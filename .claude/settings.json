@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(netstat -ano)",
+      "Bash(netsh int *)",
+      "Bash(export RUN_SUPABASE_DB_E2E=1)",
+      "Bash(export SUPABASE_DB_URL=\"postgresql://postgres:postgres@127.0.0.1:54522/postgres\")",
+      "Bash(pnpm vitest *)",
+      "Bash(pnpm add *)",
+      "Bash(node -e \"console.log\\('pdfjs-dist', require\\('pdfjs-dist/package.json'\\).version\\); console.log\\('unpdf', require\\('unpdf/package.json'\\).version\\)\")",
+      "Bash(git check-ignore *)"
+    ]
+  }
+}
