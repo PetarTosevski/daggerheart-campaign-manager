@@ -2,7 +2,7 @@
 
 ## Document status
 
-Status: Reconciled through the Sheet Template Fields migration
+Status: Reconciled through the Character Sheet Runtime migration
 (`20260718090000_phase1_schema.sql`, `20260718090100_phase1_rls.sql`, and
 `20260719090000_fear_tracker.sql`, followed by
 `20260719090100_remove_fear_reasons.sql` and
@@ -11,8 +11,9 @@ Status: Reconciled through the Sheet Template Fields migration
 `20260719130000_campaign_time_tracker.sql`,
 `20260722090000_character_workspace.sql`,
 `20260723090000_sheet_template_versions.sql`,
-`20260724090000_campaign_name_unique_per_owner.sql`, and
-`20260725090000_sheet_template_fields.sql`).
+`20260724090000_campaign_name_unique_per_owner.sql`,
+`20260725090000_sheet_template_fields.sql`, and
+`20260726090000_character_sheet_runtime.sql`).
 
 This document defines the relational data model, important constraints,
 relationships, event history, and invariants.
@@ -683,6 +684,82 @@ through owner-authorized `SECURITY DEFINER` functions:
 - `create_sheet_template_revision(source_version_id, new_version_id,
   new_object_path)` clones a published version into a new draft (server copies
   the PDF object first), copying the field definitions.
+
+## Character sheet version pinning (Task 011C)
+
+`characters.sheet_template_version_id` (nullable) pins a character to a specific
+immutable `sheet_template_versions` row via a same-campaign composite foreign key
+`(campaign_id, sheet_template_version_id)` (`on delete set null
+(sheet_template_version_id)`, so a character never loses its `campaign_id`). This
+is the layout a character renders and stores values against.
+
+Invariants:
+
+- New characters are pinned at creation (`create_character`) to the selected
+  template's current active version **only when that version is published**;
+  otherwise the pin is left null and the runtime shows a controlled
+  assign-version state.
+- Runtime code reads the pinned version, never `sheet_templates.active_version_id`
+  dynamically, so **publishing a newer version cannot change an existing
+  character's layout**.
+- Upgrading a character to a newer version is deliberately not implemented (a
+  future, explicit workflow). `pin_character_sheet_version(character_id)` performs
+  a one-time assignment for a character that has a template but no pin, and only
+  when the template's active version is published; it never reassigns an
+  already-pinned character or assigns a draft.
+- `characters` also gained a unique `(campaign_id, id)` to support the
+  same-campaign composite foreign key from `character_sheet_values`.
+
+## Table: character_sheet_values
+
+Purpose: Character-specific runtime values for the pinned sheet, stored SEPARATELY
+from the template and the PDF (Task 011C). Editing a character never modifies the
+PDF, field definitions, or version metadata.
+
+Fields:
+
+| Field | Type | Required | Notes |
+|---|---|---:|---|
+| `id` | uuid | yes | Primary key |
+| `campaign_id` | uuid | yes | FK to `campaigns` (RLS + composite FKs) |
+| `character_id` | uuid | yes | Same-campaign FK to `characters` |
+| `template_field_id` | uuid | yes | Same-campaign FK to `sheet_template_fields` (a field of the pinned version) |
+| `field_key` | text | yes | Snapshot of the field key at write time |
+| `value` | text | no | Serialized value; null clears the field |
+| `value_type` | text | yes | Snapshot of the field type |
+| `created_at` / `updated_at` | timestamptz | yes | Server-managed; `updated_at` drives optimistic concurrency |
+
+Constraints and indexes:
+
+- Unique `(character_id, template_field_id)` — one value per character and field.
+- Composite `(campaign_id, character_id)` → `characters(campaign_id, id)` and
+  `(campaign_id, template_field_id)` → `sheet_template_fields(campaign_id, id)`,
+  both `on delete cascade`, make cross-character/cross-campaign values impossible.
+- `value_type` check across the nine field types; indexes on `character_id` and
+  `campaign_id`; `updated_at` trigger.
+
+Mutation path:
+
+Direct insert/update is revoked (owners retain select). Writes flow through the
+owner-authorized `SECURITY DEFINER` function
+`save_character_sheet_value(character_id, template_field_id, value,
+expected_updated_at)`, which:
+
+- authorizes the campaign owner and requires the character to have a pinned
+  version;
+- requires the field to belong to that pinned version and be active;
+- rejects computed and read-only fields;
+- validates/normalizes by type (numeric with min/max, boolean checkbox,
+  select/radio option membership, length caps) — an empty value clears the field
+  and a valid zero is preserved;
+- applies optimistic concurrency via `expected_updated_at` (a stale snapshot is
+  rejected with SQLSTATE `40001`), so a delayed write cannot clobber a newer edit.
+
+Computed fields are read-only and are **not** evaluated in Task 011C: the task
+document defines no safe expression language (operands, dependency model,
+allowlist), so per the task contract none was invented. The reserved keys
+`food_rations`, `food_portions`, and `wither_tokens` are ordinary sheet fields
+here with no Food/Wither integration.
 
 ## Table: operations
 

@@ -23,6 +23,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { CharacterSheetTab } from "@/components/character-sheet/character-sheet-tab";
+import type { CharacterSheetRuntimeData } from "@/lib/data/character-sheet";
 import type { CharacterWorkspaceData } from "@/lib/data/characters";
 import {
   CHARACTER_STATUSES,
@@ -60,7 +62,13 @@ function StatusMessage({ state }: { state: CharacterActionState }) {
   );
 }
 
-export function CharacterWorkspace({ data }: { data: CharacterWorkspaceData }) {
+export function CharacterWorkspace({
+  data,
+  sheetData,
+}: {
+  data: CharacterWorkspaceData;
+  sheetData: CharacterSheetRuntimeData | null;
+}) {
   const hydrated = useHydrated();
   const { character } = data;
 
@@ -281,43 +289,7 @@ export function CharacterWorkspace({ data }: { data: CharacterWorkspaceData }) {
           </Card>
         ) : null}
 
-        {section === "sheet" ? (
-          <Card className="border-stone-200 bg-white/90">
-            <CardHeader>
-              <CardTitle className="text-lg">Character Sheet</CardTitle>
-              <CardDescription>
-                The interactive sheet arrives in a later task. For now this shows
-                the template chosen at creation.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs font-semibold tracking-[0.16em] text-stone-500 uppercase">
-                    Template
-                  </dt>
-                  <dd className="mt-1 text-sm text-stone-900">
-                    {data.template?.name ?? (
-                      <span className="text-stone-400">No template</span>
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold tracking-[0.16em] text-stone-500 uppercase">
-                    Kind
-                  </dt>
-                  <dd className="mt-1 text-sm text-stone-900">
-                    {data.template
-                      ? data.template.is_blank_template
-                        ? "Blank template"
-                        : "Class template"
-                      : "—"}
-                  </dd>
-                </div>
-              </dl>
-            </CardContent>
-          </Card>
-        ) : null}
+        {section === "sheet" ? <CharacterSheetTab data={sheetData} /> : null}
 
         {section !== "overview" &&
         section !== "notes" &&

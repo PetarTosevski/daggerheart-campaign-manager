@@ -28,6 +28,51 @@ specific immutable version:
 5. Existing characters created before this column exists need a backfill/assignment
    step (or remain unpinned until explicitly assigned); define this in 011C.
 
+## Status
+
+Complete — implemented and verified on 2026-07-26. Migration
+`20260726090000_character_sheet_runtime.sql` adds version pinning
+(`characters.sheet_template_version_id`), the `character_sheet_values` table, and
+the `save_character_sheet_value` / `pin_character_sheet_version` functions, and
+pins new characters at creation. `pnpm lint`, `pnpm typecheck`, `pnpm test`, and
+`pnpm build` pass; against a clean `supabase db reset` (no manual SQL) the DB
+integration suite passed with `RUN_SUPABASE_DB_E2E=1` and the full Playwright
+suite with `RUN_SUPABASE_E2E=1`. See "Implementation and verification".
+
+### Scope decisions (per the authoritative task prompt)
+
+- **Computed fields — scoped blocker.** This task document defines no safe
+  computed-field expression language (operands, dependency model, allowlist). Per
+  the contract ("document the blocker and stop rather than inventing one"), no
+  evaluator was invented: computed fields render **read-only and are not
+  evaluated**, and the server rejects writes to them. Deterministic computed
+  evaluation is deferred until an expression model is specified.
+- **Migration preview / adapters — out of scope.** The prompt lists character
+  migration between versions and Food/Wither integration as out of scope, so the
+  suggested `character_sheet_migrations` table, migration preview, and reserved-key
+  adapters were not built. Reserved keys are ordinary fields.
+- **Image fields** render a placeholder pending the Task 015 asset library (no
+  parallel asset system created).
+
+### Implementation and verification
+
+- Pinning: new characters pin the template's active version only when published;
+  runtime reads the pinned version, never `active_version_id`. Existing/legacy
+  characters are reconciled via an explicit `pin_character_sheet_version` GM
+  action (published-only, never a draft, never a reassignment) surfaced as the
+  "Assign published version" control; no data is deleted and no silent upgrade
+  occurs.
+- Values: `character_sheet_values` (one per character/field, same-campaign
+  composite FKs, RLS, owner-only writes via `save_character_sheet_value`).
+  Validation by type is authoritative in the DB function and mirrored client-side.
+  Optimistic concurrency via `updated_at`; the client also ignores stale responses
+  by sequence.
+- Runtime UI: `components/character-sheet/character-sheet-runtime.tsx` renders the
+  pinned PDF page with zoom/page navigation and HTML overlays positioned by
+  normalized coordinates, with debounced autosave and Saving/Saved/Unsaved/Save
+  failed feedback; wired into the workspace Character Sheet tab, replacing the
+  Task 010 placeholder.
+
 ## Objective
 
 Render and persist character-specific values over PDF templates and published field definitions.

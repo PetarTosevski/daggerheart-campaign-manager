@@ -214,6 +214,7 @@ export type Database = {
           portrait_url: string | null
           pronouns: string | null
           sheet_template_id: string | null
+          sheet_template_version_id: string | null
           status: string
           subclass_name: string | null
           updated_at: string
@@ -233,6 +234,7 @@ export type Database = {
           portrait_url?: string | null
           pronouns?: string | null
           sheet_template_id?: string | null
+          sheet_template_version_id?: string | null
           status?: string
           subclass_name?: string | null
           updated_at?: string
@@ -252,6 +254,7 @@ export type Database = {
           portrait_url?: string | null
           pronouns?: string | null
           sheet_template_id?: string | null
+          sheet_template_version_id?: string | null
           status?: string
           subclass_name?: string | null
           updated_at?: string
@@ -276,6 +279,71 @@ export type Database = {
             columns: ["campaign_id", "sheet_template_id"]
             isOneToOne: false
             referencedRelation: "sheet_templates"
+            referencedColumns: ["campaign_id", "id"]
+          },
+          {
+            foreignKeyName: "characters_pinned_version_same_campaign_fkey"
+            columns: ["campaign_id", "sheet_template_version_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_template_versions"
+            referencedColumns: ["campaign_id", "id"]
+          },
+        ]
+      }
+      character_sheet_values: {
+        Row: {
+          campaign_id: string
+          character_id: string
+          created_at: string
+          field_key: string
+          id: string
+          template_field_id: string
+          updated_at: string
+          value: string | null
+          value_type: string
+        }
+        Insert: {
+          campaign_id: string
+          character_id: string
+          created_at?: string
+          field_key: string
+          id?: string
+          template_field_id: string
+          updated_at?: string
+          value?: string | null
+          value_type: string
+        }
+        Update: {
+          campaign_id?: string
+          character_id?: string
+          created_at?: string
+          field_key?: string
+          id?: string
+          template_field_id?: string
+          updated_at?: string
+          value?: string | null
+          value_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "character_sheet_values_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "character_sheet_values_character_same_campaign_fkey"
+            columns: ["campaign_id", "character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["campaign_id", "id"]
+          },
+          {
+            foreignKeyName: "character_sheet_values_field_same_campaign_fkey"
+            columns: ["campaign_id", "template_field_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_template_fields"
             referencedColumns: ["campaign_id", "id"]
           },
         ]
@@ -831,6 +899,23 @@ export type Database = {
           version_created_at: string
           version_id: string
         }[]
+      }
+      save_character_sheet_value: {
+        Args: {
+          p_character_id: string
+          p_template_field_id: string
+          p_value: string | null
+          p_expected_updated_at: string | null
+        }
+        Returns: {
+          returned_updated_at: string
+          returned_value: string
+          value_id: string
+        }[]
+      }
+      pin_character_sheet_version: {
+        Args: { p_character_id: string }
+        Returns: { returned_version_id: string }[]
       }
       save_sheet_template_fields: {
         Args: { p_template_version_id: string; p_fields: Json }

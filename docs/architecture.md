@@ -2,7 +2,7 @@
 
 ## Document status
 
-Status: Reconciled through Task 011B — Sheet Template Editor
+Status: Reconciled through Task 011C — Interactive Character Sheet Runtime
 
 Product: Witherwild Campaign Manager
 
@@ -135,8 +135,31 @@ validation) live in `lib/domain/sheet-templates`; Zod input schemas in
 `TemplateFieldEditor` (route `app/(app)/characters/templates/[templateId]/edit/[versionId]`)
 handles selection, drag/resize, numeric placement, the field inspector, and an
 unsaved-changes guard; it computes pixel positions from the normalized
-coordinates and never embeds authorization or persistence rules. Runtime value
-calculation (including `computed` fields) remains deferred to Task 011C.
+coordinates and never embeds authorization or persistence rules.
+
+Task 011C adds the interactive character-sheet runtime. Each character is pinned
+to a specific published `sheet_template_versions` row via
+`characters.sheet_template_version_id`; the runtime always reads the pinned
+version (never the template's current active version), so publishing a newer
+version cannot change an existing character. Character-specific values live in
+`character_sheet_values`, entirely separate from the PDF and field definitions.
+The runtime renders the pinned version's PDF page as a background (reusing the
+011A pdf.js path) and overlays HTML controls at the fields' normalized
+coordinates — same-page, zoom-safe, no dragging. The boundary holds: coordinate
+conversion, per-type value normalization, save-state aggregation, and
+stale-response handling live in `lib/domain/character-sheet`; Zod schemas in
+`lib/validation/character-sheet`; runtime reads (pinned version, signed URL,
+fields, values) in `lib/data/character-sheet` (`getCharacterSheetRuntimeData`,
+returning an explicit no-template / no-version / ready state); and all writes go
+through the owner-authorized `save_character_sheet_value` (validated,
+optimistic-concurrency) and `pin_character_sheet_version` functions via
+programmatic Server Actions. The client `CharacterSheetRuntime` (in the workspace
+Character Sheet tab) handles debounced autosave, per-field save state, zoom, and
+page navigation. Computed fields render read-only and are NOT evaluated: the task
+document defines no safe expression language, so per the contract none was
+invented (documented blocker). Image fields render a placeholder pending the
+Task 015 asset library. Reserved keys (`food_rations`, `food_portions`,
+`wither_tokens`) are ordinary fields with no Food/Wither integration.
 
 ## Architecture goals
 

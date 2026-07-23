@@ -39,7 +39,7 @@ function makeData(
 
 describe("CharacterWorkspace", () => {
   it("shows the overview with class and template metadata by default", () => {
-    render(<CharacterWorkspace data={makeData()} />);
+    render(<CharacterWorkspace data={makeData()} sheetData={null} />);
 
     expect(
       screen.getByRole("button", { name: "Save overview" }),
@@ -51,7 +51,7 @@ describe("CharacterWorkspace", () => {
 
   it("switches to the notes section and shows persisted notes", async () => {
     const user = userEvent.setup();
-    render(<CharacterWorkspace data={makeData()} />);
+    render(<CharacterWorkspace data={makeData()} sheetData={null} />);
 
     await user.click(screen.getByRole("button", { name: "Notes" }));
 
@@ -63,7 +63,7 @@ describe("CharacterWorkspace", () => {
 
   it("renders a coming-soon placeholder for unimplemented sections", async () => {
     const user = userEvent.setup();
-    render(<CharacterWorkspace data={makeData()} />);
+    render(<CharacterWorkspace data={makeData()} sheetData={null} />);
 
     await user.click(screen.getByRole("button", { name: /Inventory/ }));
 

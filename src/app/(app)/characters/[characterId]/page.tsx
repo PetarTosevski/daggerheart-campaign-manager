@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { CharacterWorkspace } from "@/components/characters/character-workspace";
 import { Badge } from "@/components/ui/badge";
+import { getCharacterSheetRuntimeData } from "@/lib/data/character-sheet";
 import { getCharacterWorkspaceData } from "@/lib/data/characters";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -29,6 +30,8 @@ export default async function CharacterWorkspacePage({
   if (!data) {
     notFound();
   }
+
+  const sheetData = await getCharacterSheetRuntimeData(supabase, characterId);
 
   return (
     <main className="relative flex min-h-full flex-1 flex-col overflow-hidden bg-[#f4f0e8] text-stone-950">
@@ -67,7 +70,7 @@ export default async function CharacterWorkspacePage({
           )}
         </div>
 
-        <CharacterWorkspace data={data} />
+        <CharacterWorkspace data={data} sheetData={sheetData} />
       </div>
     </main>
   );
