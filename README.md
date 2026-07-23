@@ -3,12 +3,21 @@
 A private, single-user web application used by one Game Master to run a
 Daggerheart campaign with the Witherwild campaign frame.
 
-Tasks 001–007 are complete. The application currently provides authentication,
-the Phase 1 database schema, and the Fear, countdown, operations, and campaign
-week / day-night cycle features. Week advancement, food stores, inventory, and
-Wither tokens (Tasks 008–011) are not yet implemented. See `AGENTS.md` and
-`docs/` for product, architecture, and task documentation, and `docs/tasks/`
-for per-task status.
+Tasks 001–011C (including 008, 009A, and 011A–011C) are complete. The
+application currently provides authentication and the persistent authenticated
+shell; the Phase 1 database schema; Fear, countdown, and operations tracking;
+the campaign week / day-night cycle with one-day advancement; in-app campaign
+creation and initialization; the character workspace with guided character
+creation, overview, and notes; and PDF-backed character sheet templates —
+private PDF storage and rendering (011A), a GM field-overlay template editor
+with a draft/published version lifecycle (011B), and the interactive character
+sheet runtime that renders a character's pinned published template with
+autosaving HTML field overlays (011C).
+
+Not yet implemented: food stores, character inventory, Wither tokens, the
+character asset/media library, and the dice engine / roll history (Tasks
+012–016). See `AGENTS.md` and `docs/` for product, architecture, and task
+documentation, and `docs/tasks/` for per-task status.
 
 ## Technology stack
 
