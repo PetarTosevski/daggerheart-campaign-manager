@@ -169,6 +169,22 @@ Until the remaining unit and timing questions are resolved:
 - Do not apply automatic spoilage without a preview.
 - Permit a GM correction with an audit record.
 
+Implemented behavior (Task 012):
+
+- Food is held canonically in portions; one ration = 7 portions (configurable
+  per campaign). Rations and portions are derived for display.
+- The default weekly requirement is `active characters × 7 portions`, derived
+  from the active roster (never hard-coded names). A GM may override the required
+  portions with a mandatory reason.
+- Fresh food acquired in week `A` is eligible for spoilage when processing a week
+  `W >= A + 2`. Preserved food (the default for rations) does not spoil through
+  weekly processing. A GM may skip spoilage for a run with a mandatory reason.
+- Weekly processing is previewed (non-persistent) then committed atomically and
+  idempotently as a standalone action; it consumes oldest-eligible food first
+  (FIFO) and reports any shortage. It is not coupled to Task 007/008 time
+  advancement.
+- Corrections are compensating audit transactions; history is never rewritten.
+
 ## Inventory
 
 Inventory uses slots rather than weight.

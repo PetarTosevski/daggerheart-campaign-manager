@@ -539,6 +539,246 @@ export type Database = {
           },
         ]
       }
+      food_batches: {
+        Row: {
+          acquired_cycle: string | null
+          acquired_cycle_day: number | null
+          acquired_week: number
+          campaign_id: string
+          created_at: string
+          food_type: string
+          id: string
+          initial_portions: number
+          label: string
+          remaining_portions: number
+          source_note: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          acquired_cycle?: string | null
+          acquired_cycle_day?: number | null
+          acquired_week: number
+          campaign_id: string
+          created_at?: string
+          food_type: string
+          id?: string
+          initial_portions: number
+          label: string
+          remaining_portions: number
+          source_note?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          acquired_cycle?: string | null
+          acquired_cycle_day?: number | null
+          acquired_week?: number
+          campaign_id?: string
+          created_at?: string
+          food_type?: string
+          id?: string
+          initial_portions?: number
+          label?: string
+          remaining_portions?: number
+          source_note?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "food_batches_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      food_settings: {
+        Row: {
+          campaign_id: string
+          default_spoilage_policy: string
+          portions_per_active_character_per_week: number
+          portions_per_ration: number
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          default_spoilage_policy?: string
+          portions_per_active_character_per_week?: number
+          portions_per_ration?: number
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          default_spoilage_policy?: string
+          portions_per_active_character_per_week?: number
+          portions_per_ration?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "food_settings_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: true
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      food_transactions: {
+        Row: {
+          after_portions: number
+          batch_id: string | null
+          before_portions: number
+          campaign_id: string
+          character_id: string | null
+          created_at: string
+          created_by: string
+          id: string
+          operation_id: string | null
+          portions_delta: number
+          reason: string | null
+          transaction_type: string
+        }
+        Insert: {
+          after_portions: number
+          batch_id?: string | null
+          before_portions: number
+          campaign_id: string
+          character_id?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          operation_id?: string | null
+          portions_delta: number
+          reason?: string | null
+          transaction_type: string
+        }
+        Update: {
+          after_portions?: number
+          batch_id?: string | null
+          before_portions?: number
+          campaign_id?: string
+          character_id?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          operation_id?: string | null
+          portions_delta?: number
+          reason?: string | null
+          transaction_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "food_transactions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "food_transactions_batch_same_campaign_fkey"
+            columns: ["campaign_id", "batch_id"]
+            isOneToOne: false
+            referencedRelation: "food_batches"
+            referencedColumns: ["campaign_id", "id"]
+          },
+          {
+            foreignKeyName: "food_transactions_character_same_campaign_fkey"
+            columns: ["campaign_id", "character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["campaign_id", "id"]
+          },
+          {
+            foreignKeyName: "food_transactions_operation_same_campaign_fkey"
+            columns: ["campaign_id", "operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["campaign_id", "id"]
+          },
+        ]
+      }
+      food_week_processes: {
+        Row: {
+          active_character_count: number
+          applied_required_portions: number
+          campaign_id: string
+          consumed_portions: number
+          created_at: string
+          created_by: string
+          default_required_portions: number
+          id: string
+          operation_id: string
+          override_reason: string | null
+          processed_week: number
+          roster_snapshot: Json
+          selected_batch_ids: Json | null
+          selection_detail: Json | null
+          shortage_portions: number
+          spoiled_portions: number
+          used_custom_selection: boolean
+          used_override: boolean
+        }
+        Insert: {
+          active_character_count: number
+          applied_required_portions: number
+          campaign_id: string
+          consumed_portions: number
+          created_at?: string
+          created_by: string
+          default_required_portions: number
+          id?: string
+          operation_id: string
+          override_reason?: string | null
+          processed_week: number
+          roster_snapshot: Json
+          selected_batch_ids?: Json | null
+          selection_detail?: Json | null
+          shortage_portions: number
+          spoiled_portions: number
+          used_custom_selection?: boolean
+          used_override?: boolean
+        }
+        Update: {
+          active_character_count?: number
+          applied_required_portions?: number
+          campaign_id?: string
+          consumed_portions?: number
+          created_at?: string
+          created_by?: string
+          default_required_portions?: number
+          id?: string
+          operation_id?: string
+          override_reason?: string | null
+          processed_week?: number
+          roster_snapshot?: Json
+          selected_batch_ids?: Json | null
+          selection_detail?: Json | null
+          shortage_portions?: number
+          spoiled_portions?: number
+          used_custom_selection?: boolean
+          used_override?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "food_week_processes_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "food_week_processes_operation_same_campaign_fkey"
+            columns: ["campaign_id", "operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["campaign_id", "id"]
+          },
+        ]
+      }
       operations: {
         Row: {
           campaign_id: string
@@ -898,6 +1138,65 @@ export type Database = {
           returned_version_number: number
           version_created_at: string
           version_id: string
+        }[]
+      }
+      acquire_food_batch: {
+        Args: {
+          p_campaign_id: string
+          p_food_type: string
+          p_idempotency_key: string
+          p_initial_portions: number
+          p_label: string
+          p_source_note: string | null
+        }
+        Returns: {
+          batch_id: string
+          returned_acquired_week: number
+          returned_food_type: string
+          returned_initial_portions: number
+          returned_label: string
+          returned_remaining_portions: number
+          returned_status: string
+          was_applied: boolean
+        }[]
+      }
+      process_weekly_food: {
+        Args: {
+          p_campaign_id: string
+          p_idempotency_key: string
+          p_override_required_portions?: number | null
+          p_reason?: string | null
+          p_selected_batch_ids?: string[] | null
+          p_skip_spoilage?: boolean
+          p_target_week?: number | null
+        }
+        Returns: {
+          operation_id: string
+          process_id: string
+          returned_active_character_count: number
+          returned_applied_required: number
+          returned_consumed: number
+          returned_default_required: number
+          returned_processed_week: number
+          returned_shortage: number
+          returned_spoiled: number
+          returned_used_override: boolean
+          was_applied: boolean
+        }[]
+      }
+      correct_food_batch: {
+        Args: {
+          p_batch_id: string
+          p_campaign_id: string
+          p_idempotency_key: string
+          p_new_remaining_portions: number
+          p_reason: string
+        }
+        Returns: {
+          batch_id: string
+          returned_remaining_portions: number
+          returned_status: string
+          was_applied: boolean
         }[]
       }
       save_character_sheet_value: {

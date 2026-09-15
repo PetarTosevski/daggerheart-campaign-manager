@@ -58,10 +58,10 @@ Recommended order:
   2026-07-19)
 2. [x] Campaign-week and day/night-cycle tracker (Task 007 — Complete,
    verified 2026-07-19)
-3. [ ] Week-advancement preview and commit
-4. [ ] Food stores and manual transactions
-5. [ ] Weekly food consumption
-6. [ ] Spoilage
+3. [x] Week-advancement preview and commit (Tasks 007–008 — Complete)
+4. [x] Food stores and manual transactions (Task 012 — Complete)
+5. [x] Weekly food consumption (Task 012 — Complete)
+6. [x] Spoilage (Task 012 — Complete)
 7. [ ] Inventory items and transfers
 8. [ ] Correction and undo for compound operations
 

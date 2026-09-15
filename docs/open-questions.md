@@ -46,6 +46,28 @@ For fresh food that spoils after two campaign weeks:
 - Is spoilage previewed or automatically committed?
 - Can the GM override a spoilage date?
 
+Resolved: 2026-07-24 (Task 012).
+
+Decision:
+
+- Boundary: a fresh batch acquired in week `A` becomes eligible for spoilage when
+  a weekly process targets week `W` with `W >= A + 2` (acquisition week counts as
+  week 0 of the two-week window).
+- Spoilage is per batch: an eligible fresh batch spoils its full remaining
+  portions during weekly processing. Preserved food does not spoil. (Finer
+  partial-stack spoilage rules are not required by current house rules.)
+- Spoilage is always previewed (non-persistent) and only applied on an explicit
+  weekly-process commit; nothing spoils automatically.
+- The GM may skip spoilage for a given run with a mandatory reason (an audited
+  override). Editing a specific per-batch spoilage date is not modeled.
+
+Recorded in:
+
+- `docs/game-interpretation.md`
+- `docs/data-model.md`
+- `docs/tasks/TASK-012-character-food-system.md`
+- `supabase/migrations/20260727090000_food_system.sql`
+
 ## Product questions
 
 ### OQ-PROD-002 — Number of campaigns

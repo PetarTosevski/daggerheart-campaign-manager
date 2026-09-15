@@ -2,7 +2,7 @@
 
 ## Document status
 
-Status: Reconciled through the Character Sheet Runtime migration
+Status: Reconciled through the Character Food System migration
 (`20260718090000_phase1_schema.sql`, `20260718090100_phase1_rls.sql`, and
 `20260719090000_fear_tracker.sql`, followed by
 `20260719090100_remove_fear_reasons.sql` and
@@ -12,8 +12,9 @@ Status: Reconciled through the Character Sheet Runtime migration
 `20260722090000_character_workspace.sql`,
 `20260723090000_sheet_template_versions.sql`,
 `20260724090000_campaign_name_unique_per_owner.sql`,
-`20260725090000_sheet_template_fields.sql`, and
-`20260726090000_character_sheet_runtime.sql`).
+`20260725090000_sheet_template_fields.sql`,
+`20260726090000_character_sheet_runtime.sql`, and
+`20260727090000_food_system.sql`).
 
 This document defines the relational data model, important constraints,
 relationships, event history, and invariants.
@@ -87,12 +88,13 @@ The sheet-template PDF foundation adds:
 and an `active_version_id` pointer on `sheet_templates`, backed by the private
 `character-sheet-templates` Storage bucket.
 
+The character food system adds `food_settings`, `food_batches`,
+`food_transactions`, and `food_week_processes` (Task 012).
+
 Later phases add:
 
 - `inventory_items`
 - `inventory_transactions`
-- `food_stores`
-- `food_transactions`
 - `character_resources`
 - `mechanic_definitions`
 - `mechanic_instances`
@@ -115,8 +117,10 @@ auth.users
         ├── campaign_time_events
         ├── inventory_items
         │     └── inventory_transactions
-        ├── food_stores
+        ├── food_settings
+        ├── food_batches
         │     └── food_transactions
+        ├── food_week_processes
         ├── mechanic_instances
         ├── notes
         └── operations
@@ -945,48 +949,112 @@ Invariant:
 The total quantity across source and destination changes by zero for a pure
 transfer.
 
-## Later table: food_stores
+## Character food system (Task 012)
 
-Purpose: Stores food separately from general inventory.
+Food is a single authoritative, campaign-scoped store held canonically in
+PORTIONS (one ration = `portions_per_ration`, default 7). Ration/portion display
+and shortage are derived. This supersedes the earlier `food_stores` sketch; food
+is not modeled with per-owner balances.
 
-Fields include:
+### Table: food_settings
 
-- `id`
-- `campaign_id`
-- `owner_type`
-- `owner_id`
-- `name`
-- `quantity`
-- `unit`
-- `portions`
-- `acquired_week`
-- `spoils_at_week`
-- `food_category`
-- `notes`
-- timestamps
-- archival state
+One row per campaign (seeded by a trigger on campaign insert and backfilled for
+existing campaigns).
 
-Invariant:
+| Field | Type | Notes |
+|---|---|---|
+| `campaign_id` | uuid | PK, FK to `campaigns` |
+| `portions_per_ration` | integer | Default 7; check `> 0` |
+| `portions_per_active_character_per_week` | integer | Default 7; check `> 0` |
+| `default_spoilage_policy` | text | `spoil_fresh` (default) or `retain` |
+| `updated_at` | timestamptz | Trigger-maintained |
 
-Food quantity and portions must not be negative.
+### Table: food_batches
 
-No universal spoilage or consumption rule is assumed.
+Each acquisition; the store total is the sum of active batches' remaining
+portions.
 
-## Later table: food_transactions
+| Field | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK; unique `(campaign_id, id)` for composite FKs |
+| `campaign_id` | uuid | FK to `campaigns` |
+| `label` | text | Trimmed 1–100 |
+| `food_type` | text | `fresh` or `preserved` |
+| `acquired_week` / `acquired_cycle` / `acquired_cycle_day` | int/text/smallint | From campaign state at acquisition |
+| `initial_portions` | integer | Check `> 0` |
+| `remaining_portions` | integer | Check `between 0 and initial_portions` (never negative) |
+| `source_note` | text | Optional, ≤ 300 |
+| `status` | text | `active`, `depleted`, or `spoiled` |
+| `created_at` | timestamptz | `clock_timestamp()` so FIFO is deterministic by true insert order even within a transaction |
+| `updated_at` | timestamptz | Trigger-maintained |
 
-Transaction types:
+FIFO order is `(acquired_week, created_at, id)`. Depleted/spoiled batches remain
+in history and are not deleted in normal use.
 
-- `acquire`
-- `consume`
-- `transfer_out`
-- `transfer_in`
-- `spoil`
-- `lose`
-- `correction`
-- `undo`
+### Table: food_transactions
 
-Every weekly consumption applied during week advancement must link to the same
-operation as the week advancement.
+Append-only audit of every authoritative quantity change.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK |
+| `campaign_id` | uuid | FK to `campaigns` |
+| `batch_id` | uuid | Same-campaign composite FK to `food_batches` |
+| `character_id` | uuid | Optional same-campaign attribution |
+| `operation_id` | uuid | Same-campaign FK to `operations` for compound runs |
+| `transaction_type` | text | `acquire`, `consume`, `spoil`, `correction`, `override_adjust` |
+| `portions_delta` / `before_portions` / `after_portions` | integer | Check `after = before + delta`, non-negative |
+| `reason` | text | Required for overrides/corrections |
+| `created_at` / `created_by` | timestamptz / uuid | Server-set |
+
+### Table: food_week_processes
+
+One row per committed weekly process (audit). Includes the processed week, an
+immutable roster snapshot (`jsonb` array of active character ids),
+`active_character_count`, default and applied required portions, spoiled,
+consumed, and shortage portions, `used_override`, `override_reason`, and the
+linked `operation_id` (unique). A partial unique index on
+`(campaign_id, processed_week) where not used_override` rejects duplicate standard
+processing for a week; overrides are a separate, deliberate workflow.
+
+For the GM batch-selection override (migration `20260731090000`), three columns
+record the custom selection immutably: `used_custom_selection` (boolean),
+`selected_batch_ids` (`jsonb` array of the submitted ordered batch ids), and
+`selection_detail` (`jsonb` array of `{batch_id, position, consumed_portions}`,
+including selected batches that consumed zero). A custom selection is always an
+override, so `used_custom_selection` implies `used_override` and a non-null
+`selected_batch_ids`.
+
+### Mutation paths
+
+RLS restricts reads to the campaign owner; direct authenticated writes are
+revoked. All authoritative writes go through owner-authorized `SECURITY DEFINER`
+functions, idempotent via `record_operation`:
+
+- `acquire_food_batch(...)` — records a batch + an `acquire` transaction.
+- `process_weekly_food(campaign, key, target_week, override_required_portions,
+  skip_spoilage, reason, selected_batch_ids)` — atomically re-derives spoilage
+  (fresh eligible when `target_week >= acquired_week + 2`), consumption of the
+  required portions (default `active_character_count *
+  portions_per_active_character_per_week`, overridable with a reason), shortage,
+  updates batches, inserts spoil/consume transactions, and inserts the process
+  audit. Consumption is FIFO by default, or restricted to an explicit ordered
+  `selected_batch_ids` selection (consuming only those batches, in order, with
+  shortage from the selected supply and no fall-back). Each selected batch is
+  re-validated under a row lock (same campaign, active, remaining after spoilage,
+  unique). Idempotent on retry (keyed on the selection too); rejects a new
+  standard run for an already-processed week; rejects an override without a reason.
+- `correct_food_batch(...)` — an audited compensating `correction` transaction
+  that resets a batch's remaining portions within bounds (never rewrites history).
+
+### Reserved character-sheet keys
+
+`food_rations` and `food_portions` are read-only projections of the shared store:
+`food_rations = floor(total_remaining / portions_per_ration)` and
+`food_portions = total_remaining % portions_per_ration`. The runtime shadows any
+provisional `character_sheet_values` rows for these keys (rows are not deleted),
+and `save_character_sheet_value` rejects writes to them. They are not connected to
+any Food domain sync beyond this projection.
 
 ## Later table: character_resources
 
