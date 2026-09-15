@@ -27,6 +27,7 @@ import {
   type SheetSaveState,
 } from "@/lib/domain/character-sheet";
 import { isReservedFoodKey } from "@/lib/domain/food";
+import { isReservedInventoryKey } from "@/lib/domain/inventory";
 import {
   clampZoom,
   DEFAULT_ZOOM,
@@ -356,6 +357,15 @@ function FieldControl({
       return (
         <div className={`${controlClass} flex items-center bg-amber-50/80 text-stone-700`} title={`${label} (food store)`}>
           <span className="truncate tabular-nums">{value ?? "0"}</span>
+        </div>
+      );
+    }
+    // Reserved inventory keys are read-only projections of the character's
+    // inventory (Task 013). Displayed, never edited, never autosaved.
+    if (isReservedInventoryKey(field.field_key)) {
+      return (
+        <div className={`${controlClass} flex items-center bg-amber-50/80 text-stone-700`} title={`${label} (inventory)`}>
+          <span className="truncate">{value ?? "—"}</span>
         </div>
       );
     }

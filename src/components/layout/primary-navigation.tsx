@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Campaign" },
   { href: "/characters", label: "Characters" },
   { href: "/food", label: "Food" },
+  { href: "/inventory", label: "Inventory" },
 ] as const;
 
 /**

@@ -187,7 +187,13 @@ Implemented behavior (Task 012):
 
 ## Inventory
 
-Inventory uses slots rather than weight.
+Task 013 implements inventory following the task prompt: reusable item
+definitions held as stacks in owned or shared, nestable containers, with optional
+per-item weight and optional container capacity rather than a fixed slot count.
+Weight is optional (unset items contribute nothing to `carried_weight`), so
+slot-style play remains possible by leaving weights and capacities blank. This
+supersedes the earlier "slots, not weight" sketch and resolves OQ-DATA-004 and
+OQ-RULE-010.
 
 The application stores current item quantity or stack state and transaction
 history.

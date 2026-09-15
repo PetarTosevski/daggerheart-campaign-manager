@@ -2,7 +2,7 @@
 
 ## Document status
 
-Status: Reconciled through the Character Food System migration
+Status: Reconciled through the Character Inventory System migration
 (`20260718090000_phase1_schema.sql`, `20260718090100_phase1_rls.sql`, and
 `20260719090000_fear_tracker.sql`, followed by
 `20260719090100_remove_fear_reasons.sql` and
@@ -13,8 +13,10 @@ Status: Reconciled through the Character Food System migration
 `20260723090000_sheet_template_versions.sql`,
 `20260724090000_campaign_name_unique_per_owner.sql`,
 `20260725090000_sheet_template_fields.sql`,
-`20260726090000_character_sheet_runtime.sql`, and
-`20260727090000_food_system.sql`).
+`20260726090000_character_sheet_runtime.sql`,
+`20260727090000_food_system.sql`,
+`20260731090000_food_batch_selection.sql`, and
+`20260801090000_inventory_system.sql`).
 
 This document defines the relational data model, important constraints,
 relationships, event history, and invariants.
@@ -115,8 +117,11 @@ auth.users
         │     └── sheet_template_versions
         ├── characters
         ├── campaign_time_events
-        ├── inventory_items
-        │     └── inventory_transactions
+        ├── item_definitions
+        ├── inventory_containers
+        │     └── inventory_containers (nested)
+        ├── inventory_entries
+        ├── inventory_transactions
         ├── food_settings
         ├── food_batches
         │     └── food_transactions
@@ -898,6 +903,10 @@ path does not define generic undo eligibility under `OQ-PROD-005`.
 
 ## Later table: inventory_items
 
+Superseded by the Character inventory system (Task 013) below, which splits this
+sketch into `item_definitions` (reusable templates) and `inventory_entries`
+(stacks in containers). Retained for historical context only.
+
 Purpose: Represents a distinct inventory stack or item record.
 
 Fields include:
@@ -1055,6 +1064,109 @@ functions, idempotent via `record_operation`:
 provisional `character_sheet_values` rows for these keys (rows are not deleted),
 and `save_character_sheet_value` rejects writes to them. They are not connected to
 any Food domain sync beyond this projection.
+
+## Character inventory system (Task 013)
+
+The inventory system (`20260801090000_inventory_system.sql`) is an authoritative,
+campaign-scoped domain. Items are defined once and held as stacks in owned or
+shared containers; every authoritative change is audited. It supersedes the
+earlier `inventory_items` sketch below. All writes go through owner-authorized,
+idempotent SECURITY DEFINER functions; reads are RLS-scoped to the campaign owner.
+
+### Table: item_definitions
+
+Reusable item templates.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | PK; `unique (campaign_id, id)` for composite FKs |
+| `campaign_id` | uuid | FK `campaigns` on delete cascade |
+| `name` | text | 1..100 chars; case-insensitive unique per campaign while active |
+| `description` | text | null or 1..500 chars |
+| `category` | text | `weapon` / `armor` / `consumable` / `tool` / `treasure` / `misc` |
+| `stackable` | boolean | non-stackable items are limited to quantity 1 |
+| `default_stack_limit` | integer | null unless stackable; > 0 when set |
+| `unit_weight` | numeric(10,2) | null or >= 0 |
+| `asset_id` | uuid | reserved for Task 015 media; no FK yet |
+| `is_active` | boolean | archive flag |
+
+### Table: inventory_containers
+
+Owned or shared, nestable holders.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | PK; `unique (campaign_id, id)` |
+| `campaign_id` | uuid | FK `campaigns` on delete cascade |
+| `character_id` | uuid | null = shared campaign store; composite FK to `characters` |
+| `parent_container_id` | uuid | composite FK to `inventory_containers`; cycles impossible |
+| `name` | text | 1..100 chars |
+| `container_type` | text | `backpack` / `equipment` / `storage` / `shared` / `other` |
+| `capacity_value` | numeric(10,2) | null or >= 0 |
+| `is_default` | boolean | seeded shared store / character backpack |
+
+A campaign trigger seeds one shared container per campaign and one backpack per
+character (with backfill). Cycles are prevented three ways: a `not_self_parent`
+CHECK, a `before insert/update` trigger walking the parent chain, and an explicit
+walk in `move_inventory_container`. A nested container must share its parent's owner.
+
+### Table: inventory_entries
+
+Concrete stacks: a quantity of one item, either stored in a container or equipped
+by a character.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid | PK; `unique (campaign_id, id)` |
+| `campaign_id` | uuid | FK `campaigns` on delete cascade |
+| `character_id` | uuid | denormalized owner (null = shared); composite FK to `characters` |
+| `container_id` | uuid | composite FK to `inventory_containers`; null iff equipped |
+| `item_definition_id` | uuid | composite FK to `item_definitions` on delete restrict |
+| `quantity` | integer | > 0; a stack that reaches 0 is deleted |
+| `state` | text | `stored` (in a container, no slot) or `equipped` (worn, one unit, no container) |
+| `equipped_slot` | text | 1..40 chars when equipped; unique per character per slot |
+| `custom_name` / `notes` | text | optional overrides |
+
+A placement CHECK makes `stored` and `equipped` mutually exclusive and forces an
+equipped entry to be a single owned unit. A partial unique index enforces one
+equipped item per character per slot.
+
+### Table: inventory_transactions
+
+Append-only audit of every authoritative change (`add`, `remove`, `move`,
+`transfer`, `equip`, `unequip`, `consume`, `split`, `merge`, `correction`), with a
+signed `quantity_delta`, optional source/target character and container ids, the
+`operation_id`, and `created_by`. `entry_id` and `item_definition_id` are set null
+on delete so history survives stack removal.
+
+### Mutation paths
+
+Every function is owner-authorized (locks the owned campaign or row), idempotent
+via `record_operation`, and returns a trailing `was_applied`. Create/add/split
+functions take a client-generated row id so a genuine retry re-reads the same row.
+
+- `create_item_definition` / `update_item_definition` — define or edit an item
+  (activation via `is_active`); reject reducing a stack limit below a held stack.
+- `create_inventory_container` / `move_inventory_container` — create or re-parent a
+  container (cycle- and owner-checked).
+- `add_inventory_item` — create a new stack in a container, enforcing stack rules.
+- `transfer_inventory_entry` — relocate a whole stack (`move` when the owner is
+  unchanged, `transfer` when it changes).
+- `split_inventory_entry` / `merge_inventory_entries` — peel off or combine
+  stackable stacks in the same container, respecting the stack limit.
+- `equip_inventory_entry` / `unequip_inventory_entry` — wear a single owned unit in
+  a slot, or stow it back into one of the owner's containers.
+- `consume_inventory_entry` — decrement a stack (deleting it at zero).
+- `correct_inventory_entry` — an audited compensating `correction` (reason required)
+  that resets a stack's quantity (deleting it at zero).
+
+### Reserved character-sheet keys
+
+`inventory_summary`, `equipped_items`, and `carried_weight` are read-only
+projections of a character's own inventory (item counts, equipped labels, and the
+sum of `quantity * unit_weight`). The runtime shadows any provisional
+`character_sheet_values` rows for these keys (rows are not deleted), and
+`save_character_sheet_value` rejects writes to them.
 
 ## Later table: character_resources
 

@@ -62,7 +62,7 @@ Recommended order:
 4. [x] Food stores and manual transactions (Task 012 — Complete)
 5. [x] Weekly food consumption (Task 012 — Complete)
 6. [x] Spoilage (Task 012 — Complete)
-7. [ ] Inventory items and transfers
+7. [x] Inventory items and transfers (Task 013 — Complete)
 8. [ ] Correction and undo for compound operations
 
 ## Phase 3 — Character and campaign-frame mechanics
