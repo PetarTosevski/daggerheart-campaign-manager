@@ -2,7 +2,7 @@
 
 ## Document status
 
-Status: Reconciled through Task 011C — Interactive Character Sheet Runtime
+Status: Reconciled through Task 012 — Character Food System
 
 Product: Witherwild Campaign Manager
 
@@ -160,6 +160,28 @@ document defines no safe expression language, so per the contract none was
 invented (documented blocker). Image fields render a placeholder pending the
 Task 015 asset library. Reserved keys (`food_rations`, `food_portions`,
 `wither_tokens`) are ordinary fields with no Food/Wither integration.
+
+Task 012 adds the character food system: a single authoritative, campaign-scoped
+store held in portions across `food_batches`, with an append-only
+`food_transactions` audit, per-campaign `food_settings`, and a
+`food_week_processes` audit of committed weekly runs. The pure rules
+(ration/portion conversion, active-roster requirement, fresh-spoilage
+eligibility, FIFO ordering, the non-persistent weekly preview, and the
+character-sheet projection) live in `lib/domain/food`; Zod schemas in
+`lib/validation/food`; RLS-scoped reads in `lib/data/food`; and all authoritative
+writes go through owner-authorized, idempotent `SECURITY DEFINER` functions
+(`acquire_food_batch`, `process_weekly_food`, `correct_food_batch`) behind named
+Server Actions. The weekly commit re-derives spoilage and consumption
+independently in SQL under row locks — the client preview is informational only
+and its quantities are never trusted. Consumption is FIFO by default; a GM may
+override it with an explicit, reason-gated, audited ordered batch selection
+(consuming only the chosen batches, in order, validated server-side and recorded
+immutably in `food_week_processes`). Weekly processing is a standalone **Process
+Weekly Food** action (not coupled to Task 008 time advancement) and is protected
+against duplicate standard runs per week. The `food_rations`/`food_portions`
+reserved sheet keys are now read-only projections of the shared store (011C's
+runtime shadows any provisional per-character rows and rejects writes to them);
+`wither_tokens` remains deferred to Task 014.
 
 ## Architecture goals
 

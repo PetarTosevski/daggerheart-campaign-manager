@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { unstable_noStore as noStore } from "next/cache";
 
+import { getCampaignFoodPortions } from "@/lib/data/food";
 import { TEMPLATE_SIGNED_URL_TTL_SECONDS } from "@/lib/data/sheet-templates";
+import { isReservedFoodKey, projectFoodSheetValue } from "@/lib/domain/food";
 import { TEMPLATE_STORAGE_BUCKET } from "@/lib/domain/sheet-templates";
 import type { Database, Tables } from "@/lib/supabase/database.types";
 
@@ -163,6 +165,25 @@ export async function getCharacterSheetRuntimeData(
     };
   }
 
+  // Reserved food keys are read-only projections of the shared campaign food
+  // store (Task 012). Shadow any provisional per-character rows: the domain
+  // value is authoritative and consistent across every sheet in the campaign.
+  const fields = fieldsResult.data ?? [];
+  if (fields.some((f) => isReservedFoodKey(f.field_key))) {
+    const { totalPortions, portionsPerRation } = await getCampaignFoodPortions(
+      supabase,
+      character.campaign_id,
+    );
+    for (const f of fields) {
+      if (isReservedFoodKey(f.field_key)) {
+        values[f.id] = {
+          value: projectFoodSheetValue(f.field_key, totalPortions, portionsPerRation),
+          updated_at: "",
+        };
+      }
+    }
+  }
+
   return {
     state: "ready",
     characterId: character.id,
@@ -174,7 +195,7 @@ export async function getCharacterSheetRuntimeData(
       page_count: versionResult.data.page_count,
     },
     signedUrl: signed?.signedUrl ?? null,
-    fields: fieldsResult.data ?? [],
+    fields,
     values,
   };
 }

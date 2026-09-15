@@ -26,6 +26,7 @@ import {
   toPixelRect,
   type SheetSaveState,
 } from "@/lib/domain/character-sheet";
+import { isReservedFoodKey } from "@/lib/domain/food";
 import {
   clampZoom,
   DEFAULT_ZOOM,
@@ -349,6 +350,15 @@ function FieldControl({
   };
 
   function render() {
+    // Reserved food keys are read-only projections of the shared campaign food
+    // store (Task 012). They are displayed, never edited, and never autosaved.
+    if (isReservedFoodKey(field.field_key)) {
+      return (
+        <div className={`${controlClass} flex items-center bg-amber-50/80 text-stone-700`} title={`${label} (food store)`}>
+          <span className="truncate tabular-nums">{value ?? "0"}</span>
+        </div>
+      );
+    }
     if (field.field_type === "computed") {
       return (
         <div className={`${controlClass} flex items-center bg-stone-100 text-stone-500`} title={`${label} (computed)`}>

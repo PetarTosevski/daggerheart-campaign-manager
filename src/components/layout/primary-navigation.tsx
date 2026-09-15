@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Campaign" },
   { href: "/characters", label: "Characters" },
+  { href: "/food", label: "Food" },
 ] as const;
 
 /**
