@@ -183,6 +183,20 @@ reserved sheet keys are now read-only projections of the shared store (011C's
 runtime shadows any provisional per-character rows and rejects writes to them);
 `wither_tokens` remains deferred to Task 014.
 
+Task 013 adds the character and campaign inventory as an authoritative domain
+(`item_definitions`, `inventory_containers`, `inventory_entries`,
+`inventory_transactions`). The pure rules (stack-limit validation, container-cycle
+detection, and the per-character sheet projection) live in `lib/domain/inventory`;
+Zod schemas in `lib/validation/inventory`; RLS-scoped reads in `lib/data/inventory`;
+and all authoritative writes go through owner-authorized, idempotent
+`SECURITY DEFINER` functions (`add_inventory_item`, `transfer_inventory_entry`,
+`split_inventory_entry`, `merge_inventory_entries`, `equip_inventory_entry`,
+`unequip_inventory_entry`, `consume_inventory_entry`, `correct_inventory_entry`,
+and the item/container functions) behind named Server Actions. Container cycles are
+impossible (a self-parent CHECK, a parent-chain trigger, and a walk in the move
+function), and the `inventory_summary`/`equipped_items`/`carried_weight` reserved
+sheet keys are read-only projections of each character's own inventory.
+
 ## Architecture goals
 
 The architecture must:

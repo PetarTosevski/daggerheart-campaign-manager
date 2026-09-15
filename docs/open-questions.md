@@ -198,6 +198,21 @@ Question:
 What is a character's slot capacity, how many slots does each item use, how do
 stacks and containers work, and what happens when overloaded?
 
+Resolved: 2026-09-15 (Task 013).
+
+Decision:
+
+- Following the task prompt, inventory is modeled with item definitions, nestable
+  owned/shared containers, and stacks, rather than a fixed per-character slot
+  count. Stacking is per item definition: non-stackable items are one unit each,
+  stackable items honor an optional `default_stack_limit`.
+- Capacity is optional (`inventory_containers.capacity_value`, `unit_weight`) and
+  is recorded for display, not hard-enforced, so overload is surfaced rather than
+  blocked. Weight-free, slot-style play remains possible by leaving weights and
+  capacities blank.
+- Recorded in `docs/data-model.md`, `docs/game-interpretation.md`, and
+  `supabase/migrations/20260801090000_inventory_system.sql`.
+
 ## Resolved
 
 ### OQ-ARCH-005 — PDF storage and rendering dependencies
@@ -609,16 +624,22 @@ Recorded in:
 
 ### OQ-RULE-010 — Inventory weight
 
-Resolved: Previously confirmed by the campaign owner
+Resolved: Previously confirmed by the campaign owner; revisited 2026-09-15 (Task 013)
 
 Decision:
 
-Weight is ignored and inventory uses slots. Capacity details remain open.
+Weight is optional, not ignored. Task 013 follows the task prompt and records an
+optional per-item `unit_weight` and an optional container `capacity_value`,
+surfacing a derived `carried_weight` on the character sheet. Both are optional, so
+a weight-free, slot-style game is still possible by leaving them blank; capacity
+is displayed rather than hard-enforced.
 
 Recorded in:
 
 - `docs/campaign-house-rules.md`
 - `docs/game-interpretation.md`
+- `docs/data-model.md`
+- `supabase/migrations/20260801090000_inventory_system.sql`
 
 
 

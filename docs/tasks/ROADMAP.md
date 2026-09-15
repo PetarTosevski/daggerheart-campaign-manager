@@ -11,7 +11,7 @@
 011B — Sheet Template Editor (Complete)
 011C — Interactive Character Sheet Runtime (Complete)
 012 — Character Food System (Complete)
-013 — Character Inventory System
+013 — Character Inventory System (Complete)
 014 — Wither Token System
 015 — Character Asset and Media Library
 016 — Dice Engine and Roll History

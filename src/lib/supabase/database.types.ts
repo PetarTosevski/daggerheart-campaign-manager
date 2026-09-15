@@ -779,6 +779,277 @@ export type Database = {
           },
         ]
       }
+      inventory_containers: {
+        Row: {
+          campaign_id: string
+          capacity_value: number | null
+          character_id: string | null
+          container_type: string
+          created_at: string
+          id: string
+          is_default: boolean
+          name: string
+          parent_container_id: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          capacity_value?: number | null
+          character_id?: string | null
+          container_type?: string
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name: string
+          parent_container_id?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          capacity_value?: number | null
+          character_id?: string | null
+          container_type?: string
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name?: string
+          parent_container_id?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_containers_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_containers_character_same_campaign_fkey"
+            columns: ["campaign_id", "character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["campaign_id", "id"]
+          },
+          {
+            foreignKeyName: "inventory_containers_parent_same_campaign_fkey"
+            columns: ["campaign_id", "parent_container_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_containers"
+            referencedColumns: ["campaign_id", "id"]
+          },
+        ]
+      }
+      inventory_entries: {
+        Row: {
+          campaign_id: string
+          character_id: string | null
+          container_id: string | null
+          created_at: string
+          custom_name: string | null
+          equipped_slot: string | null
+          id: string
+          item_definition_id: string
+          notes: string | null
+          quantity: number
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          character_id?: string | null
+          container_id?: string | null
+          created_at?: string
+          custom_name?: string | null
+          equipped_slot?: string | null
+          id?: string
+          item_definition_id: string
+          notes?: string | null
+          quantity: number
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          character_id?: string | null
+          container_id?: string | null
+          created_at?: string
+          custom_name?: string | null
+          equipped_slot?: string | null
+          id?: string
+          item_definition_id?: string
+          notes?: string | null
+          quantity?: number
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_entries_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_entries_character_same_campaign_fkey"
+            columns: ["campaign_id", "character_id"]
+            isOneToOne: false
+            referencedRelation: "characters"
+            referencedColumns: ["campaign_id", "id"]
+          },
+          {
+            foreignKeyName: "inventory_entries_container_same_campaign_fkey"
+            columns: ["campaign_id", "container_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_containers"
+            referencedColumns: ["campaign_id", "id"]
+          },
+          {
+            foreignKeyName: "inventory_entries_item_same_campaign_fkey"
+            columns: ["campaign_id", "item_definition_id"]
+            isOneToOne: false
+            referencedRelation: "item_definitions"
+            referencedColumns: ["campaign_id", "id"]
+          },
+        ]
+      }
+      inventory_transactions: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          created_by: string
+          entry_id: string | null
+          id: string
+          item_definition_id: string | null
+          operation_id: string | null
+          quantity_delta: number
+          reason: string | null
+          source_character_id: string | null
+          source_container_id: string | null
+          target_character_id: string | null
+          target_container_id: string | null
+          transaction_type: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          created_by: string
+          entry_id?: string | null
+          id?: string
+          item_definition_id?: string | null
+          operation_id?: string | null
+          quantity_delta: number
+          reason?: string | null
+          source_character_id?: string | null
+          source_container_id?: string | null
+          target_character_id?: string | null
+          target_container_id?: string | null
+          transaction_type: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          created_by?: string
+          entry_id?: string | null
+          id?: string
+          item_definition_id?: string | null
+          operation_id?: string | null
+          quantity_delta?: number
+          reason?: string | null
+          source_character_id?: string | null
+          source_container_id?: string | null
+          target_character_id?: string | null
+          target_container_id?: string | null
+          transaction_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_transactions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_transactions_entry_same_campaign_fkey"
+            columns: ["campaign_id", "entry_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_entries"
+            referencedColumns: ["campaign_id", "id"]
+          },
+          {
+            foreignKeyName: "inventory_transactions_item_same_campaign_fkey"
+            columns: ["campaign_id", "item_definition_id"]
+            isOneToOne: false
+            referencedRelation: "item_definitions"
+            referencedColumns: ["campaign_id", "id"]
+          },
+          {
+            foreignKeyName: "inventory_transactions_operation_same_campaign_fkey"
+            columns: ["campaign_id", "operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["campaign_id", "id"]
+          },
+        ]
+      }
+      item_definitions: {
+        Row: {
+          asset_id: string | null
+          campaign_id: string
+          category: string
+          created_at: string
+          default_stack_limit: number | null
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          stackable: boolean
+          unit_weight: number | null
+          updated_at: string
+        }
+        Insert: {
+          asset_id?: string | null
+          campaign_id: string
+          category?: string
+          created_at?: string
+          default_stack_limit?: number | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          stackable?: boolean
+          unit_weight?: number | null
+          updated_at?: string
+        }
+        Update: {
+          asset_id?: string | null
+          campaign_id?: string
+          category?: string
+          created_at?: string
+          default_stack_limit?: number | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          stackable?: boolean
+          unit_weight?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "item_definitions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operations: {
         Row: {
           campaign_id: string
@@ -1040,6 +1311,219 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_inventory_item: {
+        Args: {
+          p_campaign_id: string
+          p_container_id: string
+          p_custom_name: string
+          p_entry_id: string
+          p_idempotency_key: string
+          p_item_definition_id: string
+          p_notes: string
+          p_quantity: number
+        }
+        Returns: {
+          entry_id: string
+          returned_character_id: string
+          returned_container_id: string
+          returned_quantity: number
+          returned_state: string
+          was_applied: boolean
+        }[]
+      }
+      consume_inventory_entry: {
+        Args: {
+          p_campaign_id: string
+          p_entry_id: string
+          p_idempotency_key: string
+          p_quantity: number
+          p_reason: string | null
+        }
+        Returns: {
+          entry_id: string
+          returned_character_id: string
+          returned_container_id: string
+          returned_quantity: number
+          returned_state: string
+          was_applied: boolean
+        }[]
+      }
+      correct_inventory_entry: {
+        Args: {
+          p_campaign_id: string
+          p_entry_id: string
+          p_idempotency_key: string
+          p_new_quantity: number
+          p_reason: string
+        }
+        Returns: {
+          entry_id: string
+          returned_character_id: string
+          returned_container_id: string
+          returned_quantity: number
+          returned_state: string
+          was_applied: boolean
+        }[]
+      }
+      create_inventory_container: {
+        Args: {
+          p_campaign_id: string
+          p_capacity_value: number | null
+          p_character_id: string | null
+          p_container_id: string
+          p_container_type: string
+          p_idempotency_key: string
+          p_name: string
+          p_parent_container_id: string | null
+        }
+        Returns: {
+          container_id: string
+          returned_character_id: string
+          returned_name: string
+          returned_parent_container_id: string
+          was_applied: boolean
+        }[]
+      }
+      create_item_definition: {
+        Args: {
+          p_campaign_id: string
+          p_category: string
+          p_default_stack_limit: number | null
+          p_description: string
+          p_idempotency_key: string
+          p_item_definition_id: string
+          p_name: string
+          p_stackable: boolean
+          p_unit_weight: number | null
+        }
+        Returns: {
+          item_definition_id: string
+          returned_category: string
+          returned_is_active: boolean
+          returned_name: string
+          returned_stackable: boolean
+          was_applied: boolean
+        }[]
+      }
+      equip_inventory_entry: {
+        Args: {
+          p_campaign_id: string
+          p_entry_id: string
+          p_equipped_slot: string
+          p_idempotency_key: string
+        }
+        Returns: {
+          entry_id: string
+          returned_character_id: string
+          returned_container_id: string
+          returned_quantity: number
+          returned_state: string
+          was_applied: boolean
+        }[]
+      }
+      merge_inventory_entries: {
+        Args: {
+          p_campaign_id: string
+          p_idempotency_key: string
+          p_source_entry_id: string
+          p_target_entry_id: string
+        }
+        Returns: {
+          entry_id: string
+          returned_character_id: string
+          returned_container_id: string
+          returned_quantity: number
+          returned_state: string
+          was_applied: boolean
+        }[]
+      }
+      move_inventory_container: {
+        Args: {
+          p_campaign_id: string
+          p_container_id: string
+          p_idempotency_key: string
+          p_new_parent_container_id: string | null
+        }
+        Returns: {
+          container_id: string
+          returned_character_id: string
+          returned_name: string
+          returned_parent_container_id: string
+          was_applied: boolean
+        }[]
+      }
+      split_inventory_entry: {
+        Args: {
+          p_campaign_id: string
+          p_entry_id: string
+          p_idempotency_key: string
+          p_new_entry_id: string
+          p_quantity: number
+        }
+        Returns: {
+          entry_id: string
+          returned_character_id: string
+          returned_container_id: string
+          returned_quantity: number
+          returned_state: string
+          was_applied: boolean
+        }[]
+      }
+      transfer_inventory_entry: {
+        Args: {
+          p_campaign_id: string
+          p_entry_id: string
+          p_idempotency_key: string
+          p_reason: string | null
+          p_target_container_id: string
+        }
+        Returns: {
+          entry_id: string
+          returned_character_id: string
+          returned_container_id: string
+          returned_quantity: number
+          returned_state: string
+          was_applied: boolean
+        }[]
+      }
+      unequip_inventory_entry: {
+        Args: {
+          p_campaign_id: string
+          p_entry_id: string
+          p_idempotency_key: string
+          p_target_container_id: string
+        }
+        Returns: {
+          entry_id: string
+          returned_character_id: string
+          returned_container_id: string
+          returned_quantity: number
+          returned_state: string
+          was_applied: boolean
+        }[]
+      }
+      update_item_definition: {
+        Args: {
+          p_campaign_id: string
+          p_category: string
+          p_default_stack_limit: number | null
+          p_description: string
+          p_idempotency_key: string
+          p_is_active: boolean
+          p_item_definition_id: string
+          p_name: string
+          p_stackable: boolean
+          p_unit_weight: number | null
+        }
+        Returns: {
+          item_definition_id: string
+          returned_category: string
+          returned_is_active: boolean
+          returned_name: string
+          returned_stackable: boolean
+          was_applied: boolean
+        }[]
+      }
       adjust_campaign_fear: {
         Args: {
           p_amount: number

@@ -2,8 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { unstable_noStore as noStore } from "next/cache";
 
 import { getCampaignFoodPortions } from "@/lib/data/food";
+import { getCharacterInventoryProjection } from "@/lib/data/inventory";
 import { TEMPLATE_SIGNED_URL_TTL_SECONDS } from "@/lib/data/sheet-templates";
 import { isReservedFoodKey, projectFoodSheetValue } from "@/lib/domain/food";
+import {
+  isReservedInventoryKey,
+  projectInventorySheetValue,
+} from "@/lib/domain/inventory";
 import { TEMPLATE_STORAGE_BUCKET } from "@/lib/domain/sheet-templates";
 import type { Database, Tables } from "@/lib/supabase/database.types";
 
@@ -178,6 +183,21 @@ export async function getCharacterSheetRuntimeData(
       if (isReservedFoodKey(f.field_key)) {
         values[f.id] = {
           value: projectFoodSheetValue(f.field_key, totalPortions, portionsPerRation),
+          updated_at: "",
+        };
+      }
+    }
+  }
+
+  // Reserved inventory keys are read-only projections of this character's own
+  // inventory (Task 013). Shadow any provisional per-character rows; the domain
+  // value is authoritative and recomputed from the inventory tables.
+  if (fields.some((f) => isReservedInventoryKey(f.field_key))) {
+    const projection = await getCharacterInventoryProjection(supabase, character.id);
+    for (const f of fields) {
+      if (isReservedInventoryKey(f.field_key)) {
+        values[f.id] = {
+          value: projectInventorySheetValue(f.field_key, projection),
           updated_at: "",
         };
       }
