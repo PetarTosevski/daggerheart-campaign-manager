@@ -55,3 +55,10 @@ next-env.d.ts
 
 # private references (must never be required by build, tests, CI, or deploy)
 .reference-private/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
