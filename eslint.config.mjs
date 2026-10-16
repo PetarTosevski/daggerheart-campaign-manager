@@ -12,8 +12,6 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Transient files written by the local Supabase stack (git-ignored).
-    "supabase/.temp/**",
   ]),
 ]);
 

@@ -10,7 +10,9 @@ application state and workflows. It does not replace the SRD.
 ## General interpretation rules
 
 - Official mechanics must be traceable through `rules-index.md`.
-- House-rule overrides must be explicit in `campaign-house-rules.md`.
+- House-rule overrides must be explicit and recorded in this document with
+  their source. (`campaign-house-rules.md` was retired in the 2026 rebuild; its
+  history is at tag `witherwild-final`.)
 - Current totals may be cached for fast reads.
 - Every important mutation must create auditable history in the same
   transaction.
@@ -34,6 +36,10 @@ Rules:
 
 - Fear cannot be negative.
 - Fear cannot exceed 12.
+- Source of the 0–12 range: a confirmed application range, not a house-rule
+  change (former `docs/campaign-house-rules.md`, "Fear", at tag
+  `witherwild-final`). Adjustments that would move Fear outside it are rejected.
+  It defines no automatic extended-downtime behaviour.
 - New campaigns start with Fear 0.
 - A Fear change updates the total and inserts one event atomically.
 - Corrections use compensating events.
