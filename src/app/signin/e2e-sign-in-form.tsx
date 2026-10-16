@@ -24,7 +24,10 @@ export function E2ESignInForm() {
           email: String(form.get("email") ?? ""),
           secret: String(form.get("secret") ?? ""),
         })
-          .then(() => router.push("/"))
+          .then(({ signingIn }) => {
+            if (signingIn) router.push("/");
+            else setError("Test sign-in failed.");
+          })
           .catch(() => setError("Test sign-in failed."));
       }}
     >
