@@ -2,237 +2,161 @@
 
 ## Project overview
 
-This repository contains a private web application used by one Game Master to
-run a Daggerheart campaign using the official **Witherwild** campaign frame.
+This repository contains a private web application that one Game Master uses to
+run Daggerheart campaigns during live play. It is being rebuilt (branch
+`rebuild`); the previous Witherwild-only app is preserved at tag
+`witherwild-final`.
 
-The application is a campaign operations tool. It is not a virtual tabletop, a
+The application is a **live-play GM console**. It is not a virtual tabletop, a
 rules compendium, or a replacement for the Daggerheart rulebook.
 
-Primary capabilities:
+Flow: sign in, pick a **campaign frame**, pick or create a **campaign** in that
+frame, land on the campaign's live table view.
 
-- Track campaign weeks and the Witherwild weekly day/night cycle.
-- Track current Fear and its history.
-- Create and operate countdowns.
-- Store player-character records and tracked resources.
-- Manage character and shared-party inventory.
-- Track food stores, consumption, spoilage, and shortages.
-- Track Wither tokens and other confirmed campaign-specific mechanics.
-- Preserve an auditable history of important state changes.
-- Work effectively on a tablet or laptop during live play.
+### Frames and mechanics
+
+- Frames ship in code (currently Witherwild and "Core only"). New frames are
+  development tasks, not in-app content.
+- Every mechanic is either **core** (available in every campaign) or
+  **frame-exclusive** (switched on by the campaign's frame).
+- Core: Fear, countdowns, rests and downtime moves (frames may add their own
+  moves), session log, adversaries and encounters.
+- Witherwild-exclusive: campaign time (weeks and the DAY/NIGHT cycle of 7 named
+  phases each).
+- **Before designing any mechanic the user has not specified, ask the user
+  whether it is core or frame-exclusive and how it works.** Never assume.
+
+The approved plan is `.omc/plans/campaign-manager-rebuild.md`; each phase has a
+task document in `docs/tasks/`.
 
 ## Source-of-truth hierarchy
 
 For every task, use this precedence:
 
 1. The user's explicit current task instructions.
-2. Existing implemented behavior and committed database migrations.
-3. An approved task specification in `docs/tasks/`.
-4. `docs/campaign-house-rules.md` for explicit mechanical overrides.
-5. `docs/game-interpretation.md` for application behavior derived from rules.
-6. `docs/product-spec.md` for product scope and user workflows.
-7. `docs/architecture.md` and `docs/data-model.md` for technical design.
-8. `docs/witherwild-notes.md` for campaign-specific context.
-9. The official SRD indexed by `docs/rules-index.md`.
+2. The approved task document in `docs/tasks/`.
+3. Existing implemented behaviour and the Convex schema in `convex/`.
+4. `docs/game-interpretation.md` for application behaviour derived from rules,
+   including explicit house-rule overrides.
+5. `docs/data-model.md` for the Convex schema (once created).
+6. The official SRD indexed by `docs/rules-index.md`; terminology in
+   `docs/glossary.md`.
 
 Existing code is not automatically correct. When implementation conflicts with
-documentation, identify the conflict before changing either side. Do not silently
-rewrite requirements to match accidental implementation details.
+documentation, identify the conflict before changing either side.
 
-Files inside `.reference-private/` are optional local references. They must
-never be required by builds, tests, CI, deployment, or another developer.
+`reference/legacy-sql/` holds the old Postgres functions as read-only reference
+for porting behaviour. They are not executed and are deleted once the Convex
+port matches them in tests.
 
 ## Required context for a task
 
-Before planning or implementing:
-
 1. Read this file.
-2. Read the relevant task file in `docs/tasks/`.
-3. Read only the relevant sections of:
-   - `docs/product-spec.md`
-   - `docs/architecture.md`
-   - `docs/data-model.md`
-   - `docs/game-interpretation.md`
-   - `docs/campaign-house-rules.md`
-   - `docs/witherwild-notes.md`
-   - `docs/open-questions.md`
-4. Inspect the existing code, migrations, tests, and package scripts.
-5. Compare the task against the implementation before proposing changes.
+2. Read the assigned task document in `docs/tasks/` in full.
+3. Read only the relevant sections of `docs/game-interpretation.md`,
+   `docs/rules-index.md`, `docs/glossary.md`, `docs/data-model.md` and
+   `docs/open-questions.md`.
+4. Inspect the existing code, tests and package scripts.
 
-Do not load every document or the entire SRD for unrelated work.
-
-If no task file exists for a non-trivial change, create or update one before
+If no task document exists for a non-trivial change, create one before
 implementation.
 
 ## Rules-source policy
 
-The authoritative public rules reference is:
+- Authoritative public rules reference: `reference/daggerheart-srd.pdf`.
+- Project index and interpretations: `docs/rules-index.md`,
+  `docs/game-interpretation.md`.
+- `.reference-private/` files are optional local references and must never be
+  required by builds, tests, CI or deployment.
 
-- `reference/daggerheart-srd.pdf`
+Before implementing a game mechanic: locate it in `docs/rules-index.md`, verify
+the SRD section, record the application interpretation in
+`docs/game-interpretation.md`, express it as acceptance criteria and tests, and
+implement only the confirmed behaviour.
 
-The project-maintained index and interpretations are:
+When a material rule is unclear: do not guess, add an entry to
+`docs/open-questions.md`, and continue only with unaffected work.
 
-- `docs/rules-index.md`
-- `docs/game-interpretation.md`
-- `docs/campaign-house-rules.md`
-- `docs/witherwild-notes.md`
-
-The optional private rulebook may exist at:
-
-- `.reference-private/daggerheart-core-rulebook.pdf`
-
-Use the SRD as the primary source for standard mechanics and terminology.
-House rules override official rules only where the override is explicit.
-
-Before implementing a game mechanic:
-
-1. Locate it in `docs/rules-index.md`.
-2. Verify the cited SRD section.
-3. Check `docs/campaign-house-rules.md`.
-4. Check `docs/witherwild-notes.md`.
-5. Record the application interpretation in `docs/game-interpretation.md`.
-6. Express the behavior as acceptance criteria and tests.
-7. Implement only the confirmed behavior.
-
-When a material rule is unclear:
-
-- Do not guess.
-- Add or update an item in `docs/open-questions.md`.
-- Make the behavior configurable only when that is a deliberate product choice.
-- Continue only with unaffected work.
-
-Do not reproduce substantial rulebook text, protected art, card layouts, or
-protected narrative content in source code or application assets.
+Do not reproduce substantial rulebook text, protected art, card layouts or
+protected narrative content in code or assets.
 
 ## Product principles
 
-1. Optimize for one GM during live play.
-2. Common actions should require no more than one or two primary interactions.
-3. Current campaign state must be visible at a glance.
-4. Important changes must be recoverable or correctable.
-5. Historical events must not silently disappear.
-6. Preview compound effects before commitment where practical.
-7. Prefer complete vertical slices over broad partial implementation.
-8. Do not build multiplayer collaboration unless explicitly requested.
-9. Do not build a general-purpose virtual tabletop.
-10. Never invent game rules.
+1. Optimise for one GM during live play on a tablet or laptop.
+2. Common actions take no more than one or two primary interactions.
+3. Current campaign state is visible at a glance.
+4. Important changes are recoverable or correctable.
+5. Historical events never silently disappear.
+6. Prefer complete vertical slices over broad partial implementation.
+7. Single GM account; do not build multiplayer, player access or public
+   sign-up unless explicitly requested. Keep every record owned so that a later
+   multi-user version is not blocked.
+8. Never invent game rules.
 
 ## Approved technology stack
 
-Unless an approved task explicitly changes it, use:
+- Next.js App Router, TypeScript strict mode
+- Convex (database, queries, mutations, live updates)
+- Convex Auth with Google sign-in, locked to the GM's allowlisted, verified
+  email
+- Tailwind CSS and shadcn/ui primitives
+- Zod for input validation
+- Vitest (unit, and convex-test for Convex functions), Playwright (e2e)
+- pnpm; hosting on Vercel
 
-- Next.js App Router
-- TypeScript in strict mode
-- React Server Components by default
-- Client Components only for required browser interaction
-- Tailwind CSS
-- shadcn/ui primitives
-- Supabase PostgreSQL
-- Supabase Authentication
-- Supabase Row-Level Security
-- Zod
-- Vitest
-- Playwright
-- pnpm
+Phase 1 of the plan adds the Convex packages; until then the app is a
+placeholder. Do not introduce another backend, ORM, state-management library,
+component library, form library or paid service without approval. The versions
+and scripts in `package.json` are authoritative.
 
-Do not introduce another ORM, backend framework, state-management library,
-component library, form library, or paid service without documenting the need
-and obtaining approval.
+### Server vs. client components
 
-The installed package versions and scripts in `package.json` are authoritative.
-Do not assume versions from this document.
-
-## Repository layout
-
-Expected documentation layout:
-
-```text
-AGENTS.md
-docs/
-  architecture.md
-  campaign-house-rules.md
-  data-model.md
-  game-interpretation.md
-  glossary.md
-  implementation-priorities.md
-  open-questions.md
-  product-spec.md
-  rules-index.md
-  witherwild-notes.md
-  tasks/
-reference/
-  daggerheart-srd.pdf
-.reference-private/
-  daggerheart-core-rulebook.pdf
-```
-
-Expected application layout is documented in `docs/architecture.md`. Inspect the
-actual repository before creating or moving directories.
+- Server Components for layout, the auth gate and static shells.
+- Client Components with Convex `useQuery`/`useMutation` for live mechanic
+  panels (needed for live updates across devices).
 
 ## Architectural boundaries
 
-- Keep presentation, domain logic, validation, and database access separate.
-- Use Server Components for initial reads and protected rendering by default.
-- Use named Server Actions or route handlers for mutations.
-- Authenticate, authorize, and validate every mutation on the server.
-- Enforce campaign ownership with Row-Level Security.
-- Keep service-role credentials out of browser code.
-- Do not scatter direct database calls through presentation components.
+- Keep presentation, domain logic, validation and data access separate.
+- Pure game rules live in `src/lib/domain/*` and validation in
+  `src/lib/validation/*`. These modules must not import React, Next or
+  `@/components`; Convex functions call them.
+- Authenticate and authorise every Convex query and mutation on the server
+  (`requireGm` plus ownership checks). Middleware is only a UX redirect.
 - Do not duplicate authoritative game calculations in client and server code.
-- Do not add a global client-state library without a demonstrated need.
+- Keep deploy keys and secrets out of browser code.
 
-## Database and history rules
+## Data and history rules (Convex)
 
-- Commit every schema change as a Supabase migration.
-- Never edit a migration already applied to a shared or production database.
-- Update `docs/data-model.md` whenever the implemented schema changes.
-- Use database constraints for persistent invariants.
-- Use explicit transactional database functions for compound domain operations
-  unless an approved architecture decision says otherwise.
-- Protect retryable compound operations with idempotency keys.
-- Preserve event or transaction history for Fear, countdowns, weeks, inventory,
-  food, and undo/correction operations.
-- Current totals may be cached, but must be changed atomically with their
-  corresponding history record.
-- Prefer compensating events and archival state over silent history edits.
-- Prefer storing canonical state rather than presentation values.
-    Example:
-
-    Store
-
-      - cycle = DAY
-      - cycle_day = 4
-
-    instead of
-
-      - "Forenoon"
-
-- Presentation strings should be derived whenever practical.
+- Every schema change goes in `convex/schema.ts` and is documented in
+  `docs/data-model.md`.
+- Compound domain operations run inside a single Convex mutation, which is
+  transactional.
+- Retryable operations are protected by idempotency keys stored in the
+  `operations` table; a replay with a different request is rejected.
+- Preserve event history for Fear, countdowns, campaign time and corrections.
+  Cached totals change in the same mutation as their history record.
+- Prefer compensating events over silent history edits.
+- Store canonical state, not presentation values (store `cycle = DAY`,
+  `cycleDay = 4`, never "Forenoon"); derive display strings.
 
 ## Testing requirements
 
-Every feature must include tests appropriate to its risk:
-
 - Unit tests for pure domain rules and Zod schemas.
-- Integration tests for database functions, constraints, RLS, transactions, and
-  idempotency.
-- Playwright tests for critical user workflows.
+- Convex function tests (convex-test) for atomicity, idempotency,
+  authorisation and campaign isolation.
+- Playwright tests for critical workflows, run against a throwaway local Convex
+  backend.
 
-At minimum, verify:
-
-- Fear cannot become negative.
-- A Fear adjustment creates one event and one total change.
-- Countdown boundaries and status transitions are enforced.
-- Countdown completion effects cannot apply twice.
-- Week advancement is atomic and idempotent.
-- Inventory and food transfers preserve quantity.
-- Unauthorized users cannot access another campaign.
-- Undo or correction preserves an audit trail.
+At minimum verify: Fear stays within 0–12; one Fear adjustment creates one
+event and one total change; countdown boundaries and status transitions;
+countdown completion cannot apply twice; week advancement is atomic and
+idempotent; one campaign's data never appears in another; corrections preserve
+the audit trail.
 
 Do not claim a command passed unless it was executed successfully.
 
 ## Standard commands
-
-Use the scripts that actually exist in `package.json`. Expected commands are:
 
 ```bash
 pnpm install
@@ -244,99 +168,56 @@ pnpm test:e2e
 pnpm build
 ```
 
-Before declaring implementation complete, run all applicable checks. If a
-listed script does not exist, report that discrepancy rather than inventing a
-result.
+If a listed script does not exist, report the discrepancy rather than inventing
+a result.
 
 ## Agent workflow
 
-For every non-trivial task:
-
 1. Read the applicable context.
-2. Inspect existing implementation and migrations.
-3. Reconcile task status with actual code and tests.
-4. State the intended change and acceptance criteria.
-5. Identify schema, authorization, and migration implications.
-6. Implement the smallest coherent vertical slice.
-7. Add or update tests.
-8. Run relevant checks.
-9. Review the diff for unrelated changes.
-10. Update affected documentation and task status.
-11. Report files changed, commands run, results, and unresolved questions.
-
-Do not redesign unrelated areas during a feature task.
+2. Inspect the existing implementation.
+3. State the intended change and acceptance criteria.
+4. Implement the smallest coherent vertical slice.
+5. Add or update tests and run the checks.
+6. Review the diff for unrelated changes.
+7. Update affected documentation and task status.
+8. Report files changed, commands run, results and unresolved questions.
 
 ## Task-status rules
 
-Task status must reflect evidence:
-
-- `Draft`: not approved for implementation.
-- `Ready`: acceptance criteria are approved.
+- `Draft`: not approved.
+- `Ready`: acceptance criteria approved.
 - `In progress`: implementation has begun.
 - `Blocked`: a named decision or dependency prevents progress.
-- `Review`: implementation is reported or present but has not passed the full
-  verification checklist.
-- `Complete`: acceptance criteria, documentation, and required checks have been
-  verified.
-
-A checkmark in `implementation-priorities.md` is not sufficient evidence by
-itself. Reconcile it with code, migrations, and test results.
+- `Review`: implemented but not fully verified.
+- `Complete`: acceptance criteria, documentation and required checks verified.
 
 ## Change boundaries
 
-Agents may add application code, tests, migrations, and documentation directly
-related to an approved task.
-
 Agents must not, without explicit approval:
 
-- Replace the selected framework or Supabase.
-- introduce a paid service.
-- Disable authentication or RLS.
-- Perform a destructive production migration.
+- Replace Next.js or Convex.
+- Introduce a paid service.
+- Disable authentication or authorisation checks.
 - Remove event history.
-- Add public registration, player editing, or multiplayer support.
+- Add public registration, player editing or multiplayer support.
 - Add arbitrary executable custom mechanics.
 - Copy protected rules text or artwork into the application.
-- Expand the project into a public SaaS product.
-- Redesign unrelated pages.
+- Redesign unrelated pages. Visual design is pending the user's references;
+  keep UI minimal and replaceable until then.
 
 ## Definition of done
 
-A feature is complete only when:
+A feature is complete only when acceptance criteria are satisfied,
+authorisation and validation are enforced, loading/empty/failure/accessibility
+states are handled, required tests, lint, typecheck and build pass,
+documentation and task status are updated, and no unrelated changes are
+included.
 
-- Acceptance criteria are satisfied.
-- Implementation matches current migrations and documentation.
-- Authorization and validation are enforced.
-- Loading, empty, failure, and accessibility states are handled.
-- Required unit, integration, and end-to-end tests pass.
-- Linting, type checking, and production build pass.
-- Relevant documentation and task status are updated.
-- No unrelated changes are included.
+## Task boundary rule
 
-## Task Boundary Rule
-
-Implement only the requirements defined in the currently assigned task.
-
-Do not implement requirements from future task documents, even when:
-
-- placeholder UI already exists,
-- database fields suggest later functionality,
-- TODO comments reference future work,
-- implementing a future feature would simplify the current task.
-
-When future functionality affects the current design, create only the minimum extension point required for the current task. Document the deferred work clearly and leave implementation to its assigned task.
-
-Do not begin the next task automatically. Stop after completing and verifying the assigned task.
-
-## Task Document Authority
-
-For implementation work:
-
-1. Read `AGENTS.md`.
-2. Read the assigned task document in full.
-3. Treat the assigned task document as the scope contract.
-4. Follow repository conventions where the task document is silent.
-5. Report contradictions or blockers instead of guessing.
+Implement only the requirements of the currently assigned task. Do not
+implement future tasks, even when placeholders or schema fields suggest them.
+Stop after completing and verifying the assigned task.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:46cd31e7 -->
 ## Beads Issue Tracker

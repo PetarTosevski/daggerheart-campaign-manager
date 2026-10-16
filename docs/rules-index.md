@@ -13,7 +13,7 @@ document version when the local PDF changes.
 Before implementing a rule-dependent feature:
 
 1. Read the indexed SRD section.
-2. Check `campaign-house-rules.md`.
+2. Check `game-interpretation.md` for explicit house-rule overrides.
 3. Record the application interpretation in `game-interpretation.md`.
 4. Add acceptance criteria and tests to the relevant task.
 5. Do not rely on model memory.
@@ -143,7 +143,7 @@ Reference:
 
 - No generic automatic food-consumption or spoilage system has been confirmed
   from the indexed SRD material.
-- Use `campaign-house-rules.md` for the current campaign rules.
+- The former campaign house rules (food) are historical; see tag `witherwild-final`.
 
 Application areas:
 

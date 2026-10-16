@@ -13,9 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Witherwild Campaign Manager",
-  description:
-    "Private campaign operations tool for running a Daggerheart Witherwild campaign.",
+  title: "Daggerheart Campaign Manager",
+  description: "Private live-play console for running Daggerheart campaigns.",
 };
 
 export default function RootLayout({
