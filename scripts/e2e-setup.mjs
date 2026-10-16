@@ -22,14 +22,12 @@ function readEnvFile() {
   );
 }
 
-// Options go before `--`, so values that start with "-" (PEM keys) stay positional.
+// Runs through scripts/convex-e2e.mjs, which targets the e2e backend and
+// protects .env.local.
 function convex(args, positional = []) {
-  const argv = ["convex", ...args, "--env-file", ENV_FILE];
+  const argv = ["scripts/convex-e2e.mjs", ...args];
   if (positional.length > 0) argv.push("--", ...positional);
-  return execFileSync("npx", argv, {
-    env: { ...process.env, CONVEX_AGENT_MODE: "anonymous" },
-    encoding: "utf8",
-  });
+  return execFileSync("node", argv, { encoding: "utf8" });
 }
 
 const file = readEnvFile();
