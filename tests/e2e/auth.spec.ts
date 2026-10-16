@@ -24,14 +24,16 @@ test("a wrong secret is refused", async ({ page }) => {
   await form.getByLabel("Email").fill("e2e-gm@example.test");
   await form.getByLabel("Secret").fill("not-the-secret");
   await form.getByRole("button", { name: "Test sign-in" }).click();
-  await expect(page.getByRole("alert")).toHaveText("Test sign-in failed.");
+  await expect(form.getByRole("alert")).toHaveText("Test sign-in failed.");
   await page.goto("/");
   await expect(page).toHaveURL("/signin");
 });
 
 test("an email that is not allowlisted is refused", async ({ page }) => {
   await signInAsTestGm(page, "intruder@example.test");
-  await expect(page.getByRole("alert")).toHaveText("Test sign-in failed.");
+  await expect(
+    page.getByRole("form", { name: "Test sign-in" }).getByRole("alert"),
+  ).toHaveText("Test sign-in failed.");
   await page.goto("/");
   await expect(page).toHaveURL("/signin");
 });
