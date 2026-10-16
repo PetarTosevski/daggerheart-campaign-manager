@@ -88,6 +88,9 @@ describe("isE2EDeployment", () => {
     expect(
       isE2EDeployment({ CONVEX_CLOUD_URL: "https://localhost.evil.example" }),
     ).toBe(false);
+    expect(
+      isE2EDeployment({ CONVEX_CLOUD_URL: "http://localhost:3210/.convex.cloud" }),
+    ).toBe(false);
     expect(isE2EDeployment({ CONVEX_CLOUD_URL: "not a url" })).toBe(false);
     expect(isE2EDeployment({})).toBe(false);
   });

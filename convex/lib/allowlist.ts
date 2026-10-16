@@ -47,11 +47,15 @@ export function isAllowedProfile(
   return profile.emailVerified === true && isAllowedEmail(profile.email, env);
 }
 
-/** True only for a Convex backend running on this machine. */
+/**
+ * True only for a Convex backend running on this machine. Cloud deployments
+ * (`*.convex.cloud`) are rejected explicitly as well, as defence in depth.
+ */
 export function isE2EDeployment(env: Env): boolean {
-  if (!env.CONVEX_CLOUD_URL) return false;
+  const url = env.CONVEX_CLOUD_URL;
+  if (!url || url.includes(".convex.cloud")) return false;
   try {
-    const { hostname } = new URL(env.CONVEX_CLOUD_URL);
+    const { hostname } = new URL(url);
     return hostname === "localhost" || hostname === "127.0.0.1";
   } catch {
     return false;

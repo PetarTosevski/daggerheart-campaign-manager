@@ -60,8 +60,8 @@ local-only e2e sign-in), without any game mechanic yet.
 |---|---|
 | `pnpm lint` | Pass |
 | `pnpm typecheck` | Pass |
-| `pnpm test` | 10 files, 64 tests passed (unit + convex projects) |
-| `pnpm build` | Pass; routes `/`, `/signin`, Proxy |
+| `pnpm test` | 11 files, 68 tests passed (unit + convex projects) |
+| `pnpm build` | Pass on Next.js 16.4.1; routes `/`, `/signin`, Proxy |
 | `npx convex dev --once --typecheck=enable` (local) | Pass |
 | `pnpm e2e:setup` (twice) | Pass; idempotent |
 | `pnpm test:e2e` | 4 passed (after the user installed Chromium's system libraries) |
@@ -72,4 +72,30 @@ local-only e2e sign-in), without any game mechanic yet.
 - A wrong e2e secret makes `signIn` resolve with `signingIn: false` rather
   than throw; the test form now shows an error in that case (found by the
   e2e run).
+
+## Security review (2026-10-16)
+
+Verdict: pass with fixes. No path found to a session or `users` row without
+passing the allowlist; the e2e provider cannot be registered on a cloud
+deployment. Fixes applied:
+
+- **High:** Next.js 16.2.10 had known advisories (including Image Optimization
+  RCE/SSRF and a Proxy bypass). Upgraded `next`, `eslint-config-next` and
+  `@next/env` to 16.4.1 (16.4.2 was one day old). `shadcn` (CLI) moved to
+  devDependencies; pnpm overrides patch `nanoid`, `browserslist` and
+  `source-map-js` in Next's build tooling. `pnpm audit --prod`: 58 → 1
+  moderate.
+- **Medium:** `isE2EDeployment` also rejects any `.convex.cloud` URL.
+  Follow-up for the Vercel phase: fail the production deploy if
+  `E2E_AUTH_ENABLED` is set on the production deployment.
+- **Low:** the sign-in callback moved to `convex/lib/users.ts` and is tested
+  (`tests/convex/create-or-update-user.test.ts`): unverified profile,
+  non-allowlisted email and de-listed returning account are refused with no
+  user created.
+- **Low, accepted:** Convex Auth's own public `isAuthenticated` query does not
+  call `requireGm`; it only reports whether the caller's own token is valid.
+  Every app-defined public function calls `requireGm`; Phase 6 adds the
+  sweep test over all public functions.
+- **Low, accepted:** the proxy matcher skips paths containing a dot; that only
+  skips the redirect (commented in `src/proxy.ts`).
 

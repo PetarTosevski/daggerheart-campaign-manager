@@ -5,16 +5,10 @@ import {
   createAccount,
   retrieveAccount,
 } from "@convex-dev/auth/server";
-import { ConvexError } from "convex/values";
 
 import type { MutationCtx } from "./_generated/server";
-
-import {
-  buildE2EProfile,
-  isAllowedProfile,
-  isE2EDeployment,
-  normalizeEmail,
-} from "./lib/allowlist";
+import { buildE2EProfile, isE2EDeployment } from "./lib/allowlist";
+import { createOrUpdateGmUser, type SignInArgs } from "./lib/users";
 
 const E2E_PROVIDER_ID = "e2e";
 
@@ -62,32 +56,13 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     ...e2eProviders,
   ],
   callbacks: {
-    async createOrUpdateUser(ctx, args) {
-      if (!isAllowedProfile(args.profile, process.env)) {
-        throw new ConvexError("FORBIDDEN");
-      }
-      if (args.existingUserId !== null) return args.existingUserId;
-
-      const email = normalizeEmail(args.profile.email as string);
-      // The callback's ctx is typed for any data model; this app's schema is
-      // the one in convex/schema.ts.
-      const db = (ctx as unknown as MutationCtx).db;
-      const existing = await db
-        .query("users")
-        .withIndex("email", (q) => q.eq("email", email))
-        .unique();
-      if (existing !== null) return existing._id;
-
-      return await db.insert("users", {
-        email,
-        emailVerificationTime: Date.now(),
-        ...(typeof args.profile.name === "string"
-          ? { name: args.profile.name }
-          : {}),
-        ...(typeof args.profile.image === "string"
-          ? { image: args.profile.image }
-          : {}),
-      });
-    },
+    // The callback's ctx is typed for any data model; this app's schema is
+    // the one in convex/schema.ts.
+    createOrUpdateUser: (ctx, args) =>
+      createOrUpdateGmUser(
+        ctx as unknown as MutationCtx,
+        args as unknown as SignInArgs,
+        process.env,
+      ),
   },
 });
