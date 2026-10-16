@@ -18,6 +18,8 @@ export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
 });
 
 export const config = {
-  // Run on everything except static assets and Next.js internals.
+  // Run on everything except static assets and Next.js internals. Paths with a
+  // dot are skipped as assets; that only skips the redirect, since Convex
+  // functions enforce sign-in themselves.
   matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
 };
