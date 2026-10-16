@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   COUNTDOWN_CATEGORIES,
   COUNTDOWN_INTENTS,
-} from "@/lib/domain/countdowns";
+} from "../domain/countdowns";
 
 export const COUNTDOWN_REASON_MAX_LENGTH = 200;
 export const COUNTDOWN_DETAILS_MAX_LENGTH = 1000;

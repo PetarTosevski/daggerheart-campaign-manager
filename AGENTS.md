@@ -104,10 +104,36 @@ protected narrative content in code or assets.
 - Vitest (unit, and convex-test for Convex functions), Playwright (e2e)
 - pnpm; hosting on Vercel
 
-Phase 1 of the plan adds the Convex packages; until then the app is a
-placeholder. Do not introduce another backend, ORM, state-management library,
-component library, form library or paid service without approval. The versions
-and scripts in `package.json` are authoritative.
+Do not introduce another backend, ORM, state-management library, component
+library, form library or paid service without approval. The versions and
+scripts in `package.json` are authoritative. Respect the pnpm
+`minimumReleaseAge` policy: pick an older version rather than adding an
+exclusion.
+
+### Convex layout
+
+- `convex/schema.ts`: the schema (includes Convex Auth's `authTables`).
+- `convex/auth.ts`: Convex Auth. Google sign-in, with a `profile()` override
+  that keeps `email_verified`; `createOrUpdateUser` rejects anyone not allowed
+  by `convex/lib/allowlist.ts`.
+- `convex/lib/allowlist.ts`: pure sign-in policy (`GM_EMAILS` allowlist,
+  verified email required, local-only e2e sign-in). Unit-tested.
+- `convex/lib/auth.ts`: `requireGm(ctx)`, called first by every public query
+  and mutation.
+- Convex functions import shared code from `src/lib/{domain,validation}` with
+  relative paths; ESLint forbids `@/`, React and Next imports there.
+
+### Deployments and environments
+
+- Production: a cloud deployment, deployed by Vercel with
+  `npx convex deploy --cmd 'pnpm build'`. Env vars on Convex: `AUTH_GOOGLE_ID`,
+  `AUTH_GOOGLE_SECRET`, `GM_EMAILS`, `SITE_URL`, `JWT_PRIVATE_KEY`, `JWKS`.
+- Everyday development (`pnpm dev`, `.env.local`): the GM's personal cloud dev
+  deployment.
+- Tests: the project's local, account-free backend (`.convex/local`,
+  `.env.e2e.local`), set up with `pnpm e2e:setup`. The test-only sign-in exists
+  only there; it needs a localhost backend and `E2E_AUTH_ENABLED=true`.
+- The e2e build goes to `.next-e2e`; never deploy a locally built output.
 
 ### Server vs. client components
 
@@ -160,13 +186,18 @@ Do not claim a command passed unless it was executed successfully.
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev            # Next.js; run `npx convex dev` alongside it
 pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
+pnpm typecheck      # also typechecks convex/
+pnpm test           # vitest projects: unit (jsdom) and convex (convex-test)
+pnpm e2e:setup      # once: configure the local e2e Convex backend
+pnpm test:e2e       # starts the local backend and an e2e build itself
 pnpm build
 ```
+
+`pnpm test:e2e` needs Playwright's Chromium and its system libraries
+(`pnpm exec playwright install chromium`, then
+`sudo pnpm exec playwright install-deps chromium`).
 
 If a listed script does not exist, report the discrepancy rather than inventing
 a result.
