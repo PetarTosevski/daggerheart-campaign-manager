@@ -52,8 +52,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `npx convex dev --env-file ${E2E_ENV_FILE} --typecheck=disable --tail-logs disable`,
-      env: { CONVEX_AGENT_MODE: "anonymous" },
+      command: "node scripts/convex-e2e.mjs dev --typecheck=disable --tail-logs disable",
       url: `${convexUrl}/version`,
       reuseExistingServer: true,
       timeout: 120_000,
