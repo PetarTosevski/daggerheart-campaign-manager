@@ -24,9 +24,9 @@ const seat = { userId: v.id("users"), name: v.string() };
 const playerRow = { ...seat, joinedAt: v.number() };
 
 /**
- * The roster's two shapes (CF6). Only the GM's rows carry emails. A player's
- * rows have no email field (it is declared optional and null only so client
- * code can read `p.email` on either shape), so a leaked email fails validation.
+ * The roster's two shapes (CF6). Only the GM's rows carry emails; a player's
+ * rows have no email field, so a leaked email fails validation. Clients narrow
+ * on `viewer` before reading `email`.
  */
 const rosterReturns = v.union(
   v.object({
@@ -37,7 +37,7 @@ const rosterReturns = v.union(
   v.object({
     viewer: v.literal("player"),
     gm: v.object(seat),
-    players: v.array(v.object({ ...playerRow, email: v.optional(v.null()) })),
+    players: v.array(v.object(playerRow)),
   }),
 );
 
@@ -168,20 +168,30 @@ export const rotateJoinCode = gmMutation({
   },
 });
 
-/** Joins the campaign with this code as a player. Joining twice is harmless. */
+const joinReturns = v.union(
+  v.object({ ok: v.literal(true), campaignId: v.id("campaigns") }),
+  v.object({ ok: v.literal(false), code: v.literal("BAD_CODE"), message: v.string() }),
+);
+
+/**
+ * Joins the campaign with this code as a player. Joining twice is harmless.
+ * A wrong code is returned, not thrown: a throw would roll back the rate-limit
+ * token consumed in the same transaction, so guesses would never be counted.
+ */
 export const joinByCode = userMutation({
   rateLimit: "joinByCode",
   args: { code: v.string() },
-  handler: async (ctx, { code }) => {
+  returns: joinReturns,
+  handler: async (ctx, { code }): Promise<Infer<typeof joinReturns>> => {
     const user = ctx.user;
     const joinCode = normalizeJoinCode(code);
     const campaign = joinCode
       ? await ctx.db.query("campaigns").withIndex("by_joinCode", (q) => q.eq("joinCode", joinCode)).first()
       : null;
     if (campaign === null || campaign.deletedAt !== undefined) {
-      throw appError("INVALID", "No campaign uses that code. Check it with your GM.");
+      return { ok: false as const, code: "BAD_CODE" as const, message: "No campaign uses that code. Check it with your GM." };
     }
-    if (campaign.ownerId === user._id) return { campaignId: campaign._id };
+    if (campaign.ownerId === user._id) return { ok: true as const, campaignId: campaign._id };
     const existing = await ctx.db
       .query("campaignMembers")
       .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", user._id))
@@ -191,6 +201,6 @@ export const joinByCode = userMutation({
       await ctx.db.insert("campaignMembers", { campaignId: campaign._id, userId: user._id, joinedAt: now, lastOpenedAt: now });
       await deleteInvites(ctx, campaign._id, user);
     }
-    return { campaignId: campaign._id };
+    return { ok: true as const, campaignId: campaign._id };
   },
 });

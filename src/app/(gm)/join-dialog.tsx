@@ -27,7 +27,11 @@ export function JoinDialog({ open, onClose }: { open: boolean; onClose: () => vo
           setPending(true);
           setError(null);
           join({ code })
-            .then(({ campaignId }) => router.push(`/campaigns/${campaignId}`))
+            .then((result) => {
+              if (result.ok) return router.push(`/campaigns/${result.campaignId}`);
+              setError(result.message);
+              setPending(false);
+            })
             .catch((e) => {
               setError(errorMessage(e));
               setPending(false);

@@ -33,8 +33,19 @@ test("a player joins with the GM's code and sees a read-only dashboard", async (
   const code = (await dialog.getByTestId("join-code").textContent())!;
 
   const player = await playerPage(browser);
+  const badCode = "No campaign uses that code. Check it with your GM.";
+  // A wrong code in a shared link is refused with the server's message.
+  await player.page.goto("/join/NOPE-NOPE");
+  await player.page.getByRole("button", { name: "Join campaign" }).click();
+  await expect(player.page.getByRole("main").getByRole("alert")).toHaveText(badCode);
+  await player.page.goto("/");
+
   await player.page.getByRole("button", { name: /Join Campaign/ }).click();
-  await player.page.getByRole("dialog", { name: "Join a campaign" }).getByLabel("Join code").fill(code.toLowerCase());
+  const join = player.page.getByRole("dialog", { name: "Join a campaign" });
+  await join.getByLabel("Join code").fill("NOPE-NOPE");
+  await player.page.getByRole("button", { name: "Join", exact: true }).click();
+  await expect(join.getByRole("alert")).toHaveText(badCode);
+  await join.getByLabel("Join code").fill(code.toLowerCase());
   await player.page.getByRole("button", { name: "Join", exact: true }).click();
 
   await expect(player.page.getByRole("heading", { level: 1, name })).toBeVisible();

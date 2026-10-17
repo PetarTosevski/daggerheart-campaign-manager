@@ -44,7 +44,7 @@ describe("invites honour only verified emails", () => {
   it("joinByCode still works for an unverified account", async () => {
     const { gm, player, campaignId, members } = await setup(false);
     const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
-    expect(await player.mutation(api.members.joinByCode, { code })).toEqual({ campaignId });
+    expect(await player.mutation(api.members.joinByCode, { code })).toEqual({ ok: true, campaignId });
     expect((await player.query(api.campaigns.get, { campaignId }))?.role).toBe("player");
     expect(await members()).toHaveLength(1);
   });
