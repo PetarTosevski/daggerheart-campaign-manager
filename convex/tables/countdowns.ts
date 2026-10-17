@@ -1,0 +1,36 @@
+import { defineTable } from "convex/server";
+import { v } from "convex/values";
+
+import { COUNTDOWN_CATEGORIES, COUNTDOWN_STATUSES } from "../../src/lib/domain/countdowns/index";
+
+export const countdownTables = {
+  /** Countdowns, legacy rules; no event history (user decision 2026-10-17). */
+  countdowns: defineTable({
+    campaignId: v.id("campaigns"),
+    name: v.string(),
+    description: v.string(),
+    category: v.union(...COUNTDOWN_CATEGORIES.map((c) => v.literal(c))),
+    startingValue: v.number(),
+    currentValue: v.number(),
+    status: v.union(...COUNTDOWN_STATUSES.map((s) => v.literal(s))),
+    consequence: v.string(),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    /**
+     * Set when a frame tracker owns the countdown (e.g. a Five Banners nation's
+     * objective, a PC's Lycanthropy); such countdowns stay off the dashboard list.
+     */
+    ownerKey: v.optional(v.string()),
+    kind: v.optional(v.string()),
+    /** Frame-owned countdowns are GM-only until revealed. */
+    revealed: v.optional(v.boolean()),
+  }).index("by_campaign", ["campaignId"]),
+
+  /** Witherwild-only campaign time: one row per campaign whose frame has `campaignTime`. */
+  campaignTime: defineTable({
+    campaignId: v.id("campaigns"),
+    week: v.number(),
+    cycle: v.union(v.literal("DAY"), v.literal("NIGHT")),
+    cycleDay: v.number(),
+  }).index("by_campaign", ["campaignId"]),
+};
