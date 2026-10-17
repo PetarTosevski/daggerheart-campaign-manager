@@ -1,6 +1,6 @@
 # TASK-102 — Convex + Convex Auth platform
 
-- **Status:** In progress (code, tests and e2e pass; Convex cloud project, Google OAuth and production sign-in check pending)
+- **Status:** In progress (dev deployment verified with real Google sign-in; production deployment and its sign-in check pending the Vercel setup)
 - **Phase:** 1 of `.omc/plans/campaign-manager-rebuild.md`
 - **bd:** `dcm-2a6.2` (epic `dcm-2a6`)
 - **Branch:** `rebuild`
@@ -48,8 +48,8 @@ local-only e2e sign-in), without any game mechanic yet.
 ## User steps
 
 1. ~~Install Chromium's system libraries~~ (done 2026-10-16).
-2. Create the Convex project with a cloud dev deployment (`npx convex dev`, choose a new project), which rewrites `.env.local`.
-3. Google Cloud OAuth client (web application) with redirect URIs `https://<deployment>.convex.site/api/auth/callback/google` for the dev and production deployments.
+2. ~~Convex project and cloud dev deployment~~ (done 2026-10-16: project `daggerheart-campaign-manager`, dev deployment `descriptive-dinosaur-608`).
+3. Google Cloud OAuth client (web application): done for dev (redirect `https://descriptive-dinosaur-608.convex.site/api/auth/callback/google`); add the production redirect URI when production exists.
 4. On each cloud deployment: `npx convex env set AUTH_GOOGLE_ID …`, `AUTH_GOOGLE_SECRET …`, `GM_EMAILS petar.tosevski99@gmail.com`, `SITE_URL …`, and the auth keys (`npx @convex-dev/auth`, add `--prod` for production).
 5. Vercel project: `CONVEX_DEPLOY_KEY` in Production only; build command `npx convex deploy --cmd 'pnpm build'`; preview builds off.
 6. After every deploy that touches auth, repeat the manual production sign-in check and record the date and result here.
@@ -98,4 +98,17 @@ deployment. Fixes applied:
   sweep test over all public functions.
 - **Low, accepted:** the proxy matcher skips paths containing a dot; that only
   skips the redirect (commented in `src/proxy.ts`).
+
+## Manual checks
+
+- 2026-10-16, dev deployment `descriptive-dinosaur-608`: the GM signed in with
+  Google as `petar.tosevski99@gmail.com`. Convex shows exactly one `users` row
+  (with `emailVerificationTime`) and one `google` account.
+- Production check (GM succeeds, a non-allowlisted account is refused with no
+  `users` row) is pending the production deployment.
+- Incident: an earlier e2e run rewrote `.env.local` to the local backend, so
+  the dev app sent Google `http://127.0.0.1:3213/...` (redirect_uri_mismatch)
+  and the Google env vars landed on the local backend. Fixed by moving them to
+  the cloud dev deployment and routing e2e CLI calls through
+  `scripts/convex-e2e.mjs`.
 
