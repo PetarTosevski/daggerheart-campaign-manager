@@ -17,10 +17,11 @@ import { coverOf, regionOf, toPlayerEntry, type GmEntry, type PlayerEntry } from
 import type { MapToken } from "../src/lib/world/map-state";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { loadCampaign, loadGmCampaign } from "./lib/access";
 import { requireUser } from "./lib/auth";
+import { claimFile, deleteFilesOf, deleteOwnFile, isClaimed, ownFileUrl } from "./lib/files";
 import { readMap } from "./lib/maps";
 import { campaignScope, withIdempotency } from "./lib/operations";
+import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
 
 function invalid(message: string): never {
   throw new ConvexError({ code: "INVALID", message });
@@ -41,11 +42,17 @@ async function mapTokens(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<Map
   }
 }
 
-/** URL of a stored file, or null when the id isn't a valid storage id or the file is gone. */
-async function safeUrl(ctx: QueryCtx, storageId: string): Promise<string | null> {
-  const id = ctx.db.system.normalizeId("_storage", storageId);
-  if (id === null) return null;
-  return ctx.storage.getUrl(id).catch(() => null);
+/** URL of one of the entry's own image files, or null (bad id, someone else's file, or gone). */
+function imageUrl(ctx: QueryCtx, entryId: Id<"codexEntries">, storageId: string): Promise<string | null> {
+  return ownFileUrl(ctx, "codexImage", entryId, storageId);
+}
+
+/** The campaign's codex with at least `need`: NOT_FOUND for outsiders, FORBIDDEN when too weak. */
+async function codexAccess(ctx: QueryCtx, campaignId: Id<"campaigns">, need: Permission) {
+  const user = await requireUser(ctx);
+  const campaign = await liveCampaign(ctx, campaignId);
+  const permission = await requirePermission(ctx, user, { type: "campaign", campaign }, need, "edit");
+  return { user, campaign, permission };
 }
 
 async function campaignEntries(ctx: QueryCtx, campaignId: Id<"campaigns">) {
@@ -73,8 +80,9 @@ export const list = query({
     | { role: "gm"; entries: GmEntry[]; pins: Pick<MapToken, "id" | "name" | "x" | "y" | "hidden" | "type">[] }
     | { role: "player"; entries: PlayerEntry[] }
   > => {
-    const user = await requireUser(ctx);
-    const { campaign, role } = await loadCampaign(ctx, user, campaignId);
+    const { campaign, permission } = await codexAccess(ctx, campaignId, "view");
+    // Edit and owner get the GM's codex; view gets the players' codex.
+    const role = atLeast(permission, "edit") ? "gm" : "player";
     const tokens = await mapTokens(ctx, campaign);
     const tokenById = new Map(tokens.map((t) => [t.id, t]));
     const rows = await campaignEntries(ctx, campaignId);
@@ -84,7 +92,7 @@ export const list = query({
         rows.map(async (row): Promise<GmEntry> => {
           const d = parseData(row.data);
           const token = d.tokenId === null ? undefined : tokenById.get(d.tokenId);
-          const images = await Promise.all(d.images.map(async (g) => ({ ...g, url: await safeUrl(ctx, g.storageId) })));
+          const images = await Promise.all(d.images.map(async (g) => ({ ...g, key: g.storageId, url: await imageUrl(ctx, row._id, g.storageId) })));
           const region = regionOf(campaign.frameId, d, token ?? null);
           return {
             _id: row._id,
@@ -117,7 +125,7 @@ export const list = query({
       const visiblePin = token && !token.hidden ? token : null;
       // Resolve URLs only for revealed images.
       const images = await Promise.all(
-        d.images.filter((g) => g.shown).map(async (g) => ({ ...g, url: await safeUrl(ctx, g.storageId) })),
+        d.images.filter((g) => g.shown).map(async (g) => ({ ...g, url: await imageUrl(ctx, row._id, g.storageId) })),
       );
       const view = toPlayerEntry(campaign.frameId, { _id: row._id, kind: row.kind, createdAt: row.createdAt, data: d, images }, visiblePin);
       if (view) entries.push(view);
@@ -128,12 +136,13 @@ export const list = query({
 
 type GmAccess = { user: Doc<"users">; campaign: Doc<"campaigns">; entry: Doc<"codexEntries">; data: CodexEntryData };
 
-/** Loads an entry for a GM-only change: NOT_FOUND for outsiders, FORBIDDEN for players. */
+/** Loads an entry for a GM-only change (edit permission): NOT_FOUND for outsiders, FORBIDDEN for players. */
 async function loadEntryForGm(ctx: QueryCtx, entryId: Id<"codexEntries">): Promise<GmAccess> {
   const user = await requireUser(ctx);
   const entry = await ctx.db.get(entryId);
   if (entry === null) throw new ConvexError("NOT_FOUND");
-  const campaign = await loadGmCampaign(ctx, user, entry.campaignId);
+  const campaign = await liveCampaign(ctx, entry.campaignId);
+  await requirePermission(ctx, user, { type: "codexEntry", campaign, entry }, "edit");
   return { user, campaign, entry, data: parseData(entry.data) };
 }
 
@@ -157,8 +166,7 @@ const kindValidator = v.union(v.literal("character"), v.literal("location"));
 export const create = mutation({
   args: { campaignId: v.id("campaigns"), kind: kindValidator, idempotencyKey: v.string() },
   handler: async (ctx, { campaignId, kind, idempotencyKey }) => {
-    const user = await requireUser(ctx);
-    await loadGmCampaign(ctx, user, campaignId);
+    const { user } = await codexAccess(ctx, campaignId, "edit");
     return withIdempotency(
       ctx,
       { scopeKey: campaignScope(campaignId), key: idempotencyKey, kind: "codex_create", request: { kind }, createdBy: user._id, campaignId },
@@ -178,8 +186,7 @@ export const create = mutation({
 export const seed = mutation({
   args: { campaignId: v.id("campaigns") },
   handler: async (ctx, { campaignId }) => {
-    const user = await requireUser(ctx);
-    const campaign = await loadGmCampaign(ctx, user, campaignId);
+    const { user, campaign } = await codexAccess(ctx, campaignId, "edit");
     return withIdempotency(
       ctx,
       { scopeKey: campaignScope(campaignId), key: "codex:seed", kind: "codex_seed", request: {}, createdBy: user._id, campaignId },
@@ -238,8 +245,7 @@ export const setPin = mutation({
 export const importPins = mutation({
   args: { campaignId: v.id("campaigns"), idempotencyKey: v.string() },
   handler: async (ctx, { campaignId, idempotencyKey }) => {
-    const user = await requireUser(ctx);
-    const campaign = await loadGmCampaign(ctx, user, campaignId);
+    const { user, campaign } = await codexAccess(ctx, campaignId, "edit");
     return withIdempotency(
       ctx,
       { scopeKey: campaignScope(campaignId), key: idempotencyKey, kind: "codex_import_pins", request: {}, createdBy: user._id, campaignId },
@@ -269,23 +275,13 @@ export const importPins = mutation({
   },
 });
 
-async function deleteImageFiles(ctx: MutationCtx, entryId: Id<"codexEntries">) {
-  const rows = await ctx.db
-    .query("codexImages")
-    .withIndex("by_entry", (q) => q.eq("entryId", entryId))
-    .collect();
-  for (const row of rows) {
-    await ctx.db.delete(row._id);
-    await ctx.storage.delete(row.storageId).catch(() => undefined);
-  }
-}
 
 /** GM only: deletes the entry and its image files. */
 export const remove = mutation({
   args: { entryId: v.id("codexEntries") },
   handler: async (ctx, { entryId }) => {
     const { entry } = await loadEntryForGm(ctx, entryId);
-    await deleteImageFiles(ctx, entry._id);
+    await deleteFilesOf(ctx, "codexImage", entry._id);
     await ctx.db.delete(entry._id);
   },
 });
@@ -311,16 +307,8 @@ export const attachImage = mutation({
   handler: async (ctx, { entryId, storageId }) => {
     const { user, entry, data } = await loadEntryForGm(ctx, entryId);
     const meta = await ctx.db.system.get(storageId);
-    const claimed =
-      (await ctx.db
-        .query("codexImages")
-        .withIndex("by_storage", (q) => q.eq("storageId", storageId))
-        .unique()) ??
-      (await ctx.db
-        .query("portraitUploads")
-        .withIndex("by_storage", (q) => q.eq("storageId", storageId))
-        .unique());
-    if (meta === null || claimed !== null) throw new ConvexError("NOT_FOUND");
+    // Only an unclaimed file may be attached, so the rejections below only ever delete unclaimed files.
+    if (meta === null || (await isClaimed(ctx, storageId))) throw new ConvexError("NOT_FOUND");
     if (!meta.contentType?.startsWith("image/") || meta.size > MAX_CODEX_IMAGE_BYTES) {
       await ctx.storage.delete(storageId);
       return { error: "Images must be at most 3 MB." };
@@ -329,8 +317,14 @@ export const attachImage = mutation({
       await ctx.storage.delete(storageId);
       return { error: `An entry holds at most ${MAX_CODEX_IMAGES} images.` };
     }
-    await ctx.db.insert("codexImages", { storageId, campaignId: entry.campaignId, entryId, uploadedBy: user._id, createdAt: Date.now() });
-    await save(ctx, entry, { ...data, images: [...data.images, { storageId, shown: false }], cover: data.cover ?? storageId });
+    // Validated before the file is claimed, so a rejected entry leaves no orphan file.
+    const next = codexEntryDataSchema.safeParse({ ...data, images: [...data.images, { storageId, shown: false }], cover: data.cover ?? storageId });
+    if (!next.success) {
+      await ctx.storage.delete(storageId);
+      return { error: next.error.issues[0]?.message ?? "Invalid entry." };
+    }
+    await claimFile(ctx, { storageId, campaignId: entry.campaignId, uploadedBy: user._id, kind: "codexImage", refId: entryId });
+    await save(ctx, entry, next.data);
     return { error: null };
   },
 });
@@ -374,14 +368,6 @@ export const removeImage = mutation({
       images: data.images.filter((g) => g.storageId !== storageId),
       cover: data.cover === storageId ? null : data.cover,
     });
-    const id = ctx.db.system.normalizeId("_storage", storageId);
-    if (id === null) return;
-    const row = await ctx.db
-      .query("codexImages")
-      .withIndex("by_storage", (q) => q.eq("storageId", id))
-      .unique();
-    if (row === null || row.entryId !== entryId) return;
-    await ctx.db.delete(row._id);
-    await ctx.storage.delete(id).catch(() => undefined);
+    await deleteOwnFile(ctx, "codexImage", entryId, storageId);
   },
 });

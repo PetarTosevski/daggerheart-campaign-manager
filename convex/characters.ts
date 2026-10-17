@@ -35,7 +35,9 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { loadCampaign, type Role } from "./lib/access";
 import { requireUser } from "./lib/auth";
+import { claimFile, deleteFilesOf, deleteOwnFile, isClaimed, ownFileUrl } from "./lib/files";
 import { campaignScope, withIdempotency } from "./lib/operations";
+import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
 
 function invalid(error: unknown): never {
   if (error instanceof ZodError) throw new ConvexError({ code: "INVALID", message: error.issues[0]?.message ?? "Invalid character." });
@@ -49,42 +51,28 @@ function parseSheet(raw: unknown): CharacterSheet {
   return parsed.data;
 }
 
-/** URL of a stored file, or null when the id isn't a valid storage id or the file is gone. */
-async function safeUrl(ctx: QueryCtx, storageId: string): Promise<string | null> {
-  const id = ctx.db.system.normalizeId("_storage", storageId);
-  if (id === null) return null;
-  return ctx.storage.getUrl(id).catch(() => null);
+/** URL of the character's own uploaded portrait, or null (bad id, someone else's file, or gone). */
+function portraitFileUrl(ctx: QueryCtx, characterId: Id<"characters">, storageId: string): Promise<string | null> {
+  return ownFileUrl(ctx, "portrait", characterId, storageId);
 }
 
-/** Deletes a character's uploaded portrait file — only one recorded as uploaded for this character. */
-async function deleteOwnUpload(ctx: MutationCtx, characterId: Id<"characters">, storageId: string) {
-  const id = ctx.db.system.normalizeId("_storage", storageId);
-  if (id === null) return;
-  const row = await ctx.db
-    .query("portraitUploads")
-    .withIndex("by_storage", (q) => q.eq("storageId", id))
-    .unique();
-  if (row === null || row.characterId !== characterId) return;
-  await ctx.db.delete(row._id);
-  await ctx.storage.delete(id).catch(() => undefined);
-}
+type Access = { user: Doc<"users">; campaign: Doc<"campaigns">; permission: Permission; character: Doc<"characters">; canEdit: boolean };
 
-type Access = { user: Doc<"users">; campaign: Doc<"campaigns">; role: Role; character: Doc<"characters">; canEdit: boolean };
-
-/** Loads a character the user can see; `edit` requires the GM or the character's owner. */
+/** Loads a character the user can see; `edit` requires edit permission (the GM or the character's owner). */
 async function loadCharacter(ctx: QueryCtx, characterId: Id<"characters">, { edit = false } = {}): Promise<Access> {
   const user = await requireUser(ctx);
   const character = await ctx.db.get(characterId);
   if (character === null) throw new ConvexError("NOT_FOUND");
-  const { campaign, role } = await loadCampaign(ctx, user, character.campaignId);
-  const canEdit = role === "gm" || character.ownerId === user._id;
-  if (edit && !canEdit) throw new ConvexError("FORBIDDEN");
-  return { user, campaign, role, character, canEdit };
+  const campaign = await liveCampaign(ctx, character.campaignId);
+  const permission = await requirePermission(ctx, user, { type: "character", campaign, character }, edit ? "edit" : "view", "owner");
+  return { user, campaign, permission, character, canEdit: atLeast(permission, "edit") };
 }
 
-async function toView(ctx: QueryCtx, c: Doc<"characters">, viewer: Doc<"users">, role: Role) {
+async function toView(ctx: QueryCtx, c: Doc<"characters">, viewer: Doc<"users">, canEdit: boolean) {
   const sheet = parseSheet(c.sheet);
-  const portraitUrl = sheet.portrait?.kind === "upload" ? await safeUrl(ctx, sheet.portrait.storageId) : null;
+  const portraitUrl = sheet.portrait?.kind === "upload" ? await portraitFileUrl(ctx, c._id, sheet.portrait.storageId) : null;
+  // Only editors get the upload's storage id; everyone else gets `portraitUrl` and a placeholder id.
+  if (!canEdit && sheet.portrait?.kind === "upload") sheet.portrait = { kind: "upload", storageId: "hidden" };
   return {
     _id: c._id,
     ownerId: c.ownerId,
@@ -92,7 +80,7 @@ async function toView(ctx: QueryCtx, c: Doc<"characters">, viewer: Doc<"users">,
     sheet,
     /** Resolved URL of an uploaded portrait, or null. */
     portraitUrl,
-    canEdit: role === "gm" || c.ownerId === viewer._id,
+    canEdit,
     mine: c.ownerId === viewer._id,
     updatedAt: c.updatedAt,
   };
@@ -105,12 +93,14 @@ export const listByCampaign = query({
   args: { campaignId: v.id("campaigns") },
   handler: async (ctx, { campaignId }) => {
     const user = await requireUser(ctx);
-    const { role } = await loadCampaign(ctx, user, campaignId);
+    const campaign = await liveCampaign(ctx, campaignId);
+    // One permission check per request: edit on the campaign edits every sheet; otherwise only your own.
+    const permission = await requirePermission(ctx, user, { type: "campaign", campaign }, "view", "edit");
     const rows = await ctx.db
       .query("characters")
       .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
       .collect();
-    return Promise.all(rows.map((c) => toView(ctx, c, user, role)));
+    return Promise.all(rows.map((c) => toView(ctx, c, user, atLeast(permission, "edit") || c.ownerId === user._id)));
   },
 });
 
@@ -119,12 +109,12 @@ export const get = query({
   handler: async (ctx, args) => {
     const id = ctx.db.normalizeId("characters", args.characterId);
     if (id === null) return null;
-    const { user, role, character } = await loadCharacter(ctx, id).catch((e) => {
-      if (e instanceof ConvexError && e.data === "NOT_FOUND") return { user: null, role: null, character: null } as never;
+    const { user, canEdit, character } = await loadCharacter(ctx, id).catch((e) => {
+      if (e instanceof ConvexError && e.data === "NOT_FOUND") return { user: null, canEdit: false, character: null } as never;
       throw e;
     });
     if (!character) return null;
-    return toView(ctx, character, user, role);
+    return toView(ctx, character, user, canEdit);
   },
 });
 
@@ -318,9 +308,9 @@ export const create = mutation({
 export const assignOwner = mutation({
   args: { characterId: v.id("characters"), ownerId: v.id("users") },
   handler: async (ctx, { characterId, ownerId }) => {
-    const { user, campaign, role } = await loadCharacter(ctx, characterId);
-    if (role !== "gm") throw new ConvexError("FORBIDDEN");
-    const owner = await ownerFor(ctx, campaign, role, user, ownerId);
+    const { user, campaign, permission } = await loadCharacter(ctx, characterId);
+    if (permission !== "owner") throw new ConvexError("FORBIDDEN");
+    const owner = await ownerFor(ctx, campaign, "gm", user, ownerId);
     await ctx.db.patch(characterId, { ownerId: owner, updatedAt: Date.now() });
   },
 });
@@ -363,7 +353,7 @@ export const updateSheet = mutation({
         invalid(new Error("Upload the portrait from the sheet."));
       }
     } else if ("portrait" in clean && sheet.portrait?.kind === "upload") {
-      await deleteOwnUpload(ctx, character._id, sheet.portrait.storageId);
+      await deleteOwnFile(ctx, "portrait", character._id, sheet.portrait.storageId);
     }
     next.hp = Math.min(next.hp, next.hpMax);
     next.stress = Math.min(next.stress, next.stressMax);
@@ -464,16 +454,9 @@ export const setStatus = mutation({
 export const remove = mutation({
   args: { characterId: v.id("characters") },
   handler: async (ctx, { characterId }) => {
-    const { role, character } = await loadCharacter(ctx, characterId);
-    if (role !== "gm") throw new ConvexError("FORBIDDEN");
-    const uploads = await ctx.db
-      .query("portraitUploads")
-      .withIndex("by_character", (q) => q.eq("characterId", characterId))
-      .collect();
-    for (const row of uploads) {
-      await ctx.db.delete(row._id);
-      await ctx.storage.delete(row.storageId).catch(() => undefined);
-    }
+    const { permission, character } = await loadCharacter(ctx, characterId);
+    if (permission !== "owner") throw new ConvexError("FORBIDDEN");
+    await deleteFilesOf(ctx, "portrait", characterId);
     const prefix = `character:${characterId}:`;
     const trackers = await ctx.db
       .query("frameTrackers")
@@ -505,25 +488,23 @@ export const attachPortrait = mutation({
   handler: async (ctx, { characterId, storageId }) => {
     const { user, character } = await loadCharacter(ctx, characterId, { edit: true });
     const meta = await ctx.db.system.get(storageId);
-    const claimed =
-      (await ctx.db
-        .query("portraitUploads")
-        .withIndex("by_storage", (q) => q.eq("storageId", storageId))
-        .unique()) ??
-      (await ctx.db
-        .query("codexImages")
-        .withIndex("by_storage", (q) => q.eq("storageId", storageId))
-        .unique());
-    if (meta === null || claimed !== null) throw new ConvexError("NOT_FOUND");
+    // Only an unclaimed file may be attached, so the rejections below only ever delete unclaimed files.
+    if (meta === null || (await isClaimed(ctx, storageId))) throw new ConvexError("NOT_FOUND");
     if (!meta.contentType?.startsWith("image/") || meta.size > MAX_PORTRAIT_BYTES) {
       // Returned, not thrown: a throw would roll back the deletion.
       await ctx.storage.delete(storageId);
       return { error: "Portraits must be images of at most 3 MB." };
     }
-    await ctx.db.insert("portraitUploads", { storageId, userId: user._id, characterId, createdAt: Date.now() });
     const sheet = parseSheet(character.sheet);
-    if (sheet.portrait?.kind === "upload") await deleteOwnUpload(ctx, characterId, sheet.portrait.storageId);
-    await saveSheet(ctx, character, { ...sheet, portrait: { kind: "upload", storageId } });
+    // Validated before the file is claimed, so a rejected sheet leaves no orphan file.
+    const next = characterSheetSchema.safeParse({ ...sheet, portrait: { kind: "upload", storageId } });
+    if (!next.success) {
+      await ctx.storage.delete(storageId);
+      return { error: next.error.issues[0]?.message ?? "Invalid character." };
+    }
+    await claimFile(ctx, { storageId, campaignId: character.campaignId, uploadedBy: user._id, kind: "portrait", refId: characterId });
+    if (sheet.portrait?.kind === "upload") await deleteOwnFile(ctx, "portrait", characterId, sheet.portrait.storageId);
+    await saveSheet(ctx, character, next.data);
     return { error: null };
   },
 });
@@ -535,6 +516,6 @@ export const portraitUrl = query({
     const { character } = await loadCharacter(ctx, characterId);
     const sheet = parseSheet(character.sheet);
     if (sheet.portrait?.kind !== "upload") return null;
-    return safeUrl(ctx, sheet.portrait.storageId);
+    return portraitFileUrl(ctx, character._id, sheet.portrait.storageId);
   },
 });

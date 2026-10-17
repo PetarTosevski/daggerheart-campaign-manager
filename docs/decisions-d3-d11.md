@@ -29,3 +29,4 @@
 - Creation wizard: all 9 steps required, as designed (the create button lists what's missing).
 - Wither tokens (D5): book rule automated — gaining a token rolls the Fear Die; at or below the PC's tokens → scar and clear tokens; undo available; no per-PC cap (pool of 20 shown for reference).
 - End-of-session Wither → Fear conversion caps GM Fear at 12 and shows "N Fear lost".
+- Permissions (2026-10-18): one `files` table owns every upload (map, codex image, portrait), and a `grants` join table (resource, principal user|campaign, permission view|edit|owner) is added now as the base for sharing maps and other resources later. Access = strongest of the campaign role and any grant; a view grant gets the player view.

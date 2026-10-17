@@ -2,7 +2,7 @@
 
 import { useMutation } from "convex/react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
 import { ALLEGIANCE_UNKNOWN, factionsFor, regionsFor, type CodexPatch } from "@/lib/codex/schema";
@@ -48,7 +48,7 @@ export function GmDetail({
   frameId: string;
   entry: GmEntry;
   hasPins: boolean;
-  onOpenImage: (storageId: string) => void;
+  onOpenImage: (key: string) => void;
   onPickPin: () => void;
   onDeleted: () => void;
 }) {
@@ -61,7 +61,7 @@ export function GmDetail({
   const isLoc = entry.kind === "location";
   const factions = factionsFor(frameId);
   const regions = regionsFor(frameId);
-  const coverUrl = entry.images.find((i) => i.storageId === entry.cover)?.url ?? null;
+  const coverUrl = entry.images.find((i) => i.key === entry.cover)?.url ?? null;
 
   const run = async (op: () => Promise<unknown>) => {
     setError(null);
@@ -72,8 +72,14 @@ export function GmDetail({
     }
   };
   const save = (patch: CodexPatch) => run(() => update({ entryId, patch }));
+  // A blur saves only what was typed since focus, so a stale field never writes its old text over a newer value.
+  const focused = useRef<string | null>(null);
+  const begin = (ev: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    focused.current = ev.target.value;
+  };
   const commit = (field: "name" | "role" | "pdesc" | "gmn") => (ev: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (ev.target.value !== entry[field]) void save({ [field]: ev.target.value });
+    if (ev.target.value !== focused.current) void save({ [field]: ev.target.value });
+    focused.current = null;
   };
 
   return (
@@ -88,6 +94,7 @@ export function GmDetail({
               type="text"
               maxLength={120}
               defaultValue={entry.name}
+              onFocus={begin}
               onBlur={commit("name")}
               placeholder={isLoc ? "e.g. The Sunken Abbey" : "e.g. Kreil Dirn"}
             />
@@ -99,6 +106,7 @@ export function GmDetail({
               type="text"
               maxLength={160}
               defaultValue={entry.role}
+              onFocus={begin}
               onBlur={commit("role")}
               placeholder={isLoc ? "e.g. Ruined temple, Haven district" : "e.g. Haven’s spymaster"}
             />
@@ -245,6 +253,7 @@ export function GmDetail({
             maxLength={8000}
             aria-label="What the players know"
             defaultValue={entry.pdesc}
+            onFocus={begin}
             onBlur={commit("pdesc")}
             placeholder={isLoc ? "What the party has seen or heard about this place…" : "What the party knows about this person…"}
           />
@@ -258,6 +267,7 @@ export function GmDetail({
             maxLength={8000}
             aria-label="GM notes"
             defaultValue={entry.gmn}
+            onFocus={begin}
             onBlur={commit("gmn")}
             placeholder="Secrets, motives, stats, hooks…"
           />
@@ -277,9 +287,9 @@ export function PlayerDetail({
   campaignId: string;
   frameId: string;
   entry: PlayerEntry;
-  onOpenImage: (storageId: string) => void;
+  onOpenImage: (key: string) => void;
 }) {
-  const coverUrl = entry.images.find((i) => i.storageId === entry.cover)?.url ?? null;
+  const coverUrl = entry.images.find((i) => i.key === entry.cover)?.url ?? null;
   const badge = "cx-badge self-start bg-[#1b282d] text-[12px]! text-[#e6ecea]";
   return (
     <div className="flex flex-col gap-[18px]">

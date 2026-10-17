@@ -6,10 +6,12 @@ import {
   TERRAIN_COLUMNS,
   TERRAIN_ROWS,
   WITHERWILD_TERRAIN,
+  applyTerrainCells,
   cellOf,
   paintTerrain,
   suggestedTerrain,
   terrainAt,
+  terrainDiff,
   terrainPaths,
   upscaleTerrain,
 } from "@/lib/world/terrain";
@@ -59,5 +61,25 @@ describe("terrain grid", () => {
     expect(paths.x).toBe("M0 0h2v1h-2Z");
     expect(paths.b).toBe("M0 0");
     expect(paths.w.startsWith("M2 0h126v1h-126Z")).toBe(true);
+  });
+});
+
+describe("terrain cell diffs", () => {
+  it("lists only changed cells, and applying the diff (or its inverse) round-trips", () => {
+    const after = paintTerrain(WITHERWILD_TERRAIN, 10, 10, 2, "#");
+    const diff = terrainDiff(WITHERWILD_TERRAIN, after);
+    expect(diff.indexes.length).toBe(diff.codes.length);
+    expect(diff.indexes.length).toBeGreaterThan(0);
+    expect(diff.codes).toMatch(/^#+$/);
+    expect(applyTerrainCells(WITHERWILD_TERRAIN, diff.indexes, diff.codes)).toBe(after);
+    const inverse = terrainDiff(after, WITHERWILD_TERRAIN);
+    expect(applyTerrainCells(after, inverse.indexes, inverse.codes)).toBe(WITHERWILD_TERRAIN);
+  });
+
+  it("an undo restores only its own cells, keeping another tab's strokes", () => {
+    const mine = paintTerrain(BLANK_TERRAIN, 5, 5, 1, "m");
+    const undo = terrainDiff(mine, BLANK_TERRAIN);
+    const withTheirs = paintTerrain(mine, 60, 60, 2, "d");
+    expect(applyTerrainCells(withTheirs, undo.indexes, undo.codes)).toBe(paintTerrain(BLANK_TERRAIN, 60, 60, 2, "d"));
   });
 });

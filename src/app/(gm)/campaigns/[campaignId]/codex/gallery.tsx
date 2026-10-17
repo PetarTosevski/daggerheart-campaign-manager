@@ -32,10 +32,11 @@ async function shrinkToJpeg(file: File): Promise<Blob> {
   );
 }
 
-type Img = { storageId: string; url: string | null; shown?: boolean };
+/** An image by its page key (the GM's key is the storage id; players get an opaque index). */
+type Img = { key: string; url: string | null; shown?: boolean };
 
 /** The Images card: thumbnails (GM: reveal, main picture, delete) and the add-images drop zone. */
-export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; gm: boolean; onOpen: (storageId: string) => void }) {
+export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; gm: boolean; onOpen: (key: string) => void }) {
   const uploadUrl = useMutation(api.codex.imageUploadUrl);
   const attach = useMutation(api.codex.attachImage);
   const setShown = useMutation(api.codex.setImageShown);
@@ -128,17 +129,17 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
       >
         {images.map((g) => {
           const hidden = gm && !g.shown;
-          const isCover = entry.cover === g.storageId;
+          const isCover = entry.cover === g.key;
           return (
             <div
-              key={g.storageId}
+              key={g.key}
               className={cn("cx-thumb", hidden && "hid")}
               style={{ ...(g.url ? { backgroundImage: `url(${g.url})` } : {}), borderColor: gm && g.shown ? "#3d7a55" : "#253338" }}
-              onClick={() => onOpen(g.storageId)}
+              onClick={() => onOpen(g.key)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  onOpen(g.storageId);
+                  onOpen(g.key);
                 }
               }}
               role="button"
@@ -152,7 +153,7 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
                     className={cn("cx-tb", g.shown && "on")}
                     aria-pressed={!!g.shown}
                     title={g.shown ? "Players can see this. Click to hide it." : "Hidden from players. Click to reveal it."}
-                    onClick={() => void run(() => setShown({ entryId, storageId: g.storageId, shown: !g.shown }))}
+                    onClick={() => void run(() => setShown({ entryId, storageId: g.key, shown: !g.shown }))}
                   >
                     {g.shown ? "👁 Revealed" : "🔒 Hidden"}
                   </button>
@@ -162,25 +163,25 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
                       className={cn("cx-tb", isCover && "on")}
                       title="Use as the main picture"
                       aria-label="Use as the main picture"
-                      onClick={() => void run(() => setCover({ entryId, storageId: g.storageId }))}
+                      onClick={() => void run(() => setCover({ entryId, storageId: g.key }))}
                     >
                       ★
                     </button>
                     <button
                       type="button"
                       className="cx-tb"
-                      title={confirmImg === g.storageId ? "Click again to delete this image" : "Delete image"}
-                      aria-label={confirmImg === g.storageId ? "Click again to delete this image" : "Delete image"}
+                      title={confirmImg === g.key ? "Click again to delete this image" : "Delete image"}
+                      aria-label={confirmImg === g.key ? "Click again to delete this image" : "Delete image"}
                       onClick={() => {
-                        if (confirmImg !== g.storageId) {
-                          setConfirmImg(g.storageId);
+                        if (confirmImg !== g.key) {
+                          setConfirmImg(g.key);
                           return;
                         }
                         setConfirmImg(null);
-                        void run(() => removeImage({ entryId, storageId: g.storageId }));
+                        void run(() => removeImage({ entryId, storageId: g.key }));
                       }}
                     >
-                      {confirmImg === g.storageId ? "Sure?" : "×"}
+                      {confirmImg === g.key ? "Sure?" : "×"}
                     </button>
                   </span>
                 </div>
@@ -223,7 +224,7 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
   );
 }
 
-export type LightboxState = { entryId: string; storageId: string };
+export type LightboxState = { entryId: string; key: string };
 
 /** Full-screen image viewer: click or Esc to close, arrows to step through the entry's images. */
 export function Lightbox({
@@ -239,11 +240,11 @@ export function Lightbox({
   onChange: (next: LightboxState) => void;
   onClose: () => void;
 }) {
-  const index = Math.max(0, images.findIndex((g) => g.storageId === state.storageId));
+  const index = Math.max(0, images.findIndex((g) => g.key === state.key));
   const step = (d: number) => {
     if (!images.length) return;
     const next = images[(index + d + images.length) % images.length];
-    onChange({ entryId: state.entryId, storageId: next.storageId });
+    onChange({ entryId: state.entryId, key: next.key });
   };
   const stepRef = useRef(step);
   useEffect(() => {

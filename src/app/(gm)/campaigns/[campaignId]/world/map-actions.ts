@@ -4,10 +4,13 @@ import { useMutation } from "convex/react";
 import { useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
+import { applyTerrainCells } from "@/lib/world/terrain";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
+
+const PAINT_CHUNK = 8000;
 
 /**
  * The World board's mutations. Set-style edits (a retry is harmless) go
@@ -25,6 +28,11 @@ export function useMapActions(campaignId: Id<"campaigns">) {
   const removeToken = useMutation(api.maps.removeToken);
   const clearTrail = useMutation(api.maps.clearTrail);
   const setTerrain = useMutation(api.maps.setTerrain);
+  // Painted cells show at once (no flicker between the stroke ending and the server's answer).
+  const paintCells = useMutation(api.maps.paintCells).withOptimisticUpdate((store, { campaignId: id, indexes, codes }) => {
+    const view = store.getQuery(api.maps.get, { campaignId: id });
+    if (view) store.setQuery(api.maps.get, { campaignId: id }, { ...view, state: { ...view.state, terrain: applyTerrainCells(view.state.terrain, indexes, codes) } });
+  });
   const setOptions = useMutation(api.maps.setOptions);
   const setTravelRules = useMutation(api.maps.setTravelRules);
   const renameType = useMutation(api.maps.renameType);
@@ -67,7 +75,12 @@ export function useMapActions(campaignId: Id<"campaigns">) {
     updateToken: (id: number, patch: Parameters<typeof updateToken>[0]["patch"]) => run(updateToken({ ...c, id, patch })),
     removeToken: (id: number) => run(removeToken({ ...c, id })),
     clearTrail: () => run(clearTrail(c)),
-    setTerrain: (terrain: string) => run(setTerrain({ ...c, terrain })),
+    /** Paints cells onto the stored grid, in chunks under Convex's 8192-element array limit. */
+    paintCells: async (indexes: number[], codes: string) => {
+      for (let i = 0; i < indexes.length; i += PAINT_CHUNK) {
+        if ((await run(paintCells({ ...c, indexes: indexes.slice(i, i + PAINT_CHUNK), codes: codes.slice(i, i + PAINT_CHUNK) }).then(() => true))) === undefined) return;
+      }
+    },
     resetTerrain: () => run(setTerrain({ ...c, reset: true })),
     setOptions: (opts: Omit<Parameters<typeof setOptions>[0], "campaignId">) => run(setOptions({ ...c, ...opts })),
     setTravelRules: (rules: unknown) => run(setTravelRules({ ...c, rules })),

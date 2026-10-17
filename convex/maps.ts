@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { encounterRoll, travelDays } from "../src/lib/domain/frames/horizon";
 import { hexToPixel, isAdjacent, type Hex } from "../src/lib/world/hex";
 import {
+  checkMapState,
   HORIZON_FRAME,
   initialHexCrawl,
   mapImageSize,
@@ -12,18 +13,21 @@ import {
   type HexCrawl,
   type MapState,
   type MapToken,
+  type PlayerMapState,
 } from "../src/lib/world/map-state";
-import { suggestedTerrain } from "../src/lib/world/terrain";
+import { TERRAIN_CODES, TERRAIN_COLUMNS, TERRAIN_ROWS, applyTerrainCells, suggestedTerrain } from "../src/lib/world/terrain";
 import { isBuiltinType, tokenType, tokenTypes } from "../src/lib/world/token-types";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx } from "./_generated/server";
-import { loadCampaign, loadGmCampaign, type Role } from "./lib/access";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import type { Role } from "./lib/access";
 import { requireUser } from "./lib/auth";
 import { rollDie } from "./lib/dice";
-import { deleteOwnMapUpload, mapUploadUrl, readMap, writeMap } from "./lib/maps";
+import { claimFile, deleteOwnFile, isClaimed, ownFileUrl } from "./lib/files";
+import { readMap, writeMap } from "./lib/maps";
 import { campaignScope, withIdempotency } from "./lib/operations";
+import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
 
-export type MapView = { role: Role; frameId: Doc<"campaigns">["frameId"]; state: MapState; mapUrl: string | null };
+export type MapView = { role: Role; frameId: Doc<"campaigns">["frameId"]; state: MapState | PlayerMapState; mapUrl: string | null };
 export type MoveResult = { days: number; weatherRoll?: number; dice: number[]; encounter: boolean; day: number };
 
 export type AttachResult = { ok: true } | { ok: false; message: string };
@@ -38,9 +42,18 @@ function invalid(message: string): never {
   throw new ConvexError({ code: "INVALID", message });
 }
 
-async function gmMap(ctx: MutationCtx, campaignId: Id<"campaigns">) {
+/** The map with at least `need` permission: NOT_FOUND for outsiders, FORBIDDEN when too weak (players can't edit). */
+async function mapAccess(ctx: QueryCtx, campaignId: Id<"campaigns">, need: Permission) {
   const user = await requireUser(ctx);
-  const campaign = await loadGmCampaign(ctx, user, campaignId);
+  const campaign = await liveCampaign(ctx, campaignId);
+  const permission = await requirePermission(ctx, user, { type: "map", campaign }, need, "edit");
+  // Edit and owner get the GM's map; view gets the players' map.
+  const role: Role = atLeast(permission, "edit") ? "gm" : "player";
+  return { user, campaign, role };
+}
+
+async function gmMap(ctx: MutationCtx, campaignId: Id<"campaigns">) {
+  const { user, campaign } = await mapAccess(ctx, campaignId, "edit");
   const state = await readMap(ctx, campaign);
   return { user, campaign, state };
 }
@@ -61,10 +74,9 @@ function findToken(state: MapState, id: number): MapToken {
 export const get = query({
   args: { campaignId: v.id("campaigns") },
   handler: async (ctx, { campaignId }): Promise<MapView> => {
-    const user = await requireUser(ctx);
-    const { campaign, role } = await loadCampaign(ctx, user, campaignId);
+    const { campaign, role } = await mapAccess(ctx, campaignId, "view");
     const state = await readMap(ctx, campaign);
-    const mapUrl = state.customMap ? await mapUploadUrl(ctx, campaign._id, state.customMap.storageId) : null;
+    const mapUrl = state.customMap ? await ownFileUrl(ctx, "map", campaign._id, state.customMap.storageId) : null;
     return { role, frameId: campaign.frameId, state: role === "gm" ? state : playerMapView(state), mapUrl };
   },
 });
@@ -75,8 +87,7 @@ export type MapLocation = { id: number; name: string; typeLabel: string; colour:
 export const locations = query({
   args: { campaignId: v.id("campaigns") },
   handler: async (ctx, { campaignId }): Promise<MapLocation[]> => {
-    const user = await requireUser(ctx);
-    const { campaign, role } = await loadCampaign(ctx, user, campaignId);
+    const { campaign, role } = await mapAccess(ctx, campaignId, "view");
     const full = await readMap(ctx, campaign);
     const state = role === "gm" ? full : playerMapView(full);
     const types = tokenTypes(state);
@@ -178,6 +189,23 @@ export const clearTrail = mutation({
   },
 });
 
+/**
+ * Paints terrain cells onto the current grid: cell `indexes[k]` gets the code
+ * `codes[k]`. Other cells keep whatever is stored, so two GM tabs painting at
+ * once don't overwrite each other (undo sends the cells' previous codes).
+ */
+export const paintCells = mutation({
+  args: { campaignId: v.id("campaigns"), indexes: v.array(v.number()), codes: v.string() },
+  handler: async (ctx, { campaignId, indexes, codes }) => {
+    const cells = TERRAIN_COLUMNS * TERRAIN_ROWS;
+    if (indexes.length > cells || codes.length !== indexes.length) invalid("Invalid terrain cells.");
+    if (indexes.some((i) => !Number.isInteger(i) || i < 0 || i >= cells)) invalid("Invalid terrain cells.");
+    if ([...codes].some((c) => !(TERRAIN_CODES as readonly string[]).includes(c))) invalid("Unknown terrain.");
+    const { state } = await gmMap(ctx, campaignId);
+    await writeMap(ctx, campaignId, { ...state, terrain: applyTerrainCells(state.terrain, indexes, codes) });
+  },
+});
+
 /** Replaces the painted terrain grid (`reset` restores the suggested grid). */
 export const setTerrain = mutation({
   args: { campaignId: v.id("campaigns"), terrain: v.optional(v.string()), reset: v.optional(v.boolean()) },
@@ -261,8 +289,7 @@ export const renameType = mutation({
 export const mapImageUploadUrl = mutation({
   args: { campaignId: v.id("campaigns") },
   handler: async (ctx, { campaignId }) => {
-    const user = await requireUser(ctx);
-    await loadGmCampaign(ctx, user, campaignId);
+    await mapAccess(ctx, campaignId, "edit");
     return ctx.storage.generateUploadUrl();
   },
 });
@@ -277,11 +304,8 @@ export const attachMapImage = mutation({
   handler: async (ctx, { campaignId, storageId, width, height, scaleKm }): Promise<AttachResult> => {
     const { user, state } = await gmMap(ctx, campaignId);
     const meta = await ctx.db.system.get(storageId);
-    const claimed = await ctx.db
-      .query("mapUploads")
-      .withIndex("by_storage", (q) => q.eq("storageId", storageId))
-      .unique();
-    if (meta === null || claimed !== null) throw new ConvexError("NOT_FOUND");
+    // Only an unclaimed file may be attached, so the rejections below only ever delete unclaimed files.
+    if (meta === null || (await isClaimed(ctx, storageId))) throw new ConvexError("NOT_FOUND");
     // A rejected file is deleted and reported without throwing, so the delete isn't rolled back.
     if (!meta.contentType?.startsWith("image/") || meta.size > MAX_MAP_BYTES) {
       await ctx.storage.delete(storageId);
@@ -291,9 +315,15 @@ export const attachMapImage = mutation({
       await ctx.storage.delete(storageId);
       return { ok: false, message: "Couldn't read the image size." };
     }
-    await ctx.db.insert("mapUploads", { storageId, campaignId, uploadedBy: user._id, createdAt: Date.now() });
-    if (state.customMap) await deleteOwnMapUpload(ctx, campaignId, state.customMap.storageId);
-    await writeMap(ctx, campaignId, { ...state, scaleKm: scaleKm ?? state.scaleKm, customMap: { storageId, width, height } });
+    // Validated before the file is claimed, so a bad map width or an oversized map leaves no orphan file.
+    const next = checkMapState({ ...state, scaleKm: scaleKm ?? state.scaleKm, customMap: { storageId, width, height } });
+    if (!next.ok) {
+      await ctx.storage.delete(storageId);
+      return { ok: false, message: next.message };
+    }
+    await claimFile(ctx, { storageId, campaignId, uploadedBy: user._id, kind: "map", refId: campaignId });
+    if (state.customMap) await deleteOwnFile(ctx, "map", campaignId, state.customMap.storageId);
+    await writeMap(ctx, campaignId, next.data);
     return { ok: true };
   },
 });
@@ -304,7 +334,7 @@ export const removeMapImage = mutation({
   handler: async (ctx, { campaignId }) => {
     const { state } = await gmMap(ctx, campaignId);
     if (!state.customMap) return;
-    await deleteOwnMapUpload(ctx, campaignId, state.customMap.storageId);
+    await deleteOwnFile(ctx, "map", campaignId, state.customMap.storageId);
     const next = { ...state };
     delete next.customMap;
     await writeMap(ctx, campaignId, next);

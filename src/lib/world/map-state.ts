@@ -139,8 +139,21 @@ export type TravelRulesState = z.infer<typeof travelRulesSchema>;
 export type HexCrawl = z.infer<typeof hexCrawlSchema>;
 export type CrawlHex = z.infer<typeof crawlHexSchema>;
 
-/** Largest stored map (JSON characters); Convex documents are limited to 1 MB. */
-export const MAX_MAP_JSON = 800_000;
+/** Largest stored map in UTF-8 bytes of JSON, safely under Convex's 1 MiB document limit. */
+export const MAX_MAP_JSON_BYTES = 900_000;
+
+/** What players receive: the uploaded map without its storage id (its URL is sent separately). */
+export type PlayerMapState = Omit<MapState, "customMap"> & { customMap?: { width: number; height: number } };
+
+/** The validated state ready to store, or why it can't be stored (invalid, or too large). */
+export function checkMapState(state: MapState): { ok: true; data: MapState } | { ok: false; message: string } {
+  const parsed = mapStateSchema.safeParse(state);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid map." };
+  if (new TextEncoder().encode(JSON.stringify(parsed.data)).length > MAX_MAP_JSON_BYTES) {
+    return { ok: false, message: "The map is too large. Shorten some notes or remove markers." };
+  }
+  return { ok: true, data: parsed.data };
+}
 
 export const HORIZON_FRAME = "journey-to-horizon";
 
@@ -150,7 +163,7 @@ export function initialHexCrawl(): HexCrawl {
 }
 
 /** Image size and width in km the map is drawn with: an uploaded map, or the frame's published art. */
-export function mapImageSize(frameId: string, state: Pick<MapState, "customMap">): { width: number; height: number } {
+export function mapImageSize(frameId: string, state: Pick<PlayerMapState, "customMap">): { width: number; height: number } {
   if (state.customMap) return { width: state.customMap.width, height: state.customMap.height };
   const map = (WORLD_MAPS as Record<string, { width: number; height: number }>)[frameId];
   return map ? { width: map.width, height: map.height } : { width: 1600, height: 1200 };
@@ -178,13 +191,22 @@ export function initialMapState(frameId: string, terrain?: string): MapState {
 
 /**
  * What players may see: hidden tokens removed, token notes (GM notes) blanked,
- * and of the hex crawl only explored hexes, the party's hex and its
- * neighbours, without hidden points of interest or the GM's last rolls.
+ * only the marker types (and renamed labels) visible markers use, no upload
+ * storage id or marker counter, and of the hex crawl only explored hexes, the
+ * party's hex and its neighbours, without hidden points of interest or the
+ * GM's last rolls.
  */
-export function playerMapView(state: MapState): MapState {
-  const view: MapState = {
-    ...state,
-    tokens: state.tokens.filter((t) => !t.hidden).map((t) => ({ ...t, notes: "" })),
+export function playerMapView(state: MapState): PlayerMapState {
+  const tokens = state.tokens.filter((t) => !t.hidden).map((t) => ({ ...t, notes: "" }));
+  const used = new Set(tokens.map((t) => t.type));
+  const { customMap, ...rest } = state;
+  const view: PlayerMapState = {
+    ...rest,
+    tokens,
+    nextId: 1,
+    customTypes: state.customTypes.filter((c) => used.has(c.id)),
+    typeLabels: Object.fromEntries(Object.entries(state.typeLabels).filter(([id]) => used.has(id))),
+    ...(customMap ? { customMap: { width: customMap.width, height: customMap.height } } : {}),
   };
   if (state.hexCrawl) {
     const crawl = state.hexCrawl;

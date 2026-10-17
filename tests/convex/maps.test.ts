@@ -139,6 +139,32 @@ describe("World map", () => {
     expect((await gm.query(api.maps.get, { campaignId })).state.options.rules).toBeUndefined();
   });
 
+  it("paints cells onto the stored grid without clobbering other cells", async () => {
+    const { gm, player, campaignId } = await setup();
+    // Two tabs paint different cells from the same starting grid; both strokes survive.
+    await gm.mutation(api.maps.paintCells, { campaignId, indexes: [0, 1], codes: "##" });
+    await gm.mutation(api.maps.paintCells, { campaignId, indexes: [500], codes: "m" });
+    const terrain = (await gm.query(api.maps.get, { campaignId })).state.terrain;
+    expect(terrain.slice(0, 2)).toBe("##");
+    expect(terrain[500]).toBe("m");
+    expect(terrain.slice(2, 500)).toBe(WITHERWILD_TERRAIN.slice(2, 500));
+    // Undo sends the previous codes of only its own cells.
+    await gm.mutation(api.maps.paintCells, { campaignId, indexes: [0, 1], codes: WITHERWILD_TERRAIN.slice(0, 2) });
+    const undone = (await gm.query(api.maps.get, { campaignId })).state.terrain;
+    expect(undone.slice(0, 2)).toBe(WITHERWILD_TERRAIN.slice(0, 2));
+    expect(undone[500]).toBe("m");
+
+    for (const bad of [
+      { indexes: [0], codes: "x" },
+      { indexes: [0, 1], codes: "#" },
+      { indexes: [128 * 98], codes: "#" },
+      { indexes: [1.5], codes: "#" },
+    ]) {
+      expect(errorCode(await gm.mutation(api.maps.paintCells, { campaignId, ...bad }).catch((e) => e))).toBe("INVALID");
+    }
+    expect(errorData(await player.mutation(api.maps.paintCells, { campaignId, indexes: [0], codes: "#" }).catch((e) => e))).toBe("FORBIDDEN");
+  });
+
   it("map uploads: images only, a file belongs to one campaign, previous upload deleted", async () => {
     const { t, gm, campaignId } = await setup("custom");
     const other = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Other", idempotencyKey: key() });
@@ -155,7 +181,7 @@ describe("World map", () => {
     const attach = (storageId: Id<"_storage">, campaign: Id<"campaigns">) =>
       t.run(async (ctx) => {
         const owner = (await ctx.db.get(campaign))!.ownerId;
-        await ctx.db.insert("mapUploads", { storageId, campaignId: campaign, uploadedBy: owner, createdAt: 0 });
+        await ctx.db.insert("files", { storageId, campaignId: campaign, uploadedBy: owner, kind: "map", refId: campaign, createdAt: 0 });
         const row = await ctx.db
           .query("maps")
           .withIndex("by_campaign", (q) => q.eq("campaignId", campaign))
