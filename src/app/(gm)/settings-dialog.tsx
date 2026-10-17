@@ -59,7 +59,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               />
             </label>
             <label className="flex flex-col gap-1.5 text-[14px]">
-              Game Master
+              Your name
               <input
                 type="text"
                 className={INPUT}

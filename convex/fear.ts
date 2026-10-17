@@ -7,8 +7,9 @@ import {
 } from "../src/lib/domain/fear/index";
 import type { Id } from "./_generated/dataModel";
 import { mutation, type MutationCtx } from "./_generated/server";
-import { requireGm } from "./lib/auth";
-import { loadOwnedCampaign, ruleError } from "./lib/mechanics";
+import { loadGmCampaign } from "./lib/access";
+import { requireUser } from "./lib/auth";
+import { ruleError } from "./lib/mechanics";
 import { campaignScope, withIdempotency } from "./lib/operations";
 
 export type FearChange = { previousValue: number; newValue: number };
@@ -22,7 +23,7 @@ async function loadState(ctx: MutationCtx, campaignId: Id<"campaigns">) {
   return state;
 }
 
-/** Raises or lowers GM Fear by one (0–12). Fear is core: every frame has it. */
+/** Raises or lowers GM Fear by one (0–12). GM only; Fear is core: every frame has it. */
 export const adjust = mutation({
   args: {
     campaignId: v.id("campaigns"),
@@ -30,8 +31,8 @@ export const adjust = mutation({
     idempotencyKey: v.string(),
   },
   handler: async (ctx, { campaignId, direction, idempotencyKey }): Promise<FearChange> => {
-    const user = await requireGm(ctx);
-    await loadOwnedCampaign(ctx, user._id, campaignId);
+    const user = await requireUser(ctx);
+    await loadGmCampaign(ctx, user, campaignId);
     return withIdempotency(
       ctx,
       {
@@ -57,12 +58,12 @@ export const adjust = mutation({
   },
 });
 
-/** Sets GM Fear to a value 0–12 (the dashboard's tokens). */
+/** Sets GM Fear to a value 0–12 (the dashboard's tokens). GM only. */
 export const set = mutation({
   args: { campaignId: v.id("campaigns"), value: v.number(), idempotencyKey: v.string() },
   handler: async (ctx, { campaignId, value, idempotencyKey }): Promise<FearChange> => {
-    const user = await requireGm(ctx);
-    await loadOwnedCampaign(ctx, user._id, campaignId);
+    const user = await requireUser(ctx);
+    await loadGmCampaign(ctx, user, campaignId);
     try {
       assertFearValue(value);
     } catch (error) {

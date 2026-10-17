@@ -3,7 +3,8 @@
 import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { Users } from "lucide-react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { BackLink, Wordmark } from "@/components/brand/brand";
 import { frameName } from "@/lib/campaign-display";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../convex/campaigns";
+import { PlayersDialog } from "./players-dialog";
 import { TimeArc } from "./time-arc";
 
 const CampaignContext = createContext<CampaignSummary | null>(null);
@@ -55,7 +57,9 @@ function CampaignNav({ campaignId }: { campaignId: string }) {
 function DashboardHero({ campaign }: { campaign: CampaignSummary }) {
   return (
     <div className="relative mx-auto flex max-w-[1344px] flex-col gap-9 px-4 pt-2 pb-8 sm:px-12">
-      {frameHasMechanic(campaign.frameId, "campaignTime") ? <TimeArc campaignId={campaign._id} /> : null}
+      {frameHasMechanic(campaign.frameId, "campaignTime") ? (
+        <TimeArc campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
+      ) : null}
       <div className="flex flex-wrap items-end justify-between gap-6">
       <div className="flex min-w-0 flex-col gap-2">
         <span className="text-[13px] tracking-[0.3em] text-[#c9d2cf] uppercase">
@@ -82,6 +86,7 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
   const campaign = useQuery(api.campaigns.get, { campaignId });
   const markOpened = useMutation(api.campaigns.markOpened);
   const pathname = usePathname();
+  const [playersOpen, setPlayersOpen] = useState(false);
 
   const foundId = campaign ? campaign._id : null;
   useEffect(() => {
@@ -120,11 +125,31 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
               <BackLink href="/" label="Back to main menu" className="border-white/25 bg-black/30" />
               <Wordmark className="text-[26px] sm:text-[32px]" />
             </div>
-            <CampaignNav campaignId={campaign._id} />
+            <div className="flex flex-wrap items-center gap-2">
+              <CampaignNav campaignId={campaign._id} />
+              {campaign.role === "gm" ? (
+                <button
+                  type="button"
+                  onClick={() => setPlayersOpen(true)}
+                  aria-haspopup="dialog"
+                  className="inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-xl bg-black/35 px-3.5 text-[14px] text-[#e6ecea] hover:bg-black/50"
+                >
+                  <Users className="size-4" aria-hidden="true" />
+                  Players
+                </button>
+              ) : (
+                <span className="inline-flex min-h-12 items-center rounded-xl bg-black/35 px-3.5 text-[13px] tracking-[0.16em] text-fear uppercase">
+                  Player
+                </span>
+              )}
+            </div>
           </div>
           {pathname === `/campaigns/${campaign._id}` ? <DashboardHero campaign={campaign} /> : null}
         </section>
         {children}
+        {campaign.role === "gm" ? (
+          <PlayersDialog campaignId={campaign._id} open={playersOpen} onClose={() => setPlayersOpen(false)} />
+        ) : null}
       </div>
     </CampaignContext.Provider>
   );

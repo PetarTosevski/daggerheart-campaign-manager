@@ -1,15 +1,19 @@
 /**
- * Sign-in policy for the single-GM app. Pure functions only: they take the
- * environment as an argument so they can be unit-tested and so the Convex
- * bundle does not depend on where `process.env` is readable.
+ * Sign-in policy. Pure functions only: they take the environment as an
+ * argument so they can be unit-tested and so the Convex bundle does not depend
+ * on where `process.env` is readable.
  *
- * Everything fails closed: a missing or malformed value means "not allowed".
+ * Sign-up is limited for now to an allowlist (user decision 2026-10-17): the
+ * union of `ALLOWED_EMAILS`, the legacy `GM_EMAILS` and the emails of the
+ * env-defined test accounts in `SEED_ACCOUNTS`. Everything fails closed: a
+ * missing or malformed value means "not allowed".
  */
 
 /**
- * Environment lookups used here: `GM_EMAILS`, `CONVEX_CLOUD_URL`,
- * `E2E_AUTH_ENABLED` and `E2E_AUTH_SECRET`. Typed as a plain record so
- * `process.env` can be passed directly.
+ * Environment lookups used here: `ALLOWED_EMAILS`, `GM_EMAILS`,
+ * `SEED_ACCOUNTS`, `CONVEX_CLOUD_URL`, `E2E_AUTH_ENABLED` and
+ * `E2E_AUTH_SECRET`. Typed as a plain record so `process.env` can be passed
+ * directly.
  */
 export type Env = Readonly<Record<string, string | undefined>>;
 
@@ -28,17 +32,45 @@ export function parseGmEmails(raw: string | undefined): Set<string> {
   );
 }
 
+export type SeedAccount = { email: string; password: string };
+
+/**
+ * Parses `SEED_ACCOUNTS`: `email:password` pairs separated by `;` (passwords
+ * may contain `:`). Malformed entries are skipped.
+ */
+export function parseSeedAccounts(raw: string | undefined): SeedAccount[] {
+  if (!raw) return [];
+  return raw
+    .split(";")
+    .map((entry) => {
+      const at = entry.indexOf(":");
+      if (at <= 0) return null;
+      const email = normalizeEmail(entry.slice(0, at));
+      const password = entry.slice(at + 1);
+      return email && password ? { email, password } : null;
+    })
+    .filter((a): a is SeedAccount => a !== null);
+}
+
+export function allowedEmails(env: Env): Set<string> {
+  return new Set([
+    ...parseGmEmails(env.ALLOWED_EMAILS),
+    ...parseGmEmails(env.GM_EMAILS),
+    ...parseSeedAccounts(env.SEED_ACCOUNTS).map((a) => a.email),
+  ]);
+}
+
 export function isAllowedEmail(
   email: unknown,
   env: Env,
 ): email is string {
   if (typeof email !== "string" || email.trim().length === 0) return false;
-  return parseGmEmails(env.GM_EMAILS).has(normalizeEmail(email));
+  return allowedEmails(env).has(normalizeEmail(email));
 }
 
 /**
- * A sign-in profile is allowed only when the provider vouches that the email
- * is verified (`emailVerified === true`) and the email is on the allowlist.
+ * An OAuth (or e2e) sign-in is allowed only when the provider vouches that
+ * the email is verified (`emailVerified === true`) and it is allowlisted.
  */
 export function isAllowedProfile(
   profile: { email?: unknown; emailVerified?: unknown },

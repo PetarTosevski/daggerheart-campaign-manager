@@ -1,7 +1,10 @@
+import { Suspense } from "react";
+
 import { LogoMark } from "@/components/brand/brand";
 
 import { E2ESignInForm } from "./e2e-sign-in-form";
 import { GoogleSignInButton } from "./google-sign-in-button";
+import { PasswordForm } from "./password-form";
 
 // Inlined at build time: only the e2e build renders the test-only form.
 const showE2EForm = process.env.NEXT_PUBLIC_E2E_AUTH === "true";
@@ -22,7 +25,17 @@ export default function SignInPage() {
       </div>
       <div className="mt-[72px] flex w-full max-w-sm flex-col gap-6">
         <h1 className="text-center font-display text-[26px] font-bold tracking-[0.08em]">Sign in</h1>
-        <GoogleSignInButton />
+        <Suspense>
+          <GoogleSignInButton />
+        </Suspense>
+        <div className="flex items-center gap-3 text-[13px] text-subtle" aria-hidden="true">
+          <span className="h-px flex-1 bg-line-2" />
+          or
+          <span className="h-px flex-1 bg-line-2" />
+        </div>
+        <Suspense>
+          <PasswordForm />
+        </Suspense>
         {showE2EForm ? <E2ESignInForm /> : null}
       </div>
     </main>

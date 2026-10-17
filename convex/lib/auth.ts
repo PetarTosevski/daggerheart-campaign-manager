@@ -6,11 +6,12 @@ import type { QueryCtx } from "../_generated/server";
 import { isAllowedEmail } from "./allowlist";
 
 /**
- * The real authorisation gate: every public query and mutation calls this.
+ * The first authorisation gate: every public query and mutation calls this
+ * (campaign functions then check the caller's role in `lib/access.ts`).
  * Throws `UNAUTHENTICATED` without a session and `FORBIDDEN` when the stored
- * user is no longer on the GM allowlist.
+ * user is no longer on the sign-up allowlist.
  */
-export async function requireGm(ctx: QueryCtx): Promise<Doc<"users">> {
+export async function requireUser(ctx: QueryCtx): Promise<Doc<"users">> {
   const userId = await getAuthUserId(ctx);
   if (userId === null) throw new ConvexError("UNAUTHENTICATED");
   const user = await ctx.db.get(userId);

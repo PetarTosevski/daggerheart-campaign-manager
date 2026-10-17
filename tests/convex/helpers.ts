@@ -6,14 +6,14 @@ import { makeTest } from "./setup";
 export const GM_EMAIL = "gm@example.com";
 export const OTHER_EMAIL = "other@example.com";
 
-/** Allowlists both test accounts for the duration of each test. */
-export function useAllowlist() {
-  const previous = process.env.GM_EMAILS;
+/** Allowlists the test accounts (both by default) for the duration of each test. */
+export function useAllowlist(emails = `${GM_EMAIL},${OTHER_EMAIL}`) {
+  const previous = process.env.ALLOWED_EMAILS;
   beforeEach(() => {
-    process.env.GM_EMAILS = `${GM_EMAIL},${OTHER_EMAIL}`;
+    process.env.ALLOWED_EMAILS = emails;
   });
   afterEach(() => {
-    process.env.GM_EMAILS = previous;
+    process.env.ALLOWED_EMAILS = previous;
   });
 }
 

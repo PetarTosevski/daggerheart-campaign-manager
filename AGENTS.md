@@ -93,17 +93,18 @@ art from the Claude Design boards, which the user approved for this private app
 4. Important changes are recoverable or correctable.
 5. Historical events never silently disappear.
 6. Prefer complete vertical slices over broad partial implementation.
-7. Single GM account; do not build multiplayer, player access or public
-   sign-up unless explicitly requested. Keep every record owned so that a later
-   multi-user version is not blocked.
+7. Multi-user (user decision 2026-10-17): roles are per campaign. A campaign's
+   creator is its GM; players join by email invite or join code. Anything
+   hidden from players is enforced on the server, never only in the UI.
+   Sign-up stays limited to the env allowlist until the user opens it.
 8. Never invent game rules.
 
 ## Approved technology stack
 
 - Next.js App Router, TypeScript strict mode
 - Convex (database, queries, mutations, live updates)
-- Convex Auth with Google sign-in, locked to the GM's allowlisted, verified
-  email
+- Convex Auth with Google and email + password sign-in, both limited to the
+  env allowlist
 - Tailwind CSS and shadcn/ui primitives
 - Zod for input validation
 - Vitest (unit, and convex-test for Convex functions), Playwright (e2e)
@@ -118,13 +119,19 @@ exclusion.
 ### Convex layout
 
 - `convex/schema.ts`: the schema (includes Convex Auth's `authTables`).
-- `convex/auth.ts`: Convex Auth. Google sign-in, with a `profile()` override
-  that keeps `email_verified`; `createOrUpdateUser` rejects anyone not allowed
-  by `convex/lib/allowlist.ts`.
-- `convex/lib/allowlist.ts`: pure sign-in policy (`GM_EMAILS` allowlist,
-  verified email required, local-only e2e sign-in). Unit-tested.
-- `convex/lib/auth.ts`: `requireGm(ctx)`, called first by every public query
-  and mutation.
+- `convex/auth.ts`: Convex Auth. Google (with a `profile()` override that
+  keeps `email_verified`), email + password (`password`), and the local-only
+  e2e provider; `createOrUpdateUser` (`convex/lib/users.ts`) applies the
+  allowlist and refuses a new password account for an email that already has
+  a user.
+- `convex/lib/allowlist.ts`: pure sign-in policy (allowlist =
+  `ALLOWED_EMAILS` ∪ legacy `GM_EMAILS` ∪ `SEED_ACCOUNTS` emails, verified
+  email for OAuth, local-only e2e sign-in). Unit-tested.
+- `convex/lib/auth.ts`: `requireUser(ctx)`, called first by every public query
+  and mutation. `convex/lib/access.ts`: `loadCampaign` / `loadGmCampaign`
+  return the caller's role (GM or player) or throw `NOT_FOUND` / `FORBIDDEN`.
+- `convex/accounts.ts`: `accounts:seed` creates the `SEED_ACCOUNTS` test
+  logins (`npx convex run accounts:seed`).
 - Convex functions import shared code from `src/lib/{domain,validation}` with
   relative paths; ESLint forbids `@/`, React and Next imports there.
 
@@ -132,7 +139,8 @@ exclusion.
 
 - Production: a cloud deployment, deployed by Vercel with
   `npx convex deploy --cmd 'pnpm build'`. Env vars on Convex: `AUTH_GOOGLE_ID`,
-  `AUTH_GOOGLE_SECRET`, `GM_EMAILS`, `SITE_URL`, `JWT_PRIVATE_KEY`, `JWKS`.
+  `AUTH_GOOGLE_SECRET`, `ALLOWED_EMAILS` (or the legacy `GM_EMAILS`),
+  optional `SEED_ACCOUNTS`, `SITE_URL`, `JWT_PRIVATE_KEY`, `JWKS`.
 - Everyday development (`pnpm dev`, `.env.local`): the GM's personal cloud dev
   deployment.
 - Tests: the project's local, account-free backend (`.convex/local`,
@@ -153,7 +161,7 @@ exclusion.
   `src/lib/validation/*`. These modules must not import React, Next or
   `@/components`; Convex functions call them.
 - Authenticate and authorise every Convex query and mutation on the server
-  (`requireGm` plus ownership checks). Middleware is only a UX redirect.
+  (`requireUser` plus the campaign role check). Middleware is only a UX redirect.
 - Do not duplicate authoritative game calculations in client and server code.
 - Keep deploy keys and secrets out of browser code.
 
@@ -235,9 +243,11 @@ Agents must not, without explicit approval:
 - Introduce a paid service.
 - Disable authentication or authorisation checks.
 - Remove event history.
-- Add public registration, player editing or multiplayer support.
+- Open sign-up beyond the allowlist without the user's go-ahead.
 - Add arbitrary executable custom mechanics.
-- Copy protected rules text or artwork into the application.
+- Copy protected rules text or artwork into the application beyond what the
+  user approved (frame lore, tomes and design art; rule text needed to run a
+  mechanic). Never commit the rulebook PDFs (`.reference-private/`).
 - Redesign unrelated pages. Visual design is pending the user's references;
   keep UI minimal and replaceable until then.
 

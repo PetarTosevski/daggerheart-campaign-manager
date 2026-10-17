@@ -8,8 +8,9 @@ import {
 } from "../src/lib/domain/campaign-time/index";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { requireGm } from "./lib/auth";
-import { assertMechanicEnabled, loadOwnedCampaign, ruleError } from "./lib/mechanics";
+import { loadCampaign } from "./lib/access";
+import { requireUser } from "./lib/auth";
+import { assertMechanicEnabled, ruleError } from "./lib/mechanics";
 import { campaignScope, withIdempotency } from "./lib/operations";
 
 type TimeView = { week: number; cycle: "DAY" | "NIGHT"; cycleDay: number };
@@ -33,8 +34,8 @@ const INITIAL_TIME: TimeView = { week: 1, cycle: "DAY", cycleDay: 1 };
  * for a Witherwild campaign created before campaign time existed (D1); such a
  * campaign is at the initial time until its first change.
  */
-async function findTime(ctx: QueryCtx, ownerId: Id<"users">, campaignId: Id<"campaigns">) {
-  const campaign = await loadOwnedCampaign(ctx, ownerId, campaignId);
+async function findTime(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, gmOnly = false) {
+  const { campaign } = await loadCampaign(ctx, user, campaignId, { gmOnly });
   assertMechanicEnabled(campaign, "campaignTime");
   return ctx.db
     .query("campaignTime")
@@ -42,8 +43,9 @@ async function findTime(ctx: QueryCtx, ownerId: Id<"users">, campaignId: Id<"cam
     .unique();
 }
 
-async function loadTime(ctx: MutationCtx, ownerId: Id<"users">, campaignId: Id<"campaigns">) {
-  const row = await findTime(ctx, ownerId, campaignId);
+/** For changes: GM only. */
+async function loadTime(ctx: MutationCtx, user: Doc<"users">, campaignId: Id<"campaigns">) {
+  const row = await findTime(ctx, user, campaignId, true);
   if (row !== null) return row;
   const id = await ctx.db.insert("campaignTime", { campaignId, ...INITIAL_TIME });
   return (await ctx.db.get(id))!;
@@ -52,8 +54,8 @@ async function loadTime(ctx: MutationCtx, ownerId: Id<"users">, campaignId: Id<"
 export const get = query({
   args: { campaignId: v.id("campaigns") },
   handler: async (ctx, { campaignId }): Promise<TimeView> => {
-    const user = await requireGm(ctx);
-    const row = await findTime(ctx, user._id, campaignId);
+    const user = await requireUser(ctx);
+    const row = await findTime(ctx, user, campaignId);
     return row ? toView(toDomain(row)) : INITIAL_TIME;
   },
 });
@@ -62,8 +64,8 @@ export const get = query({
 export const advance = mutation({
   args: { campaignId: v.id("campaigns"), idempotencyKey: v.string() },
   handler: async (ctx, { campaignId, idempotencyKey }): Promise<TimeView> => {
-    const user = await requireGm(ctx);
-    const row = await loadTime(ctx, user._id, campaignId);
+    const user = await requireUser(ctx);
+    const row = await loadTime(ctx, user, campaignId);
     return withIdempotency(
       ctx,
       {
@@ -87,8 +89,8 @@ export const advance = mutation({
 export const setDay = mutation({
   args: { campaignId: v.id("campaigns"), cycleDay: v.number(), idempotencyKey: v.string() },
   handler: async (ctx, { campaignId, cycleDay, idempotencyKey }): Promise<TimeView> => {
-    const user = await requireGm(ctx);
-    const row = await loadTime(ctx, user._id, campaignId);
+    const user = await requireUser(ctx);
+    const row = await loadTime(ctx, user, campaignId);
     return withIdempotency(
       ctx,
       {

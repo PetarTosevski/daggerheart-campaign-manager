@@ -1,5 +1,6 @@
 import Google from "@auth/core/providers/google";
 import { ConvexCredentials } from "@convex-dev/auth/providers/ConvexCredentials";
+import { Password } from "@convex-dev/auth/providers/Password";
 import {
   convexAuth,
   createAccount,
@@ -7,8 +8,8 @@ import {
 } from "@convex-dev/auth/server";
 
 import type { MutationCtx } from "./_generated/server";
-import { buildE2EProfile, isE2EDeployment } from "./lib/allowlist";
-import { createOrUpdateGmUser, type SignInArgs } from "./lib/users";
+import { buildE2EProfile, isE2EDeployment, normalizeEmail } from "./lib/allowlist";
+import { createOrUpdateUser, PASSWORD_PROVIDER_ID, type SignInArgs } from "./lib/users";
 
 const E2E_PROVIDER_ID = "e2e";
 
@@ -53,13 +54,23 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         };
       },
     }),
+    // Email + password sign-up and sign-in; the allowlist applies in
+    // `createOrUpdateUser`. Passwords need at least 8 characters (default).
+    Password({
+      id: PASSWORD_PROVIDER_ID,
+      profile(params) {
+        const email = typeof params.email === "string" ? normalizeEmail(params.email) : "";
+        const name = typeof params.name === "string" ? params.name.trim().slice(0, 80) : "";
+        return { email, ...(name ? { name } : {}) };
+      },
+    }),
     ...e2eProviders,
   ],
   callbacks: {
     // The callback's ctx is typed for any data model; this app's schema is
     // the one in convex/schema.ts.
     createOrUpdateUser: (ctx, args) =>
-      createOrUpdateGmUser(
+      createOrUpdateUser(
         ctx as unknown as MutationCtx,
         args as unknown as SignInArgs,
         process.env,
