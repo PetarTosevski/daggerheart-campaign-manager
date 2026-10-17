@@ -1,0 +1,30 @@
+plan: followups
+waves:
+  - wave: 1
+    tracers:
+      - id: X1
+        goal: SEED_ACCOUNTS work on a deployment only when ALLOW_SEED_ACCOUNTS is "true" (set on cloud dev, never production) or on a local e2e deployment (dcm-bxp.24).
+        depends_on: []
+        owns:
+          - convex/lib/allowlist.ts
+          - convex/accounts.ts
+          - convex/convex.config.ts
+          - tests/unit/allowlist.test.ts
+          - docs/tasks/TASK-105-accounts-and-roles.md
+        reads:
+          - convex/lib/users.ts
+          - convex/auth.ts
+        acceptance:
+          - "allowedEmails includes seed emails on local e2e, or when ALLOW_SEED_ACCOUNTS=true; never otherwise (unit tests)"
+          - "accounts:seed runs on local e2e or with the flag, refuses otherwise (unit tests)"
+          - "TASK-105 documents the flag and that it must never be set on production"
+      - id: X2
+        goal: The GM players dialog explains that email invites work for Google accounts and password accounts must join with the code (dcm-bxp.25).
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - tests/e2e/players.spec.ts
+        reads:
+          - convex/members.ts
+        acceptance:
+          - "The invite section shows the note; players.spec.ts asserts it and still passes"
