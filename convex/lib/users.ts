@@ -39,7 +39,9 @@ export async function createOrUpdateUser(
     .withIndex("email", (q) => q.eq("email", email))
     .unique();
   if (existing !== null) {
-    if (isPassword) throw new ConvexError("EMAIL_IN_USE");
+    // Same code as "not allowlisted", so sign-up does not reveal which
+    // addresses are invited or registered.
+    if (isPassword) throw new ConvexError("FORBIDDEN");
     if (existing.emailVerificationTime === undefined) {
       // A password account was registered for this address before its owner
       // proved ownership; whoever chose that password must not keep access.

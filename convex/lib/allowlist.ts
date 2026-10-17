@@ -1,19 +1,20 @@
 /**
  * Sign-in policy. Pure functions only: they take the environment as an
- * argument so they can be unit-tested and so the Convex bundle does not depend
- * on where `process.env` is readable.
+ * argument so they can be unit-tested; Convex callers pass the typed `env`
+ * from `_generated/server`, read inside their handlers.
  *
  * Sign-up is limited for now to an allowlist (user decision 2026-10-17): the
- * union of `ALLOWED_EMAILS`, the legacy `GM_EMAILS` and the emails of the
- * env-defined test accounts in `SEED_ACCOUNTS`. Everything fails closed: a
- * missing or malformed value means "not allowed".
+ * union of `ALLOWED_EMAILS`, the legacy `GM_EMAILS` and, on a local e2e
+ * deployment only, the emails of the env-defined test accounts in
+ * `SEED_ACCOUNTS`. Everything fails closed: a missing or malformed value means
+ * "not allowed".
  */
 
 /**
  * Environment lookups used here: `ALLOWED_EMAILS`, `GM_EMAILS`,
  * `SEED_ACCOUNTS`, `CONVEX_CLOUD_URL`, `E2E_AUTH_ENABLED` and
- * `E2E_AUTH_SECRET`. Typed as a plain record so `process.env` can be passed
- * directly.
+ * `E2E_AUTH_SECRET`. Typed as a plain record so the typed Convex `env` (or a
+ * test fixture) can be passed directly.
  */
 export type Env = Readonly<Record<string, string | undefined>>;
 
@@ -52,11 +53,23 @@ export function parseSeedAccounts(raw: string | undefined): SeedAccount[] {
     .filter((a): a is SeedAccount => a !== null);
 }
 
+/**
+ * The test accounts `accounts:seed` may create. Throws unless this is a local
+ * e2e deployment, so known passwords never become logins on a cloud one.
+ */
+export function seedAccountsFor(env: Env): SeedAccount[] {
+  if (!isE2EDeployment(env)) {
+    throw new Error("accounts:seed runs only on a local (e2e) deployment.");
+  }
+  return parseSeedAccounts(env.SEED_ACCOUNTS);
+}
+
 export function allowedEmails(env: Env): Set<string> {
   return new Set([
     ...parseGmEmails(env.ALLOWED_EMAILS),
     ...parseGmEmails(env.GM_EMAILS),
-    ...parseSeedAccounts(env.SEED_ACCOUNTS).map((a) => a.email),
+    // Seed accounts have env-stored passwords; allowlist them only locally.
+    ...(isE2EDeployment(env) ? parseSeedAccounts(env.SEED_ACCOUNTS).map((a) => a.email) : []),
   ]);
 }
 
