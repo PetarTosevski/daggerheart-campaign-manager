@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { derivedDefense } from "@/lib/domain/characters/derived";
 import { damageThresholds, hopeMax, tierForLevel } from "@/lib/domain/characters";
 import { assetBackground } from "@/lib/design-assets";
+import type { SheetPatch } from "@/lib/validation/characters";
 import {
   ARMOR,
   getArmor,
@@ -97,7 +98,7 @@ function Experiences() {
   const { sheet, canEdit, update } = useSheet();
   const [draft, setDraft] = useState("");
   const list = sheet.experiences;
-  const save = (next: typeof list) => void update({ experiences: next });
+  const save = (next: NonNullable<SheetPatch["experiences"]>) => void update({ experiences: next });
   return (
     <Box title="Experiences">
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
@@ -303,13 +304,13 @@ function Wealth() {
         <span className="cs-lbl">Inventory</span>
         <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Inventory">
           {sheet.inventory.map((x, i) => (
-            <li key={`${i}-${x}`} className="flex min-h-11 items-center gap-2 border-b border-[#e0cfa8] text-[17px]">
-              <span className="flex-1">{x}</span>
+            <li key={x.id} className="flex min-h-11 items-center gap-2 border-b border-[#e0cfa8] text-[17px]">
+              <span className="flex-1">{x.name}</span>
               {canEdit ? (
                 <button
                   type="button"
                   className="cs-step"
-                  aria-label={`Remove ${x}`}
+                  aria-label={`Remove ${x.name}`}
                   onClick={() => void update({ inventory: sheet.inventory.filter((_, j) => j !== i) })}
                 >
                   ×

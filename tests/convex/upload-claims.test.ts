@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const GM = "gm@example.com";
@@ -86,7 +86,7 @@ describe("uploads claimed elsewhere", () => {
       () => gm.mutation(api.characters.attachPortrait, { characterId, storageId }),
     ];
     for (const storageId of Object.values(files)) {
-      for (const attempt of attempts(storageId)) expect(errorData(await attempt().catch((e) => e))).toBe("NOT_FOUND");
+      for (const attempt of attempts(storageId)) expect(errorCode(await attempt().catch((e) => e))).toBe("NOT_FOUND");
       expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toEqual(expect.any(String));
     }
     expect(await t.run(async (ctx) => (await ctx.db.query("files").collect()).map((f) => f.kind).sort())).toEqual(["codexImage", "map", "portrait"]);
