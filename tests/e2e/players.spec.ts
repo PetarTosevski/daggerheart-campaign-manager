@@ -58,6 +58,9 @@ test("an email invite shows the campaign in the player's Load Campaign", async (
   const name = await gmCreatesCampaign(page, "beast-feast");
   await page.getByRole("button", { name: "Players" }).click();
   const dialog = page.getByRole("dialog", { name: "Players" });
+  await expect(
+    dialog.getByText("Email invites work for accounts that sign in with Google. Players who use a password should join with the code above."),
+  ).toBeVisible();
   await dialog.getByLabel("Player email").fill(PLAYER);
   await dialog.getByRole("button", { name: "Invite" }).click();
   await expect(dialog.getByText(`${PLAYER} · invited`)).toBeVisible();

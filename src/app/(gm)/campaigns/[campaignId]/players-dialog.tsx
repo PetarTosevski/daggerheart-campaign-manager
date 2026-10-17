@@ -100,6 +100,9 @@ export function PlayersDialog({
             Invite
           </BrandButton>
         </form>
+        <p className="m-0 text-[13px] text-subtle">
+          Email invites work for accounts that sign in with Google. Players who use a password should join with the code above.
+        </p>
         {access?.invites.length ? (
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
             {access.invites.map((i) => (
