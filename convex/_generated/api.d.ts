@@ -18,11 +18,20 @@ import type * as http from "../http.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_dice from "../lib/dice.js";
+import type * as lib_fear from "../lib/fear.js";
 import type * as lib_mechanics from "../lib/mechanics.js";
 import type * as lib_operations from "../lib/operations.js";
+import type * as lib_trackers from "../lib/trackers.js";
 import type * as lib_users from "../lib/users.js";
 import type * as members from "../members.js";
 import type * as settings from "../settings.js";
+import type * as trackers_ageOfUmbra from "../trackers/ageOfUmbra.js";
+import type * as trackers_andaluria from "../trackers/andaluria.js";
+import type * as trackers_colossus from "../trackers/colossus.js";
+import type * as trackers_fiveBanners from "../trackers/fiveBanners.js";
+import type * as trackers_horizon from "../trackers/horizon.js";
+import type * as trackers_weredragon from "../trackers/weredragon.js";
 import type * as users from "../users.js";
 
 import type {
@@ -42,11 +51,20 @@ declare const fullApi: ApiFromModules<{
   "lib/access": typeof lib_access;
   "lib/allowlist": typeof lib_allowlist;
   "lib/auth": typeof lib_auth;
+  "lib/dice": typeof lib_dice;
+  "lib/fear": typeof lib_fear;
   "lib/mechanics": typeof lib_mechanics;
   "lib/operations": typeof lib_operations;
+  "lib/trackers": typeof lib_trackers;
   "lib/users": typeof lib_users;
   members: typeof members;
   settings: typeof settings;
+  "trackers/ageOfUmbra": typeof trackers_ageOfUmbra;
+  "trackers/andaluria": typeof trackers_andaluria;
+  "trackers/colossus": typeof trackers_colossus;
+  "trackers/fiveBanners": typeof trackers_fiveBanners;
+  "trackers/horizon": typeof trackers_horizon;
+  "trackers/weredragon": typeof trackers_weredragon;
   users: typeof users;
 }>;
 

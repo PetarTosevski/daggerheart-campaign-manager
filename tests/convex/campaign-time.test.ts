@@ -15,11 +15,11 @@ describe("campaign time", () => {
     const { t, gm, campaignId } = await setupWithCampaign("beast-feast");
     expect(await t.run((ctx) => ctx.db.query("campaignTime").collect())).toEqual([]);
     for (const call of [
-      gm.query(api.campaignTime.get, { campaignId }),
-      gm.mutation(api.campaignTime.advance, { campaignId, idempotencyKey: key() }),
-      gm.mutation(api.campaignTime.setDay, { campaignId, cycleDay: 3, idempotencyKey: key() }),
+      () => gm.query(api.campaignTime.get, { campaignId }),
+      () => gm.mutation(api.campaignTime.advance, { campaignId, idempotencyKey: key() }),
+      () => gm.mutation(api.campaignTime.setDay, { campaignId, cycleDay: 3, idempotencyKey: key() }),
     ]) {
-      expect(errorData(await call.catch((e) => e))).toBe("MECHANIC_DISABLED");
+      expect(errorData(await call().catch((e) => e))).toBe("MECHANIC_DISABLED");
     }
   });
 

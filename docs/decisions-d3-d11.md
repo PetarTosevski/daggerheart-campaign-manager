@@ -19,3 +19,11 @@
 - Joining: GM invites by email AND a join code/link; GM can remove players.
 - Players: full control of their own character (create/edit, dice, Hope/class features, level up, rest); GM edits all characters; players see other PCs' public info only.
 - Players see: dashboard (party, time, revealed info, last session), GM Fear and countdowns (read-only), World map (non-hidden tokens) + revealed Codex, lore books. Never: hidden tokens, unrevealed NPCs/images/allegiances, GM notes, adversaries/encounters, session prep, others' journals.
+- Five Banners: relationships + objectives GM-only with per-item reveal; a Five Banners week counter with "Advance week".
+- Colossus: Kudamat's Power + Siphoning Track GM-only.
+- Horizon Doom Track: GM-only; events the GM marks "occurred" become visible to players.
+- Optional frame rules (Castle High less-lethal, Andaluria transformations, Horizon Endurance Countdowns, Motherboard remnant Corruption): on in their frame by default, GM can toggle; transformations need player consent.
+- Subagents run on Opus.
+- D4 characters: the GM can create a character for a player and assign it later (or leave it unassigned); players create their own too.
+- Players can open other players' characters as full sheets, read-only.
+- Creation wizard: all 9 steps required, as designed (the create button lists what's missing).

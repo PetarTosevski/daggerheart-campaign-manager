@@ -36,6 +36,10 @@ export default defineSchema({
     deletedAt: v.optional(v.number()),
     /** Code players use to join; the GM can rotate it. Unset until first shown. */
     joinCode: v.optional(v.string()),
+    /** GM switches for optional rules (see `src/lib/frames/options.ts`); unset keys use the frame default. */
+    options: v.optional(v.record(v.string(), v.boolean())),
+    /** Custom frame only: the GM's own tome chapters (plain text). */
+    tome: v.optional(v.object({ overview: v.string(), incident: v.string(), mechanics: v.string() })),
   })
     .index("by_owner_lastOpened", ["ownerId", "lastOpenedAt"])
     .index("by_owner_nameKey", ["ownerId", "nameKey"])
@@ -80,7 +84,27 @@ export default defineSchema({
     consequence: v.string(),
     completedAt: v.optional(v.number()),
     createdAt: v.number(),
+    /**
+     * Set when a frame tracker owns the countdown (e.g. a Five Banners nation's
+     * objective, a PC's Lycanthropy); such countdowns stay off the dashboard list.
+     */
+    ownerKey: v.optional(v.string()),
+    kind: v.optional(v.string()),
+    /** Frame-owned countdowns are GM-only until revealed. */
+    revealed: v.optional(v.boolean()),
   }).index("by_campaign", ["campaignId"]),
+
+  /**
+   * State of a frame tracker (Five Banners relationships, Siphoning Track,
+   * Doom Track…), one row per campaign and key. Each tracker module in
+   * convex/trackers/ validates its own `data` and filters it for players.
+   */
+  frameTrackers: defineTable({
+    campaignId: v.id("campaigns"),
+    key: v.string(),
+    data: v.any(),
+    updatedAt: v.number(),
+  }).index("by_campaign_key", ["campaignId", "key"]),
 
   /** Witherwild-only campaign time: one row per campaign whose frame has `campaignTime`. */
   campaignTime: defineTable({

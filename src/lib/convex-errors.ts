@@ -4,6 +4,8 @@ const MESSAGES: Record<string, string> = {
   UNAUTHENTICATED: "Your session has ended. Sign in again.",
   FORBIDDEN: "This account can't use the campaign ledger.",
   NOT_FOUND: "That campaign no longer exists.",
+  TRACKER_CORRUPT: "This tracker's saved data is damaged. Nothing was changed; ask the developer to repair it.",
+  MECHANIC_DISABLED: "That rule isn't part of this campaign's frame.",
   IDEMPOTENCY_MISMATCH: "That request clashed with an earlier one. Try again.",
 };
 

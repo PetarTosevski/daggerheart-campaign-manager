@@ -6,6 +6,7 @@ import {
   startingLevel,
 } from "../src/lib/validation/campaigns";
 import { frameHasMechanic } from "../src/lib/frames/index";
+import { isCampaignOptionId, optionsFor, resolveOptions } from "../src/lib/frames/options";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { campaignRole, loadCampaign, loadGmCampaign, type Role } from "./lib/access";
@@ -26,6 +27,8 @@ async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, 
     tier: campaign.tier,
     level: campaign.level,
     custom: campaign.custom ?? null,
+    tome: campaign.tome ?? null,
+    options: resolveOptions(campaign.frameId, campaign.options),
     createdAt: campaign.createdAt,
     /** When this user last opened it (the GM's own time for GMs). */
     lastOpenedAt,
@@ -223,5 +226,41 @@ export const restore = mutation({
       throw new ConvexError({ code: "NAME_TAKEN", message: "Another campaign now uses that name." });
     }
     await ctx.db.patch(campaignId, { deletedAt: undefined });
+  },
+});
+
+export const TOME_TEXT_MAX = 20000;
+
+/** Saves one chapter of a custom campaign's tome. GM only; players read it. */
+export const updateTome = mutation({
+  args: {
+    campaignId: v.id("campaigns"),
+    chapter: v.union(v.literal("overview"), v.literal("incident"), v.literal("mechanics")),
+    text: v.string(),
+  },
+  handler: async (ctx, { campaignId, chapter, text }) => {
+    const user = await requireUser(ctx);
+    const campaign = await loadGmCampaign(ctx, user, campaignId);
+    if (campaign.frameId !== "custom") {
+      throw new ConvexError({ code: "INVALID", message: "Only a custom campaign has a tome you write yourself." });
+    }
+    if (text.length > TOME_TEXT_MAX) {
+      throw new ConvexError({ code: "INVALID", message: `Keep each chapter under ${TOME_TEXT_MAX} characters.` });
+    }
+    const tome = campaign.tome ?? { overview: "", incident: "", mechanics: "" };
+    await ctx.db.patch(campaignId, { tome: { ...tome, [chapter]: text } });
+  },
+});
+
+/** Switches an optional rule for the campaign. GM only. */
+export const setOption = mutation({
+  args: { campaignId: v.id("campaigns"), option: v.string(), enabled: v.boolean() },
+  handler: async (ctx, { campaignId, option, enabled }) => {
+    const user = await requireUser(ctx);
+    const campaign = await loadGmCampaign(ctx, user, campaignId);
+    if (!isCampaignOptionId(option) || !optionsFor(campaign.frameId).some((o) => o.id === option)) {
+      throw new ConvexError({ code: "INVALID", message: "That rule isn't available in this campaign." });
+    }
+    await ctx.db.patch(campaignId, { options: { ...(campaign.options ?? {}), [option]: enabled } });
   },
 });

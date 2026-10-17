@@ -3,8 +3,8 @@
 import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users } from "lucide-react";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { BookOpen, Users } from "lucide-react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { BackLink, Wordmark } from "@/components/brand/brand";
 import { frameName } from "@/lib/campaign-display";
@@ -16,15 +16,29 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../convex/campaigns";
+import type { TomeChapterId } from "@/lib/frames/tomes";
+
+import { CampaignTome } from "./campaign-tome";
 import { PlayersDialog } from "./players-dialog";
 import { TimeArc } from "./time-arc";
 
-const CampaignContext = createContext<CampaignSummary | null>(null);
+type CampaignContextValue = { campaign: CampaignSummary; openTome: (chapter: TomeChapterId) => void };
+
+const CampaignContext = createContext<CampaignContextValue | null>(null);
+
+function useCampaignContext(): CampaignContextValue {
+  const value = useContext(CampaignContext);
+  if (!value) throw new Error("useCampaign must be used inside CampaignShell");
+  return value;
+}
 
 export function useCampaign(): CampaignSummary {
-  const campaign = useContext(CampaignContext);
-  if (!campaign) throw new Error("useCampaign must be used inside CampaignShell");
-  return campaign;
+  return useCampaignContext().campaign;
+}
+
+/** Opens the campaign's tome at a chapter. */
+export function useOpenTome(): (chapter: TomeChapterId) => void {
+  return useCampaignContext().openTome;
 }
 
 function CampaignNav({ campaignId }: { campaignId: string }) {
@@ -54,7 +68,7 @@ function CampaignNav({ campaignId }: { campaignId: string }) {
 }
 
 /** Title block of the dashboard header ("ACTIVE CAMPAIGN · THE WITHERWILD"). */
-function DashboardHero({ campaign }: { campaign: CampaignSummary }) {
+function DashboardHero({ campaign, onOpenTome }: { campaign: CampaignSummary; onOpenTome: () => void }) {
   return (
     <div className="relative mx-auto flex max-w-[1344px] flex-col gap-9 px-4 pt-2 pb-8 sm:px-12">
       {frameHasMechanic(campaign.frameId, "campaignTime") ? (
@@ -76,6 +90,14 @@ function DashboardHero({ campaign }: { campaign: CampaignSummary }) {
           </span>
         </p>
       </div>
+      <button
+        type="button"
+        onClick={onOpenTome}
+        className="inline-flex min-h-[52px] cursor-pointer items-center gap-2.5 rounded-full border border-white/30 bg-black/35 px-[22px] text-[15px] text-parchment hover:bg-black/50"
+      >
+        <BookOpen className="size-[18px]" strokeWidth={1.6} aria-hidden="true" />
+        Open the Tome
+      </button>
       </div>
     </div>
   );
@@ -87,6 +109,8 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
   const markOpened = useMutation(api.campaigns.markOpened);
   const pathname = usePathname();
   const [playersOpen, setPlayersOpen] = useState(false);
+  const [tomeChapter, setTomeChapter] = useState<TomeChapterId | null>(null);
+  const contextValue = useMemo(() => (campaign ? { campaign, openTome: setTomeChapter } : null), [campaign]);
 
   const foundId = campaign ? campaign._id : null;
   useEffect(() => {
@@ -111,7 +135,7 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
   const art = campaignArt(campaign.frameId, campaign.custom?.background);
 
   return (
-    <CampaignContext.Provider value={campaign}>
+    <CampaignContext.Provider value={contextValue}>
       <div className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
         <section aria-label="Campaign header" className="relative overflow-hidden">
           <div
@@ -144,9 +168,17 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
               )}
             </div>
           </div>
-          {pathname === `/campaigns/${campaign._id}` ? <DashboardHero campaign={campaign} /> : null}
+          {pathname === `/campaigns/${campaign._id}` ? (
+            <DashboardHero campaign={campaign} onOpenTome={() => setTomeChapter("overview")} />
+          ) : null}
         </section>
         {children}
+        <CampaignTome
+          campaign={campaign}
+          chapter={tomeChapter}
+          onChapter={setTomeChapter}
+          onClose={() => setTomeChapter(null)}
+        />
         {campaign.role === "gm" ? (
           <PlayersDialog campaignId={campaign._id} open={playersOpen} onClose={() => setPlayersOpen(false)} />
         ) : null}
