@@ -266,6 +266,7 @@ waves:
         goal: The World map is stored as maps (scalars) + mapTokens + mapHexes + mapTerrain tiles, edits patch only the rows they touch, and maps.get still returns the same shape, so the world UI is unchanged (convex-data H2; CD8, CD9, CD10).
         depends_on: [H06]
         owns:
+          - src/app/(gm)/campaigns/[campaignId]/world/map-actions.ts
           - convex/maps.ts
           - convex/lib/maps.ts
           - convex/tables/maps.ts
