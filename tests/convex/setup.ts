@@ -12,6 +12,18 @@ declare global {
 
 export const modules = import.meta.glob("../../convex/**/*.ts");
 
+// The components' test helpers reference vite/client types, which clash with
+// the ImportMeta declaration above, so tsc must not follow these imports.
+type ComponentTestHelper = { default: { register: (t: unknown, name?: string) => void } };
+const RATE_LIMITER_TEST = "@convex-dev/rate-limiter/test";
+const MIGRATIONS_TEST = "@convex-dev/migrations/test";
+const rateLimiter = ((await import(/* @vite-ignore */ RATE_LIMITER_TEST)) as ComponentTestHelper).default;
+const migrations = ((await import(/* @vite-ignore */ MIGRATIONS_TEST)) as ComponentTestHelper).default;
+
+/** A convex-test instance with every component in convex/convex.config.ts registered. */
 export function makeTest() {
-  return convexTest(schema, modules);
+  const t = convexTest(schema, modules);
+  rateLimiter.register(t);
+  migrations.register(t);
+  return t;
 }
