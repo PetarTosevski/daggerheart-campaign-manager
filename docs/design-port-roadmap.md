@@ -17,6 +17,10 @@
 - **Wither tokens:** Witherwild-only, ported later with the party (D5), not in D2.
 - **Lore text and art:** port the tomes and frame text and art in full (private app for one table). This overrides the `AGENTS.md` rule on rulebook text for this project.
 
+### D3–D11 decisions (2026-10-17)
+
+The full list is in `docs/decisions-d3-d11.md`. The headline change: **the app is multi-user.** Players have their own accounts; roles are per campaign (the creator is the GM; anyone can be a player elsewhere); players join by email invite or join code; anything hidden from players is enforced on the server. This adds phase **D2.5 Accounts and roles** before D3 and supersedes the single-GM principle in the original rebuild plan.
+
 ## Porting rules
 
 - The boards are the visual spec: copy the colours, type, spacing and copy text, but write idiomatic React/Next.js (components, Tailwind tokens), not the `.dc.html` template engine.
@@ -31,6 +35,7 @@
 |---|---|---|---|
 | D1 | Design foundation and entry flow | `TitleMenu` (+ Settings), `FrameSelect`, the 10 frame intros, `Chronicle`, campaign shell + nav | Theme tokens and fonts, frame registry, `campaigns` and `settings` tables, create/list/resume/delete campaign. Dashboard and other tabs are placeholders. |
 | D2 | Dashboard core mechanics | `CampaignHub` | GM Fear (tokens), countdowns, Witherwild time arc, last session card. Includes old plan Phases 3–5; resolve the board-vs-SQL conflicts first. |
+| D2.5 | Accounts and roles | — | Email+password sign-up beside Google (both allowlisted by `ALLOWED_EMAILS` for now), env-defined test accounts, `campaignMembers` (gm/player), email invites and join codes, membership-based authorization for every existing function, player-visible filtering, joined campaigns in Load Campaign. |
 | D3 | Frame dashboards and tomes | `Hub*`, `HubCustom`, `Tome*`, `TomeOpenBook` | Per-frame dashboard looks, the lore books, the Custom frame (tome, background picker). |
 | D4 | Party: roster and character creation | `Party` (roster, wizard, sheet) | Portraits in Convex file storage. |
 | D5 | Party: level-up, Hope and class features, dice | `Party` | Includes `dcm-mf7` (+1 to two unmarked traits). 3D dice (three + cannon-es). Photo import last. |
