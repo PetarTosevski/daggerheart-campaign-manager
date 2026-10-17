@@ -15,8 +15,8 @@ frame, land on the campaign's live table view.
 
 ### Frames and mechanics
 
-- Frames ship in code (currently Witherwild and "Core only"). New frames are
-  development tasks, not in-app content.
+- Frames ship in code (`src/lib/frames/`): the 10 published frames plus a
+  GM-written Custom frame. New frames are development tasks, not in-app content.
 - Every mechanic is either **core** (available in every campaign) or
   **frame-exclusive** (switched on by the campaign's frame).
 - Core: Fear, countdowns, rests and downtime moves (frames may add their own
@@ -26,8 +26,11 @@ frame, land on the campaign's live table view.
 - **Before designing any mechanic the user has not specified, ask the user
   whether it is core or frame-exclusive and how it works.** Never assume.
 
-The approved plan is `.omc/plans/campaign-manager-rebuild.md`; each phase has a
-task document in `docs/tasks/`.
+The active plan is `docs/design-port-roadmap.md` (a phased port of the Claude
+Design boards in `reference/designs/`; it supersedes Phases 2–7 of
+`.omc/plans/campaign-manager-rebuild.md`). Each phase has a task document in
+`docs/tasks/`. Design images live in `public/design-assets/`; after adding any,
+run `node scripts/design-assets-manifest.mjs`.
 
 ## Source-of-truth hierarchy
 

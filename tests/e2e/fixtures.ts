@@ -10,7 +10,14 @@ export async function signInAsTestGm(page: Page, email = E2E_GM_EMAIL) {
   await form.getByRole("button", { name: "Test sign-in" }).click();
 }
 
+/** Signed-in home is the title menu; the account lives in its Settings dialog. */
 export async function expectSignedInAs(page: Page, email = E2E_GM_EMAIL) {
   await expect(page).toHaveURL("/");
+  await openSettings(page);
   await expect(page.getByTestId("viewer-email")).toHaveText(email);
+}
+
+export async function openSettings(page: Page) {
+  await page.getByRole("navigation", { name: "Main menu" }).getByRole("button", { name: /Settings/ }).click();
+  await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
 }

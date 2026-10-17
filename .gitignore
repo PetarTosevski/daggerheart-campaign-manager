@@ -63,3 +63,6 @@ next-env.d.ts
 /.omc/*
 !/.omc/plans/
 !/.omc/specs/
+
+# oh-my-claudecode state created by hooks in subfolders
+**/.omc/state/
