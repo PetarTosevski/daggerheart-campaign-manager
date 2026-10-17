@@ -1,19 +1,9 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
-import { FRAME_IDS } from "../../src/lib/frames/index";
+import { customFrameValidator, frameIdValidator, tomeValidator } from "../lib/validators/campaigns";
 
-export const frameIdValidator = v.union(...FRAME_IDS.map((id) => v.literal(id)));
-
-export const customFrameValidator = v.object({
-  pitch: v.string(),
-  tones: v.array(v.string()),
-  themes: v.string(),
-  touchstones: v.string(),
-  partySize: v.number(),
-  startingTier: v.number(),
-  background: v.string(),
-});
+export { customFrameValidator, frameIdValidator };
 
 export const campaignTables = {
   campaigns: defineTable({
@@ -27,25 +17,42 @@ export const campaignTables = {
     /** Only for `frameId: "custom"`: the GM's own pitch, tones and art. */
     custom: v.optional(customFrameValidator),
     createdAt: v.number(),
+    /** Creation time, or the GM's last open before `campaignOpens`: the fallback `campaigns.list` sorts by. Never patched. */
     lastOpenedAt: v.number(),
     /** Set when the GM deletes the campaign; cleared by undo. */
     deletedAt: v.optional(v.number()),
-    /** Code players use to join; the GM can rotate it. Unset until first shown. */
+    /** Code players use to join; the GM can rotate it. Set on create (older campaigns: when first shown). */
     joinCode: v.optional(v.string()),
     /** GM switches for optional rules (see `src/lib/frames/options.ts`); unset keys use the frame default. */
     options: v.optional(v.record(v.string(), v.boolean())),
     /** Custom frame only: the GM's own tome chapters (plain text). */
-    tome: v.optional(v.object({ overview: v.string(), incident: v.string(), mechanics: v.string() })),
+    tome: v.optional(tomeValidator),
   })
-    .index("by_owner_lastOpened", ["ownerId", "lastOpenedAt"])
-    .index("by_owner_nameKey", ["ownerId", "nameKey"])
-    .index("by_joinCode", ["joinCode"]),
+    .index("by_owner_deletedAt_lastOpened", ["ownerId", "deletedAt", "lastOpenedAt"])
+    .index("by_owner_deletedAt_nameKey", ["ownerId", "deletedAt", "nameKey"])
+    .index("by_joinCode", ["joinCode"])
+    /** Finds campaigns deleted long enough ago to purge (CD18). */
+    .index("by_deletedAt", ["deletedAt"]),
+
+  /**
+   * When a user (GM or player) last opened a campaign. Kept off the campaign
+   * document, which many queries read (CD10); `markOpened` writes it at most
+   * every few minutes.
+   */
+  campaignOpens: defineTable({
+    userId: v.id("users"),
+    campaignId: v.id("campaigns"),
+    lastOpenedAt: v.number(),
+  })
+    .index("by_user_campaign", ["userId", "campaignId"])
+    .index("by_user_lastOpened", ["userId", "lastOpenedAt"]),
 
   /** Players of a campaign. The campaign's creator (`ownerId`) is its GM and has no row. */
   campaignMembers: defineTable({
     campaignId: v.id("campaigns"),
     userId: v.id("users"),
     joinedAt: v.number(),
+    /** Join time, or the player's last open before `campaignOpens`: the fallback `campaigns.list` sorts by. */
     lastOpenedAt: v.number(),
   })
     .index("by_campaign", ["campaignId"])

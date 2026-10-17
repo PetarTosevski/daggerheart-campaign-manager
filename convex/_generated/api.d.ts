@@ -33,6 +33,7 @@ import type * as lib_operations from "../lib/operations.js";
 import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_trackers from "../lib/trackers.js";
 import type * as lib_users from "../lib/users.js";
+import type * as lib_validators_campaigns from "../lib/validators/campaigns.js";
 import type * as maps from "../maps.js";
 import type * as members from "../members.js";
 import type * as migrations_run from "../migrations/run.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   "lib/permissions": typeof lib_permissions;
   "lib/trackers": typeof lib_trackers;
   "lib/users": typeof lib_users;
+  "lib/validators/campaigns": typeof lib_validators_campaigns;
   maps: typeof maps;
   members: typeof members;
   "migrations/run": typeof migrations_run;

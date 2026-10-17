@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
-import { errorCode, errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const CUSTOM = {
@@ -45,7 +45,7 @@ describe("custom tome", () => {
     const error = await player
       .mutation(api.campaigns.updateTome, { campaignId, chapter: "overview", text: "hi" })
       .catch((e) => e);
-    expect(errorData(error)).toBe("FORBIDDEN");
+    expect(errorCode(error)).toBe("FORBIDDEN");
   });
 
   it("is only for custom campaigns and has a length limit", async () => {

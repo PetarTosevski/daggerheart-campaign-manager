@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 
+import { campaignMessages } from "./errors/campaigns";
 import { characterMessages } from "./errors/characters";
 import { codexMessages } from "./errors/codex";
 import { commonMessages } from "./errors/common";
@@ -21,6 +22,7 @@ export function mergeMessages(...domains: Record<string, string>[]): Record<stri
 
 const MESSAGES = mergeMessages(
   commonMessages,
+  campaignMessages,
   operationMessages,
   trackerMessages,
   characterMessages,

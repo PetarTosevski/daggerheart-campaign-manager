@@ -1,21 +1,35 @@
-import { ConvexError, v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
-import {
-  campaignNameKey,
-  createCampaignSchema,
-  startingLevel,
-} from "../src/lib/validation/campaigns";
+import { appError } from "../src/lib/errors/app-error";
+import { campaignMessages } from "../src/lib/errors/campaigns";
 import { frameHasMechanic } from "../src/lib/frames/index";
 import { isCampaignOptionId, optionsFor, resolveOptions } from "../src/lib/frames/options";
+import { campaignNameKey, createCampaignSchema, startingLevel } from "../src/lib/validation/campaigns";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { campaignRole, inviteEmail, loadCampaign, loadGmCampaign, type Role } from "./lib/access";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { normalizeEmail } from "./lib/allowlist";
-import { requireUser } from "./lib/auth";
-import { ownerScope, withIdempotency } from "./lib/operations";
-import { customFrameValidator, frameIdValidator } from "./schema";
+import {
+  campaignMutation,
+  gmMutation,
+  keyedUserMutation,
+  maybeUserQuery,
+  userMutation,
+  userQuery,
+} from "./lib/functions";
+import { atLeast, campaignAccess, inviteEmail, permissionFor, type Role } from "./lib/permissions";
+import {
+  campaignSummaryValidator,
+  customFrameValidator,
+  frameIdValidator,
+  tomeChapterValidator,
+} from "./lib/validators/campaigns";
 
-async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, lastOpenedAt: number) {
+export type CampaignSummary = Infer<typeof campaignSummaryValidator>;
+
+/** `markOpened` skips the write when the stored open is younger than this. */
+export const OPEN_THROTTLE_MS = 5 * 60 * 1000;
+
+async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, lastOpenedAt: number): Promise<CampaignSummary> {
   const state = await ctx.db
     .query("campaignState")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
@@ -30,29 +44,36 @@ async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, 
     tome: campaign.tome ?? null,
     options: resolveOptions(campaign.frameId, campaign.options),
     createdAt: campaign.createdAt,
-    /** When this user last opened it (the GM's own time for GMs). */
     lastOpenedAt,
     fear: state?.fear ?? 0,
     role,
   };
 }
 
-export type CampaignSummary = Awaited<ReturnType<typeof summarise>>;
+/** When the user last opened the campaign (`campaignOpens`), or `fallback` if they have not since opens moved there. */
+async function openedAt(ctx: QueryCtx, userId: Id<"users">, campaignId: Id<"campaigns">, fallback: () => number | Promise<number>) {
+  const open = await ctx.db
+    .query("campaignOpens")
+    .withIndex("by_user_campaign", (q) => q.eq("userId", userId).eq("campaignId", campaignId))
+    .unique();
+  return open?.lastOpenedAt ?? (await fallback());
+}
 
 /** Campaigns the user runs (GM) or plays in (member or invited), most recently opened first. */
-export const list = query({
+export const list = userQuery({
   args: {},
+  returns: v.array(campaignSummaryValidator),
   handler: async (ctx) => {
-    const user = await requireUser(ctx);
+    const user = ctx.user;
+    // One GM's campaigns: a handful.
     const owned = await ctx.db
       .query("campaigns")
-      .withIndex("by_owner_lastOpened", (q) => q.eq("ownerId", user._id))
-      .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .withIndex("by_owner_deletedAt_lastOpened", (q) => q.eq("ownerId", user._id).eq("deletedAt", undefined))
       .collect();
-    const rows: { campaign: Doc<"campaigns">; role: Role; lastOpenedAt: number }[] = owned.map((c) => ({
+    const rows: { campaign: Doc<"campaigns">; role: Role; fallback: number }[] = owned.map((c) => ({
       campaign: c,
       role: "gm",
-      lastOpenedAt: c.lastOpenedAt,
+      fallback: c.lastOpenedAt,
     }));
     const seen = new Set(owned.map((c) => c._id));
     const memberships = await ctx.db
@@ -60,9 +81,9 @@ export const list = query({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
     for (const m of memberships) {
-      const c = await ctx.db.get(m.campaignId);
+      const c = await ctx.db.get("campaigns", m.campaignId);
       if (c && c.deletedAt === undefined && !seen.has(c._id)) {
-        rows.push({ campaign: c, role: "player", lastOpenedAt: m.lastOpenedAt });
+        rows.push({ campaign: c, role: "player", fallback: m.lastOpenedAt });
         seen.add(c._id);
       }
     }
@@ -73,15 +94,18 @@ export const list = query({
         .withIndex("by_email", (q) => q.eq("email", email))
         .collect();
       for (const i of invites) {
-        const c = await ctx.db.get(i.campaignId);
+        const c = await ctx.db.get("campaigns", i.campaignId);
         if (c && c.deletedAt === undefined && !seen.has(c._id)) {
-          rows.push({ campaign: c, role: "player", lastOpenedAt: i.createdAt });
+          rows.push({ campaign: c, role: "player", fallback: i.createdAt });
           seen.add(c._id);
         }
       }
     }
-    rows.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
-    return Promise.all(rows.map((r) => summarise(ctx, r.campaign, r.role, r.lastOpenedAt)));
+    const opened = await Promise.all(
+      rows.map(async (r) => ({ ...r, lastOpenedAt: await openedAt(ctx, user._id, r.campaign._id, () => r.fallback) })),
+    );
+    opened.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
+    return Promise.all(opened.map((r) => summarise(ctx, r.campaign, r.role, r.lastOpenedAt)));
   },
 });
 
@@ -92,176 +116,215 @@ export async function deleteInvites(ctx: MutationCtx, campaignId: Id<"campaigns"
     .query("campaignInvites")
     .withIndex("by_campaign_email", (q) => q.eq("campaignId", campaignId).eq("email", normalizeEmail(user.email!)))
     .collect();
-  for (const invite of invites) await ctx.db.delete(invite._id);
+  for (const invite of invites) await ctx.db.delete("campaignInvites", invite._id);
 }
 
-/** One campaign by id (a raw URL segment), or null if it is unknown, deleted or not visible to the user. */
-export const get = query({
+/** One campaign by id (a raw URL segment), or null if it is unknown, deleted, not visible to the user, or they are signed out. */
+export const get = maybeUserQuery({
   args: { campaignId: v.string() },
+  returns: v.union(campaignSummaryValidator, v.null()),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
+    const user = ctx.user;
     const campaignId = ctx.db.normalizeId("campaigns", args.campaignId);
-    if (campaignId === null) return null;
-    const campaign = await ctx.db.get(campaignId);
-    if (campaign === null || campaign.deletedAt !== undefined) return null;
-    const role = await campaignRole(ctx, user, campaign);
-    if (role === null) return null;
-    let lastOpenedAt = campaign.lastOpenedAt;
-    if (role === "player") {
+    if (user === null || campaignId === null) return null;
+    const access = await campaignAccess(ctx, user, campaignId, "owner");
+    if (access === null) return null;
+    const { campaign } = access;
+    const role: Role = access.permission === "owner" ? "gm" : "player";
+    const lastOpenedAt = await openedAt(ctx, user._id, campaign._id, async () => {
+      if (role === "gm") return campaign.lastOpenedAt;
       const member = await ctx.db
         .query("campaignMembers")
         .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", user._id))
         .unique();
-      lastOpenedAt = member?.lastOpenedAt ?? campaign.createdAt;
-    }
+      return member?.lastOpenedAt ?? campaign.createdAt;
+    });
     return summarise(ctx, campaign, role, lastOpenedAt);
   },
 });
 
-export const create = mutation({
+// No 0/O/1/I/L so codes read clearly aloud and on paper.
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const CODE_LENGTH = 8;
+
+function newJoinCode(): string {
+  // Rejection sampling keeps every character equally likely (256 % 31 ≠ 0).
+  const limit = 256 - (256 % CODE_ALPHABET.length);
+  let code = "";
+  const byte = new Uint8Array(1);
+  while (code.length < CODE_LENGTH) {
+    crypto.getRandomValues(byte);
+    if (byte[0] < limit) code += CODE_ALPHABET[byte[0] % CODE_ALPHABET.length];
+  }
+  return code;
+}
+
+/** A join code no campaign uses yet. */
+export async function freshJoinCode(ctx: QueryCtx): Promise<string> {
+  let code = newJoinCode();
+  while (await ctx.db.query("campaigns").withIndex("by_joinCode", (q) => q.eq("joinCode", code)).first()) {
+    code = newJoinCode();
+  }
+  return code;
+}
+
+/** The owner's live campaign with this name key, if any (names are unique per GM among live campaigns). */
+function liveNamesake(ctx: QueryCtx, ownerId: Id<"users">, nameKey: string) {
+  return ctx.db
+    .query("campaigns")
+    .withIndex("by_owner_deletedAt_nameKey", (q) => q.eq("ownerId", ownerId).eq("deletedAt", undefined).eq("nameKey", nameKey))
+    .first();
+}
+
+/** Creates a campaign with its Fear state, campaign time (if the frame has it) and join code. Rate-limited per user. */
+export const create = keyedUserMutation({
+  rateLimit: "createCampaign",
   args: {
     frameId: frameIdValidator,
     name: v.string(),
     custom: v.optional(customFrameValidator),
-    idempotencyKey: v.string(),
   },
-  handler: async (ctx, { idempotencyKey, ...raw }) => {
-    const user = await requireUser(ctx);
-    const parsed = createCampaignSchema.safeParse(raw);
-    if (!parsed.success) {
-      throw new ConvexError({ code: "INVALID", message: parsed.error.issues[0]?.message });
-    }
-    const input = parsed.data;
-    return withIdempotency(
-      ctx,
-      {
-        scopeKey: ownerScope(user._id),
-        key: idempotencyKey,
-        kind: "campaign_create",
-        request: input,
-        createdBy: user._id,
-      },
-      async () => {
-        const nameKey = campaignNameKey(input.name);
-        const clash = await ctx.db
-          .query("campaigns")
-          .withIndex("by_owner_nameKey", (q) => q.eq("ownerId", user._id).eq("nameKey", nameKey))
-          .filter((q) => q.eq(q.field("deletedAt"), undefined))
-          .first();
-        if (clash !== null) {
-          throw new ConvexError({ code: "NAME_TAKEN", message: "You already have a campaign with that name." });
-        }
-        const tier = input.custom?.startingTier ?? 1;
-        const now = Date.now();
-        const campaignId = await ctx.db.insert("campaigns", {
-          ownerId: user._id,
-          frameId: input.frameId,
-          name: input.name,
-          nameKey,
-          tier,
-          level: startingLevel(tier),
-          custom: input.custom,
-          createdAt: now,
-          lastOpenedAt: now,
-        });
-        await ctx.db.insert("campaignState", { campaignId, fear: 0 });
-        if (frameHasMechanic(input.frameId, "campaignTime")) {
-          await ctx.db.insert("campaignTime", { campaignId, week: 1, cycle: "DAY", cycleDay: 1 });
-        }
-        return { campaignId };
-      },
-    );
+  returns: v.object({ campaignId: v.id("campaigns") }),
+  handler: async (ctx, raw) => {
+    const input = createCampaignSchema.parse(raw);
+    const user = ctx.user;
+    return ctx.once("campaign_create", input, async () => {
+      const nameKey = campaignNameKey(input.name);
+      if ((await liveNamesake(ctx, user._id, nameKey)) !== null) {
+        throw appError("NAME_TAKEN", campaignMessages.NAME_TAKEN);
+      }
+      const tier = input.custom?.startingTier ?? 1;
+      const now = Date.now();
+      const campaignId = await ctx.db.insert("campaigns", {
+        ownerId: user._id,
+        frameId: input.frameId,
+        name: input.name,
+        nameKey,
+        tier,
+        level: startingLevel(tier),
+        custom: input.custom,
+        createdAt: now,
+        lastOpenedAt: now,
+        joinCode: await freshJoinCode(ctx),
+      });
+      await ctx.db.insert("campaignState", { campaignId, fear: 0 });
+      if (frameHasMechanic(input.frameId, "campaignTime")) {
+        await ctx.db.insert("campaignTime", { campaignId, week: 1, cycle: "DAY", cycleDay: 1 });
+      }
+      return { campaignId };
+    });
   },
 });
 
 /**
- * Marks the campaign as the user's most recently opened (drives "Continue").
- * For an invited player, opening the campaign accepts the invite: it becomes
- * a member row.
+ * Records that the user opened the campaign (drives "Continue" and the list
+ * order) in `campaignOpens`, at most once per `OPEN_THROTTLE_MS`; it never
+ * writes the campaign document. For an invited player, opening the campaign
+ * accepts the invite: it becomes a member row.
  */
-export const markOpened = mutation({
-  args: { campaignId: v.id("campaigns") },
-  handler: async (ctx, { campaignId }) => {
-    const user = await requireUser(ctx);
-    const { role } = await loadCampaign(ctx, user, campaignId);
+export const markOpened = campaignMutation({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const { user, campaign } = ctx;
     const now = Date.now();
-    if (role === "gm") {
-      await ctx.db.patch(campaignId, { lastOpenedAt: now });
-      return;
+    if (ctx.permission !== "owner") {
+      const member = await ctx.db
+        .query("campaignMembers")
+        .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", user._id))
+        .unique();
+      const email = member === null ? inviteEmail(user) : null;
+      const invite =
+        email === null
+          ? null
+          : await ctx.db
+              .query("campaignInvites")
+              .withIndex("by_campaign_email", (q) => q.eq("campaignId", campaign._id).eq("email", email))
+              .first();
+      if (invite !== null) {
+        await ctx.db.insert("campaignMembers", { campaignId: campaign._id, userId: user._id, joinedAt: now, lastOpenedAt: now });
+        await deleteInvites(ctx, campaign._id, user);
+      }
     }
-    const member = await ctx.db
-      .query("campaignMembers")
-      .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaignId).eq("userId", user._id))
+    const open = await ctx.db
+      .query("campaignOpens")
+      .withIndex("by_user_campaign", (q) => q.eq("userId", user._id).eq("campaignId", campaign._id))
       .unique();
-    if (member) {
-      await ctx.db.patch(member._id, { lastOpenedAt: now });
-    } else {
-      await ctx.db.insert("campaignMembers", { campaignId, userId: user._id, joinedAt: now, lastOpenedAt: now });
-      await deleteInvites(ctx, campaignId, user);
+    if (open === null) {
+      await ctx.db.insert("campaignOpens", { userId: user._id, campaignId: campaign._id, lastOpenedAt: now });
+    } else if (now - open.lastOpenedAt >= OPEN_THROTTLE_MS) {
+      await ctx.db.patch("campaignOpens", open._id, { lastOpenedAt: now });
     }
+    return null;
   },
 });
 
-/** Deletes a campaign (GM only). Recoverable with `restore`. */
-export const remove = mutation({
-  args: { campaignId: v.id("campaigns") },
-  handler: async (ctx, { campaignId }) => {
-    const user = await requireUser(ctx);
-    await loadGmCampaign(ctx, user, campaignId);
-    await ctx.db.patch(campaignId, { deletedAt: Date.now() });
+/** Deletes a campaign (GM only). Recoverable with `restore` until the purge. */
+export const remove = gmMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await ctx.db.patch("campaigns", ctx.campaign._id, { deletedAt: Date.now() });
+    return null;
   },
 });
 
-export const restore = mutation({
+/**
+ * Undoes `remove` (GM only). Not a campaign wrapper, because those treat a
+ * deleted campaign as missing; a deleted campaign is `NOT_FOUND` to anyone
+ * who does not own it.
+ */
+export const restore = userMutation({
   args: { campaignId: v.id("campaigns") },
+  returns: v.null(),
   handler: async (ctx, { campaignId }) => {
-    const user = await requireUser(ctx);
-    const campaign = await loadGmCampaign(ctx, user, campaignId, { includeDeleted: true });
-    if (campaign.deletedAt === undefined) return;
-    const clash = await ctx.db
-      .query("campaigns")
-      .withIndex("by_owner_nameKey", (q) => q.eq("ownerId", user._id).eq("nameKey", campaign.nameKey))
-      .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .first();
-    if (clash !== null) {
-      throw new ConvexError({ code: "NAME_TAKEN", message: "Another campaign now uses that name." });
+    const campaign = await ctx.db.get("campaigns", campaignId);
+    if (campaign === null) throw appError("NOT_FOUND");
+    const permission = await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "owner");
+    const owner = atLeast(permission, "owner");
+    if (permission === null || (campaign.deletedAt !== undefined && !owner)) throw appError("NOT_FOUND");
+    if (!owner) throw appError("FORBIDDEN");
+    if (campaign.deletedAt === undefined) return null;
+    if ((await liveNamesake(ctx, campaign.ownerId, campaign.nameKey)) !== null) {
+      throw appError("NAME_TAKEN", "Another campaign now uses that name.");
     }
-    await ctx.db.patch(campaignId, { deletedAt: undefined });
+    await ctx.db.patch("campaigns", campaign._id, { deletedAt: undefined });
+    return null;
   },
 });
 
 export const TOME_TEXT_MAX = 20000;
 
 /** Saves one chapter of a custom campaign's tome. GM only; players read it. */
-export const updateTome = mutation({
-  args: {
-    campaignId: v.id("campaigns"),
-    chapter: v.union(v.literal("overview"), v.literal("incident"), v.literal("mechanics")),
-    text: v.string(),
-  },
-  handler: async (ctx, { campaignId, chapter, text }) => {
-    const user = await requireUser(ctx);
-    const campaign = await loadGmCampaign(ctx, user, campaignId);
+export const updateTome = gmMutation({
+  args: { chapter: tomeChapterValidator, text: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { chapter, text }) => {
+    const campaign = ctx.campaign;
     if (campaign.frameId !== "custom") {
-      throw new ConvexError({ code: "INVALID", message: "Only a custom campaign has a tome you write yourself." });
+      throw appError("INVALID", "Only a custom campaign has a tome you write yourself.");
     }
     if (text.length > TOME_TEXT_MAX) {
-      throw new ConvexError({ code: "INVALID", message: `Keep each chapter under ${TOME_TEXT_MAX} characters.` });
+      throw appError("INVALID", `Keep each chapter under ${TOME_TEXT_MAX} characters.`);
     }
     const tome = campaign.tome ?? { overview: "", incident: "", mechanics: "" };
-    await ctx.db.patch(campaignId, { tome: { ...tome, [chapter]: text } });
+    await ctx.db.patch("campaigns", campaign._id, { tome: { ...tome, [chapter]: text } });
+    return null;
   },
 });
 
 /** Switches an optional rule for the campaign. GM only. */
-export const setOption = mutation({
-  args: { campaignId: v.id("campaigns"), option: v.string(), enabled: v.boolean() },
-  handler: async (ctx, { campaignId, option, enabled }) => {
-    const user = await requireUser(ctx);
-    const campaign = await loadGmCampaign(ctx, user, campaignId);
+export const setOption = gmMutation({
+  args: { option: v.string(), enabled: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { option, enabled }) => {
+    const campaign = ctx.campaign;
     if (!isCampaignOptionId(option) || !optionsFor(campaign.frameId).some((o) => o.id === option)) {
-      throw new ConvexError({ code: "INVALID", message: "That rule isn't available in this campaign." });
+      throw appError("INVALID", "That rule isn't available in this campaign.");
     }
-    await ctx.db.patch(campaignId, { options: { ...(campaign.options ?? {}), [option]: enabled } });
+    await ctx.db.patch("campaigns", campaign._id, { options: { ...(campaign.options ?? {}), [option]: enabled } });
+    return null;
   },
 });
