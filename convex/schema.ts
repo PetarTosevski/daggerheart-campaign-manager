@@ -106,6 +106,34 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_campaign_key", ["campaignId", "key"]),
 
+  /**
+   * Player characters. `sheet` is validated with `characterSheetSchema`
+   * (src/lib/validation/characters.ts). The owner (a player, or the GM for an
+   * unassigned character) and the GM can edit; everyone in the campaign can
+   * read every sheet (user decision 2026-10-17).
+   */
+  characters: defineTable({
+    campaignId: v.id("campaigns"),
+    ownerId: v.id("users"),
+    createdBy: v.id("users"),
+    status: v.union(v.literal("active"), v.literal("dead"), v.literal("retired")),
+    sheet: v.any(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_campaign", ["campaignId"])
+    .index("by_owner", ["ownerId"]),
+
+  /** Portrait files, recorded when uploaded so a sheet can only use (and delete) its own uploads. */
+  portraitUploads: defineTable({
+    storageId: v.id("_storage"),
+    userId: v.id("users"),
+    characterId: v.id("characters"),
+    createdAt: v.number(),
+  })
+    .index("by_storage", ["storageId"])
+    .index("by_character", ["characterId"]),
+
   /** Witherwild-only campaign time: one row per campaign whose frame has `campaignTime`. */
   campaignTime: defineTable({
     campaignId: v.id("campaigns"),

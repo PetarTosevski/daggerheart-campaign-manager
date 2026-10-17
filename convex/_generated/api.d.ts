@@ -12,6 +12,8 @@ import type * as accounts from "../accounts.js";
 import type * as auth from "../auth.js";
 import type * as campaignTime from "../campaignTime.js";
 import type * as campaigns from "../campaigns.js";
+import type * as characterExtras from "../characterExtras.js";
+import type * as characters from "../characters.js";
 import type * as countdowns from "../countdowns.js";
 import type * as fear from "../fear.js";
 import type * as http from "../http.js";
@@ -45,6 +47,8 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   campaignTime: typeof campaignTime;
   campaigns: typeof campaigns;
+  characterExtras: typeof characterExtras;
+  characters: typeof characters;
   countdowns: typeof countdowns;
   fear: typeof fear;
   http: typeof http;
