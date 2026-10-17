@@ -1,16 +1,23 @@
 import { ConvexError, v } from "convex/values";
 
+import { appError } from "../src/lib/errors/app-error";
 import { encounterRoll, travelDays } from "../src/lib/domain/frames/horizon";
 import { hexToPixel, isAdjacent, type Hex } from "../src/lib/world/hex";
 import {
-  checkMapState,
   HORIZON_FRAME,
+  MAX_HEXES,
+  MAX_TOKENS,
   initialHexCrawl,
   mapImageSize,
-  playerMapView,
+  mapScalarsSchema,
+  mapStateSchema,
+  terrainTile,
+  terrainTileOf,
+  TERRAIN_TILE_CELLS,
+  TERRAIN_TILES,
   travelRulesSchema,
   type CrawlHex,
-  type HexCrawl,
+  type MapScalars,
   type MapState,
   type MapToken,
   type PlayerMapState,
@@ -18,14 +25,38 @@ import {
 import { TERRAIN_CODES, TERRAIN_COLUMNS, TERRAIN_ROWS, applyTerrainCells, suggestedTerrain } from "../src/lib/world/terrain";
 import { isBuiltinType, tokenType, tokenTypes } from "../src/lib/world/token-types";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import type { Role } from "./lib/access";
-import { requireUser } from "./lib/auth";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { rollDie } from "./lib/dice";
 import { claimFile, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
-import { readMap, writeMap } from "./lib/maps";
-import { campaignScope, withIdempotency } from "./lib/operations";
-import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
+import { userMutation, userQuery } from "./lib/functions";
+import {
+  hexRow,
+  lastTokenId,
+  readMap,
+  readMapTokens,
+  readPlayerMap,
+  readTiles,
+  saveScalars,
+  tokenCount,
+  tokenRow,
+  toHex,
+  toToken,
+  valid,
+  writableMap,
+  writeHex,
+  writeTiles,
+  writeToken,
+} from "./lib/maps";
+import { campaignScope, runOnce } from "./lib/operations";
+import { atLeast, liveCampaign, requirePermission, type Permission, type Role } from "./lib/permissions";
+import {
+  attachResultValidator,
+  hexGridValidator,
+  mapLocationValidator,
+  mapViewValidator,
+  moveResultValidator,
+  travelRulesValidator,
+} from "./lib/validators/maps";
 
 export type MapView = { role: Role; frameId: Doc<"campaigns">["frameId"]; state: MapState | PlayerMapState; mapUrl: string | null };
 export type MoveResult = { days: number; weatherRoll?: number; dice: number[]; encounter: boolean; day: number };
@@ -37,62 +68,72 @@ export const MAX_MAP_BYTES = 8 * 1024 * 1024;
 
 const pct = v.number();
 const point = v.object({ x: pct, y: pct });
+const campaignArg = { campaignId: v.id("campaigns") };
 
 function invalid(message: string): never {
-  throw new ConvexError({ code: "INVALID", message });
+  throw appError("INVALID", message);
 }
 
-/** The map with at least `need` permission: NOT_FOUND for outsiders, FORBIDDEN when too weak (players can't edit). */
-async function mapAccess(ctx: QueryCtx, campaignId: Id<"campaigns">, need: Permission) {
-  const user = await requireUser(ctx);
+/**
+ * The map with at least `need` permission on the map resource (map grants
+ * count): NOT_FOUND for outsiders, FORBIDDEN when too weak. Edit and owner
+ * get the GM's map; view gets the players' map. These two codes stay string
+ * payloads (`requirePermission`) until tests/convex/permissions.test.ts and
+ * upload-claims.test.ts read codes with `errorCode`.
+ */
+async function mapAccess(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, need: Permission) {
   const campaign = await liveCampaign(ctx, campaignId);
   const permission = await requirePermission(ctx, user, { type: "map", campaign }, need, "edit");
-  // Edit and owner get the GM's map; view gets the players' map.
   const role: Role = atLeast(permission, "edit") ? "gm" : "player";
-  return { user, campaign, role };
+  return { campaign, role };
 }
 
-async function gmMap(ctx: MutationCtx, campaignId: Id<"campaigns">) {
-  const { user, campaign } = await mapAccess(ctx, campaignId, "edit");
-  const state = await readMap(ctx, campaign);
-  return { user, campaign, state };
+/** The GM's map scalars, ready to edit (a version 1 map is split into rows first). */
+async function gmMap(ctx: MutationCtx, user: Doc<"users">, campaignId: Id<"campaigns">) {
+  const { campaign } = await mapAccess(ctx, user, campaignId, "edit");
+  const map = await writableMap(ctx, campaign);
+  return { campaign, map, scalars: map.scalars };
 }
 
-function idempotent<T>(ctx: MutationCtx, user: Doc<"users">, campaignId: Id<"campaigns">, key: string, kind: string, request: unknown, run: () => Promise<T>) {
-  return withIdempotency(ctx, { scopeKey: campaignScope(campaignId), key, kind, request, createdBy: user._id, campaignId }, run);
+function once<T>(ctx: MutationCtx, user: Doc<"users">, campaignId: Id<"campaigns">, key: string, kind: string, request: unknown, run: () => Promise<T>) {
+  return runOnce(ctx, { scopeKey: campaignScope(campaignId), key, kind, request, createdBy: user._id, campaignId }, run);
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function findToken(state: MapState, id: number): MapToken {
-  const token = state.tokens.find((t) => t.id === id);
-  if (!token) invalid("That marker is no longer on the map.");
-  return token;
+function knownType(scalars: MapScalars, type: string): boolean {
+  return isBuiltinType(type) || scalars.customTypes.some((c) => c.id === type);
 }
 
-/** The map: the GM gets everything; players get `playerMapView` (no hidden markers, notes or unexplored hexes). */
-export const get = query({
-  args: { campaignId: v.id("campaigns") },
+/** The map: the GM gets everything; players get `playerMapView` (no hidden markers, notes, unexplored hexes or hidden POIs). */
+export const get = userQuery({
+  args: campaignArg,
+  returns: mapViewValidator,
   handler: async (ctx, { campaignId }): Promise<MapView> => {
-    const { campaign, role } = await mapAccess(ctx, campaignId, "view");
-    const state = await readMap(ctx, campaign);
-    const mapUrl = state.customMap ? await ownFileUrl(ctx, "map", campaign._id, state.customMap.storageId) : null;
-    return { role, frameId: campaign.frameId, state: role === "gm" ? state : playerMapView(state), mapUrl };
+    const { campaign, role } = await mapAccess(ctx, ctx.user, campaignId, "view");
+    const { state, storageId } = role === "gm" ? await gmView(ctx, campaign) : await readPlayerMap(ctx, campaign);
+    const mapUrl = storageId ? await ownFileUrl(ctx, "map", campaign._id, storageId) : null;
+    return { role, frameId: campaign.frameId, state, mapUrl };
   },
 });
+
+async function gmView(ctx: QueryCtx, campaign: Doc<"campaigns">) {
+  const state = await readMap(ctx, campaign);
+  return { state, storageId: state.customMap?.storageId };
+}
 
 export type MapLocation = { id: number; name: string; typeLabel: string; colour: string; path: string; hidden: boolean; partyHere: boolean };
 
 /** Markers ticked "Location" for the dashboard's Locations panel (players never get hidden ones). */
-export const locations = query({
-  args: { campaignId: v.id("campaigns") },
+export const locations = userQuery({
+  args: campaignArg,
+  returns: v.array(mapLocationValidator),
   handler: async (ctx, { campaignId }): Promise<MapLocation[]> => {
-    const { campaign, role } = await mapAccess(ctx, campaignId, "view");
-    const full = await readMap(ctx, campaign);
-    const state = role === "gm" ? full : playerMapView(full);
+    const { campaign, role } = await mapAccess(ctx, ctx.user, campaignId, "view");
+    const { state, tokens } = await readMapTokens(ctx, campaign);
     const types = tokenTypes(state);
-    return state.tokens
-      .filter((t) => t.location)
+    return tokens
+      .filter((t) => t.location && (role === "gm" || !t.hidden))
       .map((t) => {
         const type = tokenType(types, t.type);
         return {
@@ -108,26 +149,30 @@ export const locations = query({
   },
 });
 
-/** Places a marker; it is named after its type. */
-export const addToken = mutation({
-  args: { campaignId: v.id("campaigns"), type: v.string(), x: pct, y: pct, idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, type, x, y, idempotencyKey }): Promise<{ id: number }> => {
-    const { user, state } = await gmMap(ctx, campaignId);
-    return idempotent(ctx, user, campaignId, idempotencyKey, "map_add_token", { type, x, y }, async () => {
-      if (!isBuiltinType(type) && !state.customTypes.some((c) => c.id === type)) invalid("Unknown marker type.");
-      const id = state.nextId;
-      const label = tokenType(tokenTypes(state), type).label;
-      const token: MapToken = { id, type, x: round2(x), y: round2(y), name: label, notes: "", hidden: false, location: false };
-      await writeMap(ctx, campaignId, { ...state, nextId: id + 1, tokens: [...state.tokens, token] });
+/**
+ * Places a marker; it is named after its type. Writes only the marker's row:
+ * its id is past both the highest marker and the stored `nextId`.
+ */
+export const addToken = userMutation({
+  args: { ...campaignArg, type: v.string(), x: pct, y: pct, idempotencyKey: v.string() },
+  returns: v.object({ id: v.number() }),
+  handler: async (ctx, { campaignId, type, x, y, idempotencyKey }) => {
+    const { scalars } = await gmMap(ctx, ctx.user, campaignId);
+    return once(ctx, ctx.user, campaignId, idempotencyKey, "map_add_token", { type, x, y }, async () => {
+      if (!knownType(scalars, type)) invalid("Unknown marker type.");
+      if ((await tokenCount(ctx, campaignId)) >= MAX_TOKENS) invalid(`A map holds at most ${MAX_TOKENS} markers.`);
+      const id = Math.max(scalars.nextId, (await lastTokenId(ctx, campaignId)) + 1);
+      const label = tokenType(tokenTypes(scalars), type).label;
+      await writeToken(ctx, campaignId, null, { id, type, x: round2(x), y: round2(y), name: label, notes: "", hidden: false, location: false });
       return { id };
     });
   },
 });
 
-/** Edits a marker (sets fields, so a retry is harmless). */
-export const updateToken = mutation({
+/** Edits a marker (sets fields, so a retry is harmless). Writes only the marker's row. */
+export const updateToken = userMutation({
   args: {
-    campaignId: v.id("campaigns"),
+    ...campaignArg,
     id: v.number(),
     patch: v.object({
       name: v.optional(v.string()),
@@ -139,27 +184,34 @@ export const updateToken = mutation({
       y: v.optional(pct),
     }),
   },
+  returns: v.null(),
   handler: async (ctx, { campaignId, id, patch }) => {
-    const { state } = await gmMap(ctx, campaignId);
-    const token = findToken(state, id);
-    if (patch.type !== undefined && !isBuiltinType(patch.type) && !state.customTypes.some((c) => c.id === patch.type)) invalid("Unknown marker type.");
+    const { scalars } = await gmMap(ctx, ctx.user, campaignId);
+    const row = await tokenRow(ctx, campaignId, id);
+    if (!row) invalid("That marker is no longer on the map.");
+    if (patch.type !== undefined && !knownType(scalars, patch.type)) invalid("Unknown marker type.");
     const next: MapToken = {
-      ...token,
+      ...toToken(row),
       ...patch,
       ...(patch.x !== undefined ? { x: round2(patch.x) } : {}),
       ...(patch.y !== undefined ? { y: round2(patch.y) } : {}),
     };
-    await writeMap(ctx, campaignId, { ...state, tokens: state.tokens.map((t) => (t.id === id ? next : t)) });
+    await writeToken(ctx, campaignId, row._id, next);
+    return null;
   },
 });
 
-/** Removes a marker (already gone is fine). */
-export const removeToken = mutation({
-  args: { campaignId: v.id("campaigns"), id: v.number() },
+/** Removes a marker (already gone is fine). Removing the highest one raises `nextId`, so its id is never reused. */
+export const removeToken = userMutation({
+  args: { ...campaignArg, id: v.number() },
+  returns: v.null(),
   handler: async (ctx, { campaignId, id }) => {
-    const { state } = await gmMap(ctx, campaignId);
-    if (!state.tokens.some((t) => t.id === id)) return;
-    await writeMap(ctx, campaignId, { ...state, tokens: state.tokens.filter((t) => t.id !== id) });
+    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
+    const row = await tokenRow(ctx, campaignId, id);
+    if (!row) return null;
+    await ctx.db.delete("mapTokens", row._id);
+    if (scalars.nextId <= id && (await lastTokenId(ctx, campaignId)) < id) await saveScalars(ctx, campaignId, map, { ...scalars, nextId: id + 1 });
+    return null;
   },
 });
 
@@ -167,25 +219,28 @@ export const removeToken = mutation({
  * Moves the party marker. Its old position, then any `via` points of a
  * measured route, join the trail, which keeps the last 12 positions.
  */
-export const moveParty = mutation({
-  args: { campaignId: v.id("campaigns"), x: pct, y: pct, via: v.optional(v.array(point)), idempotencyKey: v.string() },
+export const moveParty = userMutation({
+  args: { ...campaignArg, x: pct, y: pct, via: v.optional(v.array(point)), idempotencyKey: v.string() },
+  returns: v.null(),
   handler: async (ctx, { campaignId, x, y, via = [], idempotencyKey }) => {
-    const { user, state } = await gmMap(ctx, campaignId);
+    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
     if (via.length > 24) invalid("Too many route points.");
-    return idempotent(ctx, user, campaignId, idempotencyKey, "map_move_party", { x, y, via }, async () => {
-      const { party } = state;
+    return once(ctx, ctx.user, campaignId, idempotencyKey, "map_move_party", { x, y, via }, async () => {
+      const { party } = scalars;
       const trail = [...party.trail, { x: party.x, y: party.y }, ...via.map((p) => ({ x: round2(p.x), y: round2(p.y) }))].slice(-12);
-      await writeMap(ctx, campaignId, { ...state, party: { x: round2(x), y: round2(y), trail } });
+      await saveScalars(ctx, campaignId, map, { ...scalars, party: { x: round2(x), y: round2(y), trail } });
       return null;
     });
   },
 });
 
-export const clearTrail = mutation({
-  args: { campaignId: v.id("campaigns") },
+export const clearTrail = userMutation({
+  args: campaignArg,
+  returns: v.null(),
   handler: async (ctx, { campaignId }) => {
-    const { state } = await gmMap(ctx, campaignId);
-    await writeMap(ctx, campaignId, { ...state, party: { ...state.party, trail: [] } });
+    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
+    await saveScalars(ctx, campaignId, map, { ...scalars, party: { ...scalars.party, trail: [] } });
+    return null;
   },
 });
 
@@ -193,34 +248,50 @@ export const clearTrail = mutation({
  * Paints terrain cells onto the current grid: cell `indexes[k]` gets the code
  * `codes[k]`. Other cells keep whatever is stored, so two GM tabs painting at
  * once don't overwrite each other (undo sends the cells' previous codes).
+ * Reads and writes only the terrain tiles the cells fall in.
  */
-export const paintCells = mutation({
-  args: { campaignId: v.id("campaigns"), indexes: v.array(v.number()), codes: v.string() },
+export const paintCells = userMutation({
+  args: { ...campaignArg, indexes: v.array(v.number()), codes: v.string() },
+  returns: v.null(),
   handler: async (ctx, { campaignId, indexes, codes }) => {
     const cells = TERRAIN_COLUMNS * TERRAIN_ROWS;
     if (indexes.length > cells || codes.length !== indexes.length) invalid("Invalid terrain cells.");
     if (indexes.some((i) => !Number.isInteger(i) || i < 0 || i >= cells)) invalid("Invalid terrain cells.");
     if ([...codes].some((c) => !(TERRAIN_CODES as readonly string[]).includes(c))) invalid("Unknown terrain.");
-    const { state } = await gmMap(ctx, campaignId);
-    await writeMap(ctx, campaignId, { ...state, terrain: applyTerrainCells(state.terrain, indexes, codes) });
+    const { campaign } = await gmMap(ctx, ctx.user, campaignId);
+    const byTile = new Map<number, { indexes: number[]; codes: string }>();
+    indexes.forEach((index, k) => {
+      const tile = terrainTileOf(index);
+      const entry = byTile.get(tile) ?? { indexes: [], codes: "" };
+      entry.indexes.push(index - tile * TERRAIN_TILE_CELLS);
+      entry.codes += codes[k];
+      byTile.set(tile, entry);
+    });
+    const current = await readTiles(ctx, campaign, [...byTile.keys()]);
+    const next = new Map([...byTile].map(([tile, paint]) => [tile, applyTerrainCells(current.get(tile) ?? "", paint.indexes, paint.codes)]));
+    await writeTiles(ctx, campaign, next);
+    return null;
   },
 });
 
-/** Replaces the painted terrain grid (`reset` restores the suggested grid). */
-export const setTerrain = mutation({
-  args: { campaignId: v.id("campaigns"), terrain: v.optional(v.string()), reset: v.optional(v.boolean()) },
+/** Replaces the painted terrain grid (`reset` restores the suggested grid). Writes only the tiles that change. */
+export const setTerrain = userMutation({
+  args: { ...campaignArg, terrain: v.optional(v.string()), reset: v.optional(v.boolean()) },
+  returns: v.null(),
   handler: async (ctx, { campaignId, terrain, reset }) => {
-    const { campaign, state } = await gmMap(ctx, campaignId);
+    const { campaign } = await gmMap(ctx, ctx.user, campaignId);
     const next = reset ? suggestedTerrain(campaign.frameId) : terrain;
     if (next === undefined) invalid("No terrain given.");
-    await writeMap(ctx, campaignId, { ...state, terrain: next });
+    const grid = valid(mapStateSchema.shape.terrain, next);
+    await writeTiles(ctx, campaign, new Map(Array.from({ length: TERRAIN_TILES }, (_, tile) => [tile, terrainTile(grid, tile)])));
+    return null;
   },
 });
 
 /** Map width in km and the travel options (house rule). */
-export const setOptions = mutation({
+export const setOptions = userMutation({
   args: {
-    campaignId: v.id("campaigns"),
+    ...campaignArg,
     scaleKm: v.optional(v.number()),
     method: v.optional(v.union(v.literal("foot"), v.literal("mount"), v.literal("wagon"), v.literal("boat"), v.literal("fly"))),
     pace: v.optional(v.union(v.literal("slow"), v.literal("normal"), v.literal("fast"))),
@@ -228,68 +299,77 @@ export const setOptions = mutation({
     units: v.optional(v.union(v.literal("km"), v.literal("mi"))),
     trail: v.optional(v.union(v.literal("foot"), v.literal("mount"), v.literal("20"), v.literal("40"), v.literal("60"), v.literal("80"))),
   },
+  returns: v.null(),
   handler: async (ctx, { campaignId, scaleKm, ...options }) => {
-    const { state } = await gmMap(ctx, campaignId);
+    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
     const clean = Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined));
-    await writeMap(ctx, campaignId, { ...state, scaleKm: scaleKm ?? state.scaleKm, options: { ...state.options, ...clean } });
+    await saveScalars(ctx, campaignId, map, { ...scalars, scaleKm: scaleKm ?? scalars.scaleKm, options: { ...scalars.options, ...clean } });
+    return null;
   },
 });
 
 /** The campaign's travel speeds (house rule); null restores the board's defaults. */
-export const setTravelRules = mutation({
-  args: { campaignId: v.id("campaigns"), rules: v.union(v.null(), v.any()) },
+export const setTravelRules = userMutation({
+  args: { ...campaignArg, rules: v.union(v.null(), travelRulesValidator) },
+  returns: v.null(),
   handler: async (ctx, { campaignId, rules }) => {
-    const { state } = await gmMap(ctx, campaignId);
-    const options = { ...state.options };
+    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
+    const options = { ...scalars.options };
     if (rules === null) delete options.rules;
     else {
       const parsed = travelRulesSchema.safeParse(rules);
       if (!parsed.success) invalid("Speeds must be 1–1000 km per day; pace factors 0.1–5.");
       options.rules = parsed.data;
     }
-    await writeMap(ctx, campaignId, { ...state, options });
+    await saveScalars(ctx, campaignId, map, { ...scalars, options });
+    return null;
   },
 });
 
 /** Adds a custom marker type to the palette. */
-export const addCustomType = mutation({
-  args: { campaignId: v.id("campaigns"), label: v.string(), icon: v.string(), color: v.string(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, label, icon, color, idempotencyKey }): Promise<{ id: string }> => {
-    const { user, state } = await gmMap(ctx, campaignId);
-    return idempotent(ctx, user, campaignId, idempotencyKey, "map_add_type", { label, icon, color }, async () => {
+export const addCustomType = userMutation({
+  args: { ...campaignArg, label: v.string(), icon: v.string(), color: v.string(), idempotencyKey: v.string() },
+  returns: v.object({ id: v.string() }),
+  handler: async (ctx, { campaignId, label, icon, color, idempotencyKey }) => {
+    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
+    return once(ctx, ctx.user, campaignId, idempotencyKey, "map_add_type", { label, icon, color }, async () => {
       const name = label.trim();
       if (!name) invalid("Name the marker.");
       if (!isBuiltinType(icon)) invalid("Unknown icon.");
       if (!/^#[0-9a-f]{6}$/i.test(color)) invalid("Pick a colour.");
-      let n = state.customTypes.length + 1;
-      while (state.customTypes.some((c) => c.id === `c${n}`)) n++;
+      let n = scalars.customTypes.length + 1;
+      while (scalars.customTypes.some((c) => c.id === `c${n}`)) n++;
       const id = `c${n}`;
-      await writeMap(ctx, campaignId, { ...state, customTypes: [...state.customTypes, { id, label: name, icon, color }] });
+      await saveScalars(ctx, campaignId, map, { ...scalars, customTypes: [...scalars.customTypes, { id, label: name, icon, color }] });
       return { id };
     });
   },
 });
 
 /** Renames a palette type; an empty label restores the default. */
-export const renameType = mutation({
-  args: { campaignId: v.id("campaigns"), typeId: v.string(), label: v.string() },
+export const renameType = userMutation({
+  args: { ...campaignArg, typeId: v.string(), label: v.string() },
+  returns: v.null(),
   handler: async (ctx, { campaignId, typeId, label }) => {
-    const { state } = await gmMap(ctx, campaignId);
-    if (!isBuiltinType(typeId) && !state.customTypes.some((c) => c.id === typeId)) invalid("Unknown marker type.");
-    const typeLabels = { ...state.typeLabels };
+    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
+    if (!knownType(scalars, typeId)) invalid("Unknown marker type.");
+    const typeLabels = { ...scalars.typeLabels };
     if (label.trim()) typeLabels[typeId] = label.trim();
     else delete typeLabels[typeId];
-    await writeMap(ctx, campaignId, { ...state, typeLabels });
+    await saveScalars(ctx, campaignId, map, { ...scalars, typeLabels });
+    return null;
   },
 });
 
 // ---- Uploaded map image (custom campaigns, or replacing a published map)
 
-/** An upload URL for a map image. GM only. */
-export const mapImageUploadUrl = mutation({
-  args: { campaignId: v.id("campaigns") },
+/** An upload URL for a map image. GM only; rate-limited. */
+export const mapImageUploadUrl = userMutation({
+  rateLimit: "uploadUrl",
+  args: campaignArg,
+  returns: v.string(),
   handler: async (ctx, { campaignId }) => {
-    await mapAccess(ctx, campaignId, "edit");
+    await mapAccess(ctx, ctx.user, campaignId, "edit");
     return ctx.storage.generateUploadUrl();
   },
 });
@@ -300,12 +380,14 @@ export const mapImageUploadUrl = mutation({
  * previous upload is deleted.
  * `width` and `height` are the image's pixel size (its aspect ratio).
  */
-export const attachMapImage = mutation({
-  args: { campaignId: v.id("campaigns"), storageId: v.id("_storage"), width: v.number(), height: v.number(), scaleKm: v.optional(v.number()) },
+export const attachMapImage = userMutation({
+  args: { ...campaignArg, storageId: v.id("_storage"), width: v.number(), height: v.number(), scaleKm: v.optional(v.number()) },
+  returns: attachResultValidator,
   handler: async (ctx, { campaignId, storageId, width, height, scaleKm }): Promise<AttachResult> => {
-    const { user, state } = await gmMap(ctx, campaignId);
+    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
     const meta = await ctx.db.system.get(storageId);
     // Only an unclaimed file may be attached, so the rejections below only ever delete unclaimed files.
+    // String payload until upload-claims.test.ts reads codes with `errorCode`.
     if (meta === null || (await isClaimed(ctx, storageId))) throw new ConvexError("NOT_FOUND");
     // A rejected file is deleted and reported without throwing, so the delete isn't rolled back.
     if (!isAllowedImage(meta, MAX_MAP_BYTES)) {
@@ -316,38 +398,44 @@ export const attachMapImage = mutation({
       await ctx.storage.delete(storageId);
       return { ok: false, message: "Couldn't read the image size." };
     }
-    // Validated before the file is claimed, so a bad map width or an oversized map leaves no orphan file.
-    const next = checkMapState({ ...state, scaleKm: scaleKm ?? state.scaleKm, customMap: { storageId, width, height } });
-    if (!next.ok) {
+    // Validated before the file is claimed, so a bad map width leaves no orphan file.
+    const next = mapScalarsSchema.safeParse({ ...scalars, scaleKm: scaleKm ?? scalars.scaleKm, customMap: { storageId, width, height } });
+    if (!next.success) {
       await ctx.storage.delete(storageId);
-      return { ok: false, message: next.message };
+      return { ok: false, message: next.error.issues[0]?.message ?? "Invalid map." };
     }
-    await claimFile(ctx, { storageId, campaignId, uploadedBy: user._id, kind: "map", refId: campaignId });
-    if (state.customMap) await deleteOwnFile(ctx, "map", campaignId, state.customMap.storageId);
-    await writeMap(ctx, campaignId, next.data);
+    await claimFile(ctx, { storageId, campaignId, uploadedBy: ctx.user._id, kind: "map", refId: campaignId });
+    if (scalars.customMap) await deleteOwnFile(ctx, "map", campaignId, scalars.customMap.storageId);
+    await saveScalars(ctx, campaignId, map, next.data);
     return { ok: true };
   },
 });
 
 /** Removes the uploaded map (a published frame goes back to its own art). */
-export const removeMapImage = mutation({
-  args: { campaignId: v.id("campaigns") },
+export const removeMapImage = userMutation({
+  args: campaignArg,
+  returns: v.null(),
   handler: async (ctx, { campaignId }) => {
-    const { state } = await gmMap(ctx, campaignId);
-    if (!state.customMap) return;
-    await deleteOwnFile(ctx, "map", campaignId, state.customMap.storageId);
-    const next = { ...state };
+    const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
+    if (!scalars.customMap) return null;
+    await deleteOwnFile(ctx, "map", campaignId, scalars.customMap.storageId);
+    const next = { ...scalars };
     delete next.customMap;
-    await writeMap(ctx, campaignId, next);
+    await saveScalars(ctx, campaignId, map, next);
+    return null;
   },
 });
 
 // ---- Journey to Horizon hex crawl (HF pp.171–177)
 
-async function gmCrawl(ctx: MutationCtx, campaignId: Id<"campaigns">) {
-  const loaded = await gmMap(ctx, campaignId);
-  if (loaded.campaign.frameId !== HORIZON_FRAME) throw new ConvexError("MECHANIC_DISABLED");
-  return { ...loaded, crawl: loaded.state.hexCrawl ?? initialHexCrawl() };
+type CrawlScalars = NonNullable<MapScalars["hexCrawl"]>;
+
+async function gmCrawl(ctx: MutationCtx, user: Doc<"users">, campaignId: Id<"campaigns">) {
+  const loaded = await gmMap(ctx, user, campaignId);
+  if (loaded.campaign.frameId !== HORIZON_FRAME) throw appError("MECHANIC_DISABLED");
+  const { hexes, ...initial } = initialHexCrawl();
+  const crawl: CrawlScalars = loaded.scalars.hexCrawl ?? { ...initial, hexCount: hexes.length };
+  return { ...loaded, crawl };
 }
 
 const hexArgs = { q: v.number(), r: v.number() };
@@ -356,36 +444,40 @@ function checkHex(h: Hex) {
   if (!Number.isInteger(h.q) || !Number.isInteger(h.r) || Math.abs(h.q) > 1000 || Math.abs(h.r) > 1000) invalid("That hex is off the map.");
 }
 
-function withHex(crawl: HexCrawl, h: Hex, patch: Partial<CrawlHex>): CrawlHex[] {
-  const found = crawl.hexes.find((x) => x.q === h.q && x.r === h.r);
-  const next: CrawlHex = { ...(found ?? { q: h.q, r: h.r, explored: false }), ...patch };
-  return found ? crawl.hexes.map((x) => (x === found ? next : x)) : [...crawl.hexes, next];
+/**
+ * Applies `patch` to the hex at `h` (a missing hex starts unexplored) and
+ * writes its row. Returns the crawl with `hexCount` raised for a new hex.
+ */
+async function patchHex(ctx: MutationCtx, campaignId: Id<"campaigns">, crawl: CrawlScalars, h: Hex, edit: (hex: CrawlHex) => CrawlHex): Promise<CrawlScalars> {
+  const row = await hexRow(ctx, campaignId, h);
+  if (!row && crawl.hexCount >= MAX_HEXES) invalid(`A hex crawl holds at most ${MAX_HEXES} hexes.`);
+  await writeHex(ctx, campaignId, row?._id ?? null, edit(row ? toHex(row) : { q: h.q, r: h.r, explored: false }));
+  return row ? crawl : { ...crawl, hexCount: crawl.hexCount + 1 };
 }
 
 /** The party marker at a hex's centre, in map percent. */
-function partyAt(frameId: string, state: MapState, crawl: HexCrawl, h: Hex): { x: number; y: number } {
-  const size = mapImageSize(frameId, state);
+function partyAt(frameId: string, scalars: MapScalars, crawl: CrawlScalars, h: Hex): { x: number; y: number } {
+  const size = mapImageSize(frameId, scalars);
   const c = hexToPixel(h, crawl.grid);
   const clamp = (n: number) => round2(Math.max(0, Math.min(100, n)));
   return { x: clamp((c.x / size.width) * 100), y: clamp((c.y / size.height) * 100) };
 }
 
 /** Calibrates the hex grid over the map image (origin and size in image pixels). */
-export const setHexGrid = mutation({
-  args: {
-    campaignId: v.id("campaigns"),
-    grid: v.object({ originX: v.number(), originY: v.number(), size: v.number(), orientation: v.union(v.literal("flat"), v.literal("pointy")) }),
-  },
+export const setHexGrid = userMutation({
+  args: { ...campaignArg, grid: hexGridValidator },
+  returns: v.null(),
   handler: async (ctx, { campaignId, grid }) => {
-    const { state, crawl } = await gmCrawl(ctx, campaignId);
-    await writeMap(ctx, campaignId, { ...state, hexCrawl: { ...crawl, grid } });
+    const { map, scalars, crawl } = await gmCrawl(ctx, ctx.user, campaignId);
+    await saveScalars(ctx, campaignId, map, { ...scalars, hexCrawl: { ...crawl, grid } });
+    return null;
   },
 });
 
-/** Sets a hex's terrain, habitat, region, point of interest or explored flag (null clears a field). */
-export const updateHex = mutation({
+/** Sets a hex's terrain, habitat, region, point of interest or explored flag (null clears a field). Writes the hex's row. */
+export const updateHex = userMutation({
   args: {
-    campaignId: v.id("campaigns"),
+    ...campaignArg,
     ...hexArgs,
     patch: v.object({
       explored: v.optional(v.boolean()),
@@ -395,36 +487,47 @@ export const updateHex = mutation({
       poi: v.optional(v.union(v.null(), v.object({ text: v.string(), hidden: v.boolean() }))),
     }),
   },
+  returns: v.null(),
   handler: async (ctx, { campaignId, q, r, patch }) => {
     checkHex({ q, r });
-    const { state, crawl } = await gmCrawl(ctx, campaignId);
-    const found = crawl.hexes.find((x) => x.q === q && x.r === r);
-    const next: CrawlHex = { ...(found ?? { q, r, explored: false }) };
-    if (patch.explored !== undefined) next.explored = patch.explored;
-    for (const field of ["terrain", "habitat", "region", "poi"] as const) {
-      const value = patch[field];
-      if (value === undefined) continue;
-      const blank = value === null || (typeof value === "string" && !value.trim()) || (typeof value === "object" && !value.text.trim());
-      if (blank) delete next[field];
-      else if (field === "poi") next.poi = { text: (value as { text: string }).text.trim(), hidden: (value as { hidden: boolean }).hidden };
-      else if (field === "terrain") next.terrain = value as number;
-      else next[field] = (value as string).trim();
-    }
-    const hexes = found ? crawl.hexes.map((x) => (x === found ? next : x)) : [...crawl.hexes, next];
-    await writeMap(ctx, campaignId, { ...state, hexCrawl: { ...crawl, hexes } });
+    const { map, scalars, crawl } = await gmCrawl(ctx, ctx.user, campaignId);
+    const next = await patchHex(ctx, campaignId, crawl, { q, r }, (found) => {
+      const hex: CrawlHex = { ...found };
+      if (patch.explored !== undefined) hex.explored = patch.explored;
+      if (patch.terrain !== undefined) {
+        if (patch.terrain === null) delete hex.terrain;
+        else hex.terrain = patch.terrain;
+      }
+      for (const field of ["habitat", "region"] as const) {
+        const value = patch[field];
+        if (value === undefined) continue;
+        if (value === null || !value.trim()) delete hex[field];
+        else hex[field] = value.trim();
+      }
+      if (patch.poi !== undefined) {
+        if (patch.poi === null || !patch.poi.text.trim()) delete hex.poi;
+        else hex.poi = { text: patch.poi.text.trim(), hidden: patch.poi.hidden };
+      }
+      return hex;
+    });
+    if (next !== crawl) await saveScalars(ctx, campaignId, map, { ...scalars, hexCrawl: next });
+    return null;
   },
 });
 
 /** Puts the party on a hex without travelling (setup or correction): no days pass. */
-export const placePartyHex = mutation({
-  args: { campaignId: v.id("campaigns"), ...hexArgs },
+export const placePartyHex = userMutation({
+  args: { ...campaignArg, ...hexArgs },
+  returns: v.null(),
   handler: async (ctx, { campaignId, q, r }) => {
     checkHex({ q, r });
-    const { campaign, state, crawl } = await gmCrawl(ctx, campaignId);
+    const { campaign, map, scalars, crawl } = await gmCrawl(ctx, ctx.user, campaignId);
     const h = { q, r };
-    const next: HexCrawl = { ...crawl, party: h, hexes: withHex(crawl, h, { explored: true }) };
-    const pos = partyAt(campaign.frameId, state, next, h);
-    await writeMap(ctx, campaignId, { ...state, party: { ...state.party, ...pos }, hexCrawl: next });
+    const counted = await patchHex(ctx, campaignId, crawl, h, (hex) => ({ ...hex, explored: true }));
+    const next: CrawlScalars = { ...counted, party: h };
+    const pos = partyAt(campaign.frameId, scalars, next, h);
+    await saveScalars(ctx, campaignId, map, { ...scalars, party: { ...scalars.party, ...pos }, hexCrawl: next });
+    return null;
   },
 });
 
@@ -433,19 +536,20 @@ export const placePartyHex = mutation({
  * travel mode, then the day counter advances, the hex is explored and the
  * encounter roll is made (terrain-rating dice; any 1 activates an encounter).
  */
-export const moveToHex = mutation({
+export const moveToHex = userMutation({
   args: {
-    campaignId: v.id("campaigns"),
+    ...campaignArg,
     ...hexArgs,
     terrain: v.number(),
     travelMode: v.union(v.literal("land"), v.literal("riverDown"), v.literal("riverUp"), v.literal("ocean")),
     encounterDie: v.optional(v.union(v.literal(4), v.literal(6), v.literal(8))),
     idempotencyKey: v.string(),
   },
+  returns: moveResultValidator,
   handler: async (ctx, { campaignId, q, r, terrain, travelMode, encounterDie = 6, idempotencyKey }): Promise<MoveResult> => {
     checkHex({ q, r });
-    const { user, campaign, state, crawl } = await gmCrawl(ctx, campaignId);
-    return idempotent(ctx, user, campaignId, idempotencyKey, "map_move_hex", { q, r, terrain, travelMode, encounterDie }, async () => {
+    const { campaign, map, scalars, crawl } = await gmCrawl(ctx, ctx.user, campaignId);
+    return once(ctx, ctx.user, campaignId, idempotencyKey, "map_move_hex", { q, r, terrain, travelMode, encounterDie }, async () => {
       const h = { q, r };
       if (!crawl.party) invalid("Place the party on a hex first.");
       if (!isAdjacent(crawl.party, h)) invalid("The party can only move to an adjacent hex.");
@@ -454,28 +558,30 @@ export const moveToHex = mutation({
       const roll = encounterRoll(terrain, rollDie, encounterDie);
       const day = crawl.day + travel.days;
       if (day > 100000) invalid("The day counter is full.");
-      const next: HexCrawl = {
-        ...crawl,
+      const counted = await patchHex(ctx, campaignId, crawl, h, (hex) => ({ ...hex, explored: true, terrain }));
+      const next: CrawlScalars = {
+        ...counted,
         party: h,
         day,
         travelMode,
-        hexes: withHex(crawl, h, { explored: true, terrain }),
         lastMove: { q, r, days: travel.days, dice: roll.dice, encounter: roll.encounter, ...(travel.weatherRoll ? { weatherRoll: travel.weatherRoll } : {}) },
       };
-      const pos = partyAt(campaign.frameId, state, next, h);
-      const trail = [...state.party.trail, { x: state.party.x, y: state.party.y }].slice(-12);
-      await writeMap(ctx, campaignId, { ...state, party: { ...pos, trail }, hexCrawl: next });
+      const pos = partyAt(campaign.frameId, scalars, next, h);
+      const trail = [...scalars.party.trail, { x: scalars.party.x, y: scalars.party.y }].slice(-12);
+      await saveScalars(ctx, campaignId, map, { ...scalars, party: { ...pos, trail }, hexCrawl: next });
       return { days: travel.days, ...(travel.weatherRoll ? { weatherRoll: travel.weatherRoll } : {}), dice: roll.dice, encounter: roll.encounter, day };
     });
   },
 });
 
 /** Corrects the crawl's day counter. */
-export const setCrawlDay = mutation({
-  args: { campaignId: v.id("campaigns"), day: v.number() },
+export const setCrawlDay = userMutation({
+  args: { ...campaignArg, day: v.number() },
+  returns: v.null(),
   handler: async (ctx, { campaignId, day }) => {
-    const { state, crawl } = await gmCrawl(ctx, campaignId);
+    const { map, scalars, crawl } = await gmCrawl(ctx, ctx.user, campaignId);
     if (!Number.isInteger(day) || day < 1) invalid("Day must be a whole number from 1.");
-    await writeMap(ctx, campaignId, { ...state, hexCrawl: { ...crawl, day } });
+    await saveScalars(ctx, campaignId, map, { ...scalars, hexCrawl: { ...crawl, day } });
+    return null;
   },
 });

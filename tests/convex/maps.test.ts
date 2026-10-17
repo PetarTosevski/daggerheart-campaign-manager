@@ -126,8 +126,9 @@ describe("World map", () => {
     await gm.mutation(api.maps.setOptions, { campaignId, scaleKm: 250, method: "mount", units: "mi", trail: "60" });
     const rules = (await gm.query(api.maps.get, { campaignId })).state.options;
     expect(rules).toMatchObject({ method: "mount", units: "mi", trail: "60", pace: "normal", hours: 8 });
+    const table = { road: 50, wilds: 30, marsh: 10, deep: 15, mountains: 8, water: 5 };
     const custom = {
-      speeds: Object.fromEntries(["foot", "mount", "wagon", "boat", "fly"].map((m) => [m, { road: 50, wilds: 30, marsh: 10, deep: 15, mountains: 8, water: 5 }])),
+      speeds: { foot: table, mount: table, wagon: table, boat: table, fly: table },
       trail: { foot: { road: 50, wilds: 30, marsh: 10, deep: 15, mountains: 8, water: 5 }, mount: { road: 70, wilds: 50, marsh: 15, deep: 25, mountains: 12, water: 5 } },
       slow: 0.5,
       fast: 1.5,
@@ -224,7 +225,7 @@ describe("World map", () => {
   describe("Journey to Horizon hex crawl", () => {
     it("is Horizon-only", async () => {
       const { gm, campaignId } = await setup();
-      expect(errorData(await gm.mutation(api.maps.placePartyHex, { campaignId, q: 0, r: 0 }).catch((e) => e))).toBe("MECHANIC_DISABLED");
+      expect(errorCode(await gm.mutation(api.maps.placePartyHex, { campaignId, q: 0, r: 0 }).catch((e) => e))).toBe("MECHANIC_DISABLED");
     });
 
     it("moves the party to adjacent hexes, advancing days; players see only explored and nearby hexes", async () => {
@@ -273,5 +274,86 @@ describe("World map", () => {
       expect(later.hexes.find((h) => h.q === -1 && h.r === 2)?.poi).toEqual({ text: "Old tower", hidden: false });
       expect(errorData(await player.mutation(api.maps.moveToHex, { campaignId, q: 0, r: 0, terrain: 1, travelMode: "land", idempotencyKey: key() }).catch((e) => e))).toBe("FORBIDDEN");
     });
+  });
+});
+
+describe("World map rows", () => {
+  useAllowlist(`${GM},${PLAYER}`);
+
+  async function setup(frameId: "witherwild" | "journey-to-horizon" = "witherwild") {
+    const t = makeTest();
+    const ids = await t.run(async (ctx) => ({
+      gm: await ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }),
+      player: await ctx.db.insert("users", { email: PLAYER, emailVerificationTime: 1 }),
+    }));
+    const gm = t.withIdentity({ subject: `${ids.gm}|s` });
+    const player = t.withIdentity({ subject: `${ids.player}|s` });
+    const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Rows", idempotencyKey: key() });
+    await gm.mutation(api.members.invite, { campaignId, email: PLAYER });
+    return { t, gm, player, campaignId };
+  }
+
+  type T = Awaited<ReturnType<typeof setup>>["t"];
+  const TABLES = ["maps", "mapTokens", "mapHexes", "mapTerrain"] as const;
+
+  /** Every row of every map table, by table and id. */
+  async function snapshot(t: T) {
+    const rows = await t.run(async (ctx) => {
+      const out: [string, string][] = [];
+      for (const table of TABLES) for (const row of await ctx.db.query(table).collect()) out.push([`${table}:${row._id}`, JSON.stringify(row)]);
+      return out;
+    });
+    return new Map(rows);
+  }
+
+  /** The table of every map row `run` inserted, changed or deleted. */
+  async function writes(t: T, run: () => Promise<unknown>): Promise<string[]> {
+    const before = await snapshot(t);
+    await run();
+    const after = await snapshot(t);
+    const keys = new Set([...before.keys(), ...after.keys()]);
+    return [...keys].filter((k) => before.get(k) !== after.get(k)).map((k) => k.split(":")[0]!).sort();
+  }
+
+  it("addToken, updateToken and removeToken write only the marker's row; ids are never reused", async () => {
+    const { t, gm, campaignId } = await setup();
+    await gm.mutation(api.maps.renameType, { campaignId, typeId: "village", label: "Hamlet" });
+    let first = 0;
+    const add = async () => {
+      first = (await gm.mutation(api.maps.addToken, { campaignId, type: "village", x: 1, y: 1, idempotencyKey: key() })).id;
+    };
+    expect(await writes(t, add)).toEqual(["mapTokens"]);
+    expect(await writes(t, () => gm.mutation(api.maps.updateToken, { campaignId, id: first, patch: { name: "Oakhollow", x: 5 } }))).toEqual(["mapTokens"]);
+    const { id: second } = await gm.mutation(api.maps.addToken, { campaignId, type: "city", x: 2, y: 2, idempotencyKey: key() });
+    expect(await writes(t, () => gm.mutation(api.maps.removeToken, { campaignId, id: first }))).toEqual(["mapTokens"]);
+    // Removing the highest marker also raises the stored counter, so its id stays retired.
+    expect(await writes(t, () => gm.mutation(api.maps.removeToken, { campaignId, id: second }))).toEqual(["mapTokens", "maps"]);
+    const { id: third } = await gm.mutation(api.maps.addToken, { campaignId, type: "camp", x: 3, y: 3, idempotencyKey: key() });
+    expect(third).toBe(second + 1);
+    expect((await gm.query(api.maps.get, { campaignId })).state.tokens.map((tok) => tok.id)).toEqual([third]);
+  });
+
+  it("paintCells writes only the terrain tiles it touches", async () => {
+    const { t, gm, campaignId } = await setup();
+    expect(await writes(t, () => gm.mutation(api.maps.paintCells, { campaignId, indexes: [0, 1, 500], codes: "##m" }))).toEqual(["mapTerrain"]);
+    // A cell in the last tile: one more tile row; the first tile is untouched.
+    expect(await writes(t, () => gm.mutation(api.maps.paintCells, { campaignId, indexes: [128 * 97], codes: "#" }))).toEqual(["mapTerrain"]);
+    expect(await t.run(async (ctx) => (await ctx.db.query("mapTerrain").collect()).map((row) => row.tile).sort())).toEqual([0, 6]);
+    const terrain = (await gm.query(api.maps.get, { campaignId })).state.terrain;
+    expect([terrain.slice(0, 2), terrain[500], terrain[128 * 97]]).toEqual(["##", "m", "#"]);
+    expect(terrain.slice(2, 500)).toBe(WITHERWILD_TERRAIN.slice(2, 500));
+  });
+
+  it("updateHex writes the hex row (and the counter only for a new hex); players get no hidden POI", async () => {
+    const { t, gm, player, campaignId } = await setup("journey-to-horizon");
+    await gm.mutation(api.maps.placePartyHex, { campaignId, q: 0, r: 0 });
+    expect(await writes(t, () => gm.mutation(api.maps.updateHex, { campaignId, q: 0, r: 0, patch: { poi: { text: "Buried bell", hidden: true } } }))).toEqual(["mapHexes"]);
+    expect(await writes(t, () => gm.mutation(api.maps.updateHex, { campaignId, q: 9, r: 9, patch: { region: "Far" } }))).toEqual(["mapHexes", "maps"]);
+    await gm.mutation(api.maps.updateHex, { campaignId, q: 0, r: 0, patch: { habitat: "Reef", region: null } });
+    const gmHex = (await gm.query(api.maps.get, { campaignId })).state.hexCrawl!.hexes.find((h) => h.q === 0 && h.r === 0);
+    expect(gmHex).toEqual({ q: 0, r: 0, explored: true, habitat: "Reef", poi: { text: "Buried bell", hidden: true } });
+    const view = await player.query(api.maps.get, { campaignId });
+    expect(view.state.hexCrawl!.hexes).toEqual([{ q: 0, r: 0, explored: true, habitat: "Reef" }]);
+    expect(JSON.stringify(view)).not.toMatch(/Buried bell|Far/);
   });
 });

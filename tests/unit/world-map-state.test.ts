@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { MAX_MAP_JSON_BYTES, checkMapState, initialMapState, playerMapView, type MapToken } from "@/lib/world/map-state";
+import {
+  MAX_MAP_JSON_BYTES,
+  TERRAIN_TILE_CELLS,
+  TERRAIN_TILES,
+  assembleTerrain,
+  checkMapState,
+  initialMapState,
+  joinMapState,
+  playerMapView,
+  splitMapState,
+  terrainTile,
+  terrainTileOf,
+  type MapToken,
+} from "@/lib/world/map-state";
+import { TERRAIN_COLUMNS, TERRAIN_ROWS } from "@/lib/world/terrain";
 
 const token = (id: number, over: Partial<MapToken> = {}): MapToken => ({ id, type: "village", x: 1, y: 1, name: "", notes: "", hidden: false, location: false, ...over });
 
@@ -18,6 +32,49 @@ describe("map size budget", () => {
 
   it("reports schema problems without throwing", () => {
     expect(checkMapState({ ...initialMapState("witherwild"), terrain: "xyz" }).ok).toBe(false);
+  });
+});
+
+describe("map rows", () => {
+  it("terrain tiles cover the grid exactly", () => {
+    expect(TERRAIN_TILES * TERRAIN_TILE_CELLS).toBe(TERRAIN_COLUMNS * TERRAIN_ROWS);
+    expect([terrainTileOf(0), terrainTileOf(TERRAIN_TILE_CELLS - 1), terrainTileOf(TERRAIN_TILE_CELLS), terrainTileOf(TERRAIN_COLUMNS * TERRAIN_ROWS - 1)]).toEqual([0, 0, 1, TERRAIN_TILES - 1]);
+    const base = initialMapState("witherwild").terrain;
+    const painted = "#".repeat(TERRAIN_TILE_CELLS);
+    const grid = assembleTerrain(base, [{ tile: 2, cells: painted }]);
+    expect(terrainTile(grid, 2)).toBe(painted);
+    expect(grid.slice(0, 2 * TERRAIN_TILE_CELLS)).toBe(base.slice(0, 2 * TERRAIN_TILE_CELLS));
+    expect(grid.slice(3 * TERRAIN_TILE_CELLS)).toBe(base.slice(3 * TERRAIN_TILE_CELLS));
+  });
+
+  it("split then join gives the map back, markers by id and hexes by (q, r), duplicates dropped", () => {
+    const state = {
+      ...initialMapState("journey-to-horizon"),
+      tokens: [token(4), token(2, { hidden: true })],
+      nextId: 3,
+      hexCrawl: {
+        ...initialMapState("journey-to-horizon").hexCrawl!,
+        hexes: [
+          { q: 2, r: 1, explored: true },
+          { q: -1, r: 5, explored: false, poi: { text: "Bell", hidden: true } },
+          { q: 2, r: 1, explored: false },
+        ],
+      },
+    };
+    const { scalars, tokens, hexes, terrain } = splitMapState(state);
+    expect(scalars).toMatchObject({ schemaVersion: 2, nextId: 3, hexCrawl: { hexCount: 2 } });
+    expect(scalars).not.toHaveProperty("tokens");
+    expect(scalars.hexCrawl).not.toHaveProperty("hexes");
+    const joined = joinMapState(scalars, tokens, hexes, terrain);
+    expect(joined.tokens.map((t) => t.id)).toEqual([2, 4]);
+    // nextId is past every marker even when the stored counter lags behind.
+    expect(joined.nextId).toBe(5);
+    expect(joined.hexCrawl!.hexes).toEqual([
+      { q: -1, r: 5, explored: false, poi: { text: "Bell", hidden: true } },
+      { q: 2, r: 1, explored: true },
+    ]);
+    expect(joined).not.toHaveProperty("schemaVersion");
+    expect(joined.hexCrawl).not.toHaveProperty("hexCount");
   });
 });
 
