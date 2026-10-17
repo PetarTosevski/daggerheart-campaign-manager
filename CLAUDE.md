@@ -1,6 +1,76 @@
 # Project Instructions for AI Agents
 
 This file provides instructions and context for AI coding agents working on this project.
+The full project instructions are in `AGENTS.md`; read it before any task.
+
+## Binding rules
+
+These rules bind every agent and human working in this repository. They are
+stated in both `AGENTS.md` and `CLAUDE.md`; keep the two copies identical.
+Only the user's explicit current instructions override them.
+
+### Best practices: Top 15 rules
+
+Verbatim from `docs/best-practices.md`. The full rulebook in that file (Convex,
+Next.js, React and testing rules, each with its reason and enforcement) is
+binding too; read the sections that apply before you change code.
+
+1. Every client-callable Convex function is `userQuery` / `userMutation` / `userAction` (or a campaign wrapper built on them) from `convex/lib/functions.ts`. Raw `query`/`mutation`/`action` appear only in that file, `convex/auth.ts` and `convex/http.ts`; `internal*` functions are exempt.
+2. Campaign and GM access is decided only by `permissionFor` (wrapper option `need: "view" | "edit" | "owner"`). No role checks anywhere else.
+3. Identify the caller from `ctx.auth` (via the wrapper's `ctx.user`), never from an argument and never from an unverified email.
+4. Every public function has an `args` validator with no `v.any()`. No stored field is `v.any()` (only exception: `operations.result`). Player-facing queries declare a `returns` validator.
+5. Queries on growing tables use `.withIndex()`. No `.filter()` on database queries; `.collect()` only on provably small results, otherwise `.take()`, `.paginate()` or a counter.
+6. Growing collections are their own table with a back-reference index, never an array inside one document. Fields that change often live outside documents that many queries read.
+7. Every JSON blob that is not yet a typed validator carries `schemaVersion`. Change a shape by widen → migrate (`@convex-dev/migrations`, batched) → narrow; never edit a validator in place.
+8. Every table that only grows (idempotency records, soft-deleted campaigns, orphan uploads) has an internal, batched, self-rescheduling cleanup cron in `convex/crons.ts`.
+9. Throw `ConvexError<AppError>` with an object payload `{ code, message? }` from `src/lib/errors/*`. Convert only `RuleError` and `ZodError`; let programming errors throw.
+10. Uploads: issue URLs only from access-checked, rate-limited mutations; after upload check size and an explicit type allowlist (png/jpeg/webp/gif); delete rejected files; never accept a storage id as proof of access.
+11. Wrap every `useQuery` subtree in an error boundary; every route segment has `error.tsx`, the root has `global-error.tsx`.
+12. Mutations send intents (delta, id, single field), never a client-computed snapshot of a whole object; add an optimistic update wherever a click has visible latency.
+13. Never fire mutations from effects, never copy props into state in effects, never `key=` a subtree on live content.
+14. Every public Convex function appears in `tests/convex/authz-matrix.test.ts` for anonymous, outsider, player and GM. Tests assert `ConvexError.data.code`, never message text.
+15. Work in tracer bullets in worktrees (`docs/workflow.md`): change only your tracer's `owns`, and run lint, typecheck and tests before handoff. New lint rules land as warnings and are raised to errors once they are clean.
+
+### Convex function wrappers
+
+Every client-callable Convex function is defined with `userQuery`,
+`userMutation` or `userAction` (or `maybeUserQuery`, or a campaign wrapper
+built on them) from `convex/lib/functions.ts`. Raw `query`, `mutation` and
+`action` from `convex/_generated/server` are allowed only in
+`convex/lib/functions.ts`, `convex/auth.ts` and `convex/http.ts`; ESLint
+(`no-restricted-imports`) warns on them anywhere else. Fix that warning; do
+not ignore it. `internalQuery`, `internalMutation` and `internalAction` are
+exempt. (Rule CF1 in `docs/best-practices.md`.)
+
+### Build plans: tracer bullets in worktrees
+
+Every build plan is a list of tracer bullets, written and run as
+`docs/workflow.md` describes:
+
+- The plan lives in `.omc/plans/<plan>.yaml`; each tracer has a `goal`,
+  `depends_on`, `owns`, `reads` and `acceptance`.
+- Each tracer runs in its own git worktree, branched from `rebuild` (first
+  step, before any edit: `git switch -C <worktree branch> rebuild`).
+- A tracer changes only the files in its `owns` list
+  (`pnpm tracer:guard <plan> <tracer>` checks this), runs lint, typecheck and
+  tests, commits once on its branch and never pushes.
+- Only the orchestrator merges tracers into `rebuild`: in dependency order,
+  one squashed commit per tracer; then it regenerates `convex/_generated` and
+  reruns the checks.
+
+### Project rules
+
+- **Commits:** the author is petar (the existing git config). Never add a
+  `Co-Authored-By` trailer; Vercel Hobby blocks co-authored commits.
+- **Pushing:** never push (git or `bd dolt push`) unless the user asks.
+- **Task tracking:** use `bd` (beads) for all task tracking and `bd remember`
+  for persistent knowledge. No TodoWrite, TaskCreate, markdown TODO lists or
+  MEMORY.md files.
+- **Subagents:** every subagent runs on Opus (pass `model: opus` on every
+  Agent call).
+- **Unspecified mechanics:** before designing any mechanic the user has not
+  specified, ask whether it is core or frame-exclusive and how it works. Never
+  guess.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:1105d646 -->
 ## Beads Issue Tracker
@@ -74,10 +144,9 @@ Pre-commit hook (`.beads/hooks/pre-commit` -> `scripts/pre-commit.sh`): ESLint
 on staged files + typecheck; skip once with `git commit --no-verify`. CI:
 `.github/workflows/ci.yml`. Details: `docs/testing.md`.
 
-## Architecture Overview
+## Architecture, conventions and everything else
 
-_Add a brief overview of your project architecture_
-
-## Conventions & Patterns
-
-_Add your project-specific conventions here_
+Read `AGENTS.md` before any task. It holds the project overview, the
+source-of-truth hierarchy, the stack and Convex layout, architectural
+boundaries, data and history rules, testing requirements, the agent workflow
+and the definition of done. Its rules bind you as if they were written here.
