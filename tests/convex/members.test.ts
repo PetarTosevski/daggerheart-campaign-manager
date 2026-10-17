@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
-import { errorCode, errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const PLAYER = "player@example.com";
@@ -86,12 +86,28 @@ describe("campaign membership", () => {
     const { gm, player, campaignId } = await setup();
     await gm.mutation(api.members.invite, { campaignId, email: PLAYER });
     await player.mutation(api.campaigns.markOpened, { campaignId });
-    expect(errorData(await player.query(api.members.access, { campaignId }).catch((e) => e))).toBe("FORBIDDEN");
+    expect(errorCode(await player.query(api.members.access, { campaignId }).catch((e) => e))).toBe("FORBIDDEN");
     expect(
-      errorData(await player.mutation(api.members.invite, { campaignId, email: "x@example.com" }).catch((e) => e)),
+      errorCode(await player.mutation(api.members.invite, { campaignId, email: "x@example.com" }).catch((e) => e)),
     ).toBe("FORBIDDEN");
     const roster = await player.query(api.members.roster, { campaignId });
-    expect(roster.players.map((p) => p.email)).toEqual([null]);
+    expect(roster.players).toHaveLength(1);
+    // No email field at all, not even null.
+    expect(roster.players.map((p) => "email" in p)).toEqual([false]);
+    expect(roster.gm).not.toHaveProperty("email");
+  });
+
+  it("rate-limits joinByCode at 10 a minute and invites, per user", async () => {
+    const { gm, player, stranger, campaignId } = await setup();
+    const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
+    for (let i = 0; i < 10; i++) expect(await player.mutation(api.members.joinByCode, { code })).toEqual({ campaignId });
+    expect(errorCode(await player.mutation(api.members.joinByCode, { code }).catch((e) => e))).toBe("RATE_LIMITED");
+    expect(await stranger.mutation(api.members.joinByCode, { code })).toEqual({ campaignId });
+
+    for (let i = 0; i < 30; i++) await gm.mutation(api.members.invite, { campaignId, email: `p${i}@example.com` });
+    expect(errorCode(await gm.mutation(api.members.invite, { campaignId, email: "late@example.com" }).catch((e) => e))).toBe(
+      "RATE_LIMITED",
+    );
   });
 
   it("removing a player revokes membership and the invite", async () => {
@@ -117,8 +133,8 @@ describe("campaign membership", () => {
   it("strangers see nothing", async () => {
     const { stranger, campaignId } = await setup();
     expect(await stranger.query(api.campaigns.get, { campaignId })).toBeNull();
-    expect(errorData(await stranger.query(api.countdowns.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
-    expect(errorData(await stranger.query(api.members.roster, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await stranger.query(api.countdowns.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await stranger.query(api.members.roster, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
   });
 
   it("validates invite emails", async () => {
