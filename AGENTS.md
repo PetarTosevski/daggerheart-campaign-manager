@@ -81,7 +81,9 @@ When a material rule is unclear: do not guess, add an entry to
 `docs/open-questions.md`, and continue only with unaffected work.
 
 Do not reproduce substantial rulebook text, protected art, card layouts or
-protected narrative content in code or assets.
+protected narrative content in code or assets, except the frame lore, tomes and
+art from the Claude Design boards, which the user approved for this private app
+(2026-10-17, `docs/design-port-roadmap.md`).
 
 ## Product principles
 

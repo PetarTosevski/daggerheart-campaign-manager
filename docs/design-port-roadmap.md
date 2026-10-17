@@ -10,6 +10,13 @@
 - **Data:** Convex, not localStorage. Every record is owned by the GM (`requireGm`) and syncs live across devices.
 - **Frames:** all 10 published frames plus Custom are selectable, with their lore and visuals. Only Witherwild switches on exclusive mechanics until the user specifies the others (see the memory "ask mechanic scope").
 
+### D2+ decisions (2026-10-17)
+
+- **Countdowns:** the old rules (categories, statuses active/paused/completed/cancelled, advance/reverse, completion once per lifecycle, idempotent changes), shown in the board's look, **without the audit history** (no event log or history UI).
+- **Campaign time:** follow the design: months as well as weeks and the 7-phase day/night arc ("Month I · Week 1 · Day 1"). Witherwild-only.
+- **Wither tokens:** Witherwild-only, ported later with the party (D5), not in D2.
+- **Lore text and art:** port the tomes and frame text and art in full (private app for one table). This overrides the `AGENTS.md` rule on rulebook text for this project.
+
 ## Porting rules
 
 - The boards are the visual spec: copy the colours, type, spacing and copy text, but write idiomatic React/Next.js (components, Tailwind tokens), not the `.dc.html` template engine.
