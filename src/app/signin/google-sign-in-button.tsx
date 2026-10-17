@@ -3,15 +3,16 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { BrandButton } from "@/components/brand/buttons";
 
 export function GoogleSignInButton() {
   const { signIn } = useAuthActions();
   const [pending, setPending] = useState(false);
 
   return (
-    <Button
-      size="lg"
+    <BrandButton
+      variant="primary"
+      size="xl"
       disabled={pending}
       onClick={() => {
         setPending(true);
@@ -19,6 +20,6 @@ export function GoogleSignInButton() {
       }}
     >
       {pending ? "Redirecting to Google…" : "Sign in with Google"}
-    </Button>
+    </BrandButton>
   );
 }

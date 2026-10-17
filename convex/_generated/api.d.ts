@@ -9,10 +9,13 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as campaigns from "../campaigns.js";
 import type * as http from "../http.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_operations from "../lib/operations.js";
 import type * as lib_users from "../lib/users.js";
+import type * as settings from "../settings.js";
 import type * as users from "../users.js";
 
 import type {
@@ -23,10 +26,13 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  campaigns: typeof campaigns;
   http: typeof http;
   "lib/allowlist": typeof lib_allowlist;
   "lib/auth": typeof lib_auth;
+  "lib/operations": typeof lib_operations;
   "lib/users": typeof lib_users;
+  settings: typeof settings;
   users: typeof users;
 }>;
 
