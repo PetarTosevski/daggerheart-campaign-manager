@@ -13,8 +13,8 @@ describe("Horizon Doom Track and Soul Echoes", () => {
 
   async function setup(frameId: "journey-to-horizon" | "witherwild" = "journey-to-horizon") {
     const t = makeTest();
-    const gmId = await t.run((ctx) => ctx.db.insert("users", { email: GM }));
-    const playerId = await t.run((ctx) => ctx.db.insert("users", { email: PLAYER }));
+    const gmId = await t.run((ctx) => ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }));
+    const playerId = await t.run((ctx) => ctx.db.insert("users", { email: PLAYER, emailVerificationTime: 1 }));
     const gm = t.withIdentity({ subject: `${gmId}|s` });
     const player = t.withIdentity({ subject: `${playerId}|s` });
     const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Valloren", idempotencyKey: key() });
@@ -150,7 +150,7 @@ describe("Horizon Doom Track and Soul Echoes", () => {
 
   it("hides the campaign from strangers", async () => {
     const { t, campaignId } = await setup();
-    const strangerId = await t.run((ctx) => ctx.db.insert("users", { email: "stranger@example.com" }));
+    const strangerId = await t.run((ctx) => ctx.db.insert("users", { email: "stranger@example.com", emailVerificationTime: 1 }));
     const stranger = t.withIdentity({ subject: `${strangerId}|s` });
     expect(errorData(await stranger.query(api.trackers.horizon.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
   });

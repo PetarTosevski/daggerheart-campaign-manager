@@ -15,9 +15,9 @@ describe("uploads claimed elsewhere", () => {
   async function setup() {
     const t = makeTest();
     const ids = await t.run(async (ctx) => ({
-      gm: await ctx.db.insert("users", { email: GM }),
-      victim: await ctx.db.insert("users", { email: VICTIM }),
-      player: await ctx.db.insert("users", { email: PLAYER }),
+      gm: await ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }),
+      victim: await ctx.db.insert("users", { email: VICTIM, emailVerificationTime: 1 }),
+      player: await ctx.db.insert("users", { email: PLAYER, emailVerificationTime: 1 }),
     }));
     const gm = t.withIdentity({ subject: `${ids.gm}|s` });
     const victim = t.withIdentity({ subject: `${ids.victim}|s` });

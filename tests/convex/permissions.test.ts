@@ -17,10 +17,10 @@ describe("grants", () => {
   async function setup() {
     const t = makeTest();
     const ids = await t.run(async (ctx) => ({
-      gm: await ctx.db.insert("users", { email: GM }),
-      outsider: await ctx.db.insert("users", { email: OUTSIDER }),
-      otherGm: await ctx.db.insert("users", { email: OTHER_GM }),
-      otherPlayer: await ctx.db.insert("users", { email: OTHER_PLAYER }),
+      gm: await ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }),
+      outsider: await ctx.db.insert("users", { email: OUTSIDER, emailVerificationTime: 1 }),
+      otherGm: await ctx.db.insert("users", { email: OTHER_GM, emailVerificationTime: 1 }),
+      otherPlayer: await ctx.db.insert("users", { email: OTHER_PLAYER, emailVerificationTime: 1 }),
     }));
     const as = (id: string) => t.withIdentity({ subject: `${id}|s` });
     const gm = as(ids.gm);
@@ -91,7 +91,7 @@ describe("migrations:moveUploadsToFiles", () => {
 
   it("copies the old upload tables into files, once", async () => {
     const t = makeTest();
-    const gmId = await t.run((ctx) => ctx.db.insert("users", { email: GM }));
+    const gmId = await t.run((ctx) => ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }));
     const gm = t.withIdentity({ subject: `${gmId}|s` });
     const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Old", idempotencyKey: key() });
     const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "character", idempotencyKey: key() });

@@ -7,6 +7,15 @@ import { normalizeEmail } from "./allowlist";
 /** A user's role in a campaign: its creator is the GM; members and invitees are players. */
 export type Role = "gm" | "player";
 
+/**
+ * The normalized email an invite may match, or null. Password sign-ups never
+ * verify their address, so only a verified email (Google, e2e) counts;
+ * otherwise anyone could register an invited address and join.
+ */
+export function inviteEmail(user: Doc<"users">): string | null {
+  return user.email && user.emailVerificationTime !== undefined ? normalizeEmail(user.email) : null;
+}
+
 export async function campaignRole(
   ctx: QueryCtx,
   user: Doc<"users">,
@@ -18,12 +27,11 @@ export async function campaignRole(
     .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", user._id))
     .unique();
   if (member !== null) return "player";
-  if (user.email) {
+  const email = inviteEmail(user);
+  if (email !== null) {
     const invite = await ctx.db
       .query("campaignInvites")
-      .withIndex("by_campaign_email", (q) =>
-        q.eq("campaignId", campaign._id).eq("email", normalizeEmail(user.email!)),
-      )
+      .withIndex("by_campaign_email", (q) => q.eq("campaignId", campaign._id).eq("email", email))
       .first();
     if (invite !== null) return "player";
   }

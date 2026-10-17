@@ -9,9 +9,9 @@ const PLAYER = "player@example.com";
 async function setup() {
   const t = makeTest();
   const ids = await t.run(async (ctx) => ({
-    gm: await ctx.db.insert("users", { email: "gm@example.com" }),
-    player: await ctx.db.insert("users", { email: PLAYER, name: "Ana" }),
-    stranger: await ctx.db.insert("users", { email: "other@example.com" }),
+    gm: await ctx.db.insert("users", { email: "gm@example.com", emailVerificationTime: 1 }),
+    player: await ctx.db.insert("users", { email: PLAYER, emailVerificationTime: 1, name: "Ana" }),
+    stranger: await ctx.db.insert("users", { email: "other@example.com", emailVerificationTime: 1 }),
   }));
   const as = (id: string) => t.withIdentity({ subject: `${id}|session` });
   const gm = as(ids.gm);
