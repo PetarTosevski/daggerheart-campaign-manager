@@ -114,4 +114,28 @@ describe("countdowns", () => {
       .catch((e) => e);
     expect(errorData(error)).toBe("NOT_FOUND");
   });
+
+  it("does not operate countdowns owned by a frame tracker", async () => {
+    const { t, gm, campaignId } = await setupWithCampaign();
+    const owned = await t.run((ctx) =>
+      ctx.db.insert("countdowns", {
+        campaignId,
+        name: "Objective",
+        description: "",
+        category: "project",
+        startingValue: 4,
+        currentValue: 4,
+        status: "active",
+        consequence: "",
+        createdAt: 0,
+        ownerKey: "nation:armada",
+        kind: "objective-minor",
+      }),
+    );
+    const error = await gm
+      .mutation(api.countdowns.operate, { countdownId: owned, action: "advance", idempotencyKey: key() })
+      .catch((e) => e);
+    expect(errorData(error)).toBe("NOT_FOUND");
+    expect(await gm.query(api.countdowns.listByCampaign, { campaignId })).toEqual([]);
+  });
 });

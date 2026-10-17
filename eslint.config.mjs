@@ -12,6 +12,7 @@ const eslintConfig = defineConfig([
       "src/lib/domain/**",
       "src/lib/validation/**",
       "src/lib/frames/**",
+      "src/lib/srd/**",
       "convex/lib/allowlist.ts",
     ],
     rules: {

@@ -33,7 +33,8 @@ export const listByCampaign = query({
       .query("countdowns")
       .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
       .collect();
-    return rows.filter((c) => c.status !== "cancelled").map(toClient);
+    // Frame-owned countdowns (objectives, Lycanthropy…) belong to their tracker panels.
+    return rows.filter((c) => c.status !== "cancelled" && c.ownerKey === undefined).map(toClient);
   },
 });
 
@@ -100,7 +101,8 @@ export const operate = mutation({
   handler: async (ctx, { countdownId, action, amount, idempotencyKey }) => {
     const user = await requireUser(ctx);
     const countdown = await ctx.db.get(countdownId);
-    if (countdown === null) throw new ConvexError("NOT_FOUND");
+    // Frame-owned countdowns (objectives, Lycanthropy…) follow their tracker's rules.
+    if (countdown === null || countdown.ownerKey !== undefined) throw new ConvexError("NOT_FOUND");
     await loadGmCampaign(ctx, user, countdown.campaignId);
     if ((action === "correction") !== (amount !== undefined)) {
       throw new ConvexError({ code: "INVALID", message: "Only a correction takes an amount." });

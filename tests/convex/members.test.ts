@@ -39,9 +39,9 @@ describe("campaign membership", () => {
     expect((await player.query(api.campaignTime.get, { campaignId })).cycleDay).toBe(1);
     // ...but only the GM changes them.
     for (const call of [
-      player.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: key() }),
-      player.mutation(api.campaignTime.advance, { campaignId, idempotencyKey: key() }),
-      player.mutation(api.countdowns.create, {
+      () => player.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: key() }),
+      () => player.mutation(api.campaignTime.advance, { campaignId, idempotencyKey: key() }),
+      () => player.mutation(api.countdowns.create, {
         campaignId,
         name: "x",
         description: "",
@@ -50,9 +50,9 @@ describe("campaign membership", () => {
         consequence: "",
         idempotencyKey: key(),
       }),
-      player.mutation(api.campaigns.remove, { campaignId }),
+      () => player.mutation(api.campaigns.remove, { campaignId }),
     ]) {
-      expect(errorData(await call.catch((e) => e))).toBe("FORBIDDEN");
+      expect(errorData(await call().catch((e) => e))).toBe("FORBIDDEN");
     }
   });
 

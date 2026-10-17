@@ -1,12 +1,14 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { BookOpen, Eye, EyeOff } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { ArtBackdrop, ComplexityDiamonds, CreateSteps, PageHeader } from "@/components/brand/brand";
 import { BrandButton } from "@/components/brand/buttons";
 import { assetBackground } from "@/lib/design-assets";
+import { TomeBook } from "@/components/tome/tome-book";
 import { getPublishedFrame, type PublishedFrameId } from "@/lib/frames";
+import { TOMES, type TomeChapterId } from "@/lib/frames/tomes";
 
 import { NameCampaignDialog } from "../../new/create-campaign";
 import { ExpansionBadge } from "../../new/frame-select";
@@ -22,6 +24,7 @@ export function FrameIntro({ frameId }: { frameId: PublishedFrameId }) {
   const frame = getPublishedFrame(frameId)!;
   const [hidden, setHidden] = useState(false);
   const [naming, setNaming] = useState(false);
+  const [chapter, setChapter] = useState<TomeChapterId | null>(null);
   const art = assetBackground(frame.intro.asset);
 
   return (
@@ -105,17 +108,38 @@ export function FrameIntro({ frameId }: { frameId: PublishedFrameId }) {
               </div>
               <div className="flex flex-col gap-2">
                 <Heading>Special Mechanics</Heading>
-                <p className="m-0 text-[15px] leading-snug text-brand">{frame.mechanics}</p>
+                <button
+                  type="button"
+                  onClick={() => setChapter("mechanics")}
+                  className="min-h-11 cursor-pointer text-left text-[15px] leading-snug text-brand underline underline-offset-[3px]"
+                >
+                  {frame.mechanics} ›
+                </button>
               </div>
               <div className="flex flex-col gap-2">
                 <Heading>Inciting Incident</Heading>
-                <p className="m-0 text-[15px] leading-snug text-brand">{frame.incident}</p>
+                <button
+                  type="button"
+                  onClick={() => setChapter("incident")}
+                  className="min-h-11 cursor-pointer text-left text-[15px] leading-snug text-brand underline underline-offset-[3px]"
+                >
+                  {frame.incident} ›
+                </button>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-3 pt-1.5">
               <BrandButton variant="primary" size="xl" onClick={() => setNaming(true)}>
                 Choose this Frame
+              </BrandButton>
+              <BrandButton
+                variant="pill"
+                size="xl"
+                className="border-[#4a505a] bg-black/30 px-5 text-[15px]"
+                onClick={() => setChapter("overview")}
+              >
+                <BookOpen strokeWidth={1.6} aria-hidden="true" />
+                Overview
               </BrandButton>
               <BrandButton
                 variant="pill"
@@ -130,6 +154,17 @@ export function FrameIntro({ frameId }: { frameId: PublishedFrameId }) {
           </section>
         )}
       </main>
+
+      <TomeBook
+        open={chapter !== null}
+        onClose={() => setChapter(null)}
+        chapter={chapter ?? "overview"}
+        onChapter={setChapter}
+        kicker={`Campaign Frame · ${frame.expansion ? "Hope & Fear" : "Core Rulebook"}`}
+        title={frame.name}
+        art={{ image: art, position: frame.intro.position }}
+        content={{ kind: "published", tome: TOMES[frame.id] }}
+      />
 
       <NameCampaignDialog
         frameId={frame.id}
