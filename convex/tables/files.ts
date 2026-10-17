@@ -39,7 +39,7 @@ export const fileTables = {
     .index("by_principal_type", ["principalKind", "principalId", "resourceType"])
     .index("by_creator", ["createdBy"]),
 
-  /** DEPRECATED: replaced by `files` (kind "portrait"). Kept until `migrations:moveUploadsToFiles` has run. */
+  /** DEPRECATED: replaced by `files` (kind "portrait"). Kept until `migrations/uploads:moveUploadsToFiles` has run. */
   portraitUploads: defineTable({
     storageId: v.id("_storage"),
     userId: v.id("users"),
@@ -49,7 +49,7 @@ export const fileTables = {
     .index("by_storage", ["storageId"])
     .index("by_character", ["characterId"]),
 
-  /** DEPRECATED: replaced by `files` (kind "map"). Kept until `migrations:moveUploadsToFiles` has run. */
+  /** DEPRECATED: replaced by `files` (kind "map"). Kept until `migrations/uploads:moveUploadsToFiles` has run. */
   mapUploads: defineTable({
     storageId: v.id("_storage"),
     campaignId: v.id("campaigns"),
@@ -59,7 +59,7 @@ export const fileTables = {
     .index("by_storage", ["storageId"])
     .index("by_campaign", ["campaignId"]),
 
-  /** DEPRECATED: replaced by `files` (kind "codexImage"). Kept until `migrations:moveUploadsToFiles` has run. */
+  /** DEPRECATED: replaced by `files` (kind "codexImage"). Kept until `migrations/uploads:moveUploadsToFiles` has run. */
   codexImages: defineTable({
     storageId: v.id("_storage"),
     campaignId: v.id("campaigns"),
