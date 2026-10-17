@@ -33,9 +33,10 @@ export function errorMessage(error: unknown): string {
   if (error instanceof ConvexError) {
     const data: unknown = error.data;
     if (typeof data === "string") return MESSAGES[data] ?? "Something went wrong.";
-    if (typeof data === "object" && data !== null && "message" in data) {
-      const message = (data as { message?: unknown }).message;
+    if (typeof data === "object" && data !== null) {
+      const { message, code } = data as { message?: unknown; code?: unknown };
       if (typeof message === "string" && message) return message;
+      if (typeof code === "string" && MESSAGES[code]) return MESSAGES[code];
     }
   }
   return "Something went wrong. Check your connection and try again.";

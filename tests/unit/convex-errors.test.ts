@@ -13,7 +13,7 @@ import { trackerMessages } from "@/lib/errors/trackers";
 const PREVIOUS: Record<string, string> = {
   UNAUTHENTICATED: "Your session has ended. Sign in again.",
   FORBIDDEN: "This account can't use the campaign ledger.",
-  NOT_FOUND: "That campaign no longer exists.",
+  NOT_FOUND: "That no longer exists.",
   TRACKER_CORRUPT: "This tracker's saved data is damaged. Nothing was changed; ask the developer to repair it.",
   CHARACTER_CORRUPT: "This character's saved data is damaged. Nothing was changed; ask the developer to repair it.",
   MAP_CORRUPT: "This campaign's map data is damaged. Nothing was changed; ask the developer to repair it.",

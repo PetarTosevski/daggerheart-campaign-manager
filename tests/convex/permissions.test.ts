@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { api, internal } from "../../convex/_generated/api";
-import type { Doc } from "../../convex/_generated/dataModel";
-import { upsertGrant } from "../../convex/lib/permissions";
+import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { permissionFor, upsertGrant, type Permission } from "../../convex/lib/permissions";
 import { errorData, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
@@ -83,6 +83,55 @@ describe("grants", () => {
     expect(JSON.stringify(view)).toMatch(/Wyrm lair/);
     const { id } = await outsider.mutation(api.maps.addToken, { campaignId, type: "camp", x: 1, y: 1, idempotencyKey: key() });
     expect((await outsider.query(api.maps.get, { campaignId })).state.tokens.some((tok) => tok.id === id)).toBe(true);
+  });
+});
+
+describe("permissionFor read cost", () => {
+  useAllowlist(`${GM},${OUTSIDER},${OTHER_PLAYER}`);
+
+  /** Runs permissionFor on the campaign's map with a ctx.db that counts get/query calls. */
+  async function readsFor(t: ReturnType<typeof makeTest>, userId: Id<"users">, campaignId: Id<"campaigns">, need: Permission) {
+    return t.run(async (ctx) => {
+      const campaign = (await ctx.db.get("campaigns", campaignId))!;
+      const user = (await ctx.db.get("users", userId))!;
+      let reads = 0;
+      const db = new Proxy(ctx.db, {
+        get(target, prop) {
+          const value: unknown = Reflect.get(target, prop);
+          if (typeof value !== "function") return value;
+          return (...args: unknown[]) => {
+            if (prop === "get" || prop === "query") reads++;
+            return (value as (...a: unknown[]) => unknown).apply(target, args);
+          };
+        },
+      });
+      const permission = await permissionFor({ ...ctx, db }, user, { type: "map", campaign }, need);
+      return { permission, reads };
+    });
+  }
+
+  it("short-circuits on the role and never reads the caller's other campaigns", async () => {
+    const t = makeTest();
+    const ids = await t.run(async (ctx) => ({
+      gm: await ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }),
+      outsider: await ctx.db.insert("users", { email: OUTSIDER, emailVerificationTime: 1 }),
+      player: await ctx.db.insert("users", { email: OTHER_PLAYER, emailVerificationTime: 1 }),
+    }));
+    const as = (id: string) => t.withIdentity({ subject: `${id}|s` });
+    const { campaignId } = await as(ids.gm).mutation(api.campaigns.create, { frameId: "witherwild", name: "Cost", idempotencyKey: key() });
+    await as(ids.gm).mutation(api.members.invite, { campaignId, email: OTHER_PLAYER });
+    await as(ids.player).mutation(api.campaigns.markOpened, { campaignId });
+
+    expect(await readsFor(t, ids.gm, campaignId, "owner")).toEqual({ permission: "owner", reads: 0 });
+    expect(await readsFor(t, ids.player, campaignId, "view")).toEqual({ permission: "view", reads: 1 });
+
+    // No access: role (membership, invite) plus, per target, one user grant and one campaign-grant range.
+    const before = await readsFor(t, ids.outsider, campaignId, "owner");
+    expect(before).toEqual({ permission: null, reads: 6 });
+    for (let i = 0; i < 5; i++) {
+      await as(ids.outsider).mutation(api.campaigns.create, { frameId: "witherwild", name: `Mine ${i}`, idempotencyKey: key() });
+    }
+    expect(await readsFor(t, ids.outsider, campaignId, "owner")).toEqual(before);
   });
 });
 

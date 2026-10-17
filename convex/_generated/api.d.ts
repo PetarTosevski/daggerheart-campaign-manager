@@ -24,6 +24,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_dice from "../lib/dice.js";
 import type * as lib_fear from "../lib/fear.js";
 import type * as lib_files from "../lib/files.js";
+import type * as lib_functions from "../lib/functions.js";
 import type * as lib_maps from "../lib/maps.js";
 import type * as lib_mechanics from "../lib/mechanics.js";
 import type * as lib_operations from "../lib/operations.js";
@@ -73,6 +74,7 @@ declare const fullApi: ApiFromModules<{
   "lib/dice": typeof lib_dice;
   "lib/fear": typeof lib_fear;
   "lib/files": typeof lib_files;
+  "lib/functions": typeof lib_functions;
   "lib/maps": typeof lib_maps;
   "lib/mechanics": typeof lib_mechanics;
   "lib/operations": typeof lib_operations;
