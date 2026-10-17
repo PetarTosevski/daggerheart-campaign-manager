@@ -235,6 +235,7 @@ waves:
           - convex/users.ts
           - convex/tables/countdowns.ts
           - convex/tables/history.ts
+          - convex/history.ts
           - convex/fear.ts
           - convex/lib/fear.ts
           - tests/convex/history.test.ts
