@@ -8,7 +8,7 @@ import { PASSWORD_PROVIDER_ID } from "./lib/users";
  * Creates the env-defined test accounts (`SEED_ACCOUNTS`, `email:password`
  * pairs separated by `;`) as email + password logins. Idempotent; existing
  * accounts are left unchanged. Refuses to run unless this is a local e2e
- * deployment. Run with `npx convex run accounts:seed`.
+ * deployment or `ALLOW_SEED_ACCOUNTS` is `"true"` (cloud dev only). Run with `npx convex run accounts:seed`.
  */
 export const seed = internalAction({
   args: {},

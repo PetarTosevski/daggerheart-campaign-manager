@@ -129,6 +129,20 @@ describe("allowlist sources", () => {
     expect([...allowedEmails({ ...cloud, ...sources })].sort()).toEqual(["g@x.test", "p@x.test"]);
     expect([...allowedEmails(sources)].sort()).toEqual(["g@x.test", "p@x.test"]);
   });
+
+  it("includes SEED_ACCOUNTS on a cloud deployment only when ALLOW_SEED_ACCOUNTS is exactly \"true\"", () => {
+    expect([...allowedEmails({ ...cloud, ...sources, ALLOW_SEED_ACCOUNTS: "true" })].sort()).toEqual([
+      "g@x.test",
+      "p@x.test",
+      "s@x.test",
+    ]);
+    for (const flag of ["false", "TRUE", "1", "", " true"]) {
+      expect([...allowedEmails({ ...cloud, ...sources, ALLOW_SEED_ACCOUNTS: flag })].sort()).toEqual([
+        "g@x.test",
+        "p@x.test",
+      ]);
+    }
+  });
 });
 
 describe("seedAccountsFor (accounts:seed)", () => {
@@ -143,5 +157,15 @@ describe("seedAccountsFor (accounts:seed)", () => {
       seedAccountsFor({ CONVEX_CLOUD_URL: "https://happy-otter-123.convex.cloud", SEED_ACCOUNTS: "s@x.test:pw" }),
     ).toThrow();
     expect(() => seedAccountsFor({ SEED_ACCOUNTS: "s@x.test:pw" })).toThrow();
+  });
+
+  it("runs on a cloud deployment with ALLOW_SEED_ACCOUNTS=true and refuses with any other value", () => {
+    const cloudSeed = { CONVEX_CLOUD_URL: "https://happy-otter-123.convex.cloud", SEED_ACCOUNTS: "s@x.test:pw" };
+    expect(seedAccountsFor({ ...cloudSeed, ALLOW_SEED_ACCOUNTS: "true" })).toEqual([
+      { email: "s@x.test", password: "pw" },
+    ]);
+    for (const flag of ["false", "yes", "1", ""]) {
+      expect(() => seedAccountsFor({ ...cloudSeed, ALLOW_SEED_ACCOUNTS: flag })).toThrow();
+    }
   });
 });

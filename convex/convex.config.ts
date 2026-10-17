@@ -13,6 +13,7 @@ const app = defineApp({
     ALLOWED_EMAILS: v.optional(v.string()),
     GM_EMAILS: v.optional(v.string()),
     SEED_ACCOUNTS: v.optional(v.string()),
+    ALLOW_SEED_ACCOUNTS: v.optional(v.string()),
     E2E_AUTH_ENABLED: v.optional(v.string()),
     E2E_AUTH_SECRET: v.optional(v.string()),
   },
