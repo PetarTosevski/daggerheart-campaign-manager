@@ -28,3 +28,21 @@ waves:
           - convex/members.ts
         acceptance:
           - "The invite section shows the note; players.spec.ts asserts it and still passes"
+  - wave: 2
+    tracers:
+      - id: X3
+        goal: Wrong join codes count against the joinByCode rate limit (joinByCode returns a result instead of throwing for a bad code, so the token isn't rolled back), and the players dialog narrows the roster on its viewer field.
+        depends_on: []
+        owns:
+          - convex/members.ts
+          - tests/convex/members.test.ts
+          - src/app/(gm)/join-dialog.tsx
+          - src/app/(gm)/join/[code]/join-by-link.tsx
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - tests/e2e/players.spec.ts
+        reads:
+          - convex/lib/functions.ts
+        acceptance:
+          - "11 wrong codes in a minute: the 11th returns RATE_LIMITED (convex test)"
+          - "join dialog and join-by-link show the bad-code message from the result; players.spec.ts passes"
+          - "roster's player rows no longer need an email placeholder; players-dialog narrows on roster.viewer"
