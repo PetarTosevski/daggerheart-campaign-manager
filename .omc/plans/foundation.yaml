@@ -1,0 +1,32 @@
+plan: foundation
+waves:
+  - wave: 1
+    tracers:
+      - id: T1
+        goal: Schema tables and error messages are split per domain; schema.ts and convex-errors.ts only combine them; behaviour unchanged.
+        depends_on: []
+        owns:
+          - convex/schema.ts
+          - convex/tables/**
+          - src/lib/convex-errors.ts
+          - src/lib/errors/**
+          - tests/unit/convex-errors.test.ts
+        reads:
+          - convex/**
+        acceptance:
+          - pnpm typecheck, lint, test pass; convex compiles; schema is deep-equal to before
+      - id: T2
+        goal: Plan overlap check, tracer diff guard and worktree setup scripts work.
+        depends_on: []
+        owns:
+          - scripts/plan-check.mjs
+          - scripts/tracer-guard.mjs
+          - scripts/worktree-setup.mjs
+          - tests/unit/workflow-scripts.test.ts
+          - .omc/plans/foundation.yaml
+        reads:
+          - docs/workflow.md
+          - scripts/e2e-ports.mjs
+        acceptance:
+          - plan-check fails on an overlapping plan and passes on foundation.yaml
+          - tracer-guard rejects a diff outside owns
