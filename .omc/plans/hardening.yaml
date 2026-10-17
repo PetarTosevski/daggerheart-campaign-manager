@@ -397,6 +397,9 @@ waves:
         goal: codex.list returns summary fields from a bounded read (pins from mapTokens, long text in codexEntryText, count from a counter doc), and new campaigns are seeded on create instead of by a client effect (convex-data H3; client M4; CD12, CD14, TE6).
         depends_on: [H10, H07]
         owns:
+          - tests/unit/codex-view.test.ts
+          - src/app/(gm)/campaigns/[campaignId]/codex/page.tsx
+          - tests/e2e/codex.spec.ts
           - convex/codex.ts
           - convex/tables/codex.ts
           - convex/lib/codex.ts
