@@ -4,34 +4,10 @@ import { z } from "zod";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { deleteInvites } from "./campaigns";
+import { deleteInvites, freshJoinCode } from "./campaigns";
 import { normalizeEmail } from "./lib/allowlist";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, userMutation } from "./lib/functions";
 import { campaignAccess } from "./lib/permissions";
-
-// No 0/O/1/I/L so codes read clearly aloud and on paper.
-const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-const CODE_LENGTH = 8;
-
-function newJoinCode(): string {
-  // Rejection sampling keeps every character equally likely (256 % 31 ≠ 0).
-  const limit = 256 - (256 % CODE_ALPHABET.length);
-  let code = "";
-  const byte = new Uint8Array(1);
-  while (code.length < CODE_LENGTH) {
-    crypto.getRandomValues(byte);
-    if (byte[0] < limit) code += CODE_ALPHABET[byte[0] % CODE_ALPHABET.length];
-  }
-  return code;
-}
-
-async function freshJoinCode(ctx: QueryCtx): Promise<string> {
-  let code = newJoinCode();
-  while (await ctx.db.query("campaigns").withIndex("by_joinCode", (q) => q.eq("joinCode", code)).first()) {
-    code = newJoinCode();
-  }
-  return code;
-}
 
 export function normalizeJoinCode(code: string): string {
   return code.replace(/[^a-z0-9]/gi, "").toUpperCase();

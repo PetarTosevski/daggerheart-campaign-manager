@@ -1,19 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
+import { OPEN_THROTTLE_MS } from "../../convex/campaigns";
+import { errorCode } from "./helpers";
 import { makeTest } from "./setup";
 
 const GM_EMAIL = "gm@example.com";
 const OTHER_EMAIL = "other@example.com";
-
-function errorData(error: unknown): unknown {
-  return (error as { data?: unknown }).data;
-}
-
-function errorCode(error: unknown): unknown {
-  const data = errorData(error);
-  return typeof data === "object" && data !== null ? (data as { code?: unknown }).code : data;
-}
 
 async function setup() {
   const t = makeTest();
@@ -130,7 +123,7 @@ describe("campaigns", () => {
     const mismatch = await gm
       .mutation(api.campaigns.create, { frameId: "witherwild", name: "Twice", idempotencyKey: "same" })
       .catch((e) => e);
-    expect(errorData(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
+    expect(errorCode(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
   });
 
   it("lists only the GM's own campaigns, most recently opened first", async () => {
@@ -149,7 +142,7 @@ describe("campaigns", () => {
     const { campaignId } = await other.mutation(api.campaigns.create, { frameId: "witherwild", name: "Theirs", idempotencyKey: "k" });
     expect(await gm.query(api.campaigns.get, { campaignId })).toBeNull();
     const error = await gm.mutation(api.campaigns.remove, { campaignId }).catch((e) => e);
-    expect(errorData(error)).toBe("NOT_FOUND");
+    expect(errorCode(error)).toBe("NOT_FOUND");
   });
 
   it("deletes a campaign recoverably, and undo restores it", async () => {
@@ -172,10 +165,84 @@ describe("campaigns", () => {
     expect((await gm.query(api.campaigns.list, {})).map((c) => c.name)).toEqual(["Back"]);
   });
 
+  it("records opens in campaignOpens, at most every 5 minutes, without touching the campaign", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const { t, gm } = await setup();
+      const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Open", idempotencyKey: "k" });
+      const before = await t.run((ctx) => ctx.db.get("campaigns", campaignId));
+      const opens = () => t.run((ctx) => ctx.db.query("campaignOpens").collect());
+
+      vi.setSystemTime(2_000_000);
+      await gm.mutation(api.campaigns.markOpened, { campaignId });
+      expect(await opens()).toMatchObject([{ campaignId, lastOpenedAt: 2_000_000 }]);
+
+      vi.setSystemTime(2_000_000 + OPEN_THROTTLE_MS - 1);
+      await gm.mutation(api.campaigns.markOpened, { campaignId });
+      expect((await opens())[0].lastOpenedAt).toBe(2_000_000);
+
+      vi.setSystemTime(2_000_000 + OPEN_THROTTLE_MS);
+      await gm.mutation(api.campaigns.markOpened, { campaignId });
+      expect(await opens()).toHaveLength(1);
+      expect((await opens())[0].lastOpenedAt).toBe(2_000_000 + OPEN_THROTTLE_MS);
+
+      expect(await t.run((ctx) => ctx.db.get("campaigns", campaignId))).toEqual(before);
+      expect((await gm.query(api.campaigns.get, { campaignId }))?.lastOpenedAt).toBe(2_000_000 + OPEN_THROTTLE_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("orders unopened campaigns by their stored lastOpenedAt", async () => {
+    const { t, gm } = await setup();
+    const a = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "A", idempotencyKey: "a" });
+    const b = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "B", idempotencyKey: "b" });
+    // Opens recorded on the campaign document before campaignOpens existed.
+    await t.run(async (ctx) => {
+      await ctx.db.patch("campaigns", a.campaignId, { lastOpenedAt: 2000 });
+      await ctx.db.patch("campaigns", b.campaignId, { lastOpenedAt: 1000 });
+    });
+    const names = async () => (await gm.query(api.campaigns.list, {})).map((c) => [c.name, c.lastOpenedAt]);
+    expect(await names()).toEqual([
+      ["A", 2000],
+      ["B", 1000],
+    ]);
+    await gm.mutation(api.campaigns.markOpened, { campaignId: b.campaignId });
+    expect((await names()).map(([name]) => name)).toEqual(["B", "A"]);
+  });
+
+  it("creates the join code with the campaign", async () => {
+    const { t, gm } = await setup();
+    const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Coded", idempotencyKey: "k" });
+    const campaign = await t.run((ctx) => ctx.db.get("campaigns", campaignId));
+    expect(campaign?.joinCode).toMatch(/^[A-HJKMNP-Z2-9]{8}$/);
+  });
+
+  it("rate-limits campaign creation per user", async () => {
+    const { gm, other } = await setup();
+    // Bursts of 30, refilling at 10 an hour.
+    for (let i = 0; i < 30; i++) {
+      await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: `C${i}`, idempotencyKey: `k${i}` });
+    }
+    const limited = await gm
+      .mutation(api.campaigns.create, { frameId: "witherwild", name: "C30", idempotencyKey: "k30" })
+      .catch((e) => e);
+    expect(errorCode(limited)).toBe("RATE_LIMITED");
+    await other.mutation(api.campaigns.create, { frameId: "witherwild", name: "Mine", idempotencyKey: "k" });
+  });
+
+  it("returns null, not an error, to a signed-out get", async () => {
+    const { t, gm } = await setup();
+    const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Mine", idempotencyKey: "k" });
+    expect(await t.query(api.campaigns.get, { campaignId })).toBeNull();
+    expect(await gm.query(api.campaigns.get, { campaignId: "not-an-id" })).toBeNull();
+  });
+
   it("requires sign-in", async () => {
     const { t } = await setup();
     const error = await t.query(api.campaigns.list, {}).catch((e) => e);
-    expect(errorData(error)).toBe("UNAUTHENTICATED");
+    expect(errorCode(error)).toBe("UNAUTHENTICATED");
   });
 });
 

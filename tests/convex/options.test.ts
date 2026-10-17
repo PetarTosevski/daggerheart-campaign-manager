@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
-import { errorCode, errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 describe("campaign rule switches", () => {
@@ -39,7 +39,7 @@ describe("campaign rule switches", () => {
       );
     }
     expect(
-      errorData(await player.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true }).catch((e) => e)),
+      errorCode(await player.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true }).catch((e) => e)),
     ).toBe("FORBIDDEN");
   });
 });
