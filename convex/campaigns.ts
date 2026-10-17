@@ -9,7 +9,7 @@ import { frameHasMechanic } from "../src/lib/frames/index";
 import { isCampaignOptionId, optionsFor, resolveOptions } from "../src/lib/frames/options";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { campaignRole, loadCampaign, loadGmCampaign, type Role } from "./lib/access";
+import { campaignRole, inviteEmail, loadCampaign, loadGmCampaign, type Role } from "./lib/access";
 import { normalizeEmail } from "./lib/allowlist";
 import { requireUser } from "./lib/auth";
 import { ownerScope, withIdempotency } from "./lib/operations";
@@ -66,10 +66,11 @@ export const list = query({
         seen.add(c._id);
       }
     }
-    if (user.email) {
+    const email = inviteEmail(user);
+    if (email !== null) {
       const invites = await ctx.db
         .query("campaignInvites")
-        .withIndex("by_email", (q) => q.eq("email", normalizeEmail(user.email!)))
+        .withIndex("by_email", (q) => q.eq("email", email))
         .collect();
       for (const i of invites) {
         const c = await ctx.db.get(i.campaignId);

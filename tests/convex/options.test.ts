@@ -9,8 +9,8 @@ describe("campaign rule switches", () => {
 
   async function setup(frameId: "castle-high" | "witherwild") {
     const t = makeTest();
-    const gmId = await t.run((ctx) => ctx.db.insert("users", { email: "gm@example.com" }));
-    const playerId = await t.run((ctx) => ctx.db.insert("users", { email: "player@example.com" }));
+    const gmId = await t.run((ctx) => ctx.db.insert("users", { email: "gm@example.com", emailVerificationTime: 1 }));
+    const playerId = await t.run((ctx) => ctx.db.insert("users", { email: "player@example.com", emailVerificationTime: 1 }));
     const gm = t.withIdentity({ subject: `${gmId}|s` });
     const player = t.withIdentity({ subject: `${playerId}|s` });
     const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Rules", idempotencyKey: key() });

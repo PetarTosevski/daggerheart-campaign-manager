@@ -16,9 +16,9 @@ describe("World map", () => {
   async function setup(frameId: "witherwild" | "journey-to-horizon" | "custom" = "witherwild") {
     const t = makeTest();
     const ids = await t.run(async (ctx) => ({
-      gm: await ctx.db.insert("users", { email: GM }),
-      player: await ctx.db.insert("users", { email: PLAYER }),
-      stranger: await ctx.db.insert("users", { email: STRANGER }),
+      gm: await ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }),
+      player: await ctx.db.insert("users", { email: PLAYER, emailVerificationTime: 1 }),
+      stranger: await ctx.db.insert("users", { email: STRANGER, emailVerificationTime: 1 }),
     }));
     const gm = t.withIdentity({ subject: `${ids.gm}|s` });
     const player = t.withIdentity({ subject: `${ids.player}|s` });

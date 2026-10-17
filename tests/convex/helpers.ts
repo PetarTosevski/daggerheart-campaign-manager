@@ -32,8 +32,8 @@ export const key = () => `key-${++keys}`;
 
 export async function setupWithCampaign(frameId: "witherwild" | "beast-feast" = "witherwild") {
   const t = makeTest();
-  const gmId = await t.run((ctx) => ctx.db.insert("users", { email: GM_EMAIL }));
-  const otherId = await t.run((ctx) => ctx.db.insert("users", { email: OTHER_EMAIL }));
+  const gmId = await t.run((ctx) => ctx.db.insert("users", { email: GM_EMAIL, emailVerificationTime: 1 }));
+  const otherId = await t.run((ctx) => ctx.db.insert("users", { email: OTHER_EMAIL, emailVerificationTime: 1 }));
   const gm = t.withIdentity({ subject: `${gmId}|session` });
   const other = t.withIdentity({ subject: `${otherId}|session` });
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Test", idempotencyKey: key() });

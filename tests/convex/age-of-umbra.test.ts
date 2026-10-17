@@ -11,8 +11,8 @@ function forceDice(face: number) {
 
 async function setup(frameId: "age-of-umbra" | "witherwild" = "age-of-umbra") {
   const t = makeTest();
-  const gmId = await t.run((ctx) => ctx.db.insert("users", { email: GM_EMAIL }));
-  const playerId = await t.run((ctx) => ctx.db.insert("users", { email: OTHER_EMAIL }));
+  const gmId = await t.run((ctx) => ctx.db.insert("users", { email: GM_EMAIL, emailVerificationTime: 1 }));
+  const playerId = await t.run((ctx) => ctx.db.insert("users", { email: OTHER_EMAIL, emailVerificationTime: 1 }));
   const gm = t.withIdentity({ subject: `${gmId}|s` });
   const player = t.withIdentity({ subject: `${playerId}|s` });
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Halcyon", idempotencyKey: key() });
