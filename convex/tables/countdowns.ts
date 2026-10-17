@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { COUNTDOWN_CATEGORIES, COUNTDOWN_STATUSES } from "../../src/lib/domain/countdowns/index";
 
 export const countdownTables = {
-  /** Countdowns, legacy rules; no event history (user decision 2026-10-17). */
+  /** Countdowns, legacy rules; every change is recorded in `history` (dcm-bxp.26). */
   countdowns: defineTable({
     campaignId: v.id("campaigns"),
     name: v.string(),
@@ -24,7 +24,10 @@ export const countdownTables = {
     kind: v.optional(v.string()),
     /** Frame-owned countdowns are GM-only until revealed. */
     revealed: v.optional(v.boolean()),
-  }).index("by_campaign", ["campaignId"]),
+  })
+    .index("by_campaign", ["campaignId"])
+    /** The dashboard list: `ownerKey` undefined, i.e. countdowns no frame tracker owns. */
+    .index("by_campaign_owner", ["campaignId", "ownerKey"]),
 
   /** Witherwild-only campaign time: one row per campaign whose frame has `campaignTime`. */
   campaignTime: defineTable({

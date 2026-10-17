@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { errorCode, errorData, key, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 const DETAILS = {
   name: "  The bridge collapses ",
@@ -103,16 +103,26 @@ describe("countdowns", () => {
     const mismatch = await gm
       .mutation(api.countdowns.operate, { countdownId, action: "reverse", idempotencyKey: k })
       .catch((e) => e);
-    expect(errorData(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
+    expect(errorCode(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
   });
 
   it("hides another owner's countdowns", async () => {
     const { other, campaignId, countdownId } = await withCountdown();
-    expect(errorData(await other.query(api.countdowns.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await other.query(api.countdowns.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
     const error = await other
       .mutation(api.countdowns.operate, { countdownId, action: "advance", idempotencyKey: key() })
       .catch((e) => e);
-    expect(errorData(error)).toBe("NOT_FOUND");
+    expect(errorCode(error)).toBe("NOT_FOUND");
+  });
+
+  it("lets players read the list but not change it", async () => {
+    const { gm, other, campaignId, countdownId } = await withCountdown();
+    await gm.mutation(api.members.invite, { campaignId, email: OTHER_EMAIL });
+    expect(await other.query(api.countdowns.listByCampaign, { campaignId })).toHaveLength(1);
+    const error = await other
+      .mutation(api.countdowns.operate, { countdownId, action: "advance", idempotencyKey: key() })
+      .catch((e) => e);
+    expect(errorCode(error)).toBe("FORBIDDEN");
   });
 
   it("does not operate countdowns owned by a frame tracker", async () => {
@@ -135,7 +145,7 @@ describe("countdowns", () => {
     const error = await gm
       .mutation(api.countdowns.operate, { countdownId: owned, action: "advance", idempotencyKey: key() })
       .catch((e) => e);
-    expect(errorData(error)).toBe("NOT_FOUND");
+    expect(errorCode(error)).toBe("NOT_FOUND");
     expect(await gm.query(api.countdowns.listByCampaign, { campaignId })).toEqual([]);
   });
 });
