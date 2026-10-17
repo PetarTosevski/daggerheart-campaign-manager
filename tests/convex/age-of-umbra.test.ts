@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
-import { errorCode, errorData, GM_EMAIL, key, OTHER_EMAIL, useAllowlist } from "./helpers";
+import { errorCode, GM_EMAIL, key, OTHER_EMAIL, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 /** Every server die comes up `face`. */
@@ -18,7 +18,7 @@ async function setup(frameId: "age-of-umbra" | "witherwild" = "age-of-umbra") {
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Halcyon", idempotencyKey: key() });
   await gm.mutation(api.members.invite, { campaignId, email: OTHER_EMAIL });
   const fear = async () => (await gm.query(api.campaigns.get, { campaignId }))!.fear;
-  return { gm, player, campaignId, fear };
+  return { t, gm, player, campaignId, fear };
 }
 
 describe("Age of Umbra tracker", () => {
@@ -45,7 +45,7 @@ describe("Age of Umbra tracker", () => {
     const error = await player
       .mutation(api.trackers.ageOfUmbra.setLit, { campaignId, pyreId, lit: false, idempotencyKey: key() })
       .catch((e) => e);
-    expect(errorData(error)).toBe("FORBIDDEN");
+    expect(errorCode(error)).toBe("FORBIDDEN");
     await gm.mutation(api.trackers.ageOfUmbra.removePyre, { campaignId, pyreId, idempotencyKey: key() });
     expect((await gm.query(api.trackers.ageOfUmbra.get, { campaignId })).pyres.map((p) => p.id)).toEqual(["p2"]);
   });
@@ -125,7 +125,7 @@ describe("Age of Umbra tracker", () => {
     expect(await fear()).toBe(before + 2);
 
     expect(
-      errorData(await player.mutation(api.trackers.ageOfUmbra.rollLurkingDarkness, { campaignId, idempotencyKey: key() }).catch((e) => e)),
+      errorCode(await player.mutation(api.trackers.ageOfUmbra.rollLurkingDarkness, { campaignId, idempotencyKey: key() }).catch((e) => e)),
     ).toBe("FORBIDDEN");
     expect(
       errorCode(
@@ -142,10 +142,20 @@ describe("Age of Umbra tracker", () => {
 
   it("is only for Age of Umbra campaigns", async () => {
     const { gm, campaignId } = await setup("witherwild");
-    expect(errorData(await gm.query(api.trackers.ageOfUmbra.get, { campaignId }).catch((e) => e))).toBe("MECHANIC_DISABLED");
+    expect(errorCode(await gm.query(api.trackers.ageOfUmbra.get, { campaignId }).catch((e) => e))).toBe("MECHANIC_DISABLED");
     const error = await gm
       .mutation(api.trackers.ageOfUmbra.addPyre, { campaignId, settlement: "x", idempotencyKey: key() })
       .catch((e) => e);
-    expect(errorData(error)).toBe("MECHANIC_DISABLED");
+    expect(errorCode(error)).toBe("MECHANIC_DISABLED");
+  });
+
+  it("refuses corrupt saved data with TRACKER_CORRUPT", async () => {
+    const { t, gm, campaignId } = await setup();
+    await t.run((ctx) => ctx.db.insert("frameTrackers", { campaignId, key: "ageOfUmbra", data: { pyres: "none" }, updatedAt: 0 }));
+    expect(errorCode(await gm.query(api.trackers.ageOfUmbra.get, { campaignId }).catch((e) => e))).toBe("TRACKER_CORRUPT");
+    const error = await gm
+      .mutation(api.trackers.ageOfUmbra.adjustBranches, { campaignId, delta: 1, idempotencyKey: key() })
+      .catch((e) => e);
+    expect(errorCode(error)).toBe("TRACKER_CORRUPT");
   });
 });

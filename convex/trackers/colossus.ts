@@ -1,7 +1,8 @@
-import { ConvexError, v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import {
   applyCorrection,
+  COLOSSUS_PHASES,
   colossusCorrectionSchema,
   colossusStateSchema,
   defeatColossus as defeat,
@@ -9,54 +10,60 @@ import {
   INITIAL_COLOSSUS,
   kudamatThresholds,
   markRest as mark,
-  type ColossusPhase,
-  type ColossusState,
-  type SiphonRoll,
 } from "../../src/lib/frames/trackers/colossus";
-import type { Doc, Id } from "../_generated/dataModel";
-import { mutation, query, type MutationCtx } from "../_generated/server";
-import { loadCampaign, loadGmCampaign } from "../lib/access";
-import { requireUser } from "../lib/auth";
 import { rollDice } from "../lib/dice";
-import { ruleError } from "../lib/mechanics";
-import { campaignScope, withIdempotency } from "../lib/operations";
-import { readTracker, writeTracker } from "../lib/trackers";
+import { campaignQuery, keyedGmMutation } from "../lib/functions";
+import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
 
-const FRAME = "colossus-of-the-drylands";
-const KEY = "colossus";
-const rollD12s = (count: number) => rollDice(count, 12);
-
-/** Phase and slain colossi are public; the Siphoning Track and Kudamat's Power are GM-only (`gm` is null for players). */
-export type ColossusView = {
-  phase: ColossusPhase;
-  colossiDefeated: number;
-  gm: {
-    siphonMarked: number;
-    kudamatPower: number;
-    emerged: boolean;
-    thresholds: { major: number; severe: number };
-    log: SiphonRoll[];
-  } | null;
+export const colossusTracker: FrameTracker<typeof colossusStateSchema> = {
+  frameId: "colossus-of-the-drylands",
+  key: "colossus",
+  schema: colossusStateSchema,
+  initial: () => INITIAL_COLOSSUS,
+  ruleCode: "TRACKER_RULE",
 };
 
-function assertFrame(campaign: Doc<"campaigns">) {
-  if (campaign.frameId !== FRAME) throw new ConvexError("MECHANIC_DISABLED");
-}
+const rollD12s = (count: number) => rollDice(count, 12);
 
-const parse = (data: unknown): ColossusState => (data === null ? INITIAL_COLOSSUS : colossusStateSchema.parse(data));
+const phase = v.union(...COLOSSUS_PHASES.map((p) => v.literal(p)));
+const siphonRoll = v.object({
+  reason: v.union(v.literal("defeat"), v.literal("full")),
+  dice: v.array(v.number()),
+  gained: v.number(),
+  powerAfter: v.number(),
+  at: v.number(),
+});
+const shared = { phase, colossiDefeated: v.number() };
+const colossusView = v.union(
+  v.object({
+    ...shared,
+    gm: v.object({
+      siphonMarked: v.number(),
+      kudamatPower: v.number(),
+      emerged: v.boolean(),
+      thresholds: v.object({ major: v.number(), severe: v.number() }),
+      log: v.array(siphonRoll),
+    }),
+  }),
+  v.object({ ...shared, gm: v.null() }),
+);
 
-export const get = query({
-  args: { campaignId: v.id("campaigns") },
-  handler: async (ctx, { campaignId }): Promise<ColossusView> => {
-    const user = await requireUser(ctx);
-    const { campaign, role } = await loadCampaign(ctx, user, campaignId);
-    assertFrame(campaign);
-    const state = parse(await readTracker(ctx, campaignId, KEY));
+/** Phase and slain colossi are public; the Siphoning Track and Kudamat's Power are GM-only (`gm` is null for players). */
+export type ColossusView = Infer<typeof colossusView>;
+
+export const get = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: colossusView,
+  handler: async (ctx): Promise<ColossusView> => {
+    assertTrackerFrame(ctx.campaign, colossusTracker);
+    const state = await loadTracker(ctx, ctx.campaign._id, colossusTracker);
     return {
       phase: state.phase,
       colossiDefeated: state.colossiDefeated,
       gm:
-        role === "gm"
+        ctx.permission === "owner"
           ? {
               siphonMarked: state.siphonMarked,
               kudamatPower: state.kudamatPower,
@@ -69,74 +76,52 @@ export const get = query({
   },
 });
 
-/** GM + frame checks, then one idempotent change of the tracker state. */
-async function change<R>(
-  ctx: MutationCtx,
-  campaignId: Id<"campaigns">,
-  op: { idempotencyKey: string; kind: string; request: unknown },
-  apply: (state: ColossusState, at: number) => { state: ColossusState; result: R },
-): Promise<R> {
-  const user = await requireUser(ctx);
-  assertFrame(await loadGmCampaign(ctx, user, campaignId));
-  return withIdempotency(
-    ctx,
-    { scopeKey: campaignScope(campaignId), key: op.idempotencyKey, kind: op.kind, request: op.request, createdBy: user._id, campaignId },
-    async () => {
-      const current = parse(await readTracker(ctx, campaignId, KEY));
-      let next: { state: ColossusState; result: R };
-      try {
-        next = apply(current, Date.now());
-      } catch (error) {
-        ruleError("TRACKER_RULE", error);
-      }
-      await writeTracker(ctx, campaignId, KEY, next.state);
-      return next.result;
-    },
-  );
-}
-
 /** A hunt-phase rest marks the Siphoning Track (short +1, long +2); a full track is rolled at once. */
-export const markRest = mutation({
-  args: { campaignId: v.id("campaigns"), kind: v.union(v.literal("short"), v.literal("long")), idempotencyKey: v.string() },
-  handler: (ctx, { campaignId, kind, idempotencyKey }): Promise<{ siphonMarked: number; rolls: SiphonRoll[] }> =>
-    change(ctx, campaignId, { idempotencyKey, kind: "colossus_mark_rest", request: { kind } }, (state, at) => {
-      const next = mark(state, kind, rollD12s, at);
+export const markRest = keyedGmMutation({
+  args: { kind: v.union(v.literal("short"), v.literal("long")) },
+  returns: v.object({ siphonMarked: v.number(), rolls: v.array(siphonRoll) }),
+  handler: (ctx, { kind }) =>
+    frameTrackerMutation(ctx, colossusTracker, { kind: "colossus_mark_rest", request: { kind } }, (state) => {
+      const next = mark(state, kind, rollD12s, Date.now());
       return { state: next.state, result: { siphonMarked: next.state.siphonMarked, rolls: next.rolls } };
     }),
 });
 
 /** A colossus falls: the shard is rolled into Kudamat's Power, the track resets and the interlude begins. */
-export const defeatColossus = mutation({
-  args: { campaignId: v.id("campaigns"), idempotencyKey: v.string() },
-  handler: (ctx, { campaignId, idempotencyKey }): Promise<{ colossiDefeated: number; roll: SiphonRoll; notice: string }> =>
-    change(ctx, campaignId, { idempotencyKey, kind: "colossus_defeat", request: {} }, (state, at) => {
-      const next = defeat(state, rollD12s, at);
+export const defeatColossus = keyedGmMutation({
+  args: {},
+  returns: v.object({ colossiDefeated: v.number(), roll: siphonRoll, notice: v.string() }),
+  handler: (ctx) =>
+    frameTrackerMutation(ctx, colossusTracker, { kind: "colossus_defeat", request: {} }, (state) => {
+      const next = defeat(state, rollD12s, Date.now());
       return { state: next.state, result: { colossiDefeated: next.state.colossiDefeated, roll: next.roll, notice: next.notice } };
     }),
 });
 
-export const setPhase = mutation({
-  args: { campaignId: v.id("campaigns"), phase: v.union(v.literal("hunt"), v.literal("interlude")), idempotencyKey: v.string() },
-  handler: (ctx, { campaignId, phase, idempotencyKey }): Promise<{ phase: ColossusPhase }> =>
-    change(ctx, campaignId, { idempotencyKey, kind: "colossus_set_phase", request: { phase } }, (state) => ({
+export const setPhase = keyedGmMutation({
+  args: { phase },
+  returns: v.object({ phase }),
+  handler: (ctx, { phase }) =>
+    frameTrackerMutation(ctx, colossusTracker, { kind: "colossus_set_phase", request: { phase } }, (state) => ({
       state: { ...state, phase },
       result: { phase },
     })),
 });
 
 /** Manual corrections of the track, Power or slain count. */
-export const correct = mutation({
+export const correct = keyedGmMutation({
   args: {
-    campaignId: v.id("campaigns"),
     siphonMarked: v.optional(v.number()),
     kudamatPower: v.optional(v.number()),
     colossiDefeated: v.optional(v.number()),
-    idempotencyKey: v.string(),
   },
-  handler: async (ctx, { campaignId, idempotencyKey, ...raw }): Promise<null> => {
+  returns: v.null(),
+  handler: (ctx, raw) => {
+    assertTrackerFrame(ctx.campaign, colossusTracker);
+    // The wrapper sends a ZodError as INVALID with its first message.
     const parsed = colossusCorrectionSchema.safeParse(raw);
-    if (!parsed.success) throw new ConvexError({ code: "INVALID", message: parsed.error.issues[0]?.message });
-    return change(ctx, campaignId, { idempotencyKey, kind: "colossus_correct", request: parsed.data }, (state) => ({
+    if (!parsed.success) throw parsed.error;
+    return frameTrackerMutation(ctx, colossusTracker, { kind: "colossus_correct", request: parsed.data }, (state) => ({
       state: applyCorrection(state, parsed.data),
       result: null,
     }));

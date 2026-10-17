@@ -1,98 +1,110 @@
-import { ConvexError, v } from "convex/values";
-import { ZodError } from "zod";
+import { v } from "convex/values";
+import { z } from "zod";
 
 import {
   ANDALURIA_FRAME_ID,
   ANDALURIA_TRACKER_KEY,
+  HUNT_BEATS,
   addClue,
   allCluesRevealed,
   createHunt as addHunt,
   defaultAndaluriaState,
+  huntBeatSchema,
+  huntPatchSchema,
   patchClue,
   patchHunt,
   playerHuntView,
   removeClue,
   removeHunt,
   type AndaluriaState,
-  type CluePatch,
-  type HuntPatch,
 } from "../../src/lib/frames/trackers/andaluria";
-import type { Doc, Id } from "../_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "../_generated/server";
-import { loadCampaign, loadGmCampaign } from "../lib/access";
-import { requireUser } from "../lib/auth";
-import { campaignScope, withIdempotency } from "../lib/operations";
-import { readTracker, writeTracker } from "../lib/trackers";
+import { campaignQuery, keyedGmMutation } from "../lib/functions";
+import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
 
-function assertFrame(campaign: Doc<"campaigns">): void {
-  if (campaign.frameId !== ANDALURIA_FRAME_ID) throw new ConvexError("MECHANIC_DISABLED");
-}
+/** The stored hunts (structure only: the domain module checks lengths on write). */
+const andaluriaStateSchema = z.object({
+  hunts: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      monster: z.string(),
+      what: z.string(),
+      wants: z.string(),
+      where: z.string(),
+      defeat: z.string(),
+      beat: huntBeatSchema,
+      clues: z.array(z.object({ id: z.string(), text: z.string(), revealed: z.boolean(), note: z.string() })),
+      underlings: z.array(z.string()),
+      bystanders: z.array(z.string()),
+      archived: z.boolean(),
+      monsterRevealed: z.boolean(),
+      createdAt: z.number(),
+    }),
+  ),
+}) satisfies z.ZodType<AndaluriaState>;
 
-/** Runs a pure rule; its validation errors become `{ code: "INVALID", message }`. */
-function rule<T>(fn: () => T): T {
-  try {
-    return fn();
-  } catch (error) {
-    if (error instanceof ZodError) throw new ConvexError({ code: "INVALID", message: error.issues[0]?.message ?? "Invalid input." });
-    if (error instanceof Error) throw new ConvexError({ code: "INVALID", message: error.message });
-    throw error;
-  }
-}
+export const andaluriaTracker: FrameTracker<typeof andaluriaStateSchema> = {
+  frameId: ANDALURIA_FRAME_ID,
+  key: ANDALURIA_TRACKER_KEY,
+  schema: andaluriaStateSchema,
+  initial: defaultAndaluriaState,
+  ruleCode: "INVALID",
+};
 
-async function load(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<AndaluriaState> {
-  return (await readTracker<AndaluriaState>(ctx, campaignId, ANDALURIA_TRACKER_KEY)) ?? defaultAndaluriaState();
-}
+const beat = v.union(...HUNT_BEATS.map((b) => v.literal(b)));
+const monsterAnswers = { monster: v.string(), what: v.string(), wants: v.string(), where: v.string(), defeat: v.string() };
 
-/** GM-only, frame-gated, idempotent read-modify-write of the hunts. */
-async function gmMutation<T>(
-  ctx: MutationCtx,
-  args: { campaignId: Id<"campaigns">; idempotencyKey: string; kind: string; request: unknown },
-  run: (state: AndaluriaState) => { state: AndaluriaState; result: T },
-): Promise<T> {
-  const user = await requireUser(ctx);
-  const campaign = await loadGmCampaign(ctx, user, args.campaignId);
-  assertFrame(campaign);
-  return withIdempotency(
-    ctx,
-    {
-      scopeKey: campaignScope(args.campaignId),
-      key: args.idempotencyKey,
-      kind: args.kind,
-      request: args.request,
-      createdBy: user._id,
-      campaignId: args.campaignId,
-    },
-    async () => {
-      const current = await load(ctx, args.campaignId);
-      const { state, result } = rule(() => run(current));
-      await writeTracker(ctx, args.campaignId, ANDALURIA_TRACKER_KEY, state);
-      return result;
-    },
-  );
-}
+const gmHunt = v.object({
+  id: v.string(),
+  title: v.string(),
+  ...monsterAnswers,
+  beat,
+  clues: v.array(v.object({ id: v.string(), text: v.string(), revealed: v.boolean(), note: v.string() })),
+  underlings: v.array(v.string()),
+  bystanders: v.array(v.string()),
+  archived: v.boolean(),
+  monsterRevealed: v.boolean(),
+  createdAt: v.number(),
+  allCluesRevealed: v.boolean(),
+});
+
+const playerHunt = v.object({
+  id: v.string(),
+  title: v.string(),
+  beat,
+  archived: v.boolean(),
+  clues: v.array(v.object({ id: v.string(), text: v.string() })),
+  allCluesRevealed: v.boolean(),
+  monster: v.optional(v.object(monsterAnswers)),
+});
 
 /**
  * The campaign's Hunts. Players get each hunt's title, beat and revealed clues
  * only (plus the monster once the GM reveals it); filtered here, on the server.
  */
-export const get = query({
-  args: { campaignId: v.id("campaigns") },
-  handler: async (ctx, { campaignId }) => {
-    const user = await requireUser(ctx);
-    const { campaign, role } = await loadCampaign(ctx, user, campaignId);
-    assertFrame(campaign);
-    const { hunts } = await load(ctx, campaignId);
-    if (role === "gm") {
+export const get = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: v.union(
+    v.object({ role: v.literal("gm"), hunts: v.array(gmHunt) }),
+    v.object({ role: v.literal("player"), hunts: v.array(playerHunt) }),
+  ),
+  handler: async (ctx) => {
+    assertTrackerFrame(ctx.campaign, andaluriaTracker);
+    const { hunts } = await loadTracker(ctx, ctx.campaign._id, andaluriaTracker);
+    if (ctx.permission === "owner") {
       return { role: "gm" as const, hunts: hunts.map((h) => ({ ...h, allCluesRevealed: allCluesRevealed(h) })) };
     }
     return { role: "player" as const, hunts: hunts.map(playerHuntView) };
   },
 });
 
-export const createHunt = mutation({
-  args: { campaignId: v.id("campaigns"), title: v.string(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, title, idempotencyKey }): Promise<{ huntId: string }> =>
-    gmMutation(ctx, { campaignId, idempotencyKey, kind: "andaluria_hunt_create", request: { title } }, (state) => {
+export const createHunt = keyedGmMutation({
+  args: { title: v.string() },
+  returns: v.object({ huntId: v.string() }),
+  handler: (ctx, { title }) =>
+    frameTrackerMutation(ctx, andaluriaTracker, { kind: "andaluria_hunt_create", request: { title } }, (state) => {
       const huntId = crypto.randomUUID();
       return { state: addHunt(state, huntId, title, Date.now()), result: { huntId } };
     }),
@@ -105,6 +117,7 @@ const huntPatch = v.object({
   wants: v.optional(v.string()),
   where: v.optional(v.string()),
   defeat: v.optional(v.string()),
+  // A plain string: the domain schema rejects an unknown beat with a readable message.
   beat: v.optional(v.string()),
   underlings: v.optional(v.array(v.string())),
   bystanders: v.optional(v.array(v.string())),
@@ -112,54 +125,58 @@ const huntPatch = v.object({
   monsterRevealed: v.optional(v.boolean()),
 });
 
-export const updateHunt = mutation({
-  args: { campaignId: v.id("campaigns"), huntId: v.string(), patch: huntPatch, idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, huntId, patch, idempotencyKey }) =>
-    gmMutation(ctx, { campaignId, idempotencyKey, kind: "andaluria_hunt_update", request: { huntId, patch } }, (state) => ({
-      state: patchHunt(state, huntId, patch as HuntPatch),
-      result: null,
-    })),
+export const updateHunt = keyedGmMutation({
+  args: { huntId: v.string(), patch: huntPatch },
+  returns: v.null(),
+  handler: (ctx, { huntId, patch }) =>
+    frameTrackerMutation(ctx, andaluriaTracker, { kind: "andaluria_hunt_update", request: { huntId, patch } }, (state) => {
+      // The wrapper sends a ZodError as INVALID with its first message.
+      const parsed = huntPatchSchema.safeParse(patch);
+      if (!parsed.success) throw parsed.error;
+      return { state: patchHunt(state, huntId, parsed.data), result: null };
+    }),
 });
 
-export const deleteHunt = mutation({
-  args: { campaignId: v.id("campaigns"), huntId: v.string(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, huntId, idempotencyKey }) =>
-    gmMutation(ctx, { campaignId, idempotencyKey, kind: "andaluria_hunt_delete", request: { huntId } }, (state) => ({
+export const deleteHunt = keyedGmMutation({
+  args: { huntId: v.string() },
+  returns: v.null(),
+  handler: (ctx, { huntId }) =>
+    frameTrackerMutation(ctx, andaluriaTracker, { kind: "andaluria_hunt_delete", request: { huntId } }, (state) => ({
       state: removeHunt(state, huntId),
       result: null,
     })),
 });
 
-export const createClue = mutation({
-  args: { campaignId: v.id("campaigns"), huntId: v.string(), text: v.string(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, huntId, text, idempotencyKey }): Promise<{ clueId: string }> =>
-    gmMutation(ctx, { campaignId, idempotencyKey, kind: "andaluria_clue_create", request: { huntId, text } }, (state) => {
+export const createClue = keyedGmMutation({
+  args: { huntId: v.string(), text: v.string() },
+  returns: v.object({ clueId: v.string() }),
+  handler: (ctx, { huntId, text }) =>
+    frameTrackerMutation(ctx, andaluriaTracker, { kind: "andaluria_clue_create", request: { huntId, text } }, (state) => {
       const clueId = crypto.randomUUID();
       return { state: addClue(state, huntId, clueId, text), result: { clueId } };
     }),
 });
 
 /** Edits a clue; `revealed: true` makes it solid and visible to players (HF p.155). */
-export const updateClue = mutation({
+export const updateClue = keyedGmMutation({
   args: {
-    campaignId: v.id("campaigns"),
     huntId: v.string(),
     clueId: v.string(),
     patch: v.object({ text: v.optional(v.string()), note: v.optional(v.string()), revealed: v.optional(v.boolean()) }),
-    idempotencyKey: v.string(),
   },
-  handler: async (ctx, { campaignId, huntId, clueId, patch, idempotencyKey }) =>
-    gmMutation(
-      ctx,
-      { campaignId, idempotencyKey, kind: "andaluria_clue_update", request: { huntId, clueId, patch } },
-      (state) => ({ state: patchClue(state, huntId, clueId, patch as CluePatch), result: null }),
-    ),
+  returns: v.null(),
+  handler: (ctx, { huntId, clueId, patch }) =>
+    frameTrackerMutation(ctx, andaluriaTracker, { kind: "andaluria_clue_update", request: { huntId, clueId, patch } }, (state) => ({
+      state: patchClue(state, huntId, clueId, patch),
+      result: null,
+    })),
 });
 
-export const deleteClue = mutation({
-  args: { campaignId: v.id("campaigns"), huntId: v.string(), clueId: v.string(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, huntId, clueId, idempotencyKey }) =>
-    gmMutation(ctx, { campaignId, idempotencyKey, kind: "andaluria_clue_delete", request: { huntId, clueId } }, (state) => ({
+export const deleteClue = keyedGmMutation({
+  args: { huntId: v.string(), clueId: v.string() },
+  returns: v.null(),
+  handler: (ctx, { huntId, clueId }) =>
+    frameTrackerMutation(ctx, andaluriaTracker, { kind: "andaluria_clue_delete", request: { huntId, clueId } }, (state) => ({
       state: removeClue(state, huntId, clueId),
       result: null,
     })),
