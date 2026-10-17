@@ -4,16 +4,16 @@
  * from `_generated/server`, read inside their handlers.
  *
  * Sign-up is limited for now to an allowlist (user decision 2026-10-17): the
- * union of `ALLOWED_EMAILS`, the legacy `GM_EMAILS` and, on a local e2e
- * deployment only, the emails of the env-defined test accounts in
- * `SEED_ACCOUNTS`. Everything fails closed: a missing or malformed value means
+ * union of `ALLOWED_EMAILS`, the legacy `GM_EMAILS` and, where seed accounts
+ * are enabled (`seedAccountsEnabled`), the emails of the env-defined test
+ * accounts in `SEED_ACCOUNTS`. Everything fails closed: a missing or malformed value means
  * "not allowed".
  */
 
 /**
  * Environment lookups used here: `ALLOWED_EMAILS`, `GM_EMAILS`,
- * `SEED_ACCOUNTS`, `CONVEX_CLOUD_URL`, `E2E_AUTH_ENABLED` and
- * `E2E_AUTH_SECRET`. Typed as a plain record so the typed Convex `env` (or a
+ * `SEED_ACCOUNTS`, `ALLOW_SEED_ACCOUNTS`, `CONVEX_CLOUD_URL`,
+ * `E2E_AUTH_ENABLED` and `E2E_AUTH_SECRET`. Typed as a plain record so the typed Convex `env` (or a
  * test fixture) can be passed directly.
  */
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -54,12 +54,23 @@ export function parseSeedAccounts(raw: string | undefined): SeedAccount[] {
 }
 
 /**
- * The test accounts `accounts:seed` may create. Throws unless this is a local
- * e2e deployment, so known passwords never become logins on a cloud one.
+ * Seed accounts (known, env-stored passwords) are enabled only on a local e2e
+ * deployment, or where `ALLOW_SEED_ACCOUNTS` is exactly `"true"`. Set that
+ * flag on the cloud dev deployment only, never on production.
+ */
+export function seedAccountsEnabled(env: Env): boolean {
+  return isE2EDeployment(env) || env.ALLOW_SEED_ACCOUNTS === "true";
+}
+
+/**
+ * The test accounts `accounts:seed` may create. Throws unless seed accounts
+ * are enabled, so known passwords never become logins on production.
  */
 export function seedAccountsFor(env: Env): SeedAccount[] {
-  if (!isE2EDeployment(env)) {
-    throw new Error("accounts:seed runs only on a local (e2e) deployment.");
+  if (!seedAccountsEnabled(env)) {
+    throw new Error(
+      "accounts:seed runs only on a local (e2e) deployment or with ALLOW_SEED_ACCOUNTS=true.",
+    );
   }
   return parseSeedAccounts(env.SEED_ACCOUNTS);
 }
@@ -68,8 +79,8 @@ export function allowedEmails(env: Env): Set<string> {
   return new Set([
     ...parseGmEmails(env.ALLOWED_EMAILS),
     ...parseGmEmails(env.GM_EMAILS),
-    // Seed accounts have env-stored passwords; allowlist them only locally.
-    ...(isE2EDeployment(env) ? parseSeedAccounts(env.SEED_ACCOUNTS).map((a) => a.email) : []),
+    // Seed accounts have env-stored passwords; allowlist them only where enabled.
+    ...(seedAccountsEnabled(env) ? parseSeedAccounts(env.SEED_ACCOUNTS).map((a) => a.email) : []),
   ]);
 }
 
