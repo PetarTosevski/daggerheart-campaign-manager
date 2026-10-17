@@ -6,7 +6,7 @@ import "./dashboard.css";
 import { FearPanel } from "./fear-panel";
 import { FrameRulesPanel } from "./frame-rules-panel";
 import { PartySection } from "./party-section";
-import { KeyFiguresPanel, TomePanel } from "./sidebar-panels";
+import { KeyFiguresPanel, LocationsPanel, TomePanel } from "./sidebar-panels";
 import { FrameTrackers } from "./trackers";
 
 /** CampaignHub board: the party (D4), countdowns, last session (D9) and GM Fear. */
@@ -32,6 +32,7 @@ export default function DashboardPage() {
         <FearPanel campaignId={campaign._id} fear={campaign.fear} readOnly={campaign.role !== "gm"} />
         <TomePanel />
         <KeyFiguresPanel />
+        <LocationsPanel />
         <FrameRulesPanel campaign={campaign} />
       </aside>
     </main>

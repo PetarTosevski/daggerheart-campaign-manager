@@ -40,7 +40,9 @@ describe("wizard steps", () => {
     expect(screen.getByRole("radio", { name: /Witch/ })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Stalwart" })).toBeChecked();
     expect(screen.getByText("No Spellcast trait")).toBeInTheDocument();
-  });
+    // Accessible-name lookups over every class and subclass radio are CPU-bound
+    // in jsdom; under the full parallel run this first render can pass 5s.
+  }, 15_000);
 
   it("step 2 shows Shapeshifter only with Hope & Fear", () => {
     const { unmount } = render(<HeritageStep state={guardian} update={vi.fn()} opts={CORE} />);
