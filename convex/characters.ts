@@ -505,19 +505,26 @@ export const attachPortrait = mutation({
   handler: async (ctx, { characterId, storageId }) => {
     const { user, character } = await loadCharacter(ctx, characterId, { edit: true });
     const meta = await ctx.db.system.get(storageId);
-    const claimed = await ctx.db
-      .query("portraitUploads")
-      .withIndex("by_storage", (q) => q.eq("storageId", storageId))
-      .unique();
+    const claimed =
+      (await ctx.db
+        .query("portraitUploads")
+        .withIndex("by_storage", (q) => q.eq("storageId", storageId))
+        .unique()) ??
+      (await ctx.db
+        .query("codexImages")
+        .withIndex("by_storage", (q) => q.eq("storageId", storageId))
+        .unique());
     if (meta === null || claimed !== null) throw new ConvexError("NOT_FOUND");
     if (!meta.contentType?.startsWith("image/") || meta.size > MAX_PORTRAIT_BYTES) {
+      // Returned, not thrown: a throw would roll back the deletion.
       await ctx.storage.delete(storageId);
-      invalid(new Error("Portraits must be images of at most 3 MB."));
+      return { error: "Portraits must be images of at most 3 MB." };
     }
     await ctx.db.insert("portraitUploads", { storageId, userId: user._id, characterId, createdAt: Date.now() });
     const sheet = parseSheet(character.sheet);
     if (sheet.portrait?.kind === "upload") await deleteOwnUpload(ctx, characterId, sheet.portrait.storageId);
     await saveSheet(ctx, character, { ...sheet, portrait: { kind: "upload", storageId } });
+    return { error: null };
   },
 });
 

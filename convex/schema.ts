@@ -134,6 +134,47 @@ export default defineSchema({
     .index("by_storage", ["storageId"])
     .index("by_character", ["characterId"]),
 
+  /** The campaign's World map (D6): one row, `data` validated by `mapStateSchema` (src/lib/world/map-state.ts). */
+  maps: defineTable({
+    campaignId: v.id("campaigns"),
+    data: v.any(),
+    updatedAt: v.number(),
+  }).index("by_campaign", ["campaignId"]),
+
+  /** Uploaded World map images, recorded so a file belongs to one campaign and only its own uploads are served or deleted. */
+  mapUploads: defineTable({
+    storageId: v.id("_storage"),
+    campaignId: v.id("campaigns"),
+    uploadedBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_storage", ["storageId"])
+    .index("by_campaign", ["campaignId"]),
+
+  /**
+   * Characters & Locations entries (D7), one row each; `data` is validated by
+   * the codex module. Players see only entries marked known, revealed images
+   * and the allegiance shown to them; GM notes never leave the server.
+   */
+  codexEntries: defineTable({
+    campaignId: v.id("campaigns"),
+    kind: v.union(v.literal("character"), v.literal("location")),
+    data: v.any(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_campaign_kind", ["campaignId", "kind"]),
+
+  /** Images attached to codex entries (Convex file storage), recorded so only the entry's own files are served or deleted. */
+  codexImages: defineTable({
+    storageId: v.id("_storage"),
+    campaignId: v.id("campaigns"),
+    entryId: v.id("codexEntries"),
+    uploadedBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_storage", ["storageId"])
+    .index("by_entry", ["entryId"]),
+
   /** Witherwild-only campaign time: one row per campaign whose frame has `campaignTime`. */
   campaignTime: defineTable({
     campaignId: v.id("campaigns"),
