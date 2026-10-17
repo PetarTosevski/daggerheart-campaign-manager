@@ -176,7 +176,9 @@ describe("characters", () => {
 
     // convex-test records no content type, so a stored file always fails the image check here
     // (production uploads carry it); attach the image the way attachPortrait would.
-    expect(errorCode(await p1.mutation(api.characters.attachPortrait, { characterId: a, storageId: text }).catch((e) => e))).toBe("INVALID");
+    // A rejected file is reported and deleted (a throw would roll the deletion back).
+    expect(await p1.mutation(api.characters.attachPortrait, { characterId: a, storageId: text })).toEqual({ error: expect.any(String) });
+    expect(await t.run((ctx) => ctx.storage.get(text))).toBeNull();
     await t.run(async (ctx) => {
       const c = (await ctx.db.get(a))!;
       await ctx.db.insert("portraitUploads", { storageId: image, userId: c.ownerId, characterId: a, createdAt: 0 });

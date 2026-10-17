@@ -130,7 +130,8 @@ export function PortraitUpload({
       const response = await fetch(url, { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob });
       if (!response.ok) throw new Error("The upload failed. Try again.");
       const { storageId } = (await response.json()) as { storageId: Id<"_storage"> };
-      await attachPortrait({ characterId: character._id, storageId });
+      const { error: rejected } = await attachPortrait({ characterId: character._id, storageId });
+      if (rejected) setError(rejected);
     } catch (e) {
       setError(e instanceof Error && !("data" in e) ? e.message : errorMessage(e));
     } finally {
