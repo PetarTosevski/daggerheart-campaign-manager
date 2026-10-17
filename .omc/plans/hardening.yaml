@@ -234,6 +234,11 @@ waves:
           - convex/settings.ts
           - convex/users.ts
           - convex/tables/countdowns.ts
+          - convex/tables/history.ts
+          - convex/fear.ts
+          - convex/lib/fear.ts
+          - tests/convex/history.test.ts
+          - tests/convex/fear.test.ts
           - src/lib/errors/countdowns.ts
           - src/lib/errors/campaign-time.ts
           - src/lib/errors/settings.ts
@@ -244,6 +249,7 @@ waves:
           - src/lib/validation/countdowns.ts
           - src/lib/validation/campaign-time.ts
         acceptance:
+          - "History tables (dcm-bxp.26): every Fear change, countdown change and campaign-time change writes an event row (campaignId, kind, before, after, by, at) indexed by [campaignId, at]; a GM-only paginated query lists them; tests prove each mutation writes one row and players can't read them"
           - "countdowns has a by_campaign_owner index; the dashboard list reads ownerKey undefined and excludes cancelled countdowns without collecting the whole table"
           - "users.viewer returns null when signed out instead of throwing UNAUTHENTICATED"
           - "Player-facing queries declare returns validators"
