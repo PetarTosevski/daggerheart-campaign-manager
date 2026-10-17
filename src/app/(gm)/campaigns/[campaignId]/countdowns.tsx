@@ -44,7 +44,7 @@ const GRAIN_TILT = [-12, 18, -4, 27, -20, 8, 35];
 const GRAIN_DROP = [0, 3, -2, 2, -1, 4, 1];
 const HOURGLASS = "M14 9 L46 9 C46 25 34 32 32 40 C34 48 46 55 46 71 L14 71 C14 55 26 48 28 40 C26 32 14 25 14 9 Z";
 
-function CountdownCard({ countdown }: { countdown: CountdownView }) {
+function CountdownCard({ countdown, readOnly }: { countdown: CountdownView; readOnly: boolean }) {
   const operate = useIntent(api.countdowns.operate);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const { _id: countdownId, name, currentValue: value, startingValue: start, status } = countdown;
@@ -115,7 +115,7 @@ function CountdownCard({ countdown }: { countdown: CountdownView }) {
 
       <div
         role="group"
-        aria-label="Click a grain to correct the countdown"
+        aria-label={readOnly ? "Countdown grains" : "Click a grain to correct the countdown"}
         className="flex min-h-7 flex-nowrap items-center gap-[3px] rounded-[10px] bg-[linear-gradient(180deg,rgba(0,0,0,0.25),rgba(122,82,24,0.12))] px-2 py-1.5 shadow-[inset_0_2px_6px_rgba(0,0,0,0.5)]"
       >
         {Array.from({ length: start }, (_, k) => {
@@ -148,7 +148,7 @@ function CountdownCard({ countdown }: { countdown: CountdownView }) {
               aria-label={`${name}: grain ${k + 1} of ${start}`}
               aria-pressed={on}
               title={`Correct to ${target}`}
-              disabled={operate.pending || (done && target < value)}
+              disabled={readOnly || operate.pending || (done && target < value)}
               className="cursor-pointer p-0 transition-transform hover:scale-110 disabled:cursor-not-allowed"
               style={style}
               onClick={() => void act("correction", target - value)}
@@ -157,41 +157,43 @@ function CountdownCard({ countdown }: { countdown: CountdownView }) {
         })}
       </div>
 
-      <div className="grid grid-cols-[1.2fr_1.4fr_1fr] gap-2">
-        <button
-          type="button"
-          className={cn(BTN, "border-transparent font-bold text-brand-ink")}
-          style={{ background: done ? "#5a2a2a" : "var(--brand)" }}
-          disabled={operate.pending || !canAdvanceCountdown(status, value)}
-          onClick={() => void act("advance")}
-        >
-          Tick −1
-        </button>
-        <button
-          type="button"
-          className={BTN}
-          aria-label={`Borrowed time: add one to ${name}`}
-          disabled={operate.pending || !canReverseCountdown(status, value, start)}
-          onClick={() => void act("reverse")}
-        >
-          Borrowed Time
-        </button>
-        {paused ? (
-          <button type="button" className={BTN} disabled={operate.pending || !canResumeCountdown(status)} onClick={() => void act("resume")}>
-            Resume
+      {readOnly ? null : (
+        <div className="grid grid-cols-[1.2fr_1.4fr_1fr] gap-2">
+          <button
+            type="button"
+            className={cn(BTN, "border-transparent font-bold text-brand-ink")}
+            style={{ background: done ? "#5a2a2a" : "var(--brand)" }}
+            disabled={operate.pending || !canAdvanceCountdown(status, value)}
+            onClick={() => void act("advance")}
+          >
+            Tick −1
           </button>
-        ) : (
-          <button type="button" className={BTN} disabled={operate.pending || !canPauseCountdown(status)} onClick={() => void act("pause")}>
-            Pause
+          <button
+            type="button"
+            className={BTN}
+            aria-label={`Borrowed time: add one to ${name}`}
+            disabled={operate.pending || !canReverseCountdown(status, value, start)}
+            onClick={() => void act("reverse")}
+          >
+            Borrowed Time
           </button>
-        )}
-      </div>
+          {paused ? (
+            <button type="button" className={BTN} disabled={operate.pending || !canResumeCountdown(status)} onClick={() => void act("resume")}>
+              Resume
+            </button>
+          ) : (
+            <button type="button" className={BTN} disabled={operate.pending || !canPauseCountdown(status)} onClick={() => void act("pause")}>
+              Pause
+            </button>
+          )}
+        </div>
+      )}
 
       <p role="status" aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
         {operate.error}
       </p>
 
-      {canCancelCountdown(status) ? (
+      {!readOnly && canCancelCountdown(status) ? (
         confirmCancel ? (
           <div role="alertdialog" aria-label={`Cancel ${name}`} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-danger-line bg-danger-bg px-3 py-2 text-[14px] text-[#ffd9d6]">
             <span className="flex-1">Cancel this countdown? It can’t be resumed.</span>
@@ -321,7 +323,7 @@ function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: Id<"cam
 }
 
 /** Countdowns section of the CampaignHub board. Countdowns are core: every frame has them. */
-export function Countdowns({ campaignId }: { campaignId: Id<"campaigns"> }) {
+export function Countdowns({ campaignId, readOnly = false }: { campaignId: Id<"campaigns">; readOnly?: boolean }) {
   const countdowns = useQuery(api.countdowns.listByCampaign, { campaignId });
   const [creating, setCreating] = useState(false);
 
@@ -331,12 +333,18 @@ export function Countdowns({ campaignId }: { campaignId: Id<"campaigns"> }) {
         <h2 id="cd-h" className="m-0 font-display text-[24px] font-bold text-parchment">
           Countdowns
         </h2>
-        <button type="button" className={cn(BTN, "min-h-11 px-4")} onClick={() => setCreating(true)}>
-          + New countdown
-        </button>
+        {readOnly ? null : (
+          <button type="button" className={cn(BTN, "min-h-11 px-4")} onClick={() => setCreating(true)}>
+            + New countdown
+          </button>
+        )}
       </div>
       {countdowns === undefined ? (
         <p className="text-[#9fb2b6]">Loading countdowns…</p>
+      ) : countdowns.length === 0 && readOnly ? (
+        <p className="m-0 rounded-[14px] border-2 border-dashed border-[#33444a] p-6 text-center text-[15px] text-[#9fb2b6]">
+          No countdowns running.
+        </p>
       ) : countdowns.length === 0 ? (
         <button
           type="button"
@@ -348,11 +356,11 @@ export function Countdowns({ campaignId }: { campaignId: Id<"campaigns"> }) {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
           {countdowns.map((c) => (
-            <CountdownCard key={c._id} countdown={c} />
+            <CountdownCard key={c._id} countdown={c} readOnly={readOnly} />
           ))}
         </div>
       )}
-      <NewCountdownDialog campaignId={campaignId} open={creating} onClose={() => setCreating(false)} />
+      {readOnly ? null : <NewCountdownDialog campaignId={campaignId} open={creating} onClose={() => setCreating(false)} />}
     </section>
   );
 }

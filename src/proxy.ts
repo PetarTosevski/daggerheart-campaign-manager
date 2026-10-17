@@ -6,14 +6,17 @@ import {
 
 const isSignInPage = createRouteMatcher(["/signin"]);
 
-// UX redirects only. The real gate is `requireGm` in every Convex function.
+// UX redirects only. The real gate is `requireUser` plus the campaign role check in every Convex function.
 export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
   const signedIn = await convexAuth.isAuthenticated();
   if (isSignInPage(request) && signedIn) {
     return nextjsMiddlewareRedirect(request, "/");
   }
   if (!isSignInPage(request) && !signedIn) {
-    return nextjsMiddlewareRedirect(request, "/signin");
+    // Come back here after signing in (for example a /join/<code> link).
+    const { pathname } = request.nextUrl;
+    const target = pathname === "/" ? "/signin" : `/signin?next=${encodeURIComponent(pathname)}`;
+    return nextjsMiddlewareRedirect(request, target);
   }
 });
 

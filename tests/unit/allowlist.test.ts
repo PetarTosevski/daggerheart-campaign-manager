@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  allowedEmails,
   constantTimeEqual,
   isAllowedEmail,
   isAllowedProfile,
   isE2EDeployment,
   parseGmEmails,
+  parseSeedAccounts,
 } from "../../convex/lib/allowlist";
 
 const env = { GM_EMAILS: " GM@Example.com , second@example.com ,," };
@@ -102,5 +104,19 @@ describe("constantTimeEqual", () => {
     expect(constantTimeEqual("abc", "abd")).toBe(false);
     expect(constantTimeEqual("abc", "abcd")).toBe(false);
     expect(constantTimeEqual("", "a")).toBe(false);
+  });
+});
+
+describe("allowlist sources", () => {
+  it("unions ALLOWED_EMAILS, the legacy GM_EMAILS and the seeded accounts", () => {
+    expect(parseSeedAccounts("a@x.test:pw:with:colons; bad ;B@X.test:pw2")).toEqual([
+      { email: "a@x.test", password: "pw:with:colons" },
+      { email: "b@x.test", password: "pw2" },
+    ]);
+    expect([...allowedEmails({ ALLOWED_EMAILS: "p@x.test", GM_EMAILS: "g@x.test", SEED_ACCOUNTS: "s@x.test:pw" })].sort()).toEqual([
+      "g@x.test",
+      "p@x.test",
+      "s@x.test",
+    ]);
   });
 });

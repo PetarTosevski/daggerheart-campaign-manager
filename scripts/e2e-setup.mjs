@@ -11,6 +11,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const ENV_FILE = ".env.e2e.local";
 const E2E_GM_EMAIL = "e2e-gm@example.test";
+// Extra allowlisted accounts: a player, and an email + password account.
+const E2E_ALLOWED = [E2E_GM_EMAIL, "e2e-player@example.test", "e2e-password@example.test"];
 
 function readEnvFile() {
   if (!existsSync(ENV_FILE)) return {};
@@ -48,7 +50,7 @@ convex(["dev", "--once", "--typecheck=disable", "--tail-logs", "disable"]);
 const existing = convex(["env", "list"]);
 const vars = {
   SITE_URL: "http://localhost:3000",
-  GM_EMAILS: E2E_GM_EMAIL,
+  ALLOWED_EMAILS: E2E_ALLOWED.join(","),
   E2E_AUTH_ENABLED: "true",
   E2E_AUTH_SECRET: secret,
 };

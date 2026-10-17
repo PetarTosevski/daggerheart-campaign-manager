@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 
 import { DEFAULT_ACCENT, settingsSchema } from "../src/lib/validation/campaigns";
 import { mutation, query } from "./_generated/server";
-import { requireGm } from "./lib/auth";
+import { requireUser } from "./lib/auth";
 
 const DEFAULTS = { tableName: "", gmName: "", accent: DEFAULT_ACCENT };
 
@@ -10,7 +10,7 @@ const DEFAULTS = { tableName: "", gmName: "", accent: DEFAULT_ACCENT };
 export const get = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireGm(ctx);
+    const user = await requireUser(ctx);
     const row = await ctx.db
       .query("settings")
       .withIndex("by_owner", (q) => q.eq("ownerId", user._id))
@@ -27,7 +27,7 @@ export const update = mutation({
     accent: v.optional(v.string()),
   },
   handler: async (ctx, patch) => {
-    const user = await requireGm(ctx);
+    const user = await requireUser(ctx);
     const row = await ctx.db
       .query("settings")
       .withIndex("by_owner", (q) => q.eq("ownerId", user._id))

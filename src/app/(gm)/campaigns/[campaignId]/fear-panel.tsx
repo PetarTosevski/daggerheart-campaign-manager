@@ -27,7 +27,7 @@ function coreFilter(n: number): string {
   );
 }
 
-export function FearPanel({ campaignId, fear }: { campaignId: Id<"campaigns">; fear: number }) {
+export function FearPanel({ campaignId, fear, readOnly = false }: { campaignId: Id<"campaigns">; fear: number; readOnly?: boolean }) {
   const set = useIntent(api.fear.set);
   const t = fear / MAX_FEAR;
 
@@ -40,7 +40,7 @@ export function FearPanel({ campaignId, fear }: { campaignId: Id<"campaigns">; f
         <h2 id="fear-h" className="m-0 font-display text-[22px] font-bold text-[#e3d8ff]">
           GM Fear
         </h2>
-        <span className="text-[13px] text-[#9a8cc4]">Click a token to set</span>
+        {readOnly ? null : <span className="text-[13px] text-[#9a8cc4]">Click a token to set</span>}
       </div>
       <div className="relative aspect-square w-full max-w-[330px]">
         <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" className="absolute inset-0">
@@ -72,7 +72,8 @@ export function FearPanel({ campaignId, fear }: { campaignId: Id<"campaigns">; f
               aria-label={`Fear ${value} of ${MAX_FEAR}`}
               aria-pressed={k < fear}
               className={`fz ${k < fear ? "fz-on" : "fz-off"}`}
-              style={style}
+              style={readOnly ? { ...style, cursor: "default" } : style}
+              disabled={readOnly}
               // Clicking the top lit token lowers Fear by one, as on the board.
               onClick={() => void set.fire({ campaignId, value: value === fear ? k : value })}
             />

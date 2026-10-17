@@ -26,7 +26,7 @@ export default function DashboardPage() {
             to create the first hero.
           </div>
         </section>
-        <Countdowns campaignId={campaign._id} />
+        <Countdowns campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
         <section aria-labelledby="last-h" className="flex flex-col gap-3 rounded-2xl border border-[#2a3a40] bg-[#141e22] p-6">
           <h2 id="last-h" className="m-0 font-display text-[24px] font-bold text-parchment">
             Last Session
@@ -37,7 +37,7 @@ export default function DashboardPage() {
         </section>
       </div>
       <aside className="flex flex-col gap-6 self-start">
-        <FearPanel campaignId={campaign._id} fear={campaign.fear} />
+        <FearPanel campaignId={campaign._id} fear={campaign.fear} readOnly={campaign.role !== "gm"} />
       </aside>
     </main>
   );

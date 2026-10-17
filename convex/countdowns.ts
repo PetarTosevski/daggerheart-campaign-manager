@@ -4,8 +4,9 @@ import { applyCountdownAction, COUNTDOWN_CATEGORIES } from "../src/lib/domain/co
 import { countdownDetailsSchema } from "../src/lib/validation/countdowns";
 import type { Doc } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
-import { requireGm } from "./lib/auth";
-import { loadOwnedCampaign, ruleError } from "./lib/mechanics";
+import { loadCampaign, loadGmCampaign } from "./lib/access";
+import { requireUser } from "./lib/auth";
+import { ruleError } from "./lib/mechanics";
 import { campaignScope, withIdempotency, type ScopeKey } from "./lib/operations";
 
 const toClient = (c: Doc<"countdowns">) => ({
@@ -22,12 +23,12 @@ const toClient = (c: Doc<"countdowns">) => ({
 
 export type CountdownView = ReturnType<typeof toClient>;
 
-/** The campaign's countdowns that are not cancelled, oldest first. Countdowns are core. */
+/** The campaign's countdowns that are not cancelled, oldest first. Countdowns are core; players see them read-only. */
 export const listByCampaign = query({
   args: { campaignId: v.id("campaigns") },
   handler: async (ctx, { campaignId }) => {
-    const user = await requireGm(ctx);
-    await loadOwnedCampaign(ctx, user._id, campaignId);
+    const user = await requireUser(ctx);
+    await loadCampaign(ctx, user, campaignId);
     const rows = await ctx.db
       .query("countdowns")
       .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
@@ -47,8 +48,8 @@ export const create = mutation({
     idempotencyKey: v.string(),
   },
   handler: async (ctx, { idempotencyKey, campaignId, ...raw }) => {
-    const user = await requireGm(ctx);
-    await loadOwnedCampaign(ctx, user._id, campaignId);
+    const user = await requireUser(ctx);
+    await loadGmCampaign(ctx, user, campaignId);
     const parsed = countdownDetailsSchema.safeParse(raw);
     if (!parsed.success) {
       throw new ConvexError({ code: "INVALID", message: parsed.error.issues[0]?.message });
@@ -97,10 +98,10 @@ export const operate = mutation({
     idempotencyKey: v.string(),
   },
   handler: async (ctx, { countdownId, action, amount, idempotencyKey }) => {
-    const user = await requireGm(ctx);
+    const user = await requireUser(ctx);
     const countdown = await ctx.db.get(countdownId);
     if (countdown === null) throw new ConvexError("NOT_FOUND");
-    await loadOwnedCampaign(ctx, user._id, countdown.campaignId);
+    await loadGmCampaign(ctx, user, countdown.campaignId);
     if ((action === "correction") !== (amount !== undefined)) {
       throw new ConvexError({ code: "INVALID", message: "Only a correction takes an amount." });
     }

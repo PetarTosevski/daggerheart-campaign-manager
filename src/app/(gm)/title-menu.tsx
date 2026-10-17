@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { BookOpen, Play, Plus, Sun } from "lucide-react";
+import { BookOpen, Play, Plus, Sun, Users } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
@@ -9,6 +9,7 @@ import { LogoMark } from "@/components/brand/brand";
 import { frameName, plural } from "@/lib/campaign-display";
 
 import { api } from "../../../convex/_generated/api";
+import { JoinDialog } from "./join-dialog";
 import { SettingsDialog } from "./settings-dialog";
 
 const ITEM =
@@ -32,6 +33,7 @@ export function TitleMenu() {
   const campaigns = useQuery(api.campaigns.list);
   const settings = useQuery(api.settings.get);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
   const latest = campaigns?.[0];
 
   return (
@@ -54,7 +56,7 @@ export function TitleMenu() {
             <MenuItem
               icon={<Play className="size-[18px]" strokeWidth={1.5} aria-hidden="true" />}
               label="Continue"
-              sub={`${latest.name} · ${frameName(latest.frameId)}`}
+              sub={`${latest.name} · ${frameName(latest.frameId)}${latest.role === "player" ? " · Player" : ""}`}
             />
           </Link>
         ) : null}
@@ -82,6 +84,13 @@ export function TitleMenu() {
             }
           />
         </Link>
+        <button type="button" className={ITEM} aria-haspopup="dialog" onClick={() => setJoinOpen(true)}>
+          <MenuItem
+            icon={<Users className="size-[18px]" strokeWidth={1.5} aria-hidden="true" />}
+            label="Join Campaign"
+            sub="Play in a friend's game with their code"
+          />
+        </button>
         <button
           type="button"
           className={ITEM}
@@ -97,6 +106,7 @@ export function TitleMenu() {
       </nav>
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <JoinDialog open={joinOpen} onClose={() => setJoinOpen(false)} />
 
       <div className="mt-auto pt-12 text-[13px] tracking-[0.1em] text-faint">
         {settings?.tableName || "Daggerheart Campaign Ledger"}

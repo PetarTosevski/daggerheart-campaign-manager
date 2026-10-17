@@ -31,6 +31,8 @@ function Band({
   onDeleted: (campaign: CampaignSummary) => void;
 }) {
   const remove = useMutation(api.campaigns.remove);
+  const leave = useMutation(api.members.leave);
+  const isGm = campaign.role === "gm";
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,8 +60,18 @@ function Band({
           {roman(index)}
         </span>
         <span className="flex min-w-0 flex-[1_1_320px] flex-col gap-2">
-          <span className="text-[13px] tracking-[0.22em] text-muted-text uppercase">
-            Tier {campaign.tier} · Level {campaign.level} · {frameName(campaign.frameId)}
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] tracking-[0.22em] text-muted-text uppercase">
+            <span>
+              Tier {campaign.tier} · Level {campaign.level} · {frameName(campaign.frameId)}
+            </span>
+            <span
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-[11px] tracking-[0.16em]",
+                isGm ? "border-brand/60 text-brand" : "border-[#5b4a8f] text-fear",
+              )}
+            >
+              {isGm ? "Game Master" : "Player"}
+            </span>
           </span>
           <span className="font-display text-[28px] font-bold tracking-[0.03em] sm:text-[34px]">{campaign.name}</span>
           <span className="text-[15px] text-label">
@@ -83,11 +95,11 @@ function Band({
             <BrandButton
               variant="danger"
               size="lg"
-              aria-label={`Delete ${campaign.name}`}
+              aria-label={`${isGm ? "Delete" : "Leave"} ${campaign.name}`}
               onClick={() => setConfirming(true)}
             >
-              <Trash2 className="!size-4" strokeWidth={1.8} aria-hidden="true" />
-              Delete
+              {isGm ? <Trash2 className="!size-4" strokeWidth={1.8} aria-hidden="true" /> : null}
+              {isGm ? "Delete" : "Leave"}
             </BrandButton>
           </div>
         </div>
@@ -96,11 +108,14 @@ function Band({
       {open && confirming ? (
         <div
           role="alertdialog"
-          aria-label="Confirm delete"
+          aria-label={isGm ? "Confirm delete" : "Confirm leave"}
           className="mx-6 mb-7 flex flex-wrap items-center gap-3 rounded-[10px] border border-danger-line bg-danger-bg px-4 py-3.5 sm:mr-10 sm:ml-[216px]"
         >
           <span className="flex-[1_1_260px] text-[15px] text-[#ffd9d6]">
-            Delete <strong>{campaign.name}</strong>? It will be removed from your saved campaigns.
+            {isGm ? "Delete" : "Leave"} <strong>{campaign.name}</strong>?{" "}
+            {isGm
+              ? "It will be removed from your saved campaigns."
+              : "You'll need a new invite or join code to come back."}
           </span>
           <BrandButton variant="outline" className="border-[#5a3a3a]" onClick={() => setConfirming(false)}>
             Keep it
@@ -109,12 +124,12 @@ function Band({
             variant="dangerSolid"
             onClick={() => {
               setError(null);
-              remove({ campaignId: campaign._id })
-                .then(() => onDeleted(campaign))
+              (isGm ? remove({ campaignId: campaign._id }) : leave({ campaignId: campaign._id }))
+                .then(() => (isGm ? onDeleted(campaign) : undefined))
                 .catch((e) => setError(errorMessage(e)));
             }}
           >
-            Delete
+            {isGm ? "Delete" : "Leave"}
           </BrandButton>
           {error ? (
             <p role="alert" className="m-0 w-full text-[14px] text-danger">

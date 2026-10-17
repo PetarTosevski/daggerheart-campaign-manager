@@ -67,7 +67,7 @@ function progressPath(day: number) {
 }
 
 /** The Witherwild 7-phase arc in the dashboard header. Only rendered for frames with campaign time. */
-export function TimeArc({ campaignId }: { campaignId: Id<"campaigns"> }) {
+export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"campaigns">; readOnly?: boolean }) {
   const time = useQuery(api.campaignTime.get, { campaignId });
   const advance = useIntent(api.campaignTime.advance);
   const setDay = useIntent(api.campaignTime.setDay);
@@ -127,7 +127,7 @@ export function TimeArc({ campaignId }: { campaignId: Id<"campaigns"> }) {
               aria-label={label}
               title={label}
               aria-current={current ? "step" : undefined}
-              disabled={setDay.pending || advance.pending}
+              disabled={readOnly || setDay.pending || advance.pending}
               onClick={() => {
                 if (!current) void setDay.fire({ campaignId, cycleDay: day });
               }}
@@ -171,7 +171,7 @@ export function TimeArc({ campaignId }: { campaignId: Id<"campaigns"> }) {
           Current week cycle: <strong style={{ color: c2 }}>{night ? "Night" : "Day"}</strong>
         </span>
       </div>
-      {time.cycleDay === 7 ? (
+      {time.cycleDay === 7 && !readOnly ? (
         <button
           type="button"
           onClick={() => void advance.fire({ campaignId })}
