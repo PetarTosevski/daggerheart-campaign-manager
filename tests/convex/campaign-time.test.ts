@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
-import { errorCode, errorData, key, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, key, setupWithCampaign, useAllowlist } from "./helpers";
 
 describe("campaign time", () => {
   useAllowlist();
@@ -19,7 +19,7 @@ describe("campaign time", () => {
       () => gm.mutation(api.campaignTime.advance, { campaignId, idempotencyKey: key() }),
       () => gm.mutation(api.campaignTime.setDay, { campaignId, cycleDay: 3, idempotencyKey: key() }),
     ]) {
-      expect(errorData(await call().catch((e) => e))).toBe("MECHANIC_DISABLED");
+      expect(errorCode(await call().catch((e) => e))).toBe("MECHANIC_DISABLED");
     }
   });
 
@@ -71,6 +71,6 @@ describe("campaign time", () => {
 
   it("hides another owner's campaign time", async () => {
     const { other, campaignId } = await setupWithCampaign();
-    expect(errorData(await other.query(api.campaignTime.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await other.query(api.campaignTime.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
   });
 });

@@ -1,11 +1,10 @@
-import { query } from "./_generated/server";
-import { requireUser } from "./lib/auth";
+import { v } from "convex/values";
 
-/** The signed-in GM, for the app shell. */
-export const viewer = query({
+import { maybeUserQuery } from "./lib/functions";
+
+/** The signed-in user, for the app shell; null when signed out. */
+export const viewer = maybeUserQuery({
   args: {},
-  handler: async (ctx) => {
-    const user = await requireUser(ctx);
-    return { email: user.email ?? null, name: user.name ?? null };
-  },
+  returns: v.union(v.object({ email: v.union(v.string(), v.null()), name: v.union(v.string(), v.null()) }), v.null()),
+  handler: async (ctx) => (ctx.user === null ? null : { email: ctx.user.email ?? null, name: ctx.user.name ?? null }),
 });

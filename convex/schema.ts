@@ -6,6 +6,7 @@ import { characterTables } from "./tables/characters";
 import { codexTables } from "./tables/codex";
 import { countdownTables } from "./tables/countdowns";
 import { fileTables } from "./tables/files";
+import { historyTables } from "./tables/history";
 import { mapTables } from "./tables/maps";
 import { operationTables } from "./tables/operations";
 import { trackerTables } from "./tables/trackers";
@@ -23,4 +24,5 @@ export default defineSchema({
   ...codexTables,
   ...fileTables,
   ...operationTables,
+  ...historyTables,
 });
