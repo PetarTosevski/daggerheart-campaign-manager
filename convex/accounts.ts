@@ -1,20 +1,21 @@
 import { createAccount, retrieveAccount } from "@convex-dev/auth/server";
 
-import { internalAction } from "./_generated/server";
-import { parseSeedAccounts } from "./lib/allowlist";
+import { env, internalAction } from "./_generated/server";
+import { seedAccountsFor } from "./lib/allowlist";
 import { PASSWORD_PROVIDER_ID } from "./lib/users";
 
 /**
  * Creates the env-defined test accounts (`SEED_ACCOUNTS`, `email:password`
  * pairs separated by `;`) as email + password logins. Idempotent; existing
- * accounts are left unchanged. Run with `npx convex run accounts:seed`.
+ * accounts are left unchanged. Refuses to run unless this is a local e2e
+ * deployment. Run with `npx convex run accounts:seed`.
  */
 export const seed = internalAction({
   args: {},
   handler: async (ctx) => {
     const created: string[] = [];
     const skipped: string[] = [];
-    for (const { email, password } of parseSeedAccounts(process.env.SEED_ACCOUNTS)) {
+    for (const { email, password } of seedAccountsFor(env)) {
       const existing = await retrieveAccount(ctx, {
         provider: PASSWORD_PROVIDER_ID,
         account: { id: email },

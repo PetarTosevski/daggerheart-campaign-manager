@@ -2,7 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
 
 import type { Doc } from "../_generated/dataModel";
-import type { QueryCtx } from "../_generated/server";
+import { env, type QueryCtx } from "../_generated/server";
 import { isAllowedEmail } from "./allowlist";
 
 /**
@@ -15,7 +15,7 @@ export async function requireUser(ctx: QueryCtx): Promise<Doc<"users">> {
   const userId = await getAuthUserId(ctx);
   if (userId === null) throw new ConvexError("UNAUTHENTICATED");
   const user = await ctx.db.get(userId);
-  if (user === null || !isAllowedEmail(user.email, process.env)) {
+  if (user === null || !isAllowedEmail(user.email, env)) {
     throw new ConvexError("FORBIDDEN");
   }
   return user;

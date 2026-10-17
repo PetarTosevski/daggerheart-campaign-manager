@@ -102,7 +102,7 @@ describe("createOrUpdateUser (sign-in callback)", () => {
       expect(await t.run((ctx) => ctx.db.query("users").collect())).toEqual([]);
     });
 
-    it("refuses a new password account for an email that already has a user", async () => {
+    it("refuses a new password account for an existing email with the same code as a non-allowlisted one", async () => {
       const t = makeTest();
       await t.run((ctx) => ctx.db.insert("users", { email: "gm@example.com", emailVerificationTime: 1 }));
       const error = await t
@@ -110,7 +110,7 @@ describe("createOrUpdateUser (sign-in callback)", () => {
           createOrUpdateUser(ctx, { existingUserId: null, provider: password, profile: { email: "GM@example.com" } }, penv),
         )
         .catch((e) => e);
-      expect(errorCode(error)).toBe("EMAIL_IN_USE");
+      expect(errorCode(error)).toBe("FORBIDDEN");
       expect(await t.run((ctx) => ctx.db.query("users").collect())).toHaveLength(1);
     });
 

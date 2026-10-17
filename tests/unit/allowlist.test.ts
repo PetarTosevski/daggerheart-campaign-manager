@@ -8,6 +8,7 @@ import {
   isE2EDeployment,
   parseGmEmails,
   parseSeedAccounts,
+  seedAccountsFor,
 } from "../../convex/lib/allowlist";
 
 const env = { GM_EMAILS: " GM@Example.com , second@example.com ,," };
@@ -108,15 +109,39 @@ describe("constantTimeEqual", () => {
 });
 
 describe("allowlist sources", () => {
-  it("unions ALLOWED_EMAILS, the legacy GM_EMAILS and the seeded accounts", () => {
+  const local = { CONVEX_CLOUD_URL: "http://127.0.0.1:3210" };
+  const cloud = { CONVEX_CLOUD_URL: "https://happy-otter-123.convex.cloud" };
+  const sources = { ALLOWED_EMAILS: "p@x.test", GM_EMAILS: "g@x.test", SEED_ACCOUNTS: "s@x.test:pw" };
+
+  it("unions ALLOWED_EMAILS, the legacy GM_EMAILS and, locally, the seeded accounts", () => {
     expect(parseSeedAccounts("a@x.test:pw:with:colons; bad ;B@X.test:pw2")).toEqual([
       { email: "a@x.test", password: "pw:with:colons" },
       { email: "b@x.test", password: "pw2" },
     ]);
-    expect([...allowedEmails({ ALLOWED_EMAILS: "p@x.test", GM_EMAILS: "g@x.test", SEED_ACCOUNTS: "s@x.test:pw" })].sort()).toEqual([
+    expect([...allowedEmails({ ...local, ...sources })].sort()).toEqual([
       "g@x.test",
       "p@x.test",
       "s@x.test",
     ]);
+  });
+
+  it("ignores SEED_ACCOUNTS on a cloud or unknown deployment", () => {
+    expect([...allowedEmails({ ...cloud, ...sources })].sort()).toEqual(["g@x.test", "p@x.test"]);
+    expect([...allowedEmails(sources)].sort()).toEqual(["g@x.test", "p@x.test"]);
+  });
+});
+
+describe("seedAccountsFor (accounts:seed)", () => {
+  it("returns the seed accounts on a local deployment", () => {
+    expect(
+      seedAccountsFor({ CONVEX_CLOUD_URL: "http://localhost:3210", SEED_ACCOUNTS: "s@x.test:pw" }),
+    ).toEqual([{ email: "s@x.test", password: "pw" }]);
+  });
+
+  it("refuses to run against a *.convex.cloud deployment", () => {
+    expect(() =>
+      seedAccountsFor({ CONVEX_CLOUD_URL: "https://happy-otter-123.convex.cloud", SEED_ACCOUNTS: "s@x.test:pw" }),
+    ).toThrow();
+    expect(() => seedAccountsFor({ SEED_ACCOUNTS: "s@x.test:pw" })).toThrow();
   });
 });
