@@ -60,13 +60,19 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+pnpm install          # also installs the git hooks (prepare script)
+pnpm lint
+pnpm typecheck        # tsc --noEmit, includes convex/
+pnpm test             # vitest: unit (jsdom) + convex (convex-test)
+pnpm e2e:setup        # once per checkout: local e2e Convex backend
+pnpm test:e2e         # Playwright; starts the local backend + e2e build
+E2E_PORT=3100 E2E_CONVEX_PORT=3312 pnpm test:e2e   # non-default ports
 ```
+
+Pre-commit hook (`.beads/hooks/pre-commit` -> `scripts/pre-commit.sh`): ESLint
+on staged files + typecheck; skip once with `git commit --no-verify`. CI:
+`.github/workflows/ci.yml`. Details: `docs/testing.md`.
 
 ## Architecture Overview
 

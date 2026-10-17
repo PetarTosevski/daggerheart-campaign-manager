@@ -5,9 +5,12 @@
 //
 // The e2e backend is the project's local, account-free Convex deployment
 // (CONVEX_AGENT_MODE=anonymous). It never touches a cloud deployment.
+// Respects E2E_PORT / E2E_CONVEX_PORT (see docs/testing.md).
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+
+import { e2ePorts } from "./e2e-ports.mjs";
 
 const ENV_FILE = ".env.e2e.local";
 const E2E_GM_EMAIL = "e2e-gm@example.test";
@@ -49,7 +52,8 @@ convex(["dev", "--once", "--typecheck=disable", "--tail-logs", "disable"]);
 
 const existing = convex(["env", "list"]);
 const vars = {
-  SITE_URL: "http://localhost:3000",
+  // Only OAuth redirects use it; the e2e tests sign in with the test form.
+  SITE_URL: `http://localhost:${e2ePorts().next}`,
   ALLOWED_EMAILS: E2E_ALLOWED.join(","),
   E2E_AUTH_ENABLED: "true",
   E2E_AUTH_SECRET: secret,
