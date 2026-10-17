@@ -145,7 +145,7 @@ export function PortraitUpload({
       <input
         ref={input}
         type="file"
-        accept="image/*"
+        accept="image/png,image/jpeg,image/webp,image/gif"
         className="sr-only"
         tabIndex={-1}
         aria-hidden="true"

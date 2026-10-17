@@ -43,7 +43,7 @@ export function MapImageControl({ campaignId, hasUpload, isCustom, scaleKm }: { 
   async function upload(file: File) {
     setStatus(null);
     if (!file.type.startsWith("image/") || file.size > MAX_BYTES) {
-      setStatus("Maps must be images of at most 8 MB.");
+      setStatus("Maps must be PNG, JPEG, WebP or GIF images of at most 8 MB.");
       return;
     }
     const km = Number(width);
@@ -84,7 +84,7 @@ export function MapImageControl({ campaignId, hasUpload, isCustom, scaleKm }: { 
       <input
         ref={input}
         type="file"
-        accept="image/*"
+        accept="image/png,image/jpeg,image/webp,image/gif"
         className="sr-only"
         tabIndex={-1}
         aria-hidden="true"

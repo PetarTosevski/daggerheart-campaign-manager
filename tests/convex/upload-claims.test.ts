@@ -28,8 +28,38 @@ describe("uploads claimed elsewhere", () => {
     return { t, ids, gm, victim, player, campaignId, theirs };
   }
 
+  // A minimal sheet that passes characterSheetSchema (the ids aren't checked against the SRD here).
+  const sheet = {
+    name: "Ash",
+    pronouns: "",
+    description: "",
+    level: 1,
+    classId: "warrior",
+    subclassId: "call-of-the-brave",
+    ancestry: { kind: "single", id: "human" },
+    communityId: "wildborne",
+    traits: { agility: 2, strength: 1, finesse: 1, instinct: 0, presence: 0, knowledge: -1 },
+    traitMarks: {},
+    evasion: 11,
+    hpMax: 6,
+    hp: 0,
+    stressMax: 6,
+    stress: 0,
+    hope: 2,
+    scars: 0,
+    armorMarked: 0,
+    proficiency: 1,
+    primaryWeaponId: "broadsword",
+    inventory: [],
+    gold: { handfuls: 1, bags: 0, chest: false },
+    experiences: [],
+    domainCards: { owned: [], loadout: [] },
+    background: [],
+    connections: [],
+    notes: "",
+  };
   const character = (t: ReturnType<typeof makeTest>, campaignId: Id<"campaigns">, ownerId: Id<"users">) =>
-    t.run((ctx) => ctx.db.insert("characters", { campaignId, ownerId, createdBy: ownerId, status: "active", sheet: {}, createdAt: 0, updatedAt: 0 }));
+    t.run((ctx) => ctx.db.insert("characters", { campaignId, ownerId, createdBy: ownerId, status: "active", sheet, createdAt: 0, updatedAt: 0 }));
 
   it("no attach mutation can claim (or delete) a file another table recorded", async () => {
     const { t, ids, gm, victim, campaignId, theirs } = await setup();
@@ -60,6 +90,37 @@ describe("uploads claimed elsewhere", () => {
       expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toEqual(expect.any(String));
     }
     expect(await t.run(async (ctx) => (await ctx.db.query("files").collect()).map((f) => f.kind).sort())).toEqual(["codexImage", "map", "portrait"]);
+  });
+
+  it("attach mutations accept png, jpeg, webp and gif, and reject and delete anything else", async () => {
+    const { t, ids, gm, campaignId } = await setup();
+    const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "location", idempotencyKey: key() });
+    const characterId = await character(t, campaignId, ids.gm);
+    // convex-test records no content type, so set the one an upload would carry
+    // (system tables aren't writable in the types, but convex-test allows it).
+    const upload = (contentType: string) =>
+      t.run(async (ctx) => {
+        const id = await ctx.storage.store(new Blob(["img"], { type: contentType }));
+        await (ctx.db as unknown as { patch: (id: Id<"_storage">, value: { contentType: string }) => Promise<void> }).patch(id, { contentType });
+        return id;
+      });
+    const attempts = [
+      async (storageId: Id<"_storage">) => (await gm.mutation(api.maps.attachMapImage, { campaignId, storageId, width: 10, height: 10 })).ok,
+      async (storageId: Id<"_storage">) => (await gm.mutation(api.codex.attachImage, { entryId, storageId })).error === null,
+      async (storageId: Id<"_storage">) => (await gm.mutation(api.characters.attachPortrait, { characterId, storageId })).error === null,
+    ];
+    const kept = (storageId: Id<"_storage">) => t.run(async (ctx) => (await ctx.storage.getUrl(storageId)) !== null);
+
+    for (const attach of attempts) {
+      for (const type of ["image/svg+xml", "image/x-foo"]) {
+        const storageId = await upload(type);
+        expect([type, await attach(storageId), await kept(storageId)]).toEqual([type, false, false]);
+      }
+      for (const type of ["image/png", "image/jpeg", "image/webp", "image/gif"]) {
+        const storageId = await upload(type);
+        expect([type, await attach(storageId), await kept(storageId)]).toEqual([type, true, true]);
+      }
+    }
   });
 
   it("players never receive the map's storage id, marker counter or unused marker types", async () => {

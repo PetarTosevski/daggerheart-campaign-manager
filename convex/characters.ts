@@ -35,7 +35,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { loadCampaign, type Role } from "./lib/access";
 import { requireUser } from "./lib/auth";
-import { claimFile, deleteFilesOf, deleteOwnFile, isClaimed, ownFileUrl } from "./lib/files";
+import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { campaignScope, withIdempotency } from "./lib/operations";
 import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
 
@@ -480,7 +480,7 @@ export const portraitUploadUrl = mutation({
 
 /**
  * Attaches a just-uploaded file as the character's portrait. The file must be
- * an image of at most 3 MB that no other character uses; the previous upload
+ * a PNG, JPEG, WebP or GIF of at most 3 MB that no other character uses; the previous upload
  * is deleted. Owner or GM.
  */
 export const attachPortrait = mutation({
@@ -490,10 +490,10 @@ export const attachPortrait = mutation({
     const meta = await ctx.db.system.get(storageId);
     // Only an unclaimed file may be attached, so the rejections below only ever delete unclaimed files.
     if (meta === null || (await isClaimed(ctx, storageId))) throw new ConvexError("NOT_FOUND");
-    if (!meta.contentType?.startsWith("image/") || meta.size > MAX_PORTRAIT_BYTES) {
+    if (!isAllowedImage(meta, MAX_PORTRAIT_BYTES)) {
       // Returned, not thrown: a throw would roll back the deletion.
       await ctx.storage.delete(storageId);
-      return { error: "Portraits must be images of at most 3 MB." };
+      return { error: "Portraits must be PNG, JPEG, WebP or GIF images of at most 3 MB." };
     }
     const sheet = parseSheet(character.sheet);
     // Validated before the file is claimed, so a rejected sheet leaves no orphan file.

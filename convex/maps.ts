@@ -22,7 +22,7 @@ import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/s
 import type { Role } from "./lib/access";
 import { requireUser } from "./lib/auth";
 import { rollDie } from "./lib/dice";
-import { claimFile, deleteOwnFile, isClaimed, ownFileUrl } from "./lib/files";
+import { claimFile, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { readMap, writeMap } from "./lib/maps";
 import { campaignScope, withIdempotency } from "./lib/operations";
 import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
@@ -296,7 +296,8 @@ export const mapImageUploadUrl = mutation({
 
 /**
  * Uses a just-uploaded file as the campaign's map. The file must be an image
- * of at most 8 MB that no campaign has claimed; the previous upload is deleted.
+ * (PNG, JPEG, WebP or GIF) of at most 8 MB that no campaign has claimed; the
+ * previous upload is deleted.
  * `width` and `height` are the image's pixel size (its aspect ratio).
  */
 export const attachMapImage = mutation({
@@ -307,9 +308,9 @@ export const attachMapImage = mutation({
     // Only an unclaimed file may be attached, so the rejections below only ever delete unclaimed files.
     if (meta === null || (await isClaimed(ctx, storageId))) throw new ConvexError("NOT_FOUND");
     // A rejected file is deleted and reported without throwing, so the delete isn't rolled back.
-    if (!meta.contentType?.startsWith("image/") || meta.size > MAX_MAP_BYTES) {
+    if (!isAllowedImage(meta, MAX_MAP_BYTES)) {
       await ctx.storage.delete(storageId);
-      return { ok: false, message: "Maps must be images of at most 8 MB." };
+      return { ok: false, message: "Maps must be PNG, JPEG, WebP or GIF images of at most 8 MB." };
     }
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 20000 || height > 20000) {
       await ctx.storage.delete(storageId);
