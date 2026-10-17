@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
-import { errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const PLAYER = "player@example.com";
@@ -27,9 +27,9 @@ describe("invites honour only verified emails", () => {
   it("an unverified (password) account with the invited email gets no access", async () => {
     const { player, campaignId, members } = await setup(false);
     expect(await player.query(api.campaigns.get, { campaignId })).toBeNull();
-    expect(errorData(await player.query(api.countdowns.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await player.query(api.countdowns.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
     expect(await player.query(api.campaigns.list, {})).toEqual([]);
-    expect(errorData(await player.mutation(api.campaigns.markOpened, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await player.mutation(api.campaigns.markOpened, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
     expect(await members()).toEqual([]);
   });
 
