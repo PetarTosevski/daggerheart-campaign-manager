@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 
+import { appError } from "../../src/lib/errors/app-error";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
@@ -20,35 +21,38 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** The stored `requestHash`: hex SHA-256 of the stable JSON, so request bodies are never kept. */
+export async function requestHash(request: unknown): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableStringify(request)));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export type OnceArgs = {
+  scopeKey: ScopeKey;
+  key: string;
+  kind: string;
+  request: unknown;
+  createdBy: Id<"users">;
+  campaignId?: Id<"campaigns">;
+};
+
 /**
- * Runs `run` once per (scope, key). A replay with the same kind and
- * normalised request returns the stored result; anything else with the same
- * key throws `IDEMPOTENCY_MISMATCH`. Reading the index puts it in the
- * transaction's read set, so a concurrent duplicate retries and replays.
+ * Runs `run` once per (scope, key). A replay by the same user with the same
+ * kind and request returns the stored result; anything else with the same
+ * key (another kind or request, or another user) gets `mismatch()`. Reading
+ * the index puts it in the transaction's read set, so a concurrent duplicate
+ * retries and replays.
  */
-export async function withIdempotency<T>(
-  ctx: MutationCtx,
-  args: {
-    scopeKey: ScopeKey;
-    key: string;
-    kind: string;
-    request: unknown;
-    createdBy: Id<"users">;
-    campaignId?: Id<"campaigns">;
-  },
-  run: () => Promise<T>,
-): Promise<T> {
-  if (args.key.length === 0 || args.key.length > 100) throw new ConvexError({ code: "INVALID", message: "Invalid request key." });
-  const requestHash = stableStringify(args.request);
+async function once<T>(ctx: MutationCtx, args: OnceArgs, run: () => Promise<T>, mismatch: () => Error): Promise<T> {
+  if (args.key.length === 0 || args.key.length > 100) throw appError("INVALID", "Invalid request key.");
+  const hash = await requestHash(args.request);
   const existing = await ctx.db
     .query("operations")
-    .withIndex("by_scope_key", (q) =>
-      q.eq("scopeKey", args.scopeKey).eq("idempotencyKey", args.key),
-    )
+    .withIndex("by_scope_key", (q) => q.eq("scopeKey", args.scopeKey).eq("idempotencyKey", args.key))
     .unique();
   if (existing !== null) {
-    if (existing.kind !== args.kind || existing.requestHash !== requestHash) {
-      throw new ConvexError("IDEMPOTENCY_MISMATCH");
+    if (existing.kind !== args.kind || existing.requestHash !== hash || existing.createdBy !== args.createdBy) {
+      throw mismatch();
     }
     return existing.result as T;
   }
@@ -57,11 +61,24 @@ export async function withIdempotency<T>(
     scopeKey: args.scopeKey,
     idempotencyKey: args.key,
     kind: args.kind,
-    requestHash,
+    requestHash: hash,
     result,
     campaignId: args.campaignId,
     createdBy: args.createdBy,
     createdAt: Date.now(),
   });
   return result;
+}
+
+/** The idempotency behind the keyed wrappers' `ctx.once` (lib/functions.ts): throws `ConvexError<AppError>`. */
+export function runOnce<T>(ctx: MutationCtx, args: OnceArgs, run: () => Promise<T>): Promise<T> {
+  return once(ctx, args, run, () => appError("IDEMPOTENCY_MISMATCH"));
+}
+
+/**
+ * Legacy form for modules not yet on the keyed wrappers: the same rules, with
+ * the string payload `"IDEMPOTENCY_MISMATCH"` their tests still assert.
+ */
+export function withIdempotency<T>(ctx: MutationCtx, args: OnceArgs, run: () => Promise<T>): Promise<T> {
+  return once(ctx, args, run, () => new ConvexError("IDEMPOTENCY_MISMATCH"));
 }

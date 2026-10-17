@@ -52,7 +52,7 @@ describe("campaign membership", () => {
       }),
       () => player.mutation(api.campaigns.remove, { campaignId }),
     ]) {
-      expect(errorData(await call().catch((e) => e))).toBe("FORBIDDEN");
+      expect(errorCode(await call().catch((e) => e))).toBe("FORBIDDEN");
     }
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
-import { errorCode, errorData, key, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 const fearOf = async (gm: Awaited<ReturnType<typeof setupWithCampaign>>["gm"], campaignId: string) =>
   (await gm.query(api.campaigns.get, { campaignId }))?.fear;
@@ -57,14 +57,26 @@ describe("fear", () => {
     const mismatch = await gm
       .mutation(api.fear.adjust, { campaignId, direction: "decrease", idempotencyKey: k })
       .catch((e) => e);
-    expect(errorData(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
+    expect(errorCode(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
   });
 
   it("hides other owners' campaigns and requires sign-in", async () => {
     const { t, other, campaignId } = await setupWithCampaign();
     const foreign = await other.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: key() }).catch((e) => e);
-    expect(errorData(foreign)).toBe("NOT_FOUND");
+    expect(errorCode(foreign)).toBe("NOT_FOUND");
     const anon = await t.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: key() }).catch((e) => e);
-    expect(errorData(anon)).toBe("UNAUTHENTICATED");
+    expect(errorCode(anon)).toBe("UNAUTHENTICATED");
+  });
+
+  it("lets players read Fear but not change it", async () => {
+    const { gm, other, campaignId } = await setupWithCampaign();
+    await gm.mutation(api.members.invite, { campaignId, email: OTHER_EMAIL });
+    expect(await fearOf(other, campaignId)).toBe(0);
+    for (const call of [
+      other.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: key() }),
+      other.mutation(api.fear.adjust, { campaignId, direction: "increase", idempotencyKey: key() }),
+    ]) {
+      expect(errorCode(await call.catch((e) => e))).toBe("FORBIDDEN");
+    }
   });
 });
