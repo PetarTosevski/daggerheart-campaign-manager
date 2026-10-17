@@ -63,6 +63,7 @@ describe("campaign membership", () => {
     expect(await t.run((ctx) => ctx.db.query("campaignMembers").collect())).toHaveLength(1);
     expect(await t.run((ctx) => ctx.db.query("campaignInvites").collect())).toEqual([]);
     const roster = await gm.query(api.members.roster, { campaignId });
+    if (roster.viewer !== "gm") throw new Error("expected the GM's roster");
     expect(roster.players.map((p) => [p.name, p.email])).toEqual([["Ana", PLAYER]]);
   });
 
@@ -73,13 +74,13 @@ describe("campaign membership", () => {
     expect(await gm.mutation(api.members.rotateJoinCode, { campaignId })).toBe(code);
 
     const typed = `${code.slice(0, 4).toLowerCase()}-${code.slice(4)}`;
-    expect(await player.mutation(api.members.joinByCode, { code: typed })).toEqual({ campaignId });
-    expect(await player.mutation(api.members.joinByCode, { code })).toEqual({ campaignId });
+    expect(await player.mutation(api.members.joinByCode, { code: typed })).toEqual({ ok: true, campaignId });
+    expect(await player.mutation(api.members.joinByCode, { code })).toEqual({ ok: true, campaignId });
     expect((await player.query(api.campaigns.get, { campaignId }))?.role).toBe("player");
 
     const fresh = await gm.mutation(api.members.rotateJoinCode, { campaignId, replace: true });
     expect(fresh).not.toBe(code);
-    expect(errorCode(await stranger.mutation(api.members.joinByCode, { code }).catch((e) => e))).toBe("INVALID");
+    expect(await stranger.mutation(api.members.joinByCode, { code })).toMatchObject({ ok: false, code: "BAD_CODE" });
   });
 
   it("only the GM manages access, and players don't see emails", async () => {
@@ -91,6 +92,7 @@ describe("campaign membership", () => {
       errorCode(await player.mutation(api.members.invite, { campaignId, email: "x@example.com" }).catch((e) => e)),
     ).toBe("FORBIDDEN");
     const roster = await player.query(api.members.roster, { campaignId });
+    expect(roster.viewer).toBe("player");
     expect(roster.players).toHaveLength(1);
     // No email field at all, not even null.
     expect(roster.players.map((p) => "email" in p)).toEqual([false]);
@@ -100,14 +102,27 @@ describe("campaign membership", () => {
   it("rate-limits joinByCode at 10 a minute and invites, per user", async () => {
     const { gm, player, stranger, campaignId } = await setup();
     const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
-    for (let i = 0; i < 10; i++) expect(await player.mutation(api.members.joinByCode, { code })).toEqual({ campaignId });
+    for (let i = 0; i < 10; i++) expect(await player.mutation(api.members.joinByCode, { code })).toEqual({ ok: true, campaignId });
     expect(errorCode(await player.mutation(api.members.joinByCode, { code }).catch((e) => e))).toBe("RATE_LIMITED");
-    expect(await stranger.mutation(api.members.joinByCode, { code })).toEqual({ campaignId });
+    expect(await stranger.mutation(api.members.joinByCode, { code })).toEqual({ ok: true, campaignId });
 
     for (let i = 0; i < 30; i++) await gm.mutation(api.members.invite, { campaignId, email: `p${i}@example.com` });
     expect(errorCode(await gm.mutation(api.members.invite, { campaignId, email: "late@example.com" }).catch((e) => e))).toBe(
       "RATE_LIMITED",
     );
+  });
+
+  it("counts wrong codes against the joinByCode limit: the 11th guess in a minute is RATE_LIMITED", async () => {
+    const { gm, stranger, campaignId } = await setup();
+    const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
+    for (let i = 0; i < 10; i++) {
+      expect(await stranger.mutation(api.members.joinByCode, { code: `WRONG${i}` })).toEqual({
+        ok: false,
+        code: "BAD_CODE",
+        message: "No campaign uses that code. Check it with your GM.",
+      });
+    }
+    expect(errorCode(await stranger.mutation(api.members.joinByCode, { code }).catch((e) => e))).toBe("RATE_LIMITED");
   });
 
   it("removing a player revokes membership and the invite", async () => {
@@ -118,7 +133,7 @@ describe("campaign membership", () => {
     await gm.mutation(api.members.removePlayer, { campaignId, userId: ids.player });
     expect(await player.query(api.campaigns.get, { campaignId })).toBeNull();
     // The old code no longer works, so the removed player can't rejoin with it.
-    expect(errorCode(await player.mutation(api.members.joinByCode, { code }).catch((e) => e))).toBe("INVALID");
+    expect(await player.mutation(api.members.joinByCode, { code })).toMatchObject({ ok: false, code: "BAD_CODE" });
     expect(await player.query(api.campaigns.list, {})).toEqual([]);
   });
 

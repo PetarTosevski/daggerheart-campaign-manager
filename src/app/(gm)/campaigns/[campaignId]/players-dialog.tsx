@@ -45,6 +45,8 @@ export function PlayersDialog({
     setError(null);
     p.catch((e) => setError(errorMessage(e)));
   };
+  // Only the GM's roster carries emails.
+  const players = roster?.viewer === "gm" ? roster.players : roster?.players.map((p) => ({ ...p, email: null }));
   const link = access?.joinCode && typeof window !== "undefined" ? `${window.location.origin}/join/${access.joinCode}` : "";
 
   return (
@@ -125,7 +127,7 @@ export function PlayersDialog({
           <li className="text-[14px] text-body">
             {roster?.gm.name ?? "…"} <span className="text-brand">· Game Master</span>
           </li>
-          {roster?.players.map((p) => (
+          {players?.map((p) => (
             <li key={p.userId} className="flex items-center justify-between gap-3 text-[14px] text-body">
               <span>
                 {p.name} {p.email ? <span className="text-subtle">· {p.email}</span> : null}

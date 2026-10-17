@@ -41,7 +41,11 @@ export function JoinByLink({ code }: { code: string }) {
             setPending(true);
             setError(null);
             join({ code })
-              .then(({ campaignId }) => router.replace(`/campaigns/${campaignId}`))
+              .then((result) => {
+                if (result.ok) return router.replace(`/campaigns/${result.campaignId}`);
+                setError(result.message);
+                setPending(false);
+              })
               .catch((e) => {
                 setError(errorMessage(e));
                 setPending(false);
