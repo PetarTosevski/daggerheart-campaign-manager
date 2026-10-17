@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
+import type { TravelRulesState } from "@/lib/world/map-state";
 import { applyTerrainCells } from "@/lib/world/terrain";
 import { useIntent } from "@/lib/use-intent";
 
@@ -83,7 +84,7 @@ export function useMapActions(campaignId: Id<"campaigns">) {
     },
     resetTerrain: () => run(setTerrain({ ...c, reset: true })),
     setOptions: (opts: Omit<Parameters<typeof setOptions>[0], "campaignId">) => run(setOptions({ ...c, ...opts })),
-    setTravelRules: (rules: unknown) => run(setTravelRules({ ...c, rules })),
+    setTravelRules: (rules: TravelRulesState | null) => run(setTravelRules({ ...c, rules })),
     renameType: (typeId: string, label: string) => run(renameType({ ...c, typeId, label })),
     setHexGrid: (grid: Parameters<typeof setHexGrid>[0]["grid"]) => run(setHexGrid({ ...c, grid })),
     updateHex: (q: number, r: number, patch: Parameters<typeof updateHex>[0]["patch"]) => run(updateHex({ ...c, q, r, patch })),

@@ -66,6 +66,11 @@ export const travelRulesSchema = z.object({
   fast: z.number().min(0.1).max(5),
 });
 
+/** Most markers on one map. */
+export const MAX_TOKENS = 500;
+/** Most hexes one hex crawl stores. */
+export const MAX_HEXES = 4000;
+
 const hexCoord = z.number().int().min(-1000).max(1000);
 export const HORIZON_TERRAIN = [1, 2, 3, 4] as const;
 export const HORIZON_TRAVEL_MODES = ["land", "riverDown", "riverUp", "ocean"] as const;
@@ -90,7 +95,7 @@ export const hexCrawlSchema = z.object({
     size: z.number().min(MIN_HEX_SIZE).max(MAX_HEX_SIZE),
     orientation: z.enum(["flat", "pointy"]),
   }),
-  hexes: z.array(crawlHexSchema).max(4000),
+  hexes: z.array(crawlHexSchema).max(MAX_HEXES),
   party: z.object({ q: hexCoord, r: hexCoord }).nullable(),
   /** The crawl's own day counter (Witherwild time stays Witherwild-only). */
   day: z.number().int().min(1).max(100000),
@@ -109,7 +114,7 @@ export const hexCrawlSchema = z.object({
 });
 
 export const mapStateSchema = z.object({
-  tokens: z.array(mapTokenSchema).max(500),
+  tokens: z.array(mapTokenSchema).max(MAX_TOKENS),
   nextId: z.number().int().min(1),
   party: z.object({ x: pct, y: pct, trail: z.array(z.object({ x: pct, y: pct })).max(12) }),
   /** TERRAIN_COLUMNS × TERRAIN_ROWS characters from TERRAIN_CODES. */
@@ -133,7 +138,23 @@ export const mapStateSchema = z.object({
   hexCrawl: hexCrawlSchema.optional(),
 });
 
+/**
+ * Version 2 of the `maps` row's `data` (convex/tables/maps.ts): the map's
+ * scalars only. Markers, hexes and terrain tiles live in their own tables
+ * (`mapTokens`, `mapHexes`, `mapTerrain`); `hexCount` caps the crawl's hexes.
+ * Version 1 (no `schemaVersion`) is a whole `MapState`.
+ */
+export const MAP_SCALARS_VERSION = 2;
+export const mapScalarsSchema = mapStateSchema.omit({ tokens: true, terrain: true, hexCrawl: true }).extend({
+  schemaVersion: z.literal(MAP_SCALARS_VERSION),
+  hexCrawl: hexCrawlSchema
+    .omit({ hexes: true })
+    .extend({ hexCount: z.number().int().min(0).max(MAX_HEXES) })
+    .optional(),
+});
+
 export type MapToken = z.infer<typeof mapTokenSchema>;
+export type MapScalars = z.infer<typeof mapScalarsSchema>;
 export type MapState = z.infer<typeof mapStateSchema>;
 export type TravelRulesState = z.infer<typeof travelRulesSchema>;
 export type HexCrawl = z.infer<typeof hexCrawlSchema>;
@@ -187,6 +208,63 @@ export function initialMapState(frameId: string, terrain?: string): MapState {
     typeLabels: {},
     ...(frameId === HORIZON_FRAME ? { hexCrawl: initialHexCrawl() } : {}),
   };
+}
+
+// ---- Rows: the map split into scalars, markers, hexes and terrain tiles
+
+/** Terrain rows per stored tile: the grid is kept as TERRAIN_TILES `mapTerrain` rows. */
+export const TERRAIN_TILE_ROWS = 14;
+export const TERRAIN_TILES = Math.ceil(TERRAIN_ROWS / TERRAIN_TILE_ROWS);
+export const TERRAIN_TILE_CELLS = TERRAIN_TILE_ROWS * TERRAIN_COLUMNS;
+
+/** The tile holding terrain cell `index` (row-major). */
+export function terrainTileOf(index: number): number {
+  return Math.floor(index / TERRAIN_TILE_CELLS);
+}
+
+/** Tile `tile`'s cells of a whole terrain grid. */
+export function terrainTile(grid: string, tile: number): string {
+  return grid.slice(tile * TERRAIN_TILE_CELLS, (tile + 1) * TERRAIN_TILE_CELLS);
+}
+
+/** A whole grid from `base` with the stored tiles laid over it (a missing tile keeps `base`). */
+export function assembleTerrain(base: string, tiles: readonly { tile: number; cells: string }[]): string {
+  const parts = Array.from({ length: TERRAIN_TILES }, (_, tile) => terrainTile(base, tile));
+  for (const { tile, cells } of tiles) if (tile >= 0 && tile < TERRAIN_TILES) parts[tile] = cells;
+  return parts.join("");
+}
+
+const byId = (a: MapToken, b: MapToken) => a.id - b.id;
+const byHex = (a: CrawlHex, b: CrawlHex) => a.q - b.q || a.r - b.r;
+
+/** A whole map split into what each table stores (the version 1 → 2 migration). Duplicate hexes keep the first. */
+export function splitMapState(state: MapState): { scalars: MapScalars; tokens: MapToken[]; hexes: CrawlHex[]; terrain: string } {
+  const { tokens, terrain, hexCrawl, ...rest } = state;
+  const unique = new Map<string, CrawlHex>();
+  for (const h of hexCrawl?.hexes ?? []) if (!unique.has(hexKey(h))) unique.set(hexKey(h), h);
+  const hexes = [...unique.values()].sort(byHex);
+  const scalars: MapScalars = { ...rest, schemaVersion: MAP_SCALARS_VERSION };
+  if (hexCrawl) {
+    const { grid, party, day, travelMode, lastMove } = hexCrawl;
+    scalars.hexCrawl = { grid, party, day, travelMode, ...(lastMove ? { lastMove } : {}), hexCount: hexes.length };
+  }
+  return { scalars, tokens: [...tokens].sort(byId), hexes, terrain };
+}
+
+/**
+ * The whole map from its rows: markers by id, hexes by (q, r). `nextId` is
+ * past every marker, so a removed marker's id is never handed out again.
+ */
+export function joinMapState(scalars: MapScalars, tokens: readonly MapToken[], hexes: readonly CrawlHex[], terrain: string): MapState {
+  const { party, scaleKm, options, customTypes, typeLabels, customMap, hexCrawl } = scalars;
+  const sorted = [...tokens].sort(byId);
+  const nextId = Math.max(scalars.nextId, (sorted.at(-1)?.id ?? 0) + 1);
+  const state: MapState = { tokens: sorted, nextId, party, terrain, scaleKm, options, customTypes, typeLabels, ...(customMap ? { customMap } : {}) };
+  if (hexCrawl) {
+    const { grid, party, day, travelMode, lastMove } = hexCrawl;
+    state.hexCrawl = { grid, party, day, travelMode, ...(lastMove ? { lastMove } : {}), hexes: [...hexes].sort(byHex) };
+  }
+  return state;
 }
 
 /**
