@@ -195,10 +195,10 @@ the audit trail.
 
 Do not claim a command passed unless it was executed successfully.
 
-## Standard commands
+## Build & Test
 
 ```bash
-pnpm install
+pnpm install        # also points git at the tracked hooks (.beads/hooks)
 pnpm dev            # Next.js; run `npx convex dev` alongside it
 pnpm lint
 pnpm typecheck      # also typechecks convex/
@@ -210,7 +210,12 @@ pnpm build
 
 `pnpm test:e2e` needs Playwright's Chromium and its system libraries
 (`pnpm exec playwright install chromium`, then
-`sudo pnpm exec playwright install-deps chromium`).
+`sudo pnpm exec playwright install-deps chromium`). It refuses to start when
+its ports are taken (stale servers); run on other ports with
+`E2E_PORT=3100 E2E_CONVEX_PORT=3312 pnpm test:e2e`. The pre-commit hook runs
+ESLint on staged files plus `pnpm typecheck` (never e2e). CI
+(`.github/workflows/ci.yml`) runs lint, typecheck, test and e2e. Details:
+`docs/testing.md`.
 
 If a listed script does not exist, report the discrepancy rather than inventing
 a result.
