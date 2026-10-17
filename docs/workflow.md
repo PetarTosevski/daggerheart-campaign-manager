@@ -45,7 +45,7 @@ Rules:
 ## Worktrees
 
 - Each tracer's agent runs in its own git worktree, created from the integration branch (`rebuild`) at the start of its wave. The Agent tool creates worktrees from the default branch (`master`), so every tracer's first step, before any edit, is `git merge --ff-only rebuild`. This works because `master` is an ancestor of `rebuild`. Before merging, the orchestrator checks that `git merge-base rebuild <branch>` is a `rebuild` commit and not the `master` tip. `rebuild` keeps moving while tracers run, so the branch is often not on its current tip, and that is fine for a squash merge.
-- Setup per worktree (`scripts/worktree-setup.mjs`): `pnpm install` (cheap, shared pnpm store), copy the git-ignored `.env.local` and `.env.e2e.local`, and pick a free e2e port and local Convex backend so worktrees can run browser tests at the same time.
+- Setup per worktree (`scripts/worktree-setup.mjs`): `pnpm install` (cheap, shared pnpm store), copy the git-ignored `.env.local` and `.env.e2e.local`, and pick a free e2e port and local Convex backend so worktrees can run browser tests at the same time. Before the first e2e run, run `E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm e2e:setup` once so the worktree's backend gets the test env vars. Without it, every test sign-in fails with FORBIDDEN.
 - Worktrees use local Convex backends only. The cloud dev deployment receives pushes only from the main checkout after merges.
 
 ## Testing
