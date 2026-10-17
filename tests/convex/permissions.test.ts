@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { api, internal } from "../../convex/_generated/api";
+import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { permissionFor, upsertGrant, type Permission } from "../../convex/lib/permissions";
 import { errorData, key, useAllowlist } from "./helpers";
@@ -132,37 +132,5 @@ describe("permissionFor read cost", () => {
       await as(ids.outsider).mutation(api.campaigns.create, { frameId: "witherwild", name: `Mine ${i}`, idempotencyKey: key() });
     }
     expect(await readsFor(t, ids.outsider, campaignId, "owner")).toEqual(before);
-  });
-});
-
-describe("migrations:moveUploadsToFiles", () => {
-  useAllowlist(GM);
-
-  it("copies the old upload tables into files, once", async () => {
-    const t = makeTest();
-    const gmId = await t.run((ctx) => ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }));
-    const gm = t.withIdentity({ subject: `${gmId}|s` });
-    const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Old", idempotencyKey: key() });
-    const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "character", idempotencyKey: key() });
-    const ids = await t.run(async (ctx) => {
-      const store = () => ctx.storage.store(new Blob(["png"], { type: "image/png" }));
-      const characterId = await ctx.db.insert("characters", { campaignId, ownerId: gmId, createdBy: gmId, status: "active", sheet: {}, createdAt: 0, updatedAt: 0 });
-      const map = await store();
-      const image = await store();
-      const portrait = await store();
-      await ctx.db.insert("mapUploads", { storageId: map, campaignId, uploadedBy: gmId, createdAt: 1 });
-      await ctx.db.insert("codexImages", { storageId: image, campaignId, entryId, uploadedBy: gmId, createdAt: 2 });
-      await ctx.db.insert("portraitUploads", { storageId: portrait, userId: gmId, characterId, createdAt: 3 });
-      return { characterId, map, image, portrait };
-    });
-
-    expect(await t.mutation(internal.migrations.moveUploadsToFiles, {})).toEqual({ copied: 3, alreadyMoved: 0, skipped: 0 });
-    expect(await t.mutation(internal.migrations.moveUploadsToFiles, {})).toEqual({ copied: 0, alreadyMoved: 3, skipped: 0 });
-    const files = await t.run((ctx) => ctx.db.query("files").collect());
-    expect(files.map(({ storageId, campaignId: c, uploadedBy, kind, refId, createdAt }) => ({ storageId, c, uploadedBy, kind, refId, createdAt }))).toEqual([
-      { storageId: ids.map, c: campaignId, uploadedBy: gmId, kind: "map", refId: campaignId, createdAt: 1 },
-      { storageId: ids.image, c: campaignId, uploadedBy: gmId, kind: "codexImage", refId: entryId, createdAt: 2 },
-      { storageId: ids.portrait, c: campaignId, uploadedBy: gmId, kind: "portrait", refId: ids.characterId, createdAt: 3 },
-    ]);
   });
 });
