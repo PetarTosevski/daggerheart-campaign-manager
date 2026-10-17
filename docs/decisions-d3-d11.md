@@ -1,0 +1,21 @@
+# Design port decisions for D2.5–D11 (user, 2026-10-17)
+- Frame mechanics: build trackers too (rules from the books: Core Book frames, Hope & Fear frames).
+- Hope & Fear expansion content: per-campaign switch, default on for the 4 H&F frames (Castle High, Weredragon, Andaluria, Horizon).
+- Automation: automate per the books (Fear rolls give GM Fear, crits, class/Hope features, Rally/Prayer resets), with undo.
+- Death moves: implement per the Core Book (Blaze of Glory, Avoid Death + scar roll, Risk It All), manual override stays.
+- Resolved from books: Battle Points table = Core Book; Prayer Dice use Spellcast trait; Rally once per session, unspent cleared at session end.
+- Rulebooks: .reference-private/ (git-ignored); re-extract text with pdfjs-dist when needed (never commit the books).
+- Photo import: build at end of D5 — Convex action calling Claude vision with ANTHROPIC_API_KEY env var on Convex; mandatory GM review before save; button hidden without key.
+- Rests & downtime: build per Core Book in D5 (rest flow, downtime moves applied, GM Fear on rests per book); Sessions keeps tallies.
+- Travel: keep the board's speeds as the user's HOUSE RULE (GM-editable per campaign). For Journey to Horizon, the book's hex crawl takes priority wherever it conflicts.
+- Custom campaign map: GM uploads a map image + width in km.
+- D8: catalogue + live encounter tracker (instances, HP/Stress, conditions, BP budget, Spend Fear via dashboard Fear).
+- Frame trackers: build EVERY stateful frame mechanic from its book chapter (D3); narrative-only mechanics stay text.
+- Notes: NO PINs. Each user has their own account and their own journal.
+- MULTI-USER (major change): the app is no longer single-GM. Players have their own accounts. Everything marked hidden-from-players must be invisible to players (server-enforced, not just UI). Supersedes AGENTS.md "single GM account" principle and the allowlist-only sign-in.
+- Backup: per-campaign JSON export (including images); import creates a new campaign (no overwrite).
+- Sign-in: Google AND email+password sign-up, both limited for now to an env allowlist (ALLOWED_EMAILS, replacing GM_EMAILS); plus optional env-defined pre-made accounts for testing. One later switch opens sign-up to everyone.
+- Roles: per campaign. Any account can create campaigns (it is their GM) and be a player in others.
+- Joining: GM invites by email AND a join code/link; GM can remove players.
+- Players: full control of their own character (create/edit, dice, Hope/class features, level up, rest); GM edits all characters; players see other PCs' public info only.
+- Players see: dashboard (party, time, revealed info, last session), GM Fear and countdowns (read-only), World map (non-hidden tokens) + revealed Codex, lore books. Never: hidden tokens, unrevealed NPCs/images/allegiances, GM notes, adversaries/encounters, session prep, others' journals.
