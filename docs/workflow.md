@@ -44,7 +44,7 @@ Rules:
 
 ## Worktrees
 
-- Each tracer's agent runs in its own git worktree, created from the integration branch (`rebuild`) at the start of its wave. The Agent tool creates worktrees from the default branch (`master`), so every tracer's first step, before any edit, is `git switch -C <its worktree branch> rebuild`. The orchestrator checks the base with `git merge-base --is-ancestor rebuild <branch>` before merging.
+- Each tracer's agent runs in its own git worktree, created from the integration branch (`rebuild`) at the start of its wave. The Agent tool creates worktrees from the default branch (`master`), so every tracer's first step, before any edit, is `git merge --ff-only rebuild`. This works because `master` is an ancestor of `rebuild`. The orchestrator checks the base with `git merge-base --is-ancestor rebuild <branch>` before merging.
 - Setup per worktree (`scripts/worktree-setup.mjs`): `pnpm install` (cheap, shared pnpm store), copy the git-ignored `.env.local` and `.env.e2e.local`, and pick a free e2e port and local Convex backend so worktrees can run browser tests at the same time.
 - Worktrees use local Convex backends only. The cloud dev deployment receives pushes only from the main checkout after merges.
 
