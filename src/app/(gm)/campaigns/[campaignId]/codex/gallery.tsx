@@ -200,7 +200,7 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
         <input
           ref={input}
           type="file"
-          accept="image/*"
+          accept="image/png,image/jpeg,image/webp,image/gif"
           multiple
           className="sr-only"
           tabIndex={-1}

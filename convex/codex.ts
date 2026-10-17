@@ -18,7 +18,7 @@ import type { MapToken } from "../src/lib/world/map-state";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { requireUser } from "./lib/auth";
-import { claimFile, deleteFilesOf, deleteOwnFile, isClaimed, ownFileUrl } from "./lib/files";
+import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { readMap } from "./lib/maps";
 import { campaignScope, withIdempotency } from "./lib/operations";
 import { atLeast, liveCampaign, requirePermission, type Permission } from "./lib/permissions";
@@ -298,7 +298,7 @@ export const imageUploadUrl = mutation({
 
 /**
  * GM only: attaches a just-uploaded file to the entry, hidden from players.
- * The file must be an image of at most 3 MB that nothing else has claimed.
+ * The file must be a PNG, JPEG, WebP or GIF of at most 3 MB that nothing else has claimed.
  * The first image becomes the main picture. A rejected file is deleted and
  * the reason returned (throwing would roll the deletion back).
  */
@@ -309,9 +309,9 @@ export const attachImage = mutation({
     const meta = await ctx.db.system.get(storageId);
     // Only an unclaimed file may be attached, so the rejections below only ever delete unclaimed files.
     if (meta === null || (await isClaimed(ctx, storageId))) throw new ConvexError("NOT_FOUND");
-    if (!meta.contentType?.startsWith("image/") || meta.size > MAX_CODEX_IMAGE_BYTES) {
+    if (!isAllowedImage(meta, MAX_CODEX_IMAGE_BYTES)) {
       await ctx.storage.delete(storageId);
-      return { error: "Images must be at most 3 MB." };
+      return { error: "Images must be PNG, JPEG, WebP or GIF files of at most 3 MB." };
     }
     if (data.images.length >= MAX_CODEX_IMAGES) {
       await ctx.storage.delete(storageId);

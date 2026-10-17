@@ -173,7 +173,7 @@ describe("World map", () => {
     // production uploads carry it.
     expect(await gm.mutation(api.maps.attachMapImage, { campaignId, storageId: text, width: 10, height: 10 })).toEqual({
       ok: false,
-      message: "Maps must be images of at most 8 MB.",
+      message: "Maps must be PNG, JPEG, WebP or GIF images of at most 8 MB.",
     });
     expect(await t.run((ctx) => ctx.storage.getUrl(text))).toBeNull();
 
