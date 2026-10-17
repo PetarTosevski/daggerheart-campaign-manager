@@ -5,7 +5,9 @@ export const trackerTables = {
   /**
    * State of a frame tracker (Five Banners relationships, Siphoning Track,
    * Doom Track…), one row per campaign and key. Each tracker module in
-   * convex/trackers/ validates its own `data` and filters it for players.
+   * convex/trackers/ reads `data` through its schema (`readTracker`, which
+   * throws TRACKER_CORRUPT), writes it with `schemaVersion` inside, and
+   * filters it for players.
    */
   frameTrackers: defineTable({
     campaignId: v.id("campaigns"),

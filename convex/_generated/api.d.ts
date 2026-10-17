@@ -38,6 +38,7 @@ import type * as lib_validators_campaigns from "../lib/validators/campaigns.js";
 import type * as maps from "../maps.js";
 import type * as members from "../members.js";
 import type * as migrations_run from "../migrations/run.js";
+import type * as migrations_trackers from "../migrations/trackers.js";
 import type * as migrations_uploads from "../migrations/uploads.js";
 import type * as settings from "../settings.js";
 import type * as tables_campaigns from "../tables/campaigns.js";
@@ -94,6 +95,7 @@ declare const fullApi: ApiFromModules<{
   maps: typeof maps;
   members: typeof members;
   "migrations/run": typeof migrations_run;
+  "migrations/trackers": typeof migrations_trackers;
   "migrations/uploads": typeof migrations_uploads;
   settings: typeof settings;
   "tables/campaigns": typeof tables_campaigns;

@@ -1,5 +1,6 @@
-import { ConvexError, v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
+import { appError } from "../../src/lib/errors/app-error";
 import {
   addPyre as add,
   adjustBranches as adjust,
@@ -7,6 +8,7 @@ import {
   igniteBranch as ignite,
   INITIAL_UMBRA,
   LURKING_FEAR,
+  LURKING_OUTCOMES,
   LURKING_TEXT,
   logLurking,
   removePyre as remove,
@@ -16,168 +18,158 @@ import {
   settlementSchema,
   umbraStateSchema,
   watchersSchema,
-  type LurkingOutcome,
-  type LurkingRoll,
-  type Pyre,
-  type UmbraState,
 } from "../../src/lib/frames/trackers/age-of-umbra";
-import type { Doc, Id } from "../_generated/dataModel";
-import { mutation, query, type MutationCtx } from "../_generated/server";
-import { loadCampaign, loadGmCampaign } from "../lib/access";
-import { requireUser } from "../lib/auth";
 import { rollDie } from "../lib/dice";
 import { gainFear } from "../lib/fear";
-import { ruleError } from "../lib/mechanics";
-import { campaignScope, withIdempotency } from "../lib/operations";
-import { readTracker, writeTracker } from "../lib/trackers";
+import { campaignQuery, keyedGmMutation } from "../lib/functions";
+import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
 
-const FRAME = "age-of-umbra";
-const KEY = "ageOfUmbra";
+export const umbraTracker: FrameTracker<typeof umbraStateSchema> = {
+  frameId: "age-of-umbra",
+  key: "ageOfUmbra",
+  schema: umbraStateSchema,
+  initial: () => INITIAL_UMBRA,
+  ruleCode: "TRACKER_RULE",
+};
+
+const outcome = v.union(...LURKING_OUTCOMES.map((o) => v.literal(o)));
+const lurkingRoll = v.object({
+  gmRoll: v.number(),
+  watchRoll: v.union(v.number(), v.null()),
+  result: v.number(),
+  outcome,
+  fearGained: v.number(),
+  at: v.number(),
+});
+const shared = {
+  pyres: v.array(v.object({ id: v.string(), settlement: v.string(), lit: v.boolean() })),
+  blessedBranches: v.number(),
+  atPyre: v.boolean(),
+};
+const umbraView = v.union(
+  v.object({ ...shared, gm: v.object({ log: v.array(lurkingRoll) }) }),
+  v.object({ ...shared, gm: v.null() }),
+);
 
 /** Pyres, branches and the at-a-pyre flag are public; the Lurking Darkness log is GM-only (`gm` is null for players). */
-export type UmbraView = {
-  pyres: Pyre[];
-  blessedBranches: number;
-  atPyre: boolean;
-  gm: { log: LurkingRoll[] } | null;
-};
+export type UmbraView = Infer<typeof umbraView>;
 
-export type LurkingResult = {
-  gmRoll: number;
-  watchRoll: number | null;
-  result: number;
-  outcome: LurkingOutcome;
-  text: string;
-  fear: { gained: number; lost: number; newValue: number } | null;
-};
+const fearChange = v.object({ gained: v.number(), lost: v.number(), newValue: v.number() });
+const lurkingResult = v.object({
+  gmRoll: v.number(),
+  watchRoll: v.union(v.number(), v.null()),
+  result: v.number(),
+  outcome,
+  text: v.string(),
+  fear: v.union(fearChange, v.null()),
+});
 
-function assertFrame(campaign: Doc<"campaigns">) {
-  if (campaign.frameId !== FRAME) throw new ConvexError("MECHANIC_DISABLED");
-}
+export type LurkingResult = Infer<typeof lurkingResult>;
 
-const parse = (data: unknown): UmbraState => (data === null ? INITIAL_UMBRA : umbraStateSchema.parse(data));
-
+/** A settlement name, or the wrapper sends the ZodError as INVALID with its first message. */
 function settlement(raw: string): string {
   const parsed = settlementSchema.safeParse(raw);
-  if (!parsed.success) throw new ConvexError({ code: "INVALID", message: parsed.error.issues[0]?.message });
+  if (!parsed.success) throw parsed.error;
   return parsed.data;
 }
 
-export const get = query({
-  args: { campaignId: v.id("campaigns") },
-  handler: async (ctx, { campaignId }): Promise<UmbraView> => {
-    const user = await requireUser(ctx);
-    const { campaign, role } = await loadCampaign(ctx, user, campaignId);
-    assertFrame(campaign);
-    const state = parse(await readTracker(ctx, campaignId, KEY));
+export const get = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: umbraView,
+  handler: async (ctx): Promise<UmbraView> => {
+    assertTrackerFrame(ctx.campaign, umbraTracker);
+    const state = await loadTracker(ctx, ctx.campaign._id, umbraTracker);
     return {
       pyres: state.pyres,
       blessedBranches: state.blessedBranches,
       atPyre: state.atPyre,
-      gm: role === "gm" ? { log: state.log } : null,
+      gm: ctx.permission === "owner" ? { log: state.log } : null,
     };
   },
 });
 
-/** GM + frame checks, then one idempotent change of the tracker state. */
-async function change<R>(
-  ctx: MutationCtx,
-  campaignId: Id<"campaigns">,
-  op: { idempotencyKey: string; kind: string; request: unknown },
-  apply: (state: UmbraState) => { state: UmbraState; result: R },
-  after?: (result: R) => Promise<R>,
-): Promise<R> {
-  const user = await requireUser(ctx);
-  assertFrame(await loadGmCampaign(ctx, user, campaignId));
-  return withIdempotency(
-    ctx,
-    { scopeKey: campaignScope(campaignId), key: op.idempotencyKey, kind: op.kind, request: op.request, createdBy: user._id, campaignId },
-    async () => {
-      const current = parse(await readTracker(ctx, campaignId, KEY));
-      let next: { state: UmbraState; result: R };
-      try {
-        next = apply(current);
-      } catch (error) {
-        ruleError("TRACKER_RULE", error);
-      }
-      await writeTracker(ctx, campaignId, KEY, next.state);
-      return after ? after(next.result) : next.result;
-    },
-  );
-}
-
-const ARGS = { campaignId: v.id("campaigns"), idempotencyKey: v.string() };
-
-export const addPyre = mutation({
-  args: { ...ARGS, settlement: v.string(), lit: v.optional(v.boolean()) },
-  handler: (ctx, { campaignId, idempotencyKey, settlement: raw, lit = true }): Promise<{ pyreId: string }> => {
+export const addPyre = keyedGmMutation({
+  args: { settlement: v.string(), lit: v.optional(v.boolean()) },
+  returns: v.object({ pyreId: v.string() }),
+  handler: (ctx, { settlement: raw, lit = true }) => {
+    assertTrackerFrame(ctx.campaign, umbraTracker);
     const name = settlement(raw);
-    return change(ctx, campaignId, { idempotencyKey, kind: "umbra_add_pyre", request: { settlement: name, lit } }, (state) => {
+    return frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_add_pyre", request: { settlement: name, lit } }, (state) => {
       const next = add(state, name, lit);
       return { state: next.state, result: { pyreId: next.pyreId } };
     });
   },
 });
 
-export const renamePyre = mutation({
-  args: { ...ARGS, pyreId: v.string(), settlement: v.string() },
-  handler: (ctx, { campaignId, idempotencyKey, pyreId, settlement: raw }): Promise<null> => {
+export const renamePyre = keyedGmMutation({
+  args: { pyreId: v.string(), settlement: v.string() },
+  returns: v.null(),
+  handler: (ctx, { pyreId, settlement: raw }) => {
+    assertTrackerFrame(ctx.campaign, umbraTracker);
     const name = settlement(raw);
-    return change(ctx, campaignId, { idempotencyKey, kind: "umbra_rename_pyre", request: { pyreId, settlement: name } }, (state) => ({
+    return frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_rename_pyre", request: { pyreId, settlement: name } }, (state) => ({
       state: rename(state, pyreId, name),
       result: null,
     }));
   },
 });
 
-export const removePyre = mutation({
-  args: { ...ARGS, pyreId: v.string() },
-  handler: (ctx, { campaignId, idempotencyKey, pyreId }): Promise<null> =>
-    change(ctx, campaignId, { idempotencyKey, kind: "umbra_remove_pyre", request: { pyreId } }, (state) => ({
+export const removePyre = keyedGmMutation({
+  args: { pyreId: v.string() },
+  returns: v.null(),
+  handler: (ctx, { pyreId }) =>
+    frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_remove_pyre", request: { pyreId } }, (state) => ({
       state: remove(state, pyreId),
       result: null,
     })),
 });
 
 /** Lights or extinguishes a pyre in the fiction (no branch spent). */
-export const setLit = mutation({
-  args: { ...ARGS, pyreId: v.string(), lit: v.boolean() },
-  handler: (ctx, { campaignId, idempotencyKey, pyreId, lit }): Promise<null> =>
-    change(ctx, campaignId, { idempotencyKey, kind: "umbra_set_lit", request: { pyreId, lit } }, (state) => ({
+export const setLit = keyedGmMutation({
+  args: { pyreId: v.string(), lit: v.boolean() },
+  returns: v.null(),
+  handler: (ctx, { pyreId, lit }) =>
+    frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_set_lit", request: { pyreId, lit } }, (state) => ({
       state: setPyreLit(state, pyreId, lit),
       result: null,
     })),
 });
 
 /** The party gains (+1) or loses (−1) a Blessed Branch without igniting it. */
-export const adjustBranches = mutation({
-  args: { ...ARGS, delta: v.union(v.literal(1), v.literal(-1)) },
-  handler: (ctx, { campaignId, idempotencyKey, delta }): Promise<{ blessedBranches: number }> =>
-    change(ctx, campaignId, { idempotencyKey, kind: "umbra_adjust_branches", request: { delta } }, (state) => {
+export const adjustBranches = keyedGmMutation({
+  args: { delta: v.union(v.literal(1), v.literal(-1)) },
+  returns: v.object({ blessedBranches: v.number() }),
+  handler: (ctx, { delta }) =>
+    frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_adjust_branches", request: { delta } }, (state) => {
       const next = adjust(state, delta);
       return { state: next, result: { blessedBranches: next.blessedBranches } };
     }),
 });
 
 /** Ignites a Blessed Branch to relight a pyre or found a new one. Hope is applied by hand until D5. */
-export const igniteBranch = mutation({
-  args: { ...ARGS, pyreId: v.optional(v.string()), settlement: v.optional(v.string()) },
-  handler: (ctx, { campaignId, idempotencyKey, pyreId, settlement: raw }): Promise<{ pyreId: string; reminder: string }> => {
-    if ((pyreId === undefined) === (raw === undefined)) {
-      throw new ConvexError({ code: "INVALID", message: "Relight a pyre or found a new one." });
-    }
-    const use = pyreId !== undefined ? ({ mode: "relight", pyreId } as const) : ({ mode: "found", settlement: settlement(raw!) } as const);
-    return change(ctx, campaignId, { idempotencyKey, kind: "umbra_ignite_branch", request: use }, (state) => {
+export const igniteBranch = keyedGmMutation({
+  args: { pyreId: v.optional(v.string()), settlement: v.optional(v.string()) },
+  returns: v.object({ pyreId: v.string(), reminder: v.string() }),
+  handler: (ctx, { pyreId, settlement: raw }) => {
+    assertTrackerFrame(ctx.campaign, umbraTracker);
+    let use: { mode: "relight"; pyreId: string } | { mode: "found"; settlement: string };
+    if (pyreId !== undefined && raw === undefined) use = { mode: "relight", pyreId };
+    else if (pyreId === undefined && raw !== undefined) use = { mode: "found", settlement: settlement(raw) };
+    else throw appError("INVALID", "Relight a pyre or found a new one.");
+    return frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_ignite_branch", request: use }, (state) => {
       const next = ignite(state, use);
       return { state: next.state, result: { pyreId: next.pyreId, reminder: next.reminder } };
     });
   },
 });
 
-export const setAtPyre = mutation({
-  args: { ...ARGS, atPyre: v.boolean() },
-  handler: (ctx, { campaignId, idempotencyKey, atPyre }): Promise<null> =>
-    change(ctx, campaignId, { idempotencyKey, kind: "umbra_set_at_pyre", request: { atPyre } }, (state) => ({
+export const setAtPyre = keyedGmMutation({
+  args: { atPyre: v.boolean() },
+  returns: v.null(),
+  handler: (ctx, { atPyre }) =>
+    frameTrackerMutation(ctx, umbraTracker, { kind: "umbra_set_at_pyre", request: { atPyre } }, (state) => ({
       state: { ...state, atPyre },
       result: null,
     })),
@@ -187,29 +179,23 @@ export const setAtPyre = mutation({
  * The server rolls the GM's d12; `watchers` are Keep Watch Hope Die results
  * the GM enters. Fear outcomes are applied to GM Fear (clamped at 12).
  */
-export const rollLurkingDarkness = mutation({
-  args: { ...ARGS, watchers: v.optional(v.array(v.number())) },
-  handler: (ctx, { campaignId, idempotencyKey, watchers: raw = [] }): Promise<LurkingResult> => {
+export const rollLurkingDarkness = keyedGmMutation({
+  args: { watchers: v.optional(v.array(v.number())) },
+  returns: lurkingResult,
+  handler: (ctx, { watchers: raw = [] }) => {
+    assertTrackerFrame(ctx.campaign, umbraTracker);
     const parsed = watchersSchema.safeParse(raw);
-    if (!parsed.success) throw new ConvexError({ code: "INVALID", message: parsed.error.issues[0]?.message });
+    if (!parsed.success) throw parsed.error;
     const watchers = parsed.data;
-    return change(
-      ctx,
-      campaignId,
-      { idempotencyKey, kind: "umbra_lurking_darkness", request: { watchers } },
-      (state) => {
-        assertCanRollLurking(state);
-        const roll = resolveLurking(rollDie(12), watchers);
-        const fearGained = LURKING_FEAR[roll.outcome];
-        const result: LurkingResult = { ...roll, text: LURKING_TEXT[roll.outcome], fear: null };
-        return { state: logLurking(state, { ...roll, fearGained, at: Date.now() }), result };
-      },
-      async (result) => {
-        const amount = LURKING_FEAR[result.outcome];
-        if (amount === 0) return result;
-        const { gained, lost, newValue } = await gainFear(ctx, campaignId, amount);
-        return { ...result, fear: { gained, lost, newValue } };
-      },
-    );
+    const campaignId = ctx.campaign._id;
+    return frameTrackerMutation<typeof umbraStateSchema, LurkingResult>(ctx, umbraTracker, { kind: "umbra_lurking_darkness", request: { watchers } }, async (state) => {
+      assertCanRollLurking(state);
+      const roll = resolveLurking(rollDie(12), watchers);
+      const fearGained = LURKING_FEAR[roll.outcome];
+      const next = logLurking(state, { ...roll, fearGained, at: Date.now() });
+      if (fearGained === 0) return { state: next, result: { ...roll, text: LURKING_TEXT[roll.outcome], fear: null } };
+      const { gained, lost, newValue } = await gainFear(ctx, campaignId, fearGained);
+      return { state: next, result: { ...roll, text: LURKING_TEXT[roll.outcome], fear: { gained, lost, newValue } } };
+    });
   },
 });

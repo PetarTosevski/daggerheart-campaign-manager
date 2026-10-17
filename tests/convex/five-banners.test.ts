@@ -220,4 +220,59 @@ describe("Five Banners tracker", () => {
       expect(errorCode(await call.catch((e) => e))).toBe("MECHANIC_DISABLED");
     }
   });
+
+  it("refuses corrupt saved data with TRACKER_CORRUPT", async () => {
+    const { t, gm, player, campaignId, view } = await setup();
+    await t.run((ctx) => ctx.db.insert("frameTrackers", { campaignId, key: "fiveBanners.state", data: { week: 0 }, updatedAt: 0 }));
+    expect(errorCode(await view().catch((e) => e))).toBe("TRACKER_CORRUPT");
+    expect(errorCode(await view(player).catch((e) => e))).toBe("TRACKER_CORRUPT");
+    const error = await gm.mutation(fb.advanceWeek, { campaignId, picks: [], idempotencyKey: key() }).catch((e) => e);
+    expect(errorCode(error)).toBe("TRACKER_CORRUPT");
+  });
+
+  it("records every objective change in the campaign history", async () => {
+    const { t, gm, campaignId, createObjective } = await setup();
+    const { countdownId: a } = await createObjective("armada", "objective-minor", 4);
+    await gm.mutation(fb.operateObjective, { countdownId: a, action: "advance", idempotencyKey: key() });
+    await gm.mutation(fb.advanceWeek, { campaignId, picks: [{ nation: "armada", objectiveId: a }], idempotencyKey: key() });
+    await gm.mutation(fb.operateObjective, { countdownId: a, action: "advance", idempotencyKey: key() });
+    await gm.mutation(fb.operateObjective, { countdownId: a, action: "advance", idempotencyKey: key() });
+    await gm.mutation(fb.operateObjective, { countdownId: a, action: "dismiss", idempotencyKey: key() });
+    // Reveals change no value, so they leave no history row.
+    await gm.mutation(fb.toggleReveal, { campaignId, target: { type: "objective", countdownId: a }, revealed: true, idempotencyKey: key() });
+
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query("history")
+        .withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId))
+        .collect(),
+    );
+    expect(rows.map((r) => (r.kind === "countdown" ? [r.countdownId, r.action, r.before, r.after] : r.kind))).toEqual([
+      [a, "create", null, { currentValue: 4, status: "active" }],
+      [a, "advance", { currentValue: 4, status: "active" }, { currentValue: 3, status: "active" }],
+      [a, "week", { currentValue: 3, status: "active" }, { currentValue: 2, status: "active" }],
+      [a, "advance", { currentValue: 2, status: "active" }, { currentValue: 1, status: "active" }],
+      [a, "advance", { currentValue: 1, status: "active" }, { currentValue: 0, status: "completed" }],
+      [a, "dismiss", { currentValue: 0, status: "completed" }, { currentValue: 0, status: "cancelled" }],
+    ]);
+  });
+
+  it("reads objectives only from the nation range of by_campaign_owner, oldest first", async () => {
+    const { gm, campaignId, createObjective, view } = await setup();
+    await gm.mutation(api.countdowns.create, {
+      campaignId,
+      name: "Storm",
+      description: "",
+      category: "project",
+      startingValue: 4,
+      consequence: "",
+      idempotencyKey: key(),
+    });
+    const { countdownId: first } = await createObjective("voldaen", "objective-minor", 4);
+    const { countdownId: second } = await createObjective("armada", "objective-minor", 5);
+    const { countdownId: third } = await createObjective("voldaen", "objective-major", 10);
+    const nations = (await view())?.nations ?? [];
+    expect(nations.flatMap((n) => n.objectives.map((o) => o._id))).toEqual([second, first, third]);
+    expect(nations.find((n) => n.id === "voldaen")?.objectives.map((o) => o._id)).toEqual([first, third]);
+  });
 });

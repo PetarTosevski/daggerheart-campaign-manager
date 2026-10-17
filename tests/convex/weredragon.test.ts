@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
-import { errorCode, errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const PLAYER = "player@example.com";
@@ -145,7 +145,7 @@ describe("weredragon revelations", () => {
     expect((await player.query(w.get, { campaignId })).secrets[0].used).toBe(false);
 
     const forbidden = await player.mutation(w.setSecretUsed, { campaignId, secretId, used: false, idempotencyKey: key() }).catch((e) => e);
-    expect(errorData(forbidden)).toBe("FORBIDDEN");
+    expect(errorCode(forbidden)).toBe("FORBIDDEN");
     const empty = await player.mutation(w.submitSecret, { campaignId, text: "   ", idempotencyKey: key() }).catch((e) => e);
     expect(errorCode(empty)).toBe("INVALID");
   });
@@ -157,11 +157,11 @@ describe("weredragon revelations", () => {
       () => player.mutation(w.assignReading, { campaignId, assignment: [0, 1, 2, 3, 4], idempotencyKey: key() }),
       () => player.mutation(w.updateRevelation, { campaignId, kind: "ally", status: "revealed", idempotencyKey: key() }),
     ]) {
-      expect(errorData(await call().catch((e) => e))).toBe("FORBIDDEN");
+      expect(errorCode(await call().catch((e) => e))).toBe("FORBIDDEN");
     }
-    expect(errorData(await stranger.query(w.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
-    expect(errorData(await stranger.mutation(w.submitSecret, { campaignId, text: "x", idempotencyKey: key() }).catch((e) => e))).toBe("NOT_FOUND");
-    expect(errorData(await t.query(w.get, { campaignId }).catch((e) => e))).toBe("UNAUTHENTICATED");
+    expect(errorCode(await stranger.query(w.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await stranger.mutation(w.submitSecret, { campaignId, text: "x", idempotencyKey: key() }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await t.query(w.get, { campaignId }).catch((e) => e))).toBe("UNAUTHENTICATED");
   });
 
   it("rejects a reused idempotency key with a different request", async () => {
@@ -169,7 +169,7 @@ describe("weredragon revelations", () => {
     const k = key();
     await gm.mutation(w.updateRevelation, { campaignId, kind: "ally", status: "revealed", idempotencyKey: k });
     const mismatch = await gm.mutation(w.updateRevelation, { campaignId, kind: "ally", status: "achieved", idempotencyKey: k }).catch((e) => e);
-    expect(errorData(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
+    expect(errorCode(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
   });
 
   it("is disabled in other frames", async () => {
@@ -180,7 +180,31 @@ describe("weredragon revelations", () => {
       () => gm.mutation(w.updateRevelation, { campaignId, kind: "ally", status: "revealed", idempotencyKey: key() }),
       () => player.mutation(w.submitSecret, { campaignId, text: "x", idempotencyKey: key() }),
     ]) {
-      expect(errorData(await call().catch((e) => e))).toBe("MECHANIC_DISABLED");
+      expect(errorCode(await call().catch((e) => e))).toBe("MECHANIC_DISABLED");
     }
+  });
+
+  it("refuses corrupt saved data with TRACKER_CORRUPT", async () => {
+    const { t, gm, player, campaignId } = await setup();
+    await t.run((ctx) =>
+      ctx.db.insert("frameTrackers", { campaignId, key: "weredragon", data: { revelations: [], secrets: [], pendingRoll: "5d6" }, updatedAt: 0 }),
+    );
+    expect(errorCode(await gm.query(w.get, { campaignId }).catch((e) => e))).toBe("TRACKER_CORRUPT");
+    const error = await player.mutation(w.submitSecret, { campaignId, text: "A secret", idempotencyKey: key() }).catch((e) => e);
+    expect(errorCode(error)).toBe("TRACKER_CORRUPT");
+  });
+
+  it("names no author for a secret whose stored authorId is not a user id", async () => {
+    const { t, gm, player, campaignId } = await setup();
+    await player.mutation(w.submitSecret, { campaignId, text: "She fears the stars", idempotencyKey: key() });
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("frameTrackers")
+        .withIndex("by_campaign_key", (q) => q.eq("campaignId", campaignId).eq("key", "weredragon"))
+        .unique();
+      const data = row!.data as { secrets: { authorId: string }[] };
+      await ctx.db.patch(row!._id, { data: { ...data, secrets: data.secrets.map((s) => ({ ...s, authorId: "not-an-id" })) } });
+    });
+    expect((await gm.query(w.get, { campaignId })).secrets.map((s) => [s.text, s.authorName])).toEqual([["She fears the stars", null]]);
   });
 });

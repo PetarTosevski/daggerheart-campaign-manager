@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
-import { errorCode, errorData, key, useAllowlist } from "./helpers";
+import { applyTrackerRule } from "../../convex/lib/trackers";
+import { RuleError } from "../../src/lib/errors/app-error";
+import { huntTitleSchema } from "../../src/lib/frames/trackers/andaluria";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const PLAYER = "player@example.com";
@@ -37,7 +40,7 @@ describe("andaluria hunts", () => {
       ["Wolf of Serracorte", "arrival"],
     ]);
     const mismatch = await gm.mutation(a.createHunt, { campaignId, title: "Other", idempotencyKey: k }).catch((e) => e);
-    expect(errorData(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
+    expect(errorCode(mismatch)).toBe("IDEMPOTENCY_MISMATCH");
   });
 
   it("players see title, beat and revealed clues only; the monster after the GM reveals it", async () => {
@@ -107,10 +110,10 @@ describe("andaluria hunts", () => {
       () => player.mutation(a.updateHunt, { campaignId, huntId, patch: { monsterRevealed: true }, idempotencyKey: key() }),
       () => player.mutation(a.createClue, { campaignId, huntId, text: "x", idempotencyKey: key() }),
     ]) {
-      expect(errorData(await call().catch((e) => e))).toBe("FORBIDDEN");
+      expect(errorCode(await call().catch((e) => e))).toBe("FORBIDDEN");
     }
-    expect(errorData(await stranger.query(a.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
-    expect(errorData(await t.query(a.get, { campaignId }).catch((e) => e))).toBe("UNAUTHENTICATED");
+    expect(errorCode(await stranger.query(a.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await t.query(a.get, { campaignId }).catch((e) => e))).toBe("UNAUTHENTICATED");
   });
 
   it("is disabled in other frames", async () => {
@@ -119,7 +122,37 @@ describe("andaluria hunts", () => {
       () => gm.query(a.get, { campaignId }),
       () => gm.mutation(a.createHunt, { campaignId, title: "Hunt", idempotencyKey: key() }),
     ]) {
-      expect(errorData(await call().catch((e) => e))).toBe("MECHANIC_DISABLED");
+      expect(errorCode(await call().catch((e) => e))).toBe("MECHANIC_DISABLED");
     }
+  });
+
+  it("refuses corrupt saved data with TRACKER_CORRUPT", async () => {
+    const { t, gm, player, campaignId } = await setup();
+    await t.run((ctx) =>
+      ctx.db.insert("frameTrackers", { campaignId, key: "andaluria", data: { hunts: [{ id: "h1", title: "No beat" }] }, updatedAt: 0 }),
+    );
+    expect(errorCode(await gm.query(a.get, { campaignId }).catch((e) => e))).toBe("TRACKER_CORRUPT");
+    expect(errorCode(await player.query(a.get, { campaignId }).catch((e) => e))).toBe("TRACKER_CORRUPT");
+    const error = await gm.mutation(a.createHunt, { campaignId, title: "Hunt", idempotencyKey: key() }).catch((e) => e);
+    expect(errorCode(error)).toBe("TRACKER_CORRUPT");
+  });
+});
+
+describe("applyTrackerRule", () => {
+  it("turns a plain domain Error into a RuleError with the tracker's code", async () => {
+    const error = await applyTrackerRule("TRACKER_RULE", () => {
+      throw new Error("That Sacred Pyre is gone.");
+    }).catch((e) => e);
+    expect(error).toBeInstanceOf(RuleError);
+    expect(error).toMatchObject({ code: "TRACKER_RULE", message: "That Sacred Pyre is gone." });
+  });
+
+  it("passes RuleError and ZodError through to the wrapper and rethrows bugs unchanged", async () => {
+    const rule = new RuleError("DOOM_RULE", "No.");
+    expect(await applyTrackerRule("TRACKER_RULE", () => Promise.reject(rule)).catch((e) => e)).toBe(rule);
+    const zod = huntTitleSchema.safeParse("");
+    expect(await applyTrackerRule("TRACKER_RULE", () => Promise.reject(zod.error)).catch((e) => e)).toBe(zod.error);
+    const bug = new TypeError("Cannot read properties of undefined");
+    expect(await applyTrackerRule("TRACKER_RULE", () => Promise.reject(bug)).catch((e) => e)).toBe(bug);
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { errorCode, errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const GM = "gm@example.com";
@@ -116,7 +116,7 @@ describe("Horizon Doom Track and Soul Echoes", () => {
       player.mutation(api.trackers.horizon.setOccurred, { campaignId, boxId: "1a", occurred: true, idempotencyKey: key() }),
       player.mutation(api.trackers.horizon.setEchoes, { campaignId, value: 2, idempotencyKey: key() }),
     ]) {
-      expect(errorData(await call.catch((e) => e))).toBe("FORBIDDEN");
+      expect(errorCode(await call.catch((e) => e))).toBe("FORBIDDEN");
     }
   });
 
@@ -139,19 +139,27 @@ describe("Horizon Doom Track and Soul Echoes", () => {
     expect(again).toEqual(first);
     expect(await fear()).toBe(1);
     const mismatch = gm.mutation(api.trackers.horizon.markBox, { campaignId, boxId: "4b", idempotencyKey: k });
-    expect(errorData(await mismatch.catch((e) => e))).toBe("IDEMPOTENCY_MISMATCH");
+    expect(errorCode(await mismatch.catch((e) => e))).toBe("IDEMPOTENCY_MISMATCH");
   });
 
   it("is disabled outside Journey to Horizon, on the server", async () => {
     const { gm, campaignId, mark } = await setup("witherwild");
-    expect(errorData(await gm.query(api.trackers.horizon.get, { campaignId }).catch((e) => e))).toBe("MECHANIC_DISABLED");
-    expect(errorData(await mark("1a").catch((e) => e))).toBe("MECHANIC_DISABLED");
+    expect(errorCode(await gm.query(api.trackers.horizon.get, { campaignId }).catch((e) => e))).toBe("MECHANIC_DISABLED");
+    expect(errorCode(await mark("1a").catch((e) => e))).toBe("MECHANIC_DISABLED");
   });
 
   it("hides the campaign from strangers", async () => {
     const { t, campaignId } = await setup();
     const strangerId = await t.run((ctx) => ctx.db.insert("users", { email: "stranger@example.com", emailVerificationTime: 1 }));
     const stranger = t.withIdentity({ subject: `${strangerId}|s` });
-    expect(errorData(await stranger.query(api.trackers.horizon.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await stranger.query(api.trackers.horizon.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+  });
+
+  it("refuses corrupt saved data with TRACKER_CORRUPT", async () => {
+    const { t, gm, player, campaignId, mark } = await setup();
+    await t.run((ctx) => ctx.db.insert("frameTrackers", { campaignId, key: "horizon", data: { boxes: {}, echoesCollected: 11 }, updatedAt: 0 }));
+    expect(errorCode(await gm.query(api.trackers.horizon.get, { campaignId }).catch((e) => e))).toBe("TRACKER_CORRUPT");
+    expect(errorCode(await player.query(api.trackers.horizon.get, { campaignId }).catch((e) => e))).toBe("TRACKER_CORRUPT");
+    expect(errorCode(await mark("1a").catch((e) => e))).toBe("TRACKER_CORRUPT");
   });
 });

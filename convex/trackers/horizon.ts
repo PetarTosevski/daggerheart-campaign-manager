@@ -1,189 +1,151 @@
-import { ConvexError, v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
+import { appError } from "../../src/lib/errors/app-error";
 import {
   FIRST_ECHO,
   HORIZON_TRACKER_KEY,
+  INITIAL_HORIZON_STATE,
   MAX_ECHOES,
   REFUSAL_MESSAGES,
   fearForMark,
+  horizonStateSchema,
   markRefusal,
   occurredEvents,
-  parseHorizonState,
   unmarkRefusal,
   withMark,
   withoutMark,
-  type DoomBoxState,
-  type DoomTierNumber,
-  type HorizonState,
 } from "../../src/lib/frames/trackers/horizon";
-import type { Doc, Id } from "../_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "../_generated/server";
-import { loadCampaign } from "../lib/access";
-import { requireUser } from "../lib/auth";
 import { gainFear } from "../lib/fear";
-import { campaignScope, withIdempotency } from "../lib/operations";
-import { readTracker, writeTracker } from "../lib/trackers";
-
-export type HorizonView =
-  | { role: "gm"; partyTier: number; echoesCollected: number; boxes: Record<string, DoomBoxState> }
-  | { role: "player"; echoesCollected: number; occurred: { id: string; tier: DoomTierNumber; text: string }[] };
-
-export type MarkResult = { boxId: string; fear: { gained: number; lost: number; newValue: number } | null };
-export type EchoesChange = { previousValue: number; newValue: number; levelUps: number; horizonUnlocked: boolean };
+import { campaignQuery, keyedGmMutation } from "../lib/functions";
+import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
 
 /** Journey to Horizon only; enforced here, not only in the UI. */
-async function load(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, gmOnly: boolean) {
-  const { campaign, role } = await loadCampaign(ctx, user, campaignId, { gmOnly });
-  if (campaign.frameId !== "journey-to-horizon") throw new ConvexError("MECHANIC_DISABLED");
-  const state = parseHorizonState(await readTracker(ctx, campaignId, HORIZON_TRACKER_KEY));
-  return { campaign, role, state };
-}
+export const horizonTracker: FrameTracker<typeof horizonStateSchema> = {
+  frameId: "journey-to-horizon",
+  key: HORIZON_TRACKER_KEY,
+  schema: horizonStateSchema,
+  initial: () => INITIAL_HORIZON_STATE,
+  ruleCode: "DOOM_RULE",
+};
+
+const horizonView = v.union(
+  v.object({
+    role: v.literal("gm"),
+    partyTier: v.number(),
+    echoesCollected: v.number(),
+    boxes: v.record(
+      v.string(),
+      v.object({ marked: v.boolean(), session: v.optional(v.number()), occurred: v.boolean(), markedAt: v.number() }),
+    ),
+  }),
+  v.object({
+    role: v.literal("player"),
+    echoesCollected: v.number(),
+    occurred: v.array(
+      v.object({ id: v.string(), tier: v.union(v.literal(1), v.literal(2), v.literal(3), v.literal(4)), text: v.string() }),
+    ),
+  }),
+);
+
+export type HorizonView = Infer<typeof horizonView>;
+
+const markResult = v.object({
+  boxId: v.string(),
+  fear: v.union(v.object({ gained: v.number(), lost: v.number(), newValue: v.number() }), v.null()),
+});
+const echoesChange = v.object({ previousValue: v.number(), newValue: v.number(), levelUps: v.number(), horizonUnlocked: v.boolean() });
+
+export type MarkResult = Infer<typeof markResult>;
+export type EchoesChange = Infer<typeof echoesChange>;
 
 function refuse(reason: keyof typeof REFUSAL_MESSAGES): never {
-  throw new ConvexError({ code: "DOOM_RULE", message: REFUSAL_MESSAGES[reason] });
+  throw appError("DOOM_RULE", REFUSAL_MESSAGES[reason]);
 }
 
 /** The GM sees the whole track; players see the Echo count and occurred events only. */
-export const get = query({
-  args: { campaignId: v.id("campaigns") },
-  handler: async (ctx, { campaignId }): Promise<HorizonView> => {
-    const user = await requireUser(ctx);
-    const { campaign, role, state } = await load(ctx, user, campaignId, false);
-    if (role === "gm") {
-      return { role, partyTier: campaign.tier, echoesCollected: state.echoesCollected, boxes: state.boxes };
+export const get = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: horizonView,
+  handler: async (ctx): Promise<HorizonView> => {
+    assertTrackerFrame(ctx.campaign, horizonTracker);
+    const state = await loadTracker(ctx, ctx.campaign._id, horizonTracker);
+    if (ctx.permission === "owner") {
+      return { role: "gm", partyTier: ctx.campaign.tier, echoesCollected: state.echoesCollected, boxes: state.boxes };
     }
-    return { role, echoesCollected: state.echoesCollected, occurred: occurredEvents(state) };
+    return { role: "player", echoesCollected: state.echoesCollected, occurred: occurredEvents(state) };
   },
 });
-
-async function save(ctx: MutationCtx, campaignId: Id<"campaigns">, state: HorizonState) {
-  await writeTracker(ctx, campaignId, HORIZON_TRACKER_KEY, state);
-}
 
 /**
  * Marks a Doom Track box in the party's tier (campaign.tier) or below, after
  * its parent. A Tier 4 mark gains Fear equal to the marked Tier 4 boxes.
  */
-export const markBox = mutation({
-  args: {
-    campaignId: v.id("campaigns"),
-    boxId: v.string(),
-    session: v.optional(v.number()),
-    idempotencyKey: v.string(),
-  },
-  handler: async (ctx, { campaignId, boxId, session, idempotencyKey }): Promise<MarkResult> => {
-    const user = await requireUser(ctx);
-    const { campaign, state } = await load(ctx, user, campaignId, true);
-    return withIdempotency(
-      ctx,
-      {
-        scopeKey: campaignScope(campaignId),
-        key: idempotencyKey,
-        kind: "horizon_mark",
-        request: { boxId, session },
-        createdBy: user._id,
-        campaignId,
-      },
-      async () => {
-        const reason = markRefusal(state, boxId, campaign.tier);
-        if (reason) refuse(reason);
-        if (session !== undefined && (!Number.isInteger(session) || session < 1)) {
-          throw new ConvexError({ code: "DOOM_RULE", message: "Session must be a whole number from 1." });
-        }
-        const next = withMark(state, boxId, Date.now(), session);
-        await save(ctx, campaignId, next);
-        const amount = fearForMark(next, boxId);
-        if (amount === 0) return { boxId, fear: null };
-        const { gained, lost, newValue } = await gainFear(ctx, campaignId, amount);
-        return { boxId, fear: { gained, lost, newValue } };
-      },
-    );
+export const markBox = keyedGmMutation({
+  args: { boxId: v.string(), session: v.optional(v.number()) },
+  returns: markResult,
+  handler: (ctx, { boxId, session }) => {
+    const { _id: campaignId, tier } = ctx.campaign;
+    return frameTrackerMutation<typeof horizonStateSchema, MarkResult>(ctx, horizonTracker, { kind: "horizon_mark", request: { boxId, session } }, async (state) => {
+      const reason = markRefusal(state, boxId, tier);
+      if (reason) refuse(reason);
+      if (session !== undefined && (!Number.isInteger(session) || session < 1)) {
+        throw appError("DOOM_RULE", "Session must be a whole number from 1.");
+      }
+      const next = withMark(state, boxId, Date.now(), session);
+      const amount = fearForMark(next, boxId);
+      if (amount === 0) return { state: next, result: { boxId, fear: null } };
+      const { gained, lost, newValue } = await gainFear(ctx, campaignId, amount);
+      return { state: next, result: { boxId, fear: { gained, lost, newValue } } };
+    });
   },
 });
 
 /** GM correction. Fear already gained from a Tier 4 mark is not refunded. */
-export const unmarkBox = mutation({
-  args: { campaignId: v.id("campaigns"), boxId: v.string(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, boxId, idempotencyKey }): Promise<{ boxId: string }> => {
-    const user = await requireUser(ctx);
-    const { state } = await load(ctx, user, campaignId, true);
-    return withIdempotency(
-      ctx,
-      {
-        scopeKey: campaignScope(campaignId),
-        key: idempotencyKey,
-        kind: "horizon_unmark",
-        request: { boxId },
-        createdBy: user._id,
-        campaignId,
-      },
-      async () => {
-        const reason = unmarkRefusal(state, boxId);
-        if (reason) refuse(reason);
-        await save(ctx, campaignId, withoutMark(state, boxId));
-        return { boxId };
-      },
-    );
-  },
+export const unmarkBox = keyedGmMutation({
+  args: { boxId: v.string() },
+  returns: v.object({ boxId: v.string() }),
+  handler: (ctx, { boxId }) =>
+    frameTrackerMutation(ctx, horizonTracker, { kind: "horizon_unmark", request: { boxId } }, (state) => {
+      const reason = unmarkRefusal(state, boxId);
+      if (reason) refuse(reason);
+      return { state: withoutMark(state, boxId), result: { boxId } };
+    }),
 });
 
 /** Once a marked event has occurred in play, its text becomes visible to players. */
-export const setOccurred = mutation({
-  args: { campaignId: v.id("campaigns"), boxId: v.string(), occurred: v.boolean(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, boxId, occurred, idempotencyKey }): Promise<{ boxId: string; occurred: boolean }> => {
-    const user = await requireUser(ctx);
-    const { state } = await load(ctx, user, campaignId, true);
-    return withIdempotency(
-      ctx,
-      {
-        scopeKey: campaignScope(campaignId),
-        key: idempotencyKey,
-        kind: "horizon_occurred",
-        request: { boxId, occurred },
-        createdBy: user._id,
-        campaignId,
-      },
-      async () => {
-        const entry = state.boxes[boxId];
-        if (!entry?.marked) refuse("NOT_MARKED_OCCURRED");
-        if (entry.occurred !== occurred) {
-          await save(ctx, campaignId, { ...state, boxes: { ...state.boxes, [boxId]: { ...entry, occurred } } });
-        }
-        return { boxId, occurred };
-      },
-    );
-  },
+export const setOccurred = keyedGmMutation({
+  args: { boxId: v.string(), occurred: v.boolean() },
+  returns: v.object({ boxId: v.string(), occurred: v.boolean() }),
+  handler: (ctx, { boxId, occurred }) =>
+    frameTrackerMutation(ctx, horizonTracker, { kind: "horizon_occurred", request: { boxId, occurred } }, (state) => {
+      const entry = state.boxes[boxId];
+      if (!entry?.marked) refuse("NOT_MARKED_OCCURRED");
+      return { state: { ...state, boxes: { ...state.boxes, [boxId]: { ...entry, occurred } } }, result: { boxId, occurred } };
+    }),
 });
 
 /** Sets the Soul Echoes collected (1–10). Each new Echo levels the party up; 10 unlocks Horizon. */
-export const setEchoes = mutation({
-  args: { campaignId: v.id("campaigns"), value: v.number(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, value, idempotencyKey }): Promise<EchoesChange> => {
-    const user = await requireUser(ctx);
-    const { state } = await load(ctx, user, campaignId, true);
+export const setEchoes = keyedGmMutation({
+  args: { value: v.number() },
+  returns: echoesChange,
+  handler: (ctx, { value }) => {
+    assertTrackerFrame(ctx.campaign, horizonTracker);
     if (!Number.isInteger(value) || value < FIRST_ECHO || value > MAX_ECHOES) {
-      throw new ConvexError({ code: "ECHO_RANGE", message: `Soul Echoes run from ${FIRST_ECHO} to ${MAX_ECHOES}.` });
+      throw appError("ECHO_RANGE", `Soul Echoes run from ${FIRST_ECHO} to ${MAX_ECHOES}.`);
     }
-    return withIdempotency(
-      ctx,
-      {
-        scopeKey: campaignScope(campaignId),
-        key: idempotencyKey,
-        kind: "horizon_echoes",
-        request: { value },
-        createdBy: user._id,
-        campaignId,
-      },
-      async () => {
-        const previousValue = state.echoesCollected;
-        if (value !== previousValue) await save(ctx, campaignId, { ...state, echoesCollected: value });
-        return {
+    return frameTrackerMutation(ctx, horizonTracker, { kind: "horizon_echoes", request: { value } }, (state) => {
+      const previousValue = state.echoesCollected;
+      return {
+        state: { ...state, echoesCollected: value },
+        result: {
           previousValue,
           newValue: value,
           levelUps: Math.max(0, value - previousValue),
           horizonUnlocked: value === MAX_ECHOES,
-        };
-      },
-    );
+        },
+      };
+    });
   },
 });
