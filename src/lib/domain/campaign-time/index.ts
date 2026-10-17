@@ -21,25 +21,29 @@ export const MIN_CYCLE_DAY = 1;
 export const MAX_CYCLE_DAY = 7;
 export const MIN_WEEK = 1;
 
+// Phase names from the CampaignHub design board (user decision 2026-10-17).
 const DAY_PHASES = [
   "Dawn",
   "Sunrise",
   "Morning",
-  "Forenoon",
-  "Midday",
+  "High Noon",
   "Afternoon",
-  "Civil Twilight",
+  "Sunset",
+  "Nautical Twilight",
 ] as const;
 
 const NIGHT_PHASES = [
-  "Nautical Twilight",
-  "Astronomical Twilight",
-  "Evening",
-  "Night",
+  "Nightfall",
+  "Moonrise",
+  "Deep Night",
   "Midnight",
-  "Dead of Night",
-  "Pre-Dawn",
+  "Witching Hour",
+  "Small Hours",
+  "Nautical Dawn",
 ] as const;
+
+/** Each week is one 7-day cycle; four weeks make a month (the board's default). */
+export const WEEKS_PER_MONTH = 4;
 
 export type CampaignPhaseName =
   | (typeof DAY_PHASES)[number]
@@ -126,12 +130,31 @@ export function getNextCampaignTime(current: CampaignTime): CampaignTime {
   };
 }
 
-/**
- * Returns a human-readable label, e.g. "Week 8 • Day Cycle • Forenoon".
- */
+/** The month (1-based) a campaign week falls in. */
+export function monthOf(week: number): number {
+  return Math.floor((week - 1) / WEEKS_PER_MONTH) + 1;
+}
+
+/** The week's position within its month, 1 to WEEKS_PER_MONTH. */
+export function weekInMonth(week: number): number {
+  return ((week - 1) % WEEKS_PER_MONTH) + 1;
+}
+
+/** Board label, e.g. "Month 2 · Week 1 · Day 4" (Cinzel renders the digits). */
 export function formatCampaignTime(time: CampaignTime): string {
   assertValidCampaignTime(time);
-  const cycleLabel = time.currentCycle === "DAY" ? "Day Cycle" : "Night Cycle";
-  const phase = getPhaseName(time.currentCycle, time.currentCycleDay);
-  return `Week ${time.currentWeek} • ${cycleLabel} • ${phase}`;
+  return `Month ${monthOf(time.currentWeek)} · Week ${weekInMonth(time.currentWeek)} · Day ${time.currentCycleDay}`;
+}
+
+/**
+ * The state after setting the day within the current week (the board's arc
+ * icons). Throws when the day is invalid or unchanged.
+ */
+export function withCycleDay(current: CampaignTime, cycleDay: number): CampaignTime {
+  assertValidCampaignTime(current);
+  const day = toCampaignCycleDay(cycleDay);
+  if (day === current.currentCycleDay) {
+    throw new RangeError("The campaign is already on that day.");
+  }
+  return { ...current, currentCycleDay: day };
 }

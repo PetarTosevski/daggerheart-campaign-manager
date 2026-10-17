@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   COUNTDOWN_CATEGORIES,
   COUNTDOWN_INTENTS,
+  MAX_COUNTDOWN_START,
 } from "../domain/countdowns";
 
 export const COUNTDOWN_REASON_MAX_LENGTH = 200;
@@ -54,3 +55,14 @@ export const operateCountdownSchema = z.object({
     ),
   idempotencyKey: z.uuid("The request key is invalid. Refresh and try again."),
 });
+
+/** Countdown fields as the dashboard's "New countdown" dialog sends them to Convex. */
+export const countdownDetailsSchema = createCountdownSchema
+  .pick({ name: true, description: true, category: true, consequence: true })
+  .extend({
+    startingValue: z
+      .number("Enter a starting value.")
+      .int("Starting value must be an integer.")
+      .min(1, "Starting value must be greater than zero.")
+      .max(MAX_COUNTDOWN_START, `Starting value cannot exceed ${MAX_COUNTDOWN_START}.`),
+  });

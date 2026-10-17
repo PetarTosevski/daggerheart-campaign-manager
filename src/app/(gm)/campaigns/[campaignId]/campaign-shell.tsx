@@ -7,6 +7,7 @@ import { createContext, useContext, useEffect, type ReactNode } from "react";
 
 import { BackLink, Wordmark } from "@/components/brand/brand";
 import { frameName } from "@/lib/campaign-display";
+import { frameHasMechanic } from "@/lib/frames";
 import { brandButton } from "@/components/brand/buttons";
 import { campaignArt } from "@/lib/campaign-art";
 import { CAMPAIGN_SECTIONS } from "@/lib/campaign-sections";
@@ -14,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../convex/campaigns";
+import { TimeArc } from "./time-arc";
 
 const CampaignContext = createContext<CampaignSummary | null>(null);
 
@@ -52,7 +54,9 @@ function CampaignNav({ campaignId }: { campaignId: string }) {
 /** Title block of the dashboard header ("ACTIVE CAMPAIGN · THE WITHERWILD"). */
 function DashboardHero({ campaign }: { campaign: CampaignSummary }) {
   return (
-    <div className="relative mx-auto flex max-w-[1344px] flex-wrap items-end justify-between gap-6 px-4 pt-6 pb-8 sm:px-12">
+    <div className="relative mx-auto flex max-w-[1344px] flex-col gap-9 px-4 pt-2 pb-8 sm:px-12">
+      {frameHasMechanic(campaign.frameId, "campaignTime") ? <TimeArc campaignId={campaign._id} /> : null}
+      <div className="flex flex-wrap items-end justify-between gap-6">
       <div className="flex min-w-0 flex-col gap-2">
         <span className="text-[13px] tracking-[0.3em] text-[#c9d2cf] uppercase">
           Active campaign · {frameName(campaign.frameId)}
@@ -67,6 +71,7 @@ function DashboardHero({ campaign }: { campaign: CampaignSummary }) {
             Tier {campaign.tier} · Level {campaign.level}
           </span>
         </p>
+      </div>
       </div>
     </div>
   );
