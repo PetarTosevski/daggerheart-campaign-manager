@@ -30,3 +30,25 @@
 - Wither tokens (D5): book rule automated — gaining a token rolls the Fear Die; at or below the PC's tokens → scar and clear tokens; undo available; no per-PC cap (pool of 20 shown for reference).
 - End-of-session Wither → Fear conversion caps GM Fear at 12 and shows "N Fear lost".
 - Permissions (2026-10-18): one `files` table owns every upload (map, codex image, portrait), and a `grants` join table (resource, principal user|campaign, permission view|edit|owner) is added now as the base for sharing maps and other resources later. Access = strongest of the campaign role and any grant; a view grant gets the player view.
+- Defaults accepted by the user (2026-10-18, "use defaults for all"):
+  - Seed accounts: allowed on the cloud dev deployment too, never production; gated by an explicit env flag set only on dev.
+  - Email invites: only verified (Google) accounts; the GM players dialog tells the GM that password accounts must join by code.
+  - History: Fear, countdown and campaign-time changes get their own history tables before the operations table gets its 7-day TTL.
+  - Horizon questions (dcm-bxp.20) stay open.
+- D5 decisions (defaults, 2026-10-18):
+  1. Players roll their own dice; the server rolls, every roll goes to a feed all members see; physical-dice results can be entered and are marked manual.
+  2. GM free rolls are hidden unless the GM reveals them; player character rolls are public.
+  3. 3D dice on by default, lazy-loaded, off when the device asks for reduced motion; toggle and sound saved per device.
+  4. Level-up undo: only the latest level, repeatable, plus a GM correction mode that sets the level directly.
+  5. The GM's "Party levels up" flags everyone; each owner then levels up their own character.
+  6. Strange Patterns: when both dice show the number, one benefit only (player picks Hope or clear a Stress).
+  7. Actions on another player's character (Life Support, Rally, healing/repairing an ally, Prepare together) are allowed only through those actions and logged on both characters; no target confirmation.
+  8. "Until hit" effects: a manual "Got hit" button until the D8 encounter tracker reports hits.
+  9. Unconscious, dead or away characters: roll and feature buttons disabled.
+  10. Rests: the GM starts a party rest, each player picks 2 moves, the GM finishes it; no solo rests.
+  11. Subclass features: text in D5 plus always-on numeric bonuses; full automation is a follow-up bead.
+  12. Start/End session: temporary GM buttons on the dashboard until the Sessions board (D9).
+  13. Photo import: GM only; photos deleted after reading.
+  14. Photo import model: fixed default overridable by ANTHROPIC_MODEL; one call per click, no automatic retry.
+  - Rules settled from the books (not choices): advantage cancels one-for-one to a single d6 (help: keep highest); Brawler crit = 14 × Proficiency + roll; Avoid Death scar on Hope Die ≤ level and last Hope slot flags the character's journey ending for the GM; Witch's Charm costs 3 Hope and gives the GM 1 Fear only when the roll was with Hope (removing that Hope); experiences usable on reaction rolls (cost Hope), reaction rolls generate no Hope/Fear; Fear from rolls/rests/scars applied automatically with undo; rest Fear 1d4 short, 1d4 + PCs long; at most three short rests before a long rest; Work on a Project ticks a progress countdown or the GM asks for a roll; two level-up picks per level (Proficiency and Multiclass take both), trait marks clear at 5 and 8, optional equal-or-lower card trade; multiclass from level 5, class feature only, domain cards up to half level rounded up, crosses out mastery and other multiclass; Prayer Dice = Spellcast trait d4s, 0 if ≤ 0; Wither token on Severe damage from a Withered source then Fear Die ≤ tokens = scar and clear, session end converts tokens to Fear; Castle High "away" characters are left out of rests and Fear counts.
+- D7 decisions (defaults, 2026-10-18): players see an entry's role / kind of place; starting NPCs are created automatically per frame (secret); frames other than Witherwild use Allies / Enemies / Neutral with no regions; revealing an image marks the entry known.
