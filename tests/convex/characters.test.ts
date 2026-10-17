@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../../convex/_generated/api";
+import { api, internal } from "../../convex/_generated/api";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
-import { errorCode, errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 function draft(overrides: Record<string, unknown> = {}) {
@@ -72,7 +72,7 @@ describe("characters", () => {
       ],
     });
     expect(c!.sheet.domainCards.loadout).toHaveLength(2);
-    expect(c!.sheet.inventory).toContain("Minor Health Potion");
+    expect(c!.sheet.inventory.map((i) => i.name)).toContain("Minor Health Potion");
   });
 
   it("rejects an invalid trait spread, wrong domain cards, and missing steps", async () => {
@@ -113,7 +113,7 @@ describe("characters", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ canEdit: false, mine: false });
     expect(seen[0].sheet.traits.agility).toBe(2);
-    expect(errorData(await p2.mutation(api.characters.updateSheet, { characterId, patch: { notes: "x" } }).catch((e) => e))).toBe(
+    expect(errorCode(await p2.mutation(api.characters.updateSheet, { characterId, patch: { notes: "x" } }).catch((e) => e))).toBe(
       "FORBIDDEN",
     );
     await gm.mutation(api.characters.updateSheet, { characterId, patch: { notes: "GM note" } });
@@ -129,7 +129,7 @@ describe("characters", () => {
     await gm.mutation(api.characters.assignOwner, { characterId, ownerId: ids.gm });
     expect((await p1.query(api.characters.get, { characterId }))!.canEdit).toBe(false);
     expect(
-      errorData(await p1.mutation(api.characters.create, { campaignId, draft: draft(), ownerId: ids.gm, idempotencyKey: key() }).catch((e) => e)),
+      errorCode(await p1.mutation(api.characters.create, { campaignId, draft: draft(), ownerId: ids.gm, idempotencyKey: key() }).catch((e) => e)),
     ).toBe("FORBIDDEN");
   });
 
@@ -162,7 +162,7 @@ describe("characters", () => {
     process.env.ALLOWED_EMAILS += ",x@example.com";
     const stranger = t.withIdentity({ subject: `${strangerId}|s` });
     expect(await stranger.query(api.characters.get, { characterId })).toBeNull();
-    expect(errorData(await p1.mutation(api.characters.remove, { characterId }).catch((e) => e))).toBe("FORBIDDEN");
+    expect(errorCode(await p1.mutation(api.characters.remove, { characterId }).catch((e) => e))).toBe("FORBIDDEN");
     await gm.mutation(api.characters.remove, { characterId });
     expect(await gm.query(api.characters.listByCampaign, { campaignId })).toEqual([]);
   });
@@ -193,7 +193,7 @@ describe("characters", () => {
     expect((await p1.query(api.characters.get, { characterId: a }))!.sheet.portrait).toEqual({ kind: "upload", storageId: image });
 
     // Another player can't claim or point at that file.
-    expect(errorData(await p2.mutation(api.characters.attachPortrait, { characterId: b, storageId: image }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await p2.mutation(api.characters.attachPortrait, { characterId: b, storageId: image }).catch((e) => e))).toBe("NOT_FOUND");
     expect(
       errorCode(
         await p2
@@ -207,5 +207,118 @@ describe("characters", () => {
       patch: { portrait: { kind: "asset", asset: "0".repeat(32) } },
     });
     expect(await t.run((ctx) => ctx.storage.getUrl(image))).toBeNull();
+  });
+
+  it("stores a versioned sheet whose inventory items and Experiences carry ids", async () => {
+    const { t, p1, campaignId } = await setup();
+    const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    const stored = await t.run(async (ctx) => (await ctx.db.get(characterId))!.sheet);
+    expect(stored.schemaVersion).toBe(2);
+    const ids = [...stored.inventory, ...stored.experiences].map((x: { id: string }) => x.id);
+    expect(ids.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("one corrupt sheet doesn't fail the party list: it comes back marked, the rest as usual", async () => {
+    const { t, gm, p1, campaignId } = await setup();
+    const good = (await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() })).characterId;
+    const bad = (await p1.mutation(api.characters.create, { campaignId, draft: draft({ name: "Bryn" }), idempotencyKey: key() })).characterId;
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get(bad))!;
+      await ctx.db.patch(bad, { sheet: { ...c.sheet, hp: "lots" } });
+    });
+    const list = await gm.query(api.characters.listByCampaign, { campaignId });
+    expect(list).toHaveLength(2);
+    expect(list.find((c) => c._id === good)).toMatchObject({ canEdit: true, sheet: { name: "Ash" } });
+    expect(list.find((c) => c._id === good)!.corrupt).toBeUndefined();
+    expect(list.find((c) => c._id === bad)).toMatchObject({ corrupt: true, canEdit: false, sheet: { name: "Bryn" } });
+    // Reading or editing the corrupt one alone still says so.
+    expect(errorCode(await gm.query(api.characters.get, { characterId: bad }).catch((e) => e))).toBe("CHARACTER_CORRUPT");
+    expect(errorCode(await gm.mutation(api.characters.addInventory, { characterId: bad, name: "Rope" }).catch((e) => e))).toBe("CHARACTER_CORRUPT");
+    // A sheet from an unknown future version is corrupt too.
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get(good))!;
+      await ctx.db.patch(good, { sheet: { ...c.sheet, schemaVersion: 99 } });
+    });
+    expect((await gm.query(api.characters.listByCampaign, { campaignId })).every((c) => c.corrupt)).toBe(true);
+  });
+
+  it("portraitUploadUrl is rate-limited per user", async () => {
+    const { p1, campaignId } = await setup();
+    const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    const codes: unknown[] = [];
+    for (let i = 0; i < 21; i++) {
+      codes.push(await p1.mutation(api.characters.portraitUploadUrl, { characterId }).then(() => "ok", (e) => errorCode(e)));
+    }
+    expect(codes.slice(0, 20).every((c) => c === "ok")).toBe(true);
+    expect(codes[20]).toBe("RATE_LIMITED");
+  });
+
+  it("players can't see an uploaded portrait's storage id in get or listByCampaign", async () => {
+    const { t, p1, p2, campaignId } = await setup();
+    const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    const image = await t.run((ctx) => ctx.storage.store(new Blob(["png"], { type: "image/png" })));
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get(characterId))!;
+      await ctx.db.insert("files", { storageId: image, campaignId: c.campaignId, uploadedBy: c.ownerId, kind: "portrait", refId: characterId, createdAt: 0 });
+      await ctx.db.patch(characterId, { sheet: { ...c.sheet, portrait: { kind: "upload", storageId: image } } });
+    });
+    for (const seen of [await p2.query(api.characters.get, { characterId }), ...(await p2.query(api.characters.listByCampaign, { campaignId }))]) {
+      expect(seen!.sheet.portrait).toEqual({ kind: "upload", storageId: "hidden" });
+      expect(seen!.portraitUrl).toEqual(expect.any(String));
+    }
+  });
+});
+
+describe("migrations/characters:versionSheets", () => {
+  useAllowlist("gm@example.com,p1@example.com,p2@example.com");
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("backfills schemaVersion and the ids an unmigrated read already showed; skips corrupt sheets; is idempotent", async () => {
+    const { t, gm, p1, campaignId } = await setup();
+    const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    // Rewrite it as a version 1 sheet: no schemaVersion, string inventory, Experiences without ids.
+    const corruptId = await t.run(async (ctx) => {
+      const c = (await ctx.db.get(characterId))!;
+      const { schemaVersion: _version, ...rest } = c.sheet;
+      void _version;
+      await ctx.db.patch(characterId, {
+        sheet: {
+          ...rest,
+          inventory: ["Torch", "Rope"],
+          experiences: [
+            { name: "Sellsword", value: 2 },
+            { name: "Lockpick", value: 3 },
+          ],
+        },
+      });
+      const { campaignId: cid, ownerId, createdBy } = c;
+      return ctx.db.insert("characters", { campaignId: cid, ownerId, createdBy, status: "active", sheet: { name: "Broken" }, createdAt: 0, updatedAt: 0 });
+    });
+    const before = (await gm.query(api.characters.get, { characterId }))!.sheet;
+    expect(before.inventory).toEqual([
+      { id: "inv-0", name: "Torch" },
+      { id: "inv-1", name: "Rope" },
+    ]);
+    expect(before.experiences).toEqual([
+      { id: "exp-0", name: "Sellsword", value: 2 },
+      { id: "exp-1", name: "Lockpick", value: 3 },
+    ]);
+
+    await t.mutation(internal.migrations.characters.versionSheets, { batchSize: 1 });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const stored = await t.run(async (ctx) => (await ctx.db.get(characterId))!.sheet);
+    expect(stored).toMatchObject({ schemaVersion: 2, inventory: before.inventory, experiences: before.experiences });
+    expect((await gm.query(api.characters.get, { characterId }))!.sheet).toEqual(before);
+    expect(await t.run(async (ctx) => (await ctx.db.get(corruptId))!.sheet)).toEqual({ name: "Broken" });
+
+    await t.mutation(internal.migrations.characters.versionSheets, { reset: true });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run(async (ctx) => (await ctx.db.get(characterId))!.sheet)).toEqual(stored);
   });
 });

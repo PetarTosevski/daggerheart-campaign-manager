@@ -18,15 +18,23 @@ export const ancestryChoiceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("shapeshifter"), form: z.string().min(1), feature: z.string().trim().min(1).max(200) }),
 ]);
 
-export const experienceSchema = z.object({ name: z.string().trim().min(1).max(NAME), value: z.number().int().min(-5).max(10) });
+/** An Experience as version 1 sheets stored it (no id). */
+const experienceV1Schema = z.object({ name: z.string().trim().min(1).max(NAME), value: z.number().int().min(-5).max(10) });
+
+/** A stable list id (CD8: list edits address items by id, never by index). */
+const listId = z.string().min(1).max(40);
+
+export const experienceSchema = experienceV1Schema.extend({ id: listId });
+
+export const inventoryItemSchema = z.object({ id: listId, name: z.string().trim().min(1).max(200) });
 
 const portraitSchema = z.union([
   z.object({ kind: z.literal("asset"), asset: z.string().regex(/^[0-9a-f]{32}$/) }),
   z.object({ kind: z.literal("upload"), storageId: z.string().min(1) }),
 ]);
 
-/** The full character sheet stored on `characters.sheet`. */
-export const characterSheetSchema = z.object({
+/** Version 1 of the sheet (stored without `schemaVersion`): plain-string inventory, Experiences without ids. Frozen. */
+export const characterSheetV1Schema = z.object({
   name: z.string().trim().min(1).max(NAME),
   pronouns: z.string().trim().max(NAME),
   description: z.string().max(TEXT),
@@ -53,7 +61,7 @@ export const characterSheetSchema = z.object({
   armorId: z.string().optional(),
   inventory: z.array(z.string().trim().min(1).max(200)).max(60),
   gold: z.object({ handfuls: z.number().int().min(0).max(99), bags: z.number().int().min(0).max(99), chest: z.boolean() }),
-  experiences: z.array(experienceSchema).max(12),
+  experiences: z.array(experienceV1Schema).max(12),
   domainCards: z.object({ owned: z.array(z.string()).max(40), loadout: z.array(z.string()).max(5) }),
   background: z.array(z.string().max(TEXT)).max(12),
   connections: z.array(z.string().max(TEXT)).max(12),
@@ -61,7 +69,31 @@ export const characterSheetSchema = z.object({
   portrait: portraitSchema.optional(),
 });
 
+/**
+ * The current sheet (version 2): inventory items and Experiences carry stable
+ * ids. Stored on `characters.sheet` as `{ schemaVersion: 2, ...sheet }` and
+ * read through `readSheet` (convex/characters.ts), which upgrades older
+ * versions; this schema itself has no `schemaVersion`, so domain code never
+ * sees it.
+ *
+ * To extend it (D5 and later), add fields as `.optional()` or with a
+ * `.default(...)` so stored version 2 sheets keep parsing without a migration,
+ * and add the same field to `sheetValidator` (convex/lib/validators/characters.ts).
+ * Changing or removing a field bumps `SHEET_VERSION` with an upgrade step
+ * instead (widen, migrate, narrow).
+ */
+export const characterSheetSchema = characterSheetV1Schema.extend({
+  inventory: z.array(inventoryItemSchema).max(60),
+  experiences: z.array(experienceSchema).max(12),
+});
+
+/** The stored sheet's current `schemaVersion`. */
+export const SHEET_VERSION = 2;
+
+export type CharacterSheetV1 = z.infer<typeof characterSheetV1Schema>;
 export type CharacterSheet = z.infer<typeof characterSheetSchema>;
+export type InventoryItem = z.infer<typeof inventoryItemSchema>;
+export type Experience = z.infer<typeof experienceSchema>;
 
 /** What the creation wizard submits; the server derives the rest from the class. */
 export const characterDraftSchema = z
@@ -118,6 +150,9 @@ export const sheetPatchSchema = characterSheetSchema
     // null unequips (an undefined value would be dropped in transit).
     secondaryWeaponId: z.string().nullable().optional(),
     armorId: z.string().nullable().optional(),
+    // Whole-list writes stay accepted until the sheet UI sends intents (H19); entries without an id get a new one.
+    inventory: z.array(z.union([z.string().trim().min(1).max(200), inventoryItemSchema])).max(60).optional(),
+    experiences: z.array(experienceV1Schema.extend({ id: listId.optional() })).max(12).optional(),
   })
   .strict();
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { permissionFor, upsertGrant, type Permission } from "../../convex/lib/permissions";
-import { errorData, key, useAllowlist } from "./helpers";
+import { errorCode, errorData, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const GM = "gm@example.com";
@@ -43,7 +43,7 @@ describe("grants", () => {
     const { outsider, campaignId } = await setup();
     expect(errorData(await outsider.query(api.maps.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
     expect(errorData(await outsider.query(api.codex.list, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
-    expect(errorData(await outsider.query(api.characters.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await outsider.query(api.characters.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
   });
 
   it("a view grant to another campaign's user gives the player-filtered map, read-only", async () => {
