@@ -110,6 +110,7 @@ import { components } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   action,
+  env,
   internalQuery,
   mutation,
   query,
@@ -117,6 +118,7 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "../_generated/server";
+import { isE2EDeployment } from "./allowlist";
 import { getUser } from "./auth";
 import { campaignScope, ownerScope, runOnce, type ScopeKey } from "./operations";
 import { atLeast, campaignAccess, type Permission } from "./permissions";
@@ -158,7 +160,8 @@ const baseAction = normalised(action);
 const RATE_LIMITS = {
   uploadUrl: { kind: "token bucket", rate: 20, period: HOUR },
   joinByCode: { kind: "token bucket", rate: 10, period: MINUTE },
-  createCampaign: { kind: "token bucket", rate: 10, period: HOUR },
+  // A GM setting up a table may create several at once: 10 per hour, bursts of 30.
+  createCampaign: { kind: "token bucket", rate: 10, period: HOUR, capacity: 30 },
   invite: { kind: "token bucket", rate: 30, period: HOUR },
 } as const;
 
@@ -168,6 +171,8 @@ const rateLimiter = new RateLimiter(components.rateLimiter, RATE_LIMITS);
 
 async function enforceRateLimit(ctx: MutationCtx | ActionCtx, user: Doc<"users">, name: RateLimitName | undefined) {
   if (name === undefined) return;
+  // The local e2e backend signs every spec in as the same GM; limits are covered by convex-test.
+  if (isE2EDeployment(env) && env.E2E_AUTH_ENABLED === "true") return;
   const { ok } = await rateLimiter.limit(ctx, name, { key: user._id });
   if (!ok) throw appError("RATE_LIMITED");
 }
