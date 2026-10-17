@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Characters &amp; Locations</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d1417}
+.cx-in{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font-size:15px;font-family:inherit;box-sizing:border-box;width:100%}
+.cx-ta{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font-size:17px;line-height:1.55;font-family:'EB Garamond',serif;resize:vertical}
+.cx-in:focus,.cx-ta:focus{outline:2px solid #e3b45a;outline-offset:1px}
+.cx-card{padding:20px;border-radius:14px;background:#141e22;border:1px solid #253338;display:flex;flex-direction:column;gap:12px;box-sizing:border-box}
+.cx-h{margin:0;font-family:'Cinzel',serif;font-size:20px;font-weight:700}
+.cx-lbl{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:#9fb2b6}
+.cx-ghost{min-height:40px;padding:0 14px;border-radius:8px;border:1px solid #33444a;background:transparent;color:#e6ecea;font-size:14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;box-sizing:border-box}
+.cx-ghost:hover{background:#1b282d}
+.cx-muted{color:#9fb2b6;font-size:14px;line-height:1.5}
+.cx-thumb{position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:#0b1214 center/cover no-repeat;border:2px solid #253338;cursor:zoom-in}
+.cx-thumb.hid{filter:grayscale(.7) brightness(.55)}
+.cx-tools{position:absolute;left:0;right:0;bottom:0;display:flex;gap:4px;padding:6px;background:linear-gradient(transparent,rgba(0,0,0,.85));justify-content:space-between;align-items:center}
+.cx-tb{min-height:30px;padding:0 8px;border-radius:7px;border:1px solid rgba(255,255,255,.25);background:rgba(6,10,12,.8);color:#e6ecea;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.cx-tb.on{background:#e3b45a;color:#1a1408;border-color:#e3b45a;font-weight:700}
+.cx-tb:hover{border-color:#e3b45a}
+.cx-drop{aspect-ratio:1/1;border-radius:10px;border:2px dashed #3a4d54;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#9fb2b6;font-size:13px;text-align:center;padding:10px;box-sizing:border-box;cursor:pointer;background:transparent;font-family:inherit}
+.cx-drop:hover,.cx-drop.over{border-color:#e3b45a;color:#f3cf86;background:#1b2216}
+.cx-badge{font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px;white-space:nowrap}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0d1417; color: #e6ecea; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box; display: flex; flex-direction: column">
+
+<section aria-label="Campaign header" style="position: relative; overflow: hidden">
+<div aria-hidden="true" style="{{ bannerStyle }}"></div>
+<div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(6, 12, 14, 0.7)"></div>
+<div style="position: relative; max-width: 1344px; margin: 0 auto; padding: 22px 48px 26px; box-sizing: border-box; display: flex; flex-direction: column; gap: 26px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap">
+<a href="{{ dashHref }}" aria-label="Back to the campaign dashboard" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: rgba(0, 0, 0, 0.3)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></a>
+<div style="font-family: 'Cinzel', serif; font-size: 32px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div>
+</div>
+<nav aria-label="Campaign sections" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0, 0, 0, 0.35)">
+<sc-for list="{{ navItems }}" as="n" hint-placeholder-count="7">
+<sc-if value="{{ n.isLink }}" hint-placeholder-val="{{ true }}"><a href="{{ n.href }}" aria-current="{{ n.current }}" style="{{ n.style }}">{{ n.label }}</a></sc-if>
+<sc-if value="{{ n.isOff }}" hint-placeholder-val="{{ false }}"><span title="Coming soon" style="{{ n.style }}">{{ n.label }}</span></sc-if>
+</sc-for>
+</nav>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.24em; color: #c8d3d0">{{ campaignName }}</div>
+<h1 style="margin: 0; font-family: 'Cinzel', serif; font-size: 44px; line-height: 1.05; font-weight: 900">Characters &amp; Locations</h1>
+<div style="font-size: 15px; color: #d6dfdc">{{ headerLine }}</div>
+</div>
+<button type="button" onClick="{{ togglePlayer }}" aria-pressed="{{ playerPressed }}" style="{{ playerBtn }}">{{ playerLabel }}</button>
+</div>
+</div>
+</section>
+
+<sc-if value="{{ isPlayer }}" hint-placeholder-val="{{ false }}"><div role="note" style="background: #2a2416; border-bottom: 1px solid #5a4a2a; color: #f0dfb8; font-size: 14px; padding: 10px 48px; text-align: center">Player view: only characters and locations the party knows, and only the images you have revealed. GM notes are hidden.</div></sc-if>
+
+<main style="flex: 1; width: 100%; max-width: 1344px; margin: 0 auto; padding: 24px 48px 48px; box-sizing: border-box; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 24px; align-items: start">
+
+<aside aria-label="Entries" style="display: flex; flex-direction: column; gap: 10px">
+<div role="tablist" aria-label="Kind" style="display: flex; gap: 6px; padding: 4px; border-radius: 12px; background: #141e22; border: 1px solid #253338">
+<sc-for list="{{ kindTabs }}" as="t" hint-placeholder-count="2"><button type="button" role="tab" aria-selected="{{ t.sel }}" onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.label }}</button></sc-for>
+</div>
+<sc-if value="{{ hasGroups }}" hint-placeholder-val="{{ true }}"><div role="tablist" aria-label="{{ groupAria }}" style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{ groupTabs }}" as="gt" hint-placeholder-count="4"><button type="button" role="tab" aria-selected="{{ gt.pressed }}" onClick="{{ gt.pick }}" style="{{ gt.style }}">{{ gt.label }}</button></sc-for></div></sc-if>
+<input class="cx-in" type="search" placeholder="{{ searchPh }}" aria-label="Search" onInput="{{ setSearch }}" defaultValue="">
+<sc-if value="{{ isGm }}" hint-placeholder-val="{{ true }}"><div style="display: flex; gap: 8px"><button type="button" onClick="{{ addEntry }}" style="{{ primaryStyle }}">{{ addLabel }}</button><sc-if value="{{ isLocs }}" hint-placeholder-val="{{ false }}"><button type="button" class="cx-ghost" onClick="{{ importPins }}" title="Create entries for map pins that are not in the list yet">📍 From map</button></sc-if></div></sc-if>
+<sc-if value="{{ importMsg }}" hint-placeholder-val="{{ false }}"><div class="cx-muted" role="status" style="font-size: 13px">{{ importMsg }}</div></sc-if>
+<sc-if value="{{ noList }}" hint-placeholder-val="{{ false }}"><div style="padding: 18px; border-radius: 12px; border: 1px dashed #33444a; color: #9fb2b6; font-size: 14px; line-height: 1.5">{{ emptyText }}</div></sc-if>
+<sc-for list="{{ listItems }}" as="it" hint-placeholder-count="4">
+<button type="button" onClick="{{ it.pick }}" aria-current="{{ it.current }}" style="{{ it.style }}">
+<span aria-hidden="true" style="{{ it.thumb }}">{{ it.initial }}</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; text-align: left">
+<span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.2">{{ it.name }}</span>
+<span style="font-size: 13px; color: #9fb2b6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ it.role }}</span>
+<span style="display: flex; gap: 6px; flex-wrap: wrap"><sc-if value="{{ it.hasGrp }}" hint-placeholder-val="{{ true }}"><span class="cx-badge" style="{{ it.grpStyle }}">{{ it.grpText }}</span></sc-if><sc-if value="{{ it.showBadges }}" hint-placeholder-val="{{ true }}"><span class="cx-badge" style="{{ it.knownStyle }}">{{ it.knownText }}</span><span class="cx-badge" style="background: #1b282d; color: #c8d3d0">{{ it.imgText }}</span></sc-if></span>
+</span>
+</button>
+</sc-for>
+</aside>
+
+<section aria-label="Entry detail" style="min-width: 0">
+<sc-if value="{{ noSel }}" hint-placeholder-val="{{ false }}"><div class="cx-card"><h2 class="cx-h">{{ noSelTitle }}</h2><p class="cx-muted" style="margin: 0">{{ noSelText }}</p></div></sc-if>
+
+<sc-for list="{{ details }}" as="d" hint-placeholder-count="1">
+<sc-if value="{{ d.on }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 18px">
+
+<div class="cx-card" style="flex-direction: row; gap: 20px; align-items: stretch; flex-wrap: wrap">
+<button type="button" onClick="{{ d.openCover }}" aria-label="{{ d.coverAria }}" style="{{ d.coverStyle }}">{{ d.coverText }}</button>
+<div style="flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 12px">
+<sc-if value="{{ d.gm }}" hint-placeholder-val="{{ true }}">
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="cx-lbl">Name</span><input class="cx-in" type="text" data-f="name" defaultValue="{{ d.name }}" onChange="{{ d.setF }}" placeholder="{{ d.namePh }}" style="font-size: 20px; font-family: 'Cinzel', serif; font-weight: 700"></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="cx-lbl">{{ d.roleLbl }}</span><input class="cx-in" type="text" data-f="role" defaultValue="{{ d.role }}" onChange="{{ d.setF }}" placeholder="{{ d.rolePh }}"></label>
+<sc-if value="{{ d.isChar }}" hint-placeholder-val="{{ true }}"><div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 12px; border-radius: 10px; background: #0f181b; border: 1px solid #253338">
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="cx-lbl">True allegiance</span><select class="cx-in" value="{{ d.al }}" onChange="{{ d.setAl }}" aria-label="True allegiance"><sc-for list="{{ d.alOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="cx-lbl">Players see</span><select class="cx-in" value="{{ d.alShown }}" onChange="{{ d.setShown }}" aria-label="Allegiance the players see"><sc-for list="{{ d.shownOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select></label>
+<div style="grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap"><span class="cx-muted" style="font-size: 13px; flex: 1">{{ d.alNote }}</span><sc-if value="{{ d.canReveal }}" hint-placeholder-val="{{ false }}"><button type="button" class="cx-ghost" onClick="{{ d.revealAl }}" style="min-height: 34px; font-size: 13px">👁 Reveal true allegiance</button></sc-if></div>
+</div></sc-if>
+<sc-if value="{{ d.isLoc }}" hint-placeholder-val="{{ false }}"><sc-if value="{{ d.hasRegions }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 10px; background: #0f181b; border: 1px solid #253338">
+<span class="cx-lbl">Region</span>
+<sc-if value="{{ d.regAuto }}" hint-placeholder-val="{{ false }}"><span style="font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700">{{ d.regName }} <span style="font-size: 12px; font-family: inherit; font-weight: 400; color: #9fb2b6">· 📍 from map pin</span></span></sc-if>
+<sc-if value="{{ d.regManual }}" hint-placeholder-val="{{ true }}"><select class="cx-in" value="{{ d.region }}" onChange="{{ d.setRegion }}" aria-label="Region"><sc-for list="{{ d.regOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select></sc-if>
+<span class="cx-muted" style="font-size: 13px">{{ d.regionNote }}</span>
+</div></sc-if></sc-if>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<button type="button" onClick="{{ d.toggleKnown }}" aria-pressed="{{ d.knownPressed }}" style="{{ d.knownBtn }}">{{ d.knownLabel }}</button>
+<sc-if value="{{ d.isLoc }}" hint-placeholder-val="{{ false }}"><button type="button" class="cx-ghost" onClick="{{ d.openPick }}">{{ d.pinBtn }}</button></sc-if><sc-if value="{{ d.hasPin }}" hint-placeholder-val="{{ false }}"><a href="World.dc.html" onClick="{{ d.showOnMap }}" class="cx-ghost">🗺 Show on map</a><button type="button" class="cx-ghost" onClick="{{ d.unpin }}" title="Keep the map pin but stop linking it to this location" style="color: #9fb2b6">Unlink</button></sc-if>
+<span style="flex: 1"></span>
+<button type="button" onClick="{{ d.del }}" class="cx-ghost" style="color: #ffb4a8; border-color: #5a3330">{{ d.delLabel }}</button>
+</div>
+</sc-if>
+<sc-if value="{{ d.pl }}" hint-placeholder-val="{{ false }}">
+<h2 style="margin: 0; font-family: 'Cinzel', serif; font-size: 30px; font-weight: 900; line-height: 1.1">{{ d.name }}</h2>
+<div style="font-size: 16px; color: #c8d3d0">{{ d.role }}</div>
+<sc-if value="{{ d.isChar }}" hint-placeholder-val="{{ true }}"><span class="cx-badge" style="align-self: flex-start; background: #1b282d; color: #e6ecea; font-size: 12px">⚑ {{ d.plAl }}</span></sc-if><sc-if value="{{ d.isLoc }}" hint-placeholder-val="{{ false }}"><sc-if value="{{ d.hasRegions }}" hint-placeholder-val="{{ false }}"><span class="cx-badge" style="align-self: flex-start; background: #1b282d; color: #e6ecea; font-size: 12px">⌂ {{ d.regName }}</span></sc-if></sc-if>
+<sc-if value="{{ d.hasPdesc }}" hint-placeholder-val="{{ true }}"><p style="margin: 0; font-family: 'EB Garamond', serif; font-size: 19px; line-height: 1.6; white-space: pre-line">{{ d.pdesc }}</p></sc-if>
+<sc-if value="{{ d.hasPin }}" hint-placeholder-val="{{ false }}"><a href="World.dc.html" onClick="{{ d.showOnMap }}" class="cx-ghost" style="align-self: flex-start">📍 Show on map</a></sc-if>
+</sc-if>
+</div>
+</div>
+
+<div class="cx-card">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap"><h2 class="cx-h">{{ d.galleryTitle }}</h2><span class="cx-muted">{{ d.galleryNote }}</span></div>
+<sc-if value="{{ d.noImgs }}" hint-placeholder-val="{{ false }}"><p class="cx-muted" style="margin: 0">{{ d.noImgsText }}</p></sc-if>
+<div onDragOver="{{ d.dragOver }}" onDragLeave="{{ d.dragLeave }}" onDrop="{{ d.drop }}" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px">
+<sc-for list="{{ d.imgs }}" as="g" hint-placeholder-count="3">
+<div class="{{ g.cls }}" style="{{ g.style }}" onClick="{{ g.open }}" role="button" tabindex="0" aria-label="{{ g.aria }}">
+<sc-if value="{{ g.gm }}" hint-placeholder-val="{{ true }}"><div class="cx-tools" onClick="{{ g.stop }}">
+<button type="button" class="{{ g.revCls }}" onClick="{{ g.toggle }}" aria-pressed="{{ g.revPressed }}" title="{{ g.revTip }}">{{ g.revText }}</button>
+<span style="display: flex; gap: 4px"><button type="button" class="{{ g.coverCls }}" onClick="{{ g.makeCover }}" title="Use as the main picture" aria-label="Use as the main picture">★</button><button type="button" class="cx-tb" onClick="{{ g.remove }}" title="{{ g.removeTip }}" aria-label="{{ g.removeTip }}">{{ g.removeText }}</button></span>
+</div></sc-if>
+</div>
+</sc-for>
+<sc-if value="{{ d.gm }}" hint-placeholder-val="{{ true }}"><button type="button" class="{{ d.dropCls }}" onClick="{{ d.pick }}"><span style="font-size: 28px; line-height: 1">＋</span><span>{{ d.dropText }}</span></button></sc-if>
+</div>
+<sc-if value="{{ d.busy }}" hint-placeholder-val="{{ false }}"><div class="cx-muted" role="status">Adding images…</div></sc-if>
+<sc-if value="{{ d.err }}" hint-placeholder-val="{{ false }}"><div role="alert" style="color: #ffb4a8; font-size: 14px">{{ d.errText }}</div></sc-if>
+</div>
+
+<sc-if value="{{ d.gm }}" hint-placeholder-val="{{ true }}">
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px">
+<div class="cx-card"><h2 class="cx-h">What the players know</h2><p class="cx-muted" style="margin: 0">Shown in Player view once this entry is known.</p><textarea class="cx-ta" rows="7" data-f="pdesc" defaultValue="{{ d.pdesc }}" onChange="{{ d.setF }}" placeholder="{{ d.pdescPh }}"></textarea></div>
+<div class="cx-card"><h2 class="cx-h">GM notes</h2><p class="cx-muted" style="margin: 0">Never shown to players.</p><textarea class="cx-ta" rows="7" data-f="gmn" defaultValue="{{ d.gmn }}" onChange="{{ d.setF }}" placeholder="Secrets, motives, stats, hooks…"></textarea></div>
+</div>
+</sc-if>
+
+</div>
+</sc-if>
+</sc-for>
+</section>
+</main>
+
+<input id="cx-file" type="file" accept="image/*" multiple onChange="{{ fileChosen }}" style="display: none">
+
+<sc-if value="{{ pick.on }}" hint-placeholder-val="{{ false }}">
+<div role="dialog" aria-modal="true" aria-label="{{ pick.title }}" style="position: fixed; inset: 0; z-index: 100; background: rgba(3, 6, 7, 0.9); display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box">
+<div style="width: 100%; max-width: 1100px; max-height: 100%; overflow: auto; background: #141e22; border: 1px solid #e3b45a; border-radius: 14px; padding: 18px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><h2 class="cx-h" style="flex: 1">{{ pick.title }}</h2>
+<label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #9fb2b6">Pin type<select class="cx-in" value="{{ pick.type }}" onChange="{{ pick.setType }}" style="width: auto; min-height: 38px"><sc-for list="{{ pick.types }}" as="o" hint-placeholder-count="5"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select></label>
+<button type="button" class="cx-ghost" onClick="{{ pick.cancel }}">Cancel</button></div>
+<p class="cx-muted" style="margin: 0">Click anywhere on the map to drop the pin there, or click an existing pin to link this location to it. The pin also appears on the World map.</p>
+<div onClick="{{ pick.place }}" style="{{ pick.mapStyle }}">
+<sc-for list="{{ pick.pins }}" as="pp" hint-placeholder-count="3"><button type="button" onClick="{{ pp.pick }}" title="{{ pp.title }}" aria-label="{{ pp.title }}" style="{{ pp.style }}"></button><span aria-hidden="true" style="{{ pp.lblStyle }}">{{ pp.label }}</span></sc-for>
+</div>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{ lb.on }}" hint-placeholder-val="{{ false }}">
+<div role="dialog" aria-modal="true" aria-label="{{ lb.title }}" onClick="{{ lb.close }}" style="position: fixed; inset: 0; z-index: 100; background: rgba(3, 6, 7, 0.94); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 28px; box-sizing: border-box; cursor: zoom-out">
+<img src="{{ lb.src }}" alt="{{ lb.title }}" style="max-width: 100%; max-height: calc(100vh - 140px); object-fit: contain; border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7)">
+<div style="display: flex; align-items: center; gap: 14px; color: #e6ecea" onClick="{{ lb.stop }}">
+<button type="button" class="cx-ghost" onClick="{{ lb.prev }}" disabled="{{ lb.single }}" aria-label="Previous image">‹</button>
+<span style="font-family: 'Cinzel', serif; font-size: 18px">{{ lb.title }}</span><span class="cx-muted">{{ lb.count }}</span>
+<button type="button" class="cx-ghost" onClick="{{ lb.next }}" disabled="{{ lb.single }}" aria-label="Next image">›</button>
+<button type="button" class="cx-ghost" onClick="{{ lb.close }}">Close · Esc</button>
+</div>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+// ---- image store: IndexedDB in this browser (big images do not fit localStorage)
+const IMGDB = (() => {
+  let p = null;
+  const open = () => p || (p = new Promise((res, rej) => { try { const r = indexedDB.open('dh-images', 1); r.onupgradeneeded = () => { try { r.result.createObjectStore('img'); } catch (e) {} }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }));
+  const run = (mode, fn) => open().then((db) => new Promise((res, rej) => { const t = db.transaction('img', mode); const q = fn(t.objectStore('img')); t.oncomplete = () => res(q ? q.result : undefined); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); }));
+  return { put: (id, b) => run('readwrite', (s) => s.put(b, id)), get: (id) => run('readonly', (s) => s.get(id)), del: (id) => run('readwrite', (s) => s.delete(id)) };
+})();
+const URLS = {}; const LOADING = {};
+const shrink = (file) => new Promise((res) => {
+  try { const u = URL.createObjectURL(file); const im = new Image();
+    im.onload = () => { const M = 1800; const k = Math.min(1, M / Math.max(im.naturalWidth, im.naturalHeight)); const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k)); const g = c.getContext('2d'); g.fillStyle = '#101418'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); c.toBlob((b) => res(b || file), 'image/jpeg', 0.86); };
+    im.onerror = () => { URL.revokeObjectURL(u); res(null); }; im.src = u; } catch (e) { res(null); }
+});
+const SEED = {"witherwild":[["Kreil Dirn","Haven’s spymaster"],["The Fanewraith","Rebel leader"],["Archmage Phylax","High Magus of Haven"],["Nikta, the Great Owl","Shepherd of the Seasons" ] ],"andaluria":[["Julio Cantafierro","Sombral Spade leader"],["Condesa Ysabela Delamoña IV","Reclusive noble vintner"],["Archbishop Mateo Veyra","Zealous church leader" ] ],"beastfeast":[["Carat","Elmore's alchemist"],["Doug Dougle","Halfling mayor of Elmore"],["Hylaeus the Forest Mage","Creator of the Lure" ] ],"castlehigh":[["Oliver Fleming","Returned missing student"],["Mrs. Wickett","Headmaster's assistant"],["Headmaster Dove","New, strict headmaster" ] ],"colossus":[["Mayor Logan Hartly","Mayor of Wyllin's Gulch"],["Baron Ryder Destry","Essentia mining baron"],["Preacher Rayos","Doomsday prophet" ] ],"fivebanners":[["Clover of Towers","Missing Jesthaen heir"],["Kostren","Seeker of Hilltop"],["Goledraelle","Armadan merchant-spy" ] ],"horizon":[["Saraya Rinn","Aurelian high priestess"],["Tolren","Traitorous apprentice, Fellsworn Templar"],["Abbot Kensington","Potential ally in Cinteri" ] ],"motherboard":[["Priv Maelor Rhodek","Leader of Argent"],["Mac the Scrap Jack","Illegal scrap dealer" ] ],"umbra":[["Huntmaster Evrados","Okros's lost huntmaster"],["Elder Akadona","Leader of Okros" ] ],"weredragon":[["Forlorne Lykona","Weredragon tyrant queen"],["Schon","Forlorne's secret betrayer"],["The Astromancer","Seer at Heaven's Eye" ] ]};
+const NAMES = { witherwild: 'The Witherwild', fivebanners: 'Five Banners Burning', beastfeast: 'Beast Feast', umbra: 'The Age of Umbra', motherboard: 'Motherboard', colossus: 'Colossus of the Drylands', castlehigh: 'Castle High', weredragon: 'Reign of the Weredragon', andaluria: 'Dark Heart of Andaluria', horizon: 'Journey to Horizon', custom: 'Custom campaign' };
+// ---- allegiances (characters) and regions (locations) per campaign
+const FACTIONS = { witherwild: ['Haven', 'Fanewick', 'Neutral'] };
+const REGIONS = { witherwild: ['Haven', 'Colonies', 'Fanewick'] };
+const SEED_AL = { 'Kreil Dirn': 'Haven', 'The Fanewraith': 'Fanewick', 'Archmage Phylax': 'Haven', 'Nikta, the Great Owl': 'Neutral' };
+// Witherwild map (percent coords of the World map): Haven city walls, and the dotted border of the colonies
+const POLY_HAVEN = [[47, 38], [50, 33], [53.5, 23], [57, 25], [60, 32], [63.5, 38], [62.5, 45.5], [56, 46.5], [48.5, 45.5]];
+const POLY_COLONIES = [[39.5, 0], [39.5, 34], [37, 37.5], [35.2, 41.5], [35.3, 46], [36.8, 50], [39.5, 52.2], [43, 53.6], [50, 55.4], [60, 55.6], [70, 55.2], [75, 53.4], [78.5, 50.5], [79.6, 46], [80.5, 44.6], [84.5, 45.3], [88, 47], [91, 48.6], [100, 48.6], [100, 0]];
+const inPoly = (x, y, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+const regionAt = (key, x, y) => key !== 'witherwild' ? '' : inPoly(x, y, POLY_HAVEN) ? 'Haven' : inPoly(x, y, POLY_COLONIES) ? 'Colonies' : 'Fanewick';
+const MAPS = { witherwild: ['30e1f9055a3fb07f7b9757744ff252b7', 1553, 1193, 400], fivebanners: ['0324f5cce8dd7ddafaab98afb1e52c35', 3169, 2418, 900], beastfeast: ['2b3cd581f42bb8f5d57baaad854f8fce', 2418, 3169, 300], umbra: ['37022de6c1f227e428f30404da54273d', 3169, 2418, 600], motherboard: ['cededc1a7d491b939156e45165bff355', 3169, 2418, 400], colossus: ['9b5f07cc6f1d2e9889c4121f2f3f03a5', 3169, 2418, 500], castlehigh: ['0b1a7dc08df5c136255e0f50a5101e7f', 3157, 2404, 12], weredragon: ['88ea2d92a5d4d6e732ffe14114d5ab2d', 2404, 3157, 800], andaluria: ['05b31ac534fcba6a871f8dc1b9128e34', 3157, 2404, 400], horizon: ['b39beec08ef477314e2eb8bc801bcb56', 3400, 2228, 2650] };
+const PIN_TYPES = [['landmark', 'Landmark'], ['city', 'City'], ['village', 'Village'], ['temple', 'Temple'], ['ruins', 'Ruins'], ['cave', 'Cave'], ['dungeon', 'Dungeon'], ['camp', 'Camp'], ['treasure', 'Treasure'], ['quest', 'Quest']];
+const uid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ls = (k, d) => { try { const v = JSON.parse(window.localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } };
+    const accent = (ls('dh.settings', {}) || {}).accent || '#e3b45a';
+    const act = ls('dh.active', null) || { key: 'witherwild', hub: 'CampaignHub.dc.html', name: 'The Witherwild', blob: 'd69136bf0c8eddbad10c2eb636b1b5ca' };
+    const CK = 'dh.' + act.key + '.codex';
+    let codex = st.codex;
+    if (!codex) {
+      codex = ls(CK, null);
+      if (!codex || !Array.isArray(codex.chars)) {
+        codex = { chars: (SEED[act.key] || []).map(([name, role]) => ({ id: uid('c'), name, role, known: false, pdesc: '', gmn: '', imgs: [], cover: null, al: SEED_AL[name] || '', alShown: 'unknown' })), locs: [] };
+        try { window.localStorage.setItem(CK, JSON.stringify(codex)); } catch (e) {}
+      }
+    }
+    if (codex.chars && codex.chars.some((e) => e.al === undefined)) { codex = { ...codex, chars: codex.chars.map((e) => (e.al === undefined ? { ...e, al: SEED_AL[e.name] || '', alShown: e.alShown || 'unknown' } : e)) }; try { window.localStorage.setItem(CK, JSON.stringify(codex)); } catch (e) {} }
+    const persist = (cx, extra) => { try { window.localStorage.setItem(CK, JSON.stringify(cx)); } catch (e) {} this.setState({ codex: cx, ...(extra || {}) }); };
+    if (!this._focusRead) { this._focusRead = true; const fc = ls('dh.' + act.key + '.codexFocus', null); if (fc && fc.id) { try { window.localStorage.removeItem('dh.' + act.key + '.codexFocus'); } catch (e) {} setTimeout(() => this.setState({ kind: fc.kind === 'locs' ? 'locs' : 'chars', sel: fc.id }), 0); } }
+    const kind = st.kind || 'chars'; const isLocs = kind === 'locs';
+    const player = !!st.player; const gm = !player;
+    const list = codex[kind] || [];
+    const upd = (id, fn) => { const cx = this.state && this.state.codex ? this.state.codex : codex; persist({ ...cx, [kind]: (cx[kind] || []).map((e) => (e.id === id ? { ...e, ...(typeof fn === 'function' ? fn(e) : fn) } : e)) }); };
+    // lazy-load image object URLs
+    const want = (iid) => { if (URLS[iid] || LOADING[iid]) return; LOADING[iid] = true; IMGDB.get(iid).then((b) => { if (b) { URLS[iid] = URL.createObjectURL(b); this.setState({ tick: (this.state && this.state.tick || 0) + 1 }); } else URLS[iid] = 'missing'; }).catch(() => { URLS[iid] = 'missing'; }); };
+    const src = (iid) => { want(iid); return URLS[iid] && URLS[iid] !== 'missing' ? URLS[iid] : ''; };
+    const visImgs = (e) => (e.imgs || []).filter((g) => gm || g.shown);
+    const coverOf = (e) => { const v = visImgs(e); const c = v.find((g) => g.id === e.cover) || v[0]; return c ? c.id : null; };
+    const q = (st.search || '').trim().toLowerCase();
+    const FAC = FACTIONS[act.key] || ['Allies', 'Enemies', 'Neutral'];
+    const REG = REGIONS[act.key] || [];
+    const mapData = ls('dh.' + act.key + '.map', null); const pinById = {}; ((mapData && mapData.tokens) || []).forEach((t) => { pinById[t.id] = t; });
+    const regionOf = (e) => { const t = e.pin != null ? pinById[e.pin] : null; if (t && REG.length) { const r = regionAt(act.key, t.x, t.y); if (r) return { r, auto: true }; } return { r: e.region || '', auto: false }; };
+    const groupOf = (e) => isLocs ? regionOf(e).r : gm ? (e.al || '') : (e.alShown && e.alShown !== 'unknown' ? e.alShown : '');
+    const GROUPS = isLocs ? REG : FAC;
+    const grp = st.grp && st.grp[kind] != null ? st.grp[kind] : 'all';
+    const base = list.filter((e) => (gm || e.known) && (!q || (e.name + ' ' + (e.role || '')).toLowerCase().includes(q)));
+    const shown = base.filter((e) => grp === 'all' || (grp === '' ? !groupOf(e) : groupOf(e) === grp));
+    const unknownLabel = isLocs ? 'Unsorted' : gm ? 'Unassigned' : 'Allegiance unknown';
+    const groupTabs = (!isLocs || REG.length) ? [['all', 'All']].concat(GROUPS.map((g) => [g, g])).concat([['', unknownLabel]]).map(([k2, label]) => { const n = k2 === 'all' ? base.length : base.filter((e) => (k2 === '' ? !groupOf(e) : groupOf(e) === k2)).length; const on = grp === k2;
+      return { label: label + ' · ' + n, hide: k2 === '' && !n && !on, pressed: on ? 'true' : 'false', pick: () => this.setState({ grp: { ...(st.grp || {}), [kind]: k2 }, sel: null }),
+        style: 'min-height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer; font-family: inherit; font-size: 13px; color: ' + (on ? '#1a1408' : '#e6ecea') + '; background: ' + (on ? accent : 'transparent') + '; border: 1px solid ' + (on ? accent : '#33444a') + ';' + (k2 === '' && !n && !on ? ' display: none;' : '') }; }) : [];
+    let sel = st.sel; if (!shown.some((e) => e.id === sel)) sel = shown.length ? shown[0].id : null;
+
+    const listItems = shown.map((e) => {
+      const on = e.id === sel; const cid = coverOf(e); const u = cid ? src(cid) : ''; const tot = (e.imgs || []).length; const rev = (e.imgs || []).filter((g) => g.shown).length;
+      return { name: e.name || (isLocs ? 'Unnamed location' : 'Unnamed character'), role: e.role || (isLocs ? 'Location' : 'Character'), current: on ? 'true' : 'false', initial: u ? '' : ((e.name || '?').charAt(0).toUpperCase()),
+        pick: () => this.setState({ sel: e.id, confirmDel: null }), showBadges: gm,
+        grpText: groupOf(e) || (isLocs ? '' : (gm ? 'Unassigned' : 'Allegiance unknown')), hasGrp: !!(groupOf(e) || !isLocs),
+        grpStyle: 'background: ' + ({ Haven: '#1d2a3f', Fanewick: '#1f3322', Neutral: '#2b2b2b', Colonies: '#3a2d1a' }[groupOf(e)] || '#2a1f24') + '; color: ' + ({ Haven: '#a9c6ff', Fanewick: '#a8e0a0', Neutral: '#d0d0d0', Colonies: '#f0cf8a' }[groupOf(e)] || '#e0a3b0') + ';',
+        knownText: e.known ? 'Known' : 'Secret', knownStyle: e.known ? 'background: #20352b; color: #9fdcb6;' : 'background: #2a1f24; color: #e0a3b0;',
+        imgText: tot ? rev + '/' + tot + ' shown' : 'No images',
+        thumb: 'width: 56px; height: 56px; flex: none; border-radius: 10px; background: #1f2d32 center 25% / cover no-repeat; border: 1px solid #3a4d54; display: flex; align-items: center; justify-content: center; font-family: \'Cinzel\', serif; font-size: 22px; font-weight: 700; color: #c8d3d0;' + (u ? ' background-image: url(' + u + ');' : ''),
+        style: 'width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; cursor: pointer; font-family: inherit; color: #e6ecea; box-sizing: border-box; background: ' + (on ? '#1b282d' : '#141e22') + '; border: 1.5px solid ' + (on ? accent : '#253338') + ';' };
+    });
+
+    const addImages = async (id, files) => {
+      const imgs = Array.from(files || []).filter((f) => f && /^image\//.test(f.type)); if (!imgs.length) return;
+      this.setState({ busy: id, err: null });
+      const added = [];
+      try { for (const f of imgs) { const b = await shrink(f); if (!b) continue; const iid = uid('i'); await IMGDB.put(iid, b); URLS[iid] = URL.createObjectURL(b); added.push({ id: iid, shown: false }); } }
+      catch (e) { this.setState({ err: 'Could not store the image in this browser (' + (e && e.message || 'storage error') + ').' }); }
+      const cx = this.state.codex || codex; const k = this.state.kind || 'chars';
+      persist({ ...cx, [k]: (cx[k] || []).map((e) => (e.id === id ? { ...e, imgs: (e.imgs || []).concat(added), cover: e.cover || (added[0] && added[0].id) || null } : e)) }, { busy: null });
+    };
+    this._addTo = sel; this._addImages = addImages;
+    if (!this._wired) { this._wired = true; try {
+      window.addEventListener('paste', (e) => { const s0 = this.state || {}; if (s0.player || !this._addTo) return; const t = e.target; if (t && /INPUT|TEXTAREA/.test(t.tagName)) return; const fs = Array.from((e.clipboardData && e.clipboardData.files) || []); if (fs.length) { e.preventDefault(); this._addImages(this._addTo, fs); } });
+      window.addEventListener('keydown', (e) => { const s0 = this.state || {}; if (!s0.lb) return; if (e.key === 'Escape') this.setState({ lb: null }); if (e.key === 'ArrowRight' && this._lbStep) this._lbStep(1); if (e.key === 'ArrowLeft' && this._lbStep) this._lbStep(-1); });
+    } catch (e) {} }
+
+    const details = shown.map((e) => {
+      const on = e.id === sel; const id = e.id; const imgsV = visImgs(e); const cid = coverOf(e); const cu = cid ? src(cid) : '';
+      const pending = st.confirmDel === id;
+      return {
+        isChar: !isLocs, isLoc: isLocs,
+        pinBtn: e.pin != null && pinById[e.pin] ? '📍 Move pin' : '📍 Place on map',
+        openPick: () => this.setState({ pick: { id, type: (pinById[e.pin] && pinById[e.pin].type) || 'landmark' } }),
+        unpin: () => upd(id, { pin: null }),
+        alOpts: [{ v: '', label: 'Unassigned' }].concat(FAC.map((g) => ({ v: g, label: g }))), al: e.al || '',
+        shownOpts: [{ v: 'unknown', label: 'Allegiance unknown' }].concat(FAC.map((g) => ({ v: g, label: g }))), alShown: e.alShown || 'unknown',
+        setAl: (ev) => upd(id, { al: ev.target.value }), setShown: (ev) => upd(id, { alShown: ev.target.value }),
+        revealAl: () => upd(id, (x) => ({ alShown: x.al || 'unknown' })), canReveal: !!e.al && e.alShown !== e.al,
+        alMismatch: !!e.al && e.alShown && e.alShown !== 'unknown' && e.alShown !== e.al, alNote: !e.al ? '' : e.alShown === e.al ? 'Players know the truth.' : (e.alShown || 'unknown') === 'unknown' ? 'Players don’t know where their loyalty lies.' : 'Players believe a cover story.',
+        plAl: (e.alShown && e.alShown !== 'unknown') ? e.alShown : 'Allegiance unknown',
+        hasRegions: REG.length > 0, regAuto: regionOf(e).auto, regManual: !regionOf(e).auto, regName: regionOf(e).r || 'Unsorted', regOpts: [{ v: '', label: 'Unsorted' }].concat(REG.map((g) => ({ v: g, label: g }))), region: e.region || '',
+        setRegion: (ev) => upd(id, { region: ev.target.value }), regionNote: regionOf(e).auto ? 'Set automatically from where its pin sits on the World map.' : 'Pick a region, or link this place to a map pin to set it automatically.',
+        on, gm, pl: player, name: e.name || '', role: e.role || '', pdesc: e.pdesc || '', gmn: e.gmn || '', hasPdesc: !!(e.pdesc || '').trim(), hasPin: e.pin != null && !!pinById[e.pin],
+        namePh: isLocs ? 'e.g. The Sunken Abbey' : 'e.g. Kreil Dirn', roleLbl: isLocs ? 'Kind of place' : 'Role', rolePh: isLocs ? 'e.g. Ruined temple, Haven district' : 'e.g. Haven’s spymaster',
+        pdescPh: isLocs ? 'What the party has seen or heard about this place…' : 'What the party knows about this person…',
+        setF: (ev) => { const f = ev.target.getAttribute('data-f'); if (!f) return; upd(id, { [f]: ev.target.value }); if (f === 'name' && e.pin != null) { const md = ls('dh.' + act.key + '.map', null); if (md && md.tokens) { try { window.localStorage.setItem('dh.' + act.key + '.map', JSON.stringify({ ...md, tokens: md.tokens.map((t) => (t.id === e.pin ? { ...t, name: ev.target.value } : t)) })); } catch (er) {} } } },
+        knownPressed: e.known ? 'true' : 'false', knownLabel: e.known ? '👁 Known to players' : '🔒 Secret from players',
+        knownBtn: 'min-height: 40px; padding: 0 14px; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 600; ' + (e.known ? 'background: #20352b; color: #c8f0d6; border: 1px solid #3d7a55;' : 'background: #2a1f24; color: #f0c2cc; border: 1px solid #6a3a44;'),
+        toggleKnown: () => upd(id, (x) => ({ known: !x.known })),
+        delLabel: pending ? 'Click again to delete' : 'Delete',
+        del: () => { if (!pending) { this.setState({ confirmDel: id }); return; } (e.imgs || []).forEach((g) => { IMGDB.del(g.id).catch(() => {}); }); const cx = this.state.codex || codex; persist({ ...cx, [kind]: (cx[kind] || []).filter((x) => x.id !== id) }, { confirmDel: null, sel: null }); },
+        showOnMap: () => { try { window.localStorage.setItem('dh.' + act.key + '.mapFocus', String(e.pin)); } catch (er) {} },
+        coverAria: cu ? 'Open picture of ' + (e.name || 'this entry') : 'No picture yet',
+        coverText: cu ? '' : (gm ? 'No picture yet' : ''),
+        coverStyle: 'width: 220px; min-height: 240px; flex: none; border-radius: 12px; border: 1px solid #3a4d54; background: #0b1214 center 25% / cover no-repeat; color: #7f9297; font-family: inherit; font-size: 13px; cursor: ' + (cu ? 'zoom-in' : 'default') + ';' + (cu ? ' background-image: url(' + cu + ');' : ''),
+        openCover: () => { if (cid) this.setState({ lb: { entry: id, img: cid } }); },
+        galleryTitle: gm ? 'Images' : 'Images', galleryNote: gm ? 'Reveal an image to let the players see it. Revealing one also marks the entry as known.' : '',
+        noImgs: !imgsV.length && !gm, noImgsText: 'Nothing to show yet.',
+        imgs: imgsV.map((g) => { const u = src(g.id); const isCover = (e.cover || (e.imgs[0] && e.imgs[0].id)) === g.id;
+          return { gm, cls: 'cx-thumb' + (gm && !g.shown ? ' hid' : ''), style: u ? 'background-image: url(' + u + '); border-color: ' + (gm && g.shown ? '#3d7a55' : '#253338') + ';' : '',
+            aria: 'Open image of ' + (e.name || 'this entry') + (gm ? (g.shown ? ' (revealed)' : ' (hidden from players)') : ''),
+            open: () => this.setState({ lb: { entry: id, img: g.id } }), stop: (ev) => ev.stopPropagation(),
+            revCls: 'cx-tb' + (g.shown ? ' on' : ''), revPressed: g.shown ? 'true' : 'false', revText: g.shown ? '👁 Revealed' : '🔒 Hidden', revTip: g.shown ? 'Players can see this. Click to hide it.' : 'Hidden from players. Click to reveal it.',
+            toggle: (ev) => { ev.stopPropagation(); upd(id, (x) => { const now = !(x.imgs.find((y) => y.id === g.id) || {}).shown; return { imgs: x.imgs.map((y) => (y.id === g.id ? { ...y, shown: now } : y)), known: now ? true : x.known }; }); },
+            coverCls: 'cx-tb' + (isCover ? ' on' : ''), makeCover: (ev) => { ev.stopPropagation(); upd(id, { cover: g.id }); },
+            removeTip: st.confirmImg === g.id ? 'Click again to delete this image' : 'Delete image', removeText: st.confirmImg === g.id ? 'Sure?' : '×',
+            remove: (ev) => { ev.stopPropagation(); if (st.confirmImg !== g.id) { this.setState({ confirmImg: g.id }); return; } IMGDB.del(g.id).catch(() => {}); upd(id, (x) => ({ imgs: x.imgs.filter((y) => y.id !== g.id), cover: x.cover === g.id ? null : x.cover })); this.setState({ confirmImg: null }); } }; }),
+        dropCls: 'cx-drop' + (st.dragOn === id ? ' over' : ''), dropText: 'Add images: click, drop files here, or paste',
+        pick: () => { this._addTo = id; const el = document.getElementById('cx-file'); if (el) { el.value = ''; el.click(); } },
+        dragOver: (ev) => { if (!gm) return; ev.preventDefault(); if (st.dragOn !== id) this.setState({ dragOn: id }); },
+        dragLeave: () => { if (st.dragOn) this.setState({ dragOn: null }); },
+        drop: (ev) => { if (!gm) return; ev.preventDefault(); this.setState({ dragOn: null }); addImages(id, ev.dataTransfer && ev.dataTransfer.files); },
+        busy: st.busy === id, err: !!st.err && on, errText: st.err || ''
+      };
+    });
+
+    // ---- map picker: place / move / link a pin for a location
+    const pickUi = (() => {
+      const pk = st.pick; if (!pk) return { on: false };
+      const e = (codex.locs || []).find((x) => x.id === pk.id); if (!e) return { on: false };
+      const MC = MAPS[act.key] || null; const MW = MC ? MC[1] : 1600, MH = MC ? MC[2] : 1200;
+      const md = ls('dh.' + act.key + '.map', null) || { tokens: [], party: { x: 44, y: 52, trail: [] }, nextId: 1 };
+      const toks = md.tokens || [];
+      const writeMap = (m) => { try { window.localStorage.setItem('dh.' + act.key + '.map', JSON.stringify(m)); } catch (er) {} };
+      const linkTo = (tid) => { const cx = this.state.codex || codex; persist({ ...cx, locs: (cx.locs || []).map((x) => (x.id === e.id ? { ...x, pin: tid } : x)) }, { pick: null }); };
+      return { on: true, title: 'Place “' + (e.name || 'this location') + '” on the map',
+        types: PIN_TYPES.map(([v, label]) => ({ v, label })), type: pk.type || 'landmark', setType: (ev) => this.setState({ pick: { ...pk, type: ev.target.value } }),
+        mapStyle: 'position: relative; width: 100%; max-height: calc(100vh - 260px); aspect-ratio: ' + MW + ' / ' + MH + '; margin: 0 auto; border-radius: 10px; overflow: hidden; cursor: crosshair; background-size: 100% 100%; background-repeat: no-repeat;' + (MC ? ' background-image: url(/_blob/' + MC[0] + ');' : ' background-color: #e6d8b8;'),
+        pins: toks.map((t) => { const mine = t.id === e.pin; const used = (codex.locs || []).some((x) => x.pin === t.id && x.id !== e.id);
+          return { title: (t.name || 'Pin') + (mine ? ' (this location)' : used ? ' (linked to another location)' : ' — click to link'), label: t.name || '',
+            style: 'position: absolute; left: ' + t.x + '%; top: ' + t.y + '%; transform: translate(-50%, -50%); width: ' + (mine ? 22 : 16) + 'px; height: ' + (mine ? 22 : 16) + 'px; border-radius: 50%; padding: 0; cursor: pointer; border: 2px solid #fff3d6; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); background: ' + (mine ? accent : used ? '#6a5a8a' : '#2a6a6a') + ';',
+            lblStyle: 'position: absolute; left: ' + t.x + '%; top: calc(' + t.y + '% + 12px); transform: translateX(-50%); font-size: 11px; font-weight: 600; color: #2a1f14; background: rgba(239, 227, 200, 0.85); padding: 0 4px; border-radius: 4px; pointer-events: none; white-space: nowrap;',
+            pick: (ev) => { ev.stopPropagation(); if (mine) { this.setState({ pick: null }); return; } linkTo(t.id); } }; }),
+        place: (ev) => { const r = ev.currentTarget.getBoundingClientRect(); const x = +(Math.max(0, Math.min(100, (ev.clientX - r.left) / r.width * 100))).toFixed(2), y = +(Math.max(0, Math.min(100, (ev.clientY - r.top) / r.height * 100))).toFixed(2);
+          const m = ls('dh.' + act.key + '.map', null) || { tokens: [], party: { x: 44, y: 52, trail: [] }, nextId: 1 }; const ts = m.tokens || [];
+          if (e.pin != null && ts.some((t) => t.id === e.pin)) { writeMap({ ...m, tokens: ts.map((t) => (t.id === e.pin ? { ...t, x, y, type: pk.type || t.type } : t)) }); linkTo(e.pin); return; }
+          const nid = m.nextId || (ts.reduce((a, t) => Math.max(a, t.id || 0), 0) + 1);
+          writeMap({ ...m, nextId: nid + 1, tokens: ts.concat([{ id: nid, type: pk.type || 'landmark', x, y, name: e.name || 'New location', notes: '', location: true }]) }); linkTo(nid); },
+        cancel: () => this.setState({ pick: null }), stop: (ev) => ev.stopPropagation() };
+    })();
+    // lightbox
+    const lb = (() => {
+      if (!st.lb) return { on: false };
+      const e = list.find((x) => x.id === st.lb.entry); if (!e) return { on: false };
+      const v = visImgs(e); const i = Math.max(0, v.findIndex((g) => g.id === st.lb.img)); if (!v.length) return { on: false };
+      const step = (d) => { const n = v[(i + d + v.length) % v.length]; this.setState({ lb: { entry: e.id, img: n.id } }); };
+      this._lbStep = step;
+      return { on: true, src: src(v[i].id), title: e.name || '', count: (i + 1) + ' / ' + v.length, single: v.length < 2,
+        close: () => this.setState({ lb: null }), stop: (ev) => ev.stopPropagation(), prev: (ev) => { ev.stopPropagation(); step(-1); }, next: (ev) => { ev.stopPropagation(); step(1); } };
+    })();
+
+    const NAV = ['Dashboard', 'Party', 'World', 'Characters & Locations', 'Adversaries', 'Sessions', 'Notes'];
+    const HREF = { Dashboard: act.hub || 'CampaignHub.dc.html', Party: 'Party.dc.html', World: 'World.dc.html', 'Characters & Locations': 'Codex.dc.html', Adversaries: 'Adversaries.dc.html', Sessions: 'Sessions.dc.html', Notes: 'Notes.dc.html' };
+    const navItems = NAV.map((label) => { const cur = label === 'Characters & Locations'; const href = HREF[label]; return { label, href: href || '#', isLink: !!href, isOff: !href, current: cur ? 'page' : 'false', style: 'min-height: 40px; padding: 0 14px; border-radius: 8px; font-size: 14px; display: inline-flex; align-items: center; text-decoration: none; box-sizing: border-box; color: ' + (cur ? '#1a1408' : href ? '#e6ecea' : '#7f9297') + '; background: ' + (cur ? accent : 'transparent') + ';' }; });
+    const cc = (codex.chars || []).length, lc = (codex.locs || []).length;
+    const kc = (codex.chars || []).filter((e) => e.known).length + (codex.locs || []).filter((e) => e.known).length;
+    const kindTabs = [['chars', 'Characters', cc], ['locs', 'Locations', lc]].map(([k, label, n]) => { const t = kind === k; return { label: label + ' · ' + (gm ? n : (codex[k] || []).filter((e) => e.known).length), sel: t ? 'true' : 'false', pick: () => this.setState({ kind: k, sel: null, confirmDel: null, importMsg: '' }), style: 'flex: 1; min-height: 40px; padding: 0 14px; border-radius: 8px; border: none; cursor: pointer; font-family: inherit; font-size: 14px; color: ' + (t ? '#1a1408' : '#e6ecea') + '; background: ' + (t ? accent : 'transparent') + ';' }; });
+
+    return {
+      accent, navItems, kindTabs, listItems, details, lb, pick: pickUi, groupTabs, hasGroups: groupTabs.length > 0, groupAria: isLocs ? 'Regions' : 'Allegiances',
+      dashHref: act.hub || 'CampaignHub.dc.html', campaignName: act.name || NAMES[act.key] || 'Campaign',
+      bannerStyle: 'position: absolute; inset: 0; background-size: cover; background-position: center 40%; background-image: url(/_blob/' + (act.blob || 'd69136bf0c8eddbad10c2eb636b1b5ca') + ');',
+      headerLine: gm ? cc + ' characters · ' + lc + ' locations · ' + kc + ' known to the players' : 'What your party knows',
+      isPlayer: player, isGm: gm, isLocs,
+      playerPressed: player ? 'true' : 'false', playerLabel: player ? '← Back to GM view' : '👁 Player view',
+      playerBtn: 'min-height: 48px; padding: 0 22px; border-radius: 999px; cursor: pointer; font-family: inherit; font-size: 15px; font-weight: 600; ' + (player ? 'background: ' + accent + '; color: #1a1408; border: none;' : 'background: rgba(0, 0, 0, 0.35); color: #ece6d6; border: 1px solid rgba(255, 255, 255, 0.3);'),
+      togglePlayer: () => this.setState({ player: !player, confirmDel: null, lb: null }),
+      setSearch: (ev) => this.setState({ search: ev.target.value }), searchPh: isLocs ? 'Search locations' : 'Search characters',
+      addLabel: isLocs ? '+ New location' : '+ New character',
+      primaryStyle: 'flex: 1; min-height: 44px; padding: 0 16px; border-radius: 10px; border: none; background: ' + accent + '; color: #1a1408; font-family: \'Cinzel\', serif; font-size: 14px; font-weight: 700; letter-spacing: 0.06em; cursor: pointer',
+      addEntry: () => { const cx = this.state.codex || codex; const n = { id: uid(isLocs ? 'l' : 'c'), name: '', role: '', known: false, pdesc: '', gmn: '', imgs: [], cover: null }; persist({ ...cx, [kind]: [n].concat(cx[kind] || []) }, { sel: n.id, search: '' }); },
+      importPins: () => { const m = ls('dh.' + act.key + '.map', null); const toks = (m && m.tokens) || []; const cx = this.state.codex || codex; const have = new Set((cx.locs || []).map((e) => e.pin)); const add = toks.filter((t) => !have.has(t.id)).map((t) => ({ id: uid('l'), name: t.name || 'Map pin', role: '', known: !t.hidden && !!t.location, pdesc: '', gmn: t.notes || '', imgs: [], cover: null, pin: t.id })); persist({ ...cx, locs: (cx.locs || []).concat(add) }, { importMsg: add.length ? 'Added ' + add.length + ' location' + (add.length === 1 ? '' : 's') + ' from the map.' : 'Every map pin is already in the list.' }); },
+      importMsg: isLocs ? (st.importMsg || '') : '',
+      noList: !shown.length, emptyText: q ? 'Nothing matches that search.' : gm ? (isLocs ? 'No locations yet. Add one, or pull in the pins you placed on the World map.' : 'No characters yet. Add the people your party meets.') : 'The party has not met anyone here yet.',
+      noSel: !sel, noSelTitle: gm ? 'Nothing selected' : 'Nothing to show yet', noSelText: gm ? 'Pick an entry on the left or create a new one.' : 'When the GM reveals characters and locations, they appear here.',
+      fileChosen: (ev) => { const fs = ev.target.files; if (this._addTo && fs && fs.length) addImages(this._addTo, fs); }
+    };
+  }
+}
+</script>
+</body>
+</html>

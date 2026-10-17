@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Campaign · Journey to Horizon</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d1417}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.tk{position:absolute;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid transparent;background:radial-gradient(circle at 36% 28%,#7b5cc9 0%,#4a2f94 32%,#2b1766 66%,#140a33 100%) padding-box,linear-gradient(145deg,#f0cf8a 0%,#8a6526 40%,#d6ad62 68%,#5a3f17 100%) border-box;box-shadow:inset 0 0 0 2px rgba(0,0,0,.4),inset 0 -6px 12px rgba(0,0,0,.55),0 5px 10px rgba(0,0,0,.6),0 0 18px rgba(120,80,220,.45)}
+.tk-gloss{position:absolute;top:12%;left:20%;width:26%;height:14%;border-radius:50%;background:rgba(255,255,255,.55);filter:blur(1.5px);pointer-events:none}
+.tk-btn{padding:0;cursor:pointer;transition:transform .15s}
+.tk-btn:hover{transform:translateY(-2px)}
+.tk-btn:focus-visible{outline:2px solid #e3d8ff;outline-offset:3px}
+.tk-off{position:absolute;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #3b2f5c;background:radial-gradient(circle at 50% 40%,#1d1731 0%,#0e0a1a 100%);box-shadow:inset 0 3px 8px rgba(0,0,0,.7)}
+.keeper-panel{background-color:#120c20;background-image:radial-gradient(circle at 50% 55%,rgba(12,8,22,.62) 0%,rgba(12,8,22,.3) 55%,rgba(12,8,22,.7) 100%),linear-gradient(#7a4fd6,#5a33b0),url(/_blob/23f0169b8df1a5d1e71ad2816ba967d6);background-blend-mode:normal,color,normal;background-size:cover,cover,cover;background-position:center,center,center 15%;background-repeat:no-repeat}
+.fear-core{position:relative;display:block;width:100%;aspect-ratio:1}
+.fear-fire{position:absolute;left:-22%;right:-22%;top:-48%;bottom:-6%;pointer-events:none;z-index:0}
+.fear-fire span{position:absolute;bottom:8%;border-radius:50% 50% 22% 22%/62% 62% 38% 38%;filter:blur(5px);mix-blend-mode:screen;transform-origin:50% 100%;animation:fearflick .7s ease-in-out infinite alternate}
+.fear-fire span:nth-child(1){left:6%;width:30%;height:58%;background:linear-gradient(0deg,#ff5a00 0%,#ffae3b 35%,#c04dff 75%,transparent 100%);animation-delay:-.2s}
+.fear-fire span:nth-child(2){left:30%;width:40%;height:92%;background:linear-gradient(0deg,#ff6a00 0%,#ffd06b 30%,#d064ff 70%,transparent 100%);animation-duration:.55s}
+.fear-fire span:nth-child(3){left:62%;width:30%;height:64%;background:linear-gradient(0deg,#ff5200 0%,#ffa23a 35%,#b347ff 75%,transparent 100%);animation-delay:-.4s}
+.fear-fire span:nth-child(4){left:20%;width:24%;height:74%;background:linear-gradient(0deg,#ff7a1a 0%,#ffe08a 30%,#e07bff 70%,transparent 100%);animation-duration:.85s;animation-delay:-.1s}
+.fear-fire span:nth-child(5){left:56%;width:24%;height:80%;background:linear-gradient(0deg,#ff7a1a 0%,#ffe08a 30%,#e07bff 70%,transparent 100%);animation-duration:.65s;animation-delay:-.3s}
+.fear-fire span{filter:blur(8px) saturate(.8);opacity:.75}
+.fear-smoke{position:absolute;left:-115%;right:-115%;top:-180%;bottom:12%;pointer-events:none;z-index:0}
+.fear-smoke span{position:absolute;bottom:0;width:37%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 50% 55%,rgba(224,209,253,.85) 0%,rgba(168,138,228,.57) 30%,rgba(95,70,148,.25) 55%,transparent 70%);filter:blur(4.5px);opacity:0;animation:fearsmog 4.2s ease-out infinite}
+.fear-smoke span:nth-child(1){left:33%;animation-delay:0s}
+.fear-smoke span:nth-child(2){left:22%;width:30%;animation-delay:-.9s;animation-duration:5s}
+.fear-smoke span:nth-child(3){left:44%;width:32%;animation-delay:-1.7s;animation-duration:4.6s}
+.fear-smoke span:nth-child(4){left:30%;width:40%;animation-delay:-2.6s;animation-duration:5.4s;background:radial-gradient(circle at 50% 55%,rgba(70,52,104,.82) 0%,rgba(44,32,70,.52) 40%,transparent 70%)}
+.fear-smoke span:nth-child(5){left:26%;width:28%;animation-delay:-3.4s;animation-duration:4.8s}
+.fear-smoke span:nth-child(6){left:46%;width:30%;animation-delay:-.4s;animation-duration:5.8s;background:radial-gradient(circle at 50% 55%,rgba(70,52,104,.82) 0%,rgba(44,32,70,.52) 40%,transparent 70%)}
+.fear-smoke span:nth-child(7){left:15%;width:36%;animation-delay:-1.2s;animation-duration:6.2s}
+.fear-smoke span:nth-child(8){left:50%;width:38%;animation-delay:-2.1s;animation-duration:5.6s}
+.fear-smoke span:nth-child(9){left:36%;width:44%;animation-delay:-3s;animation-duration:6.6s;background:radial-gradient(circle at 50% 55%,rgba(70,52,104,.82) 0%,rgba(44,32,70,.52) 40%,transparent 70%)}
+.fear-smoke span:nth-child(10){left:28%;width:46%;animation-delay:-4.1s;animation-duration:7s}
+.fear-haze{position:absolute;left:50%;top:50%;width:100%;aspect-ratio:1;border-radius:50%;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(150,120,210,.55) 0%,rgba(90,66,140,.3) 40%,transparent 70%);filter:blur(8px);pointer-events:none;z-index:0}
+.fear-fog{position:absolute;inset:-12%;pointer-events:none;z-index:1;background:radial-gradient(ellipse 38% 22% at 28% 62%,rgba(200,178,245,.55),transparent 70%),radial-gradient(ellipse 44% 26% at 72% 38%,rgba(160,130,225,.5),transparent 70%),radial-gradient(ellipse 52% 20% at 50% 88%,rgba(130,100,200,.55),transparent 70%),radial-gradient(ellipse 30% 18% at 60% 12%,rgba(180,155,235,.4),transparent 70%);background-size:180% 100%;filter:blur(7px);animation:fogdrift 14s ease-in-out infinite alternate}
+@keyframes fogdrift{0%{background-position:0% 0,100% 0,40% 0,80% 0}100%{background-position:100% 0,0% 0,70% 0,10% 0}}
+@keyframes fearsmog{0%{transform:translate(0,40%) scale(.45);opacity:0}15%{opacity:.9}60%{opacity:.6}100%{transform:translate(var(--dx,8%),-120%) scale(1.5);opacity:0}}
+.fear-smoke span:nth-child(odd){--dx:-12%}
+@keyframes fearflick{0%{transform:scaleY(.88) translateX(-2px) skewX(-3deg);opacity:.8}50%{transform:scaleY(1.08) translateX(1px) skewX(2deg);opacity:1}100%{transform:scaleY(.95) translateX(2px) skewX(-1deg);opacity:.9}}
+.wither-panel{position:relative;overflow:hidden;background-color:#0c1a16;background-image:linear-gradient(100deg,rgba(6,16,14,.88) 0%,rgba(6,16,14,.62) 45%,rgba(6,16,14,.35) 100%),url(/_blob/c48f7b3b7225d18008475c22adaea1cd);background-size:cover,cover;background-position:center,30% 40%;background-repeat:no-repeat}
+.wither-panel > *{position:relative;z-index:1}
+.wither-spores{position:absolute !important;inset:0;z-index:0 !important;pointer-events:none}
+.wither-spores span{position:absolute;bottom:-10px;width:6px;height:6px;border-radius:50%;background:radial-gradient(circle,#e8c6ff 0%,#b46bff 45%,transparent 70%);box-shadow:0 0 8px #a35cff;opacity:0;animation:spore 9s linear infinite}
+.wither-spores span:nth-child(1){left:8%;animation-delay:0s}
+.wither-spores span:nth-child(2){left:22%;animation-delay:-2s;animation-duration:11s;width:4px;height:4px}
+.wither-spores span:nth-child(3){left:37%;animation-delay:-5s;background:radial-gradient(circle,#d8ffe9 0%,#56e0a8 45%,transparent 70%);box-shadow:0 0 8px #3fd39a}
+.wither-spores span:nth-child(4){left:52%;animation-delay:-7s;animation-duration:12s}
+.wither-spores span:nth-child(5){left:66%;animation-delay:-3.5s;width:5px;height:5px;background:radial-gradient(circle,#d8ffe9 0%,#56e0a8 45%,transparent 70%);box-shadow:0 0 8px #3fd39a}
+.wither-spores span:nth-child(6){left:79%;animation-delay:-1s;animation-duration:10s}
+.wither-spores span:nth-child(7){left:90%;animation-delay:-6s;width:4px;height:4px}
+.wither-spores span:nth-child(8){left:45%;animation-delay:-8.5s;animation-duration:13s;width:7px;height:7px}
+@keyframes spore{0%{transform:translate(0,0);opacity:0}10%{opacity:.9}50%{transform:translate(12px,-120px)}90%{opacity:.7}100%{transform:translate(-8px,-260px);opacity:0}}
+.st-tile{position:relative;display:block;width:100%;aspect-ratio:3/4;border-radius:10px;overflow:hidden;background-size:cover;background-position:center;box-sizing:border-box;transition:filter .3s,box-shadow .3s}
+.st-hp{background-image:url(/_blob/385b2e5dbf2e03d3d350a56249c18af1)}
+.st-stress{background-image:url(/_blob/01faedf2925c87a23cab4d30d8272e54)}
+.st-hope{background-image:url(/_blob/cb6e4fcec4424c63d8bcd09160fba0c0)}
+.kill-btn,.revive-btn{opacity:0;transition:opacity .15s}
+.pc-card:hover .revive-btn,.revive-btn:focus-visible,.st-wrap:hover .kill-btn,.kill-btn:focus-visible,.pc-card:hover .card-kill{opacity:1}
+@keyframes fallin{from{opacity:0}to{opacity:1}}
+.scar-btn{opacity:0;transition:opacity .15s}
+.st-wrap:hover .scar-btn,.scar-btn:focus-visible,.scar-btn[aria-expanded="true"]{opacity:1}
+.st-btn{width:32px;height:32px;padding:0;border-radius:8px;border:1px solid #33444a;background:rgba(0,0,0,.25);color:#e6ecea;font-size:17px;cursor:pointer;font-family:inherit}
+.st-btn:focus-visible{outline:2px solid #e3d8ff;outline-offset:2px}
+.cd-btn{min-height:40px;padding:0 12px;border-radius:9px;border:1px solid #33444a;background:transparent;color:#e6ecea;font-size:14px;cursor:pointer;font-family:inherit}
+.cd-btn:focus-visible,.cd-num:focus-visible,.cd-pick:focus-visible{outline:2px solid #e3d8ff;outline-offset:2px}
+.cd-in{width:100%;box-sizing:border-box;min-height:36px;padding:4px 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:#e6ecea;font-family:inherit}
+.cd-in:hover{border-color:#33444a}.cd-in:focus{outline:none;border-color:#6f8f86;background:#0f181b}
+.cd-pick{aspect-ratio:1;border-radius:10px;border:1px solid #33444a;background:#141e22;color:#e6ecea;font-family:'Cinzel',serif;font-size:20px;font-weight:700;cursor:pointer;transition:transform .12s}
+.cd-pick:hover{transform:translateY(-2px);border-color:#e3b45a}
+@keyframes cdpulse{0%,100%{box-shadow:0 0 0 0 rgba(224,96,90,.5)}50%{box-shadow:0 0 0 8px rgba(224,96,90,0)}}
+.tm-ic{position:absolute;width:52px;height:52px;margin:-26px 0 0 -26px;padding:0;border-radius:50%;overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .15s,box-shadow .2s}
+.tm-ic:hover{transform:scale(1.1)}
+.tm-ic:focus-visible,.tm-adv:focus-visible{outline:2px solid #fff;outline-offset:3px}
+@keyframes tmglow{0%,100%{box-shadow:0 0 12px 2px var(--g)}50%{box-shadow:0 0 22px 6px var(--g)}}
+.fz{position:absolute;box-sizing:border-box;padding:0;border:none;background-color:transparent;background-size:contain;background-position:center;background-repeat:no-repeat;cursor:pointer;transition:transform .15s,filter .2s}
+.fz:hover{transform:scale(1.1)}
+.fz:focus-visible{outline:2px solid #e3d8ff;outline-offset:3px;border-radius:30%}
+.fz-on{background-image:url(/_blob/daaa0236fefb950636d60b919dc16601);filter:drop-shadow(0 0 6px rgba(150,100,240,.75)) drop-shadow(0 3px 4px rgba(0,0,0,.6))}
+.fz-off{background-image:url(/_blob/735d085e7eea18b8411e8d1f9e7162dd);opacity:.9;filter:drop-shadow(0 2px 3px rgba(0,0,0,.6))}
+.fz-big{display:block;background-image:url(/_blob/daaa0236fefb950636d60b919dc16601);background-size:contain;background-position:center;background-repeat:no-repeat}
+.ww-bg{background-image:url(/_blob/b0cd8d347b032b78f2c527ddcce21f51);background-size:cover;background-position:center;background-repeat:no-repeat}
+</style>
+</helmet>
+<svg width="0" height="0" aria-hidden="true" style="position: absolute">
+<defs>
+<filter id="smog" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.08" numOctaves="3" seed="7" result="n"></feTurbulence><feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G" result="d"></feDisplacementMap><feGaussianBlur in="d" stdDeviation="0.7" result="b"></feGaussianBlur><feGaussianBlur in="d" stdDeviation="3" result="glow"></feGaussianBlur><feMerge><feMergeNode in="glow"></feMergeNode><feMergeNode in="b"></feMergeNode></feMerge></filter>
+<linearGradient id="smogFade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#efe6ff" stop-opacity="0.95"></stop><stop offset="0.55" stop-color="#c3aef7" stop-opacity="0.85"></stop><stop offset="1" stop-color="#8f6fe0" stop-opacity="0.15"></stop></linearGradient>
+</defs>
+</svg>
+<div style="position: relative; min-height: 100vh; background: #0d1417; color: #e6ecea; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box; overflow: hidden">
+
+<section aria-label="Campaign header" style="position: relative; overflow: hidden">
+<div class="ww-bg" aria-hidden="true" style="position: absolute; inset: 0"></div>
+<div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(6, 12, 14, 0.62)"></div>
+<div style="position: relative; max-width: 1344px; margin: 0 auto; padding: 22px 48px 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 36px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap">
+<a href="TitleMenu.dc.html" aria-label="Back to main menu" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: rgba(0, 0, 0, 0.3)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></a>
+<div style="font-family: 'Cinzel', serif; font-size: 32px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div>
+</div>
+<nav aria-label="Campaign sections" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0, 0, 0, 0.35)">
+<sc-for list="{{ navItems }}" as="n" hint-placeholder-count="7">
+<sc-if value="{{ n.isLink }}" hint-placeholder-val="{{ false }}"><a href="{{ n.href }}" style="{{ n.style }}">{{ n.label }}</a></sc-if>
+<sc-if value="{{ n.isBtn }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ n.pick }}" aria-current="{{ n.current }}" style="{{ n.style }}">{{ n.label }}</button></sc-if>
+</sc-for>
+</nav>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.24em; color: #c8d3d0">Active Campaign · Journey to Horizon</div>
+<h1 style="margin: 0; font-family: 'Cinzel', serif; font-size: 52px; line-height: 1.05; font-weight: 900">[Campaign name]</h1>
+<div style="display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 15px; color: #d6dfdc"><span>{{ sessInfo.num }}</span><span aria-hidden="true">·</span><span>Tier 1 · Level [#]</span><span aria-hidden="true">·</span><span>{{ sessInfo.next }}</span></div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<button type="button" onClick="{{ openOverview }}" style="min-height: 52px; padding: 0 22px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(0, 0, 0, 0.35); color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5c2.5-1 5-1 8 1 3-2 5.5-2 8-1v13c-2.5-1-5-1-8 1-3-2-5.5-2-8-1z"></path><path d="M12 6.5v13"></path></svg>Open the Tome</button>
+<a href="Sessions.dc.html" onClick="{{ startSession }}" style="min-height: 52px; padding: 0 30px; border-radius: 999px; border: none; background: {{accent}}; color: #1a1408; font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; letter-spacing: 0.1em; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; box-sizing: border-box">Start Session</a>
+</div>
+</div>
+</div>
+</section>
+
+<main style="max-width: 1344px; margin: 0 auto; padding: 28px 48px 48px; box-sizing: border-box; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+
+<section aria-labelledby="party-h" style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+<h2 id="party-h" style="margin: 0; font-family: 'Cinzel', serif; font-size: 24px; font-weight: 700">The Party</h2>
+<a href="Party.dc.html" style="min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #33444a; background: transparent; color: #e6ecea; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center; box-sizing: border-box">+ Create character</a>
+</div>
+<sc-if value="{{ noParty }}" hint-placeholder-val="{{ false }}"><a href="Party.dc.html" style="padding: 28px; border-radius: 14px; border: 2px dashed #33444a; color: #c8d3d0; text-decoration: none; font-size: 16px; text-align: center">No characters yet. Open the Party tab to create the first hero.</a></sc-if>
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px">
+<sc-for list="{{ pcs }}" as="pc" hint-placeholder-count="4">
+<article class="pc-card" aria-label="{{ pc.cardLabel }}" style="position: relative; padding: 18px; border-radius: 14px; background: #141e22; border: 1px solid {{ pc.cardBorder }}; display: flex; flex-direction: column; gap: 12px">
+<sc-if value="{{ pc.dead }}" hint-placeholder-val="{{ false }}"><div aria-hidden="true" style="position: absolute; inset: 0; z-index: 10; border-radius: 14px; background: radial-gradient(ellipse at 50% 40%, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0.94)); animation: fallin 1.2s ease-out; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; pointer-events: none"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#8a7f78" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-4.4 0-7.5 3-7.5 7 0 2.4 1.1 4 2.6 5v2.5c0 .8.6 1.5 1.4 1.5h7c.8 0 1.4-.7 1.4-1.5V15c1.5-1 2.6-2.6 2.6-5 0-4-3.1-7-7.5-7z"></path><circle cx="9" cy="10.5" r="1.6"></circle><circle cx="15" cy="10.5" r="1.6"></circle><path d="M10 19v2M14 19v2M12 13.5l-1 1.5h2z"></path></svg><span style="font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700; letter-spacing: 0.2em; color: #b8aca4">FALLEN</span><span style="font-size: 13px; color: #8a7f78">{{ pc.fallenName }}</span></div><button type="button" class="revive-btn" onClick="{{ pc.revive }}" aria-label="{{ pc.reviveLabel }}" style="position: absolute; top: 10px; right: 10px; z-index: 20; min-height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid #e3b45a; background: rgba(30, 22, 6, 0.92); color: #ffe2a3; font-family: 'Cinzel', serif; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer; box-shadow: 0 0 12px rgba(227, 180, 90, 0.5)">Revive</button></sc-if>
+<div style="display: flex; align-items: center; gap: 14px">
+<span aria-hidden="true" style="{{ pc.faceStyle }}">{{ pc.faceInitial }}</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-family: 'Cinzel', serif; font-size: 19px; font-weight: 700">{{ pc.name }}</span><span style="font-size: 13px; color: #9fb2b6">{{ pc.line }}</span><span style="font-size: 13px; color: #7f9297">{{ pc.sub }}</span></span>
+</div>
+<div style="position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+<sc-for list="{{ pc.stats }}" as="t" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+<div class="st-wrap" style="position: relative">
+<sc-if value="{{ t.isHp }}" hint-placeholder-val="{{ false }}"><sc-if value="{{ t.alive }}" hint-placeholder-val="{{ true }}"><button type="button" class="kill-btn" onClick="{{ t.kill }}" aria-label="{{ t.killLabel }}" style="position: absolute; top: 5px; right: 5px; z-index: 3; min-height: 24px; padding: 0 8px; border-radius: 999px; border: 1px solid #8e2b2b; background: rgba(10, 2, 2, 0.8); color: #ff9a92; font-family: 'Cinzel', serif; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer">Kill</button></sc-if></sc-if>
+<sc-if value="{{ t.isHope }}" hint-placeholder-val="{{ false }}"><button type="button" class="scar-btn" onClick="{{ t.scarToggle }}" aria-expanded="{{ t.scarExpanded }}" style="position: absolute; top: 5px; right: 5px; z-index: 3; min-height: 24px; padding: 0 8px; border-radius: 999px; border: 1px solid {{ t.scarBorder }}; background: rgba(10, 4, 4, 0.75); color: #ffb0a8; font-family: 'Cinzel', serif; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer">Scars{{ t.scarBadge }}</button>
+<sc-if value="{{ t.scarOpen }}" hint-placeholder-val="{{ false }}"><div role="group" aria-label="Scars" style="position: absolute; top: 34px; right: 5px; z-index: 4; padding: 6px; border-radius: 10px; background: #160909; border: 1px solid #6a1f1f; display: flex; align-items: center; gap: 6px; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6)"><button type="button" onClick="{{ t.scarDown }}" aria-label="Heal a scar" style="width: 28px; height: 28px; border-radius: 6px; border: 1px solid #6a2a2a; background: transparent; color: #e6ecea; cursor: pointer">−</button><strong style="min-width: 16px; text-align: center; color: #ff8d84; font-size: 16px">{{ t.scars }}</strong><button type="button" onClick="{{ t.scarUp }}" aria-label="Mark a scar" style="width: 28px; height: 28px; border-radius: 6px; border: 1px solid #6a2a2a; background: transparent; color: #e6ecea; cursor: pointer">+</button></div></sc-if></sc-if>
+<div role="img" aria-label="{{ t.aria }}" class="{{ t.cls }}" style="{{ t.tileStyle }}">
+<span aria-hidden="true" style="{{ t.overlay }}"></span>
+<span aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 8px 6px; background: linear-gradient(0deg, rgba(0, 0, 0, 0.85), transparent); display: flex; flex-direction: column; gap: 4px">
+<span style="display: flex; justify-content: space-between; align-items: baseline"><span style="font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: {{ t.color }}">{{ t.name }}</span><span style="font-family: 'Cinzel', serif; font-size: 17px; font-weight: 900; color: #f4efe6">{{ t.val }}<span style="font-size: 11px; color: {{ t.maxColor }}; font-weight: {{ t.maxWeight }}">/{{ t.max }}</span></span></span>
+<span style="display: flex; gap: 2px"><sc-for list="{{ t.segs }}" as="g" hint-placeholder-count="6"><span style="{{ g }}"></span></sc-for></span>
+</span>
+</div>
+</div>
+<div style="display: flex; justify-content: space-between; align-items: center"><button type="button" class="st-btn" onClick="{{ t.minus }}" aria-label="{{ t.minusLabel }}">−</button><span style="font-size: 11px; color: #8fa3a8; text-align: center">{{ t.hint }}</span><button type="button" class="st-btn" onClick="{{ t.plus }}" aria-label="{{ t.plusLabel }}">+</button></div>
+</div>
+</sc-for>
+</div>
+</article>
+</sc-for>
+</div>
+</section>
+
+<section aria-labelledby="cd-h" style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+<h2 id="cd-h" style="margin: 0; font-family: 'Cinzel', serif; font-size: 24px; font-weight: 700">Countdowns</h2>
+<button type="button" onClick="{{ cdNew }}" style="min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #33444a; background: transparent; color: #e6ecea; font-size: 14px; cursor: pointer; font-family: inherit">+ New countdown</button>
+</div>
+<sc-if value="{{ cdEmpty }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ cdNew }}" style="padding: 24px; border-radius: 14px; border: 2px dashed #33444a; background: transparent; color: #9fb2b6; font-size: 15px; cursor: pointer; font-family: inherit">No countdowns running. Start one from 20 down to 1.</button></sc-if>
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px">
+<sc-for list="{{ countdowns }}" as="c" hint-placeholder-count="2">
+<article style="{{ c.cardStyle }}">
+<div style="display: flex; align-items: center; gap: 14px">
+<button type="button" class="cd-num" onClick="{{ c.edit }}" aria-label="{{ c.editLabel }}" style="flex: none; width: 74px; padding: 4px 0; border: none; border-radius: 12px; background: #10181b; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1">
+<svg width="44" height="58" viewBox="0 0 60 80" aria-hidden="true"><defs><clipPath id="{{ c.clipId }}"><path d="M14 9 L46 9 C46 25 34 32 32 40 C34 48 46 55 46 71 L14 71 C14 55 26 48 28 40 C26 32 14 25 14 9 Z"></path></clipPath></defs><g clip-path="{{ c.clipRef }}"><rect x="0" y="{{ c.topY }}" width="60" height="40" fill="{{ c.sand }}"></rect><rect x="0" y="{{ c.botY }}" width="60" height="40" fill="{{ c.sand }}" opacity="0.85"></rect></g><sc-if value="{{ c.flowing }}" hint-placeholder-val="{{ true }}"><line x1="30" y1="40" x2="30" y2="{{ c.botY }}" stroke="{{ c.sand }}" stroke-width="1.5" stroke-dasharray="2 2"></line></sc-if><path d="M14 9 L46 9 C46 25 34 32 32 40 C34 48 46 55 46 71 L14 71 C14 55 26 48 28 40 C26 32 14 25 14 9 Z" fill="rgba(200, 220, 230, 0.06)" stroke="#9fb2b6" stroke-width="1.5"></path><rect x="8" y="3" width="44" height="6" rx="2" fill="#7a5a2e"></rect><rect x="8" y="71" width="44" height="6" rx="2" fill="#7a5a2e"></rect></svg>
+<span style="font-family: 'Cinzel', serif; font-size: 18px; font-weight: 900; color: {{ c.numColor }}">{{ c.value }}<span style="font-size: 11px; color: #8fa3a8">/{{ c.start }}</span></span></button>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<input class="cd-in" type="text" placeholder="Countdown name" aria-label="Countdown name" data-idx="{{ c.idx }}" data-field="name" defaultValue="{{ c.name }}" onChange="{{ cdField }}" style="font-weight: 600; font-size: 16px">
+<input class="cd-in" type="text" placeholder="What happens at zero?" aria-label="What happens at zero" data-idx="{{ c.idx }}" data-field="note" defaultValue="{{ c.note }}" onChange="{{ cdField }}" style="font-size: 13px; color: #9fb2b6">
+</div>
+<button type="button" class="cd-btn" onClick="{{ c.remove }}" aria-label="{{ c.removeLabel }}" style="width: 40px; padding: 0; flex: none">✕</button>
+</div>
+<sc-if value="{{ c.done }}" hint-placeholder-val="{{ false }}"><div role="status" style="padding: 8px 12px; border-radius: 8px; background: #3a1414; border: 1px solid #8e2b2b; color: #ffd9d6; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.1em; text-align: center">THE COUNTDOWN HAS STRUCK</div></sc-if>
+<div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 3px; min-height: 28px; padding: 6px 8px; border-radius: 10px; background: linear-gradient(180deg, rgba(0, 0, 0, 0.25), rgba(122, 82, 24, 0.12)); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5)" aria-label="Click a grain to set the countdown">
+<sc-for list="{{ c.segs }}" as="g" hint-placeholder-count="10"><button type="button" onClick="{{ g.act }}" aria-label="{{ g.label }}" style="{{ g.style }}"></button></sc-for>
+</div>
+<div style="display: grid; grid-template-columns: 1.2fr 1.4fr 1fr; gap: 8px">
+<button type="button" class="cd-btn" onClick="{{ c.tick }}" style="background: {{ c.tickBg }}; border-color: transparent; color: #1a1408; font-weight: 700">Tick −1</button>
+<button type="button" class="cd-btn" onClick="{{ c.up }}" aria-label="{{ c.upLabel }}">Borrowed Time</button>
+<button type="button" class="cd-btn" onClick="{{ c.reset }}">Reset</button>
+</div>
+</article>
+</sc-for>
+</div>
+</section>
+
+<section aria-labelledby="log-h" style="padding: 20px 22px; border-radius: 14px; background: #141e22; border: 1px solid #253338; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+<h2 id="log-h" style="margin: 0; font-family: 'Cinzel', serif; font-size: 22px; font-weight: 700">Last Session</h2>
+<a href="Sessions.dc.html" style="min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #33444a; background: transparent; color: #e6ecea; font-size: 14px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; box-sizing: border-box; font-family: inherit">All sessions</a>
+</div>
+<p style="margin: 0; font-family: 'EB Garamond', serif; font-size: 19px; line-height: 1.6; color: #d3dcd9">{{ sessInfo.recap }}</p>
+</section>
+</div>
+
+<aside style="flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+
+<section aria-labelledby="fear-h" class="keeper-panel" style="padding: 20px; border-radius: 14px; overflow: hidden; border: 1px solid #3b2f5c; display: flex; flex-direction: column; align-items: center; gap: 10px">
+<div style="align-self: stretch; display: flex; justify-content: space-between; align-items: baseline; gap: 12px">
+<h2 id="fear-h" style="margin: 0; font-family: 'Cinzel', serif; font-size: 22px; font-weight: 700; color: #e3d8ff">GM Fear</h2>
+<span style="font-size: 13px; color: #9a8cc4">Click a token to set</span>
+</div>
+<div style="position: relative; width: 100%; max-width: 330px; aspect-ratio: 1">
+<svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0"><polyline points="{{ fearTrail }}" fill="none" stroke="#3a2d5e" stroke-width="0.8" stroke-dasharray="1.5 1.5"></polyline><polyline points="{{ fearTrailLit }}" fill="none" stroke="#c9b3ff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 1.5px #a68cf0) drop-shadow(0 0 3px #8f6fe0)"></polyline></svg>
+<span class="fear-fog" aria-hidden="true" style="{{ fearSmog.fog }}"></span>
+<sc-for list="{{ fearPips }}" as="f" hint-placeholder-count="12"><button type="button" onClick="{{ f.act }}" aria-label="{{ f.label }}" class="{{ f.cls }}" style="{{ f.style }}"></button></sc-for>
+<div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 22%; display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: none; z-index: 2">
+<span class="fear-core" aria-hidden="true"><sc-if value="{{ fearSmog.on }}" hint-placeholder-val="{{ false }}"><span class="fear-haze" style="{{ fearSmog.haze }}"></span><span class="fear-smoke" style="{{ fearSmog.style }}"><sc-for list="{{ fearSmog.puffs }}" as="p" hint-placeholder-count="3"><span></span></sc-for></span></sc-if><sc-if value="{{ fearOnFire }}" hint-placeholder-val="{{ false }}"><span class="fear-fire"><span></span><span></span><span></span><span></span><span></span></span></sc-if><span class="fz-big" style="position: relative; z-index: 1; width: 100%; height: 100%; {{ fearGlow }}"></span></span>
+<span style="font-family: 'Cinzel', serif; font-size: 22px; font-weight: 900; color: #efe8ff; line-height: 1; letter-spacing: 0.04em" aria-label="{{ fearLabel }}">{{ fearRoman }}</span>
+</div>
+</div>
+</section>
+
+
+<section aria-labelledby="tome-h" style="padding: 20px; border-radius: 14px; background: #efe3c8; color: #2a1f14; display: flex; flex-direction: column; gap: 10px">
+<h2 id="tome-h" style="margin: 0; font-family: 'Cinzel', serif; font-size: 22px; font-weight: 700">Campaign Tome</h2>
+<button type="button" onClick="{{ openOverview }}" style="min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 8px; border: 1px solid #cdb88f; background: #e3d2ad; color: #2a1f14; font-family: 'EB Garamond', serif; font-size: 19px; cursor: pointer; text-align: left"><span style="font-family: 'Cinzel', serif; color: #8e2b2b; width: 28px">I</span>Overview</button>
+<button type="button" onClick="{{ openIncident }}" style="min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 8px; border: 1px solid #cdb88f; background: #e3d2ad; color: #2a1f14; font-family: 'EB Garamond', serif; font-size: 19px; cursor: pointer; text-align: left"><span style="font-family: 'Cinzel', serif; color: #8e2b2b; width: 28px">II</span>The Inciting Incident</button>
+<button type="button" onClick="{{ openMechanics }}" style="min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 8px; border: 1px solid #cdb88f; background: #e3d2ad; color: #2a1f14; font-family: 'EB Garamond', serif; font-size: 19px; cursor: pointer; text-align: left"><span style="font-family: 'Cinzel', serif; color: #8e2b2b; width: 28px">III</span>Campaign Mechanics</button>
+</section>
+
+<section aria-labelledby="npc-h" style="padding: 20px; border-radius: 14px; background: #141e22; border: 1px solid #253338; display: flex; flex-direction: column; gap: 10px">
+<h2 id="npc-h" style="margin: 0; font-family: 'Cinzel', serif; font-size: 22px; font-weight: 700">Key Figures</h2>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<div style="padding: 10px 0; border-bottom: 1px solid #22303a; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Saraya Rinn</span><span style="font-size: 13px; color: #9fb2b6">Aurelian high priestess</span></div>
+<div style="padding: 10px 0; border-bottom: 1px solid #22303a; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Tolren</span><span style="font-size: 13px; color: #9fb2b6">Traitorous apprentice, Fellsworn Templar</span></div>
+<div style="padding: 10px 0; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 600">Abbot Kensington</span><span style="font-size: 13px; color: #9fb2b6">Potential ally in Cinteri</span></div>
+</div>
+</section>
+
+<section aria-labelledby="loc-h" style="padding: 20px; border-radius: 14px; background: #141e22; border: 1px solid #253338; display: flex; flex-direction: column; gap: 10px">
+<h2 id="loc-h" style="margin: 0; font-family: 'Cinzel', serif; font-size: 22px; font-weight: 700">Locations</h2>
+<sc-if value="{{ locEmpty }}" hint-placeholder-val="{{ false }}"><a href="World.dc.html" style="display: block; padding: 12px; border-radius: 10px; border: 1px dashed #33444a; color: #9fb2b6; font-size: 13px; line-height: 1.45; text-decoration: none">No locations yet. On the World map, select a marker and tick “Location” to pin it here.</a></sc-if>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ locations }}" as="l" hint-placeholder-count="3"><a href="World.dc.html" onClick="{{ l.go }}" title="Open on the map" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border-radius: 10px; border: 1px solid {{ l.border }}; background: {{ l.bg }}; color: #eef3ea; text-decoration: none; font-size: 14px"><span style="width: 26px; height: 26px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: {{ l.color }}; border: 2px solid rgba(255, 243, 214, 0.8)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ l.d }}"></path></svg></span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ l.name }}</span><span style="font-size: 11px; color: #9fb2b6">{{ l.sub }}</span></span><span aria-hidden="true" style="color: #e3b45a">›</span></a></sc-for>
+</div>
+</section>
+</aside>
+</main>
+
+<sc-if value="{{ cdPickerOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: fixed; inset: 0; z-index: 25; background: rgba(4, 8, 10, 0.78); display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box">
+<div role="dialog" aria-modal="true" aria-labelledby="cdp-title" style="width: 100%; max-width: 560px; padding: 24px; border-radius: 16px; background: #121b1f; border: 1px solid #33444a; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6)">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px"><h2 id="cdp-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 24px; font-weight: 700">{{ cdPickerTitle }}</h2><button type="button" class="cd-btn" onClick="{{ cdClose }}" aria-label="Close" style="width: 40px; padding: 0">✕</button></div>
+<sc-if value="{{ cdIsNew }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<input type="text" placeholder="Countdown name" aria-label="Countdown name" defaultValue="{{ cdDraftName }}" onChange="{{ cdSetName }}" style="min-height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #33444a; background: #0d1417; color: #e6ecea; font-size: 15px; font-family: inherit">
+<input type="text" placeholder="What happens at zero?" aria-label="What happens at zero" defaultValue="{{ cdDraftNote }}" onChange="{{ cdSetNote }}" style="min-height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #33444a; background: #0d1417; color: #e6ecea; font-size: 15px; font-family: inherit">
+</div>
+</sc-if>
+<p style="margin: 0; font-size: 14px; color: #9fb2b6">{{ cdPickerHint }}</p>
+<div role="radiogroup" aria-label="Countdown value" style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px">
+<sc-for list="{{ cdChoices }}" as="n" hint-placeholder-count="20"><button type="button" role="radio" class="cd-pick" aria-checked="{{ n.checked }}" onClick="{{ n.pick }}" style="{{ n.style }}">{{ n.v }}</button></sc-for>
+</div>
+<div style="display: flex; justify-content: flex-end; gap: 10px"><button type="button" class="cd-btn" onClick="{{ cdClose }}">Cancel</button><button type="button" onClick="{{ cdConfirm }}" style="min-height: 44px; padding: 0 22px; border-radius: 10px; border: none; background: {{accent}}; color: #1a1408; font-weight: 700; font-size: 15px; cursor: pointer; font-family: inherit">{{ cdConfirmLabel }}</button></div>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{ tomeOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; z-index: 10; background: rgba(4, 8, 10, 0.72)">
+<dc-import name="TomeHorizon" start-chapter="{{ tomeChapter }}" embedded="{{ true }}" on-close="{{ closeTome }}" hint-size="100%,100%"></dc-import>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#e3b45a","options":["#e3b45a","#8f78d8","#d9775b","#6fb8a6"]},"$preview":{"width":1440,"height":1200}}'>
+const PORTRAITS = {"anc-aetheris":["34f17485e8086eb3be27d22352988c84","center 30%"],"anc-clank":["121c084a5b0502b238e7843ea96d7165","center 30%"],"anc-drakona":["732fd2c61c74107e14735d9a5a5e4f38","center 30%"],"anc-dwarf":["ce3bd61e37b2b11d90cafe82b2434bc4","center 30%"],"anc-earthkin":["6761e68a7526fafe7ff73c5d9658fc69","center 30%"],"anc-elf":["1399e0ba62407761a44a19f0a680134a","center 30%"],"anc-emberkin":["08f2f7d0c3add9166f2182532e2f0f5e","center 30%"],"anc-faerie":["95f9f9c9d4996249028024f54d4a821a","center 30%"],"anc-faun":["9b94b85cb3ff877cb4be176cf6bf144d","center 30%"],"anc-firbolg":["be57849e2691fd81cba090c59180adbe","center 30%"],"anc-fungril":["cde0e56453b385c0174d76374f3bcfc8","center 30%"],"anc-galapa":["4e909f3e18ac83bfbeb57cd332a5017b","center 30%"],"anc-giant":["972c890e987630bfae7597c689bce51b","center 30%"],"anc-gnome":["d489df5fcb9b667c273f2c54b9979411","center 30%"],"anc-goblin":["302e7516bbd4e6d56b326dfcc77063ea","center 30%"],"anc-halfling":["50df05ceff5f6a9f8e803b922adb28cc","center 30%"],"anc-human":["7b5f34a3acebe253067779e9ef64ede6","center 30%"],"anc-infernis":["0206c90609149243f2eb6225415f2aa3","center 30%"],"anc-katari":["4545211440f18f0d8b10d7f81de2a5e8","center 30%"],"anc-orc":["57ed2d71eb2e0b36ddebf6da66ba4601","center 30%"],"anc-ribbet":["97d61cf6bbbcd0302fd491a28809bc12","center 30%"],"anc-simiah":["51b2ce54ed44a948eb07863e962a5b66","center 30%"],"anc-skykin":["dea682c94a8ea516cbf47758083e809c","center 30%"],"anc-tidekin":["c3b9f84b68df38763aa9080510040428","center 30%"],"com-duneborne":["629966c9c406d35d323c603f03177d60","center 30%"],"com-freeborne":["fc4bf330350f231997c38523b106b907","center 30%"],"com-frostborne":["d79951bd15071a20e1316fc570e5ce15","center 30%"],"com-hearthborne":["9a45999c0011c290a0b022e33f60ba06","center 30%"],"com-highborne":["39e92a6c2a210c04510229b73a921566","center 30%"],"com-loreborne":["40e01781224ff299aac21e490e9bd7e2","center 30%"],"com-orderborne":["f5e22594f07b51720fd45a48346987a6","center 30%"],"com-reborne":["c7a6303e29382bf2bbdb171bb8fea63a","center 30%"],"com-ridgeborne":["0b1784795012564327c068f8750f8838","center 30%"],"com-seaborne":["03947cd673bc6d8ba39e096f619e919a","center 30%"],"com-underborne":["e5f999601873ae305148bdd20a01c6ff","center 30%"],"com-wanderborne":["0e06922b5299bbfd34ee05b30e51b197","center 30%"],"com-warborne":["6c25abdd9c07866e5745e632afeed423","center 30%"],"com-wildborne":["fd3ffb6bcbe4711c26671bc82698b7d7","center 30%"],"sub-beastbound":["d0206ce45edd8385bdada1f40de5c38d","center 30%"],"sub-call-of-the-brave":["12e5eb0aa70f56bd58b2b016024799fd","center 30%"],"sub-call-of-the-slayer":["4dcc25990bf87ade39bb28137e430797","center 30%"],"sub-divine-wielder":["96389427d4dba906adabc234d5051288","center 30%"],"sub-elemental-origin":["43ccfbed0c7185d552cfa67e0c6fbf68","center 30%"],"sub-executioners-guild":["93d0f9e0104b4d9632871fb1ced0eb05","center 25%"],"sub-hedge":["d4cc4197681a0224ca02e4449bf464b7","center 30%"],"sub-juggernaut":["0b1712de7e8824dfe05de3d62a0b6c39","center 30%"],"sub-martial-artist":["d757e840fd99869fd64349eabd88859e","center 25%"],"sub-moon":["e19f20f5d56e773c3c11800c55ed2cda","center 30%"],"sub-nightwalker":["9dcc4ab98c6506250a9bb6fdd6ab68ad","center 30%"],"sub-pact-of-the-endless":["62e9d9410a069104516b30a4549519bb","center 35%"],"sub-pact-of-the-wrathful":["94a4f8e90b65585c709f13671319e2f5","center 30%"],"sub-poisoners-guild":["c191b86042c066b746f0787a6968e38b","center 25%"],"sub-primal-origin":["a473fd7cc8bc76343425f0ab9395c2c3","center 30%"],"sub-school-of-knowledge":["317838c60d04906d6349a105be2271b5","center 30%"],"sub-school-of-war":["355a4a0db0ace6b646edf27ed23d2c18","center 30%"],"sub-stalwart":["12ab0a4d0f4738ec54d05ba1d34485f6","center 30%"],"sub-syndicate":["d8726148e872070c2580c88ed4376c47","center 30%"],"sub-troubadour":["3d80339455226cf53843d35aeaab54f3","center 30%"],"sub-vengeance":["58639571fc861b749a50e02b5bbb1f02","center 30%"],"sub-warden-of-renewal":["9d153e4ea3565094178efd49ea428520","center 30%"],"sub-warden-of-the-elements":["015312cdce7192c158be829edf39f035","center 30%"],"sub-wayfinder":["43b63067ae8f492cb557ae58de002b37","center 30%"],"sub-winged-sentinel":["02311d0caed89d4b97319779bb5b6631","center 30%"],"sub-wordsmith":["2fa27ed702d67ce71cbc97dbcbd68862","center 30%"] };
+const portraitCss = (f) => {
+  f = f || {};
+  if (f.portrait) return 'background-image: url(' + f.portrait + '); background-position: center 30%;';
+  const slug = (k, n) => k + '-' + String(n || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
+  const anc = f.mixed && f.mixed.a ? f.mixed.a : f.ancestry;
+  const hit = PORTRAITS[slug('sub', f.subclass)] || PORTRAITS[slug('anc', anc)];
+  return hit ? 'background-image: url(/_blob/' + hit[0] + '); background-position: ' + hit[1] + ';' : '';
+};
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const accent = (() => { try { return (JSON.parse(window.localStorage.getItem('dh.settings') || '{}') || {}).accent; } catch (e) { return null; } })() || this.props.accent || '#e3b45a';
+    const KEY = 'dh.horizon.party';
+    const load = () => { try { const v = JSON.parse(window.localStorage.getItem(KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+    if (!this._syncing) { this._syncing = true; try { window.addEventListener('storage', (e) => { if (e.key === KEY) this.setState({ chars: load() }); if (e.key === 'dh.horizon.fear') this.setState({ fear: Math.max(0, Math.min(12, parseInt(e.newValue, 10) || 0)) }); }); } catch (e) {} }
+    const chars = st.chars ?? load();
+    const save = (list, extra) => { try { window.localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} this.setState({ chars: list, ...(extra || {}) }); };
+    const CLS = ['Bard', 'Druid', 'Guardian', 'Ranger', 'Rogue', 'Seraph', 'Sorcerer', 'Warrior', 'Wizard', 'Assassin', 'Brawler', 'Warlock', 'Witch'];
+    const pcsState = chars.map((c) => ({ ...c }));
+    const FEARKEY = 'dh.horizon.fear'; const fear = st.fear ?? (() => { try { return Math.max(0, Math.min(12, parseInt(window.localStorage.getItem(FEARKEY), 10) || 0)); } catch (e) { return 0; } })();
+    const keepFear = (v) => { try { window.localStorage.setItem(FEARKEY, String(v)); } catch (e) {} return v; };
+    const setPc = (i, patch) => save(pcsState.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+    const pips = (max, val, color, set, name) => Array.from({ length: max }, (_, k) => ({
+      label: name + ' ' + (k + 1) + ' of ' + max,
+      act: () => set(k + 1 === val ? k : k + 1),
+      style: 'width: 30px; height: 30px; padding: 0; border-radius: 6px; cursor: pointer; border: 1.5px solid ' + color + '; background: ' + (k < val ? color : 'transparent') + ';'
+    }));
+    const pcs = pcsState.map((p, i) => {
+      const f = p.f || {};
+      const clsName = p.clsName || CLS[p.cls] || 'Adventurer';
+      return {
+        name: f.name || 'Unnamed hero', initial: (f.name || clsName).charAt(0).toUpperCase(),
+        ...(() => { const art = portraitCss(f); return { faceInitial: art ? '' : (f.name || clsName).charAt(0).toUpperCase(), faceStyle: 'width: 76px; height: 76px; flex: none; border-radius: 14px; box-sizing: border-box; background-color: #1f2d32; background-size: cover; background-repeat: no-repeat; border: ' + (art ? '2px solid #4a5f66' : '1px dashed #3a4d54') + '; display: flex; align-items: center; justify-content: center; font-family: \'Cinzel\', serif; font-size: 26px; font-weight: 700; color: #c8d3d0; ' + art }; })(),
+        line: [f.ancestry, clsName].filter(Boolean).join(' ') + ' · Level ' + (f.level || '1'),
+        sub: [f.subclass, f.community].filter(Boolean).join(' · '),
+        hp: pips(p.hpMax || 6, p.hp || 0, '#d0605a', (v) => setPc(i, { hp: v }), 'Hit Points'),
+        stress: pips(p.stressMax || 6, p.stress || 0, '#7fa7b5', (v) => setPc(i, { stress: v }), 'Stress'),
+        hope: pips(6, p.hope || 0, accent, (v) => setPc(i, { hope: v }), 'Hope'),
+        stats: (() => {
+          const name = f.name || 'Unnamed hero';
+          const mk = (key, label, val, max, color, cls, hint, look, broken) => {
+            broken = broken || 0; val = Math.min(val, max);
+            const t = max ? val / max : 0;
+            return { name: label, val, max, color, cls: 'st-tile ' + cls, hint, aria: name + ' ' + label + ' ' + val + ' of ' + max,
+              tileStyle: look(t),
+              overlay: key === 'hp' ? 'position: absolute; left: 0; right: 0; bottom: 0; height: ' + Math.round(t * 100) + '%; background: linear-gradient(0deg, rgba(120, 10, 10, 0.75), rgba(60, 0, 0, 0.35)); mix-blend-mode: multiply; transition: height .3s;'
+                : key === 'stress' ? 'position: absolute; inset: 0; box-shadow: inset 0 0 ' + Math.round(4 + t * 30) + 'px rgba(170, 140, 255, ' + (0.15 + t * 0.7).toFixed(2) + ');'
+                : 'position: absolute; inset: 0; background: radial-gradient(circle at 50% 35%, rgba(255, 215, 120, ' + (t * 0.45).toFixed(2) + ') 0%, transparent 65%);',
+              maxColor: broken ? '#ff5a4f' : '#b8b0a4', maxWeight: broken ? '900' : '400',
+              segs: Array.from({ length: max + broken }, (_, k) => k >= max ? 'flex: 1; height: 7px; background: linear-gradient(90deg, #2a0b0b, #050303 45%, #050303 55%, #2a0b0b); clip-path: polygon(0 0, 38% 0, 50% 100%, 62% 0, 100% 0, 100% 100%, 58% 100%, 50% 35%, 42% 100%, 0 100%); filter: drop-shadow(0 0 1px #c0261c);' : 'flex: 1; height: 7px; border-radius: 2px; background: ' + (k < val ? color : 'rgba(255, 255, 255, 0.18)') + ';'),
+              minus: () => setPc(i, { [key]: Math.max(0, val - 1) }), plus: () => setPc(i, { [key]: Math.min(max, val + 1) }),
+              minusLabel: 'Clear one ' + label + ' for ' + name, plusLabel: 'Mark one ' + label + ' for ' + name };
+          };
+          const hpMax = p.hpMax || 6, stMax = p.stressMax || 6;
+          return [
+            Object.assign(mk('hp', 'HP', p.hp || 0, hpMax, '#e0605a', 'st-hp', (p.hp || 0) >= hpMax ? 'Down' : 'marked',
+              (t) => 'filter: saturate(' + (1 - t * 0.7).toFixed(2) + ') brightness(' + (1 - t * 0.45).toFixed(2) + '); box-shadow: 0 0 0 1px rgba(224, 96, 90, ' + (0.3 + t * 0.6).toFixed(2) + ');'), { isHp: true, dead: !!p.dead, alive: !p.dead, kill: () => setPc(i, { dead: true }), revive: () => setPc(i, { dead: false }), killLabel: 'Kill ' + name, reviveLabel: 'Revive ' + name }),
+            mk('stress', 'Stress', p.stress || 0, stMax, '#b9a3f5', 'st-stress', (p.stress || 0) >= stMax ? 'Breaking' : 'marked',
+              (t) => 'filter: contrast(' + (1 + t * 0.5).toFixed(2) + ') hue-rotate(' + Math.round(t * 25) + 'deg) brightness(' + (0.8 + t * 0.3).toFixed(2) + '); box-shadow: 0 0 ' + Math.round(t * 16) + 'px rgba(170, 140, 255, ' + (t * 0.8).toFixed(2) + '), 0 0 0 1px rgba(185, 163, 245, ' + (0.3 + t * 0.6).toFixed(2) + ');'),
+            Object.assign(mk('hope', 'Hope', p.hope || 0, 6 - (p.scars || 0), '#f0cf8a', 'st-hope', (p.scars || 0) ? (p.scars + ' scar' + (p.scars > 1 ? 's' : '')) : 'held',
+              (t) => 'filter: grayscale(' + (1 - t).toFixed(2) + ') brightness(' + (0.45 + t * 0.65).toFixed(2) + '); box-shadow: 0 0 ' + Math.round(t * 18) + 'px rgba(240, 207, 138, ' + (t * 0.7).toFixed(2) + '), 0 0 0 1px rgba(240, 207, 138, ' + (0.3 + t * 0.6).toFixed(2) + ');', p.scars || 0), {
+              isHope: true, scars: p.scars || 0, scarBadge: (p.scars || 0) ? ' · ' + p.scars : '', scarBorder: (p.scars || 0) ? '#c0261c' : '#6a2a2a',
+              scarOpen: st.scarOpen === i, scarExpanded: st.scarOpen === i ? 'true' : 'false',
+              scarToggle: () => this.setState({ scarOpen: this.state.scarOpen === i ? null : i }),
+              scarUp: () => { const sc = Math.min(6, (p.scars || 0) + 1); setPc(i, { scars: sc, hope: Math.min(p.hope || 0, 6 - sc) }); },
+              scarDown: () => setPc(i, { scars: Math.max(0, (p.scars || 0) - 1) })
+            })
+          ];
+        })(),
+        scars: p.scars || 0, scarText: (p.scars || 0) ? 'Hope max ' + (6 - (p.scars || 0)) : 'No scars',
+        scarUp: () => setPc(i, { scars: Math.min(6, (p.scars || 0) + 1), hope: Math.min(p.hope || 0, 6 - Math.min(6, (p.scars || 0) + 1)) }),
+        scarDown: () => setPc(i, { scars: Math.max(0, (p.scars || 0) - 1) }),
+        revive: () => setPc(i, { dead: false }), reviveLabel: 'Revive ' + (f.name || 'Unnamed hero'),
+        dead: !!p.dead, fallenName: (f.name || 'Unnamed hero') + ' has fallen', cardLabel: (f.name || 'Unnamed hero') + (p.dead ? ' (fallen)' : ''), cardBorder: p.dead ? '#3a2a2a' : '#253338',
+        _x: 0
+      };
+    });
+    const skull = 'M32 6C19 6 11 15 11 27c0 7 3.5 12 8 14.5V47c0 2 1.5 3.5 3.5 3.5h19c2 0 3.5-1.5 3.5-3.5v-5.5C49.5 39 53 34 53 27 53 15 45 6 32 6Z M18 29a6.5 7.5 0 1 0 13 0a6.5 7.5 0 1 0 -13 0Z M33 29a6.5 7.5 0 1 0 13 0a6.5 7.5 0 1 0 -13 0Z M32 36l-3.8 6.5h7.6Z M25.5 44.5h2.4v6h-2.4Z M30.8 44.5h2.4v6h-2.4Z M36.1 44.5h2.4v6h-2.4Z';
+    const wisps = 'M21 51c-2 4 2 6 -1 10 M27 51c1 4 -2 6 1 11 M32 51c-1 5 2 7 -1 12 M37 51c1 4 -2 6 1 11 M43 51c2 4 -2 6 1 10 M11 30c-5 3 -6 8 -3 12 M53 30c5 3 6 8 3 12 M24 6c-3 -3 -2 -6 1 -7 M40 6c3 -3 2 -6 -1 -7';
+    const fearSpots = Array.from({ length: 12 }, (_, i) => { const a = (i * 42 - 90) * Math.PI / 180; const r = 44 - i * 2.4; return [50 + r * Math.cos(a), 50 + r * Math.sin(a), 15 - i * 0.5]; });
+    const fearPips = fearSpots.map(([x, y, sz], k) => {
+      const on = k < fear;
+      return { label: 'Fear ' + (k + 1) + ' of 12', act: () => this.setState({ fear: keepFear(k + 1 === fear ? k : k + 1) }),
+        cls: 'fz ' + (on ? 'fz-on' : 'fz-off'),
+        style: 'width: ' + sz + '%; height: ' + sz + '%; left: ' + (x - sz / 2).toFixed(2) + '%; top: ' + (y - sz / 2).toFixed(2) + '%; rotate: ' + [-8, 6, -3, 10, -12, 4, 9, -6, 2, -10, 7, -4][k] + 'deg;' };
+    });
+    const fearPts = fearSpots.map(([x, y]) => x.toFixed(1) + ',' + y.toFixed(1));
+    const fearTrail = fearPts.join(' ');
+    const fearTrailLit = fearPts.slice(0, fear).join(' ');
+    const fearRoman = fear === 0 ? '—' : ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][fear - 1];
+    const coreGlow = (n) => { const t = n / 12; return 'filter: grayscale(' + (1 - t).toFixed(2) + ') brightness(' + (0.22 + 0.78 * t).toFixed(2) + ') drop-shadow(0 0 ' + (1 + 14 * t).toFixed(1) + 'px rgba(166, 120, 240, ' + (0.9 * t).toFixed(2) + '))' + (n >= 12 ? ' drop-shadow(0 0 16px rgba(255, 120, 30, 0.9)) sepia(0.25)' : '') + ';'; };
+    const smogOf = (n) => ({ on: n > 0, style: 'opacity: ' + (0.62 + 0.38 * n / 12).toFixed(2) + '; transform: scale(' + (0.72 + 0.52 * n / 12).toFixed(2) + '); transform-origin: 50% 100%;', haze: 'width: ' + (120 + n * 17) + '%; opacity: ' + (0.32 + 0.68 * n / 12).toFixed(2) + ';', fog: 'opacity: ' + Math.max(0, (n - 2) / 10 * 0.6).toFixed(2) + ';', puffs: Array.from({ length: Math.min(10, n + 1) }, (_, i) => ({ i })) });
+    const fearGlow = coreGlow(fear);
+    const fearSmog = smogOf(fear);
+    const CDKEY = 'dh.horizon.countdowns';
+    const cdLoad = () => { try { const v = JSON.parse(window.localStorage.getItem(CDKEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+    const cds = st.cds ?? cdLoad();
+    const cdSave = (list, extra) => { try { window.localStorage.setItem(CDKEY, JSON.stringify(list)); } catch (e) {} this.setState({ cds: list, ...(extra || {}) }); };
+    const cdUpd = (i, patch) => cdSave(cds.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+    const countdowns = cds.map((c, i) => {
+      const done = c.value <= 0; const t = c.start ? c.value / c.start : 0;
+      const col = done ? '#e0605a' : t <= 0.25 ? '#e0905a' : accent;
+      return { ...c, idx: String(i), done,
+        numColor: done ? '#ffb4ae' : '#f4efe6',
+        ring: 'flex: none; width: 74px; height: 74px; padding: 0; border: none; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; background: conic-gradient(' + col + ' 0deg ' + Math.round(t * 360) + 'deg, #22323a ' + Math.round(t * 360) + 'deg 360deg);',
+        cardStyle: 'padding: 16px; border-radius: 14px; background: #141e22; border: 1px solid ' + (done ? '#8e2b2b' : '#253338') + '; display: flex; flex-direction: column; gap: 12px;' + (done ? ' animation: cdpulse 1.6s ease-in-out infinite;' : ''),
+        segs: Array.from({ length: c.start }, (_, k) => ({ label: 'Set ' + (c.name || 'countdown') + ' to ' + (k + 1), act: () => cdUpd(i, { value: k + 1 === c.value ? k : k + 1 }),
+          style: (() => { const R = ['58% 42% 55% 45% / 52% 60% 40% 48%', '45% 55% 40% 60% / 60% 45% 55% 40%', '62% 38% 50% 50% / 45% 55% 45% 55%', '50% 50% 62% 38% / 55% 40% 60% 45%', '40% 60% 55% 45% / 48% 58% 42% 52%'];
+            const on = k < c.value; const sz = [20, 17, 22, 18, 21, 16, 19][k % 7]; const rot = [-12, 18, -4, 27, -20, 8, 35][k % 7]; const dy = [0, 3, -2, 2, -1, 4, 1][k % 7];
+            const sand = done ? ['#ffb4a8', '#c0423a', '#6a1a14'] : (c.start && c.value / c.start <= 0.25) ? ['#ffd2a0', '#e0803a', '#7a3a10'] : ['#ffe9b0', '#d9a64a', '#7a5218'];
+            return 'flex: 1 1 0; min-width: 0; max-width: ' + sz + 'px; aspect-ratio: 1.22; padding: 0; margin-top: ' + dy + 'px; border-radius: ' + R[k % 5] + '; transform: rotate(' + rot + 'deg); cursor: pointer; transition: transform .15s, background .2s; '
+              + (on ? 'border: none; background: radial-gradient(circle at 34% 30%, ' + sand[0] + ' 0%, ' + sand[1] + ' 55%, ' + sand[2] + ' 100%); box-shadow: 0 2px 3px rgba(0, 0, 0, 0.55), inset -1px -2px 2px rgba(0, 0, 0, 0.25), 0 0 6px ' + sand[1] + '55;'
+                  : 'border: 1px dashed rgba(217, 166, 74, 0.35); background: rgba(10, 16, 18, 0.6); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);');
+          })() })),
+        clipId: 'hg' + i, clipRef: 'url(#hg' + i + ')', sand: col, topY: (40 - 31 * t).toFixed(1), botY: (71 - 31 * (1 - t)).toFixed(1), flowing: !done && c.value < c.start,
+        tickBg: done ? '#5a2a2a' : accent,
+        tick: () => cdUpd(i, { value: Math.max(0, c.value - 1) }), up: () => cdUpd(i, { value: Math.min(20, c.value + 1), start: Math.max(c.start, Math.min(20, c.value + 1)) }),
+        reset: () => cdUpd(i, { value: c.start }), remove: () => cdSave(cds.filter((_, j) => j !== i)),
+        edit: () => this.setState({ cdPicker: { mode: 'edit', idx: i }, cdSel: c.value || c.start }),
+        editLabel: 'Set ' + (c.name || 'countdown') + ', currently ' + c.value + ' of ' + c.start,
+        removeLabel: 'Delete ' + (c.name || 'countdown'), upLabel: 'Borrowed time: add one to ' + (c.name || 'countdown') };
+    });
+    const picker = st.cdPicker || null;
+    const cdSel = st.cdSel ?? null;
+    const cdChoices = Array.from({ length: 20 }, (_, k) => 20 - k).map((v) => { const on = v === cdSel;
+      return { v, checked: on ? 'true' : 'false', pick: () => this.setState({ cdSel: v }),
+        style: on ? 'background: ' + accent + '; color: #1a1408; border-color: ' + accent + ';' : '' }; });
+    const LOCICON = { village: ['#5a7a3a', 'M3 11 L12 4 L21 11 V20 H3 Z M9 20 V14 H15 V20'], city: ['#3a5a8a', 'M3 20 V9 L6 6 L9 9 V20 M9 20 V12 H15 V20 M15 20 V7 L18 4 L21 7 V20 M2 20 H22'], cave: ['#5a4a3a', 'M2 20 C4 10 8 5 12 5 C16 5 20 10 22 20 Z'], ruins: ['#6a6258', 'M4 20 V8 H8 V12 M12 20 V6 H16 V10 M16 13 V20 M2 20 H22'], temple: ['#8a6a2a', 'M3 9 L12 3 L21 9 Z M5 9 V18 M9 9 V18 M15 9 V18 M19 9 V18 M2 21 H22'], dungeon: ['#3a2a3a', 'M5 21 V10 A7 7 0 0 1 19 10 V21 Z'], ambush: ['#8e2b2b', 'M4 4 L15 15 M20 4 L9 15'], monster: ['#5a2a6a', 'M12 3c-4.4 0-7.5 3-7.5 7 0 2.4 1.1 4 2.6 5v2.5h9.8V15c1.5-1 2.6-2.6 2.6-5 0-4-3.1-7-7.5-7z'], camp: ['#9a5a1a', 'M3 20 L12 5 L21 20 Z'], quest: ['#c0902a', 'M12 7 V13 M12 16.5 V17'], treasure: ['#a07a1a', 'M3 10 H21 V20 H3 Z'], landmark: ['#2a6a6a', 'M12 22 C12 22 5 14 5 9 a7 7 0 0 1 14 0 C19 14 12 22 12 22 Z'] };
+    const mapData = (() => { try { return JSON.parse(window.localStorage.getItem('dh.horizon.map') || 'null') || {}; } catch (e) { return {}; } })();
+    const customT = {}; (mapData.customTypes || []).forEach((c) => { customT[c.id] = c; });
+    const locations = (mapData.tokens || []).filter((t) => t.location).map((t) => {
+      const cu = customT[t.type]; const base = LOCICON[cu ? cu.icon : t.type] || LOCICON.landmark;
+      const typeName = (mapData.typeLabels || {})[t.type] || (cu ? cu.label : t.type.charAt(0).toUpperCase() + t.type.slice(1));
+      const here = mapData.party && Math.abs(mapData.party.x - t.x) < 0.6 && Math.abs(mapData.party.y - t.y) < 0.6;
+      return { name: t.name || typeName, sub: typeName + (here ? ' · party is here' : '') + (t.hidden ? ' · hidden from players' : ''), color: cu ? cu.c : base[0], d: base[1],
+        border: here ? '#e3b45a' : '#33444a', bg: here ? '#2a2416' : '#141e22',
+        go: () => { try { window.localStorage.setItem('dh.horizon.mapFocus', String(t.id)); } catch (e) {} } };
+    });
+    const ACTIVE = {"key": "horizon", "hub": "HubHorizon.dc.html", "name": "Journey to Horizon", "blob": "b0cd8d347b032b78f2c527ddcce21f51" };
+    try { if (window.localStorage.getItem('dh.active') !== JSON.stringify(ACTIVE)) window.localStorage.setItem('dh.active', JSON.stringify(ACTIVE)); } catch (e) {}
+    const sessInfo = (() => { let ss = []; try { ss = JSON.parse(window.localStorage.getItem('dh.horizon.sessions') || '[]') || []; } catch (e) {} if (!Array.isArray(ss)) ss = [];
+      const playedS = ss.filter((x) => x.played); const last = playedS[playedS.length - 1]; const nxt = ss.find((x) => !x.played && x.date);
+      const fd = (d) => { const t = new Date(d + 'T12:00:00'); return isNaN(t) ? d : t.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); };
+      return { num: ss.length ? 'Session ' + (playedS.length + (ss.some((x) => !x.played) ? 1 : 0) || 1) : 'No sessions yet', next: nxt ? 'Next session ' + fd(nxt.date) : 'Next session not scheduled',
+        recap: last && (last.recap || '').trim() ? last.recap : (last ? 'Session ' + last.n + ' was played, but no recap was written. Add one in the session\'s Wrap-up.' : 'No sessions played yet. Write a recap in a session\'s Wrap-up stage and it will appear here.') }; })();
+    const section = st.section || 'Dashboard';
+    const navItems = ['Dashboard', 'Party', 'World', 'Characters & Locations', 'Adversaries', 'Sessions', 'Notes'].map((label) => {
+      const on = label === section;
+      const isLink = label === 'Party' || label === 'World' || label === 'Adversaries' || label === 'Sessions' || label === 'Characters & Locations' || label === 'Notes';
+      return { label, isLink, isBtn: !isLink, href: label === 'World' ? 'World.dc.html' : label === 'Adversaries' ? 'Adversaries.dc.html' : label === 'Sessions' ? 'Sessions.dc.html' : label === 'Characters & Locations' ? 'Codex.dc.html' : label === 'Notes' ? 'Notes.dc.html' : 'Party.dc.html', current: on ? 'page' : 'false', pick: () => this.setState({ section: label }),
+        style: 'min-height: 40px; padding: 0 14px; border-radius: 8px; border: none; cursor: pointer; font-family: inherit; font-size: 14px; display: inline-flex; align-items: center; text-decoration: none; box-sizing: border-box; color: ' + (on ? '#1a1408' : '#e6ecea') + '; background: ' + (on ? accent : 'transparent') + ';' };
+    });
+    return {
+      sessInfo, startSession: () => { try { window.localStorage.setItem('dh.sessions.intent', 'play'); } catch (e) {} },
+      accent, pcs, fear, fearPips, skull, wisps, fearGlow, fearTrail, fearTrailLit, fearRoman, fearLabel: fear + ' of 12 Fear', fearOnFire: fear >= 12, fearSmog, navItems,
+      noParty: pcs.length === 0,
+      locations, locEmpty: locations.length === 0,
+      countdowns, cdEmpty: cds.length === 0,
+      cdNew: () => this.setState({ cdPicker: { mode: 'new' }, cdSel: 6, cdDraftName: '', cdDraftNote: '' }),
+      cdField: (e) => { const el = e.target; const i = Number(el.getAttribute('data-idx')); const k = el.getAttribute('data-field'); const list = this.state.cds ?? cdLoad(); cdSave(list.map((c, j) => (j === i ? { ...c, [k]: el.value } : c))); },
+      cdPickerOpen: !!picker, cdIsNew: !!picker && picker.mode === 'new',
+      cdPickerTitle: picker && picker.mode === 'edit' ? 'Set countdown' : 'New countdown',
+      cdPickerHint: picker && picker.mode === 'edit' ? 'Jump the countdown to any value from 20 to 1.' : 'Choose where it starts, from 20 down to 1.',
+      cdConfirmLabel: picker && picker.mode === 'edit' ? 'Set value' : 'Start countdown',
+      cdDraftName: st.cdDraftName || '', cdDraftNote: st.cdDraftNote || '',
+      cdSetName: (e) => this.setState({ cdDraftName: e.target.value }), cdSetNote: (e) => this.setState({ cdDraftNote: e.target.value }),
+      cdChoices, cdClose: () => this.setState({ cdPicker: null }),
+      cdConfirm: () => {
+        if (!picker || cdSel == null) return;
+        if (picker.mode === 'new') cdSave(cds.concat([{ name: st.cdDraftName || '', note: st.cdDraftNote || '', start: cdSel, value: cdSel }]), { cdPicker: null });
+        else cdSave(cds.map((c, j) => (j === picker.idx ? { ...c, value: cdSel, start: Math.max(c.start, cdSel) } : c)), { cdPicker: null });
+      },
+      tomeOpen: !!st.tome, tomeChapter: st.tome || 'overview',
+      openOverview: () => this.setState({ tome: 'overview' }),
+      openIncident: () => this.setState({ tome: 'incident' }),
+      openMechanics: () => this.setState({ tome: 'mechanics' }),
+      closeTome: () => this.setState({ tome: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,439 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Adversaries.dc.html": {
+      "expand": "fill",
+      "h": 1100,
+      "is_interactive": true,
+      "title": "Campaign · Adversaries",
+      "w": 1440,
+      "x": 12160,
+      "y": -1320
+    },
+    "AgeOfUmbra.dc.html": {
+      "expand": "fill",
+      "h": 994,
+      "is_interactive": true,
+      "title": "Frame · The Age of Umbra",
+      "w": 1440,
+      "x": 9120,
+      "y": 1080
+    },
+    "Andaluria.dc.html": {
+      "expand": "fill",
+      "h": 1040,
+      "is_interactive": true,
+      "title": "Frame · Dark Heart of Andaluria",
+      "w": 1440,
+      "x": 16720,
+      "y": 1080
+    },
+    "BeastFeast.dc.html": {
+      "expand": "fill",
+      "h": 1002,
+      "is_interactive": true,
+      "title": "Frame · Beast Feast",
+      "w": 1440,
+      "x": 7600,
+      "y": 1080
+    },
+    "CampaignHub.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · The Witherwild (Dashboard)",
+      "w": 1440,
+      "x": 6080,
+      "y": -1320
+    },
+    "CastleHigh.dc.html": {
+      "expand": "fill",
+      "h": 1015,
+      "is_interactive": true,
+      "title": "Frame · Castle High",
+      "w": 1440,
+      "x": 13680,
+      "y": 1080
+    },
+    "Chronicle.dc.html": {
+      "expand": "fill",
+      "h": 960,
+      "is_interactive": true,
+      "title": "Load Campaign",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
+    "Colossus.dc.html": {
+      "expand": "fill",
+      "h": 935,
+      "is_interactive": true,
+      "title": "Frame · Colossus of the Drylands",
+      "w": 1440,
+      "x": 12160,
+      "y": 1080
+    },
+    "CycleIcons.dc.html": {
+      "expand": "fill",
+      "h": 1900,
+      "is_interactive": true,
+      "title": "Time Arch · Day & Night Icon Ideas",
+      "w": 1440,
+      "x": 9120,
+      "y": -1320
+    },
+    "FiveBanners.dc.html": {
+      "expand": "fill",
+      "h": 987,
+      "is_interactive": true,
+      "title": "Frame · Five Banners Burning",
+      "w": 1440,
+      "x": 6080,
+      "y": 1080
+    },
+    "FrameSelect.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Existing Campaign Frame & Custom",
+      "w": 1440,
+      "x": 3040,
+      "y": 1080
+    },
+    "Horizon.dc.html": {
+      "expand": "fill",
+      "h": 1009,
+      "is_interactive": true,
+      "title": "Frame · Journey to Horizon",
+      "w": 1440,
+      "x": 18240,
+      "y": 1080
+    },
+    "HubAgeOfUmbra.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · The Age of Umbra (Dashboard)",
+      "w": 1440,
+      "x": 9120,
+      "y": 3400
+    },
+    "HubAndaluria.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · Dark Heart of Andaluria (Dashboard)",
+      "w": 1440,
+      "x": 16720,
+      "y": 3400
+    },
+    "HubBeastFeast.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · Beast Feast (Dashboard)",
+      "w": 1440,
+      "x": 7600,
+      "y": 3400
+    },
+    "HubCastleHigh.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · Castle High (Dashboard)",
+      "w": 1440,
+      "x": 13680,
+      "y": 3400
+    },
+    "HubColossus.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · Colossus of the Drylands (Dashboard)",
+      "w": 1440,
+      "x": 12160,
+      "y": 3400
+    },
+    "HubFiveBanners.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · Five Banners Burning (Dashboard)",
+      "w": 1440,
+      "x": 6080,
+      "y": 3400
+    },
+    "HubHorizon.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · Journey to Horizon (Dashboard)",
+      "w": 1440,
+      "x": 18240,
+      "y": 3400
+    },
+    "HubMotherboard.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · Motherboard (Dashboard)",
+      "w": 1440,
+      "x": 10640,
+      "y": 3400
+    },
+    "HubWeredragon.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · Reign of the Weredragon (Dashboard)",
+      "w": 1440,
+      "x": 15200,
+      "y": 3400
+    },
+    "Motherboard.dc.html": {
+      "expand": "fill",
+      "h": 934,
+      "is_interactive": true,
+      "title": "Frame · Motherboard",
+      "w": 1440,
+      "x": 10640,
+      "y": 1080
+    },
+    "Party.dc.html": {
+      "expand": "fill",
+      "h": 1200,
+      "is_interactive": true,
+      "title": "Campaign · Party (Create Character & Sheets)",
+      "w": 1440,
+      "x": 7600,
+      "y": -1320
+    },
+    "TitleMenu.dc.html": {
+      "expand": "fill",
+      "h": 960,
+      "is_interactive": true,
+      "title": "Title Menu",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "TomeAgeOfUmbra.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "The Age of Umbra Tome",
+      "w": 1440,
+      "x": 9120,
+      "y": 2280
+    },
+    "TomeAndaluria.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Dark Heart of Andaluria Tome",
+      "w": 1440,
+      "x": 16720,
+      "y": 2280
+    },
+    "TomeBeastFeast.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Beast Feast Tome",
+      "w": 1440,
+      "x": 7600,
+      "y": 2280
+    },
+    "TomeCastleHigh.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Castle High Tome",
+      "w": 1440,
+      "x": 13680,
+      "y": 2280
+    },
+    "TomeColossus.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Colossus of the Drylands Tome",
+      "w": 1440,
+      "x": 12160,
+      "y": 2280
+    },
+    "TomeFiveBanners.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Five Banners Burning Tome",
+      "w": 1440,
+      "x": 6080,
+      "y": 2280
+    },
+    "TomeHorizon.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Journey to Horizon Tome",
+      "w": 1440,
+      "x": 18240,
+      "y": 2280
+    },
+    "TomeMotherboard.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Motherboard Tome",
+      "w": 1440,
+      "x": 10640,
+      "y": 2280
+    },
+    "TomeOpenBook.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Witherwild Tome",
+      "w": 1440,
+      "x": 4560,
+      "y": 2280
+    },
+    "TomeWeredragon.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Reign of the Weredragon Tome",
+      "w": 1440,
+      "x": 15200,
+      "y": 2280
+    },
+    "Weredragon.dc.html": {
+      "expand": "fill",
+      "h": 978,
+      "is_interactive": true,
+      "title": "Frame · Reign of the Weredragon",
+      "w": 1440,
+      "x": 15200,
+      "y": 1080
+    },
+    "Witherwild.dc.html": {
+      "expand": "fill",
+      "h": 1004,
+      "is_interactive": true,
+      "title": "Frame · The Witherwild",
+      "w": 1440,
+      "x": 4560,
+      "y": 1080
+    },
+    "World.dc.html": {
+      "expand": "fill",
+      "h": 1120,
+      "is_interactive": true,
+      "title": "Campaign · World (Interactive Map)",
+      "w": 1440,
+      "x": 10640,
+      "y": -1320
+    },
+    "TomeCustom.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "title": "Custom Campaign Tome",
+      "w": 1440,
+      "x": 19840,
+      "y": 2280
+    },
+    "HubCustom.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "title": "Campaign · Custom (Dashboard)",
+      "w": 1440,
+      "x": 19840,
+      "y": 3400
+    },
+    "Sessions.dc.html": {
+      "expand": "fill",
+      "h": 1100,
+      "is_interactive": true,
+      "title": "Campaign · Sessions",
+      "w": 1440,
+      "x": 13680,
+      "y": -1320
+    },
+    "Codex.dc.html": {
+      "expand": "fill",
+      "h": 1100,
+      "is_interactive": true,
+      "title": "Campaign · Characters & Locations",
+      "w": 1440,
+      "x": 15200,
+      "y": -1320
+    },
+    "Notes.dc.html": {
+      "expand": "fill",
+      "h": 1100,
+      "is_interactive": true,
+      "title": "Campaign · Notes (Journal)",
+      "w": 1440,
+      "x": 16720,
+      "y": -1320
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-10-15T11:40:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {},
+  "order": [
+    "TitleMenu.dc.html",
+    "Chronicle.dc.html",
+    "CampaignHub.dc.html",
+    "Party.dc.html",
+    "World.dc.html",
+    "CycleIcons.dc.html",
+    "FrameSelect.dc.html",
+    "Witherwild.dc.html",
+    "FiveBanners.dc.html",
+    "BeastFeast.dc.html",
+    "AgeOfUmbra.dc.html",
+    "Motherboard.dc.html",
+    "Colossus.dc.html",
+    "CastleHigh.dc.html",
+    "Weredragon.dc.html",
+    "Andaluria.dc.html",
+    "Horizon.dc.html",
+    "TomeOpenBook.dc.html",
+    "TomeFiveBanners.dc.html",
+    "HubFiveBanners.dc.html",
+    "TomeBeastFeast.dc.html",
+    "HubBeastFeast.dc.html",
+    "TomeAgeOfUmbra.dc.html",
+    "HubAgeOfUmbra.dc.html",
+    "TomeMotherboard.dc.html",
+    "HubMotherboard.dc.html",
+    "TomeColossus.dc.html",
+    "HubColossus.dc.html",
+    "TomeCastleHigh.dc.html",
+    "HubCastleHigh.dc.html",
+    "TomeWeredragon.dc.html",
+    "HubWeredragon.dc.html",
+    "TomeAndaluria.dc.html",
+    "HubAndaluria.dc.html",
+    "TomeHorizon.dc.html",
+    "HubHorizon.dc.html",
+    "Adversaries.dc.html",
+    "Sessions.dc.html",
+    "Codex.dc.html",
+    "Notes.dc.html",
+    "TomeCustom.dc.html",
+    "HubCustom.dc.html"
+  ],
+  "pages": [],
+  "title": "Daggerheart Campaign Manager"
+}
