@@ -24,8 +24,19 @@ import {
   type TravelPace,
 } from "@/lib/domain/travel";
 import { hexDistance, hexToPixel, pixelToHex, type Hex } from "@/lib/world/hex";
-import { HORIZON_FRAME, WORLD_MAPS, mapImageSize, playerMapView, travelRules, type MapState, type MapToken } from "@/lib/world/map-state";
-import { BRUSHES, BRUSH_SIZES, TERRAIN_COLOURS, TERRAIN_NAMES, cellOf, paintTerrain, terrainAt, type TerrainCode } from "@/lib/world/terrain";
+import { HORIZON_FRAME, WORLD_MAPS, mapImageSize, playerMapView, travelRules, type MapState, type MapToken, type PlayerMapState } from "@/lib/world/map-state";
+import {
+  BRUSHES,
+  BRUSH_SIZES,
+  TERRAIN_COLOURS,
+  TERRAIN_NAMES,
+  cellOf,
+  paintTerrain,
+  suggestedTerrain,
+  terrainAt,
+  terrainDiff,
+  type TerrainCode,
+} from "@/lib/world/terrain";
 import { tokenType, tokenTypes } from "@/lib/world/token-types";
 
 import type { Id } from "../../../../../../convex/_generated/dataModel";
@@ -47,7 +58,8 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   const isGm = data.role === "gm";
   const [preview, setPreview] = useState(false);
   const editable = isGm && !preview;
-  const state: MapState = useMemo(() => (editable || !isGm ? data.state : playerMapView(data.state)), [data.state, editable, isGm]);
+  // Only the GM previews the player view, and the GM receives the full state.
+  const state: MapState | PlayerMapState = useMemo(() => (editable || !isGm ? data.state : playerMapView(data.state as MapState)), [data.state, editable, isGm]);
   const horizon = data.frameId === HORIZON_FRAME;
   const crawl = horizon ? (state.hexCrawl ?? null) : null;
 
@@ -69,7 +81,8 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
   const [brush, setBrush] = useState<TerrainCode>("r");
   const [bsize, setBsize] = useState(2);
   const [localTerrain, setLocalTerrain] = useState<string | null>(null);
-  const undo = useRef<string[]>([]);
+  /** Each entry restores the cells a stroke (or reset) changed to their previous codes. */
+  const undo = useRef<{ indexes: number[]; codes: string }[]>([]);
   const [undoCount, setUndoCount] = useState(0);
   const stroke = useRef<{ start: string; grid: string } | null>(null);
   const [measuring, setMeasuring] = useState(false);
@@ -212,20 +225,18 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
     if (el?.requestFullscreen && document.fullscreenEnabled) void el.requestFullscreen().catch(() => undefined);
   };
 
-  // ---- terrain painting (local until the stroke ends)
-  const commitTerrain = async (grid: string) => {
-    setLocalTerrain(grid);
-    await actions.setTerrain(grid);
-    setLocalTerrain(null);
+  // ---- terrain painting (local until the stroke ends, then only the changed cells are sent)
+  const pushUndo = (before: string, after: string) => {
+    undo.current = [...undo.current, terrainDiff(after, before)].slice(-30);
+    setUndoCount(undo.current.length);
   };
   const undoPaint = () => {
     const prev = undo.current.pop();
     setUndoCount(undo.current.length);
-    if (prev !== undefined) void commitTerrain(prev);
+    if (prev !== undefined) void actions.paintCells(prev.indexes, prev.codes);
   };
   const resetTerrain = async () => {
-    undo.current = [...undo.current, terrain].slice(-30);
-    setUndoCount(undo.current.length);
+    pushUndo(terrain, suggestedTerrain(data.frameId));
     await actions.resetTerrain();
   };
 
@@ -238,11 +249,12 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
       if (phase !== "end" || s.grid === s.start) s.grid = paintTerrain(s.grid, c, r, bsize, brush);
       if (phase === "end") {
         stroke.current = null;
+        setLocalTerrain(null);
         if (s.grid !== s.start) {
-          undo.current = [...undo.current, s.start].slice(-30);
-          setUndoCount(undo.current.length);
-          void commitTerrain(s.grid);
-        } else setLocalTerrain(null);
+          pushUndo(s.start, s.grid);
+          const diff = terrainDiff(s.start, s.grid);
+          void actions.paintCells(diff.indexes, diff.codes);
+        }
       } else setLocalTerrain(s.grid);
       return;
     }

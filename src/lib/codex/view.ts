@@ -49,7 +49,8 @@ export function coverOf(cover: string | null, images: readonly { storageId: stri
   return found ? found.storageId : null;
 }
 
-export type ImageView = { storageId: string; shown: boolean; url: string | null };
+/** A GM image; `key` identifies it on the page (the GM's key is the storage id). */
+export type ImageView = { key: string; storageId: string; shown: boolean; url: string | null };
 
 /** The GM's view of an entry: everything. */
 export type GmEntry = {
@@ -82,7 +83,9 @@ export type PlayerEntry = {
   region: string;
   /** The map pin, only when its token is visible on the map. */
   tokenId: number | null;
-  images: { storageId: string; url: string | null }[];
+  /** Revealed images; `key` is an opaque per-entry index (players never receive storage ids). */
+  images: { key: string; url: string | null }[];
+  /** The `key` of the main picture. */
   cover: string | null;
   createdAt: number;
 };
@@ -103,7 +106,9 @@ export function toPlayerEntry(
   visiblePin: (PinPosition & { id: number }) | null,
 ): PlayerEntry | null {
   if (!e.data.known) return null;
-  const images = e.images.filter((g) => g.shown).map((g) => ({ storageId: g.storageId, url: g.url }));
+  const shown = e.images.filter((g) => g.shown);
+  const coverId = coverOf(e.data.cover, shown);
+  const images = shown.map((g, i) => ({ key: String(i), url: g.url }));
   return {
     _id: e._id,
     kind: e.kind,
@@ -113,7 +118,7 @@ export function toPlayerEntry(
     region: e.kind === "location" ? regionOf(frameId, e.data, visiblePin).region : "",
     tokenId: visiblePin ? visiblePin.id : null,
     images,
-    cover: coverOf(e.data.cover, images),
+    cover: coverId === null ? null : String(shown.findIndex((g) => g.storageId === coverId)),
     createdAt: e.createdAt,
   };
 }

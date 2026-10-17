@@ -150,6 +150,28 @@ export function paintTerrain(grid: string, c0: number, r0: number, size: number,
   return g.join("");
 }
 
+/** Cells of `after` that differ from `before`: their indexes, and their codes in `after` (one character each). */
+export function terrainDiff(before: string, after: string): { indexes: number[]; codes: string } {
+  const indexes: number[] = [];
+  let codes = "";
+  for (let i = 0; i < after.length; i++) {
+    if (before[i] !== after[i]) {
+      indexes.push(i);
+      codes += after[i];
+    }
+  }
+  return { indexes, codes };
+}
+
+/** The grid with cell `indexes[k]` set to `codes[k]` (a later repeat of an index wins). */
+export function applyTerrainCells(grid: string, indexes: readonly number[], codes: string): string {
+  const g = grid.split("");
+  indexes.forEach((i, k) => {
+    g[i] = codes[k];
+  });
+  return g.join("");
+}
+
 export type TerrainPaths = Record<"r" | "w" | "d" | "m" | "h" | "x" | "b", string>;
 
 /** One SVG path per terrain (viewBox 0 0 128 98), merging horizontal runs. Water is `x`, impassable `b`. */

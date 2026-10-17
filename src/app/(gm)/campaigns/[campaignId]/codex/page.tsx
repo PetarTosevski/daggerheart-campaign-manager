@@ -85,7 +85,7 @@ export default function CodexPage() {
 
   const listEntries: ListEntry[] = shown.map((e) => {
     const g = groupKey(e);
-    const cover = e.images.find((i) => i.storageId === e.cover)?.url ?? null;
+    const cover = e.images.find((i) => i.key === e.cover)?.url ?? null;
     return {
       _id: e._id,
       name: e.name || (e.kind === "location" ? "Unnamed location" : "Unnamed character"),
@@ -287,7 +287,7 @@ export default function CodexPage() {
               frameId={frameId}
               entry={current as GmEntry}
               hasPins={pins.length > 0}
-              onOpenImage={(storageId) => setLightbox({ entryId: current._id, storageId })}
+              onOpenImage={(key) => setLightbox({ entryId: current._id, key })}
               onPickPin={() => setPickFor(current._id)}
               onDeleted={() => setSelected(null)}
             />
@@ -297,7 +297,7 @@ export default function CodexPage() {
               campaignId={campaign._id}
               frameId={frameId}
               entry={current as PlayerEntry}
-              onOpenImage={(storageId) => setLightbox({ entryId: current._id, storageId })}
+              onOpenImage={(key) => setLightbox({ entryId: current._id, key })}
             />
           )}
         </section>

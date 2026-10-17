@@ -46,7 +46,7 @@ async function attach(t: T, entryId: Id<"codexEntries">, uploadedBy: Id<"users">
   return t.run(async (ctx) => {
     const storageId = await ctx.storage.store(new Blob(["img"], { type: "image/jpeg" }));
     const entry = (await ctx.db.get(entryId))!;
-    await ctx.db.insert("codexImages", { storageId, campaignId: entry.campaignId, entryId, uploadedBy, createdAt: 0 });
+    await ctx.db.insert("files", { storageId, campaignId: entry.campaignId, uploadedBy, kind: "codexImage", refId: entryId, createdAt: 0 });
     const data = entry.data as { images: { storageId: string; shown: boolean }[]; cover: string | null };
     await ctx.db.patch(entryId, { data: { ...data, images: [...data.images, { storageId, shown }], cover: data.cover ?? storageId } });
     return storageId;
@@ -183,9 +183,11 @@ describe("codex", () => {
     await gm.mutation(api.codex.setImageShown, { entryId, storageId: shownImg, shown: true });
     const view = await p1.query(api.codex.list, { campaignId });
     expect(view.entries).toHaveLength(1);
-    expect(view.entries[0].images).toEqual([{ storageId: shownImg, shown: true, url: expect.any(String) }].map(({ storageId, url }) => ({ storageId, url })));
-    expect(view.entries[0].cover).toBe(shownImg);
+    // Players get opaque per-entry image keys, never storage ids.
+    expect(view.entries[0].images).toEqual([{ key: "0", url: expect.any(String) }]);
+    expect(view.entries[0].cover).toBe("0");
     expect(JSON.stringify(view)).not.toContain(hiddenImg);
+    expect(JSON.stringify(view)).not.toContain(shownImg);
 
     const gmView = await gm.query(api.codex.list, { campaignId });
     expect(gmView.entries[0].images.map((g) => g.url)).toEqual([expect.any(String), expect.any(String)]);
@@ -222,7 +224,7 @@ describe("codex", () => {
     const kept = await attach(t, b, ids.gm);
     await gm.mutation(api.codex.remove, { entryId: b });
     expect(await t.run((ctx) => ctx.storage.getUrl(kept))).toBeNull();
-    expect(await t.run((ctx) => ctx.db.query("codexImages").collect())).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("files").collect())).toEqual([]);
   });
 
   it("images: at most 8 per entry", async () => {
@@ -233,6 +235,6 @@ describe("codex", () => {
     const extra = await t.run((ctx) => ctx.storage.store(new Blob(["x"], { type: "image/png" })));
     expect(await gm.mutation(api.codex.attachImage, { entryId, storageId: extra })).toEqual({ error: expect.any(String) });
     expect(await t.run((ctx) => ctx.storage.getUrl(extra))).toBeNull();
-    expect(await t.run(async (ctx) => (await ctx.db.query("codexImages").collect()).length)).toBe(8);
+    expect(await t.run(async (ctx) => (await ctx.db.query("files").collect()).length)).toBe(8);
   });
 });

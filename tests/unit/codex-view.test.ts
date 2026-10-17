@@ -95,8 +95,9 @@ describe("codex player view", () => {
       allegianceShown: "Haven",
       region: "",
       tokenId: null,
-      images: [{ storageId: "b", url: "u-b" }],
-      cover: "b",
+      // Opaque per-entry keys, never storage ids.
+      images: [{ key: "0", url: "u-b" }],
+      cover: "0",
       createdAt: 1,
     });
   });

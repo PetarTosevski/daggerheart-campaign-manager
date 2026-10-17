@@ -181,10 +181,16 @@ describe("characters", () => {
     expect(await t.run((ctx) => ctx.storage.get(text))).toBeNull();
     await t.run(async (ctx) => {
       const c = (await ctx.db.get(a))!;
-      await ctx.db.insert("portraitUploads", { storageId: image, userId: c.ownerId, characterId: a, createdAt: 0 });
+      await ctx.db.insert("files", { storageId: image, campaignId: c.campaignId, uploadedBy: c.ownerId, kind: "portrait", refId: a, createdAt: 0 });
       await ctx.db.patch(a, { sheet: { ...c.sheet, portrait: { kind: "upload", storageId: image } } });
     });
     expect((await p1.query(api.characters.get, { characterId: a }))!.portraitUrl).toEqual(expect.any(String));
+    // Other players get the URL but never the storage id (the owner and the GM get the id to edit).
+    const seen = (await p2.query(api.characters.get, { characterId: a }))!;
+    expect(seen.portraitUrl).toEqual(expect.any(String));
+    expect(seen.sheet.portrait).toEqual({ kind: "upload", storageId: "hidden" });
+    expect(JSON.stringify(await p2.query(api.characters.listByCampaign, { campaignId }))).not.toContain(image);
+    expect((await p1.query(api.characters.get, { characterId: a }))!.sheet.portrait).toEqual({ kind: "upload", storageId: image });
 
     // Another player can't claim or point at that file.
     expect(errorData(await p2.mutation(api.characters.attachPortrait, { characterId: b, storageId: image }).catch((e) => e))).toBe("NOT_FOUND");
