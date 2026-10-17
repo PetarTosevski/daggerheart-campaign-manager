@@ -44,7 +44,7 @@ Rules:
 
 ## Worktrees
 
-- Each tracer's agent runs in its own git worktree, created from the integration branch (`rebuild`) at the start of its wave.
+- Each tracer's agent runs in its own git worktree, created from the integration branch (`rebuild`) at the start of its wave. The Agent tool creates worktrees from the default branch (`master`), so every tracer's first step, before any edit, is `git switch -C <its worktree branch> rebuild`. The orchestrator checks the base with `git merge-base --is-ancestor rebuild <branch>` before merging.
 - Setup per worktree (`scripts/worktree-setup.mjs`): `pnpm install` (cheap, shared pnpm store), copy the git-ignored `.env.local` and `.env.e2e.local`, and pick a free e2e port and local Convex backend so worktrees can run browser tests at the same time.
 - Worktrees use local Convex backends only. The cloud dev deployment receives pushes only from the main checkout after merges.
 
@@ -58,7 +58,7 @@ Rules:
 1. Before merging, `scripts/tracer-guard.mjs <plan> <tracer>` compares the branch diff with the tracer's `owns` list and rejects files outside it. A rejected tracer goes back to its agent.
 2. Merge in dependency order, one squashed commit per tracer, authored by petar, with no Co-Authored-By trailer. Do not push unless asked.
 3. Regenerate `convex/_generated`, then run lint, typecheck and vitest after each merge.
-4. Remove the worktree and branch once merged.
+4. Remove the worktree once merged. Squash-merged branches are kept, because deleting them needs a force delete, which the git guardrail blocks during autopilot. The user prunes them.
 
 ## Also binding
 
