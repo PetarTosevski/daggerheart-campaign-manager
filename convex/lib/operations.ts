@@ -38,6 +38,7 @@ export async function withIdempotency<T>(
   },
   run: () => Promise<T>,
 ): Promise<T> {
+  if (args.key.length === 0 || args.key.length > 100) throw new ConvexError({ code: "INVALID", message: "Invalid request key." });
   const requestHash = stableStringify(args.request);
   const existing = await ctx.db
     .query("operations")

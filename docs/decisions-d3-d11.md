@@ -27,3 +27,5 @@
 - D4 characters: the GM can create a character for a player and assign it later (or leave it unassigned); players create their own too.
 - Players can open other players' characters as full sheets, read-only.
 - Creation wizard: all 9 steps required, as designed (the create button lists what's missing).
+- Wither tokens (D5): book rule automated — gaining a token rolls the Fear Die; at or below the PC's tokens → scar and clear tokens; undo available; no per-PC cap (pool of 20 shown for reference).
+- End-of-session Wither → Fear conversion caps GM Fear at 12 and shows "N Fear lost".
