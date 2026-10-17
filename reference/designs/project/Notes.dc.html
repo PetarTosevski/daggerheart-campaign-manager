@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Campaign Journal</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&amp;family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d1417}
+.bj-in{min-height:42px;padding:0 12px;border-radius:8px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font-size:15px;font-family:inherit;box-sizing:border-box;width:100%}
+.bj-in:focus{outline:2px solid #e3b45a;outline-offset:1px}
+.bj-ghost{min-height:38px;padding:0 12px;border-radius:8px;border:1px solid #33444a;background:transparent;color:#e6ecea;font-size:14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;text-decoration:none}
+.bj-ghost:hover{background:#1b282d}
+.bj-lbl{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:#9fb2b6}
+.bj-paper{position:relative;border-radius:6px 14px 14px 6px;background-color:#f3ead4;background-image:radial-gradient(circle,rgba(90,70,40,.28) 1.1px,transparent 1.3px);background-size:22px 22px;background-position:11px 11px;box-shadow:0 18px 50px rgba(0,0,0,.55),inset 14px 0 18px -14px rgba(90,60,20,.45);color:#2a1f14;padding:64px 48px 36px 76px;box-sizing:border-box;min-height:760px}
+.bj-paper::before{content:'';position:absolute;left:46px;top:0;bottom:0;width:2px;background:rgba(176,58,46,.35)}
+.bj-tape{position:absolute;top:-14px;left:50%;transform:translateX(-50%) rotate(-1.5deg);padding:10px 34px 8px;font-family:'Caveat',cursive;font-size:34px;font-weight:700;color:#2a1f14;box-shadow:0 3px 8px rgba(0,0,0,.25);white-space:nowrap;max-width:80%;overflow:hidden;text-overflow:ellipsis}
+.bj-row{display:flex;align-items:flex-start;gap:10px;padding:3px 6px;border-radius:6px;min-height:34px}
+.bj-row:hover{background:rgba(120,90,40,.08)}
+.bj-bul{width:30px;height:30px;flex:none;border:none;background:transparent;cursor:pointer;font-size:22px;line-height:30px;text-align:center;padding:0;font-family:'Caveat',cursive;font-weight:700;border-radius:6px}
+.bj-bul:hover{background:rgba(120,90,40,.15)}
+.bj-text{flex:1;min-width:0;font-family:'Caveat',cursive;font-size:25px;line-height:30px;word-wrap:break-word}
+.bj-act{opacity:0;display:flex;gap:2px;transition:opacity .12s}
+.bj-row:hover .bj-act,.bj-row:focus-within .bj-act{opacity:1}
+.bj-ib{width:30px;height:30px;border:none;background:transparent;cursor:pointer;border-radius:6px;font-size:15px;color:#6a5236;padding:0}
+.bj-ib:hover{background:rgba(120,90,40,.15);color:#2a1f14}
+.bj-chip{min-height:34px;padding:0 10px;border-radius:999px;border:1.5px solid #cdb88f;background:#fbf5e6;color:#2a1f14;font-size:14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+.bj-chip[aria-pressed="true"]{background:#2a1f14;color:#f3ead4;border-color:#2a1f14}
+.bj-mention{background:rgba(227,180,90,.35);border-radius:4px;padding:0 3px;cursor:pointer;text-decoration:none;color:inherit;border-bottom:2px solid #b8842a}
+.bj-mention:hover{background:rgba(227,180,90,.6)}
+.bj-add{flex:1;min-width:0;border:none;border-bottom:2px dashed rgba(90,70,40,.4);background:transparent;font-family:'Caveat',cursive;font-size:25px;color:#2a1f14;padding:4px 2px}
+.bj-add:focus{outline:none;border-bottom-color:#8e2b2b}
+.bj-edit{flex:1;min-width:0;border:1px solid #cdb88f;border-radius:6px;background:#fffaf0;font-family:'Caveat',cursive;font-size:25px;color:#2a1f14;padding:0 6px}
+.bj-key{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 14px;font-family:'Caveat',cursive;font-size:21px;color:#4a3a26}
+.bj-tear{position:relative;min-height:760px;perspective:1600px}
+.bj-half{position:absolute;inset:0;padding:64px 48px 36px 76px;min-height:760px;will-change:transform,opacity}
+.bj-half.stub{clip-path:polygon(0 0, 6.2% 0.0%, 5.5% 3.8%, 7.7% 7.7%, 5.1% 11.5%, 7.2% 15.4%, 6.4% 19.2%, 5.1% 23.1%, 7.0% 26.9%, 5.0% 30.8%, 6.7% 34.6%, 5.1% 38.5%, 5.2% 42.3%, 6.7% 46.2%, 8.4% 50.0%, 5.3% 53.8%, 5.8% 57.7%, 7.6% 61.5%, 9.0% 65.4%, 7.3% 69.2%, 6.5% 73.1%, 9.1% 76.9%, 5.0% 80.8%, 8.6% 84.6%, 6.1% 88.5%, 5.4% 92.3%, 5.3% 96.2%, 6.2% 100.0%, 0 100%);animation:bjStub 1.5s ease-in forwards}
+.bj-half.main{clip-path:polygon(6.2% 0.0%, 5.5% 3.8%, 7.7% 7.7%, 5.1% 11.5%, 7.2% 15.4%, 6.4% 19.2%, 5.1% 23.1%, 7.0% 26.9%, 5.0% 30.8%, 6.7% 34.6%, 5.1% 38.5%, 5.2% 42.3%, 6.7% 46.2%, 8.4% 50.0%, 5.3% 53.8%, 5.8% 57.7%, 7.6% 61.5%, 9.0% 65.4%, 7.3% 69.2%, 6.5% 73.1%, 9.1% 76.9%, 5.0% 80.8%, 8.6% 84.6%, 6.1% 88.5%, 5.4% 92.3%, 5.3% 96.2%, 6.2% 100.0%, 100% 100%, 100% 0);transform-origin:100% 30%;animation:bjRip 1.35s cubic-bezier(.45,0,.75,.35) forwards}
+.bj-half.main::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(255,255,255,.75) 5%,rgba(120,90,40,.3) 9%,transparent 14%)}
+.bj-scrap{position:absolute;width:9px;height:6px;background:#efe3c8;border-radius:1px;box-shadow:0 1px 2px rgba(0,0,0,.3);animation:bjScrap 1s ease-out forwards;opacity:0}
+@keyframes bjRip{0%{transform:none;opacity:1}8%{transform:translateX(4px) rotate(.4deg)}16%{transform:translateX(-3px) rotate(-.3deg)}26%{transform:translateX(6px) rotateY(-6deg) rotate(.8deg)}55%{transform:translate(70px,-30px) rotateY(-24deg) rotate(4deg);opacity:1}100%{transform:translate(520px,-160px) rotateY(-55deg) rotate(14deg);opacity:0}}
+@keyframes bjStub{0%,60%{opacity:1}100%{opacity:0}}
+@keyframes bjScrap{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot))}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0d1417; color: #e6ecea; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box; display: flex; flex-direction: column">
+
+<section aria-label="Campaign header" style="position: relative; overflow: hidden">
+<div aria-hidden="true" style="{{ bannerStyle }}"></div>
+<div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(6, 12, 14, 0.7)"></div>
+<div style="position: relative; max-width: 1344px; margin: 0 auto; padding: 22px 48px 26px; box-sizing: border-box; display: flex; flex-direction: column; gap: 26px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap">
+<a href="{{ dashHref }}" aria-label="Back to the campaign dashboard" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: rgba(0, 0, 0, 0.3)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></a>
+<div style="font-family: 'Cinzel', serif; font-size: 32px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div>
+</div>
+<nav aria-label="Campaign sections" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0, 0, 0, 0.35)">
+<sc-for list="{{ navItems }}" as="n" hint-placeholder-count="7"><a href="{{ n.href }}" aria-current="{{ n.current }}" style="{{ n.style }}">{{ n.label }}</a></sc-for>
+</nav>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.24em; color: #c8d3d0">{{ campaignName }}</div>
+<h1 style="margin: 0; font-family: 'Cinzel', serif; font-size: 44px; line-height: 1.05; font-weight: 900">{{ whoName }}’s Journal</h1>
+<div style="font-size: 15px; color: #d6dfdc">{{ whoSub }} · {{ headerLine }}</div>
+</div>
+<div style="display: flex; gap: 10px; flex-wrap: wrap">
+<sc-if value="{{ unlocked }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ showThreads }}" aria-pressed="{{ threadsPressed }}" style="{{ threadsBtn }}">🧵 Open threads · {{ openCount }}</button></sc-if>
+</div>
+</div>
+<div role="group" aria-label="Whose journal" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<span style="font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: #c8d3d0; margin-right: 4px">Writing as</span>
+<sc-for list="{{ profiles }}" as="pf" hint-placeholder-count="4"><button type="button" onClick="{{ pf.pick }}" aria-pressed="{{ pf.current }}" style="{{ pf.style }}"><span aria-hidden="true" style="{{ pf.avatar }}">{{ pf.initial }}</span><span style="display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15"><span style="font-weight: 600; font-size: 14px">{{ pf.name }} {{ pf.lock }}</span><span style="font-size: 11px; color: #9fb2b6">{{ pf.sub }}</span></span></button></sc-for>
+<span style="flex: 1"></span>
+<sc-if value="{{ unlocked }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ togglePin }}" style="min-height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0, 0, 0, 0.3); color: #e6ecea; font-family: inherit; font-size: 13px; cursor: pointer">{{ pinLabel }}</button></sc-if>
+<sc-if value="{{ canLockNow }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ lockNow }}" style="min-height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0, 0, 0, 0.3); color: #e6ecea; font-family: inherit; font-size: 13px; cursor: pointer">Close &amp; lock</button></sc-if>
+<sc-if value="{{ settingPin }}" hint-placeholder-val="{{ false }}"><input type="password" placeholder="New PIN, then Enter" aria-label="New PIN" onKeyDown="{{ setPinKey }}" style="min-height: 38px; padding: 0 12px; border-radius: 999px; border: 1px solid #e3b45a; background: #0b1214; color: #e6ecea; font-family: inherit; font-size: 14px; width: 190px"></sc-if>
+<sc-if value="{{ pinErr }}" hint-placeholder-val="{{ false }}"><span role="alert" style="color: #ffb4a8; font-size: 13px">{{ pinErr }}</span></sc-if>
+</div>
+</div>
+</section>
+
+<sc-if value="{{ locked }}" hint-placeholder-val="{{ false }}"><div style="flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px"><div class="bj-paper" style="min-height: 0; width: 100%; max-width: 520px; text-align: center; padding: 56px 40px 40px"><div class="bj-tape" style="background: repeating-linear-gradient(45deg, #c9a8ff 0 10px, #b894f0 10px 20px)">Private</div><p style="font-family: 'Caveat', cursive; font-size: 28px; margin: 0 0 16px">This journal belongs to {{ whoName }}.</p><input type="password" placeholder="Enter PIN and press Enter" aria-label="PIN" onKeyDown="{{ unlockKey }}" style="width: 100%; box-sizing: border-box; min-height: 46px; padding: 0 14px; border-radius: 10px; border: 1.5px solid #cdb88f; background: #fffaf0; color: #2a1f14; font-size: 16px; font-family: inherit"></div></div></sc-if>
+<sc-if value="{{ unlocked }}" hint-placeholder-val="{{ true }}">
+<main style="flex: 1; width: 100%; max-width: 1344px; margin: 0 auto; padding: 28px 48px 56px; box-sizing: border-box; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 28px; align-items: start">
+
+<aside aria-label="Journal index" style="display: flex; flex-direction: column; gap: 14px; position: sticky; top: 16px">
+<input class="bj-in" type="search" placeholder="Search the journal" aria-label="Search the journal" onInput="{{ setSearch }}" defaultValue="">
+<sc-for list="{{ groups }}" as="gr" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div class="bj-lbl" style="display: flex; justify-content: space-between; align-items: center"><span>{{ gr.label }}</span><button type="button" class="bj-ghost" onClick="{{ gr.add }}" aria-label="{{ gr.addLabel }}" title="{{ gr.addLabel }}" style="min-height: 28px; padding: 0 8px; font-size: 13px">＋</button></div>
+<sc-for list="{{ gr.pages }}" as="pg" hint-placeholder-count="2">
+<button type="button" onClick="{{ pg.pick }}" aria-current="{{ pg.current }}" style="{{ pg.style }}"><span aria-hidden="true" style="{{ pg.tab }}"></span><span style="flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ pg.title }}</span><span style="font-size: 12px; color: #9fb2b6">{{ pg.count }}</span></button>
+</sc-for>
+<sc-if value="{{ gr.empty }}" hint-placeholder-val="{{ false }}"><div style="font-size: 13px; color: #7f9297; padding: 4px 2px">{{ gr.emptyText }}</div></sc-if>
+</div>
+</sc-for>
+<div style="padding: 14px; border-radius: 12px; background: #141e22; border: 1px solid #253338; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #9fb2b6; line-height: 1.5">
+<span class="bj-lbl">Quick keys</span>
+<span>Start a line with <strong style="color: #e6ecea">*</strong> task · <strong style="color: #e6ecea">o</strong> event · <strong style="color: #e6ecea">-</strong> note · <strong style="color: #e6ecea">!</strong> idea · <strong style="color: #f0cf8a">+</strong> Hope · <strong style="color: #c9a8ff">^</strong> Fear</span>
+<span>Type <strong style="color: #e6ecea">@name</strong> to link someone or somewhere from Characters &amp; Locations.</span>
+</div>
+</aside>
+
+<section aria-label="Journal page" style="min-width: 0">
+
+<sc-if value="{{ isThreads }}" hint-placeholder-val="{{ false }}">
+<div class="bj-paper">
+<div class="bj-tape" style="background: repeating-linear-gradient(45deg, #c9a8ff 0 10px, #b894f0 10px 20px)">Open threads</div>
+<p style="margin: 0 0 18px; font-family: 'Caveat', cursive; font-size: 24px; color: #6a5236">Every unfinished task and every looming Fear, from all pages.</p>
+<sc-if value="{{ noThreads }}" hint-placeholder-val="{{ false }}"><p style="font-family: 'Caveat', cursive; font-size: 26px; margin: 0">Nothing dangling. Suspicious…</p></sc-if>
+<sc-for list="{{ threads }}" as="e" hint-placeholder-count="4">
+<div class="bj-row"><button type="button" class="bj-bul" onClick="{{ e.cycle }}" title="{{ e.bulTip }}" aria-label="{{ e.bulTip }}" style="{{ e.bulStyle }}">{{ e.bul }}</button><span class="bj-text" style="{{ e.textStyle }}"><sc-for list="{{ e.parts }}" as="p" hint-placeholder-count="1"><sc-if value="{{ p.plain }}" hint-placeholder-val="{{ true }}">{{ p.t }}</sc-if><sc-if value="{{ p.link }}" hint-placeholder-val="{{ false }}"><a class="bj-mention" href="Codex.dc.html" onClick="{{ p.go }}">{{ p.t }}</a></sc-if></sc-for></span><button type="button" class="bj-ghost" onClick="{{ e.open }}" style="min-height: 30px; font-size: 13px; color: #6a5236; border-color: #cdb88f">{{ e.pageTitle }} →</button></div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ tearing }}" hint-placeholder-val="{{ false }}"><div class="bj-tear" aria-label="Page torn out" role="status">
+<div class="bj-paper bj-half stub"><div class="bj-tape" style="{{ pageTape }}">{{ pageTitle }}</div><sc-for list="{{ tearLines }}" as="tl" hint-placeholder-count="4"><div class="bj-text" style="padding: 2px 0 2px 40px">{{ tl }}</div></sc-for></div>
+<div class="bj-paper bj-half main"><div class="bj-tape" style="{{ pageTape }}">{{ pageTitle }}</div><sc-for list="{{ tearLines }}" as="tl" hint-placeholder-count="4"><div class="bj-text" style="padding: 2px 0 2px 40px">{{ tl }}</div></sc-for></div>
+<sc-for list="{{ scraps }}" as="sp" hint-placeholder-count="8"><span class="bj-scrap" aria-hidden="true" style="{{ sp }}"></span></sc-for>
+</div></sc-if>
+<sc-if value="{{ isPage }}" hint-placeholder-val="{{ true }}">
+<div class="bj-paper">
+<div class="bj-tape" style="{{ pageTape }}">{{ pageTitle }}</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px">
+<input type="text" value="{{ pageTitle }}" onChange="{{ renamePage }}" aria-label="Page title" style="flex: 1; min-width: 200px; border: none; border-bottom: 1px solid rgba(90,70,40,.3); background: transparent; font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700; color: #2a1f14; padding: 4px 0">
+<span style="font-family: 'Caveat', cursive; font-size: 22px; color: #6a5236">{{ pageMeta }}</span>
+<button type="button" class="bj-ghost" onClick="{{ cycleTape }}" title="Change the washi tape" style="min-height: 32px; color: #4a3a26; border-color: #cdb88f; font-size: 13px">🎀 Tape</button>
+<button type="button" class="bj-ghost" onClick="{{ migrateOpen }}" title="{{ migrateTip }}" disabled="{{ noOpen }}" style="min-height: 32px; color: #4a3a26; border-color: #cdb88f; font-size: 13px">➜ Migrate open tasks</button>
+<button type="button" class="bj-ghost" onClick="{{ delPage }}" style="min-height: 32px; color: #8e2b2b; border-color: #d8a8a0; font-size: 13px">{{ delLabel }}</button>
+</div>
+<sc-if value="{{ noEntries }}" hint-placeholder-val="{{ false }}"><p style="margin: 0 0 10px; font-family: 'Caveat', cursive; font-size: 24px; color: #8a7350">{{ emptyLine }}</p></sc-if>
+<div style="display: flex; flex-direction: column; gap: 1px">
+<sc-for list="{{ entries }}" as="e" hint-placeholder-count="5">
+<div class="bj-row" style="{{ e.rowStyle }}">
+<button type="button" class="bj-bul" onClick="{{ e.cycle }}" title="{{ e.bulTip }}" aria-label="{{ e.bulTip }}" style="{{ e.bulStyle }}">{{ e.bul }}</button>
+<sc-if value="{{ e.star }}" hint-placeholder-val="{{ false }}"><span aria-label="Priority" style="font-size: 18px; line-height: 30px; color: #b8842a">★</span></sc-if>
+<sc-if value="{{ e.view }}" hint-placeholder-val="{{ true }}"><span class="bj-text" style="{{ e.textStyle }}" onDoubleClick="{{ e.edit }}"><sc-for list="{{ e.parts }}" as="p" hint-placeholder-count="1"><sc-if value="{{ p.plain }}" hint-placeholder-val="{{ true }}">{{ p.t }}</sc-if><sc-if value="{{ p.link }}" hint-placeholder-val="{{ false }}"><a class="bj-mention" href="Codex.dc.html" onClick="{{ p.go }}" title="{{ p.tip }}">{{ p.t }}</a></sc-if></sc-for></span></sc-if>
+<sc-if value="{{ e.editing }}" hint-placeholder-val="{{ false }}"><input class="bj-edit" type="text" defaultValue="{{ e.text }}" onKeyDown="{{ e.editKey }}" onBlur="{{ e.save }}" aria-label="Edit entry" autoFocus="{{ true }}"></sc-if>
+<span class="bj-act">
+<button type="button" class="bj-ib" onClick="{{ e.toggleStar }}" title="Priority" aria-label="Toggle priority">★</button>
+<button type="button" class="bj-ib" onClick="{{ e.edit }}" title="Edit (or double-click the text)" aria-label="Edit entry">✎</button>
+<button type="button" class="bj-ib" onClick="{{ e.up }}" title="Move up" aria-label="Move up">↑</button>
+<button type="button" class="bj-ib" onClick="{{ e.remove }}" title="Delete" aria-label="Delete entry">×</button>
+</span>
+</div>
+</sc-for>
+</div>
+
+<div style="margin-top: 22px; display: flex; flex-direction: column; gap: 10px">
+<div role="radiogroup" aria-label="Bullet type" style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{ kinds }}" as="k" hint-placeholder-count="6"><button type="button" class="bj-chip" role="radio" aria-checked="{{ k.pressed }}" aria-pressed="{{ k.pressed }}" onClick="{{ k.pick }}" title="{{ k.tip }}"><span style="{{ k.glyphStyle }}">{{ k.glyph }}</span>{{ k.label }}</button></sc-for></div>
+<div style="display: flex; align-items: center; gap: 10px"><span style="{{ addBulStyle }}">{{ addBul }}</span><input id="bj-add" class="bj-add" type="text" placeholder="{{ addPh }}" aria-label="New entry" onKeyDown="{{ addKey }}"></div>
+</div>
+
+<div style="margin-top: 34px; padding-top: 14px; border-top: 1px dashed rgba(90,70,40,.35)">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.2em; color: #7a5b2e; margin-bottom: 6px">KEY</div>
+<div class="bj-key"><span>• task</span><span>× done</span><span>&gt; migrated</span><span>&lt; scheduled</span><span>○ event</span><span>– note</span><span>! idea</span><span style="color: #9a6b10">✦ Hope · a boon</span><span style="color: #6b3fae">☠ Fear · a threat</span><span>★ priority</span></div>
+</div>
+</div>
+</sc-if>
+</section>
+</main>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+// ---- the rip: synthesised paper-tear sound (filtered, crackly noise), no audio files needed
+const playTear = () => {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    const ctx = window.__bjAudio || (window.__bjAudio = new AC()); if (ctx.state === 'suspended') ctx.resume();
+    const dur = 1.05, sr = ctx.sampleRate, n = Math.floor(dur * sr); const buf = ctx.createBuffer(1, n, sr); const d = buf.getChannelData(0);
+    let grain = 0, next = 0, lp = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr;
+      if (i >= next) { grain = Math.random() < 0.18 ? 1 : 0.15 + Math.random() * 0.55; next = i + Math.floor(sr * (0.002 + Math.random() * 0.007)); }
+      const env = Math.min(1, t / 0.025) * (t < 0.12 ? 0.55 : t < 0.75 ? 0.75 + 0.25 * Math.sin(t * 9) : Math.max(0, 1 - (t - 0.75) / 0.3));
+      const w = Math.random() * 2 - 1; lp = lp * 0.55 + w * 0.45;
+      d[i] = (w * 0.6 + lp * 0.4) * grain * env;
+    }
+    const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = 0.95 + Math.random() * 0.1;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 700;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8; bp.frequency.setValueAtTime(2600, ctx.currentTime); bp.frequency.linearRampToValueAtTime(1500, ctx.currentTime + dur);
+    const g = ctx.createGain(); g.gain.value = 0.9;
+    src.connect(hp); hp.connect(bp); bp.connect(g); g.connect(ctx.destination); src.start();
+  } catch (e) {}
+};
+const uid = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const TAPES = ['repeating-linear-gradient(45deg, #e8c27a 0 10px, #dcb064 10px 20px)', 'repeating-linear-gradient(-45deg, #9fc7a8 0 9px, #8ab995 9px 18px)', 'repeating-linear-gradient(90deg, #e9a9a0 0 8px, #f1bdb5 8px 16px)', 'radial-gradient(circle at 6px 6px, #fff6 2px, transparent 2.5px) 0 0 / 14px 14px, #a9c3e6', 'repeating-linear-gradient(45deg, #c9a8ff 0 10px, #b894f0 10px 20px)', 'repeating-linear-gradient(0deg, #f0e0a8 0 6px, #e6d290 6px 12px)'];
+const K = { task: { g: '•', c: '#2a1f14', label: 'Task', tip: 'Something to do. Click its bullet to complete, migrate or schedule it.' }, event: { g: '○', c: '#2a1f14', label: 'Event', tip: 'Something that happened or will happen.' }, note: { g: '–', c: '#2a1f14', label: 'Note', tip: 'A fact, quote or observation.' }, idea: { g: '!', c: '#8e2b2b', label: 'Idea', tip: 'Inspiration for later.' }, hope: { g: '✦', c: '#9a6b10', label: 'Hope', tip: 'A boon, ally or lucky break for the party.' }, fear: { g: '☠', c: '#6b3fae', label: 'Fear', tip: 'A threat brewing against the party. Counts as an open thread.' } };
+const STATES = ['open', 'done', 'migrated', 'scheduled', 'struck'];
+const SG = { done: '×', migrated: '>', scheduled: '<' };
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ls = (k, d) => { try { const v = JSON.parse(window.localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } };
+    const accent = (ls('dh.settings', {}) || {}).accent || '#e3b45a';
+    const act = ls('dh.active', null) || { key: 'witherwild', hub: 'CampaignHub.dc.html', name: 'The Witherwild', blob: 'd69136bf0c8eddbad10c2eb636b1b5ca' };
+    // ---- whose journal: the GM or one of the party's players; each has their own pages
+    const party = (() => { const v = ls('dh.' + act.key + '.party', []); return Array.isArray(v) ? v : []; })();
+    const slug = (n) => String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'hero';
+    const profiles = [{ id: 'gm', name: 'Game Master', sub: 'GM' }].concat(party.filter((c) => !c.dead).map((c, i) => ({ id: 'pc-' + slug(c.f && c.f.name || 'hero-' + (i + 1)), name: (c.f && c.f.name) || 'Hero ' + (i + 1), sub: c.clsName || 'Player' })));
+    const WHOKEY = 'dh.' + act.key + '.journalWho';
+    let who = st.who || (() => { try { return window.localStorage.getItem(WHOKEY) || 'gm'; } catch (e) { return 'gm'; } })();
+    if (!profiles.some((p) => p.id === who)) who = 'gm';
+    const me = profiles.find((p) => p.id === who);
+    const isGmJ = who === 'gm';
+    const PINKEY = 'dh.' + act.key + '.journalPins'; const pins = ls(PINKEY, {}) || {};
+    const hash = (t) => { let h = 5381; const x = String(t) + '|' + act.key; for (let i = 0; i < x.length; i++) h = ((h * 33) ^ x.charCodeAt(i)) >>> 0; return h.toString(16); };
+    this._unlocked = this._unlocked || {};
+    const locked = !!pins[who] && !this._unlocked[who];
+    const JK = 'dh.' + act.key + '.journal' + (isGmJ ? '' : '.' + who);
+    let J = st.J && st.Jwho === who ? st.J : null;
+    if (!J) {
+      J = ls(JK, null);
+      if (!J || !Array.isArray(J.pages)) {
+        const now = Date.now();
+        J = isGmJ ? { pages: [{ id: uid('p'), kind: 'log', title: 'Session 1', tape: 0, created: now, entries: [] }, { id: uid('p'), kind: 'collection', title: 'Rumors & hooks', tape: 1, created: now, entries: [] }, { id: uid('p'), kind: 'collection', title: 'Loot & debts', tape: 2, created: now, entries: [] }, { id: uid('p'), kind: 'future', title: 'Future log', tape: 3, created: now, entries: [] }] }
+          : { pages: [{ id: uid('p'), kind: 'log', title: 'Session 1', tape: 2, created: now, entries: [] }, { id: uid('p'), kind: 'collection', title: 'People we met', tape: 1, created: now, entries: [] }, { id: uid('p'), kind: 'collection', title: 'Clues & secrets', tape: 4, created: now, entries: [] }, { id: uid('p'), kind: 'collection', title: 'My goals', tape: 0, created: now, entries: [] }] };
+        try { window.localStorage.setItem(JK, JSON.stringify(J)); } catch (e) {}
+      }
+    }
+    const save = (j, extra) => { try { window.localStorage.setItem(JK, JSON.stringify(j)); } catch (e) {} this.setState({ J: j, Jwho: who, ...(extra || {}) }); };
+    const cur = () => (this.state && this.state.J) || J;
+    const pages = J.pages;
+    let selId = st.page; if (!pages.some((p) => p.id === selId)) selId = pages[0] ? pages[0].id : null;
+    const page = pages.find((p) => p.id === selId) || null;
+    const threadsMode = !!st.threads;
+    const updPage = (id, fn) => { const j = cur(); save({ ...j, pages: j.pages.map((p) => (p.id === id ? { ...p, ...fn(p) } : p)) }); };
+    // Codex mentions
+    const codex = ls('dh.' + act.key + '.codex', { chars: [], locs: [] }) || { chars: [], locs: [] };
+    const known = (e) => isGmJ || !!e.known;
+    const refs = [].concat((codex.chars || []).filter(known).map((e) => ({ id: e.id, kind: 'chars', name: e.name || '', role: e.role || '' })), (codex.locs || []).filter(known).map((e) => ({ id: e.id, kind: 'locs', name: e.name || '', role: e.role || '' }))).filter((r) => r.name.trim());
+    const parts = (text) => {
+      const out = []; let s = text || ''; let i = 0; let buf = '';
+      while (i < s.length) {
+        if (s[i] === '@') { const rest = s.slice(i + 1).toLowerCase(); const hit = refs.filter((r) => rest.startsWith(r.name.toLowerCase())).sort((a, b) => b.name.length - a.name.length)[0]
+            || refs.filter((r) => { const first = r.name.toLowerCase().split(/[\s,]+/)[0]; return first.length > 1 && rest.startsWith(first) && !/[a-z0-9]/i.test(rest.charAt(first.length) || ' '); })[0];
+          if (hit) { const lenFull = rest.startsWith(hit.name.toLowerCase()) ? hit.name.length : hit.name.toLowerCase().split(/[\s,]+/)[0].length; if (buf) out.push({ t: buf, plain: true, link: false }); buf = ''; out.push({ t: s.slice(i + 1, i + 1 + lenFull), plain: false, link: true, tip: hit.role || (hit.kind === 'locs' ? 'Location' : 'Character'), go: () => { try { window.localStorage.setItem('dh.' + act.key + '.codexFocus', JSON.stringify({ id: hit.id, kind: hit.kind })); } catch (e) {} } }); i += 1 + lenFull; continue; } }
+        buf += s[i]; i++;
+      }
+      if (buf) out.push({ t: buf, plain: true, link: false });
+      return out.length ? out : [{ t: '', plain: true, link: false }];
+    };
+    const bulFor = (e) => { if (e.k === 'task') return e.s && SG[e.s] ? SG[e.s] : '•'; return (K[e.k] || K.note).g; };
+    const q = (st.search || '').trim().toLowerCase();
+    const rowFor = (p, e, idx, inThreads) => {
+      const k = K[e.k] || K.note; const struck = e.s === 'struck' || (e.k !== 'task' && e.s === 'done');
+      const cycle = () => updPage(p.id, (pp) => ({ entries: pp.entries.map((x) => { if (x.id !== e.id) return x; if (x.k === 'task') return { ...x, s: STATES[(STATES.indexOf(x.s || 'open') + 1) % STATES.length] }; return { ...x, s: x.s === 'done' ? 'open' : 'done' }; }) }));
+      return {
+        bul: bulFor(e), bulStyle: 'color: ' + k.c + ';' + (e.k === 'fear' ? ' text-shadow: 0 0 6px rgba(140, 80, 220, 0.45);' : e.k === 'hope' ? ' text-shadow: 0 0 6px rgba(230, 180, 60, 0.5);' : ''),
+        bulTip: e.k === 'task' ? 'Task: ' + ({ open: 'open', done: 'done', migrated: 'migrated', scheduled: 'scheduled', struck: 'no longer relevant' })[e.s || 'open'] + '. Click to change.' : k.label + (struck ? ' (resolved). Click to reopen.' : '. Click to mark resolved.'),
+        cycle, parts: parts(e.text), text: e.text, star: !!e.star,
+        textStyle: (struck ? 'text-decoration: line-through; text-decoration-thickness: 2px; opacity: 0.55;' : '') + (e.s === 'done' && e.k === 'task' ? ' opacity: 0.6;' : '') + (e.s === 'migrated' || e.s === 'scheduled' ? ' opacity: 0.55;' : '') + (e.k === 'fear' ? ' color: #4a2a7a;' : e.k === 'hope' ? ' color: #6a4a08;' : ''),
+        rowStyle: q && (e.text || '').toLowerCase().includes(q) ? 'background: rgba(227, 180, 90, 0.28);' : '',
+        view: st.editing !== e.id, editing: st.editing === e.id,
+        edit: () => this.setState({ editing: e.id }),
+        editKey: (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); ev.target.blur(); } if (ev.key === 'Escape') this.setState({ editing: null }); },
+        save: (ev) => { const v = ev.target.value; if (this.state && this.state.editing !== e.id) return; updPage(p.id, (pp) => ({ entries: pp.entries.map((x) => (x.id === e.id ? { ...x, text: v } : x)) })); this.setState({ editing: null }); },
+        toggleStar: () => updPage(p.id, (pp) => ({ entries: pp.entries.map((x) => (x.id === e.id ? { ...x, star: !x.star } : x)) })),
+        up: () => updPage(p.id, (pp) => { const a = pp.entries.slice(); const i = a.findIndex((x) => x.id === e.id); if (i > 0) { const t = a[i - 1]; a[i - 1] = a[i]; a[i] = t; } return { entries: a }; }),
+        remove: () => updPage(p.id, (pp) => ({ entries: pp.entries.filter((x) => x.id !== e.id) })),
+        pageTitle: p.title, open: () => this.setState({ page: p.id, threads: false })
+      };
+    };
+    const isOpenThread = (e) => (e.k === 'task' && (!e.s || e.s === 'open')) || (e.k === 'fear' && e.s !== 'done');
+    const threadsList = []; pages.forEach((p) => (p.entries || []).forEach((e, i) => { if (isOpenThread(e)) threadsList.push(rowFor(p, e, i, true)); }));
+
+    const kind = st.kind || 'task';
+    const PREFIX = { '*': 'task', '.': 'task', o: 'event', '-': 'note', '!': 'idea', '+': 'hope', '^': 'fear' };
+    const addKey = (ev) => {
+      if (ev.key !== 'Enter' || !page) return; ev.preventDefault(); let v = ev.target.value; if (!v.trim()) return; let k = this.state && this.state.kind || 'task';
+      const m = /^\s*([*.o!+^-])\s+(.*)$/.exec(v); if (m && PREFIX[m[1]]) { k = PREFIX[m[1]]; v = m[2]; }
+      ev.target.value = ''; updPage(page.id, (pp) => ({ entries: (pp.entries || []).concat({ id: uid('e'), k, text: v.trim(), s: 'open' }) }));
+    };
+    const groupsDef = [['log', 'Session logs', 'New session log'], ['collection', 'Collections', 'New collection'], ['future', 'Future log', 'New future page']];
+    const groups = groupsDef.map(([gk, label, addLabel]) => {
+      const ps = pages.filter((p) => p.kind === gk).filter((p) => !q || p.title.toLowerCase().includes(q) || (p.entries || []).some((e) => (e.text || '').toLowerCase().includes(q)));
+      return { label, addLabel, empty: !ps.length, emptyText: q ? 'No matches.' : 'Nothing here yet.',
+        add: () => { const j = cur(); const n = j.pages.filter((p) => p.kind === 'log').length + 1; const title = gk === 'log' ? 'Session ' + n : gk === 'future' ? 'Future log ' + (j.pages.filter((p) => p.kind === 'future').length + 1) : 'New collection'; const np = { id: uid('p'), kind: gk, title, tape: j.pages.length % TAPES.length, created: Date.now(), entries: [] }; save({ ...j, pages: j.pages.concat(np) }, { page: np.id, threads: false }); },
+        pages: ps.map((p) => { const on = !threadsMode && p.id === selId; const open = (p.entries || []).filter(isOpenThread).length;
+          return { title: p.title, count: open ? open + ' open' : (p.entries || []).length ? String((p.entries || []).length) : '', current: on ? 'page' : 'false', pick: () => this.setState({ page: p.id, threads: false, confirmDel: null, editing: null }),
+            tab: 'width: 10px; height: 22px; flex: none; border-radius: 2px; background: ' + TAPES[(p.tape || 0) % TAPES.length] + ';',
+            style: 'width: 100%; min-height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 15px; color: #e6ecea; box-sizing: border-box; background: ' + (on ? '#1b282d' : 'transparent') + '; border: 1px solid ' + (on ? accent : 'transparent') + ';' }; }) };
+    });
+    const NAV = ['Dashboard', 'Party', 'World', 'Characters & Locations', 'Adversaries', 'Sessions', 'Notes'];
+    const HREF = { Dashboard: act.hub || 'CampaignHub.dc.html', Party: 'Party.dc.html', World: 'World.dc.html', 'Characters & Locations': 'Codex.dc.html', Adversaries: 'Adversaries.dc.html', Sessions: 'Sessions.dc.html', Notes: 'Notes.dc.html' };
+    const navItems = NAV.map((label) => { const c = label === 'Notes'; return { label, href: HREF[label], current: c ? 'page' : 'false', style: 'min-height: 40px; padding: 0 14px; border-radius: 8px; font-size: 14px; display: inline-flex; align-items: center; text-decoration: none; box-sizing: border-box; color: ' + (c ? '#1a1408' : '#e6ecea') + '; background: ' + (c ? accent : 'transparent') + ';' }; });
+    const openCount = threadsList.length;
+    const pendingDel = page && st.confirmDel === page.id;
+    const openTasks = page ? (page.entries || []).filter((e) => e.k === 'task' && (!e.s || e.s === 'open')) : [];
+    const target = page ? (() => { const logs = pages.filter((p) => p.kind === page.kind && p.id !== page.id && (p.created || 0) > (page.created || 0)); return logs[0] || null; })() : null;
+    const created = page ? new Date(page.created || Date.now()) : null;
+    return {
+      accent, navItems, groups,
+      locked, unlocked: !locked, whoName: me.name, whoSub: isGmJ ? 'GM journal · private to the GM' : 'Player journal · ' + me.sub,
+      profiles: profiles.map((p) => { const on = p.id === who; return { name: p.name, sub: p.sub, lock: pins[p.id] ? '🔒' : '', initial: p.name.charAt(0).toUpperCase(), current: on ? 'true' : 'false',
+        pick: () => { try { window.localStorage.setItem(WHOKEY, p.id); } catch (e) {} this.setState({ who: p.id, J: null, Jwho: null, page: null, threads: false, editing: null, pinErr: '', pinMode: null }); },
+        style: 'min-height: 46px; display: inline-flex; align-items: center; gap: 10px; padding: 4px 14px 4px 4px; border-radius: 999px; cursor: pointer; font-family: inherit; color: #e6ecea; background: ' + (on ? '#1b282d' : 'rgba(0, 0, 0, 0.3)') + '; border: 1.5px solid ' + (on ? accent : 'rgba(255, 255, 255, 0.2)') + ';',
+        avatar: 'width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-family: \'Cinzel\', serif; font-weight: 700; color: #1a1408; background: ' + (p.id === 'gm' ? '#c9a8ff' : accent) + ';' }; }),
+      pinLabel: pins[who] ? '🔓 Remove lock' : '🔒 Lock with a PIN',
+      pinMode: st.pinMode || null, settingPin: st.pinMode === 'set', pinErr: st.pinErr || '',
+      togglePin: () => { if (pins[who]) { const np = { ...pins }; delete np[who]; try { window.localStorage.setItem(PINKEY, JSON.stringify(np)); } catch (e) {} this.setState({ pinMode: null, tick: Date.now() }); } else this.setState({ pinMode: st.pinMode === 'set' ? null : 'set', pinErr: '' }); },
+      setPinKey: (ev) => { if (ev.key !== 'Enter') return; const v = ev.target.value.trim(); if (v.length < 3) { this.setState({ pinErr: 'Use at least 3 characters.' }); return; } const np = { ...pins, [who]: hash(v) }; try { window.localStorage.setItem(PINKEY, JSON.stringify(np)); } catch (e) {} this._unlocked[who] = true; this.setState({ pinMode: null, pinErr: '' }); },
+      unlockKey: (ev) => { if (ev.key !== 'Enter') return; if (hash(ev.target.value.trim()) === pins[who]) { this._unlocked[who] = true; this.setState({ pinErr: '', tick: Date.now() }); } else { ev.target.value = ''; this.setState({ pinErr: 'That is not the right PIN.' }); } },
+      lockNow: () => { this._unlocked[who] = false; this.setState({ tick: Date.now() }); }, canLockNow: !!pins[who] && !locked,
+      dashHref: act.hub || 'CampaignHub.dc.html', campaignName: act.name || 'Campaign',
+      bannerStyle: 'position: absolute; inset: 0; background-size: cover; background-position: center 40%; background-image: url(/_blob/' + (act.blob || 'd69136bf0c8eddbad10c2eb636b1b5ca') + ');',
+      headerLine: pages.length + ' pages · ' + pages.reduce((a, p) => a + (p.entries || []).length, 0) + ' entries',
+      openCount, isThreads: threadsMode && !st.tearing, isPage: !threadsMode && !!page && !st.tearing, tearing: !!st.tearing && !!page,
+      tearLines: page ? (page.entries || []).slice(0, 14).map((e) => bulFor(e) + '  ' + (e.text || '')) : [],
+      scraps: Array.from({ length: 12 }, (_, i) => 'left: ' + (6 + (i % 3)) + '%; top: ' + (4 + i * 8) + '%; --dx: ' + (-20 + (i % 4) * 30) + 'px; --dy: ' + (90 + i * 22) + 'px; --rot: ' + (i * 83) + 'deg; animation-delay: ' + (0.25 + i * 0.05) + 's;'), threads: threadsList, noThreads: !threadsList.length,
+      threadsPressed: threadsMode ? 'true' : 'false', showThreads: () => this.setState({ threads: !threadsMode }),
+      threadsBtn: 'min-height: 48px; padding: 0 20px; border-radius: 999px; cursor: pointer; font-family: inherit; font-size: 15px; font-weight: 600; ' + (threadsMode ? 'background: ' + accent + '; color: #1a1408; border: none;' : 'background: rgba(0, 0, 0, 0.35); color: #ece6d6; border: 1px solid rgba(255, 255, 255, 0.3);'),
+      setSearch: (ev) => this.setState({ search: ev.target.value }),
+      pageTitle: page ? page.title : '', pageTape: page ? 'background: ' + TAPES[(page.tape || 0) % TAPES.length] + ';' : '',
+      pageMeta: page ? ({ log: 'session log', collection: 'collection', future: 'future log' })[page.kind] + ' · ' + created.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '',
+      renamePage: (ev) => { const v = ev.target.value.trim(); if (page && v) updPage(page.id, () => ({ title: v })); },
+      cycleTape: () => page && updPage(page.id, (p) => ({ tape: ((p.tape || 0) + 1) % TAPES.length })),
+      delLabel: pendingDel ? 'Click again to tear out' : 'Tear out page',
+      delPage: () => { if (!page) return; if (!pendingDel) { this.setState({ confirmDel: page.id }); return; } const pid = page.id; playTear(); this.setState({ tearing: pid, confirmDel: null }); setTimeout(() => { const j = cur(); save({ ...j, pages: j.pages.filter((p) => p.id !== pid) }, { tearing: null, page: null }); }, 1450); },
+      noOpen: openTasks.length ? null : true,
+      migrateTip: target ? 'Copy open tasks to “' + target.title + '” and mark them > here' : 'Copy open tasks to a new page and mark them > here',
+      migrateOpen: () => { if (!page || !openTasks.length) return; const j = cur(); let pagesN = j.pages.slice(); let tgt = target;
+        if (!tgt) { const n = pagesN.filter((p) => p.kind === page.kind).length + 1; tgt = { id: uid('p'), kind: page.kind, title: page.kind === 'log' ? 'Session ' + n : page.title + ' (cont.)', tape: pagesN.length % TAPES.length, created: Date.now(), entries: [] }; pagesN = pagesN.concat(tgt); }
+        const moved = openTasks.map((e) => ({ ...e, id: uid('e'), s: 'open' }));
+        pagesN = pagesN.map((p) => (p.id === page.id ? { ...p, entries: p.entries.map((e) => (openTasks.some((o) => o.id === e.id) ? { ...e, s: 'migrated' } : e)) } : p.id === tgt.id ? { ...p, entries: (p.entries || []).concat(moved) } : p));
+        save({ ...j, pages: pagesN }, { page: tgt.id }); },
+      noEntries: !!page && !(page.entries || []).length,
+      emptyLine: page && page.kind === 'log' ? 'A fresh page. What happened at the table?' : page && page.kind === 'future' ? 'Plans, festivals, deadlines, things coming due…' : 'Start the collection…',
+      entries: page ? (page.entries || []).map((e, i) => rowFor(page, e, i, false)) : [],
+      kinds: Object.keys(K).map((k) => ({ label: K[k].label, glyph: K[k].g, tip: K[k].tip, glyphStyle: 'font-family: \'Caveat\', cursive; font-weight: 700; font-size: 20px; color: ' + (kind === k ? '#f3ead4' : K[k].c) + ';', pressed: kind === k ? 'true' : 'false', pick: () => { this.setState({ kind: k }); setTimeout(() => { const el = document.getElementById('bj-add'); if (el) el.focus(); }, 0); } })),
+      addBul: (K[kind] || K.task).g, addBulStyle: 'width: 30px; text-align: center; font-family: \'Caveat\', cursive; font-weight: 700; font-size: 26px; color: ' + (K[kind] || K.task).c + ';',
+      addPh: 'Write a ' + (K[kind] || K.task).label.toLowerCase() + ' and press Enter… (@ to link)', addKey
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Five Banners Burning Tome · Open Book</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a1416}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/5273dcaa00f81a748be4d8404ef72b6e);background-size:cover;background-position:60% 40%;background-repeat:no-repeat}
+.ww-dim{filter:blur(4px) brightness(0.45);transform:scale(1.05)}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+<sc-if value="{{ standalone }}" hint-placeholder-val="{{ true }}"><div class="ww-bg ww-dim" aria-hidden="true" style="position: absolute; inset: 0"></div></sc-if>
+
+<sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-modal="true" aria-labelledby="tomeA-title" style="position: relative; width: 100%; max-width: 1240px; height: 880px; background: #3b2b1d; border: 1px solid #5c4430; border-radius: 16px; padding: 18px; box-sizing: border-box; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); display: flex">
+
+<button type="button" onClick="{{ close }}" aria-label="Close tome" style="position: absolute; top: -18px; right: -18px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+<div aria-hidden="true" style="position: absolute; top: 0; right: 140px; width: 28px; height: 140px; background: #8e2b2b; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); z-index: 1"></div>
+
+<div style="flex: 1; display: flex; background: #efe3c8; border-radius: 6px; overflow: hidden; min-width: 0">
+
+<div style="flex: 0 0 38%; padding: 48px 40px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid #d3c19c; box-shadow: inset -28px 0 34px -26px rgba(90, 60, 20, 0.4)">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: #7a5b2e">Campaign Frame · Core Rulebook</div>
+<h2 id="tomeA-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 46px; line-height: 1.05; font-weight: 900; color: #2a1f14">Five Banners Burning</h2>
+<svg width="220" height="14" viewBox="0 0 220 14" aria-hidden="true"><path d="M0 7h96M124 7h96" stroke="#a68352" stroke-width="1.2"></path><path d="M110 1l6 6-6 6-6-6z" fill="#8e2b2b"></path></svg>
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a5b2e">Contents</div>
+<nav aria-label="Chapters" style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{ t.pick }}" aria-current="{{ t.current }}" style="{{ t.style }}"><span style="font-family: 'Cinzel', serif; font-size: 18px; width: 40px; color: #8e2b2b">{{ t.roman }}</span><span style="flex: 1">{{ t.title }}</span></button>
+</sc-for>
+</nav>
+<div class="ww-bg" aria-hidden="true" style="margin-top: auto; height: 170px; border-radius: 100px 100px 8px 8px; border: 3px double #a68352"></div>
+<div style="padding: 14px 16px; border: 1px solid #cdb88f; border-radius: 6px; background: #e8d9b8; font-size: 16px; line-height: 1.5; font-style: italic; color: #4a3a26"><span style="font-style: normal; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.18em; color: #7a5b2e; display: block; margin-bottom: 4px">FOR THE GAME MASTER</span>{{ cur.note }}</div>
+</div>
+
+<div style="flex: 1; min-width: 0; padding: 48px 56px 28px 52px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<span style="font-family: 'Cinzel', serif; font-size: 22px; color: #8e2b2b">{{ cur.roman }}.</span>
+<h3 style="margin: 0; font-family: 'Cinzel', serif; font-size: 32px; font-weight: 700; color: #2a1f14">{{ cur.title }}</h3>
+</div>
+<sc-if value="{{ cur.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-family: 'Cinzel', serif; font-size: 18px; color: #6a4a22; margin-top: -8px">{{ cur.sub }}</div></sc-if>
+<div style="height: 1px; background: #cdb88f"></div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 14px; font-size: 19px; line-height: 1.65; color: #2a1f14; display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{ hasFigures }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; color: #7a5b2e">KEY FIGURES</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px">
+<sc-for list="{{ keyFigures }}" as="k" hint-placeholder-count="3"><div style="padding: 12px 14px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 6px; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.25">{{ k.name }}</span><span style="font-size: 14px; color: #6a5236">{{ k.role }}</span><span style="font-size: 15px; line-height: 1.4">{{ k.line }}</span></div></sc-for>
+</div>
+<div style="align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: #2f4a3a; color: #eef3ea; font-size: 15px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>Start: {{ startAt }}</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMechanics }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+<div style="display: flex; gap: 14px; padding: 14px 16px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 8px">
+<span style="width: 32px; height: 32px; flex: none; border-radius: 50%; border: 2px solid #8e2b2b; color: #8e2b2b; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; font-size: 15px">{{ r.n }}</span>
+<div style="display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700">{{ r.head }}</span><span style="font-size: 18px; line-height: 1.55; white-space: pre-line">{{ r.t }}</span></div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ isProse }}" hint-placeholder-val="{{ true }}">
+<p style="margin: 0"><span style="float: left; font-family: 'Cinzel', serif; font-size: 70px; line-height: 0.82; padding: 8px 10px 0 0; color: #8e2b2b">{{ cur.cap }}</span>{{ cur.capRest }}</p>
+<sc-if value="{{ isOverview }}" hint-placeholder-val="{{ false }}"><blockquote style="margin: 4px 0; padding: 6px 0 6px 20px; border-left: 3px solid #8e2b2b; font-family: 'Cinzel', serif; font-size: 21px; line-height: 1.4; color: #5a2a1a">{{ pullQuote }}</blockquote></sc-if>
+<sc-for list="{{ cur.rest }}" as="p" hint-placeholder-count="4"><p style="margin: 0; text-indent: 1.4em">{{ p.t }}</p></sc-for>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #cdb88f; padding-top: 14px">
+<div style="min-width: 160px"><sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goPrev }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">‹ {{ prevTitle }}</button></sc-if></div>
+<span style="font-family: 'Cinzel', serif; font-size: 14px; color: #8a7350">— {{ cur.roman }} —</span>
+<div style="min-width: 160px; display: flex; justify-content: flex-end"><sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goNext }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">{{ nextTitle }} ›</button></sc-if></div>
+</div>
+</div>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ closed }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ reopen }}" style="position: relative; min-height: 56px; padding: 0 32px; border-radius: 999px; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.12em; cursor: pointer">Open the Tome</button>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startChapter":{"editor":"enum","options":["overview","incident","mechanics"],"default":"overview"},"embedded":{"editor":null,"default":false},"onClose":{"editor":null},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ids = ['overview', 'incident', 'mechanics'];
+    const idx = st.idx ?? Math.max(0, ids.indexOf(this.props.startChapter ?? 'overview'));
+    const open = st.open ?? true;
+    const chapters = [{"roman": "I", "title": "Overview", "note": "Share this background with your players before they make characters. Summarized here; full text in the Core Rulebook, p. 263.", "paras": ["Althas is split among five nations. Armada is a seafaring federation of city-states built by former pirates who now trade, and it measures its power in ships. Hilltop is a wealthy theocracy that controls access to the gods and keeps temples in every other nation. Jesthaen is a young republic that broke away from Voldaen in a short, brutal war and is eager to show off its military. Polaris is a magocracy in the early stages of a magical industrial boom. Voldaen is an old, rich monarchy still reeling from losing Jesthaen.", "The current alignments: Armada and Jesthaen are allies, and Polaris backs Jesthaen mostly out of convenience. Voldaen and Hilltop are long-standing partners. Polaris and Voldaen are ideological rivals, and both Voldaen and Hilltop regard Armada with distaste.", "All five nations were once one. After the gods defeated the primordial forces of chaos, the mortals crowned the dwarven seraph Arvold as the first queen of Voldaen, and the gods made their home in what became Hilltop before leaving centuries later to fight threats from beyond. With the gods gone, Hilltop's priests claimed to rule in their name, a breakaway group of mages founded Polaris, and pirate fleets settled down into the trading cities of Armada.", "Fifteen years ago, workers and anti-monarchists declared Jesthaen independent, and the whole continent was dragged into the fighting: Hilltop backed Voldaen while Polaris and Armada backed the rebels. An armistice stopped open combat five years ago, but border skirmishes and trade disputes keep piling up, and most people assume the next war is only a matter of time.", "Play is intense and morally gray, with a large cast and a continental scope. The heroes sit where the fate of nations gets decided, duty often pulls against conscience, and the antagonists usually act out of love or loyalty as much as greed or revenge."]}, {"roman": "II", "title": "The Inciting Incident", "note": "Use this opening hook as written, or swap in one of your own. Summarized here; full text in the Core Rulebook, p. 267.", "paras": ["Clover of Towers, the firbolg child of the Jesthaen revolutionary hero Adamant Towers, disappears on the way to a political marriage with Enchanter Kalashae, a rising mage of Polaris's High Circle. Polaris doubts the kidnapping story and insists the wedding go ahead. Voldaen denies any involvement and sends investigators to Lightning Valley, a border town protected from magical storms by huge lightning rods and best known as the place where the war's armistice was negotiated. Soon afterward, word arrives of a 'disaster' at the first meeting between Voldaen's and Jesthaen's envoys.", "The party is sent to Lightning Valley to find out what happened, and investigators from every other nation turn up as well. Sheriff Oziver of Storms is out of his depth and wants help, but he needs to trust outsiders before he gives it. He knows a town guard was the last person seen with Clover, and he refuses to believe that guard is guilty; the guard is still missing. Clover was last seen drinking with guards at the Three Poles tavern.", "Clover wants to make their mother proud and find a life they can be happy with far from home, and they're ashamed that they were too young to fight for Jesthaen's freedom. Cerulean Prism, a clank apprentice of Polaris who handled Clover's correspondence during the marriage negotiations, has fallen for them and will act recklessly to find them. Kostren, Hilltop's seeker, takes over the local temple to run a divination ritual. She is overstating a vision that blames Polaris's mages because she wants war to win Hilltop more farmland.", "Zeshthon, an elderly judge of Voldaen, says they've come to visit a grandniece. Their passion for collecting art could lead them to expose Goledraelle, a seemingly bumbling Armadan textiles merchant who is really a spy sent to make sure the marriage happens.", "Open questions to seed: the first investigators headed into the eastern hills and haven't reported back for over a week. Who in town helped the kidnappers? Which rival nation, or which faction inside Jesthaen, wanted the marriage to fail? Did Clover run away on purpose? And when someone among the investigators finally turns violent, whose version of the story spreads?"]}, {"roman": "III", "title": "Campaign Mechanics", "sub": "Faction Relationships", "note": "These rules apply only to this campaign frame. Summarized here; full text in the Core Rulebook, pp. 268–269.", "paras": [""]}];
+    const rules = [{"n": "1", "head": "Faction Relationships", "t": "Keep a campaign sheet with each nation's standing toward every other nation, plus its assets and problems. Standings run from Nemeses (−3) through Enemies (−2), Unfriendly (−1), Friendly (+1) and Allies (+2) up to Close Allies (+3). The further from zero a standing is, the more risk a nation will accept to help or harm the other: a Friendly nation helps when it costs little, while a Nemesis will go out of its way to hurt its rival.\n\nThe book gives a short profile for each nation listing its starting relationships, assets, problems, one major objective and minor objectives (p. 268). The entries below summarize them."}, {"n": "2", "head": "Armada", "t": "Allies with Jesthaen, Friendly with Polaris, Unfriendly with Voldaen, Enemies with Hilltop. Strengths: a dominant navy, the best charts of currents and winds, and sea monsters as allies. Weaknesses: very little land, poor overland access, and a lingering reputation as pirates. Major goal: build trade ports in Voldaen and Polaris. Minor goals: obtain airships and send privateers against rivals."}, {"n": "3", "head": "Hilltop", "t": "Allies with Voldaen, Enemies with Armada and Jesthaen, Nemeses with Polaris. Strengths: tithe wealth, a devout army with priests and seraphs, divine authority, and a spy network running through its temples. Weaknesses: hostile neighbors on every side, almost no navy, and not enough food of its own. Major goal: bring Armada back under its spiritual authority. Minor goals: secure a blessed harvest and pin a Fallen cult on Polaris."}, {"n": "4", "head": "Jesthaen", "t": "Allies with Armada, Friendly with Polaris, Enemies with Hilltop, Nemeses with Voldaen. Strengths: a strong army, plenty of natural resources and farmland. Weaknesses: an unstable young government and holdouts still loyal to Voldaen. Major goal: get revenge on Voldaen for centuries of injustice. Minor goals: lock in trade with Armada and Polaris and take its temples back from Hilltop."}, {"n": "5", "head": "Polaris", "t": "Friendly with Armada and Jesthaen, Enemies with Voldaen, Nemeses with Hilltop. Strengths: skilled mages, magitech, airships and magical creatures. Weaknesses: a shortage of workers and poor, scarce raw materials. Major goal: perfect enchanted servitors. Minor goals: open new mines and quarries and draw in immigrant workers."}, {"n": "6", "head": "Voldaen", "t": "Allies with Hilltop, Unfriendly with Armada, Enemies with Polaris, Nemeses with Jesthaen. Strengths: traditional prestige and apparently endless wealth. Weaknesses: major cities sitting close to long hostile borders, plus turmoil after the secession. Major goal: take key resources back from Jesthaen without restarting the war. Minor goals: turn Armada against its allies and poach Polaris's mages and technology."}, {"n": "7", "head": "Objective Countdowns", "t": "Track each nation's long-term projects (exploiting an asset, fixing a problem, chasing an objective) as countdowns. Each nation runs one major objective countdown (10 steps) and up to two minor ones (4–6 steps, depending on scope) at a time.\n\nEvery in-game week, advance one countdown per nation by one tick. Story events can also push a countdown forward or back. When a countdown finishes, the nation gains something significant (an asset, a solved problem, new technology, a political shift); pick a new objective that fits the fiction and start another countdown.\n\nStagger the countdowns so only one or two nations complete something in any given week. If all five finish at once, the following weeks go quiet and the tension drains away. Send the party out to advance or sabotage objectives, and use completed countdowns as major story turns for them to react to.\n\nThe book includes a worked example of one week of airship travel in which each nation's clock moves, one completes, and another had earlier been pushed back by the PCs' choices (p. 269)."}];
+    const FIG = [{"name": "Clover of Towers", "role": "Missing Jesthaen heir", "line": "Vanished before an arranged marriage; may have fled by choice."}, {"name": "Kostren", "role": "Seeker of Hilltop", "line": "Twists a divine vision to blame Polaris and stoke war."}, {"name": "Goledraelle", "role": "Armadan merchant-spy", "line": "Plays the fool while making sure the wedding happens."}];
+    const c = chapters[idx];
+    const p0 = c.paras[0] || ''; const cur = { ...c, hasSub: !!c.sub, cap: p0.charAt(0), capRest: p0.slice(1), rest: c.paras.slice(1).map((t) => ({ t })) };
+    const tabs = chapters.map((ch, i) => {
+      const on = i === idx;
+      return { roman: ch.roman, title: ch.title, current: on ? 'page' : 'false', pick: () => this.setState({ idx: i }),
+        style: 'min-height: 48px; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 4px; text-align: left; cursor: pointer; font-family: inherit; font-size: 20px; color: #2a1f14; border: none; border-left: 3px solid ' + (on ? '#8e2b2b' : 'transparent') + '; background: ' + (on ? '#e3d2ad' : 'transparent') + '; font-weight: ' + (on ? '500' : '400') + ';' };
+    });
+    return {
+      open, closed: !open, cur, tabs, rules, keyFigures: FIG, hasFigures: idx === 1 && FIG.length > 0, startAt: "Lightning Valley, a storm-guarded border town", pullQuote: "Five flags, one fraying peace, and every spark finds tinder.", mechIntro: "These rules apply only to this campaign frame.",
+      isOverview: idx === 0 && true, isIncident: idx === 1, isMechanics: idx === 2, isProse: idx !== 2,
+      hasPrev: idx > 0, hasNext: idx < chapters.length - 1,
+      prevTitle: idx > 0 ? chapters[idx - 1].title : '', nextTitle: idx < chapters.length - 1 ? chapters[idx + 1].title : '',
+      goPrev: () => this.setState({ idx: Math.max(0, idx - 1) }),
+      goNext: () => this.setState({ idx: Math.min(chapters.length - 1, idx + 1) }),
+      standalone: !this.props.embedded,
+      rootStyle: 'position: relative; min-height: 100vh; ' + (this.props.embedded ? 'background: transparent; ' : 'background: #0a1416; ') + 'color: #2a1f14; font-family: \'EB Garamond\', serif; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 32px; overflow: hidden',
+      close: () => (this.props.onClose ? this.props.onClose() : this.setState({ open: false })),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

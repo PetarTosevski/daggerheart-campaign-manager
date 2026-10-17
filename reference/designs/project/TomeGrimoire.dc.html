@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Witherwild Tome · Dark Grimoire</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a1416}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/fd0cf35e04826264f9beb77eb6d38fcf);background-size:cover;background-position:center;background-repeat:no-repeat}
+.ww-dim{filter:blur(4px) brightness(0.4);transform:scale(1.05)}
+</style>
+</helmet>
+<div style="position: relative; min-height: 100vh; background: #0a1416; color: #e6dac0; font-family: 'EB Garamond', serif; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 32px; overflow: hidden">
+<div class="ww-bg ww-dim" aria-hidden="true" style="position: absolute; inset: 0"></div>
+
+<sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-modal="true" aria-labelledby="tomeB-title" style="position: relative; width: 100%; max-width: 980px; height: 880px; background: #15110c; border: 2px solid #8a6d3b; outline: 1px solid #8a6d3b; outline-offset: -12px; border-radius: 4px; padding: 44px 64px 28px; box-sizing: border-box; box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7); display: flex; flex-direction: column; gap: 18px">
+
+<svg width="54" height="54" viewBox="0 0 54 54" aria-hidden="true" style="position: absolute; top: 18px; left: 18px"><path d="M2 52V14C2 7 7 2 14 2h38" fill="none" stroke="#c9a45a" stroke-width="1.5"></path><path d="M10 52V20c0-6 4-10 10-10h32" fill="none" stroke="#8a6d3b" stroke-width="1"></path><circle cx="14" cy="14" r="3" fill="#c9a45a"></circle></svg>
+<svg width="54" height="54" viewBox="0 0 54 54" aria-hidden="true" style="position: absolute; top: 18px; right: 18px; transform: scaleX(-1)"><path d="M2 52V14C2 7 7 2 14 2h38" fill="none" stroke="#c9a45a" stroke-width="1.5"></path><path d="M10 52V20c0-6 4-10 10-10h32" fill="none" stroke="#8a6d3b" stroke-width="1"></path><circle cx="14" cy="14" r="3" fill="#c9a45a"></circle></svg>
+<svg width="54" height="54" viewBox="0 0 54 54" aria-hidden="true" style="position: absolute; bottom: 18px; left: 18px; transform: scaleY(-1)"><path d="M2 52V14C2 7 7 2 14 2h38" fill="none" stroke="#c9a45a" stroke-width="1.5"></path><path d="M10 52V20c0-6 4-10 10-10h32" fill="none" stroke="#8a6d3b" stroke-width="1"></path><circle cx="14" cy="14" r="3" fill="#c9a45a"></circle></svg>
+<svg width="54" height="54" viewBox="0 0 54 54" aria-hidden="true" style="position: absolute; bottom: 18px; right: 18px; transform: scale(-1, -1)"><path d="M2 52V14C2 7 7 2 14 2h38" fill="none" stroke="#c9a45a" stroke-width="1.5"></path><path d="M10 52V20c0-6 4-10 10-10h32" fill="none" stroke="#8a6d3b" stroke-width="1"></path><circle cx="14" cy="14" r="3" fill="#c9a45a"></circle></svg>
+
+<button type="button" onClick="{{ close }}" aria-label="Close tome" style="position: absolute; top: 26px; right: 30px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid #8a6d3b; background: #1e1811; color: #e6dac0; cursor: pointer; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+
+<div style="text-align: center; font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.4em; text-transform: uppercase; color: #c9a45a">The Witherwild</div>
+<nav aria-label="Chapters" style="display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<sc-if value="{{ t.notFirst }}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="color: #6d5630; padding: 0 6px">✦</span></sc-if>
+<button type="button" onClick="{{ t.pick }}" aria-current="{{ t.current }}" style="{{ t.style }}">{{ t.title }}</button>
+</sc-for>
+</nav>
+
+<div style="text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 8px">
+<div style="font-family: 'Cinzel', serif; font-size: 15px; letter-spacing: 0.3em; color: #8a6d3b">CHAPTER {{ cur.roman }}</div>
+<h2 id="tomeB-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 42px; font-weight: 700; color: #f0e3c4">{{ cur.title }}</h2>
+<sc-if value="{{ cur.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-family: 'Cinzel', serif; font-size: 19px; color: #c9a45a">{{ cur.sub }}</div></sc-if>
+<svg width="260" height="16" viewBox="0 0 260 16" aria-hidden="true"><path d="M0 8h110M150 8h110" stroke="#8a6d3b" stroke-width="1"></path><path d="M130 1l7 7-7 7-7-7z" fill="none" stroke="#c9a45a" stroke-width="1.4"></path><circle cx="116" cy="8" r="2" fill="#c9a45a"></circle><circle cx="144" cy="8" r="2" fill="#c9a45a"></circle></svg>
+<p style="margin: 0; max-width: 620px; font-size: 17px; font-style: italic; color: #b3a689">{{ cur.note }}</p>
+</div>
+
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding: 4px 18px 4px 4px">
+<div style="max-width: 720px; margin: 0 auto; font-size: 19px; line-height: 1.75; color: #e6dac0; display: flex; flex-direction: column; gap: 16px">
+<p style="margin: 0"><span style="float: left; font-family: 'Cinzel', serif; font-size: 76px; line-height: 0.8; padding: 8px 12px 0 0; color: #c9a45a">{{ cur.cap }}</span>{{ cur.capRest }}</p>
+<sc-for list="{{ cur.rest }}" as="p" hint-placeholder-count="4"><p style="margin: 0">{{ p.t }}</p></sc-for>
+</div>
+</div>
+
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 6px">
+<div style="min-width: 200px"><sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goPrev }}" style="min-height: 44px; padding: 0 12px; border: none; background: transparent; color: #c9a45a; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">‹ {{ prevTitle }}</button></sc-if></div>
+<span style="font-family: 'Cinzel', serif; font-size: 15px; color: #8a6d3b; letter-spacing: 0.2em">— {{ cur.roman }} —</span>
+<div style="min-width: 200px; display: flex; justify-content: flex-end"><sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goNext }}" style="min-height: 44px; padding: 0 12px; border: none; background: transparent; color: #c9a45a; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">{{ nextTitle }} ›</button></sc-if></div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ closed }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ reopen }}" style="position: relative; min-height: 56px; padding: 0 32px; border-radius: 4px; border: 2px solid #8a6d3b; background: #15110c; color: #e6dac0; font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.14em; cursor: pointer">Open the Grimoire</button>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startChapter":{"editor":"enum","options":["overview","incident","mechanics"],"default":"overview"},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ids = ['overview', 'incident', 'mechanics'];
+    const idx = st.idx ?? Math.max(0, ids.indexOf(this.props.startChapter ?? 'overview'));
+    const open = st.open ?? true;
+    const chapters = [
+      { roman: 'I', title: 'Overview', note: "If your group decides to play this campaign, give your players the following information before character creation.", paras: [
+        "Fanewick is a wild and untamed land, long avoided by outside forces. The woods are dark and twisting, filled with Faint Divinities who perform small miracles and services for its inhabitants, but are just as likely to lure travelers off narrow paths to their ruin. Seemingly harmless expanses of field hide bogs that engulf entire armies, consuming heavy artillery as quickly as it can cross the border. This wilderness fosters hardy people who are bold enough to raise families where others have not and strictly follow the unique rules that keep them safe. These Wicklings remained insulated from their neighbors’ wars until plague forced the people of Haven to desperate acts.",
+        "Haven was once the most powerful force in the region; for centuries, the high stone walls into the capital bore the phrase “The Godless Gate.” While the original meaning has been lost to common knowledge, some dusty tomes and ancient records state that the founders of Haven wished to be free of the influence of the Faint Divinities that dominated the surrounding regions. They hatched a plan to kill one of the mightiest of these deities, known as Shun’Aush the Granite Ophid. While their exact method of deicide is forgotten, their victory ensured Haven’s dominance in the region for centuries to come. They made their home behind his remains, which became the mighty walls that Haven is known for.",
+        "But Shun’Aush would have his revenge. As the Havenites carved through his stone body, the fine dust left behind settled into the surrounding earth. There was a time of prosperity over many centuries while the scales of the god remained undisturbed. But progress is its own pressure. The growing population demanded increased productivity, and as farmers tilled deeper soil and miners hacked into hidden stone, the ancient stone dust rose to the surface. The same walls that brought the city security became the crucible that incubated a virulent plague.",
+        "Over the last two years, over half of Haven’s populace fell to a disease known as the Serpent’s Sickness. First, victims cough up dust. Soon after, their skin breaks out in a scaling rash. Finally, their body hardens—first the flesh, bones, and soft tissue, spreading until, finally, their organs ossify. Once within the organs, “the serpent” moves so quickly that sufferers petrify where they stand, filling Haven with statues of victims in their last moments of agony.",
+        "The High Magus of Haven, Archmage Phylax, discovered a rare red flower called the crimson lady’s veil that could cure the Serpent’s Sickness. These buds grow prolifically across Fanewick in the spring—but for every ten thousand of the common white-petaled blossoms, only one red flower blooms.",
+        "Desperate to save their people from the plague, Haven invaded Fanewick to amass the scarce red buds. Their forces plunged into the deep wood and, under the guidance of Archmage Phylax, plucked out the Reaping Eye from the most powerful Faint Divinity that protected the land: The Great Owl Nikta, the Shepherd of the Seasons. The Shepherd kept Fanewick in balance by turning her eyes upon the land, first for ripening, then ruination. Thus Nikta maintained the cycle of seasons—of growth and decay, of death and rebirth. With her Reaping Eye removed, Nikta can only watch over Fanewick with the Sowing Eye, forcing the land into everlasting spring.",
+        "In the year since, Haven has conquered the bogs, turning them into fields to harvest red flowers. The endless growth that once seemed like a gift quickly evolved into a scourge known as the Witherwild—Fanewick’s flora and fauna flourished, unchecked and uncontrolled. Animals swell to massive size; trees warp, twist, and begin to hunt people; and vines creep along the forest floor, strangling all they touch. This explosive growth is unconquerable and unrelenting, with no force able to stop the burgeoning verdance for long.",
+        "Prior to the Serpent’s Sickness and the Shepherd’s endless growth, your party lived a peaceful life in Fanewick or a life of toil and conquest in Haven. But when the danger demands a response, even the unprepared—and unwilling—must make a stand."
+      ] },
+      { roman: 'II', title: 'The Inciting Incident', note: "You can use the prompt below to start your campaign, or create your own.", paras: [
+        "The Reaping Eye is stowed in a secure vault beneath the central tower of Haven’s wizarding school, seemingly impossible to recover. A secretive and dangerous rebel group, led by a mysterious figure known only as the Fanewraith (she/her), has hatched a plan to end the curse of the Witherwild: find the Great Owl, Nikta, and pluck out the Sowing Eye. While this may solve the immediate problem, the long-term consequences are not being considered, just as they weren’t when Haven invaded.",
+        "Haven’s beleaguered spymaster, Kreil Dirn (he/him), is not a popular person in Haven. He is responsible for rooting out insurgents, stopping schemes before they have a chance to start, and keeping a close watch on Haven’s internal activities. Kreil has never agreed—at least not openly—with Archmage Phylax’s (they/them) decision to steal the Reaping Eye, and the consequences they’ve all paid for that decision have been grimly vindicating.",
+        "Recently, Kreil uncovered the Fanewraith’s plot and is horrified by the possibility of her success. Knowing he can’t send a troop of Haven soldiers deep into the woods to hunt down and stop the Fanewraith from stealing the Sowing Eye, Kreil uses his vast network of informants and spies to find a group of adventurers who can bring the Fanewraith to swift justice.",
+        "The party is sent an invitation from Haven to meet with Kreil. But is his information correct? Does he have his own motivation or secret ambition? Whether they come from Fanewick or Haven, the party must extend some trust to a person who is equally as dangerous and mercurial as the “enemy” they pursue. And what will they do when they find the Fanewraith? Bring her to justice? Side with her? Attempt to recover the Reaping Eye?",
+        "Kreil advises the party to start their hunt for the Fanewraith in the treetop village of Alula, where he suspects she runs her operation."
+      ] },
+      { roman: 'III', title: 'Campaign Mechanics', sub: 'Corruption from the Witherwild', note: "The following mechanics are unique to this campaign.", paras: [
+        "Adversaries and environments in this campaign can gain an additional type called Withered. When an adversary is Withered, describe how the Witherwild changed or impacted how they would normally appear or operate.",
+        "You also need about 20 Wither tokens (these can be the same as the tokens you use for Fear). Any time a PC takes Severe damage from a Withered adversary or environment, gain a Wither token and place it on that PC’s character sheet. When you do, the PC must roll their Fear Die. If they roll equal to or below the number of Wither tokens on their sheet, they immediately gain a scar and clear all tokens, describing how the Witherwild changes them permanently.",
+        "At the end of each session, clear all Wither tokens from the PCs’ sheets and gain an equal amount of Fear.",
+        "If a character ever dies with Wither tokens on their sheet, their body is permanently taken over by the Witherwild."
+      ] }
+    ];
+    const c = chapters[idx];
+    const cur = { ...c, hasSub: !!c.sub, cap: c.paras[0].charAt(0), capRest: c.paras[0].slice(1), rest: c.paras.slice(1).map((t) => ({ t })) };
+    const tabs = chapters.map((ch, i) => {
+      const on = i === idx;
+      return { title: ch.title, notFirst: i > 0, current: on ? 'page' : 'false', pick: () => this.setState({ idx: i }),
+        style: 'min-height: 44px; padding: 0 10px; border: none; background: transparent; cursor: pointer; font-family: \'Cinzel\', serif; font-size: 15px; letter-spacing: 0.1em; color: ' + (on ? '#f0e3c4' : '#9c8a66') + '; border-bottom: 1px solid ' + (on ? '#c9a45a' : 'transparent') + ';' };
+    });
+    return {
+      open, closed: !open, cur, tabs,
+      hasPrev: idx > 0, hasNext: idx < chapters.length - 1,
+      prevTitle: idx > 0 ? chapters[idx - 1].title : '', nextTitle: idx < chapters.length - 1 ? chapters[idx + 1].title : '',
+      goPrev: () => this.setState({ idx: Math.max(0, idx - 1) }),
+      goNext: () => this.setState({ idx: Math.min(chapters.length - 1, idx + 1) }),
+      close: () => this.setState({ open: false }), reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Motherboard</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0e1a22}
+.mb-bg{background-image:url(/_blob/0b895f62874c5481f3b92d0cd284d3e9);background-size:cover;background-position:center;background-repeat:no-repeat}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.bg-blur{filter:blur(32px) brightness(0.65);transform:scale(1.2)}
+.bg-fit{background-size:contain;background-position:center}
+</style>
+</helmet>
+<div style="position: relative; min-height: 100vh; background: #0e1a22; color: #ece6d6; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden">
+<div class="mb-bg bg-blur" aria-hidden="true" style="position: absolute; inset: 0"></div>
+<div class="mb-bg bg-fit" aria-hidden="true" style="position: absolute; inset: 0"></div>
+<div style="{{ scrimStyle }}"></div>
+
+<header style="position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 48px; background: rgba(9, 16, 22, 0.76); border-bottom: 1px solid rgba(255, 255, 255, 0.08)">
+<div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap">
+<a href="FrameSelect.dc.html" aria-label="Back to campaign frames" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #3a4852; color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: rgba(0, 0, 0, 0.3)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></a>
+<div style="font-family: 'Cinzel', serif; font-size: 40px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div>
+<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.24em; color: #b6c4cd">Campaign Frame</div>
+</div>
+<ol aria-label="Steps" style="list-style: none; margin: 0; padding: 0; display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px">
+<li style="padding: 8px 14px; border-radius: 999px; background: {{accent}}; color: #1a1408; font-weight: 600">1 · Frame</li>
+<li style="padding: 8px 14px; border-radius: 999px; border: 1px solid #4a5862; color: #c8d3da; background: rgba(0, 0, 0, 0.3)">2 · Party</li>
+<li style="padding: 8px 14px; border-radius: 999px; border: 1px solid #4a5862; color: #c8d3da; background: rgba(0, 0, 0, 0.3)">3 · Session Zero</li>
+</ol>
+</header>
+
+<main style="position: relative; flex: 1; width: 100%; max-width: 1344px; margin: 0 auto; padding: 28px 48px 28px; box-sizing: border-box; display: flex; align-items: flex-start">
+<sc-if value="{{ shown }}" hint-placeholder-val="{{ true }}">
+<section aria-labelledby="mb-title" style="width: 100%; max-width: 760px; padding: 28px 32px; border-radius: 18px; background: rgba(9, 16, 22, 0.86); border: 1px solid rgba(255, 255, 255, 0.1); box-sizing: border-box; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.2em; color: #b6c4cd"><span>Core Rulebook</span><span aria-hidden="true">·</span><span>Complexity <span aria-label="3 of 4" style="color: {{accent}}; letter-spacing: 0.15em">◆◆◆◇</span></span></div>
+<h1 id="mb-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 52px; line-height: 1.04; font-weight: 900; letter-spacing: 0.04em">Motherboard</h1>
+<p style="margin: 0; font-size: 17px; line-height: 1.5; font-style: italic; color: #e1e9ee">In a world where magic takes the form of the technology left behind by a long-fallen civilization, a new threat rises as a malicious virus spreads through the machines that wander the Wastes.</p>
+<p style="margin: 0; font-size: 13px; color: #9fb0bb">Designed by Meguey Baker, Rowan Hall &amp; Spenser Starke</p>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #9fb0bb; font-weight: 500">The Pitch</h2><p style="margin: 0; font-size: 15px; line-height: 1.6; color: #e1e9ee">Among the ancient ruins of the fallen world, the great walled cities of the Echo Vale sit as bastions of hope in an otherwise hostile land. Utilizing technology powered by a mysterious language that runs through metal threads tethered high above the valley, these citadels insulate their citizens from the Wastes, where autonomous machines roam wild and massive wandering cities scour the land for scrap. But when a malicious virus infects the machine beasts that work alongside the people of the valley, the once-docile creations turn violent.</p>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #e1e9ee">In a Motherboard campaign, you’ll use technology instead of magic as you play extraordinary heroes leaving the safety of the walled cities to travel the Wastes and bring peace to the Vale once more.</p></div>
+
+<div style="display: flex; flex-direction: column; gap: 10px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #9fb0bb; font-weight: 500">Tone &amp; Feel</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 8px"><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #4a5862; font-size: 13px">Adventurous</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #4a5862; font-size: 13px">Epic</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #4a5862; font-size: 13px">Innovative</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #4a5862; font-size: 13px">Mysterious</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #4a5862; font-size: 13px">Post-Post-Apocalyptic</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #4a5862; font-size: 13px">Technological</span></div></div>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 20px">
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #9fb0bb; font-weight: 500">Themes</h2><p style="margin: 0; font-size: 15px; line-height: 1.55; color: #e1e9ee">Artificial Intelligence, Identity &amp; Personhood, Innovation, Technology vs. Humanity</p></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #9fb0bb; font-weight: 500">Touchstones</h2><p style="margin: 0; font-size: 15px; line-height: 1.55; color: #e1e9ee">Horizon Zero Dawn, Mortal Engines, Mad Max: Fury Road, The Final Fantasy Series, Fullmetal Alchemist, Slugblaster</p></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #9fb0bb; font-weight: 500">Special Mechanics</h2><button type="button" onClick="{{ openMechanics }}" style="min-height: 44px; padding: 0; border: none; background: transparent; color: {{accent}}; font-family: inherit; font-size: 15px; line-height: 1.4; text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 3px">Tech damage, augments &amp; the quantum economy ›</button></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #9fb0bb; font-weight: 500">Inciting Incident</h2><button type="button" onClick="{{ openIncident }}" style="min-height: 44px; padding: 0; border: none; background: transparent; color: {{accent}}; font-family: inherit; font-size: 15px; line-height: 1.4; text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 3px">Infected machines in Argent ›</button></div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 12px; padding-top: 6px">
+<a href="HubMotherboard.dc.html" style="min-height: 52px; padding: 0 28px; border-radius: 999px; border: none; background: {{accent}}; color: #1a1408; font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; letter-spacing: 0.1em; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box">Choose this Frame</a>
+<button type="button" onClick="{{ openOverview }}" style="min-height: 52px; padding: 0 20px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.3); color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5c2.5-1 5-1 8 1 3-2 5.5-2 8-1v13c-2.5-1-5-1-8 1-3-2-5.5-2-8-1z"></path><path d="M12 6.5v13"></path></svg>Overview</button>
+<button type="button" onClick="{{ toggle }}" style="min-height: 52px; padding: 0 20px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.18); background: transparent; color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 10px; margin-left: auto"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7c2 0 3.7.6 5.1 1.5M22 12s-3.5 7-10 7c-2 0-3.7-.6-5.1-1.5"></path><path d="M3 3l18 18"></path></svg>View full art</button>
+</div>
+</section>
+</sc-if>
+<sc-if value="{{ hidden }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ toggle }}" style="min-height: 48px; padding: 0 20px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(9, 16, 22, 0.82); color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>Show details</button></sc-if>
+</main>
+<sc-if value="{{ tomeOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; z-index: 10; background: rgba(4, 8, 10, 0.72)">
+<dc-import name="TomeMotherboard" start-chapter="{{ tomeChapter }}" embedded="{{ true }}" on-close="{{ closeTome }}" hint-size="100%,100%"></dc-import>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#e3b45a","options":["#e3b45a","#8f78d8","#d9775b","#6fb8a6"]},"dim":{"editor":"range","min":0,"max":70,"step":5,"unit":"%","default":15},"$preview":{"width":1440,"height":934}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dim = (this.props.dim ?? 15) / 100;
+    return {
+      shown: !(this.state || {}).hidden, hidden: !!(this.state || {}).hidden,
+      toggle: () => this.setState({ hidden: !(this.state || {}).hidden }),
+      tomeOpen: !!(this.state || {}).tome, tomeChapter: (this.state || {}).tome || 'overview',
+      openOverview: () => this.setState({ tome: 'overview' }),
+      openIncident: () => this.setState({ tome: 'incident' }),
+      openMechanics: () => this.setState({ tome: 'mechanics' }),
+      closeTome: () => this.setState({ tome: null }),
+      accent: this.props.accent ?? '#e3b45a',
+      scrimStyle: 'position: absolute; inset: 0; background: rgba(6, 12, 16, ' + dim + ');'
+    };
+  }
+}
+</script>
+</body>
+</html>

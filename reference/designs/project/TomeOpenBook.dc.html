@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Witherwild Tome · Open Book</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a1416}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/d69136bf0c8eddbad10c2eb636b1b5ca);background-size:cover;background-position:center;background-repeat:no-repeat}
+.ww-dim{filter:blur(4px) brightness(0.45);transform:scale(1.05)}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+<sc-if value="{{ standalone }}" hint-placeholder-val="{{ true }}"><div class="ww-bg ww-dim" aria-hidden="true" style="position: absolute; inset: 0"></div></sc-if>
+
+<sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-modal="true" aria-labelledby="tomeA-title" style="position: relative; width: 100%; max-width: 1240px; height: 880px; background: #3b2b1d; border: 1px solid #5c4430; border-radius: 16px; padding: 18px; box-sizing: border-box; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); display: flex">
+
+<button type="button" onClick="{{ close }}" aria-label="Close tome" style="position: absolute; top: -18px; right: -18px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+<div aria-hidden="true" style="position: absolute; top: 0; right: 140px; width: 28px; height: 140px; background: #8e2b2b; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); z-index: 1"></div>
+
+<div style="flex: 1; display: flex; background: #efe3c8; border-radius: 6px; overflow: hidden; min-width: 0">
+
+<div style="flex: 0 0 38%; padding: 48px 40px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid #d3c19c; box-shadow: inset -28px 0 34px -26px rgba(90, 60, 20, 0.4)">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: #7a5b2e">Campaign Frame · Core Rulebook</div>
+<h2 id="tomeA-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 46px; line-height: 1.05; font-weight: 900; color: #2a1f14">The Witherwild</h2>
+<svg width="220" height="14" viewBox="0 0 220 14" aria-hidden="true"><path d="M0 7h96M124 7h96" stroke="#a68352" stroke-width="1.2"></path><path d="M110 1l6 6-6 6-6-6z" fill="#8e2b2b"></path></svg>
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a5b2e">Contents</div>
+<nav aria-label="Chapters" style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{ t.pick }}" aria-current="{{ t.current }}" style="{{ t.style }}"><span style="font-family: 'Cinzel', serif; font-size: 18px; width: 40px; color: #8e2b2b">{{ t.roman }}</span><span style="flex: 1">{{ t.title }}</span></button>
+</sc-for>
+</nav>
+<div class="ww-bg" aria-hidden="true" style="margin-top: auto; height: 170px; border-radius: 100px 100px 8px 8px; border: 3px double #a68352"></div>
+<div style="padding: 14px 16px; border: 1px solid #cdb88f; border-radius: 6px; background: #e8d9b8; font-size: 16px; line-height: 1.5; font-style: italic; color: #4a3a26"><span style="font-style: normal; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.18em; color: #7a5b2e; display: block; margin-bottom: 4px">FOR THE GAME MASTER</span>{{ cur.note }}</div>
+</div>
+
+<div style="flex: 1; min-width: 0; padding: 48px 56px 28px 52px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<span style="font-family: 'Cinzel', serif; font-size: 22px; color: #8e2b2b">{{ cur.roman }}.</span>
+<h3 style="margin: 0; font-family: 'Cinzel', serif; font-size: 32px; font-weight: 700; color: #2a1f14">{{ cur.title }}</h3>
+</div>
+<sc-if value="{{ cur.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-family: 'Cinzel', serif; font-size: 18px; color: #6a4a22; margin-top: -8px">{{ cur.sub }}</div></sc-if>
+<div style="height: 1px; background: #cdb88f"></div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 14px; font-size: 19px; line-height: 1.65; color: #2a1f14; display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{ isIncident }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; color: #7a5b2e">KEY FIGURES</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+<div style="padding: 12px 14px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 6px; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.25">The Fanewraith</span><span style="font-size: 14px; color: #6a5236">Rebel leader</span><span style="font-size: 15px; line-height: 1.4">Plans to pluck out Nikta’s Sowing Eye.</span></div>
+<div style="padding: 12px 14px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 6px; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.25">Kreil Dirn</span><span style="font-size: 14px; color: #6a5236">Haven’s spymaster</span><span style="font-size: 15px; line-height: 1.4">Recruits the party to stop the Fanewraith.</span></div>
+<div style="padding: 12px 14px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 6px; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.25">Archmage Phylax</span><span style="font-size: 14px; color: #6a5236">High Magus of Haven</span><span style="font-size: 15px; line-height: 1.4">Stole the Reaping Eye from Nikta.</span></div>
+</div>
+<div style="align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: #2f4a3a; color: #eef3ea; font-size: 15px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>Start: the treetop village of Alula</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMechanics }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 8px; background: #2f4a3a; color: #eef3ea">
+<span style="width: 38px; height: 38px; flex: none; border-radius: 50%; background: #6b4f96; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700">W</span>
+<span style="font-size: 17px; line-height: 1.4"><strong style="font-weight: 600">You’ll need:</strong> about 20 Wither tokens (these can be the same as the tokens you use for Fear).</span>
+</div>
+<sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+<div style="display: flex; gap: 14px; padding: 14px 16px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 8px">
+<span style="width: 32px; height: 32px; flex: none; border-radius: 50%; border: 2px solid #8e2b2b; color: #8e2b2b; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; font-size: 15px">{{ r.n }}</span>
+<div style="display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700">{{ r.head }}</span><span style="font-size: 18px; line-height: 1.55">{{ r.t }}</span></div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ isProse }}" hint-placeholder-val="{{ true }}">
+<p style="margin: 0"><span style="float: left; font-family: 'Cinzel', serif; font-size: 70px; line-height: 0.82; padding: 8px 10px 0 0; color: #8e2b2b">{{ cur.cap }}</span>{{ cur.capRest }}</p>
+<sc-if value="{{ isOverview }}" hint-placeholder-val="{{ false }}"><blockquote style="margin: 4px 0; padding: 6px 0 6px 20px; border-left: 3px solid #8e2b2b; font-family: 'Cinzel', serif; font-size: 21px; line-height: 1.4; color: #5a2a1a">The same walls that brought the city security became the crucible that incubated a virulent plague.</blockquote></sc-if>
+<sc-for list="{{ cur.rest }}" as="p" hint-placeholder-count="4"><p style="margin: 0; text-indent: 1.4em">{{ p.t }}</p></sc-for>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #cdb88f; padding-top: 14px">
+<div style="min-width: 160px"><sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goPrev }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">‹ {{ prevTitle }}</button></sc-if></div>
+<span style="font-family: 'Cinzel', serif; font-size: 14px; color: #8a7350">— {{ cur.roman }} —</span>
+<div style="min-width: 160px; display: flex; justify-content: flex-end"><sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goNext }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">{{ nextTitle }} ›</button></sc-if></div>
+</div>
+</div>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ closed }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ reopen }}" style="position: relative; min-height: 56px; padding: 0 32px; border-radius: 999px; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.12em; cursor: pointer">Open the Tome</button>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startChapter":{"editor":"enum","options":["overview","incident","mechanics"],"default":"overview"},"embedded":{"editor":null,"default":false},"onClose":{"editor":null},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ids = ['overview', 'incident', 'mechanics'];
+    const idx = st.idx ?? Math.max(0, ids.indexOf(this.props.startChapter ?? 'overview'));
+    const open = st.open ?? true;
+    const chapters = [
+      { roman: 'I', title: 'Overview', note: "If your group decides to play this campaign, give your players the following information before character creation.", paras: [
+        "Fanewick is a wild and untamed land, long avoided by outside forces. The woods are dark and twisting, filled with Faint Divinities who perform small miracles and services for its inhabitants, but are just as likely to lure travelers off narrow paths to their ruin. Seemingly harmless expanses of field hide bogs that engulf entire armies, consuming heavy artillery as quickly as it can cross the border. This wilderness fosters hardy people who are bold enough to raise families where others have not and strictly follow the unique rules that keep them safe. These Wicklings remained insulated from their neighbors’ wars until plague forced the people of Haven to desperate acts.",
+        "Haven was once the most powerful force in the region; for centuries, the high stone walls into the capital bore the phrase “The Godless Gate.” While the original meaning has been lost to common knowledge, some dusty tomes and ancient records state that the founders of Haven wished to be free of the influence of the Faint Divinities that dominated the surrounding regions. They hatched a plan to kill one of the mightiest of these deities, known as Shun’Aush the Granite Ophid. While their exact method of deicide is forgotten, their victory ensured Haven’s dominance in the region for centuries to come. They made their home behind his remains, which became the mighty walls that Haven is known for.",
+        "But Shun’Aush would have his revenge. As the Havenites carved through his stone body, the fine dust left behind settled into the surrounding earth. There was a time of prosperity over many centuries while the scales of the god remained undisturbed. But progress is its own pressure. The growing population demanded increased productivity, and as farmers tilled deeper soil and miners hacked into hidden stone, the ancient stone dust rose to the surface. The same walls that brought the city security became the crucible that incubated a virulent plague.",
+        "Over the last two years, over half of Haven’s populace fell to a disease known as the Serpent’s Sickness. First, victims cough up dust. Soon after, their skin breaks out in a scaling rash. Finally, their body hardens—first the flesh, bones, and soft tissue, spreading until, finally, their organs ossify. Once within the organs, “the serpent” moves so quickly that sufferers petrify where they stand, filling Haven with statues of victims in their last moments of agony.",
+        "The High Magus of Haven, Archmage Phylax, discovered a rare red flower called the crimson lady’s veil that could cure the Serpent’s Sickness. These buds grow prolifically across Fanewick in the spring—but for every ten thousand of the common white-petaled blossoms, only one red flower blooms.",
+        "Desperate to save their people from the plague, Haven invaded Fanewick to amass the scarce red buds. Their forces plunged into the deep wood and, under the guidance of Archmage Phylax, plucked out the Reaping Eye from the most powerful Faint Divinity that protected the land: The Great Owl Nikta, the Shepherd of the Seasons. The Shepherd kept Fanewick in balance by turning her eyes upon the land, first for ripening, then ruination. Thus Nikta maintained the cycle of seasons—of growth and decay, of death and rebirth. With her Reaping Eye removed, Nikta can only watch over Fanewick with the Sowing Eye, forcing the land into everlasting spring.",
+        "In the year since, Haven has conquered the bogs, turning them into fields to harvest red flowers. The endless growth that once seemed like a gift quickly evolved into a scourge known as the Witherwild—Fanewick’s flora and fauna flourished, unchecked and uncontrolled. Animals swell to massive size; trees warp, twist, and begin to hunt people; and vines creep along the forest floor, strangling all they touch. This explosive growth is unconquerable and unrelenting, with no force able to stop the burgeoning verdance for long.",
+        "Prior to the Serpent’s Sickness and the Shepherd’s endless growth, your party lived a peaceful life in Fanewick or a life of toil and conquest in Haven. But when the danger demands a response, even the unprepared—and unwilling—must make a stand."
+      ] },
+      { roman: 'II', title: 'The Inciting Incident', note: "You can use the prompt below to start your campaign, or create your own.", paras: [
+        "The Reaping Eye is stowed in a secure vault beneath the central tower of Haven’s wizarding school, seemingly impossible to recover. A secretive and dangerous rebel group, led by a mysterious figure known only as the Fanewraith, has hatched a plan to end the curse of the Witherwild: find the Great Owl, Nikta, and pluck out the Sowing Eye. While this may solve the immediate problem, the long-term consequences are not being considered, just as they weren’t when Haven invaded.",
+        "Haven’s beleaguered spymaster, Kreil Dirn, is not a popular person in Haven. He is responsible for rooting out insurgents, stopping schemes before they have a chance to start, and keeping a close watch on Haven’s internal activities. Kreil has never agreed—at least not openly—with Archmage Phylax’s decision to steal the Reaping Eye, and the consequences they’ve all paid for that decision have been grimly vindicating.",
+        "Recently, Kreil uncovered the Fanewraith’s plot and is horrified by the possibility of her success. Knowing he can’t send a troop of Haven soldiers deep into the woods to hunt down and stop the Fanewraith from stealing the Sowing Eye, Kreil uses his vast network of informants and spies to find a group of adventurers who can bring the Fanewraith to swift justice.",
+        "The party is sent an invitation from Haven to meet with Kreil. But is his information correct? Does he have his own motivation or secret ambition? Whether they come from Fanewick or Haven, the party must extend some trust to a person who is equally as dangerous and mercurial as the “enemy” they pursue. And what will they do when they find the Fanewraith? Bring her to justice? Side with her? Attempt to recover the Reaping Eye?",
+        "Kreil advises the party to start their hunt for the Fanewraith in the treetop village of Alula, where he suspects she runs her operation."
+      ] },
+      { roman: 'III', title: 'Campaign Mechanics', sub: 'Corruption from the Witherwild', note: "The following mechanics are unique to this campaign.", paras: [
+        "Adversaries and environments in this campaign can gain an additional type called Withered. When an adversary is Withered, describe how the Witherwild changed or impacted how they would normally appear or operate.",
+        "You also need about 20 Wither tokens (these can be the same as the tokens you use for Fear). Any time a PC takes Severe damage from a Withered adversary or environment, gain a Wither token and place it on that PC’s character sheet. When you do, the PC must roll their Fear Die. If they roll equal to or below the number of Wither tokens on their sheet, they immediately gain a scar and clear all tokens, describing how the Witherwild changes them permanently.",
+        "At the end of each session, clear all Wither tokens from the PCs’ sheets and gain an equal amount of Fear.",
+        "If a character ever dies with Wither tokens on their sheet, their body is permanently taken over by the Witherwild."
+      ] }
+    ];
+    const rules = [
+      { n: '1', head: 'Withered', t: "Adversaries and environments in this campaign can gain an additional type called Withered. When an adversary is Withered, describe how the Witherwild changed or impacted how they would normally appear or operate." },
+      { n: '2', head: 'Gaining Wither', t: "Any time a PC takes Severe damage from a Withered adversary or environment, gain a Wither token and place it on that PC’s character sheet. When you do, the PC must roll their Fear Die. If they roll equal to or below the number of Wither tokens on their sheet, they immediately gain a scar and clear all tokens, describing how the Witherwild changes them permanently." },
+      { n: '3', head: 'End of Session', t: "At the end of each session, clear all Wither tokens from the PCs’ sheets and gain an equal amount of Fear." },
+      { n: '4', head: 'Death', t: "If a character ever dies with Wither tokens on their sheet, their body is permanently taken over by the Witherwild." }
+    ];
+    const c = chapters[idx];
+    const cur = { ...c, hasSub: !!c.sub, cap: c.paras[0].charAt(0), capRest: c.paras[0].slice(1), rest: c.paras.slice(1).map((t) => ({ t })) };
+    const tabs = chapters.map((ch, i) => {
+      const on = i === idx;
+      return { roman: ch.roman, title: ch.title, current: on ? 'page' : 'false', pick: () => this.setState({ idx: i }),
+        style: 'min-height: 48px; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 4px; text-align: left; cursor: pointer; font-family: inherit; font-size: 20px; color: #2a1f14; border: none; border-left: 3px solid ' + (on ? '#8e2b2b' : 'transparent') + '; background: ' + (on ? '#e3d2ad' : 'transparent') + '; font-weight: ' + (on ? '500' : '400') + ';' };
+    });
+    return {
+      open, closed: !open, cur, tabs, rules,
+      isOverview: idx === 0, isIncident: idx === 1, isMechanics: idx === 2, isProse: idx !== 2,
+      hasPrev: idx > 0, hasNext: idx < chapters.length - 1,
+      prevTitle: idx > 0 ? chapters[idx - 1].title : '', nextTitle: idx < chapters.length - 1 ? chapters[idx + 1].title : '',
+      goPrev: () => this.setState({ idx: Math.max(0, idx - 1) }),
+      goNext: () => this.setState({ idx: Math.min(chapters.length - 1, idx + 1) }),
+      standalone: !this.props.embedded,
+      rootStyle: 'position: relative; min-height: 100vh; ' + (this.props.embedded ? 'background: transparent; ' : 'background: #0a1416; ') + 'color: #2a1f14; font-family: \'EB Garamond\', serif; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 32px; overflow: hidden',
+      close: () => (this.props.onClose ? this.props.onClose() : this.setState({ open: false })),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

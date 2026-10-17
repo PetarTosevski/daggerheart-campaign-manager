@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reign of the Weredragon Tome · Open Book</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a1416}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/4b69baa5c3ea604607e14579c982c9e9);background-size:cover;background-position:center;background-repeat:no-repeat}
+.ww-dim{filter:blur(4px) brightness(0.45);transform:scale(1.05)}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+<sc-if value="{{ standalone }}" hint-placeholder-val="{{ true }}"><div class="ww-bg ww-dim" aria-hidden="true" style="position: absolute; inset: 0"></div></sc-if>
+
+<sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-modal="true" aria-labelledby="tomeA-title" style="position: relative; width: 100%; max-width: 1240px; height: 880px; background: #3b2b1d; border: 1px solid #5c4430; border-radius: 16px; padding: 18px; box-sizing: border-box; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); display: flex">
+
+<button type="button" onClick="{{ close }}" aria-label="Close tome" style="position: absolute; top: -18px; right: -18px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+<div aria-hidden="true" style="position: absolute; top: 0; right: 140px; width: 28px; height: 140px; background: #8e2b2b; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); z-index: 1"></div>
+
+<div style="flex: 1; display: flex; background: #efe3c8; border-radius: 6px; overflow: hidden; min-width: 0">
+
+<div style="flex: 0 0 38%; padding: 48px 40px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid #d3c19c; box-shadow: inset -28px 0 34px -26px rgba(90, 60, 20, 0.4)">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: #7a5b2e">Campaign Frame · Hope &amp; Fear</div>
+<h2 id="tomeA-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 46px; line-height: 1.05; font-weight: 900; color: #2a1f14">Reign of the Weredragon</h2>
+<svg width="220" height="14" viewBox="0 0 220 14" aria-hidden="true"><path d="M0 7h96M124 7h96" stroke="#a68352" stroke-width="1.2"></path><path d="M110 1l6 6-6 6-6-6z" fill="#8e2b2b"></path></svg>
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a5b2e">Contents</div>
+<nav aria-label="Chapters" style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{ t.pick }}" aria-current="{{ t.current }}" style="{{ t.style }}"><span style="font-family: 'Cinzel', serif; font-size: 18px; width: 40px; color: #8e2b2b">{{ t.roman }}</span><span style="flex: 1">{{ t.title }}</span></button>
+</sc-for>
+</nav>
+<div class="ww-bg" aria-hidden="true" style="margin-top: auto; height: 170px; border-radius: 100px 100px 8px 8px; border: 3px double #a68352"></div>
+<div style="padding: 14px 16px; border: 1px solid #cdb88f; border-radius: 6px; background: #e8d9b8; font-size: 16px; line-height: 1.5; font-style: italic; color: #4a3a26"><span style="font-style: normal; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.18em; color: #7a5b2e; display: block; margin-bottom: 4px">FOR THE GAME MASTER</span>{{ cur.note }}</div>
+</div>
+
+<div style="flex: 1; min-width: 0; padding: 48px 56px 28px 52px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<span style="font-family: 'Cinzel', serif; font-size: 22px; color: #8e2b2b">{{ cur.roman }}.</span>
+<h3 style="margin: 0; font-family: 'Cinzel', serif; font-size: 32px; font-weight: 700; color: #2a1f14">{{ cur.title }}</h3>
+</div>
+<sc-if value="{{ cur.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-family: 'Cinzel', serif; font-size: 18px; color: #6a4a22; margin-top: -8px">{{ cur.sub }}</div></sc-if>
+<div style="height: 1px; background: #cdb88f"></div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 14px; font-size: 19px; line-height: 1.65; color: #2a1f14; display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{ hasFigures }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; color: #7a5b2e">KEY FIGURES</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px">
+<sc-for list="{{ keyFigures }}" as="k" hint-placeholder-count="3"><div style="padding: 12px 14px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 6px; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.25">{{ k.name }}</span><span style="font-size: 14px; color: #6a5236">{{ k.role }}</span><span style="font-size: 15px; line-height: 1.4">{{ k.line }}</span></div></sc-for>
+</div>
+<div style="align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: #2f4a3a; color: #eef3ea; font-size: 15px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>Start: {{ startAt }}</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMechanics }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+<div style="display: flex; gap: 14px; padding: 14px 16px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 8px">
+<span style="width: 32px; height: 32px; flex: none; border-radius: 50%; border: 2px solid #8e2b2b; color: #8e2b2b; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; font-size: 15px">{{ r.n }}</span>
+<div style="display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700">{{ r.head }}</span><span style="font-size: 18px; line-height: 1.55; white-space: pre-line">{{ r.t }}</span></div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ isProse }}" hint-placeholder-val="{{ true }}">
+<p style="margin: 0"><span style="float: left; font-family: 'Cinzel', serif; font-size: 70px; line-height: 0.82; padding: 8px 10px 0 0; color: #8e2b2b">{{ cur.cap }}</span>{{ cur.capRest }}</p>
+<sc-if value="{{ isOverview }}" hint-placeholder-val="{{ false }}"><blockquote style="margin: 4px 0; padding: 6px 0 6px 20px; border-left: 3px solid #8e2b2b; font-family: 'Cinzel', serif; font-size: 21px; line-height: 1.4; color: #5a2a1a">{{ pullQuote }}</blockquote></sc-if>
+<sc-for list="{{ cur.rest }}" as="p" hint-placeholder-count="4"><p style="margin: 0; text-indent: 1.4em">{{ p.t }}</p></sc-for>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #cdb88f; padding-top: 14px">
+<div style="min-width: 160px"><sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goPrev }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">‹ {{ prevTitle }}</button></sc-if></div>
+<span style="font-family: 'Cinzel', serif; font-size: 14px; color: #8a7350">— {{ cur.roman }} —</span>
+<div style="min-width: 160px; display: flex; justify-content: flex-end"><sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goNext }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">{{ nextTitle }} ›</button></sc-if></div>
+</div>
+</div>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ closed }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ reopen }}" style="position: relative; min-height: 56px; padding: 0 32px; border-radius: 999px; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.12em; cursor: pointer">Open the Tome</button>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startChapter":{"editor":"enum","options":["overview","incident","mechanics"],"default":"overview"},"embedded":{"editor":null,"default":false},"onClose":{"editor":null},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ids = ['overview', 'incident', 'mechanics'];
+    const idx = st.idx ?? Math.max(0, ids.indexOf(this.props.startChapter ?? 'overview'));
+    const open = st.open ?? true;
+    const chapters = [{"roman": "I", "title": "Overview", "note": "Share this with your players before they build characters. Summarized here; full text in the Hope & Fear, pp. 129–130.", "paras": ["Whelvia was once a war-torn land. The Elder Druids persuaded the great dragon Whelvarax to drive out invaders, promising that the people's worship would raise her to godhood. She expelled the armies, taught the people to farm, govern and defend themselves, and ruled for over two centuries. When she died, the druids' ritual lifted her into the sky as a constellation—the first Ascendant.", "Seven dragon wardens followed, some kind and some cruel; only the mightiest joined the stars as Faint Divinities. Over time the druids faded away, and the Knights of Whelvia became the realm's sworn protectors, bound to each warden by a shared duty to the people.", "For the last century the warden was Sazanthe, a scholarly purple dragon based at Vexstone Abbey who wanted a peaceful, curious, open Whelvia. He chose as companion Forlorne Lykona, an orphaned faun sorceress and cult leader who read in the stars that he would become the next Ascendant. During their bonding ritual she turned the magic on him and absorbed him. The blast destroyed the abbey and left most of the witnesses as ghosts trapped in its ruins.", "Forlorne now rules as a weredragon tyrant from Nwarlyth, her mountaintop fortress, able to switch between her faun body and Sazanthe's dragon form. She wants to ascend through her subjects' fear rather than their love. The Knights now enforce her will, dissenters are jailed or devoured, and her breath turns enemies into feral weredrakes that fill her army.", "Since taking Sazanthe's power, Forlorne gets no answers from the stars, so she rounds up sky seers—and kills the ones whose readings displease her. Real seers have gone into hiding, but they secretly whisper of unlikely heroes destined to bring her down. The PCs are those heroes."]}, {"roman": "II", "title": "The Inciting Incident", "note": "A suggested opening scene; adapt it or write your own. Summarized here; full text in the Hope & Fear, p. 139.", "paras": ["Setup: The party is having breakfast at the Red Leaf Inn in the Whelvewood when a seagull pesters them, blinking in and out of existence in puffs of blue smoke, then drops a scroll.", "The scroll is a map marking a route through the Whelvewood to a place called \"Heaven's Eye.\" The forest is contested ground: Knight militias are trying to occupy it while rebels and locals fight to drive them out, and both sides treat strangers as potential enemies.", "On the back are a rabbit silhouette and a short rhyming note saying to find where the trees cross, show the drawing to the Foes of the Fox to pass safely through \"the warren,\" and expect to pay a price. The gull then steals some food and vanishes.", "Behind the scenes, Schon—Forlorne's right hand and a gifted sky seer who is secretly plotting her downfall—sent the bird after the stars revealed that the party matters to her defeat. Schon doesn't know why Heaven's Eye is important, only how to get there, and the seagull can return to guide the party if they get lost.", "Open questions: What dangers lie on the road to Heaven's Eye? Will the party trust the mysterious messenger? Will they side with the militias or the rebels to get through the forest? What waits in the warren, and what price will they accept?"]}, {"roman": "III", "title": "Campaign Mechanics", "sub": "Curses", "note": "Rules that apply only to this campaign frame. Summarized here; full text in the Hope & Fear, pp. 140–143.", "paras": [""]}];
+    const rules = [{"n": "1", "head": "Curses", "t": "A magical curse is a special condition (core rulebook p. 102). Two curses are central to this campaign: the Weredrake Curse, from Forlorne's \"Breath Weapon,\" and the Petrified Curse, from her \"Stone-Cold Gaze,\" which turns a creature and its gear to stone. Feel free to invent more.\n\nA curse can only be removed by magic: a spell, ritual, magic item, special location, supernatural event, higher power, or a mix of these. Working out the cure usually means research, which can launch a quest or a search for an NPC who can help. Two ready-made curse breakers are described under Keys to Victory."}, {"n": "2", "head": "The Astromancer's Revelations", "t": "At the Heaven's Eye observatory, the Astromancer gives the party five revelations. The players roll 5d6 together; each die points to a row (1–6) of the Night Sky Reading table, and the GM assigns one die to each of the five columns (one die per column). Spread the results across different places so the party has to travel widely. You can swap in table entries the players invented at session zero.\n\n1. Secret's Location: where the PCs can learn a secret that helps defeat Forlorne. Each player privately writes down a secret they think Forlorne is hiding; between sessions, pick one to inspire that adventure.\n2. Powerful Ally: an NPC who brings a pool of 3 Hope to any scene with Forlorne. PCs within Far range can spend from it as if it were their own Hope. If the ally drops or dies, the pool is lost.\n3. Key to Victory 1: a defensive item and where to find it. A PC holding one gains 1d4 Hope when Forlorne appears.\n4. Key to Victory 2: a weapon that can hurt Forlorne. Its wielder gets +1 Proficiency on attacks against her.\n5. Showdown Location: where the final battle will most likely happen. If the PCs arrive with the secret, the ally and both items, Forlorne fights alone, and her \"Feed on Fear\" and \"Terrifying\" features don't work there."}, {"n": "3", "head": "Night Sky Reading (table)", "t": "A six-row d6 table with columns for Roll, Secret's Location, Powerful Ally, Key to Victory 1, Key to Victory 2 and Showdown Location. Locations include Nightshade, Elevarne, Nwarlyth, Stillwater Lake, Vexstone Abbey and Witch's End. Each row's ally is a named NPC with a short hook, such as a dryad guarding a graveyard, a cave ogre, a bound demon, a petrified spymaster, or Forlorne's ghostly twin sister. Item entries point to core-rulebook loot or to the two items in this chapter. See the book, p. 141."}, {"n": "4", "head": "Keys to Victory", "t": "Two items from the table can break curses. Lady Lavender's Longsword is a Tier 3 two-handed primary weapon owned by a retired knight in Knightstead; its \"Curse Breaker\" feature removes all magical curses from any creature it touches. The Zoetrope of the Bright Bacchanal is buried in the ruins of the Lykona cottage at Witch's End; when lit and wound up, it removes all magical curses from creatures within Close range while it spins. Full stat blocks are on p. 142."}, {"n": "5", "head": "Evening the Odds", "t": "If the party has followed the reading and collected everything before reaching Tier 4, let them reach at least level 8 before they face Forlorne. Use complications or new story arcs to delay the confrontation so leveling feels natural."}, {"n": "6", "head": "Unique Adversaries: Forlorne Lykona", "t": "Forlorne has three stat blocks: a shared Tier 4 Solo framework (HP 11, Stress 8; Relentless (4); a \"Transform\" action that costs a Stress; and a reaction that heals her when a nearby PC fails with Fear), plus separate Faun Form and Dragon Form blocks with their own Difficulty, thresholds, attacks and features. Use whichever form she's currently in.\n\nHer faun form is charming and civil, the shape she wears to run her realm, with teleporting, entangling vines and her petrifying gaze. Her dragon form is savage and terrifying, with flight, a fear aura, the curse-spreading breath weapon and a tail sweep. See pp. 142–143."}, {"n": "7", "head": "Weredrake", "t": "A weredrake is someone transformed by Forlorne's breath: a wingless, four-legged dragon about the size of the person it used to be. It cannot speak and has none of that person's memories, though traces of their ancestry may show, such as a mechanical look on a former clank or a carapace on a former faerie. It can return to its old form while keeping its claws and teeth, often to lure in prey.\n\nThe book gives a Tier 1 Standard stat block with pack-hunting and climbing features. Scale it up as the party advances, using the core rulebook's improvising-adversaries guidance (core p. 208). See p. 143."}];
+    const FIG = [{"name": "Forlorne Lykona", "role": "Weredragon tyrant queen", "line": "Faun sorceress who stole a dragon's power to become a god."}, {"name": "Schon", "role": "Forlorne's secret betrayer", "line": "Her right-hand seer, quietly steering the party toward her downfall."}, {"name": "The Astromancer", "role": "Seer at Heaven's Eye", "line": "Reads the night sky to reveal how Forlorne can be beaten."}];
+    const c = chapters[idx];
+    const p0 = c.paras[0] || ''; const cur = { ...c, hasSub: !!c.sub, cap: p0.charAt(0), capRest: p0.slice(1), rest: c.paras.slice(1).map((t) => ({ t })) };
+    const tabs = chapters.map((ch, i) => {
+      const on = i === idx;
+      return { roman: ch.roman, title: ch.title, current: on ? 'page' : 'false', pick: () => this.setState({ idx: i }),
+        style: 'min-height: 48px; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 4px; text-align: left; cursor: pointer; font-family: inherit; font-size: 20px; color: #2a1f14; border: none; border-left: 3px solid ' + (on ? '#8e2b2b' : 'transparent') + '; background: ' + (on ? '#e3d2ad' : 'transparent') + '; font-weight: ' + (on ? '500' : '400') + ';' };
+    });
+    return {
+      open, closed: !open, cur, tabs, rules, keyFigures: FIG, hasFigures: idx === 1 && FIG.length > 0, startAt: "The Red Leaf Inn in the Whelvewood", pullQuote: "The stars have gone quiet for the queen—but they still speak of you.", mechIntro: "Rules that apply only to this campaign frame.",
+      isOverview: idx === 0 && true, isIncident: idx === 1, isMechanics: idx === 2, isProse: idx !== 2,
+      hasPrev: idx > 0, hasNext: idx < chapters.length - 1,
+      prevTitle: idx > 0 ? chapters[idx - 1].title : '', nextTitle: idx < chapters.length - 1 ? chapters[idx + 1].title : '',
+      goPrev: () => this.setState({ idx: Math.max(0, idx - 1) }),
+      goNext: () => this.setState({ idx: Math.min(chapters.length - 1, idx + 1) }),
+      standalone: !this.props.embedded,
+      rootStyle: 'position: relative; min-height: 100vh; ' + (this.props.embedded ? 'background: transparent; ' : 'background: #0a1416; ') + 'color: #2a1f14; font-family: \'EB Garamond\', serif; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 32px; overflow: hidden',
+      close: () => (this.props.onClose ? this.props.onClose() : this.setState({ open: false })),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

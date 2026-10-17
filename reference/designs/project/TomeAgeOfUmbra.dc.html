@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Age of Umbra Tome · Open Book</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a1416}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/53d3e7877e8e687107b1d80149685979);background-size:cover;background-position:70% center;background-repeat:no-repeat}
+.ww-dim{filter:blur(4px) brightness(0.45);transform:scale(1.05)}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+<sc-if value="{{ standalone }}" hint-placeholder-val="{{ true }}"><div class="ww-bg ww-dim" aria-hidden="true" style="position: absolute; inset: 0"></div></sc-if>
+
+<sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-modal="true" aria-labelledby="tomeA-title" style="position: relative; width: 100%; max-width: 1240px; height: 880px; background: #3b2b1d; border: 1px solid #5c4430; border-radius: 16px; padding: 18px; box-sizing: border-box; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); display: flex">
+
+<button type="button" onClick="{{ close }}" aria-label="Close tome" style="position: absolute; top: -18px; right: -18px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+<div aria-hidden="true" style="position: absolute; top: 0; right: 140px; width: 28px; height: 140px; background: #8e2b2b; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); z-index: 1"></div>
+
+<div style="flex: 1; display: flex; background: #efe3c8; border-radius: 6px; overflow: hidden; min-width: 0">
+
+<div style="flex: 0 0 38%; padding: 48px 40px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid #d3c19c; box-shadow: inset -28px 0 34px -26px rgba(90, 60, 20, 0.4)">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: #7a5b2e">Campaign Frame · Core Rulebook</div>
+<h2 id="tomeA-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 46px; line-height: 1.05; font-weight: 900; color: #2a1f14">The Age of Umbra</h2>
+<svg width="220" height="14" viewBox="0 0 220 14" aria-hidden="true"><path d="M0 7h96M124 7h96" stroke="#a68352" stroke-width="1.2"></path><path d="M110 1l6 6-6 6-6-6z" fill="#8e2b2b"></path></svg>
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a5b2e">Contents</div>
+<nav aria-label="Chapters" style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{ t.pick }}" aria-current="{{ t.current }}" style="{{ t.style }}"><span style="font-family: 'Cinzel', serif; font-size: 18px; width: 40px; color: #8e2b2b">{{ t.roman }}</span><span style="flex: 1">{{ t.title }}</span></button>
+</sc-for>
+</nav>
+<div class="ww-bg" aria-hidden="true" style="margin-top: auto; height: 170px; border-radius: 100px 100px 8px 8px; border: 3px double #a68352"></div>
+<div style="padding: 14px 16px; border: 1px solid #cdb88f; border-radius: 6px; background: #e8d9b8; font-size: 16px; line-height: 1.5; font-style: italic; color: #4a3a26"><span style="font-style: normal; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.18em; color: #7a5b2e; display: block; margin-bottom: 4px">FOR THE GAME MASTER</span>{{ cur.note }}</div>
+</div>
+
+<div style="flex: 1; min-width: 0; padding: 48px 56px 28px 52px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<span style="font-family: 'Cinzel', serif; font-size: 22px; color: #8e2b2b">{{ cur.roman }}.</span>
+<h3 style="margin: 0; font-family: 'Cinzel', serif; font-size: 32px; font-weight: 700; color: #2a1f14">{{ cur.title }}</h3>
+</div>
+<sc-if value="{{ cur.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-family: 'Cinzel', serif; font-size: 18px; color: #6a4a22; margin-top: -8px">{{ cur.sub }}</div></sc-if>
+<div style="height: 1px; background: #cdb88f"></div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 14px; font-size: 19px; line-height: 1.65; color: #2a1f14; display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{ hasFigures }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; color: #7a5b2e">KEY FIGURES</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px">
+<sc-for list="{{ keyFigures }}" as="k" hint-placeholder-count="3"><div style="padding: 12px 14px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 6px; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.25">{{ k.name }}</span><span style="font-size: 14px; color: #6a5236">{{ k.role }}</span><span style="font-size: 15px; line-height: 1.4">{{ k.line }}</span></div></sc-for>
+</div>
+<div style="align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: #2f4a3a; color: #eef3ea; font-size: 15px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>Start: {{ startAt }}</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMechanics }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+<div style="display: flex; gap: 14px; padding: 14px 16px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 8px">
+<span style="width: 32px; height: 32px; flex: none; border-radius: 50%; border: 2px solid #8e2b2b; color: #8e2b2b; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; font-size: 15px">{{ r.n }}</span>
+<div style="display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700">{{ r.head }}</span><span style="font-size: 18px; line-height: 1.55; white-space: pre-line">{{ r.t }}</span></div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ isProse }}" hint-placeholder-val="{{ true }}">
+<p style="margin: 0"><span style="float: left; font-family: 'Cinzel', serif; font-size: 70px; line-height: 0.82; padding: 8px 10px 0 0; color: #8e2b2b">{{ cur.cap }}</span>{{ cur.capRest }}</p>
+<sc-if value="{{ isOverview }}" hint-placeholder-val="{{ false }}"><blockquote style="margin: 4px 0; padding: 6px 0 6px 20px; border-left: 3px solid #8e2b2b; font-family: 'Cinzel', serif; font-size: 21px; line-height: 1.4; color: #5a2a1a">{{ pullQuote }}</blockquote></sc-if>
+<sc-for list="{{ cur.rest }}" as="p" hint-placeholder-count="4"><p style="margin: 0; text-indent: 1.4em">{{ p.t }}</p></sc-for>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #cdb88f; padding-top: 14px">
+<div style="min-width: 160px"><sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goPrev }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">‹ {{ prevTitle }}</button></sc-if></div>
+<span style="font-family: 'Cinzel', serif; font-size: 14px; color: #8a7350">— {{ cur.roman }} —</span>
+<div style="min-width: 160px; display: flex; justify-content: flex-end"><sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goNext }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">{{ nextTitle }} ›</button></sc-if></div>
+</div>
+</div>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ closed }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ reopen }}" style="position: relative; min-height: 56px; padding: 0 32px; border-radius: 999px; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.12em; cursor: pointer">Open the Tome</button>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startChapter":{"editor":"enum","options":["overview","incident","mechanics"],"default":"overview"},"embedded":{"editor":null,"default":false},"onClose":{"editor":null},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ids = ['overview', 'incident', 'mechanics'];
+    const idx = st.idx ?? Math.max(0, ids.indexOf(this.props.startChapter ?? 'overview'));
+    const open = st.open ?? true;
+    const chapters = [{"roman": "I", "title": "Overview", "note": "Share this background with your players before they make characters. Summarized here; full text in the Core Rulebook, p. 281.", "paras": ["The Halcyon Domain is decaying. God-King Othedias, chosen by the Veiled Gods as the bridge to divinity, secretly plotted with his Grand Ordinants and Aetherlords to shift the balance of heavenly power. The furious gods destroyed the Old World in answer and then abandoned the realm entirely, an event called the Apostasy. Since then, the cities and cathedrals have been crumbling and the clouded sky gets a little darker with every generation.", "The cycle of souls is broken. Every mortal carries the soul blight, which means anyone who dies comes back as a revenant set on destroying whatever it loved in life. If the risen body is destroyed, the soul slips into the Umbra, a shadowy mass of twisted spirits that merges with wild creatures and turns them into evolving nightmares. In dreams, people sense vast alien minds peering in through the unguarded veil.", "Almost a century into this age, the survivors, who call themselves the Enduring, live in fortified settlements built around Sacred Pyres. Everyone learns to fight young, and many grow into hardened warriors or Aetherweavers. Hunting bands go out each day to forage, salvage, and trade with other enclaves.", "In the swampy Idol Hollows, the fort village of Okros has held out for more than fifty years behind walls of melted shields and stone, its Pyre burning high enough to be seen across the region. A recent earthquake opened the Shalk Chasm, exposing structures older than the Old World, and Okros's scouts are looking for help from the Celsians of Amber Reach.", "Amber Reach, once a grand capital at the foot of the Griefcleft Mountains, is now a haunted ruin. The Celsians hold its Ashcall Quarter from inside the Celsian Athenaeum, a library turned fortress, and are slowly fighting to reclaim the streets. A ruthless gang of pleasure-seeking raiders called the Damask Queens is spreading out from the Cinnabar Quarter and clashing with them more violently each time.", "Hope hasn't gone out. There are rumors of shrines that still hold divine power able to push back the blight, heroes winning back relics, zealots trying to atone for Othedias, visions of untouched sanctuaries, and secret societies that keep prophecies of salvation."]}, {"roman": "II", "title": "The Inciting Incident", "note": "Use this opening hook as written, or swap in one of your own. Summarized here; full text in the Core Rulebook, p. 288.", "paras": ["A hunting band from Okros, led by the giant Huntmaster Evrados, goes into the Shalk Chasm looking for supplies and finds a worn-down temple to a little-known Veiled God. A monster drags Evrados deeper into the temple. His three hunters try to follow, but a horrible stench drives them back.", "While Elder Akadona and the village speakers argue about what to do, Evrados's voice rings out from the swamp beyond the walls, begging for help. The hunters charge out past the Pyre's light to save him. The screaming stops for a while, then starts again, and now the hunters are screaming too. The cries never change or fade, and Okros is close to panic.", "Akadona calls the party together and sends them out into the misty, willow-choked wetlands to find out what happened, rescue the hunters if they can, and give them peace if they can't.", "Open questions: what is the creature, and how does it steal its victims' voices? What links it to the newly uncovered temple, and what waits in its lair if it retreats there? Can Evrados's band still be saved? And what grim discoveries might force Okros to reach out to another settlement?"]}, {"roman": "III", "title": "Campaign Mechanics", "sub": "The Strength of Hate", "note": "These rules apply only to this campaign frame. Summarized here; full text in the Core Rulebook, pp. 288–289.", "paras": [""]}];
+    const rules = [{"n": "1", "head": "The Strength of Hate", "t": "Adversaries and environments can have the extra type Umbra-Touched. Describe how the Umbra has twisted them. Umbra-Touched adversaries score a critical success against PCs on a 19–20.\n\nPCs are slowly corrupted too: when a PC deals damage, they add extra damage equal to their number of scars. When a scar fills a PC's last Hope slot, the character doesn't retire. Instead they give in to the Umbra and run off into the dark, never to return."}, {"n": "2", "head": "Fiery Beacons", "t": "Every settlement is built around a Sacred Pyre, lit with a Blessed Branch and kept burning by appointed Pyrekeepers. Blessed Branches are rare relics carried by people who want to found new settlements. With one, the party can relight a dead Pyre or start a new one.\n\nBlessed Branch: lighting it gives every Enduring present 3 Hope. Its fire drives off all but the strongest monsters nearby for as long as it burns, and it needs only a little kindling each day."}, {"n": "3", "head": "Lurking Darkness", "t": "Whenever the party finishes a short or long rest away from a Sacred Pyre, the GM rolls a d12. On 1–2, an adversary of the GM's choice attacks. On 3–5, something stalks nearby and the GM gains 2 Fear. On 6–9, the dark presses closer and the GM gains 1 Fear. On 10–11, the rest passes quietly. On 12, the party finds a hopeful sign and each PC gains a Hope.\n\nNew downtime move, Keep Watch: when the GM makes the Lurking Darkness roll, each PC on watch rolls their Hope Die and may use it in place of the GM's roll. If several PCs keep watch, use the best result."}, {"n": "4", "head": "Soul Blight", "t": "When a PC or humanoid NPC dies, the GM can spend 1 Fear to raise them right away as a Shambling Zombie, or 2 Fear for a Brawny Zombie. The zombie hunts the people the victim cared about. Once it's destroyed, the soul joins the Umbra, and its features may turn up on later Umbra-Touched adversaries."}];
+    const FIG = [{"name": "Huntmaster Evrados", "role": "Okros's lost huntmaster", "line": "Taken by a monster, his voice now cries from the swamp."}, {"name": "Elder Akadona", "role": "Leader of Okros", "line": "Sends the party to rescue the hunters or end their suffering."}];
+    const c = chapters[idx];
+    const p0 = c.paras[0] || ''; const cur = { ...c, hasSub: !!c.sub, cap: p0.charAt(0), capRest: p0.slice(1), rest: c.paras.slice(1).map((t) => ({ t })) };
+    const tabs = chapters.map((ch, i) => {
+      const on = i === idx;
+      return { roman: ch.roman, title: ch.title, current: on ? 'page' : 'false', pick: () => this.setState({ idx: i }),
+        style: 'min-height: 48px; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 4px; text-align: left; cursor: pointer; font-family: inherit; font-size: 20px; color: #2a1f14; border: none; border-left: 3px solid ' + (on ? '#8e2b2b' : 'transparent') + '; background: ' + (on ? '#e3d2ad' : 'transparent') + '; font-weight: ' + (on ? '500' : '400') + ';' };
+    });
+    return {
+      open, closed: !open, cur, tabs, rules, keyFigures: FIG, hasFigures: idx === 1 && FIG.length > 0, startAt: "Okros, a fortified swamp village in the Idol Hollows", pullQuote: "The gods walked out; the Enduring kept the fire burning.", mechIntro: "These rules apply only to this campaign frame.",
+      isOverview: idx === 0 && true, isIncident: idx === 1, isMechanics: idx === 2, isProse: idx !== 2,
+      hasPrev: idx > 0, hasNext: idx < chapters.length - 1,
+      prevTitle: idx > 0 ? chapters[idx - 1].title : '', nextTitle: idx < chapters.length - 1 ? chapters[idx + 1].title : '',
+      goPrev: () => this.setState({ idx: Math.max(0, idx - 1) }),
+      goNext: () => this.setState({ idx: Math.min(chapters.length - 1, idx + 1) }),
+      standalone: !this.props.embedded,
+      rootStyle: 'position: relative; min-height: 100vh; ' + (this.props.embedded ? 'background: transparent; ' : 'background: #0a1416; ') + 'color: #2a1f14; font-family: \'EB Garamond\', serif; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 32px; overflow: hidden',
+      close: () => (this.props.onClose ? this.props.onClose() : this.setState({ open: false })),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>
