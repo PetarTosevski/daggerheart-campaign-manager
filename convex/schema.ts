@@ -2,6 +2,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+import { COUNTDOWN_CATEGORIES, COUNTDOWN_STATUSES } from "../src/lib/domain/countdowns/index";
 import { FRAME_IDS } from "../src/lib/frames/index";
 
 export const frameIdValidator = v.union(...FRAME_IDS.map((id) => v.literal(id)));
@@ -40,6 +41,28 @@ export default defineSchema({
   campaignState: defineTable({
     campaignId: v.id("campaigns"),
     fear: v.number(),
+  }).index("by_campaign", ["campaignId"]),
+
+  /** Countdowns, legacy rules; no event history (user decision 2026-10-17). */
+  countdowns: defineTable({
+    campaignId: v.id("campaigns"),
+    name: v.string(),
+    description: v.string(),
+    category: v.union(...COUNTDOWN_CATEGORIES.map((c) => v.literal(c))),
+    startingValue: v.number(),
+    currentValue: v.number(),
+    status: v.union(...COUNTDOWN_STATUSES.map((s) => v.literal(s))),
+    consequence: v.string(),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_campaign", ["campaignId"]),
+
+  /** Witherwild-only campaign time: one row per campaign whose frame has `campaignTime`. */
+  campaignTime: defineTable({
+    campaignId: v.id("campaigns"),
+    week: v.number(),
+    cycle: v.union(v.literal("DAY"), v.literal("NIGHT")),
+    cycleDay: v.number(),
   }).index("by_campaign", ["campaignId"]),
 
   settings: defineTable({

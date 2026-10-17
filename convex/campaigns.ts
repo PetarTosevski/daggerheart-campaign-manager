@@ -5,29 +5,13 @@ import {
   createCampaignSchema,
   startingLevel,
 } from "../src/lib/validation/campaigns";
-import type { Doc, Id } from "./_generated/dataModel";
+import { frameHasMechanic } from "../src/lib/frames/index";
+import type { Doc } from "./_generated/dataModel";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import { requireGm } from "./lib/auth";
+import { loadOwnedCampaign } from "./lib/mechanics";
 import { ownerScope, withIdempotency } from "./lib/operations";
 import { customFrameValidator, frameIdValidator } from "./schema";
-
-/** Loads a campaign the GM owns, or throws `NOT_FOUND` (also for other owners). */
-export async function loadOwnedCampaign(
-  ctx: QueryCtx,
-  ownerId: Id<"users">,
-  campaignId: Id<"campaigns">,
-  { includeDeleted = false } = {},
-): Promise<Doc<"campaigns">> {
-  const campaign = await ctx.db.get(campaignId);
-  if (
-    campaign === null ||
-    campaign.ownerId !== ownerId ||
-    (!includeDeleted && campaign.deletedAt !== undefined)
-  ) {
-    throw new ConvexError("NOT_FOUND");
-  }
-  return campaign;
-}
 
 async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">) {
   const state = await ctx.db
@@ -126,6 +110,9 @@ export const create = mutation({
           lastOpenedAt: now,
         });
         await ctx.db.insert("campaignState", { campaignId, fear: 0 });
+        if (frameHasMechanic(input.frameId, "campaignTime")) {
+          await ctx.db.insert("campaignTime", { campaignId, week: 1, cycle: "DAY", cycleDay: 1 });
+        }
         return { campaignId };
       },
     );
