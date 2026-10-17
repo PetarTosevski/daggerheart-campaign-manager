@@ -1,3 +1,5 @@
+import migrations from "@convex-dev/migrations/convex.config";
+import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
 
@@ -15,5 +17,8 @@ const app = defineApp({
     E2E_AUTH_SECRET: v.optional(v.string()),
   },
 });
+
+app.use(rateLimiter);
+app.use(migrations);
 
 export default app;

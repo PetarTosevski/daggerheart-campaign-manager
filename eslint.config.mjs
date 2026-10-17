@@ -5,6 +5,28 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // CF1: client-callable functions go through the wrappers in
+  // convex/lib/functions.ts. A warning by decision; convex/ must have zero.
+  // Listed before the domain block so its stricter rule wins on overlap.
+  {
+    files: ["convex/**/*.ts"],
+    ignores: ["convex/lib/functions.ts", "convex/auth.ts", "convex/http.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "warn",
+        {
+          patterns: [
+            {
+              regex: "(^|/)_generated/server$",
+              importNames: ["query", "mutation", "action"],
+              message:
+                "Use a wrapper from convex/lib/functions.ts (userQuery, userMutation, a campaign wrapper, ...) instead of a raw builder.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Shared game rules and the sign-in policy are bundled into Convex
   // functions, so they must stay framework-free and use relative imports.
   {
