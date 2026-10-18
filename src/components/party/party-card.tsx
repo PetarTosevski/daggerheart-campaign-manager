@@ -12,8 +12,12 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import type { CharacterView } from "../../../convex/characters";
 
+import { DeathCardBadge } from "./death";
+import { LevelUpCardBadge } from "./level-up";
 import { applyResourceDelta, classLines, resourceTiles, segments, TILE_ART, tileLook, type Resource, type Tile } from "./party-display";
 import { CharacterPortrait } from "./portrait";
+import type { SlotProps } from "./slots";
+import { WitherCardBadge } from "./wither";
 
 const STEP_BTN =
   "size-8 cursor-pointer rounded-lg border border-[#33444a] bg-black/25 p-0 text-[17px] text-[#e6ecea] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e3d8ff] disabled:cursor-not-allowed disabled:opacity-35";
@@ -163,8 +167,21 @@ function ResourceTile({
   );
 }
 
-/** A party card on the dashboard (CampaignHub board): portrait, HP/Stress/Hope tiles, Kill/Revive. */
-export function PartyCard({ campaignId, character }: { campaignId: Id<"campaigns">; character: CharacterView }) {
+/**
+ * A party card on the dashboard (CampaignHub board): portrait, HP/Stress/Hope
+ * tiles, Kill/Revive, and the D5 badge slots (level-up, death, Wither).
+ */
+export function PartyCard({
+  campaignId,
+  character,
+  isGm = false,
+  hopeAndFear = false,
+}: {
+  campaignId: Id<"campaigns">;
+  character: CharacterView;
+  isGm?: boolean;
+  hopeAndFear?: boolean;
+}) {
   const adjust = useMutation(api.characters.adjustResource).withOptimisticUpdate((store, { characterId, resource, delta }) => {
     const list = store.getQuery(api.characters.listByCampaign, { campaignId });
     if (!list || resource === "armor") return;
@@ -182,6 +199,7 @@ export function PartyCard({ campaignId, character }: { campaignId: Id<"campaigns
   const name = sheet.name;
   const dead = character.status === "dead";
   const { line, sub } = classLines(sheet);
+  const slot: SlotProps = { campaignId, character, canEdit, isGm, hopeAndFear };
 
   const run = async (op: () => Promise<unknown>) => {
     setError(null);
@@ -216,6 +234,9 @@ export function PartyCard({ campaignId, character }: { campaignId: Id<"campaigns
           {sub ? <span className="text-[13px] text-[#7f9297]">{sub}</span> : null}
         </span>
       </Link>
+      <LevelUpCardBadge {...slot} />
+      <DeathCardBadge {...slot} />
+      <WitherCardBadge {...slot} />
       <div className="grid grid-cols-3 gap-2.5">
         {resourceTiles(sheet).map((tile) => (
           <ResourceTile

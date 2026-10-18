@@ -3,20 +3,25 @@
 import { useMutation } from "convex/react";
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
+import type { SlotProps } from "@/components/party/slots";
 import { errorMessage } from "@/lib/convex-errors";
-import type { CharacterSheet, SheetPatch } from "@/lib/validation/characters";
+import type { SheetPatch } from "@/lib/validation/characters";
 
 import { api } from "../../../../../../../convex/_generated/api";
+import type { Id } from "../../../../../../../convex/_generated/dataModel";
 import type { CharacterView } from "../../../../../../../convex/characters";
 
 export type Resource = "hp" | "stress" | "hope" | "armor" | "scars";
+/** The statuses the sheet sets by hand (`away` comes only from death moves). */
 export type CharacterStatus = "active" | "dead" | "retired";
 
 type SheetContextValue = {
   character: CharacterView;
-  sheet: CharacterSheet;
+  sheet: CharacterView["sheet"];
   canEdit: boolean;
   hopeAndFear: boolean;
+  /** Props for the D5 feature slots mounted on the sheet (src/components/party/slots.ts). */
+  slot: SlotProps;
   update: (patch: SheetPatch) => Promise<boolean>;
   adjust: (resource: Resource, delta: number) => Promise<boolean>;
   applyDamage: (damage: number, useArmorSlot: boolean) => Promise<boolean>;
@@ -36,10 +41,14 @@ export function useSheet(): SheetContextValue {
 /** Sheet data plus its mutations; any failure lands in one live error message. */
 export function SheetProvider({
   character,
+  campaignId,
+  isGm,
   hopeAndFear,
   children,
 }: {
   character: CharacterView;
+  campaignId: Id<"campaigns">;
+  isGm: boolean;
   hopeAndFear: boolean;
   children: ReactNode;
 }) {
@@ -68,6 +77,7 @@ export function SheetProvider({
       sheet: character.sheet,
       canEdit: character.canEdit,
       hopeAndFear,
+      slot: { campaignId, character, canEdit: character.canEdit, isGm, hopeAndFear },
       update: (patch) => run(() => updateSheet({ characterId, patch })),
       adjust: (resource, delta) => (delta === 0 ? Promise.resolve(true) : run(() => adjustResource({ characterId, resource, delta }))),
       applyDamage: (damage, useArmorSlot) => run(() => damageMutation({ characterId, damage, useArmorSlot })),
@@ -75,7 +85,7 @@ export function SheetProvider({
       setStatus: (s) => run(() => status({ characterId, status: s })),
       error,
     }),
-    [character, characterId, hopeAndFear, run, updateSheet, adjustResource, damageMutation, move, status, error],
+    [character, characterId, campaignId, isGm, hopeAndFear, run, updateSheet, adjustResource, damageMutation, move, status, error],
   );
 
   return <SheetContext.Provider value={value}>{children}</SheetContext.Provider>;

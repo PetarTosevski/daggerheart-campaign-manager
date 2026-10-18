@@ -20,8 +20,11 @@ export type FrameId = PublishedFrameId | "custom";
 
 export const FRAME_IDS: readonly FrameId[] = [...PUBLISHED_FRAME_IDS, "custom"];
 
-/** Mechanics a frame can switch on beyond the core ones every campaign has. */
-export type ExclusiveMechanic = "campaignTime";
+/**
+ * Mechanics a frame can switch on beyond the core ones every campaign has.
+ * `witherTokens` (D5): Wither tokens from Withered sources, converted to Fear at session end (CB 261).
+ */
+export type ExclusiveMechanic = "campaignTime" | "witherTokens";
 
 export type ArtRef = {
   /** Design asset id (see `src/lib/design-assets.ts`). */
@@ -420,7 +423,7 @@ const EXCLUSIVE_MECHANICS: Record<FrameId, readonly ExclusiveMechanic[]> = {
     PublishedFrameId,
     readonly ExclusiveMechanic[]
   >),
-  witherwild: ["campaignTime"],
+  witherwild: ["campaignTime", "witherTokens"],
   custom: [],
 };
 

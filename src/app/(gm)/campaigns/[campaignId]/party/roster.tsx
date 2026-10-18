@@ -5,9 +5,11 @@ import { useMutation } from "convex/react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { LevelUpRosterBadge } from "@/components/party/level-up";
 import { FallenOverlay } from "@/components/party/party-card";
 import { domainBanner, DOMAIN_ICONS, heritageLine, ownerLabel, type Table } from "@/components/party/party-display";
 import { CharacterPortrait, PortraitUpload } from "@/components/party/portrait";
+import type { SlotProps } from "@/components/party/slots";
 import { errorMessage } from "@/lib/convex-errors";
 import { hopeMax } from "@/lib/domain/characters";
 import { assetBackground } from "@/lib/design-assets";
@@ -30,17 +32,19 @@ function Stat({ label, children, hope = false }: { label: string; children: Reac
   );
 }
 
-/** A hero on the roster (Party board): class banner, portrait, heritage, HP/Evasion/Hope, owner. */
+/** A hero on the roster (Party board): class banner, portrait, heritage, HP/Evasion/Hope, owner, and the D5 level-up badge slot. */
 export function RosterCard({
   campaignId,
   character,
   table,
   isGm,
+  hopeAndFear = false,
 }: {
   campaignId: Id<"campaigns">;
   character: CharacterView;
   table: Table | undefined;
   isGm: boolean;
+  hopeAndFear?: boolean;
 }) {
   const setStatus = useMutation(api.characters.setStatus);
   const assignOwner = useMutation(api.characters.assignOwner);
@@ -55,8 +59,9 @@ export function RosterCard({
   const cls = getClass(sheet.classId);
   const domains = cls?.domains ?? [];
   const banner = domainBanner(domains);
-  const maxHope = hopeMax(sheet.scars);
+  const maxHope = hopeMax(sheet.scars, sheet.hopeSlotBonus ?? 0);
   const owner = ownerLabel(character, table);
+  const slot: SlotProps = { campaignId, character, canEdit, isGm, hopeAndFear };
 
   const run = async (op: () => Promise<unknown>) => {
     setError(null);
@@ -134,6 +139,7 @@ export function RosterCard({
           <span className="text-[14px] text-[#9fb2b6]">
             {getSubclass(sheet.subclassId)?.name ? `${getSubclass(sheet.subclassId)?.name} · ` : ""}Level {sheet.level}
           </span>
+          <LevelUpRosterBadge {...slot} />
         </div>
         <div className="grid grid-cols-3 gap-2 text-center">
           <Stat label="HP">

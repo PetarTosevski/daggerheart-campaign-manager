@@ -124,10 +124,12 @@ export type Tile = {
 /**
  * The three tiles. HP and Stress show marked slots out of the maximum, as the
  * sheet tracks them (the Hub board's convention, used on the roster too); Hope
- * shows Hope held out of 6 − scars.
+ * shows Hope held out of 6 (+1 with Light in the Dark) − scars.
  */
-export function resourceTiles(sheet: Pick<CharacterSheet, "hp" | "hpMax" | "stress" | "stressMax" | "hope" | "scars">): Tile[] {
-  const hope = hopeMax(sheet.scars);
+export function resourceTiles(
+  sheet: Pick<CharacterSheet, "hp" | "hpMax" | "stress" | "stressMax" | "hope" | "scars"> & { hopeSlotBonus?: number },
+): Tile[] {
+  const hope = hopeMax(sheet.scars, sheet.hopeSlotBonus ?? 0);
   return [
     { key: "hp", label: "HP", value: Math.min(sheet.hp, sheet.hpMax), max: sheet.hpMax, broken: 0, color: "#e0605a", hint: sheet.hp >= sheet.hpMax ? "Down" : "marked" },
     {

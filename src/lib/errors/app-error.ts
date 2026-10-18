@@ -1,14 +1,31 @@
 import { ConvexError } from "convex/values";
 
+import { actionLogMessages } from "./actionLog";
+import { classFeatureMessages } from "./classFeatures";
 import { commonMessages } from "./common";
+import { deathMessages } from "./death";
+import { diceMessages } from "./dice";
+import { levelUpMessages } from "./levelUp";
+import { photoImportMessages } from "./photoImport";
+import { restMessages } from "./rests";
+import { witherMessages } from "./wither";
 
 /**
  * Every error code a Convex function may throw, shared by server and client.
  * Common codes come from `common.ts`; the rest are each domain's codes, which
- * move into their own `as const` module as each domain is converted.
+ * move into their own `as const` module as each domain is converted. A D5
+ * module's new code joins this union by itself (`keyof typeof` its module).
  */
 export type AppErrorCode =
   | keyof typeof commonMessages
+  | keyof typeof actionLogMessages
+  | keyof typeof diceMessages
+  | keyof typeof levelUpMessages
+  | keyof typeof restMessages
+  | keyof typeof deathMessages
+  | keyof typeof witherMessages
+  | keyof typeof classFeatureMessages
+  | keyof typeof photoImportMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"

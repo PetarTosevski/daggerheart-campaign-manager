@@ -2,12 +2,13 @@ import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
 import { characterExtraValidator } from "../lib/validators/characterExtras";
+import { awayValidator, storedCharacterStatusValidator } from "../lib/validators/characters";
 
 export const characterTables = {
   /**
    * Player characters. `sheet` is a versioned blob `{ schemaVersion, ...sheet }`
    * (`characterSheetSchema` in src/lib/validation/characters.ts), read only
-   * through `readSheet` in convex/characters.ts, which upgrades older versions
+   * through `readSheet` in convex/lib/characterSheet.ts, which upgrades older versions
    * (version 1 has no `schemaVersion`; `migrations/characters:versionSheets`
    * rewrites them). It stays `v.any()` until every deployment is migrated,
    * then narrows to `sheetValidator`. The owner (a player, or the GM for an
@@ -18,7 +19,9 @@ export const characterTables = {
     campaignId: v.id("campaigns"),
     ownerId: v.id("users"),
     createdBy: v.id("users"),
-    status: v.union(v.literal("active"), v.literal("dead"), v.literal("retired")),
+    /** `away` (D5, Castle High less-lethal, HF 127) comes with `away`; only death moves set it. */
+    status: storedCharacterStatusValidator,
+    away: v.optional(awayValidator),
     sheet: v.any(),
     createdAt: v.number(),
     updatedAt: v.number(),

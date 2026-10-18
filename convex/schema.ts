@@ -1,6 +1,7 @@
 import { authTables } from "@convex-dev/auth/server";
 import { defineSchema } from "convex/server";
 
+import { actionLogTables } from "./tables/actionLog";
 import { campaignTables } from "./tables/campaigns";
 import { characterTables } from "./tables/characters";
 import { codexTables } from "./tables/codex";
@@ -9,6 +10,7 @@ import { fileTables } from "./tables/files";
 import { historyTables } from "./tables/history";
 import { mapTables } from "./tables/maps";
 import { operationTables } from "./tables/operations";
+import { restTables } from "./tables/rests";
 import { trackerTables } from "./tables/trackers";
 
 export { customFrameValidator, frameIdValidator } from "./tables/campaigns";
@@ -25,4 +27,6 @@ export default defineSchema({
   ...fileTables,
   ...operationTables,
   ...historyTables,
+  ...actionLogTables,
+  ...restTables,
 });

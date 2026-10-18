@@ -1,6 +1,15 @@
 import { v, type Infer } from "convex/values";
 
 import { TRAIT_IDS, type TraitId } from "../../../src/lib/srd/types";
+import {
+  ADVANCEMENT_OPTIONS,
+  CONDITIONS,
+  EFFECT_UNTIL,
+  FEATURE_USE_UNTIL,
+  HELD_DIE_KINDS,
+  HELD_DIE_UNTIL,
+  SUBCLASS_RANKS,
+} from "../../../src/lib/validation/characters";
 
 /**
  * Convex validators for characters (CD19). They describe shapes only; the zod
@@ -80,6 +89,74 @@ export const sheetPatchValidator = v.object({
   stressMax: v.optional(v.number()),
 });
 
+const literals = <T extends string>(values: readonly T[]) => v.union(...values.map((value) => v.literal(value)));
+
+/** D5 sheet parts (T0), mirroring the zod schemas in src/lib/validation/characters.ts. */
+export const conditionValidator = literals(CONDITIONS);
+
+const advancementValidator = v.object({
+  level: v.number(),
+  picks: v.array(v.object({ option: literals(ADVANCEMENT_OPTIONS), tier: v.number(), slot: v.number(), targets: v.optional(v.array(v.string())) })),
+  cardId: v.string(),
+  tradeOut: v.optional(v.string()),
+  tradeIn: v.optional(v.string()),
+  experienceId: v.optional(v.string()),
+});
+
+export const effectValidator = v.object({
+  id: v.string(),
+  source: v.string(),
+  text: v.string(),
+  until: literals(EFFECT_UNTIL),
+  mods: v.optional(
+    v.object({
+      evasion: v.optional(v.number()),
+      attack: v.optional(v.number()),
+      damage: v.optional(v.number()),
+      trait: v.optional(v.object({ id: traitIdValidator, delta: v.number() })),
+    }),
+  ),
+});
+
+export const heldDieValidator = v.object({
+  id: v.string(),
+  kind: literals(HELD_DIE_KINDS),
+  sides: v.number(),
+  value: v.optional(v.number()),
+  until: literals(HELD_DIE_UNTIL),
+  fromCharacterId: v.optional(v.string()),
+});
+
+const classStateValidator = v.object({
+  unstoppable: v.optional(v.object({ value: v.number(), max: v.number() })),
+  focus: v.optional(v.string()),
+  strangeNumber: v.optional(v.number()),
+  marked: v.optional(v.string()),
+  getInGetOut: v.optional(v.boolean()),
+  comboDie: v.optional(v.number()),
+  favor: v.optional(v.number()),
+  hexes: v.optional(v.array(v.string())),
+});
+
+/**
+ * The D5 fields. Optional here although `readSheet` always fills them: a view
+ * built without them (older fixtures, a placeholder) stays valid.
+ */
+const d5SheetFields = {
+  hopeSlotBonus: v.optional(v.number()),
+  subclassRank: v.optional(literals(SUBCLASS_RANKS)),
+  multiclass: v.optional(v.object({ classId: v.string(), domainId: v.string(), subclassId: v.string() })),
+  advancements: v.optional(v.array(advancementValidator)),
+  levelUpPending: v.optional(v.boolean()),
+  conditions: v.optional(v.array(conditionValidator)),
+  effects: v.optional(v.array(effectValidator)),
+  heldDice: v.optional(v.array(heldDieValidator)),
+  featureUses: v.optional(v.array(v.object({ key: v.string(), until: literals(FEATURE_USE_UNTIL) }))),
+  classState: v.optional(classStateValidator),
+  wither: v.optional(v.number()),
+  journeyEnds: v.optional(v.boolean()),
+};
+
 /** The current sheet (`characterSheetSchema`, version 2) as queries return it. Keep in step with the zod schema. */
 export const sheetValidator = v.object({
   name: v.string(),
@@ -113,9 +190,20 @@ export const sheetValidator = v.object({
   connections: v.array(v.string()),
   notes: v.string(),
   portrait: v.optional(portraitValidator),
+  ...d5SheetFields,
 });
 
+/** The statuses `characters.setStatus` sets by hand. */
 export const characterStatusValidator = v.union(v.literal("active"), v.literal("dead"), v.literal("retired"));
+
+/**
+ * Every stored status: `away` (Castle High less-lethal, HF 127) is set only by
+ * death moves and cleared by the GM, never through `setStatus`.
+ */
+export const storedCharacterStatusValidator = v.union(v.literal("active"), v.literal("dead"), v.literal("retired"), v.literal("away"));
+
+/** Why an `away` character is gone (HF 127). */
+export const awayValidator = v.object({ reason: v.union(v.literal("infirmary"), v.literal("sentHome")), note: v.optional(v.string()) });
 
 /**
  * One character as `get` and `listByCampaign` return it. Only editors get an
@@ -126,7 +214,9 @@ export const characterStatusValidator = v.union(v.literal("active"), v.literal("
 export const characterViewValidator = v.object({
   _id: v.id("characters"),
   ownerId: v.id("users"),
-  status: characterStatusValidator,
+  status: storedCharacterStatusValidator,
+  /** Set while `status` is `away`. */
+  away: v.optional(awayValidator),
   sheet: sheetValidator,
   /** Resolved URL of an uploaded portrait, or null. */
   portraitUrl: v.union(v.string(), v.null()),

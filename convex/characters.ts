@@ -28,19 +28,17 @@ import { TRAIT_IDS } from "../src/lib/srd/types";
 import {
   characterDraftSchema,
   characterSheetSchema,
-  characterSheetV1Schema,
   sheetPatchSchema,
-  SHEET_VERSION,
   type CharacterDraft,
   type CharacterSheet,
-  type CharacterSheetV1,
+  type CharacterSheetInput,
 } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { readVersioned } from "./lib/blobs";
+import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { campaignQuery, keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
-import { atLeast, permissionFor, type Permission } from "./lib/permissions";
+import { atLeast, type Permission } from "./lib/permissions";
 import {
   characterDraftValidator,
   characterStatusValidator,
@@ -52,6 +50,8 @@ import {
 } from "./lib/validators/characters";
 
 export type { CharacterView };
+// Moved to convex/lib/characterSheet.ts (D5 T0); re-exported for existing importers.
+export { loadCharacter, readSheet, storedSheet };
 
 /** A new stable id for an inventory item or Experience. */
 function newId(): string {
@@ -65,40 +65,8 @@ function invalid(message: string): never {
 
 // ---------------------------------------------------------------- the stored sheet
 
-/**
- * Reads a stored sheet, upgrading older versions (CD3), or throws
- * `CHARACTER_CORRUPT`. Version 1 (no `schemaVersion`) gets ids by position,
- * so an unmigrated sheet shows the same ids on every read.
- */
-export function readSheet(raw: unknown): CharacterSheet {
-  return readVersioned(
-    {
-      1: {
-        schema: characterSheetV1Schema,
-        upgrade: (old: CharacterSheetV1) => ({
-          ...old,
-          inventory: old.inventory.map((name, i) => ({ id: `inv-${i}`, name })),
-          experiences: old.experiences.map((e, i) => ({ id: `exp-${i}`, ...e })),
-        }),
-      },
-      2: { schema: characterSheetSchema },
-    },
-    raw,
-    "CHARACTER_CORRUPT",
-  );
-}
-
-/** The stored form of a sheet: validated (a ZodError becomes INVALID), with its `schemaVersion`. */
-export function storedSheet(sheet: CharacterSheet) {
-  return { schemaVersion: SHEET_VERSION, ...characterSheetSchema.parse(sheet) };
-}
-
-async function saveSheet(ctx: MutationCtx, characterId: Id<"characters">, sheet: CharacterSheet): Promise<void> {
-  await ctx.db.patch("characters", characterId, { sheet: storedSheet(sheet), updatedAt: Date.now() });
-}
-
 /** Stands in for a sheet that fails to read, so one bad character doesn't fail the party list. */
-function placeholderSheet(raw: unknown): CharacterSheet {
+function placeholderSheet(raw: unknown): CharacterView["sheet"] {
   const stored = typeof raw === "object" && raw !== null ? (raw as { name?: unknown }).name : undefined;
   const name = typeof stored === "string" && stored.trim() !== "" ? stored.trim().slice(0, 80) : "Unreadable character";
   return {
@@ -132,46 +100,6 @@ function placeholderSheet(raw: unknown): CharacterSheet {
   };
 }
 
-// ---------------------------------------------------------------- access
-
-type Loaded = { campaign: Doc<"campaigns">; permission: Permission; character: Doc<"characters"> };
-
-/** The character, its live campaign and the user's permission on it (exact up to `enough`), or null without access. */
-async function findCharacter(ctx: QueryCtx, user: Doc<"users">, characterId: Id<"characters">, enough: Permission): Promise<Loaded | null> {
-  const character = await ctx.db.get("characters", characterId);
-  if (character === null) return null;
-  const campaign = await ctx.db.get("campaigns", character.campaignId);
-  if (campaign === null || campaign.deletedAt !== undefined) return null;
-  const permission = await permissionFor(ctx, user, { type: "character", campaign, character }, enough);
-  return permission === null ? null : { campaign, permission, character };
-}
-
-/**
- * Loads a character the user has `need` on: `view` for everyone in the
- * campaign, `edit` for the GM and the character's owner, `owner` for the GM.
- * No access → NOT_FOUND; too little → FORBIDDEN. The permission is exact up
- * to `enough` (default `need`). The character's extras load through it too
- * (convex/characterExtras.ts), so a grant on a character covers its extras.
- */
-export async function loadCharacter(
-  ctx: QueryCtx,
-  user: Doc<"users">,
-  characterId: Id<"characters">,
-  need: Permission,
-  enough: Permission = need,
-): Promise<Loaded> {
-  const found = await findCharacter(ctx, user, characterId, enough);
-  if (found === null) throw appError("NOT_FOUND");
-  if (!atLeast(found.permission, need)) throw appError("FORBIDDEN");
-  return found;
-}
-
-/** Loads a character the user edits, with its sheet. */
-async function editable(ctx: QueryCtx, user: Doc<"users">, characterId: Id<"characters">) {
-  const { campaign, character } = await loadCharacter(ctx, user, characterId, "edit");
-  return { campaign, character, sheet: readSheet(character.sheet) };
-}
-
 // ---------------------------------------------------------------- reads
 
 /** URL of the character's own uploaded portrait, or null (bad id, someone else's file, or gone). */
@@ -183,7 +111,17 @@ async function toView(ctx: QueryCtx, c: Doc<"characters">, sheet: CharacterSheet
   const portraitUrl = sheet.portrait?.kind === "upload" ? await portraitFileUrl(ctx, c._id, sheet.portrait.storageId) : null;
   // Only editors get the upload's storage id; everyone else gets `portraitUrl` and a placeholder id.
   const shown: CharacterSheet = !canEdit && sheet.portrait?.kind === "upload" ? { ...sheet, portrait: { kind: "upload", storageId: "hidden" } } : sheet;
-  return { _id: c._id, ownerId: c.ownerId, status: c.status, sheet: shown, portraitUrl, canEdit, mine: c.ownerId === viewer._id, updatedAt: c.updatedAt };
+  return {
+    _id: c._id,
+    ownerId: c.ownerId,
+    status: c.status,
+    ...(c.away ? { away: c.away } : {}),
+    sheet: shown,
+    portraitUrl,
+    canEdit,
+    mine: c.ownerId === viewer._id,
+    updatedAt: c.updatedAt,
+  };
 }
 
 /** Every character in the campaign; everyone in it can read every sheet. A sheet that fails to read comes back marked `corrupt`. */
@@ -237,7 +175,7 @@ function assertSource(source: Source, allowExpansion: boolean, what: string) {
 }
 
 /** Builds the stored sheet from a validated wizard draft (Core ch. 1). */
-export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean): CharacterSheet {
+export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean): CharacterSheetInput {
   const cls = getClass(draft.classId);
   if (!cls) throw new RuleError("INVALID", "Unknown class.");
   assertSource(cls.source, allowExpansion, cls.name);
@@ -291,7 +229,7 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean): 
 
   if (!STARTING_POTIONS.includes(draft.potion)) throw new RuleError("INVALID", "Choose a Minor Health Potion or a Minor Stamina Potion.");
 
-  const sheet: CharacterSheet = {
+  const sheet: CharacterSheetInput = {
     name: draft.name,
     pronouns: draft.pronouns,
     description: draft.description,
@@ -337,7 +275,10 @@ const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
  * for that class, no secondary with a two-handed primary, and magic weapons
  * only with a Spellcast trait (Core ch. 1 step 5).
  */
-function assertEquipment(sheet: CharacterSheet, allowExpansion: boolean) {
+function assertEquipment(
+  sheet: Pick<CharacterSheet, "level" | "classId" | "subclassId" | "primaryWeaponId" | "secondaryWeaponId" | "armorId">,
+  allowExpansion: boolean,
+) {
   const tier = tierForLevel(sheet.level);
   const sub = getSubclass(sheet.subclassId);
   const check = (weaponId: string, slot: "primary" | "secondary") => {

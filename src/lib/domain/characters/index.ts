@@ -2,6 +2,7 @@
 // (damage thresholds, armor). Pure module: bundled into Convex.
 
 import type { TraitId } from "../../srd/types";
+import type { Condition } from "../../validation/characters";
 
 /** Trait modifiers distributed at creation: "+2, +1, +1, 0, 0, −1" (Core p.17). */
 export const TRAIT_POOL: readonly number[] = [2, 1, 1, 0, 0, -1];
@@ -21,8 +22,12 @@ export function isValidTraitSpread(traits: Record<TraitId, number>): boolean {
   return values.length === pool.length && values.every((v, i) => v === pool[i]);
 }
 
-export function hopeMax(scars: number): number {
-  return Math.max(0, BASE_HOPE_MAX - scars);
+/**
+ * Hope slots left: 6, plus a seventh from Light in the Dark (`hopeSlotBonus`,
+ * CB 40, dcm-bxp.14), minus one per scar (CB 18 and 90: "a maximum of 6"; CB 106, scars).
+ */
+export function hopeMax(scars: number, hopeSlotBonus = 0): number {
+  return Math.max(0, BASE_HOPE_MAX + hopeSlotBonus - scars);
 }
 
 /** Tier of a level: 1 (level 1), 2 (2–4), 3 (5–7), 4 (8–10). */
@@ -112,13 +117,32 @@ export function equipmentModifiers(featureTexts: readonly (string | undefined)[]
 }
 
 export type Resource = "hp" | "stress" | "hope" | "scars";
-type Tracks = { hp: number; hpMax: number; stress: number; stressMax: number; hope: number; scars: number };
+type Tracks = {
+  hp: number;
+  hpMax: number;
+  stress: number;
+  stressMax: number;
+  hope: number;
+  scars: number;
+  hopeSlotBonus?: number;
+  conditions?: readonly Condition[];
+};
 
-/** Marks or clears a resource track by `delta` (used by the server's adjustResource and optimistic UI updates). */
+/**
+ * Marks or clears a resource track by `delta` (used by the server's
+ * adjustResource and optimistic UI updates). Hope stops at `hopeMax`;
+ * clearing a Hit Point wakes an Unconscious character (CB 106, Avoid Death).
+ */
 export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resource, delta: number): T {
   const clamp = (n: number, max: number) => Math.max(0, Math.min(max, n));
+  const max = (scars: number) => hopeMax(scars, sheet.hopeSlotBonus ?? 0);
   const next = { ...sheet };
-  if (resource === "hp") next.hp = clamp(sheet.hp + delta, sheet.hpMax);
+  if (resource === "hp") {
+    next.hp = clamp(sheet.hp + delta, sheet.hpMax);
+    if (next.hp < sheet.hp && sheet.conditions?.includes("unconscious")) {
+      Object.assign(next, { conditions: sheet.conditions.filter((c) => c !== "unconscious") });
+    }
+  }
   if (resource === "stress") {
     if (delta > 0) {
       const marked = markStress(sheet, delta);
@@ -126,10 +150,10 @@ export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resourc
       next.hp = marked.hp;
     } else next.stress = clamp(sheet.stress + delta, sheet.stressMax);
   }
-  if (resource === "hope") next.hope = clamp(sheet.hope + delta, hopeMax(sheet.scars));
+  if (resource === "hope") next.hope = clamp(sheet.hope + delta, max(sheet.scars));
   if (resource === "scars") {
     next.scars = clamp(sheet.scars + delta, 6);
-    next.hope = Math.min(next.hope, hopeMax(next.scars));
+    next.hope = Math.min(next.hope, max(next.scars));
   }
   return next;
 }
