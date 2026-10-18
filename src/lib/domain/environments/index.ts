@@ -15,7 +15,7 @@
 
 import { adversariesFor } from "../adversaries";
 import { groupByTier, normalizeSearch, type CatalogueBook, type CatalogueTier, type TierGroup } from "../../adversaries/catalogue";
-import type { EnvironmentAdversaryRef, EnvironmentDef, EnvironmentType } from "../../srd/types";
+import type { EnvironmentAdversaryRef, EnvironmentDef, EnvironmentFeature, EnvironmentType } from "../../srd/types";
 
 /** The environments a campaign sees: Core always, Hope & Fear with the switch on, frame entries only in their frame. */
 export function environmentsFor<T extends Pick<EnvironmentDef, "source" | "frameId">>(
@@ -114,6 +114,22 @@ export function environmentCountdownStart(label: string): EnvironmentCountdownSt
   return { kind: "dice", count: Number(m[1]), sides: Number(m[2]) };
 }
 
+/**
+ * Every countdown a feature names: its own label ("Countdown (Loop 4)") and any written in its text, such as "a
+ * Progress Countdown (12)" or "a Consequence Countdown (10)" (user 2026-10-19: those get a Start button too). Only
+ * labels with a starting value (a number or dice) count; duplicates are dropped.
+ */
+export function featureCountdownLabels(feature: Pick<EnvironmentFeature, "countdown" | "text">): string[] {
+  const labels: string[] = [];
+  if (feature.countdown !== undefined && environmentCountdownStart(feature.countdown) !== null) labels.push(feature.countdown);
+  const re = /(?:(?:[A-Z][\w-]*)\s+){0,2}Countdown \((?:(?:Loop|Long-Term)\s+)?(?:\d+d\d+|\d+)\)/g;
+  for (const match of feature.text.matchAll(re)) {
+    const label = match[0].trim();
+    if (!labels.some((l) => l.toLowerCase() === label.toLowerCase())) labels.push(label);
+  }
+  return labels;
+}
+
 /** The dashboard category of a feature's countdown: Consequence → consequence, Progress → project, any other → threat. */
 export function environmentCountdownCategory(label: string): "consequence" | "project" | "threat" {
   if (/^consequence\b/i.test(label)) return "consequence";
@@ -122,6 +138,8 @@ export function environmentCountdownCategory(label: string): "consequence" | "pr
 }
 
 /** "Mountain Pass: Icy Winds", the name of a dashboard countdown started from an environment feature. */
-export function environmentCountdownName(environment: Pick<EnvironmentDef, "name">, featureName: string): string {
-  return `${environment.name}: ${featureName}`;
+export function environmentCountdownName(environment: Pick<EnvironmentDef, "name">, featureName: string, label?: string): string {
+  // A feature that names several countdowns tells them apart by the label's kind ("… (Progress)").
+  const kind = label ? /^(.*?)\s*Countdown\b/i.exec(label)?.[1]?.trim() : undefined;
+  return kind ? `${environment.name}: ${featureName} (${kind})` : `${environment.name}: ${featureName}`;
 }
