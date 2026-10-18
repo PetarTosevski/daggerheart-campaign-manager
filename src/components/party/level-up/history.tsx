@@ -1,18 +1,22 @@
 "use client";
 
+import "./history.css";
+
 import { useId, useState } from "react";
 
+import { useLevelUpDraft } from "@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft";
 import { Label, PaperInput, Pill, SheetBox, Small } from "@/components/party/sheet-ui";
 import { availableOptions, offersOption, OPTION_ORDER, OPTION_RULES, picksFor, TIERS, type Tier } from "@/lib/domain/level-up";
 import { MAX_LEVEL, tierForLevel } from "@/lib/domain/characters";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
-import type { CharacterSheet } from "@/lib/validation/characters";
+import type { AdvancementOption, CharacterSheet } from "@/lib/validation/characters";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
 import { OPTION_SHORT, OPTION_TEXT } from "./shared";
+import { TierPicker } from "./tier-pickers";
 
 const UNLOCK_LEVEL = { 2: 2, 3: 5, 4: 8 } as const;
 
@@ -40,31 +44,47 @@ const OUTRO =
 /**
  * The board's Level Up region (Story & Advancement): budget pill, then the three tier boxes with read-only adv-box
  * checkboxes for the advancements taken (and the level that took them), joined boxes for two-pick options, crossed-out
- * options and locked tiers. Levelling itself happens from the header's level circle.
+ * options and locked tiers. Levelling starts from the header's level circle; in the guided level-up (plan
+ * guided-level-up, GL1) the open tiers' boxes become tickable for the new level: draft marks are green and can be
+ * unticked, and options with targets get a chooser under the row (tier-pickers.tsx).
  */
-export function TierBoxes({ sheet }: { sheet: CharacterSheet }) {
+export function TierBoxes({ sheet, hopeAndFear = false }: { sheet: CharacterSheet; hopeAndFear?: boolean }) {
   const headId = useId();
+  const lu = useLevelUpDraft();
+  const drafting = lu.active;
   // Crossed-out reasons come from the option list for the next level; at level 10 ask as if one level lower.
   const options = availableOptions({ ...sheet, level: Math.min(sheet.level, MAX_LEVEL - 1) });
   const total = 2 * (sheet.level - 1);
   const used = sheet.advancements.reduce((sum, a) => sum + a.picks.reduce((s, p) => s + OPTION_RULES[p.option].cost, 0), 0);
-  const current = tierForLevel(sheet.level);
+  // While levelling, the tiers open at the new level (level 5 opens tier 3).
+  const current = tierForLevel(drafting ? lu.level : sheet.level);
 
   return (
-    <section className="adv" aria-labelledby={headId}>
+    <section id="lu-target-advancements" className={cn("adv", drafting && "drafting")} aria-labelledby={headId}>
       <div className="adv-head">
         <h3 id={headId} className="sh-h">
           Level Up
         </h3>
         <span className={cn("adv-budget", total === 0 ? "locked" : used >= total && "full")}>{total ? `${used} / ${total} advancements used` : "No advancements yet"}</span>
-        <Small className="italic">{total ? "2 per level gained. Spend them in your current tier or any tier below it." : "Reach level 2 to choose your first advancements."}</Small>
+        {drafting ? (
+          <span className="adv-budget draft">
+            Level {lu.level}: {lu.picksUsed} / 2 picks
+          </span>
+        ) : null}
+        <Small className="italic">
+          {drafting
+            ? `Tick two options for level ${lu.level} in tier ${current} or below. Proficiency and multiclass take both.`
+            : total
+              ? "2 per level gained. Spend them in your current tier or any tier below it."
+              : "Reach level 2 to choose your first advancements."}
+        </Small>
       </div>
       <div className="adv-tiers">
         {TIERS.map((tier) => {
           const locked = tier > current;
           const text = TIER_TEXT[tier];
           return (
-            <SheetBox key={tier} title={text.title} label={`Tier ${tier}`} className={cn(locked && "adv-locked")}>
+            <SheetBox key={tier} title={text.title} label={`Tier ${tier}`} className={cn(locked && "adv-locked", drafting && !locked && "adv-open")}>
               {locked ? <span className="adv-budget locked self-center">Reach level {UNLOCK_LEVEL[tier]} to unlock</span> : null}
               <div className="adv-intro">{text.intro}</div>
               <Small className="text-center">{text.choose}</Small>
@@ -72,10 +92,13 @@ export function TierBoxes({ sheet }: { sheet: CharacterSheet }) {
                 {OPTION_ORDER.filter((o) => tier >= OPTION_RULES[o].fromTier && offersOption(sheet, o)).map((option) => {
                   const rule = OPTION_RULES[option];
                   const taken = picksFor(sheet, tier, option);
-                  const blocked = options.find((o) => o.tier === tier && o.option === option)?.blocked;
+                  const blocked = options.find((o) => o.tier === tier && o.option === option)?.blocked ?? null;
                   const crossed = taken.length === 0 && Boolean(blocked) && !blocked?.startsWith("Reach");
                   const joined = rule.cost === 2;
                   const boxes = joined ? 1 : rule.slots;
+                  if (drafting && !locked) {
+                    return <DraftRow key={option} sheet={sheet} tier={tier} option={option} taken={taken} blocked={blocked} crossed={crossed} hopeAndFear={hopeAndFear} />;
+                  }
                   return (
                     <li key={option} className="adv-row" title={crossed ? (blocked ?? undefined) : undefined}>
                       <span className="adv-boxes">
@@ -100,6 +123,110 @@ export function TierBoxes({ sheet }: { sheet: CharacterSheet }) {
         })}
       </div>
     </section>
+  );
+}
+
+/** Options whose targets the draft keeps on its first pick of that tier (useLevelUpDraft.setPickTargets). */
+const TARGETED: ReadonlySet<AdvancementOption> = new Set(["traits", "experiences", "domainCard"]);
+
+/**
+ * One option row of an open tier while levelling: the earlier levels' marks stay read-only, the new level's draft
+ * marks are green and can be unticked, and the next free box can be ticked when the rules allow (else it is disabled
+ * with the reason). A ticked option with targets shows its chooser under the row.
+ */
+function DraftRow({
+  sheet,
+  tier,
+  option,
+  taken,
+  blocked,
+  crossed,
+  hopeAndFear,
+}: {
+  sheet: CharacterSheet;
+  tier: Tier;
+  option: AdvancementOption;
+  taken: ReturnType<typeof picksFor>;
+  blocked: string | null;
+  crossed: boolean;
+  hopeAndFear: boolean;
+}) {
+  const { level, draft, picksUsed, togglePick } = useLevelUpDraft();
+  const reasonId = useId();
+  const rule = OPTION_RULES[option];
+  const joined = rule.cost === 2;
+  const boxes = joined ? 1 : rule.slots;
+  const drafted = draft.picks.filter((p) => p.option === option && p.tier === tier).length;
+  // Why the next free box can't be ticked for this level, or null when it can (or every box is marked).
+  let reason: string | null = null;
+  if (taken.length + drafted < boxes) {
+    if (blocked) reason = blocked;
+    else if (picksUsed + rule.cost > 2) reason = joined && picksUsed < 2 ? `It takes both picks for level ${level}; untick your other pick first.` : `Both picks for level ${level} are used.`;
+    // The draft keeps targets on one pick per option and tier (setPickTargets).
+    else if (drafted > 0 && TARGETED.has(option)) reason = `Take it once for level ${level} in this tier.`;
+  }
+  const label = `Tier ${tier}: ${OPTION_SHORT[option]} for level ${level}`;
+  const box = cn("adv-box adv-chk", joined && "joined");
+
+  return (
+    <li className={cn("adv-item", drafted > 0 && "draft")}>
+      <div className="adv-row" title={crossed ? (blocked ?? undefined) : undefined}>
+        <span className="adv-boxes">
+          {Array.from({ length: boxes }, (_, k) => {
+            const pick = taken[k];
+            if (pick) {
+              const name = `Tier ${tier}: ${OPTION_SHORT[option]} ${joined ? "(uses both picks for a level)" : `(${k + 1})`}, taken at level ${pick.level}`;
+              return (
+                <span key={k} className="adv-slot">
+                  <input type="checkbox" className={box} checked readOnly disabled aria-label={name} title={name} />
+                </span>
+              );
+            }
+            const j = k - taken.length;
+            const name = j === 0 ? label : `${label} (second pick)`;
+            if (j < drafted) {
+              return (
+                <label key={k} className="adv-slot adv-hit" title={name}>
+                  <input type="checkbox" className={cn(box, "draft")} checked aria-label={name} onChange={() => togglePick(option, tier, false)} />
+                </label>
+              );
+            }
+            if (j === drafted) {
+              return (
+                <label key={k} className={cn("adv-slot", !reason && "adv-hit")} title={reason ?? name}>
+                  <input
+                    type="checkbox"
+                    className={box}
+                    checked={false}
+                    disabled={reason !== null}
+                    aria-label={name}
+                    aria-describedby={reason ? reasonId : undefined}
+                    onChange={() => togglePick(option, tier, true)}
+                  />
+                </label>
+              );
+            }
+            return (
+              <span key={k} className="adv-slot">
+                <input type="checkbox" className={box} checked={false} readOnly disabled aria-label={`Tier ${tier}: ${OPTION_SHORT[option]} (${k + 1})`} />
+              </span>
+            );
+          })}
+        </span>
+        <Small className={cn(crossed && "adv-crossed")}>
+          {OPTION_TEXT[option]}
+          {taken.length > 0 ? <span className="adv-when"> (level {taken.map((t) => t.level).join(", ")})</span> : null}
+          {drafted > 0 ? <span className="adv-draft-tag">level {level}</span> : null}
+        </Small>
+      </div>
+      {reason ? (
+        <Small as="p" id={reasonId} className={cn("adv-why", !blocked && "sr-only")}>
+          {crossed ? "Crossed out: " : ""}
+          {reason}
+        </Small>
+      ) : null}
+      {drafted > 0 ? <TierPicker option={option} tier={tier} sheet={sheet} hopeAndFear={hopeAndFear} /> : null}
+    </li>
   );
 }
 

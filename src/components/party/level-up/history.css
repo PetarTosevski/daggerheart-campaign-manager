@@ -1,0 +1,40 @@
+/*
+ * Tier boxes while levelling (plan guided-level-up, GL1): the open tiers' boxes become tickable for the new level.
+ * Draft state is green (--sheet-green, like the ▲ and the ribbon) so it reads apart from the ink ticks of earlier
+ * levels. Base adv-* styles: level-up.css.
+ */
+
+.adv-budget.draft{background:var(--sheet-green,#3d5e2e);color:#f3f7ee}
+.adv-open{box-shadow:0 0 0 2px rgba(61,94,46,.45)}
+
+/* Each option row: the row, an optional reason line and the chooser. */
+.adv-item{display:flex;flex-direction:column;gap:6px;border-radius:8px}
+.adv-item.draft{margin:0 -6px;padding:4px 6px 8px;background:rgba(61,94,46,.1);box-shadow:inset 0 0 0 1px rgba(61,94,46,.4)}
+.adv-open .adv-row{align-items:center}
+.adv-open .adv-boxes{gap:0;padding-top:0}
+
+/* 44 px slots around each box while levelling, so the tickable ones meet the touch-target size. */
+.adv-slot{display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:44px;flex:none}
+.adv-hit{cursor:pointer}
+.adv-hit .adv-box:enabled{cursor:pointer;border-color:var(--sheet-green,#3d5e2e);border-width:2px;background-color:#f6faf0}
+.adv-hit:hover .adv-box:enabled:not(:checked){box-shadow:0 0 0 3px rgba(61,94,46,.25)}
+.adv-box:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+
+/* The new level's tick: a green brush tick on a pale green box. */
+.adv-box.draft:checked{border-color:var(--sheet-green,#3d5e2e);background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 26'%3E%3Cpath d='M2.4 13.2 Q3.6 11.6 5.6 12.9 Q8 15 10.2 18.6 Q15 9.4 24.6 2.2 Q26.4 1.4 25.8 3.2 Q18.2 10.6 11.8 22.4 Q10.6 24.4 9.2 22.8 Q6.4 17.6 2.4 13.2 Z' fill='%233d5e2e'/%3E%3C/svg%3E") -3px -7px/30px 28px no-repeat,#e4efd9}
+.adv-box.joined.draft:checked{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 26'%3E%3Cpath d='M2.4 13.2 Q3.6 11.6 5.6 12.9 Q8 15 10.2 18.6 Q15 9.4 24.6 2.2 Q26.4 1.4 25.8 3.2 Q18.2 10.6 11.8 22.4 Q10.6 24.4 9.2 22.8 Q6.4 17.6 2.4 13.2 Z' fill='%233d5e2e'/%3E%3C/svg%3E") 2px -12px/44px 36px no-repeat,linear-gradient(90deg,transparent calc(50% - .8px),#3d5e2e calc(50% - .8px),#3d5e2e calc(50% + .8px),transparent calc(50% + .8px)),#e4efd9}
+
+.adv-draft-tag{display:inline-block;margin-left:6px;padding:0 8px;border-radius:999px;background:var(--sheet-green,#3d5e2e);color:#f3f7ee;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;letter-spacing:.08em;font-style:normal;vertical-align:1px}
+.adv-why{padding-left:46px;font-style:italic;color:#8a6d3b}
+
+/* Choosers under a ticked option. */
+.adv-picker{margin-left:44px}
+.adv-mc{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:10px}
+.adv-mc legend{grid-column:1/-1}
+.adv-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.adv-field select{min-height:44px;width:100%}
+
+@media (max-width:640px){
+  .adv-picker{margin-left:0}
+  .adv-why{padding-left:0}
+}
