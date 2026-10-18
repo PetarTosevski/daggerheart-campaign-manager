@@ -52,15 +52,13 @@ export function coverOf(cover: string | null, images: readonly { storageId: stri
 /** A GM image; `key` identifies it on the page (the GM's key is the storage id). */
 export type ImageView = { key: string; storageId: string; shown: boolean; url: string | null };
 
-/** The GM's view of an entry: everything. */
+/** The GM's view of an entry in the list: every summary field (the long text comes from `codex.entryText`). */
 export type GmEntry = {
   _id: string;
   kind: CodexKind;
   name: string;
   role: string;
   known: boolean;
-  pdesc: string;
-  gmn: string;
   allegiance: string;
   allegianceShown: string;
   region: string;
@@ -72,12 +70,13 @@ export type GmEntry = {
   createdAt: number;
 };
 
-/** A player's view: only what the party may know. */
+/** A player's view in the list: only what the party may know (the long text comes from `codex.entryText`). */
 export type PlayerEntry = {
   _id: string;
   kind: CodexKind;
   name: string;
-  pdesc: string;
+  /** Role (characters) or kind of place (locations). */
+  role: string;
   /** The allegiance shown to players (characters), or `ALLEGIANCE_UNKNOWN`. */
   allegianceShown: string;
   region: string;
@@ -100,7 +99,7 @@ export function toPlayerEntry(
     _id: string;
     kind: CodexKind;
     createdAt: number;
-    data: Pick<CodexEntryData, "name" | "known" | "pdesc" | "allegianceShown" | "region" | "cover">;
+    data: Pick<CodexEntryData, "name" | "role" | "known" | "allegianceShown" | "region" | "cover">;
     images: readonly { storageId: string; shown: boolean; url: string | null }[];
   },
   visiblePin: (PinPosition & { id: number }) | null,
@@ -113,7 +112,7 @@ export function toPlayerEntry(
     _id: e._id,
     kind: e.kind,
     name: e.data.name,
-    pdesc: e.data.pdesc,
+    role: e.data.role,
     allegianceShown: e.kind === "character" ? e.data.allegianceShown || ALLEGIANCE_UNKNOWN : ALLEGIANCE_UNKNOWN,
     region: e.kind === "location" ? regionOf(frameId, e.data, visiblePin).region : "",
     tokenId: visiblePin ? visiblePin.id : null,
@@ -132,7 +131,7 @@ export function previewForPlayers(frameId: string, e: GmEntry, pins: readonly { 
       _id: e._id,
       kind: e.kind,
       createdAt: e.createdAt,
-      data: { name: e.name, known: e.known, pdesc: e.pdesc, allegianceShown: e.allegianceShown, region: e.region, cover: e.cover },
+      data: { name: e.name, role: e.role, known: e.known, allegianceShown: e.allegianceShown, region: e.region, cover: e.cover },
       images: e.images,
     },
     pin ?? null,
@@ -168,7 +167,7 @@ export function allegianceNote(allegiance: string, shown: string): string {
   return "Players believe a cover story.";
 }
 
-/** Case-insensitive search on the name (and the role, which only the GM has). */
+/** Case-insensitive search on the name and the role. */
 export function matchesSearch(e: { name: string; role?: string }, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;

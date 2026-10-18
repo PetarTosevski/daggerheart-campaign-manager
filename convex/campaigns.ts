@@ -8,6 +8,7 @@ import { campaignNameKey, createCampaignSchema, startingLevel } from "../src/lib
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { normalizeEmail } from "./lib/allowlist";
+import { seedCodex } from "./lib/codex";
 import {
   campaignMutation,
   gmMutation,
@@ -176,7 +177,10 @@ function liveNamesake(ctx: QueryCtx, ownerId: Id<"users">, nameKey: string) {
     .first();
 }
 
-/** Creates a campaign with its Fear state, campaign time (if the frame has it) and join code. Rate-limited per user. */
+/**
+ * Creates a campaign with its Fear state, campaign time (if the frame has
+ * it), join code and the frame's starting characters (all secret). Rate-limited per user.
+ */
 export const create = keyedUserMutation({
   rateLimit: "createCampaign",
   args: {
@@ -211,6 +215,7 @@ export const create = keyedUserMutation({
       if (frameHasMechanic(input.frameId, "campaignTime")) {
         await ctx.db.insert("campaignTime", { campaignId, week: 1, cycle: "DAY", cycleDay: 1 });
       }
+      await seedCodex(ctx, campaignId, input.frameId);
       return { campaignId };
     });
   },

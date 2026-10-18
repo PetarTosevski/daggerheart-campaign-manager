@@ -2,8 +2,8 @@
 
 import "./codex.css";
 
-import { useMutation, useQuery } from "convex/react";
-import { useEffect, useRef, useState } from "react";
+import { useQuery } from "convex/react";
+import { useState } from "react";
 
 import { frameName } from "@/lib/campaign-display";
 import { factionsFor, regionsFor, type CodexKind } from "@/lib/codex/schema";
@@ -25,7 +25,6 @@ const KIND_LABEL: Record<CodexKind, string> = { character: "Characters", locatio
 export default function CodexPage() {
   const campaign = useCampaign();
   const data = useQuery(api.codex.list, { campaignId: campaign._id });
-  const seed = useMutation(api.codex.seed);
   const create = useIntent(api.codex.create);
   const importPins = useIntent(api.codex.importPins);
 
@@ -39,12 +38,6 @@ export default function CodexPage() {
   const [pickFor, setPickFor] = useState<string | null>(null);
 
   const isGmUser = campaign.role === "gm";
-  const seeded = useRef(false);
-  useEffect(() => {
-    if (!isGmUser || seeded.current) return;
-    seeded.current = true;
-    void seed({ campaignId: campaign._id }).catch(() => undefined);
-  }, [isGmUser, seed, campaign._id]);
 
   const frameId = campaign.frameId;
   const gmData = data?.role === "gm" ? data : null;
@@ -96,7 +89,7 @@ export default function CodexPage() {
       groupText: g || (e.kind === "location" ? "" : unknownGroupLabel(e.kind, gm)),
       known: "known" in e ? e.known : true,
       imageText:
-        "gmn" in e
+        "known" in e
           ? e.images.length
             ? `${e.images.filter((i) => i.shown).length}/${e.images.length} shown`
             : "No images"

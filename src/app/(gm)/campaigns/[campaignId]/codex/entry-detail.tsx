@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
@@ -243,35 +243,61 @@ export function GmDetail({
 
       <Gallery entry={entry} gm onOpen={onOpenImage} />
 
-      <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
-        <div className="cx-card">
-          <h2 className="cx-h">What the players know</h2>
-          <p className="cx-muted m-0">Shown in Player view once this entry is known.</p>
-          <textarea
-            className="cx-ta"
-            rows={7}
-            maxLength={8000}
-            aria-label="What the players know"
-            defaultValue={entry.pdesc}
-            onFocus={begin}
-            onBlur={commit("pdesc")}
-            placeholder={isLoc ? "What the party has seen or heard about this place…" : "What the party knows about this person…"}
-          />
-        </div>
-        <div className="cx-card">
-          <h2 className="cx-h">GM notes</h2>
-          <p className="cx-muted m-0">Never shown to players.</p>
-          <textarea
-            className="cx-ta"
-            rows={7}
-            maxLength={8000}
-            aria-label="GM notes"
-            defaultValue={entry.gmn}
-            onFocus={begin}
-            onBlur={commit("gmn")}
-            placeholder="Secrets, motives, stats, hooks…"
-          />
-        </div>
+      <Notes entryId={entryId} isLoc={isLoc} begin={begin} commit={commit} />
+    </div>
+  );
+}
+
+/** The two long texts, loaded apart from the list (`codex.entryText`); saved on blur like the other fields. */
+function Notes({
+  entryId,
+  isLoc,
+  begin,
+  commit,
+}: {
+  entryId: Id<"codexEntries">;
+  isLoc: boolean;
+  begin: (ev: React.FocusEvent<HTMLTextAreaElement>) => void;
+  commit: (field: "pdesc" | "gmn") => (ev: React.FocusEvent<HTMLTextAreaElement>) => void;
+}) {
+  const text = useQuery(api.codex.entryText, { entryId });
+  if (text === undefined) {
+    return (
+      <p role="status" className="cx-muted m-0">
+        Loading notes…
+      </p>
+    );
+  }
+  if (text === null || text.role !== "gm") return null;
+  return (
+    <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
+      <div className="cx-card">
+        <h2 className="cx-h">What the players know</h2>
+        <p className="cx-muted m-0">Shown in Player view once this entry is known.</p>
+        <textarea
+          className="cx-ta"
+          rows={7}
+          maxLength={8000}
+          aria-label="What the players know"
+          defaultValue={text.pdesc}
+          onFocus={begin}
+          onBlur={commit("pdesc")}
+          placeholder={isLoc ? "What the party has seen or heard about this place…" : "What the party knows about this person…"}
+        />
+      </div>
+      <div className="cx-card">
+        <h2 className="cx-h">GM notes</h2>
+        <p className="cx-muted m-0">Never shown to players.</p>
+        <textarea
+          className="cx-ta"
+          rows={7}
+          maxLength={8000}
+          aria-label="GM notes"
+          defaultValue={text.gmn}
+          onFocus={begin}
+          onBlur={commit("gmn")}
+          placeholder="Secrets, motives, stats, hooks…"
+        />
       </div>
     </div>
   );
@@ -290,6 +316,8 @@ export function PlayerDetail({
   onOpenImage: (key: string) => void;
 }) {
   const coverUrl = entry.images.find((i) => i.key === entry.cover)?.url ?? null;
+  const text = useQuery(api.codex.entryText, { entryId: entry._id as Id<"codexEntries"> });
+  const pdesc = text?.pdesc ?? "";
   const badge = "cx-badge self-start bg-[#1b282d] text-[12px]! text-[#e6ecea]";
   return (
     <div className="flex flex-col gap-[18px]">
@@ -297,13 +325,13 @@ export function PlayerDetail({
         <Cover url={coverUrl} name={entry.name} gm={false} onOpen={() => entry.cover && onOpenImage(entry.cover)} />
         <div className="flex min-w-0 flex-1 basis-[260px] flex-col gap-3">
           <h2 className="m-0 font-display text-[30px] leading-[1.1] font-black">{entry.name}</h2>
-          <div className="text-[16px] text-[#c8d3d0]">{entry.kind === "location" ? "Location" : "Character"}</div>
+          <div className="text-[16px] text-[#c8d3d0]">{entry.role || (entry.kind === "location" ? "Location" : "Character")}</div>
           {entry.kind === "character" ? (
             <span className={badge}>⚑ {entry.allegianceShown !== ALLEGIANCE_UNKNOWN ? entry.allegianceShown : "Allegiance unknown"}</span>
           ) : regionsFor(frameId).length ? (
             <span className={badge}>⌂ {entry.region || "Unsorted"}</span>
           ) : null}
-          {entry.pdesc.trim() ? <p className="m-0 font-serif text-[19px] leading-[1.6] whitespace-pre-line">{entry.pdesc}</p> : null}
+          {pdesc.trim() ? <p className="m-0 font-serif text-[19px] leading-[1.6] whitespace-pre-line">{pdesc}</p> : null}
           {entry.tokenId !== null ? (
             <Link href={mapHref(campaignId, entry.tokenId)} className="cx-ghost self-start">
               📍 Show on map
