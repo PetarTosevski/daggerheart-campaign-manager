@@ -1,0 +1,266 @@
+import type { GenericValidator } from "convex/values";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { api, internal } from "../../convex/_generated/api";
+import type { Doc, Id, TableNames } from "../../convex/_generated/dataModel";
+import schema from "../../convex/schema";
+import { BATCH } from "../../convex/cleanup";
+import { GM_EMAIL, key, useAllowlist } from "./helpers";
+import { makeTest } from "./setup";
+
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+const NOW = new Date("2026-10-18T12:00:00Z").getTime();
+
+type Test = ReturnType<typeof makeTest>;
+type NewDoc<T extends TableNames> = Doc<T> extends infer D ? (D extends unknown ? Omit<D, "_id" | "_creationTime"> : never) : never;
+
+/** Whether a table's validator (an object, or a union of objects) has the field. */
+function hasField(validator: GenericValidator, field: string): boolean {
+  if (validator.kind === "object") return field in validator.fields;
+  if (validator.kind === "union") return validator.members.some((m) => hasField(m, field));
+  return false;
+}
+
+const tables = Object.entries(schema.tables) as [TableNames, { validator: GenericValidator }][];
+/** Every table whose rows belong to a campaign through a `campaignId` field. */
+const campaignTables = tables.filter(([, t]) => hasField(t.validator, "campaignId")).map(([name]) => name);
+
+async function blob(ctx: { storage: { store(blob: Blob): Promise<Id<"_storage">> } }): Promise<Id<"_storage">> {
+  return ctx.storage.store(new Blob(["x"], { type: "image/png" }));
+}
+
+/**
+ * A campaign with a row in every campaign-scoped table (plus grants and a
+ * legacy portrait, which reach it only through ids), `extraHistory` more
+ * history rows, and three blobs. Returns the tables it wrote and the blobs.
+ */
+async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | undefined, extraHistory = 0) {
+  return t.run(async (ctx) => {
+    const touched = new Set<TableNames>();
+    const ins = <T extends TableNames>(table: T, doc: NewDoc<T>) => {
+      touched.add(table);
+      return ctx.db.insert(table, doc as never) as Promise<Id<T>>;
+    };
+    const now = Date.now();
+    const campaignId = await ins("campaigns", {
+      ownerId: userId,
+      frameId: "witherwild",
+      name: `C${now}${Math.random()}`,
+      nameKey: `c${now}${Math.random()}`,
+      tier: 1,
+      level: 1,
+      createdAt: now,
+      lastOpenedAt: now,
+      deletedAt,
+    });
+    const c = campaignId;
+    const blobs = { file: await blob(ctx), mapUpload: await blob(ctx), codexImage: await blob(ctx), portrait: await blob(ctx) };
+    const characterId = await ins("characters", { campaignId: c, ownerId: userId, createdBy: userId, status: "active", sheet: {}, createdAt: now, updatedAt: now });
+    const entryId = await ins("codexEntries", { campaignId: c, kind: "character", data: {}, createdAt: now, updatedAt: now });
+    await ins("campaignOpens", { userId, campaignId: c, lastOpenedAt: now });
+    await ins("campaignMembers", { campaignId: c, userId, joinedAt: now, lastOpenedAt: now });
+    await ins("campaignInvites", { campaignId: c, email: "p@example.com", invitedBy: userId, createdAt: now });
+    await ins("campaignState", { campaignId: c, fear: 0 });
+    const countdownId = await ins("countdowns", {
+      campaignId: c,
+      name: "Doom",
+      description: "",
+      category: "threat",
+      startingValue: 4,
+      currentValue: 4,
+      status: "active",
+      consequence: "",
+      createdAt: now,
+    });
+    await ins("campaignTime", { campaignId: c, week: 1, cycle: "DAY", cycleDay: 1 });
+    for (let i = 0; i <= extraHistory; i++) {
+      await ins("history", { campaignId: c, action: "adjust", by: null, at: now + i, kind: "fear", before: 0, after: 1 });
+    }
+    await ins("history", {
+      campaignId: c,
+      action: "create",
+      by: userId,
+      at: now,
+      kind: "countdown",
+      countdownId,
+      before: null,
+      after: { currentValue: 4, status: "active" },
+    });
+    await ins("frameTrackers", { campaignId: c, key: "doom", data: {}, updatedAt: now });
+    await ins("characterExtras", {
+      campaignId: c,
+      characterId,
+      schemaVersion: 1,
+      updatedAt: now,
+      extra: "castleHigh",
+      data: { skyshard: { name: "S", description: "" } },
+    });
+    await ins("maps", { campaignId: c, data: {}, updatedAt: now });
+    await ins("mapTokens", { campaignId: c, tokenId: 1, type: "pin", x: 0, y: 0, name: "", notes: "", hidden: false, location: false });
+    await ins("mapHexes", { campaignId: c, q: 0, r: 0, explored: true });
+    await ins("mapTerrain", { campaignId: c, tile: 0, cells: "" });
+    await ins("codexEntryText", { campaignId: c, entryId, pdesc: "", gmn: "" });
+    await ins("codexCounters", { campaignId: c, entries: 1, seeded: true });
+    await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
+    await ins("mapUploads", { storageId: blobs.mapUpload, campaignId: c, uploadedBy: userId, createdAt: now });
+    await ins("codexImages", { storageId: blobs.codexImage, campaignId: c, entryId, uploadedBy: userId, createdAt: now });
+    await ins("portraitUploads", { storageId: blobs.portrait, userId, characterId, createdAt: now });
+    await ins("operations", {
+      scopeKey: `campaign:${c}`,
+      idempotencyKey: "k",
+      kind: "fear_set",
+      requestHash: "h",
+      result: null,
+      campaignId: c,
+      createdBy: userId,
+      createdAt: now,
+    });
+    const grant = { principalKind: "user" as const, principalId: userId, permission: "view" as const, createdBy: userId, createdAt: now };
+    await ins("grants", { ...grant, resourceType: "campaign", resourceId: c });
+    await ins("grants", { ...grant, resourceType: "map", resourceId: c });
+    await ins("grants", { ...grant, resourceType: "codexEntry", resourceId: entryId });
+    await ins("grants", { ...grant, resourceType: "character", resourceId: characterId });
+    await ins("grants", { ...grant, resourceType: "campaign", resourceId: "elsewhere", principalKind: "campaign", principalId: c });
+    return { campaignId, characterId, entryId, blobs: Object.values(blobs), touched: [...touched] };
+  });
+}
+
+type Seeded = Awaited<ReturnType<typeof seedCampaign>>;
+
+/** Everything left that belongs to the seeded campaign: rows per table and blobs still stored. */
+async function leftovers(t: Test, s: Seeded) {
+  return t.run(async (ctx) => {
+    const rows: Record<string, number> = {};
+    const ids = new Set<string>([s.campaignId, s.characterId, s.entryId]);
+    for (const [name] of tables) {
+      // Test-only full scan: the point is to look at every row of every table.
+      const all = (await ctx.db.query(name).collect()) as Record<string, unknown>[];
+      const mine = all.filter(
+        (row) =>
+          row.campaignId === s.campaignId ||
+          (name === "campaigns" && row._id === s.campaignId) ||
+          (name === "grants" && (ids.has(row.resourceId as string) || row.principalId === s.campaignId)) ||
+          (name === "portraitUploads" && row.characterId === s.characterId),
+      );
+      if (mine.length > 0) rows[name] = mine.length;
+    }
+    const blobs = [];
+    for (const id of s.blobs) if ((await ctx.db.system.get("_storage", id)) !== null) blobs.push(id);
+    return { rows, blobs };
+  });
+}
+
+describe("cleanup crons", () => {
+  useAllowlist();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function user(t: Test) {
+    return t.run((ctx) => ctx.db.insert("users", { email: GM_EMAIL, emailVerificationTime: 1 }));
+  }
+
+  it("expires operations older than 7 days, in batches, and keeps newer ones", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const gm = t.withIdentity({ subject: `${userId}|s` });
+    // A real keyed mutation records an operation now; it is 8 days old after the jump.
+    await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Old", idempotencyKey: key() });
+    await t.run(async (ctx) => {
+      for (let i = 0; i < BATCH + 20; i++) {
+        await ctx.db.insert("operations", {
+          scopeKey: `owner:${userId}`,
+          idempotencyKey: `old-${i}`,
+          kind: "x",
+          requestHash: "h",
+          result: null,
+          createdBy: userId,
+          createdAt: NOW - 8 * DAY,
+        });
+      }
+    });
+    vi.setSystemTime(NOW + 8 * DAY);
+    const recentKey = key();
+    await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "New", idempotencyKey: recentKey });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("operations", {
+        scopeKey: `owner:${userId}`,
+        idempotencyKey: "six-days",
+        kind: "x",
+        requestHash: "h",
+        result: null,
+        createdBy: userId,
+        createdAt: NOW + 2 * DAY,
+      });
+    });
+
+    await t.mutation(internal.cleanup.expireOperations, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const left = await t.run((ctx) => ctx.db.query("operations").collect());
+    expect(left.map((o) => o.idempotencyKey).sort()).toEqual([recentKey, "six-days"].sort());
+  });
+
+  it("covers every campaign-scoped table in the schema", async () => {
+    const t = makeTest();
+    const s = await seedCampaign(t, await user(t), undefined);
+    // A table added with a campaignId field must be seeded here and purged by convex/cleanup.ts.
+    expect(campaignTables.filter((name) => !s.touched.includes(name))).toEqual([]);
+    expect(campaignTables.length).toBeGreaterThan(20);
+  });
+
+  it("purges campaigns deleted over 30 days ago: no table keeps their rows and their blobs are gone", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const due = await seedCampaign(t, userId, NOW - 31 * DAY, BATCH + 100);
+    const alsoDue = await seedCampaign(t, userId, NOW - 45 * DAY);
+    const inUndoWindow = await seedCampaign(t, userId, NOW - 29 * DAY);
+    const live = await seedCampaign(t, userId, undefined);
+    const keptBefore = [await leftovers(t, inUndoWindow), await leftovers(t, live)];
+
+    await t.mutation(internal.cleanup.purgeDeletedCampaigns, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
+    expect(await leftovers(t, alsoDue)).toEqual({ rows: {}, blobs: [] });
+    expect([await leftovers(t, inUndoWindow), await leftovers(t, live)]).toEqual(keptBefore);
+    expect(keptBefore[0]!.rows.history).toBe(2);
+  });
+
+  it("stops purging a campaign the GM restored", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const s = await seedCampaign(t, userId, NOW - 31 * DAY);
+    const before = await leftovers(t, s);
+    await t.run((ctx) => ctx.db.patch("campaigns", s.campaignId, { deletedAt: undefined }));
+
+    await t.mutation(internal.cleanup.purgeCampaign, { campaignId: s.campaignId });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await leftovers(t, s)).toEqual(before);
+  });
+
+  it("deletes unclaimed uploads older than 2 hours and keeps claimed or recent ones", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const s = await seedCampaign(t, userId, undefined);
+    const old = await t.run(async (ctx) => ({ orphan: await blob(ctx) }));
+    vi.setSystemTime(NOW + 3 * HOUR);
+    const recent = await t.run(blob);
+
+    await t.mutation(internal.cleanup.sweepOrphanUploads, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const exists = (id: Id<"_storage">) => t.run(async (ctx) => (await ctx.db.system.get("_storage", id)) !== null);
+    expect(await exists(old.orphan)).toBe(false);
+    expect(await exists(recent)).toBe(true);
+    // Claimed by files and by the deprecated upload tables, all older than 2 hours.
+    for (const id of s.blobs) expect(await exists(id)).toBe(true);
+  });
+});
