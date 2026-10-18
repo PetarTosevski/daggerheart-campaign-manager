@@ -7,11 +7,13 @@ import { useState } from "react";
 import { PortraitUpload } from "@/components/party/portrait";
 import { Label, Pill, SheetBox, Small, paperField } from "@/components/party/sheet-ui";
 import { assetBackground } from "@/lib/design-assets";
+import { ACHIEVEMENT_LEVELS } from "@/lib/domain/level-up";
 import type { SheetPatch } from "@/lib/validation/characters";
 import { getCommunity, getSubclass, getTransformation, portraitFor, TRAIT_IDS, type ClassDef, type TraitId } from "@/lib/srd";
 import { cn } from "@/lib/utils";
 
 import { TextField } from "../fields";
+import { useLevelUpDraft } from "../level-up-draft";
 import { useSheet } from "../sheet-context";
 import { ancestryArtId, ancestryLabel, signed } from "../sheet-helpers";
 
@@ -107,13 +109,91 @@ function ModifierInput({ label, value, onSave }: { label: string; value: number;
   );
 }
 
+/** Most Experiences a sheet holds (the engine's limit). */
+const MAX_EXPERIENCES = 12;
+/** Highest Experience modifier (the engine's limit). */
+const MAX_EXPERIENCE_VALUE = 10;
+
+/**
+ * Guided level-up (GL2), shown only while the draft is on: the achievement Experience at levels 2/5/8 and the
+ * targets of the "+1 to two Experiences" advancement. Green "Level N" panels mark them as not saved yet.
+ */
+function ExperiencesLevelUp() {
+  const lu = useLevelUpDraft();
+  const { sheet } = useSheet();
+  if (!lu.active) return null;
+  const achievement = ACHIEVEMENT_LEVELS.includes(lu.level);
+  const pick = lu.draft.picks.find((p) => p.option === "experiences");
+  const targets = pick?.targets ?? [];
+  const tag = (
+    <span className="id-lu-tag" aria-hidden="true">
+      Level {lu.level}
+    </span>
+  );
+  return (
+    <>
+      {achievement ? (
+        <div className="id-lu">
+          <label className="id-lu-field">
+            <span className="id-lu-label">
+              New Experience (+2) {tag}
+              <span className="sr-only"> for level {lu.level}</span>
+            </span>
+            <input
+              className={paperField.input}
+              placeholder="Name the new Experience"
+              maxLength={80}
+              value={lu.draft.experienceName}
+              onChange={(e) => lu.setExperienceName(e.target.value)}
+            />
+          </label>
+          {sheet.experiences.length >= MAX_EXPERIENCES ? <Small className="italic">A sheet holds at most {MAX_EXPERIENCES} Experiences.</Small> : null}
+        </div>
+      ) : null}
+      {pick ? (
+        <fieldset className="id-lu">
+          <legend className="id-lu-label">
+            +1 to two Experiences {tag}
+            <span className="sr-only"> for level {lu.level}</span>
+          </legend>
+          <Small className="italic">Choose two ({targets.length}/2).</Small>
+          <ul className="id-lu-list">
+            {sheet.experiences.map((x) => {
+              const checked = targets.includes(x.id);
+              const capped = x.value >= MAX_EXPERIENCE_VALUE;
+              return (
+                <li key={x.id}>
+                  <label className="id-lu-check">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!checked && (targets.length >= 2 || capped)}
+                      onChange={() => lu.setPickTargets(pick.option, pick.tier, checked ? targets.filter((t) => t !== x.id) : [...targets, x.id])}
+                    />
+                    <span>+1 to {x.name}</span>
+                    <span className="id-lu-preview" aria-hidden="true">
+                      {signed(x.value)} → {signed(x.value + 1)}
+                    </span>
+                    {capped ? <span className="sr-only"> (already at +{MAX_EXPERIENCE_VALUE})</span> : null}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </fieldset>
+      ) : null}
+    </>
+  );
+}
+
 function Experiences() {
   const { sheet, canEdit, update } = useSheet();
+  const leveling = useLevelUpDraft().active;
   const [draft, setDraft] = useState("");
   const list = sheet.experiences;
   const save = (next: NonNullable<SheetPatch["experiences"]>) => void update({ experiences: next });
   return (
-    <SheetBox title="Experiences" className="id-exp">
+    <SheetBox title="Experiences" className="id-exp" id="lu-target-experiences">
       <ul className="id-exp-list">
         {list.map((x, i) => (
           <li key={x.id} className="id-exp-row">
@@ -151,7 +231,9 @@ function Experiences() {
           </li>
         ) : null}
       </ul>
-      {canEdit && list.length < 12 ? (
+      <ExperiencesLevelUp />
+      {/* While levelling, the new Experience comes from the draft above, so the direct Add form steps aside. */}
+      {canEdit && !leveling && list.length < MAX_EXPERIENCES ? (
         <form
           className="id-exp-row"
           onSubmit={(e) => {

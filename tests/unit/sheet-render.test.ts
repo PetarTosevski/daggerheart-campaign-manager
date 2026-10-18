@@ -252,9 +252,9 @@ describe("character sheet", () => {
     const steps = within(ribbon).getByRole("list", { name: "Level-up steps" });
     expect(within(steps).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["1New Experience", "2Advancements (0/2)", "3Domain card", "4Finish"]);
     expect(within(steps).getAllByRole("listitem")[0]).toHaveAttribute("aria-current", "step");
-    // The Experience step opens the Character Sheet page; no target yet, so the page tab takes focus.
+    // The Experience step opens the Character Sheet page and focuses the Experiences heading.
     expect(within(pages).getByRole("tab", { name: "Character Sheet" })).toHaveAttribute("aria-selected", "true");
-    expect(within(pages).getByRole("tab", { name: "Character Sheet" })).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "Experiences" })).toHaveFocus();
     expect(within(ribbon).getByRole("button", { name: "Back" })).toBeDisabled();
 
     fireEvent.click(within(ribbon).getByRole("button", { name: "Next" }));
