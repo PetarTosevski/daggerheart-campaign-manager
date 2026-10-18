@@ -13,6 +13,7 @@ import {
   routeWarning,
   scaleBar,
   canCross,
+  maxSwimKm,
   terrainSpeed,
   trailLeg,
   trailMethod,
@@ -33,8 +34,9 @@ describe("travel distances (house rule)", () => {
   });
 
   it("uses the board's speeds", () => {
-    // Water 0: open water can't be crossed on foot (user 2026-10-18).
-    expect(DEFAULT_TRAVEL_RULES.speeds.foot).toEqual({ road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 0 });
+    // Water 8: the party swims it on foot, only a stretch it can cross in a day (user 2026-10-19).
+    expect(DEFAULT_TRAVEL_RULES.speeds.foot).toEqual({ road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 8 });
+    expect(DEFAULT_TRAVEL_RULES.speeds.wagon.water).toBe(0);
     expect(DEFAULT_TRAVEL_RULES.speeds.boat.water).toBe(100);
     expect([DEFAULT_TRAVEL_RULES.slow, DEFAULT_TRAVEL_RULES.fast]).toEqual([0.75, 1.33]);
   });
@@ -73,19 +75,25 @@ describe("trail legs (party trail and token distances)", () => {
     expect(trailLeg(a, b, ww, all(""), "foot").days).toBeCloseTo(3, 6);
   });
 
-  it("water blocks on foot, mounted and by wagon but not by boat or flying; impassable adds no time but blocks", () => {
-    for (const method of ["foot", "mount", "wagon"] as const) {
-      expect(canCross(DEFAULT_TRAVEL_RULES, method, ".")).toBe(false);
-      const water = trailLeg(a, b, ww, all("."), method);
-      expect(water).toMatchObject({ water: true, blocked: true, days: 0 });
-    }
+  it("swims water that can be crossed in one day; wider water blocks; wagons can't cross; boats and flying aren't limited", () => {
+    // `a`→`b` is 30 km of one terrain at this scale.
+    expect(maxSwimKm(DEFAULT_TRAVEL_RULES, "foot", "normal")).toBe(8);
+    expect(maxSwimKm(DEFAULT_TRAVEL_RULES, "boat", "normal")).toBe(Infinity);
+    const wide = trailLeg(a, b, ww, all("."), "foot");
+    expect(wide).toMatchObject({ water: true, blocked: true, wideWater: true });
+    // A narrow river (about 6 km of water) in the middle of the wilds is swum at 8 km/day.
+    const river = trailLeg(a, b, ww, (p) => (p.x >= 14 && p.x < 16 ? "." : "w"), "foot");
+    expect(river).toMatchObject({ water: true, blocked: false, wideWater: false });
+    expect(canCross(DEFAULT_TRAVEL_RULES, "wagon", ".")).toBe(false);
+    expect(trailLeg(a, b, ww, all("."), "wagon")).toMatchObject({ blocked: true });
     const boat = trailLeg(a, b, ww, all("."), "boat");
     expect(boat).toMatchObject({ water: true, blocked: false });
-    expect(boat.days).toBeCloseTo(1.2, 6);
     expect(canCross(DEFAULT_TRAVEL_RULES, "fly", ".")).toBe(true);
-    // A GM who gives Water a speed makes it crossable again.
-    const ford = { ...DEFAULT_TRAVEL_RULES, speeds: { ...DEFAULT_TRAVEL_RULES.speeds, foot: { ...DEFAULT_TRAVEL_RULES.speeds.foot, water: 8 } } };
-    expect(trailLeg(a, b, ww, all("."), "foot", ford).days).toBeCloseTo(15, 6);
+    // A swim carries across trail points: two 5 km water legs in a row are one 10 km swim (too wide).
+    const halfway = { x: a.x + (b.x - a.x) / 6, y: a.y + (b.y - a.y) / 6 };
+    const twoLegs = trailTotal([a, halfway, { x: a.x + (b.x - a.x) / 3, y: a.y + (b.y - a.y) / 3 }], ww, all("."), "foot");
+    expect(twoLegs?.wideWater).toBe(true);
+    // Impassable adds no time but blocks.
     const half = trailLeg(a, b, ww, (p) => (p.x < 15 ? "#" : "w"), "foot");
     expect(half.blocked).toBe(true);
     expect(half.days).toBeCloseTo(1.5, 6);

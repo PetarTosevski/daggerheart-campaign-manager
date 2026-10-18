@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 
-import { METHOD_LABELS, PACE_LABELS, SPEED_TERRAINS, SPEED_TERRAIN_CODE, canCross, terrainSpeed, type TravelMethod, type TravelPace, type TravelRules } from "@/lib/domain/travel";
+import { METHOD_LABELS, PACE_LABELS, SPEED_TERRAINS, SPEED_TERRAIN_CODE, canCross, maxSwimKm, swimsWater, terrainSpeed, type TravelMethod, type TravelPace, type TravelRules } from "@/lib/domain/travel";
 import { TERRAIN_COLOURS, TERRAIN_NAMES } from "@/lib/world/terrain";
 
 /**
@@ -40,7 +40,10 @@ export function TravelLegend({ rules, method, pace, onEdit }: { rules: TravelRul
               <li key={t}>
                 <span className="w-legend-swatch" style={{ background: TERRAIN_COLOURS[code] }} aria-hidden="true" />
                 <span>{TERRAIN_NAMES[code]}</span>
-                <b>{canCross(rules, method, code) ? `${Math.round(terrainSpeed(rules, method, pace, code))} km/day` : "can't cross"}</b>
+                <b>{canCross(rules, method, code) ? `${Math.round(terrainSpeed(rules, method, pace, code))} km/day` : "can’t cross"}</b>
+                {code === "." && swimsWater(method) && canCross(rules, method, code) ? (
+                  <small className="w-legend-note">Swims up to {Math.round(maxSwimKm(rules, method, pace))} km (one day)</small>
+                ) : null}
               </li>
             );
           })}
@@ -51,7 +54,11 @@ export function TravelLegend({ rules, method, pace, onEdit }: { rules: TravelRul
           </li>
         </ul>
       ) : null}
-      {open ? <p className="m-0 text-[11px] text-[#7f9297]">Unpainted ground counts as Wilds.</p> : null}
+      {open ? (
+        <p className="m-0 text-[11px] text-[#7f9297]">
+          Unpainted ground counts as Wilds. On foot or mounted the party swims Water only where it can reach the far side in one day.
+        </p>
+      ) : null}
     </section>
   );
 }

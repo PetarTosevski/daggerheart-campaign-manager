@@ -46,14 +46,14 @@ export type TravelRules = {
 };
 
 /**
- * The board's numbers (house rule, GM-editable per campaign). A speed of 0 means the method can't cross that terrain:
- * open water can't be crossed on foot, mounted or by wagon, only by boat or flying (user 2026-10-18; a small river can
- * be painted as the ground around it, or the GM can give Water a speed).
+ * The board's numbers (house rule, GM-editable per campaign). A speed of 0 means the method can't cross that terrain
+ * (a wagon on Water). On foot and mounted the party swims Water at its speed (8 km/day), but only a stretch it can cross
+ * in one day so it can rest on the far side; wider water blocks (user 2026-10-19). Boats and flying aren't limited.
  */
 export const DEFAULT_TRAVEL_RULES: TravelRules = {
   speeds: {
-    foot: { road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 0 },
-    mount: { road: 80, wilds: 60, marsh: 18, deep: 30, mountains: 15, water: 0 },
+    foot: { road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 8 },
+    mount: { road: 80, wilds: 60, marsh: 18, deep: 30, mountains: 15, water: 8 },
     wagon: { road: 50, wilds: 30, marsh: 6, deep: 12, mountains: 5, water: 0 },
     boat: { road: 30, wilds: 25, marsh: 40, deep: 15, mountains: 8, water: 100 },
     fly: { road: 120, wilds: 120, marsh: 120, deep: 120, mountains: 120, water: 120 },
@@ -93,7 +93,8 @@ function speedOf(table: SpeedTable, code: string): number | undefined {
   return key ? table[key] : undefined;
 }
 
-export type LegResult = { km: number; days: number; water: boolean; blocked: boolean };
+/** `wideWater`: a stretch of Water too wide to swim in one day (it blocks); `waterRun` is the Water km the leg ends in. */
+export type LegResult = { km: number; days: number; water: boolean; blocked: boolean; wideWater?: boolean; waterRun?: number };
 
 /** km per day for `method` on terrain `code` after the pace multiplier; unpainted or unknown ground counts as Wilds. */
 export function terrainSpeed(rules: TravelRules, method: TravelMethod, pace: TravelPace, code: string): number {
@@ -101,7 +102,17 @@ export function terrainSpeed(rules: TravelRules, method: TravelMethod, pace: Tra
   return (speedOf(table, code) ?? table.wilds) * paceFactor(pace, rules);
 }
 
-/** Whether `method` can cross terrain `code`: never Impassable, and not where its speed is 0 (e.g. Water on foot). */
+/** Methods that swim Water and so can't stay in it longer than a day (boats and flying aren't limited). */
+export function swimsWater(method: TravelMethod): boolean {
+  return method !== "boat" && method !== "fly";
+}
+
+/** The widest stretch of Water `method` can swim in one day (km), or Infinity when it isn't limited. */
+export function maxSwimKm(rules: TravelRules, method: TravelMethod, pace: TravelPace): number {
+  return swimsWater(method) ? terrainSpeed(rules, method, pace, ".") : Infinity;
+}
+
+/** Whether `method` can cross terrain `code`: never Impassable, and not where its speed is 0 (e.g. a wagon on Water). */
 export function canCross(rules: TravelRules, method: TravelMethod, code: string): boolean {
   if (code === "#") return false;
   const table = rules.speeds[method] ?? rules.speeds.foot;
@@ -122,35 +133,50 @@ export function trailLeg(
   method: TravelMethod,
   rules: TravelRules = DEFAULT_TRAVEL_RULES,
   pace: TravelPace = "normal",
+  waterRunIn = 0,
 ): LegResult {
   const km = distanceKm(a, b, scale);
   const steps = Math.max(1, Math.ceil(km / 2));
+  const maxSwim = maxSwimKm(rules, method, pace);
   let days = 0;
   let water = false;
   let blocked = false;
+  let wideWater = false;
+  let waterRun = waterRunIn;
   for (let i = 0; i < steps; i++) {
     const t = (i + 0.5) / steps;
     const code = terrainAt({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
     if (code === ".") water = true;
+    waterRun = code === "." ? waterRun + km / steps : 0;
     if (!canCross(rules, method, code)) {
       blocked = true;
       continue;
     }
+    // A swim longer than a day leaves nowhere to rest: the crossing is too wide.
+    if (code === "." && waterRun > maxSwim + 1e-9) {
+      blocked = true;
+      wideWater = true;
+      continue;
+    }
     days += km / steps / terrainSpeed(rules, method, pace, code);
   }
-  return { km, days, water, blocked };
+  return { km, days, water, blocked, wideWater, waterRun };
 }
 
 /** A path's legs summed (the board's "Party has travelled"). */
 export function trailTotal(points: Point[], scale: MapScale, terrainAt: TerrainLookup, method: TravelMethod, rules?: TravelRules, pace?: TravelPace): LegResult | null {
   if (points.length < 2) return null;
-  const total: LegResult = { km: 0, days: 0, water: false, blocked: false };
+  const total: LegResult = { km: 0, days: 0, water: false, blocked: false, wideWater: false };
+  let waterRun = 0;
   for (let i = 1; i < points.length; i++) {
-    const leg = trailLeg(points[i - 1], points[i], scale, terrainAt, method, rules, pace);
+    // A swim continues across trail points: the run of Water carries into the next leg.
+    const leg = trailLeg(points[i - 1], points[i], scale, terrainAt, method, rules, pace, waterRun);
+    waterRun = leg.waterRun ?? 0;
     total.km += leg.km;
     total.days += leg.days;
     total.water ||= leg.water;
     total.blocked ||= leg.blocked;
+    total.wideWater ||= leg.wideWater ?? false;
   }
   return total;
 }
@@ -160,12 +186,12 @@ export function formatLeg(r: LegResult, units: "km" | "mi" = "km"): string {
   const d = r.days;
   const time = d < 1 ? `~${Math.max(1, Math.round(d * 8))} hrs` : `~${d < 3 ? d.toFixed(1) : Math.round(d)} days`;
   const distance = Math.round(r.km * (units === "mi" ? KM_PER_MILE_FACTOR : 1));
-  return `~${distance} ${units} · ${time}${r.water ? " · crosses water" : ""}${r.blocked ? " · blocked: can't cross some of this terrain" : ""}`;
+  return `~${distance} ${units} · ${time}${r.water ? " · crosses water" : ""}${r.wideWater ? " · water too wide to swim in a day" : r.blocked ? " · blocked: can't cross some of this terrain" : ""}`;
 }
 
 export type RouteOptions = { method: TravelMethod; pace: TravelPace; hours: number; units: "km" | "mi" };
 export type RouteRun = { terrain: TerrainCode; points: Point[] };
-export type RouteAnalysis = { runs: RouteRun[]; per: Record<TerrainCode, number>; km: number; days: number; blocked: boolean };
+export type RouteAnalysis = { runs: RouteRun[]; per: Record<TerrainCode, number>; km: number; days: number; blocked: boolean; wideWater: boolean };
 
 export function paceFactor(pace: TravelPace, rules: TravelRules = DEFAULT_TRAVEL_RULES): number {
   return pace === "slow" ? rules.slow : pace === "fast" ? rules.fast : 1;
@@ -184,6 +210,9 @@ export function analyseRoute(points: Point[], scale: MapScale, terrainAt: Terrai
   let km = 0;
   let days = 0;
   let blocked = false;
+  let wideWater = false;
+  let waterRun = 0;
+  const maxSwim = maxSwimKm(rules, opts.method, opts.pace);
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1];
     const b = points[i];
@@ -201,14 +230,18 @@ export function analyseRoute(points: Point[], scale: MapScale, terrainAt: Terrai
       km += d;
       per[tk] += d;
       const speed = tk === "#" ? 0 : (speedOf(spd, tk) ?? spd.wilds);
-      if (speed > 0) days += d / (speed * k);
-      else blocked = true;
+      waterRun = tk === "." ? waterRun + d : 0;
+      if (speed <= 0) blocked = true;
+      else if (tk === "." && waterRun > maxSwim + 1e-9) {
+        blocked = true;
+        wideWater = true;
+      } else days += d / (speed * k);
       const last = runs[runs.length - 1];
       if (last && last.terrain === tk) last.points.push(p1);
       else runs.push({ terrain: tk, points: [p0, p1] });
     }
   }
-  return { runs, per, km, days, blocked };
+  return { runs, per, km, days, blocked, wideWater };
 }
 
 /** Clamps travel hours per day to 1–16 (default 8). */
