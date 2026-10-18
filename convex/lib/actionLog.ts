@@ -117,6 +117,15 @@ export async function undoEntry(ctx: MutationCtx, user: Doc<"users">, entryId: I
     if (latest === null || !inGroup.has(latest._id)) throw appError("UNDO_STALE");
   }
 
+  // A death move starts from an active character; if its row took them out of
+  // play (dead or away) and nothing changed them since, undo puts them back.
+  const returning: Id<"characters">[] = [];
+  for (const r of group) {
+    if (r.kind !== "death" || r.characterId === undefined) continue;
+    const character = await ctx.db.get("characters", r.characterId);
+    if (character && (character.status === "dead" || character.status === "away") && character.updatedAt <= r.at) returning.push(character._id);
+  }
+
   // The oldest snapshot of each character is its state before the whole action.
   const oldestFirst = [...group].sort((a, b) => a.at - b.at || a._creationTime - b._creationTime);
   const restored = new Set<string>();
@@ -126,6 +135,8 @@ export async function undoEntry(ctx: MutationCtx, user: Doc<"users">, entryId: I
     if ((await ctx.db.get("characters", r.characterId)) === null) continue;
     await saveSheet(ctx, r.characterId, readSheet(JSON.parse(r.before)));
   }
+
+  for (const id of returning) await ctx.db.patch("characters", id, { status: "active", away: undefined });
 
   const fear = group.reduce((sum, r) => sum + (r.fearDelta ?? 0), 0);
   const fearReverted = fear === 0 ? 0 : (await revertFear(ctx, row.campaignId, fear)).reverted;

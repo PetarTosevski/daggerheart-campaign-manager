@@ -19,6 +19,7 @@ import type * as cleanup from "../cleanup.js";
 import type * as codex from "../codex.js";
 import type * as countdowns from "../countdowns.js";
 import type * as crons from "../crons.js";
+import type * as deathMoves from "../deathMoves.js";
 import type * as fear from "../fear.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
@@ -93,6 +94,7 @@ declare const fullApi: ApiFromModules<{
   codex: typeof codex;
   countdowns: typeof countdowns;
   crons: typeof crons;
+  deathMoves: typeof deathMoves;
   fear: typeof fear;
   history: typeof history;
   http: typeof http;

@@ -1,9 +1,19 @@
+"use client";
+
 import type { CharacterSlot } from "../slots";
 
-// D5 death moves (T4 fills these). Contract: ../slots.ts.
+import { DeathBadges } from "./badges";
+import { DeathBoundary } from "./boundary";
+import { DeathMoveSheet } from "./death-move";
 
-/** The death-move modal on the sheet; opens when the last Hit Point is marked. */
-export const DeathMoveModal: CharacterSlot = () => null;
+// D5 death moves (T4). Contract: ../slots.ts.
+
+/** The death-move modal on the sheet; opens when the last Hit Point is marked. Also the unconscious and journey-ends badges. */
+export const DeathMoveModal: CharacterSlot = (props) => (
+  <DeathBoundary>
+    <DeathMoveSheet {...props} />
+  </DeathBoundary>
+);
 
 /** Unconscious / away / journey-ends badge on the dashboard party card. */
-export const DeathCardBadge: CharacterSlot = () => null;
+export const DeathCardBadge: CharacterSlot = (props) => <DeathBadges {...props} showAway tone="card" />;
