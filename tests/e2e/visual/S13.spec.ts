@@ -116,11 +116,21 @@ test("S13 player view: locked fields, no editor controls, every page at 1440 and
 
     for (const { tab } of PAGES) {
       await openTab(player, tab);
-      // No editor-only controls: the only buttons are the page tabs (and the vault deck is a picture). The
-      // Level Up tier boxes show taken advancements as disabled checkboxes, so only enabled ones count.
-      await expect(sheet.getByRole("button").and(sheet.locator(":not([role=tab])"))).toHaveCount(0);
+      // No editor-only controls: the only buttons are the page tabs (and the vault deck is a picture), plus the
+      // Domain Deck's view-only controls (filters, More/Less, card backs, Turn over, the hide toggle) and never a
+      // Take button. The Level Up tier boxes show taken advancements as disabled checkboxes, so only enabled ones count.
+      const deck = sheet.locator("#lu-target-deck");
+      const buttons = sheet.getByRole("button").and(sheet.locator(":not([role=tab])"));
+      await expect(buttons).toHaveCount(await deck.getByRole("button").count());
+      const deckNames = await deck.getByRole("button").evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") ?? el.textContent?.trim() ?? ""));
+      const viewOnly = /^(All|Grace|Codex|(More|Less) about .+|Face-down level \d+ .+ card\. Turn it over to read it\.|Turn over .+)$/;
+      expect(deckNames.filter((name) => !viewOnly.test(name)), `deck buttons on ${tab}`).toEqual([]);
+      await expect(deck.getByRole("button", { name: /^Take |^No picks left|for level \d+$|at level-up$/ })).toHaveCount(0);
       for (const role of ["textbox", "combobox", "checkbox", "spinbutton", "radio"] as const) {
-        await expect(sheet.getByRole(role, { disabled: false }), `${role} on ${tab}`).toHaveCount(0);
+        const enabled = sheet.getByRole(role, { disabled: false });
+        // The deck's "Hide cards above my level" toggle only filters the view.
+        const allowed = role === "checkbox" ? await deck.getByRole("checkbox", { name: "Hide cards above my level" }).count() : 0;
+        await expect(enabled, `${role} on ${tab}`).toHaveCount(allowed);
       }
     }
     await openTab(player, "Character Sheet");

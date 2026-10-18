@@ -115,7 +115,7 @@ button.dk-deck:hover .dk-vd-card.v1{transform:translateY(-4px)}
 .dkc.open .dkc-text{display:block}
 .dkc-lock{display:inline-flex;align-items:center;gap:6px;margin:8px 10px 0;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;color:#4a3a26}
 .dkc-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;margin-top:auto}
-.dkc-more{min-height:44px;padding:0 4px;border:none;background:none;color:#8a6d3b;font-size:14px;text-decoration:underline;cursor:pointer}
+.dkc-more{min-height:44px;min-width:44px;padding:0 4px;border:none;background:none;color:#8a6d3b;font-size:14px;text-decoration:underline;cursor:pointer}
 .dkc-btn{min-height:44px;padding:0 14px;border-radius:999px;border:1px solid var(--dc);background:var(--dc);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;cursor:pointer}
 .dkc-btn.ghost{background:transparent;color:#6a5a40;border-color:#cdb88f}
 .dkc-btn:disabled{opacity:.45;cursor:not-allowed}
@@ -138,3 +138,11 @@ button.dk-deck:hover .dk-vd-card.v1{transform:translateY(-4px)}
 .dkf-tag{margin-bottom:12px;padding:3px 12px;border-radius:999px;background:rgba(20,12,6,.8);color:#f3cf86;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.08em}
 @media (prefers-reduced-motion:reduce){.dkf.face>.dkc,.dkf.face>.dkf-back,.dkc{transition:none}}
 @media (max-width:640px){.dkd-hide{margin-left:0}}
+
+/* Guided level-up (GL3): draft-only state is green (--sheet-green, as the ribbon's done marks), so it never reads as saved. */
+.dkd-lu{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:8px 12px;border-radius:10px;border:1.5px dashed var(--sheet-green-bright,#4d7a3a);background:rgba(77,122,58,.08)}
+.dkd-lu-text{margin:0;flex:1 1 240px;font-size:16px;color:var(--sheet-green,#3d5e2e)}
+.dkc-btn.dkc-lu{--dc:var(--sheet-green,#3d5e2e)}
+.dkc.lu-chosen{box-shadow:0 0 0 3px var(--sheet-green-bright,#4d7a3a),0 3px 10px rgba(40,25,8,.12)}
+.dkc-lu-badge,.dk-lu-badge{max-width:100%;box-sizing:border-box;text-align:center;padding:3px 10px;border-radius:999px;background:var(--sheet-green,#3d5e2e);color:#f3f7ee;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700}
+.dk-btn.dk-lu-btn{--dc:var(--sheet-green,#3d5e2e)}

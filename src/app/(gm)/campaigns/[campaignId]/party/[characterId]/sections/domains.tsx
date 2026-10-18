@@ -9,11 +9,24 @@ import { flushSync } from "react-dom";
 import { DOMAIN_ICONS } from "@/components/party/party-display";
 import { Label, SheetBox, Small } from "@/components/party/sheet-ui";
 import { assetBackground } from "@/lib/design-assets";
-import { cardsAllowed, cardTakeProblem, deckDomains, sourcesFor, unlockLevel, type CardTakeProblem } from "@/lib/domain/level-up";
+import { MAX_LEVEL } from "@/lib/domain/characters";
+import {
+  cardsAllowed,
+  cardsWithin,
+  cardTakeProblem,
+  deckDomains,
+  DOMAIN_CARD_CAP,
+  sourcesFor,
+  unlockLevel,
+  type CardTakeProblem,
+  type Tier,
+} from "@/lib/domain/level-up";
 import { DOMAIN_CARD_ART, getDomain, type ClassDef, type DomainCard } from "@/lib/srd";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
+import type { AdvancementOption } from "@/lib/validation/characters";
 
 import { api } from "../../../../../../../../convex/_generated/api";
+import { useLevelUpDraft } from "../level-up-draft";
 import { useSheet } from "../sheet-context";
 import { recallBlock, resolveCards, vaultCardIds } from "../sheet-helpers";
 
@@ -21,6 +34,8 @@ import { recallBlock, resolveCards, vaultCardIds } from "../sheet-helpers";
 // the green felt table with the fanned loadout hand and the vault deck that spreads the vault cards, and the
 // Domain Deck: every card of the character's domains, with filters, face-down cards above their reach and Take card.
 // Locked and takeable states come from cardTakeProblem, the same rule the server's takeCard enforces.
+// In guided level-up mode (GL3) the deck chooses the new level's cards into the draft instead of taking them, and
+// the hand and vault offer the optional exchange (CB 110-111); draft-only state is green, as the ribbon's done marks.
 
 const TYPE_LABEL: Record<DomainCard["type"], string> = { ability: "Ability", spell: "Spell", grimoire: "Grimoire" };
 
@@ -72,8 +87,37 @@ function fan(i: number, n: number): CSSProperties {
   return { "--rot": `${off * 7}deg`, "--ty": `${off * off * 7}px`, zIndex: i + 1 } as CSSProperties;
 }
 
+/** Level-up mode: offers an owned card for the exchange (CB 110), or shows and cancels the one being exchanged. */
+function ExchangeControl({ card }: { card: DomainCard }) {
+  const lu = useLevelUpDraft();
+  if (lu.draft.trade?.out === card.id) {
+    return (
+      <>
+        <span className="dk-lu-badge">Exchanging at level {lu.level}</span>
+        <button type="button" className="dk-btn" aria-label={`Cancel exchange of ${card.name}`} onClick={() => lu.setTrade(null)}>
+          Cancel exchange
+        </button>
+      </>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="dk-btn dk-lu-btn"
+      aria-label={`Exchange ${card.name} at level-up`}
+      onClick={() => {
+        lu.setTrade({ out: card.id, in: "" });
+        lu.goTo("deck");
+      }}
+    >
+      Exchange at level-up
+    </button>
+  );
+}
+
 export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
   const { sheet, canEdit, moveCard, slot } = useSheet();
+  const leveling = useLevelUpDraft().active && canEdit;
   const [duringRest, setDuringRest] = useState(false);
   // The vault starts spread so its cards and recall costs are in view; the deck gathers and spreads it again.
   const [vaultOpen, setVaultOpen] = useState(true);
@@ -174,12 +218,13 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
               <div className="dk-hand-list" role="list" aria-label="Loadout cards">
                 {loadout.map((card, i) => (
                   <div role="listitem" key={card.id} className="dk-hand-card" style={fan(i, loadout.length)}>
-                    <CardFace card={card} focusable>
+                    <CardFace card={card} focusable actsShown={leveling}>
                       {canEdit ? (
                         <button type="button" className="dk-btn" disabled={busy !== null} onClick={() => void move(card, "vault")}>
                           Move to vault
                         </button>
                       ) : null}
+                      {leveling ? <ExchangeControl card={card} /> : null}
                     </CardFace>
                   </div>
                 ))}
@@ -227,6 +272,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
                             </button>
                           )
                         ) : null}
+                        {leveling ? <ExchangeControl card={card} /> : null}
                       </CardFace>
                     </div>
                   );
@@ -242,20 +288,69 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
   );
 }
 
-type DeckEntry = { card: DomainCard; problem: CardTakeProblem | null };
+type DeckEntry = { card: DomainCard; problem: CardTakeProblem | null; locked: boolean };
+
+/** Where a level-up choice of a card goes: the level's card, an "additional domain card" pick, or the exchange. */
+type Slot = { kind: "card" } | { kind: "pick"; option: AdvancementOption; tier: number } | { kind: "trade"; out: string };
+
+const cardName = (id: string) => DOMAIN_CARDS.find((c) => c.id === id)?.name ?? id;
 
 /** The board's Domain Deck: filter by domain, hide cards above the character's reach, take a card while picks are left. */
 function DomainDeck() {
   const { sheet, canEdit, hopeAndFear, takeCard } = useSheet();
+  const lu = useLevelUpDraft();
   const [filter, setFilter] = useState("all");
   const [hideLocked, setHideLocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const sources = sourcesFor({ allowExpansion: hopeAndFear });
-  const doms = deckDomains(sheet);
+
+  // Level-up mode: reach at the new level, with a multiclass domain picked this level (CB 110).
+  const leveling = lu.active && canEdit;
+  const { draft, level } = lu;
+  const multiclassing = draft.picks.some((p) => p.option === "multiclass");
+  const reach = leveling && multiclassing && draft.multiclass ? { ...sheet, multiclass: draft.multiclass } : sheet;
+  const within = (cap: number) => new Set(leveling ? cardsWithin(reach, level, cap, sources).map((c) => c.id) : []);
+  const reachable = within(MAX_LEVEL);
+  /** The draft's cards and where each sits. */
+  const chosen = new Map<string, Slot>();
+  if (leveling) {
+    if (draft.cardId) chosen.set(draft.cardId, { kind: "card" });
+    for (const p of draft.picks) if (p.option === "domainCard" && p.targets?.[0]) chosen.set(p.targets[0], { kind: "pick", option: p.option, tier: p.tier });
+    if (draft.trade?.in) chosen.set(draft.trade.in, { kind: "trade", out: draft.trade.out });
+  }
+  const openPicks = leveling
+    ? draft.picks.filter((p) => p.option === "domainCard" && !p.targets?.[0]).map((p) => ({ tier: p.tier, ids: within(DOMAIN_CARD_CAP[p.tier as Tier] ?? MAX_LEVEL) }))
+    : [];
+  const openCount = (leveling && !draft.cardId ? 1 : 0) + openPicks.length;
+  const tradeOut = leveling && draft.trade && !draft.trade.in ? DOMAIN_CARDS.find((c) => c.id === draft.trade?.out) : undefined;
+
+  /** The open slot a card would fill: the level's card first, then an "additional domain card" pick. */
+  function slotFor(card: DomainCard): Slot | null {
+    if (!reachable.has(card.id) || chosen.has(card.id)) return null;
+    if (!draft.cardId) return { kind: "card" };
+    const pick = openPicks.find((p) => p.ids.has(card.id));
+    return pick ? { kind: "pick", option: "domainCard", tier: pick.tier } : null;
+  }
+  function choose(card: DomainCard, slot: Slot) {
+    if (slot.kind === "card") lu.setCardId(card.id);
+    else if (slot.kind === "pick") lu.setPickTargets(slot.option, slot.tier, [card.id]);
+    else lu.setTrade({ out: slot.out, in: card.id });
+  }
+  function undo(slot: Slot) {
+    if (slot.kind === "card") lu.setCardId("");
+    else if (slot.kind === "pick") lu.setPickTargets(slot.option, slot.tier, []);
+    else lu.setTrade({ out: slot.out, in: "" });
+  }
+
+  const doms = deckDomains(reach);
   const active = doms.includes(filter) ? filter : "all";
   const deck: DeckEntry[] = DOMAIN_CARDS.filter((c) => sources.includes(c.source) && doms.includes(c.domain))
-    .map((card) => ({ card, problem: cardTakeProblem(sheet, card.id, sources) }))
-    .filter(({ card, problem }) => (active === "all" || card.domain === active) && !(hideLocked && problem?.reason === "locked"))
+    .map((card) => {
+      const problem = cardTakeProblem(sheet, card.id, sources);
+      // In level-up mode a card that comes within reach at the new level shows face-up.
+      return { card, problem, locked: problem?.reason === "locked" && !reachable.has(card.id) };
+    })
+    .filter(({ card, locked }) => (active === "all" || card.domain === active) && !(hideLocked && locked))
     .sort((a, b) => a.card.level - b.card.level || doms.indexOf(a.card.domain) - doms.indexOf(b.card.domain) || a.card.name.localeCompare(b.card.name));
 
   async function take(card: DomainCard) {
@@ -264,8 +359,53 @@ function DomainDeck() {
     setBusy(false);
   }
 
+  /** The level-up buttons of a deck card: choose it, take it in the exchange, or the chosen badge with Undo. */
+  function levelUpActs(card: DomainCard) {
+    const slot = chosen.get(card.id);
+    if (slot) {
+      return (
+        <>
+          <span className="dkc-lu-badge">{slot.kind === "trade" ? `Exchange for ${cardName(slot.out)} at level ${level}` : `Chosen for level ${level}`}</span>
+          <button type="button" className="dkc-btn ghost" aria-label={`Undo choice of ${card.name}`} onClick={() => undo(slot)}>
+            Undo choice
+          </button>
+        </>
+      );
+    }
+    if (!reachable.has(card.id)) return null;
+    const into = slotFor(card);
+    const swaps = tradeOut && card.level <= tradeOut.level;
+    return (
+      <>
+        <button type="button" className="dkc-btn dkc-lu" aria-label={`Choose ${card.name} for level ${level}`} disabled={!into} onClick={() => into && choose(card, into)}>
+          Choose for level {level}
+        </button>
+        {swaps ? (
+          <button type="button" className="dkc-btn dkc-lu" aria-label={`Take ${card.name} in exchange for ${tradeOut.name}`} onClick={() => choose(card, { kind: "trade", out: tradeOut.id })}>
+            Take in exchange
+          </button>
+        ) : null}
+      </>
+    );
+  }
+
   return (
-    <SheetBox title="Domain Deck">
+    <SheetBox id="lu-target-deck" title="Domain Deck">
+      {leveling ? (
+        <div className="dkd-lu">
+          <p className="dkd-lu-text">
+            {openCount > 0
+              ? `Level ${level}: choose ${openCount} domain card${openCount === 1 ? "" : "s"} below.`
+              : `Level ${level}: every new domain card is chosen. Undo a choice to change it.`}
+            {tradeOut ? ` Exchanging ${tradeOut.name}: take a card of level ${tradeOut.level} or lower in its place.` : ""}
+          </p>
+          {tradeOut ? (
+            <button type="button" className="dkc-btn ghost" onClick={() => lu.setTrade(null)}>
+              Cancel exchange
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="dkd-bar">
         <div role="group" aria-label="Filter by domain" className="dkd-filters">
           {["all", ...doms].map((key) => (
@@ -283,9 +423,18 @@ function DomainDeck() {
         <p className="dkd-empty">No cards to show.</p>
       ) : (
         <div className="dk-grid" role="list" aria-label="Domain Deck cards">
-          {deck.map(({ card, problem }) => (
+          {deck.map(({ card, problem, locked }) => (
             <div role="listitem" key={card.id} className="dk-grid-item">
-              <DeckCard card={card} problem={problem} canEdit={canEdit} busy={busy} onTake={() => void take(card)} />
+              <DeckCard
+                card={card}
+                problem={problem}
+                locked={locked}
+                chosen={chosen.has(card.id)}
+                canEdit={canEdit}
+                busy={busy}
+                onTake={() => void take(card)}
+                levelUp={leveling ? levelUpActs(card) : undefined}
+              />
             </div>
           ))}
         </div>
@@ -294,8 +443,29 @@ function DomainDeck() {
   );
 }
 
-/** One deck card (board `dkc` in a `dkf` flip wrapper): a face-down card back while it is above the character's reach. */
-function DeckCard({ card, problem, canEdit, busy, onTake }: { card: DomainCard; problem: CardTakeProblem | null; canEdit: boolean; busy: boolean; onTake: () => void }) {
+/**
+ * One deck card (board `dkc` in a `dkf` flip wrapper): a face-down card back while it is above the character's reach.
+ * `levelUp` (level-up mode) replaces Take card with the draft's buttons.
+ */
+function DeckCard({
+  card,
+  problem,
+  locked,
+  chosen,
+  canEdit,
+  busy,
+  onTake,
+  levelUp,
+}: {
+  card: DomainCard;
+  problem: CardTakeProblem | null;
+  locked: boolean;
+  chosen: boolean;
+  canEdit: boolean;
+  busy: boolean;
+  onTake: () => void;
+  levelUp?: ReactNode;
+}) {
   const { sheet } = useSheet();
   const [open, setOpen] = useState(false);
   const [flipped, setFlipped] = useState(false);
@@ -305,9 +475,9 @@ function DeckCard({ card, problem, canEdit, busy, onTake }: { card: DomainCard; 
   const domainName = domain?.name ?? card.domain;
   const art = card.art ?? DOMAIN_CARD_ART[card.id];
   const owned = problem?.reason === "owned";
-  const locked = problem?.reason === "locked";
   const faceDown = locked && !flipped;
   const unlocks = unlockLevel(sheet, card);
+  const leveling = levelUp !== undefined;
 
   function flip(up: boolean) {
     // The hidden side is inert, so render first, then move focus to the side that now shows.
@@ -318,7 +488,7 @@ function DeckCard({ card, problem, canEdit, busy, onTake }: { card: DomainCard; 
   return (
     <div className={`dkf${locked ? " face" : " plain"}${flipped ? " flipped" : ""}`}>
       <article
-        className={`dkc${locked ? " locked" : ""}${owned ? " owned" : ""}${open ? " open" : ""}`}
+        className={`dkc${locked ? " locked" : ""}${owned ? " owned" : ""}${chosen ? " lu-chosen" : ""}${open ? " open" : ""}`}
         style={{ "--dc": domain?.color ?? "#5b2b2b" } as CSSProperties}
         aria-label={card.name}
         aria-hidden={faceDown || undefined}
@@ -348,12 +518,13 @@ function DeckCard({ card, problem, canEdit, busy, onTake }: { card: DomainCard; 
               Turn over
             </button>
           ) : null}
-          {canEdit && problem === null ? (
+          {levelUp}
+          {canEdit && !leveling && problem === null ? (
             <button type="button" className="dkc-btn" aria-label={`Take ${card.name}`} disabled={busy} onClick={onTake}>
               Take card
             </button>
           ) : null}
-          {canEdit && problem?.reason === "full" ? (
+          {canEdit && !leveling && problem?.reason === "full" ? (
             <button type="button" className="dkc-btn" aria-label={`No picks left for ${card.name}`} disabled>
               No picks left
             </button>
