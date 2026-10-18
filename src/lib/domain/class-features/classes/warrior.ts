@@ -1,6 +1,7 @@
 // Warrior (CB 48). Hope feature: No Mercy, +1 to attack rolls until your next rest.
-// Class features: Combat Training adds the Warrior's level to damage rolls (an auto dice-box option; the book
-// limits it to physical damage, which is the Warrior's usual damage), and Attack of Opportunity is an
+// Class features: Combat Training adds the Warrior's level to damage rolls (an auto dice-box option): "When you
+// deal physical damage" (CB 48), so it is `physicalOnly` and `convex/rolls.ts` drops it for a magic damage
+// source (a magic weapon, a magic override), and Attack of Opportunity is an
 // assisted reaction roll: the reminder, then the player rolls a reaction roll in the dice box.
 // Motherboard Warriors don't get Combat Training: "replaced with ... Ikonis Training" (CB 295).
 import type { ClassFeatures, FeatureMeta } from "../types";
@@ -32,5 +33,5 @@ export const warrior: ClassFeatures = {
   classActions: [attackOfOpportunity],
   // In Motherboard, Ikonis Training replaces Combat Training (CB 295).
   rollOptions: (sheet, kind, scope) =>
-    kind === "damage" && !scope.ikonis ? [{ key: "combatTraining", label: `Combat Training +${sheet.level}`, effect: { kind: "modifier", value: sheet.level }, auto: true }] : [],
+    kind === "damage" && !scope.ikonis ? [{ key: "combatTraining", label: `Combat Training +${sheet.level}`, effect: { kind: "modifier", value: sheet.level }, auto: true, physicalOnly: true }] : [],
 };

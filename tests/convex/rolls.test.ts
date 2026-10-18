@@ -222,6 +222,30 @@ describe("rolls: rules", () => {
     expect(await codeOf(p1.mutation(api.rolls.damageRoll, { characterId: a, ...weapon, source: { kind: "weapon", slot: "secondary" }, idempotencyKey: key() }))).toBe("DICE_RULE");
   });
 
+  it("Combat Training adds the level only to physical damage (CB 48)", async () => {
+    const { p1, a, edit } = await setup();
+    await edit(a, { level: 3 });
+    const flatOf = (damage: string) => Number(/\+(\d+)/.exec(damage)?.[1] ?? 0);
+    const damageWith = async (weaponId: string) => {
+      await edit(a, { primaryWeaponId: weaponId });
+      const { roll } = await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { kind: "damage", ...weapon }, values: [1], idempotencyKey: key() });
+      return roll.total - 1 - flatOf(getWeapon(weaponId)!.damage);
+    };
+    const magic = WEAPONS.find((w) => w.slot === "primary" && w.tier === 1 && w.source === "core" && w.damageType === "magic" && !w.classId)!;
+    expect(await damageWith(PRIMARY.id)).toBe(3);
+    expect(await damageWith(magic.id)).toBe(0);
+    // Shadowblade: "you can deal physical or magic damage", so the bonus applies.
+    expect(await damageWith("shadowblade")).toBe(3);
+    // Custom dice count as physical.
+    const custom = await p1.mutation(api.rolls.manualRoll, {
+      characterId: a,
+      roll: { kind: "damage", ...weapon, source: { kind: "dice", dice: [{ count: 1, sides: 6 }] } },
+      values: [4],
+      idempotencyKey: key(),
+    });
+    expect(custom.roll.total).toBe(7);
+  });
+
   it("a tag team costs 3 Hope once per session and applies one result to both", async () => {
     const { p1, a, b, sheetOf, edit, fear } = await setup();
     await edit(a, { hope: 4 });

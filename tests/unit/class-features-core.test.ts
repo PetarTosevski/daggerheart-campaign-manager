@@ -248,8 +248,8 @@ describe("Sorcerer Channel Raw Power (CB 46)", () => {
 });
 
 describe("Warrior (CB 48)", () => {
-  it("Combat Training adds the level to damage automatically", () => {
-    expect(rollOptions(sheetOf("warrior", { level: 3 }), "damage").find((o) => o.key === "combatTraining")).toMatchObject({ auto: true, effect: { kind: "modifier", value: 3 } });
+  it("Combat Training adds the level to damage automatically, only physical damage", () => {
+    expect(rollOptions(sheetOf("warrior", { level: 3 }), "damage").find((o) => o.key === "combatTraining")).toMatchObject({ auto: true, physicalOnly: true, effect: { kind: "modifier", value: 3 } });
     expect(rollOptions(sheetOf("warrior"), "action").find((o) => o.key === "combatTraining")).toBeUndefined();
   });
 

@@ -17,7 +17,7 @@
 //       text: "+1 to attack rolls until your next rest.", until: "rest", mods: { attack: 1 } }] },
 //       summary: "used No Mercy" }) },
 //   rollOptions: (sheet, kind) => (kind === "damage" ? [{ key: "combatTraining", label: "Combat Training",
-//     effect: { kind: "modifier", value: sheet.level }, auto: true }] : []),
+//     effect: { kind: "modifier", value: sheet.level }, auto: true, physicalOnly: true }] : []),
 // };
 // ```
 
@@ -66,6 +66,8 @@ export type RollOption = {
   effect: RollOptionEffect;
   cost?: FeatureCost;
   auto?: boolean;
+  /** Only for physical damage (Combat Training, CB 48): `convex/rolls.ts` drops it for a magic damage source. */
+  physicalOnly?: boolean;
 };
 
 /**
@@ -81,6 +83,8 @@ export type WeaponOverride = {
   critBase?: number;
   /** Evasion while this replaces the weapon (Brawler without a weapon: +1). */
   evasionBonus?: number;
+  /** The damage it deals; unset is physical (Brawler's Strike is unarmed, HF 10). */
+  damageType?: "physical" | "magic";
 };
 
 /** What a weapon override reads from the sheet (so `derivedDefense` can ask for the override's Evasion). */
