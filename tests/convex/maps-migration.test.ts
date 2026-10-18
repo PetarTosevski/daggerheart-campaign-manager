@@ -25,8 +25,8 @@ function horizonV1(): MapState {
     ...base,
     // Stored out of order, as arrays may be: reads come back by id and by (q, r).
     tokens: [
-      { id: 3, type: "c1", x: 30, y: 30, name: "Shrine", notes: "", hidden: false, location: true },
-      { id: 1, type: "village", x: 10, y: 10, name: "Oakhollow", notes: "The mayor is a spy", hidden: false, location: true },
+      { id: 3, type: "c1", x: 4.71, y: 6.04, name: "Shrine", notes: "", hidden: false, location: true },
+      { id: 1, type: "village", x: 2.94, y: 4.49, name: "Oakhollow", notes: "The mayor is a spy", hidden: false, location: true },
       { id: 2, type: "cave", x: 20, y: 20, name: "Wyrm lair", notes: "", hidden: true, location: true },
     ],
     nextId: 6,

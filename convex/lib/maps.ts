@@ -14,6 +14,7 @@ import {
   mapScalarsSchema,
   mapStateSchema,
   mapTokenSchema,
+  playerCanSeeToken,
   playerMapView,
   splitMapState,
   terrainTile,
@@ -148,12 +149,31 @@ export async function readPlayerMap(ctx: QueryCtx, campaign: Doc<"campaigns">): 
   return { state: playerMapView(full), storageId: scalars.customMap?.storageId };
 }
 
-/** Explored hexes plus the party's hex and its neighbours: every hex `playerMapView` can keep. */
-async function visibleHexRows(ctx: QueryCtx, campaignId: Id<"campaigns">, party: Hex | null): Promise<Doc<"mapHexes">[]> {
-  const explored = await ctx.db
+function exploredHexRows(ctx: QueryCtx, campaignId: Id<"campaigns">) {
+  return ctx.db
     .query("mapHexes")
     .withIndex("by_campaign_explored", (q) => q.eq("campaignId", campaignId).eq("explored", true))
     .take(MAX_HEXES);
+}
+
+/**
+ * Whether players may see each marker (`playerCanSeeToken`), for player views
+ * that list markers without the map (codex pins, Locations). Of the hex crawl
+ * it reads only the explored hexes. Throws MAP_CORRUPT.
+ */
+export async function playerTokenFilter(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<(token: MapToken) => boolean> {
+  const { stored } = await storedFor(ctx, campaign);
+  if (stored.version === 1) {
+    const { hexCrawl } = stored.state;
+    return playerCanSeeToken(stored.state, hexCrawl, hexCrawl?.hexes.filter((h) => h.explored) ?? []);
+  }
+  const { hexCrawl } = stored.scalars;
+  return playerCanSeeToken(stored.scalars, hexCrawl, hexCrawl ? await exploredHexRows(ctx, campaign._id) : []);
+}
+
+/** Explored hexes plus the party's hex and its neighbours: every hex `playerMapView` can keep. */
+async function visibleHexRows(ctx: QueryCtx, campaignId: Id<"campaigns">, party: Hex | null): Promise<Doc<"mapHexes">[]> {
+  const explored = await exploredHexRows(ctx, campaignId);
   const rows = new Map(explored.map((row) => [hexKey(row), row]));
   if (party) {
     for (const h of [party, ...neighbours(party)]) {

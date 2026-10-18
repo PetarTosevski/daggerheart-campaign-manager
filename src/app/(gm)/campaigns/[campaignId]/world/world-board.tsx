@@ -24,7 +24,7 @@ import {
   type TravelPace,
 } from "@/lib/domain/travel";
 import { hexDistance, hexToPixel, pixelToHex, type Hex } from "@/lib/world/hex";
-import { HORIZON_FRAME, WORLD_MAPS, mapImageSize, playerMapView, travelRules, type MapState, type MapToken, type PlayerMapState } from "@/lib/world/map-state";
+import { HORIZON_FRAME, SANCTUARY_TYPE, WORLD_MAPS, mapImageSize, playerMapView, travelRules, type MapState, type MapToken, type PlayerMapState } from "@/lib/world/map-state";
 import {
   BRUSHES,
   BRUSH_SIZES,
@@ -405,7 +405,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
 
   return (
     <main className={`w-main${editable ? " w-gm" : ""}`}>
-      {editable ? <Palette types={types} placing={placing} onPick={(id) => (setPlacing(id), setMeasuring(false), setPainting(false))} actions={actions} /> : null}
+      {editable ? <Palette types={horizon ? types : types.filter((t) => t.id !== SANCTUARY_TYPE)} placing={placing} onPick={(id) => (setPlacing(id), setMeasuring(false), setPainting(false))} actions={actions} /> : null}
 
       <section
         ref={section}

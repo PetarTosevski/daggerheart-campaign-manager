@@ -25,6 +25,7 @@ export const TOKEN_TYPE_ART: Record<BuiltinTokenType, { label: string; colour: s
     path: "M12 3c-4.4 0-7.5 3-7.5 7 0 2.4 1.1 4 2.6 5v2.5c0 .8.6 1.5 1.4 1.5h7c.8 0 1.4-.7 1.4-1.5V15c1.5-1 2.6-2.6 2.6-5 0-4-3.1-7-7.5-7z M9 10.5h.01 M15 10.5h.01 M10 19v2 M14 19v2",
   },
   camp: { label: "Camp", colour: "#9a5a1a", path: "M3 20 L12 5 L21 20 Z M9 20 L12 14 L15 20" },
+  sanctuary: { label: "Sanctuary", colour: "#4a7a8a", path: "M12 3 L20 7 V12 C20 17 16 20 12 21 C8 20 4 17 4 12 V7 Z M12 8 V16 M8 12 H16" },
   quest: { label: "Quest", colour: "#c0902a", path: "M12 3 a9 9 0 1 0 0.01 0 Z M12 7 V13 M12 16.5 V17" },
   treasure: { label: "Treasure", colour: "#a07a1a", path: "M3 10 H21 V20 H3 Z M3 10 C3 6 21 6 21 10 M10 13 H14 V16 H10 Z" },
   landmark: { label: "Landmark", colour: "#2a6a6a", path: "M12 22 C12 22 5 14 5 9 a7 7 0 0 1 14 0 C19 14 12 22 12 22 Z M10 9 a2 2 0 1 0 4 0 a2 2 0 1 0 -4 0" },

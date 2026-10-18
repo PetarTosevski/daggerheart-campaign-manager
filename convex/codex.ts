@@ -25,6 +25,7 @@ import {
   type EntrySummary,
 } from "./lib/codex";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
+import { playerTokenFilter } from "./lib/maps";
 import { campaignMutation, keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
 import { atLeast, liveCampaign, permissionFor, requirePermission, type Permission } from "./lib/permissions";
 import { codexKindValidator, codexListValidator, codexPatchValidator, codexTextValidator } from "./lib/validators/codex";
@@ -82,12 +83,14 @@ export const list = userQuery({
       return { role: "gm" as const, entries, pins };
     }
 
+    // An unreadable map shows no pins; the codex still works.
+    const canSee = await playerTokenFilter(ctx, campaign).catch(() => () => false);
     const entries: (PlayerEntry & { _id: Id<"codexEntries"> })[] = [];
     for (const row of rows) {
       const { summary: d } = storedEntry(row.data);
       if (!d.known) continue;
       const token = d.tokenId === null ? undefined : tokenById.get(d.tokenId);
-      const visiblePin = token && !token.hidden ? token : null;
+      const visiblePin = token && canSee(token) ? token : null;
       // Resolve URLs only for revealed images.
       const images = await Promise.all(d.images.filter((g) => g.shown).map(async (g) => ({ ...g, url: await imageUrl(ctx, files, row._id, g.storageId) })));
       const view = toPlayerEntry(campaign.frameId, { _id: row._id, kind: row.kind, createdAt: row.createdAt, data: d, images }, visiblePin);

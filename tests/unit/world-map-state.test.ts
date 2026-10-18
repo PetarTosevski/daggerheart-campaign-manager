@@ -8,12 +8,15 @@ import {
   checkMapState,
   initialMapState,
   joinMapState,
+  mapImageSize,
   playerMapView,
   splitMapState,
   terrainTile,
   terrainTileOf,
+  tokenHex,
   type MapToken,
 } from "@/lib/world/map-state";
+import { hexToPixel } from "@/lib/world/hex";
 import { TERRAIN_COLUMNS, TERRAIN_ROWS } from "@/lib/world/terrain";
 
 const token = (id: number, over: Partial<MapToken> = {}): MapToken => ({ id, type: "village", x: 1, y: 1, name: "", notes: "", hidden: false, location: false, ...over });
@@ -98,5 +101,30 @@ describe("player map view", () => {
     expect(view.typeLabels).toEqual({ cave: "Grotto" });
     expect(view.options).toEqual(state.options);
     expect(JSON.stringify(view)).not.toMatch(/kg2abc|Dragon nest|Secret capital|Lair/);
+  });
+
+  it("hex crawl: markers only in explored hexes or the party's neighbourhood, sanctuaries anywhere unless hidden", () => {
+    const base = initialMapState("journey-to-horizon");
+    const grid = { originX: 100, originY: 100, size: 40, orientation: "flat" as const };
+    const image = mapImageSize("journey-to-horizon", base);
+    const at = (q: number, r: number) => {
+      const c = hexToPixel({ q, r }, grid);
+      return { x: (c.x / image.width) * 100, y: (c.y / image.height) * 100 };
+    };
+    expect(tokenHex(at(4, -2), image, grid)).toEqual({ q: 4, r: -2 });
+    const state = {
+      ...base,
+      tokens: [
+        token(1, at(0, 1)),
+        token(2, at(4, 0)),
+        token(3, at(6, 1)),
+        token(4, { ...at(8, 8), type: "sanctuary" }),
+        token(5, { ...at(8, 8), type: "sanctuary", hidden: true }),
+      ],
+      hexCrawl: { ...base.hexCrawl!, grid, party: { q: 0, r: 0 }, hexes: [{ q: 6, r: 1, explored: true }] },
+    };
+    expect(playerMapView(state).tokens.map((t) => t.id)).toEqual([1, 3, 4]);
+    // Before the party is placed only explored hexes (and sanctuaries) show markers.
+    expect(playerMapView({ ...state, hexCrawl: { ...state.hexCrawl, party: null } }).tokens.map((t) => t.id)).toEqual([3, 4]);
   });
 });
