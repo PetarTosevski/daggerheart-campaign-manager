@@ -55,7 +55,6 @@ export const campaignTables = {
     /** Join time, or the player's last open before `campaignOpens`: the fallback `campaigns.list` sorts by. */
     lastOpenedAt: v.number(),
   })
-    .index("by_campaign", ["campaignId"])
     .index("by_user", ["userId"])
     .index("by_campaign_user", ["campaignId", "userId"]),
 
@@ -66,7 +65,6 @@ export const campaignTables = {
     invitedBy: v.id("users"),
     createdAt: v.number(),
   })
-    .index("by_campaign", ["campaignId"])
     .index("by_email", ["email"])
     .index("by_campaign_email", ["campaignId", "email"]),
 

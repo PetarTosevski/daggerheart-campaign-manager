@@ -196,9 +196,11 @@ exclusion.
 - `convex/lib/allowlist.ts`: pure sign-in policy (allowlist =
   `ALLOWED_EMAILS` ∪ legacy `GM_EMAILS` ∪ `SEED_ACCOUNTS` emails, verified
   email for OAuth, local-only e2e sign-in). Unit-tested.
-- `convex/lib/auth.ts`: `requireUser(ctx)`, called first by every public query
-  and mutation. `convex/lib/access.ts`: `loadCampaign` / `loadGmCampaign`
-  return the caller's role (GM or player) or throw `NOT_FOUND` / `FORBIDDEN`.
+- `convex/lib/functions.ts`: the auth wrappers. Every client-callable function is
+  `userQuery` / `userMutation` / `userAction` or a campaign/GM wrapper built on
+  them; they put `user` (and `campaign`, `permission`) on `ctx`.
+- `convex/lib/permissions.ts`: `permissionFor` — the single authorization model
+  (campaign role plus `grants`); wrappers and entry-scoped functions use it.
 - `convex/accounts.ts`: `accounts:seed` creates the `SEED_ACCOUNTS` test
   logins (`npx convex run accounts:seed`).
 - Convex functions import shared code from `src/lib/{domain,validation}` with

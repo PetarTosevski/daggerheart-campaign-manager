@@ -19,7 +19,6 @@ import type * as countdowns from "../countdowns.js";
 import type * as fear from "../fear.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
-import type * as lib_access from "../lib/access.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_blobs from "../lib/blobs.js";
@@ -85,7 +84,6 @@ declare const fullApi: ApiFromModules<{
   fear: typeof fear;
   history: typeof history;
   http: typeof http;
-  "lib/access": typeof lib_access;
   "lib/allowlist": typeof lib_allowlist;
   "lib/auth": typeof lib_auth;
   "lib/blobs": typeof lib_blobs;

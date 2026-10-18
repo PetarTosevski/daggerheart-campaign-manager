@@ -7,7 +7,7 @@ import { normalizeEmail } from "./allowlist";
 /**
  * The single authorization model (CF2). `permissionFor` decides every access:
  * the campaign wrappers in `lib/functions.ts` call it through `campaignAccess`,
- * and `lib/access.ts` is a shim over it until H17 removes that file.
+ * and the entry- or character-scoped functions call it directly.
  */
 
 export type Permission = Doc<"grants">["permission"];

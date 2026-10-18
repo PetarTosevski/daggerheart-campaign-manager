@@ -25,7 +25,6 @@ export const countdownTables = {
     /** Frame-owned countdowns are GM-only until revealed. */
     revealed: v.optional(v.boolean()),
   })
-    .index("by_campaign", ["campaignId"])
     /** The dashboard list: `ownerKey` undefined, i.e. countdowns no frame tracker owns. */
     .index("by_campaign_owner", ["campaignId", "ownerKey"]),
 
