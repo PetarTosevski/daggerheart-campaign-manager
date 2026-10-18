@@ -190,6 +190,93 @@ describe("levelUp", () => {
     expect(await failure(gm.mutation(api.levelUp.correctLevel, { characterId: a, level: 11, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
   });
 
+  describe("SS3: a player undoes a level-up only within its session (decision 33)", () => {
+    /** Flags the party and levels Ash up as p1; `backdate` moves the entry's `at` that many ms earlier (Date.now() can repeat within a test). */
+    async function leveled(backdate = 0) {
+      const env = await setup();
+      const { t, gm, p1, campaignId, a } = env;
+      await gm.mutation(api.levelUp.partyLevelUp, { campaignId, idempotencyKey: key() });
+      await p1.mutation(api.levelUp.apply, { characterId: a, choice: CHOICE, idempotencyKey: key() });
+      if (backdate > 0) await patchLatest(t, a, (at) => ({ at: at! - backdate }));
+      return env;
+    }
+    async function patchLatest(t: Awaited<ReturnType<typeof setup>>["t"], id: Id<"characters">, change: (at: number | undefined) => Record<string, unknown>) {
+      await t.run(async (ctx) => {
+        const c = (await ctx.db.get("characters", id))!;
+        const sheet = c.sheet as { advancements: { at?: number }[] };
+        const last = sheet.advancements.at(-1)!;
+        const { at, ...rest } = last;
+        const next = { ...rest, ...change(at) };
+        await ctx.db.patch("characters", id, { sheet: { ...c.sheet, advancements: [...sheet.advancements.slice(0, -1), next] } });
+      });
+    }
+
+    it("stamps the entry with when it was taken", async () => {
+      const before = Date.now();
+      const { a, sheetOf } = await leveled();
+      expect((await sheetOf(a)).advancements[0].at).toBeGreaterThanOrEqual(before);
+    });
+
+    it("same session: the player may undo (session running since before the level-up)", async () => {
+      const env = await setup();
+      const { gm, p1, campaignId, a } = env;
+      await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+      await gm.mutation(api.levelUp.partyLevelUp, { campaignId, idempotencyKey: key() });
+      await p1.mutation(api.levelUp.apply, { characterId: a, choice: CHOICE, idempotencyKey: key() });
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+      expect(await p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
+    });
+
+    it("between sessions with no session since: the player may undo; an End scene is no boundary", async () => {
+      const { t, gm, p1, campaignId, a } = await leveled(1000);
+      await t.run(async (ctx) => {
+        const c = (await ctx.db.get("characters", a))!;
+        await ctx.db.patch("characters", a, { sheet: { ...c.sheet, effects: [{ id: "e1", source: "Test", text: "Until the scene ends", until: "scene" }] } });
+      });
+      const ended = await gm.mutation(api.scenes.end, { campaignId, idempotencyKey: key() });
+      expect(ended.entryId).not.toBeNull();
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+      expect(await p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
+    });
+
+    it("refuses the player after a new session starts; the GM may still undo", async () => {
+      const { gm, p1, campaignId, a } = await leveled(1000);
+      await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(false);
+      expect(await failure(p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
+      expect(await gm.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+      expect(await gm.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
+    });
+
+    it("refuses the player after the session ends", async () => {
+      const env = await setup();
+      const { gm, p1, campaignId, a } = env;
+      await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+      await gm.mutation(api.levelUp.partyLevelUp, { campaignId, idempotencyKey: key() });
+      await p1.mutation(api.levelUp.apply, { characterId: a, choice: CHOICE, idempotencyKey: key() });
+      await gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() });
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(false);
+      expect(await failure(p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
+    });
+
+    it("refuses the player after a whole session started and ended since", async () => {
+      const { gm, p1, campaignId, a } = await leveled(1000);
+      await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+      await gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() });
+      expect(await failure(p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
+      expect(await gm.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
+    });
+
+    it("an older entry without `at` is GM only", async () => {
+      const { t, gm, p1, p2, a } = await leveled();
+      await patchLatest(t, a, () => ({}));
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(false);
+      expect(await p2.query(api.levelUp.canUndo, { characterId: a })).toBe(false);
+      expect(await failure(p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
+      expect(await gm.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
+    });
+  });
+
   it("a level-up row blocks undoing an older roll row", async () => {
     const { t, gm, p1, campaignId, a, ids, sheetOf } = await setup();
     const before = await sheetOf(a);

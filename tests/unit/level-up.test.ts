@@ -13,7 +13,7 @@ import {
   type PickChoice,
 } from "@/lib/domain/level-up";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
-import type { CharacterSheet } from "@/lib/validation/characters";
+import { characterSheetSchema, type CharacterSheet } from "@/lib/validation/characters";
 
 /** A level-1 Warrior (Blade & Bone) holding two level-1 cards, flagged to level up. */
 const BASE: CharacterSheet = readSheet({
@@ -116,6 +116,15 @@ describe("achievements (CB 109)", () => {
 
   it("an achievement level needs the Experience's name", () => {
     expect(validateLevelUp(BASE, { picks: [hp, stress], cardId: freshCard(BASE, 2) }, CTX)).toContain("Name the new Experience (up to 80 characters).");
+  });
+
+  it("SS3: the entry carries the caller's `at` when given, and revert drops it with the entry", () => {
+    const card = freshCard(BASE, 2);
+    const stamped = applyLevelUp(BASE, { picks: [hp, stress], cardId: card, experienceName: "Exp 2" }, { ...CTX, newId: () => "x", at: 1234 });
+    expect(stamped.advancements.at(-1)?.at).toBe(1234);
+    expect(characterSheetSchema.parse(stamped).advancements.at(-1)?.at).toBe(1234);
+    expect(up(BASE, [hp, stress]).advancements.at(-1)).not.toHaveProperty("at");
+    expect(revertLevelUp(stamped).advancements).toEqual([]);
   });
 
   it("level 10 is the last", () => {

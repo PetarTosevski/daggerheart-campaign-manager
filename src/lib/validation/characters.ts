@@ -109,6 +109,8 @@ export const advancementSchema = z.object({
   tradeOut: z.string().min(1).optional(),
   tradeIn: z.string().min(1).optional(),
   experienceId: listId.optional(),
+  /** When it was taken (ms since epoch; SS3, decision 33): a player may undo it only within that session. Older entries lack it. */
+  at: z.number().int().nonnegative().optional(),
 });
 
 const modifier = z.number().int().min(-10).max(10);

@@ -450,16 +450,17 @@ function bumpExperiences(sheet: CharacterSheet, ids: readonly string[], delta: n
 /**
  * Raises the sheet one level with the choice: achievements first (marks clear
  * at 5 and 8), then the picks, the level's card and the trade. Appends the
- * advancement and clears `levelUpPending`. Throws `LevelUpRuleError`.
+ * advancement (stamped with `ctx.at` when given) and clears `levelUpPending`.
+ * Throws `LevelUpRuleError`.
  */
-export function applyLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ctx: LevelUpContext & { newId: () => string }): CharacterSheet {
+export function applyLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ctx: LevelUpContext & { newId: () => string; at?: number }): CharacterSheet {
   const problems = validateLevelUp(sheet, choice, ctx);
   if (problems.length > 0) throw new LevelUpRuleError(problems[0]);
   const level = sheet.level + 1;
   const epoch = markEpoch(level);
   const { picks } = planPicks(sheet, choice, level, ctx);
   let next: CharacterSheet = { ...sheet, level, traits: { ...sheet.traits }, traitMarks: { ...sheet.traitMarks } };
-  const advancement: Advancement = { level, picks, cardId: choice.cardId };
+  const advancement: Advancement = { level, picks, cardId: choice.cardId, ...(ctx.at === undefined ? {} : { at: ctx.at }) };
 
   if (ACHIEVEMENT_LEVELS.includes(level)) {
     const id = ctx.newId();
