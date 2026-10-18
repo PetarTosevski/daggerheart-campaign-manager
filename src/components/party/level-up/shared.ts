@@ -28,3 +28,18 @@ export const OPTION_SHORT: Record<AdvancementOption, string> = {
   multiclass: "Multiclass (both picks)",
   comboDie: "Combo Die one step larger",
 };
+
+/** The board's option text in the tier boxes (Party.dc.html baseOpts / highOpts). */
+export const OPTION_TEXT: Record<AdvancementOption, string> = {
+  traits: "Gain a +1 bonus to two unmarked character traits and mark them.",
+  hp: "Permanently gain one Hit Point slot.",
+  stress: "Permanently gain one Stress slot.",
+  experiences: "Permanently gain a +1 bonus to two Experiences.",
+  domainCard: "Choose an additional domain card of your level or lower from a domain you have access to.",
+  evasion: "Permanently gain a +1 bonus to your Evasion.",
+  subclass: "Take an upgraded subclass card. Then cross out the multiclass option for this tier.",
+  proficiency: "Increase your Proficiency by +1.",
+  multiclass:
+    "Multiclass: Choose an additional class for your character, then cross out an unused “Take an upgraded subclass card” and the other multiclass option on this sheet.",
+  comboDie: "Increase your Combo Die by one step.",
+};

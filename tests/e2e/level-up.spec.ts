@@ -115,9 +115,28 @@ test("the GM flags the party, the player levels to 2 with the trait option, and 
   await expect(grid.getByRole("img", { name: "Agility marked this tier" })).toBeVisible();
   await expect(grid.getByRole("img", { name: "Instinct marked this tier" })).toBeVisible();
 
-  // Undo returns to level 1 with no marks.
+  // Story & Advancement shows the taken advancements in the Tier 2 box; the player gets no GM correction.
+  await player.getByRole("tab", { name: "Story & Advancement", exact: true }).click();
+  const levelUp = player.getByRole("region", { name: "Level Up" });
+  await expect(levelUp.getByText("2 / 2 advancements used")).toBeVisible();
+  const tier2 = levelUp.getByRole("region", { name: "Tier 2" });
+  await expect(tier2.getByRole("checkbox", { name: "Tier 2: +1 Stress slot (1), taken at level 2" })).toBeChecked();
+  await expect(tier2.getByRole("checkbox", { name: "Tier 2: +1 Stress slot (2)" })).not.toBeChecked();
+  await expect(tier2.getByRole("checkbox", { name: "Tier 2: +1 to two unmarked traits (1), taken at level 2" })).toBeChecked();
+  await expect(levelUp.getByRole("region", { name: "Tier 3" }).getByText("Reach level 5 to unlock")).toBeVisible();
+  await expect(player.getByRole("button", { name: "Set level" })).toHaveCount(0);
+
+  // The GM sees the same history with the level correction under the tiers.
+  await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  await page.getByRole("tab", { name: "Story & Advancement", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Level Up" }).getByText("2 / 2 advancements used")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Set level" })).toBeVisible();
+
+  // Undo (the − on the level circle) returns to level 1 with no marks.
   await player.getByRole("button", { name: "Undo level 2" }).click();
   await expect(player.getByRole("img", { name: "Level 1" })).toBeVisible();
+  await expect(levelUp.getByText("No advancements yet")).toBeVisible();
+  await player.getByRole("tab", { name: "Character Sheet", exact: true }).click();
   await expect(grid.getByLabel("Agility +2")).toBeVisible();
   await expect(grid.getByRole("img", { name: "Agility marked this tier" })).toHaveCount(0);
   await close();

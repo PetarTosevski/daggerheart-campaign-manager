@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { BrandButton } from "@/components/brand/buttons";
+import { Label, paperField, Small } from "@/components/party/sheet-ui";
 import { tierForLevel } from "@/lib/domain/characters";
 import {
   ACHIEVEMENT_LEVELS,
@@ -34,10 +34,10 @@ const STEPS = ["Achievements", "Advancements", "Domain card", "Summary"] as cons
 
 type Pick = PickChoice & { key: number };
 
-const chip = (on: boolean, disabled: boolean) =>
-  `min-h-11 rounded-[10px] border px-3.5 text-[15px] ${on ? "border-brand bg-brand text-brand-ink" : "border-line-2 bg-transparent text-parchment"} ${disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`;
+/** The board's advPick option button (aria-pressed); styles in level-up.css. */
+const chip = "lu-opt";
 
-const select = "min-h-11 w-full rounded-[10px] border border-line-2 bg-[#1d1a27] px-3 text-[15px] text-parchment";
+const select = paperField.input;
 
 const cardName = (id: string) => DOMAIN_CARDS.find((c) => c.id === id)?.name ?? id;
 
@@ -105,10 +105,10 @@ export function LevelUpStepper({
   const outCard = DOMAIN_CARDS.find((c) => c.id === tradeOut);
 
   return (
-    <div className="flex flex-col gap-5">
-      <ol className="m-0 flex list-none flex-wrap gap-2 p-0" aria-label="Level-up steps">
+    <div className="lu-body">
+      <ol className="lu-steps" aria-label="Level-up steps">
         {STEPS.map((s, i) => (
-          <li key={s} aria-current={i === step ? "step" : undefined} className={`rounded-full px-3 py-1 text-[13px] ${i === step ? "bg-brand text-brand-ink" : "bg-raised text-muted-text"}`}>
+          <li key={s} aria-current={i === step ? "step" : undefined}>
             {i + 1}. {s}
           </li>
         ))}
@@ -118,64 +118,70 @@ export function LevelUpStepper({
         <section aria-label="Achievements" className="flex flex-col gap-3">
           {ACHIEVEMENT_LEVELS.includes(level) ? (
             <>
-              <p className="m-0">
+              <Small as="p">
                 Level {level} achievements: a new Experience at +2 and +1 Proficiency
                 {marksClear ? "; the marks on your traits clear first, so you can raise them again." : "."}
-              </p>
+              </Small>
               <label className="flex flex-col gap-1.5">
-                <span className="text-[14px] text-muted-text">New Experience</span>
+                <Label>New Experience</Label>
                 <input className={select} value={experienceName} maxLength={80} onChange={(e) => setExperienceName(e.target.value)} />
               </label>
             </>
           ) : (
-            <p className="m-0">No achievements at level {level}. Take two advancements next.</p>
+            <Small as="p">No achievements at level {level}. Take two advancements next.</Small>
           )}
         </section>
       ) : null}
 
       {step === 1 ? (
         <section aria-label="Advancements" className="flex flex-col gap-4">
-          <p className="m-0">
+          <Small as="p">
             Choose two options from tier {tier} or lower ({cost} of 2 picks used). Proficiency and multiclass take both.
-          </p>
-          <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Options">
+          </Small>
+          <ul className="lu-opts" aria-label="Options">
             {open.map((o) => {
               const takenNow = picks.filter((p) => p.tier === o.tier && p.option === o.option).length;
               const full = cost + o.cost > 2 || o.used + takenNow >= o.slots;
+              // Pressed = taken at this level. With no room left a pressed option toggles off; otherwise it takes another slot.
+              const untake = full && takenNow > 0;
               return (
-                <li key={`${o.tier}-${o.option}`} className="flex items-center justify-between gap-3 rounded-[10px] border border-line-2 px-3 py-2">
-                  <span>
-                    <span className="text-[12px] tracking-[0.1em] text-muted-text uppercase">Tier {o.tier} · </span>
+                <li key={`${o.tier}-${o.option}`}>
+                  <button
+                    type="button"
+                    className={chip}
+                    aria-pressed={takenNow > 0}
+                    disabled={full && !untake}
+                    aria-label={`Take tier ${o.tier}: ${OPTION_SHORT[o.option]}`}
+                    onClick={() => (untake ? setPicks(picks.filter((x) => x.key !== picks.findLast((p) => p.tier === o.tier && p.option === o.option)?.key)) : take(o.option, o.tier))}
+                  >
+                    <span className="lu-opt-tier">Tier {o.tier}</span>
                     {OPTION_SHORT[o.option]}
-                    <span className="text-[13px] text-muted-text"> ({o.slots - o.used - takenNow} left)</span>
-                  </span>
-                  <BrandButton size="sm" disabled={full} onClick={() => take(o.option, o.tier)} aria-label={`Take tier ${o.tier}: ${OPTION_SHORT[o.option]}`}>
-                    Take
-                  </BrandButton>
+                    <span className="lu-opt-note">({o.slots - o.used - takenNow} left)</span>
+                  </button>
                 </li>
               );
             })}
           </ul>
 
           {picks.length > 0 ? (
-            <ul className="m-0 flex list-none flex-col gap-3 p-0" aria-label="Your picks">
+            <ul className="lu-picks" aria-label="Your picks">
               {picks.map((p) => (
-                <li key={p.key} className="flex flex-col gap-2 rounded-[12px] bg-raised p-3" aria-label={`Pick: ${OPTION_SHORT[p.option]}`}>
+                <li key={p.key} className="lu-pick" aria-label={`Pick: ${OPTION_SHORT[p.option]}`}>
                   <div className="flex items-center justify-between gap-2">
                     <strong>
                       Tier {p.tier}: {OPTION_SHORT[p.option]}
                     </strong>
-                    <BrandButton size="sm" variant="danger" onClick={() => setPicks(picks.filter((x) => x.key !== p.key))} aria-label={`Remove ${OPTION_SHORT[p.option]}`}>
+                    <button type="button" className="sh-modal-cancel" onClick={() => setPicks(picks.filter((x) => x.key !== p.key))} aria-label={`Remove ${OPTION_SHORT[p.option]}`}>
                       Remove
-                    </BrandButton>
+                    </button>
                   </div>
                   {p.option === "traits" ? (
-                    <div className="flex flex-wrap gap-2" role="group" aria-label="Traits to raise">
+                    <div className="lu-chips" role="group" aria-label="Traits to raise">
                       {TRAIT_IDS.map((t) => {
                         const on = (p.targets ?? []).includes(t);
                         const marked = (!marksClear && isMarked({ ...sheet, level }, t)) || traitsTaken(p.key).includes(t);
                         return (
-                          <button key={t} type="button" aria-pressed={on} disabled={marked} className={chip(on, marked)} onClick={() => toggle(p, t)}>
+                          <button key={t} type="button" aria-pressed={on} disabled={marked} className={chip} onClick={() => toggle(p, t)}>
                             {traitLabel(t)} {marked ? "(marked)" : ""}
                           </button>
                         );
@@ -183,11 +189,11 @@ export function LevelUpStepper({
                     </div>
                   ) : null}
                   {p.option === "experiences" ? (
-                    <div className="flex flex-wrap gap-2" role="group" aria-label="Experiences to raise">
+                    <div className="lu-chips" role="group" aria-label="Experiences to raise">
                       {sheet.experiences.map((x) => {
                         const on = (p.targets ?? []).includes(x.id);
                         return (
-                          <button key={x.id} type="button" aria-pressed={on} className={chip(on, false)} onClick={() => toggle(p, x.id)}>
+                          <button key={x.id} type="button" aria-pressed={on} className={chip} onClick={() => toggle(p, x.id)}>
                             {x.name} +{x.value}
                           </button>
                         );
@@ -196,7 +202,7 @@ export function LevelUpStepper({
                   ) : null}
                   {p.option === "domainCard" ? (
                     <label className="flex flex-col gap-1.5">
-                      <span className="text-[14px] text-muted-text">Extra card (up to level {Math.min(level, DOMAIN_CARD_CAP[p.tier as Tier])})</span>
+                      <Label>Extra card (up to level {Math.min(level, DOMAIN_CARD_CAP[p.tier as Tier])})</Label>
                       <select className={select} value={p.targets?.[0] ?? ""} onChange={(e) => update(p.key, e.target.value ? [e.target.value] : [])}>
                         <option value="">Choose a card</option>
                         {cardsWithin(reach, level, DOMAIN_CARD_CAP[p.tier as Tier], sources)
@@ -212,7 +218,7 @@ export function LevelUpStepper({
                   {p.option === "multiclass" ? (
                     <div className="grid gap-2 sm:grid-cols-3">
                       <label className="flex flex-col gap-1.5">
-                        <span className="text-[14px] text-muted-text">Class</span>
+                        <Label>Class</Label>
                         <select className={select} value={multiclass.classId} onChange={(e) => setMulticlass({ classId: e.target.value, domainId: "", subclassId: "" })}>
                           <option value="">Choose</option>
                           {CLASSES.filter((c) => c.id !== sheet.classId && sources.includes(c.source)).map((c) => (
@@ -223,7 +229,7 @@ export function LevelUpStepper({
                         </select>
                       </label>
                       <label className="flex flex-col gap-1.5">
-                        <span className="text-[14px] text-muted-text">Domain</span>
+                        <Label>Domain</Label>
                         <select className={select} value={multiclass.domainId} onChange={(e) => setMulticlass({ ...multiclass, domainId: e.target.value })}>
                           <option value="">Choose</option>
                           {(mcClass?.domains ?? [])
@@ -236,7 +242,7 @@ export function LevelUpStepper({
                         </select>
                       </label>
                       <label className="flex flex-col gap-1.5">
-                        <span className="text-[14px] text-muted-text">Foundation card</span>
+                        <Label>Foundation card</Label>
                         <select className={select} value={multiclass.subclassId} onChange={(e) => setMulticlass({ ...multiclass, subclassId: e.target.value })}>
                           <option value="">Choose</option>
                           {SUBCLASSES.filter((s) => s.classId === multiclass.classId && sources.includes(s.source)).map((s) => (
@@ -258,7 +264,7 @@ export function LevelUpStepper({
       {step === 2 ? (
         <section aria-label="Domain card" className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-[14px] text-muted-text">Level {level} domain card</span>
+            <Label>Level {level} domain card</Label>
             <select className={select} value={cardId} onChange={(e) => setCardId(e.target.value)}>
               <option value="">Choose a card</option>
               {levelCards.map((c) => (
@@ -268,10 +274,10 @@ export function LevelUpStepper({
               ))}
             </select>
           </label>
-          <fieldset className="m-0 flex flex-col gap-2 rounded-[12px] border border-line-2 p-3">
-            <legend className="px-1 text-[14px] text-muted-text">Optional: trade a card for one of equal or lower level</legend>
+          <fieldset className="lu-panel">
+            <legend className="sh-lbl px-1">Optional: trade a card for one of equal or lower level</legend>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[14px] text-muted-text">Trade out</span>
+              <Label>Trade out</Label>
               <select
                 className={select}
                 value={tradeOut}
@@ -290,7 +296,7 @@ export function LevelUpStepper({
             </label>
             {outCard ? (
               <label className="flex flex-col gap-1.5">
-                <span className="text-[14px] text-muted-text">Take instead</span>
+                <Label>Take instead</Label>
                 <select className={select} value={tradeIn} onChange={(e) => setTradeIn(e.target.value)}>
                   <option value="">Choose a card</option>
                   {cardsWithin(reach, level, outCard.level, sources)
@@ -326,7 +332,7 @@ export function LevelUpStepper({
             ) : null}
           </ul>
           {problems.length > 0 ? (
-            <ul className="m-0 flex flex-col gap-1 rounded-[10px] bg-danger-bg p-3 pl-7 text-danger" aria-label="Still to do">
+            <ul className="lu-problems" aria-label="Still to do">
               {problems.map((p) => (
                 <li key={p}>{p}</li>
               ))}
@@ -335,22 +341,22 @@ export function LevelUpStepper({
         </section>
       ) : null}
 
-      <p role="alert" className="m-0 text-danger empty:hidden">
+      <p role="alert" className="lu-error empty:hidden">
         {error}
       </p>
 
-      <div className="flex flex-wrap justify-between gap-3">
-        <BrandButton disabled={step === 0} onClick={() => setStep(step - 1)}>
+      <div className="sh-modal-actions">
+        <button type="button" className="sh-modal-cancel" disabled={step === 0} onClick={() => setStep(step - 1)}>
           Back
-        </BrandButton>
+        </button>
         {step < STEPS.length - 1 ? (
-          <BrandButton variant="solid" onClick={() => setStep(step + 1)}>
+          <button type="button" className="sh-modal-ok" onClick={() => setStep(step + 1)}>
             Next
-          </BrandButton>
+          </button>
         ) : (
-          <BrandButton variant="primary" disabled={problems.length > 0 || pending} onClick={() => void confirm()}>
+          <button type="button" className="sh-modal-ok" disabled={problems.length > 0 || pending} onClick={() => void confirm()}>
             Confirm level {level}
-          </BrandButton>
+          </button>
         )}
       </div>
     </div>

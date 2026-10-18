@@ -1,60 +1,109 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
-import { BrandButton } from "@/components/brand/buttons";
-import { availableOptions, offersOption, OPTION_ORDER, OPTION_RULES, picksFor, TIERS } from "@/lib/domain/level-up";
-import { MAX_LEVEL } from "@/lib/domain/characters";
+import { Label, PaperInput, Pill, SheetBox, Small } from "@/components/party/sheet-ui";
+import { availableOptions, offersOption, OPTION_ORDER, OPTION_RULES, picksFor, TIERS, type Tier } from "@/lib/domain/level-up";
+import { MAX_LEVEL, tierForLevel } from "@/lib/domain/characters";
 import { useIntent } from "@/lib/use-intent";
+import { cn } from "@/lib/utils";
 import type { CharacterSheet } from "@/lib/validation/characters";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
-import { OPTION_SHORT } from "./shared";
+import { OPTION_SHORT, OPTION_TEXT } from "./shared";
 
-const TIER_LEVELS = { 2: "Levels 2–4", 3: "Levels 5–7", 4: "Levels 8–10" } as const;
+const UNLOCK_LEVEL = { 2: 2, 3: 5, 4: 8 } as const;
 
-/** The tier grid as read-only history (Party board, level-up sheet): marked slots with the level that took them. */
-export function TierGrid({ sheet }: { sheet: CharacterSheet }) {
-  const options = availableOptions(sheet);
+const TIER_TEXT: Record<Tier, { title: string; intro: string; choose: string }> = {
+  2: {
+    title: "Levels 2–4 (Tier 2)",
+    intro: "At level 2, gain an additional Experience at +2 and gain a +1 bonus to your Proficiency.",
+    choose: "Choose two options from the list below and mark them.",
+  },
+  3: {
+    title: "Levels 5–7 (Tier 3)",
+    intro: "At level 5, gain an additional Experience at +2 and clear all marks on character traits. Then gain a +1 bonus to your Proficiency.",
+    choose: "Choose two options from the list below or any from the previous tier and mark them.",
+  },
+  4: {
+    title: "Levels 8–10 (Tier 4)",
+    intro: "At level 8, gain an additional Experience at +2 and clear all marks on character traits. Then gain a +1 bonus to your Proficiency.",
+    choose: "Choose two options from the list below or any from the previous tier and mark them.",
+  },
+};
+
+const OUTRO =
+  "Update your level and adjust your damage thresholds accordingly. Take an additional domain card of your level or lower from a domain you have access to.";
+
+/**
+ * The board's Level Up region (Story & Advancement): budget pill, then the three tier boxes with read-only adv-box
+ * checkboxes for the advancements taken (and the level that took them), joined boxes for two-pick options, crossed-out
+ * options and locked tiers. Levelling itself happens from the header's level circle.
+ */
+export function TierBoxes({ sheet }: { sheet: CharacterSheet }) {
+  const headId = useId();
+  // Crossed-out reasons come from the option list for the next level; at level 10 ask as if one level lower.
+  const options = availableOptions({ ...sheet, level: Math.min(sheet.level, MAX_LEVEL - 1) });
+  const total = 2 * (sheet.level - 1);
+  const used = sheet.advancements.reduce((sum, a) => sum + a.picks.reduce((s, p) => s + OPTION_RULES[p.option].cost, 0), 0);
+  const current = tierForLevel(sheet.level);
+
   return (
-    <div className="grid gap-4 sm:grid-cols-3" aria-label="Advancement history">
-      {TIERS.map((tier) => (
-        <section key={tier} aria-label={`Tier ${tier}`} className="flex flex-col gap-2 rounded-[12px] border border-line-2 p-3">
-          <h3 className="m-0 font-display text-[15px] font-bold">
-            Tier {tier} <span className="font-sans text-[13px] font-normal text-muted-text">· {TIER_LEVELS[tier]}</span>
-          </h3>
-          <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-            {OPTION_ORDER.filter((o) => tier >= OPTION_RULES[o].fromTier && offersOption(sheet, o)).map((option) => {
-              const taken = picksFor(sheet, tier, option);
-              const blocked = options.find((o) => o.tier === tier && o.option === option)?.blocked;
-              const crossed = taken.length === 0 && blocked && !blocked.startsWith("Reach");
-              return (
-                <li key={option} className="flex items-start gap-2 text-[14px]" title={crossed ? blocked : undefined}>
-                  <span className="flex flex-none gap-1 pt-0.5" aria-hidden="true">
-                    {Array.from({ length: OPTION_RULES[option].slots }, (_, k) => (
-                      <span key={k} className={`inline-block size-3.5 rounded-[3px] border ${k < taken.length ? "border-brand bg-brand" : "border-line-2"}`} />
-                    ))}
-                  </span>
-                  <span className={crossed ? "text-muted-text line-through" : ""}>
-                    {OPTION_SHORT[option]}
-                    <span className="sr-only">
-                      : {taken.length} of {OPTION_RULES[option].slots} marked
-                    </span>
-                    {taken.length > 0 ? <span className="text-muted-text"> (level {taken.map((t) => t.level).join(", ")})</span> : null}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
-    </div>
+    <section className="adv" aria-labelledby={headId}>
+      <div className="adv-head">
+        <h3 id={headId} className="sh-h">
+          Level Up
+        </h3>
+        <span className={cn("adv-budget", total === 0 ? "locked" : used >= total && "full")}>{total ? `${used} / ${total} advancements used` : "No advancements yet"}</span>
+        <Small className="italic">{total ? "2 per level gained. Spend them in your current tier or any tier below it." : "Reach level 2 to choose your first advancements."}</Small>
+      </div>
+      <div className="adv-tiers">
+        {TIERS.map((tier) => {
+          const locked = tier > current;
+          const text = TIER_TEXT[tier];
+          return (
+            <SheetBox key={tier} title={text.title} label={`Tier ${tier}`} className={cn(locked && "adv-locked")}>
+              {locked ? <span className="adv-budget locked self-center">Reach level {UNLOCK_LEVEL[tier]} to unlock</span> : null}
+              <div className="adv-intro">{text.intro}</div>
+              <Small className="text-center">{text.choose}</Small>
+              <ul className="adv-opts" aria-label={`Tier ${tier} options`}>
+                {OPTION_ORDER.filter((o) => tier >= OPTION_RULES[o].fromTier && offersOption(sheet, o)).map((option) => {
+                  const rule = OPTION_RULES[option];
+                  const taken = picksFor(sheet, tier, option);
+                  const blocked = options.find((o) => o.tier === tier && o.option === option)?.blocked;
+                  const crossed = taken.length === 0 && Boolean(blocked) && !blocked?.startsWith("Reach");
+                  const joined = rule.cost === 2;
+                  const boxes = joined ? 1 : rule.slots;
+                  return (
+                    <li key={option} className="adv-row" title={crossed ? (blocked ?? undefined) : undefined}>
+                      <span className="adv-boxes">
+                        {Array.from({ length: boxes }, (_, k) => {
+                          const pick = taken[k];
+                          const name = `Tier ${tier}: ${OPTION_SHORT[option]} ${joined ? "(uses both picks for a level)" : `(${k + 1})`}${pick ? `, taken at level ${pick.level}` : ""}`;
+                          return <input key={k} type="checkbox" className={cn("adv-box adv-chk", joined && "joined")} checked={pick !== undefined} readOnly disabled aria-label={name} title={name} />;
+                        })}
+                      </span>
+                      <Small className={cn(crossed && "adv-crossed")}>
+                        {OPTION_TEXT[option]}
+                        {crossed ? <span className="sr-only"> Crossed out: {blocked}</span> : null}
+                        {taken.length > 0 ? <span className="adv-when"> (level {taken.map((t) => t.level).join(", ")})</span> : null}
+                      </Small>
+                    </li>
+                  );
+                })}
+              </ul>
+              <Small className="text-center font-semibold">{OUTRO}</Small>
+            </SheetBox>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
-/** GM correction: sets the level directly, with no automation (decision 4). */
+/** GM correction under the tier boxes: sets the level directly, with no automation (decision 4). */
 export function CorrectLevel({ characterId, level }: { characterId: Id<"characters">; level: number }) {
   const [value, setValue] = useState(String(level));
   const { fire, error, pending } = useIntent(api.levelUp.correctLevel);
@@ -62,20 +111,20 @@ export function CorrectLevel({ characterId, level }: { characterId: Id<"characte
   const valid = Number.isInteger(n) && n >= 1 && n <= MAX_LEVEL && n !== level;
   return (
     <form
-      className="flex flex-wrap items-end gap-3 border-t border-line-2 pt-4"
+      className="adv-correct"
       onSubmit={(e) => {
         e.preventDefault();
         if (valid) void fire({ characterId, level: n });
       }}
     >
-      <label className="flex flex-col gap-1.5">
-        <span className="text-[14px] text-muted-text">GM correction: set the level (no automation)</span>
-        <input type="number" min={1} max={MAX_LEVEL} className="min-h-11 w-28 rounded-[10px] border border-line-2 bg-[#1d1a27] px-3 text-parchment" value={value} onChange={(e) => setValue(e.target.value)} />
+      <label className="adv-correct-field">
+        <Label>GM correction: set the level (no automation)</Label>
+        <PaperInput type="number" min={1} max={MAX_LEVEL} style={{ width: 112 }} value={value} onChange={(e) => setValue(e.target.value)} />
       </label>
-      <BrandButton type="submit" disabled={!valid || pending}>
+      <Pill type="submit" variant="solid" disabled={!valid || pending}>
         Set level
-      </BrandButton>
-      <p role="alert" className="m-0 w-full text-danger empty:hidden">
+      </Pill>
+      <p role="alert" className="adv-error empty:hidden">
         {error}
       </p>
     </form>
