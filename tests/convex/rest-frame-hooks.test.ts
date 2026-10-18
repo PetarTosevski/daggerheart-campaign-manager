@@ -208,16 +208,15 @@ describe("frame rest hooks", () => {
     const crawlDay = (ctx: Awaited<ReturnType<typeof setup>>) =>
       ctx.t.run(async (c) => (await readMap(c, (await c.db.get("campaigns", ctx.campaignId))!)).hexCrawl?.day);
 
-    it("a short rest passes a day; a short rest the GM forces past three passes none", async () => {
+    it("a short rest passes a day; a fourth short rest is refused and passes none (HF 176)", async () => {
       const h = await setup("journey-to-horizon");
       await h.rest("short");
       expect(await crawlDay(h)).toBe(2);
       await h.rest("short");
       await h.rest("short");
       expect(await crawlDay(h)).toBe(4);
-      await h.finish((await h.start("short", true)).restId);
+      expect(await codeOf(h.start("short", true))).toBe("REST_RULE");
       expect(await crawlDay(h)).toBe(4);
-      expect((await h.campaignRow())?.summary).not.toMatch(/A day passes/);
     });
 
     it("a long rest only in a sanctuary: refused elsewhere, an interrupted one gives short-rest benefits", async () => {

@@ -113,3 +113,25 @@ test("a short party rest: the player clears Stress twice, the GM finishes, GM Fe
   await expect(picker).toHaveCount(0);
   await close();
 });
+
+test("after three short rests the GM's Start short rest is disabled with the rule (CB 105, HF 176)", async ({ page }) => {
+  const { campaignId } = await gmCreatesCampaign(page);
+  const gmApi = await convexAs(page);
+  for (let i = 0; i < 3; i++) {
+    const { restId } = await gmApi.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: crypto.randomUUID() });
+    await gmApi.mutation(api.rests.finish, { campaignId, restId, idempotencyKey: crypto.randomUUID() });
+  }
+
+  const rest = page.getByRole("region", { name: "Rest", exact: true });
+  await expect(rest.getByTestId("short-rest-count")).toHaveText("3 of 3 short rests");
+  const short = rest.getByRole("button", { name: "Start short rest" });
+  await expect(short).toBeDisabled();
+  await expect(short).toHaveAccessibleDescription("Three short rests taken: the next rest must be a long rest (CB 105).");
+  await expect(rest.getByRole("checkbox")).toHaveCount(0);
+
+  // A long rest resets the count.
+  await rest.getByRole("button", { name: "Start long rest" }).click();
+  await rest.getByRole("button", { name: "Finish rest" }).click();
+  await expect(rest.getByTestId("short-rest-count")).toHaveText("0 of 3 short rests");
+  await expect(short).toBeEnabled();
+});

@@ -2,7 +2,7 @@
  * Party rests and downtime moves (D5 T3, CB 105-106; decision 10: no solo rests).
  *
  * The GM starts a short or long rest (`start`; a fourth short rest in a row
- * needs `override`), each player picks two moves for their own character
+ * is refused), each player picks two moves for their own character
  * (`choose`, one `restChoices` row per character), and the GM finishes it
  * (`finish`): server dice, the moves, expiry and class hooks, a long rest
  * wakes the Unconscious, GM Fear, frame hooks (convex/lib/restHooks.ts), and
@@ -20,8 +20,9 @@ import {
   applyMoves,
   interruptedMoves,
   MOVE_LABELS,
-  needsOverride,
+  mustLongRest,
   restedSheet,
+  SHORT_REST_LIMIT_MESSAGE,
   restFear,
   shortRestsSinceLong,
   validateChoice,
@@ -225,17 +226,22 @@ export const projects = userQuery({
 
 // ---------------------------------------------------------------- the GM's rest
 
-/** Starts a party rest. A fourth short rest since the last long rest needs `override` (CB 105). GM only. */
+/**
+ * Starts a party rest. A fourth short rest since the last long rest is refused
+ * for everyone (CB 105, HF 176; decision 17 settled by RF2). GM only.
+ */
 export const start = keyedGmMutation({
-  args: { kind: restKindValidator, override: v.optional(v.boolean()) },
+  args: {
+    kind: restKindValidator,
+    /** @deprecated Ignored: the GM override is gone (RF2). Kept so older clients still validate; narrow it later. */
+    override: v.optional(v.boolean()),
+  },
   returns: v.object({ restId: v.id("rests") }),
-  handler: async (ctx, { kind, override }) =>
-    ctx.once("rest_start", { kind, override: override ?? false }, async () => {
+  handler: async (ctx, { kind }) =>
+    ctx.once("rest_start", { kind }, async () => {
       const campaignId = ctx.campaign._id;
       if ((await openRest(ctx, campaignId)) !== null) throw restRule("A rest is already under way.");
-      const shortRests = shortRestsSinceLong(await recentRests(ctx, campaignId));
-      const overridden = needsOverride(kind, shortRests);
-      if (overridden && override !== true) throw restRule("Three short rests in a row: the next rest must be a long rest.");
+      if (mustLongRest(kind, shortRestsSinceLong(await recentRests(ctx, campaignId)))) throw restRule(SHORT_REST_LIMIT_MESSAGE);
       await restingParty(ctx, campaignId);
       // Journey to Horizon: a long rest only in a sanctuary (HF 176), refused before the rest opens.
       if (kind === "long") await assertSanctuaryLongRest(ctx, ctx.campaign);
@@ -245,7 +251,6 @@ export const start = keyedGmMutation({
         status: "open",
         startedBy: ctx.user._id,
         startedAt: Date.now(),
-        ...(overridden ? { gmOverride: true } : {}),
       });
       return { restId };
     }),

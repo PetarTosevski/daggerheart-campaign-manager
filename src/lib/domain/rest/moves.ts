@@ -78,7 +78,16 @@ export function shortRestsSinceLong(newestFirst: readonly { kind: RestKind; stat
   return count;
 }
 
-/** True when a new rest of this kind needs the GM's override: a fourth short rest in a row (CB 105). */
-export function needsOverride(kind: RestKind, shortRests: number): boolean {
+/** The refusal of a fourth short rest in a row, quoting the rule. */
+export const SHORT_REST_LIMIT_MESSAGE = "A party can take up to three short rests before their next rest must be a long rest (CB 105).";
+
+/**
+ * True when a new rest of this kind is refused: a fourth short rest in a row,
+ * in every frame and with no GM override (CB 105; HF 176 "When the party takes
+ * three short rests in a row, their next rest must be a long rest"). An
+ * interrupted long rest still gives short-rest benefits "(even if they've
+ * already had three short rests)" (CB 105); that is not a new rest.
+ */
+export function mustLongRest(kind: RestKind, shortRests: number): boolean {
   return kind === "short" && shortRests >= MAX_SHORT_RESTS;
 }
