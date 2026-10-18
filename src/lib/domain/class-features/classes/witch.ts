@@ -1,7 +1,8 @@
 // Witch (HF 16). Hope feature: Witch's Charm, when you or an ally fails an action roll, change it into
-// a success with Fear. Settled rule: if the roll was with Hope, the Hope it gave is removed and the GM
-// gains 1 Fear; a roll already with Fear changes nothing else. The dispatcher loads the latest roll of
-// the chosen ally (or the Witch's own without one).
+// a success with Fear. The sheet can't tell a failure (the Difficulty may be hidden, an ally may not be a PC),
+// so the table decides and the button always works (user 2026-10-18). Its only automation: if the latest
+// roll of the chosen ally (or the Witch's own) was an action roll with Hope, the Hope it gave is removed and
+// the GM gains 1 Fear, and the roll is logged as a success with Fear; otherwise only the 3 Hope is spent.
 //
 // Class features (HF 16):
 // - Hex: mark a Stress to temporarily Hex a target within Far range (`classState.hexes`, named by `params.choice` or
@@ -49,16 +50,14 @@ export const witch: ClassFeatures = {
     use: ({ sheet, others, roll }) => {
       const ally = others[0];
       const who = ally?.sheet ?? sheet;
-      if (roll?.kind !== "action" || (roll.outcome !== "failHope" && roll.outcome !== "failFear")) {
-        refuse(`${ally ? `${who.name}’s` : "Your"} latest roll is not a failed action roll.`);
-      }
-      const withHope = roll.outcome === "failHope";
-      const changed = withHope ? applyResourceDelta(who, "hope", -1) : who;
-      const summary = `used Witch’s Charm: ${ally ? `${who.name}’s` : "their"} roll succeeds with Fear`;
+      const whose = ally ? `${who.name}’s` : "their";
+      const withHope = roll?.kind === "action" && (roll.outcome === "failHope" || roll.outcome === "successHope");
+      if (!withHope) return { sheet, summary: `used Witch’s Charm: ${whose} roll succeeds with Fear` };
+      const changed = applyResourceDelta(who, "hope", -1);
       const next = { ...roll, outcome: "successFear" as const };
-      const fear = withHope ? { fearDelta: 1 } : {};
-      if (ally === undefined) return { sheet: changed, roll: next, ...fear, summary };
-      return { sheet, others: withHope ? [{ characterId: ally.characterId, sheet: changed }] : [], roll: next, ...fear, summary };
+      const summary = `used Witch’s Charm: ${whose} roll succeeds with Fear (the Hope becomes the GM’s Fear)`;
+      if (ally === undefined) return { sheet: changed, roll: next, fearDelta: 1, summary };
+      return { sheet, others: [{ characterId: ally.characterId, sheet: changed }], roll: next, fearDelta: 1, summary };
     },
   },
   classActions: [
