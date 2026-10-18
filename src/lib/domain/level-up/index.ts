@@ -19,6 +19,9 @@
 //   other multiclass option (CB 110-111).
 // - Brawler only (or a Brawler multiclass): once per tier, raise the Combo Die
 //   one step, d4 → d6 → d8 → d10, in `classState.comboDie` (HF 10).
+// - Multiclassing into a subclass with a Spellcast trait: the player picks it or
+//   the original subclass's; forced to the new one without an original (CB 111,
+//   characters/spellcast.ts). Stored on `multiclass.spellcastTrait`.
 // - A multiclass foundation that grants a slot (At Ease, Battlemage) raises
 //   that maximum; undoing the multiclass takes it back (characters/slots.ts).
 
@@ -29,6 +32,7 @@ import { TRAIT_IDS, type DomainCard, type Source, type TraitId } from "../../srd
 import type { Advancement, AdvancementOption, AdvancementPick, CharacterSheet, SubclassRank } from "../../validation/characters";
 import { MAX_LEVEL, tierForLevel } from "../characters/index";
 import { FEATURE_SLOTS, gainSlotBonus, loseSlotBonus, subclassSlotKey } from "../characters/slots";
+import { multiclassSpellcastProblem, resolvedMulticlassSpellcast } from "../characters/spellcast";
 
 /** An expected level-up rule violation; Convex turns it into LEVEL_UP_RULE. */
 export class LevelUpRuleError extends Error {
@@ -228,7 +232,8 @@ function cardProblem(sheet: CardAccess & Pick<CharacterSheet, "domainCards">, id
 
 export type PickChoice = { option: AdvancementOption; tier: number; targets?: string[] };
 
-export type MulticlassChoice = { classId: string; domainId: string; subclassId: string };
+/** `spellcastTrait`: which Spellcast trait to roll with when both subclasses have one (CB 111). */
+export type MulticlassChoice = { classId: string; domainId: string; subclassId: string; spellcastTrait?: TraitId };
 
 /** What the player chooses for one level. */
 export type LevelUpChoice = {
@@ -249,7 +254,7 @@ export type LevelUpContext = { allowExpansion: boolean };
 export const sourcesFor = (ctx: LevelUpContext): Source[] => (ctx.allowExpansion ? ["core", "hope-and-fear"] : ["core"]);
 
 /** Multiclass options for a class: other classes, their domains the character lacks, and their subclasses. */
-export function multiclassProblem(sheet: Pick<CharacterSheet, "classId">, choice: MulticlassChoice | undefined, ctx: LevelUpContext): string | null {
+export function multiclassProblem(sheet: Pick<CharacterSheet, "classId" | "subclassId">, choice: MulticlassChoice | undefined, ctx: LevelUpContext): string | null {
   if (!choice) return "Choose the class to multiclass into.";
   const sources = sourcesFor(ctx);
   const own = CLASSES.find((c) => c.id === sheet.classId);
@@ -260,7 +265,7 @@ export function multiclassProblem(sheet: Pick<CharacterSheet, "classId">, choice
   if (own?.domains.some((d) => d === choice.domainId)) return "Choose a domain you don't already have.";
   const sub = SUBCLASSES.find((s) => s.id === choice.subclassId);
   if (!sub || sub.classId !== cls.id || !sources.includes(sub.source)) return "Choose a foundation card from that class's subclasses.";
-  return null;
+  return multiclassSpellcastProblem(sheet.subclassId, sub.id, choice.spellcastTrait);
 }
 
 type Planned = { picks: AdvancementPick[]; problems: string[] };
@@ -494,7 +499,11 @@ export function applyLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ctx: 
         next.subclassRank = RANKS[RANKS.indexOf(next.subclassRank) + 1] ?? next.subclassRank;
         break;
       case "multiclass":
-        next.multiclass = { ...choice.multiclass! };
+        {
+          const { classId, domainId, subclassId, spellcastTrait } = choice.multiclass!;
+          const trait = resolvedMulticlassSpellcast(next.subclassId, subclassId, spellcastTrait);
+          next.multiclass = { classId, domainId, subclassId, ...(trait ? { spellcastTrait: trait } : {}) };
+        }
         next = gainSlotBonus(next, subclassSlotKey(next.multiclass.subclassId));
         break;
       case "comboDie":

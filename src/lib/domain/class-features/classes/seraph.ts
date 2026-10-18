@@ -6,15 +6,15 @@
 // `params.dieIndexes` picks Prayer Dice by their order on the sheet (default: the first one).
 import { applyResourceDelta } from "../../characters/index";
 import { actionOutcome } from "../../duality";
-import { getSubclass } from "../../../srd/index";
+import { spellcastTraitOf } from "../../characters/spellcast";
 import type { CharacterSheet, HeldDie } from "../../../validation/characters";
 import type { ClassFeatures, FeatureInput, FeatureMeta, FeatureParams, Rng } from "../types";
 import { dualityDie, HOPE_COST, refuse } from "./shared";
 
-/** The number of Prayer Dice: the Spellcast trait of the Seraph's subclass (the multiclass's for a multiclass Seraph), 0 when ≤ 0. */
+/** The number of Prayer Dice for a Seraph (or a Seraph multiclass): the Spellcast trait (`spellcastTraitOf`, CB 111), 0 when ≤ 0. */
 export function prayerDiceCount(sheet: CharacterSheet): number {
-  const subclassId = sheet.classId === "seraph" ? sheet.subclassId : sheet.multiclass?.classId === "seraph" ? sheet.multiclass.subclassId : undefined;
-  const trait = subclassId ? getSubclass(subclassId)?.spellcastTrait : undefined;
+  const seraph = sheet.classId === "seraph" || sheet.multiclass?.classId === "seraph";
+  const trait = seraph ? spellcastTraitOf(sheet) : null;
   return trait ? Math.max(0, sheet.traits[trait]) : 0;
 }
 

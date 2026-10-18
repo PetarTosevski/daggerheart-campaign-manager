@@ -257,6 +257,43 @@ describe("TierBoxes in the guided level-up", () => {
     expect((box("Tier 3: Upgraded subclass card for level 5") as HTMLInputElement).disabled).toBe(true);
   });
 
+  it("asks for the Spellcast trait only when both foundation cards have a different one (SS2, CB 111)", () => {
+    const { draft } = setup(character(LEVEL_4));
+    fireEvent.click(box("Tier 3: Multiclass (both picks) for level 5"));
+    const panel = screen.getByRole("group", { name: "Multiclass for level 5" });
+    fireEvent.change(within(panel).getByRole("combobox", { name: "Class" }), { target: { value: "wizard" } });
+    fireEvent.change(within(panel).getByRole("combobox", { name: "Domain" }), { target: { value: "splendor" } });
+    expect(screen.queryByRole("group", { name: "Spellcast trait for Spellcast Rolls" })).toBeNull();
+    fireEvent.change(within(panel).getByRole("combobox", { name: "Foundation card" }), { target: { value: "school-of-knowledge" } });
+
+    const choice = screen.getByRole("group", { name: "Spellcast trait for Spellcast Rolls" });
+    const options = within(choice).getAllByRole("button");
+    expect(options.map((b) => b.textContent)).toEqual(["Presence (Troubadour)", "Knowledge (School of Knowledge)"]);
+    expect(draft().problems).toContain("Choose the Spellcast trait for Spellcast Rolls.");
+    fireEvent.click(options[1]!);
+    expect(draft().draft.multiclass).toEqual({ classId: "wizard", domainId: "splendor", subclassId: "school-of-knowledge", spellcastTrait: "knowledge" });
+    expect(options[1]!.getAttribute("aria-pressed")).toBe("true");
+    expect(draft().problems.some((p) => /Spellcast/.test(p))).toBe(false);
+
+    // Another foundation card drops the choice; Warrior subclasses have no Spellcast trait, so nothing is asked.
+    fireEvent.change(within(panel).getByRole("combobox", { name: "Class" }), { target: { value: "warrior" } });
+    fireEvent.change(within(panel).getByRole("combobox", { name: "Domain" }), { target: { value: "blade" } });
+    fireEvent.change(within(panel).getByRole("combobox", { name: "Foundation card" }), { target: { value: "call-of-the-brave" } });
+    expect(draft().draft.multiclass?.spellcastTrait).toBeUndefined();
+    expect(screen.queryByRole("group", { name: "Spellcast trait for Spellcast Rolls" })).toBeNull();
+  });
+
+  it("notes the forced Spellcast trait when the original subclass has none (SS2)", () => {
+    setup(character({ ...LEVEL_4, classId: "guardian", subclassId: "stalwart" } as Partial<CharacterView["sheet"]>));
+    fireEvent.click(box("Tier 3: Multiclass (both picks) for level 5"));
+    const panel = screen.getByRole("group", { name: "Multiclass for level 5" });
+    fireEvent.change(within(panel).getByRole("combobox", { name: "Class" }), { target: { value: "wizard" } });
+    fireEvent.change(within(panel).getByRole("combobox", { name: "Domain" }), { target: { value: "codex" } });
+    fireEvent.change(within(panel).getByRole("combobox", { name: "Foundation card" }), { target: { value: "school-of-knowledge" } });
+    expect(screen.queryByRole("group", { name: "Spellcast trait for Spellcast Rolls" })).toBeNull();
+    expect(within(panel).getByText(/You had no Spellcast trait, so your Spellcast Rolls use School of Knowledge's: Knowledge\./)).toBeTruthy();
+  });
+
   it("keeps crossed-out options disabled with their reason", () => {
     setup(character({ ...LEVEL_4, multiclass: { classId: "warrior", domainId: "blade", subclassId: "call-of-the-brave" } } as Partial<CharacterView["sheet"]>));
     const mc = box("Tier 3: Multiclass (both picks) for level 5") as HTMLInputElement;

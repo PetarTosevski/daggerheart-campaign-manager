@@ -145,7 +145,8 @@ const classStateValidator = v.object({
 const d5SheetFields = {
   hopeSlotBonus: v.optional(v.number()),
   subclassRank: v.optional(literals(SUBCLASS_RANKS)),
-  multiclass: v.optional(v.object({ classId: v.string(), domainId: v.string(), subclassId: v.string() })),
+  /** `spellcastTrait`: the Spellcast trait chosen when multiclassing (CB 111, SS2). */
+  multiclass: v.optional(v.object({ classId: v.string(), domainId: v.string(), subclassId: v.string(), spellcastTrait: v.optional(traitIdValidator) })),
   advancements: v.optional(v.array(advancementValidator)),
   levelUpPending: v.optional(v.boolean()),
   conditions: v.optional(v.array(conditionValidator)),
@@ -155,6 +156,8 @@ const d5SheetFields = {
   classState: v.optional(classStateValidator),
   wither: v.optional(v.number()),
   journeyEnds: v.optional(v.boolean()),
+  /** Feature slot bonuses already applied (SS1). */
+  slotBonuses: v.optional(v.array(v.string())),
 };
 
 /** The current sheet (`characterSheetSchema`, version 2) as queries return it. Keep in step with the zod schema. */

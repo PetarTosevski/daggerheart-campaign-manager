@@ -3,12 +3,13 @@
 import { useLevelUpDraft } from "@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft";
 import { HeroCard } from "@/components/party/hero-card";
 import { Label, paperField, Small } from "@/components/party/sheet-ui";
+import { multiclassSpellcastOption } from "@/lib/domain/characters/spellcast";
 import { isMarked, MARK_CLEAR_LEVELS, type MulticlassChoice } from "@/lib/domain/level-up";
 import { getSubclass, PORTRAITS } from "@/lib/srd";
 import { CLASSES } from "@/lib/srd/classes";
 import { DOMAIN_CARDS, DOMAINS } from "@/lib/srd/domain-cards";
 import { SUBCLASSES } from "@/lib/srd/subclasses";
-import { TRAIT_IDS } from "@/lib/srd/types";
+import { TRAIT_IDS, type TraitId } from "@/lib/srd/types";
 import type { AdvancementOption, CharacterSheet } from "@/lib/validation/characters";
 
 import { sourcesFor, traitLabel } from "./shared";
@@ -156,7 +157,12 @@ function MulticlassPicker({ sheet, hopeAndFear }: { sheet: CharacterSheet; hopeA
       </label>
       <label className="adv-field">
         <Label>Foundation card</Label>
-        <select className={paperField.input} value={mc.subclassId} disabled={!cls} onChange={(e) => setMulticlass({ ...mc, subclassId: e.target.value })}>
+        <select
+          className={paperField.input}
+          value={mc.subclassId}
+          disabled={!cls}
+          onChange={(e) => setMulticlass({ classId: mc.classId, domainId: mc.domainId, subclassId: e.target.value })}
+        >
           <option value="">Choose</option>
           {SUBCLASSES.filter((s) => s.classId === mc.classId && sources.includes(s.source)).map((s) => (
             <option key={s.id} value={s.id}>
@@ -165,7 +171,41 @@ function MulticlassPicker({ sheet, hopeAndFear }: { sheet: CharacterSheet; hopeA
           ))}
         </select>
       </label>
+      {mc.subclassId ? <SpellcastChoice sheet={sheet} mc={mc} onPick={(t) => setMulticlass({ ...mc, spellcastTrait: t })} /> : null}
     </fieldset>
+  );
+}
+
+/**
+ * CB 111: with a Spellcast trait on both foundation cards, the player picks which one Spellcast Rolls use; without
+ * one before, the new subclass's is used (a note). Nothing shows when nothing changes.
+ */
+function SpellcastChoice({ sheet, mc, onPick }: { sheet: CharacterSheet; mc: MulticlassChoice; onPick: (trait: TraitId) => void }) {
+  const option = multiclassSpellcastOption(sheet.subclassId, mc.subclassId);
+  const added = getSubclass(mc.subclassId);
+  if (option.kind === "forced") {
+    return (
+      <Small as="p">
+        You had no Spellcast trait, so your Spellcast Rolls use {added?.name ?? "the new subclass"}&apos;s: {traitLabel(option.trait)}.
+      </Small>
+    );
+  }
+  if (option.kind !== "choose") return null;
+  const choices = [
+    { trait: option.original, from: getSubclass(sheet.subclassId)?.name ?? "your subclass" },
+    { trait: option.added, from: added?.name ?? "the new subclass" },
+  ];
+  return (
+    <div className="adv-field">
+      <Label>Spellcast trait for Spellcast Rolls</Label>
+      <div className="lu-chips" role="group" aria-label="Spellcast trait for Spellcast Rolls">
+        {choices.map((c) => (
+          <button key={c.trait} type="button" className="lu-opt" aria-pressed={mc.spellcastTrait === c.trait} onClick={() => onPick(c.trait)}>
+            {traitLabel(c.trait)} <span className="lu-opt-note">({c.from})</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

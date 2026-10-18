@@ -3,6 +3,7 @@
 import "./heritage.css";
 
 import { HeroCard } from "@/components/party/hero-card";
+import { spellcastTraitOf } from "@/lib/domain/characters/spellcast";
 import { getClass, getDomain, getSubclass, PORTRAITS, type SubclassDef } from "@/lib/srd";
 
 import { useSheet } from "../sheet-context";
@@ -11,11 +12,24 @@ import { heritageCards } from "../sheet-helpers";
 // Domains > Heritage & Subclass (board page 3): subclass cards with rank locks, multiclass cards, ancestry and
 // community cards, as the board's hero cards (HeroCard, src/components/party/hero-card.tsx).
 
-const spellcastLine = (sub: SubclassDef | undefined) =>
-  sub?.spellcastTrait ? `Spellcast trait: ${sub.spellcastTrait[0].toUpperCase()}${sub.spellcastTrait.slice(1)}` : undefined;
+type Sheet = ReturnType<typeof useSheet>["sheet"];
+
+/**
+ * The card's Spellcast trait line. With two different Spellcast traits (a multiclass, CB 111) the one Spellcast Rolls
+ * use (`spellcastTraitOf`) says so.
+ */
+function spellcastLine(sub: SubclassDef | undefined, sheet: Sheet): string | undefined {
+  const trait = sub?.spellcastTrait;
+  if (!trait) return undefined;
+  const line = `Spellcast trait: ${trait[0].toUpperCase()}${trait.slice(1)}`;
+  const own = getSubclass(sheet.subclassId)?.spellcastTrait;
+  const added = sheet.multiclass ? getSubclass(sheet.multiclass.subclassId)?.spellcastTrait : undefined;
+  const twoTraits = Boolean(own && added && own !== added);
+  return twoTraits && spellcastTraitOf(sheet) === trait ? `${line} (used for Spellcast Rolls)` : line;
+}
 
 /** Multiclass (CB 111): the second class's class feature and chosen domain, and one foundation card. */
-function MulticlassCards({ multiclass }: { multiclass: { classId: string; domainId: string; subclassId: string } }) {
+function MulticlassCards({ multiclass, sheet }: { multiclass: NonNullable<Sheet["multiclass"]>; sheet: Sheet }) {
   const cls = getClass(multiclass.classId);
   const sub = getSubclass(multiclass.subclassId);
   const domain = getDomain(multiclass.domainId)?.name ?? multiclass.domainId;
@@ -35,7 +49,7 @@ function MulticlassCards({ multiclass }: { multiclass: { classId: string; domain
           kind="Multiclass subclass"
           name={sub?.name ?? multiclass.subclassId}
           tier="Foundation"
-          sub={spellcastLine(sub)}
+          sub={spellcastLine(sub, sheet)}
           features={sub?.foundation ?? []}
           art={PORTRAITS[`sub-${multiclass.subclassId}`]}
         />
@@ -45,7 +59,7 @@ function MulticlassCards({ multiclass }: { multiclass: { classId: string; domain
 }
 
 /** How many cards the Heritage & Subclass tab shows (its count badge). */
-export function heritageCardCount(sheet: ReturnType<typeof useSheet>["sheet"]): number {
+export function heritageCardCount(sheet: Sheet): number {
   return (getSubclass(sheet.subclassId) ? 3 : 0) + (sheet.multiclass ? 2 : 0) + heritageCards(sheet).length;
 }
 
@@ -54,7 +68,7 @@ export function HeritageSection() {
   const subclass = getSubclass(sheet.subclassId);
   const subArt = PORTRAITS[`sub-${sheet.subclassId}`];
   const heritage = heritageCards(sheet);
-  const spellcast = spellcastLine(subclass);
+  const spellcast = spellcastLine(subclass, sheet);
   // Upgraded subclass cards (CB 110); multiclassing crosses out the mastery card (CB 111).
   const rank = sheet.subclassRank;
   const specializationLock = rank === "foundation" ? "Unlocks with your first upgraded subclass card" : undefined;
@@ -92,7 +106,7 @@ export function HeritageSection() {
             </div>
           </>
         ) : null}
-        {sheet.multiclass ? <MulticlassCards multiclass={sheet.multiclass} /> : null}
+        {sheet.multiclass ? <MulticlassCards multiclass={sheet.multiclass} sheet={sheet} /> : null}
         {heritage.map((c) => (
           <div role="listitem" key={c.key}>
             <HeroCard kind={c.kind} name={c.name} features={c.features} art={c.art} note={c.note} />

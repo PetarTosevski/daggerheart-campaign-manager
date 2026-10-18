@@ -162,7 +162,8 @@ describe("every option applies and reverts exactly", () => {
 
     const multiclass = { classId: "wizard", domainId: "codex", subclassId: "school-of-knowledge" };
     const multi = up(at4, [{ option: "multiclass", tier: 3 }], { multiclass });
-    expect(multi.multiclass).toEqual(multiclass);
+    // A Warrior has no Spellcast trait, so the new subclass's is stored (CB 111).
+    expect(multi.multiclass).toEqual({ ...multiclass, spellcastTrait: "knowledge" });
     expect(revertLevelUp(multi)).toEqual(at4);
   });
 
@@ -315,6 +316,52 @@ describe("multiclass foundation slots (SS1: At Ease, Battlemage)", () => {
     const at4 = { ...climb(BASE, 4), hpMax: 12 };
     const problems = validateLevelUp(at4, { picks: [{ option: "multiclass", tier: 3 }], cardId: freshCard(at4, 5), experienceName: "x", multiclass: war }, CTX);
     expect(problems).toContain("Hit Points stop at 12 slots.");
+  });
+});
+
+describe("multiclass Spellcast trait (SS2, CB 111)", () => {
+  const wizard = { classId: "wizard", domainId: "codex", subclassId: "school-of-knowledge" };
+  const pick = [{ option: "multiclass" as const, tier: 3 }];
+  /** A level-4 Rogue (Nightwalker: Finesse) about to multiclass. */
+  const rogue = (): CharacterSheet => ({ ...climb(BASE, 4), classId: "rogue", subclassId: "nightwalker" });
+  const check = (sheet: CharacterSheet, multiclass: LevelUpChoice["multiclass"]) =>
+    validateLevelUp(sheet, { picks: pick, cardId: freshCard(sheet, 5), experienceName: "x", multiclass }, CTX);
+
+  it("both subclasses with different traits: the choice is required and must be one of the two", () => {
+    const at4 = rogue();
+    expect(check(at4, wizard)).toContain("Choose the Spellcast trait for Spellcast Rolls.");
+    expect(check(at4, { ...wizard, spellcastTrait: "finesse" })).toEqual([]);
+    expect(check(at4, { ...wizard, spellcastTrait: "knowledge" })).toEqual([]);
+    expect(check(at4, { ...wizard, spellcastTrait: "strength" })).toContain("Choose the Spellcast trait of one of your subclasses.");
+  });
+
+  it("applyLevelUp stores the choice; revertLevelUp removes it with the multiclass", () => {
+    const at4 = rogue();
+    const kept = up(at4, pick, { multiclass: { ...wizard, spellcastTrait: "finesse" } });
+    expect(kept.multiclass).toEqual({ ...wizard, spellcastTrait: "finesse" });
+    const switched = up(at4, pick, { multiclass: { ...wizard, spellcastTrait: "knowledge" } });
+    expect(switched.multiclass?.spellcastTrait).toBe("knowledge");
+    expect(revertLevelUp(switched)).toEqual(at4);
+  });
+
+  it("without an original Spellcast trait the new one is forced", () => {
+    const at4 = climb(BASE, 4);
+    expect(check(at4, wizard)).toEqual([]);
+    expect(check(at4, { ...wizard, spellcastTrait: "knowledge" })).toEqual([]);
+    expect(check(at4, { ...wizard, spellcastTrait: "agility" })).toContain("Without a Spellcast trait before, you must use your new subclass's.");
+  });
+
+  it("a foundation without a Spellcast trait, or with the same one, asks nothing and stores nothing", () => {
+    const at4 = rogue();
+    const warrior = { classId: "warrior", domainId: "blade", subclassId: "call-of-the-slayer" };
+    expect(check(at4, warrior)).toEqual([]);
+    expect(up(at4, pick, { multiclass: warrior }).multiclass).toEqual(warrior);
+    expect(check(at4, { ...warrior, spellcastTrait: "knowledge" })).toContain("Choose the Spellcast trait of one of your subclasses.");
+    // Druid (Instinct) into Sorcerer (Instinct): the same trait, nothing to choose.
+    const druid: CharacterSheet = { ...climb(BASE, 4), classId: "druid", subclassId: "warden-of-renewal" };
+    const sorcerer = { classId: "sorcerer", domainId: "midnight", subclassId: "elemental-origin" };
+    expect(check(druid, sorcerer)).toEqual([]);
+    expect(up(druid, pick, { multiclass: sorcerer }).multiclass).toEqual(sorcerer);
   });
 });
 

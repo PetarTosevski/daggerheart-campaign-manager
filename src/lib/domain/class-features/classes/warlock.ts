@@ -13,10 +13,10 @@
 //   with Hope can take a Favor instead of the Hope (a class action on the latest roll; the dice box shows a prompt).
 // - Patron's Pact: before an action roll in the patron's sphere, spend a Favor for the Patron Die (d6, d8 from level
 //   5): the class action holds it (`heldDice` kind `patron`) and the dice box adds it to the next action roll.
-import { getSubclass } from "../../../srd/index";
 import type { CharacterSheet } from "../../../validation/characters";
 import { applyResourceDelta } from "../../characters/index";
 import { withEffects } from "../../characters/effects";
+import { spellcastTraitOf } from "../../characters/spellcast";
 import { actionOutcome, type RolledDie, type RollRecord } from "../../duality";
 import type { ClassFeatures } from "../types";
 import { dieContribution, HOPE_COST, isFailure, refuse, rollGains } from "./shared";
@@ -35,10 +35,9 @@ const withFavor = (sheet: CharacterSheet, favor: number): CharacterSheet => ({ .
 /** The Patron Die: d6, d8 from level 5 (HF 14). */
 export const patronDie = (level: number): 6 | 8 => (level >= 5 ? 8 : 6);
 
-/** The Warlock subclass's Spellcast trait value (with effects), or 0 when it is not positive. */
+/** The Spellcast trait value (with effects; the multiclass choice, CB 111, via `spellcastTraitOf`), or 0 when it is not positive. */
 export function warlockSpellcast(sheet: CharacterSheet): number {
-  const subclassId = sheet.classId === "warlock" ? sheet.subclassId : sheet.multiclass?.subclassId;
-  const trait = subclassId ? getSubclass(subclassId)?.spellcastTrait : undefined;
+  const trait = spellcastTraitOf(sheet);
   return trait ? Math.max(0, withEffects(sheet).traits[trait]) : 0;
 }
 
