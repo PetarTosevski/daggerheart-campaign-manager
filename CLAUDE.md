@@ -137,7 +137,7 @@ pnpm typecheck        # tsc --noEmit, includes convex/
 pnpm test             # vitest: unit (jsdom) + convex (convex-test)
 pnpm e2e:setup        # once per checkout: local e2e Convex backend
 pnpm test:e2e         # Playwright; starts the local backend + e2e build
-E2E_PORT=3100 E2E_CONVEX_PORT=3312 pnpm test:e2e   # non-default ports
+E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm test:e2e   # non-default ports (worktrees: use the ports pnpm worktree:setup prints)
 ```
 
 Pre-commit hook (`.beads/hooks/pre-commit` -> `scripts/pre-commit.sh`): ESLint

@@ -267,7 +267,13 @@ describe("cleanup crons", () => {
     for (const id of s.blobs) expect(await exists(id)).toBe(true);
   });
 
-  it("expires photo-import files older than 1 hour in the orphan job, rows and blobs", async () => {
+  it("runs the photo-import expiry hourly", async () => {
+    const crons = (await import("../../convex/crons")).default as unknown as { crons: Record<string, { schedule: { type: string; cron?: string } }> };
+    const job = crons.crons["expire photo imports"];
+    expect(job?.schedule).toEqual({ type: "cron", cron: "41 * * * *" });
+  });
+
+  it("expires photo-import files older than 1 hour, rows and blobs", async () => {
     const t = makeTest();
     const userId = await user(t);
     const s = await seedCampaign(t, userId, undefined);
@@ -280,7 +286,7 @@ describe("cleanup crons", () => {
     const stale = await photo(NOW - 61 * 60 * 1000);
     const fresh = await photo(NOW - 30 * 60 * 1000);
 
-    await t.mutation(internal.cleanup.sweepOrphanUploads, {});
+    await t.mutation(internal.cleanup.expirePhotoImports, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     const exists = (id: Id<"_storage">) => t.run(async (ctx) => (await ctx.db.system.get("_storage", id)) !== null);
@@ -295,5 +301,36 @@ describe("cleanup crons", () => {
     expect(rows.map((r) => r.storageId)).toEqual([fresh]);
     // Other kinds are untouched.
     for (const id of s.blobs) expect(await exists(id)).toBe(true);
+  });
+
+  it("expires the oldest photo-import files first, whatever their campaign, and continues past a full batch", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const s = await seedCampaign(t, userId, undefined);
+    // `refId` "a…" sorts before "z…": reading by campaign would take the BATCH newer rows first.
+    const oldest = await t.run(async (ctx) => {
+      const storageId = await blob(ctx);
+      await ctx.db.insert("files", { storageId, campaignId: s.campaignId, uploadedBy: userId, kind: "photoImport", refId: "zzz", createdAt: NOW - 10 * HOUR });
+      return storageId;
+    });
+    await t.run(async (ctx) => {
+      for (let i = 0; i < BATCH; i++) {
+        const storageId = await blob(ctx);
+        await ctx.db.insert("files", { storageId, campaignId: s.campaignId, uploadedBy: userId, kind: "photoImport", refId: "aaa", createdAt: NOW - 2 * HOUR + i });
+      }
+    });
+    const count = () =>
+      t.run(async (ctx) => (await ctx.db
+        .query("files")
+        .withIndex("by_kind_created", (q) => q.eq("kind", "photoImport"))
+        .collect()).length);
+    const exists = (id: Id<"_storage">) => t.run(async (ctx) => (await ctx.db.system.get("_storage", id)) !== null);
+
+    await t.mutation(internal.cleanup.expirePhotoImports, {});
+    expect(await exists(oldest)).toBe(false);
+    expect(await count()).toBe(1);
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await count()).toBe(0);
   });
 });

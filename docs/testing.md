@@ -48,7 +48,7 @@ backend URL.
 | `E2E_REUSE_SERVERS` | unset   | `1` reuses servers already listening on those ports  |
 
 ```bash
-E2E_PORT=3100 E2E_CONVEX_PORT=3312 pnpm test:e2e
+E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm test:e2e  # worktrees: ports from pnpm worktree:setup
 ```
 
 - Each Next port builds into its own directory: `.next-e2e` for 3000,
@@ -65,7 +65,7 @@ E2E_PORT=3100 E2E_CONVEX_PORT=3312 pnpm test:e2e
       PID 263044: /home/.../convex-local-backend --port 3212 ...
   Then either:
     - stop it: kill 263044
-    - run on other ports: E2E_PORT=3100 E2E_CONVEX_PORT=3312 pnpm test:e2e
+    - run on other ports: E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm test:e2e  # worktrees: ports from pnpm worktree:setup
     - reuse running servers on purpose: E2E_REUSE_SERVERS=1 pnpm test:e2e
   ```
 

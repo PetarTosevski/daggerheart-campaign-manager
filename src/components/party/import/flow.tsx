@@ -15,7 +15,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 
 import { ReviewForm, type Owner } from "./review";
 
-/** Photos are shrunk to this many pixels on the long side: plenty to read handwriting, far under the 5 MB limit. */
+/** Photos are shrunk to this many pixels on the long side: plenty to read handwriting, far under the server's 3.5 MB limit. */
 const MAX_SIDE = 2000;
 
 async function shrinkToJpeg(file: File): Promise<Blob> {
@@ -47,13 +47,18 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
   const [files, setFiles] = useState<File[]>([]);
   const [step, setStep] = useState<Step>({ kind: "pick" });
   const [error, setError] = useState<string | null>(null);
+  const reading = useRef(false);
 
   const owners: Owner[] = roster
     ? [{ userId: roster.gm.userId, name: `${roster.gm.name} (GM)` }, ...roster.players.map((p) => ({ userId: p.userId, name: p.name }))]
     : [];
 
   async function readPhotos() {
+    // One read per click (review L7): a second click before React re-renders the disabled button is ignored.
+    if (reading.current) return;
+    reading.current = true;
     setError(null);
+    setStep({ kind: "reading", note: "Preparing the photos…" });
     try {
       // Leftovers from an earlier, interrupted import would count against the four.
       await discard({ campaignId });
@@ -73,6 +78,8 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
       setError(e instanceof Error && !("data" in e) ? e.message : errorMessage(e));
       setStep({ kind: "pick" });
       await discard({ campaignId }).catch(() => undefined);
+    } finally {
+      reading.current = false;
     }
   }
 
