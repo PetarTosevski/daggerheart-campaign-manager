@@ -81,6 +81,10 @@ test("the GM places markers and measures; players see only visible markers", asy
   await expect(player.getByText("Wyrm lair")).toHaveCount(0);
   await expect(player.getByRole("complementary", { name: "Map tokens" })).toHaveCount(0);
   await expect(player.getByRole("button", { name: /Paint/ })).toHaveCount(0);
+  // Players see the travel speeds but can't edit them.
+  const playerLegend = player.getByRole("region", { name: "Travel speeds" });
+  await expect(playerLegend.getByRole("listitem").filter({ hasText: "Road" })).toContainText("60 km/day");
+  await expect(playerLegend.getByRole("button", { name: "Edit speeds…" })).toHaveCount(0);
 
   // Unhiding the marker reaches the player live.
   await map.getByRole("button", { name: /^Wyrm lair, Cave/ }).click();
@@ -89,6 +93,40 @@ test("the GM places markers and measures; players see only visible markers", asy
   await expect(hidden).not.toBeChecked();
   await expect(playerMap.getByRole("button", { name: /^Wyrm lair, Cave/ })).toBeVisible();
   await context.close();
+});
+
+test("the travel-speed legend follows the travel method, the pace and the GM's speeds", async ({ page }) => {
+  await gmCreatesCampaign(page, "witherwild");
+  await openWorld(page);
+  const legend = page.getByRole("region", { name: "Travel speeds" });
+  const row = (terrain: string) => legend.getByRole("listitem").filter({ hasText: terrain });
+  await expect(legend.getByTestId("legend-method")).toHaveText("On foot · Normal · km/day");
+  await expect(row("Deep wilds")).toContainText("20 km/day");
+  await expect(row("Impassable")).toContainText("can’t cross");
+
+  // The pace offers only the travel methods, by terrain.
+  const pace = page.getByLabel("Travel pace");
+  await expect(pace.locator("option")).toHaveText(["On foot · by terrain", "Mounted · by terrain", "Wagon / cart · by terrain", "Boat · by terrain", "Flying · by terrain"]);
+  await pace.selectOption({ label: "Boat · by terrain" });
+  await expect(legend.getByTestId("legend-method")).toHaveText("Boat · Normal · km/day");
+  await expect(row("Water")).toContainText("100 km/day");
+  await page.getByLabel("March pace").selectOption("slow");
+  await expect(row("Water")).toContainText("75 km/day");
+  await page.getByLabel("March pace").selectOption("normal");
+
+  // The GM edits Boat on Water; the legend follows.
+  await legend.getByRole("button", { name: "Edit speeds…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Travel speeds" });
+  await dialog.getByLabel("Boat, Water, km per day").fill("90");
+  await dialog.getByRole("button", { name: "Save speeds" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row("Water")).toContainText("90 km/day");
+
+  // Collapsible.
+  await legend.getByRole("button", { name: "Travel speeds" }).click();
+  await expect(legend.getByRole("listitem")).toHaveCount(0);
+  await legend.getByRole("button", { name: "Travel speeds" }).click();
+  await expect(legend.getByRole("listitem")).toHaveCount(7);
 });
 
 test("a custom campaign's GM sees the map upload control", async ({ page }) => {

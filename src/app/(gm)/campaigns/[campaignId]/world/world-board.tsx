@@ -7,9 +7,9 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { designAsset } from "@/lib/design-assets";
 import {
   METHOD_LABELS,
-  TRAIL_MODES,
-  TRAIL_MODE_LABELS,
+  PACE_LABELS,
   TRAVEL_METHODS,
+  TRAVEL_PACES,
   analyseRoute,
   formatDistance,
   formatLeg,
@@ -21,7 +21,6 @@ import {
   trailTotal,
   travelHours,
   type Point,
-  type TrailMode,
   type TravelMethod,
   type TravelPace,
 } from "@/lib/domain/travel";
@@ -49,6 +48,7 @@ import { MapImageControl } from "./map-image";
 import { MapView, type StrokePhase } from "./map-view";
 import { Palette } from "./palette";
 import { TokenPanel } from "./token-panel";
+import { TravelLegend } from "./travel-legend";
 import { TravelRulesDialog } from "./travel-rules";
 import { usePanZoom } from "./use-pan-zoom";
 
@@ -159,7 +159,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
 
   // ---- distances
   const partyPt = { x: state.party.x, y: state.party.y };
-  const leg = (a: Point, b: Point) => trailLeg(a, b, scale, lookup, mo.trail, rules);
+  const leg = (a: Point, b: Point) => trailLeg(a, b, scale, lookup, mo.trail, rules, mo.pace);
   const hexAway = (t: MapToken) => {
     const a = partyHex ?? toHex(partyPt);
     const b = toHex(t);
@@ -183,7 +183,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
       })
       .sort((a, b) => a.sortBy - b.sortBy)
       .slice(0, 8);
-  const trail = trailTotal([...state.party.trail, partyPt], scale, lookup, mo.trail, rules);
+  const trail = trailTotal([...state.party.trail, partyPt], scale, lookup, mo.trail, rules, mo.pace);
   const trailText = crawl ? null : trail ? formatLeg(trail, units) : "nowhere yet";
 
   // ---- mode switches
@@ -391,16 +391,6 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
             : "Scroll to zoom, drag (or right-drag, in any mode) to pan. Fully zoomed out, scrolling down moves the page (Shift + scroll always does). Drag tokens to move them; the gold banner is your party.";
   const hintActive = measuring || !!placing || settingOrigin;
 
-  const legend = [
-    { c: "rgba(227, 170, 60, 0.85)", label: `Road · ${rules.trail.foot.road} km/day on foot` },
-    { c: "rgba(70, 150, 80, 0.7)", label: `Wilds · ${rules.trail.foot.wilds} km/day` },
-    { c: "rgba(20, 80, 40, 0.85)", label: `Deep wilds · ${rules.trail.foot.deep} km/day` },
-    { c: "rgba(70, 120, 110, 0.85)", label: `Marshland · ${rules.trail.foot.marsh} km/day` },
-    { c: "rgba(176, 58, 46, 0.8)", label: `Mountains / hard going · ${rules.trail.foot.mountains} km/day` },
-    ...(painting ? [{ c: "rgba(60, 110, 200, 0.6)", label: "Water / no path" }] : []),
-    { c: "rgba(12, 9, 6, 0.85)", label: "Impassable" },
-  ];
-  const showLegend = !horizon && (showTerrain || painting);
   const isCustom = data.frameId === "custom";
 
   const tool = painting ? "paint" : measuring && mmode === "free" ? "draw" : "pan";
@@ -443,16 +433,38 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
               <span className="text-[12px] text-[#9fb2b6]">Map width {state.scaleKm} km</span>
             )}
             {!measuring && !horizon && editable ? (
-              <label className="flex items-center gap-1.5 text-[12px] text-[#9fb2b6]">
-                Pace
-                <select className="fld w-auto" style={{ minHeight: 36, padding: "4px 8px" }} value={mo.trail} onChange={(e) => actions.setOptions({ trail: e.target.value as TrailMode })} aria-label="Travel pace">
-                  {TRAIL_MODES.map((m) => (
-                    <option key={m} value={m}>
-                      {TRAIL_MODE_LABELS[m]}
+              <>
+                <label className="flex items-center gap-1.5 text-[12px] text-[#9fb2b6]">
+                  Pace
+                  <select
+                    className="fld w-auto"
+                    style={{ minHeight: 36, padding: "4px 8px" }}
+                    value={mo.trail}
+                    onChange={(e) => actions.setOptions({ trail: e.target.value as TravelMethod })}
+                    aria-label="Travel pace"
+                  >
+                    {TRAVEL_METHODS.map((m) => (
+                      <option key={m} value={m}>
+                        {METHOD_LABELS[m]} · by terrain
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <select
+                  className="fld w-auto"
+                  style={{ minHeight: 36, padding: "4px 8px" }}
+                  value={mo.pace}
+                  onChange={(e) => actions.setOptions({ pace: e.target.value as TravelPace })}
+                  aria-label="March pace"
+                >
+                  {TRAVEL_PACES.map((p) => (
+                    <option key={p} value={p}>
+                      {PACE_LABELS[p]}
+                      {p === "slow" ? ` ×${rules.slow}` : p === "fast" ? ` ×${rules.fast}` : ""}
                     </option>
                   ))}
                 </select>
-              </label>
+              </>
             ) : null}
             {!horizon ? (
               <button type="button" className="zbtn zw tip" data-tip="Terrain overlay · T" aria-pressed={showTerrain} onClick={() => setShowTerrain((s) => !s)}>
@@ -651,16 +663,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
           </div>
         ) : null}
 
-        {showLegend ? (
-          <div className="flex flex-wrap gap-3 text-[12px] text-[#c8d3d0]">
-            {legend.map((l) => (
-              <span key={l.label} className="inline-flex items-center gap-1.5">
-                <span className="size-3.5 rounded-[3px] border border-white/40" style={{ background: l.c }} />
-                {l.label}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        {!horizon ? <TravelLegend rules={rules} method={measuring ? mo.method : mo.trail} pace={mo.pace} onEdit={editable ? () => setRulesOpen(true) : undefined} /> : null}
         {!imageUrl ? (
           <div role="note" className="rounded-[10px] border border-[#5a4a2a] bg-[#2a2416] px-3.5 py-2.5 text-[14px] leading-normal text-[#f0dfb8]">
             {isCustom

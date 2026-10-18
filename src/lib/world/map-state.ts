@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 
-import { DEFAULT_TRAVEL_RULES, SPEED_TERRAINS, TRAIL_MODES, TRAVEL_METHODS, TRAVEL_PACES, type SpeedTerrain } from "../domain/travel/index";
+import { DEFAULT_TRAVEL_RULES, LEGACY_TRAIL_MODES, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, trailMethod, type SpeedTerrain } from "../domain/travel/index";
 import type { PublishedFrameId } from "../frames/index";
 import { MAX_HEX_SIZE, MIN_HEX_SIZE, pixelToHex, visibleHexKeys, hexKey, type Hex, type HexGrid } from "./hex";
 import { BLANK_TERRAIN, TERRAIN_COLUMNS, TERRAIN_ROWS, WITHERWILD_TERRAIN } from "./terrain";
@@ -63,10 +63,15 @@ export const mapTokenSchema = z.object({
 const speed = z.number().min(1).max(1000);
 const speedTable = z.object(Object.fromEntries(SPEED_TERRAINS.map((t) => [t, speed])) as Record<SpeedTerrain, typeof speed>);
 
-/** GM overrides of the house-rule travel speeds (`DEFAULT_TRAVEL_RULES`). */
+/**
+ * GM overrides of the house-rule travel speeds (`DEFAULT_TRAVEL_RULES`).
+ * Rules stored before PD1 also hold a `trail` table (foot and mount for the
+ * party trail): it still reads, is dropped on read (zod strips unknown keys),
+ * so no write keeps it, and `migrations/mapTrailMode:rewriteTrailMode`
+ * removes it from stored rows.
+ */
 export const travelRulesSchema = z.object({
   speeds: z.object(Object.fromEntries(TRAVEL_METHODS.map((m) => [m, speedTable])) as Record<(typeof TRAVEL_METHODS)[number], typeof speedTable>),
-  trail: z.object({ foot: speedTable, mount: speedTable }),
   slow: z.number().min(0.1).max(5),
   fast: z.number().min(0.1).max(5),
 });
@@ -130,8 +135,17 @@ export const mapStateSchema = z.object({
     pace: z.enum(TRAVEL_PACES),
     hours: z.number().int().min(1).max(16),
     units: z.enum(["km", "mi"]),
-    /** Header pace for the party trail and token distances. */
-    trail: z.enum(TRAIL_MODES).default("foot"),
+    /**
+     * The header's travel method for the party trail and token distances (by
+     * painted terrain, at `pace`). Widened (PD1): a flat km/day pace stored
+     * before PD1 still parses and reads as a method (`trailMethod`) until
+     * `migrations/mapTrailMode:rewriteTrailMode` has rewritten it; then this
+     * narrows to `z.enum(TRAVEL_METHODS)`.
+     */
+    trail: z
+      .enum([...TRAVEL_METHODS, ...LEGACY_TRAIL_MODES])
+      .default("foot")
+      .transform(trailMethod),
     /** GM overrides of the house-rule speeds; unset uses `DEFAULT_TRAVEL_RULES`. */
     rules: travelRulesSchema.optional(),
   }),

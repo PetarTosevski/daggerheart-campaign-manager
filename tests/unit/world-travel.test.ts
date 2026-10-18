@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_TRAVEL_RULES,
+  LEGACY_TRAIL_MODES,
+  TRAVEL_METHODS,
   analyseRoute,
   distanceKm,
   formatDistance,
@@ -10,7 +12,9 @@ import {
   mapScale,
   routeWarning,
   scaleBar,
+  terrainSpeed,
   trailLeg,
+  trailMethod,
   trailTotal,
   type Point,
 } from "@/lib/domain/travel";
@@ -30,8 +34,21 @@ describe("travel distances (house rule)", () => {
   it("uses the board's speeds", () => {
     expect(DEFAULT_TRAVEL_RULES.speeds.foot).toEqual({ road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 8 });
     expect(DEFAULT_TRAVEL_RULES.speeds.boat.water).toBe(100);
-    expect(DEFAULT_TRAVEL_RULES.trail.foot.water).toBe(20);
     expect([DEFAULT_TRAVEL_RULES.slow, DEFAULT_TRAVEL_RULES.fast]).toEqual([0.75, 1.33]);
+  });
+
+  it("gives km/day per terrain for a method and pace; unpainted or unknown ground is Wilds", () => {
+    expect(terrainSpeed(DEFAULT_TRAVEL_RULES, "boat", "normal", ".")).toBe(100);
+    expect(terrainSpeed(DEFAULT_TRAVEL_RULES, "wagon", "normal", "m")).toBe(6);
+    expect(terrainSpeed(DEFAULT_TRAVEL_RULES, "foot", "slow", "w")).toBeCloseTo(30, 6);
+    expect(terrainSpeed(DEFAULT_TRAVEL_RULES, "mount", "fast", "r")).toBeCloseTo(80 * 1.33, 6);
+    expect(terrainSpeed(DEFAULT_TRAVEL_RULES, "foot", "normal", "")).toBe(40);
+    expect(terrainSpeed(DEFAULT_TRAVEL_RULES, "mount", "normal", "?")).toBe(60);
+  });
+
+  it("reads a pre-PD1 flat pace as a travel method", () => {
+    expect(LEGACY_TRAIL_MODES.map(trailMethod)).toEqual(["foot", "foot", "foot", "mount"]);
+    expect(TRAVEL_METHODS.map(trailMethod)).toEqual([...TRAVEL_METHODS]);
   });
 });
 
@@ -39,27 +56,32 @@ describe("trail legs (party trail and token distances)", () => {
   const a: Point = { x: 0, y: 0 };
   const b: Point = { x: 30, y: 0 }; // 120 km
 
-  it("divides km by the terrain speed on foot or mounted", () => {
+  it("divides km by the travel method's terrain speed", () => {
     expect(trailLeg(a, b, ww, all("w"), "foot").days).toBeCloseTo(3, 6);
     expect(trailLeg(a, b, ww, all("r"), "foot").days).toBeCloseTo(2, 6);
     expect(trailLeg(a, b, ww, all("w"), "mount").days).toBeCloseTo(2, 6);
+    expect(trailLeg(a, b, ww, all("r"), "wagon").days).toBeCloseTo(120 / 50, 6);
+    expect(trailLeg(a, b, ww, all("."), "boat").days).toBeCloseTo(1.2, 6);
+    expect(trailLeg(a, b, ww, all("h"), "fly").days).toBeCloseTo(1, 6);
   });
 
-  it("a flat pace ignores terrain", () => {
-    expect(trailLeg(a, b, ww, all("h"), "60").days).toBeCloseTo(2, 6);
+  it("applies the pace and counts unpainted ground as Wilds", () => {
+    expect(trailLeg(a, b, ww, all("w"), "foot", DEFAULT_TRAVEL_RULES, "slow").days).toBeCloseTo(4, 6);
+    expect(trailLeg(a, b, ww, all("w"), "foot", DEFAULT_TRAVEL_RULES, "fast").days).toBeCloseTo(3 / 1.33, 6);
+    expect(trailLeg(a, b, ww, all(""), "foot").days).toBeCloseTo(3, 6);
   });
 
   it("flags water; impassable adds no time but blocks", () => {
     const water = trailLeg(a, b, ww, all("."), "foot");
     expect(water).toMatchObject({ water: true, blocked: false });
-    expect(water.days).toBeCloseTo(6, 6);
+    expect(water.days).toBeCloseTo(15, 6);
     const half = trailLeg(a, b, ww, (p) => (p.x < 15 ? "#" : "w"), "foot");
     expect(half.blocked).toBe(true);
     expect(half.days).toBeCloseTo(1.5, 6);
   });
 
   it("honours GM speeds", () => {
-    const rules = { ...DEFAULT_TRAVEL_RULES, trail: { ...DEFAULT_TRAVEL_RULES.trail, foot: { ...DEFAULT_TRAVEL_RULES.trail.foot, wilds: 60 } } };
+    const rules = { ...DEFAULT_TRAVEL_RULES, speeds: { ...DEFAULT_TRAVEL_RULES.speeds, foot: { ...DEFAULT_TRAVEL_RULES.speeds.foot, wilds: 60 } } };
     expect(trailLeg(a, b, ww, all("w"), "foot", rules).days).toBeCloseTo(2, 6);
   });
 

@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../../convex/_generated/api";
+import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { readSheet } from "../../convex/lib/characterSheet";
 import { playerTokenFilter } from "../../convex/lib/maps";
 import { enduranceOwnerKey } from "../../src/lib/domain/rest/frame-hooks/index";
 import { hexToPixel } from "../../src/lib/world/hex";
+import { initialMapState } from "../../src/lib/world/map-state";
 import { WITHERWILD_TERRAIN, paintTerrain } from "../../src/lib/world/terrain";
 import { errorCode, errorData, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
@@ -127,17 +128,16 @@ describe("World map", () => {
     expect(state.tokens.find((t) => t.id === id)!.name).toBe("Witch hut");
     expect(state.tokens.find((t) => t.id === hamlet)!.name).toBe("Hamlet");
 
-    await gm.mutation(api.maps.setOptions, { campaignId, scaleKm: 250, method: "mount", units: "mi", trail: "60" });
+    await gm.mutation(api.maps.setOptions, { campaignId, scaleKm: 250, method: "mount", units: "mi", trail: "boat" });
     const rules = (await gm.query(api.maps.get, { campaignId })).state.options;
-    expect(rules).toMatchObject({ method: "mount", units: "mi", trail: "60", pace: "normal", hours: 8 });
+    expect(rules).toMatchObject({ method: "mount", units: "mi", trail: "boat", pace: "normal", hours: 8 });
+    // An older client's flat pace is stored as the travel method it reads as.
+    await gm.mutation(api.maps.setOptions, { campaignId, trail: "80" });
+    expect((await gm.query(api.maps.get, { campaignId })).state.options.trail).toBe("mount");
     const table = { road: 50, wilds: 30, marsh: 10, deep: 15, mountains: 8, water: 5 };
-    const custom = {
-      speeds: { foot: table, mount: table, wagon: table, boat: table, fly: table },
-      trail: { foot: { road: 50, wilds: 30, marsh: 10, deep: 15, mountains: 8, water: 5 }, mount: { road: 70, wilds: 50, marsh: 15, deep: 25, mountains: 12, water: 5 } },
-      slow: 0.5,
-      fast: 1.5,
-    };
-    await gm.mutation(api.maps.setTravelRules, { campaignId, rules: custom });
+    const custom = { speeds: { foot: table, mount: table, wagon: table, boat: table, fly: table }, slow: 0.5, fast: 1.5 };
+    // The folded-in trail table from an older client is accepted and not kept.
+    await gm.mutation(api.maps.setTravelRules, { campaignId, rules: { ...custom, trail: { foot: table, mount: table } } });
     expect((await gm.query(api.maps.get, { campaignId })).state.options.rules).toEqual(custom);
     expect(errorCode(await gm.mutation(api.maps.setTravelRules, { campaignId, rules: { ...custom, slow: 0 } }).catch((e) => e))).toBe("INVALID");
     await gm.mutation(api.maps.setTravelRules, { campaignId, rules: null });
@@ -507,5 +507,64 @@ describe("World map rows", () => {
       await bare.move(1, 0);
       expect((await bare.sheet()).stress).toBe(0);
     });
+  });
+});
+
+describe("migrations/mapTrailMode:rewriteTrailMode (PD1)", () => {
+  useAllowlist(GM);
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const table = { road: 50, wilds: 30, marsh: 10, deep: 15, mountains: 8, water: 5 };
+  const rules = { speeds: { foot: table, mount: table, wagon: table, boat: table, fly: table }, slow: 0.5, fast: 1.5 };
+
+  it("rewrites stored flat paces and drops the old trail table; maps read the same; idempotent", async () => {
+    const t = makeTest();
+    const userId = await t.run((ctx) => ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }));
+    const gm = t.withIdentity({ subject: `${userId}|s` });
+    const create = async (name: string) => (await gm.mutation(api.campaigns.create, { frameId: "witherwild", name, idempotencyKey: key() })).campaignId;
+    const v2 = await create("Version 2");
+    const v1 = await create("Version 1");
+    const current = await create("Current");
+    await gm.mutation(api.maps.setOptions, { campaignId: v2, hours: 6 });
+    await gm.mutation(api.maps.setOptions, { campaignId: current, trail: "wagon" });
+    const mapRow = (campaignId: Id<"campaigns">) =>
+      t.run((ctx) =>
+        ctx.db
+          .query("maps")
+          .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+          .unique(),
+      );
+    // Stored before PD1: a flat pace and the separate trail table (version 2), and a version 1 document at 80 km/day.
+    const row = (await mapRow(v2))!;
+    await t.run(async (ctx) => {
+      const data = row.data as { options: Record<string, unknown> };
+      await ctx.db.patch("maps", row._id, { data: { ...data, options: { ...data.options, trail: "40", rules: { ...rules, trail: { foot: table, mount: table } } } } });
+      const old = initialMapState("witherwild");
+      await ctx.db.insert("maps", { campaignId: v1, data: { ...old, options: { ...old.options, trail: "80" } }, updatedAt: 0 });
+    });
+    const untouched = await mapRow(current);
+
+    const before = { v2: await gm.query(api.maps.get, { campaignId: v2 }), v1: await gm.query(api.maps.get, { campaignId: v1 }) };
+    expect(before.v2.state.options).toMatchObject({ trail: "foot", hours: 6, rules });
+    expect(before.v2.state.options.rules).not.toHaveProperty("trail");
+    expect(before.v1.state.options.trail).toBe("mount");
+
+    const migrate = async (reset = false) => {
+      await t.mutation(internal.migrations.run.run, { fn: "migrations/mapTrailMode:rewriteTrailMode", reset });
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    };
+    const stored = async (campaignId: Id<"campaigns">) => ((await mapRow(campaignId))!.data as { options: { trail: string; rules?: object } }).options;
+    await migrate();
+    expect(await stored(v2)).toMatchObject({ trail: "foot", rules });
+    expect((await stored(v2)).rules).not.toHaveProperty("trail");
+    expect((await stored(v1)).trail).toBe("mount");
+    expect(await mapRow(current)).toEqual(untouched);
+    expect(await gm.query(api.maps.get, { campaignId: v2 })).toEqual(before.v2);
+    expect(await gm.query(api.maps.get, { campaignId: v1 })).toEqual(before.v1);
+
+    const after = { v2: await mapRow(v2), v1: await mapRow(v1) };
+    await migrate(true);
+    expect({ v2: await mapRow(v2), v1: await mapRow(v1) }).toEqual(after);
   });
 });
