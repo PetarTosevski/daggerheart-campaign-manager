@@ -2,9 +2,14 @@
 
 import { useState } from "react";
 
+import { useIntent } from "@/lib/use-intent";
+
 import { Modal } from "@/components/brand/modal";
 import { battlePoints } from "@/lib/domain/encounters/budget";
 import { MAX_FEAR } from "@/lib/domain/fear";
+
+import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 import type { FearReason, TrackerActions, TrackerView } from "./use-tracker";
 
@@ -69,9 +74,11 @@ function SpendFearDialog({ open, onClose, fear, actions }: { open: boolean; onCl
  * The tracker's top bar: encounter name and status, "GM turn N" with "End GM turn" (spotlight counts reset), the GM
  * Fear as the dashboard's token art (12, lit up to the campaign's Fear; read-only here) with "Spend Fear", and the Battle Points meter (A3's budget, CB p.197).
  */
-export function TopBar({ view, fear, actions }: { view: TrackerView; fear: number; actions: TrackerActions }) {
+export function TopBar({ campaignId, view, fear, actions }: { campaignId: Id<"campaigns">; view: TrackerView; fear: number; actions: TrackerActions }) {
   const { encounter, instances } = view;
   const [spending, setSpending] = useState(false);
+  // The GM gains Fear by hand (the same campaign Fear as the dashboard; rolls with Fear raise it on their own).
+  const gain = useIntent(api.fear.adjust);
   const bp = battlePoints({
     pcs: encounter.pcs,
     adjustments: encounter.adjustments,
@@ -105,6 +112,15 @@ export function TopBar({ view, fear, actions }: { view: TrackerView; fear: numbe
         <span className="trk-fear-n" aria-hidden="true">
           {fear}
         </span>
+        <button
+          type="button"
+          className="trk-btn trk-btn-fear"
+          aria-label="Gain 1 Fear"
+          disabled={fear >= MAX_FEAR || gain.pending}
+          onClick={() => void gain.fire({ campaignId, direction: "increase" })}
+        >
+          + Fear
+        </button>
         <button type="button" className="trk-btn trk-btn-fear" disabled={!running || fear === 0} onClick={() => setSpending(true)}>
           Spend Fear
         </button>
