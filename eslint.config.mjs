@@ -27,6 +27,24 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // CF5 / CD7: no v.any() in function args, and ids come from
+  // ctx.db.normalizeId, never from a cast. Warnings; convex/ must have zero.
+  {
+    files: ["convex/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector: "Property[key.name='args'] CallExpression[callee.object.name='v'][callee.property.name='any']",
+          message: "No v.any() in args: describe the shape with v.object / v.union (CF5).",
+        },
+        {
+          selector: "TSAsExpression > TSTypeReference[typeName.name='Id']",
+          message: "Use ctx.db.normalizeId(table, s) instead of `as Id<...>` (CD7).",
+        },
+      ],
+    },
+  },
   // Shared game rules and the sign-in policy are bundled into Convex
   // functions, so they must stay framework-free and use relative imports.
   {
