@@ -2,62 +2,90 @@
 
 import "./defence-hope.css";
 
+import { useState } from "react";
+
 import { HopeFeatureSlot } from "@/components/party/features";
-import { SheetBox } from "@/components/party/sheet-ui";
-import { BASE_HOPE_MAX, hopeMax } from "@/lib/domain/characters";
+import { HOPE_COIN_STYLE, Label, PaperNumber, Pip, SheetBox, Small } from "@/components/party/sheet-ui";
+import { BASE_HOPE_MAX, hopeMax, scarsMax } from "@/lib/domain/characters";
 import type { ClassDef } from "@/lib/srd";
+import { cn } from "@/lib/utils";
 
-import { FeatureText, Stepper, Track } from "../fields";
 import { useDefense, useSheet } from "../sheet-context";
+import { pipDelta } from "../sheet-helpers";
 
-// Defence | Hope row of page 1. Restyled by S2; the Hope feature block (HopeFeatureSlot) is S6's.
+// Defence | Hope row of page 1, in the board's format (Party.dc.html "Defence" and "Hope" boxes). The Hope feature
+// block (HopeFeatureSlot) is S6's.
+
+const signed = (n: number) => `${n > 0 ? "+" : ""}${n}`;
+
+/** The editable base Evasion; the field re-syncs from the sheet only while it is not being edited (CL7). */
+function BaseEvasionInput() {
+  const { sheet, update } = useSheet();
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <label className="dh-base">
+      <Label>Base Evasion</Label>
+      <PaperNumber
+        className="dh-base-in"
+        value={draft ?? String(sheet.evasion)}
+        onFocus={() => setDraft(String(sheet.evasion))}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={(e) => {
+          const v = Number.parseInt(e.target.value, 10);
+          setDraft(null);
+          if (Number.isInteger(v) && v >= 0 && v <= 40 && v !== sheet.evasion) void update({ evasion: v });
+        }}
+      />
+    </label>
+  );
+}
 
 export function DefenceBox() {
-  const { sheet, canEdit, update, adjust } = useSheet();
+  const { sheet, canEdit, adjust } = useSheet();
   const { defense, effectEvasion, armorSlots } = useDefense();
+  const modifiers = [
+    defense.evasionModifier ? `(${signed(defense.evasionModifier)} gear)` : null,
+    defense.subclassEvasion ? `(+${defense.subclassEvasion} subclass)` : null,
+    effectEvasion ? `(${signed(effectEvasion)} effects)` : null,
+  ].filter(Boolean);
+  const armorSummary = `Armor Slot: ${sheet.armorMarked} of ${armorSlots} marked`;
   return (
-    <SheetBox title="Defence">
-      <div className="flex flex-wrap items-center gap-5">
-        <div className="flex flex-col items-center gap-1">
-          {canEdit ? (
-            <label className="flex flex-col items-center gap-1">
-              <input
-                key={sheet.evasion}
-                className="cs-num cs-circle"
-                inputMode="numeric"
-                defaultValue={sheet.evasion}
-                aria-label="Base Evasion"
-                onBlur={(e) => {
-                  const v = Number.parseInt(e.target.value, 10);
-                  if (Number.isInteger(v) && v >= 0 && v <= 40 && v !== sheet.evasion) void update({ evasion: v });
-                  else e.target.value = String(sheet.evasion);
-                }}
-              />
-              <span className="cs-lbl">Base Evasion</span>
-            </label>
-          ) : null}
-          <span className="cs-num cs-circle" aria-label={`Evasion ${defense.evasion}`} data-testid="evasion">
+    <SheetBox title="Defence" className="dh-box">
+      <div className="dh-def">
+        <div className="dh-stat">
+          <span className="sh-num dh-circle" role="img" aria-label={`Evasion ${defense.evasion}`} data-testid="evasion">
             {defense.evasion}
           </span>
-          <span className="cs-lbl">
-            Evasion
-            {defense.evasionModifier ? ` (${defense.evasionModifier > 0 ? "+" : ""}${defense.evasionModifier} gear)` : ""}
-            {defense.subclassEvasion ? ` (+${defense.subclassEvasion} subclass)` : ""}
-            {effectEvasion ? ` (${effectEvasion > 0 ? "+" : ""}${effectEvasion} effects)` : ""}
-          </span>
+          <Label>Evasion</Label>
+          {modifiers.length ? <Small className="dh-mods">{modifiers.join(" ")}</Small> : null}
+          {canEdit ? <BaseEvasionInput /> : null}
         </div>
-        <div className="flex flex-col items-center gap-1">
-          <span className="cs-num cs-circle" aria-label={`Armor Score ${armorSlots}`}>
+        <div className="dh-stat">
+          <span className="sh-num dh-circle" role="img" aria-label={`Armor Score ${armorSlots}`}>
             {armorSlots}
           </span>
-          <span className="cs-lbl">Armor</span>
+          <Label>Armor</Label>
         </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="cs-lbl">Armor slots</span>
+        <div className="dh-slots">
+          <Label>Armor slots</Label>
           {armorSlots > 0 ? (
-            <Track name="Armor Slot" kind="armor" slots={armorSlots} marked={sheet.armorMarked} readOnly={!canEdit} onDelta={(d) => void adjust("armor", d)} />
+            <div className="dh-armor" role={canEdit ? "group" : "img"} aria-label={armorSummary}>
+              {Array.from({ length: armorSlots }, (_, k) =>
+                canEdit ? (
+                  <Pip
+                    key={k}
+                    kind="armor"
+                    on={k < sheet.armorMarked}
+                    label={`Armor Slot ${k + 1} of ${armorSlots}`}
+                    onClick={() => void adjust("armor", pipDelta(k + 1, sheet.armorMarked))}
+                  />
+                ) : (
+                  <Pip key={k} kind="armor" on={k < sheet.armorMarked} />
+                ),
+              )}
+            </div>
           ) : (
-            <span className="cs-small italic">Unarmored: no Armor Slots.</span>
+            <Small className="italic">Unarmored: no Armor Slots.</Small>
           )}
         </div>
       </div>
@@ -65,30 +93,93 @@ export function DefenceBox() {
   );
 }
 
+/**
+ * The Hope coin row: 6 coins plus Light in the Dark's 7th (gold ring), trailing slots lost to scars shown as the
+ * board's split coin. Editors tap a coin to mark up to it (tapping the last marked one clears it).
+ */
+function HopeCoins() {
+  const { sheet, canEdit, adjust } = useSheet();
+  const bonus = sheet.hopeSlotBonus ?? 0;
+  const slots = BASE_HOPE_MAX + bonus;
+  const usable = hopeMax(sheet.scars, bonus);
+  const lost = slots - usable;
+  const summary = `Hope: ${sheet.hope} of ${usable} marked${lost ? `, ${lost} lost to scars` : ""}`;
+  return (
+    <div className="dh-coins" role={canEdit ? "group" : "img"} aria-label={summary} style={HOPE_COIN_STYLE}>
+      {Array.from({ length: slots }, (_, k) => {
+        const litd = k >= BASE_HOPE_MAX;
+        const title = litd ? "Light in the Dark" : undefined;
+        if (k >= usable) {
+          return canEdit ? (
+            <span key={k} className={cn("sh-pip dh-scar", litd && "dh-litd")} title={title} role="img" aria-label="Hope slot lost to a scar" />
+          ) : (
+            <span key={k} className={cn("sh-pip dh-scar", litd && "dh-litd")} title={title} aria-hidden="true" />
+          );
+        }
+        const on = k < sheet.hope;
+        const cls = cn("sh-pip coin", on && "on", litd && "dh-litd");
+        return canEdit ? (
+          <button
+            key={k}
+            type="button"
+            className={cls}
+            title={title}
+            aria-label={`Hope ${k + 1} of ${usable}`}
+            aria-pressed={on}
+            onClick={() => void adjust("hope", pipDelta(k + 1, sheet.hope))}
+          />
+        ) : (
+          <span key={k} className={cls} title={title} aria-hidden="true" />
+        );
+      })}
+    </div>
+  );
+}
+
 export function HopeBox({ cls }: { cls: ClassDef | undefined }) {
   const { sheet, canEdit, adjust, slot } = useSheet();
-  const hopeSlots = BASE_HOPE_MAX + (sheet.hopeSlotBonus ?? 0);
-  const maxHope = hopeMax(sheet.scars, sheet.hopeSlotBonus ?? 0);
+  const bonus = sheet.hopeSlotBonus ?? 0;
+  const maxHope = hopeMax(sheet.scars, bonus);
   return (
-    <SheetBox title="Hope">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="cs-small">
-          Hope max <strong className="font-display text-[20px]">{maxHope}</strong>
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="cs-lbl !text-[#8e2b2b]">Scars</span>
-          <Stepper label="Scars" value={sheet.scars} min={0} max={6} readOnly={!canEdit} onChange={(v) => void adjust("scars", v - sheet.scars)} />
+    <SheetBox title="Hope" className="dh-box">
+      <div className="dh-hope-head">
+        <Small>
+          Hope max <strong className={cn("dh-max", sheet.scars > 0 && "scarred")}>{maxHope}</strong>
+        </Small>
+        <span className="dh-scars" role="group" aria-label="Scars">
+          <Label className="dh-scars-lbl">Scars</Label>
+          {canEdit ? (
+            <button type="button" className="dh-step" aria-label="Decrease Scars" disabled={sheet.scars <= 0} onClick={() => void adjust("scars", -1)}>
+              −
+            </button>
+          ) : null}
+          <strong className="dh-scars-n" aria-live="polite">
+            {sheet.scars}
+          </strong>
+          {canEdit ? (
+            <button
+              type="button"
+              className="dh-step"
+              aria-label="Increase Scars"
+              disabled={sheet.scars >= scarsMax(bonus)}
+              onClick={() => void adjust("scars", 1)}
+            >
+              +
+            </button>
+          ) : null}
         </span>
       </div>
-      <Track name="Hope" kind="coin" slots={hopeSlots} lost={hopeSlots - maxHope} marked={sheet.hope} readOnly={!canEdit} onDelta={(d) => void adjust("hope", d)} />
-      <div className="cs-small grid grid-cols-1 gap-2 italic sm:grid-cols-2">
+      <HopeCoins />
+      <Small as="div" className="dh-rules">
         <span>Spend a Hope to use an Experience or help an ally.</span>
         <span>Spend 3 Hope to make a tag team roll or use your class’ Hope feature.</span>
-      </div>
+      </Small>
       {cls ? (
-        <div className="flex flex-col gap-1">
-          <span className="cs-lbl">Class Hope feature</span>
-          <FeatureText name={cls.hopeFeature.name} text={cls.hopeFeature.text} />
+        <div className="dh-feat">
+          <Label>Class Hope feature</Label>
+          <p className="sh-ta dh-feat-text">
+            <strong>{cls.hopeFeature.name}:</strong> {cls.hopeFeature.text}
+          </p>
         </div>
       ) : null}
       <HopeFeatureSlot {...slot} />
