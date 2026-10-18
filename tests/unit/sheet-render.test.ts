@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CharacterView } from "../../convex/characters";
 import type { Id } from "../../convex/_generated/dataModel";
+import { DOMAIN_CARDS } from "../../src/lib/srd/domain-cards";
 
 const calls: { name: string; args: unknown }[] = [];
 let current: CharacterView | null = null;
@@ -181,6 +182,49 @@ describe("character sheet", () => {
     ]);
   });
 
+  it("Domain Deck: no picks left at level 1, owned badges, face-down cards above the level, filters and hide toggle", () => {
+    show();
+    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
+    expect(screen.getByText("2 of 2 cards chosen")).toBeInTheDocument();
+    const deck = screen.getByRole("region", { name: "Domain Deck" });
+    const grid = within(deck).getByRole("list", { name: "Domain Deck cards" });
+    const takeable = DOMAIN_CARDS.find((c) => c.domain === "grace" && c.level === 1 && c.id !== "deft-deceiver" && c.source === "core")!;
+    expect(within(grid).getByRole("button", { name: `No picks left for ${takeable.name}` })).toBeDisabled();
+    expect(within(grid).queryAllByRole("button", { name: /^Take / })).toHaveLength(0);
+    expect(within(within(grid).getByRole("article", { name: "Book of Ava" })).getByText("In vault")).toBeInTheDocument();
+    expect(within(within(grid).getByRole("article", { name: "Deft Deceiver" })).getByText("In loadout")).toBeInTheDocument();
+    // A level-2 card is face down: its back is the button, its face is hidden until turned over.
+    const level2 = DOMAIN_CARDS.find((c) => c.domain === "codex" && c.level === 2 && c.source === "core")!;
+    const item = within(grid).getByText(level2.name).closest<HTMLElement>("[role=listitem]")!;
+    const back = within(item).getByRole("button", { name: "Face-down level 2 Codex card. Turn it over to read it." });
+    expect(within(grid).queryByRole("article", { name: level2.name })).toBeNull();
+    fireEvent.click(back);
+    const face = within(grid).getByRole("article", { name: level2.name });
+    expect(within(face).getByText("Unlocks at level 2")).toBeInTheDocument();
+    expect(within(face).getByRole("button", { name: `Turn over ${level2.name}` })).toHaveFocus();
+    // Filters and the hide toggle.
+    const filters = within(deck).getByRole("group", { name: "Filter by domain" });
+    expect(within(filters).getAllByRole("button").map((b) => b.textContent)).toEqual(["All", "Grace", "Codex"]);
+    fireEvent.click(within(filters).getByRole("button", { name: "Codex" }));
+    expect(within(filters).getByRole("button", { name: "Codex" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(grid).queryByRole("article", { name: "Deft Deceiver" })).toBeNull();
+    fireEvent.click(within(deck).getByLabelText("Hide cards above my level"));
+    expect(within(grid).queryAllByRole("button", { name: /^Face-down/ })).toHaveLength(0);
+    expect(within(grid).getByRole("article", { name: "Book of Ava" })).toBeInTheDocument();
+  });
+
+  it("Domain Deck: takes a card while picks are left", async () => {
+    current = character({ sheet: { ...character().sheet, level: 2 } });
+    show();
+    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
+    const grid = screen.getByRole("list", { name: "Domain Deck cards" });
+    const takeable = DOMAIN_CARDS.find((c) => c.domain === "codex" && c.level === 2 && c.source === "core")!;
+    await act(async () => {
+      fireEvent.click(within(grid).getByRole("button", { name: `Take ${takeable.name}` }));
+    });
+    expect(calls).toEqual([{ name: "characters:takeCard", args: { characterId: "c1", cardId: takeable.id } }]);
+  });
+
   it("saves notes on blur and shows subclass tiers", () => {
     show();
     fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
@@ -208,8 +252,12 @@ describe("character sheet", () => {
     expect(screen.getByRole("img", { name: "Hit Point: 1 of 5 marked" })).toBeInTheDocument();
     for (const tab of ["Story & Advancement", "Domains", "Heritage & Subclass"]) {
       fireEvent.click(screen.getByRole("tab", { name: tab }));
-      expect(within(paper).queryAllByRole("button").filter((b) => b.getAttribute("role") !== "tab")).toHaveLength(0);
+      // The Domain Deck keeps its viewing controls (filters, More, card backs, hide toggle) but has no Take buttons.
+      const deck = screen.queryByRole("region", { name: "Domain Deck" });
+      const outsideDeck = (els: HTMLElement[]) => els.filter((b) => !deck?.contains(b));
+      expect(outsideDeck(within(paper).queryAllByRole("button")).filter((b) => b.getAttribute("role") !== "tab")).toHaveLength(0);
       expect(within(paper).queryAllByRole("textbox")).toHaveLength(0);
+      if (deck) expect(within(deck).queryAllByRole("button", { name: /^(Take|No picks left)/ })).toHaveLength(0);
     }
   });
 });

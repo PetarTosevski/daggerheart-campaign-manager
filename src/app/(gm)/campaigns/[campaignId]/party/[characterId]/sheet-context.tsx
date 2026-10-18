@@ -31,6 +31,8 @@ type SheetContextValue = {
   adjust: (resource: Resource, delta: number) => Promise<boolean>;
   applyDamage: (damage: number, useArmorSlot: boolean) => Promise<boolean>;
   moveCard: (cardId: string, to: "loadout" | "vault", duringRest: boolean) => Promise<boolean>;
+  /** Takes a card from the Domain Deck (loadout while it has room, else vault). */
+  takeCard: (cardId: string) => Promise<boolean>;
   setStatus: (status: CharacterStatus) => Promise<boolean>;
   error: string | null;
 };
@@ -61,6 +63,7 @@ export function SheetProvider({
   const adjustResource = useMutation(api.characters.adjustResource);
   const damageMutation = useMutation(api.characters.applyDamage);
   const move = useMutation(api.characters.moveCard);
+  const take = useMutation(api.characters.takeCard);
   const status = useMutation(api.characters.setStatus);
   const [error, setError] = useState<string | null>(null);
   const characterId = character._id;
@@ -88,10 +91,11 @@ export function SheetProvider({
       // One key per click, so the Convex client's retries can't mark the damage twice (review L2).
       applyDamage: (damage, useArmorSlot) => run(() => damageMutation({ characterId, damage, useArmorSlot, idempotencyKey: crypto.randomUUID() })),
       moveCard: (cardId, to, duringRest) => run(() => move({ characterId, cardId, to, duringRest })),
+      takeCard: (cardId) => run(() => take({ characterId, cardId })),
       setStatus: (s) => run(() => status({ characterId, status: s })),
       error,
     }),
-    [character, characterId, campaignId, isGm, hopeAndFear, run, updateSheet, adjustResource, damageMutation, move, status, error],
+    [character, characterId, campaignId, isGm, hopeAndFear, run, updateSheet, adjustResource, damageMutation, move, take, status, error],
   );
 
   return <SheetContext.Provider value={value}>{children}</SheetContext.Provider>;

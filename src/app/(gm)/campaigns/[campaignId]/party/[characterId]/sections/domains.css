@@ -91,3 +91,50 @@ button.dk-deck:hover .dk-vd-card.v1{transform:translateY(-4px)}
   .dk-btn{min-height:44px;padding:0 14px;font-size:12px}
   .dk-toggle input{width:22px;height:22px}
 }
+
+/* Domain Deck (board .dk-grid, .dkc*, .dkf*, .dkf-back with the cb-* backs, and the filter buttons' inline style) */
+.dkd-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.dkd-filters{display:flex;flex-wrap:wrap;gap:6px}
+.dkd-filter{min-height:44px;padding:0 14px;border-radius:999px;border:1px solid #b39a6a;background:transparent;color:#4a3a26;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;cursor:pointer}
+.dkd-filter[aria-pressed="true"]{background:var(--sheet-wine,#5b2b2b);border-color:var(--sheet-wine,#5b2b2b);color:#f6ead2}
+.dkd-filter:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+.dkd-hide{margin-left:auto}
+.dkd-empty{margin:0;font-style:italic;color:var(--sheet-ink-soft,#4a3a26)}
+.dk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:12px;align-items:start}
+.dk-grid-item{min-width:0}
+.dkc{--dc:#5b2b2b;position:relative;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:#fffaf0;border:1px solid #d6c39b;box-shadow:0 3px 10px rgba(40,25,8,.12);transition:transform .15s,box-shadow .15s}
+.dkc:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(40,25,8,.18)}
+.dkc-head{display:flex;align-items:center;gap:8px;padding:8px 10px;background:linear-gradient(100deg,var(--dc),color-mix(in srgb,var(--dc) 70%,#000));color:#f6ead2}
+.dkc-ic{width:22px;height:22px;flex:none;background-size:contain;background-repeat:no-repeat;background-position:center}
+.dkc-name{flex:1;min-width:0;margin:0;font-family:var(--font-cinzel),serif;font-size:15px;font-weight:700;line-height:1.15;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.dkc-lvl{width:26px;height:26px;flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:#f6ead2;color:var(--dc);font-family:var(--font-cinzel),serif;font-weight:900;font-size:14px;box-shadow:0 0 0 2px rgba(0,0,0,.25)}
+.dkc-art{aspect-ratio:481/300;flex:none;background-color:#1a1424;background-size:cover;background-position:center 35%;border-bottom:1px solid rgba(0,0,0,.25)}
+.dkc.locked .dkc-art{filter:grayscale(.6)}
+.dkc-meta{padding:6px 10px 0;font-family:var(--font-cinzel),serif;font-size:11px;letter-spacing:.08em;color:#8a6d3b;text-transform:uppercase}
+.dkc-text{margin:4px 10px 0;font-size:15px;line-height:1.38;color:#2a1f14;white-space:pre-line;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.dkc.open .dkc-text{display:block}
+.dkc-lock{display:inline-flex;align-items:center;gap:6px;margin:8px 10px 0;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;color:#4a3a26}
+.dkc-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;margin-top:auto}
+.dkc-more{min-height:44px;padding:0 4px;border:none;background:none;color:#8a6d3b;font-size:14px;text-decoration:underline;cursor:pointer}
+.dkc-btn{min-height:44px;padding:0 14px;border-radius:999px;border:1px solid var(--dc);background:var(--dc);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;cursor:pointer}
+.dkc-btn.ghost{background:transparent;color:#6a5a40;border-color:#cdb88f}
+.dkc-btn:disabled{opacity:.45;cursor:not-allowed}
+.dkc-btn:focus-visible,.dkc-more:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+.dkc-badge{padding:3px 10px;border-radius:999px;background:rgba(61,94,46,.12);color:#3d5e2e;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700}
+.dkc.owned{box-shadow:0 0 0 2px #c9962e,0 3px 10px rgba(40,25,8,.12)}
+.dkc.locked{filter:grayscale(1);opacity:.5}
+.dkc.locked:hover{transform:none;opacity:.7}
+
+/* Face-down flip: the back sits on the face in one grid cell; the face shows rotated away until it is turned over. */
+.dkf{display:grid;perspective:1200px}
+.dkf>*{grid-area:1/1}
+.dkf.face>.dkc,.dkf.face>.dkf-back{backface-visibility:hidden;-webkit-backface-visibility:hidden;transition:transform .6s cubic-bezier(.3,.7,.3,1)}
+.dkf.face>.dkc,.dkf.face>.dkc:hover{transform:rotateY(180deg)}
+.dkf.face.flipped>.dkc,.dkf.face.flipped>.dkc:hover{transform:rotateY(0)}
+.dkf.face.flipped>.dkf-back{transform:rotateY(-180deg);pointer-events:none}
+.dkf-back{position:relative;padding:0;border:none;border-radius:12px;min-height:240px;cursor:pointer;background-color:#2a1838;background-size:cover;background-position:center;box-shadow:0 0 0 2px #c9a35a,0 3px 10px rgba(40,25,8,.25);display:flex;align-items:flex-end;justify-content:center}
+.dkf-back:hover{box-shadow:0 0 0 2px #f3cf86,0 0 18px rgba(243,207,134,.55)}
+.dkf-back:focus-visible{outline:3px solid var(--sheet-wine,#5b2b2b);outline-offset:3px}
+.dkf-tag{margin-bottom:12px;padding:3px 12px;border-radius:999px;background:rgba(20,12,6,.8);color:#f3cf86;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.08em}
+@media (prefers-reduced-motion:reduce){.dkf.face>.dkc,.dkf.face>.dkf-back,.dkc{transition:none}}
+@media (max-width:640px){.dkd-hide{margin-left:0}}
