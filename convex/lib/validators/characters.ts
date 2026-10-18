@@ -216,8 +216,15 @@ const deathAwayReasonValidator = v.union(v.literal("infirmary"), v.literal("sent
  * Why an `away` character is gone: a Castle High death move (HF 127), or
  * `benched` by its player or the GM (X6). Widened from the two death reasons;
  * every stored row still conforms, so there is no migration.
+ * `requested: true` (LL1): a player's death move picked the reason and the GM
+ * has not yet confirmed or changed it (`deathMoves.settleAway`). Absent means
+ * final, so rows stored before LL1 stay settled.
  */
-export const awayValidator = v.object({ reason: v.union(deathAwayReasonValidator, v.literal("benched")), note: v.optional(v.string()) });
+export const awayValidator = v.object({
+  reason: v.union(deathAwayReasonValidator, v.literal("benched")),
+  note: v.optional(v.string()),
+  requested: v.optional(v.literal(true)),
+});
 
 /**
  * `away` as the views return it: the death-move reasons only. A benched

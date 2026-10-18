@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import {
   avoidDeath,
+  AWAY_REASON_LABELS,
   canMakeDeathMove,
   clearAllHpAndStress,
   DEATH_MOVE_LABELS,
@@ -24,13 +25,16 @@ import { editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSh
 import { rollDie } from "./lib/dice";
 import { keyedUserMutation, userQuery } from "./lib/functions";
 import { applyRule } from "./lib/mechanics";
-import { campaignAccess } from "./lib/permissions";
+import { atLeast, campaignAccess, permissionFor } from "./lib/permissions";
 import { storedCharacterStatusValidator } from "./lib/validators/characters";
 import type { StoredRoll } from "./lib/validators/actionLog";
 
 /**
  * Death moves (D5 T4; Core Book p. 106), scars, and Castle High's less-lethal
- * rule (Hope & Fear p. 127). Every move writes an undoable `actionLog` row
+ * rule (Hope & Fear p. 127). Under less-lethal, where the character goes
+ * (infirmary or sent home) is the player's request when the player makes the
+ * move (`away.requested`); the GM confirms or changes it (`settleAway`) and has
+ * the final say. The GM's own death move is final at once (LL1). Every move writes an undoable `actionLog` row
  * (kind `death`); `undo` here also puts back the status a move changed.
  *
  * Two moves take two steps; the pending step is read back from the
@@ -66,6 +70,14 @@ async function deathState(ctx: QueryCtx, character: Doc<"characters">) {
   return { latest, pending: character.status === "active" ? pendingDeathMove(latest) : null };
 }
 
+/**
+ * A death move is due (CB 106), except for a character the GM returned to play
+ * with every Hit Point still marked, until they mark one again (LL1 decision 5).
+ */
+function dueNow(character: Doc<"characters">, sheet: CharacterSheet): boolean {
+  return character.deathMoveSpent !== true && canMakeDeathMove({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions });
+}
+
 function lessLethal(campaign: Doc<"campaigns">): boolean {
   return resolveOptions(campaign.frameId, campaign.options).lessLethal;
 }
@@ -74,7 +86,11 @@ function rule(message: string): never {
   throw new RuleError("DEATH_MOVE_RULE", message);
 }
 
-/** Sets the character dead, or away under less-lethal, and logs it. Returns the row and the new status. */
+/**
+ * Sets the character dead, or away under less-lethal, and logs it. A player's
+ * away reason is stored as a request for the GM to settle (LL1); the GM's is
+ * final. Returns the row and the new status.
+ */
 async function leavePlay(
   ctx: MutationCtx & { user: Doc<"users"> },
   campaign: Doc<"campaigns">,
@@ -85,9 +101,10 @@ async function leavePlay(
   roll?: StoredRoll,
 ) {
   const outcome = deathStatus(lessLethal(campaign), reason);
+  const requested = outcome.status === "away" && !atLeast(await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "owner"), "owner");
   await ctx.db.patch("characters", character._id, {
     status: outcome.status,
-    away: outcome.status === "away" ? outcome.away : undefined,
+    away: outcome.status === "away" ? { ...outcome.away, ...(requested ? { requested: true as const } : {}) } : undefined,
     updatedAt: Date.now(),
   });
   const entryId = await logAction(ctx, {
@@ -96,7 +113,7 @@ async function leavePlay(
     actorId: ctx.user._id,
     kind: "death",
     visibility: "public",
-    summary: `${lead}${deathSummary(sheet.name, outcome, sheet.wither)}`,
+    summary: `${lead}${deathSummary(sheet.name, outcome, sheet.wither)}${requested ? " The player's request; the GM decides." : ""}`,
     ...(roll ? { roll } : {}),
     before: sheet,
     undoable: true,
@@ -135,7 +152,7 @@ export const choose = keyedUserMutation({
     ctx.once("death_choose", args, async () => {
       const { campaign, character, sheet } = await editable(ctx, ctx.user, args.characterId);
       const { pending } = await deathState(ctx, character);
-      if (!canMakeDeathMove({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions })) {
+      if (!dueNow(character, sheet)) {
         rule("A death move is made by an active character whose last Hit Point is marked.");
       }
       if (pending !== null) rule(`Finish the ${DEATH_MOVE_LABELS[pending.move]} under way first.`);
@@ -240,14 +257,52 @@ export const returnFromAway = keyedUserMutation({
       const { campaign, character } = await loadCharacter(ctx, ctx.user, args.characterId, "owner");
       if (character.status !== "away") rule("Only an away character can return.");
       await assertOneActive(ctx, campaign, character.ownerId, character._id);
-      await ctx.db.patch("characters", character._id, { status: "active", away: undefined, updatedAt: Date.now() });
+      // LL1 decision 5: back with every Hit Point still marked, they aren't asked for a death move until they mark one again.
+      const sheet = readSheet(character.sheet);
+      await ctx.db.patch("characters", character._id, {
+        status: "active",
+        away: undefined,
+        deathMoveSpent: sheet.hpMax > 0 && sheet.hp >= sheet.hpMax ? true : undefined,
+        updatedAt: Date.now(),
+      });
       await logAction(ctx, {
         campaignId: campaign._id,
         characterId: character._id,
         actorId: ctx.user._id,
         kind: "death",
         visibility: "public",
-        summary: `${readSheet(character.sheet).name} is back in play.`,
+        summary: `${sheet.name} is back in play.`,
+        undoable: false,
+      });
+      return null;
+    }),
+});
+
+/**
+ * GM only (LL1): settles a player's less-lethal request. `reason` confirms the
+ * requested place or sets the other one; either way it is final. Refused with
+ * DEATH_MOVE_RULE when no request is waiting. Logged, not undoable; it also
+ * ends the death move's undo (the GM can still return the character).
+ */
+export const settleAway = keyedUserMutation({
+  args: { characterId: v.id("characters"), reason: awayReasonValidator },
+  returns: v.null(),
+  handler: async (ctx, args) =>
+    ctx.once("death_settle_away", args, async () => {
+      const { campaign, character } = await loadCharacter(ctx, ctx.user, args.characterId, "owner");
+      const away = character.away;
+      if (character.status !== "away" || away?.requested !== true || away.reason === "benched") rule("No less-lethal request is waiting.");
+      await ctx.db.patch("characters", character._id, {
+        away: { reason: args.reason, ...(away.note === undefined ? {} : { note: away.note }) },
+        updatedAt: Date.now(),
+      });
+      await logAction(ctx, {
+        campaignId: campaign._id,
+        characterId: character._id,
+        actorId: ctx.user._id,
+        kind: "death",
+        visibility: "public",
+        summary: `${away.reason === args.reason ? "The GM confirms" : "The GM decides"}: ${readSheet(character.sheet).name} is ${AWAY_REASON_LABELS[args.reason]}.`,
         undoable: false,
       });
       return null;
@@ -283,8 +338,9 @@ export const undo = keyedUserMutation({
 
 /**
  * What the sheet's death-move modal needs: whether a death move is due, the
- * step waiting to be taken, the latest undoable death row, and whether the
- * campaign plays less lethal. Everyone who can see the character.
+ * step waiting to be taken, the latest undoable death row, whether the
+ * campaign plays less lethal, and whether the away reason is a player's
+ * request the GM has yet to settle (LL1). Everyone who can see the character.
  */
 export const state = userQuery({
   args: { characterId: v.id("characters") },
@@ -293,17 +349,19 @@ export const state = userQuery({
     pending: pendingValidator,
     undoEntryId: v.union(v.id("actionLog"), v.null()),
     lessLethal: v.boolean(),
+    awayRequested: v.boolean(),
   }),
   handler: async (ctx, { characterId }) => {
     const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "view");
     const sheet = readSheet(character.sheet);
     const { latest, pending } = await deathState(ctx, character);
-    const due = canMakeDeathMove({ status: character.status, hp: sheet.hp, hpMax: sheet.hpMax, conditions: sheet.conditions });
+    const due = dueNow(character, sheet);
     return {
       awaitingMove: due && pending === null,
       pending,
       undoEntryId: latest !== null && latest.kind === "death" && latest.undoable ? latest._id : null,
       lessLethal: lessLethal(campaign),
+      awayRequested: character.status === "away" && character.away?.requested === true,
     };
   },
 });

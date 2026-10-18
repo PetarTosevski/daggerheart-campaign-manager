@@ -17,8 +17,19 @@ export const DeathMoveModal: CharacterSlot = (props) => (
   </DeathBoundary>
 );
 
-/** Unconscious / journey-ends badges and the GM's "Return to play" in the sheet's banner (the banner shows the away status itself). */
-export const DeathBannerBadges: CharacterSlot = (props) => <DeathBadges {...props} showAway={false} tone="banner" />;
+/**
+ * Unconscious / journey-ends badges, a less-lethal "Requested" badge with the GM's Confirm / Change (LL1) and the
+ * GM's "Return to play" in the sheet's banner (the banner shows the away status itself).
+ */
+export const DeathBannerBadges: CharacterSlot = (props) => (
+  <DeathBoundary>
+    <DeathBadges {...props} showAway={false} tone="banner" />
+  </DeathBoundary>
+);
 
-/** Unconscious / away / journey-ends badge on the dashboard party card. */
-export const DeathCardBadge: CharacterSlot = (props) => <DeathBadges {...props} showAway tone="card" />;
+/** Unconscious / away (with "Requested", LL1) / journey-ends badge on the dashboard party card. */
+export const DeathCardBadge: CharacterSlot = (props) => (
+  <DeathBoundary>
+    <DeathBadges {...props} showAway tone="card" />
+  </DeathBoundary>
+);

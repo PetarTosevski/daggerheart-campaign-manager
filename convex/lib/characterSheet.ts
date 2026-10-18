@@ -76,8 +76,10 @@ export function storedSheet(sheet: CharacterSheetInput) {
   return { schemaVersion: SHEET_VERSION, ...characterSheetSchema.parse(sheet) };
 }
 
+/** Saves a sheet. A cleared Hit Point also clears `deathMoveSpent` (LL1), so marking the last one again asks for a death move. */
 export async function saveSheet(ctx: MutationCtx, characterId: Id<"characters">, sheet: CharacterSheetInput): Promise<void> {
-  await ctx.db.patch("characters", characterId, { sheet: storedSheet(sheet), updatedAt: Date.now() });
+  const stored = storedSheet(sheet);
+  await ctx.db.patch("characters", characterId, { sheet: stored, updatedAt: Date.now(), ...(stored.hp < stored.hpMax ? { deathMoveSpent: undefined } : {}) });
 }
 
 // ---------------------------------------------------------------- access
