@@ -1,26 +1,19 @@
 "use client";
 
-/** A short rattle for a 2D roll, made with Web Audio (no asset). Silent where audio is unavailable. */
+/** The dice-roll sound (public/sounds/dice-roll.wav, chosen by the user 2026-10-18), shared by the 3D and 2D rolls. */
+const ROLL_SOUND = "/sounds/dice-roll.wav";
+
+let audio: HTMLAudioElement | null = null;
+
+/** Plays the dice-roll sound from the start. Silent where audio is unavailable or blocked by the browser. */
 export function playRollSound(): void {
   try {
-    const Ctx = window.AudioContext;
-    if (typeof Ctx !== "function") return;
-    const audio = new Ctx();
-    const start = audio.currentTime;
-    for (let i = 0; i < 4; i++) {
-      const osc = audio.createOscillator();
-      const gain = audio.createGain();
-      osc.type = "triangle";
-      osc.frequency.value = 520 + i * 90;
-      const at = start + i * 0.06;
-      gain.gain.setValueAtTime(0.0001, at);
-      gain.gain.exponentialRampToValueAtTime(0.12, at + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.05);
-      osc.connect(gain).connect(audio.destination);
-      osc.start(at);
-      osc.stop(at + 0.06);
-    }
-    window.setTimeout(() => void audio.close(), 500);
+    if (typeof Audio !== "function") return;
+    audio ??= new Audio(ROLL_SOUND);
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      // Autoplay blocked or no audio device: rolls stay silent.
+    });
   } catch {
     // No audio on this device: rolls stay silent.
   }
