@@ -15,19 +15,31 @@ export const TRAVEL_METHODS = ["foot", "mount", "wagon", "boat", "fly"] as const
 export type TravelMethod = (typeof TRAVEL_METHODS)[number];
 export const TRAVEL_PACES = ["slow", "normal", "fast"] as const;
 export type TravelPace = (typeof TRAVEL_PACES)[number];
-/** The header's pace for the party trail and token distances: by terrain, or a flat km/day. */
-export const TRAIL_MODES = ["foot", "mount", "20", "40", "60", "80"] as const;
-export type TrailMode = (typeof TRAIL_MODES)[number];
+/**
+ * Flat km/day paces the header offered before PD1. Stored map options may
+ * still hold them until `migrations/mapTrailMode:rewriteTrailMode` has run;
+ * they read as a travel method (`trailMethod`).
+ */
+export const LEGACY_TRAIL_MODES = ["20", "40", "60", "80"] as const;
+export type LegacyTrailMode = (typeof LEGACY_TRAIL_MODES)[number];
+
+/** The party trail's travel method for a stored `options.trail`: a flat pace reads as On foot, `80` as Mounted. */
+export function trailMethod(mode: TravelMethod | LegacyTrailMode): TravelMethod {
+  if (mode === "80") return "mount";
+  return (TRAVEL_METHODS as readonly string[]).includes(mode) ? (mode as TravelMethod) : "foot";
+}
 
 export const SPEED_TERRAINS: readonly SpeedTerrain[] = ["road", "wilds", "deep", "marsh", "mountains", "water"];
 export const SPEED_TERRAIN_CODE: Record<SpeedTerrain, TerrainCode> = { road: "r", wilds: "w", marsh: "m", deep: "d", mountains: "h", water: "." };
 const CODE_TERRAIN: Partial<Record<string, SpeedTerrain>> = { r: "road", w: "wilds", m: "marsh", d: "deep", h: "mountains", ".": "water" };
 
 export type TravelRules = {
-  /** km per day by method and terrain, for the Measure tool (the board's MSPD). */
+  /**
+   * km per day by method and terrain (the board's MSPD). One table drives
+   * Measure, the party trail and token distances; PD1 folded the board's
+   * separate foot/mount trail table (PMAP) into it.
+   */
   speeds: Record<TravelMethod, SpeedTable>;
-  /** km per day on foot or mounted, for the party trail and token distances (the board's PMAP). */
-  trail: Record<"foot" | "mount", SpeedTable>;
   /** Pace multipliers: Cautious and Forced march. */
   slow: number;
   fast: number;
@@ -41,10 +53,6 @@ export const DEFAULT_TRAVEL_RULES: TravelRules = {
     wagon: { road: 50, wilds: 30, marsh: 6, deep: 12, mountains: 5, water: 5 },
     boat: { road: 30, wilds: 25, marsh: 40, deep: 15, mountains: 8, water: 100 },
     fly: { road: 120, wilds: 120, marsh: 120, deep: 120, mountains: 120, water: 120 },
-  },
-  trail: {
-    foot: { road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 20 },
-    mount: { road: 80, wilds: 60, marsh: 18, deep: 30, mountains: 15, water: 20 },
   },
   slow: 0.75,
   fast: 1.33,
@@ -60,14 +68,7 @@ export const METHOD_LABELS: Record<TravelMethod, string> = {
   fly: "Flying",
 };
 
-export const TRAIL_MODE_LABELS: Record<TrailMode, string> = {
-  foot: "On foot · by terrain",
-  mount: "Mounted · by terrain",
-  "20": "Hard going · 20 km/day",
-  "40": "Wilds on foot · 40 km/day",
-  "60": "Road on foot · 60 km/day",
-  "80": "Mounted · 80 km/day",
-};
+export const PACE_LABELS: Record<TravelPace, string> = { slow: "Cautious", normal: "Normal", fast: "Forced march" };
 
 /** The map's size in km: `widthKm` across, height by the image's aspect ratio. */
 export type MapScale = { widthKm: number; heightKm: number };
@@ -90,15 +91,29 @@ function speedOf(table: SpeedTable, code: string): number | undefined {
 
 export type LegResult = { km: number; days: number; water: boolean; blocked: boolean };
 
+/** km per day for `method` on terrain `code` after the pace multiplier; unpainted or unknown ground counts as Wilds. */
+export function terrainSpeed(rules: TravelRules, method: TravelMethod, pace: TravelPace, code: string): number {
+  const table = rules.speeds[method] ?? rules.speeds.foot;
+  return (speedOf(table, code) ?? table.wilds) * paceFactor(pace, rules);
+}
+
 /**
  * One leg for the party trail and token distances (the board's `route`):
- * sampled every ~2 km at the step midpoints; impassable steps add no time but
- * mark the leg blocked; water marks it as crossing water.
+ * sampled every ~2 km at the step midpoints, each step at the travel method's
+ * speed for its terrain and the pace; impassable steps add no time but mark
+ * the leg blocked; water marks it as crossing water.
  */
-export function trailLeg(a: Point, b: Point, scale: MapScale, terrainAt: TerrainLookup, mode: TrailMode, rules: TravelRules = DEFAULT_TRAVEL_RULES): LegResult {
+export function trailLeg(
+  a: Point,
+  b: Point,
+  scale: MapScale,
+  terrainAt: TerrainLookup,
+  method: TravelMethod,
+  rules: TravelRules = DEFAULT_TRAVEL_RULES,
+  pace: TravelPace = "normal",
+): LegResult {
   const km = distanceKm(a, b, scale);
   const steps = Math.max(1, Math.ceil(km / 2));
-  const fixed = Number(mode) || 0;
   let days = 0;
   let water = false;
   let blocked = false;
@@ -110,18 +125,17 @@ export function trailLeg(a: Point, b: Point, scale: MapScale, terrainAt: Terrain
       blocked = true;
       continue;
     }
-    const table = mode === "mount" ? rules.trail.mount : rules.trail.foot;
-    days += km / steps / (fixed || speedOf(table, code) || 40);
+    days += km / steps / terrainSpeed(rules, method, pace, code);
   }
   return { km, days, water, blocked };
 }
 
 /** A path's legs summed (the board's "Party has travelled"). */
-export function trailTotal(points: Point[], scale: MapScale, terrainAt: TerrainLookup, mode: TrailMode, rules?: TravelRules): LegResult | null {
+export function trailTotal(points: Point[], scale: MapScale, terrainAt: TerrainLookup, method: TravelMethod, rules?: TravelRules, pace?: TravelPace): LegResult | null {
   if (points.length < 2) return null;
   const total: LegResult = { km: 0, days: 0, water: false, blocked: false };
   for (let i = 1; i < points.length; i++) {
-    const leg = trailLeg(points[i - 1], points[i], scale, terrainAt, mode, rules);
+    const leg = trailLeg(points[i - 1], points[i], scale, terrainAt, method, rules, pace);
     total.km += leg.km;
     total.days += leg.days;
     total.water ||= leg.water;

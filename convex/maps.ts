@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 
 import { applyResourceDelta } from "../src/lib/domain/characters/index";
 import { applyCountdownAction } from "../src/lib/domain/countdowns/index";
+import { trailMethod } from "../src/lib/domain/travel/index";
 import { appError } from "../src/lib/errors/app-error";
 import { encounterRoll, travelDays } from "../src/lib/domain/frames/horizon";
 import { enduranceOwnerKey } from "../src/lib/domain/rest/frame-hooks/index";
@@ -66,6 +67,7 @@ import {
   mapLocationValidator,
   mapViewValidator,
   moveResultValidator,
+  trailOptionValidator,
   travelRulesValidator,
 } from "./lib/validators/maps";
 
@@ -309,12 +311,12 @@ export const setOptions = userMutation({
     pace: v.optional(v.union(v.literal("slow"), v.literal("normal"), v.literal("fast"))),
     hours: v.optional(v.number()),
     units: v.optional(v.union(v.literal("km"), v.literal("mi"))),
-    trail: v.optional(v.union(v.literal("foot"), v.literal("mount"), v.literal("20"), v.literal("40"), v.literal("60"), v.literal("80"))),
+    trail: v.optional(trailOptionValidator),
   },
   returns: v.null(),
-  handler: async (ctx, { campaignId, scaleKm, ...options }) => {
+  handler: async (ctx, { campaignId, scaleKm, trail, ...options }) => {
     const { map, scalars } = await gmMap(ctx, ctx.user, campaignId);
-    const clean = Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined));
+    const clean = Object.fromEntries(Object.entries({ ...options, trail: trail && trailMethod(trail) }).filter(([, value]) => value !== undefined));
     await saveScalars(ctx, campaignId, map, { ...scalars, scaleKm: scaleKm ?? scalars.scaleKm, options: { ...scalars.options, ...clean } });
     return null;
   },

@@ -1,6 +1,6 @@
 import { v, type VFloat64 } from "convex/values";
 
-import { SPEED_TERRAINS, TRAIL_MODES, TRAVEL_METHODS, TRAVEL_PACES, type SpeedTerrain, type TravelMethod } from "../../../src/lib/domain/travel/index";
+import { LEGACY_TRAIL_MODES, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, type SpeedTerrain, type TravelMethod } from "../../../src/lib/domain/travel/index";
 import { HORIZON_TRAVEL_MODES } from "../../../src/lib/world/map-state";
 import { frameIdValidator } from "./campaigns";
 
@@ -10,6 +10,9 @@ import { frameIdValidator } from "./campaigns";
 const literals = <T extends string>(values: readonly T[]) => v.union(...values.map((value) => v.literal(value)));
 
 const point = v.object({ x: v.number(), y: v.number() });
+
+/** `setOptions`' trail pace: a travel method; a pre-PD1 flat pace from an older client is still accepted and read as a method. */
+export const trailOptionValidator = literals([...TRAVEL_METHODS, ...LEGACY_TRAIL_MODES]);
 
 /** A marker's stored fields (`mapTokens`), without its campaign and id. */
 export const mapTokenFields = {
@@ -37,10 +40,14 @@ export const crawlHexFields = {
 
 const speedTable = v.object(Object.fromEntries(SPEED_TERRAINS.map((t) => [t, v.number()])) as Record<SpeedTerrain, VFloat64<number>>);
 
-/** GM overrides of the travel speeds (`travelRulesSchema` checks the ranges). */
+/**
+ * GM overrides of the travel speeds (`travelRulesSchema` checks the ranges).
+ * `trail` (the pre-PD1 trail table) is still accepted from older clients and
+ * ignored; reads never return it. Narrow it away with the stored rows.
+ */
 export const travelRulesValidator = v.object({
   speeds: v.object(Object.fromEntries(TRAVEL_METHODS.map((m) => [m, speedTable])) as Record<TravelMethod, typeof speedTable>),
-  trail: v.object({ foot: speedTable, mount: speedTable }),
+  trail: v.optional(v.object({ foot: speedTable, mount: speedTable })),
   slow: v.number(),
   fast: v.number(),
 });
@@ -69,7 +76,8 @@ const sharedState = {
     pace: literals(TRAVEL_PACES),
     hours: v.number(),
     units: v.union(v.literal("km"), v.literal("mi")),
-    trail: literals(TRAIL_MODES),
+    // Reads turn a legacy flat pace into a method (`trailMethod`), so views only carry methods.
+    trail: literals(TRAVEL_METHODS),
     rules: v.optional(travelRulesValidator),
   }),
   customTypes: v.array(v.object({ id: v.string(), label: v.string(), icon: v.string(), color: v.string() })),

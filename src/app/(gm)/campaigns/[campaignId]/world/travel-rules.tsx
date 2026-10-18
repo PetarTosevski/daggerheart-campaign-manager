@@ -3,28 +3,22 @@
 import { useState } from "react";
 
 import { Modal } from "@/components/brand/modal";
-import { DEFAULT_TRAVEL_RULES, METHOD_LABELS, SPEED_TERRAINS, TRAVEL_METHODS, type SpeedTerrain, type TravelRules } from "@/lib/domain/travel";
+import { DEFAULT_TRAVEL_RULES, METHOD_LABELS, SPEED_TERRAINS, SPEED_TERRAIN_CODE, TRAVEL_METHODS, type SpeedTerrain, type TravelRules } from "@/lib/domain/travel";
+import { TERRAIN_NAMES } from "@/lib/world/terrain";
 
 import type { MapActions } from "./map-actions";
 
-const TERRAIN_LABEL: Record<SpeedTerrain, string> = { road: "Road", wilds: "Wilds", deep: "Deep wilds", marsh: "Marsh", mountains: "Mountains", water: "Water" };
+/** The painted terrain's names, as on the brushes and the Travel speeds legend. */
+const TERRAIN_LABEL = Object.fromEntries(SPEED_TERRAINS.map((t) => [t, TERRAIN_NAMES[SPEED_TERRAIN_CODE[t]]])) as Record<SpeedTerrain, string>;
 
 type Row = { key: string; label: string; get: (r: TravelRules) => Record<SpeedTerrain, number>; set: (r: TravelRules, t: Record<SpeedTerrain, number>) => TravelRules };
 
-const ROWS: Row[] = [
-  ...TRAVEL_METHODS.map((m) => ({
-    key: m,
-    label: `Measure · ${METHOD_LABELS[m]}`,
-    get: (r: TravelRules) => r.speeds[m],
-    set: (r: TravelRules, t: Record<SpeedTerrain, number>) => ({ ...r, speeds: { ...r.speeds, [m]: t } }),
-  })),
-  ...(["foot", "mount"] as const).map((m) => ({
-    key: `trail-${m}`,
-    label: `Trail · ${m === "foot" ? "On foot" : "Mounted"}`,
-    get: (r: TravelRules) => r.trail[m],
-    set: (r: TravelRules, t: Record<SpeedTerrain, number>) => ({ ...r, trail: { ...r.trail, [m]: t } }),
-  })),
-];
+const ROWS: Row[] = TRAVEL_METHODS.map((m) => ({
+  key: m,
+  label: METHOD_LABELS[m],
+  get: (r: TravelRules) => r.speeds[m],
+  set: (r: TravelRules, t: Record<SpeedTerrain, number>) => ({ ...r, speeds: { ...r.speeds, [m]: t } }),
+}));
 
 /** The campaign's travel speeds (house rule), km per day, editable by the GM. */
 export function TravelRulesDialog({ open, onClose, rules, actions }: { open: boolean; onClose: () => void; rules: TravelRules; actions: MapActions }) {
@@ -47,7 +41,10 @@ function RulesForm({ rules, actions, onClose }: { rules: TravelRules; actions: M
         if (ok !== undefined) onClose();
       }}
     >
-      <p className="m-0 text-[14px] text-[#c9d2cf]">Kilometres per day by terrain. Measure uses the travel method; the party trail and token distances use the header pace.</p>
+      <p className="m-0 text-[14px] text-[#c9d2cf]">
+        Kilometres per day by travel method and terrain. This one table drives Measure, the party trail and token distances; unpainted ground counts as Wilds, and
+        Impassable can&rsquo;t be crossed.
+</p>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[13px]">
           <thead>

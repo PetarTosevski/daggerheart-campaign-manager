@@ -62,6 +62,7 @@ import type * as members from "../members.js";
 import type * as migrations_characterExtras from "../migrations/characterExtras.js";
 import type * as migrations_characters from "../migrations/characters.js";
 import type * as migrations_codex from "../migrations/codex.js";
+import type * as migrations_mapTrailMode from "../migrations/mapTrailMode.js";
 import type * as migrations_maps from "../migrations/maps.js";
 import type * as migrations_motherboardEconomy from "../migrations/motherboardEconomy.js";
 import type * as migrations_run from "../migrations/run.js";
@@ -156,6 +157,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/characterExtras": typeof migrations_characterExtras;
   "migrations/characters": typeof migrations_characters;
   "migrations/codex": typeof migrations_codex;
+  "migrations/mapTrailMode": typeof migrations_mapTrailMode;
   "migrations/maps": typeof migrations_maps;
   "migrations/motherboardEconomy": typeof migrations_motherboardEconomy;
   "migrations/run": typeof migrations_run;
