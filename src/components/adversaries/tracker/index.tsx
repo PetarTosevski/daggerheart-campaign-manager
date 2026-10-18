@@ -9,6 +9,8 @@ import { useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { TrackerProps } from "../slots";
+import { spotlightCostsFear, turnSpotlights } from "@/lib/domain/encounters/spotlight";
+
 import { InstanceCard } from "./instance-card";
 import { rulesFor } from "./rules";
 import { SelectedBlock } from "./selected-block";
@@ -52,6 +54,7 @@ function Tracker({ campaignId, view, fear }: { campaignId: Id<"campaigns">; view
                   instance={instance}
                   rules={rulesFor(instance.source, customs ?? [])}
                   gmTurn={encounter.gmTurn}
+                  spotlightCostsFear={spotlightCostsFear(turnSpotlights(instances, encounter.gmTurn))}
                   selected={instance._id === selected?._id}
                   onSelect={() => setPicked(instance._id)}
                   actions={actions}

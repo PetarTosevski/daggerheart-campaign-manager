@@ -32,3 +32,17 @@ export function spotlightStatus(count: number, limit: number | "X"): { count: nu
 export function applySpotlight<T extends { spotlights: number; spotlightTurn: number }>(instance: T, gmTurn: number): T {
   return { ...instance, spotlights: spotlightsThisTurn(instance, gmTurn) + 1, spotlightTurn: gmTurn };
 }
+
+/** All spotlights this GM turn across the encounter's adversaries. */
+export function turnSpotlights(instances: readonly { spotlights: number; spotlightTurn: number }[], gmTurn: number): number {
+  return instances.reduce((sum, i) => sum + spotlightsThisTurn(i, gmTurn), 0);
+}
+
+/**
+ * CB p.153: "You can spend a Fear to make an additional GM move, shifting the spotlight to another adversary." The first
+ * spotlight of a GM turn is free; every further one spends 1 Fear (user 2026-10-18: "make each additional spotlight
+ * automatically take away fear").
+ */
+export function spotlightCostsFear(spotlightsSoFar: number): boolean {
+  return spotlightsSoFar >= 1;
+}

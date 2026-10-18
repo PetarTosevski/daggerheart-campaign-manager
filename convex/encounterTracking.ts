@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 
 import { applyCondition, applyMark, damageSeverity, damageTaken, hpForDamage, isDefeated, MAX_DAMAGE, minionDefeats } from "../src/lib/domain/encounters/damage";
-import { applySpotlight } from "../src/lib/domain/encounters/spotlight";
+import { applySpotlight, spotlightCostsFear, turnSpotlights } from "../src/lib/domain/encounters/spotlight";
 import { minionValue } from "../src/lib/domain/adversaries/index";
 import { appError } from "../src/lib/errors/app-error";
 import { ADVERSARIES } from "../src/lib/srd/adversaries";
@@ -179,13 +179,20 @@ export const setNote = keyedGmMutation({
  */
 export const spotlight = keyedGmMutation({
   args: { instanceId: v.string() },
-  returns: v.object({ spotlights: v.number(), gmTurn: v.number() }),
+  returns: v.object({ spotlights: v.number(), gmTurn: v.number(), fearSpent: v.boolean() }),
   handler: async (ctx, { instanceId }) =>
     ctx.once("encounter_spotlight", { instanceId }, async () => {
       const { instance, encounter } = await loadRunning(ctx, ctx.campaign._id, instanceId);
+      // Every spotlight after the first in a GM turn spends 1 Fear (CB p.153); FEAR_EMPTY when the GM has none.
+      const all = await ctx.db
+        .query("encounterAdversaries")
+        .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounter._id))
+        .take(MAX_INSTANCES + 1);
+      const fearSpent = spotlightCostsFear(turnSpotlights(all, encounter.gmTurn));
+      if (fearSpent) await spendCampaignFear(ctx, ctx.campaign._id, 1, "move");
       const { spotlights, spotlightTurn } = applySpotlight(instance, encounter.gmTurn);
       await ctx.db.patch("encounterAdversaries", instance._id, { spotlights, spotlightTurn, updatedAt: Date.now() });
-      return { spotlights, gmTurn: spotlightTurn };
+      return { spotlights, gmTurn: spotlightTurn, fearSpent };
     }),
 });
 

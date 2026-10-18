@@ -172,18 +172,27 @@ describe("encounter tracking: rules", () => {
     );
   });
 
-  it("counts spotlights per GM turn without blocking, and End GM turn resets them without writing the instances", async () => {
-    const { gm, campaignId, encounterId, add, instance } = await running();
+  it("counts spotlights per GM turn; every spotlight after the first spends 1 Fear (CB p.153); End GM turn resets", async () => {
+    const { gm, campaignId, encounterId, add, instance, fear } = await running();
     const id = await add(BURROWER);
-    const spot = () => gm.mutation(api.encounterTracking.spotlight, { campaignId, instanceId: id, idempotencyKey: key() });
-    expect(await spot()).toEqual({ spotlights: 1, gmTurn: 1 });
-    expect(await spot()).toEqual({ spotlights: 2, gmTurn: 1 });
-    expect(await spot()).toEqual({ spotlights: 3, gmTurn: 1 });
-    expect(await spot()).toEqual({ spotlights: 4, gmTurn: 1 }); // past Relentless (3): a warning in the UI, never refused
+    const other = await add(BEAR);
+    await gm.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: key() });
+    const spot = (instanceId = id) => gm.mutation(api.encounterTracking.spotlight, { campaignId, instanceId, idempotencyKey: key() });
+    expect(await spot()).toEqual({ spotlights: 1, gmTurn: 1, fearSpent: false });
+    expect(await fear()).toBe(3);
+    // Another adversary in the same GM turn: an additional move, 1 Fear.
+    expect(await spot(other)).toEqual({ spotlights: 1, gmTurn: 1, fearSpent: true });
+    expect(await spot()).toEqual({ spotlights: 2, gmTurn: 1, fearSpent: true });
+    expect(await spot()).toEqual({ spotlights: 3, gmTurn: 1, fearSpent: true });
+    expect(await fear()).toBe(0);
+    // No Fear left: refused, nothing counted.
+    expect(await code(spot())).toBe("FEAR_EMPTY");
+    expect((await instance(id)).spotlights).toBe(3);
     const before = await instance(id);
     expect(await gm.mutation(api.encounterTracking.endGmTurn, { campaignId, encounterId, idempotencyKey: key() })).toEqual({ gmTurn: 2 });
     expect((await instance(id)).updatedAt).toBe(before.updatedAt);
-    expect(await spot()).toEqual({ spotlights: 1, gmTurn: 2 });
+    // A new GM turn: the first spotlight is free again.
+    expect(await spot()).toEqual({ spotlights: 1, gmTurn: 2, fearSpent: false });
   });
 
   it("spends Fear: lowers campaign Fear, writes history 'spend', FEAR_EMPTY past what is held", async () => {
