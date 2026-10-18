@@ -122,7 +122,7 @@ const wizardDraft = (name: string) => ({
     .map((c) => c.id),
 });
 
-test("a Wizard picks a Strange Patterns number in the panel and answers the dice box prompt with a button", async ({ page }) => {
+test("a Wizard picks a Strange Patterns number in the panel and a matching roll offers the benefit", async ({ page }) => {
   await signInAsTestGm(page);
   await expect(page).toHaveURL("/");
   const campaign = unique("Patterns");
@@ -144,16 +144,11 @@ test("a Wizard picks a Strange Patterns number in the panel and answers the dice
   await patterns.getByRole("button", { name: "Use Strange Patterns", exact: true }).click();
   await expect(patterns.getByText("chose the Strange Patterns number: 3")).toBeVisible();
 
-  // A physical action roll whose Hope Die shows 3 (with Fear): the prompt's "+1 Hope" button takes the benefit.
-  const box = page.getByRole("region", { name: "Dice", exact: true });
-  await box.getByLabel("3D dice").uncheck();
-  await box.getByLabel("Enter physical dice").check();
-  const physical = box.getByRole("group", { name: "Physical dice" });
-  await physical.getByLabel("Hope die (d12)").fill("3");
-  await physical.getByLabel("Fear die (d12)").fill("8");
-  await box.getByRole("button", { name: "Roll", exact: true }).click();
-  const last = box.getByRole("region", { name: "Last roll" });
-  const prompt = last.getByRole("group", { name: /^Strange Patterns: a Duality Die shows 3/ });
-  await prompt.getByRole("button", { name: "+1 Hope" }).click();
-  await expect(prompt.getByRole("status")).toHaveText("used Strange Patterns: +1 Hope");
+  // A roll whose Hope Die shows 3 offers the Strange Patterns benefit (fixed dice through the server's manual roll;
+  // the sheet has no physical-dice entry), and taking the benefit gives +1 Hope.
+  const agility = { kind: "action" as const, trait: "agility" as const, modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
+  const out = await client.mutation(api.rolls.manualRoll, { characterId, roll: agility, values: [3, 8], idempotencyKey: crypto.randomUUID() });
+  expect("prompts" in out ? (out.prompts as { featureKey: string }[]).map((p) => p.featureKey) : []).toEqual(["strangePatternsBenefit"]);
+  const benefit = await client.mutation(api.classFeatures.use, { characterId, featureKey: "strangePatternsBenefit", params: { choice: "hope" }, idempotencyKey: crypto.randomUUID() });
+  expect(benefit.summary).toBe("used Strange Patterns: +1 Hope");
 });

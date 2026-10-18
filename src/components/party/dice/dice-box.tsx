@@ -10,7 +10,7 @@ import { BRAWLERS_STRIKE } from "@/lib/domain/class-features/classes/brawler";
 import { rollOptions, weaponOverrides } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES } from "@/lib/domain/class-features/index";
 import type { FeatureScope, RollPrompt } from "@/lib/domain/class-features/types";
-import { advantagePlan, dualityEffects, OUTCOME_LABEL, TYPED_MODIFIER_MAX, weaponDice, type DicePool } from "@/lib/domain/dice";
+import { dualityEffects, OUTCOME_LABEL, TYPED_MODIFIER_MAX, weaponDice, type DicePool } from "@/lib/domain/dice";
 import { ikonisWeapon } from "@/lib/domain/dice/ikonis";
 import type { RollRecord } from "@/lib/domain/duality";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
@@ -136,7 +136,7 @@ function RollPrompts({ characterId, prompts }: { characterId: Id<"characters">; 
   ));
 }
 
-/** A board chip around a real checkbox (Experiences, features, attack, physical dice). */
+/** A board chip around a real checkbox (Experiences, features, attack). */
 function Chip({ checked, onChange, children }: { checked: boolean; onChange: (on: boolean) => void; children: ReactNode }) {
   return (
     <label className="dc-chip">
@@ -148,8 +148,7 @@ function Chip({ checked, onChange, children }: { checked: boolean; onChange: (on
 
 /**
  * The dice box on the sheet, in the board's dice toolbar format: action, reaction and damage rolls, server-rolled
- * or typed in from physical dice, with Experiences, features, help dice, physical entry and Tag Team under
- * "Roll options".
+ * server-rolled, with Experiences, features, help dice and Tag Team under "Roll options".
  */
 export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id<"campaigns">; character: CharacterView; hopeAndFear: boolean }) {
   const view = character.sheet;
@@ -174,8 +173,6 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const [customCount, setCustomCount] = useState("1");
   const [customSides, setCustomSides] = useState<number>(6);
   const [critical, setCritical] = useState(false);
-  const [manual, setManual] = useState(false);
-  const [values, setValues] = useState<string[]>([]);
   const [result, setResult] = useState<Result | null>(null);
   const [history, setHistory] = useState<Result[]>([]);
   const [rolling, setRolling] = useState(false);
@@ -187,9 +184,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
 
   const actionRoll = useIntent(api.rolls.actionRoll);
   const damageRoll = useIntent(api.rolls.damageRoll);
-  const manualRoll = useIntent(api.rolls.manualRoll);
-  const pending = actionRoll.pending || damageRoll.pending || manualRoll.pending;
-  const error = actionRoll.error ?? damageRoll.error ?? manualRoll.error;
+  const pending = actionRoll.pending || damageRoll.pending;
+  const error = actionRoll.error ?? damageRoll.error;
 
   // GM Fear at the right of the toolbar, as on the board (players see it on the dashboard too).
   const campaign = useQuery(api.campaigns.get, { campaignId });
@@ -221,31 +217,6 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const useIkonis = mode === "action" && ikonisAttack && ikonis !== null;
   const rollTrait = useIkonis && ikonis.trait ? ikonis.trait : trait;
 
-  // The dice a manual entry must supply, in the server's rolling order.
-  const damagePool: DicePool = (() => {
-    const weapon = weapons.find((w) => w.key === damageSourceKey);
-    if (weapon) return weapon.dice;
-    if (damageSourceKey === "ikonis" && ikonis) return ikonis.dice;
-    const override = overrides.find((o) => o.key === damageSourceKey);
-    if (override) return override.dice;
-    return [{ count: toInt(customCount) ?? 0, sides: customSides }];
-  })();
-  const plan = (() => {
-    try {
-      return advantagePlan(advantage + (useIkonis && ikonis.advantage ? 1 : 0), disadvantage, mode === "reaction" ? 0 : help);
-    } catch {
-      return [];
-    }
-  })();
-  const expected: { label: string; sides: number }[] =
-    mode === "damage"
-      ? damagePool.flatMap((p) => Array.from({ length: Math.max(0, p.count) }, () => p.sides)).map((sides, i) => ({ label: `Damage die ${i + 1}`, sides }))
-      : [
-          { label: "Hope die", sides: 12 },
-          { label: "Fear die", sides: 12 },
-          ...plan.map((role, i) => ({ label: role === "disadvantage" ? "Disadvantage die" : `${role === "help" ? "Help" : "Advantage"} die ${i + 1}`, sides: 6 })),
-        ];
-
   /** What the result row says the roll was: "Presence +2 action roll vs 12", "Primary: Rapier (1d8) · critical". */
   function rollLabel(): string {
     if (mode === "damage") {
@@ -274,7 +245,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
     setResult(null);
     const label = rollLabel();
     const mod = toInt(modifier) ?? 0;
-    const picked = manual ? [] : chosen.filter((k) => options.some((o) => o.key === k));
+    const picked = chosen.filter((k) => options.some((o) => o.key === k));
     if (mode === "damage") {
       const damageSource =
         damageSourceKey === "primary" || damageSourceKey === "secondary"
@@ -285,9 +256,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
               ? { kind: "ikonis" as const }
               : { kind: "override" as const, key: damageSourceKey };
       const args = { source: damageSource, critical, modifier: mod, options: picked };
-      const out = manual
-        ? await manualRoll.fire({ characterId: character._id, roll: { kind: "damage", ...args }, values: values.slice(0, expected.length).map((v) => toInt(v) ?? 0) })
-        : await damageRoll.fire({ characterId: character._id, ...args });
+      const out = await damageRoll.fire({ characterId: character._id, ...args });
       if (out) await show(out.roll, [], label);
       return;
     }
@@ -305,20 +274,14 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       options: picked,
       ...(useIkonis ? { ikonis: true } : {}),
     };
-    if (manual) {
-      const out = await manualRoll.fire({ characterId: character._id, roll: args, values: values.slice(0, expected.length).map((v) => toInt(v) ?? 0) });
-      if (out) await show(out.roll, "prompts" in out ? (out.prompts as RollPrompt[]) : [], label, "fearGained" in out ? (out.fearGained as number) : undefined);
-      return;
-    }
     const out = await actionRoll.fire({ characterId: character._id, ...args });
     if (out) await show(out.roll, out.prompts, label, out.fearGained);
   }
 
   const hopeCost = experienceIds.length;
   const notEnoughHope = mode !== "damage" && hopeCost > view.hope;
-  const manualIncomplete = manual && expected.some((_, i) => toInt(values[i] ?? "") === undefined);
   const modifierTooBig = Math.abs(toInt(modifier) ?? 0) > TYPED_MODIFIER_MAX;
-  const canRoll = !(unavailable || pending || notEnoughHope || manualIncomplete || modifierTooBig);
+  const canRoll = !(unavailable || pending || notEnoughHope || modifierTooBig);
   const earlier = history.slice(1);
 
   const modField = (
@@ -479,7 +442,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
               <CountStepper label="Help dice" value={help} max={ADVANTAGE_LIMIT} onChange={setHelp} />
             </div>
           ) : null}
-          {options.length > 0 && !manual ? (
+          {options.length > 0 ? (
             <fieldset className="dc-group">
               <legend className="sh-lbl">Features</legend>
               {options.map((o) =>
@@ -497,32 +460,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
             </fieldset>
           ) : null}
           <div className="dc-group">
-            <Chip checked={manual} onChange={setManual}>
-              Enter physical dice
-            </Chip>
             <TagTeam campaignId={campaignId} character={character} disabled={unavailable} />
           </div>
-          {manual ? (
-            <div className="dc-group dc-physical" role="group" aria-label="Physical dice">
-              {expected.map((d, i) => (
-                <label key={`${d.label}-${i}`} className="dc-field dc-narrow">
-                  <span className="sh-lbl">
-                    {d.label} (d{d.sides})
-                  </span>
-                  <input
-                    className="dc-in"
-                    inputMode="numeric"
-                    value={values[i] ?? ""}
-                    onChange={(e) => {
-                      const next = [...values];
-                      next[i] = e.target.value.replace(/[^0-9]/g, "").slice(0, 2);
-                      setValues(next);
-                    }}
-                  />
-                </label>
-              ))}
-            </div>
-          ) : null}
         </div>
       </details>
 

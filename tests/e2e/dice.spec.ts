@@ -125,15 +125,11 @@ test("a GM free roll is hidden from the player until revealed", async ({ page, b
   await close();
 });
 
-test("a manual entry shows \"manual\", and undoing a Fear roll lowers GM Fear", async ({ page, browser }) => {
+test("undoing a Fear roll lowers GM Fear", async ({ page, browser }) => {
   const { campaignId, hero, characterId, player, close } = await campaignWithPlayer(page, browser);
-  await player.goto(`/campaigns/${campaignId}/party/${characterId}`);
-  const box = player.getByRole("region", { name: "Dice", exact: true });
-  await box.getByLabel("Enter physical dice").check();
-  await box.getByLabel("Hope die (d12)").fill("3");
-  await box.getByLabel("Fear die (d12)").fill("8");
-  await box.getByRole("button", { name: "Roll", exact: true }).click();
-  await expect(box.getByTestId("last-roll")).toContainText("manual");
+  // The sheet has no physical-dice entry; fixed dice (Hope 3, Fear 8) come through the server's manual roll.
+  const agility = { kind: "action" as const, trait: "agility" as const, modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
+  await (await convexAs(player)).mutation(api.rolls.manualRoll, { characterId, roll: agility, values: [3, 8], idempotencyKey: crypto.randomUUID() });
 
   await page.goto(`/campaigns/${campaignId}`);
   await expect(page.getByRole("button", { name: "Fear 1 of 12" })).toHaveAttribute("aria-pressed", "true");

@@ -69,7 +69,6 @@
 .dc-chip:hover{background:rgba(185,162,122,.15)}
 .dc-chip:has(input:checked),.dc-chip.on{background:var(--sheet-green,#3d5e2e);border-color:var(--sheet-green,#3d5e2e);color:#f3f7ee}
 .dc-chip.static{cursor:default;opacity:.85}
-.dc-physical{flex-basis:100%}
 
 /* Tag Team (inside Roll options). */
 .dc-tag{flex-basis:100%;display:flex;flex-direction:column;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid #cdb88f;background:#fbf5e6}
