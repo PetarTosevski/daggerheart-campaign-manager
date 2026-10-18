@@ -234,6 +234,19 @@ describe("deathMoves", () => {
     expect((await p1.query(api.deathMoves.state, { characterId: a })).awaitingMove).toBe(true);
   });
 
+  it("LL1 decision 5: undoing back below full Hit Points also clears the flag", async () => {
+    const { t, p1, a, characterOf } = await setup();
+    await p1.mutation(api.characters.adjustResource, { characterId: a, resource: "hp", delta: -1 });
+    const agility = { kind: "action" as const, trait: "agility" as const, modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
+    await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: agility, values: [8, 3], idempotencyKey: key() }); // with Hope: the sheet changes, so the row keeps a `before`
+    const roll = await t.run(async (ctx) => (await ctx.db.query("actionLog").withIndex("by_character_at", (q) => q.eq("characterId", a)).collect()).at(-1)!);
+    // The flag as Return to play leaves it (set directly, without touching updatedAt so the undo isn't stale).
+    await t.run((ctx) => ctx.db.patch("characters", a, { deathMoveSpent: true }));
+    expect(roll.before).toBeDefined();
+    await p1.mutation(api.actionLog.undo, { entryId: roll._id, idempotencyKey: key() });
+    expect((await characterOf(a)).deathMoveSpent).toBeUndefined();
+  });
+
   it("LL1 decision 5: back in play below full Hit Points sets no flag", async () => {
     const { p1, gm, a, edit, characterOf } = await setup("castle-high");
     await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });

@@ -198,7 +198,9 @@ export async function undoEntry(
     if (r.characterId === undefined || r.before === undefined || restored.has(r.characterId)) continue;
     restored.add(r.characterId);
     if ((await ctx.db.get("characters", r.characterId)) === null) continue;
-    await ctx.db.patch("characters", r.characterId, { sheet: storedSheet(readSheet(JSON.parse(r.before))), updatedAt: now });
+    const sheet = readSheet(JSON.parse(r.before));
+    // As saveSheet does: a Hit Point cleared again makes a death move due the next time the last one is marked (decision 5).
+    await ctx.db.patch("characters", r.characterId, { sheet: storedSheet(sheet), updatedAt: now, ...(sheet.hp < sheet.hpMax ? { deathMoveSpent: undefined } : {}) });
   }
 
   for (const id of returning) {
