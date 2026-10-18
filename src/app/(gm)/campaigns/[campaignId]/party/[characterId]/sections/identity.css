@@ -66,3 +66,19 @@
   .sh-box.id-grid{grid-template-columns:minmax(0,1fr)}
   .id-traits{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* Guided level-up (GL2): draft-only panels in the sheet's green, tagged "Level N", so they read as not saved yet. */
+.id-lu{margin:12px 0 0;padding:10px 12px;min-width:0;border-radius:10px;border:2px dashed var(--sheet-green-bright,#4d7a3a);background:rgba(77,122,58,.08);display:flex;flex-direction:column;gap:8px}
+.id-lu-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.id-lu-field .sh-in,.id-lu-field .cs-in{min-height:44px;border-color:var(--sheet-green-bright,#4d7a3a)}
+.id-lu-label{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:0;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;color:var(--sheet-green,#3d5e2e)}
+.id-lu legend.id-lu-label{float:left;width:100%}
+.id-lu-tag{padding:1px 8px;border-radius:999px;background:var(--sheet-green,#3d5e2e);color:#f3f7ee;font-size:11px;letter-spacing:.06em}
+.id-lu-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.id-lu-check{display:flex;align-items:center;gap:8px;min-height:44px;padding:2px 4px;border-radius:8px;font-size:16px;line-height:1.2;color:var(--sheet-ink,#2a1f14);cursor:pointer}
+.id-lu-check:hover{background:rgba(77,122,58,.1)}
+.id-lu-check input{width:22px;height:22px;flex:none;margin:0;accent-color:var(--sheet-green,#3d5e2e);cursor:inherit}
+.id-lu-check input:focus-visible{outline:2px solid var(--sheet-green-bright,#4d7a3a);outline-offset:2px}
+.id-lu-check:has(input:disabled){opacity:.55;cursor:not-allowed}
+.id-lu-check > span:first-of-type{flex:1;min-width:0}
+.id-lu-preview{flex:none;white-space:nowrap;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;color:var(--sheet-green,#3d5e2e)}
