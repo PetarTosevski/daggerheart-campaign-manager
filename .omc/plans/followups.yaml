@@ -83,3 +83,32 @@ waves:
           - "Sanctuary markers are visible to players in any hex (add a built-in sanctuary token type if none exists)"
           - "Non-Horizon frames: player token visibility unchanged (existing tests pass)"
           - "Codex pins pointing at a token the player can't see are omitted (existing codex pin behaviour uses the player view)"
+  - wave: 4
+    tracers:
+      - id: X6
+        goal: Each player has at most one active character per campaign (dead and away characters don't count). A player benches their active character ("Send away") before creating or bringing back another; the campaign cap stays 50 during testing (bead to lower it to 10 later).
+        depends_on: []
+        owns:
+          - convex/characters.ts
+          - convex/deathMoves.ts
+          - convex/lib/validators/characters.ts
+          - src/lib/validation/characters.ts
+          - src/components/party/death/**
+          - src/components/party/party-card.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/roster.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/new/**
+          - tests/convex/characters.test.ts
+          - tests/convex/death-moves.test.ts
+          - tests/unit/party-card.test.ts
+          - tests/e2e/party-roster.spec.ts
+          - tests/e2e/character-wizard.spec.ts
+          - docs/tasks/TASK-X6-one-active-character.md
+        reads:
+          - convex/lib/characterSheet.ts
+          - convex/lib/permissions.ts
+        acceptance:
+          - "A player with an active character can't create another (or be assigned one) until that character is dead or away; GM-owned unassigned characters are exempt (convex tests)"
+          - "A player can send their own active character away (new away reason 'benched'); a player can bring back their own benched character only when they have no other active character; the GM can do both for anyone (convex tests)"
+          - "Death-move away (infirmary / sent home, Castle High) still returns only through the GM"
+          - "Roster and party card show Send away / Bring back to the owner and GM; the wizard explains why it is blocked (e2e)"
+          - "Campaign cap stays MAX_CHARACTERS_PER_CAMPAIGN = 50; MAX_CHARACTERS_PER_PLAYER is replaced by the one-active rule"
