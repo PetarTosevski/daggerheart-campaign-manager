@@ -238,7 +238,11 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
 
       <div id="wz-inventory" className="flex scroll-mt-4 flex-col gap-2">
         <span className="wz-lbl">Inventory</span>
-        <p className="wz-lead">You take a torch, 50 feet of rope, basic supplies and a handful of gold. Then choose:</p>
+        <p className="wz-lead">
+          {opts.ikonis
+            ? "You take a torch, 50 feet of rope, basic supplies, a Network tether and 5 quantum (no gold in Motherboard, CB 301–302). Then choose:"
+            : "You take a torch, 50 feet of rope, basic supplies and a handful of gold. Then choose:"}
+        </p>
       </div>
       <Group legend="Potion">
         <div className="flex flex-wrap gap-2">
