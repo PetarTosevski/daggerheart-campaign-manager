@@ -2,15 +2,17 @@
 
 import { useState } from "react";
 
-import { companionStats, COMPANION_EXPERIENCE_VALUE, TRAINING, type CompanionState, type TrainingId } from "@/lib/frames/extras/companion";
+import { RANGES } from "@/lib/frames/extras/common";
+import { COMPANION_DICE, companionStats, COMPANION_EXPERIENCE_VALUE, TRAINING, type CompanionState, type TrainingId } from "@/lib/frames/extras/companion";
+import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { BTN, ErrorLine, ExtraCard, Field, INPUT, LABEL, NOTE, Pips } from "./ui";
+import { ALT_BTN, BTN, ErrorLine, Field, INPUT, LABEL, NOTE, PawIcon, Pips, PlaqueBox, TEXTAREA } from "./ui";
 
 /**
- * Ranger companion sheet (Core pp.40–41). Edits are a local draft until saved;
+ * Ranger companion sheet (Core pp.40–41), the board's csComp overlay. Edits are a local draft until saved;
  * Stress saves at once. The parent remounts it (key) when the saved state changes.
  */
 export function CompanionPanel({
@@ -40,165 +42,214 @@ export function CompanionPanel({
   };
 
   return (
-    <ExtraCard title={state.name ? `Companion: ${state.name}` : "Companion"} subtitle="Your Beastbound animal companion and their training.">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Name">
-          <input className={INPUT} disabled={ro} maxLength={80} value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
-        </Field>
-        <Field label="Animal">
-          <input className={INPUT} disabled={ro} maxLength={80} placeholder="What kind of animal?" value={draft.kind} onChange={(e) => patch({ kind: e.target.value })} />
-        </Field>
-      </div>
+    <>
+      <div className="xs-cols">
+        <div className="xs-col">
+          <div className="xs-frame">
+            <PawIcon size={46} />
+            <input className={INPUT} aria-label="Companion name" disabled={ro} maxLength={80} placeholder="Name" value={draft.name} onChange={(e) => patch({ name: e.target.value })} />
+            <input className={INPUT} aria-label="Companion animal" disabled={ro} maxLength={80} placeholder="What kind of animal?" value={draft.kind} onChange={(e) => patch({ kind: e.target.value })} />
+          </div>
 
-      <div className="flex flex-wrap items-center gap-6">
-        <div className="flex flex-col items-center">
-          <span data-testid="companion-evasion" className="font-display text-[28px] text-parchment">
-            {stats.evasion}
-          </span>
-          <span className={LABEL}>Evasion</span>
+          <PlaqueBox level={3} title="Creation">
+            <p className={NOTE}>
+              Work with the GM to decide what kind of animal you have as your companion. Give them a name, then create two Experiences based on
+              their training and the history you have together. Finally, describe their standard attack.
+            </p>
+            <p className={NOTE}>
+              Start with +2 in two Experiences. Whenever you gain a new Experience, your companion also gains one. All new Experiences start at +2.
+            </p>
+          </PlaqueBox>
+
+          <PlaqueBox level={3} title="Attack & Damage">
+            <Field label="Attack">
+              <input className={INPUT} disabled={ro} maxLength={80} placeholder="Bite, claws, talons…" value={draft.attack.name} onChange={(e) => patch({ attack: { ...draft.attack, name: e.target.value } })} />
+            </Field>
+            <div className="xs-kv">
+              <span className={LABEL}>Range</span>
+              <span className="xs-chips" aria-label={`Range ${stats.range}`} role="img">
+                {RANGES.map((r) => (
+                  <span key={r} className={cn("xs-chip", r === stats.range && "on")}>
+                    {r}
+                  </span>
+                ))}
+              </span>
+            </div>
+            <div className="xs-kv">
+              <span className={LABEL}>Damage</span>
+              <span className="xs-chips" aria-label={`Damage die d${stats.damageDie}`} role="img">
+                {COMPANION_DICE.map((d) => (
+                  <span key={d} className={cn("xs-chip", d === stats.damageDie && "on")}>
+                    d{d}
+                  </span>
+                ))}
+              </span>
+            </div>
+            <Field label="Damage type">
+              <select className={INPUT} disabled={ro} value={draft.attack.damageType} onChange={(e) => patch({ attack: { ...draft.attack, damageType: e.target.value as "phy" | "mag" } })}>
+                <option value="phy">Physical</option>
+                <option value="mag">Magic</option>
+              </select>
+            </Field>
+            <p className={NOTE}>
+              When you command your companion to attack, <strong>they gain any benefits that would normally only apply to you</strong>. On a success,{" "}
+              <strong>their damage roll uses your Proficiency and their damage die.</strong>
+            </p>
+          </PlaqueBox>
+
+          <PlaqueBox level={3} title="Defense">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <span className={LABEL}>
+                  Stress {state.stress} / {saved.stressMax}
+                </span>
+                <Pips
+                  label="Companion Stress"
+                  marked={state.stress}
+                  total={saved.stressMax}
+                  disabled={ro || save.pending || dirty}
+                  onSet={(stress) => void save.fire({ characterId, state: { ...state, stress } })}
+                />
+              </div>
+              <div className="xs-ev">
+                <span data-testid="companion-evasion" className="xs-evn">
+                  {stats.evasion}
+                </span>
+                <span className={LABEL}>Evasion</span>
+              </div>
+            </div>
+            {saved.out ? <p className="xs-warn">Your companion has dropped out of the scene; they return with 1 Stress cleared at your next long rest.</p> : null}
+            <p className={NOTE}>
+              When your companion would take any amount of damage, they mark a Stress. When they mark their last Stress, they drop out of the scene.
+            </p>
+          </PlaqueBox>
         </div>
-        <div className="flex flex-col gap-1">
-          <span className={LABEL}>
-            Stress {state.stress} / {saved.stressMax}
-          </span>
-          <Pips
-            label="Companion Stress"
-            marked={state.stress}
-            total={saved.stressMax}
-            disabled={ro || save.pending || dirty}
-            onSet={(stress) => void save.fire({ characterId, state: { ...state, stress } })}
-          />
-        </div>
-      </div>
-      {saved.out ? <p className={NOTE}>Your companion has dropped out of the scene; they return with 1 Stress cleared at your next long rest.</p> : null}
 
-      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-        <Field label={`Attack (${stats.range}, d${stats.damageDie} + your Proficiency)`}>
-          <input className={INPUT} disabled={ro} maxLength={80} placeholder="Bite, claws, talons…" value={draft.attack.name} onChange={(e) => patch({ attack: { ...draft.attack, name: e.target.value } })} />
-        </Field>
-        <Field label="Damage type">
-          <select className={INPUT} disabled={ro} value={draft.attack.damageType} onChange={(e) => patch({ attack: { ...draft.attack, damageType: e.target.value as "phy" | "mag" } })}>
-            <option value="phy">Physical</option>
-            <option value="mag">Magic</option>
-          </select>
-        </Field>
-      </div>
-
-      <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-        <legend className={LABEL}>
-          Experiences ({draft.experiences.length} / {stats.experienceLimit})
-        </legend>
-        {draft.experiences.map((exp, i) => (
-          <div key={i} className="flex gap-2">
-            <input
-              className={`${INPUT} flex-1`}
-              aria-label={`Companion Experience ${i + 1}`}
-              disabled={ro}
-              maxLength={80}
-              value={exp.name}
-              onChange={(e) => patch({ experiences: draft.experiences.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })}
-            />
-            <input
-              className={`${INPUT} w-20`}
-              type="number"
-              aria-label={`Companion Experience ${i + 1} modifier`}
-              disabled={ro}
-              value={exp.value}
-              onChange={(e) => patch({ experiences: draft.experiences.map((x, j) => (j === i ? { ...x, value: Number(e.target.value) } : x)) })}
-            />
-            {canEdit ? (
-              <button type="button" className={BTN} aria-label={`Remove Experience ${i + 1}`} onClick={() => patch({ experiences: draft.experiences.filter((_, j) => j !== i) })}>
-                ✕
+        <div className="xs-col">
+          <PlaqueBox level={3} title="Experiences">
+            <span className={LABEL}>
+              {draft.experiences.length} / {stats.experienceLimit}
+            </span>
+            {draft.experiences.map((exp, i) => (
+              <div key={i} className="xs-row">
+                <input
+                  className={cn(INPUT, "xs-grow")}
+                  aria-label={`Companion Experience ${i + 1}`}
+                  disabled={ro}
+                  maxLength={80}
+                  value={exp.name}
+                  onChange={(e) => patch({ experiences: draft.experiences.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })}
+                />
+                <input
+                  className={cn(INPUT, "xs-narrow")}
+                  type="number"
+                  aria-label={`Companion Experience ${i + 1} modifier`}
+                  disabled={ro}
+                  value={exp.value}
+                  onChange={(e) => patch({ experiences: draft.experiences.map((x, j) => (j === i ? { ...x, value: Number(e.target.value) } : x)) })}
+                />
+                {canEdit ? (
+                  <button type="button" className={ALT_BTN} aria-label={`Remove Experience ${i + 1}`} onClick={() => patch({ experiences: draft.experiences.filter((_, j) => j !== i) })}>
+                    ✕
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            {canEdit && draft.experiences.length < stats.experienceLimit ? (
+              <button
+                type="button"
+                className={cn(BTN, "self-start")}
+                onClick={() => patch({ experiences: [...draft.experiences, { name: "", value: COMPANION_EXPERIENCE_VALUE }] })}
+              >
+                Add Experience (+{COMPANION_EXPERIENCE_VALUE})
               </button>
             ) : null}
-          </div>
-        ))}
-        {canEdit && draft.experiences.length < stats.experienceLimit ? (
-          <button
-            type="button"
-            className={BTN}
-            onClick={() => patch({ experiences: [...draft.experiences, { name: "", value: COMPANION_EXPERIENCE_VALUE }] })}
-          >
-            Add Experience (+{COMPANION_EXPERIENCE_VALUE})
-          </button>
-        ) : null}
-      </fieldset>
+            <p className={NOTE}>
+              <strong>Make a Spellcast Roll</strong> to connect with your companion and command them to take action. Spend a Hope to add an applicable
+              Companion Experience to the roll.
+            </p>
+          </PlaqueBox>
 
-      <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-        <legend className={LABEL}>
-          Training {stats.trainingUsed} / {stats.trainingCap}
-        </legend>
-        <p className={NOTE}>One option per level-up{draft.bonusTraining ? `, plus ${draft.bonusTraining} from Expert/Advanced Training` : ""}.</p>
-        {TRAINING.map((t) => {
-          const n = draft.training[t.id] ?? 0;
-          return (
-            <div key={t.id} className="flex flex-col gap-1">
-              <div className="flex items-start gap-2">
-                <span className="flex gap-1 pt-0.5">
-                  {Array.from({ length: t.max }, (_, k) => (
-                    <input
-                      key={k}
-                      type="checkbox"
-                      aria-label={`${t.name} ${k + 1}`}
-                      checked={k < n}
-                      disabled={ro || (k >= n && (k !== n || stats.trainingUsed >= stats.trainingCap)) || (k < n && k !== n - 1)}
-                      onChange={() => setTraining(t.id, k < n ? n - 1 : n + 1)}
-                    />
-                  ))}
-                </span>
-                <span className="text-[13px] text-[#c9d6c0]">
-                  <strong className="text-[#e6ecea]">{t.name}:</strong> {t.text}
-                </span>
-              </div>
-              {t.id === "vicious" && n > 0 ? (
-                <div className="flex flex-wrap gap-2 pl-6">
-                  {draft.vicious.map((step, i) => (
-                    <select
-                      key={i}
-                      className={INPUT}
-                      aria-label={`Vicious ${i + 1}`}
-                      disabled={ro}
-                      value={step}
-                      onChange={(e) => patch({ vicious: draft.vicious.map((x, j) => (j === i ? (e.target.value as "die" | "range") : x)) })}
-                    >
-                      <option value="die">Damage die</option>
-                      <option value="range">Range</option>
-                    </select>
-                  ))}
-                </div>
-              ) : null}
+          <PlaqueBox level={3} title="Training">
+            <div className="xs-cap">
+              <span>
+                One option per level-up{draft.bonusTraining ? `, plus ${draft.bonusTraining} from Expert/Advanced Training` : ""}.
+              </span>
+              <strong>
+                {stats.trainingUsed} / {stats.trainingCap}
+              </strong>
             </div>
-          );
-        })}
-        <Field label="Expert/Advanced Training options">
-          <select className={INPUT} disabled={ro} value={draft.bonusTraining} onChange={(e) => patch({ bonusTraining: Number(e.target.value) })}>
-            <option value={0}>None</option>
-            <option value={1}>+1 (Expert Training)</option>
-            <option value={3}>+3 (Expert and Advanced Training)</option>
-          </select>
-        </Field>
-      </fieldset>
+            <div className="xs-train">
+              {TRAINING.map((t) => {
+                const n = draft.training[t.id] ?? 0;
+                return (
+                  <div key={t.id} className="xs-tr">
+                    <span className="xs-ticks">
+                      {Array.from({ length: t.max }, (_, k) => (
+                        <input
+                          key={k}
+                          type="checkbox"
+                          className="xs-tick"
+                          aria-label={`${t.name} ${k + 1}`}
+                          checked={k < n}
+                          disabled={ro || (k >= n && (k !== n || stats.trainingUsed >= stats.trainingCap)) || (k < n && k !== n - 1)}
+                          onChange={() => setTraining(t.id, k < n ? n - 1 : n + 1)}
+                        />
+                      ))}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <strong>{t.name}:</strong> {t.text}
+                      {t.id === "vicious" && n > 0 ? (
+                        <span className="mt-1.5 flex flex-wrap gap-2">
+                          {draft.vicious.map((step, i) => (
+                            <select
+                              key={i}
+                              className={cn(INPUT, "xs-mid")}
+                              aria-label={`Vicious ${i + 1}`}
+                              disabled={ro}
+                              value={step}
+                              onChange={(e) => patch({ vicious: draft.vicious.map((x, j) => (j === i ? (e.target.value as "die" | "range") : x)) })}
+                            >
+                              <option value="die">Damage die</option>
+                              <option value="range">Range</option>
+                            </select>
+                          ))}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <Field label="Expert/Advanced Training options">
+              <select className={INPUT} disabled={ro} value={draft.bonusTraining} onChange={(e) => patch({ bonusTraining: Number(e.target.value) })}>
+                <option value={0}>None</option>
+                <option value={1}>+1 (Expert Training)</option>
+                <option value={3}>+3 (Expert and Advanced Training)</option>
+              </select>
+            </Field>
+          </PlaqueBox>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Special gifts">
-          <textarea className={`${INPUT} min-h-20 py-2`} disabled={ro} maxLength={2000} value={draft.gifts} onChange={(e) => patch({ gifts: e.target.value })} />
-        </Field>
-        <Field label="Inventory">
-          <textarea className={`${INPUT} min-h-20 py-2`} disabled={ro} maxLength={2000} value={draft.inventory} onChange={(e) => patch({ inventory: e.target.value })} />
-        </Field>
+          <PlaqueBox level={3} title="Special Gifts">
+            <textarea className={TEXTAREA} aria-label="Special gifts" disabled={ro} maxLength={2000} value={draft.gifts} onChange={(e) => patch({ gifts: e.target.value })} />
+          </PlaqueBox>
+          <PlaqueBox level={3} title="Inventory">
+            <textarea className={TEXTAREA} aria-label="Companion inventory" disabled={ro} maxLength={2000} value={draft.inventory} onChange={(e) => patch({ inventory: e.target.value })} />
+          </PlaqueBox>
+        </div>
       </div>
 
       {canEdit ? (
-        <div className="flex gap-2">
+        <div className="xs-actions">
           <button type="button" className={BTN} disabled={!dirty || save.pending} onClick={() => void save.fire({ characterId, state: draft })}>
             Save companion
           </button>
-          <button type="button" className={BTN} disabled={!dirty} onClick={() => setDraft(state)}>
+          <button type="button" className={ALT_BTN} disabled={!dirty} onClick={() => setDraft(state)}>
             Discard changes
           </button>
         </div>
       ) : null}
       <ErrorLine error={save.error} />
-    </ExtraCard>
+    </>
   );
 }

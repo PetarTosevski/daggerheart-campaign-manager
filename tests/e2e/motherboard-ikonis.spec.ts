@@ -51,6 +51,10 @@ test("a Motherboard Warrior gets an Ikonis with a Force augment and no weapon pi
   await page.getByRole("button", { name: "Create character" }).click();
 
   await expect(page).toHaveURL(new RegExp(`/campaigns/${campaignId}/party/(?!new$)[a-z0-9]+$`));
-  await expect(page.getByTestId("ikonis-augments")).toHaveText(/Installed augments: Force/);
-  await expect(page.getByTestId("ikonis-damage")).toContainText("Melee · d12+2 tech");
+  // The frame extras region: one paper box for the Motherboard module, with the frame name as kicker.
+  const ikonisModule = page.getByTestId("character-extras").getByRole("region", { name: "Ikonis Module" });
+  await expect(ikonisModule.getByText("Motherboard", { exact: true })).toBeVisible();
+  await expect(ikonisModule.getByTestId("ikonis-augments")).toHaveText(/Installed augments: Force/);
+  await expect(ikonisModule.getByTestId("ikonis-damage")).toContainText("Melee · d12+2 tech");
+  await expect(ikonisModule.getByRole("region", { name: "Augments" }).getByRole("img", { name: "Augment slots: 1 of 2 used" })).toBeVisible();
 });

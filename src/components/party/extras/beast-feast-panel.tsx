@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 
+import { Pip } from "@/components/party/sheet-ui";
 import { FLAVOR_DIE, FLAVOR_LABEL, FLAVORS, harvestCount, type Flavor } from "@/lib/domain/frames/beast-feast";
 import { formatProfile, MAX_STRENGTH, profileOf, type BeastFeastState, type CookbookEntry, type FlavorProfile } from "@/lib/frames/extras/beast-feast";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { BTN, ErrorLine, ExtraCard, Field, INPUT, LABEL, NOTE } from "./ui";
+import { ALT_BTN, BTN, ErrorLine, ExtraBox, Field, INPUT, LABEL, NOTE, PlaqueBox, TEXTAREA } from "./ui";
 
 type FlavorRow = { flavor: Flavor; strength: number };
 type Recipe = CookbookEntry & { canRemove: boolean };
@@ -30,10 +31,10 @@ export function BeastFeastPanel({
   canEdit: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-4">
+    <ExtraBox frame="Beast Feast" title="Ingredients & Cookbook" subtitle="What you carry from the hunt, and the dishes the party has cooked.">
       <IngredientsCard characterId={characterId} state={state} capacity={capacity} canEdit={canEdit} />
       <CookbookCard campaignId={campaignId} cookbook={cookbook} ingredients={state.ingredients} />
-    </div>
+    </ExtraBox>
   );
 }
 
@@ -48,16 +49,27 @@ function IngredientsCard({ characterId, state, capacity, canEdit }: { characterI
   const hp = Number(beastHp);
 
   return (
-    <ExtraCard title="Ingredients" subtitle={`Carrying ${state.ingredients.length} / ${capacity} (your highest trait).`}>
+    <PlaqueBox title="Ingredients">
+      <div className="xs-kv">
+        <span className={LABEL}>
+          Carrying {state.ingredients.length} / {capacity}
+        </span>
+        <span role="img" aria-label={`Carrying ${state.ingredients.length} of ${capacity} ingredients`} className="xs-pips">
+          {Array.from({ length: capacity }, (_, k) => (
+            <Pip key={k} kind="diamond" on={k < state.ingredients.length} />
+          ))}
+        </span>
+      </div>
+      <p className={NOTE}>You can carry as many ingredients as your highest trait.</p>
       {state.ingredients.length === 0 ? <p className={NOTE}>No ingredients.</p> : null}
-      <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+      <ul className="xs-list">
         {state.ingredients.map((i) => (
-          <li key={i.id} className="flex flex-wrap items-center gap-2 text-[14px] text-[#e6ecea]">
-            <strong>{i.name}</strong>
-            <span className="text-[#c9d6c0]">{i.flavors.map((f) => `${FLAVOR_LABEL[f.flavor]} (${f.strength})`).join(", ")}</span>
-            {i.feature ? <span className="text-[13px] text-[#f4e3bd] italic">{i.feature}</span> : null}
+          <li key={i.id} className="xs-item">
+            <strong className="xs-name">{i.name}</strong>
+            <span className="xs-meta">{i.flavors.map((f) => `${FLAVOR_LABEL[f.flavor]} (${f.strength})`).join(", ")}</span>
+            {i.feature ? <span className="italic">{i.feature}</span> : null}
             {canEdit ? (
-              <button type="button" className={`${BTN} ml-auto min-h-8 px-2 text-[12px]`} disabled={remove.pending} onClick={() => void remove.fire({ characterId, ingredientId: i.id })}>
+              <button type="button" className={`${ALT_BTN} ml-auto`} disabled={remove.pending} onClick={() => void remove.fire({ characterId, ingredientId: i.id })}>
                 Remove
               </button>
             ) : null}
@@ -70,9 +82,9 @@ function IngredientsCard({ characterId, state, capacity, canEdit }: { characterI
           <legend className={LABEL}>Add an ingredient</legend>
           <input className={INPUT} aria-label="Ingredient name" placeholder="Mushroom caps…" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
           {flavors.map((row, k) => (
-            <div key={k} className="flex gap-2">
+            <div key={k} className="xs-row">
               <select
-                className={`${INPUT} flex-1`}
+                className={`${INPUT} xs-grow`}
                 aria-label={`Flavor ${k + 1}`}
                 value={row.flavor}
                 onChange={(e) => setFlavors(flavors.map((r, j) => (j === k ? { ...r, flavor: e.target.value as Flavor } : r)))}
@@ -84,7 +96,7 @@ function IngredientsCard({ characterId, state, capacity, canEdit }: { characterI
                 ))}
               </select>
               <select
-                className={`${INPUT} w-24`}
+                className={`${INPUT} xs-narrow`}
                 aria-label={`Flavor ${k + 1} strength`}
                 value={row.strength}
                 onChange={(e) => setFlavors(flavors.map((r, j) => (j === k ? { ...r, strength: Number(e.target.value) } : r)))}
@@ -96,7 +108,7 @@ function IngredientsCard({ characterId, state, capacity, canEdit }: { characterI
                 ))}
               </select>
               {flavors.length > 1 ? (
-                <button type="button" className={BTN} aria-label={`Remove flavor ${k + 1}`} onClick={() => setFlavors(flavors.filter((_, j) => j !== k))}>
+                <button type="button" className={ALT_BTN} aria-label={`Remove flavor ${k + 1}`} onClick={() => setFlavors(flavors.filter((_, j) => j !== k))}>
                   ✕
                 </button>
               ) : null}
@@ -105,7 +117,7 @@ function IngredientsCard({ characterId, state, capacity, canEdit }: { characterI
           {flavors.length < 3 ? (
             <button
               type="button"
-              className={BTN}
+              className={`${ALT_BTN} self-start`}
               onClick={() => setFlavors([...flavors, { flavor: FLAVORS.find((f) => !flavors.some((r) => r.flavor === f)) ?? "weird", strength: 1 }])}
             >
               Add flavor
@@ -114,7 +126,7 @@ function IngredientsCard({ characterId, state, capacity, canEdit }: { characterI
           <input className={INPUT} aria-label="Ingredient feature" placeholder="Feature (rare ingredients only)" maxLength={300} value={feature} onChange={(e) => setFeature(e.target.value)} />
           <button
             type="button"
-            className={BTN}
+            className={`${BTN} self-start`}
             disabled={!name.trim() || full || add.pending}
             onClick={async () => {
               const ok = await add.fire({ characterId, ingredient: { name, flavors, ...(feature.trim() ? { feature } : {}) } });
@@ -131,7 +143,7 @@ function IngredientsCard({ characterId, state, capacity, canEdit }: { characterI
       ) : null}
 
       <Field label="Harvest: beast's maximum HP">
-        <input className={`${INPUT} w-28`} type="number" min={1} value={beastHp} onChange={(e) => setBeastHp(e.target.value)} />
+        <input className={`${INPUT} xs-mid`} type="number" min={1} value={beastHp} onChange={(e) => setBeastHp(e.target.value)} />
       </Field>
       {beastHp && hp > 0 ? (
         <p data-testid="harvest-count" className={NOTE}>
@@ -139,7 +151,7 @@ function IngredientsCard({ characterId, state, capacity, canEdit }: { characterI
         </p>
       ) : null}
       <ErrorLine error={add.error ?? remove.error} />
-    </ExtraCard>
+    </PlaqueBox>
   );
 }
 
@@ -154,19 +166,20 @@ function CookbookCard({ campaignId, cookbook, ingredients }: { campaignId: Id<"c
   const profile: FlavorProfile = profileOf(chosen);
 
   return (
-    <ExtraCard title="Party Cookbook" subtitle="Cooking a recorded flavor profile again adds tokens equal to the party's tier.">
+    <PlaqueBox title="Party Cookbook">
+      <p className={NOTE}>Cooking a recorded flavor profile again adds tokens equal to the party’s tier.</p>
       {cookbook.length === 0 ? <p className={NOTE}>No recipes yet.</p> : null}
-      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+      <ul className="xs-list">
         {cookbook.map((e) => (
-          <li key={e.id} className="flex flex-col gap-0.5 rounded-lg border border-[#253338] p-2.5 text-[14px] text-[#e6ecea]">
-            <div className="flex items-center gap-2">
-              <strong className="text-parchment">{e.name}</strong>
-              <span className="text-[13px] text-[#8fa3a8]">{formatProfile(e.profile)}</span>
-              {e.mealRating !== null ? <span className="ml-auto text-[13px]">Meal Rating {e.mealRating}</span> : null}
+          <li key={e.id} className="xs-item col">
+            <div className="xs-item-head">
+              <strong className="xs-name">{e.name}</strong>
+              <span className="xs-meta">{formatProfile(e.profile)}</span>
+              {e.mealRating !== null ? <span className="ml-auto">Meal Rating {e.mealRating}</span> : null}
               {e.canRemove ? (
                 <button
                   type="button"
-                  className={`${BTN} min-h-8 px-2 text-[12px] ${e.mealRating === null ? "ml-auto" : ""}`}
+                  className={`${ALT_BTN} ${e.mealRating === null ? "ml-auto" : ""}`}
                   aria-label={`Remove ${e.name}`}
                   disabled={remove.pending}
                   onClick={() => void remove.fire({ campaignId, entryId: e.id })}
@@ -175,8 +188,8 @@ function CookbookCard({ campaignId, cookbook, ingredients }: { campaignId: Id<"c
                 </button>
               ) : null}
             </div>
-            {e.ingredients.length ? <span className="text-[13px] text-[#c9d6c0]">{e.ingredients.join(", ")}</span> : null}
-            {e.description ? <span className="text-[13px] text-[#c9d6c0] italic">{e.description}</span> : null}
+            {e.ingredients.length ? <span className="xs-meta">{e.ingredients.join(", ")}</span> : null}
+            {e.description ? <span className="italic">{e.description}</span> : null}
           </li>
         ))}
       </ul>
@@ -184,11 +197,11 @@ function CookbookCard({ campaignId, cookbook, ingredients }: { campaignId: Id<"c
       <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
         <legend className={LABEL}>Record a recipe</legend>
         <input className={INPUT} aria-label="Dish name" placeholder="Steak dinner…" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
-        <textarea className={`${INPUT} min-h-16 py-2`} aria-label="Dish description" placeholder="How it was cooked, how it turned out" maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} />
+        <textarea className={TEXTAREA} aria-label="Dish description" placeholder="How it was cooked, how it turned out" maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} />
         {ingredients.length ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="xs-checks">
             {ingredients.map((i) => (
-              <label key={i.id} className="flex items-center gap-1.5 text-[13px] text-[#e6ecea]">
+              <label key={i.id} className="xs-check">
                 <input type="checkbox" checked={picked.includes(i.id)} onChange={() => setPicked(picked.includes(i.id) ? picked.filter((x) => x !== i.id) : [...picked, i.id])} />
                 {i.name}
               </label>
@@ -197,11 +210,11 @@ function CookbookCard({ campaignId, cookbook, ingredients }: { campaignId: Id<"c
         ) : null}
         <p className={NOTE}>Flavor profile: {formatProfile(profile)}</p>
         <Field label="Meal Rating">
-          <input className={`${INPUT} w-28`} type="number" min={0} value={rating} onChange={(e) => setRating(e.target.value)} />
+          <input className={`${INPUT} xs-mid`} type="number" min={0} value={rating} onChange={(e) => setRating(e.target.value)} />
         </Field>
         <button
           type="button"
-          className={BTN}
+          className={`${BTN} self-start`}
           disabled={!name.trim() || add.pending}
           onClick={async () => {
             const ok = await add.fire({
@@ -221,6 +234,6 @@ function CookbookCard({ campaignId, cookbook, ingredients }: { campaignId: Id<"c
         <p className={NOTE}>Spend the cooked ingredients from your list after recording the dish.</p>
       </fieldset>
       <ErrorLine error={add.error ?? remove.error} />
-    </ExtraCard>
+    </PlaqueBox>
   );
 }

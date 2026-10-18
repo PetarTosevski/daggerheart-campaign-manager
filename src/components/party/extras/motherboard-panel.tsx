@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Pip } from "@/components/party/sheet-ui";
 import {
   REWARD_GROUP_LABEL,
   RELIC_VALUE,
@@ -27,7 +28,7 @@ import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { BTN, ErrorLine, ExtraCard, Field, INPUT, LABEL, NOTE, Notice } from "./ui";
+import { ALT_BTN, BTN, ErrorLine, ExtraBox, Field, INPUT, LABEL, NOTE, Notice, PlaqueBox, TEXTAREA } from "./ui";
 
 type Props = { characterId: Id<"characters">; state: MotherboardState; level: number; tier: number; canEdit: boolean };
 
@@ -36,11 +37,11 @@ const DIFFICULTY_LABEL: Record<FightDifficulty, string> = { easy: "Easy", standa
 /** Motherboard module (Core pp.301–303): Ikonis, augments, quantum and scrap. */
 export function MotherboardPanel(props: Props) {
   return (
-    <div className="flex flex-col gap-4">
+    <ExtraBox frame="Motherboard" title="Ikonis Module" subtitle="Your Ikonis, its augments, and the scrap and quantum that build them.">
       <IkonisCard key={JSON.stringify(props.state.ikonis)} {...props} />
       <WalletCard {...props} />
       <AugmentsCard {...props} />
-    </div>
+    </ExtraBox>
   );
 }
 
@@ -50,7 +51,7 @@ function InstalledLine({ installed }: { installed: readonly string[] }) {
   const defense = augmentDefense(installed);
   const parts = [defense.armorScore ? `+${defense.armorScore} Armor Score` : "", defense.evasion ? `${defense.evasion} Evasion` : ""].filter(Boolean);
   return (
-    <p data-testid="ikonis-augments" className="m-0 text-[14px] text-[#c9d6c0]">
+    <p data-testid="ikonis-augments" className={NOTE}>
       {names.length > 0 ? `Installed augments: ${names.join(", ")}` : "No augments installed."}
       {parts.length > 0 ? ` (${parts.join(", ")})` : ""}
     </p>
@@ -64,15 +65,16 @@ function IkonisCard({ characterId, state, level, canEdit }: Props) {
   const damage = ikonisDamage(state.ikonis, level);
   const ro = !canEdit;
   return (
-    <ExtraCard title={state.ikonis.name || "Ikonis"} subtitle="Two-handed. Bonded: gain a bonus to your damage rolls equal to your level.">
+    <PlaqueBox title={state.ikonis.name || "Ikonis"}>
+      <p className={NOTE}>Two-handed. Bonded: gain a bonus to your damage rolls equal to your level.</p>
       {damage ? (
-        <p data-testid="ikonis-damage" className="m-0 text-[15px] text-parchment">
+        <p data-testid="ikonis-damage" className="xs-strong m-0">
           {state.ikonis.trait ? `${TRAIT_LABEL[state.ikonis.trait]} · ` : ""}
           {state.ikonis.range} · {damage}
         </p>
       ) : null}
       <InstalledLine installed={state.installed} />
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="xs-grid2">
         <Field label="Name">
           <input className={INPUT} disabled={ro} maxLength={80} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         </Field>
@@ -110,15 +112,15 @@ function IkonisCard({ characterId, state, level, canEdit }: Props) {
         </Field>
       </div>
       <Field label="Description">
-        <textarea className={`${INPUT} min-h-16 py-2`} disabled={ro} maxLength={2000} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+        <textarea className={TEXTAREA} disabled={ro} maxLength={2000} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
       </Field>
       {canEdit ? (
-        <button type="button" className={BTN} disabled={!dirty || save.pending} onClick={() => void save.fire({ characterId, ikonis: draft })}>
+        <button type="button" className={`${BTN} self-start`} disabled={!dirty || save.pending} onClick={() => void save.fire({ characterId, ikonis: draft })}>
           Save Ikonis
         </button>
       ) : null}
       <ErrorLine error={save.error} />
-    </ExtraCard>
+    </PlaqueBox>
   );
 }
 
@@ -141,20 +143,21 @@ function WalletCard({ characterId, state, canEdit }: Props) {
   };
 
   return (
-    <ExtraCard title="Scrap & Quantum" subtitle="Each piece of scrap is worth its value, buying or selling. 10 quantum = 1 handful of gold.">
-      <div className="flex flex-wrap items-end gap-3">
+    <PlaqueBox title="Scrap & Quantum">
+      <p className={NOTE}>Each piece of scrap is worth its value, buying or selling. 10 quantum = 1 handful of gold.</p>
+      <div className="xs-row">
         <div className="flex flex-col">
           <span className={LABEL}>Quantum</span>
-          <span data-testid="quantum" className="font-display text-[28px] text-parchment">
+          <span data-testid="quantum" className="xs-big">
             {state.quantum}
           </span>
         </div>
         {canEdit ? (
           <>
-            <input className={`${INPUT} w-24`} type="number" min={0} aria-label="Correct quantum" placeholder="Set…" value={quantum} onChange={(e) => setQuantum(e.target.value)} />
+            <input className={`${INPUT} xs-narrow`} type="number" min={0} aria-label="Correct quantum" placeholder="Set…" value={quantum} onChange={(e) => setQuantum(e.target.value)} />
             <button
               type="button"
-              className={BTN}
+              className={ALT_BTN}
               disabled={quantum === "" || correct.pending}
               onClick={async () => {
                 await correct.fire({ characterId, correction: { quantum: Number(quantum) } });
@@ -164,32 +167,32 @@ function WalletCard({ characterId, state, canEdit }: Props) {
               Correct
             </button>
             <Field label="Trade quantity" className="ml-auto">
-              <input className={`${INPUT} w-20`} type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))} />
+              <input className={`${INPUT} xs-narrow`} type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))} />
             </Field>
           </>
         ) : null}
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="xs-grid3">
         {SCRAP_CATEGORIES.map((c) => (
-          <div key={c} className="flex flex-col gap-1">
+          <div key={c} className="flex min-w-0 flex-col">
             <span className={LABEL}>
               {SCRAP_TABLES[c].label} (d{SCRAP_TABLES[c].die})
             </span>
             {SCRAP_TABLES[c].items.map((item) => {
               const n = state.scrap[item.name] ?? 0;
               return (
-                <div key={item.name} className="flex items-center gap-2 text-[14px] text-[#e6ecea]">
-                  <span className="w-5 text-right text-[#8fa3a8]">{item.value}</span>
-                  <span className="flex-1">{item.name}</span>
-                  <span data-testid={`scrap-${item.name}`} className={cn("w-8 text-right", n === 0 && "text-[#5d6f73]")}>
+                <div key={item.name} className="xs-item">
+                  <span className="xs-meta w-5 text-right">{item.value}</span>
+                  <span className="xs-grow">{item.name}</span>
+                  <span data-testid={`scrap-${item.name}`} className={cn("xs-num", n === 0 && "zero")}>
                     {n}
                   </span>
                   {canEdit ? (
                     <>
                       <button
                         type="button"
-                        className={`${BTN} min-h-8 px-2 text-[12px]`}
+                        className={BTN}
                         aria-label={`Buy ${qty} ${item.name}`}
                         disabled={trade.pending || state.quantum < item.value * qty}
                         onClick={() => void trade.fire({ characterId, name: item.name, quantity: qty, direction: "buy" })}
@@ -198,7 +201,7 @@ function WalletCard({ characterId, state, canEdit }: Props) {
                       </button>
                       <button
                         type="button"
-                        className={`${BTN} min-h-8 px-2 text-[12px]`}
+                        className={ALT_BTN}
                         aria-label={`Sell ${qty} ${item.name}`}
                         disabled={trade.pending || n < qty}
                         onClick={() => void trade.fire({ characterId, name: item.name, quantity: qty, direction: "sell" })}
@@ -218,18 +221,18 @@ function WalletCard({ characterId, state, canEdit }: Props) {
         <span className={LABEL}>Relics ({RELIC_VALUE} quantum each)</span>
         {state.relics.length === 0 ? <p className={NOTE}>No relics.</p> : null}
         {state.relics.map((r) => (
-          <div key={r.id} className="flex items-center gap-2 text-[14px] text-[#e6ecea]">
-            <span className="flex-1">{r.name}</span>
+          <div key={r.id} className="xs-item">
+            <span className="xs-grow">{r.name}</span>
             {canEdit ? (
-              <button type="button" className={`${BTN} min-h-8 px-2 text-[12px]`} disabled={sellRelic.pending} onClick={() => void sellRelic.fire({ characterId, relicId: r.id })}>
+              <button type="button" className={ALT_BTN} disabled={sellRelic.pending} onClick={() => void sellRelic.fire({ characterId, relicId: r.id })}>
                 Sell
               </button>
             ) : null}
           </div>
         ))}
         {canEdit ? (
-          <div className="flex gap-2">
-            <input className={`${INPUT} flex-1`} aria-label="Relic name" placeholder="Steelhorn of the stag…" maxLength={80} value={relicName} onChange={(e) => setRelicName(e.target.value)} />
+          <div className="xs-row">
+            <input className={`${INPUT} xs-grow`} aria-label="Relic name" placeholder="Steelhorn of the stag…" maxLength={80} value={relicName} onChange={(e) => setRelicName(e.target.value)} />
             <button
               type="button"
               className={BTN}
@@ -258,11 +261,11 @@ function WalletCard({ characterId, state, canEdit }: Props) {
               )),
             )}
           </select>
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="xs-row">
             {SCRAP_CATEGORIES.map((c) => (
               <Field key={c} label={`${SCRAP_TABLES[c].label} d${SCRAP_TABLES[c].die}`}>
                 <input
-                  className={`${INPUT} w-20`}
+                  className={`${INPUT} xs-narrow`}
                   type="number"
                   min={0}
                   max={10}
@@ -287,7 +290,7 @@ function WalletCard({ characterId, state, canEdit }: Props) {
       ) : null}
       {notice ? <Notice>{notice}</Notice> : null}
       <ErrorLine error={error} />
-    </ExtraCard>
+    </PlaqueBox>
   );
 }
 
@@ -303,31 +306,42 @@ function AugmentsCard({ characterId, state, tier, canEdit }: Props) {
     Object.entries(recipe).every(([name, n]) => (name === "Relic" ? state.relics.length : (state.scrap[name] ?? 0)) >= n);
 
   return (
-    <ExtraCard title="Augments" subtitle={`Installed ${state.installed.length} / ${slots} slots (two at Tier 1, one more each tier). Craft, install and salvage during downtime.`}>
-      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+    <PlaqueBox title="Augments">
+      <div className="xs-kv">
+        <span className={LABEL}>
+          Installed {state.installed.length} / {slots}
+        </span>
+        <span role="img" aria-label={`Augment slots: ${state.installed.length} of ${slots} used`} className="xs-pips">
+          {Array.from({ length: slots }, (_, k) => (
+            <Pip key={k} kind="armor" on={k < state.installed.length} />
+          ))}
+        </span>
+      </div>
+      <p className={NOTE}>Two slots at Tier 1, one more each tier. Craft, install and salvage during downtime.</p>
+      <ul className="xs-list">
         {AUGMENTS.map((aug) => {
           const isBuilt = built.has(aug.id);
           const installed = state.installed.includes(aug.id);
           const locked = tier < aug.precompileTier;
           return (
-            <li key={aug.id} className={cn("flex flex-col gap-1 rounded-lg border p-2.5", installed ? "border-brand bg-brand/10" : "border-[#253338]", locked && "opacity-60")}>
-              <div className="flex flex-wrap items-center gap-2">
-                <strong className="text-[14px] text-parchment">{aug.name}</strong>
-                <span className="flex-1 text-[13px] text-[#c9d6c0]">{aug.text}</span>
-                {aug.precompileTier > 1 ? <span className="text-[12px] text-[#8fa3a8]">Precompile: Tier {aug.precompileTier}</span> : null}
+            <li key={aug.id} className={cn("xs-item col", installed && "on", locked && "locked")}>
+              <div className="xs-item-head">
+                <strong className="xs-name">{aug.name}</strong>
+                <span className="xs-grow">{aug.text}</span>
+                {aug.precompileTier > 1 ? <span className="xs-meta">Precompile: Tier {aug.precompileTier}</span> : null}
               </div>
-              <span className="text-[12px] text-[#8fa3a8]">
+              <span className="xs-meta">
                 {Object.entries(aug.recipe)
                   .map(([name, n]) => `${n} ${name}`)
                   .join(", ")}
               </span>
               {canEdit ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="xs-actions">
                   {isBuilt ? (
                     <>
                       <button
                         type="button"
-                        className={`${BTN} min-h-8 text-[12px]`}
+                        className={BTN}
                         aria-pressed={installed}
                         disabled={install.pending || (!installed && state.installed.length >= slots)}
                         onClick={() =>
@@ -339,14 +353,14 @@ function AugmentsCard({ characterId, state, tier, canEdit }: Props) {
                       >
                         {installed ? "Uninstall" : "Install"}
                       </button>
-                      <button type="button" className={`${BTN} min-h-8 text-[12px]`} disabled={salvage.pending} onClick={() => void salvage.fire({ characterId, augmentId: aug.id })}>
+                      <button type="button" className={ALT_BTN} disabled={salvage.pending} onClick={() => void salvage.fire({ characterId, augmentId: aug.id })}>
                         Salvage
                       </button>
                     </>
                   ) : (
                     <button
                       type="button"
-                      className={`${BTN} min-h-8 text-[12px]`}
+                      className={BTN}
                       disabled={locked || craft.pending || !affordable(aug.recipe)}
                       onClick={() => void craft.fire({ characterId, augmentId: aug.id })}
                     >
@@ -355,13 +369,13 @@ function AugmentsCard({ characterId, state, tier, canEdit }: Props) {
                   )}
                 </div>
               ) : isBuilt ? (
-                <span className="text-[12px] text-[#c9d6c0]">{installed ? "Installed" : "Built"}</span>
+                <span className="xs-meta">{installed ? "Installed" : "Built"}</span>
               ) : null}
             </li>
           );
         })}
       </ul>
       <ErrorLine error={error} />
-    </ExtraCard>
+    </PlaqueBox>
   );
 }
