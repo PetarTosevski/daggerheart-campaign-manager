@@ -18,8 +18,13 @@ import {
   removeHunt,
   type AndaluriaState,
 } from "../../src/lib/frames/trackers/andaluria";
+import { applyCountdownAction } from "../../src/lib/domain/countdowns/index";
+import { chose, HALT_LYCANTHROPY_MOVE, lycanthropyOwnerKey } from "../../src/lib/domain/rest/frame-hooks/index";
+import { resolveOptions } from "../../src/lib/frames/options";
 import { campaignQuery, keyedGmMutation } from "../lib/functions";
+import type { RestHook } from "../lib/restHooks";
 import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
+import { recordHistory } from "../tables/history";
 
 /** The stored hunts (structure only: the domain module checks lengths on write). */
 const andaluriaStateSchema = z.object({
@@ -181,3 +186,44 @@ export const deleteClue = keyedGmMutation({
       result: null,
     })),
 });
+
+/**
+ * Rest hook (D5 T3b, HF 153, Werewolf): "activate a long-term Lycanthropy
+ * Countdown (6). It ticks down each time the PC takes a rest without using a
+ * downtime move to halt their lycanthropy's progression. When it triggers,
+ * the PC gains the Werewolf transformation." With `transformations` on, each
+ * resting PC's active Lycanthropy countdown (ownerKey `lycanthropy:<id>`)
+ * ticks through the countdown rules and its history; rest undo leaves it
+ * (plan note 11). A trigger is announced; the transformation itself is set
+ * by hand (player consent, decisions).
+ */
+export const andaluriaRestHook: RestHook = async (ctx, { campaign, choices, sheets, actorId }) => {
+  if (campaign.frameId !== andaluriaTracker.frameId || !resolveOptions(campaign.frameId, campaign.options).transformations) return [];
+  const lines: string[] = [];
+  for (const [id, sheet] of sheets) {
+    if (chose(choices, id, HALT_LYCANTHROPY_MOVE)) continue;
+    const ownerKey = lycanthropyOwnerKey(id);
+    // At most one row per PC.
+    const countdown = await ctx.db
+      .query("countdowns")
+      .withIndex("by_campaign_owner", (q) => q.eq("campaignId", campaign._id).eq("ownerKey", ownerKey))
+      .first();
+    if (countdown === null || countdown.status !== "active") continue;
+    const next = applyCountdownAction(countdown, "advance");
+    await ctx.db.patch("countdowns", countdown._id, {
+      currentValue: next.currentValue,
+      status: next.status,
+      completedAt: next.completedNow ? Date.now() : countdown.completedAt,
+    });
+    await recordHistory(ctx, actorId, {
+      campaignId: campaign._id,
+      kind: "countdown",
+      action: "advance",
+      countdownId: countdown._id,
+      before: { currentValue: countdown.currentValue, status: countdown.status },
+      after: { currentValue: next.currentValue, status: next.status },
+    });
+    if (next.completedNow) lines.push(`${sheet.name}'s Lycanthropy Countdown triggers: the Werewolf transformation`);
+  }
+  return lines;
+};

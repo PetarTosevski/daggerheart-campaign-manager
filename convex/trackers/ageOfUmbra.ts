@@ -19,10 +19,13 @@ import {
   umbraStateSchema,
   watchersSchema,
 } from "../../src/lib/frames/trackers/age-of-umbra";
+import { applyResourceDelta } from "../../src/lib/domain/characters/index";
+import { keepWatchRolls } from "../../src/lib/domain/rest/frame-hooks/index";
 import { rollDie } from "../lib/dice";
 import { gainFear } from "../lib/fear";
 import { campaignQuery, keyedGmMutation } from "../lib/functions";
-import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
+import type { RestHook } from "../lib/restHooks";
+import { assertTrackerFrame, frameTrackerMutation, loadTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "../lib/trackers";
 
 export const umbraTracker: FrameTracker<typeof umbraStateSchema> = {
   frameId: "age-of-umbra",
@@ -199,3 +202,26 @@ export const rollLurkingDarkness = keyedGmMutation({
     });
   },
 });
+
+/**
+ * Rest hook (D5 T3b, CB 289): "When the party finishes a short or long rest
+ * while not in the vicinity of a Sacred Pyre, roll a d12 for the Lurking
+ * Darkness". The server rolls it with each Keep Watch Hope Die (the party
+ * takes the highest), logs it on the tracker (GM-only) and applies Fear
+ * through gainFear; on a 12 each resting PC gains a Hope on the rest's sheets
+ * (undone with the rest). The tracker log and that Fear keep their own
+ * history (plan note 11).
+ */
+export const ageOfUmbraRestHook: RestHook = async (ctx, { campaign, choices, sheets, rng }) => {
+  if (campaign.frameId !== umbraTracker.frameId) return [];
+  const state = await loadTracker(ctx, campaign._id, umbraTracker);
+  if (state.atPyre) return [];
+  const watchers = keepWatchRolls(choices, new Set<string>(sheets.keys()), rng);
+  const roll = resolveLurking(rng(12), watchers);
+  const fearGained = LURKING_FEAR[roll.outcome];
+  if (fearGained > 0) await gainFear(ctx, campaign._id, fearGained);
+  await writeTracker(ctx, campaign._id, umbraTracker.key, logLurking(state, { ...roll, fearGained, at: Date.now() }), TRACKER_SCHEMA_VERSION);
+  if (roll.outcome !== "hope") return [];
+  for (const [id, sheet] of sheets) sheets.set(id, applyResourceDelta(sheet, "hope", 1));
+  return ["Lurking Darkness: a hopeful omen, each PC gains a Hope"];
+};
