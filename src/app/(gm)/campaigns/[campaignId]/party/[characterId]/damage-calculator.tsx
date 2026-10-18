@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 
+import { Label, PaperInput, Pill, Small } from "@/components/party/sheet-ui";
 import type { Thresholds } from "@/lib/domain/characters";
 import { frameHasMechanic } from "@/lib/frames";
 import { useIntent } from "@/lib/use-intent";
@@ -59,49 +60,39 @@ export function DamageCalculator({ thresholds, armorFree }: { thresholds: Thresh
   }
 
   return (
-    <div className="cs-take" role="group" aria-labelledby={`${id}-h`}>
-      <div className="flex flex-wrap items-center gap-3">
-        <span id={`${id}-h`} className="cs-lbl">
-          Take damage
-        </span>
-        <label className="flex items-center gap-2">
-          <span className="sr-only">Damage roll</span>
-          <input
-            className="cs-in w-24 text-center"
-            inputMode="numeric"
-            placeholder="Roll"
-            value={raw}
-            onChange={(e) => setRaw(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
-            aria-describedby={`${id}-out`}
-          />
+    <div className="hp-take" role="group" aria-labelledby={`${id}-h`}>
+      <Label id={`${id}-h`}>Take damage</Label>
+      <label>
+        <span className="sr-only">Damage roll</span>
+        <PaperInput
+          className="hp-take-in"
+          inputMode="numeric"
+          placeholder="Roll"
+          value={raw}
+          onChange={(e) => setRaw(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))}
+          aria-describedby={`${id}-out`}
+        />
+      </label>
+      <label className="hp-toggle">
+        <input type="checkbox" checked={useArmor} disabled={armorFree <= 0} onChange={(e) => setUseArmor(e.target.checked)} />
+        Use an Armor Slot{armorFree <= 0 ? <span className="italic"> (none free)</span> : null}
+      </label>
+      {witherwild ? (
+        <label className="hp-toggle">
+          <input type="checkbox" checked={withered} onChange={(e) => setWithered(e.target.checked)} />
+          Withered source
         </label>
-        <label className="flex min-h-11 items-center gap-2 text-[16px]">
-          <input
-            type="checkbox"
-            className="size-5 accent-[#6b5a45]"
-            checked={useArmor}
-            disabled={armorFree <= 0}
-            onChange={(e) => setUseArmor(e.target.checked)}
-          />
-          Use an Armor Slot {armorFree <= 0 ? <span className="cs-small italic">(none free)</span> : null}
-        </label>
-        {witherwild ? (
-          <label className="flex min-h-11 items-center gap-2 text-[16px]">
-            <input type="checkbox" className="size-5 accent-[#6b5a45]" checked={withered} onChange={(e) => setWithered(e.target.checked)} />
-            Withered source
-          </label>
-        ) : null}
-        <button type="button" className="cs-pill cs-solid ml-auto" disabled={!plan || busy || (plan.marks === 0 && !plan.armorUsed)} onClick={() => void apply()}>
-          Apply
-        </button>
-      </div>
-      <p id={`${id}-out`} className="cs-small m-0 italic" aria-live="polite">
+      ) : null}
+      <Pill disabled={!plan || busy || (plan.marks === 0 && !plan.armorUsed)} onClick={() => void apply()}>
+        Apply
+      </Pill>
+      <Small as="p" id={`${id}-out`} className="hp-take-out italic" aria-live="polite">
         {plan
           ? `${SEVERITY_LABEL[plan.severity]}${plan.armorUsed ? " after marking an Armor Slot" : ""}: mark ${plan.marks} Hit Point${plan.marks === 1 ? "" : "s"}.${
               withered && plan.severity === "severe" ? " Withered: gain a Wither token and roll the Fear Die." : ""
             }`
           : (outcome ?? witheredDamage.error ?? "Enter a damage roll to see how many Hit Points it marks.")}
-      </p>
+      </Small>
     </div>
   );
 }
