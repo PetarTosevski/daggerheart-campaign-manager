@@ -2,14 +2,17 @@
 
 import { usePaginatedQuery } from "convex/react";
 import { useMutation } from "convex/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { play3d } from "./dice3d";
 import { DiceFaces, DiceSettingsToggles } from "./parts";
+import { canAnimate3d, useDiceSettings } from "./settings";
+import { playRollSound } from "./sound";
 
 const PAGE = 15;
 const SIDES = [4, 6, 8, 10, 12, 20] as const;
@@ -28,6 +31,16 @@ function GmRollForm({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const [label, setLabel] = useState("");
   const roll = useIntent(api.rolls.gmRoll);
   const n = Number.parseInt(count, 10);
+  const stage = useRef<HTMLDivElement>(null);
+  const [settings] = useDiceSettings();
+
+  // The same 3D dice and sound as the character dice box, per this device's settings.
+  async function submit() {
+    const result = await roll.fire({ campaignId, dice: [{ count: n, sides }], modifier: Number.parseInt(modifier, 10) || 0, ...(label.trim() ? { label: label.trim() } : {}) });
+    if (!result) return;
+    const shown = canAnimate3d(settings) && stage.current !== null && (await play3d(stage.current, { dice: result.roll.dice, sound: settings.sound }));
+    if (!shown && settings.sound) playRollSound();
+  }
 
   return (
     <form
@@ -35,7 +48,7 @@ function GmRollForm({ campaignId }: { campaignId: Id<"campaigns"> }) {
       className="flex flex-wrap items-end gap-2"
       onSubmit={(e) => {
         e.preventDefault();
-        void roll.fire({ campaignId, dice: [{ count: n, sides }], modifier: Number.parseInt(modifier, 10) || 0, ...(label.trim() ? { label: label.trim() } : {}) });
+        void submit();
       }}
     >
       <label className="flex flex-col gap-1 text-[12px] text-[#8fa3a8] uppercase">
@@ -66,6 +79,7 @@ function GmRollForm({ campaignId }: { campaignId: Id<"campaigns"> }) {
       <p aria-live="polite" className="m-0 w-full text-[13px] text-danger empty:hidden">
         {roll.error}
       </p>
+      <div ref={stage} className="w-full empty:hidden" />
     </form>
   );
 }
