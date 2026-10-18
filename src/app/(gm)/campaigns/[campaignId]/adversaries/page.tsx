@@ -3,12 +3,15 @@
 import "./adversaries.css";
 
 import { useQuery } from "convex/react";
-import { Component, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Component, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { AddToEncounter, EncounterBuilder } from "@/components/adversaries/builder";
 import { Catalogue } from "@/components/adversaries/catalogue";
-import { CustomAdversaries } from "@/components/adversaries/custom";
+import { CustomAdversaries, DuplicateAdversary } from "@/components/adversaries/custom";
 import { EncounterTracker } from "@/components/adversaries/tracker";
+import { countLine } from "@/lib/adversaries/catalogue";
+import { adversariesFor } from "@/lib/domain/adversaries";
+import { ADVERSARIES } from "@/lib/srd/adversaries";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
@@ -42,16 +45,29 @@ class SlotBoundary extends Component<{ children: ReactNode; label: string }, { f
   }
 }
 
-/** Stat block head actions: empty until the encounter builder (A3) adds "Add to encounter". */
-
+/**
+ * Catalogue tab: the SRD catalogue, whose stat blocks get "Add to encounter" (A3) and "Duplicate & edit" (A5), and
+ * the campaign's custom adversaries below it; a saved duplicate is selected there.
+ */
 function CatalogueTab({ campaign }: { campaign: CampaignSummary }) {
+  const [selectedCustom, setSelectedCustom] = useState<string | null>(null);
   return (
     <>
       <SlotBoundary label="The catalogue">
-        <Catalogue campaignId={campaign._id} hopeAndFear={campaign.options.hopeAndFear} frameId={campaign.frameId} renderActions={(a) => <AddToEncounter campaignId={campaign._id} adversary={a} />} />
+        <Catalogue
+          campaignId={campaign._id}
+          hopeAndFear={campaign.options.hopeAndFear}
+          frameId={campaign.frameId}
+          renderActions={(a) => (
+            <>
+              <AddToEncounter campaignId={campaign._id} adversary={a} />
+              <DuplicateAdversary campaignId={campaign._id} adversary={a} onSaved={setSelectedCustom} />
+            </>
+          )}
+        />
       </SlotBoundary>
       <SlotBoundary label="Custom adversaries">
-        <CustomAdversaries campaignId={campaign._id} />
+        <CustomAdversaries campaignId={campaign._id} selectedId={selectedCustom} onSelect={setSelectedCustom} />
       </SlotBoundary>
     </>
   );
@@ -127,6 +143,12 @@ function AdversaryTabs({ tab, onTab }: { tab: TabId; onTab: (tab: TabId) => void
 
 function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
   const [tab, setTab] = useState<TabId>("catalogue");
+  const { hopeAndFear } = campaign.options;
+  // The catalogue's size, as the board's header line (A2's count line, in place of A0's placeholder).
+  const count = useMemo(() => {
+    const visible = adversariesFor(ADVERSARIES, { hopeAndFear, frameId: campaign.frameId });
+    return countLine(visible, visible.length);
+  }, [hopeAndFear, campaign.frameId]);
   const blurb = campaign.options.hopeAndFear
     ? "Stat blocks from the Core Rulebook and Hope & Fear, with encounters and their Battle Points. Only you can see this page."
     : "Stat blocks from the Core Rulebook, with encounters and their Battle Points. Only you can see this page.";
@@ -136,7 +158,7 @@ function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
         <div className="adv-bar">
           <div>
             <h1 className="adv-title">Adversaries</h1>
-            <div className="adv-count">{campaign.options.hopeAndFear ? "Core Rulebook and Hope & Fear" : "Core Rulebook"}</div>
+            <div className="adv-count">{count}</div>
           </div>
           <p className="adv-blurb">{blurb}</p>
         </div>
