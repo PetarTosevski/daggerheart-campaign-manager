@@ -26,4 +26,5 @@ export const OPTION_SHORT: Record<AdvancementOption, string> = {
   subclass: "Upgraded subclass card",
   proficiency: "+1 Proficiency (both picks)",
   multiclass: "Multiclass (both picks)",
+  comboDie: "Combo Die one step larger",
 };

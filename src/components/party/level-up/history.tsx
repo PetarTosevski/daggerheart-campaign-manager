@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { availableOptions, OPTION_ORDER, OPTION_RULES, picksFor, TIERS } from "@/lib/domain/level-up";
+import { availableOptions, offersOption, OPTION_ORDER, OPTION_RULES, picksFor, TIERS } from "@/lib/domain/level-up";
 import { MAX_LEVEL } from "@/lib/domain/characters";
 import { useIntent } from "@/lib/use-intent";
 import type { CharacterSheet } from "@/lib/validation/characters";
@@ -26,7 +26,7 @@ export function TierGrid({ sheet }: { sheet: CharacterSheet }) {
             Tier {tier} <span className="font-sans text-[13px] font-normal text-muted-text">· {TIER_LEVELS[tier]}</span>
           </h3>
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-            {OPTION_ORDER.filter((o) => tier >= OPTION_RULES[o].fromTier).map((option) => {
+            {OPTION_ORDER.filter((o) => tier >= OPTION_RULES[o].fromTier && offersOption(sheet, o)).map((option) => {
               const taken = picksFor(sheet, tier, option);
               const blocked = options.find((o) => o.tier === tier && o.option === option)?.blocked;
               const crossed = taken.length === 0 && blocked && !blocked.startsWith("Reach");

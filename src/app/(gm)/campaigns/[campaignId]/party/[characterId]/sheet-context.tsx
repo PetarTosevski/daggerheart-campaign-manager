@@ -80,7 +80,8 @@ export function SheetProvider({
       slot: { campaignId, character, canEdit: character.canEdit, isGm, hopeAndFear },
       update: (patch) => run(() => updateSheet({ characterId, patch })),
       adjust: (resource, delta) => (delta === 0 ? Promise.resolve(true) : run(() => adjustResource({ characterId, resource, delta }))),
-      applyDamage: (damage, useArmorSlot) => run(() => damageMutation({ characterId, damage, useArmorSlot })),
+      // One key per click, so the Convex client's retries can't mark the damage twice (review L2).
+      applyDamage: (damage, useArmorSlot) => run(() => damageMutation({ characterId, damage, useArmorSlot, idempotencyKey: crypto.randomUUID() })),
       moveCard: (cardId, to, duringRest) => run(() => move({ characterId, cardId, to, duringRest })),
       setStatus: (s) => run(() => status({ characterId, status: s })),
       error,

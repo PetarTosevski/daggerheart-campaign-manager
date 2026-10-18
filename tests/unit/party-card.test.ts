@@ -87,8 +87,11 @@ describe("PartyCard", () => {
     expect(screen.queryByRole("button", { name: /Scars/ })).toBeNull();
   });
 
-  it("veils a fallen hero and offers Revive to editors", () => {
-    render(createElement(PartyCard, { campaignId, character: character({ status: "dead" }) }));
+  it("veils a fallen hero and offers Revive to the GM only", () => {
+    const { unmount } = render(createElement(PartyCard, { campaignId, character: character({ status: "dead" }) }));
+    expect(screen.queryByRole("button", { name: "Revive Brannoc" })).toBeNull();
+    unmount();
+    render(createElement(PartyCard, { campaignId, character: character({ status: "dead" }), isGm: true }));
     expect(screen.getByRole("article", { name: "Brannoc (fallen)" })).toBeInTheDocument();
     expect(screen.getByText("Brannoc has fallen")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Revive Brannoc" }));

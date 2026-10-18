@@ -268,6 +268,72 @@ describe("characters", () => {
       expect(seen!.portraitUrl).toEqual(expect.any(String));
     }
   });
+
+  it("M3: from dead or away only the GM sets a character active; any change clears away", async () => {
+    const { t, gm, p1, campaignId } = await setup();
+    const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    await p1.mutation(api.characters.setStatus, { characterId, status: "dead" });
+    expect(errorCode(await p1.mutation(api.characters.setStatus, { characterId, status: "active" }).catch((e) => e))).toBe("FORBIDDEN");
+    expect(errorCode(await p1.mutation(api.characters.setStatus, { characterId, status: "retired" }).catch((e) => e))).toBe("FORBIDDEN");
+    await gm.mutation(api.characters.setStatus, { characterId, status: "active" });
+    expect((await p1.query(api.characters.get, { characterId }))!.status).toBe("active");
+
+    await t.run((ctx) => ctx.db.patch(characterId, { status: "away", away: { reason: "infirmary" } }));
+    expect(errorCode(await p1.mutation(api.characters.setStatus, { characterId, status: "active" }).catch((e) => e))).toBe("FORBIDDEN");
+    await gm.mutation(api.characters.setStatus, { characterId, status: "active" });
+    const back = await t.run((ctx) => ctx.db.get(characterId));
+    expect(back).toMatchObject({ status: "active" });
+    expect(back!.away).toBeUndefined();
+    // An active character's owner still retires or kills them.
+    await p1.mutation(api.characters.setStatus, { characterId, status: "retired" });
+  });
+
+  it("M5: at most 50 characters per campaign and 12 per player (create and hand-over)", async () => {
+    const { t, gm, p1, ids, campaignId } = await setup();
+    const { characterId: first } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    const copy = async (ownerId: typeof ids.gm, n: number) =>
+      t.run(async (ctx) => {
+        const c = (await ctx.db.get(first))!;
+        for (let i = 0; i < n; i++) {
+          await ctx.db.insert("characters", { campaignId: c.campaignId, ownerId, createdBy: c.createdBy, status: "active", sheet: c.sheet, createdAt: 0, updatedAt: 0 });
+        }
+      });
+    await copy(ids.p1, 11);
+    const tooMany = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).catch((e) => e);
+    expect(errorCode(tooMany)).toBe("INVALID");
+    expect(errorCode(await gm.mutation(api.characters.create, { campaignId, draft: draft(), ownerId: ids.p1, idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
+    // The GM's own (unassigned) characters count only towards the campaign's cap.
+    const { characterId: spare } = await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    expect(errorCode(await gm.mutation(api.characters.assignOwner, { characterId: spare, ownerId: ids.p1 }).catch((e) => e))).toBe("INVALID");
+    await copy(ids.gm, 50 - 13);
+    expect((await gm.query(api.characters.listByCampaign, { campaignId })).length).toBe(50);
+    expect(errorCode(await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
+    expect(errorCode(await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
+  });
+
+  it("M5: characters.create is rate-limited per user (30 in a burst)", async () => {
+    // The GM, whose own characters count only towards the campaign's cap of 50.
+    const { gm, campaignId } = await setup();
+    const codes: unknown[] = [];
+    for (let i = 0; i < 31; i++) {
+      codes.push(await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).then(() => "ok", (e) => errorCode(e)));
+    }
+    expect(codes.slice(0, 30).every((c) => c === "ok")).toBe(true);
+    expect(codes[30]).toBe("RATE_LIMITED");
+  });
+
+  it("L2: applyDamage is keyed: a replay with the same key marks the damage once", async () => {
+    const { p1, campaignId } = await setup();
+    const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    const k = key();
+    const first = await p1.mutation(api.characters.applyDamage, { characterId, damage: 999, useArmorSlot: false, idempotencyKey: k });
+    const again = await p1.mutation(api.characters.applyDamage, { characterId, damage: 999, useArmorSlot: false, idempotencyKey: k });
+    expect(again).toEqual(first);
+    expect((await p1.query(api.characters.get, { characterId }))!.sheet.hp).toBe(3);
+    expect(
+      errorCode(await p1.mutation(api.characters.applyDamage, { characterId, damage: 1, useArmorSlot: false, idempotencyKey: k }).catch((e) => e)),
+    ).toBe("IDEMPOTENCY_MISMATCH");
+  });
 });
 
 describe("migrations/characters:versionSheets", () => {

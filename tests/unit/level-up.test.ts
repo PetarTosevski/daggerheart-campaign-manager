@@ -319,3 +319,38 @@ describe("domain card caps (CB 110-111)", () => {
     );
   });
 });
+
+describe("polish 27: Brawler Combo Die (HF 10)", () => {
+  const BRAWLER: CharacterSheet = { ...BASE, classId: "brawler", subclassId: "juggernaut" };
+  const combo = (tier = 2): PickChoice => ({ option: "comboDie", tier });
+
+  it("is offered only to a Brawler (or a Brawler multiclass), one slot per tier", () => {
+    expect(availableOptions(BASE).some((o) => o.option === "comboDie")).toBe(false);
+    expect(availableOptions(BRAWLER).filter((o) => o.option === "comboDie").map((o) => [o.tier, o.slots])).toEqual([
+      [2, 1],
+      [3, 1],
+      [4, 1],
+    ]);
+    const multi = { ...BASE, multiclass: { classId: "brawler", domainId: "valor", subclassId: "juggernaut" } };
+    expect(availableOptions(multi).some((o) => o.option === "comboDie")).toBe(true);
+    expect(validateLevelUp(BASE, { picks: [combo(), hp], cardId: freshCard(BASE, 2), experienceName: "x" }, CTX)).toContain("Only a Brawler has a Combo Die.");
+  });
+
+  it("raises the die one step, d4 → d6 → d8, and refuses a second pick in the same tier", () => {
+    const at2 = up(BRAWLER, [combo(), hp]);
+    expect(at2.classState.comboDie).toBe(6);
+    expect(availableOptions(at2).find((o) => o.tier === 2 && o.option === "comboDie")?.blocked).toBe("All its slots are marked.");
+    expect(validateLevelUp(at2, { picks: [combo(), stress], cardId: freshCard(at2, 3) }, CTX).join()).toMatch(/every slot in tier 2 is marked/);
+    const at5 = up(climb(at2, 4), [combo(3), { option: "hp", tier: 3 }]);
+    expect(at5.classState.comboDie).toBe(8);
+  });
+
+  it("revert lowers it one step; back at d4 the field goes", () => {
+    const at2 = up(BRAWLER, [combo(), hp]);
+    const back = revertLevelUp(at2);
+    expect(back.classState.comboDie).toBeUndefined();
+    expect(back.classState).toEqual(BRAWLER.classState);
+    const at5 = up(climb(at2, 4), [combo(3), { option: "hp", tier: 3 }]);
+    expect(revertLevelUp(at5).classState.comboDie).toBe(6);
+  });
+});

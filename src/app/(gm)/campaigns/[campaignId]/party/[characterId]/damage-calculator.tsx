@@ -1,11 +1,10 @@
 "use client";
 
-import { useMutation } from "convex/react";
 import { useId, useState } from "react";
 
-import { errorMessage } from "@/lib/convex-errors";
 import type { Thresholds } from "@/lib/domain/characters";
 import { frameHasMechanic } from "@/lib/frames";
+import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../../../convex/_generated/api";
 import { useCampaign } from "../../campaign-shell";
@@ -26,7 +25,8 @@ export function DamageCalculator({ thresholds, armorFree }: { thresholds: Thresh
   const campaign = useCampaign();
   // tests/unit/sheet-render.test.ts mocks a campaign without `frameId`.
   const witherwild = frameHasMechanic(campaign.frameId, "witherTokens");
-  const witheredDamage = useMutation(api.characters.applyDamage);
+  // Keyed (review L2): one idempotency key per click.
+  const witheredDamage = useIntent(api.characters.applyDamage);
   const id = useId();
   const [raw, setRaw] = useState("");
   const [useArmor, setUseArmor] = useState(false);
@@ -39,14 +39,10 @@ export function DamageCalculator({ thresholds, armorFree }: { thresholds: Thresh
 
   /** Withered damage goes straight to the mutation to read back the Fear Die. */
   async function applyWithered(armorUsed: boolean): Promise<boolean> {
-    try {
-      const result = await witheredDamage({ characterId: character._id, damage, useArmorSlot: armorUsed, withered: true });
-      setOutcome(result.wither ? witherLine(result.wither) : null);
-      return true;
-    } catch (e) {
-      setOutcome(errorMessage(e));
-      return false;
-    }
+    const result = await witheredDamage.fire({ characterId: character._id, damage, useArmorSlot: armorUsed, withered: true });
+    if (result === undefined) return false;
+    setOutcome(result.wither ? witherLine(result.wither) : null);
+    return true;
   }
 
   async function apply() {
@@ -104,7 +100,7 @@ export function DamageCalculator({ thresholds, armorFree }: { thresholds: Thresh
           ? `${SEVERITY_LABEL[plan.severity]}${plan.armorUsed ? " after marking an Armor Slot" : ""}: mark ${plan.marks} Hit Point${plan.marks === 1 ? "" : "s"}.${
               withered && plan.severity === "severe" ? " Withered: gain a Wither token and roll the Fear Die." : ""
             }`
-          : (outcome ?? "Enter a damage roll to see how many Hit Points it marks.")}
+          : (outcome ?? witheredDamage.error ?? "Enter a damage roll to see how many Hit Points it marks.")}
       </p>
     </div>
   );

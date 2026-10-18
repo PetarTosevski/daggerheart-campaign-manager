@@ -20,6 +20,7 @@ import { v } from "convex/values";
 import { applyResourceDelta } from "../src/lib/domain/characters/index";
 import { expire } from "../src/lib/domain/characters/expiry";
 import { findFeature, hopeFeature } from "../src/lib/domain/class-features/hooks";
+import { rallyDieStress } from "../src/lib/domain/class-features/held-dice";
 import { CLASS_FEATURES, classFeaturesAvailable } from "../src/lib/domain/class-features/index";
 import type { FeatureCost, FeatureMeta, OtherSheet } from "../src/lib/domain/class-features/types";
 import { appError } from "../src/lib/errors/app-error";
@@ -103,7 +104,9 @@ async function othersFor(
     const rows = await ctx.db
       .query("characters")
       .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
-      .take(PARTY_MAX);
+      .take(PARTY_MAX + 1);
+    // Never a silent skip of the 51st character (review M5).
+    if (rows.length > PARTY_MAX) throw appError("CLASS_FEATURE_RULE", `A party feature reaches at most ${PARTY_MAX} characters.`);
     return rows.filter((c) => c._id !== self && c.status === "active").map(other);
   }
   return [];
@@ -139,7 +142,8 @@ export const use = keyedUserMutation({
       const feature = findFeature(sheet, featureKey);
       const owner = grantingClass(sheet, featureKey);
       if (feature?.use === undefined || owner === undefined) throw appError("CLASS_FEATURE_RULE", "This character has no such feature to use.");
-      if (!classFeaturesAvailable(owner, resolveOptions(campaign.frameId, campaign.options).hopeAndFear)) {
+      // A Rally Die comes from a Bard, not the character's class: it works with Hope & Fear off too (CB 28).
+      if (featureKey !== rallyDieStress.key && !classFeaturesAvailable(owner, resolveOptions(campaign.frameId, campaign.options).hopeAndFear)) {
         throw appError("CLASS_FEATURE_RULE", "Hope & Fear classes are off in this campaign.");
       }
 

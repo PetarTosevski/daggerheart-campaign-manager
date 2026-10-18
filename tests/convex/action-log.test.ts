@@ -240,7 +240,7 @@ describe("actionLog.undo: nothing newer is lost (review H1, H2, M2)", () => {
     const { gm, p1, a, sheetOf } = await setup();
     const roll = await hopeRoll(p1, a);
     later(1000);
-    await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 3, useArmorSlot: false });
+    await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 3, useArmorSlot: false, idempotencyKey: key() });
     const damaged = await sheetOf(a);
 
     expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: roll.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");

@@ -47,6 +47,7 @@ import {
   type RestMove,
 } from "./lib/validators/rests";
 import { recordHistory } from "./tables/history";
+import { assertSanctuaryLongRest } from "./trackers/horizon";
 
 // The domain mirrors the stored validators; these fail typecheck if they drift.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -57,6 +58,20 @@ void moveMatches;
 
 /** Rests read back to count short rests; a long rest is never this far back in practice. */
 const REST_SCAN = 50;
+/** The most resting PCs a rest takes: its undo group holds 50 rows, one of them the campaign's (review M5). */
+const REST_PARTY_MAX = 49;
+
+/** The campaign's resting PCs, or REST_RULE when there are more than an undo group holds. */
+async function restingParty(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Doc<"characters">[]> {
+  // Bounded by the campaign's character cap (convex/characters.ts).
+  const party = await ctx.db
+    .query("characters")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .collect();
+  const pcs = party.filter(resting);
+  if (pcs.length > REST_PARTY_MAX) throw restRule(`A rest takes at most ${REST_PARTY_MAX} PCs.`);
+  return pcs;
+}
 
 function restRule(message: string) {
   return appError("REST_RULE", message);
@@ -221,6 +236,9 @@ export const start = keyedGmMutation({
       const shortRests = shortRestsSinceLong(await recentRests(ctx, campaignId));
       const overridden = needsOverride(kind, shortRests);
       if (overridden && override !== true) throw restRule("Three short rests in a row: the next rest must be a long rest.");
+      await restingParty(ctx, campaignId);
+      // Journey to Horizon: a long rest only in a sanctuary (HF 176), refused before the rest opens.
+      if (kind === "long") await assertSanctuaryLongRest(ctx, ctx.campaign);
       const restId = await ctx.db.insert("rests", {
         campaignId,
         kind,
@@ -244,12 +262,7 @@ type Ending = { rest: Doc<"rests">; interrupted: boolean };
 async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> }, { rest, interrupted }: Ending) {
   const campaign = ctx.campaign;
   const kind: RestKind = interrupted ? "short" : rest.kind;
-  // One party: a handful of characters.
-  const party = await ctx.db
-    .query("characters")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
-    .collect();
-  const pcs = party.filter(resting);
+  const pcs = await restingParty(ctx, campaign._id);
   const before = new Map<Id<"characters">, CharacterSheet>(pcs.map((c) => [c._id, readSheet(c.sheet)]));
 
   const allChoices = await choicesOf(ctx, rest._id);

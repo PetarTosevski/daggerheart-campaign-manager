@@ -138,6 +138,26 @@ describe("classFeatures.use", () => {
     expect((await sheetOf(b)).conditions).toEqual(["unconscious"]);
   });
 
+  it("polish 29: a Rally Die clears Stress for a Hope & Fear class with the option off; its own features stay off", async () => {
+    const { p2, b, patch, sheetOf } = await setup();
+    await patch(b, { classId: "brawler", stress: 4, heldDice: [{ id: "rally-1", kind: "rally", sides: 6, value: 3, until: "session" }] });
+    expect(await codeOf(p2.mutation(api.classFeatures.use, use(b, "comboStrike")))).toBe("CLASS_FEATURE_RULE");
+    expect(await codeOf(p2.mutation(api.classFeatures.use, use(b, "rallyDieStress")))).toBe("ok");
+    expect(await sheetOf(b)).toMatchObject({ stress: 1, heldDice: [] });
+  });
+
+  it("M5: a party feature over 50 characters is refused instead of skipping some", async () => {
+    const { t, p1, a, patch } = await setup();
+    await patch(a, { classId: "bard", subclassId: "troubadour" });
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get("characters", a))!;
+      for (let i = 0; i < 49; i++) {
+        await ctx.db.insert("characters", { campaignId: c.campaignId, ownerId: c.ownerId, createdBy: c.createdBy, status: "active", sheet: c.sheet, createdAt: 0, updatedAt: 0 });
+      }
+    });
+    expect(await codeOf(p1.mutation(api.classFeatures.use, use(a, "rally")))).toBe("CLASS_FEATURE_RULE");
+  });
+
   it("a player cannot use a feature for another player's character; the GM can", async () => {
     const { gm, p2, out, t, a, patch } = await setup();
     await patch(a, { hope: 6 });

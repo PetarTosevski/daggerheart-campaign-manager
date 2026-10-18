@@ -115,7 +115,8 @@ export function PageTwo({ cls }: { cls: ClassDef | undefined }) {
           <div className="cs-cards" role="list" aria-label="Vault cards">
             {vault.map((card) => {
               const block = recallBlock(card, sheet.level, loadout.length);
-              const cost = duringRest || card.recallCost === 0 ? "free" : `${card.recallCost} Stress`;
+              // Free only while the box is ticked and the GM has a rest open, as the server decides.
+              const cost = (duringRest && restOpen) || card.recallCost === 0 ? "free" : `${card.recallCost} Stress`;
               return (
                 <div role="listitem" key={card.id}>
                   <CardFace card={card}>

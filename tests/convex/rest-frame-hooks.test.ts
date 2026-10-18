@@ -223,7 +223,12 @@ describe("frame rest hooks", () => {
     it("a long rest only in a sanctuary: refused elsewhere, an interrupted one gives short-rest benefits", async () => {
       const h = await setup("journey-to-horizon");
       await placeParty(h, false);
+      // Refused up front outside a sanctuary (polish 30)…
+      expect(await codeOf(h.start("long"))).toBe("REST_RULE");
+      // …and again on finish when the party left the sanctuary after the rest began.
+      await placeParty(h, true);
       const { restId } = await h.start("long");
+      await h.gm.mutation(api.maps.placePartyHex, { campaignId: h.campaignId, q: 12, r: 12 });
       expect(await codeOf(h.finish(restId))).toBe("REST_RULE");
       expect(await codeOf(h.interrupt(restId))).toBe("ok");
 
