@@ -8,7 +8,7 @@ import {
   validatePlan,
 } from "../../scripts/plan-check.mjs";
 import { checkChangedFiles, findTracer } from "../../scripts/tracer-guard.mjs";
-import { findFreePort, mainCheckoutFromCommonDir } from "../../scripts/worktree-setup.mjs";
+import { CONVEX_BASE, findFreeSlotPort, mainCheckoutFromCommonDir, NEXT_BASE, SLOTS, suggestPorts, worktreeSlot } from "../../scripts/worktree-setup.mjs";
 
 type Tracer = {
   id: string;
@@ -242,10 +242,41 @@ describe("worktree setup", () => {
     expect(mainCheckoutFromCommonDir("/home/me/repo/.git")).toBe("/home/me/repo");
   });
 
-  it("finds the first run of free ports", async () => {
-    const busy = new Set([3100, 3101, 3103]);
-    const isBusy = async (port: number) => busy.has(port);
-    expect(await findFreePort(3100, isBusy)).toBe(3102);
-    expect(await findFreePort(3100, isBusy, 2)).toBe(3104);
+  it("derives a stable slot per worktree path, different for different worktrees", () => {
+    const paths = Array.from({ length: 6 }, (_, i) => `/home/me/repo/.claude/worktrees/agent-${i}`);
+    const slots = paths.map(worktreeSlot);
+    expect(slots.map((_, i) => worktreeSlot(paths[i]!))).toEqual(slots);
+    for (const slot of slots) expect(Number.isInteger(slot) && slot >= 0 && slot < SLOTS).toBe(true);
+    expect(new Set(slots).size).toBe(paths.length);
+  });
+
+  it("suggests the worktree's derived ports when they are free, distinct per worktree", async () => {
+    const none = async () => false;
+    const a = await suggestPorts("/home/me/repo/.claude/worktrees/agent-0", none);
+    const b = await suggestPorts("/home/me/repo/.claude/worktrees/agent-1", none);
+    expect(a).toEqual({ next: NEXT_BASE + worktreeSlot("/home/me/repo/.claude/worktrees/agent-0"), convex: CONVEX_BASE + 2 * worktreeSlot("/home/me/repo/.claude/worktrees/agent-0") });
+    expect(a.next).not.toBe(b.next);
+    expect(a.convex).not.toBe(b.convex);
+    // The ranges never overlap each other or the main checkout's 3000 / 3212-3213.
+    expect(NEXT_BASE + SLOTS - 1).toBeLessThan(CONVEX_BASE);
+    expect(CONVEX_BASE).toBeGreaterThan(3213);
+  });
+
+  it("checks the derived ports and moves past busy ones, wrapping around the range", async () => {
+    const worktree = "/home/me/repo/.claude/worktrees/agent-0";
+    const slot = worktreeSlot(worktree);
+    const busy = new Set([NEXT_BASE + slot, CONVEX_BASE + 2 * slot + 1]);
+    const checked: number[] = [];
+    const isBusy = async (port: number) => (checked.push(port), busy.has(port));
+    expect(await suggestPorts(worktree, isBusy)).toEqual({
+      next: NEXT_BASE + ((slot + 1) % SLOTS),
+      convex: CONVEX_BASE + 2 * ((slot + 1) % SLOTS),
+    });
+    expect(checked).toContain(NEXT_BASE + slot);
+    expect(checked).toContain(CONVEX_BASE + 2 * slot + 1);
+
+    const last = SLOTS - 1;
+    expect(await findFreeSlotPort(NEXT_BASE, 1, last, async (port: number) => port === NEXT_BASE + last)).toBe(NEXT_BASE);
+    await expect(findFreeSlotPort(NEXT_BASE, 1, 0, async () => true)).rejects.toThrow("no free port");
   });
 });

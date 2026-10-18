@@ -283,7 +283,7 @@ pnpm build
 (`pnpm exec playwright install chromium`, then
 `sudo pnpm exec playwright install-deps chromium`). It refuses to start when
 its ports are taken (stale servers); run on other ports with
-`E2E_PORT=3100 E2E_CONVEX_PORT=3312 pnpm test:e2e`. The pre-commit hook runs
+`E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm test:e2e` (in a worktree, use the ports `pnpm worktree:setup` prints; they differ per worktree). The pre-commit hook runs
 ESLint on staged files plus `pnpm typecheck` (never e2e). CI
 (`.github/workflows/ci.yml`) runs lint, typecheck, test and e2e. Details:
 `docs/testing.md`.

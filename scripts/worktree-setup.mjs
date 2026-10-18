@@ -7,11 +7,15 @@
 //
 //   node scripts/worktree-setup.mjs [worktreePath=cwd]
 //
-// Port checks reuse `isPortBusy` from scripts/e2e-ports.mjs (worktree first,
-// then main checkout) when that module exists; otherwise a plain listen test.
-// The Next.js port search starts at 3100, the Convex one at 3312 (its site
-// proxy needs the next port too), away from the main checkout's defaults
-// (3000 and 3212).
+// Ports are derived from the worktree's path (a hash picks one of `SLOTS`
+// slots), so worktrees set up side by side get different ports instead of all
+// landing on the first free one before any server has started. Next.js uses
+// 3100-3199 and Convex 3312-3511 in steps of 2 (its site proxy needs the next
+// port too), both away from the main checkout's defaults (3000 and 3212). The
+// derived port is then checked: when it is busy the search moves on to the
+// next slot, wrapping around its range. Port checks reuse `isPortBusy` from
+// scripts/e2e-ports.mjs (worktree first, then main checkout) when that module
+// exists; otherwise a plain listen test.
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync } from "node:fs";
 import net from "node:net";
@@ -43,14 +47,40 @@ async function loadIsPortBusy(roots) {
   return async (port) => !(await canListen(port));
 }
 
-/** First port >= start for which `span` consecutive ports are free. */
-export async function findFreePort(start, isPortBusy, span = 1, limit = 200) {
-  for (let port = start; port < start + limit; port++) {
+/** Port slots per range: Next.js `NEXT_BASE + slot`, Convex `CONVEX_BASE + 2 * slot`. */
+export const SLOTS = 100;
+export const NEXT_BASE = 3100;
+export const CONVEX_BASE = 3312;
+
+/** The worktree's slot in 0..SLOTS-1: FNV-1a of its absolute path, so the same worktree always gets the same ports. */
+export function worktreeSlot(worktree) {
+  let hash = 0x811c9dc5;
+  for (const byte of Buffer.from(path.resolve(worktree))) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  return hash % SLOTS;
+}
+
+/**
+ * The first free port of `base + step * slot` (with `span` consecutive ports
+ * free), trying `startSlot` first and then the following slots, wrapping
+ * around the range.
+ */
+export async function findFreeSlotPort(base, step, startSlot, isPortBusy, span = 1) {
+  for (let i = 0; i < SLOTS; i++) {
+    const port = base + step * ((startSlot + i) % SLOTS);
     let free = true;
     for (let offset = 0; offset < span && free; offset++) free = !(await isPortBusy(port + offset));
     if (free) return port;
   }
-  throw new Error(`no free port in ${start}-${start + limit - 1}`);
+  throw new Error(`no free port in ${base}-${base + step * SLOTS - 1}`);
+}
+
+/** Free e2e ports for the worktree, starting from the ones its path derives. */
+export async function suggestPorts(worktree, isPortBusy) {
+  const slot = worktreeSlot(worktree);
+  return {
+    next: await findFreeSlotPort(NEXT_BASE, 1, slot, isPortBusy),
+    convex: await findFreeSlotPort(CONVEX_BASE, 2, slot, isPortBusy, 2),
+  };
 }
 
 function git(cwd, args) {
@@ -82,10 +112,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     execFileSync("pnpm", ["install", "--frozen-lockfile"], { cwd: worktree, stdio: "inherit" });
 
     const isPortBusy = await loadIsPortBusy([worktree, main]);
-    const next = await findFreePort(3100, isPortBusy);
-    let convex = await findFreePort(3312, isPortBusy, 2);
-    if (convex <= next && next <= convex + 1) convex = await findFreePort(next + 1, isPortBusy, 2);
-    console.log("worktree-setup: done. Free e2e ports right now; run e2e in this worktree with:");
+    const { next, convex } = await suggestPorts(worktree, isPortBusy);
+    console.log("worktree-setup: done. This worktree's e2e ports (free right now); run e2e here with:");
     console.log(`  E2E_PORT=${next} E2E_CONVEX_PORT=${convex} pnpm test:e2e`);
   } catch (error) {
     console.error(`worktree-setup: ${error.stderr?.toString().trim() || error.message}`);

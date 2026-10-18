@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { derivedDefense } from "../src/lib/domain/characters/derived";
 import { appError } from "../src/lib/errors/app-error";
 import { resolveOptions } from "../src/lib/frames/options";
-import { MAX_PHOTO_BYTES, MAX_PHOTOS, PHOTO_TYPES, type PhotoReadResult } from "../src/lib/import/draft";
+import { MAX_PHOTOS, PHOTO_TYPES, type PhotoReadResult } from "../src/lib/import/draft";
 import { sheetFromImport } from "../src/lib/import/sheet";
 import { draftFromReading, SHEET_READING_JSON_SCHEMA, sheetPrompt, sheetReadingSchema } from "../src/lib/import/sheet-photo";
 import { characterSheetSchema } from "../src/lib/validation/characters";
@@ -29,6 +29,13 @@ import { traitsValidator, goldValidator } from "./lib/validators/characters";
 /** The model used unless `ANTHROPIC_MODEL` names another (decision 14). */
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
 const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
+/**
+ * The largest photo `claim` keeps (review M4). The Messages API limits each
+ * image to 5 MB of base64, which is 3.75 MB of raw bytes; 3.5 MB leaves
+ * margin, and four of them keep the request well inside an action's memory.
+ * The browser shrinks photos far below this.
+ */
+export const PHOTO_MAX_BYTES = 3.5 * 1024 * 1024;
 
 /** The API key, read in the handler (CF19); undefined when unset or blank. */
 function apiKey(): string | undefined {
@@ -118,7 +125,7 @@ export const uploadUrl = gmMutation({
 /**
  * Records a just-uploaded photo for the campaign's import. Only an unclaimed
  * file is accepted (NOT_FOUND otherwise). A file that isn't a JPEG, PNG or
- * WebP of at most 5 MB, or a fifth photo, is deleted and the reason returned,
+ * WebP of at most `PHOTO_MAX_BYTES`, or a fifth photo, is deleted and the reason returned,
  * not thrown, so the delete is kept (CF16).
  */
 export const claim = gmMutation({
@@ -127,7 +134,7 @@ export const claim = gmMutation({
   handler: async (ctx, { storageId }) => {
     const meta = await ctx.db.system.get("_storage", storageId);
     if (meta === null || (await isClaimed(ctx, storageId))) throw appError("NOT_FOUND");
-    if (!isAllowedImage(meta, MAX_PHOTO_BYTES) || !PHOTO_TYPES.includes(meta.contentType ?? "")) {
+    if (!isAllowedImage(meta, PHOTO_MAX_BYTES) || !PHOTO_TYPES.includes(meta.contentType ?? "")) {
       await ctx.storage.delete(storageId);
       return { ok: false as const, code: "PHOTO_IMPORT_FILE" as const };
     }
@@ -182,34 +189,44 @@ export const deletePhotos = internalMutation({
   },
 });
 
-/** Base64 of the bytes, in chunks small enough for `String.fromCharCode`. */
+/**
+ * Base64 of the bytes, encoded a slice at a time (a multiple of 3 bytes, so the
+ * pieces join without padding) instead of through one binary string of the
+ * whole photo.
+ */
 function base64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(binary);
+  const pieces: string[] = [];
+  for (let i = 0; i < bytes.length; i += 0x6000) pieces.push(btoa(String.fromCharCode(...bytes.subarray(i, i + 0x6000))));
+  return pieces.join("");
+}
+
+type Photo = { mediaType: string; data: string };
+
+/**
+ * The request body, joined once from its pieces: the base64 data (JSON-safe as
+ * is) goes in directly, never through `JSON.stringify` of an object holding
+ * every photo (review M4).
+ */
+function requestBody(images: Photo[], hopeAndFear: boolean): string {
+  const head = JSON.stringify({
+    model: env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL,
+    max_tokens: 8000,
+    output_config: { effort: "low", format: { type: "json_schema", schema: SHEET_READING_JSON_SCHEMA } },
+  });
+  const pieces = [head.slice(0, -1), ',"messages":[{"role":"user","content":['];
+  for (const image of images) pieces.push(`{"type":"image","source":{"type":"base64","media_type":${JSON.stringify(image.mediaType)},"data":"`, image.data, '"}},');
+  pieces.push(JSON.stringify({ type: "text", text: sheetPrompt(hopeAndFear) }), "]}]}");
+  return pieces.join("");
 }
 
 /** One Messages API call with the photos; no retry (decision 14). Returns Claude's reading, or throws PHOTO_IMPORT_FAILED. */
-async function askClaude(key: string, images: { mediaType: string; data: string }[], hopeAndFear: boolean): Promise<unknown> {
+async function askClaude(key: string, body: string): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(MESSAGES_URL, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL,
-        max_tokens: 8000,
-        output_config: { effort: "low", format: { type: "json_schema", schema: SHEET_READING_JSON_SCHEMA } },
-        messages: [
-          {
-            role: "user",
-            content: [
-              ...images.map((image) => ({ type: "image", source: { type: "base64", media_type: image.mediaType, data: image.data } })),
-              { type: "text", text: sheetPrompt(hopeAndFear) },
-            ],
-          },
-        ],
-      }),
+      body,
     });
   } catch (error) {
     console.error("Photo import: the Messages API request failed.", error);
@@ -219,10 +236,10 @@ async function askClaude(key: string, images: { mediaType: string; data: string 
     console.error(`Photo import: the Messages API answered ${response.status}.`, (await response.text()).slice(0, 500));
     throw appError("PHOTO_IMPORT_FAILED");
   }
-  const body = (await response.json()) as { stop_reason?: string; content?: { type: string; text?: string }[] };
-  const text = body.content?.find((block) => block.type === "text")?.text;
-  if (body.stop_reason !== "end_turn" || text === undefined) {
-    console.error(`Photo import: no answer (stop reason ${body.stop_reason ?? "none"}).`);
+  const answer = (await response.json()) as { stop_reason?: string; content?: { type: string; text?: string }[] };
+  const text = answer.content?.find((block) => block.type === "text")?.text;
+  if (answer.stop_reason !== "end_turn" || text === undefined) {
+    console.error(`Photo import: no answer (stop reason ${answer.stop_reason ?? "none"}).`);
     throw appError("PHOTO_IMPORT_FAILED");
   }
   try {
@@ -248,13 +265,16 @@ export const read = userAction({
     try {
       const key = apiKey();
       if (key === undefined) throw appError("PHOTO_IMPORT_UNAVAILABLE");
-      const images: { mediaType: string; data: string }[] = [];
+      const images: Photo[] = [];
       for (const id of storageIds) {
         const blob = await ctx.storage.get(id);
-        if (blob !== null) images.push({ mediaType: blob.type || "image/jpeg", data: base64(new Uint8Array(await blob.arrayBuffer())) });
+        // `claim` refuses larger files; a blob over the cap is skipped, never sent.
+        if (blob !== null && blob.size <= PHOTO_MAX_BYTES) images.push({ mediaType: blob.type || "image/jpeg", data: base64(new Uint8Array(await blob.arrayBuffer())) });
       }
       if (images.length === 0) throw appError("PHOTO_IMPORT_RULE", "Upload at least one photo first.");
-      const reading = sheetReadingSchema.safeParse(await askClaude(key, images, hopeAndFear));
+      const body = requestBody(images, hopeAndFear);
+      images.length = 0; // drop the per-photo strings before the request is in flight
+      const reading = sheetReadingSchema.safeParse(await askClaude(key, body));
       if (!reading.success) {
         console.error("Photo import: the answer didn't match the schema.", reading.error.issues[0]);
         throw appError("PHOTO_IMPORT_FAILED");

@@ -18,6 +18,8 @@ export const fileTables = {
   })
     .index("by_storage", ["storageId"])
     .index("by_ref", ["kind", "refId"])
+    /** Oldest first within a kind: the hourly photo-import expiry (D5 R3). */
+    .index("by_kind_created", ["kind", "createdAt"])
     .index("by_campaign_kind", ["campaignId", "kind"])
     .index("by_uploader", ["uploadedBy"]),
 

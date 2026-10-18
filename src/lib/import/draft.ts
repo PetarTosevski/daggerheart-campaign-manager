@@ -8,8 +8,6 @@ import { characterSheetSchema, experienceSchema } from "../validation/characters
 
 /** At most this many photos per import (the front and back of a sheet, twice over). */
 export const MAX_PHOTOS = 4;
-/** The largest photo the server keeps (the browser shrinks photos well below it). */
-export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 /** Photo types the Messages API reads; GIF is left out on purpose. */
 export const PHOTO_TYPES: readonly string[] = ["image/jpeg", "image/png", "image/webp"];
 

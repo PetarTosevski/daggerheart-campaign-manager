@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { DEFAULT_MODEL } from "../../convex/photoImport";
+import { DEFAULT_MODEL, PHOTO_MAX_BYTES } from "../../convex/photoImport";
 import { messagesResponse, validDraft, warriorReading } from "../fixtures/photo-import";
 import { errorCode, GM_EMAIL, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
@@ -89,18 +89,21 @@ describe("photo import", () => {
     expect(errorCode(await fail(s.player.mutation(api.photoImport.uploadUrl, { campaignId: s.campaignId })))).toBe("FORBIDDEN");
   });
 
-  it("claims at most four JPEG, PNG or WebP photos of at most 5 MB, deleting rejected files", async () => {
+  it("claims at most four JPEG, PNG or WebP photos of at most 3.5 MB, deleting rejected files", async () => {
     const s = await setup();
+    expect(PHOTO_MAX_BYTES).toBe(3.5 * 1024 * 1024);
     const gif = await store(s, "image/gif");
     expect(await s.gm.mutation(api.photoImport.claim, { campaignId: s.campaignId, storageId: gif })).toEqual({ ok: false, code: "PHOTO_IMPORT_FILE" });
     expect(await blobExists(s, gif)).toBe(false);
-    const huge = await store(s, "image/png", 5 * 1024 * 1024 + 1);
+    const huge = await store(s, "image/png", 3.5 * 1024 * 1024 + 1);
     expect(await s.gm.mutation(api.photoImport.claim, { campaignId: s.campaignId, storageId: huge })).toEqual({ ok: false, code: "PHOTO_IMPORT_FILE" });
     expect(await blobExists(s, huge)).toBe(false);
 
     const webp = await store(s, "image/webp");
     expect(await s.gm.mutation(api.photoImport.claim, { campaignId: s.campaignId, storageId: webp })).toEqual({ ok: true });
-    await uploadPhotos(s, 3);
+    const largest = await store(s, "image/jpeg", 3.5 * 1024 * 1024);
+    expect(await s.gm.mutation(api.photoImport.claim, { campaignId: s.campaignId, storageId: largest })).toEqual({ ok: true });
+    await uploadPhotos(s, 2);
     const fifth = await store(s);
     expect(await s.gm.mutation(api.photoImport.claim, { campaignId: s.campaignId, storageId: fifth })).toEqual({ ok: false, code: "PHOTO_IMPORT_TOO_MANY" });
     expect(await blobExists(s, fifth)).toBe(false);
@@ -136,6 +139,33 @@ describe("photo import", () => {
 
     for (const id of photos) expect(await blobExists(s, id)).toBe(false);
     expect(await photoRows(s)).toHaveLength(0);
+  });
+
+  it("sends each photo's exact bytes as base64 in a well-formed body", async () => {
+    const s = await setup();
+    // 100 001 bytes: several encoding slices, and a length that isn't a multiple of 3.
+    const bytes = Uint8Array.from({ length: 100_001 }, (_, i) => (i * 37) % 256);
+    const storageId = await s.t.run(async (ctx) => {
+      const id = await ctx.storage.store(new Blob([bytes], { type: "image/png" }));
+      await (ctx.db as unknown as { patch: (id: Id<"_storage">, value: { contentType: string }) => Promise<void> }).patch(id, { contentType: "image/png" });
+      return id;
+    });
+    expect(await s.gm.mutation(api.photoImport.claim, { campaignId: s.campaignId, storageId })).toEqual({ ok: true });
+    await s.gm.action(api.photoImport.read, { campaignId: s.campaignId });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]?.body as string) as {
+      max_tokens: number;
+      output_config: { effort: string };
+      messages: { role: string; content: { type: string; text?: string; source?: { media_type: string; data: string } }[] }[];
+    };
+    expect(body.max_tokens).toBe(8000);
+    expect(body.output_config.effort).toBe("low");
+    expect(body.messages).toHaveLength(1);
+    const [image, text] = body.messages[0]!.content;
+    expect(image!.source!.media_type).toBe("image/png");
+    expect(Uint8Array.from(atob(image!.source!.data), (c) => c.charCodeAt(0))).toEqual(bytes);
+    expect(text!.type).toBe("text");
+    expect(text!.text!.length).toBeGreaterThan(0);
   });
 
   it("uses ANTHROPIC_MODEL when set", async () => {
