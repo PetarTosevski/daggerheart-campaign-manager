@@ -88,15 +88,16 @@ test("the stat block shows impulses, difficulty, adversaries, badges and questio
   await row(page, "Mountain Pass").click();
   await expect(feature("Icy Winds").locator(".adc-kind")).toHaveText(["Reaction", "Countdown (Loop 4)"]);
 
-  // Potential adversaries link to the Catalogue tab; "Back to" returns to the same environment.
+  // Potential adversaries open in a panel right in the Environment tab; Close dismisses it.
   await row(page, "Raging River").click();
-  await block.getByRole("button", { name: "Open Glass Snake in the catalogue" }).click();
-  await expect(page.getByRole("tab", { name: "Catalogue" })).toHaveAttribute("aria-selected", "true");
+  await block.getByRole("button", { name: "Show the Glass Snake stat block" }).click();
+  await expect(page.getByRole("tab", { name: "Environment" })).toHaveAttribute("aria-selected", "true");
   const opened = page.getByRole("region", { name: "Glass Snake, opened from Raging River" });
   await expect(opened.getByRole("heading", { level: 2, name: "Glass Snake" })).toBeVisible();
   await expect(opened.getByRole("button", { name: "Add Glass Snake to an encounter" })).toBeVisible();
-  await opened.getByRole("button", { name: "Back to Raging River" }).click();
-  await expect(page.getByRole("tab", { name: "Environment" })).toHaveAttribute("aria-selected", "true");
+  await expect(opened.getByRole("button", { name: /^Back to/ })).toHaveCount(0);
+  await opened.getByRole("button", { name: "Close" }).click();
+  await expect(opened).toHaveCount(0);
   await expect(statBlock(page).getByRole("heading", { level: 2, name: "Raging River" })).toBeVisible();
   await expect(row(page, "Raging River")).toHaveAttribute("aria-current", "true");
 });
@@ -118,14 +119,14 @@ test("Hope & Fear environments and adversary links follow the campaign's switch"
   await expect(block.getByRole("img", { name: "Hope and Fear" })).toBeVisible();
   await expect(block.getByText("Hope & Fear · p. 99")).toBeVisible();
   // The mine's Hope & Fear adversaries are links while the switch is on.
-  await expect(block.getByRole("button", { name: "Open Darkweave Crawler in the catalogue" })).toBeVisible();
+  await expect(block.getByRole("button", { name: "Show the Darkweave Crawler stat block" })).toBeVisible();
 
   await client.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: false });
   await expect(page.getByTestId("environment-count")).toHaveText("19 environments");
   await expect(list(page).getByRole("group", { name: "Book", exact: true })).toHaveCount(0);
   // Core environments still link Core adversaries but not Hope & Fear ones.
   await list(page).getByRole("searchbox", { name: "Search environments" }).fill("raging");
-  await expect(statBlock(page).getByRole("button", { name: "Open Bear in the catalogue" })).toBeVisible();
+  await expect(statBlock(page).getByRole("button", { name: "Show the Bear stat block" })).toBeVisible();
 });
 
 test("at 390 px the stat block follows the list, picking a row brings it into view, 44 px targets, no horizontal scroll", async ({ page }) => {
