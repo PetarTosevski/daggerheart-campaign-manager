@@ -3,7 +3,7 @@
 import { Lock } from "lucide-react";
 
 import { assetBackground } from "@/lib/design-assets";
-import { getSubclass, PORTRAITS, type ClassDef, type Feature } from "@/lib/srd";
+import { getClass, getDomain, getSubclass, PORTRAITS, type ClassDef, type Feature, type SubclassDef } from "@/lib/srd";
 
 import { TextField } from "./fields";
 import { useSheet } from "./sheet-context";
@@ -109,12 +109,44 @@ function QuestionList({
   );
 }
 
+const spellcastLine = (sub: SubclassDef | undefined) =>
+  sub?.spellcastTrait ? `Spellcast trait: ${sub.spellcastTrait[0].toUpperCase()}${sub.spellcastTrait.slice(1)}` : undefined;
+
+/** Multiclass (CB 111): the second class's class feature and chosen domain, and one foundation card. */
+function MulticlassCards({ multiclass }: { multiclass: { classId: string; domainId: string; subclassId: string } }) {
+  const cls = getClass(multiclass.classId);
+  const sub = getSubclass(multiclass.subclassId);
+  const domain = getDomain(multiclass.domainId)?.name ?? multiclass.domainId;
+  return (
+    <>
+      <div role="listitem">
+        <HeritageCardView kind="Multiclass" name={cls?.name ?? multiclass.classId} sub={`Domain: ${domain}`} features={cls?.classFeatures ?? []} />
+      </div>
+      <div role="listitem">
+        <HeritageCardView
+          kind="Multiclass subclass"
+          name={sub?.name ?? multiclass.subclassId}
+          tier="Foundation"
+          sub={spellcastLine(sub)}
+          features={sub?.foundation ?? []}
+          art={PORTRAITS[`sub-${multiclass.subclassId}`]}
+        />
+      </div>
+    </>
+  );
+}
+
 export function PageThree({ cls }: { cls: ClassDef | undefined }) {
   const { sheet, canEdit, update } = useSheet();
   const subclass = getSubclass(sheet.subclassId);
   const subArt = PORTRAITS[`sub-${sheet.subclassId}`];
   const heritage = heritageCards(sheet);
-  const spellcast = subclass?.spellcastTrait ? `Spellcast trait: ${subclass.spellcastTrait[0].toUpperCase()}${subclass.spellcastTrait.slice(1)}` : undefined;
+  const spellcast = spellcastLine(subclass);
+  // Upgraded subclass cards (CB 110); multiclassing crosses out the mastery card (CB 111).
+  const rank = sheet.subclassRank;
+  const specializationLock = rank === "foundation" ? "Unlocks with your first upgraded subclass card" : undefined;
+  const masteryLock =
+    rank === "mastery" ? undefined : sheet.multiclass ? "Crossed out: you multiclassed" : "Unlocks with your second upgraded subclass card";
 
   return (
     <div className="flex flex-col gap-4">
@@ -132,7 +164,7 @@ export function PageThree({ cls }: { cls: ClassDef | undefined }) {
                 tier="Specialization"
                 features={subclass.specialization}
                 art={subArt}
-                locked="Unlocks with your first upgraded subclass card"
+                locked={specializationLock}
               />
             </div>
             <div role="listitem">
@@ -142,11 +174,12 @@ export function PageThree({ cls }: { cls: ClassDef | undefined }) {
                 tier="Mastery"
                 features={subclass.mastery}
                 art={subArt}
-                locked="Unlocks with your second upgraded subclass card"
+                locked={masteryLock}
               />
             </div>
           </>
         ) : null}
+        {sheet.multiclass ? <MulticlassCards multiclass={sheet.multiclass} /> : null}
         {heritage.map((c) => (
           <div role="listitem" key={c.key}>
             <HeritageCardView kind={c.kind} name={c.name} features={c.features} art={c.art} note={c.note} />

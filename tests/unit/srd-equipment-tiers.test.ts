@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ARMOR, WEAPONS } from "@/lib/srd/equipment";
 import { COMBAT_WHEELCHAIR_IDS, TIERED_ARMOR, TIERED_WEAPONS } from "@/lib/srd/equipment-tiers";
+import { ARMOR as ALL_ARMOR, getArmor, getWeapon, WEAPONS as ALL_WEAPONS } from "@/lib/srd/index";
 
 const count = <T>(items: readonly T[], pred: (item: T) => boolean) => items.filter(pred).length;
 
@@ -175,5 +176,25 @@ describe("ids", () => {
     for (const id of [...TIERED_WEAPONS, ...TIERED_ARMOR].map((x) => x.id)) {
       expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
     }
+  });
+});
+
+describe("merged lookups in src/lib/srd/index.ts (CB 109, 115-127)", () => {
+  it("WEAPONS and ARMOR hold every tier, with unique ids", () => {
+    expect(ALL_WEAPONS).toHaveLength(WEAPONS.length + TIERED_WEAPONS.length);
+    expect(ALL_ARMOR).toHaveLength(ARMOR.length + TIERED_ARMOR.length);
+    for (const list of [ALL_WEAPONS, ALL_ARMOR]) {
+      const ids = list.map((x) => x.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+    expect(new Set(ALL_WEAPONS.map((w) => w.tier))).toEqual(new Set([1, 2, 3, 4]));
+    expect(new Set(ALL_ARMOR.map((a) => a.tier))).toEqual(new Set([1, 2, 3, 4]));
+  });
+
+  it("getWeapon and getArmor resolve every tier", () => {
+    for (const w of [...WEAPONS, ...TIERED_WEAPONS]) expect(getWeapon(w.id), w.id).toBe(w);
+    for (const a of [...ARMOR, ...TIERED_ARMOR]) expect(getArmor(a.id), a.id).toBe(a);
+    expect(getWeapon("legendary-broadsword")).toMatchObject({ tier: 4, slot: "primary" });
+    expect(getArmor("advanced-chainmail-armor")).toMatchObject({ tier: 3 });
   });
 });
