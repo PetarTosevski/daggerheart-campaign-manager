@@ -19,7 +19,7 @@ vi.mock("convex/react", () => ({
   },
 }));
 
-const { LevelUpDraftProvider, useLevelUpDraft, issueTarget } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft");
+const { LevelUpDraftProvider, useLevelUpDraft, issueTarget, advancementsChosen, cardsChosen } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft");
 
 const KEY = "dcm:level-up-draft:c1";
 /** A level-1 card of the Bard's domains the fixture doesn't own. */
@@ -317,6 +317,45 @@ describe("useLevelUpDraft", () => {
     expect(navigate).toHaveBeenLastCalledWith("story", undefined);
     expect(document.activeElement?.textContent).toBe("Level Up");
     expect(document.activeElement?.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("goes on to the Domain Deck once both picks and their choosers are done, then to Finish once the card is chosen", () => {
+    const { result, navigate } = setup(character({ level: 2 }));
+    act(() => result.current.start());
+    expect(result.current.step).toBe("advancements");
+
+    act(() => result.current.togglePick("hp", 2, true));
+    act(() => result.current.togglePick("traits", 2, true));
+    // The traits chooser is still open: no jump yet.
+    expect(result.current.step).toBe("advancements");
+    act(() => result.current.setPickTargets("traits", 2, ["agility"]));
+    expect(result.current.step).toBe("advancements");
+    act(() => result.current.setPickTargets("traits", 2, ["agility", "instinct"]));
+    expect(result.current.step).toBe("deck");
+    expect(navigate).toHaveBeenLastCalledWith("domains", "cards");
+
+    act(() => result.current.setCardId(CARD.id));
+    expect(result.current.step).toBe("finish");
+
+    // Coming back to change a pick that is already complete does not jump away again.
+    act(() => result.current.goTo("advancements"));
+    act(() => result.current.togglePick("hp", 2, false));
+    act(() => result.current.togglePick("stress", 2, true));
+    expect(result.current.step).toBe("deck");
+  });
+});
+
+describe("advancementsChosen and cardsChosen", () => {
+  it("need both picks with their targets, and every card with no half-set exchange", () => {
+    const traits = { option: "traits" as const, tier: 2, targets: ["agility", "instinct"] };
+    expect(advancementsChosen({ picks: [traits], experienceName: "", cardId: "" })).toBe(false);
+    expect(advancementsChosen({ picks: [traits, { option: "hp", tier: 2 }], experienceName: "", cardId: "" })).toBe(true);
+    expect(advancementsChosen({ picks: [{ ...traits, targets: ["agility"] }, { option: "hp", tier: 2 }], experienceName: "", cardId: "" })).toBe(false);
+    expect(advancementsChosen({ picks: [{ option: "domainCard", tier: 2, targets: [] }, { option: "hp", tier: 2 }], experienceName: "", cardId: "" })).toBe(true);
+    const extra = { option: "domainCard" as const, tier: 2, targets: [] as string[] };
+    expect(cardsChosen({ picks: [extra], experienceName: "", cardId: "a" })).toBe(false);
+    expect(cardsChosen({ picks: [{ ...extra, targets: ["b"] }], experienceName: "", cardId: "a" })).toBe(true);
+    expect(cardsChosen({ picks: [], experienceName: "", cardId: "a", trade: { out: "x", in: "" } })).toBe(false);
   });
 });
 

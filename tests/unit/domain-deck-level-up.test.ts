@@ -142,7 +142,8 @@ describe("Domain Deck in level-up mode", () => {
     fireEvent.click(within(grid).getByRole("button", { name: `Choose ${LEVEL2.name} for level 2` }));
     expect(within(grid).getAllByText("Chosen for level 2")).toHaveLength(2);
     const ribbon = screen.getByRole("region", { name: "Level-up to 2" });
-    expect(summary(ribbon)).toHaveTextContent(LEVEL2.name);
+    // Choosing the last card goes on to the summary by itself.
+    expect(within(ribbon).getByRole("list", { name: "Your choices" })).toHaveTextContent(LEVEL2.name);
     expect(within(ribbon).getByRole("button", { name: "Finish level-up" })).toBeEnabled();
 
     // Undo empties the pick again.

@@ -23,6 +23,8 @@ test("GL1 tier boxes: tick advancements and choose traits for the new level at 1
   const traits = tiers.getByRole("group", { name: "Traits to raise for level 2" });
   await traits.getByRole("button", { name: /Presence/ }).click();
   await traits.getByRole("button", { name: /Knowledge/ }).click();
+  // Completing both picks jumps to the Domain Deck; come back to the tier boxes.
+  await ribbon.getByRole("list", { name: "Level-up steps" }).getByRole("button", { name: /Advancements/ }).click();
   await expect(tiers.getByText("Level 2: 2 / 2 picks")).toBeVisible();
   await expect(tiers.getByRole("checkbox", { name: "Tier 2: +1 Evasion for level 2" })).toBeDisabled();
   await expect(ribbon.getByRole("list", { name: "Level-up steps" }).getByRole("listitem").filter({ hasText: "Advancements (2/2)" })).toHaveAttribute("data-done", "true");

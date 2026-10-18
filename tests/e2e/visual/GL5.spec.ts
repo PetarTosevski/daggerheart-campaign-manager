@@ -43,6 +43,8 @@ test("GL5 traits twice in one level and the upgraded subclass card at 1440 and 3
   await expect(second.getByRole("button", { name: /Presence/ })).toBeDisabled();
   await second.getByRole("button", { name: /Agility/ }).click();
   await second.getByRole("button", { name: /Finesse/ }).click();
+  // Completing both picks jumps to the Domain Deck; come back to the tier boxes.
+  await ribbon.getByRole("list", { name: "Level-up steps" }).getByRole("button", { name: /Advancements/ }).click();
   await expect(tiers.getByText("Level 5: 2 / 2 picks")).toBeVisible();
   await expect(ribbon.getByRole("list", { name: "Level-up steps" }).getByRole("listitem").filter({ hasText: "Advancements (2/2)" })).toHaveAttribute("data-done", "true");
   await shoot(tier3, "traits-twice");
@@ -50,7 +52,9 @@ test("GL5 traits twice in one level and the upgraded subclass card at 1440 and 3
 
   // The upgraded subclass card: the Troubadour's specialization as a hero card under the ticked option.
   await tier3.getByRole("checkbox", { name: "Tier 3: +1 to two unmarked traits for level 5 (second pick)", exact: true }).uncheck();
-  await tier3.getByRole("checkbox", { name: "Tier 3: Upgraded subclass card for level 5", exact: true }).check();
+  await tier3.getByRole("checkbox", { name: "Tier 3: Upgraded subclass card for level 5", exact: true }).click();
+  // Completing both picks jumps to the Domain Deck; come back to the tier boxes.
+  await ribbon.getByRole("list", { name: "Level-up steps" }).getByRole("button", { name: /Advancements/ }).click();
   const card = tier3.getByRole("article", { name: "Subclass: Troubadour Specialization" });
   await expect(card.getByRole("heading", { name: "Troubadour" })).toBeVisible();
   await card.scrollIntoViewIfNeeded();
