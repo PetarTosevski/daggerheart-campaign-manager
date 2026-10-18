@@ -20,6 +20,7 @@ import type * as cleanup from "../cleanup.js";
 import type * as codex from "../codex.js";
 import type * as countdowns from "../countdowns.js";
 import type * as crons from "../crons.js";
+import type * as customAdversaries from "../customAdversaries.js";
 import type * as deathMoves from "../deathMoves.js";
 import type * as encounterTracking from "../encounterTracking.js";
 import type * as encounters from "../encounters.js";
@@ -113,6 +114,7 @@ declare const fullApi: ApiFromModules<{
   codex: typeof codex;
   countdowns: typeof countdowns;
   crons: typeof crons;
+  customAdversaries: typeof customAdversaries;
   deathMoves: typeof deathMoves;
   encounterTracking: typeof encounterTracking;
   encounters: typeof encounters;
