@@ -505,7 +505,10 @@ function DeckCard({
         <div className="dkc-meta">
           {domainName} {TYPE_LABEL[card.type]} · Recall {card.recallCost}
         </div>
-        <p className="dkc-text">{card.text}</p>
+        {/* More makes the text scroll inside the fixed-size card; it is then focusable so the keyboard can scroll it. */}
+        <p className="dkc-text" role={open ? "region" : undefined} tabIndex={open && !faceDown ? 0 : undefined} aria-label={open ? `${card.name} text` : undefined}>
+          {card.text}
+        </p>
         {locked ? <span className="dkc-lock">{unlocks ? `Unlocks at level ${unlocks}` : "Out of reach"}</span> : null}
         <footer className="dkc-foot">
           <button type="button" className="dkc-more" aria-expanded={open} aria-label={`${open ? "Less" : "More"} about ${card.name}`} onClick={() => setOpen((o) => !o)}>
