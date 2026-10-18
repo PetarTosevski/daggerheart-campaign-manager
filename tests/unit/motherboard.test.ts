@@ -8,6 +8,21 @@ import {
   scrapForRoll,
   scrapValue,
 } from "@/lib/domain/frames/motherboard";
+import { hasTether, NETWORK_TETHER } from "@/lib/domain/motherboard";
+import {
+  companionLost,
+  CORRUPTION_TRACK_SIZE,
+  corruptionOf,
+  corruptionStateSchema,
+  INITIAL_CORRUPTION,
+  isRemnant,
+  repairCorruption,
+  replaceLostCompanion,
+  rollCorruption,
+  rollsCorruption,
+  setRemnant,
+} from "@/lib/domain/rest/frame-hooks";
+import { RuleError } from "@/lib/errors/app-error";
 
 function script(...faces: number[]) {
   const queue = [...faces];
@@ -87,5 +102,53 @@ describe("creation wizard in a Motherboard campaign (CB 301)", () => {
     const ikonis = { name: "Rod", description: "Hums", trait: "agility" as const, range: "Far" as const, damageType: "physical" as const };
     expect(restoreWizard(JSON.parse(JSON.stringify({ ...s, ikonis }))).ikonis).toEqual(ikonis);
     expect(restoreWizard({ ikonis: { name: 3 } }).ikonis).toEqual(emptyWizard().ikonis);
+  });
+});
+
+describe("Motherboard rules from the book (RF4)", () => {
+  const id = "ranger-1";
+  const remnant = setRemnant(INITIAL_CORRUPTION, id, true);
+
+  it("the Corruption Track has six boxes and only a remnant that isn't lost rolls (CB 295)", () => {
+    expect(CORRUPTION_TRACK_SIZE).toBe(6);
+    expect(rollsCorruption(INITIAL_CORRUPTION, id)).toBe(false);
+    expect(rollsCorruption(remnant, id)).toBe(true);
+    const five = { ...remnant, marks: { [id]: 5 } };
+    const sixth = rollCorruption(five, id, 1, 0);
+    expect(sixth).toMatchObject({ marked: true, total: 6, lost: true });
+    expect(companionLost(sixth.state, id)).toBe(true);
+    expect(rollsCorruption(sixth.state, id)).toBe(false);
+    expect(rollCorruption(sixth.state, id, 1, 0).total).toBe(6);
+    expect(rollCorruption(five, id, 2, 0)).toMatchObject({ marked: false, total: 5, lost: false });
+  });
+
+  it("reads rows written before RF4 (no remnant list; marks above six are a full track)", () => {
+    const old = corruptionStateSchema.parse({ marks: { [id]: 9 }, log: [] });
+    expect(old.remnant).toEqual([]);
+    expect(corruptionOf(old, id)).toBe(6);
+  });
+
+  it("a repair clears 1d4 Corruption, never below zero; a lost remnant can't be repaired or unmarked", () => {
+    expect(repairCorruption({ ...remnant, marks: { [id]: 3 } }, id, 2)).toMatchObject({ cleared: 2, total: 1 });
+    expect(repairCorruption({ ...remnant, marks: { [id]: 2 } }, id, 4)).toMatchObject({ cleared: 2, total: 0 });
+    expect(() => repairCorruption(remnant, id, 1)).toThrow(RuleError);
+    expect(() => repairCorruption({ ...INITIAL_CORRUPTION, marks: { [id]: 2 } }, id, 1)).toThrow(RuleError);
+    expect(() => repairCorruption(remnant, id, 5)).toThrow(RangeError);
+    const lost = { ...remnant, marks: { [id]: 6 } };
+    expect(() => repairCorruption(lost, id, 1)).toThrow(RuleError);
+    expect(() => setRemnant(lost, id, false)).toThrow(RuleError);
+  });
+
+  it("a new companion clears the lost remnant's track", () => {
+    expect(() => replaceLostCompanion(remnant, id)).toThrow(RuleError);
+    const fresh = replaceLostCompanion({ ...remnant, marks: { [id]: 6, other: 2 } }, id);
+    expect(fresh.marks).toEqual({ other: 2 });
+    expect(isRemnant(fresh, id)).toBe(false);
+  });
+
+  it("knows the Network tether by name in any case (CB 301)", () => {
+    expect(hasTether([{ name: "network Tether " }])).toBe(true);
+    expect(hasTether([{ name: "Torch" }])).toBe(false);
+    expect(NETWORK_TETHER).toBe("Network tether");
   });
 });

@@ -226,6 +226,8 @@ test("a Motherboard character shows the Ikonis instead of weapons, and installed
   const scrap = { Crystal: 27, Aluminum: 67, Relay: 33, Capacitor: 4, Battery: 5 };
   await client.mutation(api.characterExtras.correctWallet, { characterId, correction: { scrap }, idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.characterExtras.craftAugment, { characterId, augmentId: "block", idempotencyKey: crypto.randomUUID() });
+  // CB 301: augments are swapped during downtime, so the GM opens a rest first.
+  await client.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.characterExtras.installAugments, { characterId, augmentIds: ["force", "block"], idempotencyKey: crypto.randomUUID() });
 
   // Block: +3 Armor Score, -1 Evasion.

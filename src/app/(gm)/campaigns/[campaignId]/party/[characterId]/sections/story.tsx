@@ -9,15 +9,19 @@ import { MAX_BAGS, MAX_HANDFULS } from "@/lib/domain/characters";
 import type { ClassDef } from "@/lib/srd";
 import { CLASSES } from "@/lib/srd/classes";
 import { cn } from "@/lib/utils";
+import { useIntent } from "@/lib/use-intent";
 
+import { api } from "../../../../../../../../convex/_generated/api";
 import { Stepper } from "../fields";
-import { useSheet } from "../sheet-context";
+import { useMotherboard, useSheet } from "../sheet-context";
 
 // Story & Advancement boxes (board page 2): Wealth, Inventory, Character Description, Background Questions,
 // Connections, and Notes (below the Level Up region).
 
 /** Pips per coin kind: "10 handfuls to 1 bag, and 10 bags to 1 chest" (CB 104), so 9 marks; the 10th rolls over. */
 const WEALTH_PIPS = MAX_HANDFULS;
+/** The Ikonis module's quantum cap (`motherboardStateSchema`). */
+const MAX_QUANTUM = 1_000_000;
 
 /** One row of handful or bag pips. Tapping a pip sets the count to it; tapping the last marked one clears it. */
 function CoinPips({ kind, name, value, onSet }: { kind: "gold-hand" | "gold-bag"; name: string; value: number; onSet?: (next: number) => void }) {
@@ -41,7 +45,43 @@ function CoinPips({ kind, name, value, onSet }: { kind: "gold-hand" | "gold-bag"
   );
 }
 
+/**
+ * Motherboard's Wealth box: "gold is not used as a currency … PCs can gather scrap to trade for a currency known as
+ * quantum" (CB 302). The count lives in the Ikonis module; the stepper corrects it one at a time.
+ */
+function QuantumWealth({ quantum }: { quantum: number }) {
+  const { character, canEdit } = useSheet();
+  const correct = useIntent(api.characterExtras.correctWallet);
+  return (
+    <SheetBox title="Wealth">
+      <div className="st-wealth-head">
+        <Label>Quantum</Label>
+        <Stepper
+          label="Quantum"
+          value={quantum}
+          min={0}
+          max={MAX_QUANTUM}
+          readOnly={!canEdit}
+          onChange={(next) => void correct.fire({ characterId: character._id, correction: { quantum: next } })}
+        />
+      </div>
+      <Small className="italic">Gold is not used in this frame. 10 quantum = 1 handful of gold; trade scrap in the Ikonis module.</Small>
+      {correct.error ? (
+        <Small as="p" className="st-err">
+          {correct.error}
+        </Small>
+      ) : null}
+    </SheetBox>
+  );
+}
+
 export function WealthBox() {
+  const { motherboard, state } = useMotherboard();
+  if (motherboard) return state ? <QuantumWealth quantum={state.quantum} /> : null;
+  return <GoldWealth />;
+}
+
+function GoldWealth() {
   const { sheet, canEdit, update, adjustGold } = useSheet();
   // Counts stored above 9 before the CB 104 cap show as 9 until the next change clamps them.
   const g = { ...sheet.gold, handfuls: Math.min(sheet.gold.handfuls, MAX_HANDFULS), bags: Math.min(sheet.gold.bags, MAX_BAGS) };
@@ -89,14 +129,17 @@ export function WealthBox() {
   );
 }
 
-/** The board's starting inventory line, with the class's "take either ... OR ..." items. */
-function startingInventory(cls: ClassDef) {
-  const base = "Take a torch, 50ft of rope, basic supplies, and a handful of gold. Then choose between a minor health potion OR a minor stamina potion.";
+/** The board's starting inventory line, with the class's "take either ... OR ..." items; Motherboard trades the gold for a tether (CB 301-302). */
+function startingInventory(cls: ClassDef, motherboard: boolean) {
+  const base = motherboard
+    ? "Take a torch, 50ft of rope, basic supplies, and a Network tether (no gold: you start with 5 quantum). Then choose between a minor health potion OR a minor stamina potion."
+    : "Take a torch, 50ft of rope, basic supplies, and a handful of gold. Then choose between a minor health potion OR a minor stamina potion.";
   return cls.classItems ? `${base} And either ${cls.classItems}` : base;
 }
 
 export function InventoryBox({ className }: { className?: string }) {
   const { sheet, canEdit, update } = useSheet();
+  const { motherboard } = useMotherboard();
   // page-two.tsx passes no class here, so look it up from the leaf module (CL9).
   const cls = CLASSES.find((c) => c.id === sheet.classId);
   const [item, setItem] = useState("");
@@ -104,7 +147,7 @@ export function InventoryBox({ className }: { className?: string }) {
     <SheetBox title="Inventory" className={className}>
       {cls ? (
         <Small as="div" className="st-start">
-          <strong>Starting inventory:</strong> {startingInventory(cls)}
+          <strong>Starting inventory:</strong> {startingInventory(cls, motherboard)}
         </Small>
       ) : null}
       <ul className="st-inv" aria-label="Inventory">

@@ -5,7 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { campaignFearState } from "../../convex/lib/fear";
 import { readMap } from "../../convex/lib/maps";
-import { readTracker } from "../../convex/lib/trackers";
+import { readTracker, TRACKER_SCHEMA_VERSION, writeTracker } from "../../convex/lib/trackers";
 import { CORRUPTION_TRACKER_KEY, corruptionStateSchema, enduranceOwnerKey, lycanthropyOwnerKey } from "../../src/lib/domain/rest/frame-hooks/index";
 import type { PublishedFrameId } from "../../src/lib/frames/index";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
@@ -422,16 +422,20 @@ describe("frame rest hooks", () => {
   describe("Motherboard (CB 295)", () => {
     const corruption = (ctx: Awaited<ReturnType<typeof setup>>) => ctx.t.run((c) => readTracker(c, ctx.campaignId, CORRUPTION_TRACKER_KEY, corruptionStateSchema));
 
-    it("a Beastbound ranger's Fear Die is rolled each rest; a 1 marks a Corruption", async () => {
+    const remnant = (h: Awaited<ReturnType<typeof setup>>) =>
+      h.p1.mutation(api.characterExtras.setCompanionRemnant, { characterId: h.a, remnant: true, idempotencyKey: key() });
+
+    it("a remnant companion's ranger rolls the Fear Die each rest; a 1 marks a Corruption", async () => {
       const h = await setup("motherboard");
       await h.edit(h.a, (s) => ({ ...s, classId: "ranger", subclassId: "beastbound" }));
+      await remnant(h);
       const { restId } = await h.start("short");
       forceDice(1);
       await h.finish(restId);
       const state = await corruption(h);
       expect(state?.marks).toEqual({ [h.a]: 1 });
       expect(state?.log).toEqual([expect.objectContaining({ characterId: h.a, fearDie: 1, marked: true })]);
-      expect((await h.campaignRow())?.summary).toMatch(/Ash's remnant companion glitches: Corruption 1/);
+      expect((await h.campaignRow())?.summary).toMatch(/Ash's remnant companion glitches: Corruption 1 of 6/);
       vi.restoreAllMocks();
 
       forceDice(2);
@@ -440,14 +444,34 @@ describe("frame rest hooks", () => {
       expect((await corruption(h))?.log).toHaveLength(2);
     });
 
-    it("rolls nothing with remnantCorruption off, without a Beastbound ranger, or outside the frame", async () => {
+    it("the sixth mark loses the remnant: no more rolls", async () => {
+      const h = await setup("motherboard");
+      await h.edit(h.a, (s) => ({ ...s, classId: "ranger", subclassId: "beastbound" }));
+      await remnant(h);
+      await h.t.run(async (c) => {
+        const state = (await readTracker(c, h.campaignId, CORRUPTION_TRACKER_KEY, corruptionStateSchema))!;
+        await writeTracker(c, h.campaignId, CORRUPTION_TRACKER_KEY, { ...state, marks: { [h.a]: 5 } }, TRACKER_SCHEMA_VERSION);
+      });
+      forceDice(1);
+      await h.rest("short");
+      expect((await corruption(h))?.marks).toEqual({ [h.a]: 6 });
+      expect((await h.campaignRow())?.summary).toMatch(/Ash's remnant companion marks its last Corruption and turns violent/);
+      await h.rest("short");
+      expect((await corruption(h))?.log).toHaveLength(1);
+      vi.restoreAllMocks();
+    });
+
+    it("rolls nothing with remnantCorruption off, for a companion that isn't a remnant, without a Beastbound ranger, or outside the frame", async () => {
       const h = await setup("motherboard");
       await h.rest("short");
       expect(await corruption(h)).toBeNull();
       await h.edit(h.a, (s) => ({ ...s, classId: "ranger", subclassId: "beastbound" }));
-      await h.setOption("remnantCorruption", false);
       await h.rest("short");
       expect(await corruption(h)).toBeNull();
+      await remnant(h);
+      await h.setOption("remnantCorruption", false);
+      await h.rest("short");
+      expect((await corruption(h))?.log).toEqual([]);
 
       const core = await setup("witherwild");
       await core.edit(core.a, (s) => ({ ...s, classId: "ranger", subclassId: "beastbound" }));

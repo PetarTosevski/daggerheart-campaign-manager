@@ -32,6 +32,7 @@
  */
 import type { Rng } from "../../src/lib/domain/class-features/types";
 import {
+  CORRUPTION_TRACK_SIZE,
   CORRUPTION_TRACKER_KEY,
   corruptionStateSchema,
   FEAST_MOVE,
@@ -39,6 +40,7 @@ import {
   frameRestMoves,
   INITIAL_CORRUPTION,
   rollCorruption,
+  rollsCorruption,
 } from "../../src/lib/domain/rest/frame-hooks/index";
 import { classFeaturesAvailable } from "../../src/lib/domain/class-features/index";
 import type { RestKind, RestMove } from "../../src/lib/domain/rest/index";
@@ -85,20 +87,23 @@ const beastFeastRestHook: RestHook = async (_ctx, { campaign, interrupted, choic
 /**
  * Motherboard, optional Corruption Track (CB 295): "At the beginning of
  * downtime, the ranger rolls their Fear Die. If it lands on a 1, they must
- * mark a Corruption". With `remnantCorruption` on, every resting Beastbound
- * ranger's Fear Die is rolled; marks and rolls are kept in the
+ * mark a Corruption". With `remnantCorruption` on, the Fear Die is rolled
+ * for every resting Beastbound ranger whose companion is marked a remnant
+ * ("If a Beastbound ranger has a remnant companion…") and not yet lost; the
+ * six-box track, remnant marks and rolls are kept in the
  * `motherboard.corruption` tracker (own history, not undone with the rest).
  */
 const motherboardRestHook: RestHook = async (ctx, { campaign, sheets, rng }) => {
   if (campaign.frameId !== FRAME_IDS.motherboard || !resolveOptions(campaign.frameId, campaign.options).remnantCorruption) return [];
-  const rangers = [...sheets].filter(([, sheet]) => sheet.subclassId === BEASTBOUND_SUBCLASS_ID);
-  if (rangers.length === 0) return [];
   let state = (await readTracker(ctx, campaign._id, CORRUPTION_TRACKER_KEY, corruptionStateSchema)) ?? INITIAL_CORRUPTION;
+  const rangers = [...sheets].filter(([id, sheet]) => sheet.subclassId === BEASTBOUND_SUBCLASS_ID && rollsCorruption(state, id));
+  if (rangers.length === 0) return [];
   const lines: string[] = [];
   for (const [id, sheet] of rangers) {
     const rolled = rollCorruption(state, id, rng(12), Date.now());
     state = rolled.state;
-    if (rolled.marked) lines.push(`${sheet.name}'s remnant companion glitches: Corruption ${rolled.total}`);
+    if (rolled.lost) lines.push(`${sheet.name}'s remnant companion marks its last Corruption and turns violent: take a new companion`);
+    else if (rolled.marked) lines.push(`${sheet.name}'s remnant companion glitches: Corruption ${rolled.total} of ${CORRUPTION_TRACK_SIZE}`);
   }
   await writeTracker(ctx, campaign._id, CORRUPTION_TRACKER_KEY, state, TRACKER_SCHEMA_VERSION);
   return lines;

@@ -60,6 +60,7 @@ import type * as migrations_characterExtras from "../migrations/characterExtras.
 import type * as migrations_characters from "../migrations/characters.js";
 import type * as migrations_codex from "../migrations/codex.js";
 import type * as migrations_maps from "../migrations/maps.js";
+import type * as migrations_motherboardEconomy from "../migrations/motherboardEconomy.js";
 import type * as migrations_run from "../migrations/run.js";
 import type * as migrations_slotBonuses from "../migrations/slotBonuses.js";
 import type * as migrations_trackers from "../migrations/trackers.js";
@@ -150,6 +151,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/characters": typeof migrations_characters;
   "migrations/codex": typeof migrations_codex;
   "migrations/maps": typeof migrations_maps;
+  "migrations/motherboardEconomy": typeof migrations_motherboardEconomy;
   "migrations/run": typeof migrations_run;
   "migrations/slotBonuses": typeof migrations_slotBonuses;
   "migrations/trackers": typeof migrations_trackers;
