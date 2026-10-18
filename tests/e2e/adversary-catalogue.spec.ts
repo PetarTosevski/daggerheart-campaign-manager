@@ -34,7 +34,7 @@ test("Tier 2 + Horde filter, a second click clears a chip, and the empty state",
   await tier.getByRole("button", { name: "2", exact: true }).click();
   await type.getByRole("button", { name: "Horde", exact: true }).click();
   await expect(type.getByRole("button", { name: "Horde", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(list(page).getByRole("heading", { level: 3 })).toHaveText(["Tier 2"]);
+  await expect(list(page).getByRole("heading", { level: 3 })).toHaveText([/^Tier 2/]);
   const types = await list(page).locator(".adc-type").allTextContents();
   expect(types.length).toBeGreaterThan(0);
   for (const t of types) expect(t).toMatch(/^Horde \(\d+\/HP\)$/);

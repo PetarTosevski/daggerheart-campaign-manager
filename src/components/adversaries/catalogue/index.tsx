@@ -2,6 +2,7 @@
 
 import "./catalogue.css";
 
+import { ChevronDown } from "lucide-react";
 import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import {
@@ -12,6 +13,7 @@ import {
   filterAdversaries,
   groupByTier,
   moreLabel,
+  openCount,
   sortAdversaries,
   toggleChip,
   typeLabel,
@@ -79,6 +81,20 @@ function ChipRow<T extends string | number>({
 }
 
 /** Catalogue tab (D8 A2): search, Tier / Type / Book chips, tier-grouped list with paging, and the selected stat block. */
+/** "An adversary's type represents the role they play in a conflict." The types as the Core Rulebook lists them (p.194). */
+const TYPE_MEANING: Record<AdversaryType, string> = {
+  Bruiser: "Tough and deliver powerful attacks.",
+  Horde: "Groups of identical creatures acting together as a single unit.",
+  Leader: "Command and summon other adversaries.",
+  Minion: "Easily dispatched but dangerous in numbers.",
+  Ranged: "Fragile in close encounters but can attack from a distance for high damage.",
+  Skulk: "Maneuver and exploit opportunities to ambush opponents.",
+  Social: "Present unique challenges to overcome through conversation rather than combat.",
+  Solo: "Present a formidable challenge to a whole party, with or without support.",
+  Standard: "Rank-and-file adversaries representative of their fictional group.",
+  Support: "Enhance their allies and disrupt their opponents.",
+};
+
 const SORT_KEY = "dcm:adversary-sort";
 const SORT_EVENT = "dcm-adversary-sort";
 /** The last choice, for when storage throws (private windows, blocked site data). */
@@ -107,6 +123,8 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
   const [filters, setFilters] = useState<CatalogueFilters>(NO_FILTERS);
   const [limit, setLimit] = useState(PAGE_FIRST);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Tier groups the GM folded away (click a tier's heading).
+  const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set());
   // A–Z or book order, remembered per device (browser storage is for conveniences only).
   const sort = useSyncExternalStore(subscribeSort, readSort, () => "name" as CatalogueSort);
   function chooseSort(next: CatalogueSort) {
@@ -125,8 +143,8 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
   const book = hopeAndFear ? filters.book : null;
   const { query, tier, type } = filters;
   const matches = useMemo(() => sortAdversaries(filterAdversaries(visible, { query, tier, type, book }), sort), [visible, query, tier, type, book, sort]);
-  const groups = groupByTier(matches, limit);
-  const more = moreLabel(matches.length, limit);
+  const groups = groupByTier(matches, limit, collapsed);
+  const more = moreLabel(openCount(matches, collapsed), limit);
   const selected = matches.find((def) => def.id === selectedId) ?? matches[0] ?? null;
 
   function update(patch: Partial<CatalogueFilters>) {
@@ -171,6 +189,18 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
           </div>
           <ChipRow label="Tier" values={TIERS} current={tier} name={String} onPick={(tier) => update({ tier })} />
           <ChipRow<AdversaryType> label="Type" values={ADVERSARY_TYPES} current={type} name={String} onPick={(type) => update({ type })} />
+          <details className="adc-legend">
+            <summary>What do the types mean?</summary>
+            <dl>
+              {ADVERSARY_TYPES.map((t) => (
+                <div key={t} className="contents">
+                  <dt>{t}</dt>
+                  <dd>{TYPE_MEANING[t]}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="adc-legend-src">Core Rulebook p. 194, “Adversary Types”.</p>
+          </details>
           {hopeAndFear ? (
             <ChipRow<CatalogueBook>
               label="Book"
@@ -184,11 +214,28 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
         <div className="adc-list">
           {groups.map((group) => (
             <div key={group.tier} role="group" aria-labelledby={`adc-tier-${group.tier}`}>
-              <div className="adc-tierhead">
-                <h3 id={`adc-tier-${group.tier}`}>{group.title}</h3>
-                <span>{group.sub}</span>
-              </div>
-              {group.entries.map((def) => (
+              <h3 className="adc-tierhead-h" id={`adc-tier-${group.tier}`}>
+                <button
+                  type="button"
+                  className="adc-tierhead"
+                  aria-expanded={!collapsed.has(group.tier)}
+                  onClick={() => {
+                    setCollapsed((c) => {
+                      const next = new Set(c);
+                      if (next.has(group.tier)) next.delete(group.tier);
+                      else next.add(group.tier);
+                      return next;
+                    });
+                    // A fresh page of 60 from the tiers still open (user 2026-10-18).
+                    setLimit(PAGE_MORE);
+                  }}
+                >
+                  <span className="adc-tierhead-title">{group.title}</span>
+                  <span className="adc-tierhead-sub">{group.sub}</span>
+                  <ChevronDown className="adc-tierhead-chev size-4" aria-hidden="true" />
+                </button>
+              </h3>
+              {collapsed.has(group.tier) ? null : group.entries.map((def) => (
                 <button
                   key={def.id}
                   type="button"

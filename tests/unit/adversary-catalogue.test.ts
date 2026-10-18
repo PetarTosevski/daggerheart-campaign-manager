@@ -9,6 +9,7 @@ import {
   filterAdversaries,
   groupByTier,
   moreLabel,
+  openCount,
   normalizeSearch,
   textBlocks,
   thresholdsLabel,
@@ -95,10 +96,11 @@ describe("tier groups, paging and the count line", () => {
   it("groups the shown entries by tier with the level range and the tier's full count", () => {
     const visible = adversariesFor(ADVERSARIES, { hopeAndFear: false, frameId: "witherwild" });
     const groups = groupByTier(visible, PAGE_FIRST);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]!.title).toBe("Tier 1");
+    // Every tier keeps its heading (so it can be collapsed); the first page fills Tier 1.
+    expect(groups.map((g) => g.title)).toEqual(["Tier 1", "Tier 2", "Tier 3", "Tier 4"]);
     expect(groups[0]!.sub).toBe("Level 1 · 52 adversaries");
     expect(groups[0]!.entries).toHaveLength(PAGE_FIRST);
+    expect(groups.slice(1).every((g) => g.entries.length === 0)).toBe(true);
 
     const all = groupByTier(visible, Infinity);
     expect(all.map((g) => g.sub)).toEqual([
@@ -170,5 +172,20 @@ describe("sortAdversaries", () => {
     // Tiers stay grouped whatever the order.
     const all = sortAdversaries(ADVERSARIES, "book").map((a) => a.tier);
     expect(all).toEqual([...all].sort((a, b) => a - b));
+  });
+});
+
+describe("groupByTier with collapsed tiers", () => {
+  it("gives a collapsed tier no entries and lets the next open tier fill the page", () => {
+    const core = ADVERSARIES.filter((a) => a.source === "core");
+    const tier1 = core.filter((a) => a.tier === 1).length;
+    const groups = groupByTier(core, 60, new Set([1]));
+    expect(groups.map((g) => g.tier)).toEqual([1, 2, 3, 4]);
+    expect(groups[0]!.entries).toEqual([]);
+    expect(groups[0]!.sub).toBe(`Level 1 · ${tier1} adversaries`);
+    // The page of 60 starts at Tier 2.
+    expect(groups.slice(1).reduce((n, g) => n + g.entries.length, 0)).toBe(Math.min(60, core.length - tier1));
+    expect(groups[1]!.entries.length).toBeGreaterThan(0);
+    expect(openCount(core, new Set([1]))).toBe(core.length - tier1);
   });
 });
