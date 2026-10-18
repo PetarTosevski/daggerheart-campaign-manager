@@ -22,7 +22,7 @@
 // ```
 
 import type { RollKind, RollRecord } from "../duality";
-import type { CharacterSheet } from "../../validation/characters";
+import type { CharacterSheet, HeldDie } from "../../validation/characters";
 
 /** A fair die roll (server: convex/lib/dice.ts `rollDie`; tests: a fixed sequence). */
 export type Rng = (sides: number) => number;
@@ -38,7 +38,16 @@ export type FeatureCost = {
   heldDieId?: string;
   /** Marks this use (`sheet.featureUses`), e.g. once per long rest. */
   use?: { key: string; until: "rest" | "longRest" | "session" };
+  /** Roll options only (`applyRollOptions`): ends this effect (`sheet.effects[].id`), e.g. Get In & Get Out's advantage, spent once. */
+  effectId?: string;
 };
+
+/**
+ * What the campaign allows a sheet's class modules to offer: Hope & Fear classes only with the
+ * `hopeAndFear` option (`classFeaturesAvailable`), and in Motherboard (`ikonis`) the Warrior's Combat
+ * Training is replaced by Ikonis Training (CB 295). Callers without a campaign pass nothing: everything is offered.
+ */
+export type FeatureScope = { hopeAndFear: boolean; ikonis: boolean };
 
 /** What choosing a roll option adds to the roll. */
 export type RollOptionEffect =
@@ -73,6 +82,9 @@ export type WeaponOverride = {
   /** Evasion while this replaces the weapon (Brawler without a weapon: +1). */
   evasionBonus?: number;
 };
+
+/** What a weapon override reads from the sheet (so `derivedDefense` can ask for the override's Evasion). */
+export type WeaponSheet = Pick<CharacterSheet, "classId" | "multiclass" | "primaryWeaponId" | "secondaryWeaponId" | "proficiency">;
 
 /** A finished Duality roll as `afterDualityRoll` sees it. */
 export type DualityRollResult = { hope: number; fear: number; roll: RollRecord };
@@ -121,6 +133,23 @@ export type FeatureUseResult = {
   summary: string;
 };
 
+/**
+ * An input the features panel renders for a feature, filling one `FeatureParams` field:
+ * - `text`: free text in `choice` (a target's name); optional.
+ * - `select`: one of `options(sheet)` in `choice` (a Beastform, a trait, a loadout card).
+ * - `number`: a whole number from `min` to `max` in `amount` (Strange Patterns).
+ * - `heldDice`: held dice of `heldKind`, by their order among those dice, in `dieIndexes` (Prayer Dice).
+ * - `rollDice`: damage dice of the latest roll, by index, in `dieIndexes` (Volatile Magic).
+ * - `ally`: another active PC in `targetId`; optional ones default to the user.
+ */
+export type FeatureInput =
+  | { kind: "text"; param: "choice"; label: string; placeholder?: string }
+  | { kind: "select"; param: "choice"; label: string; required: boolean; empty: string; options: (sheet: CharacterSheet) => { value: string; label: string }[] }
+  | { kind: "number"; param: "amount"; label: string; min: number; max: number }
+  | { kind: "heldDice"; param: "dieIndexes"; label: string; heldKind: HeldDie["kind"] }
+  | { kind: "rollDice"; param: "dieIndexes"; label: string }
+  | { kind: "ally"; param: "targetId"; label: string; required: boolean };
+
 /** A Hope feature or class action: metadata the UI renders generically, plus `use` for automated ones. */
 export type FeatureMeta = {
   key: string;
@@ -130,6 +159,8 @@ export type FeatureMeta = {
   cost?: FeatureCost;
   automation: Automation;
   target: FeatureTarget;
+  /** Inputs the features panel shows before the Use button (see `FeatureInput`). */
+  inputs?: readonly FeatureInput[];
   /** Applies the feature; absent for `text` features. Throw a `RuleError` for an expected refusal. */
   use?: (input: FeatureUseInput) => FeatureUseResult;
 };
@@ -140,9 +171,9 @@ export type ClassFeatures = {
   /** The class's Hope feature (3 Hope, CB 27). Never gained through multiclass. */
   hopeFeature?: FeatureMeta;
   classActions?: readonly FeatureMeta[];
-  /** Options the dice box offers for a roll of this kind. */
-  rollOptions?: (sheet: CharacterSheet, kind: HookRollKind) => RollOption[];
-  weaponOverrides?: (sheet: CharacterSheet) => WeaponOverride[];
+  /** Options the dice box offers for a roll of this kind. Held Rally Dice are offered by `hooks.ts` for every class. */
+  rollOptions?: (sheet: CharacterSheet, kind: HookRollKind, scope: FeatureScope) => RollOption[];
+  weaponOverrides?: (sheet: WeaponSheet) => WeaponOverride[];
   afterDualityRoll?: (sheet: CharacterSheet, result: DualityRollResult) => RollPrompt[];
   /** After `expire(sheet, shortRest|longRest)`: class resets on a rest. */
   onRest?: (sheet: CharacterSheet, kind: "short" | "long") => CharacterSheet;

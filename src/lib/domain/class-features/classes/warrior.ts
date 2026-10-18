@@ -2,8 +2,8 @@
 // Class features: Combat Training adds the Warrior's level to damage rolls (an auto dice-box option; the book
 // limits it to physical damage, which is the Warrior's usual damage), and Attack of Opportunity is an
 // assisted reaction roll: the reminder, then the player rolls a reaction roll in the dice box.
+// Motherboard Warriors don't get Combat Training: "replaced with ... Ikonis Training" (CB 295).
 import type { ClassFeatures, FeatureMeta } from "../types";
-import { rallyDieOptions, rallyDieStress } from "./bard";
 import { HOPE_COST, withEffect } from "./shared";
 
 const attackOfOpportunity: FeatureMeta = {
@@ -29,9 +29,8 @@ export const warrior: ClassFeatures = {
       summary: "used No Mercy: +1 to attack rolls",
     }),
   },
-  classActions: [attackOfOpportunity, rallyDieStress],
-  rollOptions: (sheet, kind) => [
-    ...(kind === "damage" ? [{ key: "combatTraining", label: `Combat Training +${sheet.level}`, effect: { kind: "modifier" as const, value: sheet.level }, auto: true }] : []),
-    ...rallyDieOptions(sheet, "warrior"),
-  ],
+  classActions: [attackOfOpportunity],
+  // In Motherboard, Ikonis Training replaces Combat Training (CB 295).
+  rollOptions: (sheet, kind, scope) =>
+    kind === "damage" && !scope.ikonis ? [{ key: "combatTraining", label: `Combat Training +${sheet.level}`, effect: { kind: "modifier", value: sheet.level }, auto: true }] : [],
 };

@@ -5,11 +5,17 @@
 // combines their answers. A class without a module answers with the no-op
 // default: no options, no overrides, no prompts, the sheet unchanged.
 //
+// Held dice any class can spend (a Rally Die) are offered for every sheet by
+// `rollOptions` (held-dice.ts), once, whatever the class and multiclass.
+// `rollOptions`, `weaponOverrides` and `afterDualityRoll` take the campaign's
+// `FeatureScope`: a Hope & Fear class's module answers only with `hopeAndFear`.
+//
 // ```ts
 // // T1 dice box / rolls.ts
-// const options = rollOptions(sheet, "damage");
-// const override = weaponOverrides(sheet)[0];
-// const prompts = afterDualityRoll(sheet, { hope, fear, roll });
+// const scope = featureScope(campaign.frameId, campaign.options);
+// const options = rollOptions(sheet, "damage", undefined, scope);
+// const override = weaponOverrides(sheet, undefined, scope)[0];
+// const prompts = afterDualityRoll(sheet, { hope, fear, roll }, undefined, scope);
 // // T3 rests.finish, after expire(sheet, "longRest")
 // sheet = onRest(sheet, "long");
 // // T5 sessions.start / sessions.end
@@ -20,13 +26,17 @@
 // const actions = classActions(sheet);
 // const feature = findFeature(sheet, "noMercy");
 // ```
-// Tests pass their own registry as the last argument.
+// Tests pass their own registry as the third argument.
 
 import type { CharacterSheet } from "../../validation/characters";
-import { CLASS_FEATURES, type Registry } from "./index";
-import type { ClassFeatures, DualityRollResult, FeatureMeta, HookRollKind, Rng, RollOption, RollPrompt, WeaponOverride } from "./types";
+import { heldDiceOptions } from "./held-dice";
+import { CLASS_FEATURES, classFeaturesAvailable, type Registry } from "./index";
+import type { ClassFeatures, DualityRollResult, FeatureMeta, FeatureScope, HookRollKind, Rng, RollOption, RollPrompt, WeaponOverride, WeaponSheet } from "./types";
 
 type Classed = Pick<CharacterSheet, "classId" | "multiclass">;
+
+/** No campaign known: every class module answers. */
+const EVERYTHING: FeatureScope = { hopeAndFear: true, ikonis: false };
 
 /** The sheet's class module, then its multiclass module (when different); missing ones are skipped. */
 function modulesFor(sheet: Classed, registry: Registry): ClassFeatures[] {
@@ -37,16 +47,22 @@ function modulesFor(sheet: Classed, registry: Registry): ClassFeatures[] {
   });
 }
 
-export function rollOptions(sheet: CharacterSheet, kind: HookRollKind, registry: Registry = CLASS_FEATURES): RollOption[] {
-  return modulesFor(sheet, registry).flatMap((m) => m.rollOptions?.(sheet, kind) ?? []);
+/** The modules the campaign allows (Hope & Fear classes only with the option). */
+function scopedModules(sheet: Classed, registry: Registry, scope: FeatureScope): ClassFeatures[] {
+  return modulesFor(sheet, registry).filter((m) => classFeaturesAvailable(m.classId, scope.hopeAndFear));
 }
 
-export function weaponOverrides(sheet: CharacterSheet, registry: Registry = CLASS_FEATURES): WeaponOverride[] {
-  return modulesFor(sheet, registry).flatMap((m) => m.weaponOverrides?.(sheet) ?? []);
+/** The class modules' options for this roll, then the held Rally Dice (any class). */
+export function rollOptions(sheet: CharacterSheet, kind: HookRollKind, registry: Registry = CLASS_FEATURES, scope: FeatureScope = EVERYTHING): RollOption[] {
+  return [...scopedModules(sheet, registry, scope).flatMap((m) => m.rollOptions?.(sheet, kind, scope) ?? []), ...heldDiceOptions(sheet)];
 }
 
-export function afterDualityRoll(sheet: CharacterSheet, result: DualityRollResult, registry: Registry = CLASS_FEATURES): RollPrompt[] {
-  return modulesFor(sheet, registry).flatMap((m) => m.afterDualityRoll?.(sheet, result) ?? []);
+export function weaponOverrides(sheet: WeaponSheet, registry: Registry = CLASS_FEATURES, scope: FeatureScope = EVERYTHING): WeaponOverride[] {
+  return scopedModules(sheet, registry, scope).flatMap((m) => m.weaponOverrides?.(sheet) ?? []);
+}
+
+export function afterDualityRoll(sheet: CharacterSheet, result: DualityRollResult, registry: Registry = CLASS_FEATURES, scope: FeatureScope = EVERYTHING): RollPrompt[] {
+  return scopedModules(sheet, registry, scope).flatMap((m) => m.afterDualityRoll?.(sheet, result) ?? []);
 }
 
 export function onRest(sheet: CharacterSheet, kind: "short" | "long", registry: Registry = CLASS_FEATURES): CharacterSheet {
@@ -66,9 +82,11 @@ export function hopeFeature(sheet: Classed, registry: Registry = CLASS_FEATURES)
   return registry[sheet.classId]?.hopeFeature;
 }
 
-/** Class actions of the class and the multiclass. */
+/** Class actions of the class and the multiclass; one shared by both (the Rally Die spend) is listed once. */
 export function classActions(sheet: Classed, registry: Registry = CLASS_FEATURES): FeatureMeta[] {
-  return modulesFor(sheet, registry).flatMap((m) => m.classActions ?? []);
+  return modulesFor(sheet, registry)
+    .flatMap((m) => m.classActions ?? [])
+    .filter((f, i, all) => all.findIndex((g) => g.key === f.key) === i);
 }
 
 /** The Hope feature or class action with this key that the sheet may use, or undefined. */
@@ -76,4 +94,9 @@ export function findFeature(sheet: Classed, key: string, registry: Registry = CL
   const hope = hopeFeature(sheet, registry);
   if (hope?.key === key) return hope;
   return classActions(sheet, registry).find((f) => f.key === key);
+}
+
+/** The Evasion bonus of the active weapon override (Brawler's Strike +1), the largest when several apply (HF 10). */
+export function overrideEvasion(sheet: WeaponSheet, registry: Registry = CLASS_FEATURES): number {
+  return Math.max(0, ...weaponOverrides(sheet, registry).map((o) => o.evasionBonus ?? 0));
 }

@@ -1,13 +1,13 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { useId, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
 import { classActions, hopeFeature } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES, CLASS_STATE_LABELS, classFeaturesAvailable } from "@/lib/domain/class-features/index";
-import type { FeatureMeta } from "@/lib/domain/class-features/types";
-import { TRAIT_IDS } from "@/lib/srd/types";
+import type { FeatureInput, FeatureMeta } from "@/lib/domain/class-features/types";
+import { characterSheetSchema } from "@/lib/validation/characters";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -47,13 +47,27 @@ function costLabel(feature: FeatureMeta): string | null {
 
 const TRAIT_LABEL = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
-/** The ally picker for `target: "ally"` features; Witch's Charm may also pick yourself. */
-function AllyPicker({ campaignId, self, allowSelf, value, onChange }: { campaignId: Id<"campaigns">; self: Id<"characters">; allowSelf: boolean; value: Id<"characters"> | ""; onChange: (v: Id<"characters"> | "") => void }) {
+/** The ally picker for `target: "ally"` features and `ally` inputs; Witch's Charm and optional inputs may also pick yourself. */
+function AllyPicker({
+  campaignId,
+  self,
+  allowSelf,
+  value,
+  onChange,
+  label = "Target",
+}: {
+  campaignId: Id<"campaigns">;
+  self: Id<"characters">;
+  allowSelf: boolean;
+  value: Id<"characters"> | "";
+  onChange: (v: Id<"characters"> | "") => void;
+  label?: string;
+}) {
   const party = useQuery(api.characters.listByCampaign, { campaignId });
   const allies = (party ?? []).filter((c) => c._id !== self && c.status === "active");
   return (
     <label className="flex flex-col gap-1">
-      <span className="cs-lbl">Target</span>
+      <span className="cs-lbl">{label}</span>
       <select className="cs-in" value={value} onChange={(e) => onChange(allies.find((c) => c._id === e.target.value)?._id ?? "")} disabled={party === undefined}>
         {allowSelf ? <option value="">Yourself</option> : <option value="">Choose an ally</option>}
         {allies.map((c) => (
@@ -63,6 +77,29 @@ function AllyPicker({ campaignId, self, allowSelf, value, onChange }: { campaign
         ))}
       </select>
     </label>
+  );
+}
+
+/** Held dice of one kind (Prayer Dice), picked by their order among those dice. */
+function HeldDicePicker({ sheet, input, value, onChange }: { sheet: Sheet; input: Extract<FeatureInput, { kind: "heldDice" }>; value: number[]; onChange: (v: number[]) => void }) {
+  const held = (sheet.heldDice ?? []).filter((d) => d.kind === input.heldKind);
+  if (held.length === 0) return <span className="cs-small italic">None held.</span>;
+  return (
+    <fieldset className="flex flex-wrap items-center gap-3">
+      <legend className="cs-lbl">{input.label} (default: the first)</legend>
+      {held.map((d, i) => (
+        <label key={d.id} className="flex min-h-11 items-center gap-2 text-[16px]">
+          <input
+            type="checkbox"
+            className="size-5 accent-[#6b5a45]"
+            checked={value.includes(i)}
+            onChange={(e) => onChange(e.target.checked ? [...value, i] : value.filter((x) => x !== i))}
+          />
+          d{d.sides}
+          {d.value !== undefined ? `: ${d.value}` : ""}
+        </label>
+      ))}
+    </fieldset>
   );
 }
 
@@ -91,34 +128,99 @@ function DamageDicePicker({ characterId, value, onChange }: { characterId: Id<"c
   );
 }
 
+/** Whether an input still needs a value before the feature can be used. */
+function inputMissing(input: FeatureInput, values: { choice: string; amount: string; dieIndexes: number[]; target: string }): boolean {
+  switch (input.kind) {
+    case "select":
+      return input.required && values.choice === "";
+    case "number": {
+      const n = Number(values.amount);
+      return values.amount === "" || !Number.isInteger(n) || n < input.min || n > input.max;
+    }
+    case "rollDice":
+      return values.dieIndexes.length === 0;
+    case "ally":
+      return input.required && values.target === "";
+    case "text":
+    case "heldDice":
+      return false;
+  }
+}
+
 function FeatureCard({ feature, props, blocked }: { feature: FeatureMeta; props: SlotProps; blocked: string | null }) {
   const { character, campaignId, canEdit } = props;
   const applyFeature = useMutation(api.classFeatures.use);
   const { run, busy, error } = useIntent();
   const [target, setTarget] = useState<Id<"characters"> | "">("");
   const [choice, setChoice] = useState("");
+  const [amount, setAmount] = useState("");
   const [dieIndexes, setDieIndexes] = useState<number[]>([]);
   const [done, setDone] = useState<string | null>(null);
+  const inputId = useId();
   const cost = costLabel(feature);
   const short = feature.cost?.hope !== undefined && character.sheet.hope < feature.cost.hope;
   const needsTarget = feature.target === "ally" && feature.key !== "witchsCharm";
-  const missing = (needsTarget && target === "") || (feature.key === "evolution" && choice === "") || (feature.key === "volatileMagic" && dieIndexes.length === 0);
+  const inputs = feature.inputs ?? [];
+  const missing = (needsTarget && target === "") || inputs.some((i) => inputMissing(i, { choice, amount, dieIndexes, target }));
+  // `select` options read the full sheet (loadout cards, tier); the panel's sheet is the server's view of it.
+  const parsed = useMemo(() => characterSheetSchema.safeParse(character.sheet), [character.sheet]);
 
   async function submit() {
     setDone(null);
+    const params = {
+      ...(target ? { targetId: target } : {}),
+      ...(choice.trim() ? { choice: choice.trim() } : {}),
+      ...(amount !== "" ? { amount: Number(amount) } : {}),
+      ...(dieIndexes.length ? { dieIndexes } : {}),
+    };
     const ok = await run((idempotencyKey) =>
-      applyFeature({
-        characterId: character._id,
-        featureKey: feature.key,
-        params: {
-          ...(target ? { targetId: target } : {}),
-          ...(choice ? { choice } : {}),
-          ...(dieIndexes.length ? { dieIndexes } : {}),
-        },
-        idempotencyKey,
-      }).then((r) => setDone(r.summary)),
+      applyFeature({ characterId: character._id, featureKey: feature.key, params, idempotencyKey }).then((r) => setDone(r.summary)),
     );
-    if (ok) setDieIndexes([]);
+    if (ok) {
+      setDieIndexes([]);
+      setChoice("");
+      setAmount("");
+    }
+  }
+
+  function renderInput(input: FeatureInput, i: number) {
+    const id = `${inputId}-${i}`;
+    switch (input.kind) {
+      case "text":
+        return (
+          <label key={id} className="flex flex-col gap-1">
+            <span className="cs-lbl">{input.label}</span>
+            <input className="cs-in" maxLength={60} placeholder={input.placeholder} value={choice} onChange={(e) => setChoice(e.target.value)} />
+          </label>
+        );
+      case "select":
+        return (
+          <label key={id} className="flex flex-col gap-1">
+            <span className="cs-lbl">{input.label}</span>
+            <select className="cs-in" value={choice} onChange={(e) => setChoice(e.target.value)}>
+              <option value="">{input.empty}</option>
+              {(parsed.success ? input.options(parsed.data) : []).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        );
+      case "number":
+        return (
+          <label key={id} className="flex flex-col gap-1">
+            <span className="cs-lbl">{input.label}</span>
+            <input className="cs-in w-24 text-center" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))} />
+          </label>
+        );
+      case "heldDice":
+        return <HeldDicePicker key={id} sheet={character.sheet} input={input} value={dieIndexes} onChange={setDieIndexes} />;
+      case "rollDice":
+        return <DamageDicePicker key={id} characterId={character._id} value={dieIndexes} onChange={setDieIndexes} />;
+      case "ally":
+        return <AllyPicker key={id} campaignId={campaignId} self={character._id} allowSelf={!input.required} value={target} onChange={setTarget} label={input.label} />;
+    }
   }
 
   return (
@@ -134,20 +236,7 @@ function FeatureCard({ feature, props, blocked }: { feature: FeatureMeta; props:
           {feature.target === "ally" ? (
             <AllyPicker campaignId={campaignId} self={character._id} allowSelf={!needsTarget} value={target} onChange={setTarget} />
           ) : null}
-          {feature.key === "evolution" ? (
-            <label className="flex flex-col gap-1">
-              <span className="cs-lbl">Trait +1</span>
-              <select className="cs-in" value={choice} onChange={(e) => setChoice(e.target.value)}>
-                <option value="">Choose a trait</option>
-                {TRAIT_IDS.map((t) => (
-                  <option key={t} value={t}>
-                    {TRAIT_LABEL(t)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {feature.key === "volatileMagic" ? <DamageDicePicker characterId={character._id} value={dieIndexes} onChange={setDieIndexes} /> : null}
+          {inputs.map(renderInput)}
           <button type="button" className="cs-pill cs-solid" disabled={busy || blocked !== null || short || missing} onClick={() => void submit()}>
             Use {feature.name}
           </button>

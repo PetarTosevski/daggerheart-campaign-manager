@@ -310,3 +310,31 @@ describe("Druid (CB 30)", () => {
     }
   });
 });
+
+describe("integration (D5 TI-a)", () => {
+  it("Combat Training is not offered in Motherboard, where Ikonis Training replaces it (CB 295)", () => {
+    const warrior = sheetOf("warrior", { level: 3 });
+    expect(rollOptions(warrior, "damage", undefined, { hopeAndFear: true, ikonis: true }).map((o) => o.key)).not.toContain("combatTraining");
+    expect(rollOptions(warrior, "damage", undefined, { hopeAndFear: false, ikonis: false }).map((o) => o.key)).toContain("combatTraining");
+  });
+
+  it("panel inputs: Strange Patterns' number, Channel Raw Power's cards, Beastform's forms, Evolution's traits, Ranger's Focus target, Prayer Dice", () => {
+    expect(findFeature(sheetOf("wizard"), "strangePatterns")?.inputs).toEqual([{ kind: "number", param: "amount", label: "Number (1-12)", min: 1, max: 12 }]);
+    const sorcerer = sheetOf("sorcerer", { domainCards: { owned: ["a-soldier-s-bond"], loadout: ["a-soldier-s-bond"] } });
+    const [channel] = findFeature(sorcerer, "channelRawPower")!.inputs!;
+    expect(channel?.kind === "select" && channel.options(sorcerer).map((o) => o.value)).toEqual(["hope:a-soldier-s-bond", "damage:a-soldier-s-bond"]);
+    const druid = sheetOf("druid", { level: 1 });
+    const [form] = findFeature(druid, "beastform")!.inputs!;
+    const forms = form?.kind === "select" ? form.options(druid) : [];
+    expect(forms.length).toBeGreaterThan(0);
+    // A form from the list is accepted by Beastform.
+    expect(act(druid, "beastform", { params: { choice: forms[0]!.value } }).sheet.effects[0]?.id).toBe("beastform");
+    const [trait] = findFeature(druid, "evolution")!.inputs!;
+    expect(trait?.kind === "select" && trait.options(druid).map((o) => o.value)).toEqual(["agility", "strength", "finesse", "instinct", "presence", "knowledge"]);
+    expect(findFeature(sheetOf("ranger"), "rangersFocus")?.inputs?.[0]).toMatchObject({ kind: "text", param: "choice" });
+    const seraph = sheetOf("seraph");
+    expect(findFeature(seraph, "prayerHope")?.inputs?.map((i) => i.kind)).toEqual(["heldDice", "ally"]);
+    expect(findFeature(seraph, "prayerRoll")?.inputs?.map((i) => i.kind)).toEqual(["heldDice"]);
+    expect(findFeature(sheetOf("sorcerer"), "volatileMagic")?.inputs?.map((i) => i.kind)).toEqual(["rollDice"]);
+  });
+});

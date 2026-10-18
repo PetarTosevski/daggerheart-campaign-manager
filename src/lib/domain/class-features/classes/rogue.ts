@@ -4,7 +4,6 @@
 // option the player ticks when Cloaked or an ally is in Melee range of the target.
 import { tierForLevel } from "../../characters/index";
 import type { ClassFeatures, FeatureMeta } from "../types";
-import { rallyDieOptions, rallyDieStress } from "./bard";
 import { HOPE_COST, withEffect } from "./shared";
 
 const DODGE = "rogues-dodge";
@@ -35,11 +34,10 @@ export const rogue: ClassFeatures = {
       summary: "used Rogue’s Dodge: +2 Evasion",
     }),
   },
-  classActions: [cloaked, rallyDieStress],
+  classActions: [cloaked],
   rollOptions: (sheet, kind) => {
     const tier = tierForLevel(sheet.level);
-    const own = kind === "damage" ? [{ key: "sneakAttack", label: `Sneak Attack +${tier}d6`, effect: { kind: "dice" as const, count: tier, sides: 6 } }] : [];
-    return [...own, ...rallyDieOptions(sheet, "rogue")];
+    return kind === "damage" ? [{ key: "sneakAttack", label: `Sneak Attack +${tier}d6`, effect: { kind: "dice" as const, count: tier, sides: 6 } }] : [];
   },
   // The effect ends on a hit (`until: "hit"`, the Got hit button) and otherwise on the next rest (CB 42).
   onRest: (sheet) => (sheet.effects.some((e) => e.id === DODGE) ? { ...sheet, effects: sheet.effects.filter((e) => e.id !== DODGE) } : sheet),

@@ -3,10 +3,9 @@
 // Class features: Beastform marks a Stress and shows the form as an effect (End = drop out of it);
 // Wildtouch is text only.
 import { tierForLevel } from "../../characters/index";
-import { getBeastform } from "../../../srd/index";
+import { beastformsForTier, getBeastform } from "../../../srd/index";
 import { TRAIT_IDS, type TraitId } from "../../../srd/types";
 import type { ClassFeatures, FeatureMeta } from "../types";
-import { rallyDieOptions, rallyDieStress } from "./bard";
 import { HOPE_COST, refuse, withEffect } from "./shared";
 
 const isTrait = (value: string | undefined): value is TraitId => TRAIT_IDS.some((t) => t === value);
@@ -20,6 +19,16 @@ const beastform: FeatureMeta = {
   cost: { stress: 1 },
   automation: "assist",
   target: "self",
+  inputs: [
+    {
+      kind: "select",
+      param: "choice",
+      label: "Beastform",
+      required: false,
+      empty: "Reminder only",
+      options: (sheet) => beastformsForTier(tierForLevel(sheet.level)).map((b) => ({ value: b.id, label: `${b.name} (tier ${b.tier})` })),
+    },
+  ],
   use: ({ sheet, params }) => {
     // `choice`: a Beastform id; without one the effect is a plain reminder.
     const form = params.choice ? getBeastform(params.choice) : undefined;
@@ -68,6 +77,7 @@ export const druid: ClassFeatures = {
     cost: HOPE_COST,
     automation: "assist",
     target: "self",
+    inputs: [{ kind: "select", param: "choice", label: "Trait +1", required: true, empty: "Choose a trait", options: () => TRAIT_IDS.map((t) => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) })) }],
     use: ({ sheet, params }) => {
       const trait = params.choice;
       if (!isTrait(trait)) refuse("Choose a trait to raise.");
@@ -83,6 +93,5 @@ export const druid: ClassFeatures = {
       };
     },
   },
-  classActions: [beastform, wildtouch, rallyDieStress],
-  rollOptions: (sheet) => rallyDieOptions(sheet, "druid"),
+  classActions: [beastform, wildtouch],
 };

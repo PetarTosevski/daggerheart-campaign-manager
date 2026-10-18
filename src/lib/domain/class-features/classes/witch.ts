@@ -69,6 +69,7 @@ export const witch: ClassFeatures = {
       cost: { stress: 1 },
       automation: "auto",
       target: "none",
+      inputs: [{ kind: "text", param: "choice", label: "Target name", placeholder: "Target 1" }],
       use: ({ sheet, params }) => {
         const hexes = sheet.classState.hexes ?? [];
         const max = witchSpellcast(sheet);

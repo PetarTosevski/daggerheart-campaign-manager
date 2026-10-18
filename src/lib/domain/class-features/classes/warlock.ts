@@ -8,8 +8,9 @@
 //
 // Class features (HF 14):
 // - Favor (`classState.favor`): starts at 3 (unset reads as 3; the session start writes it). A downtime move shows
-//   tribute: gain Favor equal to the Spellcast trait (a class action, once per rest). A success with Hope can take a
-//   Favor instead of the Hope (a class action on the latest roll; the dice box shows a reminder).
+//   tribute: gain Favor equal to the Spellcast trait (`warlockSpellcast`). It is the rest move "tribute"
+//   (convex/lib/restHooks.ts), not a class action, so it is taken once per rest through the rest picker. A success
+//   with Hope can take a Favor instead of the Hope (a class action on the latest roll; the dice box shows a prompt).
 // - Patron's Pact: before an action roll in the patron's sphere, spend a Favor for the Patron Die (d6, d8 from level
 //   5): the class action holds it (`heldDice` kind `patron`) and the dice box adds it to the next action roll.
 import { getSubclass } from "../../../srd/index";
@@ -109,19 +110,6 @@ export const warlock: ClassFeatures = {
           sheet: { ...withFavor(sheet, favor - 1), heldDice: [...sheet.heldDice, { id: PATRON_DIE_ID, kind: "patron", sides, until: "manual" }] },
           summary: `used Patron’s Pact: spent a Favor for the Patron Die (d${sides}), ${favor - 1} Favor left`,
         };
-      },
-    },
-    {
-      key: "tribute",
-      name: "Tribute",
-      text: "Downtime move: show tribute to your patron and gain Favor equal to your Spellcast trait.",
-      cost: { use: { key: "tribute", until: "rest" } },
-      automation: "auto",
-      target: "self",
-      use: ({ sheet }) => {
-        const gain = warlockSpellcast(sheet);
-        const favor = favorOf(sheet);
-        return { sheet: withFavor(sheet, favor + gain), summary: `showed tribute to their patron: +${gain} Favor (${favor} → ${Math.min(99, favor + gain)})` };
       },
     },
     {

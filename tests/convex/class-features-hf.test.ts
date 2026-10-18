@@ -1,4 +1,4 @@
-// Hope & Fear class features through Convex (D5 T8c): Favor spend and tribute, the Brawler crit, Commune's long-rest reset.
+// Hope & Fear class features through Convex (D5 T8c): Favor spend, the Brawler crit, Commune's long-rest reset. Tribute is a rest move (rest tests).
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
@@ -63,8 +63,8 @@ const NO_DUALITY = { modifier: 0, experienceIds: [] as string[], advantage: 0, d
 describe("Hope & Fear class features", () => {
   useAllowlist();
 
-  it("Warlock: a Favor pays for the Patron Die, the next action roll adds it, and a tribute gains Spellcast-trait Favor once per rest", async () => {
-    const { gm, campaignId, create, sheetOf, use } = await setup();
+  it("Warlock: a Favor pays for the Patron Die, the next action roll adds it; tribute is no class action (it is a rest move)", async () => {
+    const { gm, create, sheetOf, use } = await setup();
     const w = await create("warlock", "Mor");
 
     await use(w, "patronsPact");
@@ -77,15 +77,9 @@ describe("Hope & Fear class features", () => {
     expect(roll.dice.filter((d) => d.role === "extra").map((d) => d.sides)).toEqual([6]);
     expect((await sheetOf(w)).heldDice).toEqual([]);
 
-    await use(w, "tribute");
-    expect((await sheetOf(w)).classState.favor).toBe(4);
     expect(await codeOf(use(w, "tribute"))).toBe("CLASS_FEATURE_RULE");
-    // A rest refreshes the tribute.
-    const { restId } = await gm.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: key() });
-    await gm.mutation(api.rests.finish, { campaignId, restId, idempotencyKey: key() });
-    await use(w, "tribute");
     sheet = await sheetOf(w);
-    expect(sheet.classState.favor).toBe(6);
+    expect(sheet.classState.favor).toBe(2);
   });
 
   it("Warlock: Favor reads 3 before it is set and is spent down to none", async () => {

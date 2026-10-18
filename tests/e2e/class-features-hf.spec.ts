@@ -78,6 +78,8 @@ test("a Brawler without a weapon rolls Brawler's Strike damage with Proficiency-
   await expect(page.getByRole("heading", { level: 1, name: hero })).toBeVisible();
   const box = page.getByRole("region", { name: "Dice", exact: true });
   await box.getByText("Damage", { exact: true }).click();
+  // Listed once, as the override: no "Primary: Brawler's Strike" entry next to it.
+  await expect(box.getByLabel("Damage source").getByRole("option", { name: /^Primary: / })).toHaveCount(0);
   await box.getByLabel("Damage source").selectOption({ label: "Brawler’s Strike (I Am the Weapon)" });
   await box.getByRole("button", { name: "Roll", exact: true }).click();
 
@@ -86,4 +88,41 @@ test("a Brawler without a weapon rolls Brawler's Strike damage with Proficiency-
   const faces = last.getByRole("list", { name: "Dice" });
   await expect(faces.getByRole("listitem", { name: /^Damage d8: / })).toHaveCount(2);
   await expect(faces.getByRole("listitem", { name: /^Damage d6: / })).toHaveCount(2);
+});
+
+test("a Witch names the target of a Hex in the features panel", async ({ page }) => {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const campaign = unique("Hex");
+  await page.goto("/frames/witherwild");
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(campaign);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: campaign })).toBeVisible();
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+
+  const client = await convexAs(page);
+  await client.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true });
+  const hero = unique("Morwen");
+  const witch = {
+    ...brawlerDraft(hero),
+    classId: "witch",
+    subclassId: "hedge",
+    // Knowledge +2: the Hedge's Spellcast trait allows two Hexes.
+    traits: { agility: 0, strength: -1, finesse: 1, instinct: 1, presence: 0, knowledge: 2 },
+    primaryWeaponId: "dagger",
+    domainCards: cardsForDomains(getClass("witch")!.domains, 1)
+      .filter((c) => c.level === 1)
+      .slice(0, 2)
+      .map((c) => c.id),
+  };
+  const { characterId } = await client.mutation(api.characters.create, { campaignId, draft: witch, idempotencyKey: crypto.randomUUID() });
+
+  await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  await expect(page.getByRole("heading", { level: 1, name: hero })).toBeVisible();
+  const hex = page.getByRole("region", { name: "Features" }).getByRole("group", { name: "Hex", exact: true });
+  await hex.getByLabel("Target name").fill("Grak the Bold");
+  await hex.getByRole("button", { name: "Use Hex", exact: true }).click();
+  await expect(hex.getByText("used Hex on Grak the Bold")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Features" }).getByText("Grak the Bold", { exact: true })).toBeVisible();
 });

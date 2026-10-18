@@ -8,9 +8,8 @@
 //   level-up advancements in `classState.comboDie`) and keep rolling until a result is lower than the one before it;
 //   every result is added to that damage roll (role `extra`, so a roll is comboed once).
 import { getWeapon } from "../../../srd/index";
-import type { CharacterSheet } from "../../../validation/characters";
 import type { RolledDie } from "../../duality";
-import type { ClassFeatures, Rng, WeaponOverride } from "../types";
+import type { ClassFeatures, Rng, WeaponOverride, WeaponSheet } from "../types";
 import { assistFeature, refuse } from "./shared";
 
 export const BRAWLERS_STRIKE = "brawler-s-strike";
@@ -18,7 +17,7 @@ export const BRAWLERS_STRIKE = "brawler-s-strike";
 export const COMBO_MAX = 20;
 
 /** No Active Weapon other than Brawler's Strike (HF 10, I Am the Weapon). */
-function barehanded(sheet: CharacterSheet): boolean {
+function barehanded(sheet: WeaponSheet): boolean {
   if (sheet.secondaryWeaponId !== undefined) return false;
   return sheet.primaryWeaponId === BRAWLERS_STRIKE || getWeapon(sheet.primaryWeaponId) === undefined;
 }

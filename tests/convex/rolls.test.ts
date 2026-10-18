@@ -272,3 +272,117 @@ describe("rolls: rules", () => {
     expect(await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, idempotencyKey })).toEqual(first);
   });
 });
+
+// ---------------------------------------------------------------- D5 TI-a integration
+
+/** A GM-owned character of any class in a fresh campaign of `frameId` (Hope & Fear content on unless `hopeAndFear` is false). */
+async function classSetup(frameId: "witherwild" | "motherboard", hopeAndFear = true) {
+  const t = makeTest();
+  const gmId = await t.run((ctx) => ctx.db.insert("users", { email: "gm@example.com" }));
+  const gm = t.withIdentity({ subject: `${gmId}|s` });
+  const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Party", idempotencyKey: key() });
+  await gm.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: hopeAndFear });
+  const create = async (classId: string, change: Record<string, unknown> = {}, ikonis?: { name: string; description: string; trait: "strength"; range: "Melee"; damageType: "physical" }) => {
+    const cls = getClass(classId)!;
+    const d = {
+      ...draft(classId),
+      classId,
+      subclassId: subclassesForClass(classId)[0].id,
+      domainCards: cardsForDomains(cls.domains, 1).filter((c) => c.level === 1).slice(0, 2).map((c) => c.id),
+      ...change,
+    };
+    return (await gm.mutation(api.characters.create, { campaignId, draft: d, ...(ikonis ? { ikonis } : {}), idempotencyKey: key() })).characterId;
+  };
+  const sheetOf = (id: Id<"characters">) => t.run(async (ctx) => readSheet((await ctx.db.get("characters", id))!.sheet));
+  const edit = (id: Id<"characters">, change: Partial<CharacterSheet>) =>
+    t.run(async (ctx) => saveSheet(ctx, id, { ...readSheet((await ctx.db.get("characters", id))!.sheet), ...change }));
+  return { t, gm, campaignId, create, sheetOf, edit };
+}
+
+const RALLY = { id: "rally-1", kind: "rally" as const, sides: 6, until: "session" as const };
+const strike = { source: { kind: "override" as const, key: "brawlersStrike" }, critical: false, modifier: 0, options: [] as string[] };
+
+describe("rolls: class-feature integration (D5 TI-a)", () => {
+  useAllowlist(EMAILS);
+
+  it("with Hope & Fear off, a Brawler's override is refused but a held Rally Die still spends; on, both work", async () => {
+    const { gm, campaignId, create, edit } = await classSetup("witherwild");
+    const brawler = await create("brawler", { primaryWeaponId: "brawler-s-strike" });
+    await edit(brawler, { heldDice: [RALLY] });
+    expect(await codeOf(gm.mutation(api.rolls.damageRoll, { characterId: brawler, ...strike, idempotencyKey: key() }))).toBe("ok");
+    await gm.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: false });
+    expect(await codeOf(gm.mutation(api.rolls.damageRoll, { characterId: brawler, ...strike, idempotencyKey: key() }))).toBe("DICE_RULE");
+    const { roll } = await gm.mutation(api.rolls.actionRoll, { characterId: brawler, ...agility, options: ["rally:rally-1"], idempotencyKey: key() });
+    expect(roll.dice.filter((d) => d.role === "extra").map((d) => d.sides)).toEqual([6]);
+  });
+
+  it("Brawler's Strike as the primary weapon rolls as the override: both dice scale with Proficiency (HF 10)", async () => {
+    const { gm, create, edit } = await classSetup("witherwild");
+    const brawler = await create("brawler", { primaryWeaponId: "brawler-s-strike" });
+    await edit(brawler, { proficiency: 2 });
+    const { roll } = await gm.mutation(api.rolls.damageRoll, { characterId: brawler, ...weapon, idempotencyKey: key() });
+    expect(roll.dice.map((d) => d.sides)).toEqual([8, 8, 6, 6]);
+  });
+
+  it("a Brawler crit with a Rally Die: 14 × Proficiency plus the Rally Die's maximum, plus the roll (CB 98)", async () => {
+    const { gm, create, edit } = await classSetup("witherwild");
+    const brawler = await create("brawler", { primaryWeaponId: "brawler-s-strike" });
+    await edit(brawler, { heldDice: [RALLY] });
+    const { roll } = await gm.mutation(api.rolls.manualRoll, {
+      characterId: brawler,
+      roll: { kind: "damage", ...strike, critical: true, options: ["rally:rally-1"] },
+      values: [1, 1, 1],
+      idempotencyKey: key(),
+    });
+    expect(roll.total).toBe(14 + 6 + 3);
+  });
+
+  it("Get In & Get Out's advantage is spent once: taking it ends the effect", async () => {
+    const { gm, create, sheetOf } = await classSetup("witherwild");
+    const assassin = await create("assassin");
+    await gm.mutation(api.classFeatures.use, { characterId: assassin, featureKey: "getInGetOut", params: {}, idempotencyKey: key() });
+    const { roll } = await gm.mutation(api.rolls.manualRoll, { characterId: assassin, roll: { ...agility, options: ["getInGetOut"] }, values: [4, 5, 6], idempotencyKey: key() });
+    expect(roll.dice.map((d) => d.role)).toEqual(["hope", "fear", "advantage"]);
+    expect((await sheetOf(assassin)).effects).toEqual([]);
+    expect(await codeOf(gm.mutation(api.rolls.actionRoll, { characterId: assassin, ...agility, options: ["getInGetOut"], idempotencyKey: key() }))).toBe("DICE_RULE");
+  });
+
+  it("Strange Patterns prompts after a reaction roll too (CB 50)", async () => {
+    const { gm, create, edit } = await classSetup("witherwild");
+    const wizard = await create("wizard");
+    await edit(wizard, { classState: { strangeNumber: 3 } });
+    const out = await gm.mutation(api.rolls.manualRoll, { characterId: wizard, roll: { ...agility, kind: "reaction" }, values: [3, 8], idempotencyKey: key() });
+    const prompts = "prompts" in out ? (out.prompts as { featureKey: string }[]) : [];
+    expect(prompts.map((p) => p.featureKey)).toEqual(["strangePatternsBenefit"]);
+    await gm.mutation(api.classFeatures.use, { characterId: wizard, featureKey: "strangePatternsBenefit", params: { choice: "hope" }, idempotencyKey: key() });
+  });
+
+  it("Motherboard: the Ikonis is the attack and damage source with Bonded and augments; no Combat Training (CB 295, 301)", async () => {
+    const { t, gm, create, sheetOf } = await classSetup("motherboard");
+    const ikonis = { name: "Spark rod", description: "", trait: "strength" as const, range: "Melee" as const, damageType: "physical" as const };
+    const warrior = await create("warrior", { primaryWeaponId: "" }, ikonis);
+    const ikonisDamage = { source: { kind: "ikonis" as const }, critical: false, modifier: 0, options: [] as string[] };
+    // d12+1 at Proficiency 1, Bonded +1 (level 1), Force +1 (Ikonis Training); Combat Training would add another +1.
+    const dmg = await gm.mutation(api.rolls.manualRoll, { characterId: warrior, roll: { kind: "damage", ...ikonisDamage }, values: [5], idempotencyKey: key() });
+    expect(dmg.roll.total).toBe(5 + 1 + 1 + 1);
+    expect(await codeOf(gm.mutation(api.rolls.damageRoll, { characterId: warrior, ...weapon, idempotencyKey: key() }))).toBe("DICE_RULE");
+
+    // Converge +1 and Override (advantage) installed: the attack uses the Ikonis's trait (Strength +1).
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query("characterExtras")
+        .withIndex("by_character_extra", (q) => q.eq("characterId", warrior).eq("extra", "motherboard"))
+        .unique();
+      await ctx.db.patch("characterExtras", row!._id, { data: { ...row!.data, installed: ["force", "converge", "override"] } } as never);
+    });
+    const attack = await gm.mutation(api.rolls.manualRoll, { characterId: warrior, roll: { ...agility, ikonis: true }, values: [6, 5, 4], idempotencyKey: key() });
+    expect(attack.roll.dice.map((d) => d.role)).toEqual(["hope", "fear", "advantage"]);
+    expect(attack.roll.total).toBe(6 + 5 + 4 + 1 + 1);
+    expect((await sheetOf(warrior)).primaryWeaponId).toBe("");
+
+    // Outside Motherboard there is no Ikonis.
+    const other = await classSetup("witherwild");
+    const plain = await other.create("warrior");
+    expect(await codeOf(other.gm.mutation(api.rolls.damageRoll, { characterId: plain, ...ikonisDamage, idempotencyKey: key() }))).toBe("DICE_RULE");
+  });
+});

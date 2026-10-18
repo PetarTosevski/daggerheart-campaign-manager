@@ -1,10 +1,14 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { useMemo, useRef, useState } from "react";
 
+import { BRAWLERS_STRIKE } from "@/lib/domain/class-features/classes/brawler";
 import { rollOptions, weaponOverrides } from "@/lib/domain/class-features/hooks";
-import type { RollPrompt } from "@/lib/domain/class-features/types";
+import { CLASS_FEATURES } from "@/lib/domain/class-features/index";
+import type { FeatureScope, RollPrompt } from "@/lib/domain/class-features/types";
 import { advantagePlan, weaponDice, type DicePool } from "@/lib/domain/dice";
+import { ikonisWeapon } from "@/lib/domain/dice/ikonis";
 import type { RollRecord } from "@/lib/domain/duality";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
 import { WEAPONS } from "@/lib/srd/equipment";
@@ -36,8 +40,49 @@ function isUnavailable(character: CharacterView): boolean {
   return character.status === "dead" || character.status === "away" || (character.sheet.conditions ?? []).includes("unconscious");
 }
 
+function poolLabel(pool: DicePool, flat: number): string {
+  return pool.map((d) => `${d.count}d${d.sides}`).join("+") + (flat ? `+${flat}` : "");
+}
+
+/** Prompts after a roll (Strange Patterns, Favor): each choice is a button that answers through the feature (`classFeatures.use`). */
+function RollPrompts({ characterId, prompts }: { characterId: Id<"characters">; prompts: RollPrompt[] }) {
+  const answer = useIntent(api.classFeatures.use);
+  const [answered, setAnswered] = useState<Record<string, string>>({});
+  return prompts.map((p) => (
+    <div key={p.key} className="cs-small flex flex-wrap items-center gap-2" role="group" aria-label={p.text}>
+      <span>{p.text}</span>
+      {answered[p.key] ? (
+        <span className="italic" role="status">
+          {answered[p.key]}
+        </span>
+      ) : (
+        p.choices.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            className="cs-pill !min-h-9 !px-3 text-[13px]"
+            disabled={answer.pending}
+            onClick={() =>
+              void answer.fire({ characterId, featureKey: p.featureKey, params: { choice: c.key } }).then((out) => {
+                if (out) setAnswered((a) => ({ ...a, [p.key]: out.summary }));
+              })
+            }
+          >
+            {c.label}
+          </button>
+        ))
+      )}
+      {answer.error ? (
+        <span role="alert" className="text-[#8e2b2b]">
+          {answer.error}
+        </span>
+      ) : null}
+    </div>
+  ));
+}
+
 /** The dice box on the sheet: action, reaction and damage rolls, server-rolled or typed in from physical dice. */
-export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">; character: CharacterView }) {
+export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id<"campaigns">; character: CharacterView; hopeAndFear: boolean }) {
   const view = character.sheet;
   const sheet = useMemo(() => {
     const parsed = characterSheetSchema.safeParse(view);
@@ -54,6 +99,7 @@ export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">
   const [disadvantage, setDisadvantage] = useState(0);
   const [help, setHelp] = useState(0);
   const [attack, setAttack] = useState(false);
+  const [ikonisAttack, setIkonisAttack] = useState(false);
   const [chosen, setChosen] = useState<string[]>([]);
   const [source, setSource] = useState("primary");
   const [customCount, setCustomCount] = useState("1");
@@ -71,33 +117,44 @@ export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">
   const pending = actionRoll.pending || damageRoll.pending || manualRoll.pending;
   const error = actionRoll.error ?? damageRoll.error ?? manualRoll.error;
 
-  const overrides = sheet ? weaponOverrides(sheet) : [];
-  const options = sheet ? rollOptions(sheet, mode) : [];
+  // The Motherboard module (null in other frames): the Ikonis replaces weapons there (CB 301).
+  const extras = useQuery(api.characterExtras.get, { characterId: character._id });
+  const motherboard = extras?.motherboard ?? null;
+  const scope: FeatureScope = { hopeAndFear, ikonis: motherboard !== null };
+  const ikonis = motherboard && sheet ? ikonisWeapon(motherboard.ikonis, motherboard.installed, sheet.level, sheet.proficiency) : null;
+  const overrides = sheet ? weaponOverrides(sheet, CLASS_FEATURES, scope) : [];
+  const options = sheet ? rollOptions(sheet, mode, CLASS_FEATURES, scope) : [];
+  // Brawler's Strike as a primary weapon is listed once, as the I Am the Weapon override, when that applies (HF 10).
+  const strikeOverride = overrides.some((o) => o.key === "brawlersStrike");
   const weapons = [
     { key: "primary", id: view.primaryWeaponId },
     { key: "secondary", id: view.secondaryWeaponId },
   ].flatMap(({ key, id }) => {
     const w = id ? WEAPONS.find((x) => x.id === id) : undefined;
-    return w ? [{ key, label: `${key === "primary" ? "Primary" : "Secondary"}: ${w.name} (${w.damage})`, damage: w.damage }] : [];
+    if (!w || (w.id === BRAWLERS_STRIKE && strikeOverride)) return [];
+    try {
+      const { dice, flat } = weaponDice(w.damage, view.proficiency, w.id === BRAWLERS_STRIKE);
+      return [{ key, label: `${key === "primary" ? "Primary" : "Secondary"}: ${w.name} (${poolLabel(dice, flat)})`, dice }];
+    } catch {
+      return [];
+    }
   });
+  const sources = [...weapons.map((w) => w.key), ...(ikonis ? ["ikonis"] : []), ...overrides.map((o) => o.key), "custom"];
+  const damageSourceKey = sources.includes(source) ? source : sources[0]!;
+  const useIkonis = mode === "action" && ikonisAttack && ikonis !== null;
 
   // The dice a manual entry must supply, in the server's rolling order.
   const damagePool: DicePool = (() => {
-    const weapon = weapons.find((w) => w.key === source);
-    if (weapon) {
-      try {
-        return weaponDice(weapon.damage, view.proficiency).dice;
-      } catch {
-        return [];
-      }
-    }
-    const override = overrides.find((o) => o.key === source);
+    const weapon = weapons.find((w) => w.key === damageSourceKey);
+    if (weapon) return weapon.dice;
+    if (damageSourceKey === "ikonis" && ikonis) return ikonis.dice;
+    const override = overrides.find((o) => o.key === damageSourceKey);
     if (override) return override.dice;
     return [{ count: toInt(customCount) ?? 0, sides: customSides }];
   })();
   const plan = (() => {
     try {
-      return advantagePlan(advantage, disadvantage, mode === "reaction" ? 0 : help);
+      return advantagePlan(advantage + (useIkonis && ikonis.advantage ? 1 : 0), disadvantage, mode === "reaction" ? 0 : help);
     } catch {
       return [];
     }
@@ -123,11 +180,13 @@ export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">
     const picked = manual ? [] : chosen.filter((k) => options.some((o) => o.key === k));
     if (mode === "damage") {
       const damageSource =
-        source === "primary" || source === "secondary"
-          ? { kind: "weapon" as const, slot: source === "primary" ? ("primary" as const) : ("secondary" as const) }
-          : source === "custom"
+        damageSourceKey === "primary" || damageSourceKey === "secondary"
+          ? { kind: "weapon" as const, slot: damageSourceKey === "primary" ? ("primary" as const) : ("secondary" as const) }
+          : damageSourceKey === "custom"
             ? { kind: "dice" as const, dice: [{ count: toInt(customCount) ?? 0, sides: customSides }] }
-            : { kind: "override" as const, key: source };
+            : damageSourceKey === "ikonis"
+              ? { kind: "ikonis" as const }
+              : { kind: "override" as const, key: damageSourceKey };
       const args = { source: damageSource, critical, modifier: mod, options: picked };
       const out = manual
         ? await manualRoll.fire({ characterId: character._id, roll: { kind: "damage", ...args }, values: values.slice(0, expected.length).map((v) => toInt(v) ?? 0) })
@@ -145,12 +204,13 @@ export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">
       advantage,
       disadvantage,
       help: mode === "reaction" ? 0 : help,
-      attack: mode === "action" && attack,
+      attack: mode === "action" && (attack || useIkonis),
       options: picked,
+      ...(useIkonis ? { ikonis: true } : {}),
     };
     if (manual) {
       const out = await manualRoll.fire({ characterId: character._id, roll: args, values: values.slice(0, expected.length).map((v) => toInt(v) ?? 0) });
-      if (out) await show(out.roll, []);
+      if (out) await show(out.roll, "prompts" in out ? (out.prompts as RollPrompt[]) : []);
       return;
     }
     const out = await actionRoll.fire({ characterId: character._id, ...args });
@@ -188,12 +248,13 @@ export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
             <span className="cs-lbl">Damage source</span>
-            <select className="cs-in" value={source} onChange={(e) => setSource(e.target.value)}>
+            <select className="cs-in" value={damageSourceKey} onChange={(e) => setSource(e.target.value)}>
               {weapons.map((w) => (
                 <option key={w.key} value={w.key}>
                   {w.label}
                 </option>
               ))}
+              {ikonis ? <option value="ikonis">{`Ikonis: ${ikonis.label} (${poolLabel(ikonis.dice, ikonis.flat)})`}</option> : null}
               {overrides.map((o) => (
                 <option key={o.key} value={o.key}>
                   {o.label}
@@ -202,7 +263,7 @@ export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">
               <option value="custom">Other dice (spell, feature)</option>
             </select>
           </label>
-          {source === "custom" ? (
+          {damageSourceKey === "custom" ? (
             <div className="flex items-end gap-2">
               <label className="flex flex-col gap-1">
                 <span className="cs-lbl">Dice count</span>
@@ -229,7 +290,7 @@ export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="flex flex-col gap-1">
             <span className="cs-lbl">Trait</span>
-            <select className="cs-in" value={trait} onChange={(e) => setTrait(e.target.value as TraitId)}>
+            <select className="cs-in" value={useIkonis && ikonis.trait ? ikonis.trait : trait} disabled={useIkonis && ikonis.trait !== null} onChange={(e) => setTrait(e.target.value as TraitId)}>
               {TRAIT_IDS.map((t) => (
                 <option key={t} value={t}>
                   {TRAIT_LABEL[t]} ({view.traits[t] >= 0 ? "+" : ""}
@@ -246,6 +307,14 @@ export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">
             <label className="flex min-h-11 items-center gap-2 self-end text-[16px]">
               <input type="checkbox" className="size-5" checked={attack} onChange={(e) => setAttack(e.target.checked)} />
               Attack roll
+            </label>
+          ) : null}
+          {mode === "action" && ikonis ? (
+            <label className="flex min-h-11 items-center gap-2 self-end text-[16px] sm:col-span-3">
+              <input type="checkbox" className="size-5" checked={ikonisAttack} onChange={(e) => setIkonisAttack(e.target.checked)} />
+              Ikonis attack ({ikonis.label}
+              {ikonis.attack ? `, +${ikonis.attack}` : ""}
+              {ikonis.advantage ? ", advantage" : ""})
             </label>
           ) : null}
         </div>
@@ -346,16 +415,7 @@ export function DiceBox({ campaignId, character }: { campaignId: Id<"campaigns">
             {result.roll.manual ? <span className="ml-2 align-middle text-[12px] tracking-[0.12em] uppercase">manual</span> : null}
           </p>
           <DiceFaces dice={result.roll.dice} />
-          {result.prompts.map((p) => (
-            <div key={p.key} className="cs-small flex flex-wrap items-center gap-2" role="note">
-              <span>{p.text}</span>
-              {p.choices.map((c) => (
-                <span key={c.key} className="rounded-full border border-[#b08a3e] px-2 py-0.5 text-[13px]">
-                  {c.label}
-                </span>
-              ))}
-            </div>
-          ))}
+          <RollPrompts characterId={character._id} prompts={result.prompts} />
         </section>
       ) : null}
 

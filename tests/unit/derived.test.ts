@@ -48,6 +48,14 @@ describe("other always-on subclass bonuses", () => {
     expect(mastered.subclassEvasion).toBe(1);
   });
 
+  it("Brawler's Strike as the only weapon adds +1 Evasion (HF 10, I Am the Weapon); not with a secondary weapon", () => {
+    const brawler = { evasion: 10, primaryWeaponId: "brawler-s-strike", classId: "brawler", proficiency: 1, subclassId: "juggernaut" };
+    expect(derivedDefense(brawler).evasion).toBe(11);
+    expect(derivedDefense({ ...brawler, secondaryWeaponId: "small-dagger" }).evasion).toBe(10);
+    // Without the class (a partial sheet) no override is asked for.
+    expect(derivedDefense({ evasion: 10, primaryWeaponId: "brawler-s-strike" }).evasion).toBe(10);
+  });
+
   it("subclasses without numeric features add nothing", () => {
     expect(subclassBonuses({ subclassId: "vengeance", subclassRank: "mastery" })).toEqual({ thresholds: 0, severe: 0, evasion: 0 });
   });

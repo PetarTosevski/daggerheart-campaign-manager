@@ -17,26 +17,17 @@ import { warlock } from "./classes/warlock";
 import { warrior } from "./classes/warrior";
 import { witch } from "./classes/witch";
 import { wizard } from "./classes/wizard";
+import { rallyDieStress } from "./held-dice";
 import type { ClassFeatures } from "./types";
 
 /** Class id → its features. A class without an entry gets the no-op defaults in hooks.ts. */
 export type Registry = Readonly<Record<string, ClassFeatures>>;
 
-export const CLASS_FEATURES: Registry = {
-  bard,
-  druid,
-  guardian,
-  ranger,
-  rogue,
-  seraph,
-  sorcerer,
-  warrior,
-  wizard,
-  assassin,
-  brawler,
-  warlock,
-  witch,
-};
+/** Every class can spend a held Rally Die to clear Stress (held-dice.ts), so each module lists that action too. */
+const withHeldDice = (modules: readonly ClassFeatures[]): Registry =>
+  Object.fromEntries(modules.map((m) => [m.classId, { ...m, classActions: [...(m.classActions ?? []), rallyDieStress] }]));
+
+export const CLASS_FEATURES: Registry = withHeldDice([bard, druid, guardian, ranger, rogue, seraph, sorcerer, warrior, wizard, assassin, brawler, warlock, witch]);
 
 /** A Hope & Fear class's features are offered only while the campaign's `hopeAndFear` option is on. */
 export function classFeaturesAvailable(classId: string, hopeAndFear: boolean): boolean {

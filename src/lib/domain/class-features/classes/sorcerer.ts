@@ -7,8 +7,7 @@
 import { applyResourceDelta } from "../../characters/index";
 import { getDomainCard } from "../../../srd/index";
 import type { CharacterSheet } from "../../../validation/characters";
-import type { ClassFeatures, FeatureMeta, RollOption } from "../types";
-import { rallyDieOptions, rallyDieStress } from "./bard";
+import type { ClassFeatures, FeatureMeta } from "../types";
 import { dieContribution, HOPE_COST, refuse, withEffect } from "./shared";
 
 const CHANNEL = "channel-raw-power-";
@@ -19,6 +18,18 @@ function channelBonus(sheet: CharacterSheet): number {
   return effect ? Number(effect.id.slice(CHANNEL.length)) || 0 : 0;
 }
 
+/** Channel Raw Power's choices: each loadout card for Hope or for spell damage (`params.choice`). */
+function channelChoices(sheet: CharacterSheet): { value: string; label: string }[] {
+  return sheet.domainCards.loadout.flatMap((id) => {
+    const card = getDomainCard(id);
+    if (card === undefined) return [];
+    return [
+      { value: `hope:${id}`, label: `${card.name}: ${card.level} Hope` },
+      { value: `damage:${id}`, label: `${card.name}: +${2 * card.level} spell damage` },
+    ];
+  });
+}
+
 const channelRawPower: FeatureMeta = {
   key: "channelRawPower",
   name: "Channel Raw Power",
@@ -26,6 +37,7 @@ const channelRawPower: FeatureMeta = {
   cost: { use: { key: "channelRawPower", until: "longRest" } },
   automation: "auto",
   target: "self",
+  inputs: [{ kind: "select", param: "choice", label: "Card to vault", required: true, empty: "Choose a loadout card", options: channelChoices }],
   use: ({ sheet, params }) => {
     const [mode, cardId] = (params.choice ?? "").split(":");
     if ((mode !== "hope" && mode !== "damage") || !cardId) refuse("Choose a loadout card and Hope or damage.");
@@ -55,6 +67,7 @@ export const sorcerer: ClassFeatures = {
     cost: HOPE_COST,
     automation: "auto",
     target: "self",
+    inputs: [{ kind: "rollDice", param: "dieIndexes", label: "Dice to reroll" }],
     use: ({ sheet, params, rng, roll }) => {
       if (roll?.kind !== "damage") refuse("Your latest roll is not a damage roll.");
       const indexes = [...new Set(params.dieIndexes ?? [])];
@@ -74,10 +87,9 @@ export const sorcerer: ClassFeatures = {
       };
     },
   },
-  classActions: [channelRawPower, rallyDieStress],
+  classActions: [channelRawPower],
   rollOptions: (sheet, kind) => {
     const bonus = channelBonus(sheet);
-    const own: RollOption[] = kind === "damage" && bonus > 0 ? [{ key: "channelRawPower", label: `Channel Raw Power +${bonus}`, effect: { kind: "modifier", value: bonus } }] : [];
-    return [...own, ...rallyDieOptions(sheet, "sorcerer")];
+    return kind === "damage" && bonus > 0 ? [{ key: "channelRawPower", label: `Channel Raw Power +${bonus}`, effect: { kind: "modifier", value: bonus } }] : [];
   },
 };

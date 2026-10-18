@@ -8,8 +8,7 @@ import { applyResourceDelta } from "../../characters/index";
 import { actionOutcome } from "../../duality";
 import { getSubclass } from "../../../srd/index";
 import type { CharacterSheet, HeldDie } from "../../../validation/characters";
-import type { ClassFeatures, FeatureMeta, FeatureParams, Rng } from "../types";
-import { rallyDieOptions, rallyDieStress } from "./bard";
+import type { ClassFeatures, FeatureInput, FeatureMeta, FeatureParams, Rng } from "../types";
 import { dualityDie, HOPE_COST, refuse } from "./shared";
 
 /** The number of Prayer Dice: the Spellcast trait of the Seraph's subclass (the multiclass's for a multiclass Seraph), 0 when ≤ 0. */
@@ -39,6 +38,9 @@ function spendPrayer(sheet: CharacterSheet, params: FeatureParams): { sheet: Cha
   return { sheet: { ...sheet, heldDice: sheet.heldDice.filter((d) => !spent.includes(d)) }, value, count: spent.length };
 }
 
+/** The Prayer Dice to spend, by their order among the held Prayer Dice (default: the first). */
+const PRAYER_INPUT: FeatureInput = { kind: "heldDice", param: "dieIndexes", label: "Prayer Dice to spend", heldKind: "prayer" };
+
 const dice = (count: number) => (count === 1 ? "a Prayer Die" : `${count} Prayer Dice`);
 
 const prayerHope: FeatureMeta = {
@@ -47,6 +49,7 @@ const prayerHope: FeatureMeta = {
   text: "Spend Prayer Dice: you, or an ally within Far range, gain Hope equal to their value.",
   automation: "auto",
   target: "party",
+  inputs: [PRAYER_INPUT, { kind: "ally", param: "targetId", label: "Who gains the Hope", required: false }],
   use: ({ sheet, params, others }) => {
     const paid = spendPrayer(sheet, params);
     if (params.targetId === undefined) return { sheet: applyResourceDelta(paid.sheet, "hope", paid.value), summary: `spent ${dice(paid.count)} (${paid.value}) to gain Hope` };
@@ -66,6 +69,7 @@ const prayerDamage: FeatureMeta = {
   text: "Spend Prayer Dice to reduce incoming damage to you or an ally by their value (apply it in the damage calculator).",
   automation: "assist",
   target: "self",
+  inputs: [PRAYER_INPUT],
   use: ({ sheet, params }) => {
     const paid = spendPrayer(sheet, params);
     return { sheet: paid.sheet, summary: `spent ${dice(paid.count)}: reduce incoming damage by ${paid.value}` };
@@ -78,6 +82,7 @@ const prayerRoll: FeatureMeta = {
   text: "Spend Prayer Dice after your roll is made: add their value to its result.",
   automation: "auto",
   target: "self",
+  inputs: [PRAYER_INPUT],
   use: ({ sheet, params, roll }) => {
     if (roll === undefined || roll.kind === "free") refuse("Roll first: you have no roll to add to.");
     const paid = spendPrayer(sheet, params);
@@ -110,7 +115,6 @@ export const seraph: ClassFeatures = {
       };
     },
   },
-  classActions: [prayerHope, prayerDamage, prayerRoll, rallyDieStress],
-  rollOptions: (sheet) => rallyDieOptions(sheet, "seraph"),
+  classActions: [prayerHope, prayerDamage, prayerRoll],
   onSessionStart: rollPrayerDice,
 };
