@@ -7,7 +7,11 @@ import { convexAs, expectNoHorizontalScroll } from "./visual/helpers";
 
 // D8 A4: the live encounter tracker on the Adversaries page's Encounters tab. Damage through thresholds (CB p.91),
 // Stress, conditions, Spend Fear (the dashboard's GM Fear goes down, CB p.154), spotlights per GM turn (CB p.153) and
-// a hidden GM attack roll that players see only once revealed.
+// a hidden GM attack roll that players see only once revealed. TR1: thresholds on the cards, the player sheet's heart /
+// diamond pips, the dashboard's Fear tokens in the top bar and the 3D dice on Roll attack / Roll damage.
+
+// Headless Chromium only offers software WebGL behind this switch (as in dice-3d.spec.ts).
+test.use({ launchOptions: { args: ["--enable-unsafe-swiftshader"] } });
 
 const PLAYER = "e2e-player@example.test";
 
@@ -69,8 +73,15 @@ test("the GM tracks damage, Stress, conditions, Fear, the spotlight and a hidden
   await client.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: crypto.randomUUID() });
   await expect(tracker.getByTestId("tracker-fear")).toHaveAttribute("aria-label", "GM Fear 3 of 12");
   await expect(tracker.getByTestId("tracker-bp")).toHaveText(/Spent 4 of 14 BP/);
+  // TR1: 12 Fear tokens of the dashboard's art, 3 lit.
+  await expect(tracker.locator(".trk-token")).toHaveCount(12);
+  await expect(tracker.locator(".trk-token-on")).toHaveCount(3);
 
   const card = tracker.getByRole("article", { name: "Bear", exact: true });
+  // TR1: the thresholds beside Difficulty; HP hearts and Stress diamonds as on the player sheet.
+  await expect(card.getByTestId("thresholds")).toHaveText("Thresholds 9 / 17");
+  await expect(card.getByRole("button", { name: "Mark Hit Point 1 of 7" })).toHaveClass(/\bsh-pip\b.*\bheart\b/);
+  await expect(card.getByRole("button", { name: "Mark Stress 1 of 2" })).toHaveClass(/\bsh-pip\b.*\bdiamond\b/);
   // 9 damage on Thresholds 9/17 is Major: 2 HP.
   await card.getByLabel("Damage to Bear").fill("9");
   await card.getByRole("button", { name: "Apply" }).click();
@@ -104,6 +115,10 @@ test("the GM tracks damage, Stress, conditions, Fear, the spotlight and a hidden
   const block = tracker.getByRole("article", { name: "Bear stat block" });
   await block.getByRole("button", { name: "Roll attack" }).click();
   await expect(block.getByText(/Attack \d+ \(d20 \d+, \+1\).*Hidden from players/)).toBeVisible();
+  // TR1: the dice land in 3D on the server's d20 (3D is on by default without reduced motion).
+  const dice = block.getByTestId("tracker-dice-stage").getByTestId("dice-3d");
+  await expect(dice).toBeVisible();
+  await expect(dice).toHaveAttribute("data-values", /^\d+$/, { timeout: 10_000 });
 
   await page.goto(`/campaigns/${campaignId}`);
   await expect(page.getByTestId("fear-value")).toHaveAttribute("aria-label", "2 of 12 Fear");
@@ -129,4 +144,14 @@ test("at 390 px the tracker stacks without horizontal scroll and its buttons are
     const box = await control.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
+});
+
+test("with reduced motion the tracker's rolls show no 3D dice", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const { campaignId } = await gmCreatesCampaign(page);
+  const { tracker } = await runningBear(page, campaignId);
+  const block = tracker.getByRole("article", { name: "Bear stat block" });
+  await block.getByRole("button", { name: "Roll damage" }).click();
+  await expect(block.getByText(/Damage \d+ \(.*Hidden from players/)).toBeVisible();
+  await expect(block.getByTestId("dice-3d")).toHaveCount(0);
 });

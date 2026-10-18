@@ -5,7 +5,9 @@ import { openAdversaries, visual } from "./helpers";
 
 // A4 (D8): the live encounter tracker at 1440 and 390: the top bar, instance cards (fresh, damaged, defeated), a
 // Minion group and the whole tracker. The board has no tracker (analysis section 1); these are judged against the
-// Adversaries board's tokens (pips, chips, parchment) in docs/tasks/TASK-D8-A4.md.
+// Adversaries board's tokens (pips, chips, parchment) in docs/tasks/TASK-D8-A4.md. TR1 (docs/tasks/TASK-TR1.md): the top
+// bar's Fear is the dashboard's token art (5 of 12 lit), the cards show Thresholds beside Difficulty and the player
+// sheet's HP hearts / Stress diamonds.
 
 test("A4 encounter tracker: top bar, cards, Minion group and page at 1440 and 390", { tag: "@visual" }, async ({ page }) => {
   const { client, campaignId } = await openAdversaries(page);
@@ -31,6 +33,9 @@ test("A4 encounter tracker: top bar, cards, Minion group and page at 1440 and 39
   const tracker = page.getByRole("tabpanel", { name: "Encounters" }).getByRole("region", { name: "Encounter tracker" });
   await expect(tracker.getByRole("heading", { name: "Den of the bear" })).toBeVisible();
   const { shoot } = visual(page, "A4");
+  await expect(tracker.locator(".trk-token-on")).toHaveCount(5);
+  await expect(tracker.getByRole("article", { name: "Bear 2", exact: true }).getByTestId("thresholds")).toHaveText("Thresholds 9 / 17");
+  await expect(tracker.getByRole("article", { name: "Jagged Knife Lackey", exact: true }).getByTestId("thresholds")).toHaveText("Thresholds Minion");
 
   await shoot(tracker.locator(".trk-top"), "top-bar");
   await shoot(tracker.getByRole("article", { name: "Bear", exact: true }), "card-fresh");

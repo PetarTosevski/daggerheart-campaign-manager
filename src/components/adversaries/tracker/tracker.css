@@ -1,6 +1,6 @@
 /*
  * Live encounter tracker (D8 A4). The board has no tracker; this is drawn in the Adversaries board's language on the
- * --adv-* tokens of adversaries.css: dark shell panels, the board's chips, the 22 px HP / Stress pips and the parchment
+ * --adv-* tokens of adversaries.css: dark shell panels, the board's chips, the player sheet's heart / diamond pips (sheet-ui.css), the dashboard's Fear tokens and the parchment
  * stat block (A2). Prefix trk-. Every control is at least 44 px high (the 390 px touch-target rule).
  */
 .trk { display: flex; flex-direction: column; gap: 16px; margin-top: 28px; font-family: var(--adv-font-ui); color: var(--adv-text); }
@@ -34,7 +34,6 @@
 .trk-btn:focus-visible,
 .trk-chip:focus-visible,
 .trk-step:focus-visible,
-.trk-pip:focus-visible,
 .trk-card-name:focus-visible,
 .trk-tag-x:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 2px; }
 .trk-btn-fear { border-color: var(--adv-hf-border); background: var(--adv-hf-bg); color: var(--adv-hf-fear); }
@@ -74,9 +73,11 @@
 .trk-status { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #2d2614; color: var(--adv-acc); }
 .trk-status[data-status="running"] { background: #20352b; color: #9fdcb6; }
 .trk-turn { font-family: var(--adv-font-head); font-size: 16px; font-weight: 700; color: var(--adv-name); }
-.trk-tokens { display: inline-flex; flex-wrap: wrap; gap: 4px; max-width: 180px; }
-.trk-token { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--adv-hf-border); background: transparent; }
-.trk-token[data-on="true"] { background: var(--adv-hf-fear); border-color: var(--adv-hf-fear); box-shadow: 0 0 6px rgba(198, 182, 242, 0.6); }
+/* The dashboard's GM Fear token art (fear-panel / dashboard.css .fz-on / .fz-off), lit up to the campaign's Fear. */
+.trk-tokens { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; }
+.trk-token { display: block; width: 24px; height: 24px; background: center / contain no-repeat; }
+.trk-token-on { background-image: url(/design-assets/daaa0236fefb950636d60b919dc16601.png); filter: drop-shadow(0 0 4px rgba(150, 100, 240, 0.75)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)); }
+.trk-token-off { background-image: url(/design-assets/735d085e7eea18b8411e8d1f9e7162dd.png); opacity: 0.9; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)); }
 .trk-fear-n { font-family: var(--adv-font-head); font-size: 22px; font-weight: 900; color: var(--adv-hf-fear); min-width: 1.5ch; }
 .trk-top > .trk-top-bp { flex-direction: column; align-items: stretch; gap: 6px; font-size: 13px; color: var(--adv-muted); min-width: 160px; }
 .trk-bar { display: block; height: 8px; border-radius: 999px; background: var(--adv-border); overflow: hidden; }
@@ -120,7 +121,8 @@
 }
 .trk-count { font-size: 15px; color: var(--adv-muted); }
 .trk-type { padding: 3px 9px; border-radius: 6px; background: var(--adv-type-bg); font-size: 12px; color: var(--adv-chip-text); }
-.trk-diff { margin-left: auto; font-size: 13px; color: var(--adv-muted); }
+.trk-diff { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; margin-left: auto; font-size: 13px; color: var(--adv-muted); }
+.trk-diff b { font-family: var(--adv-font-head); color: var(--adv-text); }
 .trk-badge { padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .trk-badge-defeated { background: var(--adv-error-bg); color: var(--adv-error-text); border: 1px solid var(--adv-error-border); }
 .trk-note { margin: 0; font-size: 13px; color: var(--adv-muted); }
@@ -129,32 +131,12 @@
 .trk-track { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .trk-track-h { min-width: 76px; font-size: 13px; color: var(--adv-muted); }
 .trk-track-h b { font-family: var(--adv-font-head); color: var(--adv-text); }
-.trk-pips { display: flex; flex-wrap: wrap; gap: 0; flex: 1 1 200px; min-width: 0; }
-/* The 22 px pip inside a 44 px hit area. */
-.trk-pip {
-  position: relative;
-  width: 30px;
-  height: 44px;
-  padding: 0;
-  border: none;
-  background: none;
-  cursor: pointer;
-}
-.trk-pip::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 11px;
-  width: var(--adv-pip-size);
-  height: var(--adv-pip-size);
-  box-sizing: border-box;
-  border-radius: 4px;
-  border: 1.5px solid var(--adv-divider);
-  background: var(--adv-pip-empty);
-}
-.trk-pip-hp[aria-pressed="true"]::before { background: var(--adv-pip-hp); border-color: var(--adv-pip-hp); }
-.trk-pip-stress::before { border-radius: 50%; }
-.trk-pip-stress[aria-pressed="true"]::before { background: var(--adv-pip-stress); border-color: #8f6fe0; }
+/* The player sheet's hearts (HP) and diamonds (Stress) from sheet-ui.css, on a parchment strip so they read as there. */
+.trk-pips { display: flex; flex-wrap: wrap; gap: 0; flex: 0 1 auto; min-width: 0; padding: 0 4px; border-radius: 10px; background: var(--adv-parch); }
+/* 32 px wide inside a 44 px high hit area (44 px wide would wrap a 7-HP track at 390). */
+.trk-pips .sh-pip.trk-pip { flex: none; width: 32px; min-width: 0; max-width: none; height: 44px; min-height: 44px; aspect-ratio: auto; }
+.trk-pips .sh-pip.heart::before { width: 26px; height: 24px; }
+.trk-pips .sh-pip.diamond::before { width: 18px; height: 18px; }
 .trk-steps { display: inline-flex; gap: 6px; }
 
 .trk-damage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 4px; border-top: 1px solid var(--adv-border-row); }
@@ -184,6 +166,9 @@
 .trk-fear-acts strong { flex: 1 1 100%; font-family: var(--adv-font-head); font-size: 13px; letter-spacing: 0.06em; color: var(--adv-label); }
 .trk-fear-acts .trk-btn-fear { border-color: var(--adv-kind-fear); background: var(--adv-kind-fear); color: #f3ecff; }
 .trk-fear-acts .trk-roll-out { font-size: 13px; }
+
+.trk-dice-stage { flex: 1 1 100%; }
+.trk-dice-stage:empty { display: none; }
 
 /* Spend Fear dialog */
 .trk-dialog { display: flex; flex-direction: column; gap: 16px; font-family: var(--adv-font-ui); }

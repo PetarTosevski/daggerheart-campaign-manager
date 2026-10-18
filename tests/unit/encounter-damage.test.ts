@@ -261,6 +261,26 @@ describe("instance card: optimistic pips", async () => {
     expect(screen.getByRole("button", { name: /Hidden/ })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("shows the thresholds next to Difficulty, and HP / Stress as the player sheet's hearts and diamonds (TR1)", () => {
+    render(createElement(Harness));
+    expect(screen.getByTestId("thresholds")).toHaveTextContent("Thresholds 9 / 17");
+    const heart = screen.getByRole("button", { name: "Mark Hit Point 1 of 7" });
+    expect(heart).toHaveClass("sh-pip", "heart");
+    expect(screen.getByRole("button", { name: "Mark Stress 1 of 2" })).toHaveClass("sh-pip", "diamond");
+    expect(heart).not.toHaveClass("on");
+  });
+
+  it("shows 'Minion' for a Minion group's thresholds and 'none' for a missing one (TR1)", () => {
+    const minions = { ...bear, label: "Lackey", type: "Minion", minionCount: 4, stats: { difficulty: 9, major: null, severe: null, hpMax: 4, stressMax: 1 } };
+    store.set(nameOf(api.encounters.get), { encounter: { _id: "e1", gmTurn: 1 }, instances: [minions] });
+    const { unmount } = render(createElement(Harness));
+    expect(screen.getByTestId("thresholds")).toHaveTextContent("Thresholds Minion");
+    unmount();
+    store.set(nameOf(api.encounters.get), { encounter: { _id: "e1", gmTurn: 1 }, instances: [{ ...bear, stats: { ...bear.stats, severe: null } }] });
+    render(createElement(Harness));
+    expect(screen.getByTestId("thresholds")).toHaveTextContent("Thresholds 9 / none");
+  });
+
   it("shows Vulnerable while Stress is full", async () => {
     render(createElement(Harness));
     await act(async () => {

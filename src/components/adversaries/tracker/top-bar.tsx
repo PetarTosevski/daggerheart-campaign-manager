@@ -67,7 +67,7 @@ function SpendFearDialog({ open, onClose, fear, actions }: { open: boolean; onCl
 
 /**
  * The tracker's top bar: encounter name and status, "GM turn N" with "End GM turn" (spotlight counts reset), the GM
- * Fear tokens live from the campaign with "Spend Fear", and the Battle Points meter (A3's budget, CB p.197).
+ * Fear as the dashboard's token art (12, lit up to the campaign's Fear; read-only here) with "Spend Fear", and the Battle Points meter (A3's budget, CB p.197).
  */
 export function TopBar({ view, fear, actions }: { view: TrackerView; fear: number; actions: TrackerActions }) {
   const { encounter, instances } = view;
@@ -99,7 +99,7 @@ export function TopBar({ view, fear, actions }: { view: TrackerView; fear: numbe
       <div className="trk-top-fear">
         <span className="trk-tokens" role="img" aria-label={`GM Fear ${fear} of ${MAX_FEAR}`} data-testid="tracker-fear">
           {Array.from({ length: MAX_FEAR }, (_, i) => (
-            <i key={i} className="trk-token" data-on={i < fear} />
+            <i key={i} className={`trk-token ${i < fear ? "trk-token-on" : "trk-token-off"}`} />
           ))}
         </span>
         <span className="trk-fear-n" aria-hidden="true">
