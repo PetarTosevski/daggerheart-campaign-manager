@@ -52,7 +52,7 @@ function FeatureText({ text }: { text: string }) {
 function AdversaryName({ name, adversaryId, canOpen, onOpen }: { name: string; adversaryId?: string; canOpen: (id: string) => boolean; onOpen: (id: string) => void }) {
   if (!adversaryId || !canOpen(adversaryId)) return <>{name}</>;
   return (
-    <button type="button" className="env-advlink" onClick={() => onOpen(adversaryId)} aria-label={`Open ${name} in the catalogue`}>
+    <button type="button" className="env-advlink" onClick={() => onOpen(adversaryId)} aria-label={`Show the ${name} stat block`}>
       {name}
     </button>
   );

@@ -67,17 +67,7 @@ class SlotBoundary extends Component<{ children: ReactNode; label: string }, { f
  * Catalogue tab: the SRD catalogue, whose stat blocks get "Add to encounter" (A3) and "Duplicate & edit" (A5), and
  * the campaign's custom adversaries below it; a saved duplicate is selected there.
  */
-function CatalogueTab({
-  campaign,
-  opened,
-  onBack,
-  onClose,
-}: {
-  campaign: CampaignSummary;
-  opened: OpenedFromEnvironment | null;
-  onBack: () => void;
-  onClose: () => void;
-}) {
+function CatalogueTab({ campaign }: { campaign: CampaignSummary }) {
   const [selectedCustom, setSelectedCustom] = useState<string | null>(null);
   const renderActions = (a: CatalogueEntryRef) => (
     <>
@@ -87,15 +77,6 @@ function CatalogueTab({
   );
   return (
     <>
-      {opened ? (
-        <OpenedAdversary
-          adversaryId={opened.adversaryId}
-          fromEnvironment={opened.environmentName}
-          renderActions={renderActions}
-          onBack={onBack}
-          onClose={onClose}
-        />
-      ) : null}
       <SlotBoundary label="The catalogue">
         <Catalogue campaignId={campaign._id} hopeAndFear={campaign.options.hopeAndFear} frameId={campaign.frameId} renderActions={renderActions} />
       </SlotBoundary>
@@ -177,7 +158,7 @@ function AdversaryTabs({ tab, onTab }: { tab: TabId; onTab: (tab: TabId) => void
 function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
   const [tab, setTab] = useState<TabId>("catalogue");
   const [opened, setOpened] = useState<OpenedFromEnvironment | null>(null);
-  // The selected environment lives here so it survives a tab switch ("Back to ..." from an opened adversary).
+  // The selected environment lives here so it survives a tab switch.
   const [environmentId, setEnvironmentId] = useState<string | null>(null);
   const { hopeAndFear } = campaign.options;
   // The catalogue's size, as the board's header line (A2's count line, in place of A0's placeholder).
@@ -203,30 +184,35 @@ function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
         <AdversaryTabs tab={tab} onTab={setTab} />
         <section role="tabpanel" id={`adv-panel-${tab}`} aria-labelledby={`adv-tab-${tab}`} tabIndex={0} className="adv-panel">
           {tab === "catalogue" ? (
-            <CatalogueTab
-              campaign={campaign}
-              opened={opened}
-              onBack={() => {
-                setOpened(null);
-                setTab("environment");
-              }}
-              onClose={() => setOpened(null)}
-            />
+            <CatalogueTab campaign={campaign} />
           ) : tab === "encounters" ? (
             <EncountersTab campaign={campaign} />
           ) : (
-            <SlotBoundary label="Environments">
-              <EnvironmentCatalogue
-                hopeAndFear={hopeAndFear}
-                frameId={campaign.frameId}
-                selectedId={environmentId}
-                onSelect={setEnvironmentId}
-                onOpenAdversary={(adversaryId, environment) => {
-                  setOpened({ adversaryId, environmentId: environment.id, environmentName: environment.name });
-                  setTab("catalogue");
-                }}
-              />
-            </SlotBoundary>
+            <>
+              {/* A Potential Adversary opens right here, above the environments (user 2026-10-19). */}
+              {opened ? (
+                <OpenedAdversary
+                  adversaryId={opened.adversaryId}
+                  fromEnvironment={opened.environmentName}
+                  renderActions={(a) => (
+                    <>
+                      <AddToEncounter campaignId={campaign._id} adversary={a} />
+                      <DuplicateAdversary campaignId={campaign._id} adversary={a} onSaved={() => setTab("catalogue")} />
+                    </>
+                  )}
+                  onClose={() => setOpened(null)}
+                />
+              ) : null}
+              <SlotBoundary label="Environments">
+                <EnvironmentCatalogue
+                  hopeAndFear={hopeAndFear}
+                  frameId={campaign.frameId}
+                  selectedId={environmentId}
+                  onSelect={setEnvironmentId}
+                  onOpenAdversary={(adversaryId, environment) => setOpened({ adversaryId, environmentId: environment.id, environmentName: environment.name })}
+                />
+              </SlotBoundary>
+            </>
           )}
         </section>
       </main>

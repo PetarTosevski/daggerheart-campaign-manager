@@ -16,16 +16,18 @@ export type OpenedAdversaryProps = {
   fromEnvironment: string;
   /** The stat block's head actions, as in the catalogue ("Add to encounter", "Duplicate & edit"). */
   renderActions: (adversary: CatalogueEntryRef) => ReactNode;
-  onBack: () => void;
+  /** Optional "Back to <environment>" (not needed when the panel opens inside the Environment tab). */
+  onBack?: () => void;
   onClose: () => void;
 };
 
-/** Catalogue tab: the adversary picked in an environment's stat block, above the catalogue, with a way back. */
+/** The adversary picked in an environment's Potential Adversaries line, shown above the environment catalogue. */
 export function OpenedAdversary({ adversaryId, fromEnvironment, renderActions, onBack, onClose }: OpenedAdversaryProps) {
   const ref = useRef<HTMLElement>(null);
-  // The tab changed under the GM's pointer: move focus (and the view) to what they opened.
+  // Move focus (and the view) to what the GM opened.
   useEffect(() => {
     ref.current?.focus();
+    ref.current?.scrollIntoView?.({ block: "start", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }, [adversaryId]);
   const adversary = ADVERSARIES.find((a) => a.id === adversaryId);
   if (!adversary) return null;
@@ -35,9 +37,11 @@ export function OpenedAdversary({ adversaryId, fromEnvironment, renderActions, o
         <p>
           Potential adversary of <strong>{fromEnvironment}</strong>
         </p>
-        <button type="button" onClick={onBack}>
-          Back to {fromEnvironment}
-        </button>
+        {onBack ? (
+          <button type="button" onClick={onBack}>
+            Back to {fromEnvironment}
+          </button>
+        ) : null}
         <button type="button" onClick={onClose}>
           Close
         </button>
