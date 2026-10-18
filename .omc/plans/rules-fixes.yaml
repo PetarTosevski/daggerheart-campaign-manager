@@ -60,6 +60,7 @@ waves:
           - src/components/party/rest/launcher.tsx
           - tests/unit/rest.test.ts
           - tests/convex/rests.test.ts
+          - tests/convex/rest-frame-hooks.test.ts
           - tests/e2e/rest.spec.ts
           - docs/tasks/TASK-RF2.md
         reads:
