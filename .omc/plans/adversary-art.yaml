@@ -32,3 +32,29 @@ waves:
           - "Matching: each illustration is assigned to the adversary it depicts by page position (the stat block it sits beside/above, using the text positions from pdf.js) and checked by eye on rendered pages; ambiguous ones (a spread with several adversaries, a scene piece) are listed in the task doc and left unassigned rather than guessed; src/lib/srd/adversary-art.ts maps adversary id -> { src, width, height, credit? } (generated) and records the count per book"
           - "The parchment stat block shows the art as a framed banner under the name (lazy-loaded, alt text '<name> illustration', object-fit cover with a sensible focal point, no layout shift via width/height), and the catalogue list shows a small round thumbnail where art exists; adversaries without art are unchanged; custom adversaries copied from an SRD block reuse its art (by basedOn) when A5's data carries basedOn"
           - "Total added image weight is reported in the task doc (aim under ~15 MB); unit test checks every mapped file exists and ids are real adversaries; AA1 visual spec shoots a stat block with and without art at 1440 and 390; pnpm lint, typecheck, test pass"
+      - id: TR1
+        title: Tracker look - thresholds on cards, player-style HP/Stress pips, Fear as tokens, 3D dice
+        size: S
+        goal: "User 2026-10-18 (screenshot of the running encounter): 'add thresholds on encounter tab, also change their hp & stress icons to match the players, also make the fear slider use tokens' and 'also add the 3d dice rolls here'."
+        depends_on: []
+        owns:
+          - src/components/adversaries/tracker/
+          - tests/unit/encounter-damage.test.ts
+          - tests/e2e/encounter-tracker.spec.ts
+          - tests/e2e/visual/A4.spec.ts
+          - docs/tasks/TASK-TR1.md
+        reads:
+          - src/components/party/sheet-ui/index.tsx
+          - src/components/party/sheet-ui/sheet-ui.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/hp-stress.tsx
+          - src/app/(gm)/campaigns/[campaignId]/fear-panel.tsx
+          - src/app/(gm)/campaigns/[campaignId]/dashboard.css
+          - src/components/party/dice/roll-feed.tsx
+          - src/components/party/dice/dice3d/index.ts
+          - src/components/party/dice/settings.ts
+        acceptance:
+          - "Each instance card shows the adversary's damage thresholds (Major/Severe, e.g. 'Thresholds 37 / 70', and 'Minion'/'none' where the block has none) next to Difficulty, in the board's tokens"
+          - "HP pips are the players' heart pips and Stress pips the players' diamond pips (reuse sheet-ui Pip kinds 'heart'/'diamond' and their CSS, imported into the tracker; marked/unmarked states as on the player sheet), still buttons with the existing accessible names and 44 px hit areas, no horizontal scroll at 390"
+          - "The top bar's GM Fear shows the dashboard's Fear token art (lit and unlit tokens, /design-assets/daaa0236fefb950636d60b919dc16601.png and 735d085e7eea18b8411e8d1f9e7162dd.png, as in fear-panel/dashboard.css) in a row of 12, read-only there (Spend Fear stays the way to lower it), with the count and an accessible label 'GM Fear N of 12'"
+          - "Roll attack / Roll damage play the 3D dice and the dice sound like the GM roll form does (play3d into a stage element, falling back to playRollSound; respects the dice settings: 3D off / reduced motion / sound off)"
+          - "Tests updated (unit, tracker e2e, A4 visual); pnpm lint, typecheck, test pass"
