@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type KeyboardEvent } from "react";
+import type { KeyboardEvent } from "react";
 
 import type { ClassDef } from "@/lib/srd";
 
+import type { SheetCollection } from "./level-up-draft";
 import { DomainCardsSection } from "./sections/domains";
 import { HeritageSection, heritageCardCount } from "./sections/heritage";
 import { useSheet } from "./sheet-context";
@@ -12,22 +13,22 @@ import { nextTabIndex } from "./sheet-helpers";
 const COLLECTIONS = [
   { id: "cards", label: "Domain Cards" },
   { id: "heritage", label: "Heritage & Subclass" },
-] as const;
+] as const satisfies readonly { id: SheetCollection; label: string }[];
 
-type CollectionId = (typeof COLLECTIONS)[number]["id"];
-
-/** Domains page: the "Card collections" sub-tabs (board dk-tabs) over Domain Cards and Heritage & Subclass. */
-export function PageThree({ cls }: { cls: ClassDef | undefined }) {
+/**
+ * Domains page: the "Card collections" sub-tabs (board dk-tabs) over Domain Cards and Heritage & Subclass. The sheet
+ * holds the selected sub-tab (`tab` / `onTab`) so the guided level-up can open the Domain Deck.
+ */
+export function PageThree({ cls, tab, onTab }: { cls: ClassDef | undefined; tab: SheetCollection; onTab: (tab: SheetCollection) => void }) {
   const { sheet } = useSheet();
-  const [tab, setTab] = useState<CollectionId>("cards");
-  const counts: Record<CollectionId, number> = { cards: sheet.domainCards.owned.length, heritage: heritageCardCount(sheet) };
+  const counts: Record<SheetCollection, number> = { cards: sheet.domainCards.owned.length, heritage: heritageCardCount(sheet) };
 
   function onKey(e: KeyboardEvent<HTMLDivElement>) {
     const next = nextTabIndex(e.key, COLLECTIONS.findIndex((c) => c.id === tab), COLLECTIONS.length);
     const target = COLLECTIONS[next];
     if (!target) return;
     e.preventDefault();
-    setTab(target.id);
+    onTab(target.id);
     document.getElementById(`subtab-${target.id}`)?.focus();
   }
 
@@ -44,7 +45,7 @@ export function PageThree({ cls }: { cls: ClassDef | undefined }) {
             aria-selected={tab === c.id}
             aria-controls={`subpanel-${c.id}`}
             tabIndex={tab === c.id ? 0 : -1}
-            onClick={() => setTab(c.id)}
+            onClick={() => onTab(c.id)}
           >
             {c.label}
             <span className="dk-tabn" aria-hidden="true">

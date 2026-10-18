@@ -94,6 +94,14 @@ test("S13 GM sheet: every page at 1440 and 390, 44 px controls, no horizontal sc
   await expect(sheet.locator("footer.cs-foot + section").getByRole("group", { name: "Character status" })).toBeVisible();
   await phonePass(page, sheet);
   await shootPages(page, sheet, "S13", "gm");
+
+  // The guided level-up ribbon (GL0) on every page: still no horizontal scroll and no small controls at 390.
+  await sheet.getByRole("button", { name: "Level up to 2" }).click();
+  const ribbon = sheet.getByRole("region", { name: "Level-up to 2" });
+  await expect(ribbon).toBeVisible();
+  await phonePass(page, sheet);
+  await ribbon.getByRole("button", { name: "Cancel" }).click();
+  await expect(ribbon).toBeHidden();
 });
 
 test("S13 player view: locked fields, no editor controls, every page at 1440 and 390", { tag: "@visual" }, async ({ page, browser }) => {

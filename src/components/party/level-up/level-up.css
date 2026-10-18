@@ -50,15 +50,7 @@
 .adv-correct-field{display:flex;flex-direction:column;gap:6px}
 .adv-error,.lu-error{margin:0;width:100%;font-family:var(--font-garamond),serif;font-size:16px;color:#8e2b2b}
 
-/* Stepper dialog (advPick style). */
-.sh-modal.lu-modal{max-width:680px}
-.lu-body{display:flex;flex-direction:column;gap:16px;font-size:17px}
-.lu-body section{display:flex;flex-direction:column;gap:12px}
-.lu-body label{display:flex;flex-direction:column;gap:6px}
-.lu-steps{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
-.lu-steps li{padding:3px 12px;border-radius:999px;background:rgba(138,109,74,.14);color:var(--sheet-label,#8a6d4a);font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.06em}
-.lu-steps li[aria-current="step"]{background:var(--sheet-wine,#5b2b2b);color:#f6ead2}
-.lu-opts{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:8px}
+/* advPick option buttons, chips and panels for the level-up choosers (guided-level-up GL1-GL3). */
 .lu-chips{display:flex;flex-wrap:wrap;gap:8px}
 .lu-opt{min-height:44px;padding:4px 14px;border-radius:10px;border:1.5px solid #cdb88f;background:#fffaf0;color:var(--sheet-ink,#2a1f14);font-family:inherit;font-size:15px;text-align:left;cursor:pointer;display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px}
 .lu-opt[aria-pressed="true"]{border-color:var(--sheet-wine,#5b2b2b);background:#e3c98f}
@@ -67,6 +59,4 @@
 .lu-opt:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
 .lu-opt-tier{font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--sheet-label,#8a6d4a)}
 .lu-opt-note{font-size:12px}
-.lu-picks{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
-.lu-pick,.lu-panel{display:flex;flex-direction:column;gap:10px;margin:0;padding:12px;border-radius:10px;border:1px solid var(--sheet-line,#d1b98b);background:rgba(255,250,240,.7)}
-.lu-problems{margin:0;padding:10px 12px 10px 28px;border-radius:10px;background:rgba(142,43,43,.08);color:#8e2b2b;display:flex;flex-direction:column;gap:4px}
+.lu-panel{display:flex;flex-direction:column;gap:10px;margin:0;padding:12px;border-radius:10px;border:1px solid var(--sheet-line,#d1b98b);background:rgba(255,250,240,.7)}

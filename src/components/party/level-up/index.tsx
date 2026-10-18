@@ -5,29 +5,27 @@ import "./level-up.css";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { Badge, PaperModal } from "@/components/party/sheet-ui";
-import { MAX_LEVEL } from "@/lib/domain/characters";
+import { Badge } from "@/components/party/sheet-ui";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
-import type { CampaignSlot, CharacterSlot } from "../slots";
+import type { CampaignSlot, CharacterSlot, SlotProps } from "../slots";
 
 import { CorrectLevel, TierBoxes } from "./history";
-import { fullSheet } from "./shared";
-import { LevelUpStepper } from "./stepper";
+import { canLevelUp, fullSheet } from "./shared";
 
 // D5 level-up (T2); board look from the sheet redesign (S8). Contract: ../slots.ts.
 
 /**
- * The header's lvl-wrap: the 66 px level circle (img "Level N"), a green ▲ badge that opens the stepper when the viewer
- * may level up, and the small − that undoes the latest level-up. Viewers who cannot level see "Level up pending".
+ * The header's lvl-wrap: the 66 px level circle (img "Level N"), a green ▲ badge that starts the guided level-up
+ * (`onStart`, plan guided-level-up) when the viewer may level up, and the small − that undoes the latest level-up.
+ * The ▲ hides while the level-up is under way (`leveling`). Viewers who cannot level see "Level up pending".
  */
-export const LevelUpButton: CharacterSlot = ({ character, canEdit, isGm, hopeAndFear }) => {
-  const [open, setOpen] = useState(false);
+export function LevelUpButton({ character, canEdit, isGm, onStart, leveling = false }: SlotProps & { onStart: () => void; leveling?: boolean }) {
   const undo = useIntent(api.levelUp.undoLast);
   const sheet = fullSheet(character);
   const level = sheet?.level ?? character.sheet.level;
-  const canLevel = sheet !== null && canEdit && level < MAX_LEVEL && (sheet.levelUpPending || isGm);
+  const canLevel = canLevelUp(sheet, canEdit, isGm);
   const latest = sheet?.advancements.at(-1);
   const canUndo = canEdit && latest !== undefined && latest.level === level;
 
@@ -42,8 +40,8 @@ export const LevelUpButton: CharacterSlot = ({ character, canEdit, isGm, hopeAnd
             Level
           </span>
         </div>
-        {canLevel ? (
-          <button type="button" className="lv-up" aria-label={`Level up to ${level + 1}`} title={`Level up to ${level + 1}`} onClick={() => setOpen(true)}>
+        {canLevel && !leveling ? (
+          <button type="button" className="lv-up" aria-label={`Level up to ${level + 1}`} title={`Level up to ${level + 1}`} onClick={onStart}>
             <span aria-hidden="true">▲</span>
           </button>
         ) : null}
@@ -66,15 +64,9 @@ export const LevelUpButton: CharacterSlot = ({ character, canEdit, isGm, hopeAnd
           {undo.error}
         </span>
       ) : null}
-
-      {sheet && canLevel ? (
-        <PaperModal open={open} onClose={() => setOpen(false)} title={`Level up to ${level + 1}`} className="lu-modal">
-          <LevelUpStepper characterId={character._id} sheet={sheet} hopeAndFear={hopeAndFear} onDone={() => setOpen(false)} />
-        </PaperModal>
-      ) : null}
     </div>
   );
-};
+}
 
 /** The Level Up region on the sheet's Story & Advancement page: tier boxes with the history, and the GM correction under them. */
 export const AdvancementTiers: CharacterSlot = ({ character, isGm }) => {
