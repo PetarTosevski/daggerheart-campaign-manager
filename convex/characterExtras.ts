@@ -121,15 +121,23 @@ async function readState<E extends Extra>(ctx: QueryCtx, loaded: Loaded, extra: 
 }
 
 /**
+ * A character's Motherboard module (Ikonis, augments, scrap): its row, else
+ * its old `frameTrackers` row (until the migration has run), else null; null
+ * outside Motherboard.
+ */
+export async function motherboardState(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">): Promise<MotherboardState | null> {
+  if (campaign.frameId !== FRAME_OF.motherboard) return null;
+  const row = await extraRow(ctx, characterId, "motherboard");
+  if (row !== null) return readRow("motherboard", row);
+  return readTracker(ctx, campaign._id, extraKey(characterId, "motherboard"), motherboardStateSchema);
+}
+
+/**
  * The Ikonis augments a character has installed (Motherboard only, CB 301);
  * `[]` in other frames. `derivedDefense` adds Guard, Deny and Block.
  */
 export async function installedAugments(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">): Promise<string[]> {
-  if (campaign.frameId !== FRAME_OF.motherboard) return [];
-  const row = await extraRow(ctx, characterId, "motherboard");
-  if (row !== null) return readRow("motherboard", row).installed;
-  const legacy = await readTracker(ctx, campaign._id, extraKey(characterId, "motherboard"), motherboardStateSchema);
-  return legacy?.installed ?? [];
+  return (await motherboardState(ctx, campaign, characterId))?.installed ?? [];
 }
 
 /** Writes a new character's Motherboard module (`characters.create`). */

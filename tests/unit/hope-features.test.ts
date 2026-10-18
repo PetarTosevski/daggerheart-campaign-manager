@@ -161,7 +161,9 @@ describe("automated Hope features", () => {
     const result = use("sorcerer", { roll, params: { dieIndexes: [0] }, rng: dice(7) });
     expect(result.roll?.dice.map((d) => d.value)).toEqual([7, 9]);
     expect(result.roll?.total).toBe(19);
-    expect(result.roll?.manual).toBe(false);
+    // The other dice are still the typed-in ones, so the roll stays marked manual (review L1).
+    expect(result.roll?.manual).toBe(true);
+    expect(use("sorcerer", { roll: { ...roll, manual: false }, params: { dieIndexes: [0] }, rng: dice(7) }).roll?.manual).toBe(false);
     expect(refusal(() => use("sorcerer", { roll, params: {} }))).toBe("CLASS_FEATURE_RULE");
     expect(refusal(() => use("sorcerer", { roll, params: { dieIndexes: [5] } }))).toBe("CLASS_FEATURE_RULE");
     expect(refusal(() => use("sorcerer", { roll: actionRoll(3, 5, 9, "failFear"), params: { dieIndexes: [0] } }))).toBe("CLASS_FEATURE_RULE");

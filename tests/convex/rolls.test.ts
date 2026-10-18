@@ -385,4 +385,96 @@ describe("rolls: class-feature integration (D5 TI-a)", () => {
     const plain = await other.create("warrior");
     expect(await codeOf(other.gm.mutation(api.rolls.damageRoll, { characterId: plain, ...ikonisDamage, idempotencyKey: key() }))).toBe("DICE_RULE");
   });
+
+  it("Motherboard: an Ikonis still in the old frameTrackers row rolls (characterExtras.motherboardState fallback)", async () => {
+    const { t, gm, campaignId, create } = await classSetup("motherboard");
+    const ikonis = { name: "Spark rod", description: "", trait: "strength" as const, range: "Melee" as const, damageType: "physical" as const };
+    const warrior = await create("warrior", { primaryWeaponId: "" }, ikonis);
+    await t.run(async (ctx) => {
+      const row = (await ctx.db
+        .query("characterExtras")
+        .withIndex("by_character_extra", (q) => q.eq("characterId", warrior).eq("extra", "motherboard"))
+        .unique())!;
+      await ctx.db.delete("characterExtras", row._id);
+      await ctx.db.insert("frameTrackers", { campaignId, key: `character:${warrior}:motherboard`, data: row.data, updatedAt: 7 });
+    });
+    const dmg = await gm.mutation(api.rolls.manualRoll, {
+      characterId: warrior,
+      roll: { kind: "damage", source: { kind: "ikonis" }, critical: false, modifier: 0, options: [] },
+      values: [5],
+      idempotencyKey: key(),
+    });
+    expect(dmg.roll.total).toBe(5 + 1 + 1 + 1);
+  });
+});
+
+// ---------------------------------------------------------------- D5 review fixes (R1)
+
+describe("rolls: trust (review H2, M1)", () => {
+  useAllowlist(EMAILS);
+  const summaryOf = (t: ReturnType<typeof makeTest>, id: Id<"actionLog">) => t.run(async (ctx) => (await ctx.db.get("actionLog", id))!.summary);
+
+  it("tagTeamApply refuses when either character rolled after the tag team; the tag team still undoes", async () => {
+    const { p1, p2, a, b, edit, sheetOf } = await setup();
+    await edit(a, { hope: 6 });
+    const side = { trait: "agility" as const, modifier: 0 };
+    const { rolls } = await p1.mutation(api.rolls.tagTeam, { characterId: a, partnerId: b, initiator: side, partner: side, idempotencyKey: key() });
+    const between = await p2.mutation(api.rolls.actionRoll, { characterId: b, ...agility, idempotencyKey: key() });
+
+    expect(await codeOf(p1.mutation(api.rolls.tagTeamApply, { entryId: rolls[0]!.entryId, pick: a, idempotencyKey: key() }))).toBe("DICE_RULE");
+
+    // With the roll in between undone, the tag team applies again.
+    await p2.mutation(api.actionLog.undo, { entryId: between.entryId, idempotencyKey: key() });
+    expect(await codeOf(p1.mutation(api.rolls.tagTeamApply, { entryId: rolls[0]!.entryId, pick: a, idempotencyKey: key() }))).toBe("ok");
+    await p1.mutation(api.actionLog.undo, { entryId: rolls[0]!.entryId, idempotencyKey: key() });
+    expect((await sheetOf(a)).hope).toBe(6);
+  });
+
+  it("caps the typed modifier at ±10 on action, damage and tag team rolls", async () => {
+    const { p1, a, b, edit } = await setup();
+    await edit(a, { hope: 6 });
+    expect(await codeOf(p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, modifier: 11, idempotencyKey: key() }))).toBe("DICE_RULE");
+    expect(await codeOf(p1.mutation(api.rolls.damageRoll, { characterId: a, ...weapon, modifier: -11, idempotencyKey: key() }))).toBe("DICE_RULE");
+    expect(await codeOf(p1.mutation(api.rolls.manualRoll, { characterId: a, values: [5, 3], roll: { ...agility, modifier: 11 }, idempotencyKey: key() }))).toBe("DICE_RULE");
+    const big = { trait: "agility" as const, modifier: 11 };
+    const ok = { trait: "agility" as const, modifier: 10 };
+    expect(await codeOf(p1.mutation(api.rolls.tagTeam, { characterId: a, partnerId: b, initiator: ok, partner: big, idempotencyKey: key() }))).toBe("DICE_RULE");
+    expect(await codeOf(p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, modifier: 10, idempotencyKey: key() }))).toBe("ok");
+    expect(await codeOf(p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, modifier: -10, idempotencyKey: key() }))).toBe("ok");
+  });
+
+  it("feed lines show the typed modifier and who set the Difficulty", async () => {
+    const { t, gm, p1, a } = await setup();
+    const byPlayer = await p1.mutation(api.rolls.manualRoll, { characterId: a, values: [5, 3], roll: { ...agility, modifier: 3, difficulty: 12 }, idempotencyKey: key() });
+    const player = await summaryOf(t, byPlayer.entryId);
+    expect(player).toContain("+3 typed");
+    expect(player).toContain("vs DC 12 (player)");
+
+    const byGm = await gm.mutation(api.rolls.manualRoll, { characterId: a, values: [5, 3], roll: { ...agility, modifier: -2, difficulty: 12 }, idempotencyKey: key() });
+    const fromGm = await summaryOf(t, byGm.entryId);
+    expect(fromGm).toContain("-2 typed");
+    expect(fromGm).toContain("vs 12");
+    expect(fromGm).not.toContain("(player)");
+
+    const plain = await p1.mutation(api.rolls.manualRoll, { characterId: a, values: [5, 3], roll: agility, idempotencyKey: key() });
+    expect(await summaryOf(t, plain.entryId)).not.toContain("typed");
+  });
+
+  it("a damage critical is declared unless the character's latest action roll was a critical success", async () => {
+    const { t, p1, a } = await setup();
+    const crit = { ...weapon, critical: true };
+    const declared = await p1.mutation(api.rolls.damageRoll, { characterId: a, ...crit, idempotencyKey: key() });
+    expect(await summaryOf(t, declared.entryId)).toContain("critical (declared) damage");
+
+    await p1.mutation(api.rolls.manualRoll, { characterId: a, values: [7, 7], roll: agility, idempotencyKey: key() });
+    const rolled = await p1.mutation(api.rolls.damageRoll, { characterId: a, ...crit, modifier: 2, idempotencyKey: key() });
+    const line = await summaryOf(t, rolled.entryId);
+    expect(line).toContain("Ash: critical damage");
+    expect(line).toContain("+2 typed");
+
+    // A later non-critical action roll unlinks it again.
+    await p1.mutation(api.rolls.manualRoll, { characterId: a, values: [8, 3], roll: agility, idempotencyKey: key() });
+    const again = await p1.mutation(api.rolls.damageRoll, { characterId: a, ...crit, idempotencyKey: key() });
+    expect(await summaryOf(t, again.entryId)).toContain("critical (declared)");
+  });
 });

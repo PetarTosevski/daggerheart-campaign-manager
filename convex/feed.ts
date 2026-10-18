@@ -61,7 +61,7 @@ export const list = campaignQuery({
         actorId: row.actorId,
         ...(row.fearDelta !== undefined ? { fearDelta: row.fearDelta } : {}),
         undone: row.undoneAt !== undefined,
-        canUndo: row.undoable && row.undoneAt === undefined && (isGm || row.actorId === ctx.user._id),
+        canUndo: row.undoable && row.kind !== "rest" && row.undoneAt === undefined && (isGm || row.actorId === ctx.user._id),
       };
       if (isGm) return { ...shown, visibility: row.visibility, revealable: row.kind === "gmRoll" && row.visibility === "gm" };
       // The index already holds only public rows; this keeps the player shape honest.

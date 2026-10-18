@@ -47,6 +47,20 @@ function assertInt(value: number, min: number, max: number, what: string): void 
   if (!Number.isInteger(value) || value < min || value > max) throw new DiceRuleError(`${what} must be a whole number from ${min} to ${max}.`);
 }
 
+/** The most a modifier typed into a character roll adds or takes away (review M1); the dice box bounds its field with it. */
+export const TYPED_MODIFIER_MAX = 10;
+
+/** Refuses a typed modifier outside ±`TYPED_MODIFIER_MAX`. */
+export function assertTypedModifier(value: number): void {
+  assertInt(value, -TYPED_MODIFIER_MAX, TYPED_MODIFIER_MAX, "The typed modifier");
+}
+
+/** " +2 typed" for a non-zero typed modifier: feed lines show what the roller chose. */
+export function typedLabel(modifier: number): string {
+  if (modifier === 0) return "";
+  return ` ${modifier > 0 ? "+" : ""}${modifier} typed`;
+}
+
 function assertSides(sides: number): void {
   if (!(DIE_SIDES as readonly number[]).includes(sides)) throw new DiceRuleError(`A d${sides} isn't a die the app rolls.`);
 }

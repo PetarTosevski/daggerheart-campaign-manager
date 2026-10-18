@@ -7,7 +7,7 @@ import { BRAWLERS_STRIKE } from "@/lib/domain/class-features/classes/brawler";
 import { rollOptions, weaponOverrides } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES } from "@/lib/domain/class-features/index";
 import type { FeatureScope, RollPrompt } from "@/lib/domain/class-features/types";
-import { advantagePlan, weaponDice, type DicePool } from "@/lib/domain/dice";
+import { advantagePlan, TYPED_MODIFIER_MAX, weaponDice, type DicePool } from "@/lib/domain/dice";
 import { ikonisWeapon } from "@/lib/domain/dice/ikonis";
 import type { RollRecord } from "@/lib/domain/duality";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
@@ -220,6 +220,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const hopeCost = experienceIds.length;
   const notEnoughHope = mode !== "damage" && hopeCost > view.hope;
   const manualIncomplete = manual && expected.some((_, i) => toInt(values[i] ?? "") === undefined);
+  const modifierTooBig = Math.abs(toInt(modifier) ?? 0) > TYPED_MODIFIER_MAX;
 
   return (
     <section className="cs-box" aria-label="Dice">
@@ -397,10 +398,11 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" className="cs-pill cs-solid" disabled={unavailable || pending || notEnoughHope || manualIncomplete} onClick={() => void roll()}>
+        <button type="button" className="cs-pill cs-solid" disabled={unavailable || pending || notEnoughHope || manualIncomplete || modifierTooBig} onClick={() => void roll()}>
           {pending ? "Rolling…" : "Roll"}
         </button>
         {notEnoughHope ? <span className="cs-small italic">Not enough Hope for those Experiences.</span> : null}
+        {modifierTooBig ? <span className="cs-small italic">{`The modifier goes from −${TYPED_MODIFIER_MAX} to +${TYPED_MODIFIER_MAX}.`}</span> : null}
         <DiceSettingsToggles className="ml-auto" />
       </div>
       <p aria-live="polite" className="m-0 text-[14px] text-[#8e2b2b] empty:hidden">

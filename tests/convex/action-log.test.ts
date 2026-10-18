@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { logAction } from "../../convex/lib/actionLog";
+import { logAction, PLAYER_DICE_UNDO_MS } from "../../convex/lib/actionLog";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { campaignFearState, gainFear } from "../../convex/lib/fear";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
@@ -193,11 +193,125 @@ describe("actionLog.undo", () => {
     expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: another!, idempotencyKey: key() }))).toBe("ok");
   });
 
+  it("refuses a rest row: rests.undo also reopens the rest (review L4)", async () => {
+    const { t, ids, gm, campaignId } = await setup();
+    const entryId = await t.run((ctx) => logAction(ctx, { campaignId, actorId: ids.gm, kind: "rest", visibility: "public", summary: "Short rest", undoable: true }));
+    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+  });
+
   it("a retry with the same key returns the first result", async () => {
     const { ids, p1, a, act, hope } = await setup();
     const [entryId] = await act(ids.p1, [{ characterId: a, change: hope }], { fear: 1 });
     const idempotencyKey = key();
     const first = await p1.mutation(api.actionLog.undo, { entryId: entryId!, idempotencyKey });
     expect(await p1.mutation(api.actionLog.undo, { entryId: entryId!, idempotencyKey })).toEqual(first);
+  });
+});
+
+// ---------------------------------------------------------------- D5 review fixes (R1)
+
+const agility = { kind: "action" as const, trait: "agility" as const, modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
+const ROLL = {
+  kind: "action" as const,
+  dice: [
+    { sides: 12, value: 8, role: "hope" as const },
+    { sides: 12, value: 3, role: "fear" as const },
+  ],
+  modifier: 0,
+  total: 11,
+  outcome: "successHope" as const,
+  manual: false,
+};
+
+describe("actionLog.undo: nothing newer is lost (review H1, H2, M2)", () => {
+  useAllowlist(EMAILS);
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const later = (ms: number) => vi.setSystemTime(Date.now() + ms);
+  const hopeRoll = (who: { mutation: ReturnType<typeof makeTest>["mutation"] }, characterId: Id<"characters">) =>
+    who.mutation(api.rolls.manualRoll, { characterId, values: [8, 3], roll: agility, idempotencyKey: key() });
+
+  it("H1: a roll can't be undone after an unlogged change (applyDamage); the damage stays", async () => {
+    const { gm, p1, a, sheetOf } = await setup();
+    const roll = await hopeRoll(p1, a);
+    later(1000);
+    await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 3, useArmorSlot: false });
+    const damaged = await sheetOf(a);
+
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: roll.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: roll.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+    expect(await sheetOf(a)).toEqual(damaged);
+  });
+
+  it("H1: undoing newer rows one by one still works (undo's own write is not a newer change)", async () => {
+    const { p1, a, sheetOf } = await setup();
+    const hopeBefore = (await sheetOf(a)).hope;
+    const first = await hopeRoll(p1, a);
+    later(1000);
+    const second = await hopeRoll(p1, a);
+    later(1000);
+    await p1.mutation(api.actionLog.undo, { entryId: second.entryId, idempotencyKey: key() });
+    later(1000);
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: first.entryId, idempotencyKey: key() }))).toBe("ok");
+    expect((await sheetOf(a)).hope).toBe(hopeBefore);
+  });
+
+  it("H2: a group is refused while a live row of its character sits between its rows", async () => {
+    const { t, ids, gm, campaignId, a, b, act, hope, sheetOf } = await setup();
+    /** One row of a two-step action (like a Tag Team roll, then its apply). */
+    const groupRow = (characterId: Id<"characters">, groupId: string) =>
+      t.run(async (ctx) => {
+        const before = readSheet((await ctx.db.get("characters", characterId))!.sheet);
+        await saveSheet(ctx, characterId, hope(before));
+        return logAction(ctx, { campaignId, characterId, actorId: ids.gm, kind: "roll", visibility: "public", summary: "two steps", groupId, before, undoable: true });
+      });
+    const split = crypto.randomUUID();
+    await groupRow(a, split);
+    later(1000);
+    await act(ids.gm, [{ characterId: a, change: hope }]);
+    later(1000);
+    const last = await groupRow(a, split);
+    // The newest row is in the group, but undoing it would wipe the roll in between.
+    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: last, idempotencyKey: key() }))).toBe("UNDO_STALE");
+
+    // Nothing in between: the two steps undo together.
+    const hopeBefore = (await sheetOf(b)).hope;
+    const whole = crypto.randomUUID();
+    await groupRow(b, whole);
+    later(1000);
+    const end = await groupRow(b, whole);
+    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: end, idempotencyKey: key() }))).toBe("ok");
+    expect((await sheetOf(b)).hope).toBe(hopeBefore);
+  });
+
+  it(`M2: a player undoes their dice row only within ${PLAYER_DICE_UNDO_MS / 1000} seconds; the GM any time`, async () => {
+    const { ids, gm, p1, a, act, hope } = await setup();
+    const fresh = await hopeRoll(p1, a);
+    later(PLAYER_DICE_UNDO_MS);
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: fresh.entryId, idempotencyKey: key() }))).toBe("ok");
+
+    const old = await hopeRoll(p1, a);
+    later(PLAYER_DICE_UNDO_MS + 1);
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: old.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: old.entryId, idempotencyKey: key() }))).toBe("ok");
+
+    // A row without dice has no time limit.
+    const [noDice] = await act(ids.p1, [{ characterId: a, change: hope }]);
+    later(10 * PLAYER_DICE_UNDO_MS);
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: noDice!, idempotencyKey: key() }))).toBe("ok");
+  });
+
+  it("M2: the limit covers death-move rows that carry dice", async () => {
+    const { t, ids, p1, campaignId, a } = await setup();
+    const entryId = await t.run((ctx) =>
+      logAction(ctx, { campaignId, characterId: a, actorId: ids.p1, kind: "death", visibility: "public", summary: "Risk It All", roll: ROLL, undoable: true }),
+    );
+    later(PLAYER_DICE_UNDO_MS + 1);
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
   });
 });

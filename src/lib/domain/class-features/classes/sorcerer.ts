@@ -82,7 +82,7 @@ export const sorcerer: ClassFeatures = {
       });
       return {
         sheet,
-        roll: { ...roll, dice, total, manual: false },
+        roll: { ...roll, dice, total, manual: roll.manual },
         summary: `used Volatile Magic: rerolled ${indexes.length} damage ${indexes.length === 1 ? "die" : "dice"}, ${roll.total} → ${total}`,
       };
     },
