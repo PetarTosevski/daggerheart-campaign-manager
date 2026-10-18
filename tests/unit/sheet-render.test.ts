@@ -19,7 +19,7 @@ vi.mock("convex/react", () => ({
 }));
 
 vi.mock("@/app/(gm)/campaigns/[campaignId]/campaign-shell", () => ({
-  useCampaign: () => ({ _id: "k1", options: { hopeAndFear: false } }),
+  useCampaign: () => ({ _id: "k1", frameId: "witherwild", options: { hopeAndFear: false } }),
 }));
 
 const { CharacterSheetView } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet");
