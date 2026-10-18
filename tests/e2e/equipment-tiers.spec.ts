@@ -10,7 +10,7 @@ const unique = (label: string) => `${label} ${crypto.randomUUID().slice(0, 8)}`;
 const TIER_3 = "Advanced Broadsword (Tier 3)";
 
 /** T2's GM correction (decision 4): sets the level directly, no automation. */
-const correctLevel = makeFunctionReference<"mutation", { characterId: string; level: number }>("levelUp:correctLevel");
+const correctLevel = makeFunctionReference<"mutation", { characterId: string; level: number; idempotencyKey: string }>("levelUp:correctLevel");
 
 async function convexAs(page: Page): Promise<ConvexHttpClient> {
   const token = await page.evaluate(() => {
@@ -81,13 +81,7 @@ test("a level-1 character cannot see a Tier 3 weapon", async ({ page }) => {
 
 test("a level-5 character can pick a Tier 3 weapon", async ({ page }) => {
   const { client, characterId } = await setup(page);
-  try {
-    await client.mutation(correctLevel, { characterId, level: 5 });
-  } catch (error) {
-    // levelUp.correctLevel lands with T2; until then there is no way to raise a level.
-    test.skip(String(error).includes("Could not find public function"), "needs T2's levelUp.correctLevel");
-    throw error;
-  }
+  await client.mutation(correctLevel, { characterId, level: 5, idempotencyKey: `level-5-${characterId}` });
   const primary = page.getByLabel("Primary weapon");
   await expect(primary.getByRole("option", { name: TIER_3 })).toBeAttached();
   await primary.selectOption({ label: TIER_3 });
