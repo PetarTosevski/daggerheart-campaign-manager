@@ -109,6 +109,10 @@
   box-sizing: border-box;
 }
 .enc-ghost:hover { background: var(--enc-raised); }
+/* On the parchment stat block: the main action, solid wine with cream text (the dark-page ghost style was unreadable there). */
+.enc-ghost.enc-on-paper { background: #5b2b2b; border-color: #5b2b2b; color: #f6ead2; font-weight: 700; }
+.enc-ghost.enc-on-paper:hover { background: #6e3434; border-color: #6e3434; }
+.enc-ghost.enc-on-paper:focus-visible { outline: 2px solid #5b2b2b; outline-offset: 2px; }
 .enc-ghost:disabled { opacity: 0.5; cursor: default; }
 .enc-danger { color: var(--enc-danger); border-color: var(--enc-danger-border); }
 .enc-ghost:focus-visible,
