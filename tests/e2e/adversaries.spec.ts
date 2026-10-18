@@ -2,7 +2,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { signInAsTestGm } from "./fixtures";
 
-// D8 A0: the GM-only Adversaries page shell (tabs Catalogue / Encounters with their slots); players see no nav item
+// D8 A0: the GM-only Adversaries page shell (tabs Catalogue / Encounters / Environment (EV1) with their slots); players see no nav item
 // and a GM-only panel, and their page asks the server for no adversary or party data.
 
 const PLAYER = "e2e-player@example.test";
@@ -60,15 +60,24 @@ test("the GM opens Adversaries from the nav and switches tabs with the mouse and
   await expect(encountersPanel.getByRole("button", { name: "+ New encounter" })).toBeVisible();
   await expect(encountersPanel.getByRole("heading", { name: "Encounter tracker" })).toBeVisible();
 
-  // Arrow keys move the selection and the focus (WAI-ARIA tabs).
+  // Arrow keys move the selection and the focus (WAI-ARIA tabs), wrapping at the ends.
+  const environment = tabs.getByRole("tab", { name: "Environment" });
   await encounters.press("ArrowRight");
+  await expect(environment).toHaveAttribute("aria-selected", "true");
+  await expect(environment).toBeFocused();
+  await expect(page.getByRole("tabpanel", { name: "Environment" }).getByRole("region", { name: "Environment list" })).toBeVisible();
+  await environment.press("ArrowRight");
   await expect(catalogue).toHaveAttribute("aria-selected", "true");
   await expect(catalogue).toBeFocused();
   await catalogue.press("ArrowLeft");
+  await expect(environment).toHaveAttribute("aria-selected", "true");
+  await environment.press("ArrowLeft");
   await expect(encounters).toHaveAttribute("aria-selected", "true");
   await expect(encounters).toBeFocused();
   await encounters.press("Home");
   await expect(catalogue).toHaveAttribute("aria-selected", "true");
+  await catalogue.press("End");
+  await expect(environment).toHaveAttribute("aria-selected", "true");
 });
 
 test("a joined player has no Adversaries nav item and sees the GM-only panel at the URL, with no data request", async ({ page, browser }) => {
