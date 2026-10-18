@@ -11,9 +11,9 @@ const row = (page: Page, name: string) => list(page).getByRole("button", { name:
 
 test("search 'burrower' shows Acid Burrower and its stat block", async ({ page }) => {
   await openAdversaries(page, "witherwild");
-  await expect(list(page).getByText("129 adversaries", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("catalogue-count")).toHaveText("129 adversaries");
   await list(page).getByRole("searchbox", { name: "Search adversaries" }).fill("burrower");
-  await expect(list(page).getByText("1 of 129 shown")).toBeVisible();
+  await expect(page.getByTestId("catalogue-count")).toHaveText("1 of 129 shown");
   await expect(row(page, "Acid Burrower")).toHaveAttribute("aria-current", "true");
   await expect(list(page).locator(".adc-item")).toHaveCount(1);
 
@@ -72,9 +72,9 @@ test("a Witherwild campaign (Hope & Fear off) shows no Hope & Fear entries and n
 
 test("a Castle High campaign shows Hope & Fear entries with their pill and source line", async ({ page }) => {
   await openAdversaries(page, "castle-high");
-  await expect(list(page).getByText("264 adversaries · 129 core, 135 Hope & Fear")).toBeVisible();
+  await expect(page.getByTestId("catalogue-count")).toHaveText("264 adversaries · 129 core, 135 Hope & Fear");
   await list(page).getByRole("group", { name: "Book" }).getByRole("button", { name: "Hope & Fear" }).click();
-  await expect(list(page).getByText("135 of 264 shown")).toBeVisible();
+  await expect(page.getByTestId("catalogue-count")).toHaveText("135 of 264 shown");
   await list(page).getByRole("searchbox", { name: "Search adversaries" }).fill("ahuizotl");
   await expect(row(page, "Ahuizotl")).toBeVisible();
   const block = statBlock(page);

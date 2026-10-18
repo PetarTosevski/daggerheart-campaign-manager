@@ -107,11 +107,13 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
   }
 
   return (
-    <div className="adc-grid">
+    <>
+      {/* The count sits above the grid so the stat block lines up with the search bar and the list's bottom. */}
+      <p className="adc-count" aria-live="polite" data-testid="catalogue-count">
+        {countLine(visible, matches.length)}
+      </p>
+      <div className="adc-grid">
       <section className="adc-browse" aria-label="Adversary list">
-        <p className="adc-count" aria-live="polite">
-          {countLine(visible, matches.length)}
-        </p>
         <div className="adc-filters">
           <input
             className="adc-search"
@@ -183,6 +185,7 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
       <aside ref={detailRef} className="adc-detail" aria-label="Stat block">
         {selected ? <StatBlock adversary={selected} actions={renderActions(selected)} /> : null}
       </aside>
-    </div>
+      </div>
+    </>
   );
 }
