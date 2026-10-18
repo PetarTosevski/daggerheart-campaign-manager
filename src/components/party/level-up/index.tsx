@@ -1,84 +1,92 @@
 "use client";
 
+import "./level-up.css";
+
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { Modal } from "@/components/brand/modal";
+import { Badge, PaperModal } from "@/components/party/sheet-ui";
 import { MAX_LEVEL } from "@/lib/domain/characters";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { CampaignSlot, CharacterSlot } from "../slots";
 
-import { CorrectLevel, TierGrid } from "./history";
+import { CorrectLevel, TierBoxes } from "./history";
 import { fullSheet } from "./shared";
 import { LevelUpStepper } from "./stepper";
 
-// D5 level-up (T2). Contract: ../slots.ts.
+// D5 level-up (T2); board look from the sheet redesign (S8). Contract: ../slots.ts.
 
-const paperButton =
-  "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 font-display text-[13px] font-bold tracking-[0.06em] disabled:cursor-not-allowed disabled:opacity-50";
-
-/** The sheet header's level circle (66 px double ring). */
-function LevelCircle({ level }: { level: number }) {
-  return (
-    <div className="cs-lvl" role="img" aria-label={`Level ${level}`}>
-      <strong aria-hidden="true">{level}</strong>
-      <span aria-hidden="true">LEVEL</span>
-    </div>
-  );
-}
-
-/** The sheet header's level circle with the level-up button and stepper beside it; plus undo, history and the GM correction. */
+/**
+ * The header's lvl-wrap: the 66 px level circle (img "Level N"), a green ▲ badge that opens the stepper when the viewer
+ * may level up, and the small − that undoes the latest level-up. Viewers who cannot level see "Level up pending".
+ */
 export const LevelUpButton: CharacterSlot = ({ character, canEdit, isGm, hopeAndFear }) => {
-  const [open, setOpen] = useState<"stepper" | "history" | null>(null);
+  const [open, setOpen] = useState(false);
   const undo = useIntent(api.levelUp.undoLast);
   const sheet = fullSheet(character);
-  if (!sheet) return <LevelCircle level={character.sheet.level} />;
-  const name = sheet.name;
-  const canLevel = canEdit && sheet.level < MAX_LEVEL && (sheet.levelUpPending || isGm);
-  const latest = sheet.advancements.at(-1);
-  const canUndo = canEdit && latest !== undefined && latest.level === sheet.level;
+  const level = sheet?.level ?? character.sheet.level;
+  const canLevel = sheet !== null && canEdit && level < MAX_LEVEL && (sheet.levelUpPending || isGm);
+  const latest = sheet?.advancements.at(-1);
+  const canUndo = canEdit && latest !== undefined && latest.level === level;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <LevelCircle level={sheet.level} />
-      {canLevel ? (
-        <button type="button" className={`${paperButton} border-[#4f8a3a] bg-[#5b8c45] text-white`} onClick={() => setOpen("stepper")}>
-          Level up to {sheet.level + 1}
-        </button>
-      ) : sheet.levelUpPending ? (
-        <span className="rounded-full bg-[#5b8c45] px-3 py-1 text-[13px] font-semibold text-white">Level up pending</span>
-      ) : null}
-      {canUndo ? (
-        <button type="button" className={`${paperButton} border-[#6b2b26] bg-[#fffaf0] text-[#6b2b26]`} disabled={undo.pending} onClick={() => void undo.fire({ characterId: character._id })}>
-          Undo level {sheet.level}
-        </button>
-      ) : null}
-      {canEdit ? (
-        <button type="button" className={`${paperButton} border-[#8a6d4a] bg-[#fffaf0] text-[#3a2a14]`} onClick={() => setOpen("history")}>
-          Advancements
-        </button>
-      ) : null}
+    <div className="lvl-row">
+      <div className="lvl-wrap">
+        <div className="lvl-circle" role="img" aria-label={`Level ${level}`}>
+          <span className="lv-n" aria-hidden="true">
+            {level}
+          </span>
+          <span className="lv-l" aria-hidden="true">
+            Level
+          </span>
+        </div>
+        {canLevel ? (
+          <button type="button" className="lv-up" aria-label={`Level up to ${level + 1}`} title={`Level up to ${level + 1}`} onClick={() => setOpen(true)}>
+            <span aria-hidden="true">▲</span>
+          </button>
+        ) : null}
+        {canUndo ? (
+          <button
+            type="button"
+            className="lvl-down"
+            aria-label={`Undo level ${level}`}
+            title={`Undo level ${level}`}
+            disabled={undo.pending}
+            onClick={() => void undo.fire({ characterId: character._id })}
+          >
+            <span aria-hidden="true">−</span>
+          </button>
+        ) : null}
+      </div>
+      {!canLevel && sheet?.levelUpPending ? <Badge tone="green">Level up pending</Badge> : null}
       {undo.error ? (
-        <span role="alert" className="text-[14px] text-[#8a1c1c]">
+        <span role="alert" className="lvl-error">
           {undo.error}
         </span>
       ) : null}
 
-      <Modal open={open === "stepper"} onClose={() => setOpen(null)} title={`Level up to ${sheet.level + 1}`} className="max-w-[760px]">
-        <LevelUpStepper characterId={character._id} sheet={sheet} hopeAndFear={hopeAndFear} onDone={() => setOpen(null)} />
-      </Modal>
-      <Modal open={open === "history"} onClose={() => setOpen(null)} title={`${name}'s advancements`} className="max-w-[900px]">
-        <TierGrid sheet={sheet} />
-        {isGm ? <CorrectLevel characterId={character._id} level={sheet.level} /> : null}
-      </Modal>
+      {sheet && canLevel ? (
+        <PaperModal open={open} onClose={() => setOpen(false)} title={`Level up to ${level + 1}`} className="lu-modal">
+          <LevelUpStepper characterId={character._id} sheet={sheet} hopeAndFear={hopeAndFear} onDone={() => setOpen(false)} />
+        </PaperModal>
+      ) : null}
     </div>
   );
 };
 
-/** The Level Up region on the sheet's Story & Advancement page (tier boxes and history). Mount point; S8 fills it. */
-export const AdvancementTiers: CharacterSlot = () => null;
+/** The Level Up region on the sheet's Story & Advancement page: tier boxes with the history, and the GM correction under them. */
+export const AdvancementTiers: CharacterSlot = ({ character, isGm }) => {
+  const sheet = fullSheet(character);
+  if (!sheet) return null;
+  return (
+    <div className="flex flex-col gap-3">
+      <TierBoxes sheet={sheet} />
+      {isGm ? <CorrectLevel characterId={character._id} level={sheet.level} /> : null}
+    </div>
+  );
+};
 
 function PendingBadge({ label }: { label: string }) {
   return (
