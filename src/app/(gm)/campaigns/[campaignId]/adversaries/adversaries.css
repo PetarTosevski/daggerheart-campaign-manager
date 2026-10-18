@@ -1,0 +1,171 @@
+/*
+ * Adversaries page (D8): the board's tokens (reference/designs/project/Adversaries.dc.html, lines 11-70) as custom
+ * properties on .adv-root, plus the page shell (header, tabs). Feature slots (catalogue, builder, tracker, custom)
+ * use these tokens and keep their own rules in their own colocated .css. Fonts come from the root layout:
+ * --font-cinzel (headings, names, numbers), --font-garamond (stat-block body), --font-plex (UI).
+ */
+.adv-root {
+  /* Dark shell */
+  --adv-page: #0d1417;
+  --adv-list: #111a1d;
+  --adv-tierhead: #0f171a;
+  --adv-search: #141e22;
+  --adv-border: #1f2c31;
+  --adv-border-strong: #33444a;
+  --adv-border-row: #18252a;
+  --adv-text: #e6ecea;
+  --adv-muted: #9fb2b6;
+  --adv-muted-2: #8fa3a8;
+  --adv-row-hover: #16242a;
+  --adv-row-selected: #1b2a24;
+  --adv-chip-text: #cfd9d6;
+  --adv-chip-hover: #6f8f86;
+  --adv-name: #f1ead9;
+  --adv-type-bg: #1f2c31;
+  /* Accent: the app's settings accent (the board's --acc), with the board's default */
+  --adv-acc: var(--brand, #e3b45a);
+  --adv-acc-ink: #1a1408;
+  /* Hope & Fear pill */
+  --adv-hf-border: #5b4a8f;
+  --adv-hf-bg: #1e1930;
+  --adv-hf-hope: #f0cf8a;
+  --adv-hf-amp: #a39cb2;
+  --adv-hf-fear: #c6b6f2;
+  /* Parchment stat block */
+  --adv-parch: #efe3c8;
+  --adv-parch-head: #e6d6b2;
+  --adv-parch-rule: #8e2b2b;
+  --adv-ink: #2a1f14;
+  --adv-ink-soft: #4a3a26;
+  --adv-label: #6a4a22;
+  --adv-label-2: #6a5236;
+  --adv-divider: #cdb88f;
+  --adv-stat-bg: #e8d9b8;
+  --adv-atk-bg: #2a1f14;
+  --adv-atk-text: #f6ead2;
+  --adv-atk-hi: #f0cf8a;
+  --adv-parch-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  /* Pips (22 px) */
+  --adv-pip-size: 22px;
+  --adv-pip-hp: #b8322a;
+  --adv-pip-stress: #4a2a7a;
+  --adv-pip-empty: #f6ecd6;
+  /* Feature kind badges */
+  --adv-kind-passive: #5d6b4a;
+  --adv-kind-action: #8e2b2b;
+  --adv-kind-reaction: #2f5a7a;
+  --adv-kind-fear: #4a2a7a;
+  --adv-kind-evolution: #9a5a14;
+  --adv-kind-other: #6a5236;
+  /* Error banner */
+  --adv-error-border: #8e2b2b;
+  --adv-error-bg: #2a1012;
+  --adv-error-text: #ffd9d6;
+
+  --adv-font-head: var(--font-cinzel), serif;
+  --adv-font-body: var(--font-garamond), serif;
+  --adv-font-ui: var(--font-plex), sans-serif;
+
+  background: var(--adv-page);
+  color: var(--adv-text);
+  font-family: var(--adv-font-ui);
+  box-sizing: border-box;
+}
+
+.adv-top { border-bottom: 1px solid var(--adv-border); }
+.adv-bar {
+  max-width: 1344px;
+  margin: 0 auto;
+  padding: 16px 48px;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.adv-title { margin: 0; font-family: var(--adv-font-head); font-size: 30px; font-weight: 900; letter-spacing: 0.06em; color: var(--adv-text); }
+.adv-count { font-size: 13px; color: var(--adv-muted); }
+.adv-blurb { font-size: 13px; color: var(--adv-muted); max-width: 420px; text-align: right; margin: 0; }
+
+.adv-main { max-width: 1344px; margin: 0 auto; padding: 24px 48px 48px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px; }
+
+.adv-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.adv-tab {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid var(--adv-border-strong);
+  background: transparent;
+  color: var(--adv-chip-text);
+  font-family: var(--adv-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.adv-tab:hover { border-color: var(--adv-chip-hover); }
+.adv-tab[aria-selected="true"] { background: var(--adv-acc); border-color: var(--adv-acc); color: var(--adv-acc-ink); }
+.adv-tab:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 2px; }
+
+.adv-panel { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.adv-panel:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 4px; border-radius: 8px; }
+
+.adv-stub {
+  margin: 0;
+  padding: 28px;
+  border: 2px dashed var(--adv-border-strong);
+  border-radius: 14px;
+  background: var(--adv-list);
+  color: var(--adv-muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+.adv-alert {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--adv-error-border);
+  background: var(--adv-error-bg);
+  color: var(--adv-error-text);
+  font-size: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.adv-alert button {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid var(--adv-error-text);
+  background: transparent;
+  color: var(--adv-error-text);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.adv-gm-only {
+  max-width: 640px;
+  margin: 48px auto;
+  padding: 28px;
+  border: 1px solid var(--adv-border);
+  border-radius: 14px;
+  background: var(--adv-list);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.adv-gm-only p { margin: 0; color: var(--adv-muted); font-size: 15px; }
+
+@media (max-width: 980px) {
+  .adv-bar { padding: 12px 16px; }
+  .adv-main { padding: 16px; }
+  .adv-blurb { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .adv-root * { transition: none !important; animation: none !important; }
+}

@@ -89,6 +89,26 @@ export async function openSheet(
   return { client, campaignId, characterId, url, sheet };
 }
 
+/**
+ * Signs in as the test GM, starts a campaign of `frame` through the UI and opens its Adversaries page (D8,
+ * .omc/plans/d8.yaml). Returns a Convex client for seeding, the campaign id and the page URL.
+ */
+export async function openAdversaries(page: Page, frame = "witherwild") {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const campaignName = `Visual ${crypto.randomUUID().slice(0, 8)}`;
+  await page.goto(`/frames/${frame}`);
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(campaignName);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: campaignName })).toBeVisible();
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+  const url = `/campaigns/${campaignId}/adversaries`;
+  await page.goto(url);
+  await expect(page.getByRole("heading", { level: 1, name: "Adversaries" })).toBeVisible();
+  return { client: await convexAs(page), campaignId, url };
+}
+
 /** The sheet's page tab ("Character Sheet", "Story & Advancement", "Domains") or a Domains sub-tab. */
 export async function openTab(page: Page, name: string) {
   await page.getByRole("tab", { name, exact: true }).click();

@@ -5,6 +5,7 @@ import { classFeatureMessages } from "./classFeatures";
 import { commonMessages } from "./common";
 import { deathMessages } from "./death";
 import { diceMessages } from "./dice";
+import { encounterMessages } from "./encounters";
 import { levelUpMessages } from "./levelUp";
 import { photoImportMessages } from "./photoImport";
 import { restMessages } from "./rests";
@@ -26,6 +27,7 @@ export type AppErrorCode =
   | keyof typeof witherMessages
   | keyof typeof classFeatureMessages
   | keyof typeof photoImportMessages
+  | keyof typeof encounterMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"

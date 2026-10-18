@@ -223,6 +223,22 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("codexCounters").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "codexCounters", rows);
   },
+  // Adversary instances go before the encounters and custom adversaries they reference.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("encounterAdversaries").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "encounterAdversaries", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db
+      .query("encounters")
+      .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", c))
+      .take(budget.left);
+    await deleteRows(ctx, budget, "encounters", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("customAdversaries").withIndex("by_campaign_name", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "customAdversaries", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "operations", rows);

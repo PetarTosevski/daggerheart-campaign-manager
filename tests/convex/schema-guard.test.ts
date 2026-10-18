@@ -113,6 +113,9 @@ const CAMPAIGN_SCOPED = [
   "actionLog",
   "rests",
   "restChoices",
+  "encounters",
+  "encounterAdversaries",
+  "customAdversaries",
 ];
 const BOUNDED = ["settings", "grants", ...Object.keys(authTables)];
 

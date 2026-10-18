@@ -8,6 +8,7 @@ import { codexMessages } from "./errors/codex";
 import { commonMessages } from "./errors/common";
 import { deathMessages } from "./errors/death";
 import { diceMessages } from "./errors/dice";
+import { encounterMessages } from "./errors/encounters";
 import { levelUpMessages } from "./errors/levelUp";
 import { mapMessages } from "./errors/maps";
 import { operationMessages } from "./errors/operations";
@@ -44,6 +45,7 @@ const MESSAGES = mergeMessages(
   witherMessages,
   classFeatureMessages,
   photoImportMessages,
+  encounterMessages,
 );
 
 /** A message for the GM from an error thrown by a Convex function. */

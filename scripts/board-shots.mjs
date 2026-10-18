@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-// Shoots named regions of the Party board's character sheet (reference/designs/project/Party.dc.html, opened
-// from disk) at 1440x900 and 390x844 into test-results/visual/board/<region>-<width>.png, for side-by-side
-// comparison with the app shots of tests/e2e/visual/<tracer>.spec.ts (.omc/plans/sheet-redesign.yaml).
+// Shoots named regions of a Claude Design board (opened from disk) at 1440x900 and 390x844 into
+// test-results/visual/board/<region>-<width>.png, for side-by-side comparison with the app shots of
+// tests/e2e/visual/<tracer>.spec.ts.
 //
-//   node scripts/board-shots.mjs                 # list the regions
-//   node scripts/board-shots.mjs defence hope    # shoot those regions
-//   node scripts/board-shots.mjs all             # shoot every region
+//   node scripts/board-shots.mjs                          # list the regions
+//   node scripts/board-shots.mjs defence hope             # Party board regions (.omc/plans/sheet-redesign.yaml)
+//   node scripts/board-shots.mjs adversaries:statblock    # Adversaries board regions (.omc/plans/d8.yaml)
+//   node scripts/board-shots.mjs all                      # every Party region; adversaries:all for every Adversaries one
 //
-// The board seeds a "Test Bard" on its first load, so the script reloads once and then clicks "Open character
+// Party: the board seeds a "Test Bard" on its first load, so the script reloads once and then clicks "Open character
 // sheet". Images stored as /_blob/... (portrait art, Hope coins, card art) do not load from disk, so those areas
-// render blank; that is expected (reference/designs/CLAUDE.md).
+// render blank; that is expected (reference/designs/CLAUDE.md). Adversaries: each region gets a fresh load; Acid
+// Burrower is selected by default, `empty` searches for "zzzz". Adversaries shots are saved as adversaries-<region>-<width>.png.
 
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -65,13 +67,34 @@ const REGIONS = {
   "hero-cards": { page: "Domains", sub: /Heritage|Subclass|Hero/i, find: (p) => p.locator(`${DIALOG} .hc-grid`) },
 };
 
+const ADVERSARIES_BOARD = pathToFileURL(join(ROOT, "reference/designs/project/Adversaries.dc.html")).href;
+/** Adversaries board region -> how to find it, after an optional step on a freshly loaded board. */
+const ADVERSARY_REGIONS = {
+  page: { find: () => null },
+  header: { find: (p) => p.locator(".ad-top") },
+  filters: { find: (p) => p.locator(".ad-filters") },
+  list: { find: (p) => p.locator(".ad-list") },
+  statblock: { find: (p) => p.locator(".ad-detail") },
+  empty: { prepare: (p) => p.locator(".ad-search").fill("zzzz"), find: (p) => p.locator(".ad-list") },
+};
+
 const wanted = process.argv.slice(2);
 if (wanted.length === 0) {
-  console.log(`Regions: ${Object.keys(REGIONS).join(", ")}\nUsage: node scripts/board-shots.mjs <region...> | all`);
+  console.log(
+    `Party regions: ${Object.keys(REGIONS).join(", ")}\n` +
+      `Adversaries regions: ${Object.keys(ADVERSARY_REGIONS).map((r) => `adversaries:${r}`).join(", ")}\n` +
+      "Usage: node scripts/board-shots.mjs <region...> | all | adversaries:all",
+  );
   process.exit(0);
 }
-const names = wanted.includes("all") ? Object.keys(REGIONS) : wanted;
-const unknown = names.filter((n) => !REGIONS[n]);
+const advWanted = wanted.filter((n) => n.startsWith("adversaries:")).map((n) => n.slice("adversaries:".length));
+const partyWanted = wanted.filter((n) => !n.startsWith("adversaries:"));
+const names = partyWanted.includes("all") ? Object.keys(REGIONS) : partyWanted;
+const advNames = advWanted.includes("all") ? Object.keys(ADVERSARY_REGIONS) : advWanted;
+const unknown = [
+  ...names.filter((n) => !REGIONS[n]),
+  ...advNames.filter((n) => !ADVERSARY_REGIONS[n]).map((n) => `adversaries:${n}`),
+];
 if (unknown.length) {
   console.error(`Unknown region(s): ${unknown.join(", ")}. Run without arguments for the list.`);
   process.exit(1);
@@ -81,7 +104,31 @@ mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch();
 let failed = 0;
 try {
-  for (const viewport of VIEWPORTS) {
+  for (const viewport of advNames.length ? VIEWPORTS : []) {
+    const page = await browser.newPage({ viewport });
+    for (const name of advNames) {
+      const region = ADVERSARY_REGIONS[name];
+      await page.goto(ADVERSARIES_BOARD);
+      await page.locator(".ad-item").first().waitFor({ timeout: 20000 });
+      if (region.prepare) await region.prepare(page);
+      const path = join(OUT, `adversaries-${name}-${viewport.width}.png`);
+      try {
+        const target = region.find(page);
+        if (target === null) {
+          await page.screenshot({ path, fullPage: true, animations: "disabled" });
+        } else {
+          await target.first().waitFor({ timeout: 5000 });
+          await target.first().screenshot({ path, animations: "disabled" });
+        }
+        console.log(path);
+      } catch (error) {
+        failed += 1;
+        console.error(`adversaries:${name} @ ${viewport.width}: not found (${error.message.split("\n")[0]})`);
+      }
+    }
+    await page.close();
+  }
+  for (const viewport of names.length ? VIEWPORTS : []) {
     const page = await browser.newPage({ viewport });
     await page.goto(BOARD);
     await page.waitForLoadState("networkidle");

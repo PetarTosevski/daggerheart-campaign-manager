@@ -57,3 +57,34 @@ export async function revertFear(
   }
   return { previousValue: state.fear, newValue, reverted: state.fear - newValue };
 }
+
+/** Why the GM spends Fear (CB p.154): an interrupt, an additional GM move, a Fear Feature, or an adversary's Experience. */
+export const FEAR_SPEND_REASONS = ["interrupt", "move", "feature", "experience"] as const;
+export type FearSpendReason = (typeof FEAR_SPEND_REASONS)[number];
+
+/**
+ * Spends `amount` (a whole number 1–12, else FEAR_RANGE) of the campaign's GM Fear for `reason` (CB p.154). Refuses with
+ * FEAR_EMPTY when the GM holds less than `amount`, and records the change in `history` (action "spend"),
+ * with the signed-in caller as `by`. The history row has no reason field; the reason is returned for the
+ * caller's own log.
+ *
+ * ```ts
+ * await spendFear(ctx, ctx.campaign._id, 1, "move"); // GM Fear 3 → 2
+ * ```
+ */
+export async function spendFear(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  amount: number,
+  reason: FearSpendReason,
+): Promise<{ previousValue: number; newValue: number; reason: FearSpendReason }> {
+  if (!Number.isInteger(amount) || amount < 1 || amount > MAX_FEAR) {
+    throw appError("FEAR_RANGE", `Fear to spend must be a whole number from 1 to ${MAX_FEAR}.`);
+  }
+  const state = await campaignFearState(ctx, campaignId);
+  if (state.fear < amount) throw appError("FEAR_EMPTY");
+  const newValue = state.fear - amount;
+  await ctx.db.patch("campaignState", state._id, { fear: newValue });
+  await recordHistory(ctx, await getAuthUserId(ctx), { campaignId, kind: "fear", action: "spend", before: state.fear, after: newValue });
+  return { previousValue: state.fear, newValue, reason };
+}
