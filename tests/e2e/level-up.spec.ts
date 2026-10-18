@@ -116,18 +116,17 @@ test("the GM flags the party, the player levels to 2 through the guided mode, an
   await traits.getByRole("button", { name: /Instinct/ }).click();
   await expect(traits.getByRole("button", { name: /Agility/ })).toHaveAttribute("aria-pressed", "true");
   await expect(traits.getByRole("button", { name: /Instinct/ })).toHaveAttribute("aria-pressed", "true");
-  await levelUp.getByRole("checkbox", { name: "Tier 2: +1 Stress slot for level 2" }).check();
+  // Ticking the last pick moves to the Domain Deck at once, so click (check() would re-read the box after it left).
+  await levelUp.getByRole("checkbox", { name: "Tier 2: +1 Stress slot for level 2" }).click();
   await expect(steps.getByRole("button", { name: "Advancements (2/2) (done)" })).toBeVisible();
 
-  // Next: the Domain Deck. Choose the level's card.
-  await ribbon.getByRole("button", { name: "Next" }).click();
+  // Completing both picks goes on to the Domain Deck by itself. Choose the level's card.
   const deck = player.getByRole("region", { name: "Domain Deck" });
   await expect(deck.getByRole("heading", { name: "Domain Deck" })).toBeFocused();
   await deck.getByRole("button", { name: `Choose ${card.name} for level 2` }).click();
   await expect(deck.getByRole("button", { name: `Undo choice of ${card.name}` })).toBeVisible();
 
-  // Next: Finish. The summary lists every choice and nothing is left to do.
-  await ribbon.getByRole("button", { name: "Next" }).click();
+  // Choosing the card goes on to Finish by itself. The summary lists every choice and nothing is left to do.
   const choices = ribbon.getByRole("list", { name: "Your choices" });
   await expect(choices).toContainText("New Experience “Always Land on My Feet” +2");
   await expect(choices).toContainText("Tier 2: +1 to two unmarked traits: Agility, Instinct");

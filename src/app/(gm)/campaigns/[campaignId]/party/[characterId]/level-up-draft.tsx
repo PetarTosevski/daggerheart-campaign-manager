@@ -127,6 +127,20 @@ const TARGET_COUNT: Partial<Record<AdvancementOption, number>> = { traits: 2, ex
 
 const PICKS_PER_LEVEL = 2;
 
+/**
+ * Both picks are taken and every chooser that lives in the tier boxes or Experiences is filled (the domainCard pick's
+ * card is chosen in the deck). Used to move on to the Domain Deck once the advancements are done.
+ */
+export function advancementsChosen(draft: LevelUpDraft): boolean {
+  const cost = draft.picks.reduce((sum, p) => sum + OPTION_RULES[p.option].cost, 0);
+  if (cost < PICKS_PER_LEVEL) return false;
+  return draft.picks.every((p) => {
+    if (p.option === "multiclass") return Boolean(draft.multiclass?.classId && draft.multiclass.domainId && draft.multiclass.subclassId);
+    const count = TARGET_COUNT[p.option];
+    return p.option === "domainCard" || !count || (p.targets?.length ?? 0) === count;
+  });
+}
+
 const storageKey = (characterId: string) => `dcm:level-up-draft:${characterId}`;
 
 const storedSchema = z.object({
@@ -175,6 +189,12 @@ export function issueTarget(message: string, sheet: Pick<CharacterSheet, "experi
   if (/domain card|^Trade |deck holds|^You already have |out of reach at this level/i.test(message)) return "deck";
   if (/Experience/.test(message) || sheet.experiences.some((x) => message.startsWith(`${x.name} is already at`))) return "experiences";
   return "advancements";
+}
+
+/** The level's card and every extra domainCard pick's card are chosen, and no exchange is half set up. */
+export function cardsChosen(draft: LevelUpDraft): boolean {
+  if (!draft.cardId || (draft.trade && !(draft.trade.out && draft.trade.in))) return false;
+  return draft.picks.every((p) => p.option !== "domainCard" || (p.targets?.length ?? 0) === 1);
 }
 
 const LevelUpDraftContext = createContext<LevelUpDraftValue | null>(null);
@@ -262,6 +282,11 @@ export function LevelUpDraftProvider({
     const edit = (fn: (d: LevelUpDraft) => LevelUpDraft) => {
       if (!active) return;
       setState((s) => ({ ...s, draft: fn(s.draft) }));
+      // The edit that completes the advancements takes the player on to the Domain Deck (user request 2026-10-18).
+      const next = fn(draft);
+      if ((state.step === "advancements" || state.step === "experiences") && !advancementsChosen(draft) && advancementsChosen(next)) goTo("deck");
+      // Choosing the last card in the deck goes on to the summary (user request 2026-10-18).
+      else if (state.step === "deck" && advancementsChosen(next) && !cardsChosen(draft) && cardsChosen(next)) goTo("finish");
     };
     const same = (option: AdvancementOption, tier: number) => (p: PickChoice) => p.option === option && p.tier === tier;
 
