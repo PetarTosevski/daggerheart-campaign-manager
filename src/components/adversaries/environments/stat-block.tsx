@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { textBlocks } from "@/lib/adversaries/catalogue";
 import { environmentTierLine } from "@/lib/domain/environments";
+import { environmentArt } from "@/lib/srd/environment-art";
 import type { EnvironmentDef, EnvironmentFeature, EnvironmentFeatureKind } from "@/lib/srd/types";
 
 import { HopeFearPill } from "../catalogue/stat-block";
@@ -73,6 +74,7 @@ function sourceLine(environment: EnvironmentDef): string {
  * features with kind, Fear and countdown badges, and the italic feature questions.
  */
 export function EnvironmentStatBlock({ environment, canOpenAdversary, onOpenAdversary, top, renderFeatureActions }: EnvironmentStatBlockProps) {
+  const art = environmentArt(environment.id);
   return (
     <article className="adc-sb" aria-label={`${environment.name} stat block`}>
       {top ? <div className="env-sb-top">{top}</div> : null}
@@ -81,6 +83,12 @@ export function EnvironmentStatBlock({ environment, canOpenAdversary, onOpenAdve
           <h2 className="adc-sb-name">{environment.name}</h2>
           {environment.source === "hope-and-fear" ? <HopeFearPill large /> : null}
         </div>
+        {art ? (
+          <figure className="adc-sb-art" title={art.credit}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- static pre-optimised WebP from public/ */}
+            <img src={art.src} width={art.width} height={art.height} alt={`${environment.name} illustration`} loading="lazy" decoding="async" />
+          </figure>
+        ) : null}
         <div className="adc-sb-tt">{environmentTierLine(environment)}</div>
         <p className="adc-sb-desc">{environment.description}</p>
       </div>

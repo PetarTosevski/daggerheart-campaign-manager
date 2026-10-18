@@ -28,6 +28,7 @@ import {
 } from "@/lib/domain/environments";
 import type { FrameId } from "@/lib/frames";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
+import { environmentArt } from "@/lib/srd/environment-art";
 import { ENVIRONMENTS } from "@/lib/srd/environments";
 import { ENVIRONMENT_TYPES, type EnvironmentDef, type EnvironmentType } from "@/lib/srd/types";
 
@@ -49,6 +50,14 @@ const TYPE_MEANING: Record<EnvironmentType, string> = {
   Traversal: "Dangerous locations where moving around the space itself is a challenge.",
   Event: "Defined more by the activity taking place than the space they take place in.",
 };
+
+/** Round thumbnail of the rulebook art (EA1, as the adversary list's); nothing without art. Decorative: the name follows. */
+function Thumb({ id }: { id: string }) {
+  const art = environmentArt(id);
+  if (!art) return null;
+  // eslint-disable-next-line @next/next/no-img-element -- static pre-optimised WebP from public/
+  return <img className="adc-thumb" src={art.src} width={32} height={32} alt="" loading="lazy" decoding="async" />;
+}
 
 const SORT_KEY = "dcm:environment-sort";
 const SORT_EVENT = "dcm-environment-sort";
@@ -255,6 +264,7 @@ export function EnvironmentCatalogue({ campaignId, fear, hopeAndFear, frameId, s
                       >
                         <span className="adc-item-main">
                           <span className="adc-nm">
+                            <Thumb id={def.id} />
                             {def.name}
                             {def.source === "hope-and-fear" ? <HopeFearPill /> : null}
                           </span>
