@@ -1,1 +1,48 @@
-/* Styles for sections/hp-stress.tsx only (sheet redesign wave 2). Tokens and primitives: ../sheet.css, src/components/party/sheet-ui/. */
+/* Styles for sections/hp-stress.tsx and damage-calculator.tsx (board: Party.dc.html thr-*, thr-take, slot rows). Tokens and primitives: ../sheet.css, src/components/party/sheet-ui/. */
+
+/* Threshold heads: wine name, range field, "Mark N HP". */
+.hp-heads{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;text-align:center}
+.hp-head{display:flex;flex-direction:column;gap:4px;min-width:0}
+.hp-head-name{padding:6px;border-radius:6px;background:var(--sheet-wine);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:14px}
+.hp-head-val{display:flex;align-items:center;justify-content:center;min-height:52px;border-radius:8px;border:1px solid var(--sheet-field-line);border-bottom:2px solid #a8865a;background:linear-gradient(180deg,#fffcf3,#f8efdc);font-family:var(--font-cinzel),serif;font-size:22px;font-weight:700;color:var(--sheet-ink)}
+@media (max-width:640px){.hp-head-name{font-size:12px;padding:6px 2px}.hp-head-val{font-size:18px}}
+
+/* Threshold pills and breakdown parts. */
+.hp-break{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.hp-thr-pill{padding:3px 10px;border-radius:999px;background:var(--sheet-wine);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:400}
+.hp-thr-part{padding:2px 8px;border-radius:999px;background:rgba(91,43,43,.1);border:1px solid rgba(91,43,43,.25);font-size:14px;color:#4a2a1a}
+
+/* Take damage (thr-take): dashed wine row. */
+.hp-take{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:rgba(91,43,43,.06);border:1px dashed rgba(91,43,43,.3)}
+.hp-take-in{width:90px;min-height:38px;padding:4px 10px;text-align:center}
+.hp-take-out{flex:1 1 220px;min-width:0;margin:0}
+.hp-toggle{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border-radius:999px;border:1px solid #b9a27a;background:linear-gradient(180deg,#fffcf3,#f8efdc);font-family:var(--font-garamond),serif;font-size:15px;color:var(--sheet-ink-soft);cursor:pointer}
+.hp-toggle input{appearance:none;flex:none;width:16px;height:16px;margin:0;border:1.5px solid #8a6d4a;border-radius:4px;background:#fffcf3;cursor:inherit}
+.hp-toggle input:checked{border-color:var(--sheet-wine);background:var(--sheet-wine) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5 L6.5 11.5 L12.5 4.5' fill='none' stroke='%23f6ead2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/100% no-repeat}
+.hp-toggle input:focus-visible{outline:none}
+.hp-toggle:has(input:checked){border-color:var(--sheet-wine);background:rgba(91,43,43,.12);color:var(--sheet-ink)}
+.hp-toggle:has(input:disabled){opacity:.55;cursor:not-allowed}
+.hp-toggle:has(input:focus-visible){outline:2px solid var(--sheet-wine);outline-offset:2px}
+@media (max-width:640px){.hp-toggle{min-height:44px}}
+
+/* Slot rows: label | 12 slots | −/+ (stacked at phone width). */
+.hp-row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:8px}
+.hp-row-lbl{grid-column:1}
+.hp-row .hp-slots{grid-column:2}
+.hp-steps{grid-column:3;display:flex;gap:4px}
+.hp-step{width:32px;height:32px;border-radius:6px;border:1px solid #b9a27a;background:transparent;color:var(--sheet-ink);font-size:16px;line-height:1;cursor:pointer}
+.hp-step:hover:not(:disabled){background:rgba(185,162,122,.2)}
+.hp-step:disabled{opacity:.4;cursor:not-allowed}
+.hp-step:focus-visible{outline:2px solid var(--sheet-wine);outline-offset:2px}
+@media (max-width:640px){
+  .hp-row{grid-template-columns:minmax(0,1fr) auto}
+  .hp-row .hp-slots{grid-column:1 / -1;grid-row:2}
+  .hp-steps{grid-column:2;grid-row:1}
+  .hp-step{width:44px;height:44px}
+}
+
+/* Unused slots (beyond the character's slots): faded and dashed, as on the board; hidden at phone width. */
+@media (max-width:640px){.sh-pip.hp-off{display:none}}
+.sh-pip.hp-off::before{opacity:.35}
+.sh-pip.diamond.hp-off::before{border-style:dashed}
+.sh-pip.heart.hp-off::before{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 30'%3E%3Cpath d='M16 28 C6 20 2 14 2 9 C2 5 5 2 9 2 C12 2 14.5 4 16 6.5 C17.5 4 20 2 23 2 C27 2 30 5 30 9 C30 14 26 20 16 28 Z' fill='none' stroke='%23b04a45' stroke-width='1.6' stroke-dasharray='3 2.5'/%3E%3C/svg%3E")}

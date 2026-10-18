@@ -1,9 +1,12 @@
 "use client";
 
+import "./wither.css";
+
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
-import { WITHER_POOL } from "@/lib/domain/wither";
+import { Label, SlotRow, Small } from "@/components/party/sheet-ui";
+import { FEAR_DIE_SIDES, WITHER_POOL } from "@/lib/domain/wither";
 import { frameHasMechanic } from "@/lib/frames";
 import { useIntent } from "@/lib/use-intent";
 
@@ -33,28 +36,39 @@ function Counter({ campaignId, character, isGm }: SlotProps) {
     await adjust.fire({ campaignId, characterId: character._id, delta: -1 });
   }
 
+  // One slot per Fear Die face (d12); more tokens than that add slots.
+  const slots = Math.max(FEAR_DIE_SIDES, tokens);
   return (
-    <section aria-label="Wither tokens" className="cs-take">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="cs-lbl">Wither tokens</span>
-        <strong className="font-display text-[22px]" data-testid="wither-tokens">
-          {tokens}
-        </strong>
-        <span className="cs-small italic">pool of {WITHER_POOL} for reference</span>
+    <section aria-label="Wither tokens" className="wither">
+      <div className="wither-row">
+        <Label className="wither-lbl">
+          Wither{" "}
+          <strong className="wither-count" data-testid="wither-tokens">
+            {tokens}
+          </strong>
+        </Label>
+        <SlotRow role="img" aria-label={`${tokens} Wither token${tokens === 1 ? "" : "s"}`} className="wither-slots">
+          {Array.from({ length: slots }, (_, k) => (
+            <span key={k} aria-hidden="true" className={`sh-pip wither-token${k < tokens ? " on" : ""}`} />
+          ))}
+        </SlotRow>
         {isGm ? (
-          <span className="ml-auto flex gap-2">
-            <button type="button" className="cs-pill" disabled={tokens === 0 || adjust.pending} aria-label={`Remove a Wither token from ${name}`} onClick={() => void minusOne()}>
+          <span className="wither-steps">
+            <button type="button" className="wither-step" disabled={tokens === 0 || adjust.pending} aria-label={`Remove a Wither token from ${name}`} onClick={() => void minusOne()}>
               −
             </button>
-            <button type="button" className="cs-pill cs-solid" disabled={gain.pending} aria-label={`Add a Wither token to ${name} and roll the Fear Die`} onClick={() => void plusOne()}>
-              + Wither
+            <button type="button" className="wither-step" disabled={gain.pending} aria-label={`Add a Wither token to ${name} and roll the Fear Die`} onClick={() => void plusOne()}>
+              +
             </button>
           </span>
         ) : null}
       </div>
-      <p className="cs-small m-0 italic" aria-live="polite">
-        {gain.error ?? adjust.error ?? report ?? "Severe damage from a Withered source adds a token; the Fear Die at or below the tokens leaves a scar."}
-      </p>
+      <Small as="p" role="status" className="italic">
+        {gain.error ??
+          adjust.error ??
+          report ??
+          `Severe damage from a Withered source adds a token; the Fear Die at or below the tokens leaves a scar. Pool of ${WITHER_POOL} for reference.`}
+      </Small>
     </section>
   );
 }
