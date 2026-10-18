@@ -12,7 +12,8 @@
  *
  * Class-feature hooks run in the campaign's `FeatureScope`: a Hope & Fear
  * class's options, overrides and prompts only with `hopeAndFear` on, and no
- * Combat Training in Motherboard (CB 295). In Motherboard the Ikonis is an
+ * Combat Training in Motherboard (CB 295). `physicalOnly` options (Combat
+ * Training, CB 48) are dropped for a magic damage source (`magicDamage`). In Motherboard the Ikonis is an
  * attack (`ikonis: true`) and damage (`source.kind: "ikonis"`) source (CB 301).
  */
 import { v } from "convex/values";
@@ -21,7 +22,7 @@ import { withEffects } from "../src/lib/domain/characters/effects";
 import { BRAWLERS_STRIKE } from "../src/lib/domain/class-features/classes/brawler";
 import { afterDualityRoll, rollOptions, weaponOverrides } from "../src/lib/domain/class-features/hooks";
 import { CLASS_FEATURES } from "../src/lib/domain/class-features/index";
-import type { FeatureScope } from "../src/lib/domain/class-features/types";
+import type { FeatureScope, WeaponOverride } from "../src/lib/domain/class-features/types";
 import { ikonisWeapon, type IkonisWeapon } from "../src/lib/domain/dice/ikonis";
 import {
   applyDualityEffects,
@@ -252,6 +253,21 @@ async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded
 }
 
 /**
+ * Whether a damage source deals magic damage, for `physicalOnly` options (Combat Training, CB 48): a weapon by
+ * its damage type, where "either" (Shadowblade: "you can deal physical or magic damage") counts as physical; an
+ * override by its definition (unset is physical); the Ikonis and custom dice as physical (Motherboard has no
+ * Combat Training anyway, CB 295).
+ */
+function magicDamage(sheet: CharacterSheet, source: DamageSource, overrides: readonly WeaponOverride[]): boolean {
+  if (source.kind === "weapon") {
+    const weaponId = source.slot === "primary" ? sheet.primaryWeaponId : sheet.secondaryWeaponId;
+    return (weaponId ? getWeapon(weaponId) : undefined)?.damageType === "magic";
+  }
+  if (source.kind === "override") return overrides.find((o) => o.key === source.key)?.damageType === "magic";
+  return false;
+}
+
+/**
  * The damage dice of a source: weapon dice at Proficiency (CB 98), a class
  * override, the Ikonis, or dice as given. Option dice are bonus dice, so a
  * critical maxes them too (CB 98).
@@ -259,17 +275,19 @@ async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded
 function prepareDamage(sheet: CharacterSheet, args: DamageArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DamageInput; label: string } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
   assertTypedModifier(args.modifier);
-  const opts = applyRollOptions(sheet, rollOptions(sheet, "damage", CLASS_FEATURES, scope), args.options);
-  const live = withEffects(sheet);
-  const fixed = opts.fixedDice.reduce((s, d) => s + d.value, 0);
-  const base = { critical: args.critical, bonusDice: opts.extraDice };
-  const extra = args.modifier + opts.modifier + fixed;
   const overrides = weaponOverrides(sheet, CLASS_FEATURES, scope);
   let source = args.source;
   // Brawler's Strike as the primary weapon is the I Am the Weapon override when it applies (HF 10).
   if (source.kind === "weapon" && source.slot === "primary" && sheet.primaryWeaponId === BRAWLERS_STRIKE && overrides.some((o) => o.key === "brawlersStrike")) {
     source = { kind: "override", key: "brawlersStrike" };
   }
+  const magic = magicDamage(sheet, source, overrides);
+  const available = rollOptions(sheet, "damage", CLASS_FEATURES, scope).filter((o) => !(magic && o.physicalOnly));
+  const opts = applyRollOptions(sheet, available, args.options);
+  const live = withEffects(sheet);
+  const fixed = opts.fixedDice.reduce((s, d) => s + d.value, 0);
+  const base = { critical: args.critical, bonusDice: opts.extraDice };
+  const extra = args.modifier + opts.modifier + fixed;
   let input: DamageInput;
   let label: string;
   if (source.kind === "weapon") {
