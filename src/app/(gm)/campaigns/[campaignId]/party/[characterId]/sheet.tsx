@@ -3,7 +3,7 @@
 import { useQuery } from "convex/react";
 import { X } from "lucide-react";
 import Link from "next/link";
-import { useState, type KeyboardEvent } from "react";
+import { useCallback, useState, type KeyboardEvent } from "react";
 
 import { LevelUpButton } from "@/components/party/level-up";
 import { getClass } from "@/lib/srd";
@@ -11,6 +11,8 @@ import { getClass } from "@/lib/srd";
 import { api } from "../../../../../../../convex/_generated/api";
 import { useCampaign } from "../../campaign-shell";
 
+import { LevelUpDraftProvider, useLevelUpDraft, type SheetCollection, type SheetPage } from "./level-up-draft";
+import { LevelUpRibbon } from "./level-up-ribbon";
 import { PageOne } from "./page-one";
 import { PageThree } from "./page-three";
 import { PageTwo } from "./page-two";
@@ -23,14 +25,42 @@ const PAGES = [
   { id: "sheet", label: "Character Sheet" },
   { id: "story", label: "Story & Advancement" },
   { id: "domains", label: "Domains" },
-] as const;
+] as const satisfies readonly { id: SheetPage; label: string }[];
 
-type PageId = (typeof PAGES)[number]["id"];
-
-/** The board's sheet shell: header row (banner | tabs | level | close), the live error, three pages, footer, status row. */
+/** The sheet's page and Domains sub-tab, held here so the guided level-up (level-up-draft.tsx) can navigate. */
 function SheetBody({ rosterHref }: { rosterHref: string }) {
+  const { slot } = useSheet();
+  const [page, setPage] = useState<SheetPage>("sheet");
+  const [collection, setCollection] = useState<SheetCollection>("cards");
+  const navigate = useCallback((next: SheetPage, sub?: SheetCollection) => {
+    setPage(next);
+    if (sub) setCollection(sub);
+  }, []);
+  // Choosing a page tab opens Domains on Domain Cards, as it did when the sub-tab lived in PageThree.
+  const choosePage = useCallback((next: SheetPage) => navigate(next, "cards"), [navigate]);
+  return (
+    <LevelUpDraftProvider slot={slot} navigate={navigate}>
+      <SheetPaper rosterHref={rosterHref} page={page} setPage={choosePage} collection={collection} setCollection={setCollection} />
+    </LevelUpDraftProvider>
+  );
+}
+
+/** The board's sheet shell: header row (banner | tabs | level | close), the level-up ribbon, the live error, three pages, footer, status row. */
+function SheetPaper({
+  rosterHref,
+  page,
+  setPage,
+  collection,
+  setCollection,
+}: {
+  rosterHref: string;
+  page: SheetPage;
+  setPage: (page: SheetPage) => void;
+  collection: SheetCollection;
+  setCollection: (collection: SheetCollection) => void;
+}) {
   const { sheet, canEdit, error, slot } = useSheet();
-  const [page, setPage] = useState<PageId>("sheet");
+  const levelUp = useLevelUpDraft();
   const cls = getClass(sheet.classId);
 
   function onTabKey(e: KeyboardEvent<HTMLDivElement>) {
@@ -63,12 +93,13 @@ function SheetBody({ rosterHref }: { rosterHref: string }) {
           ))}
         </div>
         <div className="cs-head-end">
-          <LevelUpButton {...slot} />
+          <LevelUpButton {...slot} onStart={levelUp.start} leveling={levelUp.active} />
           <Link href={rosterHref} className="cs-close" aria-label="Close character sheet">
             <X className="size-4" aria-hidden="true" />
           </Link>
         </div>
       </header>
+      <LevelUpRibbon />
       <SheetDeathMoves />
 
       <p role="alert" aria-live="assertive" className="cs-error">
@@ -77,7 +108,7 @@ function SheetBody({ rosterHref }: { rosterHref: string }) {
 
       {PAGES.map((p) => (
         <div key={p.id} id={`panel-${p.id}`} role="tabpanel" aria-labelledby={`tab-${p.id}`} hidden={page !== p.id}>
-          {page !== p.id ? null : p.id === "sheet" ? <PageOne cls={cls} /> : p.id === "story" ? <PageTwo cls={cls} /> : <PageThree cls={cls} />}
+          {page !== p.id ? null : p.id === "sheet" ? <PageOne cls={cls} /> : p.id === "story" ? <PageTwo cls={cls} /> : <PageThree cls={cls} tab={collection} onTab={setCollection} />}
         </div>
       ))}
 

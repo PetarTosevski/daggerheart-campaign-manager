@@ -1,3 +1,4 @@
+import { MAX_LEVEL } from "@/lib/domain/characters";
 import { characterSheetSchema, type CharacterSheet } from "@/lib/validation/characters";
 import type { AdvancementOption } from "@/lib/validation/characters";
 import type { Source, TraitId } from "@/lib/srd/types";
@@ -9,6 +10,11 @@ export function fullSheet(view: CharacterView): CharacterSheet | null {
   if (view.corrupt) return null;
   const parsed = characterSheetSchema.safeParse(view.sheet);
   return parsed.success ? parsed.data : null;
+}
+
+/** Whether the viewer may level the character up (the header's ▲): owner with a pending level-up, or the GM, below the top level. */
+export function canLevelUp(sheet: CharacterSheet | null, canEdit: boolean, isGm: boolean): boolean {
+  return sheet !== null && canEdit && sheet.level < MAX_LEVEL && (sheet.levelUpPending || isGm);
 }
 
 export const sourcesFor = (hopeAndFear: boolean): Source[] => (hopeAndFear ? ["core", "hope-and-fear"] : ["core"]);
