@@ -13,7 +13,8 @@ import {
 } from "../../src/lib/frames/trackers/colossus";
 import { rollDice } from "../lib/dice";
 import { campaignQuery, keyedGmMutation } from "../lib/functions";
-import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
+import type { RestHook } from "../lib/restHooks";
+import { assertTrackerFrame, frameTrackerMutation, loadTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "../lib/trackers";
 
 export const colossusTracker: FrameTracker<typeof colossusStateSchema> = {
   frameId: "colossus-of-the-drylands",
@@ -86,6 +87,22 @@ export const markRest = keyedGmMutation({
       return { state: next.state, result: { siphonMarked: next.state.siphonMarked, rolls: next.rolls } };
     }),
 });
+
+/**
+ * Rest hook (D5 T3b, CB 327): "When the PCs take a short rest during the hunt
+ * phase, mark the Siphoning Track once. When the PCs take a long rest during
+ * the hunt phase, mark the Siphoning Track twice." `kind` is the rest's
+ * effect, so an interrupted long rest marks once. The track is GM-only, so
+ * the hook adds no line to the public feed; rest undo leaves it (plan note 11).
+ */
+export const colossusRestHook: RestHook = async (ctx, { campaign, kind, rng }) => {
+  if (campaign.frameId !== colossusTracker.frameId) return [];
+  const state = await loadTracker(ctx, campaign._id, colossusTracker);
+  if (state.phase !== "hunt") return [];
+  const next = mark(state, kind, (count) => Array.from({ length: count }, () => rng(12)), Date.now());
+  await writeTracker(ctx, campaign._id, colossusTracker.key, next.state, TRACKER_SCHEMA_VERSION);
+  return [];
+};
 
 /** A colossus falls: the shard is rolled into Kudamat's Power, the track resets and the interlude begins. */
 export const defeatColossus = keyedGmMutation({

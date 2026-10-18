@@ -15,9 +15,18 @@ import {
   withMark,
   withoutMark,
 } from "../../src/lib/frames/trackers/horizon";
+import { ENDURANCE_START, enduranceOwnerKey, horizonDaysPassed } from "../../src/lib/domain/rest/frame-hooks/index";
+import { resolveOptions } from "../../src/lib/frames/options";
+import { hexKey } from "../../src/lib/world/hex";
+import { mapImageSize, SANCTUARY_TYPE, tokenHex } from "../../src/lib/world/map-state";
+import type { Doc } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { gainFear } from "../lib/fear";
 import { campaignQuery, keyedGmMutation } from "../lib/functions";
+import { listMapTokens, saveScalars, writableMap } from "../lib/maps";
+import type { RestHook } from "../lib/restHooks";
 import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
+import { recordHistory } from "../tables/history";
 
 /** Journey to Horizon only; enforced here, not only in the UI. */
 export const horizonTracker: FrameTracker<typeof horizonStateSchema> = {
@@ -149,3 +158,91 @@ export const setEchoes = keyedGmMutation({
     });
   },
 });
+
+/** The crawl's day counter's upper bound (`hexCrawlSchema`). */
+const MAX_CRAWL_DAY = 100000;
+
+/**
+ * HF 176, Endurance Countdowns (optional): "At the end of a rest, each PC
+ * gains an Endurance Countdown (6). … When a PC's Endurance Countdown
+ * triggers, they become Vulnerable until their next rest. At the start of a
+ * rest, all PCs' Endurance Countdowns end." One countdown row per PC, reset
+ * to 6 (its history records the reset); a PC whose countdown had triggered
+ * loses Vulnerable on the rest's sheet.
+ */
+async function resetEndurance(ctx: MutationCtx, campaign: Doc<"campaigns">, input: Parameters<RestHook>[1]): Promise<void> {
+  const after = { currentValue: ENDURANCE_START, status: "active" as const };
+  for (const [id, sheet] of input.sheets) {
+    const ownerKey = enduranceOwnerKey(id);
+    // At most one row per PC.
+    const row = await ctx.db
+      .query("countdowns")
+      .withIndex("by_campaign_owner", (q) => q.eq("campaignId", campaign._id).eq("ownerKey", ownerKey))
+      .first();
+    if (row === null) {
+      const countdownId = await ctx.db.insert("countdowns", {
+        campaignId: campaign._id,
+        name: `Endurance: ${sheet.name}`,
+        description: "Each wilderness hex: roll your Hope Die; at or below the countdown, mark a Stress, otherwise tick it down (HF 176).",
+        category: "consequence",
+        startingValue: ENDURANCE_START,
+        ...after,
+        consequence: "Vulnerable until the next rest.",
+        createdAt: Date.now(),
+        ownerKey,
+        kind: "endurance",
+        revealed: true,
+      });
+      await recordHistory(ctx, input.actorId, { campaignId: campaign._id, kind: "countdown", action: "create", countdownId, before: null, after });
+      continue;
+    }
+    if (row.status === "completed" && sheet.conditions.includes("vulnerable")) {
+      input.sheets.set(id, { ...sheet, conditions: sheet.conditions.filter((c) => c !== "vulnerable") });
+    }
+    await ctx.db.patch("countdowns", row._id, { ...after, startingValue: ENDURANCE_START, completedAt: undefined });
+    await recordHistory(ctx, input.actorId, {
+      campaignId: campaign._id,
+      kind: "countdown",
+      action: "endurance_reset",
+      countdownId: row._id,
+      before: { currentValue: row.currentValue, status: row.status },
+      after,
+    });
+  }
+}
+
+/**
+ * Rest hook (D5 T3b, HF 176, "Resting"): "Outside a sanctuary, the party can
+ * take only short rests, each of which represents an entire day spent in one
+ * location. Inside a sanctuary, the party can take a long rest". A long rest
+ * is refused (REST_RULE) when the hex crawl puts the party in a hex with no
+ * sanctuary marker; a short rest advances the crawl's day counter by one
+ * (`horizonDaysPassed`); with `enduranceCountdowns` on, every resting PC's
+ * Endurance Countdown restarts at 6. Day and countdowns keep their own
+ * history; rest undo restores sheets only (plan note 11).
+ */
+export const horizonRestHook: RestHook = async (ctx, input) => {
+  const { campaign, rest, kind, interrupted } = input;
+  if (campaign.frameId !== horizonTracker.frameId) return [];
+  const map = await writableMap(ctx, campaign);
+  const crawl = map.scalars.hexCrawl;
+  if (kind === "long" && crawl?.party) {
+    const image = mapImageSize(campaign.frameId, map.scalars);
+    const party = hexKey(crawl.party);
+    const tokens = await listMapTokens(ctx, campaign._id);
+    if (!tokens.some((t) => t.type === SANCTUARY_TYPE && hexKey(tokenHex(t, image, crawl.grid)) === party)) {
+      throw appError("REST_RULE", "Outside a sanctuary the party can take only short rests (HF 176). Move the party to a sanctuary, or interrupt the rest for a short rest's benefits.");
+    }
+  }
+  const lines: string[] = [];
+  const days = horizonDaysPassed({ kind, interrupted, gmOverride: rest.gmOverride ?? false });
+  if (days > 0 && crawl !== undefined && crawl.day + days <= MAX_CRAWL_DAY) {
+    await saveScalars(ctx, campaign._id, map, { ...map.scalars, hexCrawl: { ...crawl, day: crawl.day + days } });
+    lines.push(`A day passes: day ${crawl.day + days} of the journey`);
+  }
+  if (resolveOptions(campaign.frameId, campaign.options).enduranceCountdowns) {
+    await resetEndurance(ctx, campaign, input);
+    lines.push(`Endurance Countdowns start at ${ENDURANCE_START}`);
+  }
+  return lines;
+};
