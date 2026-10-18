@@ -267,3 +267,57 @@ export interface AdversaryDef {
   /** Printed page in the source book. */
   page?: number;
 }
+
+/**
+ * Environment type (CB p.241): "Explorations are wondrous locations with mysteries and marvels to discover. Socials are
+ * locations that primarily present interpersonal challenges. Traversals are dangerous locations where moving around the
+ * space itself is a challenge. Events are defined more by the activity taking place than the space they take place in."
+ */
+export type EnvironmentType = "Exploration" | "Social" | "Traversal" | "Event";
+
+export const ENVIRONMENT_TYPES: readonly EnvironmentType[] = ["Exploration", "Social", "Traversal", "Event"];
+
+/** "Environment features can take the form of actions ..., reactions ..., and passives" (CB p.241). */
+export type EnvironmentFeatureKind = "passive" | "action" | "reaction";
+
+export interface EnvironmentFeature {
+  name: string;
+  kind: EnvironmentFeatureKind;
+  /** Verbatim rules text, without a leading countdown label; "- " lines are list items. */
+  text: string;
+  /** Fear the feature asks the GM to spend ("Spend a Fear" = 1, "spend 2 Fear" = 2). */
+  fearCost?: number;
+  /** The countdown label printed at the start of the feature, e.g. "Countdown (Loop 4)", "Consequence Countdown (6)". */
+  countdown?: string;
+  /** The italic questions printed below the feature (CB p.241, "Feature Questions"). */
+  questions?: string;
+}
+
+/**
+ * One entry of a stat block's "Potential Adversaries" line: an adversary ("Merchant") or a group with its members
+ * ("Beasts (Bear, Glass Snake)"). `adversaryId` is set where the name is an SRD adversary.
+ */
+export interface EnvironmentAdversaryRef {
+  name: string;
+  adversaryId?: string;
+  members?: readonly { name: string; adversaryId?: string }[];
+}
+
+export interface EnvironmentDef {
+  /** Unique slug of the name. */
+  id: string;
+  name: string;
+  tier: 1 | 2 | 3 | 4;
+  type: EnvironmentType;
+  description: string;
+  impulses: string;
+  /** A number, or the printed text where the book gives none ("Special (see “Relative Strength”)"). */
+  difficulty: number | string;
+  potentialAdversaries: readonly EnvironmentAdversaryRef[];
+  features: readonly EnvironmentFeature[];
+  source: Source;
+  /** Set for frame-exclusive environments, shown only in campaigns of that frame. */
+  frameId?: string;
+  /** Printed page in the source book. */
+  page: number;
+}

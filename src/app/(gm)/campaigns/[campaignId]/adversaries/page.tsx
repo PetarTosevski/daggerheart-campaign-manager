@@ -8,6 +8,9 @@ import { Component, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { AddToEncounter, EncounterBuilder } from "@/components/adversaries/builder";
 import { Catalogue } from "@/components/adversaries/catalogue";
 import { CustomAdversaries, DuplicateAdversary } from "@/components/adversaries/custom";
+import { EnvironmentCatalogue } from "@/components/adversaries/environments";
+import { OpenedAdversary } from "@/components/adversaries/environments/opened-adversary";
+import type { CatalogueEntryRef } from "@/components/adversaries/slots";
 import { EncounterTracker } from "@/components/adversaries/tracker";
 import { countLine } from "@/lib/adversaries/catalogue";
 import { adversariesFor } from "@/lib/domain/adversaries";
@@ -21,8 +24,12 @@ import { useCampaign } from "../campaign-shell";
 const TABS = [
   { id: "catalogue", label: "Catalogue" },
   { id: "encounters", label: "Encounters" },
+  { id: "environment", label: "Environment" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
+
+/** An adversary opened from an environment's Potential Adversaries (EV1), shown at the top of the Catalogue tab. */
+type OpenedFromEnvironment = { adversaryId: string; environmentId: string; environmentName: string };
 
 /** Keeps a failing slot (a `useQuery` that throws) from blanking the page (CL1); "Try again" remounts it. */
 class SlotBoundary extends Component<{ children: ReactNode; label: string }, { failed: boolean }> {
@@ -49,22 +56,37 @@ class SlotBoundary extends Component<{ children: ReactNode; label: string }, { f
  * Catalogue tab: the SRD catalogue, whose stat blocks get "Add to encounter" (A3) and "Duplicate & edit" (A5), and
  * the campaign's custom adversaries below it; a saved duplicate is selected there.
  */
-function CatalogueTab({ campaign }: { campaign: CampaignSummary }) {
+function CatalogueTab({
+  campaign,
+  opened,
+  onBack,
+  onClose,
+}: {
+  campaign: CampaignSummary;
+  opened: OpenedFromEnvironment | null;
+  onBack: () => void;
+  onClose: () => void;
+}) {
   const [selectedCustom, setSelectedCustom] = useState<string | null>(null);
+  const renderActions = (a: CatalogueEntryRef) => (
+    <>
+      <AddToEncounter campaignId={campaign._id} adversary={a} />
+      <DuplicateAdversary campaignId={campaign._id} adversary={a} onSaved={setSelectedCustom} />
+    </>
+  );
   return (
     <>
-      <SlotBoundary label="The catalogue">
-        <Catalogue
-          campaignId={campaign._id}
-          hopeAndFear={campaign.options.hopeAndFear}
-          frameId={campaign.frameId}
-          renderActions={(a) => (
-            <>
-              <AddToEncounter campaignId={campaign._id} adversary={a} />
-              <DuplicateAdversary campaignId={campaign._id} adversary={a} onSaved={setSelectedCustom} />
-            </>
-          )}
+      {opened ? (
+        <OpenedAdversary
+          adversaryId={opened.adversaryId}
+          fromEnvironment={opened.environmentName}
+          renderActions={renderActions}
+          onBack={onBack}
+          onClose={onClose}
         />
+      ) : null}
+      <SlotBoundary label="The catalogue">
+        <Catalogue campaignId={campaign._id} hopeAndFear={campaign.options.hopeAndFear} frameId={campaign.frameId} renderActions={renderActions} />
       </SlotBoundary>
       <SlotBoundary label="Custom adversaries">
         <CustomAdversaries campaignId={campaign._id} selectedId={selectedCustom} onSelect={setSelectedCustom} />
@@ -143,6 +165,9 @@ function AdversaryTabs({ tab, onTab }: { tab: TabId; onTab: (tab: TabId) => void
 
 function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
   const [tab, setTab] = useState<TabId>("catalogue");
+  const [opened, setOpened] = useState<OpenedFromEnvironment | null>(null);
+  // The selected environment lives here so it survives a tab switch ("Back to ..." from an opened adversary).
+  const [environmentId, setEnvironmentId] = useState<string | null>(null);
   const { hopeAndFear } = campaign.options;
   // The catalogue's size, as the board's header line (A2's count line, in place of A0's placeholder).
   const count = useMemo(() => {
@@ -150,8 +175,8 @@ function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
     return countLine(visible, visible.length);
   }, [hopeAndFear, campaign.frameId]);
   const blurb = campaign.options.hopeAndFear
-    ? "Stat blocks from the Core Rulebook and Hope & Fear, with encounters and their Battle Points. Only you can see this page."
-    : "Stat blocks from the Core Rulebook, with encounters and their Battle Points. Only you can see this page.";
+    ? "Adversary and environment stat blocks from the Core Rulebook and Hope & Fear, with encounters and their Battle Points. Only you can see this page."
+    : "Adversary and environment stat blocks from the Core Rulebook, with encounters and their Battle Points. Only you can see this page.";
   return (
     <>
       <header className="adv-top">
@@ -166,7 +191,32 @@ function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
       <main className="adv-main">
         <AdversaryTabs tab={tab} onTab={setTab} />
         <section role="tabpanel" id={`adv-panel-${tab}`} aria-labelledby={`adv-tab-${tab}`} tabIndex={0} className="adv-panel">
-          {tab === "catalogue" ? <CatalogueTab campaign={campaign} /> : <EncountersTab campaign={campaign} />}
+          {tab === "catalogue" ? (
+            <CatalogueTab
+              campaign={campaign}
+              opened={opened}
+              onBack={() => {
+                setOpened(null);
+                setTab("environment");
+              }}
+              onClose={() => setOpened(null)}
+            />
+          ) : tab === "encounters" ? (
+            <EncountersTab campaign={campaign} />
+          ) : (
+            <SlotBoundary label="Environments">
+              <EnvironmentCatalogue
+                hopeAndFear={hopeAndFear}
+                frameId={campaign.frameId}
+                selectedId={environmentId}
+                onSelect={setEnvironmentId}
+                onOpenAdversary={(adversaryId, environment) => {
+                  setOpened({ adversaryId, environmentId: environment.id, environmentName: environment.name });
+                  setTab("catalogue");
+                }}
+              />
+            </SlotBoundary>
+          )}
         </section>
       </main>
     </>

@@ -1,0 +1,47 @@
+/*
+ * Environment tab (EV1): the adversary catalogue's layout and parchment (catalogue.css, adc-*) plus the parts only an
+ * environment stat block has: the Difficulty / Potential Adversaries box, linked adversary names, numbered lists and
+ * the italic feature questions (CB p.241).
+ */
+.env-sb-box { margin: 0; padding: 8px 12px; border: 1px solid var(--adv-divider); border-radius: 6px; background: var(--adv-stat-bg); display: flex; flex-direction: column; gap: 4px; }
+.env-sb-box dt { display: inline; font-family: var(--adv-font-head); font-size: 13px; letter-spacing: 0.06em; color: var(--adv-label); margin-right: 6px; }
+.env-sb-box dt::after { content: ":"; }
+.env-sb-box dd { display: inline; margin: 0; line-height: 1.8; }
+/* A name in running text (an inline target): underlined like a link; the padding grows the hit area up to, never
+   into, the next line. */
+.env-advlink {
+  display: inline;
+  padding: 4px 0;
+  margin: -4px 0;
+  border: none;
+  background: none;
+  color: var(--adv-parch-rule);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.env-advlink:hover { color: var(--adv-ink); }
+.env-advlink:focus-visible { outline: 2px solid var(--adv-parch-rule); outline-offset: 2px; border-radius: 2px; }
+.env-nowrap { white-space: nowrap; }
+.env-olist { list-style: decimal; }
+.env-q { margin: 2px 0 0; padding-left: 12px; font-style: italic; color: var(--adv-ink-soft); }
+
+/* Catalogue tab: the adversary opened from an environment's Potential Adversaries. */
+.env-opened { max-width: 760px; margin: 0 0 22px; border: 1px solid var(--adv-border-strong); border-radius: 14px; padding: 14px; background: var(--adv-list); }
+.env-opened-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.env-opened-bar p { margin: 0; flex: 1 1 200px; color: var(--adv-muted); font-size: 14px; }
+.env-opened-bar button {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--adv-border-strong);
+  background: transparent;
+  color: var(--adv-chip-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.env-opened-bar button:hover { border-color: var(--adv-chip-hover); }
+.env-opened-bar button:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 2px; }
+.env-opened .adc-sb { max-height: none; }
