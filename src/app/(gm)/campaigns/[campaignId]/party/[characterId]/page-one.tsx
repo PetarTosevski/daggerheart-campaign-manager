@@ -6,9 +6,9 @@ import { SheetDiceBox } from "@/components/party/dice";
 import { FeaturesPanel } from "@/components/party/features";
 import { RestPicker } from "@/components/party/rest";
 import { WitherCounter } from "@/components/party/wither";
-import { derivedDefense } from "@/lib/domain/characters/derived";
+import { derivedDefense, derivedThresholds, subclassBonuses } from "@/lib/domain/characters/derived";
 import { withEffects } from "@/lib/domain/characters/effects";
-import { BASE_HOPE_MAX, damageThresholds, hopeMax, tierForLevel } from "@/lib/domain/characters";
+import { BASE_HOPE_MAX, hopeMax, tierForLevel } from "@/lib/domain/characters";
 import { assetBackground } from "@/lib/design-assets";
 import type { SheetPatch } from "@/lib/validation/characters";
 import {
@@ -190,6 +190,7 @@ function WeaponBlock({ label, weaponId, slot }: { label: string; weaponId?: stri
           <span className="cs-lbl">Name</span>
           <select
             className="cs-in"
+            aria-label={`${label} weapon`}
             value={weaponId ?? ""}
             disabled={blocked && !weapon}
             onChange={(e) => {
@@ -248,7 +249,7 @@ function ArmorBlock() {
       {canEdit ? (
         <label className="flex flex-col gap-1">
           <span className="cs-lbl">Name</span>
-          <select className="cs-in" value={sheet.armorId ?? ""} onChange={(e) => e.target.value && void update({ armorId: e.target.value })}>
+          <select className="cs-in" aria-label="Active armor" value={sheet.armorId ?? ""} onChange={(e) => e.target.value && void update({ armorId: e.target.value })}>
             {sheet.armorId ? null : <option value="">Unarmored</option>}
             {options.map((a) => (
               <option key={a.id} value={a.id}>
@@ -448,7 +449,8 @@ export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: R
   const defense = derivedDefense(withEffects(sheet));
   const effectEvasion = defense.evasion - derivedDefense(sheet).evasion;
   const armorSlots = defense.armorScore;
-  const thresholds = damageThresholds(sheet.level, armor?.baseThresholds ?? null);
+  const thresholds = derivedThresholds(sheet);
+  const subclassBonus = subclassBonuses(sheet);
   const ranges = thresholdRanges(thresholds);
   const hopeSlots = BASE_HOPE_MAX + (sheet.hopeSlotBonus ?? 0);
   const maxHope = hopeMax(sheet.scars, sheet.hopeSlotBonus ?? 0);
@@ -488,6 +490,7 @@ export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: R
               <span className="cs-lbl">
                 Evasion
                 {defense.evasionModifier ? ` (${defense.evasionModifier > 0 ? "+" : ""}${defense.evasionModifier} gear)` : ""}
+                {defense.subclassEvasion ? ` (+${defense.subclassEvasion} subclass)` : ""}
                 {effectEvasion ? ` (${effectEvasion > 0 ? "+" : ""}${effectEvasion} effects)` : ""}
               </span>
             </div>
@@ -571,6 +574,8 @@ export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: R
             </strong>
             <span className="cs-small italic">
               = {armor ? `${armor.name} ${armor.baseThresholds.major}/${armor.baseThresholds.severe}` : "Unarmored"} + level {sheet.level}
+              {subclassBonus.thresholds ? ` + ${subclassBonus.thresholds} subclass` : ""}
+              {subclassBonus.severe ? ` (+${subclassBonus.severe} Severe, subclass)` : ""}
             </span>
           </div>
           {canEdit ? <DamageCalculator thresholds={thresholds} armorFree={armorSlots - sheet.armorMarked} /> : null}

@@ -4,7 +4,8 @@
 import { BEASTFORMS } from "./beastforms";
 import { CLASSES } from "./classes";
 import { DOMAIN_CARDS, DOMAINS } from "./domain-cards";
-import { ARMOR, STARTING_SUGGESTIONS, WEAPONS } from "./equipment";
+import { ARMOR as TIER1_ARMOR, STARTING_SUGGESTIONS, WEAPONS as TIER1_WEAPONS } from "./equipment";
+import { TIERED_ARMOR, TIERED_WEAPONS } from "./equipment-tiers";
 import { ANCESTRIES, COMMUNITIES, TRANSFORMATIONS } from "./heritage";
 import { PORTRAITS } from "./art";
 import { SUBCLASSES } from "./subclasses";
@@ -29,10 +30,14 @@ export * from "./types";
 export { BEASTFORMS } from "./beastforms";
 export { CLASSES } from "./classes";
 export { DOMAIN_CARDS, DOMAINS } from "./domain-cards";
-export { ARMOR, EXPERIENCE_SUGGESTIONS, STARTING_SUGGESTIONS, WEAPONS } from "./equipment";
+export { EXPERIENCE_SUGGESTIONS, STARTING_SUGGESTIONS } from "./equipment";
 export { ANCESTRIES, COMMUNITIES, TRANSFORMATIONS } from "./heritage";
 export { DOMAIN_CARD_ART, PORTRAITS, TRANSFORMATION_ART } from "./art";
 export { SUBCLASSES } from "./subclasses";
+
+/** Every weapon and armor, Tier 1 to 4 (tiers by level, CB 109; weapon tables CB 115-125, armor CB 126-127). */
+export const WEAPONS: readonly Weapon[] = [...TIER1_WEAPONS, ...TIERED_WEAPONS];
+export const ARMOR: readonly Armor[] = [...TIER1_ARMOR, ...TIERED_ARMOR];
 
 const byId = <T extends { id: string }>(list: readonly T[], id: string): T | undefined =>
   list.find((item) => item.id === id);
