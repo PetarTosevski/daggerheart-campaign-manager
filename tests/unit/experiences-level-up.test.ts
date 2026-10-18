@@ -128,6 +128,15 @@ describe("Experiences in the guided level-up", () => {
     expect(JSON.parse(window.sessionStorage.getItem(KEY) ?? "{}").draft.experienceName).toBe("Court musician");
     expect(calls).toEqual([]);
 
+    // Enter moves on to the advancements step (with an empty name it stays put).
+    fireEvent.change(input, { target: { value: "  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(within(steps).getAllByRole("listitem")[0]).toHaveAttribute("aria-current", "step");
+    fireEvent.change(input, { target: { value: "Court musician" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(within(steps).getAllByRole("listitem")[1]).toHaveAttribute("aria-current", "step");
+    fireEvent.click(within(steps).getByRole("button", { name: /New Experience/ }));
+
     fireEvent.click(within(ribbon).getByRole("button", { name: "Cancel" }));
     expect(within(box()).queryByRole("textbox", { name: /for level/ })).toBeNull();
     expect(within(box()).getByRole("textbox", { name: "New Experience" })).toBeInTheDocument();
