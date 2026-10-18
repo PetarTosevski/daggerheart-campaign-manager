@@ -1,0 +1,83 @@
+# Environment tab actions, environment art and an Expansions default (user 2026-10-19).
+# - "let me spend fear for the effects / start the countdowns for the selected environments"
+# - "Can you add images to any environments that had them, similar to adversaries"
+# - Settings: "add a button here that enables expansions (only h&f for now)"; answered: it's the default for new
+#   campaigns (each campaign keeps its own switch). Countdowns started from an environment feature start Private.
+# Format: docs/workflow.md.
+plan: env-actions
+waves:
+  - wave: 1
+    tracers:
+      - id: EF1
+        title: Spend Fear on environment features and start their countdowns
+        size: M
+        goal: On the Environment tab's stat block, a feature with a Fear cost has a "Spend N Fear" button that lowers GM Fear, and a feature with a countdown has "Start countdown" that creates a Private dashboard countdown from it.
+        depends_on: []
+        owns:
+          - src/components/adversaries/environments/stat-block.tsx
+          - src/components/adversaries/environments/feature-actions.tsx
+          - src/components/adversaries/environments/index.tsx
+          - src/components/adversaries/environments/environments.css
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/page.tsx
+          - convex/environmentActions.ts
+          - src/lib/domain/environments/index.ts
+          - tests/convex/environment-actions.test.ts
+          - tests/unit/environment-catalogue.test.ts
+          - tests/e2e/environments.spec.ts
+          - docs/tasks/TASK-EF1.md
+        reads:
+          - convex/lib/fear.ts
+          - convex/countdowns.ts
+          - src/lib/domain/countdowns/index.ts
+          - src/components/adversaries/tracker/top-bar.tsx
+          - docs/tasks/TASK-CV1.md
+          - docs/tasks/TASK-EV1.md
+        acceptance:
+          - "convex/environmentActions.ts (GM wrappers, need owner, keyed, args+returns validators): `spendFear({environmentId, featureName})` spends the feature's Fear cost through convex/lib/fear.ts spendFear (reason 'feature'; FEAR_EMPTY when short) and logs which environment feature it was; `startCountdown({environmentId, featureName})` creates a dashboard countdown (name '<Environment>: <Feature>', description the feature text, a sensible category, starting value from the countdown label: a number, or for 'Loop N'/'Long-Term N' that N, or for a dice countdown like 'Loop 1d4' a server roll; visibility Private) and refuses features without a countdown; both refuse unknown environments/features and Hope & Fear environments when the campaign's switch is off"
+          - "The environment stat block shows, per feature: 'Spend N Fear' when the feature has a Fear cost (disabled with the reason when the GM holds less), and 'Start countdown' when it has a countdown label; a short status line confirms ('Spent 1 Fear: Icy Winds' / 'Countdown started on the dashboard'); the current GM Fear is shown at the top of the stat block (the dashboard's Fear token art) with '+ Fear'; buttons follow the board's parchment look with 44 px targets"
+          - "Convex tests (spend, FEAR_EMPTY, start with a number / loop / dice label, private visibility, player FORBIDDEN, outsider NOT_FOUND, H&F off refused), e2e (spend lowers dashboard Fear; start creates a private countdown the GM sees on the dashboard and a player doesn't); pnpm lint, typecheck, test pass"
+      - id: XS1
+        title: Settings - Expansions switch as the default for new campaigns
+        size: S
+        goal: The Settings dialog has an Expansions section with a Hope & Fear switch; new campaigns start with Hope & Fear on or off as set there, and each campaign's own switch still works.
+        depends_on: []
+        owns:
+          - src/app/(gm)/settings-dialog.tsx
+          - convex/settings.ts
+          - convex/tables/campaigns.ts
+          - convex/campaigns.ts
+          - src/lib/frames/options.ts
+          - tests/convex/settings.test.ts
+          - tests/convex/campaigns.test.ts
+          - tests/e2e/campaigns.spec.ts
+          - docs/tasks/TASK-XS1.md
+          - docs/data-model.md
+        reads:
+          - convex/lib/validators/campaigns.ts
+        acceptance:
+          - "settings gains optional `expansions: { hopeAndFear?: boolean }` (widen); settings.get/update carry it; campaigns.create sets the new campaign's hopeAndFear option from it when the frame offers that option (frames whose default is already on, like Castle High, keep their default unless the setting says off? — keep each frame's own default when the setting is unset; when set, it overrides the frame default for frames that offer the option)"
+          - "Settings dialog: an 'Expansions' section under Display with a 'Hope & Fear' switch (role=switch, 44 px) and one line: 'New campaigns start with Hope & Fear content. Change it per campaign on its dashboard.'; saves like the other settings"
+          - "Tests (unit/convex: create with the setting on/off/unset; e2e: toggle in Settings, create a campaign, its Hope & Fear option matches); pnpm lint, typecheck, test pass"
+  - wave: 2
+    tracers:
+      - id: EA1
+        title: Environment illustrations from the rulebooks
+        size: M
+        goal: Every environment whose book page shows its illustration gets that art on its stat block and a thumbnail in the list, like the adversary art.
+        depends_on: [EF1]
+        owns:
+          - scripts/srd/extract-environment-art.mjs
+          - public/environment-art/
+          - src/lib/srd/environment-art.ts
+          - src/components/adversaries/environments/stat-block.tsx
+          - src/components/adversaries/environments/index.tsx
+          - src/components/adversaries/environments/environments.css
+          - tests/unit/environment-art.test.ts
+          - tests/e2e/visual/EA1.spec.ts
+          - docs/tasks/TASK-EA1.md
+        reads:
+          - scripts/srd/extract-adversary-art.mjs
+          - docs/tasks/TASK-AA1.md
+          - src/lib/srd/environments.ts
+        acceptance:
+          - "Reuse the adversary art extractor's approach (captions first, checked against rendered pages; ambiguous ones left out and listed); WebP at most 900 px wide; shown whole and never larger than the book's image (as the adversary art after its fix: object-fit contain, max-height 340px); unit test checks files and ids; visual spec; pnpm lint, typecheck, test pass"
