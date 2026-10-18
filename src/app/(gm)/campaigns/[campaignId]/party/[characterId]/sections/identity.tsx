@@ -4,16 +4,18 @@ import "./identity.css";
 
 import { useState } from "react";
 
-import { SheetBox } from "@/components/party/sheet-ui";
+import { PortraitUpload } from "@/components/party/portrait";
+import { Label, Pill, SheetBox, Small, paperField } from "@/components/party/sheet-ui";
 import { assetBackground } from "@/lib/design-assets";
 import type { SheetPatch } from "@/lib/validation/characters";
-import { getCommunity, getSubclass, portraitFor, TRAIT_IDS, type ClassDef, type TraitId } from "@/lib/srd";
+import { getCommunity, getSubclass, getTransformation, portraitFor, TRAIT_IDS, type ClassDef, type TraitId } from "@/lib/srd";
+import { cn } from "@/lib/utils";
 
-import { Stepper, TextField } from "../fields";
+import { TextField } from "../fields";
 import { useSheet } from "../sheet-context";
 import { ancestryArtId, ancestryLabel, signed } from "../sheet-helpers";
 
-// Top of page 1 (board: portrait arch + Experiences | identity grid + traits). Restyled by S1.
+// Top of page 1, as on the board (Party.dc.html): portrait arch + Experiences | identity grid + traits.
 
 const TRAITS: Record<TraitId, { label: string; verbs: string }> = {
   agility: { label: "Agility", verbs: "Sprint · Leap · Maneuver" },
@@ -24,44 +26,84 @@ const TRAITS: Record<TraitId, { label: string; verbs: string }> = {
   knowledge: { label: "Knowledge", verbs: "Recall · Analyze · Comprehend" },
 };
 
+const MOD_MIN = -5;
+const MOD_MAX = 10;
+
+/** "+2", "2", "-1" or "−1" to a number in range; null when it isn't one. */
+function parseModifier(text: string): number | null {
+  const m = /^\s*([+\-−]?)(\d{1,2})\s*$/.exec(text);
+  if (!m) return null;
+  const n = Number(m[2]) * (m[1] === "-" || m[1] === "−" ? -1 : 1);
+  return Math.min(MOD_MAX, Math.max(MOD_MIN, n));
+}
+
+/** The board's trait card: green Cinzel head, ringed number, trait-mark dot, italic verbs; paper steppers for editors. */
 function TraitsGrid() {
   const { sheet, canEdit, update } = useSheet();
   const epoch = sheet.level >= 8 ? 3 : sheet.level >= 5 ? 2 : 1;
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" role="list" aria-label="Traits">
+    <div className="id-traits" role="list" aria-label="Traits">
       {TRAIT_IDS.map((t) => {
+        const { label, verbs } = TRAITS[t];
+        const value = sheet.traits[t];
         const marked = (sheet.traitMarks[t] ?? 0) === epoch;
+        const set = (v: number) => void update({ traits: { ...sheet.traits, [t]: v } });
         return (
-          <div key={t} role="listitem" className="cs-box items-center !gap-2 !p-3 text-center">
-            <span className="cs-trait-head self-stretch">{TRAITS[t].label}</span>
-            <span className="relative">
-              <span className="cs-num cs-circle" aria-label={`${TRAITS[t].label} ${signed(sheet.traits[t])}`}>
-                {signed(sheet.traits[t])}
+          <div key={t} role="listitem" className="id-trait">
+            <span className="id-trait-head">{label}</span>
+            <span className="id-trait-ring">
+              <span className={cn(paperField.number, "id-trait-circle")} aria-label={`${label} ${signed(value)}`}>
+                {signed(value)}
               </span>
+              {/* Marks change only through level-up, so the dot is shown, not toggled. */}
               {marked ? (
-                <span
-                  className="absolute -top-1 -right-2 size-5 rounded-full border-2 border-[#4d7a3a] bg-[#4d7a3a]"
-                  role="img"
-                  aria-label={`${TRAITS[t].label} marked this tier`}
-                />
-              ) : null}
+                <span className="id-trait-mark on" role="img" aria-label={`${label} marked this tier`} title={`${label} marked this tier`} />
+              ) : (
+                <span className="id-trait-mark" aria-hidden="true" />
+              )}
             </span>
             {canEdit ? (
-              <Stepper
-                label={TRAITS[t].label}
-                value={sheet.traits[t]}
-                min={-5}
-                max={10}
-                display={<span className="sr-only">{signed(sheet.traits[t])}</span>}
-                onChange={(v) => void update({ traits: { ...sheet.traits, [t]: v } })}
-                readOnly={false}
-              />
+              <div className="id-steps" role="group" aria-label={label}>
+                <button type="button" className="id-step" aria-label={`Decrease ${label}`} disabled={value <= MOD_MIN} onClick={() => set(value - 1)}>
+                  −
+                </button>
+                <span className="sr-only" aria-live="polite">
+                  {signed(value)}
+                </span>
+                <button type="button" className="id-step" aria-label={`Increase ${label}`} disabled={value >= MOD_MAX} onClick={() => set(value + 1)}>
+                  +
+                </button>
+              </div>
             ) : null}
-            <span className="text-[14px] text-[#4a3a26] italic">{TRAITS[t].verbs}</span>
+            <Small className="italic">{verbs}</Small>
           </div>
         );
       })}
     </div>
+  );
+}
+
+/** The board's 50 px "+2" field. Shows the saved value while unfocused; saves a valid number on blur. */
+function ModifierInput({ label, value, onSave }: { label: string; value: number; onSave: (next: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      className={cn(paperField.input, "id-exp-mod")}
+      inputMode="numeric"
+      aria-label={label}
+      maxLength={3}
+      value={draft ?? signed(value)}
+      onFocus={() => setDraft(signed(value))}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        const next = draft === null ? null : parseModifier(draft);
+        setDraft(null);
+        if (next !== null && next !== value) onSave(next);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+    />
   );
 }
 
@@ -71,41 +113,47 @@ function Experiences() {
   const list = sheet.experiences;
   const save = (next: NonNullable<SheetPatch["experiences"]>) => void update({ experiences: next });
   return (
-    <SheetBox title="Experiences">
-      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+    <SheetBox title="Experiences" className="id-exp">
+      <ul className="id-exp-list">
         {list.map((x, i) => (
-          <li key={`${i}-${x.name}`} className="flex flex-wrap items-center gap-2">
-            <div className="min-w-[160px] flex-[1_1_100%]">
+          <li key={x.id} className="id-exp-row">
+            <div className="id-exp-name">
               <TextField
                 label={`Experience ${i + 1}`}
                 hideLabel
                 value={x.name}
                 maxLength={80}
                 readOnly={!canEdit}
-                onSave={(name) => name && save(list.map((e, j) => (j === i ? { ...e, name } : e)))}
+                onSave={(name) => name && save(list.map((e) => (e.id === x.id ? { ...e, name } : e)))}
               />
             </div>
-            <Stepper
-              label={`${x.name} bonus`}
-              value={x.value}
-              min={-5}
-              max={10}
-              display={signed(x.value)}
-              readOnly={!canEdit}
-              onChange={(value) => save(list.map((e, j) => (j === i ? { ...e, value } : e)))}
-            />
             {canEdit ? (
-              <button type="button" className="cs-step" aria-label={`Remove ${x.name}`} onClick={() => save(list.filter((_, j) => j !== i))}>
-                ×
-              </button>
-            ) : null}
+              <>
+                <ModifierInput
+                  label={`Experience ${i + 1} modifier`}
+                  value={x.value}
+                  onSave={(value) => save(list.map((e) => (e.id === x.id ? { ...e, value } : e)))}
+                />
+                <button type="button" className="id-step id-exp-remove" aria-label={`Remove ${x.name}`} onClick={() => save(list.filter((e) => e.id !== x.id))}>
+                  ×
+                </button>
+              </>
+            ) : (
+              <span className={cn(paperField.locked, "id-exp-mod")} aria-label={`Experience ${i + 1} modifier ${signed(x.value)}`}>
+                {signed(x.value)}
+              </span>
+            )}
           </li>
         ))}
-        {list.length === 0 ? <li className="cs-small italic">No Experiences yet.</li> : null}
+        {list.length === 0 ? (
+          <li>
+            <Small className="italic">No Experiences yet.</Small>
+          </li>
+        ) : null}
       </ul>
       {canEdit && list.length < 12 ? (
         <form
-          className="flex gap-2"
+          className="id-exp-row"
           onSubmit={(e) => {
             e.preventDefault();
             const name = draft.trim();
@@ -114,28 +162,33 @@ function Experiences() {
             setDraft("");
           }}
         >
-          <label className="min-w-0 flex-1">
+          <label className="id-exp-name">
             <span className="sr-only">New Experience</span>
-            <input className="cs-in" placeholder="New Experience" maxLength={80} value={draft} onChange={(e) => setDraft(e.target.value)} />
+            <input className={paperField.input} placeholder="New Experience" maxLength={80} value={draft} onChange={(e) => setDraft(e.target.value)} />
           </label>
-          <button type="submit" className="cs-pill">
+          <Pill type="submit" className="id-exp-add">
             Add
-          </button>
+          </Pill>
         </form>
       ) : null}
     </SheetBox>
   );
 }
 
-function ReadOnlyField({ label, value }: { label: string; value: string }) {
+/** A set-at-creation value in the board's locked field (`sh-in sh-locked`). */
+function LockedField({ label, value, title = "Set at character creation", tag }: { label: string; value: string; title?: string; tag?: string }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="cs-lbl">{label}</span>
-      <span className="cs-in cs-ro">{value}</span>
+    <div className="id-field">
+      <Label>{label}</Label>
+      <div className={paperField.locked} title={title}>
+        <span>{value}</span>
+        {tag ? <span className="id-hf">{tag}</span> : null}
+      </div>
     </div>
   );
 }
 
+/** The board's arched portrait frame (`pt-frame`), with the upload button for editors as its `pt-actions` overlay. */
 function Portrait() {
   const { sheet, character } = useSheet();
   const uploaded = character.portraitUrl;
@@ -150,13 +203,28 @@ function Portrait() {
         : art
           ? assetBackground(art.asset)
           : "none";
+  const empty = image === "none";
   return (
-    <div
-      role="img"
-      aria-label={`Portrait of ${sheet.name}`}
-      className="mx-auto aspect-[4/5] w-full max-w-[240px] rounded-t-full border-[3px] border-double border-[#a8865a] bg-[#e8d9b6] bg-cover bg-no-repeat shadow-[inset_0_0_30px_rgba(40,25,8,.3)]"
-      style={{ backgroundImage: image, backgroundPosition: sheet.portrait ? "center" : (art?.position ?? "center") }}
-    />
+    <div className={cn("id-portrait", empty && "id-portrait-empty")}>
+      <div
+        role="img"
+        aria-label={`Portrait of ${sheet.name}`}
+        className="id-portrait-art"
+        style={{ backgroundImage: image, backgroundPosition: sheet.portrait ? "center 30%" : (art?.position ?? "center 30%") }}
+      >
+        {empty ? (
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
+          </svg>
+        ) : null}
+      </div>
+      {character.canEdit ? (
+        <div className="id-portrait-actions">
+          <PortraitUpload character={character} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -164,20 +232,37 @@ function Portrait() {
 export function IdentitySection({ cls }: { cls: ClassDef | undefined }) {
   const { sheet, canEdit, update } = useSheet();
   const subclass = getSubclass(sheet.subclassId);
+  const transformationId = sheet.transformationId ?? (sheet.ancestry.kind === "shapeshifter" ? "shapeshifter" : undefined);
+  const transformation = transformationId ? (getTransformation(transformationId)?.name ?? transformationId) : "None";
   return (
-    <div className="cs-top">
-      <div className="cs-col">
+    <div className="cs-top id-top">
+      <div className="cs-col id-col">
         <Portrait />
         <Experiences />
       </div>
-      <div className="cs-col">
-        <div className="cs-box !grid grid-cols-1 content-start !gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <TextField label="Name" value={sheet.name} maxLength={80} readOnly={!canEdit} onSave={(name) => name && void update({ name })} />
-          <TextField label="Pronouns" value={sheet.pronouns} maxLength={80} placeholder="they/them" readOnly={!canEdit} onSave={(pronouns) => void update({ pronouns })} />
-          <ReadOnlyField label="Class" value={cls?.name ?? sheet.classId} />
-          <ReadOnlyField label="Subclass" value={subclass?.name ?? sheet.subclassId} />
-          <ReadOnlyField label="Ancestry" value={ancestryLabel(sheet.ancestry)} />
-          <ReadOnlyField label="Community" value={getCommunity(sheet.communityId)?.name ?? sheet.communityId} />
+      <div className="cs-col id-col">
+        <div className="id-head">
+          <div className="sh-box id-grid">
+            <div className="id-field">
+              <TextField label="Name" labelClassName="sh-lbl" value={sheet.name} maxLength={80} readOnly={!canEdit} onSave={(name) => name && void update({ name })} />
+            </div>
+            <div className="id-field">
+              <TextField
+                label="Pronouns"
+                labelClassName="sh-lbl"
+                value={sheet.pronouns}
+                maxLength={80}
+                placeholder="they/them"
+                readOnly={!canEdit}
+                onSave={(pronouns) => void update({ pronouns })}
+              />
+            </div>
+            <LockedField label="Ancestry" value={ancestryLabel(sheet.ancestry)} />
+            <LockedField label="Community" value={getCommunity(sheet.communityId)?.name ?? sheet.communityId} />
+            <LockedField label="Subclass" value={subclass?.name ?? sheet.subclassId} />
+            <LockedField label="Class" value={cls?.name ?? sheet.classId} />
+            <LockedField label="Transformation" value={transformation} title="Gained through the story, not at will" tag="H&F" />
+          </div>
         </div>
         <TraitsGrid />
       </div>
