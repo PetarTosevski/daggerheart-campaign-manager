@@ -1,0 +1,28 @@
+/*
+ * The sheet's rest picker (picker.tsx), at the top of the Downtime box. Board look: Cinzel head like the
+ * SHORT REST / LONG REST heads, moves as the board's 44 px Garamond chips (green when picked), paper selects
+ * (sh-in) and the solid wine confirm pill. Tokens: --sheet-* in the sheet route's sheet.css.
+ */
+.rp{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border:1px dashed var(--sheet-gold-line,#b08a3e);border-radius:10px;background:rgba(255,252,243,.6)}
+.rp-h{margin:0;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#7a5b2e}
+.rp-form{display:flex;flex-direction:column;gap:12px}
+.rp-slot{display:flex;flex-direction:column;gap:8px}
+.rp-chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.rp-slot-lbl{flex-basis:100%}
+.rp-chip{min-height:44px;padding:0 16px;border-radius:999px;border:1.5px solid #b9a27a;background:transparent;color:var(--sheet-ink,#2a1f14);font-family:var(--font-garamond),serif;font-size:18px;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.rp-chip:hover{border-color:var(--sheet-green,#3d5e2e)}
+.rp-chip[aria-pressed="true"]{border-color:var(--sheet-green,#3d5e2e);background:var(--sheet-green,#3d5e2e);color:#f3f7ee}
+.rp-chip:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+.rp-field{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:340px}
+.rp-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.rp-actions>.sh-pill{align-self:auto}
+.rp-error{margin:0;font-size:14px;color:#8a1c1c}
+.rp-project{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin:0;padding:10px 0 0;border:0;border-top:1px dashed var(--sheet-gold-line,#b08a3e)}
+.rp-project>legend{float:left;width:100%;margin-bottom:4px;padding:0}
+.rp-grow{flex:1;min-width:160px}
+.rp-count{width:88px}
+.rp-swaps{display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px dashed var(--sheet-gold-line,#b08a3e)}
+.rp-swap-lists{display:flex;flex-wrap:wrap;gap:16px}
+.rp-swap-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.rp-swap-list>li{display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:var(--font-garamond),serif;font-size:16px;color:var(--sheet-ink,#2a1f14)}
+@media (max-width:640px){.rp{padding:10px}.rp-field{max-width:none}.rp-swap-lists{flex-direction:column}}
