@@ -220,6 +220,12 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   wither: z.number().int().min(0).max(99).default(0),
   /** The last Hope slot was scarred (CB 106): the GM ends the character's journey. */
   journeyEnds: z.boolean().default(false),
+  /**
+   * Feature slot bonuses already added to `hpMax`/`stressMax` (keys of `FEATURE_SLOTS`,
+   * src/lib/domain/characters/slots.ts), so none is applied twice. Optional (SS1, widened, no version bump):
+   * missing on sheets stored before it, which `migrations/slotBonuses:applySlotBonuses` backfills.
+   */
+  slotBonuses: z.array(z.string().min(1).max(60)).max(20).optional(),
 });
 
 /** The stored sheet's current `schemaVersion`. */

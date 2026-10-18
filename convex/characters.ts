@@ -15,6 +15,7 @@ import {
   STARTING_STRESS,
 } from "../src/lib/domain/characters/index";
 import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
+import { applySlotBonuses } from "../src/lib/domain/characters/slots";
 import { addCard, cardTakeProblem, sourcesFor } from "../src/lib/domain/level-up/index";
 import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
 import { appError, RuleError } from "../src/lib/errors/app-error";
@@ -131,7 +132,10 @@ function awayView(c: Doc<"characters">): Pick<CharacterView, "away" | "benched">
 async function toView(ctx: QueryCtx, c: Doc<"characters">, sheet: CharacterSheet, viewer: Doc<"users">, canEdit: boolean): Promise<CharacterView> {
   const portraitUrl = sheet.portrait?.kind === "upload" ? await portraitFileUrl(ctx, c._id, sheet.portrait.storageId) : null;
   // Only editors get the upload's storage id; everyone else gets `portraitUrl` and a placeholder id.
-  const shown: CharacterSheet = !canEdit && sheet.portrait?.kind === "upload" ? { ...sheet, portrait: { kind: "upload", storageId: "hidden" } } : sheet;
+  // `slotBonuses` is server bookkeeping (feature slots, SS1); the view validator doesn't carry it.
+  const { slotBonuses: _bonuses, ...rest } = sheet;
+  void _bonuses;
+  const shown: CharacterSheet = !canEdit && rest.portrait?.kind === "upload" ? { ...rest, portrait: { kind: "upload", storageId: "hidden" } } : rest;
   return {
     _id: c._id,
     ownerId: c.ownerId,
@@ -283,7 +287,8 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
     ...(draft.portrait ? { portrait: draft.portrait } : {}),
   };
   assertEquipment(sheet, allowExpansion, { ikonis });
-  return sheet;
+  // At Ease, Battlemage, Endurance, High Stamina: their slots raise the starting maximums.
+  return applySlotBonuses(sheet);
 }
 
 /** "Your choice of a Minor Health Potion … or a Minor Stamina Potion" (Core ch. 1, step 5). */

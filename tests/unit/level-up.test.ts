@@ -289,6 +289,35 @@ describe("subclass and multiclass crossing out (CB 110-111)", () => {
   });
 });
 
+describe("multiclass foundation slots (SS1: At Ease, Battlemage)", () => {
+  const war = { classId: "wizard", domainId: "codex", subclassId: "school-of-war" };
+
+  it("multiclassing into School of War adds a Hit Point slot; undo takes it back", () => {
+    const at4 = climb(BASE, 4);
+    const at5 = up(at4, [{ option: "multiclass", tier: 3 }], { multiclass: war });
+    expect(at5.hpMax).toBe(at4.hpMax + 1);
+    expect(at5.stressMax).toBe(at4.stressMax);
+    expect(at5.slotBonuses).toEqual(["subclass:school-of-war"]);
+    const back = revertLevelUp({ ...at5, hp: at5.hpMax });
+    expect(back.hpMax).toBe(at4.hpMax);
+    expect(back.hp).toBe(at4.hpMax);
+    expect(revertLevelUp(at5)).toEqual({ ...at4, slotBonuses: [] });
+  });
+
+  it("a foundation without a slot changes no maximum", () => {
+    const at4 = climb(BASE, 4);
+    const at5 = up(at4, [{ option: "multiclass", tier: 3 }], { multiclass: { ...war, subclassId: "school-of-knowledge" } });
+    expect([at5.hpMax, at5.stressMax]).toEqual([at4.hpMax, at4.stressMax]);
+    expect(at5.slotBonuses).toBeUndefined();
+  });
+
+  it("the new slot counts toward the 12-slot cap", () => {
+    const at4 = { ...climb(BASE, 4), hpMax: 12 };
+    const problems = validateLevelUp(at4, { picks: [{ option: "multiclass", tier: 3 }], cardId: freshCard(at4, 5), experienceName: "x", multiclass: war }, CTX);
+    expect(problems).toContain("Hit Points stop at 12 slots.");
+  });
+});
+
 describe("domain card caps (CB 110-111)", () => {
   it("the level card is the level or lower from the class domains", () => {
     const at2 = up(BASE, [hp, stress]);
