@@ -11,7 +11,7 @@ import { useIntent } from "@/lib/use-intent";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { CharacterView } from "../../../../convex/characters";
-import { DiceFaces, rollHeadline } from "./parts";
+import { DiceTiles, rollHeadline } from "./parts";
 
 const COST = 3;
 
@@ -71,7 +71,7 @@ export function TagTeam({ campaignId, character, disabled }: { campaignId: Id<"c
   if (!open) {
     return (
       <div>
-        <button type="button" className="cs-pill" disabled={disabled} onClick={() => setOpen(true)}>
+        <button type="button" className="sh-pill" disabled={disabled} onClick={() => setOpen(true)}>
           Tag Team Roll…
         </button>
       </div>
@@ -79,34 +79,34 @@ export function TagTeam({ campaignId, character, disabled }: { campaignId: Id<"c
   }
 
   return (
-    <section aria-label="Tag Team Roll" className="flex flex-col gap-3 rounded-[10px] border border-[#d1b98b] p-3">
+    <section aria-label="Tag Team Roll" className="dc-tag">
       <div className="flex items-center justify-between gap-2">
-        <span className="cs-lbl">Tag Team Roll ({COST} Hope, once per session)</span>
-        <button type="button" className="cs-pill !min-h-9" onClick={() => setOpen(false)}>
+        <span className="sh-lbl">Tag Team Roll ({COST} Hope, once per session)</span>
+        <button type="button" className="sh-pill" onClick={() => setOpen(false)}>
           Close
         </button>
       </div>
-      {used ? <p className="cs-small m-0 italic">You already started a Tag Team Roll this session.</p> : null}
+      {used ? <p className="sh-small m-0 italic">You already started a Tag Team Roll this session.</p> : null}
       {pending ? (
         <div className="flex flex-col gap-2">
-          <p className="cs-small m-0">Choose the roll that counts for both:</p>
+          <p className="sh-small m-0">Choose the roll that counts for both:</p>
           {pending.rolls.map((r) => (
             <div key={r.entryId} className="flex flex-wrap items-center gap-3">
-              <span className="font-display text-[18px]">
+              <span className="dc-tag-name">
                 {r.name}: {rollHeadline(r.roll)}
               </span>
-              <DiceFaces dice={r.roll.dice} />
-              <button type="button" className="cs-pill cs-solid" disabled={apply.pending} onClick={() => void pick(pending.rolls[0]!.entryId, r.characterId, r.name)}>
+              <DiceTiles roll={r.roll} />
+              <button type="button" className="sh-pill solid" disabled={apply.pending} onClick={() => void pick(pending.rolls[0]!.entryId, r.characterId, r.name)}>
                 Use {r.name}’s roll
               </button>
             </div>
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1">
-            <span className="cs-lbl">Partner</span>
-            <select className="cs-in" value={partnerId} onChange={(e) => setPartnerId(e.target.value)}>
+        <div className="dc-tag-grid">
+          <label className="dc-field">
+            <span className="sh-lbl">Partner</span>
+            <select className="dc-in" value={partnerId} onChange={(e) => setPartnerId(e.target.value)}>
               <option value="">{party === undefined ? "Loading the party…" : "Choose a partner"}</option>
               {partners.map((c) => (
                 <option key={c._id} value={c._id}>
@@ -115,13 +115,13 @@ export function TagTeam({ campaignId, character, disabled }: { campaignId: Id<"c
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="cs-lbl">Difficulty</span>
-            <input className="cs-in text-center" inputMode="numeric" placeholder="GM’s call" value={difficulty} onChange={(e) => setDifficulty(e.target.value.replace(/[^0-9]/g, "").slice(0, 2))} />
+          <label className="dc-field">
+            <span className="sh-lbl">Difficulty</span>
+            <input className="dc-in" inputMode="numeric" placeholder="GM’s call" value={difficulty} onChange={(e) => setDifficulty(e.target.value.replace(/[^0-9]/g, "").slice(0, 2))} />
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="cs-lbl">Your trait</span>
-            <select className="cs-in" value={mine} onChange={(e) => setMine(e.target.value as TraitId)}>
+          <label className="dc-field">
+            <span className="sh-lbl">Your trait</span>
+            <select className="dc-in" value={mine} onChange={(e) => setMine(e.target.value as TraitId)}>
               {TRAIT_IDS.map((t) => (
                 <option key={t} value={t}>
                   {TRAIT_LABEL[t]}
@@ -129,9 +129,9 @@ export function TagTeam({ campaignId, character, disabled }: { campaignId: Id<"c
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="cs-lbl">Partner’s trait</span>
-            <select className="cs-in" value={theirs} onChange={(e) => setTheirs(e.target.value as TraitId)}>
+          <label className="dc-field">
+            <span className="sh-lbl">Partner’s trait</span>
+            <select className="dc-in" value={theirs} onChange={(e) => setTheirs(e.target.value as TraitId)}>
               {TRAIT_IDS.map((t) => (
                 <option key={t} value={t}>
                   {TRAIT_LABEL[t]}
@@ -140,13 +140,13 @@ export function TagTeam({ campaignId, character, disabled }: { campaignId: Id<"c
             </select>
           </label>
           <div>
-            <button type="button" className="cs-pill cs-solid" disabled={disabled || used || !partner || character.sheet.hope < COST || start.pending} onClick={() => void begin()}>
+            <button type="button" className="sh-pill solid" disabled={disabled || used || !partner || character.sheet.hope < COST || start.pending} onClick={() => void begin()}>
               Roll together ({COST} Hope)
             </button>
           </div>
         </div>
       )}
-      <p aria-live="polite" className="cs-small m-0 empty:hidden">
+      <p aria-live="polite" className="sh-small m-0 empty:hidden">
         {start.error ?? apply.error ?? applied}
       </p>
     </section>

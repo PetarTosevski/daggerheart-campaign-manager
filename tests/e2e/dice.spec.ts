@@ -85,12 +85,16 @@ test("a player rolls from the sheet and the GM and player see it in the feed", a
   await box.getByLabel("Trait").selectOption("presence");
   await box.getByLabel("Difficulty").fill("12");
   await box.getByRole("button", { name: "Roll", exact: true }).click();
-  await expect(box.getByTestId("last-roll")).toBeVisible();
+  await expect(box.getByTestId("last-roll")).toContainText("Presence +2 action roll vs 12");
+  await expect(box.getByText(/^GM Fear \d+$/)).toBeVisible();
+  // A second roll moves the first into the "Earlier" list.
+  await box.getByRole("button", { name: "Roll", exact: true }).click();
+  await expect(box.getByRole("list", { name: "Earlier" }).getByRole("listitem")).toHaveCount(1);
 
   await page.goto(`/campaigns/${campaignId}`);
-  await expect(feedOf(page).getByRole("listitem").filter({ hasText: `${hero}: Presence action roll` })).toBeVisible();
+  await expect(feedOf(page).getByRole("listitem").filter({ hasText: `${hero}: Presence action roll` })).toHaveCount(2);
   await player.goto(`/campaigns/${campaignId}`);
-  await expect(feedOf(player).getByRole("listitem").filter({ hasText: `${hero}: Presence action roll` })).toBeVisible();
+  await expect(feedOf(player).getByRole("listitem").filter({ hasText: `${hero}: Presence action roll` })).toHaveCount(2);
   await close();
 });
 
