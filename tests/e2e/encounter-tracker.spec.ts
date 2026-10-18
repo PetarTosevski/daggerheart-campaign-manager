@@ -105,6 +105,8 @@ test("the GM tracks damage, Stress, conditions, Fear, the spotlight and a hidden
   // (CB p.153), then End GM turn resets the counter.
   await card.getByRole("button", { name: "Spotlight Bear", exact: true }).click();
   await expect(card.getByTestId("spotlight-count")).toHaveText("Spotlight 1/1");
+  // At the limit the Spotlight button turns to the warning colour.
+  await expect(card.getByRole("button", { name: /^Spotlight Bear/ })).toHaveAttribute("data-maxed", "true");
   await card.getByRole("button", { name: "Spotlight Bear (spends 1 Fear)" }).click();
   await expect(card.getByTestId("spotlight-count")).toHaveText("Spotlight 2/1");
   await expect(tracker.getByTestId("tracker-fear")).toHaveAttribute("aria-label", "GM Fear 1 of 12");
