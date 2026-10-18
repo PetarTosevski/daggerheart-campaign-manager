@@ -77,7 +77,7 @@ describe("codex player view", () => {
     _id: "e1",
     kind: "character" as const,
     createdAt: 1,
-    data: { name: "Kreil", known: true, pdesc: "Quiet.", allegianceShown: "Haven", region: "", cover: "a" },
+    data: { name: "Kreil", role: "Spymaster", known: true, allegianceShown: "Haven", region: "", cover: "a" },
     images,
   };
 
@@ -85,13 +85,13 @@ describe("codex player view", () => {
     expect(toPlayerEntry("witherwild", { ...base, data: { ...base.data, known: false } }, null)).toBeNull();
   });
 
-  it("keeps only public fields and revealed images; the cover falls back to a revealed one", () => {
+  it("keeps only public fields (the role included) and revealed images; the cover falls back to a revealed one", () => {
     const view = toPlayerEntry("witherwild", base, null)!;
     expect(view).toEqual({
       _id: "e1",
       kind: "character",
       name: "Kreil",
-      pdesc: "Quiet.",
+      role: "Spymaster",
       allegianceShown: "Haven",
       region: "",
       tokenId: null,
@@ -115,9 +115,7 @@ describe("codex player view", () => {
       name: "Gate",
       role: "Ruin",
       known: true,
-      pdesc: "",
-      gmn: "secret",
-      allegiance: "",
+      allegiance: "Fanewick",
       allegianceShown: "unknown",
       region: "Haven",
       regionAuto: true,
@@ -128,7 +126,7 @@ describe("codex player view", () => {
     };
     expect(previewForPlayers("witherwild", gm, [{ id: 3, x: 55, y: 40, hidden: true }])).toMatchObject({ tokenId: null, region: "Haven" });
     expect(previewForPlayers("witherwild", gm, [{ id: 3, x: 55, y: 40, hidden: false }])).toMatchObject({ tokenId: 3 });
-    expect(JSON.stringify(previewForPlayers("witherwild", gm, []))).not.toContain("secret");
+    expect(JSON.stringify(previewForPlayers("witherwild", gm, []))).not.toContain("Fanewick");
   });
 });
 
