@@ -161,6 +161,15 @@ export function ancestryLabel(a: CharacterSheet["ancestry"]): string {
   return `Shapeshifter (${getAncestry(a.form)?.name ?? a.form} form)`;
 }
 
+/** Roving-focus tabs (WAI-ARIA tabs pattern): the tab index an arrow, Home or End key moves to, or -1 for other keys. */
+export function nextTabIndex(key: string, current: number, count: number): number {
+  if (key === "ArrowRight") return (current + 1) % count;
+  if (key === "ArrowLeft") return (current + count - 1) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return -1;
+}
+
 /** The ancestry whose art stands in for a missing portrait. */
 export function ancestryArtId(a: CharacterSheet["ancestry"]): string {
   return a.kind === "single" ? a.id : a.kind === "mixed" ? a.first : a.form;

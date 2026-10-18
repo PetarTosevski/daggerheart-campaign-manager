@@ -1,224 +1,63 @@
 "use client";
 
-import { Lock } from "lucide-react";
+import { useState, type KeyboardEvent } from "react";
 
-import { assetBackground } from "@/lib/design-assets";
-import { getClass, getDomain, getSubclass, PORTRAITS, type ClassDef, type Feature, type SubclassDef } from "@/lib/srd";
+import type { ClassDef } from "@/lib/srd";
 
-import { TextField } from "./fields";
+import { DomainCardsSection } from "./sections/domains";
+import { HeritageSection, heritageCardCount } from "./sections/heritage";
 import { useSheet } from "./sheet-context";
-import { heritageCards } from "./sheet-helpers";
+import { nextTabIndex } from "./sheet-helpers";
 
-function Features({ features }: { features: readonly Feature[] }) {
-  return (
-    <div className="flex flex-col gap-2">
-      {features.map((f) => (
-        <p key={f.name} className="cs-hc-text">
-          <strong>{f.name}</strong>
-          {f.text ? `: ${f.text}` : ""}
-        </p>
-      ))}
-    </div>
-  );
-}
+const COLLECTIONS = [
+  { id: "cards", label: "Domain Cards" },
+  { id: "heritage", label: "Heritage & Subclass" },
+] as const;
 
-function HeritageCardView({
-  kind,
-  name,
-  tier,
-  sub,
-  features,
-  art,
-  note,
-  locked,
-}: {
-  kind: string;
-  name: string;
-  tier?: string;
-  sub?: string;
-  features: readonly Feature[];
-  art?: { asset: string; position: string };
-  note?: string;
-  locked?: string;
-}) {
-  return (
-    <article className={`cs-hc${locked ? " locked" : ""}`} aria-label={`${kind}: ${name}${tier ? ` ${tier}` : ""}${locked ? " (locked)" : ""}`}>
-      <div
-        className="cs-hc-art"
-        style={art ? { backgroundImage: assetBackground(art.asset), backgroundPosition: art.position } : undefined}
-      >
-        <span className="cs-hc-kind">{kind}</span>
-      </div>
-      <div className="cs-hc-body">
-        <div className="cs-hc-head">
-          <h4 className="cs-hc-name">{name}</h4>
-          {tier ? <span className="cs-hc-tier">{tier}</span> : null}
-        </div>
-        {sub ? <span className="cs-hc-sub">{sub}</span> : null}
-        <Features features={features} />
-        {note ? <p className="cs-small m-0 italic">{note}</p> : null}
-        {locked ? (
-          <span className="cs-hc-lock inline-flex items-center gap-1.5">
-            <Lock className="size-3.5" aria-hidden="true" />
-            {locked}
-          </span>
-        ) : null}
-      </div>
-    </article>
-  );
-}
+type CollectionId = (typeof COLLECTIONS)[number]["id"];
 
-function QuestionList({
-  title,
-  intro,
-  questions,
-  answers,
-  field,
-}: {
-  title: string;
-  intro: string;
-  questions: readonly string[];
-  answers: readonly string[];
-  field: "background" | "connections";
-}) {
-  const { canEdit, update } = useSheet();
-  const count = Math.max(questions.length, answers.length);
-  const save = (i: number, text: string) => {
-    const next = Array.from({ length: Math.max(count, i + 1) }, (_, j) => (j === i ? text : (answers[j] ?? "")));
-    void update({ [field]: next });
-  };
-  return (
-    <section className="cs-box" aria-label={title}>
-      <h3 className="cs-h">{title}</h3>
-      <p className="cs-small m-0 italic">{intro}</p>
-      {count === 0 ? <p className="cs-small m-0">No questions for this class.</p> : null}
-      {Array.from({ length: count }, (_, i) => (
-        <TextField
-          key={i}
-          label={questions[i] ?? `Your own question ${i + 1}`}
-          value={answers[i] ?? ""}
-          multiline
-          rows={3}
-          maxLength={2000}
-          labelClassName="text-[17px] font-semibold leading-snug text-[#2a1f14]"
-          readOnly={!canEdit}
-          onSave={(text) => save(i, text)}
-        />
-      ))}
-    </section>
-  );
-}
-
-const spellcastLine = (sub: SubclassDef | undefined) =>
-  sub?.spellcastTrait ? `Spellcast trait: ${sub.spellcastTrait[0].toUpperCase()}${sub.spellcastTrait.slice(1)}` : undefined;
-
-/** Multiclass (CB 111): the second class's class feature and chosen domain, and one foundation card. */
-function MulticlassCards({ multiclass }: { multiclass: { classId: string; domainId: string; subclassId: string } }) {
-  const cls = getClass(multiclass.classId);
-  const sub = getSubclass(multiclass.subclassId);
-  const domain = getDomain(multiclass.domainId)?.name ?? multiclass.domainId;
-  return (
-    <>
-      <div role="listitem">
-        <HeritageCardView kind="Multiclass" name={cls?.name ?? multiclass.classId} sub={`Domain: ${domain}`} features={cls?.classFeatures ?? []} />
-      </div>
-      <div role="listitem">
-        <HeritageCardView
-          kind="Multiclass subclass"
-          name={sub?.name ?? multiclass.subclassId}
-          tier="Foundation"
-          sub={spellcastLine(sub)}
-          features={sub?.foundation ?? []}
-          art={PORTRAITS[`sub-${multiclass.subclassId}`]}
-        />
-      </div>
-    </>
-  );
-}
-
+/** Domains page: the "Card collections" sub-tabs (board dk-tabs) over Domain Cards and Heritage & Subclass. */
 export function PageThree({ cls }: { cls: ClassDef | undefined }) {
-  const { sheet, canEdit, update } = useSheet();
-  const subclass = getSubclass(sheet.subclassId);
-  const subArt = PORTRAITS[`sub-${sheet.subclassId}`];
-  const heritage = heritageCards(sheet);
-  const spellcast = spellcastLine(subclass);
-  // Upgraded subclass cards (CB 110); multiclassing crosses out the mastery card (CB 111).
-  const rank = sheet.subclassRank;
-  const specializationLock = rank === "foundation" ? "Unlocks with your first upgraded subclass card" : undefined;
-  const masteryLock =
-    rank === "mastery" ? undefined : sheet.multiclass ? "Crossed out: you multiclassed" : "Unlocks with your second upgraded subclass card";
+  const { sheet } = useSheet();
+  const [tab, setTab] = useState<CollectionId>("cards");
+  const counts: Record<CollectionId, number> = { cards: sheet.domainCards.owned.length, heritage: heritageCardCount(sheet) };
+
+  function onKey(e: KeyboardEvent<HTMLDivElement>) {
+    const next = nextTabIndex(e.key, COLLECTIONS.findIndex((c) => c.id === tab), COLLECTIONS.length);
+    const target = COLLECTIONS[next];
+    if (!target) return;
+    e.preventDefault();
+    setTab(target.id);
+    document.getElementById(`subtab-${target.id}`)?.focus();
+  }
 
   return (
-    <div className="flex flex-col gap-4">
-      <p className="cs-small m-0 italic">Your subclass, ancestry and community cards. They’re always active and don’t count toward your domain card limit.</p>
-      <div className="cs-cards" role="list" aria-label="Heritage and subclass cards">
-        {subclass ? (
-          <>
-            <div role="listitem">
-              <HeritageCardView kind="Subclass" name={subclass.name} tier="Foundation" sub={spellcast} features={subclass.foundation} art={subArt} />
-            </div>
-            <div role="listitem">
-              <HeritageCardView
-                kind="Subclass"
-                name={subclass.name}
-                tier="Specialization"
-                features={subclass.specialization}
-                art={subArt}
-                locked={specializationLock}
-              />
-            </div>
-            <div role="listitem">
-              <HeritageCardView
-                kind="Subclass"
-                name={subclass.name}
-                tier="Mastery"
-                features={subclass.mastery}
-                art={subArt}
-                locked={masteryLock}
-              />
-            </div>
-          </>
-        ) : null}
-        {sheet.multiclass ? <MulticlassCards multiclass={sheet.multiclass} /> : null}
-        {heritage.map((c) => (
-          <div role="listitem" key={c.key}>
-            <HeritageCardView kind={c.kind} name={c.name} features={c.features} art={c.art} note={c.note} />
-          </div>
+    <div className="cs-page">
+      <div className="dk-tabs" role="tablist" aria-label="Card collections" onKeyDown={onKey}>
+        {COLLECTIONS.map((c) => (
+          <button
+            key={c.id}
+            id={`subtab-${c.id}`}
+            type="button"
+            role="tab"
+            className="dk-tab"
+            aria-selected={tab === c.id}
+            aria-controls={`subpanel-${c.id}`}
+            tabIndex={tab === c.id ? 0 : -1}
+            onClick={() => setTab(c.id)}
+          >
+            {c.label}
+            <span className="dk-tabn" aria-hidden="true">
+              {counts[c.id]}
+            </span>
+          </button>
         ))}
       </div>
-
-      <section className="cs-box" aria-label="Character description">
-        <h3 className="cs-h">Description</h3>
-        {cls && (cls.clothes || cls.attitude) ? (
-          <p className="cs-small m-0 italic">
-            {cls.clothes ? `Clothes that are ${cls.clothes}. ` : ""}
-            {cls.attitude ? `Attitude like ${cls.attitude}.` : ""}
-          </p>
-        ) : null}
-        <TextField label="Description" hideLabel value={sheet.description} multiline rows={3} maxLength={2000} readOnly={!canEdit} onSave={(description) => void update({ description })} />
-      </section>
-
-      <div className="cs-grid">
-        <QuestionList
-          title="Background"
-          intro="Answer the background questions or make your own."
-          questions={cls?.backgroundQuestions ?? []}
-          answers={sheet.background}
-          field="background"
-        />
-        <QuestionList
-          title="Connections"
-          intro="Ask these questions of the others in your party, or make your own."
-          questions={cls?.connectionQuestions ?? []}
-          answers={sheet.connections}
-          field="connections"
-        />
-      </div>
-
-      <section className="cs-box" aria-label="Notes">
-        <h3 className="cs-h">Notes</h3>
-        <TextField label="Notes" hideLabel value={sheet.notes} multiline rows={8} maxLength={10000} readOnly={!canEdit} onSave={(notes) => void update({ notes })} />
-      </section>
+      {COLLECTIONS.map((c) => (
+        <div key={c.id} id={`subpanel-${c.id}`} role="tabpanel" aria-labelledby={`subtab-${c.id}`} hidden={tab !== c.id}>
+          {tab !== c.id ? null : c.id === "cards" ? <DomainCardsSection cls={cls} /> : <HeritageSection />}
+        </div>
+      ))}
     </div>
   );
 }

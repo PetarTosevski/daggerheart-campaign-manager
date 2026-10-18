@@ -72,8 +72,9 @@ test("a level-1 character cannot see a Tier 3 weapon", async ({ page }) => {
   // Stalwart foundation, Unwavering: chainmail 7/15 + level 1 + 1 (CB 36).
   await expect(page.getByTestId("threshold-major")).toHaveText("Major 9");
   await expect(page.getByTestId("threshold-severe")).toHaveText("Severe 17");
-  // Page three: only the foundation card is unlocked at subclassRank foundation (CB 110).
-  await page.getByRole("tab", { name: "Heritage & Story" }).click();
+  // Domains > Heritage & Subclass: only the foundation card is unlocked at subclassRank foundation (CB 110).
+  await page.getByRole("tab", { name: "Domains" }).click();
+  await page.getByRole("tab", { name: "Heritage & Subclass" }).click();
   await expect(page.getByRole("article", { name: "Subclass: Stalwart Foundation" })).toBeVisible();
   await expect(page.getByRole("article", { name: "Subclass: Stalwart Specialization (locked)" })).toBeVisible();
   await expect(page.getByRole("article", { name: "Subclass: Stalwart Mastery (locked)" })).toBeVisible();

@@ -66,6 +66,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
+  // Visual comparison shots (tests/e2e/visual/*, tagged @visual) run only with E2E_VISUAL=1.
+  grepInvert: process.env.E2E_VISUAL === "1" ? undefined : /@visual/,
   retries: process.env.CI ? 2 : 0,
   reporter: "html",
   use: {

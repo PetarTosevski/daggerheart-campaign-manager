@@ -19,12 +19,22 @@ import { LevelUpStepper } from "./stepper";
 const paperButton =
   "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-4 font-display text-[13px] font-bold tracking-[0.06em] disabled:cursor-not-allowed disabled:opacity-50";
 
-/** The level-up button and stepper on the sheet header, next to the level; plus undo, history and the GM correction. */
+/** The sheet header's level circle (66 px double ring). */
+function LevelCircle({ level }: { level: number }) {
+  return (
+    <div className="cs-lvl" role="img" aria-label={`Level ${level}`}>
+      <strong aria-hidden="true">{level}</strong>
+      <span aria-hidden="true">LEVEL</span>
+    </div>
+  );
+}
+
+/** The sheet header's level circle with the level-up button and stepper beside it; plus undo, history and the GM correction. */
 export const LevelUpButton: CharacterSlot = ({ character, canEdit, isGm, hopeAndFear }) => {
   const [open, setOpen] = useState<"stepper" | "history" | null>(null);
   const undo = useIntent(api.levelUp.undoLast);
   const sheet = fullSheet(character);
-  if (!sheet) return null;
+  if (!sheet) return <LevelCircle level={character.sheet.level} />;
   const name = sheet.name;
   const canLevel = canEdit && sheet.level < MAX_LEVEL && (sheet.levelUpPending || isGm);
   const latest = sheet.advancements.at(-1);
@@ -32,6 +42,7 @@ export const LevelUpButton: CharacterSlot = ({ character, canEdit, isGm, hopeAnd
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <LevelCircle level={sheet.level} />
       {canLevel ? (
         <button type="button" className={`${paperButton} border-[#4f8a3a] bg-[#5b8c45] text-white`} onClick={() => setOpen("stepper")}>
           Level up to {sheet.level + 1}
@@ -65,6 +76,9 @@ export const LevelUpButton: CharacterSlot = ({ character, canEdit, isGm, hopeAnd
     </div>
   );
 };
+
+/** The Level Up region on the sheet's Story & Advancement page (tier boxes and history). Mount point; S8 fills it. */
+export const AdvancementTiers: CharacterSlot = () => null;
 
 function PendingBadge({ label }: { label: string }) {
   return (
