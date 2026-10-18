@@ -19,6 +19,8 @@
 //   other multiclass option (CB 110-111).
 // - Brawler only (or a Brawler multiclass): once per tier, raise the Combo Die
 //   one step, d4 → d6 → d8 → d10, in `classState.comboDie` (HF 10).
+// - A multiclass foundation that grants a slot (At Ease, Battlemage) raises
+//   that maximum; undoing the multiclass takes it back (characters/slots.ts).
 
 import { CLASSES } from "../../srd/classes";
 import { DOMAIN_CARDS } from "../../srd/domain-cards";
@@ -26,6 +28,7 @@ import { SUBCLASSES } from "../../srd/subclasses";
 import { TRAIT_IDS, type DomainCard, type Source, type TraitId } from "../../srd/types";
 import type { Advancement, AdvancementOption, AdvancementPick, CharacterSheet, SubclassRank } from "../../validation/characters";
 import { MAX_LEVEL, tierForLevel } from "../characters/index";
+import { FEATURE_SLOTS, gainSlotBonus, loseSlotBonus, subclassSlotKey } from "../characters/slots";
 
 /** An expected level-up rule violation; Convex turns it into LEVEL_UP_RULE. */
 export class LevelUpRuleError extends Error {
@@ -352,6 +355,10 @@ function planPicks(sheet: CharacterSheet, choice: LevelUpChoice, level: number, 
         if (level < 5) problems.push("Multiclassing starts at level 5.");
         const problem = multiclassProblem(sheet, choice.multiclass, ctx);
         if (problem) problems.push(problem);
+        // The new foundation's slot (At Ease, Battlemage) counts toward the 12-slot cap.
+        const bonus = choice.multiclass ? FEATURE_SLOTS[subclassSlotKey(choice.multiclass.subclassId)] : undefined;
+        if (bonus && "hp" in bonus) hp += bonus.hp;
+        if (bonus && "stress" in bonus) stress += bonus.stress;
         break;
       }
       case "comboDie":
@@ -488,6 +495,7 @@ export function applyLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ctx: 
         break;
       case "multiclass":
         next.multiclass = { ...choice.multiclass! };
+        next = gainSlotBonus(next, subclassSlotKey(next.multiclass.subclassId));
         break;
       case "comboDie":
         next.classState = { ...next.classState, comboDie: comboStep(next.classState.comboDie, 1)! };
@@ -519,7 +527,7 @@ export function revertLevelUp(sheet: CharacterSheet): CharacterSheet {
   if (advancement.level !== sheet.level) throw new LevelUpRuleError(`The level was set by hand; correct it back to ${advancement.level} first.`);
   const level = advancement.level;
   const rest = sheet.advancements.slice(0, -1);
-  const next: CharacterSheet = { ...sheet, traits: { ...sheet.traits }, traitMarks: { ...sheet.traitMarks } };
+  let next: CharacterSheet = { ...sheet, traits: { ...sheet.traits }, traitMarks: { ...sheet.traitMarks } };
 
   if (advancement.tradeIn && advancement.tradeOut) next.domainCards = swapCard(next.domainCards, advancement.tradeIn, advancement.tradeOut);
   const gained = [advancement.cardId, ...advancement.picks.filter((p) => p.option === "domainCard").flatMap((p) => p.targets ?? [])];
@@ -555,6 +563,7 @@ export function revertLevelUp(sheet: CharacterSheet): CharacterSheet {
         next.subclassRank = RANKS[RANKS.indexOf(next.subclassRank) - 1] ?? "foundation";
         break;
       case "multiclass":
+        if (next.multiclass) next = loseSlotBonus(next, subclassSlotKey(next.multiclass.subclassId));
         delete next.multiclass;
         break;
       case "comboDie": {
