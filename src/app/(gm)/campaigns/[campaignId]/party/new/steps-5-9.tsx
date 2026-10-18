@@ -150,9 +150,16 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
           <button
             type="button"
             className="wz-ghost"
-            onClick={() =>
-              update(opts.ikonis ? { armorId: loadout.armorId } : { primaryWeaponId: loadout.primaryWeaponId, secondaryWeaponId: loadout.secondaryWeaponId, armorId: loadout.armorId })
-            }
+            onClick={() => {
+              update(opts.ikonis ? { armorId: loadout.armorId } : { primaryWeaponId: loadout.primaryWeaponId, secondaryWeaponId: loadout.secondaryWeaponId, armorId: loadout.armorId });
+              // The equipment is set: move on to what is left on this step, the potion (and Next under it).
+              requestAnimationFrame(() => {
+                const inventory = document.getElementById("wz-inventory");
+                const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+                inventory?.scrollIntoView?.({ block: "start", behavior: reduce ? "auto" : "smooth" });
+                inventory?.parentElement?.querySelector<HTMLInputElement>('input[name="potion"]')?.focus({ preventScroll: true });
+              });
+            }}
           >
             Use suggested {opts.ikonis ? "armor" : "loadout"}
           </button>
@@ -229,7 +236,7 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
         {gearSummary(state)}
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div id="wz-inventory" className="flex scroll-mt-4 flex-col gap-2">
         <span className="wz-lbl">Inventory</span>
         <p className="wz-lead">You take a torch, 50 feet of rope, basic supplies and a handful of gold. Then choose:</p>
       </div>
