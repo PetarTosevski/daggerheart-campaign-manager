@@ -30,7 +30,7 @@ waves:
           - convex/tables/characters.ts
           - convex/characters.ts
           - src/components/party/party-card.tsx
-          - src/components/party/roster.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/roster.tsx
         acceptance:
           - "`away` gains an optional `requested: true` (widen; absent = confirmed, so stored rows stay final); a player's less-lethal death move sets it, the GM's doesn't; the views return it"
           - "A GM-only mutation (keyed, need owner) settles the request: confirm the requested reason or set the other one (infirmary/sentHome); it clears `requested`; refused for non-GM (FORBIDDEN) and when there is no pending request"
@@ -49,7 +49,7 @@ waves:
           - convex/lib/characterSheet.ts
           - convex/sessions.ts
           - src/components/party/session/index.tsx
-          - src/components/party/roster.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/roster.tsx
           - tests/convex/one-active.test.ts
           - tests/convex/sessions.test.ts
           - tests/e2e/players.spec.ts
