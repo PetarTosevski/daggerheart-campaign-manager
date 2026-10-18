@@ -155,3 +155,28 @@ export function textBlocks(text: string): TextBlock[] {
   }
   return blocks;
 }
+
+/** How the catalogue orders adversaries inside each tier group. */
+export type CatalogueSort = "name" | "book";
+
+const SOURCE_RANK: Record<string, number> = { core: 0, "hope-and-fear": 1 };
+
+/**
+ * Orders by tier (the list is grouped by tier), then alphabetically or in book order (Core Rulebook, then Hope & Fear,
+ * then frame entries; by page, then the data's order). Book order keeps adversaries a book prints together side by side,
+ * e.g. the assassins (user 2026-10-18).
+ */
+export function sortAdversaries<T extends Pick<AdversaryDef, "tier" | "name" | "source"> & { page?: number }>(list: readonly T[], sort: CatalogueSort): T[] {
+  const index = new Map(list.map((def, i) => [def, i]));
+  return [...list].sort((a, b) => {
+    if (a.tier !== b.tier) return a.tier - b.tier;
+    if (sort === "book") {
+      const source = (SOURCE_RANK[a.source] ?? 2) - (SOURCE_RANK[b.source] ?? 2);
+      if (source !== 0) return source;
+      const page = (a.page ?? 0) - (b.page ?? 0);
+      if (page !== 0) return page;
+      return (index.get(a) ?? 0) - (index.get(b) ?? 0);
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
