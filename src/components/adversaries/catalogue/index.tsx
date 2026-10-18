@@ -2,7 +2,7 @@
 
 import "./catalogue.css";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import {
   NO_FILTERS,
@@ -12,10 +12,12 @@ import {
   filterAdversaries,
   groupByTier,
   moreLabel,
+  sortAdversaries,
   toggleChip,
   typeLabel,
   type CatalogueBook,
   type CatalogueFilters,
+  type CatalogueSort,
   type CatalogueTier,
 } from "@/lib/adversaries/catalogue";
 import { adversariesFor } from "@/lib/domain/adversaries";
@@ -77,17 +79,52 @@ function ChipRow<T extends string | number>({
 }
 
 /** Catalogue tab (D8 A2): search, Tier / Type / Book chips, tier-grouped list with paging, and the selected stat block. */
+const SORT_KEY = "dcm:adversary-sort";
+const SORT_EVENT = "dcm-adversary-sort";
+/** The last choice, for when storage throws (private windows, blocked site data). */
+let sortFallback: CatalogueSort = "name";
+
+function readSort(): CatalogueSort {
+  try {
+    const stored = window.localStorage.getItem(SORT_KEY);
+    return stored === "book" || stored === "name" ? stored : sortFallback;
+  } catch {
+    return sortFallback;
+  }
+}
+
+function subscribeSort(onChange: () => void): () => void {
+  window.addEventListener(SORT_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(SORT_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
 export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProps) {
   const visible = useMemo(() => adversariesFor(ADVERSARIES, { hopeAndFear, frameId }), [hopeAndFear, frameId]);
   const [filters, setFilters] = useState<CatalogueFilters>(NO_FILTERS);
   const [limit, setLimit] = useState(PAGE_FIRST);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // A–Z or book order, remembered per device (browser storage is for conveniences only).
+  const sort = useSyncExternalStore(subscribeSort, readSort, () => "name" as CatalogueSort);
+  function chooseSort(next: CatalogueSort) {
+    setLimit(PAGE_FIRST);
+    try {
+      window.localStorage.setItem(SORT_KEY, next);
+    } catch {
+      // Storage blocked: the order can't be remembered; fall back to the in-page event only.
+    }
+    sortFallback = next;
+    window.dispatchEvent(new Event(SORT_EVENT));
+  }
   const detailRef = useRef<HTMLElement>(null);
 
   // The Book row exists only with Hope & Fear on; a Book filter left over from before the switch went off is ignored.
   const book = hopeAndFear ? filters.book : null;
   const { query, tier, type } = filters;
-  const matches = useMemo(() => filterAdversaries(visible, { query, tier, type, book }), [visible, query, tier, type, book]);
+  const matches = useMemo(() => sortAdversaries(filterAdversaries(visible, { query, tier, type, book }), sort), [visible, query, tier, type, book, sort]);
   const groups = groupByTier(matches, limit);
   const more = moreLabel(matches.length, limit);
   const selected = matches.find((def) => def.id === selectedId) ?? matches[0] ?? null;
@@ -123,6 +160,15 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
             value={filters.query}
             onChange={(event) => update({ query: event.target.value })}
           />
+          <div className="adc-chips" role="group" aria-label="Order">
+            <span className="adc-flab">Order</span>
+            <Chip on={sort === "name"} onClick={() => chooseSort("name")}>
+              A–Z
+            </Chip>
+            <Chip on={sort === "book"} onClick={() => chooseSort("book")}>
+              Book order
+            </Chip>
+          </div>
           <ChipRow label="Tier" values={TIERS} current={tier} name={String} onPick={(tier) => update({ tier })} />
           <ChipRow<AdversaryType> label="Type" values={ADVERSARY_TYPES} current={type} name={String} onPick={(type) => update({ type })} />
           {hopeAndFear ? (

@@ -153,3 +153,22 @@ describe("stat block labels", () => {
     expect(blocks[1]!.kind === "list" && blocks[1]!.items).toHaveLength(6);
   });
 });
+
+describe("sortAdversaries", () => {
+  it("A–Z keeps tiers together and orders names; book order follows source and page so a book's groups stay together", async () => {
+    const { sortAdversaries } = await import("../../src/lib/adversaries/catalogue");
+    const { ADVERSARIES } = await import("../../src/lib/srd/adversaries");
+    const tier2Core = ADVERSARIES.filter((a) => a.tier === 2 && a.source === "core");
+    const byName = sortAdversaries(tier2Core, "name").map((a) => a.name);
+    expect(byName).toEqual([...byName].sort((a, b) => a.localeCompare(b)));
+    const book = sortAdversaries(tier2Core, "book");
+    // The three assassins are on CB p.220: adjacent in book order, not in A–Z.
+    const at = (list: readonly { name: string }[], name: string) => list.findIndex((a) => a.name === name);
+    const idx = ["Apprentice Assassin", "Assassin Poisoner", "Master Assassin"].map((n) => at(book, n)).sort((a, b) => a - b);
+    expect(idx[2]! - idx[0]!).toBeLessThanOrEqual(3);
+    expect(book.map((a) => a.page)).toEqual([...book.map((a) => a.page)].sort((a, b) => (a ?? 0) - (b ?? 0)));
+    // Tiers stay grouped whatever the order.
+    const all = sortAdversaries(ADVERSARIES, "book").map((a) => a.tier);
+    expect(all).toEqual([...all].sort((a, b) => a - b));
+  });
+});
