@@ -7,11 +7,15 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 const calls: { name: string; args: unknown }[] = [];
 let current: CharacterView | null = null;
+/** What `rests.current` returns: no open rest unless a test opens one. */
+let restsCurrent: { open: { _id: string } | null; shortRestsSinceLong: number; last: null } = { open: null, shortRestsSinceLong: 0, last: null };
+
+const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 
 vi.mock("convex/react", () => ({
-  useQuery: () => current,
+  useQuery: (ref: unknown) => (functionName(ref) === "rests:current" ? restsCurrent : current),
   useMutation: (ref: unknown) => {
-    const name = String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
+    const name = functionName(ref);
     return async (args: unknown) => {
       calls.push({ name, args });
     };
@@ -73,6 +77,7 @@ describe("character sheet", () => {
   beforeEach(() => {
     calls.length = 0;
     current = character();
+    restsCurrent = { open: null, shortRestsSinceLong: 0, last: null };
   });
 
   it("shows page one with computed thresholds and proficiency dice", () => {
@@ -106,10 +111,22 @@ describe("character sheet", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     });
-    expect(calls.map((c) => c.args)).toEqual([{ characterId: "c1", damage: 13, useArmorSlot: true }]);
+    // Keyed (review L2): each click sends its own idempotency key.
+    expect(calls.map((c) => c.args)).toEqual([{ characterId: "c1", damage: 13, useArmorSlot: true, idempotencyKey: expect.any(String) }]);
+  });
+
+  it("polish 31: with no rest open the vault button shows the real Recall Cost, even with the rest box ticked", () => {
+    show();
+    fireEvent.click(screen.getByRole("tab", { name: "Domain Cards" }));
+    const vault = screen.getByRole("list", { name: "Vault cards" });
+    expect(within(vault).getByRole("button", { name: "Move to loadout (2 Stress)" })).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Swapping during a rest/));
+    expect(within(vault).getByRole("button", { name: "Move to loadout (2 Stress)" })).toBeInTheDocument();
+    expect(screen.getByTestId("no-open-rest")).toBeInTheDocument();
   });
 
   it("moves domain cards between loadout and vault", async () => {
+    restsCurrent = { open: { _id: "r1" }, shortRestsSinceLong: 0, last: null };
     show();
     fireEvent.click(screen.getByRole("tab", { name: "Domain Cards" }));
     const loadout = screen.getByRole("list", { name: "Loadout cards" });

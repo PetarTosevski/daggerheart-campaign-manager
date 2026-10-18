@@ -107,6 +107,25 @@ describe("levelUp", () => {
     ]);
   });
 
+  it("polish 27: a Brawler raises the Combo Die (HF 10); undo lowers it; a Warrior is refused", async () => {
+    const { t, gm, a, b, sheetOf } = await setup();
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get("characters", a))!;
+      await ctx.db.patch("characters", a, { sheet: { ...c.sheet, classId: "brawler", subclassId: "juggernaut" } });
+    });
+    const choice = {
+      picks: [{ option: "comboDie" as const, tier: 2 }, { option: "hp" as const, tier: 2 }],
+      experienceName: "Bare Knuckles",
+      cardId: cardsForDomains(["valor"], 2).find((c) => c.level === 2)!.id,
+    };
+    expect(await gm.mutation(api.levelUp.apply, { characterId: a, choice, idempotencyKey: key() })).toEqual({ level: 2 });
+    expect((await sheetOf(a)).classState.comboDie).toBe(6);
+    await gm.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() });
+    expect((await sheetOf(a)).classState.comboDie).toBeUndefined();
+    const warrior = { ...choice, cardId: CHOICE.cardId };
+    expect(await failure(gm.mutation(api.levelUp.apply, { characterId: b, choice: warrior, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
+  });
+
   it("an invalid choice is LEVEL_UP_RULE", async () => {
     const { gm, a } = await setup();
     const bad = { ...CHOICE, picks: [{ option: "traits" as const, tier: 2, targets: ["agility", "agility"] }, { option: "hp" as const, tier: 2 }] };

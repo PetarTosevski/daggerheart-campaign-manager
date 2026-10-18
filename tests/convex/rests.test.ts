@@ -111,6 +111,23 @@ describe("rests", () => {
     expect(await codeOf(start("short"))).toBe("ok");
   });
 
+  it("M5: a rest over 49 resting PCs is refused (start and finish), never a partial undo group", async () => {
+    const { t, a, start, finish } = await setup();
+    const copies = (n: number) =>
+      t.run(async (ctx) => {
+        const c = (await ctx.db.get("characters", a))!;
+        for (let i = 0; i < n; i++) {
+          await ctx.db.insert("characters", { campaignId: c.campaignId, ownerId: c.ownerId, createdBy: c.createdBy, status: "active", sheet: c.sheet, createdAt: 0, updatedAt: 0 });
+        }
+      });
+    await copies(47);
+    const { restId } = await start("short");
+    await copies(1);
+    expect(await codeOf(finish(restId))).toBe("REST_RULE");
+    await t.run((ctx) => ctx.db.delete("rests", restId));
+    expect(await codeOf(start("short"))).toBe("REST_RULE");
+  });
+
   it("refuses a second open rest", async () => {
     const { start } = await setup();
     await start("short");

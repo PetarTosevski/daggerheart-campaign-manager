@@ -16,6 +16,7 @@
 import { v } from "convex/values";
 
 import { expire } from "../src/lib/domain/characters/expiry";
+import { appError } from "../src/lib/errors/app-error";
 import { onSessionEnd, onSessionStart } from "../src/lib/domain/class-features/hooks";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -29,12 +30,13 @@ import { campaignQuery, keyedGmMutation } from "./lib/functions";
 /** One party: a handful of characters (a group holds at most 50 rows, one is the campaign's). */
 const PARTY_MAX = 49;
 
-/** The campaign's characters with readable sheets; a corrupt sheet is left alone. */
+/** The campaign's characters with readable sheets; a corrupt sheet is left alone. More than PARTY_MAX is INVALID, never a silent skip (review M5). */
 async function party(ctx: MutationCtx, campaignId: Id<"campaigns">) {
   const rows = await ctx.db
     .query("characters")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
-    .take(PARTY_MAX);
+    .take(PARTY_MAX + 1);
+  if (rows.length > PARTY_MAX) throw appError("INVALID", `A session can update at most ${PARTY_MAX} characters; remove some from the campaign.`);
   return rows.flatMap((character) => {
     try {
       return [{ character, sheet: readSheet(character.sheet) }];

@@ -159,7 +159,9 @@ export async function undoEntry(
       : await ctx.db
           .query("actionLog")
           .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.groupId))
-          .take(GROUP_MAX);
+          .take(GROUP_MAX + 1);
+  // A partial group would restore some sheets and miss others: refuse instead.
+  if (group.length > GROUP_MAX) throw appError("UNDO_STALE", "This action touched too many characters to undo.");
   if (group.some((r) => refuse.kinds.includes(r.kind))) throw appError("UNDO_STALE", refuse.message);
   if (group.some((r) => !r.undoable || r.undoneAt !== undefined)) throw appError("UNDO_STALE");
 

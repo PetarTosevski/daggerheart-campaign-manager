@@ -212,6 +212,26 @@ async function resetEndurance(ctx: MutationCtx, campaign: Doc<"campaigns">, inpu
 }
 
 /**
+ * HF 176, "Resting": "Inside a sanctuary, the party can take a long rest".
+ * In Journey to Horizon, REST_RULE when the hex crawl puts the party in a hex
+ * with no sanctuary marker; other frames, or no crawl, pass. `rests.start`
+ * calls it up front; the rest hook checks again on finish. `map`: the
+ * caller's already loaded map.
+ */
+export async function assertSanctuaryLongRest(ctx: MutationCtx, campaign: Doc<"campaigns">, map?: Awaited<ReturnType<typeof writableMap>>): Promise<void> {
+  if (campaign.frameId !== horizonTracker.frameId) return;
+  const { scalars } = map ?? (await writableMap(ctx, campaign));
+  const crawl = scalars.hexCrawl;
+  if (!crawl?.party) return;
+  const image = mapImageSize(campaign.frameId, scalars);
+  const party = hexKey(crawl.party);
+  const tokens = await listMapTokens(ctx, campaign._id);
+  if (!tokens.some((t) => t.type === SANCTUARY_TYPE && hexKey(tokenHex(t, image, crawl.grid)) === party)) {
+    throw appError("REST_RULE", "Outside a sanctuary the party can take only short rests (HF 176). Move the party to a sanctuary, or interrupt the rest for a short rest's benefits.");
+  }
+}
+
+/**
  * Rest hook (D5 T3b, HF 176, "Resting"): "Outside a sanctuary, the party can
  * take only short rests, each of which represents an entire day spent in one
  * location. Inside a sanctuary, the party can take a long rest". A long rest
@@ -226,14 +246,7 @@ export const horizonRestHook: RestHook = async (ctx, input) => {
   if (campaign.frameId !== horizonTracker.frameId) return [];
   const map = await writableMap(ctx, campaign);
   const crawl = map.scalars.hexCrawl;
-  if (kind === "long" && crawl?.party) {
-    const image = mapImageSize(campaign.frameId, map.scalars);
-    const party = hexKey(crawl.party);
-    const tokens = await listMapTokens(ctx, campaign._id);
-    if (!tokens.some((t) => t.type === SANCTUARY_TYPE && hexKey(tokenHex(t, image, crawl.grid)) === party)) {
-      throw appError("REST_RULE", "Outside a sanctuary the party can take only short rests (HF 176). Move the party to a sanctuary, or interrupt the rest for a short rest's benefits.");
-    }
-  }
+  if (kind === "long") await assertSanctuaryLongRest(ctx, campaign, map);
   const lines: string[] = [];
   const days = horizonDaysPassed({ kind, interrupted, gmOverride: rest.gmOverride ?? false });
   if (days > 0 && crawl !== undefined && crawl.day + days <= MAX_CRAWL_DAY) {

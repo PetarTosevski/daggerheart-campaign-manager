@@ -80,13 +80,13 @@ describe("Wither tokens", () => {
     const { gm, campaignId, a } = await setup("beast-feast");
     expect(await codeOf(gm.mutation(api.wither.gain, { campaignId, characterId: a, idempotencyKey: key() }))).toBe("MECHANIC_DISABLED");
     expect(await codeOf(gm.mutation(api.wither.adjust, { campaignId, characterId: a, delta: 1, idempotencyKey: key() }))).toBe("MECHANIC_DISABLED");
-    expect(await codeOf(gm.mutation(api.characters.applyDamage, { characterId: a, damage: 999, useArmorSlot: false, withered: true }))).toBe("MECHANIC_DISABLED");
+    expect(await codeOf(gm.mutation(api.characters.applyDamage, { characterId: a, damage: 999, useArmorSlot: false, withered: true, idempotencyKey: key() }))).toBe("MECHANIC_DISABLED");
   });
 
   it("Severe damage from a Withered source adds a token and rolls the Fear Die publicly", async () => {
     const { t, gm, a, sheetOf } = await setup();
     fearDie(12);
-    const result = await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 999, useArmorSlot: false, withered: true });
+    const result = await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 999, useArmorSlot: false, withered: true, idempotencyKey: key() });
     expect(result.severity).toBe("severe");
     expect(result.wither).toMatchObject({ tokens: 1, fearDie: 12, scarred: false, journeyEnds: false });
     expect((await sheetOf(a)).wither).toBe(1);
@@ -97,7 +97,7 @@ describe("Wither tokens", () => {
 
   it("Minor damage from a Withered source adds no token", async () => {
     const { gm, a, sheetOf } = await setup();
-    const result = await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 1, useArmorSlot: false, withered: true });
+    const result = await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 1, useArmorSlot: false, withered: true, idempotencyKey: key() });
     expect(result.severity).toBe("minor");
     expect(result.wither).toBeUndefined();
     expect((await sheetOf(a)).wither).toBe(0);
@@ -105,7 +105,7 @@ describe("Wither tokens", () => {
 
   it("Severe damage without a Withered source adds no token", async () => {
     const { gm, a, sheetOf } = await setup();
-    const result = await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 999, useArmorSlot: false });
+    const result = await gm.mutation(api.characters.applyDamage, { characterId: a, damage: 999, useArmorSlot: false, idempotencyKey: key() });
     expect(result.wither).toBeUndefined();
     expect((await sheetOf(a)).wither).toBe(0);
   });
@@ -115,7 +115,7 @@ describe("Wither tokens", () => {
     await setTokens(a, 2);
     const hpBefore = (await sheetOf(a)).hp;
     fearDie(3);
-    const result = await p1.mutation(api.characters.applyDamage, { characterId: a, damage: 999, useArmorSlot: false, withered: true });
+    const result = await p1.mutation(api.characters.applyDamage, { characterId: a, damage: 999, useArmorSlot: false, withered: true, idempotencyKey: key() });
     expect(result.wither).toMatchObject({ tokens: 3, fearDie: 3, scarred: true });
     const after = await sheetOf(a);
     expect(after).toMatchObject({ wither: 0, scars: 1 });

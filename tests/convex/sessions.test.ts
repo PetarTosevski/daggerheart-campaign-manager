@@ -123,6 +123,18 @@ describe("sessions", () => {
     expect(result.journeyEnds).toEqual([{ characterId: b, name: "Bryn" }]);
   });
 
+  it("M5: over 49 characters, start and end are INVALID instead of silently skipping some", async () => {
+    const { t, gm, campaignId, a } = await setup();
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get("characters", a))!;
+      for (let i = 0; i < 48; i++) {
+        await ctx.db.insert("characters", { campaignId: c.campaignId, ownerId: c.ownerId, createdBy: c.createdBy, status: "active", sheet: c.sheet, createdAt: 0, updatedAt: 0 });
+      }
+    });
+    expect(await codeOf(gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() }))).toBe("INVALID");
+    expect(await codeOf(gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() }))).toBe("INVALID");
+  });
+
   it("start stamps the session once; current is readable by members", async () => {
     const { gm, p1, campaignId } = await setup();
     expect(await p1.query(api.sessions.current, { campaignId })).toEqual({ startedAt: null });

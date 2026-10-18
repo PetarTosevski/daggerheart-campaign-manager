@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useId, useMemo, useRef, useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
+import { rallyDieStress } from "@/lib/domain/class-features/held-dice";
 import { classActions, hopeFeature } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES, CLASS_STATE_LABELS, classFeaturesAvailable } from "@/lib/domain/class-features/index";
 import type { FeatureInput, FeatureMeta } from "@/lib/domain/class-features/types";
@@ -331,9 +332,12 @@ export function FeaturesBox(props: SlotProps) {
   const sheet = props.character.sheet;
   const available = classFeaturesAvailable(sheet.classId, props.hopeAndFear);
   const hope = available ? hopeFeature(sheet) : undefined;
-  // Class actions of the class and the multiclass, each offered only if its class is (Hope & Fear option).
-  const actions = classActions(sheet).filter((f) =>
-    [sheet.classId, sheet.multiclass?.classId].some((id) => id !== undefined && classFeaturesAvailable(id, props.hopeAndFear) && CLASS_FEATURES[id]?.classActions?.includes(f)),
+  // Class actions of the class and the multiclass, each offered only if its class is (Hope & Fear option);
+  // a held Rally Die comes from a Bard, so it is offered either way.
+  const actions = classActions(sheet).filter(
+    (f) =>
+      f.key === rallyDieStress.key ||
+      [sheet.classId, sheet.multiclass?.classId].some((id) => id !== undefined && classFeaturesAvailable(id, props.hopeAndFear) && CLASS_FEATURES[id]?.classActions?.includes(f)),
   );
   const conditions = sheet.conditions ?? [];
   const held = sheet.heldDice ?? [];

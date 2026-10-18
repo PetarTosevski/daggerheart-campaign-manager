@@ -40,7 +40,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { installedAugments, seedMotherboard } from "./characterExtras";
 import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
-import { campaignQuery, keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
+import { campaignQuery, keyedCampaignMutation, keyedUserMutation, userMutation, userQuery } from "./lib/functions";
 import { assertMechanicEnabled } from "./lib/mechanics";
 import { atLeast, type Permission } from "./lib/permissions";
 import {
@@ -274,6 +274,27 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
 /** "Your choice of a Minor Health Potion … or a Minor Stamina Potion" (Core ch. 1, step 5). */
 const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
 
+/** Reversible defaults (review M5): the most characters a campaign holds, and the most one player owns in it. */
+export const MAX_CHARACTERS_PER_CAMPAIGN = 50;
+export const MAX_CHARACTERS_PER_PLAYER = 12;
+
+/**
+ * Refuses a character that would push the campaign past its cap, or `owner`
+ * past the per-player cap (the GM's own, unassigned characters count only
+ * towards the campaign's). `moving`: an existing character changing hands.
+ */
+async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">, moving?: Doc<"characters">) {
+  // Bounded by the cap itself.
+  const party = await ctx.db
+    .query("characters")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
+    .take(MAX_CHARACTERS_PER_CAMPAIGN);
+  if (moving === undefined && party.length >= MAX_CHARACTERS_PER_CAMPAIGN) invalid(`A campaign holds at most ${MAX_CHARACTERS_PER_CAMPAIGN} characters.`);
+  if (owner === campaign.ownerId) return;
+  const owned = party.filter((c) => c.ownerId === owner && c._id !== moving?._id).length;
+  if (owned >= MAX_CHARACTERS_PER_PLAYER) invalid(`A player has at most ${MAX_CHARACTERS_PER_PLAYER} characters in a campaign.`);
+}
+
 /** The owner of a new or reassigned character: the caller, or (GM only) the GM or a member of the campaign. */
 async function ownerFor(ctx: MutationCtx, campaign: Doc<"campaigns">, permission: Permission, user: Doc<"users">, ownerId?: Id<"users">) {
   if (!ownerId || ownerId === user._id) return user._id;
@@ -294,6 +315,7 @@ async function ownerFor(ctx: MutationCtx, campaign: Doc<"campaigns">, permission
  */
 export const create = keyedCampaignMutation({
   need: "view",
+  rateLimit: "createCharacter",
   // Telling the GM from a player decides who may assign another owner.
   enough: "owner",
   args: { draft: characterDraftValidator, ownerId: v.optional(v.id("users")), ikonis: v.optional(ikonisValidator) },
@@ -311,6 +333,7 @@ export const create = keyedCampaignMutation({
     const sheet = sheetFromDraft(parsed, resolveOptions(ctx.campaign.frameId, ctx.campaign.options).hopeAndFear, motherboard);
     const owner = await ownerFor(ctx, ctx.campaign, ctx.permission, ctx.user, ownerId);
     return ctx.once("character_create", { draft: parsed, owner, ikonis: designed ?? null }, async () => {
+      await assertRoom(ctx, ctx.campaign, owner);
       const now = Date.now();
       const characterId = await ctx.db.insert("characters", {
         campaignId: ctx.campaign._id,
@@ -332,8 +355,9 @@ export const assignOwner = userMutation({
   args: { characterId: v.id("characters"), ownerId: v.id("users") },
   returns: v.null(),
   handler: async (ctx, { characterId, ownerId }) => {
-    const { campaign, permission } = await loadCharacter(ctx, ctx.user, characterId, "owner");
+    const { campaign, permission, character } = await loadCharacter(ctx, ctx.user, characterId, "owner");
     const owner = await ownerFor(ctx, campaign, permission, ctx.user, ownerId);
+    if (owner !== character.ownerId) await assertRoom(ctx, campaign, owner, character);
     await ctx.db.patch("characters", characterId, { ownerId: owner, updatedAt: Date.now() });
     return null;
   },
@@ -521,9 +545,10 @@ export const adjustResource = userMutation({
  * resulting Hit Points (Core, "Hit Points and Damage Thresholds"). Owner or GM.
  * `withered` (Witherwild, CB 261): Severe damage (after the Armor Slot) from a
  * Withered source also gains a Wither token and rolls the Fear Die
- * (convex/wither.ts); outside Witherwild it is MECHANIC_DISABLED.
+ * (convex/wither.ts); outside Witherwild it is MECHANIC_DISABLED. Keyed
+ * (review L2): a retry with the same idempotency key returns the first result.
  */
-export const applyDamage = userMutation({
+export const applyDamage = keyedUserMutation({
   args: { characterId: v.id("characters"), damage: v.number(), useArmorSlot: v.boolean(), withered: v.optional(v.boolean()) },
   returns: v.object({
     severity: v.union(v.literal("none"), v.literal("minor"), v.literal("major"), v.literal("severe")),
@@ -532,28 +557,29 @@ export const applyDamage = userMutation({
     armorMarked: v.number(),
     wither: v.optional(witherGainValidator),
   }),
-  handler: async (ctx, { characterId, damage, useArmorSlot, withered }) => {
-    if (!Number.isInteger(damage) || damage < 1 || damage > 999) invalid("Enter the damage as a whole number.");
-    const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
-    if (withered) assertMechanicEnabled(campaign, "witherTokens");
-    const defense = derivedDefense(s, await installedAugments(ctx, campaign, character._id));
-    // Armor base + level + always-on subclass bonuses (CB 36, 45; HF 10).
-    const thresholds = derivedThresholds(s);
-    if (useArmorSlot && s.armorMarked >= defense.armorScore) invalid("No Armor Slot is free.");
-    const result = hitPointsToMark(damage, thresholds, useArmorSlot);
-    const next: CharacterSheet = {
-      ...s,
-      armorMarked: useArmorSlot ? s.armorMarked + 1 : s.armorMarked,
-      hp: Math.min(s.hpMax, s.hp + result.marks),
-    };
-    await saveSheet(ctx, character._id, next);
-    // The Wither row's `before` is the damaged sheet: undoing it takes back the token, not the damage.
-    const wither =
-      withered && result.severity === "severe"
-        ? await gainWitherToken(ctx, { campaignId: campaign._id, characterId: character._id, sheet: next, actorId: ctx.user._id, source: "Severe Withered damage" })
-        : undefined;
-    return { severity: result.severity, marks: result.marks, hp: next.hp, armorMarked: next.armorMarked, ...(wither ? { wither } : {}) };
-  },
+  handler: async (ctx, { characterId, damage, useArmorSlot, withered }) =>
+    ctx.once("character_damage", { characterId, damage, useArmorSlot, withered: withered ?? false }, async () => {
+      if (!Number.isInteger(damage) || damage < 1 || damage > 999) invalid("Enter the damage as a whole number.");
+      const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
+      if (withered) assertMechanicEnabled(campaign, "witherTokens");
+      const defense = derivedDefense(s, await installedAugments(ctx, campaign, character._id));
+      // Armor base + level + always-on subclass bonuses (CB 36, 45; HF 10).
+      const thresholds = derivedThresholds(s);
+      if (useArmorSlot && s.armorMarked >= defense.armorScore) invalid("No Armor Slot is free.");
+      const result = hitPointsToMark(damage, thresholds, useArmorSlot);
+      const next: CharacterSheet = {
+        ...s,
+        armorMarked: useArmorSlot ? s.armorMarked + 1 : s.armorMarked,
+        hp: Math.min(s.hpMax, s.hp + result.marks),
+      };
+      await saveSheet(ctx, character._id, next);
+      // The Wither row's `before` is the damaged sheet: undoing it takes back the token, not the damage.
+      const wither =
+        withered && result.severity === "severe"
+          ? await gainWitherToken(ctx, { campaignId: campaign._id, characterId: character._id, sheet: next, actorId: ctx.user._id, source: "Severe Withered damage" })
+          : undefined;
+      return { severity: result.severity, marks: result.marks, hp: next.hp, armorMarked: next.armorMarked, ...(wither ? { wither } : {}) };
+    }),
 });
 
 /**
@@ -595,13 +621,19 @@ export const moveCard = userMutation({
   },
 });
 
-/** Marks a character dead, retired or active again. Owner or GM. (Death moves come in D5.) */
+/**
+ * Marks a character dead, retired or active again. Owner or GM, but only the
+ * GM moves a character out of dead or away (review M3: an owner can't revive
+ * their own character). Any change clears `away` (HF 127).
+ */
 export const setStatus = userMutation({
   args: { characterId: v.id("characters"), status: characterStatusValidator },
   returns: v.null(),
   handler: async (ctx, { characterId, status }) => {
-    await loadCharacter(ctx, ctx.user, characterId, "edit");
-    await ctx.db.patch("characters", characterId, { status, updatedAt: Date.now() });
+    const { character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+    if (status === character.status) return null;
+    if ((character.status === "dead" || character.status === "away") && permission !== "owner") throw appError("FORBIDDEN");
+    await ctx.db.patch("characters", characterId, { status, away: undefined, updatedAt: Date.now() });
     return null;
   },
 });

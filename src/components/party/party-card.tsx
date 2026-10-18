@@ -225,7 +225,7 @@ export function PartyCard({
         dead ? "border-[#3a2a2a]" : "border-[#253338]",
       )}
     >
-      {dead ? <FallenOverlay name={name} canEdit={canEdit} busy={busy} onRevive={() => status("active")} /> : null}
+      {dead ? <FallenOverlay name={name} canEdit={isGm} busy={busy} onRevive={() => status("active")} /> : null}
       <Link href={`/campaigns/${campaignId}/party/${character._id}`} className="flex items-center gap-3.5 rounded-[10px] hover:bg-white/[0.03]">
         <CharacterPortrait character={character} size={76} />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">

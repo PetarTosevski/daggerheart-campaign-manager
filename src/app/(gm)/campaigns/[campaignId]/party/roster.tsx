@@ -98,7 +98,7 @@ export function RosterCard({
         </button>
       ) : null}
       {dead ? (
-        <FallenOverlay name={name} canEdit={canEdit} busy={busy} onRevive={() => void run(() => setStatus({ characterId: character._id, status: "active" }))} />
+        <FallenOverlay name={name} canEdit={isGm} busy={busy} onRevive={() => void run(() => setStatus({ characterId: character._id, status: "active" }))} />
       ) : null}
 
       <div className="flex items-baseline justify-between gap-2.5 px-4 py-3 [text-shadow:0_1px_3px_rgba(0,0,0,0.55)]" style={{ background: banner }}>

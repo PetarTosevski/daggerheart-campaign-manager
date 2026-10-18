@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { hexToPixel } from "../../src/lib/world/hex";
+import { initialHexCrawl, WORLD_MAPS } from "../../src/lib/world/map-state";
 import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
@@ -161,5 +163,19 @@ describe("Horizon Doom Track and Soul Echoes", () => {
     expect(errorCode(await gm.query(api.trackers.horizon.get, { campaignId }).catch((e) => e))).toBe("TRACKER_CORRUPT");
     expect(errorCode(await player.query(api.trackers.horizon.get, { campaignId }).catch((e) => e))).toBe("TRACKER_CORRUPT");
     expect(errorCode(await mark("1a").catch((e) => e))).toBe("TRACKER_CORRUPT");
+  });
+
+  it("rests.start refuses a long rest outside a sanctuary up front (HF 176); a short rest and a sanctuary hex are fine", async () => {
+    const { gm, campaignId } = await setup();
+    const start = (kind: "short" | "long") => gm.mutation(api.rests.start, { campaignId, kind, idempotencyKey: key() });
+    await gm.mutation(api.maps.placePartyHex, { campaignId, q: 10, r: 10 });
+    expect(errorCode(await start("long").catch((e) => e))).toBe("REST_RULE");
+    expect((await gm.query(api.rests.current, { campaignId })).open).toBeNull();
+    const { width, height } = WORLD_MAPS["journey-to-horizon"];
+    const p = hexToPixel({ q: 10, r: 10 }, initialHexCrawl().grid);
+    await gm.mutation(api.maps.addToken, { campaignId, type: "sanctuary", x: (p.x / width) * 100, y: (p.y / height) * 100, idempotencyKey: key() });
+    expect((await gm.query(api.rests.current, { campaignId })).open).toBeNull();
+    const { restId } = await start("long");
+    expect((await gm.query(api.rests.current, { campaignId })).open?._id).toBe(restId);
   });
 });

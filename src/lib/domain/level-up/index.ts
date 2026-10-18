@@ -17,6 +17,8 @@
 // - Upgraded subclass crosses out that tier's multiclass; multiclass (level 5+,
 //   once) crosses out that tier's upgraded subclass, the mastery card and the
 //   other multiclass option (CB 110-111).
+// - Brawler only (or a Brawler multiclass): once per tier, raise the Combo Die
+//   one step, d4 → d6 → d8 → d10, in `classState.comboDie` (HF 10).
 
 import { CLASSES } from "../../srd/classes";
 import { DOMAIN_CARDS } from "../../srd/domain-cards";
@@ -49,9 +51,29 @@ export const OPTION_RULES: Record<AdvancementOption, { slots: number; fromTier: 
   subclass: { slots: 1, fromTier: 3, cost: 1, label: "Take an upgraded subclass card" },
   proficiency: { slots: 1, fromTier: 3, cost: 2, label: "Increase your Proficiency by +1" },
   multiclass: { slots: 1, fromTier: 3, cost: 2, label: "Multiclass" },
+  // HF 10, Combo Strike: "Once per tier, you can increase your Combo Die by one step as a level advancement option."
+  comboDie: { slots: 1, fromTier: 2, cost: 1, label: "Increase your Combo Die by one step" },
 };
 
-export const OPTION_ORDER: readonly AdvancementOption[] = ["traits", "hp", "stress", "experiences", "domainCard", "evasion", "subclass", "proficiency", "multiclass"];
+export const OPTION_ORDER: readonly AdvancementOption[] = ["traits", "hp", "stress", "experiences", "domainCard", "evasion", "subclass", "proficiency", "multiclass", "comboDie"];
+
+/** Options only one class offers: the Brawler's Combo Die (HF 10), for a Brawler or a Brawler multiclass (which gains the class feature). */
+const CLASS_ONLY: Partial<Record<AdvancementOption, string>> = { comboDie: "brawler" };
+
+/** Whether the character's class (or multiclass) offers the option at all. */
+export function offersOption(sheet: Pick<CharacterSheet, "classId" | "multiclass">, option: AdvancementOption): boolean {
+  const only = CLASS_ONLY[option];
+  return only === undefined || sheet.classId === only || sheet.multiclass?.classId === only;
+}
+
+/** The Combo Die's sizes: it starts as a d4 and each advancement raises it one step (HF 10). */
+export const COMBO_DIE_STEPS: readonly number[] = [4, 6, 8, 10, 12];
+
+/** The Combo Die one step up (`by` 1) or down (`by` -1), or undefined past either end. */
+function comboStep(current: number | undefined, by: 1 | -1): number | undefined {
+  const index = COMBO_DIE_STEPS.indexOf(current ?? COMBO_DIE_STEPS[0]!);
+  return index === -1 ? undefined : COMBO_DIE_STEPS[index + by];
+}
 
 /** The highest card level the domain card option of a tier may take ("up to level 4/7", CB 110). */
 export const DOMAIN_CARD_CAP: Record<Tier, number> = { 2: 4, 3: 7, 4: MAX_LEVEL };
@@ -109,7 +131,7 @@ function crossedOut(sheet: Progress, tier: number, option: AdvancementOption): s
 }
 
 /** Every option of every tier, with its slots and whether it can be taken at the next level. */
-export function availableOptions(sheet: Pick<CharacterSheet, "level"> & Progress): OptionSlot[] {
+export function availableOptions(sheet: Pick<CharacterSheet, "level" | "classId"> & Progress): OptionSlot[] {
   const next = sheet.level + 1;
   const reached = next > MAX_LEVEL ? 0 : tierForLevel(next);
   const picks = picksOf(sheet);
@@ -117,7 +139,7 @@ export function availableOptions(sheet: Pick<CharacterSheet, "level"> & Progress
   for (const tier of TIERS) {
     for (const option of OPTION_ORDER) {
       const rule = OPTION_RULES[option];
-      if (tier < rule.fromTier) continue;
+      if (tier < rule.fromTier || !offersOption(sheet, option)) continue;
       const used = usedSlots(picks, tier, option);
       const blocked =
         tier > reached
@@ -218,6 +240,7 @@ function planPicks(sheet: CharacterSheet, choice: LevelUpChoice, level: number, 
   let evasion = sheet.evasion;
   let proficiency = sheet.proficiency + (ACHIEVEMENT_LEVELS.includes(level) ? 1 : 0);
   let rank = RANKS.indexOf(sheet.subclassRank);
+  let combo: number | undefined = sheet.classState.comboDie;
 
   for (const p of choice.picks) {
     const rule = OPTION_RULES[p.option];
@@ -291,6 +314,11 @@ function planPicks(sheet: CharacterSheet, choice: LevelUpChoice, level: number, 
         if (problem) problems.push(problem);
         break;
       }
+      case "comboDie":
+        if (!offersOption(sheet, "comboDie")) problems.push("Only a Brawler has a Combo Die.");
+        combo = comboStep(combo, 1);
+        if (combo === undefined) problems.push("Your Combo Die is at its largest.");
+        break;
     }
     picks.push(pick);
   }
@@ -420,6 +448,9 @@ export function applyLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ctx: 
       case "multiclass":
         next.multiclass = { ...choice.multiclass! };
         break;
+      case "comboDie":
+        next.classState = { ...next.classState, comboDie: comboStep(next.classState.comboDie, 1)! };
+        break;
       case "domainCard":
         break;
     }
@@ -485,6 +516,13 @@ export function revertLevelUp(sheet: CharacterSheet): CharacterSheet {
       case "multiclass":
         delete next.multiclass;
         break;
+      case "comboDie": {
+        // Back one step; back at the starting d4 the field goes, as before the first advancement.
+        const { comboDie, ...state } = next.classState;
+        const lower = comboStep(comboDie, -1);
+        next.classState = lower === undefined || lower === COMBO_DIE_STEPS[0] ? state : { ...state, comboDie: lower };
+        break;
+      }
       case "domainCard":
         break;
     }

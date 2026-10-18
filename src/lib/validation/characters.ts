@@ -87,8 +87,8 @@ export const HELD_DIE_UNTIL = ["session", "longRest", "manual"] as const;
 export const FEATURE_USE_UNTIL = ["rest", "longRest", "session"] as const;
 export const HELD_DIE_KINDS = ["rally", "prayer", "patron", "combo"] as const;
 
-/** The level-up options (CB 110). Proficiency and multiclass take both picks of a level. */
-export const ADVANCEMENT_OPTIONS = ["traits", "hp", "stress", "experiences", "domainCard", "evasion", "subclass", "proficiency", "multiclass"] as const;
+/** The level-up options (CB 110; `comboDie`: Brawler only, HF 10). Proficiency and multiclass take both picks of a level. */
+export const ADVANCEMENT_OPTIONS = ["traits", "hp", "stress", "experiences", "domainCard", "evasion", "subclass", "proficiency", "multiclass", "comboDie"] as const;
 export type AdvancementOption = (typeof ADVANCEMENT_OPTIONS)[number];
 
 const shortText = z.string().trim().min(1).max(80);

@@ -122,7 +122,7 @@ test("the GM plays a character sheet: tracks, damage, cards and notes", async ({
   await expect(page.getByRole("group", { name: "Hit Point: 3 of 5 marked" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Armor Slot: 1 of 3 marked" })).toBeVisible();
 
-  // Domain cards: vault Book of Ava, then recall it during a rest (free).
+  // Domain cards: vault Book of Ava, then recall it (no rest is open, so it costs Stress).
   await page.getByRole("tab", { name: "Domain Cards" }).click();
   const loadout = page.getByRole("list", { name: "Loadout cards" });
   await loadout.getByRole("article", { name: "Book of Ava" }).getByRole("button", { name: "Move to vault" }).click();
@@ -130,9 +130,9 @@ test("the GM plays a character sheet: tracks, damage, cards and notes", async ({
   await expect(vault.getByRole("article", { name: "Book of Ava" })).toBeVisible();
   await expect(vault.getByRole("button", { name: "Move to loadout (2 Stress)" })).toBeVisible();
   await page.getByLabel(/Swapping during a rest \(free only while the GM has a rest open\)/).check();
-  // No party rest is open, so the server charges the Recall Cost anyway.
+  // No party rest is open, so the server charges the Recall Cost anyway, and the button says so (polish 31).
   await expect(page.getByTestId("no-open-rest")).toBeVisible();
-  await vault.getByRole("button", { name: "Move to loadout (free)" }).click();
+  await vault.getByRole("button", { name: "Move to loadout (2 Stress)" }).click();
   await expect(loadout.getByRole("article", { name: "Book of Ava" })).toBeVisible();
 
   // Notes save on blur and survive a reload.
