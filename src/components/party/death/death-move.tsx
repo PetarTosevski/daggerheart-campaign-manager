@@ -21,15 +21,27 @@ const MOVE_HINTS: Record<DeathMove, string> = {
 };
 
 /** The death-move strip and parchment modal on the sheet (CB 106), for the owner and the GM. The badges sit in the banner. */
-export function DeathMoveSheet({ character, canEdit }: SlotProps) {
+export function DeathMoveSheet({ character, canEdit, isGm }: SlotProps) {
   return (
     <section aria-label="Death moves" className="db-strip">
-      {canEdit ? <DeathMoveControls characterId={character._id} name={character.sheet.name} updatedAt={character.updatedAt} sheet={character.sheet} /> : null}
+      {canEdit ? <DeathMoveControls characterId={character._id} name={character.sheet.name} updatedAt={character.updatedAt} sheet={character.sheet} isGm={isGm} /> : null}
     </section>
   );
 }
 
-function DeathMoveControls({ characterId, name, updatedAt, sheet }: { characterId: Id<"characters">; name: string; updatedAt: number; sheet: SlotProps["character"]["sheet"] }) {
+function DeathMoveControls({
+  characterId,
+  name,
+  updatedAt,
+  sheet,
+  isGm,
+}: {
+  characterId: Id<"characters">;
+  name: string;
+  updatedAt: number;
+  sheet: SlotProps["character"]["sheet"];
+  isGm: boolean;
+}) {
   const state = useQuery(api.deathMoves.state, { characterId });
   const undo = useIntent(api.deathMoves.undo);
   // Closing the modal hides it until the character changes again.
@@ -77,24 +89,28 @@ function DeathMoveControls({ characterId, name, updatedAt, sheet }: { characterI
       ) : null}
       <PaperModal open={open} onClose={() => setDismissedAt(updatedAt)} title="Death move">
         {state.pending?.move === "blazeOfGlory" ? (
-          <FinishBlaze characterId={characterId} name={name} lessLethal={state.lessLethal} onDone={setResult} />
+          <FinishBlaze characterId={characterId} name={name} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} />
         ) : state.pending?.move === "riskItAll" ? (
           <SplitRiskItAll key={state.undoEntryId ?? "risk"} characterId={characterId} value={state.pending.value} hp={sheet.hp} stress={sheet.stress} onDone={setResult} />
         ) : (
-          <ChooseMove characterId={characterId} name={name} level={sheet.level} lessLethal={state.lessLethal} onDone={setResult} />
+          <ChooseMove characterId={characterId} name={name} level={sheet.level} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} />
         )}
       </PaperModal>
     </>
   );
 }
 
-function AwayReasonPicker({ value, onChange }: { value: AwayReason; onChange: (r: AwayReason) => void }) {
+/** Where a Castle High character goes instead of dying (HF 127). A player's pick is a request the GM settles (LL1). */
+function AwayReasonPicker({ value, onChange, request }: { value: AwayReason; onChange: (r: AwayReason) => void; request: boolean }) {
   return (
     <fieldset className="db-reason">
-      <legend className="sh-small">Less lethal (Castle High): instead of dying, the character is…</legend>
+      <legend className="sh-small">
+        {request ? "Less lethal (Castle High): instead of dying, the character is… — the GM decides" : "Less lethal (Castle High): instead of dying, the character is…"}
+      </legend>
       {(["infirmary", "sentHome"] as const).map((r) => (
         <label key={r}>
           <input type="radio" name="away-reason" checked={value === r} onChange={() => onChange(r)} />
+          {request ? "Request: " : ""}
           {r === "infirmary" ? "In the infirmary" : "Sent home"}
         </label>
       ))}
@@ -124,7 +140,21 @@ function MoveOption({ move, disabled, onPick }: { move: DeathMove; disabled: boo
   );
 }
 
-function ChooseMove({ characterId, name, level, lessLethal, onDone }: { characterId: Id<"characters">; name: string; level: number; lessLethal: boolean; onDone: (text: string) => void }) {
+function ChooseMove({
+  characterId,
+  name,
+  level,
+  lessLethal,
+  request,
+  onDone,
+}: {
+  characterId: Id<"characters">;
+  name: string;
+  level: number;
+  lessLethal: boolean;
+  request: boolean;
+  onDone: (text: string) => void;
+}) {
   const choose = useIntent(api.deathMoves.choose);
   const [action, setAction] = useState("");
   const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
@@ -136,14 +166,14 @@ function ChooseMove({ characterId, name, level, lessLethal, onDone }: { characte
       onDone(`Hope Die ${r.hopeDie} against level ${level}: ${r.scarred ? "a scar" : "no scar"}.${r.journeyEnds ? " The last Hope slot is gone: the journey ends." : ""}`);
     } else if (move === "riskItAll") {
       const lead = `Hope ${r.hopeDie}, Fear ${r.fearDie}: `;
-      onDone(lead + (r.status !== "active" ? (r.status === "away" ? "away instead of dead." : "death.") : r.pending ? "clear Hit Points and Stress." : "matching dice, everything cleared."));
+      onDone(lead + (r.status !== "active" ? (r.status === "away" ? `away instead of dead${request ? " (requested; the GM decides)" : ""}.` : "death.") : r.pending ? "clear Hit Points and Stress." : "matching dice, everything cleared."));
     } else onDone("Blaze of Glory: the action critically succeeds.");
   }
 
   return (
     <>
       <p className="db-lede">{name} has marked their last Hit Point. Choose a death move.</p>
-      {lessLethal ? <AwayReasonPicker value={awayReason} onChange={setAwayReason} /> : null}
+      {lessLethal ? <AwayReasonPicker value={awayReason} onChange={setAwayReason} request={request} /> : null}
       <div className="db-moves">
         {(["blazeOfGlory", "avoidDeath", "riskItAll"] as const).map((move) => (
           <div key={move} className="db-move">
@@ -166,20 +196,32 @@ function ChooseMove({ characterId, name, level, lessLethal, onDone }: { characte
   );
 }
 
-function FinishBlaze({ characterId, name, lessLethal, onDone }: { characterId: Id<"characters">; name: string; lessLethal: boolean; onDone: (text: string) => void }) {
+function FinishBlaze({
+  characterId,
+  name,
+  lessLethal,
+  request,
+  onDone,
+}: {
+  characterId: Id<"characters">;
+  name: string;
+  lessLethal: boolean;
+  request: boolean;
+  onDone: (text: string) => void;
+}) {
   const finish = useIntent(api.deathMoves.finishBlaze);
   const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
   return (
     <>
       <p className="db-lede">{name} takes their last action, which critically succeeds. When it is done, they cross through the veil.</p>
-      {lessLethal ? <AwayReasonPicker value={awayReason} onChange={setAwayReason} /> : null}
+      {lessLethal ? <AwayReasonPicker value={awayReason} onChange={setAwayReason} request={request} /> : null}
       <div className="sh-modal-actions">
         <Pill
           variant="solid"
           disabled={finish.pending}
           onClick={() =>
             void finish.fire({ characterId, ...(lessLethal ? { awayReason } : {}) }).then((r) => {
-              if (r) onDone(r.status === "away" ? `${name} is away instead of dead.` : `${name} has crossed through the veil.`);
+              if (r) onDone(r.status === "away" ? `${name} is away instead of dead${request ? " (requested; the GM decides)" : ""}.` : `${name} has crossed through the veil.`);
             })
           }
         >

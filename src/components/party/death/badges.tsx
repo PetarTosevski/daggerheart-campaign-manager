@@ -2,9 +2,11 @@
 
 import "./death.css";
 
+import { useQuery } from "convex/react";
+
 import { BrandButton } from "@/components/brand/buttons";
 import { Badge } from "@/components/party/sheet-ui";
-import { AWAY_REASON_LABELS } from "@/lib/domain/death/index";
+import { AWAY_REASON_LABELS, type AwayReason } from "@/lib/domain/death/index";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +34,10 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: SlotPr
   const journeyEnds = Boolean(character.sheet.journeyEnds) && (isGm || canEdit) && character.status !== "dead";
   // A benched character (X6) comes back through the card's "Bring back".
   const returnToPlay = away && isGm && !character.benched;
-  if (!unconscious && !(away && (showAway || returnToPlay)) && !journeyEnds) return null;
+  // A Castle High away character: its reason may still be the player's request (LL1).
+  const deathAway = away && character.away !== undefined;
+  if (!unconscious && !(away && (showAway || returnToPlay)) && !deathAway && !journeyEnds) return null;
+  const request = deathAway ? <AwayRequest character={character} isGm={isGm} tone={tone} /> : null;
 
   if (tone === "banner") {
     return (
@@ -43,6 +48,7 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: SlotPr
             {awayLabel(character)}
           </Badge>
         ) : null}
+        {request}
         {journeyEnds ? (
           <Badge tone="wine" data-testid="death-journey-ends">
             Journey ends
@@ -74,6 +80,7 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: SlotPr
           {awayLabel(character)}
         </span>
       ) : null}
+      {request}
       {journeyEnds ? (
         <span data-testid="death-journey-ends" className={cn(BADGE, "bg-[#3a1414] text-[#ffb0a8]")}>
           Journey ends
@@ -90,5 +97,53 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: SlotPr
         </span>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * LL1: a player's less-lethal pick is a request until the GM settles it. Everyone
+ * sees "Requested"; the GM gets "Confirm" and "Change to …" (the GM's choice is final).
+ */
+function AwayRequest({ character, isGm, tone }: { character: SlotProps["character"]; isGm: boolean; tone: "banner" | "card" }) {
+  const state = useQuery(api.deathMoves.state, { characterId: character._id });
+  const settle = useIntent(api.deathMoves.settleAway);
+  const reason = character.away?.reason;
+  if (!state?.awayRequested || reason === undefined) return null;
+  const other: AwayReason = reason === "infirmary" ? "sentHome" : "infirmary";
+  const choices = [
+    [reason, "Confirm"],
+    [other, `Change to ${AWAY_REASON_LABELS[other]}`],
+  ] as const;
+  const fire = (r: AwayReason) => void settle.fire({ characterId: character._id, reason: r });
+  return (
+    <>
+      {tone === "banner" ? (
+        <Badge tone="paper" data-testid="death-away-requested">
+          Requested
+        </Badge>
+      ) : (
+        <span data-testid="death-away-requested" className={cn(BADGE, "bg-[#3a3014] text-[#f3dfa8]")}>
+          Requested
+        </span>
+      )}
+      {isGm
+        ? choices.map(([r, text]) =>
+            tone === "banner" ? (
+              <button key={r} type="button" className="db-return" disabled={settle.pending} onClick={() => fire(r)}>
+                {text}
+              </button>
+            ) : (
+              <BrandButton key={r} size="sm" variant="pill" disabled={settle.pending} onClick={() => fire(r)}>
+                {text}
+              </BrandButton>
+            ),
+          )
+        : null}
+      {settle.error ? (
+        <span role="alert" className={tone === "banner" ? "db-error" : "text-[13px] text-danger"}>
+          {settle.error}
+        </span>
+      ) : null}
+    </>
   );
 }

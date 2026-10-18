@@ -192,7 +192,72 @@ describe("deathMoves", () => {
     await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
     const done = await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
     expect(done.status).toBe("away");
-    expect((await characterOf(a)).away).toEqual({ reason: "infirmary" });
+    expect((await characterOf(a)).away).toEqual({ reason: "infirmary", requested: true });
+  });
+
+  it("LL1: a player's less-lethal pick is a request; the GM confirms it", async () => {
+    const { p1, gm, a, characterOf, row } = await setup("castle-high");
+    forceDice(2, 8);
+    const result = await p1.mutation(api.deathMoves.choose, { characterId: a, move: "riskItAll", awayReason: "sentHome", idempotencyKey: key() });
+    expect((await characterOf(a)).away).toEqual({ reason: "sentHome", requested: true });
+    expect((await row(result.entryId))?.summary).toContain("the GM decides");
+    expect((await p1.query(api.deathMoves.state, { characterId: a })).awayRequested).toBe(true);
+
+    // The player can't settle their own request.
+    expect(await codeOf(p1.mutation(api.deathMoves.settleAway, { characterId: a, reason: "infirmary", idempotencyKey: key() }))).toBe("FORBIDDEN");
+    await gm.mutation(api.deathMoves.settleAway, { characterId: a, reason: "sentHome", idempotencyKey: key() });
+    expect(await characterOf(a)).toMatchObject({ status: "away", away: { reason: "sentHome" } });
+    expect((await characterOf(a)).away?.requested).toBeUndefined();
+    expect((await gm.query(api.deathMoves.state, { characterId: a })).awayRequested).toBe(false);
+    // Settled is final: nothing left to settle.
+    expect(await codeOf(gm.mutation(api.deathMoves.settleAway, { characterId: a, reason: "infirmary", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
+  });
+
+  it("LL1 decision 5: back in play at full Hit Points, no death move until a Hit Point is cleared and marked again", async () => {
+    const { p1, gm, a, characterOf, sheetOf } = await setup("castle-high");
+    await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
+    await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
+    await gm.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() });
+    // HP and Stress stay as they were; the prompt is not shown and the move is refused.
+    const sheet = await sheetOf(a);
+    expect(sheet.hp).toBe(sheet.hpMax);
+    expect(sheet.stress).toBe(3);
+    expect((await characterOf(a)).deathMoveSpent).toBe(true);
+    expect((await p1.query(api.deathMoves.state, { characterId: a })).awaitingMove).toBe(false);
+    expect(await codeOf(p1.mutation(api.deathMoves.choose, { characterId: a, move: "avoidDeath", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
+
+    // Clearing a Hit Point (saveSheet) clears the flag; marking the last one again asks for a death move.
+    await p1.mutation(api.characters.adjustResource, { characterId: a, resource: "hp", delta: -1 });
+    expect((await characterOf(a)).deathMoveSpent).toBeUndefined();
+    expect((await p1.query(api.deathMoves.state, { characterId: a })).awaitingMove).toBe(false);
+    await p1.mutation(api.characters.adjustResource, { characterId: a, resource: "hp", delta: 1 });
+    expect((await p1.query(api.deathMoves.state, { characterId: a })).awaitingMove).toBe(true);
+  });
+
+  it("LL1 decision 5: back in play below full Hit Points sets no flag", async () => {
+    const { p1, gm, a, edit, characterOf } = await setup("castle-high");
+    await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
+    await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
+    await edit(a, (s) => ({ ...s, hp: s.hpMax - 2 }));
+    await gm.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() });
+    expect((await characterOf(a)).deathMoveSpent).toBeUndefined();
+  });
+
+  it("LL1: the GM changes a player's request, and the GM's own death move is final at once", async () => {
+    const { p1, gm, a, b, characterOf } = await setup("castle-high");
+    await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
+    await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, awayReason: "infirmary", idempotencyKey: key() });
+    await gm.mutation(api.deathMoves.settleAway, { characterId: a, reason: "sentHome", idempotencyKey: key() });
+    expect((await characterOf(a)).away).toEqual({ reason: "sentHome" });
+
+    await gm.mutation(api.deathMoves.choose, { characterId: b, move: "blazeOfGlory", idempotencyKey: key() });
+    await gm.mutation(api.deathMoves.finishBlaze, { characterId: b, awayReason: "sentHome", idempotencyKey: key() });
+    expect((await characterOf(b)).away).toEqual({ reason: "sentHome" });
+    expect((await gm.query(api.deathMoves.state, { characterId: b })).awayRequested).toBe(false);
+    expect(await codeOf(gm.mutation(api.deathMoves.settleAway, { characterId: b, reason: "infirmary", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
+    // An active character has no request either.
+    await gm.mutation(api.deathMoves.returnFromAway, { characterId: b, idempotencyKey: key() });
+    expect(await codeOf(gm.mutation(api.deathMoves.settleAway, { characterId: b, reason: "infirmary", idempotencyKey: key() }))).toBe("DEATH_MOVE_RULE");
   });
 
   it("undo restores the sheet and the status, and reopens the move's earlier step", async () => {
@@ -224,7 +289,7 @@ describe("deathMoves", () => {
     // The owner can't bring back a death-move away character; "away" again changes nothing (no bench).
     expect(await codeOf(p1.mutation(api.characters.setStatus, { characterId: a, status: "active" }))).toBe("FORBIDDEN");
     await p1.mutation(api.characters.setStatus, { characterId: a, status: "away" });
-    expect((await characterOf(a)).away).toEqual({ reason: "infirmary" });
+    expect((await characterOf(a)).away).toEqual({ reason: "infirmary", requested: true });
 
     // The player makes a new character; Ash can't come back while it is active.
     const { characterId: fresh } = await p1.mutation(api.characters.create, { campaignId, draft: draft("Cid"), idempotencyKey: key() });
@@ -259,6 +324,14 @@ describe("deathMoves", () => {
     expect(await back(out, a)).toBe("NOT_FOUND");
     expect(await back(p1, a)).toBe("FORBIDDEN");
     expect(await back(gm, a)).toBe("ok");
+
+    // Bryn is away by the GM's hand: final, so the GM reaches the rule.
+    const settle = (who: typeof gm) => codeOf(who.mutation(api.deathMoves.settleAway, { characterId: b, reason: "infirmary", idempotencyKey: key() }));
+    expect(await settle(t as typeof gm)).toBe("UNAUTHENTICATED");
+    expect(await settle(out)).toBe("NOT_FOUND");
+    expect(await settle(p1)).toBe("FORBIDDEN");
+    expect(await settle(p2)).toBe("FORBIDDEN");
+    expect(await settle(gm)).toBe("DEATH_MOVE_RULE");
 
     const split = (who: typeof gm) => codeOf(who.mutation(api.deathMoves.resolveRiskItAll, { characterId: a, hp: 1, stress: 0, idempotencyKey: key() }));
     expect(await split(t as typeof gm)).toBe("UNAUTHENTICATED");

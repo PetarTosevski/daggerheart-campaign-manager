@@ -22,6 +22,13 @@ export const characterTables = {
     /** `away` (D5, Castle High less-lethal, HF 127) comes with `away`; only death moves set it. */
     status: storedCharacterStatusValidator,
     away: v.optional(awayValidator),
+    /**
+     * LL1 decision 5: set when the GM returns an away character to play with
+     * every Hit Point still marked, so it is not asked for a death move again;
+     * `saveSheet` clears it once a Hit Point is cleared, and marking the last
+     * one again brings the prompt back. Absent on every older row.
+     */
+    deathMoveSpent: v.optional(v.literal(true)),
     sheet: v.any(),
     createdAt: v.number(),
     updatedAt: v.number(),
