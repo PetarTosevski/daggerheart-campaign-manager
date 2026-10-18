@@ -622,3 +622,88 @@ waves:
           - "convex/cleanup.ts also expires photoImport files rows and blobs older than one hour, in the existing batched orphan job (CD17)"
           - "tests/convex/photo-import.test.ts mocks fetch: a fixture response becomes a draft, the images are gone afterwards, a player is FORBIDDEN, a missing key gives PHOTO_IMPORT_UNAVAILABLE; tests/unit/sheet-photo.test.ts covers fuzzy matching; tests/unit/photo-import-review.test.tsx covers the disabled Save"
           - "tests/e2e/photo-import.spec.ts: on the e2e backend without ANTHROPIC_API_KEY the import button is absent for the GM"
+  # ---------------------------------------------------------------- wave 4: integration (orchestrator-added from tracer reports)
+  - wave: 4
+    tracers:
+      - id: TI-a
+        title: Integration — dice, class features and the features panel
+        timing: end-of-D5
+        size: L
+        goal: Close the cross-tracer gaps in dice and class features listed as items 1-5, 7, 8, 21-26 of .omc/autopilot/d5-integration.md.
+        depends_on: [T1, T2, T8a, T8b, T8c, T9]
+        owns:
+          - convex/rolls.ts
+          - src/components/party/dice/dice-box.tsx
+          - src/components/party/dice/parts.tsx
+          - src/components/party/dice/roll-feed.tsx
+          - src/components/party/dice/index.tsx
+          - src/lib/domain/dice/**
+          - src/lib/domain/class-features/**
+          - src/components/party/features/**
+          - src/lib/domain/characters/derived.ts
+          - src/lib/domain/level-up/**
+          - src/components/party/level-up/**
+          - tests/unit/dice.test.ts
+          - tests/unit/derived.test.ts
+          - tests/unit/level-up.test.ts
+          - tests/unit/hope-features.test.ts
+          - tests/unit/class-features-core.test.ts
+          - tests/unit/class-features-hf.test.ts
+          - tests/convex/rolls.test.ts
+          - tests/convex/class-features.test.ts
+          - tests/convex/class-features-core.test.ts
+          - tests/convex/class-features-hf.test.ts
+          - tests/e2e/class-features.spec.ts
+          - tests/e2e/class-features-hf.spec.ts
+          - tests/e2e/hope-features.spec.ts
+          - tests/e2e/dice.spec.ts
+          - docs/tasks/TASK-D5-TI-a.md
+        reads:
+          - .omc/autopilot/d5-integration.md
+          - convex/characterExtras.ts
+        acceptance:
+          - "Items 1-5, 7, 8, 21-26 of .omc/autopilot/d5-integration.md are each done or explicitly reported as not done with the reason"
+          - "Each fixed item has a test"
+          - "pnpm lint, typecheck, test pass; touched e2e specs pass"
+      - id: TI-b
+        title: Integration — rests, sheet display, Motherboard and frame follow-ups
+        timing: end-of-D5
+        size: L
+        goal: Close the cross-tracer gaps in rests, the sheet, Motherboard and frames listed as items 6, 9-15, 17-20 of .omc/autopilot/d5-integration.md.
+        depends_on: [T3, T3b, T5, T7, T9]
+        owns:
+          - convex/lib/restHooks.ts
+          - convex/lib/validators/rests.ts
+          - convex/rests.ts
+          - src/lib/domain/rest/**
+          - src/components/party/rest/**
+          - convex/maps.ts
+          - convex/characters.ts
+          - src/lib/import/sheet.ts
+          - src/lib/equipment-rules.ts
+          - src/lib/domain/wither/**
+          - src/lib/domain/characters/index.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-one.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-two.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/roster.tsx
+          - src/app/(gm)/campaigns/[campaignId]/trackers/colossus.tsx
+          - tests/unit/rest.test.ts
+          - tests/unit/wither.test.ts
+          - tests/unit/equipment-rules.test.ts
+          - tests/convex/rests.test.ts
+          - tests/convex/rest-frame-hooks.test.ts
+          - tests/convex/maps.test.ts
+          - tests/convex/characters.test.ts
+          - tests/convex/wither.test.ts
+          - tests/e2e/rest.spec.ts
+          - tests/e2e/rest-frame-hooks.spec.ts
+          - tests/e2e/character-sheet.spec.ts
+          - docs/tasks/TASK-D5-TI-b.md
+        reads:
+          - .omc/autopilot/d5-integration.md
+          - src/lib/domain/class-features/classes/warlock.ts
+          - convex/characterExtras.ts
+        acceptance:
+          - "Items 6, 9-15, 17-20 of .omc/autopilot/d5-integration.md are each done or explicitly reported as not done with the reason"
+          - "Each fixed item has a test"
+          - "pnpm lint, typecheck, test pass; touched e2e specs pass"
