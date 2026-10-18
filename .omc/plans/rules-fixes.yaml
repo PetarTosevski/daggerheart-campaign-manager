@@ -112,6 +112,10 @@ waves:
           - tests/unit/motherboard.test.ts
           - tests/convex/motherboard.test.ts
           - tests/e2e/motherboard-ikonis.spec.ts
+          - tests/convex/character-extras.test.ts
+          - tests/convex/motherboard-ikonis.test.ts
+          - tests/convex/rest-frame-hooks.test.ts
+          - tests/e2e/character-sheet.spec.ts
           - docs/tasks/TASK-RF4.md
           - docs/data-model.md
         reads:
