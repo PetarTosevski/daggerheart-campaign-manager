@@ -13,7 +13,7 @@ import { getCommunity, getSubclass, getTransformation, portraitFor, TRAIT_IDS, t
 import { cn } from "@/lib/utils";
 
 import { TextField } from "../fields";
-import { useLevelUpDraft } from "../level-up-draft";
+import { advancementsChosen, cardsChosen, useLevelUpDraft } from "../level-up-draft";
 import { useSheet } from "../sheet-context";
 import { ancestryArtId, ancestryLabel, signed } from "../sheet-helpers";
 
@@ -145,6 +145,12 @@ function ExperiencesLevelUp() {
               maxLength={80}
               value={lu.draft.experienceName}
               onChange={(e) => lu.setExperienceName(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter moves on to the next unfinished step: the tier boxes, then the deck, then the summary.
+                if (e.key !== "Enter" || !lu.draft.experienceName.trim()) return;
+                e.preventDefault();
+                lu.goTo(!advancementsChosen(lu.draft) ? "advancements" : !cardsChosen(lu.draft) ? "deck" : "finish");
+              }}
             />
           </label>
           {sheet.experiences.length >= MAX_EXPERIENCES ? <Small className="italic">A sheet holds at most {MAX_EXPERIENCES} Experiences.</Small> : null}
