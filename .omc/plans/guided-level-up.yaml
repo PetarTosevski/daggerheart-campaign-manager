@@ -118,6 +118,7 @@ waves:
           - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.tsx
           - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.css
           - tests/unit/domain-deck-level-up.test.ts
+          - tests/e2e/visual/S13.spec.ts
           - tests/e2e/visual/GL3.spec.ts
           - docs/tasks/TASK-GL3.md
         reads:
@@ -126,6 +127,7 @@ waves:
         acceptance:
           - "The Domain Deck box has id lu-target-deck; with the draft active, cards reachable at the new level (cardsWithin with the draft's multiclass) show 'Choose for level N' (accessible name 'Choose <card> for level N'), filling cardId first then the domainCard pick's target; chosen cards show 'Chosen for level N' + 'Undo choice'; cards reachable only at the new level are face-up; the normal Take card is hidden during the mode"
           - "Owned cards in the hand and vault show 'Exchange at level-up' which, with a deck card picked as the replacement (same level or lower, CB 110), sets the draft trade; the summary shows it"
+          - "DD1 follow-up: the deck's More/Less buttons are at least 44x44 at 390 px, and S13's read-only player check allows the deck's view-only controls (filters, More, card backs, Turn over) while still forbidding Take buttons; both S13 visual tests pass"
           - "Unit tests; pnpm lint, typecheck, test pass"
   - wave: 3
     tracers:
