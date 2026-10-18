@@ -27,6 +27,6 @@ test("EV1 environment tab: page, filters, list, stat block, opened adversary and
 
   await list.getByRole("group", { name: "Type", exact: true }).getByRole("button", { name: "All" }).click();
   await list.getByRole("searchbox", { name: "Search environments" }).fill("raging");
-  await page.getByRole("complementary", { name: "Environment stat block" }).getByRole("button", { name: "Open Bear in the catalogue" }).click();
+  await page.getByRole("complementary", { name: "Environment stat block" }).getByRole("button", { name: "Show the Bear stat block" }).click();
   await shoot(page.getByRole("region", { name: "Bear, opened from Raging River" }), "opened");
 });
