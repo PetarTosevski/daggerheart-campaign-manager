@@ -79,6 +79,10 @@ function Band({
           </span>
         </span>
         <span className="flex gap-2.5">
+          <span className="flex min-w-[76px] flex-col items-center gap-0.5 rounded-[10px] bg-[#16262a] px-3.5 py-2.5 text-[#9fd3c7]">
+            <span className="text-[12px] tracking-[0.12em] uppercase">Players</span>
+            <strong className="text-[24px]">{campaign.players}</strong>
+          </span>
           <span className="flex min-w-[76px] flex-col items-center gap-0.5 rounded-[10px] bg-fear-bg px-3.5 py-2.5 text-fear">
             <span className="text-[12px] tracking-[0.12em] uppercase">Fear</span>
             <strong className="text-[24px]">{campaign.fear}</strong>
