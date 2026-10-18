@@ -371,8 +371,11 @@ export const updateSheet = userMutation({
   args: { characterId: v.id("characters"), patch: sheetPatchValidator },
   returns: v.null(),
   handler: async (ctx, { characterId, patch }) => {
-    const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
+    const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+    const sheet = readSheet(character.sheet);
     const clean = sheetPatchSchema.parse(patch);
+    // Players change traits only through level-up (user 2026-10-18); the GM can still correct them.
+    if (clean.traits !== undefined && permission !== "owner") throw appError("FORBIDDEN");
     const { secondaryWeaponId, armorId, inventory, experiences, ...rest } = clean;
     const next: CharacterSheet = { ...sheet, ...rest };
     if (inventory !== undefined) next.inventory = inventory.map((item) => (typeof item === "string" ? { id: newId(), name: item } : item));
@@ -430,12 +433,13 @@ export const setGoldChest = userMutation({
   },
 });
 
-/** Sets one trait's modifier. Owner or GM. */
+/** Sets one trait's modifier. GM only: players change traits through level-up (user 2026-10-18). */
 export const setTrait = userMutation({
   args: { characterId: v.id("characters"), trait: traitIdValidator, value: v.number() },
   returns: v.null(),
   handler: async (ctx, { characterId, trait, value }) => {
-    const { character, sheet } = await editable(ctx, ctx.user, characterId);
+    const { character } = await loadCharacter(ctx, ctx.user, characterId, "owner", "owner");
+    const sheet = readSheet(character.sheet);
     await saveSheet(ctx, character._id, { ...sheet, traits: { ...sheet.traits, [trait]: value } });
     return null;
   },
