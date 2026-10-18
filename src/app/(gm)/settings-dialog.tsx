@@ -115,8 +115,19 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                 <span className="block text-[13px] text-muted-text">
                   New campaigns start with Hope &amp; Fear content. Change it per campaign on its dashboard.
                 </span>
+                {settings.expansions.hopeAndFear === undefined ? (
+                  // Until it is set, each frame keeps its own default (Castle High, for example, starts with Hope & Fear on).
+                  <span className="block text-[13px] text-[#c9b27a]" data-testid="expansions-frame-default">
+                    Not set yet: each frame uses its own default.
+                  </span>
+                ) : null}
               </span>
             </label>
+            {settings.expansions.hopeAndFear !== undefined ? (
+              <button type="button" className="self-start text-[13px] text-muted-text underline underline-offset-2" onClick={() => save({ expansions: { hopeAndFear: null } })}>
+                Use each frame&rsquo;s default
+              </button>
+            ) : null}
           </section>
 
           <section aria-labelledby="set-account"className="flex flex-col gap-2.5">
