@@ -1,6 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+
+import { play3d } from "@/components/party/dice/dice3d";
+import { canAnimate3d, useDiceSettings } from "@/components/party/dice/settings";
+import { playRollSound } from "@/components/party/dice/sound";
 
 import { hordeHalved } from "@/lib/domain/encounters/damage";
 import { useIntent } from "@/lib/use-intent";
@@ -21,7 +25,8 @@ function diceText(dice: readonly { sides: number; value: number }[]): string {
  * The selected instance's parchment stat block (A2's StatBlock) with the tracker's head actions: "Roll attack"
  * (d20 + ATK, CB p.160) and "Roll damage" go through the GM's hidden roll (rolls.gmRoll: players see it only once the
  * GM reveals it in the roll feed); a natural 20 offers "Critical damage" (CB p.148). Above the features, buttons spend
- * Fear for a Fear-cost feature or to add an Experience (CB p.194: "+N, 1 Fear").
+ * Fear for a Fear-cost feature or to add an Experience (CB p.194: "+N, 1 Fear"). Rolls play the 3D dice and the dice
+ * sound like the GM roll form (dice settings: 3D off, reduced motion or sound off fall back as there).
  */
 export function SelectedBlock({
   campaignId,
@@ -39,14 +44,24 @@ export function SelectedBlock({
   const roll = useIntent(api.rolls.gmRoll);
   const [rolled, setRolled] = useState<Rolled | null>(null);
   const [spent, setSpent] = useState<string | null>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const [settings] = useDiceSettings();
   const { block } = rules;
   const attack = attackRoll(block.attack.modifier);
   const halved = rules.hordeX !== null && hordeHalved({ hp: instance.hp, hpMax: instance.stats.hpMax });
   const damageText = halved && rules.hordeX ? rules.hordeX : block.attack.damage;
   const damage = damageRoll(damageText);
 
+  // The same 3D dice and sound as the GM roll form, per this device's settings; the text result shows right away.
   async function rollPool(dice: DicePool, modifier: number, what: string) {
-    return roll.fire({ campaignId, dice, modifier, label: `${instance.label}: ${what}` });
+    const result = await roll.fire({ campaignId, dice, modifier, label: `${instance.label}: ${what}` });
+    if (result) void animate(result.roll.dice);
+    return result;
+  }
+
+  async function animate(dice: Parameters<typeof play3d>[1]["dice"]) {
+    const shown = canAnimate3d(settings) && stage.current !== null && (await play3d(stage.current, { dice, sound: settings.sound }));
+    if (!shown && settings.sound) playRollSound();
   }
 
   async function rollAttack() {
@@ -90,6 +105,7 @@ export function SelectedBlock({
       <p className="trk-roll-out" aria-live="polite">
         {roll.error ?? (rolled ? `${rolled.text}. Hidden from players until you reveal it in the roll feed.` : null)}
       </p>
+      <div ref={stage} className="trk-dice-stage" data-testid="tracker-dice-stage" />
     </div>
   );
 

@@ -2,6 +2,7 @@
 
 import { useState, type KeyboardEvent } from "react";
 
+import { Pip } from "@/components/party/sheet-ui";
 import { hordeHalved, MAX_DAMAGE, SEVERITY_LABEL, vulnerableFromStress } from "@/lib/domain/encounters/damage";
 import { spotlightLimit, spotlightStatus, spotlightsThisTurn } from "@/lib/domain/encounters/spotlight";
 
@@ -45,12 +46,12 @@ function Track({
       </span>
       <span className="trk-pips">
         {Array.from({ length: max }, (_, i) => (
-          <button
+          <Pip
             key={i}
-            type="button"
-            className={`trk-pip trk-pip-${kind}`}
-            aria-pressed={i < marked}
-            aria-label={`Mark ${label} ${i + 1} of ${max}`}
+            kind={kind === "hp" ? "heart" : "diamond"}
+            className="trk-pip"
+            on={i < marked}
+            label={`Mark ${label} ${i + 1} of ${max}`}
             onClick={() => onDelta(pipDelta(i + 1, marked))}
           />
         ))}
@@ -71,6 +72,12 @@ function Track({
       </span>
     </div>
   );
+}
+
+/** "37 / 70", "9 / none", or "Minion" / "none" when the block has no thresholds (CB p.201: Minions are defeated by any damage). */
+function thresholdsText(major: number | null, severe: number | null, type: string | null): string {
+  if (major === null && severe === null) return type === "Minion" ? "Minion" : "none";
+  return `${major ?? "none"} / ${severe ?? "none"}`;
 }
 
 type DamageOutcome = { text: string; suggestedDefeats: number | null };
@@ -209,7 +216,8 @@ function Tags({ instance, actions }: { instance: TrackerInstance; actions: Track
 }
 
 /**
- * One adversary instance on the tracker: HP and Stress pips (22 px, the board's), the damage box, Minion group count
+ * One adversary instance on the tracker: Difficulty and damage thresholds, HP hearts and Stress diamonds (the player
+ * sheet's sheet-ui pips on a parchment strip), the damage box, Minion group count
  * and defeats, the Horde halved note, conditions (+ Vulnerable while Stress is full, CB p.178), tags and the spotlight
  * counter for this GM turn. The name button selects it and shows its stat block.
  */
@@ -246,7 +254,12 @@ export function InstanceCard({
         </button>
         <span className="trk-type">{typeLine}</span>
         {instance.defeated ? <span className="trk-badge trk-badge-defeated">Defeated</span> : null}
-        <span className="trk-diff">Difficulty {stats.difficulty}</span>
+        <span className="trk-diff">
+          Difficulty <b>{stats.difficulty}</b>
+          <span className="trk-thr" data-testid="thresholds">
+            Thresholds <b>{thresholdsText(stats.major, stats.severe, instance.type)}</b>
+          </span>
+        </span>
       </div>
 
       {minions ? (
