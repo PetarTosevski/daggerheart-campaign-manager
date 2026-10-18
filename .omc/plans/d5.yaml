@@ -707,3 +707,101 @@ waves:
           - "Items 6, 9-15, 17-20 of .omc/autopilot/d5-integration.md are each done or explicitly reported as not done with the reason"
           - "Each fixed item has a test"
           - "pnpm lint, typecheck, test pass; touched e2e specs pass"
+  # ---------------------------------------------------------------- wave 5: review fixes + polish (orchestrator-added)
+  - wave: 5
+    tracers:
+      - id: R1
+        title: Undo integrity and roll trust (review H1, H2, M1, M2, L1, L4-block; polish 28)
+        timing: end-of-D5
+        size: M
+        goal: Undo never overwrites newer state, Tag Team groups stay contiguous, typed roll context is capped and visible, and player re-roll-by-undo is limited.
+        depends_on: [TI-a, TI-b]
+        owns:
+          - convex/lib/actionLog.ts
+          - convex/actionLog.ts
+          - convex/rolls.ts
+          - convex/characterExtras.ts
+          - src/lib/domain/dice/**
+          - src/lib/domain/class-features/classes/sorcerer.ts
+          - src/components/party/dice/**
+          - tests/convex/action-log.test.ts
+          - tests/convex/rolls.test.ts
+          - tests/unit/dice.test.ts
+          - tests/unit/hope-features.test.ts
+          - tests/e2e/dice.spec.ts
+          - docs/tasks/TASK-D5-R1.md
+        reads:
+          - .omc/audit/d5-review.md
+          - .omc/autopilot/d5-integration.md
+        acceptance:
+          - "H1: undo refuses (UNDO_STALE) when a character changed after its newest group row (convex test: roll, unlogged applyDamage, undo refused, damage kept)"
+          - "H2: undo requires contiguous live rows per character; tagTeamApply refuses when a roll happened between tagTeam and apply (convex tests)"
+          - "M1: typed modifier capped at ±10; summaries show typed modifier and player-set Difficulty; an unlinked damage critical is labelled declared (tests)"
+          - "M2: a player may undo a dice-carrying row (roll/death) only within 60 seconds; the GM any time (test)"
+          - "L1: Volatile Magic keeps roll.manual; L4: actionLog.undo refuses kind rest rows (use rests.undo)"
+          - "Polish 28: characterExtras exports motherboardState (with the legacy fallback) and rolls.ts uses it"
+      - id: R2
+        title: Character status, limits, keyed damage and level-up polish (review M3, M5, L2; polish 27, 29, 30, 31)
+        timing: end-of-D5
+        size: M
+        goal: Owners can't revive dead/away characters, parties are bounded with explicit errors, applyDamage is idempotent, and the remaining D5 polish lands.
+        depends_on: [TI-a, TI-b]
+        owns:
+          - convex/characters.ts
+          - convex/lib/functions.ts
+          - convex/rests.ts
+          - convex/sessions.ts
+          - convex/classFeatures.ts
+          - convex/levelUp.ts
+          - convex/trackers/horizon.ts
+          - convex/lib/validators/characters.ts
+          - src/lib/validation/characters.ts
+          - src/lib/domain/level-up/**
+          - src/components/party/level-up/**
+          - src/components/party/features/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-two.tsx
+          - tests/convex/characters.test.ts
+          - tests/convex/rests.test.ts
+          - tests/convex/sessions.test.ts
+          - tests/convex/class-features.test.ts
+          - tests/convex/level-up.test.ts
+          - tests/convex/horizon.test.ts
+          - tests/unit/level-up.test.ts
+          - tests/unit/sheet-render.test.ts
+          - tests/e2e/character-sheet.spec.ts
+          - docs/tasks/TASK-D5-R2.md
+        reads:
+          - .omc/audit/d5-review.md
+          - .omc/autopilot/d5-integration.md
+        acceptance:
+          - "M3: from dead/away only the GM can set a character active; away is cleared (test)"
+          - "M5: at most 50 characters per campaign and 12 per player, create rate-limited; rests over 49 PCs refused; session/classFeatures party reads error instead of silently skipping (tests)"
+          - "L2: applyDamage is a keyed mutation; the sheet passes an idempotency key (replay test)"
+          - "Polish 27: Brawler Combo Die advancement (HF 10), Brawler only, one per tier, applies and reverts (unit + convex)"
+          - "Polish 29: Rally Die clear-Stress works for a Hope & Fear class with the option off (test)"
+          - "Polish 30: rests.start refuses a Horizon long rest outside a sanctuary (test)"
+          - "Polish 31: the vault button shows the real swap cost when no rest is open (sheet-render test mocks rests.current)"
+      - id: R3
+        title: Photo import robustness and worktree ports (review M4, L7; polish 32)
+        timing: end-of-D5
+        size: S
+        goal: Photo import stays within action memory and API limits, abandoned photos expire hourly, double clicks don't double-call, and worktrees get distinct e2e ports.
+        depends_on: [TI-a, TI-b]
+        owns:
+          - convex/photoImport.ts
+          - convex/crons.ts
+          - convex/cleanup.ts
+          - src/components/party/import/**
+          - src/lib/errors/photoImport.ts
+          - scripts/worktree-setup.mjs
+          - tests/convex/photo-import.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/unit/workflow-scripts.test.ts
+          - docs/tasks/TASK-D5-R3.md
+        reads:
+          - .omc/audit/d5-review.md
+        acceptance:
+          - "M4: each photo capped at 3.5 MB; the request body is built without redundant full copies; photo-import expiry runs hourly (cron) and reads oldest first (tests)"
+          - "L7: the read button is disabled while a read is in flight (unit test)"
+          - "Polish 32: worktree:setup suggests ports derived from the worktree (distinct per worktree) and verifies they are free (unit test)"
