@@ -37,7 +37,7 @@ function Tracker({ campaignId, view, fear }: { campaignId: Id<"campaigns">; view
 
   return (
     <section className="trk" aria-label="Encounter tracker">
-      <TopBar view={view} fear={fear} actions={actions} />
+      <TopBar campaignId={campaignId} view={view} fear={fear} actions={actions} />
       {actions.error ? (
         <p role="alert" className="trk-error">
           {actions.error}

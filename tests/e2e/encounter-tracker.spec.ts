@@ -108,6 +108,9 @@ test("the GM tracks damage, Stress, conditions, Fear, the spotlight and a hidden
   await card.getByRole("button", { name: "Spotlight Bear (spends 1 Fear)" }).click();
   await expect(card.getByTestId("spotlight-count")).toHaveText("Spotlight 2/1");
   await expect(tracker.getByTestId("tracker-fear")).toHaveAttribute("aria-label", "GM Fear 1 of 12");
+  // The GM gains a Fear by hand.
+  await tracker.getByRole("button", { name: "Gain 1 Fear" }).click();
+  await expect(tracker.getByTestId("tracker-fear")).toHaveAttribute("aria-label", "GM Fear 2 of 12");
   await expect(card.getByText("Past the limit for this GM turn")).toBeVisible();
   await tracker.getByRole("button", { name: "End GM turn" }).click();
   await expect(tracker.getByTestId("gm-turn")).toHaveText("GM turn 2");
@@ -123,7 +126,7 @@ test("the GM tracks damage, Stress, conditions, Fear, the spotlight and a hidden
   await expect(dice).toHaveAttribute("data-values", /^\d+$/, { timeout: 10_000 });
 
   await page.goto(`/campaigns/${campaignId}`);
-  await expect(page.getByTestId("fear-value")).toHaveAttribute("aria-label", "1 of 12 Fear");
+  await expect(page.getByTestId("fear-value")).toHaveAttribute("aria-label", "2 of 12 Fear");
   const gmFeed = page.getByRole("list", { name: "Rolls" });
   const gmRow = gmFeed.getByRole("listitem").filter({ hasText: "GM: Bear: attack" });
   await expect(gmRow).toContainText("hidden");
