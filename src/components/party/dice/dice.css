@@ -1,0 +1,132 @@
+/*
+ * The sheet's dice box in the board's Dice section format (Party.dc.html, section[aria-label="Dice"]):
+ * one wrapping toolbar of labelled fields, the roll pills, 3D/sound toggles and GM Fear at the right,
+ * a "Roll options" chip row, then the result row (die tiles, total, coloured outcome) and "Earlier".
+ * Colours: the --sheet-* tokens (sheet.css), with fallbacks.
+ */
+.sh-box.dc-box{gap:10px}
+
+/* Toolbar. */
+.dc-bar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.dc-bar .dc-h{margin:0 6px 6px 0;white-space:nowrap;align-self:flex-end}
+.dc-bar .dc-h::before,.dc-bar .dc-h::after{display:none}
+.dc-field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.dc-trait{flex:1 1 110px}
+.dc-source{flex:1.6 1 220px}
+.dc-narrow{flex:0 0 70px}
+.dc-bar .dc-diff{flex-basis:96px}
+.dc-in{width:100%;box-sizing:border-box;min-height:40px;padding:0 8px;border-radius:8px;border:1px solid #cdb88f;background:#fffaf0;color:var(--sheet-ink,#2a1f14);font-family:var(--font-garamond),serif;font-size:15px}
+.dc-in::placeholder{color:#a89270}
+.dc-in:focus{outline:none;border-color:var(--sheet-gold-line,#b08a3e);box-shadow:0 0 0 3px rgba(227,180,90,.38)}
+.dc-in:disabled{opacity:.6}
+
+/* Roll type: dk-tabs style segmented control around real radios. */
+.dc-seg{display:inline-flex;flex:none;gap:3px;padding:3px;border-radius:11px;background:#e3d2ad}
+.dc-seg-opt{position:relative;min-height:36px;padding:0 10px;border-radius:8px;display:inline-flex;align-items:center;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;color:#4a3826;cursor:pointer}
+.dc-seg-opt:has(input:checked){background:var(--sheet-wine,#5b2b2b);color:#f6ead2}
+.dc-seg-opt:has(input:focus-visible){outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+
+/* Steppers (Adv / Dis, help dice). */
+.dc-adv{flex:none}
+.dc-adv-row{display:inline-flex;align-items:center;gap:4px;height:40px}
+.dc-adv-val{min-width:96px;text-align:center}
+.dc-stepper{display:inline-flex;align-items:center;gap:6px}
+.dc-step{width:32px;height:36px;flex:none;border-radius:8px;border:1px solid #a68352;background:#fffaf0;color:var(--sheet-ink,#2a1f14);font-size:16px;cursor:pointer}
+.dc-step:hover:not(:disabled){background:#f3e2bd}
+.dc-step:disabled{opacity:.4;cursor:not-allowed}
+.dc-step:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+.dc-step-val{min-width:20px;text-align:center;font-family:var(--font-cinzel),serif;font-size:16px;font-weight:700}
+
+/* Roll pills: the sheet-ui Pill, at the toolbar's field height. */
+.dc-bar .dc-go{flex:none;align-self:flex-end;min-height:40px;padding:0 16px;font-size:14px}
+.dc-bar .dc-go.solid{border-color:#8e2b2b;background:#8e2b2b}
+.dc-bar .dc-go.solid:hover:not(:disabled){background:#7a2424}
+
+/* Toggles: a pill around a real checkbox (critical hit, 3D dice, sound). */
+.dc-toggle{position:relative;flex:none;display:inline-flex;align-items:center;min-height:32px;padding:0 10px;border-radius:999px;border:1px solid #a68352;background:#fffaf0;color:var(--sheet-ink,#2a1f14);font-family:var(--font-garamond),serif;font-size:13px;white-space:nowrap;cursor:pointer}
+.dc-toggle input,.dc-chip input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.dc-toggle:has(input:focus-visible),.dc-chip:has(input:focus-visible){outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+.dc-crit{min-height:40px;border-radius:8px}
+.dc-crit:has(input:checked){background:#f3e2bd;border-color:var(--sheet-wine,#5b2b2b)}
+.dc-sound{width:32px;padding:0;justify-content:center}
+.dc-end{flex:none;margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding-bottom:4px}
+.dc-fear{white-space:nowrap;margin-left:4px}
+
+.dc-note{font-style:italic}
+.dc-error{color:#8e2b2b;font-size:14px}
+
+/* Roll options: a disclosure row of board chips. */
+.dc-opts{border-top:1px dashed #cdb88f;padding-top:6px}
+.dc-opts>summary{cursor:pointer;min-height:32px;display:flex;align-items:center;gap:6px;list-style:none}
+.dc-opts>summary::-webkit-details-marker{display:none}
+.dc-opts>summary::before{content:"▸";font-size:11px;transition:transform .15s}
+.dc-opts[open]>summary::before{transform:rotate(90deg)}
+.dc-opts>summary:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px;border-radius:4px}
+.dc-opts-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding-top:6px}
+.dc-group{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0;padding:0;border:0;min-width:0}
+.dc-group>legend{float:left;margin-right:6px}
+.dc-chip{position:relative;display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border-radius:999px;border:1.5px solid #b9a27a;background:transparent;color:var(--sheet-ink,#2a1f14);font-family:var(--font-garamond),serif;font-size:15px;cursor:pointer}
+.dc-chip:hover{background:rgba(185,162,122,.15)}
+.dc-chip:has(input:checked),.dc-chip.on{background:var(--sheet-green,#3d5e2e);border-color:var(--sheet-green,#3d5e2e);color:#f3f7ee}
+.dc-chip.static{cursor:default;opacity:.85}
+.dc-physical{flex-basis:100%}
+
+/* Tag Team (inside Roll options). */
+.dc-tag{flex-basis:100%;display:flex;flex-direction:column;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid #cdb88f;background:#fbf5e6}
+.dc-tag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end}
+.dc-tag-name{font-family:var(--font-cinzel),serif;font-size:16px;font-weight:700}
+
+/* Results: rolling note, last roll, earlier. */
+.dc-results{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+.dc-rolling{flex:1 1 380px;padding:18px 12px;border-radius:10px;background:#fbf5e6;border:1px dashed #cdb88f;font-style:italic;text-align:center}
+.dc-last{flex:1 1 380px;display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-radius:10px;background:#fbf5e6;border:1px solid #cdb88f;min-width:0}
+.dc-last-row{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+.dc-last-main{display:flex;align-items:center;gap:14px;flex:1;min-width:200px}
+.dc-total{font-family:var(--font-cinzel),serif;font-size:30px;font-weight:900;color:var(--sheet-ink,#2a1f14)}
+.dc-last-text{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.dc-outcome{font-family:var(--font-cinzel),serif;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.dc-outcome.crit{color:#8a6a00}
+.dc-outcome.hope{color:#9a6b10}
+.dc-outcome.fear{color:#6b3fae}
+.dc-outcome.dmg{color:#8e2b2b}
+.dc-manual{margin-left:8px;font-size:11px;letter-spacing:.12em;color:var(--sheet-label,#8a6d4a)}
+.dc-prompt{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.dc-earlier{flex:0 1 260px;display:flex;flex-direction:column;gap:2px;color:#6a5236;padding:8px 4px}
+.dc-earlier ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
+
+/* Die tiles. */
+.dc-tiles{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.dc-tile{position:relative;width:40px;height:40px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-cinzel),serif;font-size:19px;font-weight:900;box-shadow:inset 0 -3px 0 rgba(0,0,0,.2),0 2px 6px rgba(0,0,0,.25)}
+.dc-tile.hope,.dc-tile.fear{width:54px;height:54px;border-radius:12px;font-size:26px}
+.dc-tile.hope{background:linear-gradient(145deg,#f7dc8f,#c9962e);color:#3a2505}
+.dc-tile.fear{background:linear-gradient(145deg,#a98ad8,#4b2a86);color:#f3ecff;box-shadow:inset 0 -3px 0 rgba(0,0,0,.3),0 2px 6px rgba(0,0,0,.25)}
+.dc-tile.hope.decided{outline:3px solid var(--sheet-gold,#c9962e);outline-offset:2px}
+.dc-tile.fear.decided{outline:3px solid #6b3fae;outline-offset:2px}
+.dc-tile.adv{background:linear-gradient(145deg,#cfe6c4,#5b8c45);color:#14300c}
+.dc-tile.dis{background:linear-gradient(145deg,#f1c2bd,#a14040);color:#3b0d0d}
+.dc-tile.extra{background:linear-gradient(145deg,#fbf3e1,#d9c59c);color:#3b2f1e}
+.dc-tile.dmg{background:linear-gradient(145deg,#e8a08f,#8e2b2b);color:#fff4ec}
+.dc-tile.dropped{opacity:.45;text-decoration:line-through}
+.dc-tile-sides{position:absolute;right:3px;bottom:1px;font-family:var(--font-garamond),serif;font-size:9px;font-weight:400;opacity:.8}
+
+/* Phone: keep the app's stacked layout with 44 px targets. */
+@media (max-width:640px){
+  .dc-bar .dc-h{flex-basis:100%;margin:0}
+  .dc-seg{flex:1 1 100%}
+  .dc-seg-opt{flex:1;justify-content:center;min-height:44px}
+  .dc-trait,.dc-source{flex-basis:100%}
+  .dc-narrow,.dc-bar .dc-diff{flex:1 1 90px}
+  .dc-in{min-height:44px;font-size:16px}
+  .dc-step{width:44px;height:44px}
+  .dc-adv{flex:1 1 100%}
+  .dc-adv-row{height:44px}
+  .dc-adv-val{flex:1}
+  .dc-bar .dc-go{flex:1 1 100%;min-height:44px}
+  .dc-crit{flex:1 1 auto;min-height:44px}
+  .dc-end{flex:1 1 100%;margin-left:0;flex-wrap:wrap}
+  .dc-toggle{min-height:44px}
+  .dc-sound{width:44px}
+  .dc-chip{min-height:44px}
+  .dc-opts>summary{min-height:44px}
+  .dc-earlier{flex-basis:100%}
+}

@@ -81,7 +81,7 @@ test("with reduced motion, 3D is off by default and no canvas appears even when 
 test("with the toggle on, the dice land in 3D on the server's values, and the feed shows the same values", async ({ page }) => {
   const { campaignId, hero, box } = await gmSheet(page);
   await expect(box.getByRole("checkbox", { name: "3D dice" })).toBeChecked();
-  await box.getByRole("button", { name: "Increase Advantage", exact: true }).click();
+  await box.getByRole("button", { name: "More advantage", exact: true }).click();
   await box.getByRole("button", { name: "Roll", exact: true }).click();
   const canvas = box.getByTestId("dice-3d");
   await expect(canvas).toBeVisible();
