@@ -1,11 +1,14 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import {
   applyCountdownAction,
   COUNTDOWN_CATEGORIES,
   COUNTDOWN_STATUSES,
+  COUNTDOWN_VISIBILITY_PRESETS,
+  countdownForPlayer,
   CountdownRangeError,
   CountdownRuleError,
+  normaliseCountdownVisibility,
 } from "../src/lib/domain/countdowns/index";
 import { appError } from "../src/lib/errors/app-error";
 import { countdownDetailsSchema } from "../src/lib/validation/countdowns";
@@ -13,19 +16,27 @@ import type { Doc } from "./_generated/dataModel";
 import { campaignQuery, keyedGmMutation, keyedUserMutation } from "./lib/functions";
 import { applyRule } from "./lib/mechanics";
 import { atLeast, campaignAccess } from "./lib/permissions";
+import { countdownVisibilityValidator } from "./tables/countdowns";
 import { recordHistory } from "./tables/history";
 
+/**
+ * A dashboard countdown as the caller may see it. The GM gets everything; a player gets `null` for each
+ * field the GM hid (CV1), and never receives a private countdown.
+ */
 const countdownView = v.object({
   _id: v.id("countdowns"),
-  name: v.string(),
-  description: v.string(),
-  category: v.union(...COUNTDOWN_CATEGORIES.map((c) => v.literal(c))),
-  startingValue: v.number(),
-  currentValue: v.number(),
+  name: v.union(v.string(), v.null()),
+  description: v.union(v.string(), v.null()),
+  category: v.union(...COUNTDOWN_CATEGORIES.map((c) => v.literal(c)), v.null()),
+  startingValue: v.union(v.number(), v.null()),
+  currentValue: v.union(v.number(), v.null()),
   status: v.union(...COUNTDOWN_STATUSES.map((s) => v.literal(s))),
-  consequence: v.string(),
+  consequence: v.union(v.string(), v.null()),
   completedAt: v.union(v.number(), v.null()),
+  visibility: countdownVisibilityValidator,
 });
+
+export type CountdownView = Infer<typeof countdownView>;
 
 const toClient = (c: Doc<"countdowns">) => ({
   _id: c._id,
@@ -37,23 +48,28 @@ const toClient = (c: Doc<"countdowns">) => ({
   status: c.status,
   consequence: c.consequence,
   completedAt: c.completedAt ?? null,
+  visibility: c.visibility ?? COUNTDOWN_VISIBILITY_PRESETS.public,
 });
 
-export type CountdownView = ReturnType<typeof toClient>;
-
-/** The campaign's countdowns that are not cancelled, oldest first. Countdowns are core; players see them read-only. */
+/**
+ * The campaign's countdowns that are not cancelled, oldest first. Countdowns are core; players see them
+ * read-only, without private countdowns and with hidden fields blanked here on the server.
+ */
 export const listByCampaign = campaignQuery({
   need: "view",
+  enough: "owner",
   args: {},
   returns: v.array(countdownView),
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<CountdownView[]> => {
     // Frame-owned countdowns (objectives, Lycanthropy…) belong to their tracker panels, so
     // the index range reads only the dashboard's own (ownerKey unset); a campaign has few.
     const rows = await ctx.db
       .query("countdowns")
       .withIndex("by_campaign_owner", (q) => q.eq("campaignId", ctx.campaign._id).eq("ownerKey", undefined))
       .collect();
-    return rows.filter((c) => c.status !== "cancelled").map(toClient);
+    const views = rows.filter((c) => c.status !== "cancelled").map(toClient);
+    if (atLeast(ctx.permission, "owner")) return views;
+    return views.flatMap((c) => countdownForPlayer(c, c.visibility) ?? []);
   },
 });
 
@@ -64,17 +80,21 @@ export const create = keyedGmMutation({
     category: v.union(...COUNTDOWN_CATEGORIES.map((c) => v.literal(c))),
     startingValue: v.number(),
     consequence: v.string(),
+    /** Who sees it; absent = everything public. */
+    visibility: v.optional(countdownVisibilityValidator),
   },
-  handler: async (ctx, raw) => {
+  handler: async (ctx, { visibility, ...raw }) => {
     const input = countdownDetailsSchema.parse(raw);
     const campaignId = ctx.campaign._id;
-    return ctx.once("countdown_create", input, async () => {
+    const shown = visibility === undefined ? undefined : normaliseCountdownVisibility(visibility);
+    return ctx.once("countdown_create", { ...input, visibility: shown }, async () => {
       const countdownId = await ctx.db.insert("countdowns", {
         ...input,
         campaignId,
         currentValue: input.startingValue,
         status: "active",
         createdAt: Date.now(),
+        visibility: shown,
       });
       await recordHistory(ctx, ctx.user._id, {
         campaignId,
@@ -85,6 +105,24 @@ export const create = keyedGmMutation({
         after: { currentValue: input.startingValue, status: "active" },
       });
       return { countdownId };
+    });
+  },
+});
+
+/** Changes who sees a dashboard countdown (private / public with hidden fields / public). GM only. */
+export const setVisibility = keyedGmMutation({
+  args: { countdownId: v.id("countdowns"), visibility: countdownVisibilityValidator },
+  returns: v.object({ visibility: countdownVisibilityValidator }),
+  handler: async (ctx, { countdownId, visibility }) => {
+    const countdown = await ctx.db.get("countdowns", countdownId);
+    // Frame-owned countdowns keep their own `revealed` flag; another campaign's countdown is not found.
+    if (countdown === null || countdown.campaignId !== ctx.campaign._id || countdown.ownerKey !== undefined) {
+      throw appError("NOT_FOUND");
+    }
+    const next = normaliseCountdownVisibility(visibility);
+    return ctx.once("countdown_visibility", { countdownId, visibility: next }, async () => {
+      await ctx.db.patch("countdowns", countdownId, { visibility: next });
+      return { visibility: next };
     });
   },
 });

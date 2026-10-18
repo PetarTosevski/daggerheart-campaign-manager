@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { COUNTDOWN_VISIBILITY_PRESETS, type CountdownVisibility } from "../../src/lib/domain/countdowns/index";
 import { errorCode, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 const DETAILS = {
@@ -123,6 +124,130 @@ describe("countdowns", () => {
       .mutation(api.countdowns.operate, { countdownId, action: "advance", idempotencyKey: key() })
       .catch((e) => e);
     expect(errorCode(error)).toBe("FORBIDDEN");
+  });
+
+  describe("visibility (CV1)", () => {
+    async function withPlayer() {
+      const ctx = await setupWithCampaign();
+      await ctx.gm.mutation(api.members.invite, { campaignId: ctx.campaignId, email: OTHER_EMAIL });
+      const create = (visibility?: CountdownVisibility, name = "The dam breaks") =>
+        ctx.gm.mutation(api.countdowns.create, {
+          campaignId: ctx.campaignId,
+          ...DETAILS,
+          name,
+          description: "Secret plan",
+          visibility,
+          idempotencyKey: key(),
+        });
+      const list = (who: typeof ctx.gm) => who.query(api.countdowns.listByCampaign, { campaignId: ctx.campaignId });
+      return { ...ctx, create, list };
+    }
+
+    it("treats a countdown without visibility as public", async () => {
+      const { create, list, other } = await withPlayer();
+      await create();
+      expect(await list(other)).toEqual([
+        expect.objectContaining({ name: "The dam breaks", description: "Secret plan", currentValue: 3, startingValue: 3, visibility: { mode: "public", hidden: [] } }),
+      ]);
+    });
+
+    it("A: a private countdown reaches the GM only", async () => {
+      const { create, list, gm, other } = await withPlayer();
+      await create(COUNTDOWN_VISIBILITY_PRESETS.private);
+      expect(await list(gm)).toEqual([expect.objectContaining({ name: "The dam breaks", visibility: { mode: "private" } })]);
+      expect(await list(other)).toEqual([]);
+    });
+
+    it("B: public with name and description hidden blanks them for players only", async () => {
+      const { create, list, gm, other } = await withPlayer();
+      await create(COUNTDOWN_VISIBILITY_PRESETS.partly);
+      expect(await list(gm)).toEqual([expect.objectContaining({ name: "The dam breaks", description: "Secret plan" })]);
+      const [seen] = await list(other);
+      expect(seen).toMatchObject({
+        name: null,
+        description: null,
+        category: "threat",
+        consequence: "The road east is cut off.",
+        currentValue: 3,
+        startingValue: 3,
+        status: "active",
+      });
+      expect(JSON.stringify(seen)).not.toMatch(/dam breaks|Secret plan/);
+    });
+
+    it("B: any field can be hidden, hidden progress keeps only the status", async () => {
+      const { create, list, other } = await withPlayer();
+      await create({ mode: "public", hidden: ["progress", "category", "consequence", "progress"] });
+      const [seen] = await list(other);
+      expect(seen).toMatchObject({
+        name: "The dam breaks",
+        description: "Secret plan",
+        category: null,
+        consequence: null,
+        currentValue: null,
+        startingValue: null,
+        status: "active",
+        visibility: { mode: "public", hidden: ["category", "consequence", "progress"] },
+      });
+    });
+
+    it("C: everything public", async () => {
+      const { create, list, other } = await withPlayer();
+      await create(COUNTDOWN_VISIBILITY_PRESETS.public);
+      expect(await list(other)).toEqual([expect.objectContaining({ name: "The dam breaks", consequence: "The road east is cut off.", currentValue: 3 })]);
+    });
+
+    it("the GM changes visibility later; players cannot", async () => {
+      const { create, list, gm, other, campaignId } = await withPlayer();
+      const { countdownId } = await create(COUNTDOWN_VISIBILITY_PRESETS.private);
+      const set = (who: typeof gm, visibility: CountdownVisibility) =>
+        who.mutation(api.countdowns.setVisibility, { campaignId, countdownId, visibility, idempotencyKey: key() });
+
+      await set(gm, COUNTDOWN_VISIBILITY_PRESETS.partly);
+      expect(await list(other)).toEqual([expect.objectContaining({ name: null, description: null })]);
+      await set(gm, COUNTDOWN_VISIBILITY_PRESETS.public);
+      expect(await list(other)).toEqual([expect.objectContaining({ name: "The dam breaks" })]);
+
+      expect(errorCode(await set(other, COUNTDOWN_VISIBILITY_PRESETS.public).catch((e) => e))).toBe("FORBIDDEN");
+      await set(gm, COUNTDOWN_VISIBILITY_PRESETS.private);
+      expect(errorCode(await set(other, COUNTDOWN_VISIBILITY_PRESETS.public).catch((e) => e))).toBe("FORBIDDEN");
+      expect(await list(other)).toEqual([]);
+    });
+
+    it("outsiders get NOT_FOUND, and another campaign's or a frame's countdown is not found", async () => {
+      const { t, gm, other, campaignId, countdownId } = await withCountdown();
+      const visibility = COUNTDOWN_VISIBILITY_PRESETS.private;
+      // `other` has no access to this campaign at all.
+      expect(
+        errorCode(await other.mutation(api.countdowns.setVisibility, { campaignId, countdownId, visibility, idempotencyKey: key() }).catch((e) => e)),
+      ).toBe("NOT_FOUND");
+      // As GM of their own campaign they still cannot reach this countdown through it.
+      const { campaignId: theirs } = await other.mutation(api.campaigns.create, { frameId: "witherwild", name: "Theirs", idempotencyKey: key() });
+      expect(
+        errorCode(
+          await other
+            .mutation(api.countdowns.setVisibility, { campaignId: theirs, countdownId, visibility, idempotencyKey: key() })
+            .catch((e) => e),
+        ),
+      ).toBe("NOT_FOUND");
+      const owned = await t.run((ctx) =>
+        ctx.db.insert("countdowns", {
+          campaignId,
+          name: "Objective",
+          description: "",
+          category: "project",
+          startingValue: 4,
+          currentValue: 4,
+          status: "active",
+          consequence: "",
+          createdAt: 0,
+          ownerKey: "nation:armada",
+        }),
+      );
+      expect(
+        errorCode(await gm.mutation(api.countdowns.setVisibility, { campaignId, countdownId: owned, visibility, idempotencyKey: key() }).catch((e) => e)),
+      ).toBe("NOT_FOUND");
+    });
   });
 
   it("does not operate countdowns owned by a frame tracker", async () => {
