@@ -747,6 +747,8 @@ waves:
         goal: Owners can't revive dead/away characters, parties are bounded with explicit errors, applyDamage is idempotent, and the remaining D5 polish lands.
         depends_on: [TI-a, TI-b]
         owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/damage-calculator.tsx
+          - tests/convex/wither.test.ts
           - convex/characters.ts
           - convex/lib/functions.ts
           - convex/rests.ts
