@@ -147,3 +147,32 @@ waves:
         acceptance:
           - "level-up.spec: GM flags the party; the player presses ▲, is taken to Experiences and types the new Experience (level 2), is taken to the tier boxes and ticks two options (one with a target chooser), is taken to the Domain Deck and chooses a card, finishes; the sheet shows level 2, the Experience, the marks and the card; undo still works; a player without the flag sees no ▲"
           - "Every e2e spec that levelled through the old modal is moved to the guided mode; the full e2e suite passes"
+  - wave: 4
+    tracers:
+      - id: GL5
+        title: Same traits advancement twice in one level; subclass upgrade shows the card
+        size: S
+        goal: "User 2026-10-18: allow taking '+1 to two unmarked traits' twice in one level (four different traits, the engine already allows it), and show the upgraded subclass card itself instead of a note when the subclass advancement is ticked."
+        depends_on: [GL1, GL2, GL3]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft.tsx
+          - src/components/party/level-up/history.tsx
+          - src/components/party/level-up/tier-pickers.tsx
+          - src/components/party/level-up/history.css
+          - src/components/party/hero-card.tsx
+          - src/components/party/hero-card.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/heritage.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/heritage.css
+          - tests/unit/level-up-draft.test.ts
+          - tests/unit/tier-boxes.test.ts
+          - tests/e2e/visual/GL5.spec.ts
+          - docs/tasks/TASK-GL5.md
+        reads:
+          - src/lib/domain/level-up/index.ts
+          - docs/tasks/TASK-GL0.md
+          - docs/tasks/TASK-GL1.md
+        acceptance:
+          - "useLevelUpDraft.setPickTargets takes an optional 4th argument `index` (0 = first pick of that option and tier, the default, so existing callers in identity.tsx and domains.tsx keep working) and sets targets on that pick"
+          - "In the tier boxes a second (and third, slots permitting) traits box can be ticked for the same level; each traits pick gets its own chooser ('Traits to raise for level N' / '... (second pick)'); traits chosen in one pick or marked this tier are disabled in the other; validateLevelUp shows no problem for four distinct unmarked traits"
+          - "Ticking the subclass advancement shows the upgraded subclass card (specialization or mastery) rendered as the Heritage & Subclass tab's hero card (art, kind tag, name, tier, text); the card view is extracted from sections/heritage.tsx into src/components/party/hero-card.tsx and reused by both, with the Heritage tab looking unchanged"
+          - "Unit tests for both; GL5 visual spec at 1440 and 390 (no horizontal scroll, 44 px targets); pnpm lint, typecheck, test pass"
