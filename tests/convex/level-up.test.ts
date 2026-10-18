@@ -126,6 +126,39 @@ describe("levelUp", () => {
     expect(await failure(gm.mutation(api.levelUp.apply, { characterId: b, choice: warrior, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
   });
 
+  it("SS2: multiclass Spellcast trait (CB 111): chosen, stored, shown, undone; forced without one; magic weapons follow", async () => {
+    const { t, gm, a, b, sheetOf } = await setup();
+    const atLevel4 = (id: Id<"characters">, patch: Record<string, unknown>) =>
+      t.run(async (ctx) => {
+        const c = (await ctx.db.get("characters", id))!;
+        await ctx.db.patch("characters", id, { sheet: { ...c.sheet, level: 4, ...patch } });
+      });
+    const wizard = { classId: "wizard", domainId: "codex", subclassId: "school-of-knowledge" };
+    const pick = [{ option: "multiclass" as const, tier: 3 }];
+    // Ash: a Rogue (Nightwalker, Finesse) multiclassing into the Wizard's School of Knowledge (Knowledge).
+    await atLevel4(a, { classId: "rogue", subclassId: "nightwalker" });
+    const rogueChoice = { picks: pick, experienceName: "Bookish", cardId: cardsForDomains(["midnight"], 5).find((c) => c.level === 5)!.id, multiclass: wizard };
+    expect(await failure(gm.mutation(api.levelUp.apply, { characterId: a, choice: rogueChoice, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
+    const strength = { ...rogueChoice, multiclass: { ...wizard, spellcastTrait: "strength" as const } };
+    expect(await failure(gm.mutation(api.levelUp.apply, { characterId: a, choice: strength, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
+    const knowledge = { ...rogueChoice, multiclass: { ...wizard, spellcastTrait: "knowledge" as const } };
+    expect(await gm.mutation(api.levelUp.apply, { characterId: a, choice: knowledge, idempotencyKey: key() })).toEqual({ level: 5 });
+    expect((await sheetOf(a)).multiclass).toEqual({ ...wizard, spellcastTrait: "knowledge" });
+    expect((await gm.query(api.characters.get, { characterId: a }))?.sheet.multiclass?.spellcastTrait).toBe("knowledge");
+    await gm.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() });
+    expect((await sheetOf(a)).multiclass).toBeUndefined();
+
+    // Bryn: a Warrior (no Spellcast trait) gets the new one forced, and may then wield magic weapons.
+    await atLevel4(b, {});
+    const magic = WEAPONS.find((w) => w.slot === "primary" && w.tier === 1 && w.source === "core" && w.category === "magic" && !w.classId)!.id;
+    expect(await failure(gm.mutation(api.characters.updateSheet, { characterId: b, patch: { primaryWeaponId: magic } }))).toBe("INVALID");
+    const warriorChoice = { picks: pick, experienceName: "Bookish", cardId: cardsForDomains(["blade"], 5).find((c) => c.level === 5)!.id, multiclass: wizard };
+    expect(await gm.mutation(api.levelUp.apply, { characterId: b, choice: warriorChoice, idempotencyKey: key() })).toEqual({ level: 5 });
+    expect((await sheetOf(b)).multiclass?.spellcastTrait).toBe("knowledge");
+    await gm.mutation(api.characters.updateSheet, { characterId: b, patch: { primaryWeaponId: magic } });
+    expect((await sheetOf(b)).primaryWeaponId).toBe(magic);
+  });
+
   it("an invalid choice is LEVEL_UP_RULE", async () => {
     const { gm, a } = await setup();
     const bad = { ...CHOICE, picks: [{ option: "traits" as const, tier: 2, targets: ["agility", "agility"] }, { option: "hp" as const, tier: 2 }] };

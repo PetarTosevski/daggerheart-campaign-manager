@@ -9,6 +9,7 @@ import { logAction, newGroupId } from "./lib/actionLog";
 import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { keyedGmMutation, keyedUserMutation } from "./lib/functions";
 import { applyRule } from "./lib/mechanics";
+import { traitIdValidator } from "./lib/validators/characters";
 
 /**
  * Leveling up (D5 T2, CB 109-111). The GM flags the party; each owner then
@@ -30,7 +31,7 @@ const choiceValidator = v.object({
   experienceName: v.optional(v.string()),
   cardId: v.string(),
   trade: v.optional(v.object({ out: v.string(), in: v.string() })),
-  multiclass: v.optional(v.object({ classId: v.string(), domainId: v.string(), subclassId: v.string() })),
+  multiclass: v.optional(v.object({ classId: v.string(), domainId: v.string(), subclassId: v.string(), spellcastTrait: v.optional(traitIdValidator) })),
 });
 
 const levelResult = v.object({ level: v.number() });

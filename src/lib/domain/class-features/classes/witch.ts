@@ -9,17 +9,16 @@
 //   "Target N"): −tier to its damage rolls and Difficulty (the GM applies it). At most Spellcast-trait targets at once.
 //   Temporary: "Clear Hexes" ends them, and every rest and session end clears them.
 // - Commune: once per long rest, roll Spellcast-trait d6s and read a result on the chart.
-import { getSubclass } from "../../../srd/index";
 import type { CharacterSheet } from "../../../validation/characters";
 import { applyResourceDelta, tierForLevel } from "../../characters/index";
 import { withEffects } from "../../characters/effects";
+import { spellcastTraitOf } from "../../characters/spellcast";
 import type { ClassFeatures } from "../types";
 import { HOPE_COST, refuse } from "./shared";
 
-/** The Witch subclass's Spellcast trait value (with effects), or 0 when it is not positive. */
+/** The Spellcast trait value (with effects; the multiclass choice, CB 111, via `spellcastTraitOf`), or 0 when it is not positive. */
 export function witchSpellcast(sheet: CharacterSheet): number {
-  const subclassId = sheet.classId === "witch" ? sheet.subclassId : sheet.multiclass?.subclassId;
-  const trait = subclassId ? getSubclass(subclassId)?.spellcastTrait : undefined;
+  const trait = spellcastTraitOf(sheet);
   return trait ? Math.max(0, withEffects(sheet).traits[trait]) : 0;
 }
 

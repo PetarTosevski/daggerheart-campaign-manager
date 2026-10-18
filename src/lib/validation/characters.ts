@@ -201,8 +201,13 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   primaryWeaponId: z.string().max(100),
   /** Upgraded subclass advancements move it up (CB 110). */
   subclassRank: z.enum(SUBCLASS_RANKS).default("foundation"),
-  /** Multiclass (CB 110-111): the second class's class features, one of its domains and its foundation card. */
-  multiclass: z.object({ classId: z.string().min(1), domainId: z.string().min(1), subclassId: z.string().min(1) }).optional(),
+  /**
+   * Multiclass (CB 110-111): the second class's class features, one of its domains and its foundation card.
+   * `spellcastTrait` (widened, SS2): the Spellcast trait chosen for Spellcast Rolls (`spellcastTraitOf`).
+   */
+  multiclass: z
+    .object({ classId: z.string().min(1), domainId: z.string().min(1), subclassId: z.string().min(1), spellcastTrait: z.enum(TRAIT_IDS).optional() })
+    .optional(),
   /** One entry per level gained (at most 9); level undo inverts the latest one (dcm-mf7). */
   advancements: z.array(advancementSchema).max(9).default([]),
   /** Set by the GM's "Party levels up" (CB 109); cleared when the owner levels up. */

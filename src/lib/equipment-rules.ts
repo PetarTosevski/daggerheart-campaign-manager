@@ -10,7 +10,9 @@
 
 import { tierForLevel } from "./domain/characters/index";
 import { RuleError, type AppErrorCode } from "./errors/app-error";
-import { getArmor, getSubclass, getWeapon, type Source } from "./srd/index";
+import { spellcastTraitOf } from "./domain/characters/spellcast";
+import { getArmor, getWeapon, type Source } from "./srd/index";
+import type { CharacterSheet } from "./validation/characters";
 
 export const IKONIS_ONLY = "In a Motherboard campaign your Ikonis replaces weapons (CB 301).";
 
@@ -26,6 +28,8 @@ export type EquipmentSheet = {
   primaryWeaponId: string;
   secondaryWeaponId?: string | null;
   armorId?: string | null;
+  /** A multiclass can bring a Spellcast trait (CB 111). */
+  multiclass?: CharacterSheet["multiclass"];
 };
 
 export type EquipmentOptions = {
@@ -54,14 +58,14 @@ export function assertEquipment(sheet: EquipmentSheet, allowExpansion: boolean, 
     return;
   }
   const tier = tierForLevel(sheet.level);
-  const sub = getSubclass(sheet.subclassId);
+  const spellcaster = spellcastTraitOf(sheet) !== null;
   const check = (weaponId: string, slot: "primary" | "secondary") => {
     const w = getWeapon(weaponId);
     if (!w || w.slot !== slot) return refuse(`Choose a ${slot} weapon.`);
     if (w.tier > tier) refuse(`${w.name} is Tier ${w.tier}; a level ${sheet.level} character is Tier ${tier}.`);
     assertSource(w.source, allowExpansion, w.name, code);
     if (w.classId && w.classId !== sheet.classId) refuse(`${w.name} belongs to another class.`);
-    if (w.category === "magic" && !sub?.spellcastTrait) refuse("Magic weapons need a Spellcast trait from the subclass.");
+    if (w.category === "magic" && !spellcaster) refuse("Magic weapons need a Spellcast trait from the subclass.");
     return w;
   };
   const primary = check(sheet.primaryWeaponId, "primary");

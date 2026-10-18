@@ -6,11 +6,12 @@ import type { ReactNode } from "react";
 
 import { Label, paperField, SheetBox, Small } from "@/components/party/sheet-ui";
 import { derivedDefense } from "@/lib/domain/characters/derived";
+import { spellcastTraitOf } from "@/lib/domain/characters/spellcast";
 import { tierForLevel } from "@/lib/domain/characters";
 import { ACHIEVEMENT_LEVELS } from "@/lib/domain/level-up";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
 import { ikonisDamage, type MotherboardState } from "@/lib/frames/extras/motherboard";
-import { ARMOR, getArmor, getSubclass, getWeapon, WEAPONS, type Weapon } from "@/lib/srd";
+import { ARMOR, getArmor, getWeapon, WEAPONS, type Weapon } from "@/lib/srd";
 import { cn } from "@/lib/utils";
 
 import { useMotherboard, useSheet } from "../sheet-context";
@@ -69,7 +70,8 @@ const BURDEN: Record<Weapon["burden"], string> = { "two-handed": "Two-handed", b
 function WeaponBlock({ label, weaponId, slot }: { label: string; weaponId?: string; slot: Weapon["slot"] }) {
   const { sheet, canEdit, update, hopeAndFear } = useSheet();
   const weapon = weaponId ? getWeapon(weaponId) : undefined;
-  const spellcaster = Boolean(getSubclass(sheet.subclassId)?.spellcastTrait);
+  // A multiclass can bring the Spellcast trait magic weapons need (CB 111).
+  const spellcaster = spellcastTraitOf(sheet) !== null;
   const primary = getWeapon(sheet.primaryWeaponId);
   const blocked = slot === "secondary" && primary?.burden === "two-handed";
   const options = weaponOptions(slot, sheet.level, sheet.classId, spellcaster, hopeAndFear, weaponId);
