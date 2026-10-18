@@ -1,5 +1,7 @@
 "use client";
 
+import { Eye, EyeOff } from "lucide-react";
+
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { designAsset } from "@/lib/design-assets";
@@ -488,8 +490,10 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
             <button type="button" className="zbtn zw tip" data-tip="Fit the whole map · 0" aria-label="Fit map" onClick={panZoom.fit}>
               Fit
             </button>
-            <button type="button" className="zbtn zw tip" data-tip="Hide / show all tokens · H" aria-pressed={hideToks} onClick={() => setHideToks((s) => !s)}>
-              {hideToks ? "👁 Show tokens" : "🙈 Hide all tokens"}
+            <button type="button" className="zbtn zw tip gap-1.5" data-tip="Hide / show all tokens · H" aria-pressed={hideToks} onClick={() => setHideToks((s) => !s)}>
+              {/* Open eye: tokens are hidden, click to show them; closed eye: click to hide them all. */}
+              {hideToks ? <Eye className="size-4" aria-hidden="true" /> : <EyeOff className="size-4" aria-hidden="true" />}
+              {hideToks ? "Show tokens" : "Hide all tokens"}
             </button>
             <button type="button" className="zbtn zw tip" aria-pressed={fs} aria-label={fs ? "Exit full screen (Esc)" : "Full screen"} data-tip={`${fs ? "Exit full screen (Esc)" : "Full screen"} · F`} onClick={toggleFs}>
               {fs ? "✕ Exit full screen" : "⛶ Full screen"}
