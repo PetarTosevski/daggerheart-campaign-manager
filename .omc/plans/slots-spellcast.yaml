@@ -99,6 +99,7 @@ waves:
         goal: "User answer to AFK decision 33 (2026-10-18): 'let a player undo only for the session they did the levelup'. The GM can undo any time; a player can undo their latest level-up only until the campaign's session boundary after it (a session starts or ends after the level-up). Decision 16 (undo sets 'level up pending' again; refused after a GM correction) is confirmed and stays."
         depends_on: [SS2]
         owns:
+          - convex/lib/validators/characters.ts
           - convex/levelUp.ts
           - src/lib/validation/characters.ts
           - src/lib/domain/level-up/index.ts
