@@ -58,8 +58,13 @@ async function setup(frameId: PublishedFrameId) {
   const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
   await p1.mutation(api.members.joinByCode, { code });
   await p2.mutation(api.members.joinByCode, { code });
-  const a = (await p1.mutation(api.characters.create, { campaignId, draft: draft("Ash"), idempotencyKey: key() })).characterId;
-  const b = (await p2.mutation(api.characters.create, { campaignId, draft: draft("Bryn"), idempotencyKey: key() })).characterId;
+  // Motherboard characters carry an Ikonis instead of weapons (CB 295).
+  const withIkonis = (d: ReturnType<typeof draft>) =>
+    frameId === "motherboard"
+      ? { draft: { ...d, primaryWeaponId: "", secondaryWeaponId: undefined }, ikonis: { name: "Spark rod", description: "", trait: "strength" as const, range: "Melee" as const, damageType: "physical" as const } }
+      : { draft: d };
+  const a = (await p1.mutation(api.characters.create, { campaignId, ...withIkonis(draft("Ash")), idempotencyKey: key() })).characterId;
+  const b = (await p2.mutation(api.characters.create, { campaignId, ...withIkonis(draft("Bryn")), idempotencyKey: key() })).characterId;
 
   const sheetOf = (id: Id<"characters">) => t.run(async (ctx) => readSheet((await ctx.db.get("characters", id))!.sheet));
   const edit = (id: Id<"characters">, change: (s: CharacterSheet) => CharacterSheet) =>
