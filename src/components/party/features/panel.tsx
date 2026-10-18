@@ -1,8 +1,11 @@
 "use client";
 
+import "./features.css";
+
 import { useMutation, useQuery } from "convex/react";
 import { useId, useMemo, useRef, useState } from "react";
 
+import { EffectRow, Label, paperField, Pill, Small } from "@/components/party/sheet-ui";
 import { errorMessage } from "@/lib/convex-errors";
 import { rallyDieStress } from "@/lib/domain/class-features/held-dice";
 import { classActions, hopeFeature } from "@/lib/domain/class-features/hooks";
@@ -13,6 +16,9 @@ import { characterSheetSchema } from "@/lib/validation/characters";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SlotProps } from "../slots";
+
+// Board blocks (reference/designs/project/Party.dc.html): the Hope box's `hf` block (HopeFeatureBlock) and the
+// Class Features box's `cf.rows` (FeaturesBox). Styles: ./features.css.
 
 type Sheet = SlotProps["character"]["sheet"];
 
@@ -67,9 +73,9 @@ function AllyPicker({
   const party = useQuery(api.characters.listByCampaign, { campaignId });
   const allies = (party ?? []).filter((c) => c._id !== self && c.status === "active");
   return (
-    <label className="flex flex-col gap-1">
-      <span className="cs-lbl">{label}</span>
-      <select className="cs-in" value={value} onChange={(e) => onChange(allies.find((c) => c._id === e.target.value)?._id ?? "")} disabled={party === undefined}>
+    <label className="ft-field">
+      <Label>{label}</Label>
+      <select className={paperField.input} value={value} onChange={(e) => onChange(allies.find((c) => c._id === e.target.value)?._id ?? "")} disabled={party === undefined}>
         {allowSelf ? <option value="">Yourself</option> : <option value="">Choose an ally</option>}
         {allies.map((c) => (
           <option key={c._id} value={c._id}>
@@ -84,18 +90,13 @@ function AllyPicker({
 /** Held dice of one kind (Prayer Dice), picked by their order among those dice. */
 function HeldDicePicker({ sheet, input, value, onChange }: { sheet: Sheet; input: Extract<FeatureInput, { kind: "heldDice" }>; value: number[]; onChange: (v: number[]) => void }) {
   const held = (sheet.heldDice ?? []).filter((d) => d.kind === input.heldKind);
-  if (held.length === 0) return <span className="cs-small italic">None held.</span>;
+  if (held.length === 0) return <Small className="italic">None held.</Small>;
   return (
-    <fieldset className="flex flex-wrap items-center gap-3">
-      <legend className="cs-lbl">{input.label} (default: the first)</legend>
+    <fieldset className="ft-checks">
+      <legend className="sh-lbl">{input.label} (default: the first)</legend>
       {held.map((d, i) => (
-        <label key={d.id} className="flex min-h-11 items-center gap-2 text-[16px]">
-          <input
-            type="checkbox"
-            className="size-5 accent-[#6b5a45]"
-            checked={value.includes(i)}
-            onChange={(e) => onChange(e.target.checked ? [...value, i] : value.filter((x) => x !== i))}
-          />
+        <label key={d.id} className="ft-check">
+          <input type="checkbox" checked={value.includes(i)} onChange={(e) => onChange(e.target.checked ? [...value, i] : value.filter((x) => x !== i))} />
           d{d.sides}
           {d.value !== undefined ? `: ${d.value}` : ""}
         </label>
@@ -107,20 +108,15 @@ function HeldDicePicker({ sheet, input, value, onChange }: { sheet: Sheet; input
 /** Volatile Magic: pick damage dice of the latest damage roll to reroll. */
 function DamageDicePicker({ characterId, value, onChange }: { characterId: Id<"characters">; value: number[]; onChange: (v: number[]) => void }) {
   const roll = useQuery(api.classFeatures.lastRoll, { characterId });
-  if (roll === undefined) return <span className="cs-small italic">Loading your latest roll…</span>;
-  if (roll === null || roll.kind !== "damage") return <span className="cs-small italic">Roll damage first: your latest roll is not a damage roll.</span>;
+  if (roll === undefined) return <Small className="italic">Loading your latest roll…</Small>;
+  if (roll === null || roll.kind !== "damage") return <Small className="italic">Roll damage first: your latest roll is not a damage roll.</Small>;
   return (
-    <fieldset className="flex flex-wrap items-center gap-3">
-      <legend className="cs-lbl">Dice to reroll (total {roll.total})</legend>
+    <fieldset className="ft-checks">
+      <legend className="sh-lbl">Dice to reroll (total {roll.total})</legend>
       {roll.dice.map((d, i) =>
         d.role === "damage" && !d.dropped ? (
-          <label key={i} className="flex min-h-11 items-center gap-2 text-[16px]">
-            <input
-              type="checkbox"
-              className="size-5 accent-[#6b5a45]"
-              checked={value.includes(i)}
-              onChange={(e) => onChange(e.target.checked ? [...value, i] : value.filter((x) => x !== i))}
-            />
+          <label key={i} className="ft-check">
+            <input type="checkbox" checked={value.includes(i)} onChange={(e) => onChange(e.target.checked ? [...value, i] : value.filter((x) => x !== i))} />
             d{d.sides}: {d.value}
           </label>
         ) : null,
@@ -148,7 +144,11 @@ function inputMissing(input: FeatureInput, values: { choice: string; amount: str
   }
 }
 
-function FeatureCard({ feature, props, blocked }: { feature: FeatureMeta; props: SlotProps; blocked: string | null }) {
+/**
+ * One usable feature. `hope`: the Hope box's hf block (the feature text is already above it, so only the pickers,
+ * the gold "✦ Use … · 3 Hope" pill and the status box). `row`: a cf row with title, text, cost and a Use pill.
+ */
+function FeatureCard({ feature, props, blocked, variant }: { feature: FeatureMeta; props: SlotProps; blocked: string | null; variant: "hope" | "row" }) {
   const { character, campaignId, canEdit } = props;
   const applyFeature = useMutation(api.classFeatures.use);
   const { run, busy, error } = useIntent();
@@ -165,6 +165,10 @@ function FeatureCard({ feature, props, blocked }: { feature: FeatureMeta; props:
   const missing = (needsTarget && target === "") || inputs.some((i) => inputMissing(i, { choice, amount, dieIndexes, target }));
   // `select` options read the full sheet (loadout cards, tier); the panel's sheet is the server's view of it.
   const parsed = useMemo(() => characterSheetSchema.safeParse(character.sheet), [character.sheet]);
+  const usable = canEdit && feature.use !== undefined;
+  // A hard block (dead, away, unconscious) wins over the last result; the result wins over "Needs N Hope".
+  const message = canEdit ? (blocked ?? done ?? (short ? `Needs ${feature.cost?.hope} Hope.` : null)) : done;
+  const disabled = busy || blocked !== null || short || missing;
 
   async function submit() {
     setDone(null);
@@ -189,16 +193,16 @@ function FeatureCard({ feature, props, blocked }: { feature: FeatureMeta; props:
     switch (input.kind) {
       case "text":
         return (
-          <label key={id} className="flex flex-col gap-1">
-            <span className="cs-lbl">{input.label}</span>
-            <input className="cs-in" maxLength={60} placeholder={input.placeholder} value={choice} onChange={(e) => setChoice(e.target.value)} />
+          <label key={id} className="ft-field">
+            <Label>{input.label}</Label>
+            <input className={paperField.input} maxLength={60} placeholder={input.placeholder} value={choice} onChange={(e) => setChoice(e.target.value)} />
           </label>
         );
       case "select":
         return (
-          <label key={id} className="flex flex-col gap-1">
-            <span className="cs-lbl">{input.label}</span>
-            <select className="cs-in" value={choice} onChange={(e) => setChoice(e.target.value)}>
+          <label key={id} className="ft-field">
+            <Label>{input.label}</Label>
+            <select className={paperField.input} value={choice} onChange={(e) => setChoice(e.target.value)}>
               <option value="">{input.empty}</option>
               {(parsed.success ? input.options(parsed.data) : []).map((o) => (
                 <option key={o.value} value={o.value}>
@@ -210,9 +214,9 @@ function FeatureCard({ feature, props, blocked }: { feature: FeatureMeta; props:
         );
       case "number":
         return (
-          <label key={id} className="flex flex-col gap-1">
-            <span className="cs-lbl">{input.label}</span>
-            <input className="cs-in w-24 text-center" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))} />
+          <label key={id} className="ft-field">
+            <Label>{input.label}</Label>
+            <input className={`${paperField.input} ft-number`} inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))} />
           </label>
         );
       case "heldDice":
@@ -224,41 +228,65 @@ function FeatureCard({ feature, props, blocked }: { feature: FeatureMeta; props:
     }
   }
 
+  const pickers =
+    usable && (feature.target === "ally" || inputs.length > 0) ? (
+      <div className="ft-pickers">
+        {feature.target === "ally" ? <AllyPicker campaignId={campaignId} self={character._id} allowSelf={!needsTarget} value={target} onChange={setTarget} /> : null}
+        {inputs.map(renderInput)}
+      </div>
+    ) : null;
+  // Always rendered so screen readers announce the result; empty, it takes no space.
+  const status = (
+    <div role="status" className="ft-msg">
+      {message}
+    </div>
+  );
+  const alert = error ? (
+    <p role="alert" className="ft-error">
+      {error}
+    </p>
+  ) : null;
+
+  if (variant === "hope") {
+    if (!usable) return null;
+    return (
+      <div className="hf-feature" role="group" aria-label={feature.name}>
+        {pickers}
+        <button type="button" className="hf-use" disabled={disabled} onClick={() => void submit()}>
+          <span aria-hidden="true">✦ </span>
+          Use {feature.name}
+          {cost ? ` · ${cost}` : ""}
+        </button>
+        {feature.automation === "assist" ? <Small className="italic">Reminder: the Hope is spent here; apply the effect at the table.</Small> : null}
+        {status}
+        {alert}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-2" role="group" aria-label={feature.name}>
-      <p className="cs-small m-0">
-        <strong className="font-display text-[14px]">{feature.name}</strong>
-        {cost ? <span className="cs-lbl ml-2">{cost}</span> : null}
-        {feature.automation === "assist" ? <span className="cs-lbl ml-2">(reminder)</span> : null}
-        {feature.text ? <span className="block">{feature.text}</span> : null}
-      </p>
-      {canEdit && feature.use ? (
-        <div className="flex flex-wrap items-end gap-3">
-          {feature.target === "ally" ? (
-            <AllyPicker campaignId={campaignId} self={character._id} allowSelf={!needsTarget} value={target} onChange={setTarget} />
-          ) : null}
-          {inputs.map(renderInput)}
-          <button type="button" className="cs-pill cs-solid" disabled={busy || blocked !== null || short || missing} onClick={() => void submit()}>
+    <div className="cf-row" role="group" aria-label={feature.name}>
+      <div>
+        <strong className="cf-title">{feature.name}</strong>
+        {cost ? <span className="cf-cost">{cost}</span> : null}
+        {feature.automation === "assist" ? <span className="cf-cost">reminder</span> : null}
+        {feature.text ? <Small className="cf-text">{feature.text}</Small> : null}
+      </div>
+      {pickers}
+      {usable ? (
+        <div className="cf-btns">
+          <Pill variant="solid" disabled={disabled} onClick={() => void submit()}>
             Use {feature.name}
-          </button>
+          </Pill>
         </div>
       ) : null}
-      {canEdit && (blocked ?? (short ? `Needs ${feature.cost?.hope} Hope.` : null)) ? (
-        <span className="cs-small italic">{blocked ?? `Needs ${feature.cost?.hope} Hope.`}</span>
-      ) : null}
-      <p className="cs-small m-0 italic" aria-live="polite">
-        {error ? (
-          <span role="alert" className="text-[#8e2b2b]">
-            {error}
-          </span>
-        ) : (
-          done
-        )}
-      </p>
+      {status}
+      {alert}
     </div>
   );
 }
 
+/** The hf block's "Active effects": one dashed EffectRow per effect (its text states how long it lasts) with its End button, then Got hit. */
 function Effects({ props }: { props: SlotProps }) {
   const { character, canEdit } = props;
   const sheet = character.sheet;
@@ -269,38 +297,31 @@ function Effects({ props }: { props: SlotProps }) {
   if (effects.length === 0) return null;
   const hitEffects = effects.filter((e) => e.until === "hit");
   return (
-    <div className="flex flex-col gap-2">
-      <span className="cs-lbl">Active effects</span>
-      <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Active effects">
+    <div className="hf-effects">
+      <Label>Active effects</Label>
+      <ul className="ft-list" aria-label="Active effects">
         {effects.map((e) => (
-          <li key={e.id} className="flex flex-wrap items-center gap-3">
-            <span className="cs-small">
-              <strong className="font-display text-[14px]">{e.source}:</strong> {e.text}
-            </span>
-            {canEdit ? (
-              <button
-                type="button"
-                className="cs-pill ml-auto"
-                disabled={busy}
-                aria-label={`End ${e.source}`}
-                onClick={() => void run((idempotencyKey) => endEffect({ characterId: character._id, effectId: e.id, idempotencyKey }))}
-              >
-                End
-              </button>
-            ) : null}
+          <li key={e.id}>
+            <EffectRow
+              disabled={busy}
+              endAriaLabel={`End ${e.source}`}
+              onEnd={canEdit ? () => void run((idempotencyKey) => endEffect({ characterId: character._id, effectId: e.id, idempotencyKey })) : undefined}
+            >
+              {e.source}: {e.text}
+            </EffectRow>
           </li>
         ))}
       </ul>
       {canEdit && hitEffects.length > 0 ? (
-        <div>
-          <button type="button" className="cs-pill" disabled={busy} onClick={() => void run((idempotencyKey) => gotHit({ characterId: character._id, idempotencyKey }))}>
+        <div className="hf-hit">
+          <button type="button" className="hf-ghost" disabled={busy} onClick={() => void run((idempotencyKey) => gotHit({ characterId: character._id, idempotencyKey }))}>
             Got hit
           </button>
-          <span className="cs-small ml-3 italic">An attack succeeded against you: ends {hitEffects.map((e) => e.source).join(", ")}.</span>
+          <Small className="italic">An attack succeeded against you: ends {hitEffects.map((e) => e.source).join(", ")}.</Small>
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="cs-small m-0 text-[#8e2b2b]">
+        <p role="alert" className="ft-error">
           {error}
         </p>
       ) : null}
@@ -326,12 +347,23 @@ function blockedReason(props: SlotProps): string | null {
   return null;
 }
 
-/** The features panel: Hope feature and class actions, active effects, conditions, held dice and class counters. */
-export function FeaturesBox(props: SlotProps) {
-  const headingId = useId();
+/** The Hope box's hf block: the class Hope feature's pickers, Use pill and status, then the active effects. */
+export function HopeFeatureBlock(props: SlotProps) {
   const sheet = props.character.sheet;
-  const available = classFeaturesAvailable(sheet.classId, props.hopeAndFear);
-  const hope = available ? hopeFeature(sheet) : undefined;
+  const hope = classFeaturesAvailable(sheet.classId, props.hopeAndFear) ? hopeFeature(sheet) : undefined;
+  const showHope = hope !== undefined && props.canEdit && hope.use !== undefined;
+  if (!showHope && (sheet.effects ?? []).length === 0) return null;
+  return (
+    <div className="hf">
+      {hope ? <FeatureCard feature={hope} props={props} blocked={blockedReason(props)} variant="hope" /> : null}
+      <Effects props={props} />
+    </div>
+  );
+}
+
+/** The Class Features box's cf rows: class actions, then held dice and conditions as chips and the class counters. */
+export function FeaturesBox(props: SlotProps) {
+  const sheet = props.character.sheet;
   // Class actions of the class and the multiclass, each offered only if its class is (Hope & Fear option);
   // a held Rally Die comes from a Bard, so it is offered either way.
   const actions = classActions(sheet).filter(
@@ -342,26 +374,20 @@ export function FeaturesBox(props: SlotProps) {
   const conditions = sheet.conditions ?? [];
   const held = sheet.heldDice ?? [];
   const state = stateEntries(sheet);
-  const effects = sheet.effects ?? [];
-  if (!hope && actions.length === 0 && effects.length === 0 && conditions.length === 0 && held.length === 0 && state.length === 0) return null;
+  if (actions.length === 0 && conditions.length === 0 && held.length === 0 && state.length === 0) return null;
   const blocked = blockedReason(props);
 
   return (
-    <section className="cs-box" aria-labelledby={headingId}>
-      <h3 id={headingId} className="cs-h">
-        Features
-      </h3>
-      {hope ? <FeatureCard feature={hope} props={props} blocked={blocked} /> : null}
+    <div className="cf">
       {actions.map((f) => (
-        <FeatureCard key={f.key} feature={f} props={props} blocked={blocked} />
+        <FeatureCard key={f.key} feature={f} props={props} blocked={blocked} variant="row" />
       ))}
-      <Effects props={props} />
       {conditions.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="cs-lbl">Conditions</span>
-          <ul className="m-0 flex list-none flex-wrap gap-2 p-0" aria-label="Conditions">
+        <div className="cf-chips">
+          <Label>Conditions</Label>
+          <ul className="ft-list ft-inline" aria-label="Conditions">
             {conditions.map((c) => (
-              <li key={c} className="cs-thr-pill">
+              <li key={c} className="ft-pill">
                 {TRAIT_LABEL(c)}
               </li>
             ))}
@@ -369,11 +395,11 @@ export function FeaturesBox(props: SlotProps) {
         </div>
       ) : null}
       {held.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="cs-lbl">Held dice</span>
-          <ul className="m-0 flex list-none flex-wrap gap-2 p-0" aria-label="Held dice">
+        <div className="cf-chips">
+          <Label>Held dice</Label>
+          <ul className="ft-list ft-inline" aria-label="Held dice">
             {held.map((d) => (
-              <li key={d.id} className="cs-thr-pill">
+              <li key={d.id} className="ft-pill">
                 {TRAIT_LABEL(d.kind)} d{d.sides}
                 {d.value !== undefined ? `: ${d.value}` : ""}
               </li>
@@ -382,15 +408,15 @@ export function FeaturesBox(props: SlotProps) {
         </div>
       ) : null}
       {state.length > 0 ? (
-        <dl className="cs-small m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        <dl className="cf-state">
           {state.map(([label, text]) => (
             <div key={label} className="contents">
-              <dt className="cs-lbl">{label}</dt>
-              <dd className="m-0">{text}</dd>
+              <dt className="sh-lbl">{label}</dt>
+              <dd className="sh-small">{text}</dd>
             </div>
           ))}
         </dl>
       ) : null}
-    </section>
+    </div>
   );
 }

@@ -13,7 +13,7 @@ export class FeatureBoundary extends Component<{ children: ReactNode }, { failed
   override render() {
     if (this.state.failed) {
       return (
-        <p role="alert" className="cs-small italic">
+        <p role="alert" className="sh-small italic">
           The features panel could not load. Reload the page to try again.
         </p>
       );

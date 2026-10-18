@@ -63,14 +63,22 @@ test("a Rogue spends 3 Hope on Rogue's Dodge, Evasion shows +2, and Got hit remo
   const evasion = page.getByTestId("evasion");
   const base = Number(await evasion.textContent());
 
-  const features = page.getByRole("region", { name: "Features" });
-  await features.getByRole("button", { name: "Use Rogue’s Dodge" }).click();
+  const hopeBox = page.getByRole("region", { name: "Hope", exact: true });
+  await hopeBox.getByRole("button", { name: "Use Rogue’s Dodge" }).click();
   await expect(evasion).toHaveText(String(base + 2));
   await expect(page.getByText("(+2 effects)")).toBeVisible();
   await expect(page.getByRole("group", { name: "Hope: 0 of 6 marked" })).toBeVisible();
-  await expect(features.getByRole("list", { name: "Active effects" })).toContainText("Rogue’s Dodge");
+  await expect(hopeBox.getByRole("list", { name: "Active effects" })).toContainText("Rogue’s Dodge");
 
-  await features.getByRole("button", { name: "Got hit" }).click();
+  await hopeBox.getByRole("button", { name: "Got hit" }).click();
   await expect(evasion).toHaveText(String(base));
-  await expect(features.getByRole("list", { name: "Active effects" })).toHaveCount(0);
+  await expect(hopeBox.getByRole("list", { name: "Active effects" })).toHaveCount(0);
+
+  // An away character still sees the controls, disabled, with the reason.
+  await client.mutation(api.characters.adjustResource, { characterId, resource: "hope", delta: 3 });
+  await client.mutation(api.characters.setStatus, { characterId, status: "away" });
+  const dodge = hopeBox.getByRole("group", { name: "Rogue’s Dodge" });
+  await expect(dodge.getByRole("button", { name: "Use Rogue’s Dodge · 3 Hope" })).toBeDisabled();
+  await expect(dodge.getByRole("status")).toHaveText("Away characters can't use features.");
+  await expect(page.getByRole("region", { name: "Class Features" }).getByRole("group", { name: "Cloaked" })).toContainText("Away characters can't use features.");
 });
