@@ -5,11 +5,10 @@ import "./adversaries.css";
 import { useQuery } from "convex/react";
 import { Component, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
-import { EncounterBuilder } from "@/components/adversaries/builder";
+import { AddToEncounter, EncounterBuilder } from "@/components/adversaries/builder";
 import { Catalogue } from "@/components/adversaries/catalogue";
 import { CustomAdversaries } from "@/components/adversaries/custom";
 import { EncounterTracker } from "@/components/adversaries/tracker";
-import type { CatalogueProps } from "@/components/adversaries/slots";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
@@ -44,13 +43,12 @@ class SlotBoundary extends Component<{ children: ReactNode; label: string }, { f
 }
 
 /** Stat block head actions: empty until the encounter builder (A3) adds "Add to encounter". */
-const noActions: CatalogueProps["renderActions"] = () => null;
 
 function CatalogueTab({ campaign }: { campaign: CampaignSummary }) {
   return (
     <>
       <SlotBoundary label="The catalogue">
-        <Catalogue campaignId={campaign._id} hopeAndFear={campaign.options.hopeAndFear} frameId={campaign.frameId} renderActions={noActions} />
+        <Catalogue campaignId={campaign._id} hopeAndFear={campaign.options.hopeAndFear} frameId={campaign.frameId} renderActions={(a) => <AddToEncounter campaignId={campaign._id} adversary={a} />} />
       </SlotBoundary>
       <SlotBoundary label="Custom adversaries">
         <CustomAdversaries campaignId={campaign._id} />
