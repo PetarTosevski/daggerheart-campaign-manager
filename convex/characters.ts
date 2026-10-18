@@ -12,6 +12,7 @@ import {
   STARTING_STRESS,
 } from "../src/lib/domain/characters/index";
 import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
+import { addCard, cardTakeProblem, sourcesFor } from "../src/lib/domain/level-up/index";
 import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
 import { appError, RuleError } from "../src/lib/errors/app-error";
 import { FRAME_OF } from "../src/lib/frames/extras/common";
@@ -613,6 +614,24 @@ export const moveCard = userMutation({
       }
     }
     await saveSheet(ctx, character._id, next);
+    return null;
+  },
+});
+
+/**
+ * Takes a card from the Domain Deck (owner or GM): a card of the campaign's sources from the character's class or
+ * multiclass domains within reach of their level, while they have picks left (level + 1 + "additional domain card"
+ * advancements). It goes into the loadout while it has room, else into the vault; no Stress. INVALID otherwise.
+ */
+export const takeCard = userMutation({
+  args: { characterId: v.id("characters"), cardId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { characterId, cardId }) => {
+    const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
+    const sources = sourcesFor({ allowExpansion: resolveOptions(campaign.frameId, campaign.options).hopeAndFear });
+    const problem = cardTakeProblem(s, cardId, sources);
+    if (problem) invalid(problem.message);
+    await saveSheet(ctx, character._id, { ...s, domainCards: addCard(s.domainCards, cardId) });
     return null;
   },
 });

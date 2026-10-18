@@ -174,6 +174,45 @@ export function cardsWithin(sheet: CardAccess & Pick<CharacterSheet, "domainCard
   ).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
 }
 
+/** The domains whose cards the character may take: the class's domains, then the multiclass domain (CB 110). */
+export function deckDomains(sheet: CardAccess): string[] {
+  const cls = CLASSES.find((c) => c.id === sheet.classId);
+  const domains: string[] = [...(cls?.domains ?? [])];
+  if (sheet.multiclass && !domains.includes(sheet.multiclass.domainId)) domains.push(sheet.multiclass.domainId);
+  return domains;
+}
+
+/** The lowest character level at which `card` comes within reach, or null when its domain is out of reach. */
+export function unlockLevel(sheet: CardAccess, card: Pick<DomainCard, "domain" | "level">): number | null {
+  for (let level = 1; level <= MAX_LEVEL; level++) if (card.level <= cardLimit(sheet, card.domain, level, MAX_LEVEL)) return level;
+  return null;
+}
+
+/** Domain cards a sheet may own: level + 1, plus one per "additional domain card" advancement (the board's count). */
+export function cardsAllowed(sheet: Pick<CharacterSheet, "level"> & { advancements?: readonly Advancement[] }): number {
+  return sheet.level + 1 + (sheet.advancements ?? []).flatMap((a) => a.picks).filter((p) => p.option === "domainCard").length;
+}
+
+export type CardTakeProblem = { reason: "unknown" | "owned" | "locked" | "full"; message: string };
+
+/**
+ * Why the character can't take card `id` from the Domain Deck now, or null: an unknown card or one from a source the
+ * campaign doesn't use, an owned card, a card outside their domains or above their reach (cardLimit, no tier cap),
+ * or no picks left (owned >= cardsAllowed). The server's takeCard and the sheet's deck both decide with it.
+ */
+export function cardTakeProblem(
+  sheet: CardAccess & Pick<CharacterSheet, "domainCards" | "level"> & { advancements?: readonly Advancement[] },
+  id: string,
+  sources: readonly Source[],
+): CardTakeProblem | null {
+  const card = cardById(id);
+  if (!card || !sources.includes(card.source)) return { reason: "unknown", message: "Unknown domain card." };
+  if (sheet.domainCards.owned.includes(id)) return { reason: "owned", message: `You already have ${card.name}.` };
+  if (card.level > cardLimit(sheet, card.domain, sheet.level, MAX_LEVEL)) return { reason: "locked", message: `${card.name} is out of reach at this level.` };
+  if (sheet.domainCards.owned.length >= cardsAllowed(sheet)) return { reason: "full", message: "No picks left: you already have every card your level allows." };
+  return null;
+}
+
 function cardProblem(sheet: CardAccess & Pick<CharacterSheet, "domainCards">, id: string, level: number, cap: number, sources: readonly Source[]): string | null {
   const card = cardById(id);
   if (!card || !sources.includes(card.source)) return "Unknown domain card.";
@@ -203,7 +242,8 @@ export type LevelUpChoice = {
 
 export type LevelUpContext = { allowExpansion: boolean };
 
-const sourcesFor = (ctx: LevelUpContext): Source[] => (ctx.allowExpansion ? ["core", "hope-and-fear"] : ["core"]);
+/** The card sources a campaign uses: the core set, plus Hope & Fear when the campaign enables it. */
+export const sourcesFor = (ctx: LevelUpContext): Source[] => (ctx.allowExpansion ? ["core", "hope-and-fear"] : ["core"]);
 
 /** Multiclass options for a class: other classes, their domains the character lacks, and their subclasses. */
 export function multiclassProblem(sheet: Pick<CharacterSheet, "classId">, choice: MulticlassChoice | undefined, ctx: LevelUpContext): string | null {
@@ -381,7 +421,8 @@ export function validateLevelUp(sheet: CharacterSheet, choice: LevelUpChoice, ct
 
 // ---------------------------------------------------------------- apply / revert
 
-function addCard(cards: CharacterSheet["domainCards"], id: string): CharacterSheet["domainCards"] {
+/** Adds an owned card: into the loadout while it has room (fewer than 5), else into the vault. */
+export function addCard(cards: CharacterSheet["domainCards"], id: string): CharacterSheet["domainCards"] {
   return { owned: [...cards.owned, id], loadout: cards.loadout.length < MAX.loadout ? [...cards.loadout, id] : cards.loadout };
 }
 

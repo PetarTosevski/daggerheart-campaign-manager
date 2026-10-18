@@ -3,20 +3,24 @@
 import "./domains.css";
 
 import { useQuery } from "convex/react";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 
 import { DOMAIN_ICONS } from "@/components/party/party-display";
 import { Label, SheetBox, Small } from "@/components/party/sheet-ui";
 import { assetBackground } from "@/lib/design-assets";
+import { cardsAllowed, cardTakeProblem, deckDomains, sourcesFor, unlockLevel, type CardTakeProblem } from "@/lib/domain/level-up";
 import { DOMAIN_CARD_ART, getDomain, type ClassDef, type DomainCard } from "@/lib/srd";
+import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
 
 import { api } from "../../../../../../../../convex/_generated/api";
 import { useSheet } from "../sheet-context";
 import { recallBlock, resolveCards, vaultCardIds } from "../sheet-helpers";
 
 // Domains > Domain Cards (board page 3): the class domains box (chips, cards chosen with pips, rest swap toggle)
-// and the green felt table with the fanned loadout hand and the vault deck that spreads the vault cards.
-// The board's Domain Deck browser is not built (it needs a take-card mutation; open question).
+// the green felt table with the fanned loadout hand and the vault deck that spreads the vault cards, and the
+// Domain Deck: every card of the character's domains, with filters, face-down cards above their reach and Take card.
+// Locked and takeable states come from cardTakeProblem, the same rule the server's takeCard enforces.
 
 const TYPE_LABEL: Record<DomainCard["type"], string> = { ability: "Ability", spell: "Spell", grimoire: "Grimoire" };
 
@@ -81,8 +85,8 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
   const loadout = resolveCards(sheet.domainCards.loadout);
   const vault = resolveCards(vaultCardIds(sheet));
   // Board: level + 1 cards, plus one per "additional domain card" advancement.
-  const bonus = (sheet.advancements ?? []).flatMap((a) => a.picks).filter((p) => p.option === "domainCard").length;
-  const allowed = sheet.level + 1 + bonus;
+  const allowed = cardsAllowed(sheet);
+  const bonus = allowed - sheet.level - 1;
   const pips = Math.max(allowed, owned);
   const backs = [0, 1, 2].map((i) => CARD_BACKS[vault[vault.length - 1 - i]?.domain ?? cls?.domains[i % cls.domains.length] ?? ""] ?? GENERIC_BACK);
   const deckLabel = `${vaultOpen ? "Close" : "Open"} vault, ${vault.length} card${vault.length === 1 ? "" : "s"}`;
@@ -165,7 +169,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
         <div className="dk-felt-row">
           <div className="dk-hand">
             {loadout.length === 0 ? (
-              <p className="dk-empty">Your hand is empty. Move cards here from your vault.</p>
+              <p className="dk-empty">Your hand is empty. Take cards from the Domain Deck below, or draw them from your vault.</p>
             ) : (
               <div className="dk-hand-list" role="list" aria-label="Loadout cards">
                 {loadout.map((card, i) => (
@@ -232,6 +236,146 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
           </div>
         ) : null}
       </section>
+
+      <DomainDeck />
+    </div>
+  );
+}
+
+type DeckEntry = { card: DomainCard; problem: CardTakeProblem | null };
+
+/** The board's Domain Deck: filter by domain, hide cards above the character's reach, take a card while picks are left. */
+function DomainDeck() {
+  const { sheet, canEdit, hopeAndFear, takeCard } = useSheet();
+  const [filter, setFilter] = useState("all");
+  const [hideLocked, setHideLocked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const sources = sourcesFor({ allowExpansion: hopeAndFear });
+  const doms = deckDomains(sheet);
+  const active = doms.includes(filter) ? filter : "all";
+  const deck: DeckEntry[] = DOMAIN_CARDS.filter((c) => sources.includes(c.source) && doms.includes(c.domain))
+    .map((card) => ({ card, problem: cardTakeProblem(sheet, card.id, sources) }))
+    .filter(({ card, problem }) => (active === "all" || card.domain === active) && !(hideLocked && problem?.reason === "locked"))
+    .sort((a, b) => a.card.level - b.card.level || doms.indexOf(a.card.domain) - doms.indexOf(b.card.domain) || a.card.name.localeCompare(b.card.name));
+
+  async function take(card: DomainCard) {
+    setBusy(true);
+    await takeCard(card.id);
+    setBusy(false);
+  }
+
+  return (
+    <SheetBox title="Domain Deck">
+      <div className="dkd-bar">
+        <div role="group" aria-label="Filter by domain" className="dkd-filters">
+          {["all", ...doms].map((key) => (
+            <button key={key} type="button" className="dkd-filter" aria-pressed={active === key} onClick={() => setFilter(key)}>
+              {key === "all" ? "All" : (getDomain(key)?.name ?? key)}
+            </button>
+          ))}
+        </div>
+        <label className="dk-toggle dkd-hide">
+          <input type="checkbox" checked={hideLocked} onChange={(e) => setHideLocked(e.target.checked)} />
+          <span>Hide cards above my level</span>
+        </label>
+      </div>
+      {deck.length === 0 ? (
+        <p className="dkd-empty">No cards to show.</p>
+      ) : (
+        <div className="dk-grid" role="list" aria-label="Domain Deck cards">
+          {deck.map(({ card, problem }) => (
+            <div role="listitem" key={card.id} className="dk-grid-item">
+              <DeckCard card={card} problem={problem} canEdit={canEdit} busy={busy} onTake={() => void take(card)} />
+            </div>
+          ))}
+        </div>
+      )}
+    </SheetBox>
+  );
+}
+
+/** One deck card (board `dkc` in a `dkf` flip wrapper): a face-down card back while it is above the character's reach. */
+function DeckCard({ card, problem, canEdit, busy, onTake }: { card: DomainCard; problem: CardTakeProblem | null; canEdit: boolean; busy: boolean; onTake: () => void }) {
+  const { sheet } = useSheet();
+  const [open, setOpen] = useState(false);
+  const [flipped, setFlipped] = useState(false);
+  const backRef = useRef<HTMLButtonElement>(null);
+  const turnRef = useRef<HTMLButtonElement>(null);
+  const domain = getDomain(card.domain);
+  const domainName = domain?.name ?? card.domain;
+  const art = card.art ?? DOMAIN_CARD_ART[card.id];
+  const owned = problem?.reason === "owned";
+  const locked = problem?.reason === "locked";
+  const faceDown = locked && !flipped;
+  const unlocks = unlockLevel(sheet, card);
+
+  function flip(up: boolean) {
+    // The hidden side is inert, so render first, then move focus to the side that now shows.
+    flushSync(() => setFlipped(up));
+    (up ? turnRef : backRef).current?.focus();
+  }
+
+  return (
+    <div className={`dkf${locked ? " face" : " plain"}${flipped ? " flipped" : ""}`}>
+      <article
+        className={`dkc${locked ? " locked" : ""}${owned ? " owned" : ""}${open ? " open" : ""}`}
+        style={{ "--dc": domain?.color ?? "#5b2b2b" } as CSSProperties}
+        aria-label={card.name}
+        aria-hidden={faceDown || undefined}
+        inert={faceDown}
+      >
+        <header className="dkc-head">
+          <span className="dkc-ic" aria-hidden="true" style={{ backgroundImage: assetBackground(DOMAIN_ICONS[card.domain] ?? "") }} />
+          <h4 className="dkc-name">{card.name}</h4>
+          <span className="dkc-lvl" aria-label={`Level ${card.level}`}>
+            {card.level}
+          </span>
+        </header>
+        {art ? <div className="dkc-art" aria-hidden="true" style={{ backgroundImage: assetBackground(art) }} /> : null}
+        <div className="dkc-meta">
+          {domainName} {TYPE_LABEL[card.type]} · Recall {card.recallCost}
+        </div>
+        <p className="dkc-text">{card.text}</p>
+        {locked ? <span className="dkc-lock">{unlocks ? `Unlocks at level ${unlocks}` : "Out of reach"}</span> : null}
+        <footer className="dkc-foot">
+          <button type="button" className="dkc-more" aria-expanded={open} aria-label={`${open ? "Less" : "More"} about ${card.name}`} onClick={() => setOpen((o) => !o)}>
+            {open ? "Less" : "More"}
+          </button>
+          <span className="flex-1" />
+          {owned ? <span className="dkc-badge">{sheet.domainCards.loadout.includes(card.id) ? "In loadout" : "In vault"}</span> : null}
+          {locked ? (
+            <button ref={turnRef} type="button" className="dkc-btn ghost" aria-label={`Turn over ${card.name}`} onClick={() => flip(false)}>
+              Turn over
+            </button>
+          ) : null}
+          {canEdit && problem === null ? (
+            <button type="button" className="dkc-btn" aria-label={`Take ${card.name}`} disabled={busy} onClick={onTake}>
+              Take card
+            </button>
+          ) : null}
+          {canEdit && problem?.reason === "full" ? (
+            <button type="button" className="dkc-btn" aria-label={`No picks left for ${card.name}`} disabled>
+              No picks left
+            </button>
+          ) : null}
+        </footer>
+      </article>
+      {locked ? (
+        <button
+          ref={backRef}
+          type="button"
+          className="dkf-back"
+          style={{ backgroundImage: assetBackground(CARD_BACKS[card.domain] ?? GENERIC_BACK) }}
+          aria-label={`Face-down level ${card.level} ${domainName} card. Turn it over to read it.`}
+          aria-hidden={flipped || undefined}
+          inert={flipped}
+          onClick={() => flip(true)}
+        >
+          <span className="dkf-tag" aria-hidden="true">
+            Level {card.level}
+          </span>
+        </button>
+      ) : null}
     </div>
   );
 }
