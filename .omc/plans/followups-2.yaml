@@ -18,6 +18,8 @@ waves:
         owns:
           - convex/deathMoves.ts
           - convex/lib/validators/characters.ts
+          - convex/tables/characters.ts
+          - convex/lib/characterSheet.ts
           - src/components/party/death/
           - tests/convex/death-moves.test.ts
           - tests/e2e/death.spec.ts
