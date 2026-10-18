@@ -37,3 +37,32 @@ waves:
           - "UI: the death-move dialog says the choice is a request when the player makes it ('Request: In the infirmary / Sent home — the GM decides'); the away badge shows 'requested' until settled; the GM sees 'Confirm' and 'Change to …' on the badge (sheet header and roster/party card where the badge already shows)"
           - "Decision 5: a character returned to play (GM 'Return to play') is not asked for a death move again because its Hit Points are still all marked; the prompt appears only after a new Hit Point is marked after the return (or however the existing trigger can be scoped to 'since the return'), and the sheet's HP/Stress stay as they were"
           - "Convex tests (player request, GM confirm, GM change, player can't settle, GM's own death move is final; return to play at full HP is not prompted until new damage) and the death e2e updated; pnpm lint, typecheck, test pass; decisions doc records both rules"
+  - wave: 2
+    tracers:
+      - id: XC1
+        title: GM allows extra active characters per player for the current session
+        size: S
+        goal: "User 2026-10-18: 'add a gm option to temporarily allow more than 1 character per player for specific sessions'; at session end 'keep them'. While a session runs, the GM can switch on 'Allow extra characters this session'; while on, the one-active-character rule is lifted; it switches off when the session ends; characters made active meanwhile stay active, the roster warns about players with more than one, and the rule applies again for any further activation."
+        depends_on: [LL1]
+        owns:
+          - convex/tables/campaigns.ts
+          - convex/lib/characterSheet.ts
+          - convex/sessions.ts
+          - src/components/party/session/index.tsx
+          - src/components/party/roster.tsx
+          - tests/convex/one-active.test.ts
+          - tests/convex/sessions.test.ts
+          - tests/e2e/players.spec.ts
+          - docs/tasks/TASK-XC1.md
+          - docs/data-model.md
+          - docs/decisions-d3-d11.md
+        reads:
+          - docs/tasks/TASK-X6-one-active-character.md
+          - convex/characters.ts
+          - convex/deathMoves.ts
+          - convex/lib/actionLog.ts
+        acceptance:
+          - "campaignState gains optional `extraCharactersSession` (widen; e.g. the sessionStartedAt it applies to); a GM-only keyed mutation in convex/sessions.ts switches it on/off only while a session runs (coded error otherwise); sessions.end clears it; a session start never inherits it"
+          - "assertOneActive skips the check while the allowance applies to the running session (one indexed read of campaignState), for every caller (create, assignOwner, setStatus, death-move return, undo)"
+          - "UI: the GM's Session card shows the switch while a session runs (players don't see it); the roster shows 'N active: send one away' on a player's characters when they have more than one active, for everyone"
+          - "Tests: allowed during the session, refused again after it ends, extras stay active after the end, players can't toggle (FORBIDDEN), toggle refused with no session; pnpm lint, typecheck, test pass; decisions doc records the rule"
