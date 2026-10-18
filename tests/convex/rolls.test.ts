@@ -216,7 +216,8 @@ describe("rolls: rules", () => {
     const { roll } = await p1.mutation(api.rolls.damageRoll, { characterId: a, ...weapon, idempotencyKey: key() });
     expect(roll.dice.map((d) => d.sides)).toEqual([sides, sides]);
     const manual = await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { kind: "damage", ...weapon, critical: true }, values: [1, 2], idempotencyKey: key() });
-    expect(manual.roll.total).toBe(2 * sides + 1 + 2 + flat);
+    // + level 1 from the Warrior's Combat Training (CB 48).
+    expect(manual.roll.total).toBe(2 * sides + 1 + 2 + flat + 1);
     expect(await codeOf(p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { kind: "damage", ...weapon }, values: [1], idempotencyKey: key() }))).toBe("DICE_RULE");
     expect(await codeOf(p1.mutation(api.rolls.damageRoll, { characterId: a, ...weapon, source: { kind: "weapon", slot: "secondary" }, idempotencyKey: key() }))).toBe("DICE_RULE");
   });

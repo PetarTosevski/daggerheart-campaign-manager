@@ -1,7 +1,50 @@
 // Sorcerer (CB 46). Hope feature: Volatile Magic rerolls chosen damage dice of the caster's latest damage roll.
 // The dispatcher loads that roll; "an attack that deals magic damage" is the player's call.
-import type { ClassFeatures } from "../types";
-import { dieContribution, HOPE_COST, refuse } from "./shared";
+// Class feature: Channel Raw Power, once per long rest: vault a loadout card (`params.choice` =
+// "hope:<cardId>" or "damage:<cardId>") for Hope equal to its level, or for +2× its level on the damage roll
+// of the spell it enhances. The bonus is an effect (`channel-raw-power-<bonus>`, until the scene ends) that
+// the dice box offers as a damage option; End it after that roll.
+import { applyResourceDelta } from "../../characters/index";
+import { getDomainCard } from "../../../srd/index";
+import type { CharacterSheet } from "../../../validation/characters";
+import type { ClassFeatures, FeatureMeta, RollOption } from "../types";
+import { rallyDieOptions, rallyDieStress } from "./bard";
+import { dieContribution, HOPE_COST, refuse, withEffect } from "./shared";
+
+const CHANNEL = "channel-raw-power-";
+
+/** The damage bonus of an active Channel Raw Power effect, or 0. */
+function channelBonus(sheet: CharacterSheet): number {
+  const effect = sheet.effects.find((e) => e.id.startsWith(CHANNEL));
+  return effect ? Number(effect.id.slice(CHANNEL.length)) || 0 : 0;
+}
+
+const channelRawPower: FeatureMeta = {
+  key: "channelRawPower",
+  name: "Channel Raw Power",
+  text: "Once per long rest: vault a loadout card to gain Hope equal to its level, or +2× its level to a spell's damage roll.",
+  cost: { use: { key: "channelRawPower", until: "longRest" } },
+  automation: "auto",
+  target: "self",
+  use: ({ sheet, params }) => {
+    const [mode, cardId] = (params.choice ?? "").split(":");
+    if ((mode !== "hope" && mode !== "damage") || !cardId) refuse("Choose a loadout card and Hope or damage.");
+    const card = getDomainCard(cardId);
+    if (card === undefined || !sheet.domainCards.loadout.includes(cardId)) refuse("Choose a card from your loadout.");
+    const vaulted = { ...sheet, domainCards: { ...sheet.domainCards, loadout: sheet.domainCards.loadout.filter((id) => id !== cardId) } };
+    if (mode === "hope") {
+      return { sheet: applyResourceDelta(vaulted, "hope", card.level), summary: `used Channel Raw Power: vaulted ${card.name} for ${card.level} Hope` };
+    }
+    const bonus = 2 * card.level;
+    return {
+      sheet: withEffect(
+        { ...vaulted, effects: vaulted.effects.filter((e) => !e.id.startsWith(CHANNEL)) },
+        { id: `${CHANNEL}${bonus}`, source: "Channel Raw Power", text: `+${bonus} to the damage roll of the spell you enhance. End it after that roll.`, until: "scene" },
+      ),
+      summary: `used Channel Raw Power: vaulted ${card.name} for +${bonus} spell damage`,
+    };
+  },
+};
 
 export const sorcerer: ClassFeatures = {
   classId: "sorcerer",
@@ -30,5 +73,11 @@ export const sorcerer: ClassFeatures = {
         summary: `used Volatile Magic: rerolled ${indexes.length} damage ${indexes.length === 1 ? "die" : "dice"}, ${roll.total} → ${total}`,
       };
     },
+  },
+  classActions: [channelRawPower, rallyDieStress],
+  rollOptions: (sheet, kind) => {
+    const bonus = channelBonus(sheet);
+    const own: RollOption[] = kind === "damage" && bonus > 0 ? [{ key: "channelRawPower", label: `Channel Raw Power +${bonus}`, effect: { kind: "modifier", value: bonus } }] : [];
+    return [...own, ...rallyDieOptions(sheet, "sorcerer")];
   },
 };

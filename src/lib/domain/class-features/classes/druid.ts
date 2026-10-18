@@ -1,10 +1,63 @@
 // Druid (CB 30). Hope feature: Evolution, a Beastform without marking a Stress and +1 to a chosen trait
 // until you drop out of it: an effect with an End button (plan note 11; no beastform-panel link in D5).
+// Class features: Beastform marks a Stress and shows the form as an effect (End = drop out of it);
+// Wildtouch is text only.
+import { tierForLevel } from "../../characters/index";
+import { getBeastform } from "../../../srd/index";
 import { TRAIT_IDS, type TraitId } from "../../../srd/types";
-import type { ClassFeatures } from "../types";
+import type { ClassFeatures, FeatureMeta } from "../types";
+import { rallyDieOptions, rallyDieStress } from "./bard";
 import { HOPE_COST, refuse, withEffect } from "./shared";
 
 const isTrait = (value: string | undefined): value is TraitId => TRAIT_IDS.some((t) => t === value);
+
+const TEXT_MAX = 300;
+
+const beastform: FeatureMeta = {
+  key: "beastform",
+  name: "Beastform",
+  text: "Mark a Stress to transform into a creature of your tier or lower. You can't use weapons or cast spells from domain cards while transformed.",
+  cost: { stress: 1 },
+  automation: "assist",
+  target: "self",
+  use: ({ sheet, params }) => {
+    // `choice`: a Beastform id; without one the effect is a plain reminder.
+    const form = params.choice ? getBeastform(params.choice) : undefined;
+    if (params.choice && form === undefined) refuse("Choose a Beastform.");
+    if (form && form.tier > tierForLevel(sheet.level)) refuse(`${form.name} is above your tier.`);
+    const base = "Can't use weapons or cast spells from domain cards; drop out at any time or when you mark your last Hit Point.";
+    const parts = form
+      ? [
+          form.evasionBonus ? `+${form.evasionBonus} Evasion` : null,
+          form.traitBonus ? `+${form.traitBonus.bonus} ${form.traitBonus.trait}` : null,
+          form.attack ? `attack ${form.attack.trait} ${form.attack.range} ${form.attack.damage}` : null,
+        ].filter((p): p is string => p !== null)
+      : [];
+    const text = form ? `${form.name}${parts.length > 0 ? `: ${parts.join(", ")}` : ""}. ${base}` : `Transformed. ${base}`;
+    const mods = {
+      ...(form?.evasionBonus ? { evasion: form.evasionBonus } : {}),
+      ...(form?.traitBonus ? { trait: { id: form.traitBonus.trait, delta: form.traitBonus.bonus } } : {}),
+    };
+    return {
+      sheet: withEffect(sheet, {
+        id: "beastform",
+        source: "Beastform",
+        text: text.slice(0, TEXT_MAX),
+        until: "manual",
+        ...(Object.keys(mods).length > 0 ? { mods } : {}),
+      }),
+      summary: `marked a Stress for Beastform${form ? `: ${form.name}` : ""}`,
+    };
+  },
+};
+
+const wildtouch: FeatureMeta = {
+  key: "wildtouch",
+  name: "Wildtouch",
+  text: "At will: harmless, subtle nature effects, such as making a flower grow quickly, a slight gust of wind, or starting a campfire.",
+  automation: "text",
+  target: "none",
+};
 
 export const druid: ClassFeatures = {
   classId: "druid",
@@ -30,4 +83,6 @@ export const druid: ClassFeatures = {
       };
     },
   },
+  classActions: [beastform, wildtouch, rallyDieStress],
+  rollOptions: (sheet) => rallyDieOptions(sheet, "druid"),
 };
