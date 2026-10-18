@@ -100,7 +100,26 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             </div>
           </section>
 
-          <section aria-labelledby="set-account" className="flex flex-col gap-2.5">
+          <section aria-labelledby="set-expansions" className="flex flex-col gap-2.5">
+            <SectionTitle id="set-expansions">Expansions</SectionTitle>
+            <label className="flex min-h-11 cursor-pointer items-center gap-3 text-[14px]">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={settings.expansions.hopeAndFear ?? false}
+                onChange={(e) => save({ expansions: { hopeAndFear: e.target.checked } })}
+                className="size-5 flex-none cursor-pointer accent-brand"
+              />
+              <span>
+                Hope &amp; Fear
+                <span className="block text-[13px] text-muted-text">
+                  New campaigns start with Hope &amp; Fear content. Change it per campaign on its dashboard.
+                </span>
+              </span>
+            </label>
+          </section>
+
+          <section aria-labelledby="set-account"className="flex flex-col gap-2.5">
             <SectionTitle id="set-account">Account</SectionTitle>
             <div className="flex flex-wrap items-center justify-between gap-3 text-[14px] text-body">
               <span>
