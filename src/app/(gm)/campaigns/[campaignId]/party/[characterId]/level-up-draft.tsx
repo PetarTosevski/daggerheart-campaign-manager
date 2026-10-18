@@ -14,6 +14,7 @@ import {
   type MulticlassChoice,
   type PickChoice,
 } from "@/lib/domain/level-up";
+import { TRAIT_IDS } from "@/lib/srd/types";
 import { useIntent } from "@/lib/use-intent";
 import { ADVANCEMENT_OPTIONS, type AdvancementOption, type CharacterSheet } from "@/lib/validation/characters";
 
@@ -154,7 +155,7 @@ const storedSchema = z.object({
     experienceName: z.string().max(200),
     cardId: z.string(),
     trade: z.object({ out: z.string(), in: z.string() }).optional(),
-    multiclass: z.object({ classId: z.string(), domainId: z.string(), subclassId: z.string() }).optional(),
+    multiclass: z.object({ classId: z.string(), domainId: z.string(), subclassId: z.string(), spellcastTrait: z.enum(TRAIT_IDS).optional() }).optional(),
   }),
 });
 
