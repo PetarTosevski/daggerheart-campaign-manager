@@ -789,6 +789,8 @@ waves:
         goal: Photo import stays within action memory and API limits, abandoned photos expire hourly, double clicks don't double-call, and worktrees get distinct e2e ports.
         depends_on: [TI-a, TI-b]
         owns:
+          - tests/unit/photo-import-flow.test.tsx
+          - convex/tables/files.ts
           - convex/photoImport.ts
           - convex/crons.ts
           - convex/cleanup.ts
