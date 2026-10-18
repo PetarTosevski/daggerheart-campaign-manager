@@ -90,10 +90,17 @@ test("a short party rest: the player clears Stress twice, the GM finishes, GM Fe
   // The player picks Clear Stress twice on their sheet.
   await player.goto(`/campaigns/${campaignId}/party/${characterId}`);
   const picker = player.getByRole("region", { name: "Downtime moves" });
-  await picker.getByRole("combobox", { name: "Move 1" }).selectOption({ label: "Clear Stress" });
-  await picker.getByRole("combobox", { name: "Move 2" }).selectOption({ label: "Clear Stress" });
+  for (const slot of ["Move 1", "Move 2"]) {
+    const chip = picker.getByRole("group", { name: slot }).getByRole("button", { name: "Clear Stress" });
+    await chip.click();
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+  }
   await picker.getByRole("button", { name: "Save moves" }).click();
   await expect(picker.getByText(/^Saved\./)).toBeVisible();
+  // The Downtime box's reference text marks the saved move: Clear Stress, picked twice.
+  const downtime = player.getByRole("region", { name: "Downtime", exact: true });
+  await expect(downtime.getByText("Picked ×2")).toBeVisible();
+  await expect(downtime.getByText(/^Picked/)).toHaveCount(1);
 
   // The GM sees the picks and finishes the rest.
   await expect(rest.getByRole("list", { name: "Downtime choices" })).toContainText(`${hero}: Clear Stress, Clear Stress`);

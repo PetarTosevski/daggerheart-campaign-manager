@@ -1,8 +1,11 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
-import { useState } from "react";
+import "./rest.css";
 
+import { useMutation, useQuery } from "convex/react";
+import { useId, useState } from "react";
+
+import { Label, paperField, Pill, Small } from "@/components/party/sheet-ui";
 import { errorMessage } from "@/lib/convex-errors";
 import { ALLY_MOVES, MOVE_LABELS, MOVES_PER_REST, REST_MOVES, type RestKind, type RestMove } from "@/lib/domain/rest/moves";
 import { DOMAIN_CARDS } from "@/lib/srd/domain-cards";
@@ -15,8 +18,6 @@ import type { SlotProps } from "../slots";
 
 type Pick = { move: RestMove; targetId?: Id<"characters">; countdownId?: Id<"countdowns"> };
 
-const SELECT = "min-h-10 rounded-md border border-[#c9b083] bg-[#fbf3e1] px-2 text-[15px]";
-const BTN = "min-h-10 cursor-pointer rounded-md border border-[#5b2b2b] bg-transparent px-3 text-[14px] disabled:cursor-not-allowed disabled:opacity-50";
 const cardName = (id: string) => DOMAIN_CARDS.find((c) => c.id === id)?.name ?? id;
 
 /** The sheet's downtime-move picker while a party rest is open (CB 105). */
@@ -25,9 +26,9 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
   const party = useQuery(api.characters.listByCampaign, { campaignId });
   if (state === undefined || party === undefined) {
     return (
-      <p role="status" className="cs-small m-0">
+      <Small as="p" role="status">
         Loading the rest…
-      </p>
+      </Small>
     );
   }
   const open = state.open;
@@ -38,16 +39,16 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
     character.status !== "active" ? character.status : character.sheet.conditions?.includes("unconscious") ? "unconscious" : null;
 
   return (
-    <section className="cs-box" aria-label="Downtime moves">
-      <h3 className="cs-h">{kindLabel}: downtime moves</h3>
+    <section className="rp" aria-label="Downtime moves">
+      <h4 className="rp-h">{kindLabel}: downtime moves</h4>
       {!canEdit || unavailable !== null ? (
-        <p className="cs-small m-0">
+        <Small as="p">
           {unavailable !== null
             ? `${character.sheet.name} is ${unavailable} and can't pick downtime moves.`
             : choice
               ? `Picked: ${choice.moves.map((m) => MOVE_LABELS[m.move]).join(", ")}`
               : "Still choosing."}
-        </p>
+        </Small>
       ) : (
         <>
           <MoveForm
@@ -88,6 +89,7 @@ function MoveForm({
     Array.from({ length: MOVES_PER_REST }, (_, i) => initial[i] ?? { move: moves[0] }),
   );
   const [saved, setSaved] = useState(initial.length > 0);
+  const uid = useId();
   const set = (i: number, next: Pick) => {
     setSaved(false);
     setPicks((all) => all.map((p, k) => (k === i ? next : p)));
@@ -95,29 +97,29 @@ function MoveForm({
 
   return (
     <form
-      className="flex flex-col gap-3"
+      className="rp-form"
       onSubmit={(e) => {
         e.preventDefault();
         void choose.fire({ restId, characterId: character._id, moves: picks }).then((r) => setSaved(r !== undefined));
       }}
     >
       {picks.map((pick, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-2">
-            <span className="cs-lbl">Move {i + 1}</span>
-            <select className={SELECT} value={pick.move} onChange={(e) => set(i, { move: e.target.value as RestMove })}>
-              {moves.map((m) => (
-                <option key={m} value={m}>
-                  {MOVE_LABELS[m]}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div key={i} className="rp-slot">
+          <div role="group" aria-labelledby={`${uid}-move-${i}`} className="rp-chips">
+            <Label id={`${uid}-move-${i}`} className="rp-slot-lbl">
+              Move {i + 1}
+            </Label>
+            {moves.map((m) => (
+              <button key={m} type="button" className="rp-chip" aria-pressed={pick.move === m} onClick={() => set(i, { move: m })}>
+                {MOVE_LABELS[m]}
+              </button>
+            ))}
+          </div>
           {ALLY_MOVES.includes(pick.move) && allies.length > 0 ? (
-            <label className="flex items-center gap-2">
-              <span className="cs-lbl">On</span>
+            <label className="rp-field">
+              <Label>On</Label>
               <select
-                className={SELECT}
+                className={paperField.input}
                 value={pick.targetId ?? ""}
                 onChange={(e) => {
                   const ally = allies.find((a) => a._id === e.target.value);
@@ -134,10 +136,10 @@ function MoveForm({
             </label>
           ) : null}
           {pick.move === "workOnProject" ? (
-            <label className="flex items-center gap-2">
-              <span className="cs-lbl">Project</span>
+            <label className="rp-field">
+              <Label>Project</Label>
               <select
-                className={SELECT}
+                className={paperField.input}
                 value={pick.countdownId ?? ""}
                 onChange={(e) => {
                   const project = projects?.find((p) => p._id === e.target.value);
@@ -158,15 +160,15 @@ function MoveForm({
         </div>
       ))}
       {picks.some((p) => p.move === "workOnProject" && p.countdownId === undefined) ? (
-        <p className="cs-small m-0">The GM asks for an action roll to gauge the project&apos;s progress: roll it in the dice box.</p>
+        <Small as="p">The GM asks for an action roll to gauge the project&apos;s progress: roll it in the dice box.</Small>
       ) : null}
-      <div className="flex flex-wrap items-center gap-3">
-        <button type="submit" className={BTN} disabled={choose.pending}>
+      <div className="rp-actions">
+        <Pill type="submit" variant="solid" disabled={choose.pending}>
           Save moves
-        </button>
-        {saved ? <span className="cs-small">Saved. The GM applies them when the rest ends.</span> : null}
+        </Pill>
+        {saved ? <Small>Saved. The GM applies them when the rest ends.</Small> : null}
       </div>
-      <p aria-live="polite" className="m-0 text-[14px] text-[#8a1c1c]">
+      <p aria-live="polite" className="rp-error">
         {choose.error ?? ""}
       </p>
       {kind === "long" ? <NewProject characterId={character._id} /> : null}
@@ -180,25 +182,23 @@ function NewProject({ characterId }: { characterId: Id<"characters"> }) {
   const [name, setName] = useState("");
   const [start, setStart] = useState(4);
   return (
-    <fieldset className="flex flex-wrap items-end gap-2 border-0 p-0">
-      <legend className="cs-lbl mb-1">New project</legend>
-      <label className="flex flex-col gap-1">
-        <span className="cs-small">Name</span>
-        <input className={SELECT} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+    <fieldset className="rp-project">
+      <legend className="sh-lbl">New project</legend>
+      <label className="rp-field rp-grow">
+        <Small>Name</Small>
+        <input className={paperField.input} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
       </label>
-      <label className="flex flex-col gap-1">
-        <span className="cs-small">Countdown</span>
-        <input className={`${SELECT} w-20`} type="number" min={1} max={20} value={start} onChange={(e) => setStart(Number(e.target.value))} />
+      <label className="rp-field">
+        <Small>Countdown</Small>
+        <input className={`${paperField.input} rp-count`} type="number" min={1} max={20} value={start} onChange={(e) => setStart(Number(e.target.value))} />
       </label>
-      <button
-        type="button"
-        className={BTN}
+      <Pill
         disabled={create.pending || name.trim() === ""}
         onClick={() => void create.fire({ characterId, name, startingValue: start }).then((r) => r && setName(""))}
       >
         Create project
-      </button>
-      <span aria-live="polite" className="text-[14px] text-[#8a1c1c]">
+      </Pill>
+      <span aria-live="polite" className="rp-error">
         {create.error ?? ""}
       </span>
     </fieldset>
@@ -217,31 +217,29 @@ function CardSwaps({ character }: { character: CharacterView }) {
     move({ characterId: character._id, cardId, to, duringRest: true }).catch((e: unknown) => setError(errorMessage(e)));
   };
   return (
-    <div className="flex flex-col gap-2 border-t border-dashed border-[#c9b083] pt-3">
-      <span className="cs-lbl">Swap domain cards (free during a rest)</span>
-      <div className="flex flex-wrap gap-4">
-        <ul aria-label="Rest loadout" className="m-0 flex list-none flex-col gap-1 p-0">
+    <div className="rp-swaps">
+      <Label>Swap domain cards (free during a rest)</Label>
+      <div className="rp-swap-lists">
+        <ul aria-label="Rest loadout" className="rp-swap-list">
           {loadout.map((id) => (
-            <li key={id} className="flex items-center gap-2 text-[14px]">
+            <li key={id}>
               {cardName(id)}
-              <button type="button" className={BTN} onClick={() => run(id, "vault")}>
-                To vault
-              </button>
+              <Pill onClick={() => run(id, "vault")}>To vault</Pill>
             </li>
           ))}
         </ul>
-        <ul aria-label="Rest vault" className="m-0 flex list-none flex-col gap-1 p-0">
+        <ul aria-label="Rest vault" className="rp-swap-list">
           {vault.map((id) => (
-            <li key={id} className="flex items-center gap-2 text-[14px]">
+            <li key={id}>
               {cardName(id)}
-              <button type="button" className={BTN} disabled={loadout.length >= 5} onClick={() => run(id, "loadout")}>
+              <Pill disabled={loadout.length >= 5} onClick={() => run(id, "loadout")}>
                 To loadout
-              </button>
+              </Pill>
             </li>
           ))}
         </ul>
       </div>
-      <p aria-live="polite" className="m-0 text-[14px] text-[#8a1c1c]">
+      <p aria-live="polite" className="rp-error">
         {error ?? ""}
       </p>
     </div>

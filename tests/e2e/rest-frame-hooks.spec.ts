@@ -85,9 +85,10 @@ test("a Beast Feast rest offers Make a Feast and hides the moves that clear Stre
 
   await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
   const picker = page.getByRole("region", { name: "Downtime moves" });
-  const move1 = picker.getByLabel("Move 1");
-  await expect(move1.locator("option")).toHaveText(["Repair Armor", "Make a Feast"]);
-  await move1.selectOption({ label: "Make a Feast" });
+  const move1 = picker.getByRole("group", { name: "Move 1" });
+  await expect(move1.getByRole("button")).toHaveText(["Repair Armor", "Make a Feast"]);
+  await move1.getByRole("button", { name: "Make a Feast" }).click();
+  await expect(move1.getByRole("button", { name: "Make a Feast" })).toHaveAttribute("aria-pressed", "true");
   await picker.getByRole("button", { name: "Save moves" }).click();
   await expect(picker.getByText("Saved.", { exact: false })).toBeVisible();
 });
