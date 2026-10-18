@@ -45,12 +45,16 @@ export type TravelRules = {
   fast: number;
 };
 
-/** The board's numbers (house rule, GM-editable per campaign). */
+/**
+ * The board's numbers (house rule, GM-editable per campaign). A speed of 0 means the method can't cross that terrain:
+ * open water can't be crossed on foot, mounted or by wagon, only by boat or flying (user 2026-10-18; a small river can
+ * be painted as the ground around it, or the GM can give Water a speed).
+ */
 export const DEFAULT_TRAVEL_RULES: TravelRules = {
   speeds: {
-    foot: { road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 8 },
-    mount: { road: 80, wilds: 60, marsh: 18, deep: 30, mountains: 15, water: 8 },
-    wagon: { road: 50, wilds: 30, marsh: 6, deep: 12, mountains: 5, water: 5 },
+    foot: { road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 0 },
+    mount: { road: 80, wilds: 60, marsh: 18, deep: 30, mountains: 15, water: 0 },
+    wagon: { road: 50, wilds: 30, marsh: 6, deep: 12, mountains: 5, water: 0 },
     boat: { road: 30, wilds: 25, marsh: 40, deep: 15, mountains: 8, water: 100 },
     fly: { road: 120, wilds: 120, marsh: 120, deep: 120, mountains: 120, water: 120 },
   },
@@ -97,6 +101,13 @@ export function terrainSpeed(rules: TravelRules, method: TravelMethod, pace: Tra
   return (speedOf(table, code) ?? table.wilds) * paceFactor(pace, rules);
 }
 
+/** Whether `method` can cross terrain `code`: never Impassable, and not where its speed is 0 (e.g. Water on foot). */
+export function canCross(rules: TravelRules, method: TravelMethod, code: string): boolean {
+  if (code === "#") return false;
+  const table = rules.speeds[method] ?? rules.speeds.foot;
+  return (speedOf(table, code) ?? table.wilds) > 0;
+}
+
 /**
  * One leg for the party trail and token distances (the board's `route`):
  * sampled every ~2 km at the step midpoints, each step at the travel method's
@@ -121,7 +132,7 @@ export function trailLeg(
     const t = (i + 0.5) / steps;
     const code = terrainAt({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
     if (code === ".") water = true;
-    if (code === "#") {
+    if (!canCross(rules, method, code)) {
       blocked = true;
       continue;
     }
@@ -139,6 +150,7 @@ export function trailTotal(points: Point[], scale: MapScale, terrainAt: TerrainL
     total.km += leg.km;
     total.days += leg.days;
     total.water ||= leg.water;
+    total.blocked ||= leg.blocked;
   }
   return total;
 }
@@ -148,7 +160,7 @@ export function formatLeg(r: LegResult, units: "km" | "mi" = "km"): string {
   const d = r.days;
   const time = d < 1 ? `~${Math.max(1, Math.round(d * 8))} hrs` : `~${d < 3 ? d.toFixed(1) : Math.round(d)} days`;
   const distance = Math.round(r.km * (units === "mi" ? KM_PER_MILE_FACTOR : 1));
-  return `~${distance} ${units} · ${time}${r.water ? " · crosses water" : ""}${r.blocked ? " · blocked by impassable terrain" : ""}`;
+  return `~${distance} ${units} · ${time}${r.water ? " · crosses water" : ""}${r.blocked ? " · blocked: can't cross some of this terrain" : ""}`;
 }
 
 export type RouteOptions = { method: TravelMethod; pace: TravelPace; hours: number; units: "km" | "mi" };
@@ -171,6 +183,7 @@ export function analyseRoute(points: Point[], scale: MapScale, terrainAt: Terrai
   const k = paceFactor(opts.pace, rules);
   let km = 0;
   let days = 0;
+  let blocked = false;
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1];
     const b = points[i];
@@ -187,13 +200,15 @@ export function analyseRoute(points: Point[], scale: MapScale, terrainAt: Terrai
       const d = seg / n;
       km += d;
       per[tk] += d;
-      if (tk !== "#") days += d / ((speedOf(spd, tk) || 30) * k);
+      const speed = tk === "#" ? 0 : (speedOf(spd, tk) ?? spd.wilds);
+      if (speed > 0) days += d / (speed * k);
+      else blocked = true;
       const last = runs[runs.length - 1];
       if (last && last.terrain === tk) last.points.push(p1);
       else runs.push({ terrain: tk, points: [p0, p1] });
     }
   }
-  return { runs, per, km, days, blocked: per["#"] > 0 };
+  return { runs, per, km, days, blocked };
 }
 
 /** Clamps travel hours per day to 1–16 (default 8). */

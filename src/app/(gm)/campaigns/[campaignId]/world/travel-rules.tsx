@@ -43,7 +43,8 @@ function RulesForm({ rules, actions, onClose }: { rules: TravelRules; actions: M
     >
       <p className="m-0 text-[14px] text-[#c9d2cf]">
         Kilometres per day by travel method and terrain. This one table drives Measure, the party trail and token distances; unpainted ground counts as Wilds, and
-        Impassable can&rsquo;t be crossed.
+        Impassable can&rsquo;t be crossed. A speed of 0 means that method can&rsquo;t cross the terrain: by default open Water is
+        crossed only by boat or flying.
 </p>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[13px]">
@@ -68,7 +69,7 @@ function RulesForm({ rules, actions, onClose }: { rules: TravelRules; actions: M
                     <input
                       className="fld fsm w-[72px]"
                       type="number"
-                      min={1}
+                      min={0}
                       max={1000}
                       required
                       aria-label={`${row.label}, ${TERRAIN_LABEL[t]}, km per day`}
