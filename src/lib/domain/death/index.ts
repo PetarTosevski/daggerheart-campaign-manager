@@ -72,7 +72,7 @@ export function avoidDeath<T extends Tracks>(sheet: T, hopeDie: number): { sheet
   const scarred = hopeDie <= sheet.level;
   let journeyEnds = Boolean(sheet.journeyEnds);
   if (scarred) {
-    // The stored scars stop at 6 (with a seventh Hope slot the last slot is the 7th scar).
+    // Scars go up to 6 + hopeSlotBonus (scarsMax); the journey ends when no Hope slot is left.
     journeyEnds = journeyEnds || hopeMax(sheet.scars + 1, sheet.hopeSlotBonus ?? 0) <= 0;
     next = { ...applyResourceDelta(next, "scars", 1), journeyEnds };
   }

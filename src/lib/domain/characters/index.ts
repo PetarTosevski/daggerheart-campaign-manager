@@ -30,6 +30,11 @@ export function hopeMax(scars: number, hopeSlotBonus = 0): number {
   return Math.max(0, BASE_HOPE_MAX + hopeSlotBonus - scars);
 }
 
+/** The most scars a sheet can hold: one per Hope slot, Light in the Dark's included (CB 40, 106). */
+export function scarsMax(hopeSlotBonus = 0): number {
+  return BASE_HOPE_MAX + hopeSlotBonus;
+}
+
 /** Tier of a level: 1 (level 1), 2 (2–4), 3 (5–7), 4 (8–10). */
 export function tierForLevel(level: number): 1 | 2 | 3 | 4 {
   if (level >= 8) return 4;
@@ -152,7 +157,7 @@ export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resourc
   }
   if (resource === "hope") next.hope = clamp(sheet.hope + delta, max(sheet.scars));
   if (resource === "scars") {
-    next.scars = clamp(sheet.scars + delta, 6);
+    next.scars = clamp(sheet.scars + delta, scarsMax(sheet.hopeSlotBonus ?? 0));
     next.hope = Math.min(next.hope, max(next.scars));
   }
   return next;

@@ -10,9 +10,9 @@ import {
   STARTING_HOPE,
   STARTING_PROFICIENCY,
   STARTING_STRESS,
-  tierForLevel,
 } from "../src/lib/domain/characters/index";
 import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
+import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
 import { appError, RuleError } from "../src/lib/errors/app-error";
 import { FRAME_OF } from "../src/lib/frames/extras/common";
 import { ikonisMissing, ikonisSchema, startingMotherboard } from "../src/lib/frames/extras/motherboard";
@@ -25,7 +25,6 @@ import {
   getDomainCard,
   getSubclass,
   getWeapon,
-  type Source,
 } from "../src/lib/srd/index";
 import { TRAIT_IDS } from "../src/lib/srd/types";
 import {
@@ -175,14 +174,6 @@ export const get = userQuery({
 
 // ---------------------------------------------------------------- creation
 
-function assertSource(source: Source, allowExpansion: boolean, what: string) {
-  if (source === "hope-and-fear" && !allowExpansion) {
-    throw new RuleError("INVALID", `${what} is Hope & Fear content, which this campaign doesn't use.`);
-  }
-}
-
-const IKONIS_ONLY = "In a Motherboard campaign your Ikonis replaces weapons (CB 301).";
-
 /** Builds the stored sheet from a validated wizard draft (Core ch. 1). `ikonis`: a Motherboard campaign (CB 301). */
 export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, ikonis = false): CharacterSheetInput {
   const cls = getClass(draft.classId);
@@ -276,59 +267,12 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
     notes: "",
     ...(draft.portrait ? { portrait: draft.portrait } : {}),
   };
-  assertEquipment(sheet, allowExpansion, ikonis);
+  assertEquipment(sheet, allowExpansion, { ikonis });
   return sheet;
 }
 
 /** "Your choice of a Minor Health Potion … or a Minor Stamina Potion" (Core ch. 1, step 5). */
 const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
-
-/**
- * Equipment the character can use: known items, at or below their tier,
- * Hope & Fear items only when the campaign uses them, class-bound weapons only
- * for that class, no secondary with a two-handed primary, and magic weapons
- * only with a Spellcast trait (Core ch. 1 step 5). With `ikonis` (Motherboard,
- * CB 301) an empty primary is the Ikonis, which is two-handed: no secondary.
- * A weapon a Motherboard character got before T9 is still checked as a weapon.
- */
-function assertEquipment(
-  sheet: Pick<CharacterSheet, "level" | "classId" | "subclassId" | "primaryWeaponId" | "secondaryWeaponId" | "armorId">,
-  allowExpansion: boolean,
-  ikonis = false,
-) {
-  if (ikonis && sheet.primaryWeaponId === "") {
-    if (sheet.secondaryWeaponId) throw new RuleError("INVALID", IKONIS_ONLY);
-    assertArmor(sheet, allowExpansion);
-    return;
-  }
-  const tier = tierForLevel(sheet.level);
-  const sub = getSubclass(sheet.subclassId);
-  const check = (weaponId: string, slot: "primary" | "secondary") => {
-    const w = getWeapon(weaponId);
-    if (!w || w.slot !== slot) throw new RuleError("INVALID", `Choose a ${slot} weapon.`);
-    if (w.tier > tier) throw new RuleError("INVALID", `${w.name} is Tier ${w.tier}; this character is Tier ${tier}.`);
-    assertSource(w.source, allowExpansion, w.name);
-    if (w.classId && w.classId !== sheet.classId) throw new RuleError("INVALID", `${w.name} belongs to another class.`);
-    if (w.category === "magic" && !sub?.spellcastTrait) throw new RuleError("INVALID", "Magic weapons need a Spellcast trait from your subclass.");
-    return w;
-  };
-  const primary = check(sheet.primaryWeaponId, "primary");
-  if (sheet.secondaryWeaponId) {
-    check(sheet.secondaryWeaponId, "secondary");
-    if (primary.burden === "two-handed") throw new RuleError("INVALID", "A two-handed primary weapon leaves no hand for a secondary.");
-    if (primary.burden === "barehanded") throw new RuleError("INVALID", `${primary.name} can't be used with other weapons.`);
-  }
-  assertArmor(sheet, allowExpansion);
-}
-
-function assertArmor(sheet: Pick<CharacterSheet, "level" | "armorId">, allowExpansion: boolean) {
-  if (!sheet.armorId) return;
-  const tier = tierForLevel(sheet.level);
-  const a = getArmor(sheet.armorId);
-  if (!a) throw new RuleError("INVALID", "Unknown armor.");
-  if (a.tier > tier) throw new RuleError("INVALID", `${a.name} is Tier ${a.tier}; this character is Tier ${tier}.`);
-  assertSource(a.source, allowExpansion, a.name);
-}
 
 /** The owner of a new or reassigned character: the caller, or (GM only) the GM or a member of the campaign. */
 async function ownerFor(ctx: MutationCtx, campaign: Doc<"campaigns">, permission: Permission, user: Doc<"users">, ownerId?: Id<"users">) {
@@ -421,7 +365,7 @@ export const updateSheet = userMutation({
       const ikonis = campaign.frameId === FRAME_OF.motherboard;
       // CB 301: no new weapons in a Motherboard campaign (an empty primary is the Ikonis).
       if (ikonis && ((clean.primaryWeaponId ?? "") !== "" || (secondaryWeaponId ?? null) !== null)) invalid(IKONIS_ONLY);
-      assertEquipment(next, resolveOptions(campaign.frameId, campaign.options).hopeAndFear, ikonis);
+      assertEquipment(next, resolveOptions(campaign.frameId, campaign.options).hopeAndFear, { ikonis });
     }
     if (clean.portrait?.kind === "upload") {
       // Uploaded portraits are attached through `attachPortrait`, never by id here.

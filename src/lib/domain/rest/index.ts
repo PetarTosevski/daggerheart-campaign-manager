@@ -16,6 +16,7 @@ import { RuleError } from "../../errors/app-error";
 import type { CharacterSheet } from "../../validation/characters";
 import { applyResourceDelta, hopeMax, tierForLevel } from "../characters/index";
 import { expire } from "../characters/expiry";
+import { favorOf, warlockSpellcast } from "../class-features/classes/warlock";
 import { onRest } from "../class-features/hooks";
 import type { Registry } from "../class-features/index";
 import type { Rng } from "../class-features/types";
@@ -25,15 +26,23 @@ export * from "./moves";
 
 /**
  * Checks one PC's picks: exactly two moves this rest allows (plus any `extra`
- * frame or class moves), a target only on an ally move and never yourself, a
- * countdown only on Work on a Project. Throws `RuleError("REST_RULE")`.
+ * frame or class moves, minus the frame's `forbidden` ones), a target only on
+ * an ally move and never yourself, a countdown only on Work on a Project.
+ * Throws `RuleError("REST_RULE")`.
  */
-export function validateChoice(kind: RestKind, characterId: string, moves: readonly ChosenMove[], extra: readonly RestMove[] = []): void {
+export function validateChoice(
+  kind: RestKind,
+  characterId: string,
+  moves: readonly ChosenMove[],
+  extra: readonly RestMove[] = [],
+  forbidden: readonly RestMove[] = [],
+): void {
   const fail = (message: string): never => {
     throw new RuleError("REST_RULE", message);
   };
   if (moves.length !== MOVES_PER_REST) fail(`Choose ${MOVES_PER_REST} downtime moves.`);
   for (const m of moves) {
+    if (forbidden.includes(m.move)) fail(`${MOVE_LABELS[m.move]} can't be chosen in this campaign.`);
     if (!REST_MOVES[kind].includes(m.move) && !extra.includes(m.move)) fail(`${MOVE_LABELS[m.move]} isn't a ${kind} rest move.`);
     if (m.targetId !== undefined && !ALLY_MOVES.includes(m.move)) fail(`${MOVE_LABELS[m.move]} can't target an ally.`);
     if (m.targetId === characterId) fail("Leave the target empty to use a move on yourself.");
@@ -55,13 +64,16 @@ const SHORT_EQUIVALENT: Partial<Record<RestMove, RestMove>> = {
   tendToAllWounds: "tendToWounds",
   clearAllStress: "clearStress",
   repairAllArmor: "repairArmor",
+  tribute: "tribute",
 };
 
 /**
  * The moves an interrupted rest still gives (CB 105): an interrupted short
  * rest gives nothing; an interrupted long rest gives "the benefits of a short
  * rest", so each long-rest move becomes its short-rest counterpart and Work on
- * a Project (long rest only) is lost. Frame and class moves are dropped too.
+ * a Project (long rest only) is lost. Tribute (a downtime move on either
+ * rest, HF 14) stays; the frame moves are dropped (their hooks read the
+ * picks themselves).
  */
 export function interruptedMoves(kind: RestKind, moves: readonly ChosenMove[]): ChosenMove[] {
   if (kind === "short") return [];
@@ -86,8 +98,9 @@ export type MovesResult = {
  * character id). Dice come from `rng` (1d4 per short-rest move, + the mover's
  * tier, CB 105). A move on a character missing from `sheets` (not resting) is
  * skipped. Prepare together gives 2 Hope to everyone who chose it when two or
- * more PCs did, otherwise 1 Hope like Prepare. Make a Feast and Tribute are
- * applied by their own rules, not here.
+ * more PCs did, otherwise 1 Hope like Prepare. Tribute gains Favor equal to
+ * the Warlock's Spellcast trait, at least 0 (HF 14). Make a Feast, Keep Watch
+ * and halting lycanthropy are applied by the frame hooks, not here.
  */
 export function applyMoves(kind: RestKind, input: Readonly<Record<string, CharacterSheet>>, choices: readonly RestChoice[], rng: Rng): MovesResult {
   const sheets: Record<string, CharacterSheet> = { ...input };
@@ -154,8 +167,17 @@ export function applyMoves(kind: RestKind, input: Readonly<Record<string, Charac
           projects.push({ characterId: choice.characterId, ...(m.countdownId !== undefined ? { countdownId: m.countdownId } : {}) });
           say(choice.characterId, m.countdownId !== undefined ? "Work on a Project: ticks the project" : "Work on a Project: the GM asks for an action roll");
           break;
+        case "tribute": {
+          const self = sheets[choice.characterId]!;
+          const favor = favorOf(self);
+          const next = Math.min(99, favor + warlockSpellcast(self));
+          sheets[choice.characterId] = { ...self, classState: { ...self.classState, favor: next } };
+          say(choice.characterId, `Tribute: +${next - favor} Favor (${favor} to ${next})`);
+          break;
+        }
         case "makeAFeast":
-        case "tribute":
+        case "keepWatch":
+        case "haltLycanthropy":
           break;
       }
       if (onAlly) say(targetId, `${mover.name} used ${MOVE_LABELS[m.move]} on them`);

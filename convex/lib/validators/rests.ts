@@ -12,8 +12,9 @@ export const restStatusValidator = v.union(v.literal("open"), v.literal("finishe
 /**
  * A downtime move (CB 105). Short rest: the first four plus `prepareTogether`;
  * long rest: the "All" moves, Prepare and Work on a Project. `makeAFeast`
- * (Beast Feast, CB 271-279) and `tribute` (Warlock Patron's Pact, HF 14) are
- * frame and class moves T3b and T8c offer.
+ * (Beast Feast, CB 278), `keepWatch` (The Age of Umbra, CB 289),
+ * `haltLycanthropy` (Dark Heart of Andaluria, HF 153) and `tribute` (Warlock
+ * Favor, HF 14) are frame and class moves (src/lib/domain/rest/frame-hooks).
  */
 export const restMoveValidator = v.union(
   v.literal("tendToWounds"),
@@ -27,6 +28,8 @@ export const restMoveValidator = v.union(
   v.literal("workOnProject"),
   v.literal("makeAFeast"),
   v.literal("tribute"),
+  v.literal("keepWatch"),
+  v.literal("haltLycanthropy"),
 );
 
 /** One chosen move: an ally target for Tend to Wounds or Repair Armor, a countdown for Work on a Project. */

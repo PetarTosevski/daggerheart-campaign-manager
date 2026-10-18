@@ -2,9 +2,9 @@
 // checks the server applies (the review screen runs the same checks to keep
 // Save disabled). Pure: no framework imports, relative imports only.
 
-import { tierForLevel } from "../domain/characters/index";
+import { assertEquipment, assertSource as assertSourceRule } from "../equipment-rules";
 import { RuleError } from "../errors/app-error";
-import { getAncestry, getArmor, getClass, getCommunity, getDomainCard, getSubclass, getWeapon, type Source } from "../srd/index";
+import { getAncestry, getClass, getCommunity, getDomainCard, getSubclass, type Source } from "../srd/index";
 import type { CharacterSheetInput } from "../validation/characters";
 import { importDraftSchema, type ImportDraft } from "./draft";
 
@@ -16,14 +16,14 @@ function refuse(message: string): never {
 }
 
 function assertSource(source: Source, allowExpansion: boolean, what: string) {
-  if (source === "hope-and-fear" && !allowExpansion) refuse(`${what} is Hope & Fear content, which this campaign doesn't use.`);
+  assertSourceRule(source, allowExpansion, what, "PHOTO_IMPORT_RULE");
 }
 
 /**
  * The sheet for a reviewed draft at any level. Checks the class, subclass,
  * heritage and domain cards (from the class's domains, at or below the level),
- * equipment at or below the character's tier (tiers by level, CB 109) with the
- * same hand, class and Spellcast rules as the wizard, and marked HP and Stress
+ * equipment through the shared rules (src/lib/equipment-rules.ts, the same
+ * ones the server applies), and marked HP and Stress
  * within their maximums. Throws a `ZodError` for a malformed draft and a
  * `RuleError` (PHOTO_IMPORT_RULE) for a rules problem.
  */
@@ -52,28 +52,11 @@ export function sheetFromImport(input: ImportDraft, allowExpansion: boolean, new
   if (!community) refuse("Choose a community.");
   assertSource(community.source, allowExpansion, community.name);
 
-  const tier = tierForLevel(draft.level);
-  const weapon = (id: string, slot: "primary" | "secondary") => {
-    const w = getWeapon(id);
-    if (!w || w.slot !== slot) refuse(`Choose a ${slot} weapon.`);
-    if (w.tier > tier) refuse(`${w.name} is Tier ${w.tier}; a level ${draft.level} character is Tier ${tier}.`);
-    assertSource(w.source, allowExpansion, w.name);
-    if (w.classId && w.classId !== cls.id) refuse(`${w.name} belongs to another class.`);
-    if (w.category === "magic" && !sub.spellcastTrait) refuse("Magic weapons need a Spellcast trait from the subclass.");
-    return w;
-  };
-  const primary = weapon(draft.primaryWeaponId, "primary");
-  if (draft.secondaryWeaponId) {
-    weapon(draft.secondaryWeaponId, "secondary");
-    if (primary.burden === "two-handed") refuse("A two-handed primary weapon leaves no hand for a secondary.");
-    if (primary.burden === "barehanded") refuse(`${primary.name} can't be used with other weapons.`);
-  }
-  if (draft.armorId) {
-    const a = getArmor(draft.armorId);
-    if (!a) refuse("Choose armor.");
-    if (a.tier > tier) refuse(`${a.name} is Tier ${a.tier}; a level ${draft.level} character is Tier ${tier}.`);
-    assertSource(a.source, allowExpansion, a.name);
-  }
+  assertEquipment(
+    { level: draft.level, classId: cls.id, subclassId: sub.id, primaryWeaponId: draft.primaryWeaponId, secondaryWeaponId: draft.secondaryWeaponId, armorId: draft.armorId },
+    allowExpansion,
+    { code: "PHOTO_IMPORT_RULE" },
+  );
 
   const domains = new Set<string>(cls.domains);
   for (const id of draft.domainCards) {
@@ -107,7 +90,7 @@ export function sheetFromImport(input: ImportDraft, allowExpansion: boolean, new
     scars: 0,
     armorMarked: draft.armorMarked,
     proficiency: draft.proficiency,
-    primaryWeaponId: primary.id,
+    primaryWeaponId: draft.primaryWeaponId,
     ...(draft.secondaryWeaponId ? { secondaryWeaponId: draft.secondaryWeaponId } : {}),
     ...(draft.armorId ? { armorId: draft.armorId } : {}),
     inventory: draft.inventory.map((name) => ({ id: newId(), name })),

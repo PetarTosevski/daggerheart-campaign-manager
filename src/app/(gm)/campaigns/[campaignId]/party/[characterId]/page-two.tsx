@@ -1,10 +1,12 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { useState, type CSSProperties } from "react";
 
 import { assetBackground } from "@/lib/design-assets";
 import { DOMAIN_CARD_ART, getDomain, type ClassDef, type DomainCard } from "@/lib/srd";
 
+import { api } from "../../../../../../../convex/_generated/api";
 import { useSheet } from "./sheet-context";
 import { recallBlock, resolveCards, vaultCardIds } from "./sheet-helpers";
 
@@ -32,8 +34,11 @@ function CardFace({ card, children }: { card: DomainCard; children?: React.React
 }
 
 export function PageTwo({ cls }: { cls: ClassDef | undefined }) {
-  const { sheet, canEdit, moveCard } = useSheet();
+  const { sheet, canEdit, moveCard, slot } = useSheet();
   const [duringRest, setDuringRest] = useState(false);
+  // The server makes a "during rest" swap free only while the campaign has an open rest (CB 101, 105).
+  const rests = useQuery(api.rests.current, canEdit ? { campaignId: slot.campaignId } : "skip");
+  const restOpen = Boolean(rests?.open);
   const [busy, setBusy] = useState<string | null>(null);
   const loadout = resolveCards(sheet.domainCards.loadout);
   const vault = resolveCards(vaultCardIds(sheet));
@@ -66,8 +71,13 @@ export function PageTwo({ cls }: { cls: ClassDef | undefined }) {
         {canEdit ? (
           <label className="flex min-h-11 flex-wrap items-center gap-2 border-t border-[#dccaa2] pt-3 text-[17px]">
             <input type="checkbox" className="size-5 accent-[#5b2b2b]" checked={duringRest} onChange={(e) => setDuringRest(e.target.checked)} />
-            Swapping during a rest (free)
+            Swapping during a rest (free only while the GM has a rest open)
             <span className="cs-small italic">Moving a card from the vault into your loadout marks Stress equal to its Recall Cost, unless it happens during a rest.</span>
+            {duringRest && !restOpen ? (
+              <span className="cs-small font-bold text-[#8e2b2b]" data-testid="no-open-rest">
+                No rest is open right now: a swap still costs its Recall Cost in Stress.
+              </span>
+            ) : null}
           </label>
         ) : null}
       </section>

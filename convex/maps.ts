@@ -1,8 +1,12 @@
 import { ConvexError, v } from "convex/values";
 
+import { applyResourceDelta } from "../src/lib/domain/characters/index";
+import { applyCountdownAction } from "../src/lib/domain/countdowns/index";
 import { appError } from "../src/lib/errors/app-error";
 import { encounterRoll, travelDays } from "../src/lib/domain/frames/horizon";
-import { hexToPixel, isAdjacent, type Hex } from "../src/lib/world/hex";
+import { enduranceOwnerKey } from "../src/lib/domain/rest/frame-hooks/index";
+import { resolveOptions } from "../src/lib/frames/options";
+import { hexKey, hexToPixel, isAdjacent, type Hex } from "../src/lib/world/hex";
 import {
   HORIZON_FRAME,
   MAX_HEXES,
@@ -11,10 +15,12 @@ import {
   mapImageSize,
   mapScalarsSchema,
   mapStateSchema,
+  SANCTUARY_TYPE,
   terrainTile,
   terrainTileOf,
   TERRAIN_TILE_CELLS,
   TERRAIN_TILES,
+  tokenHex,
   travelRulesSchema,
   type CrawlHex,
   type MapScalars,
@@ -26,12 +32,15 @@ import { TERRAIN_CODES, TERRAIN_COLUMNS, TERRAIN_ROWS, applyTerrainCells, sugges
 import { isBuiltinType, tokenType, tokenTypes } from "../src/lib/world/token-types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { logAction, newGroupId } from "./lib/actionLog";
+import { readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { claimFile, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { userMutation, userQuery } from "./lib/functions";
 import {
   hexRow,
   lastTokenId,
+  listMapTokens,
   playerTokenFilter,
   readMap,
   readMapTokens,
@@ -50,6 +59,7 @@ import {
 } from "./lib/maps";
 import { campaignScope, runOnce } from "./lib/operations";
 import { atLeast, liveCampaign, requirePermission, type Permission, type Role } from "./lib/permissions";
+import { recordHistory } from "./tables/history";
 import {
   attachResultValidator,
   hexGridValidator,
@@ -534,9 +544,84 @@ export const placePartyHex = userMutation({
 });
 
 /**
+ * Optional rule, Endurance Countdowns (HF 176): "When the party enters a
+ * wilderness hex, each player rolls their Hope Die. If the result is equal to
+ * or lower than the value of their PC's Endurance Countdown, they mark a
+ * Stress. Otherwise, they tick down their Endurance Countdown. When a PC's
+ * Endurance Countdown triggers, they become Vulnerable until their next rest."
+ * With `enduranceCountdowns` on, every active PC with an active countdown
+ * (started by a rest, convex/trackers/horizon.ts) rolls a server Hope Die
+ * (d12). A hex holding a sanctuary marker is not wilderness (reversible
+ * minimum, TASK-D5-TI-b questions). The sheet change is logged (undoable);
+ * the tick keeps the countdown's own history.
+ */
+async function enduranceOnEntry(ctx: MutationCtx, campaign: Doc<"campaigns">, scalars: MapScalars, crawl: CrawlScalars, h: Hex, actorId: Id<"users">): Promise<void> {
+  if (!resolveOptions(campaign.frameId, campaign.options).enduranceCountdowns) return;
+  const image = mapImageSize(campaign.frameId, scalars);
+  const tokens = await listMapTokens(ctx, campaign._id);
+  if (tokens.some((t) => t.type === SANCTUARY_TYPE && hexKey(tokenHex(t, image, crawl.grid)) === hexKey(h))) return;
+  // One party: a handful of characters.
+  const party = await ctx.db
+    .query("characters")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
+    .collect();
+  const groupId = newGroupId();
+  for (const pc of party.filter((c) => c.status === "active")) {
+    // At most one row per PC.
+    const countdown = await ctx.db
+      .query("countdowns")
+      .withIndex("by_campaign_owner", (q) => q.eq("campaignId", campaign._id).eq("ownerKey", enduranceOwnerKey(pc._id)))
+      .first();
+    if (countdown === null || countdown.status !== "active") continue;
+    const before = readSheet(pc.sheet);
+    const hopeDie = rollDie(12);
+    let after = before;
+    let summary: string;
+    if (hopeDie <= countdown.currentValue) {
+      after = applyResourceDelta(before, "stress", 1);
+      summary = `Endurance (HF 176): Hope Die ${hopeDie}, at or below ${countdown.currentValue}: marks a Stress`;
+    } else {
+      const next = applyCountdownAction(countdown, "advance");
+      await ctx.db.patch("countdowns", countdown._id, {
+        currentValue: next.currentValue,
+        status: next.status,
+        completedAt: next.completedNow ? Date.now() : countdown.completedAt,
+      });
+      await recordHistory(ctx, actorId, {
+        campaignId: campaign._id,
+        kind: "countdown",
+        action: "advance",
+        countdownId: countdown._id,
+        before: { currentValue: countdown.currentValue, status: countdown.status },
+        after: { currentValue: next.currentValue, status: next.status },
+      });
+      summary = `Endurance (HF 176): Hope Die ${hopeDie}, above ${countdown.currentValue}: the countdown ticks to ${next.currentValue}`;
+      if (next.completedNow) {
+        if (!before.conditions.includes("vulnerable")) after = { ...before, conditions: [...before.conditions, "vulnerable"] };
+        summary += "; it triggers: Vulnerable until the next rest";
+      }
+    }
+    if (after !== before) await saveSheet(ctx, pc._id, after);
+    await logAction(ctx, {
+      campaignId: campaign._id,
+      characterId: pc._id,
+      actorId,
+      kind: "roll",
+      visibility: "public",
+      summary: `${before.name}: ${summary}`,
+      groupId,
+      ...(after !== before ? { before } : {}),
+      undoable: after !== before,
+    });
+  }
+}
+
+/**
  * Travels to an adjacent hex (HF pp.171, 176–177): days by terrain rating and
  * travel mode, then the day counter advances, the hex is explored and the
  * encounter roll is made (terrain-rating dice; any 1 activates an encounter).
+ * Entering a wilderness hex runs the Endurance Countdowns (HF 176) when that
+ * option is on.
  */
 export const moveToHex = userMutation({
   args: {
@@ -571,6 +656,7 @@ export const moveToHex = userMutation({
       const pos = partyAt(campaign.frameId, scalars, next, h);
       const trail = [...scalars.party.trail, { x: scalars.party.x, y: scalars.party.y }].slice(-12);
       await saveScalars(ctx, campaignId, map, { ...scalars, party: { ...pos, trail }, hexCrawl: next });
+      await enduranceOnEntry(ctx, campaign, scalars, next, h, ctx.user._id);
       return { days: travel.days, ...(travel.weatherRoll ? { weatherRoll: travel.weatherRoll } : {}), dice: roll.dice, encounter: roll.encounter, day };
     });
   },

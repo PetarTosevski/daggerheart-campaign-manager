@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { readSheet } from "../../convex/lib/characterSheet";
 import type { ClassFeatures } from "@/lib/domain/class-features/types";
+import { FEAST_FORBIDDEN, frameRestMoves } from "@/lib/domain/rest/frame-hooks";
 import {
+  allowedMoves,
   applyMoves,
   interruptedMoves,
   needsOverride,
@@ -185,6 +187,51 @@ describe("validateChoice", () => {
     expect(code(() => validateChoice("short", "a", [{ move: "clearStress", targetId: "b" }, { move: "prepare" }]))).toBe("REST_RULE");
     expect(code(() => validateChoice("short", "a", [{ move: "tendToWounds", targetId: "a" }, { move: "prepare" }]))).toBe("REST_RULE");
     expect(code(() => validateChoice("long", "a", [{ move: "prepare", countdownId: "c" }, { move: "prepare" }]))).toBe("REST_RULE");
+  });
+});
+
+describe("frame and class moves", () => {
+  const code = (run: () => void) => {
+    try {
+      run();
+    } catch (e) {
+      return e instanceof RuleError ? e.code : "other";
+    }
+    return null;
+  };
+  const rules = (frameId: string, over: Partial<{ transformations: boolean; warlock: boolean }> = {}) =>
+    frameRestMoves({ frameId, transformations: false, warlock: false, ...over });
+
+  it("each frame's own move, on either rest: Make a Feast, Keep Watch, halt lycanthropy (transformations on), Tribute", () => {
+    expect(rules("beast-feast").extra).toEqual(["makeAFeast"]);
+    expect(rules("age-of-umbra").extra).toEqual(["keepWatch"]);
+    expect(rules("dark-heart-of-andaluria").extra).toEqual([]);
+    expect(rules("dark-heart-of-andaluria", { transformations: true }).extra).toEqual(["haltLycanthropy"]);
+    expect(rules("witherwild", { warlock: true }).extra).toEqual(["tribute"]);
+    expect(rules("witherwild")).toEqual({ extra: [], forbidden: [] });
+  });
+
+  it("Beast Feast forbids the moves that clear Stress, clear Hit Points or gain Hope (CB 278)", () => {
+    const feast = rules("beast-feast");
+    expect(feast.forbidden).toBe(FEAST_FORBIDDEN);
+    expect(allowedMoves("short", feast.extra, feast.forbidden)).toEqual(["repairArmor", "makeAFeast"]);
+    expect(allowedMoves("long", feast.extra, feast.forbidden)).toEqual(["repairAllArmor", "workOnProject", "makeAFeast"]);
+    expect(code(() => validateChoice("short", "a", [{ move: "clearStress" }, { move: "makeAFeast" }], feast.extra, feast.forbidden))).toBe("REST_RULE");
+    expect(code(() => validateChoice("short", "a", [{ move: "repairArmor" }, { move: "makeAFeast" }], feast.extra, feast.forbidden))).toBeNull();
+  });
+
+  it("Tribute gains Favor equal to the Warlock's Spellcast trait (HF 14), never less than 0", () => {
+    const warlock = (presence: number) =>
+      sheet("Vela", 1, { classId: "warlock", subclassId: "pact-of-the-endless", traits: { agility: 0, strength: 0, finesse: 0, instinct: 0, presence, knowledge: 0 } });
+    const choice = (moves: RestChoice["moves"]): RestChoice[] => [{ characterId: "w", moves }];
+    const done = applyMoves("short", { w: warlock(2) }, choice([{ move: "tribute" }, { move: "tribute" }]), fixed(1));
+    expect(done.sheets.w.classState.favor).toBe(7);
+    expect(done.lines.w).toEqual(["Tribute: +2 Favor (3 to 5)", "Tribute: +2 Favor (5 to 7)"]);
+    expect(applyMoves("short", { w: warlock(-1) }, choice([{ move: "tribute" }, { move: "clearStress" }]), fixed(1)).sheets.w.classState.favor).toBe(3);
+  });
+
+  it("an interrupted long rest keeps Tribute (a short-rest move too) and drops the frame moves", () => {
+    expect(interruptedMoves("long", [{ move: "tribute" }, { move: "keepWatch" }])).toEqual([{ move: "tribute" }]);
   });
 });
 

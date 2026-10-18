@@ -76,11 +76,15 @@ async function setup(frameId: PublishedFrameId) {
   const undo = (restId: Id<"rests">) => gm.mutation(api.rests.undo, { campaignId, restId, idempotencyKey: key() });
   const rest = async (kind: "short" | "long") => finish((await start(kind)).restId);
   const setOption = (option: string, enabled: boolean) => gm.mutation(api.campaigns.setOption, { campaignId, option, enabled });
+  const choose = (who: typeof p1, restId: Id<"rests">, characterId: Id<"characters">, moves: { move: string }[]) =>
+    who.mutation(api.rests.choose, { restId, characterId, moves: moves as { move: "prepare" }[], idempotencyKey: key() });
+  const pickable = async (characterId: Id<"characters">) =>
+    (await gm.query(api.rests.current, { campaignId })).open?.moves.find((m) => m.characterId === characterId)?.moves;
   const campaignRow = async () => {
     const rows = await t.run((ctx) => ctx.db.query("actionLog").withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId)).collect());
     return rows.filter((r) => r.characterId === undefined).at(-1);
   };
-  return { t, gm, p1, p2, campaignId, a, b, sheetOf, edit, fear, start, finish, interrupt, undo, rest, setOption, campaignRow };
+  return { t, gm, p1, p2, campaignId, a, b, sheetOf, edit, fear, start, finish, interrupt, undo, rest, setOption, campaignRow, choose, pickable };
 }
 
 async function codeOf(p: Promise<unknown>): Promise<unknown> {
@@ -157,6 +161,23 @@ describe("frame rest hooks", () => {
       expect(fearGained).toBe(3);
       expect(await fear()).toBe(5);
       expect((await gm.query(api.trackers.ageOfUmbra.get, { campaignId })).gm?.log[0]).toMatchObject({ outcome: "fear2", fearGained: 2 });
+    });
+
+    it("Keep Watch is a downtime move (CB 289): the watcher's Hope Die joins the Lurking Darkness roll", async () => {
+      const { gm, p1, a, campaignId, start, finish, choose, pickable } = await setup("age-of-umbra");
+      const { restId } = await start("short");
+      expect(await pickable(a)).toContain("keepWatch");
+      await choose(p1, restId, a, [{ move: "keepWatch" }, { move: "clearStress" }]);
+      forceDice(7);
+      await finish(restId);
+      expect((await gm.query(api.trackers.ageOfUmbra.get, { campaignId })).gm?.log[0]).toMatchObject({ gmRoll: 7, watchRoll: 7 });
+    });
+
+    it("Keep Watch is refused outside the frame", async () => {
+      const { p1, a, start, choose, pickable } = await setup("witherwild");
+      const { restId } = await start("long");
+      expect(await pickable(a)).not.toContain("keepWatch");
+      expect(await codeOf(choose(p1, restId, a, [{ move: "keepWatch" }, { move: "prepare" }]))).toBe("REST_RULE");
     });
 
     it("at a Sacred Pyre nothing is rolled; outside the frame neither", async () => {
@@ -251,6 +272,26 @@ describe("frame rest hooks", () => {
       expect((await campaignRow())?.summary).toMatch(/Make a Feast: Ash cook/);
     });
 
+    it("players can't choose moves that clear Stress, clear Hit Points or gain Hope, on either rest", async () => {
+      const { p1, a, b, start, interrupt, choose, pickable } = await setup("beast-feast");
+      const short = (await start("short")).restId;
+      expect(await pickable(a)).toEqual(["repairArmor", "makeAFeast"]);
+      for (const move of ["tendToWounds", "clearStress", "prepare", "prepareTogether"]) {
+        expect(await codeOf(choose(p1, short, a, [{ move }, { move: "repairArmor" }]))).toBe("REST_RULE");
+      }
+      // On an ally too: Tend to Wounds clears Hit Points whoever it targets.
+      expect(await codeOf(p1.mutation(api.rests.choose, { restId: short, characterId: a, moves: [{ move: "tendToWounds", targetId: b }, { move: "repairArmor" }], idempotencyKey: key() }))).toBe(
+        "REST_RULE",
+      );
+      await interrupt(short);
+      const long = (await start("long")).restId;
+      expect(await pickable(a)).toEqual(["repairAllArmor", "workOnProject", "makeAFeast"]);
+      for (const move of ["tendToAllWounds", "clearAllStress", "prepare", "prepareTogether"]) {
+        expect(await codeOf(choose(p1, long, a, [{ move }, { move: "repairAllArmor" }]))).toBe("REST_RULE");
+      }
+      expect(await codeOf(choose(p1, long, a, [{ move: "makeAFeast" }, { move: "repairAllArmor" }]))).toBe("ok");
+    });
+
     it("is refused outside the frame", async () => {
       const { p1, a, start } = await setup("witherwild");
       const { restId } = await start("long");
@@ -287,6 +328,21 @@ describe("frame rest hooks", () => {
       expect((await h.campaignRow())?.summary).toMatch(/Ash's Lycanthropy Countdown triggers/);
     });
 
+    it("a PC who picks the halt move keeps their countdown; the move needs transformations on", async () => {
+      const h = await setup("dark-heart-of-andaluria");
+      const id = await bite(h, h.a, 4);
+      const { restId } = await h.start("short");
+      expect(await h.pickable(h.a)).toContain("haltLycanthropy");
+      await h.choose(h.p1, restId, h.a, [{ move: "haltLycanthropy" }, { move: "clearStress" }]);
+      await h.finish(restId);
+      expect((await h.t.run((ctx) => ctx.db.get("countdowns", id)))?.currentValue).toBe(4);
+
+      await h.setOption("transformations", false);
+      const next = (await h.start("short")).restId;
+      expect(await h.pickable(h.a)).not.toContain("haltLycanthropy");
+      expect(await codeOf(h.choose(h.p1, next, h.a, [{ move: "haltLycanthropy" }, { move: "clearStress" }]))).toBe("REST_RULE");
+    });
+
     it("does not tick with transformations off, or outside the frame", async () => {
       const h = await setup("dark-heart-of-andaluria");
       await h.setOption("transformations", false);
@@ -298,6 +354,64 @@ describe("frame rest hooks", () => {
       const coreId = await bite(core, core.a, 6);
       await core.rest("short");
       expect((await core.t.run((ctx) => ctx.db.get("countdowns", coreId)))?.currentValue).toBe(6);
+    });
+  });
+
+  describe("Warlock Tribute (HF 14)", () => {
+    const warlock = (s: CharacterSheet): CharacterSheet => ({
+      ...s,
+      classId: "warlock",
+      subclassId: "pact-of-the-endless",
+      traits: { ...s.traits, presence: 2 },
+      classState: { ...s.classState, favor: 3 },
+    });
+
+    it("a Warlock's Tribute move gains Favor equal to Spellcast (presence 2): 3 to 5", async () => {
+      const h = await setup("dark-heart-of-andaluria");
+      await h.edit(h.a, warlock);
+      const { restId } = await h.start("short");
+      expect(await h.pickable(h.a)).toContain("tribute");
+      expect(await h.pickable(h.b)).not.toContain("tribute");
+      await h.choose(h.p1, restId, h.a, [{ move: "tribute" }, { move: "clearStress" }]);
+      expect(await codeOf(h.choose(h.p2, restId, h.b, [{ move: "tribute" }, { move: "clearStress" }]))).toBe("REST_RULE");
+      await h.finish(restId);
+      expect((await h.sheetOf(h.a)).classState.favor).toBe(5);
+    });
+
+    it("is refused while the campaign's Hope & Fear content is off", async () => {
+      const h = await setup("witherwild");
+      await h.edit(h.a, warlock);
+      const { restId } = await h.start("short");
+      expect(await h.pickable(h.a)).not.toContain("tribute");
+      expect(await codeOf(h.choose(h.p1, restId, h.a, [{ move: "tribute" }, { move: "clearStress" }]))).toBe("REST_RULE");
+    });
+  });
+
+  describe("Work on a Project lists only project countdowns", () => {
+    it("a frame countdown owned by the character is neither listed nor pickable", async () => {
+      const h = await setup("witherwild");
+      const { countdownId } = await h.p1.mutation(api.rests.createProject, { characterId: h.a, name: "Forge a blade", startingValue: 4, idempotencyKey: key() });
+      const other = await h.t.run((ctx) =>
+        ctx.db.insert("countdowns", {
+          campaignId: h.campaignId,
+          name: "Not a project",
+          description: "",
+          category: "consequence",
+          startingValue: 6,
+          currentValue: 6,
+          status: "active",
+          consequence: "",
+          createdAt: Date.now(),
+          ownerKey: h.a,
+          kind: "endurance",
+        }),
+      );
+      expect((await h.p1.query(api.rests.projects, { characterId: h.a })).map((p) => p._id)).toEqual([countdownId]);
+      const { restId } = await h.start("long");
+      const pick = (id: Id<"countdowns">) =>
+        h.p1.mutation(api.rests.choose, { restId, characterId: h.a, moves: [{ move: "workOnProject", countdownId: id }, { move: "prepare" }], idempotencyKey: key() });
+      expect(await codeOf(pick(other))).toBe("REST_RULE");
+      expect(await codeOf(pick(countdownId))).toBe("ok");
     });
   });
 

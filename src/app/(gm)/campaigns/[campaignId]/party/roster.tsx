@@ -1,7 +1,7 @@
 "use client";
 
 import { derivedDefense } from "@/lib/domain/characters/derived";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -13,12 +13,14 @@ import type { SlotProps } from "@/components/party/slots";
 import { errorMessage } from "@/lib/convex-errors";
 import { hopeMax } from "@/lib/domain/characters";
 import { assetBackground } from "@/lib/design-assets";
+import { FRAME_OF } from "@/lib/frames/extras/common";
 import { getClass, getDomain, getSubclass } from "@/lib/srd";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CharacterView } from "../../../../../../convex/characters";
+import { useCampaign } from "../campaign-shell";
 
 const SMALL_BTN =
   "inline-flex min-h-10 cursor-pointer items-center rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50";
@@ -62,6 +64,10 @@ export function RosterCard({
   const maxHope = hopeMax(sheet.scars, sheet.hopeSlotBonus ?? 0);
   const owner = ownerLabel(character, table);
   const slot: SlotProps = { campaignId, character, canEdit, isGm, hopeAndFear };
+  // Motherboard: installed Ikonis augments change Evasion (Block, CB 301-303), as on the server.
+  const motherboard = useCampaign().frameId === FRAME_OF.motherboard && !character.corrupt;
+  const extras = useQuery(api.characterExtras.get, motherboard ? { characterId: character._id } : "skip");
+  const augments = motherboard ? (extras?.motherboard?.installed ?? []) : [];
 
   const run = async (op: () => Promise<unknown>) => {
     setError(null);
@@ -147,7 +153,9 @@ export function RosterCard({
               {sheet.hp} / {sheet.hpMax}
             </span>
           </Stat>
-          <Stat label="Evasion">{derivedDefense(sheet).evasion}</Stat>
+          <Stat label="Evasion">
+            <span data-testid="roster-evasion">{derivedDefense(sheet, augments).evasion}</span>
+          </Stat>
           <Stat label="Hope" hope>
             {Math.min(sheet.hope, maxHope)}
             <span className={cn("text-[12px]", sheet.scars ? "font-black text-[#ff5a4f]" : "font-normal text-[#b39a6a]")}> / {maxHope}</span>

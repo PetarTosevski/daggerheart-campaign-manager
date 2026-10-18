@@ -16,6 +16,7 @@ import { v } from "convex/values";
 
 import { applyCountdownAction, CountdownRangeError, CountdownRuleError, MAX_COUNTDOWN_START } from "../src/lib/domain/countdowns/index";
 import {
+  allowedMoves,
   applyMoves,
   interruptedMoves,
   MOVE_LABELS,
@@ -36,8 +37,15 @@ import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/charact
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
 import { campaignQuery, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
-import { extraMoves, runRestHooks } from "./lib/restHooks";
-import { restChoiceMoveValidator, restKindValidator, restStatusValidator, type RestKind, type RestMove } from "./lib/validators/rests";
+import { restMovesFor, runRestHooks } from "./lib/restHooks";
+import {
+  restChoiceMoveValidator,
+  restKindValidator,
+  restMoveValidator,
+  restStatusValidator,
+  type RestKind,
+  type RestMove,
+} from "./lib/validators/rests";
 import { recordHistory } from "./tables/history";
 
 // The domain mirrors the stored validators; these fail typecheck if they drift.
@@ -80,17 +88,51 @@ async function choicesOf(ctx: QueryCtx, restId: Id<"rests">): Promise<Doc<"restC
 /** A resting PC: active (not dead, retired or away, HF 127). Unconscious PCs rest but pick no moves (decision 9). */
 const resting = (c: Doc<"characters">) => c.status === "active";
 
+/** Each resting PC's pickable moves for this rest. A sheet that fails to read gets the core moves. */
+async function pickableMoves(ctx: QueryCtx, campaign: Doc<"campaigns">, kind: RestKind): Promise<{ characterId: Id<"characters">; moves: RestMove[] }[]> {
+  // One party: a handful of characters.
+  const party = await ctx.db
+    .query("characters")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
+    .collect();
+  return party.filter(resting).map((c) => {
+    let sheet: Pick<CharacterSheet, "classId" | "multiclass">;
+    try {
+      sheet = readSheet(c.sheet);
+    } catch {
+      sheet = { classId: "" };
+    }
+    const rules = restMovesFor(campaign, sheet);
+    return { characterId: c._id, moves: allowedMoves(kind, rules.extra, rules.forbidden) };
+  });
+}
+
 // ---------------------------------------------------------------- reads
 
 const choiceView = v.object({ characterId: v.id("characters"), moves: v.array(restChoiceMoveValidator) });
+const movesView = v.object({ characterId: v.id("characters"), moves: v.array(restMoveValidator) });
 
-/** The open rest with its choices, the short-rest count (CB 105), and the latest ended rest for undo. Everyone in the campaign. */
+/** A countdown Work on a Project can tick: the character's own project (not an Endurance or Lycanthropy countdown). */
+const isProject = (c: Doc<"countdowns">, characterId: Id<"characters">) => c.ownerKey === characterId && c.kind === "project" && c.status !== "cancelled";
+
+/**
+ * The open rest with its choices and each resting PC's pickable moves (core,
+ * frame and class moves, `restMovesFor`), the short-rest count (CB 105), and
+ * the latest ended rest for undo. Everyone in the campaign.
+ */
 export const current = campaignQuery({
   need: "view",
   args: {},
   returns: v.object({
     open: v.union(
-      v.object({ _id: v.id("rests"), kind: restKindValidator, startedAt: v.number(), gmOverride: v.boolean(), choices: v.array(choiceView) }),
+      v.object({
+        _id: v.id("rests"),
+        kind: restKindValidator,
+        startedAt: v.number(),
+        gmOverride: v.boolean(),
+        choices: v.array(choiceView),
+        moves: v.array(movesView),
+      }),
       v.null(),
     ),
     shortRestsSinceLong: v.number(),
@@ -122,6 +164,7 @@ export const current = campaignQuery({
               startedAt: open.startedAt,
               gmOverride: open.gmOverride ?? false,
               choices: (await choicesOf(ctx, open._id)).map((c) => ({ characterId: c.characterId, moves: c.moves })),
+              moves: await pickableMoves(ctx, ctx.campaign, open.kind),
             },
       shortRestsSinceLong: shortRestsSinceLong(rests),
       last:
@@ -148,7 +191,7 @@ const projectView = v.object({
   status: v.union(v.literal("active"), v.literal("paused"), v.literal("completed"), v.literal("cancelled")),
 });
 
-/** A character's project countdowns (Work on a Project, CB 105), not cancelled. Everyone who can see the character. */
+/** A character's project countdowns (Work on a Project, CB 105; `kind` "project"), not cancelled. Everyone who can see the character. */
 export const projects = userQuery({
   args: { characterId: v.id("characters") },
   returns: v.array(projectView),
@@ -160,7 +203,7 @@ export const projects = userQuery({
       .withIndex("by_campaign_owner", (q) => q.eq("campaignId", campaign._id).eq("ownerKey", character._id))
       .collect();
     return rows
-      .filter((c) => c.status !== "cancelled")
+      .filter((c) => isProject(c, character._id))
       .map((c) => ({ _id: c._id, name: c.name, startingValue: c.startingValue, currentValue: c.currentValue, status: c.status }));
   },
 });
@@ -385,8 +428,11 @@ export const undo = keyedGmMutation({
 /**
  * Sets a character's two downtime moves for the open rest (CB 105). The
  * character's owner or the GM; dead, away and unconscious characters can't
- * (CHARACTER_UNAVAILABLE). An ally target must be another resting PC of the
- * campaign; a project countdown must be the character's own.
+ * (CHARACTER_UNAVAILABLE). The moves are the rest's, with the frame and class
+ * moves and without the frame's forbidden ones (`restMovesFor`: Beast Feast
+ * refuses moves that clear Stress, clear HP or gain Hope, CB 278). An ally
+ * target must be another resting PC of the campaign; a project countdown must
+ * be one of the character's own projects.
  */
 export const choose = keyedUserMutation({
   args: { restId: v.id("rests"), characterId: v.id("characters"), moves: v.array(restChoiceMoveValidator) },
@@ -398,11 +444,13 @@ export const choose = keyedUserMutation({
       assertCanAct(character, sheet);
       if (character.status !== "active") throw appError("CHARACTER_UNAVAILABLE");
       const rest = await loadOpenRest(ctx, campaign._id, restId);
+      const rules = restMovesFor(campaign, sheet);
       validateChoice(
         rest.kind,
         characterId,
         moves.map((m) => ({ move: m.move, targetId: m.targetId, countdownId: m.countdownId })),
-        extraMoves(campaign, rest.kind),
+        rules.extra,
+        rules.forbidden,
       );
       for (const m of moves) {
         if (m.targetId !== undefined) {
@@ -411,7 +459,7 @@ export const choose = keyedUserMutation({
         }
         if (m.countdownId !== undefined) {
           const countdown = await ctx.db.get("countdowns", m.countdownId);
-          if (countdown === null || countdown.campaignId !== campaign._id || countdown.ownerKey !== characterId || countdown.status === "cancelled") {
+          if (countdown === null || countdown.campaignId !== campaign._id || !isProject(countdown, characterId)) {
             throw restRule("Pick one of this character's projects.");
           }
         }

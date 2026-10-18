@@ -23,13 +23,13 @@ export const FRAME_IDS = {
 } as const;
 
 /**
- * Keep Watch (CB 289): "you roll your Hope Die". The move has no id in
- * `restMoveValidator` yet (convex/lib/validators/rests.ts is T0's), so a
- * choice is matched by this string; until the id exists nobody can pick it.
+ * Keep Watch (CB 289): "Parties have access to an additional downtime move:
+ * Keep Watch: … When the GM makes a Lurking Darkness roll at the end of
+ * downtime, you roll your Hope Die".
  */
-export const KEEP_WATCH_MOVE = "keepWatch";
-/** HF 153: "a downtime move to halt their lycanthropy's progression"; same caveat as Keep Watch. */
-export const HALT_LYCANTHROPY_MOVE = "haltLycanthropy";
+export const KEEP_WATCH_MOVE: RestMove = "keepWatch";
+/** HF 153: "It ticks down each time the PC takes a rest without using a downtime move to halt their lycanthropy's progression." */
+export const HALT_LYCANTHROPY_MOVE: RestMove = "haltLycanthropy";
 
 type Choice = { characterId: string; moves: readonly { move: string }[] };
 
@@ -107,3 +107,37 @@ export function rollCorruption(state: CorruptionState, characterId: string, fear
  * Make a Feast." The frame's extra move on either rest.
  */
 export const FEAST_MOVE: RestMove = "makeAFeast";
+
+/** CB 278: the core moves that clear Stress, clear Hit Points or gain Hope, which Beast Feast players can't choose. */
+export const FEAST_FORBIDDEN: readonly RestMove[] = ["tendToWounds", "tendToAllWounds", "clearStress", "clearAllStress", "prepare", "prepareTogether"];
+
+/** HF 14, Favor: "You can use a downtime move to show tribute to your patron." */
+export const TRIBUTE_MOVE: RestMove = "tribute";
+
+export type RestMoveRules = {
+  frameId: string;
+  /** Andaluria's optional transformations rule is on. */
+  transformations: boolean;
+  /** The PC is a Warlock (class or multiclass) and the campaign offers the Warlock's features. */
+  warlock: boolean;
+};
+
+/**
+ * The frame and class downtime moves of one PC, on either rest, and the core
+ * moves the frame forbids:
+ * - Beast Feast (CB 278): Make a Feast; no moves that clear Stress, clear Hit
+ *   Points or gain Hope (Berry's Restaurant, CB 279, is not modelled).
+ * - The Age of Umbra (CB 289): Keep Watch.
+ * - Dark Heart of Andaluria with transformations on (HF 153): halt
+ *   lycanthropy, offered to every PC (whether a PC carries the countdown is
+ *   not checked; see TASK-D5-TI-b questions).
+ * - A Warlock (HF 14): Tribute.
+ */
+export function frameRestMoves({ frameId, transformations, warlock }: RestMoveRules): { extra: RestMove[]; forbidden: readonly RestMove[] } {
+  const extra: RestMove[] = [];
+  if (frameId === FRAME_IDS.beastFeast) extra.push(FEAST_MOVE);
+  if (frameId === FRAME_IDS.ageOfUmbra) extra.push(KEEP_WATCH_MOVE);
+  if (frameId === FRAME_IDS.andaluria && transformations) extra.push(HALT_LYCANTHROPY_MOVE);
+  if (warlock) extra.push(TRIBUTE_MOVE);
+  return { extra, forbidden: frameId === FRAME_IDS.beastFeast ? FEAST_FORBIDDEN : [] };
+}

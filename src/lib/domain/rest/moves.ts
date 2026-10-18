@@ -16,7 +16,9 @@ export type RestMove =
   | "repairAllArmor"
   | "workOnProject"
   | "makeAFeast"
-  | "tribute";
+  | "tribute"
+  | "keepWatch"
+  | "haltLycanthropy";
 
 /** One chosen move, with plain id strings (the Convex caller converts). */
 export type ChosenMove = { move: RestMove; targetId?: string; countdownId?: string };
@@ -27,7 +29,7 @@ export const MOVES_PER_REST = 2;
 /** "A party can take up to three short rests before their next rest must be a long rest" (CB 105). */
 export const MAX_SHORT_RESTS = 3;
 
-/** The core moves of each rest (CB 105). Frame and class moves (Make a Feast, Tribute) come from their own rules. */
+/** The core moves of each rest (CB 105). Frame and class moves (Make a Feast, Keep Watch, Tribute…) come from their own rules. */
 export const REST_MOVES: Record<RestKind, readonly RestMove[]> = {
   short: ["tendToWounds", "clearStress", "repairArmor", "prepare", "prepareTogether"],
   long: ["tendToAllWounds", "clearAllStress", "repairAllArmor", "prepare", "prepareTogether", "workOnProject"],
@@ -48,7 +50,18 @@ export const MOVE_LABELS: Record<RestMove, string> = {
   workOnProject: "Work on a Project",
   makeAFeast: "Make a Feast",
   tribute: "Tribute",
+  keepWatch: "Keep Watch",
+  haltLycanthropy: "Halt lycanthropy",
 };
+
+/**
+ * The moves a PC can pick: the rest's core moves without the frame's
+ * `forbidden` ones (Beast Feast, CB 278), then the frame and class `extra`
+ * moves, in that order.
+ */
+export function allowedMoves(kind: RestKind, extra: readonly RestMove[] = [], forbidden: readonly RestMove[] = []): RestMove[] {
+  return [...REST_MOVES[kind].filter((m) => !forbidden.includes(m)), ...extra.filter((m) => !forbidden.includes(m))];
+}
 
 /**
  * Short rests since the last finished long rest, from rests newest first. Only
