@@ -73,7 +73,8 @@ function TraitPicker({ tier, index, sheet }: { tier: number; index: number; shee
       <div className="lu-chips" role="group" aria-label={`Traits to raise for level ${level}${PICK_SUFFIX[index] ?? ""}`}>
         {TRAIT_IDS.map((t) => {
           const on = chosen.includes(t);
-          const marked = (!marksClear && isMarked({ ...sheet, level }, t)) || elsewhere.includes(t);
+          const otherPick = elsewhere.includes(t);
+          const marked = (!marksClear && isMarked({ ...sheet, level }, t)) || otherPick;
           const full = !on && chosen.length >= 2;
           return (
             <button
@@ -86,7 +87,7 @@ function TraitPicker({ tier, index, sheet }: { tier: number; index: number; shee
             >
               {traitLabel(t)} {sheet.traits[t] >= 0 ? "+" : ""}
               {sheet.traits[t]}
-              {marked ? <span className="lu-opt-note">(marked)</span> : null}
+              {marked ? <span className="lu-opt-note">{otherPick ? "(other pick)" : "(marked)"}</span> : null}
             </button>
           );
         })}

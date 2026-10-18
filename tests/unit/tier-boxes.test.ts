@@ -179,10 +179,14 @@ describe("TierBoxes in the guided level-up", () => {
     ]);
     expect(draft().problems.filter((p) => /trait/i.test(p))).toEqual([]);
 
-    // Unticking a traits box drops the latest pick and its chooser.
-    fireEvent.click(box("Tier 2: +1 to two unmarked traits for level 2 (second pick)"));
+    // A trait the other pick raises says so.
+    expect(within(first).getByRole("button", { name: /Finesse/ })).toHaveTextContent("(other pick)");
+
+    // Unticking the FIRST box removes the first pick; the second pick keeps its traits.
+    fireEvent.click(box("Tier 2: +1 to two unmarked traits for level 2"));
+    expect(draft().draft.picks).toEqual([{ option: "traits", tier: 2, targets: ["finesse", "instinct"] }]);
     expect(screen.queryByRole("group", { name: "Traits to raise for level 2 (second pick)" })).toBeNull();
-    expect(draft().draft.picks).toEqual([{ option: "traits", tier: 2, targets: ["presence", "knowledge"] }]);
+    expect(within(screen.getByRole("group", { name: "Traits to raise for level 2" })).getByRole("button", { name: /Finesse/ })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("sends the Experiences option to the Experiences box and the extra card to the Domain Deck", () => {
