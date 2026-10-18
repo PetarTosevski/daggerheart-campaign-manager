@@ -1,0 +1,38 @@
+/*
+ * Death moves on the sheet (CB 106, HF 127) in the board's look (Party.dc.html): the banner's FALLEN-style pills,
+ * the parchment death-move dialog (advPick) and its option buttons. Colours: the --sheet-* tokens (sheet.css).
+ */
+
+/* Banner badges: inline with the status badge; "Return to play" as a small light outline pill on the banner. */
+.db-banner{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.db-return{min-height:30px;padding:0 12px;border-radius:999px;border:1px solid rgba(246,234,210,.75);background:rgba(10,6,6,.35);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.08em;text-shadow:none;cursor:pointer;white-space:nowrap}
+.db-return:hover:not(:disabled){background:rgba(246,234,210,.18)}
+.db-return:disabled{opacity:.5;cursor:not-allowed}
+.db-return:focus-visible{outline:2px solid #f6ead2;outline-offset:2px}
+@media (max-width:640px){.db-return{min-height:44px}}
+.db-error{font-size:14px;color:#ffd9cf;text-shadow:none}
+
+/* Strip under the header row: "Make a death move", the result and undo. */
+.db-strip{display:flex;flex-direction:column;gap:8px}
+.db-strip:empty{display:none}
+.db-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+
+/* Dialog body. */
+.db-lede{margin:0;font-size:17px;color:var(--sheet-ink-soft,#4a3a26)}
+.db-moves{display:flex;flex-direction:column;gap:10px}
+.db-move{display:flex;flex-direction:column;gap:8px}
+.db-opt{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;min-height:44px;padding:12px 16px;border-radius:10px;border:1.5px solid #cdb88f;background:#fffaf0;color:var(--sheet-ink,#2a1f14);font-family:inherit;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+.db-opt:hover:not(:disabled){border-color:var(--sheet-wine,#5b2b2b);background:#fff3d8}
+.db-opt:disabled{background:#e6dcc6;color:#9a8a6a;cursor:not-allowed}
+.db-opt:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+.db-opt.blaze{border-color:var(--sheet-wine,#5b2b2b)}
+.db-opt-name{font-family:var(--font-cinzel),serif;font-size:17px;font-weight:700;color:var(--sheet-wine,#5b2b2b)}
+.db-opt-hint{font-size:15px;line-height:1.4;color:var(--sheet-ink-soft,#4a3a26)}
+.db-field{display:flex;flex-direction:column;gap:4px;padding-left:16px}
+.db-reason{margin:0;padding:10px 12px;border:1px dashed rgba(91,43,43,.35);border-radius:8px;background:rgba(91,43,43,.05);display:flex;flex-wrap:wrap;gap:6px 18px}
+.db-reason legend{padding:0 4px}
+.db-reason label{display:inline-flex;align-items:center;gap:8px;min-height:44px;font-size:16px;cursor:pointer}
+.db-reason input{width:18px;height:18px;color-scheme:light;accent-color:var(--sheet-wine,#5b2b2b)}
+.db-split{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:16px}
+.db-split .sh-num{width:88px;min-height:48px;text-align:center;font-size:20px}
+.db-alert{margin:0;font-size:15px;color:#8e2b2b}
