@@ -8,6 +8,7 @@ import type { CampaignSlotProps } from "@/components/party/slots";
 import { useCampaign } from "./campaign-shell";
 import { Countdowns } from "./countdowns";
 import "./dashboard.css";
+import { EndScene } from "./end-scene";
 import { FearPanel } from "./fear-panel";
 import { FrameRulesPanel } from "./frame-rules-panel";
 import { PartySection } from "./party-section";
@@ -38,6 +39,7 @@ export default function DashboardPage() {
       <aside className="flex flex-col gap-6 self-start">
         <FearPanel campaignId={campaign._id} fear={campaign.fear} readOnly={campaign.role !== "gm"} />
         <SessionButtons {...slot} />
+        <EndScene campaignId={campaign._id} isGm={slot.isGm} />
         <RestLauncher {...slot} />
         <TomePanel />
         <KeyFiguresPanel />

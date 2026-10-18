@@ -81,6 +81,14 @@ describe("expire (CB 105 rests refresh rest features)", () => {
     });
   });
 
+  it("a scene end (CB 107) ends only `scene` effects; dice and uses stay", () => {
+    expect(left("scene")).toEqual({
+      effects: ["rest", "longRest", "session", "hit", "manual"],
+      heldDice: ["session", "longRest", "manual"],
+      featureUses: ["rest", "longRest", "session"],
+    });
+  });
+
   it("a hit ends only `hit` effects; other fields are untouched", () => {
     const s = expire(sheet, "hit");
     expect(s.effects.map((e) => e.until)).toEqual(["rest", "longRest", "session", "scene", "manual"]);

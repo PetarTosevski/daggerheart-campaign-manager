@@ -65,6 +65,7 @@ import type * as migrations_uploads from "../migrations/uploads.js";
 import type * as photoImport from "../photoImport.js";
 import type * as rests from "../rests.js";
 import type * as rolls from "../rolls.js";
+import type * as scenes from "../scenes.js";
 import type * as sessions from "../sessions.js";
 import type * as settings from "../settings.js";
 import type * as tables_actionLog from "../tables/actionLog.js";
@@ -151,6 +152,7 @@ declare const fullApi: ApiFromModules<{
   photoImport: typeof photoImport;
   rests: typeof rests;
   rolls: typeof rolls;
+  scenes: typeof scenes;
   sessions: typeof sessions;
   settings: typeof settings;
   "tables/actionLog": typeof tables_actionLog;
