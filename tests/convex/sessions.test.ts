@@ -96,7 +96,7 @@ describe("sessions", () => {
     const again = await gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() });
     expect(again).toMatchObject({ tokens: 0, fearGained: 0, fearLost: 0, entryId: null });
     expect(await fear()).toBe(2);
-    expect(await gm.query(api.sessions.current, { campaignId })).toEqual({ startedAt: null });
+    expect(await gm.query(api.sessions.current, { campaignId })).toEqual({ startedAt: null, extraCharacters: false });
   });
 
   it("undoing the End restores the tokens and the Fear", async () => {
@@ -137,12 +137,12 @@ describe("sessions", () => {
 
   it("start stamps the session once; current is readable by members", async () => {
     const { gm, p1, campaignId } = await setup();
-    expect(await p1.query(api.sessions.current, { campaignId })).toEqual({ startedAt: null });
+    expect(await p1.query(api.sessions.current, { campaignId })).toEqual({ startedAt: null, extraCharacters: false });
     const first = await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
     expect(first.alreadyStarted).toBe(false);
     const second = await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
     expect(second).toEqual({ startedAt: first.startedAt, alreadyStarted: true });
-    expect(await p1.query(api.sessions.current, { campaignId })).toEqual({ startedAt: first.startedAt });
+    expect(await p1.query(api.sessions.current, { campaignId })).toEqual({ startedAt: first.startedAt, extraCharacters: false });
   });
 
   it("authorizes: anonymous UNAUTHENTICATED, outsider NOT_FOUND, player FORBIDDEN, GM ok", async () => {
@@ -157,5 +157,28 @@ describe("sessions", () => {
     expect(await codeOf(out.query(api.sessions.current, { campaignId }))).toBe("NOT_FOUND");
     expect(await codeOf(p1.query(api.sessions.current, { campaignId }))).toBe("ok");
     expect(await codeOf(gm.query(api.sessions.current, { campaignId }))).toBe("ok");
+    const allow = (who: typeof gm) => codeOf(who.mutation(api.sessions.allowExtraCharacters, { campaignId, allow: true, idempotencyKey: key() }));
+    expect(await allow(anon)).toBe("UNAUTHENTICATED");
+    expect(await allow(out)).toBe("NOT_FOUND");
+    expect(await allow(p1)).toBe("FORBIDDEN");
+    await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+    expect(await allow(p1)).toBe("FORBIDDEN");
+    expect(await allow(gm)).toBe("ok");
+  });
+
+  it("XC1: extra characters are allowed only while a session runs; End clears it and a new start doesn't inherit it", async () => {
+    const { gm, p1, campaignId } = await setup();
+    const allow = (value: boolean) => gm.mutation(api.sessions.allowExtraCharacters, { campaignId, allow: value, idempotencyKey: key() });
+    expect(await codeOf(allow(true))).toBe("INVALID");
+    await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+    await allow(true);
+    expect((await p1.query(api.sessions.current, { campaignId })).extraCharacters).toBe(true);
+    await allow(false);
+    expect((await p1.query(api.sessions.current, { campaignId })).extraCharacters).toBe(false);
+    await allow(true);
+    await gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() });
+    expect(await p1.query(api.sessions.current, { campaignId })).toEqual({ startedAt: null, extraCharacters: false });
+    await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+    expect((await p1.query(api.sessions.current, { campaignId })).extraCharacters).toBe(false);
   });
 });

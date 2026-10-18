@@ -143,15 +143,26 @@ export function partyOf(ctx: QueryCtx, campaignId: Id<"campaigns">) {
     .take(MAX_CHARACTERS_PER_CAMPAIGN);
 }
 
+/** XC1: true while the GM allows extra active characters for the running session. */
+export async function extraCharactersAllowed(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<boolean> {
+  const state = await ctx.db
+    .query("campaignState")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .unique();
+  return state?.sessionStartedAt !== undefined && state.extraCharactersSession === state.sessionStartedAt;
+}
+
 /**
  * One active character per player (X6, user decision 2026-10-18): refuses
  * putting a character of `owner` in play while another of theirs (not
  * `except`) is active. Dead, retired and away characters don't count, and the
  * GM's own (unassigned) characters are exempt. Call it on every move into
  * `active`: create, hand-over, bring back, revive, return, undo.
+ * XC1: skipped while the GM allows extra characters for the running session.
  */
 export async function assertOneActive(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">, except?: Id<"characters">) {
   if (owner === campaign.ownerId) return;
+  if (await extraCharactersAllowed(ctx, campaign._id)) return;
   const other = (await partyOf(ctx, campaign._id)).find((c) => c.ownerId === owner && c.status === "active" && c._id !== except);
   if (other === undefined) return;
   let name = "another character";
