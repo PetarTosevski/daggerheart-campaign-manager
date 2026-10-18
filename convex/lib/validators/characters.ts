@@ -193,17 +193,34 @@ export const sheetValidator = v.object({
   ...d5SheetFields,
 });
 
-/** The statuses `characters.setStatus` sets by hand. */
-export const characterStatusValidator = v.union(v.literal("active"), v.literal("dead"), v.literal("retired"));
+/**
+ * The statuses `characters.setStatus` sets by hand. `away` there benches the
+ * character (`away: { reason: "benched" }`, X6); `active` brings them back.
+ */
+export const characterStatusValidator = v.union(v.literal("active"), v.literal("dead"), v.literal("retired"), v.literal("away"));
 
 /**
- * Every stored status: `away` (Castle High less-lethal, HF 127) is set only by
- * death moves and cleared by the GM, never through `setStatus`.
+ * Every stored status: `away` is a Castle High less-lethal death move (HF 127;
+ * set by death moves, cleared only by the GM) or a bench (X6, `setStatus`).
  */
 export const storedCharacterStatusValidator = v.union(v.literal("active"), v.literal("dead"), v.literal("retired"), v.literal("away"));
 
-/** Why an `away` character is gone (HF 127). */
-export const awayValidator = v.object({ reason: v.union(v.literal("infirmary"), v.literal("sentHome")), note: v.optional(v.string()) });
+/** The Castle High death-move reasons (HF 127): only the GM returns these. */
+const deathAwayReasonValidator = v.union(v.literal("infirmary"), v.literal("sentHome"));
+
+/**
+ * Why an `away` character is gone: a Castle High death move (HF 127), or
+ * `benched` by its player or the GM (X6). Widened from the two death reasons;
+ * every stored row still conforms, so there is no migration.
+ */
+export const awayValidator = v.object({ reason: v.union(deathAwayReasonValidator, v.literal("benched")), note: v.optional(v.string()) });
+
+/**
+ * `away` as the views return it: the death-move reasons only. A benched
+ * character comes back with `benched: true` instead, so readers that label
+ * the death reasons keep their exhaustive maps.
+ */
+const awayViewValidator = v.object({ reason: deathAwayReasonValidator, note: v.optional(v.string()) });
 
 /**
  * One character as `get` and `listByCampaign` return it. Only editors get an
@@ -215,8 +232,10 @@ export const characterViewValidator = v.object({
   _id: v.id("characters"),
   ownerId: v.id("users"),
   status: storedCharacterStatusValidator,
-  /** Set while `status` is `away`. */
-  away: v.optional(awayValidator),
+  /** Set while `status` is `away` after a Castle High death move. */
+  away: v.optional(awayViewValidator),
+  /** Set while `status` is `away` because the character is benched (X6). */
+  benched: v.optional(v.literal(true)),
   sheet: sheetValidator,
   /** Resolved URL of an uploaded portrait, or null. */
   portraitUrl: v.union(v.string(), v.null()),

@@ -25,6 +25,7 @@
  * });
  * ```
  */
+import { assertOneActive } from "../characters";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -201,7 +202,13 @@ export async function undoEntry(
     await ctx.db.patch("characters", r.characterId, { sheet: storedSheet(readSheet(JSON.parse(r.before))), updatedAt: now });
   }
 
-  for (const id of returning) await ctx.db.patch("characters", id, { status: "active", away: undefined, updatedAt: now });
+  for (const id of returning) {
+    // Back in play only into a free slot: one active character per player (throws, rolling the undo back).
+    const character = await ctx.db.get("characters", id);
+    const campaign = await ctx.db.get("campaigns", row.campaignId);
+    if (character && campaign) await assertOneActive(ctx, campaign, character.ownerId, id);
+    await ctx.db.patch("characters", id, { status: "active", away: undefined, updatedAt: now });
+  }
 
   const fear = group.reduce((sum, r) => sum + (r.fearDelta ?? 0), 0);
   const fearReverted = fear === 0 ? 0 : (await revertFear(ctx, row.campaignId, fear)).reverted;

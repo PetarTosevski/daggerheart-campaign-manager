@@ -97,4 +97,27 @@ describe("PartyCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Revive Brannoc" }));
     expect(calls).toEqual([{ name: expect.stringContaining("setStatus"), args: { characterId: "c1", status: "active" } }]);
   });
+
+  it("X6: the owner sends an active hero away and brings a benched one back; nobody else sees either", async () => {
+    const { unmount } = render(createElement(PartyCard, { campaignId, character: character() }));
+    fireEvent.click(screen.getByRole("button", { name: "Send Brannoc away" }));
+    await vi.waitFor(() => expect(calls).toEqual([{ name: expect.stringContaining("setStatus"), args: { characterId: "c1", status: "away" } }]));
+    unmount();
+
+    calls.length = 0;
+    const benched = render(createElement(PartyCard, { campaignId, character: character({ status: "away", benched: true }) }));
+    expect(screen.getByTestId("death-away")).toHaveTextContent("Away · benched");
+    fireEvent.click(screen.getByRole("button", { name: "Bring Brannoc back" }));
+    await vi.waitFor(() => expect(calls).toEqual([{ name: expect.stringContaining("setStatus"), args: { characterId: "c1", status: "active" } }]));
+    benched.unmount();
+
+    // A Castle High away character returns only through the GM's "Return to play".
+    const castle = render(createElement(PartyCard, { campaignId, character: character({ status: "away", away: { reason: "infirmary" } }) }));
+    expect(screen.queryByRole("button", { name: "Bring Brannoc back" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Send Brannoc away" })).toBeNull();
+    castle.unmount();
+
+    render(createElement(PartyCard, { campaignId, character: character({ canEdit: false, mine: false }) }));
+    expect(screen.queryByRole("button", { name: "Send Brannoc away" })).toBeNull();
+  });
 });

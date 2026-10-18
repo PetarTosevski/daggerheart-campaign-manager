@@ -62,6 +62,29 @@ export function FallenOverlay({ name, canEdit, onRevive, busy }: { name: string;
   );
 }
 
+/**
+ * "Send away" for an active character and "Bring back" for a benched one
+ * (X6: one active character per player). Shown to the owner and the GM; the
+ * server refuses a second active character.
+ */
+export function BenchButton({ character, busy, onSet }: { character: CharacterView; busy?: boolean; onSet: (status: "active" | "away") => void }) {
+  if (!character.canEdit || character.corrupt) return null;
+  const name = character.sheet.name;
+  const bring = character.status === "away" && character.benched === true;
+  if (character.status !== "active" && !bring) return null;
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => onSet(bring ? "active" : "away")}
+      aria-label={bring ? `Bring ${name} back` : `Send ${name} away`}
+      className="inline-flex min-h-9 cursor-pointer items-center self-start rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[13px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {bring ? "Bring back" : "Send away"}
+    </button>
+  );
+}
+
 function ResourceTile({
   tile,
   name,
@@ -169,7 +192,8 @@ function ResourceTile({
 
 /**
  * A party card on the dashboard (CampaignHub board): portrait, HP/Stress/Hope
- * tiles, Kill/Revive, and the D5 badge slots (level-up, death, Wither).
+ * tiles, Kill/Revive, Send away/Bring back, and the D5 badge slots (level-up,
+ * death, Wither).
  */
 export function PartyCard({
   campaignId,
@@ -210,7 +234,7 @@ export function PartyCard({
     }
   };
   const step = (resource: Resource, delta: number) => void run(() => adjust({ characterId: character._id, resource, delta }));
-  const status = (next: "active" | "dead") =>
+  const status = (next: "active" | "dead" | "away") =>
     void (async () => {
       setBusy(true);
       await run(() => setStatus({ characterId: character._id, status: next }));
@@ -236,6 +260,7 @@ export function PartyCard({
       </Link>
       <LevelUpCardBadge {...slot} />
       <DeathCardBadge {...slot} />
+      <BenchButton character={character} busy={busy} onSet={status} />
       <WitherCardBadge {...slot} />
       <div className="grid grid-cols-3 gap-2.5">
         {resourceTiles(sheet).map((tile) => (
