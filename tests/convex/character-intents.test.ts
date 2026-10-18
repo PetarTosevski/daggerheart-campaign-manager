@@ -66,7 +66,8 @@ describe("character intents", () => {
     await gm.mutation(api.characters.removeInventory, { characterId, itemId: torch.id });
     await p1.mutation(api.characters.setExperience, { characterId, experienceId: first.id, value: 3 });
     await gm.mutation(api.characters.setExperience, { characterId, experienceId: second.id, name: "Locksmith" });
-    await p1.mutation(api.characters.setTrait, { characterId, trait: "agility", value: 3 });
+    // Traits are the GM's to correct (players change them through level-up).
+    await gm.mutation(api.characters.setTrait, { characterId, trait: "agility", value: 3 });
     await gm.mutation(api.characters.setTrait, { characterId, trait: "knowledge", value: 0 });
 
     const now = await sheet();
@@ -110,9 +111,13 @@ describe("character intents", () => {
   });
 
   it("intents validate their values", async () => {
-    const { p1, characterId } = await setup();
+    const { gm, p1, characterId } = await setup();
     const fails = async (run: () => Promise<unknown>) => errorCode(await run().then(() => null, (e) => e));
-    expect(await fails(() => p1.mutation(api.characters.setTrait, { characterId, trait: "agility", value: 11 }))).toBe("INVALID");
+    expect(await fails(() => gm.mutation(api.characters.setTrait, { characterId, trait: "agility", value: 11 }))).toBe("INVALID");
+    // A player can't set traits, directly or through updateSheet.
+    expect(await fails(() => p1.mutation(api.characters.setTrait, { characterId, trait: "agility", value: 3 }))).toBe("FORBIDDEN");
+    const traits = { agility: 3, strength: 1, finesse: 1, instinct: 0, presence: 0, knowledge: -1 };
+    expect(await fails(() => p1.mutation(api.characters.updateSheet, { characterId, patch: { traits } }))).toBe("FORBIDDEN");
     expect(await fails(() => p1.mutation(api.characters.addInventory, { characterId, name: "  " }))).toBe("INVALID");
     expect(await fails(() => p1.mutation(api.characters.addExperience, { characterId, name: "x".repeat(81) }))).toBe("INVALID");
   });

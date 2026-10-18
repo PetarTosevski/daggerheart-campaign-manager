@@ -39,9 +39,10 @@ function parseModifier(text: string): number | null {
   return Math.min(MOD_MAX, Math.max(MOD_MIN, n));
 }
 
-/** The board's trait card: green Cinzel head, ringed number, trait-mark dot, italic verbs; paper steppers for editors. */
+/** The board's trait card: green Cinzel head, ringed number, trait-mark dot, italic verbs; paper steppers for the GM. */
 function TraitsGrid() {
-  const { sheet, canEdit, update } = useSheet();
+  const { sheet, canEdit, slot, update } = useSheet();
+  const isGm = slot.isGm;
   const epoch = sheet.level >= 8 ? 3 : sheet.level >= 5 ? 2 : 1;
   return (
     <div className="id-traits" role="list" aria-label="Traits">
@@ -64,7 +65,8 @@ function TraitsGrid() {
                 <span className="id-trait-mark" aria-hidden="true" />
               )}
             </span>
-            {canEdit ? (
+            {/* Players change traits only through level-up; the GM keeps the steppers to correct them. */}
+            {canEdit && isGm ? (
               <div className="id-steps" role="group" aria-label={label}>
                 <button type="button" className="id-step" aria-label={`Decrease ${label}`} disabled={value <= MOD_MIN} onClick={() => set(value - 1)}>
                   −
