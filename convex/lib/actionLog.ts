@@ -25,12 +25,11 @@
  * });
  * ```
  */
-import { assertOneActive } from "../characters";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { readSheet, storedSheet } from "./characterSheet";
+import { assertOneActive, readSheet, storedSheet } from "./characterSheet";
 import { revertFear } from "./fear";
 import { campaignAccess } from "./permissions";
 import type { ActionKind, StoredRoll, Visibility } from "./validators/actionLog";

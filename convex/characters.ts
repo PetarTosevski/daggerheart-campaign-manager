@@ -53,7 +53,10 @@ import {
   type CharacterView,
 } from "./lib/validators/characters";
 import { ikonisValidator } from "./lib/validators/characterExtras";
-import { gainWitherToken, witherGainValidator } from "./wither";
+import { gainWitherToken } from "./wither";
+import { witherGainValidator } from "./lib/validators/wither";
+import { assertOneActive, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
+export { assertOneActive, MAX_CHARACTERS_PER_CAMPAIGN };
 
 export type { CharacterView };
 // Moved to convex/lib/characterSheet.ts (D5 T0); re-exported for existing importers.
@@ -281,37 +284,6 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
 
 /** "Your choice of a Minor Health Potion … or a Minor Stamina Potion" (Core ch. 1, step 5). */
 const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
-
-/** Reversible default (review M5; stays 50 while testing): the most characters a campaign holds. */
-export const MAX_CHARACTERS_PER_CAMPAIGN = 50;
-
-/** The campaign's characters, bounded by the cap itself. */
-function partyOf(ctx: QueryCtx, campaignId: Id<"campaigns">) {
-  return ctx.db
-    .query("characters")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
-    .take(MAX_CHARACTERS_PER_CAMPAIGN);
-}
-
-/**
- * One active character per player (X6, user decision 2026-10-18): refuses
- * putting a character of `owner` in play while another of theirs (not
- * `except`) is active. Dead, retired and away characters don't count, and the
- * GM's own (unassigned) characters are exempt. Call it on every move into
- * `active`: create, hand-over, bring back, revive, return, undo.
- */
-export async function assertOneActive(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">, except?: Id<"characters">) {
-  if (owner === campaign.ownerId) return;
-  const other = (await partyOf(ctx, campaign._id)).find((c) => c.ownerId === owner && c.status === "active" && c._id !== except);
-  if (other === undefined) return;
-  let name = "another character";
-  try {
-    name = readSheet(other.sheet).name;
-  } catch {
-    // A corrupt sheet still blocks; the message just can't name it.
-  }
-  invalid(`A player has one active character at a time. Send ${name} away first.`);
-}
 
 /** Refuses a new character past the campaign's cap, or a second active one for `owner`. */
 async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">) {

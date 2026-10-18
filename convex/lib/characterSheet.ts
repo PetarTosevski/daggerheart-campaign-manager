@@ -129,3 +129,35 @@ export function assertCanAct(character: Pick<Doc<"characters">, "status">, sheet
     throw appError("CHARACTER_UNAVAILABLE");
   }
 }
+
+/** Reversible default (review M5; stays 50 while testing): the most characters a campaign holds. */
+export const MAX_CHARACTERS_PER_CAMPAIGN = 50;
+
+/** The campaign's characters, bounded by the cap itself. */
+export function partyOf(ctx: QueryCtx, campaignId: Id<"campaigns">) {
+  return ctx.db
+    .query("characters")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .take(MAX_CHARACTERS_PER_CAMPAIGN);
+}
+
+/**
+ * One active character per player (X6, user decision 2026-10-18): refuses
+ * putting a character of `owner` in play while another of theirs (not
+ * `except`) is active. Dead, retired and away characters don't count, and the
+ * GM's own (unassigned) characters are exempt. Call it on every move into
+ * `active`: create, hand-over, bring back, revive, return, undo.
+ */
+export async function assertOneActive(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">, except?: Id<"characters">) {
+  if (owner === campaign.ownerId) return;
+  const other = (await partyOf(ctx, campaign._id)).find((c) => c.ownerId === owner && c.status === "active" && c._id !== except);
+  if (other === undefined) return;
+  let name = "another character";
+  try {
+    name = readSheet(other.sheet).name;
+  } catch {
+    // A corrupt sheet still blocks; the message just can't name it.
+  }
+  throw appError("INVALID", `A player has one active character at a time. Send ${name} away first.`);
+}
+
