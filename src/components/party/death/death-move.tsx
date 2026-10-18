@@ -1,18 +1,17 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { useState } from "react";
+import "./death.css";
 
-import { BrandButton } from "@/components/brand/buttons";
-import { Modal } from "@/components/brand/modal";
+import { useQuery } from "convex/react";
+import { useId, useState } from "react";
+
+import { Label, PaperInput, PaperModal, PaperNumber, Pill } from "@/components/party/sheet-ui";
 import { DEATH_MOVE_LABELS, type AwayReason, type DeathMove } from "@/lib/domain/death/index";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { SlotProps } from "../slots";
-
-import { DeathBadges } from "./badges";
 
 // Short reminders of CB 106; the book has the full text.
 const MOVE_HINTS: Record<DeathMove, string> = {
@@ -21,14 +20,10 @@ const MOVE_HINTS: Record<DeathMove, string> = {
   riskItAll: "Roll the Duality Dice. Hope higher: clear Hit Points and Stress worth the Hope Die. Fear higher: death. Matching: clear all.",
 };
 
-const FIELD = "rounded-lg border border-line-2 bg-black/30 px-3 py-2 text-[15px] text-parchment";
-
-/** The death-move strip and modal on the sheet (CB 106): badges for everyone, the moves for the owner and the GM. */
-export function DeathMoveSheet(props: SlotProps) {
-  const { character, canEdit } = props;
+/** The death-move strip and parchment modal on the sheet (CB 106), for the owner and the GM. The badges sit in the banner. */
+export function DeathMoveSheet({ character, canEdit }: SlotProps) {
   return (
-    <section aria-label="Death moves" className="flex flex-col gap-2 empty:hidden">
-      <DeathBadges {...props} showAway={false} tone="paper" />
+    <section aria-label="Death moves" className="db-strip">
       {canEdit ? <DeathMoveControls characterId={character._id} name={character.sheet.name} updatedAt={character.updatedAt} sheet={character.sheet} /> : null}
     </section>
   );
@@ -48,24 +43,21 @@ function DeathMoveControls({ characterId, name, updatedAt, sheet }: { characterI
   return (
     <>
       {due && !open ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <BrandButton size="sm" variant="dangerSolid" onClick={() => setDismissedAt(null)}>
+        <div className="db-row">
+          <Pill variant="solid" onClick={() => setDismissedAt(null)}>
             {state.pending ? `Finish ${DEATH_MOVE_LABELS[state.pending.move]}` : "Make a death move"}
-          </BrandButton>
+          </Pill>
         </div>
       ) : null}
       {result || state.undoEntryId ? (
-        <div className="flex flex-wrap items-center gap-3 text-[15px]">
+        <div className="db-row sh-small">
           {result ? (
             <p role="status" className="m-0">
               {result}
             </p>
           ) : null}
           {state.undoEntryId ? (
-            <BrandButton
-              size="sm"
-              variant="outline"
-              className="border-[#8a6a3a] text-[#3a2a14]"
+            <Pill
               disabled={undo.pending}
               onClick={() =>
                 void undo.fire({ entryId: state.undoEntryId! }).then((r) => {
@@ -74,16 +66,16 @@ function DeathMoveControls({ characterId, name, updatedAt, sheet }: { characterI
               }
             >
               Undo death move
-            </BrandButton>
+            </Pill>
           ) : null}
           {undo.error ? (
-            <span role="alert" className="text-[14px]">
+            <span role="alert" className="db-alert">
               {undo.error}
             </span>
           ) : null}
         </div>
       ) : null}
-      <Modal open={open} onClose={() => setDismissedAt(updatedAt)} title="Death move">
+      <PaperModal open={open} onClose={() => setDismissedAt(updatedAt)} title="Death move">
         {state.pending?.move === "blazeOfGlory" ? (
           <FinishBlaze characterId={characterId} name={name} lessLethal={state.lessLethal} onDone={setResult} />
         ) : state.pending?.move === "riskItAll" ? (
@@ -91,22 +83,44 @@ function DeathMoveControls({ characterId, name, updatedAt, sheet }: { characterI
         ) : (
           <ChooseMove characterId={characterId} name={name} level={sheet.level} lessLethal={state.lessLethal} onDone={setResult} />
         )}
-      </Modal>
+      </PaperModal>
     </>
   );
 }
 
 function AwayReasonPicker({ value, onChange }: { value: AwayReason; onChange: (r: AwayReason) => void }) {
   return (
-    <fieldset className="m-0 flex flex-wrap gap-4 border-0 p-0">
-      <legend className="mb-1 text-[14px] text-muted-text">Less lethal (Castle High): instead of dying, the character is…</legend>
+    <fieldset className="db-reason">
+      <legend className="sh-small">Less lethal (Castle High): instead of dying, the character is…</legend>
       {(["infirmary", "sentHome"] as const).map((r) => (
-        <label key={r} className="flex items-center gap-2 text-[15px]">
+        <label key={r}>
           <input type="radio" name="away-reason" checked={value === r} onChange={() => onChange(r)} />
           {r === "infirmary" ? "In the infirmary" : "Sent home"}
         </label>
       ))}
     </fieldset>
+  );
+}
+
+/** One death move as a large option button: the move's name is its accessible name, the reminder its description. */
+function MoveOption({ move, disabled, onPick }: { move: DeathMove; disabled: boolean; onPick: () => void }) {
+  const id = useId();
+  return (
+    <button
+      type="button"
+      className={`db-opt${move === "blazeOfGlory" ? " blaze" : ""}`}
+      aria-labelledby={`${id}-name`}
+      aria-describedby={`${id}-hint`}
+      disabled={disabled}
+      onClick={onPick}
+    >
+      <span id={`${id}-name`} className="db-opt-name">
+        {DEATH_MOVE_LABELS[move]}
+      </span>
+      <span id={`${id}-hint`} className="db-opt-hint">
+        {MOVE_HINTS[move]}
+      </span>
+    </button>
   );
 }
 
@@ -127,33 +141,28 @@ function ChooseMove({ characterId, name, level, lessLethal, onDone }: { characte
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <p className="m-0 text-[15px] text-muted-text">{name} has marked their last Hit Point. Choose a death move.</p>
+    <>
+      <p className="db-lede">{name} has marked their last Hit Point. Choose a death move.</p>
       {lessLethal ? <AwayReasonPicker value={awayReason} onChange={setAwayReason} /> : null}
-      <div className="flex flex-col gap-3">
+      <div className="db-moves">
         {(["blazeOfGlory", "avoidDeath", "riskItAll"] as const).map((move) => (
-          <div key={move} className="flex flex-col gap-2 rounded-xl border border-line-2 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <BrandButton size="sm" variant={move === "blazeOfGlory" ? "dangerSolid" : "solid"} disabled={choose.pending} onClick={() => void pick(move)}>
-                {DEATH_MOVE_LABELS[move]}
-              </BrandButton>
-            </div>
-            <p className="m-0 text-[14px] text-muted-text">{MOVE_HINTS[move]}</p>
+          <div key={move} className="db-move">
+            <MoveOption move={move} disabled={choose.pending} onPick={() => void pick(move)} />
             {move === "blazeOfGlory" ? (
-              <label className="flex flex-col gap-1 text-[14px]">
-                Last action (optional)
-                <input className={FIELD} value={action} maxLength={200} onChange={(e) => setAction(e.target.value)} />
+              <label className="db-field">
+                <Label>Last action (optional)</Label>
+                <PaperInput value={action} maxLength={200} onChange={(e) => setAction(e.target.value)} />
               </label>
             ) : null}
           </div>
         ))}
       </div>
       {choose.error ? (
-        <p role="alert" className="m-0 text-[14px] text-danger">
+        <p role="alert" className="db-alert">
           {choose.error}
         </p>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -161,26 +170,28 @@ function FinishBlaze({ characterId, name, lessLethal, onDone }: { characterId: I
   const finish = useIntent(api.deathMoves.finishBlaze);
   const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
   return (
-    <div className="flex flex-col gap-4">
-      <p className="m-0 text-[15px]">{name} takes their last action, which critically succeeds. When it is done, they cross through the veil.</p>
+    <>
+      <p className="db-lede">{name} takes their last action, which critically succeeds. When it is done, they cross through the veil.</p>
       {lessLethal ? <AwayReasonPicker value={awayReason} onChange={setAwayReason} /> : null}
-      <BrandButton
-        variant="dangerSolid"
-        disabled={finish.pending}
-        onClick={() =>
-          void finish.fire({ characterId, ...(lessLethal ? { awayReason } : {}) }).then((r) => {
-            if (r) onDone(r.status === "away" ? `${name} is away instead of dead.` : `${name} has crossed through the veil.`);
-          })
-        }
-      >
-        {lessLethal ? "End the action" : "Cross through the veil"}
-      </BrandButton>
+      <div className="sh-modal-actions">
+        <Pill
+          variant="solid"
+          disabled={finish.pending}
+          onClick={() =>
+            void finish.fire({ characterId, ...(lessLethal ? { awayReason } : {}) }).then((r) => {
+              if (r) onDone(r.status === "away" ? `${name} is away instead of dead.` : `${name} has crossed through the veil.`);
+            })
+          }
+        >
+          {lessLethal ? "End the action" : "Cross through the veil"}
+        </Pill>
+      </div>
       {finish.error ? (
-        <p role="alert" className="m-0 text-[14px] text-danger">
+        <p role="alert" className="db-alert">
           {finish.error}
         </p>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -192,33 +203,36 @@ function SplitRiskItAll({ characterId, value, hp, stress, onDone }: { characterI
   const [hpClear, setHpClear] = useState(maxHp);
   const stressClear = total - hpClear;
   return (
-    <div className="flex flex-col gap-4">
-      <p className="m-0 text-[15px]">
+    <>
+      <p className="db-lede">
         The Hope Die shows {value}: clear {total} in total, split between Hit Points and Stress.
       </p>
-      <label className="flex items-center gap-3 text-[15px]">
-        Hit Points to clear
-        <input type="number" className={`${FIELD} w-20`} min={minHp} max={maxHp} value={hpClear} onChange={(e) => setHpClear(Math.max(minHp, Math.min(maxHp, Math.round(Number(e.target.value) || 0))))} />
+      <label className="db-split">
+        <Label>Hit Points to clear</Label>
+        <PaperNumber type="number" min={minHp} max={maxHp} value={hpClear} onChange={(e) => setHpClear(Math.max(minHp, Math.min(maxHp, Math.round(Number(e.target.value) || 0))))} />
       </label>
-      <p className="m-0 text-[15px]" data-testid="risk-stress">
+      <p className="db-lede" data-testid="risk-stress">
         Stress to clear: {stressClear}
       </p>
-      <BrandButton
-        variant="solid"
-        disabled={resolve.pending}
-        onClick={() =>
-          void resolve.fire({ characterId, hp: hpClear, stress: stressClear }).then((r) => {
-            if (r) onDone(`Cleared ${hpClear} Hit Points and ${stressClear} Stress.`);
-          })
-        }
-      >
-        Clear them
-      </BrandButton>
+      <div className="sh-modal-actions">
+        <button
+          type="button"
+          className="sh-modal-ok"
+          disabled={resolve.pending}
+          onClick={() =>
+            void resolve.fire({ characterId, hp: hpClear, stress: stressClear }).then((r) => {
+              if (r) onDone(`Cleared ${hpClear} Hit Points and ${stressClear} Stress.`);
+            })
+          }
+        >
+          Clear them
+        </button>
+      </div>
       {resolve.error ? (
-        <p role="alert" className="m-0 text-[14px] text-danger">
+        <p role="alert" className="db-alert">
           {resolve.error}
         </p>
       ) : null}
-    </div>
+    </>
   );
 }
