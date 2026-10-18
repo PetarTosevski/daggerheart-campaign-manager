@@ -11,13 +11,13 @@ import { useSheet } from "../sheet-context";
 import { heritageCards } from "../sheet-helpers";
 
 // Domains > Heritage & Subclass (board page 3): subclass cards with rank locks, multiclass cards, ancestry and
-// community cards. Restyled by S12.
+// community cards, as the board's hero cards (hc-card).
 
 function Features({ features }: { features: readonly Feature[] }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="hc-fx">
       {features.map((f) => (
-        <p key={f.name} className="cs-hc-text">
+        <p key={f.name} className="hc-text">
           <strong>{f.name}</strong>
           {f.text ? `: ${f.text}` : ""}
         </p>
@@ -46,23 +46,25 @@ function HeritageCardView({
   locked?: string;
 }) {
   return (
-    <article className={`cs-hc${locked ? " locked" : ""}`} aria-label={`${kind}: ${name}${tier ? ` ${tier}` : ""}${locked ? " (locked)" : ""}`}>
-      <div
-        className="cs-hc-art"
-        style={art ? { backgroundImage: assetBackground(art.asset), backgroundPosition: art.position } : undefined}
-      >
-        <span className="cs-hc-kind">{kind}</span>
+    <article className={`hc-card${locked ? " locked" : ""}`} aria-label={`${kind}: ${name}${tier ? ` ${tier}` : ""}${locked ? " (locked)" : ""}`}>
+      <div className="hc-top">
+        <div
+          className="hc-art"
+          aria-hidden="true"
+          style={art ? { backgroundImage: assetBackground(art.asset), backgroundPosition: art.position } : undefined}
+        />
+        <span className="hc-kind">{kind}</span>
       </div>
-      <div className="cs-hc-body">
-        <div className="cs-hc-head">
-          <h4 className="cs-hc-name">{name}</h4>
-          {tier ? <span className="cs-hc-tier">{tier}</span> : null}
+      <div className="hc-body">
+        <div className="hc-head">
+          <h4 className="hc-name">{name}</h4>
+          {tier ? <span className="hc-tier">{tier}</span> : null}
         </div>
-        {sub ? <span className="cs-hc-sub">{sub}</span> : null}
+        {sub ? <span className="hc-sub">{sub}</span> : null}
         <Features features={features} />
-        {note ? <p className="cs-small m-0 italic">{note}</p> : null}
+        {note ? <p className="hc-note">{note}</p> : null}
         {locked ? (
-          <span className="cs-hc-lock inline-flex items-center gap-1.5">
+          <span className="hc-lock">
             <Lock className="size-3.5" aria-hidden="true" />
             {locked}
           </span>
@@ -83,7 +85,13 @@ function MulticlassCards({ multiclass }: { multiclass: { classId: string; domain
   return (
     <>
       <div role="listitem">
-        <HeritageCardView kind="Multiclass" name={cls?.name ?? multiclass.classId} sub={`Domain: ${domain}`} features={cls?.classFeatures ?? []} />
+        <HeritageCardView
+          kind="Multiclass"
+          name={cls?.name ?? multiclass.classId}
+          sub={`Domain: ${domain}`}
+          features={cls?.classFeatures ?? []}
+          art={PORTRAITS[`sub-${multiclass.subclassId}`]}
+        />
       </div>
       <div role="listitem">
         <HeritageCardView
@@ -118,8 +126,8 @@ export function HeritageSection() {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="cs-small m-0 italic">Your subclass, ancestry and community cards. They’re always active and don’t count toward your domain card limit.</p>
-      <div className="cs-cards" role="list" aria-label="Heritage and subclass cards">
+      <p className="sh-small m-0 italic">Your subclass, ancestry and community cards. They’re always active and don’t count toward your domain card limit.</p>
+      <div className="hc-grid" role="list" aria-label="Heritage and subclass cards">
         {subclass ? (
           <>
             <div role="listitem">
