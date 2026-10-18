@@ -210,7 +210,7 @@ describe("automated Hope features", () => {
     });
   });
 
-  describe("Witch's Charm turns a failed action roll into a success with Fear (HF 16, settled rule)", () => {
+  describe("Witch's Charm: always usable; a latest action roll with Hope becomes a success with Fear (HF 16, user 2026-10-18)", () => {
     it("with Hope: the ally loses that Hope and the GM gains 1 Fear", () => {
       const target = ally({ hope: 2 });
       const result = use("witch", { others: [target], roll: actionRoll(6, 2, 10, "failHope") });
@@ -221,11 +221,11 @@ describe("automated Hope features", () => {
       expect(result.sheet).toEqual(sheetOf("witch"));
     });
 
-    it("with Fear: nothing else changes", () => {
+    it("with Fear: only the Hope is spent", () => {
       const result = use("witch", { others: [ally()], roll: actionRoll(2, 6, 10, "failFear") });
-      expect(result.roll?.outcome).toBe("successFear");
+      expect(result.roll).toBeUndefined();
       expect(result.fearDelta).toBeUndefined();
-      expect(result.others).toEqual([]);
+      expect(result.others).toBeUndefined();
     });
 
     it("works on the Witch's own roll", () => {
@@ -234,10 +234,14 @@ describe("automated Hope features", () => {
       expect(result.fearDelta).toBe(1);
     });
 
-    it("refuses a success, a reaction roll and no roll", () => {
-      expect(refusal(() => use("witch", { roll: actionRoll(9, 2, 16, "successHope") }))).toBe("CLASS_FEATURE_RULE");
-      expect(refusal(() => use("witch", { roll: { ...actionRoll(2, 6, 10, "failFear"), kind: "reaction" } }))).toBe("CLASS_FEATURE_RULE");
-      expect(refusal(() => use("witch"))).toBe("CLASS_FEATURE_RULE");
+    it("never refuses (the sheet can't know the Difficulty): a success with Hope also turns, a reaction roll or no roll only spends the Hope", () => {
+      const success = use("witch", { roll: actionRoll(9, 2, 16, "successHope") });
+      expect(success.roll?.outcome).toBe("successFear");
+      expect(success.fearDelta).toBe(1);
+      const reaction = use("witch", { roll: { ...actionRoll(6, 2, 10, "failHope"), kind: "reaction" } });
+      expect(reaction.roll).toBeUndefined();
+      expect(reaction.fearDelta).toBeUndefined();
+      expect(use("witch").roll).toBeUndefined();
     });
   });
 });
