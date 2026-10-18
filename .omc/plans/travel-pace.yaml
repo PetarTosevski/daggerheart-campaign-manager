@@ -1,0 +1,43 @@
+# World map pace (bead dcm-bxp.33). User 2026-10-18: option (a) — "A is fine, however the party needs to know the
+# travel speed on all terrain types, maybe a legend". Format: docs/workflow.md.
+#
+# Today the header "Pace" (party trail and token distances) offers "On foot · by terrain", "Mounted · by terrain" and four
+# hard-coded flat speeds named after an old terrain set ("Hard going 20", "Wilds on foot 40", "Road on foot 60",
+# "Mounted 80" km/day) that ignore the GM's Travel rules. Decision (a): drop the flat speeds; the pace becomes the travel
+# method (On foot, Mounted, Wagon / cart, Boat, Flying, as the Measure tool), always by painted terrain from the GM's
+# Travel rules table; unpainted ground counts as Wilds; Cautious / Normal / Forced march stays.
+plan: travel-pace
+waves:
+  - wave: 1
+    tracers:
+      - id: PD1
+        title: Pace by travel method and terrain, with a travel-speed legend
+        size: M
+        goal: The World map's trail pace is the travel method (by terrain, from the GM's table), the stale flat speeds are gone, and everyone sees a legend of km/day per terrain type for the selected method and pace.
+        depends_on: []
+        owns:
+          - src/lib/domain/travel/index.ts
+          - src/lib/world/map-state.ts
+          - convex/lib/validators/maps.ts
+          - convex/maps.ts
+          - convex/migrations/mapTrailMode.ts
+          - src/app/(gm)/campaigns/[campaignId]/world/world-board.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/travel-rules.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/travel-legend.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/world.css
+          - tests/unit/world-travel.test.ts
+          - tests/convex/maps.test.ts
+          - tests/e2e/world.spec.ts
+          - tests/e2e/visual/PD1.spec.ts
+          - docs/tasks/TASK-PD1.md
+          - docs/data-model.md
+        reads:
+          - src/lib/world/terrain.ts
+          - src/app/(gm)/campaigns/[campaignId]/world/map-view.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/palette.tsx
+          - reference/designs/project/World.dc.html
+        acceptance:
+          - "The trail pace options are the five travel methods (labels from METHOD_LABELS), each 'by terrain'; trail and token distances use the selected method's km/day per painted terrain from the GM's Travel rules (one speed table per method; the separate foot/mount `trail` table is folded in: keep reading it for stored rules (widen/narrow), stop writing it, and say in the Travel rules panel that one table drives Measure, the party trail and token distances); unpainted or unknown ground counts as Wilds; Impassable stays impassable"
+          - "Stored map options with an old flat mode ('20','40','60','80') read as On foot (or Mounted for '80') and are rewritten once by an idempotent batched migration; the validator keeps accepting the old values until the narrow step (documented)"
+          - "A 'Travel speeds' legend on the map (visible to GM and players, collapsible, in the board's style) lists every terrain type with its swatch colour (TERRAIN_COLOURS) and km/day for the selected method after the pace multiplier, plus 'Impassable'; it follows changes to the method, pace and the GM's table live"
+          - "Unit tests (method speeds, unpainted = Wilds, old-mode mapping), convex migration test, world e2e (pick Boat, legend shows Water's boat speed; GM edits a speed and the legend follows), PD1 visual spec at 1440 and 390 (no horizontal scroll); pnpm lint, typecheck, test pass; bead dcm-bxp.33 resolved"
