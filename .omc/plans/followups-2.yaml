@@ -4,6 +4,8 @@
 #   demise can instead lead to a character ending up in the infirmary for a few weeks or being sent home for the
 #   semester, making them unplayable for some time but not dead." The book doesn't say who picks. User: "let the player
 #   request. GM has final say".
+# Also in LL1 (AFK decision 5): returning from away kept the sheet, so a character back at full Hit Points was asked
+#   for a death move again. The book has no rule (HF 127 only "unplayable for some time"). User: "change it" (no re-ask).
 plan: followups-2
 waves:
   - wave: 1
@@ -31,4 +33,5 @@ waves:
           - "`away` gains an optional `requested: true` (widen; absent = confirmed, so stored rows stay final); a player's less-lethal death move sets it, the GM's doesn't; the views return it"
           - "A GM-only mutation (keyed, need owner) settles the request: confirm the requested reason or set the other one (infirmary/sentHome); it clears `requested`; refused for non-GM (FORBIDDEN) and when there is no pending request"
           - "UI: the death-move dialog says the choice is a request when the player makes it ('Request: In the infirmary / Sent home — the GM decides'); the away badge shows 'requested' until settled; the GM sees 'Confirm' and 'Change to …' on the badge (sheet header and roster/party card where the badge already shows)"
-          - "Convex tests (player request, GM confirm, GM change, player can't settle, GM's own death move is final) and the death e2e updated; pnpm lint, typecheck, test pass; decisions doc records the rule"
+          - "Decision 5: a character returned to play (GM 'Return to play') is not asked for a death move again because its Hit Points are still all marked; the prompt appears only after a new Hit Point is marked after the return (or however the existing trigger can be scoped to 'since the return'), and the sheet's HP/Stress stay as they were"
+          - "Convex tests (player request, GM confirm, GM change, player can't settle, GM's own death move is final; return to play at full HP is not prompted until new damage) and the death e2e updated; pnpm lint, typecheck, test pass; decisions doc records both rules"
