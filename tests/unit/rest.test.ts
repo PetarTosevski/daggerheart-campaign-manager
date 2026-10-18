@@ -7,7 +7,7 @@ import {
   allowedMoves,
   applyMoves,
   interruptedMoves,
-  needsOverride,
+  mustLongRest,
   restedSheet,
   restFear,
   shortRestsSinceLong,
@@ -263,10 +263,11 @@ describe("rest counting and Fear (CB 105)", () => {
     ).toBe(2);
   });
 
-  it("a fourth short rest needs the GM's override; a long rest never does", () => {
-    expect(needsOverride("short", 2)).toBe(false);
-    expect(needsOverride("short", 3)).toBe(true);
-    expect(needsOverride("long", 3)).toBe(false);
+  it("a fourth short rest in a row is refused; a long rest never is (CB 105, HF 176)", () => {
+    expect(mustLongRest("short", 2)).toBe(false);
+    expect(mustLongRest("short", 3)).toBe(true);
+    expect(mustLongRest("short", 4)).toBe(true);
+    expect(mustLongRest("long", 3)).toBe(false);
   });
 
   it("GM Fear: 1d4 on a short rest, 1d4 + PCs on a long rest", () => {

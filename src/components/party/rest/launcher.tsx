@@ -1,10 +1,9 @@
 "use client";
 
 import { useQuery } from "convex/react";
-import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
-import { MAX_SHORT_RESTS, MOVE_LABELS, needsOverride } from "@/lib/domain/rest/moves";
+import { MAX_SHORT_RESTS, MOVE_LABELS, mustLongRest } from "@/lib/domain/rest/moves";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
@@ -20,7 +19,6 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
   const finish = useIntent(api.rests.finish);
   const interrupt = useIntent(api.rests.interrupt);
   const undo = useIntent(api.rests.undo);
-  const [override, setOverride] = useState(false);
 
   if (state === undefined || party === undefined) {
     return (
@@ -32,7 +30,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
   const { open, shortRestsSinceLong, last } = state;
   if (!isGm && open === null) return null;
   const resting = party.filter((c) => c.status === "active");
-  const blocked = needsOverride("short", shortRestsSinceLong);
+  const blocked = mustLongRest("short", shortRestsSinceLong);
   const error = start.error ?? finish.error ?? interrupt.error ?? undo.error;
 
   return (
@@ -49,7 +47,12 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
       {open === null ? (
         <>
           <div className="flex flex-wrap gap-2">
-            <BrandButton size="sm" disabled={start.pending || (blocked && !override)} onClick={() => void start.fire({ campaignId, kind: "short", override: blocked ? true : undefined })}>
+            <BrandButton
+              size="sm"
+              disabled={start.pending || blocked}
+              aria-describedby={blocked ? "short-rest-limit" : undefined}
+              onClick={() => void start.fire({ campaignId, kind: "short" })}
+            >
               Start short rest
             </BrandButton>
             <BrandButton size="sm" disabled={start.pending} onClick={() => void start.fire({ campaignId, kind: "long" })}>
@@ -57,10 +60,9 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
             </BrandButton>
           </div>
           {blocked ? (
-            <label className="flex items-center gap-2 text-[14px] text-[#c9d2cf]">
-              <input type="checkbox" className="size-5" checked={override} onChange={(e) => setOverride(e.target.checked)} />
-              Three short rests taken: allow another short rest anyway
-            </label>
+            <p id="short-rest-limit" className="m-0 text-[14px] text-[#c9d2cf]">
+              Three short rests taken: the next rest must be a long rest (CB 105).
+            </p>
           ) : null}
           {last !== null ? (
             <div className="flex flex-wrap items-center justify-between gap-2 text-[14px] text-[#c9d2cf]">

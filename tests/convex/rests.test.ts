@@ -98,13 +98,16 @@ describe("rests", () => {
     expect(rows.find((r) => r.characterId === undefined)?.fearDelta).toBe(fearGained);
   });
 
-  it("refuses a fourth short rest unless the GM overrides it (CB 105)", async () => {
-    const { start, finish, gm, campaignId } = await setup();
+  it("refuses a fourth short rest in a row, even with the old override flag (CB 105, HF 176)", async () => {
+    const { start, finish, gm, t, campaignId } = await setup();
     for (let i = 0; i < 3; i++) await finish((await start("short")).restId);
     expect(await codeOf(start("short"))).toBe("REST_RULE");
-    const { restId } = await start("short", true);
-    expect((await gm.query(api.rests.current, { campaignId })).open?.gmOverride).toBe(true);
-    await finish(restId);
+    // The deprecated `override` arg is ignored: no GM override any more (RF2).
+    expect(await codeOf(start("short", true))).toBe("REST_RULE");
+    expect((await gm.query(api.rests.current, { campaignId })).open).toBeNull();
+    const rows = await t.run((ctx) => ctx.db.query("rests").withIndex("by_campaign_started", (q) => q.eq("campaignId", campaignId)).collect());
+    expect(rows).toHaveLength(3);
+    expect(rows.some((r) => r.gmOverride !== undefined)).toBe(false);
     // A long rest resets the count.
     await finish((await start("long")).restId);
     expect((await gm.query(api.rests.current, { campaignId })).shortRestsSinceLong).toBe(0);
@@ -253,6 +256,18 @@ describe("rests", () => {
     expect(stress).toBeGreaterThanOrEqual(6 - 5);
     expect(stress).toBeLessThanOrEqual(6 - 2);
     expect(fearGained).toBe(fearRoll);
+  });
+
+  it("an interrupted long rest after three short rests still gives short-rest benefits (CB 105)", async () => {
+    const { p1, a, gm, campaignId, sheetOf, edit, start, finish } = await setup();
+    for (let i = 0; i < 3; i++) await finish((await start("short")).restId);
+    await edit(a, (s) => ({ ...s, stress: 6 }));
+    const long = await start("long");
+    await p1.mutation(api.rests.choose, { restId: long.restId, characterId: a, moves: [{ move: "clearAllStress" }, { move: "prepare" }], idempotencyKey: key() });
+    await gm.mutation(api.rests.interrupt, { campaignId, restId: long.restId, idempotencyKey: key() });
+    expect((await sheetOf(a)).stress).toBeLessThanOrEqual(6 - 2);
+    // An interrupted long rest is not a long rest: the next rest must still be a long rest.
+    expect(await codeOf(start("short"))).toBe("REST_RULE");
   });
 
   describe("access: anonymous, outsider, player and GM", () => {

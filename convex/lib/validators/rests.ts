@@ -46,7 +46,11 @@ export const restFields = {
   startedBy: v.id("users"),
   startedAt: v.number(),
   finishedAt: v.optional(v.number()),
-  /** The GM started a fourth short rest anyway (decision 17). */
+  /**
+   * @deprecated The GM started a fourth short rest anyway (decision 17). No
+   * longer written (RF2: a fourth short rest is refused); still read for old
+   * rows (Horizon days passed). Narrow once no row carries it.
+   */
   gmOverride: v.optional(v.boolean()),
   /** The GM's rest Fear roll (1d4, CB 105) and the Fear it gave. */
   fearRoll: v.optional(v.number()),
