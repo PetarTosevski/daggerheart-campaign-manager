@@ -41,5 +41,7 @@ export const campaignSummaryValidator = v.object({
   /** When this user last opened it. */
   lastOpenedAt: v.number(),
   fear: v.number(),
+  /** How many players have joined (member rows; invites not yet accepted don't count). */
+  players: v.number(),
   role: v.union(v.literal("gm"), v.literal("player")),
 });

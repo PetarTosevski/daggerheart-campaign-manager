@@ -35,6 +35,11 @@ async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, 
     .query("campaignState")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
     .unique();
+  // A table's players: a handful (bounded read).
+  const members = await ctx.db
+    .query("campaignMembers")
+    .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id))
+    .take(100);
   return {
     _id: campaign._id,
     frameId: campaign.frameId,
@@ -47,6 +52,7 @@ async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, 
     createdAt: campaign.createdAt,
     lastOpenedAt,
     fear: state?.fear ?? 0,
+    players: members.length,
     role,
   };
 }
