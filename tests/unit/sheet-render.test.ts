@@ -7,13 +7,20 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 const calls: { name: string; args: unknown }[] = [];
 let current: CharacterView | null = null;
-/** What `rests.current` returns: no open rest unless a test opens one. */
-let restsCurrent: { open: { _id: string } | null; shortRestsSinceLong: number; last: null } = { open: null, shortRestsSinceLong: 0, last: null };
+type OpenRest = { _id: string; kind: "short" | "long"; startedAt: number; gmOverride: boolean; choices: never[]; moves: never[] };
+/** What `rests.current` returns: no open rest unless a test opens one (then with the validator's full shape). */
+let restsCurrent: { open: OpenRest | null; shortRestsSinceLong: number; last: null } = { open: null, shortRestsSinceLong: 0, last: null };
+const openShortRest = (): OpenRest => ({ _id: "r1", kind: "short", startedAt: 0, gmOverride: false, choices: [], moves: [] });
 
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 
 vi.mock("convex/react", () => ({
-  useQuery: (ref: unknown) => (functionName(ref) === "rests:current" ? restsCurrent : current),
+  useQuery: (ref: unknown) => {
+    const name = functionName(ref);
+    if (name === "rests:current") return restsCurrent;
+    if (name === "characters:listByCampaign") return current ? [current] : [];
+    return current;
+  },
   useMutation: (ref: unknown) => {
     const name = functionName(ref);
     return async (args: unknown) => {
@@ -88,6 +95,10 @@ describe("character sheet", () => {
     expect(screen.getByRole("link", { name: "Close character sheet" })).toHaveAttribute("href", "/campaigns/k1/party");
     expect(screen.getByRole("img", { name: "Level 1" })).toBeInTheDocument();
     expect(screen.getByText("All changes save automatically.")).toBeInTheDocument();
+    // The status row sits under the footer, on every page.
+    const status = screen.getByRole("region", { name: "Status" });
+    expect(status.previousElementSibling?.tagName).toBe("FOOTER");
+    expect(within(status).getByRole("group", { name: "Character status" })).toBeInTheDocument();
 
     // Arrow keys move between pages (roving tabIndex).
     fireEvent.keyDown(within(pages).getByRole("tab", { name: "Character Sheet" }), { key: "ArrowLeft" });
@@ -152,7 +163,7 @@ describe("character sheet", () => {
   });
 
   it("moves domain cards between loadout and vault", async () => {
-    restsCurrent = { open: { _id: "r1" }, shortRestsSinceLong: 0, last: null };
+    restsCurrent = { open: openShortRest(), shortRestsSinceLong: 0, last: null };
     show();
     fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
     const loadout = screen.getByRole("list", { name: "Loadout cards" });

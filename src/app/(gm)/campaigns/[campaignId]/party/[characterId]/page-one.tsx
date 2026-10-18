@@ -10,10 +10,9 @@ import { ActiveArmorBox, ActiveWeaponsBox } from "./sections/equipment";
 import { FrameExtrasRegion } from "./sections/frame-extras";
 import { HitPointsStressBox } from "./sections/hp-stress";
 import { IdentitySection } from "./sections/identity";
-import { StatusControls } from "./sections/status";
 import { useSheet } from "./sheet-context";
 
-/** Character Sheet page in the board's order. Composition only: each box lives in sections/. */
+/** Character Sheet page in the board's order. Composition only: each box lives in sections/. Status controls sit under the footer (sheet.tsx). */
 export function PageOne({ cls }: { cls: ClassDef | undefined }) {
   const { slot } = useSheet();
   return (
@@ -36,7 +35,6 @@ export function PageOne({ cls }: { cls: ClassDef | undefined }) {
         <DowntimeBox />
       </div>
       <FrameExtrasRegion />
-      <StatusControls />
     </div>
   );
 }

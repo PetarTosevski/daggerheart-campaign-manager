@@ -5,7 +5,6 @@ import { X } from "lucide-react";
 import Link from "next/link";
 import { useState, type KeyboardEvent } from "react";
 
-import { brandButton } from "@/components/brand/buttons";
 import { LevelUpButton } from "@/components/party/level-up";
 import { getClass } from "@/lib/srd";
 
@@ -16,6 +15,7 @@ import { PageOne } from "./page-one";
 import { PageThree } from "./page-three";
 import { PageTwo } from "./page-two";
 import { SheetBanner, SheetDeathMoves } from "./sections/header";
+import { StatusControls } from "./sections/status";
 import { SheetProvider, useSheet } from "./sheet-context";
 import { nextTabIndex } from "./sheet-helpers";
 
@@ -27,7 +27,7 @@ const PAGES = [
 
 type PageId = (typeof PAGES)[number]["id"];
 
-/** The board's sheet shell: header row (banner | tabs | level | close), the live error, three pages, footer. */
+/** The board's sheet shell: header row (banner | tabs | level | close), the live error, three pages, footer, status row. */
 function SheetBody({ rosterHref }: { rosterHref: string }) {
   const { sheet, canEdit, error, slot } = useSheet();
   const [page, setPage] = useState<PageId>("sheet");
@@ -89,6 +89,7 @@ function SheetBody({ rosterHref }: { rosterHref: string }) {
         ) : null}
         <span className="cs-small italic">{canEdit ? "All changes save automatically." : "Updates live as the table plays."}</span>
       </footer>
+      <StatusControls />
     </article>
   );
 }
@@ -100,16 +101,24 @@ export function CharacterSheetView({ characterId }: { characterId: string }) {
   const rosterHref = `/campaigns/${campaign._id}/party`;
 
   if (character === undefined) {
-    return <main className="mx-auto max-w-[1180px] px-4 py-12 text-muted-text sm:px-6">Loading character…</main>;
+    return (
+      <main className="cs-backdrop">
+        <p className="cs-paper cs-empty cs-small italic" role="status">
+          Loading character…
+        </p>
+      </main>
+    );
   }
   if (character === null) {
     return (
-      <main className="mx-auto flex max-w-[1180px] flex-col items-center gap-5 px-4 py-16 text-center text-parchment">
-        <h1 className="font-display text-[32px] font-bold">Character not found</h1>
-        <p className="text-muted-text">It may have been deleted, or it belongs to another campaign.</p>
-        <Link href={rosterHref} className={brandButton({ variant: "solid", size: "lg" })}>
-          Back to the party
-        </Link>
+      <main className="cs-backdrop">
+        <div className="cs-paper cs-empty">
+          <h1>Character not found</h1>
+          <p className="cs-small m-0">It may have been deleted, or it belongs to another campaign.</p>
+          <Link href={rosterHref} className="cs-back">
+            Back to the party
+          </Link>
+        </div>
       </main>
     );
   }
