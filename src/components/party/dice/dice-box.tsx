@@ -195,7 +195,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const scope: FeatureScope = { hopeAndFear, ikonis: motherboard !== null };
   const ikonis = motherboard && sheet ? ikonisWeapon(motherboard.ikonis, motherboard.installed, sheet.level, sheet.proficiency) : null;
   const overrides = sheet ? weaponOverrides(sheet, CLASS_FEATURES, scope) : [];
-  const options = sheet ? rollOptions(sheet, mode, CLASS_FEATURES, scope) : [];
+  const allOptions = sheet ? rollOptions(sheet, mode, CLASS_FEATURES, scope) : [];
   // Brawler's Strike as a primary weapon is listed once, as the I Am the Weapon override, when that applies (HF 10).
   const strikeOverride = overrides.some((o) => o.key === "brawlersStrike");
   const weapons = [
@@ -214,6 +214,13 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const ikonisLabel = ikonis ? `Ikonis: ${ikonis.label} (${poolLabel(ikonis.dice, ikonis.flat)})` : "";
   const sources = [...weapons.map((w) => w.key), ...(ikonis ? ["ikonis"] : []), ...overrides.map((o) => o.key), "custom"];
   const damageSourceKey = sources.includes(source) ? source : sources[0]!;
+  // Physical-only options (Combat Training, CB 48) are left out for a magic damage source, as the server does.
+  const magicSource =
+    mode === "damage" &&
+    ((damageSourceKey === "primary" || damageSourceKey === "secondary"
+      ? WEAPONS.find((w) => w.id === (damageSourceKey === "primary" ? view.primaryWeaponId : view.secondaryWeaponId))?.damageType
+      : overrides.find((o) => o.key === damageSourceKey)?.damageType) === "magic");
+  const options = allOptions.filter((o) => !(o.physicalOnly && magicSource));
   const useIkonis = mode === "action" && ikonisAttack && ikonis !== null;
   const rollTrait = useIkonis && ikonis.trait ? ikonis.trait : trait;
 
