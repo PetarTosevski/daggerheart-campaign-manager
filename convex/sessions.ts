@@ -8,7 +8,11 @@
  *   runs `onSessionEnd`, and clears Wither tokens; the tokens become GM Fear
  *   capped at 12, the rest reported as lost (CB 261; decision). Ending with
  *   nothing to change writes nothing, so a second End is a no-op.
- * - `current`: the started session, for every member.
+ * - `current`: the started session, for every member, and whether extra
+ *   characters are allowed in it.
+ * - `allowExtraCharacters` (XC1, user 2026-10-18): while a session runs, the GM
+ *   lifts the one-active-character rule for it (INVALID with no session). `end`
+ *   switches it off; characters made active meanwhile stay active.
  * Each action writes one undoable `actionLog` group: a row per changed PC plus
  * a campaign row carrying the Fear. Undo restores the sheets and the Fear;
  * `sessionStartedAt` keeps its value.
@@ -67,8 +71,36 @@ async function saveChanged(
 export const current = campaignQuery({
   need: "view",
   args: {},
-  returns: v.object({ startedAt: v.union(v.number(), v.null()) }),
-  handler: async (ctx) => ({ startedAt: (await campaignFearState(ctx, ctx.campaign._id)).sessionStartedAt ?? null }),
+  returns: v.object({ startedAt: v.union(v.number(), v.null()), extraCharacters: v.boolean() }),
+  handler: async (ctx) => {
+    const state = await campaignFearState(ctx, ctx.campaign._id);
+    return {
+      startedAt: state.sessionStartedAt ?? null,
+      extraCharacters: state.sessionStartedAt !== undefined && state.extraCharactersSession === state.sessionStartedAt,
+    };
+  },
+});
+
+export const allowExtraCharacters = keyedGmMutation({
+  args: { allow: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { allow }) =>
+    ctx.once("session_extra_characters", { allow }, async () => {
+      const state = await campaignFearState(ctx, ctx.campaign._id);
+      if (state.sessionStartedAt === undefined) throw appError("INVALID", "Start a session first.");
+      const on = state.extraCharactersSession === state.sessionStartedAt;
+      if (on === allow) return null;
+      await ctx.db.patch("campaignState", state._id, { extraCharactersSession: allow ? state.sessionStartedAt : undefined });
+      await logAction(ctx, {
+        campaignId: ctx.campaign._id,
+        actorId: ctx.user._id,
+        kind: "session",
+        visibility: "public",
+        summary: allow ? "Extra characters allowed this session" : "Extra characters no longer allowed",
+        undoable: false,
+      });
+      return null;
+    }),
 });
 
 export const start = keyedGmMutation({
@@ -80,7 +112,7 @@ export const start = keyedGmMutation({
       const state = await campaignFearState(ctx, campaignId);
       if (state.sessionStartedAt !== undefined) return { startedAt: state.sessionStartedAt, alreadyStarted: true };
       const startedAt = Date.now();
-      await ctx.db.patch("campaignState", state._id, { sessionStartedAt: startedAt });
+      await ctx.db.patch("campaignState", state._id, { sessionStartedAt: startedAt, extraCharactersSession: undefined });
       const groupId = newGroupId();
       const changes = (await party(ctx, campaignId))
         .filter(({ character }) => character.status === "active")
@@ -119,7 +151,7 @@ export const end = keyedGmMutation({
       if (!started && changes.every(({ sheet, next }) => same(sheet, next))) {
         return { tokens: 0, fearGained: 0, fearLost: 0, journeyEnds, entryId: null };
       }
-      if (started) await ctx.db.patch("campaignState", state._id, { sessionStartedAt: undefined });
+      if (started) await ctx.db.patch("campaignState", state._id, { sessionStartedAt: undefined, extraCharactersSession: undefined });
 
       const groupId = newGroupId();
       await saveChanged(ctx, { campaignId, actorId: ctx.user._id, groupId, summary: "session end" }, changes);

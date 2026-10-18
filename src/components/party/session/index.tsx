@@ -1,10 +1,11 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
+import { errorMessage } from "@/lib/convex-errors";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
@@ -27,6 +28,15 @@ function Buttons({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const session = useQuery(api.sessions.current, { campaignId });
   const start = useIntent(api.sessions.start);
   const end = useIntent(api.sessions.end);
+  const [extrasError, setExtrasError] = useState<string | null>(null);
+  const allowExtras = useMutation(api.sessions.allowExtraCharacters).withOptimisticUpdate((store, { allow }) => {
+    const current = store.getQuery(api.sessions.current, { campaignId });
+    if (current) store.setQuery(api.sessions.current, { campaignId }, { ...current, extraCharacters: allow });
+  });
+  function toggleExtras(allow: boolean) {
+    setExtrasError(null);
+    allowExtras({ campaignId, allow, idempotencyKey: crypto.randomUUID() }).catch((e: unknown) => setExtrasError(errorMessage(e)));
+  }
   const [confirm, setConfirm] = useState<"start" | "end" | null>(null);
   const [report, setReport] = useState<string | null>(null);
   const started = session?.startedAt != null;
@@ -43,7 +53,7 @@ function Buttons({ campaignId }: { campaignId: Id<"campaigns"> }) {
     }
   }
 
-  const error = start.error ?? end.error;
+  const error = start.error ?? end.error ?? extrasError;
   return (
     <section aria-labelledby="session-h" className="flex flex-col gap-3 rounded-[14px] border border-[#2a3a40] bg-[#141e22] p-5">
       <h2 id="session-h" className="m-0 font-display text-[20px] font-bold text-parchment">
@@ -60,13 +70,28 @@ function Buttons({ campaignId }: { campaignId: Id<"campaigns"> }) {
           End session
         </BrandButton>
       </div>
+      {started ? (
+        <label className="flex min-h-10 cursor-pointer items-center gap-2.5 text-[14px] text-[#c9d2cf]">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={session.extraCharacters}
+            onChange={(e) => toggleExtras(e.target.checked)}
+            className="size-4 flex-none accent-brand"
+          />
+          <span>
+            Allow extra characters this session
+            <span className="block text-[13px] text-[#9fb2b6]">Players may have more than one active character until the session ends. Characters made active stay active.</span>
+          </span>
+        </label>
+      ) : null}
       <p className="m-0 text-[14px] text-[#c9d2cf]" aria-live="polite" role="status">
         {error ?? report ?? ""}
       </p>
       <Modal open={confirm !== null} onClose={() => setConfirm(null)} title={confirm === "end" ? "End the session?" : "Start the session?"} className="max-w-[480px]">
         <p className="m-0 text-[16px] text-[#c9d2cf]">
           {confirm === "end"
-            ? "Session effects end, and every Wither token on the PCs' sheets becomes GM Fear (up to 12)."
+            ? `Session effects end, and every Wither token on the PCs' sheets becomes GM Fear (up to 12).${session?.extraCharacters ? " Extra characters are no longer allowed; the ones in play stay active." : ""}`
             : "Start-of-session features (such as Prayer Dice) are given out."}
         </p>
         <div className="flex justify-end gap-2.5">

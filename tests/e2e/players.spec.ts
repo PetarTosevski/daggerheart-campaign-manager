@@ -1,5 +1,9 @@
+import { ConvexHttpClient } from "convex/browser";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+import { ANCESTRIES, ARMOR, cardsForDomains, COMMUNITIES, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd";
 import { signInAsTestGm } from "./fixtures";
 
 const PLAYER = "e2e-player@example.test";
@@ -130,4 +134,84 @@ test("a wrong password and a non-allowlisted sign-up are refused", async ({ page
   await expect(signUp.getByRole("alert")).toBeVisible();
   await page.goto("/");
   await expect(page).toHaveURL("/signin");
+});
+
+/** Creates a level-1 Warrior through the API as the signed-in user of `page` (the wizard has its own spec). */
+async function createCharacter(page: Page, campaignId: string, name: string) {
+  const token = await page.evaluate(() => {
+    const k = Object.keys(localStorage).find((x) => x.startsWith("__convexAuthJWT"));
+    return k ? localStorage.getItem(k) : null;
+  });
+  expect(token, "Convex Auth token in localStorage").toBeTruthy();
+  const client = new ConvexHttpClient(process.env.E2E_CONVEX_URL!);
+  client.setAuth(token!);
+  const cls = getClass("warrior")!;
+  await client.mutation(api.characters.create, {
+    campaignId: campaignId as Id<"campaigns">,
+    draft: {
+      classId: cls.id,
+      subclassId: subclassesForClass("warrior")[0].id,
+      ancestry: { kind: "single", id: ANCESTRIES.find((a) => a.source === "core")!.id },
+      communityId: COMMUNITIES.find((c) => c.source === "core")!.id,
+      traits: { agility: 2, strength: 1, finesse: 1, instinct: 0, presence: 0, knowledge: -1 },
+      name,
+      pronouns: "",
+      description: "",
+      primaryWeaponId: WEAPONS.find((w) => w.slot === "primary" && w.tier === 1 && w.source === "core" && w.category === "physical" && !w.classId)!.id,
+      armorId: ARMOR.find((a) => a.source === "core" && a.tier === 1)!.id,
+      potion: "Minor Health Potion",
+      classItem: "",
+      background: [],
+      experiences: ["Sellsword", "Lockpick"],
+      domainCards: cardsForDomains(cls.domains, 1).slice(0, 2).map((c) => c.id),
+      connections: [],
+    },
+    idempotencyKey: crypto.randomUUID(),
+  });
+}
+
+test("XC1: the GM allows extra characters for the session; they stay after it ends, with a roster warning", async ({ page, browser }) => {
+  const name = await gmCreatesCampaign(page);
+  const campaignId = new URL(page.url()).pathname.split("/")[2];
+  await page.getByRole("button", { name: "Players" }).click();
+  const dialog = page.getByRole("dialog", { name: "Players" });
+  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+  const code = (await dialog.getByTestId("join-code").textContent())!;
+  await dialog.getByRole("button", { name: "Close players" }).click();
+  const player = await playerPage(browser);
+  await player.page.goto(`/join/${code}`);
+  await player.page.getByRole("button", { name: "Join campaign" }).click();
+  await expect(player.page.getByRole("heading", { level: 1, name })).toBeVisible();
+
+  const first = unique("Gale");
+  const second = unique("Hale");
+  await createCharacter(player.page, campaignId, first);
+  await expect(createCharacter(player.page, campaignId, second)).rejects.toThrow();
+
+  // The switch shows only while a session runs, and only to the GM.
+  const allow = page.getByRole("switch", { name: /Allow extra characters this session/ });
+  await expect(allow).toHaveCount(0);
+  await page.getByRole("button", { name: "Start session" }).click();
+  await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
+  await allow.check();
+  await expect(allow).toBeChecked();
+  await expect(player.page.getByRole("switch", { name: /Allow extra characters/ })).toHaveCount(0);
+
+  // The checkbox flips optimistically; retry until the server has the allowance.
+  await expect(() => createCharacter(player.page, campaignId, second)).toPass();
+  await player.page.goto(`/campaigns/${campaignId}/party`);
+  for (const hero of [first, second]) {
+    await expect(player.page.getByRole("article", { name: hero }).getByTestId("extra-active-warning")).toHaveText("2 active: send one away");
+  }
+
+  // End: the allowance goes, the extras stay active, and the rule is back.
+  await page.getByRole("button", { name: "End session" }).click();
+  await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
+  await expect(allow).toHaveCount(0);
+  await expect(player.page.getByRole("article", { name: second }).getByTestId("extra-active-warning")).toHaveText("2 active: send one away");
+  await expect(createCharacter(player.page, campaignId, unique("Ivo"))).rejects.toThrow();
+
+  await player.page.getByRole("article", { name: second }).getByRole("button", { name: `Send ${second} away` }).click();
+  await expect(player.page.getByTestId("extra-active-warning")).toHaveCount(0);
+  await player.close();
 });

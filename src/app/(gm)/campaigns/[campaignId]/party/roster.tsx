@@ -68,6 +68,10 @@ export function RosterCard({
   const motherboard = useCampaign().frameId === FRAME_OF.motherboard && !character.corrupt;
   const extras = useQuery(api.characterExtras.get, motherboard ? { characterId: character._id } : "skip");
   const augments = motherboard ? (extras?.motherboard?.installed ?? []) : [];
+  // XC1: extras made active while the GM allowed them stay active; warn until the player sends some away. Same args as the page's query, so no extra fetch.
+  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const activeOfOwner =
+    character.status === "active" && owner !== "Unassigned" ? (party ?? []).filter((c) => c.ownerId === character.ownerId && c.status === "active").length : 0;
 
   const run = async (op: () => Promise<unknown>) => {
     setError(null);
@@ -146,6 +150,11 @@ export function RosterCard({
             {getSubclass(sheet.subclassId)?.name ? `${getSubclass(sheet.subclassId)?.name} · ` : ""}Level {sheet.level}
           </span>
           <LevelUpRosterBadge {...slot} />
+          {activeOfOwner > 1 ? (
+            <span data-testid="extra-active-warning" className="mt-1 self-start rounded-full border border-[#7a5a1e] bg-[#2a2416] px-2.5 py-0.5 text-[13px] text-[#f1d08a]">
+              {activeOfOwner} active: send one away
+            </span>
+          ) : null}
         </div>
         <div className="grid grid-cols-3 gap-2 text-center">
           <Stat label="HP">

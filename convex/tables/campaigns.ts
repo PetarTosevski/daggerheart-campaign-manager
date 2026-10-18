@@ -73,6 +73,12 @@ export const campaignTables = {
     fear: v.number(),
     /** When the GM's temporary Start session button was pressed (D5 decision 12); moves to Sessions in D9. */
     sessionStartedAt: v.optional(v.number()),
+    /**
+     * XC1: the `sessionStartedAt` of the session in which the GM allows more than
+     * one active character per player. Applies only while it equals the running
+     * session's; `sessions.end` clears it.
+     */
+    extraCharactersSession: v.optional(v.number()),
   }).index("by_campaign", ["campaignId"]),
 
   settings: defineTable({
