@@ -120,9 +120,9 @@ test("a Witch names the target of a Hex in the features panel", async ({ page })
 
   await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
   await expect(page.getByRole("heading", { level: 1, name: hero })).toBeVisible();
-  const hex = page.getByRole("region", { name: "Features" }).getByRole("group", { name: "Hex", exact: true });
+  const hex = page.getByRole("region", { name: "Class Features" }).getByRole("group", { name: "Hex", exact: true });
   await hex.getByLabel("Target name").fill("Grak the Bold");
   await hex.getByRole("button", { name: "Use Hex", exact: true }).click();
   await expect(hex.getByText("used Hex on Grak the Bold")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Features" }).getByText("Grak the Bold", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Class Features" }).getByText("Grak the Bold", { exact: true })).toBeVisible();
 });

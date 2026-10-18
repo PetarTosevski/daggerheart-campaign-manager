@@ -1,0 +1,47 @@
+/*
+ * The board's hf block (Hope box) and cf rows (Class Features box), Party.dc.html lines 824-829 and 908-916.
+ * Colours: the --sheet-* tokens of the sheet route's sheet.css, with the board's literal values as fallbacks.
+ */
+.hf,.cf,.hf-feature,.hf-effects{display:flex;flex-direction:column;gap:8px;min-width:0}
+.hf{gap:12px}
+
+/* Gold outline pill: "✦ Use <feature> · 3 Hope". */
+.hf-use{width:100%;min-height:44px;padding:0 16px;border-radius:999px;border:1.5px solid var(--sheet-gold,#c9962e);background:#f3e2bd;color:#5a3a08;font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700;cursor:pointer;transition:background .15s}
+.hf-use:hover:not(:disabled){background:#efd6a2}
+.hf-use:disabled{background:#efe6d4;color:#a8977a;border-color:#d8c8a4;cursor:not-allowed}
+.hf-use:focus-visible,.hf-ghost:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+.hf-hit{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.hf-ghost{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #a68352;background:transparent;color:var(--sheet-ink-soft,#4a3a26);font-family:inherit;font-size:15px;cursor:pointer}
+.hf-ghost:hover:not(:disabled){background:#f3e2bd}
+.hf-ghost:disabled{opacity:.45;cursor:not-allowed}
+
+/* Gold status box (hf.msg / cf.msg); kept in the tree when empty so it announces, but takes no space. */
+.ft-msg{padding:8px 10px;border-radius:8px;background:#f3e2bd;border:1px solid var(--sheet-gold,#c9962e);color:#4a3008;font-family:var(--font-garamond),serif;font-size:15px;line-height:1.45}
+.ft-msg:empty{padding:0;border:0;background:none}
+.ft-error{margin:0;font-family:var(--font-garamond),serif;font-size:15px;color:#8e2b2b}
+
+/* Picker rows: labelled paper fields and checkbox chips. */
+.ft-pickers{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.ft-field{display:flex;flex-direction:column;gap:4px;flex:1 1 200px;min-width:0}
+.ft-field .ft-number{width:96px;text-align:center}
+.ft-checks{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0;padding:0;border:0;min-width:0}
+.ft-checks>legend{padding:0;margin-bottom:4px}
+.ft-check{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;border-radius:999px;border:1px solid #a68352;background:#fffaf0;color:var(--sheet-ink,#2a1f14);font-family:var(--font-garamond),serif;font-size:16px;cursor:pointer}
+.ft-check input{width:18px;height:18px;accent-color:var(--sheet-wine,#5b2b2b)}
+.ft-check:has(input:checked){background:#3f6b4f;border-color:transparent;color:#fff}
+
+/* Lists and chips (thr-pill). */
+.ft-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.ft-inline{flex-direction:row;flex-wrap:wrap}
+.ft-pill{padding:3px 10px;border-radius:999px;background:var(--sheet-wine,#5b2b2b);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:13px}
+
+/* cf rows. */
+.cf-row{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:10px;background:#fffaf0;border:1px solid #dcc9a2;min-width:0}
+.cf-title{font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700;color:#4a3008}
+.cf-cost{margin-left:8px;padding:1px 8px;border-radius:999px;border:1px solid #cdb88f;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sheet-label,#8a6d4a);white-space:nowrap}
+.cf-text{margin-left:6px}
+.cf-btns{display:flex;flex-wrap:wrap;gap:6px}
+.cf-btns>.sh-pill{align-self:flex-start}
+.cf-chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.cf-state{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;align-items:baseline}
+.cf-state dd{margin:0}
