@@ -1,0 +1,147 @@
+# Guided level-up plan: replace the level-up stepper modal with a guided mode on the sheet itself
+# (user 2026-10-18: "When the player needs to tick advancement bring him to the advancement sheet and let him tick
+# there, if he chooses to add experience bring him to the experience screen and let him type it. When he has to draw
+# domain cards bring him to the domain deck and let him add the cards from the deck").
+# Format: docs/workflow.md. Runs after domain-deck DD1 is merged (shares domains.tsx and sheet-context.tsx).
+#
+# Paths: C = src/app/(gm)/campaigns/[campaignId]/party/[characterId]
+#
+# Design (defaults; the server stays as is):
+#   - The server contract does not change: levelUp.apply still takes one atomic LevelUpChoice
+#     {picks, experienceName?, cardId, trade?, multiclass?} and the engine (src/lib/domain/level-up) stays the rule
+#     source. The guided mode builds that choice as a client draft and submits it once at "Finish level-up".
+#   - The draft lives in a LevelUpDraft context provided by the sheet (C/level-up-draft.tsx) and survives reloads in
+#     sessionStorage per character (try/catch; works without it). Cancel drops it. Validation = validateLevelUp.
+#   - Pressing the header's ▲ starts the mode: a level-up ribbon (role=region "Level-up to N") pinned under the
+#     sheet header lists the steps in book order (CB 109-111) with done/todo state, Back/Next, Cancel and Finish:
+#       1. "New Experience" (only at levels 2, 5, 8): goes to Character Sheet > Experiences, which shows a highlighted
+#          "New Experience (+2)" input to type the name (draft.experienceName). Tier achievements text is shown in
+#          the ribbon (Proficiency +1, marks cleared at 5/8).
+#       2. "Advancements (n/2)": goes to Story & Advancement > Level Up; the open tiers' option checkboxes become
+#          tickable for the new level (draft marks shown distinctly from earlier levels; costs and blocks from
+#          availableOptions). Options that need targets are chosen where they live:
+#            - "+1 to two Experiences": goes to Experiences, which shows tick boxes on the Experiences.
+#            - "additional domain card": goes to the Domain Deck (an extra pick, as step 3).
+#            - traits, multiclass and subclass: an inline chooser right under the ticked option in the tier box.
+#       3. "Domain card": goes to Domains > Domain Cards > Domain Deck, scrolled into view. In the mode the deck's
+#          button on reachable cards (cardLimit at the NEW level, incl. a multiclass domain picked this level) reads
+#          "Choose for level N" and fills draft.cardId (or the domainCard pick's target); chosen cards show
+#          "Chosen for level N" with "Undo choice". The optional exchange (CB 110 trade) is offered on owned cards
+#          in the hand/vault as "Exchange at level-up".
+#       4. "Finish": a summary of every choice with any validateLevelUp problems linked to their step; "Finish
+#          level-up" calls levelUp.apply; success exits the mode and clears the draft.
+#   - Navigation: one `goTo(step)` sets the page tab, the Domains sub-tab, scrolls the target region into view
+#     and moves focus to its heading (prefers-reduced-motion: no smooth scroll).
+#   - The PaperModal stepper is removed; its pickers' logic moves into the places above.
+plan: guided-level-up
+waves:
+  - wave: 1
+    tracers:
+      - id: GL0
+        foundation: true
+        title: Level-up draft, ribbon, navigation and finish
+        size: M
+        goal: Pressing ▲ starts a guided level-up mode with a ribbon of steps that navigates the sheet and finishes with one levelUp.apply call; sections can read and change the draft through a hook; the modal stepper is gone.
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-ribbon.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-ribbon.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-three.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - src/components/party/level-up/index.tsx
+          - src/components/party/level-up/stepper.tsx
+          - src/components/party/level-up/shared.ts
+          - src/components/party/level-up/level-up.css
+          - tests/unit/level-up-draft.test.ts
+          - tests/unit/sheet-render.test.ts
+          - tests/e2e/visual/GL0.spec.ts
+          - tests/e2e/visual/S8.spec.ts
+          - tests/e2e/visual/S13.spec.ts
+          - docs/tasks/TASK-GL0.md
+        reads:
+          - convex/levelUp.ts
+          - src/lib/domain/level-up/index.ts
+          - src/components/party/level-up/history.tsx
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "C/level-up-draft.tsx exports LevelUpDraftProvider and useLevelUpDraft(): {active, level (new level), draft: LevelUpChoice-shaped, choice (built LevelUpChoice), problems (validateLevelUp), start(), cancel(), finish() (levelUp.apply via useIntent, returns success), setExperienceName, togglePick(option, tier), setPickTargets(option, tier, targets), setCardId, setTrade, setMulticlass, goTo(step), step, steps}; outside the provider or when inactive the hook returns inactive no-op values so sections render unchanged; sessionStorage restore per character id guarded by try/catch and dropped if the sheet level changed"
+          - "The ▲ starts the mode instead of opening a modal; stepper.tsx is deleted or reduced to helpers still used; the − undo and the GM correction are unchanged"
+          - "Ribbon: region 'Level-up to N' under the header with an ordered list of steps (aria-current=step, done state), tier achievement text, Back/Next/Cancel, and on the Finish step a summary with problems as buttons that goTo their step and a 'Finish level-up' button disabled while problems remain"
+          - "goTo switches the page tab and (for the deck) the Domains sub-tab 'Domain Cards' (page-three.tsx takes its sub-tab from a controlled prop/context), scrolls the target into view and focuses it; targets are found by stable ids documented in TASK-GL0.md: #lu-target-experiences, #lu-target-advancements, #lu-target-deck"
+          - "Unit tests cover the draft (picks toggle/limit, built choice, problems, restore and drop on level change, cancel); sheet-render stays green"
+          - "pnpm lint, typecheck, test pass; the visual specs that opened the old modal are updated to the ribbon"
+  - wave: 2
+    tracers:
+      - id: GL1
+        title: Tick advancements on the Level Up tier boxes
+        size: M
+        goal: In level-up mode the open tiers' options are tickable on the Story & Advancement page and options with targets get an inline chooser (traits, multiclass, subclass) or send the player to Experiences / the Domain Deck.
+        depends_on: [GL0]
+        owns:
+          - src/components/party/level-up/history.tsx
+          - src/components/party/level-up/tier-pickers.tsx
+          - src/components/party/level-up/history.css
+          - tests/unit/tier-boxes.test.ts
+          - tests/e2e/visual/GL1.spec.ts
+          - docs/tasks/TASK-GL1.md
+        reads:
+          - src/components/party/level-up/stepper.tsx
+          - src/lib/domain/level-up/index.ts
+        acceptance:
+          - "TierBoxes wraps in #lu-target-advancements; with the draft active, boxes for the new level's open options are enabled checkboxes (accessible name 'Tier T: <option> for level N'), ticking calls togglePick, a joined (cost 2) option uses both picks, blocked options stay disabled with their reason, earlier levels' marks stay read-only and look different from draft marks"
+          - "Ticking traits, multiclass or subclass shows the stepper's chooser inline under that row (two traits not marked this tier; class/domain/subclass selects); ticking the Experiences option shows a 'Choose them in Experiences' button that goTo('experiences'); ticking the domain card option shows 'Choose it in the Domain Deck' that goTo('deck')"
+          - "Unit tests for enabled/disabled states and the inline choosers; pnpm lint, typecheck, test pass"
+      - id: GL2
+        title: Type the new Experience and pick +1 Experiences in the Experiences box
+        size: S
+        goal: In level-up mode the Experiences box shows a highlighted 'New Experience (+2)' input at levels 2/5/8 and tick boxes for the '+1 to two Experiences' advancement.
+        depends_on: [GL0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.css
+          - tests/unit/experiences-level-up.test.ts
+          - tests/e2e/visual/GL2.spec.ts
+          - docs/tasks/TASK-GL2.md
+        reads:
+          - src/lib/domain/level-up/index.ts
+        acceptance:
+          - "The Experiences SheetBox has id lu-target-experiences; with the draft active at an achievement level it shows a highlighted input labelled 'New Experience (+2) for level N' bound to setExperienceName (max 200, the engine's limit); with the Experiences advancement ticked it shows a checkbox per existing Experience ('+1 to <name>'), at most two, bound to setPickTargets; outside the mode the box is unchanged"
+          - "Unit tests; pnpm lint, typecheck, test pass"
+      - id: GL3
+        title: Choose level-up domain cards in the Domain Deck
+        size: M
+        goal: In level-up mode the Domain Deck chooses the level's card (and the extra domainCard advancement card) and the hand/vault offer the optional exchange.
+        depends_on: [GL0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.css
+          - tests/unit/domain-deck-level-up.test.ts
+          - tests/e2e/visual/GL3.spec.ts
+          - docs/tasks/TASK-GL3.md
+        reads:
+          - src/lib/domain/level-up/index.ts
+          - docs/tasks/TASK-SR-DD1.md
+        acceptance:
+          - "The Domain Deck box has id lu-target-deck; with the draft active, cards reachable at the new level (cardsWithin with the draft's multiclass) show 'Choose for level N' (accessible name 'Choose <card> for level N'), filling cardId first then the domainCard pick's target; chosen cards show 'Chosen for level N' + 'Undo choice'; cards reachable only at the new level are face-up; the normal Take card is hidden during the mode"
+          - "Owned cards in the hand and vault show 'Exchange at level-up' which, with a deck card picked as the replacement (same level or lower, CB 110), sets the draft trade; the summary shows it"
+          - "Unit tests; pnpm lint, typecheck, test pass"
+  - wave: 3
+    tracers:
+      - id: GL4
+        title: Guided level-up end to end
+        size: S
+        goal: The e2e level-up spec drives the guided mode through every step and the full suite passes.
+        depends_on: [GL1, GL2, GL3]
+        owns:
+          - tests/e2e/level-up.spec.ts
+          - tests/e2e/class-features.spec.ts
+          - tests/e2e/class-features-hf.spec.ts
+          - tests/e2e/domain-deck.spec.ts
+          - docs/tasks/TASK-GL4.md
+        reads:
+          - tests/e2e/fixtures.ts
+        acceptance:
+          - "level-up.spec: GM flags the party; the player presses ▲, is taken to Experiences and types the new Experience (level 2), is taken to the tier boxes and ticks two options (one with a target chooser), is taken to the Domain Deck and chooses a card, finishes; the sheet shows level 2, the Experience, the marks and the card; undo still works; a player without the flag sees no ▲"
+          - "Every e2e spec that levelled through the old modal is moved to the guided mode; the full e2e suite passes"
