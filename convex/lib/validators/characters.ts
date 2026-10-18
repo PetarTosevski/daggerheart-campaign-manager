@@ -101,6 +101,7 @@ const advancementValidator = v.object({
   tradeOut: v.optional(v.string()),
   tradeIn: v.optional(v.string()),
   experienceId: v.optional(v.string()),
+  at: v.optional(v.number()),
 });
 
 export const effectValidator = v.object({

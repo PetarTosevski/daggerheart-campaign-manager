@@ -39,7 +39,7 @@
   1. Players roll their own dice; the server rolls, every roll goes to a feed all members see; physical-dice results can be entered and are marked manual.
   2. GM free rolls are hidden unless the GM reveals them; player character rolls are public.
   3. 3D dice on by default, lazy-loaded, off when the device asks for reduced motion; toggle and sound saved per device.
-  4. Level-up undo: only the latest level, repeatable, plus a GM correction mode that sets the level directly.
+  4. Level-up undo: only the latest level, repeatable, plus a GM correction mode that sets the level directly. Undo sets "level up pending" again and is refused after a GM correction until the level is set back (decision 16, confirmed 2026-10-18). A player may undo only within the session the level-up happened in: once a session starts or ends after it (or for an entry from before SS3, which has no time), only the GM can (decision 33, user 2026-10-18: "let a player undo only for the session they did the levelup"; SS3).
   5. The GM's "Party levels up" flags everyone; each owner then levels up their own character.
   6. Strange Patterns: when both dice show the number, one benefit only (player picks Hope or clear a Stress).
   7. Actions on another player's character (Life Support, Rally, healing/repairing an ally, Prepare together) are allowed only through those actions and logged on both characters; no target confirmation.
