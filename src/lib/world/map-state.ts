@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { DEFAULT_TRAVEL_RULES, SPEED_TERRAINS, TRAIL_MODES, TRAVEL_METHODS, TRAVEL_PACES, type SpeedTerrain } from "../domain/travel/index";
 import type { PublishedFrameId } from "../frames/index";
-import { MAX_HEX_SIZE, MIN_HEX_SIZE, visibleHexKeys, hexKey } from "./hex";
+import { MAX_HEX_SIZE, MIN_HEX_SIZE, pixelToHex, visibleHexKeys, hexKey, type Hex, type HexGrid } from "./hex";
 import { BLANK_TERRAIN, TERRAIN_COLUMNS, TERRAIN_ROWS, WITHERWILD_TERRAIN } from "./terrain";
 
 export { TERRAIN_CODES, TERRAIN_COLUMNS, TERRAIN_ROWS } from "./terrain";
@@ -23,8 +23,13 @@ export const BUILTIN_TOKEN_TYPES = [
   "camp",
   "quest",
   "treasure",
+  "sanctuary",
+  // Last: unknown marker types fall back to it (`tokenType`).
   "landmark",
 ] as const;
+
+/** Sanctuaries are on the players' map wherever they are (HF p.169), unless the GM hides one. */
+export const SANCTUARY_TYPE = "sanctuary";
 
 /** Map art and width in km per published frame (the board's MAPS table). */
 export const WORLD_MAPS: Record<PublishedFrameId, { asset: string; width: number; height: number; scaleKm: number }> = {
@@ -267,15 +272,38 @@ export function joinMapState(scalars: MapScalars, tokens: readonly MapToken[], h
   return state;
 }
 
+/** The hex a marker sits in: its x, y are percentages of the map image (Horizon markers snap to hex centres). */
+export function tokenHex(token: Pick<MapToken, "x" | "y">, image: { width: number; height: number }, grid: HexGrid): Hex {
+  return pixelToHex((token.x / 100) * image.width, (token.y / 100) * image.height, grid);
+}
+
 /**
- * What players may see: hidden tokens removed, token notes (GM notes) blanked,
+ * Whether players may see a marker: never a hidden one; in the hex crawl
+ * (Journey to Horizon only) only one in a hex they can see (explored, the
+ * party's hex or adjacent, HF p.176) or a sanctuary (HF p.169).
+ */
+export function playerCanSeeToken(
+  state: Pick<MapState, "customMap">,
+  crawl: { grid: HexGrid; party: Hex | null } | undefined,
+  explored: Hex[],
+): (token: MapToken) => boolean {
+  if (!crawl) return (t) => !t.hidden;
+  const visible = visibleHexKeys(explored, crawl.party);
+  const image = mapImageSize(HORIZON_FRAME, state);
+  return (t) => !t.hidden && (t.type === SANCTUARY_TYPE || visible.has(hexKey(tokenHex(t, image, crawl.grid))));
+}
+
+/**
+ * What players may see: hidden tokens (and, in the hex crawl, tokens outside
+ * the hexes players can see, except sanctuaries) removed, token notes (GM notes) blanked,
  * only the marker types (and renamed labels) visible markers use, no upload
  * storage id or marker counter, and of the hex crawl only explored hexes, the
  * party's hex and its neighbours, without hidden points of interest or the
  * GM's last rolls.
  */
 export function playerMapView(state: MapState): PlayerMapState {
-  const tokens = state.tokens.filter((t) => !t.hidden).map((t) => ({ ...t, notes: "" }));
+  const canSee = playerCanSeeToken(state, state.hexCrawl, state.hexCrawl?.hexes.filter((h) => h.explored) ?? []);
+  const tokens = state.tokens.filter(canSee).map((t) => ({ ...t, notes: "" }));
   const used = new Set(tokens.map((t) => t.type));
   const { customMap, ...rest } = state;
   const view: PlayerMapState = {

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { playerTokenFilter } from "../../convex/lib/maps";
+import { hexToPixel } from "../../src/lib/world/hex";
 import { WITHERWILD_TERRAIN, paintTerrain } from "../../src/lib/world/terrain";
 import { errorCode, errorData, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
@@ -274,6 +276,54 @@ describe("World map", () => {
       expect(later.hexes.find((h) => h.q === -1 && h.r === 2)?.poi).toEqual({ text: "Old tower", hidden: false });
       expect(errorData(await player.mutation(api.maps.moveToHex, { campaignId, q: 0, r: 0, terrain: 1, travelMode: "land", idempotencyKey: key() }).catch((e) => e))).toBe("FORBIDDEN");
     });
+
+    it("players see markers only in hexes they can see (HF p.176); sanctuaries everywhere (HF p.169)", async () => {
+      const { t, gm, player, campaignId } = await setup("journey-to-horizon");
+      const grid ={ originX: 100, originY: 100, size: 40, orientation: "flat" as const };
+      await gm.mutation(api.maps.setHexGrid, { campaignId, grid });
+      // Marker positions are percentages of the 3400 × 2228 Horizon map, snapped to the hex centre.
+      const add = async (type: string, q: number, r: number, hidden = false) => {
+        const c = hexToPixel({ q, r }, grid);
+        const { id } = await gm.mutation(api.maps.addToken, { campaignId, type, x: (c.x / 3400) * 100, y: (c.y / 2228) * 100, idempotencyKey: key() });
+        if (hidden) await gm.mutation(api.maps.updateToken, { campaignId, id, patch: { hidden: true } });
+        return id;
+      };
+      await gm.mutation(api.maps.placePartyHex, { campaignId, q: 0, r: 0 });
+      const near = await add("village", 1, 0);
+      const far = await add("ruins", 3, 0);
+      const explored = await add("camp", 5, 2);
+      const sanctuary = await add("sanctuary", 9, 4);
+      await add("sanctuary", 9, 5, true);
+      await add("cave", 1, -1, true);
+      const seen = async () => (await player.query(api.maps.get, { campaignId })).state.tokens.map((t) => t.id);
+
+      expect((await gm.query(api.maps.get, { campaignId })).state.tokens).toHaveLength(6);
+      expect(await seen()).toEqual([near, sanctuary]);
+
+      // Explored hexes show their markers wherever the party is.
+      await gm.mutation(api.maps.updateHex, { campaignId, q: 5, r: 2, patch: { explored: true } });
+      expect(await seen()).toEqual([near, explored, sanctuary]);
+
+      // Moving next to the far marker reveals it; the party's old neighbourhood stays visible only where explored.
+      await gm.mutation(api.maps.moveToHex, { campaignId, q: 1, r: 0, terrain: 1, travelMode: "land", idempotencyKey: key() });
+      await gm.mutation(api.maps.moveToHex, { campaignId, q: 2, r: 0, terrain: 1, travelMode: "land", idempotencyKey: key() });
+      expect(await seen()).toEqual([near, far, explored, sanctuary]);
+
+      // Player views that list markers without the map (codex pins, Locations) use the same filter.
+      const tokens = (await gm.query(api.maps.get, { campaignId })).state.tokens;
+      const filtered = await t.run(async (ctx) => {
+        const canSee = await playerTokenFilter(ctx, (await ctx.db.get(campaignId))!);
+        return tokens.filter(canSee).map((tok) => tok.id);
+      });
+      expect(filtered).toEqual(await seen());
+    });
+  });
+
+  it("other frames: player marker visibility ignores hexes", async () => {
+    const { gm, player, campaignId } = await setup();
+    const { id } = await gm.mutation(api.maps.addToken, { campaignId, type: "sanctuary", x: 90, y: 90, idempotencyKey: key() });
+    const { id: far } = await gm.mutation(api.maps.addToken, { campaignId, type: "ruins", x: 1, y: 1, idempotencyKey: key() });
+    expect((await player.query(api.maps.get, { campaignId })).state.tokens.map((t) => t.id)).toEqual([id, far]);
   });
 });
 

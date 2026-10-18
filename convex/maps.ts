@@ -32,6 +32,7 @@ import { userMutation, userQuery } from "./lib/functions";
 import {
   hexRow,
   lastTokenId,
+  playerTokenFilter,
   readMap,
   readMapTokens,
   readPlayerMap,
@@ -132,8 +133,9 @@ export const locations = userQuery({
     const { campaign, role } = await mapAccess(ctx, ctx.user, campaignId, "view");
     const { state, tokens } = await readMapTokens(ctx, campaign);
     const types = tokenTypes(state);
+    const canSee = role === "gm" ? () => true : await playerTokenFilter(ctx, campaign);
     return tokens
-      .filter((t) => t.location && (role === "gm" || !t.hidden))
+      .filter((t) => t.location && canSee(t))
       .map((t) => {
         const type = tokenType(types, t.type);
         return {
