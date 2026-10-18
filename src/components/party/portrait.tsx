@@ -162,7 +162,7 @@ export function PortraitUpload({
         className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-wait disabled:opacity-50"
       >
         <Camera className="size-4" aria-hidden="true" />
-        {busy ? "Uploading…" : "Portrait"}
+        {busy ? "Uploading…" : character.sheet.portrait ? "Change portrait" : "Add portrait"}
       </button>
       <span role="status" aria-live="polite" className="text-[13px] text-danger empty:hidden">
         {error}

@@ -1,1 +1,68 @@
 /* Styles for sections/identity.tsx only (sheet redesign wave 2). Tokens and primitives: ../sheet.css, src/components/party/sheet-ui/. */
+/* Board: Party.dc.html page 1 top (pt-frame, Experiences, identity grid, trait cards). */
+
+.id-top{margin-bottom:8px}
+.cs-col.id-col{gap:22px}
+
+/* Portrait arch (pt-frame): 270 px, double border, round top. */
+.id-portrait{position:relative;height:270px;box-sizing:border-box;border:4px double #8a6d4a;border-radius:110px 110px 14px 14px;background-color:#f6edd8;overflow:hidden}
+.id-portrait-art{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#8a6d4a;background-size:cover;background-repeat:no-repeat}
+.id-portrait-actions{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;padding:28px 8px 10px;background:linear-gradient(transparent,rgba(20,12,4,.65));opacity:0;transition:opacity .2s}
+.id-portrait:hover .id-portrait-actions,.id-portrait:focus-within .id-portrait-actions,.id-portrait-empty .id-portrait-actions{opacity:1}
+.id-portrait-empty .id-portrait-actions{background:none}
+@media (hover:none){.id-portrait-actions{opacity:1}}
+@media (prefers-reduced-motion:reduce){.id-portrait-actions{transition:none}}
+/* PortraitUpload's button as the board's pt-btn. */
+.id-portrait-actions button{min-height:32px;padding:0 14px;gap:6px;border-radius:999px;border:1px solid #f3cf86;background:rgba(26,16,8,.75);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700}
+.id-portrait-actions button:hover:not(:disabled){background:rgba(26,16,8,.9)}
+.id-portrait-actions button:focus-visible{outline:2px solid #f3cf86;outline-offset:2px}
+.id-portrait-empty .id-portrait-actions button{background:var(--sheet-green,#3d5e2e);border-color:var(--sheet-green,#3d5e2e)}
+.id-portrait-actions [role="status"]{padding:2px 8px;border-radius:6px;background:#fbf5e6;color:#8e2b2b;font-size:13px;text-align:center}
+.id-portrait-actions [role="status"]:empty{display:none}
+
+/* Experiences: board rows of a name field and a 50 px "+2" field. */
+.sh-box.id-exp{padding:16px 14px}
+.id-exp-list{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.id-exp-row{display:flex;gap:6px;align-items:flex-end}
+.id-exp-name{flex:1;min-width:0}
+.id-exp-name .cs-in,.id-exp-name .sh-in{padding-left:10px;padding-right:10px}
+.id-exp-mod{width:50px;flex:none;justify-content:center;text-align:center;padding-left:4px;padding-right:4px}
+.id-exp-add{align-self:flex-end;min-height:44px}
+
+/* Small paper buttons: trait steppers and Experience remove. */
+.id-step{width:32px;height:32px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0;border-radius:8px;border:1px solid #c4a46c;background:linear-gradient(180deg,#fffcf3 0%,#f3e6c6 100%);color:var(--sheet-ink,#2a1f14);font-family:var(--font-cinzel),serif;font-size:16px;font-weight:700;line-height:1;cursor:pointer}
+.id-step:hover:not(:disabled){border-color:var(--sheet-gold-line,#b08a3e);background:#fffdf7}
+.id-step:focus-visible{outline:2px solid var(--sheet-green-bright,#4d7a3a);outline-offset:2px}
+.id-step:disabled{opacity:.4;cursor:not-allowed}
+.id-exp-remove{align-self:center}
+
+/* Identity grid: bottom-aligned to the portrait height, 3 columns. */
+.id-head{min-height:270px;display:flex;flex-direction:column;justify-content:flex-end}
+.sh-box.id-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 16px}
+.id-field{display:flex;flex-direction:column;gap:2px;min-width:0}
+.id-field > .flex{gap:2px}
+.id-hf{flex:none;margin-right:6px;padding:1px 6px;border-radius:999px;background:#1e1930;border:1px solid #5b4a8f;color:#f0cf8a;font-family:var(--font-cinzel),serif;font-size:10px;font-weight:700}
+
+/* Trait cards. */
+.id-traits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.id-trait{position:relative;padding:10px;border-radius:10px;background:#fbf5e6;border:1px solid #d6c39b;display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center;min-width:0}
+.id-trait-head{align-self:stretch;padding:4px 0;border-radius:6px;background:var(--sheet-green-bright,#4d7a3a);color:#f3f7ee;font-family:var(--font-cinzel),serif;font-size:15px;font-weight:700}
+.id-trait-ring{position:relative;display:inline-block}
+.sh-num.id-trait-circle{width:72px;height:72px;min-height:0;border-radius:50%;padding:0;font-size:28px;display:flex;align-items:center;justify-content:center}
+.id-trait-mark{position:absolute;top:-4px;right:-10px;width:20px;height:20px;box-sizing:border-box;border-radius:50%;border:2px solid var(--sheet-green-bright,#4d7a3a);background:#fbf5e6;box-shadow:0 1px 2px rgba(40,25,8,.25)}
+.id-trait-mark.on{background:radial-gradient(circle at 40% 35%,#7fb06a,#3d5e2e 70%);border-color:#2f4a23}
+.id-steps{display:flex;gap:8px}
+
+@media (max-width:1100px){.sh-box.id-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){
+  .id-portrait{width:100%;max-width:240px;margin:0 auto}
+  .id-head{min-height:0}
+}
+@media (max-width:640px){
+  .id-step{width:44px;height:44px}
+  .id-portrait-actions button{min-height:44px}
+}
+@media (max-width:520px){
+  .sh-box.id-grid{grid-template-columns:minmax(0,1fr)}
+  .id-traits{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
