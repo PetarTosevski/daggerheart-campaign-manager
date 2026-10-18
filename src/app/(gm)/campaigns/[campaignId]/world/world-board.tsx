@@ -144,8 +144,13 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
       .map((k) => ({ c: TERRAIN_COLOURS[k], label: `${TERRAIN_NAMES[k]} ${formatDistance(mRes.per[k], units)} · ${Math.round((mRes.per[k] / mRes.km) * 100)}%` }));
     if (mRes.blocked)
       return {
-        total: `${formatDistance(mRes.km, units)} · ⛔ Impassable`,
-        sub: `The route crosses ${formatDistance(mRes.per["#"], units)} of impassable terrain. Redraw it around the black areas.`,
+        total: `${formatDistance(mRes.km, units)} · ⛔ ${mRes.per["#"] > 0 ? "Impassable" : mRes.wideWater ? "Water too wide" : "Can’t cross"}`,
+        sub:
+          mRes.per["#"] > 0
+            ? `The route crosses ${formatDistance(mRes.per["#"], units)} of impassable terrain. Redraw it around the black areas.`
+            : mRes.wideWater
+              ? "Some water on this route is wider than a day’s swim, so there’s nowhere to rest. Find a narrower crossing or travel by boat."
+              : "This travel method can’t cross some of the terrain on this route.",
         parts,
         warn: "",
       };
