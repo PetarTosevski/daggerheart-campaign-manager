@@ -46,3 +46,21 @@ waves:
           - "11 wrong codes in a minute: the 11th returns RATE_LIMITED (convex test)"
           - "join dialog and join-by-link show the bad-code message from the result; players.spec.ts passes"
           - "roster's player rows no longer need an email placeholder; players-dialog narrows on roster.viewer"
+  - wave: 3
+    tracers:
+      - id: X4
+        goal: Weredragon-only "Roll the night sky" — any campaign member can roll the Astromancer's 5d6 (HF p.140, "the players collectively rolling 5d6"); assigning dice to revelations stays GM-only.
+        depends_on: []
+        owns:
+          - convex/trackers/weredragon.ts
+          - tests/convex/weredragon.test.ts
+          - src/app/(gm)/campaigns/[campaignId]/trackers/weredragon.tsx
+          - tests/e2e/weredragon.spec.ts
+        reads:
+          - convex/lib/functions.ts
+          - convex/lib/trackers.ts
+        acceptance:
+          - "A player (and the GM) can call the roll; an outsider gets NOT_FOUND; the roll is visible to all members (convex test)"
+          - "A player can roll only while no roll is waiting to be assigned; the GM can always re-roll (convex test)"
+          - "assignReading stays GM-only (convex test)"
+          - "The Weredragon tracker shows players a 'Roll the night sky' button; weredragon.spec.ts covers a player rolling and the GM assigning"
