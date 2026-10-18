@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
+import { signInAsTestGm } from "./fixtures";
 import { expectNoHorizontalScroll, openAdversaries } from "./visual/helpers";
 
 // EV1: the Adversaries page's Environment tab: the environment stat blocks of the Core Rulebook and (with the Hope &
@@ -146,4 +147,61 @@ test("at 390 px the stat block follows the list, picking a row brings it into vi
     expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   }
   await expectNoHorizontalScroll(page);
+});
+
+// EF1: spend a feature's Fear and start its countdown (Private) from the stat block.
+test("Spend Fear lowers the GM's Fear; Start countdown puts a private countdown on the dashboard a player doesn't see", async ({ page, browser }) => {
+  const { client, campaignId } = await openAdversaries(page, "witherwild");
+  await openEnvironmentTab(page);
+  const block = statBlock(page);
+  const feature = (name: string) => block.locator(".adc-feat").filter({ has: page.locator(".adc-feat-h strong", { hasText: new RegExp(`^${name}$`) }) });
+  await row(page, "Raging River").click();
+
+  // A new campaign holds no Fear: the button says why it can't be used.
+  const spend = feature("Undertow").getByRole("button", { name: "Spend 1 Fear" });
+  await expect(block.getByRole("img", { name: "GM Fear 0 of 12" })).toBeVisible();
+  await expect(spend).toBeDisabled();
+  await expect(spend).toHaveAccessibleDescription("No Fear to spend.");
+  // A feature with neither a Fear cost nor a countdown has no buttons.
+  await expect(feature("Dangerous Crossing").getByRole("button")).toHaveCount(0);
+
+  const gain = block.getByRole("button", { name: "Gain 1 Fear" });
+  await gain.click();
+  await expect(block.getByRole("img", { name: "GM Fear 1 of 12" })).toBeVisible();
+  await gain.click();
+  await expect(block.getByRole("img", { name: "GM Fear 2 of 12" })).toBeVisible();
+  await spend.click();
+  await expect(block.getByTestId("environment-status")).toHaveText("Spent 1 Fear: Undertow");
+  await expect(block.getByRole("img", { name: "GM Fear 1 of 12" })).toBeVisible();
+  expect((await client.query(api.campaigns.get, { campaignId }))?.fear).toBe(1);
+  for (const target of [spend, gain]) {
+    expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
+
+  await row(page, "Mountain Pass").click();
+  // The status line belongs to the environment it was written for.
+  await expect(block.getByTestId("environment-status")).toHaveText("");
+  await feature("Icy Winds").getByRole("button", { name: "Start countdown" }).click();
+  await expect(block.getByTestId("environment-status")).toHaveText(/^Countdown started on the dashboard: Icy Winds at 4/);
+
+  // The dashboard: the GM sees it as Private, at 4.
+  await page.goto(`/campaigns/${campaignId}`);
+  const grid = page.getByRole("region", { name: "Countdowns" });
+  await expect(grid.getByRole("button", { name: "Who can see Mountain Pass: Icy Winds: Private" })).toBeVisible();
+  await expect(grid.getByRole("article", { name: "Mountain Pass: Icy Winds" }).getByTestId("countdown-value")).toHaveText("4/4");
+
+  // A player who joins by code sees no countdown.
+  const { joinCode } = await client.query(api.members.access, { campaignId });
+  const context = await browser.newContext();
+  const player = await context.newPage();
+  await signInAsTestGm(player, "e2e-player@example.test");
+  await expect(player).toHaveURL("/");
+  await player.goto(`/join/${joinCode}`);
+  await player.getByRole("button", { name: "Join campaign" }).click();
+  await expect(player).toHaveURL(`/campaigns/${campaignId}`);
+  const seen = player.getByRole("region", { name: "Countdowns" });
+  await expect(seen).toBeVisible();
+  await expect(seen.getByRole("article")).toHaveCount(0);
+  await expect(seen).not.toContainText("Icy Winds");
+  await context.close();
 });

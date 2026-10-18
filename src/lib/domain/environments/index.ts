@@ -94,3 +94,34 @@ export function environmentCountLine(visible: readonly Pick<EnvironmentDef, "sou
 export function environmentTierLine(def: Pick<EnvironmentDef, "tier" | "type">): string {
   return `Tier ${def.tier} ${def.type}`;
 }
+
+/** How a countdown started from an environment feature begins: a printed number, or dice the server rolls. */
+export type EnvironmentCountdownStart = { kind: "fixed"; value: number } | { kind: "dice"; count: number; sides: number };
+
+/**
+ * The starting value of a feature's countdown label (EF1): "Countdown (6)" and "Consequence Countdown (8)" give the
+ * number, "Countdown (Loop 4)" / "(Long-Term 4)" give 4, and "Countdown (Loop 1d4)" gives dice to roll. Null when the
+ * label has no value in brackets.
+ *
+ * ```ts
+ * environmentCountdownStart("Countdown (Loop 1d4)"); // { kind: "dice", count: 1, sides: 4 }
+ * ```
+ */
+export function environmentCountdownStart(label: string): EnvironmentCountdownStart | null {
+  const m = /\((?:(?:Loop|Long-Term)\s+)?(?:(\d+)d(\d+)|(\d+))\)\s*$/i.exec(label);
+  if (!m) return null;
+  if (m[3] !== undefined) return { kind: "fixed", value: Number(m[3]) };
+  return { kind: "dice", count: Number(m[1]), sides: Number(m[2]) };
+}
+
+/** The dashboard category of a feature's countdown: Consequence → consequence, Progress → project, any other → threat. */
+export function environmentCountdownCategory(label: string): "consequence" | "project" | "threat" {
+  if (/^consequence\b/i.test(label)) return "consequence";
+  if (/^progress\b/i.test(label)) return "project";
+  return "threat";
+}
+
+/** "Mountain Pass: Icy Winds", the name of a dashboard countdown started from an environment feature. */
+export function environmentCountdownName(environment: Pick<EnvironmentDef, "name">, featureName: string): string {
+  return `${environment.name}: ${featureName}`;
+}

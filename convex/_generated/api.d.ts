@@ -24,6 +24,7 @@ import type * as customAdversaries from "../customAdversaries.js";
 import type * as deathMoves from "../deathMoves.js";
 import type * as encounterTracking from "../encounterTracking.js";
 import type * as encounters from "../encounters.js";
+import type * as environmentActions from "../environmentActions.js";
 import type * as fear from "../fear.js";
 import type * as feed from "../feed.js";
 import type * as history from "../history.js";
@@ -119,6 +120,7 @@ declare const fullApi: ApiFromModules<{
   deathMoves: typeof deathMoves;
   encounterTracking: typeof encounterTracking;
   encounters: typeof encounters;
+  environmentActions: typeof environmentActions;
   fear: typeof fear;
   feed: typeof feed;
   history: typeof history;

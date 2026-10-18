@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import { PAGE_FIRST, openCount, sortAdversaries } from "@/lib/adversaries/catalogue";
 import {
   NO_ENVIRONMENT_FILTERS,
+  environmentCountdownCategory,
+  environmentCountdownName,
+  environmentCountdownStart,
   environmentCountLine,
   environmentTierLine,
   environmentsFor,
@@ -85,5 +88,22 @@ describe("environment catalogue helpers (EV1)", () => {
     expect(potentialAdversariesText([{ name: "Beasts", members: [{ name: "Bear" }, { name: "Glass Snake" }] }, { name: "Merchant" }])).toBe(
       "Beasts (Bear, Glass Snake), Merchant",
     );
+  });
+
+  it("reads a feature countdown's starting value, category and dashboard name (EF1)", () => {
+    expect(environmentCountdownStart("Countdown (6)")).toEqual({ kind: "fixed", value: 6 });
+    expect(environmentCountdownStart("Consequence Countdown (8)")).toEqual({ kind: "fixed", value: 8 });
+    expect(environmentCountdownStart("Countdown (Loop 4)")).toEqual({ kind: "fixed", value: 4 });
+    expect(environmentCountdownStart("Countdown (Long-Term 3)")).toEqual({ kind: "fixed", value: 3 });
+    expect(environmentCountdownStart("Countdown (Loop 1d4)")).toEqual({ kind: "dice", count: 1, sides: 4 });
+    expect(environmentCountdownStart("Countdown")).toBeNull();
+    expect(environmentCountdownCategory("Consequence Countdown (6)")).toBe("consequence");
+    expect(environmentCountdownCategory("Progress Countdown (5)")).toBe("project");
+    expect(environmentCountdownCategory("Countdown (Loop 6)")).toBe("threat");
+    expect(environmentCountdownName({ name: "Mountain Pass" }, "Icy Winds")).toBe("Mountain Pass: Icy Winds");
+    // Every countdown printed in the books has a starting value.
+    const labels = ENVIRONMENTS.flatMap((e) => e.features.flatMap((f) => (f.countdown ? [f.countdown] : [])));
+    expect(labels).toHaveLength(17);
+    expect(labels.filter((label) => environmentCountdownStart(label) === null)).toEqual([]);
   });
 });

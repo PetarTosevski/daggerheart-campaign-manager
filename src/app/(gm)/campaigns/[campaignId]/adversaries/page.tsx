@@ -205,6 +205,8 @@ function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
               ) : null}
               <SlotBoundary label="Environments">
                 <EnvironmentCatalogue
+                  campaignId={campaign._id}
+                  fear={campaign.fear}
                   hopeAndFear={hopeAndFear}
                   frameId={campaign.frameId}
                   selectedId={environmentId}

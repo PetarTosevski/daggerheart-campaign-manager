@@ -31,7 +31,9 @@ import { ADVERSARIES } from "@/lib/srd/adversaries";
 import { ENVIRONMENTS } from "@/lib/srd/environments";
 import { ENVIRONMENT_TYPES, type EnvironmentDef, type EnvironmentType } from "@/lib/srd/types";
 
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { HopeFearPill } from "../catalogue/stat-block";
+import { EnvironmentFearBar, EnvironmentStatus, FeatureActions, useEnvironmentActions } from "./feature-actions";
 import { EnvironmentStatBlock } from "./stat-block";
 
 const TIERS: readonly CatalogueTier[] = [1, 2, 3, 4];
@@ -108,6 +110,9 @@ function ChipRow<T extends string | number>({
 }
 
 export type EnvironmentCatalogueProps = {
+  campaignId: Id<"campaigns">;
+  /** The campaign's GM Fear (the dashboard's), spent by features with a Fear cost (EF1). */
+  fear: number;
   /** The campaign's Hope & Fear content switch: Hope & Fear environments (and adversary links) only when on. */
   hopeAndFear: boolean;
   frameId: FrameId;
@@ -122,7 +127,8 @@ export type EnvironmentCatalogueProps = {
  * Environment tab (EV1): search, Order / Tier / Type / Book chips, tier groups that collapse, paging, and the selected
  * environment's parchment stat block, laid out like the adversary catalogue.
  */
-export function EnvironmentCatalogue({ hopeAndFear, frameId, selectedId, onSelect, onOpenAdversary }: EnvironmentCatalogueProps) {
+export function EnvironmentCatalogue({ campaignId, fear, hopeAndFear, frameId, selectedId, onSelect, onOpenAdversary }: EnvironmentCatalogueProps) {
+  const actions = useEnvironmentActions(campaignId);
   const visible = useMemo(() => environmentsFor(ENVIRONMENTS, { hopeAndFear, frameId }), [hopeAndFear, frameId]);
   const adversaryIds = useMemo(() => new Set(adversariesFor(ADVERSARIES, { hopeAndFear, frameId }).map((a) => a.id)), [hopeAndFear, frameId]);
   const [filters, setFilters] = useState<EnvironmentFilters>(NO_ENVIRONMENT_FILTERS);
@@ -278,6 +284,13 @@ export function EnvironmentCatalogue({ hopeAndFear, frameId, selectedId, onSelec
               environment={selected}
               canOpenAdversary={(id) => adversaryIds.has(id)}
               onOpenAdversary={(id) => onOpenAdversary(id, selected)}
+              top={
+                <>
+                  <EnvironmentFearBar campaignId={campaignId} fear={fear} />
+                  <EnvironmentStatus status={actions.statusFor(selected.id)} />
+                </>
+              }
+              renderFeatureActions={(feature) => <FeatureActions environment={selected} feature={feature} fear={fear} actions={actions} />}
             />
           ) : null}
         </aside>
