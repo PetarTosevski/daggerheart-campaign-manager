@@ -71,7 +71,8 @@ export type LevelUpDraftValue = {
   finish: () => Promise<boolean>;
   setExperienceName: (name: string) => void;
   /** Adds (on = true), removes (on = false) or toggles (on omitted) a pick of `option` in `tier`, within the rules. */
-  togglePick: (option: AdvancementOption, tier: number, on?: boolean) => void;
+  /** Adds (on) or removes (off) a pick; `index` removes that pick of the option and tier (default: the latest). */
+  togglePick: (option: AdvancementOption, tier: number, on?: boolean, index?: number) => void;
   /**
    * Sets the targets (traits, Experience ids or a card id) of the draft's pick of `option` in `tier`; `index` picks
    * which one when the level takes it more than once (0, the default, is the first).
@@ -325,9 +326,11 @@ export function LevelUpDraftProvider({
         return true;
       },
       setExperienceName: (name) => edit((d) => ({ ...d, experienceName: name.slice(0, 200) })),
-      togglePick: (option, tier, on) =>
+      togglePick: (option, tier, on, which) =>
         edit((d) => {
-          const index = d.picks.findLastIndex(same(option, tier));
+          const matches = d.picks.map((p, i) => (same(option, tier)(p) ? i : -1)).filter((i) => i !== -1);
+          // Unticking a box removes that box's pick (with its chosen targets), not just the latest one.
+          const index = which !== undefined && on === false ? (matches[which] ?? -1) : (matches.at(-1) ?? -1);
           if (!(on ?? index === -1)) return index === -1 ? d : { ...d, picks: d.picks.filter((_, i) => i !== index) };
           const slotInfo = sheet ? availableOptions(sheet).find((o) => o.option === option && o.tier === tier) : undefined;
           const cost = d.picks.reduce((sum, p) => sum + OPTION_RULES[p.option].cost, 0);

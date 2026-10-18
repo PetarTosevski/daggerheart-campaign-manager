@@ -182,7 +182,7 @@ function DraftRow({
             if (j < drafted) {
               return (
                 <label key={k} className="adv-slot adv-hit" title={name}>
-                  <input type="checkbox" className={cn(box, "draft")} checked aria-label={name} onChange={() => togglePick(option, tier, false)} />
+                  <input type="checkbox" className={cn(box, "draft")} checked aria-label={name} onChange={() => togglePick(option, tier, false, j)} />
                 </label>
               );
             }
