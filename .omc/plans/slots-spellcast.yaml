@@ -66,6 +66,7 @@ waves:
           - src/lib/domain/level-up/index.ts
           - src/lib/validation/characters.ts
           - src/lib/domain/characters/spellcast.ts
+          - convex/lib/validators/characters.ts
           - src/lib/equipment-rules.ts
           - src/lib/domain/class-features/classes/warlock.ts
           - src/lib/domain/class-features/classes/witch.ts
