@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { useState, type ReactNode } from "react";
 
 import { SheetDiceBox } from "@/components/party/dice";
@@ -10,6 +11,8 @@ import { derivedDefense, derivedThresholds, subclassBonuses } from "@/lib/domain
 import { withEffects } from "@/lib/domain/characters/effects";
 import { BASE_HOPE_MAX, hopeMax, tierForLevel } from "@/lib/domain/characters";
 import { assetBackground } from "@/lib/design-assets";
+import { FRAME_OF, TRAIT_LABEL } from "@/lib/frames/extras/common";
+import { ikonisDamage, type MotherboardState } from "@/lib/frames/extras/motherboard";
 import type { SheetPatch } from "@/lib/validation/characters";
 import {
   ARMOR,
@@ -25,6 +28,9 @@ import {
   type Weapon,
 } from "@/lib/srd";
 
+import { api } from "../../../../../../../convex/_generated/api";
+import type { Id } from "../../../../../../../convex/_generated/dataModel";
+import { useCampaign } from "../../campaign-shell";
 import { DamageCalculator } from "./damage-calculator";
 import { Stepper, TextField, Track } from "./fields";
 import { useSheet, type CharacterStatus } from "./sheet-context";
@@ -239,6 +245,47 @@ function WeaponBlock({ label, weaponId, slot }: { label: string; weaponId?: stri
   );
 }
 
+/**
+ * The character's Motherboard module in a Motherboard campaign (CB 301-303),
+ * or null elsewhere: its installed augments count toward Armor Score and
+ * Evasion like the server's `derivedDefense`, and its Ikonis replaces weapons.
+ */
+function useMotherboard(characterId: Id<"characters">): { motherboard: boolean; state: MotherboardState | null } {
+  const motherboard = useCampaign().frameId === FRAME_OF.motherboard;
+  const extras = useQuery(api.characterExtras.get, motherboard ? { characterId } : "skip");
+  return { motherboard, state: motherboard ? (extras?.motherboard ?? null) : null };
+}
+
+/** The Ikonis in place of the weapon pickers (CB 301: no normal weapons; edited in the Motherboard panel). */
+function IkonisBlock({ state }: { state: MotherboardState | null }) {
+  const { sheet } = useSheet();
+  const ikonis = state?.ikonis;
+  return (
+    <div className="flex flex-col gap-2" data-testid="ikonis-weapon">
+      <h4 className="m-0 font-display text-[16px] font-bold text-[#3d5e2e]">Ikonis</h4>
+      <div className="flex flex-col gap-1">
+        <span className="cs-lbl">Name</span>
+        <span className="cs-in cs-ro">{ikonis?.name || "Ikonis"}</span>
+      </div>
+      {ikonis ? (
+        <dl className="m-0 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="flex flex-col gap-1">
+            <dt className="cs-lbl">Trait &amp; range</dt>
+            <dd className="cs-in cs-ro m-0">
+              {ikonis.trait ? TRAIT_LABEL[ikonis.trait] : "—"} · {ikonis.range ?? "—"}
+            </dd>
+          </div>
+          <div className="flex flex-col gap-1">
+            <dt className="cs-lbl">Damage dice</dt>
+            <dd className="cs-in cs-ro m-0">{ikonisDamage(ikonis, sheet.level) ?? "—"}</dd>
+          </div>
+        </dl>
+      ) : null}
+      <span className="cs-small italic">Two-handed. Edit it and its augments in the Motherboard panel below.</span>
+    </div>
+  );
+}
+
 function ArmorBlock() {
   const { sheet, canEdit, update, hopeAndFear } = useSheet();
   const armor = sheet.armorId ? getArmor(sheet.armorId) : undefined;
@@ -443,11 +490,13 @@ function Identity({ cls }: { cls: ClassDef | undefined }) {
 }
 
 export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: ReactNode }) {
-  const { sheet, canEdit, update, adjust, slot } = useSheet();
+  const { sheet, character, canEdit, update, adjust, slot } = useSheet();
   const armor = sheet.armorId ? getArmor(sheet.armorId) : undefined;
-  // Evasion shown with active effects (Rogue's Dodge and the like); the base on the sheet never changes.
-  const defense = derivedDefense(withEffects(sheet));
-  const effectEvasion = defense.evasion - derivedDefense(sheet).evasion;
+  const motherboard = useMotherboard(character._id);
+  const augments = motherboard.state?.installed ?? [];
+  // Evasion shown with active effects (Rogue's Dodge and the like) and installed augments (Motherboard); the base on the sheet never changes.
+  const defense = derivedDefense(withEffects(sheet), augments);
+  const effectEvasion = defense.evasion - derivedDefense(sheet, augments).evasion;
   const armorSlots = defense.armorScore;
   const thresholds = derivedThresholds(sheet);
   const subclassBonus = subclassBonuses(sheet);
@@ -616,8 +665,14 @@ export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: R
               {sheet.proficiency}
             </strong>
           </div>
-          <WeaponBlock label="Primary" weaponId={sheet.primaryWeaponId} slot="primary" />
-          <WeaponBlock label="Secondary" weaponId={sheet.secondaryWeaponId} slot="secondary" />
+          {motherboard.motherboard && sheet.primaryWeaponId === "" ? (
+            <IkonisBlock state={motherboard.state} />
+          ) : (
+            <>
+              <WeaponBlock label="Primary" weaponId={sheet.primaryWeaponId} slot="primary" />
+              <WeaponBlock label="Secondary" weaponId={sheet.secondaryWeaponId} slot="secondary" />
+            </>
+          )}
         </Box>
       </div>
 

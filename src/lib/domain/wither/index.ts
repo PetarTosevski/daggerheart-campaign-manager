@@ -12,7 +12,7 @@
 // const gain = gainWither(sheet, rollDie(FEAR_DIE_SIDES)); // { sheet, tokens, fearDie, scarred }
 // ```
 
-import { hopeMax } from "../characters/index";
+import { hopeMax, scarsMax } from "../characters/index";
 
 /** The Fear Die of the Duality Dice. */
 export const FEAR_DIE_SIDES = 12;
@@ -20,7 +20,6 @@ export const FEAR_DIE_SIDES = 12;
 export const WITHER_POOL = 20;
 /** The sheet's bounds (src/lib/validation/characters.ts). */
 export const WITHER_MAX = 99;
-export const SCARS_MAX = 6;
 
 type WitherSheet = { wither: number; scars: number; hope: number; hopeSlotBonus?: number; journeyEnds?: boolean };
 
@@ -31,11 +30,11 @@ export function fearDieScars(fearDie: number, tokens: number): boolean {
 
 /**
  * Crosses out one Hope slot (CB 106): one more scar, Hope cut to the slots
- * left, and the journey ends when no slot is left. Scars stop at the sheet's
- * maximum.
+ * left, and the journey ends when no slot is left. Scars stop at one per
+ * Hope slot: 6, or 7 with Light in the Dark (`hopeSlotBonus`, CB 40).
  */
 export function addScar<T extends WitherSheet>(sheet: T): T {
-  const scars = Math.min(SCARS_MAX, sheet.scars + 1);
+  const scars = Math.min(scarsMax(sheet.hopeSlotBonus ?? 0), sheet.scars + 1);
   const slots = hopeMax(scars, sheet.hopeSlotBonus ?? 0);
   return { ...sheet, scars, hope: Math.min(sheet.hope, slots), journeyEnds: Boolean(sheet.journeyEnds) || slots === 0 };
 }

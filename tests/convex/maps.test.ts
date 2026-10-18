@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { readSheet } from "../../convex/lib/characterSheet";
 import { playerTokenFilter } from "../../convex/lib/maps";
+import { enduranceOwnerKey } from "../../src/lib/domain/rest/frame-hooks/index";
 import { hexToPixel } from "../../src/lib/world/hex";
 import { WITHERWILD_TERRAIN, paintTerrain } from "../../src/lib/world/terrain";
 import { errorCode, errorData, key, useAllowlist } from "./helpers";
@@ -405,5 +407,105 @@ describe("World map rows", () => {
     const view = await player.query(api.maps.get, { campaignId });
     expect(view.state.hexCrawl!.hexes).toEqual([{ q: 0, r: 0, explored: true, habitat: "Reef" }]);
     expect(JSON.stringify(view)).not.toMatch(/Buried bell|Far/);
+  });
+
+  describe("Endurance Countdowns on entering a wilderness hex (HF 176)", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    /** Every server die comes up `face` (a d4 shows ((face - 1) mod 4) + 1). */
+    const forceDice = (face: number) =>
+      vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(((array: Uint32Array) => array.fill(face - 1)) as typeof crypto.getRandomValues);
+
+    async function crawl() {
+      const ctx = await setup("journey-to-horizon");
+      const { t, gm, campaignId } = ctx;
+      const { characterId } = await gm.mutation(api.characters.create, {
+        campaignId,
+        draft: {
+          classId: "bard",
+          subclassId: "troubadour",
+          ancestry: { kind: "single", id: "elf" },
+          communityId: "loreborne",
+          traits: { agility: 0, strength: -1, finesse: 1, instinct: 0, presence: 2, knowledge: 1 },
+          name: "Liriel",
+          pronouns: "",
+          description: "",
+          primaryWeaponId: "rapier",
+          armorId: "gambeson-armor",
+          potion: "Minor Health Potion",
+          classItem: "",
+          background: [],
+          experiences: ["Wanderer", "Singer"],
+          domainCards: ["deft-deceiver", "book-of-ava"],
+          connections: [],
+        },
+        idempotencyKey: key(),
+      });
+      await gm.mutation(api.maps.placePartyHex, { campaignId, q: 0, r: 0 });
+      const countdown = (value: number) =>
+        t.run((c) =>
+          c.db.insert("countdowns", {
+            campaignId,
+            name: "Endurance: Liriel",
+            description: "",
+            category: "consequence",
+            startingValue: 6,
+            currentValue: value,
+            status: "active",
+            consequence: "Vulnerable until the next rest.",
+            createdAt: Date.now(),
+            ownerKey: enduranceOwnerKey(characterId),
+            kind: "endurance",
+            revealed: true,
+          }),
+        );
+      const move = (q: number, r: number) => gm.mutation(api.maps.moveToHex, { campaignId, q, r, terrain: 1, travelMode: "land", idempotencyKey: key() });
+      const sheet = () => t.run(async (c) => readSheet((await c.db.get("characters", characterId))!.sheet));
+      const row = (id: Id<"countdowns">) => t.run((c) => c.db.get("countdowns", id));
+      return { ...ctx, characterId, countdown, move, sheet, row };
+    }
+
+    it("a Hope Die above the countdown ticks it; at or below it marks a Stress; a trigger makes the PC Vulnerable", async () => {
+      const h = await crawl();
+      const id = await h.countdown(2);
+      forceDice(12);
+      await h.move(1, 0);
+      expect(await h.row(id)).toMatchObject({ currentValue: 1, status: "active" });
+      expect((await h.sheet()).stress).toBe(0);
+
+      vi.restoreAllMocks();
+      forceDice(1);
+      await h.move(2, 0);
+      expect((await h.row(id))?.currentValue).toBe(1);
+      expect((await h.sheet()).stress).toBe(1);
+
+      vi.restoreAllMocks();
+      forceDice(12);
+      await h.move(3, 0);
+      expect(await h.row(id)).toMatchObject({ currentValue: 0, status: "completed" });
+      expect((await h.sheet()).conditions).toContain("vulnerable");
+      const feed = await h.t.run((c) => c.db.query("actionLog").withIndex("by_character_at", (q) => q.eq("characterId", h.characterId)).collect());
+      expect(feed.map((r) => r.summary).at(-1)).toMatch(/triggers: Vulnerable/);
+    });
+
+    it("a sanctuary hex is not wilderness; nothing rolls with the option off or without a countdown", async () => {
+      const h = await crawl();
+      const id = await h.countdown(6);
+      const c = hexToPixel({ q: 1, r: 0 }, (await h.gm.query(api.maps.get, { campaignId: h.campaignId })).state.hexCrawl!.grid);
+      await h.gm.mutation(api.maps.addToken, { campaignId: h.campaignId, type: "sanctuary", x: (c.x / 3400) * 100, y: (c.y / 2228) * 100, idempotencyKey: key() });
+      forceDice(1);
+      await h.move(1, 0);
+      expect((await h.row(id))?.currentValue).toBe(6);
+      expect((await h.sheet()).stress).toBe(0);
+
+      await h.gm.mutation(api.campaigns.setOption, { campaignId: h.campaignId, option: "enduranceCountdowns", enabled: false });
+      await h.move(2, 0);
+      expect((await h.sheet()).stress).toBe(0);
+
+      const bare = await crawl();
+      forceDice(1);
+      await bare.move(1, 0);
+      expect((await bare.sheet()).stress).toBe(0);
+    });
   });
 });

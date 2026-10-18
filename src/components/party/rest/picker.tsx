@@ -54,6 +54,7 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
             key={`${open._id}-${character._id}`}
             restId={open._id}
             kind={open.kind}
+            moves={open.moves.find((m) => m.characterId === character._id)?.moves ?? REST_MOVES[open.kind]}
             character={character}
             allies={party.filter((c) => c._id !== character._id && c.status === "active")}
             initial={choice?.moves ?? []}
@@ -68,12 +69,15 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
 function MoveForm({
   restId,
   kind,
+  moves,
   character,
   allies,
   initial,
 }: {
   restId: Id<"rests">;
   kind: RestKind;
+  /** The moves this PC can pick: the rest's core moves with the frame and class moves (Make a Feast, Keep Watch, halt lycanthropy, Tribute). */
+  moves: readonly RestMove[];
   character: CharacterView;
   allies: CharacterView[];
   initial: Pick[];
@@ -81,7 +85,7 @@ function MoveForm({
   const choose = useIntent(api.rests.choose);
   const projects = useQuery(api.rests.projects, kind === "long" ? { characterId: character._id } : "skip");
   const [picks, setPicks] = useState<Pick[]>(() =>
-    Array.from({ length: MOVES_PER_REST }, (_, i) => initial[i] ?? { move: REST_MOVES[kind][0] }),
+    Array.from({ length: MOVES_PER_REST }, (_, i) => initial[i] ?? { move: moves[0] }),
   );
   const [saved, setSaved] = useState(initial.length > 0);
   const set = (i: number, next: Pick) => {
@@ -102,7 +106,7 @@ function MoveForm({
           <label className="flex items-center gap-2">
             <span className="cs-lbl">Move {i + 1}</span>
             <select className={SELECT} value={pick.move} onChange={(e) => set(i, { move: e.target.value as RestMove })}>
-              {REST_MOVES[kind].map((m) => (
+              {moves.map((m) => (
                 <option key={m} value={m}>
                   {MOVE_LABELS[m]}
                 </option>

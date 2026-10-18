@@ -17,8 +17,9 @@
  *   stay in their tracker's log.
  * - It may throw `REST_RULE` to refuse the rest (Horizon: a long rest outside
  *   a sanctuary); it runs first so nothing is written before a refusal.
- * - `extraMoves` lists the frame's extra downtime moves for a rest kind (Make
- *   a Feast); `rests.choose` accepts them on top of the core moves.
+ * - `restMovesFor` lists a PC's frame and class downtime moves (Make a Feast,
+ *   Keep Watch, halt lycanthropy, Tribute) and the core moves the frame
+ *   forbids (Beast Feast); `rests.choose` checks picks against it.
  *
  * ```ts
  * const colossus: RestHook = async (ctx, { campaign, kind }) => {
@@ -35,9 +36,11 @@ import {
   corruptionStateSchema,
   FEAST_MOVE,
   FRAME_IDS,
+  frameRestMoves,
   INITIAL_CORRUPTION,
   rollCorruption,
 } from "../../src/lib/domain/rest/frame-hooks/index";
+import { classFeaturesAvailable } from "../../src/lib/domain/class-features/index";
 import type { RestKind, RestMove } from "../../src/lib/domain/rest/index";
 import { BEASTBOUND_SUBCLASS_ID } from "../../src/lib/frames/extras/common";
 import { resolveOptions } from "../../src/lib/frames/options";
@@ -111,8 +114,15 @@ export async function runRestHooks(ctx: MutationCtx, input: RestHookInput): Prom
   return lines;
 }
 
-/** The frame's extra downtime moves for this rest kind: Make a Feast on either rest in Beast Feast (CB 278). */
-export function extraMoves(campaign: Doc<"campaigns">, kind: RestKind): RestMove[] {
-  void kind;
-  return campaign.frameId === FRAME_IDS.beastFeast ? [FEAST_MOVE] : [];
+/**
+ * One PC's frame and class downtime moves (on either rest) and the core moves
+ * the frame forbids (`frameRestMoves`): Make a Feast and the Beast Feast
+ * restriction (CB 278), Keep Watch (CB 289), halting lycanthropy (HF 153,
+ * transformations on), Tribute for a Warlock while its features are offered
+ * (HF 14). `rests.choose` checks picks against it and `rests.current` lists it.
+ */
+export function restMovesFor(campaign: Doc<"campaigns">, sheet: Pick<CharacterSheet, "classId" | "multiclass">): { extra: RestMove[]; forbidden: readonly RestMove[] } {
+  const options = resolveOptions(campaign.frameId, campaign.options);
+  const warlock = [sheet.classId, sheet.multiclass?.classId].includes("warlock") && classFeaturesAvailable("warlock", options.hopeAndFear);
+  return frameRestMoves({ frameId: campaign.frameId, transformations: options.transformations, warlock });
 }

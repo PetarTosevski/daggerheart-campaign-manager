@@ -3,6 +3,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { cardsForDomains, getClass } from "../../src/lib/srd/index";
 import { signInAsTestGm } from "./fixtures";
 
 const PLAYER = "e2e-player@example.test";
@@ -128,7 +129,9 @@ test("the GM plays a character sheet: tracks, damage, cards and notes", async ({
   const vault = page.getByRole("list", { name: "Vault cards" });
   await expect(vault.getByRole("article", { name: "Book of Ava" })).toBeVisible();
   await expect(vault.getByRole("button", { name: "Move to loadout (2 Stress)" })).toBeVisible();
-  await page.getByLabel(/Swapping during a rest/).check();
+  await page.getByLabel(/Swapping during a rest \(free only while the GM has a rest open\)/).check();
+  // No party rest is open, so the server charges the Recall Cost anyway.
+  await expect(page.getByTestId("no-open-rest")).toBeVisible();
   await vault.getByRole("button", { name: "Move to loadout (free)" }).click();
   await expect(loadout.getByRole("article", { name: "Book of Ava" })).toBeVisible();
 
@@ -173,4 +176,56 @@ test("another player reads the full sheet, live, with no edit controls", async (
   await player.getByRole("tab", { name: "Heritage & Story" }).click();
   await expect(paper.getByRole("textbox")).toHaveCount(0);
   await close();
+});
+
+test("a Motherboard character shows the Ikonis instead of weapons, and installed augments in Armor Score and Evasion (CB 301-303)", async ({ page }) => {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const name = unique("Ikonis sheet");
+  await page.goto("/frames/motherboard");
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(name);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+
+  const client = await convexAs(page);
+  const warrior = getClass("warrior")!;
+  const { characterId } = await client.mutation(api.characters.create, {
+    campaignId,
+    draft: {
+      ...bardDraft(unique("Vex")),
+      classId: "warrior",
+      subclassId: "call-of-the-brave",
+      traits: { agility: 2, strength: 1, finesse: 1, instinct: 0, presence: 0, knowledge: -1 },
+      primaryWeaponId: "",
+      domainCards: cardsForDomains(warrior.domains, 1)
+        .filter((c) => c.level === 1)
+        .slice(0, 2)
+        .map((c) => c.id),
+    },
+    ikonis: { name: "Spark rod", description: "", trait: "strength", range: "Melee", damageType: "physical" },
+    idempotencyKey: crypto.randomUUID(),
+  });
+  // Block needs Tier 3 (precompile): the GM's level correction puts the Warrior at level 5.
+  await client.mutation(api.levelUp.correctLevel, { characterId, level: 5, idempotencyKey: crypto.randomUUID() });
+
+  await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  await expect(page.getByTestId("ikonis-weapon")).toContainText("Spark rod");
+  await expect(page.getByLabel("Primary weapon")).toHaveCount(0);
+  const evasion = Number(await page.getByTestId("evasion").textContent());
+  const armorLabel = await page.getByLabel(/^Armor Score \d+$/).getAttribute("aria-label");
+  const armor = Number(armorLabel!.replace("Armor Score ", ""));
+
+  const scrap = { Crystal: 27, Aluminum: 67, Relay: 33, Capacitor: 4, Battery: 5 };
+  await client.mutation(api.characterExtras.correctWallet, { characterId, correction: { scrap }, idempotencyKey: crypto.randomUUID() });
+  await client.mutation(api.characterExtras.craftAugment, { characterId, augmentId: "block", idempotencyKey: crypto.randomUUID() });
+  await client.mutation(api.characterExtras.installAugments, { characterId, augmentIds: ["force", "block"], idempotencyKey: crypto.randomUUID() });
+
+  // Block: +3 Armor Score, -1 Evasion.
+  await expect(page.getByTestId("evasion")).toHaveText(String(evasion - 1));
+  await expect(page.getByLabel(`Armor Score ${armor + 3}`)).toBeVisible();
+
+  await page.goto(`/campaigns/${campaignId}/party`);
+  await expect(page.getByTestId("roster-evasion")).toHaveText(String(evasion - 1));
 });

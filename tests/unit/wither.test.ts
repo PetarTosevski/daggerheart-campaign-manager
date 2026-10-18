@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { applyResourceDelta } from "../../src/lib/domain/characters";
 import { addScar, adjustWither, fearDieScars, gainWither } from "../../src/lib/domain/wither";
 
 const sheet = (over: Partial<{ wither: number; scars: number; hope: number; hopeSlotBonus: number; journeyEnds: boolean }> = {}) => ({
@@ -47,6 +48,18 @@ describe("Wither tokens (CB 261)", () => {
 
   it("a seventh Hope slot (Light in the Dark) keeps the journey going at five scars", () => {
     expect(addScar(sheet({ scars: 5, hope: 2, hopeSlotBonus: 1 }))).toMatchObject({ scars: 6, hope: 1, journeyEnds: false });
+  });
+
+  it("with Light in the Dark the seventh scar is stored and ends the journey; without it scars stop at 6", () => {
+    expect(addScar(sheet({ scars: 6, hope: 1, hopeSlotBonus: 1 }))).toMatchObject({ scars: 7, hope: 0, journeyEnds: true });
+    expect(gainWither(sheet({ wither: 0, scars: 6, hope: 1, hopeSlotBonus: 1 }), 1).sheet).toMatchObject({ scars: 7, journeyEnds: true });
+    expect(addScar(sheet({ scars: 6, hope: 0, journeyEnds: true })).scars).toBe(6);
+  });
+
+  it("applyResourceDelta's scar clamp is 6 + hopeSlotBonus", () => {
+    const tracks = { hp: 0, hpMax: 6, stress: 0, stressMax: 6, hope: 1, scars: 6 };
+    expect(applyResourceDelta({ ...tracks, hopeSlotBonus: 1 }, "scars", 3).scars).toBe(7);
+    expect(applyResourceDelta(tracks, "scars", 3).scars).toBe(6);
   });
 
   it("the GM's correction stays within 0..99", () => {

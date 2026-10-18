@@ -152,6 +152,9 @@ function KudamatCard({
             );
           })}
         </div>
+        <p className="m-0 text-[13px] text-[#9fb2b6]" data-testid="siphon-rest-note">
+          Party rests mark the track automatically when the GM finishes them. Use these only to correct a rest taken outside the app.
+        </p>
         <div className="flex flex-wrap gap-2">
           {(["short", "long"] as const).map((kind) => (
             <button
@@ -161,7 +164,7 @@ function KudamatCard({
               disabled={phase !== "hunt" || markRest.pending}
               onClick={() => void markRest.fire({ campaignId: campaign._id, kind })}
             >
-              {kind === "short" ? "Short rest +1" : "Long rest +2"}
+              {kind === "short" ? "Correction: short rest +1" : "Correction: long rest +2"}
             </button>
           ))}
           {phase !== "hunt" ? <span className="self-center text-[13px] text-[#9fb2b6]">Rests mark the track only during a hunt.</span> : null}
