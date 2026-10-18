@@ -296,7 +296,9 @@ export function InstanceCard({
         {spot.over ? <span className="trk-spot-warn">Past the limit for this GM turn</span> : null}
         <button
           type="button"
-          className="trk-btn"
+          className="trk-btn trk-spot-btn"
+          // At or past its limit for this GM turn (1, or Relentless X): shown in the warning colour, never blocked.
+          data-maxed={spot.limit !== "X" && spot.count >= spot.limit}
           aria-label={`Spotlight ${instance.label}${spotlightCostsFear ? " (spends 1 Fear)" : ""}`}
           onClick={() => void actions.spotlight(instance._id)}
         >

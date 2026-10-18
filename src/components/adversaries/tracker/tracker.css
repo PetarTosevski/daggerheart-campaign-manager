@@ -180,3 +180,7 @@
   .trk-top { padding: 14px; }
   .trk-diff { margin-left: 0; }
 }
+
+/* Spotlight at (or past) its limit for this GM turn: the warning colour of the counter. */
+.trk-spot-btn[data-maxed="true"] { background: #6b2620; border-color: #e0705a; color: #ffe1d8; }
+.trk-spot-btn[data-maxed="true"]:hover { background: #7d2d25; }
