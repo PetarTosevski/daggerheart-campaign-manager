@@ -5,6 +5,7 @@ import "./story.css";
 import { useState } from "react";
 
 import { Label, PaperInput, PaperTextarea, Pill, SheetBox, Small, paperField } from "@/components/party/sheet-ui";
+import { MAX_BAGS, MAX_HANDFULS } from "@/lib/domain/characters";
 import type { ClassDef } from "@/lib/srd";
 import { CLASSES } from "@/lib/srd/classes";
 import { cn } from "@/lib/utils";
@@ -15,8 +16,8 @@ import { useSheet } from "../sheet-context";
 // Story & Advancement boxes (board page 2): Wealth, Inventory, Character Description, Background Questions,
 // Connections, and Notes (below the Level Up region).
 
-/** Pips shown per coin kind (the board's 10); larger counts still go through the stepper. */
-const WEALTH_PIPS = 10;
+/** Pips per coin kind: "10 handfuls to 1 bag, and 10 bags to 1 chest" (CB 104), so 9 marks; the 10th rolls over. */
+const WEALTH_PIPS = MAX_HANDFULS;
 
 /** One row of handful or bag pips. Tapping a pip sets the count to it; tapping the last marked one clears it. */
 function CoinPips({ kind, name, value, onSet }: { kind: "gold-hand" | "gold-bag"; name: string; value: number; onSet?: (next: number) => void }) {
@@ -41,19 +42,36 @@ function CoinPips({ kind, name, value, onSet }: { kind: "gold-hand" | "gold-bag"
 }
 
 export function WealthBox() {
-  const { sheet, canEdit, update } = useSheet();
-  const g = sheet.gold;
+  const { sheet, canEdit, update, adjustGold } = useSheet();
+  // Counts stored above 9 before the CB 104 cap show as 9 until the next change clamps them.
+  const g = { ...sheet.gold, handfuls: Math.min(sheet.gold.handfuls, MAX_HANDFULS), bags: Math.min(sheet.gold.bags, MAX_BAGS) };
   const set = (patch: Partial<typeof g>) => void update({ gold: { ...g, ...patch } });
+  // + past 9 rolls over (a bag, or the chest); it stops only when that would need a second chest.
+  const bagsFull = g.bags >= MAX_BAGS && g.chest;
   return (
     <SheetBox title="Wealth">
       <div className="st-wealth-head">
         <Label>Handfuls of coins</Label>
-        <Stepper label="Handfuls of gold" value={g.handfuls} min={0} max={99} readOnly={!canEdit} onChange={(handfuls) => set({ handfuls })} />
+        <Stepper
+          label="Handfuls of gold"
+          value={g.handfuls}
+          min={0}
+          max={bagsFull ? MAX_HANDFULS : MAX_HANDFULS + 1}
+          readOnly={!canEdit}
+          onChange={(next) => void adjustGold("handfuls", next - g.handfuls)}
+        />
       </div>
       <CoinPips kind="gold-hand" name="Handfuls" value={g.handfuls} onSet={canEdit ? (handfuls) => set({ handfuls }) : undefined} />
       <div className="st-wealth-head">
         <Label>Bags of coins</Label>
-        <Stepper label="Bags of gold" value={g.bags} min={0} max={99} readOnly={!canEdit} onChange={(bags) => set({ bags })} />
+        <Stepper
+          label="Bags of gold"
+          value={g.bags}
+          min={0}
+          max={g.chest ? MAX_BAGS : MAX_BAGS + 1}
+          readOnly={!canEdit}
+          onChange={(next) => void adjustGold("bags", next - g.bags)}
+        />
       </div>
       <CoinPips kind="gold-bag" name="Bags" value={g.bags} onSet={canEdit ? (bags) => set({ bags }) : undefined} />
       {canEdit ? (

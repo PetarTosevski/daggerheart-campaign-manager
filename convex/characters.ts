@@ -2,10 +2,13 @@ import { v } from "convex/values";
 
 import {
   applyResourceDelta,
+  addGold,
   BASE_HOPE_MAX,
   hitPointsToMark,
   hopeMax,
   markStress,
+  MAX_BAGS,
+  MAX_HANDFULS,
   STARTING_EXPERIENCE_VALUE,
   STARTING_HOPE,
   STARTING_PROFICIENCY,
@@ -378,6 +381,8 @@ export const updateSheet = userMutation({
     if (clean.traits !== undefined && permission !== "owner") throw appError("FORBIDDEN");
     const { secondaryWeaponId, armorId, inventory, experiences, ...rest } = clean;
     const next: CharacterSheet = { ...sheet, ...rest };
+    // CB 104: a category holds at most 9 marks (a 10th rolls over through adjustGold).
+    if (rest.gold) next.gold = { ...rest.gold, handfuls: Math.min(rest.gold.handfuls, MAX_HANDFULS), bags: Math.min(rest.gold.bags, MAX_BAGS) };
     if (inventory !== undefined) next.inventory = inventory.map((item) => (typeof item === "string" ? { id: newId(), name: item } : item));
     if (experiences !== undefined) next.experiences = experiences.map((e) => ({ ...e, id: e.id ?? newId() }));
     if (secondaryWeaponId === null) delete next.secondaryWeaponId;
@@ -416,7 +421,9 @@ export const adjustGold = userMutation({
   handler: async (ctx, { characterId, coin, delta }) => {
     assertDelta(delta, 99);
     const { character, sheet } = await editable(ctx, ctx.user, characterId);
-    const gold = { ...sheet.gold, [coin]: Math.max(0, Math.min(99, sheet.gold[coin] + delta)) };
+    // CB 104: at most 9 handfuls and 9 bags; a 10th rolls over into the next category, and only one chest.
+    const gold = addGold(sheet.gold, coin, delta);
+    if (gold === null) invalid("You already have a chest of gold; store some before you take more.");
     await saveSheet(ctx, character._id, { ...sheet, gold });
     return gold;
   },

@@ -101,12 +101,22 @@ describe("character intents", () => {
     expect(errorCode(await p1.mutation(api.characters.setExperience, { characterId, experienceId, value: 1 }).catch((e) => e))).toBe("NOT_FOUND");
   });
 
-  it("gold stays within 0-99 and the chest is its own field", async () => {
+  it("gold follows CB 104: 9 handfuls and 9 bags, a 10th rolls over, one chest at most", async () => {
     const { p1, characterId, sheet } = await setup();
     expect(await p1.mutation(api.characters.adjustGold, { characterId, coin: "bags", delta: -5 })).toEqual({ handfuls: 1, bags: 0, chest: false });
-    expect(await p1.mutation(api.characters.adjustGold, { characterId, coin: "handfuls", delta: 99 })).toMatchObject({ handfuls: 99 });
-    await p1.mutation(api.characters.setGoldChest, { characterId, chest: true });
-    expect((await sheet()).gold).toEqual({ handfuls: 99, bags: 0, chest: true });
+    // 1 + 8 = 9 handfuls; one more is a bag and clears the handfuls.
+    expect(await p1.mutation(api.characters.adjustGold, { characterId, coin: "handfuls", delta: 8 })).toEqual({ handfuls: 9, bags: 0, chest: false });
+    expect(await p1.mutation(api.characters.adjustGold, { characterId, coin: "handfuls", delta: 1 })).toEqual({ handfuls: 0, bags: 1, chest: false });
+    // 1 + 9 bags = the chest.
+    expect(await p1.mutation(api.characters.adjustGold, { characterId, coin: "bags", delta: 9 })).toEqual({ handfuls: 0, bags: 0, chest: true });
+    expect(await p1.mutation(api.characters.adjustGold, { characterId, coin: "bags", delta: 9 })).toEqual({ handfuls: 0, bags: 9, chest: true });
+    // A second chest isn't allowed: store gold first.
+    expect(errorCode(await p1.mutation(api.characters.adjustGold, { characterId, coin: "bags", delta: 1 }).catch((e) => e))).toBe("INVALID");
+    // A whole-sheet write is capped at 9 too.
+    await p1.mutation(api.characters.updateSheet, { characterId, patch: { gold: { handfuls: 27, bags: 40, chest: true } } });
+    expect((await sheet()).gold).toEqual({ handfuls: 9, bags: 9, chest: true });
+    await p1.mutation(api.characters.setGoldChest, { characterId, chest: false });
+    expect((await sheet()).gold).toEqual({ handfuls: 9, bags: 9, chest: false });
     expect(errorCode(await p1.mutation(api.characters.adjustGold, { characterId, coin: "bags", delta: 0.5 }).catch((e) => e))).toBe("INVALID");
   });
 
