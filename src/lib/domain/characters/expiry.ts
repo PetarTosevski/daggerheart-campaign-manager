@@ -2,7 +2,8 @@
 //
 // Contract: every temporary thing on a sheet (an effect, a held die, a used
 // feature) carries `until`, and `expire(sheet, event)` is the ONE place that
-// removes it. Rests (T3), session start/end (T5) and "Got hit" (T8a) call it;
+// removes it. Rests (T3), session start/end (T5), the GM's End scene (RF1;
+// CB 107: the GM decides when a scene has played out) and "Got hit" (T8a) call it;
 // no class-specific code is needed. What each event ends:
 //
 // | event       | effects                 | heldDice   | featureUses       |
@@ -10,6 +11,7 @@
 // | shortRest   | rest                    | -          | rest              |
 // | longRest    | rest, longRest          | longRest   | rest, longRest    |
 // | session     | session, scene          | session    | session           |
+// | scene       | scene                   | -          | -                 |
 // | hit         | hit                     | -          | -                 |
 //
 // A long rest refreshes "rest" features too (CB 105: rest features refresh on
@@ -22,24 +24,27 @@
 
 import type { Effect, FeatureUse, HeldDie } from "../../validation/characters";
 
-export type ExpiryEvent = "shortRest" | "longRest" | "session" | "hit";
+export type ExpiryEvent = "shortRest" | "longRest" | "session" | "scene" | "hit";
 
 const EFFECTS: Record<ExpiryEvent, readonly Effect["until"][]> = {
   shortRest: ["rest"],
   longRest: ["rest", "longRest"],
   session: ["session", "scene"],
+  scene: ["scene"],
   hit: ["hit"],
 };
 const HELD_DICE: Record<ExpiryEvent, readonly HeldDie["until"][]> = {
   shortRest: [],
   longRest: ["longRest"],
   session: ["session"],
+  scene: [],
   hit: [],
 };
 const FEATURE_USES: Record<ExpiryEvent, readonly FeatureUse["until"][]> = {
   shortRest: ["rest"],
   longRest: ["rest", "longRest"],
   session: ["session"],
+  scene: [],
   hit: [],
 };
 
