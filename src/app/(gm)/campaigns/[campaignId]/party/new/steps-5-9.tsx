@@ -1,6 +1,8 @@
 "use client";
 
 import { designAsset } from "@/lib/design-assets";
+import { TRAIT_LABEL, traitIdSchema } from "@/lib/frames/extras/common";
+import { IKONIS_RANGES, IKONIS_TRAINING_CLASS_ID, type Ikonis } from "@/lib/frames/extras/motherboard";
 import { DOMAIN_CARD_ART, EXPERIENCE_SUGGESTIONS, getClass, getDomain, getSubclass, getWeapon, type Armor, type Weapon } from "@/lib/srd";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +68,64 @@ function ArmorBody({ a }: { a: Armor }) {
 
 // ---------------------------------------------------------------- Step 5
 
+/** Motherboard module sheet, top section: trait, range and damage, damage type, name (CB 301). */
+function IkonisFields({ state, update }: Pick<StepProps, "state" | "update">) {
+  const ik = state.ikonis;
+  const set = (patch: Partial<Ikonis>) => update({ ikonis: { ...ik, ...patch } });
+  return (
+    <Group legend="Ikonis">
+      <p className="wz-note">
+        Two-handed. Bonded: gain a bonus to your damage rolls equal to your level. It starts with two Augment slots
+        {state.classId === IKONIS_TRAINING_CLASS_ID ? "; Ikonis Training gives you a Force augment (+1 damage) already crafted and installed." : " and no augments installed."}
+      </p>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-3.5">
+        <label className="flex flex-col gap-1.5">
+          <span className="wz-lbl">Ikonis name</span>
+          <input className="wz-in" type="text" maxLength={80} value={ik.name} onChange={(e) => set({ name: e.target.value })} />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="wz-lbl">Ikonis trait</span>
+          <select className="wz-select" value={ik.trait ?? ""} onChange={(e) => set({ trait: traitIdSchema.safeParse(e.target.value).data ?? null })}>
+            <option value="">Choose…</option>
+            {traitIdSchema.options.map((t) => (
+              <option key={t} value={t}>
+                {TRAIT_LABEL[t]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="wz-lbl">Ikonis range and damage</span>
+          <select className="wz-select" value={ik.range ?? ""} onChange={(e) => set({ range: IKONIS_RANGES.find((r) => r.range === e.target.value)?.range ?? null })}>
+            <option value="">Choose…</option>
+            {IKONIS_RANGES.map((r) => (
+              <option key={r.range} value={r.range}>
+                {r.range}: {r.damage}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="wz-lbl">Ikonis damage type</span>
+          <select
+            className="wz-select"
+            value={ik.damageType ?? ""}
+            onChange={(e) => set({ damageType: e.target.value === "physical" || e.target.value === "tech" ? e.target.value : null })}
+          >
+            <option value="">Choose…</option>
+            <option value="physical">Physical</option>
+            <option value="tech">Tech</option>
+          </select>
+        </label>
+      </div>
+      <label className="flex flex-col gap-1.5">
+        <span className="wz-lbl">Ikonis description</span>
+        <textarea className="wz-ta" maxLength={2000} value={ik.description} onChange={(e) => set({ description: e.target.value })} />
+      </label>
+    </Group>
+  );
+}
+
 export function EquipmentStep({ state, update, opts }: StepProps) {
   const cls = state.classId ? getClass(state.classId) : undefined;
   const sub = state.subclassId ? getSubclass(state.subclassId) : undefined;
@@ -76,21 +136,30 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
   return (
     <div className="flex flex-col gap-[18px]">
       <div className="flex flex-wrap items-center justify-between gap-2.5">
-        <p className="wz-lead min-w-[min(100%,260px)] flex-1">
-          Choose Tier 1 weapons: a <strong>two-handed primary</strong>, or a <strong>one-handed primary and a one-handed secondary</strong>. Then choose a set of Tier 1
-          armor.
-        </p>
+        {opts.ikonis ? (
+          <p className="wz-lead min-w-[min(100%,260px)] flex-1">
+            In Motherboard you don&apos;t take weapons: design your <strong>Ikonis</strong>, a two-handed weapon that grows with you. Then choose a set of Tier 1 armor.
+          </p>
+        ) : (
+          <p className="wz-lead min-w-[min(100%,260px)] flex-1">
+            Choose Tier 1 weapons: a <strong>two-handed primary</strong>, or a <strong>one-handed primary and a one-handed secondary</strong>. Then choose a set of Tier
+            1 armor.
+          </p>
+        )}
         {loadout ? (
           <button
             type="button"
             className="wz-ghost"
-            onClick={() => update({ primaryWeaponId: loadout.primaryWeaponId, secondaryWeaponId: loadout.secondaryWeaponId, armorId: loadout.armorId })}
+            onClick={() =>
+              update(opts.ikonis ? { armorId: loadout.armorId } : { primaryWeaponId: loadout.primaryWeaponId, secondaryWeaponId: loadout.secondaryWeaponId, armorId: loadout.armorId })
+            }
           >
-            Use suggested loadout
+            Use suggested {opts.ikonis ? "armor" : "loadout"}
           </button>
         ) : null}
       </div>
-      {sub ? (
+      {opts.ikonis ? <IkonisFields state={state} update={update} /> : null}
+      {!opts.ikonis && sub ? (
         <p className="wz-note">
           {sub.spellcastTrait
             ? `Your Spellcast trait is ${traitLabel(sub.spellcastTrait)}, so you can wield magic weapons.`
@@ -98,49 +167,53 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
         </p>
       ) : null}
 
-      <Group legend="Primary weapon">
-        <div className="wz-gears">
-          {primaryWeaponsFor(state, opts).map((w) => (
-            <Choice
-              key={w.id}
-              name="primary"
-              checked={state.primaryWeaponId === w.id}
-              onSelect={() => update({ primaryWeaponId: w.id, ...(w.burden === "two-handed" ? { secondaryWeaponId: null } : {}) })}
-              className="wz-gear"
-            >
-              <WeaponBody w={w} />
-            </Choice>
-          ))}
-        </div>
-      </Group>
-
-      <Group
-        legend={
-          <>
-            Secondary weapon{" "}
-            <span className="font-serif text-[15px] tracking-normal text-[#8a6d3b] normal-case">(optional, one-handed primaries only)</span>
-          </>
-        }
-      >
-        <div className="wz-gears">
-          <Choice name="secondary" checked={!state.secondaryWeaponId} onSelect={() => update({ secondaryWeaponId: null })} className="wz-gear">
-            <span className="wz-gn">None</span>
-            <span>{twoHanded ? "Your primary weapon takes both hands." : "Keep a hand free."}</span>
-          </Choice>
-          {secondaryWeaponsFor(opts).map((w) => (
-            <Choice
-              key={w.id}
-              name="secondary"
-              checked={state.secondaryWeaponId === w.id}
-              disabled={twoHanded}
-              onSelect={() => update({ secondaryWeaponId: w.id })}
-              className="wz-gear"
-            >
-              <WeaponBody w={w} />
-            </Choice>
-          ))}
-        </div>
-      </Group>
+      {opts.ikonis ? null : (
+        <>
+          <Group legend="Primary weapon">
+            <div className="wz-gears">
+              {primaryWeaponsFor(state, opts).map((w) => (
+                <Choice
+                  key={w.id}
+                  name="primary"
+                  checked={state.primaryWeaponId === w.id}
+                  onSelect={() => update({ primaryWeaponId: w.id, ...(w.burden === "two-handed" ? { secondaryWeaponId: null } : {}) })}
+                  className="wz-gear"
+                >
+                  <WeaponBody w={w} />
+                </Choice>
+              ))}
+            </div>
+          </Group>
+    
+          <Group
+            legend={
+              <>
+                Secondary weapon{" "}
+                <span className="font-serif text-[15px] tracking-normal text-[#8a6d3b] normal-case">(optional, one-handed primaries only)</span>
+              </>
+            }
+          >
+            <div className="wz-gears">
+              <Choice name="secondary" checked={!state.secondaryWeaponId} onSelect={() => update({ secondaryWeaponId: null })} className="wz-gear">
+                <span className="wz-gn">None</span>
+                <span>{twoHanded ? "Your primary weapon takes both hands." : "Keep a hand free."}</span>
+              </Choice>
+              {secondaryWeaponsFor(opts).map((w) => (
+                <Choice
+                  key={w.id}
+                  name="secondary"
+                  checked={state.secondaryWeaponId === w.id}
+                  disabled={twoHanded}
+                  onSelect={() => update({ secondaryWeaponId: w.id })}
+                  className="wz-gear"
+                >
+                  <WeaponBody w={w} />
+                </Choice>
+              ))}
+            </div>
+          </Group>
+        </>
+      )}
 
       <Group legend="Armor">
         <div className="wz-gears">

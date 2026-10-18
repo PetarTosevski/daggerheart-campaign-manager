@@ -190,7 +190,15 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   // ---- D5 fields (T0). Every one is defaulted or optional, so stored version 2 sheets parse unchanged.
   /** Light in the Dark (companion, dcm-bxp.14): a seventh Hope slot. Hope max = 6 + bonus − scars (`hopeMax`). */
   hope: z.number().int().min(0).max(7),
+  /** Seven slots with Light in the Dark, so a seventh scar is possible (T9; widened from 6, stored sheets still parse). */
+  scars: z.number().int().min(0).max(7),
   hopeSlotBonus: z.number().int().min(0).max(1).default(0),
+  /**
+   * Empty when the character fights with an Ikonis instead of weapons
+   * (Motherboard, CB 301: "Characters don't have access to Daggerheart's normal
+   * selection of primary and secondary weapons"). Widened from `min(1)` (T9).
+   */
+  primaryWeaponId: z.string().max(100),
   /** Upgraded subclass advancements move it up (CB 110). */
   subclassRank: z.enum(SUBCLASS_RANKS).default("foundation"),
   /** Multiclass (CB 110-111): the second class's class features, one of its domains and its foundation card. */
@@ -236,7 +244,8 @@ export const characterDraftSchema = z
     name: z.string().trim().min(1, "Give your character a name.").max(NAME),
     pronouns: z.string().trim().max(NAME),
     description: z.string().max(TEXT),
-    primaryWeaponId: z.string().min(1, "Choose a primary weapon."),
+    /** Empty in a Motherboard campaign, where an Ikonis replaces weapons (CB 301); the server requires it elsewhere. */
+    primaryWeaponId: z.string().max(100),
     secondaryWeaponId: z.string().optional(),
     armorId: z.string().min(1, "Choose armor."),
     potion: z.string().trim().min(1, "Choose a potion.").max(100),

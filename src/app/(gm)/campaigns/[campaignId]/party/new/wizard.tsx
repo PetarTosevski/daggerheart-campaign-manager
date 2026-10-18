@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 
+import { FRAME_OF } from "@/lib/frames/extras/common";
 import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
 
@@ -69,14 +70,15 @@ export function CharacterWizard() {
   const campaignId = campaign._id;
   const router = useRouter();
   const isGm = campaign.role === "gm";
-  const opts = useMemo(() => ({ hopeAndFear: campaign.options.hopeAndFear }), [campaign.options.hopeAndFear]);
+  const ikonis = campaign.frameId === FRAME_OF.motherboard;
+  const opts = useMemo(() => ({ hopeAndFear: campaign.options.hopeAndFear, ikonis }), [campaign.options.hopeAndFear, ikonis]);
   const roster = useQuery(api.members.roster, isGm ? { campaignId } : "skip");
   const create = useIntent(api.characters.create);
 
   // The campaign shell only renders once the campaign has loaded on the client, so storage is safe to read here.
   const [raw, setRaw] = useState<WizardState>(() => loadDraft(campaignId));
   const state = useMemo(() => normalizeWizard(raw, opts), [raw, opts]);
-  const missing = useMemo(() => missingByStep(state), [state]);
+  const missing = useMemo(() => missingByStep(state, opts), [state, opts]);
   const step = state.step;
 
   useEffect(() => {
@@ -107,7 +109,12 @@ export function CharacterWizard() {
 
   async function submit() {
     if (!allOk || create.pending) return;
-    const result = await create.fire({ campaignId, draft: toCharacterDraft(state, portraitAsset(state)), ...(ownerId ? { ownerId } : {}) });
+    const result = await create.fire({
+      campaignId,
+      draft: toCharacterDraft(state, portraitAsset(state)),
+      ...(ownerId ? { ownerId } : {}),
+      ...(ikonis ? { ikonis: state.ikonis } : {}),
+    });
     if (result) {
       saveDraft(campaignId, null);
       router.push(`/campaigns/${campaignId}/party/${result.characterId}`);

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { derivedDefense } from "../../src/lib/domain/characters/derived";
 import { gatherScrap } from "../../src/lib/domain/frames/motherboard";
 import {
   addRelic,
   applyGather,
+  augmentDefense,
+  ikonisMissing,
+  startingMotherboard,
   AUGMENTS,
   augmentSlots,
   correctWallet,
@@ -82,5 +86,31 @@ describe("Motherboard extras (Core pp.301-303)", () => {
     expect(s.relics).toEqual([]);
     s = salvage(s, "bury");
     expect(s.relics).toEqual([{ id: "r1", name: "Jaw piston" }]);
+  });
+});
+
+describe("Ikonis at character creation and augment defense (T9)", () => {
+  const ikonis = { name: "Spark rod", description: "", trait: "strength" as const, range: "Melee" as const, damageType: "physical" as const };
+
+  it("a Warrior starts with Force crafted and installed (CB 295); others with none (CB 301)", () => {
+    expect(startingMotherboard(ikonis, "warrior")).toMatchObject({ ikonis, built: [{ id: "force", relics: [] }], installed: ["force"], quantum: 5 });
+    expect(startingMotherboard(ikonis, "bard")).toMatchObject({ built: [], installed: [] });
+  });
+
+  it("the module's top section must be filled in", () => {
+    expect(ikonisMissing(INITIAL_MOTHERBOARD.ikonis)).toEqual(["an Ikonis trait", "an Ikonis range", "an Ikonis damage type", "an Ikonis name"]);
+    expect(ikonisMissing(ikonis)).toEqual([]);
+  });
+
+  it("Guard +1, Deny +2, Block +3 Armor Score and -1 Evasion (module sheet, CB 301-303)", () => {
+    expect(augmentDefense(["force", "guard"])).toEqual({ armorScore: 1, evasion: 0 });
+    expect(augmentDefense(["guard", "deny", "block"])).toEqual({ armorScore: 6, evasion: -1 });
+  });
+
+  it("derivedDefense adds installed augments", () => {
+    const sheet = { evasion: 10, primaryWeaponId: "", armorId: "gambeson-armor" };
+    const base = derivedDefense(sheet);
+    expect(derivedDefense(sheet, ["guard", "block"])).toMatchObject({ armorScore: base.armorScore + 4, evasion: base.evasion - 1 });
+    expect(derivedDefense(sheet, [])).toEqual(base);
   });
 });

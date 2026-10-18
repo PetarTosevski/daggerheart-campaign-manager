@@ -2,7 +2,9 @@ import { v } from "convex/values";
 
 import {
   applyResourceDelta,
+  BASE_HOPE_MAX,
   hitPointsToMark,
+  hopeMax,
   markStress,
   STARTING_EXPERIENCE_VALUE,
   STARTING_HOPE,
@@ -12,6 +14,8 @@ import {
 } from "../src/lib/domain/characters/index";
 import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
 import { appError, RuleError } from "../src/lib/errors/app-error";
+import { FRAME_OF } from "../src/lib/frames/extras/common";
+import { ikonisMissing, ikonisSchema, startingMotherboard } from "../src/lib/frames/extras/motherboard";
 import { resolveOptions } from "../src/lib/frames/options";
 import {
   getAncestry,
@@ -34,6 +38,7 @@ import {
 } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { installedAugments, seedMotherboard } from "./characterExtras";
 import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { campaignQuery, keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
@@ -48,6 +53,7 @@ import {
   traitIdValidator,
   type CharacterView,
 } from "./lib/validators/characters";
+import { ikonisValidator } from "./lib/validators/characterExtras";
 import { gainWitherToken, witherGainValidator } from "./wither";
 
 export type { CharacterView };
@@ -175,8 +181,10 @@ function assertSource(source: Source, allowExpansion: boolean, what: string) {
   }
 }
 
-/** Builds the stored sheet from a validated wizard draft (Core ch. 1). */
-export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean): CharacterSheetInput {
+const IKONIS_ONLY = "In a Motherboard campaign your Ikonis replaces weapons (CB 301).";
+
+/** Builds the stored sheet from a validated wizard draft (Core ch. 1). `ikonis`: a Motherboard campaign (CB 301). */
+export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, ikonis = false): CharacterSheetInput {
   const cls = getClass(draft.classId);
   if (!cls) throw new RuleError("INVALID", "Unknown class.");
   assertSource(cls.source, allowExpansion, cls.name);
@@ -201,19 +209,24 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean): 
   if (!community) throw new RuleError("INVALID", "Unknown community.");
   assertSource(community.source, allowExpansion, community.name);
 
-  const primary = getWeapon(draft.primaryWeaponId);
-  if (!primary || primary.slot !== "primary") throw new RuleError("INVALID", "Choose a primary weapon.");
-  if (primary.tier !== 1) throw new RuleError("INVALID", "Starting weapons are Tier 1.");
-  assertSource(primary.source, allowExpansion, primary.name);
-  if (primary.classId && primary.classId !== cls.id) throw new RuleError("INVALID", `${primary.name} belongs to another class.`);
-  if (draft.secondaryWeaponId) {
-    const secondary = getWeapon(draft.secondaryWeaponId);
-    if (!secondary || secondary.slot !== "secondary") throw new RuleError("INVALID", "Choose a secondary weapon.");
-    if (primary.burden === "two-handed") throw new RuleError("INVALID", "A two-handed primary weapon leaves no hand for a secondary.");
-    assertSource(secondary.source, allowExpansion, secondary.name);
-  }
-  if (primary.category === "magic" && !sub.spellcastTrait) {
-    throw new RuleError("INVALID", "Magic weapons need a Spellcast trait from your subclass.");
+  if (ikonis) {
+    // CB 301: no normal weapons; the Ikonis is two-handed and lives in the Motherboard module.
+    if (draft.primaryWeaponId || draft.secondaryWeaponId) throw new RuleError("INVALID", IKONIS_ONLY);
+  } else {
+    const primary = getWeapon(draft.primaryWeaponId);
+    if (!primary || primary.slot !== "primary") throw new RuleError("INVALID", "Choose a primary weapon.");
+    if (primary.tier !== 1) throw new RuleError("INVALID", "Starting weapons are Tier 1.");
+    assertSource(primary.source, allowExpansion, primary.name);
+    if (primary.classId && primary.classId !== cls.id) throw new RuleError("INVALID", `${primary.name} belongs to another class.`);
+    if (draft.secondaryWeaponId) {
+      const secondary = getWeapon(draft.secondaryWeaponId);
+      if (!secondary || secondary.slot !== "secondary") throw new RuleError("INVALID", "Choose a secondary weapon.");
+      if (primary.burden === "two-handed") throw new RuleError("INVALID", "A two-handed primary weapon leaves no hand for a secondary.");
+      assertSource(secondary.source, allowExpansion, secondary.name);
+    }
+    if (primary.category === "magic" && !sub.spellcastTrait) {
+      throw new RuleError("INVALID", "Magic weapons need a Spellcast trait from your subclass.");
+    }
   }
   const armor = getArmor(draft.armorId);
   if (!armor || armor.tier !== 1) throw new RuleError("INVALID", "Choose Tier 1 armor.");
@@ -251,7 +264,7 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean): 
     scars: 0,
     armorMarked: 0,
     proficiency: STARTING_PROFICIENCY,
-    primaryWeaponId: primary.id,
+    primaryWeaponId: draft.primaryWeaponId,
     ...(draft.secondaryWeaponId ? { secondaryWeaponId: draft.secondaryWeaponId } : {}),
     armorId: armor.id,
     inventory: ["Torch", "50 feet of rope", "Basic supplies", draft.potion, ...(draft.classItem ? [draft.classItem] : [])].map((name) => ({ id: newId(), name })),
@@ -263,7 +276,7 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean): 
     notes: "",
     ...(draft.portrait ? { portrait: draft.portrait } : {}),
   };
-  assertEquipment(sheet, allowExpansion);
+  assertEquipment(sheet, allowExpansion, ikonis);
   return sheet;
 }
 
@@ -274,12 +287,20 @@ const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
  * Equipment the character can use: known items, at or below their tier,
  * Hope & Fear items only when the campaign uses them, class-bound weapons only
  * for that class, no secondary with a two-handed primary, and magic weapons
- * only with a Spellcast trait (Core ch. 1 step 5).
+ * only with a Spellcast trait (Core ch. 1 step 5). With `ikonis` (Motherboard,
+ * CB 301) an empty primary is the Ikonis, which is two-handed: no secondary.
+ * A weapon a Motherboard character got before T9 is still checked as a weapon.
  */
 function assertEquipment(
   sheet: Pick<CharacterSheet, "level" | "classId" | "subclassId" | "primaryWeaponId" | "secondaryWeaponId" | "armorId">,
   allowExpansion: boolean,
+  ikonis = false,
 ) {
+  if (ikonis && sheet.primaryWeaponId === "") {
+    if (sheet.secondaryWeaponId) throw new RuleError("INVALID", IKONIS_ONLY);
+    assertArmor(sheet, allowExpansion);
+    return;
+  }
   const tier = tierForLevel(sheet.level);
   const sub = getSubclass(sheet.subclassId);
   const check = (weaponId: string, slot: "primary" | "secondary") => {
@@ -297,12 +318,16 @@ function assertEquipment(
     if (primary.burden === "two-handed") throw new RuleError("INVALID", "A two-handed primary weapon leaves no hand for a secondary.");
     if (primary.burden === "barehanded") throw new RuleError("INVALID", `${primary.name} can't be used with other weapons.`);
   }
-  if (sheet.armorId) {
-    const a = getArmor(sheet.armorId);
-    if (!a) throw new RuleError("INVALID", "Unknown armor.");
-    if (a.tier > tier) throw new RuleError("INVALID", `${a.name} is Tier ${a.tier}; this character is Tier ${tier}.`);
-    assertSource(a.source, allowExpansion, a.name);
-  }
+  assertArmor(sheet, allowExpansion);
+}
+
+function assertArmor(sheet: Pick<CharacterSheet, "level" | "armorId">, allowExpansion: boolean) {
+  if (!sheet.armorId) return;
+  const tier = tierForLevel(sheet.level);
+  const a = getArmor(sheet.armorId);
+  if (!a) throw new RuleError("INVALID", "Unknown armor.");
+  if (a.tier > tier) throw new RuleError("INVALID", `${a.name} is Tier ${a.tier}; this character is Tier ${tier}.`);
+  assertSource(a.source, allowExpansion, a.name);
 }
 
 /** The owner of a new or reassigned character: the caller, or (GM only) the GM or a member of the campaign. */
@@ -318,19 +343,30 @@ async function ownerFor(ctx: MutationCtx, campaign: Doc<"campaigns">, permission
   return ownerId;
 }
 
-/** Creates a character from the wizard. Players create their own; the GM may assign it to a player. */
+/**
+ * Creates a character from the wizard. Players create their own; the GM may
+ * assign it to a player. In a Motherboard campaign the draft has no weapons and
+ * `ikonis` is required (CB 301); a Warrior starts with Force installed (CB 295).
+ */
 export const create = keyedCampaignMutation({
   need: "view",
   // Telling the GM from a player decides who may assign another owner.
   enough: "owner",
-  args: { draft: characterDraftValidator, ownerId: v.optional(v.id("users")) },
+  args: { draft: characterDraftValidator, ownerId: v.optional(v.id("users")), ikonis: v.optional(ikonisValidator) },
   returns: v.object({ characterId: v.id("characters") }),
-  handler: async (ctx, { draft, ownerId }) => {
+  handler: async (ctx, { draft, ownerId, ikonis }) => {
     const parsed = characterDraftSchema.parse(draft);
     if (parsed.portrait?.kind === "upload") invalid("Upload a portrait from the sheet after creating the character.");
-    const sheet = sheetFromDraft(parsed, resolveOptions(ctx.campaign.frameId, ctx.campaign.options).hopeAndFear);
+    const motherboard = ctx.campaign.frameId === FRAME_OF.motherboard;
+    const designed = ikonis === undefined ? undefined : ikonisSchema.parse(ikonis);
+    if (!motherboard && designed) invalid("Only Motherboard characters have an Ikonis.");
+    if (motherboard) {
+      const missing = designed ? ikonisMissing(designed) : ["your Ikonis"];
+      if (missing.length > 0) invalid(`Choose ${missing.join(", ")}.`);
+    }
+    const sheet = sheetFromDraft(parsed, resolveOptions(ctx.campaign.frameId, ctx.campaign.options).hopeAndFear, motherboard);
     const owner = await ownerFor(ctx, ctx.campaign, ctx.permission, ctx.user, ownerId);
-    return ctx.once("character_create", { draft: parsed, owner }, async () => {
+    return ctx.once("character_create", { draft: parsed, owner, ikonis: designed ?? null }, async () => {
       const now = Date.now();
       const characterId = await ctx.db.insert("characters", {
         campaignId: ctx.campaign._id,
@@ -341,6 +377,7 @@ export const create = keyedCampaignMutation({
         createdAt: now,
         updatedAt: now,
       });
+      if (designed) await seedMotherboard(ctx, ctx.campaign._id, characterId, startingMotherboard(designed, parsed.classId));
       return { characterId };
     });
   },
@@ -379,9 +416,12 @@ export const updateSheet = userMutation({
     else if (secondaryWeaponId !== undefined) next.secondaryWeaponId = secondaryWeaponId;
     if (armorId === null) delete next.armorId;
     else if (armorId !== undefined) next.armorId = armorId;
-    next.armorMarked = Math.min(next.armorMarked, derivedDefense(next).armorScore);
+    next.armorMarked = Math.min(next.armorMarked, derivedDefense(next, await installedAugments(ctx, campaign, character._id)).armorScore);
     if ("primaryWeaponId" in clean || secondaryWeaponId !== undefined || armorId !== undefined) {
-      assertEquipment(next, resolveOptions(campaign.frameId, campaign.options).hopeAndFear);
+      const ikonis = campaign.frameId === FRAME_OF.motherboard;
+      // CB 301: no new weapons in a Motherboard campaign (an empty primary is the Ikonis).
+      if (ikonis && ((clean.primaryWeaponId ?? "") !== "" || (secondaryWeaponId ?? null) !== null)) invalid(IKONIS_ONLY);
+      assertEquipment(next, resolveOptions(campaign.frameId, campaign.options).hopeAndFear, ikonis);
     }
     if (clean.portrait?.kind === "upload") {
       // Uploaded portraits are attached through `attachPortrait`, never by id here.
@@ -516,11 +556,16 @@ export const adjustResource = userMutation({
   returns: v.object({ hp: v.number(), stress: v.number(), hope: v.number(), armorMarked: v.number(), scars: v.number() }),
   handler: async (ctx, { characterId, resource, delta }) => {
     assertDelta(delta, 12);
-    const { character, sheet: s } = await editable(ctx, ctx.user, characterId);
+    const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
     const next: CharacterSheet =
       resource === "armor"
-        ? { ...s, armorMarked: Math.max(0, Math.min(derivedDefense(s).armorScore, s.armorMarked + delta)) }
+        ? { ...s, armorMarked: Math.max(0, Math.min(derivedDefense(s, await installedAugments(ctx, campaign, character._id)).armorScore, s.armorMarked + delta)) }
         : applyResourceDelta(s, resource, delta);
+    if (resource === "scars") {
+      // One scar per Hope slot, a seventh with Light in the Dark (CB 40, 106); `applyResourceDelta` stops at 6.
+      next.scars = Math.max(0, Math.min(BASE_HOPE_MAX + s.hopeSlotBonus, s.scars + delta));
+      next.hope = Math.min(next.hope, hopeMax(next.scars, s.hopeSlotBonus));
+    }
     await saveSheet(ctx, character._id, next);
     return { hp: next.hp, stress: next.stress, hope: next.hope, armorMarked: next.armorMarked, scars: next.scars };
   },
@@ -547,7 +592,7 @@ export const applyDamage = userMutation({
     if (!Number.isInteger(damage) || damage < 1 || damage > 999) invalid("Enter the damage as a whole number.");
     const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
     if (withered) assertMechanicEnabled(campaign, "witherTokens");
-    const defense = derivedDefense(s);
+    const defense = derivedDefense(s, await installedAugments(ctx, campaign, character._id));
     // Armor base + level + always-on subclass bonuses (CB 36, 45; HF 10).
     const thresholds = derivedThresholds(s);
     if (useArmorSlot && s.armorMarked >= defense.armorScore) invalid("No Armor Slot is free.");
@@ -570,13 +615,14 @@ export const applyDamage = userMutation({
 /**
  * Moves a domain card between loadout (max 5) and vault. From the vault into
  * the loadout costs the card's Recall Cost in Stress unless it happens during
- * a rest (Core, "Domain Cards"). Owner or GM.
+ * a rest (CB 101, 105: swaps are free "when you start a rest"): `duringRest`
+ * counts only while the campaign has an open party rest. Owner or GM.
  */
 export const moveCard = userMutation({
   args: { characterId: v.id("characters"), cardId: v.string(), to: v.union(v.literal("loadout"), v.literal("vault")), duringRest: v.optional(v.boolean()) },
   returns: v.null(),
   handler: async (ctx, { characterId, cardId, to, duringRest }) => {
-    const { character, sheet: s } = await editable(ctx, ctx.user, characterId);
+    const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
     if (!s.domainCards.owned.includes(cardId)) invalid("That card isn't in your deck.");
     const inLoadout = s.domainCards.loadout.includes(cardId);
     let next: CharacterSheet = { ...s };
@@ -589,7 +635,13 @@ export const moveCard = userMutation({
       if ((getDomainCard(cardId)?.level ?? 99) > s.level) invalid("That card is above your level.");
       next.domainCards = { ...s.domainCards, loadout: [...s.domainCards.loadout, cardId] };
       const recall = getDomainCard(cardId)?.recallCost ?? 0;
-      if (!duringRest && recall > 0) {
+      const resting =
+        duringRest === true &&
+        (await ctx.db
+          .query("rests")
+          .withIndex("by_campaign_status_started", (q) => q.eq("campaignId", campaign._id).eq("status", "open"))
+          .first()) !== null;
+      if (!resting && recall > 0) {
         const { stress, hp } = markStress(next, recall);
         next = { ...next, stress, hp };
       }
