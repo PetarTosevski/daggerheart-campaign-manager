@@ -20,6 +20,7 @@ import {
 } from "@/lib/adversaries/catalogue";
 import { adversariesFor } from "@/lib/domain/adversaries";
 import { ADVERSARIES } from "@/lib/srd/adversaries";
+import { adversaryArt } from "@/lib/srd/adversary-art";
 import { ADVERSARY_TYPES, type AdversaryType } from "@/lib/srd/types";
 
 import type { CatalogueProps } from "../slots";
@@ -37,6 +38,14 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
       {children}
     </button>
   );
+}
+
+/** Round thumbnail of the rulebook art (AA1); nothing for an adversary without art. Decorative: the name follows. */
+function Thumb({ id }: { id: string }) {
+  const art = adversaryArt(id);
+  if (!art) return null;
+  // eslint-disable-next-line @next/next/no-img-element -- static pre-optimised WebP from public/
+  return <img className="adc-thumb" src={art.src} width={32} height={32} alt="" loading="lazy" decoding="async" />;
 }
 
 function ChipRow<T extends string | number>({
@@ -141,6 +150,7 @@ export function Catalogue({ hopeAndFear, frameId, renderActions }: CatalogueProp
                 >
                   <span className="adc-item-main">
                     <span className="adc-nm">
+                      <Thumb id={def.id} />
                       {def.name}
                       {def.source === "hope-and-fear" ? <HopeFearPill /> : null}
                     </span>
