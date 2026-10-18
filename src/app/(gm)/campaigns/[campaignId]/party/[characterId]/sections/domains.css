@@ -1,1 +1,93 @@
 /* Styles for sections/domains.tsx only (sheet redesign wave 2). Tokens and primitives: ../sheet.css, src/components/party/sheet-ui/. */
+/* Board: Party.dc.html .dk-dom, .dk-pip, .dk-toggle, .table-felt, .hand, .hand-card, .hc-face, .vault-deck, .vault-spread. */
+
+/* Domains box */
+.dk-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}
+.dk-doms{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.dk-dom{display:inline-flex;align-items:center;gap:6px;padding:4px 12px 4px 6px;border-radius:999px;color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700}
+.dk-dom-ic{width:20px;height:20px;flex:none;background-size:contain;background-repeat:no-repeat;background-position:center}
+.dk-allow{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.dk-count{font-family:var(--font-cinzel),serif;font-size:18px;color:#3a2a14;text-transform:uppercase;letter-spacing:.04em}
+.dk-pips{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;padding:3px}
+.dk-pip{width:14px;height:14px;box-sizing:border-box;border-radius:3px;border:1.5px solid #8a6d3b;transform:rotate(45deg)}
+.dk-pip.on{background:var(--sheet-wine,#5b2b2b);border-color:var(--sheet-wine,#5b2b2b)}
+.dk-allow-sub{font-size:13px}
+.dk-rest{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding-top:10px;border-top:1px solid rgba(138,109,59,.25)}
+.dk-toggle{display:inline-flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-size:16px;color:#3a2a14}
+.dk-toggle input{width:18px;height:18px;margin:0;flex:none;color-scheme:light;accent-color:var(--sheet-wine,#5b2b2b)}
+.dk-rest-when{font-size:14px;color:var(--sheet-ink-soft,#4a3a26)}
+.dk-warn{font-weight:700;color:var(--sheet-red,#8e2b2b)}
+
+/* Felt table */
+.dk-felt{position:relative;border-radius:16px;padding:16px 20px 22px;background:radial-gradient(ellipse at 50% 120%,#2f5a3e 0%,#1d3a28 45%,#132619 100%);box-shadow:inset 0 0 0 2px rgba(201,163,90,.45),inset 0 0 60px rgba(0,0,0,.55),0 10px 28px rgba(0,0,0,.3);color:#f1e3c6}
+.dk-felt-head{display:flex;align-items:baseline;gap:10px}
+.dk-felt-title{margin:0;font-family:var(--font-cinzel),serif;font-size:20px;font-weight:700;color:#f3cf86;letter-spacing:.08em}
+.dk-felt-sub{font-family:var(--font-cinzel),serif;font-size:13px;color:#d9c9a3}
+.dk-felt-row{display:flex;align-items:flex-end;gap:24px;min-height:330px}
+.dk-hand{flex:1;min-width:0;display:flex;justify-content:center;align-items:flex-end;padding:40px 0 6px}
+.dk-hand-list{display:flex;justify-content:center;align-items:flex-end}
+.dk-empty{margin:auto;font-style:italic;color:#bfae8a;text-align:center;max-width:360px}
+.dk-hand-card{--rot:0deg;--ty:0px;position:relative;flex:none;width:190px;margin:0 -26px;transform-origin:50% 120%;transform:translateY(var(--ty)) rotate(var(--rot));transition:transform .22s ease}
+.dk-hand-card:hover,.dk-hand-card:focus-within{transform:translateY(-46px) rotate(0deg) scale(1.12);z-index:30!important}
+
+/* Card face */
+.dk-face{--dc:#5b2b2b;position:relative;aspect-ratio:5/7;border-radius:12px;overflow:hidden;background:#fffaf0;color:#2a1f14;display:flex;flex-direction:column;box-shadow:0 0 0 2px #c9a35a,0 10px 22px rgba(0,0,0,.5);outline:none}
+.dk-face:focus-visible{box-shadow:0 0 0 3px #f3cf86,0 0 0 5px var(--sheet-wine,#5b2b2b),0 10px 22px rgba(0,0,0,.5)}
+.dk-face-head{display:flex;align-items:center;gap:6px;padding:6px 8px;background:linear-gradient(100deg,var(--dc),color-mix(in srgb,var(--dc) 65%,#000));color:#f6ead2}
+.dk-face-name{flex:1;min-width:0;margin:0;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;line-height:1.1;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.dk-face-lvl{width:22px;height:22px;flex:none;border-radius:50%;background:#f6ead2;color:var(--dc);display:flex;align-items:center;justify-content:center;font-family:var(--font-cinzel),serif;font-weight:900;font-size:12px}
+.dk-face-art{position:relative;aspect-ratio:481/300;flex:none;background-color:#1a1424;background-size:cover;background-position:center 35%}
+.dk-face-rc{position:absolute;right:6px;bottom:-13px;z-index:2;width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#7fb2e0,#2a4f86);color:#fff;font-family:var(--font-cinzel),serif;font-weight:900;font-size:13px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #0e1a2c,0 0 0 3px #c9a35a}
+.dk-face-meta{padding:6px 8px 0;font-family:var(--font-cinzel),serif;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#7a5e30}
+.dk-face-text{margin:2px 8px 0;flex:1;min-height:0;font-size:11.5px;line-height:1.32;white-space:pre-line;overflow:hidden;-webkit-mask-image:linear-gradient(#000 80%,transparent);mask-image:linear-gradient(#000 80%,transparent)}
+.dk-face-acts{position:absolute;left:0;right:0;bottom:0;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;padding:20px 6px 8px;background:linear-gradient(transparent,rgba(255,250,240,.96) 40%);opacity:0;transition:opacity .15s}
+.dk-hand-card:hover .dk-face-acts,.dk-hand-card:focus-within .dk-face-acts,.dk-face-acts.show{opacity:1}
+.dk-btn{min-height:28px;padding:0 10px;border-radius:999px;border:1px solid var(--dc);background:var(--dc);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;cursor:pointer}
+.dk-btn:disabled{opacity:.45;cursor:not-allowed}
+.dk-btn:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+.dk-block{font-size:12px;font-style:italic;color:#4a3a26;text-align:center}
+
+/* Vault deck */
+.dk-deck{position:relative;flex:none;width:150px;aspect-ratio:5/7;margin:0 8px 30px 0;padding:0;border:none;background:none;cursor:pointer;color:inherit}
+div.dk-deck{cursor:default}
+.dk-deck:focus-visible{outline:3px solid #f3cf86;outline-offset:6px;border-radius:12px}
+.dk-vd-card{position:absolute;inset:0;border-radius:12px;background-color:#1d1550;background-position:center;background-size:cover;background-repeat:no-repeat;box-shadow:0 0 0 2px #c9a35a,0 6px 14px rgba(0,0,0,.5);transition:transform .25s ease}
+.dk-vd-card.v2{transform:translate(4px,-4px) rotate(2deg)}
+.dk-vd-card.v3{transform:translate(8px,-8px) rotate(4deg)}
+button.dk-deck:hover .dk-vd-card.v3{transform:translate(14px,-14px) rotate(8deg)}
+button.dk-deck:hover .dk-vd-card.v2{transform:translate(7px,-7px) rotate(4deg)}
+button.dk-deck:hover .dk-vd-card.v1{transform:translateY(-4px)}
+.dk-deck.empty .dk-vd-card.v2,.dk-deck.empty .dk-vd-card.v3{display:none}
+.dk-deck.empty .dk-vd-card.v1{opacity:.35;filter:grayscale(.6)}
+.dk-deck.open .dk-vd-card.v1{box-shadow:0 0 0 2px #f3cf86,0 0 22px rgba(243,207,134,.6)}
+.dk-vd-count{position:absolute;right:-10px;top:-12px;z-index:2;min-width:30px;height:30px;padding:0 6px;box-sizing:border-box;border-radius:999px;background:var(--sheet-wine,#5b2b2b);color:#f6ead2;font-family:var(--font-cinzel),serif;font-weight:900;font-size:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #c9a35a}
+.dk-vd-lbl{position:absolute;left:-30px;right:-30px;white-space:nowrap;bottom:-24px;text-align:center;font-family:var(--font-cinzel),serif;font-size:11px;letter-spacing:.08em;color:#d9c9a3}
+
+/* Vault spread */
+.dk-spread{margin-top:16px;padding-top:16px;border-top:1px solid rgba(201,163,90,.35)}
+.dk-spread-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:16px}
+.dk-spread-card{--d:0ms;animation:dkPop .45s cubic-bezier(.2,.9,.3,1.25) both;animation-delay:var(--d);transform-origin:100% 0}
+@keyframes dkPop{from{opacity:0;transform:translate(40%,-60%) scale(.4) rotate(12deg)}to{opacity:1;transform:none}}
+
+@media (prefers-reduced-motion:reduce){.dk-spread-card{animation:none}.dk-hand-card,.dk-vd-card{transition:none}}
+@media (max-width:1000px){.dk-hand-card{width:150px;margin:0 -30px}}
+
+/* Phone: the app's stacked layout. The deck sits above the hand, and cards are full-width faces with their whole text. */
+@media (max-width:640px){
+  .dk-allow{align-items:flex-start}
+  .dk-pips{justify-content:flex-start}
+  .dk-felt{padding:14px 14px 18px}
+  .dk-felt-row{flex-direction:column-reverse;align-items:center;gap:16px;min-height:0}
+  .dk-hand{width:100%;padding:0}
+  .dk-hand-list{width:100%;flex-direction:column;align-items:stretch;gap:14px}
+  .dk-hand-card,.dk-hand-card:hover,.dk-hand-card:focus-within{width:auto;margin:0;transform:none}
+  .dk-deck{width:110px;margin:16px 0 30px}
+  .dk-spread-list{grid-template-columns:1fr}
+  .dk-face{aspect-ratio:auto}
+  .dk-face-name{font-size:16px}
+  .dk-face-meta{font-size:11px}
+  .dk-face-text{font-size:15px;overflow:visible;-webkit-mask-image:none;mask-image:none}
+  .dk-face-acts{position:static;opacity:1;padding:12px 8px 10px;background:none}
+  .dk-btn{min-height:44px;padding:0 14px;font-size:12px}
+  .dk-toggle input{width:22px;height:22px}
+}

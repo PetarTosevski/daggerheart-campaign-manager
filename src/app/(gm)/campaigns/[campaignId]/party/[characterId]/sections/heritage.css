@@ -1,1 +1,19 @@
 /* Styles for sections/heritage.tsx only (sheet redesign wave 2). Tokens and primitives: ../sheet.css, src/components/party/sheet-ui/. */
+/* Board: Party.dc.html .hc-grid, .hc-card, .hc-kind, .hc-body, .hc-head, .hc-name, .hc-tier, .hc-sub, .hc-text, .hc-lock. */
+
+.hc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:16px;align-items:stretch}
+.hc-card{height:100%;border-radius:14px;overflow:hidden;background:#fffaf0;border:1px solid #d6c39b;box-shadow:0 6px 18px rgba(40,25,8,.18);display:flex;flex-direction:column}
+.hc-top{position:relative;flex:none}
+.hc-art{aspect-ratio:16/10;background-color:#2a2418;background-size:cover;background-position:center 30%}
+.hc-kind{position:absolute;left:10px;bottom:10px;padding:3px 10px;border-radius:999px;background:rgba(20,12,6,.75);color:#f3cf86;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.hc-body{flex:1;padding:12px 14px 14px;display:flex;flex-direction:column;gap:6px}
+.hc-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
+.hc-name{margin:0;font-family:var(--font-cinzel),serif;font-size:19px;font-weight:700;color:#2a1f14}
+.hc-tier{font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;color:#7a5e30;text-transform:uppercase;letter-spacing:.08em}
+.hc-sub{font-size:13px;font-weight:700;color:#4a2a7a}
+.hc-fx{display:flex;flex-direction:column;gap:10px}
+.hc-text{margin:0;font-size:15px;line-height:1.45;white-space:pre-line;color:#2a1f14}
+.hc-note{margin:0;font-size:14px;font-style:italic;color:var(--sheet-ink-soft,#4a3a26)}
+.hc-lock{display:inline-flex;align-items:center;gap:6px;padding-top:4px;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;color:#6a5236}
+/* Board: a locked card greys its art, head and text; the lock line stays readable. */
+.hc-card.locked .hc-art,.hc-card.locked .hc-head,.hc-card.locked .hc-fx,.hc-card.locked .hc-sub{filter:grayscale(.85);opacity:.6}
