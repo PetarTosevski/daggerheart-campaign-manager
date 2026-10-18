@@ -174,3 +174,62 @@ export function applyCountdownAction(
     reopened: state.status === "completed" && status !== "completed",
   };
 }
+
+/** Countdown fields the GM can hide from players on a public countdown ("progress" = current and starting value). */
+export const COUNTDOWN_HIDEABLE_FIELDS = ["name", "description", "category", "consequence", "progress"] as const;
+
+export type CountdownHideableField = (typeof COUNTDOWN_HIDEABLE_FIELDS)[number];
+
+/** Who sees a dashboard countdown. Stored countdowns without one are fully public. */
+export type CountdownVisibility = { mode: "private" } | { mode: "public"; hidden: CountdownHideableField[] };
+
+export type CountdownVisibilityPreset = "private" | "partly" | "public";
+
+/** What "Public, details hidden" hides until the GM ticks other fields. */
+export const DEFAULT_HIDDEN_COUNTDOWN_FIELDS: CountdownHideableField[] = ["name", "description"];
+
+/** The three presets: A private, B public with name and description hidden, C public. */
+export const COUNTDOWN_VISIBILITY_PRESETS: Record<CountdownVisibilityPreset, CountdownVisibility> = {
+  private: { mode: "private" },
+  partly: { mode: "public", hidden: DEFAULT_HIDDEN_COUNTDOWN_FIELDS },
+  public: { mode: "public", hidden: [] },
+};
+
+/** One entry per hidden field, in the canonical order, so the stored array stays capped at five. */
+export function normaliseCountdownVisibility(visibility: CountdownVisibility): CountdownVisibility {
+  if (visibility.mode === "private") return { mode: "private" };
+  return { mode: "public", hidden: COUNTDOWN_HIDEABLE_FIELDS.filter((f) => visibility.hidden.includes(f)) };
+}
+
+/** Private, Partly hidden (public with at least one hidden field) or Public. */
+export function countdownVisibilityPreset(visibility: CountdownVisibility): CountdownVisibilityPreset {
+  if (visibility.mode === "private") return "private";
+  return visibility.hidden.length > 0 ? "partly" : "public";
+}
+
+type CountdownDetails = {
+  name: string;
+  description: string;
+  category: CountdownCategory;
+  consequence: string;
+  startingValue: number;
+  currentValue: number;
+};
+
+/**
+ * What a player may see of a countdown: `null` for a private one (players never receive it), otherwise
+ * the countdown with every hidden field set to `null` (hidden progress blanks both values; the status stays).
+ */
+export function countdownForPlayer<T extends CountdownDetails>(countdown: T, visibility: CountdownVisibility) {
+  if (visibility.mode === "private") return null;
+  const hide = (field: CountdownHideableField) => visibility.hidden.includes(field);
+  return {
+    ...countdown,
+    name: hide("name") ? null : countdown.name,
+    description: hide("description") ? null : countdown.description,
+    category: hide("category") ? null : countdown.category,
+    consequence: hide("consequence") ? null : countdown.consequence,
+    startingValue: hide("progress") ? null : countdown.startingValue,
+    currentValue: hide("progress") ? null : countdown.currentValue,
+  };
+}

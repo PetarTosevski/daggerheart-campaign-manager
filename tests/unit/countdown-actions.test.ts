@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { applyCountdownAction, CountdownRuleError, type CountdownState } from "@/lib/domain/countdowns";
+import {
+  applyCountdownAction,
+  COUNTDOWN_VISIBILITY_PRESETS,
+  countdownForPlayer,
+  countdownVisibilityPreset,
+  CountdownRuleError,
+  normaliseCountdownVisibility,
+  type CountdownState,
+} from "@/lib/domain/countdowns";
 import { assertFearValue, FearRangeError } from "@/lib/domain/fear";
 
 const at = (currentValue: number, status: CountdownState["status"] = "active"): CountdownState => ({
@@ -66,5 +74,44 @@ describe("assertFearValue", () => {
     expect(() => assertFearValue(0)).not.toThrow();
     expect(() => assertFearValue(12)).not.toThrow();
     for (const bad of [-1, 13, 2.5]) expect(() => assertFearValue(bad)).toThrow(FearRangeError);
+  });
+});
+
+describe("countdown visibility", () => {
+  const countdown = {
+    _id: "cd1",
+    name: "The dam breaks",
+    description: "Secret plan",
+    category: "threat" as const,
+    consequence: "The valley floods.",
+    startingValue: 6,
+    currentValue: 4,
+    status: "paused" as const,
+  };
+
+  it("drops a private countdown for players", () => {
+    expect(countdownForPlayer(countdown, COUNTDOWN_VISIBILITY_PRESETS.private)).toBeNull();
+  });
+
+  it("blanks exactly the hidden fields and keeps the rest", () => {
+    expect(countdownForPlayer(countdown, COUNTDOWN_VISIBILITY_PRESETS.partly)).toEqual({ ...countdown, name: null, description: null });
+    expect(countdownForPlayer(countdown, { mode: "public", hidden: ["progress", "category", "consequence"] })).toEqual({
+      ...countdown,
+      category: null,
+      consequence: null,
+      startingValue: null,
+      currentValue: null,
+    });
+    expect(countdownForPlayer(countdown, COUNTDOWN_VISIBILITY_PRESETS.public)).toEqual(countdown);
+  });
+
+  it("normalises hidden fields to one each, in order, and names the preset", () => {
+    expect(normaliseCountdownVisibility({ mode: "public", hidden: ["progress", "name", "progress"] })).toEqual({
+      mode: "public",
+      hidden: ["name", "progress"],
+    });
+    expect(countdownVisibilityPreset({ mode: "private" })).toBe("private");
+    expect(countdownVisibilityPreset({ mode: "public", hidden: ["category"] })).toBe("partly");
+    expect(countdownVisibilityPreset({ mode: "public", hidden: [] })).toBe("public");
   });
 });
