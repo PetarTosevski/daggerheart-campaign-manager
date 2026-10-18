@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { z } from "zod";
 
-import { tierForLevel } from "../src/lib/domain/characters/index";
+import { hopeMax, tierForLevel } from "../src/lib/domain/characters/index";
 import { gatherScrap as rollScrap } from "../src/lib/domain/frames/motherboard";
 import { appError, RuleError } from "../src/lib/errors/app-error";
 import {
@@ -37,7 +37,7 @@ import {
 } from "../src/lib/frames/extras/motherboard";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { loadCharacter } from "./characters";
+import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { parseOrCorrupt, readVersioned } from "./lib/blobs";
 import { rollDie } from "./lib/dice";
 import { keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
@@ -69,6 +69,7 @@ const sheetBasics = z.object({
   traits: z.record(z.string(), z.number()),
 });
 type SheetBasics = z.infer<typeof sheetBasics>;
+const slotBonus = z.object({ hopeSlotBonus: z.number().int().min(0).max(1).default(0) });
 
 type Loaded = {
   user: Doc<"users">;
@@ -117,6 +118,31 @@ async function readState<E extends Extra>(ctx: QueryCtx, loaded: Loaded, extra: 
   if (row !== null) return readRow(extra, row);
   const legacy = await readTracker(ctx, loaded.campaign._id, extraKey(loaded.character._id, extra), SCHEMAS[extra].schema);
   return (legacy ?? SCHEMAS[extra].initial) as StateOf[E];
+}
+
+/**
+ * The Ikonis augments a character has installed (Motherboard only, CB 301);
+ * `[]` in other frames. `derivedDefense` adds Guard, Deny and Block.
+ */
+export async function installedAugments(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">): Promise<string[]> {
+  if (campaign.frameId !== FRAME_OF.motherboard) return [];
+  const row = await extraRow(ctx, characterId, "motherboard");
+  if (row !== null) return readRow("motherboard", row).installed;
+  const legacy = await readTracker(ctx, campaign._id, extraKey(characterId, "motherboard"), motherboardStateSchema);
+  return legacy?.installed ?? [];
+}
+
+/** Writes a new character's Motherboard module (`characters.create`). */
+export async function seedMotherboard(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, state: MotherboardState): Promise<void> {
+  const stored = {
+    campaignId,
+    characterId,
+    extra: "motherboard",
+    schemaVersion: EXTRA_SCHEMA_VERSION,
+    data: motherboardStateSchema.parse(state),
+    updatedAt: Date.now(),
+  } as CharacterExtraRow;
+  await ctx.db.insert("characterExtras", stored);
 }
 
 /** The stored row of one extra (at most one per character and extra). */
@@ -234,15 +260,28 @@ export const setBeastform = userMutation({
 
 // ---- Beastbound companion
 
+/**
+ * Saves the companion sheet. Light in the Dark ("Use this as an additional Hope
+ * slot your character can mark", CB 40) sets the character's `hopeSlotBonus`,
+ * so Hope max becomes 7 (dcm-bxp.14); untaking it cuts Hope to the slots left.
+ */
 export const saveCompanion = userMutation({
   args: { ...keyed, state: companionStateValidator },
   returns: v.null(),
-  handler: (ctx, { characterId, idempotencyKey, state }) => {
+  handler: async (ctx, { characterId, idempotencyKey, state }) => {
     const next = companionStateSchema.parse(state);
-    return change(ctx, characterId, "companion", { idempotencyKey, kind: "extra_companion", request: next }, (_, { sheet }) => {
+    await change(ctx, characterId, "companion", { idempotencyKey, kind: "extra_companion", request: next }, (_, { sheet }) => {
       validateCompanion(next, sheet.level);
       return { state: next, result: null };
     });
+    // Derived from the saved state, so a replayed request writes the same values.
+    const { character } = await loadCharacter(ctx, ctx.user, characterId, "edit");
+    const hopeSlotBonus = (next.training.lightInTheDark ?? 0) > 0 ? 1 : 0;
+    if (parseOrCorrupt(slotBonus, character.sheet, "CHARACTER_CORRUPT").hopeSlotBonus !== hopeSlotBonus) {
+      const sheet = readSheet(character.sheet);
+      await saveSheet(ctx, characterId, { ...sheet, hopeSlotBonus, hope: Math.min(sheet.hope, hopeMax(sheet.scars, hopeSlotBonus)) });
+    }
+    return null;
   },
 });
 

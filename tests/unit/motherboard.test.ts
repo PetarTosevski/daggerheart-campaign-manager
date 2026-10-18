@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { emptyWizard, missingByStep, normalizeWizard, restoreWizard, toCharacterDraft } from "@/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic";
 import {
   gatherScrap,
   rollShackStock,
@@ -64,5 +65,27 @@ describe("Motherboard scrap", () => {
     expect(stock.Gear).toBe(10);
     expect(stock.Gold).toBe(8);
     expect(stock.Battery).toBe(6);
+  });
+});
+
+describe("creation wizard in a Motherboard campaign (CB 301)", () => {
+  const MB = { hopeAndFear: false, ikonis: true };
+  const warrior = { ...emptyWizard(), classId: "warrior", subclassId: "call-of-the-brave", armorId: "gambeson-armor", potion: "Minor Health Potion", classItem: "" };
+
+  it("asks for the Ikonis instead of a primary weapon", () => {
+    const s = normalizeWizard(warrior, MB);
+    expect(missingByStep(s, MB)[5]).toEqual(["an Ikonis trait", "an Ikonis range", "an Ikonis damage type", "an Ikonis name", "a class item"]);
+    expect(missingByStep(s)[5]).toContain("a primary weapon");
+    const done = { ...s, ikonis: { name: "Rod", description: "", trait: "strength" as const, range: "Melee" as const, damageType: "tech" as const } };
+    expect(missingByStep(done, MB)[5]).toEqual(["a class item"]);
+  });
+
+  it("drops weapons and keeps the Ikonis across a reload", () => {
+    const s = normalizeWizard({ ...warrior, primaryWeaponId: "battleaxe", secondaryWeaponId: "round-shield" }, MB);
+    expect(s).toMatchObject({ primaryWeaponId: null, secondaryWeaponId: null });
+    expect(toCharacterDraft(s, null).primaryWeaponId).toBe("");
+    const ikonis = { name: "Rod", description: "Hums", trait: "agility" as const, range: "Far" as const, damageType: "physical" as const };
+    expect(restoreWizard(JSON.parse(JSON.stringify({ ...s, ikonis }))).ikonis).toEqual(ikonis);
+    expect(restoreWizard({ ikonis: { name: 3 } }).ikonis).toEqual(emptyWizard().ikonis);
   });
 });

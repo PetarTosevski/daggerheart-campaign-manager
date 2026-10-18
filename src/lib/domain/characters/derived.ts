@@ -1,4 +1,5 @@
 import { getArmor, getWeapon } from "../../srd/index";
+import { augmentDefense } from "../../frames/extras/motherboard";
 import type { CharacterSheet, SubclassRank } from "../../validation/characters";
 import { damageThresholds, equipmentModifiers, type Thresholds } from "./index";
 
@@ -46,17 +47,25 @@ export function subclassBonuses(sheet: SubclassFields): Required<SubclassBonus> 
   return total;
 }
 
-/** Evasion and Armor Score after equipped items' modifiers and subclass bonuses; `evasion` on the sheet is the base. */
-export function derivedDefense(sheet: Pick<CharacterSheet, "evasion" | "primaryWeaponId" | "secondaryWeaponId" | "armorId"> & SubclassFields) {
+/**
+ * Evasion and Armor Score after equipped items' modifiers, subclass bonuses and
+ * installed Ikonis augments (Motherboard: Guard, Deny, Block, CB 301-303);
+ * `evasion` on the sheet is the base.
+ */
+export function derivedDefense(
+  sheet: Pick<CharacterSheet, "evasion" | "primaryWeaponId" | "secondaryWeaponId" | "armorId"> & SubclassFields,
+  installedAugments: readonly string[] = [],
+) {
   const items = [getWeapon(sheet.primaryWeaponId), sheet.secondaryWeaponId ? getWeapon(sheet.secondaryWeaponId) : undefined];
   const armor = sheet.armorId ? getArmor(sheet.armorId) : undefined;
   const mods = equipmentModifiers([...items.map((w) => w?.feature?.text), armor?.feature?.text]);
   const subclassEvasion = subclassBonuses(sheet).evasion;
+  const augments = augmentDefense(installedAugments);
   return {
-    evasion: sheet.evasion + mods.evasion + subclassEvasion,
-    evasionModifier: mods.evasion,
+    evasion: sheet.evasion + mods.evasion + subclassEvasion + augments.evasion,
+    evasionModifier: mods.evasion + augments.evasion,
     subclassEvasion,
-    armorScore: Math.max(0, (armor?.baseScore ?? 0) + mods.armorScore),
+    armorScore: Math.max(0, (armor?.baseScore ?? 0) + mods.armorScore + augments.armorScore),
   };
 }
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { applyResourceDelta, hopeMax } from "../../src/lib/domain/characters/index";
+import { avoidDeath } from "../../src/lib/domain/death/index";
+import { characterSheetSchema } from "../../src/lib/validation/characters";
 import { companionExperienceLimit, companionStats, INITIAL_COMPANION, trainingCap, validateCompanion } from "../../src/lib/frames/extras/companion";
 
 const sheet = (patch: Partial<typeof INITIAL_COMPANION>) => ({ ...INITIAL_COMPANION, ...patch });
@@ -39,5 +42,25 @@ describe("Ranger companion (Core pp.40-41)", () => {
     const exps = [1, 2, 3].map((n) => ({ name: `E${n}`, value: 2 }));
     expect(() => validateCompanion(sheet({ experiences: exps }), 1)).toThrow(/2 Experiences/);
     expect(() => validateCompanion(sheet({ experiences: exps }), 2)).not.toThrow();
+  });
+});
+
+describe("Light in the Dark (CB 40, dcm-bxp.14)", () => {
+  const tracks = { level: 3, hp: 6, hpMax: 6, stress: 0, stressMax: 6, hope: 1, scars: 6, hopeSlotBonus: 1, conditions: [] };
+
+  it("a seventh Hope slot: Hope max 7, and the sheet holds 7 Hope and 7 scars", () => {
+    expect(hopeMax(0, 1)).toBe(7);
+    expect(applyResourceDelta({ ...tracks, scars: 0, hope: 6 }, "hope", 1).hope).toBe(7);
+    const fields = characterSheetSchema.pick({ hope: true, scars: true, hopeSlotBonus: true });
+    expect(fields.safeParse({ hope: 7, scars: 0, hopeSlotBonus: 1 }).success).toBe(true);
+    expect(fields.safeParse({ hope: 0, scars: 7, hopeSlotBonus: 1 }).success).toBe(true);
+    expect(fields.safeParse({ hope: 0, scars: 8, hopeSlotBonus: 1 }).success).toBe(false);
+  });
+
+  it("with six scars one slot is left; scarring it ends the journey (CB 106)", () => {
+    expect(hopeMax(6, 1)).toBe(1);
+    const scarred = avoidDeath(tracks, 1);
+    expect(scarred).toMatchObject({ scarred: true, journeyEnds: true });
+    expect(avoidDeath({ ...tracks, scars: 5 }, 1).journeyEnds).toBe(false);
   });
 });

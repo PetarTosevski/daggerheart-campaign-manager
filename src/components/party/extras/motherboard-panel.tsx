@@ -12,7 +12,16 @@ import {
   type RewardGroup,
 } from "@/lib/domain/frames/motherboard";
 import { TRAIT_LABEL, traitIdSchema } from "@/lib/frames/extras/common";
-import { AUGMENTS, augmentSlots, IKONIS_RANGES, ikonisDamage, type Ikonis, type MotherboardState } from "@/lib/frames/extras/motherboard";
+import {
+  augmentDefense,
+  AUGMENTS,
+  augmentSlots,
+  getAugment,
+  IKONIS_RANGES,
+  ikonisDamage,
+  type Ikonis,
+  type MotherboardState,
+} from "@/lib/frames/extras/motherboard";
 import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
 
@@ -35,6 +44,19 @@ export function MotherboardPanel(props: Props) {
   );
 }
 
+/** Installed augments are features of the Ikonis (CB 301); Guard, Deny and Block change Armor Score and Evasion. */
+function InstalledLine({ installed }: { installed: readonly string[] }) {
+  const names = installed.map((id) => getAugment(id)?.name ?? id);
+  const defense = augmentDefense(installed);
+  const parts = [defense.armorScore ? `+${defense.armorScore} Armor Score` : "", defense.evasion ? `${defense.evasion} Evasion` : ""].filter(Boolean);
+  return (
+    <p data-testid="ikonis-augments" className="m-0 text-[14px] text-[#c9d6c0]">
+      {names.length > 0 ? `Installed augments: ${names.join(", ")}` : "No augments installed."}
+      {parts.length > 0 ? ` (${parts.join(", ")})` : ""}
+    </p>
+  );
+}
+
 function IkonisCard({ characterId, state, level, canEdit }: Props) {
   const save = useIntent(api.characterExtras.saveIkonis);
   const [draft, setDraft] = useState<Ikonis>(state.ikonis);
@@ -49,6 +71,7 @@ function IkonisCard({ characterId, state, level, canEdit }: Props) {
           {state.ikonis.range} · {damage}
         </p>
       ) : null}
+      <InstalledLine installed={state.installed} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Name">
           <input className={INPUT} disabled={ro} maxLength={80} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />

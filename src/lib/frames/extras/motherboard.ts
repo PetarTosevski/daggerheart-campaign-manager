@@ -89,6 +89,43 @@ export const INITIAL_MOTHERBOARD: MotherboardState = {
   installed: [],
 };
 
+/** The module sheet's top section is filled in: trait, range, damage type and a name (CB 301). */
+export function ikonisMissing(ikonis: Ikonis): string[] {
+  return [
+    !ikonis.trait && "an Ikonis trait",
+    !ikonis.range && "an Ikonis range",
+    !ikonis.damageType && "an Ikonis damage type",
+    !ikonis.name.trim() && "an Ikonis name",
+  ].filter((x): x is string => !!x);
+}
+
+/** CB 295: the Warrior's Combat Training is replaced by Ikonis Training. */
+export const IKONIS_TRAINING_CLASS_ID = "warrior";
+
+/**
+ * A new character's module: the designed Ikonis, no augments installed (CB 301:
+ * "An Ikonis starts with no augments installed"), except a Warrior's Force
+ * (CB 295, Ikonis Training: "You start with one Force augment already crafted and installed").
+ */
+export function startingMotherboard(ikonis: Ikonis, classId: string): MotherboardState {
+  const force = classId === IKONIS_TRAINING_CLASS_ID;
+  return { ...INITIAL_MOTHERBOARD, ikonis, built: force ? [{ id: "force", relics: [] }] : [], installed: force ? ["force"] : [] };
+}
+
+/** Installed augments that change defense (module sheet): Guard +1, Deny +2, Block +3 Armor Score and −1 Evasion. */
+const DEFENSE: Readonly<Record<string, { armorScore: number; evasion: number }>> = {
+  guard: { armorScore: 1, evasion: 0 },
+  deny: { armorScore: 2, evasion: 0 },
+  block: { armorScore: 3, evasion: -1 },
+};
+
+export function augmentDefense(installed: readonly string[]): { armorScore: number; evasion: number } {
+  return installed.reduce(
+    (sum, id) => ({ armorScore: sum.armorScore + (DEFENSE[id]?.armorScore ?? 0), evasion: sum.evasion + (DEFENSE[id]?.evasion ?? 0) }),
+    { armorScore: 0, evasion: 0 },
+  );
+}
+
 const have = (s: MotherboardState, name: string) => s.scrap[name] ?? 0;
 const withScrap = (s: MotherboardState, name: string, delta: number): MotherboardState => {
   const next = have(s, name) + delta;

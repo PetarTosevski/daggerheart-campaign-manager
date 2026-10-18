@@ -22,6 +22,7 @@ import {
   type Source,
   type TraitId,
 } from "@/lib/srd";
+import { ikonisMissing, ikonisSchema, INITIAL_MOTHERBOARD, type Ikonis } from "@/lib/frames/extras/motherboard";
 import type { CharacterDraft } from "@/lib/validation/characters";
 
 export const STEP_TITLES = [
@@ -76,6 +77,8 @@ export type WizardState = {
   connections: string[];
   /** GM only: who the character belongs to (a user id); null = the GM. */
   ownerId: string | null;
+  /** Motherboard campaigns: the Ikonis designed in place of weapons (CB 301). */
+  ikonis: Ikonis;
 };
 
 export const emptyWizard = (): WizardState => ({
@@ -105,6 +108,7 @@ export const emptyWizard = (): WizardState => ({
   domainCards: [],
   connections: [],
   ownerId: null,
+  ikonis: { ...INITIAL_MOTHERBOARD.ikonis },
 });
 
 /** Restores a stored draft, keeping only fields of the right type. */
@@ -152,10 +156,15 @@ export function restoreWizard(raw: unknown): WizardState {
     domainCards: strings(r.domainCards),
     connections: strings(r.connections),
     ownerId: str(r.ownerId),
+    ikonis: (() => {
+      const parsed = ikonisSchema.safeParse(r.ikonis);
+      return parsed.success ? parsed.data : base.ikonis;
+    })(),
   };
 }
 
-export type WizardOptions = { hopeAndFear: boolean };
+/** `ikonis`: a Motherboard campaign, where an Ikonis replaces weapons (CB 301). */
+export type WizardOptions = { hopeAndFear: boolean; ikonis?: boolean };
 
 export const sourcesFor = (opts: WizardOptions): Source[] => (opts.hopeAndFear ? ["core", "hope-and-fear"] : ["core"]);
 
@@ -220,7 +229,7 @@ export function normalizeWizard(state: WizardState, opts: WizardOptions): Wizard
   const com = state.communityId ? COMMUNITIES.find((c) => c.id === state.communityId) : undefined;
   const communityId = com && ok(com.source) ? com.id : null;
 
-  const primaries = primaryWeaponsFor({ classId, subclassId }, opts);
+  const primaries = opts.ikonis ? [] : primaryWeaponsFor({ classId, subclassId }, opts);
   const primary = primaries.find((w) => w.id === state.primaryWeaponId);
   const secondary =
     primary && primary.burden !== "two-handed"
@@ -264,7 +273,7 @@ export const traitsComplete = (traits: Partial<Record<TraitId, number>>) =>
   [...Object.values(traits)].sort((a, b) => (a ?? 0) - (b ?? 0)).join() === [...TRAIT_POOL].sort((a, b) => a - b).join();
 
 /** What each step still needs, in the board's words. Expects a normalized state. */
-export function missingByStep(s: WizardState): Record<number, string[]> {
+export function missingByStep(s: WizardState, opts?: WizardOptions): Record<number, string[]> {
   const cls = s.classId ? getClass(s.classId) : undefined;
   const has = (v: string) => v.trim().length > 0;
   const list = (...items: (string | false | null | undefined)[]) => items.filter((x): x is string => !!x);
@@ -283,7 +292,7 @@ export function missingByStep(s: WizardState): Record<number, string[]> {
     3: list(!traitsComplete(s.traits) && "all six trait modifiers"),
     4: list(!has(s.name) && "a name"),
     5: list(
-      !s.primaryWeaponId && "a primary weapon",
+      ...(opts?.ikonis ? ikonisMissing(s.ikonis) : [!s.primaryWeaponId && "a primary weapon"]),
       !s.armorId && "armor",
       !s.potion && "a potion",
       classItemsFor(cls).length > 0 && !s.classItem && "a class item",
