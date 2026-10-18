@@ -55,3 +55,4 @@
 - Campaign purge (2026-10-18): built and tested but not scheduled; deleted campaigns stay restorable until a GM 'Delete permanently' action exists. Daily jobs expire operations (7 days) and orphan uploads (2 hours).
 - Weredragon (2026-10-18): "Roll the night sky" is a Weredragon-only feature: any member can roll the 5d6 (HF p.140), the GM assigns.
 - Horizon (2026-10-18): players see a map token only if it is not hidden and sits in a hex they can see (explored, current or adjacent, HF p.176); sanctuaries always visible (HF p.169). Hex details stay GM-typed (HF p.169 allows it); region generation stays dcm-bxp.17.
+- Rest Fear (2026-10-18, confirmed): short rest 1d4, long rest 1d4 + active PCs (CB 105); an interrupted short rest gives no Fear, an interrupted long rest gives short-rest Fear (1d4); only finished short rests count toward the three-short-rest limit.
