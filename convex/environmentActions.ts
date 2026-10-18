@@ -5,6 +5,7 @@ import {
   environmentCountdownCategory,
   environmentCountdownName,
   environmentCountdownStart,
+  featureCountdownLabels,
   environmentsFor,
 } from "../src/lib/domain/environments/index";
 import { appError } from "../src/lib/errors/app-error";
@@ -72,18 +73,20 @@ export const spendFear = keyedGmMutation({
  * Private (the user's answer: only the GM sees it until they change it). A feature without a countdown is INVALID.
  */
 export const startCountdown = keyedGmMutation({
-  args: featureArgs,
+  /** `label`: which of the feature's countdowns (its own label or one written in its text); the first when omitted. */
+  args: { ...featureArgs, label: v.optional(v.string()) },
   returns: v.object({ countdownId: v.id("countdowns"), name: v.string(), startingValue: v.number() }),
-  handler: async (ctx, { environmentId, featureName }) => {
+  handler: async (ctx, { environmentId, featureName, label: wanted }) => {
     const { environment, feature } = findFeature(ctx.campaign, environmentId, featureName);
-    const label = feature.countdown;
+    const labels = featureCountdownLabels(feature);
+    const label = wanted === undefined ? labels[0] : labels.find((l) => l === wanted);
     const start = label === undefined ? null : environmentCountdownStart(label);
-    if (label === undefined || start === null) throw appError("INVALID", "That feature has no countdown.");
+    if (label === undefined || start === null) throw appError("INVALID", "That feature has no such countdown.");
     const campaignId = ctx.campaign._id;
-    return ctx.once("environment_start_countdown", { environmentId, featureName }, async () => {
+    return ctx.once("environment_start_countdown", { environmentId, featureName, label }, async () => {
       const rolled = start.kind === "fixed" ? start.value : rollDice(start.count, start.sides).reduce((a, b) => a + b, 0);
       const startingValue = Math.min(MAX_COUNTDOWN_START, Math.max(1, rolled));
-      const name = environmentCountdownName(environment, feature.name);
+      const name = environmentCountdownName(environment, feature.name, labels.length > 1 ? label : undefined);
       const countdownId = await ctx.db.insert("countdowns", {
         campaignId,
         name,

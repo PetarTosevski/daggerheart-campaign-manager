@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
+import { featureCountdownLabels } from "@/lib/domain/environments";
 import { MAX_FEAR } from "@/lib/domain/fear";
 import { ENVIRONMENTS } from "@/lib/srd/environments";
 import type { EnvironmentDef, EnvironmentFeature } from "@/lib/srd/types";
@@ -32,7 +33,7 @@ export function useEnvironmentActions(campaignId: Id<"campaigns">) {
   });
   const start = useMutation(api.environmentActions.startCountdown);
 
-  async function run(environment: EnvironmentDef, feature: EnvironmentFeature, action: "spend" | "start") {
+  async function run(environment: EnvironmentDef, feature: EnvironmentFeature, action: "spend" | "start", label?: string) {
     const id = `${environment.id}/${feature.name}`;
     setPending(id);
     setStatus(null);
@@ -42,8 +43,8 @@ export function useEnvironmentActions(campaignId: Id<"campaigns">) {
         const { spent } = await spend(args);
         setStatus({ environmentId: environment.id, text: `Spent ${spent} Fear: ${feature.name}`, error: false });
       } else {
-        const { startingValue } = await start(args);
-        setStatus({ environmentId: environment.id, text: `Countdown started on the dashboard: ${feature.name} at ${startingValue} (private)`, error: false });
+        const { name, startingValue } = await start(label === undefined ? args : { ...args, label });
+        setStatus({ environmentId: environment.id, text: `Countdown started on the dashboard: ${name} at ${startingValue} (private)`, error: false });
       }
     } catch (e) {
       setStatus({ environmentId: environment.id, text: errorMessage(e), error: true });
@@ -57,7 +58,7 @@ export function useEnvironmentActions(campaignId: Id<"campaigns">) {
     statusFor: (environmentId: string) => (status?.environmentId === environmentId ? status : null),
     pending: (environment: EnvironmentDef, feature: EnvironmentFeature) => pending === `${environment.id}/${feature.name}`,
     spendFear: (environment: EnvironmentDef, feature: EnvironmentFeature) => run(environment, feature, "spend"),
-    startCountdown: (environment: EnvironmentDef, feature: EnvironmentFeature) => run(environment, feature, "start"),
+    startCountdown: (environment: EnvironmentDef, feature: EnvironmentFeature, label?: string) => run(environment, feature, "start", label),
   };
 }
 
@@ -111,7 +112,8 @@ export function FeatureActions({
   actions: EnvironmentActions;
 }) {
   const cost = feature.fearCost;
-  if (cost === undefined && feature.countdown === undefined) return null;
+  const countdowns = featureCountdownLabels(feature);
+  if (cost === undefined && countdowns.length === 0) return null;
   const busy = actions.pending(environment, feature);
   const short = cost !== undefined && fear < cost;
   const reasonId = `env-short-${environment.id}-${feature.name.replace(/[^a-z0-9]+/gi, "-")}`;
@@ -128,11 +130,18 @@ export function FeatureActions({
           Spend {cost} Fear
         </button>
       ) : null}
-      {feature.countdown !== undefined ? (
-        <button type="button" className="env-act" disabled={busy} onClick={() => void actions.startCountdown(environment, feature)}>
+      {countdowns.length === 1 ? (
+        <button type="button" className="env-act" disabled={busy} onClick={() => void actions.startCountdown(environment, feature, countdowns[0])}>
           Start countdown
         </button>
-      ) : null}
+      ) : (
+        // Several countdowns in one feature (e.g. a Progress and a Consequence Countdown): one button each.
+        countdowns.map((label) => (
+          <button key={label} type="button" className="env-act" disabled={busy} onClick={() => void actions.startCountdown(environment, feature, label)}>
+            Start {label}
+          </button>
+        ))
+      )}
       {short ? (
         <span id={reasonId} className="env-act-note">
           {fear === 0 ? "No Fear to spend." : `You hold ${fear} Fear.`}

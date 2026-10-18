@@ -144,4 +144,15 @@ describe("environment actions (EF1)", () => {
     expect(await ctx.gm.mutation(api.environmentActions.spendFear, args)).toEqual({ fear: 2, spent: 1 });
     expect(await fearOf(ctx)).toBe(2);
   });
+
+  it("starts a countdown written in a feature's text, and picks one of several by its label", async () => {
+    const ctx = await setup();
+    const climb = await start(ctx, "cliffside-ascent", "The Climb");
+    expect(climb).toMatchObject({ name: "Cliffside Ascent: The Climb", startingValue: 12 });
+    const pick = (label: string) =>
+      ctx.gm.mutation(api.environmentActions.startCountdown, { campaignId: ctx.campaignId, environmentId: "heist", featureName: "Infiltration", label, idempotencyKey: key() });
+    expect(await pick("Consequence Countdown (10)")).toMatchObject({ name: "Heist: Infiltration (Consequence)", startingValue: 10 });
+    expect(await pick("Progress Countdown (12)")).toMatchObject({ name: "Heist: Infiltration (Progress)", startingValue: 12 });
+    expect(await codeOf(pick("Countdown (99)"))).toBe("INVALID");
+  });
 });

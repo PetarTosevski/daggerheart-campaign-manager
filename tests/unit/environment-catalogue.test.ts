@@ -107,3 +107,16 @@ describe("environment catalogue helpers (EV1)", () => {
     expect(labels.filter((label) => environmentCountdownStart(label) === null)).toEqual([]);
   });
 });
+
+describe("featureCountdownLabels", () => {
+  it("lists a feature's own countdown and the countdowns written in its text", async () => {
+    const { featureCountdownLabels } = await import("../../src/lib/domain/environments");
+    const { ENVIRONMENTS } = await import("../../src/lib/srd/environments");
+    const feature = (env: string, name: string) => ENVIRONMENTS.find((e) => e.id === env)!.features.find((f) => f.name === name)!;
+    expect(featureCountdownLabels(feature("cliffside-ascent", "The Climb"))).toEqual(["Progress Countdown (12)"]);
+    expect(featureCountdownLabels(feature("haunted-city", "Apocalypse Then"))).toEqual(["Progress Countdown (5)"]);
+    expect(featureCountdownLabels(feature("heist", "Infiltration"))).toEqual(["Progress Countdown (12)", "Consequence Countdown (10)"]);
+    // A feature's own label comes first and isn't repeated.
+    expect(featureCountdownLabels(feature("mountain-pass", "Icy Winds"))[0]).toMatch(/Loop 4/);
+  });
+});
