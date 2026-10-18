@@ -1,8 +1,8 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import { textBlocks } from "@/lib/adversaries/catalogue";
 import { environmentTierLine } from "@/lib/domain/environments";
-import type { EnvironmentDef, EnvironmentFeatureKind } from "@/lib/srd/types";
+import type { EnvironmentDef, EnvironmentFeature, EnvironmentFeatureKind } from "@/lib/srd/types";
 
 import { HopeFearPill } from "../catalogue/stat-block";
 
@@ -14,6 +14,10 @@ export type EnvironmentStatBlockProps = {
   canOpenAdversary: (adversaryId: string) => boolean;
   /** Opens that adversary in the Catalogue tab. */
   onOpenAdversary: (adversaryId: string) => void;
+  /** Shown above the name (EF1: GM Fear with "+ Fear" and the actions' status line). */
+  top?: ReactNode;
+  /** A feature's buttons (EF1: "Spend N Fear", "Start countdown"), under its text. */
+  renderFeatureActions?: (feature: EnvironmentFeature) => ReactNode;
 };
 
 /** Feature text: paragraphs, "- " bullet lists, and numbered lists where every item starts "N. " (Deep Pockets). */
@@ -68,9 +72,10 @@ function sourceLine(environment: EnvironmentDef): string {
  * and type, description, Impulses, Difficulty, Potential Adversaries (linked to the catalogue where they are in it),
  * features with kind, Fear and countdown badges, and the italic feature questions.
  */
-export function EnvironmentStatBlock({ environment, canOpenAdversary, onOpenAdversary }: EnvironmentStatBlockProps) {
+export function EnvironmentStatBlock({ environment, canOpenAdversary, onOpenAdversary, top, renderFeatureActions }: EnvironmentStatBlockProps) {
   return (
     <article className="adc-sb" aria-label={`${environment.name} stat block`}>
+      {top ? <div className="env-sb-top">{top}</div> : null}
       <div className="adc-sb-head">
         <div className="adc-sb-top">
           <h2 className="adc-sb-name">{environment.name}</h2>
@@ -128,6 +133,7 @@ export function EnvironmentStatBlock({ environment, canOpenAdversary, onOpenAdve
             </div>
             <FeatureText text={feature.text} />
             {feature.questions ? <p className="env-q">{feature.questions}</p> : null}
+            {renderFeatureActions?.(feature)}
           </div>
         ))}
         <div className="adc-sb-src">{sourceLine(environment)}</div>
