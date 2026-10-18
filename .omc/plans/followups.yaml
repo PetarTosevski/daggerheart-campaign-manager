@@ -64,3 +64,22 @@ waves:
           - "A player can roll only while no roll is waiting to be assigned; the GM can always re-roll (convex test)"
           - "assignReading stays GM-only (convex test)"
           - "The Weredragon tracker shows players a 'Roll the night sky' button; weredragon.spec.ts covers a player rolling and the GM assigning"
+      - id: X5
+        goal: In Journey to Horizon, players see a map token only when it is not hidden AND it sits in a hex they can see (explored, the party's hex, or adjacent; HF p.176); sanctuary markers stay visible everywhere (HF p.169). Other frames are unchanged.
+        depends_on: []
+        owns:
+          - convex/lib/maps.ts
+          - src/lib/world/map-state.ts
+          - src/lib/world/hex.ts
+          - src/lib/world/token-types.ts
+          - tests/convex/maps.test.ts
+          - tests/unit/world-map-state.test.ts
+          - tests/e2e/horizon.spec.ts
+        reads:
+          - convex/maps.ts
+          - convex/lib/validators/maps.ts
+        acceptance:
+          - "Horizon player view: a non-hidden token in an unexplored, non-adjacent hex is absent; the same token becomes visible when its hex is explored or adjacent to the party (convex test)"
+          - "Sanctuary markers are visible to players in any hex (add a built-in sanctuary token type if none exists)"
+          - "Non-Horizon frames: player token visibility unchanged (existing tests pass)"
+          - "Codex pins pointing at a token the player can't see are omitted (existing codex pin behaviour uses the player view)"
