@@ -58,6 +58,7 @@ import type * as migrations_run from "../migrations/run.js";
 import type * as migrations_trackers from "../migrations/trackers.js";
 import type * as migrations_uploads from "../migrations/uploads.js";
 import type * as rests from "../rests.js";
+import type * as sessions from "../sessions.js";
 import type * as settings from "../settings.js";
 import type * as tables_actionLog from "../tables/actionLog.js";
 import type * as tables_campaigns from "../tables/campaigns.js";
@@ -77,6 +78,7 @@ import type * as trackers_fiveBanners from "../trackers/fiveBanners.js";
 import type * as trackers_horizon from "../trackers/horizon.js";
 import type * as trackers_weredragon from "../trackers/weredragon.js";
 import type * as users from "../users.js";
+import type * as wither from "../wither.js";
 
 import type {
   ApiFromModules,
@@ -135,6 +137,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/trackers": typeof migrations_trackers;
   "migrations/uploads": typeof migrations_uploads;
   rests: typeof rests;
+  sessions: typeof sessions;
   settings: typeof settings;
   "tables/actionLog": typeof tables_actionLog;
   "tables/campaigns": typeof tables_campaigns;
@@ -154,6 +157,7 @@ declare const fullApi: ApiFromModules<{
   "trackers/horizon": typeof trackers_horizon;
   "trackers/weredragon": typeof trackers_weredragon;
   users: typeof users;
+  wither: typeof wither;
 }>;
 
 /**

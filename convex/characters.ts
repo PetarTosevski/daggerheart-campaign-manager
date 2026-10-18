@@ -4,14 +4,13 @@ import {
   applyResourceDelta,
   hitPointsToMark,
   markStress,
-  damageThresholds,
   STARTING_EXPERIENCE_VALUE,
   STARTING_HOPE,
   STARTING_PROFICIENCY,
   STARTING_STRESS,
   tierForLevel,
 } from "../src/lib/domain/characters/index";
-import { derivedDefense } from "../src/lib/domain/characters/derived";
+import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
 import { appError, RuleError } from "../src/lib/errors/app-error";
 import { resolveOptions } from "../src/lib/frames/options";
 import {
@@ -38,6 +37,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { campaignQuery, keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
+import { assertMechanicEnabled } from "./lib/mechanics";
 import { atLeast, type Permission } from "./lib/permissions";
 import {
   characterDraftValidator,
@@ -48,6 +48,7 @@ import {
   traitIdValidator,
   type CharacterView,
 } from "./lib/validators/characters";
+import { gainWitherToken, witherGainValidator } from "./wither";
 
 export type { CharacterView };
 // Moved to convex/lib/characterSheet.ts (D5 T0); re-exported for existing importers.
@@ -529,21 +530,26 @@ export const adjustResource = userMutation({
  * Takes damage in one step: compares it with the character's thresholds,
  * optionally marks an Armor Slot to reduce the severity by one, and marks the
  * resulting Hit Points (Core, "Hit Points and Damage Thresholds"). Owner or GM.
+ * `withered` (Witherwild, CB 261): Severe damage (after the Armor Slot) from a
+ * Withered source also gains a Wither token and rolls the Fear Die
+ * (convex/wither.ts); outside Witherwild it is MECHANIC_DISABLED.
  */
 export const applyDamage = userMutation({
-  args: { characterId: v.id("characters"), damage: v.number(), useArmorSlot: v.boolean() },
+  args: { characterId: v.id("characters"), damage: v.number(), useArmorSlot: v.boolean(), withered: v.optional(v.boolean()) },
   returns: v.object({
     severity: v.union(v.literal("none"), v.literal("minor"), v.literal("major"), v.literal("severe")),
     marks: v.number(),
     hp: v.number(),
     armorMarked: v.number(),
+    wither: v.optional(witherGainValidator),
   }),
-  handler: async (ctx, { characterId, damage, useArmorSlot }) => {
+  handler: async (ctx, { characterId, damage, useArmorSlot, withered }) => {
     if (!Number.isInteger(damage) || damage < 1 || damage > 999) invalid("Enter the damage as a whole number.");
-    const { character, sheet: s } = await editable(ctx, ctx.user, characterId);
+    const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
+    if (withered) assertMechanicEnabled(campaign, "witherTokens");
     const defense = derivedDefense(s);
-    const armor = s.armorId ? getArmor(s.armorId) : undefined;
-    const thresholds = damageThresholds(s.level, armor?.baseThresholds ?? null);
+    // Armor base + level + always-on subclass bonuses (CB 36, 45; HF 10).
+    const thresholds = derivedThresholds(s);
     if (useArmorSlot && s.armorMarked >= defense.armorScore) invalid("No Armor Slot is free.");
     const result = hitPointsToMark(damage, thresholds, useArmorSlot);
     const next: CharacterSheet = {
@@ -552,7 +558,12 @@ export const applyDamage = userMutation({
       hp: Math.min(s.hpMax, s.hp + result.marks),
     };
     await saveSheet(ctx, character._id, next);
-    return { severity: result.severity, marks: result.marks, hp: next.hp, armorMarked: next.armorMarked };
+    // The Wither row's `before` is the damaged sheet: undoing it takes back the token, not the damage.
+    const wither =
+      withered && result.severity === "severe"
+        ? await gainWitherToken(ctx, { campaignId: campaign._id, characterId: character._id, sheet: next, actorId: ctx.user._id, source: "Severe Withered damage" })
+        : undefined;
+    return { severity: result.severity, marks: result.marks, hp: next.hp, armorMarked: next.armorMarked, ...(wither ? { wither } : {}) };
   },
 });
 
