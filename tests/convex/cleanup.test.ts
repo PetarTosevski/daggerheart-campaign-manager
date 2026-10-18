@@ -87,6 +87,9 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
       before: null,
       after: { currentValue: 4, status: "active" },
     });
+    await ins("actionLog", { campaignId: c, characterId, actorId: userId, kind: "roll", visibility: "public", summary: "rolled", undoable: true, at: now });
+    const restId = await ins("rests", { campaignId: c, kind: "short", status: "open", startedBy: userId, startedAt: now });
+    await ins("restChoices", { campaignId: c, restId, characterId, moves: [{ move: "clearStress" }], updatedBy: userId, updatedAt: now });
     await ins("frameTrackers", { campaignId: c, key: "doom", data: {}, updatedAt: now });
     await ins("characterExtras", {
       campaignId: c,

@@ -6,6 +6,8 @@ import { useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { BackLink } from "@/components/brand/brand";
 import { brandButton } from "@/components/brand/buttons";
+import { DeathMoveModal } from "@/components/party/death";
+import { LevelUpButton } from "@/components/party/level-up";
 import { getClass, getDomain } from "@/lib/srd";
 
 import { api } from "../../../../../../../convex/_generated/api";
@@ -24,6 +26,10 @@ const PAGES = [
 
 type PageId = (typeof PAGES)[number]["id"];
 
+const STATUS_BADGE = { dead: "Dead", retired: "Retired", away: "Away" } as const;
+/** Castle High less-lethal (HF 127): where an `away` character went. */
+const AWAY_REASON = { infirmary: "in the infirmary", sentHome: "sent home" } as const;
+
 function bannerBackground(domains: readonly string[]): string {
   const [a, b] = domains.map((d) => getDomain(d)?.color ?? "#5b2b2b");
   const second = b ?? a ?? "#5b2b2b";
@@ -35,7 +41,7 @@ function bannerBackground(domains: readonly string[]): string {
 }
 
 function SheetBody({ extras }: { extras?: ReactNode }) {
-  const { sheet, character, canEdit, error } = useSheet();
+  const { sheet, character, canEdit, error, slot } = useSheet();
   const [page, setPage] = useState<PageId>("sheet");
   const cls = getClass(sheet.classId);
   const domains = cls?.domains ?? [];
@@ -77,6 +83,7 @@ function SheetBody({ extras }: { extras?: ReactNode }) {
           <strong aria-hidden="true">{sheet.level}</strong>
           <span aria-hidden="true">LEVEL</span>
         </div>
+        <LevelUpButton {...slot} />
       </header>
 
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -86,7 +93,8 @@ function SheetBody({ extras }: { extras?: ReactNode }) {
         {sheet.pronouns ? <span className="text-[17px] text-[#6a5236] italic">{sheet.pronouns}</span> : null}
         {character.status !== "active" ? (
           <span className={`cs-status ${character.status === "dead" ? "bg-[#5b2b2b] text-[#f6ead2]" : "bg-[#d9c8a8] text-[#3a2a14]"}`} data-testid="character-status">
-            {character.status === "dead" ? "Dead" : "Retired"}
+            {STATUS_BADGE[character.status]}
+            {character.status === "away" && character.away ? ` · ${AWAY_REASON[character.away.reason]}` : ""}
           </span>
         ) : null}
         {!canEdit ? (
@@ -117,6 +125,7 @@ function SheetBody({ extras }: { extras?: ReactNode }) {
       <p className="cs-small m-0 border-t border-[#d1b98b] pt-3 text-right italic">
         {canEdit ? "All changes save automatically." : "Updates live as the table plays."}
       </p>
+      <DeathMoveModal {...slot} />
     </article>
   );
 }
@@ -148,7 +157,7 @@ export function CharacterSheetView({ characterId, extras }: { characterId: strin
         <BackLink href={rosterHref} label="Back to the party" className="border-white/25 bg-black/30" />
         <span className="text-[13px] tracking-[0.3em] text-[#c9d2cf] uppercase">Party · Character sheet</span>
       </div>
-      <SheetProvider character={character} hopeAndFear={Boolean(campaign.options.hopeAndFear)}>
+      <SheetProvider character={character} campaignId={campaign._id} isGm={campaign.role === "gm"} hopeAndFear={Boolean(campaign.options.hopeAndFear)}>
         <SheetBody extras={extras} />
       </SheetProvider>
     </main>

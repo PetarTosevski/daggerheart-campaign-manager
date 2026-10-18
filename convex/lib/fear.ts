@@ -34,3 +34,26 @@ export async function gainFear(
   }
   return { previousValue: state.fear, newValue, gained: newValue - state.fear, lost: Math.max(0, amount) - (newValue - state.fear) };
 }
+
+/**
+ * Takes back Fear an undone action gained (D5 undo): subtracts `amount`
+ * (a negative amount gives Fear back), kept within 0–12, and records the
+ * change in `history` with action "undo". Returns how much actually changed.
+ *
+ * ```ts
+ * await revertFear(ctx, campaignId, row.fearDelta ?? 0); // a Fear roll gained 1 → GM Fear −1, never below 0
+ * ```
+ */
+export async function revertFear(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  amount: number,
+): Promise<{ previousValue: number; newValue: number; reverted: number }> {
+  const state = await campaignFearState(ctx, campaignId);
+  const newValue = Math.max(0, Math.min(MAX_FEAR, state.fear - amount));
+  if (newValue !== state.fear) {
+    await ctx.db.patch("campaignState", state._id, { fear: newValue });
+    await recordHistory(ctx, await getAuthUserId(ctx), { campaignId, kind: "fear", action: "undo", before: state.fear, after: newValue });
+  }
+  return { previousValue: state.fear, newValue, reverted: state.fear - newValue };
+}

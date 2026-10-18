@@ -69,6 +69,106 @@ export const characterSheetV1Schema = z.object({
   portrait: portraitSchema.optional(),
 });
 
+// ---------------------------------------------------------------- D5 sheet parts
+
+/** Conditions a character can have (CB 102-103, plus Unconscious from Avoid Death, CB 106). */
+export const CONDITIONS = ["vulnerable", "restrained", "hidden", "cloaked", "unconscious", "distracted"] as const;
+export type Condition = (typeof CONDITIONS)[number];
+
+export const SUBCLASS_RANKS = ["foundation", "specialization", "mastery"] as const;
+export type SubclassRank = (typeof SUBCLASS_RANKS)[number];
+
+/**
+ * When an effect ends: `expire(sheet, event)` (src/lib/domain/characters/expiry.ts) removes it.
+ * `scene` ends at session end; `manual` only through its End button.
+ */
+export const EFFECT_UNTIL = ["rest", "longRest", "session", "hit", "scene", "manual"] as const;
+export const HELD_DIE_UNTIL = ["session", "longRest", "manual"] as const;
+export const FEATURE_USE_UNTIL = ["rest", "longRest", "session"] as const;
+export const HELD_DIE_KINDS = ["rally", "prayer", "patron", "combo"] as const;
+
+/** The level-up options (CB 110). Proficiency and multiclass take both picks of a level. */
+export const ADVANCEMENT_OPTIONS = ["traits", "hp", "stress", "experiences", "domainCard", "evasion", "subclass", "proficiency", "multiclass"] as const;
+export type AdvancementOption = (typeof ADVANCEMENT_OPTIONS)[number];
+
+const shortText = z.string().trim().min(1).max(80);
+
+/** One level-up pick: the option, the tier it was taken from, its slot in that tier, and what it chose (traits, Experience ids, a card id). */
+export const advancementPickSchema = z.object({
+  option: z.enum(ADVANCEMENT_OPTIONS),
+  tier: z.number().int().min(2).max(4),
+  slot: z.number().int().min(0).max(2),
+  targets: z.array(z.string().min(1).max(80)).max(2).optional(),
+});
+
+/** One level gained: its picks, the level's domain card, an optional card trade, and the achievement Experience (levels 2, 5, 8). */
+export const advancementSchema = z.object({
+  level: z.number().int().min(2).max(MAX_LEVEL),
+  picks: z.array(advancementPickSchema).min(1).max(2),
+  cardId: z.string().min(1),
+  tradeOut: z.string().min(1).optional(),
+  tradeIn: z.string().min(1).optional(),
+  experienceId: listId.optional(),
+});
+
+const modifier = z.number().int().min(-10).max(10);
+
+export const effectSchema = z.object({
+  id: listId,
+  /** What made it, e.g. "Rogue's Dodge". */
+  source: shortText,
+  text: z.string().max(300),
+  until: z.enum(EFFECT_UNTIL),
+  mods: z
+    .object({
+      evasion: modifier.optional(),
+      attack: modifier.optional(),
+      damage: modifier.optional(),
+      trait: z.object({ id: z.enum(TRAIT_IDS), delta: modifier }).optional(),
+    })
+    .optional(),
+});
+
+export const heldDieSchema = z.object({
+  id: listId,
+  kind: z.enum(HELD_DIE_KINDS),
+  sides: z.number().int().min(2).max(20),
+  /** Rolled value, when the die was rolled on receipt (Prayer Dice); unset until rolled. */
+  value: z.number().int().min(1).max(20).optional(),
+  until: z.enum(HELD_DIE_UNTIL),
+  /** The character who gave it (Rally), as a plain id string. */
+  fromCharacterId: z.string().min(1).max(40).optional(),
+});
+
+export const featureUseSchema = z.object({ key: z.string().min(1).max(40), until: z.enum(FEATURE_USE_UNTIL) });
+
+/** Flat per-class counters (spec section C). All optional; a class reads only its own. */
+export const classStateSchema = z.object({
+  /** Guardian Unstoppable: the die's current value and its maximum (d4, d6 from level 5). */
+  unstoppable: z.object({ value: z.number().int().min(1).max(6), max: z.number().int().min(4).max(6) }).optional(),
+  /** Ranger's Focus: the current focus. */
+  focus: shortText.optional(),
+  /** Wizard Strange Patterns: the chosen number. */
+  strangeNumber: z.number().int().min(1).max(12).optional(),
+  /** Assassin Marked for Death: the marked target. */
+  marked: shortText.optional(),
+  /** Assassin Get In & Get Out: the next roll has advantage. */
+  getInGetOut: z.boolean().optional(),
+  /** Brawler Combo Strike: the current combo die size. */
+  comboDie: z.number().int().min(4).max(20).optional(),
+  /** Warlock Favor (starts at 3). */
+  favor: z.number().int().min(0).max(99).optional(),
+  /** Witch Hex: hexed targets. */
+  hexes: z.array(shortText).max(10).optional(),
+});
+
+export type Advancement = z.infer<typeof advancementSchema>;
+export type AdvancementPick = z.infer<typeof advancementPickSchema>;
+export type Effect = z.infer<typeof effectSchema>;
+export type HeldDie = z.infer<typeof heldDieSchema>;
+export type FeatureUse = z.infer<typeof featureUseSchema>;
+export type ClassState = z.infer<typeof classStateSchema>;
+
 /**
  * The current sheet (version 2): inventory items and Experiences carry stable
  * ids. Stored on `characters.sheet` as `{ schemaVersion: 2, ...sheet }` and
@@ -78,20 +178,50 @@ export const characterSheetV1Schema = z.object({
  *
  * To extend it (D5 and later), add fields as `.optional()` or with a
  * `.default(...)` so stored version 2 sheets keep parsing without a migration,
- * and add the same field to `sheetValidator` (convex/lib/validators/characters.ts).
+ * and add the same field to `sheetValidator` (convex/lib/validators/characters.ts)
+ * as `v.optional(...)`, so views built before the field existed stay valid.
+ * Only T0 (wave 1) and T9 (wave 3) edit this file in D5.
  * Changing or removing a field bumps `SHEET_VERSION` with an upgrade step
  * instead (widen, migrate, narrow).
  */
 export const characterSheetSchema = characterSheetV1Schema.extend({
   inventory: z.array(inventoryItemSchema).max(60),
   experiences: z.array(experienceSchema).max(12),
+  // ---- D5 fields (T0). Every one is defaulted or optional, so stored version 2 sheets parse unchanged.
+  /** Light in the Dark (companion, dcm-bxp.14): a seventh Hope slot. Hope max = 6 + bonus − scars (`hopeMax`). */
+  hope: z.number().int().min(0).max(7),
+  hopeSlotBonus: z.number().int().min(0).max(1).default(0),
+  /** Upgraded subclass advancements move it up (CB 110). */
+  subclassRank: z.enum(SUBCLASS_RANKS).default("foundation"),
+  /** Multiclass (CB 110-111): the second class's class features, one of its domains and its foundation card. */
+  multiclass: z.object({ classId: z.string().min(1), domainId: z.string().min(1), subclassId: z.string().min(1) }).optional(),
+  /** One entry per level gained (at most 9); level undo inverts the latest one (dcm-mf7). */
+  advancements: z.array(advancementSchema).max(9).default([]),
+  /** Set by the GM's "Party levels up" (CB 109); cleared when the owner levels up. */
+  levelUpPending: z.boolean().default(false),
+  conditions: z.array(z.enum(CONDITIONS)).max(CONDITIONS.length).default([]),
+  /** Temporary effects; derived values add their `mods` (`withEffects`), base stats never change. */
+  effects: z.array(effectSchema).max(20).default([]),
+  /** Dice held for later (Rally, Prayer, patron, combo). */
+  heldDice: z.array(heldDieSchema).max(20).default([]),
+  /** "Once per rest/long rest/session" features already used. */
+  featureUses: z.array(featureUseSchema).max(20).default([]),
+  /** Small per-class counters (spec section C); lists with an `until` live in the three arrays above. */
+  classState: classStateSchema.default({}),
+  /** Wither tokens (Witherwild, CB 261): no per-character cap. */
+  wither: z.number().int().min(0).max(99).default(0),
+  /** The last Hope slot was scarred (CB 106): the GM ends the character's journey. */
+  journeyEnds: z.boolean().default(false),
 });
 
 /** The stored sheet's current `schemaVersion`. */
 export const SHEET_VERSION = 2;
 
 export type CharacterSheetV1 = z.infer<typeof characterSheetV1Schema>;
+/** A parsed sheet: every D5 field is present (defaults filled in by `readSheet`). */
 export type CharacterSheet = z.infer<typeof characterSheetSchema>;
+/** A sheet before defaults: the D5 fields may be missing (what callers may build and `storedSheet` accepts). */
+export type CharacterSheetInput = z.input<typeof characterSheetSchema>;
 export type InventoryItem = z.infer<typeof inventoryItemSchema>;
 export type Experience = z.infer<typeof experienceSchema>;
 

@@ -186,6 +186,18 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     await deleteRows(ctx, budget, "history", rows);
   },
   async (ctx, c, budget) => {
+    const rows = await ctx.db.query("actionLog").withIndex("by_campaign_at", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "actionLog", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("restChoices").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "restChoices", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("rests").withIndex("by_campaign_started", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "rests", rows);
+  },
+  async (ctx, c, budget) => {
     const rows = await ctx.db.query("frameTrackers").withIndex("by_campaign_key", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "frameTrackers", rows);
   },

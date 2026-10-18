@@ -2,8 +2,13 @@
 
 import { useState, type ReactNode } from "react";
 
+import { SheetDiceBox } from "@/components/party/dice";
+import { FeaturesPanel } from "@/components/party/features";
+import { RestPicker } from "@/components/party/rest";
+import { WitherCounter } from "@/components/party/wither";
 import { derivedDefense } from "@/lib/domain/characters/derived";
-import { damageThresholds, hopeMax, tierForLevel } from "@/lib/domain/characters";
+import { withEffects } from "@/lib/domain/characters/effects";
+import { BASE_HOPE_MAX, damageThresholds, hopeMax, tierForLevel } from "@/lib/domain/characters";
 import { assetBackground } from "@/lib/design-assets";
 import type { SheetPatch } from "@/lib/validation/characters";
 import {
@@ -437,13 +442,16 @@ function Identity({ cls }: { cls: ClassDef | undefined }) {
 }
 
 export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: ReactNode }) {
-  const { sheet, canEdit, update, adjust } = useSheet();
+  const { sheet, canEdit, update, adjust, slot } = useSheet();
   const armor = sheet.armorId ? getArmor(sheet.armorId) : undefined;
-  const defense = derivedDefense(sheet);
+  // Evasion shown with active effects (Rogue's Dodge and the like); the base on the sheet never changes.
+  const defense = derivedDefense(withEffects(sheet));
+  const effectEvasion = defense.evasion - derivedDefense(sheet).evasion;
   const armorSlots = defense.armorScore;
   const thresholds = damageThresholds(sheet.level, armor?.baseThresholds ?? null);
   const ranges = thresholdRanges(thresholds);
-  const maxHope = hopeMax(sheet.scars);
+  const hopeSlots = BASE_HOPE_MAX + (sheet.hopeSlotBonus ?? 0);
+  const maxHope = hopeMax(sheet.scars, sheet.hopeSlotBonus ?? 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -480,6 +488,7 @@ export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: R
               <span className="cs-lbl">
                 Evasion
                 {defense.evasionModifier ? ` (${defense.evasionModifier > 0 ? "+" : ""}${defense.evasionModifier} gear)` : ""}
+                {effectEvasion ? ` (${effectEvasion > 0 ? "+" : ""}${effectEvasion} effects)` : ""}
               </span>
             </div>
             <div className="flex flex-col items-center gap-1">
@@ -516,7 +525,7 @@ export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: R
               <Stepper label="Scars" value={sheet.scars} min={0} max={6} readOnly={!canEdit} onChange={(v) => void adjust("scars", v - sheet.scars)} />
             </span>
           </div>
-          <Track name="Hope" kind="coin" slots={6} lost={6 - maxHope} marked={sheet.hope} readOnly={!canEdit} onDelta={(d) => void adjust("hope", d)} />
+          <Track name="Hope" kind="coin" slots={hopeSlots} lost={hopeSlots - maxHope} marked={sheet.hope} readOnly={!canEdit} onDelta={(d) => void adjust("hope", d)} />
           <div className="cs-small grid grid-cols-1 gap-2 italic sm:grid-cols-2">
             <span>Spend a Hope to use an Experience or help an ally.</span>
             <span>Spend 3 Hope to make a tag team roll or use your class’ Hope feature.</span>
@@ -529,6 +538,9 @@ export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: R
           ) : null}
         </Box>
       </div>
+
+      <SheetDiceBox {...slot} />
+      <FeaturesPanel {...slot} />
 
       <div className="cs-grid">
         <Box title="Hit Points & Stress">
@@ -603,6 +615,9 @@ export function PageOne({ cls, extras }: { cls: ClassDef | undefined; extras?: R
           <WeaponBlock label="Secondary" weaponId={sheet.secondaryWeaponId} slot="secondary" />
         </Box>
       </div>
+
+      <RestPicker {...slot} />
+      <WitherCounter {...slot} />
 
       <div className="cs-grid">
         <ArmorBlock />

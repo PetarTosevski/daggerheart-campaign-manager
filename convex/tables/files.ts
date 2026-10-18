@@ -11,8 +11,8 @@ export const fileTables = {
     storageId: v.id("_storage"),
     campaignId: v.id("campaigns"),
     uploadedBy: v.id("users"),
-    kind: v.union(v.literal("map"), v.literal("codexImage"), v.literal("portrait")),
-    /** The campaign (map), codex entry (codexImage) or character (portrait) id. */
+    kind: v.union(v.literal("map"), v.literal("codexImage"), v.literal("portrait"), v.literal("photoImport")),
+    /** The campaign (map, photoImport), codex entry (codexImage) or character (portrait) id. Photo-import files are deleted after reading (D5 T7). */
     refId: v.string(),
     createdAt: v.number(),
   })

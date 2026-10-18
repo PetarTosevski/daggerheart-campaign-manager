@@ -9,6 +9,7 @@
  */
 
 import type * as accounts from "../accounts.js";
+import type * as actionLog from "../actionLog.js";
 import type * as auth from "../auth.js";
 import type * as campaignTime from "../campaignTime.js";
 import type * as campaigns from "../campaigns.js";
@@ -21,9 +22,11 @@ import type * as crons from "../crons.js";
 import type * as fear from "../fear.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
+import type * as lib_actionLog from "../lib/actionLog.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_blobs from "../lib/blobs.js";
+import type * as lib_characterSheet from "../lib/characterSheet.js";
 import type * as lib_codex from "../lib/codex.js";
 import type * as lib_dice from "../lib/dice.js";
 import type * as lib_fear from "../lib/fear.js";
@@ -36,11 +39,13 @@ import type * as lib_operations from "../lib/operations.js";
 import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_trackers from "../lib/trackers.js";
 import type * as lib_users from "../lib/users.js";
+import type * as lib_validators_actionLog from "../lib/validators/actionLog.js";
 import type * as lib_validators_campaigns from "../lib/validators/campaigns.js";
 import type * as lib_validators_characterExtras from "../lib/validators/characterExtras.js";
 import type * as lib_validators_characters from "../lib/validators/characters.js";
 import type * as lib_validators_codex from "../lib/validators/codex.js";
 import type * as lib_validators_maps from "../lib/validators/maps.js";
+import type * as lib_validators_rests from "../lib/validators/rests.js";
 import type * as maps from "../maps.js";
 import type * as members from "../members.js";
 import type * as migrations_characterExtras from "../migrations/characterExtras.js";
@@ -51,6 +56,7 @@ import type * as migrations_run from "../migrations/run.js";
 import type * as migrations_trackers from "../migrations/trackers.js";
 import type * as migrations_uploads from "../migrations/uploads.js";
 import type * as settings from "../settings.js";
+import type * as tables_actionLog from "../tables/actionLog.js";
 import type * as tables_campaigns from "../tables/campaigns.js";
 import type * as tables_characters from "../tables/characters.js";
 import type * as tables_codex from "../tables/codex.js";
@@ -59,6 +65,7 @@ import type * as tables_files from "../tables/files.js";
 import type * as tables_history from "../tables/history.js";
 import type * as tables_maps from "../tables/maps.js";
 import type * as tables_operations from "../tables/operations.js";
+import type * as tables_rests from "../tables/rests.js";
 import type * as tables_trackers from "../tables/trackers.js";
 import type * as trackers_ageOfUmbra from "../trackers/ageOfUmbra.js";
 import type * as trackers_andaluria from "../trackers/andaluria.js";
@@ -76,6 +83,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
+  actionLog: typeof actionLog;
   auth: typeof auth;
   campaignTime: typeof campaignTime;
   campaigns: typeof campaigns;
@@ -88,9 +96,11 @@ declare const fullApi: ApiFromModules<{
   fear: typeof fear;
   history: typeof history;
   http: typeof http;
+  "lib/actionLog": typeof lib_actionLog;
   "lib/allowlist": typeof lib_allowlist;
   "lib/auth": typeof lib_auth;
   "lib/blobs": typeof lib_blobs;
+  "lib/characterSheet": typeof lib_characterSheet;
   "lib/codex": typeof lib_codex;
   "lib/dice": typeof lib_dice;
   "lib/fear": typeof lib_fear;
@@ -103,11 +113,13 @@ declare const fullApi: ApiFromModules<{
   "lib/permissions": typeof lib_permissions;
   "lib/trackers": typeof lib_trackers;
   "lib/users": typeof lib_users;
+  "lib/validators/actionLog": typeof lib_validators_actionLog;
   "lib/validators/campaigns": typeof lib_validators_campaigns;
   "lib/validators/characterExtras": typeof lib_validators_characterExtras;
   "lib/validators/characters": typeof lib_validators_characters;
   "lib/validators/codex": typeof lib_validators_codex;
   "lib/validators/maps": typeof lib_validators_maps;
+  "lib/validators/rests": typeof lib_validators_rests;
   maps: typeof maps;
   members: typeof members;
   "migrations/characterExtras": typeof migrations_characterExtras;
@@ -118,6 +130,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/trackers": typeof migrations_trackers;
   "migrations/uploads": typeof migrations_uploads;
   settings: typeof settings;
+  "tables/actionLog": typeof tables_actionLog;
   "tables/campaigns": typeof tables_campaigns;
   "tables/characters": typeof tables_characters;
   "tables/codex": typeof tables_codex;
@@ -126,6 +139,7 @@ declare const fullApi: ApiFromModules<{
   "tables/history": typeof tables_history;
   "tables/maps": typeof tables_maps;
   "tables/operations": typeof tables_operations;
+  "tables/rests": typeof tables_rests;
   "tables/trackers": typeof tables_trackers;
   "trackers/ageOfUmbra": typeof trackers_ageOfUmbra;
   "trackers/andaluria": typeof trackers_andaluria;

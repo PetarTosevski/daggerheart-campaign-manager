@@ -110,6 +110,9 @@ const CAMPAIGN_SCOPED = [
   "codexEntryText",
   "codexCounters",
   "history",
+  "actionLog",
+  "rests",
+  "restChoices",
 ];
 const BOUNDED = ["settings", "grants", ...Object.keys(authTables)];
 

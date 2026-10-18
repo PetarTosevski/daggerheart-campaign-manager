@@ -8,9 +8,12 @@ import { PartyCard } from "@/components/party/party-card";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
+import { useCampaign } from "./campaign-shell";
+
 /** The dashboard's party: a card per character with live HP/Stress/Hope tiles. */
 export function PartySection({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const characters = useQuery(api.characters.listByCampaign, { campaignId });
+  const campaign = useCampaign();
   const base = `/campaigns/${campaignId}/party`;
 
   return (
@@ -39,7 +42,7 @@ export function PartySection({ campaignId }: { campaignId: Id<"campaigns"> }) {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
           {characters.map((c) => (
-            <PartyCard key={c._id} campaignId={campaignId} character={c} />
+            <PartyCard key={c._id} campaignId={campaignId} character={c} isGm={campaign.role === "gm"} hopeAndFear={Boolean(campaign.options?.hopeAndFear)} />
           ))}
         </div>
       )}

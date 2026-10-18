@@ -1,12 +1,20 @@
 import { ConvexError } from "convex/values";
 
+import { actionLogMessages } from "./errors/actionLog";
 import { campaignMessages } from "./errors/campaigns";
 import { characterMessages } from "./errors/characters";
+import { classFeatureMessages } from "./errors/classFeatures";
 import { codexMessages } from "./errors/codex";
 import { commonMessages } from "./errors/common";
+import { deathMessages } from "./errors/death";
+import { diceMessages } from "./errors/dice";
+import { levelUpMessages } from "./errors/levelUp";
 import { mapMessages } from "./errors/maps";
 import { operationMessages } from "./errors/operations";
+import { photoImportMessages } from "./errors/photoImport";
+import { restMessages } from "./errors/rests";
 import { trackerMessages } from "./errors/trackers";
+import { witherMessages } from "./errors/wither";
 
 /** Combines each domain's messages (`src/lib/errors/<domain>.ts`); a code defined twice is a bug. */
 export function mergeMessages(...domains: Record<string, string>[]): Record<string, string> {
@@ -28,6 +36,14 @@ const MESSAGES = mergeMessages(
   characterMessages,
   mapMessages,
   codexMessages,
+  actionLogMessages,
+  diceMessages,
+  levelUpMessages,
+  restMessages,
+  deathMessages,
+  witherMessages,
+  classFeatureMessages,
+  photoImportMessages,
 );
 
 /** A message for the GM from an error thrown by a Convex function. */

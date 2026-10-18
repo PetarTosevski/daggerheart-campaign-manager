@@ -163,6 +163,10 @@ const RATE_LIMITS = {
   // A GM setting up a table may create several at once: 10 per hour, bursts of 30.
   createCampaign: { kind: "token bucket", rate: 10, period: HOUR, capacity: 30 },
   invite: { kind: "token bucket", rate: 30, period: HOUR },
+  // Dice rolls (D5): a steady minute of play, with room for a burst of quick rolls.
+  roll: { kind: "token bucket", rate: 60, period: MINUTE, capacity: 120 },
+  // Photo import (D5): one Messages API call per click (decision 14).
+  photoImport: { kind: "token bucket", rate: 10, period: HOUR },
 } as const;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;
