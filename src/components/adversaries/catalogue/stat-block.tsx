@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 
 import { attackLabel, experienceLabel, textBlocks, thresholdsLabel, typeLabel } from "@/lib/adversaries/catalogue";
 import { getPublishedFrame } from "@/lib/frames";
+import { adversaryArt } from "@/lib/srd/adversary-art";
 import type { AdversaryDef, AdversaryFeatureKind } from "@/lib/srd/types";
 
 /**
  * The fields the parchment stat block reads. An SRD `AdversaryDef` fits it, and so does a custom adversary row
  * (A5: no source or page, a numeric countdown) or an instance's snapshot joined with its definition (A4).
+ * The rulebook art (AA1) is found by the SRD `id`, or by `basedOn` for a custom block copied from an SRD entry.
  */
 export type StatBlockAdversary = Pick<
   AdversaryDef,
@@ -18,6 +20,8 @@ export type StatBlockAdversary = Pick<
   source?: AdversaryDef["source"];
   frameId?: string;
   page?: number;
+  id?: string;
+  basedOn?: string;
 };
 
 export type StatBlockProps = {
@@ -72,6 +76,7 @@ function FeatureText({ text }: { text: string }) {
 export function StatBlock({ adversary, actions, tracker }: StatBlockProps) {
   const source = sourceLine(adversary);
   const experience = experienceLabel(adversary.experiences);
+  const art = adversaryArt(adversary.id ?? adversary.basedOn);
   return (
     <article className="adc-sb" aria-label={`${adversary.name} stat block`}>
       <div className="adc-sb-head">
@@ -79,6 +84,12 @@ export function StatBlock({ adversary, actions, tracker }: StatBlockProps) {
           <h2 className="adc-sb-name">{adversary.name}</h2>
           {adversary.source === "hope-and-fear" ? <HopeFearPill large /> : null}
         </div>
+        {art ? (
+          <figure className="adc-sb-art" title={art.credit}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- static pre-optimised WebP from public/ */}
+            <img src={art.src} width={art.width} height={art.height} alt={`${adversary.name} illustration`} loading="lazy" decoding="async" />
+          </figure>
+        ) : null}
         <div className="adc-sb-tt">
           Tier {adversary.tier} {typeLabel(adversary)}
         </div>

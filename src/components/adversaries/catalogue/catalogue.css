@@ -76,6 +76,17 @@
 .adc-item-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .adc-nm { font-family: var(--adv-font-head); font-size: 16px; font-weight: 700; color: var(--adv-name); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .adc-sub { font-size: 12.5px; color: var(--adv-muted); }
+/* AA1: round thumbnail of the rulebook art; rows without art are unchanged. */
+.adc-thumb {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: 50% 20%;
+  background: var(--adv-parch);
+  border: 1px solid var(--adv-border-strong);
+}
 .adc-type { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--adv-type-bg); color: var(--adv-chip-text); white-space: nowrap; }
 .adc-num { display: flex; gap: 14px; font-size: 12px; color: var(--adv-muted-2); text-align: center; }
 .adc-num strong { display: block; font-family: var(--adv-font-head); font-size: 16px; color: var(--adv-text); }
@@ -128,6 +139,16 @@
 .adc-sb-head { padding: 22px 26px 14px; background: linear-gradient(180deg, var(--adv-parch-head), var(--adv-parch)); border-bottom: 2px solid var(--adv-parch-rule); }
 .adc-sb-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .adc-sb-name { margin: 0; font-family: var(--adv-font-head); font-size: 30px; font-weight: 900; line-height: 1.05; color: var(--adv-ink); overflow-wrap: anywhere; }
+/* AA1: the rulebook art as a framed banner under the name; width/height on the img keep its box before it loads. */
+.adc-sb-art {
+  margin: 12px 0 4px;
+  border: 1px solid var(--adv-divider);
+  border-radius: 6px;
+  background: radial-gradient(ellipse at 50% 40%, var(--adv-parch), var(--adv-stat-bg));
+  box-shadow: inset 0 0 0 3px var(--adv-parch), inset 0 0 0 4px var(--adv-divider);
+  overflow: hidden;
+}
+.adc-sb-art img { display: block; width: 100%; height: auto; max-height: 280px; object-fit: cover; object-position: 50% 20%; }
 .adc-sb-tt { margin-top: 6px; font-family: var(--adv-font-head); font-size: 14px; font-weight: 700; color: var(--adv-parch-rule); letter-spacing: 0.06em; }
 .adc-sb-desc { margin: 8px 0 0; font-size: 18px; font-style: italic; line-height: 1.4; color: var(--adv-ink-soft); }
 .adc-sb-actions { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; font-family: var(--adv-font-ui); }
