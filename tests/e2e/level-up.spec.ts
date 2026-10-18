@@ -78,11 +78,17 @@ async function playerJoins(page: Page, browser: Browser, campaignName: string) {
   return { player, close: () => context.close() };
 }
 
-test("the GM flags the party, the player levels to 2 with the trait option, and undo returns to level 1", async ({ page, browser }) => {
+test("the GM flags the party, the player levels to 2 through the guided mode, and undo returns to level 1", async ({ page, browser }) => {
   const { name, campaignId } = await gmCreatesCampaign(page);
   const { player, close } = await playerJoins(page, browser, name);
   const hero = `Tabby ${crypto.randomUUID().slice(0, 6)}`;
   const characterId = await createCharacter(player, campaignId, hero);
+  const card = cardsForDomains(getClass("warrior")!.domains, 2).find((c) => c.level === 2 && c.source === "core")!;
+
+  // Without the GM's flag the player sees no ▲.
+  await player.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  await expect(player.getByRole("img", { name: "Level 1" })).toBeVisible();
+  await expect(player.getByRole("button", { name: "Level up to 2" })).toHaveCount(0);
 
   // The GM calls for the level-up on the roster.
   await page.goto(`/campaigns/${campaignId}/party`);
@@ -90,25 +96,53 @@ test("the GM flags the party, the player levels to 2 with the trait option, and 
   await expect(page.getByRole("status").filter({ hasText: "can level up" })).toHaveText("1 character can level up.");
   await expect(page.getByRole("article", { name: hero }).getByTestId("level-up-pending")).toBeVisible();
 
-  // The player levels up on the sheet.
-  await player.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  // ▲ starts the guided mode: the ribbon opens on the Experiences, where level 2 names a new Experience.
   await player.getByRole("button", { name: "Level up to 2" }).click();
-  const stepper = player.getByRole("dialog", { name: "Level up to 2" });
-  await stepper.getByLabel("New Experience").fill("Always Land on My Feet");
-  await stepper.getByRole("button", { name: "Next" }).click();
-  await stepper.getByRole("button", { name: "Take tier 2: +1 to two unmarked traits" }).click();
-  const traits = stepper.getByRole("group", { name: "Traits to raise" });
+  const ribbon = player.getByRole("region", { name: "Level-up to 2" });
+  await expect(ribbon).toBeVisible();
+  await expect(player.getByRole("dialog")).toHaveCount(0);
+  const steps = ribbon.getByRole("list", { name: "Level-up steps" });
+  await expect(steps.getByRole("listitem").first()).toHaveAttribute("aria-current", "step");
+  await expect(player.getByRole("heading", { name: "Experiences" })).toBeFocused();
+  await player.getByRole("textbox", { name: "New Experience (+2) for level 2" }).fill("Always Land on My Feet");
+
+  // Next: the tier boxes on Story & Advancement. Tick the traits option (inline chooser) and a Stress slot.
+  await ribbon.getByRole("button", { name: "Next" }).click();
+  const levelUp = player.getByRole("region", { name: "Level Up" });
+  await expect(levelUp.getByRole("heading", { name: "Level Up" })).toBeFocused();
+  await levelUp.getByRole("checkbox", { name: "Tier 2: +1 to two unmarked traits for level 2" }).check();
+  const traits = levelUp.getByRole("group", { name: "Traits to raise for level 2" });
   await traits.getByRole("button", { name: /Agility/ }).click();
   await traits.getByRole("button", { name: /Instinct/ }).click();
-  await stepper.getByRole("button", { name: "Take tier 2: +1 Stress slot" }).click();
-  await stepper.getByRole("button", { name: "Next" }).click();
-  await expect(stepper.getByLabel("Level 2 domain card")).not.toHaveValue("");
-  await stepper.getByRole("button", { name: "Next" }).click();
-  await stepper.getByRole("button", { name: "Confirm level 2" }).click();
-  await expect(stepper).toBeHidden();
+  await expect(traits.getByRole("button", { name: /Agility/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(traits.getByRole("button", { name: /Instinct/ })).toHaveAttribute("aria-pressed", "true");
+  await levelUp.getByRole("checkbox", { name: "Tier 2: +1 Stress slot for level 2" }).check();
+  await expect(steps.getByRole("button", { name: "Advancements (2/2) (done)" })).toBeVisible();
 
-  // The sheet shows level 2, +1 on both traits, and their marks.
+  // Next: the Domain Deck. Choose the level's card.
+  await ribbon.getByRole("button", { name: "Next" }).click();
+  const deck = player.getByRole("region", { name: "Domain Deck" });
+  await expect(deck.getByRole("heading", { name: "Domain Deck" })).toBeFocused();
+  await deck.getByRole("button", { name: `Choose ${card.name} for level 2` }).click();
+  await expect(deck.getByRole("button", { name: `Undo choice of ${card.name}` })).toBeVisible();
+
+  // Next: Finish. The summary lists every choice and nothing is left to do.
+  await ribbon.getByRole("button", { name: "Next" }).click();
+  const choices = ribbon.getByRole("list", { name: "Your choices" });
+  await expect(choices).toContainText("New Experience “Always Land on My Feet” +2");
+  await expect(choices).toContainText("Tier 2: +1 to two unmarked traits: Agility, Instinct");
+  await expect(choices).toContainText("Tier 2: +1 Stress slot");
+  await expect(choices).toContainText(`Domain card: ${card.name}`);
+  await expect(ribbon.getByText("Everything is chosen. Finish to level up.")).toBeVisible();
+  await ribbon.getByRole("button", { name: "Finish level-up" }).click();
+  await expect(ribbon).toBeHidden();
+
+  // The sheet shows level 2, the card, the Experience, +1 on both traits and their marks.
   await expect(player.getByRole("img", { name: "Level 2" })).toBeVisible();
+  await expect(player.getByRole("region", { name: "Loadout and vault" }).getByRole("article", { name: card.name })).toBeVisible();
+  await player.getByRole("tab", { name: "Character Sheet", exact: true }).click();
+  await expect(player.getByRole("textbox", { name: "Experience 3", exact: true })).toHaveValue("Always Land on My Feet");
+  await expect(player.getByRole("textbox", { name: "Experience 3 modifier" })).toHaveValue("+2");
   const grid = player.getByRole("list", { name: "Traits" });
   await expect(grid.getByLabel("Agility +3")).toBeVisible();
   await expect(grid.getByLabel("Instinct +1")).toBeVisible();
@@ -117,7 +151,6 @@ test("the GM flags the party, the player levels to 2 with the trait option, and 
 
   // Story & Advancement shows the taken advancements in the Tier 2 box; the player gets no GM correction.
   await player.getByRole("tab", { name: "Story & Advancement", exact: true }).click();
-  const levelUp = player.getByRole("region", { name: "Level Up" });
   await expect(levelUp.getByText("2 / 2 advancements used")).toBeVisible();
   const tier2 = levelUp.getByRole("region", { name: "Tier 2" });
   await expect(tier2.getByRole("checkbox", { name: "Tier 2: +1 Stress slot (1), taken at level 2" })).toBeChecked();
@@ -132,12 +165,13 @@ test("the GM flags the party, the player levels to 2 with the trait option, and 
   await expect(page.getByRole("region", { name: "Level Up" }).getByText("2 / 2 advancements used")).toBeVisible();
   await expect(page.getByRole("button", { name: "Set level" })).toBeVisible();
 
-  // Undo (the − on the level circle) returns to level 1 with no marks.
+  // Undo (the − on the level circle) returns to level 1 with no marks and no new Experience.
   await player.getByRole("button", { name: "Undo level 2" }).click();
   await expect(player.getByRole("img", { name: "Level 1" })).toBeVisible();
   await expect(levelUp.getByText("No advancements yet")).toBeVisible();
   await player.getByRole("tab", { name: "Character Sheet", exact: true }).click();
   await expect(grid.getByLabel("Agility +2")).toBeVisible();
   await expect(grid.getByRole("img", { name: "Agility marked this tier" })).toHaveCount(0);
+  await expect(player.getByRole("textbox", { name: "Experience 3", exact: true })).toHaveCount(0);
   await close();
 });
