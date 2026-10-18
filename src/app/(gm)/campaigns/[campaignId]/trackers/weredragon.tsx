@@ -48,10 +48,17 @@ export function WeredragonTracker({ campaign }: { campaign: CampaignSummary }) {
       <TrackerCard
         title="The Astromancer’s Revelations"
         subtitle={isGm ? "Each revelation stays hidden from players until you reveal it." : "What the stars have shown you."}
-        actions={isGm ? <ReadNightSky campaignId={campaign._id} /> : undefined}
+        actions={<RollNightSky campaignId={campaign._id} waiting={!isGm && view.pendingRoll !== null} />}
       >
-        {isGm && view.pendingRoll ? (
-          <ReadingPicker key={view.pendingRoll.join(",")} campaignId={campaign._id} roll={view.pendingRoll} />
+        {view.pendingRoll ? (
+          isGm ? (
+            <ReadingPicker key={view.pendingRoll.join(",")} campaignId={campaign._id} roll={view.pendingRoll} />
+          ) : (
+            <p className="m-0 text-[14px] text-[#9fb2b6]">
+              The stars show <span data-testid="night-sky-roll" className="font-display text-[#e6ecea]">{view.pendingRoll.join(" · ")}</span>. The GM
+              places one die in each column.
+            </p>
+          )
         ) : null}
         <ol aria-label="Revelations" className="m-0 flex list-none flex-col gap-2.5 p-0">
           {view.revelations.map((r, i) =>
@@ -73,12 +80,13 @@ export function WeredragonTracker({ campaign }: { campaign: CampaignSummary }) {
   );
 }
 
-function ReadNightSky({ campaignId }: { campaignId: Id<"campaigns"> }) {
+/** Any member rolls the 5d6 (HF p.140); a player waits until the GM has placed the last roll. */
+function RollNightSky({ campaignId, waiting }: { campaignId: Id<"campaigns">; waiting: boolean }) {
   const read = useIntent(api.trackers.weredragon.readNightSky);
   return (
     <div className="flex flex-col items-end gap-1">
-      <button type="button" className={TRACKER_BTN} disabled={read.pending} onClick={() => read.fire({ campaignId })}>
-        Read the night sky
+      <button type="button" className={TRACKER_BTN} disabled={read.pending || waiting} onClick={() => read.fire({ campaignId })}>
+        Roll the night sky
       </button>
       <ErrorLine error={read.error} />
     </div>
@@ -189,7 +197,7 @@ function GmRevelation({ campaignId, index, revelation: r }: { campaignId: Id<"ca
         defaultValue={r.text}
         maxLength={TEXT_MAX}
         rows={2}
-        placeholder="Read the night sky, or write your own revelation."
+        placeholder="Roll the night sky, or write your own revelation."
         onBlur={(e) => {
           if (e.target.value.trim() !== r.text) update.fire({ campaignId, kind: r.kind, text: e.target.value });
         }}
