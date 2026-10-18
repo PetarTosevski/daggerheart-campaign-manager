@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CharacterView } from "../../convex/characters";
 import type { Id } from "../../convex/_generated/dataModel";
 import { CLASSES } from "../../src/lib/srd/classes";
+import { SUBCLASSES } from "../../src/lib/srd/subclasses";
 
 // Tier boxes in the guided level-up (plan guided-level-up, GL1): the open tiers' boxes are tickable for the new
 // level, blocked ones stay disabled with their reason, earlier marks stay read-only, and ticked options with targets
@@ -152,8 +153,36 @@ describe("TierBoxes in the guided level-up", () => {
     expect((within(group).getByRole("button", { name: /Finesse/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(within(group).getByRole("button", { name: /Presence/ }));
     expect(draft().draft.picks[0]!.targets).toEqual(["knowledge"]);
-    // The draft keeps one traits pick per tier and level.
-    expect((box("Tier 2: +1 to two unmarked traits for level 2 (second pick)") as HTMLInputElement).disabled).toBe(true);
+    // GL5: the traits option can take the level's other pick too.
+    expect((box("Tier 2: +1 to two unmarked traits for level 2 (second pick)") as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it("takes the traits option twice in one level: four different unmarked traits, one chooser per pick (GL5)", () => {
+    const { draft } = setup(character({ traitMarks: { agility: 1 } }));
+    fireEvent.click(box("Tier 2: +1 to two unmarked traits for level 2"));
+    fireEvent.click(box("Tier 2: +1 to two unmarked traits for level 2 (second pick)"));
+    expect(screen.getByText("Level 2: 2 / 2 picks")).toBeTruthy();
+    const first = screen.getByRole("group", { name: "Traits to raise for level 2" });
+    const second = screen.getByRole("group", { name: "Traits to raise for level 2 (second pick)" });
+
+    fireEvent.click(within(first).getByRole("button", { name: /Presence/ }));
+    fireEvent.click(within(first).getByRole("button", { name: /Knowledge/ }));
+    // Traits the first pick raises, and traits marked this tier, are disabled in the second.
+    for (const name of [/Presence/, /Knowledge/, /Agility/]) expect((within(second).getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(second).getByRole("button", { name: /Finesse/ }));
+    fireEvent.click(within(second).getByRole("button", { name: /Instinct/ }));
+    expect((within(first).getByRole("button", { name: /Finesse/ }) as HTMLButtonElement).disabled).toBe(true);
+
+    expect(draft().draft.picks).toEqual([
+      { option: "traits", tier: 2, targets: ["presence", "knowledge"] },
+      { option: "traits", tier: 2, targets: ["finesse", "instinct"] },
+    ]);
+    expect(draft().problems.filter((p) => /trait/i.test(p))).toEqual([]);
+
+    // Unticking a traits box drops the latest pick and its chooser.
+    fireEvent.click(box("Tier 2: +1 to two unmarked traits for level 2 (second pick)"));
+    expect(screen.queryByRole("group", { name: "Traits to raise for level 2 (second pick)" })).toBeNull();
+    expect(draft().draft.picks).toEqual([{ option: "traits", tier: 2, targets: ["presence", "knowledge"] }]);
   });
 
   it("sends the Experiences option to the Experiences box and the extra card to the Domain Deck", () => {
@@ -185,7 +214,20 @@ describe("TierBoxes in the guided level-up", () => {
     fireEvent.click(box("Tier 3: +1 Proficiency (both picks) for level 5"));
 
     fireEvent.click(box("Tier 3: Upgraded subclass card for level 5"));
-    expect(screen.getByText(/your Troubadour foundation card upgrades to its specialization card/)).toBeTruthy();
+    // GL5: the upgraded subclass card itself, as the Heritage & Subclass tab's hero card.
+    expect(screen.getByText("At level 5 you take your specialization card.")).toBeTruthy();
+    const card = screen.getByRole("article", { name: "Subclass: Troubadour Specialization" });
+    const troubadour = SUBCLASSES.find((s) => s.id === "troubadour")!;
+    expect(within(card).getByRole("heading", { name: "Troubadour" })).toBeTruthy();
+    expect(within(card).getByText("Subclass")).toBeTruthy();
+    expect(within(card).getByText("Specialization")).toBeTruthy();
+    expect(card.textContent).toContain(troubadour.specialization[0]!.name);
+  });
+
+  it("shows the mastery card when the subclass is already specialized (GL5)", () => {
+    setup(character({ ...LEVEL_4, subclassRank: "specialization" } as Partial<CharacterView["sheet"]>));
+    fireEvent.click(box("Tier 3: Upgraded subclass card for level 5"));
+    expect(screen.getByRole("article", { name: "Subclass: Troubadour Mastery" })).toBeTruthy();
   });
 
   it("shows the multiclass class, domain and foundation selects under a ticked multiclass", () => {

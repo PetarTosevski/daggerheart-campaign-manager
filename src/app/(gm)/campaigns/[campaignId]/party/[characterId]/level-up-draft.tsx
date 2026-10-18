@@ -72,8 +72,11 @@ export type LevelUpDraftValue = {
   setExperienceName: (name: string) => void;
   /** Adds (on = true), removes (on = false) or toggles (on omitted) a pick of `option` in `tier`, within the rules. */
   togglePick: (option: AdvancementOption, tier: number, on?: boolean) => void;
-  /** Sets the targets (traits, Experience ids or a card id) of the draft's pick of `option` in `tier`. */
-  setPickTargets: (option: AdvancementOption, tier: number, targets: string[]) => void;
+  /**
+   * Sets the targets (traits, Experience ids or a card id) of the draft's pick of `option` in `tier`; `index` picks
+   * which one when the level takes it more than once (0, the default, is the first).
+   */
+  setPickTargets: (option: AdvancementOption, tier: number, targets: string[], index?: number) => void;
   setCardId: (cardId: string) => void;
   setTrade: (trade: { out: string; in: string } | null) => void;
   setMulticlass: (multiclass: MulticlassChoice | null) => void;
@@ -307,12 +310,12 @@ export function LevelUpDraftProvider({
           if (!slotInfo || slotInfo.blocked !== null || cost + slotInfo.cost > PICKS_PER_LEVEL || slotInfo.used + takenNow >= slotInfo.slots) return d;
           return { ...d, picks: [...d.picks, TARGET_COUNT[option] ? { option, tier, targets: [] } : { option, tier }] };
         }),
-      setPickTargets: (option, tier, targets) =>
+      setPickTargets: (option, tier, targets, index = 0) =>
         edit((d) => {
-          const index = d.picks.findIndex(same(option, tier));
+          const at = d.picks.map((p, i) => (same(option, tier)(p) ? i : -1)).filter((i) => i !== -1)[index];
           const count = TARGET_COUNT[option];
-          if (index === -1 || !count) return d;
-          return { ...d, picks: d.picks.map((p, i) => (i === index ? { ...p, targets: [...new Set(targets)].slice(0, count) } : p)) };
+          if (at === undefined || !count) return d;
+          return { ...d, picks: d.picks.map((p, i) => (i === at ? { ...p, targets: [...new Set(targets)].slice(0, count) } : p)) };
         }),
       setCardId: (cardId) => edit((d) => ({ ...d, cardId })),
       setTrade: (trade) => edit((d) => withOptional(d, "trade", trade)),

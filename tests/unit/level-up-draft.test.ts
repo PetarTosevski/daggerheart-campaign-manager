@@ -154,6 +154,31 @@ describe("useLevelUpDraft", () => {
     expect(result.current.draft.picks).toEqual([{ option: "hp", tier: 2 }]);
   });
 
+  it("sets the targets of the second traits pick of a tier with setPickTargets' index (GL5)", () => {
+    const { result } = setup(character({ level: 2 }));
+    act(() => result.current.start());
+    act(() => result.current.togglePick("traits", 2, true));
+    act(() => result.current.togglePick("traits", 2, true));
+    act(() => result.current.setPickTargets("traits", 2, ["agility", "strength"]));
+    act(() => result.current.setPickTargets("traits", 2, ["finesse", "instinct", "presence"], 1));
+    expect(result.current.draft.picks).toEqual([
+      { option: "traits", tier: 2, targets: ["agility", "strength"] },
+      { option: "traits", tier: 2, targets: ["finesse", "instinct"] },
+    ]);
+    // Index 0 is the default; an index past the picks changes nothing.
+    act(() => result.current.setPickTargets("traits", 2, ["knowledge", "presence"], 0));
+    act(() => result.current.setPickTargets("traits", 2, ["agility"], 2));
+    expect(result.current.draft.picks.map((p) => p.targets)).toEqual([
+      ["knowledge", "presence"],
+      ["finesse", "instinct"],
+    ]);
+    // Four distinct unmarked traits pass the rules; a trait in both picks does not.
+    act(() => result.current.setCardId(CARD.id));
+    expect(result.current.problems).toEqual([]);
+    act(() => result.current.setPickTargets("traits", 2, ["knowledge", "agility"], 1));
+    expect(result.current.problems).toEqual(["knowledge is marked this tier."]);
+  });
+
   it("builds the choice, lists problems with their steps and clears them as choices are made", () => {
     const { result } = setup();
     act(() => result.current.start());

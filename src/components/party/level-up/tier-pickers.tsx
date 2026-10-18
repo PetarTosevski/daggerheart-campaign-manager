@@ -1,8 +1,10 @@
 "use client";
 
 import { useLevelUpDraft } from "@/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft";
+import { HeroCard } from "@/components/party/hero-card";
 import { Label, paperField, Small } from "@/components/party/sheet-ui";
 import { isMarked, MARK_CLEAR_LEVELS, type MulticlassChoice } from "@/lib/domain/level-up";
+import { getSubclass, PORTRAITS } from "@/lib/srd";
 import { CLASSES } from "@/lib/srd/classes";
 import { DOMAIN_CARDS, DOMAINS } from "@/lib/srd/domain-cards";
 import { SUBCLASSES } from "@/lib/srd/subclasses";
@@ -15,12 +17,29 @@ import { sourcesFor, traitLabel } from "./shared";
 // comes from the removed modal stepper (cda2114 stepper.tsx); the choices go into the level-up draft.
 
 const RANK_NEXT = { foundation: "specialization", specialization: "mastery", mastery: "mastery" } as const;
+const RANK_TITLE = { specialization: "Specialization", mastery: "Mastery" } as const;
 
-/** The chooser for the draft's pick of `option` in `tier`, or null for options without one. */
-export function TierPicker({ option, tier, sheet, hopeAndFear }: { option: AdvancementOption; tier: number; sheet: CharacterSheet; hopeAndFear: boolean }) {
+/**
+ * The chooser for the draft's `index`th pick of `option` in `tier` (0 = the first), or null for options without one.
+ * Only traits take a chooser per pick; the other options with one have a single slot per tier.
+ */
+export function TierPicker({
+  option,
+  tier,
+  index = 0,
+  sheet,
+  hopeAndFear,
+}: {
+  option: AdvancementOption;
+  tier: number;
+  index?: number;
+  sheet: CharacterSheet;
+  hopeAndFear: boolean;
+}) {
+  if (index > 0 && option !== "traits") return null;
   switch (option) {
     case "traits":
-      return <TraitPicker tier={tier} sheet={sheet} />;
+      return <TraitPicker tier={tier} index={index} sheet={sheet} />;
     case "experiences":
       return <GoToPicker option="experiences" tier={tier} sheet={sheet} />;
     case "domainCard":
@@ -28,23 +47,30 @@ export function TierPicker({ option, tier, sheet, hopeAndFear }: { option: Advan
     case "multiclass":
       return <MulticlassPicker sheet={sheet} hopeAndFear={hopeAndFear} />;
     case "subclass":
-      return <SubclassNote sheet={sheet} />;
+      return <SubclassCard sheet={sheet} />;
     default:
       return null;
   }
 }
 
-/** Two traits to raise: not marked this tier (marks clear at 5 and 8) and not raised by another pick this level. */
-function TraitPicker({ tier, sheet }: { tier: number; sheet: CharacterSheet }) {
+const PICK_SUFFIX = ["", " (second pick)", " (third pick)"];
+
+/**
+ * Two traits to raise for the `index`th traits pick of `tier`: not marked this tier (marks clear at 5 and 8) and not
+ * raised by another pick this level.
+ */
+function TraitPicker({ tier, index, sheet }: { tier: number; index: number; sheet: CharacterSheet }) {
   const { level, draft, setPickTargets } = useLevelUpDraft();
-  const pick = draft.picks.find((p) => p.option === "traits" && p.tier === tier);
+  const pick = draft.picks.filter((p) => p.option === "traits" && p.tier === tier)[index];
   const chosen = pick?.targets ?? [];
   const elsewhere = draft.picks.filter((p) => p !== pick && p.option === "traits").flatMap((p) => p.targets ?? []);
   const marksClear = MARK_CLEAR_LEVELS.includes(level);
   return (
     <div className="lu-panel adv-picker">
-      <Small as="p">Choose two traits to raise by +1 and mark ({chosen.length}/2).</Small>
-      <div className="lu-chips" role="group" aria-label={`Traits to raise for level ${level}`}>
+      <Small as="p">
+        {index > 0 ? "Second pick: choose two other traits" : "Choose two traits"} to raise by +1 and mark ({chosen.length}/2).
+      </Small>
+      <div className="lu-chips" role="group" aria-label={`Traits to raise for level ${level}${PICK_SUFFIX[index] ?? ""}`}>
         {TRAIT_IDS.map((t) => {
           const on = chosen.includes(t);
           const marked = (!marksClear && isMarked({ ...sheet, level }, t)) || elsewhere.includes(t);
@@ -56,7 +82,7 @@ function TraitPicker({ tier, sheet }: { tier: number; sheet: CharacterSheet }) {
               className="lu-opt"
               aria-pressed={on}
               disabled={marked || full}
-              onClick={() => setPickTargets("traits", tier, on ? chosen.filter((x) => x !== t) : [...chosen, t])}
+              onClick={() => setPickTargets("traits", tier, on ? chosen.filter((x) => x !== t) : [...chosen, t], index)}
             >
               {traitLabel(t)} {sheet.traits[t] >= 0 ? "+" : ""}
               {sheet.traits[t]}
@@ -142,15 +168,22 @@ function MulticlassPicker({ sheet, hopeAndFear }: { sheet: CharacterSheet; hopeA
   );
 }
 
-/** The upgraded subclass card takes no choice: it names the card the subclass moves to. */
-function SubclassNote({ sheet }: { sheet: CharacterSheet }) {
+/**
+ * The upgraded subclass card takes no choice: it shows the card the subclass moves to, as the Heritage & Subclass
+ * tab's hero card.
+ */
+function SubclassCard({ sheet }: { sheet: CharacterSheet }) {
   const { level } = useLevelUpDraft();
-  const sub = SUBCLASSES.find((s) => s.id === sheet.subclassId);
+  const sub = getSubclass(sheet.subclassId);
+  const next = RANK_NEXT[sheet.subclassRank];
   return (
-    <div className="lu-panel adv-picker">
+    <div className="lu-panel adv-picker adv-subclass">
       <Small as="p">
-        At level {level} your {sub?.name ?? "subclass"} {sheet.subclassRank} card upgrades to its {RANK_NEXT[sheet.subclassRank]} card.
+        At level {level} you take your {next} card.
       </Small>
+      {sub ? (
+        <HeroCard kind="Subclass" name={sub.name} tier={RANK_TITLE[next]} features={sub[next]} art={PORTRAITS[`sub-${sub.id}`]} />
+      ) : null}
     </div>
   );
 }

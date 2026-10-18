@@ -126,13 +126,11 @@ export function TierBoxes({ sheet, hopeAndFear = false }: { sheet: CharacterShee
   );
 }
 
-/** Options whose targets the draft keeps on its first pick of that tier (useLevelUpDraft.setPickTargets). */
-const TARGETED: ReadonlySet<AdvancementOption> = new Set(["traits", "experiences", "domainCard"]);
-
 /**
  * One option row of an open tier while levelling: the earlier levels' marks stay read-only, the new level's draft
  * marks are green and can be unticked, and the next free box can be ticked when the rules allow (else it is disabled
- * with the reason). A ticked option with targets shows its chooser under the row.
+ * with the reason). A ticked option with targets shows a chooser per pick under the row (traits can be taken twice
+ * in one level: four different traits).
  */
 function DraftRow({
   sheet,
@@ -161,10 +159,7 @@ function DraftRow({
   let reason: string | null = null;
   if (taken.length + drafted < boxes) {
     if (blocked) reason = blocked;
-    else if (picksUsed + rule.cost > 2) reason = joined && picksUsed < 2 ? `It takes both picks for level ${level}; untick your other pick first.` : `Both picks for level ${level} are used.`;
-    // The draft keeps targets on one pick per option and tier (setPickTargets).
-    else if (drafted > 0 && TARGETED.has(option)) reason = `Take it once for level ${level} in this tier.`;
-  }
+    else if (picksUsed + rule.cost > 2) reason = joined && picksUsed < 2 ? `It takes both picks for level ${level}; untick your other pick first.` : `Both picks for level ${level} are used.`;  }
   const label = `Tier ${tier}: ${OPTION_SHORT[option]} for level ${level}`;
   const box = cn("adv-box adv-chk", joined && "joined");
 
@@ -183,7 +178,7 @@ function DraftRow({
               );
             }
             const j = k - taken.length;
-            const name = j === 0 ? label : `${label} (second pick)`;
+            const name = j === 0 ? label : `${label} (${j === 1 ? "second" : "third"} pick)`;
             if (j < drafted) {
               return (
                 <label key={k} className="adv-slot adv-hit" title={name}>
@@ -225,7 +220,9 @@ function DraftRow({
           {reason}
         </Small>
       ) : null}
-      {drafted > 0 ? <TierPicker option={option} tier={tier} sheet={sheet} hopeAndFear={hopeAndFear} /> : null}
+      {Array.from({ length: drafted }, (_, j) => (
+        <TierPicker key={j} option={option} tier={tier} index={j} sheet={sheet} hopeAndFear={hopeAndFear} />
+      ))}
     </li>
   );
 }
