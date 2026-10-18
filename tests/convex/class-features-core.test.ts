@@ -47,9 +47,10 @@ async function setup() {
   await p1.mutation(api.members.joinByCode, { code });
   await p2.mutation(api.members.joinByCode, { code });
   const a = (await p1.mutation(api.characters.create, { campaignId, draft: draft("Ash"), idempotencyKey: key() })).characterId;
-  const b = (await p2.mutation(api.characters.create, { campaignId, draft: draft("Bryn"), idempotencyKey: key() })).characterId;
+  // One active character per player: Cid is created and sent away before Bryn.
   const c = (await p2.mutation(api.characters.create, { campaignId, draft: draft("Cid"), idempotencyKey: key() })).characterId;
   await t.run((ctx) => ctx.db.patch("characters", c, { status: "away" }));
+  const b = (await p2.mutation(api.characters.create, { campaignId, draft: draft("Bryn"), idempotencyKey: key() })).characterId;
 
   const sheetOf = (id: Id<"characters">) => t.run(async (ctx) => readSheet((await ctx.db.get("characters", id))!.sheet));
   const patch = (id: Id<"characters">, change: Partial<CharacterSheet>) =>

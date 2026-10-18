@@ -18,6 +18,7 @@ import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { assertOneActive } from "./characters";
 import { logAction, undoEntry } from "./lib/actionLog";
 import { editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
@@ -226,7 +227,11 @@ export const resolveRiskItAll = keyedUserMutation({
     }),
 });
 
-/** GM only: brings an away character (Castle High less-lethal) back into play. Logged, not undoable. */
+/**
+ * GM only: brings an away character (Castle High less-lethal, or benched) back
+ * into play, unless its player has another active character (INVALID, X6).
+ * Logged, not undoable.
+ */
 export const returnFromAway = keyedUserMutation({
   args: { characterId: v.id("characters") },
   returns: v.null(),
@@ -234,6 +239,7 @@ export const returnFromAway = keyedUserMutation({
     ctx.once("death_return", args, async () => {
       const { campaign, character } = await loadCharacter(ctx, ctx.user, args.characterId, "owner");
       if (character.status !== "away") rule("Only an away character can return.");
+      await assertOneActive(ctx, campaign, character.ownerId, character._id);
       await ctx.db.patch("characters", character._id, { status: "active", away: undefined, updatedAt: Date.now() });
       await logAction(ctx, {
         campaignId: campaign._id,
@@ -266,6 +272,11 @@ export const undo = keyedUserMutation({
       // undoEntry also returns a character this row took out of play (dead or away) to active.
       const result = await undoEntry(ctx, ctx.user, entryId);
       const after = await ctx.db.get("characters", character._id);
+      // Back in play only while the player has no other active character (X6); the throw rolls the undo back.
+      if (after?.status === "active" && character.status !== "active") {
+        const campaign = await ctx.db.get("campaigns", character.campaignId);
+        if (campaign !== null) await assertOneActive(ctx, campaign, character.ownerId, character._id);
+      }
       return { ...result, status: after?.status ?? character.status };
     }),
 });

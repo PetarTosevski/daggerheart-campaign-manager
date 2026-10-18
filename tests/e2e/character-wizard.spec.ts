@@ -96,6 +96,8 @@ test("a player completes all nine steps and lands on the sheet", async ({ page, 
   await player.goto(`/campaigns/${campaignId}/party/new`);
   await expect(player.getByText("Still needed: a class")).toBeVisible();
   await expect(player.getByLabel("Character for")).toHaveCount(0);
+  // One active character per player (X6): the wizard says why a second one is blocked.
+  await expect(player.getByTestId("wizard-blocked")).toContainText("Send Brakka Stonefist away");
   await close();
 });
 

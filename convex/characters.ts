@@ -113,6 +113,14 @@ function portraitFileUrl(ctx: QueryCtx, characterId: Id<"characters">, storageId
   return ownFileUrl(ctx, "portrait", characterId, storageId);
 }
 
+/** `away` for the views: a death-move reason as `away`, a bench as `benched: true` (X6). */
+function awayView(c: Doc<"characters">): Pick<CharacterView, "away" | "benched"> {
+  if (c.away === undefined) return {};
+  const { reason, note } = c.away;
+  if (reason === "benched") return { benched: true };
+  return { away: { reason, ...(note === undefined ? {} : { note }) } };
+}
+
 async function toView(ctx: QueryCtx, c: Doc<"characters">, sheet: CharacterSheet, viewer: Doc<"users">, canEdit: boolean): Promise<CharacterView> {
   const portraitUrl = sheet.portrait?.kind === "upload" ? await portraitFileUrl(ctx, c._id, sheet.portrait.storageId) : null;
   // Only editors get the upload's storage id; everyone else gets `portraitUrl` and a placeholder id.
@@ -121,7 +129,7 @@ async function toView(ctx: QueryCtx, c: Doc<"characters">, sheet: CharacterSheet
     _id: c._id,
     ownerId: c.ownerId,
     status: c.status,
-    ...(c.away ? { away: c.away } : {}),
+    ...awayView(c),
     sheet: shown,
     portraitUrl,
     canEdit,
@@ -151,7 +159,7 @@ export const listByCampaign = campaignQuery({
           sheet = readSheet(c.sheet);
         } catch {
           const mine = c.ownerId === ctx.user._id;
-          return { _id: c._id, ownerId: c.ownerId, status: c.status, sheet: placeholderSheet(c.sheet), portraitUrl: null, canEdit: false, mine, updatedAt: c.updatedAt, corrupt: true };
+          return { _id: c._id, ownerId: c.ownerId, status: c.status, ...awayView(c), sheet: placeholderSheet(c.sheet), portraitUrl: null, canEdit: false, mine, updatedAt: c.updatedAt, corrupt: true };
         }
         return toView(ctx, c, sheet, ctx.user, editsAll || c.ownerId === ctx.user._id);
       }),
@@ -274,25 +282,41 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
 /** "Your choice of a Minor Health Potion … or a Minor Stamina Potion" (Core ch. 1, step 5). */
 const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
 
-/** Reversible defaults (review M5): the most characters a campaign holds, and the most one player owns in it. */
+/** Reversible default (review M5; stays 50 while testing): the most characters a campaign holds. */
 export const MAX_CHARACTERS_PER_CAMPAIGN = 50;
-export const MAX_CHARACTERS_PER_PLAYER = 12;
+
+/** The campaign's characters, bounded by the cap itself. */
+function partyOf(ctx: QueryCtx, campaignId: Id<"campaigns">) {
+  return ctx.db
+    .query("characters")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .take(MAX_CHARACTERS_PER_CAMPAIGN);
+}
 
 /**
- * Refuses a character that would push the campaign past its cap, or `owner`
- * past the per-player cap (the GM's own, unassigned characters count only
- * towards the campaign's). `moving`: an existing character changing hands.
+ * One active character per player (X6, user decision 2026-10-18): refuses
+ * putting a character of `owner` in play while another of theirs (not
+ * `except`) is active. Dead, retired and away characters don't count, and the
+ * GM's own (unassigned) characters are exempt. Call it on every move into
+ * `active`: create, hand-over, bring back, revive, return, undo.
  */
-async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">, moving?: Doc<"characters">) {
-  // Bounded by the cap itself.
-  const party = await ctx.db
-    .query("characters")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
-    .take(MAX_CHARACTERS_PER_CAMPAIGN);
-  if (moving === undefined && party.length >= MAX_CHARACTERS_PER_CAMPAIGN) invalid(`A campaign holds at most ${MAX_CHARACTERS_PER_CAMPAIGN} characters.`);
+export async function assertOneActive(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">, except?: Id<"characters">) {
   if (owner === campaign.ownerId) return;
-  const owned = party.filter((c) => c.ownerId === owner && c._id !== moving?._id).length;
-  if (owned >= MAX_CHARACTERS_PER_PLAYER) invalid(`A player has at most ${MAX_CHARACTERS_PER_PLAYER} characters in a campaign.`);
+  const other = (await partyOf(ctx, campaign._id)).find((c) => c.ownerId === owner && c.status === "active" && c._id !== except);
+  if (other === undefined) return;
+  let name = "another character";
+  try {
+    name = readSheet(other.sheet).name;
+  } catch {
+    // A corrupt sheet still blocks; the message just can't name it.
+  }
+  invalid(`A player has one active character at a time. Send ${name} away first.`);
+}
+
+/** Refuses a new character past the campaign's cap, or a second active one for `owner`. */
+async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">) {
+  if ((await partyOf(ctx, campaign._id)).length >= MAX_CHARACTERS_PER_CAMPAIGN) invalid(`A campaign holds at most ${MAX_CHARACTERS_PER_CAMPAIGN} characters.`);
+  await assertOneActive(ctx, campaign, owner);
 }
 
 /** The owner of a new or reassigned character: the caller, or (GM only) the GM or a member of the campaign. */
@@ -357,7 +381,7 @@ export const assignOwner = userMutation({
   handler: async (ctx, { characterId, ownerId }) => {
     const { campaign, permission, character } = await loadCharacter(ctx, ctx.user, characterId, "owner");
     const owner = await ownerFor(ctx, campaign, permission, ctx.user, ownerId);
-    if (owner !== character.ownerId) await assertRoom(ctx, campaign, owner, character);
+    if (owner !== character.ownerId && character.status === "active") await assertOneActive(ctx, campaign, owner, character._id);
     await ctx.db.patch("characters", characterId, { ownerId: owner, updatedAt: Date.now() });
     return null;
   },
@@ -622,18 +646,25 @@ export const moveCard = userMutation({
 });
 
 /**
- * Marks a character dead, retired or active again. Owner or GM, but only the
- * GM moves a character out of dead or away (review M3: an owner can't revive
- * their own character). Any change clears `away` (HF 127).
+ * Marks a character dead, retired, active again, or `away` (benched, X6).
+ * Owner or GM. Only an active character is benched. Only the GM moves a
+ * character out of dead or a Castle High away (review M3: an owner can't
+ * revive their own character); the owner brings back their own benched one.
+ * A move into `active` keeps one active character per player
+ * (`assertOneActive`, INVALID). Any change clears or replaces `away`.
  */
 export const setStatus = userMutation({
   args: { characterId: v.id("characters"), status: characterStatusValidator },
   returns: v.null(),
   handler: async (ctx, { characterId, status }) => {
-    const { character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+    const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
     if (status === character.status) return null;
-    if ((character.status === "dead" || character.status === "away") && permission !== "owner") throw appError("FORBIDDEN");
-    await ctx.db.patch("characters", characterId, { status, away: undefined, updatedAt: Date.now() });
+    const benched = character.status === "away" && character.away?.reason === "benched";
+    const ownerMayLeave = character.status === "active" || character.status === "retired" || (benched && status === "active");
+    if (!ownerMayLeave && permission !== "owner") throw appError("FORBIDDEN");
+    if (status === "away" && character.status !== "active") invalid("Only an active character can be sent away.");
+    if (status === "active") await assertOneActive(ctx, campaign, character.ownerId, character._id);
+    await ctx.db.patch("characters", characterId, { status, away: status === "away" ? { reason: "benched" } : undefined, updatedAt: Date.now() });
     return null;
   },
 });

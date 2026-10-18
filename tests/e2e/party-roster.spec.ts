@@ -119,6 +119,34 @@ test("dashboard tiles change HP live for another viewer; players can't edit othe
   await close();
 });
 
+test("X6: a player benches their character to play another, and brings the first back only after benching the second", async ({ page, browser }) => {
+  const { name, campaignId } = await gmCreatesCampaign(page);
+  const { player, close } = await playerJoins(page, browser, name);
+  const first = unique("Eda");
+  const second = unique("Fen");
+  await createCharacter(player, campaignId, first);
+
+  await player.goto(`/campaigns/${campaignId}/party`);
+  const firstCard = player.getByRole("article", { name: first });
+  await firstCard.getByRole("button", { name: `Send ${first} away` }).click();
+  await expect(firstCard.getByRole("button", { name: `Bring ${first} back` })).toBeVisible();
+
+  // The slot is free: a second character, then the first can't come back while it is active.
+  await createCharacter(player, campaignId, second);
+  await firstCard.getByRole("button", { name: `Bring ${first} back` }).click();
+  await expect(firstCard.getByText(`Send ${second} away first`)).toBeVisible();
+
+  // The GM sees the same controls on the dashboard card.
+  await page.goto(`/campaigns/${campaignId}`);
+  const gmCard = page.getByRole("article", { name: second });
+  await gmCard.getByRole("button", { name: `Send ${second} away` }).click();
+  await expect(gmCard.getByTestId("death-away")).toHaveText("Away · benched");
+
+  await firstCard.getByRole("button", { name: `Bring ${first} back` }).click();
+  await expect(firstCard.getByRole("button", { name: `Send ${first} away` })).toBeVisible();
+  await close();
+});
+
 test("the GM assigns a character to a player", async ({ page, browser }) => {
   const { name, campaignId } = await gmCreatesCampaign(page);
   const { player, close } = await playerJoins(page, browser, name);

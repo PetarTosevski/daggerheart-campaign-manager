@@ -106,9 +106,13 @@ export function CharacterWizard() {
 
   const owners = roster ? [{ userId: roster.gm.userId, name: `${roster.gm.name} (you)` }, ...roster.players.map((p) => ({ userId: p.userId, name: p.name }))] : [];
   const ownerId = isGm && owners.some((o) => o.userId === state.ownerId) ? (state.ownerId as Id<"users">) : undefined;
+  // X6: one active character per player (the GM's own are exempt); the server refuses the same.
+  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const playerId = isGm ? (ownerId !== roster?.gm.userId ? ownerId : undefined) : undefined;
+  const blocker = party?.find((c) => c.status === "active" && (isGm ? playerId !== undefined && c.ownerId === playerId : c.mine));
 
   async function submit() {
-    if (!allOk || create.pending) return;
+    if (!allOk || blocker || create.pending) return;
     const result = await create.fire({
       campaignId,
       draft: toCharacterDraft(state, portraitAsset(state)),
@@ -164,6 +168,16 @@ export function CharacterWizard() {
               ))}
             </select>
           </div>
+        ) : null}
+
+        {blocker ? (
+          <p id="cc-blocked" data-testid="wizard-blocked" role="status" className="m-0 rounded-[10px] border border-[#cdb88f] bg-[#f3e6c8] px-3 py-2 text-[15px] text-[#3a2a14]">
+            {blocker.sheet.name} is still active, and a player has one active character at a time. Send {blocker.sheet.name} away from the{" "}
+            <Link href={`/campaigns/${campaignId}/party`} className="underline">
+              Party page
+            </Link>{" "}
+            before creating another.
+          </p>
         ) : null}
 
         <nav aria-label="Character creation steps">
@@ -226,8 +240,8 @@ export function CharacterWizard() {
               <button
                 type="button"
                 className="wz-primary"
-                aria-disabled={!allOk || create.pending}
-                aria-describedby={createTip ? "cc-missing" : undefined}
+                aria-disabled={!allOk || Boolean(blocker) || create.pending}
+                aria-describedby={blocker ? "cc-blocked" : createTip ? "cc-missing" : undefined}
                 title={createTip || undefined}
                 onClick={() => void submit()}
               >

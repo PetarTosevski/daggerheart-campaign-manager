@@ -220,9 +220,9 @@ describe("characters", () => {
   });
 
   it("one corrupt sheet doesn't fail the party list: it comes back marked, the rest as usual", async () => {
-    const { t, gm, p1, campaignId } = await setup();
+    const { t, gm, p1, p2, campaignId } = await setup();
     const good = (await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() })).characterId;
-    const bad = (await p1.mutation(api.characters.create, { campaignId, draft: draft({ name: "Bryn" }), idempotencyKey: key() })).characterId;
+    const bad = (await p2.mutation(api.characters.create, { campaignId, draft: draft({ name: "Bryn" }), idempotencyKey: key() })).characterId;
     await t.run(async (ctx) => {
       const c = (await ctx.db.get(bad))!;
       await ctx.db.patch(bad, { sheet: { ...c.sheet, hp: "lots" } });
@@ -288,27 +288,95 @@ describe("characters", () => {
     await p1.mutation(api.characters.setStatus, { characterId, status: "retired" });
   });
 
-  it("M5: at most 50 characters per campaign and 12 per player (create and hand-over)", async () => {
-    const { t, gm, p1, ids, campaignId } = await setup();
-    const { characterId: first } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
-    const copy = async (ownerId: typeof ids.gm, n: number) =>
-      t.run(async (ctx) => {
-        const c = (await ctx.db.get(first))!;
-        for (let i = 0; i < n; i++) {
-          await ctx.db.insert("characters", { campaignId: c.campaignId, ownerId, createdBy: c.createdBy, status: "active", sheet: c.sheet, createdAt: 0, updatedAt: 0 });
-        }
-      });
-    await copy(ids.p1, 11);
-    const tooMany = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).catch((e) => e);
-    expect(errorCode(tooMany)).toBe("INVALID");
-    expect(errorCode(await gm.mutation(api.characters.create, { campaignId, draft: draft(), ownerId: ids.p1, idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
-    // The GM's own (unassigned) characters count only towards the campaign's cap.
-    const { characterId: spare } = await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
-    expect(errorCode(await gm.mutation(api.characters.assignOwner, { characterId: spare, ownerId: ids.p1 }).catch((e) => e))).toBe("INVALID");
-    await copy(ids.gm, 50 - 13);
+  it("M5: at most 50 characters per campaign", async () => {
+    const { t, gm, p1, campaignId } = await setup();
+    const { characterId: first } = await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    await t.run(async (ctx) => {
+      const c = (await ctx.db.get(first))!;
+      // Dead player characters: they count towards the campaign's cap only.
+      for (let i = 0; i < 49; i++) {
+        await ctx.db.insert("characters", { campaignId: c.campaignId, ownerId: c.ownerId, createdBy: c.createdBy, status: "dead", sheet: c.sheet, createdAt: 0, updatedAt: 0 });
+      }
+    });
     expect((await gm.query(api.characters.listByCampaign, { campaignId })).length).toBe(50);
     expect(errorCode(await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
     expect(errorCode(await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
+  });
+
+  it("X6: one active character per player (create and hand-over); dead and away ones don't count; the GM's own are exempt", async () => {
+    const { t, gm, p1, p2, ids, campaignId } = await setup();
+    const { characterId: first } = await p1.mutation(api.characters.create, { campaignId, draft: draft({ name: "First" }), idempotencyKey: key() });
+    const second = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() }).catch((e) => e);
+    expect(errorCode(second)).toBe("INVALID");
+    expect(errorCode(await gm.mutation(api.characters.create, { campaignId, draft: draft(), ownerId: ids.p1, idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
+    // Another player and the GM are unaffected; the GM holds any number of unassigned characters.
+    await p2.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    const { characterId: spare } = await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    // Handing an active character to a player who already has one is refused; a dead one goes through.
+    expect(errorCode(await gm.mutation(api.characters.assignOwner, { characterId: spare, ownerId: ids.p1 }).catch((e) => e))).toBe("INVALID");
+    await gm.mutation(api.characters.setStatus, { characterId: spare, status: "dead" });
+    await gm.mutation(api.characters.assignOwner, { characterId: spare, ownerId: ids.p1 });
+
+    // Away (benched or a Castle High death move) and dead characters free the slot.
+    await p1.mutation(api.characters.setStatus, { characterId: first, status: "away" });
+    const { characterId: benchedNew } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    await t.run((ctx) => ctx.db.patch(benchedNew, { status: "away", away: { reason: "infirmary" } }));
+    const { characterId: third } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    await p1.mutation(api.characters.setStatus, { characterId: third, status: "dead" });
+    await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+  });
+
+  it("X6: the owner benches and brings back their own character; the GM does both for anyone", async () => {
+    const { t, gm, p1, p2, campaignId } = await setup();
+    const { characterId: a } = await p1.mutation(api.characters.create, { campaignId, draft: draft({ name: "Ash" }), idempotencyKey: key() });
+    // Only the owner or the GM.
+    expect(errorCode(await p2.mutation(api.characters.setStatus, { characterId: a, status: "away" }).catch((e) => e))).toBe("FORBIDDEN");
+    await p1.mutation(api.characters.setStatus, { characterId: a, status: "away" });
+    const benched = await t.run((ctx) => ctx.db.get(a));
+    expect(benched).toMatchObject({ status: "away", away: { reason: "benched" } });
+    // Views show a bench as `benched`, not as a death-move reason.
+    const view = await p1.query(api.characters.get, { characterId: a });
+    expect(view).toMatchObject({ status: "away", benched: true });
+    expect(view!.away).toBeUndefined();
+
+    // A new character takes the slot; the benched one can't come back until it is sent away.
+    const { characterId: b } = await p1.mutation(api.characters.create, { campaignId, draft: draft({ name: "Brin" }), idempotencyKey: key() });
+    expect(errorCode(await p1.mutation(api.characters.setStatus, { characterId: a, status: "active" }).catch((e) => e))).toBe("INVALID");
+    expect(errorCode(await gm.mutation(api.characters.setStatus, { characterId: a, status: "active" }).catch((e) => e))).toBe("INVALID");
+    await p1.mutation(api.characters.setStatus, { characterId: b, status: "away" });
+    await p1.mutation(api.characters.setStatus, { characterId: a, status: "active" });
+    const back = await t.run((ctx) => ctx.db.get(a));
+    expect(back).toMatchObject({ status: "active" });
+    expect(back!.away).toBeUndefined();
+
+    // The GM benches and brings back a player's character.
+    await gm.mutation(api.characters.setStatus, { characterId: a, status: "away" });
+    await gm.mutation(api.characters.setStatus, { characterId: a, status: "active" });
+    // Only an active character is sent away; a dead one isn't benched by anyone.
+    await gm.mutation(api.characters.setStatus, { characterId: b, status: "dead" });
+    expect(errorCode(await gm.mutation(api.characters.setStatus, { characterId: b, status: "away" }).catch((e) => e))).toBe("INVALID");
+    expect(errorCode(await p1.mutation(api.characters.setStatus, { characterId: b, status: "away" }).catch((e) => e))).toBe("FORBIDDEN");
+    // The GM's own characters are exempt: the GM brings back any number.
+    const { characterId: g1 } = await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    await gm.mutation(api.characters.setStatus, { characterId: g1, status: "away" });
+    await gm.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    await gm.mutation(api.characters.setStatus, { characterId: g1, status: "active" });
+  });
+
+  it("X6: a Castle High away character returns only through the GM, and only into a free slot", async () => {
+    const { t, gm, p1, campaignId } = await setup("castle-high");
+    const { characterId: a } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    await t.run((ctx) => ctx.db.patch(a, { status: "away", away: { reason: "sentHome" } }));
+    // The owner can't bring back a death-move away character, nor bench them.
+    expect(errorCode(await p1.mutation(api.characters.setStatus, { characterId: a, status: "active" }).catch((e) => e))).toBe("FORBIDDEN");
+    expect(errorCode(await p1.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() }).catch((e) => e))).toBe("FORBIDDEN");
+    const { characterId: b } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    // The GM can't return them while the player has another active character.
+    expect(errorCode(await gm.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() }).catch((e) => e))).toBe("INVALID");
+    await p1.mutation(api.characters.setStatus, { characterId: b, status: "away" });
+    await gm.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() });
+    expect((await t.run((ctx) => ctx.db.get(a)))!.status).toBe("active");
   });
 
   it("M5: characters.create is rate-limited per user (30 in a burst)", async () => {

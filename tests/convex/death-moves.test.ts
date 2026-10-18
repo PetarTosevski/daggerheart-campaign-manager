@@ -216,6 +216,27 @@ describe("deathMoves", () => {
     expect(await codeOf(gm.mutation(api.deathMoves.undo, { entryId: dead.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
   });
 
+  it("X6: a death-move away character comes back (return or undo) only into a free slot; the owner can't bring them back", async () => {
+    const { p1, gm, a, campaignId, characterOf } = await setup("castle-high");
+    await p1.mutation(api.deathMoves.choose, { characterId: a, move: "blazeOfGlory", idempotencyKey: key() });
+    const gone = await p1.mutation(api.deathMoves.finishBlaze, { characterId: a, idempotencyKey: key() });
+    expect(gone.status).toBe("away");
+    // The owner can't bring back a death-move away character; "away" again changes nothing (no bench).
+    expect(await codeOf(p1.mutation(api.characters.setStatus, { characterId: a, status: "active" }))).toBe("FORBIDDEN");
+    await p1.mutation(api.characters.setStatus, { characterId: a, status: "away" });
+    expect((await characterOf(a)).away).toEqual({ reason: "infirmary" });
+
+    // The player makes a new character; Ash can't come back while it is active.
+    const { characterId: fresh } = await p1.mutation(api.characters.create, { campaignId, draft: draft("Cid"), idempotencyKey: key() });
+    expect(await codeOf(gm.mutation(api.deathMoves.undo, { entryId: gone.entryId, idempotencyKey: key() }))).toBe("INVALID");
+    expect((await characterOf(a)).status).toBe("away");
+    expect(await codeOf(gm.mutation(api.deathMoves.returnFromAway, { characterId: a, idempotencyKey: key() }))).toBe("INVALID");
+
+    // Once the new one is benched, the undo goes through.
+    await p1.mutation(api.characters.setStatus, { characterId: fresh, status: "away" });
+    expect((await gm.mutation(api.deathMoves.undo, { entryId: gone.entryId, idempotencyKey: key() })).status).toBe("active");
+  });
+
   it("anonymous, outsider, player and GM", async () => {
     const { t, p1, p2, gm, out, a, b } = await setup("castle-high");
     const choose = (who: typeof gm, characterId: Id<"characters">) =>

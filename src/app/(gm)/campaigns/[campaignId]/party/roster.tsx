@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { LevelUpRosterBadge } from "@/components/party/level-up";
-import { FallenOverlay } from "@/components/party/party-card";
+import { BenchButton, FallenOverlay } from "@/components/party/party-card";
 import { domainBanner, DOMAIN_ICONS, heritageLine, ownerLabel, type Table } from "@/components/party/party-display";
 import { CharacterPortrait, PortraitUpload } from "@/components/party/portrait";
 import type { SlotProps } from "@/components/party/slots";
@@ -34,7 +34,7 @@ function Stat({ label, children, hope = false }: { label: string; children: Reac
   );
 }
 
-/** A hero on the roster (Party board): class banner, portrait, heritage, HP/Evasion/Hope, owner, and the D5 level-up badge slot. */
+/** A hero on the roster (Party board): class banner, portrait, heritage, HP/Evasion/Hope, owner, Send away/Bring back, and the D5 level-up badge slot. */
 export function RosterCard({
   campaignId,
   character,
@@ -176,6 +176,7 @@ export function RosterCard({
         {canEdit || isGm ? (
           <div className="flex flex-wrap items-center gap-2 border-t border-[#253338] pt-2.5">
             <PortraitUpload character={character} />
+            <BenchButton character={character} busy={busy} onSet={(status) => void run(() => setStatus({ characterId: character._id, status }))} />
             {isGm && table ? (
               <label className="flex min-w-0 flex-1 items-center gap-2 text-[13px] text-[#9fb2b6]">
                 <span className="sr-only sm:not-sr-only">Player</span>
