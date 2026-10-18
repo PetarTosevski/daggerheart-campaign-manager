@@ -81,6 +81,15 @@ export function TextField({
   );
 }
 
+/** "Name: text" for a class, weapon or armor feature. */
+export function FeatureText({ name, text }: { name: string; text: string }) {
+  return (
+    <p className="cs-small m-0 whitespace-pre-line">
+      <strong className="font-display text-[14px]">{name}:</strong> {text}
+    </p>
+  );
+}
+
 /** − value + control; read-only shows the value alone. */
 export function Stepper({
   label,

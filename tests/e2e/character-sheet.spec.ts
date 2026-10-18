@@ -123,7 +123,8 @@ test("the GM plays a character sheet: tracks, damage, cards and notes", async ({
   await expect(page.getByRole("group", { name: "Armor Slot: 1 of 3 marked" })).toBeVisible();
 
   // Domain cards: vault Book of Ava, then recall it (no rest is open, so it costs Stress).
-  await page.getByRole("tab", { name: "Domain Cards" }).click();
+  await page.getByRole("tab", { name: "Domains" }).click();
+  await expect(page.getByRole("tab", { name: "Domain Cards" })).toHaveAttribute("aria-selected", "true");
   const loadout = page.getByRole("list", { name: "Loadout cards" });
   await loadout.getByRole("article", { name: "Book of Ava" }).getByRole("button", { name: "Move to vault" }).click();
   const vault = page.getByRole("list", { name: "Vault cards" });
@@ -136,8 +137,9 @@ test("the GM plays a character sheet: tracks, damage, cards and notes", async ({
   await expect(loadout.getByRole("article", { name: "Book of Ava" })).toBeVisible();
 
   // Notes save on blur and survive a reload.
-  await page.getByRole("tab", { name: "Heritage & Story" }).click();
+  await page.getByRole("tab", { name: "Heritage & Subclass" }).click();
   await expect(page.getByRole("article", { name: "Subclass: Troubadour Specialization (locked)" })).toBeVisible();
+  await page.getByRole("tab", { name: "Story & Advancement" }).click();
   const notes = page.getByRole("textbox", { name: "Notes" });
   await notes.fill("Owes the innkeeper 3 gold.");
   await notes.blur();
@@ -145,7 +147,7 @@ test("the GM plays a character sheet: tracks, damage, cards and notes", async ({
   const client = await convexAs(page);
   await expect.poll(async () => (await client.query(api.characters.get, { characterId }))?.sheet.notes).toBe("Owes the innkeeper 3 gold.");
   await page.reload();
-  await page.getByRole("tab", { name: "Heritage & Story" }).click();
+  await page.getByRole("tab", { name: "Story & Advancement" }).click();
   await expect(page.getByRole("textbox", { name: "Notes" })).toHaveValue("Owes the innkeeper 3 gold.");
 });
 
@@ -171,9 +173,13 @@ test("another player reads the full sheet, live, with no edit controls", async (
   await page.getByRole("button", { name: "Hit Point 1 of 5" }).click();
   await expect(player.getByRole("img", { name: "Hit Point: 1 of 5 marked" })).toBeVisible();
 
-  await player.getByRole("tab", { name: "Domain Cards" }).click();
+  await player.getByRole("tab", { name: "Domains" }).click();
+  await expect(paper.getByRole("list", { name: "Loadout cards" })).toBeVisible();
   await expect(paper.getByRole("button", { name: /Move to/ })).toHaveCount(0);
-  await player.getByRole("tab", { name: "Heritage & Story" }).click();
+  await player.getByRole("tab", { name: "Heritage & Subclass" }).click();
+  await expect(paper.getByRole("list", { name: "Heritage and subclass cards" })).toBeVisible();
+  await player.getByRole("tab", { name: "Story & Advancement" }).click();
+  await expect(paper.getByRole("region", { name: "Notes" })).toBeVisible();
   await expect(paper.getByRole("textbox")).toHaveCount(0);
   await close();
 });

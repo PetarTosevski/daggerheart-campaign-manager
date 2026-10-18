@@ -80,6 +80,31 @@ describe("character sheet", () => {
     restsCurrent = { open: null, shortRestsSinceLong: 0, last: null };
   });
 
+  it("renders the board shell: page tabs, Domains sub-tabs with counts, close link to the roster", () => {
+    show();
+    const pages = screen.getByRole("tablist", { name: "Sheet pages" });
+    expect(within(pages).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Character Sheet", "Story & Advancement", "Domains"]);
+    expect(within(pages).getByRole("tab", { name: "Character Sheet" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("link", { name: "Close character sheet" })).toHaveAttribute("href", "/campaigns/k1/party");
+    expect(screen.getByRole("img", { name: "Level 1" })).toBeInTheDocument();
+    expect(screen.getByText("All changes save automatically.")).toBeInTheDocument();
+
+    // Arrow keys move between pages (roving tabIndex).
+    fireEvent.keyDown(within(pages).getByRole("tab", { name: "Character Sheet" }), { key: "ArrowLeft" });
+    const domains = within(pages).getByRole("tab", { name: "Domains" });
+    expect(domains).toHaveAttribute("aria-selected", "true");
+    expect(domains).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("tabpanel", { name: "Domains" })).toBeInTheDocument();
+
+    const collections = screen.getByRole("tablist", { name: "Card collections" });
+    const cards = within(collections).getByRole("tab", { name: "Domain Cards" });
+    expect(cards).toHaveAttribute("aria-selected", "true");
+    expect(cards).toHaveTextContent("Domain Cards2");
+    fireEvent.keyDown(cards, { key: "ArrowRight" });
+    expect(within(collections).getByRole("tab", { name: "Heritage & Subclass" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("list", { name: "Heritage and subclass cards" })).toBeInTheDocument();
+  });
+
   it("shows page one with computed thresholds and proficiency dice", () => {
     show();
     expect(screen.getByRole("heading", { level: 1, name: "Liriel" })).toBeInTheDocument();
@@ -117,6 +142,7 @@ describe("character sheet", () => {
 
   it("polish 31: with no rest open the vault button shows the real Recall Cost, even with the rest box ticked", () => {
     show();
+    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
     fireEvent.click(screen.getByRole("tab", { name: "Domain Cards" }));
     const vault = screen.getByRole("list", { name: "Vault cards" });
     expect(within(vault).getByRole("button", { name: "Move to loadout (2 Stress)" })).toBeInTheDocument();
@@ -128,7 +154,7 @@ describe("character sheet", () => {
   it("moves domain cards between loadout and vault", async () => {
     restsCurrent = { open: { _id: "r1" }, shortRestsSinceLong: 0, last: null };
     show();
-    fireEvent.click(screen.getByRole("tab", { name: "Domain Cards" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
     const loadout = screen.getByRole("list", { name: "Loadout cards" });
     await act(async () => {
       fireEvent.click(within(loadout).getByRole("button", { name: "Move to vault" }));
@@ -146,9 +172,11 @@ describe("character sheet", () => {
 
   it("saves notes on blur and shows subclass tiers", () => {
     show();
-    fireEvent.click(screen.getByRole("tab", { name: "Heritage & Story" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Heritage & Subclass" }));
     expect(screen.getByRole("article", { name: "Subclass: Troubadour Foundation" })).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Subclass: Troubadour Mastery (locked)" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Story & Advancement" }));
     const notes = screen.getByRole("textbox", { name: "Notes" });
     fireEvent.blur(notes, { target: { value: "Paid the innkeeper." } });
     expect(calls.map((c) => c.args)).toEqual([{ characterId: "c1", patch: { notes: "Paid the innkeeper." } }]);
@@ -167,7 +195,7 @@ describe("character sheet", () => {
     expect(within(paper).queryAllByRole("combobox")).toHaveLength(0);
     expect(within(paper).queryAllByRole("checkbox")).toHaveLength(0);
     expect(screen.getByRole("img", { name: "Hit Point: 1 of 5 marked" })).toBeInTheDocument();
-    for (const tab of ["Domain Cards", "Heritage & Story"]) {
+    for (const tab of ["Story & Advancement", "Domains", "Heritage & Subclass"]) {
       fireEvent.click(screen.getByRole("tab", { name: tab }));
       expect(within(paper).queryAllByRole("button").filter((b) => b.getAttribute("role") !== "tab")).toHaveLength(0);
       expect(within(paper).queryAllByRole("textbox")).toHaveLength(0);

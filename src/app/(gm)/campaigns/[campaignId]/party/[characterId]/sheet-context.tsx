@@ -1,15 +1,20 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
 import type { SlotProps } from "@/components/party/slots";
 import { errorMessage } from "@/lib/convex-errors";
+import { derivedDefense } from "@/lib/domain/characters/derived";
+import { withEffects } from "@/lib/domain/characters/effects";
+import { FRAME_OF } from "@/lib/frames/extras/common";
+import type { MotherboardState } from "@/lib/frames/extras/motherboard";
 import type { SheetPatch } from "@/lib/validation/characters";
 
 import { api } from "../../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../../convex/_generated/dataModel";
 import type { CharacterView } from "../../../../../../../convex/characters";
+import { useCampaign } from "../../campaign-shell";
 
 export type Resource = "hp" | "stress" | "hope" | "armor" | "scars";
 /** The statuses the sheet sets by hand (`away` comes only from death moves). */
@@ -90,4 +95,27 @@ export function SheetProvider({
   );
 
   return <SheetContext.Provider value={value}>{children}</SheetContext.Provider>;
+}
+
+/**
+ * The character's Motherboard module in a Motherboard campaign (CB 301-303), or null elsewhere: its installed
+ * augments count toward Armor Score and Evasion like the server's `derivedDefense`, and its Ikonis replaces weapons.
+ */
+export function useMotherboard(): { motherboard: boolean; state: MotherboardState | null } {
+  const { character } = useSheet();
+  const motherboard = useCampaign().frameId === FRAME_OF.motherboard;
+  const extras = useQuery(api.characterExtras.get, motherboard ? { characterId: character._id } : "skip");
+  return { motherboard, state: motherboard ? (extras?.motherboard ?? null) : null };
+}
+
+/**
+ * Evasion and Armor Score as the sheet shows them: with active effects (Rogue's Dodge and the like) and installed
+ * augments (Motherboard); the base on the sheet never changes. `effectEvasion` is the part that comes from effects.
+ */
+export function useDefense() {
+  const { sheet } = useSheet();
+  const { state } = useMotherboard();
+  const augments = state?.installed ?? [];
+  const defense = derivedDefense(withEffects(sheet), augments);
+  return { defense, effectEvasion: defense.evasion - derivedDefense(sheet, augments).evasion, armorSlots: defense.armorScore };
 }
