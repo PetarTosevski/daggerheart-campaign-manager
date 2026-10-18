@@ -32,20 +32,31 @@ type TabId = (typeof TABS)[number]["id"];
 type OpenedFromEnvironment = { adversaryId: string; environmentId: string; environmentName: string };
 
 /** Keeps a failing slot (a `useQuery` that throws) from blanking the page (CL1); "Try again" remounts it. */
-class SlotBoundary extends Component<{ children: ReactNode; label: string }, { failed: boolean }> {
-  state = { failed: false };
+class SlotBoundary extends Component<{ children: ReactNode; label: string }, { failed: boolean; message: string }> {
+  state: { failed: boolean; message: string } = { failed: false, message: "" };
 
-  static getDerivedStateFromError() {
-    return { failed: true };
+  static getDerivedStateFromError(error: unknown) {
+    return { failed: true, message: error instanceof Error ? error.message : String(error) };
+  }
+
+  componentDidCatch(error: unknown) {
+    // Logged so a failure can be diagnosed from the browser console (and the dev server's browser log).
+    console.error(`${this.props.label} failed to load`, error);
   }
 
   render() {
     if (!this.state.failed) return this.props.children;
     return (
       <div role="alert" className="adv-alert">
-        <span>{this.props.label} failed to load.</span>
-        <button type="button" onClick={() => this.setState({ failed: false })}>
+        <span>
+          {this.props.label} failed to load{this.state.message ? `: ${this.state.message}` : "."}
+        </span>
+        <button type="button" onClick={() => this.setState({ failed: false, message: "" })}>
           Try again
+        </button>
+        {/* A chunk that failed to load (e.g. while the app was updating) needs a full reload. */}
+        <button type="button" onClick={() => window.location.reload()}>
+          Reload page
         </button>
       </div>
     );
