@@ -254,3 +254,9 @@
   .enc-builder { grid-template-columns: minmax(0, 1fr); }
   .enc-detail { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Tier filter in the Add to encounter dialog. */
+.enc-tiers { display: flex; flex-wrap: wrap; gap: 6px; }
+.enc-tier { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--adv-border-strong); background: transparent; color: var(--adv-text); font-family: inherit; font-size: 14px; cursor: pointer; }
+.enc-tier[aria-pressed="true"] { background: var(--adv-acc); border-color: var(--adv-acc); color: var(--adv-acc-ink); font-weight: 700; }
+.enc-tier:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 2px; }

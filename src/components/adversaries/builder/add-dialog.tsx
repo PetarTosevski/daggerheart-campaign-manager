@@ -62,6 +62,8 @@ function AddForm({ campaignId, onClose, encounterId: fixedEncounter, adversaryId
   const add = useIntent(api.encounters.addAdversary);
 
   const [search, setSearch] = useState("");
+  // 0 = every tier.
+  const [tier, setTier] = useState(0);
   const [picked, setPicked] = useState<string | null>(fixedAdversary ?? null);
   const [chosenEncounter, setChosenEncounter] = useState<string | null>(null);
   const [newName, setNewName] = useState("New encounter");
@@ -85,7 +87,7 @@ function AddForm({ campaignId, onClose, encounterId: fixedEncounter, adversaryId
   const amount = Math.min(max, count ?? (minion ? groupSize : 1));
   const matches = fixedAdversary
     ? []
-    : catalogue.filter((a) => fold(`${a.name} ${a.type}`).includes(fold(search.trim()))).slice(0, SHOWN);
+    : catalogue.filter((a) => (tier === 0 || a.tier === tier) && fold(`${a.name} ${a.type}`).includes(fold(search.trim()))).slice(0, SHOWN);
   const error = create.error ?? add.error;
   const pending = create.pending || add.pending;
 
@@ -122,6 +124,13 @@ function AddForm({ campaignId, onClose, encounterId: fixedEncounter, adversaryId
             <span className="enc-lbl">Adversary</span>
             <input className="enc-in" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or type" />
           </label>
+          <div className="enc-tiers" role="group" aria-label="Filter by tier">
+            {[0, 1, 2, 3, 4].map((t) => (
+              <button key={t} type="button" className="enc-tier" aria-pressed={tier === t} onClick={() => setTier(t)}>
+                {t === 0 ? "All tiers" : `Tier ${t}`}
+              </button>
+            ))}
+          </div>
           {matches.length === 0 ? (
             <p className="enc-muted">No adversary matches. Try another name.</p>
           ) : (
