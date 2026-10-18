@@ -1,5 +1,7 @@
+import { ConvexHttpClient } from "convex/browser";
 import { expect, test, type Page } from "@playwright/test";
 
+import { api } from "../../convex/_generated/api";
 import { signInAsTestGm } from "./fixtures";
 
 // Names are unique per GM and the local backend keeps data between runs.
@@ -94,6 +96,63 @@ test("settings save the accent colour", async ({ page }) => {
     .toBe("#8f78d8");
   await dialog.getByRole("radio", { name: "Gold" }).click();
   await expect(dialog.getByRole("radio", { name: "Gold" })).toHaveAttribute("aria-checked", "true");
+});
+
+/** A Convex client authenticated as the page's signed-in user. */
+async function convexAs(page: Page): Promise<ConvexHttpClient> {
+  const token = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.startsWith("__convexAuthJWT"));
+    return key ? localStorage.getItem(key) : null;
+  });
+  expect(token, "Convex Auth token in localStorage").toBeTruthy();
+  const client = new ConvexHttpClient(process.env.E2E_CONVEX_URL!);
+  client.setAuth(token!);
+  return client;
+}
+
+async function createWitherwild(page: Page, name: string) {
+  await page.goto("/new");
+  await page.getByRole("button", { name: /The Witherwild/ }).click();
+  await page.getByRole("button", { name: "Start campaign" }).click();
+  const dialog = page.getByRole("dialog", { name: "Name your campaign" });
+  await dialog.getByLabel("Campaign name").fill(name);
+  await dialog.getByRole("button", { name: "Start campaign" }).click();
+  await expect(page).toHaveURL(/\/campaigns\/[a-z0-9]+$/);
+}
+
+test("the Expansions setting decides Hope & Fear for new campaigns", async ({ page }) => {
+  await signIn(page);
+  const client = await convexAs(page);
+  try {
+    await page.getByRole("button", { name: /Settings/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Settings" });
+    const hopeAndFear = dialog.getByRole("switch", { name: /Hope & Fear/ });
+    await expect(dialog.getByText("New campaigns start with Hope & Fear content.", { exact: false })).toBeVisible();
+    if (await hopeAndFear.isChecked()) await hopeAndFear.click();
+    await hopeAndFear.click();
+    await expect(hopeAndFear).toBeChecked();
+    await expect.poll(async () => (await client.query(api.settings.get, {})).expansions.hopeAndFear).toBe(true);
+
+    await createWitherwild(page, unique("Expansions On"));
+    const rule = page.getByRole("checkbox", { name: /Hope & Fear content/ });
+    await expect(rule).toBeChecked();
+    // Each campaign keeps its own switch.
+    await rule.click();
+    await expect(rule).not.toBeChecked();
+
+    await page.goto("/");
+    await page.getByRole("button", { name: /Settings/ }).click();
+    await expect(hopeAndFear).toBeChecked();
+    await hopeAndFear.click();
+    await expect(hopeAndFear).not.toBeChecked();
+    await expect.poll(async () => (await client.query(api.settings.get, {})).expansions.hopeAndFear).toBe(false);
+
+    await createWitherwild(page, unique("Expansions Off"));
+    await expect(page.getByRole("checkbox", { name: /Hope & Fear content/ })).not.toBeChecked();
+  } finally {
+    // Other specs rely on each frame's own default.
+    await client.mutation(api.settings.update, { expansions: { hopeAndFear: null } });
+  }
 });
 
 test("an unknown campaign id shows not found", async ({ page }) => {

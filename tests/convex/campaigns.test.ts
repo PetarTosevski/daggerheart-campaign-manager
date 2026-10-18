@@ -257,13 +257,19 @@ describe("settings", () => {
 
   it("returns defaults, then saves partial updates", async () => {
     const { gm } = await setup();
-    expect(await gm.query(api.settings.get, {})).toEqual({ tableName: "", gmName: "", accent: "#e3b45a" });
+    expect(await gm.query(api.settings.get, {})).toEqual({
+      tableName: "",
+      gmName: "",
+      accent: "#e3b45a",
+      expansions: {},
+    });
     await gm.mutation(api.settings.update, { tableName: " Thursday Crew " });
     await gm.mutation(api.settings.update, { accent: "#8f78d8" });
     expect(await gm.query(api.settings.get, {})).toEqual({
       tableName: "Thursday Crew",
       gmName: "",
       accent: "#8f78d8",
+      expansions: {},
     });
   });
 

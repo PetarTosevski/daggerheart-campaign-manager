@@ -86,5 +86,7 @@ export const campaignTables = {
     tableName: v.string(),
     gmName: v.string(),
     accent: v.string(),
+    /** XS1: defaults for new campaigns; an unset key keeps each frame's own default. */
+    expansions: v.optional(v.object({ hopeAndFear: v.optional(v.boolean()) })),
   }).index("by_owner", ["ownerId"]),
 };

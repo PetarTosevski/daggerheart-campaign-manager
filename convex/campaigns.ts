@@ -24,6 +24,7 @@ import {
   frameIdValidator,
   tomeChapterValidator,
 } from "./lib/validators/campaigns";
+import { settingsRow } from "./settings";
 
 export type CampaignSummary = Infer<typeof campaignSummaryValidator>;
 
@@ -205,6 +206,9 @@ export const create = keyedUserMutation({
       }
       const tier = input.custom?.startingTier ?? 1;
       const now = Date.now();
+      // XS1: the GM's Expansions setting, when set, decides Hope & Fear for frames that offer it.
+      const hopeAndFear = (await settingsRow(ctx, user))?.expansions?.hopeAndFear;
+      const offersHopeAndFear = optionsFor(input.frameId).some((o) => o.id === "hopeAndFear");
       const campaignId = await ctx.db.insert("campaigns", {
         ownerId: user._id,
         frameId: input.frameId,
@@ -216,6 +220,7 @@ export const create = keyedUserMutation({
         createdAt: now,
         lastOpenedAt: now,
         joinCode: await freshJoinCode(ctx),
+        ...(hopeAndFear !== undefined && offersHopeAndFear ? { options: { hopeAndFear } } : {}),
       });
       await ctx.db.insert("campaignState", { campaignId, fear: 0 });
       if (frameHasMechanic(input.frameId, "campaignTime")) {
