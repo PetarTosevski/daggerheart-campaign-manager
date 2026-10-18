@@ -1,0 +1,144 @@
+/*
+ * Class and frame extras in the board's paper style (Party.dc.html: cs-launch, cs-ov/cs-sheet, cs-box + cs-plaque,
+ * cs-tier/cs-form, cs-chip, cs-box-tick, cs-cur). Prefixed `xs-` so the sheet route's own cs-* rules never collide.
+ * Tokens: --sheet-* (sheet.css); fields, pips and the modal: src/components/party/sheet-ui/.
+ */
+
+/* Frame extras region: one sh-box per frame extra, the frame name as kicker over the sh-h heading. */
+.xs-region{display:flex;flex-direction:column;gap:18px}
+.xs-region:empty{display:none}
+.xs-kicker{margin:0 0 -8px;text-align:center;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--sheet-wine,#5b2b2b)}
+.xs-sub{margin:-4px 0 0;text-align:center;font-style:italic}
+
+/* Plaque box (cs-box + cs-plaque): white panel with the green-ruled, leaf-tipped wine title. */
+.xs-pbox{position:relative;display:flex;flex-direction:column;gap:10px;min-width:0;margin-top:16px;padding:28px 16px 14px;border-radius:12px;background:rgba(255,255,255,.88);box-shadow:0 1px 0 rgba(0,0,0,.04)}
+@media (max-width:640px){.xs-pbox{padding:28px 12px 12px}}
+.xs-plaque{position:absolute;left:-8px;right:-8px;top:-16px;height:32px;margin:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.xs-plaque::before{content:"";position:absolute;left:14px;right:14px;top:50%;border-top:2px solid #4f8a3a}
+.xs-plaque::after{content:"";position:absolute;left:0;right:0;top:50%;height:14px;margin-top:-7px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 14'%3E%3Cpath d='M2 7 C8 1 16 1 28 7 C16 13 8 13 2 7Z' fill='%234f8a3a'/%3E%3Cpath d='M6 7 H26' stroke='%23e9f0df' stroke-width='1.2'/%3E%3C/svg%3E") left center/30px 14px no-repeat,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 14'%3E%3Cpath d='M28 7 C22 1 14 1 2 7 C14 13 22 13 28 7Z' fill='%234f8a3a'/%3E%3Cpath d='M4 7 H24' stroke='%23e9f0df' stroke-width='1.2'/%3E%3C/svg%3E") right center/30px 14px no-repeat}
+.xs-plaque span{position:relative;z-index:1;max-width:calc(100% - 72px);padding:2px 22px 3px;box-sizing:border-box;background:#fbf8f0;border:2px solid #4f8a3a;border-radius:3px;font-family:var(--font-cinzel),serif;font-weight:700;font-size:19px;line-height:1.2;color:#6b2b26;letter-spacing:.02em;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:640px){.xs-plaque span{font-size:16px;padding:2px 12px 3px}}
+
+/* Fields and text. */
+.xs-field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.xs-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
+.xs-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 18px}
+@media (max-width:760px){.xs-grid3{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:520px){.xs-grid2{grid-template-columns:minmax(0,1fr)}}
+.xs-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.xs-row>.xs-grow{flex:1 1 160px;min-width:0}
+.sh-in.xs-narrow{width:96px;flex:none}
+.sh-in.xs-mid{width:140px;flex:none}
+.sh-ta.xs-ta-sm{min-height:84px}
+.xs-note{margin:0;font-family:var(--font-garamond),serif;font-size:14px;line-height:1.5;font-style:italic;color:#6b6760}
+.xs-note strong{color:var(--sheet-ink,#2a1f14)}
+.xs-strong{font-family:var(--font-cinzel),serif;font-weight:700;color:var(--sheet-ink,#2a1f14)}
+.xs-big{font-family:var(--font-cinzel),serif;font-size:28px;font-weight:700;line-height:1.1;color:var(--sheet-ink,#2a1f14)}
+.xs-warn{margin:0;padding:8px 10px;border-radius:8px;background:rgba(107,43,38,.1);color:#6b2b26;font-size:14px;font-weight:600}
+.xs-error{margin:0;font-size:15px;font-weight:600;color:var(--sheet-red,#b04a45)}
+.xs-error:empty{display:none}
+.xs-notice{margin:0;padding:8px 12px;border-radius:8px;background:#f3e2bd;border:1px solid var(--sheet-gold,#c9962e);color:#4a3008;font-size:15px}
+.xs-check{display:inline-flex;align-items:center;gap:6px;min-height:32px;font-family:var(--font-garamond),serif;font-size:15px;color:var(--sheet-ink,#2a1f14)}
+.xs-check input{width:18px;height:18px;accent-color:#4f8a3a}
+.xs-checks{display:flex;flex-wrap:wrap;gap:4px 14px}
+
+/* Buttons: the board's cs-btn (green pill) and cs-btn.alt (white with wine outline). */
+.xs-btn{flex:none;min-height:36px;padding:0 14px;border-radius:999px;border:1px solid #4f8a3a;background:#5b8c45;color:#fff;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.xs-btn:hover:not(:disabled){background:#4f7d3b}
+.xs-btn.alt{background:#fff;color:#6b2b26;border-color:#6b2b26}
+.xs-btn.alt:hover:not(:disabled){background:#f6ecec}
+.xs-btn[aria-pressed="true"]{background:#3f6f2f;border-color:#2f5a22;color:#fff}
+.xs-btn:disabled{opacity:.4;cursor:not-allowed}
+.xs-btn:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+@media (max-width:640px){.xs-btn{min-height:44px}}
+.xs-actions{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Chips (cs-chip): read-only ranges and dice with the current one on. */
+.xs-chips{display:flex;flex-wrap:wrap;gap:5px}
+.xs-chip{padding:3px 9px;border-radius:999px;border:1px solid #c9bfa8;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;color:#9a8f7a}
+.xs-chip.on{background:#6b2b26;border-color:#6b2b26;color:#fbf3e4}
+.xs-kv{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.xs-kv>.sh-lbl{width:92px;flex:none}
+
+/* Pip rows (diamond Stress, armor slots): wrap instead of the 12-column slot grid. */
+.xs-pips{display:flex;flex-wrap:wrap;gap:4px}
+.xs-pips .sh-pip{width:40px;flex:none}
+@media (max-width:640px){.xs-pips .sh-pip{width:44px}}
+
+/* Evasion ring (cs-ev). */
+.xs-ev{display:flex;flex-direction:column;align-items:center;gap:6px}
+.xs-evn{width:66px;height:66px;border-radius:50%;border:2px solid #8a6a5e;box-shadow:0 0 0 4px rgba(255,255,255,.9),0 0 0 5px #b39587;display:flex;align-items:center;justify-content:center;font-family:var(--font-cinzel),serif;font-size:28px;font-weight:700;color:#3b3a36;background:#fff}
+
+/* Training ticks (cs-box-tick). */
+.xs-train{display:flex;flex-direction:column;gap:8px}
+.xs-tr{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.45}
+.xs-ticks{display:flex;gap:4px;flex:none;width:84px;justify-content:flex-end}
+.xs-tick{appearance:none;width:24px;height:24px;margin:0;border:1.5px solid #3b3a36;border-radius:3px;background:#fff;cursor:pointer;position:relative;flex:none}
+.xs-tick:checked{background:#4f8a3a;border-color:#3f6f2f}
+.xs-tick:checked::after{content:"";position:absolute;left:7px;top:2px;width:6px;height:12px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.xs-tick:disabled{opacity:.35;cursor:not-allowed}
+.xs-tick:checked:disabled{opacity:.7}
+.xs-tick:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+@media (max-width:640px){.xs-ticks{width:auto}.xs-tr{flex-direction:column;gap:4px}}
+.xs-cap{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:14px;color:#6b6760}
+.xs-cap strong{font-family:var(--font-cinzel),serif;color:#4f8a3a;font-size:15px}
+
+/* List rows (scrap, relics, ingredients, recipes, augments): dashed separators as the board's cs-form. */
+.xs-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column}
+.xs-item{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 0;border-bottom:1px dashed #d6ccb6;font-family:var(--font-garamond),serif;font-size:16px;color:var(--sheet-ink,#2a1f14)}
+.xs-item:last-child{border-bottom:none}
+.xs-item.col{flex-direction:column;align-items:stretch;gap:4px}
+.xs-item.on{margin:0 -8px;padding:8px;border-radius:8px;background:rgba(79,138,58,.12);border-bottom-color:transparent;box-shadow:inset 3px 0 0 #4f8a3a}
+.xs-item.locked{opacity:.55}
+.xs-item-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.xs-grow{flex:1;min-width:0}
+.xs-name{font-family:var(--font-cinzel),serif;font-weight:700;font-size:15px;color:#3f6f2f}
+.xs-meta{font-size:14px;color:#6b6760}
+.xs-num{min-width:28px;text-align:right;font-family:var(--font-cinzel),serif;font-weight:700}
+.xs-num.zero{color:#b5a88f}
+
+/* Overlay sheets (cs-ov/cs-sheet): a wide parchment PaperModal with the banner art in its head. */
+.sh-modal.xs-sheet{max-width:1000px;background:#ece0c4 var(--xs-paper) left top/100% auto repeat-y;color:#3b3a36}
+.xs-sheet .sh-modal-body{gap:10px;padding:0 26px 30px}
+.xs-sheet .sh-modal-head{position:relative;min-height:118px;margin:0 -26px 6px;padding:30px 20px 0 0;justify-content:flex-end;background:var(--xs-banner) left top/auto 118px no-repeat}
+.xs-sheet .sh-modal-head>.min-w-0{display:flex;align-items:center;flex:0 1 auto;margin-left:auto}
+.xs-sheet .sh-modal-title{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.xs-sheet .sh-modal-sub{margin:0;padding:10px 16px;border-radius:10px;background:rgba(255,255,255,.9);font-family:var(--font-cinzel),serif;font-size:15px;font-weight:700;color:#6b2b26}
+.xs-sheet .sh-close{background:rgba(255,255,255,.85);border-color:#8a7a5a}
+@media (max-width:760px){
+  .xs-sheet .sh-modal-body{padding:0 14px 20px}
+  .xs-sheet .sh-modal-head{min-height:96px;margin:0 -14px 6px;padding:96px 14px 0;background-size:auto 96px;flex-wrap:wrap}
+  .xs-sheet .sh-close{position:absolute;right:12px;top:12px}
+  .xs-sheet .sh-modal-head>.min-w-0{margin:8px 0 0;width:100%}
+  .xs-sheet .sh-modal-sub{flex:1}
+}
+.xs-cols{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:0 22px;align-items:start}
+.xs-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+@media (max-width:760px){.xs-cols{grid-template-columns:minmax(0,1fr)}}
+.xs-intro{margin:0;padding:10px 14px;border-radius:10px;background:rgba(255,255,255,.82);font-size:15px;line-height:1.5;color:#3b3a36}
+
+/* Companion portrait frame (cs-frame). */
+.xs-frame{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:22px 26px;margin-top:16px;border:7px double #8a6a5e;border-radius:46% 46% 30% 30%/40% 40% 22% 22%;background:rgba(255,255,255,.92);color:#8a6a5e;box-shadow:0 0 0 3px rgba(255,255,255,.6),0 0 0 4px #b39587}
+.xs-frame .sh-in{text-align:center}
+
+/* Beastform: current form bar (cs-cur) and tier plaques with form rows (cs-tiers/cs-tier/cs-form). */
+.xs-cur{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;border-radius:12px;background:rgba(79,138,58,.92);color:#f4f6ec}
+.xs-cur-k{font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.85}
+.xs-cur-n{font-family:var(--font-cinzel),serif;font-size:18px;font-weight:700}
+.xs-cur ul{margin:4px 0 0;padding:0;list-style:none;font-size:14px}
+.xs-cur .xs-btn.alt{background:#fff}
+.xs-tiers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 22px;align-items:start}
+@media (max-width:760px){.xs-tiers{grid-template-columns:minmax(0,1fr)}}
+.xs-tiers>.xs-pbox{margin-top:20px;gap:0}
+.xs-lockt{margin:-4px 0 6px;font-size:13px;font-style:italic;color:#8a6d3b;text-align:center}
+.xs-tier.locked .xs-form{opacity:.45;filter:grayscale(.6)}
+.xs-form{padding:10px 0;border-bottom:1px dashed #d6ccb6}
+.xs-form:last-child{border-bottom:none}
+.xs-form.on{margin:0 -8px;padding:10px 8px;border-radius:8px;background:rgba(79,138,58,.12);border-bottom-color:transparent;box-shadow:inset 3px 0 0 #4f8a3a}
+.xs-fhead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.xs-fname{margin:0;font-family:var(--font-cinzel),serif;font-weight:700;font-size:16px;color:#5e7d47;letter-spacing:.02em}
+.xs-form.on .xs-fname{color:#3f6f2f}
+.xs-fex{font-size:12px;text-transform:uppercase;color:#4a4740}
+.xs-fstat{margin-top:4px;font-size:14px;font-weight:700;font-style:italic;color:#2f2b25}
+.xs-ftext{margin-top:3px;font-size:14px;line-height:1.45;white-space:pre-line}
+.xs-pick{display:flex;flex-direction:column;gap:10px;margin-top:10px;padding-top:10px;border-top:1px dashed #b7d0a8}
