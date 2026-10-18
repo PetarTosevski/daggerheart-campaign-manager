@@ -105,15 +105,24 @@ export const get = campaignQuery({
   },
 });
 
-/** "Read the night sky": the server rolls 5d6 for the GM to assign (HF p.140). */
-export const readNightSky = keyedGmMutation({
+/**
+ * "Roll the night sky": the server rolls 5d6 for the GM to assign. Any member
+ * may roll, since "the players collectively roll 5d6" (HF p.140); a player only
+ * while no roll waits to be assigned, the GM at any time (a re-roll).
+ */
+export const readNightSky = keyedCampaignMutation({
+  need: "view",
+  enough: "owner",
   args: {},
   returns: v.object({ roll: v.array(v.number()) }),
-  handler: (ctx) =>
-    frameTrackerMutation(ctx, weredragonTracker, { kind: "weredragon_read", request: {} }, (state) => {
+  handler: (ctx) => {
+    const isGm = ctx.permission === "owner";
+    return frameTrackerMutation(ctx, weredragonTracker, { kind: "weredragon_read", request: {} }, (state) => {
+      if (!isGm && state.pendingRoll !== null) throw appError("INVALID", "The GM is still placing the last roll.");
       const roll = rollDice(READING_DICE, 6);
       return { state: { ...state, pendingRoll: roll }, result: { roll } };
-    }),
+    });
+  },
 });
 
 /**

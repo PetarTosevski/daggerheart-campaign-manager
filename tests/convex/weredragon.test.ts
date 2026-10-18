@@ -150,10 +150,31 @@ describe("weredragon revelations", () => {
     expect(errorCode(empty)).toBe("INVALID");
   });
 
+  it("any member rolls the night sky and every member sees it; only the GM re-rolls a waiting roll", async () => {
+    const { gm, player, player2, stranger, campaignId } = await setup();
+    const k = key();
+    const { roll } = await player.mutation(w.readNightSky, { campaignId, idempotencyKey: k });
+    expect(roll).toHaveLength(5);
+    // A retried click replays the same roll instead of failing on the waiting roll.
+    expect((await player.mutation(w.readNightSky, { campaignId, idempotencyKey: k })).roll).toEqual(roll);
+    for (const viewer of [gm, player, player2]) expect((await viewer.query(w.get, { campaignId })).pendingRoll).toEqual(roll);
+
+    const waiting = await player2.mutation(w.readNightSky, { campaignId, idempotencyKey: key() }).catch((e) => e);
+    expect(errorCode(waiting)).toBe("INVALID");
+    expect(errorCode(await stranger.mutation(w.readNightSky, { campaignId, idempotencyKey: key() }).catch((e) => e))).toBe("NOT_FOUND");
+
+    const reroll = await gm.mutation(w.readNightSky, { campaignId, idempotencyKey: key() });
+    expect((await player.query(w.get, { campaignId })).pendingRoll).toEqual(reroll.roll);
+    const assignment = [0, 1, 2, 3, 4];
+    expect(errorCode(await player.mutation(w.assignReading, { campaignId, assignment, idempotencyKey: key() }).catch((e) => e))).toBe("FORBIDDEN");
+    await gm.mutation(w.assignReading, { campaignId, assignment, idempotencyKey: key() });
+    expect((await player.query(w.get, { campaignId })).pendingRoll).toBeNull();
+    expect((await player2.mutation(w.readNightSky, { campaignId, idempotencyKey: key() })).roll).toHaveLength(5);
+  });
+
   it("only the GM changes revelations; strangers and anonymous users see nothing", async () => {
     const { t, player, stranger, campaignId } = await setup();
     for (const call of [
-      () => player.mutation(w.readNightSky, { campaignId, idempotencyKey: key() }),
       () => player.mutation(w.assignReading, { campaignId, assignment: [0, 1, 2, 3, 4], idempotencyKey: key() }),
       () => player.mutation(w.updateRevelation, { campaignId, kind: "ally", status: "revealed", idempotencyKey: key() }),
     ]) {

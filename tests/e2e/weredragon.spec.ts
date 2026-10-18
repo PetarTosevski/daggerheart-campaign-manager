@@ -32,29 +32,36 @@ async function playerJoins(page: Page, browser: Browser) {
   return { player, close: () => context.close() };
 }
 
-test("the GM reads the night sky and reveals revelations; players submit secrets privately", async ({ page, browser }) => {
+test("a player rolls the night sky and the GM places the dice; players submit secrets privately", async ({ page, browser }) => {
   await gmCreatesCampaign(page);
+  const { player, close } = await playerJoins(page, browser);
   const card = page.getByRole("region", { name: /Revelations/ });
-  await card.getByRole("button", { name: "Read the night sky" }).click();
-  const reading = card.getByRole("group", { name: "Night sky reading" });
-  await expect(card.getByTestId("night-sky-roll")).toHaveText(/^[1-6]( · [1-6]){4}$/);
+  const playerCard = player.getByRole("region", { name: /Revelations/ });
+
+  // HF p.140: the players roll the 5d6; every member sees the result.
+  await playerCard.getByRole("button", { name: "Roll the night sky" }).click();
+  await expect(playerCard.getByTestId("night-sky-roll")).toHaveText(/^[1-6]( · [1-6]){4}$/);
+  const roll = (await playerCard.getByTestId("night-sky-roll").textContent())!;
+  await expect(card.getByTestId("night-sky-roll")).toHaveText(roll);
+  await expect(playerCard.getByRole("button", { name: "Roll the night sky" })).toBeDisabled();
+  await expect(playerCard.getByRole("group", { name: "Night sky reading" })).toHaveCount(0);
 
   // Picking a die already in another column swaps the two.
+  const reading = card.getByRole("group", { name: "Night sky reading" });
   await reading.getByLabel("Die for Powerful Ally").selectOption({ index: 0 });
   await expect(reading.getByLabel("Die for Secret’s Location")).toHaveValue("1");
   await reading.getByRole("button", { name: "Apply reading" }).click();
   await expect(reading).toHaveCount(0);
+  await expect(playerCard.getByTestId("night-sky-roll")).toHaveCount(0);
+  await expect(playerCard.getByRole("button", { name: "Roll the night sky" })).toBeEnabled();
 
   const ally = card.getByRole("listitem", { name: "Powerful Ally" });
   const allyText = await ally.getByLabel("Powerful Ally text").inputValue();
   expect(allyText.length).toBeGreaterThan(10);
   await ally.getByLabel("Powerful Ally status").selectOption("revealed");
 
-  const { player, close } = await playerJoins(page, browser);
-  const playerCard = player.getByRole("region", { name: /Revelations/ });
   await expect(playerCard.getByRole("listitem", { name: "Powerful Ally" })).toContainText(allyText);
   await expect(playerCard.getByRole("listitem", { name: "Secret’s Location" })).toContainText("Not yet revealed.");
-  await expect(playerCard.getByRole("button", { name: "Read the night sky" })).toHaveCount(0);
 
   const secrets = player.getByRole("region", { name: /Forlorne’s Secrets/ });
   await secrets.getByLabel("Secret Forlorne is hiding").fill("She fears her own reflection");
