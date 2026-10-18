@@ -225,6 +225,7 @@ export function InstanceCard({
   instance,
   rules,
   gmTurn,
+  spotlightCostsFear = false,
   selected,
   onSelect,
   actions,
@@ -232,6 +233,8 @@ export function InstanceCard({
   instance: TrackerInstance;
   rules: BlockRules | null;
   gmTurn: number;
+  /** A spotlight was already given this GM turn, so the next one spends 1 Fear (CB p.153). */
+  spotlightCostsFear?: boolean;
   selected: boolean;
   onSelect: () => void;
   actions: TrackerActions;
@@ -291,8 +294,13 @@ export function InstanceCard({
           {spot.label}
         </span>
         {spot.over ? <span className="trk-spot-warn">Past the limit for this GM turn</span> : null}
-        <button type="button" className="trk-btn" aria-label={`Spotlight ${instance.label}`} onClick={() => void actions.spotlight(instance._id)}>
-          Spotlight
+        <button
+          type="button"
+          className="trk-btn"
+          aria-label={`Spotlight ${instance.label}${spotlightCostsFear ? " (spends 1 Fear)" : ""}`}
+          onClick={() => void actions.spotlight(instance._id)}
+        >
+          {spotlightCostsFear ? "Spotlight · 1 Fear" : "Spotlight"}
         </button>
       </div>
     </article>

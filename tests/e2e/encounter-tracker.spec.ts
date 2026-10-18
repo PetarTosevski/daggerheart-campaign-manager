@@ -101,11 +101,13 @@ test("the GM tracks damage, Stress, conditions, Fear, the spotlight and a hidden
   await expect(spend).toBeHidden();
   await expect(tracker.getByTestId("tracker-fear")).toHaveAttribute("aria-label", "GM Fear 2 of 12");
 
-  // Spotlight twice (past the limit of 1: a warning, not a block), then End GM turn resets the counter.
-  await card.getByRole("button", { name: "Spotlight Bear" }).click();
+  // Spotlight twice (past the limit of 1: a warning, not a block); the second spotlight of the GM turn spends 1 Fear
+  // (CB p.153), then End GM turn resets the counter.
+  await card.getByRole("button", { name: "Spotlight Bear", exact: true }).click();
   await expect(card.getByTestId("spotlight-count")).toHaveText("Spotlight 1/1");
-  await card.getByRole("button", { name: "Spotlight Bear" }).click();
+  await card.getByRole("button", { name: "Spotlight Bear (spends 1 Fear)" }).click();
   await expect(card.getByTestId("spotlight-count")).toHaveText("Spotlight 2/1");
+  await expect(tracker.getByTestId("tracker-fear")).toHaveAttribute("aria-label", "GM Fear 1 of 12");
   await expect(card.getByText("Past the limit for this GM turn")).toBeVisible();
   await tracker.getByRole("button", { name: "End GM turn" }).click();
   await expect(tracker.getByTestId("gm-turn")).toHaveText("GM turn 2");
@@ -121,7 +123,7 @@ test("the GM tracks damage, Stress, conditions, Fear, the spotlight and a hidden
   await expect(dice).toHaveAttribute("data-values", /^\d+$/, { timeout: 10_000 });
 
   await page.goto(`/campaigns/${campaignId}`);
-  await expect(page.getByTestId("fear-value")).toHaveAttribute("aria-label", "2 of 12 Fear");
+  await expect(page.getByTestId("fear-value")).toHaveAttribute("aria-label", "1 of 12 Fear");
   const gmFeed = page.getByRole("list", { name: "Rolls" });
   const gmRow = gmFeed.getByRole("listitem").filter({ hasText: "GM: Bear: attack" });
   await expect(gmRow).toContainText("hidden");
