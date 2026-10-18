@@ -4,7 +4,9 @@
  * Fixed against the board: the list scrolls inside its panel (the board clipped it at 640 px, so "Show more" was
  * unreachable) and rows never shrink, so their text never overlaps at 390 px.
  */
-.adc-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 560px); gap: 28px; align-items: start; }
+/* The stat block column stretches to the list column: top at the search bar, bottom at the list's bottom; the block
+   scrolls inside it. */
+.adc-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 560px); gap: 28px; align-items: stretch; }
 .adc-browse { min-width: 0; }
 .adc-count { margin: 0 0 10px; font-size: 13px; color: var(--adv-muted); }
 
@@ -126,7 +128,8 @@
 .adc-hf-fear { color: var(--adv-hf-fear); }
 
 /* Parchment stat block */
-.adc-detail { position: sticky; top: 16px; min-width: 0; }
+.adc-detail { position: relative; min-width: 0; }
+.adc-detail > .adc-sb { position: absolute; inset: 0; max-height: none; }
 .adc-sb {
   max-height: 880px;
   overflow-y: auto;
@@ -194,6 +197,7 @@
   .adc-grid { grid-template-columns: minmax(0, 1fr); }
   .adc-detail { position: static; scroll-margin-top: 16px; }
   .adc-sb { max-height: none; }
+  .adc-detail > .adc-sb { position: static; }
   .adc-num { display: none; }
 }
 @media (max-width: 480px) {
