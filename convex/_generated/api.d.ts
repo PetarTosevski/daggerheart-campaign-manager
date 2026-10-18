@@ -15,6 +15,7 @@ import type * as campaignTime from "../campaignTime.js";
 import type * as campaigns from "../campaigns.js";
 import type * as characterExtras from "../characterExtras.js";
 import type * as characters from "../characters.js";
+import type * as classFeatures from "../classFeatures.js";
 import type * as cleanup from "../cleanup.js";
 import type * as codex from "../codex.js";
 import type * as countdowns from "../countdowns.js";
@@ -95,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   campaigns: typeof campaigns;
   characterExtras: typeof characterExtras;
   characters: typeof characters;
+  classFeatures: typeof classFeatures;
   cleanup: typeof cleanup;
   codex: typeof codex;
   countdowns: typeof countdowns;

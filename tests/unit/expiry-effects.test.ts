@@ -134,20 +134,21 @@ describe("Duality Dice (CB 94-95)", () => {
 describe("class-feature hooks", () => {
   const roll: RollRecord = { kind: "action", dice: [], modifier: 0, total: 10, outcome: "successHope", manual: false };
 
-  it("the registry starts empty", () => {
-    expect(CLASS_FEATURES).toEqual({});
+  it("the registry has all 13 classes", () => {
+    expect(Object.keys(CLASS_FEATURES)).toHaveLength(13);
   });
 
   it("a class without a registry entry gets the no-op defaults", () => {
-    expect(hooks.rollOptions(base, "action")).toEqual([]);
-    expect(hooks.weaponOverrides(base)).toEqual([]);
-    expect(hooks.afterDualityRoll(base, { hope: 5, fear: 5, roll })).toEqual([]);
-    expect(hooks.onRest(base, "long")).toBe(base);
-    expect(hooks.onSessionStart(base, () => 1)).toBe(base);
-    expect(hooks.onSessionEnd(base)).toBe(base);
-    expect(hooks.hopeFeature(base)).toBeUndefined();
-    expect(hooks.classActions(base)).toEqual([]);
-    expect(hooks.findFeature(base, "anything")).toBeUndefined();
+    const none = { ...base, classId: "none" };
+    expect(hooks.rollOptions(none, "action")).toEqual([]);
+    expect(hooks.weaponOverrides(none)).toEqual([]);
+    expect(hooks.afterDualityRoll(none, { hope: 5, fear: 5, roll })).toEqual([]);
+    expect(hooks.onRest(none, "long")).toBe(none);
+    expect(hooks.onSessionStart(none, () => 1)).toBe(none);
+    expect(hooks.onSessionEnd(none)).toBe(none);
+    expect(hooks.hopeFeature(none)).toBeUndefined();
+    expect(hooks.classActions(none)).toEqual([]);
+    expect(hooks.findFeature(none, "anything")).toBeUndefined();
   });
 
   it("combines the class and the multiclass, but takes the Hope feature from the class only (CB 110-111)", () => {
