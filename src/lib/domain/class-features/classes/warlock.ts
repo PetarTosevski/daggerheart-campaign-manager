@@ -5,12 +5,51 @@
 // the advantage die keep the highest). Help, extra and damage dice and the modifier stay. The new
 // result replaces the old one: the Hope or Fear the failed action roll gave is taken back and the
 // new roll's is given (CB 94-95).
+//
+// Class features (HF 14):
+// - Favor (`classState.favor`): starts at 3 (unset reads as 3; the session start writes it). A downtime move shows
+//   tribute: gain Favor equal to the Spellcast trait (a class action, once per rest). A success with Hope can take a
+//   Favor instead of the Hope (a class action on the latest roll; the dice box shows a reminder).
+// - Patron's Pact: before an action roll in the patron's sphere, spend a Favor for the Patron Die (d6, d8 from level
+//   5): the class action holds it (`heldDice` kind `patron`) and the dice box adds it to the next action roll.
+import { getSubclass } from "../../../srd/index";
+import type { CharacterSheet } from "../../../validation/characters";
 import { applyResourceDelta } from "../../characters/index";
-import { actionOutcome, type RolledDie } from "../../duality";
+import { withEffects } from "../../characters/effects";
+import { actionOutcome, type RolledDie, type RollRecord } from "../../duality";
 import type { ClassFeatures } from "../types";
 import { dieContribution, HOPE_COST, isFailure, refuse, rollGains } from "./shared";
 
 const REROLLED = new Set<RolledDie["role"]>(["hope", "fear", "advantage", "disadvantage"]);
+
+export const START_FAVOR = 3;
+export const PATRON_DIE_ID = "patron-die";
+/** `featureUses` prefix marking the roll whose Hope was already traded for a Favor. */
+const TRADED = "favorForHope:";
+
+export const favorOf = (sheet: Pick<CharacterSheet, "classState">): number => sheet.classState.favor ?? START_FAVOR;
+
+const withFavor = (sheet: CharacterSheet, favor: number): CharacterSheet => ({ ...sheet, classState: { ...sheet.classState, favor: Math.max(0, Math.min(99, favor)) } });
+
+/** The Patron Die: d6, d8 from level 5 (HF 14). */
+export const patronDie = (level: number): 6 | 8 => (level >= 5 ? 8 : 6);
+
+/** The Warlock subclass's Spellcast trait value (with effects), or 0 when it is not positive. */
+export function warlockSpellcast(sheet: CharacterSheet): number {
+  const subclassId = sheet.classId === "warlock" ? sheet.subclassId : sheet.multiclass?.subclassId;
+  const trait = subclassId ? getSubclass(subclassId)?.spellcastTrait : undefined;
+  return trait ? Math.max(0, withEffects(sheet).traits[trait]) : 0;
+}
+
+const succeededWithHope = (roll: RollRecord | undefined): roll is RollRecord => roll?.kind === "action" && (roll.outcome === "successHope" || roll.outcome === "critical");
+
+/** A short, stable fingerprint of a roll, so its Hope is traded only once. */
+function fingerprint(roll: RollRecord): string {
+  const text = `${roll.dice.map((d) => `${d.role}${d.value}`).join(",")}=${roll.total}`;
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
+  return TRADED + hash.toString(36);
+}
 
 export const warlock: ClassFeatures = {
   classId: "warlock",
@@ -54,4 +93,66 @@ export const warlock: ClassFeatures = {
       };
     },
   },
+  classActions: [
+    {
+      key: "patronsPact",
+      name: "Patron’s Pact",
+      text: "Before an action roll in your patron’s sphere: spend a Favor to call on them. Add the Patron Die (d6, d8 from level 5) in the dice box.",
+      automation: "auto",
+      target: "self",
+      use: ({ sheet }) => {
+        const favor = favorOf(sheet);
+        if (favor < 1) refuse("You have no Favor to spend.");
+        if (sheet.heldDice.some((d) => d.kind === "patron")) refuse("You already hold your Patron Die: add it to your next action roll.");
+        const sides = patronDie(sheet.level);
+        return {
+          sheet: { ...withFavor(sheet, favor - 1), heldDice: [...sheet.heldDice, { id: PATRON_DIE_ID, kind: "patron", sides, until: "manual" }] },
+          summary: `used Patron’s Pact: spent a Favor for the Patron Die (d${sides}), ${favor - 1} Favor left`,
+        };
+      },
+    },
+    {
+      key: "tribute",
+      name: "Tribute",
+      text: "Downtime move: show tribute to your patron and gain Favor equal to your Spellcast trait.",
+      cost: { use: { key: "tribute", until: "rest" } },
+      automation: "auto",
+      target: "self",
+      use: ({ sheet }) => {
+        const gain = warlockSpellcast(sheet);
+        const favor = favorOf(sheet);
+        return { sheet: withFavor(sheet, favor + gain), summary: `showed tribute to their patron: +${gain} Favor (${favor} → ${Math.min(99, favor + gain)})` };
+      },
+    },
+    {
+      key: "favorForHope",
+      name: "Favor instead of Hope",
+      text: "After an action roll that succeeds with Hope: gain a Favor instead of that Hope.",
+      automation: "auto",
+      target: "self",
+      use: ({ sheet, roll }) => {
+        if (!succeededWithHope(roll)) refuse("Your latest roll is not a success with Hope.");
+        const mark = fingerprint(roll);
+        if (sheet.featureUses.some((u) => u.key === mark)) refuse("You already took a Favor for this roll.");
+        if (sheet.hope === 0) refuse("You have no Hope to trade.");
+        const favor = favorOf(sheet);
+        const traded = withFavor(applyResourceDelta(sheet, "hope", -1), favor + 1);
+        return {
+          sheet: { ...traded, featureUses: [...sheet.featureUses.filter((u) => !u.key.startsWith(TRADED)), { key: mark, until: "session" }] },
+          summary: `took a Favor instead of a Hope (${favor + 1} Favor)`,
+        };
+      },
+    },
+  ],
+  rollOptions: (sheet, kind) =>
+    kind === "action"
+      ? sheet.heldDice
+          .filter((d) => d.kind === "patron")
+          .map((d) => ({ key: "patronDie", label: `Patron Die (d${d.sides})`, effect: { kind: "heldDie" as const, heldDieId: d.id } }))
+      : [],
+  afterDualityRoll: (_sheet, { roll }) =>
+    succeededWithHope(roll)
+      ? [{ key: "favorForHope", featureKey: "favorForHope", text: "Favor: you can take a Favor instead of this Hope (Features, “Favor instead of Hope”).", choices: [{ key: "favor", label: "Favor instead of Hope" }] }]
+      : [],
+  onSessionStart: (sheet) => (sheet.classState.favor === undefined ? withFavor(sheet, START_FAVOR) : sheet),
 };
