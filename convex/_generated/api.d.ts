@@ -23,6 +23,7 @@ import type * as deathMoves from "../deathMoves.js";
 import type * as fear from "../fear.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
+import type * as levelUp from "../levelUp.js";
 import type * as lib_actionLog from "../lib/actionLog.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
 import type * as lib_auth from "../lib/auth.js";
@@ -102,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   fear: typeof fear;
   history: typeof history;
   http: typeof http;
+  levelUp: typeof levelUp;
   "lib/actionLog": typeof lib_actionLog;
   "lib/allowlist": typeof lib_allowlist;
   "lib/auth": typeof lib_auth;
