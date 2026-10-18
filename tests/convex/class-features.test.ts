@@ -213,9 +213,36 @@ describe("classFeatures.use", () => {
     expect(mine.groupId).toBe(charm.groupId);
     expect(mine.fearDelta).toBe(1);
 
-    // The charmed roll is no longer a failure.
+    // The button always works (the sheet can't know the Difficulty): on a roll already with Fear it only spends the Hope.
     await patch(a, { hope: 3 });
-    expect(await codeOf(p1.mutation(api.classFeatures.use, use(a, "witchsCharm", { targetId: b })))).toBe("CLASS_FEATURE_RULE");
+    await p1.mutation(api.classFeatures.use, use(a, "witchsCharm", { targetId: b }));
+    expect((await sheetOf(a)).hope).toBe(0);
+    expect((await sheetOf(b)).hope).toBe(1);
+    expect(await fear()).toBe(1);
+  });
+
+  it("Witch's Charm works on any latest roll: a success with Hope gives that Hope to the GM as Fear", async () => {
+    const { gm, p1, a, b, campaignId, patch, sheetOf, fear, logRoll } = await setup();
+    await gm.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true });
+    await patch(a, { classId: "witch", hope: 3 });
+    await patch(b, { hope: 2 });
+    // The Difficulty may be hidden from the sheet, so even a roll that looks like a success can be charmed.
+    await logRoll(b, {
+      kind: "action",
+      dice: [
+        { sides: 12, value: 9, role: "hope" },
+        { sides: 12, value: 4, role: "fear" },
+      ],
+      modifier: 1,
+      total: 14,
+      outcome: "successHope",
+      manual: false,
+    });
+    const result = await p1.mutation(api.classFeatures.use, use(a, "witchsCharm", { targetId: b }));
+    expect(result.roll?.outcome).toBe("successFear");
+    expect((await sheetOf(b)).hope).toBe(1);
+    expect((await sheetOf(a)).hope).toBe(0);
+    expect(await fear()).toBe(1);
   });
 
   it("Witch's Charm on a roll with Fear changes nothing else", async () => {
