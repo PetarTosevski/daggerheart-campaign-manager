@@ -194,3 +194,76 @@ export interface PortraitArt {
   /** CSS background-position. */
   position: string;
 }
+
+/** Adversary role (CB p.194, details pp.198-207). A Horde's "(N/HP)" is kept apart in `hordePerHp`. */
+export type AdversaryType =
+  | "Bruiser"
+  | "Horde"
+  | "Leader"
+  | "Minion"
+  | "Ranged"
+  | "Skulk"
+  | "Social"
+  | "Solo"
+  | "Standard"
+  | "Support";
+
+export const ADVERSARY_TYPES: readonly AdversaryType[] = [
+  "Bruiser",
+  "Horde",
+  "Leader",
+  "Minion",
+  "Ranged",
+  "Skulk",
+  "Social",
+  "Solo",
+  "Standard",
+  "Support",
+];
+
+/** Passives, actions and reactions (CB p.194); evolutions are a Hope & Fear addition (HF p.61). */
+export type AdversaryFeatureKind = "passive" | "action" | "reaction" | "evolution";
+
+export interface AdversaryFeature {
+  name: string;
+  kind: AdversaryFeatureKind;
+  /** Verbatim rules text, without a leading countdown label. */
+  text: string;
+  /** Fear the feature asks the GM to spend ("Spend a Fear" = 1, "spend 2 Fear" = 2). */
+  fearCost?: number;
+  /** The countdown label printed with the feature, e.g. "Countdown (5)", "Long-Term Countdown (8)". */
+  countdown?: string;
+}
+
+export interface AdversaryDef {
+  /** Unique slug of the name. */
+  id: string;
+  name: string;
+  tier: 1 | 2 | 3 | 4;
+  type: AdversaryType;
+  /** Hordes only: creatures represented by each Hit Point, "Horde (Y/HP)" (CB p.199). */
+  hordePerHp?: number;
+  description: string;
+  motives: string;
+  difficulty: number;
+  /** Damage thresholds; null where the book prints "None" (Minions, some Major-only blocks). */
+  thresholds: { major: number | null; severe: number | null };
+  hp: number;
+  /** Null where the book prints "Stress: None". */
+  stress: number | null;
+  attack: {
+    /** Attack roll bonus; a string for dice bonuses such as "+2d4". */
+    modifier: number | string;
+    name: string;
+    range: Range;
+    /** Verbatim damage, e.g. "1d12+2 phy", "2 phy", "40 direct phy". */
+    damage: string;
+  };
+  experiences: readonly { name: string; value: number }[];
+  features: readonly AdversaryFeature[];
+  source: Source;
+  /** Set for frame-exclusive adversaries, shown only in campaigns of that frame. */
+  frameId?: string;
+  /** Printed page in the source book. */
+  page?: number;
+}
