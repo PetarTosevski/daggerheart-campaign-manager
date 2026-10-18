@@ -266,4 +266,34 @@ describe("cleanup crons", () => {
     // Claimed by files and by the deprecated upload tables, all older than 2 hours.
     for (const id of s.blobs) expect(await exists(id)).toBe(true);
   });
+
+  it("expires photo-import files older than 1 hour in the orphan job, rows and blobs", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const s = await seedCampaign(t, userId, undefined);
+    const photo = (createdAt: number) =>
+      t.run(async (ctx) => {
+        const storageId = await blob(ctx);
+        await ctx.db.insert("files", { storageId, campaignId: s.campaignId, uploadedBy: userId, kind: "photoImport", refId: s.campaignId, createdAt });
+        return storageId;
+      });
+    const stale = await photo(NOW - 61 * 60 * 1000);
+    const fresh = await photo(NOW - 30 * 60 * 1000);
+
+    await t.mutation(internal.cleanup.sweepOrphanUploads, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const exists = (id: Id<"_storage">) => t.run(async (ctx) => (await ctx.db.system.get("_storage", id)) !== null);
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query("files")
+        .withIndex("by_ref", (q) => q.eq("kind", "photoImport"))
+        .collect(),
+    );
+    expect(await exists(stale)).toBe(false);
+    expect(await exists(fresh)).toBe(true);
+    expect(rows.map((r) => r.storageId)).toEqual([fresh]);
+    // Other kinds are untouched.
+    for (const id of s.blobs) expect(await exists(id)).toBe(true);
+  });
 });

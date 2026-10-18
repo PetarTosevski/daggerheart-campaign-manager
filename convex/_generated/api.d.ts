@@ -60,6 +60,7 @@ import type * as migrations_maps from "../migrations/maps.js";
 import type * as migrations_run from "../migrations/run.js";
 import type * as migrations_trackers from "../migrations/trackers.js";
 import type * as migrations_uploads from "../migrations/uploads.js";
+import type * as photoImport from "../photoImport.js";
 import type * as rests from "../rests.js";
 import type * as rolls from "../rolls.js";
 import type * as sessions from "../sessions.js";
@@ -143,6 +144,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/run": typeof migrations_run;
   "migrations/trackers": typeof migrations_trackers;
   "migrations/uploads": typeof migrations_uploads;
+  photoImport: typeof photoImport;
   rests: typeof rests;
   rolls: typeof rolls;
   sessions: typeof sessions;
