@@ -51,7 +51,7 @@ test("the GM opens Adversaries from the nav and switches tabs with the mouse and
   const encounters = tabs.getByRole("tab", { name: "Encounters" });
   await expect(catalogue).toHaveAttribute("aria-selected", "true");
   const panel = page.getByRole("tabpanel", { name: "Catalogue" });
-  await expect(panel.getByText("The adversary catalogue arrives with the next update.")).toBeVisible();
+  await expect(panel.getByRole("region", { name: "Adversary list" })).toBeVisible();
   await expect(panel.getByText("Custom adversaries arrive with the next update.")).toBeVisible();
 
   await encounters.click();
