@@ -22,6 +22,8 @@ export const OPERATIONS_TTL_MS = 7 * DAY;
 export const PURGE_AFTER_MS = 30 * DAY;
 /** An upload that nothing claimed after this long is abandoned (claims happen within minutes). */
 export const ORPHAN_AGE_MS = 2 * HOUR;
+/** Photo-import photos are deleted once read; ones never read expire after this long (D5 T7). */
+export const PHOTO_IMPORT_TTL_MS = HOUR;
 
 /** Deletes a blob. A failure (already gone) is logged, not thrown, so the rest of the batch still runs. */
 async function deleteBlob(ctx: MutationCtx, storageId: Id<"_storage">): Promise<void> {
@@ -277,15 +279,34 @@ async function isClaimedAnywhere(ctx: MutationCtx, storageId: Id<"_storage">): P
   return false;
 }
 
+/** Deletes photo-import files (rows and blobs) older than `PHOTO_IMPORT_TTL_MS`: photos uploaded but never read. */
+async function expirePhotoImports(ctx: MutationCtx): Promise<void> {
+  const cutoff = Date.now() - PHOTO_IMPORT_TTL_MS;
+  // Read photos are deleted at once, so the rows left are a few abandoned uploads.
+  const rows = await ctx.db
+    .query("files")
+    .withIndex("by_ref", (q) => q.eq("kind", "photoImport"))
+    .take(BATCH);
+  await deleteRows(
+    ctx,
+    { left: BATCH },
+    "files",
+    rows.filter((row) => row.createdAt < cutoff),
+    (row) => row.storageId,
+  );
+}
+
 /**
  * Deletes uploads older than `ORPHAN_AGE_MS` that nothing claims (an upload
  * URL used but never attached), a page of `BATCH` blobs per run. `cutoff` is
- * fixed on the first run so the cursor stays valid.
+ * fixed on the first run so the cursor stays valid. The first run also
+ * expires photo-import files older than `PHOTO_IMPORT_TTL_MS`.
  */
 export const sweepOrphanUploads = internalMutation({
   args: { cutoff: v.optional(v.number()), cursor: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
+    if (args.cursor === undefined) await expirePhotoImports(ctx);
     const cutoff = args.cutoff ?? Date.now() - ORPHAN_AGE_MS;
     const page = await ctx.db.system
       .query("_storage")
