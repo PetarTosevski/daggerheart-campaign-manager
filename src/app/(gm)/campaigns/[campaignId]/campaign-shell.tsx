@@ -11,7 +11,7 @@ import { frameName } from "@/lib/campaign-display";
 import { frameHasMechanic } from "@/lib/frames";
 import { brandButton } from "@/components/brand/buttons";
 import { campaignArt } from "@/lib/campaign-art";
-import { CAMPAIGN_SECTIONS } from "@/lib/campaign-sections";
+import { CAMPAIGN_SECTIONS, visibleToPlayers } from "@/lib/campaign-sections";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -41,12 +41,12 @@ export function useOpenTome(): (chapter: TomeChapterId) => void {
   return useCampaignContext().openTome;
 }
 
-function CampaignNav({ campaignId }: { campaignId: string }) {
+function CampaignNav({ campaignId, isGm }: { campaignId: string; isGm: boolean }) {
   const pathname = usePathname();
   const base = `/campaigns/${campaignId}`;
   return (
     <nav aria-label="Campaign sections" className="flex flex-wrap gap-1 rounded-xl bg-black/35 p-1">
-      {CAMPAIGN_SECTIONS.map((section) => {
+      {CAMPAIGN_SECTIONS.filter((section) => isGm || visibleToPlayers(section)).map((section) => {
         const href = section.slug ? `${base}/${section.slug}` : base;
         const current = pathname === href;
         return (
@@ -150,7 +150,7 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
               <Wordmark className="text-[26px] sm:text-[32px]" />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <CampaignNav campaignId={campaign._id} />
+              <CampaignNav campaignId={campaign._id} isGm={campaign.role === "gm"} />
               {campaign.role === "gm" ? (
                 <button
                   type="button"

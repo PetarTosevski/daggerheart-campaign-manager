@@ -10,6 +10,7 @@ import { codexMessages } from "@/lib/errors/codex";
 import { commonMessages } from "@/lib/errors/common";
 import { deathMessages } from "@/lib/errors/death";
 import { diceMessages } from "@/lib/errors/dice";
+import { encounterMessages } from "@/lib/errors/encounters";
 import { levelUpMessages } from "@/lib/errors/levelUp";
 import { mapMessages } from "@/lib/errors/maps";
 import { operationMessages } from "@/lib/errors/operations";
@@ -41,7 +42,7 @@ const D5_DOMAINS = [
   classFeatureMessages,
   photoImportMessages,
 ];
-const DOMAINS = [commonMessages, campaignMessages, operationMessages, trackerMessages, characterMessages, mapMessages, codexMessages, ...D5_DOMAINS];
+const DOMAINS = [commonMessages, campaignMessages, operationMessages, trackerMessages, characterMessages, mapMessages, codexMessages, ...D5_DOMAINS, encounterMessages];
 
 describe("errorMessage", () => {
   it("maps every previous code to the same text", () => {
@@ -69,6 +70,22 @@ describe("domain messages", () => {
       for (const [code, text] of Object.entries(messages)) expect(errorMessage(new ConvexError({ code }))).toBe(text);
     }
     expect(Object.keys(actionLogMessages).sort()).toEqual(["CHARACTER_UNAVAILABLE", "UNDO_STALE"]);
+  });
+
+  it("the D8 encounter codes are all defined, each mapping to its message", () => {
+    expect(Object.keys(encounterMessages).sort()).toEqual(
+      [
+        "ADVERSARY_UNKNOWN",
+        "CUSTOM_ADVERSARY_LIMIT",
+        "ENCOUNTER_FULL",
+        "ENCOUNTER_LIMIT",
+        "ENCOUNTER_NOT_RUNNING",
+        "ENCOUNTER_RULE",
+        "ENCOUNTER_RUNNING",
+        "FEAR_EMPTY",
+      ].sort(),
+    );
+    for (const [code, text] of Object.entries(encounterMessages)) expect(errorMessage(new ConvexError({ code }))).toBe(text);
   });
 
   it("mergeMessages rejects a code defined by two domains", () => {

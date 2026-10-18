@@ -105,6 +105,36 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("mapTerrain", { campaignId: c, tile: 0, cells: "" });
     await ins("codexEntryText", { campaignId: c, entryId, pdesc: "", gmn: "" });
     await ins("codexCounters", { campaignId: c, entries: 1, seeded: true });
+    const customId = await ins("customAdversaries", {
+      campaignId: c,
+      name: "Bog Hag",
+      tier: 1,
+      type: "Solo",
+      description: "",
+      motives: "",
+      difficulty: 12,
+      thresholds: { major: 7, severe: 12 },
+      hp: 6,
+      stress: 3,
+      attack: { modifier: 2, name: "Claws", range: "Melee", damage: "1d8+2 phy" },
+      experiences: [],
+      features: [{ name: "Curse", kind: "action", text: "", fearCost: 1 }],
+      createdAt: now,
+      updatedAt: now,
+    });
+    const encounterId = await ins("encounters", { campaignId: c, name: "Ambush", status: "running", pcs: 4, adjustments: ["hard"], gmTurn: 1, createdAt: now, updatedAt: now });
+    const instance = { campaignId: c, encounterId, order: 0, summoned: false, hp: 0, stress: 0, defeated: false, conditions: [], tags: [], spotlights: 0, spotlightTurn: 1, updatedAt: now };
+    const stats = { difficulty: 12, major: 7, severe: 12, hpMax: 6, stressMax: 3 };
+    await ins("encounterAdversaries", { ...instance, source: { kind: "custom", customId }, label: "Bog Hag", stats });
+    await ins("encounterAdversaries", {
+      ...instance,
+      order: 1,
+      source: { kind: "srd", adversaryId: "jagged-knife-lackey" },
+      label: "Jagged Knife Lackey",
+      minionCount: 4,
+      stats: { difficulty: 9, major: null, severe: null, hpMax: 1, stressMax: 1 },
+      conditions: ["hidden"],
+    });
     await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
     await ins("mapUploads", { storageId: blobs.mapUpload, campaignId: c, uploadedBy: userId, createdAt: now });
     await ins("codexImages", { storageId: blobs.codexImage, campaignId: c, entryId, uploadedBy: userId, createdAt: now });
