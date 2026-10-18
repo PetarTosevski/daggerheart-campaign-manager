@@ -21,16 +21,10 @@ import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { keyedGmMutation } from "./lib/functions";
 import { assertMechanicEnabled } from "./lib/mechanics";
+import { witherGainValidator } from "./lib/validators/wither";
 
-export const witherGainValidator = v.object({
-  /** Tokens after the gain, before clearing: what the Fear Die was compared with. */
-  tokens: v.number(),
-  fearDie: v.number(),
-  scarred: v.boolean(),
-  /** The scar crossed out the last Hope slot (CB 106). */
-  journeyEnds: v.boolean(),
-  entryId: v.id("actionLog"),
-});
+export { witherGainValidator };
+
 
 /**
  * Adds one Wither token to `sheet` (the character's current sheet), rolls the

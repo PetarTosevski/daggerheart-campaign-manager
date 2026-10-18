@@ -51,6 +51,7 @@ import type * as lib_validators_characters from "../lib/validators/characters.js
 import type * as lib_validators_codex from "../lib/validators/codex.js";
 import type * as lib_validators_maps from "../lib/validators/maps.js";
 import type * as lib_validators_rests from "../lib/validators/rests.js";
+import type * as lib_validators_wither from "../lib/validators/wither.js";
 import type * as maps from "../maps.js";
 import type * as members from "../members.js";
 import type * as migrations_characterExtras from "../migrations/characterExtras.js";
@@ -135,6 +136,7 @@ declare const fullApi: ApiFromModules<{
   "lib/validators/codex": typeof lib_validators_codex;
   "lib/validators/maps": typeof lib_validators_maps;
   "lib/validators/rests": typeof lib_validators_rests;
+  "lib/validators/wither": typeof lib_validators_wither;
   maps: typeof maps;
   members: typeof members;
   "migrations/characterExtras": typeof migrations_characterExtras;
