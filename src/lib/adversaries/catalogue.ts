@@ -82,23 +82,32 @@ export function toggleChip<T>(current: T | null, value: T): T | null {
 export type TierGroup<T> = { tier: CatalogueTier; title: string; sub: string; entries: T[] };
 
 /**
- * The first `limit` entries of `list` grouped by tier (list order kept). Each heading counts all of the tier's
- * matches, shown or not: "Levels 2–4 · 36 adversaries".
+ * `list` grouped by tier (list order kept): a heading for every tier that has matches, counting all of them ("Levels 2–4 ·
+ * 36 adversaries"), and the first `limit` entries of the tiers that aren't `collapsed`. A collapsed tier shows only its
+ * heading and doesn't use up the page, so the next open tier fills it.
  */
-export function groupByTier<T extends Pick<AdversaryDef, "tier">>(list: readonly T[], limit: number): TierGroup<T>[] {
+export function groupByTier<T extends Pick<AdversaryDef, "tier">>(list: readonly T[], limit: number, collapsed: ReadonlySet<number> = new Set()): TierGroup<T>[] {
   const counts = new Map<CatalogueTier, number>();
   for (const def of list) counts.set(def.tier, (counts.get(def.tier) ?? 0) + 1);
   const groups: TierGroup<T>[] = [];
-  for (const def of list.slice(0, limit)) {
+  let shown = 0;
+  for (const def of list) {
     let group = groups.at(-1);
     if (group?.tier !== def.tier) {
       const n = counts.get(def.tier) ?? 0;
       group = { tier: def.tier, title: `Tier ${def.tier}`, sub: `${TIER_LEVELS[def.tier]} · ${n} ${n === 1 ? "adversary" : "adversaries"}`, entries: [] };
       groups.push(group);
     }
+    if (collapsed.has(def.tier) || shown >= limit) continue;
     group.entries.push(def);
+    shown += 1;
   }
   return groups;
+}
+
+/** How many entries the open (not collapsed) tiers hold: what "Show more" pages through. */
+export function openCount(list: readonly Pick<AdversaryDef, "tier">[], collapsed: ReadonlySet<number>): number {
+  return list.filter((def) => !collapsed.has(def.tier)).length;
 }
 
 /** "Show 60 more · 87 left", or null when everything is shown. */

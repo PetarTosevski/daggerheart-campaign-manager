@@ -25,8 +25,18 @@
 }
 .adc-search::placeholder { color: var(--adv-muted); }
 .adc-search:focus { outline: 2px solid var(--adv-acc); outline-offset: 1px; }
-.adc-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.adc-flab { font-size: 12px; color: var(--adv-muted-2); min-width: 44px; }
+/* The label sits in its own gutter so a row that wraps (Type) starts its second line under the first chip. */
+.adc-chips { position: relative; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-left: 56px; }
+.adc-flab { position: absolute; left: 0; top: 0; line-height: 44px; font-size: 12px; color: var(--adv-muted-2); }
+/* Adversary type legend (CB p.194). */
+.adc-legend { margin-left: 56px; font-size: 14px; color: var(--adv-text); }
+.adc-legend summary { cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; color: var(--adv-muted-2); text-decoration: underline; text-underline-offset: 3px; }
+.adc-legend summary:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 2px; }
+.adc-legend dl { margin: 4px 0 8px; display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; line-height: 1.4; }
+.adc-legend dt { font-weight: 700; }
+.adc-legend dd { margin: 0; color: var(--adv-muted, var(--adv-text)); }
+.adc-legend .adc-legend-src { margin: 0; font-size: 12px; color: var(--adv-muted-2); }
+@media (max-width: 480px) { .adc-legend dl { grid-template-columns: 1fr; } .adc-legend dd { margin-bottom: 6px; } }
 .adc-chip {
   min-height: 44px;
   min-width: 44px;
@@ -53,10 +63,16 @@
   border-radius: 14px;
   background: var(--adv-list);
 }
-.adc-tierhead { display: flex; align-items: baseline; gap: 12px; padding: 14px 16px 8px; background: var(--adv-tierhead); border-top: 1px solid var(--adv-border); }
+.adc-tierhead-h { margin: 0; }
+/* The tier heading is a button that folds its group away. */
+.adc-tierhead { width: 100%; min-height: 44px; display: flex; align-items: baseline; gap: 12px; padding: 14px 16px 8px; background: var(--adv-tierhead); border: none; border-top: 1px solid var(--adv-border); color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .adc-list > :first-child .adc-tierhead { border-top: none; }
-.adc-tierhead h3 { margin: 0; font-family: var(--adv-font-head); font-size: 18px; font-weight: 700; color: #efe3c8; }
-.adc-tierhead span { font-size: 12px; color: var(--adv-muted-2); }
+.adc-tierhead:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: -2px; }
+.adc-tierhead-title { font-family: var(--adv-font-head); font-size: 18px; font-weight: 700; color: #efe3c8; }
+.adc-tierhead-sub { font-size: 12px; color: var(--adv-muted-2); }
+.adc-tierhead-chev { margin-left: auto; align-self: center; color: var(--adv-muted-2); transition: transform .15s; }
+.adc-tierhead[aria-expanded="false"] .adc-tierhead-chev { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .adc-tierhead-chev { transition: none; } }
 .adc-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
