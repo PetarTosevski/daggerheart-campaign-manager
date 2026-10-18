@@ -50,3 +50,4 @@ button.gold-chest:hover .gc-img{opacity:.9}
 .st-empty{color:#8f7a58;font-style:italic}
 .st-prompts{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
 .st-prompts>li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.st-err{color:#6b2b26;font-weight:600}

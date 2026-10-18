@@ -104,7 +104,7 @@ describe("character extras", () => {
   });
 
   it("Motherboard: gather is rolled on the server and idempotent; trade, craft, install", async () => {
-    const { p1, characterId } = await setup("motherboard");
+    const { gm, p1, campaignId, characterId } = await setup("motherboard");
     const idempotencyKey = key();
     const first = await p1.mutation(api.characterExtras.gatherScrap, { characterId, shards: 2, metals: 1, components: 1, idempotencyKey });
     const replay = await p1.mutation(api.characterExtras.gatherScrap, { characterId, shards: 2, metals: 1, components: 1, idempotencyKey });
@@ -119,6 +119,8 @@ describe("character extras", () => {
       idempotencyKey: key(),
     });
     await p1.mutation(api.characterExtras.craftAugment, { characterId, augmentId: "force", idempotencyKey: key() });
+    // CB 301: swaps happen during downtime, so the GM opens a rest first.
+    await gm.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: key() });
     await p1.mutation(api.characterExtras.installAugments, { characterId, augmentIds: ["force"], idempotencyKey: key() });
     expect(await fail(p1.mutation(api.characterExtras.craftAugment, { characterId, augmentId: "sear", idempotencyKey: key() }))).toBe("EXTRA_RULE");
     await p1.mutation(api.characterExtras.addRelic, { characterId, name: "Steelhorn", idempotencyKey: key() });

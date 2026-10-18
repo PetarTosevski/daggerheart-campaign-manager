@@ -11,6 +11,7 @@ import { BeastFeastPanel } from "./beast-feast-panel";
 import { BeastformPanel } from "./beastform-panel";
 import { CastleHighPanel } from "./castle-high-panel";
 import { CompanionPanel } from "./companion-panel";
+import { CorruptionBox } from "./corruption-box";
 import { MotherboardPanel } from "./motherboard-panel";
 import { ExtraSheet, PawIcon } from "./ui";
 
@@ -50,6 +51,7 @@ export const ClassExtras: CharacterSlot = ({ character }) => {
           </Launcher>
           <ExtraSheet open={open === "comp"} onClose={close} title="Ranger Companion" banner="comp" subtitle={view.companion.name ? `Name: ${view.companion.name}` : undefined}>
             <CompanionPanel key={keyOf(view.companion)} characterId={characterId} state={view.companion} level={view.level} canEdit={canEdit} />
+            <CorruptionBox characterId={characterId} />
           </ExtraSheet>
         </>
       ) : null}

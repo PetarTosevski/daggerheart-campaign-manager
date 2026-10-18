@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 
+import { RuleError } from "../../../errors/app-error";
 import type { Rng } from "../../class-features/types";
 import type { RestKind, RestMove } from "../moves";
 
@@ -46,9 +47,10 @@ export function keepWatchRolls(choices: readonly Choice[], resting: ReadonlySet<
 /**
  * Journey to Horizon (HF 176): "Outside a sanctuary, the party can take only
  * short rests, each of which represents an entire day spent in one location."
- * A short rest the GM forced past the third in a row (`gmOverride`) passes no
- * day (plan acceptance; see the T3b questions), nor does an interrupted long
- * rest or a long rest ("multiple days", no number given).
+ * A finished short rest passes a day; an interrupted long rest or a long rest
+ * ("multiple days", no number given) passes none. Since RF2 a fourth short
+ * rest in a row is refused (CB 105, HF 176), so no new rest carries
+ * `gmOverride`; it is still honoured (no day) for rests stored before RF2.
  */
 export function horizonDaysPassed(rest: { kind: RestKind; interrupted: boolean; gmOverride: boolean }): number {
   return rest.kind === "short" && !rest.interrupted && !rest.gmOverride ? 1 : 0;
@@ -72,33 +74,89 @@ export function corruptionMarked(fearDie: number): boolean {
 /** How many Corruption rolls the tracker keeps. */
 export const CORRUPTION_LOG_SIZE = 10;
 export const CORRUPTION_TRACKER_KEY = "motherboard.corruption";
+/** CB 295: the Corruption Track recorded on the Companion sheet has six boxes. */
+export const CORRUPTION_TRACK_SIZE = 6;
+/** CB 295: a technomancer's temporary repair "clears 1d4 Corruption". */
+export const CORRUPTION_REPAIR_DIE = 4;
 
 /**
- * The marked Corruption per Beastbound ranger (character id → marks) and the
- * latest rolls. The book's track is a printed graphic with no slot count in
- * the text, so marks are not capped here (T3b questions).
+ * The marked Corruption per Beastbound ranger (character id → marks), the
+ * rangers whose companion is a remnant (CB 295: "If a Beastbound ranger has a
+ * remnant companion…"), and the latest rolls. `remnant` was added by RF4 with
+ * a default, so rows written before read as "no remnant companions". Marks
+ * stored above six before RF4 read as a full track.
  */
 export const corruptionStateSchema = z.object({
   marks: z.record(z.string(), z.number().int().min(0).max(100)),
+  remnant: z.array(z.string()).max(100).default([]),
   log: z
     .array(z.object({ characterId: z.string(), fearDie: z.number().int().min(1).max(12), marked: z.boolean(), at: z.number() }))
     .max(CORRUPTION_LOG_SIZE),
 });
 export type CorruptionState = z.infer<typeof corruptionStateSchema>;
-export const INITIAL_CORRUPTION: CorruptionState = { marks: {}, log: [] };
+export const INITIAL_CORRUPTION: CorruptionState = { marks: {}, remnant: [], log: [] };
 
-/** Records one ranger's downtime Corruption roll. */
-export function rollCorruption(state: CorruptionState, characterId: string, fearDie: number, at: number): { state: CorruptionState; marked: boolean; total: number } {
+/** A ranger's marked Corruption, at most the track's six boxes. */
+export const corruptionOf = (state: CorruptionState, characterId: string) => Math.min(state.marks[characterId] ?? 0, CORRUPTION_TRACK_SIZE);
+export const isRemnant = (state: CorruptionState, characterId: string) => state.remnant.includes(characterId);
+/** CB 295: "If the companion's last Corruption is ever marked, the remnant becomes violent and can no longer be commanded or repaired." */
+export const companionLost = (state: CorruptionState, characterId: string) => corruptionOf(state, characterId) >= CORRUPTION_TRACK_SIZE;
+/** Only a remnant companion that is not lost rolls at the start of downtime. */
+export const rollsCorruption = (state: CorruptionState, characterId: string) => isRemnant(state, characterId) && !companionLost(state, characterId);
+
+
+export const COMPANION_LOST =
+  "The remnant has become violent: it can no longer be commanded or repaired. The ranger takes a new companion with two new Experiences (CB 295).";
+
+/** Records one ranger's downtime Corruption roll; the track stops at six. */
+export function rollCorruption(
+  state: CorruptionState,
+  characterId: string,
+  fearDie: number,
+  at: number,
+): { state: CorruptionState; marked: boolean; total: number; lost: boolean } {
   const marked = corruptionMarked(fearDie);
-  const total = (state.marks[characterId] ?? 0) + (marked ? 1 : 0);
+  const total = Math.min(corruptionOf(state, characterId) + (marked ? 1 : 0), CORRUPTION_TRACK_SIZE);
   return {
     state: {
+      ...state,
       marks: marked ? { ...state.marks, [characterId]: total } : state.marks,
       log: [{ characterId, fearDie, marked, at }, ...state.log].slice(0, CORRUPTION_LOG_SIZE),
     },
     marked,
     total,
+    lost: total >= CORRUPTION_TRACK_SIZE,
   };
+}
+
+/** The owner or the GM marks (or unmarks) the companion as a remnant; a lost remnant can't be changed. */
+export function setRemnant(state: CorruptionState, characterId: string, remnant: boolean): CorruptionState {
+  if (companionLost(state, characterId)) throw new RuleError("EXTRA_RULE", COMPANION_LOST);
+  const others = state.remnant.filter((id) => id !== characterId);
+  return { ...state, remnant: remnant ? [...others, characterId] : others };
+}
+
+/** CB 295: a technomancer's temporary repair "clears 1d4 Corruption" (`d4` is the rolled die). */
+export function repairCorruption(state: CorruptionState, characterId: string, d4: number): { state: CorruptionState; cleared: number; total: number } {
+  if (!Number.isInteger(d4) || d4 < 1 || d4 > CORRUPTION_REPAIR_DIE) throw new RangeError("The repair die shows 1–4.");
+  if (!isRemnant(state, characterId)) throw new RuleError("EXTRA_RULE", "Only a remnant companion can be repaired.");
+  if (companionLost(state, characterId)) throw new RuleError("EXTRA_RULE", COMPANION_LOST);
+  const before = corruptionOf(state, characterId);
+  if (before === 0) throw new RuleError("EXTRA_RULE", "The remnant has no Corruption to clear.");
+  const total = Math.max(0, before - d4);
+  return { state: { ...state, marks: { ...state.marks, [characterId]: total } }, cleared: before - total, total };
+}
+
+/**
+ * CB 295: "The ranger must take a new companion with two new Experiences."
+ * Clears the lost remnant's track and its remnant mark (the new companion is
+ * marked a remnant again if it is one).
+ */
+export function replaceLostCompanion(state: CorruptionState, characterId: string): CorruptionState {
+  if (!companionLost(state, characterId)) throw new RuleError("EXTRA_RULE", "Only a lost companion is replaced.");
+  const marks = { ...state.marks };
+  delete marks[characterId];
+  return { ...state, marks, remnant: state.remnant.filter((id) => id !== characterId) };
 }
 
 /**

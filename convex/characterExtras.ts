@@ -3,6 +3,21 @@ import { z } from "zod";
 
 import { hopeMax, tierForLevel } from "../src/lib/domain/characters/index";
 import { gatherScrap as rollScrap } from "../src/lib/domain/frames/motherboard";
+import { SWAP_NEEDS_DOWNTIME } from "../src/lib/domain/motherboard/index";
+import {
+  companionLost,
+  CORRUPTION_REPAIR_DIE,
+  CORRUPTION_TRACK_SIZE,
+  CORRUPTION_TRACKER_KEY,
+  corruptionOf,
+  corruptionStateSchema,
+  INITIAL_CORRUPTION,
+  isRemnant,
+  repairCorruption,
+  replaceLostCompanion,
+  setRemnant,
+  type CorruptionState,
+} from "../src/lib/domain/rest/frame-hooks/index";
 import { appError, RuleError } from "../src/lib/errors/app-error";
 import {
   addIngredient as addIngredientTo,
@@ -18,7 +33,7 @@ import {
 } from "../src/lib/frames/extras/beast-feast";
 import { beastformStateSchema, INITIAL_BEASTFORM, validateBeastform, type BeastformState } from "../src/lib/frames/extras/beastform";
 import { castleHighStateSchema, INITIAL_CASTLE_HIGH, type CastleHighState } from "../src/lib/frames/extras/castle-high";
-import { COOKBOOK_KEY, extraKey, extrasFor, FRAME_OF, type Extra } from "../src/lib/frames/extras/common";
+import { BEASTBOUND_SUBCLASS_ID, COOKBOOK_KEY, extraKey, extrasFor, FRAME_OF, type Extra } from "../src/lib/frames/extras/common";
 import { companionStateSchema, INITIAL_COMPANION, validateCompanion, type CompanionState } from "../src/lib/frames/extras/companion";
 import {
   addRelic as addRelicTo,
@@ -35,6 +50,7 @@ import {
   walletCorrectionSchema,
   type MotherboardState,
 } from "../src/lib/frames/extras/motherboard";
+import { resolveOptions } from "../src/lib/frames/options";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
@@ -43,7 +59,7 @@ import { rollDie } from "./lib/dice";
 import { keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
 import { campaignScope, runOnce } from "./lib/operations";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
-import { applyTrackerRule, frameTrackerMutation, loadTracker, readTracker, type FrameTracker } from "./lib/trackers";
+import { applyTrackerRule, frameTrackerMutation, loadTracker, readTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "./lib/trackers";
 import {
   beastformStateValidator,
   companionStateValidator,
@@ -153,6 +169,14 @@ export async function seedMotherboard(ctx: MutationCtx, campaignId: Id<"campaign
   await ctx.db.insert("characterExtras", stored);
 }
 
+/** The campaign's open rest (downtime), if any. */
+function openRest(ctx: QueryCtx, campaignId: Id<"campaigns">) {
+  return ctx.db
+    .query("rests")
+    .withIndex("by_campaign_status_started", (q) => q.eq("campaignId", campaignId).eq("status", "open"))
+    .first();
+}
+
 /** The stored row of one extra (at most one per character and extra). */
 function extraRow(ctx: QueryCtx, characterId: Id<"characters">, extra: Extra) {
   return ctx.db
@@ -171,7 +195,7 @@ async function change<E extends Extra, R>(
   characterId: Id<"characters">,
   extra: E,
   op: { idempotencyKey: string; kind: string; request: object },
-  apply: (state: StateOf[E], loaded: Loaded) => { state: StateOf[E]; result: R },
+  apply: (state: StateOf[E], loaded: Loaded) => { state: StateOf[E]; result: R } | Promise<{ state: StateOf[E]; result: R }>,
 ): Promise<R> {
   const loaded = await load(ctx, ctx.user, characterId, "edit");
   if (!extrasFor(loaded.campaign.frameId, loaded.sheet)[extra]) throw appError("MECHANIC_DISABLED");
@@ -189,20 +213,25 @@ async function change<E extends Extra, R>(
     async () => {
       const row = await extraRow(ctx, characterId, extra);
       const next = await applyTrackerRule("EXTRA_RULE", async () => apply(await readState(ctx, loaded, extra, row), loaded));
-      // The schema matches the row's `data` validator for this `extra`.
-      const stored = {
-        campaignId,
-        characterId,
-        extra,
-        schemaVersion: EXTRA_SCHEMA_VERSION,
-        data: SCHEMAS[extra].schema.parse(next.state),
-        updatedAt: Date.now(),
-      } as CharacterExtraRow;
-      if (row === null) await ctx.db.insert("characterExtras", stored);
-      else await ctx.db.replace("characterExtras", row._id, stored);
+      await storeExtra(ctx, loaded, extra, row, next.state);
       return next.result;
     },
   );
+}
+
+/** Writes one extra's state to its row (inserting it the first time). */
+async function storeExtra<E extends Extra>(ctx: MutationCtx, loaded: Loaded, extra: E, row: Doc<"characterExtras"> | null, state: StateOf[E]): Promise<void> {
+  // The schema matches the row's `data` validator for this `extra`.
+  const stored = {
+    campaignId: loaded.campaign._id,
+    characterId: loaded.character._id,
+    extra,
+    schemaVersion: EXTRA_SCHEMA_VERSION,
+    data: SCHEMAS[extra].schema.parse(state),
+    updatedAt: Date.now(),
+  } as CharacterExtraRow;
+  if (row === null) await ctx.db.insert("characterExtras", stored);
+  else await ctx.db.replace("characterExtras", row._id, stored);
 }
 
 /** The party's shared Beast Feast cookbook: a campaign-level frame tracker. */
@@ -293,15 +322,130 @@ export const saveCompanion = userMutation({
   },
 });
 
+// ---- Motherboard remnant companion: optional Corruption Track (CB 295)
+
+/**
+ * The Corruption Track applies to a Beastbound ranger in a Motherboard
+ * campaign with the optional `remnantCorruption` rule on.
+ */
+function corruptionApplies({ campaign, sheet }: Loaded): boolean {
+  return campaign.frameId === FRAME_OF.motherboard && sheet.subclassId === BEASTBOUND_SUBCLASS_ID && resolveOptions(campaign.frameId, campaign.options).remnantCorruption;
+}
+
+/**
+ * One idempotent change of the campaign's `motherboard.corruption` tracker
+ * for a ranger the caller has `need` on (`edit`: owner or GM; `owner`: GM).
+ */
+async function corruptionChange<R>(
+  ctx: MutationCtx & { user: Doc<"users"> },
+  characterId: Id<"characters">,
+  need: Permission,
+  op: { idempotencyKey: string; kind: string; request: object },
+  apply: (state: CorruptionState, loaded: Loaded) => { state: CorruptionState; result: R } | Promise<{ state: CorruptionState; result: R }>,
+): Promise<R> {
+  const loaded = await load(ctx, ctx.user, characterId, need);
+  if (!corruptionApplies(loaded)) throw appError("MECHANIC_DISABLED");
+  const campaignId = loaded.campaign._id;
+  return runOnce(
+    ctx,
+    { scopeKey: campaignScope(campaignId), key: op.idempotencyKey, kind: op.kind, request: { characterId, ...op.request }, createdBy: ctx.user._id, campaignId },
+    async () => {
+      const current = (await readTracker(ctx, campaignId, CORRUPTION_TRACKER_KEY, corruptionStateSchema)) ?? INITIAL_CORRUPTION;
+      const next = await applyTrackerRule("EXTRA_RULE", () => apply(current, loaded));
+      await writeTracker(ctx, campaignId, CORRUPTION_TRACKER_KEY, next.state, TRACKER_SCHEMA_VERSION);
+      return next.result;
+    },
+  );
+}
+
+/** A ranger's Corruption Track, or null where it doesn't apply (another frame or subclass, or the optional rule off). */
+export const corruption = userQuery({
+  args: { characterId: v.id("characters") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      trackSize: v.number(),
+      marks: v.number(),
+      remnant: v.boolean(),
+      lost: v.boolean(),
+      canEdit: v.boolean(),
+      canRepair: v.boolean(),
+      lastRoll: v.union(v.null(), v.object({ fearDie: v.number(), marked: v.boolean(), at: v.number() })),
+    }),
+  ),
+  handler: async (ctx, { characterId }) => {
+    const loaded = await load(ctx, ctx.user, characterId, "view", "owner");
+    if (!corruptionApplies(loaded)) return null;
+    const state = (await readTracker(ctx, loaded.campaign._id, CORRUPTION_TRACKER_KEY, corruptionStateSchema)) ?? INITIAL_CORRUPTION;
+    const last = state.log.find((entry) => entry.characterId === characterId);
+    return {
+      trackSize: CORRUPTION_TRACK_SIZE,
+      marks: corruptionOf(state, characterId),
+      remnant: isRemnant(state, characterId),
+      lost: companionLost(state, characterId),
+      canEdit: atLeast(loaded.permission, "edit"),
+      canRepair: atLeast(loaded.permission, "owner"),
+      lastRoll: last ? { fearDie: last.fearDie, marked: last.marked, at: last.at } : null,
+    };
+  },
+});
+
+/** The owner or the GM marks the companion as a remnant (only remnants roll for Corruption), or unmarks it. */
+export const setCompanionRemnant = userMutation({
+  args: { ...keyed, remnant: v.boolean() },
+  returns: v.null(),
+  handler: (ctx, { characterId, idempotencyKey, remnant }) =>
+    corruptionChange(ctx, characterId, "edit", { idempotencyKey, kind: "extra_companion_remnant", request: { remnant } }, (state) => ({
+      state: setRemnant(state, characterId, remnant),
+      result: null,
+    })),
+});
+
+/** GM only: a technomancer temporarily repairs the remnant, clearing 1d4 Corruption (CB 295). */
+export const repairCompanion = userMutation({
+  args: keyed,
+  returns: v.object({ die: v.number(), cleared: v.number(), marks: v.number() }),
+  handler: (ctx, { characterId, idempotencyKey }) =>
+    corruptionChange(ctx, characterId, "owner", { idempotencyKey, kind: "extra_companion_repair", request: {} }, (state) => {
+      const die = rollDie(CORRUPTION_REPAIR_DIE);
+      const repaired = repairCorruption(state, characterId, die);
+      return { state: repaired.state, result: { die, cleared: repaired.cleared, marks: repaired.total } };
+    }),
+});
+
+/**
+ * After the last Corruption is marked, the ranger takes a new companion "with
+ * two new Experiences" and carries over the level-up options already chosen
+ * (CB 295): clears the track, and resets the companion sheet except its
+ * training. Owner or GM.
+ */
+export const replaceCompanion = userMutation({
+  args: keyed,
+  returns: v.null(),
+  handler: (ctx, { characterId, idempotencyKey }) =>
+    corruptionChange(ctx, characterId, "edit", { idempotencyKey, kind: "extra_companion_replace", request: {} }, async (state, loaded) => {
+      const next = replaceLostCompanion(state, characterId);
+      const row = await extraRow(ctx, characterId, "companion");
+      const old = await readState(ctx, loaded, "companion", row);
+      await storeExtra(ctx, loaded, "companion", row, {
+        ...INITIAL_COMPANION,
+        training: old.training,
+        vicious: old.vicious,
+        bonusTraining: old.bonusTraining,
+      });
+      return { state: next, result: null };
+    }),
+});
+
 // ---- Motherboard
 
-const mb = <R>(
+const mb =<R>(
   ctx: MutationCtx & { user: Doc<"users"> },
   characterId: Id<"characters">,
   idempotencyKey: string,
   kind: string,
   request: object,
-  apply: (s: MotherboardState, loaded: Loaded) => { state: MotherboardState; result: R },
+  apply: (s: MotherboardState, loaded: Loaded) => { state: MotherboardState; result: R } | Promise<{ state: MotherboardState; result: R }>,
 ) => change(ctx, characterId, "motherboard", { idempotencyKey, kind, request }, apply);
 
 export const saveIkonis = userMutation({
@@ -382,14 +526,25 @@ export const salvageAugment = userMutation({
     mb(ctx, characterId, idempotencyKey, "extra_salvage_augment", { augmentId }, (s) => ({ state: salvage(s, augmentId), result: null })),
 });
 
+/** Install or swap augments: only while the campaign has an open rest (CB 301, "during downtime"). */
 export const installAugments = userMutation({
   args: { ...keyed, augmentIds: v.array(v.string()) },
   returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, augmentIds }) =>
-    mb(ctx, characterId, idempotencyKey, "extra_install_augments", { augmentIds }, (s, { sheet }) => ({
-      state: install(s, augmentIds, tierForLevel(sheet.level)),
-      result: null,
-    })),
+    mb(ctx, characterId, idempotencyKey, "extra_install_augments", { augmentIds }, async (s, { campaign, sheet }) => {
+      if ((await openRest(ctx, campaign._id)) === null) throw new RuleError("EXTRA_RULE", SWAP_NEEDS_DOWNTIME);
+      return { state: install(s, augmentIds, tierForLevel(sheet.level)), result: null };
+    }),
+});
+
+/** Whether the campaign is in downtime (an open rest), when augments may be swapped (CB 301). */
+export const augmentSwapOpen = userQuery({
+  args: { characterId: v.id("characters") },
+  returns: v.boolean(),
+  handler: async (ctx, { characterId }) => {
+    const { campaign } = await load(ctx, ctx.user, characterId, "view");
+    return (await openRest(ctx, campaign._id)) !== null;
+  },
 });
 
 /** Manual corrections of quantum and scrap counts. */

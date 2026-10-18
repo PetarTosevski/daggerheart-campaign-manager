@@ -108,12 +108,14 @@ describe("Motherboard Ikonis (CB 295, 301-303)", () => {
   });
 
   it("installed Guard raises the Armor Score the server uses", async () => {
-    const { p1, campaignId, sheetOf } = await setup("motherboard");
+    const { gm, p1, campaignId, sheetOf } = await setup("motherboard");
     const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft("warrior"), ikonis: IKONIS, idempotencyKey: key() });
     const base = getArmor(ARMOR_ID)!.baseScore;
     const scrap = { Wire: 3, Silver: 2, Platinum: 2, Fuse: 3 };
     await p1.mutation(api.characterExtras.correctWallet, { characterId, correction: { scrap }, idempotencyKey: key() });
     await p1.mutation(api.characterExtras.craftAugment, { characterId, augmentId: "guard", idempotencyKey: key() });
+    // CB 301: augments are swapped during downtime (an open rest).
+    await gm.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: key() });
     await p1.mutation(api.characterExtras.installAugments, { characterId, augmentIds: ["force", "guard"], idempotencyKey: key() });
     const r = await p1.mutation(api.characters.adjustResource, { characterId, resource: "armor", delta: 12 });
     expect(r.armorMarked).toBe(base + 1);

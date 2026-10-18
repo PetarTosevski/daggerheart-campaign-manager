@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { Pip } from "@/components/party/sheet-ui";
@@ -298,6 +299,8 @@ function AugmentsCard({ characterId, state, tier, canEdit }: Props) {
   const craft = useIntent(api.characterExtras.craftAugment);
   const salvage = useIntent(api.characterExtras.salvageAugment);
   const install = useIntent(api.characterExtras.installAugments);
+  // CB 301: "PCs may freely swap augments they've already crafted during downtime" (an open rest).
+  const downtime = useQuery(api.characterExtras.augmentSwapOpen, canEdit ? { characterId } : "skip") ?? false;
   const slots = augmentSlots(tier);
   const built = new Set(state.built.map((b) => b.id));
   const error = craft.error ?? salvage.error ?? install.error;
@@ -318,6 +321,7 @@ function AugmentsCard({ characterId, state, tier, canEdit }: Props) {
         </span>
       </div>
       <p className={NOTE}>Two slots at Tier 1, one more each tier. Craft, install and salvage during downtime.</p>
+      {canEdit && !downtime ? <p className={NOTE}>Swap installed augments while the party rests (downtime).</p> : null}
       <ul className="xs-list">
         {AUGMENTS.map((aug) => {
           const isBuilt = built.has(aug.id);
@@ -343,7 +347,7 @@ function AugmentsCard({ characterId, state, tier, canEdit }: Props) {
                         type="button"
                         className={BTN}
                         aria-pressed={installed}
-                        disabled={install.pending || (!installed && state.installed.length >= slots)}
+                        disabled={!downtime || install.pending || (!installed && state.installed.length >= slots)}
                         onClick={() =>
                           void install.fire({
                             characterId,

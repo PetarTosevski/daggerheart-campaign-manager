@@ -21,6 +21,7 @@ import { addCard, cardTakeProblem, sourcesFor } from "../src/lib/domain/level-up
 import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
 import { appError, RuleError } from "../src/lib/errors/app-error";
 import { FRAME_OF } from "../src/lib/frames/extras/common";
+import { MOTHERBOARD_STARTING_GOLD, NETWORK_TETHER } from "../src/lib/domain/motherboard/index";
 import { ikonisMissing, ikonisSchema, startingMotherboard } from "../src/lib/frames/extras/motherboard";
 import { resolveOptions } from "../src/lib/frames/options";
 import {
@@ -275,8 +276,11 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
     primaryWeaponId: draft.primaryWeaponId,
     ...(draft.secondaryWeaponId ? { secondaryWeaponId: draft.secondaryWeaponId } : {}),
     armorId: armor.id,
-    inventory: ["Torch", "50 feet of rope", "Basic supplies", draft.potion, ...(draft.classItem ? [draft.classItem] : [])].map((name) => ({ id: newId(), name })),
-    gold: { handfuls: 1, bags: 0, chest: false },
+    // CB 301-302 (Motherboard): a Network tether joins the inventory and gold is not used (5 quantum instead).
+    inventory: ["Torch", "50 feet of rope", "Basic supplies", draft.potion, ...(draft.classItem ? [draft.classItem] : []), ...(ikonis ? [NETWORK_TETHER] : [])].map(
+      (name) => ({ id: newId(), name }),
+    ),
+    gold: ikonis ? { ...MOTHERBOARD_STARTING_GOLD } : { handfuls: 1, bags: 0, chest: false },
     experiences: draft.experiences.map((name) => ({ id: newId(), name, value: STARTING_EXPERIENCE_VALUE })),
     domainCards: { owned: [...draft.domainCards], loadout: [...draft.domainCards] },
     background: draft.background,
