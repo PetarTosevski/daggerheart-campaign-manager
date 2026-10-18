@@ -364,15 +364,15 @@ export function HopeFeatureBlock(props: SlotProps) {
 /** The Class Features box's cf rows: class actions, then held dice and conditions as chips and the class counters. */
 export function FeaturesBox(props: SlotProps) {
   const sheet = props.character.sheet;
+  const held = sheet.heldDice ?? [];
   // Class actions of the class and the multiclass, each offered only if its class is (Hope & Fear option);
-  // a held Rally Die comes from a Bard, so it is offered either way.
-  const actions = classActions(sheet).filter(
-    (f) =>
-      f.key === rallyDieStress.key ||
-      [sheet.classId, sheet.multiclass?.classId].some((id) => id !== undefined && classFeaturesAvailable(id, props.hopeAndFear) && CLASS_FEATURES[id]?.classActions?.includes(f)),
+  // a Rally Die comes from a Bard, so its action is offered to any class, but only while one is held.
+  const actions = classActions(sheet).filter((f) =>
+    f.key === rallyDieStress.key
+      ? held.some((d) => d.kind === "rally")
+      : [sheet.classId, sheet.multiclass?.classId].some((id) => id !== undefined && classFeaturesAvailable(id, props.hopeAndFear) && CLASS_FEATURES[id]?.classActions?.includes(f)),
   );
   const conditions = sheet.conditions ?? [];
-  const held = sheet.heldDice ?? [];
   const state = stateEntries(sheet);
   if (actions.length === 0 && conditions.length === 0 && held.length === 0 && state.length === 0) return null;
   const blocked = blockedReason(props);

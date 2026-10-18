@@ -83,12 +83,15 @@ test("a Bard rallies, a Warrior spends the Rally Die on a roll in the dice box, 
   await expect(page.getByRole("heading", { level: 1, name: warrior })).toBeVisible();
   const warriorFeatures = page.getByRole("region", { name: "Class Features" });
   await expect(warriorFeatures.getByRole("list", { name: "Held dice" })).toContainText("Rally d6");
+  // The "Rally Die: clear Stress" action shows only while a Rally Die is held.
+  await expect(warriorFeatures.getByRole("button", { name: "Use Rally Die: clear Stress" })).toBeVisible();
   const box = page.getByRole("region", { name: "Dice", exact: true });
   await box.getByLabel("Rally Die d6").check();
   await box.getByRole("button", { name: "Roll", exact: true }).click();
   await expect(box.getByTestId("last-roll")).toBeVisible();
   await expect(box.getByRole("listitem", { name: /^Extra d6: \d$/ })).toHaveCount(1);
   await expect(warriorFeatures.getByRole("list", { name: "Held dice" })).toHaveCount(0);
+  await expect(warriorFeatures.getByRole("button", { name: "Use Rally Die: clear Stress" })).toHaveCount(0);
 
   // The GM ends the session: the Bard's unspent die clears.
   await page.goto(`/campaigns/${campaignId}`);
