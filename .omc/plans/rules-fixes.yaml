@@ -1,0 +1,123 @@
+# Rules fixes the books settle (rulebook check of the AFK decisions, 2026-10-18; findings with quotes in
+# .omc/autopilot/rules-check.md). The user asked: "check all your open questions against the core book & hope and
+# fear and double check if you can answer some yourself". Format: docs/workflow.md.
+#
+#   RF1 (decision 2), CB 107: "At the GM's discretion, a scene continues until the current narrative situation has
+#       played out." -> the GM ends a scene; scene-length effects end then (and still at session end).
+#   RF2 (decision 17), CB 105: "A party can take up to three short rests before their next rest must be a long
+#       rest" and HF 176: "When the party takes three short rests in a row, their next rest must be a long rest" ->
+#       no fourth short rest (the GM override goes). CB 105: an interrupted long rest still gives short-rest benefits
+#       "(even if they've already had three short rests)" (already built).
+#   RF3 (decision 25), CB 48: "Combat Training: ... When you deal physical damage, you gain a bonus to your damage
+#       roll equal to your level." -> only on physical damage.
+#   RF4 (decisions 20, 23, 24), Motherboard (CB 295, 301-302):
+#       - Corruption: optional rule for remnant companions; "Corruption Track" has 6 boxes; "At the beginning of
+#         downtime, the ranger rolls their Fear Die. If it lands on a 1, they must mark a Corruption"; "Specialized
+#         technomancers may be able to temporarily repair the remnant (which clears 1d4 Corruption)"; "If the
+#         companion's last Corruption is ever marked, the remnant becomes violent and can no longer be commanded or
+#         repaired. The ranger must take a new companion with two new Experiences."
+#       - "PCs may freely swap augments they've already crafted during downtime." -> swaps only while a rest is open.
+#       - "Each PC adds a Network tether to their inventory at character creation." "In this campaign frame, gold is
+#         not used as a currency. Instead, PCs can gather scrap to trade for a currency known as quantum. ... All PCs
+#         start with 5 quantum." (10 quantum = 1 handful of gold for prices.)
+plan: rules-fixes
+waves:
+  - wave: 1
+    tracers:
+      - id: RF1
+        title: The GM ends a scene; scene-length effects end
+        size: S
+        goal: The GM has an "End scene" control; it ends every scene-length effect on the campaign's PCs (logged like session-end expiry); session end still ends them too.
+        depends_on: []
+        owns:
+          - src/lib/domain/characters/expiry.ts
+          - convex/scenes.ts
+          - src/app/(gm)/campaigns/[campaignId]/end-scene.tsx
+          - src/app/(gm)/campaigns/[campaignId]/page.tsx
+          - tests/unit/expiry-effects.test.ts
+          - tests/convex/scenes.test.ts
+          - tests/convex/authz-matrix.test.ts
+          - docs/tasks/TASK-RF1.md
+        reads:
+          - convex/sessions.ts
+          - src/lib/domain/characters/effects.ts
+          - convex/lib/functions.ts
+        acceptance:
+          - "expiry gets a 'scene' trigger that removes only scene-length effects; convex/scenes.ts exports a GM-only keyed mutation (gm wrapper, need owner) that applies it to every active PC in the campaign with batched reads by index, writes a feed/action-log line like session end does, and returns how many effects ended"
+          - "The dashboard (GM only) shows an 'End scene' button in the board's style near the session controls, with a short confirmation of what ended; players don't see it"
+          - "Unit test for the trigger; convex tests: GM ends a scene (scene effects gone, session effects kept), players FORBIDDEN, outsiders NOT_FOUND (authz matrix entry if the matrix exists, else in the test)"
+          - "pnpm lint, typecheck, test pass"
+      - id: RF2
+        title: No fourth short rest in a row
+        size: S
+        goal: A fourth short rest in a row is refused for everyone (CB 105, HF 176); the GM override is removed from the server and the rest UI.
+        depends_on: []
+        owns:
+          - src/lib/domain/rest/moves.ts
+          - convex/rests.ts
+          - convex/lib/validators/rests.ts
+          - src/components/party/rest/index.tsx
+          - src/components/party/rest/launcher.tsx
+          - tests/unit/rest.test.ts
+          - tests/convex/rests.test.ts
+          - tests/e2e/rest.spec.ts
+          - docs/tasks/TASK-RF2.md
+        reads:
+          - src/lib/domain/rest/index.ts
+          - src/components/party/rest/picker.tsx
+        acceptance:
+          - "rests.start refuses a short rest when three short rests have been finished since the last long rest (coded error, message quoting the rule); the `override` arg is removed (or ignored and deprecated per the widen/narrow rule if stored data uses it); an interrupted long rest still gives short-rest benefits regardless of the count"
+          - "The GM's rest UI disables 'Short rest' with the reason after three, instead of offering an override"
+          - "Tests updated (unit, convex, rest e2e); pnpm lint, typecheck, test pass"
+      - id: RF3
+        title: Combat Training only on physical damage
+        size: S
+        goal: The Warrior's Combat Training bonus applies only to physical damage (CB 48).
+        depends_on: []
+        owns:
+          - src/lib/domain/class-features/classes/warrior.ts
+          - src/lib/domain/class-features/types.ts
+          - convex/rolls.ts
+          - tests/unit/class-features-core.test.ts
+          - tests/convex/rolls.test.ts
+          - docs/tasks/TASK-RF3.md
+        reads:
+          - src/lib/srd/equipment.ts
+          - src/components/party/dice/dice-box.tsx
+        acceptance:
+          - "The damage roll knows its damage type: weapon sources from the weapon's category (physical/magic), overrides from their definition, the Ikonis per its existing rule, custom dice as physical unless the player marks them magic (only if a small option is needed; otherwise custom = physical, documented)"
+          - "Combat Training (+level) is offered/applied only for physical damage; a magic weapon's damage roll doesn't get it"
+          - "Tests; pnpm lint, typecheck, test pass"
+  - wave: 2
+    tracers:
+      - id: RF4
+        title: Motherboard rules from the book (Corruption track, downtime swaps, tether and quantum)
+        size: M
+        goal: Motherboard follows CB 295 and 301-302 for the Corruption track, augment swaps and the tether/quantum economy.
+        # Also waits for slots-spellcast SS3 (shares src/lib/validation/characters.ts); the orchestrator starts it after SS3 merges.
+        depends_on: [RF1, RF2, RF3]
+        owns:
+          - convex/characterExtras.ts
+          - src/lib/domain/motherboard/
+          - convex/lib/restHooks.ts
+          - src/lib/domain/rest/frame-hooks/index.ts
+          - src/components/party/extras/
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/story.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/story.css
+          - convex/characters.ts
+          - src/lib/validation/characters.ts
+          - convex/lib/validators/characters.ts
+          - convex/migrations/motherboardEconomy.ts
+          - tests/unit/motherboard.test.ts
+          - tests/convex/motherboard.test.ts
+          - tests/e2e/motherboard-ikonis.spec.ts
+          - docs/tasks/TASK-RF4.md
+          - docs/data-model.md
+        reads:
+          - docs/decisions-d3-d11.md
+          - src/lib/srd/
+        acceptance:
+          - "Corruption: a companion can be marked a remnant (owner or GM toggle); only remnant companions roll at the start of downtime; the track has 6 boxes; a GM/technomancer 'Repair (clear 1d4)' action exists; marking the 6th box marks the companion lost (can't be commanded or repaired) with a note that the ranger takes a new companion with two new Experiences"
+          - "installAugments/swap changes are refused unless the campaign has an open rest (coded error quoting CB 301); crafting rules unchanged"
+          - "New Motherboard characters get 'Network tether' in their inventory and 5 quantum instead of gold; the Wealth box shows Quantum (stepper) instead of handfuls/bags/chest in Motherboard; existing Motherboard characters get the tether and 5 quantum once by migration (idempotent); other frames unchanged"
+          - "Tests (unit, convex, motherboard e2e); pnpm lint, typecheck, test pass"
