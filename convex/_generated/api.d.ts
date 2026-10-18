@@ -21,6 +21,7 @@ import type * as codex from "../codex.js";
 import type * as countdowns from "../countdowns.js";
 import type * as crons from "../crons.js";
 import type * as deathMoves from "../deathMoves.js";
+import type * as encounters from "../encounters.js";
 import type * as fear from "../fear.js";
 import type * as feed from "../feed.js";
 import type * as history from "../history.js";
@@ -112,6 +113,7 @@ declare const fullApi: ApiFromModules<{
   countdowns: typeof countdowns;
   crons: typeof crons;
   deathMoves: typeof deathMoves;
+  encounters: typeof encounters;
   fear: typeof fear;
   feed: typeof feed;
   history: typeof history;

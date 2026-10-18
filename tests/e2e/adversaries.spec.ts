@@ -57,7 +57,7 @@ test("the GM opens Adversaries from the nav and switches tabs with the mouse and
   await encounters.click();
   await expect(encounters).toHaveAttribute("aria-selected", "true");
   const encountersPanel = page.getByRole("tabpanel", { name: "Encounters" });
-  await expect(encountersPanel.getByText("Encounters and the Battle Points budget arrive with the next update.")).toBeVisible();
+  await expect(encountersPanel.getByRole("button", { name: "+ New encounter" })).toBeVisible();
   await expect(encountersPanel.getByText("The live encounter tracker arrives with the next update.")).toBeVisible();
 
   // Arrow keys move the selection and the focus (WAI-ARIA tabs).
