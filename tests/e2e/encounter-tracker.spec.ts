@@ -1,0 +1,132 @@
+import { expect, test, type Browser, type Page } from "@playwright/test";
+
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+import { signInAsTestGm } from "./fixtures";
+import { convexAs, expectNoHorizontalScroll } from "./visual/helpers";
+
+// D8 A4: the live encounter tracker on the Adversaries page's Encounters tab. Damage through thresholds (CB p.91),
+// Stress, conditions, Spend Fear (the dashboard's GM Fear goes down, CB p.154), spotlights per GM turn (CB p.153) and
+// a hidden GM attack roll that players see only once revealed.
+
+const PLAYER = "e2e-player@example.test";
+
+async function gmCreatesCampaign(page: Page) {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const name = `Tracker ${crypto.randomUUID().slice(0, 8)}`;
+  await page.goto("/frames/witherwild");
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(name);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  return { name, campaignId: new URL(page.url()).pathname.split("/")[2] as Id<"campaigns"> };
+}
+
+async function playerJoins(page: Page, browser: Browser, campaignName: string) {
+  await page.getByRole("button", { name: "Players" }).click();
+  const dialog = page.getByRole("dialog", { name: "Players" });
+  await expect(dialog.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+  const code = (await dialog.getByTestId("join-code").textContent())!;
+  await dialog.getByRole("button", { name: "Close players" }).click();
+
+  const context = await browser.newContext();
+  const player = await context.newPage();
+  await signInAsTestGm(player, PLAYER);
+  await expect(player).toHaveURL("/");
+  await player.getByRole("button", { name: /Join Campaign/ }).click();
+  await player.getByRole("dialog", { name: "Join a campaign" }).getByLabel("Join code").fill(code);
+  await player.getByRole("button", { name: "Join", exact: true }).click();
+  await expect(player.getByRole("heading", { level: 1, name: campaignName })).toBeVisible();
+  return { player, close: () => context.close() };
+}
+
+/** A running encounter with one Bear (Thresholds 9/17, HP 7, Stress 2), opened on the Encounters tab. */
+async function runningBear(page: Page, campaignId: Id<"campaigns">) {
+  const client = await convexAs(page);
+  const { encounterId } = await client.mutation(api.encounters.create, { campaignId, name: "Den of the bear", pcs: 4, idempotencyKey: crypto.randomUUID() });
+  await client.mutation(api.encounters.addAdversary, {
+    campaignId,
+    encounterId,
+    source: { kind: "srd", adversaryId: "bear" },
+    count: 1,
+    summoned: false,
+    idempotencyKey: crypto.randomUUID(),
+  });
+  await page.goto(`/campaigns/${campaignId}/adversaries`);
+  await page.getByRole("tab", { name: "Encounters" }).click();
+  const panel = page.getByRole("tabpanel", { name: "Encounters" });
+  await panel.getByRole("button", { name: "▶ Start encounter" }).click();
+  const tracker = panel.getByRole("region", { name: "Encounter tracker" });
+  await expect(tracker.getByRole("heading", { name: "Den of the bear" })).toBeVisible();
+  return { client, encounterId, tracker };
+}
+
+test("the GM tracks damage, Stress, conditions, Fear, the spotlight and a hidden attack roll", async ({ page, browser }) => {
+  const { name, campaignId } = await gmCreatesCampaign(page);
+  const { player, close } = await playerJoins(page, browser, name);
+  const { client, tracker } = await runningBear(page, campaignId);
+  await client.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: crypto.randomUUID() });
+  await expect(tracker.getByTestId("tracker-fear")).toHaveAttribute("aria-label", "GM Fear 3 of 12");
+  await expect(tracker.getByTestId("tracker-bp")).toHaveText(/Spent 4 of 14 BP/);
+
+  const card = tracker.getByRole("article", { name: "Bear", exact: true });
+  // 9 damage on Thresholds 9/17 is Major: 2 HP.
+  await card.getByLabel("Damage to Bear").fill("9");
+  await card.getByRole("button", { name: "Apply" }).click();
+  await expect(card.getByText("Major: 2 HP marked")).toBeVisible();
+  await expect(card.getByRole("button", { name: "Mark Hit Point 2 of 7" })).toHaveAttribute("aria-pressed", "true");
+  await expect(card.getByRole("button", { name: "Mark Hit Point 3 of 7" })).toHaveAttribute("aria-pressed", "false");
+
+  await card.getByRole("button", { name: "Mark Stress 1 of 2" }).click();
+  await expect(card.getByRole("button", { name: "Mark Stress 1 of 2" })).toHaveAttribute("aria-pressed", "true");
+  await card.getByRole("button", { name: "Vulnerable" }).click();
+  await expect(card.getByRole("button", { name: /Vulnerable/ })).toHaveAttribute("aria-pressed", "true");
+
+  // Spend 1 Fear for an additional GM move: the tracker and the dashboard show 2.
+  await tracker.getByRole("button", { name: "Spend Fear", exact: true }).click();
+  const spend = page.getByRole("dialog", { name: "Spend Fear" });
+  await spend.getByRole("button", { name: "Additional GM move" }).click();
+  await expect(spend).toBeHidden();
+  await expect(tracker.getByTestId("tracker-fear")).toHaveAttribute("aria-label", "GM Fear 2 of 12");
+
+  // Spotlight twice (past the limit of 1: a warning, not a block), then End GM turn resets the counter.
+  await card.getByRole("button", { name: "Spotlight Bear" }).click();
+  await expect(card.getByTestId("spotlight-count")).toHaveText("Spotlight 1/1");
+  await card.getByRole("button", { name: "Spotlight Bear" }).click();
+  await expect(card.getByTestId("spotlight-count")).toHaveText("Spotlight 2/1");
+  await expect(card.getByText("Past the limit for this GM turn")).toBeVisible();
+  await tracker.getByRole("button", { name: "End GM turn" }).click();
+  await expect(tracker.getByTestId("gm-turn")).toHaveText("GM turn 2");
+  await expect(card.getByTestId("spotlight-count")).toHaveText("Spotlight 0/1");
+
+  // The attack roll goes to the hidden GM roll feed.
+  const block = tracker.getByRole("article", { name: "Bear stat block" });
+  await block.getByRole("button", { name: "Roll attack" }).click();
+  await expect(block.getByText(/Attack \d+ \(d20 \d+, \+1\).*Hidden from players/)).toBeVisible();
+
+  await page.goto(`/campaigns/${campaignId}`);
+  await expect(page.getByTestId("fear-value")).toHaveAttribute("aria-label", "2 of 12 Fear");
+  const gmFeed = page.getByRole("list", { name: "Rolls" });
+  const gmRow = gmFeed.getByRole("listitem").filter({ hasText: "GM: Bear: attack" });
+  await expect(gmRow).toContainText("hidden");
+
+  await player.goto(`/campaigns/${campaignId}`);
+  await expect(player.getByRole("heading", { name: "Roll Feed" })).toBeVisible();
+  await expect(player.getByText("GM: Bear: attack")).toHaveCount(0);
+  await gmRow.getByRole("button", { name: "Reveal" }).click();
+  await expect(player.getByText(/GM: Bear: attack/)).toBeVisible();
+  await close();
+});
+
+test("at 390 px the tracker stacks without horizontal scroll and its buttons are 44 px high", async ({ page }) => {
+  const { campaignId } = await gmCreatesCampaign(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const { tracker } = await runningBear(page, campaignId);
+  await expect(tracker.getByRole("article", { name: "Bear stat block" })).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  for (const control of await tracker.getByRole("button").all()) {
+    const box = await control.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  }
+});
