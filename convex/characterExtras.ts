@@ -1,8 +1,9 @@
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import { z } from "zod";
 
 import { tierForLevel } from "../src/lib/domain/characters/index";
-import { gatherScrap as rollScrap, type GatheredScrap } from "../src/lib/domain/frames/motherboard";
+import { gatherScrap as rollScrap } from "../src/lib/domain/frames/motherboard";
+import { appError, RuleError } from "../src/lib/errors/app-error";
 import {
   addIngredient as addIngredientTo,
   beastFeastStateSchema,
@@ -14,7 +15,6 @@ import {
   INITIAL_COOKBOOK,
   removeIngredient as removeIngredientFrom,
   type BeastFeastState,
-  type CookbookState,
 } from "../src/lib/frames/extras/beast-feast";
 import { beastformStateSchema, INITIAL_BEASTFORM, validateBeastform, type BeastformState } from "../src/lib/frames/extras/beastform";
 import { castleHighStateSchema, INITIAL_CASTLE_HIGH, type CastleHighState } from "../src/lib/frames/extras/castle-high";
@@ -36,15 +36,32 @@ import {
   type MotherboardState,
 } from "../src/lib/frames/extras/motherboard";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { loadCampaign, type Role } from "./lib/access";
-import { requireUser } from "./lib/auth";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { loadCharacter } from "./characters";
+import { parseOrCorrupt, readVersioned } from "./lib/blobs";
 import { rollDie } from "./lib/dice";
-import { ruleError } from "./lib/mechanics";
-import { campaignScope, withIdempotency } from "./lib/operations";
-import { readTracker, writeTracker } from "./lib/trackers";
+import { keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
+import { campaignScope, runOnce } from "./lib/operations";
+import { atLeast, permissionFor, type Permission } from "./lib/permissions";
+import { applyTrackerRule, frameTrackerMutation, loadTracker, readTracker, type FrameTracker } from "./lib/trackers";
+import {
+  beastformStateValidator,
+  companionStateValidator,
+  cookbookEntryInputValidator,
+  extrasViewValidator,
+  gatheredScrapValidator,
+  ikonisValidator,
+  ingredientInputValidator,
+  skyshardValidator,
+  walletCorrectionValidator,
+  type CharacterExtraRow,
+  type ExtrasView,
+} from "./lib/validators/characterExtras";
 
-/** The sheet fields the extras depend on (the full sheet is validated by convex/characters.ts). */
+/** The version every `characterExtras` row is written with (CD3); bumping it needs an upgrade step in `readRow`. */
+const EXTRA_SCHEMA_VERSION = 1;
+
+/** The sheet fields the extras depend on (the full sheet is read by convex/characters.ts). */
 const sheetBasics = z.object({
   level: z.number().int().min(1).max(10),
   classId: z.string(),
@@ -56,23 +73,19 @@ type SheetBasics = z.infer<typeof sheetBasics>;
 type Loaded = {
   user: Doc<"users">;
   campaign: Doc<"campaigns">;
-  role: Role;
   character: Doc<"characters">;
+  permission: Permission;
   sheet: SheetBasics;
-  canEdit: boolean;
 };
 
-/** Everyone in the campaign reads a character's extras; the owner or the GM edits them. */
-async function load(ctx: QueryCtx, characterId: Id<"characters">, edit = false): Promise<Loaded> {
-  const user = await requireUser(ctx);
-  const character = await ctx.db.get(characterId);
-  if (character === null) throw new ConvexError("NOT_FOUND");
-  const { campaign, role } = await loadCampaign(ctx, user, character.campaignId);
-  const parsed = sheetBasics.safeParse(character.sheet);
-  if (!parsed.success) throw new ConvexError("CHARACTER_CORRUPT");
-  const canEdit = role === "gm" || character.ownerId === user._id;
-  if (edit && !canEdit) throw new ConvexError("FORBIDDEN");
-  return { user, campaign, role, character, sheet: parsed.data, canEdit };
+/**
+ * A character's extras share the character's access (`permissionFor` on the
+ * character): everyone in the campaign views them; the GM, the owner and
+ * anyone with an edit grant on the character edit them.
+ */
+async function load(ctx: QueryCtx, user: Doc<"users">, characterId: Id<"characters">, need: Permission, enough: Permission = need): Promise<Loaded> {
+  const { campaign, character, permission } = await loadCharacter(ctx, user, characterId, need, enough);
+  return { user, campaign, character, permission, sheet: parseOrCorrupt(sheetBasics, character.sheet, "CHARACTER_CORRUPT") };
 }
 
 const SCHEMAS = {
@@ -90,82 +103,105 @@ type StateOf = {
   castleHigh: CastleHighState;
 };
 
-function parseState<E extends Extra>(extra: E, raw: unknown): StateOf[E] {
-  if (raw === null) return SCHEMAS[extra].initial as StateOf[E];
-  const parsed = SCHEMAS[extra].schema.safeParse(raw);
-  if (!parsed.success) throw new ConvexError("TRACKER_CORRUPT");
-  return parsed.data as StateOf[E];
+/** A stored row's state, read through its version's schema (CD3). */
+function readRow<E extends Extra>(extra: E, row: Doc<"characterExtras">): StateOf[E] {
+  const versioned = { ...row.data, schemaVersion: row.schemaVersion };
+  return readVersioned({ [EXTRA_SCHEMA_VERSION]: { schema: SCHEMAS[extra].schema } }, versioned, "TRACKER_CORRUPT") as StateOf[E];
 }
 
-async function readCookbook(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<CookbookState> {
-  return parseCookbook(await readTracker(ctx, campaignId, COOKBOOK_KEY));
+/**
+ * The extra's state: its row, else (until `migrations/characterExtras:moveFromTrackers`
+ * has run on every deployment) its old `frameTrackers` row, else the initial state.
+ */
+async function readState<E extends Extra>(ctx: QueryCtx, loaded: Loaded, extra: E, row: Doc<"characterExtras"> | null): Promise<StateOf[E]> {
+  if (row !== null) return readRow(extra, row);
+  const legacy = await readTracker(ctx, loaded.campaign._id, extraKey(loaded.character._id, extra), SCHEMAS[extra].schema);
+  return (legacy ?? SCHEMAS[extra].initial) as StateOf[E];
 }
 
-function parseCookbook(raw: unknown): CookbookState {
-  if (raw === null) return INITIAL_COOKBOOK;
-  const parsed = cookbookStateSchema.safeParse(raw);
-  if (!parsed.success) throw new ConvexError("TRACKER_CORRUPT");
-  return parsed.data;
+/** The stored row of one extra (at most one per character and extra). */
+function extraRow(ctx: QueryCtx, characterId: Id<"characters">, extra: Extra) {
+  return ctx.db
+    .query("characterExtras")
+    .withIndex("by_character_extra", (q) => q.eq("characterId", characterId).eq("extra", extra))
+    .unique();
 }
 
-function input<T>(schema: z.ZodType<T>, raw: unknown): T {
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) throw new ConvexError({ code: "INVALID", message: parsed.error.issues[0]?.message ?? "Invalid input." });
-  return parsed.data;
-}
-
-/** A frame extra outside its frame, or a class extra on another class, is refused. */
-function assertApplies(loaded: Loaded, extra: Extra) {
-  if (!extrasFor(loaded.campaign.frameId, loaded.sheet)[extra]) throw new ConvexError("MECHANIC_DISABLED");
-}
-
-/** Edit access + applicability, then one idempotent change of the extra's state. */
+/**
+ * Edit access and applicability (a frame extra outside its frame, or a class
+ * extra on another class, is `MECHANIC_DISABLED`), then one idempotent change
+ * of the extra's state. The domain's plain `Error`s become `EXTRA_RULE`.
+ */
 async function change<E extends Extra, R>(
-  ctx: MutationCtx,
+  ctx: MutationCtx & { user: Doc<"users"> },
   characterId: Id<"characters">,
   extra: E,
-  op: { idempotencyKey: string; kind: string; request: unknown },
+  op: { idempotencyKey: string; kind: string; request: object },
   apply: (state: StateOf[E], loaded: Loaded) => { state: StateOf[E]; result: R },
 ): Promise<R> {
-  const loaded = await load(ctx, characterId, true);
-  assertApplies(loaded, extra);
+  const loaded = await load(ctx, ctx.user, characterId, "edit");
+  if (!extrasFor(loaded.campaign.frameId, loaded.sheet)[extra]) throw appError("MECHANIC_DISABLED");
   const campaignId = loaded.campaign._id;
-  return withIdempotency(
+  return runOnce(
     ctx,
     {
       scopeKey: campaignScope(campaignId),
       key: op.idempotencyKey,
       kind: op.kind,
-      request: { characterId, ...(op.request as object) },
-      createdBy: loaded.user._id,
+      request: { characterId, ...op.request },
+      createdBy: ctx.user._id,
       campaignId,
     },
     async () => {
-      const key = extraKey(characterId, extra);
-      const current = parseState(extra, await readTracker(ctx, campaignId, key));
-      let next: { state: StateOf[E]; result: R };
-      try {
-        next = apply(current, loaded);
-      } catch (error) {
-        ruleError("EXTRA_RULE", error);
-      }
-      await writeTracker(ctx, campaignId, key, SCHEMAS[extra].schema.parse(next.state));
+      const row = await extraRow(ctx, characterId, extra);
+      const next = await applyTrackerRule("EXTRA_RULE", async () => apply(await readState(ctx, loaded, extra, row), loaded));
+      // The schema matches the row's `data` validator for this `extra`.
+      const stored = {
+        campaignId,
+        characterId,
+        extra,
+        schemaVersion: EXTRA_SCHEMA_VERSION,
+        data: SCHEMAS[extra].schema.parse(next.state),
+        updatedAt: Date.now(),
+      } as CharacterExtraRow;
+      if (row === null) await ctx.db.insert("characterExtras", stored);
+      else await ctx.db.replace("characterExtras", row._id, stored);
       return next.result;
     },
   );
 }
 
+/** The party's shared Beast Feast cookbook: a campaign-level frame tracker. */
+const COOKBOOK: FrameTracker<typeof cookbookStateSchema> = {
+  frameId: FRAME_OF.beastFeast,
+  key: COOKBOOK_KEY,
+  schema: cookbookStateSchema,
+  initial: () => INITIAL_COOKBOOK,
+  ruleCode: "EXTRA_RULE",
+};
+
 /** A character's extras: only those that apply to their class and the campaign's frame. */
-export const get = query({
+export const get = userQuery({
   args: { characterId: v.id("characters") },
-  handler: async (ctx, { characterId }) => {
-    const loaded = await load(ctx, characterId);
+  returns: extrasViewValidator,
+  handler: async (ctx, { characterId }): Promise<ExtrasView> => {
+    const loaded = await load(ctx, ctx.user, characterId, "view", "edit");
     const { campaign, sheet } = loaded;
     const applies = extrasFor(campaign.frameId, sheet);
+    // At most one row per extra.
+    const rows = await ctx.db
+      .query("characterExtras")
+      .withIndex("by_character_extra", (q) => q.eq("characterId", characterId))
+      .collect();
     const read = async <E extends Extra>(extra: E): Promise<StateOf[E] | null> =>
-      applies[extra] ? parseState(extra, await readTracker(ctx, campaign._id, extraKey(characterId, extra))) : null;
+      applies[extra] ? readState(ctx, loaded, extra, rows.find((r) => r.extra === extra) ?? null) : null;
+    const cookbook = async () => {
+      const book = await loadTracker(ctx, campaign._id, COOKBOOK);
+      const gm = atLeast(await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "owner"), "owner");
+      return book.entries.map((e) => ({ ...e, canRemove: gm || e.addedBy === ctx.user._id }));
+    };
     return {
-      canEdit: loaded.canEdit,
+      canEdit: atLeast(loaded.permission, "edit"),
       level: sheet.level,
       tier: tierForLevel(sheet.level),
       ingredientCapacity: ingredientCapacity(sheet.traits),
@@ -174,9 +210,7 @@ export const get = query({
       motherboard: await read("motherboard"),
       beastFeast: await read("beastFeast"),
       castleHigh: await read("castleHigh"),
-      cookbook: applies.beastFeast
-        ? (await readCookbook(ctx, campaign._id)).entries.map((e) => ({ ...e, canRemove: loaded.role === "gm" || e.addedBy === loaded.user._id }))
-        : null,
+      cookbook: applies.beastFeast ? await cookbook() : null,
     };
   },
 });
@@ -186,10 +220,11 @@ const keyed = { characterId: v.id("characters"), idempotencyKey: v.string() };
 // ---- Druid Beastform
 
 /** Take a Beastform of your tier or lower, or drop out (`state.formId` null). */
-export const setBeastform = mutation({
-  args: { ...keyed, state: v.any() },
+export const setBeastform = userMutation({
+  args: { ...keyed, state: beastformStateValidator },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, state }) => {
-    const next = input(beastformStateSchema, state);
+    const next = beastformStateSchema.parse(state);
     return change(ctx, characterId, "beastform", { idempotencyKey, kind: "extra_beastform", request: next }, (_, { sheet }) => {
       validateBeastform(next, tierForLevel(sheet.level));
       return { state: next, result: null };
@@ -199,10 +234,11 @@ export const setBeastform = mutation({
 
 // ---- Beastbound companion
 
-export const saveCompanion = mutation({
-  args: { ...keyed, state: v.any() },
+export const saveCompanion = userMutation({
+  args: { ...keyed, state: companionStateValidator },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, state }) => {
-    const next = input(companionStateSchema, state);
+    const next = companionStateSchema.parse(state);
     return change(ctx, characterId, "companion", { idempotencyKey, kind: "extra_companion", request: next }, (_, { sheet }) => {
       validateCompanion(next, sheet.level);
       return { state: next, result: null };
@@ -213,33 +249,33 @@ export const saveCompanion = mutation({
 // ---- Motherboard
 
 const mb = <R>(
-  ctx: MutationCtx,
+  ctx: MutationCtx & { user: Doc<"users"> },
   characterId: Id<"characters">,
   idempotencyKey: string,
   kind: string,
-  request: unknown,
+  request: object,
   apply: (s: MotherboardState, loaded: Loaded) => { state: MotherboardState; result: R },
 ) => change(ctx, characterId, "motherboard", { idempotencyKey, kind, request }, apply);
 
-export const saveIkonis = mutation({
-  args: { ...keyed, ikonis: v.any() },
+export const saveIkonis = userMutation({
+  args: { ...keyed, ikonis: ikonisValidator },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, ikonis }) => {
-    const next = input(ikonisSchema, ikonis);
+    const next = ikonisSchema.parse(ikonis);
     return mb(ctx, characterId, idempotencyKey, "extra_ikonis", next, (s) => ({ state: { ...s, ikonis: next }, result: null }));
   },
 });
 
-const diceCount = v.number();
+const diceCount = z.number().int().min(0).max(10);
+const scrapDiceSchema = z.object({ shards: diceCount, metals: diceCount, components: diceCount });
 
 /** Gather scrap (p.302): the server rolls the dice the GM set for each category. */
-export const gatherScrap = mutation({
-  args: { ...keyed, shards: diceCount, metals: diceCount, components: diceCount },
-  handler: (ctx, { characterId, idempotencyKey, ...counts }): Promise<GatheredScrap[]> => {
-    const parsed = input(
-      z.object({ shards: z.number().int().min(0).max(10), metals: z.number().int().min(0).max(10), components: z.number().int().min(0).max(10) }),
-      counts,
-    );
-    if (parsed.shards + parsed.metals + parsed.components === 0) throw new ConvexError({ code: "INVALID", message: "Roll at least one die." });
+export const gatherScrap = userMutation({
+  args: { ...keyed, shards: v.number(), metals: v.number(), components: v.number() },
+  returns: v.array(gatheredScrapValidator),
+  handler: (ctx, { characterId, idempotencyKey, ...counts }) => {
+    const parsed = scrapDiceSchema.parse(counts);
+    if (parsed.shards + parsed.metals + parsed.components === 0) throw appError("INVALID", "Roll at least one die.");
     return mb(ctx, characterId, idempotencyKey, "extra_gather_scrap", parsed, (s) => {
       const gathered = rollScrap(parsed, rollDie);
       return { state: applyGather(s, gathered), result: gathered };
@@ -247,9 +283,12 @@ export const gatherScrap = mutation({
   },
 });
 
+const quantumResult = v.object({ quantum: v.number() });
+
 /** Buy or sell scrap at a scrap shack, at its value (p.303). */
-export const tradeScrap = mutation({
+export const tradeScrap = userMutation({
   args: { ...keyed, name: v.string(), quantity: v.number(), direction: v.union(v.literal("buy"), v.literal("sell")) },
+  returns: quantumResult,
   handler: (ctx, { characterId, idempotencyKey, name, quantity, direction }) =>
     mb(ctx, characterId, idempotencyKey, "extra_trade_scrap", { name, quantity, direction }, (s) => {
       const state = trade(s, name, quantity, direction);
@@ -257,10 +296,11 @@ export const tradeScrap = mutation({
     }),
 });
 
-export const addRelic = mutation({
+export const addRelic = userMutation({
   args: { ...keyed, name: v.string() },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, name }) => {
-    const relicName = input(z.string().trim().min(1, "Name the relic.").max(80), name);
+    const relicName = z.string().trim().min(1, "Name the relic.").max(80).parse(name);
     return mb(ctx, characterId, idempotencyKey, "extra_add_relic", { name: relicName }, (s) => ({
       state: addRelicTo(s, { id: idempotencyKey.slice(0, 100), name: relicName }),
       result: null,
@@ -268,8 +308,9 @@ export const addRelic = mutation({
   },
 });
 
-export const sellRelic = mutation({
+export const sellRelic = userMutation({
   args: { ...keyed, relicId: v.string() },
+  returns: quantumResult,
   handler: (ctx, { characterId, idempotencyKey, relicId }) =>
     mb(ctx, characterId, idempotencyKey, "extra_sell_relic", { relicId }, (s) => {
       const state = sellRelicFrom(s, relicId);
@@ -277,8 +318,9 @@ export const sellRelic = mutation({
     }),
 });
 
-export const craftAugment = mutation({
+export const craftAugment = userMutation({
   args: { ...keyed, augmentId: v.string() },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, augmentId }) =>
     mb(ctx, characterId, idempotencyKey, "extra_craft_augment", { augmentId }, (s, { sheet }) => ({
       state: craft(s, augmentId, tierForLevel(sheet.level)),
@@ -286,14 +328,16 @@ export const craftAugment = mutation({
     })),
 });
 
-export const salvageAugment = mutation({
+export const salvageAugment = userMutation({
   args: { ...keyed, augmentId: v.string() },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, augmentId }) =>
     mb(ctx, characterId, idempotencyKey, "extra_salvage_augment", { augmentId }, (s) => ({ state: salvage(s, augmentId), result: null })),
 });
 
-export const installAugments = mutation({
+export const installAugments = userMutation({
   args: { ...keyed, augmentIds: v.array(v.string()) },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, augmentIds }) =>
     mb(ctx, characterId, idempotencyKey, "extra_install_augments", { augmentIds }, (s, { sheet }) => ({
       state: install(s, augmentIds, tierForLevel(sheet.level)),
@@ -302,20 +346,22 @@ export const installAugments = mutation({
 });
 
 /** Manual corrections of quantum and scrap counts. */
-export const correctWallet = mutation({
-  args: { ...keyed, correction: v.any() },
+export const correctWallet = userMutation({
+  args: { ...keyed, correction: walletCorrectionValidator },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, correction }) => {
-    const parsed = input(walletCorrectionSchema, correction);
+    const parsed = walletCorrectionSchema.parse(correction);
     return mb(ctx, characterId, idempotencyKey, "extra_correct_wallet", parsed, (s) => ({ state: applyCorrection(s, parsed), result: null }));
   },
 });
 
 // ---- Beast Feast
 
-export const addIngredient = mutation({
-  args: { ...keyed, ingredient: v.any() },
+export const addIngredient = userMutation({
+  args: { ...keyed, ingredient: ingredientInputValidator },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, ingredient }) => {
-    const parsed = input(ingredientInputSchema, ingredient);
+    const parsed = ingredientInputSchema.parse(ingredient);
     return change(ctx, characterId, "beastFeast", { idempotencyKey, kind: "extra_add_ingredient", request: parsed }, (s, { sheet }) => ({
       state: addIngredientTo(s, { ...parsed, id: idempotencyKey.slice(0, 100) }, ingredientCapacity(sheet.traits)),
       result: null,
@@ -323,8 +369,9 @@ export const addIngredient = mutation({
   },
 });
 
-export const removeIngredient = mutation({
+export const removeIngredient = userMutation({
   args: { ...keyed, ingredientId: v.string() },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, ingredientId }) =>
     change(ctx, characterId, "beastFeast", { idempotencyKey, kind: "extra_remove_ingredient", request: { ingredientId } }, (s) => ({
       state: removeIngredientFrom(s, ingredientId),
@@ -333,54 +380,41 @@ export const removeIngredient = mutation({
 });
 
 /** Any member of a Beast Feast campaign adds recipes to the party cookbook. */
-export const addCookbookEntry = mutation({
-  args: { campaignId: v.id("campaigns"), entry: v.any(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, entry, idempotencyKey }) => {
-    const user = await requireUser(ctx);
-    const { campaign } = await loadCampaign(ctx, user, campaignId);
-    if (campaign.frameId !== FRAME_OF.beastFeast) throw new ConvexError("MECHANIC_DISABLED");
-    const parsed = input(cookbookEntryInputSchema, entry);
-    return withIdempotency(
-      ctx,
-      { scopeKey: campaignScope(campaignId), key: idempotencyKey, kind: "extra_cookbook_add", request: parsed, createdBy: user._id, campaignId },
-      async () => {
-        const book = await readCookbook(ctx, campaignId);
-        const next = { entries: [...book.entries, { ...parsed, id: idempotencyKey.slice(0, 100), addedBy: user._id, at: Date.now() }] };
-        await writeTracker(ctx, campaignId, COOKBOOK_KEY, cookbookStateSchema.parse(next));
-        return null;
-      },
-    );
+export const addCookbookEntry = keyedCampaignMutation({
+  need: "view",
+  args: { entry: cookbookEntryInputValidator },
+  returns: v.null(),
+  handler: (ctx, { entry }) => {
+    const parsed = cookbookEntryInputSchema.parse(entry);
+    return frameTrackerMutation(ctx, COOKBOOK, { kind: "extra_cookbook_add", request: parsed }, (book) => ({
+      state: cookbookStateSchema.parse({ entries: [...book.entries, { ...parsed, id: crypto.randomUUID(), addedBy: ctx.user._id, at: Date.now() }] }),
+      result: null,
+    }));
   },
 });
 
 /** The recipe's author or the GM removes it. */
-export const removeCookbookEntry = mutation({
-  args: { campaignId: v.id("campaigns"), entryId: v.string(), idempotencyKey: v.string() },
-  handler: async (ctx, { campaignId, entryId, idempotencyKey }) => {
-    const user = await requireUser(ctx);
-    const { campaign, role } = await loadCampaign(ctx, user, campaignId);
-    if (campaign.frameId !== FRAME_OF.beastFeast) throw new ConvexError("MECHANIC_DISABLED");
-    return withIdempotency(
-      ctx,
-      { scopeKey: campaignScope(campaignId), key: idempotencyKey, kind: "extra_cookbook_remove", request: { entryId }, createdBy: user._id, campaignId },
-      async () => {
-        const book = await readCookbook(ctx, campaignId);
-        const entry = book.entries.find((e) => e.id === entryId);
-        if (!entry) throw new ConvexError({ code: "EXTRA_RULE", message: "That recipe is gone." });
-        if (role !== "gm" && entry.addedBy !== user._id) throw new ConvexError("FORBIDDEN");
-        await writeTracker(ctx, campaignId, COOKBOOK_KEY, { entries: book.entries.filter((e) => e.id !== entryId) });
-        return null;
-      },
-    );
-  },
+export const removeCookbookEntry = keyedCampaignMutation({
+  need: "view",
+  enough: "owner",
+  args: { entryId: v.string() },
+  returns: v.null(),
+  handler: (ctx, { entryId }) =>
+    frameTrackerMutation(ctx, COOKBOOK, { kind: "extra_cookbook_remove", request: { entryId } }, (book) => {
+      const entry = book.entries.find((e) => e.id === entryId);
+      if (!entry) throw new RuleError("EXTRA_RULE", "That recipe is gone.");
+      if (ctx.permission !== "owner" && entry.addedBy !== ctx.user._id) throw appError("FORBIDDEN");
+      return { state: { entries: book.entries.filter((e) => e.id !== entryId) }, result: null };
+    }),
 });
 
 // ---- Castle High
 
-export const saveSkyshard = mutation({
-  args: { ...keyed, skyshard: v.any() },
+export const saveSkyshard = userMutation({
+  args: { ...keyed, skyshard: skyshardValidator },
+  returns: v.null(),
   handler: (ctx, { characterId, idempotencyKey, skyshard }) => {
-    const next = input(castleHighStateSchema, { skyshard });
+    const next = castleHighStateSchema.parse({ skyshard });
     return change(ctx, characterId, "castleHigh", { idempotencyKey, kind: "extra_skyshard", request: next }, () => ({ state: next, result: null }));
   },
 });

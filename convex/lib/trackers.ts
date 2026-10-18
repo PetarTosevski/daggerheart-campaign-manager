@@ -41,19 +41,10 @@ export async function readTracker<S extends z.ZodType>(
   campaignId: Id<"campaigns">,
   key: string,
   schema: S,
-): Promise<z.output<S> | null>;
-/**
- * @deprecated Unvalidated read, kept only for the character extras
- * (`convex/characterExtras.ts`, which parse the result themselves) until they
- * move to their own table (H14).
- */
-export async function readTracker(ctx: QueryCtx, campaignId: Id<"campaigns">, key: string): Promise<unknown>;
-export async function readTracker(ctx: QueryCtx, campaignId: Id<"campaigns">, key: string, schema?: z.ZodType): Promise<unknown> {
+): Promise<z.output<S> | null> {
   const row = await trackerRow(ctx, campaignId, key);
   if (row === null) return null;
-  const data: unknown = row.data;
-  if (schema === undefined) return data;
-  return readVersioned({ [TRACKER_SCHEMA_VERSION]: { schema } }, data, "TRACKER_CORRUPT");
+  return readVersioned({ [TRACKER_SCHEMA_VERSION]: { schema } }, row.data, "TRACKER_CORRUPT");
 }
 
 /**

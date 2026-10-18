@@ -1,6 +1,8 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
+import { characterExtraValidator } from "../lib/validators/characterExtras";
+
 export const characterTables = {
   /**
    * Player characters. `sheet` is a versioned blob `{ schemaVersion, ...sheet }`
@@ -23,4 +25,18 @@ export const characterTables = {
   })
     .index("by_campaign", ["campaignId"])
     .index("by_owner", ["ownerId"]),
+
+  /**
+   * A character's extras (beastform, companion, Motherboard wallet, Beast
+   * Feast ingredients, Castle High skyshard): at most one row per character
+   * and extra, `data` typed by `extra`. Read and written only through
+   * convex/characterExtras.ts, whose access is the character's
+   * (`permissionFor`). Before H14 they lived in `frameTrackers` under
+   * `character:<id>:<extra>` keys; `migrations/characterExtras:moveFromTrackers`
+   * moves them here. `characters.remove` deletes a character's rows through
+   * `by_character_extra`; `by_campaign` serves the campaign purge (CD18).
+   */
+  characterExtras: defineTable(characterExtraValidator)
+    .index("by_character_extra", ["characterId", "extra"])
+    .index("by_campaign", ["campaignId"]),
 };

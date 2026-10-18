@@ -5,7 +5,7 @@ import { WEREDRAGON_TRACKER_KEY } from "../../src/lib/frames/trackers/weredragon
 import { migrations } from "../lib/migrations";
 import { TRACKER_SCHEMA_VERSION } from "../lib/trackers";
 
-/** The keys of the frame trackers in `convex/trackers/` (character extras share the table but are not versioned yet). */
+/** The keys of the frame trackers in `convex/trackers/` (character extras moved to the characterExtras table; unmigrated `character:` rows are skipped). */
 const TRACKER_KEYS = new Set([ANDALURIA_TRACKER_KEY, WEREDRAGON_TRACKER_KEY, HORIZON_TRACKER_KEY, FIVE_BANNERS_KEY, "colossus", "ageOfUmbra"]);
 
 /**
