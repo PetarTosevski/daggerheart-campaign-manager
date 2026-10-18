@@ -69,12 +69,12 @@ export function LevelUpButton({ character, canEdit, isGm, onStart, leveling = fa
 }
 
 /** The Level Up region on the sheet's Story & Advancement page: tier boxes with the history, and the GM correction under them. */
-export const AdvancementTiers: CharacterSlot = ({ character, isGm }) => {
+export const AdvancementTiers: CharacterSlot = ({ character, isGm, hopeAndFear }) => {
   const sheet = fullSheet(character);
   if (!sheet) return null;
   return (
     <div className="flex flex-col gap-3">
-      <TierBoxes sheet={sheet} />
+      <TierBoxes sheet={sheet} hopeAndFear={hopeAndFear} />
       {isGm ? <CorrectLevel characterId={character._id} level={sheet.level} /> : null}
     </div>
   );
