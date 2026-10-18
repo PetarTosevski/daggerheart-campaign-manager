@@ -26,6 +26,7 @@ import { ikonisWeapon, type IkonisWeapon } from "../src/lib/domain/dice/ikonis";
 import {
   applyDualityEffects,
   applyRollOptions,
+  assertTypedModifier,
   DiceRuleError,
   dualityEffects,
   experienceBonus,
@@ -36,6 +37,7 @@ import {
   rollDuality,
   rollFree,
   spendHope,
+  typedLabel,
   weaponDice,
   type DamageInput,
   type DualityInput,
@@ -46,14 +48,13 @@ import { appError } from "../src/lib/errors/app-error";
 import { getWeapon } from "../src/lib/srd/index";
 import type { TraitId } from "../src/lib/srd/types";
 import { FRAME_OF, TRAIT_LABEL } from "../src/lib/frames/extras/common";
-import { motherboardStateSchema } from "../src/lib/frames/extras/motherboard";
 import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
-import type { Doc } from "./_generated/dataModel";
+import { motherboardState } from "./characterExtras";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { logAction, newGroupId } from "./lib/actionLog";
-import { parseOrCorrupt } from "./lib/blobs";
-import { assertCanAct, editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { latestLiveRow, logAction, newGroupId } from "./lib/actionLog";
+import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
 import { gmMutation, keyedGmMutation, keyedUserMutation } from "./lib/functions";
@@ -147,15 +148,12 @@ function scopeOf(campaign: Doc<"campaigns">): FeatureScope {
 
 /**
  * The character's Ikonis as a weapon (Motherboard only), read from its
- * `characterExtras` motherboard row (seeded by `characters.create`).
+ * Motherboard module (`motherboardState`: its `characterExtras` row, seeded by
+ * `characters.create`, or the legacy tracker row).
  */
 async function loadIkonis(ctx: QueryCtx, campaign: Doc<"campaigns">, character: Doc<"characters">, sheet: CharacterSheet): Promise<IkonisWeapon> {
   if (campaign.frameId !== FRAME_OF.motherboard) throw appError("DICE_RULE", "Only Motherboard characters have an Ikonis.");
-  const row = await ctx.db
-    .query("characterExtras")
-    .withIndex("by_character_extra", (q) => q.eq("characterId", character._id).eq("extra", "motherboard"))
-    .unique();
-  const state = row === null ? null : parseOrCorrupt(motherboardStateSchema, row.data, "TRACKER_CORRUPT");
+  const state = await motherboardState(ctx, campaign, character._id);
   const weapon = state === null ? null : ikonisWeapon(state.ikonis, state.installed, sheet.level, sheet.proficiency);
   if (weapon === null) throw appError("DICE_RULE", "Design your Ikonis first (Motherboard panel).");
   return weapon;
@@ -164,6 +162,7 @@ async function loadIkonis(ctx: QueryCtx, campaign: Doc<"campaigns">, character: 
 /** Pays a Duality roll's costs (Experiences, roll options) and builds the resolver's input. */
 function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DualityInput; extras: string[] } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
+  assertTypedModifier(args.modifier);
   const live = withEffects(sheet);
   const exp = experienceBonus(sheet.experiences, args.experienceIds);
   const opts = applyRollOptions(spendHope(sheet, exp.hope), rollOptions(sheet, args.kind, CLASS_FEATURES, scope), args.options);
@@ -185,14 +184,40 @@ function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: Feature
   };
 }
 
-function dualitySummary(name: string, args: Pick<DualityArgs, "kind" | "trait">, roll: RollRecord, extras: string[]): string {
-  const vs = roll.difficulty !== undefined ? ` vs ${roll.difficulty}` : "";
-  const using = extras.length > 0 ? ` (${extras.join(", ")})` : "";
-  const manual = roll.manual ? " [manual]" : "";
-  return `${name}: ${TRAIT_LABEL[args.trait]} ${args.kind} roll ${roll.total}${vs}, ${OUTCOME_LABEL[roll.outcome]}${using}${manual}`;
+/** " vs 14" when the GM set the Difficulty, " vs DC 14 (player)" when a player typed it (review M1). */
+function versus(difficulty: number | undefined, gm: boolean): string {
+  if (difficulty === undefined) return "";
+  return gm ? ` vs ${difficulty}` : ` vs DC ${difficulty} (player)`;
 }
 
-type Loaded = { campaign: Doc<"campaigns">; character: Doc<"characters">; sheet: CharacterSheet };
+function dualitySummary(name: string, args: Pick<DualityArgs, "kind" | "trait" | "modifier">, roll: RollRecord, extras: string[], gm: boolean): string {
+  const using = extras.length > 0 ? ` (${extras.join(", ")})` : "";
+  const manual = roll.manual ? " [manual]" : "";
+  return `${name}: ${TRAIT_LABEL[args.trait]} ${args.kind} roll ${roll.total}${typedLabel(args.modifier)}${versus(roll.difficulty, gm)}, ${OUTCOME_LABEL[roll.outcome]}${using}${manual}`;
+}
+
+/** `gm`: the roller is the campaign's GM, so their typed values are the GM's call. */
+type Loaded = { campaign: Doc<"campaigns">; character: Doc<"characters">; sheet: CharacterSheet; gm: boolean };
+
+/** A character the user edits (owner or GM), with its sheet. */
+async function editable(ctx: QueryCtx, user: Doc<"users">, characterId: Id<"characters">): Promise<Loaded> {
+  const { campaign, character, permission } = await loadCharacter(ctx, user, characterId, "edit", "owner");
+  return { campaign, character, sheet: readSheet(character.sheet), gm: permission === "owner" };
+}
+
+/** How far back a damage roll looks for the character's latest action roll. */
+const CRITICAL_SCAN = 20;
+
+/** A damage critical counts as rolled when the character's latest live action roll was a critical success; else it is declared (review M1). */
+async function criticalRolled(ctx: QueryCtx, characterId: Id<"characters">): Promise<boolean> {
+  const rows = await ctx.db
+    .query("actionLog")
+    .withIndex("by_character_at", (q) => q.eq("characterId", characterId))
+    .order("desc")
+    .take(CRITICAL_SCAN);
+  const last = rows.find((r) => r.undoneAt === undefined && r.roll?.kind === "action");
+  return last?.roll?.outcome === "critical";
+}
 
 /** Rolls (or reads typed-in dice), applies Hope, Stress and Fear, saves and logs. */
 async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
@@ -215,7 +240,7 @@ async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded
     actorId: ctx.user._id,
     kind: "roll",
     visibility: "public",
-    summary: dualitySummary(sheet.name, { kind: args.kind, trait }, roll, extras),
+    summary: dualitySummary(sheet.name, { kind: args.kind, trait, modifier: args.modifier }, roll, extras, loaded.gm),
     roll,
     ...(sheetChanged ? { before: sheet } : {}),
     ...(gained !== 0 ? { fearDelta: gained } : {}),
@@ -233,6 +258,7 @@ async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded
  */
 function prepareDamage(sheet: CharacterSheet, args: DamageArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DamageInput; label: string } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
+  assertTypedModifier(args.modifier);
   const opts = applyRollOptions(sheet, rollOptions(sheet, "damage", CLASS_FEATURES, scope), args.options);
   const live = withEffects(sheet);
   const fixed = opts.fixedDice.reduce((s, d) => s + d.value, 0);
@@ -276,6 +302,7 @@ async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded,
   const ikonis = args.source.kind === "ikonis" ? await loadIkonis(ctx, campaign, character, sheet) : null;
   const { paid, input, label } = rules(() => prepareDamage(sheet, args, scopeOf(campaign), ikonis));
   const roll: RollRecord = { ...rules(() => rollDamage(input, rng)), manual };
+  const critical = !args.critical ? "" : (await criticalRolled(ctx, character._id)) ? "critical " : "critical (declared) ";
   const sheetChanged = changed(sheet, paid);
   if (sheetChanged) await saveSheet(ctx, character._id, paid);
   const entryId = await logAction(ctx, {
@@ -284,7 +311,7 @@ async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded,
     actorId: ctx.user._id,
     kind: "roll",
     visibility: "public",
-    summary: `${sheet.name}: ${args.critical ? "critical " : ""}damage ${roll.total} (${label})${manual ? " [manual]" : ""}`,
+    summary: `${sheet.name}: ${critical}damage ${roll.total}${typedLabel(args.modifier)} (${label})${manual ? " [manual]" : ""}`,
     roll,
     ...(sheetChanged ? { before: sheet } : {}),
     undoable: true,
@@ -378,6 +405,7 @@ export const tagTeam = keyedUserMutation({
       const partnerSheet = readSheet(partner.character.sheet);
       assertCanAct(lead.character, lead.sheet);
       assertCanAct(partner.character, partnerSheet);
+      rules(() => [args.initiator, args.partner].forEach((side) => assertTypedModifier(side.modifier)));
       if (lead.sheet.featureUses.some((u) => u.key === TAG_TEAM_USE)) throw appError("DICE_RULE", "You already started a Tag Team Roll this session.");
       const paid = rules(() => spendHope(lead.sheet, TAG_TEAM_HOPE));
       await saveSheet(ctx, lead.character._id, { ...paid, featureUses: [...paid.featureUses, { key: TAG_TEAM_USE, until: "session" }] });
@@ -402,7 +430,7 @@ export const tagTeam = keyedUserMutation({
           actorId: ctx.user._id,
           kind: "roll",
           visibility: "public",
-          summary: `${sheet.name}: Tag Team ${TRAIT_LABEL[side.trait]} roll ${roll.total}${roll.difficulty !== undefined ? ` vs ${roll.difficulty}` : ""}, ${OUTCOME_LABEL[roll.outcome]} (not applied yet)`,
+          summary: `${sheet.name}: Tag Team ${TRAIT_LABEL[side.trait]} roll ${roll.total}${typedLabel(side.modifier)}${versus(roll.difficulty, lead.gm)}, ${OUTCOME_LABEL[roll.outcome]} (not applied yet)`,
           roll,
           groupId,
           ...(before ? { before } : {}),
@@ -441,6 +469,11 @@ export const tagTeamApply = keyedUserMutation({
       if (!pending) throw appError("DICE_RULE", "This Tag Team Roll is already settled.");
       const chosen = group.find((r) => r.characterId === pick)?.roll;
       if (chosen === undefined) throw appError("DICE_RULE", "Pick one of the two rolls.");
+      // Applying over a newer action would make the group undo wipe it (review H2).
+      for (const r of group) {
+        const latest = await latestLiveRow(ctx, r.characterId!);
+        if (latest?._id !== r._id) throw appError("DICE_RULE", "Someone in this Tag Team Roll has acted since; it can't be applied any more.");
+      }
 
       const effects = dualityEffects("action", chosen.outcome);
       const { gained } = effects.fear > 0 ? await gainFear(ctx, lead.campaign._id, effects.fear * group.length) : { gained: 0 };

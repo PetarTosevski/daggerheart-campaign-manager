@@ -115,7 +115,8 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
                 <span className="ml-auto text-[12px] text-[#8fa3a8]">{time(row.at)}</span>
               </div>
               {row.roll ? <DiceFaces dice={row.roll.dice} /> : null}
-              {row.canUndo || ("revealable" in row && row.revealable) ? (
+              {/* A rest is undone from the rest panel (rests.undo reopens it); actionLog.undo refuses it. */}
+              {(row.canUndo && row.kind !== "rest") || ("revealable" in row && row.revealable) ? (
                 <div className="flex gap-2">
                   {"revealable" in row && row.revealable ? (
                     <button
@@ -129,7 +130,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
                       Reveal
                     </button>
                   ) : null}
-                  {row.canUndo ? (
+                  {row.canUndo && row.kind !== "rest" ? (
                     <button type="button" className={BTN} disabled={undo.pending} onClick={() => void undo.fire({ entryId: row._id })}>
                       Undo
                     </button>

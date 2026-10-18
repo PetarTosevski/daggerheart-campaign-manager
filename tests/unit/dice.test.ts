@@ -4,6 +4,7 @@ import {
   advantagePlan,
   applyDualityEffects,
   applyRollOptions,
+  assertTypedModifier,
   DiceRuleError,
   dualityEffects,
   experienceBonus,
@@ -14,6 +15,8 @@ import {
   rollDuality,
   rollFree,
   spendHope,
+  typedLabel,
+  TYPED_MODIFIER_MAX,
   weaponDice,
   type DualityInput,
 } from "../../src/lib/domain/dice";
@@ -236,5 +239,19 @@ describe("manual entry", () => {
     const extra = queueRng([5, 5, 2]);
     rollDuality(base, extra);
     expect(() => extra.done()).toThrow(DiceRuleError);
+  });
+});
+
+describe("typed modifier (review M1)", () => {
+  it("accepts whole numbers from −10 to +10 and refuses the rest", () => {
+    expect(TYPED_MODIFIER_MAX).toBe(10);
+    for (const ok of [-10, 0, 10]) expect(() => assertTypedModifier(ok)).not.toThrow();
+    for (const bad of [-11, 11, 1.5]) expect(() => assertTypedModifier(bad)).toThrow(DiceRuleError);
+  });
+
+  it("labels a non-zero typed modifier for the feed", () => {
+    expect(typedLabel(0)).toBe("");
+    expect(typedLabel(3)).toBe(" +3 typed");
+    expect(typedLabel(-2)).toBe(" -2 typed");
   });
 });
