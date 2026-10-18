@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { cardsForDomains, getClass } from "../../src/lib/srd";
 import { signInAsTestGm } from "./fixtures";
 
 const unique = (label: string) => `${label} ${crypto.randomUUID().slice(0, 8)}`;
@@ -98,4 +99,58 @@ test("a Bard rallies, a Warrior spends the Rally Die on a roll in the dice box, 
   await expect(page.getByRole("heading", { level: 1, name: bard })).toBeVisible();
   await expect(page.getByRole("region", { name: "Features" }).getByRole("button", { name: "Use Rally", exact: true })).toBeEnabled();
   await expect(page.getByRole("region", { name: "Features" }).getByRole("list", { name: "Held dice" })).toHaveCount(0);
+});
+
+/** A level-1 Wizard. */
+const wizardDraft = (name: string) => ({
+  ...common,
+  classId: "wizard",
+  subclassId: "school-of-knowledge",
+  ancestry: { kind: "single", id: "elf" },
+  communityId: "loreborne",
+  traits: { agility: 0, strength: -1, finesse: 1, instinct: 0, presence: 1, knowledge: 2 },
+  name,
+  primaryWeaponId: "dagger",
+  armorId: "gambeson-armor",
+  experiences: ["Archivist", "Stargazer"],
+  domainCards: cardsForDomains(getClass("wizard")!.domains, 1)
+    .filter((c) => c.level === 1)
+    .slice(0, 2)
+    .map((c) => c.id),
+});
+
+test("a Wizard picks a Strange Patterns number in the panel and answers the dice box prompt with a button", async ({ page }) => {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const campaign = unique("Patterns");
+  await page.goto("/frames/witherwild");
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(campaign);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: campaign })).toBeVisible();
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+  const client = await convexAs(page);
+  const hero = unique("Ysolde");
+  const { characterId } = await client.mutation(api.characters.create, { campaignId, draft: wizardDraft(hero), idempotencyKey: crypto.randomUUID() });
+
+  await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  await expect(page.getByRole("heading", { level: 1, name: hero })).toBeVisible();
+  const features = page.getByRole("region", { name: "Features" });
+  const patterns = features.getByRole("group", { name: "Strange Patterns", exact: true });
+  await patterns.getByLabel("Number (1-12)").fill("3");
+  await patterns.getByRole("button", { name: "Use Strange Patterns", exact: true }).click();
+  await expect(patterns.getByText("chose the Strange Patterns number: 3")).toBeVisible();
+
+  // A physical action roll whose Hope Die shows 3 (with Fear): the prompt's "+1 Hope" button takes the benefit.
+  const box = page.getByRole("region", { name: "Dice", exact: true });
+  await box.getByLabel("3D dice").uncheck();
+  await box.getByLabel("Enter physical dice").check();
+  const physical = box.getByRole("group", { name: "Physical dice" });
+  await physical.getByLabel("Hope die (d12)").fill("3");
+  await physical.getByLabel("Fear die (d12)").fill("8");
+  await box.getByRole("button", { name: "Roll", exact: true }).click();
+  const last = box.getByRole("region", { name: "Last roll" });
+  const prompt = last.getByRole("group", { name: /^Strange Patterns: a Duality Die shows 3/ });
+  await prompt.getByRole("button", { name: "+1 Hope" }).click();
+  await expect(prompt.getByRole("status")).toHaveText("used Strange Patterns: +1 Hope");
 });

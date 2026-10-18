@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { readSheet } from "../../convex/lib/characterSheet";
 import { expire } from "@/lib/domain/characters/expiry";
 import { BRAWLERS_STRIKE, COMBO_MAX, comboChain } from "@/lib/domain/class-features/classes/brawler";
+import { warlockSpellcast } from "@/lib/domain/class-features/classes/warlock";
 import { afterDualityRoll, classActions, findFeature, onRest, onSessionEnd, onSessionStart, rollOptions, weaponOverrides } from "@/lib/domain/class-features/hooks";
 import { classFeaturesAvailable } from "@/lib/domain/class-features/index";
 import type { FeatureUseInput, FeatureUseResult } from "@/lib/domain/class-features/types";
@@ -223,12 +224,11 @@ describe("Warlock (HF 14)", () => {
     expect(ruleMessage(() => act(sheetOf("warlock", { classState: { favor: 0 } }), "patronsPact"))).toMatch(/no Favor/);
   });
 
-  it("a tribute gains Favor equal to the Spellcast trait, once per rest", () => {
+  it("tribute is a rest move, not a class action; its gain is the Spellcast trait, never negative", () => {
     const sheet = sheetOf("warlock", { classState: { favor: 1 } });
-    expect(findFeature(sheet, "tribute")?.cost).toEqual({ use: { key: "tribute", until: "rest" } });
-    expect(act(sheet, "tribute").sheet.classState.favor).toBe(3);
-    // A negative Spellcast trait gains nothing.
-    expect(act({ ...sheet, traits: { ...sheet.traits, presence: -1 } }, "tribute").sheet.classState.favor).toBe(1);
+    expect(findFeature(sheet, "tribute")).toBeUndefined();
+    expect(warlockSpellcast(sheet)).toBe(2);
+    expect(warlockSpellcast({ ...sheet, traits: { ...sheet.traits, presence: -1 } })).toBe(0);
   });
 
   it("a success with Hope can take a Favor instead of the Hope, once per roll", () => {
@@ -276,5 +276,55 @@ describe("Witch (HF 16)", () => {
     const used = { ...sheet, featureUses: [{ key: "commune", until: "longRest" as const }] };
     expect(expire(used, "shortRest").featureUses).toHaveLength(1);
     expect(expire(used, "longRest").featureUses).toEqual([]);
+  });
+});
+
+describe("integration (D5 TI-a)", () => {
+  it("Get In & Get Out's advantage ends the effect when taken, so it is spent once", () => {
+    const ready = act(sheetOf("assassin"), "getInGetOut").sheet;
+    const applied = applyRollOptions(ready, rollOptions(ready, "action"), ["getInGetOut"]);
+    expect(applied.sheet.effects).toEqual([]);
+    expect(applied.sheet.featureUses).toEqual([]);
+    // A stale option list can't spend it twice.
+    expect(() => applyRollOptions(applied.sheet, rollOptions(ready, "action"), ["getInGetOut"])).toThrow(/already used/);
+  });
+
+  it("a FeatureScope without hopeAndFear drops a Hope & Fear class's options, overrides and prompts, but not held Rally Dice", () => {
+    const off = { hopeAndFear: false, ikonis: false };
+    const bare = sheetOf("brawler", { primaryWeaponId: BRAWLERS_STRIKE, heldDice: [{ id: "rally-1", kind: "rally", sides: 6, until: "session" }] });
+    expect(weaponOverrides(bare, undefined, off)).toEqual([]);
+    expect(weaponOverrides(bare).map((o) => o.key)).toEqual(["brawlersStrike"]);
+    expect(rollOptions(bare, "damage", undefined, off).map((o) => o.key)).toEqual(["rally:rally-1"]);
+    const warlock = sheetOf("warlock", { heldDice: [{ id: "patron-die", kind: "patron", sides: 6, until: "manual" }] });
+    expect(rollOptions(warlock, "action").map((o) => o.key)).toEqual(["patronDie"]);
+    expect(rollOptions(warlock, "action", undefined, off)).toEqual([]);
+    expect(afterDualityRoll(warlock, { hope: 8, fear: 4, roll: action("successHope") }, undefined, off)).toEqual([]);
+  });
+
+  it("any class holding a Rally Die can spend it: Hope & Fear classes too, listed once for a multiclass", () => {
+    const rally = { id: "rally-1", kind: "rally" as const, sides: 6, until: "session" as const };
+    const brawler = sheetOf("brawler", { heldDice: [rally], stress: 3 });
+    expect(rollOptions(brawler, "action").map((o) => o.key)).toEqual(["rally:rally-1"]);
+    expect(act(brawler, "rallyDieStress", { rng: dice(2) }).sheet).toMatchObject({ stress: 1, heldDice: [] });
+    const multi = sheetOf("witch", { heldDice: [rally], multiclass: { classId: "bard", domainId: "grace", subclassId: "troubadour" } });
+    expect(classActions(multi).filter((f) => f.key === "rallyDieStress")).toHaveLength(1);
+    expect(rollOptions(multi, "damage").filter((o) => o.key === "rally:rally-1")).toHaveLength(1);
+  });
+
+  it("Brawler crit with Marked for Death bonus dice: 14 × Proficiency plus every bonus die's maximum, plus the roll", () => {
+    const strike = weaponOverrides(sheetOf("brawler", { primaryWeaponId: BRAWLERS_STRIKE, proficiency: 1 }))[0]!;
+    const roll = rollDamage({ dice: strike.dice, flat: 0, critical: true, critBase: strike.critBase, bonusDice: [{ count: 2, sides: 4 }] }, dice(1, 1, 1, 1));
+    expect(roll.dice.map((d) => d.sides)).toEqual([8, 6, 4, 4]);
+    expect(roll.total).toBe(14 + 8 + 4);
+  });
+
+  it("Marked for Death and Hex take a target name from the panel's text input (params.choice)", () => {
+    for (const [classId, key] of [
+      ["assassin", "markedForDeath"],
+      ["witch", "hex"],
+    ] as const) {
+      expect(findFeature(sheetOf(classId), key)?.inputs).toEqual([expect.objectContaining({ kind: "text", param: "choice", label: "Target name" })]);
+    }
+    expect(act(sheetOf("witch"), "hex", { params: { choice: "Grak" } }).sheet.classState.hexes).toEqual(["Grak"]);
   });
 });

@@ -5,7 +5,7 @@
 //   tier-many d4s (Executioners Guild: d6 with Ambush, d8 with Backstab at mastery). One target at a time; it lasts
 //   until a rest (`until: "rest"`), the target is defeated or the GM spends Fear equal to the tier (the End button).
 // - Get In & Get Out: spend a Hope for a way in or out; the next roll acting on it has advantage. The dice box offers
-//   the advantage once (a `featureUses` mark); using the feature again offers it again.
+//   the advantage while the effect lasts; taking it ends the effect (`cost.effectId`), so it is spent once.
 import { applyResourceDelta, tierForLevel } from "../../characters/index";
 import type { CharacterSheet } from "../../../validation/characters";
 import type { ClassFeatures } from "../types";
@@ -13,8 +13,6 @@ import { HOPE_COST, refuse, withEffect } from "./shared";
 
 export const MARKED = "marked-for-death";
 export const GET_IN = "get-in-get-out";
-/** The `featureUses` mark set when the dice box spends Get In & Get Out's advantage. */
-export const GET_IN_SPENT = "getInGetOut";
 
 const SUCCESS = new Set(["critical", "successHope", "successFear"]);
 
@@ -47,6 +45,7 @@ export const assassin: ClassFeatures = {
       cost: { stress: 1 },
       automation: "auto",
       target: "none",
+      inputs: [{ kind: "text", param: "choice", label: "Target name", placeholder: "The target" }],
       use: ({ sheet, params, roll }) => {
         if (roll?.kind !== "action" || !SUCCESS.has(roll.outcome)) refuse("Your latest roll is not a successful attack.");
         const target = params.choice?.trim().slice(0, 60) || "The target";
@@ -71,10 +70,7 @@ export const assassin: ClassFeatures = {
       automation: "auto",
       target: "none",
       use: ({ sheet }) => ({
-        sheet: {
-          ...withEffect(sheet, { id: GET_IN, source: "Get In & Get Out", text: "Advantage on the next roll that acts on this way in or out.", until: "session" }),
-          featureUses: sheet.featureUses.filter((u) => u.key !== GET_IN_SPENT),
-        },
+        sheet: withEffect(sheet, { id: GET_IN, source: "Get In & Get Out", text: "Advantage on the next roll that acts on this way in or out.", until: "session" }),
         summary: "used Get In & Get Out: the next roll acting on it has advantage",
       }),
     },
@@ -86,7 +82,7 @@ export const assassin: ClassFeatures = {
       const die = markedDie(sheet);
       return [{ key: "markedForDeath", label: `Marked for Death (+${tier}d${die})`, effect: { kind: "dice", count: tier, sides: die } }];
     }
-    if (!sheet.effects.some((e) => e.id === GET_IN) || sheet.featureUses.some((u) => u.key === GET_IN_SPENT)) return [];
-    return [{ key: "getInGetOut", label: "Get In & Get Out (advantage)", effect: { kind: "advantage" }, cost: { use: { key: GET_IN_SPENT, until: "session" } } }];
+    if (!sheet.effects.some((e) => e.id === GET_IN)) return [];
+    return [{ key: "getInGetOut", label: "Get In & Get Out (advantage)", effect: { kind: "advantage" }, cost: { effectId: GET_IN } }];
   },
 };

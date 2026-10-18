@@ -9,7 +9,6 @@ import { applyResourceDelta } from "../../characters/index";
 import { actionOutcome, type RolledDie } from "../../duality";
 import type { CharacterSheet } from "../../../validation/characters";
 import type { ClassFeatures, FeatureMeta } from "../types";
-import { rallyDieOptions, rallyDieStress } from "./bard";
 import { assistFeature, dieContribution, isFailure, refuse, rollGains } from "./shared";
 
 const FOCUS_MAX = 80;
@@ -27,6 +26,7 @@ const rangersFocus: FeatureMeta = {
   cost: { hope: 1 },
   automation: "auto",
   target: "self",
+  inputs: [{ kind: "text", param: "choice", label: "Target name", placeholder: "the target" }],
   use: ({ sheet, params, roll }) => {
     if (roll?.kind !== "action") refuse("Make the attack first: your latest roll is not an action roll.");
     if (isFailure(roll)) return { sheet, summary: "used Ranger’s Focus: the attack failed, no Focus" };
@@ -80,6 +80,5 @@ const endFocus: FeatureMeta = {
 export const ranger: ClassFeatures = {
   classId: "ranger",
   hopeFeature: assistFeature("holdThemOff", "Hold Them Off", "After a successful weapon attack, use the same roll against two more adversaries within range."),
-  classActions: [rangersFocus, focusReroll, endFocus, rallyDieStress],
-  rollOptions: (sheet) => rallyDieOptions(sheet, "ranger"),
+  classActions: [rangersFocus, focusReroll, endFocus],
 };

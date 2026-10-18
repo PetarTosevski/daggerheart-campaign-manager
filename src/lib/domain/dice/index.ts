@@ -202,7 +202,7 @@ export type AppliedOptions = {
 
 /**
  * Applies the auto options and the chosen ones (`rollOptions` hook): pays each
- * cost (Hope, Stress, a held die, a once-per use) and collects what they add.
+ * cost (Hope, Stress, a held die, a once-per use, an effect it ends) and collects what they add.
  * An unknown key or a feature already used is a dice-rule violation.
  */
 export function applyRollOptions(sheet: CharacterSheet, available: readonly RollOption[], chosen: readonly string[]): AppliedOptions {
@@ -218,6 +218,11 @@ export function applyRollOptions(sheet: CharacterSheet, available: readonly Roll
       const use = cost.use;
       if (next.featureUses.some((u) => u.key === use.key)) throw new DiceRuleError(`${option.label} is already used.`);
       next = { ...next, featureUses: [...next.featureUses, { key: use.key, until: use.until }] };
+    }
+    if (cost?.effectId !== undefined) {
+      const effectId = cost.effectId;
+      if (!next.effects.some((e) => e.id === effectId)) throw new DiceRuleError(`${option.label} is already used.`);
+      next = { ...next, effects: next.effects.filter((e) => e.id !== effectId) };
     }
     const heldId = cost?.heldDieId ?? (option.effect.kind === "heldDie" ? option.effect.heldDieId : undefined);
     if (heldId !== undefined) {
@@ -245,9 +250,10 @@ export type DicePool = readonly { count: number; sides: number }[];
 /**
  * A weapon's damage dice at a Proficiency (CB 98): the leading die is rolled
  * Proficiency times; any further die and the flat bonus are added once.
- * `"d8+1 phy"` at Proficiency 2 → 2d8 + 1.
+ * `"d8+1 phy"` at Proficiency 2 → 2d8 + 1. `scaleAll` scales every die
+ * (Brawler's Strike: "both the d8 and d6 scale off your Proficiency", HF 10).
  */
-export function weaponDice(damage: string, proficiency: number): { dice: DicePool; flat: number } {
+export function weaponDice(damage: string, proficiency: number, scaleAll = false): { dice: DicePool; flat: number } {
   const formula = damage.trim().split(/\s+/)[0] ?? "";
   const terms = formula.split("+");
   const dice: { count: number; sides: number }[] = [];
@@ -256,7 +262,7 @@ export function weaponDice(damage: string, proficiency: number): { dice: DicePoo
     const die = /^(\d*)d(\d+)$/.exec(term);
     if (die) {
       const count = die[1] ? Number(die[1]) : 1;
-      dice.push({ count: i === 0 ? count * proficiency : count, sides: Number(die[2]) });
+      dice.push({ count: i === 0 || scaleAll ? count * proficiency : count, sides: Number(die[2]) });
     } else if (/^\d+$/.test(term)) flat += Number(term);
     else throw new DiceRuleError(`Can't read the damage "${damage}".`);
   }
@@ -288,15 +294,21 @@ export type DamageInput = {
   /** Flat bonus: the weapon's, effects' and the typed modifier. */
   flat: number;
   critical: boolean;
-  /** Replaces the dice's maximum on a critical (Brawler: 14 × Proficiency). */
+  /** Replaces `dice`' maximum on a critical (Brawler: 14 × Proficiency). */
   critBase?: number;
+  /** Dice roll options add (Marked for Death, Sneak Attack, a Rally Die), rolled after `dice`; a critical maxes them too. */
+  bonusDice?: DicePool;
 };
 
-/** A damage roll. A critical starts from the dice's maximum (CB 98), folded into `modifier`. */
+/**
+ * A damage roll. A critical starts from the maximum of every damage die (CB 98: "add the highest
+ * possible value of the damage dice"), `critBase` standing in for the base dice; folded into `modifier`.
+ */
 export function rollDamage(input: DamageInput, rng: Rng): RollRecord {
   assertInt(input.flat, -LIMITS.modifier * 2, LIMITS.modifier * 4, "The modifier");
-  const dice = rollPool(input.dice, "damage", rng);
-  const crit = input.critical ? (input.critBase ?? maxRoll(input.dice)) : 0;
+  const bonus = input.bonusDice ?? [];
+  const dice = rollPool([...input.dice, ...bonus], "damage", rng);
+  const crit = input.critical ? (input.critBase ?? maxRoll(input.dice)) + maxRoll(bonus) : 0;
   const modifier = input.flat + crit;
   return { kind: "damage", dice, modifier, total: Math.max(0, sum(dice) + modifier), outcome: "none", manual: false };
 }

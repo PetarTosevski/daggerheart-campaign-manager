@@ -9,11 +9,20 @@
  * - `tagTeam` then `tagTeamApply`: both PCs roll, then the initiator picks the
  *   roll that applies to both (CB 97); the four rows share one group.
  * - `gmRoll` / `reveal`: GM free rolls, hidden from players until revealed.
+ *
+ * Class-feature hooks run in the campaign's `FeatureScope`: a Hope & Fear
+ * class's options, overrides and prompts only with `hopeAndFear` on, and no
+ * Combat Training in Motherboard (CB 295). In Motherboard the Ikonis is an
+ * attack (`ikonis: true`) and damage (`source.kind: "ikonis"`) source (CB 301).
  */
 import { v } from "convex/values";
 
 import { withEffects } from "../src/lib/domain/characters/effects";
+import { BRAWLERS_STRIKE } from "../src/lib/domain/class-features/classes/brawler";
 import { afterDualityRoll, rollOptions, weaponOverrides } from "../src/lib/domain/class-features/hooks";
+import { CLASS_FEATURES } from "../src/lib/domain/class-features/index";
+import type { FeatureScope } from "../src/lib/domain/class-features/types";
+import { ikonisWeapon, type IkonisWeapon } from "../src/lib/domain/dice/ikonis";
 import {
   applyDualityEffects,
   applyRollOptions,
@@ -36,11 +45,14 @@ import type { RollRecord } from "../src/lib/domain/duality";
 import { appError } from "../src/lib/errors/app-error";
 import { getWeapon } from "../src/lib/srd/index";
 import type { TraitId } from "../src/lib/srd/types";
-import { TRAIT_LABEL } from "../src/lib/frames/extras/common";
+import { FRAME_OF, TRAIT_LABEL } from "../src/lib/frames/extras/common";
+import { motherboardStateSchema } from "../src/lib/frames/extras/motherboard";
+import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
+import { parseOrCorrupt } from "./lib/blobs";
 import { assertCanAct, editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
@@ -67,6 +79,8 @@ const dualityFields = {
   attack: v.boolean(),
   /** Chosen `rollOptions` keys (auto options apply anyway). */
   options: v.array(v.string()),
+  /** An Ikonis attack (Motherboard): its trait, Converge/Target bonus and Override's advantage apply. */
+  ikonis: v.optional(v.boolean()),
 };
 
 const poolValidator = v.array(v.object({ count: v.number(), sides: v.number() }));
@@ -74,6 +88,8 @@ const poolValidator = v.array(v.object({ count: v.number(), sides: v.number() })
 const damageSource = v.union(
   v.object({ kind: v.literal("weapon"), slot: v.union(v.literal("primary"), v.literal("secondary")) }),
   v.object({ kind: v.literal("override"), key: v.string() }),
+  /** The character's Ikonis (Motherboard, CB 301). */
+  v.object({ kind: v.literal("ikonis") }),
   /** Dice named by a spell or feature ("d6 using Spellcast"): rolled as given. */
   v.object({ kind: v.literal("dice"), dice: poolValidator }),
 );
@@ -90,8 +106,20 @@ const promptValidator = v.object({
 const dualityResult = v.object({ entryId: v.id("actionLog"), roll: rollValidator, fearGained: v.number(), prompts: v.array(promptValidator) });
 const damageResult = v.object({ entryId: v.id("actionLog"), roll: rollValidator });
 
-type DualityArgs = { kind: "action" | "reaction"; trait: TraitId; modifier: number; difficulty?: number; experienceIds: string[]; advantage: number; disadvantage: number; help: number; attack: boolean; options: string[] };
-type DamageSource = { kind: "weapon"; slot: "primary" | "secondary" } | { kind: "override"; key: string } | { kind: "dice"; dice: { count: number; sides: number }[] };
+type DualityArgs = {
+  kind: "action" | "reaction";
+  trait: TraitId;
+  modifier: number;
+  difficulty?: number;
+  experienceIds: string[];
+  advantage: number;
+  disadvantage: number;
+  help: number;
+  attack: boolean;
+  options: string[];
+  ikonis?: boolean;
+};
+type DamageSource = { kind: "weapon"; slot: "primary" | "secondary" } | { kind: "override"; key: string } | { kind: "ikonis" } | { kind: "dice"; dice: { count: number; sides: number }[] };
 type DamageArgs = { source: DamageSource; critical: boolean; modifier: number; options: string[] };
 
 const MAX_OPTIONS = 20;
@@ -112,26 +140,48 @@ function signed(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`;
 }
 
+/** What the campaign lets class modules offer (Hope & Fear classes, Combat Training outside Motherboard). */
+function scopeOf(campaign: Doc<"campaigns">): FeatureScope {
+  return { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear, ikonis: campaign.frameId === FRAME_OF.motherboard };
+}
+
+/**
+ * The character's Ikonis as a weapon (Motherboard only), read from its
+ * `characterExtras` motherboard row (seeded by `characters.create`).
+ */
+async function loadIkonis(ctx: QueryCtx, campaign: Doc<"campaigns">, character: Doc<"characters">, sheet: CharacterSheet): Promise<IkonisWeapon> {
+  if (campaign.frameId !== FRAME_OF.motherboard) throw appError("DICE_RULE", "Only Motherboard characters have an Ikonis.");
+  const row = await ctx.db
+    .query("characterExtras")
+    .withIndex("by_character_extra", (q) => q.eq("characterId", character._id).eq("extra", "motherboard"))
+    .unique();
+  const state = row === null ? null : parseOrCorrupt(motherboardStateSchema, row.data, "TRACKER_CORRUPT");
+  const weapon = state === null ? null : ikonisWeapon(state.ikonis, state.installed, sheet.level, sheet.proficiency);
+  if (weapon === null) throw appError("DICE_RULE", "Design your Ikonis first (Motherboard panel).");
+  return weapon;
+}
+
 /** Pays a Duality roll's costs (Experiences, roll options) and builds the resolver's input. */
-function prepareDuality(sheet: CharacterSheet, args: DualityArgs): { paid: CharacterSheet; input: DualityInput; extras: string[] } {
+function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DualityInput; extras: string[] } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
   const live = withEffects(sheet);
   const exp = experienceBonus(sheet.experiences, args.experienceIds);
-  const opts = applyRollOptions(spendHope(sheet, exp.hope), rollOptions(sheet, args.kind), args.options);
+  const opts = applyRollOptions(spendHope(sheet, exp.hope), rollOptions(sheet, args.kind, CLASS_FEATURES, scope), args.options);
+  const attack = args.attack || ikonis !== null;
   return {
     paid: opts.sheet,
     input: {
       kind: args.kind,
-      trait: live.traits[args.trait],
-      modifier: args.modifier + exp.value + opts.modifier + (args.attack ? live.attackBonus : 0),
+      trait: live.traits[ikonis?.trait ?? args.trait],
+      modifier: args.modifier + exp.value + opts.modifier + (attack ? live.attackBonus : 0) + (ikonis?.attack ?? 0),
       ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}),
-      advantage: args.advantage + opts.advantage,
+      advantage: args.advantage + opts.advantage + (ikonis?.advantage ? 1 : 0),
       disadvantage: args.disadvantage,
       help: args.help,
       extraDice: opts.extraDice,
       fixedDice: opts.fixedDice,
     },
-    extras: [...exp.names, ...opts.labels],
+    extras: [...(ikonis ? [ikonis.label, ...ikonis.augments] : []), ...exp.names, ...opts.labels],
   };
 }
 
@@ -148,7 +198,10 @@ type Loaded = { campaign: Doc<"campaigns">; character: Doc<"characters">; sheet:
 async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
   assertCanAct(character, sheet);
-  const { paid, input, extras } = rules(() => prepareDuality(sheet, args));
+  const scope = scopeOf(campaign);
+  const ikonis = args.ikonis ? await loadIkonis(ctx, campaign, character, sheet) : null;
+  const { paid, input, extras } = rules(() => prepareDuality(sheet, args, scope, ikonis));
+  const trait = ikonis?.trait ?? args.trait;
   const rolled = rules(() => rollDuality(input, rng));
   const roll: RollRecord = { ...rolled.roll, manual };
   const effects = dualityEffects(args.kind, roll.outcome);
@@ -162,45 +215,56 @@ async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded
     actorId: ctx.user._id,
     kind: "roll",
     visibility: "public",
-    summary: dualitySummary(sheet.name, args, roll, extras),
+    summary: dualitySummary(sheet.name, { kind: args.kind, trait }, roll, extras),
     roll,
     ...(sheetChanged ? { before: sheet } : {}),
     ...(gained !== 0 ? { fearDelta: gained } : {}),
     undoable: true,
   });
-  const prompts = args.kind === "action" ? afterDualityRoll(next, { hope: rolled.hope, fear: rolled.fear, roll }) : [];
+  // Reaction rolls prompt too (Strange Patterns: "a Duality Die shows it", CB 50); prompts that need Hope check the roll kind.
+  const prompts = afterDualityRoll(next, { hope: rolled.hope, fear: rolled.fear, roll }, CLASS_FEATURES, scope);
   return { entryId, roll, fearGained: gained, prompts };
 }
 
-/** The damage dice of a source: weapon dice at Proficiency (CB 98), a class override, or dice as given. */
-function prepareDamage(sheet: CharacterSheet, args: DamageArgs): { paid: CharacterSheet; input: DamageInput; label: string } {
+/**
+ * The damage dice of a source: weapon dice at Proficiency (CB 98), a class
+ * override, the Ikonis, or dice as given. Option dice are bonus dice, so a
+ * critical maxes them too (CB 98).
+ */
+function prepareDamage(sheet: CharacterSheet, args: DamageArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DamageInput; label: string } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
-  const opts = applyRollOptions(sheet, rollOptions(sheet, "damage"), args.options);
+  const opts = applyRollOptions(sheet, rollOptions(sheet, "damage", CLASS_FEATURES, scope), args.options);
   const live = withEffects(sheet);
   const fixed = opts.fixedDice.reduce((s, d) => s + d.value, 0);
-  const base = { critical: args.critical };
-  const source = args.source;
+  const base = { critical: args.critical, bonusDice: opts.extraDice };
+  const extra = args.modifier + opts.modifier + fixed;
+  const overrides = weaponOverrides(sheet, CLASS_FEATURES, scope);
+  let source = args.source;
+  // Brawler's Strike as the primary weapon is the I Am the Weapon override when it applies (HF 10).
+  if (source.kind === "weapon" && source.slot === "primary" && sheet.primaryWeaponId === BRAWLERS_STRIKE && overrides.some((o) => o.key === "brawlersStrike")) {
+    source = { kind: "override", key: "brawlersStrike" };
+  }
   let input: DamageInput;
   let label: string;
   if (source.kind === "weapon") {
     const weaponId = source.slot === "primary" ? sheet.primaryWeaponId : sheet.secondaryWeaponId;
     const weapon = weaponId ? getWeapon(weaponId) : undefined;
     if (!weapon) throw new DiceRuleError(`No ${source.slot} weapon is equipped.`);
-    const { dice, flat } = weaponDice(weapon.damage, sheet.proficiency);
-    input = { ...base, dice: [...dice, ...opts.extraDice], flat: flat + args.modifier + opts.modifier + live.damageBonus + fixed };
+    const { dice, flat } = weaponDice(weapon.damage, sheet.proficiency, weapon.id === BRAWLERS_STRIKE);
+    input = { ...base, dice, flat: flat + extra + live.damageBonus };
     label = weapon.name;
   } else if (source.kind === "override") {
-    const override = weaponOverrides(sheet).find((o) => o.key === source.key);
+    const key = source.key;
+    const override = overrides.find((o) => o.key === key);
     if (!override) throw new DiceRuleError("That attack isn't available.");
-    input = {
-      ...base,
-      dice: [...override.dice, ...opts.extraDice],
-      flat: override.flat + args.modifier + opts.modifier + live.damageBonus + fixed,
-      ...(override.critBase !== undefined ? { critBase: override.critBase } : {}),
-    };
+    input = { ...base, dice: override.dice, flat: override.flat + extra + live.damageBonus, ...(override.critBase !== undefined ? { critBase: override.critBase } : {}) };
     label = override.label;
+  } else if (source.kind === "ikonis") {
+    if (ikonis === null) throw new DiceRuleError("Only Motherboard characters have an Ikonis.");
+    input = { ...base, dice: ikonis.dice, flat: ikonis.flat + extra + live.damageBonus };
+    label = [ikonis.label, ...ikonis.augments].join(", ");
   } else {
-    input = { ...base, dice: [...source.dice, ...opts.extraDice], flat: args.modifier + opts.modifier + fixed };
+    input = { ...base, dice: source.dice, flat: extra };
     label = source.dice.map((d) => `${d.count}d${d.sides}`).join("+");
   }
   return { paid: opts.sheet, input, label: [label, ...opts.labels].join(", ") };
@@ -209,7 +273,8 @@ function prepareDamage(sheet: CharacterSheet, args: DamageArgs): { paid: Charact
 async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DamageArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
   assertCanAct(character, sheet);
-  const { paid, input, label } = rules(() => prepareDamage(sheet, args));
+  const ikonis = args.source.kind === "ikonis" ? await loadIkonis(ctx, campaign, character, sheet) : null;
+  const { paid, input, label } = rules(() => prepareDamage(sheet, args, scopeOf(campaign), ikonis));
   const roll: RollRecord = { ...rules(() => rollDamage(input, rng)), manual };
   const sheetChanged = changed(sheet, paid);
   if (sheetChanged) await saveSheet(ctx, character._id, paid);

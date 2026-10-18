@@ -7,7 +7,6 @@
 // clears Restrained and Vulnerable (it can't have them); the damage-severity reduction is a reminder.
 import type { CharacterSheet } from "../../../validation/characters";
 import type { ClassFeatures, FeatureMeta } from "../types";
-import { rallyDieOptions, rallyDieStress } from "./bard";
 import { HOPE_COST, refuse } from "./shared";
 
 /** Unstoppable Die size by level (CB 36). */
@@ -79,12 +78,10 @@ export const guardian: ClassFeatures = {
       return { sheet: { ...sheet, armorMarked: Math.max(0, sheet.armorMarked - 2) }, summary: "used Frontline Tank: cleared 2 Armor Slots" };
     },
   },
-  classActions: [unstoppable, unstoppableHit, endUnstoppable, rallyDieStress],
+  classActions: [unstoppable, unstoppableHit, endUnstoppable],
   rollOptions: (sheet, kind) => {
     const die = sheet.classState.unstoppable;
-    const own =
-      kind === "damage" && die !== undefined ? [{ key: "unstoppable", label: `Unstoppable +${die.value}`, effect: { kind: "modifier" as const, value: die.value }, auto: true }] : [];
-    return [...own, ...rallyDieOptions(sheet, "guardian")];
+    return kind === "damage" && die !== undefined ? [{ key: "unstoppable", label: `Unstoppable +${die.value}`, effect: { kind: "modifier" as const, value: die.value }, auto: true }] : [];
   },
   // The scene ends with the session at the latest.
   onSessionEnd: (sheet) => (sheet.classState.unstoppable === undefined ? sheet : withoutDie(sheet)),

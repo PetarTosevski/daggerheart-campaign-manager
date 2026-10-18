@@ -9,7 +9,6 @@
 import { applyResourceDelta, hopeMax } from "../../characters/index";
 import type { RollRecord } from "../../duality";
 import type { ClassFeatures, FeatureMeta } from "../types";
-import { rallyDieOptions, rallyDieStress } from "./bard";
 import { assistFeature, dualityDie, refuse } from "./shared";
 
 const CHANGE = "strangePatternsChange";
@@ -27,6 +26,7 @@ const strangePatterns: FeatureMeta = {
   text: "Choose a number from 1 to 12. When a Duality Die shows it, gain a Hope or clear a Stress. You can change it when you take a long rest.",
   automation: "auto",
   target: "self",
+  inputs: [{ kind: "number", param: "amount", label: "Number (1-12)", min: 1, max: 12 }],
   use: ({ sheet, params }) => {
     const n = params.amount ?? Number(params.choice);
     if (!Number.isInteger(n) || n < 1 || n > 12) refuse("Choose a number from 1 to 12.");
@@ -45,6 +45,19 @@ const strangePatternsBenefit: FeatureMeta = {
   text: "Your latest Duality roll showed your number: gain a Hope or clear a Stress.",
   automation: "auto",
   target: "self",
+  inputs: [
+    {
+      kind: "select",
+      param: "choice",
+      label: "Benefit",
+      required: false,
+      empty: "Hope (Stress when Hope is full)",
+      options: () => [
+        { value: "hope", label: "+1 Hope" },
+        { value: "stress", label: "Clear 1 Stress" },
+      ],
+    },
+  ],
   use: ({ sheet, params, roll }) => {
     const n = sheet.classState.strangeNumber;
     if (n === undefined) refuse("Choose your Strange Patterns number first.");
@@ -63,8 +76,7 @@ const strangePatternsBenefit: FeatureMeta = {
 export const wizard: ClassFeatures = {
   classId: "wizard",
   hopeFeature: assistFeature("notThisTime", "Not This Time", "Force an adversary within Far range to reroll an attack or damage roll."),
-  classActions: [strangePatterns, strangePatternsBenefit, rallyDieStress],
-  rollOptions: (sheet) => rallyDieOptions(sheet, "wizard"),
+  classActions: [strangePatterns, strangePatternsBenefit],
   afterDualityRoll: (sheet, { roll }) => {
     const n = sheet.classState.strangeNumber;
     if (n === undefined || !matches(roll, n)) return [];

@@ -17,6 +17,7 @@ import {
   weaponDice,
   type DualityInput,
 } from "../../src/lib/domain/dice";
+import { ikonisWeapon } from "../../src/lib/domain/dice/ikonis";
 import type { RollOption } from "../../src/lib/domain/class-features/types";
 import { characterSheetSchema, type CharacterSheet } from "../../src/lib/validation/characters";
 
@@ -184,6 +185,44 @@ describe("damage (CB 98)", () => {
   it("refuses dice the app doesn't roll", () => {
     expect(() => rollDamage({ dice: [{ count: 1, sides: 7 }], flat: 0, critical: false }, seq(3))).toThrow(DiceRuleError);
     expect(() => rollFree([], 0, seq())).toThrow(DiceRuleError);
+  });
+});
+
+describe("integration (D5 TI-a)", () => {
+  it("weaponDice scaleAll scales every die (Brawler's Strike d8+d6 at Proficiency 2 → 2d8 + 2d6)", () => {
+    expect(weaponDice("d8+d6 phy", 2).dice).toEqual([
+      { count: 2, sides: 8 },
+      { count: 1, sides: 6 },
+    ]);
+    expect(weaponDice("d8+d6 phy", 2, true).dice).toEqual([
+      { count: 2, sides: 8 },
+      { count: 2, sides: 6 },
+    ]);
+  });
+
+  it("a critical maxes option bonus dice too (CB 98), after critBase or the base dice", () => {
+    const plain = rollDamage({ dice: [{ count: 1, sides: 8 }], flat: 1, critical: true, bonusDice: [{ count: 1, sides: 6 }] }, seq(2, 3));
+    expect(plain.dice.map((d) => d.sides)).toEqual([8, 6]);
+    expect(plain.total).toBe(8 + 6 + 2 + 3 + 1);
+    expect(rollDamage({ dice: [{ count: 1, sides: 8 }], flat: 0, critical: false, bonusDice: [{ count: 1, sides: 6 }] }, seq(2, 3)).total).toBe(5);
+  });
+
+  it("an option with cost.effectId ends that effect, and refuses once it is gone", () => {
+    const withEffect = sheet({ effects: [{ id: "way-in", source: "Get In & Get Out", text: "x", until: "session" }] });
+    const option: RollOption = { key: "way", label: "Way in", effect: { kind: "advantage" }, cost: { effectId: "way-in" } };
+    const applied = applyRollOptions(withEffect, [option], ["way"]);
+    expect(applied.advantage).toBe(1);
+    expect(applied.sheet.effects).toEqual([]);
+    expect(() => applyRollOptions(applied.sheet, [option], ["way"])).toThrow(DiceRuleError);
+  });
+
+  it("the Ikonis: range dice at Proficiency, Bonded (+level) and augments (CB 301, module sheet)", () => {
+    const ikonis = { name: "Spark rod", description: "", trait: "strength" as const, range: "Melee" as const, damageType: "physical" as const };
+    expect(ikonisWeapon({ ...ikonis, range: null }, [], 1, 1)).toBeNull();
+    expect(ikonisWeapon(ikonis, [], 3, 2)).toEqual({ label: "Spark rod", trait: "strength", dice: [{ count: 2, sides: 12 }], flat: 1 + 3, attack: 0, advantage: false, augments: [] });
+    const built = ikonisWeapon(ikonis, ["force", "sear", "target", "converge", "override", "guard"], 1, 1)!;
+    expect(built).toMatchObject({ flat: 1 + 1 + 1 + 2, attack: 3, advantage: true });
+    expect(built.augments).toEqual(["Force", "Sear", "Target", "Converge", "Override"]);
   });
 });
 
