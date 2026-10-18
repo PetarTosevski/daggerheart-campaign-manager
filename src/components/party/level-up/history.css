@@ -33,6 +33,9 @@
 .adv-mc legend{grid-column:1/-1}
 .adv-field{display:flex;flex-direction:column;gap:6px;min-width:0}
 .adv-field select{min-height:44px;width:100%}
+/* The upgraded subclass card: the Heritage tab's hero card (hero-card.css) at its grid width. */
+.adv-subclass{gap:8px}
+.adv-subclass .hc-card{width:100%;max-width:320px;height:auto}
 
 @media (max-width:640px){
   .adv-picker{margin-left:0}

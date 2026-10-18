@@ -2,77 +2,14 @@
 
 import "./heritage.css";
 
-import { Lock } from "lucide-react";
-
-import { assetBackground } from "@/lib/design-assets";
-import { getClass, getDomain, getSubclass, PORTRAITS, type Feature, type SubclassDef } from "@/lib/srd";
+import { HeroCard } from "@/components/party/hero-card";
+import { getClass, getDomain, getSubclass, PORTRAITS, type SubclassDef } from "@/lib/srd";
 
 import { useSheet } from "../sheet-context";
 import { heritageCards } from "../sheet-helpers";
 
 // Domains > Heritage & Subclass (board page 3): subclass cards with rank locks, multiclass cards, ancestry and
-// community cards, as the board's hero cards (hc-card).
-
-function Features({ features }: { features: readonly Feature[] }) {
-  return (
-    <div className="hc-fx">
-      {features.map((f) => (
-        <p key={f.name} className="hc-text">
-          <strong>{f.name}</strong>
-          {f.text ? `: ${f.text}` : ""}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-function HeritageCardView({
-  kind,
-  name,
-  tier,
-  sub,
-  features,
-  art,
-  note,
-  locked,
-}: {
-  kind: string;
-  name: string;
-  tier?: string;
-  sub?: string;
-  features: readonly Feature[];
-  art?: { asset: string; position: string };
-  note?: string;
-  locked?: string;
-}) {
-  return (
-    <article className={`hc-card${locked ? " locked" : ""}`} aria-label={`${kind}: ${name}${tier ? ` ${tier}` : ""}${locked ? " (locked)" : ""}`}>
-      <div className="hc-top">
-        <div
-          className="hc-art"
-          aria-hidden="true"
-          style={art ? { backgroundImage: assetBackground(art.asset), backgroundPosition: art.position } : undefined}
-        />
-        <span className="hc-kind">{kind}</span>
-      </div>
-      <div className="hc-body">
-        <div className="hc-head">
-          <h4 className="hc-name">{name}</h4>
-          {tier ? <span className="hc-tier">{tier}</span> : null}
-        </div>
-        {sub ? <span className="hc-sub">{sub}</span> : null}
-        <Features features={features} />
-        {note ? <p className="hc-note">{note}</p> : null}
-        {locked ? (
-          <span className="hc-lock">
-            <Lock className="size-3.5" aria-hidden="true" />
-            {locked}
-          </span>
-        ) : null}
-      </div>
-    </article>
-  );
-}
+// community cards, as the board's hero cards (HeroCard, src/components/party/hero-card.tsx).
 
 const spellcastLine = (sub: SubclassDef | undefined) =>
   sub?.spellcastTrait ? `Spellcast trait: ${sub.spellcastTrait[0].toUpperCase()}${sub.spellcastTrait.slice(1)}` : undefined;
@@ -85,7 +22,7 @@ function MulticlassCards({ multiclass }: { multiclass: { classId: string; domain
   return (
     <>
       <div role="listitem">
-        <HeritageCardView
+        <HeroCard
           kind="Multiclass"
           name={cls?.name ?? multiclass.classId}
           sub={`Domain: ${domain}`}
@@ -94,7 +31,7 @@ function MulticlassCards({ multiclass }: { multiclass: { classId: string; domain
         />
       </div>
       <div role="listitem">
-        <HeritageCardView
+        <HeroCard
           kind="Multiclass subclass"
           name={sub?.name ?? multiclass.subclassId}
           tier="Foundation"
@@ -131,10 +68,10 @@ export function HeritageSection() {
         {subclass ? (
           <>
             <div role="listitem">
-              <HeritageCardView kind="Subclass" name={subclass.name} tier="Foundation" sub={spellcast} features={subclass.foundation} art={subArt} />
+              <HeroCard kind="Subclass" name={subclass.name} tier="Foundation" sub={spellcast} features={subclass.foundation} art={subArt} />
             </div>
             <div role="listitem">
-              <HeritageCardView
+              <HeroCard
                 kind="Subclass"
                 name={subclass.name}
                 tier="Specialization"
@@ -144,7 +81,7 @@ export function HeritageSection() {
               />
             </div>
             <div role="listitem">
-              <HeritageCardView
+              <HeroCard
                 kind="Subclass"
                 name={subclass.name}
                 tier="Mastery"
@@ -158,7 +95,7 @@ export function HeritageSection() {
         {sheet.multiclass ? <MulticlassCards multiclass={sheet.multiclass} /> : null}
         {heritage.map((c) => (
           <div role="listitem" key={c.key}>
-            <HeritageCardView kind={c.kind} name={c.name} features={c.features} art={c.art} note={c.note} />
+            <HeroCard kind={c.kind} name={c.name} features={c.features} art={c.art} note={c.note} />
           </div>
         ))}
       </div>
