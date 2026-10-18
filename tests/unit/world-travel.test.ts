@@ -12,6 +12,7 @@ import {
   mapScale,
   routeWarning,
   scaleBar,
+  canCross,
   terrainSpeed,
   trailLeg,
   trailMethod,
@@ -32,7 +33,8 @@ describe("travel distances (house rule)", () => {
   });
 
   it("uses the board's speeds", () => {
-    expect(DEFAULT_TRAVEL_RULES.speeds.foot).toEqual({ road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 8 });
+    // Water 0: open water can't be crossed on foot (user 2026-10-18).
+    expect(DEFAULT_TRAVEL_RULES.speeds.foot).toEqual({ road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 0 });
     expect(DEFAULT_TRAVEL_RULES.speeds.boat.water).toBe(100);
     expect([DEFAULT_TRAVEL_RULES.slow, DEFAULT_TRAVEL_RULES.fast]).toEqual([0.75, 1.33]);
   });
@@ -71,10 +73,19 @@ describe("trail legs (party trail and token distances)", () => {
     expect(trailLeg(a, b, ww, all(""), "foot").days).toBeCloseTo(3, 6);
   });
 
-  it("flags water; impassable adds no time but blocks", () => {
-    const water = trailLeg(a, b, ww, all("."), "foot");
-    expect(water).toMatchObject({ water: true, blocked: false });
-    expect(water.days).toBeCloseTo(15, 6);
+  it("water blocks on foot, mounted and by wagon but not by boat or flying; impassable adds no time but blocks", () => {
+    for (const method of ["foot", "mount", "wagon"] as const) {
+      expect(canCross(DEFAULT_TRAVEL_RULES, method, ".")).toBe(false);
+      const water = trailLeg(a, b, ww, all("."), method);
+      expect(water).toMatchObject({ water: true, blocked: true, days: 0 });
+    }
+    const boat = trailLeg(a, b, ww, all("."), "boat");
+    expect(boat).toMatchObject({ water: true, blocked: false });
+    expect(boat.days).toBeCloseTo(1.2, 6);
+    expect(canCross(DEFAULT_TRAVEL_RULES, "fly", ".")).toBe(true);
+    // A GM who gives Water a speed makes it crossable again.
+    const ford = { ...DEFAULT_TRAVEL_RULES, speeds: { ...DEFAULT_TRAVEL_RULES.speeds, foot: { ...DEFAULT_TRAVEL_RULES.speeds.foot, water: 8 } } };
+    expect(trailLeg(a, b, ww, all("."), "foot", ford).days).toBeCloseTo(15, 6);
     const half = trailLeg(a, b, ww, (p) => (p.x < 15 ? "#" : "w"), "foot");
     expect(half.blocked).toBe(true);
     expect(half.days).toBeCloseTo(1.5, 6);
@@ -91,7 +102,7 @@ describe("trail legs (party trail and token distances)", () => {
     expect(t.km).toBeCloseTo(120, 6);
     expect(formatLeg({ ...t, days: 4 })).toBe("~120 km · ~4 days");
     expect(formatLeg({ km: 50, days: 1.25, water: true, blocked: false })).toBe("~50 km · ~1.3 days · crosses water");
-    expect(formatLeg({ km: 5, days: 0.1, water: false, blocked: true })).toBe("~5 km · ~1 hrs · blocked by impassable terrain");
+    expect(formatLeg({ km: 5, days: 0.1, water: false, blocked: true })).toBe("~5 km · ~1 hrs · blocked: can't cross some of this terrain");
     expect(formatLeg({ ...t, days: 4 }, "mi")).toBe("~75 mi · ~4 days");
   });
 });

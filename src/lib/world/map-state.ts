@@ -60,7 +60,8 @@ export const mapTokenSchema = z.object({
   location: z.boolean(),
 });
 
-const speed = z.number().min(1).max(1000);
+// 0 = this method can't cross the terrain (e.g. Water on foot).
+const speed = z.number().min(0).max(1000);
 const speedTable = z.object(Object.fromEntries(SPEED_TERRAINS.map((t) => [t, speed])) as Record<SpeedTerrain, typeof speed>);
 
 /**
