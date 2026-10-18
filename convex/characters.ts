@@ -149,10 +149,18 @@ async function findCharacter(ctx: QueryCtx, user: Doc<"users">, characterId: Id<
 /**
  * Loads a character the user has `need` on: `view` for everyone in the
  * campaign, `edit` for the GM and the character's owner, `owner` for the GM.
- * No access → NOT_FOUND; too little → FORBIDDEN.
+ * No access → NOT_FOUND; too little → FORBIDDEN. The permission is exact up
+ * to `enough` (default `need`). The character's extras load through it too
+ * (convex/characterExtras.ts), so a grant on a character covers its extras.
  */
-async function loadCharacter(ctx: QueryCtx, user: Doc<"users">, characterId: Id<"characters">, need: Permission): Promise<Loaded> {
-  const found = await findCharacter(ctx, user, characterId, need);
+export async function loadCharacter(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  characterId: Id<"characters">,
+  need: Permission,
+  enough: Permission = need,
+): Promise<Loaded> {
+  const found = await findCharacter(ctx, user, characterId, enough);
   if (found === null) throw appError("NOT_FOUND");
   if (!atLeast(found.permission, need)) throw appError("FORBIDDEN");
   return found;
@@ -650,20 +658,20 @@ export const setStatus = userMutation({
   },
 });
 
-/** GM only: delete a character, its portrait files and its frame trackers. */
+/** GM only: delete a character, its portrait files and its extras. */
 export const remove = userMutation({
   args: { characterId: v.id("characters") },
   returns: v.null(),
   handler: async (ctx, { characterId }) => {
-    const { character } = await loadCharacter(ctx, ctx.user, characterId, "owner");
+    await loadCharacter(ctx, ctx.user, characterId, "owner");
     await deleteFilesOf(ctx, "portrait", characterId);
-    const prefix = `character:${characterId}:`;
-    // One character's trackers: a few rows.
-    const trackers = await ctx.db
-      .query("frameTrackers")
-      .withIndex("by_campaign_key", (q) => q.eq("campaignId", character.campaignId).gte("key", prefix).lt("key", `${prefix}￿`))
+    // At most one row per extra. Rows still in `frameTrackers` are deleted by
+    // `migrations/characterExtras:moveFromTrackers` once their character is gone.
+    const extras = await ctx.db
+      .query("characterExtras")
+      .withIndex("by_character_extra", (q) => q.eq("characterId", characterId))
       .collect();
-    for (const row of trackers) await ctx.db.delete("frameTrackers", row._id);
+    for (const row of extras) await ctx.db.delete("characterExtras", row._id);
     await ctx.db.delete("characters", characterId);
     return null;
   },

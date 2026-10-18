@@ -5,20 +5,26 @@ import { z } from "zod";
 
 import type { Range, TraitId } from "../../srd/types";
 
-/** The extras a character can carry, each stored as a frame tracker row. */
+/** The extras a character can carry, each stored as one `characterExtras` row. */
 export const EXTRAS = ["beastform", "companion", "motherboard", "beastFeast", "castleHigh"] as const;
 export type Extra = (typeof EXTRAS)[number];
 
-/** Tracker key of a character's extra: `character:<characterId>:<extra>`. */
+/**
+ * The `frameTrackers` key an extra was stored under before the
+ * `characterExtras` table (H14). Read only as a fallback for rows that
+ * `migrations/characterExtras:moveFromTrackers` has not moved yet; remove it
+ * once that migration has run on every deployment.
+ */
 export const extraKey = (characterId: string, extra: Extra) => `character:${characterId}:${extra}`;
 /** The party's shared Beast Feast cookbook (one per campaign). */
 export const COOKBOOK_KEY = "beastFeast.cookbook";
 
-export const FRAME_OF: Partial<Record<Extra, string>> = {
+/** The frame each frame-exclusive extra belongs to. */
+export const FRAME_OF = {
   motherboard: "motherboard",
   beastFeast: "beast-feast",
   castleHigh: "castle-high",
-};
+} as const satisfies Partial<Record<Extra, string>>;
 
 export const DRUID_CLASS_ID = "druid";
 export const BEASTBOUND_SUBCLASS_ID = "beastbound";
