@@ -16,15 +16,15 @@ test("S11 Story & Advancement boxes at 1440 and 390", { tag: "@visual" }, async 
   const gold = async () => (await client.query(api.characters.get, { characterId }))?.sheet.gold;
 
   // A pip sets the count through the gold update; tapping the last marked pip clears it.
-  await wealth.getByRole("button", { name: "Handfuls 3 of 10" }).click();
-  await expect(wealth.getByRole("button", { name: "Handfuls 3 of 10" })).toHaveAttribute("aria-pressed", "true");
+  await wealth.getByRole("button", { name: "Handfuls 3 of 9" }).click();
+  await expect(wealth.getByRole("button", { name: "Handfuls 3 of 9" })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(async () => (await gold())?.handfuls).toBe(3);
-  await wealth.getByRole("button", { name: "Bags 2 of 10" }).click();
+  await wealth.getByRole("button", { name: "Bags 2 of 9" }).click();
   await expect.poll(async () => (await gold())?.bags).toBe(2);
-  await wealth.getByRole("button", { name: "Bags 2 of 10" }).click();
+  await wealth.getByRole("button", { name: "Bags 2 of 9" }).click();
   await expect.poll(async () => (await gold())?.bags).toBe(1);
 
-  // Counts above 10 go through the stepper.
+  // The stepper adds one bag.
   await wealth.getByRole("button", { name: "Increase Bags of gold" }).click();
   await expect.poll(async () => (await gold())?.bags).toBe(2);
 

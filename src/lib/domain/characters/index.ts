@@ -163,3 +163,39 @@ export function applyResourceDelta<T extends Tracks>(sheet: T, resource: Resourc
   return next;
 }
 
+
+// ---------------------------------------------------------------- gold (CB 104)
+
+/** "10 handfuls to 1 bag, and 10 bags to 1 chest": a category holds at most 9 marks. */
+export const MAX_HANDFULS = 9;
+export const MAX_BAGS = 9;
+
+export type Gold = { handfuls: number; bags: number; chest: boolean };
+
+/**
+ * Adds `delta` handfuls or bags (CB 104): "When you have marked all of the slots in a category and you gain another
+ * gold reward in that category, you mark a slot in the following category and clear all the slots in the current one"
+ * (9 handfuls + 1 = 1 bag, 9 bags + 1 = 1 chest). "If you ever have more than 1 chest, you'll need to store some of
+ * your gold before you can take more": returns null when the gain would need a second chest. Spending stops at 0
+ * (the book doesn't break a bag into handfuls). Counts stored above 9 before this rule are clamped first.
+ */
+export function addGold(gold: Gold, coin: "handfuls" | "bags", delta: number): Gold | null {
+  let handfuls = Math.min(gold.handfuls, MAX_HANDFULS);
+  let bags = Math.min(gold.bags, MAX_BAGS);
+  let chest = gold.chest;
+  if (coin === "handfuls") {
+    const total = handfuls + delta;
+    if (total < 0) return { handfuls: 0, bags, chest };
+    handfuls = total % 10;
+    bags += Math.floor(total / 10);
+  } else {
+    bags = Math.max(0, bags + delta);
+  }
+  if (bags > MAX_BAGS) {
+    const chests = Math.floor(bags / 10) + (chest ? 1 : 0);
+    if (chests > 1) return null;
+    chest = true;
+    bags %= 10;
+  }
+  return { handfuls, bags, chest };
+}
