@@ -30,8 +30,8 @@ describe("environment actions (EF1)", () => {
   describe("spendFear", () => {
     it("spends the feature's Fear cost, records a Fear spend in history and logs the feature in the GM's feed", async () => {
       const ctx = await setup({ fear: 5 });
-      expect(await spend(ctx, "raging-river", "Undertow")).toEqual({ fear: 4, spent: 1 });
-      expect(await spend(ctx, "divine-usurpation", "Godslayer")).toEqual({ fear: 1, spent: 3 });
+      expect(await spend(ctx, "raging-river", "Undertow")).toMatchObject({ fear: 4, spent: 1 });
+      expect(await spend(ctx, "divine-usurpation", "Godslayer")).toMatchObject({ fear: 1, spent: 3 });
       expect(await fearOf(ctx)).toBe(1);
 
       const rows = await ctx.t.run((c) => c.db.query("history").withIndex("by_campaign_at", (q) => q.eq("campaignId", ctx.campaignId)).collect());
@@ -44,6 +44,17 @@ describe("environment actions (EF1)", () => {
         ["feature", "gm", "Spent 1 Fear: Undertow (Raging River)"],
         ["feature", "gm", "Spent 3 Fear: Godslayer (Divine Usurpation)"],
       ]);
+    });
+
+    it("is undone from the feed by the GM: the Fear comes back and the row shows as undone", async () => {
+      const ctx = await setup({ fear: 5 });
+      const { entryId } = await spend(ctx, "divine-usurpation", "Godslayer");
+      expect(await fearOf(ctx)).toBe(2);
+      const feed = await ctx.gm.query(api.feed.list, { campaignId: ctx.campaignId, paginationOpts: { numItems: 10, cursor: null } });
+      expect(feed.page[0]).toMatchObject({ _id: entryId, canUndo: true, fearDelta: -3 });
+      expect(await ctx.gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() })).toEqual({ undone: [entryId], fearReverted: -3 });
+      expect(await fearOf(ctx)).toBe(5);
+      expect(await codeOf(ctx.gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
     });
 
     it("refuses with FEAR_EMPTY when the GM holds less than the cost, and changes nothing", async () => {
@@ -120,7 +131,7 @@ describe("environment actions (EF1)", () => {
     const ctx = await setup({ hopeAndFear: false, fear: 3 });
     expect(await codeOf(spend(ctx, "abandoned-mine", "Into the Spider’s Web"))).toBe("NOT_FOUND");
     expect(await codeOf(start(ctx, "abandoned-mine", "Impending Collapse"))).toBe("NOT_FOUND");
-    expect(await spend(ctx, "raging-river", "Undertow")).toEqual({ fear: 2, spent: 1 });
+    expect(await spend(ctx, "raging-river", "Undertow")).toMatchObject({ fear: 2, spent: 1 });
     expect(await start(ctx, "mountain-pass", "Icy Winds")).toMatchObject({ startingValue: 4 });
   });
 
@@ -141,7 +152,7 @@ describe("environment actions (EF1)", () => {
     const idempotencyKey = key();
     const args = { campaignId: ctx.campaignId, environmentId: "raging-river", featureName: "Undertow", idempotencyKey };
     await ctx.gm.mutation(api.environmentActions.spendFear, args);
-    expect(await ctx.gm.mutation(api.environmentActions.spendFear, args)).toEqual({ fear: 2, spent: 1 });
+    expect(await ctx.gm.mutation(api.environmentActions.spendFear, args)).toMatchObject({ fear: 2, spent: 1 });
     expect(await fearOf(ctx)).toBe(2);
   });
 

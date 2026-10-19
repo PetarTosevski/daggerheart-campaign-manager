@@ -14,7 +14,7 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
 /** The line under the stat block's Fear bar, for the environment it was written for. */
-type Status = { environmentId: string; text: string; error: boolean };
+type Status = { environmentId: string; text: string; error: boolean; undo?: () => void };
 
 /**
  * The Environment tab's actions (EF1): spend a feature's Fear and start its countdown (Private) on the dashboard. The
@@ -32,6 +32,18 @@ export function useEnvironmentActions(campaignId: Id<"campaigns">) {
     store.setQuery(api.campaigns.get, { campaignId }, { ...campaign, fear: campaign.fear - cost });
   });
   const start = useMutation(api.environmentActions.startCountdown);
+  const undoEntry = useMutation(api.actionLog.undo);
+
+  /** Gives a Fear spend back (the same undo as the GM's feed). */
+  async function undo(environmentId: string, entryId: Id<"actionLog">, featureName: string) {
+    setStatus(null);
+    try {
+      await undoEntry({ entryId, idempotencyKey: crypto.randomUUID() });
+      setStatus({ environmentId, text: `Undone: ${featureName}, the Fear is back`, error: false });
+    } catch (e) {
+      setStatus({ environmentId, text: errorMessage(e), error: true });
+    }
+  }
 
   async function run(environment: EnvironmentDef, feature: EnvironmentFeature, action: "spend" | "start", label?: string) {
     const id = `${environment.id}/${feature.name}`;
@@ -40,8 +52,13 @@ export function useEnvironmentActions(campaignId: Id<"campaigns">) {
     const args = { campaignId, environmentId: environment.id, featureName: feature.name, idempotencyKey: crypto.randomUUID() };
     try {
       if (action === "spend") {
-        const { spent } = await spend(args);
-        setStatus({ environmentId: environment.id, text: `Spent ${spent} Fear: ${feature.name}`, error: false });
+        const { spent, entryId } = await spend(args);
+        setStatus({
+          environmentId: environment.id,
+          text: `Spent ${spent} Fear: ${feature.name}`,
+          error: false,
+          undo: () => void undo(environment.id, entryId, feature.name),
+        });
       } else {
         const { name, startingValue } = await start(label === undefined ? args : { ...args, label });
         setStatus({ environmentId: environment.id, text: `Countdown started on the dashboard: ${name} at ${startingValue} (private)`, error: false });
@@ -151,11 +168,18 @@ export function FeatureActions({
   );
 }
 
-/** The confirmation (or error) line for the shown environment; an aria-live region so it is announced. */
+/** The confirmation (or error) line for the shown environment; an aria-live region so it is announced. A Fear spend gets Undo. */
 export function EnvironmentStatus({ status }: { status: Status | null }) {
   return (
-    <p role="status" className={`env-status${status?.error ? " env-status-error" : ""}`} data-testid="environment-status">
-      {status?.text ?? ""}
-    </p>
+    <div className="env-status-row">
+      <p role="status" className={`env-status${status?.error ? " env-status-error" : ""}`} data-testid="environment-status">
+        {status?.text ?? ""}
+      </p>
+      {status?.undo ? (
+        <button type="button" className="env-act" onClick={status.undo}>
+          Undo
+        </button>
+      ) : null}
+    </div>
   );
 }
