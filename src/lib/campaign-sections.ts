@@ -5,8 +5,9 @@ export const CAMPAIGN_SECTIONS = [
   { slug: "world", label: "World", phase: "D6" },
   { slug: "codex", label: "Characters & Locations", phase: "D7" },
   { slug: "adversaries", label: "Adversaries", phase: "D8", gmOnly: true },
-  { slug: "sessions", label: "Sessions", phase: "D9" },
-  { slug: "notes", label: "Notes", phase: "D10" },
+  { slug: "combat-map", label: "Combat Map", phase: "D9" },
+  { slug: "sessions", label: "Sessions", phase: "D10" },
+  { slug: "notes", label: "Notes", phase: "D11" },
 ] as const;
 
 export type CampaignSection = (typeof CAMPAIGN_SECTIONS)[number];

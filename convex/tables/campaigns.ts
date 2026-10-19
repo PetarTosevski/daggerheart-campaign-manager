@@ -71,7 +71,7 @@ export const campaignTables = {
   campaignState: defineTable({
     campaignId: v.id("campaigns"),
     fear: v.number(),
-    /** When the GM's temporary Start session button was pressed (D5 decision 12); moves to Sessions in D9. */
+    /** When the GM's temporary Start session button was pressed (D5 decision 12); moves to Sessions in D10. */
     sessionStartedAt: v.optional(v.number()),
     /**
      * XC1: the `sessionStartedAt` of the session in which the GM allows more than

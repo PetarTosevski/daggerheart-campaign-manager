@@ -31,6 +31,8 @@ The full list is in `docs/decisions-d3-d11.md`. The headline change: **the app i
 
 ## Phases
 
+Renumbered 2026-10-19: Combat Map became D9, so Sessions, Notes and Hardening moved to D10–D12. Older task docs and `docs/decisions-d3-d11.md` use the old numbers (D9 Sessions, D10 Notes, D11 Hardening).
+
 | # | Phase | Boards | Notes |
 |---|---|---|---|
 | D1 | Design foundation and entry flow | `TitleMenu` (+ Settings), `FrameSelect`, the 10 frame intros, `Chronicle`, campaign shell + nav | Theme tokens and fonts, frame registry, `campaigns` and `settings` tables, create/list/resume/delete campaign. Dashboard and other tabs are placeholders. |
@@ -42,8 +44,9 @@ The full list is in `docs/decisions-d3-d11.md`. The headline change: **the app i
 | D6 | World maps | `World` | Pan/zoom, tokens, route measuring, terrain painting per frame. |
 | D7 | Characters & Locations | `Codex` | Images in Convex storage, allegiance/region, player view. |
 | D8 | Adversaries | `Adversaries` | SRD stat blocks as data files, paginated; live encounter tracker (design issue dh-ned). |
-| D9 | Sessions | `Sessions` | Prep / Play / Wrap-up, live session start/end synced to the party. |
-| D10 | Notes | `Notes` | Per-person bullet journals with optional PIN. |
-| D11 | Hardening and docs | all | Live-update e2e, unauthenticated sweep test, accessibility and tablet pass, settings backup/restore, README and AGENTS. |
+| D9 | Combat Map | `Combat` | Several battle maps per campaign (uploaded or laid out by Claude), hand editing, tokens on the encounter tracker, range circles, facing, vision cones, light and fog of war, player view. Rules: `docs/combat-map-brief.md`, bd `dcm-bxp.32`. |
+| D10 | Sessions | `Sessions` | Prep / Play / Wrap-up, live session start/end synced to the party. |
+| D11 | Notes | `Notes` | Per-person bullet journals with optional PIN. |
+| D12 | Hardening and docs | all | Live-update e2e, unauthenticated sweep test, accessibility and tablet pass, settings backup/restore, README and AGENTS. |
 
 Exploratory boards that are not on the design canvas (`FearOptions`, `TomeGrimoire`, `TomeCodex`) and `CycleIcons` (icon ideas) are references only.
