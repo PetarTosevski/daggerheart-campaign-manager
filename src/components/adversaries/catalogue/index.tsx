@@ -44,10 +44,11 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
   );
 }
 
-/** Round thumbnail of the rulebook art (AA1); nothing for an adversary without art. Decorative: the name follows. */
+/** Round thumbnail of the rulebook art (AA1); an empty circle where the rulebook has none. Decorative: the name follows. */
 function Thumb({ id }: { id: string }) {
   const art = adversaryArt(id);
-  if (!art) return null;
+  // An empty circle where there is no art, so every name in the list starts at the same place (user 2026-10-19).
+  if (!art) return <span className="adc-thumb-none" aria-hidden="true" />;
   // eslint-disable-next-line @next/next/no-img-element -- static pre-optimised WebP from public/
   return <img className="adc-thumb" src={art.src} width={32} height={32} alt="" loading="lazy" decoding="async" />;
 }

@@ -94,8 +94,8 @@
 .adc-item-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .adc-nm { font-family: var(--adv-font-head); font-size: 16px; font-weight: 700; color: var(--adv-name); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .adc-sub { font-size: 12.5px; color: var(--adv-muted); }
-/* AA1: round thumbnail of the rulebook art; rows without art are unchanged. */
-.adc-thumb {
+/* AA1: round thumbnail of the rulebook art; rows without art keep an empty circle so the names line up. */
+.adc-thumb, .adc-thumb-none {
   flex: none;
   width: 32px;
   height: 32px;
@@ -105,6 +105,7 @@
   background: var(--adv-parch);
   border: 1px solid var(--adv-border-strong);
 }
+.adc-thumb-none { background: transparent; border-style: dashed; opacity: 0.6; }
 .adc-type { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--adv-type-bg); color: var(--adv-chip-text); white-space: nowrap; }
 .adc-num { display: flex; gap: 14px; font-size: 12px; color: var(--adv-muted-2); text-align: center; }
 .adc-num strong { display: block; font-family: var(--adv-font-head); font-size: 16px; color: var(--adv-text); }
