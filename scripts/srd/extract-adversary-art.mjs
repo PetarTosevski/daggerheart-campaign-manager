@@ -16,7 +16,8 @@
 // A caption is the text in a caption font: small (7 pt) all-caps lines. Each caption is matched to an adversary by
 // name (ALIASES for the few captions that name it differently, each checked on the rendered page) and to the
 // nearest non-furniture image. Group and scene captions (SKIP) stay unassigned. Uncaptioned art (the Reign of the
-// Weredragon pages) is assigned only through MANUAL, each entry checked on the rendered page.
+// Weredragon pages) is assigned only through MANUAL, each entry checked on the rendered page. A picture of several
+// adversaries together (SHARED) goes whole to each of them, the others greyed out a little so that one stands out.
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -44,10 +45,10 @@ const ALIASES = {
 /** Captions left unassigned: not an adversary, a group, or one image shared by several adversaries. */
 const SKIP = {
   "core:JAGGED KNIFE": "the gang's knife, not an adversary",
-  "core:HEAD VAMPIRE": "one image shows the Head Vampire and a Dire Bat together",
-  "core:DIRE BAT": "one image shows the Head Vampire and a Dire Bat together",
+  "core:HEAD VAMPIRE": "one image shows the Head Vampire and a Dire Bat together (SHARED)",
+  "core:DIRE BAT": "one image shows the Head Vampire and a Dire Bat together (SHARED)",
   "hope-and-fear:DARKWEAVE CRAWLERS": "two small crawlers inside the Darkweave Queen's image; the image goes to the Queen",
-  "hope-and-fear:THE HARBINGERS": "the four Harbingers together in one image",
+  "hope-and-fear:THE HARBINGERS": "the four Harbingers together in one image (SHARED)",
 };
 
 /**
@@ -63,12 +64,70 @@ const PICK = {
 
 /**
  * Uncaptioned art assigned by hand, checked by eye: book, PDF page, image index on the page (paint order), id.
- * Left out on purpose: the purple dragon breathing green on HF p.141 (probably Forlorne's Dragon Form, but no caption
- * and not beside her block) and the horned brute on the CB p.209 chapter opener.
+ * Left out on purpose: the horned brute on the CB p.209 chapter opener.
  */
 const MANUAL = [
+  { book: "hope-and-fear", page: 142, image: 2, id: "forlorne-lykona-dragon-form", note: "HF p.141, uncaptioned: a purple dragon breathing gas, taken as Forlorne's Dragon Form (user 2026-10-19)" },
   { book: "hope-and-fear", page: 144, image: 1, id: "weredrake", note: "HF p.143 beside the Weredrake block: a wingless, quadrupedal dragon, as its text describes" },
 ];
+
+/**
+ * One picture of several adversaries (user 2026-10-19: "keep the entire picture without crop, but grey out the other
+ * characters a little bit so the main one stands out"): book, PDF page, image index, and per adversary the ellipses
+ * that stay in full colour, as [centre x, centre y, radius x, radius y] in fractions of the trimmed image, set by eye.
+ */
+const SHARED = [
+  {
+    book: "core",
+    page: 234,
+    image: 2,
+    note: "CB p.233, captioned HEAD VAMPIRE and DIRE BAT",
+    focus: {
+      "head-vampire": [[0.33, 0.55, 0.26, 0.5]],
+      "dire-bat": [[0.72, 0.5, 0.3, 0.42]],
+    },
+  },
+  {
+    book: "hope-and-fear",
+    page: 95,
+    image: 3,
+    note: "HF p.94, captioned THE HARBINGERS; told apart by their descriptions",
+    focus: {
+      // A withered white horse (top left, the rider with the scythe).
+      "harbinger-of-famine": [[0.24, 0.38, 0.22, 0.2], [0.22, 0.15, 0.11, 0.15]],
+      // A skeletal horse (top middle).
+      "harbinger-of-death": [[0.58, 0.25, 0.28, 0.27]],
+      // A worm-eaten horse (bottom left).
+      "harbinger-of-pestilence": [[0.24, 0.73, 0.24, 0.26]],
+      // Black armour and a bloody banner (bottom right).
+      "harbinger-of-war": [[0.68, 0.68, 0.27, 0.3], [0.8, 0.22, 0.14, 0.18]],
+    },
+  },
+];
+
+/** Greys out what lies outside `ellipses` (soft-edged) in RGBA pixels: most of the colour gone and a little paler. */
+function spotlight({ data, info }, ellipses) {
+  const { width: w, height: h, channels: c } = info;
+  const out = Buffer.from(data);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let keep = 0;
+      for (const [cx, cy, rx, ry] of ellipses) {
+        const d = Math.hypot((x / w - cx) / rx, (y / h - cy) / ry);
+        keep = Math.max(keep, Math.min(1, Math.max(0, (1.15 - d) / 0.3)));
+      }
+      if (keep >= 1) continue;
+      const i = (y * w + x) * c;
+      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      for (let k = 0; k < 3; k++) {
+        const grey = 0.7 * lum + 0.3 * data[i + k];
+        const pale = grey + (255 - grey) * 0.2;
+        out[i + k] = Math.round(keep * data[i + k] + (1 - keep) * pale);
+      }
+    }
+  }
+  return out;
+}
 
 function args() {
   const out = { pdfjs: process.env.PDFJS_DIR, sharp: process.env.SHARP_DIR, dry: false };
@@ -245,6 +304,12 @@ async function main() {
           picks.push({ id: m.id, img, how: `manual (${m.note})` });
           used.set(img.index, m.id);
         }
+        for (const sh of SHARED.filter((sh) => sh.book === book.key && sh.page === p)) {
+          const img = imgs.find((im) => im.index === sh.image);
+          if (!img) throw new Error(`${where}: SHARED image ${sh.image} not found`);
+          for (const [id, focus] of Object.entries(sh.focus)) picks.push({ id, img, focus, how: `shared (${sh.note})` });
+          used.set(img.index, Object.keys(sh.focus).join(", "));
+        }
         for (const im of imgs) if (!used.has(im.index)) unassigned.push(`${where}: image ${im.index} (${im.w}x${im.h}) has no caption`);
 
         for (const pick of picks) {
@@ -253,7 +318,11 @@ async function main() {
           const raw = await imageData(page, pick.img.name);
           const base = sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: raw.channels } });
           const trimmed = await base.trim({ threshold: 1 }).png().toBuffer({ resolveWithObject: true }).catch(() => null);
-          const src = trimmed ? sharp(trimmed.data) : base;
+          let src = trimmed ? sharp(trimmed.data) : base;
+          if (pick.focus) {
+            const rgba = await src.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+            src = sharp(spotlight(rgba, pick.focus), { raw: { width: rgba.info.width, height: rgba.info.height, channels: rgba.info.channels } });
+          }
           const out = await src
             .resize({ width: MAX_WIDTH, withoutEnlargement: true })
             .webp({ quality: QUALITY, alphaQuality: 80, effort: 6 })
