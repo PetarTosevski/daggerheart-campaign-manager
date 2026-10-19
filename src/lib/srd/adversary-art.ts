@@ -5,8 +5,8 @@
 
 export type AdversaryArt = { src: string; width: number; height: number; credit?: string };
 
-/** Illustrations per book: Core Rulebook 50, Hope & Fear 52. */
-export const ADVERSARY_ART_COUNT = {"core":50,"hope-and-fear":52} as const;
+/** Illustrations per book: Core Rulebook 52, Hope & Fear 57. */
+export const ADVERSARY_ART_COUNT = {"core":52,"hope-and-fear":57} as const;
 
 export const ADVERSARY_ART: Readonly<Record<string, AdversaryArt>> = {
   "acid-burrower": { src: "/adversary-art/acid-burrower.webp", width: 900, height: 555, credit: "CB p.210" },
@@ -33,6 +33,7 @@ export const ADVERSARY_ART: Readonly<Record<string, AdversaryArt>> = {
   "demon-of-jealousy": { src: "/adversary-art/demon-of-jealousy.webp", width: 900, height: 810, credit: "CB p.229" },
   "demon-of-wrath": { src: "/adversary-art/demon-of-wrath.webp", width: 900, height: 714, credit: "CB p.229" },
   "demonic-hound-pack": { src: "/adversary-art/demonic-hound-pack.webp", width: 900, height: 412, credit: "CB p.222" },
+  "dire-bat": { src: "/adversary-art/dire-bat.webp", width: 900, height: 572, credit: "CB p.233" },
   "dire-pangolati": { src: "/adversary-art/dire-pangolati.webp", width: 735, height: 567, credit: "HF p.71" },
   "doppelhound": { src: "/adversary-art/doppelhound.webp", width: 508, height: 485, credit: "HF p.71" },
   "entombed-cat-beast": { src: "/adversary-art/entombed-cat-beast.webp", width: 900, height: 977, credit: "HF p.72" },
@@ -41,6 +42,7 @@ export const ADVERSARY_ART: Readonly<Record<string, AdversaryArt>> = {
   "entombed-stonemason": { src: "/adversary-art/entombed-stonemason.webp", width: 465, height: 438, credit: "HF p.73" },
   "fallen-warlord-realm-breaker": { src: "/adversary-art/fallen-warlord-realm-breaker.webp", width: 900, height: 911, credit: "CB p.235" },
   "fallen-warlord-undefeated-champion": { src: "/adversary-art/fallen-warlord-undefeated-champion.webp", width: 900, height: 771, credit: "CB p.235" },
+  "forlorne-lykona-dragon-form": { src: "/adversary-art/forlorne-lykona-dragon-form.webp", width: 900, height: 422, credit: "HF p.141" },
   "fowlbear": { src: "/adversary-art/fowlbear.webp", width: 900, height: 691, credit: "HF p.74" },
   "giant-brawler": { src: "/adversary-art/giant-brawler.webp", width: 900, height: 860, credit: "CB p.223" },
   "glass-snake": { src: "/adversary-art/glass-snake.webp", width: 900, height: 569, credit: "CB p.212" },
@@ -54,6 +56,11 @@ export const ADVERSARY_ART: Readonly<Record<string, AdversaryArt>> = {
   "guahalan-shifter": { src: "/adversary-art/guahalan-shifter.webp", width: 354, height: 582, credit: "HF p.76" },
   "guahalan-spirit-beast": { src: "/adversary-art/guahalan-spirit-beast.webp", width: 891, height: 403, credit: "HF p.76" },
   "guahalan-spirit-singer": { src: "/adversary-art/guahalan-spirit-singer.webp", width: 255, height: 481, credit: "HF p.77" },
+  "harbinger-of-death": { src: "/adversary-art/harbinger-of-death.webp", width: 766, height: 957, credit: "HF p.94" },
+  "harbinger-of-famine": { src: "/adversary-art/harbinger-of-famine.webp", width: 766, height: 957, credit: "HF p.94" },
+  "harbinger-of-pestilence": { src: "/adversary-art/harbinger-of-pestilence.webp", width: 766, height: 957, credit: "HF p.94" },
+  "harbinger-of-war": { src: "/adversary-art/harbinger-of-war.webp", width: 766, height: 957, credit: "HF p.94" },
+  "head-vampire": { src: "/adversary-art/head-vampire.webp", width: 900, height: 572, credit: "CB p.233" },
   "hydra": { src: "/adversary-art/hydra.webp", width: 900, height: 674, credit: "CB p.231" },
   "jagged-knife-bandit": { src: "/adversary-art/jagged-knife-bandit.webp", width: 507, height: 887, credit: "CB p.213" },
   "jagged-knife-hexer": { src: "/adversary-art/jagged-knife-hexer.webp", width: 704, height: 820, credit: "CB p.213" },
