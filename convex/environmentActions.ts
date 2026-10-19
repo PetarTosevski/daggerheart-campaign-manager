@@ -43,26 +43,29 @@ function findFeature(campaign: Doc<"campaigns">, environmentId: string, featureN
 
 /**
  * Spends the feature's Fear cost ("Spend a Fear to ...", CB p.154 Fear Features) from GM Fear (FEAR_EMPTY when the GM
- * holds less) and logs which environment feature it was in the GM's feed. A feature without a Fear cost is INVALID.
+ * holds less) and logs which environment feature it was in the GM's feed, where Undo gives the Fear back. A feature
+ * without a Fear cost is INVALID.
  */
 export const spendFear = keyedGmMutation({
   args: featureArgs,
-  returns: v.object({ fear: v.number(), spent: v.number() }),
+  returns: v.object({ fear: v.number(), spent: v.number(), entryId: v.id("actionLog") }),
   handler: async (ctx, { environmentId, featureName }) => {
     const { environment, feature } = findFeature(ctx.campaign, environmentId, featureName);
     const cost = feature.fearCost;
     if (cost === undefined) throw appError("INVALID", "That feature doesn't cost Fear.");
     return ctx.once("environment_spend_fear", { environmentId, featureName }, async () => {
       const { newValue } = await spendCampaignFear(ctx, ctx.campaign._id, cost, "feature");
-      await logAction(ctx, {
+      // Undoable from the feed (user 2026-10-19): `actionLog.undo` gives the spent Fear back (capped at 12).
+      const entryId = await logAction(ctx, {
         campaignId: ctx.campaign._id,
         actorId: ctx.user._id,
         kind: "feature",
         visibility: "gm",
         summary: `Spent ${cost} Fear: ${feature.name} (${environment.name})`,
-        undoable: false,
+        fearDelta: -cost,
+        undoable: true,
       });
-      return { fear: newValue, spent: cost };
+      return { fear: newValue, spent: cost, entryId };
     });
   },
 });

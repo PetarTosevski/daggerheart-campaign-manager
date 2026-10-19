@@ -177,6 +177,12 @@ test("Spend Fear lowers the GM's Fear; Start countdown puts a private countdown 
   for (const target of [spend, gain]) {
     expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   }
+  // Undo gives the Fear back, then spend again so the rest of the test starts at 1.
+  await block.getByRole("button", { name: "Undo" }).click();
+  await expect(block.getByTestId("environment-status")).toHaveText("Undone: Undertow, the Fear is back");
+  await expect(block.getByRole("img", { name: "GM Fear 2 of 12" })).toBeVisible();
+  await spend.click();
+  await expect(block.getByRole("img", { name: "GM Fear 1 of 12" })).toBeVisible();
 
   await row(page, "Mountain Pass").click();
   // The status line belongs to the environment it was written for.
