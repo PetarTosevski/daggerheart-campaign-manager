@@ -69,7 +69,7 @@ Each **player sees only their own character's view**. Show these states:
 
   Show a small badge for the dim phases ("Dim light: ranged attacks at disadvantage").
   Light sources: a character can carry one (torch, lantern, Alistair's Torch). Map objects
-  give light too and are clicked on / off: a **wall torch** lights like a torch (clear to
+  give light too and **both the GM and players** click them on / off: a **wall torch** lights like a torch (clear to
   Close = 6 squares, dim to Far = 12); a **campfire** lights double that (clear to 12
   squares, dim to 24). Show lit and unlit states.
 - **Explored areas** stay faintly visible after the character looks away, but tokens
