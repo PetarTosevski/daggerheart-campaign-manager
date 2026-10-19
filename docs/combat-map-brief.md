@@ -64,10 +64,14 @@ Each **player sees only their own character's view**. Show these states:
 | Night, no light | Melee | Very Close | beyond |
 | Night, torch / lantern | up to Close | Close to Far | beyond |
 | Night, Alistair's Torch | up to Far | — | beyond |
+| Night, wall torch (map object) | up to Close | Close to Far | beyond |
+| Night, campfire (map object) | 12 squares | 12 to 24 squares | beyond |
 
   Show a small badge for the dim phases ("Dim light: ranged attacks at disadvantage").
-  Light sources: a character can carry one (torch, lantern, Alistair's Torch).
-  Not yet confirmed: whether map objects (campfire, wall torch) give light too.
+  Light sources: a character can carry one (torch, lantern, Alistair's Torch). Map objects
+  give light too and are clicked on / off: a **wall torch** lights like a torch (clear to
+  Close = 6 squares, dim to Far = 12); a **campfire** lights double that (clear to 12
+  squares, dim to 24). Show lit and unlit states.
 - **Explored areas** stay faintly visible after the character looks away, but tokens
   there are not shown unless the character can see them now.
 - **Hidden in dim light**: tokens in dim light at night are hidden from players. The GM
