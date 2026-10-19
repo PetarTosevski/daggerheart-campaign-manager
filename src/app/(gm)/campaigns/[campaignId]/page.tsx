@@ -15,7 +15,7 @@ import { PartySection } from "./party-section";
 import { KeyFiguresPanel, LocationsPanel, TomePanel } from "./sidebar-panels";
 import { FrameTrackers } from "./trackers";
 
-/** CampaignHub board: the party (D4), countdowns, last session (D9) and GM Fear. */
+/** CampaignHub board: the party (D4), countdowns, last session (D10) and GM Fear. */
 export default function DashboardPage() {
   const campaign = useCampaign();
   const slot: CampaignSlotProps = { campaignId: campaign._id, isGm: campaign.role === "gm", hopeAndFear: Boolean(campaign.options.hopeAndFear) };

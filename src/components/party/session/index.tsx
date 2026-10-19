@@ -13,7 +13,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import type { CampaignSlot } from "../slots";
 import { SlotBoundary } from "./boundary";
 
-// D5 temporary session buttons until D9 (T5). Contract: ../slots.ts.
+// D5 temporary session buttons until D10 Sessions (T5). Contract: ../slots.ts.
 
 type EndResult = { tokens: number; fearGained: number; fearLost: number; journeyEnds: { name: string }[] };
 

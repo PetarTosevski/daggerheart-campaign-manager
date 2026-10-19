@@ -1,6 +1,6 @@
 /**
  * The GM's temporary Start / End session buttons (D5 T5, decision 12) until
- * the Sessions board (D9) takes them over.
+ * the Sessions board (D10) takes them over.
  *
  * - `start`: stamps `campaignState.sessionStartedAt` and runs the class hook
  *   `onSessionStart` for every active PC. Pressing it again does nothing.
