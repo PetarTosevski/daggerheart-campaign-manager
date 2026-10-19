@@ -182,7 +182,7 @@ test("Spend Fear lowers the GM's Fear; Start countdown puts a private countdown 
   // The status line belongs to the environment it was written for.
   await expect(block.getByTestId("environment-status")).toHaveText("");
   await feature("Icy Winds").getByRole("button", { name: "Start countdown" }).click();
-  await expect(block.getByTestId("environment-status")).toHaveText(/^Countdown started on the dashboard: Icy Winds at 4/);
+  await expect(block.getByTestId("environment-status")).toHaveText(/^Countdown started on the dashboard: Mountain Pass: Icy Winds at 4/);
 
   // The dashboard: the GM sees it as Private, at 4.
   await page.goto(`/campaigns/${campaignId}`);
