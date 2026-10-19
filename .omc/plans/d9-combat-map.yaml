@@ -1,0 +1,384 @@
+# D9 plan: Combat Map (bead dcm-bxp.32). Several battle maps per campaign (uploaded or laid out by Claude), hand editing, tokens on
+# the encounter tracker, range circles, facing, vision cones, light and fog of war, and a player view.
+# Board: reference/designs/project/Combat.dc.html (the visual spec, and a working reference for the painter, the layout prompt and
+#   the vision engine). Rules: docs/combat-map-brief.md and the user's answers in the comments on dcm-bxp.32 (all 2026-10-19).
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L).
+# Book pages: CB = Core Book, printed pages. Range bands: CB p.103 "Optional Rule: Defined Ranges" (Melee 1, Very Close 3, Close 6,
+#   Far 12, Very Far 13+ squares). Cover, line of sight and darkness: CB p.104. Alistair's Torch: CB p.129. Each tracer that cites a
+#   page re-checks it (.reference-private/, pdfjs-dist; never commit the books) and quotes it in its task doc.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+#
+# Rules decided by the user (binding; tracers quote the one they implement in their task doc):
+#   R1  Grid: square, 1 square = 5 ft (CB p.103). The GM sizes and aligns the grid over an uploaded image.
+#   R2  Maps: several per campaign; the GM marks one live (the one players see). Generated layouts can be edited by hand AND regenerated.
+#   R3  Range circles on any token (PC or adversary), switched on/off per token; "hide all". Melee 1, Very Close 3, Close 6, Far 12.
+#   R4  Tokens are linked to the encounter tracker (adversaries) and character sheets (PCs). The GM sees stats; players never see an
+#       adversary's or NPC's HP, Stress, Difficulty or other stats. Players move and turn only their own PC's token.
+#   R5  Facing: a token faces the way it last moved; its owner or the GM can also turn it (drag handle, snapped to 15 degrees).
+#       The PC's portrait on the token shows the front.
+#   R6  Vision cone: 70 + 15 x Instinct degrees, capped at 180 (floor 10). Never behind. Base 70 and step 15 are named constants in
+#       one place (the user may tune them).
+#   R7  Sight: anything big enough to hide behind blocks sight (walls, trees, tents, boulders, pillars, statues, masts). Bushes, rocks,
+#       logs, crates, barrels, chests, tables, rubble are cover only by default; the GM can set any object to block sight.
+#   R8  Light by campaign time (src/lib/domain/campaign-time): Day phases and Nautical Dawn = full vision in the cone. Dim phases are
+#       ONLY Nautical Twilight (last DAY day) and Nightfall (first NIGHT day): full vision, tokens shown, a badge says ranged attacks
+#       are at disadvantage and traps are harder to notice. The other night phases are night. (The board wrongly lists Nautical Dawn
+#       as dim: fix it.)
+#   R9  Night: no light = clear in Melee (1), dim to Very Close (3), nothing beyond. Torch and lantern = clear to Close (6), dim to
+#       Far (12). Alistair's Torch = clear to Far (12). Wall torch (map object) = like a torch. Campfire (map object) = double: clear
+#       to 12, dim to 24. Map lights are switched on/off by the GM AND by players (a player only for a light they can see or have seen).
+#   R10 Dim light at night hides tokens (other than PCs, see Q4). The GM asks for a roll; on a success the GM reveals that token to
+#       that player ("Reveal to..."). Clear light shows tokens normally.
+#   R11 Each player sees only their own character's view. Explored areas stay faintly visible, but tokens there are hidden unless the
+#       character can see them now.
+#   R12 The GM sees everything, can preview any PC's view, and can reveal or hide areas by hand with a brush.
+#
+# OPEN QUESTIONS (defaults are built unless the user answers otherwise; a different answer changes only the tracers that cite it):
+#   Q1  Secrecy of the layout. Default: players receive the live map's whole layout (terrain, objects, the uploaded image); fog is
+#       painted on their screen; TOKENS are filtered on the server (a token a player can't see never reaches their browser). An image
+#       can't be sent in pieces, so hiding unexplored terrain would only work for generated maps. Cited by C7, C8.
+#   Q2  Lanterns: the brief treats a lantern like a torch (the user named torches only). Default: same as a torch. Cited by C1.
+#   Q3  Carried lights: default only PCs carry a light (the GM uses wall torches and campfires for the rest). Cited by C1, C7.
+#   Q4  Other PCs in dim light: default a player always sees the other PCs' tokens (the party knows where its members are); allies
+#       and neutral tokens follow R10 like enemies. Cited by C1, C7.
+#   Q5  Claude layout limit: default 10 generations per user per hour (rate limit `combatMapGenerate`), like photo import. Cited by C0, C4.
+#   Q6  The board's "+ Session encounter" button needs Sessions (now D10). Default: replaced by "Add encounter" (a D8 encounter's
+#       adversaries); C6 files a D10 follow-up bead for the session link. Cited by C6.
+#
+# Rules for every tracer (part of every acceptance list, not repeated):
+#   - Every new public function uses the wrappers in convex/lib/functions.ts (campaignQuery / gmQuery / gmMutation /
+#     keyedGmMutation / campaignMutation / userAction); authorization only through permissionFor via the wrappers. Map writes,
+#     generation, editing, encounter tokens and reveals are GM-only. A player's writes are limited to their own PC token (move, turn,
+#     carried light) and to switching a map light they can see (C7); ownership is checked through permissionFor on the character.
+#   - `args` and `returns` validators on every new function, no v.any(); schema-guard RETURNS_PENDING never grows.
+#   - Its own Convex test covers anonymous, outsider, player and GM for each new function (tests/convex/authz-matrix.test.ts does
+#     not exist yet; D12 folds these in) and asserts ConvexError.data.code (errorCode helper), never message text.
+#   - Intents only: ids, deltas and single fields (move = token id + x + y; turn = token id + angle); never a whole map or token list.
+#     Optimistic updates on token drag, turn, ring toggles and light switches.
+#   - Indexed reads only (no .filter on queries); caps checked with an index `.take`: MAX_COMBAT_MAPS 30 per campaign,
+#     MAX_COMBAT_TOKENS 80 per map, MAX_COMBAT_OBJECTS 300 per map, MAX_COMBAT_AREAS 60 per map, grid 12..44 x 10..32 squares.
+#   - A new error code is one C0 defines in src/lib/errors/combatMap.ts; a code C0 did not add means stop and report.
+#   - No new dependency. The vision engine and spec validation are pure TypeScript in src/lib/domain/combat-map (C1), used by the
+#     server and the client alike, so what the server filters and what the client paints can never disagree.
+#   - Every useQuery subtree sits inside an error boundary; loading uses the shared Loading with role=status.
+#   - UI in the board's look: tokens from C/combat-map/combat-map.css (C0); each later tracer adds CSS only in its own colocated
+#     .css. 1440 and 1024 px layouts; 390 px: no horizontal page scroll, touch targets >= 44 px, labels on every control, keyboard
+#     reachable (R/N/Delete/Escape shortcuts as on the board), native <dialog> modals via src/components/brand/modal.tsx.
+#   - Visual acceptance: the tracer's tests/e2e/visual/<id>.spec.ts (tag @visual, E2E_VISUAL=1) shoots its regions at 1440x900,
+#     1024x768 and 390x844; board counterparts from `node scripts/board-shots.mjs combat:<region>` (C0 adds them); the task doc
+#     docs/tasks/TASK-D9-<id>.md lists both sets with a verdict per region and every deliberate deviation.
+#   - pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e specs pass in its worktree; the
+#     orchestrator runs the full e2e suite after each wave.
+#   - Every tracer owns docs/tasks/TASK-D9-<id>.md.
+#
+# Data model (C0 creates every table; later tracers only add functions):
+#   combatMaps        one row per map: campaignId, name, live (bool), source ("blank" | "generated" | "image"), w, h (squares),
+#                     base terrain, areas (<= 60, typed validator from Claude's layout), prompt, seed, image (files row id) + grid
+#                     {cell px, offset x, y}, schemaVersion, updatedAt. Indexes by_campaign_updated, by_campaign_live.
+#   combatMapObjects  one row per object (tree, campfire, wall torch...): mapId, kind, x, y, r, rot, variant, len, span, points,
+#                     sight override ("block" | "cover" | "none" | unset = R7 default), lit (lights only). Index by_map.
+#                     Own table so one edit or light switch writes one row.
+#   combatMapCells    painted tiles per layer: mapId, layer ("terrain" | "block" | "fog"), tile, cells (string). Index by_map_layer_tile.
+#                     terrain = hand-painted terrain; block = painted sight blockers (for images); fog = GM reveal/hide marks.
+#   combatTokens      one row per token: campaignId, mapId, ref (pc: characterId | adversary: encounterAdversaries id | custom: name,
+#                     hp, hpMax, stress, stressMax, conditions), side (pc | enemy | ally | neutral), x, y, size (1..3), face (radians),
+#                     light (pc only: none | torch | lantern | alistair), revealedTo (character ids, <= party cap). Index by_map.
+#   combatExplored    one row per (map, character): explored half-squares as a bitmap string. Index by_map_character. Own table
+#                     because it changes on every move.
+#   files.kind        widened with "combatMap" (refId = the map id).
+#   Range circles and "names" are per-viewer conveniences in localStorage, not stored on the server.
+# Shared files: convex/schema.ts, convex/cleanup.ts, convex/lib/functions.ts (the rate limit), convex/tables/files.ts,
+#   convex/lib/files.ts, src/lib/errors/app-error.ts, src/lib/convex-errors.ts, tests/convex/schema-guard.test.ts,
+#   tests/convex/cleanup.test.ts, tests/e2e/visual/helpers.ts, scripts/board-shots.mjs belong to C0 only.
+#   C/combat-map/page.tsx belongs to C0, which mounts one stub per feature folder (src/components/combat-map/{maps,generate,editor,
+#   tokens,vision}/index.tsx) with typed props from src/components/combat-map/slots.ts, so feature tracers own only their folder.
+#   docs/data-model.md is updated by the orchestrator at merge time from each tracer's report.
+plan: d9-combat-map
+waves:
+  # ---------------------------------------------------------------- wave 1: foundation, pure domain and painter, in parallel
+  - wave: 1
+    tracers:
+      - id: C0
+        foundation: true
+        title: D9 foundation (tables, validators, error module, rate limit, files kind, purge, route shell with stubs, visual tooling)
+        size: M
+        goal: The combat map tables exist and are purged with their campaign, the error codes and the generation rate limit are wired, and /campaigns/<id>/combat-map opens a board-look page (header, Fear, nav, left column and map area with stubs) for the GM and the player view stub for players.
+        depends_on: []
+        owns:
+          - convex/schema.ts
+          - convex/tables/combatMaps.ts
+          - convex/tables/files.ts
+          - convex/lib/validators/combatMaps.ts
+          - convex/lib/combatMaps.ts
+          - convex/lib/files.ts
+          - convex/lib/functions.ts
+          - convex/cleanup.ts
+          - src/lib/errors/combatMap.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/combat-map.css
+          - src/components/combat-map/slots.ts
+          - src/components/combat-map/maps/index.tsx
+          - src/components/combat-map/generate/index.tsx
+          - src/components/combat-map/editor/index.tsx
+          - src/components/combat-map/tokens/index.tsx
+          - src/components/combat-map/vision/index.tsx
+          - scripts/board-shots.mjs
+          - tests/e2e/visual/helpers.ts
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/e2e/combat-map-shell.spec.ts
+          - docs/tasks/TASK-D9-C0.md
+        reads:
+          - reference/designs/project/Combat.dc.html
+          - docs/combat-map-brief.md
+          - convex/tables/encounters.ts
+          - convex/tables/maps.ts
+          - convex/lib/permissions.ts
+          - src/lib/campaign-sections.ts
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/page.tsx
+        acceptance:
+          - "convex/tables/combatMaps.ts defines combatMaps, combatMapObjects, combatMapCells, combatTokens, combatExplored with the fields and indexes in the data model above; files.kind gains \"combatMap\" (widen only)"
+          - Validators and caps (MAX_COMBAT_MAPS, MAX_COMBAT_TOKENS, MAX_COMBAT_OBJECTS, MAX_COMBAT_AREAS, grid bounds) live in convex/lib/validators/combatMaps.ts and convex/lib/combatMaps.ts; combatMaps carries schemaVersion 1
+          - "src/lib/errors/combatMap.ts defines every code D9 needs (at least COMBAT_MAP_NOT_FOUND, COMBAT_MAP_LIMIT, COMBAT_TOKEN_NOT_FOUND, COMBAT_TOKEN_LIMIT, COMBAT_OBJECT_LIMIT, COMBAT_NOT_YOUR_TOKEN, COMBAT_GENERATE_UNAVAILABLE, COMBAT_LAYOUT_INVALID, COMBAT_LIGHT_NOT_SEEN) and convex-errors combines them"
+          - "RATE_LIMITS gains combatMapGenerate: 10 per hour per user (Q5)"
+          - purgeCampaign deletes every combat table's rows and the combatMap files; tests/convex/cleanup.test.ts covers it
+          - The page shows the board's header, nav (Combat Map current) and two-column layout; GM and player get their own stub; players are not refused (the tab is not gmOnly)
+          - "board-shots: combat:gm-empty, combat:gm-play, combat:gm-edit, combat:player-day, combat:player-night, combat:map-list"
+      - id: C1
+        title: Pure domain - layout spec, sight defaults, ranges, light and vision engine
+        size: M
+        goal: A pure, tested TypeScript module validates a map layout and answers what a character sees (cone, line of sight, light level per square, token visibility) for any map, time phase and set of lights.
+        depends_on: []
+        owns:
+          - src/lib/domain/combat-map/spec.ts
+          - src/lib/domain/combat-map/sight.ts
+          - src/lib/domain/combat-map/ranges.ts
+          - src/lib/domain/combat-map/light.ts
+          - src/lib/domain/combat-map/vision.ts
+          - src/lib/domain/combat-map/index.ts
+          - tests/unit/combat-map-spec.test.ts
+          - tests/unit/combat-map-vision.test.ts
+          - docs/tasks/TASK-D9-C1.md
+        reads:
+          - reference/designs/project/Combat.dc.html
+          - docs/combat-map-brief.md
+          - src/lib/domain/campaign-time/index.ts
+        acceptance:
+          - "spec.ts: zod schema + clean() ported from the board's CMAP.clean (terrains, object kinds incl. walltorch, shapes, caps, w 12..44, h 10..32); rejects junk, keeps valid parts"
+          - "sight.ts: R7 defaults per object kind and the override (block | cover | none)"
+          - "ranges.ts: RANGE_BANDS Melee 1, Very Close 3, Close 6, Far 12 (CB p.103 quoted in the task doc)"
+          - "light.ts: lightOf(phase) per R8 (Nautical Dawn is day, only Nautical Twilight and Nightfall are dim); carried lights per R9 (lantern = torch, Q2; only PCs carry, Q3); map lights walltorch [6,12], campfire [12,24]; no light [1,3]"
+          - "vision.ts: coneDeg(instinct) = clamp(70 + 15 x instinct, 10, 180) with VISION_BASE_DEG and VISION_STEP_DEG constants (R6); blockers from terrain walls, painted block cells and sight-blocking objects; los(); visibleSquares(); tokenVisibility(viewer, token) -> clear | dim | hidden, with R10 (dim hides tokens at night unless revealedTo), R11 and Q4 (other PCs always shown)"
+          - Unit tests cover each R6-R11 row of the light table, the 180 cap, the never-behind rule, a wall and a tree blocking sight, a bush not blocking, an override blocking, and the Nautical Dawn fix
+          - "Speed: a 44 x 32 map with 300 objects computes one viewer's visibility in under 50 ms in the unit test (it runs inside Convex queries)"
+      - id: C2
+        title: Map painter and keyword fallback layout
+        size: M
+        goal: A client-side painter turns a layout (plus painted cells and objects) into the board's hand-painted top-down battle map on a canvas, and a keyword generator makes a usable layout without Claude.
+        depends_on: []
+        owns:
+          - src/lib/combat-map/painter.ts
+          - src/lib/combat-map/raster.ts
+          - src/lib/combat-map/fallback-layout.ts
+          - tests/unit/combat-map-painter.test.ts
+          - docs/tasks/TASK-D9-C2.md
+        reads:
+          - reference/designs/project/Combat.dc.html
+        acceptance:
+          - "raster.ts: the board's rasterize (rect, ellipse, poly, path, border) as a pure function, plus merging painted terrain tiles on top"
+          - "painter.ts: the board's CMAP.render (terrain noise, edges, texture strokes, every object kind incl. hull, mast, campfire glow, lit/unlit wall torch) drawing into a given CanvasRenderingContext2D; deterministic for a seed"
+          - "fallback-layout.ts: the board's CMAP.generate keyword layout (forest, camp, snow, swamp, coast...) returning a spec that passes spec.ts"
+          - Unit tests cover rasterize shapes, the fallback for three descriptions, and a painter smoke test with a recording mock context (jsdom has no canvas)
+          - "C2 runs beside C1, so raster.ts declares its own structural PaintSpec type (the board's spec shape); C3 checks that C1's spec type is assignable to it"
+
+  # ---------------------------------------------------------------- wave 2: maps (list, live, upload, grid, view)
+  - wave: 2
+    tracers:
+      - id: C3
+        title: Maps - list, create, rename, duplicate, delete, live, image upload, grid, map view
+        size: L
+        goal: The GM keeps several maps per campaign, uploads a map image and aligns its square grid, pans and zooms the painted or uploaded map, and marks one map live; players open the tab and see the live map.
+        depends_on: [C0, C1, C2]
+        owns:
+          - convex/combatMaps.ts
+          - src/components/combat-map/maps/**
+          - src/components/combat-map/map-view/**
+          - tests/convex/combat-maps.test.ts
+          - tests/e2e/combat-maps.spec.ts
+          - tests/e2e/visual/C3.spec.ts
+          - docs/tasks/TASK-D9-C3.md
+        reads:
+          - convex/tables/combatMaps.ts
+          - convex/lib/validators/combatMaps.ts
+          - convex/lib/combatMaps.ts
+          - convex/lib/files.ts
+          - convex/maps.ts
+          - src/app/(gm)/campaigns/[campaignId]/world/use-pan-zoom.ts
+          - src/lib/combat-map/painter.ts
+          - src/lib/domain/combat-map/index.ts
+          - src/components/combat-map/slots.ts
+        acceptance:
+          - "GM: list (name, size, source, live badge), create blank (Small 22x15 / Medium 30x20 / Large 40x27), rename, duplicate (map, objects, cells; tokens not copied), delete (with its rows and image file), setLive (exactly one live map per campaign) - R2"
+          - "Image upload: uploadUrl (GM, rate limit uploadUrl), attach checks size and the png/jpeg/webp/gif allowlist, deletes a rejected file and returns {ok:false} instead of throwing; refId = map id"
+          - "Grid over an image: square size and offset, nudge buttons and drag-to-shift as on the board (R1)"
+          - "Map view: canvas painter for generated/blank maps, image + grid for uploads; pan, zoom (Ctrl+scroll, -, +, Fit); header line 'title · W x H squares · N tokens'"
+          - "Players: campaignQuery `live` returns the live map's layout (Q1) or an empty state 'The GM has not shown a map yet'; no list, no edit tools"
+          - "e2e: GM creates two maps, uploads an image to one, sets it live; a player sees that map and no Scene card"
+
+  # ---------------------------------------------------------------- wave 3: generation, editing, tokens, in parallel
+  - wave: 3
+    tracers:
+      - id: C4
+        title: Claude lays out a map from the GM's description
+        size: M
+        goal: The GM describes a battlefield, picks a size and gets a layout from Claude (or the keyword fallback), can ask for another version, and the map is drawn and saved.
+        depends_on: [C3]
+        owns:
+          - convex/combatMapGenerate.ts
+          - src/components/combat-map/generate/**
+          - tests/convex/combat-map-generate.test.ts
+          - tests/e2e/combat-map-generate.spec.ts
+          - tests/e2e/visual/C4.spec.ts
+          - docs/tasks/TASK-D9-C4.md
+        reads:
+          - convex/photoImport.ts
+          - convex/combatMaps.ts
+          - src/lib/domain/combat-map/spec.ts
+          - src/lib/combat-map/fallback-layout.ts
+          - reference/designs/project/Combat.dc.html
+        acceptance:
+          - "userAction `generate` (GM via an internal access check, rate limit combatMapGenerate, Q5): calls the Messages API like convex/photoImport.ts (ANTHROPIC_API_KEY, ANTHROPIC_MODEL, DEFAULT_MODEL) with the board's scene prompt, parses JSON, validates with spec.ts, and saves areas + objects through an internal mutation; a variation seed for 'Another version'"
+          - "Without ANTHROPIC_API_KEY, or when Claude's reply fails validation, the keyword fallback is used and the card says which (board copy)"
+          - "UI: the board's Scene card (description, Small/Medium/Large, Generate / Generate new map, Another version, spinner with Stop that ignores the late result, message line)"
+          - "Regenerating keeps tokens (clamped inside the new size) and clears explored areas and fog marks for that map"
+          - Convex tests stub fetch; no real API call in tests
+      - id: C5
+        title: Editing a map by hand
+        size: L
+        goal: In edit mode the GM paints terrain, places, moves and deletes objects, sets any object to block sight or not, and paints sight blockers over an uploaded image.
+        depends_on: [C3]
+        owns:
+          - convex/combatMapEdit.ts
+          - src/components/combat-map/editor/**
+          - tests/convex/combat-map-edit.test.ts
+          - tests/e2e/combat-map-edit.spec.ts
+          - tests/e2e/visual/C5.spec.ts
+          - docs/tasks/TASK-D9-C5.md
+        reads:
+          - convex/combatMaps.ts
+          - convex/maps.ts
+          - src/lib/domain/combat-map/sight.ts
+          - src/lib/combat-map/raster.ts
+          - reference/designs/project/Combat.dc.html
+        acceptance:
+          - "paintCells (layer terrain | block, brush 1/2/3 squares, tiles in combatMapCells), addObject / moveObject / removeObject (cap MAX_COMBAT_OBJECTS), setObjectSight (block | cover | none | default) - R2, R7"
+          - "UI: the board's edit tools (Pan, Terrain + palette, Object + kind picker, Sight blocker brush, Erase), object panel with the sight setting and a 'blocks sight' outline in edit mode"
+          - "Painted cells and objects redraw only the changed area (no full repaint per stroke)"
+          - "e2e: GM paints a stone floor, adds a tree and a crate, sets the crate to block sight; reload keeps them"
+      - id: C6
+        title: Tokens - party, encounter, custom, move, facing, panel, range circles
+        size: L
+        goal: The GM places the party, a D8 encounter's adversaries and custom tokens, everyone drags their allowed tokens (snapping to the grid and facing the way they moved), turns them with a handle, edits HP/Stress/conditions in the token panel (synced to sheets and the tracker), and toggles range circles per token.
+        depends_on: [C3]
+        owns:
+          - convex/combatTokens.ts
+          - src/components/combat-map/tokens/**
+          - tests/convex/combat-tokens.test.ts
+          - tests/e2e/combat-tokens.spec.ts
+          - tests/e2e/visual/C6.spec.ts
+          - docs/tasks/TASK-D9-C6.md
+        reads:
+          - convex/combatMaps.ts
+          - convex/encounters.ts
+          - convex/encounterTracking.ts
+          - convex/characters.ts
+          - convex/lib/encounters.ts
+          - src/lib/domain/combat-map/ranges.ts
+          - reference/designs/project/Combat.dc.html
+        acceptance:
+          - "GM: addParty (active characters not yet on the map), addEncounter (a D8 encounter's instances, solo = 2x2; replaces the board's Session encounter button, Q6 - file a D10 bead for the session link), addCustom (name, HP, side), setSide, setSize (1..3), remove, clear (two-click confirm as on the board); cap MAX_COMBAT_TOKENS"
+          - "move (token id, x, y; clamped, snapped; sets face from the movement direction) and turn (token id, angle snapped to 15 degrees) - R5; a player may move/turn only their own PC's token (COMBAT_NOT_YOUR_TOKEN otherwise) - R4"
+          - "Token look as on the board: portrait (PC) or initials, side colour ring, HP bar, condition badge, facing arrow; a downed token is greyed"
+          - "Token panel (GM, or the player for their own PC): HP and Stress pips write through the existing character and encounterTracking mutations (one source of truth, no copies on the token for pc/adversary refs); conditions from the tracker's list; custom tokens keep their own numbers"
+          - "Range circles per token (R3): toggle in the panel and with R; 'Hide all'; Melee/Very Close/Close/Far rings labelled; state is per viewer in localStorage"
+          - GM-side query returns every token with stats; the player-side filtered query is C7's
+          - "e2e: GM adds the party and an encounter, drags an adversary (it faces the move), turns it, marks 2 HP (the tracker shows 2); a player drags their PC and cannot drag another token"
+
+  # ---------------------------------------------------------------- wave 4: vision and fog on the server
+  - wave: 4
+    tracers:
+      - id: C7
+        title: Vision on the server - player view, reveals, lights, explored areas, fog marks
+        size: L
+        goal: A player's query returns only the tokens their character can see under the campaign's time and the map's lights, without any adversary stats; the GM reveals dim tokens to a player, anyone switches a map light they can see, PCs carry a light, explored areas are remembered, and the GM brushes fog.
+        depends_on: [C1, C5, C6]
+        owns:
+          - convex/combatVision.ts
+          - convex/lib/combatVision.ts
+          - tests/convex/combat-vision.test.ts
+          - docs/tasks/TASK-D9-C7.md
+        reads:
+          - convex/combatMaps.ts
+          - convex/combatTokens.ts
+          - convex/combatMapEdit.ts
+          - convex/campaignTime.ts
+          - src/lib/domain/combat-map/index.ts
+          - convex/lib/permissions.ts
+        acceptance:
+          - "campaignQuery `playerView` (returns validator): the live map, the caller's PC token, and for every other token only what tokenVisibility allows (C1); hidden tokens are absent; adversary/NPC tokens carry name + portrait/initials + size + side + face only (R4, R10, R11, Q4)"
+          - "gmQuery `previewAs` (character id): the same result the player would get, for the GM preview (R12)"
+          - "gmMutation revealTo / unrevealTo (token id, character id) - R10; campaignMutation setCarriedLight (own PC token or GM; none | torch | lantern | alistair) - R9, Q3; campaignMutation toggleLight (object id): GM always, a player only if the light is visible or explored for their character (COMBAT_LIGHT_NOT_SEEN) - R9"
+          - "campaignMutation markExplored (map id, bitmap delta) for the caller's own character, merged into combatExplored; gmMutation paintFog (reveal | hide | erase cells, layer fog) - R11, R12"
+          - "Tests: a token behind a wall is absent for the player; a dim-band enemy at night is absent until revealTo; during Nightfall it is present; another PC is always present (Q4); an adversary row never includes hp, stress or difficulty; a player cannot toggle an unseen light"
+          - "Reactivity: moving any token or switching a light re-runs playerView; the C1 speed budget keeps the query under Convex limits on the largest map"
+
+  # ---------------------------------------------------------------- wave 5: vision and fog on screen, player view
+  - wave: 5
+    tracers:
+      - id: C8
+        title: Fog of war and the player view on screen
+        size: L
+        goal: Players see the live map through their character's eyes (cone, light, dim and dark bands, faint explored areas, revealed tokens marked), switch lights and their carried light, and the GM previews any PC's view, reveals tokens and brushes fog.
+        depends_on: [C7]
+        owns:
+          - src/components/combat-map/vision/**
+          - tests/e2e/combat-vision.spec.ts
+          - tests/e2e/visual/C8.spec.ts
+          - docs/tasks/TASK-D9-C8.md
+        reads:
+          - convex/combatVision.ts
+          - src/lib/domain/combat-map/index.ts
+          - src/components/combat-map/slots.ts
+          - src/components/combat-map/map-view/**
+          - src/components/combat-map/tokens/**
+          - reference/designs/project/Combat.dc.html
+        acceptance:
+          - "Fog canvas over the map, painted with the same C1 engine: clear, dim (faint terrain), dark, explored (faint, no tokens), GM fog marks; the cone outline from the token's facing (R6, R11)"
+          - "Player view: only the live map; own token highlighted; 'Your view' card with the cone width ('85 degrees vision cone (Instinct +1)'), carried light picker, the light rule line for the current phase and the dim-phase badge (R8, R9); markExplored is sent only when the explored set grows, throttled"
+          - "Clicking a lit/unlit campfire or wall torch switches it (GM and players, R9)"
+          - "GM: 'Preview' picker (any PC) showing previewAs; in the token panel 'Reveal to...' per PC for a token in dim light, with the board's dashed outline for revealed tokens; fog brushes Reveal / Hide / Erase (R10, R12)"
+          - "e2e (two browsers): at night with a torch, an enemy in the dim band is hidden for the player; the GM reveals it and it appears live; the GM moves an enemy behind a wall and it disappears for the player; daytime shows it again"
+
+  # ---------------------------------------------------------------- wave 6: end to end
+  - wave: 6
+    tracers:
+      - id: C9
+        title: D9 end-to-end pass, docs and follow-ups
+        size: S
+        goal: A full GM-and-player combat flow passes in the browser at desktop and tablet sizes, the task docs and data model are complete, and the follow-ups are filed.
+        depends_on: [C4, C8]
+        owns:
+          - tests/e2e/combat-map-flow.spec.ts
+          - docs/tasks/TASK-D9-C9.md
+        reads:
+          - convex/combat*.ts
+          - src/components/combat-map/**
+          - docs/combat-map-brief.md
+        acceptance:
+          - "One spec: GM generates a map (fallback), edits it, sets it live, adds the party and an encounter, a player moves their PC at night with a torch, the GM reveals a dim enemy, lights a campfire, and the player sees the lit area; at 1440 and 1024 px"
+          - "Checks every R1-R12 against the app and lists any gap in the task doc; each gap is filed as a bead under dcm-bxp"
+          - "Files follow-ups: D10 session-encounter link (Q6), authz-matrix entries for every D9 function (D12)"
