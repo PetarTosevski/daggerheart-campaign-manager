@@ -33,11 +33,11 @@
 #       character can see them now.
 #   R12 The GM sees everything, can preview any PC's view, and can reveal or hide areas by hand with a brush.
 #
-# OPEN QUESTIONS (defaults are built unless the user answers otherwise; a different answer changes only the tracers that cite it):
-#   Q1  (open) Secrecy of the layout. Default: players receive the live map's whole layout (terrain, objects, the uploaded image); fog is
+# QUESTIONS (all answered by the user 2026-10-19; tracers cite them by number):
+#   Q1  ANSWERED (yes to the default): Secrecy of the layout. players receive the live map's whole layout (terrain, objects, the uploaded image); fog is
 #       painted on their screen; TOKENS are filtered on the server (a token a player can't see never reaches their browser). An image
 #       can't be sent in pieces, so hiding unexplored terrain would only work for generated maps. Cited by C7, C8.
-#   Q2  (open) Lanterns: the brief treats a lantern like a torch (the user named torches only). Default: same as a torch. Cited by C1.
+#   Q2  ANSWERED: a lantern is the same as a torch. Cited by C1.
 #   Q3  ANSWERED: every token can carry a light (PCs, adversaries, allies, custom); the GM sets any token's light, a player only
 #       their own PC's. A carried light lights the area around its bearer for every viewer who can see that area. Cited by C1, C7.
 #   Q4  ANSWERED: a player always sees the other PCs' tokens, but NOT what those PCs see (no shared vision, R11). Allies and neutral
