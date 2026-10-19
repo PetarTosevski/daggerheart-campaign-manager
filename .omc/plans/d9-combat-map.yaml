@@ -34,16 +34,18 @@
 #   R12 The GM sees everything, can preview any PC's view, and can reveal or hide areas by hand with a brush.
 #
 # OPEN QUESTIONS (defaults are built unless the user answers otherwise; a different answer changes only the tracers that cite it):
-#   Q1  Secrecy of the layout. Default: players receive the live map's whole layout (terrain, objects, the uploaded image); fog is
+#   Q1  (open) Secrecy of the layout. Default: players receive the live map's whole layout (terrain, objects, the uploaded image); fog is
 #       painted on their screen; TOKENS are filtered on the server (a token a player can't see never reaches their browser). An image
 #       can't be sent in pieces, so hiding unexplored terrain would only work for generated maps. Cited by C7, C8.
-#   Q2  Lanterns: the brief treats a lantern like a torch (the user named torches only). Default: same as a torch. Cited by C1.
-#   Q3  Carried lights: default only PCs carry a light (the GM uses wall torches and campfires for the rest). Cited by C1, C7.
-#   Q4  Other PCs in dim light: default a player always sees the other PCs' tokens (the party knows where its members are); allies
-#       and neutral tokens follow R10 like enemies. Cited by C1, C7.
-#   Q5  Claude layout limit: default 10 generations per user per hour (rate limit `combatMapGenerate`), like photo import. Cited by C0, C4.
-#   Q6  The board's "+ Session encounter" button needs Sessions (now D10). Default: replaced by "Add encounter" (a D8 encounter's
-#       adversaries); C6 files a D10 follow-up bead for the session link. Cited by C6.
+#   Q2  (open) Lanterns: the brief treats a lantern like a torch (the user named torches only). Default: same as a torch. Cited by C1.
+#   Q3  ANSWERED: every token can carry a light (PCs, adversaries, allies, custom); the GM sets any token's light, a player only
+#       their own PC's. A carried light lights the area around its bearer for every viewer who can see that area. Cited by C1, C7.
+#   Q4  ANSWERED: a player always sees the other PCs' tokens, but NOT what those PCs see (no shared vision, R11). Allies and neutral
+#       tokens follow R10 like enemies. Cited by C1, C7.
+#   Q5  ANSWERED: 10 generations per user per hour (rate limit `combatMapGenerate`). Cited by C0, C4.
+#   Q6  ANSWERED: keep the board's "+ Session encounter" button; it stays disabled ("Comes with Sessions") and does nothing until
+#       D10 Sessions wires it. The board's "From the Adversaries tab" queue is how tracker adversaries reach the map. C6 files the
+#       D10 bead. Cited by C6.
 #
 # Rules for every tracer (part of every acceptance list, not repeated):
 #   - Every new public function uses the wrappers in convex/lib/functions.ts (campaignQuery / gmQuery / gmMutation /
@@ -82,7 +84,7 @@
 #                     terrain = hand-painted terrain; block = painted sight blockers (for images); fog = GM reveal/hide marks.
 #   combatTokens      one row per token: campaignId, mapId, ref (pc: characterId | adversary: encounterAdversaries id | custom: name,
 #                     hp, hpMax, stress, stressMax, conditions), side (pc | enemy | ally | neutral), x, y, size (1..3), face (radians),
-#                     light (pc only: none | torch | lantern | alistair), revealedTo (character ids, <= party cap). Index by_map.
+#                     light (any token: none | torch | lantern | alistair, Q3), revealedTo (character ids, <= party cap). Index by_map.
 #   combatExplored    one row per (map, character): explored half-squares as a bitmap string. Index by_map_character. Own table
 #                     because it changes on every move.
 #   files.kind        widened with "combatMap" (refId = the map id).
@@ -171,8 +173,8 @@ waves:
           - "spec.ts: zod schema + clean() ported from the board's CMAP.clean (terrains, object kinds incl. walltorch, shapes, caps, w 12..44, h 10..32); rejects junk, keeps valid parts"
           - "sight.ts: R7 defaults per object kind and the override (block | cover | none)"
           - "ranges.ts: RANGE_BANDS Melee 1, Very Close 3, Close 6, Far 12 (CB p.103 quoted in the task doc)"
-          - "light.ts: lightOf(phase) per R8 (Nautical Dawn is day, only Nautical Twilight and Nightfall are dim); carried lights per R9 (lantern = torch, Q2; only PCs carry, Q3); map lights walltorch [6,12], campfire [12,24]; no light [1,3]"
-          - "vision.ts: coneDeg(instinct) = clamp(70 + 15 x instinct, 10, 180) with VISION_BASE_DEG and VISION_STEP_DEG constants (R6); blockers from terrain walls, painted block cells and sight-blocking objects; los(); visibleSquares(); tokenVisibility(viewer, token) -> clear | dim | hidden, with R10 (dim hides tokens at night unless revealedTo), R11 and Q4 (other PCs always shown)"
+          - "light.ts: lightOf(phase) per R8 (Nautical Dawn is day, only Nautical Twilight and Nightfall are dim); carried lights per R9 on any token (lantern = torch, Q2; Q3); map lights walltorch [6,12], campfire [12,24]; no light [1,3]"
+          - "vision.ts: coneDeg(instinct) = clamp(70 + 15 x instinct, 10, 180) with VISION_BASE_DEG and VISION_STEP_DEG constants (R6); blockers from terrain walls, painted block cells and sight-blocking objects; los(); visibleSquares(); tokenVisibility(viewer, token) -> clear | dim | hidden, with R10 (dim hides tokens at night unless revealedTo), R11 (only the viewer's own cone, no shared vision) and Q4 (other PCs' tokens always shown)"
           - Unit tests cover each R6-R11 row of the light table, the 180 cap, the never-behind rule, a wall and a tree blocking sight, a bush not blocking, an override blocking, and the Nautical Dawn fix
           - "Speed: a 44 x 32 map with 300 objects computes one viewer's visibility in under 50 ms in the unit test (it runs inside Convex queries)"
       - id: C2
@@ -300,7 +302,8 @@ waves:
           - src/lib/domain/combat-map/ranges.ts
           - reference/designs/project/Combat.dc.html
         acceptance:
-          - "GM: addParty (active characters not yet on the map), addEncounter (a D8 encounter's instances, solo = 2x2; replaces the board's Session encounter button, Q6 - file a D10 bead for the session link), addCustom (name, HP, side), setSide, setSize (1..3), remove, clear (two-click confirm as on the board); cap MAX_COMBAT_TOKENS"
+          - "GM: addParty (active characters not yet on the map), the board's 'From the Adversaries tab' queue (the running D8 encounter's instances not yet on the map, one by one or Place all; solo = 2x2), addCustom (name, HP, side), setSide, setSize (1..3), remove, clear (two-click confirm as on the board); cap MAX_COMBAT_TOKENS"
+          - "The board's '+ Session encounter' button is shown disabled with the title 'Comes with Sessions' and calls nothing (Q6); file a D10 bead to wire it"
           - "move (token id, x, y; clamped, snapped; sets face from the movement direction) and turn (token id, angle snapped to 15 degrees) - R5; a player may move/turn only their own PC's token (COMBAT_NOT_YOUR_TOKEN otherwise) - R4"
           - "Token look as on the board: portrait (PC) or initials, side colour ring, HP bar, condition badge, facing arrow; a downed token is greyed"
           - "Token panel (GM, or the player for their own PC): HP and Stress pips write through the existing character and encounterTracking mutations (one source of truth, no copies on the token for pc/adversary refs); conditions from the tracker's list; custom tokens keep their own numbers"
@@ -331,9 +334,9 @@ waves:
         acceptance:
           - "campaignQuery `playerView` (returns validator): the live map, the caller's PC token, and for every other token only what tokenVisibility allows (C1); hidden tokens are absent; adversary/NPC tokens carry name + portrait/initials + size + side + face only (R4, R10, R11, Q4)"
           - "gmQuery `previewAs` (character id): the same result the player would get, for the GM preview (R12)"
-          - "gmMutation revealTo / unrevealTo (token id, character id) - R10; campaignMutation setCarriedLight (own PC token or GM; none | torch | lantern | alistair) - R9, Q3; campaignMutation toggleLight (object id): GM always, a player only if the light is visible or explored for their character (COMBAT_LIGHT_NOT_SEEN) - R9"
+          - "gmMutation revealTo / unrevealTo (token id, character id) - R10; campaignMutation setCarriedLight (any token for the GM, own PC token for a player; none | torch | lantern | alistair) - R9, Q3; campaignMutation toggleLight (object id): GM always, a player only if the light is visible or explored for their character (COMBAT_LIGHT_NOT_SEEN) - R9"
           - "campaignMutation markExplored (map id, bitmap delta) for the caller's own character, merged into combatExplored; gmMutation paintFog (reveal | hide | erase cells, layer fog) - R11, R12"
-          - "Tests: a token behind a wall is absent for the player; a dim-band enemy at night is absent until revealTo; during Nightfall it is present; another PC is always present (Q4); an adversary row never includes hp, stress or difficulty; a player cannot toggle an unseen light"
+          - "Tests: a token behind a wall is absent for the player; a dim-band enemy at night is absent until revealTo; during Nightfall it is present; another PC is always present but its view is not added to the player's (Q4); an enemy's carried torch lights the squares around it for a player who can see them (Q3); an adversary row never includes hp, stress or difficulty; a player cannot toggle an unseen light"
           - "Reactivity: moving any token or switching a light re-runs playerView; the C1 speed budget keeps the query under Convex limits on the largest map"
 
   # ---------------------------------------------------------------- wave 5: vision and fog on screen, player view
@@ -358,7 +361,7 @@ waves:
           - reference/designs/project/Combat.dc.html
         acceptance:
           - "Fog canvas over the map, painted with the same C1 engine: clear, dim (faint terrain), dark, explored (faint, no tokens), GM fog marks; the cone outline from the token's facing (R6, R11)"
-          - "Player view: only the live map; own token highlighted; 'Your view' card with the cone width ('85 degrees vision cone (Instinct +1)'), carried light picker, the light rule line for the current phase and the dim-phase badge (R8, R9); markExplored is sent only when the explored set grows, throttled"
+          - "Player view: only the live map; own token highlighted; 'Your view' card with the cone width ('85 degrees vision cone (Instinct +1)'), carried light picker for their own token (the GM sets any token's light in the token panel, Q3), the light rule line for the current phase and the dim-phase badge (R8, R9); markExplored is sent only when the explored set grows, throttled"
           - "Clicking a lit/unlit campfire or wall torch switches it (GM and players, R9)"
           - "GM: 'Preview' picker (any PC) showing previewAs; in the token panel 'Reveal to...' per PC for a token in dim light, with the board's dashed outline for revealed tokens; fog brushes Reveal / Hide / Erase (R10, R12)"
           - "e2e (two browsers): at night with a torch, an enemy in the dim band is hidden for the player; the GM reveals it and it appears live; the GM moves an enemy behind a wall and it disappears for the player; daytime shows it again"
@@ -381,4 +384,4 @@ waves:
         acceptance:
           - "One spec: GM generates a map (fallback), edits it, sets it live, adds the party and an encounter, a player moves their PC at night with a torch, the GM reveals a dim enemy, lights a campfire, and the player sees the lit area; at 1440 and 1024 px"
           - "Checks every R1-R12 against the app and lists any gap in the task doc; each gap is filed as a bead under dcm-bxp"
-          - "Files follow-ups: D10 session-encounter link (Q6), authz-matrix entries for every D9 function (D12)"
+          - "Files follow-ups: authz-matrix entries for every D9 function (D12); confirms C6 filed the D10 session-encounter bead (Q6)"
