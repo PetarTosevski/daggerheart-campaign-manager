@@ -34,9 +34,13 @@
 #   R12 The GM sees everything, can preview any PC's view, and can reveal or hide areas by hand with a brush.
 #
 # QUESTIONS (all answered by the user 2026-10-19; tracers cite them by number):
-#   Q1  ANSWERED (yes to the default): Secrecy of the layout. players receive the live map's whole layout (terrain, objects, the uploaded image); fog is
-#       painted on their screen; TOKENS are filtered on the server (a token a player can't see never reaches their browser). An image
-#       can't be sent in pieces, so hiding unexplored terrain would only work for generated maps. Cited by C7, C8.
+#   Q1  ANSWERED: players receive the live map's whole layout (terrain, objects, the uploaded image); fog is painted on their
+#       screen; TOKENS are filtered on the server. The map's edges are hidden too (user 2026-10-19): the player's fog extends
+#       FOG_PAD_SQUARES (default 24, the farthest light reach) beyond every edge, the area outside the map always looks exactly like
+#       unexplored fog (even when a character looks straight at the edge), and the player's pan limits and "Fit" use that padded
+#       area or their explored squares, never the map's real bounds. The real size stays in the payload (visible to someone
+#       reading the network traffic); hiding it there would need server-cropped layouts and cannot work for uploaded images.
+#       Cited by C7, C8.
 #   Q2  ANSWERED: a lantern is the same as a torch. Cited by C1.
 #   Q3  ANSWERED: every token can carry a light (PCs, adversaries, allies, custom); the GM sets any token's light, a player only
 #       their own PC's. A carried light lights the area around its bearer for every viewer who can see that area. Cited by C1, C7.
@@ -360,6 +364,7 @@ waves:
           - src/components/combat-map/tokens/**
           - reference/designs/project/Combat.dc.html
         acceptance:
+          - "Hidden edges (Q1): the player's map area is padded by FOG_PAD_SQUARES on every side; outside-the-map squares render as unexplored fog in every state (never as a border, a different colour or the end of the grid); pan limits and Fit use the padded area or the explored squares; the header line shows no W x H for players"
           - "Fog canvas over the map, painted with the same C1 engine: clear, dim (faint terrain), dark, explored (faint, no tokens), GM fog marks; the cone outline from the token's facing (R6, R11)"
           - "Player view: only the live map; own token highlighted; 'Your view' card with the cone width ('85 degrees vision cone (Instinct +1)'), carried light picker for their own token (the GM sets any token's light in the token panel, Q3), the light rule line for the current phase and the dim-phase badge (R8, R9); markExplored is sent only when the explored set grows, throttled"
           - "Clicking a lit/unlit campfire or wall torch switches it (GM and players, R9)"
