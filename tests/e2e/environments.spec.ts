@@ -162,8 +162,8 @@ test("Spend Fear lowers the GM's Fear; Start countdown puts a private countdown 
   await expect(block.getByRole("img", { name: "GM Fear 0 of 12" })).toBeVisible();
   await expect(spend).toBeDisabled();
   await expect(spend).toHaveAccessibleDescription("No Fear to spend.");
-  // A feature with neither a Fear cost nor a countdown has no buttons.
-  await expect(feature("Dangerous Crossing").getByRole("button")).toHaveCount(0);
+  // A countdown written in a feature's text also gets a Start button ("…uses a Progress Countdown (4)").
+  await expect(feature("Dangerous Crossing").getByRole("button")).toHaveText(["Start countdown"]);
 
   const gain = block.getByRole("button", { name: "Gain 1 Fear" });
   await gain.click();
