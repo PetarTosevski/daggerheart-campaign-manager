@@ -54,6 +54,7 @@ import {
   characterDraftValidator,
   characterStatusValidator,
   characterViewValidator,
+  conditionValidator,
   goldValidator,
   sheetPatchValidator,
   traitIdValidator,
@@ -551,6 +552,21 @@ export const adjustResource = userMutation({
     }
     await saveSheet(ctx, character._id, next);
     return { hp: next.hp, stress: next.stress, hope: next.hope, armorMarked: next.armorMarked, scars: next.scars };
+  },
+});
+
+/**
+ * Switches one condition on the sheet (CB p.102: Vulnerable, Restrained, Hidden...): on when it was off, off when it was
+ * on. Owner or GM; used by the Combat Map's token card (user 2026-10-20).
+ */
+export const toggleCondition = userMutation({
+  args: { characterId: v.id("characters"), condition: conditionValidator },
+  returns: v.object({ conditions: v.array(conditionValidator) }),
+  handler: async (ctx, { characterId, condition }) => {
+    const { character, sheet: s } = await editable(ctx, ctx.user, characterId);
+    const conditions = s.conditions.includes(condition) ? s.conditions.filter((c) => c !== condition) : [...s.conditions, condition];
+    await saveSheet(ctx, character._id, { ...s, conditions });
+    return { conditions };
   },
 });
 

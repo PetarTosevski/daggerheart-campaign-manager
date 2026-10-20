@@ -7,6 +7,7 @@ import { useState } from "react";
 import { errorMessage } from "@/lib/convex-errors";
 import { applyResourceDelta } from "@/lib/domain/characters";
 import { applyCondition, applyMark } from "@/lib/domain/encounters/damage";
+import type { Condition } from "@/lib/validation/characters";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -68,6 +69,9 @@ export function useTokenActions(campaignId: Id<"campaigns">, map: CombatMapSumma
           return { ...s, hp: next.hp, stress: next.stress, down: s.hpMax > 0 && next.hp >= s.hpMax };
         }),
     ),
+  );
+  const togglePcCondition = useMutation(api.characters.toggleCondition).withOptimisticUpdate((store, { characterId, condition }) =>
+    patchTokens(store, (t) => t.characterId === characterId, (t) => withStats(t, (s) => applyCondition<string, typeof s>(s, condition))),
   );
   const markTrack = (track: "hp" | "stress") =>
     (store: OptimisticLocalStore, { instanceId, delta }: { instanceId: string; delta: number }) =>
@@ -147,6 +151,12 @@ export function useTokenActions(campaignId: Id<"campaigns">, map: CombatMapSumma
         return run(() => toggleCondition({ campaignId, instanceId, condition, idempotencyKey: idempotencyKey() }));
       }
       return run(() => toggleCustomCondition({ campaignId, tokenId: token._id, condition, idempotencyKey: idempotencyKey() }));
+    },
+    /** A PC's condition, on the character sheet (owner or GM). */
+    togglePcCondition: (token: TokenView, condition: Condition) => {
+      if (token.kind !== "pc" || !token.characterId) return Promise.resolve();
+      const characterId = token.characterId;
+      return run(() => togglePcCondition({ characterId, condition }));
     },
     setSide: (tokenId: Id<"combatTokens">, side: TokenView["side"]) => run(() => setSide({ campaignId, tokenId, side })),
     setSize: (tokenId: Id<"combatTokens">, size: number) => run(() => setSize({ campaignId, tokenId, size })),
