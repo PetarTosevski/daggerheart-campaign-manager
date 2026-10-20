@@ -1,0 +1,221 @@
+/*
+ * Vision (D9 C8): the fog of war, the light pill, the GM's preview menu, the player's "Your view" card, "Reveal to…"
+ * and the light switches on the map, in the board's look (reference/designs/project/Combat.dc.html). Shared tokens
+ * and classes come from the page's combat-map.css; token looks reuse C6's tokens.css classes.
+ */
+
+/* ---------------------------------------------------------------- map layers */
+
+/* The fog sits over the map and under C6's tokens (z 2): tokens on screen are the ones the server sent. */
+.cm-fog {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.cm-fog-tint {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+}
+.cm-vis-over {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.cm-vis-lights {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+/* A switch over a campfire or wall torch (R9): invisible until hovered or focused; the painter draws lit / out. */
+.cm-vis-light {
+  position: absolute;
+  min-width: 24px;
+  min-height: 24px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.cm-vis-light:hover,
+.cm-vis-light:focus-visible {
+  border-color: rgba(243, 207, 134, 0.85);
+  box-shadow: 0 0 14px rgba(243, 207, 134, 0.55);
+  outline: none;
+}
+.cm-vis-light[aria-pressed="false"]:hover,
+.cm-vis-light[aria-pressed="false"]:focus-visible {
+  border-style: dashed;
+}
+/* The fog brush takes the pointer over the whole map, tokens included (R12). */
+.cm-vis-brush {
+  position: absolute;
+  z-index: 3;
+  cursor: crosshair;
+  touch-action: none;
+}
+.cm-vis-error {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 60;
+  margin: 0;
+  max-width: min(420px, calc(100% - 20px));
+}
+
+/* A token revealed to this player in dim light (R10): the board's dashed outline and eye badge. */
+.cm-tok.revealed {
+  outline: 2px dashed #c6b6f2;
+  outline-offset: 5px;
+}
+.cm-tok.revealed .cm-tag {
+  opacity: 1;
+}
+.cm-vis-rev {
+  left: -8px;
+  top: -8px;
+  background: #5b4a8f;
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.cm-light {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cm-light-day {
+  background: rgba(227, 180, 90, 0.18);
+  border: 1px solid #8a6d2a;
+  color: #f3cf86;
+}
+.cm-light-dim {
+  background: rgba(160, 90, 40, 0.25);
+  border: 1px solid #b0703a;
+  color: #ffc89a;
+}
+.cm-light-night {
+  background: rgba(40, 50, 90, 0.45);
+  border: 1px solid #4a5a9a;
+  color: #c6d2ff;
+}
+.cm-light-badge {
+  opacity: 0.85;
+  font-weight: 500;
+}
+.cm-pv {
+  position: relative;
+}
+.cm-pv-btn {
+  background: rgba(0, 0, 0, 0.35);
+}
+.cm-pv-menu {
+  position: absolute;
+  right: 0;
+  top: 44px;
+  z-index: 40;
+  min-width: 220px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--cm-card);
+  border: 1px solid var(--cm-border);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cm-pv-lbl {
+  padding: 4px 6px;
+}
+.cm-pv-item {
+  justify-content: flex-start;
+}
+.cm-pv-item[aria-checked="true"] {
+  border-color: var(--cm-acc);
+  color: var(--cm-acc-soft);
+}
+
+/* ---------------------------------------------------------------- cards */
+
+.cm-vis-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cm-vis-tight {
+  gap: 4px;
+}
+.cm-vis-inline {
+  margin-right: 4px;
+}
+.cm-vis-small {
+  font-size: 13px;
+}
+.cm-vis-me {
+  align-items: baseline;
+}
+.cm-vis-name {
+  font-family: var(--cm-display);
+  font-size: 22px;
+}
+.cm-vis-name-sm {
+  font-size: 16px;
+}
+.cm-vis-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: none;
+}
+.cm-vis-dim {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(160, 90, 40, 0.25);
+  border: 1px solid #b0703a;
+  color: #ffc89a;
+}
+.cm-vis-preview {
+  font-size: 13px;
+  color: var(--cm-acc-soft);
+}
+.cm-vis-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #1a1630;
+  border: 1px solid #5b4a8f;
+}
+.cm-vis-reveal-lbl {
+  color: #c6b6f2;
+}
+
+@media (max-width: 760px) {
+  .cm-vis-light {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .cm-pv-menu {
+    left: 0;
+    right: auto;
+  }
+}
