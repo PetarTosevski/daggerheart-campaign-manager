@@ -9,6 +9,8 @@
 // `rollOptions` (held-dice.ts), once, whatever the class and multiclass.
 // `rollOptions`, `weaponOverrides` and `afterDualityRoll` take the campaign's
 // `FeatureScope`: a Hope & Fear class's module answers only with `hopeAndFear`.
+// The session features (src/lib/domain/session-features) add the Waxing Moon damage
+// option to `rollOptions` and the Slayer choice prompt to `afterDualityRoll`.
 //
 // ```ts
 // // T1 dice box / rolls.ts
@@ -29,6 +31,7 @@
 // Tests pass their own registry as the third argument.
 
 import type { CharacterSheet } from "../../validation/characters";
+import { slayerStorePrompt, waxingMoonOption } from "../session-features/dice-hooks";
 import { heldDiceOptions } from "./held-dice";
 import { CLASS_FEATURES, classFeaturesAvailable, type Registry } from "./index";
 import type { ClassFeatures, DualityRollResult, FeatureMeta, FeatureScope, HookRollKind, Rng, RollOption, RollPrompt, WeaponOverride, WeaponSheet } from "./types";
@@ -52,17 +55,28 @@ function scopedModules(sheet: Classed, registry: Registry, scope: FeatureScope):
   return modulesFor(sheet, registry).filter((m) => classFeaturesAvailable(m.classId, scope.hopeAndFear));
 }
 
-/** The class modules' options for this roll, then the held Rally Dice (any class). */
+/**
+ * The class modules' options for this roll, then the session features' (Waxing Moon +2 on damage rolls for a
+ * Lunar Phases holder with a Waxing die, HF 17; only in a `hopeAndFear` scope), then the held Rally Dice (any class).
+ */
 export function rollOptions(sheet: CharacterSheet, kind: HookRollKind, registry: Registry = CLASS_FEATURES, scope: FeatureScope = EVERYTHING): RollOption[] {
-  return [...scopedModules(sheet, registry, scope).flatMap((m) => m.rollOptions?.(sheet, kind, scope) ?? []), ...heldDiceOptions(sheet)];
+  return [
+    ...scopedModules(sheet, registry, scope).flatMap((m) => m.rollOptions?.(sheet, kind, scope) ?? []),
+    ...waxingMoonOption(sheet, kind, scope),
+    ...heldDiceOptions(sheet),
+  ];
 }
 
 export function weaponOverrides(sheet: WeaponSheet, registry: Registry = CLASS_FEATURES, scope: FeatureScope = EVERYTHING): WeaponOverride[] {
   return scopedModules(sheet, registry, scope).flatMap((m) => m.weaponOverrides?.(sheet) ?? []);
 }
 
+/**
+ * The class modules' prompts, then the Slayer choice (session-features U2: "Take the Hope or store a Slayer Die?"
+ * after an action roll with Hope while the pool is below Proficiency; `sheet` is the sheet after the roll's gains).
+ */
 export function afterDualityRoll(sheet: CharacterSheet, result: DualityRollResult, registry: Registry = CLASS_FEATURES, scope: FeatureScope = EVERYTHING): RollPrompt[] {
-  return scopedModules(sheet, registry, scope).flatMap((m) => m.afterDualityRoll?.(sheet, result) ?? []);
+  return [...scopedModules(sheet, registry, scope).flatMap((m) => m.afterDualityRoll?.(sheet, result) ?? []), ...slayerStorePrompt(sheet, result)];
 }
 
 export function onRest(sheet: CharacterSheet, kind: "short" | "long", registry: Registry = CLASS_FEATURES): CharacterSheet {
