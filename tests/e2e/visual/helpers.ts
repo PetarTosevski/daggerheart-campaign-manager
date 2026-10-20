@@ -19,6 +19,16 @@ export const VIEWPORTS = [
   { width: 390, height: 844 },
 ] as const;
 
+/**
+ * The three viewports of the combat map plan (.omc/plans/d9-combat-map.yaml): desktop, tablet and phone. Pass them
+ * to `visual(page, tracer, D9_VIEWPORTS)`; board counterparts come from `node scripts/board-shots.mjs combat:<region>`.
+ */
+export const D9_VIEWPORTS = [
+  { width: 1440, height: 900 },
+  { width: 1024, height: 768 },
+  { width: 390, height: 844 },
+] as const;
+
 /** A level-1 Bard (Troubadour): Rapier, Gambeson, Deft Deceiver + Book of Ava. Override fields per shot. */
 export function bardDraft(name: string) {
   return {
@@ -109,6 +119,26 @@ export async function openAdversaries(page: Page, frame = "witherwild") {
   return { client: await convexAs(page), campaignId, url };
 }
 
+/**
+ * Signs in as the test GM, starts a campaign of `frame` through the UI and opens its Combat Map page (D9,
+ * .omc/plans/d9-combat-map.yaml). Returns a Convex client for seeding, the campaign id and name, and the page URL.
+ */
+export async function openCombatMap(page: Page, frame = "witherwild") {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const campaignName = `Visual ${crypto.randomUUID().slice(0, 8)}`;
+  await page.goto(`/frames/${frame}`);
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(campaignName);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: campaignName })).toBeVisible();
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+  const url = `/campaigns/${campaignId}/combat-map`;
+  await page.goto(url);
+  await expect(page.getByRole("heading", { level: 1, name: "Combat Map" })).toBeVisible();
+  return { client: await convexAs(page), campaignId, campaignName, url };
+}
+
 /** The sheet's page tab ("Character Sheet", "Story & Advancement", "Domains") or a Domains sub-tab. */
 export async function openTab(page: Page, name: string) {
   await page.getByRole("tab", { name, exact: true }).click();
@@ -121,19 +151,20 @@ export async function expectNoHorizontalScroll(page: Page) {
 }
 
 /**
- * Shots for one tracer: `shoot(locator, name)` screenshots the region at 1440x900 and at 390x844 (checking
- * there is no horizontal scroll at 390), then restores the first viewport.
+ * Shots for one tracer: `shoot(locator, name)` screenshots the region at each viewport (default 1440x900 and
+ * 390x844; D9 passes `D9_VIEWPORTS`), checking there is no horizontal scroll below 640 px, then restores the first
+ * viewport.
  */
-export function visual(page: Page, tracer: string) {
+export function visual(page: Page, tracer: string, viewports: readonly { width: number; height: number }[] = VIEWPORTS) {
   return {
     async shoot(locator: Locator, name: string) {
-      for (const viewport of VIEWPORTS) {
+      for (const viewport of viewports) {
         await page.setViewportSize(viewport);
         await expect(locator).toBeVisible();
         if (viewport.width < 640) await expectNoHorizontalScroll(page);
         await locator.screenshot({ path: `test-results/visual/${tracer}/${name}-${viewport.width}.png`, animations: "disabled" });
       }
-      await page.setViewportSize(VIEWPORTS[0]);
+      await page.setViewportSize(viewports[0] ?? VIEWPORTS[0]);
     },
   };
 }

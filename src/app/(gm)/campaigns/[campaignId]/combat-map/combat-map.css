@@ -1,0 +1,470 @@
+/*
+ * Combat Map page (D9): the board's tokens and shared classes (reference/designs/project/Combat.dc.html, lines
+ * 12-60) as custom properties on .cm-root, plus the page shell (header, two columns, map area). Feature slots
+ * (src/components/combat-map/{maps,map-view,generate,editor,tokens,vision}) use these classes and variables and
+ * keep their own rules in their own colocated .css. Class names follow the board (`cm-card`, `cm-btn`, `cm-lbl`,
+ * `cm-seg`, `cm-live`, `cm-chip`, `cm-in`, `cm-ta`, `cm-go`, `cm-pip`, `cm-spin`); the board's `.sm` modifier is
+ * `cm-sm`. Fonts come from the root layout: --font-cinzel (headings, numbers), --font-garamond (the scene text),
+ * --font-plex (UI).
+ */
+.cm-root {
+  --cm-page: #0d1417;
+  --cm-card: #141e22;
+  --cm-card-border: #253338;
+  --cm-field: #0b1214;
+  --cm-border: #33444a;
+  --cm-hover: #1b282d;
+  --cm-text: #e6ecea;
+  --cm-muted: #9fb2b6;
+  /* Accent: the app's settings accent (the board's gold), with the board's default */
+  --cm-acc: var(--brand, #e3b45a);
+  --cm-acc-soft: #f3cf86;
+  --cm-acc-bg: #2d2614;
+  --cm-acc-ink: #1a1408;
+  --cm-danger: #ffb4a8;
+  --cm-danger-border: #5a3330;
+  --cm-fear-bg: rgba(40, 20, 60, 0.75);
+  --cm-fear-border: #5b4a8f;
+  --cm-fear-text: #c6b6f2;
+  --cm-live-bg: #1d3a2a;
+  --cm-live-text: #9fe7bb;
+  --cm-live-dot: #5fd38d;
+  --cm-vp-bg: #070b0c;
+  --cm-display: var(--font-cinzel), serif;
+  --cm-serif: var(--font-garamond), serif;
+
+  background: var(--cm-page);
+  color: var(--cm-text);
+  font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------- shared classes (board) */
+
+.cm-card {
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--cm-card);
+  border: 1px solid var(--cm-card-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.cm-card-me {
+  border-color: var(--cm-acc);
+}
+.cm-h {
+  margin: 0;
+  font-family: var(--cm-display);
+  font-size: 18px;
+  font-weight: 700;
+}
+.cm-lbl {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cm-muted);
+}
+.cm-muted {
+  color: var(--cm-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.cm-m0 {
+  margin: 0;
+}
+.cm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.cm-between {
+  justify-content: space-between;
+}
+.cm-ta {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 96px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--cm-border);
+  background: var(--cm-field);
+  color: var(--cm-text);
+  font-size: 17px;
+  line-height: 1.5;
+  font-family: var(--cm-serif);
+  resize: vertical;
+}
+.cm-in {
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--cm-border);
+  background: var(--cm-field);
+  color: var(--cm-text);
+  font-size: 14px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.cm-ta:focus-visible,
+.cm-in:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 1px;
+}
+.cm-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--cm-border);
+  background: transparent;
+  color: var(--cm-text);
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.cm-btn:hover {
+  background: var(--cm-hover);
+}
+.cm-btn:focus-visible,
+.cm-go:focus-visible,
+.cm-chip:focus-visible,
+.cm-seg button:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 2px;
+}
+.cm-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cm-btn[aria-pressed="true"] {
+  background: var(--cm-acc-bg);
+  border-color: var(--cm-acc);
+  color: var(--cm-acc-soft);
+}
+.cm-btn.cm-sm {
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 13px;
+}
+.cm-btn.cm-danger {
+  color: var(--cm-danger);
+  border-color: var(--cm-danger-border);
+}
+.cm-go {
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: none;
+  background: var(--cm-acc);
+  color: var(--cm-acc-ink);
+  font-family: var(--cm-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.cm-go[disabled] {
+  opacity: 0.5;
+  cursor: wait;
+}
+.cm-chip {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #3a4d54;
+  background: var(--cm-field);
+  color: var(--cm-text);
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cm-chip:hover {
+  border-color: var(--cm-acc);
+}
+.cm-seg {
+  display: flex;
+  padding: 4px;
+  gap: 4px;
+  border-radius: 12px;
+  background: var(--cm-field);
+  border: 1px solid var(--cm-card-border);
+}
+.cm-seg button {
+  flex: 1;
+  min-height: 38px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--cm-text);
+  font-family: var(--cm-display);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cm-seg button[aria-pressed="true"] {
+  background: var(--cm-acc);
+  color: var(--cm-acc-ink);
+}
+.cm-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--cm-live-bg);
+  color: var(--cm-live-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.cm-live::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cm-live-dot);
+  box-shadow: 0 0 0 3px rgb(95 211 141 / 0.25);
+}
+.cm-pip {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 2px solid;
+  box-sizing: border-box;
+  padding: 0;
+  cursor: pointer;
+}
+.cm-spin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2.5px solid #3a4d54;
+  border-top-color: var(--cm-acc);
+  animation: cm-spin 0.8s linear infinite;
+  flex: none;
+}
+@keyframes cm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm-spin {
+    animation-duration: 2.4s;
+  }
+}
+.cm-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--cm-danger-border);
+  background: #1a1311;
+  color: var(--cm-danger);
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- page shell */
+
+.cm-head {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 22px 32px 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+.cm-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.cm-campaign {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: #c8d3d0;
+}
+.cm-title {
+  margin: 0;
+  font-family: var(--cm-display);
+  font-size: 40px;
+  line-height: 1.05;
+  font-weight: 900;
+}
+.cm-headline {
+  font-size: 15px;
+  color: #d6dfdc;
+}
+.cm-head-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.cm-fear {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--cm-fear-bg);
+  border: 1px solid var(--cm-fear-border);
+}
+.cm-fear-lbl {
+  font-family: var(--cm-display);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--cm-fear-text);
+}
+.cm-fear .cm-fear-step {
+  width: 30px;
+  padding: 0;
+}
+.cm-fear-n {
+  font-family: var(--cm-display);
+  font-size: 20px;
+  min-width: 22px;
+  text-align: center;
+}
+.cm-fear-err {
+  font-size: 12px;
+  color: var(--cm-danger);
+}
+.cm-main {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 22px 32px 40px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.cm-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+/* A player before any map is live: no left column, the empty map area takes the width. */
+.cm-main.cm-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cm-area {
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- map area (C3 extends it in map-view) */
+
+.cm-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.cm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 30px;
+}
+.cm-map-title {
+  font-family: var(--cm-display);
+  font-size: 18px;
+  margin-right: 6px;
+}
+.cm-vp {
+  position: relative;
+  overflow: auto;
+  max-height: calc(100vh - 150px);
+  min-height: 440px;
+  border-radius: 14px;
+  border: 1px solid var(--cm-card-border);
+  background: var(--cm-vp-bg);
+}
+.cm-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  text-align: center;
+}
+.cm-empty-inner {
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+.cm-empty-title {
+  font-family: var(--cm-display);
+  font-size: 22px;
+}
+
+/* ---------------------------------------------------------------- tablet and phone */
+
+@media (max-width: 1180px) {
+  .cm-main {
+    grid-template-columns: 300px minmax(0, 1fr);
+    padding: 16px 18px 28px;
+    gap: 14px;
+  }
+  .cm-head {
+    padding: 16px 18px 0;
+    gap: 12px;
+  }
+  .cm-title {
+    font-size: 30px;
+  }
+  .cm-card {
+    padding: 14px;
+  }
+  .cm-vp {
+    min-height: 400px;
+  }
+}
+@media (max-width: 760px) {
+  .cm-main {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 16px 24px;
+  }
+  .cm-head {
+    padding: 12px 16px 0;
+  }
+  .cm-vp {
+    min-height: 320px;
+    max-height: 70vh;
+  }
+  /* Touch targets of at least 44 px on phones. */
+  .cm-btn,
+  .cm-btn.cm-sm,
+  .cm-chip,
+  .cm-seg button {
+    min-height: 44px;
+  }
+  .cm-fear .cm-fear-step {
+    width: 44px;
+  }
+}

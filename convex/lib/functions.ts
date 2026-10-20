@@ -169,6 +169,8 @@ const RATE_LIMITS = {
   createCharacter: { kind: "token bucket", rate: 20, period: HOUR, capacity: 30 },
   // Photo import (D5): one Messages API call per click (decision 14).
   photoImport: { kind: "token bucket", rate: 10, period: HOUR },
+  // Combat map layouts (D9, Q5): one Messages API call per Generate / Another version, 10 per user per hour.
+  combatMapGenerate: { kind: "token bucket", rate: 10, period: HOUR },
 } as const;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

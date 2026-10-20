@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
+import { deleteMapChildren } from "./lib/combatMaps";
 
 /**
  * Retention for the tables that only grow (CD17, CD18), run by `crons.ts`.
@@ -150,6 +151,20 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
       .withIndex("by_principal_type", (q) => q.eq("principalKind", "campaign").eq("principalId", c))
       .take(budget.left);
     await deleteRows(ctx, budget, "grants", toCampaign);
+  },
+  // A combat map's objects, painted cells, tokens and explored areas go before the map (D9); its image is a
+  // `files` row of this campaign (kind "combatMap"), deleted with the campaign's files below.
+  async (ctx, c, budget) => {
+    const maps = await ctx.db
+      .query("combatMaps")
+      .withIndex("by_campaign_updated", (q) => q.eq("campaignId", c))
+      .take(budget.left);
+    for (const map of maps) {
+      budget.left -= await deleteMapChildren(ctx, map._id, budget.left);
+      // Out of budget: the map may still have children; the next run finishes it.
+      if (budget.left <= 0) return;
+      await deleteRows(ctx, budget, "combatMaps", [map]);
+    }
   },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("files").withIndex("by_campaign_kind", (q) => q.eq("campaignId", c)).take(budget.left);
