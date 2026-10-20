@@ -9,7 +9,7 @@
 #   carries printed page N in its footer). Each tracer that cites a page re-checks it (.reference-private/, pdfjs-dist; never commit
 #   the books) and quotes it in its task doc.
 # Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
-# Status: DRAFT. Defaults for the QUESTIONS below are written into the acceptance lists and marked (Qn); an answer that differs changes
+# Status: APPROVED 2026-10-20 (all defaults). Defaults for the QUESTIONS below are written into the acceptance lists and marked (Qn); an answer that differs changes
 #   only the tracers that cite that Qn. Tracers do not start until the user has answered or accepted the defaults.
 #
 # Rules the board settles (binding; tracers quote the one they implement in their task doc):
@@ -85,7 +85,7 @@
 #   E7  `api.sessions.current/start/end/allowExtraCharacters` keep accepting their current arguments (new arguments are optional), so
 #       tests/convex/{sessions,one-active,scenes,class-features-core,level-up}.test.ts keep passing unchanged.
 #
-# QUESTIONS (open; defaults marked in the acceptance lists as (Qn)):
+# QUESTIONS (ALL ANSWERED by the user 2026-10-20: "default" — every default below is binding; marked in the acceptance lists as (Qn)):
 #   Q1  Encounter builder in Prep. The board's builder is an abstract counter (2× Bruiser, 1× Leader ...) stored on the session; D8
 #       already built a real Battle Points builder on encounters with real stat blocks. Options: (a) the board's abstract counter on
 #       the session; (b) the session links ONE D8 encounter and Prep shows D8's builder for it (create 'Session N encounter' or link
