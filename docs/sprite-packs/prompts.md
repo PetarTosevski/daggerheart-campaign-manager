@@ -16,9 +16,11 @@ work (bd: sprite packs), not built yet.
 - Paste the **style block** at the end of every prompt, unchanged. It keeps every sheet in one style.
 - One prompt per sheet. Regenerate a sheet until every cell is filled, nothing overlaps another cell, and the
   background is flat magenta.
-- Save each sheet as `sheets/<setting>/<sheet>.png`, for example `sheets/forest/props.png`,
-  `sheets/forest/large.png`, `sheets/forest/terrain.png`. Keep the names: the cutter reads the setting and the
-  sheet type from them.
+- Save each sheet as `sprite-sheets/<setting>/<sheet>.png` in the project folder (git-ignored: raw sheets are
+  never committed), for example `sprite-sheets/forest/props.png`, `sprite-sheets/forest/large.png`,
+  `sprite-sheets/forest/terrain.png`. Keep the names: the cutter reads the setting and the sheet type from them.
+  Folder names are the setting names below in lower case with hyphens (`common`, `grassland-and-road`,
+  `town-street-and-market`, `mushroom-cavern`, …); the folders already exist.
 - Scale: one map square is 5 ft. On a props sheet each object fills about one square; on a large sheet about
   two by two squares. Keep that in mind if you write your own lists.
 
