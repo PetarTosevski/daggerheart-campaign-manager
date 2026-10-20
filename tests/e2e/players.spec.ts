@@ -188,10 +188,14 @@ test("XC1: the GM allows extra characters for the session; they stay after it en
   await createCharacter(player.page, campaignId, first);
   await expect(createCharacter(player.page, campaignId, second)).rejects.toThrow();
 
-  // The switch shows only while a session runs, and only to the GM.
+  // The switch shows only while a session runs, and only to the GM (on the Sessions tab's live card, D10 S3).
+  await page.goto(`/campaigns/${campaignId}/sessions`);
+  await page.getByRole("button", { name: "+ New session" }).click();
+  const liveCard = page.getByRole("region", { name: "Live session" });
   const allow = page.getByRole("switch", { name: /Allow extra characters this session/ });
+  await expect(liveCard.getByRole("button", { name: "Start session" })).toBeVisible();
   await expect(allow).toHaveCount(0);
-  await page.getByRole("button", { name: "Start session" }).click();
+  await liveCard.getByRole("button", { name: "Start session" }).click();
   await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
   await allow.check();
   await expect(allow).toBeChecked();
@@ -205,7 +209,7 @@ test("XC1: the GM allows extra characters for the session; they stay after it en
   }
 
   // End: the allowance goes, the extras stay active, and the rule is back.
-  await page.getByRole("button", { name: "End session" }).click();
+  await liveCard.getByRole("button", { name: "End session" }).click();
   await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
   await expect(allow).toHaveCount(0);
   await expect(player.page.getByRole("article", { name: second }).getByTestId("extra-active-warning")).toHaveText("2 active: send one away");

@@ -70,6 +70,15 @@ test("a Bard rallies, a Warrior spends the Rally Die on a roll in the dice box, 
   const { characterId: bardId } = await client.mutation(api.characters.create, { campaignId, draft: bardDraft(bard), idempotencyKey: crypto.randomUUID() });
   const { characterId: warriorId } = await client.mutation(api.characters.create, { campaignId, draft: warriorDraft(warrior), idempotencyKey: crypto.randomUUID() });
 
+  // The GM starts a session on the Sessions tab (D10 S3's live card), so the rally below happens inside it.
+  await page.goto(`/campaigns/${campaignId}/sessions`);
+  await page.getByRole("button", { name: "+ New session" }).click();
+  const liveCard = page.getByRole("region", { name: "Live session" });
+  await liveCard.getByRole("button", { name: "Start session" }).click();
+  await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
+  await expect(liveCard.getByRole("button", { name: "End session" })).toBeVisible();
+  const sessionUrl = page.url();
+
   // The Bard rallies: both PCs hold a d6 Rally Die.
   await page.goto(`/campaigns/${campaignId}/party/${bardId}`);
   await expect(page.getByRole("heading", { level: 1, name: bard })).toBeVisible();
@@ -94,10 +103,10 @@ test("a Bard rallies, a Warrior spends the Rally Die on a roll in the dice box, 
   await expect(warriorFeatures.getByRole("button", { name: "Use Rally Die: clear Stress" })).toHaveCount(0);
 
   // The GM ends the session: the Bard's unspent die clears.
-  await page.goto(`/campaigns/${campaignId}`);
-  await page.getByRole("button", { name: "End session" }).click();
+  await page.goto(sessionUrl);
+  await liveCard.getByRole("button", { name: "End session" }).click();
   await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
-  await expect(page.getByText("Session ended.")).toBeVisible();
+  await expect(liveCard.getByText("Session ended.")).toBeVisible();
   await page.goto(`/campaigns/${campaignId}/party/${bardId}`);
   await expect(page.getByRole("heading", { level: 1, name: bard })).toBeVisible();
   await expect(page.getByRole("region", { name: "Class Features" }).getByRole("button", { name: "Use Rally", exact: true })).toBeEnabled();

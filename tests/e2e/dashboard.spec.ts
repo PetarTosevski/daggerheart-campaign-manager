@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { signInAsTestGm } from "./fixtures";
+import { convexAs } from "./visual/helpers";
 
 const unique = (label: string) => `${label} ${Date.now().toString(36)}`;
 
@@ -164,4 +167,73 @@ test("frames without campaign time show no arc", async ({ page }) => {
   await newCampaign(page, "castle-high");
   await expect(page.getByRole("region", { name: "GM Fear" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Time of the long cycle" })).toHaveCount(0);
+});
+
+test("D10 S7: the hero session line, Start Session, the Last Session card and the Wither panel's End Session", async ({ page, browser }) => {
+  await newCampaign(page, "witherwild");
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+  const client = await convexAs(page);
+  const hero = page.getByRole("region", { name: "Campaign header" });
+  const last = page.getByRole("region", { name: "Last Session" });
+  const wither = page.getByRole("region", { name: "Wither Tokens" });
+
+  // Nothing yet: the board's fallbacks (B9), an empty Wither panel (B12), and no temporary Session card.
+  await expect(hero.getByTestId("hero-session")).toHaveText("No sessions yet");
+  await expect(hero.getByTestId("hero-next-session")).toHaveText("Next session not scheduled");
+  await expect(last.getByTestId("last-session-text")).toHaveText("No sessions played yet. Write a recap in a session's Wrap-up stage and it will appear here.");
+  await expect(last.getByRole("link", { name: "All sessions" })).toHaveAttribute("href", `/campaigns/${campaignId}/sessions`);
+  await expect(wither.getByTestId("wither-panel-count")).toHaveText("0 on sheets · 20 in pool");
+  await expect(page.getByRole("heading", { name: "Session", exact: true })).toHaveCount(0);
+
+  // Start Session (B8): no session yet, so one is created, started and opened on Play.
+  await hero.getByRole("button", { name: "Start Session", exact: true }).click();
+  await expect(page).toHaveURL(/\/sessions\?s=[^&]+&stage=play$/);
+  await expect(page.getByRole("tab", { name: "Play" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("region", { name: "Live session" })).toContainText("Session in progress");
+  const sessionUrl = new URL(page.url());
+
+  await page.goto(`/campaigns/${campaignId}`);
+  await expect(hero.getByTestId("hero-session")).toHaveText("Session 1");
+  await expect(hero.getByRole("link", { name: "Session 1 in progress" })).toHaveAttribute("href", `${sessionUrl.pathname}${sessionUrl.search}`);
+  await expect(hero.getByRole("button", { name: "Start Session", exact: true })).toHaveCount(0);
+
+  // The Wither panel's End Session: the same confirm and report as the live card (B12).
+  await wither.getByRole("button", { name: "End Session · convert 0 to Fear" }).click();
+  await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
+  await expect(wither.getByRole("status")).toHaveText("Session ended.");
+  await expect(hero.getByRole("button", { name: "Start Session", exact: true })).toBeVisible();
+  await expect(hero.getByTestId("hero-session")).toHaveText("Session 1");
+  await expect(last.getByTestId("last-session-text")).toHaveText("Session 1 was played, but no recap was written. Add one in the session's Wrap-up.");
+
+  // A recap and a dated planned session reach the card and the hero.
+  const sessionId = sessionUrl.searchParams.get("s")!;
+  await client.mutation(api.sessionWrap.setRecap, { campaignId, sessionId, recap: "The party crossed the river at dawn." });
+  const { sessionId: next } = await client.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: crypto.randomUUID() });
+  await client.mutation(api.sessionRecords.setDate, { campaignId, sessionId: next, date: "2026-11-24" });
+  await expect(last.getByTestId("last-session-text")).toHaveText("The party crossed the river at dawn.");
+  await expect(hero.getByTestId("hero-next-session")).toHaveText(/^Next session \D*24\D*2026$|^Next session .*2026.*24/);
+
+  // A player sees the line and the card, no buttons, and while a session runs a chip instead of the button.
+  await page.getByRole("button", { name: "Players" }).click();
+  const players = page.getByRole("dialog", { name: "Players" });
+  await expect(players.getByTestId("join-code")).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+  const code = (await players.getByTestId("join-code").textContent())!;
+  await players.getByRole("button", { name: "Close players" }).click();
+  const context = await browser.newContext();
+  const player = await context.newPage();
+  await signInAsTestGm(player, "e2e-player@example.test");
+  await expect(player).toHaveURL("/");
+  await player.goto(`/join/${code}`);
+  await player.getByRole("button", { name: "Join campaign" }).click();
+  const playerHero = player.getByRole("region", { name: "Campaign header" });
+  await expect(playerHero.getByTestId("hero-session")).toHaveText("Session 1");
+  await expect(player.getByRole("region", { name: "Last Session" }).getByTestId("last-session-text")).toHaveText("The party crossed the river at dawn.");
+  await expect(playerHero.getByRole("button", { name: "Start Session", exact: true })).toHaveCount(0);
+  await expect(player.getByRole("region", { name: "Wither Tokens" }).getByRole("button")).toHaveCount(0);
+
+  await client.mutation(api.sessions.start, { campaignId, idempotencyKey: crypto.randomUUID() });
+  await expect(playerHero.getByText("Session 2 in progress")).toBeVisible();
+  await expect(playerHero.getByRole("link", { name: "Session 2 in progress" })).toHaveCount(0);
+  await expect(hero.getByRole("link", { name: "Session 2 in progress" })).toBeVisible();
+  await context.close();
 });

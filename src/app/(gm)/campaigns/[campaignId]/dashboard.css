@@ -43,3 +43,19 @@
 /* CV1: what the GM hides from players. Dashed gold edge like an empty sand grain, over a faint hatch. */
 .cd-hidden{display:inline-flex;align-items:center;padding:1px 8px;border:1px dashed rgba(217,166,74,.45);border-radius:999px;background:repeating-linear-gradient(135deg,rgba(217,166,74,.08) 0 4px,transparent 4px 8px),#10181b;color:#c9b17a;font-size:12px;font-style:italic;letter-spacing:.06em;text-transform:none}
 .cd-hidden-strip{display:flex;align-items:center;justify-content:center;min-height:28px;border:1px dashed rgba(217,166,74,.35);border-radius:10px;background:repeating-linear-gradient(135deg,rgba(217,166,74,.07) 0 6px,transparent 6px 12px),linear-gradient(180deg,rgba(0,0,0,.25),rgba(122,82,24,.12));box-shadow:inset 0 2px 6px rgba(0,0,0,.5);color:#8fa3a8;font-size:12px;font-style:italic;letter-spacing:.12em;text-transform:uppercase}
+/* D10 S7: Witherwild's Wither Tokens panel (CampaignHub board l.49-61, l.263-272): forest art under a dark wash, rising spores. */
+.wither-panel{position:relative;overflow:hidden;background-color:#0c1a16;background-image:linear-gradient(100deg,rgba(6,16,14,.88) 0%,rgba(6,16,14,.62) 45%,rgba(6,16,14,.35) 100%),url(/design-assets/c48f7b3b7225d18008475c22adaea1cd.jpg);background-size:cover,cover;background-position:center,30% 40%;background-repeat:no-repeat;box-shadow:inset 0 0 40px rgba(60,200,140,.12)}
+.wither-panel > *{position:relative;z-index:1}
+.wither-panel-count,.wither-panel-shadow{text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.wither-spores{position:absolute !important;inset:0;z-index:0 !important;pointer-events:none}
+.wither-spores span{position:absolute;bottom:-10px;width:6px;height:6px;border-radius:50%;background:radial-gradient(circle,#e8c6ff 0%,#b46bff 45%,transparent 70%);box-shadow:0 0 8px #a35cff;opacity:0;animation:spore 9s linear infinite}
+.wither-spores span:nth-child(1){left:8%;animation-delay:0s}
+.wither-spores span:nth-child(2){left:22%;animation-delay:-2s;animation-duration:11s;width:4px;height:4px}
+.wither-spores span:nth-child(3){left:37%;animation-delay:-5s;background:radial-gradient(circle,#d8ffe9 0%,#56e0a8 45%,transparent 70%);box-shadow:0 0 8px #3fd39a}
+.wither-spores span:nth-child(4){left:52%;animation-delay:-7s;animation-duration:12s}
+.wither-spores span:nth-child(5){left:66%;animation-delay:-3.5s;width:5px;height:5px;background:radial-gradient(circle,#d8ffe9 0%,#56e0a8 45%,transparent 70%);box-shadow:0 0 8px #3fd39a}
+.wither-spores span:nth-child(6){left:79%;animation-delay:-1s;animation-duration:10s}
+.wither-spores span:nth-child(7){left:90%;animation-delay:-6s;width:4px;height:4px}
+.wither-spores span:nth-child(8){left:45%;animation-delay:-8.5s;animation-duration:13s;width:7px;height:7px}
+@keyframes spore{0%{transform:translate(0,0);opacity:0}10%{opacity:.9}50%{transform:translate(12px,-120px)}90%{opacity:.7}100%{transform:translate(-8px,-260px);opacity:0}}
+@media (prefers-reduced-motion:reduce){.wither-spores span{animation:none}}
