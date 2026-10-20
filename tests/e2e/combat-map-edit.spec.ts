@@ -10,6 +10,9 @@ import { openCombatMap } from "./visual/helpers";
 
 /** Page coordinates of the centre of square (x, y) on the stage (the GM's stage has no padding). */
 async function squareCentre(stage: Locator, w: number, x: number, y: number) {
+  // The tool column can be taller than the window (Scene card + Edit card), and picking a tool scrolls the page:
+  // bring the map's top back into view so the square is on screen.
+  await stage.evaluate((el) => el.scrollIntoView({ block: "start" }));
   const box = (await stage.boundingBox())!;
   const step = box.width / w;
   return { x: box.x + (x + 0.5) * step, y: box.y + (y + 0.5) * step };
