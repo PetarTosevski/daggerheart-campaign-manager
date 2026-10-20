@@ -227,6 +227,8 @@ waves:
         goal: After a roll with Hope a Slayer is asked to take the Hope or store a Slayer Die, attack and damage rolls can spend Slayer Dice that the server rolls and adds, every roll with Fear places a Know the Tide token, and a Seaborne character can spend tokens for +1 each before an action roll.
         depends_on: [F0]
         owns:
+          # Added 2026-10-21: U9 changes who may apply a Tag Team, which an existing assertion pins.
+          - tests/convex/rolls.test.ts
           - convex/rolls.ts
           - src/components/party/dice/**
           - tests/convex/rolls-session-features.test.ts
