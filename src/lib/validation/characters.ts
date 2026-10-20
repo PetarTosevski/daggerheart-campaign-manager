@@ -164,12 +164,31 @@ export const classStateSchema = z.object({
   hexes: z.array(shortText).max(10).optional(),
 });
 
+/** The most Slayer Dice or Know the Tide tokens a sheet can hold: Proficiency and level both stop at 10. */
+export const SESSION_POOL_MAX = 10;
+
+/**
+ * Session-bound feature state (plan session-features, F0; widened, no version bump). Every member is optional and
+ * an absent object reads as "no pool, no tokens, no die". The pure rules live in src/lib/domain/session-features.
+ * - `slayerDice`: Call of the Slayer's pool of unrolled d6s (CB 48), capped at Proficiency when a die is stored.
+ * - `slayerClaim`: the actionLog id of the roll whose Slayer choice was answered (one answer per roll).
+ * - `tideTokens`: Know the Tide tokens (Seaborne, CB 77), capped at the level when one is placed.
+ * - `moonDie`: the Lunar Phases die (Moon Witch mastery, HF 17); absent = no phase.
+ */
+export const sessionFeaturesSchema = z.object({
+  slayerDice: z.number().int().min(0).max(SESSION_POOL_MAX).optional(),
+  slayerClaim: z.string().min(1).max(40).optional(),
+  tideTokens: z.number().int().min(0).max(SESSION_POOL_MAX).optional(),
+  moonDie: z.number().int().min(1).max(6).optional(),
+});
+
 export type Advancement = z.infer<typeof advancementSchema>;
 export type AdvancementPick = z.infer<typeof advancementPickSchema>;
 export type Effect = z.infer<typeof effectSchema>;
 export type HeldDie = z.infer<typeof heldDieSchema>;
 export type FeatureUse = z.infer<typeof featureUseSchema>;
 export type ClassState = z.infer<typeof classStateSchema>;
+export type SessionFeatures = z.infer<typeof sessionFeaturesSchema>;
 
 /**
  * The current sheet (version 2): inventory items and Experiences carry stable
@@ -233,6 +252,8 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
    * missing on sheets stored before it, which `migrations/slotBonuses:applySlotBonuses` backfills.
    */
   slotBonuses: z.array(z.string().min(1).max(60)).max(20).optional(),
+  /** Slayer Dice, Know the Tide tokens and the Lunar Phases die (session-features F0; optional, widened, no version bump). */
+  sessionFeatures: sessionFeaturesSchema.optional(),
 });
 
 /** The stored sheet's current `schemaVersion`. */

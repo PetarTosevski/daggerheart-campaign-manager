@@ -1,6 +1,8 @@
 import { getArmor, getWeapon } from "../../srd/index";
 import { augmentDefense } from "../../frames/extras/motherboard";
 import { overrideEvasion } from "../class-features/hooks";
+import type { FeatureScope } from "../class-features/types";
+import { lunarBonuses } from "../session-features/lunar";
 import type { CharacterSheet, SubclassRank } from "../../validation/characters";
 import { damageThresholds, equipmentModifiers, type Thresholds } from "./index";
 
@@ -29,6 +31,14 @@ const HELD: Record<SubclassRank, readonly SubclassRank[]> = {
 
 type SubclassFields = Partial<Pick<CharacterSheet, "subclassId" | "subclassRank" | "multiclass">>;
 
+/** The Lunar Phases die (session-features): a Moon Witch's Waning adds Evasion, Full adds to both thresholds (HF 17). */
+type MoonFields = Partial<Pick<CharacterSheet, "sessionFeatures">>;
+
+/** The moon die's bonuses; all 0 without a mastery Moon Witch holding a die (E6: such sheets are unchanged). */
+function moon(sheet: SubclassFields & MoonFields, scope: FeatureScope | undefined) {
+  return sheet.subclassId === undefined ? { evasion: 0, thresholds: 0 } : lunarBonuses({ ...sheet, subclassId: sheet.subclassId }, scope);
+}
+
 /** Summed always-on bonuses of the subclass cards held, plus a multiclass foundation card (CB 111). */
 export function subclassBonuses(sheet: SubclassFields): Required<SubclassBonus> {
   const total = { thresholds: 0, severe: 0, evasion: 0 };
@@ -51,12 +61,14 @@ export function subclassBonuses(sheet: SubclassFields): Required<SubclassBonus> 
 /**
  * Evasion and Armor Score after equipped items' modifiers, subclass bonuses,
  * the active weapon override's Evasion (Brawler's Strike +1, HF 10; needs
- * `classId` and `proficiency`) and installed Ikonis augments (Motherboard:
- * Guard, Deny, Block, CB 301-303); `evasion` on the sheet is the base.
+ * `classId` and `proficiency`), installed Ikonis augments (Motherboard:
+ * Guard, Deny, Block, CB 301-303) and a Waning moon die (+1, Lunar Phases,
+ * HF 17; `scope` as in `holdsLunarPhases`, default: allowed); `evasion` on the sheet is the base.
  */
 export function derivedDefense(
-  sheet: Pick<CharacterSheet, "evasion" | "primaryWeaponId" | "secondaryWeaponId" | "armorId"> & SubclassFields & Partial<Pick<CharacterSheet, "classId" | "proficiency">>,
+  sheet: Pick<CharacterSheet, "evasion" | "primaryWeaponId" | "secondaryWeaponId" | "armorId"> & SubclassFields & MoonFields & Partial<Pick<CharacterSheet, "classId" | "proficiency">>,
   installedAugments: readonly string[] = [],
+  scope?: FeatureScope,
 ) {
   const items = [getWeapon(sheet.primaryWeaponId), sheet.secondaryWeaponId ? getWeapon(sheet.secondaryWeaponId) : undefined];
   const armor = sheet.armorId ? getArmor(sheet.armorId) : undefined;
@@ -69,17 +81,17 @@ export function derivedDefense(
       ? overrideEvasion({ classId, proficiency, primaryWeaponId: sheet.primaryWeaponId, secondaryWeaponId: sheet.secondaryWeaponId, multiclass: sheet.multiclass })
       : 0;
   return {
-    evasion: sheet.evasion + mods.evasion + subclassEvasion + weaponEvasion + augments.evasion,
+    evasion: sheet.evasion + mods.evasion + subclassEvasion + weaponEvasion + augments.evasion + moon(sheet, scope).evasion,
     evasionModifier: mods.evasion + augments.evasion,
     subclassEvasion,
     armorScore: Math.max(0, (armor?.baseScore ?? 0) + mods.armorScore + augments.armorScore),
   };
 }
 
-/** Damage thresholds: armor base + level (CB 18, 111) + always-on subclass bonuses. */
-export function derivedThresholds(sheet: Pick<CharacterSheet, "level" | "armorId"> & SubclassFields): Thresholds {
+/** Damage thresholds: armor base + level (CB 18, 111) + always-on subclass bonuses + a Full moon die (+3 to both, HF 17). */
+export function derivedThresholds(sheet: Pick<CharacterSheet, "level" | "armorId"> & SubclassFields & MoonFields, scope?: FeatureScope): Thresholds {
   const armor = sheet.armorId ? getArmor(sheet.armorId) : undefined;
   const bonus = subclassBonuses(sheet);
-  const t = damageThresholds(sheet.level, armor?.baseThresholds ?? null, bonus.thresholds);
+  const t = damageThresholds(sheet.level, armor?.baseThresholds ?? null, bonus.thresholds + moon(sheet, scope).thresholds);
   return { major: t.major, severe: t.severe + bonus.severe };
 }

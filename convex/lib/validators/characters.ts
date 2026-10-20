@@ -159,6 +159,15 @@ const d5SheetFields = {
   journeyEnds: v.optional(v.boolean()),
   /** Feature slot bonuses already applied (SS1). */
   slotBonuses: v.optional(v.array(v.string())),
+  /** Slayer Dice, Know the Tide tokens and the Lunar Phases die (`sessionFeaturesSchema`, session-features F0). */
+  sessionFeatures: v.optional(
+    v.object({
+      slayerDice: v.optional(v.number()),
+      slayerClaim: v.optional(v.string()),
+      tideTokens: v.optional(v.number()),
+      moonDie: v.optional(v.number()),
+    }),
+  ),
 };
 
 /** The current sheet (`characterSheetSchema`, version 2) as queries return it. Keep in step with the zod schema. */
