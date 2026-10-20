@@ -29,6 +29,13 @@ export const D9_VIEWPORTS = [
   { width: 390, height: 844 },
 ] as const;
 
+/**
+ * The viewports of the Sessions plan (.omc/plans/d10-sessions.yaml): the same three sizes as D9. Shots go to
+ * test-results/visual/D10-<id>/ (plain S0..S13 folders belong to the sheet redesign); board counterparts come from
+ * `node scripts/board-shots.mjs sessions:<region>` and `hub:<region>`.
+ */
+export const D10_VIEWPORTS = D9_VIEWPORTS;
+
 /** A level-1 Bard (Troubadour): Rapier, Gambeson, Deft Deceiver + Book of Ava. Override fields per shot. */
 export function bardDraft(name: string) {
   return {
@@ -136,6 +143,27 @@ export async function openCombatMap(page: Page, frame = "witherwild") {
   const url = `/campaigns/${campaignId}/combat-map`;
   await page.goto(url);
   await expect(page.getByRole("heading", { level: 1, name: "Combat Map" })).toBeVisible();
+  return { client: await convexAs(page), campaignId, campaignName, url };
+}
+
+/**
+ * Signs in as the test GM, starts a campaign of `frame` through the UI and opens its Sessions page (D10,
+ * .omc/plans/d10-sessions.yaml), with `query` (for example `?s=<id>&stage=play`) when given. Returns a Convex client
+ * for seeding, the campaign id and name, and the page URL (without the query).
+ */
+export async function openSessions(page: Page, { frame = "witherwild", query = "" }: { frame?: string; query?: string } = {}) {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const campaignName = `Visual ${crypto.randomUUID().slice(0, 8)}`;
+  await page.goto(`/frames/${frame}`);
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(campaignName);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: campaignName })).toBeVisible();
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+  const url = `/campaigns/${campaignId}/sessions`;
+  await page.goto(`${url}${query}`);
+  await expect(page.getByRole("heading", { level: 1, name: "Sessions" })).toBeVisible();
   return { client: await convexAs(page), campaignId, campaignName, url };
 }
 

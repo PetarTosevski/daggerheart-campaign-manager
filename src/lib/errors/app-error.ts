@@ -10,6 +10,7 @@ import { encounterMessages } from "./encounters";
 import { levelUpMessages } from "./levelUp";
 import { photoImportMessages } from "./photoImport";
 import { restMessages } from "./rests";
+import { sessionMessages } from "./sessions";
 import { witherMessages } from "./wither";
 
 /**
@@ -30,6 +31,7 @@ export type AppErrorCode =
   | keyof typeof photoImportMessages
   | keyof typeof encounterMessages
   | keyof typeof combatMapMessages
+  | keyof typeof sessionMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"

@@ -5,6 +5,7 @@ import { api, internal } from "../../convex/_generated/api";
 import type { Doc, Id, TableNames } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { BATCH } from "../../convex/cleanup";
+import { deleteSessionRows } from "../../convex/lib/sessions";
 import { GM_EMAIL, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
@@ -170,6 +171,11 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
       revealedTo: [],
     });
     await ins("combatExplored", { mapId: combatMapId, characterId, bits: "", updatedAt: now });
+    // A session with its prep (linking the encounter), a log line and a spotlight count (D10).
+    const sessionId = await ins("sessions", { campaignId: c, n: 1, title: "The Bridge at Dawn", status: "live", startedAt: now, createdAt: now, updatedAt: now });
+    await ins("sessionPrep", { campaignId: c, sessionId, scenes: [{ id: "s1", type: "combat", text: "Ambush" }], hooks: "", encounterId, updatedAt: now });
+    await ins("sessionLog", { campaignId: c, sessionId, at: now, text: "Session started.", by: userId, auto: true });
+    await ins("sessionSpotlights", { campaignId: c, sessionId, characterId, count: 2 });
     await ins("files", { storageId: blobs.combatImage, campaignId: c, uploadedBy: userId, kind: "combatMap", refId: combatMapId, createdAt: now });
     await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
     await ins("mapUploads", { storageId: blobs.mapUpload, campaignId: c, uploadedBy: userId, createdAt: now });
@@ -191,7 +197,7 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("grants", { ...grant, resourceType: "codexEntry", resourceId: entryId });
     await ins("grants", { ...grant, resourceType: "character", resourceId: characterId });
     await ins("grants", { ...grant, resourceType: "campaign", resourceId: "elsewhere", principalKind: "campaign", principalId: c });
-    return { campaignId, characterId, entryId, combatMapId, blobs: Object.values(blobs), touched: [...touched] };
+    return { campaignId, characterId, entryId, combatMapId, sessionId, encounterId, blobs: Object.values(blobs), touched: [...touched] };
   });
 }
 
@@ -322,6 +328,34 @@ describe("cleanup crons", () => {
     expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
     expect(await leftovers(t, live)).toEqual(liveBefore);
     expect(liveBefore.rows).toMatchObject({ combatMaps: 1, combatTokens: 1, combatMapObjects: 1, combatMapCells: 1, combatExplored: 1 });
+    expect(liveBefore.rows).toMatchObject({ sessions: 1, sessionPrep: 1, sessionLog: 1, sessionSpotlights: 1 });
+  });
+
+  it("deletes one session's prep, log and spotlight rows and leaves the linked encounter and other sessions (D10)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const s = await seedCampaign(t, userId, undefined);
+    const other = await t.run(async (ctx) => {
+      const now = Date.now();
+      const otherId = await ctx.db.insert("sessions", { campaignId: s.campaignId, n: 2, status: "planned", createdAt: now, updatedAt: now });
+      await ctx.db.insert("sessionLog", { campaignId: s.campaignId, sessionId: otherId, at: now, text: "Keep me", by: userId, auto: false });
+      for (let i = 0; i < 30; i++) {
+        await ctx.db.insert("sessionLog", { campaignId: s.campaignId, sessionId: s.sessionId, at: now + i, text: `Line ${i}`, by: userId, auto: false });
+      }
+      return otherId;
+    });
+
+    const deleted = await t.run((ctx) => deleteSessionRows(ctx, s.sessionId));
+
+    // One prep row, 31 log lines and one spotlight row.
+    expect(deleted).toBe(33);
+    const left = await leftovers(t, s);
+    expect(left.rows).toMatchObject({ sessions: 2, sessionLog: 1, encounters: 1 });
+    expect(left.rows.sessionPrep).toBeUndefined();
+    expect(left.rows.sessionSpotlights).toBeUndefined();
+    expect(await t.run((ctx) => ctx.db.get("encounters", s.encounterId))).not.toBeNull();
+    const kept = await t.run((ctx) => ctx.db.query("sessionLog").withIndex("by_session_at", (q) => q.eq("sessionId", other)).collect());
+    expect(kept.map((row) => row.text)).toEqual(["Keep me"]);
   });
 
   it("stops purging a campaign the GM restored", async () => {
