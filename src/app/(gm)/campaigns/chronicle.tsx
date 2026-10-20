@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { PageHeader } from "@/components/brand/brand";
 import { BrandButton, brandButton } from "@/components/brand/buttons";
@@ -154,7 +154,9 @@ export function Chronicle() {
   const [deleted, setDeleted] = useState<CampaignSummary | null>(null);
   const [undoError, setUndoError] = useState<string | null>(null);
 
-  // The first campaign starts expanded, as on the board.
+  // Oldest first, so the first campaign you made is I (user 2026-10-21); the server lists most recently opened first.
+  const ordered = useMemo(() => (campaigns === undefined ? undefined : [...campaigns].sort((x, y) => x.createdAt - y.createdAt)), [campaigns]);
+  // The most recently opened campaign starts expanded.
   const expanded = openId === undefined ? campaigns?.[0]?._id : openId;
 
   return (
@@ -198,7 +200,7 @@ export function Chronicle() {
               </Link>
             </div>
           ) : (
-            campaigns.map((campaign, index) => (
+            ordered!.map((campaign, index) => (
               <Band
                 key={campaign._id}
                 campaign={campaign}
@@ -217,7 +219,7 @@ export function Chronicle() {
 
         {campaigns && campaigns.length > 1 ? (
           <nav aria-label="Jump to campaign" className="hidden flex-none flex-col items-center justify-center gap-1 sm:flex">
-            {campaigns.map((campaign, index) => {
+            {ordered!.map((campaign, index) => {
               const on = campaign._id === expanded;
               return (
                 <a
