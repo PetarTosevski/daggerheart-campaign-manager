@@ -134,16 +134,18 @@ function decided(role: RolledDie["role"], outcome: RollRecord["outcome"]): boole
  * The dice of a roll as the board's die tiles: big gold Hope and purple Fear dice (ringed when they decided the
  * roll) and smaller tiles for the rest. Same list semantics as DiceFaces: one labelled item per die.
  */
-export function DiceTiles({ roll }: { roll: RollRecord }) {
+export function DiceTiles({ roll, slayer = 0 }: { roll: RollRecord; slayer?: number }) {
+  // The last `slayer` dice are spent Slayer Dice (rolls.ts appends them last): labelled "Slayer d6".
+  const firstSlayer = roll.dice.length - slayer;
   return (
     <ul className="dc-tiles" aria-label="Dice">
       {roll.dice.map((d, i) => (
         <li
           // Dice have no ids; their order within a stored roll never changes.
           key={`${i}-${d.role}`}
-          className={`dc-tile ${TILE_CLASS[d.role]}${decided(d.role, roll.outcome) ? " decided" : ""}${d.dropped ? " dropped" : ""}`}
-          aria-label={`${ROLE_LABEL[d.role]} d${d.sides}: ${d.value}${d.dropped ? " (not counted)" : ""}`}
-          title={`${ROLE_LABEL[d.role]} d${d.sides}`}
+          className={`dc-tile ${TILE_CLASS[d.role]}${i >= firstSlayer ? " slayer" : ""}${decided(d.role, roll.outcome) ? " decided" : ""}${d.dropped ? " dropped" : ""}`}
+          aria-label={`${i >= firstSlayer ? "Slayer" : ROLE_LABEL[d.role]} d${d.sides}: ${d.value}${d.dropped ? " (not counted)" : ""}`}
+          title={`${i >= firstSlayer ? "Slayer" : ROLE_LABEL[d.role]} d${d.sides}`}
         >
           {d.value}
           {d.role === "hope" || d.role === "fear" ? null : <span className="dc-tile-sides">d{d.sides}</span>}

@@ -15,21 +15,22 @@ import { DiceTiles, rollHeadline } from "./parts";
 
 const COST = 3;
 
-type Pending = { rolls: { characterId: Id<"characters">; entryId: Id<"actionLog">; roll: RollRecord; name: string }[] };
+/** A Tag Team Roll waiting for its pick (`rolls.pendingChoices`): `entryId` is the initiator's roll. */
+export type PendingTagTeam = { entryId: Id<"actionLog">; rolls: { characterId: Id<"characters">; entryId: Id<"actionLog">; roll: RollRecord; name: string }[] };
 
 /**
  * Tag Team Roll (CB 97): spend 3 Hope once per session, both PCs roll, then
  * pick the roll that counts for both. The partner's sheet changes only through
- * this action (decision 7), logged on both characters.
+ * this action (decision 7), logged on both characters. The pick is offered in
+ * both participants' dice boxes (U9: either player, or the GM, chooses).
  */
-export function TagTeam({ campaignId, character, disabled }: { campaignId: Id<"campaigns">; character: CharacterView; disabled: boolean }) {
+export function TagTeam({ campaignId, character, disabled, pending }: { campaignId: Id<"campaigns">; character: CharacterView; disabled: boolean; pending: PendingTagTeam | null }) {
   const [open, setOpen] = useState(false);
   const party = useQuery(api.characters.listByCampaign, open ? { campaignId } : "skip");
   const [partnerId, setPartnerId] = useState("");
   const [mine, setMine] = useState<TraitId>("agility");
   const [theirs, setTheirs] = useState<TraitId>("agility");
   const [difficulty, setDifficulty] = useState("");
-  const [pending, setPending] = useState<Pending | null>(null);
   const [applied, setApplied] = useState<string | null>(null);
   const start = useIntent(api.rolls.tagTeam);
   const apply = useIntent(api.rolls.tagTeamApply);
@@ -51,24 +52,18 @@ export function TagTeam({ campaignId, character, disabled }: { campaignId: Id<"c
       initiator: { trait: mine, modifier: 0 },
       partner: { trait: theirs, modifier: 0 },
     });
-    if (out) {
-      const names = new Map([
-        [character._id, character.sheet.name],
-        [partner._id, partner.sheet.name],
-      ]);
-      setPending({ rolls: out.rolls.map((r) => ({ ...r, name: names.get(r.characterId) ?? "" })) });
-    }
+    // The pick shows from `rolls.pendingChoices`, in both participants' boxes.
+    if (out) setOpen(true);
   }
 
   async function pick(entryId: Id<"actionLog">, characterId: Id<"characters">, name: string) {
     const out = await apply.fire({ entryId, pick: characterId });
     if (out) {
-      setPending(null);
       setApplied(`${name}’s roll counts for both${out.fearGained > 0 ? `; the GM gains ${out.fearGained} Fear` : ""}.`);
     }
   }
 
-  if (!open) {
+  if (!open && pending === null) {
     return (
       <div>
         <button type="button" className="sh-pill" disabled={disabled} onClick={() => setOpen(true)}>
@@ -82,11 +77,13 @@ export function TagTeam({ campaignId, character, disabled }: { campaignId: Id<"c
     <section aria-label="Tag Team Roll" className="dc-tag">
       <div className="flex items-center justify-between gap-2">
         <span className="sh-lbl">Tag Team Roll ({COST} Hope, once per session)</span>
-        <button type="button" className="sh-pill" onClick={() => setOpen(false)}>
-          Close
-        </button>
+        {pending === null ? (
+          <button type="button" className="sh-pill" onClick={() => setOpen(false)}>
+            Close
+          </button>
+        ) : null}
       </div>
-      {used ? <p className="sh-small m-0 italic">You already started a Tag Team Roll this session.</p> : null}
+      {used && pending === null ? <p className="sh-small m-0 italic">You already started a Tag Team Roll this session.</p> : null}
       {pending ? (
         <div className="flex flex-col gap-2">
           <p className="sh-small m-0">Choose the roll that counts for both:</p>
@@ -96,7 +93,7 @@ export function TagTeam({ campaignId, character, disabled }: { campaignId: Id<"c
                 {r.name}: {rollHeadline(r.roll)}
               </span>
               <DiceTiles roll={r.roll} />
-              <button type="button" className="sh-pill solid" disabled={apply.pending} onClick={() => void pick(pending.rolls[0]!.entryId, r.characterId, r.name)}>
+              <button type="button" className="sh-pill solid" disabled={apply.pending} onClick={() => void pick(pending.entryId, r.characterId, r.name)}>
                 Use {r.name}’s roll
               </button>
             </div>

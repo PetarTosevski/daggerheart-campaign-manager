@@ -13,6 +13,7 @@ import type { FeatureScope, RollPrompt } from "@/lib/domain/class-features/types
 import { dualityEffects, OUTCOME_LABEL, TYPED_MODIFIER_MAX, weaponDice, type DicePool } from "@/lib/domain/dice";
 import { ikonisWeapon } from "@/lib/domain/dice/ikonis";
 import type { RollRecord } from "@/lib/domain/duality";
+import { holdsSlayer, holdsTide, SLAYER_STORE_PROMPT, slayerDice, tideTokens } from "@/lib/domain/session-features";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
 import { WEAPONS } from "@/lib/srd/equipment";
 import { TRAIT_IDS, type TraitId } from "@/lib/srd/types";
@@ -25,11 +26,13 @@ import type { CharacterView } from "../../../../convex/characters";
 import { play3d } from "./dice3d";
 import { AdvantageStepper, BoardDiceToggles, CountStepper, DiceTiles } from "./parts";
 import { canAnimate3d, useDiceSettings } from "./settings";
+import { SlayerOffer } from "./slayer";
 import { playRollSound } from "./sound";
 import { TagTeam } from "./tag-team";
 
 type Mode = "action" | "reaction" | "damage";
-type Result = { id: number; roll: RollRecord; prompts: RollPrompt[]; label: string; fearGained?: number };
+/** `slayer`: how many of the roll's last dice are spent Slayer Dice (labelled "Slayer d6"). */
+type Result = { id: number; entryId: Id<"actionLog">; roll: RollRecord; prompts: RollPrompt[]; label: string; fearGained?: number; slayer: number };
 
 const SIDES = [4, 6, 8, 10, 12, 20] as const;
 /** The most advantage or disadvantage dice one roll accepts (the domain's stepper limit). */
@@ -105,7 +108,8 @@ function earlierText(roll: RollRecord): string {
 function RollPrompts({ characterId, prompts }: { characterId: Id<"characters">; prompts: RollPrompt[] }) {
   const answer = useIntent(api.classFeatures.use);
   const [answered, setAnswered] = useState<Record<string, string>>({});
-  return prompts.map((p) => (
+  // The Slayer choice answers through rolls.storeSlayerDie (SlayerOffer, fed by rolls.pendingChoices), not a class feature.
+  return prompts.filter((p) => p.key !== SLAYER_STORE_PROMPT).map((p) => (
     <div key={p.key} className="dc-prompt sh-small" role="group" aria-label={p.text}>
       <span>{p.text}</span>
       {answered[p.key] ? (
@@ -173,6 +177,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const [customCount, setCustomCount] = useState("1");
   const [customSides, setCustomSides] = useState<number>(6);
   const [critical, setCritical] = useState(false);
+  // Session features (U3, U5): local form state until the roll, reset after it.
+  const [slayerSpend, setSlayerSpend] = useState(0);
+  const [tideSpend, setTideSpend] = useState(0);
   const [result, setResult] = useState<Result | null>(null);
   const [history, setHistory] = useState<Result[]>([]);
   const [rolling, setRolling] = useState(false);
@@ -191,6 +198,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const campaign = useQuery(api.campaigns.get, { campaignId });
   // The Motherboard module (null in other frames): the Ikonis replaces weapons there (CB 301).
   const extras = useQuery(api.characterExtras.get, { characterId: character._id });
+  // The open Slayer choice and a Tag Team Roll waiting for its pick, whoever rolled (U2, U9).
+  const choices = useQuery(api.rolls.pendingChoices, { characterId: character._id });
   const motherboard = extras?.motherboard ?? null;
   const scope: FeatureScope = { hopeAndFear, ikonis: motherboard !== null };
   const ikonis = motherboard && sheet ? ikonisWeapon(motherboard.ikonis, motherboard.installed, sheet.level, sheet.proficiency) : null;
@@ -223,6 +232,14 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const options = allOptions.filter((o) => !(o.physicalOnly && magicSource));
   const useIkonis = mode === "action" && ikonisAttack && ikonis !== null;
   const rollTrait = useIkonis && ikonis.trait ? ikonis.trait : trait;
+  // '+ Slayer Dice' on attack and damage rolls while the pool holds dice (K2); '+ Tide tokens' on action rolls, only
+  // for a Know the Tide holder, never shown (not even disabled) to anyone else (U5).
+  const slayerPool = sheet ? slayerDice(sheet) : 0;
+  const showSlayer = sheet !== null && holdsSlayer(sheet) && slayerPool > 0 && (mode === "damage" || (mode === "action" && (attack || useIkonis)));
+  const slayerCount = showSlayer ? Math.min(slayerSpend, slayerPool) : 0;
+  const tideHeld = sheet ? tideTokens(sheet) : 0;
+  const showTide = sheet !== null && holdsTide(sheet) && mode === "action";
+  const tideCount = showTide ? Math.min(tideSpend, tideHeld) : 0;
 
   /** What the result row says the roll was: "Presence +2 action roll vs 12", "Primary: Rapier (1d8) · critical". */
   function rollLabel(): string {
@@ -233,17 +250,25 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       return `${name}${critical ? " · critical" : ""}`;
     }
     const diff = toInt(difficulty);
-    return `${TRAIT_LABEL[rollTrait]} ${signed(view.traits[rollTrait])} ${mode} roll${diff !== undefined ? ` vs ${diff}` : ""}`;
+    const tide = tideCount > 0 ? ` · Know the Tide +${tideCount}` : "";
+    return `${TRAIT_LABEL[rollTrait]} ${signed(view.traits[rollTrait])} ${mode} roll${diff !== undefined ? ` vs ${diff}` : ""}${tide}`;
   }
 
-  async function show(roll: RollRecord, prompts: RollPrompt[], label: string, fearGained?: number) {
+  /** " · Slayer d6 ×2 (4, 6)": the spent Slayer Dice, the roll's last dice. */
+  function slayerText(roll: RollRecord, n: number): string {
+    if (n === 0) return "";
+    const values = roll.dice.slice(-n).map((d) => d.value);
+    return ` · Slayer d6${n > 1 ? ` ×${n}` : ""} (${values.join(", ")})`;
+  }
+
+  async function show(entryId: Id<"actionLog">, roll: RollRecord, prompts: RollPrompt[], label: string, slayer: number, fearGained?: number) {
     const animate = canAnimate3d(settings) && stage.current !== null;
     if (animate) setRolling(true);
     const shown = animate && (await play3d(stage.current!, { dice: roll.dice, sound: settings.sound }));
     setRolling(false);
     if (!shown && settings.sound) playRollSound();
     seq.current += 1;
-    const entry: Result = { id: seq.current, roll, prompts, label, ...(fearGained !== undefined ? { fearGained } : {}) };
+    const entry: Result = { id: seq.current, entryId, roll, prompts, label: label + slayerText(roll, slayer), slayer, ...(fearGained !== undefined ? { fearGained } : {}) };
     setResult(entry);
     setHistory((h) => [entry, ...h].slice(0, HISTORY));
   }
@@ -262,9 +287,12 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
             : damageSourceKey === "ikonis"
               ? { kind: "ikonis" as const }
               : { kind: "override" as const, key: damageSourceKey };
-      const args = { source: damageSource, critical, modifier: mod, options: picked };
+      const args = { source: damageSource, critical, modifier: mod, options: picked, ...(slayerCount > 0 ? { slayerDice: slayerCount } : {}) };
       const out = await damageRoll.fire({ characterId: character._id, ...args });
-      if (out) await show(out.roll, [], label);
+      if (out) {
+        setSlayerSpend(0);
+        await show(out.entryId, out.roll, [], label, slayerCount);
+      }
       return;
     }
     const diff = toInt(difficulty);
@@ -280,9 +308,15 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       attack: mode === "action" && (attack || useIkonis),
       options: picked,
       ...(useIkonis ? { ikonis: true } : {}),
+      ...(slayerCount > 0 ? { slayerDice: slayerCount } : {}),
+      ...(tideCount > 0 ? { tideTokens: tideCount } : {}),
     };
     const out = await actionRoll.fire({ characterId: character._id, ...args });
-    if (out) await show(out.roll, out.prompts, label, out.fearGained);
+    if (out) {
+      setSlayerSpend(0);
+      setTideSpend(0);
+      await show(out.entryId, out.roll, out.prompts, label, slayerCount, out.fearGained);
+    }
   }
 
   const hopeCost = experienceIds.length;
@@ -449,6 +483,22 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
               <CountStepper label="Help dice" value={help} max={ADVANTAGE_LIMIT} onChange={setHelp} />
             </div>
           ) : null}
+          {showSlayer || showTide ? (
+            <div className="dc-group dc-session">
+              {showSlayer ? (
+                <span className="dc-session-item">
+                  <CountStepper label="Slayer Dice to spend" value={slayerCount} max={slayerPool} onChange={setSlayerSpend} />
+                  <span className="sh-small dc-held">{slayerPool} held</span>
+                </span>
+              ) : null}
+              {showTide ? (
+                <span className="dc-session-item">
+                  <CountStepper label="Tide tokens to spend" value={tideCount} max={tideHeld} onChange={setTideSpend} />
+                  <span className="sh-small dc-held">{tideHeld} held (+1 each)</span>
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           {options.length > 0 ? (
             <fieldset className="dc-group">
               <legend className="sh-lbl">Features</legend>
@@ -467,7 +517,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
             </fieldset>
           ) : null}
           <div className="dc-group">
-            <TagTeam campaignId={campaignId} character={character} disabled={unavailable} />
+            <TagTeam campaignId={campaignId} character={character} disabled={unavailable} pending={choices?.tagTeam ?? null} />
           </div>
         </div>
       </details>
@@ -482,7 +532,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
         {result ? (
           <section aria-label="Last roll" className="dc-last">
             <div className="dc-last-row">
-              <DiceTiles roll={result.roll} />
+              <DiceTiles roll={result.roll} slayer={result.slayer} />
               <div className="dc-last-main" data-testid="last-roll">
                 <span className="dc-total">{result.roll.total}</span>
                 <span className="dc-last-text">
@@ -500,6 +550,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
             </div>
             <RollPrompts characterId={character._id} prompts={result.prompts} />
           </section>
+        ) : null}
+        {choices?.slayer && !pending && !rolling ? (
+          <SlayerOffer key={choices.slayer.entryId} characterId={character._id} entryId={choices.slayer.entryId} prompt={choices.slayer.prompt} />
         ) : null}
         {earlier.length > 0 ? (
           <div className="dc-earlier sh-small">
