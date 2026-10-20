@@ -77,15 +77,24 @@ test("Witherwild: Severe Withered damage gives a Wither token, and ending the se
   await page.goto(`/campaigns/${campaignId}`);
   await expect(page.getByRole("button", { name: "Fear 1 of 12" })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByText(`Wither ${count}`)).toBeVisible();
+  // D10 S7: the dashboard's Wither Tokens panel counts the tokens on the sheets (the pool of 20 is for reference).
+  await expect(page.getByTestId("wither-panel-count")).toHaveText(`${count} on sheets · ${20 - count} in pool`);
+  await expect(page.getByRole("button", { name: `End Session · convert ${count} to Fear` })).toBeVisible();
 
-  await page.getByRole("button", { name: "Start session" }).click();
+  // Start and End live on the Sessions tab (D10 S3's live card).
+  await page.goto(`/campaigns/${campaignId}/sessions`);
+  await page.getByRole("button", { name: "+ New session" }).click();
+  const liveCard = page.getByRole("region", { name: "Live session" });
+  await liveCard.getByRole("button", { name: "Start session" }).click();
   await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
-  await expect(page.getByText("Session started.")).toBeVisible();
+  await expect(liveCard.getByText("Session started.")).toBeVisible();
 
-  await page.getByRole("button", { name: "End session" }).click();
+  await liveCard.getByRole("button", { name: "End session" }).click();
   await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
-  await expect(page.getByText(`${count} Wither token${count === 1 ? "" : "s"} → +${count} Fear.`)).toBeVisible();
+  await expect(liveCard.getByText(`${count} Wither token${count === 1 ? "" : "s"} → +${count} Fear.`)).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}`);
   await expect(page.getByRole("button", { name: `Fear ${count} of 12` })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: `Fear ${count + 1} of 12` })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByText(`Wither ${count}`)).toBeHidden();
+  await expect(page.getByTestId("wither-panel-count")).toHaveText("0 on sheets · 20 in pool");
 });

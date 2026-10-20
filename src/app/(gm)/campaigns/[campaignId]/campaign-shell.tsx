@@ -2,19 +2,23 @@
 
 import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, Users } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { BackLink, Wordmark } from "@/components/brand/brand";
+import { SlotBoundary } from "@/components/party/session/boundary";
 import { frameName } from "@/lib/campaign-display";
 import { frameHasMechanic } from "@/lib/frames";
 import { brandButton } from "@/components/brand/buttons";
 import { campaignArt } from "@/lib/campaign-art";
+import { formatSessionDate } from "@/lib/domain/sessions";
+import { useIntent } from "@/lib/use-intent";
 import { CAMPAIGN_SECTIONS, visibleToPlayers } from "@/lib/campaign-sections";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { CampaignSummary } from "../../../../../convex/campaigns";
 import type { TomeChapterId } from "@/lib/frames/tomes";
 
@@ -67,6 +71,91 @@ function CampaignNav({ campaignId, isGm }: { campaignId: string; isGm: boolean }
   );
 }
 
+function TierLevel({ campaign }: { campaign: CampaignSummary }) {
+  return (
+    <span>
+      Tier {campaign.tier} · Level {campaign.level}
+    </span>
+  );
+}
+
+/**
+ * The hero line (D10 S7, B9; board CampaignHub l.137): 'Session N' (the live one, else the last played) or 'No sessions
+ * yet', 'Tier · Level', and 'Next session <date>' in the viewer's locale or 'Next session not scheduled'. Every member.
+ */
+function HeroSessionLine({ campaign }: { campaign: CampaignSummary }) {
+  const summary = useQuery(api.sessionWrap.dashboard, { campaignId: campaign._id });
+  if (summary === undefined) {
+    return (
+      <>
+        <span role="status">Loading sessions…</span>
+        <span aria-hidden="true">·</span>
+        <TierLevel campaign={campaign} />
+      </>
+    );
+  }
+  const next = summary.nextDate ? `Next session ${formatSessionDate(summary.nextDate, { weekday: false })}` : summary.nextSessionLine;
+  return (
+    <>
+      <span data-testid="hero-session">{summary.dashboardNumber}</span>
+      <span aria-hidden="true">·</span>
+      <TierLevel campaign={campaign} />
+      <span aria-hidden="true">·</span>
+      <span data-testid="hero-next-session">{next}</span>
+    </>
+  );
+}
+
+const heroPill =
+  "inline-flex min-h-[52px] cursor-pointer items-center rounded-full bg-brand px-[30px] font-display text-[16px] font-bold tracking-[0.1em] text-brand-ink hover:brightness-110 disabled:cursor-default disabled:opacity-60";
+
+/**
+ * GM: 'Start Session' (B8) starts the newest planned session, creating one when there is none, and opens it on Play;
+ * while a session is live the pill reads 'Session N in progress' and opens it. Players see a chip while one is live.
+ */
+function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
+  const summary = useQuery(api.sessionWrap.dashboard, { campaignId });
+  const start = useIntent(api.sessions.start);
+  const router = useRouter();
+  if (summary === undefined) return null;
+  const sessions = `/campaigns/${campaignId}/sessions`;
+  const play = (sessionId: string) => `${sessions}?s=${sessionId}&stage=play`;
+
+  if (summary.live) {
+    const label = `Session ${summary.live.n} in progress`;
+    return isGm ? (
+      <Link href={play(summary.live.sessionId)} className={heroPill}>
+        {label}
+      </Link>
+    ) : (
+      <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[#3f6a4a] bg-black/45 px-4 text-[14px] text-[#d8f0e0]">
+        <span aria-hidden="true" className="size-2 rounded-full bg-[#56e0a8] shadow-[0_0_8px_#3fd39a]" />
+        {label}
+      </span>
+    );
+  }
+  if (!isGm) return null;
+
+  async function startSession() {
+    const result = await start.fire({ campaignId });
+    // Without a sessionId the server found one already live (alreadyStarted); the Sessions tab shows it.
+    if (result) router.push(result.sessionId ? play(result.sessionId) : sessions);
+  }
+
+  return (
+    <span className="flex flex-col items-start gap-1">
+      <button type="button" className={heroPill} disabled={start.pending} onClick={() => void startSession()}>
+        Start Session
+      </button>
+      {start.error ? (
+        <span role="alert" className="text-[14px] text-[#f0a8a0]">
+          {start.error}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 /** Title block of the dashboard header ("ACTIVE CAMPAIGN · THE WITHERWILD"). */
 function DashboardHero({ campaign, onOpenTome }: { campaign: CampaignSummary; onOpenTome: () => void }) {
   return (
@@ -83,13 +172,12 @@ function DashboardHero({ campaign, onOpenTome }: { campaign: CampaignSummary; on
           {campaign.name}
         </h1>
         <p className="m-0 flex flex-wrap gap-x-4 gap-y-1 text-[15px] text-[#c9d2cf]">
-          <span>No sessions yet</span>
-          <span aria-hidden="true">·</span>
-          <span>
-            Tier {campaign.tier} · Level {campaign.level}
-          </span>
+          <SlotBoundary fallback={<TierLevel campaign={campaign} />}>
+            <HeroSessionLine campaign={campaign} />
+          </SlotBoundary>
         </p>
       </div>
+      <div className="flex flex-wrap items-center gap-3">
       <button
         type="button"
         onClick={onOpenTome}
@@ -98,6 +186,10 @@ function DashboardHero({ campaign, onOpenTome }: { campaign: CampaignSummary; on
         <BookOpen className="size-[18px]" strokeWidth={1.6} aria-hidden="true" />
         Open the Tome
       </button>
+      <SlotBoundary fallback={null}>
+        <HeroSessionAction campaignId={campaign._id} isGm={campaign.role === "gm"} />
+      </SlotBoundary>
+      </div>
       </div>
     </div>
   );
