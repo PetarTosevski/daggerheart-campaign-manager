@@ -53,19 +53,34 @@ const SESSION_SCAN = 200;
 /**
  * A real session start or end row of `convex/sessions.ts` (its campaign rows "Session started" and
  * "Session ended…"). Scene ends (`convex/scenes.ts`) share kind "session" but are no boundary.
+ * Only the pre-migration fallback of `sessionBoundaryAfter` reads it (dcm-bxp.48; S9 narrows it away).
  */
 const isSessionBoundary = (row: Doc<"actionLog">) =>
   row.kind === "session" && row.characterId === undefined && (row.summary === "Session started" || row.summary.startsWith("Session ended"));
 
 /**
- * Whether a session started or ended after `at`. A session running now that started at or before `at`
- * has run throughout (an end clears `sessionStartedAt`, a new start stamps a later time). With none
- * running, the campaign's log rows from `at` on (index `by_campaign_at`, at most SESSION_SCAN) are checked;
- * a boundary in the same millisecond counts.
+ * Whether a session started or ended after `at` (dcm-bxp.48). A session running now that started at or before
+ * `at` has run throughout (an end clears `sessionStartedAt`, a new start stamps a later time). With none running,
+ * the `sessions` table answers: a session whose latest start is after `at` (index `by_campaign_started`) or whose
+ * latest end is at or after it (`by_campaign_ended`; an end in the same millisecond counts). A restarted session
+ * (B7) carries its latest start, so it counts too.
+ *
+ * Fallback until every deployment ran `migrations/sessions:backfillSessions` (S9 removes it): the campaign's log
+ * rows from `at` on (index `by_campaign_at`, at most SESSION_SCAN) are checked for a start or end row.
  */
 async function sessionBoundaryAfter(ctx: QueryCtx, campaignId: Id<"campaigns">, at: number): Promise<boolean> {
   const { sessionStartedAt } = await campaignFearState(ctx, campaignId);
   if (sessionStartedAt !== undefined) return sessionStartedAt > at;
+  const startedAfter = await ctx.db
+    .query("sessions")
+    .withIndex("by_campaign_started", (q) => q.eq("campaignId", campaignId).gt("startedAt", at))
+    .first();
+  if (startedAfter !== null) return true;
+  const endedAfter = await ctx.db
+    .query("sessions")
+    .withIndex("by_campaign_ended", (q) => q.eq("campaignId", campaignId).gte("endedAt", at))
+    .first();
+  if (endedAfter !== null) return true;
   const rows = await ctx.db
     .query("actionLog")
     .withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId).gte("at", at))
