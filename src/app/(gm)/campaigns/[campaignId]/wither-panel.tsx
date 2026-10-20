@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Modal } from "@/components/brand/modal";
 import { SlotBoundary } from "@/components/party/session/boundary";
-import { endReportLines } from "@/components/sessions/live";
+import { endDialogText, endReportLines, useWitherChoice, WitherChoiceField } from "@/components/sessions/live";
 import { WITHER_POOL } from "@/lib/domain/wither";
 import { frameHasMechanic } from "@/lib/frames";
 import { useIntent } from "@/lib/use-intent";
@@ -27,6 +27,7 @@ function Panel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolea
   const end = useIntent(api.sessions.end);
   const [confirm, setConfirm] = useState(false);
   const [report, setReport] = useState<string[] | null>(null);
+  const wither = useWitherChoice(campaignId);
 
   // Every PC's tokens clear at the End (E2), so every sheet counts.
   const total = characters?.reduce((sum, c) => sum + (c.corrupt ? 0 : (c.sheet.wither ?? 0)), 0);
@@ -34,7 +35,7 @@ function Panel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolea
   async function run() {
     setConfirm(false);
     setReport(null);
-    const result = await end.fire({ campaignId });
+    const result = await end.fire({ campaignId, ...wither.args });
     if (result) setReport(endReportLines(result));
   }
 
@@ -57,14 +58,20 @@ function Panel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolea
       <p className="wither-panel-shadow m-0 text-[14px] leading-normal text-[#d2e0da]">
         At the end of each session, clear all Wither tokens from the PCs’ sheets and gain an equal amount of Fear.
       </p>
+      {wither.applies && !wither.convert ? (
+        <p className="wither-panel-shadow m-0 text-[14px] text-[#e3d8ff]">House rule: Wither stays on the sheets across sessions.</p>
+      ) : null}
       {isGm ? (
         <button
           type="button"
           className="min-h-12 cursor-pointer rounded-[10px] border border-[#6b4f96] bg-[#2a2145] px-3 text-[15px] font-semibold text-[#efe8ff] hover:bg-[#352a57] disabled:cursor-default disabled:opacity-60"
           disabled={total === undefined || end.pending}
-          onClick={() => setConfirm(true)}
+          onClick={() => {
+            wither.reset();
+            setConfirm(true);
+          }}
         >
-          End Session · convert {total ?? 0} to Fear
+          {wither.convert ? `End Session · convert ${total ?? 0} to Fear` : "End Session · keep Wither"}
         </button>
       ) : null}
       {end.error ? (
@@ -85,9 +92,12 @@ function Panel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolea
       {isGm ? (
         <Modal open={confirm} onClose={() => setConfirm(false)} title="End the session?" className="max-w-[480px]">
           <p className="m-0 text-[16px] text-[#c9d2cf]">
-            Session effects end, unspent Rally and Prayer Dice are cleared, and every Wither token on the PCs&apos; sheets becomes GM Fear (up to 12).
+            {endDialogText(wither)}
             {current?.extraCharacters ? " Extra characters are no longer allowed; the ones in play stay active." : ""}
           </p>
+          <div className="text-[15px] text-[#e6ecea]">
+            <WitherChoiceField choice={wither} />
+          </div>
           <div className="flex justify-end gap-2.5">
             <button
               type="button"

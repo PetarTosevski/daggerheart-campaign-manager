@@ -90,7 +90,10 @@ test("Witherwild: Severe Withered damage gives a Wither token, and ending the se
   await expect(liveCard.getByText("Session started.")).toBeVisible();
 
   await liveCard.getByRole("button", { name: "End session" }).click();
-  await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
+  // The End dialog offers to keep Wither on the sheets (house rule); the book's conversion is ticked by default.
+  const endDialog = page.getByRole("dialog", { name: "End the session?" });
+  await expect(endDialog.getByRole("checkbox", { name: /Turn Wither tokens into Fear/ })).toBeChecked();
+  await endDialog.getByRole("button", { name: "End session" }).click();
   await expect(liveCard.getByText(`${count} Wither token${count === 1 ? "" : "s"} → +${count} Fear.`)).toBeVisible();
   await page.goto(`/campaigns/${campaignId}`);
   await expect(page.getByRole("button", { name: `Fear ${count} of 12` })).toHaveAttribute("aria-pressed", "true");

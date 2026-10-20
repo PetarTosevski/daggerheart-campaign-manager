@@ -7,7 +7,7 @@
  *   it for the live session does nothing (`alreadyStarted`, E1). Another live session is ended first with every end
  *   effect (B6); a played session starts again and its start effects run again (B7).
  * - `end`: ends the live session (status played, `endedAt`, its tally window added to `sessions.tally`, Q3) and, for
- *   every PC, clears session effects (`expire(sheet, "session")`), runs `onSessionEnd`, and clears Wither tokens;
+ *   every PC, clears session effects (`expire(sheet, "session")`), runs `onSessionEnd`, and turns Wither tokens into Fear (unless the GM keeps them: `convertWither`, house rule `witherPersists`);
  *   the tokens become GM Fear capped at 12, the rest reported as lost (CB 261; decision). Ending with nothing to
  *   change writes nothing, so a second End is a no-op; with no live session it still clears session effects (E2).
  * - Both stamp the session's log with the board's auto lines (B10) and report the session features that are not
@@ -26,6 +26,7 @@ import { expire } from "../src/lib/domain/characters/expiry";
 import { onSessionEnd, onSessionStart } from "../src/lib/domain/class-features/hooks";
 import { addTally, windowTally } from "../src/lib/domain/sessions";
 import { appError } from "../src/lib/errors/app-error";
+import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -152,8 +153,10 @@ export function sessionReminders(sheets: readonly CharacterSheet[], when: "start
 // ---------------------------------------------------------------- end (shared by `end` and `start`, B6)
 
 const endResult = v.object({
-  /** Wither tokens cleared from every PC. */
+  /** Wither tokens cleared from every PC and turned into Fear. */
   tokens: v.number(),
+  /** Wither tokens left on the sheets because this End didn't convert them (house rule `witherPersists`). */
+  witherKept: v.optional(v.number()),
   fearGained: v.number(),
   /** Tokens past GM Fear's cap of 12: "N Fear lost". */
   fearLost: v.number(),
@@ -184,13 +187,27 @@ async function currentLive(ctx: MutationCtx, campaignId: Id<"campaigns">, state:
   return liveSession(ctx, campaignId);
 }
 
-async function runEnd(ctx: GmCtx): Promise<EndResult> {
+/**
+ * Whether an End turns Wither tokens into Fear (CB p.261): yes, unless the GM asked otherwise or the campaign's house rule
+ * `witherPersists` keeps them across sessions (user 2026-10-20). Outside Witherwild there are no tokens either way.
+ */
+function convertsWither(campaign: Doc<"campaigns">, convertWither: boolean | undefined): boolean {
+  return convertWither ?? !resolveOptions(campaign.frameId, campaign.options).witherPersists;
+}
+
+async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
   const campaignId = ctx.campaign._id;
   const state = await campaignFearState(ctx, campaignId);
   const live = await currentLive(ctx, campaignId, state);
   const members = await party(ctx, campaignId);
-  const tokens = members.reduce((sum, { sheet }) => sum + sheet.wither, 0);
-  const changes = members.map((c) => ({ ...c, next: { ...onSessionEnd(expire(c.sheet, "session")), wither: 0 } }));
+  const onSheets = members.reduce((sum, { sheet }) => sum + sheet.wither, 0);
+  const convert = convertsWither(ctx.campaign, convertWither);
+  const tokens = convert ? onSheets : 0;
+  const kept = convert ? 0 : onSheets;
+  const changes = members.map((c) => {
+    const next = onSessionEnd(expire(c.sheet, "session"));
+    return { ...c, next: convert ? { ...next, wither: 0 } : next };
+  });
   const journeyEnds = members
     .filter(({ character, sheet }) => sheet.journeyEnds && character.status !== "dead" && character.status !== "retired")
     .map(({ character, sheet }) => ({ characterId: character._id, name: sheet.name }));
@@ -204,7 +221,8 @@ async function runEnd(ctx: GmCtx): Promise<EndResult> {
   const groupId = newGroupId();
   await saveChanged(ctx, { campaignId, actorId: ctx.user._id, groupId, summary: "session end" }, changes);
   const { gained, lost } = tokens > 0 ? await gainFear(ctx, campaignId, tokens) : { gained: 0, lost: 0 };
-  const fearText = tokens > 0 ? `; ${tokens} Wither → +${gained} Fear${lost > 0 ? ` (${lost} Fear lost)` : ""}` : "";
+  const fearText =
+    tokens > 0 ? `; ${tokens} Wither → +${gained} Fear${lost > 0 ? ` (${lost} Fear lost)` : ""}` : kept > 0 ? `; ${kept} Wither kept` : "";
   const entryId = await logAction(ctx, {
     campaignId,
     actorId: ctx.user._id,
@@ -224,6 +242,7 @@ async function runEnd(ctx: GmCtx): Promise<EndResult> {
     fearLost: lost,
     journeyEnds,
     entryId,
+    ...(kept > 0 ? { witherKept: kept } : {}),
     lostDice,
     reminders: sessionReminders(active, "end"),
     ...(ctx.campaign.frameId === "journey-to-horizon" ? { doomTier: ctx.campaign.tier } : {}),
@@ -236,7 +255,11 @@ async function runEnd(ctx: GmCtx): Promise<EndResult> {
   const rows = await tallyRows(ctx, campaignId, from, endedAt);
   const tally = addTally(live.tally, windowTally(rows.fear, rows.rests, { from, to: endedAt }));
   await ctx.db.patch("sessions", live._id, { status: "played", endedAt, tally, updatedAt: endedAt });
-  await stampLog(ctx, live, ctx.user._id, logLine("Session ended.", [...lostDice, ...(tokens > 0 ? [witherNote(tokens, gained, lost)] : [])]));
+  await stampLog(ctx, live, ctx.user._id, logLine("Session ended.", [
+      ...lostDice,
+      ...(tokens > 0 ? [witherNote(tokens, gained, lost)] : []),
+      ...(kept > 0 ? [`${kept} Wither token${kept === 1 ? "" : "s"} kept on the sheets`] : []),
+    ]));
   return { ...report, sessionId: live._id, n: live.n };
 }
 
@@ -349,7 +372,9 @@ export const start = keyedGmMutation({
 });
 
 export const end = keyedGmMutation({
-  args: {},
+  /** `convertWither`: turn Wither tokens into Fear (CB p.261); unset = the campaign's rule (on unless `witherPersists`). */
+  args: { convertWither: v.optional(v.boolean()) },
   returns: endResult,
-  handler: async (ctx) => ctx.once("session_end", {}, () => runEnd(ctx)),
+  handler: async (ctx, { convertWither }) =>
+    ctx.once("session_end", convertWither === undefined ? {} : { convertWither }, () => runEnd(ctx, convertWither)),
 });

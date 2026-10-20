@@ -10,7 +10,8 @@ export type CampaignOptionId =
   | "lessLethal"
   | "transformations"
   | "enduranceCountdowns"
-  | "remnantCorruption";
+  | "remnantCorruption"
+  | "witherPersists";
 
 export type CampaignOption = {
   id: CampaignOptionId;
@@ -55,6 +56,14 @@ export const CAMPAIGN_OPTIONS: CampaignOption[] = [
     description: "A Beastbound ranger's remnant companion can be corrupted.",
     frames: ["motherboard"],
     defaultFor: (frameId) => frameId === "motherboard",
+  },
+  {
+    // A house rule against the book (CB p.261: session end turns every Wither token into Fear), user 2026-10-20.
+    id: "witherPersists",
+    label: "Wither stays across sessions (house rule)",
+    description: "Ending a session keeps Wither tokens on the sheets instead of turning them into Fear. You can still convert them in the End dialog.",
+    frames: ["witherwild"],
+    defaultFor: () => false,
   },
 ];
 
