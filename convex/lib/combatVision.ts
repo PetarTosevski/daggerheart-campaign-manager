@@ -21,14 +21,12 @@ import {
 } from "../../src/lib/domain/combat-map/index";
 import { appError } from "../../src/lib/errors/app-error";
 import { frameHasMechanic } from "../../src/lib/frames/index";
-import { PORTRAITS } from "../../src/lib/srd/art";
 import { CLASSES } from "../../src/lib/srd/classes";
-import type { TokenView } from "../combatTokens";
+import { pcPortrait, type TokenView } from "../combatTokens";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { readSheet } from "./characterSheet";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
-import { ownFileUrl } from "./files";
 import { atLeast, permissionFor } from "./permissions";
 import { CELL_LAYERS, tokenSideValidator } from "./validators/combatMaps";
 
@@ -226,18 +224,6 @@ export function parseExploredDelta(bits: string, w: number, h: number): Uint8Arr
 }
 
 // ---------------------------------------------------------------- one player's view
-
-/** A PC's portrait (CharacterPortrait's order: upload, chosen art, default art by subclass then ancestry). */
-async function pcPortrait(ctx: QueryCtx, characterId: Id<"characters">, sheet: ReturnType<typeof readSheet>): Promise<TokenView["portrait"]> {
-  if (sheet.portrait?.kind === "upload") {
-    const url = await ownFileUrl(ctx, "portrait", characterId, sheet.portrait.storageId);
-    return url === null ? null : { kind: "url", url };
-  }
-  if (sheet.portrait?.kind === "asset") return { kind: "asset", asset: sheet.portrait.asset, position: "center 30%" };
-  const ancestry = sheet.ancestry.kind === "single" ? sheet.ancestry.id : sheet.ancestry.kind === "mixed" ? sheet.ancestry.first : sheet.ancestry.form;
-  const art = PORTRAITS[`sub-${sheet.subclassId}`] ?? PORTRAITS[`anc-${ancestry}`];
-  return art ? { kind: "asset", asset: art.asset, position: art.position } : null;
-}
 
 /**
  * A PC token as C6's `TokenView`, seen by `asUser` (Q4: every member reads every sheet, so other PCs' HP and

@@ -193,7 +193,7 @@ async function insertTokens(ctx: MutationCtx, map: Doc<"combatMaps">, existing: 
 }
 
 /** A PC's portrait (CharacterPortrait's order: upload, chosen art, default art by subclass then ancestry). */
-async function pcPortrait(ctx: QueryCtx, characterId: Id<"characters">, sheet: ReturnType<typeof readSheet>): Promise<TokenView["portrait"]> {
+export async function pcPortrait(ctx: QueryCtx, characterId: Id<"characters">, sheet: ReturnType<typeof readSheet>): Promise<TokenView["portrait"]> {
   if (sheet.portrait?.kind === "upload") {
     const url = await ownFileUrl(ctx, "portrait", characterId, sheet.portrait.storageId);
     return url === null ? null : { kind: "url", url };

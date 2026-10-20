@@ -93,7 +93,7 @@ export const combatMapFields = {
   updatedAt: v.number(),
 };
 
-/** Object kinds of the painter (board `CMAP.KINDS`). Lights: `campfire`, `walltorch` (R9); `torch` is a decorative brazier with no light. */
+/** Object kinds of the painter (board `CMAP.KINDS`). Lights: `campfire`, `walltorch` and the board's older `torch` (lit like a wall torch, R9). */
 export const COMBAT_OBJECT_KINDS = [
   "tree",
   "bush",
