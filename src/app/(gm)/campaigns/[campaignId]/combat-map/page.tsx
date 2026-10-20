@@ -139,7 +139,15 @@ function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
       {state.mode === "edit" ? (
         <>
           <SlotBoundary label="Scene">
-            <ScenePanel campaignId={campaignId} map={map} onMapCreated={(id) => onSelectMap(id)} />
+            <ScenePanel
+              campaignId={campaignId}
+              map={map}
+              onMapCreated={(id) => {
+                // A new map opens in Edit, as on the board, so the Scene card (and its result line) stays up.
+                onSelectMap(id);
+                onMode("edit");
+              }}
+            />
           </SlotBoundary>
           {map ? (
             <SlotBoundary label="Edit tools">
