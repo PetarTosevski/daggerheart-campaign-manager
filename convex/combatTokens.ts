@@ -4,9 +4,11 @@ import { freeSquares, moveToken, snapTurn, startFace, startSide } from "../src/c
 import { rasterize, type TerrainId } from "../src/lib/combat-map/raster";
 import { appError } from "../src/lib/errors/app-error";
 import { applyCondition } from "../src/lib/domain/encounters/damage";
+import { sessionEncounterTitle } from "../src/lib/domain/sessions/encounter-title";
 import { ADVERSARIES } from "../src/lib/srd/adversaries";
 import { PORTRAITS } from "../src/lib/srd/art";
 import { CLASSES } from "../src/lib/srd/classes";
+import type { AdversaryType } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { partyOf, readSheet } from "./lib/characterSheet";
@@ -19,12 +21,13 @@ import {
   loadCombatToken,
   tokensOnMap,
 } from "./lib/combatMaps";
-import { MAX_INSTANCES } from "./lib/encounters";
+import { MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { ownFileUrl } from "./lib/files";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
+import { liveSession, newestPlannedSession, sessionPrepOf } from "./lib/sessions";
 import { carriedLightValidator, tokenSideValidator } from "./lib/validators/combatMaps";
-import { encounterConditionValidator } from "./lib/validators/encounters";
+import { encounterConditionValidator, encounterStatusValidator } from "./lib/validators/encounters";
 
 /**
  * Tokens on a combat map (D9 C6, plan `.omc/plans/d9-combat-map.yaml`; R3, R4, R5, Q6). The GM places the party,
@@ -34,6 +37,9 @@ import { encounterConditionValidator } from "./lib/validators/encounters";
  * One source of truth for stats (R4): a PC token reads its character sheet and an adversary token its
  * `encounterAdversaries` row; the client writes them through the existing character and encounter-tracker
  * mutations. Only custom tokens keep their own numbers, changed here.
+ *
+ * D10 S8 (plan `.omc/plans/d10-sessions.yaml`, B11, Q2): `sessionEncounter` and `placeSessionEncounter` put the live
+ * (else the newest planned) session's linked encounter on the map with one click ("＋ Session encounter").
  *
  * Reads: the GM's `list` returns every token with its stats. Players get `party`: the PC tokens only (their own
  * and the other PCs', Q4), never an adversary, ally or neutral token, until C7's filtered `playerView`.
@@ -108,6 +114,26 @@ const combatantsValidator = v.object({
   encounter: v.union(v.null(), v.object({ _id: v.id("encounters"), name: v.string() })),
   /** The board's "From the Adversaries tab" queue: the running encounter's instances not yet on this map, in order. */
   queue: v.array(v.object({ instanceId: v.id("encounterAdversaries"), name: v.string(), solo: v.boolean() })),
+});
+
+/** The "＋ Session encounter" button (B11): its title, and the session and encounter it places (null: none). */
+const sessionEncounterValidator = v.object({
+  /** 'Session N: 2× Bruiser, 1× Leader' (S1's sessionEncounterTitle over every instance), or 'No planned session with an encounter'. */
+  title: v.string(),
+  session: v.union(
+    v.null(),
+    v.object({
+      sessionId: v.id("sessions"),
+      n: v.number(),
+      encounterId: v.id("encounters"),
+      encounterName: v.string(),
+      status: encounterStatusValidator,
+      /** Instances in the encounter. */
+      adversaries: v.number(),
+      /** Its undefeated instances not on this map yet (0 for an unknown map). */
+      unplaced: v.number(),
+    }),
+  ),
 });
 
 /** Sides the GM picks for a custom token (the party side belongs to PCs). */
@@ -190,6 +216,32 @@ async function insertTokens(ctx: MutationCtx, map: Doc<"combatMaps">, existing: 
     );
   }
   return ids;
+}
+
+/**
+ * The session the Combat Map's "＋ Session encounter" uses (B11: the live session, else the newest planned one) and
+ * its linked encounter (S4: `sessionPrep.encounterId`), or null when there is no such session, it links none, or the
+ * link dangles (D8 deleted the encounter) or points outside the campaign.
+ */
+async function sessionEncounterOf(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<{ session: Doc<"sessions">; encounter: Doc<"encounters"> } | null> {
+  const session = (await liveSession(ctx, campaignId)) ?? (await newestPlannedSession(ctx, campaignId));
+  if (session === null) return null;
+  const encounterId = (await sessionPrepOf(ctx, session._id))?.encounterId;
+  const encounter = encounterId === undefined ? null : await ctx.db.get("encounters", encounterId);
+  return encounter !== null && encounter.campaignId === campaignId ? { session, encounter } : null;
+}
+
+/** The encounter's instances in order (at most MAX_INSTANCES). */
+function instancesOf(ctx: QueryCtx, encounterId: Id<"encounters">) {
+  return ctx.db
+    .query("encounterAdversaries")
+    .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounterId))
+    .take(MAX_INSTANCES);
+}
+
+/** The ids of the adversary instances already on a map. */
+function placedInstances(tokens: Doc<"combatTokens">[]): Set<Id<"encounterAdversaries">> {
+  return new Set(tokens.flatMap((t) => (t.ref.kind === "adversary" ? [t.ref.adversaryId] : [])));
 }
 
 /** A PC's portrait (CharacterPortrait's order: upload, chosen art, default art by subclass then ancestry). */
@@ -386,6 +438,40 @@ export const combatants = gmQuery({
   },
 });
 
+/**
+ * GM, the "＋ Session encounter" button (B11): the live session, else the newest planned one, with its linked
+ * encounter, the title 'Session N: 2× Bruiser, 1× Leader' over every instance, and how many of its undefeated
+ * instances are not on this map yet; `session: null` with 'No planned session with an encounter' otherwise.
+ */
+export const sessionEncounter = gmQuery({
+  args: { mapId: v.string() },
+  returns: sessionEncounterValidator,
+  handler: async (ctx, { mapId }) => {
+    const campaignId = ctx.campaign._id;
+    const found = await sessionEncounterOf(ctx, campaignId);
+    if (found === null) return { title: sessionEncounterTitle(null), session: null };
+    const { session, encounter } = found;
+    const instances = await instancesOf(ctx, encounter._id);
+    const types: { type: AdversaryType | null }[] = [];
+    for (const instance of instances) types.push({ type: (await adversaryType(ctx, campaignId, instance)) as AdversaryType | null });
+    const map = await findMap(ctx, campaignId, mapId);
+    const placed = map === null ? null : placedInstances(await tokensOnMap(ctx, map._id));
+    const unplaced = placed === null ? 0 : instances.filter((i) => !i.defeated && !placed.has(i._id)).length;
+    return {
+      title: sessionEncounterTitle({ n: session.n, instances: types }),
+      session: {
+        sessionId: session._id,
+        n: session.n,
+        encounterId: encounter._id,
+        encounterName: encounter.name,
+        status: encounter.status,
+        adversaries: instances.length,
+        unplaced,
+      },
+    };
+  },
+});
+
 // ---------------------------------------------------------------- GM: placing tokens
 
 /** Places every active character not yet on the map (the board's "＋ Party"); COMBAT_TOKEN_LIMIT past the cap. */
@@ -440,6 +526,40 @@ export const placeAdversaries = keyedGmMutation({
       await assertCanAddTokens(ctx, map._id, adding.length);
       await insertTokens(ctx, map, existing, adding);
       return { added: adding.length };
+    }),
+});
+
+/**
+ * "＋ Session encounter" (B11, Q2 default a): the live (else newest planned) session's linked encounter is started
+ * with D8's start rules when it is a draft or ended (ENCOUNTER_RUNNING, 'End the running encounter first', while
+ * ANOTHER encounter runs), then every unplaced, undefeated instance is placed as `placeAdversaries` does (enemy side,
+ * a Solo 2 × 2, COMBAT_TOKEN_LIMIT past the cap). SESSION_NO_ENCOUNTER without a linked encounter. One transaction:
+ * a refusal writes nothing.
+ */
+export const placeSessionEncounter = keyedGmMutation({
+  args: { mapId: v.string() },
+  returns: v.object({ n: v.number(), added: v.number(), started: v.boolean() }),
+  handler: async (ctx, { mapId }) =>
+    ctx.once("combat_place_session_encounter", { mapId }, async () => {
+      const campaignId = ctx.campaign._id;
+      const map = await loadCombatMap(ctx, campaignId, mapId);
+      const found = await sessionEncounterOf(ctx, campaignId);
+      if (found === null) throw appError("SESSION_NO_ENCOUNTER");
+      const { session, encounter } = found;
+      const started = await startEncounter(ctx, campaignId, encounter, "End the running encounter first.");
+      const existing = await tokensOnMap(ctx, map._id);
+      const placed = placedInstances(existing);
+      const adding: NewToken[] = [];
+      for (const instance of await instancesOf(ctx, encounter._id)) {
+        if (instance.defeated || placed.has(instance._id)) continue;
+        const solo = (await adversaryType(ctx, campaignId, instance)) === "Solo";
+        adding.push({ ref: { kind: "adversary", adversaryId: instance._id }, side: "enemy", size: solo ? 2 : 1 });
+      }
+      if (adding.length > 0) {
+        await assertCanAddTokens(ctx, map._id, adding.length);
+        await insertTokens(ctx, map, existing, adding);
+      }
+      return { n: session.n, added: adding.length, started };
     }),
 });
 
