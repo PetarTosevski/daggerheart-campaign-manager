@@ -1,0 +1,108 @@
+/*
+ * Editing a map by hand (D9 C5): the board's "Edit by hand" card, the selected-object card and the edit overlay
+ * on the map. Shared tokens and classes come from the page's combat-map.css (C0).
+ */
+
+.cm-ed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cm-ed-tools,
+.cm-ed-kinds,
+.cm-ed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cm-ed-kinds,
+.cm-ed-row {
+  gap: 4px;
+}
+.cm-ed-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cm-ed-terrains {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+.cm-btn.cm-ed-terrain {
+  justify-content: flex-start;
+  text-transform: capitalize;
+}
+.cm-ed-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  flex: none;
+}
+.cm-ed-brushes {
+  gap: 6px;
+}
+.cm-ed-push {
+  margin-left: auto;
+}
+.cm-ed-start {
+  align-self: flex-start;
+}
+.cm-ed-obj {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #0b1214;
+  border: 1px solid var(--cm-acc);
+}
+.cm-ed-obj-name {
+  font-family: var(--font-cinzel), "Cinzel", serif;
+}
+.cm-ed-note {
+  font-size: 13px;
+}
+.cm-linkbtn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--cm-acc-soft);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.cm-linkbtn:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 2px;
+}
+
+/* The overlay over the map in Edit: lets every pointer through with Move view, takes the left button otherwise. */
+.cm-ed-layer {
+  position: absolute;
+  touch-action: none;
+}
+.cm-ed-layer.cm-ed-tool-pan {
+  pointer-events: none;
+}
+.cm-ed-layer.cm-ed-tool-terrain,
+.cm-ed-layer.cm-ed-tool-block,
+.cm-ed-layer.cm-ed-tool-erase {
+  cursor: crosshair;
+}
+.cm-ed-layer.cm-ed-tool-object {
+  cursor: copy;
+}
+.cm-ed-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+@media (max-width: 760px) {
+  .cm-linkbtn {
+    min-height: 44px;
+  }
+}
