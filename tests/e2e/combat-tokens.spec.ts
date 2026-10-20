@@ -64,7 +64,7 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     const tools = page.getByRole("complementary", { name: "Map tools" });
     const combatants = tools.getByRole("region", { name: "Combatants" });
     await expect(combatants.getByRole("button", { name: "＋ Session encounter" })).toBeDisabled();
-    await expect(combatants.getByRole("button", { name: "＋ Session encounter" })).toHaveAttribute("title", "Comes with Sessions");
+    await expect(combatants.getByRole("button", { name: "＋ Session encounter" })).toHaveAttribute("title", "No planned session with an encounter");
     await combatants.getByRole("button", { name: "＋ Party (2)" }).click();
     await expect(combatants.getByRole("button", { name: "＋ Party (0)" })).toBeDisabled();
     const queue = combatants.getByRole("group", { name: "From the Adversaries tab" });

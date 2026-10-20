@@ -20,6 +20,7 @@ import {
   MAX_MINIONS,
   MAX_PCS,
   MIN_PCS,
+  startEncounter,
 } from "./lib/encounters";
 import { gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import {
@@ -277,11 +278,7 @@ export const start = gmMutation({
   returns: v.null(),
   handler: async (ctx, { encounterId }) => {
     const encounter = await loadEncounter(ctx, ctx.campaign._id, encounterId);
-    if (encounter.status === "running") return null;
-    const running = await byStatus(ctx, ctx.campaign._id, "running").first();
-    if (running !== null) throw appError("ENCOUNTER_RUNNING");
-    const now = Date.now();
-    await ctx.db.patch("encounters", encounter._id, { status: "running", startedAt: now, endedAt: undefined, updatedAt: now });
+    await startEncounter(ctx, ctx.campaign._id, encounter);
     return null;
   },
 });

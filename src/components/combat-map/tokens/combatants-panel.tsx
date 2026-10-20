@@ -18,7 +18,8 @@ const idempotencyKey = () => crypto.randomUUID();
 
 /**
  * GM, left column in Play (slot `CombatantsPanel`, D9 C6): the board's Combatants card. "＋ Party (n)" places the
- * active characters not yet on the map; "＋ Session encounter" stays disabled until D10 Sessions wires it (Q6); the
+ * active characters not yet on the map; "＋ Session encounter" (D10 S8, B11) starts the live (else newest planned)
+ * session's encounter if needed and places its adversaries, titled 'Session N: 2× Bruiser, 1× Leader'; the
  * "From the Adversaries tab" queue places the running encounter's adversaries one by one or all at once (solo
  * adversaries 2 × 2); a custom token has a name, Hit Points and a side; "Clear tokens" asks for a second click.
  */
@@ -27,7 +28,9 @@ export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
   const info = useQuery(api.combatTokens.combatants, { campaignId, mapId });
   const tokens = useQuery(api.combatTokens.list, { campaignId, mapId });
   const addParty = useMutation(api.combatTokens.addParty);
+  const session = useQuery(api.combatTokens.sessionEncounter, { campaignId, mapId });
   const place = useMutation(api.combatTokens.placeAdversaries);
+  const placeSessionEncounter = useMutation(api.combatTokens.placeSessionEncounter);
   const addCustom = useMutation(api.combatTokens.addCustom);
   const clear = useMutation(api.combatTokens.clear).withOptimisticUpdate((store, args) => {
     if (store.getQuery(api.combatTokens.list, { campaignId: args.campaignId, mapId }) !== undefined) {
@@ -35,6 +38,7 @@ export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
     }
   });
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [name, setName] = useState("");
@@ -72,7 +76,15 @@ export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
     });
   }
 
-  if (info === undefined || tokens === undefined) {
+  function placeSession() {
+    setNotice(null);
+    void run(async () => {
+      const { n, added } = await placeSessionEncounter({ campaignId, mapId, idempotencyKey: idempotencyKey() });
+      setNotice(added > 0 ? `Added Session ${n}'s encounter.` : `Session ${n}'s encounter is already on the map.`);
+    });
+  }
+
+  if (info === undefined || tokens === undefined || session === undefined) {
     return (
       <section className="cm-card" aria-labelledby="cm-combatants-h">
         <h2 id="cm-combatants-h" className="cm-h">
@@ -108,8 +120,14 @@ export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
         >
           ＋ Party ({info.partyLeft})
         </button>
-        {/* Q6: kept from the board, disabled until D10 Sessions wires it; it calls nothing. */}
-        <button type="button" className="cm-btn" disabled title="Comes with Sessions">
+        {/* D10 S8 (B11, Q2): the live (else newest planned) session's encounter; disabled without one. */}
+        <button
+          type="button"
+          className="cm-btn"
+          disabled={session.session === null || session.session.adversaries === 0 || pending}
+          title={session.title}
+          onClick={placeSession}
+        >
           ＋ Session encounter
         </button>
         {tokens.length > 0 ? (
@@ -177,6 +195,11 @@ export function CombatantsPanel({ campaignId, map }: CombatantsPanelProps) {
           </button>
         </form>
       </details>
+      {notice ? (
+        <p role="status" className="cm-muted cm-small cm-m0">
+          {notice}
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="cm-alert cm-m0">
           {error}

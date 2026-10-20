@@ -1,6 +1,6 @@
 import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { QueryCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 /**
  * Shared helpers of the D8 adversary and encounter functions: caps the validators cannot express, loaders that
@@ -65,6 +65,28 @@ export async function loadInstance(
 /** Refuses (ENCOUNTER_NOT_RUNNING) a tracker action on an encounter that is not running. */
 export function assertRunning(encounter: Doc<"encounters">): void {
   if (encounter.status !== "running") throw appError("ENCOUNTER_NOT_RUNNING");
+}
+
+/**
+ * Starts `encounter` (D8 `encounters.start`; reused by D10 S8's `combatTokens.placeSessionEncounter`): a running
+ * encounter is left alone; a draft or ended one starts unless another encounter of the campaign is running
+ * (ENCOUNTER_RUNNING, with `runningMessage` when given). Returns whether it started the encounter.
+ */
+export async function startEncounter(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  encounter: Doc<"encounters">,
+  runningMessage?: string,
+): Promise<boolean> {
+  if (encounter.status === "running") return false;
+  const running = await ctx.db
+    .query("encounters")
+    .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaignId).eq("status", "running"))
+    .first();
+  if (running !== null) throw appError("ENCOUNTER_RUNNING", runningMessage);
+  const now = Date.now();
+  await ctx.db.patch("encounters", encounter._id, { status: "running", startedAt: now, endedAt: undefined, updatedAt: now });
+  return true;
 }
 
 /** How many instances the encounter holds, reading at most MAX_INSTANCES + 1 rows (a result above the cap means full). */
