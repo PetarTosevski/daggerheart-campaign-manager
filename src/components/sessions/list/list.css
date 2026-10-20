@@ -1,0 +1,58 @@
+/*
+ * Session list slot (D10 S2): the entries of the board's list column (Sessions.dc.html l.64-69) and the error line
+ * under '+ New session'. The entry box, the chip and the current ring are the page's shared `ss-item` / `ss-chip`.
+ */
+.ss-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ss-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.ss-item-n {
+  font-family: var(--ss-display);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  color: var(--ss-muted);
+}
+.ss-item-title {
+  font-family: var(--ss-display);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.ss-item-date {
+  font-size: 13px;
+  color: var(--ss-muted);
+}
+.ss-new {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.ss-new-error {
+  margin: 0;
+  max-width: 320px;
+  color: var(--ss-danger);
+  font-size: 13px;
+  text-align: right;
+}
+@media (max-width: 720px) {
+  .ss-new {
+    width: 100%;
+    align-items: stretch;
+  }
+  .ss-new-error {
+    max-width: none;
+    text-align: left;
+  }
+}
