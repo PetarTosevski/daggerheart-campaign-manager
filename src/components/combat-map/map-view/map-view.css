@@ -1,0 +1,96 @@
+/*
+ * The combat map area (D9 C3): the pan/zoom viewport, the stage the layers draw in, the map canvas and the grid
+ * bar for uploaded images. Shared tokens and classes come from the page's combat-map.css (C0).
+ */
+
+.cm-spacer {
+  margin-right: auto;
+}
+.cm-zoom {
+  min-width: 42px;
+  text-align: center;
+  font-size: 13px;
+}
+.cm-hint {
+  font-size: 13px;
+}
+
+/* The board's viewport: it scrolls (pan = scroll), a fixed height so Fit has room to fit into. */
+.cm-vp.cm-vp-map {
+  height: max(440px, calc(100vh - 230px));
+  max-height: none;
+  cursor: grab;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+}
+.cm-vp.cm-vp-map.cm-panning {
+  cursor: grabbing;
+}
+.cm-vp.cm-vp-map.cm-shifting {
+  cursor: move;
+}
+/* Centres a stage smaller than the viewport; a larger one scrolls from its top-left corner. */
+.cm-vp-inner {
+  min-width: 100%;
+  min-height: 100%;
+  width: max-content;
+  display: grid;
+  place-items: center;
+}
+.cm-stage {
+  position: relative;
+  flex: none;
+}
+.cm-canvas {
+  position: absolute;
+  display: block;
+  image-rendering: auto;
+}
+.cm-vp-loading {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Grid over an uploaded image (R1). */
+.cm-gridbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--cm-card);
+  border: 1px solid var(--cm-card-border);
+}
+.cm-gridbar-hint {
+  font-size: 13px;
+}
+.cm-gridbar-lbl {
+  width: 72px;
+}
+.cm-gridbar-in {
+  width: 64px;
+  min-height: 30px;
+  text-align: center;
+}
+.cm-gridbar-unit {
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .cm-vp.cm-vp-map {
+    height: max(400px, calc(100vh - 210px));
+  }
+}
+@media (max-width: 760px) {
+  .cm-vp.cm-vp-map {
+    height: 70vh;
+    min-height: 320px;
+  }
+  .cm-gridbar-in {
+    min-height: 44px;
+  }
+}
