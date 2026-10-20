@@ -39,7 +39,7 @@ export function TitleMenu() {
   return (
     <main className="flex min-h-screen flex-col items-center bg-ink px-6 pt-16 pb-12 text-parchment">
       <div className="flex flex-col items-center gap-3.5 text-center">
-        <LogoMark />
+        <LogoMark size={110} />
         <h1 className="font-display text-[clamp(28px,8.4vw,104px)] leading-none font-black tracking-[0.08em]">
           DAGGERHEART
         </h1>
