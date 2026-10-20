@@ -20,7 +20,7 @@ import type { LiveCardProps } from "../slots";
 /**
  * Live slot (D10 S3, board Sessions.dc.html l.89-93, l.231-311): the live card of the selected session. Dot, 'Session
  * in progress' / 'Not running', the board's texts (live since, played, another session running), Start / End with
- * their confirm dialogs, the report of what the party sync did (B10, Q6, Q8) and, while live, the XC1 switch. Start
+ * their confirm dialogs, the report of what the party sync did (B10, Q6, session features U8) and, while live, the XC1 switch. Start
  * switches the stage to Play, End to Wrap-up (B2). GM only; the session comes from S2's list subscription, so an id
  * that is not one of the campaign's sessions (deleted, or the shell spec's placeholder) renders nothing.
  */
@@ -37,13 +37,17 @@ function hhmm(at: number): string {
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
-/** What the End told the GM (as the dashboard card): the Wither → Fear conversion (CB 261), dice lost, journeys that end (CB 106), Q8 reminders. */
+/**
+ * What the End told the GM (as the dashboard card): the Wither → Fear conversion (CB 261), dice lost, the session
+ * features cleared (Slayer Dice for Hope, Tide tokens, the moon die; session-features U8), journeys that end (CB 106).
+ */
 export function endReportLines(r: EndResult): string[] {
   const first = r.tokens > 0 ? `Session ended. ${plural(r.tokens, "Wither token")} → +${r.fearGained} Fear${r.fearLost > 0 ? `, ${r.fearLost} Fear lost` : ""}.` : "Session ended.";
   return [
     first,
     ...(r.witherKept ? [`${plural(r.witherKept, "Wither token")} stay on the sheets.`] : []),
     ...(r.lostDice?.length ? [`${r.lostDice.join("; ")}.`] : []),
+    ...(r.features ?? []).map((line) => `${line}.`),
     ...(r.journeyEnds.length > 0 ? [`Journey ends: ${r.journeyEnds.map((c) => c.name).join(", ")}.`] : []),
     ...(r.reminders ?? []),
   ];
@@ -90,12 +94,12 @@ export function endDialogText(choice: WitherChoice): string {
     : "Session effects end and unspent Rally and Prayer Dice are cleared. Wither tokens stay on the PCs' sheets.";
 }
 
-/** What the Start told the GM: the session ended first (B6), the Prayer Dice rolled (B10), Q8 reminders. */
+/** What the Start told the GM: the session ended first (B6), the Prayer Dice rolled (B10), Luckbringer and the moon dice (U1, U6). */
 function startReportLines(r: StartResult): string[] {
   const previous = r.ended?.n !== undefined ? `Session ${r.ended.n} ended first.` : "The running session ended first.";
   const ended = r.ended ? endReportLines(r.ended).map((line, i) => (i === 0 ? line.replace("Session ended.", previous) : line)) : [];
   const notes = r.notes ?? [];
-  return [...ended, notes.length > 0 ? `Session started. ${notes.join("; ")}.` : "Session started.", ...(r.reminders ?? [])];
+  return [...ended, notes.length > 0 ? `Session started. ${notes.join("; ")}.` : "Session started.", ...(r.features ?? []).map((line) => `${line}.`), ...(r.reminders ?? [])];
 }
 
 function Card({ campaignId, sessionId, onStage }: LiveCardProps) {
