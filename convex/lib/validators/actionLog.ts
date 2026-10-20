@@ -75,6 +75,8 @@ export const actionLogFields = {
   undoable: v.boolean(),
   undoneAt: v.optional(v.number()),
   undoneBy: v.optional(v.id("users")),
+  /** Set when the GM deletes the row from the feed (`feed.remove`). Display only: undo and "latest roll" checks still see it. */
+  removedAt: v.optional(v.number()),
   at: v.number(),
 };
 

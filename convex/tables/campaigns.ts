@@ -27,6 +27,8 @@ export const campaignTables = {
     options: v.optional(v.record(v.string(), v.boolean())),
     /** Custom frame only: the GM's own tome chapters (plain text). */
     tome: v.optional(tomeValidator),
+    /** When the GM last cleared the roll feed (`feed.clear`): the feed shows only rows after it. */
+    feedClearedAt: v.optional(v.number()),
   })
     .index("by_owner_deletedAt_lastOpened", ["ownerId", "deletedAt", "lastOpenedAt"])
     .index("by_owner_deletedAt_nameKey", ["ownerId", "deletedAt", "nameKey"])

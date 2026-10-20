@@ -141,3 +141,44 @@ test("undoing a Fear roll lowers GM Fear", async ({ page, browser }) => {
   await expect(page.getByRole("button", { name: "Fear 1 of 12" })).toHaveAttribute("aria-pressed", "false");
   await close();
 });
+
+test("the GM deletes a feed line and clears the feed for everyone; anyone folds the feed away", async ({ page, browser }) => {
+  const { campaignId, hero, characterId, player, close } = await campaignWithPlayer(page, browser);
+  const client = await convexAs(player);
+  const roll = (trait: "agility" | "strength") =>
+    client.mutation(api.rolls.manualRoll, {
+      characterId: characterId as Id<"characters">,
+      roll: { kind: "reaction", trait, modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] },
+      values: [4, 4],
+      idempotencyKey: crypto.randomUUID(),
+    });
+  await roll("agility");
+  await roll("strength");
+  await page.goto(`/campaigns/${campaignId}`);
+  await player.goto(`/campaigns/${campaignId}`);
+  const line = (p: Page, trait: string) => feedOf(p).getByRole("listitem").filter({ hasText: `${hero}: ${trait}` });
+  await expect(line(player, "Agility")).toBeVisible();
+  // Players get no delete or clear buttons.
+  await expect(feedOf(player).getByRole("button", { name: /^Delete from the feed/ })).toHaveCount(0);
+  await expect(player.getByRole("button", { name: "Clear feed" })).toHaveCount(0);
+
+  await line(page, "Agility").getByRole("button", { name: /^Delete from the feed/ }).click();
+  await expect(line(player, "Agility")).toHaveCount(0);
+  await expect(line(player, "Strength")).toBeVisible();
+
+  await page.getByRole("button", { name: "Clear feed" }).click();
+  await page.getByRole("button", { name: "Clear for everyone" }).click();
+  await expect(line(player, "Strength")).toHaveCount(0);
+  await expect(feedOf(page)).toHaveCount(0);
+
+  // Folding is per device and survives a reload.
+  const toggle = player.getByRole("button", { name: "Roll Feed" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(player.getByText(/^No rolls yet/)).toHaveCount(0);
+  await player.reload();
+  await expect(player.getByRole("button", { name: "Roll Feed" })).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "Roll Feed" })).toHaveAttribute("aria-expanded", "true");
+  await close();
+});
