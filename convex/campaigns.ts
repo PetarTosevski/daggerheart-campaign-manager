@@ -67,17 +67,23 @@ async function openedAt(ctx: QueryCtx, userId: Id<"users">, campaignId: Id<"camp
   return open?.lastOpenedAt ?? (await fallback());
 }
 
-/** Campaigns the user runs (GM) or plays in (member or invited), most recently opened first. */
+/**
+ * The most campaigns Load Campaign lists. Each summary costs a few reads, so an unbounded list hit Convex's 4096-read
+ * limit for an account with hundreds of campaigns (the e2e GM, 2026-10-20). Each source is read newest first.
+ */
+const LIST_MAX = 100;
+
+/** Campaigns the user runs (GM) or plays in (member or invited), most recently opened first; at most `LIST_MAX`. */
 export const list = userQuery({
   args: {},
   returns: v.array(campaignSummaryValidator),
   handler: async (ctx) => {
     const user = ctx.user;
-    // One GM's campaigns: a handful.
     const owned = await ctx.db
       .query("campaigns")
       .withIndex("by_owner_deletedAt_lastOpened", (q) => q.eq("ownerId", user._id).eq("deletedAt", undefined))
-      .collect();
+      .order("desc")
+      .take(LIST_MAX);
     const rows: { campaign: Doc<"campaigns">; role: Role; fallback: number }[] = owned.map((c) => ({
       campaign: c,
       role: "gm",
@@ -87,7 +93,8 @@ export const list = userQuery({
     const memberships = await ctx.db
       .query("campaignMembers")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
+      .order("desc")
+      .take(LIST_MAX);
     for (const m of memberships) {
       const c = await ctx.db.get("campaigns", m.campaignId);
       if (c && c.deletedAt === undefined && !seen.has(c._id)) {
@@ -100,7 +107,8 @@ export const list = userQuery({
       const invites = await ctx.db
         .query("campaignInvites")
         .withIndex("by_email", (q) => q.eq("email", email))
-        .collect();
+        .order("desc")
+        .take(LIST_MAX);
       for (const i of invites) {
         const c = await ctx.db.get("campaigns", i.campaignId);
         if (c && c.deletedAt === undefined && !seen.has(c._id)) {
@@ -113,7 +121,7 @@ export const list = userQuery({
       rows.map(async (r) => ({ ...r, lastOpenedAt: await openedAt(ctx, user._id, r.campaign._id, () => r.fallback) })),
     );
     opened.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
-    return Promise.all(opened.map((r) => summarise(ctx, r.campaign, r.role, r.lastOpenedAt)));
+    return Promise.all(opened.slice(0, LIST_MAX).map((r) => summarise(ctx, r.campaign, r.role, r.lastOpenedAt)));
   },
 });
 

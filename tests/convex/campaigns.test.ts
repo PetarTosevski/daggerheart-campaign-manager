@@ -137,6 +137,30 @@ describe("campaigns", () => {
     expect(names).toEqual(["A", "B"]);
   });
 
+  it("lists at most 100 campaigns, the newest, for an account with many (stays inside Convex's read limit)", async () => {
+    const { t, gm } = await setup();
+    const gmId = await t.run(async (ctx) => (await ctx.db.query("users").collect()).find((u) => u.email === GM_EMAIL)!._id);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 150; i++) {
+        const campaignId = await ctx.db.insert("campaigns", {
+          ownerId: gmId,
+          frameId: "witherwild",
+          name: `C${i}`,
+          nameKey: `c${i}`,
+          tier: 1,
+          level: 1,
+          createdAt: i,
+          lastOpenedAt: i,
+        });
+        await ctx.db.insert("campaignState", { campaignId, fear: 0 });
+      }
+    });
+    const names = (await gm.query(api.campaigns.list, {})).map((c) => c.name);
+    expect(names).toHaveLength(100);
+    expect(names[0]).toBe("C149");
+    expect(names).not.toContain("C49");
+  });
+
   it("hides another owner's campaign", async () => {
     const { gm, other } = await setup();
     const { campaignId } = await other.mutation(api.campaigns.create, { frameId: "witherwild", name: "Theirs", idempotencyKey: "k" });
