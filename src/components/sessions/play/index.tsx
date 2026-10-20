@@ -265,15 +265,18 @@ function LogCard({ campaignId, sessionId }: CardProps) {
                 {clock(l.at)}
               </time>
               <span className="ss-log-text">{l.text}</span>
-              <button
-                type="button"
-                className="ss-x ss-log-x"
-                aria-label={`Remove log entry: ${l.text}`}
-                disabled={l._id.startsWith(OPTIMISTIC)}
-                onClick={() => onRemove(l._id)}
-              >
-                ×
-              </button>
+              {l.auto ? null : (
+                // Automatic Start/End lines stay (the server refuses them too).
+                <button
+                  type="button"
+                  className="ss-x ss-log-x"
+                  aria-label={`Remove log entry: ${l.text}`}
+                  disabled={l._id.startsWith(OPTIMISTIC)}
+                  onClick={() => onRemove(l._id)}
+                >
+                  ×
+                </button>
+              )}
             </li>
           ))}
         </ol>

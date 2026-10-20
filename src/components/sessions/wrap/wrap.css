@@ -88,3 +88,7 @@
     min-height: 44px;
   }
 }
+
+/* The milestone's confirm step (user 2026-10-20). */
+.sw-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sw-confirm > button { min-height: 44px; }

@@ -179,9 +179,12 @@ function Milestone({ campaignId, wrap }: { campaignId: Id<"campaigns">; wrap: Se
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A confirm step before flagging the party (user 2026-10-20), as Delete has.
+  const [confirming, setConfirming] = useState(false);
   const called = wrap.milestoneAt !== undefined;
 
   async function onCall() {
+    setConfirming(false);
     setError(null);
     setBusy(true);
     try {
@@ -202,13 +205,24 @@ function Milestone({ campaignId, wrap }: { campaignId: Id<"campaigns">; wrap: Se
         aria-pressed={called}
         disabled={called || busy}
         title={called ? "The party was told to level up. This can't be undone." : undefined}
-        onClick={onCall}
+        onClick={() => setConfirming(true)}
       >
         <span className="sw-box" aria-hidden="true">
           {called ? "✓" : ""}
         </span>
         <span className="sw-row-label">Milestone reached: the party levels up</span>
       </button>
+      {confirming && !called ? (
+        <div className="sw-confirm" role="group" aria-label="Confirm the milestone">
+          <span className="ss-muted">Every active character gets a level-up. This can’t be undone.</span>
+          <button type="button" className="ss-primary" disabled={busy} onClick={() => void onCall()}>
+            Level up the party
+          </button>
+          <button type="button" className="ss-ghost" onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
       <p role="status" className="ss-muted ss-m0 sw-status">
         {notice}
       </p>
