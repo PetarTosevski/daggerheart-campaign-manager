@@ -6,7 +6,7 @@
 #   ends with printed page N-1 in its footer (checked 2026-10-21: Luckbringer sits in block 65, footer '64'). Each tracer that cites a
 #   page re-checks it (.reference-private/, pdfjs-dist; never commit the books) and quotes it in its task doc.
 # Paths: C = src/app/(gm)/campaigns/[campaignId]; P = C/party/[characterId] (written out in full below).
-# Status: DRAFT 2026-10-21. U1-U7 are the user's decisions (binding). One QUESTION (Q1) has a default; tracers that cite it do not
+# Status: APPROVED 2026-10-21 (Q1 answered; Moon Witch confirmed). U1-U7 are the user's decisions (binding). One QUESTION (Q1) has a default; tracers that cite it do not
 #   start until the user has answered or accepted it.
 #
 # Rules from the books (binding; tracers quote the one they implement in their task doc):
@@ -100,7 +100,13 @@
 #   Dice, reroll any 1s' (Call of the Slayer specialization, CB p.48) and the Martial Preparation downtime move's ally Slayer Die
 #   (Call of the Slayer mastery, CB p.48); authz-matrix entries (D12).
 #
-# QUESTIONS (one; the default is written into the acceptance lists and marked (Q1)):
+# QUESTIONS (ANSWERED by the user 2026-10-21; binding):
+#   ANSWER Q1: (a) action rolls only, never reaction rolls; for a Tag Team only the roll the players CHOOSE counts (for both).
+#   U9  (user 2026-10-21, with Q1) Tag Team: "let the players decide which roll they wish to use" - EITHER participating player (edit
+#       access to either character) or the GM can pick the roll in tagTeamApply, not only the initiator; the dice box offers the pick
+#       to both players. Owned by F2 (convex/rolls.ts, src/components/party/dice/**).
+#   U6 clarified: Lunar Phases is the Moon WITCH subclass mastery (Hope & Fear, HF p.17); the user confirmed.
+# (Original question text kept below for reference.)
 #   Q1  Which rolls place a Know the Tide token (U4 'every roll with Fear')? The book defines rolling with Fear by the dice ('your Fear
 #       Die rolled higher than your Hope Die', CB p.18) but says reaction rolls 'don't generate Hope, Fear, or additional GM moves'
 #       (CB p.99), and a Tag Team Roll applies one roll 'for both of your results. On a roll with Hope, all PCs
