@@ -31,7 +31,7 @@ async function withMap(size: "small" | "medium" | "large" = "medium") {
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size, idempotencyKey: key() });
   const get = async () => (await gm.query(api.combatMaps.get, { campaignId, mapId }))!;
   const tiles = () => ctx.t.run((c) => c.db.query("combatMapCells").withIndex("by_map_layer_tile", (q) => q.eq("mapId", mapId)).collect());
-  const paint = (squares: number[], value: "block" | "erase" | "stone" | "water" | "wall") =>
+  const paint = (squares: number[], value: "block" | "eraseTerrain" | "eraseBlock" | "stone" | "water" | "wall") =>
     gm.mutation(api.combatMapEdit.paintCells, { campaignId, mapId, squares, paint: value });
   const add = async (kind: (typeof PLACEABLE_KINDS)[number], x: number, y: number) =>
     (await gm.mutation(api.combatMapEdit.addObject, { campaignId, mapId, kind, x, y })).objectId;
@@ -123,7 +123,7 @@ describe("combat map editing: painting", () => {
     expect(decodeCells(live!.cells, live!.w, live!.h).paint["4,10"]).toBe("water");
   });
 
-  it("paints and erases sight blockers; Erase clears both layers and drops tiles left empty (R7)", async () => {
+  it("paints and erases; Erase terrain and Clear sight each clear their own layer and drop tiles left empty (R7)", async () => {
     const f = await withMap();
     const a = squareIndex(3, 3, 30);
     const b = squareIndex(4, 3, 30);
@@ -134,14 +134,17 @@ describe("combat map editing: painting", () => {
     expect([...decoded.block].sort()).toEqual(["3,3", "4,3"]);
     expect(decoded.paint).toEqual({ "3,3": "stone" });
 
-    await f.paint([a], "erase");
+    await f.paint([a], "eraseTerrain");
     layout = await f.get();
     decoded = decodeCells(layout.cells, layout.w, layout.h);
-    expect([...decoded.block]).toEqual(["4,3"]);
+    expect([...decoded.block].sort()).toEqual(["3,3", "4,3"]);
     expect(decoded.paint).toEqual({});
     expect((await f.tiles()).map(({ layer }) => layer)).toEqual(["block"]);
 
-    await f.paint([b], "erase");
+    await f.paint([a], "eraseBlock");
+    decoded = decodeCells((await f.get()).cells, 30, 20);
+    expect([...decoded.block]).toEqual(["4,3"]);
+    await f.paint([b], "eraseBlock");
     expect(await f.tiles()).toEqual([]);
   });
 
@@ -155,7 +158,7 @@ describe("combat map editing: painting", () => {
     expect(los(vision(layout0), 2.5, 5.5, 8.5, 5.5)).toBe(true);
     await f.paint([squareIndex(5, 5, 30)], "block");
     expect(los(vision(await f.get()), 2.5, 5.5, 8.5, 5.5)).toBe(false);
-    await f.paint([squareIndex(5, 5, 30)], "erase");
+    await f.paint([squareIndex(5, 5, 30)], "eraseBlock");
     await f.paint([squareIndex(5, 5, 30)], "wall");
     expect(los(vision(await f.get()), 2.5, 5.5, 8.5, 5.5)).toBe(false);
   });
@@ -190,12 +193,12 @@ describe("combat map editing: painting", () => {
 
   it("the client's optimistic copy of a stroke equals what the server stores", async () => {
     const f = await withMap();
-    const strokes: [number[], "stone" | "block" | "erase" | "water"][] = [
+    const strokes: [number[], "stone" | "block" | "eraseTerrain" | "eraseBlock" | "water"][] = [
       [brushSquares(4.2, 6.7, 3, 30, 20), "stone"],
       [brushSquares(4.2, 7.9, 2, 30, 20), "block"],
       [brushSquares(29.5, 19.5, 3, 30, 20), "water"],
-      [brushSquares(4.2, 6.7, 1, 30, 20), "erase"],
-      [brushSquares(3.2, 7.1, 2, 30, 20), "erase"],
+      [brushSquares(4.2, 6.7, 1, 30, 20), "eraseTerrain"],
+      [brushSquares(3.2, 7.1, 2, 30, 20), "eraseBlock"],
     ];
     let optimistic: CellTile[] = [];
     for (const [squares, value] of strokes) {

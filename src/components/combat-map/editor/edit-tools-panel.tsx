@@ -31,7 +31,8 @@ const TOOLS: readonly { tool: EditTool; label: string; painted: boolean }[] = [
   { tool: "terrain", label: "🖌 Terrain", painted: true },
   { tool: "object", label: "🌲 Objects", painted: true },
   { tool: "block", label: "▦ Block sight", painted: false },
-  { tool: "erase", label: "⌫ Erase", painted: false },
+  { tool: "eraseTerrain", label: "⌫ Erase terrain", painted: true },
+  { tool: "eraseBlock", label: "⌫ Clear sight", painted: false },
 ];
 
 /** GM, left column in Edit (slot `EditToolsPanel`): the board's "Edit by hand" card and the selected object's panel. */
@@ -144,9 +145,16 @@ function EditTools({ campaignId, layout }: { campaignId: Id<"campaigns">; layout
         </div>
       ) : null}
 
-      {tool === "erase" ? (
+      {tool === "eraseTerrain" ? (
         <div className="cm-ed-sub">
-          <span className="cm-muted">Erase painted terrain and sight blockers under the brush.</span>
+          <span className="cm-muted">Erase painted terrain under the brush; the map’s own layout shows again.</span>
+          {brushes}
+        </div>
+      ) : null}
+
+      {tool === "eraseBlock" ? (
+        <div className="cm-ed-sub">
+          <span className="cm-muted">Clear painted sight blockers under the brush.</span>
           {brushes}
         </div>
       ) : null}

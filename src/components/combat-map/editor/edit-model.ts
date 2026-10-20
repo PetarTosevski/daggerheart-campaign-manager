@@ -136,18 +136,14 @@ export function brushSquares(x: number, y: number, brush: number, w: number, h: 
   return out;
 }
 
-/** What a stroke paints: a terrain, a sight blocker, or erasing both (the Erase tool). */
-export type PaintValue = Terrain | "block" | "erase";
+/** What a stroke paints: a terrain, a sight blocker, or erasing one of the two (Erase terrain / Clear sight). */
+export type PaintValue = Terrain | "block" | "eraseTerrain" | "eraseBlock";
 
 /** The layers a stroke writes, each with the code it puts in every touched square. */
 export function strokeLayers(paint: PaintValue): { layer: Exclude<CellLayer, "fog">; code: string }[] {
   if (paint === "block") return [{ layer: "block", code: BLOCK_CODE }];
-  if (paint === "erase") {
-    return [
-      { layer: "terrain", code: CELL_UNPAINTED },
-      { layer: "block", code: CELL_UNPAINTED },
-    ];
-  }
+  if (paint === "eraseTerrain") return [{ layer: "terrain", code: CELL_UNPAINTED }];
+  if (paint === "eraseBlock") return [{ layer: "block", code: CELL_UNPAINTED }];
   return [{ layer: "terrain", code: codeOfTerrain(paint) }];
 }
 

@@ -126,13 +126,19 @@ test("the GM paints a stone floor, adds a tree and a crate, sets the crate to bl
     .poll(async () => (await client.query(api.combatMaps.get, { campaignId, mapId }))?.objects.map((o) => [o.kind, o.x, o.y]))
     .toEqual([["tree", 8.5, 15.5]]);
 
-  // ---- Sight blockers: a stroke of Block sight, then Erase.
+  // ---- Sight blockers: a stroke of Block sight, then Clear sight (Erase terrain leaves blockers alone).
   await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Block sight/ }).click();
   const wallAt = await squareCentre(stage, 30, 20, 3);
   await page.mouse.click(wallAt.x, wallAt.y);
   await expect.poll(async () => [...decodeCells((await client.query(api.combatMaps.get, { campaignId, mapId }))!.cells, 30, 20).block]).toEqual(["20,3"]);
-  await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Erase/ }).click();
-  await page.mouse.click(wallAt.x, wallAt.y);
+  // Picking a tool can scroll the page, so the square's position is read again after each pick.
+  await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Erase terrain/ }).click();
+  let at = await squareCentre(stage, 30, 20, 3);
+  await page.mouse.click(at.x, at.y);
+  await expect.poll(async () => [...decodeCells((await client.query(api.combatMaps.get, { campaignId, mapId }))!.cells, 30, 20).block]).toEqual(["20,3"]);
+  await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Clear sight/ }).click();
+  at = await squareCentre(stage, 30, 20, 3);
+  await page.mouse.click(at.x, at.y);
   await expect.poll(async () => decodeCells((await client.query(api.combatMaps.get, { campaignId, mapId }))!.cells, 30, 20).block.size).toBe(0);
 });
 
@@ -172,7 +178,7 @@ test("an uploaded image offers the sight tools only; Move view lets the map pan"
 
   // A painted map: every tool. Move view is on and lets the pointer through to the map (it pans).
   await maps.getByRole("button", { name: "Glade", exact: true }).click();
-  await expect(toolGroup.getByRole("button")).toHaveText(["✋ Move view", "🖌 Terrain", "🌲 Objects", "▦ Block sight", "⌫ Erase"]);
+  await expect(toolGroup.getByRole("button")).toHaveText(["✋ Move view", "🖌 Terrain", "🌲 Objects", "▦ Block sight", "⌫ Erase terrain", "⌫ Clear sight"]);
   await expect(toolGroup.getByRole("button", { name: /Move view/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("combat-editor-layer")).toHaveCSS("pointer-events", "none");
   await toolGroup.getByRole("button", { name: /Terrain/ }).click();
@@ -180,7 +186,7 @@ test("an uploaded image offers the sight tools only; Move view lets the map pan"
 
   // The image: no painted terrain or drawn objects, so only the sight tools (Terrain falls back to Move view).
   await maps.getByRole("button", { name: "Crypt", exact: true }).click();
-  await expect(toolGroup.getByRole("button")).toHaveText(["✋ Move view", "▦ Block sight", "⌫ Erase"]);
+  await expect(toolGroup.getByRole("button")).toHaveText(["✋ Move view", "▦ Block sight", "⌫ Clear sight"]);
   await expect(toolGroup.getByRole("button", { name: /Move view/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("group", { name: "Grid over the image" })).toBeVisible();
   await toolGroup.getByRole("button", { name: /Block sight/ }).click();
