@@ -23,7 +23,7 @@ All `gmMutation` (player FORBIDDEN, outsider NOT_FOUND, anonymous UNAUTHENTICATE
 
 | Function | Args | Returns | Notes |
 |---|---|---|---|
-| `paintCells` | `mapId: string`, `squares: number[]` (`y * w + x`), `paint: Terrain \| "block" \| "erase"` | null | One write per stroke: only the touched tiles are read and written; a tile left empty is deleted. Erase clears terrain and blockers. Squares outside the map → INVALID. |
+| `paintCells` | `mapId: string`, `squares: number[]` (`y * w + x`), `paint: Terrain \| "block" \| "eraseTerrain" \| "eraseBlock"` | null | One write per stroke: only the touched tiles are read and written; a tile left empty is deleted. eraseTerrain clears painted terrain, eraseBlock clears blockers (two tools, user 2026-10-20). Squares outside the map → INVALID. |
 | `clearPaint` | `mapId`, `layer: "terrain" \| "block"` | null | The board's "Undo all painting" (terrain). |
 | `addObject` | `mapId`, `kind` (the board's 18 placeable kinds), `x`, `y` | `{ objectId }` | Half squares, inside the map, the board's default radius (OBJ_R); cap MAX_COMBAT_OBJECTS → COMBAT_OBJECT_LIMIT. |
 | `moveObject` | `objectId: string`, `x`, `y` | null | Quarter squares, clamped to the map. |
@@ -73,7 +73,7 @@ Board: `test-results/visual/board/combat-gm-edit-{1440,1024,390}.png`.
 
 | Region | Verdict |
 |---|---|
-| Edit by hand card, tool row | Matches the board's buttons and order. Deviation: the fifth tool is "⌫ Erase" (plan wording; clears painted terrain and blockers) instead of the board's "⌫ Clear sight". No "⊞ Grid" tool: the grid bar stays C3's, above the map. |
+| Edit by hand card, tool row | Matches the board's buttons and order, with "⌫ Clear sight" (blockers) as on the board plus "⌫ Erase terrain" (painted terrain), split at the user's request 2026-10-20. No "⊞ Grid" tool: the grid bar stays C3's, above the map. |
 | Terrain palette and brush | Matches the board: two-column swatch buttons, Brush 1 / 2 / 3, "Undo all painting" when there is painted terrain. |
 | Objects picker | Matches the board's 18 kinds and the hint line. |
 | Selected-object card | Matches the board (gold border, Cinzel name, sight buttons, Smaller / Bigger / ⟲ / ⟳, Done / Delete); adds a line naming the kind's default and "Use the default". |

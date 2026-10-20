@@ -38,7 +38,7 @@ const MAX_STROKE_SQUARES = MAX_MAP_W * MAX_MAP_H;
 const MAX_LAYER_TILES = Math.ceil(MAX_MAP_H / CELL_TILE_ROWS);
 
 const placeableKindValidator = v.union(...PLACEABLE_KINDS.map((kind) => v.literal(kind)));
-const paintValueValidator = v.union(combatTerrainValidator, v.literal("block"), v.literal("erase"));
+const paintValueValidator = v.union(combatTerrainValidator, v.literal("block"), v.literal("eraseTerrain"), v.literal("eraseBlock"));
 const paintLayerValidator = v.union(v.literal("terrain"), v.literal("block"));
 
 const finite = (n: number) => Number.isFinite(n);
@@ -74,7 +74,8 @@ async function writeLayer(
 
 /**
  * GM: one brush stroke. `squares` are the touched squares as `y * w + x` of the map's current size; `paint` is a
- * terrain (hand-painted terrain layer), "block" (painted sight blockers, R7) or "erase" (clears both). Only the
+ * terrain (hand-painted terrain layer), "block" (painted sight blockers, R7), "eraseTerrain" (clears painted terrain) or "eraseBlock" (clears sight
+ * blockers; user 2026-10-20: two separate tools). Only the
  * tiles the stroke touches are written, so a stroke is one small write however long the GM drags.
  */
 export const paintCells = gmMutation({

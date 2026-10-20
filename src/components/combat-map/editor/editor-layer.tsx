@@ -88,7 +88,7 @@ function drawStrokeSquares(canvas: HTMLCanvasElement, squares: readonly number[]
   for (const s of squares) ctx.fillRect((s % w) * cell, Math.floor(s / w) * cell, cell, cell);
 }
 
-const strokeColor = (paint: PaintValue) => (paint === "block" ? COLORS.strokeBlock : paint === "erase" ? COLORS.strokeErase : COLORS.strokeTerrain);
+const strokeColor = (paint: PaintValue) => (paint === "block" ? COLORS.strokeBlock : paint === "eraseTerrain" || paint === "eraseBlock" ? COLORS.strokeErase : COLORS.strokeTerrain);
 
 /**
  * Map area in Edit (slot `EditorLayer`): the tools' pointer handling (paint strokes, placing, selecting and
@@ -134,7 +134,7 @@ export function EditorLayer({ campaignId, map, viewport, onSelectToken }: MapLay
       });
       return;
     }
-    const paint: PaintValue = tool === "terrain" ? editor.terrain : tool === "block" ? "block" : "erase";
+    const paint: PaintValue = tool === "terrain" ? editor.terrain : tool;
     const squares = brushSquares(p.x, p.y, editor.brush, w, h);
     e.currentTarget.setPointerCapture(e.pointerId);
     stroke.current = { pointerId: e.pointerId, paint, squares: new Set(squares) };

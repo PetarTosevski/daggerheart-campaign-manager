@@ -6,8 +6,9 @@ import type { Terrain } from "@/lib/domain/combat-map/spec";
 
 import type { Brush, PlaceableKind } from "./edit-model";
 
-/** The board's edit tools: move the view, paint terrain, place objects, paint sight blockers, erase painting. */
-export type EditTool = "pan" | "terrain" | "object" | "block" | "erase";
+/** The board's edit tools: move the view, paint terrain, place objects, paint sight blockers, erase painted
+ * terrain, clear sight blockers (two tools, user 2026-10-20). */
+export type EditTool = "pan" | "terrain" | "object" | "block" | "eraseTerrain" | "eraseBlock";
 
 /** Tools that need the painter (terrain, drawn objects): an uploaded image offers the sight tools only. */
 const PAINTER_TOOLS: ReadonlySet<EditTool> = new Set<EditTool>(["terrain", "object"]);
