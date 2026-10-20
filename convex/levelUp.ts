@@ -7,11 +7,12 @@ import { resolveOptions } from "../src/lib/frames/options";
 import { ADVANCEMENT_OPTIONS, type CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { logAction, newGroupId } from "./lib/actionLog";
+import { logAction } from "./lib/actionLog";
 import { loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { campaignFearState } from "./lib/fear";
 import { keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
 import { applyRule } from "./lib/mechanics";
+import { partyLevelUp as flagParty } from "./lib/partyLevelUp";
 import { atLeast, type Permission } from "./lib/permissions";
 import { traitIdValidator } from "./lib/validators/characters";
 
@@ -195,41 +196,10 @@ export const correctLevel = keyedUserMutation({
 /**
  * GM only: "Party levels up" (CB 109, decision 5). Flags every active
  * character below level 10; dead, retired and away ones are left out.
+ * The body lives in convex/lib/partyLevelUp.ts (shared with D10's milestone, Q5).
  */
 export const partyLevelUp = keyedGmMutation({
   args: {},
   returns: v.object({ flagged: v.number() }),
-  handler: async (ctx) =>
-    ctx.once("level_up_party", {}, async () => {
-      // One party: a handful of characters.
-      const rows = await ctx.db
-        .query("characters")
-        .withIndex("by_campaign", (q) => q.eq("campaignId", ctx.campaign._id))
-        .collect();
-      const groupId = newGroupId();
-      let flagged = 0;
-      for (const character of rows) {
-        if (character.status !== "active") continue;
-        let sheet: CharacterSheet;
-        try {
-          sheet = readSheet(character.sheet);
-        } catch {
-          continue; // An unreadable sheet can't level up; the roster shows it as corrupt.
-        }
-        if (sheet.level >= MAX_LEVEL) continue;
-        if (!sheet.levelUpPending) await saveSheet(ctx, character._id, { ...sheet, levelUpPending: true });
-        await logAction(ctx, {
-          campaignId: ctx.campaign._id,
-          characterId: character._id,
-          actorId: ctx.user._id,
-          kind: "levelUp",
-          visibility: "public",
-          summary: `${sheet.name} can level up to ${sheet.level + 1}.`,
-          groupId,
-          undoable: false,
-        });
-        flagged += 1;
-      }
-      return { flagged };
-    }),
+  handler: async (ctx) => ctx.once("level_up_party", {}, () => flagParty(ctx, ctx.campaign._id, ctx.user._id)),
 });

@@ -254,6 +254,23 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("customAdversaries").withIndex("by_campaign_name", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "customAdversaries", rows);
   },
+  // Sessions (D10): every sessions table carries the campaignId, so each goes by its own index.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("sessionLog").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "sessionLog", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("sessionSpotlights").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "sessionSpotlights", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("sessionPrep").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "sessionPrep", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("sessions").withIndex("by_campaign_n", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "sessions", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "operations", rows);

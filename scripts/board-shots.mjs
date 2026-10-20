@@ -18,6 +18,13 @@
 // on the way: empty board (gm-empty) → a party of two is seeded and a map drawn by the board's keyword fallback (no
 // Claude from disk) → the maps card (map-list) and edit mode (gm-edit) → Play with the party placed (gm-play) →
 // the player view as Liriel by day (player-day) and at night carrying a torch (player-night).
+//   node scripts/board-shots.mjs sessions:all hub:all     # Sessions and dashboard regions (.omc/plans/d10-sessions.yaml)
+// Sessions / hub: shot at the D10 sizes (1440x900, 1024x768, 390x844) as sessions-<region>-<width>.png and
+// hub-<region>-<width>.png. Each region gets a fresh page whose localStorage holds one fixed story: a party of two
+// (Liriel the Seraph with 2 Wither tokens, Brannoc the Bard with 1) and three sessions (1 played with a recap, 2 and 3
+// planned, 2 dated; 3 has scenes, hooks, encounter roles, spotlight counts, a tally, log lines, recap, loot, threads and
+// the milestone). `empty` has no sessions; `live` marks Session 3 live; the stages click their tab on Session 3 (the
+// board selects the newest session).
 
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -163,26 +170,122 @@ async function shootCombat(browser, viewport, wantedRegions) {
   return failures;
 }
 
+const SESSIONS_BOARD = pathToFileURL(join(ROOT, "reference/designs/project/Sessions.dc.html")).href;
+const HUB_BOARD = pathToFileURL(join(ROOT, "reference/designs/project/CampaignHub.dc.html")).href;
+const D10_VIEWPORTS = COMBAT_VIEWPORTS;
+/** The boards' localStorage keys for the default campaign (Witherwild). */
+const D10_KEYS = { sessions: "dh.witherwild.sessions", party: "dh.witherwild.party", live: "dh.witherwild.live" };
+const D10_PARTY = [
+  { cls: 5, clsName: "Seraph", hpMax: 6, hp: 1, stressMax: 6, stress: 2, hope: 2, wither: 2, f: { name: "Liriel", strength: "+1" } },
+  { cls: 0, clsName: "Bard", hpMax: 5, hp: 0, stressMax: 6, stress: 1, hope: 3, wither: 1, f: { name: "Brannoc" } },
+];
+const D10_SESSIONS = [
+  { id: "s1", n: 1, title: "The Bridge at Dawn", date: "2026-10-03", played: true, scenes: [], hooks: "", pcs: 2, roles: {}, adj: [], spot: {}, tally: { fearGain: 4, fearSpent: 3, short: 1 }, log: [], recap: "The party crossed the river at dawn and met the ferryman, who warned them about the wither spreading through the Grove.", loot: "", threads: "", levelUp: false },
+  { id: "s2", n: 2, title: "Into the Grove", date: "2026-10-24", played: false, scenes: [], hooks: "", pcs: 2, roles: {}, adj: [], spot: {}, tally: {}, log: [], recap: "", loot: "", threads: "", levelUp: false },
+  {
+    id: "s3",
+    n: 3,
+    title: "",
+    date: "",
+    played: false,
+    scenes: [
+      { type: "Combat", text: "Bandits at the ford" },
+      { type: "Social", text: "Bargain with the ferryman" },
+    ],
+    hooks: "The ferryman knows who poisoned the well.",
+    pcs: 2,
+    roles: { bruiser: 1, standard: 1 },
+    adj: ["hard"],
+    spot: { Liriel: 2, Brannoc: 1 },
+    tally: { fearGain: 2, fearSpent: 1, short: 1, long: 0 },
+    log: [
+      { time: "19:02", text: "Session started." },
+      { time: "19:40", text: "Brannoc talked the bandits down." },
+    ],
+    recap: "The party reached the Grove.",
+    loot: "A silver locket, a handful of gold.",
+    threads: "The Doom countdown ticked to 3.",
+    levelUp: true,
+  },
+];
+/** Sessions / hub region -> board, story and what to shoot (null = the whole page). */
+const SESSION_REGIONS = {
+  empty: { board: SESSIONS_BOARD, story: {}, find: () => null },
+  list: { board: SESSIONS_BOARD, find: (p) => p.locator('aside[aria-label="Session list"]') },
+  prep: { board: SESSIONS_BOARD, tab: "Prep", find: (p) => p.locator('section[aria-label="Session detail"]') },
+  play: { board: SESSIONS_BOARD, tab: "Play", find: (p) => p.locator('section[aria-label="Session detail"]') },
+  wrap: { board: SESSIONS_BOARD, tab: "Wrap-up", find: (p) => p.locator('section[aria-label="Session detail"]') },
+  live: { board: SESSIONS_BOARD, live: true, tab: "Play", find: () => null },
+};
+const HUB_REGIONS = {
+  "last-session": { board: HUB_BOARD, find: (p) => p.locator('section[aria-labelledby="log-h"]') },
+  "wither-panel": { board: HUB_BOARD, find: (p) => p.locator('section[aria-labelledby="wither-h"]') },
+};
+
+/** Shoots one sessions / hub region at one viewport on a fresh page seeded with the region's story. */
+async function shootD10(browser, viewport, prefix, name, region) {
+  const page = await browser.newPage({ viewport });
+  const path = join(OUT, `${prefix}-${name}-${viewport.width}.png`);
+  try {
+    const story = region.story ?? {
+      [D10_KEYS.party]: D10_PARTY,
+      [D10_KEYS.sessions]: D10_SESSIONS,
+      ...(region.live ? { [D10_KEYS.live]: { id: "s3", n: 3, at: Date.now() - 40 * 60 * 1000 } } : {}),
+    };
+    await page.goto(region.board);
+    await page.evaluate((list) => {
+      window.localStorage.clear();
+      for (const [key, value] of list) window.localStorage.setItem(key, JSON.stringify(value));
+    }, Object.entries(story));
+    await page.reload();
+    await page.locator("main").first().waitFor({ timeout: 20000 });
+    if (region.tab) await page.getByRole("tab", { name: region.tab, exact: true }).click();
+    // The board has no phone layout: below 640 px its detail column collapses to a sliver, so shoot the whole page.
+    const target = viewport.width < 640 && region.tab ? null : region.find(page);
+    if (target === null) await page.screenshot({ path, fullPage: true, animations: "disabled" });
+    else {
+      await target.first().waitFor({ timeout: 5000 });
+      await target.first().screenshot({ path, animations: "disabled" });
+    }
+    console.log(path);
+    return 0;
+  } catch (error) {
+    console.error(`${prefix}:${name} @ ${viewport.width}: not found (${error.message.split("\n")[0]})`);
+    return 1;
+  } finally {
+    await page.close();
+  }
+}
+
 const wanted = process.argv.slice(2);
 if (wanted.length === 0) {
   console.log(
     `Party regions: ${Object.keys(REGIONS).join(", ")}\n` +
       `Adversaries regions: ${Object.keys(ADVERSARY_REGIONS).map((r) => `adversaries:${r}`).join(", ")}\n` +
       `Combat regions: ${Object.keys(COMBAT_REGIONS).map((r) => `combat:${r}`).join(", ")}\n` +
-      "Usage: node scripts/board-shots.mjs <region...> | all | adversaries:all | combat:all",
+      `Sessions regions: ${Object.keys(SESSION_REGIONS).map((r) => `sessions:${r}`).join(", ")}\n` +
+      `Dashboard regions: ${Object.keys(HUB_REGIONS).map((r) => `hub:${r}`).join(", ")}\n` +
+      "Usage: node scripts/board-shots.mjs <region...> | all | adversaries:all | combat:all | sessions:all | hub:all",
   );
   process.exit(0);
 }
-const advWanted = wanted.filter((n) => n.startsWith("adversaries:")).map((n) => n.slice("adversaries:".length));
-const combatWanted = wanted.filter((n) => n.startsWith("combat:")).map((n) => n.slice("combat:".length));
-const partyWanted = wanted.filter((n) => !n.startsWith("adversaries:") && !n.startsWith("combat:"));
+const PREFIXES = ["adversaries:", "combat:", "sessions:", "hub:"];
+const prefixed = (prefix, regions) => {
+  const list = wanted.filter((n) => n.startsWith(prefix)).map((n) => n.slice(prefix.length));
+  return list.includes("all") ? Object.keys(regions) : list;
+};
+const advNames = prefixed("adversaries:", ADVERSARY_REGIONS);
+const combatNames = prefixed("combat:", COMBAT_REGIONS);
+const sessionNames = prefixed("sessions:", SESSION_REGIONS);
+const hubNames = prefixed("hub:", HUB_REGIONS);
+const partyWanted = wanted.filter((n) => !PREFIXES.some((p) => n.startsWith(p)));
 const names = partyWanted.includes("all") ? Object.keys(REGIONS) : partyWanted;
-const advNames = advWanted.includes("all") ? Object.keys(ADVERSARY_REGIONS) : advWanted;
-const combatNames = combatWanted.includes("all") ? Object.keys(COMBAT_REGIONS) : combatWanted;
 const unknown = [
   ...names.filter((n) => !REGIONS[n]),
   ...advNames.filter((n) => !ADVERSARY_REGIONS[n]).map((n) => `adversaries:${n}`),
   ...combatNames.filter((n) => !COMBAT_REGIONS[n]).map((n) => `combat:${n}`),
+  ...sessionNames.filter((n) => !SESSION_REGIONS[n]).map((n) => `sessions:${n}`),
+  ...hubNames.filter((n) => !HUB_REGIONS[n]).map((n) => `hub:${n}`),
 ];
 if (unknown.length) {
   console.error(`Unknown region(s): ${unknown.join(", ")}. Run without arguments for the list.`);
@@ -194,6 +297,10 @@ const browser = await chromium.launch();
 let failed = 0;
 try {
   for (const viewport of combatNames.length ? COMBAT_VIEWPORTS : []) failed += await shootCombat(browser, viewport, combatNames);
+  for (const viewport of sessionNames.length || hubNames.length ? D10_VIEWPORTS : []) {
+    for (const name of sessionNames) failed += await shootD10(browser, viewport, "sessions", name, SESSION_REGIONS[name]);
+    for (const name of hubNames) failed += await shootD10(browser, viewport, "hub", name, HUB_REGIONS[name]);
+  }
   for (const viewport of advNames.length ? VIEWPORTS : []) {
     const page = await browser.newPage({ viewport });
     for (const name of advNames) {

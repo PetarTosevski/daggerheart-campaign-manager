@@ -119,6 +119,10 @@ const CAMPAIGN_SCOPED = [
   "customAdversaries",
   "combatMaps",
   "combatTokens",
+  "sessions",
+  "sessionPrep",
+  "sessionLog",
+  "sessionSpotlights",
 ];
 /**
  * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge

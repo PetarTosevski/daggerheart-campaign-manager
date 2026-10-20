@@ -13,6 +13,7 @@ import { historyTables } from "./tables/history";
 import { mapTables } from "./tables/maps";
 import { operationTables } from "./tables/operations";
 import { restTables } from "./tables/rests";
+import { sessionTables } from "./tables/sessions";
 import { trackerTables } from "./tables/trackers";
 
 export { customFrameValidator, frameIdValidator } from "./tables/campaigns";
@@ -33,4 +34,5 @@ export default defineSchema({
   ...restTables,
   ...encounterTables,
   ...combatMapTables,
+  ...sessionTables,
 });

@@ -73,7 +73,7 @@ export const campaignTables = {
   campaignState: defineTable({
     campaignId: v.id("campaigns"),
     fear: v.number(),
-    /** When the GM's temporary Start session button was pressed (D5 decision 12); moves to Sessions in D10. */
+    /** When the live session started (D5 decision 12; since D10 written by the Sessions board's start, cleared by end). */
     sessionStartedAt: v.optional(v.number()),
     /**
      * XC1: the `sessionStartedAt` of the session in which the GM allows more than
@@ -81,6 +81,12 @@ export const campaignTables = {
      * session's; `sessions.end` clears it.
      */
     extraCharactersSession: v.optional(v.number()),
+    /**
+     * D10: the campaign's live session (`sessions` row with status "live", B6). `sessionStartedAt` and
+     * `extraCharactersSession` stay the cached "live since" that XC1 and SS3 read; start and end write all three in
+     * the same mutation (convex/sessions.ts).
+     */
+    liveSessionId: v.optional(v.id("sessions")),
   }).index("by_campaign", ["campaignId"]),
 
   settings: defineTable({
