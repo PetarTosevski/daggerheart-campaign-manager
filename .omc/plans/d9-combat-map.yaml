@@ -370,7 +370,8 @@ waves:
           - "Hidden edges (Q1): the player's map area is padded by FOG_PAD_SQUARES on every side; outside-the-map squares render as unexplored fog in every state (never as a border, a different colour or the end of the grid); pan limits and Fit use the padded area or the explored squares; the header line shows no W x H for players"
           - "Fog canvas over the map, painted with the same C1 engine: clear, dim (faint terrain), dark, explored (faint, no tokens), GM fog marks; the cone outline from the token's facing (R6, R11)"
           - "Player view: only the live map; own token highlighted; 'Your view' card with the cone width ('85 degrees vision cone (Instinct +1)'), carried light picker for their own token (the GM sets any token's light in the token panel, Q3), the light rule line for the current phase and the dim-phase badge (R8, R9); markExplored is sent only when the explored set grows, throttled"
-          - "Clicking a lit/unlit campfire or wall torch switches it (GM and players, R9)"
+          - "Clicking a lit/unlit campfire or wall torch switches it (GM and players, R9) through C7's toggleLight (C5's updateObject.lit stays as the GM's edit-card switch)"
+          - "The GM's carried-light picker for the selected token (any token, Q3) renders in RevealPanel under C6's token card (decided 2026-10-20: C6's token-panel.tsx stays C6's)"
           - "GM: 'Preview' picker (any PC) showing previewAs; in the token panel 'Reveal to...' per PC for a token in dim light, with the board's dashed outline for revealed tokens; fog brushes Reveal / Hide / Erase (R10, R12)"
           - "e2e (two browsers): at night with a torch, an enemy in the dim band is hidden for the player; the GM reveals it and it appears live; the GM moves an enemy behind a wall and it disappears for the player; daytime shows it again"
 
