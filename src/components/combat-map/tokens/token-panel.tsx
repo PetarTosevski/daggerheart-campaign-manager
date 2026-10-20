@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { TokenPanelProps } from "../slots";
 import { normalizeAngle, TURN_BUTTON_STEP } from "./geometry";
 import { useRings } from "./rings";
-import { SIDES, TRACKER_CONDITIONS } from "./sides";
+import { PC_CONDITIONS, SIDES, TRACKER_CONDITIONS } from "./sides";
 import { useTokenActions, useTokens, type TokenActions, type TokenView } from "./use-tokens";
 
 const SIZES = [
@@ -120,6 +120,26 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
           <Pips label="Stress" value={s.stress} max={s.stressMax} colour="#4f6a86" disabled={!canEdit} onDelta={(d) => void actions.mark(token, "stress", d)} />
         </div>
       ) : null}
+      {s && token.kind === "pc" ? (
+        // A PC's conditions live on the character sheet; the owner and the GM switch them here (user 2026-10-20).
+        <div className="cm-tokfield">
+          <span className="cm-lbl">Conditions</span>
+          <div className="cm-row cm-tight" role="group" aria-label="Conditions">
+            {PC_CONDITIONS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className="cm-btn cm-sm"
+                aria-pressed={s.conditions.includes(c.id)}
+                disabled={!canEdit}
+                onClick={() => void actions.togglePcCondition(token, c.id)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {trackerClosed && gm ? <span className="cm-muted cm-small">The encounter isn’t running. Start it on the Adversaries tab to mark HP, Stress and conditions.</span> : null}
 
       <div className="cm-row cm-tight">
@@ -158,12 +178,6 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
                   </button>
                 ))}
               </div>
-            </div>
-          ) : null}
-          {s && token.kind === "pc" ? (
-            <div className="cm-tokfield">
-              <span className="cm-lbl">Conditions</span>
-              <span className="cm-muted cm-small">{s.conditions.length > 0 ? s.conditions.map((c) => c.charAt(0).toUpperCase() + c.slice(1)).join(", ") : "None"} · set on the character sheet</span>
             </div>
           ) : null}
           <div className="cm-row cm-tight" role="group" aria-label="Side">

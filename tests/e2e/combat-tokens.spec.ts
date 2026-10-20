@@ -57,7 +57,7 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     await expect(player).toHaveURL("/");
     const playerClient = await convexAs(player);
     await playerClient.mutation(api.members.joinByCode, { code });
-    await playerClient.mutation(api.characters.create, { campaignId, draft: bardDraft("Ash"), idempotencyKey: crypto.randomUUID() });
+    const { characterId: ashId } = await playerClient.mutation(api.characters.create, { campaignId, draft: bardDraft("Ash"), idempotencyKey: crypto.randomUUID() });
 
     // ---- GM: the Combatants card.
     await page.goto(url);
@@ -137,6 +137,13 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     const playerPanel = player.getByRole("region", { name: "Selected token" });
     await expect(playerPanel.getByRole("button", { name: "Turn left" })).toHaveCount(0);
     await expect(playerPanel.getByRole("button", { name: "◎ Range circles" })).toBeVisible();
+    // Conditions: another PC's are read-only; the player switches their own, which lands on the character sheet.
+    await expect(playerPanel.getByRole("group", { name: "Conditions" }).getByRole("button", { name: "Vulnerable" })).toBeDisabled();
+    await mine.click();
+    const vulnerable = playerPanel.getByRole("group", { name: "Conditions" }).getByRole("button", { name: "Vulnerable" });
+    await vulnerable.click();
+    await expect(vulnerable).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(async () => (await playerClient.query(api.characters.get, { characterId: ashId }))?.sheet.conditions).toEqual(["vulnerable"]);
   } finally {
     await context.close();
   }

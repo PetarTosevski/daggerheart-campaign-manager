@@ -159,3 +159,20 @@ describe("character intents", () => {
     expect(await t.run(async (ctx) => (await ctx.db.get(characterId))!.sheet.schemaVersion)).toBe(2);
   });
 });
+
+describe("characters.toggleCondition", () => {
+  useAllowlist(EMAILS);
+
+  it("anonymous, outsider-like player, owner and GM; switches a condition on and off", async () => {
+    const { t, gm, p1, p2, characterId, sheet } = await setup();
+    const toggle = (who: typeof gm, condition: "vulnerable" | "hidden") => who.mutation(api.characters.toggleCondition, { characterId, condition });
+    const code = (p: Promise<unknown>) => p.then(() => "ok", (e: unknown) => errorCode(e));
+    expect(await code(toggle(t as unknown as typeof gm, "vulnerable"))).toBe("UNAUTHENTICATED");
+    // Another player of the campaign reads the sheet but may not edit it.
+    expect(await code(toggle(p2, "vulnerable"))).toBe("FORBIDDEN");
+    expect(await toggle(p1, "vulnerable")).toEqual({ conditions: ["vulnerable"] });
+    expect(await toggle(gm, "hidden")).toEqual({ conditions: ["vulnerable", "hidden"] });
+    expect(await toggle(gm, "vulnerable")).toEqual({ conditions: ["hidden"] });
+    expect((await sheet()).conditions).toEqual(["hidden"]);
+  });
+});
