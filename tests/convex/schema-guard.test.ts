@@ -82,6 +82,7 @@ const DUPLICATE_INDEX_PENDING_DROP: string[] = [];
  * guard until it is listed here.
  * - `retention`: only grows; a cron in convex/crons.ts deletes old rows.
  * - `campaignScoped`: rows belong to one campaign and go with its purge.
+ * - `mapScoped`: rows belong to one combat map and go before it.
  * - `bounded`: at most a few rows per user, or rows owned by a library.
  */
 const RETENTION: Record<string, string> = {
@@ -116,7 +117,14 @@ const CAMPAIGN_SCOPED = [
   "encounters",
   "encounterAdversaries",
   "customAdversaries",
+  "combatMaps",
+  "combatTokens",
 ];
+/**
+ * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge
+ * and by C3's map delete (`deleteMapChildren` in convex/lib/combatMaps.ts).
+ */
+const MAP_SCOPED = ["combatMapObjects", "combatMapCells", "combatExplored"];
 const BOUNDED = ["settings", "grants", ...Object.keys(authTables)];
 
 describe("stored fields", () => {
@@ -171,7 +179,7 @@ describe("indexes", () => {
 });
 
 describe("retention", () => {
-  const classified = [...Object.keys(RETENTION), ...CAMPAIGN_SCOPED, ...BOUNDED];
+  const classified = [...Object.keys(RETENTION), ...CAMPAIGN_SCOPED, ...MAP_SCOPED, ...BOUNDED];
 
   test("every table has a retention decision", () => {
     expect(Object.keys(tables).filter((name) => !classified.includes(name))).toEqual([]);
@@ -187,6 +195,14 @@ describe("retention", () => {
       const json = tables[name].validator.json as { type: string; value: unknown };
       const objects = json.type === "union" ? (json.value as { value: object }[]) : [json as { value: object }];
       return !objects.every((member) => "campaignId" in member.value);
+    });
+    expect(missing).toEqual([]);
+  });
+
+  test("map-scoped tables have a mapId the purge can find", () => {
+    const missing = MAP_SCOPED.filter((name) => {
+      const json = tables[name].validator.json as { value: object };
+      return !("mapId" in json.value);
     });
     expect(missing).toEqual([]);
   });

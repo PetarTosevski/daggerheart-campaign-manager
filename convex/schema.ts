@@ -5,6 +5,7 @@ import { actionLogTables } from "./tables/actionLog";
 import { campaignTables } from "./tables/campaigns";
 import { characterTables } from "./tables/characters";
 import { codexTables } from "./tables/codex";
+import { combatMapTables } from "./tables/combatMaps";
 import { encounterTables } from "./tables/encounters";
 import { countdownTables } from "./tables/countdowns";
 import { fileTables } from "./tables/files";
@@ -31,4 +32,5 @@ export default defineSchema({
   ...actionLogTables,
   ...restTables,
   ...encounterTables,
+  ...combatMapTables,
 });

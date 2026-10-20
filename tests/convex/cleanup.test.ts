@@ -31,8 +31,8 @@ async function blob(ctx: { storage: { store(blob: Blob): Promise<Id<"_storage">>
 }
 
 /**
- * A campaign with a row in every campaign-scoped table (plus grants and a
- * legacy portrait, which reach it only through ids), `extraHistory` more
+ * A campaign with a row in every campaign-scoped table (plus grants, a
+ * legacy portrait and a combat map's children, which reach it only through ids), `extraHistory` more
  * history rows, and three blobs. Returns the tables it wrote and the blobs.
  */
 async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | undefined, extraHistory = 0) {
@@ -55,7 +55,13 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
       deletedAt,
     });
     const c = campaignId;
-    const blobs = { file: await blob(ctx), mapUpload: await blob(ctx), codexImage: await blob(ctx), portrait: await blob(ctx) };
+    const blobs = {
+      file: await blob(ctx),
+      mapUpload: await blob(ctx),
+      codexImage: await blob(ctx),
+      portrait: await blob(ctx),
+      combatImage: await blob(ctx),
+    };
     const characterId = await ins("characters", { campaignId: c, ownerId: userId, createdBy: userId, status: "active", sheet: {}, createdAt: now, updatedAt: now });
     const entryId = await ins("codexEntries", { campaignId: c, kind: "character", data: {}, createdAt: now, updatedAt: now });
     await ins("campaignOpens", { userId, campaignId: c, lastOpenedAt: now });
@@ -135,6 +141,36 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
       stats: { difficulty: 9, major: null, severe: null, hpMax: 1, stressMax: 1 },
       conditions: ["hidden"],
     });
+    // A combat map with one of each child row and its image (D9).
+    const combatMapId = await ins("combatMaps", {
+      campaignId: c,
+      name: "Bandit camp",
+      live: true,
+      source: "image",
+      w: 30,
+      h: 20,
+      base: "grass",
+      areas: [{ terrain: "water", shape: "ellipse", x: 5, y: 5, rx: 2, ry: 1.5 }],
+      seed: 7,
+      schemaVersion: 1,
+      updatedAt: now,
+    });
+    await ins("combatMapObjects", { mapId: combatMapId, kind: "campfire", x: 4, y: 4, r: 1, rot: 0, lit: false });
+    await ins("combatMapCells", { mapId: combatMapId, layer: "block", tile: 0, cells: "#" });
+    await ins("combatTokens", {
+      campaignId: c,
+      mapId: combatMapId,
+      ref: { kind: "pc", characterId },
+      side: "pc",
+      x: 1,
+      y: 1,
+      size: 1,
+      face: 0,
+      light: "torch",
+      revealedTo: [],
+    });
+    await ins("combatExplored", { mapId: combatMapId, characterId, bits: "", updatedAt: now });
+    await ins("files", { storageId: blobs.combatImage, campaignId: c, uploadedBy: userId, kind: "combatMap", refId: combatMapId, createdAt: now });
     await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
     await ins("mapUploads", { storageId: blobs.mapUpload, campaignId: c, uploadedBy: userId, createdAt: now });
     await ins("codexImages", { storageId: blobs.codexImage, campaignId: c, entryId, uploadedBy: userId, createdAt: now });
@@ -155,7 +191,7 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("grants", { ...grant, resourceType: "codexEntry", resourceId: entryId });
     await ins("grants", { ...grant, resourceType: "character", resourceId: characterId });
     await ins("grants", { ...grant, resourceType: "campaign", resourceId: "elsewhere", principalKind: "campaign", principalId: c });
-    return { campaignId, characterId, entryId, blobs: Object.values(blobs), touched: [...touched] };
+    return { campaignId, characterId, entryId, combatMapId, blobs: Object.values(blobs), touched: [...touched] };
   });
 }
 
@@ -174,7 +210,9 @@ async function leftovers(t: Test, s: Seeded) {
           row.campaignId === s.campaignId ||
           (name === "campaigns" && row._id === s.campaignId) ||
           (name === "grants" && (ids.has(row.resourceId as string) || row.principalId === s.campaignId)) ||
-          (name === "portraitUploads" && row.characterId === s.characterId),
+          (name === "portraitUploads" && row.characterId === s.characterId) ||
+          // Combat map children have no campaignId; they belong to the campaign through their map.
+          row.mapId === s.combatMapId,
       );
       if (mine.length > 0) rows[name] = mine.length;
     }
@@ -264,6 +302,26 @@ describe("cleanup crons", () => {
     expect(await leftovers(t, alsoDue)).toEqual({ rows: {}, blobs: [] });
     expect([await leftovers(t, inUndoWindow), await leftovers(t, live)]).toEqual(keptBefore);
     expect(keptBefore[0]!.rows.history).toBe(2);
+  });
+
+  it("purges a combat map with more children than one batch over several runs (D9)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const due = await seedCampaign(t, userId, NOW - 31 * DAY);
+    const live = await seedCampaign(t, userId, undefined);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < BATCH + 50; i++) {
+        await ctx.db.insert("combatMapObjects", { mapId: due.combatMapId, kind: "tree", x: i % 30, y: 3, r: 1.2, rot: 0 });
+      }
+    });
+    const liveBefore = await leftovers(t, live);
+
+    await t.mutation(internal.cleanup.purgeDeletedCampaigns, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
+    expect(await leftovers(t, live)).toEqual(liveBefore);
+    expect(liveBefore.rows).toMatchObject({ combatMaps: 1, combatTokens: 1, combatMapObjects: 1, combatMapCells: 1, combatExplored: 1 });
   });
 
   it("stops purging a campaign the GM restored", async () => {

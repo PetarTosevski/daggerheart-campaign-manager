@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 
 import { actionLogMessages } from "./actionLog";
 import { classFeatureMessages } from "./classFeatures";
+import { combatMapMessages } from "./combatMap";
 import { commonMessages } from "./common";
 import { deathMessages } from "./death";
 import { diceMessages } from "./dice";
@@ -28,6 +29,7 @@ export type AppErrorCode =
   | keyof typeof classFeatureMessages
   | keyof typeof photoImportMessages
   | keyof typeof encounterMessages
+  | keyof typeof combatMapMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"

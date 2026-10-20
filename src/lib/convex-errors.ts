@@ -5,6 +5,7 @@ import { campaignMessages } from "./errors/campaigns";
 import { characterMessages } from "./errors/characters";
 import { classFeatureMessages } from "./errors/classFeatures";
 import { codexMessages } from "./errors/codex";
+import { combatMapMessages } from "./errors/combatMap";
 import { commonMessages } from "./errors/common";
 import { deathMessages } from "./errors/death";
 import { diceMessages } from "./errors/dice";
@@ -46,6 +47,7 @@ const MESSAGES = mergeMessages(
   classFeatureMessages,
   photoImportMessages,
   encounterMessages,
+  combatMapMessages,
 );
 
 /** A message for the GM from an error thrown by a Convex function. */
