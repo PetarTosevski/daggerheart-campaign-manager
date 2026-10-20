@@ -117,3 +117,48 @@ describe("feed.list", () => {
     expect(rows[0]).toMatchObject({ undone: true, canUndo: false });
   });
 });
+
+describe("feed.remove and feed.clear", () => {
+  useAllowlist(EMAILS);
+
+  it("anonymous, outsider, player and GM", async () => {
+    const { t, gm, p1, out, campaignId, a } = await setup();
+    const { entryId } = await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, idempotencyKey: key() });
+    for (const [who, code] of [[t, "UNAUTHENTICATED"], [out, "NOT_FOUND"], [p1, "FORBIDDEN"]] as const) {
+      expect(await codeOf(who.mutation(api.feed.remove, { campaignId, entryId }))).toBe(code);
+      expect(await codeOf(who.mutation(api.feed.clear, { campaignId }))).toBe(code);
+    }
+    expect(await codeOf(gm.mutation(api.feed.remove, { campaignId, entryId }))).toBe("ok");
+    expect(await codeOf(gm.mutation(api.feed.clear, { campaignId }))).toBe("ok");
+  });
+
+  it("the GM deletes one row for everyone; the action itself stays (its undo still works)", async () => {
+    const { gm, p1, campaignId, a } = await setup();
+    const first = await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, idempotencyKey: key() });
+    await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, idempotencyKey: key() });
+    await gm.mutation(api.feed.remove, { campaignId, entryId: first.entryId });
+    for (const who of [gm, p1]) {
+      const { page: rows } = await who.query(api.feed.list, { campaignId, paginationOpts: page });
+      expect(rows.map((r) => r._id)).not.toContain(first.entryId);
+      expect(rows).toHaveLength(1);
+    }
+  });
+
+  it("a row of another campaign is NOT_FOUND", async () => {
+    const one = await setup();
+    const { entryId } = await one.p1.mutation(api.rolls.actionRoll, { characterId: one.a, ...agility, idempotencyKey: key() });
+    const { campaignId: other } = await one.gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Other", idempotencyKey: key() });
+    expect(await codeOf(one.gm.mutation(api.feed.remove, { campaignId: other, entryId }))).toBe("NOT_FOUND");
+  });
+
+  it("clearing hides every earlier row for everyone; later rows show", async () => {
+    const { gm, p1, campaignId, a } = await setup();
+    await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, idempotencyKey: key() });
+    await gm.mutation(api.feed.clear, { campaignId });
+    expect((await p1.query(api.feed.list, { campaignId, paginationOpts: page })).page).toEqual([]);
+    expect((await gm.query(api.feed.list, { campaignId, paginationOpts: page })).page).toEqual([]);
+    await new Promise((r) => setTimeout(r, 2));
+    await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, idempotencyKey: key() });
+    expect((await p1.query(api.feed.list, { campaignId, paginationOpts: page })).page).toHaveLength(1);
+  });
+});

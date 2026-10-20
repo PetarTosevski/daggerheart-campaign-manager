@@ -1,8 +1,9 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 
+import { appError } from "../src/lib/errors/app-error";
 import type { Doc } from "./_generated/dataModel";
-import { campaignQuery } from "./lib/functions";
+import { campaignQuery, gmMutation } from "./lib/functions";
 import { actionKindValidator, rollValidator, visibilityValidator } from "./lib/validators/actionLog";
 
 /** What every feed row shows. Never the `before` snapshot: it holds the whole sheet, notes included. */
@@ -30,7 +31,8 @@ const gmRow = v.object({ ...common, visibility: visibilityValidator, revealable:
  * The roll feed (D5): the campaign's action log, newest first, one page at a
  * time. The GM reads every row (`by_campaign_at`); players read only public
  * rows (`by_campaign_visibility_at`), so a GM free roll stays hidden from them
- * until it is revealed (decision 2), whatever the client asks for.
+ * until it is revealed (decision 2), whatever the client asks for. Rows the GM
+ * removed, and rows from before the GM last cleared the feed, are left out.
  */
 export const list = campaignQuery({
   need: "view",
@@ -39,15 +41,16 @@ export const list = campaignQuery({
   returns: paginationResultValidator(v.union(gmRow, playerRow)),
   handler: async (ctx, { paginationOpts }) => {
     const isGm = ctx.permission === "owner";
+    const clearedAt = ctx.campaign.feedClearedAt ?? -1;
     const page = isGm
       ? await ctx.db
           .query("actionLog")
-          .withIndex("by_campaign_at", (q) => q.eq("campaignId", ctx.campaign._id))
+          .withIndex("by_campaign_at", (q) => q.eq("campaignId", ctx.campaign._id).gt("at", clearedAt))
           .order("desc")
           .paginate(paginationOpts)
       : await ctx.db
           .query("actionLog")
-          .withIndex("by_campaign_visibility_at", (q) => q.eq("campaignId", ctx.campaign._id).eq("visibility", "public"))
+          .withIndex("by_campaign_visibility_at", (q) => q.eq("campaignId", ctx.campaign._id).eq("visibility", "public").gt("at", clearedAt))
           .order("desc")
           .paginate(paginationOpts);
     const view = (row: Doc<"actionLog">) => {
@@ -67,6 +70,32 @@ export const list = campaignQuery({
       // The index already holds only public rows; this keeps the player shape honest.
       return { ...shown, visibility: "public" as const };
     };
-    return { ...page, page: page.page.filter((row) => isGm || row.visibility === "public").map(view) };
+    // A removed row is skipped here, so a page can come back shorter than asked (removals are rare).
+    return { ...page, page: page.page.filter((row) => row.removedAt === undefined && (isGm || row.visibility === "public")).map(view) };
+  },
+});
+
+/**
+ * Deletes one row from the feed for everyone (user 2026-10-20). Display only: it does not undo the action, and undo and
+ * the "latest roll" checks still see the row. GM only; a row of another campaign is NOT_FOUND.
+ */
+export const remove = gmMutation({
+  args: { entryId: v.id("actionLog") },
+  returns: v.null(),
+  handler: async (ctx, { entryId }) => {
+    const row = await ctx.db.get("actionLog", entryId);
+    if (row === null || row.campaignId !== ctx.campaign._id) throw appError("NOT_FOUND");
+    if (row.removedAt === undefined) await ctx.db.patch("actionLog", entryId, { removedAt: Date.now() });
+    return null;
+  },
+});
+
+/** Clears the feed for everyone: only rows logged after now are shown (user 2026-10-20). Display only, as `remove`. GM only. */
+export const clear = gmMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    await ctx.db.patch("campaigns", ctx.campaign._id, { feedClearedAt: Date.now() });
+    return null;
   },
 });
