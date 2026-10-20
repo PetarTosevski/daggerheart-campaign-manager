@@ -6,7 +6,7 @@ import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 
 // D9 C6: tokens (.omc/plans/d9-combat-map.yaml). The GM adds the party and the running encounter's adversary, drags
 // the adversary (it faces the way it moved), turns it with the knob, marks 2 HP (the tracker shows 2); a player drags
-// their own PC and cannot drag another PC's token, and sees no adversary.
+// their own PC and cannot drag another PC's token, and sees the adversary without stats.
 
 const PLAYER = "e2e-player@example.test";
 
@@ -118,7 +118,8 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     const theirs = playerBoard.getByRole("button", { name: /^Liriel, Party/ });
     await expect(mine).toBeVisible();
     await expect(theirs).toBeVisible();
-    await expect(playerBoard.getByRole("button", { name: /^Bear/ })).toHaveCount(0);
+    // C8: by day the Bear stands in Ash's cone, so the player sees it, with no stats (R4).
+    await expect(playerBoard.getByRole("button", { name: "Bear, Enemy" })).toBeVisible();
     const playerStep = await squarePx(player);
 
     const [mx, my] = (await mine.getAttribute("data-square"))!.split(",").map(Number) as [number, number];
