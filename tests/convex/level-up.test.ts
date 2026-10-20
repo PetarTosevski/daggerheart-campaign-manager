@@ -267,6 +267,42 @@ describe("levelUp", () => {
       expect(await gm.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
     });
 
+    it("D10 S3: restarting a played session after the level-up is a boundary; a level-up inside the restarted session may be undone", async () => {
+      const { gm, p1, campaignId, a } = await leveled(1000);
+      const { sessionId } = await gm.mutation(api.sessionRecords.create, { campaignId, idempotencyKey: key() });
+      await gm.mutation(api.sessionRecords.setPlayed, { campaignId, sessionId, played: true });
+      // Marked played by hand: no start or end time, so no boundary.
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+      await gm.mutation(api.sessions.start, { campaignId, sessionId, idempotencyKey: key() });
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(false);
+      expect(await failure(p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() }))).toBe("LEVEL_UP_RULE");
+
+      // The GM takes it back (the flag is set again); the player levels up again inside the restarted session.
+      expect(await gm.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
+      await p1.mutation(api.levelUp.apply, { characterId: a, choice: CHOICE, idempotencyKey: key() });
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+      expect(await p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
+    });
+
+    it("dcm-bxp.48: a session row's start or end after the level-up refuses the player without any log row", async () => {
+      const { t, gm, p1, campaignId, a } = await leveled(5000);
+      const at = (await t.run(async (ctx) => (await ctx.db.get("characters", a))!.sheet as { advancements: { at: number }[] })).advancements[0].at;
+      const insert = (fields: { startedAt?: number; endedAt?: number }) =>
+        t.run(async (ctx) => {
+          const now = Date.now();
+          return ctx.db.insert("sessions", { campaignId, n: 9, status: "played", ...fields, createdAt: now, updatedAt: now });
+        });
+      // A session that ended before the level-up is no boundary.
+      await insert({ startedAt: at - 3000, endedAt: at - 1000 });
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+      // One that ended in the same millisecond is.
+      const id = await insert({ startedAt: at - 500, endedAt: at });
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(false);
+      await t.run((ctx) => ctx.db.patch("sessions", id, { startedAt: at + 1, endedAt: undefined }));
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(false);
+      expect(await gm.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+    });
+
     it("an older entry without `at` is GM only", async () => {
       const { t, gm, p1, p2, a } = await leveled();
       await patchLatest(t, a, () => ({}));

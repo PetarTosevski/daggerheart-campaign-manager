@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { lastPlayedSession, liveSession } from "@/lib/domain/sessions";
 import { DOOM_TRACK, type DoomBox, type DoomTier } from "@/lib/frames/doom-track";
 import {
   FIRST_ECHO,
@@ -113,6 +114,9 @@ function DoomTrack({ campaignId, state, partyTier }: { campaignId: Id<"campaigns
   const mark = useIntent(api.trackers.horizon.markBox);
   const unmark = useIntent(api.trackers.horizon.unmarkBox);
   const occur = useIntent(api.trackers.horizon.setOccurred);
+  // Q6 (D10 S3): a mark is stamped with the live session's number, else the last played one's ('(session N)').
+  const sessions = useQuery(api.sessionRecords.list, { campaignId });
+  const sessionNumber = sessions ? (liveSession(sessions) ?? lastPlayedSession(sessions))?.n : undefined;
   const [notice, setNotice] = useState<string | null>(null);
   const pending = mark.pending || unmark.pending || occur.pending;
   const error = mark.error ?? unmark.error ?? occur.error;
@@ -123,7 +127,7 @@ function DoomTrack({ campaignId, state, partyTier }: { campaignId: Id<"campaigns
       await unmark.fire({ campaignId, boxId: id });
       return;
     }
-    const result = await mark.fire({ campaignId, boxId: id });
+    const result = await mark.fire({ campaignId, boxId: id, ...(sessionNumber !== undefined ? { session: sessionNumber } : {}) });
     if (result?.fear) {
       const { gained, lost } = result.fear;
       setNotice(`Gained ${gained} Fear${lost > 0 ? ` (${lost} lost at the cap)` : ""}.`);

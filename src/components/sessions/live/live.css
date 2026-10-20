@@ -1,0 +1,107 @@
+/* D10 S3: the live card (board Sessions.dc.html l.89-93). Tokens and the shared row-card / dot come from sessions.css. */
+.ss-live[data-live="true"] {
+  border-color: var(--ss-live);
+}
+.ss-live-text {
+  min-width: 240px;
+}
+.ss-live-other {
+  color: var(--ss-danger);
+}
+.ss-live-btn {
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: none;
+  color: #fff;
+  font-family: var(--ss-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.ss-live-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.ss-live-btn:focus-visible {
+  outline: 2px solid var(--ss-acc);
+  outline-offset: 2px;
+}
+.ss-live-start {
+  background: var(--ss-live);
+}
+.ss-live-end {
+  background: var(--ss-end);
+}
+.ss-live-switch {
+  flex-basis: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #c9d2cf;
+}
+.ss-live-switch input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: var(--ss-live);
+}
+.ss-live-hint {
+  display: block;
+  font-size: 13px;
+}
+.ss-live-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ss-danger);
+  font-size: 14px;
+}
+.ss-live-report {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: #c9d2cf;
+}
+.ss-live-report:empty {
+  display: none;
+}
+.ss-live-link {
+  color: var(--ss-acc);
+}
+.ss-live-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 16px;
+  color: #c9d2cf;
+}
+.ss-live-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.ss-live-actions .ss-ghost {
+  min-height: 46px;
+}
+
+/* Phone: the button takes the row, 44 px targets (the board has no phone layout). */
+@media (max-width: 720px) {
+  .ss-live-text {
+    min-width: 0;
+    flex-basis: calc(100% - 26px);
+  }
+  .ss-live > .ss-live-btn {
+    width: 100%;
+  }
+  .ss-live > .ss-dot {
+    align-self: flex-start;
+    margin-top: 5px;
+  }
+}

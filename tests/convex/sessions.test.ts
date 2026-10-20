@@ -142,7 +142,8 @@ describe("sessions", () => {
     expect(first.alreadyStarted).toBe(false);
     const second = await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
     expect(second).toEqual({ startedAt: first.startedAt, alreadyStarted: true });
-    expect(await p1.query(api.sessions.current, { campaignId })).toEqual({ startedAt: first.startedAt, extraCharacters: false });
+    // D10 S3: `current` also names the live session (new optional fields, E7).
+    expect(await p1.query(api.sessions.current, { campaignId })).toEqual({ startedAt: first.startedAt, extraCharacters: false, sessionId: first.sessionId, n: 1 });
   });
 
   it("authorizes: anonymous UNAUTHENTICATED, outsider NOT_FOUND, player FORBIDDEN, GM ok", async () => {
@@ -180,5 +181,214 @@ describe("sessions", () => {
     expect(await p1.query(api.sessions.current, { campaignId })).toEqual({ startedAt: null, extraCharacters: false });
     await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
     expect((await p1.query(api.sessions.current, { campaignId })).extraCharacters).toBe(false);
+  });
+});
+
+describe("sessions per session (D10 S3)", () => {
+  useAllowlist(EMAILS);
+
+  type Env = Awaited<ReturnType<typeof setup>>;
+  const create = (env: Env) => env.gm.mutation(api.sessionRecords.create, { campaignId: env.campaignId, idempotencyKey: key() });
+  const startOf = (env: Env, sessionId?: string) => env.gm.mutation(api.sessions.start, { campaignId: env.campaignId, ...(sessionId ? { sessionId } : {}), idempotencyKey: key() });
+  const endOf = (env: Env) => env.gm.mutation(api.sessions.end, { campaignId: env.campaignId, idempotencyKey: key() });
+  const row = (env: Env, id: Id<"sessions">) => env.t.run(async (ctx) => (await ctx.db.get("sessions", id))!);
+  const state = (env: Env) => env.t.run((ctx) => campaignFearState(ctx, env.campaignId));
+  const logOf = (env: Env, id: Id<"sessions">) =>
+    env.t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("sessionLog")
+          .withIndex("by_session_at", (q) => q.eq("sessionId", id))
+          .collect()
+      ).map((r) => ({ text: r.text, auto: r.auto })),
+    );
+  const seraph = (s: CharacterSheet): CharacterSheet => ({
+    ...s,
+    classId: "seraph",
+    subclassId: "divine-wielder",
+    traits: { agility: 0, strength: 2, finesse: 1, instinct: 1, presence: 0, knowledge: -1 },
+  });
+
+  it("start with a sessionId puts that session live, stamps campaignState and the log; current names it", async () => {
+    const env = await setup();
+    const { sessionId } = await create(env);
+    await create(env);
+    const result = await startOf(env, sessionId);
+    expect(result).toMatchObject({ alreadyStarted: false, sessionId, n: 1, notes: [], reminders: [] });
+    expect(await row(env, sessionId)).toMatchObject({ status: "live", startedAt: result.startedAt });
+    expect(await state(env)).toMatchObject({ sessionStartedAt: result.startedAt, liveSessionId: sessionId });
+    expect(await env.p1.query(api.sessions.current, { campaignId: env.campaignId })).toEqual({ startedAt: result.startedAt, extraCharacters: false, sessionId, n: 1 });
+    expect(await logOf(env, sessionId)).toEqual([{ text: "Session started.", auto: true }]);
+    // The live session again: a no-op (E1).
+    expect(await startOf(env, sessionId)).toEqual({ startedAt: result.startedAt, alreadyStarted: true });
+    expect(await startOf(env)).toEqual({ startedAt: result.startedAt, alreadyStarted: true });
+    expect(await logOf(env, sessionId)).toHaveLength(1);
+  });
+
+  it("B8: start without a sessionId takes the newest planned session, or creates one", async () => {
+    const env = await setup();
+    const first = await startOf(env);
+    expect(first).toMatchObject({ alreadyStarted: false, n: 1 });
+    await endOf(env);
+    const two = await create(env);
+    const three = await create(env);
+    await env.gm.mutation(api.sessionRecords.setPlayed, { campaignId: env.campaignId, sessionId: three.sessionId, played: true });
+    expect(await startOf(env)).toMatchObject({ sessionId: two.sessionId, n: 2 });
+  });
+
+  it("B6: starting another session ends the live one first with every end effect", async () => {
+    const env = await setup();
+    const one = await create(env);
+    const two = await create(env);
+    await startOf(env, one.sessionId);
+    await env.change(env.a, (s) => ({ ...s, wither: 2 }));
+    const result = await startOf(env, two.sessionId);
+    expect(result.ended).toMatchObject({ sessionId: one.sessionId, n: 1, tokens: 2, fearGained: 2 });
+    const ended = await row(env, one.sessionId);
+    expect(ended.status).toBe("played");
+    expect(ended.endedAt).toBeLessThanOrEqual(result.startedAt);
+    expect(await row(env, two.sessionId)).toMatchObject({ status: "live", startedAt: result.startedAt });
+    expect(await state(env)).toMatchObject({ liveSessionId: two.sessionId, sessionStartedAt: result.startedAt });
+    expect((await env.sheetOf(env.a)).wither).toBe(0);
+    expect(await env.fear()).toBe(2);
+    expect(await logOf(env, one.sessionId)).toEqual([
+      { text: "Session started.", auto: true },
+      { text: "Session ended. 2 Wither tokens → +2 Fear.", auto: true },
+    ]);
+  });
+
+  it("B10, K3: Seraphs' Prayer Dice go into the start line; the end line lists the unspent dice lost", async () => {
+    const env = await setup();
+    await env.change(env.a, seraph);
+    const { sessionId } = await create(env);
+    const started = await startOf(env, sessionId);
+    const dice = (await env.sheetOf(env.a)).heldDice.filter((d) => d.kind === "prayer");
+    expect(dice).toHaveLength(2);
+    const values = dice.map((d) => d.value).join(", ");
+    expect(started.notes).toEqual([`Ash rolled Prayer Dice: ${values}`]);
+    await env.change(env.b, (s) => ({ ...s, wither: 1 }));
+    await env.setFear(11);
+    const ended = await endOf(env);
+    expect(ended).toMatchObject({ sessionId, n: 1, lostDice: ["Ash lost 2 unspent dice"], tokens: 1, fearGained: 1 });
+    expect(await logOf(env, sessionId)).toEqual([
+      { text: `Session started. Ash rolled Prayer Dice: ${values}.`, auto: true },
+      { text: "Session ended. Ash lost 2 unspent dice; 1 Wither token → +1 Fear.", auto: true },
+    ]);
+  });
+
+  it("B7: a played session starts again, its start effects run again, and the tally adds the new window", async () => {
+    const env = await setup();
+    await env.change(env.a, seraph);
+    const { sessionId } = await create(env);
+    await startOf(env, sessionId);
+    const adjust = (direction: "increase" | "decrease") => env.gm.mutation(api.fear.adjust, { campaignId: env.campaignId, direction, idempotencyKey: key() });
+    await adjust("increase");
+    await adjust("increase");
+    await adjust("decrease");
+    await endOf(env);
+    expect((await row(env, sessionId)).tally).toEqual({ fearGained: 2, fearSpent: 1, shortRests: 0, longRests: 0 });
+    expect((await env.sheetOf(env.a)).heldDice).toEqual([]);
+
+    const again = await startOf(env, sessionId);
+    expect(again).toMatchObject({ alreadyStarted: false, sessionId, n: 1 });
+    expect((await env.sheetOf(env.a)).heldDice.filter((d) => d.kind === "prayer")).toHaveLength(2);
+    expect(await row(env, sessionId)).toMatchObject({ status: "live", startedAt: again.startedAt });
+    await adjust("increase");
+    // A finished long rest and an interrupted short one in the window: only the finished one counts.
+    await env.t.run(async (ctx) => {
+      const by = (await ctx.db.query("users").first())!._id;
+      await ctx.db.insert("rests", { campaignId: env.campaignId, kind: "long", status: "finished", startedBy: by, startedAt: Date.now(), finishedAt: Date.now() });
+      await ctx.db.insert("rests", { campaignId: env.campaignId, kind: "short", status: "interrupted", startedBy: by, startedAt: Date.now() });
+    });
+    await endOf(env);
+    expect((await row(env, sessionId)).tally).toEqual({ fearGained: 3, fearSpent: 1, shortRests: 0, longRests: 1 });
+    expect(await row(env, sessionId)).toMatchObject({ status: "played" });
+  });
+
+  it("Q7, E6: undoing a Start or End group restores sheets and Fear and leaves the session's status and times", async () => {
+    const env = await setup();
+    await env.change(env.a, seraph);
+    const { sessionId } = await create(env);
+    const started = await startOf(env, sessionId);
+    const startEntry = await env.t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("actionLog")
+          .withIndex("by_campaign_at", (q) => q.eq("campaignId", env.campaignId))
+          .collect()
+      ).find((r) => r.summary === "Session started")!,
+    );
+    await env.gm.mutation(api.actionLog.undo, { entryId: startEntry._id, idempotencyKey: key() });
+    expect((await env.sheetOf(env.a)).heldDice).toEqual([]);
+    expect(await row(env, sessionId)).toMatchObject({ status: "live", startedAt: started.startedAt });
+
+    await env.setFear(3);
+    await env.change(env.b, (s) => ({ ...s, wither: 2 }));
+    const ended = await endOf(env);
+    const played = await row(env, sessionId);
+    await env.gm.mutation(api.actionLog.undo, { entryId: ended.entryId!, idempotencyKey: key() });
+    expect(await env.fear()).toBe(3);
+    expect((await env.sheetOf(env.b)).wither).toBe(2);
+    expect(await row(env, sessionId)).toMatchObject({ status: "played", startedAt: played.startedAt, endedAt: played.endedAt });
+  });
+
+  it("E2, E3: end clears the live marker and XC1; with no live session it still clears session effects", async () => {
+    const env = await setup();
+    const { sessionId } = await create(env);
+    await startOf(env, sessionId);
+    await env.gm.mutation(api.sessions.allowExtraCharacters, { campaignId: env.campaignId, allow: true, idempotencyKey: key() });
+    await endOf(env);
+    const s = await state(env);
+    expect(s.sessionStartedAt).toBeUndefined();
+    expect(s.liveSessionId).toBeUndefined();
+    expect(s.extraCharactersSession).toBeUndefined();
+    await env.change(env.a, (sheet) => ({ ...sheet, effects: [{ id: "e1", source: "Test", text: "until session", until: "session", mods: {} }] }));
+    const again = await endOf(env);
+    expect(again.entryId).not.toBeNull();
+    expect(again.sessionId).toBeUndefined();
+    expect((await env.sheetOf(env.a)).effects).toEqual([]);
+  });
+
+  it("Q8, Q6: the reports remind of Luckbringer, Slayer Dice and Know the Tide; Horizon gets the Doom Track tier", async () => {
+    const env = await setup();
+    await env.change(env.a, (s) => ({ ...s, ancestry: { kind: "single", id: "halfling" }, communityId: "seaborne" }));
+    await env.change(env.b, (s) => ({ ...s, subclassId: "call-of-the-slayer" }));
+    const started = await startOf(env);
+    expect(started.reminders).toEqual(["Luckbringer (Ash): everyone in the party gains a Hope."]);
+    const ended = await endOf(env);
+    expect(ended.reminders).toEqual(["Know the Tide (Ash): clear all unspent tokens.", "Slayer Dice (Bryn): clear unspent Slayer Dice and gain a Hope per die cleared."]);
+    expect(ended.doomTier).toBeUndefined();
+
+    const { campaignId } = await env.gm.mutation(api.campaigns.create, { frameId: "journey-to-horizon", name: "Horizon", idempotencyKey: key() });
+    await env.gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+    expect(await env.gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() })).toMatchObject({ doomTier: 1, n: 1 });
+  });
+
+  it("a full session log gets no stamp, and start and end still run", async () => {
+    const env = await setup();
+    const { sessionId } = await create(env);
+    await env.t.run(async (ctx) => {
+      const by = (await ctx.db.query("users").first())!._id;
+      for (let i = 0; i < 500; i++) await ctx.db.insert("sessionLog", { campaignId: env.campaignId, sessionId, at: i, text: `line ${i}`, by, auto: false });
+    });
+    await startOf(env, sessionId);
+    await endOf(env);
+    expect(await logOf(env, sessionId)).toHaveLength(500);
+    expect(await row(env, sessionId)).toMatchObject({ status: "played" });
+  });
+
+  it("start with a sessionId: SESSION_NOT_FOUND for a bad or foreign id; anonymous, outsider, player refused", async () => {
+    const env = await setup();
+    const { sessionId } = await create(env);
+    const { campaignId: other } = await env.gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Other", idempotencyKey: key() });
+    const foreign = (await env.gm.mutation(api.sessionRecords.create, { campaignId: other, idempotencyKey: key() })).sessionId;
+    expect(await codeOf(startOf(env, "nope"))).toBe("SESSION_NOT_FOUND");
+    expect(await codeOf(startOf(env, foreign))).toBe("SESSION_NOT_FOUND");
+    const args = { campaignId: env.campaignId, sessionId };
+    expect(await codeOf(env.anon.mutation(api.sessions.start, { ...args, idempotencyKey: key() }))).toBe("UNAUTHENTICATED");
+    expect(await codeOf(env.out.mutation(api.sessions.start, { ...args, idempotencyKey: key() }))).toBe("NOT_FOUND");
+    expect(await codeOf(env.p1.mutation(api.sessions.start, { ...args, idempotencyKey: key() }))).toBe("FORBIDDEN");
+    expect(await codeOf(env.gm.mutation(api.sessions.start, { ...args, idempotencyKey: key() }))).toBe("ok");
+    expect(await row(env, sessionId)).toMatchObject({ status: "live" });
   });
 });
