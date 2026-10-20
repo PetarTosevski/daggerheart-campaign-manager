@@ -5,21 +5,14 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /** The hexagon mark above the title (TitleMenu). */
+/**
+ * The Daggerheart emblem (from the Core Rulebook's title page, its darkest blues lifted so it reads on the app's dark
+ * ground; public/brand/daggerheart-emblem.webp, 451 x 512). `size` is its height in px. Decorative: the wordmark beside it
+ * names the app.
+ */
 export function LogoMark({ size = 56 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 32 32"
-      fill="none"
-      stroke="var(--brand)"
-      strokeWidth="1.3"
-      aria-hidden="true"
-    >
-      <path d="M16 2 L28 9.5 L28 22.5 L16 30 L4 22.5 L4 9.5 Z" />
-      <path d="M16 2 L16 30 M4 9.5 L28 22.5 M28 9.5 L4 22.5" stroke="#8f78d8" strokeWidth="0.9" />
-    </svg>
-  );
+  // eslint-disable-next-line @next/next/no-img-element -- a small static asset from public/, already optimised
+  return <img src="/brand/daggerheart-emblem.webp" width={Math.round((size * 451) / 512)} height={size} alt="" aria-hidden="true" className="select-none" />;
 }
 
 export function Wordmark({ className }: { className?: string }) {
