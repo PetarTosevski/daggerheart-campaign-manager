@@ -472,6 +472,9 @@ waves:
         goal: On the Combat Map the GM places the live (or newest planned) session's encounter with one click; the button shows which session and adversaries it will place, and stays disabled without one.
         depends_on: [S4]
         owns:
+          # Added 2026-10-20: D8's start logic extracted into a shared helper (startEncounter) for S8.
+          - convex/lib/encounters.ts
+          - convex/encounters.ts
           - convex/combatTokens.ts
           - src/components/combat-map/tokens/combatants-panel.tsx
           - tests/convex/session-encounter.test.ts
