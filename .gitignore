@@ -68,3 +68,6 @@ next-env.d.ts
 # oh-my-claudecode state created by hooks in subfolders
 **/.omc/state/
 .claude/worktrees/
+
+# Raw sprite sheets generated for sprite packs (large; never committed). See docs/sprite-packs/prompts.md.
+/sprite-sheets/
