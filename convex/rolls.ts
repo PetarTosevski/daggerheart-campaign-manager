@@ -10,6 +10,15 @@
  *   roll that applies to both (CB 97); the four rows share one group.
  * - `gmRoll` / `reveal`: GM free rolls, hidden from players until revealed.
  *
+ * Session features (plan session-features F2, rules in src/lib/domain/session-features):
+ * - `slayerDice` (attack and damage rolls): spends Slayer Dice, rolled with the server rng (also for a
+ *   manual roll) and added as extra d6s labelled "Slayer d6" (K2, U3).
+ * - `tideTokens` (action rolls): spends Know the Tide tokens for +1 each (K3, U5).
+ * - a roll with Fear places a Tide token in the same saved sheet and log row (U4, Q1): action rolls and the
+ *   applied Tag Team result for both PCs, never a reaction roll or a critical.
+ * - `pendingChoices` / `storeSlayerDie`: the Slayer choice after an action roll with Hope (U2), and the
+ *   pending Tag Team pick, which either participant's editor or the GM makes (U9).
+ *
  * Class-feature hooks run in the campaign's `FeatureScope`: a Hope & Fear
  * class's options, overrides and prompts only with `hopeAndFear` on, and no
  * Combat Training in Motherboard (CB 295). `physicalOnly` options (Combat
@@ -45,6 +54,19 @@ import {
   type Rng,
 } from "../src/lib/domain/dice/index";
 import type { RollRecord } from "../src/lib/domain/duality";
+import {
+  featuresOf,
+  placeTideToken,
+  rollGaveHope,
+  SLAYER_DIE_SIDES,
+  slayerCapacity,
+  slayerDice,
+  slayerStorePrompt,
+  spendSlayerDice,
+  spendTideTokens,
+  storeSlayerDie as storeDie,
+  WITH_HOPE,
+} from "../src/lib/domain/session-features/index";
 import { appError } from "../src/lib/errors/app-error";
 import { getWeapon } from "../src/lib/srd/index";
 import type { TraitId } from "../src/lib/srd/types";
@@ -55,11 +77,12 @@ import { motherboardState } from "./characterExtras";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { latestLiveRow, logAction, newGroupId } from "./lib/actionLog";
-import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { assertCanAct, findCharacter, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
-import { gmMutation, keyedGmMutation, keyedUserMutation } from "./lib/functions";
+import { gmMutation, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
 import { applyRule } from "./lib/mechanics";
+import { atLeast } from "./lib/permissions";
 import { rollValidator } from "./lib/validators/actionLog";
 import { traitIdValidator } from "./lib/validators/characters";
 
@@ -83,6 +106,10 @@ const dualityFields = {
   options: v.array(v.string()),
   /** An Ikonis attack (Motherboard): its trait, Converge/Target bonus and Override's advantage apply. */
   ikonis: v.optional(v.boolean()),
+  /** Slayer Dice to spend (attack rolls only, CB 48): rolled by the server and added. */
+  slayerDice: v.optional(v.number()),
+  /** Know the Tide tokens to spend (action rolls only, CB 77): +1 each. */
+  tideTokens: v.optional(v.number()),
 };
 
 const poolValidator = v.array(v.object({ count: v.number(), sides: v.number() }));
@@ -96,7 +123,14 @@ const damageSource = v.union(
   v.object({ kind: v.literal("dice"), dice: poolValidator }),
 );
 
-const damageFields = { source: damageSource, critical: v.boolean(), modifier: v.number(), options: v.array(v.string()) };
+const damageFields = {
+  source: damageSource,
+  critical: v.boolean(),
+  modifier: v.number(),
+  options: v.array(v.string()),
+  /** Slayer Dice to spend (CB 48): rolled by the server and added. */
+  slayerDice: v.optional(v.number()),
+};
 
 const promptValidator = v.object({
   key: v.string(),
@@ -120,9 +154,11 @@ type DualityArgs = {
   attack: boolean;
   options: string[];
   ikonis?: boolean;
+  slayerDice?: number;
+  tideTokens?: number;
 };
 type DamageSource = { kind: "weapon"; slot: "primary" | "secondary" } | { kind: "override"; key: string } | { kind: "ikonis" } | { kind: "dice"; dice: { count: number; sides: number }[] };
-type DamageArgs = { source: DamageSource; critical: boolean; modifier: number; options: string[] };
+type DamageArgs = { source: DamageSource; critical: boolean; modifier: number; options: string[]; slayerDice?: number };
 
 const MAX_OPTIONS = 20;
 const MAX_VALUES = 40;
@@ -168,21 +204,49 @@ function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: Feature
   const exp = experienceBonus(sheet.experiences, args.experienceIds);
   const opts = applyRollOptions(spendHope(sheet, exp.hope), rollOptions(sheet, args.kind, CLASS_FEATURES, scope), args.options);
   const attack = args.attack || ikonis !== null;
+  const spent = spendSessionFeatures(opts.sheet, args, attack);
   return {
-    paid: opts.sheet,
+    paid: spent.sheet,
     input: {
       kind: args.kind,
       trait: live.traits[ikonis?.trait ?? args.trait],
-      modifier: args.modifier + exp.value + opts.modifier + (attack ? live.attackBonus : 0) + (ikonis?.attack ?? 0),
+      modifier: args.modifier + exp.value + opts.modifier + spent.tide + (attack ? live.attackBonus : 0) + (ikonis?.attack ?? 0),
       ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}),
       advantage: args.advantage + opts.advantage + (ikonis?.advantage ? 1 : 0),
       disadvantage: args.disadvantage,
       help: args.help,
       extraDice: opts.extraDice,
-      fixedDice: opts.fixedDice,
+      // Slayer Dice come last, already rolled by the server rng (a manual roll types in only its own dice).
+      fixedDice: [...opts.fixedDice, ...spent.slayer],
     },
-    extras: [...(ikonis ? [ikonis.label, ...ikonis.augments] : []), ...exp.names, ...opts.labels],
+    extras: [...(ikonis ? [ikonis.label, ...ikonis.augments] : []), ...exp.names, ...opts.labels, ...spent.labels],
   };
+}
+
+/** One Slayer d6 each, rolled with the server's rng whatever the roll's own dice come from (U3). */
+function rollSlayerDice(n: number): { sides: number; value: number }[] {
+  return Array.from({ length: n }, () => ({ sides: SLAYER_DIE_SIDES, value: rollDie(SLAYER_DIE_SIDES) }));
+}
+
+/** "Slayer d6 ×2 (4, 6)". */
+function slayerLabel(dice: readonly { value: number }[]): string[] {
+  return dice.length === 0 ? [] : [`Slayer d6${dice.length > 1 ? ` ×${dice.length}` : ""} (${dice.map((d) => d.value).join(", ")})`];
+}
+
+/**
+ * Spends a Duality roll's Slayer Dice (attack rolls only, K2) and Tide tokens (action rolls only, K3) through the
+ * session-features rules, and rolls the Slayer Dice. Refusals: DICE_RULE (wrong roll, more than held),
+ * CLASS_FEATURE_RULE (Tide tokens without Know the Tide).
+ */
+function spendSessionFeatures(sheet: CharacterSheet, args: DualityArgs, attack: boolean): { sheet: CharacterSheet; tide: number; slayer: { sides: number; value: number }[]; labels: string[] } {
+  const slayerCount = args.slayerDice ?? 0;
+  const tideCount = args.tideTokens ?? 0;
+  if (slayerCount !== 0 && (args.kind !== "action" || !attack)) throw new DiceRuleError("Slayer Dice add to attack rolls and damage rolls only.");
+  const afterSlayer = spendSlayerDice(sheet, slayerCount);
+  const tide = spendTideTokens(afterSlayer, tideCount);
+  if (tideCount !== 0 && args.kind !== "action") throw new DiceRuleError("Know the Tide tokens add to action rolls only.");
+  const slayer = rollSlayerDice(slayerCount);
+  return { sheet: tide.sheet, tide: tide.modifier, slayer, labels: [...(tide.modifier > 0 ? [`Know the Tide +${tide.modifier}`] : []), ...slayerLabel(slayer)] };
 }
 
 /** " vs 14" when the GM set the Difficulty, " vs DC 14 (player)" when a player typed it (review M1). */
@@ -231,7 +295,8 @@ async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded
   const rolled = rules(() => rollDuality(input, rng));
   const roll: RollRecord = { ...rolled.roll, manual };
   const effects = dualityEffects(args.kind, roll.outcome);
-  const next = applyDualityEffects(paid, effects);
+  // A roll with Fear places a Know the Tide token in the same saved sheet and row, so undoing the roll takes it back (U4).
+  const next = placeTideToken(applyDualityEffects(paid, effects), roll.outcome, args.kind).sheet;
   const { gained } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const sheetChanged = changed(sheet, next);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
@@ -311,7 +376,19 @@ function prepareDamage(sheet: CharacterSheet, args: DamageArgs, scope: FeatureSc
     input = { ...base, dice: source.dice, flat: extra };
     label = source.dice.map((d) => `${d.count}d${d.sides}`).join("+");
   }
-  return { paid: opts.sheet, input, label: [label, ...opts.labels].join(", ") };
+  return { paid: spendSlayerDice(opts.sheet, args.slayerDice ?? 0), input, label: [label, ...opts.labels].join(", ") };
+}
+
+/**
+ * Adds spent Slayer Dice to a damage roll as extra d6s (K2: "rolling them and adding their result to the roll").
+ * Like the option dice, a critical adds their maximum too (CB 98, `rollDamage`'s bonus dice).
+ */
+function withSlayerDamage(roll: RollRecord, slayer: readonly { sides: number; value: number }[], critical: boolean): RollRecord {
+  if (slayer.length === 0) return roll;
+  const dice = [...roll.dice, ...slayer.map((d) => ({ ...d, role: "extra" as const }))];
+  const modifier = roll.modifier + (critical ? slayer.reduce((s, d) => s + d.sides, 0) : 0);
+  const total = Math.max(0, dice.reduce((s, d) => s + d.value, 0) + modifier);
+  return { ...roll, dice, modifier, total };
 }
 
 async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DamageArgs, rng: Rng, manual: boolean) {
@@ -319,7 +396,8 @@ async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded,
   assertCanAct(character, sheet);
   const ikonis = args.source.kind === "ikonis" ? await loadIkonis(ctx, campaign, character, sheet) : null;
   const { paid, input, label } = rules(() => prepareDamage(sheet, args, scopeOf(campaign), ikonis));
-  const roll: RollRecord = { ...rules(() => rollDamage(input, rng)), manual };
+  const slayer = rollSlayerDice(args.slayerDice ?? 0);
+  const roll: RollRecord = withSlayerDamage({ ...rules(() => rollDamage(input, rng)), manual }, slayer, args.critical);
   const critical = !args.critical ? "" : (await criticalRolled(ctx, character._id)) ? "critical " : "critical (declared) ";
   const sheetChanged = changed(sheet, paid);
   if (sheetChanged) await saveSheet(ctx, character._id, paid);
@@ -329,7 +407,7 @@ async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded,
     actorId: ctx.user._id,
     kind: "roll",
     visibility: "public",
-    summary: `${sheet.name}: ${critical}damage ${roll.total}${typedLabel(args.modifier)} (${label})${manual ? " [manual]" : ""}`,
+    summary: `${sheet.name}: ${critical}damage ${roll.total}${typedLabel(args.modifier)} (${[label, ...slayerLabel(slayer)].join(", ")})${manual ? " [manual]" : ""}`,
     roll,
     ...(sheetChanged ? { before: sheet } : {}),
     undoable: true,
@@ -460,10 +538,123 @@ export const tagTeam = keyedUserMutation({
     }),
 });
 
+/** The rows of a Tag Team group, initiator first (at most 4: two rolls, two results). */
+async function tagTeamGroup(ctx: QueryCtx, row: Doc<"actionLog">): Promise<Doc<"actionLog">[]> {
+  if (row.groupId === undefined) return [];
+  return (
+    await ctx.db
+      .query("actionLog")
+      .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.groupId))
+      .take(5)
+  ).sort((a, b) => a.at - b.at || a._creationTime - b._creationTime);
+}
+
+/** Exactly two live action rolls of two characters: a Tag Team Roll waiting for its pick. */
+function isPendingTagTeam(group: readonly Doc<"actionLog">[]): boolean {
+  return group.length === 2 && group.every((r) => r.kind === "roll" && r.roll?.kind === "action" && r.characterId !== undefined && r.undoneAt === undefined);
+}
+
+/** How far back the Slayer choice and the Tag Team pick look for a character's latest live row. */
+const LATEST_SCAN = 20;
+
+/** The character's newest row that is not undone (as `latestLiveRow`, readable in a query). */
+async function latestLive(ctx: QueryCtx, characterId: Id<"characters">): Promise<Doc<"actionLog"> | null> {
+  const rows = await ctx.db
+    .query("actionLog")
+    .withIndex("by_character_at", (q) => q.eq("characterId", characterId))
+    .order("desc")
+    .take(LATEST_SCAN);
+  return rows.find((r) => r.undoneAt === undefined) ?? null;
+}
+
+/**
+ * The roll whose Slayer choice is open (U2, K5): the character's latest live row, when it is an action roll with
+ * Hope (critical included) that applied to the character - a plain roll, or the character's applied Tag Team
+ * result (Q1), never a Tag Team roll still waiting for its pick. Null otherwise.
+ */
+async function slayerRoll(ctx: QueryCtx, characterId: Id<"characters">): Promise<Doc<"actionLog"> | null> {
+  const row = await latestLive(ctx, characterId);
+  if (row === null || row.kind !== "roll" || row.roll?.kind !== "action" || !WITH_HOPE.includes(row.roll.outcome)) return null;
+  if (row.groupId !== undefined && (await tagTeamGroup(ctx, row)).length !== 4) return null;
+  return row;
+}
+
+const pendingRollValidator = v.object({ characterId: v.id("characters"), entryId: v.id("actionLog"), roll: rollValidator, name: v.string() });
+
+/**
+ * What the dice box still offers a character's editors (the owner and the GM), whoever rolled or picked:
+ * - `slayer`: the open Slayer choice (U2), only while the pool has room and the roll is unanswered;
+ * - `tagTeam`: a Tag Team Roll the character is in that waits for its pick (U9: either participant picks).
+ */
+export const pendingChoices = userQuery({
+  args: { characterId: v.id("characters") },
+  returns: v.object({
+    slayer: v.union(v.null(), v.object({ entryId: v.id("actionLog"), prompt: promptValidator })),
+    tagTeam: v.union(v.null(), v.object({ entryId: v.id("actionLog"), rolls: v.array(pendingRollValidator) })),
+  }),
+  handler: async (ctx, { characterId }) => {
+    const { character } = await loadCharacter(ctx, ctx.user, characterId, "edit");
+    const sheet = readSheet(character.sheet);
+    const open = await slayerRoll(ctx, characterId);
+    const prompt = open?.roll !== undefined && featuresOf(sheet).slayerClaim !== open._id ? slayerStorePrompt(sheet, { hope: 0, fear: 0, roll: open.roll })[0] : undefined;
+    const slayer = open !== null && prompt !== undefined ? { entryId: open._id, prompt } : null;
+
+    const latest = await latestLive(ctx, characterId);
+    const group = latest === null ? [] : await tagTeamGroup(ctx, latest);
+    if (!isPendingTagTeam(group)) return { slayer, tagTeam: null };
+    const rolls = [];
+    for (const r of group) {
+      const other = await ctx.db.get("characters", r.characterId!);
+      // Applying over a newer action is refused (tagTeamApply), so such a roll is not offered either.
+      if (other === null || (await latestLive(ctx, other._id))?._id !== r._id) return { slayer, tagTeam: null };
+      rolls.push({ characterId: other._id, entryId: r._id, roll: r.roll!, name: readSheet(other.sheet).name });
+    }
+    return { slayer, tagTeam: { entryId: group[0]!._id, rolls } };
+  },
+});
+
+/**
+ * Answers the Slayer choice with "store" (U2, K2): the character's latest live roll must be an action roll with
+ * Hope (`slayerRoll`), unanswered, and the pool below Proficiency. Takes back the Hope the roll gave (derived
+ * from the row's `before` sheet and the outcome: a roll at Hope max gave none) and keeps a critical's cleared
+ * Stress. One undoable public row. Refusals: NOT_FOUND (no such row of this character), CLASS_FEATURE_RULE.
+ */
+export const storeSlayerDie = keyedUserMutation({
+  rateLimit: "roll",
+  args: { characterId: v.id("characters"), entryId: v.id("actionLog") },
+  returns: v.object({ slayerDice: v.number(), capacity: v.number(), hope: v.number() }),
+  handler: async (ctx, { characterId, entryId }) =>
+    ctx.once("roll_slayer_store", { characterId, entryId }, async () => {
+      const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
+      const row = await ctx.db.get("actionLog", entryId);
+      if (row === null || row.characterId !== character._id) throw appError("NOT_FOUND");
+      const open = await slayerRoll(ctx, character._id);
+      if (open?._id !== row._id || row.roll === undefined) throw appError("CLASS_FEATURE_RULE", "Only your latest roll with Hope can store a Slayer Die.");
+      // The sheet before the roll (absent: the roll changed nothing). A roll made at Hope max gave no Hope back.
+      const before = row.before === undefined ? sheet : readSheet(JSON.parse(row.before));
+      const next = storeDie(sheet, { hopeGained: rollGaveHope(before, row.roll.outcome, "action"), entryId: row._id });
+      await saveSheet(ctx, character._id, next);
+      await logAction(ctx, {
+        campaignId: campaign._id,
+        characterId: character._id,
+        actorId: ctx.user._id,
+        kind: "feature",
+        visibility: "public",
+        summary: `${sheet.name} stored a Slayer Die (${slayerDice(next)}/${slayerCapacity(next)})`,
+        before: sheet,
+        undoable: true,
+      });
+      return { slayerDice: slayerDice(next), capacity: slayerCapacity(next), hope: next.hope };
+    }),
+});
+
 /**
  * Applies the picked Tag Team roll to both PCs (CB 97): with Hope every
  * involved PC gains a Hope (a critical also clears a Stress), with Fear the
- * GM gains a Fear per PC involved. Logged on both characters in the group.
+ * GM gains a Fear per PC involved and a Know the Tide holder places a token
+ * (Q1). Logged on both characters in the group, each result row carrying the
+ * chosen roll (the Slayer choice reads it). Either participant's editor or
+ * the GM picks (U9).
  */
 export const tagTeamApply = keyedUserMutation({
   rateLimit: "roll",
@@ -474,17 +665,16 @@ export const tagTeamApply = keyedUserMutation({
       const row = await ctx.db.get("actionLog", entryId);
       if (row === null || row.groupId === undefined || row.characterId === undefined) throw appError("NOT_FOUND");
       // The rows of a pending tag team: exactly two live action rolls, initiator first.
-      const group = (
-        await ctx.db
-          .query("actionLog")
-          .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.groupId))
-          .take(5)
-      ).sort((a, b) => a.at - b.at || a._creationTime - b._creationTime);
+      const group = await tagTeamGroup(ctx, row);
       const [first] = group;
       if (first?.characterId === undefined) throw appError("NOT_FOUND");
-      const lead = await loadCharacter(ctx, ctx.user, first.characterId, "edit");
-      const pending = group.length === 2 && group.every((r) => r.kind === "roll" && r.roll?.kind === "action" && r.characterId !== undefined && r.undoneAt === undefined);
-      if (!pending) throw appError("DICE_RULE", "This Tag Team Roll is already settled.");
+      // U9: the GM, or the editor (owner) of either character in the Tag Team, picks.
+      const lead = await findCharacter(ctx, ctx.user, first.characterId, "edit");
+      if (lead === null) throw appError("NOT_FOUND");
+      const second = group.find((r) => r.characterId !== undefined && r.characterId !== first.characterId);
+      const partner = atLeast(lead.permission, "edit") || second === undefined ? null : await findCharacter(ctx, ctx.user, second.characterId!, "edit");
+      if (!atLeast(lead.permission, "edit") && !atLeast(partner?.permission ?? null, "edit")) throw appError("FORBIDDEN");
+      if (!isPendingTagTeam(group)) throw appError("DICE_RULE", "This Tag Team Roll is already settled.");
       const chosen = group.find((r) => r.characterId === pick)?.roll;
       if (chosen === undefined) throw appError("DICE_RULE", "Pick one of the two rolls.");
       // Applying over a newer action would make the group undo wipe it (review H2).
@@ -499,7 +689,8 @@ export const tagTeamApply = keyedUserMutation({
         const character = await ctx.db.get("characters", r.characterId!);
         if (character === null) continue;
         const sheet = readSheet(character.sheet);
-        const next = applyDualityEffects(sheet, { ...effects, fear: 0 });
+        // Q1: only the chosen roll counts, for both participants, as an action roll.
+        const next = placeTideToken(applyDualityEffects(sheet, { ...effects, fear: 0 }), chosen.outcome, "action").sheet;
         const sheetChanged = changed(sheet, next);
         if (sheetChanged) await saveSheet(ctx, character._id, next);
         const gain = effects.hope > 0 ? (next.hope > sheet.hope ? " gains a Hope" : " (Hope full)") : "";
@@ -510,6 +701,7 @@ export const tagTeamApply = keyedUserMutation({
           kind: "roll",
           visibility: "public",
           summary: `${sheet.name}: Tag Team result ${chosen.total}, ${OUTCOME_LABEL[chosen.outcome]}${gain}${i === 0 && gained > 0 ? `; GM gains ${gained} Fear` : ""}`,
+          roll: chosen,
           groupId: row.groupId,
           ...(sheetChanged ? { before: sheet } : {}),
           ...(i === 0 && gained !== 0 ? { fearDelta: gained } : {}),

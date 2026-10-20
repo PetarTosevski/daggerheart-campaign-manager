@@ -70,6 +70,13 @@
 .dc-chip:has(input:checked),.dc-chip.on{background:var(--sheet-green,#3d5e2e);border-color:var(--sheet-green,#3d5e2e);color:#f3f7ee}
 .dc-chip.static{cursor:default;opacity:.85}
 
+/* Session features (Slayer Dice, Know the Tide; plan session-features F2). */
+.dc-session{gap:6px 16px}
+.dc-session-item{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
+.dc-held{color:#6a5236;font-style:italic}
+.dc-slayer{padding:8px 12px;border-radius:10px;border:1px solid #8e2b2b;background:#fbefe6}
+.dc-tile.slayer{background:linear-gradient(145deg,#f3d0c2,#a4553a);color:#2e0f05}
+
 /* Tag Team (inside Roll options). */
 .dc-tag{flex-basis:100%;display:flex;flex-direction:column;gap:10px;padding:10px 12px;border-radius:10px;border:1px solid #cdb88f;background:#fbf5e6}
 .dc-tag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end}
@@ -128,4 +135,5 @@
   .dc-chip{min-height:44px}
   .dc-opts>summary{min-height:44px}
   .dc-earlier{flex-basis:100%}
+  .dc-session,.dc-session-item{flex-basis:100%}
 }

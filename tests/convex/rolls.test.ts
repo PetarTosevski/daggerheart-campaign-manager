@@ -9,7 +9,7 @@ import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
-const EMAILS = "gm@example.com,p1@example.com,p2@example.com,out@example.com";
+const EMAILS = "gm@example.com,p1@example.com,p2@example.com,p3@example.com,out@example.com";
 const PRIMARY = WEAPONS.find((w) => w.slot === "primary" && w.tier === 1 && w.source === "core" && w.category === "physical" && !w.classId)!;
 
 function draft(name: string) {
@@ -91,8 +91,12 @@ describe("rolls: access (anonymous, outsider, player, GM)", () => {
     }
   });
 
-  it("tagTeam and tagTeamApply: the initiator's owner and the GM", async () => {
-    const { t, gm, p1, p2, out, a, b, edit } = await setup();
+  it("tagTeam: the initiator's owner and the GM; tagTeamApply: either participant's owner and the GM (U9)", async () => {
+    const { t, gm, p1, p2, out, campaignId, a, b, edit } = await setup();
+    // A player in the campaign who owns neither character.
+    const p3Id = await t.run(async (ctx) => ctx.db.insert("users", { email: "p3@example.com" }));
+    const p3 = t.withIdentity({ subject: `${p3Id}|s` });
+    await p3.mutation(api.members.joinByCode, { code: await gm.mutation(api.members.rotateJoinCode, { campaignId }) });
     await edit(a, { hope: 6 });
     const side = { trait: "agility" as const, modifier: 0 };
     const start = (who: Caller) => who.mutation(api.rolls.tagTeam, { characterId: a, partnerId: b, initiator: side, partner: side, idempotencyKey: key() });
@@ -100,15 +104,18 @@ describe("rolls: access (anonymous, outsider, player, GM)", () => {
     expect(await codeOf(start(out))).toBe("NOT_FOUND");
     expect(await codeOf(start(p2))).toBe("FORBIDDEN");
     const { rolls } = await start(p1);
-    const apply = (who: Caller) => who.mutation(api.rolls.tagTeamApply, { entryId: rolls[0]!.entryId, pick: a, idempotencyKey: key() });
+    const apply = (who: Caller, entryId = rolls[0]!.entryId) => who.mutation(api.rolls.tagTeamApply, { entryId, pick: a, idempotencyKey: key() });
     expect(await codeOf(apply(t))).toBe("UNAUTHENTICATED");
     expect(await codeOf(apply(out))).toBe("NOT_FOUND");
-    expect(await codeOf(apply(p2))).toBe("FORBIDDEN");
-    expect(await codeOf(apply(gm))).toBe("ok");
-    // The GM may start one for a character too (once per session per character).
-    await edit(b, { hope: 6 });
-    expect(await codeOf(gm.mutation(api.rolls.tagTeam, { characterId: b, partnerId: a, initiator: side, partner: side, idempotencyKey: key() }))).toBe("ok");
+    expect(await codeOf(apply(p3))).toBe("FORBIDDEN");
+    // U9: the partner's owner picks too.
+    expect(await codeOf(apply(p2))).toBe("ok");
     expect(await codeOf(apply(p1))).toBe("DICE_RULE"); // already settled
+    // The GM may start one for a character too (once per session per character), and pick it.
+    await edit(b, { hope: 6 });
+    const second = await gm.mutation(api.rolls.tagTeam, { characterId: b, partnerId: a, initiator: side, partner: side, idempotencyKey: key() });
+    expect(await codeOf(apply(p3, second.rolls[0]!.entryId))).toBe("FORBIDDEN");
+    expect(await codeOf(apply(gm, second.rolls[0]!.entryId))).toBe("ok");
   });
 
   it("gmRoll and reveal: the GM only", async () => {
