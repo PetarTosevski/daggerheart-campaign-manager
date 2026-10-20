@@ -311,7 +311,7 @@ waves:
           - "move (token id, x, y; clamped, snapped; sets face from the movement direction) and turn (token id, angle snapped to 15 degrees) - R5; a player may move/turn only their own PC's token (COMBAT_NOT_YOUR_TOKEN otherwise) - R4"
           - "Token look as on the board: portrait (PC) or initials, side colour ring, HP bar, condition badge, facing arrow; a downed token is greyed"
           - "Token panel (GM, or the player for their own PC): HP and Stress pips write through the existing character and encounterTracking mutations (one source of truth, no copies on the token for pc/adversary refs); conditions from the tracker's list; custom tokens keep their own numbers"
-          - "Range circles per token (R3): toggle in the panel and with R; 'Hide all'; Melee/Very Close/Close/Far rings labelled; state is per viewer in localStorage"
+          - "Range circles per token (R3): toggle in the panel and with R; 'Hide all circles' (C6 renders it in its own panel or layer; the MapBoard toolbar is C3's); Melee/Very Close/Close/Far rings labelled; state is per viewer in localStorage"
           - GM-side query returns every token with stats; the player-side filtered query is C7's
           - "e2e: GM adds the party and an encounter, drags an adversary (it faces the move), turns it, marks 2 HP (the tracker shows 2); a player drags their PC and cannot drag another token"
 
@@ -353,6 +353,9 @@ waves:
         depends_on: [C7]
         owns:
           - src/components/combat-map/vision/**
+          # Added after C3 (2026-10-20): the player's Fit and pan limits use the padded area or explored squares (Q1).
+          - src/components/combat-map/map-view/map-board.tsx
+          - src/components/combat-map/map-view/use-map-zoom.ts
           - tests/e2e/combat-vision.spec.ts
           - tests/e2e/visual/C8.spec.ts
           - docs/tasks/TASK-D9-C8.md
