@@ -18,6 +18,7 @@ import type * as characters from "../characters.js";
 import type * as classFeatures from "../classFeatures.js";
 import type * as cleanup from "../cleanup.js";
 import type * as codex from "../codex.js";
+import type * as combatMapGenerate from "../combatMapGenerate.js";
 import type * as combatMaps from "../combatMaps.js";
 import type * as countdowns from "../countdowns.js";
 import type * as crons from "../crons.js";
@@ -118,6 +119,7 @@ declare const fullApi: ApiFromModules<{
   classFeatures: typeof classFeatures;
   cleanup: typeof cleanup;
   codex: typeof codex;
+  combatMapGenerate: typeof combatMapGenerate;
   combatMaps: typeof combatMaps;
   countdowns: typeof countdowns;
   crons: typeof crons;
