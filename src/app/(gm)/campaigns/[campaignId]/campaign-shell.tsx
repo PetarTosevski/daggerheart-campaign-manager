@@ -7,6 +7,7 @@ import { BookOpen, Users } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { BackLink, Wordmark } from "@/components/brand/brand";
+import { Modal } from "@/components/brand/modal";
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { frameName } from "@/lib/campaign-display";
 import { frameHasMechanic } from "@/lib/frames";
@@ -117,6 +118,8 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
   const summary = useQuery(api.sessionWrap.dashboard, { campaignId });
   const start = useIntent(api.sessions.start);
   const router = useRouter();
+  // A confirm before starting (user 2026-10-20), as the Sessions tab's live card has.
+  const [confirm, setConfirm] = useState(false);
   if (summary === undefined) return null;
   const sessions = `/campaigns/${campaignId}/sessions`;
   const play = (sessionId: string) => `${sessions}?s=${sessionId}&stage=play`;
@@ -137,6 +140,7 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
   if (!isGm) return null;
 
   async function startSession() {
+    setConfirm(false);
     const result = await start.fire({ campaignId });
     // Without a sessionId the server found one already live (alreadyStarted); the Sessions tab shows it.
     if (result) router.push(result.sessionId ? play(result.sessionId) : sessions);
@@ -144,9 +148,30 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
 
   return (
     <span className="flex flex-col items-start gap-1">
-      <button type="button" className={heroPill} disabled={start.pending} onClick={() => void startSession()}>
+      <button type="button" className={heroPill} disabled={start.pending} onClick={() => setConfirm(true)}>
         Start Session
       </button>
+      <Modal open={confirm} onClose={() => setConfirm(false)} title="Start the session?" className="max-w-[480px]">
+        <p className="m-0 text-[16px] text-[#c9d2cf]">
+          The next planned session starts (a new one if none is planned) and start-of-session features (such as Prayer Dice) are given out.
+        </p>
+        <div className="flex justify-end gap-2.5">
+          <button
+            type="button"
+            className="min-h-11 cursor-pointer rounded-[10px] border border-[#33444a] bg-transparent px-4 text-[14px] text-[#e6ecea] hover:bg-white/5"
+            onClick={() => setConfirm(false)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="min-h-11 cursor-pointer rounded-full border border-[#2f7a4f] bg-[#1f5236] px-5 text-[14px] font-semibold text-[#e6fff0] hover:bg-[#256342]"
+            onClick={() => void startSession()}
+          >
+            Start session
+          </button>
+        </div>
+      </Modal>
       {start.error ? (
         <span role="alert" className="text-[14px] text-[#f0a8a0]">
           {start.error}

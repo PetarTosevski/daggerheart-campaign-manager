@@ -187,6 +187,8 @@ test("D10 S7: the hero session line, Start Session, the Last Session card and th
 
   // Start Session (B8): no session yet, so one is created, started and opened on Play.
   await hero.getByRole("button", { name: "Start Session", exact: true }).click();
+  // A confirm first (user 2026-10-20).
+  await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
   await expect(page).toHaveURL(/\/sessions\?s=[^&]+&stage=play$/);
   await expect(page.getByRole("tab", { name: "Play" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("region", { name: "Live session" })).toContainText("Session in progress");

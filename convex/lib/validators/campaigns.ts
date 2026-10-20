@@ -25,6 +25,7 @@ export const campaignOptionsValidator = v.object({
   transformations: v.boolean(),
   enduranceCountdowns: v.boolean(),
   remnantCorruption: v.boolean(),
+  witherPersists: v.boolean(),
 });
 
 /** What `campaigns.list` and `campaigns.get` return per campaign. */

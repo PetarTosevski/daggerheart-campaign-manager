@@ -105,3 +105,7 @@
     margin-top: 5px;
   }
 }
+
+/* The End dialog's Wither choice (house rule, user 2026-10-20). */
+.ss-live-wither { display: flex; gap: 10px; align-items: flex-start; min-height: 44px; cursor: pointer; }
+.ss-live-wither input { width: 20px; height: 20px; flex: none; margin-top: 2px; accent-color: var(--ss-acc); }

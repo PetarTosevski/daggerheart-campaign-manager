@@ -100,6 +100,9 @@ test("the GM plans scenes and hooks and builds the session encounter; reload kee
   // A player (the session played, so they may see it) opening ?stage=prep gets the read-only view only (K10, Q4).
   await page.getByRole("region", { name: "Session", exact: true }).getByRole("button", { name: "Mark as played" }).click();
   await expect(page.getByRole("button", { name: "Mark as not played" })).toBeVisible();
+  // The button flips optimistically; a reload shows the server has it before the player looks.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Mark as not played" })).toBeVisible();
   const { player, close } = await playerJoins(page, browser, campaignId, campaignName);
   try {
     await player.goto(`${url}?s=${sessionUrl.searchParams.get("s")}&stage=prep`);

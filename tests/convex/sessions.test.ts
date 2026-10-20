@@ -84,6 +84,28 @@ describe("sessions", () => {
     expect((await sheetOf(b)).wither).toBe(0);
   });
 
+  it("keeps Wither on the sheets when the GM unticks the conversion, or by default under the witherPersists house rule", async () => {
+    const { gm, campaignId, a, b, sheetOf, change, fear, setFear } = await setup();
+    await setFear(4);
+    await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+    await change(a, (s) => ({ ...s, wither: 2 }));
+    await change(b, (s) => ({ ...s, wither: 1 }));
+    const kept = await gm.mutation(api.sessions.end, { campaignId, convertWither: false, idempotencyKey: key() });
+    expect(kept).toMatchObject({ tokens: 0, fearGained: 0, witherKept: 3 });
+    expect(await fear()).toBe(4);
+    expect([(await sheetOf(a)).wither, (await sheetOf(b)).wither]).toEqual([2, 1]);
+
+    // The house rule makes "keep" the default; an explicit convertWither: true still converts.
+    await gm.mutation(api.campaigns.setOption, { campaignId, option: "witherPersists", enabled: true });
+    await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+    expect(await gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() })).toMatchObject({ tokens: 0, witherKept: 3 });
+    expect((await sheetOf(a)).wither).toBe(2);
+    await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+    expect(await gm.mutation(api.sessions.end, { campaignId, convertWither: true, idempotencyKey: key() })).toMatchObject({ tokens: 3, fearGained: 3 });
+    expect(await fear()).toBe(7);
+    expect((await sheetOf(a)).wither).toBe(0);
+  });
+
   it("end is idempotent: a replay returns the same result and a second End changes nothing", async () => {
     const { gm, campaignId, a, change, fear } = await setup();
     await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });

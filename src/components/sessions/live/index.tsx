@@ -9,6 +9,7 @@ import { useState } from "react";
 
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
+import { frameHasMechanic } from "@/lib/frames";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
@@ -41,10 +42,52 @@ export function endReportLines(r: EndResult): string[] {
   const first = r.tokens > 0 ? `Session ended. ${plural(r.tokens, "Wither token")} → +${r.fearGained} Fear${r.fearLost > 0 ? `, ${r.fearLost} Fear lost` : ""}.` : "Session ended.";
   return [
     first,
+    ...(r.witherKept ? [`${plural(r.witherKept, "Wither token")} stay on the sheets.`] : []),
     ...(r.lostDice?.length ? [`${r.lostDice.join("; ")}.`] : []),
     ...(r.journeyEnds.length > 0 ? [`Journey ends: ${r.journeyEnds.map((c) => c.name).join(", ")}.`] : []),
     ...(r.reminders ?? []),
   ];
+}
+
+/**
+ * The End dialog's Wither choice (Witherwild only): turn the tokens into Fear as the book says (CB p.261), or keep them
+ * on the sheets (user 2026-10-20). Preset from the campaign's house rule `witherPersists` each time the dialog opens.
+ */
+export function useWitherChoice(campaignId: Id<"campaigns">) {
+  const campaign = useQuery(api.campaigns.get, { campaignId });
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const applies = campaign ? frameHasMechanic(campaign.frameId, "witherTokens") : false;
+  const convert = choice ?? !(campaign?.options.witherPersists ?? false);
+  return {
+    applies,
+    convert,
+    setConvert: setChoice,
+    /** Back to the campaign's default (call when the dialog opens). */
+    reset: () => setChoice(null),
+    /** The End's argument: only where Wither exists. */
+    args: applies ? { convertWither: convert } : {},
+  };
+}
+
+export type WitherChoice = ReturnType<typeof useWitherChoice>;
+
+/** The checkbox in an End dialog; nothing outside Witherwild. */
+export function WitherChoiceField({ choice }: { choice: WitherChoice }) {
+  if (!choice.applies) return null;
+  return (
+    <label className="ss-live-wither">
+      <input type="checkbox" checked={choice.convert} onChange={(e) => choice.setConvert(e.target.checked)} />
+      <span>Turn Wither tokens into Fear (CB p.261). Untick to keep them on the sheets.</span>
+    </label>
+  );
+}
+
+/** The End dialog's text, matching the Wither choice. */
+export function endDialogText(choice: WitherChoice): string {
+  if (!choice.applies) return "Session effects end and unspent Rally and Prayer Dice are cleared.";
+  return choice.convert
+    ? "Session effects end, unspent Rally and Prayer Dice are cleared, and every Wither token on the PCs' sheets becomes GM Fear (up to 12)."
+    : "Session effects end and unspent Rally and Prayer Dice are cleared. Wither tokens stay on the PCs' sheets.";
 }
 
 /** What the Start told the GM: the session ended first (B6), the Prayer Dice rolled (B10), Q8 reminders. */
@@ -67,6 +110,7 @@ function Card({ campaignId, sessionId, onStage }: LiveCardProps) {
   });
   const [confirm, setConfirm] = useState<"start" | "end" | null>(null);
   const [report, setReport] = useState<Report | null>(null);
+  const wither = useWitherChoice(campaignId);
 
   if (sessions === undefined || current === undefined) {
     return (
@@ -109,7 +153,7 @@ function Card({ campaignId, sessionId, onStage }: LiveCardProps) {
       setReport({ sessionId, lines: result.alreadyStarted ? ["The session is already running."] : startReportLines(result) });
       onStage("play");
     } else if (which === "end") {
-      const result = await end.fire({ campaignId });
+      const result = await end.fire({ campaignId, ...wither.args });
       if (!result) return;
       setReport({ sessionId, lines: endReportLines(result), doomTier: result.doomTier });
       onStage("wrap");
@@ -125,7 +169,10 @@ function Card({ campaignId, sessionId, onStage }: LiveCardProps) {
         {otherRunning ? <span className="ss-live-other">{otherText}</span> : null}
       </div>
       {live ? (
-        <button type="button" className="ss-live-btn ss-live-end" disabled={end.pending} onClick={() => setConfirm("end")}>
+        <button type="button" className="ss-live-btn ss-live-end" disabled={end.pending} onClick={() => {
+            wither.reset();
+            setConfirm("end");
+          }}>
           <span aria-hidden="true">■ </span>End session
         </button>
       ) : (
@@ -169,10 +216,13 @@ function Card({ campaignId, sessionId, onStage }: LiveCardProps) {
       <Modal open={confirm !== null} onClose={() => setConfirm(null)} title={confirm === "end" ? "End the session?" : "Start the session?"} className="max-w-[480px]">
         <div className="ss-live-dialog">
           {confirm === "end" ? (
-            <p className="ss-m0">
-              Session effects end, unspent Rally and Prayer Dice are cleared, and every Wither token on the PCs&apos; sheets becomes GM Fear (up to 12).
-              {current.extraCharacters ? " Extra characters are no longer allowed; the ones in play stay active." : ""}
-            </p>
+            <>
+              <p className="ss-m0">
+                {endDialogText(wither)}
+                {current.extraCharacters ? " Extra characters are no longer allowed; the ones in play stay active." : ""}
+              </p>
+              <WitherChoiceField choice={wither} />
+            </>
           ) : (
             <>
               <p className="ss-m0">Start-of-session features (such as Prayer Dice) are given out.</p>
