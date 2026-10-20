@@ -154,7 +154,7 @@
 #     the accent from settings); each later tracer adds CSS only in its own colocated .css. 1440 and 1024 px layouts; 390 px: one
 #     column, no horizontal page scroll, touch targets >= 44 px, labels on every control, keyboard reachable, native <dialog> modals
 #     via src/components/brand/modal.tsx.
-#   - Visual acceptance: the tracer's tests/e2e/visual/<id>.spec.ts (tag @visual, E2E_VISUAL=1) shoots its regions at 1440x900,
+#   - Visual acceptance: the tracer's tests/e2e/visual/D10-<id>.spec.ts (tag @visual, E2E_VISUAL=1) shoots its regions at 1440x900,
 #     1024x768 and 390x844; board counterparts from `node scripts/board-shots.mjs sessions:<region>` / `hub:<region>` (S0 adds them);
 #     the task doc docs/tasks/TASK-D10-<id>.md lists both sets with a verdict per region and every deliberate deviation.
 #   - pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e specs pass in its worktree; the
@@ -292,7 +292,7 @@ waves:
           - src/components/sessions/detail/**
           - tests/convex/session-records.test.ts
           - tests/e2e/session-records.spec.ts
-          - tests/e2e/visual/S2.spec.ts
+          - tests/e2e/visual/D10-S2.spec.ts
           - docs/tasks/TASK-D10-S2.md
         reads:
           - convex/lib/sessions.ts
@@ -327,7 +327,7 @@ waves:
           - tests/convex/level-up.test.ts
           - tests/convex/sessions-migration.test.ts
           - tests/e2e/sessions-live.spec.ts
-          - tests/e2e/visual/S3.spec.ts
+          - tests/e2e/visual/D10-S3.spec.ts
           - docs/tasks/TASK-D10-S3.md
         reads:
           - convex/lib/sessions.ts
@@ -362,7 +362,7 @@ waves:
           - src/components/sessions/prep/**
           - tests/convex/session-prep.test.ts
           - tests/e2e/session-prep.spec.ts
-          - tests/e2e/visual/S4.spec.ts
+          - tests/e2e/visual/D10-S4.spec.ts
           - docs/tasks/TASK-D10-S4.md
         reads:
           - convex/lib/sessions.ts
@@ -388,7 +388,7 @@ waves:
           - src/components/sessions/play/**
           - tests/convex/session-play.test.ts
           - tests/e2e/session-play.spec.ts
-          - tests/e2e/visual/S5.spec.ts
+          - tests/e2e/visual/D10-S5.spec.ts
           - docs/tasks/TASK-D10-S5.md
         reads:
           - convex/lib/sessions.ts
@@ -414,7 +414,7 @@ waves:
           - src/components/sessions/wrap/**
           - tests/convex/session-wrap.test.ts
           - tests/e2e/session-wrap.spec.ts
-          - tests/e2e/visual/S6.spec.ts
+          - tests/e2e/visual/D10-S6.spec.ts
           - docs/tasks/TASK-D10-S6.md
         reads:
           - convex/lib/sessions.ts
@@ -450,7 +450,7 @@ waves:
           - tests/e2e/wither.spec.ts
           - tests/e2e/players.spec.ts
           - tests/e2e/class-features.spec.ts
-          - tests/e2e/visual/S7.spec.ts
+          - tests/e2e/visual/D10-S7.spec.ts
           - docs/tasks/TASK-D10-S7.md
         reads:
           - convex/sessions.ts
