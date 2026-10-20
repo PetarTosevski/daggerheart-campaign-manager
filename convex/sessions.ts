@@ -10,8 +10,14 @@
  *   every PC, clears session effects (`expire(sheet, "session")`), runs `onSessionEnd`, and turns Wither tokens into Fear (unless the GM keeps them: `convertWither`, house rule `witherPersists`);
  *   the tokens become GM Fear capped at 12, the rest reported as lost (CB 261; decision). Ending with nothing to
  *   change writes nothing, so a second End is a no-op; with no live session it still clears session effects (E2).
- * - Both stamp the session's log with the board's auto lines (B10) and report the session features that are not
- *   automated (Q8) and, in Journey to Horizon, the Doom Track reminder (Q6).
+ * - Session features (plan session-features F1, U1, U6, U8): `start` then gives the party its Luckbringer Hope and rolls
+ *   every Lunar Phases holder's moon die (`sessionStartFeatures`, active PCs, the campaign's FeatureScope); `end` clears
+ *   Slayer Dice for a Hope each, Tide tokens and the moon die (`sessionEndFeatures`, every PC). Both run inside the
+ *   same sheet change as the class hooks, so they share the PC's row in the undoable group; their notes come back in
+ *   `features` and join the log stamp.
+ * - Both stamp the session's log with the board's auto lines (B10) and, in Journey to Horizon, report the Doom Track
+ *   reminder (Q6). `reminders` (Q8) stays in the results for older callers but is always empty: the four features it
+ *   reminded of are automated.
  * - `current`: the started session, for every member, and whether extra characters are allowed in it.
  * - `allowExtraCharacters` (XC1, user 2026-10-18): while a session runs, the GM lifts the one-active-character rule
  *   for it (INVALID with no session). `end` switches it off; characters made active meanwhile stay active.
@@ -24,8 +30,11 @@ import { v, type Infer } from "convex/values";
 
 import { expire } from "../src/lib/domain/characters/expiry";
 import { onSessionEnd, onSessionStart } from "../src/lib/domain/class-features/hooks";
+import type { FeatureScope } from "../src/lib/domain/class-features/types";
+import { sessionEndFeatures, sessionStartFeatures } from "../src/lib/domain/session-features";
 import { addTally, windowTally } from "../src/lib/domain/sessions";
 import { appError } from "../src/lib/errors/app-error";
+import { FRAME_OF } from "../src/lib/frames/extras/common";
 import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -77,7 +86,7 @@ async function saveChanged(
   return count;
 }
 
-// ---------------------------------------------------------------- log stamps (B10) and reports (Q6, Q8)
+// ---------------------------------------------------------------- log stamps (B10) and reports (Q6, U8)
 
 /**
  * Writes one auto line ('Session started.' / 'Session ended.' plus what the party sync did, B10) into the session's
@@ -124,30 +133,9 @@ function witherNote(tokens: number, gained: number, lost: number): string {
   return `${tokens} Wither token${tokens === 1 ? "" : "s"} → +${gained} Fear${lost > 0 ? ` (${lost} Fear lost)` : ""}`;
 }
 
-const holdsAncestryFeature = (sheet: CharacterSheet, ancestryId: string) =>
-  (sheet.ancestry.kind === "single" && sheet.ancestry.id === ancestryId) || (sheet.ancestry.kind === "mixed" && sheet.ancestry.first === ancestryId);
-
-const holdsSubclass = (sheet: CharacterSheet, subclassId: string, rank: "foundation" | "mastery") =>
-  (sheet.subclassId === subclassId && (rank === "foundation" || sheet.subclassRank === "mastery")) ||
-  (rank === "foundation" && sheet.multiclass?.subclassId === subclassId);
-
-/**
- * Session features the app does not automate (Q8; D5 decision 11: subclass and heritage features are text), as one
- * reminder per PC who has one. Start: Luckbringer (Halfling, CB p.64) and Lunar Phases (Moon mastery, HF p.17). End:
- * Slayer Dice (Call of the Slayer, CB p.48) and Know the Tide (Seaborne, CB p.77).
- */
-export function sessionReminders(sheets: readonly CharacterSheet[], when: "start" | "end"): string[] {
-  return sheets.flatMap((sheet) => {
-    const out: string[] = [];
-    if (when === "start") {
-      if (holdsAncestryFeature(sheet, "halfling")) out.push(`Luckbringer (${sheet.name}): everyone in the party gains a Hope.`);
-      if (holdsSubclass(sheet, "moon", "mastery")) out.push(`Lunar Phases (${sheet.name}): roll a d6 and place it on the card.`);
-    } else {
-      if (holdsSubclass(sheet, "call-of-the-slayer", "foundation")) out.push(`Slayer Dice (${sheet.name}): clear unspent Slayer Dice and gain a Hope per die cleared.`);
-      if (sheet.communityId === "seaborne") out.push(`Know the Tide (${sheet.name}): clear all unspent tokens.`);
-    }
-    return out;
-  });
+/** What the campaign lets features offer (as rolls.ts): Lunar Phases is a Hope & Fear (Witch) feature (K4). */
+function scopeOf(campaign: Doc<"campaigns">): FeatureScope {
+  return { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear, ikonis: campaign.frameId === FRAME_OF.motherboard };
 }
 
 // ---------------------------------------------------------------- end (shared by `end` and `start`, B6)
@@ -169,8 +157,10 @@ const endResult = v.object({
   n: v.optional(v.number()),
   /** 'Ash lost 2 unspent dice' per PC (B10). */
   lostDice: v.optional(v.array(v.string())),
-  /** Q8 reminders: Slayer Dice, Know the Tide. */
+  /** Q8 reminders: kept for older callers, always empty (the features are automated, E2). */
   reminders: v.optional(v.array(v.string())),
+  /** Session features the End did (U8): 'Bryn cleared 2 Slayer Dice: +2 Hope', 'Kai cleared 3 Tide tokens', "Mira's moon die ends". */
+  features: v.optional(v.array(v.string())),
   /** Journey to Horizon (Q6, HF p.177): mark a Doom Track box in this tier or below. */
   doomTier: v.optional(v.number()),
 });
@@ -204,9 +194,11 @@ async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
   const convert = convertsWither(ctx.campaign, convertWither);
   const tokens = convert ? onSheets : 0;
   const kept = convert ? 0 : onSheets;
+  const features: string[] = [];
   const changes = members.map((c) => {
-    const next = onSessionEnd(expire(c.sheet, "session"));
-    return { ...c, next: convert ? { ...next, wither: 0 } : next };
+    const ended = sessionEndFeatures(onSessionEnd(expire(c.sheet, "session")));
+    features.push(...ended.notes);
+    return { ...c, next: convert ? { ...ended.sheet, wither: 0 } : ended.sheet };
   });
   const journeyEnds = members
     .filter(({ character, sheet }) => sheet.journeyEnds && character.status !== "dead" && character.status !== "retired")
@@ -235,7 +227,6 @@ async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
   });
 
   const lostDice = lostDiceNotes(changes);
-  const active = members.filter(({ character }) => character.status === "active").map(({ sheet }) => sheet);
   const report: EndResult = {
     tokens,
     fearGained: gained,
@@ -244,7 +235,8 @@ async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
     entryId,
     ...(kept > 0 ? { witherKept: kept } : {}),
     lostDice,
-    reminders: sessionReminders(active, "end"),
+    reminders: [],
+    features,
     ...(ctx.campaign.frameId === "journey-to-horizon" ? { doomTier: ctx.campaign.tier } : {}),
   };
   if (live === null) return report;
@@ -257,6 +249,7 @@ async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
   await ctx.db.patch("sessions", live._id, { status: "played", endedAt, tally, updatedAt: endedAt });
   await stampLog(ctx, live, ctx.user._id, logLine("Session ended.", [
       ...lostDice,
+      ...features,
       ...(tokens > 0 ? [witherNote(tokens, gained, lost)] : []),
       ...(kept > 0 ? [`${kept} Wither token${kept === 1 ? "" : "s"} kept on the sheets`] : []),
     ]));
@@ -316,8 +309,10 @@ const startResult = v.object({
   n: v.optional(v.number()),
   /** 'Ash rolled Prayer Dice: 3, 1' per Seraph (B10). */
   notes: v.optional(v.array(v.string())),
-  /** Q8 reminders: Luckbringer, Lunar Phases. */
+  /** Q8 reminders: kept for older callers, always empty (the features are automated, E2). */
   reminders: v.optional(v.array(v.string())),
+  /** Session features the Start did (U1, U6): 'Luckbringer (Pip, Rosa): everyone gains 2 Hope', "Mira's moon die: 4 (Full: +3 to damage thresholds)". */
+  features: v.optional(v.array(v.string())),
   /** The session that was live and was ended first (B6), with its End report. */
   ended: v.optional(endResult),
 });
@@ -350,22 +345,23 @@ export const start = keyedGmMutation({
       await ctx.db.patch("sessions", target._id, { status: "live", startedAt, updatedAt: startedAt });
       const groupId = newGroupId();
       const active = (await party(ctx, campaignId)).filter(({ character }) => character.status === "active");
-      const changes = active.map((c) => ({ ...c, next: onSessionStart(c.sheet, rollDie) }));
+      // Class hooks first (Prayer Dice, Rally), then the session features on the result (F0: a changed sheet is a new reference).
+      const hooked = active.map((c) => onSessionStart(c.sheet, rollDie));
+      const { sheets, notes: features } = sessionStartFeatures(hooked, rollDie, scopeOf(ctx.campaign));
+      const changes = active.map((c, i) => ({ ...c, next: sheets[i] }));
       await saveChanged(ctx, { campaignId, actorId: ctx.user._id, groupId, summary: "session start" }, changes);
       await logAction(ctx, { campaignId, actorId: ctx.user._id, kind: "session", visibility: "public", summary: "Session started", groupId, undoable: true });
 
       const notes = prayerNotes(changes);
-      await stampLog(ctx, target, ctx.user._id, logLine("Session started.", notes));
+      await stampLog(ctx, target, ctx.user._id, logLine("Session started.", [...notes, ...features]));
       return {
         startedAt,
         alreadyStarted: false,
         sessionId: target._id,
         n: target.n,
         notes,
-        reminders: sessionReminders(
-          changes.map(({ next }) => next),
-          "start",
-        ),
+        reminders: [],
+        features,
         ...(ended === undefined ? {} : { ended }),
       };
     }),

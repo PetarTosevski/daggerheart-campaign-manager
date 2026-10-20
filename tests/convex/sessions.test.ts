@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -371,15 +371,115 @@ describe("sessions per session (D10 S3)", () => {
     expect((await env.sheetOf(env.a)).effects).toEqual([]);
   });
 
-  it("Q8, Q6: the reports remind of Luckbringer, Slayer Dice and Know the Tide; Horizon gets the Doom Track tier", async () => {
+  // Session features (plan session-features F1): the Q8 reminders became automation (U8); Horizon's Doom Track stays (Q6).
+  /** Another PC in the campaign, copied from `a` with its own name, sheet change and status (dead and away PCs). */
+  const extra = (env: Env, name: string, status: "active" | "dead" | "away", f: (s: CharacterSheet) => CharacterSheet) =>
+    env.t.run(async (ctx) => {
+      const c = (await ctx.db.get("characters", env.a))!;
+      const id = await ctx.db.insert("characters", { campaignId: c.campaignId, ownerId: c.ownerId, createdBy: c.createdBy, status, sheet: c.sheet, createdAt: 0, updatedAt: 0 });
+      await saveSheet(ctx, id, f({ ...readSheet(c.sheet), name }));
+      return id;
+    });
+  const halfling = (s: CharacterSheet): CharacterSheet => ({ ...s, ancestry: { kind: "single", id: "halfling" } });
+  const moonWitch = (s: CharacterSheet): CharacterSheet => ({ ...s, classId: "witch", subclassId: "moon", subclassRank: "mastery" });
+  const groupRow = (env: Env, summary: string) =>
+    env.t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query("actionLog")
+          .withIndex("by_campaign_at", (q) => q.eq("campaignId", env.campaignId))
+          .collect()
+      ).findLast((r) => r.summary === summary)!,
+    );
+
+  it("U1, K6: each active Halfling gives every active PC a Hope at Start, capped; dead or away Halflings give nothing; undo takes it back", async () => {
     const env = await setup();
-    await env.change(env.a, (s) => ({ ...s, ancestry: { kind: "single", id: "halfling" }, communityId: "seaborne" }));
-    await env.change(env.b, (s) => ({ ...s, subclassId: "call-of-the-slayer" }));
-    const started = await startOf(env);
-    expect(started.reminders).toEqual(["Luckbringer (Ash): everyone in the party gains a Hope."]);
+    await env.change(env.a, (s) => ({ ...halfling(s), hope: 5 }));
+    await env.change(env.b, (s) => ({ ...halfling(s), hope: 2 }));
+    const dead = await extra(env, "Cato", "dead", (s) => ({ ...halfling(s), hope: 1 }));
+    const away = await extra(env, "Dara", "away", (s) => ({ ...halfling(s), hope: 1 }));
+    const { sessionId } = await create(env);
+    const started = await startOf(env, sessionId);
+    expect(started.features).toEqual(["Luckbringer (Ash, Bryn): everyone gains 2 Hope"]);
+    expect(started.reminders).toEqual([]);
+    expect((await env.sheetOf(env.a)).hope).toBe(6);
+    expect((await env.sheetOf(env.b)).hope).toBe(4);
+    expect((await env.sheetOf(dead)).hope).toBe(1);
+    expect((await env.sheetOf(away)).hope).toBe(1);
+    expect(await logOf(env, sessionId)).toEqual([{ text: "Session started. Luckbringer (Ash, Bryn): everyone gains 2 Hope.", auto: true }]);
+
+    await env.gm.mutation(api.actionLog.undo, { entryId: (await groupRow(env, "Session started"))._id, idempotencyKey: key() });
+    expect((await env.sheetOf(env.a)).hope).toBe(5);
+    expect((await env.sheetOf(env.b)).hope).toBe(2);
+  });
+
+  it("U6, K4: a Moon Witch at mastery rolls the moon die at Start (only with Hope & Fear on); End removes it; undo restores it", async () => {
+    const env = await setup();
+    await env.change(env.a, moonWitch);
+    const off = await startOf(env);
+    expect(off.features).toEqual([]);
+    expect((await env.sheetOf(env.a)).sessionFeatures).toBeUndefined();
+    await endOf(env);
+
+    await env.gm.mutation(api.campaigns.setOption, { campaignId: env.campaignId, option: "hopeAndFear", enabled: true });
+    const spy = vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(((array: Uint32Array) => array.fill(3)) as typeof crypto.getRandomValues);
+    try {
+      const { sessionId } = await create(env);
+      const started = await startOf(env, sessionId);
+      expect(started.features).toEqual(["Ash's moon die: 4 (Full: +3 to damage thresholds)"]);
+      expect((await env.sheetOf(env.a)).sessionFeatures).toEqual({ moonDie: 4 });
+      const ended = await endOf(env);
+      expect(ended.features).toEqual(["Ash's moon die ends"]);
+      expect((await env.sheetOf(env.a)).sessionFeatures).toBeUndefined();
+      expect((await logOf(env, sessionId)).map((r) => r.text)).toEqual(["Session started. Ash's moon die: 4 (Full: +3 to damage thresholds).", "Session ended. Ash's moon die ends."]);
+      await env.gm.mutation(api.actionLog.undo, { entryId: ended.entryId!, idempotencyKey: key() });
+      expect((await env.sheetOf(env.a)).sessionFeatures).toEqual({ moonDie: 4 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("U8, K2, K3: End clears Slayer Dice for a Hope each (capped) and Tide tokens, with no live session too; undo restores them", async () => {
+    const env = await setup();
+    await env.change(env.a, (s) => ({ ...s, communityId: "seaborne", sessionFeatures: { tideTokens: 3 } }));
+    await env.change(env.b, (s) => ({ ...s, subclassId: "call-of-the-slayer", hope: 3, sessionFeatures: { slayerDice: 2, slayerClaim: "roll-1" } }));
+    const { sessionId } = await create(env);
+    await startOf(env, sessionId);
     const ended = await endOf(env);
-    expect(ended.reminders).toEqual(["Know the Tide (Ash): clear all unspent tokens.", "Slayer Dice (Bryn): clear unspent Slayer Dice and gain a Hope per die cleared."]);
-    expect(ended.doomTier).toBeUndefined();
+    expect(ended.features).toEqual(["Ash cleared 3 Tide tokens", "Bryn cleared 2 Slayer Dice: +2 Hope"]);
+    expect(ended.reminders).toEqual([]);
+    expect((await env.sheetOf(env.a)).sessionFeatures).toBeUndefined();
+    expect((await env.sheetOf(env.b)).hope).toBe(5);
+    expect((await env.sheetOf(env.b)).sessionFeatures?.slayerDice).toBeUndefined();
+    expect((await logOf(env, sessionId)).at(-1)).toEqual({ text: "Session ended. Ash cleared 3 Tide tokens; Bryn cleared 2 Slayer Dice: +2 Hope.", auto: true });
+
+    await env.gm.mutation(api.actionLog.undo, { entryId: ended.entryId!, idempotencyKey: key() });
+    expect((await env.sheetOf(env.a)).sessionFeatures).toEqual({ tideTokens: 3 });
+    expect((await env.sheetOf(env.b)).hope).toBe(3);
+    expect((await env.sheetOf(env.b)).sessionFeatures?.slayerDice).toBe(2);
+
+    // No live session (E1): the End still clears; the Hope stops at the maximum (K6).
+    await env.change(env.b, (s) => ({ ...s, hope: 5 }));
+    const again = await endOf(env);
+    expect(again.sessionId).toBeUndefined();
+    expect(again.features).toEqual(["Ash cleared 3 Tide tokens", "Bryn cleared 2 Slayer Dice: +1 Hope"]);
+    expect((await env.sheetOf(env.b)).hope).toBe(6);
+  });
+
+  it("B7: restarting a played session gives the Luckbringer Hope again", async () => {
+    const env = await setup();
+    await env.change(env.a, (s) => ({ ...halfling(s), hope: 1 }));
+    const { sessionId } = await create(env);
+    await startOf(env, sessionId);
+    await endOf(env);
+    expect((await startOf(env, sessionId)).features).toEqual(["Luckbringer (Ash): everyone gains 1 Hope"]);
+    expect((await env.sheetOf(env.a)).hope).toBe(3);
+  });
+
+  it("Q6: Journey to Horizon's End report carries the Doom Track tier; other frames don't", async () => {
+    const env = await setup();
+    await startOf(env);
+    expect((await endOf(env)).doomTier).toBeUndefined();
 
     const { campaignId } = await env.gm.mutation(api.campaigns.create, { frameId: "journey-to-horizon", name: "Horizon", idempotencyKey: key() });
     await env.gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
