@@ -87,6 +87,7 @@ import type * as rolls from "../rolls.js";
 import type * as scenes from "../scenes.js";
 import type * as sessionPrep from "../sessionPrep.js";
 import type * as sessionRecords from "../sessionRecords.js";
+import type * as sessionWrap from "../sessionWrap.js";
 import type * as sessions from "../sessions.js";
 import type * as settings from "../settings.js";
 import type * as tables_actionLog from "../tables/actionLog.js";
@@ -198,6 +199,7 @@ declare const fullApi: ApiFromModules<{
   scenes: typeof scenes;
   sessionPrep: typeof sessionPrep;
   sessionRecords: typeof sessionRecords;
+  sessionWrap: typeof sessionWrap;
   sessions: typeof sessions;
   settings: typeof settings;
   "tables/actionLog": typeof tables_actionLog;
