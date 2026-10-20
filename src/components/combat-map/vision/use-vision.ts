@@ -84,8 +84,10 @@ export function useFogMasks(view: ViewOk | null, stored: Uint8Array | null): Fog
   }, [view, stored]);
 }
 
-/** One explored-area write per this many milliseconds at most (trailing). */
-export const EXPLORED_THROTTLE_MS = 1500;
+/** At most one explored-area write per this many milliseconds; the first change of view is sent at once. */
+export const EXPLORED_THROTTLE_MS = 500;
+
+type ExploredWrite = { mapId: Id<"combatMaps">; characterId: Id<"characters">; bits: string };
 
 /**
  * Keeps the player's explored area on the server (R11) without a write per render:
@@ -93,31 +95,55 @@ export const EXPLORED_THROTTLE_MS = 1500;
  *   sees a sample the stored row lacks;
  * - the effect runs only when that answer or the seen mask itself changes (its dependencies are the boolean and
  *   the encoded mask, never a fresh object), and returns at once when nothing grows;
- * - the write is throttled: one `markExplored` per EXPLORED_THROTTLE_MS, sent after the wait, cancelled when the
- *   view changes first (the next run sends the newer mask);
+ * - the write goes out at once when none was sent in the last EXPLORED_THROTTLE_MS and none is in flight; otherwise
+ *   one write is scheduled, and it sends the newest mask when it fires. A change of view never cancels it: the
+ *   server keeps only what the character sees when the write arrives, so a cancelled write lost a view that lasted
+ *   less than the wait (dcm-bxp.55: a campfire lit and put out quickly);
  * - after a write the stored row updates reactively, `grows` turns false and nothing more is sent. A failed or
- *   refused write (the server keeps only what it sees, `grew: false`) does not retry for the same mask, because
- *   the dependencies did not change.
+ *   refused write (`grew: false`) does not retry for the same mask, because the dependencies did not change.
  * Only the player's own client writes; the GM's preview never marks a character's explored area.
  */
 export function useExploredSync(campaignId: Id<"campaigns">, viewing: Viewing, masks: FogMasks | null, stored: Uint8Array | null, storedLoaded: boolean) {
   const markExplored = useMutation(api.combatVision.markExplored);
   const last = useRef(0);
+  const latest = useRef<ExploredWrite | null>(null);
+  const timer = useRef<number | null>(null);
+  const inFlight = useRef(false);
   const ok = viewing.kind === "player" ? okView(viewing) : null;
   const grows = ok !== null && masks !== null && storedLoaded && exploredGrows(stored ?? new Uint8Array(0), masks.seen);
   const bits = ok?.vision.seen ?? null;
   const mapId = ok?.mapId ?? null;
   const characterId = ok?.characterId ?? null;
+
+  useEffect(() => () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+  }, []);
+
   useEffect(() => {
     if (!grows || bits === null || mapId === null || characterId === null) return;
-    const wait = Math.max(0, last.current + EXPLORED_THROTTLE_MS - Date.now());
-    const timer = window.setTimeout(() => {
+    latest.current = { mapId, characterId, bits };
+    if (timer.current !== null) return; // the scheduled write will send this newer mask
+    const send = () => {
+      timer.current = null;
+      const write = latest.current;
+      if (write === null) return;
+      latest.current = null;
+      inFlight.current = true;
       last.current = Date.now();
-      markExplored({ campaignId, mapId, characterId, bits }).catch(() => {
-        // The next change of view tries again; explored areas are a convenience, never an error card.
-      });
-    }, wait);
-    return () => window.clearTimeout(timer);
+      markExplored({ campaignId, ...write })
+        .catch(() => {
+          // The next change of view tries again; explored areas are a convenience, never an error card.
+        })
+        .finally(() => {
+          inFlight.current = false;
+          // A view that changed while this write was out is sent next, after the throttle.
+          if (latest.current !== null && timer.current === null) timer.current = window.setTimeout(send, EXPLORED_THROTTLE_MS);
+        });
+    };
+    if (inFlight.current) return; // sent when the write in flight settles
+    const wait = last.current + EXPLORED_THROTTLE_MS - Date.now();
+    if (wait <= 0) send();
+    else timer.current = window.setTimeout(send, wait);
   }, [grows, bits, mapId, characterId, campaignId, markExplored]);
 }
 

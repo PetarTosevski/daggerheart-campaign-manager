@@ -54,7 +54,7 @@ Result: see "Checks" below.
 | R8 light by campaign time; only Nautical Twilight and Nightfall dim; Nautical Dawn day | Met (Witherwild) | `src/lib/domain/combat-map/light.ts` `DIM_PHASES`, `lightOf`; unit "only Nautical Twilight and Nightfall are dim…"; `combat-vision.spec.ts` (Nautical Dawn = Daylight); this flow (Moonrise). Gap: frames without campaign time are always day, see dcm-bxp.54 |
 | R9 night reaches (none 1/3, torch = lantern 6/12, Alistair 12, wall torch 6/12, campfire 12/24); GM and players switch map lights (players only seen/explored ones) | Met | `light.ts` `CARRIED_LIGHT_REACH`, `MAP_LIGHT_REACH`; unit light rows; `combatVision.toggleLight` COMBAT_LIGHT_NOT_SEEN; `combat-vision.test.ts` "lets a player switch only a light…"; `combat-vision.spec.ts` (player puts out a wall torch); this flow (torch dim band, campfire placed lit, put out, lit again) |
 | R10 dim light at night hides non-PC tokens; GM "Reveal to…" after a roll | Met | `vision.ts` `tokenVisibility`; `combatVision.revealTo/unrevealTo`; `combat-vision.test.ts` "hides a dim-band enemy at night until the GM reveals it…"; `combat-vision.spec.ts`; this flow (Bear) |
-| R11 own character's view only; explored areas faint, tokens there hidden | Met, one gap (dcm-bxp.55) | `combatVision.playerView`, `markExplored`, `combatExplored`; unit "another PC's vision is not shared", "a revealed token out of sight is hidden"; `combat-vision.test.ts` explored case; this flow (fire out → Wolf hidden, square explored) |
+| R11 own character's view only; explored areas faint, tokens there hidden | Met, one gap (dcm-bxp.55 (fixed after C9: the write is sent at once and never cancelled)) | `combatVision.playerView`, `markExplored`, `combatExplored`; unit "another PC's vision is not shared", "a revealed token out of sight is hidden"; `combat-vision.test.ts` explored case; this flow (fire out → Wolf hidden, square explored) |
 | R12 GM sees everything, previews any PC, reveal/hide brush | Met | `combatVision.previewAs`, `paintFog`; "👁 Player view ▾", "See the map as", fog brush in `vision/panels.tsx`; `combat-vision.test.ts` "gives the GM's preview exactly the player's result"; `combat-vision.spec.ts` (preview, Hide/Erase brush); this flow (GM board shows all four tokens). Board's "Forget explored" not built, see dcm-bxp.52 |
 | Q1 whole layout to players, tokens filtered on the server; padded fog, hidden edges, no W × H | Met | `combatMaps.live` (layout), `combatVision.playerView` (tokens); `FOG_PAD_SQUARES` in `vision.ts`; `vision/vision-layer.tsx`; `combat-vision.spec.ts` (padding pixels = unseen, Fit, header); this flow (`playerView` returns only the PCs, header = map name) |
 | Q2 lantern = torch | Met | `light.ts` `CARRIED_LIGHT_REACH.lantern`; unit "torch and lantern…" |
@@ -80,7 +80,7 @@ Result: see "Checks" below.
    per 1.5 s; a pending write is cancelled when the view changes and the next one carries only the newer mask, and
    `markExplored` keeps only what the character sees at write time. In the first runs the GM put the campfire out
    within that window and the Wolf's square went back to unseen instead of explored. The spec now waits for the
-   stored row to grow before putting the fire out. Bead **dcm-bxp.55** (bug, P3).
+   stored row to grow before putting the fire out. Bead **dcm-bxp.55 (fixed after C9: the write is sent at once and never cancelled)** (bug, P3).
 
 Not filed (no gap against the rules):
 - C0 QUESTION 1: the plan names a shared `Loading` component that does not exist; the slots use the codebase's inline
@@ -99,7 +99,7 @@ Not filed (no gap against the rules):
 - dcm-bxp.52 Combat Map: GM 'Forget explored' action
 - dcm-bxp.53 Combat Map: players read PC tokens from playerView.pcs (one query)
 - dcm-bxp.54 Combat Map: night and lights in frames without campaign time (ask the user)
-- dcm-bxp.55 Combat Map: squares seen only briefly never become explored (bug)
+- dcm-bxp.55 (fixed after C9: the write is sent at once and never cancelled) Combat Map: squares seen only briefly never become explored (bug)
 - dcm-bxp.50 (exists, C6) D10: wire the Combat Map's '+ Session encounter' button
 
 ## Checks

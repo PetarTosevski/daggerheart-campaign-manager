@@ -4,6 +4,7 @@ import type { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { blocksSight } from "../../src/lib/domain/combat-map/sight";
+import { decodeExplored, exploredLength, SAMPLES_PER_SQUARE } from "../../src/lib/domain/combat-map/vision";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 
@@ -227,9 +228,15 @@ for (const viewport of [
         // ---- The GM places a campfire beside the Wolf in edit mode (lit, R9): the player sees the lit area
         // around it, and the Wolf in it.
         const ashCharacterId = tokens.find((t) => t.name === "Ash")!.characterId!;
-        const exploredCount = async () =>
-          (await playerClient.query(api.combatVision.explored, { campaignId, characterId: ashCharacterId }))?.bits.replace(/A/g, "").length ?? 0;
-        const exploredBefore = await exploredCount();
+        /** Whether the middle of square (x, y) is in Ash's stored explored area (C1's codec). */
+        const explored = async (x: number, y: number) => {
+          const row = await playerClient.query(api.combatVision.explored, { campaignId, characterId: ashCharacterId });
+          if (!row) return false;
+          const mask = decodeExplored(row.bits, exploredLength(W, 20));
+          const s = SAMPLES_PER_SQUARE;
+          return mask[(y * s + 1) * W * s + x * s + 1] === 1;
+        };
+        expect(await explored(20, 10)).toBe(false);
         await mode.getByRole("button", { name: /Edit map/ }).click();
         await card.getByRole("group", { name: "Edit tool" }).getByRole("button", { name: /Objects/ }).click();
         await card.getByRole("button", { name: "Campfire", exact: true }).click();
@@ -239,10 +246,8 @@ for (const viewport of [
         await expect(playerBoard.getByRole("button", { name: "Dire Wolf, Enemy" })).toBeVisible();
         await expect.poll(async () => (await fogPixel(player, PAD + 20.5, PAD + 10.5))[3]).toBeLessThan(10);
         expect((await fogPixel(player, PAD + 24.5, PAD + 10.5))[3]).toBeLessThan(10);
-        // The lit area reaches the player's explored row (markExplored, throttled to one write per 1.5 s). Waited
-        // for: a view that changes before the write is never stored (the client sends only what it sees at that
-        // moment; dcm-bxp.55).
-        await expect.poll(exploredCount, { timeout: 15_000 }).toBeGreaterThan(exploredBefore);
+        // The lit square beside the Wolf reaches the player's explored row (markExplored).
+        await expect.poll(() => explored(20, 10), { timeout: 15_000 }).toBe(true);
 
         // ---- Back in Play the GM puts the fire out (the Wolf goes; its square stays faintly explored, R11) and
         // lights it again (the Wolf is back).
