@@ -1,0 +1,156 @@
+/*
+ * Play slot (D10 S5): board Sessions.dc.html l.144-183. Two columns (spotlight + tally | log, 1fr / 1.3fr), the
+ * spotlight pills (due ones ringed in the accent), the tally rows (no steppers, Q3) and the log rows (time, serif
+ * text, remove). Phone: one column, 44 px targets.
+ */
+.ss-play {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 18px;
+  align-items: start;
+}
+.ss-play-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.ss-play-tall {
+  min-height: 44px;
+}
+.ss-self-start {
+  align-self: flex-start;
+}
+.ss-play-error {
+  margin: 0;
+  color: var(--ss-danger);
+  font-size: 14px;
+}
+.ss-play-note {
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------- spotlight (board l.152) */
+
+.ss-spot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ss-spot {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--ss-text);
+  background: transparent;
+  border: 1.5px solid var(--ss-border);
+  max-width: 100%;
+}
+.ss-spot > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ss-spot[data-due="true"] {
+  background: var(--ss-hover);
+  border-color: var(--ss-acc);
+}
+.ss-spot:focus-visible {
+  outline: 2px solid var(--ss-acc);
+  outline-offset: 2px;
+}
+.ss-spot-n {
+  font-family: var(--ss-display);
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- tally (board l.159, steppers dropped: Q3) */
+
+.ss-tally {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ss-tally-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 0;
+  border-bottom: 1px solid #1f2b30;
+}
+.ss-tally-row dt {
+  font-size: 15px;
+}
+.ss-tally-row dd {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- log (board l.168-179) */
+
+.ss-log-form {
+  display: flex;
+  gap: 8px;
+}
+.ss-log-in {
+  flex: 1;
+}
+.ss-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ss-log-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid #1f2b30;
+}
+.ss-log-time {
+  flex: none;
+  width: 44px;
+  padding-top: 3px;
+  font-size: 13px;
+  color: var(--ss-muted);
+}
+.ss-log-text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--ss-serif);
+  font-size: 18px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.ss-log-x {
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+}
+.ss-log-x[disabled] {
+  opacity: 0.4;
+  cursor: progress;
+}
+
+@media (max-width: 720px) {
+  .ss-play {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ss-log-x {
+    width: 44px;
+    height: 44px;
+  }
+}

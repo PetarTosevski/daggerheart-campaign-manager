@@ -86,6 +86,7 @@ import type * as photoImport from "../photoImport.js";
 import type * as rests from "../rests.js";
 import type * as rolls from "../rolls.js";
 import type * as scenes from "../scenes.js";
+import type * as sessionPlay from "../sessionPlay.js";
 import type * as sessionPrep from "../sessionPrep.js";
 import type * as sessionRecords from "../sessionRecords.js";
 import type * as sessionWrap from "../sessionWrap.js";
@@ -199,6 +200,7 @@ declare const fullApi: ApiFromModules<{
   rests: typeof rests;
   rolls: typeof rolls;
   scenes: typeof scenes;
+  sessionPlay: typeof sessionPlay;
   sessionPrep: typeof sessionPrep;
   sessionRecords: typeof sessionRecords;
   sessionWrap: typeof sessionWrap;
