@@ -10,11 +10,18 @@ const WHEEL_STEP = 1.12;
 
 const clampZoom = (z: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
 
+/** A rectangle of the stage in unzoomed pixels. */
+export type FitArea = { x: number; y: number; w: number; h: number };
+
 /**
  * Zoom for the combat map viewport, following the World map's pattern (src/app/(gm)/campaigns/[campaignId]/world/
  * use-pan-zoom.ts: Fit on mount and on resize, wheel zoom anchored on the cursor through a non-passive listener)
  * with the board's model: the viewport scrolls (pan = scroll), the stage is `contentW x contentH` pixels at zoom 1,
  * and Ctrl / Cmd + scroll zooms (a plain scroll scrolls). `fitKey` changes when another map (or size) is shown.
+ *
+ * `fitArea` (unzoomed stage px, optional): what Fit frames instead of the whole stage, centred in the viewport. The
+ * player's view passes the squares their character has explored (C8, Q1), so Fit never frames the map's real
+ * bounds; without it Fit frames the whole stage (the GM's map, or the player's padded area).
  */
 export function useMapZoom(
   viewport: RefObject<HTMLDivElement | null>,
@@ -22,6 +29,7 @@ export function useMapZoom(
   contentW: number,
   contentH: number,
   fitKey: string,
+  fitArea: FitArea | null = null,
 ) {
   const [zoom, setZoomState] = useState(1);
   const zoomRef = useRef(zoom);
@@ -46,25 +54,47 @@ export function useMapZoom(
 
   function fitZoom(): number {
     const vp = viewport.current;
-    if (!vp || contentW <= 0 || contentH <= 0) return zoomRef.current;
-    return clampZoom(Math.min((vp.clientWidth - 8) / contentW, (vp.clientHeight - 8) / contentH));
+    const w = fitArea ? fitArea.w : contentW;
+    const h = fitArea ? fitArea.h : contentH;
+    if (!vp || w <= 0 || h <= 0) return zoomRef.current;
+    return clampZoom(Math.min((vp.clientWidth - 8) / w, (vp.clientHeight - 8) / h));
+  }
+
+  /** Scrolls so the stage point (px, py) (unzoomed) sits under the client point (cx, cy) at zoom `z`. */
+  function scrollToAnchor(a: { px: number; py: number; cx: number; cy: number }, z: number) {
+    const vp = viewport.current;
+    if (!vp || !stage) return;
+    const s = stage.getBoundingClientRect();
+    vp.scrollBy(s.left - (a.cx - a.px * z), s.top - (a.cy - a.py * z));
   }
 
   function fit() {
     anchor.current = null;
     const z = fitZoom();
+    const vp = viewport.current;
+    if (fitArea && vp) {
+      // Centre the fitted area in the viewport.
+      const v = vp.getBoundingClientRect();
+      anchor.current = { px: fitArea.x + fitArea.w / 2, py: fitArea.y + fitArea.h / 2, cx: v.left + v.width / 2, cy: v.top + v.height / 2 };
+    }
+    if (z === zoomRef.current) {
+      // No re-render follows, so scroll now.
+      const a = anchor.current;
+      anchor.current = null;
+      if (a) scrollToAnchor(a, z);
+      return;
+    }
     zoomRef.current = z;
     setZoomState(z);
   }
 
-  // After a zoom change, scroll so the anchored stage point is back under the cursor.
+  // After a zoom change, scroll so the anchored stage point is back under the cursor (or the fitted area's centre).
   useLayoutEffect(() => {
     const a = anchor.current;
-    const vp = viewport.current;
     anchor.current = null;
-    if (!a || !vp || !stage) return;
-    const s = stage.getBoundingClientRect();
-    vp.scrollBy(s.left - (a.cx - a.px * zoom), s.top - (a.cy - a.py * zoom));
+    if (a) scrollToAnchor(a, zoom);
+    // scrollToAnchor reads the current viewport and stage.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom, viewport, stage]);
 
   const onFit = useEffectEvent(fit);

@@ -11,6 +11,7 @@ import { errorMessage } from "@/lib/convex-errors";
 import { api } from "../../../../convex/_generated/api";
 import type { CombatMapLayout } from "../../../../convex/combatMaps";
 import type { CombatMapSummary, CombatMapViewport, MapBoardProps } from "../slots";
+import { usePlayerFitArea } from "../vision/fit";
 import { decodeCells } from "./cells";
 import { MapViewContext, type MapViewState } from "./context";
 import { imageMapSize, type ImageGrid } from "./grid";
@@ -89,7 +90,19 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
   const viewportRef = useRef<HTMLDivElement>(null);
   // The stage element as state (not a ref), so `toSquares` may be handed to layers during render.
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
-  const { zoom, setZoom, fit } = useMapZoom(viewportRef, stage, (w + 2 * pad) * MAP_CELL, (h + 2 * pad) * MAP_CELL, `${map._id}:${w}x${h}`);
+  // Q1: a player's stage is the map padded by FOG_PAD_SQUARES of fog (the pan limits), and Fit frames the squares
+  // their character has explored, never the map's real bounds (C8). The GM's Fit frames the map.
+  const fitSquares = usePlayerFitArea({ campaignId, role }, map, pad);
+  const fitArea = fitSquares ? { x: fitSquares.x * MAP_CELL, y: fitSquares.y * MAP_CELL, w: fitSquares.w * MAP_CELL, h: fitSquares.h * MAP_CELL } : null;
+  const { zoom, setZoom, fit } = useMapZoom(
+    viewportRef,
+    stage,
+    (w + 2 * pad) * MAP_CELL,
+    (h + 2 * pad) * MAP_CELL,
+    // Refit once when the explored area first arrives, not on every square explored.
+    `${map._id}:${w}x${h}:${fitArea ? "explored" : "all"}`,
+    fitArea,
+  );
   const [showNames, setShowNames] = useViewerFlag(NAMES_KEY);
   const [error, setError] = useState<string | null>(null);
   const drag = useRef<Drag | null>(null);
