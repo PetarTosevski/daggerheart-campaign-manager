@@ -73,6 +73,11 @@ test("the GM writes the recap and loot and calls the milestone; a player reads o
   await expect(milestone).toHaveAttribute("aria-pressed", "false");
   await expect(stage.getByRole("link", { name: "Open Party to level up →" })).toHaveCount(0);
   await milestone.click();
+  // A confirm step first; Cancel leaves the party alone.
+  await stage.getByRole("button", { name: "Cancel" }).click();
+  await expect(milestone).toHaveAttribute("aria-pressed", "false");
+  await milestone.click();
+  await stage.getByRole("button", { name: "Level up the party" }).click();
   await expect(stage.getByRole("status").filter({ hasText: "can level up" })).toHaveText("2 characters can level up.");
   await expect(milestone).toHaveAttribute("aria-pressed", "true");
   await expect(milestone).toBeDisabled();

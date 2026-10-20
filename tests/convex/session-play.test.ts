@@ -225,6 +225,9 @@ describe("session play: log", () => {
     expect((await env.gm.query(api.sessionPlay.log, args)).map((l) => l.text)).toEqual(["Bryn found the key.", "Session started."]);
     expect(await failure(env.gm.mutation(api.sessionPlay.removeLog, { ...args, logId: first.logId }))).toBe("SESSION_LOG_NOT_FOUND");
     expect(await failure(env.gm.mutation(api.sessionPlay.removeLog, { ...args, logId: "nope" }))).toBe("SESSION_LOG_NOT_FOUND");
+    // The automatic Start/End lines stay.
+    const autoId = listed[2]!._id;
+    expect(await failure(env.gm.mutation(api.sessionPlay.removeLog, { ...args, logId: autoId }))).toBe("INVALID");
     // A line of another session is not this session's.
     const other = await env.create();
     expect(await failure(env.gm.mutation(api.sessionPlay.removeLog, { campaignId: env.campaignId, sessionId: other, logId: second.logId }))).toBe(

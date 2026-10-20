@@ -191,6 +191,8 @@ export const removeLog = gmMutation({
     const id = ctx.db.normalizeId("sessionLog", logId);
     const row = id === null ? null : await ctx.db.get("sessionLog", id);
     if (row === null || row.sessionId !== session._id) throw appError("SESSION_LOG_NOT_FOUND");
+    // The Start/End lines are the session's record of what happened automatically (user 2026-10-20): kept.
+    if (row.auto) throw appError("INVALID", "Automatic session lines can't be removed.");
     await ctx.db.delete("sessionLog", row._id);
     return null;
   },

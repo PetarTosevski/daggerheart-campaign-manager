@@ -29,6 +29,7 @@ test("D10 S6 wrap-up at 1440, 1024 and 390", { tag: "@visual" }, async ({ page }
   await stage.getByRole("textbox", { name: "Countdowns & threads" }).fill("The Doom countdown ticked to 3.");
   await stage.getByRole("textbox", { name: "Countdowns & threads" }).blur();
   await stage.getByRole("button", { name: "Milestone reached: the party levels up" }).click();
+  await stage.getByRole("button", { name: "Level up the party" }).click();
   // The status line comes with the server's answer, so the reload below cannot cut the mutation off.
   await expect(stage.getByRole("status").filter({ hasText: "can level up" })).toHaveText("2 characters can level up.");
   await expect.poll(async () => (await client.query(api.sessionWrap.get, { campaignId, sessionId }))?.threads).toBe("The Doom countdown ticked to 3.");
