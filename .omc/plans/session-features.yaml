@@ -1,0 +1,308 @@
+# Session-features plan (bead dcm-bxp.58, D10 follow-up of Q8). Automates the four session-bound heritage and subclass features that
+# convex/sessions.ts `sessionReminders` only reminds of today: Luckbringer, Slayer Dice, Know the Tide, Lunar Phases. The reminders
+# go; the party sync, the dice box and the character sheet do the work.
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation.
+# Book pages: CB = Core Book, HF = Hope & Fear, PRINTED pages. In the extracted core.txt / hopefear.txt the "===== PAGE N =====" block
+#   ends with printed page N-1 in its footer (checked 2026-10-21: Luckbringer sits in block 65, footer '64'). Each tracer that cites a
+#   page re-checks it (.reference-private/, pdfjs-dist; never commit the books) and quotes it in its task doc.
+# Paths: C = src/app/(gm)/campaigns/[campaignId]; P = C/party/[characterId] (written out in full below).
+# Status: DRAFT 2026-10-21. U1-U7 are the user's decisions (binding). One QUESTION (Q1) has a default; tracers that cite it do not
+#   start until the user has answered or accepted it.
+#
+# Rules from the books (binding; tracers quote the one they implement in their task doc):
+#   K1  Luckbringer (Halfling ancestry feature, CB p.64): 'At the start of each session, everyone in your party gains a Hope.'
+#   K2  Slayer (Call of the Slayer foundation feature, Warrior, CB p.48; the bead says p.48, the request said p.49, which is the PDF
+#       page): 'You gain a pool of dice called Slayer Dice. On a roll with Hope, you can place a d6 on this card instead of gaining a
+#       Hope, adding the die to the pool. You can store a number of Slayer Dice equal to your Proficiency. When you make an attack roll
+#       or damage roll, you can spend any number of these Slayer Dice, rolling them and adding their result to the roll. At the end of
+#       each session, clear any unspent Slayer Dice on this card and gain a Hope per die cleared.'
+#   K3  Know the Tide (Seaborne community feature, CB p.77): 'When you roll with Fear, place a token on your community card. You can
+#       hold a number of tokens equal to your level. Before you make an action roll, you can spend any number of these tokens to gain a
+#       +1 bonus to the roll for each token spent. At the end of each session, clear all unspent tokens.'
+#   K4  Lunar Phases (Moon subclass mastery feature, HF p.17): 'At the beginning of each session, roll a d6 and place it on this card.
+#       You gain the matching effect until the end of session. 1 New: Spend a Hope to negate Minor damage. 2-3 Waxing: +2 to damage
+#       rolls. 4 Full: +3 to damage thresholds. 5-6 Waning: +1 to Evasion. Once per rest, you can spend a Hope to increase the value of
+#       this die by one. If you increase the value of a 6, it becomes a 1.'
+#       FACT CHECK: Moon is a WITCH subclass (HF p.16 'WITCH SUBCLASSES Choose either the Hedge or Moon subclass'; src/lib/srd/
+#       subclasses.ts id 'moon', classId 'witch', source hope-and-fear), not a Druid one as the request says. U6 is read as 'a Moon
+#       Witch whose mastery is taken'. Witch is a Hope & Fear class: Lunar Phases works only with the campaign's hopeAndFear option
+#       (classFeaturesAvailable), like every other Witch feature.
+#   K5  'Any time you roll with Hope on your Duality Dice ... you gain a Hope (to a maximum of 6)' (CB p.18); 'A critical success
+#       counts as a roll with Hope ... along with gaining a Hope, you also clear a Stress' (CB p.90): a critical offers the Slayer
+#       choice; storing replaces only the Hope, the Stress still clears. 'Reaction rolls ... don't generate Hope, Fear, or additional GM
+#       moves' (CB p.99): a reaction roll gains no Hope, so it never offers the Slayer choice (Know the Tide: see Q1).
+#   K6  Hope maximum: hopeMax(scars, hopeSlotBonus) (src/lib/domain/characters, 6 + Light in the Dark - scars); applyResourceDelta caps.
+#   K7  Holders. Luckbringer: ancestry single 'halfling', mixed with first 'halfling' (the first ancestry gives its first feature,
+#       slots.ts), or a Shapeshifter whose form is 'halfling' and whose chosen form feature is Luckbringer (closes the gap TASK-D10-S3
+#       note 5 left; F0 checks how the wizard stores `feature`). Slayer: subclassId 'call-of-the-slayer' at any rank, or
+#       multiclass.subclassId 'call-of-the-slayer' (a multiclass gets the foundation, CB p.110-111). Know the Tide: communityId
+#       'seaborne'. Lunar Phases: subclassId 'moon' with subclassRank 'mastery' (never through a multiclass, which has no mastery).
+#
+# User decisions 2026-10-21 (binding; cited in the acceptance lists as Un):
+#   U1  Luckbringer stacks: each ACTIVE Halfling in the party gives every active PC a Hope at session start (two Halflings = 2 Hope),
+#       never above that PC's Hope maximum (K6). Applied in the Start party sync, undoable with the Start group.
+#   U2  Slayer store: after a roll with Hope (K5), when the pool is not full (< Proficiency), the dice box asks 'Take the Hope or store
+#       a Slayer Die?'.
+#   U3  Slayer spend: a '+ Slayer Dice' stepper in the dice box on attack rolls (action roll with attack on) and damage rolls; the chosen
+#       dice are rolled on the server and added to the roll.
+#   U4  Know the Tide tokens are placed automatically on every roll with Fear, up to the character's level (which rolls count: Q1).
+#   U5  Tide spend: a '+ Tide tokens' stepper before an action roll, +1 per token; shown ONLY to characters with the Seaborne community
+#       feature, never to others.
+#   U6  Lunar Phases: the d6 is rolled automatically at session start; Waxing (+2 damage rolls), Full (+3 thresholds) and Waning (+1
+#       Evasion) apply automatically until session end; New offers 'Spend a Hope to negate this Minor damage' when the character takes
+#       Minor damage; the sheet has a once-per-rest 'Spend a Hope: +1 to the moon die' button (6 -> 1). A Moon Witch whose mastery is
+#       taken gets a dedicated 'Lunar Phases' section on the sheet: the four phases with a picture of the moon in each (New, Waxing,
+#       Full, Waning; drawn as inline SVG, no external images), the current phase highlighted with its effect, the die value and the
+#       bump button. Hidden for everyone else.
+#   U7  The Slayer pool, the Tide tokens and the moon die show as chips in the sheet's Class Features box, like held Rally dice.
+#   U8  (from the same decision) Session end clears Slayer Dice (+1 Hope per die cleared, capped at Hope max) and Tide tokens; the moon
+#       die and its effect end at session end. This replaces the four reminders in convex/sessions.ts, is listed in the Start/End report
+#       and stamped in the session log, and goes through the existing undoable actionLog groups.
+#
+# Existing behaviour to keep (tests exist; tracers extend, never weaken):
+#   E1  sessions.start / end (D10 E1-E7, .omc/plans/d10-sessions.yaml): idempotent (ctx.once); one undoable actionLog group per Start
+#       and per End, a row per changed PC plus the campaign row; start runs onSessionStart for ACTIVE PCs, end runs
+#       expire(sheet,'session') + onSessionEnd for EVERY PC, also with no live session (tests/e2e/class-features.spec.ts relies on it);
+#       a played session started again runs its start effects again (B7); undo restores sheets and Fear, status stays (Q7).
+#   E2  The Start/End results keep every current field; `reminders` stays in the validators as optional (callers built before keep
+#       type-checking) but is no longer filled for these four features; the new lines travel in a new optional `features` field.
+#       The one test that asserts the reminders (tests/convex/sessions.test.ts 'Q8, Q6: the reports remind ...') is REPLACED by tests
+#       of the automation (user decision U8), the Horizon doomTier part of it stays.
+#   E3  rolls.actionRoll / damageRoll / manualRoll / tagTeam / tagTeamApply keep their current arguments; the new ones are optional,
+#       so tests/convex/rolls.test.ts and every dice e2e pass unchanged. Prompts keep the shape promptValidator has.
+#   E4  characters.applyDamage keeps its arguments and results (the new argument is optional); tests/convex/characters.test.ts,
+#       wither.test.ts and the damage calculator e2e pass unchanged. It writes no actionLog row today; that stays for plain damage.
+#   E5  Held dice (Rally, Prayer), classState counters and their chips in the Class Features box render as today.
+#   E6  derivedDefense / derivedThresholds results are unchanged for every sheet without a moon die (roster Evasion, sheet thresholds,
+#       applyDamage).
+#
+# Data model (F0 creates every field; later tracers only read and write it). Widen only, no migration, no SHEET_VERSION bump:
+#   characters.sheet (the version 2 blob) gains ONE optional object, in src/lib/validation/characters.ts (zod, `.optional()`) and in
+#   sheetValidator (convex/lib/validators/characters.ts, `v.optional(...)`), as the file's own extension note prescribes:
+#     sessionFeatures?: {
+#       slayerDice?: int 0..10      Slayer pool (unrolled d6s), capped at Proficiency when a die is stored (K2)
+#       slayerClaim?: string <= 40  the actionLog id of the roll whose Slayer choice was answered (one answer per roll)
+#       tideTokens?: int 0..10      Know the Tide tokens, capped at level when one is placed (K3)
+#       moonDie?: int 1..6          the Lunar Phases die (K4); absent = no phase
+#     }
+#   Old sheets without it read as 'no pool, no tokens, no die'. A lowered Proficiency or level trims nothing already held; the cap is
+#   checked when a die or token is added. The once-per-rest bump is a featureUses entry { key: 'lunarPhasesBump', until: 'rest' }
+#   (existing mechanism, expired by rests). No new table, no new index, no new error module: refusals use existing codes
+#   (CLASS_FEATURE_RULE, DICE_RULE, NOT_ENOUGH_HOPE, INVALID); a tracer that needs a code not listed here stops and reports.
+#   docs/data-model.md is updated by the orchestrator from F0's report.
+#
+# Shared files: src/lib/validation/characters.ts, convex/lib/validators/characters.ts, src/lib/domain/characters/derived.ts,
+#   src/lib/domain/class-features/hooks.ts and the new pure module src/lib/domain/session-features/** belong to F0 only. Later tracers
+#   read them; a needed change there means stop and report. convex/sessions.ts + src/components/sessions/live/** belong to F1;
+#   convex/rolls.ts + src/components/party/dice/** to F2; convex/characters.ts, convex/sessionFeatures.ts and the sheet UI files to F3.
+#
+# Out of scope (F4 files beads; ask the user before designing them): Weapon Specialist's 'once per long rest when you roll your Slayer
+#   Dice, reroll any 1s' (Call of the Slayer specialization, CB p.48) and the Martial Preparation downtime move's ally Slayer Die
+#   (Call of the Slayer mastery, CB p.48); authz-matrix entries (D12).
+#
+# QUESTIONS (one; the default is written into the acceptance lists and marked (Q1)):
+#   Q1  Which rolls place a Know the Tide token (U4 'every roll with Fear')? The book defines rolling with Fear by the dice ('your Fear
+#       Die rolled higher than your Hope Die', CB p.18) but says reaction rolls 'don't generate Hope, Fear, or additional GM moves'
+#       (CB p.99), and a Tag Team Roll applies one roll 'for both of your results. On a roll with Hope, all PCs
+#       involved gain a Hope.' (CB p.97). Options: (a) action rolls only, plus the applied Tag Team
+#       result for BOTH participants; reaction rolls never; (b) every Duality roll whose Fear Die is higher, reaction rolls included,
+#       plus Tag Team for both; (c) (a) without Tag Team. In every option a critical is never 'with Fear', and a roll changed afterwards
+#       (Witch's Charm turning Hope into a success with Fear) places nothing: only the roll as rolled counts. DEFAULT (a): it matches
+#       K5 for the Slayer choice (reaction rolls generate neither), and the Tag Team result is each participant's roll. Under (a) the
+#       Slayer choice is offered to each Slayer in an applied Tag Team result with Hope too. Cited by F0, F2, F4.
+#
+# Rules for every tracer (part of every acceptance list, not repeated):
+#   - Every new or changed public function uses the wrappers in convex/lib/functions.ts (keyedUserMutation for character actions,
+#     keyedGmMutation for session boundaries); access only through permissionFor via loadCharacter / editable ('edit': the owner or
+#     the GM) or the GM wrappers. Identity from ctx.user, never an argument.
+#   - `args` and `returns` validators on every new function and on every changed one, no v.any(); schema-guard RETURNS_PENDING never
+#     grows.
+#   - Its own Convex test covers anonymous, outsider, player (owner and non-owner where it applies) and GM for each new or changed
+#     function, with the codes the existing rolls / characters / sessions tests assert for those roles, through the errorCode helper
+#     (ConvexError.data.code), never message text (tests/convex/authz-matrix.test.ts does not exist yet; D12 folds these in).
+#   - Intents only: counts and ids (slayerDice: n, tideTokens: n, entryId, characterId, negateMinor: true); the server rolls the dice,
+#     reads the sheet and computes every pool, Hope and threshold; the client never sends a pool value or a sheet. Optimistic updates
+#     on the chips and the moon die bump; the steppers are local form state until the roll.
+#   - Pure logic lives in src/lib/domain/session-features (F0) and is used by server and client alike; no second copy of a rule.
+#   - Indexed reads only (no .filter on queries), bounded takes; no Date.now() in queries.
+#   - Every useQuery subtree sits inside an error boundary (the existing dice and features boundaries count); loading uses the shared
+#     Loading with role=status.
+#   - UI in the sheet's and dice box's existing look (sheet-ui, ft-pill chips, dc-prompt); CSS only in the tracer's own colocated
+#     .css; 1440 and 1024 px layouts; 390 px: one column, no horizontal page scroll, touch targets >= 44 px, a label on every control
+#     (steppers: 'Slayer Dice to spend', 'Tide tokens to spend'), keyboard reachable.
+#   - Visual acceptance for UI tracers: tests/e2e/visual/SF-<id>.spec.ts (tag @visual, E2E_VISUAL=1) shoots its regions at 1440x900,
+#     1024x768 and 390x844; the task doc lists the shots with a verdict per region and every deliberate deviation.
+#   - pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e specs pass in its worktree; the
+#     orchestrator runs the full e2e suite after each wave.
+#   - Every tracer owns docs/tasks/TASK-SF-<id>.md and quotes the K rules it implements with their pages.
+plan: session-features
+waves:
+  # ---------------------------------------------------------------- wave 1: sheet field and pure domain
+  - wave: 1
+    tracers:
+      - id: F0
+        foundation: true
+        title: Foundation - sessionFeatures sheet field, pure session-features domain, derived Evasion and thresholds, dice hooks
+        size: M
+        goal: Sheets carry the optional sessionFeatures object, and a pure, tested module answers who holds each feature, every pool change, the moon phase and its effects, and the session start and end transforms, with the moon die already reflected in derived Evasion, thresholds and the damage-roll options.
+        depends_on: []
+        owns:
+          - src/lib/validation/characters.ts
+          - convex/lib/validators/characters.ts
+          - src/lib/domain/session-features/**
+          - src/lib/domain/characters/derived.ts
+          - src/lib/domain/class-features/hooks.ts
+          - tests/unit/session-features.test.ts
+          - tests/unit/derived-moon.test.ts
+          - tests/convex/session-features-sheet.test.ts
+          - docs/tasks/TASK-SF-F0.md
+        reads:
+          - src/lib/domain/characters/index.ts
+          - src/lib/domain/characters/effects.ts
+          - src/lib/domain/characters/slots.ts
+          - src/lib/domain/class-features/types.ts
+          - src/lib/domain/class-features/index.ts
+          - src/lib/domain/class-features/held-dice.ts
+          - src/lib/domain/class-features/classes/wizard.ts
+          - src/lib/domain/dice/index.ts
+          - src/lib/srd/heritage.ts
+          - src/lib/srd/subclasses.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/new/steps-1-4.tsx
+          - convex/lib/characterSheet.ts
+          - convex/sessions.ts
+        acceptance:
+          - "src/lib/validation/characters.ts and sheetValidator gain the optional sessionFeatures object of the data model (widen only, no SHEET_VERSION bump); tests/convex/session-features-sheet.test.ts proves a stored sheet without it still reads, one with it round-trips through saveSheet/readSheet, and out-of-range values are refused"
+          - "holders.ts: holdsLuckbringer, holdsSlayer, holdsTide, holdsLunarPhases(sheet, scope) exactly as K7 (single / mixed-first Halfling and the Shapeshifter form feature, Slayer by subclass or multiclass, Seaborne, Moon mastery only with hopeAndFear); unit tests cover each branch and a non-holder"
+          - "luckbringer.ts: partyHope(activeSheets) = the number of active Halflings; applyLuckbringer(sheets) adds it to every sheet through applyResourceDelta (capped at hopeMax, K6) and returns the notes ('Luckbringer (Pip, Rosa): everyone gains 2 Hope') - U1"
+          - "slayer.ts: slayerCapacity = Proficiency; canStore(sheet, outcome) only for action-roll outcomes with Hope including critical (K5); storeSlayerDie(sheet, {hopeGained, entryId}) adds a die (refuses past capacity or for an already claimed entryId with CLASS_FEATURE_RULE), removes the Hope the roll gave only when it gave one, keeps a critical's cleared Stress, writes slayerClaim; spendSlayerDice(sheet, n) refuses n above the pool with DICE_RULE; clearSlayerAtEnd(sheet) empties the pool and adds 1 Hope per die, capped (K2, U2, U3, U8)"
+          - "tide.ts: tideCapacity = level; placeTideToken(sheet, outcome, kind) adds one token for a roll with Fear under the Q1 default (action rolls, never a critical, never a reaction), capped; spendTideTokens(sheet, n) refuses n above the held tokens with DICE_RULE and returns the +n modifier; clearTideAtEnd empties them (K3, U4, U5, U8, Q1)"
+          - "lunar.ts: phaseOf(die) (1 New, 2-3 Waxing, 4 Full, 5-6 Waning) with name and effect text; lunarBonuses(sheet) -> { damage: 2 | 0, thresholds: 3 | 0, evasion: 1 | 0 } read only from sessionFeatures.moonDie and holdsLunarPhases; rollMoonDie(sheet, rng); bumpMoonDie(sheet) spends 1 Hope (NOT_ENOUGH_HOPE), refuses without a die or when 'lunarPhasesBump' is already used this rest (CLASS_FEATURE_RULE), +1 with 6 -> 1, marks the featureUse until 'rest'; canNegateMinor(sheet, severity) = New phase, severity minor, Hope >= 1 (K4, U6)"
+          - "session.ts: sessionStartFeatures(activeSheets, rng, scope) = Luckbringer for the party, then a moon die for each Lunar Phases holder; sessionEndFeatures(sheet) = Slayer clear with Hope, Tide clear, moon die removed; both return the next sheets and the report / log notes ('Mira's moon die: 4 (Full: +3 to damage thresholds)', 'Bryn cleared 2 Slayer Dice: +2 Hope', 'Kai cleared 3 Tide tokens', 'Mira's moon die ends'); pure and deterministic with a fixed rng (U1, U6, U8)"
+          - "derived.ts: derivedDefense adds lunarBonuses.evasion (Waning) and derivedThresholds adds lunarBonuses.thresholds to both thresholds (Full); every existing derived test passes unchanged and tests/unit/derived-moon.test.ts covers each phase and a sheet without a die (E6)"
+          - "hooks.ts: rollOptions adds, for every sheet with a Waxing moon die, an auto damage option 'Waxing Moon +2' (any damage type; Lunar Phases only in hopeAndFear scope); afterDualityRoll adds, for a Slayer holder whose pool is not full after an action roll with Hope, the prompt { key: 'slayerStore', featureKey: 'slayerStore', text: 'Take the Hope or store a Slayer Die?', choices: hope 'Take the Hope', store 'Store a Slayer Die' } (U2); existing class modules and the Rally option are untouched"
+          - "Unit tests cover every function above, including two Halflings with one PC at Hope max, a critical stored as a Slayer Die, a store when Hope was already full, the 6 -> 1 bump, a second bump in the same rest and Tide tokens at the level cap"
+
+  # ---------------------------------------------------------------- wave 2: session boundaries, dice, sheet, in parallel
+  - wave: 2
+    tracers:
+      - id: F1
+        title: Session boundaries - Luckbringer and the moon die at Start, Slayer and Tide clear at End, reports and log
+        size: S
+        goal: Starting a session gives the party its Luckbringer Hope and rolls every Moon Witch's die, ending one clears Slayer Dice for Hope, Tide tokens and the moon die, all inside the existing undoable Start and End groups and shown in the reports and the session log instead of the reminders.
+        depends_on: [F0]
+        owns:
+          - convex/sessions.ts
+          - src/components/sessions/live/**
+          - tests/convex/sessions.test.ts
+          - tests/convex/session-features-boundary.test.ts
+          - tests/e2e/session-features-boundary.spec.ts
+          - tests/e2e/visual/SF-F1.spec.ts
+          - docs/tasks/TASK-SF-F1.md
+        reads:
+          - src/lib/domain/session-features/**
+          - src/lib/domain/class-features/hooks.ts
+          - src/lib/domain/characters/expiry.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/characterSheet.ts
+          - convex/lib/sessions.ts
+          - src/app/(gm)/campaigns/[campaignId]/wither-panel.tsx
+          - tests/e2e/class-features.spec.ts
+        acceptance:
+          - "start: after onSessionStart, sessionStartFeatures runs on the active PCs in the campaign's FeatureScope; each changed PC is saved with its row in the Start group, so undoing the group takes back the Luckbringer Hope and the moon dice (U1, U6, E1); two active Halflings give every active PC 2 Hope, a PC at Hope max gains nothing more (U1, K6); a dead or away Halfling gives nothing"
+          - "end: sessionEndFeatures runs on every PC after expire(sheet,'session') and onSessionEnd, also when no session is live (E1); Slayer Dice clear with +1 Hope each (capped), Tide tokens clear, the moon die is removed, all in the End group and undone with it (U8)"
+          - "sessionReminders is removed; Start and End results carry the new optional `features` lines from F0's notes; `reminders` stays optional and unfilled (E2); restarting a played session runs the Start features again (B7, as Prayer Dice)"
+          - "The session log stamps add the same notes after 'Session started.' / 'Session ended.' (D10 B10 format, one line each)"
+          - "tests/convex/sessions.test.ts: the Q8 reminder test is replaced by automation tests (stacked Luckbringer with the Hope cap, a fixed-rng moon die, Slayer clear with Hope, Tide clear, undo of Start and of End restoring all of it); its Horizon doomTier assertion stays; every other test passes unchanged (E1, E2)"
+          - "Live card (src/components/sessions/live): the Start and End reports list the `features` lines where the reminders were; endReportLines (also used by the dashboard's Wither panel) includes them"
+          - "e2e: a party with two Halflings, a Call of the Slayer Warrior holding 2 Slayer Dice and a Seaborne PC holding tokens (seeded through the e2e helpers): Start raises every active PC's Hope by 2 (capped), the report says so; End clears the dice (+2 Hope on the Warrior) and the tokens; the visual spec shoots the Start and End reports"
+      - id: F2
+        title: Dice box - Slayer choice after a roll with Hope, Slayer Dice stepper, automatic Tide tokens, Tide stepper
+        size: M
+        goal: After a roll with Hope a Slayer is asked to take the Hope or store a Slayer Die, attack and damage rolls can spend Slayer Dice that the server rolls and adds, every roll with Fear places a Know the Tide token, and a Seaborne character can spend tokens for +1 each before an action roll.
+        depends_on: [F0]
+        owns:
+          - convex/rolls.ts
+          - src/components/party/dice/**
+          - tests/convex/rolls-session-features.test.ts
+          - tests/e2e/session-features-dice.spec.ts
+          - tests/e2e/visual/SF-F2.spec.ts
+          - docs/tasks/TASK-SF-F2.md
+        reads:
+          - src/lib/domain/session-features/**
+          - src/lib/domain/class-features/hooks.ts
+          - src/lib/domain/dice/index.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/characterSheet.ts
+          - convex/classFeatures.ts
+          - tests/convex/rolls.test.ts
+        acceptance:
+          - "actionRoll, manualRoll (action kind) and damageRoll gain optional `slayerDice` (int >= 0); on an action roll it is accepted only with attack on, on reaction rolls never (DICE_RULE); the server spends them through F0's spendSlayerDice, rolls that many d6 with the server rng (also for a manual roll) and adds them to the roll as extra dice labelled 'Slayer d6', shown in the roll and the feed (U3, K2)"
+          - "actionRoll and manualRoll (action kind) gain optional `tideTokens` (int >= 0): refused with CLASS_FEATURE_RULE for a character without Know the Tide, DICE_RULE above the held tokens; each token adds +1 to the modifier, labelled 'Know the Tide +n' (U5, K3)"
+          - "After the outcome is known, a roll with Fear places a Tide token through F0's placeTideToken in the same saved sheet and the same actionLog row (undoing the roll takes it back): action rolls only, plus tagTeamApply's chosen result for both participants; never a reaction roll or a critical (U4, Q1)"
+          - "keyedUserMutation storeSlayerDie({ characterId, entryId }): edit access (owner or GM); the row must be that character's latest live roll (kind roll, an action roll with Hope including critical, K5), unclaimed (sessionFeatures.slayerClaim), the pool below Proficiency; hopeGained is derived from the row's `before` sheet and the outcome (a roll at Hope max gave none, so none is taken back); one undoable public row 'Bryn stored a Slayer Die (2/3)'; refusals CLASS_FEATURE_RULE / NOT_FOUND as F0 and loadCharacter decide (U2)"
+          - "Dice box: the result keeps its entryId; the 'slayerStore' prompt renders as 'Take the Hope or store a Slayer Die?' with 'Take the Hope' (dismisses, no call) and 'Store a Slayer Die' (calls storeSlayerDie); other prompts still go to classFeatures.use (E3). Tag Team results offer it to each Slayer in the result (Q1)"
+          - "Dice box: '+ Slayer Dice' stepper (max = the pool) under Roll options on attack rolls and damage rolls for Slayer holders with dice; '+ Tide tokens' stepper (max = held tokens) on action rolls, rendered ONLY when the sheet holds Know the Tide (holdsTide) - never for others, not even disabled (U5); both reset after a roll"
+          - "tests/convex/rolls-session-features.test.ts covers each new argument and storeSlayerDie for anonymous, outsider, player owner, player non-owner and GM, plus: spend more than held, store twice for one roll, store at a full pool, store after a later roll, store at Hope max, critical keeps the cleared Stress, Fear roll at the level cap, reaction roll with Fear places nothing, undo of a roll removes its token; tests/convex/rolls.test.ts passes unchanged (E3)"
+          - "e2e: a Slayer Warrior rolls with Hope (fixed dice via manual roll), stores a Slayer Die (chip count 1, Hope unchanged), spends it on a damage roll ('Slayer d6' in the result); a Seaborne PC rolls with Fear (token 1), spends it on the next action roll (+1 shown); a non-Seaborne PC's dice box has no Tide stepper; the visual spec shoots the prompt and both steppers"
+      - id: F3
+        title: Character sheet - Class Features chips, Lunar Phases section with moon pictures and the bump, New Moon negates Minor damage
+        size: M
+        goal: The Class Features box shows the Slayer pool, Tide tokens and moon die as chips, a Moon Witch with the mastery sees a Lunar Phases section with the four drawn moon phases, the current one highlighted, and a once-per-rest bump, and under a New moon the damage calculator offers to spend a Hope to negate Minor damage.
+        depends_on: [F0]
+        owns:
+          - convex/sessionFeatures.ts
+          - convex/characters.ts
+          - src/components/party/features/panel.tsx
+          - src/components/party/features/features.css
+          - src/components/party/lunar/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-one.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/damage-calculator.tsx
+          - tests/convex/session-features.test.ts
+          - tests/unit/lunar-phases-render.test.tsx
+          - tests/e2e/session-features-sheet.spec.ts
+          - tests/e2e/visual/SF-F3.spec.ts
+          - docs/tasks/TASK-SF-F3.md
+        reads:
+          - src/lib/domain/session-features/**
+          - src/lib/domain/characters/derived.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/class-features.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-helpers.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/hp-stress.tsx
+          - src/components/party/sheet-ui/index.tsx
+          - convex/lib/characterSheet.ts
+          - convex/lib/actionLog.ts
+        acceptance:
+          - "FeaturesBox chips (U7): 'Slayer Dice n/Proficiency' for Slayer holders, 'Tide tokens n/level' for Seaborne, 'Moon die n: <Phase>' for a die; each only for its holder and only when non-zero (Slayer and Tide) or present (moon); Rally and Prayer chips and the class counters unchanged (E5)"
+          - "keyedUserMutation sessionFeatures.bumpMoonDie({ characterId }): edit access; F0's bumpMoonDie (1 Hope, once per rest, 6 -> 1); refusals NOT_ENOUGH_HOPE / CLASS_FEATURE_RULE; one undoable public actionLog row 'Mira spent a Hope: moon die 3 -> 4 (Full)' (U6)"
+          - "characters.applyDamage gains optional `negateMinor: true`: allowed only when F0's canNegateMinor holds for the severity after the Armor Slot (else CLASS_FEATURE_RULE); spends 1 Hope, marks no Hit Point (the Armor Slot, if chosen, is still marked), returns severity 'minor' with marks 0, and writes one undoable public row 'Mira spent a Hope: the New Moon negates Minor damage'; without the argument nothing changes (E4)"
+          - "Damage calculator: when the planned severity is Minor and the moon die is New, a 'Spend a Hope to negate this Minor damage' button next to Apply (disabled with the reason at 0 Hope); the thresholds it shows already include Full's +3 through derivedThresholds (U6)"
+          - "src/components/party/lunar: a 'Lunar Phases' section mounted on page one right after the Class Features box, rendered ONLY for holdsLunarPhases (Moon Witch with mastery, hopeAndFear on), never for others; four phase cards New, Waxing, Full, Waning, each with its moon drawn as inline SVG (dark disc, a lit crescent, half and full disc and a waning crescent; no external images, accessible names 'New moon' etc.), the roll range and effect text; the current phase highlighted (aria-current) with its effect; the die value or 'No moon die: rolled when the session starts'; the 'Spend a Hope: +1 to the moon die' button (disabled with the reason when used this rest, no die, or 0 Hope) with an optimistic die change (U6)"
+          - "tests/convex/session-features.test.ts covers bumpMoonDie and applyDamage negateMinor for anonymous, outsider, player owner, player non-owner and GM, plus: bump without a die, a second bump in the same rest, a bump after a short rest, 6 -> 1, negate under Waxing or on Major damage refused, negate at 0 Hope refused, undo of each row; tests/unit/lunar-phases-render.test.tsx proves the section is absent for a non-Moon sheet and for a Moon Witch below mastery"
+          - "e2e: a Moon Witch with mastery and a seeded moon die of 1 sees the section with New highlighted, takes Minor damage and negates it (Hope -1, no Hit Point); bumps the die to 2 (Waxing highlighted, the bump button now disabled); a Slayer and a Seaborne PC show their chips; another PC's sheet shows no Lunar Phases section; the visual spec shoots the section (each phase highlighted once via seeded dice) and the chips"
+
+  # ---------------------------------------------------------------- wave 3: end to end
+  - wave: 3
+    tracers:
+      - id: F4
+        title: End-to-end pass, docs and follow-ups
+        size: S
+        goal: One browser flow plays a whole session with all four features, from Start through rolls, damage and the bump to End, and every rule, decision and kept behaviour is checked against the app with gaps filed.
+        depends_on: [F1, F2, F3]
+        owns:
+          - tests/e2e/session-features-flow.spec.ts
+          - docs/tasks/TASK-SF-F4.md
+        reads:
+          - convex/sessions.ts
+          - convex/rolls.ts
+          - convex/sessionFeatures.ts
+          - convex/characters.ts
+          - src/lib/domain/session-features/**
+          - src/components/party/dice/**
+          - src/components/party/lunar/**
+          - src/components/sessions/live/**
+        acceptance:
+          - "One spec at 1440 and 1024 px in a Hope & Fear campaign with a Halfling, a Call of the Slayer Warrior, a Seaborne PC and a Moon Witch at mastery: the GM starts the session (every active PC +1 Hope, capped; the Witch's moon die appears on her chip and Lunar Phases section; the report and the session log list both); the Warrior stores a Slayer Die and spends it on a damage roll; the Seaborne PC gains a token on a roll with Fear and spends it; the Witch bumps the die; the GM ends the session (Slayer Dice and tokens cleared, the Warrior's Hope rises per die left, the moon die gone); undoing the End from the feed brings back the dice, tokens and die"
+          - "A player sees their own steppers and chips only; the Tide stepper never appears for the non-Seaborne PCs (U5); the Lunar Phases section never appears on the other sheets (U6)"
+          - "Checks every K1-K7, U1-U8 and E1-E6 against the app and lists any gap in the task doc; each gap is filed as a bead under dcm-bxp; bead dcm-bxp.58 closes when merged"
+          - "Files follow-up beads: Weapon Specialist's Slayer Dice reroll and Martial Preparation's ally Slayer Die (out of scope, to be specified by the user first); authz-matrix entries for every function this plan added or changed (D12)"
