@@ -110,6 +110,8 @@ waves:
           - src/components/combat-map/map-view/movement-overlay.tsx
           - src/components/combat-map/map-view/paint-spec.ts
           - src/components/combat-map/map-view/map-canvas.tsx
+          - src/lib/combat-map/painter.ts
+          - src/lib/combat-map/sprites/**
           - tests/e2e/combat-movement.spec.ts
           - tests/e2e/visual/MV-M1.spec.ts
           - docs/tasks/TASK-MV-M1.md
