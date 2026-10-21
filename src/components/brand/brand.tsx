@@ -10,9 +10,9 @@ import { cn } from "@/lib/utils";
  * ground; public/brand/daggerheart-emblem.webp, 451 x 512). `size` is its height in px. Decorative: the wordmark beside it
  * names the app.
  */
-export function LogoMark({ size = 56 }: { size?: number }) {
+export function LogoMark({ size = 56, className }: { size?: number; className?: string }) {
   // eslint-disable-next-line @next/next/no-img-element -- a small static asset from public/, already optimised
-  return <img src="/brand/daggerheart-emblem.webp" width={Math.round((size * 451) / 512)} height={size} alt="" aria-hidden="true" className="select-none" />;
+  return <img src="/brand/daggerheart-emblem.webp" width={Math.round((size * 451) / 512)} height={size} alt="" aria-hidden="true" className={cn("select-none", className)} />;
 }
 
 export function Wordmark({ className }: { className?: string }) {

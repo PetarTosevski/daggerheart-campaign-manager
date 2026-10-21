@@ -37,9 +37,9 @@ export function TitleMenu() {
   const latest = campaigns?.[0];
 
   return (
-    <main className="flex min-h-screen flex-col items-center bg-ink px-6 pt-16 pb-12 text-parchment">
+    <main className="flex min-h-screen flex-col items-center bg-ink px-6 pt-[max(4rem,16vh)] pb-12 text-parchment">
       <div className="flex flex-col items-center gap-3.5 text-center">
-        <LogoMark size={110} />
+        <LogoMark size={110} className="mb-6" />
         <h1 className="font-display text-[clamp(28px,8.4vw,104px)] leading-none font-black tracking-[0.08em]">
           DAGGERHEART
         </h1>
