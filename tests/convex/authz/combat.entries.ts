@@ -6,7 +6,8 @@ import { freshKey } from "./synth";
 
 /**
  * Authz matrix: combat (combatMaps, combatMapEdit, combatMapGenerate, combatMapStyle, combatTokens, combatVision,
- * spritePacks). Filled by tracer H11 (.omc/plans/d12-hardening.yaml; beads dcm-bxp.51, dcm-bxp.88).
+ * spritePacks). Filled by tracer H11 (.omc/plans/d12-hardening.yaml; beads dcm-bxp.51, dcm-bxp.88). combatActions and
+ * combatRequests added by CA3 (.omc/plans/combat-actions.yaml); their content checks are in combat-attack*.test.ts.
  *
  * The area's setup gives every world a live medium map (the campaign's first map is live at once), characterA's PC
  * token at (5, 10) facing east, characterB's at (5, 14), a custom enemy token at (15, 10), and a closed door at
@@ -241,10 +242,106 @@ const packs: Entry[] = [
   { fn: api.spritePacks.reorderSprite, access: "gm", setup: sprites, args: () => ({ direction: "down" }) },
 ];
 
+/**
+ * Weapon attacks (plan combat-actions CA3): a running encounter with a Minion pack ("Minion (1)", Difficulty 1) next to
+ * characterA's token at (6, 10), so every attack hits and offers extra Minions, and an archer at (8, 10), out of melee
+ * range, so an attack on it waits for the GM. Registers `packId`, `packToken`, `archerToken`.
+ */
+async function arena(w: World) {
+  const { campaignId } = w;
+  const mapId = w.ids.mapId as Id<"combatMaps">;
+  const now = Date.now();
+  const ids = await w.t.run(async (ctx) => {
+    const encounterId = await ctx.db.insert("encounters", { campaignId, name: "Ambush", status: "running", pcs: 2, adjustments: [], gmTurn: 1, createdAt: now, updatedAt: now, startedAt: now });
+    const customId = await ctx.db.insert("customAdversaries", {
+      campaignId,
+      name: "Rat",
+      tier: 1,
+      type: "Minion",
+      description: "",
+      motives: "",
+      difficulty: 1,
+      thresholds: { major: null, severe: null },
+      hp: 1,
+      stress: 1,
+      attack: { modifier: 0, name: "Bite", range: "Melee", damage: "1 phy" },
+      experiences: [],
+      features: [{ name: "Minion (1)", kind: "passive", text: "" }],
+      createdAt: now,
+      updatedAt: now,
+    });
+    const base = { campaignId, encounterId, summoned: false, hp: 0, stress: 0, defeated: false, conditions: [], tags: [], spotlights: 0, spotlightTurn: 0, updatedAt: now };
+    const pack = await ctx.db.insert("encounterAdversaries", {
+      ...base,
+      source: { kind: "custom", customId },
+      label: "Rats",
+      order: 0,
+      minionCount: 6,
+      stats: { difficulty: 1, major: null, severe: null, hpMax: 6, stressMax: 1 },
+    });
+    const archer = await ctx.db.insert("encounterAdversaries", {
+      ...base,
+      source: { kind: "srd", adversaryId: "bear" },
+      label: "Archer",
+      order: 1,
+      stats: { difficulty: 1, major: 100, severe: 200, hpMax: 5, stressMax: 1 },
+    });
+    const token = { campaignId, mapId, size: 1, light: "none" as const, revealedTo: [], side: "enemy" as const, face: Math.PI };
+    const packToken = await ctx.db.insert("combatTokens", { ...token, ref: { kind: "adversary", adversaryId: pack }, x: 6, y: 10 });
+    const archerToken = await ctx.db.insert("combatTokens", { ...token, ref: { kind: "adversary", adversaryId: archer }, x: 8, y: 10 });
+    return { pack, packToken, archerToken };
+  });
+  w.set("packId", ids.pack);
+  w.set("packToken", ids.packToken);
+  w.set("archerToken", ids.archerToken);
+}
+
+function attackArgs(w: World, target: string) {
+  return {
+    characterId: w.characterA,
+    mapId: w.ids.mapId,
+    targetTokenIds: [target],
+    slot: "primary",
+    modifier: 0,
+    experienceIds: [],
+    advantage: 0,
+    disadvantage: 0,
+    help: 0,
+    options: [],
+  };
+}
+
+/** characterA's player attacks the pack: a resolved attack with a Minion offer (`entryId`). */
+async function attacked(w: World) {
+  await arena(w);
+  const r = await w.as("player").mutation(api.combatActions.attack, { campaignId: w.campaignId, idempotencyKey: freshKey(), ...attackArgs(w, w.ids.packToken!) } as never);
+  if (r.status !== "resolved" || r.minionOffer === null) throw new Error("expected a resolved attack with a Minion offer");
+  w.set("entryId", r.entryId);
+}
+
+/** characterA's player attacks the archer out of range: an open sanction (`requestId`). */
+async function sanctioned(w: World) {
+  await arena(w);
+  const r = await w.as("player").mutation(api.combatActions.attack, { campaignId: w.campaignId, idempotencyKey: freshKey(), ...attackArgs(w, w.ids.archerToken!) } as never);
+  if (r.status !== "pending") throw new Error("expected a pending attack");
+  w.set("requestId", r.requestId);
+}
+
+// Another player acting for characterA is refused by `loadCharacter` (edit on the character).
+const NOT_THEIRS = { otherPlayer: "FORBIDDEN" } as const;
+
+const attacks: Entry[] = [
+  { fn: api.combatActions.attack, access: "view", setup: arena, args: (w) => attackArgs(w, w.ids.packToken!), expect: NOT_THEIRS },
+  { fn: api.combatActions.targets, access: "view", setup: arena, args: (w) => ({ characterId: w.characterA, mapId: w.ids.mapId }), expect: NOT_THEIRS },
+  { fn: api.combatActions.pickMinions, access: "view", setup: attacked, args: (w) => ({ entryId: w.ids.entryId, instanceIds: [w.ids.packId] }), expect: NOT_THEIRS },
+  { fn: api.combatRequests.sanction, access: "gm", setup: sanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
+  { fn: api.combatRequests.mine, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
+];
+
 const area: Area = {
   area: "combat",
   setup,
-  entries: [...maps, ...edit, ...generate, ...style, ...tokens, ...vision, ...packs],
+  entries: [...maps, ...edit, ...generate, ...style, ...tokens, ...vision, ...packs, ...attacks],
   pending: [],
 };
 
