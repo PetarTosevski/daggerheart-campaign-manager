@@ -1,14 +1,20 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import { paintTile, isEmptyTile, squaresByTile } from "../src/components/combat-map/editor/edit-model";
 import {
+  boxSeen,
   encodeExplored,
   exploredGrows,
   givesLight,
   mergeExplored,
+  objectSampleBox,
   pointLevel,
+  sightOf,
   visibleSquares,
+  type VisionObject,
 } from "../src/lib/domain/combat-map/index";
+import { isDoor } from "../src/lib/domain/combat-map/movement";
+import { spriteMove } from "../src/lib/sprite-packs/index";
 import { appError } from "../src/lib/errors/app-error";
 import { tokenViewValidator } from "./combatTokens";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -37,10 +43,11 @@ import {
   storedExplored,
   viewOf,
   visionMaskValidator,
+  type Scene,
   type ViewResult,
 } from "./lib/combatVision";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery } from "./lib/functions";
-import { loadObjectTraits } from "./lib/spriteSources";
+import { loadObjectTraits, resolveRefs, type UploadedSprites } from "./lib/spriteSources";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
 import { carriedLightValidator } from "./lib/validators/combatMaps";
 
@@ -57,6 +64,9 @@ import { carriedLightValidator } from "./lib/validators/combatMaps";
  * - `setCarriedLight`: any token's light for the GM, a player's own PC token's (R9, Q3).
  * - `toggleLight`: a map light on or off; the GM always, a player only when one of their characters on the live
  *   map sees it now or has explored its square (COMBAT_LIGHT_NOT_SEEN, R9).
+ * - `doors` / `toggleDoor` (map-movement M2, D7, D8): the doors the caller may switch, and a door opened or closed;
+ *   the GM always, a player only on the live map and only a door one of their characters sees now or has explored
+ *   (an unseen door answers COMBAT_OBJECT_NOT_FOUND, as if it were not there).
  * - `explored` / `markExplored`: a character's explored samples (R11), merged, written only when they grow.
  * - `paintFog` (GM): reveal / hide / erase marks on the fog layer (R12); they decide token visibility too (user
  *   2026-10-20: "reveal" squares are clear, "hide" squares unseen).
@@ -98,6 +108,24 @@ const viewResultValidator = v.union(
 type ViewState = { state: "noMap" } | { state: "noCharacter"; mapId: Id<"combatMaps"> } | ViewResult;
 
 const fogMarkValidator = v.union(v.literal("reveal"), v.literal("hide"), v.literal("erase"));
+
+/**
+ * A door the caller may switch (map-movement M2): where it stands (centre, radius and rotation, as the layout has
+ * them), whether it is open, and whether it is solid (blocks sight while closed: the Classic door, the wooden door
+ * sprite) or bars / a gate (see-through cover while closed, D7).
+ */
+const doorViewValidator = v.object({
+  _id: v.id("combatMapObjects"),
+  x: v.number(),
+  y: v.number(),
+  r: v.number(),
+  rot: v.number(),
+  open: v.boolean(),
+  solid: v.boolean(),
+});
+export type DoorView = Infer<typeof doorViewValidator>;
+
+const doorsResultValidator = v.union(v.null(), v.object({ mapId: v.id("combatMaps"), doors: v.array(doorViewValidator) }));
 
 // ---------------------------------------------------------------- helpers
 
@@ -316,21 +344,128 @@ export const toggleLight = campaignMutation({
   },
 });
 
-/** Whether a character the caller plays (edit permission) on this map sees the object now or has explored its square. */
-async function hasSeen(ctx: CampaignCtx<MutationCtx>, map: Doc<"combatMaps">, object: Doc<"combatMapObjects">): Promise<boolean> {
-  const scene = await loadScene(ctx, ctx.campaign, map);
+/** The views of the characters the caller plays (edit permission) on the scene's map, with their explored masks. */
+async function ownViewers(ctx: CampaignCtx<QueryCtx>, scene: Scene) {
+  const out: { view: NonNullable<ReturnType<typeof viewOf>>["view"]; explored: Uint8Array }[] = [];
   for (const token of scene.tokens) {
     if (token.ref.kind !== "pc") continue;
     const character = await ctx.db.get("characters", token.ref.characterId);
     if (character === null || character.campaignId !== ctx.campaign._id || !(await canActFor(ctx, character))) continue;
     const viewer = viewOf(scene, character);
     if (viewer === null) continue;
-    if (pointLevel(viewer.view, object.x, object.y) > 0) return true;
-    const mask = storedExplored(await exploredRow(ctx, map._id, character._id), map.w, map.h);
-    if (mask[sampleIndex(scene.prepared, object.x, object.y)]) return true;
+    out.push({ view: viewer.view, explored: storedExplored(await exploredRow(ctx, scene.map._id, character._id), scene.map.w, scene.map.h) });
+  }
+  return out;
+}
+
+/** Whether a character the caller plays (edit permission) on this map sees the object now or has explored its square. */
+async function hasSeen(ctx: CampaignCtx<MutationCtx>, map: Doc<"combatMaps">, object: Doc<"combatMapObjects">): Promise<boolean> {
+  const scene = await loadScene(ctx, ctx.campaign, map);
+  for (const { view, explored } of await ownViewers(ctx, scene)) {
+    if (pointLevel(view, object.x, object.y) > 0) return true;
+    if (explored[sampleIndex(scene.prepared, object.x, object.y)]) return true;
   }
   return false;
 }
+
+// ---------------------------------------------------------------- doors (map-movement M2)
+
+/** Whether the row is a door (D7): its sprite's `move` is "door", or it has none and its Classic kind is `door`. */
+function isDoorRow(object: Doc<"combatMapObjects">, uploaded: UploadedSprites): boolean {
+  const move = object.sprite === undefined ? null : spriteMove(object.sprite, { uploaded: (id) => uploaded.get(id) });
+  return isDoor({ kind: object.kind, move });
+}
+
+/** The doors on the scene's map, with their engine objects (index-aligned with `scene.objects`). */
+function sceneDoors(scene: Scene): { row: Doc<"combatMapObjects">; vision: VisionObject }[] {
+  const out: { row: Doc<"combatMapObjects">; vision: VisionObject }[] = [];
+  scene.objects.forEach((row, i) => {
+    const vision = scene.visionObjects[i];
+    if (vision !== undefined && isDoorRow(row, scene.uploaded)) out.push({ row, vision });
+  });
+  return out;
+}
+
+/**
+ * Whether any of the viewers sees any sample the door stands on now, or has explored one (D8, the toggleLight rule
+ * over the door's footprint: a closed door hides its own centre from anyone looking at its face).
+ */
+function doorSeen(scene: Scene, viewers: Awaited<ReturnType<typeof ownViewers>>, door: VisionObject): boolean {
+  const box = objectSampleBox(scene.prepared, door);
+  return viewers.some(({ view, explored }) => boxSeen(view, box, explored));
+}
+
+function doorView(row: Doc<"combatMapObjects">, vision: VisionObject): DoorView {
+  return {
+    _id: row._id,
+    x: row.x,
+    y: row.y,
+    r: row.r,
+    rot: row.rot,
+    open: row.open === true,
+    solid: sightOf({ ...vision, open: false }) === "block",
+  };
+}
+
+/**
+ * The doors the caller may switch on a map (D8): the GM every door on `mapId` (default: the live map); a player the
+ * live map's doors one of their characters sees now or has explored, and nothing else (a door they have not seen is
+ * never sent). Null without a map.
+ */
+export const doors = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: { mapId: v.optional(v.string()) },
+  returns: doorsResultValidator,
+  handler: async (ctx, { mapId }) => {
+    const map = await targetMap(ctx, mapId);
+    if (map === null) return null;
+    const scene = await loadScene(ctx, ctx.campaign, map);
+    const all = sceneDoors(scene);
+    if (atLeast(ctx.permission, "owner")) return { mapId: map._id, doors: all.map(({ row, vision }) => doorView(row, vision)) };
+    if (all.length === 0) return { mapId: map._id, doors: [] };
+    const viewers = await ownViewers(ctx, scene);
+    return {
+      mapId: map._id,
+      doors: all.filter(({ vision }) => doorSeen(scene, viewers, vision)).map(({ row, vision }) => doorView(row, vision)),
+    };
+  },
+});
+
+/**
+ * Opens or closes a door (D7, D8): `open` is the wanted state, so a double click cannot undo itself. The GM always;
+ * a player only on the live map (COMBAT_MAP_NOT_FOUND) and only a door one of their characters sees now or has
+ * explored (else COMBAT_OBJECT_NOT_FOUND, exactly as for an object that is not there, so a refusal tells a player
+ * nothing about doors they have not seen). INVALID for an object that is not a door. Closed is stored as an absent
+ * `open`. A closed door blocks movement (M0 `movement.ts` reads `open`); a closed solid door blocks sight
+ * (`sightOf`); an open door does neither.
+ */
+export const toggleDoor = campaignMutation({
+  need: "view",
+  enough: "owner",
+  args: { objectId: v.string(), open: v.boolean() },
+  returns: v.object({ open: v.boolean() }),
+  handler: async (ctx, { objectId, open }) => {
+    const { object, map } = await loadCombatObject(ctx, ctx.campaign._id, objectId);
+    if (atLeast(ctx.permission, "owner")) {
+      if (!isDoorRow(object, await resolveRefs(ctx, ctx.campaign._id, [object.sprite]))) throw appError("INVALID", "Only doors open and close.");
+    } else {
+      if (!map.live) throw appError("COMBAT_MAP_NOT_FOUND");
+      const scene = await loadScene(ctx, ctx.campaign, map);
+      const door = sceneDoors(scene).find(({ row }) => row._id === object._id);
+      if (door === undefined) {
+        // Not a door: INVALID once the player has seen the object, else as if it were not there.
+        const i = scene.objects.findIndex((row) => row._id === object._id);
+        const vision = scene.visionObjects[i];
+        if (vision !== undefined && doorSeen(scene, await ownViewers(ctx, scene), vision)) throw appError("INVALID", "Only doors open and close.");
+        throw appError("COMBAT_OBJECT_NOT_FOUND");
+      }
+      if (!doorSeen(scene, await ownViewers(ctx, scene), door.vision)) throw appError("COMBAT_OBJECT_NOT_FOUND");
+    }
+    if ((object.open === true) !== open) await ctx.db.patch("combatMapObjects", object._id, { open: open ? true : undefined });
+    return { open };
+  },
+});
 
 /**
  * GM: one fog brush stroke (R12) on the map's fog layer: "reveal" (those squares are clear for every player,

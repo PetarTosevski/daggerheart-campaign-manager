@@ -17,7 +17,9 @@ import { useTokens } from "../tokens/use-tokens";
 import { FOG_COLOURS, UNSEEN_CSS, fogImage, maskAt, type FogMasks } from "./fog";
 import { useCampaignLight } from "./use-campaign-light";
 import {
+  doorLabels,
   okView,
+  useDoors,
   useExploredSync,
   useFogMasks,
   useStoredExplored,
@@ -222,6 +224,10 @@ export function VisionLayer(props: MapLayerProps) {
       .join("");
   }, [viewing.kind, view, tokens]);
 
+  // ---- doors the viewer may switch (map-movement M2, D8): the server sends only those (players: the ones seen).
+  const doors = useDoors(props);
+  const labels = doorLabels(doors);
+
   // ---- lights the viewer may switch (R9): the GM every campfire and wall torch; a player those seen or explored.
   const lights = editing
     ? []
@@ -295,6 +301,28 @@ export function VisionLayer(props: MapLayerProps) {
                 style={{ left: (o.x + pad) * step, top: (o.y + pad) * step, width: size, height: size }}
                 onPointerDown={(e) => e.preventDefault()}
                 onClick={() => void actions.setLit(o._id as Id<"combatMapObjects">, !lit)}
+              />
+            );
+          })}
+        </div>
+      ) : null}
+      {doors.length > 0 && !editing ? (
+        <div className="cm-vis-lights">
+          {doors.map((d) => {
+            const label = (labels.get(d._id) ?? "Door").toLowerCase();
+            const size = Math.max(0.9, d.r * 1.2) * step;
+            return (
+              <button
+                key={d._id}
+                type="button"
+                className="cm-vis-light cm-vis-door"
+                data-testid="combat-door"
+                aria-pressed={d.open}
+                aria-label={`${d.open ? "Close" : "Open"} ${label}`}
+                title={`${label}: ${d.open ? "open, click to close it" : "closed, click to open it"}`}
+                style={{ left: (d.x + pad) * step, top: (d.y + pad) * step, width: size, height: size }}
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => void actions.setOpen(d._id, !d.open)}
               />
             );
           })}

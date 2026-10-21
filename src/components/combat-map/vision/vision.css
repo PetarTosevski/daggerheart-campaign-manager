@@ -56,6 +56,17 @@
 .cm-vis-light[aria-pressed="false"]:focus-visible {
   border-style: dashed;
 }
+/* A switch over a door (map-movement M2): like a light switch, but square; dashed while the door is closed. */
+.cm-vis-door {
+  border-radius: 4px;
+}
+.cm-vis-doors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
 /* The fog brush takes the pointer over the whole map, tokens included (R12). */
 .cm-vis-brush {
   position: absolute;

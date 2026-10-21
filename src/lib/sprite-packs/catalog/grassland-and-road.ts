@@ -10,7 +10,7 @@ export const GRASSLAND_AND_ROAD = defineFolder("grassland-and-road", {
     obj("fence post", "none", "low", "pillar", { standIn: false }),
     obj("rock", "cover", "low", "rock"),
     obj("shrub", "cover", "low", "bush"),
-    obj("wooden gate", "cover", "low", "log", { move: "door", footprint: "rect", standIn: false }),
+    obj("wooden gate", "cover", "low", "door", { move: "door", footprint: "rect", standIn: false }),
     obj("scarecrow", "none", "tall", "deadtree", { standIn: false }),
     obj("beehive", "cover", "low", "barrel", { standIn: false }),
     obj("trough", "cover", "low", "crate", { footprint: "rect", standIn: false }),

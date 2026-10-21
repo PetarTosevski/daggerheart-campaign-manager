@@ -100,7 +100,8 @@ describe("clean (port of the board's CMAP.clean)", () => {
   it("knows every board terrain and object kind", () => {
     expect(TERRAINS).toHaveLength(14);
     expect(OBJECT_KINDS).toContain("walltorch");
-    expect(OBJECT_KINDS).toHaveLength(22);
+    expect(OBJECT_KINDS).toContain("door");
+    expect(OBJECT_KINDS).toHaveLength(23);
   });
 });
 

@@ -29,7 +29,7 @@ export const SEWERS = defineFolder("sewers", {
     obj("rat nest", "cover", "low", "rubble", { standIn: false }),
     long("stone bridge over channel", "none", "flat", "log", { move: "open", standIn: false }),
     obj("thieves' hideout corner", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
-    obj("iron gate", "cover", "tall", "pillar", { move: "door", footprint: "rect", standIn: false }),
+    obj("iron gate", "cover", "tall", "door", { move: "door", footprint: "rect", standIn: false }),
     obj("flooded chamber", "none", "flat", "rock", { move: "difficult", footprint: "rect", standIn: false }),
   ],
   terrain: [

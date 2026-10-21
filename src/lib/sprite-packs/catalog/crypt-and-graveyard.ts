@@ -27,7 +27,7 @@ export const CRYPT_AND_GRAVEYARD = defineFolder("crypt-and-graveyard", {
     obj("open grave", "none", "flat", "rubble", { footprint: "rect", standIn: false }),
     obj("dead tree", "none", "tall", "deadtree"),
     obj("angel statue", "block", "tall", "statue"),
-    obj("crypt gate", "cover", "tall", "pillar", { move: "door", footprint: "rect", standIn: false }),
+    obj("crypt gate", "cover", "tall", "door", { move: "door", footprint: "rect", standIn: false }),
     obj("bone pile", "cover", "low", "bones", { standIn: false }),
     obj("ossuary shelf", "block", "tall", "crate", { footprint: "rect", standIn: false }),
     long("catacomb niche wall", "block", "tall", "pillar", { standIn: false }),

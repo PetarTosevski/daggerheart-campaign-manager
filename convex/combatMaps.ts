@@ -79,6 +79,8 @@ const objectViewValidator = v.object({
   points: v.optional(v.array(pointValidator)),
   sight: v.optional(sightModeValidator),
   lit: v.optional(v.boolean()),
+  /** Doors only (map-movement M2): true = open; absent = closed (every row written before M2 reads as closed). */
+  open: v.optional(v.boolean()),
   /** Sprite packs: the object's sprite (absent = mapped from `kind` in the Sprites style, D1). */
   sprite: v.optional(spriteRefValidator),
 });
@@ -205,7 +207,7 @@ async function layoutOf(ctx: QueryCtx, map: Doc<"combatMaps">, gm: boolean): Pro
     seed: map.seed,
     updatedAt: map.updatedAt,
     image: map.image ? { url: await imageUrl(ctx, map), grid: map.image.grid } : null,
-    objects: objects.map(({ _id, kind, x, y, r, rot, variant, len, span, points, sight, lit, sprite }) => ({
+    objects: objects.map(({ _id, kind, x, y, r, rot, variant, len, span, points, sight, lit, open, sprite }) => ({
       _id,
       kind,
       x,
@@ -218,6 +220,7 @@ async function layoutOf(ctx: QueryCtx, map: Doc<"combatMaps">, gm: boolean): Pro
       ...(points === undefined ? {} : { points }),
       ...(sight === undefined ? {} : { sight }),
       ...(lit === undefined ? {} : { lit }),
+      ...(open === true ? { open } : {}),
       ...(sprite === undefined ? {} : { sprite }),
     })),
     cells: cells.flatMap(({ layer, tile, cells: text }) => (layer === "texture" ? [] : [{ layer, tile, cells: text }])),

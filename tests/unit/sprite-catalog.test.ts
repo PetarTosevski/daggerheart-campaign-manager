@@ -444,6 +444,23 @@ describe("movement trait (map-movement M0, D1, D2; doors: user answer 2026-10-21
     }
   });
 
+  it("map-movement M2: the six door sprites map to Classic `door` and keep move \"door\"; exactly those", () => {
+    const doors = [
+      "dungeon/wooden-door-closed",
+      "dungeon/portcullis-section",
+      "crypt-and-graveyard/crypt-gate",
+      "sewers/iron-gate",
+      "grassland-and-road/wooden-gate",
+      "town-street-and-market/wooden-fence-gate",
+    ];
+    for (const key of doors) {
+      const e = catalogEntry(key);
+      expect([key, e?.category === "object" ? e.classic.kind : null, e?.move]).toEqual([key, "door", "door"]);
+    }
+    const classicDoors = CATALOG_ENTRIES.filter((e) => e.category === "object" && e.classic.kind === "door").map((e) => e.key);
+    expect(classicDoors.sort()).toEqual([...doors].sort());
+  });
+
   it("pins the plan's examples: buildings and fences block, gates and doors are doors, plot / rubble / brambles are difficult, the trapdoor and a rug are open", () => {
     const move = (key: string) => catalogEntry(key)?.move;
     expect(["thatched-cottage", "stone-cottage", "timber-barn", "wooden-fence-section"].map((k) => move(`town-street-and-market/${k}`))).toEqual(Array(4).fill("block"));

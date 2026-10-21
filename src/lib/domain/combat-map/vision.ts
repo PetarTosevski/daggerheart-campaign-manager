@@ -77,6 +77,8 @@ export type VisionObject = {
   readonly r?: number;
   readonly sight?: SightMode | null;
   readonly lit?: boolean | null;
+  /** Doors only (map-movement M2): true = open, so it blocks no sight (`sightOf`); absent = closed. */
+  readonly open?: boolean | null;
   /** Rotation in radians (turns rect footprints). */
   readonly rot?: number | null;
   /** Sprite traits (sprite-packs P3); absent = the Classic kind's behaviour, unchanged. */
@@ -504,6 +506,59 @@ export function sampleLevel(view: ViewerView, sx: number, sy: number): 0 | 1 | 2
 /** Level at a point in squares (e.g. a map light's centre, for C7's toggleLight). */
 export function pointLevel(view: ViewerView, x: number, y: number): 0 | 1 | 2 {
   return sampleLevel(view, Math.floor(x * S), Math.floor(y * S));
+}
+
+/** A box of samples, half-open: [sx0, sx1) x [sy0, sy1). */
+export type SampleBox = { readonly sx0: number; readonly sy0: number; readonly sx1: number; readonly sy1: number };
+
+/**
+ * The samples an object stands on (map-movement M2: whether a viewer has seen a door): the axis-aligned box around
+ * its footprint as `prepareMap` blocks it (a rect sprite turned by `rot`, else the circle `r * blockRadiusFactor`),
+ * at least its own square, clamped to the map. A closed door blocks its own samples, so its centre alone is hidden
+ * from anyone who looks at its face; any sample of the box counts.
+ */
+export function objectSampleBox(map: Pick<PreparedMap, "sw" | "sh">, o: VisionObject): SampleBox {
+  const t = o.traits;
+  let ex: number;
+  let ey: number;
+  if (t && t.footprint === "rect") {
+    const tw = t.w > 0 ? t.w : 1;
+    const th = t.h > 0 ? t.h : 1;
+    const scale = o.r ? o.r / defaultTraitRadius({ w: tw, h: th }) : 1;
+    const rot = Number.isFinite(o.rot) ? (o.rot as number) : 0;
+    const hw = (tw * scale) / 2;
+    const hh = (th * scale) / 2;
+    ex = Math.abs(hw * Math.cos(rot)) + Math.abs(hh * Math.sin(rot));
+    ey = Math.abs(hw * Math.sin(rot)) + Math.abs(hh * Math.cos(rot));
+  } else {
+    ex = ey = (o.r || (t ? defaultTraitRadius(t) : 1)) * blockRadiusFactor(o.kind);
+  }
+  // Samples whose centre lies within the extents (as prepareMap marks them), at least the one holding the centre.
+  const span = (c: number, e: number, size: number): [number, number] => {
+    const e2 = Math.max(0.5, e);
+    let lo = Math.ceil((c - e2) * S - 0.5);
+    let hi = Math.floor((c + e2) * S - 0.5) + 1;
+    if (hi <= lo) {
+      lo = Math.floor(c * S);
+      hi = lo + 1;
+    }
+    return [Math.max(0, lo), Math.min(size, hi)];
+  };
+  const [sx0, sx1] = span(o.x, ex, map.sw);
+  const [sy0, sy1] = span(o.y, ey, map.sh);
+  return { sx0, sy0, sx1, sy1 };
+}
+
+/** Whether any sample of the box is dim or clear for the viewer now, or set in `explored` (index sy * sw + sx). */
+export function boxSeen(view: ViewerView, box: SampleBox, explored?: Uint8Array | null): boolean {
+  const { sw } = view.map;
+  for (let sy = box.sy0; sy < box.sy1; sy++) {
+    for (let sx = box.sx0; sx < box.sx1; sx++) {
+      if (explored?.[sy * sw + sx]) return true;
+      if (sampleLevel(view, sx, sy) > 0) return true;
+    }
+  }
+  return false;
 }
 
 /** Per-sample levels for the whole map (C8 paints fog from this; explored = level > 0). */

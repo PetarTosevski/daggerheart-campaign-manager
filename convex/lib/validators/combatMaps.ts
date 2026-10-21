@@ -125,7 +125,10 @@ export const combatMapFields = {
   texturePalette: v.optional(v.array(spriteRefValidator)),
 };
 
-/** Object kinds of the painter (board `CMAP.KINDS`). Lights: `campfire`, `walltorch` and the board's older `torch` (lit like a wall torch, R9). */
+/**
+ * Object kinds of the painter (board `CMAP.KINDS`). Lights: `campfire`, `walltorch` and the board's older `torch` (lit
+ * like a wall torch, R9). `door` (map-movement M2, D7; widened): a door that opens and closes (`open`).
+ */
 export const COMBAT_OBJECT_KINDS = [
   "tree",
   "bush",
@@ -149,6 +152,7 @@ export const COMBAT_OBJECT_KINDS = [
   "crystal",
   "bones",
   "hull",
+  "door",
 ] as const;
 export type CombatObjectKind = (typeof COMBAT_OBJECT_KINDS)[number];
 export const combatObjectKindValidator = literals(COMBAT_OBJECT_KINDS);
@@ -180,6 +184,12 @@ export const combatObjectFields = {
   sight: v.optional(sightModeValidator),
   /** Lights only (campfire, walltorch): false = switched off. Absent = lit, as on the board. */
   lit: v.optional(v.boolean()),
+  /**
+   * Doors only (map-movement M2, D7: a Classic `door` or a sprite whose `move` is "door"): true = open. Absent = closed.
+   * A closed door blocks movement; a closed solid door blocks sight; an open one does neither. Written by
+   * `combatVision.toggleDoor` only.
+   */
+  open: v.optional(v.boolean()),
   /**
    * Sprites style only: the sprite drawn for this object (D1). `kind` stays its Classic fallback (D2: a light
    * sprite's kind is a light kind of the same reach) and `sight` stays the GM's override (D3).

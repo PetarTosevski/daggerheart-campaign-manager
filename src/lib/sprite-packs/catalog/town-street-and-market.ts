@@ -48,7 +48,7 @@ export const TOWN_STREET_AND_MARKET = defineFolder("town-street-and-market", {
       obj("stone cottage", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 3, standIn: false }),
       obj("timber barn", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 4, standIn: false }),
       obj("wooden fence section", "cover", "low", "log", { move: "block", footprint: "rect", w: 3, h: 1, standIn: false }),
-      obj("wooden fence gate", "cover", "low", "log", { move: "door", footprint: "rect", w: 3, h: 1, standIn: false }),
+      obj("wooden fence gate", "cover", "low", "door", { move: "door", footprint: "rect", w: 3, h: 1, standIn: false }),
       obj("vegetable garden plot", "none", "flat", "rubble", { move: "difficult", footprint: "rect", w: 3, h: 3, standIn: false }),
       obj("haystack", "block", "tall", "boulder", { standIn: false }),
       long("woodpile with chopping block", "cover", "low", "log", { standIn: false }),
