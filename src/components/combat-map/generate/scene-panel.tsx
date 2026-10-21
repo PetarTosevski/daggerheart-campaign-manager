@@ -11,8 +11,10 @@ import { useIntent } from "@/lib/use-intent";
 import { api } from "../../../../convex/_generated/api";
 import type { GenerateResult } from "../../../../convex/combatMapGenerate";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import type { SettingRef } from "../../../../convex/lib/validators/combatMaps";
 import { MapImageButton } from "../maps";
 import type { CombatMapSummary, ScenePanelProps } from "../slots";
+import { SettingSelect } from "./setting-select";
 
 /** The board's size presets (convex/lib/combatMaps.ts MAP_SIZES). */
 const SIZES = [
@@ -64,6 +66,8 @@ export function ScenePanel({ campaignId, map, onMapCreated }: ScenePanelProps) {
   const [draft, setDraft] = useState<{ mapId: Id<"combatMaps"> | null; text: string } | null>(null);
   const [picked, setPicked] = useState<{ mapId: Id<"combatMaps"> | null; size: SizeKey } | null>(null);
   const [busy, setBusy] = useState<{ mapId: Id<"combatMaps"> | null } | null>(null);
+  // Sprite packs P7: the Setting pick before the first map exists (a map stores its own with setSetting).
+  const [pendingSetting, setPendingSetting] = useState<SettingRef | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   // The running generation; Stop or a newer click replaces it, so a late answer is ignored here too.
   const job = useRef(0);
@@ -84,6 +88,8 @@ export function ScenePanel({ campaignId, map, onMapCreated }: ScenePanelProps) {
   const prompt = draft !== null && draft.mapId === mapId ? draft.text : (layout?.prompt ?? "");
   const size = picked !== null && picked.mapId === mapId ? picked.size : sizeOf(map);
   const source = map?.source ?? null;
+  // The setting the GM picked (sent to generate; absent = Let Claude choose): the map's own pick, else the pending one.
+  const pickedSetting: SettingRef | null = map ? (layout?.settingPicked === true && layout.setting ? layout.setting : null) : pendingSetting;
 
   async function run({ target, another }: Run) {
     const desc = prompt.trim();
@@ -110,7 +116,14 @@ export function ScenePanel({ campaignId, map, onMapCreated }: ScenePanelProps) {
       onMapCreated(targetId);
     }
     try {
-      const result = await generate({ campaignId, mapId: targetId, prompt: desc, size, ...(another ? { another: true } : {}) });
+      const result = await generate({
+        campaignId,
+        mapId: targetId,
+        prompt: desc,
+        size,
+        ...(another ? { another: true } : {}),
+        ...(pickedSetting ? { setting: pickedSetting } : {}),
+      });
       if (job.current !== id) return;
       setMessage(resultMessage(result));
     } catch (e) {
@@ -147,6 +160,16 @@ export function ScenePanel({ campaignId, map, onMapCreated }: ScenePanelProps) {
           onChange={(e) => setDraft({ mapId, text: e.target.value })}
         />
       </label>
+      <SettingSelect
+        campaignId={campaignId}
+        mapId={mapId}
+        setting={layout?.setting}
+        settingPicked={layout?.settingPicked === true}
+        generated={source === "generated"}
+        pending={pendingSetting}
+        onPending={setPendingSetting}
+        disabled={disabled}
+      />
       <div className="cm-row cm-scene-sizes" role="group" aria-label="Map size">
         <span className="cm-lbl" aria-hidden="true">
           Size

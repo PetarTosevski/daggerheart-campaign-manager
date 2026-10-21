@@ -3,6 +3,9 @@ import { v, type Infer } from "convex/values";
 import { generateFallbackLayout } from "../src/lib/combat-map/fallback-layout";
 import { clean, mapSpecSchema, type MapSpec } from "../src/lib/domain/combat-map/spec";
 import { appError } from "../src/lib/errors/app-error";
+import { isSettingId, pickSetting, SETTING_LABEL, SETTINGS } from "../src/lib/sprite-packs/index";
+import { fallbackDescription, spriteFallback } from "../src/lib/sprite-packs/sprite-fallback";
+import { buildPalette, cleanSpriteLayout, spritePrompt, type SpritePalette } from "../src/lib/sprite-packs/sprite-layout";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { env, internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -11,9 +14,14 @@ import {
   combatAreaValidator,
   combatObjectKindValidator,
   combatTerrainValidator,
+  mapStyleValidator,
   pointValidator,
+  settingRefValidator,
   sightModeValidator,
+  spriteRefValidator,
+  type SettingRef,
 } from "./lib/validators/combatMaps";
+import { MAX_PACK_SPRITES, MAX_SPRITE_PACKS, spriteCategoryValidator } from "./lib/validators/spritePacks";
 import {
   CELL_TILE_ROWS,
   MAP_SIZES,
@@ -43,6 +51,14 @@ import { DEFAULT_MODEL } from "./photoImport";
  * Saving replaces the map's layout: areas, objects, painted cells (terrain, sight blockers, fog marks) and
  * explored areas go; tokens stay, moved inside the new size. "Stop" (`stop`) bumps the map's `updatedAt`, and a
  * generation whose map changed after it started is dropped, so a stopped or overtaken result never lands.
+ *
+ * Sprite packs (tracer P7, plan `.omc/plans/sprite-packs.yaml`): `generate` takes an optional `setting` (absent =
+ * "Let Claude choose") and saves the resolved setting with the layout (D7). A Sprites map without a picked setting
+ * first asks Claude a short classification call over the setting names (built-in + the campaign's own-setting packs),
+ * then lays out with `spritePrompt` (that setting's and common's sprites and textures, plus the GM's uploaded sprites
+ * of the setting, Q3); the pair is one `combatMapGenerate` use (Q2). A Classic map keeps today's `scenePrompt` (E6);
+ * its setting is the GM's pick (whose label is added to the scene) or the keyword picker's. Without Claude, the
+ * keyword layout is drawn as today and, on a Sprites map, mapped to the setting (`spriteFallback`).
  */
 
 const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
@@ -95,6 +111,8 @@ const sizeValidator = v.union(v.literal("small"), v.literal("medium"), v.literal
 
 const layoutObjectValidator = v.object({
   kind: combatObjectKindValidator,
+  /** Sprites maps: the sprite drawn; `kind` stays its Classic look (D1). */
+  sprite: v.optional(spriteRefValidator),
   x: v.number(),
   y: v.number(),
   r: v.number(),
@@ -180,6 +198,13 @@ class ClaudeFailure extends Error {}
 
 /** One Messages API call; no retry. Returns the parsed JSON reply, or throws ClaudeFailure. */
 async function askClaude(key: string, prompt: string): Promise<unknown> {
+  const parsed = parseReply(await askClaudeText(key, prompt, MAX_TOKENS));
+  if (parsed === null) throw new ClaudeFailure("no JSON");
+  return parsed;
+}
+
+/** One Messages API call of at most `maxTokens`; no retry. Returns the reply's text, or throws ClaudeFailure. */
+async function askClaudeText(key: string, prompt: string, maxTokens: number): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
   let response: Response;
@@ -189,7 +214,7 @@ async function askClaude(key: string, prompt: string): Promise<unknown> {
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL,
-        max_tokens: MAX_TOKENS,
+        max_tokens: maxTokens,
         messages: [{ role: "user", content: prompt }],
       }),
       signal: controller.signal,
@@ -210,9 +235,42 @@ async function askClaude(key: string, prompt: string): Promise<unknown> {
     console.error(`Combat map: no complete answer (stop reason ${answer.stop_reason ?? "none"}).`);
     throw new ClaudeFailure(answer.stop_reason === "max_tokens" ? "too long" : "no answer");
   }
-  const parsed = parseReply(text);
-  if (parsed === null) throw new ClaudeFailure("no JSON");
-  return parsed;
+  return text;
+}
+
+// ---------------------------------------------------------------- setting (sprite packs P7)
+
+/** Room for one setting id in the classification reply. */
+const CLASSIFY_MAX_TOKENS = 40;
+
+/** One choice of the classification call: what Claude answers (`token`), what is stored and its name. */
+export type SettingOption = { token: string; ref: SettingRef; label: string };
+
+/** The classification call's choices: the built-in settings, then the campaign's own-setting packs (`pack-1`...). */
+export function settingOptions(packs: readonly { _id: Id<"spritePacks">; name: string; extends?: string }[]): SettingOption[] {
+  const own = packs.filter((p) => p.extends === undefined || !isSettingId(p.extends));
+  return [
+    ...SETTINGS.map((s) => ({ token: s.id, ref: { builtin: s.id }, label: s.label })),
+    ...own.map((p, i) => ({ token: `pack-${i + 1}`, ref: { pack: p._id }, label: p.name })),
+  ];
+}
+
+/** The classification prompt (Q2): the scene and the setting names; the reply is one id. */
+export function settingPrompt(desc: string, options: readonly SettingOption[]): string {
+  return (
+    "Pick the setting of a top-down tabletop battle map. Reply with ONLY the id of the one setting below that best fits the SCENE, nothing else.\n" +
+    `SETTINGS:\n${options.map((o) => `${o.token} = ${o.label}`).join("\n")}\n` +
+    `SCENE: ${desc}`
+  );
+}
+
+/** The option Claude named: an exact id, else the longest id in its text; null when it named none. */
+export function parseSetting(text: string, options: readonly SettingOption[]): SettingOption | null {
+  const answer = text.trim().toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "");
+  const exact = options.find((o) => o.token === answer);
+  if (exact) return exact;
+  const byLength = [...options].sort((a, b) => b.token.length - a.token.length);
+  return byLength.find((o) => new RegExp(`(^|[^a-z0-9-])${o.token}($|[^a-z0-9-])`).test(answer)) ?? null;
 }
 
 // ---------------------------------------------------------------- server side
@@ -225,14 +283,83 @@ async function assertGm(ctx: QueryCtx, userId: Id<"users">, campaignId: Id<"camp
   if (access.permission !== "owner") throw appError("FORBIDDEN");
 }
 
-/** For `generate`: the GM check and the map's `updatedAt` (the fence `save` compares), in one query (CF8). */
+const packRowValidator = v.object({ _id: v.id("spritePacks"), name: v.string(), extends: v.optional(v.string()) });
+
+/** The fields of an uploaded sprite the layout palette reads (`buildPalette`). */
+const paletteSpriteValidator = v.object({
+  _id: v.id("spritePackSprites"),
+  name: v.string(),
+  category: spriteCategoryValidator,
+  w: v.number(),
+  h: v.number(),
+  sight: sightModeValidator,
+  classicKind: combatObjectKindValidator,
+  classicVariant: v.optional(v.string()),
+  terrain: v.optional(combatTerrainValidator),
+});
+
+/**
+ * For `generate`: the GM check, the map's `updatedAt` (the fence `save` compares), its style and name, and the
+ * campaign's packs (at most MAX_SPRITE_PACKS, for the setting choices), in one query (CF8). A picked `setting` must
+ * be a built-in setting (SPRITE_SETTING_UNKNOWN) or a pack of this campaign (SPRITE_PACK_NOT_FOUND), as `setSetting`.
+ */
 export const context = internalQuery({
-  args: { userId: v.id("users"), campaignId: v.id("campaigns"), mapId: v.string() },
-  returns: v.object({ mapId: v.id("combatMaps"), updatedAt: v.number() }),
-  handler: async (ctx, { userId, campaignId, mapId }) => {
+  args: { userId: v.id("users"), campaignId: v.id("campaigns"), mapId: v.string(), setting: v.optional(settingRefValidator) },
+  returns: v.object({
+    mapId: v.id("combatMaps"),
+    updatedAt: v.number(),
+    style: mapStyleValidator,
+    name: v.string(),
+    packs: v.array(packRowValidator),
+  }),
+  handler: async (ctx, { userId, campaignId, mapId, setting }) => {
     await assertGm(ctx, userId, campaignId);
     const map = await loadCombatMap(ctx, campaignId, mapId);
-    return { mapId: map._id, updatedAt: map.updatedAt };
+    if (setting !== undefined && "builtin" in setting && !isSettingId(setting.builtin)) throw appError("SPRITE_SETTING_UNKNOWN");
+    const packs = await ctx.db
+      .query("spritePacks")
+      .withIndex("by_campaign_updated", (q) => q.eq("campaignId", campaignId))
+      .take(MAX_SPRITE_PACKS);
+    if (setting !== undefined && "pack" in setting && !packs.some((p) => p._id === setting.pack)) throw appError("SPRITE_PACK_NOT_FOUND");
+    packs.sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      mapId: map._id,
+      updatedAt: map.updatedAt,
+      style: map.style ?? "classic",
+      name: map.name,
+      packs: packs.map((p) => ({ _id: p._id, name: p.name, ...(p.extends === undefined ? {} : { extends: p.extends }) })),
+    };
+  },
+});
+
+/** For `generate` on a Sprites map: the uploaded sprites of the setting's packs (each at most MAX_PACK_SPRITES). */
+export const packSprites = internalQuery({
+  args: { userId: v.id("users"), campaignId: v.id("campaigns"), packIds: v.array(v.id("spritePacks")) },
+  returns: v.array(paletteSpriteValidator),
+  handler: async (ctx, { userId, campaignId, packIds }) => {
+    await assertGm(ctx, userId, campaignId);
+    const rows = [];
+    for (const packId of packIds.slice(0, MAX_SPRITE_PACKS)) {
+      const sprites = await ctx.db
+        .query("spritePackSprites")
+        .withIndex("by_pack_order", (q) => q.eq("packId", packId))
+        .take(MAX_PACK_SPRITES);
+      for (const s of sprites) {
+        if (s.campaignId !== campaignId) continue;
+        rows.push({
+          _id: s._id,
+          name: s.name,
+          category: s.category,
+          w: s.w,
+          h: s.h,
+          sight: s.sight,
+          classicKind: s.classicKind,
+          ...(s.classicVariant === undefined ? {} : { classicVariant: s.classicVariant }),
+          ...(s.terrain === undefined ? {} : { terrain: s.terrain }),
+        });
+      }
+    }
+    return rows;
   },
 });
 
@@ -279,9 +406,12 @@ export const save = internalMutation({
     prompt: v.string(),
     seed: v.number(),
     layout: layoutValidator,
+    /** The resolved setting and whether the GM picked it (D7, P7). */
+    setting: settingRefValidator,
+    settingPicked: v.boolean(),
   },
   returns: v.boolean(),
-  handler: async (ctx, { userId, campaignId, mapId, updatedAt, prompt, seed, layout }) => {
+  handler: async (ctx, { userId, campaignId, mapId, updatedAt, prompt, seed, layout, setting, settingPicked }) => {
     await assertGm(ctx, userId, campaignId);
     const map = await ctx.db.get("combatMaps", mapId);
     if (map === null || map.campaignId !== campaignId || map.updatedAt !== updatedAt) return false;
@@ -301,6 +431,8 @@ export const save = internalMutation({
       areas: layout.areas,
       prompt,
       seed,
+      setting,
+      settingPicked,
       image: undefined,
       updatedAt: Math.max(Date.now(), updatedAt + 1),
       ...(renamed ? { name: layout.title.slice(0, MAX_MAP_NAME) } : {}),
@@ -327,30 +459,78 @@ export const generate = userAction({
     prompt: v.string(),
     size: sizeValidator,
     another: v.optional(v.boolean()),
+    /** Sprite packs P7: the GM's pick from the Setting picker; absent = "Let Claude choose" (Q2). */
+    setting: v.optional(settingRefValidator),
   },
   returns: generateResultValidator,
-  handler: async (ctx, { campaignId, mapId, prompt, size, another }): Promise<GenerateResult> => {
-    const fence = await ctx.runQuery(internal.combatMapGenerate.context, { userId: ctx.user._id, campaignId, mapId });
+  handler: async (ctx, { campaignId, mapId, prompt, size, another, setting: picked }): Promise<GenerateResult> => {
+    const fence = await ctx.runQuery(internal.combatMapGenerate.context, {
+      userId: ctx.user._id,
+      campaignId,
+      mapId,
+      ...(picked === undefined ? {} : { setting: picked }),
+    });
     const desc = description(prompt);
     const { w, h } = MAP_SIZES[size];
     const seed = 1 + Math.floor(Math.random() * 9999);
+    const variation = another ? seed : undefined;
+    const sprites = fence.style === "sprites";
     const key = apiKey();
     let layout: Layout | null = null;
     let claude: GenerateResult["claude"] = key === undefined ? "unavailable" : "ok";
     let reason: string | undefined;
-    if (key !== undefined) {
+    const fail = (error: unknown) => {
+      if (!(error instanceof ClaudeFailure)) throw error;
+      claude = "failed";
+      reason = error.message;
+    };
+
+    // The setting (D7, Q2): the GM's pick; on a Sprites map Claude's classification; else the keyword picker.
+    const options = settingOptions(fence.packs);
+    let chosen: SettingRef | undefined = picked;
+    if (chosen === undefined && sprites && key !== undefined) {
       try {
-        layout = toLayout(await askClaude(key, scenePrompt(desc, w, h, another ? seed : undefined)), w, h, seed);
+        chosen = parseSetting(await askClaudeText(key, settingPrompt(desc, options), CLASSIFY_MAX_TOKENS), options)?.ref;
+      } catch (error) {
+        fail(error);
+      }
+    }
+    const setting: SettingRef = chosen ?? { builtin: pickSetting(desc, fence.name) };
+    const pack = "pack" in setting ? (fence.packs.find((p) => p._id === setting.pack) ?? null) : null;
+    // The built-in folder the setting draws on: itself, or the one a pack adds to; null for a pack of its own.
+    const folder = "builtin" in setting ? setting.builtin : pack?.extends !== undefined && isSettingId(pack.extends) ? pack.extends : null;
+    const label = "builtin" in setting ? (isSettingId(setting.builtin) ? SETTING_LABEL[setting.builtin] : setting.builtin) : (pack?.name ?? "custom");
+
+    let palette: SpritePalette<Id<"spritePackSprites">> | null = null;
+    if (sprites) {
+      // The setting's uploaded sprites (Q3): its own pack, or the packs that add to the built-in setting.
+      const packIds = pack !== null ? [pack._id] : fence.packs.filter((p) => folder !== null && p.extends === folder).map((p) => p._id);
+      const uploaded = packIds.length === 0 ? [] : await ctx.runQuery(internal.combatMapGenerate.packSprites, { userId: ctx.user._id, campaignId, packIds });
+      palette = buildPalette(folder, uploaded);
+    }
+
+    if (key !== undefined && claude === "ok") {
+      try {
+        if (palette !== null) {
+          layout = cleanSpriteLayout(await askClaude(key, spritePrompt(desc, w, h, label, palette, variation)), palette, w, h, seed);
+        } else {
+          // A Classic map keeps the board's prompt (E6); a setting the GM picked is named in the scene.
+          const scene = picked === undefined ? desc : `${desc}\nSetting: ${label}.`;
+          layout = toLayout(await askClaude(key, scenePrompt(scene, w, h, variation)), w, h, seed);
+        }
         if (layout === null) throw new ClaudeFailure("unusable layout");
       } catch (error) {
-        if (!(error instanceof ClaudeFailure)) throw error;
-        claude = "failed";
-        reason = error.message;
+        fail(error);
       }
     }
     const drawnBy = layout === null ? "keywords" : "claude";
-    layout ??= toLayout(generateFallbackLayout(desc, { seed, w, h }), w, h, seed);
-    if (layout === null) throw appError("COMBAT_GENERATE_UNAVAILABLE");
+    if (layout === null) {
+      // The keyword layout as today; steered by the setting when it was picked or on a Sprites map.
+      const steer = picked !== undefined || sprites;
+      const classic = toLayout(generateFallbackLayout(steer ? fallbackDescription(desc, folder) : desc, { seed, w, h }), w, h, seed);
+      if (classic === null) throw appError("COMBAT_GENERATE_UNAVAILABLE");
+      layout = palette !== null ? spriteFallback(classic, palette, folder, label, seed) : classic;
+    }
     const saved: boolean = await ctx.runMutation(internal.combatMapGenerate.save, {
       userId: ctx.user._id,
       campaignId,
@@ -359,6 +539,8 @@ export const generate = userAction({
       prompt: desc,
       seed,
       layout,
+      setting,
+      settingPicked: picked !== undefined,
     });
     return { mapId: fence.mapId, saved, drawnBy, claude, ...(reason === undefined ? {} : { reason }) };
   },
