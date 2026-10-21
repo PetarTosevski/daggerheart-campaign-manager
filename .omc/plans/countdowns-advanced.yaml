@@ -205,6 +205,9 @@ waves:
         goal: Countdowns carry mode, armed, repeat, dice, chase and track fields, a pure tested module answers every tick amount, trigger and reset, one server helper ticks, triggers, records and reverts countdown changes (hooked into undo), create and the list accept and show the new fields, and the dashboard countdown UI is split into files without changing what it does.
         depends_on: []
         owns:
+          # Added 2026-10-21: the new countdownTicks table must be in the schema guard and the purge seed.
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/cleanup.test.ts
           - src/lib/domain/countdowns/**
           - src/lib/validation/countdowns.ts
           - convex/tables/countdowns.ts
