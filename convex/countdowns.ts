@@ -1,4 +1,5 @@
 import { v, type Infer } from "convex/values";
+import { z } from "zod";
 
 import {
   applyCountdownAction,
@@ -11,10 +12,21 @@ import {
   MAX_COUNTDOWN_START,
   normaliseCountdownVisibility,
 } from "../src/lib/domain/countdowns/index";
-import { COUNTDOWN_MODES, COUNTDOWN_REPEATS, COUNTDOWN_REST_MODES, startFromDice, validateSteps } from "../src/lib/domain/countdowns/advanced";
+import {
+  CHASE_LEADS,
+  chaseRowValues,
+  COUNTDOWN_MODES,
+  COUNTDOWN_REPEATS,
+  COUNTDOWN_REST_MODES,
+  startFromDice,
+  validateSteps,
+  type ChaseRole,
+  type ChaseSide,
+} from "../src/lib/domain/countdowns/advanced";
 import { appError } from "../src/lib/errors/app-error";
-import { countdownDetailsSchema } from "../src/lib/validation/countdowns";
-import type { Doc } from "./_generated/dataModel";
+import { countdownDetailsSchema, createCountdownSchema } from "../src/lib/validation/countdowns";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { campaignQuery, keyedGmMutation, keyedUserMutation } from "./lib/functions";
 import { rollDice } from "./lib/dice";
 import { applyTick } from "./lib/countdownTicks";
@@ -168,7 +180,104 @@ export const create = keyedGmMutation({
   },
 });
 
-/** Changes who sees a dashboard countdown (private / public with hidden fields / public). GM only. */
+/** The party's track of a chase is always this row's name; the rivals' row carries the name the GM typed. */
+export const CHASE_PARTY_NAME = "The party";
+
+const CHASE_LEAD_SIZES = Object.keys(CHASE_LEADS) as (keyof typeof CHASE_LEADS)[];
+
+/** createChase's details (countdowns-advanced K3): the rivals' name, notes, the shared start 2..20 and a lead. */
+const chaseSchema = createCountdownSchema.pick({ name: true, description: true }).extend({
+  startingValue: z
+    .number("Pick a die size.")
+    .int("The start must be a whole number.")
+    .min(2, "A chase starts at 2 or more.")
+    .max(MAX_COUNTDOWN_START, `A chase starts at ${MAX_COUNTDOWN_START} at most.`),
+  lead: z.union([z.enum(CHASE_LEAD_SIZES), z.number().int("The lead must be a whole number.").min(1, "The lead must be at least 1.")]),
+});
+
+/** What happens when each side reaches 0 (CB p.163): the pursuers catch up, or the escapee gets away. */
+function chaseConsequence(side: ChaseSide, role: ChaseRole, rivals: string): string {
+  const pursuer = (side === "party") === (role === "pursuing");
+  if (side === "party") return pursuer ? `The party catches ${rivals}` : "The party gets away";
+  return pursuer ? `${rivals} catches the party` : `${rivals} gets away`;
+}
+
+/**
+ * Starts a chase (CB p.163, countdowns-advanced D9): two linked dashboard countdowns with the same start N, the
+ * pursuers' at N and the escapee's at N - lead (small 1, decent 3, substantial 5, or a typed 1..N-1). The PCs' row is a
+ * progress countdown, the rivals' a consequence countdown, whether the PCs pursue or escape, so one counted roll ticks
+ * both by the Dynamic Countdown Advancement table (K1). Both rows share the visibility and the armed flag; chase rows
+ * never repeat. GM only; INVALID for a lead not below N or a start outside 2..20. Two history "create" rows.
+ */
+export const createChase = keyedGmMutation({
+  args: {
+    /** The rivals: who the party chases or flees ("The thief"). */
+    name: v.string(),
+    description: v.string(),
+    /** The die size both countdowns share (2..20). */
+    startingValue: v.number(),
+    lead: v.union(...CHASE_LEAD_SIZES.map((l) => v.literal(l)), v.number()),
+    party: v.union(v.literal("pursuing"), v.literal("escaping")),
+    visibility: v.optional(countdownVisibilityValidator),
+    /** Ticks by itself on counted action rolls; absent = unarmed (as `create`, D4). */
+    armed: v.optional(v.boolean()),
+  },
+  returns: v.object({ partyId: v.id("countdowns"), rivalsId: v.id("countdowns") }),
+  handler: async (ctx, { party: role, visibility, armed, ...raw }) => {
+    const { name, description, startingValue, lead } = chaseSchema.parse(raw);
+    const values = applyRule("INVALID", CountdownRuleError, () => chaseRowValues(startingValue, lead, role));
+    const shown = visibility === undefined ? undefined : normaliseCountdownVisibility(visibility);
+    const campaignId = ctx.campaign._id;
+    return ctx.once("countdown_chase", { name, description, startingValue, lead, role, visibility: shown, armed }, async () => {
+      const now = Date.now();
+      const row = (side: ChaseSide) => ({
+        campaignId,
+        name: side === "party" ? CHASE_PARTY_NAME : name,
+        description,
+        category: "threat" as const,
+        startingValue,
+        currentValue: values[side],
+        status: "active" as const,
+        consequence: chaseConsequence(side, role, name),
+        createdAt: now,
+        visibility: shown,
+        mode: side === "party" ? ("progress" as const) : ("consequence" as const),
+        armed: armed ?? false,
+      });
+      const partyId = await ctx.db.insert("countdowns", row("party"));
+      const rivalsId = await ctx.db.insert("countdowns", { ...row("rivals"), chase: { partnerId: partyId, side: "rivals", party: role } });
+      await ctx.db.patch("countdowns", partyId, { chase: { partnerId: rivalsId, side: "party", party: role } });
+      for (const [countdownId, side] of [
+        [partyId, "party"],
+        [rivalsId, "rivals"],
+      ] as const) {
+        await recordHistory(ctx, ctx.user._id, {
+          campaignId,
+          kind: "countdown",
+          action: "create",
+          countdownId,
+          before: null,
+          after: { currentValue: values[side], status: "active" },
+        });
+      }
+      return { partyId, rivalsId };
+    });
+  },
+});
+
+/** A chase row's partner (D9) when it is a dashboard countdown of the same campaign, else null. */
+async function chasePartner(ctx: MutationCtx, countdown: Doc<"countdowns">): Promise<Doc<"countdowns"> | null> {
+  const partnerId: Id<"countdowns"> | undefined = countdown.chase?.partnerId;
+  if (partnerId === undefined) return null;
+  const partner = await ctx.db.get("countdowns", partnerId);
+  if (partner === null || partner.campaignId !== countdown.campaignId || partner.ownerKey !== undefined) return null;
+  return partner;
+}
+
+/**
+ * Changes who sees a dashboard countdown (private / public with hidden fields / public). GM only. A chase pair shares
+ * one visibility (D9, D12): its partner row changes too.
+ */
 export const setVisibility = keyedGmMutation({
   args: { countdownId: v.id("countdowns"), visibility: countdownVisibilityValidator },
   returns: v.object({ visibility: countdownVisibilityValidator }),
@@ -181,6 +290,8 @@ export const setVisibility = keyedGmMutation({
     const next = normaliseCountdownVisibility(visibility);
     return ctx.once("countdown_visibility", { countdownId, visibility: next }, async () => {
       await ctx.db.patch("countdowns", countdownId, { visibility: next });
+      const partner = await chasePartner(ctx, countdown);
+      if (partner !== null) await ctx.db.patch("countdowns", partner._id, { visibility: next });
       return { visibility: next };
     });
   },
@@ -265,6 +376,27 @@ export const operate = keyedUserMutation({
     if ((action === "correction") !== (amount !== undefined)) {
       throw appError("INVALID", "Only a correction takes an amount.");
     }
+    // A chase is cancelled as a pair (D9), also once one side has reached 0 (completed), so the ended chase leaves the
+    // board in one click; a row that doesn't belong to a chase keeps today's rule (E1).
+    if (action === "cancel" && countdown.chase !== undefined) {
+      if (countdown.status === "cancelled") throw appError("COUNTDOWN_RULE", "Cancelled countdowns cannot be changed.");
+      return ctx.once("countdown_operate", { countdownId, action, amount }, async () => {
+        const partner = await chasePartner(ctx, countdown);
+        for (const row of [countdown, partner]) {
+          if (row === null || row.status === "cancelled") continue;
+          await ctx.db.patch("countdowns", row._id, { status: "cancelled" });
+          await recordHistory(ctx, ctx.user._id, {
+            campaignId: row.campaignId,
+            kind: "countdown",
+            action: "cancel",
+            countdownId: row._id,
+            before: { currentValue: row.currentValue, status: row.status },
+            after: { currentValue: row.currentValue, status: "cancelled" },
+          });
+        }
+        return { previousValue: countdown.currentValue, newValue: countdown.currentValue, status: "cancelled" as const };
+      });
+    }
     return ctx.once("countdown_operate", { countdownId, action, amount }, async () => {
       // Both expected domain errors (a rule, or a value out of range) become COUNTDOWN_RULE. The legacy rules check
       // every move first, also the ones that then go through applyTick, so a refused move is refused as before (E1).
@@ -290,6 +422,24 @@ export const operate = keyedUserMutation({
         before: { currentValue: countdown.currentValue, status: countdown.status },
         after: { currentValue: next.currentValue, status: next.status },
       });
+      // A chase pauses and resumes as a pair (D9): the partner follows when its own state allows it (a side that already
+      // reached 0 stays completed).
+      if (action === "pause" || action === "resume") {
+        const partner = await chasePartner(ctx, countdown);
+        const from = action === "pause" ? "active" : "paused";
+        if (partner !== null && partner.status === from) {
+          const status = action === "pause" ? "paused" : "active";
+          await ctx.db.patch("countdowns", partner._id, { status });
+          await recordHistory(ctx, ctx.user._id, {
+            campaignId: partner.campaignId,
+            kind: "countdown",
+            action,
+            countdownId: partner._id,
+            before: { currentValue: partner.currentValue, status: partner.status },
+            after: { currentValue: partner.currentValue, status },
+          });
+        }
+      }
       return { previousValue: countdown.currentValue, newValue: next.currentValue, status: next.status };
     });
   },
