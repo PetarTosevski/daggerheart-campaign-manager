@@ -38,7 +38,7 @@
 /* cf rows. */
 .cf-row{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:10px;background:#fffaf0;border:1px solid #dcc9a2;min-width:0}
 .cf-title{font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700;color:#4a3008}
-.cf-cost{margin-left:8px;padding:1px 8px;border-radius:999px;border:1px solid #cdb88f;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sheet-label,#8a6d4a);white-space:nowrap}
+.cf-cost{margin-left:8px;padding:1px 8px;border-radius:999px;border:1px solid #cdb88f;font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sheet-label,#6d563a);white-space:nowrap}
 .cf-text{margin-left:6px}
 .cf-btns{display:flex;flex-wrap:wrap;gap:6px}
 .cf-btns>.sh-pill{align-self:flex-start}

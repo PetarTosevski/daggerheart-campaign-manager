@@ -196,7 +196,7 @@ export function EquipmentStep({ state, update, opts }: StepProps) {
             legend={
               <>
                 Secondary weapon{" "}
-                <span className="font-serif text-[15px] tracking-normal text-[#8a6d3b] normal-case">(optional, one-handed primaries only)</span>
+                <span className="font-serif text-[15px] tracking-normal text-[#6e572f] normal-case">(optional, one-handed primaries only)</span>
               </>
             }
           >

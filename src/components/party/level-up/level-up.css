@@ -28,15 +28,15 @@
 .adv-head .sh-h::before,.adv-head .sh-h::after{display:none}
 .adv-budget{align-self:center;padding:3px 12px;border-radius:999px;background:rgba(61,94,46,.12);color:var(--sheet-green,#3d5e2e);font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.06em}
 .adv-budget.full{background:var(--sheet-green,#3d5e2e);color:#f3f7ee}
-.adv-budget.locked{background:rgba(91,43,43,.1);color:#8a6d3b}
+.adv-budget.locked{background:rgba(91,43,43,.1);color:#5a4526}
 .adv-tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px}
-.adv-locked{opacity:.6}
+.adv-locked{opacity:.8}
 .adv-intro{padding:10px 12px;border-radius:8px;background:var(--sheet-wine,#5b2b2b);color:#f6ead2;font-family:var(--font-garamond),serif;font-size:16px;line-height:1.4;text-align:center}
 .adv-opts{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .adv-row{display:flex;gap:8px;align-items:flex-start}
 .adv-boxes{display:flex;gap:2px;flex:none;padding-top:3px}
 .adv-crossed{text-decoration:line-through;opacity:.6}
-.adv-when{font-style:italic;color:var(--sheet-label,#8a6d4a)}
+.adv-when{font-style:italic;color:var(--sheet-label,#6d563a)}
 
 /* adv-box checkboxes (read-only), with a brush-pen tick: light entry, pooled corner, tapering flick with dry-brush streaks. */
 .adv-box{-webkit-appearance:none;appearance:none;position:relative;display:inline-block;box-sizing:border-box;vertical-align:top;width:22px;height:22px;margin:0;padding:0;flex:none;border:1.6px solid #8a6d3b;border-radius:3px;background:#fffaf0}
@@ -57,6 +57,6 @@
 .lu-opt:disabled{border-color:#cdb88f;background:#e6dcc6;color:#9a8a6a;cursor:not-allowed}
 .lu-opt:not(:disabled):hover{border-color:#a68352}
 .lu-opt:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
-.lu-opt-tier{font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--sheet-label,#8a6d4a)}
+.lu-opt-tier{font-family:var(--font-cinzel),serif;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--sheet-label,#6d563a)}
 .lu-opt-note{font-size:12px}
 .lu-panel{display:flex;flex-direction:column;gap:10px;margin:0;padding:12px;border-radius:10px;border:1px solid var(--sheet-line,#d1b98b);background:rgba(255,250,240,.7)}

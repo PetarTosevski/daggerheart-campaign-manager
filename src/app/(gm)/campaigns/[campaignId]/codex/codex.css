@@ -12,7 +12,9 @@
 .cx-muted{color:#9fb2b6;font-size:14px;line-height:1.5}
 .cx-thumb{position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:#0b1214 center/cover no-repeat;border:2px solid #253338;cursor:zoom-in}
 .cx-thumb.hid{filter:grayscale(.7) brightness(.55)}
-.cx-thumb:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.cx-thumb-open{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;background:transparent;cursor:zoom-in}
+.cx-thumb:has(.cx-thumb-open:focus-visible){outline:2px solid var(--brand);outline-offset:2px}
+.cx-thumb-open:focus-visible{outline:none}
 .cx-tools{position:absolute;left:0;right:0;bottom:0;display:flex;gap:4px;padding:6px;background:linear-gradient(transparent,rgba(0,0,0,.85));justify-content:space-between;align-items:center;cursor:default}
 .cx-tb{min-height:30px;padding:0 8px;border-radius:7px;border:1px solid rgba(255,255,255,.25);background:rgba(6,10,12,.8);color:#e6ecea;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
 .cx-tb.on{background:var(--brand);color:var(--brand-ink);border-color:var(--brand);font-weight:700}
