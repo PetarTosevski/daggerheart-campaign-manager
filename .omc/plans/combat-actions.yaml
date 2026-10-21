@@ -1,7 +1,10 @@
 # Combat-actions plan: players hold their domain cards on the Combat Map and use them there, attack enemy tokens with weapon
 # damage dice, roll dice from the map; enemies take the final damage against their thresholds (HP) or Stress automatically;
 # once-per cards grey out until they come back.
-# Status: DRAFT: QUESTIONS pending user answer. Analysis, inventory, quoted rules and QUESTIONS Q1-Q12:
+# Status: APPROVED 2026-10-21. USER ANSWERS Q1-Q12 (binding): Q1 an attack or card use on a target outside its range needs the
+#   GM's sanction (the action waits as a pending request; the GM approves or declines; nothing is rolled before approval);
+#   Q2-Q12 the defaults below.
+# Former status: DRAFT. Analysis, inventory, quoted rules and QUESTIONS Q1-Q12:
 #   .omc/autopilot/combat-actions-analysis.md. Defaults for open questions are written into acceptance lists and marked (Qn);
 #   an answer that differs changes only the tracers that cite that Qn. Tracers do not start until the user has answered or
 #   accepted the defaults.
@@ -29,7 +32,7 @@
 #      p.26).  R8 Hope features (CB p.90).  R9 multiple targets / groups (CB p.104).  R10 resistance / immunity (CB p.99).
 #   R11 Defined Ranges and line of sight (CB p.103-104).  R12 adversary reaction rolls d20 (CB p.161).
 #
-# Defaults of open questions used below (analysis section 4): Q1 range warns only; Q2 line of sight required, cover gives
+# Defaults of open questions used below (analysis section 4): Q1 out-of-range needs GM sanction (user answer); Q2 line of sight required, cover gives
 #   disadvantage; Q3 rest / long rest resets, shared featureUses keys card:<id>, session does not reset; Q4 "on a success" uses
 #   only on success; Q5 player sees own damage total; Q6 player sees Defeated and picks extra Minions; Q7 server rolls enemy
 #   reaction d20; Q8 SRD resistance table + GM toggle for conditional + custom picker; Q9 movement as prompts, manual steps
@@ -150,7 +153,7 @@ waves:
           - src/lib/srd/adversary-resistance.ts
           - .omc/autopilot/combat-actions-analysis.md
         acceptance:
-          - "tokenDistance counts squares between the nearest edges of two footprints (size 1-3), a diagonal = 1; rangeCheck returns the band and inRange, used as a warning only (Q1, CB p.103 quoted)"
+          - "tokenDistance counts squares between the nearest edges of two footprints (size 1-3), a diagonal = 1; rangeCheck returns the band and inRange, used by the server to route out-of-range actions to GM sanction (Q1, CB p.103 quoted)"
           - "lineOfSight uses vision.los from the attacker's centre to any sample of the target footprint; cover between them returns disadvantage (Q2, CB p.104 quoted)"
           - "resolveHits(total, crit, targets) marks a target hit when total >= its Difficulty or on a critical (R1, CB p.96, p.90); one roll for all targets (R9)"
           - "applyDamageTo(target, amount, type) applies immunity, then resistance (halve, round down; both types needed for phy/mag), then thresholds 1/2/3 HP, none at 0 or less, no Massive; Minion targets are defeated and return extra-defeat counts per X; Stress over the track marks 1 HP (R3, R5, R10) - reusing encounters/damage.ts"
@@ -190,7 +193,7 @@ waves:
         acceptance:
           - "The duality and damage internals move from convex/rolls.ts to convex/lib/rolls.ts unchanged in behaviour (CF8); every existing rolls test passes untouched"
           - "combatActions.attack {characterId, mapId, targetTokenIds, slot, ...duality options} is a keyed campaign mutation with need edit on the character; the attacker is that character's PC token on the live map; targets must be enemy tokens linked to running encounter instances (else COMBAT_TARGET_INVALID)"
-          - "No line of sight to a target refuses it with COMBAT_NO_LINE_OF_SIGHT (Q2); out of range is returned as a warning band, not refused (Q1)"
+          - "No line of sight to a target refuses it with COMBAT_NO_LINE_OF_SIGHT (Q2); an out-of-range target turns the action into a pending GM-sanction request (Q1): the GM approves (then it resolves as normal) or declines; nothing is rolled or charged before approval; role tests for request, approve, decline"
           - "One duality roll (Hope/Fear/crit effects, GM Fear, countdown ticks exactly as actionRoll); on any hit one damage roll at Proficiency with crit max (R2); each hit target takes the total through applyDamageTo; instances update hp/stress/defeated in the same mutation (U4)"
           - "One actionLog group: a public row whose summary and roll show the attack roll, the damage dice and total (Q5) and Hit / Miss / Defeated per target, with no HP, Stress, threshold or Difficulty value (U1); a gm row with damage, severity and HP marked per target, storing adversaryBefore"
           - "actionLog undo of the group (actor or GM) restores the sheet and every adversaryBefore row and takes back Fear; stale undo still refuses with UNDO_STALE (U4)"
