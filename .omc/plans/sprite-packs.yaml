@@ -583,3 +583,110 @@ waves:
           - "tests/e2e/combat-map-flow.spec.ts (D9 C9) passes unchanged on rebuild (E1, E2)"
           - "Checks P1-P3, D1-D10 and E1-E8 against the app and lists any gap in the task doc; each gap is filed as a bead under dcm-bxp.56"
           - "Files follow-ups: authz-matrix entries for every new function (D12); the user's pick between Classic and Sprites as the default (P3, Q4) as an open bead; any sheet the P4 report asked the user to regenerate"
+  - wave: 7
+    tracers:
+      - id: P11A
+        title: Batch 2 sheets into the catalog - common, forest, grassland-and-road, mountain-and-cliffs, cave, dungeon, crypt-and-graveyard
+        size: M
+        # USER (2026-10-21): batch 2 = docs/sprite-packs/batch-2.md; sheets in C:\Users\Petar\sprite-sheets (props-2, large-2 or the
+        #   town's large-3, terrain-2). Catalog extras only; the pack is rebuilt by P11Z.
+        goal: Check every batch-2 sheet of these folders, add their items as catalog extras with sizes, sight, height, footprint, light, Classic kind and move, and record the overrides each sheet needs.
+        depends_on: [P10]
+        owns:
+          - src/lib/sprite-packs/catalog/common.ts
+          - src/lib/sprite-packs/catalog/forest.ts
+          - src/lib/sprite-packs/catalog/grassland-and-road.ts
+          - src/lib/sprite-packs/catalog/mountain-and-cliffs.ts
+          - src/lib/sprite-packs/catalog/cave.ts
+          - src/lib/sprite-packs/catalog/dungeon.ts
+          - src/lib/sprite-packs/catalog/crypt-and-graveyard.ts
+          - docs/tasks/TASK-SP-P11A.md
+        reads:
+          - docs/sprite-packs/batch-2.md
+          - docs/tasks/TASK-SP-P4.md
+          - docs/tasks/TASK-SP-P4V.md
+          - docs/tasks/TASK-MV-M0.md
+          - docs/tasks/TASK-MV-M2.md
+          - scripts/sprite-packs/**
+        acceptance:
+          - "Every batch-2 item of these folders is a catalog extra on its sheet in the doc's order, with traits consistent with existing items (doors get move 'door' and Classic kind 'door'; lights by the D2 rule)"
+          - "Each sheet is cut to a scratch out dir and reviewed: cell count, keying, halos, shadows; the task doc lists per sheet the overrides needed (unpink, unmix, untint, rotate) and any sheet that should be regenerated with the reason"
+          - "pnpm typecheck and lint pass for the catalog files; tracer-guard passes"
+      - id: P11B
+        title: Batch 2 sheets into the catalog - castle-interior, tavern, town-street-and-market, temple, swamp, snow-and-tundra
+        size: M
+        # USER (2026-10-21): batch 2 = docs/sprite-packs/batch-2.md; sheets in C:\Users\Petar\sprite-sheets (props-2, large-2 or the
+        #   town's large-3, terrain-2). Catalog extras only; the pack is rebuilt by P11Z.
+        goal: Check every batch-2 sheet of these folders, add their items as catalog extras with sizes, sight, height, footprint, light, Classic kind and move, and record the overrides each sheet needs.
+        depends_on: [P10]
+        owns:
+          - src/lib/sprite-packs/catalog/castle-interior.ts
+          - src/lib/sprite-packs/catalog/tavern.ts
+          - src/lib/sprite-packs/catalog/town-street-and-market.ts
+          - src/lib/sprite-packs/catalog/temple.ts
+          - src/lib/sprite-packs/catalog/swamp.ts
+          - src/lib/sprite-packs/catalog/snow-and-tundra.ts
+          - docs/tasks/TASK-SP-P11B.md
+        reads:
+          - docs/sprite-packs/batch-2.md
+          - docs/tasks/TASK-SP-P4.md
+          - docs/tasks/TASK-SP-P4V.md
+          - docs/tasks/TASK-MV-M0.md
+          - docs/tasks/TASK-MV-M2.md
+          - scripts/sprite-packs/**
+        acceptance:
+          - "Every batch-2 item of these folders is a catalog extra on its sheet in the doc's order, with traits consistent with existing items (doors get move 'door' and Classic kind 'door'; lights by the D2 rule)"
+          - "Each sheet is cut to a scratch out dir and reviewed: cell count, keying, halos, shadows; the task doc lists per sheet the overrides needed (unpink, unmix, untint, rotate) and any sheet that should be regenerated with the reason"
+          - "pnpm typecheck and lint pass for the catalog files; tracer-guard passes"
+      - id: P11C
+        title: Batch 2 sheets into the catalog - desert, coast-and-beach, ship-deck, sewers, ruins, mushroom-cavern, volcanic
+        size: M
+        # USER (2026-10-21): batch 2 = docs/sprite-packs/batch-2.md; sheets in C:\Users\Petar\sprite-sheets (props-2, large-2 or the
+        #   town's large-3, terrain-2). Catalog extras only; the pack is rebuilt by P11Z.
+        goal: Check every batch-2 sheet of these folders, add their items as catalog extras with sizes, sight, height, footprint, light, Classic kind and move, and record the overrides each sheet needs.
+        depends_on: [P10]
+        owns:
+          - src/lib/sprite-packs/catalog/desert.ts
+          - src/lib/sprite-packs/catalog/coast-and-beach.ts
+          - src/lib/sprite-packs/catalog/ship-deck.ts
+          - src/lib/sprite-packs/catalog/sewers.ts
+          - src/lib/sprite-packs/catalog/ruins.ts
+          - src/lib/sprite-packs/catalog/mushroom-cavern.ts
+          - src/lib/sprite-packs/catalog/volcanic.ts
+          - docs/tasks/TASK-SP-P11C.md
+        reads:
+          - docs/sprite-packs/batch-2.md
+          - docs/tasks/TASK-SP-P4.md
+          - docs/tasks/TASK-SP-P4V.md
+          - docs/tasks/TASK-MV-M0.md
+          - docs/tasks/TASK-MV-M2.md
+          - scripts/sprite-packs/**
+        acceptance:
+          - "Every batch-2 item of these folders is a catalog extra on its sheet in the doc's order, with traits consistent with existing items (doors get move 'door' and Classic kind 'door'; lights by the D2 rule)"
+          - "Each sheet is cut to a scratch out dir and reviewed: cell count, keying, halos, shadows; the task doc lists per sheet the overrides needed (unpink, unmix, untint, rotate) and any sheet that should be regenerated with the reason"
+          - "pnpm typecheck and lint pass for the catalog files; tracer-guard passes"
+  - wave: 8
+    tracers:
+      - id: P11Z
+        title: Batch 2 built into the pack - overrides, cut, rebuild, tests
+        size: M
+        goal: Apply P11A-C's overrides, cut all 60 batch-2 sheets, rebuild the built-in pack, and pin the new items in tests.
+        depends_on: [P11A, P11B, P11C]
+        owns:
+          - scripts/sprite-packs/**
+          - public/sprite-packs/**
+          - src/lib/sprite-packs/builtin/**
+          - src/lib/sprite-packs/catalog/index.ts
+          - src/lib/sprite-packs/catalog/types.ts
+          - tests/unit/sprite-catalog.test.ts
+          - tests/unit/sprite-builtin-pack.test.ts
+          - docs/sprite-packs/prompts.md
+          - docs/sprite-packs/batch-2.md
+          - docs/tasks/TASK-SP-P11Z.md
+        reads:
+          - docs/tasks/TASK-SP-P11A.md
+          - docs/tasks/TASK-SP-P11B.md
+          - docs/tasks/TASK-SP-P11C.md
+        acceptance:
+          - "The pack holds 589 + the batch-2 items that cut cleanly (target 1169); every catalog key has art; pack size and the largest files reported against the limits; a contact sheet per folder reviewed"
+          - "Catalog and pack tests pin the new count, the doors, lights and move values; pnpm lint, typecheck and vitest pass; tracer-guard passes"
