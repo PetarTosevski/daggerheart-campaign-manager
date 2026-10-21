@@ -210,6 +210,26 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("journalPages", { ...page, title: "Torn", visibility: "gm", binnedAt: now, binnedBy: userId, entryCount: 0, openCount: 0 });
     await ins("journalPageRecipients", { campaignId: c, pageId, userId, addedAt: now });
     await ins("journalEntries", { campaignId: c, journalId, pageId, authorId: userId, kind: "task", state: "open", star: false, text: "Find the well", order: 0, open: true, createdAt: now, updatedAt: now });
+    // A Lorekeeper conversation with a question and its answer, a ruling pinned from it, an Ask-the-GM, a book
+    // switch and the campaign's usage counter (D13). The book itself is per deployment and stays.
+    const bookId = await ins("lorekeeperBooks", { key: `core-${now}-${Math.random()}`, title: "Mini Manual", subtitle: "Rules", cover: "core", pages: 12, chunkCount: 0, ingestedAt: now, schemaVersion: 1 });
+    await ins("lorekeeperLibrary", { campaignId: c, bookId, enabled: false, updatedAt: now });
+    const conversationId = await ins("lorekeeperConversations", { campaignId: c, userId, title: "Critical hits?", visibility: "campaign", webSearch: true, messageCount: 2, lastAt: now, createdAt: now });
+    const message = { conversationId, campaignId: c, userId, createdAt: now, updatedAt: now };
+    await ins("lorekeeperMessages", { ...message, role: "question", status: "done", text: "Critical hits?" });
+    const answerId = await ins("lorekeeperMessages", {
+      ...message,
+      role: "answer",
+      status: "done",
+      text: "They always succeed.",
+      parts: { verdict: "rules", quotes: [{ kind: "book", text: "A critical hit always succeeds.", bookId, page: 3, section: "Core Mechanics" }] },
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, webSearches: 0, costMicros: 10 },
+      model: "claude-sonnet-5-5",
+      reserved: { micros: 80_000, day: "2026-10-18", month: "2026-10" },
+    });
+    const rulingId = await ins("lorekeeperRulings", { campaignId: c, title: "Crits", text: "Max damage plus a roll.", sessionId, fromMessageId: answerId, pinnedBy: userId, pinnedAt: now, updatedAt: now });
+    await ins("lorekeeperAsks", { campaignId: c, messageId: answerId, askedBy: userId, askedAt: now, resolvedAt: now, resolution: "pinned", rulingId });
+    await ins("lorekeeperUsage", { kind: "campaign", campaignId: c, period: "2026-10", questions: 1, costMicros: 10, updatedAt: now });
     await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
     await ins("files", { storageId: blobs.codexImage, campaignId: c, uploadedBy: userId, kind: "codexImage", refId: entryId, createdAt: now });
     await ins("files", { storageId: blobs.portrait, campaignId: c, uploadedBy: userId, kind: "portrait", refId: characterId, createdAt: now });
@@ -425,6 +445,37 @@ describe("cleanup crons", () => {
     expect(await t.run((ctx) => ctx.db.get("encounters", s.encounterId))).not.toBeNull();
     const kept = await t.run((ctx) => ctx.db.query("sessionLog").withIndex("by_session_at", (q) => q.eq("sessionId", other)).collect());
     expect(kept.map((row) => row.text)).toEqual(["Keep me"]);
+  });
+
+  it("purges a campaign's Lorekeeper rows in batches and keeps books, other campaigns and per-user counters (D13)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const due = await seedCampaign(t, userId, NOW - 31 * DAY);
+    const live = await seedCampaign(t, userId, undefined);
+    await t.run(async (ctx) => {
+      const conversation = await ctx.db
+        .query("lorekeeperConversations")
+        .withIndex("by_campaign_user_last", (q) => q.eq("campaignId", due.campaignId))
+        .first();
+      for (let i = 0; i < BATCH + 40; i++) {
+        await ctx.db.insert("lorekeeperMessages", { conversationId: conversation!._id, campaignId: due.campaignId, userId, role: "question", status: "done", text: `Q${i}`, createdAt: NOW, updatedAt: NOW });
+      }
+      await ctx.db.insert("lorekeeperUsage", { kind: "user", userId, period: "2026-10-18", questions: 3, costMicros: 30, updatedAt: NOW });
+      await ctx.db.insert("lorekeeperUsage", { kind: "deployment", period: "2026-10", questions: 3, costMicros: 30, updatedAt: NOW });
+    });
+    const liveBefore = await leftovers(t, live);
+    expect(liveBefore.rows).toMatchObject({ lorekeeperLibrary: 1, lorekeeperConversations: 1, lorekeeperMessages: 2, lorekeeperRulings: 1, lorekeeperAsks: 1, lorekeeperUsage: 1 });
+
+    await t.mutation(internal.cleanup.purgeDeletedCampaigns, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
+    expect(await leftovers(t, live)).toEqual(liveBefore);
+    const kept = await t.run(async (ctx) => ({
+      books: (await ctx.db.query("lorekeeperBooks").collect()).length,
+      kinds: (await ctx.db.query("lorekeeperUsage").collect()).map((row) => row.kind).sort(),
+    }));
+    expect(kept).toEqual({ books: 2, kinds: ["campaign", "deployment", "user"] });
   });
 
   it("stops purging a campaign the GM restored", async () => {

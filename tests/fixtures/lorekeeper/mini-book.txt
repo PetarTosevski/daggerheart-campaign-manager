@@ -1,0 +1,40 @@
+Invented test text for the Lorekeeper (D13). Not from any real book: every rule below is made up for tests.
+
+===== PAGE 1 =====
+THE MINI MANUAL  An invented rulebook for tests
+
+===== PAGE 2 =====
+ABOUT THIS MANUAL  Nothing in this manual is a real rule. It exists so the Lorekeeper's tests have pages, chapters and footers to read.  1   Introduction
+
+===== PAGE 3 =====
+TWIN DICE  Roll the two twin dice together and add them. The higher die tells you whose story bends: the bright die for the heroes, the dark die for the table's GM.  MATCHED DICE  When both twin dice land on the same face, the roll is a critical hit.  2   Chapter 1: Core Mechanics
+
+===== PAGE 4 =====
+CRITICAL HITS  A critical hit always succeeds. On an attack, a critical hit deals the highest damage the weapon can roll, then adds a normal damage roll on top. The hero also gains one spark and clears one strain.  3   Chapter 1: Core Mechanics
+
+===== PAGE 5 =====
+SPARKS AND STRAIN  Heroes spend sparks to help a friend or to use a special move. Strain marks how close a hero is to breaking; a hero with every strain box marked takes a lasting scar.  4   Chapter 1: Core Mechanics
+
+===== PAGE 6 =====
+RANGES  Ranges in the mini manual are Touch, Close, Far and Beyond. Touch is within arm's reach. Close is a short dash away.  5   Chapter 2: Combat
+
+===== PAGE 7 =====
+RANGE ON A GRID  On a grid of one-inch squares, Touch is the next square, Close is up to four squares, Far is up to twelve squares and Beyond is anything further.  6   Chapter 2: Combat
+
+===== PAGE 8 =====
+HOLDING BREATH  A hero can hold their breath for a number of rounds equal to three plus their Grit. After that, the hero marks one strain at the end of every round until they breathe again.  7   Chapter 2: Combat
+
+===== PAGE 9 =====
+No footer on this page: the counting continues from the block number. SWIMMING  Swimming in heavy gear makes every Agility roll harder by two.
+
+===== PAGE 10 =====
+THE HEXWEAVER  9   Chapter 3: Classes  Hexweavers bind their foes with whispered curses and trade their own strain for power.
+
+===== PAGE 11 =====
+HEX  Once per scene, a Hexweaver may lay a Hex on a target within Far range. A hexed target rolls its attacks with a penalty of one die. The manual does not say what happens when a target carries two Hexes at once.  10   Chapter 3: Classes
+
+===== PAGE 12 =====
+WITCHLIGHT  A Hexweaver's witchlight sheds light out to Close range and reveals hidden things in that light.  11   Chapter 3: Classes
+
+===== PAGE 13 =====
+INDEX  Critical hits 3 · Hex 10 · Holding breath 7 · Ranges 5 · Twin dice 2  12   Index

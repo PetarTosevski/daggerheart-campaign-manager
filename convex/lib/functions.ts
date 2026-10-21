@@ -173,6 +173,8 @@ const RATE_LIMITS = {
   combatMapGenerate: { kind: "token bucket", rate: 10, period: HOUR },
   // Sprite uploads (sprite packs P8): one URL per cut sprite; a sheet is up to 16, so 200 per hour, bursts of 64.
   spriteUpload: { kind: "token bucket", rate: 200, period: HOUR, capacity: 64 },
+  // Lorekeeper questions (D13): each one is a Messages API call; 30 per hour, bursts of 10 (the caps in Q9 bound cost).
+  lorekeeperAsk: { kind: "token bucket", rate: 30, period: HOUR, capacity: 10 },
 } as const;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

@@ -11,6 +11,7 @@ import { deathMessages } from "./errors/death";
 import { diceMessages } from "./errors/dice";
 import { encounterMessages } from "./errors/encounters";
 import { levelUpMessages } from "./errors/levelUp";
+import { lorekeeperMessages } from "./errors/lorekeeper";
 import { mapMessages } from "./errors/maps";
 import { noteMessages } from "./errors/notes";
 import { operationMessages } from "./errors/operations";
@@ -54,6 +55,7 @@ const MESSAGES = mergeMessages(
   sessionMessages,
   spritePackMessages,
   noteMessages,
+  lorekeeperMessages,
 );
 
 /**

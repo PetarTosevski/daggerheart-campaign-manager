@@ -10,6 +10,7 @@ import { encounterTables } from "./tables/encounters";
 import { countdownTables } from "./tables/countdowns";
 import { fileTables } from "./tables/files";
 import { historyTables } from "./tables/history";
+import { lorekeeperTables } from "./tables/lorekeeper";
 import { mapTables } from "./tables/maps";
 import { notesTables } from "./tables/notes";
 import { operationTables } from "./tables/operations";
@@ -39,4 +40,5 @@ export default defineSchema({
   ...sessionTables,
   ...spritePackTables,
   ...notesTables,
+  ...lorekeeperTables,
 });

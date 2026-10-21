@@ -1,0 +1,171 @@
+/*
+ * The Lorekeeper (D13): the board's tokens and classes (reference/designs/project/Lorekeeper.dc.html, its second
+ * <style> block), scoped under .lk-root so they never leak into other pages. The page shell (L0) uses lk-main,
+ * lk-side, lk-chat, lk-chathead, lk-sigil, lk-name; the slots (src/components/lorekeeper/*, contract in slots.ts) use
+ * the rest: cards and library rows (lk-card, lk-h, lk-lbl, lk-muted, lk-src, lk-book, lk-cover-*), pills (lk-pill,
+ * lk-ok, lk-amber, lk-red), the stream (lk-stream, lk-q, lk-qb, lk-who, lk-a, lk-mini, lk-thinking, lk-dots), the
+ * parchment answer (lk-ab, lk-verdict, lk-v-ok, lk-v-amber, lk-v-red, lk-quote, lk-cite, lk-chip, lk-call, lk-web,
+ * lk-disc, lk-res, lk-acts, lk-act), the composer (lk-compose, lk-sugs, lk-sug, lk-inrow, lk-in, lk-send, lk-toggle),
+ * rulings and legend (lk-ruling, lk-legend) and the drawer (lk-drawer, lk-fab). A slot adds CSS only in a colocated
+ * .css in its own folder. The drawer (L7) is rendered outside this page: it puts .lk-root on its own container.
+ * Fonts: the app's --font-cinzel, --font-garamond and --font-plex (src/app/layout.tsx), the board's three faces.
+ * Not on the board: the 390 px targets of at least 44 px, and the sidebar staying in the flow above the chat on
+ * phones (L7 folds it into 'Library & rulings', Q12).
+ */
+.lk-root {
+  --lk-page: #0d1417;
+  --lk-text: #e6ecea;
+  --lk-muted: #9fb2b6;
+  --lk-card: #141e22;
+  --lk-card-border: #253338;
+  --lk-line: #1f2b30;
+  --lk-field: #0b1214;
+  --lk-border: #33444a;
+  --lk-gold: #e3b45a;
+  --lk-gold-deep: #c9a24a;
+  --lk-gold-ink: #1a1408;
+  --lk-display: var(--font-cinzel), "Cinzel", serif;
+  --lk-serif: var(--font-garamond), "EB Garamond", serif;
+  --lk-sans: var(--font-plex), "IBM Plex Sans", sans-serif;
+  color: var(--lk-text);
+  font-family: var(--lk-sans);
+}
+
+.lk-root .lk-main {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 22px 28px 32px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.lk-root .lk-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lk-root .lk-card { padding: 16px; border-radius: 14px; background: var(--lk-card); border: 1px solid var(--lk-card-border); display: flex; flex-direction: column; gap: 10px; }
+.lk-root .lk-cardhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.lk-root .lk-h { margin: 0; font-family: var(--lk-display); font-size: 16px; font-weight: 700; letter-spacing: .04em; }
+.lk-root .lk-lbl { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--lk-muted); }
+.lk-root .lk-muted { color: var(--lk-muted); font-size: 13.5px; line-height: 1.5; }
+.lk-root .lk-src { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px; border-radius: 10px; background: #0f171a; border: 1px solid var(--lk-line); }
+.lk-root .lk-book { width: 34px; height: 44px; border-radius: 3px 6px 6px 3px; box-shadow: inset 3px 0 0 rgba(0, 0, 0, .35), 0 2px 6px rgba(0, 0, 0, .4); }
+/* Book spines (lorekeeperBooks.cover tokens; the board's gradients). */
+.lk-root .lk-cover-core { background: linear-gradient(160deg, #7a2e28, #3a1210); }
+.lk-root .lk-cover-hopeFear { background: linear-gradient(160deg, #5b4a8f, #1e1930); }
+.lk-root .lk-cover-frame { background: linear-gradient(160deg, #3f6b4f, #14261c); }
+.lk-root .lk-cover-houseRules { background: linear-gradient(160deg, #6a5236, #2a1f14); }
+.lk-root .lk-pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.lk-root .lk-ok { background: #1d3a2a; color: #9fe7bb; }
+.lk-root .lk-amber { background: #3a2c12; color: #f3cf86; }
+.lk-root .lk-red { background: #3a1c1c; color: #ffb4a8; }
+
+/* Chat panel */
+.lk-root .lk-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 140px);
+  min-width: 0;
+  border-radius: 16px;
+  border: 1px solid var(--lk-card-border);
+  background: radial-gradient(1200px 500px at 50% -10%, rgba(227, 180, 90, .07), transparent 60%), #0b1214;
+  overflow: hidden;
+}
+.lk-root .lk-chathead { display: flex; align-items: center; gap: 14px; padding: 16px 20px; border-bottom: 1px solid var(--lk-line); background: rgba(10, 16, 18, .6); }
+.lk-root .lk-chathead-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lk-root .lk-chathead-slots { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.lk-root .lk-sigil { width: 52px; height: 52px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 35% 30%, #3a2a12, #120c05); border: 2px solid var(--lk-gold-deep); box-shadow: 0 0 0 4px rgba(201, 162, 74, .12), 0 0 24px rgba(227, 180, 90, .18); }
+.lk-root .lk-name { font-family: var(--lk-display); font-size: 22px; font-weight: 900; letter-spacing: .06em; margin: 0; }
+.lk-root .lk-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.lk-root .lk-stream { flex: 1; padding: 22px 24px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; }
+.lk-root .lk-intro { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 24px; }
+.lk-root .lk-q { align-self: flex-end; max-width: 70%; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.lk-root .lk-qb { padding: 10px 14px; border-radius: 14px 14px 4px 14px; background: #24343a; border: 1px solid #33464d; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lk-root .lk-who { font-size: 12px; color: var(--lk-muted); }
+.lk-root .lk-a { align-self: flex-start; max-width: min(760px, 92%); display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 12px; }
+.lk-root .lk-mini { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #1a120a; border: 1.5px solid var(--lk-gold-deep); }
+
+/* Parchment answer */
+.lk-root .lk-ab { border-radius: 4px 16px 16px 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; background: linear-gradient(180deg, #f7eedb, #efe2c4); color: #2a1f14; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); border: 1px solid #d9c59c; }
+.lk-root .lk-ab p { margin: 0; font-family: var(--lk-serif); font-size: 18px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lk-root .lk-ab-error { border-color: #b8463c; }
+.lk-root .lk-verdict { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; padding: 4px 10px 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.lk-root .lk-v-ok { background: #2f5a3e; color: #eaf7ee; }
+.lk-root .lk-v-amber { background: #8a5a12; color: #fff4dc; }
+.lk-root .lk-v-red { background: #7a2e28; color: #ffe9e4; }
+.lk-root .lk-quote { margin: 0; padding: 10px 14px; border-left: 3px solid #a8865a; background: rgba(168, 134, 90, .12); border-radius: 0 8px 8px 0; font-family: var(--lk-serif); font-style: italic; font-size: 16.5px; line-height: 1.45; color: #3a2a18; }
+.lk-root .lk-cite { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12.5px; color: #6a5236; }
+.lk-root .lk-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; border: 1px solid #cdb88f; background: #fffaf0; color: #4a3820; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.lk-root .lk-acts { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; border-top: 1px dashed #cdb88f; }
+.lk-root .lk-act { min-height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid #cdb88f; background: transparent; color: #4a3820; font-family: inherit; font-size: 13px; cursor: pointer; }
+.lk-root .lk-act:hover { background: #fffaf0; }
+.lk-root .lk-act-dark { color: var(--lk-text); border-color: var(--lk-border); }
+.lk-root .lk-act-dark:hover { background: #1b282d; }
+.lk-root .lk-act:disabled { opacity: .6; cursor: default; }
+.lk-root .lk-call { padding: 10px 12px; border-radius: 10px; background: #fff6e2; border: 1px solid #e0b860; }
+.lk-root .lk-call .lk-lbl { color: #8a5a12; }
+.lk-root .lk-call p { font-size: 16.5px; }
+.lk-root .lk-web { border-radius: 12px; border: 1.5px dashed #8a7a9a; background: #ece6f2; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.lk-root .lk-disc { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; background: #2a2238; color: #ece6ff; font-size: 13px; line-height: 1.45; }
+.lk-root .lk-res { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 10px 12px; border-radius: 8px; background: #fff; border: 1px solid #d6cce2; }
+.lk-root .lk-res strong { font-size: 14px; color: #2a1f3a; }
+.lk-root .lk-res span.d { font-size: 12px; color: #6a5a80; }
+.lk-root .lk-res p { grid-column: 1 / -1; margin: 0; font-family: var(--lk-sans); font-size: 13.5px; line-height: 1.45; color: #3a3048; }
+.lk-root .lk-thinking { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #c8b88a; }
+.lk-root .lk-dots i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--lk-gold-deep); margin: 0 2px; animation: lkb 1.2s infinite; }
+.lk-root .lk-dots i:nth-child(2) { animation-delay: .15s; }
+.lk-root .lk-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes lkb {
+  0%, 80%, 100% { opacity: .25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lk-root .lk-dots i { animation: none; }
+}
+
+/* Composer */
+.lk-root .lk-compose { border-top: 1px solid var(--lk-line); padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; background: rgba(10, 16, 18, .7); }
+.lk-root .lk-sugs { display: flex; flex-wrap: wrap; gap: 6px; }
+.lk-root .lk-sug { min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid #3a4d54; background: #0f171a; color: var(--lk-text); font-family: inherit; font-size: 13px; cursor: pointer; }
+.lk-root .lk-sug:hover { border-color: var(--lk-gold); }
+.lk-root .lk-inrow { display: flex; gap: 8px; align-items: flex-end; }
+.lk-root .lk-in { flex: 1; min-height: 48px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--lk-border); background: var(--lk-field); color: var(--lk-text); font-family: var(--lk-serif); font-size: 18px; resize: none; box-sizing: border-box; }
+.lk-root .lk-in:focus { outline: 2px solid var(--lk-gold); outline-offset: 1px; }
+.lk-root .lk-send { min-height: 48px; padding: 0 20px; border-radius: 12px; border: none; background: var(--lk-gold); color: var(--lk-gold-ink); font-family: var(--lk-display); font-weight: 700; font-size: 15px; cursor: pointer; }
+.lk-root .lk-send:disabled { opacity: .55; cursor: default; }
+.lk-root .lk-toggle { display: inline-flex; padding: 3px; border-radius: 999px; background: #0f171a; border: 1px solid var(--lk-card-border); }
+.lk-root .lk-toggle button { min-height: 28px; padding: 0 12px; border-radius: 999px; border: none; background: transparent; color: var(--lk-muted); font-family: inherit; font-size: 12.5px; cursor: pointer; }
+.lk-root .lk-toggle button[aria-pressed="true"] { background: #24343a; color: #f3cf86; }
+
+/* Sidebar cards */
+.lk-root .lk-ruling { padding: 10px; border-radius: 10px; background: #1a1610; border: 1px solid #4a3a1a; display: flex; flex-direction: column; gap: 4px; }
+.lk-root .lk-ruling strong { font-family: var(--lk-serif); font-size: 16px; color: #f3cf86; }
+.lk-root .lk-legend { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: start; font-size: 13px; line-height: 1.4; color: #c8d3d0; }
+.lk-root .lk-alert { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; background: #3a1c1c; color: #ffb4a8; font-size: 14px; }
+
+/* Drawer (L7) */
+.lk-root.lk-drawer, .lk-root .lk-drawer { width: 440px; max-width: 100%; display: flex; flex-direction: column; background: #0b1214; border-left: 1px solid var(--lk-border); box-shadow: -20px 0 50px rgba(0, 0, 0, .6); }
+.lk-root .lk-drawer .lk-stream, .lk-root.lk-drawer .lk-stream { padding: 16px; }
+.lk-root .lk-drawer .lk-a, .lk-root.lk-drawer .lk-a { max-width: 100%; }
+.lk-root .lk-drawer .lk-q, .lk-root.lk-drawer .lk-q { max-width: 88%; }
+.lk-root .lk-fab, .lk-root.lk-fab { display: flex; align-items: center; gap: 8px; padding: 10px 16px 10px 10px; border-radius: 999px; background: #1a120a; border: 1.5px solid var(--lk-gold-deep); color: #f3cf86; font-family: var(--lk-display); font-weight: 700; box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
+
+/* Phones (the board's 760 px query; 44 px targets added) */
+@media (max-width: 760px) {
+  .lk-root .lk-main { grid-template-columns: minmax(0, 1fr); padding: 12px 12px 20px; gap: 12px; }
+  .lk-root .lk-q { max-width: 88%; }
+  .lk-root .lk-a { max-width: 100%; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; }
+  .lk-root .lk-mini { width: 28px; height: 28px; }
+  .lk-root .lk-stream { padding: 14px 12px; }
+  .lk-root .lk-ab { padding: 12px 14px; }
+  .lk-root .lk-ab p { font-size: 17px; }
+  .lk-root .lk-chathead { padding: 12px; gap: 10px; flex-wrap: wrap; }
+  .lk-root .lk-sigil { width: 44px; height: 44px; }
+  .lk-root .lk-name { font-size: 19px; }
+  .lk-root .lk-chat { min-height: calc(100vh - 80px); border-radius: 12px; }
+  .lk-root .lk-compose { padding: 10px; }
+  .lk-root .lk-act,
+  .lk-root .lk-sug,
+  .lk-root .lk-chip,
+  .lk-root .lk-toggle button { min-height: 44px; }
+}
