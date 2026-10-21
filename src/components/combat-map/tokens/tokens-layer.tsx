@@ -6,13 +6,29 @@ import { designAsset } from "@/lib/design-assets";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
 import type { MapLayerProps } from "../slots";
-import { initialsOf, snapTurn } from "./geometry";
+import { initialsOf, snapTurn, TURN_BUTTON_STEP } from "./geometry";
 import { useRings } from "./rings";
 import { SIDES } from "./sides";
 import { useTokenActions, useTokens, type TokenView } from "./use-tokens";
 
 /** Ring colours per band (the board's RANGES): Melee, Very Close, Close, Far. */
 const RING_COLOURS = ["rgba(255,255,255,0.8)", "rgba(243,207,134,0.9)", "rgba(111,184,166,0.9)", "rgba(198,182,242,0.85)"] as const;
+
+/** Keyboard moves, one square: arrow keys and WASD. */
+const KEY_STEPS: Readonly<Record<string, readonly [number, number]>> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  a: [-1, 0],
+  A: [-1, 0],
+  d: [1, 0],
+  D: [1, 0],
+  w: [0, -1],
+  W: [0, -1],
+  s: [0, 1],
+  S: [0, 1],
+};
 
 /** Token background without a portrait, per side (the board). */
 const SIDE_BACKGROUND: Record<TokenView["side"], string> = {
@@ -59,11 +75,27 @@ export function TokensLayer(props: MapLayerProps) {
   const { cell, zoom, pad } = viewport;
   const selected = tokens?.find((t) => t._id === selectedTokenId) ?? null;
 
-  // R / Delete (the board's shortcuts); Escape and N are the map board's.
+  // R / Delete (the board's shortcuts); Escape and N are the map board's. Arrow keys or WASD move a token one square (it faces
+  // the way it moves) and Q / E turn it (user 2026-10-21): the GM's selected token, a player's selected token or else their own PC,
+  // so a player never has to click first.
   const onKey = useEffectEvent((e: globalThis.KeyboardEvent) => {
     const target = e.target as HTMLElement | null;
     if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) return;
-    if (e.ctrlKey || e.metaKey || e.altKey || editing || !selected) return;
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || editing) return;
+    const mover = selected?.canMove ? selected : gm ? null : (tokens?.find((t) => t.mine && t.canMove) ?? null);
+    const step = KEY_STEPS[e.key];
+    if (mover && step) {
+      e.preventDefault();
+      if (!selected) onSelectToken(mover._id);
+      void actions.move(mover._id, mover.x + step[0], mover.y + step[1]);
+      return;
+    }
+    if (mover && (e.key === "q" || e.key === "Q" || e.key === "e" || e.key === "E")) {
+      e.preventDefault();
+      void actions.turn(mover._id, snapTurn(mover.face + (e.key.toLowerCase() === "q" ? -TURN_BUTTON_STEP : TURN_BUTTON_STEP)));
+      return;
+    }
+    if (!selected) return;
     if (e.key === "r" || e.key === "R") rings.toggle(selected._id);
     if (gm && (e.key === "Delete" || e.key === "Backspace")) {
       e.preventDefault();
@@ -106,11 +138,11 @@ export function TokensLayer(props: MapLayerProps) {
     if (x !== token.x || y !== token.y) void actions.move(token._id, x, y);
   }
   function onTokenKey(e: KeyboardEvent<HTMLButtonElement>, token: TokenView) {
-    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    const step = KEY_STEPS[e.key];
     if (!step || !token.canMove || editing) return;
     e.preventDefault();
     onSelectToken(token._id);
-    void actions.move(token._id, token.x + step[0]!, token.y + step[1]!);
+    void actions.move(token._id, token.x + step[0], token.y + step[1]);
   }
 
   function onKnobDown(e: ReactPointerEvent<HTMLElement>, token: TokenView) {
