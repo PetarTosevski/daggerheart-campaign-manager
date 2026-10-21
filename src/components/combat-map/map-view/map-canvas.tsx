@@ -57,7 +57,7 @@ type CanvasState = { style: "classic"; painted: Painted } | { style: "sprites"; 
 const NO_UPLOADS: sprites.UploadedSprites = new Map();
 
 /** Squares whose painted terrain differs between two cell maps, as one bounding rectangle, or null. */
-function paintDiff(a: PaintedTerrain, b: PaintedTerrain): MapRect | null {
+function paintDiff(a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): MapRect | null {
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -72,6 +72,16 @@ function paintDiff(a: PaintedTerrain, b: PaintedTerrain): MapRect | null {
   for (const key in a) if (a[key] !== b[key]) touch(key);
   for (const key in b) if (!(key in a)) touch(key);
   return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/** Squares whose texture ref differs between two texture-cell maps (P9), as one bounding rectangle, or null. */
+function refDiff(a: sprites.SpritePaintSpec["textures"], b: sprites.SpritePaintSpec["textures"]): MapRect | null {
+  const key = (ref: { builtin: string } | { uploaded: string } | undefined) => (ref === undefined ? "" : "builtin" in ref ? `b:${ref.builtin}` : `u:${ref.uploaded}`);
+  const left: Record<string, string> = {};
+  const right: Record<string, string> = {};
+  for (const k in a ?? {}) left[k] = key(a![k]);
+  for (const k in b ?? {}) right[k] = key(b![k]);
+  return paintDiff(left, right);
 }
 
 /**
@@ -121,8 +131,9 @@ function paintSpriteLayout(
   if (!ctx) return prev;
   const spec = toSpritePaintSpec(layout, uploaded);
   const art = spriteImages();
+  // Hand-painted texture cells (P9) are not structure: like painted terrain they repaint only the squares they change.
   const structure = JSON.stringify([
-    layout._id, layout.w, layout.h, layout.seed, layout.base, layout.plankV ?? false, layout.areas, spec.setting, spec.textures,
+    layout._id, layout.w, layout.h, layout.seed, layout.base, layout.plankV ?? false, layout.areas, spec.setting,
     [...uploaded.values()].map((u) => [u._id, u.url]),
   ]);
   const objects = new Map<string, sprites.SpritePaintObject>((spec.objects ?? []).map((o) => [o.id, o]));
@@ -140,7 +151,9 @@ function paintSpriteLayout(
     else if (JSON.stringify(old) !== JSON.stringify(object)) dirty.push(unionRect(bounds(old), bounds(object)));
   }
   for (const [id, old] of prev.objects) if (!objects.has(id)) dirty.push(bounds(old));
-  const cellsChanged = paintDiff(prev.paint, paint);
+  const terrainChanged = paintDiff(prev.paint, paint);
+  const texturesChanged = refDiff(prev.spec.textures, spec.textures);
+  const cellsChanged = terrainChanged && texturesChanged ? unionRect(terrainChanged, texturesChanged) : (terrainChanged ?? texturesChanged);
   if (cellsChanged !== null) dirty.push(terrainDirtyRect(cellsChanged));
   if (dirty.length === 0) return { ...prev, spec, objects };
   const prepared = cellsChanged !== null ? sprites.prepareMap(spec, paint) : sprites.withObjects(prev.prepared, spec.objects ?? []);

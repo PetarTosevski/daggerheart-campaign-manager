@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
 import type { Terrain } from "@/lib/domain/combat-map/spec";
+import type { SpriteRef } from "../../../../convex/lib/validators/combatMaps";
 
 import type { Brush, PlaceableKind } from "./edit-model";
 
@@ -23,6 +24,10 @@ export type EditorState = {
   terrain: Terrain;
   brush: Brush;
   kind: PlaceableKind;
+  /** Sprites style (P9): the object sprite to place; null = the picker's first sprite. */
+  sprite: SpriteRef | null;
+  /** Sprites style (P9): the texture to paint; null = paint `terrain` (a terrain without a texture). */
+  texture: SpriteRef | null;
   /** The object selected on the map (its panel shows), or null. */
   selectedObjectId: string | null;
   /** The last failed edit's message, shown in the Edit tools card. */
@@ -34,6 +39,9 @@ type EditorContextValue = EditorState & {
   setTerrain: (terrain: Terrain) => void;
   setBrush: (brush: Brush) => void;
   setKind: (kind: PlaceableKind) => void;
+  setSprite: (sprite: SpriteRef) => void;
+  /** Picks a texture to paint, or null to paint the plain `terrain`. */
+  setTexture: (texture: SpriteRef | null) => void;
   selectObject: (objectId: string | null) => void;
   setError: (message: string | null) => void;
 };
@@ -47,6 +55,8 @@ export function EditorStateProvider({ children }: { children: ReactNode }) {
     terrain: "stone",
     brush: 1,
     kind: "tree",
+    sprite: null,
+    texture: null,
     selectedObjectId: null,
     error: null,
   });
@@ -55,9 +65,12 @@ export function EditorStateProvider({ children }: { children: ReactNode }) {
       ...state,
       // Picking a tool drops the object selection (the board).
       setTool: (tool) => setState((s) => ({ ...s, tool, selectedObjectId: null, error: null })),
-      setTerrain: (terrain) => setState((s) => ({ ...s, terrain })),
+      // A plain terrain replaces the picked texture (Sprites style).
+      setTerrain: (terrain) => setState((s) => ({ ...s, terrain, texture: null })),
       setBrush: (brush) => setState((s) => ({ ...s, brush })),
       setKind: (kind) => setState((s) => ({ ...s, kind })),
+      setSprite: (sprite) => setState((s) => ({ ...s, sprite })),
+      setTexture: (texture) => setState((s) => ({ ...s, texture })),
       selectObject: (selectedObjectId) => setState((s) => ({ ...s, selectedObjectId })),
       setError: (error) => setState((s) => ({ ...s, error })),
     }),
