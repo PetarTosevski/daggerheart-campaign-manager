@@ -17,6 +17,7 @@ import { countdownDetailsSchema } from "../src/lib/validation/countdowns";
 import type { Doc } from "./_generated/dataModel";
 import { campaignQuery, keyedGmMutation, keyedUserMutation } from "./lib/functions";
 import { rollDice } from "./lib/dice";
+import { applyTick } from "./lib/countdownTicks";
 import { applyRule } from "./lib/mechanics";
 import { atLeast, campaignAccess } from "./lib/permissions";
 import {
@@ -186,8 +187,52 @@ export const setVisibility = keyedGmMutation({
 });
 
 /**
+ * Arms or disarms a dashboard countdown (countdowns-advanced D4): an armed countdown ticks by itself on counted action
+ * rolls (a long-term one on finished long rests). GM only; NOT_FOUND for a frame-owned or another campaign's countdown,
+ * COUNTDOWN_RULE for a cancelled one. A chase row arms its partner too (D9). Arming changes no value, so it writes no
+ * history row.
+ */
+export const setArmed = keyedGmMutation({
+  args: { countdownId: v.id("countdowns"), armed: v.boolean() },
+  returns: v.object({ armed: v.boolean() }),
+  handler: async (ctx, { countdownId, armed }) => {
+    const countdown = await ctx.db.get("countdowns", countdownId);
+    if (countdown === null || countdown.campaignId !== ctx.campaign._id || countdown.ownerKey !== undefined) {
+      throw appError("NOT_FOUND");
+    }
+    if (countdown.status === "cancelled") throw appError("COUNTDOWN_RULE", "A cancelled countdown can't be armed.");
+    return ctx.once("countdown_armed", { countdownId, armed }, async () => {
+      await ctx.db.patch("countdowns", countdownId, { armed });
+      const partnerId = countdown.chase?.partnerId;
+      const partner = partnerId === undefined ? null : await ctx.db.get("countdowns", partnerId);
+      if (partner !== null && partner.campaignId === countdown.campaignId && partner.ownerKey === undefined && partner.status !== "cancelled") {
+        await ctx.db.patch("countdowns", partner._id, { armed });
+      }
+      return { armed };
+    });
+  },
+});
+
+/**
+ * How far a manual move ticks the countdown through the one tick path (`applyTick`), or 0 when it keeps today's rules:
+ * every Tick -1 and every downward correction of an active countdown, and of a paused one that repeats (so its loop
+ * resets instead of ending). A paused countdown that doesn't repeat keeps today's correction (completes at 0 without a
+ * trigger, E1/E3); upward moves (Borrowed Time, positive corrections), pause, resume and cancel never tick.
+ * The card's optimistic update (countdowns/card.tsx `manualTickAmount`) is a copy of this rule; see the K2 report.
+ */
+function manualTickAmount(countdown: Pick<Doc<"countdowns">, "status" | "repeat">, action: string, amount: number): number {
+  if (action === "advance") return 1;
+  if (action !== "correction" || amount >= 0) return 0;
+  const open = countdown.status === "active" || (countdown.status === "paused" && countdown.repeat !== undefined);
+  return open ? -amount : 0;
+}
+
+/**
  * advance / reverse / pause / resume / cancel, or a correction by `amount`,
  * following the legacy SQL rules in `applyCountdownAction`. GM only.
+ * A Tick -1 or a downward correction then moves the countdown through K0's `applyTick` (source "advance" /
+ * "correction", no entryId: nothing for a roll's undo), so a manual tick to 0 triggers, resets a repeating countdown
+ * and writes the GM's notice exactly like a roll (countdowns-advanced D7, Q2); see `manualTickAmount`.
  * The client sends no `campaignId`, so the campaign comes from the countdown and
  * is authorized here through `campaignAccess` (permissionFor); the idempotency
  * key is scoped to the caller.
@@ -205,6 +250,11 @@ export const operate = keyedUserMutation({
     ),
     amount: v.optional(v.number()),
   },
+  returns: v.object({
+    previousValue: v.number(),
+    newValue: v.number(),
+    status: v.union(...COUNTDOWN_STATUSES.map((s) => v.literal(s))),
+  }),
   handler: async (ctx, { countdownId, action, amount }) => {
     const countdown = await ctx.db.get("countdowns", countdownId);
     // Frame-owned countdowns (objectives, Lycanthropy…) follow their tracker's rules.
@@ -216,10 +266,17 @@ export const operate = keyedUserMutation({
       throw appError("INVALID", "Only a correction takes an amount.");
     }
     return ctx.once("countdown_operate", { countdownId, action, amount }, async () => {
-      // Both expected domain errors (a rule, or a value out of range) become COUNTDOWN_RULE.
+      // Both expected domain errors (a rule, or a value out of range) become COUNTDOWN_RULE. The legacy rules check
+      // every move first, also the ones that then go through applyTick, so a refused move is refused as before (E1).
       const next = applyRule("COUNTDOWN_RULE", CountdownRangeError, () =>
         applyRule("COUNTDOWN_RULE", CountdownRuleError, () => applyCountdownAction(countdown, action, amount ?? 0)),
       );
+      const tick = manualTickAmount(countdown, action, amount ?? 0);
+      if (tick > 0) {
+        const source = action === "correction" ? "correction" : "advance";
+        const ticked = await applyTick(ctx, countdown, tick, { source, actorId: ctx.user._id }, { whilePaused: action === "correction" });
+        return { previousValue: countdown.currentValue, newValue: ticked.after.currentValue, status: ticked.after.status };
+      }
       await ctx.db.patch("countdowns", countdownId, {
         currentValue: next.currentValue,
         status: next.status,

@@ -1,10 +1,11 @@
 import { v } from "convex/values";
 
+import { COUNTDOWN_DICE_SIDES, MAX_COUNTDOWN_DICE, startFromDice } from "../src/lib/domain/countdowns/advanced";
 import { COUNTDOWN_VISIBILITY_PRESETS, MAX_COUNTDOWN_START } from "../src/lib/domain/countdowns/index";
+import { parseCountdownLabel } from "../src/lib/domain/countdowns/labels";
 import {
   environmentCountdownCategory,
   environmentCountdownName,
-  environmentCountdownStart,
   featureCountdownLabels,
   environmentsFor,
 } from "../src/lib/domain/environments/index";
@@ -74,6 +75,9 @@ export const spendFear = keyedGmMutation({
  * Starts the feature's countdown on the dashboard: named "<Environment>: <Feature>", the feature text as its
  * description, a category from the label, the label's starting value (dice like "Loop 1d4" are rolled here), and
  * Private (the user's answer: only the GM sees it until they change it). A feature without a countdown is INVALID.
+ * countdowns-advanced K2: the label (`parseCountdownLabel`) also gives the mode (progress / consequence / long-term /
+ * standard), the repeat (loop / increasing / decreasing, first start kept as `initialValue`) and the dice formula
+ * (kept as `startDice`, Q4); the countdown starts armed (D4). Arguments and result are unchanged (E4).
  */
 export const startCountdown = keyedGmMutation({
   /** `label`: which of the feature's countdowns (its own label or one written in its text); the first when omitted. */
@@ -83,12 +87,16 @@ export const startCountdown = keyedGmMutation({
     const { environment, feature } = findFeature(ctx.campaign, environmentId, featureName);
     const labels = featureCountdownLabels(feature);
     const label = wanted === undefined ? labels[0] : labels.find((l) => l === wanted);
-    const start = label === undefined ? null : environmentCountdownStart(label);
-    if (label === undefined || start === null) throw appError("INVALID", "That feature has no such countdown.");
+    const parsed = label === undefined ? null : parseCountdownLabel(label);
+    if (label === undefined || parsed === null) throw appError("INVALID", "That feature has no such countdown.");
+    const { mode, repeat, start } = parsed;
     const campaignId = ctx.campaign._id;
     return ctx.once("environment_start_countdown", { environmentId, featureName, label }, async () => {
-      const rolled = start.kind === "fixed" ? start.value : rollDice(start.count, start.sides).reduce((a, b) => a + b, 0);
-      const startingValue = Math.min(MAX_COUNTDOWN_START, Math.max(1, rolled));
+      // The label says what it is (countdowns-advanced K2): mode, repeat and a fixed or rolled start (R5, R6, R7).
+      const startingValue =
+        start.kind === "fixed" ? Math.min(MAX_COUNTDOWN_START, Math.max(1, start.value)) : startFromDice(rollDice(start.count, start.sides), MAX_COUNTDOWN_START);
+      const sides = COUNTDOWN_DICE_SIDES.find((n) => start.kind === "dice" && n === start.sides);
+      const startDice = start.kind === "dice" && sides !== undefined && start.count >= 1 && start.count <= MAX_COUNTDOWN_DICE ? { count: start.count, sides } : undefined;
       const name = environmentCountdownName(environment, feature.name, labels.length > 1 ? label : undefined);
       const countdownId = await ctx.db.insert("countdowns", {
         campaignId,
@@ -101,6 +109,11 @@ export const startCountdown = keyedGmMutation({
         status: "active",
         createdAt: Date.now(),
         visibility: COUNTDOWN_VISIBILITY_PRESETS.private,
+        // Started countdowns tick by themselves (D4); an absent mode is standard (D1).
+        armed: true,
+        ...(mode !== "standard" ? { mode } : {}),
+        ...(repeat !== null && mode !== "longTerm" ? { repeat, initialValue: startingValue } : {}),
+        ...(startDice !== undefined && mode !== "longTerm" ? { startDice } : {}),
       });
       await recordHistory(ctx, ctx.user._id, {
         campaignId,

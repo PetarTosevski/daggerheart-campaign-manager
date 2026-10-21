@@ -1,26 +1,118 @@
 "use client";
 
+import { useMutation } from "convex/react";
 import { Eye, EyeOff } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import { Modal } from "@/components/brand/modal";
+import { errorMessage } from "@/lib/convex-errors";
 import {
+  applyCountdownAction,
   canAdvanceCountdown,
   canCancelCountdown,
   canPauseCountdown,
   canResumeCountdown,
   canReverseCountdown,
   countdownVisibilityPreset,
+  type CountdownAction,
 } from "@/lib/domain/countdowns";
+import { nextCycleStart, tickCountdown } from "@/lib/domain/countdowns/advanced";
 import { cn } from "@/lib/utils";
-import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CountdownView } from "../../../../../../convex/countdowns";
 
+import { advancementLine } from "./new-dialog";
 import { BTN, CATEGORY_LABEL } from "./shared";
 import { Hidden, VISIBILITY_OPTIONS, VisibilityForm } from "./visibility";
+
+/**
+ * How far a manual move ticks through the tick path, else 0 (copy of convex/countdowns.ts `manualTickAmount`, which the
+ * server runs; kept identical until it moves into src/lib/domain/countdowns, see the K2 report): every Tick -1, and a
+ * downward correction of an active countdown or of a paused one that repeats.
+ */
+function manualTickAmount(countdown: Pick<CountdownView, "status" | "repeat">, action: CountdownAction, amount: number): number {
+  if (action === "advance") return 1;
+  if (action !== "correction" || amount >= 0) return 0;
+  const open = countdown.status === "active" || (countdown.status === "paused" && countdown.repeat !== null);
+  return open ? -amount : 0;
+}
+
+/**
+ * The card after one operate intent, computed with the same domain rules as the server (applyCountdownAction checks the
+ * move; tickCountdown triggers and resets), for the optimistic update. A refused move leaves the card as it is.
+ */
+export function operatedView(countdown: CountdownView, action: CountdownAction, amount = 0, now = Date.now()): CountdownView {
+  if (countdown.currentValue === null || countdown.startingValue === null) return countdown;
+  const state = { startingValue: countdown.startingValue, currentValue: countdown.currentValue, status: countdown.status };
+  try {
+    const next = applyCountdownAction(state, action, amount);
+    const tick = manualTickAmount(countdown, action, amount);
+    if (tick === 0) {
+      const completedAt = next.completedNow ? now : next.reopened ? null : countdown.completedAt;
+      return { ...countdown, currentValue: next.currentValue, status: next.status, completedAt };
+    }
+    const ticked = tickCountdown(
+      { ...state, repeat: countdown.repeat ?? undefined, triggerCount: countdown.triggerCount ?? 0 },
+      tick,
+      { whilePaused: action === "correction" },
+    );
+    return {
+      ...countdown,
+      ...ticked.next,
+      completedAt: ticked.finished ? now : countdown.completedAt,
+      lastTriggeredAt: ticked.triggered ? now : countdown.lastTriggeredAt,
+    };
+  } catch {
+    return countdown;
+  }
+}
+
+/** One keyed intent per click with its error kept for the card's aria-live region (as useIntent, for a mutation with an optimistic update). */
+function useKeyed<A extends { idempotencyKey: string }, R>(run: (args: A) => Promise<R>) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  async function fire(args: Omit<A, "idempotencyKey">): Promise<R | undefined> {
+    setError(null);
+    setPending(true);
+    try {
+      return await run({ ...args, idempotencyKey: crypto.randomUUID() } as A);
+    } catch (e) {
+      setError(errorMessage(e));
+      return undefined;
+    } finally {
+      setPending(false);
+    }
+  }
+  return { fire, error, pending };
+}
+
+/** What kind of countdown it is: 'Progress', 'Loop 5', 'Increasing 8 → 9', 'Decreasing 8 → 7', 'Rolled 1d6: 4'. */
+export function typeBadges(countdown: CountdownView): { label: string; title?: string }[] {
+  const out: { label: string; title?: string }[] = [];
+  const { mode, repeat, startingValue: start, startDice } = countdown;
+  if (mode === "progress") out.push({ label: "Progress", title: `Progress countdown. Per action roll: ${advancementLine("progress")}` });
+  if (mode === "consequence") out.push({ label: "Consequence", title: `Consequence countdown. Per action roll: ${advancementLine("consequence")}` });
+  if (mode === "longTerm") out.push({ label: "Long-term" });
+  if (repeat !== null && repeat !== undefined) {
+    const name = { loop: "Loop", increasing: "Increasing", decreasing: "Decreasing" }[repeat];
+    if (start === null) out.push({ label: name });
+    else if (repeat === "loop") out.push({ label: `Loop ${start}`, title: `Resets to ${start} after it triggers.` });
+    else {
+      const next = nextCycleStart(repeat, start);
+      out.push({
+        label: `${name} ${start} → ${next ?? "major event"}`,
+        title: next === null ? "The next trigger is the major event." : `Resets to ${next} after it triggers.`,
+      });
+    }
+  }
+  if (startDice) {
+    const rolled = countdown.initialValue ?? start;
+    out.push({ label: `Rolled ${startDice.count}d${startDice.sides}${rolled === null ? "" : `: ${rolled}`}` });
+  }
+  return out;
+}
 
 // Irregular sand grains from the board.
 const GRAIN_RADII = [
@@ -38,7 +130,28 @@ const HOURGLASS = "M14 9 L46 9 C46 25 34 32 32 40 C34 48 46 55 46 71 L14 71 C14 
 const CLOTH = "M9 11 Q30 4 51 11 L53 64 Q47 71 41 65 Q36 72 30 65 Q24 72 19 65 Q13 71 7 64 Z";
 /** One dashboard countdown: the hourglass, its grains, the GM's ticks, pause, cancel and visibility. */
 export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: CountdownView; campaignId: Id<"campaigns">; readOnly: boolean }) {
-  const operate = useIntent(api.countdowns.operate);
+  // Optimistic (CL4): the card moves on click, computed by the same domain rules the server runs.
+  const operate = useKeyed(
+    useMutation(api.countdowns.operate).withOptimisticUpdate((store, { countdownId: id, action, amount }) => {
+      const list = store.getQuery(api.countdowns.listByCampaign, { campaignId });
+      if (list === undefined) return;
+      const next = list.map((c) => (c._id === id ? operatedView(c, action, amount) : c)).filter((c) => c.status !== "cancelled");
+      store.setQuery(api.countdowns.listByCampaign, { campaignId }, next);
+    }),
+  );
+  const arm = useKeyed(
+    useMutation(api.countdowns.setArmed).withOptimisticUpdate((store, { countdownId: id, armed }) => {
+      const list = store.getQuery(api.countdowns.listByCampaign, { campaignId });
+      if (list === undefined) return;
+      // A chase row arms its partner too (D9).
+      const partner = list.find((c) => c._id === id)?.chase?.partnerId;
+      store.setQuery(
+        api.countdowns.listByCampaign,
+        { campaignId },
+        list.map((c) => (c._id === id || c._id === partner ? { ...c, armed } : c)),
+      );
+    }),
+  );
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [editingVisibility, setEditingVisibility] = useState(false);
   const { _id: countdownId, status } = countdown;
@@ -58,8 +171,13 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
   const badge = VISIBILITY_OPTIONS.find((o) => o.preset === preset)!.badge;
   const BadgeIcon = preset === "private" ? EyeOff : Eye;
 
-  const act = (action: "advance" | "reverse" | "pause" | "resume" | "cancel" | "correction", amount?: number) =>
-    operate.fire({ countdownId, action, amount });
+  const act = (action: CountdownAction, amount?: number) => operate.fire({ countdownId, action, amount });
+  const badges = typeBadges(countdown);
+  const triggers = countdown.triggerCount ?? 0;
+  // "Triggered n times" on a repeating countdown (Q2); one that doesn't repeat shows the struck banner instead.
+  const showTriggers = triggers > 0 && countdown.repeat !== null && countdown.repeat !== undefined;
+  const armed = countdown.armed === true;
+  const canArm = !readOnly && countdown.armed !== null && status !== "cancelled";
 
   return (
     <article
@@ -155,6 +273,53 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
         )}
       </div>
 
+      {badges.length > 0 || showTriggers || canArm ? (
+        <div className="flex flex-wrap items-center gap-2" data-testid="countdown-type">
+          {badges.map((b) => (
+            <span
+              key={b.label}
+              title={b.title}
+              aria-label={b.title ? `${b.label}: ${b.title}` : undefined}
+              tabIndex={b.title ? 0 : undefined}
+              className="rounded-full border border-[#7a5a2e] bg-[#1d1a12] px-2.5 py-0.5 text-[12px] font-semibold text-[#e6c88a]"
+            >
+              {b.label}
+            </span>
+          ))}
+          {showTriggers ? (
+            <span className="text-[12px] text-[#c9d2cf]" data-testid="countdown-triggers">
+              Triggered {triggers} {triggers === 1 ? "time" : "times"}
+            </span>
+          ) : null}
+          {canArm ? (
+            <button
+              type="button"
+              aria-pressed={armed}
+              aria-label={`Armed: ${name} advances on action rolls`}
+              title={armed ? "Armed: every PC action roll ticks it. Click to stop." : "Not armed: only your ticks move it. Click to arm."}
+              onClick={() => void arm.fire({ campaignId, countdownId, armed: !armed })}
+              className="ml-auto flex min-h-11 cursor-pointer items-center gap-2 rounded-full px-2 text-[13px] text-[#c9d2cf]"
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "relative h-5 w-9 flex-none rounded-full border transition-colors",
+                  armed ? "border-brand bg-brand" : "border-[#4a5a60] bg-[#10181b]",
+                )}
+              >
+                <span
+                  className={cn(
+                    "absolute top-0.5 size-3.5 rounded-full transition-[left]",
+                    armed ? "left-[18px] bg-brand-ink" : "left-0.5 bg-[#8fa3a8]",
+                  )}
+                />
+              </span>
+              Armed
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {done ? (
         <div role="status" className="rounded-lg border border-danger-line bg-[#3a1414] px-3 py-2 text-center font-display text-[14px] tracking-[0.1em] text-[#ffd9d6]">
           THE COUNTDOWN HAS STRUCK
@@ -242,7 +407,7 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
       )}
 
       <p role="status" aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
-        {operate.error}
+        {operate.error ?? arm.error}
       </p>
 
       {!readOnly && canCancelCountdown(status) ? (
