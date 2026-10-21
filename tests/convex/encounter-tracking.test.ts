@@ -26,7 +26,7 @@ async function running({ start = true }: { start?: boolean } = {}) {
     (await gm.mutation(api.encounters.addAdversary, { campaignId, encounterId, source, count, summoned: false, idempotencyKey: key() })).instanceIds[0]!;
   if (start) await gm.mutation(api.encounters.start, { campaignId, encounterId });
   const instance = async (id: string) => (await gm.query(api.encounters.get, { campaignId, encounterId }))!.instances.find((i) => i._id === id)!;
-  const fear = async () => (await gm.query(api.campaigns.get, { campaignId }))!.fear;
+  const fear = async () => gm.query(api.campaigns.fear, { campaignId });
   return { ...ctx, encounterId, add, instance, fear };
 }
 

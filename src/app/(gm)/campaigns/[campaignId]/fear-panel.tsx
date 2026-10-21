@@ -1,9 +1,11 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { memo, useState, type CSSProperties } from "react";
 
+import { SlotBoundary } from "@/components/party/session/boundary";
+import { errorMessage } from "@/lib/convex-errors";
 import { MAX_FEAR } from "@/lib/domain/fear";
-import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -27,8 +29,34 @@ function coreFilter(n: number): string {
   );
 }
 
-export function FearPanel({ campaignId, fear, readOnly = false }: { campaignId: Id<"campaigns">; fear: number; readOnly?: boolean }) {
-  const set = useIntent(api.fear.set);
+/**
+ * The dashboard's GM Fear panel. It reads its own small query (PF7), so a Fear click re-renders this panel and nothing
+ * else on the page; a failing read leaves the rest of the dashboard standing (CL1).
+ */
+export const FearPanel = memo(function FearPanel(props: { campaignId: Id<"campaigns">; readOnly?: boolean }) {
+  return (
+    <SlotBoundary fallback={<p className="m-0 text-[14px] text-[#f0a8a0]">GM Fear could not be loaded.</p>}>
+      <FearTokens {...props} />
+    </SlotBoundary>
+  );
+});
+
+function FearTokens({ campaignId, readOnly = false }: { campaignId: Id<"campaigns">; readOnly?: boolean }) {
+  const loaded = useQuery(api.campaigns.fear, { campaignId });
+  const fear = loaded ?? 0;
+  // A token click shows the new Fear at once (CL3: the value is the intent; the server checks the range).
+  const run = useMutation(api.fear.set).withOptimisticUpdate((store, args) => {
+    store.setQuery(api.campaigns.fear, { campaignId: args.campaignId }, args.value);
+  });
+  const [error, setError] = useState<string | null>(null);
+  async function setFear(value: number) {
+    setError(null);
+    try {
+      await run({ campaignId, value, idempotencyKey: crypto.randomUUID() });
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
   const t = fear / MAX_FEAR;
 
   return (
@@ -73,9 +101,9 @@ export function FearPanel({ campaignId, fear, readOnly = false }: { campaignId: 
               aria-pressed={k < fear}
               className={`fz ${k < fear ? "fz-on" : "fz-off"}`}
               style={readOnly ? { ...style, cursor: "default" } : style}
-              disabled={readOnly}
+              disabled={readOnly || loaded === undefined}
               // Clicking the top lit token lowers Fear by one, as on the board.
-              onClick={() => void set.fire({ campaignId, value: value === fear ? k : value })}
+              onClick={() => void setFear(value === fear ? k : value)}
             />
           );
         })}
@@ -118,7 +146,7 @@ export function FearPanel({ campaignId, fear, readOnly = false }: { campaignId: 
         </div>
       </div>
       <p role="status" aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
-        {set.error}
+        {error}
       </p>
     </section>
   );

@@ -173,7 +173,7 @@ test("Spend Fear lowers the GM's Fear; Start countdown puts a private countdown 
   await spend.click();
   await expect(block.getByTestId("environment-status")).toHaveText("Spent 1 Fear: Undertow");
   await expect(block.getByRole("img", { name: "GM Fear 1 of 12" })).toBeVisible();
-  expect((await client.query(api.campaigns.get, { campaignId }))?.fear).toBe(1);
+  expect(await client.query(api.campaigns.fear, { campaignId })).toBe(1);
   for (const target of [spend, gain]) {
     expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   }

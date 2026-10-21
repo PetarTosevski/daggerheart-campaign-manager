@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import { errorCode, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
-const fearOf = async (gm: Awaited<ReturnType<typeof setupWithCampaign>>["gm"], campaignId: string) =>
-  (await gm.query(api.campaigns.get, { campaignId }))?.fear;
+const fearOf = async (gm: Awaited<ReturnType<typeof setupWithCampaign>>["gm"], campaignId: Awaited<ReturnType<typeof setupWithCampaign>>["campaignId"]) =>
+  gm.query(api.campaigns.fear, { campaignId });
 
 describe("fear", () => {
   useAllowlist();

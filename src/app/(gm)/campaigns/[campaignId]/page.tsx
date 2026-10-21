@@ -31,7 +31,7 @@ export default function DashboardPage() {
         <LastSession campaignId={campaign._id} />
       </div>
       <aside className="flex flex-col gap-6 self-start">
-        <FearPanel campaignId={campaign._id} fear={campaign.fear} readOnly={campaign.role !== "gm"} />
+        <FearPanel campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
         <WitherPanel campaign={campaign} />
         <EndScene campaignId={campaign._id} isGm={slot.isGm} />
         <RestLauncher {...slot} />

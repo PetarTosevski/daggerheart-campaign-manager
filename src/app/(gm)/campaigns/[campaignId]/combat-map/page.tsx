@@ -19,7 +19,7 @@ import { useIntent } from "@/lib/use-intent";
 import { api } from "../../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
-import { useCampaign } from "../campaign-shell";
+import { useCampaign, WithFear } from "../campaign-shell";
 
 /**
  * Combat Map (D9): the page shell. C0 owns the layout, header, GM Fear, the Play / Edit switch and the shared page
@@ -278,7 +278,9 @@ function CombatHeader({ campaign, state, loading }: { campaign: CampaignSummary;
           <>
             {/* Sessions hub: while a session is live, a chip back to its Play stage. */}
             <LiveSessionChip campaignId={campaign._id} />
-            <FearPill campaignId={campaign._id} fear={campaign.fear} />
+            <SlotBoundary label="Fear">
+              <WithFear>{(fear) => <FearPill campaignId={campaign._id} fear={fear} />}</WithFear>
+            </SlotBoundary>
             {state.map ? (
               <SlotBoundary label="Map style">
                 <StyleSwitch campaignId={campaign._id} map={state.map} />

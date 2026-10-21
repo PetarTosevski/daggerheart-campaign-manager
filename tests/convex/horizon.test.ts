@@ -30,7 +30,7 @@ describe("Horizon Doom Track and Soul Echoes", () => {
           .unique();
         await ctx.db.patch(state!._id, { fear });
       });
-    const fear = async () => (await gm.query(api.campaigns.get, { campaignId }))!.fear;
+    const fear = async () => gm.query(api.campaigns.fear, { campaignId });
     const mark = (boxId: string, campaign: Id<"campaigns"> = campaignId) =>
       gm.mutation(api.trackers.horizon.markBox, { campaignId: campaign, boxId, idempotencyKey: key() });
     return { t, gm, player, campaignId, setTier, setFear, fear, mark };

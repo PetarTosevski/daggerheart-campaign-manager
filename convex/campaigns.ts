@@ -9,8 +9,10 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { normalizeEmail } from "./lib/allowlist";
 import { seedCodex } from "./lib/codex";
+import { campaignFearState } from "./lib/fear";
 import {
   campaignMutation,
+  campaignQuery,
   gmMutation,
   keyedUserMutation,
   maybeUserQuery,
@@ -26,16 +28,32 @@ import {
 } from "./lib/validators/campaigns";
 import { settingsRow } from "./settings";
 
-export type CampaignSummary = Infer<typeof campaignSummaryValidator>;
+/**
+ * What `get` returns: the campaign summary without GM Fear (PF7). Fear changes on every click, and the whole campaign
+ * page reads `get`; Fear has its own query (`fear` below), so a Fear click re-sends only that.
+ */
+const summaryValidator = campaignSummaryValidator.omit("fear");
+
+export type CampaignSummary = Infer<typeof summaryValidator>;
+
+/**
+ * What `list` returns per campaign: the summary plus its Fear, which Load Campaign shows on every card. Only the title
+ * menu subscribes to `list` (never a campaign page), so a Fear click inside a campaign does not re-send it.
+ */
+export type CampaignListItem = Infer<typeof campaignSummaryValidator>;
+
+async function withFear(ctx: QueryCtx, summary: CampaignSummary): Promise<CampaignListItem> {
+  const state = await ctx.db
+    .query("campaignState")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", summary._id))
+    .unique();
+  return { ...summary, fear: state?.fear ?? 0 };
+}
 
 /** `markOpened` skips the write when the stored open is younger than this. */
 export const OPEN_THROTTLE_MS = 5 * 60 * 1000;
 
 async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, lastOpenedAt: number): Promise<CampaignSummary> {
-  const state = await ctx.db
-    .query("campaignState")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
-    .unique();
   // A table's players: a handful (bounded read).
   const members = await ctx.db
     .query("campaignMembers")
@@ -52,7 +70,6 @@ async function summarise(ctx: QueryCtx, campaign: Doc<"campaigns">, role: Role, 
     options: resolveOptions(campaign.frameId, campaign.options),
     createdAt: campaign.createdAt,
     lastOpenedAt,
-    fear: state?.fear ?? 0,
     players: members.length,
     role,
   };
@@ -121,7 +138,9 @@ export const list = userQuery({
       rows.map(async (r) => ({ ...r, lastOpenedAt: await openedAt(ctx, user._id, r.campaign._id, () => r.fallback) })),
     );
     opened.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
-    return Promise.all(opened.slice(0, LIST_MAX).map((r) => summarise(ctx, r.campaign, r.role, r.lastOpenedAt)));
+    return Promise.all(
+      opened.slice(0, LIST_MAX).map(async (r) => withFear(ctx, await summarise(ctx, r.campaign, r.role, r.lastOpenedAt))),
+    );
   },
 });
 
@@ -138,7 +157,7 @@ export async function deleteInvites(ctx: MutationCtx, campaignId: Id<"campaigns"
 /** One campaign by id (a raw URL segment), or null if it is unknown, deleted, not visible to the user, or they are signed out. */
 export const get = maybeUserQuery({
   args: { campaignId: v.string() },
-  returns: v.union(campaignSummaryValidator, v.null()),
+  returns: v.union(summaryValidator, v.null()),
   handler: async (ctx, args) => {
     const user = ctx.user;
     const campaignId = ctx.db.normalizeId("campaigns", args.campaignId);
@@ -157,6 +176,17 @@ export const get = maybeUserQuery({
     });
     return summarise(ctx, campaign, role, lastOpenedAt);
   },
+});
+
+/**
+ * The campaign's GM Fear (0–12), every member. Its own small query so a Fear change re-sends only this, not the campaign
+ * summary that the whole campaign page reads (PF7).
+ */
+export const fear = campaignQuery({
+  need: "view",
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => (await campaignFearState(ctx, ctx.campaign._id)).fear,
 });
 
 // No 0/O/1/I/L so codes read clearly aloud and on paper.

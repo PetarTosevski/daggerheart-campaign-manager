@@ -17,7 +17,7 @@ async function setup(frameId: "age-of-umbra" | "witherwild" = "age-of-umbra") {
   const player = t.withIdentity({ subject: `${playerId}|s` });
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Halcyon", idempotencyKey: key() });
   await gm.mutation(api.members.invite, { campaignId, email: OTHER_EMAIL });
-  const fear = async () => (await gm.query(api.campaigns.get, { campaignId }))!.fear;
+  const fear = async () => gm.query(api.campaigns.fear, { campaignId });
   return { t, gm, player, campaignId, fear };
 }
 

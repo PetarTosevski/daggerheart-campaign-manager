@@ -20,7 +20,7 @@ import { ADVERSARIES } from "@/lib/srd/adversaries";
 import { api } from "../../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
-import { useCampaign } from "../campaign-shell";
+import { useCampaign, WithFear } from "../campaign-shell";
 
 const TABS = [
   { id: "catalogue", label: "Catalogue" },
@@ -123,7 +123,7 @@ function EncountersTab({ campaign, initialEncounter }: { campaign: CampaignSumma
         <Builder campaignId={campaign._id} onOpenEncounter={setOpenEncounter} initialEncounterId={initialEncounter} />
       </SlotBoundary>
       <SlotBoundary label="The encounter tracker">
-        <EncounterTracker campaignId={campaign._id} encounterId={openEncounter} fear={campaign.fear} />
+        <WithFear>{(fear) => <EncounterTracker campaignId={campaign._id} encounterId={openEncounter} fear={fear} />}</WithFear>
       </SlotBoundary>
     </>
   );
@@ -223,15 +223,19 @@ function GmAdversaries({ campaign, initialTab, initialEncounter }: { campaign: C
                 />
               ) : null}
               <SlotBoundary label="Environments">
-                <EnvironmentCatalogue
-                  campaignId={campaign._id}
-                  fear={campaign.fear}
-                  hopeAndFear={hopeAndFear}
-                  frameId={campaign.frameId}
-                  selectedId={environmentId}
-                  onSelect={setEnvironmentId}
-                  onOpenAdversary={(adversaryId, environment) => setOpened({ adversaryId, environmentId: environment.id, environmentName: environment.name })}
-                />
+                <WithFear>
+                  {(fear) => (
+                    <EnvironmentCatalogue
+                      campaignId={campaign._id}
+                      fear={fear}
+                      hopeAndFear={hopeAndFear}
+                      frameId={campaign.frameId}
+                      selectedId={environmentId}
+                      onSelect={setEnvironmentId}
+                      onOpenAdversary={(adversaryId, environment) => setOpened({ adversaryId, environmentId: environment.id, environmentName: environment.name })}
+                    />
+                  )}
+                </WithFear>
               </SlotBoundary>
             </>
           )}
