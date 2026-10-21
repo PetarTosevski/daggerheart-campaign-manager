@@ -4,8 +4,22 @@
 import type { CSSProperties } from "react";
 
 import { hopeMax } from "@/lib/domain/characters";
-import { getAncestry, getClass, getCommunity, getDomain, getSubclass, portraitFor, type DomainId } from "@/lib/srd";
+import { PORTRAITS } from "@/lib/srd/art";
+import { CLASSES } from "@/lib/srd/classes";
+import { DOMAINS } from "@/lib/srd/domains";
+import { ANCESTRIES, COMMUNITIES } from "@/lib/srd/heritage";
+import { SUBCLASSES } from "@/lib/srd/subclasses";
+import type { DomainId, PortraitArt } from "@/lib/srd/types";
 import type { CharacterSheet } from "@/lib/validation/characters";
+
+// CL9: SRD leaf modules, not the @/lib/srd barrel (its helpers close over every list, domain cards and all tiers).
+const getAncestry = (id: string) => ANCESTRIES.find((a) => a.id === id);
+const getClass = (id: string) => CLASSES.find((c) => c.id === id);
+const getCommunity = (id: string) => COMMUNITIES.find((c) => c.id === id);
+const getDomain = (id: string) => DOMAINS.find((d) => d.id === id);
+const getSubclass = (id: string) => SUBCLASSES.find((s) => s.id === id);
+const portraitFor = (opts: { subclassId?: string | null; ancestryId?: string | null }): PortraitArt | undefined =>
+  (opts.subclassId ? PORTRAITS[`sub-${opts.subclassId}`] : undefined) ?? (opts.ancestryId ? PORTRAITS[`anc-${opts.ancestryId}`] : undefined);
 
 /** Domain emblems from the Party board (`.dom-<domain>` classes), as design asset ids. */
 export const DOMAIN_ICONS: Readonly<Record<string, string>> = {
