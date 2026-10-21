@@ -50,6 +50,7 @@ const eslintConfig = defineConfig([
   {
     files: [
       "src/lib/domain/**",
+      "src/lib/sprite-packs/**",
       "src/lib/validation/**",
       "src/lib/frames/**",
       "src/lib/srd/**",
