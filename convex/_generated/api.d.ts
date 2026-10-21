@@ -68,6 +68,7 @@ import type * as lib_validators_encounters from "../lib/validators/encounters.js
 import type * as lib_validators_maps from "../lib/validators/maps.js";
 import type * as lib_validators_rests from "../lib/validators/rests.js";
 import type * as lib_validators_sessions from "../lib/validators/sessions.js";
+import type * as lib_validators_spritePacks from "../lib/validators/spritePacks.js";
 import type * as lib_validators_wither from "../lib/validators/wither.js";
 import type * as maps from "../maps.js";
 import type * as members from "../members.js";
@@ -106,6 +107,7 @@ import type * as tables_maps from "../tables/maps.js";
 import type * as tables_operations from "../tables/operations.js";
 import type * as tables_rests from "../tables/rests.js";
 import type * as tables_sessions from "../tables/sessions.js";
+import type * as tables_spritePacks from "../tables/spritePacks.js";
 import type * as tables_trackers from "../tables/trackers.js";
 import type * as trackers_ageOfUmbra from "../trackers/ageOfUmbra.js";
 import type * as trackers_andaluria from "../trackers/andaluria.js";
@@ -183,6 +185,7 @@ declare const fullApi: ApiFromModules<{
   "lib/validators/maps": typeof lib_validators_maps;
   "lib/validators/rests": typeof lib_validators_rests;
   "lib/validators/sessions": typeof lib_validators_sessions;
+  "lib/validators/spritePacks": typeof lib_validators_spritePacks;
   "lib/validators/wither": typeof lib_validators_wither;
   maps: typeof maps;
   members: typeof members;
@@ -221,6 +224,7 @@ declare const fullApi: ApiFromModules<{
   "tables/operations": typeof tables_operations;
   "tables/rests": typeof tables_rests;
   "tables/sessions": typeof tables_sessions;
+  "tables/spritePacks": typeof tables_spritePacks;
   "tables/trackers": typeof tables_trackers;
   "trackers/ageOfUmbra": typeof trackers_ageOfUmbra;
   "trackers/andaluria": typeof trackers_andaluria;

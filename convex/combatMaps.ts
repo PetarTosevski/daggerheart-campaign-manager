@@ -24,14 +24,16 @@ import { claimFile, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files
 import { campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import {
   CELL_LAYERS,
-  cellLayerValidator,
   combatAreaValidator,
   combatGridValidator,
   combatMapSourceValidator,
   combatObjectKindValidator,
   combatTerrainValidator,
+  mapStyleValidator,
   pointValidator,
+  settingRefValidator,
   sightModeValidator,
+  spriteRefValidator,
   type CombatGrid,
 } from "./lib/validators/combatMaps";
 
@@ -77,9 +79,21 @@ const objectViewValidator = v.object({
   points: v.optional(v.array(pointValidator)),
   sight: v.optional(sightModeValidator),
   lit: v.optional(v.boolean()),
+  /** Sprite packs: the object's sprite (absent = mapped from `kind` in the Sprites style, D1). */
+  sprite: v.optional(spriteRefValidator),
 });
 
-const cellViewValidator = v.object({ layer: cellLayerValidator, tile: v.number(), cells: v.string() });
+/**
+ * The D9 layers' tiles (terrain, block, fog), as every Classic reader decodes them (map-view/cells.ts). The
+ * sprite-packs "texture" layer goes out separately in `textureCells`, so a reader of `cells` never meets it.
+ */
+const cellViewValidator = v.object({
+  layer: v.union(v.literal("terrain"), v.literal("block"), v.literal("fog")),
+  tile: v.number(),
+  cells: v.string(),
+});
+/** Tiles of the "texture" layer (sprite packs P9): `TEXTURE_CODES[i]` = the map's `texturePalette[i]`, "." none. */
+const textureCellViewValidator = v.object({ tile: v.number(), cells: v.string() });
 
 const imageViewValidator = v.object({
   /** null while the image is unreachable (deleted blob); the map then shows its grid only. */
@@ -106,7 +120,17 @@ export const combatMapLayoutValidator = v.object({
   image: v.union(imageViewValidator, v.null()),
   objects: v.array(objectViewValidator),
   cells: v.array(cellViewValidator),
+  /** Sprite packs: the "texture" layer's tiles; absent when the map has none. */
+  textureCells: v.optional(v.array(textureCellViewValidator)),
   prompt: v.optional(v.string()),
+  /** Sprite packs: absent = "classic" (Q4, E3). */
+  style: v.optional(mapStyleValidator),
+  /** Sprite packs: the resolved setting (D7); absent = resolve at paint time with the keyword picker. */
+  setting: v.optional(settingRefValidator),
+  /** Sprite packs, GM only (like `prompt`): whether the GM picked the setting (D7). */
+  settingPicked: v.optional(v.boolean()),
+  /** Sprite packs: what the "texture" cell layer's codes paint (TEXTURE_CODES[i] = texturePalette[i]). */
+  texturePalette: v.optional(v.array(spriteRefValidator)),
 });
 export type CombatMapLayout = Infer<typeof combatMapLayoutValidator>;
 
@@ -125,6 +149,9 @@ const mapListRowValidator = v.object({
   seed: v.number(),
   imageUrl: v.union(v.string(), v.null()),
   updatedAt: v.number(),
+  /** Sprite packs: the thumbnail draws the map's style (absent = "classic") in its setting. */
+  style: v.optional(mapStyleValidator),
+  setting: v.optional(settingRefValidator),
 });
 export type CombatMapListRow = Infer<typeof mapListRowValidator>;
 
@@ -164,6 +191,7 @@ async function layoutOf(ctx: QueryCtx, map: Doc<"combatMaps">, gm: boolean): Pro
     .query("combatMapCells")
     .withIndex("by_map_layer_tile", (q) => q.eq("mapId", map._id))
     .take(MAX_CELL_TILES);
+  const textureCells = cells.flatMap(({ layer, tile, cells: text }) => (layer === "texture" ? [{ tile, cells: text }] : []));
   return {
     _id: map._id,
     name: map.name,
@@ -177,7 +205,7 @@ async function layoutOf(ctx: QueryCtx, map: Doc<"combatMaps">, gm: boolean): Pro
     seed: map.seed,
     updatedAt: map.updatedAt,
     image: map.image ? { url: await imageUrl(ctx, map), grid: map.image.grid } : null,
-    objects: objects.map(({ _id, kind, x, y, r, rot, variant, len, span, points, sight, lit }) => ({
+    objects: objects.map(({ _id, kind, x, y, r, rot, variant, len, span, points, sight, lit, sprite }) => ({
       _id,
       kind,
       x,
@@ -190,9 +218,15 @@ async function layoutOf(ctx: QueryCtx, map: Doc<"combatMaps">, gm: boolean): Pro
       ...(points === undefined ? {} : { points }),
       ...(sight === undefined ? {} : { sight }),
       ...(lit === undefined ? {} : { lit }),
+      ...(sprite === undefined ? {} : { sprite }),
     })),
-    cells: cells.map(({ layer, tile, cells: text }) => ({ layer, tile, cells: text })),
+    cells: cells.flatMap(({ layer, tile, cells: text }) => (layer === "texture" ? [] : [{ layer, tile, cells: text }])),
+    ...(textureCells.length === 0 ? {} : { textureCells }),
     ...(gm && map.prompt !== undefined ? { prompt: map.prompt } : {}),
+    ...(map.style === undefined ? {} : { style: map.style }),
+    ...(map.setting === undefined ? {} : { setting: map.setting }),
+    ...(gm && map.settingPicked !== undefined ? { settingPicked: map.settingPicked } : {}),
+    ...(map.texturePalette === undefined ? {} : { texturePalette: map.texturePalette }),
   };
 }
 
@@ -276,6 +310,8 @@ export const list = gmQuery({
         seed: map.seed,
         imageUrl: await imageUrl(ctx, map),
         updatedAt: map.updatedAt,
+        ...(map.style === undefined ? {} : { style: map.style }),
+        ...(map.setting === undefined ? {} : { setting: map.setting }),
       });
     }
     return rows;
@@ -370,6 +406,8 @@ export const setLive = gmMutation({
 /**
  * GM: a copy of a map: its layout, objects and painted cells (tokens, explored areas and the live mark are not
  * copied). An uploaded image is copied into its own file by a scheduled action, so each map owns its file.
+ * Every stored field is spread, so the sprite-pack fields go along (sprite packs E8): style, setting,
+ * settingPicked, texturePalette, area textures, object sprites and the "texture" cell layer.
  */
 export const duplicate = keyedGmMutation({
   args: { mapId: v.string() },

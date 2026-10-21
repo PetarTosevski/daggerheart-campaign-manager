@@ -26,6 +26,12 @@ export type CellLayer = "terrain" | "block" | "fog";
 /** A stored tile as the layout queries return it (`combatMapCells` without ids). */
 export type CellTile = { readonly layer: CellLayer; readonly tile: number; readonly cells: string };
 
+/**
+ * Any stored `combatMapCells` row, including the sprite-packs "texture" layer (uppercase palette codes, the sprite
+ * painter's); `decodeCells` ignores texture tiles, so the server can pass its rows unfiltered.
+ */
+export type StoredCellTile = { readonly layer: CellLayer | "texture"; readonly tile: number; readonly cells: string };
+
 /** Every layer decoded, keyed by square: `cellKey(x, y)` = "x,y" (the painter's `paintKey`, C1's square keys). */
 export type DecodedCells = {
   /** Hand-painted terrain: C2 `paintMap(..., { paint })` and C1 `prepareMap({ paint })`. */
@@ -59,7 +65,7 @@ export const indexInTile = (x: number, y: number, w: number): number => (y - til
  * Decodes a map's tiles (any layers, any order) for a map of `w` x `h` squares. Squares outside the map (a tile
  * longer than the map, rows below `h`) and unknown codes are ignored, so a resized map never paints off its edge.
  */
-export function decodeCells(tiles: readonly CellTile[], w: number, h: number): DecodedCells {
+export function decodeCells(tiles: readonly StoredCellTile[], w: number, h: number): DecodedCells {
   const out: DecodedCells = { paint: {}, block: new Set(), fog: {} };
   for (const { layer, tile, cells } of tiles) {
     const top = tile * CELL_TILE_ROWS;
@@ -75,8 +81,10 @@ export function decodeCells(tiles: readonly CellTile[], w: number, h: number): D
         if (terrain !== null) out.paint[key] = terrain;
       } else if (layer === "block") {
         if (code === BLOCK_CODE) out.block.add(key);
-      } else if (code === FOG_REVEAL) out.fog[key] = "reveal";
-      else if (code === FOG_HIDE) out.fog[key] = "hide";
+      } else if (layer === "fog") {
+        if (code === FOG_REVEAL) out.fog[key] = "reveal";
+        else if (code === FOG_HIDE) out.fog[key] = "hide";
+      }
     }
   }
   return out;

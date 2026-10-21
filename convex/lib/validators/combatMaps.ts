@@ -42,9 +42,30 @@ export type AreaShape = (typeof AREA_SHAPES)[number];
 /** A point in squares, as the board writes it: `[x, y]`. Arrays hold at most MAX_AREA_POINTS points. */
 export const pointValidator = v.array(v.number());
 
+// ---------------------------------------------------------------- sprite packs (plan .omc/plans/sprite-packs.yaml, P0)
+
+/**
+ * A sprite of a sprite pack (sprite packs D1, D8): a built-in catalog key `<setting>/<slug>` (e.g. "forest/oak-tree",
+ * resolved against the static manifest in src/lib/sprite-packs; an unknown key is SPRITE_UNKNOWN on write and
+ * draws Classic on read) or a GM-uploaded sprite (`spritePackSprites` id, CD6; a deleted one draws Classic, D9).
+ */
+export const spriteRefValidator = v.union(v.object({ builtin: v.string() }), v.object({ uploaded: v.id("spritePackSprites") }));
+export type SpriteRef = Infer<typeof spriteRefValidator>;
+
+/** A map's setting (D7): a built-in setting id (a sprite-sheets folder name, never "common") or a GM pack (Q3). */
+export const settingRefValidator = v.union(v.object({ builtin: v.string() }), v.object({ pack: v.id("spritePacks") }));
+export type SettingRef = Infer<typeof settingRefValidator>;
+
+/** How a map is drawn (sprite packs P3): today's procedural painter or pack sprites. Absent `style` = "classic" (Q4, E3). */
+export const MAP_STYLES = ["classic", "sprites"] as const;
+export type MapStyle = (typeof MAP_STYLES)[number];
+export const mapStyleValidator = literals(MAP_STYLES);
+
 /** One painted terrain area of a layout, painted in order (later on top). Unused fields for a shape may be absent. */
 export const combatAreaValidator = v.object({
   terrain: combatTerrainValidator,
+  /** Sprites style only: the texture drawn for this area (D1). Classic ignores it and paints `terrain`. */
+  texture: v.optional(spriteRefValidator),
   shape: literals(AREA_SHAPES),
   x: v.optional(v.number()),
   y: v.optional(v.number()),
@@ -91,6 +112,17 @@ export const combatMapFields = {
   image: v.optional(combatMapImageValidator),
   schemaVersion: v.number(),
   updatedAt: v.number(),
+  /** Sprite packs P3: how the map is drawn. Absent = "classic" (Q4); `setStyle` (P5) writes only this field (D1). */
+  style: v.optional(mapStyleValidator),
+  /** The resolved setting (D7). Absent on D9 maps: resolved at paint time by the keyword picker, stored on a switch to Sprites. */
+  setting: v.optional(settingRefValidator),
+  /** Whether the GM picked `setting` (true) or Claude / the keyword picker chose it (false), D7. */
+  settingPicked: v.optional(v.boolean()),
+  /**
+   * Textures hand-painted on the "texture" cell layer (P9), at most MAX_TEXTURE_PALETTE
+   * (convex/lib/validators/spritePacks.ts). Cell code `TEXTURE_CODES[i]` paints `texturePalette[i]`.
+   */
+  texturePalette: v.optional(v.array(spriteRefValidator)),
 };
 
 /** Object kinds of the painter (board `CMAP.KINDS`). Lights: `campfire`, `walltorch` and the board's older `torch` (lit like a wall torch, R9). */
@@ -148,16 +180,29 @@ export const combatObjectFields = {
   sight: v.optional(sightModeValidator),
   /** Lights only (campfire, walltorch): false = switched off. Absent = lit, as on the board. */
   lit: v.optional(v.boolean()),
+  /**
+   * Sprites style only: the sprite drawn for this object (D1). `kind` stays its Classic fallback (D2: a light
+   * sprite's kind is a light kind of the same reach) and `sight` stays the GM's override (D3).
+   */
+  sprite: v.optional(spriteRefValidator),
 };
 
 /**
  * Layers of painted cells (`combatMapCells`): `terrain` = hand-painted terrain (C5), `block` = painted sight
- * blockers for images (C5, R7), `fog` = the GM's reveal/hide marks (C7, R12). Encodings: `CELL_CODES` in
- * `convex/lib/combatMaps.ts`.
+ * blockers for images (C5, R7), `fog` = the GM's reveal/hide marks (C7, R12), `texture` = hand-painted textures
+ * of a Sprites map (sprite packs P9: `TEXTURE_CODES[i]` paints `texturePalette[i]`, "." none; painting a texture
+ * also paints its terrain class on `terrain`, so vision and Classic stay right). Encodings: `CELL_CODES` in
+ * `convex/lib/combatMaps.ts` and `TEXTURE_CODES` below.
  */
-export const CELL_LAYERS = ["terrain", "block", "fog"] as const;
+export const CELL_LAYERS = ["terrain", "block", "fog", "texture"] as const;
 export type CellLayer = (typeof CELL_LAYERS)[number];
 export const cellLayerValidator = literals(CELL_LAYERS);
+
+/**
+ * Cell codes of the "texture" layer: code i = the map's `texturePalette[i]`. Uppercase, so a texture cell can
+ * never read as a terrain ("a".."n"), block ("#") or fog ("r", "h") code. Its length is MAX_TEXTURE_PALETTE.
+ */
+export const TEXTURE_CODES = "ABCDEFGHIJKLMNOP";
 
 export const combatCellFields = {
   mapId: v.id("combatMaps"),

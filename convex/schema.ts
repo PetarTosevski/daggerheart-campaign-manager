@@ -14,6 +14,7 @@ import { mapTables } from "./tables/maps";
 import { operationTables } from "./tables/operations";
 import { restTables } from "./tables/rests";
 import { sessionTables } from "./tables/sessions";
+import { spritePackTables } from "./tables/spritePacks";
 import { trackerTables } from "./tables/trackers";
 
 export { customFrameValidator, frameIdValidator } from "./tables/campaigns";
@@ -35,4 +36,5 @@ export default defineSchema({
   ...encounterTables,
   ...combatMapTables,
   ...sessionTables,
+  ...spritePackTables,
 });

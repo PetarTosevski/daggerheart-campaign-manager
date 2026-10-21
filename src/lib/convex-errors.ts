@@ -16,6 +16,7 @@ import { operationMessages } from "./errors/operations";
 import { photoImportMessages } from "./errors/photoImport";
 import { restMessages } from "./errors/rests";
 import { sessionMessages } from "./errors/sessions";
+import { spritePackMessages } from "./errors/spritePacks";
 import { trackerMessages } from "./errors/trackers";
 import { witherMessages } from "./errors/wither";
 
@@ -50,6 +51,7 @@ const MESSAGES = mergeMessages(
   encounterMessages,
   combatMapMessages,
   sessionMessages,
+  spritePackMessages,
 );
 
 /** A message for the GM from an error thrown by a Convex function. */

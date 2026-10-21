@@ -29,12 +29,15 @@ export async function isClaimed(ctx: QueryCtx, storageId: Id<"_storage">): Promi
   return row !== null;
 }
 
-/** Records an unclaimed file as belonging to `refId` (check `isClaimed` first). */
+/**
+ * Records an unclaimed file as belonging to `refId` (check `isClaimed` first) and returns the new `files` row's id
+ * (an uploaded sprite stores it as `spritePackSprites.fileId`, sprite packs P8).
+ */
 export async function claimFile(
   ctx: MutationCtx,
   file: { storageId: Id<"_storage">; campaignId: Id<"campaigns">; uploadedBy: Id<"users">; kind: FileKind; refId: string },
-): Promise<void> {
-  await ctx.db.insert("files", { ...file, createdAt: Date.now() });
+): Promise<Id<"files">> {
+  return ctx.db.insert("files", { ...file, createdAt: Date.now() });
 }
 
 /** The file's record when it was recorded for this kind and owner, else null (bad id, someone else's file). */
