@@ -70,6 +70,27 @@ export interface PreparedMap {
 /** Kinds whose light the GM and players switch (R9). */
 export const LIGHT_KINDS: ReadonlySet<string> = new Set(["campfire", "torch", "walltorch"]);
 
+/**
+ * Doors (map-movement M1, D8): an object of kind `door` reads the layout's optional `open` (absent = closed). It is
+ * drawn as placed while closed and swung 90 degrees on its hinge (its local left end, `-r` along `rot`) while open.
+ */
+export interface DoorPaintFields {
+  readonly open?: boolean | null;
+}
+
+/** Whether an object is a door drawn open (kind `door` with `open: true`). */
+export const isOpenDoor = (o: PaintObject): boolean => o.kind === "door" && (o as PaintObject & DoorPaintFields).open === true;
+
+/**
+ * Where a door's leaf lies: while open, turned +90 degrees about its hinge, the end at `-half` along `rot` (`half` in
+ * the caller's units, squares or pixels). Returns the leaf's centre and rotation; a closed door keeps (x, y, rot).
+ */
+export const doorLeaf = (x: number, y: number, rot: number, half: number, open: boolean): { x: number; y: number; rot: number } => {
+  if (!open) return { x, y, rot };
+  const hx = x - half * Math.cos(rot), hy = y - half * Math.sin(rot);
+  return { x: hx - half * Math.sin(rot), y: hy + half * Math.cos(rot), rot: rot + Math.PI / 2 };
+};
+
 // ---------------------------------------------------------------------------------------------------- noise and random
 
 const hash = (x: number, y: number, s: number): number => {
@@ -135,6 +156,8 @@ export const objectBounds = (o: PaintObject, cell = DEFAULT_CELL): MapRect => {
     case "mushroom": case "bones": rad = 0.4 * s; break;
     case "crystal": rad = 1.6 * s; break;
     case "torch": case "walltorch": rad = 1.8 * s; break;
+    // The leaf's whole swing, open or closed, so a toggle repaints both: its far corner is about sqrt(5) r away.
+    case "door": rad = 2.4 * s; break;
     default: rad = 1.8 * s;
   }
   rad += m;
@@ -342,6 +365,32 @@ const canopy = (ctx: CanvasRenderingContext2D, C: number, x: number, y: number, 
   }
 };
 
+/**
+ * A door (map-movement M1): stone jambs at both ends of its opening (2r long along `rot`) and a plank leaf. Closed,
+ * the leaf fills the opening; open, it is swung 90 degrees on the hinge jamb (local left), its swing arc drawn faintly.
+ */
+const paintDoor = (ctx: CanvasRenderingContext2D, o: PaintObject, x: number, y: number, s: number, rot: number) => {
+  const open = isOpenDoor(o);
+  const t = Math.max(4, s * 0.22);
+  ctx.translate(x, y); ctx.rotate(rot);
+  if (open) {
+    ctx.strokeStyle = "rgba(240,226,190,0.55)"; ctx.lineWidth = 1.4; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.arc(-s, 0, 2 * s, 0, Math.PI / 2); ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.save();
+  if (open) { ctx.translate(-s, 0); ctx.rotate(Math.PI / 2); ctx.translate(s, 0); }
+  ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(-s + 3, -t / 2 + 4, 2 * s, t);
+  ctx.fillStyle = "#8a5a2c"; ctx.strokeStyle = "#2e1a0a"; ctx.lineWidth = 2;
+  ctx.fillRect(-s, -t / 2, 2 * s, t); ctx.strokeRect(-s, -t / 2, 2 * s, t);
+  ctx.strokeStyle = "rgba(46,26,10,0.6)"; ctx.lineWidth = 1;
+  for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(-s + (k * s) / 2, -t / 2); ctx.lineTo(-s + (k * s) / 2, t / 2); ctx.stroke(); }
+  ctx.fillStyle = "#d6b04a"; ctx.beginPath(); ctx.arc(s * 0.72, 0, Math.max(1.5, t * 0.22), 0, 7); ctx.fill();
+  ctx.restore();
+  const j = t * 1.15;
+  ctx.fillStyle = "#8f8b82"; ctx.strokeStyle = "#2a2826"; ctx.lineWidth = 1.6;
+  for (const ex of [-s, s]) { ctx.fillRect(ex - j / 2, -j / 2, j, j); ctx.strokeRect(ex - j / 2, -j / 2, j, j); }
+};
+
 const isLit = (o: PaintObject, lights: PaintOptions["lights"]) => (lights === "lit" ? true : lights === "unlit" ? false : o.lit !== false);
 
 const paintObject = (ctx: CanvasRenderingContext2D, o: PaintObject, C: number, seed: number, lights: PaintOptions["lights"]) => {
@@ -509,6 +558,10 @@ const paintObject = (ctx: CanvasRenderingContext2D, o: PaintObject, C: number, s
       } else {
         ctx.fillStyle = "#2a2420"; ctx.beginPath(); ctx.arc(x, y - s * 0.12, s * 0.08, 0, 7); ctx.fill();
       }
+      break;
+    }
+    case "door": {
+      paintDoor(ctx, o, x, y, s, rot);
       break;
     }
     case "bones": {

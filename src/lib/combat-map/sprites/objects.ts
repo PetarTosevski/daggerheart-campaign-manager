@@ -3,9 +3,18 @@
 //
 // Size (D4): an object's own sprite fits its w x h squares and is scaled by r / (max(w, h) / 2); a sprite that stands
 // in for a Classic kind (no ref, D1) is sized like the Classic drawing of that kind at that r, so layouts made for
-// Classic keep their spacing. `rot` turns the sprite about its centre.
+// Classic keep their spacing. `rot` turns the sprite about its centre. An open door's sprite (map-movement M1, D8) is
+// drawn swung 90 degrees on its hinge, the sprite's local left end.
 
-import { objectBounds as classicObjectBounds, paintMapRect as classicPaintMapRect, unionRect, type MapRect, type PreparedMap } from "../painter";
+import {
+  objectBounds as classicObjectBounds,
+  doorLeaf,
+  isOpenDoor,
+  paintMapRect as classicPaintMapRect,
+  unionRect,
+  type MapRect,
+  type PreparedMap,
+} from "../painter";
 import type { PaintObject } from "../raster";
 import type { SpriteLight } from "../../sprite-packs/catalog/index";
 import type { SpriteRef } from "../../sprite-packs/traits";
@@ -67,6 +76,14 @@ export function placeObject(o: SpritePaintObject, setting: string, seed: number,
   return { o, art, sw: art.px.w * k * scale, sh: art.px.h * k * scale };
 }
 
+/**
+ * Where the sprite is drawn, in squares: the object's centre and rotation, or for an open door the leaf swung 90
+ * degrees about its hinge (half the drawn width to the sprite's local left).
+ */
+export function spritePose(p: PlacedObject): { x: number; y: number; rot: number } {
+  return doorLeaf(p.o.x, p.o.y, p.o.rot || 0, p.sw / 2, isOpenDoor(p.o));
+}
+
 const lightOn = (o: PaintObject, lights: "spec" | "lit" | "unlit" | undefined) => (lights === "lit" ? true : lights === "unlit" ? false : o.lit !== false);
 
 /** The object's shadow at `cell` pixels per square (null: flat or Classic). */
@@ -83,7 +100,10 @@ export function placedBounds(p: PlacedObject, cell: number): MapRect {
   if (!p.art) return classic;
   const glow = p.art.light === "none" ? 0 : GLOW[p.art.light].radius;
   const rad = Math.max(0.5 * Math.hypot(p.sw, p.sh) + shadowReach(placedShadow(p, cell)) / cell, glow) + PX_MARGIN / cell;
-  return unionRect(classic, { x: p.o.x - rad, y: p.o.y - rad, w: 2 * rad, h: 2 * rad });
+  const at = spritePose(p);
+  const sprite = unionRect(classic, { x: at.x - rad, y: at.y - rad, w: 2 * rad, h: 2 * rad });
+  // A door's bounds cover the leaf both closed and open, so the repaint after a toggle clears the old drawing too.
+  return p.o.kind === "door" ? unionRect(sprite, { x: p.o.x - rad, y: p.o.y - rad, w: 2 * rad, h: 2 * rad }) : sprite;
 }
 
 const noop = () => undefined;
@@ -153,10 +173,10 @@ export function drawShadow(ctx: CanvasRenderingContext2D, p: PlacedObject, art: 
   const spec = placedShadow(p, cell);
   if (!p.art || !spec) return;
   const [w, h] = drawnPx(p, cell);
-  const rot = p.o.rot || 0;
-  const img = art.shadow(p.art.url, w, h, rot, spec) as (CanvasImageSource & { width: number; height: number }) | null;
+  const at = spritePose(p);
+  const img = art.shadow(p.art.url, w, h, at.rot, spec) as (CanvasImageSource & { width: number; height: number }) | null;
   if (!img) return;
-  ctx.drawImage(img, Math.round(p.o.x * cell + spec.dx - img.width / 2), Math.round(p.o.y * cell + spec.dy - img.height / 2));
+  ctx.drawImage(img, Math.round(at.x * cell + spec.dx - img.width / 2), Math.round(at.y * cell + spec.dy - img.height / 2));
 }
 
 export function drawGlow(ctx: CanvasRenderingContext2D, p: PlacedObject, cell: number, lights: "spec" | "lit" | "unlit" | undefined): void {
@@ -177,14 +197,14 @@ export function drawSprite(ctx: CanvasRenderingContext2D, p: PlacedObject, art: 
   const [w, h] = drawnPx(p, cell);
   const img = art.sprite(p.art.url, w, h);
   if (!img) return;
-  const rot = p.o.rot || 0;
-  if (rot === 0) {
-    ctx.drawImage(img, Math.round(p.o.x * cell - w / 2), Math.round(p.o.y * cell - h / 2));
+  const at = spritePose(p);
+  if (at.rot === 0) {
+    ctx.drawImage(img, Math.round(at.x * cell - w / 2), Math.round(at.y * cell - h / 2));
     return;
   }
   ctx.save();
-  ctx.translate(p.o.x * cell, p.o.y * cell);
-  ctx.rotate(rot);
+  ctx.translate(at.x * cell, at.y * cell);
+  ctx.rotate(at.rot);
   ctx.drawImage(img, -w / 2, -h / 2);
   ctx.restore();
 }
