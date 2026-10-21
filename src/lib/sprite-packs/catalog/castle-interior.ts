@@ -38,4 +38,49 @@ export const CASTLE_INTERIOR = defineFolder("castle-interior", {
     tex("wooden floorboards", "wood", false),
     tex("marble tiles", "stone", false),
   ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11B): new items, not variants; none stands in for a Classic kind.
+  // The kitchen hearth burns (campfire light); the reading chair's candle is a faint glow. The gatehouse portcullis
+  // is a door (bars: cover; blocks movement while closed); the wardrobe, screen and organ block. The portcullis,
+  // statue pair and battlement wall are drawn nearly square, so they are 2 x 2 rect, not 2 x 1.
+  extras: {
+    "props-2": [
+      obj("hunting hound", "none", "low", "rock", { standIn: false }),
+      obj("heraldic shield", "none", "low", "rock", { standIn: false }),
+      obj("chess table", "cover", "low", "table", { standIn: false }),
+      obj("wash basin on a stand", "none", "low", "barrel", { standIn: false }),
+      obj("small writing desk", "cover", "low", "table", { footprint: "rect", standIn: false }),
+      obj("globe on a stand", "cover", "low", "barrel", { standIn: false }),
+      obj("wine rack", "cover", "low", "crate", { footprint: "rect", standIn: false }),
+      obj("folding dressing screen", "block", "tall", "crate", { footprint: "rect", standIn: false }),
+      obj("birdcage", "none", "low", "barrel", { standIn: false }),
+      obj("potted fern", "cover", "low", "bush", { move: "open", standIn: false }),
+      obj("spinning wheel", "cover", "low", "table", { standIn: false }),
+      obj("crown on a velvet cushion", "none", "low", "chest", { standIn: false }),
+      obj("serving trolley with food", "cover", "low", "table", { footprint: "rect", standIn: false }),
+      obj("wooden bathing tub", "cover", "low", "barrel", { standIn: false }),
+      obj("wardrobe", "block", "tall", "crate", { footprint: "rect", standIn: false }),
+      obj("reading chair with a candle", "cover", "low", "table", { light: "faintglow", standIn: false }),
+    ],
+    "large-2": [
+      obj("copper bathtub with a screen", "cover", "low", "barrel", { footprint: "rect", standIn: false }),
+      obj("kitchen hearth with a roasting spit", "block", "tall", "campfire", {
+        footprint: "rect",
+        light: "campfire",
+        standIn: false,
+      }),
+      long("war table with a campaign map", "cover", "low", "table", { standIn: false }),
+      obj("pipe organ", "block", "tall", "crate", { footprint: "rect", standIn: false }),
+      obj("gatehouse portcullis", "cover", "tall", "door", { move: "door", footprint: "rect", standIn: false }),
+      obj("pair of knight statues", "block", "tall", "statue", { footprint: "rect", standIn: false }),
+      obj("ballista", "cover", "low", "crate", { footprint: "rect", standIn: false }),
+      obj("treasury strongboxes", "cover", "low", "chest", { footprint: "rect", standIn: false }),
+      obj("battlement wall with crenellations", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
+    ],
+    "terrain-2": [
+      tex("blue royal carpet", "stone", false),
+      tex("rush-strewn flagstones", "stone", false),
+      tex("oak parquet", "wood", false),
+      tex("battlement stone", "stone", false),
+    ],
+  },
 });

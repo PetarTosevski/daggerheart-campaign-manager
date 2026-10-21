@@ -38,4 +38,44 @@ export const TAVERN = defineFolder("tavern", {
     tex("kitchen tiles", "stone", false),
     tex("stone hearth floor", "stone", true),
   ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11B): new items, not variants; none stands in for a Classic kind.
+  // No light sources on these sheets. The cellar trapdoor stays open like the dungeon trapdoor (a floor hatch); the
+  // stable stall's walls block like the fenced coop; shelves and the brewing vats block by the D1 default.
+  extras: {
+    "props-2": [
+      obj("arm-wrestling table", "cover", "low", "table", { standIn: false }),
+      obj("dice game on a barrelhead", "cover", "low", "barrel", { standIn: false }),
+      obj("cheese wheel", "none", "low", "barrel", { standIn: false }),
+      obj("bread basket", "none", "low", "barrel", { standIn: false }),
+      obj("broken chair", "none", "low", "rubble", { standIn: false }),
+      obj("spittoon", "none", "low", "barrel", { standIn: false }),
+      obj("chopping board with a cleaver", "none", "flat", "table", { footprint: "rect", standIn: false }),
+      obj("pot of stew", "none", "low", "barrel", { standIn: false }),
+      obj("washtub of dishes", "cover", "low", "barrel", { standIn: false }),
+      obj("sack of potatoes", "cover", "low", "barrel", { standIn: false }),
+      obj("crate of wine bottles", "cover", "low", "crate", { standIn: false }),
+      obj("overturned table", "cover", "low", "table", { standIn: false }),
+      obj("hearth rug", "none", "flat", "rubble", { move: "open", standIn: false }),
+      obj("bard's hand drum", "none", "low", "barrel", { standIn: false }),
+      obj("small round table for two", "cover", "low", "table", { standIn: false }),
+      obj("crock of pickles", "none", "low", "barrel", { standIn: false }),
+    ],
+    "large-2": [
+      obj("wine cellar rack", "block", "tall", "crate", { footprint: "rect", standIn: false }),
+      obj("brewing copper and vats", "block", "tall", "barrel", { footprint: "rect", standIn: false }),
+      obj("large round table with chairs", "cover", "low", "table", { standIn: false }),
+      long("gambling table", "cover", "low", "table", { standIn: false }),
+      long("guest bathtub", "cover", "low", "barrel", { standIn: false }),
+      long("pair of fireside armchairs", "cover", "low", "table", { standIn: false }),
+      obj("inn stable stall with a horse", "cover", "low", "crate", { move: "block", footprint: "rect", standIn: false }),
+      obj("cellar trapdoor with stairs", "none", "flat", "crate", { footprint: "rect", standIn: false }),
+      long("back-bar shelves with bottles", "block", "tall", "crate", { standIn: false }),
+    ],
+    "terrain-2": [
+      tex("stone cellar floor", "stone", false),
+      tex("straw-covered floor", "dirt", true),
+      tex("sawdust floor", "dirt", true),
+      tex("dark oak planks", "wood", false),
+    ],
+  },
 });

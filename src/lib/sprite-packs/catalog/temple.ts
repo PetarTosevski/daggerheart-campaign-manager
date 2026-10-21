@@ -38,4 +38,45 @@ export const TEMPLE = defineFolder("temple", {
     tex("stone tiles with runes", "stone", false),
     tex("polished wood", "wood", false),
   ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11B): new items, not variants; none stands in for a Classic kind.
+  // The eternal flame bowl burns (torch light, like the floor brazier); the votive candle rack is a faint glow. The
+  // lotus pond is difficult (like the sacred pool); the steps, garden floors and cushion are open; the lion statue,
+  // bell and colonnade block. The cloister garden and entrance steps are 3 x 3, the colonnade 3 x 2.
+  extras: {
+    "props-2": [
+      obj("kneeling monk", "none", "low", "rock", { standIn: false }),
+      obj("hanging censer", "none", "low", "barrel", { standIn: false }),
+      obj("scroll shelf", "cover", "low", "crate", { footprint: "rect", standIn: false }),
+      obj("prayer wheel", "cover", "low", "barrel", { standIn: false }),
+      obj("votive candle rack", "cover", "low", "crystal", { light: "faintglow", footprint: "rect", standIn: false }),
+      obj("alms box", "cover", "low", "chest", { standIn: false }),
+      obj("eternal flame bowl", "none", "low", "torch", { light: "torch", standIn: false }),
+      obj("ceremonial dagger on a cushion", "none", "low", "chest", { standIn: false }),
+      obj("golden chalice", "none", "low", "barrel", { standIn: false }),
+      obj("guardian lion statue", "cover", "low", "statue", { move: "block", standIn: false }),
+      obj("lotus bowl", "none", "low", "barrel", { standIn: false }),
+      obj("meditation cushion", "none", "flat", "rubble", { move: "open", standIn: false }),
+      obj("ritual drum", "cover", "low", "barrel", { standIn: false }),
+      obj("crystal orb on a stand", "none", "low", "crystal", { standIn: false }),
+      obj("small sword in a stone", "cover", "low", "rock", { standIn: false }),
+      obj("tithe chest", "cover", "low", "chest", { standIn: false }),
+    ],
+    "large-2": [
+      obj("cloister garden", "none", "flat", "rubble", { move: "open", footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("lotus pond", "none", "flat", "rock", { move: "difficult", standIn: false }),
+      obj("choir stalls", "cover", "low", "log", { footprint: "rect", standIn: false }),
+      obj("temple entrance steps", "none", "low", "rubble", { move: "open", footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("great brass bell", "cover", "tall", "barrel", { move: "block", standIn: false }),
+      obj("raked sand garden", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
+      obj("oracle's smoking tripod", "none", "low", "barrel", { standIn: false }),
+      obj("sun-disc altar", "cover", "low", "table", { standIn: false }),
+      obj("colonnade", "cover", "tall", "pillar", { move: "block", footprint: "rect", w: 3, h: 2, standIn: false }),
+    ],
+    "terrain-2": [
+      tex("gold-inlaid floor", "stone", false),
+      tex("purple prayer carpet", "stone", false),
+      tex("sandstone temple floor", "stone", false),
+      tex("white gravel", "path", true),
+    ],
+  },
 });

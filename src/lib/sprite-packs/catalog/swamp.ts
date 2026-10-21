@@ -38,4 +38,44 @@ export const SWAMP = defineFolder("swamp", {
     tex("bog grass", "grass", true),
     tex("rotting boardwalk planks", "wood", false),
   ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11B): new items, not variants; none stands in for a Classic kind.
+  // The skull lantern and the skull shrine's fire are real flames (torch light). The boardwalk junction is open (like
+  // the broken boardwalk); the tar pit, sunken arch and swamp terrains follow the movement defaults (difficult).
+  extras: {
+    "props-2": [
+      obj("alligator", "none", "low", "rock", { standIn: false }),
+      obj("giant leech", "none", "low", "rock", { standIn: false }),
+      obj("heron", "none", "low", "rock", { standIn: false }),
+      obj("turtle on a log", "cover", "low", "log", { standIn: false }),
+      obj("crayfish trap", "none", "low", "crate", { standIn: false }),
+      obj("fishing pole in the mud", "none", "flat", "log", { move: "open", standIn: false }),
+      obj("skull lantern on a stick", "none", "tall", "torch", { light: "torch", standIn: false }),
+      obj("stack of peat bricks", "cover", "low", "crate", { standIn: false }),
+      obj("mooring post with rope", "none", "tall", "pillar", { standIn: false }),
+      obj("carnivorous plant", "cover", "low", "bush", { standIn: false }),
+      obj("sunken statue head", "cover", "low", "statue", { standIn: false }),
+      obj("wicker eel trap", "none", "low", "barrel", { standIn: false }),
+      obj("hand reaching from the mud", "none", "low", "bones", { standIn: false }),
+      obj("swamp orchid", "none", "low", "bush", { move: "open", standIn: false }),
+      obj("dead fish", "none", "flat", "bones", { move: "open", standIn: false }),
+      obj("half-sunken chest", "cover", "low", "chest", { standIn: false }),
+    ],
+    "large-2": [
+      obj("witch's hut on stilts (whole)", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("swamp troll", "cover", "tall", "rock", { standIn: false }),
+      obj("boardwalk junction", "none", "flat", "log", { move: "open", footprint: "rect", standIn: false }),
+      long("flat-bottomed punt", "cover", "low", "log", { standIn: false }),
+      obj("cypress tree with knees", "block", "tall", "tree", { variant: "dark", standIn: false }),
+      obj("skull shrine", "cover", "low", "torch", { light: "torch", standIn: false }),
+      obj("giant carnivorous plant", "block", "tall", "bush", { standIn: false }),
+      obj("sunken stone arch", "cover", "low", "rubble", { footprint: "rect", standIn: false }),
+      obj("bubbling tar pit", "none", "flat", "rubble", { standIn: false }),
+    ],
+    "terrain-2": [
+      tex("duckweed water", "water", true),
+      tex("peat bog", "swamp", true),
+      tex("wet reed bed", "swamp", true),
+      tex("algae-green mud", "swamp", true),
+    ],
+  },
 });
