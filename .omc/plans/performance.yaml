@@ -56,6 +56,20 @@ waves:
         goal: "campaigns.get and campaigns.list stop reading campaignState.fear; FearPanel and every fear reader use a small fear query (campaignQuery, returns validator); the shell splits its context into stable identity fields and live fields so a Fear click re-renders only the Fear consumers."
         depends_on: []
         owns:
+          - src/app/(gm)/campaigns/[campaignId]/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/app/(gm)/campaigns/chronicle.tsx
+          - src/components/party/dice/dice-box.tsx
+          - src/components/adversaries/tracker/use-tracker.ts
+          - src/components/adversaries/environments/feature-actions.tsx
+          - tests/convex/age-of-umbra.test.ts
+          - tests/convex/encounter-tracking.test.ts
+          - tests/convex/environment-actions.test.ts
+          - tests/convex/fear-spend.test.ts
+          - tests/convex/fear.test.ts
+          - tests/convex/horizon.test.ts
+          - tests/e2e/environments.spec.ts
           - convex/campaigns.ts
           - convex/sessions.ts
           - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
