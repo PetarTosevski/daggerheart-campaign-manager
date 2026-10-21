@@ -5,11 +5,11 @@ import { defineFolder, long, obj, tex } from "./types";
 export const CASTLE_INTERIOR = defineFolder("castle-interior", {
   props: [
     obj("banner stand", "none", "tall", "pillar", { standIn: false }),
-    obj("suit of armour", "cover", "tall", "statue", { standIn: false }),
+    obj("suit of armour", "cover", "tall", "statue", { move: "block", standIn: false }),
     obj("candelabra", "none", "tall", "crystal", { light: "faintglow" }),
     obj("ornate chair", "cover", "low", "table", { standIn: false }),
     obj("small table with goblet", "cover", "low", "table"),
-    obj("rug (small)", "none", "flat", "rubble", { footprint: "rect", standIn: false }),
+    obj("rug (small)", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
     obj("fireplace grate", "none", "low", "campfire", { light: "campfire" }),
     obj("weapon display", "cover", "low", "crate", { footprint: "rect", standIn: false }),
     obj("tapestry rolled", "cover", "low", "log", { standIn: false }),
@@ -24,12 +24,12 @@ export const CASTLE_INTERIOR = defineFolder("castle-interior", {
   large: [
     obj("throne on a dais", "cover", "low", "statue", { footprint: "rect", standIn: false }),
     long("long dining table", "cover", "low", "table"),
-    obj("four-poster bed", "cover", "tall", "table", { footprint: "rect", standIn: false }),
+    obj("four-poster bed", "cover", "tall", "table", { move: "block", footprint: "rect", standIn: false }),
     obj("grand fireplace", "block", "tall", "campfire", { footprint: "rect", light: "campfire" }),
-    obj("great rug", "none", "flat", "rubble", { footprint: "rect", standIn: false }),
-    obj("staircase", "none", "low", "rubble", { footprint: "rect", standIn: false }),
+    obj("great rug", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
+    obj("staircase", "none", "low", "rubble", { move: "open", footprint: "rect", standIn: false }),
     obj("stone column", "block", "tall", "pillar"),
-    obj("armoury rack", "cover", "tall", "crate", { footprint: "rect", standIn: false }),
+    obj("armoury rack", "cover", "tall", "crate", { move: "block", footprint: "rect", standIn: false }),
     obj("library desk", "cover", "low", "table", { footprint: "rect", standIn: false }),
   ],
   terrain: [

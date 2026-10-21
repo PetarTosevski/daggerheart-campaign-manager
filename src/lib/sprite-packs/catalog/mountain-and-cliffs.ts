@@ -4,7 +4,7 @@ import { defineFolder, long, obj, tex } from "./types";
 
 export const MOUNTAIN_AND_CLIFFS = defineFolder("mountain-and-cliffs", {
   props: [
-    obj("loose rocks", "cover", "low", "rubble"),
+    obj("loose rocks", "cover", "low", "rubble", { move: "difficult" }),
     obj("mountain goat", "none", "low", "rock", { standIn: false }),
     obj("cairn", "cover", "low", "rock", { standIn: false }),
     obj("snowy rock", "cover", "low", "rock"),
@@ -14,7 +14,7 @@ export const MOUNTAIN_AND_CLIFFS = defineFolder("mountain-and-cliffs", {
     obj("eagle nest", "none", "flat", "bones", { standIn: false }),
     obj("old campsite", "none", "flat", "rubble", { standIn: false }),
     obj("broken pickaxe", "none", "flat", "bones", { standIn: false }),
-    obj("ice patch", "none", "flat", "rock", { standIn: false }),
+    obj("ice patch", "none", "flat", "rock", { move: "difficult", standIn: false }),
     obj("crystal outcrop", "none", "low", "crystal", { light: "faintglow" }),
     obj("bones of a climber", "none", "flat", "bones"),
     obj("rope bridge anchor", "cover", "low", "log", { standIn: false }),
@@ -27,9 +27,9 @@ export const MOUNTAIN_AND_CLIFFS = defineFolder("mountain-and-cliffs", {
     obj("rock spire", "block", "tall", "boulder"),
     obj("cave mouth", "block", "tall", "boulder", { standIn: false }),
     obj("pine trees (pair)", "block", "tall", "tree", { variant: "pine" }),
-    obj("rockslide", "cover", "low", "rubble"),
-    long("rope bridge (two squares)", "none", "flat", "log", { standIn: false }),
-    obj("stone stair", "none", "low", "rubble", { footprint: "rect", standIn: false }),
+    obj("rockslide", "cover", "low", "rubble", { move: "difficult" }),
+    long("rope bridge (two squares)", "none", "flat", "log", { move: "open", standIn: false }),
+    obj("stone stair", "none", "low", "rubble", { move: "open", footprint: "rect", standIn: false }),
     obj("giant's skull", "block", "tall", "bones", { standIn: false }),
   ],
   terrain: [

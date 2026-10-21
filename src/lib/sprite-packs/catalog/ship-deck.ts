@@ -27,7 +27,7 @@ export const SHIP_DECK = defineFolder("ship-deck", {
     obj("capstan", "cover", "low", "barrel", { standIn: false }),
     obj("lifeboat", "cover", "low", "log", { footprint: "rect", standIn: false }),
     obj("cargo stack", "block", "tall", "crate", { footprint: "rect", standIn: false }),
-    obj("stairs below deck", "none", "flat", "rubble", { footprint: "rect", standIn: false }),
+    obj("stairs below deck", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
     long("cannon pair", "cover", "low", "barrel", { standIn: false }),
     obj("ship's bow", "none", "flat", "hull", { standIn: false }),
     obj("ship's stern cabin corner", "block", "tall", "pillar", { footprint: "rect", standIn: false }),

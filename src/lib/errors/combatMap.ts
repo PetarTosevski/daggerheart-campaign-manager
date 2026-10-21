@@ -31,6 +31,11 @@ export const combatMapMessages = {
   COMBAT_LAYOUT_INVALID: "That map layout isn't valid.",
   /** A player switching a map light their character has never seen (R9, C7). */
   COMBAT_LIGHT_NOT_SEEN: "Your character hasn't seen that light.",
+  /**
+   * A player's move whose path crosses or ends on a wall, a building or a closed door (map-movement M0, D3). Carries
+   * no position (D6): the refusal itself is all a player learns.
+   */
+  MOVE_BLOCKED: "Something blocks the way.",
   /** A stored combat map blob that cannot be read (CD2). */
   COMBAT_MAP_CORRUPT: "This map's saved data can't be read.",
 } as const satisfies Record<string, string>;

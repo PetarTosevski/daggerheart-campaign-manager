@@ -8,6 +8,7 @@
  */
 
 import type { ObjectKind, ObjectVariant, Terrain } from "../../domain/combat-map/spec";
+import { defaultMove, terrainMove, type MoveTrait } from "../../domain/combat-map/movement";
 import type { SightMode } from "../../domain/combat-map/sight";
 
 /** Sheets per folder, in the order the prompts doc lists them. */
@@ -71,6 +72,13 @@ type EntryBase = {
   readonly light: SpriteLight;
   readonly height: SpriteHeight;
   readonly footprint: SpriteFootprint;
+  /**
+   * Movement (map-movement M0, D1/D2): "block", "difficult", "open", or "door" (blocks while closed). Objects
+   * default from their traits (`defaultMove`: blocks sight and tall = block, else difficult when the Classic kind is
+   * difficult, else open) unless the folder file
+   * overrides it; textures take their terrain class's (`terrainMove`).
+   */
+  readonly move: MoveTrait;
 };
 
 export type ObjectEntry = EntryBase & {
@@ -140,6 +148,8 @@ type ObjectOptions = {
   readonly w?: number;
   readonly h?: number;
   readonly standIn?: boolean;
+  /** Overrides the D1 default movement (fences block, gates are doors, garden plots are difficult). */
+  readonly move?: MoveTrait;
 };
 
 /** An object spec before the folder assigns key, sheet and index. */
@@ -165,6 +175,7 @@ export function obj(
     height,
     light: opts.light ?? "none",
     footprint: opts.footprint ?? "circle",
+    move: opts.move ?? defaultMove({ sight, height, classicKind: kind }),
     classic: opts.variant ? { kind, variant: opts.variant } : { kind },
     standIn: opts.standIn ?? true,
     ...(opts.w !== undefined ? { w: opts.w } : {}),
@@ -253,6 +264,7 @@ export function defineFolder(
       light: "none",
       height: "flat",
       footprint: "rect",
+      move: terrainMove(t.terrain),
     }));
   const terrain = [
     ...textures(sheets.terrain),

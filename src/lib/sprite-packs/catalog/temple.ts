@@ -6,7 +6,7 @@ export const TEMPLE = defineFolder("temple", {
   props: [
     obj("candle stand", "none", "tall", "crystal", { light: "faintglow" }),
     obj("offering bowl", "none", "low", "barrel", { standIn: false }),
-    obj("prayer mat", "none", "flat", "rubble", { footprint: "rect", standIn: false }),
+    obj("prayer mat", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
     obj("incense burner", "none", "low", "barrel", { standIn: false }),
     obj("holy book on a lectern", "cover", "low", "table", { standIn: false }),
     obj("bell", "cover", "low", "barrel", { standIn: false }),
@@ -26,11 +26,11 @@ export const TEMPLE = defineFolder("temple", {
     obj("great statue of a god", "block", "tall", "statue"),
     obj("pew row", "cover", "low", "log", { footprint: "rect", standIn: false }),
     obj("stone column", "block", "tall", "pillar"),
-    obj("sacred pool", "none", "flat", "rock", { standIn: false }),
+    obj("sacred pool", "none", "flat", "rock", { move: "difficult", standIn: false }),
     obj("bell tower base", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
-    obj("stained-glass light pattern", "none", "flat", "rubble", { footprint: "rect", standIn: false }),
+    obj("stained-glass light pattern", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
     obj("reliquary", "cover", "low", "chest", { footprint: "rect", standIn: false }),
-    obj("priest's dais", "none", "low", "rubble", { footprint: "rect", standIn: false }),
+    obj("priest's dais", "none", "low", "rubble", { move: "open", footprint: "rect", standIn: false }),
   ],
   terrain: [
     tex("temple marble", "stone", true),
