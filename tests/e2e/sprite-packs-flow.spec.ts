@@ -285,9 +285,9 @@ for (const viewport of [
 
         // ---- In Play the GM puts the brazier out (the Wolf goes) and lights it again (the Wolf is back).
         await mode.getByRole("button", { name: /Play/ }).click();
-        await board.getByRole("button", { name: "Put out the brazier" }).click();
+        await board.getByRole("button", { name: "Put out the iron brazier (lit)" }).click();
         await expect(playerBoard.getByRole("button", { name: /^Dire Wolf/ })).toHaveCount(0);
-        await board.getByRole("button", { name: "Light the brazier" }).click();
+        await board.getByRole("button", { name: "Light the iron brazier (lit)" }).click();
         await expect(playerBoard.getByRole("button", { name: "Dire Wolf, Enemy" })).toBeVisible();
 
         // ---- A thick stone pillar sprite (2 × 2, blocks sight by its manifest, D3) between Ash and the Wolf hides it.
