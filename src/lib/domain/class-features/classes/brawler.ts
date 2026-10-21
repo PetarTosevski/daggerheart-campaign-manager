@@ -7,7 +7,8 @@
 // - Combo Strike: after rolling damage on a successful Melee attack, mark a Stress: roll the Combo Die (d4, raised by
 //   level-up advancements in `classState.comboDie`) and keep rolling until a result is lower than the one before it;
 //   every result is added to that damage roll (role `extra`, so a roll is comboed once).
-import { getWeapon } from "../../../srd/index";
+import { WEAPONS as TIER1_WEAPONS } from "../../../srd/equipment";
+import { TIERED_WEAPONS } from "../../../srd/equipment-tiers";
 import type { RolledDie } from "../../duality";
 import type { ClassFeatures, Rng, WeaponOverride, WeaponSheet } from "../types";
 import { assistFeature, refuse } from "./shared";
@@ -16,10 +17,13 @@ export const BRAWLERS_STRIKE = "brawler-s-strike";
 /** A safety stop for the combo chain; with a d4 a chain this long is vanishingly rare. */
 export const COMBO_MAX = 20;
 
+// CL9: SRD leaf modules, not the srd barrel (its lookup helpers pull every SRD list into the bundle).
+const isKnownWeapon = (id: string): boolean => TIER1_WEAPONS.some((w) => w.id === id) || TIERED_WEAPONS.some((w) => w.id === id);
+
 /** No Active Weapon other than Brawler's Strike (HF 10, I Am the Weapon). */
 function barehanded(sheet: WeaponSheet): boolean {
   if (sheet.secondaryWeaponId !== undefined) return false;
-  return sheet.primaryWeaponId === BRAWLERS_STRIKE || getWeapon(sheet.primaryWeaponId) === undefined;
+  return sheet.primaryWeaponId === BRAWLERS_STRIKE || !isKnownWeapon(sheet.primaryWeaponId);
 }
 
 /** Brawler's Strike at the sheet's Proficiency. */

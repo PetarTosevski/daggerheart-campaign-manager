@@ -3,10 +3,14 @@
 // Class features: Beastform marks a Stress and shows the form as an effect (End = drop out of it);
 // Wildtouch is text only.
 import { tierForLevel } from "../../characters/index";
-import { beastformsForTier, getBeastform } from "../../../srd/index";
+import { BEASTFORMS } from "../../../srd/beastforms";
 import { TRAIT_IDS, type TraitId } from "../../../srd/types";
 import type { ClassFeatures, FeatureMeta } from "../types";
 import { HOPE_COST, refuse, withEffect } from "./shared";
+
+// CL9: the SRD leaf module, not the srd barrel.
+const getBeastform = (id: string) => BEASTFORMS.find((b) => b.id === id);
+const beastformsForTier = (tier: number) => BEASTFORMS.filter((b) => b.tier <= tier);
 
 const isTrait = (value: string | undefined): value is TraitId => TRAIT_IDS.some((t) => t === value);
 
