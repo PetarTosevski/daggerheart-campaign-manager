@@ -23,6 +23,10 @@
     ],
     "desert/large": { "unpink": [6], "note": "pink edge around the giant skeleton ribs" },
     "coast-and-beach/props": { "unmix": [4], "note": "fishing net strands" },
+    "town-street-and-market/large-2": {
+      "untint": { "8": [[0.52, 0.44, 1, 1], [0.47, 0.63, 1, 1], [0.6, 0.36, 1, 0.44]] },
+      "note": "chicken coop run netting drawn rose-pink (magenta mixed into the fill); the areas cover the run, not the hut"
+    },
     "sewers/large": { "rotate": { "5": 90 }, "note": "stone bridge over the channel drawn upright; the catalog sizes it 2 x 1" },
     "mushroom-cavern/props": {
       "unpink": [0, 14],
