@@ -132,6 +132,11 @@ describe("doors: movement (M0 reads open)", () => {
   const grid = (objects: MovementObject[]) => buildMovementGrid({ w: W, h: H, base: "grass", areas: [...WALL], objects });
   const sq = (x: number, y: number) => ({ x, y });
 
+  it("a hand-placed Classic door (r 0.5) still blocks its doorway when closed", () => {
+    expect(pathBlocked(grid([{ kind: "door", x: 10.5, y: 10.5, r: 0.5 }]), sq(5, 10), sq(14, 10), 1)).toBe(true);
+    expect(pathBlocked(grid([{ kind: "door", x: 10.5, y: 10.5, r: 0.5, open: true }]), sq(5, 10), sq(14, 10), 1)).toBe(false);
+  });
+
   it("a closed Classic door blocks the doorway, an open one lets a token through", () => {
     expect(pathBlocked(grid([]), sq(5, 10), sq(14, 10), 1)).toBe(false);
     expect(pathBlocked(grid([{ kind: "door", x: 10.5, y: 10.5, r: 1 }]), sq(5, 10), sq(14, 10), 1)).toBe(true);

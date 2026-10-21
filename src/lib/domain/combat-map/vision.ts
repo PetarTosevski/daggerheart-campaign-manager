@@ -283,7 +283,7 @@ export function prepareMap(input: VisionMapInput): PreparedMap {
       blockRect(blocked, sw, sh, o, t);
       continue;
     }
-    const rr = (o.r || (t ? defaultTraitRadius(t) : 1)) * blockRadiusFactor(o.kind);
+    const rr = circleBlockRadius(o);
     const sy0 = Math.max(0, Math.floor((o.y - rr) * S));
     const sy1 = Math.min(sh, Math.ceil((o.y + rr) * S));
     const sx0 = Math.max(0, Math.floor((o.x - rr) * S));
@@ -531,7 +531,7 @@ export function objectSampleBox(map: Pick<PreparedMap, "sw" | "sh">, o: VisionOb
     ex = Math.abs(hw * Math.cos(rot)) + Math.abs(hh * Math.sin(rot));
     ey = Math.abs(hw * Math.sin(rot)) + Math.abs(hh * Math.cos(rot));
   } else {
-    ex = ey = (o.r || (t ? defaultTraitRadius(t) : 1)) * blockRadiusFactor(o.kind);
+    ex = ey = circleBlockRadius(o);
   }
   // Samples whose centre lies within the extents (as prepareMap marks them), at least the one holding the centre.
   const span = (c: number, e: number, size: number): [number, number] => {
@@ -658,4 +658,14 @@ export function mergeExplored(a: Uint8Array, b: Uint8Array): Uint8Array {
 export function exploredGrows(prev: Uint8Array, next: Uint8Array): boolean {
   for (let i = 0; i < next.length; i++) if (next[i] && !prev[i]) return true;
   return false;
+}
+
+/**
+ * The blocking radius of a circle-footprint object. A door covers at least half a square, so a hand-placed door (r 0.5)
+ * still blocks movement and sight across its own square when closed.
+ */
+function circleBlockRadius(o: VisionObject): number {
+  const t = o.traits;
+  const r = (o.r || (t ? defaultTraitRadius(t) : 1)) * blockRadiusFactor(o.kind);
+  return o.kind === "door" ? Math.max(r, 0.5) : r;
 }
