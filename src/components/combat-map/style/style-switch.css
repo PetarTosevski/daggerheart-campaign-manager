@@ -1,0 +1,31 @@
+/* Sprite packs P6: the Classic | Sprites switch in the Combat Map header (cm-seg from combat-map.css). */
+
+.cm-style {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cm-style-seg {
+  min-width: 190px;
+}
+.cm-style-seg button {
+  padding: 0 14px;
+  white-space: nowrap;
+}
+.cm-style-error {
+  max-width: 260px;
+  font-size: 13px;
+}
+.cm-style-loading {
+  margin: 0;
+  align-self: center;
+}
+
+@media (max-width: 760px) {
+  .cm-style {
+    flex: 1 1 100%;
+  }
+  .cm-style-seg {
+    min-width: 0;
+  }
+}

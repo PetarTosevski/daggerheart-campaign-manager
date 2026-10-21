@@ -2,10 +2,12 @@
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
+import { givesLight } from "@/lib/domain/combat-map/light";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
+import { spriteTraits } from "@/lib/sprite-packs/traits";
 
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { brushSquares, isSwitchableLight, objectLabel } from "../editor/edit-model";
+import { brushSquares, objectLabel } from "../editor/edit-model";
 import { useMapView } from "../map-view/context";
 import type { MapLayerProps } from "../slots";
 import { initialsOf } from "../tokens/geometry";
@@ -224,7 +226,7 @@ export function VisionLayer(props: MapLayerProps) {
   const lights = editing
     ? []
     : layout.objects.filter((o) => {
-        if (!isSwitchableLight(o.kind)) return false;
+        if (!givesLight({ kind: o.kind, traits: o.sprite ? spriteTraits(o.sprite) : null })) return false;
         if (gm) return true;
         return masks !== null && (maskAt(masks.seen, masks, o.x, o.y) || maskAt(masks.explored, masks, o.x, o.y));
       });
