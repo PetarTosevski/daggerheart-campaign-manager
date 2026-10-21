@@ -51,35 +51,4 @@ export const fileTables = {
     .index("by_resource_principal", ["resourceType", "resourceId", "principalKind", "principalId"])
     .index("by_principal_type", ["principalKind", "principalId", "resourceType"])
     .index("by_creator", ["createdBy"]),
-
-  /** DEPRECATED: replaced by `files` (kind "portrait"). Kept until `migrations/uploads:moveUploadsToFiles` has run. */
-  portraitUploads: defineTable({
-    storageId: v.id("_storage"),
-    userId: v.id("users"),
-    characterId: v.id("characters"),
-    createdAt: v.number(),
-  })
-    .index("by_storage", ["storageId"])
-    .index("by_character", ["characterId"]),
-
-  /** DEPRECATED: replaced by `files` (kind "map"). Kept until `migrations/uploads:moveUploadsToFiles` has run. */
-  mapUploads: defineTable({
-    storageId: v.id("_storage"),
-    campaignId: v.id("campaigns"),
-    uploadedBy: v.id("users"),
-    createdAt: v.number(),
-  })
-    .index("by_storage", ["storageId"])
-    .index("by_campaign", ["campaignId"]),
-
-  /** DEPRECATED: replaced by `files` (kind "codexImage"). Kept until `migrations/uploads:moveUploadsToFiles` has run. */
-  codexImages: defineTable({
-    storageId: v.id("_storage"),
-    campaignId: v.id("campaigns"),
-    entryId: v.id("codexEntries"),
-    uploadedBy: v.id("users"),
-    createdAt: v.number(),
-  })
-    .index("by_storage", ["storageId"])
-    .index("by_entry", ["entryId"]),
 };
