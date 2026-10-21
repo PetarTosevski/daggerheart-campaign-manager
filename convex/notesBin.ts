@@ -8,6 +8,7 @@ import { readSheet } from "./lib/characterSheet";
 import { campaignMutation, campaignQuery } from "./lib/functions";
 import { internalMutation } from "./_generated/server";
 import { assertAction, bumpJournal, deletePageRows, notesRole, pageAccess, resolvePage, type NotesCtx } from "./lib/notes";
+import { pageReadCache } from "./lib/permissions";
 import { BIN_TTL_MS, MAX_PAGES, pageKindValidator, pageRefValidator, type PageVisibility } from "./lib/validators/notes";
 
 /**
@@ -119,10 +120,12 @@ export const bin = campaignQuery({
 
     const rows: BinRow[] = [];
     const names = new Map<Id<"journals">, string>();
+    // One read of the caller's role and of each journal and its departure for the whole list (PF10).
+    const cache = pageReadCache(ctx.user, ctx.campaign);
     for (const page of candidates.values()) {
       let access;
       try {
-        access = await pageAccess(ctx, page._id);
+        access = await pageAccess(ctx, page, cache);
       } catch (error) {
         if (isCode(error, "NOTE_PAGE_NOT_FOUND")) continue;
         throw error;

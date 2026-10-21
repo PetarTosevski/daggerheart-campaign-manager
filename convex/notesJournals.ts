@@ -7,9 +7,8 @@ import { CLASSES } from "../src/lib/srd/classes";
 import type { Doc, Id } from "./_generated/dataModel";
 import { readSheet } from "./lib/characterSheet";
 import { campaignQuery } from "./lib/functions";
-import { departed } from "./lib/journalState";
 import { notesRole, pageAccess, type NotesCtx, type PageAccess } from "./lib/notes";
-import { permissionFor } from "./lib/permissions";
+import { cachedDeparted, pageReadCache, permissionFor, type PageReadCache } from "./lib/permissions";
 import { MAX_PAGES, pageKindValidator } from "./lib/validators/notes";
 
 /**
@@ -137,11 +136,14 @@ async function livePages(ctx: NotesCtx, journalId: Id<"journals">): Promise<Doc<
   return pages.sort((a, b) => a.createdAt - b.createdAt || a._creationTime - b._creationTime);
 }
 
-/** How many of a journal's live pages the caller reads (permissionFor per page, CF2). */
-async function readableCount(ctx: NotesCtx, journal: Doc<"journals">): Promise<number> {
+/**
+ * How many of a journal's live pages the caller reads (permissionFor per page, CF2). The list's `cache` reads the
+ * caller's role and the journal's departure once, not once per page (PF10).
+ */
+async function readableCount(ctx: NotesCtx, journal: Doc<"journals">, cache: PageReadCache): Promise<number> {
   let count = 0;
   for (const page of await livePages(ctx, journal._id)) {
-    if ((await permissionFor(ctx, ctx.user, { type: "journalPage", campaign: ctx.campaign, journal, page })) !== null) count += 1;
+    if ((await permissionFor(ctx, ctx.user, { type: "journalPage", campaign: ctx.campaign, journal, page, cache })) !== null) count += 1;
   }
   return count;
 }
@@ -164,12 +166,13 @@ export const playerJournals = campaignQuery({
   returns: v.array(playerJournalRowValidator),
   handler: async (ctx): Promise<PlayerJournalRow[]> => {
     if ((await notesRole(ctx)) !== "gm") return [];
+    const cache = pageReadCache(ctx.user, ctx.campaign);
     const rows: PlayerJournalRow[] = [];
     for (const journal of await campaignJournals(ctx)) {
-      if (journal.userId === ctx.campaign.ownerId || (await departed(ctx, ctx.campaign, journal))) continue;
+      if (journal.userId === ctx.campaign.ownerId || (await cachedDeparted(ctx, ctx.campaign, journal, cache))) continue;
       const owner = await ownerOf(ctx, journal);
       const { whoName, whoSub } = journalWho(owner);
-      rows.push({ journalId: journal._id, name: whoName, sub: whoSub, pageCount: await readableCount(ctx, journal) });
+      rows.push({ journalId: journal._id, name: whoName, sub: whoSub, pageCount: await readableCount(ctx, journal, cache) });
     }
     return rows.sort((a, b) => a.name.localeCompare(b.name) || a.journalId.localeCompare(b.journalId));
   },
@@ -186,11 +189,12 @@ export const pastJournals = campaignQuery({
   returns: v.array(pastJournalRowValidator),
   handler: async (ctx): Promise<PastJournalRow[]> => {
     await notesRole(ctx); // grant-only users have no notes: NOT_FOUND
+    const cache = pageReadCache(ctx.user, ctx.campaign);
     const rows: PastJournalRow[] = [];
     for (const journal of await campaignJournals(ctx)) {
-      if (journal.userId === ctx.campaign.ownerId || !(await departed(ctx, ctx.campaign, journal))) continue;
+      if (journal.userId === ctx.campaign.ownerId || !(await cachedDeparted(ctx, ctx.campaign, journal, cache))) continue;
       const owner = await ownerOf(ctx, journal);
-      rows.push({ journalId: journal._id, name: pastJournalTitle(owner), pageCount: await readableCount(ctx, journal) });
+      rows.push({ journalId: journal._id, name: pastJournalTitle(owner), pageCount: await readableCount(ctx, journal, cache) });
     }
     return rows.sort((a, b) => a.name.localeCompare(b.name) || a.journalId.localeCompare(b.journalId));
   },
@@ -212,12 +216,15 @@ export const journalView = campaignQuery({
     const journal = id === null ? null : await ctx.db.get("journals", id);
     if (journal === null || journal.campaignId !== ctx.campaign._id) throw appError("NOT_FOUND");
     const owner = await ownerOf(ctx, journal);
-    const isDeparted = await departed(ctx, ctx.campaign, journal);
+    // One read of the caller's role and the journal's departure for all its pages (PF10).
+    const cache = pageReadCache(ctx.user, ctx.campaign);
+    cache.journals.set(journal._id, Promise.resolve(journal));
+    const isDeparted = await cachedDeparted(ctx, ctx.campaign, journal, cache);
     const pages: JournalViewPage[] = [];
     for (const page of await livePages(ctx, journal._id)) {
       let access: PageAccess;
       try {
-        access = await pageAccess(ctx, page._id);
+        access = await pageAccess(ctx, page, cache);
       } catch (error) {
         if (isCode(error, "NOTE_PAGE_NOT_FOUND")) continue;
         throw error;

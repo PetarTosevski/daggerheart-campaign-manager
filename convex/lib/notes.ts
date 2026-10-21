@@ -2,8 +2,7 @@ import { entryActions, pageActions } from "../../src/lib/domain/notes/actions";
 import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { departed } from "./journalState";
-import { campaignRole, permissionFor, type Role } from "./permissions";
+import { cachedDeparted, cachedJournal, cachedRole, campaignRole, permissionFor, type PageReadCache, type Role } from "./permissions";
 import {
   defaultVisibility,
   journalTemplate,
@@ -221,18 +220,22 @@ export type PageAccess = {
 /**
  * A page the caller can read, with what they may do (analysis 3.2). A missing page, one of another campaign, or one
  * `permissionFor` refuses answers NOTE_PAGE_NOT_FOUND, the same for all three (a page you cannot read does not exist).
+ *
+ * A list query that checks many pages passes the page documents it already read and one `pageReadCache` (PF10), so
+ * the journal, the caller's role and the departure are read once per list, not once per page. Mutations pass an id
+ * and no cache.
  */
-export async function pageAccess(ctx: NotesCtx, pageId: Id<"journalPages">): Promise<PageAccess> {
-  const page = await ctx.db.get("journalPages", pageId);
+export async function pageAccess(ctx: NotesCtx, pageRef: Id<"journalPages"> | Doc<"journalPages">, cache?: PageReadCache): Promise<PageAccess> {
+  const page = typeof pageRef === "string" ? await ctx.db.get("journalPages", pageRef) : pageRef;
   if (page === null || page.campaignId !== ctx.campaign._id) throw appError("NOTE_PAGE_NOT_FOUND");
-  const journal = await ctx.db.get("journals", page.journalId);
+  const journal = await cachedJournal(ctx, page.journalId, cache);
   if (journal === null) throw appError("NOTE_PAGE_NOT_FOUND");
-  const permission = await permissionFor(ctx, ctx.user, { type: "journalPage", campaign: ctx.campaign, journal, page });
+  const permission = await permissionFor(ctx, ctx.user, { type: "journalPage", campaign: ctx.campaign, journal, page, cache });
   if (permission === null) throw appError("NOTE_PAGE_NOT_FOUND");
   const isOwner = permission === "owner";
-  const role = await campaignRole(ctx, ctx.user, ctx.campaign);
+  const role = await cachedRole(ctx, ctx.user, ctx.campaign, cache);
   const isGm = role === "gm";
-  const isDeparted = await departed(ctx, ctx.campaign, journal);
+  const isDeparted = await cachedDeparted(ctx, ctx.campaign, journal, cache);
   const binned = page.binnedAt !== undefined;
   // permissionFor answered, so the caller reads the page by the visibility table (for a torn-out page: the owner, or
   // the binner who would still read it, N1 canRestore). N1's action table decides the rest.

@@ -297,9 +297,10 @@ export const list = gmQuery({
   handler: async (ctx): Promise<CombatMapListRow[]> => {
     const maps = await mapsOf(ctx, ctx.campaign._id);
     maps.sort((a, b) => a._creationTime - b._creationTime);
-    const rows: CombatMapListRow[] = [];
-    for (const map of maps) {
-      rows.push({
+    // Every map's image file and URL in one batch (PF10), not one awaited lookup per map.
+    const urls = await Promise.all(maps.map((map) => imageUrl(ctx, map)));
+    return maps.map(
+      (map, i): CombatMapListRow => ({
         _id: map._id,
         _creationTime: map._creationTime,
         name: map.name,
@@ -311,13 +312,12 @@ export const list = gmQuery({
         ...(map.plankV === undefined ? {} : { plankV: map.plankV }),
         areas: map.areas,
         seed: map.seed,
-        imageUrl: await imageUrl(ctx, map),
+        imageUrl: urls[i] ?? null,
         updatedAt: map.updatedAt,
         ...(map.style === undefined ? {} : { style: map.style }),
         ...(map.setting === undefined ? {} : { setting: map.setting }),
-      });
-    }
-    return rows;
+      }),
+    );
   },
 });
 
