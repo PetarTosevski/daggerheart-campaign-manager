@@ -20,6 +20,7 @@ import {
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import type { PageEntries } from "../../../../convex/notesEntries";
 import type { PageRef } from "../../../../convex/lib/validators/notes";
 import { MentionInput } from "../mentions";
 import type { NotesSlotProps } from "../slots";
@@ -34,10 +35,17 @@ import { pageRefOf, useEntryMutations, usePageEntries } from "./use-entries";
  */
 export function Entries({ campaignId, pageId, search }: NotesSlotProps) {
   const page = pageRefOf(pageId);
-  const data = usePageEntries(campaignId, page);
+  const loaded = usePageEntries(campaignId, page);
   const mutations = useEntryMutations();
   const [editing, setEditing] = useState<Id<"journalEntries"> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The first write on a default page creates the journal, so `pageId` turns from `template-<i>` into the new page's
+  // id and the subscription reloads (dcm-bxp.102). Until it answers, the template's last answer stays on screen so the
+  // add row stays mounted: focus, the chosen bullet kind and typed text survive. Stored during render, the way React
+  // keeps a value from an earlier render (no effect, no copied props).
+  const [last, setLast] = useState<{ pageId: string | null; data: PageEntries } | null>(null);
+  if (loaded !== undefined && (last?.data !== loaded || last.pageId !== pageId)) setLast({ pageId, data: loaded });
+  const data = loaded ?? (last && isTemplate(last.pageId) && !isTemplate(pageId) ? last.data : undefined);
 
   if (data === undefined) {
     return (
@@ -91,6 +99,11 @@ export function Entries({ campaignId, pageId, search }: NotesSlotProps) {
       <KeyLegend />
     </div>
   );
+}
+
+/** `?page=` names a default page that has not been written yet. */
+function isTemplate(pageId: string | null): boolean {
+  return pageId === null || pageId.startsWith("template-");
 }
 
 /** The 'Bullet type' chips (a radiogroup: aria-checked only, arrow keys move) and the add input (B4). */
