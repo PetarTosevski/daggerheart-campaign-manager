@@ -91,7 +91,7 @@ function SoulEchoes({ campaignId, value, readOnly = false }: { campaignId: Id<"c
               onClick={() => void choose(n)}
               className={cn(
                 "size-10 rounded-full border font-display text-[14px] disabled:cursor-default",
-                lit ? "border-[#e8c66a] bg-[#e8c66a]/20 text-[#f3dc93] shadow-[0_0_10px_rgba(232,198,106,0.45)]" : "border-[#33444a] text-[#6f8287]",
+                lit ? "border-[#e8c66a] bg-[#e8c66a]/20 text-[#f3dc93] shadow-[0_0_10px_rgba(232,198,106,0.45)]" : "border-[#33444a] text-[#8fa3a8]",
                 !readOnly && "cursor-pointer hover:brightness-125",
               )}
             >
@@ -177,7 +177,7 @@ function TierSection({ tier, ctx }: { tier: DoomTier; ctx: BoxCtx }) {
   const locked = tier.tier > ctx.partyTier;
   const headingId = `doom-tier-${tier.tier}`;
   return (
-    <section aria-labelledby={headingId} className={cn("flex flex-col gap-2.5 rounded-xl border border-[#253338] p-4", locked && "opacity-70")}>
+    <section aria-labelledby={headingId} className={cn("flex flex-col gap-2.5 rounded-xl border border-[#253338] p-4", locked && "opacity-75")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 id={headingId} className="m-0 font-display text-[16px] font-bold text-parchment">
           Tier {tier.tier}: {tier.title}

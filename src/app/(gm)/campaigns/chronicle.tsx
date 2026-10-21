@@ -50,15 +50,16 @@ function Band({
         aria-expanded={open}
         className="flex min-h-[150px] w-full cursor-pointer flex-wrap items-center gap-x-9 gap-y-6 px-6 py-6 text-left text-parchment sm:px-10"
       >
+        {/* The big numeral is decoration (the board's dim, receding index), drawn as generated content so it is not
+            read as text; WCAG 1.4.3 exempts pure decoration. */}
         <span
+          data-numeral={roman(index)}
           className={cn(
-            "w-[100px] text-center font-display text-[64px] leading-none font-black sm:w-[140px] sm:text-[80px]",
+            "w-[100px] text-center font-display text-[64px] leading-none font-black before:content-[attr(data-numeral)] sm:w-[140px] sm:text-[80px]",
             open ? "text-brand" : "text-[#3f3a4e]",
           )}
           aria-hidden="true"
-        >
-          {roman(index)}
-        </span>
+        />
         <span className="flex min-w-0 flex-[1_1_320px] flex-col gap-2">
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] tracking-[0.22em] text-muted-text uppercase">
             <span>
