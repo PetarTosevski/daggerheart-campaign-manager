@@ -85,6 +85,12 @@
 #   ally answered Use/Pass; the GM can 'Resolve now' anytime; no timer. Q18 (a) with no live map the GM targets PCs from the party
 #   list with no range or line-of-sight restrictions. Q19 (a) Fear spent only on the GM's tap; Fear-cost features and a second
 #   spotlight ask first; optional ones are a one-tap prompt defaulting to No; Fear gains automatic. Plan status: APPROVED.
+# ORCHESTRATOR NOTES (2026-10-21, from AA0):
+#   - Open combatRequests are closed (status declined, resolvedAt set) when their encounter ends; AA2 owns that in its encounter-end
+#     path, CA3 for sanctions on the map. No open-row sweep in the cron.
+#   - Stat-block tokens ('Pool' etc.): AA1 also owns convex/lib/validators/encounters.ts for a widen-only optional `tokens` field on
+#     encounter instances so those features can be automated.
+#   - CA3 also owns convex/lib/validators/combatRequests.ts for widen-only edits if its attack args differ from AA0's stored shape.
 plan: combat-actions
 waves:
   # ---------------------------------------------------------------- wave 1: foundation, resistance table
@@ -252,6 +258,7 @@ waves:
         goal: A player attacks one or more enemy tokens from their PC token with a weapon; the server rolls, decides hit or miss per target, rolls damage, marks HP on the encounter instances, and writes a public feed row (hit or miss only) and a GM row (damage, severity, HP) that the existing undo reverts.
         depends_on: [CA1, AA0]
         owns:
+          - convex/lib/validators/combatRequests.ts
           - convex/rolls.ts
           - convex/lib/rolls.ts
           - convex/combatActions.ts
@@ -481,6 +488,7 @@ waves:
         goal: Pure functions roll an adversary attack against each target's Evasion, compute damage and the PC's severity from their thresholds, apply the Armor Slot step-down and direct damage, and run the reaction-window state machine that ends in the final HP / Stress / Armor marks.
         depends_on: [AA0, CA1]
         owns:
+          - convex/lib/validators/encounters.ts
           - src/lib/domain/adversary-actions/**
           - src/lib/domain/adversary-effects/run.ts
           - tests/unit/adversary-actions/**
