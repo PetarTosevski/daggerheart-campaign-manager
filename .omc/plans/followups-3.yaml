@@ -15,6 +15,7 @@ waves:
           - tests/e2e/notes-bin.spec.ts
           - tests/e2e/notes-journals.spec.ts
           - tests/e2e/notes-sharing.spec.ts
+          - tests/e2e/notes-a11y.spec.ts
           - tests/unit/notes-entries-ui.test.tsx
           - docs/tasks/TASK-F3-F1.md
         reads:
