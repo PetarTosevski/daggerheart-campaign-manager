@@ -71,10 +71,10 @@ Every build plan is a list of tracer bullets, written and run as
 
 ## Project overview
 
-This repository contains a private web application that one Game Master uses to
-run Daggerheart campaigns during live play. It is being rebuilt (branch
-`rebuild`); the previous Witherwild-only app is preserved at tag
-`witherwild-final`.
+This repository contains a private, multi-user web application for running
+Daggerheart campaigns during live play: the Game Master runs the table, and
+players join with their own accounts. It is being rebuilt (branch `rebuild`);
+the previous Witherwild-only app is preserved at tag `witherwild-final`.
 
 The application is a **live-play GM console**. It is not a virtual tabletop, a
 rules compendium, or a replacement for the Daggerheart rulebook.
@@ -98,7 +98,9 @@ frame, land on the campaign's live table view.
 The active plan is `docs/design-port-roadmap.md` (a phased port of the Claude
 Design boards in `reference/designs/`; it supersedes Phases 2–7 of
 `.omc/plans/campaign-manager-rebuild.md`). Each phase has a task document in
-`docs/tasks/`. Design images live in `public/design-assets/`; after adding any,
+`docs/tasks/`. D12 (hardening and docs) is `.omc/plans/d12-hardening.yaml`;
+the Lorekeeper rules assistant (D13) is `.omc/plans/d13-lorekeeper.yaml`.
+Design images live in `public/design-assets/`; after adding any,
 run `node scripts/design-assets-manifest.mjs`.
 
 ## Source-of-truth hierarchy
@@ -202,16 +204,41 @@ exclusion.
 - `convex/lib/permissions.ts`: `permissionFor` — the single authorization model
   (campaign role plus `grants`); wrappers and entry-scoped functions use it.
 - `convex/accounts.ts`: `accounts:seed` creates the `SEED_ACCOUNTS` test
-  logins (`npx convex run accounts:seed`).
+  logins (`npx convex run accounts:seed`; local e2e or cloud dev only).
+- `convex/tables/*`: the table definitions, one file per area, which
+  `convex/schema.ts` combines.
+- `convex/migrations/*`: `@convex-dev/migrations` migrations (`run.ts` runs
+  them).
+- `convex/crons.ts` and `convex/cleanup.ts`: the batched, self-rescheduling
+  retention jobs for the tables that only grow (rule 8).
+- `convex/convex.config.ts`: the components (rate limiter, migrations) and the
+  typed list of Convex environment variables.
+- `convex/lorekeeper*.ts`, `convex/lib/lorekeeper/*`, `convex/lib/claude.ts`:
+  the Lorekeeper (rules Q&A over book text ingested into the deployment) and
+  its usage caps.
 - Convex functions import shared code from `src/lib/{domain,validation}` with
   relative paths; ESLint forbids `@/`, React and Next imports there.
 
 ### Deployments and environments
 
-- Production: a cloud deployment, deployed by Vercel with
-  `npx convex deploy --cmd 'pnpm build'`. Env vars on Convex: `AUTH_GOOGLE_ID`,
-  `AUTH_GOOGLE_SECRET`, `ALLOWED_EMAILS` (or the legacy `GM_EMAILS`),
-  optional `SEED_ACCOUNTS`, `SITE_URL`, `JWT_PRIVATE_KEY`, `JWKS`.
+- Production: a cloud deployment, deployed by Vercel (production builds
+  only, `vercel.json`) with `npx convex deploy --cmd 'pnpm build'`.
+  Env vars on Convex: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`,
+  `ALLOWED_EMAILS` (or the legacy `GM_EMAILS`), `SITE_URL`,
+  `JWT_PRIVATE_KEY`, `JWKS`; optional `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+  `LOREKEEPER_MODEL` and the Lorekeeper caps `LOREKEEPER_DAILY_QUESTIONS`,
+  `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD`
+  (`convex/convex.config.ts`). Env var on Vercel: `CONVEX_DEPLOY_KEY`;
+  `npx convex deploy` sets `NEXT_PUBLIC_CONVEX_URL` for the build.
+- `ANTHROPIC_API_KEY` lives only in the Convex env, never in Vercel,
+  `.env.local` or a `NEXT_PUBLIC_` variable.
+- Dev-only variables never go to production: `SEED_ACCOUNTS` and
+  `ALLOW_SEED_ACCOUNTS` (cloud dev test logins), and `E2E_AUTH_ENABLED`,
+  `E2E_AUTH_SECRET` and `LOREKEEPER_FAKE_MODEL` (local e2e backend only).
+- Lorekeeper book text is loaded with `pnpm lorekeeper:ingest <bookKey>
+  <textFile>` (`--prod`, `--deployment <name>` or `--e2e` picks the target).
+  Book text never goes into the repository; the script refuses files inside
+  it.
 - Everyday development (`pnpm dev`, `.env.local`): the GM's personal cloud dev
   deployment.
 - Tests: the project's local, account-free backend (`.convex/local`,
@@ -232,7 +259,10 @@ exclusion.
   `src/lib/validation/*`. These modules must not import React, Next or
   `@/components`; Convex functions call them.
 - Authenticate and authorise every Convex query and mutation on the server
-  (`requireUser` plus the campaign role check). Middleware is only a UX redirect.
+  through the wrappers in `convex/lib/functions.ts` (`userQuery`,
+  `userMutation`, `userAction`, `maybeUserQuery` and the campaign/GM wrappers
+  built on them), with access decided by `permissionFor`. The proxy
+  (`src/proxy.ts`) is only a UX redirect.
 - Do not duplicate authoritative game calculations in client and server code.
 - Keep deploy keys and secrets out of browser code.
 
@@ -257,6 +287,24 @@ exclusion.
   authorisation and campaign isolation.
 - Playwright tests for critical workflows, run against a throwaway local Convex
   backend.
+- The authorization matrix (`tests/convex/authz-matrix.test.ts` plus one
+  `tests/convex/authz/<area>.entries.ts` per area): every public function has
+  an entry for each role of its access class. The inventory guard fails
+  `pnpm test` when a public function has no entry, so a new function ships
+  with its entry (`docs/testing.md`, "Authorization matrix").
+- The unauthenticated sweep: `tests/convex/unauthenticated-sweep.test.ts`
+  calls every public function signed out and as a stranger;
+  `tests/e2e/unauthenticated.spec.ts` checks that every page sends a signed-out
+  visitor to sign-in.
+- Accessibility and tablet specs (`tests/e2e/a11y-*.spec.ts`, helpers in
+  `tests/e2e/a11y.ts`): zero serious or critical axe findings, no sideways
+  scroll and 44 px touch targets at 768x1024 and 1024x768.
+- Live-update specs (`tests/e2e/live-*.spec.ts`, fixture in
+  `tests/e2e/live.ts`): GM and player side by side in two browsers; the change
+  must reach the other screen without a reload.
+- Error boundaries: every route segment with a page has `error.tsx`
+  (`tests/unit/route-error.test.tsx`); `tests/e2e/error-boundary.spec.ts`
+  proves a failing query shows the error screen.
 
 At minimum verify: Fear stays within 0–12; one Fear adjustment creates one
 event and one total change; countdown boundaries and status transitions;
@@ -283,7 +331,9 @@ pnpm build
 (`pnpm exec playwright install chromium`, then
 `sudo pnpm exec playwright install-deps chromium`). It refuses to start when
 its ports are taken (stale servers); run on other ports with
-`E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm test:e2e` (in a worktree, use the ports `pnpm worktree:setup` prints; they differ per worktree). The pre-commit hook runs
+`E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm test:e2e` (in a worktree, use the ports `pnpm worktree:setup` prints; they differ per worktree). On a loaded machine,
+start the backend and the e2e build by hand and run Playwright with
+`E2E_REUSE_SERVERS=1` (`docs/performance.md`, `docs/testing.md`). The pre-commit hook runs
 ESLint on staged files plus `pnpm typecheck` (never e2e). CI
 (`.github/workflows/ci.yml`) runs lint, typecheck, test and e2e. Details:
 `docs/testing.md`.
@@ -324,8 +374,8 @@ Agents must not, without explicit approval:
 - Copy protected rules text or artwork into the application beyond what the
   user approved (frame lore, tomes and design art; rule text needed to run a
   mechanic). Never commit the rulebook PDFs (`.reference-private/`).
-- Redesign unrelated pages. Visual design is pending the user's references;
-  keep UI minimal and replaceable until then.
+- Redesign unrelated pages. The Claude Design boards are the visual spec;
+  follow the porting rules in `docs/design-port-roadmap.md`.
 
 ## Definition of done
 

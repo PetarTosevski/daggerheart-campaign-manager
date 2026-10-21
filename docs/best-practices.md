@@ -157,7 +157,7 @@ Why: the client can skip them. · https://stack.convex.dev/authorization · Enfo
 ## 3. Client (Next.js / React / Convex React)
 
 **CL1. Wrap every `useQuery` subtree in an error boundary (one per dashboard panel). Add `error.tsx` per route segment (using the `retry` prop) and a root `global-error.tsx`.**
-Why: Convex throws query errors at the `useQuery` call site, so one corrupt tracker blanks the app. · https://docs.convex.dev/functions/error-handling/ ; https://nextjs.org/docs/app/api-reference/file-conventions/error · Enforced by: `tests/e2e/error-boundary.spec.ts`.
+Why: Convex throws query errors at the `useQuery` call site, so one corrupt tracker blanks the app. · https://docs.convex.dev/functions/error-handling/ ; https://nextjs.org/docs/app/api-reference/file-conventions/error · Enforced by: `tests/unit/route-error.test.tsx` (every route segment has `error.tsx`) + `tests/e2e/error-boundary.spec.ts`.
 
 **CL2. `useQuery` returning `undefined` means loading and `null` means "none"; pass `"skip"` for conditional queries. Loading UI is the shared `<Loading>` with `role="status"`.**
 Why: it keeps states consistent and announces loading to screen readers. · https://docs.convex.dev/client/react · Enforced by: review + axe (TE13).
@@ -207,7 +207,7 @@ Why: tabs and screen readers rely on it. · https://nextjs.org/docs/app/api-refe
 Why: messages and id formats change, codes are the contract. · https://docs.convex.dev/testing/convex-test · Enforced by: review.
 
 **TE2. Cover every public function for `anon`, `outsider`, `player` and `gm` in `tests/convex/authz-matrix.test.ts`, whose guard enumerates `api` and fails on any missing function.**
-Why: a missing access check is the riskiest bug, and lint cannot see it. · https://docs.convex.dev/testing/convex-test · Enforced by: the guard test.
+Why: a missing access check is the riskiest bug, and lint cannot see it. · https://docs.convex.dev/testing/convex-test · Enforced by: the inventory guard in `tests/convex/authz-matrix.test.ts` over `tests/convex/authz/*.entries.ts` (run by `tests/convex/authz/*.test.ts`) + `tests/convex/unauthenticated-sweep.test.ts`.
 
 **TE3. Shared setup (`makeUsers`, `setupWithCampaign`, `expectConvexError`, character drafts) lives in `tests/convex/helpers.ts` and `tests/fixtures/*`; no per-file user inserts or GM constants.**
 Why: the copies drift. · https://vitest.dev/guide/test-context · Enforced by: review.
@@ -240,7 +240,7 @@ Why: a local failure should leave a trace without retries. · https://playwright
 Why: these are the bugs the audits found. · https://docs.convex.dev/testing/convex-test · Enforced by: review.
 
 **TE13. Run axe on the title menu, dashboard, sheet, codex with the lightbox open, and world: zero serious or critical violations.**
-Why: static lint misses nested-interactive and focus issues. · https://playwright.dev/docs/accessibility-testing · Enforced by: `tests/e2e/a11y.spec.ts`.
+Why: static lint misses nested-interactive and focus issues. · https://playwright.dev/docs/accessibility-testing · Enforced by: `tests/e2e/a11y-*.spec.ts` (helpers in `tests/e2e/a11y.ts`, at 768x1024 and 1024x768).
 
 **TE14. Measure coverage on `convex/**` and `src/lib/**` (`pnpm test:coverage`, with thresholds).**
 Why: gaps should not be found only by grep. · https://vitest.dev/guide/coverage · Enforced by: vitest thresholds.

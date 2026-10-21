@@ -132,17 +132,29 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ```bash
 pnpm install          # also installs the git hooks (prepare script)
+pnpm dev              # Next.js; run `npx convex dev` alongside it
 pnpm lint
 pnpm typecheck        # tsc --noEmit, includes convex/
 pnpm test             # vitest: unit (jsdom) + convex (convex-test)
 pnpm e2e:setup        # once per checkout: local e2e Convex backend
 pnpm test:e2e         # Playwright; starts the local backend + e2e build
 E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm test:e2e   # non-default ports (worktrees: use the ports pnpm worktree:setup prints)
+pnpm build
 ```
 
 Pre-commit hook (`.beads/hooks/pre-commit` -> `scripts/pre-commit.sh`): ESLint
 on staged files + typecheck; skip once with `git commit --no-verify`. CI:
 `.github/workflows/ci.yml`. Details: `docs/testing.md`.
+
+What the suite enforces: the authorization matrix
+(`tests/convex/authz-matrix.test.ts` and `tests/convex/authz/<area>.entries.ts`;
+its inventory guard fails `pnpm test` for a public function without an entry),
+the unauthenticated sweep (`tests/convex/unauthenticated-sweep.test.ts`,
+`tests/e2e/unauthenticated.spec.ts`), axe and tablet specs
+(`tests/e2e/a11y-*.spec.ts`), live two-browser specs
+(`tests/e2e/live-*.spec.ts`) and error boundaries on every route segment. On a
+loaded machine, start the e2e servers by hand and run Playwright with
+`E2E_REUSE_SERVERS=1` (`docs/testing.md`).
 
 ## Architecture, conventions and everything else
 
