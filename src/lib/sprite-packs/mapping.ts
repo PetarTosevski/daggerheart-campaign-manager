@@ -76,13 +76,31 @@ export function spriteCandidates(kind: ObjectKind, variant: string | undefined, 
   return [];
 }
 
-/** Candidate textures for a Classic terrain in a setting: the setting's, else common's. */
+/**
+ * A terrain's texture pool in a setting: `base`, the primary-sheet textures it
+ * always had (the setting's, else common's), and `gained`, the extra-sheet
+ * textures that only add variants (the setting's when it has any texture of
+ * that terrain, else common's). Extras never displace a primary pool, so a
+ * setting that fell back to common's primary textures keeps them.
+ */
+function texturePool(terrain: Terrain, setting: string): { base: readonly TextureEntry[]; gained: readonly TextureEntry[] } {
+  const of = (folder: string) => MAPPING.get(folder)?.terrains.get(terrain) ?? [];
+  const own = of(setting);
+  const common = of(COMMON_FOLDER);
+  const ownBase = own.filter((e) => e.extraSheet === undefined);
+  const ownGained = own.filter((e) => e.extraSheet !== undefined);
+  const base = ownBase.length > 0 ? ownBase : common.filter((e) => e.extraSheet === undefined);
+  const gained = own.length > 0 ? ownGained : common.filter((e) => e.extraSheet !== undefined);
+  return { base, gained };
+}
+
+/**
+ * Candidate textures for a Classic terrain in a setting: the primary ones (the
+ * setting's, else common's), then the extra-sheet variants (see texturePool).
+ */
 export function textureCandidates(terrain: Terrain, setting: string): readonly TextureEntry[] {
-  for (const folder of [setting, COMMON_FOLDER]) {
-    const list = MAPPING.get(folder)?.terrains.get(terrain);
-    if (list && list.length > 0) return list;
-  }
-  return [];
+  const { base, gained } = texturePool(terrain, setting);
+  return [...base, ...gained];
 }
 
 /** FNV-1a 32-bit hash; deterministic across server and browser. */
@@ -112,11 +130,19 @@ export function pickSprite(
  * The texture key for a Classic terrain at square (x, y). Squares of one
  * TEXTURE_SQUARES block share a pick; the painter's noise mask (P6) does the
  * fine variant mixing on top.
+ *
+ * Extra-sheet variants only add choices (TASK-SP-P11Z): the primary pick is
+ * the same hash over the primary pool as before any extras existed, and a
+ * second hash decides whether the block shows that pick or one of the gained
+ * variants. A block that shows a primary texture shows exactly its old one.
  */
 export function pickTexture(terrain: Terrain, setting: string, x: number, y: number, seed: number): string | null {
-  const list = textureCandidates(terrain, setting);
-  if (list.length === 0) return null;
+  const { base, gained } = texturePool(terrain, setting);
   const bx = Math.floor(x / TEXTURE_SQUARES);
   const by = Math.floor(y / TEXTURE_SQUARES);
-  return list[hash(`${terrain}|${bx}|${by}|${seed}`) % list.length]?.key ?? null;
+  const block = `${terrain}|${bx}|${by}|${seed}`;
+  const primary = base[hash(block) % Math.max(1, base.length)]?.key ?? null;
+  if (gained.length === 0) return primary;
+  const g = hash(`${block}|gained`) % (base.length + gained.length);
+  return g < base.length ? primary : (gained[g - base.length]?.key ?? null);
 }
