@@ -269,6 +269,11 @@ waves:
           - tests/convex/combat-attack.test.ts
           - tests/convex/combat-attack-authz.test.ts
           - docs/tasks/TASK-CA-CA3.md
+          # ORCHESTRATOR NOTE 2026-10-22: follow-up after the first commit - matrix entries, encounter-end close, docs.
+          - tests/convex/authz/combat.entries.ts
+          - convex/encounters.ts
+          - convex/tables/combatRequests.ts
+          - docs/data-model.md
         reads:
           - convex/lib/functions.ts
           - convex/lib/permissions.ts
