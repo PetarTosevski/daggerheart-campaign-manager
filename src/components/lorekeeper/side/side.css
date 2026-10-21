@@ -1,0 +1,79 @@
+/*
+ * The sidebar cards (D13 L7): only what lorekeeper.css (the board's classes) lacks. The board's inline styles for
+ * book rows and rulings, the GM's controls (pill switches, Edit / Unpin, the open asks) the board does not draw, the
+ * Add PDF help, and the phones' 'Library & rulings' fold (Q12). Same tokens (--lk-*), under .lk-root.
+ */
+.lk-root .lk-fold { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lk-root .lk-foldbody { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lk-root .lk-foldbtn { display: none; }
+
+.lk-root .lk-books,
+.lk-root .lk-rulings { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.lk-root .lk-srctext { min-width: 0; }
+.lk-root .lk-srcname { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.lk-root .lk-srcsub { font-size: 12px; }
+.lk-root .lk-pillswitch { border: none; font-family: inherit; cursor: pointer; }
+.lk-root .lk-pillswitch:hover { filter: brightness(1.2); }
+.lk-root .lk-pillswitch:focus-visible,
+.lk-root .lk-foldbtn:focus-visible,
+.lk-root .lk-rulingacts .lk-act:focus-visible,
+.lk-root .lk-cardhead .lk-act:focus-visible { outline: 2px solid var(--lk-gold); outline-offset: 2px; }
+.lk-root .lk-indexpill { font-size: 12px; }
+.lk-root .lk-count { font-size: 12px; }
+
+.lk-root .lk-legendrow { display: contents; }
+
+.lk-root .lk-rulingtext { font-size: 13px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.lk-root .lk-rulingmeta { font-size: 10px; }
+.lk-root .lk-ruling strong { overflow-wrap: anywhere; }
+.lk-root .lk-rulingacts { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+.lk-root .lk-rulingacts .lk-act { min-height: 30px; }
+.lk-root .lk-act-gold { background: var(--lk-gold); border-color: var(--lk-gold); color: var(--lk-gold-ink); font-weight: 600; }
+.lk-root .lk-act-gold:hover { background: #ecc372; }
+.lk-root .lk-asks { display: flex; flex-direction: column; gap: 8px; }
+.lk-root .lk-ask { padding: 10px; border-radius: 10px; background: #2a2010; border: 1px dashed #8a6a2a; display: flex; flex-direction: column; gap: 4px; }
+.lk-root .lk-askq { font-family: var(--lk-serif); font-size: 16px; color: var(--lk-text); overflow-wrap: anywhere; }
+
+/* Add PDF help */
+.lk-root .lk-help { display: flex; flex-direction: column; gap: 14px; }
+.lk-root .lk-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.5; color: var(--lk-text); }
+.lk-root .lk-help code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; padding: 1px 5px; border-radius: 5px; background: #0b1214; border: 1px solid var(--lk-line); color: #f3cf86; overflow-wrap: anywhere; }
+.lk-root .lk-code { margin: 6px 0; padding: 10px 12px; border-radius: 10px; background: #0b1214; border: 1px solid var(--lk-line); overflow-x: auto; white-space: pre-wrap; }
+.lk-root .lk-code code { padding: 0; border: none; background: transparent; }
+.lk-root .lk-help .lk-send { min-height: 48px; }
+.lk-root .lk-dialog .lk-danger { background: #b8463c; border-color: #b8463c; color: #fff4f2; min-height: 48px; padding: 0 16px; }
+
+/* Phones: the cards fold under 'Library & rulings' above the chat (Q12); 44 px targets. */
+@media (max-width: 760px) {
+  .lk-root .lk-fold { gap: 10px; }
+  .lk-root .lk-foldbtn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 48px;
+    padding: 0 16px;
+    border-radius: 12px;
+    border: 1px solid var(--lk-card-border);
+    background: var(--lk-card);
+    color: var(--lk-text);
+    font-family: var(--lk-display);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    cursor: pointer;
+  }
+  .lk-root .lk-foldicon { transition: transform .15s ease; }
+  .lk-root .lk-fold[data-open="true"] .lk-foldicon { transform: rotate(180deg); }
+  .lk-root .lk-fold[data-open="false"] .lk-foldbody { display: none; }
+  .lk-root .lk-pillswitch { min-height: 44px; min-width: 64px; }
+  /*
+   * The page's chat header (L0) wraps at this width; with the index pill and the Conversations menu in its slots the
+   * title column would shrink to a word per line. Give the title the row beside the sigil so the slots wrap below.
+   */
+  .lk-root .lk-chat .lk-chathead-text { flex-basis: calc(100% - 64px); }
+  .lk-root .lk-rulingacts .lk-act { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lk-root .lk-foldicon { transition: none; }
+}
