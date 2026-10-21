@@ -35,6 +35,7 @@ import {
   pickTexture,
   slugify,
   spriteCandidates,
+  spriteMove,
   spriteTraits,
   textureCandidates,
   type CatalogEntry,
@@ -338,6 +339,143 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
       return e && e.category === "object" ? [e.w, e.h, e.sight, e.height, e.footprint, e.light, e.classic, e.standIn] : null;
     };
     expect(traits("town-street-and-market/haystack")).toEqual(traits("grassland-and-road/haystack"));
+  });
+});
+
+describe("movement trait (map-movement M0, D1, D2; doors: user answer 2026-10-21)", () => {
+  /** Every override the catalog makes against the D1 default, key -> move. */
+  const OVERRIDES: Readonly<Record<string, string>> = {
+    // Fences, cages and walls that are not sight blockers still block.
+    "town-street-and-market/wooden-fence-section": "block",
+    "town-street-and-market/chicken-coop-with-fenced-run": "block",
+    "crypt-and-graveyard/iron-fence-section": "block",
+    "dungeon/iron-cage": "block",
+    "dungeon/cell-with-bars": "block",
+    "castle-interior/suit-of-armour": "block",
+    "castle-interior/four-poster-bed": "block",
+    "castle-interior/armoury-rack": "block",
+    // Walkable surfaces whose Classic kind (log, rubble, bones) would make them difficult: rugs, mats, bedrolls,
+    // bridges, piers, boardwalks, stairs, daises, floor marks, plates, grates, levers, ladders.
+    "common/bedroll": "open",
+    "grassland-and-road/picnic-blanket": "open",
+    "grassland-and-road/wooden-bridge-two-squares": "open",
+    "mountain-and-cliffs/rope-bridge-two-squares": "open",
+    "mountain-and-cliffs/stone-stair": "open",
+    "dungeon/pressure-plate": "open",
+    "dungeon/bloodstain": "open",
+    "dungeon/lever": "open",
+    "dungeon/stone-stair-down": "open",
+    "castle-interior/rug-small": "open",
+    "castle-interior/great-rug": "open",
+    "castle-interior/staircase": "open",
+    "tavern/stair-up": "open",
+    "temple/prayer-mat": "open",
+    "temple/stained-glass-light-pattern": "open",
+    "temple/priests-dais": "open",
+    "swamp/broken-boardwalk-two-squares": "open",
+    "snow-and-tundra/animal-tracks": "open",
+    "snow-and-tundra/fur-bedroll": "open",
+    "desert/rug": "open",
+    "desert/sand-dune-ripple": "open",
+    "coast-and-beach/wooden-pier-section": "open",
+    "ship-deck/stairs-below-deck": "open",
+    "sewers/grate": "open",
+    "sewers/ladder-up": "open",
+    "sewers/valve-wheel": "open",
+    "sewers/stone-bridge-over-channel": "open",
+    "ruins/cracked-tile": "open",
+    "volcanic/lava-bridge": "open",
+    // Doors and gates: block while closed (M2 adds the switch).
+    "dungeon/wooden-door-closed": "door",
+    "dungeon/portcullis-section": "door",
+    "crypt-and-graveyard/crypt-gate": "door",
+    "sewers/iron-gate": "door",
+    "grassland-and-road/wooden-gate": "door",
+    "town-street-and-market/wooden-fence-gate": "door",
+    // Difficult: plots, rubble, brambles, mud, fallen trunks, sludge, pools, drifts, dunes.
+    "town-street-and-market/vegetable-garden-plot": "difficult",
+    "town-street-and-market/trash-pile": "difficult",
+    "common/pile-of-rubble": "difficult",
+    "common/fallen-tree-trunk": "difficult",
+    "forest/thorn-bramble": "difficult",
+    "forest/small-pond": "difficult",
+    "mountain-and-cliffs/loose-rocks": "difficult",
+    "mountain-and-cliffs/ice-patch": "difficult",
+    "mountain-and-cliffs/rockslide": "difficult",
+    "cave/rock-pile": "difficult",
+    "cave/underground-pool": "difficult",
+    "cave/collapsed-tunnel": "difficult",
+    "dungeon/collapsed-wall": "difficult",
+    "temple/sacred-pool": "difficult",
+    "swamp/bubbling-mud": "difficult",
+    "swamp/rotting-log": "difficult",
+    "swamp/bog-pool": "difficult",
+    "snow-and-tundra/snowdrift": "difficult",
+    "snow-and-tundra/frozen-lake-hole": "difficult",
+    "desert/sand-dune": "difficult",
+    "desert/oasis-pool": "difficult",
+    "coast-and-beach/tide-pool": "difficult",
+    "sewers/sludge-pile": "difficult",
+    "sewers/sewage-puddle": "difficult",
+    "sewers/collapsed-pipe": "difficult",
+    "sewers/flooded-chamber": "difficult",
+    "ruins/rubble": "difficult",
+    "ruins/mossy-brick-pile": "difficult",
+    "mushroom-cavern/underground-lake": "difficult",
+    "mushroom-cavern/dark-pool": "difficult",
+    "volcanic/lava-pool": "difficult",
+  };
+
+  it("every object has a move: the default (blocks sight and tall = block, else difficult for a bush / log / bones / rubble Classic kind, else open) unless overridden", () => {
+    const difficultKinds = ["bush", "log", "bones", "rubble"];
+    for (const e of CATALOG_ENTRIES) {
+      if (e.category !== "object") continue;
+      const fallback = e.sight === "block" && e.height === "tall" ? "block" : difficultKinds.includes(e.classic.kind) ? "difficult" : "open";
+      expect(e.move, e.key).toBe(OVERRIDES[e.key] ?? fallback);
+    }
+    for (const key of Object.keys(OVERRIDES)) expect(catalogEntry(key), key).not.toBeNull();
+  });
+
+  it("textures take their terrain class's movement", () => {
+    for (const e of CATALOG_ENTRIES) {
+      if (e.category !== "texture") continue;
+      const expected = ["wall", "void"].includes(e.terrain) ? "block" : ["water", "deep", "swamp", "snow", "lava"].includes(e.terrain) ? "difficult" : "open";
+      expect(e.move, e.key).toBe(expected);
+    }
+  });
+
+  it("pins the plan's examples: buildings and fences block, gates and doors are doors, plot / rubble / brambles are difficult, the trapdoor and a rug are open", () => {
+    const move = (key: string) => catalogEntry(key)?.move;
+    expect(["thatched-cottage", "stone-cottage", "timber-barn", "wooden-fence-section"].map((k) => move(`town-street-and-market/${k}`))).toEqual(Array(4).fill("block"));
+    expect(move("town-street-and-market/wooden-fence-gate")).toBe("door");
+    expect(move("dungeon/wooden-door-closed")).toBe("door");
+    expect(move("town-street-and-market/vegetable-garden-plot")).toBe("difficult");
+    expect(move("common/pile-of-rubble")).toBe("difficult");
+    expect(move("forest/thorn-bramble")).toBe("difficult");
+    expect(move("dungeon/trapdoor")).toBe("open");
+    expect(move("castle-interior/great-rug")).toBe("open");
+    // Orchestrator answers (2026-10-21): pits and chasms are difficult; the bed and armoury rack block; the notice
+    // board and the gong stay open; a sprite of a difficult Classic kind defaults to difficult.
+    expect(["dungeon/large-pit", "mushroom-cavern/chasm", "cave/chasm-crack", "crypt-and-graveyard/open-grave"].map(move)).toEqual(Array(4).fill("difficult"));
+    expect(["castle-interior/four-poster-bed", "castle-interior/armoury-rack"].map(move)).toEqual(["block", "block"]);
+    expect(["tavern/notice-board", "temple/gong"].map(move)).toEqual(["open", "open"]);
+    expect(["forest/bush", "cave/bones", "swamp/rotten-stump"].map(move)).toEqual(Array(3).fill("difficult"));
+    expect(move("ship-deck/ships-bow")).toBe("open");
+  });
+
+  it("spriteMove: the catalog's move for built-ins, the D1 default from an uploaded row's labels, null when unresolved", () => {
+    expect(spriteMove({ builtin: "sewers/iron-gate" })).toBe("door");
+    expect(spriteMove({ builtin: "forest/unknown" })).toBeNull();
+    const rows: Record<string, { sight: "block" | "cover" | "none"; height: "flat" | "low" | "tall" }> = {
+      tall: { sight: "block", height: "tall" },
+      low: { sight: "block", height: "low" },
+    };
+    const lookup = { uploaded: (id: string) => (rows[id] ? { ...rows[id], light: "none" as const, footprint: "rect" as const, w: 1, h: 1 } : null) };
+    expect(spriteMove({ uploaded: "tall" }, lookup)).toBe("block");
+    expect(spriteMove({ uploaded: "low" }, lookup)).toBe("open");
+    const bush = { sight: "cover" as const, height: "low" as const, light: "none" as const, footprint: "circle" as const, w: 1, h: 1, classicKind: "bush" };
+    expect(spriteMove({ uploaded: "bush" }, { uploaded: () => bush })).toBe("difficult");
+    expect(spriteMove({ uploaded: "gone" }, lookup)).toBeNull();
   });
 });
 

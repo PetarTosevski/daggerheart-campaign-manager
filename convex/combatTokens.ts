@@ -2,6 +2,7 @@ import { v, type Infer } from "convex/values";
 
 import { freeSquares, moveToken, snapTurn, startFace, startSide } from "../src/components/combat-map/tokens/geometry";
 import { rasterize, type TerrainId } from "../src/lib/combat-map/raster";
+import { checkMove } from "../src/lib/domain/combat-map/movement";
 import { appError } from "../src/lib/errors/app-error";
 import { applyCondition } from "../src/lib/domain/encounters/damage";
 import { sessionEncounterTitle } from "../src/lib/domain/sessions/encounter-title";
@@ -21,6 +22,7 @@ import {
   loadCombatToken,
   tokensOnMap,
 } from "./lib/combatMaps";
+import { movementGrid } from "./lib/combatMovement";
 import { adversaryArtSrc, MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { ownFileUrl } from "./lib/files";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
@@ -673,17 +675,28 @@ export const clear = gmMutation({
 /**
  * Moves a token to square (x, y): whole squares, inside the map; it faces the way it moved (R5). The GM moves any
  * token; a player only their own PC's token on the live map (COMBAT_NOT_YOUR_TOKEN otherwise, R4).
+ *
+ * Movement (map-movement M0, D1-D4, D6): the token's footprint is checked along the straight line from where it stands
+ * to (x, y). A player's move that crosses or ends on a blocking square (wall, building, closed door) is refused with
+ * MOVE_BLOCKED, which carries no position; the GM's move always goes through and returns `blocked: true` so the map can
+ * warn. `difficult`: the move crossed or ended on difficult terrain (a movement roll is needed to pass this turn, D5).
+ * Players already receive the whole layout (`combatMaps.live`, Q1), so neither answer tells them anything new.
  */
 export const move = campaignMutation({
   need: "view",
   enough: "owner",
   args: { tokenId: v.string(), x: v.number(), y: v.number() },
-  returns: v.object({ x: v.number(), y: v.number(), face: v.number() }),
+  returns: v.object({ x: v.number(), y: v.number(), face: v.number(), blocked: v.boolean(), difficult: v.boolean() }),
   handler: async (ctx, { tokenId, x, y }) => {
     const { token, map } = await movableToken(ctx, tokenId);
     const next = moveToken(token, x, y, map);
+    const stays = next.x === token.x && next.y === token.y;
+    const { blocked, difficult } = stays
+      ? { blocked: false, difficult: false }
+      : checkMove(await movementGrid(ctx, ctx.campaign._id, map), token, next, token.size);
+    if (blocked && !atLeast(ctx.permission, "owner")) throw appError("MOVE_BLOCKED");
     await ctx.db.patch("combatTokens", token._id, next);
-    return next;
+    return { ...next, blocked, difficult };
   },
 });
 

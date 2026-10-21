@@ -288,7 +288,7 @@ describe("combat tokens: moving, turning, editing", () => {
     const ash = await f.tokenOf("Ash");
     const move = (x: number, y: number) => f.player.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x, y });
 
-    expect(await move(ash.x, ash.y + 3.4)).toEqual({ x: ash.x, y: ash.y + 3, face: Math.PI / 2 });
+    expect(await move(ash.x, ash.y + 3.4)).toEqual({ x: ash.x, y: ash.y + 3, face: Math.PI / 2, blocked: false, difficult: false });
     expect(await move(ash.x - 2, ash.y + 1)).toMatchObject({ x: ash.x - 2, y: ash.y + 1 });
     expect((await f.tokenOf("Ash")).face).toBeCloseTo(Math.atan2(-2, -2));
     // Off the map: clamped to the edge (a medium map is 30 × 20).

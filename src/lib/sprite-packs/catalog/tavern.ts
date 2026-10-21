@@ -26,7 +26,7 @@ export const TAVERN = defineFolder("tavern", {
     obj("hearth fireplace", "block", "tall", "campfire", { footprint: "rect", light: "campfire" }),
     long("long bench table", "cover", "low", "table"),
     obj("stage platform", "none", "low", "table", { footprint: "rect", standIn: false }),
-    obj("stair up", "none", "low", "rubble", { footprint: "rect", standIn: false }),
+    obj("stair up", "none", "low", "rubble", { move: "open", footprint: "rect", standIn: false }),
     obj("kitchen stove", "cover", "low", "campfire", { footprint: "rect", light: "campfire" }),
     obj("storeroom shelves", "block", "tall", "crate", { footprint: "rect", standIn: false }),
     obj("booth with benches", "cover", "low", "table", { footprint: "rect", standIn: false }),

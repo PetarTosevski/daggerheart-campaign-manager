@@ -10,7 +10,7 @@ export const COAST_AND_BEACH = defineFolder("coast-and-beach", {
     obj("rowboat oar", "none", "flat", "log", { standIn: false }),
     obj("fishing net", "none", "flat", "rubble", { standIn: false }),
     obj("rock with seaweed", "cover", "low", "rock"),
-    obj("tide pool", "none", "flat", "rock", { standIn: false }),
+    obj("tide pool", "none", "flat", "rock", { move: "difficult", standIn: false }),
     obj("sandcastle", "cover", "low", "rubble", { standIn: false }),
     obj("seagull", "none", "low", "rock", { standIn: false }),
     obj("rope post", "none", "low", "pillar", { standIn: false }),
@@ -23,7 +23,7 @@ export const COAST_AND_BEACH = defineFolder("coast-and-beach", {
   ],
   large: [
     obj("rowboat", "cover", "low", "log", { footprint: "rect", standIn: false }),
-    long("wooden pier section", "none", "flat", "log", { standIn: false }),
+    long("wooden pier section", "none", "flat", "log", { move: "open", standIn: false }),
     obj("palm tree", "block", "tall", "tree", { variant: "olive" }),
     obj("large sea rock", "block", "tall", "boulder"),
     obj("shipwreck piece", "block", "tall", "boulder", { footprint: "rect", standIn: false }),
