@@ -69,6 +69,7 @@ waves:
         goal: The Lorekeeper tables exist and are purged with their campaign and expired by cron, the lorekeeperAsk rate limit and every D13 error code are defined, convex/lib/claude.ts streams a Messages API reply (SSE parsed, usage returned, timeout, fake model on E2E only), the context / retrieve / caps / web hooks exist as stubs, and /campaigns/<id>/lorekeeper opens the board-look shell with slots for GM and players.
         depends_on: []
         owns:
+          - convex/convex.config.ts
           - convex/schema.ts
           - convex/tables/lorekeeper.ts
           - convex/lib/validators/lorekeeper.ts
