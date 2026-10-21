@@ -17,6 +17,9 @@
 #   transitive dependency of @convex-dev/auth; Q4's compiler would add babel-plugin-react-compiler).
 # Rulebook: docs/best-practices.md. Keep every SlotBoundary / error boundary (CL1); intents only (CL3); preload per CL5;
 #   lazy per-frame and SRD code per CL8/CL9; new queries via campaignQuery with returns validators and authz entries.
+# USER ANSWERS (2026-10-21, binding): defaults for all 5 QUESTIONS - local token check in proxy.ts (no Convex call, skip prefetches);
+#   initialAuthTokenReuse on, pinned at 1.46 with a regression e2e; prefetch all 8 tabs; React Compiler not now (decide after PF7);
+#   no production measurement, the user checks the feel after wave 2.
 plan: performance
 waves:
   # ---------------------------------------------------------------- wave 1: measuring stick
