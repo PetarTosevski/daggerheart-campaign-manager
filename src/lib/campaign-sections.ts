@@ -9,6 +9,7 @@ export const CAMPAIGN_SECTIONS = [
   { slug: "combat-map", label: "Combat Map", phase: "D9" },
   { slug: "adversaries", label: "Adversaries", phase: "D8", gmOnly: true },
   { slug: "notes", label: "Notes", phase: "D11" },
+  { slug: "lorekeeper", label: "Lorekeeper", phase: "D13" },
 ] as const;
 
 export type CampaignSection = (typeof CAMPAIGN_SECTIONS)[number];

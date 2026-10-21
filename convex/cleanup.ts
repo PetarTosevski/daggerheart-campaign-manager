@@ -296,6 +296,39 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("journals").withIndex("by_campaign_user", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "journals", rows);
   },
+  // Lorekeeper (D13): asks and rulings before the messages they reference, messages before their conversations,
+  // then the GM's book switches and the campaign's usage counters (per-user and deployment counters have no
+  // campaign; they expire after 13 months, convex/lorekeeperRetention.ts). Books and chunks are per deployment.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperAsks").withIndex("by_campaign_open", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperAsks", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperRulings").withIndex("by_campaign_pinned", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperRulings", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db
+      .query("lorekeeperMessages")
+      .withIndex("by_campaign_user_status", (q) => q.eq("campaignId", c))
+      .take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperMessages", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db
+      .query("lorekeeperConversations")
+      .withIndex("by_campaign_user_last", (q) => q.eq("campaignId", c))
+      .take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperConversations", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperLibrary").withIndex("by_campaign_book", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperLibrary", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("lorekeeperUsage").withIndex("by_campaign_period", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "lorekeeperUsage", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "operations", rows);

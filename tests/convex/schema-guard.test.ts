@@ -127,6 +127,12 @@ const CAMPAIGN_SCOPED = [
   "journalPages",
   "journalPageRecipients",
   "journalEntries",
+  "lorekeeperLibrary",
+  "lorekeeperConversations",
+  "lorekeeperMessages",
+  "lorekeeperRulings",
+  "lorekeeperAsks",
+  "lorekeeperUsage",
 ];
 /**
  * Campaign-scoped tables that also have a retention job of their own (listed once above, so this is a second note,
@@ -134,13 +140,16 @@ const CAMPAIGN_SCOPED = [
  */
 const ALSO_RETENTION: Record<string, string> = {
   journalPages: "torn-out pages are purged 30 days after binnedAt, with their entries and recipients (D11 N7 cron)",
+  lorekeeperUsage:
+    "usage counters expire 13 months after their last update (D13 L0 cron); per-user and deployment rows have no campaign",
 };
 /**
  * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge
  * and by C3's map delete (`deleteMapChildren` in convex/lib/combatMaps.ts).
  */
 const MAP_SCOPED = ["combatMapObjects", "combatMapCells", "combatExplored"];
-const BOUNDED = ["settings", "grants", ...Object.keys(authTables)];
+/** Lorekeeper books and their chunks (D13): one set per deployment (about 20 books), replaced on re-ingest. */
+const BOUNDED = ["settings", "grants", "lorekeeperBooks", "lorekeeperChunks", ...Object.keys(authTables)];
 
 describe("stored fields", () => {
   test("no v.any() outside the allowlist", () => {
@@ -241,7 +250,17 @@ const VALIDATOR_EXEMPT_MODULES = ["auth"];
 /** Config modules that register no functions (convex.config pulls in component code). */
 const CONFIG_MODULES = ["convex.config", "auth.config", "schema"];
 
-async function publicFunctions(): Promise<{ name: string; fn: Registered }[]> {
+/**
+ * Every public function, loaded once per file (importing every convex module is the slow part; bead dcm-lm0) and
+ * shared by the tests below.
+ */
+let loaded: Promise<{ name: string; fn: Registered }[]> | undefined;
+function publicFunctions(): Promise<{ name: string; fn: Registered }[]> {
+  loaded ??= loadPublicFunctions();
+  return loaded;
+}
+
+async function loadPublicFunctions(): Promise<{ name: string; fn: Registered }[]> {
   const found: { name: string; fn: Registered }[] = [];
   for (const [path, load] of Object.entries(modules)) {
     const file = path.replace(/^.*\/convex\//, "").replace(/\.ts$/, "");

@@ -37,6 +37,11 @@ type Env = {
   readonly E2E_AUTH_ENABLED: string | undefined;
   readonly E2E_AUTH_SECRET: string | undefined;
   readonly GM_EMAILS: string | undefined;
+  readonly LOREKEEPER_CAMPAIGN_MONTHLY_USD: string | undefined;
+  readonly LOREKEEPER_DAILY_QUESTIONS: string | undefined;
+  readonly LOREKEEPER_FAKE_MODEL: string | undefined;
+  readonly LOREKEEPER_MODEL: string | undefined;
+  readonly LOREKEEPER_MONTHLY_USD: string | undefined;
   readonly SEED_ACCOUNTS: string | undefined;
 };
 

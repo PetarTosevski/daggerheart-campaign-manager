@@ -19,5 +19,9 @@ crons.cron("purge torn-out journal pages", "23 4 * * *", internal.notesBin.purge
 // Abandoned photo-import photos (D5 R3, review M4): hourly, so none outlives
 // its one-hour TTL by more than another hour.
 crons.cron("expire photo imports", "41 * * * *", internal.cleanup.expirePhotoImports, {});
+// Lorekeeper (D13 L0): usage counters older than 13 months; hourly, answers stuck in pending/streaming for over
+// 10 minutes end as errors. Conversations are never expired (Q10: kept until their asker deletes them).
+crons.cron("expire lorekeeper usage", "47 4 * * *", internal.lorekeeperRetention.expireUsage, {});
+crons.cron("end stuck lorekeeper answers", "29 * * * *", internal.lorekeeperRetention.expireStaleRuns, {});
 
 export default crons;
