@@ -14,6 +14,7 @@ import { ANCESTRIES, COMMUNITIES } from "@/lib/srd/heritage";
 import { SUBCLASSES } from "@/lib/srd/subclasses";
 import { TRAIT_IDS, type Source } from "@/lib/srd/types";
 import { cn } from "@/lib/utils";
+import { pronounsFieldLabel } from "@/lib/validation/characters";
 
 import type { Id } from "../../../../convex/_generated/dataModel";
 
@@ -117,7 +118,8 @@ export function ReviewForm({ initial, unreadable, unmatched, hopeAndFear, owners
         <Field label="Name" note={note("name")}>
           {(id, flagged) => <input id={id} className={cn(control, flagged)} value={draft.name} onChange={(e) => set("name", e.target.value)} />}
         </Field>
-        <Field label="Pronouns" note={null}>
+        {/* The default label (dcm-bxp.35); the sheet's switch relabels it "Pronouns" once the character is saved. */}
+        <Field label={pronounsFieldLabel(undefined)} note={null}>
           {(id) => <input id={id} className={control} value={draft.pronouns} onChange={(e) => set("pronouns", e.target.value)} />}
         </Field>
         {number("Level", "level")}

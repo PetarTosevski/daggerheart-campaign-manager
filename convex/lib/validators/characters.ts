@@ -8,6 +8,7 @@ import {
   FEATURE_USE_UNTIL,
   HELD_DIE_KINDS,
   HELD_DIE_UNTIL,
+  PRONOUNS_LABELS,
   SUBCLASS_RANKS,
 } from "../../../src/lib/validation/characters";
 
@@ -25,6 +26,9 @@ export const portraitValidator = v.union(
   v.object({ kind: v.literal("asset"), asset: v.string() }),
   v.object({ kind: v.literal("upload"), storageId: v.string() }),
 );
+
+/** How the `pronouns` field is labelled (dcm-bxp.35): "gender" (the default when missing) or "pronouns". */
+export const pronounsLabelValidator = v.union(...PRONOUNS_LABELS.map((l) => v.literal(l)));
 
 export const goldValidator = v.object({ handfuls: v.number(), bags: v.number(), chest: v.boolean() });
 
@@ -51,6 +55,7 @@ export const characterDraftValidator = v.object({
   traits: traitsValidator,
   name: v.string(),
   pronouns: v.string(),
+  pronounsLabel: v.optional(pronounsLabelValidator),
   description: v.string(),
   primaryWeaponId: v.string(),
   secondaryWeaponId: v.optional(v.string()),
@@ -72,6 +77,7 @@ export const experienceValidator = v.object({ id: v.string(), name: v.string(), 
 export const sheetPatchValidator = v.object({
   name: v.optional(v.string()),
   pronouns: v.optional(v.string()),
+  pronounsLabel: v.optional(pronounsLabelValidator),
   description: v.optional(v.string()),
   traits: v.optional(traitsValidator),
   evasion: v.optional(v.number()),
@@ -176,6 +182,7 @@ const d5SheetFields = {
 export const sheetValidator = v.object({
   name: v.string(),
   pronouns: v.string(),
+  pronounsLabel: v.optional(pronounsLabelValidator),
   description: v.string(),
   level: v.number(),
   classId: v.string(),

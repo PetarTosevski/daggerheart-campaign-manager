@@ -23,7 +23,7 @@ import {
   type TraitId,
 } from "@/lib/srd";
 import { ikonisMissing, ikonisSchema, INITIAL_MOTHERBOARD, type Ikonis } from "@/lib/frames/extras/motherboard";
-import type { CharacterDraft } from "@/lib/validation/characters";
+import type { CharacterDraft, PronounsLabel } from "@/lib/validation/characters";
 
 export const STEP_TITLES = [
   "Class & Subclass",
@@ -63,6 +63,8 @@ export type WizardState = {
   traits: Partial<Record<TraitId, number>>;
   name: string;
   pronouns: string;
+  /** How the pronouns field is labelled: "Gender" (default) or "Pronouns" (dcm-bxp.35). */
+  pronounsLabel: PronounsLabel;
   description: string;
   /** PORTRAITS key (e.g. "sub-stalwart"), "none" for no portrait, null for the default (subclass art). */
   portrait: string | null;
@@ -96,6 +98,7 @@ export const emptyWizard = (): WizardState => ({
   traits: {},
   name: "",
   pronouns: "",
+  pronounsLabel: "gender",
   description: "",
   portrait: null,
   primaryWeaponId: null,
@@ -144,6 +147,7 @@ export function restoreWizard(raw: unknown): WizardState {
     traits,
     name: text(r.name),
     pronouns: text(r.pronouns),
+    pronounsLabel: r.pronounsLabel === "pronouns" ? "pronouns" : "gender",
     description: text(r.description),
     portrait: str(r.portrait),
     primaryWeaponId: str(r.primaryWeaponId),
@@ -437,6 +441,8 @@ export function toCharacterDraft(s: WizardState, portrait: string | null): Chara
     traits: s.traits as Record<TraitId, number>,
     name: s.name.trim(),
     pronouns: s.pronouns.trim(),
+    // Sent only when it differs from the default, so default drafts are unchanged.
+    ...(s.pronounsLabel === "pronouns" ? { pronounsLabel: "pronouns" as const } : {}),
     description: s.description.trim(),
     primaryWeaponId: s.primaryWeaponId ?? "",
     ...(s.secondaryWeaponId ? { secondaryWeaponId: s.secondaryWeaponId } : {}),

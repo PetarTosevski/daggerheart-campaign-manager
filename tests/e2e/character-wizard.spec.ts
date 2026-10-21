@@ -57,7 +57,7 @@ async function completeWizard(page: Page, characterName: string) {
   await next(page);
 
   await page.getByLabel("Character name").fill(characterName);
-  await page.getByLabel("Pronouns").fill("they/them");
+  await page.getByLabel("Gender", { exact: true }).fill("they/them");
   await next(page);
 
   await expect(page.getByText("Still needed: a primary weapon, armor, a potion and a class item")).toBeVisible();

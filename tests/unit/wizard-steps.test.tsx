@@ -69,7 +69,7 @@ describe("wizard steps", () => {
   it("step 4 labels its inputs and offers matching portraits", () => {
     render(<InfoStep state={guardian} update={vi.fn()} opts={CORE} />);
     expect(screen.getByLabelText("Character name")).toBeInTheDocument();
-    expect(screen.getByLabelText("Pronouns")).toBeInTheDocument();
+    expect(screen.getByLabelText("Gender")).toBeInTheDocument();
     const portraits = screen.getByRole("group", { name: "Portrait" });
     expect(within(portraits).getByLabelText("Stalwart", RADIO)).toBeChecked();
     expect(within(portraits).getByLabelText("Dwarf", RADIO)).toBeInTheDocument();

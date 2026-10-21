@@ -8,7 +8,7 @@ import { PortraitUpload } from "@/components/party/portrait";
 import { Label, Pill, SheetBox, Small, paperField } from "@/components/party/sheet-ui";
 import { assetBackground } from "@/lib/design-assets";
 import { ACHIEVEMENT_LEVELS } from "@/lib/domain/level-up";
-import type { SheetPatch } from "@/lib/validation/characters";
+import { pronounsFieldLabel, type PronounsLabel, type SheetPatch } from "@/lib/validation/characters";
 import { getCommunity, getSubclass, getTransformation, portraitFor, TRAIT_IDS, type ClassDef, type TraitId } from "@/lib/srd";
 import { cn } from "@/lib/utils";
 
@@ -318,6 +318,55 @@ function Portrait() {
   );
 }
 
+/**
+ * The pronouns text, labelled "Gender" by default or "Pronouns" when the character chose it (dcm-bxp.35).
+ * Everyone who can edit the sheet sees the switch; the label is stored on the sheet so every viewer, read-only
+ * players included, sees the same one. The switch sends one field and shows the new label while it saves.
+ */
+export function PronounsField() {
+  const { sheet, canEdit, update } = useSheet();
+  const [pending, setPending] = useState<PronounsLabel | null>(null);
+  const flag = pending ?? sheet.pronounsLabel ?? "gender";
+  const label = pronounsFieldLabel(flag);
+  const toggle = async () => {
+    const next: PronounsLabel = flag === "pronouns" ? "gender" : "pronouns";
+    setPending(next);
+    try {
+      await update({ pronounsLabel: next });
+    } finally {
+      setPending(null);
+    }
+  };
+  return (
+    <div className="id-field">
+      <TextField
+        label={label}
+        labelClassName="sh-lbl"
+        value={sheet.pronouns}
+        maxLength={80}
+        placeholder={flag === "pronouns" ? "they/them" : undefined}
+        readOnly={!canEdit}
+        onSave={(pronouns) => void update({ pronouns })}
+      />
+      {canEdit ? (
+        <button
+          type="button"
+          role="switch"
+          aria-checked={flag === "pronouns"}
+          aria-label="Label as Pronouns"
+          className="mt-1 flex items-center gap-1.5 self-start bg-transparent p-0 text-[12px] text-[#6b5a3e]"
+          onClick={() => void toggle()}
+        >
+          <span aria-hidden="true" className={cn("relative inline-block h-3.5 w-6 rounded-full border border-current", flag === "pronouns" && "bg-current")}>
+            <span className={cn("absolute top-[2px] left-[2px] h-2 w-2 rounded-full bg-current transition-transform", flag === "pronouns" && "translate-x-2.5 bg-[#f4ead4]")} />
+          </span>
+          Pronouns
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 /** Portrait arch with Experiences under it | identity grid (3 columns) with the six traits under it. */
 export function IdentitySection({ cls }: { cls: ClassDef | undefined }) {
   const { sheet, canEdit, update } = useSheet();
@@ -336,17 +385,8 @@ export function IdentitySection({ cls }: { cls: ClassDef | undefined }) {
             <div className="id-field">
               <TextField label="Name" labelClassName="sh-lbl" value={sheet.name} maxLength={80} readOnly={!canEdit} onSave={(name) => name && void update({ name })} />
             </div>
-            <div className="id-field">
-              <TextField
-                label="Pronouns"
-                labelClassName="sh-lbl"
-                value={sheet.pronouns}
-                maxLength={80}
-                placeholder="they/them"
-                readOnly={!canEdit}
-                onSave={(pronouns) => void update({ pronouns })}
-              />
-            </div>
+            <PronounsField />
+
             <LockedField label="Ancestry" value={ancestryLabel(sheet.ancestry)} />
             <LockedField label="Community" value={getCommunity(sheet.communityId)?.name ?? sheet.communityId} />
             <LockedField label="Subclass" value={subclass?.name ?? sheet.subclassId} />
