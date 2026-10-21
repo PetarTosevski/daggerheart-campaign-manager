@@ -153,6 +153,11 @@ export const encounterAdversaryFields = {
   resistanceActive: v.optional(v.boolean()),
   /** Card and feature modifiers on this instance (CA0). Absent = none. */
   effects: v.optional(v.array(instanceEffectValidator)),
+  /**
+   * Tokens on this instance's stat block (plan combat-actions AA1): the Zombie's "a token on their stat block", the
+   * Candlemaker's five, a Pool. Read by `tokens` requirements and the `tokens` outcome of adversary features. Absent = 0.
+   */
+  tokens: v.optional(v.number()),
 };
 
 const thresholdsValidator = v.object({ major: v.union(v.number(), v.null()), severe: v.union(v.number(), v.null()) });
