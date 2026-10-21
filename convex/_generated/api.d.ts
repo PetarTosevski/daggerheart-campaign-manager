@@ -78,6 +78,7 @@ import type * as lib_validators_characterExtras from "../lib/validators/characte
 import type * as lib_validators_characters from "../lib/validators/characters.js";
 import type * as lib_validators_codex from "../lib/validators/codex.js";
 import type * as lib_validators_combatMaps from "../lib/validators/combatMaps.js";
+import type * as lib_validators_combatRequests from "../lib/validators/combatRequests.js";
 import type * as lib_validators_encounters from "../lib/validators/encounters.js";
 import type * as lib_validators_lorekeeper from "../lib/validators/lorekeeper.js";
 import type * as lib_validators_maps from "../lib/validators/maps.js";
@@ -128,6 +129,7 @@ import type * as tables_campaigns from "../tables/campaigns.js";
 import type * as tables_characters from "../tables/characters.js";
 import type * as tables_codex from "../tables/codex.js";
 import type * as tables_combatMaps from "../tables/combatMaps.js";
+import type * as tables_combatRequests from "../tables/combatRequests.js";
 import type * as tables_countdowns from "../tables/countdowns.js";
 import type * as tables_encounters from "../tables/encounters.js";
 import type * as tables_files from "../tables/files.js";
@@ -226,6 +228,7 @@ declare const fullApi: ApiFromModules<{
   "lib/validators/characters": typeof lib_validators_characters;
   "lib/validators/codex": typeof lib_validators_codex;
   "lib/validators/combatMaps": typeof lib_validators_combatMaps;
+  "lib/validators/combatRequests": typeof lib_validators_combatRequests;
   "lib/validators/encounters": typeof lib_validators_encounters;
   "lib/validators/lorekeeper": typeof lib_validators_lorekeeper;
   "lib/validators/maps": typeof lib_validators_maps;
@@ -276,6 +279,7 @@ declare const fullApi: ApiFromModules<{
   "tables/characters": typeof tables_characters;
   "tables/codex": typeof tables_codex;
   "tables/combatMaps": typeof tables_combatMaps;
+  "tables/combatRequests": typeof tables_combatRequests;
   "tables/countdowns": typeof tables_countdowns;
   "tables/encounters": typeof tables_encounters;
   "tables/files": typeof tables_files;

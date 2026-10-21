@@ -133,6 +133,7 @@ const CAMPAIGN_SCOPED = [
   "lorekeeperRulings",
   "lorekeeperAsks",
   "lorekeeperUsage",
+  "combatRequests",
 ];
 /**
  * Campaign-scoped tables that also have a retention job of their own (listed once above, so this is a second note,
@@ -142,6 +143,7 @@ const ALSO_RETENTION: Record<string, string> = {
   journalPages: "torn-out pages are purged 30 days after binnedAt, with their entries and recipients (D11 N7 cron)",
   lorekeeperUsage:
     "usage counters expire 13 months after their last update (D13 L0 cron); per-user and deployment rows have no campaign",
+  combatRequests: "resolved and declined requests are swept a day after resolvedAt (combat-actions AA0 cron)",
 };
 /**
  * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge
@@ -421,5 +423,166 @@ describe("combat-actions widening (CA0)", () => {
     const { t, campaignId } = await seed();
     const bad = { campaignId, ...block, resistance: { physical: "weak", magic: "none" } };
     await expect(t.run((ctx) => ctx.db.insert("customAdversaries", bad as never))).rejects.toThrow();
+  });
+});
+
+/**
+ * Plan combat-actions, AA0: the new `combatRequests` table. Its payload is a typed union keyed by `kind` with
+ * `schemaVersion` (rule 7); both kinds store and read back; an unknown kind or a missing schemaVersion is refused.
+ */
+describe("combat requests (AA0)", () => {
+  async function seed() {
+    const t = makeTest();
+    const ids = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", { email: "aa0@example.com", emailVerificationTime: 1 });
+      const campaignId = await ctx.db.insert("campaigns", {
+        ownerId: userId,
+        frameId: "witherwild",
+        name: "AA0",
+        nameKey: "aa0",
+        tier: 1,
+        level: 1,
+        createdAt: 1,
+        lastOpenedAt: 1,
+      });
+      const characterId = await ctx.db.insert("characters", {
+        campaignId,
+        ownerId: userId,
+        createdBy: userId,
+        status: "active",
+        sheet: {},
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const encounterId = await ctx.db.insert("encounters", {
+        campaignId,
+        name: "Ambush",
+        status: "running",
+        pcs: 4,
+        adjustments: [],
+        gmTurn: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const instanceId = await ctx.db.insert("encounterAdversaries", {
+        campaignId,
+        encounterId,
+        source: { kind: "srd", adversaryId: "bear" },
+        label: "Bear",
+        order: 0,
+        summoned: false,
+        stats: { difficulty: 14, major: 9, severe: 17, hpMax: 7, stressMax: 2 },
+        hp: 0,
+        stress: 0,
+        defeated: false,
+        conditions: [],
+        tags: [],
+        spotlights: 0,
+        spotlightTurn: 1,
+        updatedAt: 1,
+      });
+      const mapId = await ctx.db.insert("combatMaps", {
+        campaignId,
+        name: "Camp",
+        live: true,
+        source: "image",
+        w: 10,
+        h: 10,
+        base: "grass",
+        areas: [],
+        seed: 1,
+        schemaVersion: 1,
+        updatedAt: 1,
+      });
+      const tokenId = await ctx.db.insert("combatTokens", {
+        campaignId,
+        mapId,
+        ref: { kind: "pc", characterId },
+        side: "pc",
+        x: 1,
+        y: 1,
+        size: 1,
+        face: 0,
+        light: "torch",
+        revealedTo: [],
+      });
+      return { userId, campaignId, characterId, encounterId, instanceId, mapId, tokenId };
+    });
+    return { t, ...ids };
+  }
+
+  test("a sanction and an incoming hit store and read back, with responses", async () => {
+    const { t, userId, campaignId, characterId, encounterId, instanceId, mapId, tokenId } = await seed();
+    await t.run(async (ctx) => {
+      const sanction = {
+        campaignId,
+        encounterId,
+        mapId,
+        kind: "sanction" as const,
+        status: "open" as const,
+        createdBy: userId,
+        createdAt: 1,
+        payload: {
+          schemaVersion: 1 as const,
+          kind: "sanction" as const,
+          characterId,
+          action: {
+            kind: "card" as const,
+            cardId: "chain-lightning",
+            useId: "main",
+            targetTokenIds: [tokenId],
+            choices: [{ id: "hope", value: 2 }],
+          },
+          outOfRange: [{ tokenId, band: "far" as const }],
+        },
+        responses: [],
+      };
+      const hit = {
+        campaignId,
+        encounterId,
+        kind: "incomingHit" as const,
+        status: "resolved" as const,
+        createdBy: userId,
+        createdAt: 1,
+        payload: {
+          schemaVersion: 1 as const,
+          kind: "incomingHit" as const,
+          attacker: { instanceId, label: "Bear" },
+          targetCharacterId: characterId,
+          damage: 14,
+          damageType: "physical" as const,
+          direct: false,
+          critical: false,
+          groupId: "g1",
+          responders: [{ characterId, role: "target" as const, cardIds: [] }],
+        },
+        responses: [{ characterId, choice: { kind: "armor" as const, slots: 1 }, by: userId, at: 2 }],
+        resolvedAt: 2,
+        resolvedBy: userId,
+      };
+      const sanctionId = await ctx.db.insert("combatRequests", sanction);
+      const hitId = await ctx.db.insert("combatRequests", hit);
+      expect(await ctx.db.get("combatRequests", sanctionId)).toMatchObject(sanction);
+      expect(await ctx.db.get("combatRequests", hitId)).toMatchObject(hit);
+      const open = await ctx.db
+        .query("combatRequests")
+        .withIndex("by_campaign_status", (q) => q.eq("campaignId", campaignId).eq("status", "open"))
+        .take(10);
+      expect(open.map((r) => r._id)).toEqual([sanctionId]);
+    });
+  });
+
+  test("an unknown kind, a missing schemaVersion or an untyped payload is refused", async () => {
+    const { t, userId, campaignId, characterId } = await seed();
+    const row = { campaignId, kind: "sanction", status: "open", createdBy: userId, createdAt: 1, responses: [] };
+    const payload = { schemaVersion: 1, kind: "sanction", characterId, action: { kind: "attack", slot: "primary", targetTokenIds: [], roll: {} }, outOfRange: [] };
+    await t.run((ctx) => ctx.db.insert("combatRequests", { ...row, payload } as never));
+    const bad = [
+      { ...row, kind: "ambush", payload },
+      { ...row, payload: { ...payload, schemaVersion: undefined } },
+      { ...row, payload: { ...payload, anything: 1 } },
+      { ...row, payload: { ...payload, kind: "duel" } },
+    ];
+    for (const doc of bad) await expect(t.run((ctx) => ctx.db.insert("combatRequests", doc as never))).rejects.toThrow();
   });
 });

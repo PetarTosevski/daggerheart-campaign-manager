@@ -1,6 +1,7 @@
 import { ConvexError } from "convex/values";
 
 import { actionLogMessages } from "./errors/actionLog";
+import { adversaryActionMessages } from "./errors/adversaryActions";
 import { campaignMessages } from "./errors/campaigns";
 import { characterMessages } from "./errors/characters";
 import { classFeatureMessages } from "./errors/classFeatures";
@@ -54,6 +55,7 @@ const MESSAGES = mergeMessages(
   encounterMessages,
   combatMapMessages,
   combatActionMessages,
+  adversaryActionMessages,
   sessionMessages,
   spritePackMessages,
   noteMessages,
