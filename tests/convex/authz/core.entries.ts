@@ -101,6 +101,7 @@ const area: Area = {
 
     // ---- campaignTime (witherwild has it)
     { fn: api.campaignTime.get, access: "view" },
+    { fn: api.campaigns.fear, access: "view" },
     { fn: api.campaignTime.advance, access: "gm", expect: { grantee: "FORBIDDEN" } },
     // A new campaign starts on day 1; setDay must change the day.
     { fn: api.campaignTime.setDay, access: "gm", args: () => ({ cycleDay: 2 }), expect: { grantee: "FORBIDDEN" } },

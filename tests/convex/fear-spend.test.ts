@@ -6,7 +6,7 @@ import { errorCode, key, setupWithCampaign, useAllowlist } from "./helpers";
 
 type Ctx = Awaited<ReturnType<typeof setupWithCampaign>>;
 
-const fearOf = async ({ gm, campaignId }: Ctx) => (await gm.query(api.campaigns.get, { campaignId }))?.fear;
+const fearOf = async ({ gm, campaignId }: Ctx) => gm.query(api.campaigns.fear, { campaignId });
 
 const history = ({ t, campaignId }: Ctx) =>
   t.run((ctx) =>

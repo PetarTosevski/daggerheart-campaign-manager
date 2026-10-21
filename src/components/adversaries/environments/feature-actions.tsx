@@ -25,11 +25,11 @@ export function useEnvironmentActions(campaignId: Id<"campaigns">) {
   const [status, setStatus] = useState<Status | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const spend = useMutation(api.environmentActions.spendFear).withOptimisticUpdate((store, { environmentId, featureName }) => {
-    const campaign = store.getQuery(api.campaigns.get, { campaignId });
+    const fear = store.getQuery(api.campaigns.fear, { campaignId });
     // The same bundled stat block the server reads the cost from.
     const cost = ENVIRONMENTS.find((e) => e.id === environmentId)?.features.find((f) => f.name === featureName)?.fearCost;
-    if (!campaign || cost === undefined || campaign.fear < cost) return;
-    store.setQuery(api.campaigns.get, { campaignId }, { ...campaign, fear: campaign.fear - cost });
+    if (fear === undefined || cost === undefined || fear < cost) return;
+    store.setQuery(api.campaigns.fear, { campaignId }, fear - cost);
   });
   const start = useMutation(api.environmentActions.startCountdown);
   const undoEntry = useMutation(api.actionLog.undo);

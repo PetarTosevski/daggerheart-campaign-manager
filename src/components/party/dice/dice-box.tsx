@@ -195,7 +195,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const error = actionRoll.error ?? damageRoll.error;
 
   // GM Fear at the right of the toolbar, as on the board (players see it on the dashboard too).
-  const campaign = useQuery(api.campaigns.get, { campaignId });
+  const fear = useQuery(api.campaigns.fear, { campaignId });
   // The Motherboard module (null in other frames): the Ikonis replaces weapons there (CB 301).
   const extras = useQuery(api.characterExtras.get, { characterId: character._id });
   // The open Slayer choice and a Tag Team Roll waiting for its pick, whoever rolled (U2, U9).
@@ -437,9 +437,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
 
         <div className="dc-end">
           <BoardDiceToggles />
-          {campaign ? (
+          {fear !== undefined ? (
             <span className="sh-small dc-fear">
-              GM Fear <strong>{campaign.fear}</strong>
+              GM Fear <strong>{fear}</strong>
             </span>
           ) : null}
         </div>

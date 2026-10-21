@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, Users } from "lucide-react";
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { BackLink, Wordmark } from "@/components/brand/brand";
 import { Modal } from "@/components/brand/modal";
@@ -27,26 +27,43 @@ import { CampaignTome } from "./campaign-tome";
 import { PlayersDialog } from "./players-dialog";
 import { TimeArc } from "./time-arc";
 
-type CampaignContextValue = { campaign: CampaignSummary; openTome: (chapter: TomeChapterId) => void };
-
-const CampaignContext = createContext<CampaignContextValue | null>(null);
-
-function useCampaignContext(): CampaignContextValue {
-  const value = useContext(CampaignContext);
-  if (!value) throw new Error("useCampaign must be used inside CampaignShell");
-  return value;
-}
+/*
+ * The shell's context is split by how often each part changes (PF7). `CampaignContext` holds the campaign summary,
+ * which changes only when the campaign itself is edited (name, tome, options, players); `OpenTomeContext` holds a
+ * setter that never changes. The live GM Fear is in neither: `useCampaignFear()` reads its own small query, so a
+ * Fear click re-renders only the components that show Fear.
+ */
+const CampaignContext = createContext<CampaignSummary | null>(null);
+const OpenTomeContext = createContext<((chapter: TomeChapterId) => void) | null>(null);
 
 export function useCampaign(): CampaignSummary {
-  return useCampaignContext().campaign;
+  const campaign = useContext(CampaignContext);
+  if (!campaign) throw new Error("useCampaign must be used inside CampaignShell");
+  return campaign;
 }
 
 /** Opens the campaign's tome at a chapter. */
 export function useOpenTome(): (chapter: TomeChapterId) => void {
-  return useCampaignContext().openTome;
+  const openTome = useContext(OpenTomeContext);
+  if (!openTome) throw new Error("useOpenTome must be used inside CampaignShell");
+  return openTome;
 }
 
-function CampaignNav({ campaignId, isGm }: { campaignId: string; isGm: boolean }) {
+/** The campaign's live GM Fear (`campaigns.fear`; undefined while loading). Wrap the reader in an error boundary (CL1). */
+export function useCampaignFear(): number | undefined {
+  return useQuery(api.campaigns.fear, { campaignId: useCampaign()._id });
+}
+
+/**
+ * Renders `children` with the live GM Fear once it has loaded (nothing before). Only this subtree re-renders on a Fear
+ * change; put it inside the reader's error boundary.
+ */
+export function WithFear({ children }: { children: (fear: number) => ReactNode }) {
+  const fear = useCampaignFear();
+  return fear === undefined ? null : children(fear);
+}
+
+const CampaignNav = memo(function CampaignNav({ campaignId, isGm }: { campaignId: string; isGm: boolean }) {
   const pathname = usePathname();
   const base = `/campaigns/${campaignId}`;
   return (
@@ -70,7 +87,7 @@ function CampaignNav({ campaignId, isGm }: { campaignId: string; isGm: boolean }
       })}
     </nav>
   );
-}
+});
 
 function TierLevel({ campaign }: { campaign: CampaignSummary }) {
   return (
@@ -181,8 +198,8 @@ function HeroSessionAction({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
   );
 }
 
-/** Title block of the dashboard header ("ACTIVE CAMPAIGN · THE WITHERWILD"). */
-function DashboardHero({ campaign, onOpenTome }: { campaign: CampaignSummary; onOpenTome: () => void }) {
+/** Title block of the dashboard header ("ACTIVE CAMPAIGN · THE WITHERWILD"). Memoized: it re-renders only with the campaign. */
+const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { campaign: CampaignSummary; onOpenTome: () => void }) {
   return (
     <div className="relative mx-auto flex max-w-[1344px] flex-col gap-9 px-4 pt-2 pb-8 sm:px-12">
       {frameHasMechanic(campaign.frameId, "campaignTime") ? (
@@ -218,7 +235,10 @@ function DashboardHero({ campaign, onOpenTome }: { campaign: CampaignSummary; on
       </div>
     </div>
   );
-}
+});
+
+const MemoTome = memo(CampaignTome);
+const MemoPlayersDialog = memo(PlayersDialog);
 
 /** Shared campaign chrome from the dashboard boards: art header and section nav. */
 export function CampaignShell({ campaignId, children }: { campaignId: string; children: ReactNode }) {
@@ -227,7 +247,9 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
   const pathname = usePathname();
   const [playersOpen, setPlayersOpen] = useState(false);
   const [tomeChapter, setTomeChapter] = useState<TomeChapterId | null>(null);
-  const contextValue = useMemo(() => (campaign ? { campaign, openTome: setTomeChapter } : null), [campaign]);
+  const openOverview = useCallback(() => setTomeChapter("overview"), []);
+  const closeTome = useCallback(() => setTomeChapter(null), []);
+  const closePlayers = useCallback(() => setPlayersOpen(false), []);
 
   const foundId = campaign ? campaign._id : null;
   useEffect(() => {
@@ -252,7 +274,8 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
   const art = campaignArt(campaign.frameId, campaign.custom?.background);
 
   return (
-    <CampaignContext.Provider value={contextValue}>
+    <CampaignContext.Provider value={campaign}>
+      <OpenTomeContext.Provider value={setTomeChapter}>
       <div className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
         <section aria-label="Campaign header" className="relative overflow-hidden">
           <div
@@ -286,20 +309,16 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
             </div>
           </div>
           {pathname === `/campaigns/${campaign._id}` ? (
-            <DashboardHero campaign={campaign} onOpenTome={() => setTomeChapter("overview")} />
+            <DashboardHero campaign={campaign} onOpenTome={openOverview} />
           ) : null}
         </section>
         {children}
-        <CampaignTome
-          campaign={campaign}
-          chapter={tomeChapter}
-          onChapter={setTomeChapter}
-          onClose={() => setTomeChapter(null)}
-        />
+        <MemoTome campaign={campaign} chapter={tomeChapter} onChapter={setTomeChapter} onClose={closeTome} />
         {campaign.role === "gm" ? (
-          <PlayersDialog campaignId={campaign._id} open={playersOpen} onClose={() => setPlayersOpen(false)} />
+          <MemoPlayersDialog campaignId={campaign._id} open={playersOpen} onClose={closePlayers} />
         ) : null}
       </div>
+      </OpenTomeContext.Provider>
     </CampaignContext.Provider>
   );
 }

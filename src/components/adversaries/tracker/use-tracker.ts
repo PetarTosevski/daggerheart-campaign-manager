@@ -21,7 +21,7 @@ export type FearReason = "interrupt" | "move" | "feature" | "experience";
 /**
  * The tracker's mutations (convex/encounterTracking.ts) with optimistic updates on `encounters.get` (CL4): pips,
  * conditions, spotlights and the GM turn use the same pure rules as the server, so a double click on "+" marks 2;
- * Fear spending lowers `campaigns.get`'s Fear at once. Each call gets its own idempotency key; a failure is kept in
+ * Fear spending lowers `campaigns.fear` at once. Each call gets its own idempotency key; a failure is kept in
  * `error` for the tracker's alert line.
  */
 export function useTracker(campaignId: Id<"campaigns">, encounterId: string) {
@@ -52,9 +52,9 @@ export function useTracker(campaignId: Id<"campaigns">, encounterId: string) {
     store.setQuery(api.encounters.get, viewArgs, { ...view, encounter: { ...view.encounter, gmTurn: view.encounter.gmTurn + 1 } });
   });
   const spendFear = useMutation(api.encounterTracking.spendFear).withOptimisticUpdate((store, { amount }) => {
-    const campaign = store.getQuery(api.campaigns.get, { campaignId });
-    if (!campaign || campaign.fear < amount) return;
-    store.setQuery(api.campaigns.get, { campaignId }, { ...campaign, fear: campaign.fear - amount });
+    const fear = store.getQuery(api.campaigns.fear, { campaignId });
+    if (fear === undefined || fear < amount) return;
+    store.setQuery(api.campaigns.fear, { campaignId }, fear - amount);
   });
   const applyDamage = useMutation(api.encounterTracking.applyDamage);
   const defeatMinions = useMutation(api.encounterTracking.defeatMinions);

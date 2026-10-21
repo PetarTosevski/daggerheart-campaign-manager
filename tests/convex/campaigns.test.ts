@@ -51,9 +51,35 @@ describe("campaigns", () => {
       name: "The Long Spring",
       tier: 1,
       level: 1,
-      fear: 0,
       custom: null,
     });
+    expect(await gm.query(api.campaigns.fear, { campaignId })).toBe(0);
+  });
+
+  it("PF7: keeps Fear out of campaigns.get; campaigns.fear and the Load Campaign list follow every change", async () => {
+    const { gm } = await setup();
+    const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Fearful", idempotencyKey: "k1" });
+    await gm.mutation(api.fear.set, { campaignId, value: 7, idempotencyKey: "f1" });
+    expect(await gm.query(api.campaigns.fear, { campaignId })).toBe(7);
+    await gm.mutation(api.fear.adjust, { campaignId, direction: "decrease", idempotencyKey: "f2" });
+    expect(await gm.query(api.campaigns.fear, { campaignId })).toBe(6);
+    expect(await gm.query(api.campaigns.get, { campaignId })).not.toHaveProperty("fear");
+    expect(await gm.query(api.campaigns.list, {})).toMatchObject([{ _id: campaignId, fear: 6 }]);
+  });
+
+  it("campaigns.fear: the GM and a player read it; outsiders get NOT_FOUND, the signed-out UNAUTHENTICATED", async () => {
+    process.env.GM_EMAILS = `${GM_EMAIL},${OTHER_EMAIL},player@example.com`;
+    const { t, gm, other } = await setup();
+    const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Read", idempotencyKey: "k1" });
+    await gm.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: "f1" });
+    const playerId = await t.run((ctx) => ctx.db.insert("users", { email: "player@example.com" }));
+    await t.run((ctx) => ctx.db.insert("campaignMembers", { campaignId, userId: playerId, joinedAt: 0, lastOpenedAt: 0 }));
+    const player = t.withIdentity({ subject: `${playerId}|session` });
+
+    expect(await gm.query(api.campaigns.fear, { campaignId })).toBe(3);
+    expect(await player.query(api.campaigns.fear, { campaignId })).toBe(3);
+    expect(errorCode(await other.query(api.campaigns.fear, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await t.query(api.campaigns.fear, { campaignId }).catch((e) => e))).toBe("UNAUTHENTICATED");
   });
 
   it("creates a custom campaign with trimmed details and its starting tier", async () => {

@@ -14,7 +14,7 @@ async function setup({ hopeAndFear = true, fear = 0 } = {}) {
   return ctx;
 }
 
-const fearOf = async ({ gm, campaignId }: Ctx) => (await gm.query(api.campaigns.get, { campaignId }))?.fear;
+const fearOf = async ({ gm, campaignId }: Ctx) => gm.query(api.campaigns.fear, { campaignId });
 
 const spend = ({ gm, campaignId }: Ctx, environmentId: string, featureName: string, who = gm) =>
   who.mutation(api.environmentActions.spendFear, { campaignId, environmentId, featureName, idempotencyKey: key() });

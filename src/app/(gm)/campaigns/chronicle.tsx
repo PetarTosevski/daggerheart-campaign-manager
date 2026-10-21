@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import type { CampaignSummary } from "../../../../convex/campaigns";
+import type { CampaignListItem } from "../../../../convex/campaigns";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
@@ -24,11 +24,11 @@ function Band({
   onToggle,
   onDeleted,
 }: {
-  campaign: CampaignSummary;
+  campaign: CampaignListItem;
   index: number;
   open: boolean;
   onToggle: () => void;
-  onDeleted: (campaign: CampaignSummary) => void;
+  onDeleted: (campaign: CampaignListItem) => void;
 }) {
   const remove = useMutation(api.campaigns.remove);
   const leave = useMutation(api.members.leave);
@@ -151,7 +151,7 @@ export function Chronicle() {
   const campaigns = useQuery(api.campaigns.list);
   const restore = useMutation(api.campaigns.restore);
   const [openId, setOpenId] = useState<Id<"campaigns"> | null | undefined>(undefined);
-  const [deleted, setDeleted] = useState<CampaignSummary | null>(null);
+  const [deleted, setDeleted] = useState<CampaignListItem | null>(null);
   const [undoError, setUndoError] = useState<string | null>(null);
 
   // Oldest first, so the first campaign you made is I (user 2026-10-21); the server lists most recently opened first.
