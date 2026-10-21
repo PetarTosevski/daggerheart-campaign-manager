@@ -1,0 +1,44 @@
+# Follow-ups 3 (2026-10-21): small fixes from the D11 Notes end-to-end pass (N9) and the sprite-packs end-to-end pass (P10).
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size.
+plan: followups-3
+waves:
+  - wave: 1
+    tracers:
+      - id: F1
+        title: Notes - the add row stays mounted on the first write (dcm-bxp.102), notes-entries test 2 via Players' journals (dcm-bxp.103), the 390 Pages disclosure in the older specs (dcm-bxp.114)
+        size: S
+        goal: Close dcm-bxp.102, .103 and .114.
+        depends_on: []
+        owns:
+          - src/components/notes/entries/index.tsx
+          - tests/e2e/notes-entries.spec.ts
+          - tests/e2e/notes-bin.spec.ts
+          - tests/e2e/notes-journals.spec.ts
+          - tests/e2e/notes-sharing.spec.ts
+          - tests/unit/notes-entries-ui.test.tsx
+          - docs/tasks/TASK-F3-F1.md
+        reads:
+          - docs/tasks/TASK-D11-N9.md
+          - src/components/notes/**
+        acceptance:
+          - "The first write on a default page keeps the add row mounted: focus stays in the input, the bullet kind stays, nothing typed is lost (RTL test plus the notes-entries e2e)"
+          - "notes-entries test 2 opens the player's page through Players' journals (or Shared by players) instead of ?page=, and passes"
+          - "N9's openIndex diff (scratchpad/n9/n9-390-specs.diff, TASK-D11-N9.md) is applied; the full notes e2e set passes at 1440 and 390"
+      - id: F2
+        title: Combat Map - uploaded light sprites get the Play-mode light switch, named after the sprite (dcm-bxp.83, dcm-bxp.87)
+        size: S
+        goal: Close dcm-bxp.83 and .87.
+        depends_on: []
+        owns:
+          - src/components/combat-map/vision/vision-layer.tsx
+          - src/components/combat-map/vision/panels.tsx
+          - tests/e2e/combat-light-uploaded.spec.ts
+          - docs/tasks/TASK-F3-F2.md
+        reads:
+          - docs/tasks/TASK-SP-P10.md
+          - src/components/combat-map/map-view/paint-spec.ts
+          - convex/combatMapStyle.ts
+        acceptance:
+          - "vision-layer reads spriteSources (behind an error boundary, only when the map has uploaded refs) and passes the uploaded lookup to spriteTraits, so an uploaded faint-glow or torch sprite gets the Play light switch, as the server and the editor already allow"
+          - "Light switches (map and panel) are labelled with the sprite's name when the object has a sprite, else the Classic kind"
+          - "e2e: a GM uploads a light sprite, places it, switches it in Play; a player who has seen it can switch it; pnpm lint, typecheck and the combat-map e2e specs pass"
