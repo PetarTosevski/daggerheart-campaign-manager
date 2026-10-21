@@ -166,6 +166,16 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
       await deleteRows(ctx, budget, "combatMaps", [map]);
     }
   },
+  // GM sprite packs (sprite packs P0): sprites before their packs; each sprite's image is a `files` row of this
+  // campaign (kind "sprite"), deleted with the campaign's files below.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("spritePackSprites").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "spritePackSprites", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("spritePacks").withIndex("by_campaign_updated", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "spritePacks", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("files").withIndex("by_campaign_kind", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "files", rows, (row) => row.storageId);

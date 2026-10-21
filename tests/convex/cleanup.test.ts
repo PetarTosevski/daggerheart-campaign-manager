@@ -62,6 +62,7 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
       codexImage: await blob(ctx),
       portrait: await blob(ctx),
       combatImage: await blob(ctx),
+      sprite: await blob(ctx),
     };
     const characterId = await ins("characters", { campaignId: c, ownerId: userId, createdBy: userId, status: "active", sheet: {}, createdAt: now, updatedAt: now });
     const entryId = await ins("codexEntries", { campaignId: c, kind: "character", data: {}, createdAt: now, updatedAt: now });
@@ -177,6 +178,30 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("sessionLog", { campaignId: c, sessionId, at: now, text: "Session started.", by: userId, auto: true });
     await ins("sessionSpotlights", { campaignId: c, sessionId, characterId, count: 2 });
     await ins("files", { storageId: blobs.combatImage, campaignId: c, uploadedBy: userId, kind: "combatMap", refId: combatMapId, createdAt: now });
+    // A GM sprite pack with one uploaded sprite and its image (sprite packs P0); the map uses it.
+    const packId = await ins("spritePacks", { campaignId: c, name: "Standing stones", extends: "forest", createdBy: userId, createdAt: now, updatedAt: now });
+    const spriteFileId = await ins("files", { storageId: blobs.sprite, campaignId: c, uploadedBy: userId, kind: "sprite", refId: "pending", createdAt: now });
+    const spriteId = await ins("spritePackSprites", {
+      campaignId: c,
+      packId,
+      fileId: spriteFileId,
+      name: "Standing stone",
+      slug: "standing-stone",
+      category: "object",
+      w: 1,
+      h: 1,
+      sight: "block",
+      light: "none",
+      height: "tall",
+      footprint: "circle",
+      classicKind: "statue",
+      px: { w: 160, h: 160 },
+      order: 0,
+      createdAt: now,
+    });
+    await ctx.db.patch("files", spriteFileId, { refId: spriteId });
+    await ctx.db.patch("combatMaps", combatMapId, { style: "sprites", setting: { pack: packId }, settingPicked: true, texturePalette: [{ uploaded: spriteId }] });
+    await ins("combatMapObjects", { mapId: combatMapId, kind: "statue", x: 6, y: 6, r: 0.5, rot: 0, sprite: { uploaded: spriteId } });
     await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
     await ins("mapUploads", { storageId: blobs.mapUpload, campaignId: c, uploadedBy: userId, createdAt: now });
     await ins("codexImages", { storageId: blobs.codexImage, campaignId: c, entryId, uploadedBy: userId, createdAt: now });
@@ -327,8 +352,25 @@ describe("cleanup crons", () => {
 
     expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
     expect(await leftovers(t, live)).toEqual(liveBefore);
-    expect(liveBefore.rows).toMatchObject({ combatMaps: 1, combatTokens: 1, combatMapObjects: 1, combatMapCells: 1, combatExplored: 1 });
+    expect(liveBefore.rows).toMatchObject({ combatMaps: 1, combatTokens: 1, combatMapObjects: 2, combatMapCells: 1, combatExplored: 1 });
     expect(liveBefore.rows).toMatchObject({ sessions: 1, sessionPrep: 1, sessionLog: 1, sessionSpotlights: 1 });
+  });
+
+  it("purges a campaign's sprite packs, uploaded sprites and their sprite files with blobs (sprite packs P0)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const due = await seedCampaign(t, userId, NOW - 31 * DAY);
+    const live = await seedCampaign(t, userId, undefined);
+    const liveBefore = await leftovers(t, live);
+    expect(liveBefore.rows).toMatchObject({ spritePacks: 1, spritePackSprites: 1, files: 3 });
+
+    await t.mutation(internal.cleanup.purgeDeletedCampaigns, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
+    const spriteFiles = await t.run((ctx) => ctx.db.query("files").withIndex("by_campaign_kind", (q) => q.eq("campaignId", due.campaignId).eq("kind", "sprite")).collect());
+    expect(spriteFiles).toEqual([]);
+    expect(await leftovers(t, live)).toEqual(liveBefore);
   });
 
   it("deletes one session's prep, log and spotlight rows and leaves the linked encounter and other sessions (D10)", async () => {

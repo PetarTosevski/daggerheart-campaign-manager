@@ -123,6 +123,8 @@ const CAMPAIGN_SCOPED = [
   "sessionPrep",
   "sessionLog",
   "sessionSpotlights",
+  "spritePacks",
+  "spritePackSprites",
 ];
 /**
  * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge

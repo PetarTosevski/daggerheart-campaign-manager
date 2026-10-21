@@ -11,6 +11,7 @@ import { levelUpMessages } from "./levelUp";
 import { photoImportMessages } from "./photoImport";
 import { restMessages } from "./rests";
 import { sessionMessages } from "./sessions";
+import { spritePackMessages } from "./spritePacks";
 import { witherMessages } from "./wither";
 
 /**
@@ -32,6 +33,7 @@ export type AppErrorCode =
   | keyof typeof encounterMessages
   | keyof typeof combatMapMessages
   | keyof typeof sessionMessages
+  | keyof typeof spritePackMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"

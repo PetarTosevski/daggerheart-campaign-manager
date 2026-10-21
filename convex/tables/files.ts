@@ -4,7 +4,7 @@ import { v } from "convex/values";
 export const fileTables = {
   /**
    * Uploaded files (Convex file storage), recorded when attached so a file
-   * belongs to one thing: a campaign's map, a codex entry, a character or a combat map
+   * belongs to one thing: a campaign's map, a codex entry, a character, a combat map or an uploaded sprite
    * (`refId`). Only a file's own owner serves or deletes it.
    */
   files: defineTable({
@@ -17,8 +17,13 @@ export const fileTables = {
       v.literal("portrait"),
       v.literal("photoImport"),
       v.literal("combatMap"),
+      v.literal("sprite"),
     ),
-    /** The campaign (map, photoImport), codex entry (codexImage), character (portrait) or combat map (combatMap, D9) id. Photo-import files are deleted after reading (D5 T7). */
+    /**
+     * The campaign (map, photoImport), codex entry (codexImage), character (portrait), combat map (combatMap, D9)
+     * or uploaded sprite (sprite: the `spritePackSprites` id, sprite packs D9) id. Photo-import files are deleted
+     * after reading (D5 T7).
+     */
     refId: v.string(),
     createdAt: v.number(),
   })

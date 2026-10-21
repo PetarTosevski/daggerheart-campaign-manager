@@ -171,6 +171,8 @@ const RATE_LIMITS = {
   photoImport: { kind: "token bucket", rate: 10, period: HOUR },
   // Combat map layouts (D9, Q5): one Messages API call per Generate / Another version, 10 per user per hour.
   combatMapGenerate: { kind: "token bucket", rate: 10, period: HOUR },
+  // Sprite uploads (sprite packs P8): one URL per cut sprite; a sheet is up to 16, so 200 per hour, bursts of 64.
+  spriteUpload: { kind: "token bucket", rate: 200, period: HOUR, capacity: 64 },
 } as const;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

@@ -165,3 +165,35 @@ export type RevealPanelProps = CombatPageState & { map: CombatMapSummary };
 
 /** Shared by every provider: state shared between a feature's panel and layer. */
 export type ProviderProps = { children: ReactNode };
+
+// ---------------------------------------------------------------- sprite packs (plan .omc/plans/sprite-packs.yaml)
+//
+// | Folder    | Tracer | Exports (mounted by the page)                                                       |
+// |-----------|--------|--------------------------------------------------------------------------------------|
+// | `style/`  | P6     | `StyleSwitch` (Combat Map header, GM only, once a map is on screen)                   |
+// | `packs/`  | P8     | `PacksLink` (GM left column, under Maps), `PacksScreen` (the /combat-map/packs route) |
+//
+// P0 ships both folders as stubs: `StyleSwitch` renders nothing, `PacksLink` is a plain link to the packs route
+// and `PacksScreen` an empty-state card. The page mounts each in its own error boundary and only for the GM;
+// the server functions refuse players anyway (D10).
+
+/**
+ * Combat Map header, GM only, rendered only while a map is on screen: the per-map Classic | Sprites switch (P3).
+ * P6 reads the map's `style` from `combatMaps.get` (absent = "classic", Q4) and calls `combatMapStyle.setStyle`
+ * (map id + style, D1) with an optimistic update on `combatMaps.get` / `combatMaps.list`.
+ */
+export type StyleSwitchProps = {
+  campaignId: Id<"campaigns">;
+  map: CombatMapSummary;
+};
+
+/** GM left column, under the Maps card: opens the sprite packs screen (`packsHref(campaignId)`). */
+export type PacksLinkProps = { campaignId: Id<"campaigns"> };
+
+/** The /campaigns/<id>/combat-map/packs route body (GM only; the route sends players back to the Combat Map). */
+export type PacksScreenProps = { campaignId: Id<"campaigns"> };
+
+/** The sprite packs route of a campaign. */
+export function packsHref(campaignId: Id<"campaigns">): string {
+  return `/campaigns/${campaignId}/combat-map/packs`;
+}

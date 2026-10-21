@@ -7,6 +7,8 @@ import { Component, useState, type ReactNode } from "react";
 import { EditorLayer, EditorProvider, EditToolsPanel } from "@/components/combat-map/editor";
 import { ScenePanel } from "@/components/combat-map/generate";
 import { MapBoard, MapHeaderLine, MapsPanel, useCurrentMap } from "@/components/combat-map/maps";
+import { PacksLink } from "@/components/combat-map/packs";
+import { StyleSwitch } from "@/components/combat-map/style";
 import type { CombatMode, CombatPageState, CombatRole, MapLayerProps } from "@/components/combat-map/slots";
 import { CombatantsPanel, TokenPanel, TokensLayer, TokensProvider } from "@/components/combat-map/tokens";
 import { LightPill, PreviewPicker, RevealPanel, VisionLayer, VisionPanel, VisionProvider } from "@/components/combat-map/vision";
@@ -134,6 +136,9 @@ function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
     <>
       <SlotBoundary label="Maps">
         <MapsPanel campaignId={campaignId} selectedMapId={selectedMapId} onSelectMap={onSelectMap} />
+      </SlotBoundary>
+      <SlotBoundary label="Sprite packs">
+        <PacksLink campaignId={campaignId} />
       </SlotBoundary>
       <ModeSwitch mode={state.mode} onMode={onMode} />
       {state.mode === "edit" ? (
@@ -271,6 +276,11 @@ function CombatHeader({ campaign, state, loading }: { campaign: CampaignSummary;
         {state.role === "gm" ? (
           <>
             <FearPill campaignId={campaign._id} fear={campaign.fear} />
+            {state.map ? (
+              <SlotBoundary label="Map style">
+                <StyleSwitch campaignId={campaign._id} map={state.map} />
+              </SlotBoundary>
+            ) : null}
             <SlotBoundary label="Player view">
               <PreviewPicker {...state} />
             </SlotBoundary>

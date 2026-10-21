@@ -1,7 +1,15 @@
 import { v } from "convex/values";
 
-import { paintTile, isEmptyTile, isSwitchableLight, squaresByTile } from "../src/components/combat-map/editor/edit-model";
-import { encodeExplored, exploredGrows, mergeExplored, pointLevel, visibleSquares } from "../src/lib/domain/combat-map/index";
+import { paintTile, isEmptyTile, squaresByTile } from "../src/components/combat-map/editor/edit-model";
+import {
+  encodeExplored,
+  exploredGrows,
+  givesLight,
+  mergeExplored,
+  pointLevel,
+  visibleSquares,
+  type LightTrait,
+} from "../src/lib/domain/combat-map/index";
 import { appError } from "../src/lib/errors/app-error";
 import { tokenViewValidator } from "./combatTokens";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -285,7 +293,8 @@ export const setCarriedLight = campaignMutation({
 });
 
 /**
- * Switches a map light (campfire, wall torch) on or off: `lit` is the wanted state, so a double click cannot
+ * Switches a map light (campfire, wall torch, or a sprite whose light trait is not none: `givesLight`, sprite packs
+ * Q1) on or off: `lit` is the wanted state, so a double click cannot
  * undo itself. The GM always; a player only on the live map and only when one of the characters they play has
  * the light in view now (C1 `pointLevel` > 0) or has explored its square (COMBAT_LIGHT_NOT_SEEN, R9).
  */
@@ -296,7 +305,8 @@ export const toggleLight = campaignMutation({
   returns: v.object({ lit: v.boolean() }),
   handler: async (ctx, { objectId, lit }) => {
     const { object, map } = await loadCombatObject(ctx, ctx.campaign._id, objectId);
-    if (!isSwitchableLight(object.kind)) throw appError("INVALID", "Only campfires and wall torches can be lit.");
+    const traits = await objectLightTraits(ctx, object);
+    if (!givesLight({ kind: object.kind, lit: object.lit, traits })) throw appError("INVALID", "Only map lights can be lit.");
     if (!atLeast(ctx.permission, "owner")) {
       if (!map.live) throw appError("COMBAT_MAP_NOT_FOUND");
       if (!(await hasSeen(ctx, map, object))) throw appError("COMBAT_LIGHT_NOT_SEEN");
@@ -305,6 +315,18 @@ export const toggleLight = campaignMutation({
     return { lit };
   },
 });
+
+/**
+ * The light trait of an object's sprite, for `givesLight` (sprite packs Q1, plan ORCHESTRATOR NOTE): an uploaded
+ * sprite's row of this campaign gives its `light`; null otherwise, so the Classic kind decides (D2). A built-in
+ * sprite's trait comes from the catalog (P1), which P5 wires in here (`spriteTraits`); until then a built-in
+ * sprite's Classic kind decides, which D2 makes equal for torch and campfire sprites. A deleted sprite is null (D9).
+ */
+async function objectLightTraits(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, object: Doc<"combatMapObjects">): Promise<{ light: LightTrait } | null> {
+  if (object.sprite === undefined || !("uploaded" in object.sprite)) return null;
+  const sprite = await ctx.db.get("spritePackSprites", object.sprite.uploaded);
+  return sprite !== null && sprite.campaignId === ctx.campaign._id ? { light: sprite.light } : null;
+}
 
 /** Whether a character the caller plays (edit permission) on this map sees the object now or has explored its square. */
 async function hasSeen(ctx: CampaignCtx<MutationCtx>, map: Doc<"combatMaps">, object: Doc<"combatMapObjects">): Promise<boolean> {
