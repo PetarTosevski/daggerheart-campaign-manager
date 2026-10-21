@@ -53,6 +53,8 @@ export const list = campaignQuery({
           .withIndex("by_campaign_visibility_at", (q) => q.eq("campaignId", ctx.campaign._id).eq("visibility", "public").gt("at", clearedAt))
           .order("desc")
           .paginate(paginationOpts);
+    // Rows in a rest's group (e.g. a long rest's countdown notice) are undone with the rest, from the rest panel.
+    const restGroups = new Set(page.page.filter((r) => r.kind === "rest" && r.groupId !== undefined).map((r) => r.groupId));
     const view = (row: Doc<"actionLog">) => {
       const shown = {
         _id: row._id,
@@ -64,7 +66,7 @@ export const list = campaignQuery({
         actorId: row.actorId,
         ...(row.fearDelta !== undefined ? { fearDelta: row.fearDelta } : {}),
         undone: row.undoneAt !== undefined,
-        canUndo: row.undoable && row.kind !== "rest" && row.undoneAt === undefined && (isGm || row.actorId === ctx.user._id),
+        canUndo: row.undoable && row.kind !== "rest" && !(row.groupId !== undefined && restGroups.has(row.groupId)) && row.undoneAt === undefined && (isGm || row.actorId === ctx.user._id),
       };
       if (isGm) return { ...shown, visibility: row.visibility, revealable: row.kind === "gmRoll" && row.visibility === "gm" };
       // The index already holds only public rows; this keeps the player shape honest.
