@@ -579,6 +579,10 @@
     font-size: 28px;
     padding: 8px 22px 6px;
   }
+}
+
+/* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
+@media (max-width: 1100px), (pointer: coarse) {
   .bj-threads,
   .bj-ghost,
   .bj-chip,
@@ -586,6 +590,10 @@
   .bj-plus {
     min-height: 44px;
   }
+}
+/* The row's bullet and icon buttons grow on phones and touch screens only: on a mouse tablet 44 px icons would squeeze
+   the entry text to a narrow column; a touch screen also wraps the row (entries.css). */
+@media (max-width: 720px), (pointer: coarse) {
   .bj-bul,
   .bj-ib {
     width: 44px;

@@ -90,6 +90,9 @@
     height: 70vh;
     min-height: 320px;
   }
+}
+/* Touch targets of at least 44 px on tablets and phones (D12 H22). */
+@media (max-width: 1100px), (pointer: coarse) {
   .cm-gridbar-in {
     min-height: 44px;
   }

@@ -243,10 +243,13 @@
   color: var(--bj-danger);
 }
 
-@media (max-width: 720px) {
+/* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
+@media (max-width: 1100px), (pointer: coarse) {
   .bj-bin-restore {
     min-height: 44px;
   }
+}
+@media (max-width: 720px) {
   .bj-toast-wrap {
     bottom: 16px;
   }
