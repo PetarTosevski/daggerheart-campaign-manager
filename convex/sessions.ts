@@ -30,11 +30,9 @@ import { v, type Infer } from "convex/values";
 
 import { expire } from "../src/lib/domain/characters/expiry";
 import { onSessionEnd, onSessionStart } from "../src/lib/domain/class-features/hooks";
-import type { FeatureScope } from "../src/lib/domain/class-features/types";
 import { sessionEndFeatures, sessionStartFeatures } from "../src/lib/domain/session-features";
 import { addTally, windowTally } from "../src/lib/domain/sessions";
 import { appError } from "../src/lib/errors/app-error";
-import { FRAME_OF } from "../src/lib/frames/extras/common";
 import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -42,6 +40,7 @@ import type { MutationCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
+import { featureScope } from "./lib/featureScope";
 import { campaignFearState, gainFear } from "./lib/fear";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { insertSession, liveSession, loadSession, newestPlannedSession, tallyRows } from "./lib/sessions";
@@ -131,11 +130,6 @@ function lostDiceNotes(changes: { sheet: CharacterSheet; next: CharacterSheet }[
 /** The Wither conversion as the log and report say it: '3 Wither tokens → +3 Fear (1 Fear lost)'. */
 function witherNote(tokens: number, gained: number, lost: number): string {
   return `${tokens} Wither token${tokens === 1 ? "" : "s"} → +${gained} Fear${lost > 0 ? ` (${lost} Fear lost)` : ""}`;
-}
-
-/** What the campaign lets features offer (as rolls.ts): Lunar Phases is a Hope & Fear (Witch) feature (K4). */
-function scopeOf(campaign: Doc<"campaigns">): FeatureScope {
-  return { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear, ikonis: campaign.frameId === FRAME_OF.motherboard };
 }
 
 // ---------------------------------------------------------------- end (shared by `end` and `start`, B6)
@@ -347,7 +341,7 @@ export const start = keyedGmMutation({
       const active = (await party(ctx, campaignId)).filter(({ character }) => character.status === "active");
       // Class hooks first (Prayer Dice, Rally), then the session features on the result (F0: a changed sheet is a new reference).
       const hooked = active.map((c) => onSessionStart(c.sheet, rollDie));
-      const { sheets, notes: features } = sessionStartFeatures(hooked, rollDie, scopeOf(ctx.campaign));
+      const { sheets, notes: features } = sessionStartFeatures(hooked, rollDie, featureScope(ctx.campaign));
       const changes = active.map((c, i) => ({ ...c, next: sheets[i] }));
       await saveChanged(ctx, { campaignId, actorId: ctx.user._id, groupId, summary: "session start" }, changes);
       await logAction(ctx, { campaignId, actorId: ctx.user._id, kind: "session", visibility: "public", summary: "Session started", groupId, undoable: true });
