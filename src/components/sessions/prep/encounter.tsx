@@ -5,10 +5,10 @@ import "@/components/adversaries/builder/builder.css";
 
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
 
-import { AddAdversaryDialog } from "@/components/adversaries/builder/add-dialog";
 import { BudgetPanel } from "@/components/adversaries/builder/budget-panel";
 import type { EncounterView, InstanceView } from "@/components/adversaries/builder/types";
 import { errorMessage } from "@/lib/convex-errors";
@@ -21,6 +21,20 @@ import { encounterTrackerHref } from "../session-chip";
 
 type Summary = NonNullable<FunctionReturnType<typeof api.sessionPrep.get>["encounter"]>;
 type Ids = { campaignId: Id<"campaigns">; sessionId: Id<"sessions"> };
+
+function AddLoading() {
+  return (
+    <p role="status" className="enc-muted">
+      Loading the adversary list…
+    </p>
+  );
+}
+
+// CL8: the add dialog (and the SRD adversary list it searches) loads only when "+ Add adversary" is first clicked.
+const AddAdversaryDialog = dynamic(() => import("@/components/adversaries/builder/add-dialog").then((m) => m.AddAdversaryDialog), {
+  ssr: false,
+  loading: AddLoading,
+});
 
 const STATUS_LABEL = { draft: "Draft", running: "Running", ended: "Ended" } as const;
 
@@ -124,6 +138,8 @@ function LinkedEncounter({ campaignId, sessionId, summary }: Ids & { summary: Su
 function Builder({ campaignId, sessionId, view, partyTier }: Ids & { view: EncounterView; partyTier: number }) {
   const { encounter, instances } = view;
   const [adding, setAdding] = useState(false);
+  // Mounts on the first open and stays mounted, so the dialog's close and focus return work as before.
+  const [addOpened, setAddOpened] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const unlink = useMutation(api.sessionPrep.unlinkEncounter).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.sessionPrep.get, { campaignId: args.campaignId, sessionId: args.sessionId });
@@ -178,7 +194,14 @@ function Builder({ campaignId, sessionId, view, partyTier }: Ids & { view: Encou
           </ul>
         )}
         <div className="ssp-actions">
-          <button type="button" className="enc-ghost" onClick={() => setAdding(true)}>
+          <button
+            type="button"
+            className="enc-ghost"
+            onClick={() => {
+              setAddOpened(true);
+              setAdding(true);
+            }}
+          >
             + Add adversary
           </button>
           <Link className="enc-ghost" href={encounterTrackerHref(campaignId, encounter._id)}>
@@ -195,7 +218,9 @@ function Builder({ campaignId, sessionId, view, partyTier }: Ids & { view: Encou
           </p>
         ) : null}
       </section>
-      <AddAdversaryDialog campaignId={campaignId} open={adding} onClose={() => setAdding(false)} encounterId={encounter._id} pcs={encounter.pcs} />
+      {addOpened ? (
+        <AddAdversaryDialog campaignId={campaignId} open={adding} onClose={() => setAdding(false)} encounterId={encounter._id} pcs={encounter.pcs} />
+      ) : null}
     </div>
   );
 }
