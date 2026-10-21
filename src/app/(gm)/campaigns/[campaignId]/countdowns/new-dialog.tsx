@@ -11,6 +11,8 @@ import {
   MAX_COUNTDOWN_DICE,
   type CountdownDiceSides,
   type CountdownRepeat,
+  type CountdownRestMode,
+  type CountdownStep,
 } from "@/lib/domain/countdowns/advanced";
 import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
@@ -19,16 +21,18 @@ import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
 import { BTN, CATEGORY_LABEL } from "./shared";
+import { RestModeSwitch, StepEditor } from "./track";
 import { choiceOf, VisibilityPicker, visibilityOf } from "./visibility";
 
 const NEW_COUNTDOWN_VISIBILITY = choiceOf(COUNTDOWN_VISIBILITY_PRESETS.public);
 
-/** The types this dialog creates (long-term and chase have their own, K3 / K4). CB p.162. */
-type DialogMode = "standard" | "progress" | "consequence";
+/** The types this dialog creates (chase has its own, K3). CB p.162 and p.164 (long-term, K4). */
+type DialogMode = "standard" | "progress" | "consequence" | "longTerm";
 const TYPES: { mode: DialogMode; label: string; hint: string }[] = [
   { mode: "standard", label: "Standard", hint: "Ticks down 1 on every action roll, whatever the result." },
   { mode: "progress", label: "Progress", hint: "The party works toward it: their successes tick it down." },
   { mode: "consequence", label: "Consequence", hint: "The party tries to avoid it: their failures tick it down." },
+  { mode: "longTerm", label: "Long-term", hint: "A campaign event: a track of steps, ticked once per long rest." },
 ];
 
 /** CB p.163, Randomized Starting Value, Loop, Increasing or Decreasing. */
@@ -124,8 +128,13 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
   const [diceSides, setDiceSides] = useState<CountdownDiceSides>(6);
   const [repeat, setRepeat] = useState<CountdownRepeat | "none">("none");
   const [armed, setArmed] = useState(true);
+  const [steps, setSteps] = useState<CountdownStep[]>([]);
+  const [restMode, setRestMode] = useState<CountdownRestMode>("auto");
+  const longTerm = mode === "longTerm";
   // The form unmounts on close (Modal renders children only while open); reset the pickers too.
   const close = () => {
+    setSteps([]);
+    setRestMode("auto");
     setStart(6);
     setVisibility(NEW_COUNTDOWN_VISIBILITY);
     setMode("standard");
@@ -148,18 +157,27 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
           if (create.pending) return;
           const form = new FormData(event.currentTarget);
           // Intents only: the server rolls the dice and keeps the formula (R5, D8).
-          const created = await create.fire({
+          const details = {
             campaignId,
             name: String(form.get("name") ?? ""),
             consequence: String(form.get("consequence") ?? ""),
             description: String(form.get("description") ?? ""),
             category: String(form.get("category")) as CountdownCategory,
-            ...(rolled ? { startDice: { count: diceCount, sides: diceSides } } : { startingValue: start }),
-            mode,
-            ...(repeat !== "none" ? { repeat } : {}),
             armed,
             visibility: visibilityOf(visibility),
-          });
+          };
+          // A long-term countdown has a fixed start, no repeat, its written steps and the On long rest switch (CB p.164, Q3).
+          const written = steps.filter((s) => s.value <= start && s.text.trim() !== "");
+          const created = await create.fire(
+            longTerm
+              ? { ...details, startingValue: start, mode, restMode, ...(written.length > 0 ? { steps: written } : {}) }
+              : {
+                  ...details,
+                  ...(rolled ? { startDice: { count: diceCount, sides: diceSides } } : { startingValue: start }),
+                  mode,
+                  ...(repeat !== "none" ? { repeat } : {}),
+                },
+          );
           if (created) close();
         }}
       >
@@ -201,21 +219,23 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
 
         <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
           <legend className="mb-2 p-0 text-[14px] text-[#9fb2b6]">Type</legend>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {TYPES.map((t) => (
               <Choice key={t.mode} name={`${ids}-type`} label={t.label} hint={t.hint} checked={mode === t.mode} onChange={() => setMode(t.mode)} />
             ))}
           </div>
-          {mode === "standard" ? null : <AdvancementTable mode={mode} />}
+          {mode === "progress" || mode === "consequence" ? <AdvancementTable mode={mode} /> : null}
         </fieldset>
 
         <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
           <legend className="mb-2 p-0 text-[14px] text-[#9fb2b6]">Start</legend>
-          <div className="grid grid-cols-2 gap-2">
-            <Choice name={`${ids}-start`} label="A number" hint="Such as Countdown 4." checked={!rolled} onChange={() => setRolled(false)} />
-            <Choice name={`${ids}-start`} label="Roll dice" hint="Rolled when you start it." checked={rolled} onChange={() => setRolled(true)} />
-          </div>
-          {rolled ? (
+          {longTerm ? null : (
+            <div className="grid grid-cols-2 gap-2">
+              <Choice name={`${ids}-start`} label="A number" hint="Such as Countdown 4." checked={!rolled} onChange={() => setRolled(false)} />
+              <Choice name={`${ids}-start`} label="Roll dice" hint="Rolled when you start it." checked={rolled} onChange={() => setRolled(true)} />
+            </div>
+          )}
+          {rolled && !longTerm ? (
             <div className="grid grid-cols-2 gap-2">
               <select aria-label="Number of dice" value={diceCount} onChange={(e) => setDiceCount(Number(e.target.value))} className={SELECT}>
                 {Array.from({ length: MAX_COUNTDOWN_DICE }, (_, k) => k + 1).map((n) => (
@@ -242,7 +262,11 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
             </div>
           ) : (
             <>
-              <p className="m-0 text-[14px] text-[#9fb2b6]">Pick where it starts. Each tick brings it one step closer to zero.</p>
+              <p className="m-0 text-[14px] text-[#9fb2b6]">
+                {longTerm
+                  ? "How far out is the event? Usually between 4 and 12 ticks (one per long rest)."
+                  : "Pick where it starts. Each tick brings it one step closer to zero."}
+              </p>
               <div role="radiogroup" aria-label="Starting value" className="grid grid-cols-5 gap-2">
                 {Array.from({ length: MAX_COUNTDOWN_START }, (_, k) => MAX_COUNTDOWN_START - k).map((n) => (
                   <button
@@ -264,41 +288,64 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
           )}
         </fieldset>
 
-        <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
-          <legend className="mb-2 p-0 text-[14px] text-[#9fb2b6]">Repeats</legend>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {REPEATS.map((r) => (
-              <label
-                key={r.repeat}
-                className={cn(
-                  "flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border px-3 py-2 text-[14px] font-semibold text-[#e6ecea]",
-                  repeat === r.repeat ? "border-brand bg-[#1d2a2e]" : "border-[#33444a] bg-[#141e22] hover:border-brand",
-                )}
-              >
-                <input
-                  type="radio"
-                  name={`${ids}-repeat`}
-                  aria-label={r.label}
-                  checked={repeat === r.repeat}
-                  onChange={() => setRepeat(r.repeat)}
-                  className="size-4 flex-none accent-[var(--brand)]"
-                />
-                {r.label}
-              </label>
-            ))}
-          </div>
-          <p className="m-0 text-[13px] text-[#8fa3a8]" aria-live="polite">
-            {REPEATS.find((r) => r.repeat === repeat)?.hint}
-          </p>
-        </fieldset>
+        {longTerm ? (
+          <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+            <legend className="mb-2 p-0 text-[14px] text-[#9fb2b6]">Steps</legend>
+            <p className="m-0 text-[13px] text-[#8fa3a8]">
+              From the first box to the last, write events that foreshadow the final one; alternate softer and harder moves. Every line is
+              optional and only you see them. Mark the steps where news reaches the party.
+            </p>
+            <StepEditor
+              label="Steps"
+              start={start}
+              steps={steps}
+              live
+              onStep={(value, text, news) => setSteps((prev) => [...prev.filter((s) => s.value !== value), { value, text, ...(news ? { news } : {}) }])}
+            />
+          </fieldset>
+        ) : (
+          <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+            <legend className="mb-2 p-0 text-[14px] text-[#9fb2b6]">Repeats</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {REPEATS.map((r) => (
+                <label
+                  key={r.repeat}
+                  className={cn(
+                    "flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border px-3 py-2 text-[14px] font-semibold text-[#e6ecea]",
+                    repeat === r.repeat ? "border-brand bg-[#1d2a2e]" : "border-[#33444a] bg-[#141e22] hover:border-brand",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name={`${ids}-repeat`}
+                    aria-label={r.label}
+                    checked={repeat === r.repeat}
+                    onChange={() => setRepeat(r.repeat)}
+                    className="size-4 flex-none accent-[var(--brand)]"
+                  />
+                  {r.label}
+                </label>
+              ))}
+            </div>
+            <p className="m-0 text-[13px] text-[#8fa3a8]" aria-live="polite">
+              {REPEATS.find((r) => r.repeat === repeat)?.hint}
+            </p>
+          </fieldset>
+        )}
 
         <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-[10px] border border-[#33444a] bg-[#141e22] px-3 py-2 text-[14px] text-[#e6ecea]">
           <input type="checkbox" checked={armed} onChange={(e) => setArmed(e.target.checked)} className="mt-0.5 size-4 flex-none accent-[var(--brand)]" />
           <span className="flex flex-col gap-0.5">
-            <span className="font-semibold">Advance automatically on action rolls</span>
-            <span className="text-[12px] text-[#8fa3a8]">Armed: each PC action roll ticks it as its type says. You can switch it on the card.</span>
+            <span className="font-semibold">{longTerm ? "Tick on every long rest" : "Advance automatically on action rolls"}</span>
+            <span className="text-[12px] text-[#8fa3a8]">
+              {longTerm
+                ? "Armed: each finished long rest ticks it once, or reminds you (below). An interrupted rest doesn't count."
+                : "Armed: each PC action roll ticks it as its type says. You can switch it on the card."}
+            </span>
           </span>
         </label>
+
+        {longTerm ? <RestModeSwitch value={restMode} onChange={setRestMode} disabled={!armed} /> : null}
 
         {create.error ? (
           <p role="alert" className="m-0 text-[14px] text-danger">
@@ -310,7 +357,7 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
             Cancel
           </button>
           <BrandButton type="submit" variant="solid" disabled={create.pending}>
-            {rolled ? `Roll ${formula}` : `Start at ${start}`}
+            {rolled && !longTerm ? `Roll ${formula}` : `Start at ${start}`}
           </BrandButton>
         </div>
       </form>

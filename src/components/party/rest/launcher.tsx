@@ -8,6 +8,7 @@ import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { CampaignSlotProps } from "../slots";
+import { LongTermAfterRest } from "./long-term";
 
 const KIND_LABEL = { short: "Short rest", long: "Long rest" } as const;
 
@@ -77,6 +78,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
               ) : null}
             </div>
           ) : null}
+          {isGm && last !== null && last.kind === "long" && last.status === "finished" ? <LongTermAfterRest campaignId={campaignId} /> : null}
         </>
       ) : (
         <>

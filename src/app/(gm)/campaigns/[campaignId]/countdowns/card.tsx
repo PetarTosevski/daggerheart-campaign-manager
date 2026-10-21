@@ -5,7 +5,6 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import { Modal } from "@/components/brand/modal";
-import { errorMessage } from "@/lib/convex-errors";
 import {
   applyCountdownAction,
   canAdvanceCountdown,
@@ -25,6 +24,7 @@ import type { CountdownView } from "../../../../../../convex/countdowns";
 
 import { advancementLine } from "./new-dialog";
 import { BTN, CATEGORY_LABEL } from "./shared";
+import { LongTermTrack, useKeyed } from "./track";
 import { Hidden, VISIBILITY_OPTIONS, VisibilityForm } from "./visibility";
 
 /**
@@ -69,32 +69,13 @@ export function operatedView(countdown: CountdownView, action: CountdownAction, 
   }
 }
 
-/** One keyed intent per click with its error kept for the card's aria-live region (as useIntent, for a mutation with an optimistic update). */
-function useKeyed<A extends { idempotencyKey: string }, R>(run: (args: A) => Promise<R>) {
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  async function fire(args: Omit<A, "idempotencyKey">): Promise<R | undefined> {
-    setError(null);
-    setPending(true);
-    try {
-      return await run({ ...args, idempotencyKey: crypto.randomUUID() } as A);
-    } catch (e) {
-      setError(errorMessage(e));
-      return undefined;
-    } finally {
-      setPending(false);
-    }
-  }
-  return { fire, error, pending };
-}
-
 /** What kind of countdown it is: 'Progress', 'Loop 5', 'Increasing 8 → 9', 'Decreasing 8 → 7', 'Rolled 1d6: 4'. */
 export function typeBadges(countdown: CountdownView): { label: string; title?: string }[] {
   const out: { label: string; title?: string }[] = [];
   const { mode, repeat, startingValue: start, startDice } = countdown;
   if (mode === "progress") out.push({ label: "Progress", title: `Progress countdown. Per action roll: ${advancementLine("progress")}` });
   if (mode === "consequence") out.push({ label: "Consequence", title: `Consequence countdown. Per action roll: ${advancementLine("consequence")}` });
-  if (mode === "longTerm") out.push({ label: "Long-term" });
+  if (mode === "longTerm") out.push({ label: "Long-term", title: "Ticks on long rests, never on action rolls." });
   if (repeat !== null && repeat !== undefined) {
     const name = { loop: "Loop", increasing: "Increasing", decreasing: "Decreasing" }[repeat];
     if (start === null) out.push({ label: name });
@@ -178,6 +159,8 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
   const showTriggers = triggers > 0 && countdown.repeat !== null && countdown.repeat !== undefined;
   const armed = countdown.armed === true;
   const canArm = !readOnly && countdown.armed !== null && status !== "cancelled";
+  // A long-term countdown ticks on long rests, never on rolls (CB p.164, D10); its card shows the track (K4).
+  const longTerm = countdown.mode === "longTerm";
 
   return (
     <article
@@ -295,8 +278,16 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
             <button
               type="button"
               aria-pressed={armed}
-              aria-label={`Armed: ${name} advances on action rolls`}
-              title={armed ? "Armed: every PC action roll ticks it. Click to stop." : "Not armed: only your ticks move it. Click to arm."}
+              aria-label={longTerm ? `Armed: ${name} follows long rests` : `Armed: ${name} advances on action rolls`}
+              title={
+                longTerm
+                  ? armed
+                    ? "Armed: every finished long rest ticks it once (or reminds you). Click to stop."
+                    : "Not armed: long rests leave it alone. Click to arm."
+                  : armed
+                    ? "Armed: every PC action roll ticks it. Click to stop."
+                    : "Not armed: only your ticks move it. Click to arm."
+              }
               onClick={() => void arm.fire({ campaignId, countdownId, armed: !armed })}
               className="ml-auto flex min-h-11 cursor-pointer items-center gap-2 rounded-full px-2 text-[13px] text-[#c9d2cf]"
             >
@@ -326,7 +317,9 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
         </div>
       ) : null}
 
-      {progress ? (
+      {progress && longTerm ? (
+        <LongTermTrack countdown={countdown} campaignId={campaignId} readOnly={readOnly} progress={progress} />
+      ) : progress ? (
         <div
           role="group"
           aria-label={readOnly ? "Countdown grains" : "Click a grain to correct the countdown"}
