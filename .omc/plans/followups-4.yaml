@@ -14,6 +14,8 @@ waves:
           - convex/sessions.ts
           - convex/sessionFeatures.ts
           - convex/lib/featureScope.ts
+          - convex/lib/validators/actionLog.ts
+          - tests/convex/rolls-session-features.test.ts
           - tests/convex/session-features.test.ts
           - tests/convex/rolls.test.ts
           - docs/tasks/TASK-F4-F3.md

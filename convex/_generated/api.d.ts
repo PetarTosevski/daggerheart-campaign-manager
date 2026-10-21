@@ -52,6 +52,7 @@ import type * as lib_countdownTicks from "../lib/countdownTicks.js";
 import type * as lib_dice from "../lib/dice.js";
 import type * as lib_encounters from "../lib/encounters.js";
 import type * as lib_fear from "../lib/fear.js";
+import type * as lib_featureScope from "../lib/featureScope.js";
 import type * as lib_files from "../lib/files.js";
 import type * as lib_functions from "../lib/functions.js";
 import type * as lib_journalState from "../lib/journalState.js";
@@ -199,6 +200,7 @@ declare const fullApi: ApiFromModules<{
   "lib/dice": typeof lib_dice;
   "lib/encounters": typeof lib_encounters;
   "lib/fear": typeof lib_fear;
+  "lib/featureScope": typeof lib_featureScope;
   "lib/files": typeof lib_files;
   "lib/functions": typeof lib_functions;
   "lib/journalState": typeof lib_journalState;
