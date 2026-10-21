@@ -119,3 +119,73 @@ test("the GM ticks a countdown from a player's roll in the feed; the player's un
   await expect(row.getByRole("button", { name: /^Tick countdowns/ })).toHaveCount(0);
   await close();
 });
+
+// K6: the New countdown dialog hints the book's 5-10 start for dynamic countdowns (R3, dcm-bxp.75); the feed's
+// Tick countdowns lists a chase as ONE row and applying it moves both sides by the table (dcm-bxp.77).
+test("the feed ticks both sides of a chase from one row; the dialog hints 5-10 for dynamic starts", async ({ page, browser }) => {
+  const { campaignId, hero, characterId, player, close } = await campaignWithPlayer(page, browser);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const gm = await convexAs(page);
+
+  await page.getByRole("button", { name: "+ New countdown" }).click();
+  const dialog = page.getByRole("dialog", { name: "New countdown" });
+  await expect(dialog.getByTestId("dynamic-start-hint")).toHaveCount(0);
+  await dialog.getByRole("radio", { name: "Progress", exact: true }).check();
+  await expect(dialog.getByTestId("dynamic-start-hint")).toHaveText("Dynamic countdowns typically start at 5-10.");
+  await dialog.getByRole("radio", { name: "Consequence", exact: true }).check();
+  await expect(dialog.getByTestId("dynamic-start-hint")).toBeVisible();
+  await dialog.getByRole("radio", { name: "Long-term", exact: true }).check();
+  await expect(dialog.getByTestId("dynamic-start-hint")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  // An unarmed chase (d6, decent lead: the party 6, the thief 3).
+  await gm.mutation(api.countdowns.createChase, {
+    campaignId,
+    name: "The thief",
+    description: "",
+    startingValue: 6,
+    lead: "decent",
+    party: "pursuing",
+    armed: false,
+    idempotencyKey: crypto.randomUUID(),
+  });
+  const card = page.getByRole("article", { name: "Chase: The thief" });
+  await expect(card.getByTestId("chase-value-party")).toHaveText("6/6");
+
+  // Success with Fear (Hope 3, Fear 8, no Difficulty): one tick on each side.
+  await (await convexAs(player)).mutation(api.rolls.manualRoll, { characterId, roll: agility, values: [3, 8], idempotencyKey: crypto.randomUUID() });
+  const row = feedOf(page).getByRole("listitem").filter({ hasText: `${hero}: Agility action roll` });
+  await row.getByRole("button", { name: /^Tick countdowns/ }).click();
+  const tick = page.getByRole("dialog", { name: "Tick countdowns" });
+  const items = tick.getByRole("list", { name: "Countdowns to tick" }).getByRole("listitem");
+  await expect(items).toHaveCount(1);
+  const chaseRow = items.first();
+  await expect(chaseRow).toContainText("Chase · both sides move");
+  await expect(chaseRow).toContainText("The party");
+  await expect(chaseRow).toContainText("The thief");
+  await expect(chaseRow.getByText("−1")).toHaveCount(2);
+  const box = tick.getByRole("checkbox", { name: "Chase: The party and The thief" });
+  await box.check();
+  await tick.screenshot({ path: "test-results/visual/CD-K6/feed-chase-row-1440.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await tick.screenshot({ path: "test-results/visual/CD-K6/feed-chase-row-390.png" });
+  expect((await chaseRow.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await tick.getByRole("button", { name: "Apply" }).click();
+  await expect(tick).toBeHidden();
+  await expect(card.getByTestId("chase-value-party")).toHaveText("5/6");
+  await expect(card.getByTestId("chase-value-rivals")).toHaveText("2/6");
+  await expect.poll(async () => (await gm.query(api.countdowns.listByCampaign, { campaignId })).map((c) => c.currentValue)).toEqual([5, 2]);
+
+  // The server's state: the pair's row shows it ticked; the player's undo takes both ticks back.
+  await page.reload();
+  await row.getByRole("button", { name: /^Tick countdowns/ }).click();
+  await expect(tick.getByRole("checkbox", { name: "Chase: The party and The thief" })).toBeChecked();
+  await expect(tick.getByRole("checkbox", { name: "Chase: The party and The thief" })).toBeDisabled();
+  await tick.getByRole("button", { name: "Close", exact: true }).click();
+  await player.goto(`/campaigns/${campaignId}`);
+  await feedOf(player).getByRole("listitem").filter({ hasText: `${hero}: Agility action roll` }).getByRole("button", { name: "Undo" }).click();
+  await expect.poll(async () => (await gm.query(api.countdowns.listByCampaign, { campaignId })).map((c) => c.currentValue)).toEqual([6, 3]);
+  await expect(card.getByTestId("chase-value-party")).toHaveText("6/6");
+  await close();
+});

@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { RollOutcome } from "../../src/lib/domain/duality";
 import {
   chaseEnded,
+  chaseNeedsDecision,
   chaseRowValues,
   chaseStart,
   chaseTicks,
   countdownNoticeText,
   countsAsActionRoll,
+  manualTickAmount,
+  resumeAtZero,
   rollTicks,
   startFromDice,
   tickCountdown,
@@ -307,5 +310,58 @@ describe("countdownForPlayer (D12)", () => {
       steps: null,
       restMode: null,
     });
+  });
+});
+
+describe("K6: paused countdowns, manualTickAmount, double-zero chases", () => {
+  const paused = (currentValue: number, startingValue: number, extra: object = {}) => ({ currentValue, startingValue, status: "paused" as const, ...extra });
+
+  it("manualTickAmount: Tick -1 and a downward correction of an active countdown tick; a paused one never does", () => {
+    expect(manualTickAmount({ status: "active" }, "advance", 0)).toBe(1);
+    expect(manualTickAmount({ status: "active" }, "correction", -3)).toBe(3);
+    expect(manualTickAmount({ status: "active" }, "correction", 2)).toBe(0);
+    expect(manualTickAmount({ status: "paused" }, "correction", -3)).toBe(0);
+    for (const action of ["reverse", "pause", "resume", "cancel"]) expect(manualTickAmount({ status: "active" }, action, 0)).toBe(0);
+  });
+
+  it("resumeAtZero: a loop triggers and resets, active; increasing grows; decreasing at its last loop is the major event", () => {
+    expect(resumeAtZero(paused(0, 5, { repeat: "loop", triggerCount: 1 }))).toEqual({
+      next: { currentValue: 5, startingValue: 5, status: "active", triggerCount: 2 },
+      triggered: true,
+      reset: true,
+      finished: false,
+      notice: { kind: "trigger", count: 2 },
+    });
+    expect(resumeAtZero(paused(0, 8, { repeat: "increasing" })).next).toMatchObject({ currentValue: 9, startingValue: 9, status: "active" });
+    expect(resumeAtZero(paused(0, 1, { repeat: "decreasing" }))).toMatchObject({
+      finished: true,
+      notice: { kind: "majorEvent", count: 1 },
+      next: { status: "completed" },
+    });
+  });
+
+  it("resumeAtZero: a countdown that doesn't repeat completes without a trigger; anything else is refused", () => {
+    expect(resumeAtZero(paused(0, 4))).toEqual({
+      next: { currentValue: 0, startingValue: 4, status: "completed", triggerCount: 0 },
+      triggered: false,
+      reset: false,
+      finished: true,
+      notice: null,
+    });
+    expect(() => resumeAtZero(paused(2, 4))).toThrow(CountdownRuleError);
+    expect(() => resumeAtZero(active(0, 4))).toThrow(CountdownRuleError);
+  });
+
+  it("chaseNeedsDecision: only both sides at 0, never a cancelled side", () => {
+    const side = (currentValue: number, status: "active" | "completed" | "cancelled" = "active") => ({ currentValue, status });
+    expect(chaseNeedsDecision({ party: side(0, "completed"), rivals: side(0, "completed") })).toBe(true);
+    expect(chaseNeedsDecision({ party: side(0, "completed"), rivals: side(2) })).toBe(false);
+    expect(chaseNeedsDecision({ party: side(0, "cancelled"), rivals: side(0, "completed") })).toBe(false);
+  });
+
+  it("chaseResult travels with progress for players", () => {
+    const row = { name: "x", description: "", category: "threat" as const, consequence: "", startingValue: 6, currentValue: 0, chaseResult: "caught" as const };
+    expect(countdownForPlayer(row, COUNTDOWN_VISIBILITY_PRESETS.public)?.chaseResult).toBe("caught");
+    expect(countdownForPlayer(row, { mode: "public", hidden: ["progress"] })?.chaseResult).toBeNull();
   });
 });

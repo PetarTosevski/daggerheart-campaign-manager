@@ -413,6 +413,52 @@ describe("countdown rolls: the feed button (Q1 (c), D5)", () => {
     expect(await value(id)).toBe(4);
   });
 
+  it("a chase pair is one preview row, and applying either side ticks both by chaseTicks with one undo (K6, dcm-bxp.77)", async () => {
+    const { t, gm, p1, create, roll, value, apply, preview, undo, chase } = await setup();
+    const solo = await create({ startingValue: 4 });
+    const { p, r } = await chase(6, 3);
+    await t.run(async (ctx) => {
+      await ctx.db.patch("countdowns", p, { armed: false });
+      await ctx.db.patch("countdowns", r, { armed: false });
+    });
+    const { entryId } = await roll("successFear");
+    expect([await value(p), await value(r)]).toEqual([6, 3]);
+    const view = await preview(gm, entryId);
+    expect(view.countdowns).toHaveLength(2);
+    expect(view.countdowns.map((c) => c.countdownId)).toEqual([solo, p]);
+    expect(view.countdowns[1]).toMatchObject({
+      name: "The party",
+      amount: 1,
+      ticked: false,
+      partner: { countdownId: r, name: "The thief", currentValue: 3, amount: 1, ticked: false },
+    });
+    // Choosing the rivals' side brings the party's along.
+    expect(await apply(gm, entryId, [r])).toEqual([
+      { countdownId: r, currentValue: 2, triggered: false },
+      { countdownId: p, currentValue: 5, triggered: false },
+    ]);
+    const ticks = await t.run((ctx) => ctx.db.query("countdownTicks").withIndex("by_entry_countdown", (q) => q.eq("entryId", entryId)).collect());
+    expect(new Set(ticks.map((k) => `${k.countdownId}:${k.source}`))).toEqual(new Set([`${r}:feed`, `${p}:feed`]));
+    expect((await preview(gm, entryId)).countdowns[1]).toMatchObject({ ticked: true, partner: { ticked: true } });
+    expect(await codeOf(apply(gm, entryId, [p]))).toBe("COUNTDOWN_RULE");
+    await undo(p1, entryId);
+    expect([await value(p), await value(r)]).toEqual([6, 3]);
+  });
+
+  it("a chase side the roll doesn't move stays as it is; the other side ticks by the table", async () => {
+    const { t, gm, roll, value, apply, preview, chase } = await setup();
+    const { p, r } = await chase(6, 3);
+    await t.run(async (ctx) => {
+      await ctx.db.patch("countdowns", p, { armed: false });
+      await ctx.db.patch("countdowns", r, { armed: false });
+    });
+    const { entryId } = await roll("failHope");
+    expect((await preview(gm, entryId)).countdowns[0]).toMatchObject({ amount: 0, partner: { amount: 2 } });
+    await apply(gm, entryId, [p]);
+    expect([await value(p), await value(r)]).toEqual([6, 1]);
+    expect((await preview(gm, entryId)).countdowns[0]).toMatchObject({ ticked: false, partner: { ticked: true } });
+  });
+
   it("countedRows names plain action rolls and a Tag Team's first result row only", async () => {
     const { gm, p1, a, b, edit, campaignId, roll } = await setup();
     const action = await roll("successHope");

@@ -14,8 +14,10 @@ import {
 } from "../src/lib/domain/countdowns/index";
 import {
   CHASE_LEADS,
+  chaseNeedsDecision,
   chaseRowValues,
   COUNTDOWN_MODES,
+  manualTickAmount,
   COUNTDOWN_REPEATS,
   COUNTDOWN_REST_MODES,
   startFromDice,
@@ -29,10 +31,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { campaignQuery, keyedGmMutation, keyedUserMutation } from "./lib/functions";
 import { rollDice } from "./lib/dice";
-import { applyTick } from "./lib/countdownTicks";
+import { applyTick, clearChaseResult } from "./lib/countdownTicks";
 import { applyRule } from "./lib/mechanics";
 import { atLeast, campaignAccess } from "./lib/permissions";
 import {
+  countdownChaseResultValidator,
   countdownChaseValidator,
   countdownModeValidator,
   countdownRepeatValidator,
@@ -73,6 +76,8 @@ const countdownView = v.object({
   chase: orNull(countdownChaseValidator),
   steps: orNull(v.array(countdownStepValidator)),
   restMode: orNull(v.union(...COUNTDOWN_REST_MODES.map((r) => v.literal(r)))),
+  /** A chase row: the GM's call when both sides reached 0 together (K6); travels with "progress". */
+  chaseResult: orNull(countdownChaseResultValidator),
 });
 
 export type CountdownView = Infer<typeof countdownView>;
@@ -98,6 +103,7 @@ const toClient = (c: Doc<"countdowns">) => ({
   chase: c.chase ?? null,
   steps: c.mode === "longTerm" ? (c.steps ?? []) : null,
   restMode: c.mode === "longTerm" ? (c.restMode ?? "auto") : null,
+  chaseResult: c.chaseResult ?? null,
 });
 
 /**
@@ -325,17 +331,63 @@ export const setArmed = keyedGmMutation({
 });
 
 /**
- * How far a manual move ticks the countdown through the one tick path (`applyTick`), or 0 when it keeps today's rules:
- * every Tick -1 and every downward correction of an active countdown, and of a paused one that repeats (so its loop
- * resets instead of ending). A paused countdown that doesn't repeat keeps today's correction (completes at 0 without a
- * trigger, E1/E3); upward moves (Borrowed Time, positive corrections), pause, resume and cancel never tick.
- * The card's optimistic update (countdowns/card.tsx `manualTickAmount`) is a copy of this rule; see the K2 report.
+ * The GM's call on a chase whose two sides both reached 0 (a success with Fear on two sides at 1, say): "caught" or
+ * "escaped" (K6, dcm-bxp.73; the book doesn't say who wins, the user answered "gm decides"). Stored on both rows; the
+ * card then shows that banner, players see "The GM is deciding" until then. GM only: NOT_FOUND for a frame-owned or
+ * another campaign's countdown; COUNTDOWN_RULE for a row that isn't part of a chase or a chase that isn't at 0 on both
+ * sides. The GM may change the call; a side that reopens clears it. One history row "decide" per row (the values don't
+ * move; the row records who called it), with no undo path, like the other manual countdown operations.
  */
-function manualTickAmount(countdown: Pick<Doc<"countdowns">, "status" | "repeat">, action: string, amount: number): number {
-  if (action === "advance") return 1;
-  if (action !== "correction" || amount >= 0) return 0;
-  const open = countdown.status === "active" || (countdown.status === "paused" && countdown.repeat !== undefined);
-  return open ? -amount : 0;
+export const decideChase = keyedGmMutation({
+  args: { countdownId: v.id("countdowns"), result: countdownChaseResultValidator },
+  returns: v.object({ result: countdownChaseResultValidator }),
+  handler: async (ctx, { countdownId, result }) => {
+    const countdown = await ctx.db.get("countdowns", countdownId);
+    if (countdown === null || countdown.campaignId !== ctx.campaign._id || countdown.ownerKey !== undefined) {
+      throw appError("NOT_FOUND");
+    }
+    const partner = await chasePartner(ctx, countdown);
+    if (partner === null) throw appError("COUNTDOWN_RULE", "Only a chase needs that call.");
+    const [party, rivals] = countdown.chase?.side === "party" ? [countdown, partner] : [partner, countdown];
+    if (!chaseNeedsDecision({ party, rivals })) throw appError("COUNTDOWN_RULE", "Both sides must have reached 0.");
+    return ctx.once("countdown_chase_decide", { countdownId, result }, async () => {
+      for (const row of [party, rivals]) {
+        await ctx.db.patch("countdowns", row._id, { chaseResult: result });
+        await recordHistory(ctx, ctx.user._id, {
+          campaignId: row.campaignId,
+          kind: "countdown",
+          action: "decide",
+          countdownId: row._id,
+          before: { currentValue: row.currentValue, status: row.status },
+          after: { currentValue: row.currentValue, status: row.status },
+        });
+      }
+      return { result };
+    });
+  },
+});
+
+/** Writes a move `applyCountdownAction` computed (no tick path) and its history row; returns the new value and status. */
+async function moveByRules(
+  ctx: MutationCtx & { user: Doc<"users"> },
+  countdown: Doc<"countdowns">,
+  action: string,
+  next: ReturnType<typeof applyCountdownAction>,
+): Promise<{ currentValue: number; status: Doc<"countdowns">["status"] }> {
+  await ctx.db.patch("countdowns", countdown._id, {
+    currentValue: next.currentValue,
+    status: next.status,
+    completedAt: next.completedNow ? Date.now() : next.reopened ? undefined : countdown.completedAt,
+  });
+  await recordHistory(ctx, ctx.user._id, {
+    campaignId: countdown.campaignId,
+    kind: "countdown",
+    action,
+    countdownId: countdown._id,
+    before: { currentValue: countdown.currentValue, status: countdown.status },
+    after: { currentValue: next.currentValue, status: next.status },
+  });
+  return { currentValue: next.currentValue, status: next.status };
 }
 
 /**
@@ -406,41 +458,40 @@ export const operate = keyedUserMutation({
       const tick = manualTickAmount(countdown, action, amount ?? 0);
       if (tick > 0) {
         const source = action === "correction" ? "correction" : "advance";
-        const ticked = await applyTick(ctx, countdown, tick, { source, actorId: ctx.user._id }, { whilePaused: action === "correction" });
+        const ticked = await applyTick(ctx, countdown, tick, { source, actorId: ctx.user._id });
         return { previousValue: countdown.currentValue, newValue: ticked.after.currentValue, status: ticked.after.status };
       }
-      await ctx.db.patch("countdowns", countdownId, {
-        currentValue: next.currentValue,
-        status: next.status,
-        completedAt: next.completedNow ? Date.now() : next.reopened ? undefined : countdown.completedAt,
-      });
-      await recordHistory(ctx, ctx.user._id, {
-        campaignId: countdown.campaignId,
-        kind: "countdown",
-        action,
-        countdownId,
-        before: { currentValue: countdown.currentValue, status: countdown.status },
-        after: { currentValue: next.currentValue, status: next.status },
-      });
+      // Nothing triggers while paused (K6, dcm-bxp.74): a countdown corrected to 0 while paused stays paused at 0, and
+      // Resume brings its trigger now (a repeating one resets, one that doesn't repeat completes), through applyTick so a
+      // trigger writes its history row and GM notice like any other.
+      const result =
+        action === "resume" && countdown.currentValue === 0
+          ? (await applyTick(ctx, countdown, 0, { source: "resume", actorId: ctx.user._id }, { resume: true })).after
+          : await moveByRules(ctx, countdown, action, next);
+      if (countdown.chase !== undefined && countdown.currentValue === 0 && result.currentValue > 0) await clearChaseResult(ctx, countdown);
       // A chase pauses and resumes as a pair (D9): the partner follows when its own state allows it (a side that already
       // reached 0 stays completed).
       if (action === "pause" || action === "resume") {
         const partner = await chasePartner(ctx, countdown);
         const from = action === "pause" ? "active" : "paused";
         if (partner !== null && partner.status === from) {
-          const status = action === "pause" ? "paused" : "active";
-          await ctx.db.patch("countdowns", partner._id, { status });
-          await recordHistory(ctx, ctx.user._id, {
-            campaignId: partner.campaignId,
-            kind: "countdown",
-            action,
-            countdownId: partner._id,
-            before: { currentValue: partner.currentValue, status: partner.status },
-            after: { currentValue: partner.currentValue, status },
-          });
+          if (action === "resume" && partner.currentValue === 0) {
+            await applyTick(ctx, partner, 0, { source: "resume", actorId: ctx.user._id }, { resume: true });
+          } else {
+            const status = action === "pause" ? "paused" : "active";
+            await ctx.db.patch("countdowns", partner._id, { status });
+            await recordHistory(ctx, ctx.user._id, {
+              campaignId: partner.campaignId,
+              kind: "countdown",
+              action,
+              countdownId: partner._id,
+              before: { currentValue: partner.currentValue, status: partner.status },
+              after: { currentValue: partner.currentValue, status },
+            });
+          }
         }
       }
-      return { previousValue: countdown.currentValue, newValue: next.currentValue, status: next.status };
+      return { previousValue: countdown.currentValue, newValue: result.currentValue, status: result.status };
     });
   },
 });

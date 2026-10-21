@@ -15,7 +15,7 @@ import {
   countdownVisibilityPreset,
   type CountdownAction,
 } from "@/lib/domain/countdowns";
-import { nextCycleStart, tickCountdown } from "@/lib/domain/countdowns/advanced";
+import { manualTickAmount, nextCycleStart, resumeAtZero, tickCountdown } from "@/lib/domain/countdowns/advanced";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../convex/_generated/api";
@@ -28,36 +28,22 @@ import { LongTermTrack, useKeyed } from "./track";
 import { Hidden, VISIBILITY_OPTIONS, VisibilityForm } from "./visibility";
 
 /**
- * How far a manual move ticks through the tick path, else 0 (copy of convex/countdowns.ts `manualTickAmount`, which the
- * server runs; kept identical until it moves into src/lib/domain/countdowns, see the K2 report): every Tick -1, and a
- * downward correction of an active countdown or of a paused one that repeats.
- */
-function manualTickAmount(countdown: Pick<CountdownView, "status" | "repeat">, action: CountdownAction, amount: number): number {
-  if (action === "advance") return 1;
-  if (action !== "correction" || amount >= 0) return 0;
-  const open = countdown.status === "active" || (countdown.status === "paused" && countdown.repeat !== null);
-  return open ? -amount : 0;
-}
-
-/**
  * The card after one operate intent, computed with the same domain rules as the server (applyCountdownAction checks the
- * move; tickCountdown triggers and resets), for the optimistic update. A refused move leaves the card as it is.
+ * move; manualTickAmount picks the tick path; tickCountdown triggers and resets; resumeAtZero brings the trigger of a
+ * countdown corrected to 0 while paused), for the optimistic update. A refused move leaves the card as it is.
  */
 export function operatedView(countdown: CountdownView, action: CountdownAction, amount = 0, now = Date.now()): CountdownView {
   if (countdown.currentValue === null || countdown.startingValue === null) return countdown;
   const state = { startingValue: countdown.startingValue, currentValue: countdown.currentValue, status: countdown.status };
+  const advanced = { ...state, repeat: countdown.repeat ?? undefined, triggerCount: countdown.triggerCount ?? 0 };
   try {
     const next = applyCountdownAction(state, action, amount);
     const tick = manualTickAmount(countdown, action, amount);
-    if (tick === 0) {
+    if (tick === 0 && !(action === "resume" && state.currentValue === 0)) {
       const completedAt = next.completedNow ? now : next.reopened ? null : countdown.completedAt;
       return { ...countdown, currentValue: next.currentValue, status: next.status, completedAt };
     }
-    const ticked = tickCountdown(
-      { ...state, repeat: countdown.repeat ?? undefined, triggerCount: countdown.triggerCount ?? 0 },
-      tick,
-      { whilePaused: action === "correction" },
-    );
+    const ticked = tick === 0 ? resumeAtZero(advanced) : tickCountdown(advanced, tick);
     return {
       ...countdown,
       ...ticked.next,

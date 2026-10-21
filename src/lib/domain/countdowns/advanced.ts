@@ -148,6 +148,44 @@ export function tickCountdown(state: TickableCountdown, amount: number, options:
   };
 }
 
+/**
+ * Resuming a countdown that the GM corrected to 0 while it was paused (K6, dcm-bxp.74): nothing triggers while paused,
+ * so the trigger happens now. A repeating countdown triggers and resets to its next start (loop / increasing /
+ * decreasing, or the decreasing major event), active; one that doesn't repeat completes without a trigger notice, the
+ * completion a correction to 0 gives an active countdown (E1).
+ */
+export function resumeAtZero(state: TickableCountdown): CountdownTickResult {
+  if (state.status !== "paused" || state.currentValue !== 0) throw new CountdownRuleError("Only a paused countdown at 0 resumes into its trigger.");
+  const triggerCount = state.triggerCount ?? 0;
+  if (state.repeat === undefined) {
+    return {
+      next: { currentValue: 0, startingValue: state.startingValue, status: "completed", triggerCount },
+      triggered: false,
+      reset: false,
+      finished: true,
+      notice: null,
+    };
+  }
+  return tickCountdown({ ...state, status: "active", currentValue: 1 }, 1);
+}
+
+/**
+ * How far a manual move ticks the countdown through the server's tick path (`applyTick`), or 0 when it follows
+ * `applyCountdownAction` alone: every Tick -1 and every downward correction of an ACTIVE countdown (so a manual tick to 0
+ * triggers and resets like a roll, D7). A paused countdown never ticks: a correction moves it and it stays paused, also
+ * at 0 (K6, dcm-bxp.74); upward moves, pause, resume and cancel never tick. The server (convex/countdowns.ts operate)
+ * and the card's optimistic update both call this.
+ */
+export function manualTickAmount(countdown: { status: CountdownStatus }, action: string, amount: number): number {
+  if (action === "advance") return 1;
+  if (action !== "correction" || amount >= 0) return 0;
+  return countdown.status === "active" ? -amount : 0;
+}
+
+/** How a chase ended when both sides reached 0 on one roll: the GM decides (K6, dcm-bxp.73). */
+export const CHASE_RESULTS = ["caught", "escaped"] as const;
+export type ChaseResult = (typeof CHASE_RESULTS)[number];
+
 function ordinal(n: number): string {
   const tens = n % 100;
   if (tens >= 11 && tens <= 13) return `${n}th`;
@@ -167,6 +205,15 @@ export type ChasePair = { party: { currentValue: number; status: CountdownStatus
 export function chaseEnded(pair: ChasePair): boolean {
   const over = (row: ChasePair["party"]) => row.currentValue <= 0 || row.status === "completed" || row.status === "cancelled";
   return over(pair.party) || over(pair.rivals);
+}
+
+/**
+ * Both sides of a chase reached 0 (a success with Fear on two sides at 1, say): the book doesn't say who wins, so the GM
+ * decides "caught" or "escaped" (K6, dcm-bxp.73). A cancelled side never counts.
+ */
+export function chaseNeedsDecision(pair: ChasePair): boolean {
+  const zero = (row: ChasePair["party"]) => row.status !== "cancelled" && (row.currentValue <= 0 || row.status === "completed");
+  return zero(pair.party) && zero(pair.rivals);
 }
 
 /**

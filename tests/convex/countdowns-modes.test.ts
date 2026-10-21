@@ -162,15 +162,58 @@ describe("countdown types on the dashboard (countdowns-advanced K2)", () => {
       expect((await ctx.notices()).at(-1)?.summary).toBe("Doom triggered (2nd time): The dam breaks");
     });
 
-    it("a correction to 0 triggers a loop too, also while paused (it resets and runs again)", async () => {
+    it("a correction to 0 triggers an active loop; a paused one stays paused at 0 and triggers on Resume (K6, dcm-bxp.74)", async () => {
       const ctx = await setup();
       const { countdownId } = await ctx.create({ startingValue: 5, repeat: "loop" });
       expect(await ctx.op(countdownId, "correction", -5)).toEqual({ previousValue: 5, newValue: 5, status: "active" });
       expect((await ctx.row(countdownId)).triggerCount).toBe(1);
       await ctx.op(countdownId, "pause");
       expect(await ctx.op(countdownId, "correction", -2)).toEqual({ previousValue: 5, newValue: 3, status: "paused" });
-      expect(await ctx.op(countdownId, "correction", -3)).toMatchObject({ newValue: 5, status: "active" });
-      expect((await ctx.row(countdownId)).triggerCount).toBe(2);
+      // Nothing triggers while paused: it stays paused at 0, no trigger, no reset, no notice.
+      expect(await ctx.op(countdownId, "correction", -3)).toEqual({ previousValue: 3, newValue: 0, status: "paused" });
+      expect(await ctx.row(countdownId)).toMatchObject({ currentValue: 0, startingValue: 5, status: "paused", triggerCount: 1 });
+      expect((await ctx.row(countdownId)).completedAt).toBeUndefined();
+      expect(await ctx.notices()).toHaveLength(1);
+      // A correction up while paused stays paused too.
+      expect(await ctx.op(countdownId, "correction", 2)).toEqual({ previousValue: 0, newValue: 2, status: "paused" });
+      await ctx.op(countdownId, "correction", -2);
+      // Resume brings the trigger: it resets, active, with the notice.
+      expect(await ctx.op(countdownId, "resume")).toEqual({ previousValue: 0, newValue: 5, status: "active" });
+      expect(await ctx.row(countdownId)).toMatchObject({ currentValue: 5, status: "active", triggerCount: 2 });
+      expect((await ctx.notices()).at(-1)?.summary).toBe("Doom triggered (2nd time): The dam breaks");
+      expect((await ctx.history(countdownId)).map((h) => h.action)).toEqual([
+        "create",
+        "trigger",
+        "pause",
+        "correction",
+        "correction",
+        "correction",
+        "correction",
+        "trigger",
+      ]);
+    });
+
+    it("a paused countdown that doesn't repeat stays paused at 0 and completes on Resume without a notice", async () => {
+      const ctx = await setup();
+      const { countdownId } = await ctx.create({ startingValue: 3 });
+      await ctx.op(countdownId, "pause");
+      expect(await ctx.op(countdownId, "correction", -3)).toEqual({ previousValue: 3, newValue: 0, status: "paused" });
+      expect((await ctx.row(countdownId)).completedAt).toBeUndefined();
+      expect(await ctx.op(countdownId, "resume")).toEqual({ previousValue: 0, newValue: 0, status: "completed" });
+      expect(await ctx.row(countdownId)).toMatchObject({ status: "completed", completedAt: expect.any(Number) });
+      expect((await ctx.row(countdownId)).triggerCount).toBeUndefined();
+      expect(await ctx.notices()).toHaveLength(0);
+      const rows = await ctx.history(countdownId);
+      expect(rows.at(-1)).toMatchObject({ action: "resume", before: { currentValue: 0, status: "paused" }, after: { currentValue: 0, status: "completed" } });
+    });
+
+    it("a paused decreasing countdown at its last loop brings the major event on Resume", async () => {
+      const ctx = await setup();
+      const { countdownId } = await ctx.create({ startingValue: 1, repeat: "decreasing" });
+      await ctx.op(countdownId, "pause");
+      await ctx.op(countdownId, "correction", -1);
+      expect(await ctx.op(countdownId, "resume")).toEqual({ previousValue: 0, newValue: 0, status: "completed" });
+      expect((await ctx.notices()).at(-1)?.summary).toBe("Doom: major event: The dam breaks");
     });
 
     it("decreasing at 1 ends with the major event and completes", async () => {

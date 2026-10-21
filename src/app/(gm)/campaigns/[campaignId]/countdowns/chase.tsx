@@ -61,21 +61,32 @@ const pursues = (side: ChaseSide, role: ChaseRole) => (side === "party") === (ro
 /** A side reached 0: its status is completed (players may not see the value), or its value is 0. */
 const atZero = (row: CountdownView | undefined) => row !== undefined && (row.status === "completed" || row.currentValue === 0);
 
+/** The banner for a chase that ended in a catch or an escape, from the PCs' role. */
+function endLine(caught: boolean, role: ChaseRole, rivalsName: string): { headline: "Caught!" | "Got away!"; line: string } {
+  if (role === "pursuing") return caught ? { headline: "Caught!", line: `The party caught ${rivalsName}.` } : { headline: "Got away!", line: `${rivalsName} got away from the party.` };
+  return caught ? { headline: "Caught!", line: `${rivalsName} caught the party.` } : { headline: "Got away!", line: `The party got away from ${rivalsName}.` };
+}
+
+export type ChaseOutcome = { headline: "Caught!" | "Got away!"; line: string } | { deciding: true };
+
 /**
  * How the chase ended, or null while it runs (D9): the side at 0 tells it. The pursuers at 0 caught the escapee
- * ("Caught!"), the escapee at 0 got away ("Got away!"), whichever side the PCs are on.
+ * ("Caught!"), the escapee at 0 got away ("Got away!"), whichever side the PCs are on. Both sides at 0 at once: the GM
+ * decides (K6, dcm-bxp.73); until the call is stored (`chaseResult`) the outcome is `{ deciding: true }`.
  */
 export function chaseOutcome(
   party: CountdownView | undefined,
   rivals: CountdownView | undefined,
   role: ChaseRole,
   rivalsName: string,
-): { headline: "Caught!" | "Got away!"; line: string } | null {
+): ChaseOutcome | null {
+  if (atZero(party) && atZero(rivals)) {
+    const result = party?.chaseResult ?? rivals?.chaseResult ?? null;
+    return result === null ? { deciding: true } : endLine(result === "caught", role, rivalsName);
+  }
   const side: ChaseSide | null = atZero(party) ? "party" : atZero(rivals) ? "rivals" : null;
   if (side === null) return null;
-  const caught = pursues(side, role);
-  if (side === "party") return caught ? { headline: "Caught!", line: `The party caught ${rivalsName}.` } : { headline: "Got away!", line: `The party got away from ${rivalsName}.` };
-  return caught ? { headline: "Caught!", line: `${rivalsName} caught the party.` } : { headline: "Got away!", line: `${rivalsName} got away from the party.` };
+  return endLine(pursues(side, role), role, rivalsName);
 }
 
 /** One keyed intent with its error kept for the card's aria-live line (for mutations with an optimistic update). */
@@ -233,6 +244,18 @@ export function ChaseCard({
       );
     }),
   );
+  // The GM's call on a double-zero end (K6), stored on both rows; optimistic so the banner settles on click.
+  const decide = useKeyed(
+    useMutation(api.countdowns.decideChase).withOptimisticUpdate((store, { result }) => {
+      const list = store.getQuery(api.countdowns.listByCampaign, { campaignId });
+      if (list === undefined) return;
+      store.setQuery(
+        api.countdowns.listByCampaign,
+        { campaignId },
+        list.map((c) => (pairIds.has(c._id) ? { ...c, chaseResult: result } : c)),
+      );
+    }),
+  );
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [editingVisibility, setEditingVisibility] = useState(false);
 
@@ -291,7 +314,35 @@ export function ChaseCard({
         </span>
       </div>
 
-      {outcome ? (
+      {outcome && "deciding" in outcome ? (
+        <div
+          role="status"
+          data-testid="chase-deciding"
+          className="flex flex-col items-center gap-2 rounded-lg border border-danger-line bg-[#3a1414] px-3 py-2 text-center"
+        >
+          <span className="font-display text-[18px] font-bold tracking-[0.06em] text-[#ffd9d6]">Both sides reached 0</span>
+          {readOnly ? (
+            <span className="text-[13px] text-[#f0c4c0]">The GM is deciding how the chase ends.</span>
+          ) : (
+            <>
+              <span className="text-[13px] text-[#f0c4c0]">The book doesn&apos;t say who wins. Your call:</span>
+              <div role="group" aria-label="How the chase ends" className="grid w-full grid-cols-2 gap-2 sm:w-auto">
+                {(["caught", "escaped"] as const).map((result) => (
+                  <button
+                    key={result}
+                    type="button"
+                    className={cn(BTN, "min-h-11 border-danger-line font-semibold text-[#ffd9d6]")}
+                    disabled={decide.pending}
+                    onClick={() => void decide.fire({ campaignId, countdownId: anchor._id, result })}
+                  >
+                    {result === "caught" ? "Caught!" : "Got away!"}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ) : outcome ? (
         <div role="status" className="flex flex-col items-center gap-0.5 rounded-lg border border-danger-line bg-[#3a1414] px-3 py-2 text-center">
           <span className="font-display text-[20px] font-bold tracking-[0.06em] text-[#ffd9d6]" data-testid="chase-outcome">
             {outcome.headline}
@@ -338,7 +389,7 @@ export function ChaseCard({
       )}
 
       <p role="status" aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
-        {operate.error ?? arm.error}
+        {operate.error ?? arm.error ?? decide.error}
       </p>
 
       {readOnly || rows.every((r) => r.status === "cancelled") ? null : confirmCancel ? (
