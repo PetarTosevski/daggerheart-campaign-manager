@@ -95,6 +95,7 @@ import type * as migrations_uploads from "../migrations/uploads.js";
 import type * as notes from "../notes.js";
 import type * as notesBin from "../notesBin.js";
 import type * as notesEntries from "../notesEntries.js";
+import type * as notesJournals from "../notesJournals.js";
 import type * as notesSharing from "../notesSharing.js";
 import type * as notesThreads from "../notesThreads.js";
 import type * as photoImport from "../photoImport.js";
@@ -228,6 +229,7 @@ declare const fullApi: ApiFromModules<{
   notes: typeof notes;
   notesBin: typeof notesBin;
   notesEntries: typeof notesEntries;
+  notesJournals: typeof notesJournals;
   notesSharing: typeof notesSharing;
   notesThreads: typeof notesThreads;
   photoImport: typeof photoImport;
