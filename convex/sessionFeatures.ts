@@ -17,7 +17,7 @@ import type { Doc } from "./_generated/dataModel";
 import { env, internalMutation } from "./_generated/server";
 import { logAction } from "./lib/actionLog";
 import { isE2EDeployment } from "./lib/allowlist";
-import { editable, readSheet, saveSheet } from "./lib/characterSheet";
+import { assertCanAct, editable, readSheet, saveSheet } from "./lib/characterSheet";
 import { keyedUserMutation } from "./lib/functions";
 
 /** What the campaign lets features answer to (Lunar Phases only with Hope & Fear on); the same as rolls.ts. */
@@ -36,6 +36,8 @@ export const bumpMoonDie = keyedUserMutation({
   handler: async (ctx, { characterId }) =>
     ctx.once("lunar_bump", { characterId }, async () => {
       const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
+      // As other features: not while dead, away or unconscious.
+      assertCanAct(character, sheet);
       const { sheet: next, from, to } = bump(sheet, featureScope(campaign));
       await saveSheet(ctx, character._id, next);
       await logAction(ctx, {

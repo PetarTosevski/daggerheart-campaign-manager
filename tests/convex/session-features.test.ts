@@ -145,6 +145,13 @@ describe("sessionFeatures.bumpMoonDie", () => {
     expect(await codeOf(p1.mutation(api.sessionFeatures.bumpMoonDie, bump(mira)))).toBe("CLASS_FEATURE_RULE");
   });
 
+  it("refuses while the Witch can't act (unconscious), as other features do", async () => {
+    const { p1, mira, moon, sheetOf } = await setup();
+    await moon(2, { hope: 3, conditions: ["unconscious"] });
+    expect(await codeOf(p1.mutation(api.sessionFeatures.bumpMoonDie, bump(mira)))).toBe("CHARACTER_UNAVAILABLE");
+    expect((await sheetOf(mira)).sessionFeatures?.moonDie).toBe(2);
+  });
+
   it("a short rest refreshes the bump", async () => {
     const { gm, p1, campaignId, mira, moon, sheetOf } = await setup();
     await moon(2);
