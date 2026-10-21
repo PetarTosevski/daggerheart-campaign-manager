@@ -3,7 +3,8 @@
 import "./codex.css";
 
 import { useQuery } from "convex/react";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 import { frameName } from "@/lib/campaign-display";
 import { factionsFor, regionsFor, type CodexKind } from "@/lib/codex/schema";
@@ -23,7 +24,17 @@ const KIND_LABEL: Record<CodexKind, string> = { character: "Characters", locatio
 
 /** Characters & Locations (the Codex board): the GM's people and places, and what the party knows of them. */
 export default function CodexPage() {
+  // `useSearchParams` (the `?entry=` link) needs a Suspense boundary.
+  return (
+    <Suspense fallback={null}>
+      <CodexBoard />
+    </Suspense>
+  );
+}
+
+function CodexBoard() {
   const campaign = useCampaign();
+  const entryParam = useSearchParams().get("entry");
   const data = useQuery(api.codex.list, { campaignId: campaign._id });
   const create = useIntent(api.codex.create);
   const importPins = useIntent(api.codex.importPins);
@@ -53,6 +64,18 @@ export default function CodexPage() {
           ? data.entries.map((e) => previewForPlayers(frameId, e, pins)).filter((e): e is PlayerEntry => e !== null)
           : data.entries
         : data.entries;
+
+  // `?entry=<id>` (a Notes mention, D11 N5): once that entry is in the visible list, select it and its kind tab with the
+  // full list. Adjusted during render (CL7), once per link; an id the viewer cannot see changes nothing.
+  const [linkedEntry, setLinkedEntry] = useState<string | null>(null);
+  const linked = entryParam !== null && entryParam !== linkedEntry ? all.find((e) => e._id === entryParam) : undefined;
+  if (linked) {
+    setLinkedEntry(linked._id);
+    setKind(linked.kind);
+    setGroups((g) => ({ ...g, [linked.kind]: "all" }));
+    setSearch("");
+    setSelected(linked._id);
+  }
 
   const ofKind = all.filter((e) => e.kind === kind);
   const base = ofKind.filter((e) => matchesSearch({ name: e.name, role: "role" in e ? e.role : undefined }, search));
