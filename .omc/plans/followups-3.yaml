@@ -33,6 +33,7 @@ waves:
           - src/components/combat-map/vision/vision-layer.tsx
           - src/components/combat-map/vision/panels.tsx
           - tests/e2e/combat-light-uploaded.spec.ts
+          - tests/e2e/sprite-packs-flow.spec.ts
           - docs/tasks/TASK-F3-F2.md
         reads:
           - docs/tasks/TASK-SP-P10.md
