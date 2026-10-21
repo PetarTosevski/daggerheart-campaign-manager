@@ -47,6 +47,31 @@ waves:
           - "docs/performance.md has the baseline tables and the exact commands"
 
   # ---------------------------------------------------------------- wave 2: the first click
+      - id: PF7
+        title: Fear out of the campaign summary; stable campaign context
+        size: M
+        # ORCHESTRATOR NOTE (2026-10-21): pulled forward on the user's request; runs now, before PF0/PF4. PF4 later rebases on
+        #   its campaign-shell split. The authz entry for any new Fear query goes to D12 H5 (core.entries.ts is H0/H5's file);
+        #   PF7 measures with its own fear-render e2e (queries re-sent and main-thread time per Fear click, before/after).
+        goal: "campaigns.get and campaigns.list stop reading campaignState.fear; FearPanel and every fear reader use a small fear query (campaignQuery, returns validator); the shell splits its context into stable identity fields and live fields so a Fear click re-renders only the Fear consumers."
+        depends_on: []
+        owns:
+          - convex/campaigns.ts
+          - convex/sessions.ts
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/fear-panel.tsx
+          - tests/convex/campaigns.test.ts
+          - tests/e2e/fear-render.spec.ts
+          - docs/tasks/TASK-PF-PF7.md
+        reads:
+          - convex/fear.ts
+          - convex/tables/campaigns.ts
+          - src/lib/optimistic/**
+        acceptance:
+          - "lint, typecheck, pnpm test (including the authz matrix) pass; dashboard.spec.ts Fear test and fear-render.spec.ts pass"
+          - "PF0: one Fear click re-sends exactly 1 query result (baseline 3: campaigns.get, campaigns.list when subscribed, sessions.current)"
+          - "PF0 cpu4: main-thread task time of a Fear click on the dashboard down >= 50% versus the PF0 baseline recorded for that click"
+
   - wave: 2
     tracers:
       - id: PF1
@@ -154,7 +179,7 @@ waves:
         title: Preload the campaign in the layout; header art via next/image
         size: M
         goal: "The [campaignId] layout preloads campaigns.get on the server (preloadQuery with convexAuthNextjsToken, CL5) and the shell reads it with usePreloadedQuery, so pages mount at hydration and subscribe in the first Convex flight; the header art becomes next/image with priority and sizes (CL10)."
-        depends_on: [PF1]
+        depends_on: [PF1, PF7]
         owns:
           - src/app/(gm)/campaigns/[campaignId]/layout.tsx
           - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
@@ -174,29 +199,6 @@ waves:
   # ---------------------------------------------------------------- wave 4: re-render breadth and server reads (after D12 H2)
   - wave: 4
     tracers:
-      - id: PF7
-        title: Fear out of the campaign summary; stable campaign context
-        size: M
-        goal: "campaigns.get and campaigns.list stop reading campaignState.fear; FearPanel and every fear reader use a small fear query (campaignQuery, returns validator); the shell splits its context into stable identity fields and live fields so a Fear click re-renders only the Fear consumers."
-        depends_on: [PF4]
-        owns:
-          - convex/campaigns.ts
-          - convex/sessions.ts
-          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
-          - src/app/(gm)/campaigns/[campaignId]/fear-panel.tsx
-          - tests/convex/campaigns.test.ts
-          - tests/convex/authz/core.entries.ts
-          - tests/e2e/fear-render.spec.ts
-          - docs/tasks/TASK-PF-PF7.md
-        reads:
-          - convex/fear.ts
-          - convex/tables/campaigns.ts
-          - src/lib/optimistic/**
-        acceptance:
-          - "lint, typecheck, pnpm test (including the authz matrix) pass; dashboard.spec.ts Fear test and fear-render.spec.ts pass"
-          - "PF0: one Fear click re-sends exactly 1 query result (baseline 3: campaigns.get, campaigns.list when subscribed, sessions.current)"
-          - "PF0 cpu4: main-thread task time of a Fear click on the dashboard down >= 50% versus the PF0 baseline recorded for that click"
-
       - id: PF9
         title: Dashboard party summary projection
         size: S
