@@ -1,154 +1,165 @@
-# D11 plan: Notes (bead dcm-bxp.10). Per-person bullet journals: pages (session logs, collections, future log), bullets with
-# signifiers and task states, migration of open tasks, open threads, search, @links to Characters & Locations, tear-out, and a
-# Shared section ('Shared by players' / 'Shared by GM') with per-page visibility enforced on the server.
-# Board: reference/designs/project/Notes.dc.html (the only Notes board; visual spec and data model). Patch history:
+# D11 plan: Notes (bead dcm-bxp.10). Per-person bullet journals (a player's journal belongs to their character), pages
+# (session logs linked to real sessions, collections, future log), bullets with signifiers and task states, migration, open
+# threads, search, an @ picker for Characters & Locations, per-page sharing with chosen recipients, entries added by readers,
+# a 30-day bin for torn-out pages, past journals of departed characters, and "Download my journal".
+# Board: reference/designs/project/Notes.dc.html (the only Notes board; visual spec). Patch history:
 #   reference/designs/tools/notes_profiles.py (per-person journals; its PIN is dropped, A1), tracker dh-009, dh-5p5.
-# Analysis: .omc/autopilot/d11-analysis.md (board inventory, data model, visibility model, conflicts, USER ANSWERS, OPEN QUESTIONS).
+# Analysis: .omc/autopilot/d11-analysis.md (board inventory, data model, visibility and action tables, conflicts).
 # Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation.
-# Book pages: none. Notes has no game mechanic; the Hope / Fear bullets are journal labels only (OQ7). Nothing to quote.
+# Book pages: none. Notes has no game mechanic; Hope / Fear bullets are labels only (Q7). Nothing to quote.
 # Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
 #
-# Status: DRAFT 2026-10-21. USER ANSWERS A1-A5 are binding. OPEN QUESTIONS OQ1-OQ14 carry defaults that are PENDING USER ANSWER;
-#   the acceptance lists use those defaults and mark them (OQn). An answer that differs changes only the tracers citing it.
-#   No tracer starts until the user has answered or accepted the open defaults.
+# Status: APPROVED FOR BUILD 2026-10-21. Every question is answered; no open questions remain. Answers marked (An) / (Qn),
+#   defaults this plan adds marked (Dn); the coordinator's assumed defaults are part of the answers they belong to.
 #
 # USER ANSWERS (2026-10-21, binding):
-#   A1  No PIN at all: the board's 'Lock with a PIN', 'Close & lock', the locked card and every PIN text are dropped (also the
-#       earlier decision 'Notes: NO PINs', docs/decisions-d3-d11.md).
-#   A2  Every account has its own notes section per campaign, plus a Shared section with two tabs: 'Shared by players' and
-#       'Shared by GM'.
-#   A3  A player's note is private, shared with the other players only (hidden from the GM), or shared with everyone.
-#   A4  By default the GM can read players' notes; per note a player can hide it from the GM or show it to the other players
-#       only. The owner always sees their note. A player's private note: the GM reads it unless the player hid it. The GM's
-#       own notes are private by default; the GM can share one into 'Shared by GM'. Everything is enforced on the server.
-#   A5  The GM can share a note with chosen players (one or more, per note) besides everyone; it appears in 'Shared by GM' only
-#       for the chosen players, server-enforced. Recipients are their own indexed table (journalPageRecipients), never an array
-#       in the note (best-practices rule 6).
+#   A1  No PIN at all: no 'Lock with a PIN', 'Close & lock', locked card or PIN text (also decision 'Notes: NO PINs').
+#   A2  Every account has its own notes section per campaign, plus a Shared section with the tabs 'Shared by players' and
+#       'Shared by GM'. Refined by Q12 (a player's journal belongs to their character).
+#   A3  A player's page is private, shared with the other players only (hidden from the GM), or shared with everyone.
+#   A4  The GM reads players' pages by default; per page a player can hide it from the GM or show it to players only. The owner
+#       always sees their page. The GM's pages are private by default and can be shared into 'Shared by GM'. Server-enforced.
+#   A5  The GM can share a page with chosen players (one or more) besides everyone; only they see it in 'Shared by GM'.
+#       Recipients are their own indexed table (journalPageRecipients), never an array in the page (rule 6).
+#   Q1  Sharing is set per page (a page with its entries).
+#   Q2  The GM sees players' pages everywhere: in 'Shared by players' and by opening any player's journal, unless hidden from
+#       the GM.
+#   Q3  Only the owner edits a page. The GM and any player who can read a page can ADD entries to it. An added entry has a
+#       different colour and ends with '- <author>': the author's character name for a player (fallback account name), 'GM'
+#       for the GM. Assumed defaults: an author edits and deletes their own added entries; the page owner can delete any added
+#       entry but not edit it; an added entry is visible to whoever can read the page.
+#   Q4  Players can also share a page with chosen players, using the same recipients table as the GM.
+#   Q5  Session log pages are named after the real D10 session with its date; a new session log page links to the current or a
+#       chosen session.
+#   Q6  An @ picker stores the Codex entry id, so links survive renames; the current name is shown; viewers who cannot see the
+#       entry get plain text.
+#   Q7  Hope / Fear bullets are labels only (they never touch party Hope or GM Fear).
+#   Q8  '<active character>’s Journal' / 'Player journal · <class>' (fallback account name / 'Player'); GM 'Game Master’s
+#       Journal' / 'GM journal · private to the GM'.
+#   Q9  Download allowed. Assumed default: 'Download my journal' exports your own pages as one Markdown file, generated in the
+#       browser from data you can read; no server export of other people's pages.
+#   Q10 Limits: MAX_PAGES 200 per journal (bin included), MAX_PAGE_ENTRIES 300, MAX_JOURNAL_ENTRIES 5000, TITLE_MAX 80,
+#       TEXT_MAX 500 characters.
+#   Q11 Tearing out a page gives a 10-second Undo and moves it to a bin for 30 days, restorable by the owner; then an internal,
+#       batched, self-rescheduling cron in convex/crons.ts purges it (rule 8).
+#   Q12 A player's journal is linked to their CHARACTER. When the player leaves or is removed, or the character dies or is
+#       retired, the journal is kept, its pages become readable by everyone in the campaign and the GM can delete them; a
+#       'Past journals' list in the Shared section names them after the character. Assumed defaults: pages marked Private
+#       (hidden from everyone) stay private after departure; a new character gets a new journal; a player without a character
+#       writes in an account journal that attaches to their first character; the GM's journal belongs to the GM account; a
+#       departed player who rejoins gets their pages' previous visibility back.
+#   Q13 Search and open threads cover your own journal only.
+#   Q14 The sharing chip alone tells the owner who can read a page.
 #
-# Visibility model (from A2-A5; .omc/autopilot/d11-analysis.md section 3). journalPages.visibility, per page (a 'note' = a page
-#   with its entries, OQ1):
-#   player page: 'gm' (DEFAULT: owner + GM; in the GM's 'Shared by players' marked 'Private · GM can read', OQ2), 'private'
-#                (owner only), 'players' (owner + other players, never the GM), 'everyone' (every member).
-#   GM page:     'private' (DEFAULT: owner only), 'everyone' (every player; 'Shared by GM'), 'chosen' (only players with a
-#                journalPageRecipients row for the page; 'Shared by GM' for them only).
-#   A player may not set 'chosen' (OQ4 default no) and the GM may not set 'gm' / 'players': INVALID. Owner-is-GM comes from
-#   ctx.permission (the wrapper's permissionFor result). Only the owner edits (OQ3). Entries follow their page.
-#   permissionFor resource { type: 'journalPage', campaign, page }: owner -> owner; GM -> view for 'gm' | 'everyone'; player ->
-#   view for 'players' | 'everyone', or 'chosen' with a recipient row (one point read on by_page_user); else null.
-#   A page the caller may not read answers NOTE_PAGE_NOT_FOUND, exactly as a deleted one.
+# DEFAULTS THIS PLAN ADDS (assumed defaults, each derived from an answer; analysis section 0.3):
+#   D1  Departure is computed at read time, never stored: a player journal is departed when its owner has no campaign role
+#       (convex/lib/permissions.ts campaignRole is null after members.removePlayer / leave), or its character is missing, has
+#       status 'dead' or 'retired' (storedCharacterStatusValidator; no new state), or belongs to another account now. 'away'
+#       (benched, X6, or a Castle High death move) is not a departure. A rejoin or a status set back to 'active' restores the
+#       previous visibility by itself. No D11 tracer edits convex/members.ts or convex/characters.ts.
+#   D2  A departed journal is frozen: nobody adds or edits entries, not even its owner (who still reads it while a member); the
+#       GM may tear out its non-private pages into the bin (restorable by the GM, purged after 30 days).
+#   D3  Attachment: an unattached player journal (characterId absent) belongs to the player's earliest character in the
+#       campaign that is not departed and has no journal; the first write after that stores characterId. The current journal is
+#       the active character's, else the newest non-departed character's, else an unattached one (created on first write).
+#   D4  A player's 'chosen' page is hidden from the GM unless the player ticks the GM in the recipient picker.
+#   D5  Added entries: text edit by the author; delete by the author or the page owner; bullet cycle by the owner or the author;
+#       star and order by the owner only; migrated copies keep their author; a journal's open threads include added entries on
+#       its own pages.
+#   D6  Session log pages: title set at creation ('Session N', plus ': <session title>' when there is one), editable; the meta
+#       shows the linked session's date live ('No date set'); players link only live / played sessions (D10 Q4), the GM any;
+#       a deleted session leaves the page unlinked; the picker preselects the live session, else the newest visible one; the
+#       default 'Session 1' page links to the live or newest visible session when one exists; migration to a new log page uses
+#       the board title and no link.
+#   D7  Mentions are stored in the entry text as '@[<name when written>](<codexEntryId>)' tokens (at most 10 per entry; the
+#       server checks each id is a codex entry of the campaign the author can see, else INVALID); a viewer who can see the entry
+#       gets a link with its current name, everyone else the stored name as plain text.
 #
-# OPEN QUESTIONS (full wording in .omc/autopilot/d11-analysis.md section 6; defaults pending user answer):
-#   OQ1  A 'note' is (a) a page with its entries; (b) one entry. DEFAULT (a). Cited by N0, N6.
-#   OQ2  Where the GM reads players' 'gm' pages: (a) in 'Shared by players', marked and grouped by player; (b) a separate
-#        'Players' journals' tab. DEFAULT (a). Cited by N6.
-#   OQ3  Editing someone else's shared note: (a) owner only, others read; (b) GM may edit readable player notes; (c) readers add
-#        entries. DEFAULT (a). Cited by N0, N6.
-#   OQ4  Players share with specific players: (a) no; (b) yes. DEFAULT (a) no. Cited by N0, N1, N6.
-#   OQ5  Session log pages vs the Sessions tab: (a) board numbering, no link; (b) named after the live session. DEFAULT (a).
-#        Cited by N1, N2.
-#   OQ6  @links: (a) matched by name at render (board); (b) @ picker storing the entry id. DEFAULT (a). Cited by N1, N5.
-#   OQ7  Bullet types, states and migration exactly as the board (six kinds; task open / done / migrated / scheduled / struck;
-#        others open / resolved; migrate to the next page of the same kind or a new one; Hope / Fear are labels only):
-#        (a) yes; (b) changes. DEFAULT (a). Cited by N1, N3.
-#   OQ8  Player journal name: (a) '<active character>’s Journal' / 'Player journal · <class>', fallback account name / 'Player';
-#        (b) account name. GM: 'Game Master’s Journal' / 'GM journal · private to the GM'. DEFAULT (a). Cited by N2.
-#   OQ9  Export: (a) none in D11; D12 backup carries only the GM's own journal; (b) 'Download my journal'. DEFAULT (a). N7.
-#   OQ10 Limits: (a) MAX_PAGES 200 per journal, MAX_PAGE_ENTRIES 300, MAX_JOURNAL_ENTRIES 5000, title 80 and entry 500
-#        characters; recipients at most the campaign's players. DEFAULT (a). Cited by N0, N2, N3, N6.
-#   OQ11 Tear out: (a) board (second click deletes for good, for every reader; animation + sound, none under reduced motion);
-#        (b) + 10 s Undo; (c) 30-day bin. DEFAULT (a). Cited by N2.
-#   OQ12 Player leaves / is removed: (a) pages kept, hidden from everyone, back on rejoin, purged with the campaign; (b) deleted.
-#        DEFAULT (a). Cited by N0, N6.
-#   OQ13 Search and open threads: (a) own journal only (board); (b) also readable shared pages. DEFAULT (a). Cited by N4.
-#   OQ14 Telling the owner who can read: (a) the sharing chip always shows the state; (b) also a one-time notice to players.
-#        DEFAULT (a). Cited by N6.
+# Visibility (journalPages.visibility): player 'gm' (default) | 'private' | 'players' | 'everyone' | 'chosen'; GM 'private'
+#   (default) | 'everyone' | 'chosen'. Readers besides the owner, journal present: gm -> GM; private -> nobody; players -> other
+#   players, not the GM; everyone -> every member; chosen -> recipients (D4). Departed journal (D1): private stays owner-only,
+#   every other value -> every member. The GM journal never departs. Binned pages: owner (and the GM for a departed journal's
+#   page it tore out) only, in the bin. A page the caller may not read answers NOTE_PAGE_NOT_FOUND, exactly as a deleted one.
 #
 # Rules the board settles (binding; tracers quote the ones they implement in their task doc; line numbers in Notes.dc.html):
-#   B1  Header (l.66-74): '<whoName>’s Journal', sub '<whoSub> · <N> pages · <M> entries', button '🧵 Open threads · N'
-#       (aria-pressed, accent fill when on). Dropped: the 'Writing as' switcher (A2) and every PIN control (A1).
-#   B2  Index (l.91-107): 'Search the journal'; groups 'Session logs' / 'Collections' / 'Future log', each with '＋' ('New session
-#       log', 'New collection', 'New future page'); page button = tape tab, title, count ('N open', else entry count, else
-#       nothing); empty 'Nothing here yet.' / 'No matches.'; the Quick keys card copy.
-#   B3  Page (l.127-165): tape label with the title; title input; meta '<session log | collection | future log> · <date>';
-#       '🎀 Tape' cycles 6 tapes; '➜ Migrate open tasks' (disabled without open tasks; tooltips 'Copy open tasks to “<t>” and
-#       mark them > here' / 'Copy open tasks to a new page and mark them > here'); 'Tear out page' -> 'Click again to tear out';
-#       empty lines per kind; KEY legend.
-#   B4  Entries (l.139-157, 195-280): kinds task • / event ○ / note – / idea ! / Hope ✦ / Fear ☠ with the board's tooltips;
-#       task states open -> done (×) -> migrated (>) -> scheduled (<) -> struck -> open; other kinds open <-> resolved
-#       (struck); ★ priority; edit by ✎ or double-click (Enter saves, Escape cancels, blur saves); ↑ move up; × delete (no
-#       confirm); add with the 'Bullet type' chips and 'Write a <kind> and press Enter… (@ to link)'; quick-key prefixes
-#       '* . o - ! + ^' followed by a space.
-#   B5  Open thread = an open task or an unresolved Fear entry. Threads view (l.111-120): tape 'Open threads', 'Every
-#       unfinished task and every looming Fear, from all pages.', rows with '<page title> →', empty 'Nothing dangling.
-#       Suspicious…'.
-#   B6  Migrate (l.296-333): target = first page of the same kind created after this one, else a new page ('Session <n>' for
-#       logs, '<title> (cont.)' otherwise); open tasks copied as new open entries, originals marked migrated; target opens.
-#   B7  New pages (l.285): 'Session <log pages + 1>', 'New collection', 'Future log <n>'; tape = page count mod 6; opens.
-#       Default pages: GM 'Session 1', 'Rumors & hooks', 'Loot & debts', 'Future log'; player 'Session 1', 'People we met',
-#       'Clues & secrets', 'My goals' (tapes as in the board, l.223-224). New and default pages get the default visibility.
-#   B8  @mentions (l.236-249): name match at render against Characters & Locations (longest full name, else first name of 2+
-#       letters); tooltip = role, else 'Character' / 'Location'; players link only entries the GM made known.
+#   B1  Header (l.66-74): '<whoName>’s Journal', sub '<whoSub> · <N> pages · <M> entries', '🧵 Open threads · N' (aria-pressed,
+#       accent fill when on). Dropped: 'Writing as' switcher (A2) and PIN controls (A1).
+#   B2  Index (l.91-107): 'Search the journal'; groups 'Session logs' / 'Collections' / 'Future log' with '＋' ('New session
+#       log', 'New collection', 'New future page'); page button = tape tab, title, count ('N open' / entry count / nothing);
+#       'Nothing here yet.' / 'No matches.'; Quick keys card copy.
+#   B3  Page (l.127-165): tape label; title input; meta '<session log | collection | future log> · <date>'; '🎀 Tape' (6 tapes);
+#       '➜ Migrate open tasks' (disabled without open tasks; tooltips 'Copy open tasks to “<t>” and mark them > here' / 'Copy
+#       open tasks to a new page and mark them > here'); 'Tear out page' -> 'Click again to tear out'; empty lines per kind; KEY.
+#   B4  Entries (l.139-157, 195-280): task • / event ○ / note – / idea ! / Hope ✦ / Fear ☠ with the board's tooltips; task
+#       open -> done (×) -> migrated (>) -> scheduled (<) -> struck -> open; others open <-> resolved; ★; ✎ or double-click edit
+#       (Enter / Escape / blur); ↑; × (no confirm); 'Bullet type' chips; 'Write a <kind> and press Enter… (@ to link)'; quick
+#       keys '* . o - ! + ^' + space.
+#   B5  Open thread = open task or unresolved Fear. Threads view (l.111-120): tape 'Open threads', 'Every unfinished task and
+#       every looming Fear, from all pages.', '<page title> →', 'Nothing dangling. Suspicious…'.
+#   B6  Migrate (l.296-333): first later page of the same kind, else a new page ('Session <n>' / '<title> (cont.)'); open tasks
+#       copied as new open entries (author kept, D5), originals migrated; target opens.
+#   B7  New pages (l.285): 'New collection', 'Future log <n>', session logs per D6; tape = page count mod 6. Default pages: GM
+#       'Session 1', 'Rumors & hooks', 'Loot & debts', 'Future log'; player 'Session 1', 'People we met', 'Clues & secrets', 'My
+#       goals' (tapes l.223-224). New and default pages get the default visibility (A4).
+#   B8  Tear out (l.326): rip animation (two clip-path halves, scraps) and synthesised tear sound; skipped under reduced motion.
 #   B9  Search (l.251, 283): case-insensitive substring over titles and entry text; matching rows highlighted.
 #
 # Rules for every tracer (part of every acceptance list, not repeated):
 #   - Every public function uses the wrappers in convex/lib/functions.ts: campaignQuery / campaignMutation /
-#     keyedCampaignMutation with need 'view' (GM and players pass; outsiders NOT_FOUND, anonymous UNAUTHENTICATED). Own-journal
-#     functions go through convex/lib/notes.ts loadOwnJournal / ensureJournal (found by (campaignId, ctx.user._id)); any read of
-#     a page goes through permissionFor on the 'journalPage' resource (CF2); writes need 'owner' of the page (OQ3). No journal,
-#     owner or user id of the caller ever comes from args (CF3, CF4); recipient user ids are validated as current players.
-#   - A page or entry the caller may not read answers NOTE_PAGE_NOT_FOUND / NOTE_ENTRY_NOT_FOUND, exactly as a deleted one.
+#     keyedCampaignMutation with need 'view' (GM and players pass; outsiders NOT_FOUND, anonymous UNAUTHENTICATED). Page access
+#     goes only through convex/lib/notes.ts pageAccess, which calls permissionFor on the 'journalPage' resource (CF2) and
+#     returns { permission, departed, isAuthor... }; the action table in .omc/autopilot/d11-analysis.md 3.2 is enforced there.
+#     The caller's identity comes from ctx.user only (CF3, CF4); recipient ids are validated as campaign members.
 #   - `args` and `returns` validators on every new function, no v.any(); schema-guard RETURNS_PENDING never grows.
-#   - Its own Convex test covers anonymous, outsider, player, a second player and GM for each new function, written as a table
-#     (function x role -> expected code) so D12 can fold it into tests/convex/authz-matrix.test.ts (that file does not exist
-#     yet); assertions use ConvexError.data.code (errorCode helper), never message text.
-#   - Intents only: page ref + one field (renamePage = page + title; setVisibility = page + value; addRecipient = page + user;
-#     cycle = entry id). The server computes next states with the N1 domain; the client never sends a page or entry snapshot.
-#     Optimistic updates on bullet cycle, star, add, delete, move up, rename, tape and visibility, with updaters in
-#     src/lib/optimistic/notes-<area>.ts.
-#   - Indexed reads only (no .filter on queries); caps checked with counters on journals / journalPages, never .collect().length.
+#   - Its own Convex test covers anonymous, outsider, owner player, second player, chosen player where relevant, and GM for each
+#     new function, written as a table (function x role -> expected code) so D12 can fold it into
+#     tests/convex/authz-matrix.test.ts (that file does not exist yet); assertions use ConvexError.data.code (errorCode
+#     helper), never message text.
+#   - Intents only: page ref + one field, entry id + one field, page + user for recipients. The server computes next states with
+#     the N1 domain. Optimistic updates on bullet cycle, star, add, delete, move up, rename, tape, visibility and recipients,
+#     with updaters in src/lib/optimistic/notes-<area>.ts.
+#   - Indexed reads only (no .filter on queries; binnedAt is part of the list indexes); caps checked with counters, never
+#     .collect().length.
 #   - A new error code is one N0 defines in src/lib/errors/notes.ts; a code N0 did not add means stop and report.
 #   - No new dependency. Pure logic lives in src/lib/domain/notes (N1), used by server and client alike.
 #   - Every useQuery subtree sits inside an error boundary; loading uses the shared Loading with role=status.
-#   - UI in the board's look: tokens and classes from C/notes/notes.css (N0: bj-paper, bj-tape, bj-row, bj-bul, bj-text, bj-act,
-#     bj-ib, bj-chip, bj-mention, bj-add, bj-edit, bj-key, bj-in, bj-ghost, bj-lbl; the accent from settings); each later tracer
-#     adds CSS only in its own colocated .css. 390 px (the board has no mobile layout): one column, no horizontal page scroll,
-#     touch targets >= 44 px, row actions visible on touch (pointer: coarse), labels on every control, keyboard reachable,
-#     reduced motion respected, native <dialog> via src/components/brand/modal.tsx.
+#   - UI in the board's look: classes from C/notes/notes.css (N0: bj-paper, bj-tape, bj-row, bj-bul, bj-text, bj-act, bj-ib,
+#     bj-chip, bj-mention, bj-add, bj-edit, bj-key, bj-in, bj-ghost, bj-lbl, bj-added (added-entry colour)); later tracers add CSS
+#     only in their own colocated .css. 390 px (no board layout): one column, no horizontal page scroll, targets >= 44 px, row
+#     actions visible on touch, labels on every control, keyboard reachable, reduced motion respected, native <dialog> via
+#     src/components/brand/modal.tsx.
 #   - Visual acceptance: the tracer's tests/e2e/visual/D11-<id>.spec.ts (tag @visual, E2E_VISUAL=1) shoots its regions at
-#     1440x900 and 390x844; board counterparts from `node scripts/board-shots.mjs notes:<region>` (N0 adds them, 1440 only: the
-#     board has no mobile layout, so 390 shots are judged against the 390 rules above; the Shared section and the sharing
-#     control are not on the board and are judged against the board's tokens); the task doc docs/tasks/TASK-D11-<id>.md lists
-#     both sets with a verdict per region and every deliberate deviation.
+#     1440x900 and 390x844; board counterparts from `node scripts/board-shots.mjs notes:<region>` (1440 only); regions that are
+#     not on the board (sharing, Shared section, journals lists, pickers, bin, toast) are judged against the board's tokens; the
+#     task doc docs/tasks/TASK-D11-<id>.md lists both sets with a verdict per region and every deliberate deviation.
 #   - pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e specs pass in its worktree; the
 #     orchestrator runs the full e2e suite after each wave.
 #
-# Data model (N0 creates every table; later tracers only add functions). Widen only: no existing validator changes shape.
-#   journals              campaignId, userId, pageCount, entryCount, openCount, createdAt, updatedAt. Indexes by_campaign_user
-#                         [campaignId, userId], by_campaign (purge). One per (campaign, account) (A2).
-#   journalPages          campaignId, journalId, ownerId, kind ('log' | 'collection' | 'future'), title, tape (0-5), visibility
-#                         ('gm' | 'private' | 'players' | 'everyone' | 'chosen'), entryCount, openCount, createdAt, updatedAt.
-#                         Indexes by_journal [journalId], by_campaign_visibility [campaignId, visibility], by_campaign (purge).
+# Data model (N0 creates every table and index; later tracers only add functions). Widen only.
+#   journals              campaignId, userId, characterId? (D3), pageCount, entryCount, openCount, createdAt, updatedAt.
+#                         Indexes by_campaign_user [campaignId, userId], by_character [characterId], by_campaign.
+#   journalPages          campaignId, journalId, ownerId, kind ('log' | 'collection' | 'future'), title, tape (0-5), visibility,
+#                         sessionId? (Q5), binnedAt?, binnedBy?, entryCount, openCount, createdAt, updatedAt. Indexes
+#                         by_journal_binned [journalId, binnedAt], by_campaign_visibility_binned [campaignId, visibility,
+#                         binnedAt], by_binned [binnedAt], by_campaign.
 #   journalPageRecipients campaignId, pageId, userId, addedAt. Indexes by_page_user [pageId, userId], by_campaign_user
-#                         [campaignId, userId], by_campaign (purge). The GM's chosen players (A5); rows exist only while the
-#                         page is 'chosen'.
-#   journalEntries        campaignId, journalId, pageId, kind ('task' | 'event' | 'note' | 'idea' | 'hope' | 'fear'), state
-#                         ('open' | 'done' | 'migrated' | 'scheduled' | 'struck'), star, text, order, open (open task or
-#                         unresolved Fear, B5), createdAt, updatedAt. Indexes by_page_order [pageId, order], by_journal_open
-#                         [journalId, open], by_campaign (purge); search index search_text (text; filter journalId).
-#   First open: no journal row -> notes.journal returns null + the N1 default templates; the first write carries a template ref
-#   ({ template: i }) and ensureJournal creates the journal and its default pages (default visibility: player 'gm', GM
-#   'private', A4) in that same mutation (CL6). Typed fields only: no blob, no schemaVersion. No table only grows (all purged
-#   with the campaign, recipients and entries with their page), so no cron. grants is not used (analysis section 2).
+#                         [campaignId, userId], by_campaign. Rows exist only while the page is 'chosen'.
+#   journalEntries        campaignId, journalId, pageId, authorId, authorCharacterId?, kind, state, star, text (D7 tokens), order,
+#                         open, createdAt, updatedAt. Indexes by_page_order [pageId, order], by_journal_open [journalId, open],
+#                         by_campaign; search index search_text (text; filter journalId).
+#   Typed fields only (no blob, no schemaVersion). Counters exclude binned pages. purgeCampaign deletes all four tables' rows;
+#   the bin cron (N7) purges pages binned > 30 days with their entries and recipients. First write creates the journal and its
+#   default pages from template refs (CL6).
 #
 # Shared files: convex/schema.ts, convex/lib/permissions.ts, convex/cleanup.ts, src/lib/errors/app-error.ts,
 #   src/lib/convex-errors.ts, tests/convex/schema-guard.test.ts, tests/convex/cleanup.test.ts, tests/convex/permissions.test.ts,
-#   scripts/board-shots.mjs belong to N0 only. C/notes/page.tsx belongs to N0, which mounts one stub per feature folder
-#   (src/components/notes/{header,index-column,page,entries,threads,search,mentions,sharing,shared}/index.tsx) with typed props
-#   from src/components/notes/slots.ts (campaignId, pageId, view ('page' | 'threads' | 'shared-players' | 'shared-gm'), search,
-#   matchingPageIds, readOnly, onPage, onView, onSearch); the page keeps page and view in the URL (?page=<id>&view=...). N7 may
-#   adjust C/notes/page.tsx and notes.css in wave 4. C/codex/page.tsx belongs to N5 (one ?entry= read, no other change).
-#   docs/data-model.md is updated by the orchestrator. The static C/notes route replaces the [section] placeholder for Notes;
-#   campaign-sections.ts is unchanged (Notes stays visible to players).
+#   scripts/board-shots.mjs belong to N0. convex/crons.ts belongs to N7. C/notes/page.tsx belongs to N0, which mounts one stub
+#   per feature folder (src/components/notes/{header,index-column,page,entries,threads,search,export,mentions,sharing,shared,bin,
+#   journals}/index.tsx) with typed props from src/components/notes/slots.ts (campaignId, journalId?, pageId, view ('page' |
+#   'threads' | 'shared-players' | 'shared-gm' | 'journal' | 'bin'), search, matchingPageIds, access, onPage, onView, onSearch);
+#   page and view live in the URL (?page=<id>&view=...&journal=<id>). N9 may adjust C/notes/page.tsx and notes.css in wave 5.
+#   C/codex/page.tsx belongs to N5 (one ?entry= read). docs/data-model.md is updated by the orchestrator. The static C/notes
+#   route replaces the [section] placeholder for Notes; campaign-sections.ts is unchanged.
 plan: d11-notes
 waves:
   # ---------------------------------------------------------------- wave 1: foundation and pure domain, in parallel
@@ -156,15 +167,16 @@ waves:
     tracers:
       - id: N0
         foundation: true
-        title: D11 foundation (tables, validators, error module, journalPage resource with the visibility model in permissionFor, purge, route shell with stubs, board shots)
-        size: M
-        goal: The notes tables exist and are purged with their campaign, permissionFor decides every journal-page read by the A2-A5 visibility model, the notes error codes and the loadOwnJournal / ensureJournal / resolvePage helpers are wired, and /campaigns/<id>/notes opens a board-look shell with stubs for GM and players alike.
+        title: D11 foundation (tables, validators, error module, journalPage resource with visibility + departure in permissionFor, pageAccess and journal helpers, purge, route shell with stubs, board shots)
+        size: L
+        goal: The notes tables exist and are purged with their campaign, permissionFor and pageAccess decide every page read and action by the visibility, departure and authorship rules, the journal helpers (current journal, attachment, ensureJournal, template refs) are wired, and /campaigns/<id>/notes opens a board-look shell with stubs for GM and players.
         depends_on: []
         owns:
           - convex/schema.ts
           - convex/tables/notes.ts
           - convex/lib/validators/notes.ts
           - convex/lib/notes.ts
+          - convex/lib/journalState.ts
           - convex/lib/permissions.ts
           - convex/cleanup.ts
           - src/lib/errors/notes.ts
@@ -180,9 +192,12 @@ waves:
           - src/components/notes/entries/index.tsx
           - src/components/notes/threads/index.tsx
           - src/components/notes/search/index.tsx
+          - src/components/notes/export/index.tsx
           - src/components/notes/mentions/index.tsx
           - src/components/notes/sharing/index.tsx
           - src/components/notes/shared/index.tsx
+          - src/components/notes/bin/index.tsx
+          - src/components/notes/journals/index.tsx
           - scripts/board-shots.mjs
           - tests/convex/schema-guard.test.ts
           - tests/convex/cleanup.test.ts
@@ -194,29 +209,34 @@ waves:
           - reference/designs/project/Notes.dc.html
           - .omc/autopilot/d11-analysis.md
           - convex/lib/functions.ts
-          - convex/tables/files.ts
+          - convex/members.ts
+          - convex/characters.ts
+          - convex/lib/validators/characters.ts
+          - convex/tables/characters.ts
           - convex/tables/campaigns.ts
+          - convex/tables/files.ts
+          - convex/tables/sessions.ts
           - convex/tables/codex.ts
           - src/lib/campaign-sections.ts
           - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
           - src/app/(gm)/campaigns/[campaignId]/sessions/page.tsx
-          - src/app/(gm)/campaigns/[campaignId]/[section]/page.tsx
           - tests/convex/helpers.ts
         acceptance:
-          - "convex/tables/notes.ts defines journals, journalPages, journalPageRecipients, journalEntries with the fields, indexes and search index of the data model; convex/schema.ts composes them; caps (MAX_PAGES 200, MAX_PAGE_ENTRIES 300, MAX_JOURNAL_ENTRIES 5000, TITLE_MAX 80, TEXT_MAX 500; OQ10), kind / state / visibility validators and pageRefValidator (page id or { template: number }) live in convex/lib/validators/notes.ts"
-          - "convex/lib/permissions.ts: Resource gains { type: 'journalPage'; campaign; page }; permissionFor: owner -> owner; GM -> view for player pages 'gm' | 'everyone' and nothing for 'private' | 'players'; player -> view for 'players' | 'everyone', or 'chosen' only with a journalPageRecipients row (by_page_user point read); else null; nobody but the owner gets edit (A3, A4, A5, OQ3)"
-          - "tests/convex/permissions.test.ts covers the full matrix: every visibility value x {owner, GM, other player, chosen player, player not chosen, outsider}; a 'chosen' GM page is readable by the chosen player and not by a player who was not chosen; a player's 'players' page is readable by other players and not by the GM; a player's 'private' page by nobody but the owner; a GM 'private' page by no player"
-          - "convex/lib/notes.ts: loadOwnJournal (by_campaign_user), ensureJournal (creates the journal and the caller's default pages from N1 defaults: GM template and visibility 'private' when ctx.permission is owner of the campaign, else the player template and 'gm'; B7, A4), resolvePage (own page id or template index; NOTE_PAGE_NOT_FOUND otherwise), loadReadablePage (permissionFor journalPage view; NOTE_PAGE_NOT_FOUND otherwise), loadOwnEntry (NOTE_ENTRY_NOT_FOUND), insertPage (NOTE_PAGE_LIMIT), deletePageRows (entries and recipients, bounded), bumpCounts (page and journal counters in the same mutation); tests/convex/notes-lib.test.ts covers each, including a second ensureJournal returning the existing journal"
-          - "src/lib/errors/notes.ts defines every code D11 needs (at least NOTE_PAGE_NOT_FOUND, NOTE_ENTRY_NOT_FOUND, NOTE_PAGE_LIMIT, NOTE_PAGE_FULL, NOTE_JOURNAL_FULL, NOTE_NOTHING_TO_MIGRATE, NOTE_VISIBILITY_INVALID, NOTE_RECIPIENT_INVALID) and app-error.ts / convex-errors.ts combine them; no PIN code exists (A1)"
-          - "purgeCampaign deletes every notes table's rows in bounded batches; schema-guard classifies the four tables as campaign-scoped; tests/convex/cleanup.test.ts covers it. Removing a player from the campaign leaves their journal (OQ12)."
-          - "The page shows the board's hero (campaign name line, title and sub line slots, actions slot for the threads button), the index column (search slot, own-page groups slot, the Shared slot with the tabs 'Shared by players' / 'Shared by GM' (A2), the Quick keys card copy) and the paper column, driven by ?page and ?view; 1440: 300 px + fluid grid as the board; 390: one column; error.tsx (CL1); title 'Notes · <campaign>' (CL15); no PIN control anywhere (A1)"
-          - "Every slot stub renders its section's empty frame with typed props from src/components/notes/slots.ts; each sits in its own error boundary"
-          - "board-shots: notes:empty (GM default pages, empty Session 1), notes:page (seeded entries of every kind and state, a star, a mention), notes:threads, notes:search, notes:player (player default pages)"
+          - "convex/tables/notes.ts defines journals, journalPages, journalPageRecipients, journalEntries with every field, index and the search index of the data model; convex/schema.ts composes them; caps (Q10, MAX_MENTIONS 10), kind / state / visibility validators, pageRefValidator (page id or { template: number }) and the D7 token format constant live in convex/lib/validators/notes.ts"
+          - "convex/lib/journalState.ts: departed(ctx, campaign, journal) per D1 (campaignRole null; character missing, 'dead', 'retired' or owned by another account; 'away' and 'active' not departed; the GM journal never departs), at most three point reads, no write"
+          - "convex/lib/permissions.ts: Resource gains { type: 'journalPage'; campaign; journal; page }; permissionFor returns owner for the page owner and view per the visibility table (A3, A4, A5, Q2, Q4, D4, Q12 departure: private stays owner-only, every other value readable by every member), else null; binned pages only for the owner and the binning GM; recipients read with one by_page_user point lookup"
+          - "tests/convex/permissions.test.ts covers the full matrix: every visibility x {owner, GM, other player, chosen player, player not chosen, outsider} x {journal present, departed by removal, departed by 'dead', departed by 'retired', 'away' (not departed), rejoined}; a GM 'chosen' page is readable by the chosen player and not by a player who was not chosen; a player's 'chosen' page is hidden from the GM unless the GM is a recipient (D4); a departed player's 'players' page becomes readable by the GM and its 'private' page stays owner-only; after a rejoin the 'players' page is hidden from the GM again"
+          - "convex/lib/notes.ts: currentJournal (D3: active character's journal, else newest non-departed character's, else unattached), ensureJournal (creates the journal and default pages from N1: GM template + 'private' when ctx.permission is campaign owner, else player template + 'gm'; stores characterId per D3), resolvePage (own page id or template index), pageAccess (permissionFor + departed + author flags; enforces the analysis 3.2 action table: canEditPage, canAdd, canEditEntry, canCycle, canDeleteEntry, canBin, canRestore; NOTE_PAGE_NOT_FOUND / NOTE_ENTRY_NOT_FOUND / NOTE_FORBIDDEN_ACTION / NOTE_JOURNAL_CLOSED), insertPage (NOTE_PAGE_LIMIT), deletePageRows (entries and recipients, bounded), bumpCounts; tests/convex/notes-lib.test.ts covers each, including attachment of an account journal to the first character and a new journal for a second character after the first died"
+          - "src/lib/errors/notes.ts defines every code D11 needs (at least NOTE_PAGE_NOT_FOUND, NOTE_ENTRY_NOT_FOUND, NOTE_PAGE_LIMIT, NOTE_PAGE_FULL, NOTE_JOURNAL_FULL, NOTE_NOTHING_TO_MIGRATE, NOTE_VISIBILITY_INVALID, NOTE_RECIPIENT_INVALID, NOTE_FORBIDDEN_ACTION, NOTE_JOURNAL_CLOSED, NOTE_SESSION_INVALID, NOTE_MENTION_INVALID, NOTE_NOT_BINNED) and app-error.ts / convex-errors.ts combine them; no PIN code (A1)"
+          - "purgeCampaign deletes every notes table's rows in bounded batches; schema-guard classifies the four tables as campaign-scoped and journalPages also as retention-managed (bin, N7); tests/convex/cleanup.test.ts covers the purge"
+          - "The page shows the board's hero (campaign line, title and sub slots, actions slot), the index column (search slot, own-page groups slot, the Shared slot with tabs 'Shared by players' / 'Shared by GM', the journals slot, the bin slot, Quick keys card copy) and the paper column, driven by ?page, ?view and ?journal; 1440: 300 px + fluid as the board; 390: one column; error.tsx (CL1); title 'Notes · <campaign>' (CL15); no PIN control (A1)"
+          - "Every slot stub renders its section's empty frame with typed props from src/components/notes/slots.ts, each in its own error boundary"
+          - "board-shots: notes:empty (GM default pages), notes:page (every kind and state, a star, a mention), notes:threads, notes:search, notes:player (player default pages), notes:tear (mid-animation frame)"
           - "e2e notes-shell: the GM and a player each open Notes and see the shell with the two Shared tabs; an outsider gets the campaign not-found page"
       - id: N1
-        title: Pure domain - bullets and states, quick keys, open threads, migration target, defaults and titles, visibility rules and labels, mentions parser, search match, header line
-        size: S
-        goal: A pure, tested TypeScript module answers every derived value the Notes board and the sharing control show, from plain page and entry rows.
+        title: Pure domain - bullets and states, quick keys, threads, migration, defaults and titles, visibility rules and labels, action rules, mention tokens, session-log titles, Markdown export, search match, header line
+        size: M
+        goal: A pure, tested TypeScript module answers every derived value the Notes board and its additions show, from plain journal, page, entry, session and character rows.
         depends_on: []
         owns:
           - src/lib/domain/notes/**
@@ -225,23 +245,27 @@ waves:
         reads:
           - reference/designs/project/Notes.dc.html
           - .omc/autopilot/d11-analysis.md
+          - src/lib/domain/sessions/index.ts
         acceptance:
-          - "bullets.ts: the six kinds with glyph, colour, label and the board's tooltips; glyphFor(kind, state); nextState (task: open -> done -> migrated -> scheduled -> struck -> open; others open <-> done); isStruck; bulletTip; isOpenThread (open task or unresolved Fear) - B4, B5; Hope / Fear are labels only (OQ7)"
-          - "quick-keys.ts: parseQuickKey(text, selectedKind) -> { kind, text } for '* . o - ! + ^' followed by a space, trimmed; anything else keeps the selected kind - B4"
-          - "migrate.ts: migrationTarget(pages, page) (first page of the same kind created later) and newContinuationTitle ('Session <n>' for logs, '<title> (cont.)' otherwise) - B6"
-          - "defaults.ts: GM and player default pages with titles, kinds and tapes; newPageTitle(kind, pages) ('Session <log pages + 1>', 'New collection', 'Future log <n>') and newPageTape (page count mod 6) - B7, OQ5"
-          - "visibility.ts: allowedVisibilities(isGm) (player: gm, private, players, everyone; GM: private, everyone, chosen; OQ4), defaultVisibility(isGm) (player 'gm', GM 'private'; A4), labels ('Private · GM can read', 'Private · hidden from the GM', 'Players only (hidden from the GM)', 'Everyone'; GM 'Private', 'Everyone', 'Chosen players') and sharedTab(page, gmId) ('players' | 'gm' | null) - A2-A5"
-          - "mentions.ts: parseMentions(text, refs) -> parts (plain / link with ref id, kind, tooltip) with the board's longest-name and first-name rules - B8, OQ6"
-          - "summary.ts: headerLine ('N pages · M entries'), pageCountLabel ('N open' / entry count / ''), pageMeta ('session log · <date>'), emptyLine per kind, matches(text, query) - B2, B3, B9"
-          - "Unit tests cover every function above, including a full task-state cycle, a quick key without a following space, a migration with and without a later page, a mention of a first name followed by punctuation, and every allowed / refused visibility per owner type"
+          - "bullets.ts: six kinds with glyph, colour, label and the board's tooltips; glyphFor; nextState (task cycle; others open <-> done); isStruck; bulletTip; isOpenThread - B4, B5; Hope / Fear labels only (Q7)"
+          - "quick-keys.ts: parseQuickKey(text, selectedKind) for '* . o - ! + ^' + space - B4"
+          - "migrate.ts: migrationTarget and newContinuationTitle - B6"
+          - "defaults.ts: GM / player default pages, newPageTitle ('New collection', 'Future log <n>', 'Session <log pages + 1>' for unlinked logs), sessionLogTitle(session) ('Session N' / 'Session N: <title>', D6), newPageTape - B7, Q5"
+          - "visibility.ts: allowedVisibilities(isGm) (player gm / private / players / everyone / chosen; GM private / everyone / chosen; Q4), defaultVisibility (A4), chip labels ('Private · GM can read', 'Private · hidden from everyone', 'Players only (hidden from the GM)', 'Everyone', 'Chosen players'; GM 'Private', 'Everyone', 'Chosen players'), effectiveReaders(visibility, departed) for the chip text and the departed rule (Q12)"
+          - "actions.ts: the pure form of the analysis 3.2 action table (isOwner, isAuthor, departed, canRead) -> canEditPage, canAdd, canEditEntry, canCycle, canDeleteEntry, canBin, canRestore; used by convex/lib/notes.ts and the UI (D2, D5, Q3)"
+          - "mentions.ts: token format '@[name](id)' (D7): parseTokens(text) -> parts, insertMention, countMentions (<= 10), toPlainText, renderParts(parts, visibleRefs) -> link with current name / plain stored name (Q6)"
+          - "authors.ts: authorLabel (character name, else account name; 'GM' for the campaign owner) and the ' - <author>' suffix (Q3)"
+          - "export.ts: journalToMarkdown(pages, entries) -> one Markdown document (page headings with kind and date, bullet glyphs and states, mentions as plain names, added entries with their author) (Q9)"
+          - "summary.ts: headerLine, pageCountLabel, pageMeta (session date for linked logs, D6), emptyLine, matches - B2, B3, B9"
+          - "Unit tests cover every function above, including a full task-state cycle, migration with and without a later page, every allowed / refused visibility per owner type, every action-table row, departed visibility, mention tokens with renamed and invisible entries, and a Markdown export snapshot"
 
   # ---------------------------------------------------------------- wave 2: own journal + pages, entries, in parallel
   - wave: 2
     tracers:
       - id: N2
-        title: Own journal and pages - default pages, new page, rename, tape, tear out, hero and index column
+        title: Own journal and pages - current journal, default pages, new page with session link, rename, tape, hero and index column
         size: M
-        goal: Each person opens their own journal with the board's default pages, creates, renames, re-tapes and tears out pages, and sees the hero line and the index column with counts.
+        goal: Each person opens their current journal (the GM's account journal, a player's character journal) with the board's default pages, creates pages (session logs linked to a real session), renames and re-tapes them, and sees the hero and the index column with counts.
         depends_on: [N0, N1]
         owns:
           - convex/notes.ts
@@ -255,24 +279,27 @@ waves:
           - docs/tasks/TASK-D11-N2.md
         reads:
           - convex/lib/notes.ts
+          - convex/lib/journalState.ts
           - convex/lib/validators/notes.ts
           - convex/tables/notes.ts
           - convex/characters.ts
+          - convex/sessionRecords.ts
+          - convex/tables/sessions.ts
           - src/lib/domain/notes/index.ts
           - src/components/notes/slots.ts
           - reference/designs/project/Notes.dc.html
         acceptance:
-          - "campaignQuery journal (returns validator): the caller's own journal: whoName / whoSub (GM 'Game Master' / 'GM journal · private to the GM'; player: active character's name and 'Player journal · <class>', else account name and 'Player'; OQ8), counts, pages (id, kind, title, tape, visibility, createdAt, entryCount, openCount) in created order; or { journal: null, templates } before the first write; never another person's pages"
-          - "campaignMutation createPage (kind; title, tape and default visibility from N1; NOTE_PAGE_LIMIT past MAX_PAGES) returns the id; renamePage (page ref + title, 1-80 characters after trimming, INVALID otherwise); cycleTape (page ref); tearOutPage (page ref: deletes the page, its entries and recipients, fixes the journal counters; the page disappears for every reader too) - B3, B7, OQ10, OQ11"
-          - "Each write accepts a template ref and creates the journal with its default pages in the same mutation (ensureJournal)"
-          - "Role table in tests/convex/notes-pages.test.ts: anonymous UNAUTHENTICATED, outsider NOT_FOUND, player and GM succeed on their own journal; renaming, re-taping or tearing out someone else's page answers NOTE_PAGE_NOT_FOUND even when it is shared with the caller (owner-only edits, OQ3)"
-          - "UI: the hero (title '<whoName>’s Journal', sub line, header line, actions slot), the index column (search input wired to onSearch, three groups with '＋' and labels, tape tabs, a small visibility mark per page, counts, 'Nothing here yet.' / 'No matches.' when matchingPageIds empties a group, Quick keys card), the page header (tape label, title input saved on change, meta, '🎀 Tape', toolbar slots for Migrate and Sharing, 'Tear out page' -> 'Click again to tear out' then the rip animation and synthesised sound, both skipped under reduced motion) - B1, B2, B3; no 'Writing as' switcher, no PIN controls (A1, A2); 390 px: the index collapses behind a 'Pages' disclosure above the paper"
-          - "e2e: the GM opens Notes and sees Session 1, Rumors & hooks, Loot & debts, Future log; adds a collection, renames it, changes its tape, tears it out with two clicks; reload keeps the result; a player sees Session 1, People we met, Clues & secrets, My goals"
-          - "Visual D11-N2: hero, index column and an empty page at 1440 and 390 vs notes:empty and notes:player"
+          - "campaignQuery journal (returns validator): the caller's current journal (D3) with whoName / whoSub (Q8, from the journal's character), counts, pages (id, kind, title, tape, visibility, sessionId + session number / date when linked and visible, createdAt, entryCount, openCount; binned excluded) in created order; or { journal: null, templates } before the first write"
+          - "campaignMutation createPage (kind, optional sessionId for logs: the session must be in the campaign and visible to the caller, live / played for players, else NOTE_SESSION_INVALID; title from N1 sessionLogTitle or newPageTitle; default visibility; NOTE_PAGE_LIMIT) returns the id; renamePage (1-80 characters, INVALID otherwise); cycleTape; setSession (page ref + sessionId or null; same check) - B3, B7, Q5, D6"
+          - "Each write accepts a template ref and creates the journal (with characterId per D3) and its default pages in the same mutation; the default 'Session 1' links to the live or newest visible session when one exists (D6)"
+          - "Role table in tests/convex/notes-pages.test.ts: anonymous UNAUTHENTICATED, outsider NOT_FOUND, owner player and GM succeed; editing someone else's page answers NOTE_PAGE_NOT_FOUND when unreadable and NOTE_FORBIDDEN_ACTION when readable (owner-only edits, Q3); writes on a departed journal NOTE_JOURNAL_CLOSED (D2); a player linking a planned session NOTE_SESSION_INVALID; a player whose character died gets a new journal for the next character (Q12)"
+          - "UI: hero (title '<whoName>’s Journal', sub line, header line, actions slot), index column (search input wired to onSearch, three groups with '＋', tape tabs, visibility mark per page, counts, 'Nothing here yet.' / 'No matches.', Quick keys card), page header (tape label, title input, meta with the linked session's date, '🎀 Tape', toolbar slots for Migrate, Sharing and Tear out); '＋ New session log' opens a small <dialog> session picker (preselected per D6, 'No session' option); no 'Writing as' switcher, no PIN (A1, A2); 390: the index behind a 'Pages' disclosure"
+          - "e2e: the GM opens Notes and sees the four default pages; with Session 2 live, adds a session log titled 'Session 2' showing its date; adds a collection, renames it, changes its tape; reload keeps it; a player sees the player defaults under '<character>’s Journal'"
+          - "Visual D11-N2: hero, index column, empty page and the session picker at 1440 and 390 vs notes:empty and notes:player"
       - id: N3
-        title: Entries - add with bullet type and quick keys, cycle states, star, edit, move up, delete, migrate open tasks, KEY legend
-        size: M
-        goal: On their own page the owner writes entries of the six kinds (chips or quick keys), cycles task states and resolves other kinds, stars, edits, moves and deletes them, and migrates open tasks to the next page, all live and optimistic.
+        title: Entries - own and added entries, bullet types and quick keys, states, star, edit, move, delete, migrate, author colour and suffix, KEY legend
+        size: L
+        goal: The owner writes and manages entries on their pages and migrates open tasks; anyone who can read a page adds entries that show in the added colour with ' - <author>', editable and deletable per the action table; all live and optimistic.
         depends_on: [N0, N1]
         owns:
           - convex/notesEntries.ts
@@ -287,55 +314,62 @@ waves:
           - convex/lib/notes.ts
           - convex/lib/validators/notes.ts
           - convex/tables/notes.ts
+          - convex/codex.ts
+          - convex/lib/codex.ts
           - src/lib/domain/notes/index.ts
           - src/components/notes/slots.ts
           - src/components/notes/mentions/index.tsx
           - reference/designs/project/Notes.dc.html
         acceptance:
-          - "campaignQuery entries (page ref; returns validator): a readable page's entries in order (loadReadablePage, by_page_order, take MAX_PAGE_ENTRIES) with kind, state, star, text, open, plus readOnly (caller is not the owner); a template ref returns []; an unreadable page NOTE_PAGE_NOT_FOUND"
-          - "campaignMutation add (page ref, kind, text 1-500 characters; the client parses quick keys with N1; appended after the last order; NOTE_PAGE_FULL / NOTE_JOURNAL_FULL past the caps; OQ10), setText (entry id + text), cycle (entry id; the server applies N1 nextState and recomputes open), toggleStar, moveUp (swaps order with the previous entry; first entry no-op), remove (entry id) - B4; owner only (OQ3); every write updates page and journal counters in the same mutation"
-          - "campaignMutation migrateOpen (page ref): N1 migrationTarget or a new page via insertPage (NOTE_PAGE_LIMIT, default visibility), copies the open tasks as new open entries, marks the originals migrated, returns the target id; NOTE_NOTHING_TO_MIGRATE without open tasks - B6"
-          - "Role table in tests/convex/notes-entries.test.ts: anonymous UNAUTHENTICATED, outsider NOT_FOUND; owner succeeds; the GM reads a player's 'gm' page entries but every write answers NOTE_ENTRY_NOT_FOUND / NOTE_PAGE_NOT_FOUND; the GM reading a player's 'private' or 'players' page NOTE_PAGE_NOT_FOUND; another player reading a 'gm' page NOTE_PAGE_NOT_FOUND; counters stay equal to the rows after every operation; Hope / Fear entries change no Hope or Fear (OQ7)"
-          - "UI: entry rows (bullet button with tooltip and aria label, ★, text through the mentions slot EntryText, ✎ / double-click edit with Enter / Escape / blur, ↑, ×, actions on hover / focus and always on touch; all controls hidden when readOnly), search highlight via props.search and N1 matches, the 'Bullet type' radiogroup (role=radio + aria-checked only), the glyph and 'Write a <kind> and press Enter… (@ to link)', the empty line per kind, the KEY legend, and the MigrateButton for the page toolbar slot with the board's tooltips and disabled state - B3, B4, B6"
-          - "RTL (tests/unit/notes-entries-ui.test.tsx): two quick clicks on a task bullet advance it two states (optimistic, CL4); typing '^ ambush' adds a Fear entry; readOnly renders no controls"
-          - "e2e: the GM adds a task, an event and '^ The Hollow King stirs', completes the task, stars the event, edits it by double-click, moves it up, deletes it, then migrates an open task to a new page (the original shows >)"
-          - "Visual D11-N3: a page with every kind and state at 1440 and 390 vs notes:page"
+          - "campaignQuery entries (page ref; returns validator): a readable page's entries in order (by_page_order, take MAX_PAGE_ENTRIES) with kind, state, star, text, open, authorLabel and added (author is not the page owner) per N1 authorLabel (Q3), plus the caller's per-entry and per-page action flags from pageAccess; a template ref returns []; unreadable NOTE_PAGE_NOT_FOUND"
+          - "campaignMutation add (page ref, kind, text 1-500; quick keys parsed by the client with N1; mention tokens validated: <= 10, each a codex entry of the campaign the author can see, else NOTE_MENTION_INVALID (D7); authorId = ctx.user, authorCharacterId = the author's current journal character; NOTE_PAGE_FULL / NOTE_JOURNAL_FULL; any reader may add, departed NOTE_JOURNAL_CLOSED - Q3, D2), setText (author only), cycle (owner or author, N1 nextState), toggleStar and moveUp (owner only), remove (author or owner) - B4, D5; counters updated in the same mutation"
+          - "campaignMutation migrateOpen (page ref, owner only): N1 migrationTarget or a new page (default visibility, no session link, D6), copies open tasks keeping their author (D5), marks the originals migrated, returns the target; NOTE_NOTHING_TO_MIGRATE - B6"
+          - "Role table in tests/convex/notes-entries.test.ts: anonymous UNAUTHENTICATED, outsider NOT_FOUND; the GM adds to a player's 'gm' page (added, label 'GM'); a chosen player adds to a 'chosen' page while a player not chosen gets NOTE_PAGE_NOT_FOUND; the author edits and deletes their added entry; the owner deletes it but setText answers NOTE_FORBIDDEN_ACTION; a reader starring or moving NOTE_FORBIDDEN_ACTION; any add on a departed journal NOTE_JOURNAL_CLOSED; counters equal the rows after every operation; Hope / Fear entries change no Hope or Fear (Q7)"
+          - "UI: entry rows (bullet with tooltip and aria label, ★, text through the mentions slot EntryText, added entries in the bj-added colour ending ' - <author>', ✎ / double-click edit, ↑, ×, each shown only when its action flag allows; on hover / focus and always on touch), search highlight, the 'Bullet type' radiogroup (aria-checked only), the add row through the mentions slot MentionInput with 'Write a <kind> and press Enter… (@ to link)' (also for readers who may add), empty lines, KEY legend, MigrateButton for the toolbar slot - B3, B4, B6"
+          - "RTL tests/unit/notes-entries-ui.test.tsx: two quick clicks on a task bullet advance two states (CL4); '^ ambush' adds a Fear; an added entry renders ' - GM' in the added colour; a reader sees the add row and no owner controls"
+          - "e2e: the GM adds, completes, stars, edits, moves and deletes entries and migrates an open task; a player opens a GM page shared with everyone and adds an entry that shows ' - <character>' for both"
+          - "Visual D11-N3: a page with every kind, state and an added entry at 1440 and 390 vs notes:page"
 
-  # ---------------------------------------------------------------- wave 3: threads + search, mentions, sharing, in parallel
+  # ---------------------------------------------------------------- wave 3: threads/search/export, mentions, sharing, bin, in parallel
   - wave: 3
     tracers:
       - id: N4
-        title: Open threads and search - threads view and button, server search over titles and entry text of the caller's own journal
-        size: S
-        goal: The owner opens the Open threads view listing every open task and unresolved Fear from their own pages, jumps to a page from it, and searches their journal with the page list filtered and matching lines highlighted.
+        title: Open threads, search and 'Download my journal' - own journal only
+        size: M
+        goal: The owner opens Open threads (open tasks and unresolved Fears from their own pages), searches their own journal with the page list filtered and lines highlighted, and downloads their own pages as one Markdown file.
         depends_on: [N2, N3]
         owns:
           - convex/notesThreads.ts
           - src/components/notes/threads/**
           - src/components/notes/search/**
+          - src/components/notes/export/**
           - tests/convex/notes-threads.test.ts
+          - tests/unit/notes-export-ui.test.tsx
           - tests/e2e/notes-threads.spec.ts
           - tests/e2e/visual/D11-N4.spec.ts
           - docs/tasks/TASK-D11-N4.md
         reads:
           - convex/lib/notes.ts
           - convex/tables/notes.ts
+          - convex/notes.ts
           - convex/notesEntries.ts
           - src/components/notes/entries/index.tsx
           - src/components/notes/slots.ts
           - src/lib/domain/notes/index.ts
           - reference/designs/project/Notes.dc.html
         acceptance:
-          - "campaignQuery threads (returns validator): the caller's own open entries from by_journal_open (take 500) with page id and title, in page then entry order - B5, OQ13"
-          - "campaignQuery search (query 1-80 characters; returns validator): own page ids whose title matches (by_journal, take MAX_PAGES, N1 matches) or that hold an entry found by the search_text index filtered by the caller's journalId (take 200); never another person's pages, shared or not (OQ13)"
-          - "Role table in tests/convex/notes-threads.test.ts: anonymous UNAUTHENTICATED, outsider NOT_FOUND; a player's search and threads never return the GM's pages (even 'everyone' ones) and the GM's never return a player's (even 'gm' ones)"
-          - "UI: ThreadsButton '🧵 Open threads · N' (journal openCount, aria-pressed, accent when on) in the hero actions slot; ThreadsView paper with the violet 'Open threads' tape, the intro line, rows with clickable bullets and '<page title> →', empty 'Nothing dangling. Suspicious…'; useJournalSearch (debounced) feeding matchingPageIds; ?view=threads - B1, B5, B9"
-          - "e2e: with open tasks on two pages and a resolved Fear, the threads view lists the open ones only; completing one from the view drops the count; '<page> →' opens that page; a word on one page leaves only that page in the index and highlights the line"
+          - "campaignQuery threads (returns validator): the current journal's open entries (by_journal_open, take 500; binned pages dropped in TS) with page id and title, including added entries on own pages (D5) - B5, Q13"
+          - "campaignQuery search (1-80 characters; returns validator): own non-binned page ids matching by title (N1 matches) or by an entry from search_text filtered by the caller's journalId (take 200) - B9, Q13"
+          - "campaignQuery exportPage (cursor; returns validator): the caller's own non-binned pages and their entries, paginated; the client builds one Markdown file with N1 journalToMarkdown and saves it as '<whoName> journal.md'; no other person's pages ever (Q9)"
+          - "Role table in tests/convex/notes-threads.test.ts: anonymous UNAUTHENTICATED, outsider NOT_FOUND; threads, search and export return only the caller's own journal: never a shared page, a page the caller can read, or another journal's page"
+          - "UI: ThreadsButton '🧵 Open threads · N' in the hero actions slot; ThreadsView (violet 'Open threads' tape, intro line, rows with bullets and '<page title> →', 'Nothing dangling. Suspicious…'); useJournalSearch (debounced) feeding matchingPageIds; a 'Download my journal' button in the hero actions slot - B1, B5, B9"
+          - "RTL tests/unit/notes-export-ui.test.tsx: the download produces one Markdown blob from two pages of fake data"
+          - "e2e: the threads view lists only open entries and updates when one is completed; a search narrows the index and highlights the line; 'Download my journal' saves a .md file containing a page title"
           - "Visual D11-N4: threads view and a search at 1440 and 390 vs notes:threads and notes:search"
       - id: N5
-        title: Mentions - @links to Characters & Locations, Codex opens on the linked entry
-        size: S
-        goal: Entries that name a Characters & Locations entry after @ show it as a link with its role, for players only for entries the GM made known (also on shared pages), and a click opens the Codex on that entry.
+        title: '@ picker and links - store Codex entry ids, current names, plain text for viewers who cannot see the entry, Codex opens on the entry'
+        size: M
+        goal: Typing @ in an entry opens a picker of the Characters & Locations entries the writer can see and stores the entry id; links show the entry's current name to viewers who can see it and open the Codex on it, while everyone else reads the stored name as plain text.
         depends_on: [N3]
         owns:
           - src/components/notes/mentions/**
@@ -346,21 +380,23 @@ waves:
           - docs/tasks/TASK-D11-N5.md
         reads:
           - convex/codex.ts
+          - convex/notesEntries.ts
           - src/lib/domain/notes/index.ts
           - src/components/notes/slots.ts
           - src/components/notes/entries/index.tsx
           - reference/designs/project/Notes.dc.html
           - reference/designs/project/Codex.dc.html
         acceptance:
-          - "EntryText parses with N1 parseMentions against the refs from api.codex.list of the viewer (player-filtered on the server: known entries only), so a GM mention on a page shared with players links only what that player may see; links go to /campaigns/<id>/codex?entry=<entry id>; tooltip = role, else 'Character' / 'Location' - B8, OQ6"
-          - "codex/page.tsx: an ?entry=<id> in the visible list selects it and its kind tab on load (derived during render, CL7; an unknown id falls back to today's default); no other change"
-          - "No new Convex function; RTL tests/unit/notes-mentions.test.tsx covers full name, first name, punctuation and no match"
-          - "e2e: the GM writes '@<starting NPC name> owes us' and the name links to the Codex on that NPC; the GM shares the page with everyone: a player sees plain text while the NPC is unknown and a link after the GM marks it known"
-          - "Visual D11-N5: a page with mentions at 1440 and 390 vs notes:page"
+          - "MentionInput: typing @ opens an accessible combobox (role=combobox / listbox, arrow keys, Enter, Escape) over the writer's api.codex.list (players: known entries only) filtered by the typed prefix; choosing inserts an N1 token; editing keeps existing tokens; at most 10 per entry (Q6, D7)"
+          - "EntryText renders N1 parts against the viewer's api.codex.list: a visible entry is a link with its current name and the role tooltip ('Character' / 'Location' fallback) to /campaigns/<id>/codex?entry=<id>; an entry the viewer cannot see is the stored name as plain text (Q6)"
+          - "codex/page.tsx: an ?entry=<id> in the visible list selects it and its kind tab on load (derived during render, CL7); no other change"
+          - "No new Convex function (server validation of tokens is N3's); RTL tests/unit/notes-mentions.test.tsx covers picking, a renamed entry showing the new name, and an invisible entry as plain text"
+          - "e2e: the GM mentions an unrevealed NPC on a page shared with everyone; the GM renames the NPC and the link shows the new name; a player sees the old stored name as plain text, then a link with the current name after the GM marks it known; clicking opens the Codex on that NPC"
+          - "Visual D11-N5: the open picker and a page with mentions at 1440 and 390 vs notes:page"
       - id: N6
-        title: Sharing - per-page visibility, the GM's chosen players, the Shared section with 'Shared by players' and 'Shared by GM', read-only shared pages
+        title: Sharing - per-page visibility for GM and players, chosen recipients (one table for both), the Shared tabs, read-only shared pages with the add row
         size: L
-        goal: A player sets each page to 'Private · GM can read' (default), 'Private · hidden from the GM', 'Players only' or 'Everyone'; the GM sets 'Private' (default), 'Everyone' or 'Chosen players'; the Shared tabs list exactly what the server lets each caller read, and a shared page opens read-only.
+        goal: Owners set each page's visibility (players also 'Chosen players', the GM pickable as a recipient), the Shared tabs list exactly what the server lets each caller read, and a shared page opens read-only with the add row.
         depends_on: [N2, N3]
         owns:
           - convex/notesSharing.ts
@@ -373,6 +409,7 @@ waves:
           - docs/tasks/TASK-D11-N6.md
         reads:
           - convex/lib/notes.ts
+          - convex/lib/journalState.ts
           - convex/lib/permissions.ts
           - convex/lib/validators/notes.ts
           - convex/tables/notes.ts
@@ -384,30 +421,97 @@ waves:
           - src/lib/domain/notes/index.ts
           - .omc/autopilot/d11-analysis.md
         acceptance:
-          - "campaignMutation setVisibility (page ref + value): owner only; N1 allowedVisibilities by ctx.permission (player: gm / private / players / everyone; GM: private / everyone / chosen), else NOTE_VISIBILITY_INVALID (OQ4: a player cannot pick 'chosen'); leaving 'chosen' deletes the page's journalPageRecipients rows in the same mutation - A3, A4, A5"
-          - "campaignMutation addRecipient / removeRecipient (page ref + user id): only the GM owner of a 'chosen' page; the user must be a current player of the campaign (campaignMembers by_campaign_user), else NOTE_RECIPIENT_INVALID; one row per (page, user) (by_page_user), adding twice is a no-op; the recipients are a table, never an array on the page (A5)"
-          - "campaignQuery shared (tab 'players' | 'gm'; returns validator): 'players' = player pages from by_campaign_visibility for 'everyone' plus 'players' (for players) or plus 'gm' (for the GM, marked 'Private · GM can read' and grouped by player; OQ2); 'gm' = for a player, GM pages 'everyone' plus the pages of the caller's journalPageRecipients rows (by_campaign_user); for the GM, their own shared pages with recipient names. Each row: page id, title, kind, tape, owner name, visibility label; bounded takes; every row passes permissionFor journalPage view; the caller's own pages and pages of former members are left out (OQ12)"
-          - "campaignQuery recipients (page ref; GM owner only; returns validator): the campaign's players with a chosen flag for the dialog"
-          - "Role table in tests/convex/notes-sharing.test.ts (anonymous UNAUTHENTICATED, outsider NOT_FOUND, owner, GM, player A, player B): a GM page shared with chosen player A appears in A's 'Shared by GM' and its entries load for A, while player B gets neither (not in the list; entries NOT_FOUND / NOTE_PAGE_NOT_FOUND); removing A hides it from A at once; switching the page to 'everyone' shows it to B; a player's 'players' page shows for the other player and not for the GM; a 'gm' page shows for the GM only; a 'private' page for nobody; a player calling addRecipient or setting 'chosen' gets NOTE_VISIBILITY_INVALID / NOT_FOUND; the GM setting 'players' gets NOTE_VISIBILITY_INVALID; nobody but the owner can change visibility (NOTE_PAGE_NOT_FOUND)"
-          - "UI: the sharing chip in the page toolbar slot always showing the current state (OQ14) and a native <dialog> with the allowed options as radios and, for 'Chosen players', a checkbox per current player (optimistic toggles); the Shared block in the index column with the tabs 'Shared by players' / 'Shared by GM' (ARIA tabs), each listing owner name + title with the tape tab and an empty line ('Nothing shared yet.'); opening a shared page shows '<owner>’s page · read only' above the paper with the entries readOnly (no add area, actions, tape, migrate or tear out) and ?view=shared-players / shared-gm"
-          - "e2e (GM + players A and B in three browsers): the GM shares a page with A only: A sees it under 'Shared by GM', B does not; the GM switches it to Everyone: B sees it too. Player A writes a private page: the GM finds it under 'Shared by players' marked 'Private · GM can read'; A hides it from the GM: it disappears for the GM; A sets it to 'Players only': B sees it, the GM does not"
-          - "Visual D11-N6: sharing dialog (player and GM), Shared tabs and a read-only shared page at 1440 and 390, judged against the board's tokens (not on the board)"
+          - "campaignMutation setVisibility (page ref + value): owner only, journal not departed; N1 allowedVisibilities by ctx.permission, else NOTE_VISIBILITY_INVALID; leaving 'chosen' deletes the page's recipient rows in the same mutation - A3, A4, A5, Q4"
+          - "campaignMutation addRecipient / removeRecipient (page ref + user id): owner of a 'chosen' page (GM or player); the user must be a member of the campaign other than the owner (players for a GM page; other players or the GM for a player page, D4), else NOTE_RECIPIENT_INVALID; one row per (page, user) via by_page_user; adding twice is a no-op; never an array on the page (A5, Q4)"
+          - "campaignQuery shared (tab 'players' | 'gm'; returns validator): 'players' = readable non-binned player pages of present journals (by_campaign_visibility_binned for everyone / players / gm plus the caller's recipient rows by_campaign_user), the GM's 'gm' pages grouped by player (Q2); 'gm' = GM pages 'everyone' plus 'chosen' pages with the caller as recipient; for the GM, their own shared pages with recipient names; each row: page id, title, kind, tape, owner name, chip label; bounded takes; every row passes permissionFor; own pages and departed journals' pages left out (those are in Past journals, N8)"
+          - "campaignQuery recipients (page ref; owner only; returns validator): the eligible members with a chosen flag"
+          - "Role table in tests/convex/notes-sharing.test.ts (anonymous, outsider, owner, GM, chosen player A, not-chosen player B): a GM page shared with A only appears in A's 'Shared by GM' and its entries load for A, while B gets neither (absent from the list, entries NOTE_PAGE_NOT_FOUND); removing A hides it from A at once; 'everyone' shows it to B; a player's page shared with chosen player B is invisible to the GM until the player ticks the GM (D4); a 'players' page shows for other players and not for the GM; a 'gm' page for the GM only; a 'private' page for nobody; the GM setting 'players' NOTE_VISIBILITY_INVALID; a non-owner changing visibility or recipients NOTE_FORBIDDEN_ACTION (readable) or NOTE_PAGE_NOT_FOUND (unreadable)"
+          - "UI: the sharing chip in the page toolbar showing the current state (Q14) and a native <dialog> with the allowed options as radios and, for 'Chosen players', a checkbox per eligible member (optimistic); the Shared block with ARIA tabs 'Shared by players' / 'Shared by GM' listing owner name + title + tape tab, empty 'Nothing shared yet.'; a shared page opens with '<owner>’s page · read only' above the paper, entries with the reader's flags (add row present when allowed), ?view=shared-players / shared-gm"
+          - "e2e (GM + players A and B in three browsers): the GM shares a page with A only (A sees it, B does not), then with everyone (B sees it); player A writes a page: the GM finds it under 'Shared by players' and adds an entry ending ' - GM'; A hides it from everyone: the GM loses it; A sets it to 'Players only': B sees it and the GM does not; A shares one page with chosen B only"
+          - "Visual D11-N6: sharing dialog (player and GM), Shared tabs and a shared page at 1440 and 390, judged against the board's tokens"
+      - id: N7
+        title: Bin - tear out with the rip, 10-second Undo, torn-out pages list, restore, 30-day purge cron
+        size: M
+        goal: 'Tearing out a page plays the rip, moves the page to the bin with a 10-second Undo, the owner finds it under Torn-out pages and restores it within 30 days, and a batched, self-rescheduling cron purges it afterwards.'
+        depends_on: [N2, N3]
+        owns:
+          - convex/notesBin.ts
+          - convex/crons.ts
+          - src/components/notes/bin/**
+          - tests/convex/notes-bin.test.ts
+          - tests/e2e/notes-bin.spec.ts
+          - tests/e2e/visual/D11-N7.spec.ts
+          - docs/tasks/TASK-D11-N7.md
+        reads:
+          - convex/lib/notes.ts
+          - convex/lib/journalState.ts
+          - convex/tables/notes.ts
+          - convex/cleanup.ts
+          - src/components/notes/slots.ts
+          - src/lib/domain/notes/index.ts
+          - reference/designs/project/Notes.dc.html
+        acceptance:
+          - "campaignMutation binPage (page ref): pageAccess canBin (owner of a present journal; the GM for a non-private page of a departed journal, Q12, D2); sets binnedAt / binnedBy, fixes the journal counters; the page leaves every list for every reader at once - Q11"
+          - "campaignMutation restorePage (page ref): canRestore (whoever binned it, while they still have access); NOTE_NOT_BINNED otherwise; NOTE_PAGE_LIMIT is not checked twice (the bin counts toward MAX_PAGES); campaignQuery bin (returns validator): the caller's binned pages (own, and departed pages the GM binned) with days left"
+          - "internalMutation purgeBinned: pages with binnedAt older than 30 days (by_binned range), deleting each page's entries and recipients in bounded batches, rescheduling itself with ctx.scheduler.runAfter while work remains; convex/crons.ts runs it daily, not at minute 0 (CD17, rule 8); no Date.now() in queries (CF10)"
+          - "Role table in tests/convex/notes-bin.test.ts: anonymous UNAUTHENTICATED, outsider NOT_FOUND; the owner bins and restores; a reader binning NOTE_FORBIDDEN_ACTION; the GM bins a departed player's 'everyone' page but gets NOT_FOUND for its 'private' page; the purge removes a 31-day-old page with its rows and keeps a 29-day-old one; a second purge run changes nothing"
+          - "UI: the 'Tear out page' -> 'Click again to tear out' button for the page toolbar slot with the board's rip animation and synthesised sound (B8, skipped under reduced motion), a role=status toast 'Page torn out · Undo' for 10 seconds calling restorePage, and the 'Torn-out pages' list in the index column (title, 'N days left', 'Restore')"
+          - "e2e: the GM tears out a page, presses Undo and it is back; tears it out again, finds it under Torn-out pages and restores it; a player who could read the page loses it when it is torn out"
+          - "Visual D11-N7: the tear frame, the toast and the bin list at 1440 and 390 vs notes:tear"
 
-  # ---------------------------------------------------------------- wave 4: end to end, visual, accessibility, docs
+  # ---------------------------------------------------------------- wave 4: players' journals and past journals
   - wave: 4
     tracers:
-      - id: N7
-        title: D11 end to end - GM and players flow, privacy matrix in the browser, 1440 / 390 visual pass, axe, docs and follow-up beads
+      - id: N8
+        title: Journals - the GM opens any player's journal, Past journals of departed characters, departure and rejoin end to end
+        size: M
+        goal: The GM opens any current player's journal and reads every page not hidden from the GM; everyone finds departed characters' journals under Past journals with their non-private pages; the GM can tear those pages out; a rejoin or a return to 'active' restores the previous visibility.
+        depends_on: [N6, N7]
+        owns:
+          - convex/notesJournals.ts
+          - src/components/notes/journals/**
+          - tests/convex/notes-journals.test.ts
+          - tests/e2e/notes-journals.spec.ts
+          - tests/e2e/visual/D11-N8.spec.ts
+          - docs/tasks/TASK-D11-N8.md
+        reads:
+          - convex/lib/notes.ts
+          - convex/lib/journalState.ts
+          - convex/lib/permissions.ts
+          - convex/tables/notes.ts
+          - convex/tables/characters.ts
+          - convex/members.ts
+          - convex/characters.ts
+          - convex/notesBin.ts
+          - convex/notesSharing.ts
+          - src/components/notes/bin/index.tsx
+          - src/components/notes/entries/index.tsx
+          - src/components/notes/slots.ts
+          - src/lib/domain/notes/index.ts
+        acceptance:
+          - "campaignQuery playerJournals (returns validator): for the GM, every present player journal (by_campaign, bounded) named after its character (Q8) with the number of pages the GM can read; for players an empty list (Q2)"
+          - "campaignQuery pastJournals (returns validator): every departed journal (D1) named '<character>’s journal' (account name for an unattached journal of a departed player), with its count of readable pages; for every member (Q12)"
+          - "campaignQuery journalView (journalId; returns validator): the pages of that journal the caller can read (permissionFor per page; private pages of departed journals never; pages hidden from the GM never for the GM), with owner name, departed flag and action flags; another campaign's or unknown journal NOT_FOUND"
+          - "Role table in tests/convex/notes-journals.test.ts: anonymous UNAUTHENTICATED, outsider NOT_FOUND; the GM sees a player's 'gm', 'everyone' and ticked-'chosen' pages but not 'private', 'players' or unticked-'chosen' ones; a player calling playerJournals gets []; after members.removePlayer the player's 'players' and 'gm' pages appear in pastJournals for everyone and the 'private' page for nobody; the same after characters.setStatus 'dead' and 'retired', and not for 'away'; after the player rejoins (joinByCode) or the status returns to 'active' the pages leave pastJournals and their previous visibility applies again; the GM bins a past journal's page (NOTE_JOURNAL_CLOSED for any add)"
+          - "UI: 'Players’ journals' (GM only) and 'Past journals' lists in the journals slot of the index column; opening one shows the journal view (?view=journal&journal=<id>) with '<character>’s Journal', 'read only' / 'Past journal · read only', pages and their entries with the viewer's flags (add row only where allowed; none on past journals), and for the GM a 'Tear out page' on past pages through the bin slot"
+          - "e2e: a player writes a 'players' page and a 'private' page; the GM cannot see either in the player's journal; the GM retires the character: everyone sees the 'players' page under Past journals, nobody the private one; the GM tears it out; the GM sets the character active again and the remaining pages return to the player's journal with their visibility"
+          - "Visual D11-N8: Players’ journals list, a journal view and Past journals at 1440 and 390, judged against the board's tokens"
+
+  # ---------------------------------------------------------------- wave 5: end to end, visual, accessibility, docs
+  - wave: 5
+    tracers:
+      - id: N9
+        title: D11 end to end - GM and players flow, privacy in the browser, 1440 / 390 visual pass, axe, docs and follow-up beads
         size: S
-        goal: One flow proves the GM and two players keep their own journals and see exactly the shared pages the visibility model allows, end to end at 1440 and 390; every region matches the board or a recorded deviation, axe finds no serious issue, and the follow-ups are filed.
-        depends_on: [N4, N5, N6]
+        goal: One flow proves the GM and two players keep their journals and see exactly what the visibility, sharing, added-entry, bin and departure rules allow, end to end at 1440 and 390; every region matches the board or a recorded deviation; axe finds no serious issue; follow-ups are filed.
+        depends_on: [N4, N5, N8]
         owns:
           - src/app/(gm)/campaigns/[campaignId]/notes/page.tsx
           - src/app/(gm)/campaigns/[campaignId]/notes/notes.css
           - tests/e2e/notes-flow.spec.ts
           - tests/e2e/notes-a11y.spec.ts
-          - tests/e2e/visual/D11-N7.spec.ts
-          - docs/tasks/TASK-D11-N7.md
+          - tests/e2e/visual/D11-N9.spec.ts
+          - docs/tasks/TASK-D11-N9.md
         reads:
           - .omc/plans/d11-notes.yaml
           - .omc/autopilot/d11-analysis.md
@@ -415,13 +519,15 @@ waves:
           - convex/notesEntries.ts
           - convex/notesThreads.ts
           - convex/notesSharing.ts
+          - convex/notesBin.ts
+          - convex/notesJournals.ts
           - src/components/notes/**
           - tests/e2e/fixtures.ts
           - reference/designs/project/Notes.dc.html
         acceptance:
-          - "e2e notes-flow at 1440x900 and 390x844: the GM writes on Session 1, migrates a task, checks open threads, shares one page with player A only and one with everyone; players A and B each write in their own journal and share per the visibility options; each browser shows exactly the pages the model allows (A5 chosen vs not chosen, A3 / A4 GM-hidden and players-only), with live updates across two tabs of the same account"
-          - "e2e notes-a11y: axe on the Notes page (page view, threads view, the sharing dialog, a Shared tab, editing an entry): zero serious or critical violations; keyboard-only: add an entry, cycle its bullet, open the sharing dialog and pick an option, switch Shared tabs"
-          - "Visual D11-N7: every notes:<region> at 1440 compared with the board, every 390 shot checked against the 390 rules; the task doc lists each region's verdict and every deliberate deviation (switcher and PIN dropped, Shared section and sharing control added, mobile layout, ARIA fixes)"
+          - "e2e notes-flow at 1440x900 and 390x844: the GM links a session log, writes, migrates a task, shares a page with player A only and one with everyone; A and B write in their character journals, add entries to readable pages (' - <author>' shown), share per the options; each browser shows exactly the allowed pages; a torn-out page disappears for readers and comes back with Undo; B's character retires and B's non-private pages appear under Past journals; live updates across two tabs of one account"
+          - "e2e notes-a11y: axe on page view, threads view, sharing dialog, @ picker, a Shared tab, a journal view and the bin: zero serious or critical violations; keyboard-only: add an entry with a mention, cycle its bullet, open the sharing dialog and pick an option, switch Shared tabs, undo a tear-out"
+          - "Visual D11-N9: every notes:<region> at 1440 compared with the board, every 390 shot checked against the 390 rules; the task doc lists each region's verdict and every deliberate deviation (switcher and PIN dropped; Shared, journals, bin, pickers and download added; session-linked titles; mobile layout; ARIA fixes)"
           - "Any layout fix goes only into C/notes/page.tsx and notes.css; a needed change elsewhere means stop and report"
-          - "Files follow-up beads: authz-matrix entries for every D11 function (D12); D12 backup must export only what the visibility model allows the GM to read and nothing else from players (OQ9); 'Download my journal' if wanted (OQ9); player-to-chosen-players sharing if the user answers OQ4 yes"
+          - "Files follow-up beads: authz-matrix entries for every D11 function (D12); D12 backup carries only what the visibility model lets the GM read and never players' private or players-only pages"
           - "pnpm lint, pnpm typecheck, pnpm test and the full notes e2e set pass"
