@@ -1,5 +1,3 @@
-import { ConvexError } from "convex/values";
-
 import { appError } from "../../src/lib/errors/app-error";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
@@ -73,12 +71,4 @@ async function once<T>(ctx: MutationCtx, args: OnceArgs, run: () => Promise<T>, 
 /** The idempotency behind the keyed wrappers' `ctx.once` (lib/functions.ts): throws `ConvexError<AppError>`. */
 export function runOnce<T>(ctx: MutationCtx, args: OnceArgs, run: () => Promise<T>): Promise<T> {
   return once(ctx, args, run, () => appError("IDEMPOTENCY_MISMATCH"));
-}
-
-/**
- * Legacy form for modules not yet on the keyed wrappers: the same rules, with
- * the string payload `"IDEMPOTENCY_MISMATCH"` their tests still assert.
- */
-export function withIdempotency<T>(ctx: MutationCtx, args: OnceArgs, run: () => Promise<T>): Promise<T> {
-  return once(ctx, args, run, () => new ConvexError("IDEMPOTENCY_MISMATCH"));
 }

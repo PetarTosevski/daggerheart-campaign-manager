@@ -72,8 +72,14 @@ export const roster = campaignQuery({
 });
 
 /** GM view of who can join: pending email invites and the join code. */
+const accessReturns = v.object({
+  joinCode: v.union(v.string(), v.null()),
+  invites: v.array(v.object({ _id: v.id("campaignInvites"), email: v.string(), createdAt: v.number() })),
+});
+
 export const access = gmQuery({
   args: {},
+  returns: accessReturns,
   handler: async (ctx) => {
     // One table's pending invites: a handful of rows.
     const invites = await ctx.db
@@ -90,6 +96,7 @@ export const access = gmQuery({
 export const invite = gmMutation({
   rateLimit: "invite",
   args: { email: v.string() },
+  returns: v.id("campaignInvites"),
   handler: async (ctx, { email: raw }) => {
     const campaignId = ctx.campaign._id;
     const email = normalizeEmail(emailSchema.parse(raw.trim()));
@@ -116,14 +123,16 @@ export const invite = gmMutation({
 
 export const revokeInvite = userMutation({
   args: { inviteId: v.id("campaignInvites") },
+  returns: v.null(),
   handler: async (ctx, { inviteId }) => {
     const invite = await ctx.db.get("campaignInvites", inviteId);
-    if (invite === null) return;
+    if (invite === null) return null;
     // The client sends only the invite; its campaign decides who may revoke it.
     const access = await campaignAccess(ctx, ctx.user, invite.campaignId, "owner");
     if (access === null) throw appError("NOT_FOUND");
     if (access.permission !== "owner") throw appError("FORBIDDEN");
     await ctx.db.delete("campaignInvites", inviteId);
+    return null;
   },
 });
 
@@ -140,10 +149,12 @@ async function removeAccess(ctx: MutationCtx, campaignId: Id<"campaigns">, userI
 
 export const removePlayer = gmMutation({
   args: { userId: v.id("users") },
+  returns: v.null(),
   handler: async (ctx, { userId }) => {
     await removeAccess(ctx, ctx.campaign._id, userId);
     // The removed player may still know the code; replace it.
     if (ctx.campaign.joinCode) await ctx.db.patch("campaigns", ctx.campaign._id, { joinCode: await freshJoinCode(ctx) });
+    return null;
   },
 });
 
@@ -151,15 +162,18 @@ export const removePlayer = gmMutation({
 export const leave = campaignMutation({
   need: "view",
   args: {},
+  returns: v.null(),
   handler: async (ctx) => {
     if (ctx.campaign.ownerId === ctx.user._id) throw appError("INVALID", "The GM can't leave their own campaign.");
     await removeAccess(ctx, ctx.campaign._id, ctx.user._id);
+    return null;
   },
 });
 
 /** Shows (creating on first use) or replaces the campaign's join code. GM only. */
 export const rotateJoinCode = gmMutation({
   args: { replace: v.optional(v.boolean()) },
+  returns: v.string(),
   handler: async (ctx, { replace }) => {
     if (ctx.campaign.joinCode && !replace) return ctx.campaign.joinCode;
     const code = await freshJoinCode(ctx);

@@ -1,5 +1,4 @@
-import { ConvexError } from "convex/values";
-
+import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { normalizeEmail } from "./allowlist";
@@ -257,19 +256,18 @@ export async function campaignAccess(
  * `permissionFor`, requiring `need`: NOT_FOUND without any access (never
  * revealing the resource), FORBIDDEN when too weak. The result is exact up to
  * `enough` (pass "edit" when the caller also tells view from edit).
- * Legacy string payloads, for modules not yet on the wrappers.
  */
 export async function requirePermission(ctx: QueryCtx, user: Doc<"users">, resource: Resource, need: Permission, enough: Permission = need): Promise<Permission> {
   const permission = await permissionFor(ctx, user, resource, enough);
-  if (permission === null) throw new ConvexError("NOT_FOUND");
-  if (!atLeast(permission, need)) throw new ConvexError("FORBIDDEN");
+  if (permission === null) throw appError("NOT_FOUND");
+  if (!atLeast(permission, need)) throw appError("FORBIDDEN");
   return permission;
 }
 
 /** A live (not deleted) campaign, or NOT_FOUND. Access is checked separately (`requirePermission`). */
 export async function liveCampaign(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Doc<"campaigns">> {
   const campaign = await ctx.db.get("campaigns", campaignId);
-  if (campaign === null || campaign.deletedAt !== undefined) throw new ConvexError("NOT_FOUND");
+  if (campaign === null || campaign.deletedAt !== undefined) throw appError("NOT_FOUND");
   return campaign;
 }
 

@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 
 import { applyResourceDelta } from "../src/lib/domain/characters/index";
 import { applyCountdownAction } from "../src/lib/domain/countdowns/index";
@@ -402,7 +402,7 @@ export const attachMapImage = userMutation({
     const meta = await ctx.db.system.get(storageId);
     // Only an unclaimed file may be attached, so the rejections below only ever delete unclaimed files.
     // String payload until upload-claims.test.ts reads codes with `errorCode`.
-    if (meta === null || (await isClaimed(ctx, storageId))) throw new ConvexError("NOT_FOUND");
+    if (meta === null || (await isClaimed(ctx, storageId))) throw appError("NOT_FOUND");
     // A rejected file is deleted and reported without throwing, so the delete isn't rolled back.
     if (!isAllowedImage(meta, MAX_MAP_BYTES)) {
       await ctx.storage.delete(storageId);

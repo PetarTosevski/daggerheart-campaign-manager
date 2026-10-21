@@ -1,5 +1,4 @@
-import { ConvexError } from "convex/values";
-
+import { appError } from "../../src/lib/errors/app-error";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { isAllowedEmail, isAllowedProfile, normalizeEmail, type Env } from "./allowlist";
@@ -30,7 +29,7 @@ export async function createOrUpdateUser(
   const allowed = isPassword
     ? isAllowedEmail(args.profile.email, env)
     : isAllowedProfile(args.profile, env);
-  if (!allowed) throw new ConvexError("FORBIDDEN");
+  if (!allowed) throw appError("FORBIDDEN");
   if (args.existingUserId !== null) return args.existingUserId;
 
   const email = normalizeEmail(args.profile.email as string);
@@ -41,7 +40,7 @@ export async function createOrUpdateUser(
   if (existing !== null) {
     // Same code as "not allowlisted", so sign-up does not reveal which
     // addresses are invited or registered.
-    if (isPassword) throw new ConvexError("FORBIDDEN");
+    if (isPassword) throw appError("FORBIDDEN");
     if (existing.emailVerificationTime === undefined) {
       // A password account was registered for this address before its owner
       // proved ownership; whoever chose that password must not keep access.

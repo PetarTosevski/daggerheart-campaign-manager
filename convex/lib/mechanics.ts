@@ -1,13 +1,13 @@
 import { ConvexError } from "convex/values";
 
-import { RuleError, type AppErrorCode } from "../../src/lib/errors/app-error";
+import { appError, RuleError, type AppErrorCode } from "../../src/lib/errors/app-error";
 import { frameHasMechanic, type ExclusiveMechanic } from "../../src/lib/frames/index";
 import type { Doc } from "../_generated/dataModel";
 
 /** Frame-exclusive mechanics are enforced on the server, not only hidden in the UI. */
 export function assertMechanicEnabled(campaign: Doc<"campaigns">, mechanic: ExclusiveMechanic): void {
   if (!frameHasMechanic(campaign.frameId, mechanic)) {
-    throw new ConvexError("MECHANIC_DISABLED");
+    throw appError("MECHANIC_DISABLED");
   }
 }
 
