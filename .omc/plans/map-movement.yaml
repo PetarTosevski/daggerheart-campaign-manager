@@ -21,6 +21,15 @@
 #      No roll, no block, no turn tracking now.
 #   D6 Fog and secrecy: the server never tells a player about blocking or difficult squares they haven't explored beyond what the
 #      refusal itself reveals (MOVE_BLOCKED carries no position).
+# USER ANSWER (2026-10-21, binding): "doors need to be able to be opened and closed. closed doors block opened doors do not. add a
+#   switch similar to light campfire to open the doors. closed doors also block sights".
+#   D7 Doors: catalog `move: "door"` items (dungeon wooden door, portcullis section, crypt gate, sewers iron gate, grassland wooden
+#      gate, village fence gate) and a new Classic kind `door`. Map objects gain optional `open` (absent = closed). Closed blocks
+#      movement; open never blocks. Sight: a closed SOLID door (wooden door, Classic door) blocks sight; bars and gates (portcullis,
+#      crypt gate, iron gate, wooden gates) block movement when closed but stay see-through (cover) - default, reported to the user.
+#   D8 The switch works like the light switch (combatVision.toggleLight): the GM always; a player only on the live map when one of
+#      their characters has seen the door. Open is drawn as the door swung 90 degrees on its hinge edge (or a paired open sprite when
+#      the catalog has one); closed as placed.
 plan: map-movement
 waves:
   - wave: 1
@@ -55,11 +64,39 @@ waves:
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
   - wave: 2
     tracers:
+      - id: M2
+        title: Doors - open/closed field, the door switch like the light switch, closed doors block sight and movement, Classic door kind
+        size: M
+        goal: Map doors open and close (D7, D8) on the server, in vision and from the vision panel; M1 draws them.
+        depends_on: [M0]
+        owns:
+          - convex/lib/validators/combatMaps.ts
+          - convex/combatVision.ts
+          - convex/lib/combatVision.ts
+          - src/lib/domain/combat-map/spec.ts
+          - src/lib/domain/combat-map/sight.ts
+          - src/lib/domain/combat-map/vision.ts
+          - src/components/combat-map/vision/**
+          - tests/convex/combat-doors.test.ts
+          - tests/unit/combat-doors.test.ts
+          - docs/tasks/TASK-MV-M2.md
+        reads:
+          - docs/tasks/TASK-MV-M0.md
+          - src/lib/domain/combat-map/movement.ts
+          - src/lib/sprite-packs/**
+        acceptance:
+          - "combatMapObjects gain optional `open` (widen only); OBJECT_KINDS gains `door` (widen the validator; Classic kinds stay valid); door sprites map to Classic `door`"
+          - "combatVision.toggleDoor {objectId, open}: GM always; a player only on the live map after one of their characters has seen it (same rule as toggleLight); INVALID for a non-door; role tests (anonymous, outsider, player who has / hasn't seen it, GM) assert ConvexError.data.code"
+          - "Vision: a closed solid door blocks sight, an open one doesn't, bars/gates stay cover; movement (M0) reads `open`; unit and Convex tests for both, incl. a player's view through an opened door"
+          - "The vision panel lists doors the viewer can see with an Open / Close switch beside the light switches; optimistic; a player sees only doors they've seen"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  - wave: 3
+    tracers:
       - id: M1
         title: Movement on the map - blocked moves stop with feedback, the GM warning, difficult squares hatched, the token's movement-roll note
         size: M
-        goal: The token layer and map view show M0's rules (D3, D5) for drag and keyboard moves, players and GM.
-        depends_on: [M0]
+        goal: The token layer and map view show M0's rules (D3, D5) for drag and keyboard moves, players and GM, and draw doors open or closed (D8). Starts after sprite P6 is merged.
+        depends_on: [M0, M2]
         owns:
           - src/components/combat-map/tokens/**
           - src/components/combat-map/map-view/movement-overlay.tsx
@@ -76,4 +113,5 @@ waves:
           - "A player's drag or arrow/WASD step into a wall or building snaps back (optimistic move rolled back on MOVE_BLOCKED) with a short polite 'Blocked' announcement (aria-live); the GM's move goes through with a visible warning"
           - "Difficult squares the viewer can see are hatched in Classic and Sprites styles; a token that crossed or ends on one shows the D5 note on its card for its owner and the GM; reduced motion respected"
           - "e2e at 1440 and 390: a player can't walk through a wall or a cottage, can walk through a gate, gets the difficult note in a garden plot; the GM can move through a wall with the warning; screenshots of the hatch in both styles"
+          - "Doors are drawn closed or swung open in Classic and Sprites; clicking a door the viewer may switch toggles it (same rule as M2); e2e: a player opens a closed door, walks and sees through it, closes it again"
           - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
