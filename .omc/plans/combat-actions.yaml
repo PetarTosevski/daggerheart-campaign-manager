@@ -81,6 +81,10 @@
 #   'takes double (magic|fire) damage' and the damage-halving reactions (Vampire Mistform, Flickerfly, Crimson Lepus) as features;
 #   CA2's conditional entries stay as GM toggles only where the condition isn't trackable (underground, within stone, cloud form);
 #   Phoenix's Smoldering Egg is a conditional entry on the same instance.
+# USER ANSWERS Q17-Q19 (2026-10-21, binding): Q17 (a) the reaction window closes when the target chose armor and every eligible
+#   ally answered Use/Pass; the GM can 'Resolve now' anytime; no timer. Q18 (a) with no live map the GM targets PCs from the party
+#   list with no range or line-of-sight restrictions. Q19 (a) Fear spent only on the GM's tap; Fear-cost features and a second
+#   spotlight ask first; optional ones are a one-tap prompt defaulting to No; Fear gains automatic. Plan status: APPROVED.
 plan: combat-actions
 waves:
   # ---------------------------------------------------------------- wave 1: foundation, resistance table
