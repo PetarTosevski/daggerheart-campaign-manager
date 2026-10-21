@@ -157,6 +157,9 @@
 #   Automatic. Automatic = option (a): it ticks once when a long rest finishes (an interrupted rest doesn't count). Reminder = option
 #   (c): finishing the long rest only reminds the GM ("Tick <name>?" with a one-click tick), nothing moves by itself.
 #   Owned by K4 (long-term) with the field in K0's data model (e.g. `restMode: "auto" | "remind"`, optional, absent = auto).
+# USER ANSWERS Q-K3-1 and K4-Q1 (2026-10-21, binding): defaults. A chase follows the advancement table (a failure with Fear ticks
+#   the consequence side 3; the book's "3 to 1" example is treated as a typo). An unarmed long-term countdown does nothing after a
+#   long rest; Armed + Automatic ticks once, Armed + Reminder only reminds.
 # QUESTIONS (defaults apply once the user accepts them; cited as Qn):
 #   Q1  Which rolls advance a standard or dynamic countdown? (a) only rolls the GM applies afterwards from the roll feed ('Tick
 #       countdowns' on an action-roll row); (b) armed countdowns tick automatically on every counted PC action roll (D2) while armed;
