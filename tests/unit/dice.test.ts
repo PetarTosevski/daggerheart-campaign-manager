@@ -158,7 +158,9 @@ describe("roll options (class-feature hooks)", () => {
     const s = sheet({ heldDice: [{ id: "r1", kind: "rally", sides: 8, until: "session" }] });
     const out = applyRollOptions(s, options, ["rally", "sneak"]);
     expect(out.modifier).toBe(1);
-    expect(out.extraDice).toEqual([{ count: 1, sides: 8 }, { count: 1, sides: 6 }]);
+    // Sneak Attack is a damage die; the Rally Die is a named die (a critical maxes only the first, CB 98).
+    expect(out.extraDice).toEqual([{ count: 1, sides: 6 }]);
+    expect(out.namedDice).toEqual([{ count: 1, sides: 8 }]);
     expect(out.sheet.heldDice).toEqual([]);
     expect(out.sheet.featureUses).toEqual([{ key: "sneak", until: "rest" }]);
     expect(() => applyRollOptions(out.sheet, options, ["sneak"])).toThrow(DiceRuleError);
@@ -203,10 +205,12 @@ describe("integration (D5 TI-a)", () => {
     ]);
   });
 
-  it("a critical maxes option bonus dice too (CB 98), after critBase or the base dice", () => {
+  it("a critical maxes every damage die, feature dice included (Sneak Attack), but not named dice (a Rally Die) (CB 98; user 2026-10-21)", () => {
     const plain = rollDamage({ dice: [{ count: 1, sides: 8 }], flat: 1, critical: true, bonusDice: [{ count: 1, sides: 6 }] }, seq(2, 3));
     expect(plain.dice.map((d) => d.sides)).toEqual([8, 6]);
     expect(plain.total).toBe(8 + 6 + 2 + 3 + 1);
+    const rally = rollDamage({ dice: [{ count: 1, sides: 8 }], flat: 0, critical: true, namedDice: [{ count: 1, sides: 6 }] }, seq(2, 3));
+    expect(rally.total).toBe(8 + 2 + 3);
     expect(rollDamage({ dice: [{ count: 1, sides: 8 }], flat: 0, critical: false, bonusDice: [{ count: 1, sides: 6 }] }, seq(2, 3)).total).toBe(5);
   });
 

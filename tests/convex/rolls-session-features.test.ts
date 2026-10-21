@@ -207,9 +207,9 @@ describe("rolls session features: Slayer Dice (CB 48, U2, U3)", () => {
     expect(hit.roll.dice).toHaveLength(3);
     expect(hit.roll.total).toBe(3 + 8 + hit.roll.dice[2]!.value + hit.roll.modifier);
     expect((await sheetOf(slayer)).sessionFeatures?.slayerDice).toBe(1);
-    // A critical damage roll adds the Slayer die's maximum too (like the option dice).
+    // A critical maxes the damage dice; a Slayer Die is a named die, not a damage die, and rolls normally (CB 48, 98; user 2026-10-21).
     const crit = await p1.mutation(api.rolls.manualRoll, { characterId: slayer, roll: { ...d6, critical: true, kind: "damage", slayerDice: 1 }, values: [2], idempotencyKey: key() });
-    expect(crit.roll.modifier).toBe(dmg.roll.modifier + 6 + 6);
+    expect(crit.roll.modifier).toBe(dmg.roll.modifier + 6);
     expect(crit.roll.total).toBe(2 + crit.roll.dice[1]!.value + crit.roll.modifier);
     // Refusals: not an attack, a reaction roll, more than held, a character without Slayer.
     await edit(slayer, { sessionFeatures: { slayerDice: 1 } });

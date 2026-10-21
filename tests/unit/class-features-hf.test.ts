@@ -217,7 +217,7 @@ describe("Warlock (HF 14)", () => {
     expect(options).toEqual([{ key: "patronDie", label: "Patron Die (d6)", effect: { kind: "heldDie", heldDieId: "patron-die" } }]);
     expect(rollOptions(called, "damage")).toEqual([]);
     const applied = applyRollOptions(called, options, ["patronDie"]);
-    expect(applied.extraDice).toEqual([{ count: 1, sides: 6 }]);
+    expect(applied.namedDice).toEqual([{ count: 1, sides: 6 }]);
     expect(applied.sheet.heldDice).toEqual([]);
 
     expect(act(sheetOf("warlock", { level: 5 }), "patronsPact").sheet.heldDice[0]!.sides).toBe(8);

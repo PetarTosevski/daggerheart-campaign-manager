@@ -215,7 +215,7 @@ function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: Feature
       advantage: args.advantage + opts.advantage + (ikonis?.advantage ? 1 : 0),
       disadvantage: args.disadvantage,
       help: args.help,
-      extraDice: opts.extraDice,
+      extraDice: [...opts.extraDice, ...opts.namedDice],
       // Slayer Dice come last, already rolled by the server rng (a manual roll types in only its own dice).
       fixedDice: [...opts.fixedDice, ...spent.slayer],
     },
@@ -335,7 +335,7 @@ function magicDamage(sheet: CharacterSheet, source: DamageSource, overrides: rea
 /**
  * The damage dice of a source: weapon dice at Proficiency (CB 98), a class
  * override, the Ikonis, or dice as given. Option dice are bonus dice, so a
- * critical maxes them too (CB 98).
+ * critical maxes feature damage dice (Sneak Attack) but not named held dice (a Rally Die; CB 98, user 2026-10-21).
  */
 function prepareDamage(sheet: CharacterSheet, args: DamageArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DamageInput; label: string } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
@@ -351,7 +351,7 @@ function prepareDamage(sheet: CharacterSheet, args: DamageArgs, scope: FeatureSc
   const opts = applyRollOptions(sheet, available, args.options);
   const live = withEffects(sheet);
   const fixed = opts.fixedDice.reduce((s, d) => s + d.value, 0);
-  const base = { critical: args.critical, bonusDice: opts.extraDice };
+  const base = { critical: args.critical, bonusDice: opts.extraDice, namedDice: opts.namedDice };
   const extra = args.modifier + opts.modifier + fixed;
   let input: DamageInput;
   let label: string;
@@ -381,14 +381,13 @@ function prepareDamage(sheet: CharacterSheet, args: DamageArgs, scope: FeatureSc
 
 /**
  * Adds spent Slayer Dice to a damage roll as extra d6s (K2: "rolling them and adding their result to the roll").
- * Like the option dice, a critical adds their maximum too (CB 98, `rollDamage`'s bonus dice).
+ * A critical does not max them: it maxes the damage dice only (CB 98; user 2026-10-21).
  */
-function withSlayerDamage(roll: RollRecord, slayer: readonly { sides: number; value: number }[], critical: boolean): RollRecord {
+function withSlayerDamage(roll: RollRecord, slayer: readonly { sides: number; value: number }[]): RollRecord {
   if (slayer.length === 0) return roll;
   const dice = [...roll.dice, ...slayer.map((d) => ({ ...d, role: "extra" as const }))];
-  const modifier = roll.modifier + (critical ? slayer.reduce((s, d) => s + d.sides, 0) : 0);
-  const total = Math.max(0, dice.reduce((s, d) => s + d.value, 0) + modifier);
-  return { ...roll, dice, modifier, total };
+  const total = Math.max(0, dice.reduce((s, d) => s + d.value, 0) + roll.modifier);
+  return { ...roll, dice, total };
 }
 
 async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DamageArgs, rng: Rng, manual: boolean) {
@@ -397,7 +396,7 @@ async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded,
   const ikonis = args.source.kind === "ikonis" ? await loadIkonis(ctx, campaign, character, sheet) : null;
   const { paid, input, label } = rules(() => prepareDamage(sheet, args, scopeOf(campaign), ikonis));
   const slayer = rollSlayerDice(args.slayerDice ?? 0);
-  const roll: RollRecord = withSlayerDamage({ ...rules(() => rollDamage(input, rng)), manual }, slayer, args.critical);
+  const roll: RollRecord = withSlayerDamage({ ...rules(() => rollDamage(input, rng)), manual }, slayer);
   const critical = !args.critical ? "" : (await criticalRolled(ctx, character._id)) ? "critical " : "critical (declared) ";
   const sheetChanged = changed(sheet, paid);
   if (sheetChanged) await saveSheet(ctx, character._id, paid);
