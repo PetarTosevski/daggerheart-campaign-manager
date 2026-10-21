@@ -102,6 +102,7 @@ import type * as sessionRecords from "../sessionRecords.js";
 import type * as sessionWrap from "../sessionWrap.js";
 import type * as sessions from "../sessions.js";
 import type * as settings from "../settings.js";
+import type * as spritePacks from "../spritePacks.js";
 import type * as tables_actionLog from "../tables/actionLog.js";
 import type * as tables_campaigns from "../tables/campaigns.js";
 import type * as tables_characters from "../tables/characters.js";
@@ -228,6 +229,7 @@ declare const fullApi: ApiFromModules<{
   sessionWrap: typeof sessionWrap;
   sessions: typeof sessions;
   settings: typeof settings;
+  spritePacks: typeof spritePacks;
   "tables/actionLog": typeof tables_actionLog;
   "tables/campaigns": typeof tables_campaigns;
   "tables/characters": typeof tables_characters;
