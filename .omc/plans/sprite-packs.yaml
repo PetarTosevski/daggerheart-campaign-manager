@@ -91,6 +91,12 @@
 #       never proof of access.
 #   E8  Duplicating a map copies its new fields too (style, setting, texture palette, sprite and texture refs, texture cells).
 #
+# ORCHESTRATOR NOTE (2026-10-21, after P3 merged): light can now come from a sprite's traits (`givesLight`, `mapLightReach` in
+#   src/lib/domain/combat-map/light.ts; trait "faintglow" clear 1 / dim 3). Every place that asks "is this a switchable light?"
+#   must use givesLight({kind, lit, traits}) instead of the Classic kind alone: convex/combatVision.ts toggleLight (P0 or P5),
+#   src/components/combat-map/editor/edit-model.ts isSwitchableLight and edit-tools-panel.tsx's reach label via mapLightReach (P9),
+#   and the play-mode light switches in src/components/combat-map/vision/vision-layer.tsx (P6). P5 passes resolved traits and `rot`
+#   on every object given to prepareMap (convex/lib/combatVision.ts).
 # QUESTIONS (ANSWERED by the user 2026-10-21; binding):
 #   ANSWER Q1 = (b): the torch-like and campfire-like kinds of (a), PLUS a new "faint glow" map-light reach for things that only
 #       glow (candles, candelabra, glowing mushrooms, luminous moss, crystals, wisps, lava, glowing lichen...): FAINT_GLOW_REACH =
@@ -206,6 +212,8 @@ waves:
         goal: The new map, area, object and cell fields and the spritePacks / spritePackSprites tables exist, are read back by every existing map query without error, are copied by duplicate and purged with their campaign; the error codes, the spriteUpload rate limit and the "sprite" files kind are wired; the Combat Map page mounts the StyleSwitch and PacksLink stubs and /campaigns/<id>/combat-map/packs opens a GM-only shell.
         depends_on: []
         owns:
+          # Added 2026-10-21: the cell layer widening needs decodeCells to know the texture layer.
+          - src/components/combat-map/map-view/cells.ts
           - package.json
           - pnpm-lock.yaml
           - tsconfig.json
