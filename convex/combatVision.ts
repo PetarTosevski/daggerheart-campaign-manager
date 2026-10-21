@@ -8,7 +8,6 @@ import {
   mergeExplored,
   pointLevel,
   visibleSquares,
-  type LightTrait,
 } from "../src/lib/domain/combat-map/index";
 import { appError } from "../src/lib/errors/app-error";
 import { tokenViewValidator } from "./combatTokens";
@@ -41,6 +40,7 @@ import {
   type ViewResult,
 } from "./lib/combatVision";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery } from "./lib/functions";
+import { loadObjectTraits } from "./lib/spriteSources";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
 import { carriedLightValidator } from "./lib/validators/combatMaps";
 
@@ -305,7 +305,7 @@ export const toggleLight = campaignMutation({
   returns: v.object({ lit: v.boolean() }),
   handler: async (ctx, { objectId, lit }) => {
     const { object, map } = await loadCombatObject(ctx, ctx.campaign._id, objectId);
-    const traits = await objectLightTraits(ctx, object);
+    const traits = await loadObjectTraits(ctx, ctx.campaign._id, object);
     if (!givesLight({ kind: object.kind, lit: object.lit, traits })) throw appError("INVALID", "Only map lights can be lit.");
     if (!atLeast(ctx.permission, "owner")) {
       if (!map.live) throw appError("COMBAT_MAP_NOT_FOUND");
@@ -315,18 +315,6 @@ export const toggleLight = campaignMutation({
     return { lit };
   },
 });
-
-/**
- * The light trait of an object's sprite, for `givesLight` (sprite packs Q1, plan ORCHESTRATOR NOTE): an uploaded
- * sprite's row of this campaign gives its `light`; null otherwise, so the Classic kind decides (D2). A built-in
- * sprite's trait comes from the catalog (P1), which P5 wires in here (`spriteTraits`); until then a built-in
- * sprite's Classic kind decides, which D2 makes equal for torch and campfire sprites. A deleted sprite is null (D9).
- */
-async function objectLightTraits(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, object: Doc<"combatMapObjects">): Promise<{ light: LightTrait } | null> {
-  if (object.sprite === undefined || !("uploaded" in object.sprite)) return null;
-  const sprite = await ctx.db.get("spritePackSprites", object.sprite.uploaded);
-  return sprite !== null && sprite.campaignId === ctx.campaign._id ? { light: sprite.light } : null;
-}
 
 /** Whether a character the caller plays (edit permission) on this map sees the object now or has explored its square. */
 async function hasSeen(ctx: CampaignCtx<MutationCtx>, map: Doc<"combatMaps">, object: Doc<"combatMapObjects">): Promise<boolean> {
