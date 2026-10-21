@@ -1,6 +1,6 @@
 // Built-in catalog: town street and market (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, obj, tex } from "./types";
+import { defineFolder, long, obj, tex } from "./types";
 
 export const TOWN_STREET_AND_MARKET = defineFolder("town-street-and-market", {
   props: [
@@ -38,4 +38,20 @@ export const TOWN_STREET_AND_MARKET = defineFolder("town-street-and-market", {
     tex("muddy street", "dirt", true),
     tex("market plaza tiles", "stone", false),
   ],
+  // The village sheet (large-2.jpg, tracer P4V): new items, not variants. Sizes in squares, against the town's
+  // 2 x 2 house corner and wagon: cottages 3 x 3, the barn 3 x 4, fence and gate 3 x 1, garden plot 3 x 3,
+  // haystack and coop 2 x 2, woodpile 2 x 1. No movement trait exists: walls and fences are told apart by sight.
+  extras: {
+    "large-2": [
+      obj("thatched cottage", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("stone cottage", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("timber barn", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 4, standIn: false }),
+      obj("wooden fence section", "cover", "low", "log", { footprint: "rect", w: 3, h: 1, standIn: false }),
+      obj("wooden fence gate", "cover", "low", "log", { footprint: "rect", w: 3, h: 1, standIn: false }),
+      obj("vegetable garden plot", "none", "flat", "rubble", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("haystack", "block", "tall", "boulder", { standIn: false }),
+      long("woodpile with chopping block", "cover", "low", "log", { standIn: false }),
+      obj("chicken coop with fenced run", "cover", "low", "crate", { footprint: "rect", standIn: false }),
+    ],
+  },
 });

@@ -19,6 +19,10 @@
  *             leans magenta is faded out (never on purple objects).
  *   unmix     cut indices re-keyed from the sheet by unmixing the magenta
  *             (thin light strands: spider webs, nets), without erosion.
+ *   untint    {cutIndex: [[x0, y0, x1, y1], ...]}: inside these areas
+ *             (fractions of the cut) rose and pink pixels of an opaque
+ *             pink-tinted fill (the coop netting) become a warm grey-brown,
+ *             alpha kept.
  *   rotate    {cutIndex: 90 | 180 | 270}: rotate a cut clockwise (a 2 x 1
  *             item drawn upright).
  *   note      free text shown in the report.
@@ -37,6 +41,7 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 
 const indexList = z.array(z.number().int().min(0));
+const fraction = z.number().min(0).max(1);
 
 export const sheetOverrideSchema = z
   .object({
@@ -46,6 +51,7 @@ export const sheetOverrideSchema = z
     order: indexList.optional(),
     unpink: indexList.optional(),
     unmix: indexList.optional(),
+    untint: z.record(z.string().regex(/^\d+$/), z.array(z.tuple([fraction, fraction, fraction, fraction])).min(1)).optional(),
     rotate: z.record(z.string().regex(/^\d+$/), z.union([z.literal(90), z.literal(180), z.literal(270)])).optional(),
     note: z.string().optional(),
   })
@@ -81,6 +87,7 @@ export function activeOverride(overrides: Overrides, id: string, found: number):
     if (ov.order) active.order = ov.order;
     if (ov.variants) active.variants = { ...active.variants, ...ov.variants };
     if (ov.rotate) active.rotate = { ...active.rotate, ...ov.rotate };
+    if (ov.untint) active.untint = { ...active.untint, ...ov.untint };
   }
   return { active, notes };
 }

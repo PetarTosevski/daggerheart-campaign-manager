@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { BUILTIN_LOOKUP, BUILTIN_MANIFEST, builtinSpriteUrl } from "../../src/lib/sprite-packs/builtin";
 import { CATALOG_ENTRIES } from "../../src/lib/sprite-packs/catalog";
 import { builtinManifestSchema, type ManifestFile } from "../../src/lib/sprite-packs/manifest";
+import { untint } from "../../scripts/sprite-packs/lib/pipeline";
 
 const ROOT = resolve(__dirname, "../..");
 const PUBLIC = join(ROOT, "public/sprite-packs");
@@ -125,5 +126,27 @@ describe("public/sprite-packs", () => {
   it("never tracks a raw sheet under sprite-sheets/", () => {
     const tracked = execFileSync("git", ["ls-files", "sprite-sheets"], { cwd: ROOT, encoding: "utf8" }).trim();
     expect(tracked).toBe("");
+  });
+});
+
+describe("the village extra sheet (tracer P4V)", () => {
+  it("holds 589 sprites, nine of them from town-street-and-market/large-2", () => {
+    expect(sprites).toHaveLength(589);
+    const village = CATALOG_ENTRIES.filter((e) => e.extraSheet === "large-2").map((e) => e.key);
+    expect(village).toHaveLength(9);
+    for (const key of village) expect(BUILTIN_LOOKUP.get(key)?.art, key).not.toBeNull();
+  });
+
+  it("untint turns rose pixels inside its areas warm grey-brown and leaves brown wood and everything outside alone", () => {
+    const px = (rgba: number[][]) => ({ width: rgba.length, height: 1, data: new Uint8ClampedArray(rgba.flat()) });
+    const rose = [177, 110, 102, 255];
+    const wood = [150, 110, 70, 255];
+    const out = untint(px([rose, wood, rose, rose]), [[0, 0, 0.75, 1]]);
+    const [r = 0, g = 0, b = 0, a = 0] = out.data.slice(0, 4);
+    expect(r - g).toBeLessThan(25);
+    expect(b).toBeLessThan(g);
+    expect(a).toBe(255);
+    expect([...out.data.slice(4, 8)]).toEqual(wood);
+    expect([...out.data.slice(12, 16)]).toEqual(rose);
   });
 });

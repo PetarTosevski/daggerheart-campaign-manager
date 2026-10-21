@@ -160,6 +160,41 @@ export function unpink(img: RgbaImage): RgbaImage {
 }
 
 /**
+ * Take a pink tint out of an opaque area (the chicken coop's netting, drawn
+ * as a rose-brown fill because the generator mixed the magenta into it): every
+ * pixel whose blue reaches UNTINT_BLUE of its green while red dominates (rose,
+ * salmon, pink; browns have blue well below green) is pulled toward its own
+ * luminance by UNTINT_DESAT and its blue capped at UNTINT_WARM of the green,
+ * which turns rose into a warm grey-brown. Alpha is kept. Applied only inside
+ * the areas an override names (fractions of the cut, [x0, y0, x1, y1]),
+ * because brown wood next to the tinted area passes the same colour test.
+ */
+const UNTINT_BLUE = 0.8;
+const UNTINT_DESAT = 0.75;
+const UNTINT_WARM = 0.88;
+export type UntintArea = readonly [number, number, number, number];
+export function untint(img: RgbaImage, areas: readonly UntintArea[]): RgbaImage {
+  const data = new Uint8ClampedArray(img.data);
+  const inside = (x: number, y: number) =>
+    areas.some(([x0, y0, x1, y1]) => x >= x0 * img.width && x < x1 * img.width && y >= y0 * img.height && y < y1 * img.height);
+  for (let i = 0; i < data.length; i += 4) {
+    if ((data[i + 3] ?? 0) === 0) continue;
+    const p = i / 4;
+    if (!inside(p % img.width, Math.floor(p / img.width))) continue;
+    const r = data[i] ?? 0;
+    const g = data[i + 1] ?? 0;
+    const b = data[i + 2] ?? 0;
+    if (r <= g || b < g * UNTINT_BLUE) continue;
+    const y = 0.299 * r + 0.587 * g + 0.114 * b;
+    const ng = g + (y - g) * UNTINT_DESAT;
+    data[i] = r + (y - r) * UNTINT_DESAT;
+    data[i + 1] = ng;
+    data[i + 2] = Math.min(b + (y - b) * UNTINT_DESAT, ng * UNTINT_WARM);
+  }
+  return { width: img.width, height: img.height, data };
+}
+
+/**
  * Re-key a cut from the original sheet by unmixing it from the magenta
  * background, for thin light strands (spider webs, nets) that the normal key
  * and erosion remove: each pixel is read as object colour over #FF00FF, so
@@ -353,6 +388,13 @@ export async function processFolder(src: string, folderId: string, overrides: Ov
       if (!cut) throw new Error(`overrides ${id}: unpink #${i + 1} has no cut`);
       cuts[i] = unpink(cut);
       result.overrideNotes.push(`#${i + 1}: pink aura removed (unpink)`);
+    }
+    for (const [k, areas] of Object.entries(active.untint ?? {})) {
+      const i = Number(k);
+      const cut = cuts[i];
+      if (!cut) throw new Error(`overrides ${id}: untint #${i + 1} has no cut`);
+      cuts[i] = untint(cut, areas);
+      result.overrideNotes.push(`#${i + 1}: pink tint taken out (untint)`);
     }
     for (const [k, deg] of Object.entries(active.rotate ?? {})) {
       const i = Number(k);

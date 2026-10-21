@@ -28,6 +28,7 @@ import {
   tex,
   createSpriteLookup,
   folderEntries,
+  folderOfKey,
   isSettingId,
   pickSetting,
   pickSprite,
@@ -136,14 +137,15 @@ describe("catalog vs docs/sprite-packs/prompts.md", () => {
     expect(extras).toEqual(doc.extras);
   });
 
-  it("no extra sheet exists today, so the catalog has no extra-sheet items", () => {
-    expect(CATALOG_ENTRIES.filter((e) => e.extraSheet !== undefined)).toEqual([]);
+  it("the one extra sheet today is the village sheet (town-street-and-market/large-2, P4V) with nine items", () => {
+    const extra = CATALOG_ENTRIES.filter((e) => e.extraSheet !== undefined);
+    expect(extra.map((e) => `${folderOfKey(e.key)}/${e.extraSheet}`)).toEqual(Array(9).fill("town-street-and-market/large-2"));
   });
 
   it("keys are unique and match <folder>/<slug> (D8)", () => {
     const keys = CATALOG_ENTRIES.map((e) => e.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys).toHaveLength(20 * (16 + 9 + 4));
+    expect(keys).toHaveLength(20 * (16 + 9 + 4) + 9);
     for (const key of keys) expect(key).toMatch(/^[a-z0-9-]+\/[a-z0-9-]+$/);
     expect(catalogEntry("forest/oak-tree")?.name).toBe("oak tree");
     expect(catalogEntry("swamp/will-o-wisp-light")?.name).toBe("will-o'-wisp light");
@@ -202,14 +204,16 @@ describe("extra sheets: new items, not variants (user answer 2026-10-21)", () =>
 });
 
 describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
-  it("sizes are within 1..4; props 1 x 1, large 2 x 2 or long 2 x 1 rect, textures TEXTURE_SQUARES (D4)", () => {
+  it("sizes are within 1..4; props 1 x 1, large 2 x 2 or long 2 x 1 rect (extra-sheet items: any rect size), textures TEXTURE_SQUARES (D4)", () => {
     for (const e of CATALOG_ENTRIES) {
       for (const side of [e.w, e.h]) {
         expect(side).toBeGreaterThanOrEqual(SPRITE_SIZE_MIN);
         expect(side).toBeLessThanOrEqual(SPRITE_SIZE_MAX);
       }
       if (e.sheet === "props") expect([e.w, e.h]).toEqual([1, 1]);
-      if (e.sheet === "large") {
+      if (e.sheet === "large" && e.extraSheet) {
+        if (e.w !== e.h) expect(e.footprint).toBe("rect");
+      } else if (e.sheet === "large") {
         expect([[2, 2], [2, 1]]).toContainEqual([e.w, e.h]);
         if (e.h === 1) expect(e.footprint).toBe("rect");
       }
@@ -312,6 +316,28 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
     expect(catalogEntry("sewers/sewer-channel-two-squares")).toBeNull();
     expect(catalogEntry("forest/thick-hedge")).toMatchObject({ w: 2, h: 1, footprint: "rect", sight: "block", height: "tall" });
     expect(catalogEntry("temple/pew-row")).toMatchObject({ w: 2, h: 2, footprint: "rect", sight: "cover", height: "low" });
+  });
+
+  it("the village sheet's nine items (P4V): buildings block sight, fence and gate are cover, the garden plot is flat", () => {
+    const village = entriesOnSheet(CATALOG["town-street-and-market"].large, "large-2");
+    expect(village.map((e) => [e.key.split("/")[1], e.index, e.w, e.h, e.sight, e.height, e.footprint, e.light])).toEqual([
+      ["thatched-cottage", 0, 3, 3, "block", "tall", "rect", "none"],
+      ["stone-cottage", 1, 3, 3, "block", "tall", "rect", "none"],
+      ["timber-barn", 2, 3, 4, "block", "tall", "rect", "none"],
+      ["wooden-fence-section", 3, 3, 1, "cover", "low", "rect", "none"],
+      ["wooden-fence-gate", 4, 3, 1, "cover", "low", "rect", "none"],
+      ["vegetable-garden-plot", 5, 3, 3, "none", "flat", "rect", "none"],
+      ["haystack", 6, 2, 2, "block", "tall", "circle", "none"],
+      ["woodpile-with-chopping-block", 7, 2, 1, "cover", "low", "rect", "none"],
+      ["chicken-coop-with-fenced-run", 8, 2, 2, "cover", "low", "rect", "none"],
+    ]);
+    for (const e of village) expect(e.category === "object" && e.standIn, e.key).toBe(false);
+    // The town haystack matches grassland-and-road's haystack (its nearest existing kind).
+    const traits = (key: string) => {
+      const e = catalogEntry(key);
+      return e && e.category === "object" ? [e.w, e.h, e.sight, e.height, e.footprint, e.light, e.classic, e.standIn] : null;
+    };
+    expect(traits("town-street-and-market/haystack")).toEqual(traits("grassland-and-road/haystack"));
   });
 });
 

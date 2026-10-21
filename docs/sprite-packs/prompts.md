@@ -24,7 +24,8 @@ docs/tasks/TASK-SP-P4.md). GM uploads and the painter using the sprites are plan
   folder's files and manifest entries change; keys (`<folder>/<slug>`) stay, so placed objects keep working.
 - **Fixes the cutter cannot decide** go in `scripts/sprite-packs/overrides.json` (format in
   `scripts/sprite-packs/lib/overrides.ts`): skip a cut, reorder, name an extra cut as a numbered variant of an
-  item, remove a pink glow (`unpink`), keep thin web strands (`unmix`), rotate a long item drawn upright. A
+  item, remove a pink glow (`unpink`), keep thin web strands (`unmix`), turn an opaque pink-tinted fill
+  inside given areas warm grey-brown (`untint`), rotate a long item drawn upright. A
   `when: {found: n}` override applies only while the cutter finds n cuts, so it goes quiet on a regenerated sheet.
   The cut indices are 0-based (the report's #n is index n-1).
 - **Extra sheets:** a file named `<props|large|terrain>-<anything>` (e.g. `town-street-and-market/large-2.jpg`)
@@ -32,7 +33,8 @@ docs/tasks/TASK-SP-P4.md). GM uploads and the painter using the sprites are plan
   `- large-2: cottage · garden fence · …` under the setting below and the same names, in reading order, under
   `extras: { "large-2": [...] }` in `src/lib/sprite-packs/catalog/<folder>.ts`; the cutter then names the sheet's
   cuts from that list. `overrides.json` can still name a cut as a numbered variant of an existing item; any other
-  cut is listed in the report as unassigned. No extra sheet exists today.
+  cut is listed in the report as unassigned. One extra sheet exists: `town-street-and-market/large-2` (the
+  village, tracer P4V, docs/tasks/TASK-SP-P4V.md); items on an extra sheet may be any size up to 4 x 4.
 - **Tolerances:** a flat outer frame of any colour around a terrain sheet (the white one) is found and cut off,
   and the swatches are inset past the JPEG bleed; thin drawn grid lines (up to about 12 px at 2048) are removed
   before cutting, and dark-magenta grid lines key out with the background. Soft glows and smoke over magenta keep
@@ -170,6 +172,7 @@ Each setting has three sheets. Lists are in grid order (left to right, top to bo
 ### town street and market
 - props: market crate of apples · fish barrel · vegetable stall basket · street lamp · well bucket · bench · cart (handcart) · crate stack · pottery jars · bolt of cloth · sign post · trash pile · chicken · dog · rain barrel · flower box
 - large: market stall with awning · fountain · town well · statue on a plinth · house corner · blacksmith forge · wagon · large tree in a planter · guard post
+- large-2: thatched cottage · stone cottage · timber barn · wooden fence section · wooden fence gate · vegetable garden plot · haystack · woodpile with chopping block · chicken coop with fenced run
 - terrain: cobblestones · town square flagstones · muddy street · market plaza tiles
 
 ### temple
