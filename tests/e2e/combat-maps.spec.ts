@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { signInAsTestGm } from "./fixtures";
+import { api } from "../../convex/_generated/api";
 import { openCombatMap } from "./visual/helpers";
 
 // D9 C3: combat maps (.omc/plans/d9-combat-map.yaml). The GM keeps several maps, uploads an image to one, lines
@@ -62,7 +63,7 @@ async function playerJoins(page: Page, browser: Browser, campaignName: string) {
 }
 
 test("the GM keeps two maps, uploads an image to one and sets it live; a player sees that map and no Scene card", async ({ page, browser }) => {
-  const { campaignId, campaignName, url } = await openCombatMap(page);
+  const { client, campaignId, campaignName, url } = await openCombatMap(page);
   const tools = page.getByRole("complementary", { name: "Map tools" });
   const maps = tools.getByRole("list", { name: "Campaign maps" });
 
@@ -118,6 +119,8 @@ test("the GM keeps two maps, uploads an image to one and sets it live; a player 
   await bridge.getByRole("button", { name: "Set live" }).click();
   await expect(bridge.getByText("LIVE", { exact: true })).toBeVisible();
   await expect(first.getByText("LIVE", { exact: true })).toHaveCount(0);
+  // The badge moves optimistically: wait for the server before leaving the page (a pending write could be dropped).
+  await expect.poll(async () => (await client.query(api.combatMaps.list, { campaignId })).find((m) => m.name === "Old bridge")?.live).toBe(true);
   await page.goto(url);
   await expect(maps.getByRole("listitem").filter({ hasText: "Old bridge" }).getByText("LIVE", { exact: true })).toBeVisible();
 
