@@ -536,6 +536,7 @@ waves:
         goal: In edit mode on a Sprites map the GM places, moves, rotates, scales and deletes the setting's sprites (built-in and uploaded), paints terrain textures, and sets any sprite to block sight or not, with the same partial repaints and tools as Classic editing, which stays unchanged.
         depends_on: [P6, P8]
         owns:
+          - src/components/combat-map/map-view/map-canvas.tsx
           - convex/combatMapEdit.ts
           - src/components/combat-map/editor/**
           - tests/convex/combat-map-edit-sprites.test.ts
