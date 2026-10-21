@@ -1,7 +1,10 @@
 // Who holds each session-bound feature (plan session-features K7). Pure: bundled into Convex, shared with the sheet.
-import { getSubclass } from "../../srd/index";
+import { SUBCLASSES } from "../../srd/subclasses";
 import type { FeatureScope } from "../class-features/types";
 import type { CharacterSheet, SubclassRank } from "../../validation/characters";
+
+// CL9: the subclasses leaf module, not the srd/index barrel (it closes over every SRD list).
+const getSubclass = (id: string) => SUBCLASSES.find((s) => s.id === id);
 
 /** No campaign known: every feature answers (the same default as class-features/hooks.ts). */
 export const EVERYTHING: FeatureScope = { hopeAndFear: true, ikonis: false };

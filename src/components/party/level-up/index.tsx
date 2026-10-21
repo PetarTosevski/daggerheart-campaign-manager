@@ -85,21 +85,7 @@ export const AdvancementTiers: CharacterSlot = ({ character, isGm, hopeAndFear }
   );
 };
 
-function PendingBadge({ label }: { label: string }) {
-  return (
-    <span data-testid="level-up-pending" className="self-start rounded-full bg-[#2f5a2a] px-2.5 py-0.5 text-[12px] font-semibold text-[#e9f2e4]">
-      {label}
-    </span>
-  );
-}
-
-/** "Level up pending" badge on the dashboard party card. */
-export const LevelUpCardBadge: CharacterSlot = ({ character }) =>
-  character.sheet.levelUpPending && !character.corrupt ? <PendingBadge label={`Level up pending (to ${character.sheet.level + 1})`} /> : null;
-
-/** "Level up pending" badge on the roster card. */
-export const LevelUpRosterBadge: CharacterSlot = ({ character }) =>
-  character.sheet.levelUpPending && !character.corrupt ? <PendingBadge label="Level up pending" /> : null;
+export { LevelUpCardBadge, LevelUpRosterBadge } from "./badge";
 
 /** The GM's "Party levels up" button on the roster (CB 109: all party members level up together). */
 export const PartyLevelUpButton: CampaignSlot = ({ campaignId, isGm }) => {

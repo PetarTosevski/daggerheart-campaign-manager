@@ -1,7 +1,7 @@
 // The Spellcast trait a character rolls with (CB 111). A multiclass whose foundation card has a Spellcast trait lets
 // the player choose that trait or the original subclass's (`multiclass.spellcastTrait`); without an original
 // Spellcast trait the new one is forced. Older multiclass data without the choice keeps the original trait.
-import { getSubclass } from "../../srd/index";
+import { SUBCLASSES } from "../../srd/subclasses";
 import type { TraitId } from "../../srd/types";
 import type { CharacterSheet } from "../../validation/characters";
 
@@ -10,6 +10,9 @@ export type SpellcastOption =
   | { kind: "none"; trait: TraitId | null }
   | { kind: "forced"; trait: TraitId }
   | { kind: "choose"; original: TraitId; added: TraitId };
+
+// CL9: the subclasses leaf module, not the srd/index barrel (it closes over every SRD list).
+const getSubclass = (id: string) => SUBCLASSES.find((s) => s.id === id);
 
 const traitOf = (subclassId: string | undefined): TraitId | null => (subclassId ? (getSubclass(subclassId)?.spellcastTrait ?? null) : null);
 

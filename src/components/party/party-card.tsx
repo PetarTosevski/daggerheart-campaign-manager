@@ -13,7 +13,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import type { CharacterView } from "../../../convex/characters";
 
 import { DeathCardBadge } from "./death";
-import { LevelUpCardBadge } from "./level-up";
+import { LevelUpCardBadge } from "./level-up/badge";
 import { applyResourceDelta, classLines, resourceTiles, segments, TILE_ART, tileLook, type Resource, type Tile } from "./party-display";
 import { CharacterPortrait } from "./portrait";
 import type { SlotProps } from "./slots";
