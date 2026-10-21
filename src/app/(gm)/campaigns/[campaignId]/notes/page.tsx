@@ -21,7 +21,7 @@ import type { CampaignSummary } from "../../../../../../convex/campaigns";
 import { useCampaign } from "../campaign-shell";
 
 /** The board's handwriting face (Notes.dc.html l.10), only on this page. */
-const caveat = Caveat({ subsets: ["latin"], weight: ["500", "700"], variable: "--font-caveat" });
+const caveat = Caveat({ subsets: ["latin"], variable: "--font-caveat" });
 
 /**
  * Notes (D11): the page shell. N0 owns the layout, the hero frame, the Quick keys card and the URL state
