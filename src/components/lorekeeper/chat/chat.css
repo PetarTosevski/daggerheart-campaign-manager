@@ -1,0 +1,91 @@
+/*
+ * The chat column (D13 L6). Only what lorekeeper.css (the board's classes) lacks: the column's height so the stream
+ * scrolls under a fixed composer, the board's inline styles (quote stack, toggle row), and states the board has no
+ * look for (retry note, counter, notices, dialogs, the Conversations menu). Same tokens (--lk-*), under .lk-root.
+ */
+.lk-root .lk-chatcol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: max(480px, calc(100vh - 226px));
+}
+.lk-root .lk-chatcol[data-variant="drawer"] { height: 100%; }
+.lk-root .lk-chatcol .lk-stream { min-height: 0; }
+.lk-root .lk-loading { margin: auto; }
+.lk-root .lk-earlier { align-self: center; }
+
+/* Answer card details (board inline styles and states) */
+.lk-root .lk-quotebox { display: flex; flex-direction: column; gap: 6px; }
+.lk-root .lk-retried { align-self: flex-start; font-size: 12.5px; font-style: italic; color: #6a5236; }
+.lk-root .lk-chip:focus-visible,
+.lk-root .lk-act:focus-visible,
+.lk-root .lk-sug:focus-visible,
+.lk-root .lk-send:focus-visible,
+.lk-root .lk-toggle button:focus-visible,
+.lk-root .lk-visibility:focus-visible { outline: 2px solid var(--lk-gold); outline-offset: 2px; }
+.lk-root .lk-ab .lk-chip:focus-visible,
+.lk-root .lk-ab .lk-act:focus-visible { outline-color: #8a5a12; }
+.lk-root .lk-actlink { display: inline-flex; align-items: center; text-decoration: none; }
+.lk-root .lk-acts { align-items: center; }
+.lk-root .lk-copied { font-size: 12.5px; color: #2f5a3e; }
+.lk-root .lk-copied:empty { display: none; }
+.lk-root .lk-cardnote { margin: 0; font-size: 13px; color: #7a2e28; }
+.lk-root .lk-res a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Composer details */
+.lk-root .lk-togglerow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lk-root .lk-counter { align-self: flex-end; font-size: 12px; color: var(--lk-muted); }
+.lk-root .lk-visibility { min-height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--lk-card-border); background: #0f171a; color: var(--lk-muted); font-family: inherit; font-size: 12.5px; cursor: pointer; }
+.lk-root .lk-visibility[aria-pressed="true"] { background: #24343a; color: #f3cf86; }
+.lk-root .lk-vistext { font-size: 12px; color: var(--lk-muted); }
+.lk-root .lk-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-radius: 10px; background: #2a2010; border: 1px solid #4a3a1a; color: #f3cf86; font-size: 13.5px; line-height: 1.45; }
+.lk-root .lk-left { color: var(--lk-muted); }
+.lk-root .lk-sug:disabled { opacity: .55; cursor: default; }
+.lk-root .lk-in:disabled { opacity: .6; }
+
+/* Dialogs (brand Modal inside .lk-root) */
+.lk-root .lk-dialog { max-width: 680px; }
+.lk-root .lk-dialog h2 { font-family: var(--lk-display); font-size: 24px; }
+.lk-root .lk-dialog-text { margin: 0; font-size: 15px; line-height: 1.5; color: var(--lk-text); overflow-wrap: anywhere; }
+.lk-root .lk-pagetext { display: flex; flex-direction: column; gap: 14px; max-height: 60vh; overflow-y: auto; padding: 14px 16px; border-radius: 10px; background: linear-gradient(180deg, #f7eedb, #efe2c4); color: #2a1f14; }
+.lk-root .lk-pagetext section { display: flex; flex-direction: column; gap: 4px; }
+.lk-root .lk-pagetext .lk-lbl { margin: 0; color: #6a5236; }
+.lk-root .lk-pagetext p { margin: 0; font-family: var(--lk-serif); font-size: 17px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lk-root .lk-form { display: flex; flex-direction: column; gap: 8px; }
+.lk-root .lk-field { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--lk-border); background: var(--lk-field); color: var(--lk-text); font-family: var(--lk-serif); font-size: 17px; resize: vertical; }
+.lk-root .lk-field:focus { outline: 2px solid var(--lk-gold); outline-offset: 1px; }
+.lk-root .lk-formacts { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.lk-root .lk-formacts .lk-act { min-height: 48px; padding: 0 16px; }
+.lk-root .lk-danger { background: #b8463c; color: #fff4f2; }
+
+/* The Conversations menu (chat header) */
+.lk-root .lk-convos { position: relative; }
+.lk-root .lk-convos-toggle { min-height: 32px; }
+.lk-root .lk-convos-panel { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 520px); overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 12px; border-radius: 12px; background: var(--lk-card); border: 1px solid var(--lk-border); box-shadow: 0 16px 40px rgba(0, 0, 0, .55); }
+.lk-root .lk-convos-panel[hidden] { display: none; }
+.lk-root .lk-convos-new { min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px dashed var(--lk-gold-deep); background: transparent; color: #f3cf86; font-family: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; }
+.lk-root .lk-convos-group { display: flex; flex-direction: column; gap: 6px; }
+.lk-root .lk-convos-group h2 { margin: 0; }
+.lk-root .lk-convos-group ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.lk-root .lk-convos-row { display: flex; align-items: stretch; gap: 4px; }
+.lk-root .lk-convos-pick { flex: 1; min-width: 0; min-height: 44px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 6px 10px; border-radius: 8px; border: 1px solid transparent; background: #0f171a; color: var(--lk-text); font-family: inherit; text-align: left; cursor: pointer; }
+.lk-root .lk-convos-pick:hover { border-color: var(--lk-border); }
+.lk-root .lk-convos-pick[aria-current="true"] { border-color: var(--lk-gold-deep); }
+.lk-root .lk-convos-title { max-width: 100%; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lk-root .lk-convos-meta { font-size: 12px; color: var(--lk-muted); }
+.lk-root .lk-convos-del { flex: none; width: 44px; border-radius: 8px; border: 1px solid var(--lk-line); background: transparent; color: var(--lk-muted); cursor: pointer; }
+.lk-root .lk-convos-del:hover { color: #ffb4a8; border-color: #7a2e28; }
+.lk-root .lk-convos-pick:focus-visible,
+.lk-root .lk-convos-del:focus-visible,
+.lk-root .lk-convos-new:focus-visible { outline: 2px solid var(--lk-gold); outline-offset: 1px; }
+
+@media (max-width: 760px) {
+  .lk-root .lk-chatcol { height: max(420px, calc(100dvh - 170px)); }
+  .lk-root .lk-chatcol[data-variant="drawer"] { height: 100%; }
+  .lk-root .lk-visibility,
+  .lk-root .lk-convos-toggle,
+  .lk-root .lk-earlier { min-height: 44px; }
+  .lk-root .lk-inrow { flex-wrap: nowrap; }
+  .lk-root .lk-send { padding: 0 16px; min-width: 64px; }
+}
