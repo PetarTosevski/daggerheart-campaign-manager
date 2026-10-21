@@ -211,6 +211,9 @@
   .cm-pk-list {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+/* Touch targets of at least 44 px on tablets and phones (D12 H22). */
+@media (max-width: 1100px), (pointer: coarse) {
   .cm-pk .cm-in,
   .cm-pk-check {
     min-height: 44px;

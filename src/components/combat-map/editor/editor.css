@@ -148,10 +148,13 @@
   display: inline-block;
 }
 
-@media (max-width: 760px) {
+/* Touch targets of at least 44 px on tablets and phones (D12 H22). */
+@media (max-width: 1100px), (pointer: coarse) {
   .cm-linkbtn {
     min-height: 44px;
   }
+}
+@media (max-width: 760px) {
   .cm-ed-sprites-scroll {
     max-height: 420px;
   }

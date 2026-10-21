@@ -304,8 +304,8 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 760px) {
-  /* Touch targets of at least 44 px on phones. */
+/* Touch targets of at least 44 px on tablets and phones (D12 H22). */
+@media (max-width: 1100px), (pointer: coarse) {
   .cm-pip {
     width: 44px;
     height: 44px;

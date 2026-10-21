@@ -29,7 +29,7 @@
   outline-offset: 2px;
 }
 .ss-live-start {
-  background: var(--ss-live);
+  background: var(--ss-live-btn);
 }
 .ss-live-end {
   background: var(--ss-end);

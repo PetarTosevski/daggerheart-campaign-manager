@@ -27,6 +27,8 @@
   --ss-played-bg: #20352b;
   --ss-played-text: #9fdcb6;
   --ss-live: #4f9e72;
+  /* White text on --ss-live is 3.2:1; the Start buttons use this darker green (4.7:1, D12 H22, as H21's --enc-start). */
+  --ss-live-btn: #40815d;
   --ss-live-dot: #5fd38d;
   --ss-end: #a2463a;
   --ss-idle-dot: #4a5c62;
@@ -381,7 +383,20 @@
   }
 }
 
-/* Phone: one column (list first), 16 px gutters, 44 px touch targets (the board has no phone layout). */
+/* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
+@media (max-width: 1100px), (pointer: coarse) {
+  .ss-ghost,
+  .ss-tabs button {
+    min-height: 44px;
+  }
+  .ss-x,
+  .ss-step {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Phone: one column (list first), 16 px gutters (the board has no phone layout). */
 @media (max-width: 720px) {
   .ss-head {
     padding: 18px 16px 0;
@@ -396,15 +411,6 @@
   }
   .ss-primary {
     width: 100%;
-  }
-  .ss-ghost,
-  .ss-tabs button {
-    min-height: 44px;
-  }
-  .ss-x,
-  .ss-step {
-    width: 44px;
-    height: 44px;
   }
   .ss-tabs {
     align-self: stretch;

@@ -91,9 +91,9 @@
 .bj-toolbar .bj-entry-error {
   margin: 0;
 }
-
+/* 390 px and touch screens: the row actions go under the text so the text keeps its width (44 px targets, notes.css). */
 /* 390 px: the row actions go under the text so the text keeps its width (targets are 44 px from notes.css). */
-@media (max-width: 720px) {
+@media (max-width: 720px), (pointer: coarse) {
   .bj-row {
     flex-wrap: wrap;
     align-items: center;
