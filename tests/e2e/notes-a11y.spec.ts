@@ -122,12 +122,11 @@ for (const viewport of [
         await expect(input).toHaveValue("");
         const row = ownPaper(page).getByRole("listitem").filter({ hasText: "about the toll" });
         await expect(row.getByRole("link")).toHaveText("Marlow");
-        // The first write creates the journal: the page ref changes from 'template-0' to the new id, the entries
-        // subscription reloads and the add row remounts, so focus drops to <body> (bead dcm-bxp.102). Tab back to it.
+        // The first write creates the journal: the page ref changes from 'template-0' to the new id and the entries
+        // subscription reloads, but the add row stays mounted, so focus stays in the input (dcm-bxp.102).
         await expect.poll(async () => (await gm.query(api.notes.journal, { campaignId })).journal !== null).toBe(true);
         await expect(row.getByRole("button", { name: "Task: open. Click to change." })).toBeVisible();
-        await expect(input).not.toBeFocused();
-        await tabTo(page, input, { back: true });
+        await expect(input).toBeFocused();
         await page.keyboard.type("^ wither spreads");
         await page.keyboard.press("Enter");
         await expect(ownPaper(page).getByRole("listitem").filter({ hasText: "wither spreads" })).toBeVisible();

@@ -57,7 +57,20 @@ const index = (page: Page) => page.getByRole("complementary", { name: "Journal i
 const sharedBlock = (page: Page) => index(page).getByRole("region", { name: "Shared" });
 const paper = (page: Page) => page.getByRole("region", { name: "Journal page" });
 
+/** At 390 px the whole index column sits behind the 'Pages' disclosure (N9); opens it when it is closed. */
+async function openIndex(page: Page) {
+  const toggle = page.getByRole("complementary", { name: "Journal index" }).getByRole("button", { name: /^Pages/ });
+  await expect(page.getByRole("complementary", { name: "Journal index" })).toBeVisible();
+  if (!(await toggle.isVisible())) return;
+  // Retried: a click that lands before hydration does nothing.
+  await expect(async () => {
+    if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass();
+}
+
 async function openTab(page: Page, name: "Shared by players" | "Shared by GM") {
+  await openIndex(page);
   const tab = sharedBlock(page).getByRole("tab", { name });
   await tab.click();
   await expect(tab).toHaveAttribute("aria-selected", "true");
@@ -199,7 +212,7 @@ for (const viewport of [
         // ---- A shares another page ('People we met') with chosen B only: B sees it, the GM loses it.
         await expect(sharedRow(gmPanel, "People we met", "Ash")).toBeVisible();
         await A.page.goto(`/campaigns/${campaignId}/notes`);
-        if (viewport.width < 640) await index(A.page).getByRole("button", { name: /^Pages/ }).click();
+        await openIndex(A.page);
         await index(A.page).getByRole("navigation", { name: "Your pages" }).getByRole("button", { name: /People we met/ }).click();
         dialog = await openSharing(A.page);
         await dialog.getByRole("radio", { name: /Chosen players/ }).check();
@@ -211,6 +224,7 @@ for (const viewport of [
           .toEqual(["People we met", "Session 1"]);
         await dialog.getByRole("button", { name: "Done" }).click();
         await expect(paper(A.page).getByRole("button", { name: "Sharing: Chosen players · Bram" })).toBeVisible();
+        await openIndex(B.page);
         await expect(sharedRow(panel, "People we met", "Ash")).toBeVisible();
         await expect(sharedRow(gmPanel, "People we met", "Ash")).toHaveCount(0);
         await expect

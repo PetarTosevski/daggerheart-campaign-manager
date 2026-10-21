@@ -145,6 +145,49 @@ describe("Entries (D11 N3)", () => {
     expect(within(list).getByText("ambush")).toBeInTheDocument();
   });
 
+  it("the first write on a default page keeps the add row mounted while the new page loads (dcm-bxp.102)", () => {
+    cache.set(page([]));
+    const { rerender } = render(<Entries {...props({ pageId: "template-0" })} />);
+    const group = screen.getByRole("radiogroup", { name: "Bullet type" });
+    fireEvent.click(within(group).getByRole("radio", { name: /Hope/ }));
+    const input = screen.getByRole("textbox", { name: "New entry" });
+    expect(input).toHaveFocus();
+    fireEvent.change(input, { target: { value: "Old Mag runs the ferry" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(named("add").map((c) => c.args)).toEqual([{ campaignId: CAMPAIGN, page: { template: 0 }, kind: "hope", text: "Old Mag runs the ferry" }]);
+
+    // The journal now exists: the page gets its id and its subscription has no answer yet.
+    act(() => {
+      cache.set(undefined);
+      rerender(<Entries {...props({ pageId: "page9" })} />);
+    });
+    expect(screen.queryByText("Loading entries…")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "New entry" })).toBe(input);
+    expect(input).toHaveFocus();
+    expect(within(group).getByRole("radio", { name: /Hope/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText("Old Mag runs the ferry")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "typed while loading" } });
+
+    act(() => cache.set(page([row("e1", { kind: "hope", text: "Old Mag runs the ferry" })])));
+    expect(screen.getByRole("textbox", { name: "New entry" })).toBe(input);
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("typed while loading");
+    expect(within(group).getByRole("radio", { name: /Hope/ })).toHaveAttribute("aria-checked", "true");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(named("add")[1]!.args).toEqual({ campaignId: CAMPAIGN, page: "page9", kind: "hope", text: "typed while loading" });
+  });
+
+  it("opening another written page still shows the loading line (no stale rows)", () => {
+    cache.set(page([row("e1", { text: "on page one" })]));
+    const { rerender } = render(<Entries {...props({ pageId: "page1" })} />);
+    act(() => {
+      cache.set(undefined);
+      rerender(<Entries {...props({ pageId: "page2" })} />);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Loading entries…");
+    expect(screen.queryByText("on page one")).not.toBeInTheDocument();
+  });
+
   it("the Bullet type chips are a radiogroup with aria-checked only; arrows move the choice and the placeholder follows", () => {
     cache.set(page([]));
     render(<Entries {...props()} />);

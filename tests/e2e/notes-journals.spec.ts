@@ -62,9 +62,22 @@ async function expectStrip(page: Page, titles: string[]) {
   for (const title of titles) await expect(strip(page).getByRole("button", { name: new RegExp(`^${title}`) })).toBeVisible();
 }
 
+/** At 390 px the whole index column sits behind the 'Pages' disclosure (N9); opens it when it is closed. */
+async function openIndex(page: Page) {
+  const toggle = page.getByRole("complementary", { name: "Journal index" }).getByRole("button", { name: /^Pages/ });
+  await expect(page.getByRole("complementary", { name: "Journal index" })).toBeVisible();
+  if (!(await toggle.isVisible())) return;
+  // Retried: a click that lands before hydration does nothing.
+  await expect(async () => {
+    if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass();
+}
+
 /** Opens Ash's past journal from the index. */
 async function openPast(page: Page) {
   await page.goto(page.url().split("?")[0]!);
+  await openIndex(page);
   await pastList(page).getByRole("button", { name: /^Ash’s journal/ }).click();
   await expect(page).toHaveURL(/view=journal&journal=/);
   await expect(paperColumn(page).getByText("Past journal · read only")).toBeVisible();
@@ -104,6 +117,7 @@ for (const viewport of [
 
         // ---- The GM opens Ash's journal: neither page is there; the GM adds to 'Session 1' (Q3).
         await gm.page.goto(notesUrl);
+        await openIndex(gm.page);
         await expect(playersList(gm.page).getByRole("button", { name: /^Ash/ })).toContainText("Player journal · Bard · 2 pages");
         await playersList(gm.page).getByRole("button", { name: /^Ash/ }).click();
         await expect(gm.page).toHaveURL(/view=journal&journal=/);
@@ -122,6 +136,7 @@ for (const viewport of [
         if (viewport.width < 640) await expectNoHorizontalScroll(gm.page);
         // Players get no 'Players’ journals' list (Q2).
         await B.page.goto(notesUrl);
+        await openIndex(B.page);
         await expect(pastList(B.page)).toContainText("No past journals.");
         await expect(playersList(B.page)).toHaveCount(0);
 
@@ -129,6 +144,7 @@ for (const viewport of [
         await setStatus("retired");
         await expect.poll(() => pastNames(B)).toEqual([["Ash’s journal", 3]]);
         await gm.page.goto(notesUrl);
+        await openIndex(gm.page);
         await expect(playersList(gm.page)).toContainText("No player has written yet.");
         await openPast(gm.page);
         await expectStrip(gm.page, ["Session 1", "Party secrets", "My goals"]);
@@ -141,6 +157,7 @@ for (const viewport of [
         await expect(paperColumn(B.page).getByRole("button", { name: "Tear out page" })).toHaveCount(0);
         if (viewport.width < 640) await expectNoHorizontalScroll(B.page);
         await A.page.goto(notesUrl);
+        await openIndex(A.page);
         await openPast(A.page);
         await expectStrip(A.page, ["Session 1", "Party secrets", "True name", "My goals"]);
 
@@ -151,6 +168,7 @@ for (const viewport of [
         await paperColumn(gm.page).getByRole("button", { name: "Click again to tear out" }).click();
         await expect.poll(() => pastNames(B)).toEqual([["Ash’s journal", 2]]);
         await expectStrip(gm.page, ["Session 1", "My goals"]);
+        await openIndex(gm.page);
         await expect(index(gm.page).getByRole("region", { name: "Torn-out pages" })).toContainText("from Ash’s journal");
         await expectStrip(B.page, ["Session 1", "My goals"]);
 
@@ -168,11 +186,13 @@ for (const viewport of [
             ["My goals", "gm"],
           ]);
         await gm.page.goto(notesUrl);
+        await openIndex(gm.page);
         await expect(pastList(gm.page)).toContainText("No past journals.");
         await playersList(gm.page).getByRole("button", { name: /^Ash/ }).click();
         await expectStrip(gm.page, ["Session 1", "My goals"]);
         await expect(paperColumn(gm.page).getByRole("textbox", { name: "New entry" })).toBeVisible();
         await B.page.goto(notesUrl);
+        await openIndex(B.page);
         await expect(pastList(B.page)).toContainText("No past journals.");
 
         // ---- Dead, then active: the same cycle.
@@ -191,6 +211,7 @@ for (const viewport of [
         await expect.poll(() => pastNames(B)).toEqual([["Ash’s journal", 2]]);
         await expect.poll(() => A.client.query(api.notesJournals.pastJournals, { campaignId }).then(() => "ok", () => "refused")).toBe("refused");
         await gm.page.goto(notesUrl);
+        await openIndex(gm.page);
         await openPast(gm.page);
         await expectStrip(gm.page, ["Session 1", "My goals"]);
         const fresh = await gm.client.mutation(api.members.rotateJoinCode, { campaignId });
@@ -199,6 +220,7 @@ for (const viewport of [
         await expect(paperColumn(gm.page).getByText("read only", { exact: true })).toBeVisible();
         await expect(paperColumn(gm.page).getByRole("textbox", { name: "New entry" })).toBeVisible();
         await gm.page.goto(notesUrl);
+        await openIndex(gm.page);
         await expect(playersList(gm.page).getByRole("button", { name: /^Ash/ })).toContainText("2 pages");
       } finally {
         await a.close();

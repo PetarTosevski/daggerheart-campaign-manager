@@ -67,6 +67,18 @@ const paper = (page: Page) => page.getByRole("region", { name: "Journal page" })
 const toast = (page: Page) => page.getByRole("status").filter({ hasText: "Page torn out" });
 const binList = (page: Page) => page.getByRole("list", { name: "Torn-out pages" });
 
+/** At 390 px the whole index column sits behind the 'Pages' disclosure (N9); opens it when it is closed. */
+async function openIndex(page: Page) {
+  const toggle = page.getByRole("complementary", { name: "Journal index" }).getByRole("button", { name: /^Pages/ });
+  await expect(page.getByRole("complementary", { name: "Journal index" })).toBeVisible();
+  if (!(await toggle.isVisible())) return;
+  // Retried: a click that lands before hydration does nothing.
+  await expect(async () => {
+    if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass();
+}
+
 async function tearOut(page: Page) {
   const button = paper(page).getByRole("button", { name: "Tear out page" });
   await button.scrollIntoViewIfNeeded();
@@ -95,6 +107,8 @@ async function serverState(client: ConvexHttpClient, campaignId: Id<"campaigns">
 
 for (const viewport of VIEWPORTS) {
   test(`${viewport.width}: the GM tears out a page, undoes it, tears it out again and restores it from Torn-out pages`, async ({ page }) => {
+    // The test waits out the toast's 10 s on purpose; on a loaded machine the rest no longer fits the default 30 s.
+    test.setTimeout(90_000);
     await page.setViewportSize(viewport);
     const audio = await countAudio(page);
     const { campaignId } = await gmCreatesCampaign(page);
@@ -104,6 +118,7 @@ for (const viewport of VIEWPORTS) {
 
     await page.goto(`/campaigns/${campaignId}/notes?page=${pageId}`);
     await expect(paper(page).getByLabel("Page title")).toHaveValue("Rumors & hooks");
+    await openIndex(page);
     await expect(page.getByRole("region", { name: "Torn-out pages" }).getByText("Nothing torn out.")).toBeVisible();
 
     // First click arms, second tears: the rip plays over the paper, the sound is synthesised, the toast offers Undo.
@@ -130,6 +145,7 @@ for (const viewport of VIEWPORTS) {
     // Again: this time it waits under Torn-out pages ('30 days left'); the toast goes after 10 seconds.
     await tearOut(page);
     await expect(toast(page)).toBeVisible();
+    await openIndex(page);
     const row = binList(page).getByRole("listitem").filter({ hasText: "Rumors & hooks" });
     await expect(row).toContainText("30 days left");
     await expect.poll(() => serverState(client, campaignId, pageId)).toEqual({ listed: false, binned: true });
@@ -141,8 +157,10 @@ for (const viewport of VIEWPORTS) {
     await expect(torn.getByText("the mill burned")).toBeVisible();
     await expect(torn.getByRole("textbox", { name: "New entry" })).toHaveCount(0);
     if (viewport.width < 640) await expectNoHorizontalScroll(page);
+    await openIndex(page);
     await row.getByRole("button", { name: "Restore Rumors & hooks" }).click();
     await expect(paper(page).getByLabel("Page title")).toHaveValue("Rumors & hooks");
+    await openIndex(page);
     await expect(page.getByRole("region", { name: "Torn-out pages" }).getByText("Nothing torn out.")).toBeVisible();
     await expect.poll(() => serverState(client, campaignId, pageId)).toEqual({ listed: true, binned: false });
     expect((await client.query(api.notesEntries.entries, { campaignId, page: pageId })).entries.map((e) => e.text)).toEqual(["the mill burned"]);
@@ -166,6 +184,7 @@ for (const viewport of VIEWPORTS) {
       await expect(toast(player)).toBeVisible();
       await expect(player.getByTestId("tear-frame")).toHaveCount(0);
       expect(await audio()).toBe(0);
+      await openIndex(player);
       await expect(binList(player).getByRole("listitem").filter({ hasText: "Session 1" })).toContainText("30 days left");
       await expect.poll(() => codeOf(gm.query(api.notesEntries.entries, { campaignId, page: pageId }))).toBe("NOTE_PAGE_NOT_FOUND");
       await expect.poll(async () => (await gm.query(api.notesBin.bin, { campaignId })).length).toBe(0);
