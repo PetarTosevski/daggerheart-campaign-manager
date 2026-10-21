@@ -49,6 +49,7 @@ waves:
           - tests/unit/combat-movement.test.ts
           - tests/unit/sprite-catalog.test.ts
           - tests/convex/combat-token-movement.test.ts
+          - tests/convex/combat-tokens.test.ts
           - docs/tasks/TASK-MV-M0.md
         reads:
           - src/lib/domain/combat-map/**
