@@ -311,6 +311,8 @@ async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded
     roll,
     ...(sheetChanged ? { before: sheet } : {}),
     ...(gained !== 0 ? { fearDelta: gained } : {}),
+    // `paid` is the sheet after the roll's costs and before its gains (K2: the Slayer store takes back only a gained Hope).
+    ...(args.kind === "action" && WITH_HOPE.includes(roll.outcome) ? { hopeGained: rollGaveHope(paid, roll.outcome, args.kind) } : {}),
     undoable: true,
   });
   // Armed countdowns tick right after the action roll resolves (countdowns-advanced K1, CB p.162); never a reaction roll (CB p.99).
@@ -634,9 +636,10 @@ export const storeSlayerDie = keyedUserMutation({
       if (row === null || row.characterId !== character._id) throw appError("NOT_FOUND");
       const open = await slayerRoll(ctx, character._id);
       if (open?._id !== row._id || row.roll === undefined) throw appError("CLASS_FEATURE_RULE", "Only your latest roll with Hope can store a Slayer Die.");
-      // The sheet before the roll (absent: the roll changed nothing). A roll made at Hope max gave no Hope back.
+      // The roll records whether it gave the Hope (after its costs, dcm-bxp.65). An older row falls back to its
+      // `before` sheet (absent: the roll changed nothing); a roll made at Hope max gave no Hope back.
       const before = row.before === undefined ? sheet : readSheet(JSON.parse(row.before));
-      const next = storeDie(sheet, { hopeGained: rollGaveHope(before, row.roll.outcome, "action"), entryId: row._id });
+      const next = storeDie(sheet, { hopeGained: row.hopeGained ?? rollGaveHope(before, row.roll.outcome, "action"), entryId: row._id });
       await saveSheet(ctx, character._id, next);
       await logAction(ctx, {
         campaignId: campaign._id,
@@ -710,6 +713,7 @@ export const tagTeamApply = keyedUserMutation({
           groupId: row.groupId,
           ...(sheetChanged ? { before: sheet } : {}),
           ...(i === 0 && gained !== 0 ? { fearDelta: gained } : {}),
+          ...(WITH_HOPE.includes(chosen.outcome) ? { hopeGained: rollGaveHope(sheet, chosen.outcome, "action") } : {}),
           undoable: true,
         });
         firstResult ??= resultId;

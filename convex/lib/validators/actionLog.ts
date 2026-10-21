@@ -95,6 +95,8 @@ export const actionLogFields = {
   adversaryBefore: v.optional(v.array(adversaryBeforeValidator)),
   /** GM Fear this row gained (positive) or removed (negative); undo reverts it through `revertFear`. */
   fearDelta: v.optional(v.number()),
+  /** An action roll with Hope: whether it gave the Hope (false at Hope max after its costs). `rolls.storeSlayerDie` takes it back (K2, dcm-bxp.65). */
+  hopeGained: v.optional(v.boolean()),
   undoable: v.boolean(),
   undoneAt: v.optional(v.number()),
   undoneBy: v.optional(v.id("users")),
