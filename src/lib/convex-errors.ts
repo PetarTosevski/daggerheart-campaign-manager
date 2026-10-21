@@ -56,15 +56,18 @@ const MESSAGES = mergeMessages(
   noteMessages,
 );
 
-/** A message for the GM from an error thrown by a Convex function. */
+/**
+ * A message for the GM from an error thrown by a Convex function. Every
+ * server error is `ConvexError<AppError>` (`{ code, message? }`, CF13): the
+ * message when present, else the code's text.
+ */
 export function errorMessage(error: unknown): string {
   if (error instanceof ConvexError) {
     const data: unknown = error.data;
-    if (typeof data === "string") return MESSAGES[data] ?? "Something went wrong.";
     if (typeof data === "object" && data !== null) {
       const { message, code } = data as { message?: unknown; code?: unknown };
       if (typeof message === "string" && message) return message;
-      if (typeof code === "string" && MESSAGES[code]) return MESSAGES[code];
+      if (typeof code === "string") return MESSAGES[code] ?? "Something went wrong.";
     }
   }
   return "Something went wrong. Check your connection and try again.";

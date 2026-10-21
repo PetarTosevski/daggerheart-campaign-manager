@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { createOrUpdateUser } from "../../convex/lib/users";
+import { errorCode } from "./helpers";
 import { makeTest } from "./setup";
 
 const env = { GM_EMAILS: "gm@example.com" };
 const verifiedGm = { email: "GM@example.com", emailVerified: true };
-
-function errorCode(error: unknown): unknown {
-  return (error as { data?: unknown }).data;
-}
 
 describe("createOrUpdateUser (sign-in callback)", () => {
   it("creates one user for a verified, allowlisted email and reuses it", async () => {

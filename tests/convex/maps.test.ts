@@ -8,7 +8,7 @@ import { enduranceOwnerKey } from "../../src/lib/domain/rest/frame-hooks/index";
 import { hexToPixel } from "../../src/lib/world/hex";
 import { initialMapState } from "../../src/lib/world/map-state";
 import { WITHERWILD_TERRAIN, paintTerrain } from "../../src/lib/world/terrain";
-import { errorCode, errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const GM = "gm@example.com";
@@ -74,10 +74,10 @@ describe("World map", () => {
       player.mutation(api.maps.setOptions, { campaignId, scaleKm: 10 }),
       player.mutation(api.maps.mapImageUploadUrl, { campaignId }),
     ];
-    for (const attempt of attempts) expect(errorData(await attempt.catch((e) => e))).toBe("FORBIDDEN");
+    for (const attempt of attempts) expect(errorCode(await attempt.catch((e) => e))).toBe("FORBIDDEN");
 
-    expect(errorData(await stranger.query(api.maps.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
-    expect(errorData(await stranger.mutation(api.maps.removeToken, { campaignId, id: visible.id }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await stranger.query(api.maps.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await stranger.mutation(api.maps.removeToken, { campaignId, id: visible.id }).catch((e) => e))).toBe("NOT_FOUND");
   });
 
   it("adding a marker or moving the party replays on a retried key", async () => {
@@ -167,7 +167,7 @@ describe("World map", () => {
     ]) {
       expect(errorCode(await gm.mutation(api.maps.paintCells, { campaignId, ...bad }).catch((e) => e))).toBe("INVALID");
     }
-    expect(errorData(await player.mutation(api.maps.paintCells, { campaignId, indexes: [0], codes: "#" }).catch((e) => e))).toBe("FORBIDDEN");
+    expect(errorCode(await player.mutation(api.maps.paintCells, { campaignId, indexes: [0], codes: "#" }).catch((e) => e))).toBe("FORBIDDEN");
   });
 
   it("map uploads: images only, a file belongs to one campaign, previous upload deleted", async () => {
@@ -200,8 +200,8 @@ describe("World map", () => {
     expect((await gm.query(api.maps.get, { campaignId })).mapUrl).toEqual(expect.any(String));
 
     // The same file can't be claimed again, here or by another campaign.
-    expect(errorData(await gm.mutation(api.maps.attachMapImage, { campaignId: other.campaignId, storageId: image, width: 8, height: 6 }).catch((e) => e))).toBe("NOT_FOUND");
-    expect(errorData(await gm.mutation(api.maps.attachMapImage, { campaignId, storageId: image, width: 8, height: 6 }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await gm.mutation(api.maps.attachMapImage, { campaignId: other.campaignId, storageId: image, width: 8, height: 6 }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await gm.mutation(api.maps.attachMapImage, { campaignId, storageId: image, width: 8, height: 6 }).catch((e) => e))).toBe("NOT_FOUND");
 
     // A map pointing at a file recorded for another campaign resolves to no URL and isn't deleted.
     const foreign = await t.run((ctx) => ctx.storage.store(new Blob(["png"], { type: "image/png" })));
@@ -276,7 +276,7 @@ describe("World map", () => {
       await move(0, 1);
       const later = (await player.query(api.maps.get, { campaignId })).state.hexCrawl!;
       expect(later.hexes.find((h) => h.q === -1 && h.r === 2)?.poi).toEqual({ text: "Old tower", hidden: false });
-      expect(errorData(await player.mutation(api.maps.moveToHex, { campaignId, q: 0, r: 0, terrain: 1, travelMode: "land", idempotencyKey: key() }).catch((e) => e))).toBe("FORBIDDEN");
+      expect(errorCode(await player.mutation(api.maps.moveToHex, { campaignId, q: 0, r: 0, terrain: 1, travelMode: "land", idempotencyKey: key() }).catch((e) => e))).toBe("FORBIDDEN");
     });
 
     it("players see markers only in hexes they can see (HF p.176); sanctuaries everywhere (HF p.169)", async () => {

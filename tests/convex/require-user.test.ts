@@ -1,13 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { requireUser } from "../../convex/lib/auth";
+import { errorCode } from "./helpers";
 import { makeTest } from "./setup";
 
 const GM_EMAIL = "gm@example.com";
-
-function errorCode(error: unknown): unknown {
-  return (error as { data?: unknown }).data;
-}
 
 describe("requireUser", () => {
   const previous = process.env.GM_EMAILS;

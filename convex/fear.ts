@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import {
   amountForFearDirection,
@@ -11,11 +11,14 @@ import { keyedGmMutation } from "./lib/functions";
 import { applyRule } from "./lib/mechanics";
 import { recordHistory } from "./tables/history";
 
-export type FearChange = { previousValue: number; newValue: number };
+const fearChange = v.object({ previousValue: v.number(), newValue: v.number() });
+
+export type FearChange = Infer<typeof fearChange>;
 
 /** Raises or lowers GM Fear by one (0–12). GM only; Fear is core: every frame has it. */
 export const adjust = keyedGmMutation({
   args: { direction: v.union(v.literal("increase"), v.literal("decrease")) },
+  returns: fearChange,
   handler: async (ctx, { direction }): Promise<FearChange> =>
     ctx.once("fear_adjust", { direction }, async () => {
       const state = await campaignFearState(ctx, ctx.campaign._id);
@@ -37,6 +40,7 @@ export const adjust = keyedGmMutation({
 /** Sets GM Fear to a value 0–12 (the dashboard's tokens). GM only. Setting the current value records nothing. */
 export const set = keyedGmMutation({
   args: { value: v.number() },
+  returns: fearChange,
   handler: async (ctx, { value }): Promise<FearChange> => {
     applyRule("FEAR_RANGE", FearRangeError, () => assertFearValue(value));
     return ctx.once("fear_set", { value }, async () => {

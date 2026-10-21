@@ -244,23 +244,6 @@ const VALIDATOR_EXEMPT_MODULES = ["auth"];
 /** Config modules that register no functions (convex.config pulls in component code). */
 const CONFIG_MODULES = ["convex.config", "auth.config", "schema"];
 
-/**
- * Functions still without a `returns` validator: mutations, and one GM-only
- * query (rule 4 requires one on player-facing queries). Adding one removes the
- * entry; the guard fails while a listed function has one, so the list only
- * shrinks (and it also proves the module scan finds functions at all).
- */
-const RETURNS_PENDING = [
-  "fear:adjust",
-  "fear:set",
-  "members:access",
-  "members:invite",
-  "members:revokeInvite",
-  "members:removePlayer",
-  "members:leave",
-  "members:rotateJoinCode",
-];
-
 async function publicFunctions(): Promise<{ name: string; fn: Registered }[]> {
   const found: { name: string; fn: Registered }[] = [];
   for (const [path, load] of Object.entries(modules)) {
@@ -285,9 +268,9 @@ describe("public functions", () => {
     expect(bad).toEqual([]);
   });
 
-  test("every public function declares a returns validator, except the listed ones", async () => {
-    const missing = (await publicFunctions()).filter(({ fn }) => fn.exportReturns() === "null").map(({ name }) => name);
-    expect(missing.filter((name) => !RETURNS_PENDING.includes(name))).toEqual([]);
-    expect(RETURNS_PENDING.filter((name) => !missing.includes(name))).toEqual([]);
+  test("every public function declares a returns validator", async () => {
+    const functions = await publicFunctions();
+    expect(functions.length).toBeGreaterThan(0);
+    expect(functions.filter(({ fn }) => fn.exportReturns() === "null").map(({ name }) => name)).toEqual([]);
   });
 });

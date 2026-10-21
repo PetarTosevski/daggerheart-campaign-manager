@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { permissionFor, upsertGrant, type Permission } from "../../convex/lib/permissions";
-import { errorCode, errorData, key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const GM = "gm@example.com";
@@ -41,8 +41,8 @@ describe("grants", () => {
 
   it("without grants an outsider has no access", async () => {
     const { outsider, campaignId } = await setup();
-    expect(errorData(await outsider.query(api.maps.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
-    expect(errorData(await outsider.query(api.codex.list, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await outsider.query(api.maps.get, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await outsider.query(api.codex.list, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
     expect(errorCode(await outsider.query(api.characters.listByCampaign, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
   });
 
@@ -55,9 +55,9 @@ describe("grants", () => {
     expect(view.role).toBe("player");
     expect(view.state.tokens).toEqual([{ id: visible.id, type: "village", x: 10, y: 10, name: "Village", notes: "", hidden: false, location: false }]);
     expect(JSON.stringify(view)).not.toMatch(/Wyrm lair|GM secret/);
-    expect(errorData(await outsider.mutation(api.maps.addToken, { campaignId, type: "camp", x: 1, y: 1, idempotencyKey: key() }).catch((e) => e))).toBe("FORBIDDEN");
+    expect(errorCode(await outsider.mutation(api.maps.addToken, { campaignId, type: "camp", x: 1, y: 1, idempotencyKey: key() }).catch((e) => e))).toBe("FORBIDDEN");
     // The grant is on the map only: the codex stays hidden.
-    expect(errorData(await outsider.query(api.codex.list, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    expect(errorCode(await outsider.query(api.codex.list, { campaignId }).catch((e) => e))).toBe("NOT_FOUND");
   });
 
   it("a view grant to a campaign reaches its members", async () => {

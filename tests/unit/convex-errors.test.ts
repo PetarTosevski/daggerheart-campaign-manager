@@ -19,7 +19,7 @@ import { restMessages } from "@/lib/errors/rests";
 import { trackerMessages } from "@/lib/errors/trackers";
 import { witherMessages } from "@/lib/errors/wither";
 
-/** The messages as they were before the per-domain split. */
+/** The messages as they were before the per-domain split, now sent as `{ code }`. */
 const PREVIOUS: Record<string, string> = {
   UNAUTHENTICATED: "Your session has ended. Sign in again.",
   FORBIDDEN: "This account can't use the campaign ledger.",
@@ -47,12 +47,13 @@ const DOMAINS = [commonMessages, campaignMessages, operationMessages, trackerMes
 describe("errorMessage", () => {
   it("maps every previous code to the same text", () => {
     for (const [code, text] of Object.entries(PREVIOUS)) {
-      expect(errorMessage(new ConvexError(code))).toBe(text);
+      expect(errorMessage(new ConvexError({ code }))).toBe(text);
     }
   });
 
   it("keeps the fallbacks", () => {
-    expect(errorMessage(new ConvexError("NO_SUCH_CODE"))).toBe("Something went wrong.");
+    expect(errorMessage(new ConvexError({ code: "NO_SUCH_CODE" }))).toBe("Something went wrong.");
+    expect(errorMessage(new ConvexError({ code: "NOT_FOUND", message: "Gone." }))).toBe("Gone.");
     expect(errorMessage(new ConvexError({ message: "Custom text" }))).toBe("Custom text");
     expect(errorMessage(new Error("boom"))).toBe("Something went wrong. Check your connection and try again.");
   });
