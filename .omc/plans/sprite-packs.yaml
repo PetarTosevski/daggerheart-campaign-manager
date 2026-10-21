@@ -673,6 +673,7 @@ waves:
         goal: Apply P11A-C's overrides, cut all 60 batch-2 sheets, rebuild the built-in pack, and pin the new items in tests.
         depends_on: [P11A, P11B, P11C]
         owns:
+          - src/lib/sprite-packs/catalog/volcanic.ts
           - scripts/sprite-packs/**
           - public/sprite-packs/**
           - src/lib/sprite-packs/builtin/**
