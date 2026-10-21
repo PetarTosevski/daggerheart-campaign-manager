@@ -14,6 +14,8 @@ crons.cron("expire operations", "17 3 * * *", internal.cleanup.expireOperations,
 // which will reuse internal.cleanup.purgeCampaign. Enabling the timer is this line:
 // crons.cron("purge deleted campaigns", "37 3 * * *", internal.cleanup.purgeDeletedCampaigns, {});
 crons.cron("sweep orphan uploads", "53 3 * * *", internal.cleanup.sweepOrphanUploads, {});
+// Notes bin (D11 N7, Q11): torn-out journal pages older than 30 days, with their entries and recipients.
+crons.cron("purge torn-out journal pages", "23 4 * * *", internal.notesBin.purgeBinned, {});
 // Abandoned photo-import photos (D5 R3, review M4): hourly, so none outlives
 // its one-hour TTL by more than another hour.
 crons.cron("expire photo imports", "41 * * * *", internal.cleanup.expirePhotoImports, {});

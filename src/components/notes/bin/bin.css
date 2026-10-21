@@ -1,0 +1,260 @@
+/*
+ * The bin (D11 N7): the tear-out button (board Notes.dc.html l.135), the rip (l.39-47: two clip-path halves and paper
+ * scraps; here laid over the paper with position: fixed, since the page itself is already gone), the 'Page torn out ·
+ * Undo' toast and the 'Torn-out pages' list (not on the board: the board's tokens). Shared tokens and classes come from
+ * the page's notes.css (--bj-*, bj-paper, bj-tape-*, bj-ghost, bj-paper-btn, bj-lbl, bj-empty).
+ */
+
+/* ---------------------------------------------------------------- tear-out button (board l.135) */
+
+.bj-tear-btn {
+  color: #8e2b2b;
+  border-color: #d8a8a0;
+}
+.bj-tear-btn:hover:not(:disabled) {
+  background: rgba(142, 43, 43, 0.08);
+}
+.bj-tear-btn:focus-visible {
+  outline: 2px solid #8e2b2b;
+  outline-offset: 2px;
+}
+.bj-tear-error {
+  font-size: 13px;
+  color: #8e2b2b;
+}
+
+/* ---------------------------------------------------------------- the rip (board l.39-47) */
+
+.bj-tear {
+  position: fixed;
+  z-index: 40;
+  perspective: 1600px;
+  pointer-events: none;
+}
+.bj-half {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  will-change: transform, opacity;
+}
+.bj-half > .bj-paper {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+.bj-half-stub {
+  clip-path: polygon(0 0, 6.2% 0%, 5.5% 3.8%, 7.7% 7.7%, 5.1% 11.5%, 7.2% 15.4%, 6.4% 19.2%, 5.1% 23.1%, 7% 26.9%, 5% 30.8%, 6.7% 34.6%, 5.1% 38.5%, 5.2% 42.3%, 6.7% 46.2%, 8.4% 50%, 5.3% 53.8%, 5.8% 57.7%, 7.6% 61.5%, 9% 65.4%, 7.3% 69.2%, 6.5% 73.1%, 9.1% 76.9%, 5% 80.8%, 8.6% 84.6%, 6.1% 88.5%, 5.4% 92.3%, 5.3% 96.2%, 6.2% 100%, 0 100%);
+  animation: bjStub 1.5s ease-in forwards;
+}
+.bj-half-main {
+  clip-path: polygon(6.2% 0%, 5.5% 3.8%, 7.7% 7.7%, 5.1% 11.5%, 7.2% 15.4%, 6.4% 19.2%, 5.1% 23.1%, 7% 26.9%, 5% 30.8%, 6.7% 34.6%, 5.1% 38.5%, 5.2% 42.3%, 6.7% 46.2%, 8.4% 50%, 5.3% 53.8%, 5.8% 57.7%, 7.6% 61.5%, 9% 65.4%, 7.3% 69.2%, 6.5% 73.1%, 9.1% 76.9%, 5% 80.8%, 8.6% 84.6%, 6.1% 88.5%, 5.4% 92.3%, 5.3% 96.2%, 6.2% 100%, 100% 100%, 100% 0);
+  transform-origin: 100% 30%;
+  animation: bjRip 1.35s cubic-bezier(0.45, 0, 0.75, 0.35) forwards;
+}
+.bj-half-main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.75) 5%, rgba(120, 90, 40, 0.3) 9%, transparent 14%);
+}
+.bj-scrap {
+  position: absolute;
+  width: 9px;
+  height: 6px;
+  background: #efe3c8;
+  border-radius: 1px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  animation: bjScrap 1s ease-out forwards;
+  opacity: 0;
+}
+@keyframes bjRip {
+  0% {
+    transform: none;
+    opacity: 1;
+  }
+  8% {
+    transform: translateX(4px) rotate(0.4deg);
+  }
+  16% {
+    transform: translateX(-3px) rotate(-0.3deg);
+  }
+  26% {
+    transform: translateX(6px) rotateY(-6deg) rotate(0.8deg);
+  }
+  55% {
+    transform: translate(70px, -30px) rotateY(-24deg) rotate(4deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(520px, -160px) rotateY(-55deg) rotate(14deg);
+    opacity: 0;
+  }
+}
+@keyframes bjStub {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes bjScrap {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot));
+  }
+}
+
+/* ---------------------------------------------------------------- toast (not on the board) */
+
+.bj-toast-wrap {
+  position: fixed;
+  z-index: 50;
+  left: 0;
+  right: 0;
+  bottom: 24px;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  pointer-events: none;
+}
+.bj-toast {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 8px 6px 18px;
+  border-radius: 12px;
+  background: var(--bj-card);
+  border: 1px solid var(--bj-card-border);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+  color: var(--bj-text);
+  font-size: 15px;
+  pointer-events: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.bj-toast[data-open="true"] {
+  display: inline-flex;
+}
+.bj-toast-undo {
+  min-height: 44px;
+  min-width: 72px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--bj-acc);
+  color: var(--bj-acc-ink);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.bj-toast-undo:focus-visible {
+  outline: 2px solid var(--bj-text);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- torn-out pages (not on the board) */
+
+.bj-bin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bj-bin-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.bj-bin-open {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--bj-text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.bj-bin-open:hover {
+  background: var(--bj-hover);
+}
+.bj-bin-open[aria-current="page"] {
+  background: var(--bj-hover);
+  border-color: var(--bj-acc);
+}
+.bj-bin-open:focus-visible {
+  outline: 2px solid var(--bj-acc);
+  outline-offset: 2px;
+}
+.bj-bin-tab {
+  flex: none;
+  width: 22px;
+  height: 12px;
+  border-radius: 2px;
+  opacity: 0.7;
+  transform: rotate(-3deg);
+}
+.bj-bin-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.bj-bin-title {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 180, 168, 0.5);
+}
+.bj-bin-meta {
+  font-size: 12px;
+  color: var(--bj-faint);
+}
+.bj-bin-restore {
+  flex: none;
+  min-height: 36px;
+  font-size: 13px;
+}
+.bj-bin-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bj-danger);
+}
+
+@media (max-width: 720px) {
+  .bj-bin-restore {
+    min-height: 44px;
+  }
+  .bj-toast-wrap {
+    bottom: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-half,
+  .bj-scrap {
+    animation: none;
+  }
+}
