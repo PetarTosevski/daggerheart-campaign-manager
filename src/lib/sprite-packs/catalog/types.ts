@@ -53,8 +53,16 @@ type EntryBase = {
   readonly key: string;
   /** The item's name exactly as the prompts doc writes it. */
   readonly name: string;
+  /** The sheet layout: a primary sheet, or the layout of the extra sheet the item is on. */
   readonly sheet: Sheet;
-  /** 0-based position on its sheet in reading order (the cutter labels by it). */
+  /**
+   * Set only for an item drawn on an extra sheet: that sheet's id without the
+   * folder (`large-2` for `town-street-and-market/large-2.jpg`). Such items are
+   * new catalog items with their own keys and traits (not variants); they come
+   * after the primary sheet's items in their sheet's list.
+   */
+  readonly extraSheet?: string;
+  /** 0-based position on its sheet (the extra sheet, if any) in reading order (the cutter labels by it). */
   readonly index: number;
   /** Size in squares (D4). */
   readonly w: number;
@@ -86,7 +94,11 @@ export type TextureEntry = EntryBase & {
 
 export type CatalogEntry = ObjectEntry | TextureEntry;
 
-/** One folder's three sheets, each in grid order. */
+/**
+ * One folder's three sheets, each in grid order. An extra sheet's items are
+ * appended to the list of the sheet whose layout it uses (`large-2` -> large),
+ * so the mapping tables and lookups see them like any other item.
+ */
 export type FolderCatalog = {
   readonly folder: string;
   readonly props: readonly ObjectEntry[];
@@ -98,6 +110,19 @@ export type FolderCatalog = {
 
 /** Appended to a texture key whose slug equals an object's in the same folder. */
 export const TEXTURE_KEY_SUFFIX = "-terrain";
+
+/** Id of an extra sheet: `<props|large|terrain>-<suffix>` (the file name without extension). */
+export const EXTRA_SHEET_ID = /^(props|large|terrain)-[a-z0-9-]+$/;
+
+/** The id of the sheet an entry is drawn on: `props`, `large`, `terrain` or an extra sheet's id. */
+export function entrySheetId(entry: Pick<EntryBase, "sheet" | "extraSheet">): string {
+  return entry.extraSheet ?? entry.sheet;
+}
+
+/** The entries of a folder sheet list that are drawn on the given sheet id. */
+export function entriesOnSheet<E extends CatalogEntry>(entries: readonly E[], sheetId: string): E[] {
+  return entries.filter((e) => entrySheetId(e) === sheetId);
+}
 
 /** `bird's nest (on the ground)` -> `birds-nest-on-the-ground` (D8). */
 export function slugify(name: string): string {
@@ -163,9 +188,19 @@ export function tex(name: string, terrain: Terrain, rotatable: boolean): Texture
   return { name, terrain, rotatable };
 }
 
+/** Items of extra sheets, by sheet id: object specs on props / large layouts, textures on terrain layouts. */
+export type ExtraSheets = {
+  readonly [id: `props-${string}` | `large-${string}`]: readonly ObjectSpec[];
+} & {
+  readonly [id: `terrain-${string}`]: readonly TextureSpec[];
+};
+
 /**
  * Builds one folder's catalog: assigns key, sheet, grid index and the default
- * size per sheet (props 1 x 1, large 2 x 2, textures TEXTURE_SQUARES).
+ * size per sheet (props 1 x 1, large 2 x 2, textures TEXTURE_SQUARES). Items of
+ * extra sheets (`extras`, keyed by sheet id) become new entries appended to
+ * their layout's list, indexed by their position on the extra sheet. Throws on
+ * a bad extra-sheet id or a duplicate key.
  */
 export function defineFolder(
   folder: string,
@@ -173,21 +208,30 @@ export function defineFolder(
     readonly props: readonly ObjectSpec[];
     readonly large: readonly ObjectSpec[];
     readonly terrain: readonly TextureSpec[];
+    readonly extras?: ExtraSheets;
   },
 ): FolderCatalog {
-  const objects = (sheet: "props" | "large", specs: readonly ObjectSpec[]): ObjectEntry[] => {
+  const objects = (sheet: "props" | "large", specs: readonly ObjectSpec[], extraSheet?: string): ObjectEntry[] => {
     const size = sheet === "props" ? 1 : 2;
     return specs.map((s, index) => ({
       ...s,
       key: `${folder}/${slugify(s.name)}`,
       sheet,
+      ...(extraSheet ? { extraSheet } : {}),
       index,
       w: s.w ?? size,
       h: s.h ?? size,
     }));
   };
-  const props = objects("props", sheets.props);
-  const large = objects("large", sheets.large);
+  const extras = Object.entries(sheets.extras ?? {}) as Array<[string, readonly (ObjectSpec | TextureSpec)[]]>;
+  for (const [id] of extras) if (!EXTRA_SHEET_ID.test(id)) throw new Error(`${folder}: bad extra sheet id "${id}"`);
+  const extrasOf = (sheet: Sheet) => extras.filter(([id]) => id.startsWith(`${sheet}-`));
+  const objectList = (sheet: "props" | "large", specs: readonly ObjectSpec[]) => [
+    ...objects(sheet, specs),
+    ...extrasOf(sheet).flatMap(([id, list]) => objects(sheet, list as readonly ObjectSpec[], id)),
+  ];
+  const props = objectList("props", sheets.props);
+  const large = objectList("large", sheets.large);
   const objectKeys = new Set([...props, ...large].map((e) => e.key));
   // A texture named like an object of the same folder (volcanic "cracked basalt")
   // gets the TEXTURE_KEY_SUFFIX so keys stay unique.
@@ -195,15 +239,13 @@ export function defineFolder(
     const key = `${folder}/${slugify(name)}`;
     return objectKeys.has(key) ? `${key}${TEXTURE_KEY_SUFFIX}` : key;
   };
-  return {
-    folder,
-    props,
-    large,
-    terrain: sheets.terrain.map((t, index) => ({
+  const textures = (specs: readonly TextureSpec[], extraSheet?: string): TextureEntry[] =>
+    specs.map((t, index) => ({
       ...t,
       category: "texture",
       key: textureKey(t.name),
       sheet: "terrain",
+      ...(extraSheet ? { extraSheet } : {}),
       index,
       w: TEXTURE_SQUARES,
       h: TEXTURE_SQUARES,
@@ -211,6 +253,15 @@ export function defineFolder(
       light: "none",
       height: "flat",
       footprint: "rect",
-    })),
-  };
+    }));
+  const terrain = [
+    ...textures(sheets.terrain),
+    ...extrasOf("terrain").flatMap(([id, list]) => textures(list as readonly TextureSpec[], id)),
+  ];
+  const seen = new Set<string>();
+  for (const e of [...props, ...large, ...terrain]) {
+    if (seen.has(e.key)) throw new Error(`${folder}: duplicate key ${e.key}`);
+    seen.add(e.key);
+  }
+  return { folder, props, large, terrain };
 }

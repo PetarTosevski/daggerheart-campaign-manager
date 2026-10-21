@@ -20,6 +20,12 @@ import {
   builtinManifestSchema,
   catalogEntry,
   classicLight,
+  defineFolder,
+  entriesOnSheet,
+  entrySheetId,
+  long,
+  obj,
+  tex,
   createSpriteLookup,
   folderEntries,
   isSettingId,
@@ -30,6 +36,7 @@ import {
   spriteCandidates,
   spriteTraits,
   textureCandidates,
+  type CatalogEntry,
   type FolderId,
   type Sheet,
   type SpriteTraits,
@@ -37,7 +44,7 @@ import {
 
 // ---------------------------------------------------------------- the prompts doc, parsed
 
-type DocFolder = { folder: string; props: string[]; large: string[]; terrain: string[] };
+type DocFolder = { folder: string; props: string[]; large: string[]; terrain: string[]; extras: Record<string, string[]> };
 
 function parsePromptsDoc(): DocFolder[] {
   const text = readFileSync(join(process.cwd(), "docs/sprite-packs/prompts.md"), "utf8");
@@ -46,7 +53,7 @@ function parsePromptsDoc(): DocFolder[] {
   const get = (folder: string) => {
     let f = folders.find((x) => x.folder === folder);
     if (!f) {
-      f = { folder, props: [], large: [], terrain: [] };
+      f = { folder, props: [], large: [], terrain: [], extras: {} };
       folders.push(f);
     }
     return f;
@@ -83,6 +90,9 @@ function parsePromptsDoc(): DocFolder[] {
       }
       const sheet = /^- (props|large|terrain): (.+)$/.exec(line);
       if (setting && sheet) get(setting)[sheet[1] as Sheet].push(...items(sheet[2]!));
+      // An extra sheet's new items: `- large-2: cottage · ...`.
+      const extra = /^- ((?:props|large|terrain)-[a-z0-9-]+): (.+)$/.exec(line);
+      if (setting && extra) (get(setting).extras[extra[1]!] ??= []).push(...items(extra[2]!));
     }
   }
   return folders;
@@ -101,8 +111,9 @@ describe("catalog vs docs/sprite-packs/prompts.md", () => {
     const cat = CATALOG[folder as FolderId];
     for (const sheet of ["props", "large", "terrain"] as const) {
       expect(doc[sheet]).toHaveLength(SHEET_COUNTS[sheet]);
-      expect(cat[sheet].map((e) => e.name)).toEqual(doc[sheet]);
-      cat[sheet].forEach((e, i) => {
+      const primary = entriesOnSheet<CatalogEntry>(cat[sheet], sheet);
+      expect(primary.map((e) => e.name)).toEqual(doc[sheet]);
+      primary.forEach((e, i) => {
         expect(e.sheet).toBe(sheet);
         expect(e.index).toBe(i);
         const slugKey = `${folder}/${slugify(e.name)}`;
@@ -110,6 +121,23 @@ describe("catalog vs docs/sprite-packs/prompts.md", () => {
         if (e.key !== slugKey) expect(sheet).toBe("terrain");
       });
     }
+  });
+
+  it.each(DOC.map((f) => [f.folder, f] as const))("%s: extra-sheet items match the doc's extra-sheet lists", (folder, doc) => {
+    const cat = CATALOG[folder as FolderId];
+    const extras: Record<string, string[]> = {};
+    for (const sheet of ["props", "large", "terrain"] as const)
+      for (const e of cat[sheet])
+        if (e.extraSheet) {
+          expect(e.extraSheet.startsWith(`${sheet}-`)).toBe(true);
+          expect(e.index).toBe((extras[e.extraSheet] ??= []).length);
+          extras[e.extraSheet]!.push(e.name);
+        }
+    expect(extras).toEqual(doc.extras);
+  });
+
+  it("no extra sheet exists today, so the catalog has no extra-sheet items", () => {
+    expect(CATALOG_ENTRIES.filter((e) => e.extraSheet !== undefined)).toEqual([]);
   });
 
   it("keys are unique and match <folder>/<slug> (D8)", () => {
@@ -124,6 +152,52 @@ describe("catalog vs docs/sprite-packs/prompts.md", () => {
     expect(catalogEntry("volcanic/cracked-basalt")?.category).toBe("object");
     expect(catalogEntry("volcanic/cracked-basalt-terrain")?.category).toBe("texture");
     expect(keys.filter((k) => k.endsWith(TEXTURE_KEY_SUFFIX))).toEqual(["volcanic/cracked-basalt-terrain"]);
+  });
+});
+
+describe("extra sheets: new items, not variants (user answer 2026-10-21)", () => {
+  const folder = defineFolder("town-street-and-market", {
+    props: [obj("barrel", "cover", "low", "barrel")],
+    large: [long("market stall", "cover", "tall", "table")],
+    terrain: [tex("cobblestones", "stone", true)],
+    extras: {
+      "large-2": [obj("cottage", "block", "tall", "pillar", { footprint: "rect" }), long("garden fence", "cover", "low", "log")],
+      "props-2": [obj("garden plot", "none", "flat", "bush")],
+      "terrain-2": [tex("barrel", "dirt", true)],
+    },
+  });
+
+  it("appends an extra sheet's items to its layout's list with their own keys, sheet id, index and default size", () => {
+    expect(folder.large.map((e) => [e.key, entrySheetId(e), e.index, e.w, e.h])).toEqual([
+      ["town-street-and-market/market-stall", "large", 0, 2, 1],
+      ["town-street-and-market/cottage", "large-2", 0, 2, 2],
+      ["town-street-and-market/garden-fence", "large-2", 1, 2, 1],
+    ]);
+    expect(folder.large[1]).toMatchObject({ sheet: "large", extraSheet: "large-2", sight: "block", footprint: "rect" });
+    expect(folder.props.map((e) => [e.key, entrySheetId(e), e.index, e.w])).toEqual([
+      ["town-street-and-market/barrel", "props", 0, 1],
+      ["town-street-and-market/garden-plot", "props-2", 0, 1],
+    ]);
+    // A texture on an extra terrain sheet gets the texture suffix when it shares an object's slug.
+    expect(folder.terrain.map((e) => [e.key, entrySheetId(e), e.index, e.w])).toEqual([
+      ["town-street-and-market/cobblestones", "terrain", 0, TEXTURE_SQUARES],
+      [`town-street-and-market/barrel${TEXTURE_KEY_SUFFIX}`, "terrain-2", 0, TEXTURE_SQUARES],
+    ]);
+    expect(entriesOnSheet(folder.large, "large-2").map((e) => e.name)).toEqual(["cottage", "garden fence"]);
+    expect(entriesOnSheet(folder.large, "large").map((e) => e.name)).toEqual(["market stall"]);
+    expect(folder.props[0]).not.toHaveProperty("extraSheet");
+  });
+
+  it("rejects a bad extra-sheet id and a key that repeats a primary item", () => {
+    const base = { props: [], large: [], terrain: [] };
+    expect(() => defineFolder("forest", { ...base, extras: { ["large2" as "large-2"]: [] } })).toThrow(/bad extra sheet id/);
+    expect(() =>
+      defineFolder("forest", {
+        ...base,
+        large: [obj("oak tree", "block", "tall", "tree")],
+        extras: { "large-2": [obj("oak tree", "block", "tall", "tree")] },
+      }),
+    ).toThrow(/duplicate key forest\/oak-tree/);
   });
 });
 
@@ -231,6 +305,13 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
     expect(catalogEntry("temple/sacred-pool")).toMatchObject({ sight: "none", height: "flat" });
     expect(catalogEntry("grassland-and-road/stone-wall-section")).toMatchObject({ sight: "block", w: 2, h: 1, footprint: "rect" });
     expect(catalogEntry("tavern/worn-planks")).toMatchObject({ terrain: "wood", rotatable: false });
+  });
+
+  it("sizes from the user's P4 answers: sewer channel crossing 2 x 2, thick hedge 2 x 1, pew row 2 x 2 (all rect)", () => {
+    expect(catalogEntry("sewers/sewer-channel-crossing")).toMatchObject({ w: 2, h: 2, footprint: "rect", sight: "none", height: "flat" });
+    expect(catalogEntry("sewers/sewer-channel-two-squares")).toBeNull();
+    expect(catalogEntry("forest/thick-hedge")).toMatchObject({ w: 2, h: 1, footprint: "rect", sight: "block", height: "tall" });
+    expect(catalogEntry("temple/pew-row")).toMatchObject({ w: 2, h: 2, footprint: "rect", sight: "cover", height: "low" });
   });
 });
 

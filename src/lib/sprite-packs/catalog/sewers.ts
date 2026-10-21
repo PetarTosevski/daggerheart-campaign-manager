@@ -22,7 +22,7 @@ export const SEWERS = defineFolder("sewers", {
     obj("eel", "none", "low", "rock", { standIn: false }),
   ],
   large: [
-    long("sewer channel (two squares)", "none", "flat", "rock", { standIn: false }),
+    obj("sewer channel crossing", "none", "flat", "rock", { footprint: "rect", standIn: false }),
     obj("arched tunnel mouth", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
     obj("cistern", "cover", "low", "barrel", { standIn: false }),
     obj("collapsed pipe", "cover", "low", "rubble", { standIn: false }),

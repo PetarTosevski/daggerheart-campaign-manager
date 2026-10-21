@@ -1,6 +1,6 @@
 // Built-in catalog: temple (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, obj, tex } from "./types";
 
 export const TEMPLE = defineFolder("temple", {
   props: [
@@ -24,7 +24,7 @@ export const TEMPLE = defineFolder("temple", {
   large: [
     obj("altar", "cover", "low", "table", { footprint: "rect", standIn: false }),
     obj("great statue of a god", "block", "tall", "statue"),
-    long("pew row", "cover", "low", "log", { standIn: false }),
+    obj("pew row", "cover", "low", "log", { footprint: "rect", standIn: false }),
     obj("stone column", "block", "tall", "pillar"),
     obj("sacred pool", "none", "flat", "rock", { standIn: false }),
     obj("bell tower base", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
