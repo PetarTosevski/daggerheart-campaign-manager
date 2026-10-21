@@ -504,6 +504,8 @@ waves:
         title: D11 end to end - GM and players flow, privacy in the browser, 1440 / 390 visual pass, axe, docs and follow-up beads
         size: S
         goal: One flow proves the GM and two players keep their journals and see exactly what the visibility, sharing, added-entry, bin and departure rules allow, end to end at 1440 and 390; every region matches the board or a recorded deviation; axe finds no serious issue; follow-ups are filed.
+        # ORCHESTRATOR NOTE (2026-10-21, from N2): at 390 px the whole index column (own pages, search, Shared, journals,
+        #   bin, Quick keys) goes behind the 'Pages' disclosure; N2's '🔗 Session' relink button on log pages stays.
         depends_on: [N4, N5, N8]
         owns:
           - src/app/(gm)/campaigns/[campaignId]/notes/page.tsx
