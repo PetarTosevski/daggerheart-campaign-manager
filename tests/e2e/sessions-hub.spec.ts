@@ -11,7 +11,7 @@ import { expectNoHorizontalScroll, openSessions } from "./visual/helpers";
 const uuid = () => crypto.randomUUID();
 const SHOTS = "test-results/visual/SESSIONS-HUB";
 
-test("the nav reads Dashboard · Party · World · Characters & Locations · Sessions · Combat Map · Adversaries · Notes", async ({ page }) => {
+test("the nav reads Dashboard · Party · World · Characters & Locations · Sessions · Combat Map · Adversaries · Notes · Lorekeeper", async ({ page }) => {
   await openSessions(page);
   const nav = page.getByRole("navigation", { name: "Campaign sections" });
   await expect(nav.getByRole("link")).toHaveText([
@@ -23,6 +23,7 @@ test("the nav reads Dashboard · Party · World · Characters & Locations · Ses
     "Combat Map",
     "Adversaries",
     "Notes",
+    "Lorekeeper",
   ]);
   await expect(nav.getByRole("link", { name: "Sessions" })).toHaveAttribute("aria-current", "page");
 });
