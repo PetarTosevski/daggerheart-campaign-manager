@@ -1,4 +1,5 @@
 import { appError } from "../../src/lib/errors/app-error";
+import { adversaryArt } from "../../src/lib/srd/adversary-art";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
@@ -96,4 +97,15 @@ export async function countInstances(ctx: QueryCtx, encounterId: Id<"encounters"
     .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounterId))
     .take(MAX_INSTANCES + 1);
   return rows.length;
+}
+
+/**
+ * The rulebook art of an encounter instance (public/adversary-art), or null: the SRD adversary's own, or for a custom
+ * adversary the art of the SRD entry it was duplicated from (`basedOn`). Used for Combat Map tokens (user 2026-10-21).
+ */
+export async function adversaryArtSrc(ctx: QueryCtx, campaignId: Id<"campaigns">, instance: Doc<"encounterAdversaries">): Promise<string | null> {
+  if (instance.source.kind === "srd") return adversaryArt(instance.source.adversaryId)?.src ?? null;
+  const block = await ctx.db.get("customAdversaries", instance.source.customId);
+  if (block === null || block.campaignId !== campaignId) return null;
+  return adversaryArt(block.basedOn)?.src ?? null;
 }
