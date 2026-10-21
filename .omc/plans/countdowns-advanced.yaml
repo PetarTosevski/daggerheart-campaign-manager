@@ -407,3 +407,44 @@ waves:
           - "A player sees public countdowns with their badges, no Armed switch, no steps, no feed notices and no 'Tick countdowns' button (D12)"
           - "Checks every R1-R11, D1-D12 and E1-E7 against the app and lists any gap in the task doc; each gap is filed as a bead under dcm-bxp; bead dcm-bxp.70 closes when merged"
           - "Files follow-up beads: Start buttons for adversary stat-block countdowns (loop / decreasing / dice labels), authz-matrix entries for every function this plan added or changed"
+  - wave: 5
+    tracers:
+      - id: K6
+        title: K5 gaps - GM decides a double-zero chase, paused stays paused, feed rolls tick both chase sides, start hint, one manualTickAmount
+        size: S
+        # USER ANSWERS (2026-10-21, binding): G2 (dcm-bxp.73) "gm decides": when both chase sides reach 0 on one roll the card asks the GM
+        #   "Caught!" or "Got away!" and stores the choice. G3 (dcm-bxp.74) "stay paused until unpause": a correction never un-pauses.
+        #   G6 (dcm-bxp.77) "let GM do whatever he wants with the countdown, rolls tick both sides": applying a roll to a chase from the
+        #   feed ticks both sides by chaseTicks (one checkbox per pair); the GM keeps free manual control of each side on the card.
+        goal: Close dcm-bxp.73, .74, .75, .76 and .77 with the user's answers above.
+        depends_on: [K5]
+        owns:
+          - convex/tables/countdowns.ts
+          - convex/countdowns.ts
+          - convex/countdownRolls.ts
+          - convex/lib/countdownTicks.ts
+          - src/lib/domain/countdowns/index.ts
+          - src/lib/domain/countdowns/advanced.ts
+          - src/lib/domain/countdowns/labels.ts
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/card.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/chase.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/new-dialog.tsx
+          - src/components/party/dice/tick-countdowns.tsx
+          - tests/convex/countdowns-modes.test.ts
+          - tests/convex/countdowns-chase.test.ts
+          - tests/convex/countdown-rolls.test.ts
+          - tests/unit/countdown-advanced.test.ts
+          - tests/unit/countdown-domain.test.ts
+          - tests/e2e/countdowns-chase.spec.ts
+          - tests/e2e/countdown-rolls.spec.ts
+          - docs/tasks/TASK-CD-K6.md
+        reads:
+          - docs/tasks/TASK-CD-K5.md
+          - convex/schema.ts
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/**
+        acceptance:
+          - "A roll that takes both chase sides to 0 leaves the pair asking the GM; a new optional field (widen only) stores 'caught' or 'escaped'; the card then shows that banner; players see 'The GM is deciding' until then; a Convex test per role for the decide mutation (anonymous, outsider, player, GM) asserting ConvexError.data.code"
+          - "A correction (any amount, to 0 included) on a paused countdown, repeating or not, leaves it paused; only Resume un-pauses; K2's opposite test is changed to the new rule"
+          - "The feed's Tick countdowns lists a chase as one row; applying a roll ticks both sides by chaseTicks with one undo; the GM's manual Tick -1 / Borrowed Time per side on the card are unchanged"
+          - "The New countdown dialog shows 'typically 5-10' for progress and consequence starts (R3); manualTickAmount lives once in the domain and card.tsx imports it"
+          - "pnpm lint, typecheck, vitest and the countdown e2e specs pass; screenshots of the double-zero card and the feed's chase row at 1440 and 390"
