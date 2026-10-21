@@ -110,7 +110,8 @@ describe("Bard Rally (CB 28)", () => {
       expect(rollOptions(warrior, kind).filter((o) => o.key === "rally:rally-1")).toHaveLength(1);
     }
     const applied = applyRollOptions(warrior, rollOptions(warrior, "action"), ["rally:rally-1"]);
-    expect(applied.extraDice).toEqual([{ count: 1, sides: 6 }]);
+    // A Rally Die is a named die (not a damage die, so a critical doesn't max it).
+    expect(applied.namedDice).toEqual([{ count: 1, sides: 6 }]);
     expect(applied.sheet.heldDice).toEqual([]);
     const multi = { ...warrior, multiclass: { classId: "bard", domainId: "grace", subclassId: "troubadour" } };
     expect(rollOptions(multi, "damage").filter((o) => o.key.startsWith("rally:"))).toHaveLength(1);

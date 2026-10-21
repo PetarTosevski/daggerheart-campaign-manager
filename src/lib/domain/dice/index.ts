@@ -209,7 +209,10 @@ export type AppliedOptions = {
   sheet: CharacterSheet;
   modifier: number;
   advantage: number;
+  /** Extra damage dice from features (`dice` effects: Sneak Attack, Marked for Death). */
   extraDice: { count: number; sides: number }[];
+  /** Named held dice still to roll (a Rally Die): not damage dice, so a critical doesn't max them. */
+  namedDice: { count: number; sides: number }[];
   fixedDice: { sides: number; value: number }[];
   labels: string[];
 };
@@ -223,7 +226,7 @@ export function applyRollOptions(sheet: CharacterSheet, available: readonly Roll
   for (const key of chosen) if (!available.some((o) => o.key === key)) throw new DiceRuleError("That option isn't available for this roll.");
   const picked = available.filter((o) => o.auto || chosen.includes(o.key));
   let next = sheet;
-  const out: AppliedOptions = { sheet, modifier: 0, advantage: 0, extraDice: [], fixedDice: [], labels: [] };
+  const out: AppliedOptions = { sheet, modifier: 0, advantage: 0, extraDice: [], namedDice: [], fixedDice: [], labels: [] };
   for (const option of picked) {
     const cost = option.cost;
     if (cost?.hope) next = spendHope(next, cost.hope);
@@ -245,7 +248,7 @@ export function applyRollOptions(sheet: CharacterSheet, available: readonly Roll
       next = { ...next, heldDice: next.heldDice.filter((d) => d.id !== heldId) };
       if (option.effect.kind === "heldDie") {
         if (held.value !== undefined) out.fixedDice.push({ sides: held.sides, value: held.value });
-        else out.extraDice.push({ count: 1, sides: held.sides });
+        else out.namedDice.push({ count: 1, sides: held.sides });
       }
     }
     const effect = option.effect;
@@ -310,8 +313,13 @@ export type DamageInput = {
   critical: boolean;
   /** Replaces `dice`' maximum on a critical (Brawler: 14 × Proficiency). */
   critBase?: number;
-  /** Dice roll options add (Marked for Death, Sneak Attack, a Rally Die), rolled after `dice`; a critical maxes them too. */
+  /** Extra damage dice from features (Sneak Attack, Marked for Death), rolled after `dice`; a critical maxes them too (CB 98). */
   bonusDice?: DicePool;
+  /**
+   * Named dice added to the roll (a Rally Die; Slayer Dice are added by the caller), rolled last. They are not damage dice,
+   * so a critical does not max them (user 2026-10-21: "A Slayer Die is not a damage die", CB 48 names them).
+   */
+  namedDice?: DicePool;
 };
 
 /**
@@ -321,7 +329,8 @@ export type DamageInput = {
 export function rollDamage(input: DamageInput, rng: Rng): RollRecord {
   assertInt(input.flat, -LIMITS.modifier * 2, LIMITS.modifier * 4, "The modifier");
   const bonus = input.bonusDice ?? [];
-  const dice = rollPool([...input.dice, ...bonus], "damage", rng);
+  const dice = rollPool([...input.dice, ...bonus, ...(input.namedDice ?? [])], "damage", rng);
+  // A critical maxes every damage die (CB 98), feature damage dice included; named dice roll normally.
   const crit = input.critical ? (input.critBase ?? maxRoll(input.dice)) + maxRoll(bonus) : 0;
   const modifier = input.flat + crit;
   return { kind: "damage", dice, modifier, total: Math.max(0, sum(dice) + modifier), outcome: "none", manual: false };

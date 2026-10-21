@@ -355,7 +355,7 @@ describe("rolls: class-feature integration (D5 TI-a)", () => {
     expect(roll.dice.map((d) => d.sides)).toEqual([8, 8, 6, 6]);
   });
 
-  it("a Brawler crit with a Rally Die: 14 × Proficiency plus the Rally Die's maximum, plus the roll (CB 98)", async () => {
+  it("a Brawler crit with a Rally Die: 14 × Proficiency plus the roll; a Rally Die is a named die, not maxed (CB 98; user 2026-10-21)", async () => {
     const { gm, create, edit } = await classSetup("witherwild");
     const brawler = await create("brawler", { primaryWeaponId: "brawler-s-strike" });
     await edit(brawler, { heldDice: [RALLY] });
@@ -365,7 +365,7 @@ describe("rolls: class-feature integration (D5 TI-a)", () => {
       values: [1, 1, 1],
       idempotencyKey: key(),
     });
-    expect(roll.total).toBe(14 + 6 + 3);
+    expect(roll.total).toBe(14 + 3);
   });
 
   it("Get In & Get Out's advantage is spent once: taking it ends the effect", async () => {
