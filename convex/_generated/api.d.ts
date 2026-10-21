@@ -93,6 +93,7 @@ import type * as migrations_slotBonuses from "../migrations/slotBonuses.js";
 import type * as migrations_trackers from "../migrations/trackers.js";
 import type * as migrations_uploads from "../migrations/uploads.js";
 import type * as notes from "../notes.js";
+import type * as notesBin from "../notesBin.js";
 import type * as notesEntries from "../notesEntries.js";
 import type * as notesSharing from "../notesSharing.js";
 import type * as notesThreads from "../notesThreads.js";
@@ -225,6 +226,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/trackers": typeof migrations_trackers;
   "migrations/uploads": typeof migrations_uploads;
   notes: typeof notes;
+  notesBin: typeof notesBin;
   notesEntries: typeof notesEntries;
   notesSharing: typeof notesSharing;
   notesThreads: typeof notesThreads;
