@@ -63,8 +63,25 @@ export function WithFear({ children }: { children: (fear: number) => ReactNode }
   return fear === undefined ? null : children(fear);
 }
 
+/** False until the browser first goes idle after mount (at most about 2 s), so background work waits for the page. */
+function useAfterIdle(): boolean {
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(() => setIdle(true), { timeout: 2000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(() => setIdle(true), 1000);
+    return () => window.clearTimeout(id);
+  }, []);
+  return idle;
+}
+
 const CampaignNav = memo(function CampaignNav({ campaignId, isGm }: { campaignId: string; isGm: boolean }) {
   const pathname = usePathname();
+  // Full prefetch of every tab (PF1, user answer Q3) starts once the page is idle, so the tabs' payloads and code do
+  // not compete with the open page's own; until then the default prefetch fetches the shell down to the loading boundary.
+  const fullPrefetch = useAfterIdle();
   const base = `/campaigns/${campaignId}`;
   return (
     <nav aria-label="Campaign sections" className="flex flex-wrap gap-1 rounded-xl bg-black/35 p-1">
@@ -75,6 +92,9 @@ const CampaignNav = memo(function CampaignNav({ campaignId, isGm }: { campaignId
           <Link
             key={section.label}
             href={href}
+            // Fully prefetched, a first click renders at once (the tab's RSC payload and code are here) and the router
+            // cache serves revisits.
+            prefetch={fullPrefetch ? true : null}
             aria-current={current ? "page" : undefined}
             className={cn(
               "inline-flex min-h-11 items-center rounded-lg px-3.5 text-[14px]",
@@ -237,6 +257,36 @@ const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { ca
   );
 });
 
+const skeletonBlock = "rounded-[14px] border border-[#253338] bg-[#141e22] motion-safe:animate-pulse";
+
+/**
+ * The loading skeleton of a campaign page (PF1): the dashboard boards' dark panels in the page grid, announced politely
+ * (role=status, aria-busy). The campaign segment's loading.tsx shows it while a tab's server payload is on its way, and
+ * the shell shows it while the campaign summary loads.
+ */
+export function CampaignSectionLoading({ label = "Loading page" }: { label?: string }) {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+      data-testid="campaign-loading"
+      className="mx-auto grid max-w-[1344px] grid-cols-1 gap-6 px-4 py-7 sm:px-12 lg:grid-cols-[minmax(0,1fr)_340px]"
+    >
+      <span className="sr-only">{label}…</span>
+      <div aria-hidden="true" className="flex min-w-0 flex-col gap-6">
+        <div className="h-7 w-48 rounded-md bg-[#18242a] motion-safe:animate-pulse" />
+        <div className={cn(skeletonBlock, "h-[220px]")} />
+        <div className={cn(skeletonBlock, "h-[160px]")} />
+      </div>
+      <div aria-hidden="true" className="flex flex-col gap-6">
+        <div className={cn(skeletonBlock, "h-[180px]")} />
+        <div className={cn(skeletonBlock, "h-[120px]")} />
+      </div>
+    </div>
+  );
+}
+
 const MemoTome = memo(CampaignTome);
 const MemoPlayersDialog = memo(PlayersDialog);
 
@@ -257,7 +307,12 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
   }, [foundId, markOpened]);
 
   if (campaign === undefined) {
-    return <main className="min-h-screen bg-[#0d1417] p-12 text-muted-text">Loading campaign…</main>;
+    return (
+      <div className="min-h-screen bg-[#0d1417] font-sans text-[#e6ecea]">
+        <div aria-hidden="true" className="h-[92px] border-b border-[#1c272b] bg-[#101a1d]" />
+        <CampaignSectionLoading label="Loading campaign" />
+      </div>
+    );
   }
   if (campaign === null) {
     return (

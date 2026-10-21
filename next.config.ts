@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  experimental: {
+    // Router cache (PF1): a page segment fetched on navigation is reused for 30 s, so going back to a tab does not wait
+    // on the server again. Data stays live: every page reads it from Convex subscriptions, not from the RSC payload.
+    // Fully prefetched links (the campaign nav, prefetch={true}) use the `static` time, 5 minutes by default.
+    staleTimes: { dynamic: 30 },
+  },
   async headers() {
     return [
       {
