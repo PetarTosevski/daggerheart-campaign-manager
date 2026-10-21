@@ -16,6 +16,7 @@ import {
 } from "../src/lib/domain/characters/index";
 import { derivedDefense, derivedThresholds } from "../src/lib/domain/characters/derived";
 import { applySlotBonuses } from "../src/lib/domain/characters/slots";
+import { negateMinor } from "../src/lib/domain/session-features/index";
 import { spellcastTraitOf } from "../src/lib/domain/characters/spellcast";
 import { addCard, cardTakeProblem, sourcesFor } from "../src/lib/domain/level-up/index";
 import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
@@ -45,6 +46,8 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { installedAugments, seedMotherboard } from "./characterExtras";
+import { logAction } from "./lib/actionLog";
+import { featureScope } from "./sessionFeatures";
 import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
 import { campaignQuery, keyedCampaignMutation, keyedUserMutation, userMutation, userQuery } from "./lib/functions";
@@ -578,9 +581,14 @@ export const toggleCondition = userMutation({
  * Withered source also gains a Wither token and rolls the Fear Die
  * (convex/wither.ts); outside Witherwild it is MECHANIC_DISABLED. Keyed
  * (review L2): a retry with the same idempotency key returns the first result.
+ * `negateMinor` (Lunar Phases, New moon, HF p.17 "Spend a Hope to negate Minor
+ * damage"; plan session-features U6): allowed only when F0's `canNegateMinor`
+ * holds for the severity after the Armor Slot (else CLASS_FEATURE_RULE); spends
+ * the Hope, marks no Hit Point (a chosen Armor Slot is still marked), returns
+ * marks 0 and writes one undoable public row. Plain damage stays unlogged (E4).
  */
 export const applyDamage = keyedUserMutation({
-  args: { characterId: v.id("characters"), damage: v.number(), useArmorSlot: v.boolean(), withered: v.optional(v.boolean()) },
+  args: { characterId: v.id("characters"), damage: v.number(), useArmorSlot: v.boolean(), withered: v.optional(v.boolean()), negateMinor: v.optional(v.literal(true)) },
   returns: v.object({
     severity: v.union(v.literal("none"), v.literal("minor"), v.literal("major"), v.literal("severe")),
     marks: v.number(),
@@ -588,21 +596,36 @@ export const applyDamage = keyedUserMutation({
     armorMarked: v.number(),
     wither: v.optional(witherGainValidator),
   }),
-  handler: async (ctx, { characterId, damage, useArmorSlot, withered }) =>
-    ctx.once("character_damage", { characterId, damage, useArmorSlot, withered: withered ?? false }, async () => {
+  handler: async (ctx, { characterId, damage, useArmorSlot, withered, negateMinor: negate }) =>
+    // `negateMinor` joins the request only when set, so plain damage keeps its request hash.
+    ctx.once("character_damage", { characterId, damage, useArmorSlot, withered: withered ?? false, ...(negate ? { negateMinor: true } : {}) }, async () => {
       if (!Number.isInteger(damage) || damage < 1 || damage > 999) invalid("Enter the damage as a whole number.");
       const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
       if (withered) assertMechanicEnabled(campaign, "witherTokens");
-      const defense = derivedDefense(s, await installedAugments(ctx, campaign, character._id));
-      // Armor base + level + always-on subclass bonuses (CB 36, 45; HF 10).
-      const thresholds = derivedThresholds(s);
+      const scope = featureScope(campaign);
+      const defense = derivedDefense(s, await installedAugments(ctx, campaign, character._id), scope);
+      // Armor base + level + always-on subclass bonuses (CB 36, 45; HF 10) + a Full moon's +3 (HF 17).
+      const thresholds = derivedThresholds(s, scope);
       if (useArmorSlot && s.armorMarked >= defense.armorScore) invalid("No Armor Slot is free.");
       const result = hitPointsToMark(damage, thresholds, useArmorSlot);
-      const next: CharacterSheet = {
-        ...s,
-        armorMarked: useArmorSlot ? s.armorMarked + 1 : s.armorMarked,
-        hp: Math.min(s.hpMax, s.hp + result.marks),
-      };
+      const armored: CharacterSheet = { ...s, armorMarked: useArmorSlot ? s.armorMarked + 1 : s.armorMarked };
+      if (negate) {
+        // Refuses (CLASS_FEATURE_RULE) unless the New moon covers this severity and a Hope is there to spend.
+        const next = negateMinor(armored, result.severity, scope);
+        await saveSheet(ctx, character._id, next);
+        await logAction(ctx, {
+          campaignId: campaign._id,
+          characterId: character._id,
+          actorId: ctx.user._id,
+          kind: "feature",
+          visibility: "public",
+          summary: `${s.name} spent a Hope: the New Moon negates Minor damage`,
+          before: s,
+          undoable: true,
+        });
+        return { severity: "minor" as const, marks: 0, hp: next.hp, armorMarked: next.armorMarked };
+      }
+      const next: CharacterSheet = { ...armored, hp: Math.min(s.hpMax, s.hp + result.marks) };
       await saveSheet(ctx, character._id, next);
       // The Wither row's `before` is the damaged sheet: undoing it takes back the token, not the damage.
       const wither =

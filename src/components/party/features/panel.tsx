@@ -11,6 +11,7 @@ import { rallyDieStress } from "@/lib/domain/class-features/held-dice";
 import { classActions, hopeFeature } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES, CLASS_STATE_LABELS, classFeaturesAvailable } from "@/lib/domain/class-features/index";
 import type { FeatureInput, FeatureMeta } from "@/lib/domain/class-features/types";
+import { currentPhase, holdsSlayer, holdsTide, slayerCapacity, slayerDice, tideCapacity, tideTokens } from "@/lib/domain/session-features";
 import { characterSheetSchema } from "@/lib/validation/characters";
 
 import { api } from "../../../../convex/_generated/api";
@@ -339,6 +340,22 @@ function stateEntries(sheet: Sheet): [string, string][] {
   });
 }
 
+/**
+ * Session-feature chips (plan session-features U7), each only for its holder: the Slayer pool and the Know the Tide
+ * tokens while any are held, the moon die while one is placed (Lunar Phases only with Hope & Fear on).
+ */
+function sessionChips(sheet: Sheet, hopeAndFear: boolean): { key: string; text: string }[] {
+  const chips: { key: string; text: string }[] = [];
+  const slayer = slayerDice(sheet);
+  if (holdsSlayer(sheet) && slayer > 0) chips.push({ key: "slayer", text: `Slayer Dice ${slayer}/${slayerCapacity(sheet)}` });
+  const tide = tideTokens(sheet);
+  if (holdsTide(sheet) && tide > 0) chips.push({ key: "tide", text: `Tide tokens ${tide}/${tideCapacity(sheet)}` });
+  const die = sheet.sessionFeatures?.moonDie;
+  const phase = currentPhase(sheet, { hopeAndFear, ikonis: false });
+  if (die !== undefined && phase) chips.push({ key: "moon", text: `Moon die ${die}: ${phase.name}` });
+  return chips;
+}
+
 function blockedReason(props: SlotProps): string | null {
   const { character } = props;
   if (character.status === "dead") return "Dead characters can't use features.";
@@ -374,7 +391,8 @@ export function FeaturesBox(props: SlotProps) {
   );
   const conditions = sheet.conditions ?? [];
   const state = stateEntries(sheet);
-  if (actions.length === 0 && conditions.length === 0 && held.length === 0 && state.length === 0) return null;
+  const session = sessionChips(sheet, props.hopeAndFear);
+  if (actions.length === 0 && conditions.length === 0 && held.length === 0 && session.length === 0 && state.length === 0) return null;
   const blocked = blockedReason(props);
 
   return (
@@ -402,6 +420,18 @@ export function FeaturesBox(props: SlotProps) {
               <li key={d.id} className="ft-pill">
                 {TRAIT_LABEL(d.kind)} d{d.sides}
                 {d.value !== undefined ? `: ${d.value}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {session.length > 0 ? (
+        <div className="cf-chips">
+          <Label>Session</Label>
+          <ul className="ft-list ft-inline" aria-label="Session features">
+            {session.map((c) => (
+              <li key={c.key} className="ft-pill" data-chip={c.key}>
+                {c.text}
               </li>
             ))}
           </ul>
