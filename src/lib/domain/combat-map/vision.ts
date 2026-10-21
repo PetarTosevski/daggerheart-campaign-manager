@@ -17,9 +17,18 @@
  * 2 = clear.
  */
 
-import { CARRIED_LIGHT_REACH, isLit, lightOf, mapLightReach, type CarriedLight, type LightLevel } from "./light";
+import {
+  CARRIED_LIGHT_REACH,
+  TERRAIN_GLOW_REACH,
+  isLit,
+  lightOf,
+  mapLightReach,
+  terrainGlows,
+  type CarriedLight,
+  type LightLevel,
+} from "./light";
 import { blockRadiusFactor, blocksSight, type SightMode } from "./sight";
-import { SIGHT_BLOCKING_TERRAINS, type Terrain } from "./spec";
+import { SIGHT_BLOCKING_TERRAINS, isTerrain, type Terrain } from "./spec";
 import { defaultTraitRadius, type VisionTraits } from "./traits";
 
 // ---------------------------------------------------------------- constants
@@ -97,6 +106,12 @@ export type VisionMapInput = {
   readonly block?: Iterable<string>;
   /** An uploaded image: terrain is ignored, only painted blockers and objects block. */
   readonly image?: boolean;
+  /**
+   * Glowing squares (F6), "x,y" square keys. When given, these replace the terrain rule: a Sprites map passes the
+   * squares whose texture glows (`glowingSquares`, src/lib/combat-map/sprites/terrain.ts). When absent, the squares
+   * whose Classic terrain glows (lava, `GLOWING_TERRAINS`) glow; an uploaded image has none.
+   */
+  readonly glow?: Iterable<string>;
 };
 
 export type MapLightSource = { readonly x: number; readonly y: number; readonly clear: number; readonly dim: number };
@@ -112,6 +127,12 @@ export type PreparedMap = {
   readonly blocked: Uint8Array;
   /** Lit map lights (R9). */
   readonly lights: readonly MapLightSource[];
+  /**
+   * The light of glowing terrain (F6), per sample: 0 none, 1 dim, 2 clear, computed once here (each glowing square is
+   * a faint glow at its centre, sight lines from it included) so a viewer only reads it. Absent when no square glows:
+   * such a map prepares and sees exactly as before.
+   */
+  readonly glow?: Uint8Array;
 };
 
 const S = SAMPLES_PER_SQUARE;
@@ -145,6 +166,60 @@ function inPoly(px: number, py: number, pts: readonly Point[]): boolean {
   return inside;
 }
 
+/** An area's hit test (point in squares) and bounding box, or null for an unknown or degenerate shape. */
+type AreaHit = {
+  readonly hit: (cx: number, cy: number) => boolean;
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+};
+
+function areaHit(a: VisionArea, mapW: number, mapH: number): AreaHit | null {
+  const pts = a.points ?? [];
+  const ax = a.x ?? 0;
+  const ay = a.y ?? 0;
+  if (a.shape === "rect") {
+    const aw = a.w ?? 1;
+    const ah = a.h ?? 1;
+    return { x0: ax, y0: ay, x1: ax + aw, y1: ay + ah, hit: (cx, cy) => cx >= ax && cx <= ax + aw && cy >= ay && cy <= ay + ah };
+  }
+  if (a.shape === "ellipse") {
+    const rx = a.rx || 1;
+    const ry = a.ry || 1;
+    return { x0: ax - rx, y0: ay - ry, x1: ax + rx, y1: ay + ry, hit: (cx, cy) => ((cx - ax) / rx) ** 2 + ((cy - ay) / ry) ** 2 <= 1 };
+  }
+  if (a.shape === "poly" && pts.length > 2) {
+    return {
+      x0: Math.min(...pts.map((p) => p[0])),
+      x1: Math.max(...pts.map((p) => p[0])),
+      y0: Math.min(...pts.map((p) => p[1])),
+      y1: Math.max(...pts.map((p) => p[1])),
+      hit: (cx, cy) => inPoly(cx, cy, pts),
+    };
+  }
+  if (a.shape === "path" && pts.length > 1) {
+    const hw = (a.width || 2) / 2;
+    return {
+      x0: Math.min(...pts.map((p) => p[0])) - hw,
+      x1: Math.max(...pts.map((p) => p[0])) + hw,
+      y0: Math.min(...pts.map((p) => p[1])) - hw,
+      y1: Math.max(...pts.map((p) => p[1])) + hw,
+      hit: (cx, cy) => {
+        for (let i = 0; i < pts.length - 1; i++) {
+          if (segDist(cx, cy, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) <= hw) return true;
+        }
+        return false;
+      },
+    };
+  }
+  if (a.shape === "border") {
+    const th = a.width || 2;
+    return { x0: 0, y0: 0, x1: mapW, y1: mapH, hit: (cx, cy) => cx < th || cy < th || cx > mapW - th || cy > mapH - th };
+  }
+  return null;
+}
+
 /** Rasterise areas (in order, later wins) into a "blocks sight" grid at sample resolution. */
 function rasterizeWalls(input: VisionMapInput, sw: number, sh: number, out: Uint8Array): void {
   const baseWall = isWallish(input.base) ? 1 : 0;
@@ -152,47 +227,9 @@ function rasterizeWalls(input: VisionMapInput, sw: number, sh: number, out: Uint
   for (const a of input.areas ?? []) {
     if (typeof a.terrain !== "string") continue;
     const wall = isWallish(a.terrain) ? 1 : 0;
-    const pts = a.points ?? [];
-    let hit: ((cx: number, cy: number) => boolean) | null = null;
-    let x0 = 0;
-    let y0 = 0;
-    let x1 = input.w;
-    let y1 = input.h;
-    const ax = a.x ?? 0;
-    const ay = a.y ?? 0;
-    if (a.shape === "rect") {
-      const aw = a.w ?? 1;
-      const ah = a.h ?? 1;
-      [x0, y0, x1, y1] = [ax, ay, ax + aw, ay + ah];
-      hit = (cx, cy) => cx >= ax && cx <= ax + aw && cy >= ay && cy <= ay + ah;
-    } else if (a.shape === "ellipse") {
-      const rx = a.rx || 1;
-      const ry = a.ry || 1;
-      [x0, y0, x1, y1] = [ax - rx, ay - ry, ax + rx, ay + ry];
-      hit = (cx, cy) => ((cx - ax) / rx) ** 2 + ((cy - ay) / ry) ** 2 <= 1;
-    } else if (a.shape === "poly" && pts.length > 2) {
-      x0 = Math.min(...pts.map((p) => p[0]));
-      x1 = Math.max(...pts.map((p) => p[0]));
-      y0 = Math.min(...pts.map((p) => p[1]));
-      y1 = Math.max(...pts.map((p) => p[1]));
-      hit = (cx, cy) => inPoly(cx, cy, pts);
-    } else if (a.shape === "path" && pts.length > 1) {
-      const hw = (a.width || 2) / 2;
-      x0 = Math.min(...pts.map((p) => p[0])) - hw;
-      x1 = Math.max(...pts.map((p) => p[0])) + hw;
-      y0 = Math.min(...pts.map((p) => p[1])) - hw;
-      y1 = Math.max(...pts.map((p) => p[1])) + hw;
-      hit = (cx, cy) => {
-        for (let i = 0; i < pts.length - 1; i++) {
-          if (segDist(cx, cy, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) <= hw) return true;
-        }
-        return false;
-      };
-    } else if (a.shape === "border") {
-      const th = a.width || 2;
-      hit = (cx, cy) => cx < th || cy < th || cx > input.w - th || cy > input.h - th;
-    }
-    if (!hit) continue;
+    const area = areaHit(a, input.w, input.h);
+    if (!area) continue;
+    const { hit, x0, y0, x1, y1 } = area;
     const sx0 = Math.max(0, Math.floor(x0 * S) - 1);
     const sy0 = Math.max(0, Math.floor(y0 * S) - 1);
     const sx1 = Math.min(sw - 1, Math.ceil(x1 * S) + 1);
@@ -255,9 +292,107 @@ function blockRect(out: Uint8Array, sw: number, sh: number, o: VisionObject, t: 
 }
 
 /**
+ * F6: the squares (index y * w + x) whose Classic terrain glows: the terrain at each square's centre, areas in order
+ * (later wins, unknown terrains skipped, as the painter's `rasterize` at one cell per square), painted squares on
+ * top. Returns [] without rasterising when no terrain of the map glows.
+ */
+function terrainGlowSquares(input: VisionMapInput, w: number, h: number): number[] {
+  const paint = Object.entries(input.paint ?? {});
+  const known = (t: unknown): t is string => isTerrain(t);
+  const glows =
+    terrainGlows(input.base) ||
+    (input.areas ?? []).some((a) => known(a.terrain) && terrainGlows(a.terrain)) ||
+    paint.some(([, t]) => known(t) && terrainGlows(t));
+  if (!glows) return [];
+  const grid = new Uint8Array(w * h).fill(known(input.base) && terrainGlows(input.base) ? 1 : 0);
+  for (const a of input.areas ?? []) {
+    if (!known(a.terrain)) continue;
+    const area = areaHit(a, w, h);
+    if (!area) continue;
+    const value = terrainGlows(a.terrain) ? 1 : 0;
+    const x0 = Math.max(0, Math.floor(area.x0) - 1);
+    const y0 = Math.max(0, Math.floor(area.y0) - 1);
+    const x1 = Math.min(w - 1, Math.ceil(area.x1) + 1);
+    const y1 = Math.min(h - 1, Math.ceil(area.y1) + 1);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) if (area.hit(x + 0.5, y + 0.5)) grid[y * w + x] = value;
+    }
+  }
+  for (const [key, terrain] of paint) {
+    const xy = parseKey(key);
+    if (!xy || !known(terrain) || xy[0] < 0 || xy[1] < 0 || xy[0] >= w || xy[1] >= h) continue;
+    grid[xy[1] * w + xy[0]] = terrainGlows(terrain) ? 1 : 0;
+  }
+  const out: number[] = [];
+  for (let i = 0; i < grid.length; i++) if (grid[i]) out.push(i);
+  return out;
+}
+
+/** F6: the glowing squares of a map (index y * w + x): the caller's list when given, else the terrain rule. */
+function glowSquares(input: VisionMapInput, w: number, h: number): number[] {
+  if (input.glow === undefined) return input.image ? [] : terrainGlowSquares(input, w, h);
+  const out = new Set<number>();
+  for (const key of input.glow) {
+    const xy = parseKey(key);
+    if (xy && xy[0] >= 0 && xy[1] >= 0 && xy[0] < w && xy[1] < h) out.add(xy[1] * w + xy[0]);
+  }
+  return [...out];
+}
+
+/**
+ * F6: the light of every glowing square (a faint glow at its centre, TERRAIN_GLOW_REACH), per sample: the best level
+ * over the glowing squares in reach, each checked with a sight line from the square's centre (as `computeSample`
+ * checks a map light). Walked per sample: the clear band first, stopping at the first square that sees the sample,
+ * then the dim band, so a sample costs about one sight line however large the lava field is.
+ */
+function terrainGlowLevels(map: PreparedMap, squares: readonly number[]): Uint8Array {
+  const { w, h, sw, sh } = map;
+  const out = new Uint8Array(sw * sh);
+  const clear = TERRAIN_GLOW_REACH[0] + LIGHT_SLACK;
+  const dim = TERRAIN_GLOW_REACH[1] + LIGHT_SLACK;
+  const R = Math.ceil(dim);
+  const glowing = new Uint8Array(w * h);
+  for (const sq of squares) glowing[sq] = 1;
+  // Squares with a glowing square within R squares (the only ones whose samples can be lit).
+  const near = new Uint8Array(w * h);
+  for (const sq of squares) {
+    const x = sq % w;
+    const y = Math.floor(sq / w);
+    for (let yy = Math.max(0, y - R); yy <= Math.min(h - 1, y + R); yy++) near.fill(1, yy * w + Math.max(0, x - R), yy * w + Math.min(w - 1, x + R) + 1);
+  }
+  /** Whether a glowing square within `reach` of the point sees it. */
+  const litFrom = (px: number, py: number, qx: number, qy: number, reach: number, lo: number): boolean => {
+    const r = Math.ceil(reach);
+    for (let y = Math.max(0, qy - r); y <= Math.min(h - 1, qy + r); y++) {
+      for (let x = Math.max(0, qx - r); x <= Math.min(w - 1, qx + r); x++) {
+        if (!glowing[y * w + x]) continue;
+        const d = Math.hypot(px - x - 0.5, py - y - 0.5);
+        if (d > reach || d <= lo) continue;
+        if (los(map, x + 0.5, y + 0.5, px, py)) return true;
+      }
+    }
+    return false;
+  };
+  for (let sy = 0; sy < sh; sy++) {
+    const py = (sy + 0.5) / S;
+    const qy = Math.floor(py);
+    for (let sx = 0; sx < sw; sx++) {
+      const px = (sx + 0.5) / S;
+      const qx = Math.floor(px);
+      if (!near[qy * w + qx]) continue;
+      // A square's own samples are always clear (within LOS_NEAR of its centre); then the clear band, then the dim band.
+      if (glowing[qy * w + qx] || litFrom(px, py, qx, qy, clear, -1)) out[sy * sw + sx] = 2;
+      else if (litFrom(px, py, qx, qy, dim, clear)) out[sy * sw + sx] = 1;
+    }
+  }
+  return out;
+}
+
+/**
  * Build the blocking grid (terrain walls, painted blockers, sight-blocking
  * objects, R7) and the list of lit map lights (R9). Objects with sprite
  * traits (P3) use their sight default (D3), light (Q1) and footprint (D4).
+ * Glowing terrain (F6) is lit here once, for every viewer.
  */
 export function prepareMap(input: VisionMapInput): PreparedMap {
   const w = Math.max(1, Math.trunc(input.w));
@@ -294,7 +429,9 @@ export function prepareMap(input: VisionMapInput): PreparedMap {
       }
     }
   }
-  return { w, h, sw, sh, blocked, lights };
+  const prepared: PreparedMap = { w, h, sw, sh, blocked, lights };
+  const glowing = glowSquares(input, w, h);
+  return glowing.length === 0 ? prepared : { ...prepared, glow: terrainGlowLevels(prepared, glowing) };
 }
 
 // ---------------------------------------------------------------- line of sight
@@ -466,9 +603,12 @@ function computeSample(view: ViewerView, sx: number, sy: number): 0 | 1 | 2 {
   if (view.light !== "night") {
     return own || los(view.map, view.eyeX, view.eyeY, px, py) ? 2 : 0;
   }
-  // Night: cheap distance pass first, so dark samples skip the sight line.
-  let reachable = false;
+  // Night: cheap distance pass first, so dark samples skip the sight line. Glowing terrain (F6) was lit once in
+  // prepareMap; it counts like any other map light once the viewer has a sight line to the sample.
+  const glow = view.map.glow ? (view.map.glow[sy * view.map.sw + sx] as 0 | 1 | 2) : 0;
+  let reachable = glow > 0;
   for (const s of view.sources) {
+    if (reachable) break;
     if (Math.hypot(px - s.x, py - s.y) <= s.dim + LIGHT_SLACK) {
       reachable = true;
       break;
@@ -476,7 +616,8 @@ function computeSample(view: ViewerView, sx: number, sy: number): 0 | 1 | 2 {
   }
   if (!reachable) return 0;
   if (!own && !los(view.map, view.eyeX, view.eyeY, px, py)) return 0;
-  let level: 0 | 1 | 2 = 0;
+  let level: 0 | 1 | 2 = glow;
+  if (level === 2) return 2;
   for (const s of view.sources) {
     const d = Math.hypot(px - s.x, py - s.y);
     if (d > s.dim + LIGHT_SLACK) continue;

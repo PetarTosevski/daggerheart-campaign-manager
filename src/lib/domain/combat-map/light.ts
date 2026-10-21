@@ -118,6 +118,23 @@ export function givesLight(object: LightSubject): boolean {
   return mapLightReach(object) !== null;
 }
 
+/**
+ * Glowing terrain (followups-5 F6, dcm-bxp.91; user 2026-10-21: "glowing terrain gives off light like other
+ * faint-glow objects - very dim light only around its own squares"). The Classic terrains that glow. A Sprites map
+ * asks its textures instead (a texture whose light trait is not none glows: `glowingSquares` in
+ * src/lib/combat-map/sprites/terrain.ts). Each glowing square is a faint-glow light at its centre, always lit
+ * (terrain has no switch).
+ */
+export const GLOWING_TERRAINS: ReadonlySet<string> = new Set(["lava"]);
+
+/** The reach of one glowing square's light: the faint glow (clear in Melee, dim to Very Close). */
+export const TERRAIN_GLOW_REACH: LightReach = FAINT_GLOW_REACH;
+
+/** Whether a Classic terrain glows (F6). */
+export function terrainGlows(terrain: string | null | undefined): boolean {
+  return typeof terrain === "string" && GLOWING_TERRAINS.has(terrain);
+}
+
 /** A map light is lit unless switched off (`lit === false`), as on the board. */
 export function isLit(object: LightSubject): boolean {
   return givesLight(object) && object.lit !== false;

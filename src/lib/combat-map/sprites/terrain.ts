@@ -11,9 +11,13 @@
 //   plus a feather of about 0.35 square (nine jittered taps). Terrains without a texture (wall, void, ... when the packs have
 //   none) keep the Classic pixels already painted underneath and are feathered the same way.
 
+import { terrainGlows } from "../../domain/combat-map/light";
 import type { PreparedMap } from "../painter";
-import { WALLISH, areaHits, isTerrain, paintKey, type PaintArea, type PaintedTerrain, type TerrainId } from "../raster";
-import { TEXTURE_SQUARES } from "../../sprite-packs/catalog/index";
+import { WALLISH, areaHits, isTerrain, paintKey, rasterize, type PaintArea, type PaintSpec, type PaintedTerrain, type TerrainId } from "../raster";
+import { BUILTIN_LOOKUP, builtinSpriteUrl } from "../../sprite-packs/builtin/index";
+import { CATALOG_ENTRIES, TEXTURE_SQUARES } from "../../sprite-packs/catalog/index";
+import { textureCandidates } from "../../sprite-packs/mapping";
+import { COMMON_FOLDER } from "../../sprite-packs/settings";
 import type { SpriteRef } from "../../sprite-packs/traits";
 import type { SpriteArt } from "./loader";
 import { refTextureArt, terrainTextures, type TextureArt, type UploadedSprites } from "./resolve";
@@ -35,6 +39,8 @@ export interface TexturePlan {
   readonly cells: Uint16Array;
   /** sources[0] is the empty source. */
   readonly sources: readonly TextureSource[];
+  /** URLs of the glowing textures among the sources (F6); absent or empty = nothing glows (pixels as before). */
+  readonly glow?: ReadonlySet<string>;
 }
 
 /** Feather half-width in squares (the blend band is about twice this: 0.35 square, D6). */
@@ -72,6 +78,111 @@ const fbm = (x: number, y: number, s: number): number =>
   vnoise(x, y, s) * 0.55 + vnoise(x * 2.1, y * 2.1, s + 7) * 0.3 + vnoise(x * 4.3, y * 4.3, s + 13) * 0.15;
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+// ------------------------------------------------------------------------------------------- glowing terrain (F6)
+// A texture whose light trait is not none glows (followups-5 F6, dcm-bxp.91): the painter lifts its pixels a little,
+// and vision lights each square it covers as a faint glow. Squares without a texture glow when their Classic terrain
+// does (lava). Pure, so the server (convex/lib/combatVision.ts) and the browser decide the same squares.
+
+/** How much a glowing texture's pixels are lifted (multiplied by 1 + GLOW_GAIN, plus GLOW_ADD), weighted by coverage. */
+const GLOW_GAIN = 0.16;
+const GLOW_ADD = 10;
+
+/** The URLs of the built-in glowing textures (catalog light not none, with a file in the pack). */
+const BUILTIN_GLOW_URLS: ReadonlySet<string> = new Set(
+  CATALOG_ENTRIES.flatMap((e) => {
+    if (e.category !== "texture" || e.light === "none") return [];
+    const art = BUILTIN_LOOKUP.get(e.key)?.art;
+    return art ? [builtinSpriteUrl(art)] : [];
+  }),
+);
+
+/** The uploaded-sprite fields glow reads: the client's `UploadedSprite` and the server's row both have them. */
+export type GlowUpload = { readonly category: string; readonly light: string; readonly url?: string | null };
+export type GlowUploads = ReadonlyMap<string, GlowUpload>;
+
+/** Whether an explicit texture ref glows; null when it is not a drawable texture (the square then falls back). */
+function refGlows(ref: SpriteRef, uploaded: GlowUploads): boolean | null {
+  if ("builtin" in ref) {
+    const found = BUILTIN_LOOKUP.get(ref.builtin);
+    if (!found || !found.art || found.entry.category !== "texture") return null;
+    return found.entry.light !== "none";
+  }
+  const row = uploaded.get(ref.uploaded);
+  if (!row || row.category !== "texture" || row.url === null) return null;
+  return row.light !== "none";
+}
+
+/** Glow per texture of a terrain class's mix, in `terrainTextures` order (the setting's, then common's). */
+function mappedGlows(terrain: TerrainId, setting: string): boolean[] {
+  const out: boolean[] = [];
+  const seen = new Set<string>();
+  for (const folder of [setting || COMMON_FOLDER, COMMON_FOLDER]) {
+    for (const entry of textureCandidates(terrain, folder)) {
+      if (seen.has(entry.key)) continue;
+      seen.add(entry.key);
+      if (BUILTIN_LOOKUP.get(entry.key)?.art) out.push(entry.light !== "none");
+    }
+  }
+  return out;
+}
+
+/** Index of the texture a mix draws at a point (squares): the variant mask's winner, as `compositeTextures` picks it. */
+function mixWinner(count: number, x: number, y: number, seed: number): number {
+  let best = -1, at = 0;
+  for (let k = 0; k < count; k++) {
+    const n = vnoise(x / MIX_SQUARES, y / MIX_SQUARES, seed + 101 + k * 13);
+    if (n > best) { best = n; at = k; }
+  }
+  return at;
+}
+
+/**
+ * The squares of a Sprites map that glow (F6), as "x,y" keys, decided at each square's centre the way the painter
+ * draws it: a texture cell, else the texture of the area that painted the square, else the mix of its terrain class
+ * in the setting (the variant drawn at the centre), else the Classic terrain (lava glows). Vision's `prepareMap` takes
+ * the result as `glow`.
+ */
+export function glowingSquares(
+  spec: Pick<PaintSpec, "w" | "h" | "seed" | "base"> & { readonly areas?: ReadonlyArray<SpritePaintArea> },
+  paint: PaintedTerrain | undefined,
+  textures: Readonly<Record<string, SpriteRef>> | undefined,
+  setting: string,
+  uploaded: GlowUploads,
+): string[] {
+  const w = Math.max(0, Math.floor(spec.w)), h = Math.max(0, Math.floor(spec.h));
+  const seed = (spec.seed || 1) | 0;
+  const grid = rasterize({ w, h, base: spec.base, areas: spec.areas }, 1, paint);
+  const areas = spec.areas ?? [];
+  const areaGlow = areas.map((a) => (a && isTerrain(a.terrain) && a.texture ? refGlows(a.texture, uploaded) : null));
+  const anyAreaTexture = areaGlow.some((g) => g !== null);
+  const mapped = new Map<TerrainId, boolean[]>();
+  const out: string[] = [];
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const key = paintKey(x, y);
+      const t = grid[y]![x]!;
+      const cell = textures?.[key];
+      let glow = cell ? refGlows(cell, uploaded) : null;
+      if (glow === null && anyAreaTexture && !(paint && isTerrain(paint[key]))) {
+        for (let i = areas.length - 1; i >= 0; i--) {
+          const a = areas[i];
+          if (!a || !isTerrain(a.terrain) || !areaHits(a, x + 0.5, y + 0.5, w, h)) continue;
+          if (a.terrain === t && areaGlow[i] !== null) glow = areaGlow[i]!;
+          break;
+        }
+      }
+      if (glow === null) {
+        let list = mapped.get(t);
+        if (!list) mapped.set(t, (list = mappedGlows(t, setting)));
+        if (list.length === 0) glow = terrainGlows(t);
+        else if (!list.some(Boolean)) glow = false;
+        else glow = list.length === 1 ? list[0]! : list[mixWinner(list.length, x + 0.5, y + 0.5, seed)]!;
+      }
+      if (glow) out.push(key);
+    }
+  return out;
+}
 
 // ------------------------------------------------------------------------------------------------------- planning
 
@@ -141,7 +252,11 @@ export function planTextures(
       cells[y * fw + x] = s > 0 ? s : mapped(t);
     }
   }
-  return { ff, fw, fh, cells, sources };
+  // F6: the glowing textures among the sources (built-in by catalog light, uploaded by the row's light).
+  const glow = new Set<string>();
+  for (const s of sources) for (const a of s.arts) if (BUILTIN_GLOW_URLS.has(a.url)) glow.add(a.url);
+  for (const row of uploaded.values()) if (row.category === "texture" && row.light !== "none" && row.url !== null) glow.add(row.url);
+  return glow.size === 0 ? { ff, fw, fh, cells, sources } : { ff, fw, fh, cells, sources, glow };
 }
 
 /** Every texture URL a plan may draw (the canvas repaints the map when one of them arrives). */
@@ -153,7 +268,7 @@ export function planUrls(plan: TexturePlan): Set<string> {
 
 // ------------------------------------------------------------------------------------------------------ compositing
 
-type Tile = { readonly data: Uint8ClampedArray; readonly rot: boolean; readonly salt: number };
+type Tile = { readonly data: Uint8ClampedArray; readonly rot: boolean; readonly salt: number; readonly glow?: boolean };
 
 /** Seeded orientation of tile (tx, ty), remembered for the last tile asked (pixels come row by row). */
 function orientation(seed: number) {
@@ -193,7 +308,8 @@ export function loadTiles(plan: TexturePlan, art: SpriteArt, cell: number, seed:
       const d = art.texture(a.url, T);
       if (!d) return [];
       const s = (seed ^ a.salt) | 0;
-      return [{ data: d, rot: a.rotatable, salt: a.salt, own: orientation(s), nbx: orientation(s), nby: orientation(s) }];
+      const tile = { data: d, rot: a.rotatable, salt: a.salt, own: orientation(s), nbx: orientation(s), nby: orientation(s) };
+      return [plan.glow?.has(a.url) ? { ...tile, glow: true } : tile];
     }),
   );
 }
@@ -251,9 +367,12 @@ export function compositeTextures(
   const sourceAt = (gx: number, gy: number) => cells[clamp(Math.floor(gy / FC), 0, fh - 1) * fw + clamp(Math.floor(gx / FC), 0, fw - 1)]!;
   const terrainAt = (gx: number, gy: number) => fine[clamp(Math.floor(gy / FC), 0, fh - 1)]![clamp(Math.floor(gx / FC), 0, fw - 1)]!;
   const rgb = [0, 0, 0];
+  /** F6: the share of the current pixel drawn from glowing textures. */
+  let glowShare = 0;
 
   /** Adds w x the colour of `tile` at pixel (px, py) to rgb. */
   const texel = (tile: OrientedTile, px: number, py: number, w: number) => {
+    if (tile.glow) glowShare += w;
     const tx = Math.floor(px / T), ty = Math.floor(py / T);
     const lx = px - tx * T, ly = py - ty * T;
     const d = tile.data;
@@ -330,6 +449,7 @@ export function compositeTextures(
       const fx = Math.min(fw - 1, Math.floor(px / FC)), fy = Math.min(fh - 1, Math.floor(py / FC));
       const o = ((py - y0) * rw + (px - x0)) * 4;
       rgb[0] = 0; rgb[1] = 0; rgb[2] = 0;
+      glowShare = 0;
       if (!edge[fy * fw + fx]) {
         const list = tiles[cells[fy * fw + fx]!]!;
         if (list.length === 0) continue;
@@ -371,6 +491,11 @@ export function compositeTextures(
           shade = near(7) ? WALL_RIM[0] : near(14) ? WALL_RIM[1] : 1;
         }
         for (let src = 1; src < tapCount.length; src++) if (tapCount[src]! > 0) sample(tiles[src]!, px, py, (tapCount[src]! / total) * macro * shade);
+      }
+      if (glowShare > 0) {
+        // F6: a glowing texture's pixels are lifted a little (its own hue, brighter), by the share it covers.
+        const g = Math.min(1, glowShare);
+        for (let c = 0; c < 3; c++) rgb[c] = rgb[c]! * (1 + GLOW_GAIN * g) + GLOW_ADD * g;
       }
       data[o] = clamp(rgb[0]!, 0, 255); data[o + 1] = clamp(rgb[1]!, 0, 255); data[o + 2] = clamp(rgb[2]!, 0, 255); data[o + 3] = 255;
       drew = true;

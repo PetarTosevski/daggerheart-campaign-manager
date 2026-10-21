@@ -1,6 +1,6 @@
 // Built-in catalog: mushroom cavern (underdark) (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, obj, tex } from "./types";
+import { defineFolder, glowTex, obj, tex } from "./types";
 
 export const MUSHROOM_CAVERN = defineFolder("mushroom-cavern", {
   props: [
@@ -34,7 +34,7 @@ export const MUSHROOM_CAVERN = defineFolder("mushroom-cavern", {
   ],
   terrain: [
     tex("dark cave floor", "cave", true),
-    tex("glowing moss floor", "cave", true),
+    glowTex("glowing moss floor", "cave", true),
     tex("fungal carpet", "cave", true),
     tex("black underground water", "water", true),
   ],
@@ -74,8 +74,8 @@ export const MUSHROOM_CAVERN = defineFolder("mushroom-cavern", {
       obj("spider-goddess shrine", "cover", "low", "statue", { standIn: false }),
     ],
     "terrain-2": [
-      tex("violet glowing moss", "cave", true),
-      tex("crystal-studded floor", "cave", true),
+      glowTex("violet glowing moss", "cave", true),
+      glowTex("crystal-studded floor", "cave", true),
       tex("spore-dust ground", "cave", true),
       tex("wet obsidian", "stone", true),
     ],
