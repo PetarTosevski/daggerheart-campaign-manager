@@ -72,10 +72,11 @@ const agility = { kind: "action" as const, trait: "agility" as const, modifier: 
 test("the GM ticks a countdown from a player's roll in the feed; the player's undo takes it back", async ({ page, browser }) => {
   const { campaignId, hero, characterId, player, close } = await campaignWithPlayer(page, browser);
 
-  // 'Countdown 4' from the existing dialog: unarmed, so the roll doesn't tick it by itself.
+  // 'Countdown 4' with Armed switched off (the dialog arms by default), so the roll doesn't tick it by itself.
   await page.getByRole("button", { name: "+ New countdown" }).click();
   const dialog = page.getByRole("dialog", { name: "New countdown" });
   await dialog.getByLabel("Countdown name").fill("The dam breaks");
+  await dialog.getByRole("checkbox", { name: /Advance automatically on action rolls/ }).uncheck();
   await dialog.getByLabel("What happens at zero").fill("The valley floods.");
   await dialog.getByRole("radio", { name: "4", exact: true }).click();
   await dialog.getByRole("button", { name: "Start at 4" }).click();

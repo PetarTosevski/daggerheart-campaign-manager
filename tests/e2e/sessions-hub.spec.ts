@@ -74,7 +74,8 @@ test("the Play stage's Encounter card: none → Prep, the linked encounter, Star
   await expect(tracker).toHaveAttribute("href", `/campaigns/${campaignId}/adversaries?tab=encounters&encounter=${encounterId}`);
   await expect(card.getByRole("link", { name: "Open the map" })).toHaveAttribute("href", `/campaigns/${campaignId}/combat-map`);
 
-  // HP marked in the tracker shows up here live (read-only).
+  // HP marked in the tracker shows up here live (read-only). Wait for the server to run the encounter first.
+  await expect.poll(async () => (await client.query(api.encounters.get, { campaignId, encounterId }))?.encounter.status).toBe("running");
   const view = await client.query(api.encounters.get, { campaignId, encounterId });
   // The second Bandit ('Jagged Knife Bandit 2'): its label is not a prefix of the other one's.
   const second = view!.instances[1]!;
