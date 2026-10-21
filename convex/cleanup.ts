@@ -286,6 +286,30 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("sessions").withIndex("by_campaign_n", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "sessions", rows);
   },
+  // Notes (D11): entries and recipients before their pages, pages before their journals. Each table goes by the
+  // campaign prefix of one of its indexes.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("journalEntries").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "journalEntries", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db
+      .query("journalPageRecipients")
+      .withIndex("by_campaign_user", (q) => q.eq("campaignId", c))
+      .take(budget.left);
+    await deleteRows(ctx, budget, "journalPageRecipients", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db
+      .query("journalPages")
+      .withIndex("by_campaign_visibility_binned", (q) => q.eq("campaignId", c))
+      .take(budget.left);
+    await deleteRows(ctx, budget, "journalPages", rows);
+  },
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("journals").withIndex("by_campaign_user", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "journals", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "operations", rows);

@@ -8,6 +8,7 @@ import { deathMessages } from "./death";
 import { diceMessages } from "./dice";
 import { encounterMessages } from "./encounters";
 import { levelUpMessages } from "./levelUp";
+import { noteMessages } from "./notes";
 import { photoImportMessages } from "./photoImport";
 import { restMessages } from "./rests";
 import { sessionMessages } from "./sessions";
@@ -34,6 +35,7 @@ export type AppErrorCode =
   | keyof typeof combatMapMessages
   | keyof typeof sessionMessages
   | keyof typeof spritePackMessages
+  | keyof typeof noteMessages
   | "IDEMPOTENCY_MISMATCH"
   | "NAME_TAKEN"
   | "OBJECTIVE_LIMIT"

@@ -12,6 +12,7 @@ import { diceMessages } from "./errors/dice";
 import { encounterMessages } from "./errors/encounters";
 import { levelUpMessages } from "./errors/levelUp";
 import { mapMessages } from "./errors/maps";
+import { noteMessages } from "./errors/notes";
 import { operationMessages } from "./errors/operations";
 import { photoImportMessages } from "./errors/photoImport";
 import { restMessages } from "./errors/rests";
@@ -52,6 +53,7 @@ const MESSAGES = mergeMessages(
   combatMapMessages,
   sessionMessages,
   spritePackMessages,
+  noteMessages,
 );
 
 /** A message for the GM from an error thrown by a Convex function. */

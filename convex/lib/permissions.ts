@@ -3,6 +3,8 @@ import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { normalizeEmail } from "./allowlist";
+import { canReadPage } from "../../src/lib/domain/notes/visibility";
+import { departed } from "./journalState";
 
 /**
  * The single authorization model (CF2). `permissionFor` decides every access:
@@ -20,7 +22,12 @@ export type Resource =
   | { type: "campaign"; campaign: Doc<"campaigns"> }
   | { type: "map"; campaign: Doc<"campaigns"> }
   | { type: "codexEntry"; campaign: Doc<"campaigns">; entry: Doc<"codexEntries"> }
-  | { type: "character"; campaign: Doc<"campaigns">; character: Doc<"characters"> };
+  | { type: "character"; campaign: Doc<"campaigns">; character: Doc<"characters"> }
+  /** D11: a journal page with its journal; decided by `journalPagePermission` alone (no role default, no grants). */
+  | { type: "journalPage"; campaign: Doc<"campaigns">; journal: Doc<"journals">; page: Doc<"journalPages"> };
+
+/** Resources that grants can name (journal pages cannot: their visibility is the rule, analysis 2). */
+type GrantableResource = Exclude<Resource, { type: "journalPage" }>;
 
 const RANK: Record<Permission, number> = { view: 1, edit: 2, owner: 3 };
 
@@ -69,16 +76,37 @@ export async function campaignRole(ctx: QueryCtx, user: Doc<"users">, campaign: 
 }
 
 /**
+ * `campaignRole` for a user known only by id (a journal's owner, D1): no read for the GM, then the membership lookup,
+ * and only for a non-member the users row and the invite lookup.
+ */
+export async function campaignRoleOf(ctx: QueryCtx, userId: Id<"users">, campaign: Doc<"campaigns">): Promise<Role | null> {
+  if (campaign.ownerId === userId) return "gm";
+  const member = await ctx.db
+    .query("campaignMembers")
+    .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id).eq("userId", userId))
+    .unique();
+  if (member !== null) return "player";
+  const user = await ctx.db.get("users", userId);
+  const email = user === null ? null : inviteEmail(user);
+  if (email === null) return null;
+  const invite = await ctx.db
+    .query("campaignInvites")
+    .withIndex("by_campaign_email", (q) => q.eq("campaignId", campaign._id).eq("email", email))
+    .first();
+  return invite === null ? null : "player";
+}
+
+/**
  * Today's rules: the campaign's GM owns everything in it; a player (member or
  * invitee) views it and edits their own character.
  */
-export function rolePermission(role: Role | null, resource: Resource, userId: Id<"users">): Permission | null {
+export function rolePermission(role: Role | null, resource: GrantableResource, userId: Id<"users">): Permission | null {
   if (role === "gm") return "owner";
   if (role === "player") return resource.type === "character" && resource.character.ownerId === userId ? "edit" : "view";
   return null;
 }
 
-function resourceId(resource: Resource): string {
+function resourceId(resource: GrantableResource): string {
   if (resource.type === "codexEntry") return resource.entry._id;
   if (resource.type === "character") return resource.character._id;
   return resource.campaign._id;
@@ -115,9 +143,10 @@ async function actsFor(ctx: QueryCtx, user: Doc<"users">, principalId: string): 
  * campaigns or memberships.
  */
 export async function permissionFor(ctx: QueryCtx, user: Doc<"users">, resource: Resource, need: Permission = "owner"): Promise<Permission | null> {
+  if (resource.type === "journalPage") return journalPagePermission(ctx, user, resource);
   let best = rolePermission(await campaignRole(ctx, user, resource.campaign), resource, user._id);
   if (atLeast(best, need)) return best;
-  const targets: { type: Resource["type"]; id: string }[] = [{ type: resource.type, id: resourceId(resource) }];
+  const targets: { type: GrantableResource["type"]; id: string }[] = [{ type: resource.type, id: resourceId(resource) }];
   if (resource.type !== "campaign") targets.push({ type: "campaign", id: resource.campaign._id });
   for (const target of targets) {
     const own = await ctx.db
@@ -142,6 +171,69 @@ export async function permissionFor(ctx: QueryCtx, user: Doc<"users">, resource:
     }
   }
   return best;
+}
+
+/**
+ * A journal page (D11): `owner` for the page's owner, `view` for a reader, else null. Readers besides the owner
+ * (analysis 3.1; A3, A4, A5, Q2, Q4, D4):
+ *
+ * | visibility | journal present                         | journal departed (D1, Q12) |
+ * |------------|-----------------------------------------|----------------------------|
+ * | `gm`       | the GM                                  | every member               |
+ * | `private`  | nobody                                  | nobody                     |
+ * | `players`  | the other players, not the GM           | every member               |
+ * | `everyone` | every member                            | every member               |
+ * | `chosen`   | its recipients (the GM only if ticked)  | every member               |
+ *
+ * The GM is never owner of a player's page (unlike `rolePermission`), and grants do not apply. Someone without a
+ * campaign role (removed, left, an outsider) reads nothing, not even their own pages. A torn-out page (Q11) is
+ * readable only by its owner, and by the GM who tore it out (a departed journal's page, D2) while that GM would still
+ * read it if it were not torn out. A page of another
+ * campaign, or one whose journal does not match, is null. `need` does not shorten it: the result is always exact.
+ * Cost: the caller's role (GM: none; player: one or two reads), then at most `departed` (two to four reads) and one
+ * `by_page_user` point lookup.
+ */
+async function journalPagePermission(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  { campaign, journal, page }: Extract<Resource, { type: "journalPage" }>,
+): Promise<Permission | null> {
+  if (page.campaignId !== campaign._id || journal.campaignId !== campaign._id || page.journalId !== journal._id) return null;
+  const role = await campaignRole(ctx, user, campaign);
+  if (role === null) return null;
+  const isOwner = page.ownerId === user._id;
+  if (page.binnedAt !== undefined) {
+    if (isOwner) return "owner";
+    // Q11, N1 actions.canRestore: the GM who tore it out, while they could still read it if it were not torn out.
+    if (role !== "gm" || page.binnedBy !== user._id) return null;
+  } else if (isOwner) return "owner";
+  return (await readsJournalPage(ctx, user, role, campaign, journal, page)) ? "view" : null;
+}
+
+/**
+ * Whether a member who does not own the page reads it by the visibility table, ignoring the bin: N1's `canReadPage`
+ * (src/lib/domain/notes/visibility.ts, the one copy of the table) fed with departure (D1) and the caller's recipient
+ * row. A private page costs no read.
+ */
+async function readsJournalPage(
+  ctx: QueryCtx,
+  user: Doc<"users">,
+  role: Role,
+  campaign: Doc<"campaigns">,
+  journal: Doc<"journals">,
+  page: Doc<"journalPages">,
+): Promise<boolean> {
+  if (page.visibility === "private") return false;
+  const ownerIsGm = journal.userId === campaign.ownerId;
+  const isDeparted = !ownerIsGm && (await departed(ctx, campaign, journal));
+  const isRecipient =
+    !isDeparted &&
+    page.visibility === "chosen" &&
+    (await ctx.db
+      .query("journalPageRecipients")
+      .withIndex("by_page_user", (q) => q.eq("pageId", page._id).eq("userId", user._id))
+      .unique()) !== null;
+  return canReadPage({ visibility: page.visibility, ownerIsGm, departed: isDeparted, viewer: role, isRecipient });
 }
 
 /**

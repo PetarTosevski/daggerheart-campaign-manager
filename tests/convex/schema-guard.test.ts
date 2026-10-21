@@ -126,7 +126,18 @@ const CAMPAIGN_SCOPED = [
   "sessionSpotlights",
   "spritePacks",
   "spritePackSprites",
+  "journals",
+  "journalPages",
+  "journalPageRecipients",
+  "journalEntries",
 ];
+/**
+ * Campaign-scoped tables that also have a retention job of their own (listed once above, so this is a second note,
+ * not a second classification). The guard only checks that each is campaign-scoped; the job lands with its tracer.
+ */
+const ALSO_RETENTION: Record<string, string> = {
+  journalPages: "torn-out pages are purged 30 days after binnedAt, with their entries and recipients (D11 N7 cron)",
+};
 /**
  * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge
  * and by C3's map delete (`deleteMapChildren` in convex/lib/combatMaps.ts).
@@ -204,6 +215,10 @@ describe("retention", () => {
       return !objects.every((member) => "campaignId" in member.value);
     });
     expect(missing).toEqual([]);
+  });
+
+  test("tables with an extra retention job are campaign-scoped tables of the schema", () => {
+    expect(Object.keys(ALSO_RETENTION).filter((name) => !CAMPAIGN_SCOPED.includes(name) || !(name in tables))).toEqual([]);
   });
 
   test("map-scoped tables have a mapId the purge can find", () => {
