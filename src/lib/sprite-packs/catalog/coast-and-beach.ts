@@ -38,4 +38,45 @@ export const COAST_AND_BEACH = defineFolder("coast-and-beach", {
     tex("shallow sea water", "water", true),
     tex("rocky shore", "stone", true),
   ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11C): new items, not variants, in sheet order. Props 1 x 1; large
+  // against the 2 x 2 fishing hut corner and rowboat: the boathouse 3 x 3 (whole roof, like the village cottages), the
+  // fishing boat and breakwater 3 x 2, salt pans and the sea-stack arch 3 x 3. The open oyster's pearl only shines in
+  // the drawing (no light, D2). The breakwater's top is walkable (rock = open); salt pans are difficult (rubble).
+  extras: {
+    "props-2": [
+      obj("lobster pot", "cover", "low", "crate", { standIn: false }),
+      obj("fishing rod and tackle box", "none", "low", "crate", { standIn: false }),
+      obj("jellyfish", "none", "flat", "rock", { standIn: false }),
+      obj("sea turtle", "none", "low", "rock", { standIn: false }),
+      obj("pelican", "none", "low", "rock", { standIn: false }),
+      obj("stranded octopus", "none", "flat", "rock", { standIn: false }),
+      obj("coconut pile", "none", "low", "rock", { standIn: false }),
+      obj("fish drying rack", "cover", "low", "table", { standIn: false }),
+      obj("basket of clams", "none", "low", "barrel", { standIn: false }),
+      obj("wooden buoy", "none", "low", "barrel", { standIn: false }),
+      obj("seaweed pile", "none", "flat", "rubble", { standIn: false }),
+      obj("conch shell", "none", "flat", "bones", { standIn: false }),
+      obj("open pearl oyster", "none", "flat", "bones", { standIn: false }),
+      obj("coral chunk", "cover", "low", "rock", { standIn: false }),
+      obj("sea urchins", "none", "flat", "rubble", { standIn: false }),
+      obj("tar bucket and brush", "none", "low", "barrel", { standIn: false }),
+    ],
+    "large-2": [
+      obj("boathouse", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("sea serpent coils", "block", "tall", "boulder", { standIn: false }),
+      obj("giant crab", "block", "tall", "boulder", { standIn: false }),
+      obj("sailing fishing boat", "cover", "low", "log", { footprint: "rect", w: 3, h: 2, standIn: false }),
+      obj("stone breakwater", "cover", "low", "rock", { footprint: "rect", w: 3, h: 2, standIn: false }),
+      obj("dockside crane", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
+      obj("mermaid on a rock", "cover", "low", "rock", { standIn: false }),
+      obj("salt evaporation pans", "none", "flat", "rubble", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("sea-stack rock arch", "block", "tall", "boulder", { w: 3, h: 3, standIn: false }),
+    ],
+    "terrain-2": [
+      tex("pebble beach", "stone", true),
+      tex("seaweed-covered rocks", "stone", true),
+      tex("coral reef shallows", "water", true),
+      tex("tidal mudflat", "swamp", true),
+    ],
+  },
 });

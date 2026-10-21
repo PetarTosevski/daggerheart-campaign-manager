@@ -38,4 +38,46 @@ export const VOLCANIC = defineFolder("volcanic", {
     tex("ash ground", "dirt", true),
     tex("cracked basalt", "stone", true),
   ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11C): new items, not variants, in sheet order. Props 1 x 1; large
+  // against the 2 x 2 forge of the fire giants: the dragon, the lava-lake island and the ash-buried house 3 x 3.
+  // Light (D2): the small fire elemental and the throne's braziers give torch light, the burning bush and the giant
+  // brass brazier campfire light; lava, molten gold, the glowing fissure, fire beetle, rune stone, salamander nest,
+  // magma fall and lava tube glow faintly (like the magma bubble and lava pool). Lava and molten gold are difficult.
+  extras: {
+    "props-2": [
+      obj("fire imp", "none", "low", "rock", { standIn: false }),
+      obj("lava crab", "none", "low", "rock", { standIn: false }),
+      obj("fire beetle", "none", "low", "rock", { light: "faintglow", standIn: false }),
+      obj("small lava stream", "none", "flat", "rubble", { move: "difficult", light: "faintglow", standIn: false }),
+      obj("pumice rocks", "cover", "low", "rock", { standIn: false }),
+      obj("puddle of molten gold", "none", "flat", "rock", { move: "difficult", light: "faintglow", standIn: false }),
+      obj("dragon egg", "cover", "low", "barrel", { standIn: false }),
+      obj("obsidian dagger", "none", "flat", "bones", { standIn: false }),
+      obj("smouldering backpack", "none", "low", "crate", { standIn: false }),
+      obj("ash-covered body", "none", "flat", "bones", { standIn: false }),
+      obj("smoking fissure", "none", "flat", "rubble", { light: "faintglow", standIn: false }),
+      obj("small fire elemental", "none", "low", "torch", { light: "torch", standIn: false }),
+      obj("red crystal cluster", "none", "low", "crystal", { standIn: false }),
+      obj("slag heap", "cover", "low", "rubble", { standIn: false }),
+      obj("fire rune stone", "cover", "low", "rock", { light: "faintglow", standIn: false }),
+      obj("burning bush", "cover", "low", "campfire", { light: "campfire", standIn: false }),
+    ],
+    "large-2": [
+      obj("sleeping red dragon", "block", "tall", "boulder", { w: 3, h: 3, standIn: false }),
+      obj("fire giant's throne", "block", "tall", "torch", { light: "torch", standIn: false }),
+      obj("magma fall", "block", "tall", "boulder", { light: "faintglow", footprint: "rect", standIn: false }),
+      obj("obsidian archway", "cover", "tall", "pillar", { standIn: false }),
+      obj("island in a lava lake", "none", "flat", "rock", { move: "difficult", light: "faintglow", footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("salamander nest", "cover", "low", "rubble", { light: "faintglow", standIn: false }),
+      obj("ash-buried house", "cover", "low", "rubble", { w: 3, h: 3, standIn: false }),
+      obj("giant brass brazier", "block", "tall", "campfire", { light: "campfire", standIn: false }),
+      obj("lava tube opening", "none", "flat", "rubble", { light: "faintglow", footprint: "rect", standIn: false }),
+    ],
+    "terrain-2": [
+      tex("cooled ropy lava", "stone", true),
+      tex("red-hot cracked ground", "stone", true),
+      tex("sulphur crust", "dirt", true),
+      tex("obsidian glass", "stone", true),
+    ],
+  },
 });

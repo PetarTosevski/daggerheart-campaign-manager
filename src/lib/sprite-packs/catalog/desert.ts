@@ -38,4 +38,44 @@ export const DESERT = defineFolder("desert", {
     tex("sandstone floor", "stone", false),
     tex("rocky desert", "dirt", true),
   ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11C): new items, not variants, in sheet order. Props 1 x 1; large
+  // against the 2 x 2 palm tree and caravan wagon: the sphinx 2 x 3 (drawn portrait), mesa, colossus head and shrine
+  // 3 x 3, the mummy 1 x 1 (a man-sized figure). The brass oil lamp is drawn unlit (no light, D2).
+  extras: {
+    "props-2": [
+      obj("vulture", "none", "low", "rock", { standIn: false }),
+      obj("scarab beetle", "none", "low", "rock", { standIn: false }),
+      obj("jackal", "none", "low", "rock", { standIn: false }),
+      obj("tumbleweed", "cover", "low", "bush", { standIn: false }),
+      obj("prickly pear cactus", "cover", "low", "bush", { standIn: false }),
+      obj("basket of dates", "none", "low", "barrel", { standIn: false }),
+      obj("hookah", "none", "low", "barrel", { standIn: false }),
+      obj("brass oil lamp", "none", "low", "barrel", { standIn: false }),
+      obj("half-buried helmet", "none", "flat", "bones", { standIn: false }),
+      obj("amphora", "cover", "low", "barrel", { standIn: false }),
+      obj("spice pile", "none", "flat", "rubble", { standIn: false }),
+      obj("weathered idol", "cover", "low", "rock", { standIn: false }),
+      obj("quicksand patch", "none", "flat", "rubble", { move: "difficult", standIn: false }),
+      obj("wind-carved rock", "cover", "low", "rock", { standIn: false }),
+      obj("snake charmer's basket", "none", "low", "barrel", { standIn: false }),
+      obj("saddle bags", "none", "low", "crate", { standIn: false }),
+    ],
+    "large-2": [
+      obj("sphinx statue", "block", "tall", "statue", { footprint: "rect", w: 2, h: 3, standIn: false }),
+      obj("mummy", "none", "low", "rock", { w: 1, h: 1, standIn: false }),
+      obj("giant sandworm emerging", "block", "tall", "boulder", { standIn: false }),
+      obj("bazaar pavilion", "block", "tall", "tent", { footprint: "rect", standIn: false }),
+      obj("acacia tree", "block", "tall", "tree", { variant: "olive", standIn: false }),
+      obj("mesa rock", "block", "tall", "boulder", { w: 3, h: 3, standIn: false }),
+      obj("sunken tomb entrance", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
+      obj("half-buried colossus head", "block", "tall", "statue", { w: 3, h: 3, standIn: false }),
+      obj("desert shrine with pillars", "cover", "tall", "pillar", { footprint: "rect", w: 3, h: 3, standIn: false }),
+    ],
+    "terrain-2": [
+      tex("red sand", "sand", true),
+      tex("salt flat", "sand", true),
+      tex("wind-rippled dunes", "sand", true),
+      tex("desert pebbles", "dirt", true),
+    ],
+  },
 });
