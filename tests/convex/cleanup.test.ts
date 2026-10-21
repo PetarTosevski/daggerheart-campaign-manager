@@ -95,7 +95,9 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
       before: null,
       after: { currentValue: 4, status: "active" },
     });
-    await ins("actionLog", { campaignId: c, characterId, actorId: userId, kind: "roll", visibility: "public", summary: "rolled", undoable: true, at: now });
+    const rollId = await ins("actionLog", { campaignId: c, characterId, actorId: userId, kind: "roll", visibility: "public", summary: "rolled", undoable: true, at: now });
+    const tickState = { currentValue: 4, startingValue: 4, status: "active" as const, triggerCount: 0 };
+    await ins("countdownTicks", { campaignId: c, countdownId, entryId: rollId, source: "roll", amount: 1, before: tickState, after: { ...tickState, currentValue: 3 }, at: now });
     const restId = await ins("rests", { campaignId: c, kind: "short", status: "open", startedBy: userId, startedAt: now });
     await ins("restChoices", { campaignId: c, restId, characterId, moves: [{ move: "clearStress" }], updatedBy: userId, updatedAt: now });
     await ins("frameTrackers", { campaignId: c, key: "doom", data: {}, updatedAt: now });

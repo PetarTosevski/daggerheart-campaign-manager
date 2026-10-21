@@ -216,14 +216,34 @@ type CountdownDetails = {
   currentValue: number;
 };
 
+/** Advanced fields (countdowns-advanced D12) that travel with "progress": blanked when the GM hides the progress. */
+export const COUNTDOWN_PROGRESS_FIELDS = ["mode", "repeat", "initialValue", "triggerCount", "lastTriggeredAt"] as const;
+/** Advanced fields only the GM ever receives (D12): null for every player. */
+export const COUNTDOWN_GM_ONLY_FIELDS = ["armed", "startDice", "steps", "restMode"] as const;
+
+type BlankedField =
+  | "name"
+  | "description"
+  | "category"
+  | "consequence"
+  | "startingValue"
+  | "currentValue"
+  | (typeof COUNTDOWN_PROGRESS_FIELDS)[number]
+  | (typeof COUNTDOWN_GM_ONLY_FIELDS)[number];
+
+/** T with each field a player may be denied widened to `| null`. */
+export type CountdownForPlayer<T> = { [K in keyof T]: K extends BlankedField ? T[K] | null : T[K] };
+
 /**
  * What a player may see of a countdown: `null` for a private one (players never receive it), otherwise
  * the countdown with every hidden field set to `null` (hidden progress blanks both values; the status stays).
+ * Advanced fields present on the countdown (D12): mode, repeat, initialValue, triggerCount and lastTriggeredAt go with
+ * "progress"; armed, startDice, steps and restMode are always `null`. Fields the countdown lacks stay absent.
  */
-export function countdownForPlayer<T extends CountdownDetails>(countdown: T, visibility: CountdownVisibility) {
+export function countdownForPlayer<T extends CountdownDetails>(countdown: T, visibility: CountdownVisibility): CountdownForPlayer<T> | null {
   if (visibility.mode === "private") return null;
   const hide = (field: CountdownHideableField) => visibility.hidden.includes(field);
-  return {
+  const shown: Record<string, unknown> = {
     ...countdown,
     name: hide("name") ? null : countdown.name,
     description: hide("description") ? null : countdown.description,
@@ -232,4 +252,7 @@ export function countdownForPlayer<T extends CountdownDetails>(countdown: T, vis
     startingValue: hide("progress") ? null : countdown.startingValue,
     currentValue: hide("progress") ? null : countdown.currentValue,
   };
+  for (const field of COUNTDOWN_PROGRESS_FIELDS) if (field in countdown && hide("progress")) shown[field] = null;
+  for (const field of COUNTDOWN_GM_ONLY_FIELDS) if (field in countdown) shown[field] = null;
+  return shown as CountdownForPlayer<T>;
 }

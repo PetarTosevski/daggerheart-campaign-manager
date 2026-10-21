@@ -30,6 +30,7 @@ import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { assertOneActive, readSheet, storedSheet } from "./characterSheet";
+import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
 import { campaignAccess } from "./permissions";
 import type { ActionKind, StoredRoll, Visibility } from "./validators/actionLog";
@@ -136,7 +137,9 @@ async function assertNothingNewer(ctx: MutationCtx, characterId: Id<"characters"
  * undone, when a player undoes a dice row (roll or death move) older than
  * `PLAYER_DICE_UNDO_MS`, or when anything newer happened to a character in
  * the group (`assertNothingNewer`). Restores each `before` sheet, reverts the
- * group's Fear (floor 0), and marks every row undone.
+ * group's Fear (floor 0), takes back the countdown ticks the group's rows caused
+ * where the countdown has not changed since (`revertTicks`, countdowns-advanced
+ * D11), and marks every row undone.
  */
 export async function undoEntry(
   ctx: MutationCtx,
@@ -213,6 +216,12 @@ export async function undoEntry(
 
   const fear = group.reduce((sum, r) => sum + (r.fearDelta ?? 0), 0);
   const fearReverted = fear === 0 ? 0 : (await revertFear(ctx, row.campaignId, fear)).reverted;
+
+  await revertTicks(
+    ctx,
+    group.map((r) => r._id),
+    user._id,
+  );
 
   for (const r of group) await ctx.db.patch("actionLog", r._id, { undoneAt: now, undoneBy: user._id });
   return { undone: group.map((r) => r._id), fearReverted };
