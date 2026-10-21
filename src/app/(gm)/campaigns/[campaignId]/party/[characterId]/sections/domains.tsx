@@ -9,6 +9,7 @@ import { flushSync } from "react-dom";
 import { DOMAIN_ICONS } from "@/components/party/party-display";
 import { Label, SheetBox, Small } from "@/components/party/sheet-ui";
 import { assetBackground } from "@/lib/design-assets";
+import { cardAvailability } from "@/lib/domain/card-effects/availability";
 import { MAX_LEVEL } from "@/lib/domain/characters";
 import {
   cardsAllowed,
@@ -36,6 +37,10 @@ import { recallBlock, resolveCards, vaultCardIds } from "../sheet-helpers";
 // Locked and takeable states come from cardTakeProblem, the same rule the server's takeCard enforces.
 // In guided level-up mode (GL3) the deck chooses the new level's cards into the draft instead of taking them, and
 // the hand and vault offer the optional exchange (CB 110-111); draft-only state is green, as the ribbon's done marks.
+// A card whose once-per limit is used (featureUses `card:<id>`, written on the map by CA4) is greyed, its hand card is
+// turned, and a ribbon names when it comes back, from the same cardAvailability the map's Hand and the server use.
+// CB p.101, "Usage Limits": "If you use that card, you'll need a way to remember that it's temporarily unavailable. You
+// might choose to … turn it on its side". Rests clear the entry through `expire`, so the card is ready again by itself.
 
 const TYPE_LABEL: Record<DomainCard["type"], string> = { ability: "Ability", spell: "Spell", grimoire: "Grimoire" };
 
@@ -54,13 +59,58 @@ const CARD_BACKS: Record<string, string> = {
   valor: "4c7f9d2c0b0c64af54dbf902ac891ffe",
 };
 
-/** The board's hand-card face (`hc-face`): domain-coloured head, art with the Recall badge, meta, text, footer. */
-function CardFace({ card, focusable, actsShown, children }: { card: DomainCard; focusable?: boolean; actsShown?: boolean; children?: ReactNode }) {
+/** The ribbon under an exhausted card's art (the board's felt palette): the state in words, never by the grey alone. */
+const USED_RIBBON: CSSProperties = {
+  flex: "none",
+  margin: 0,
+  padding: "4px 30px 4px 6px",
+  background: "rgba(26,20,36,.9)",
+  color: "#f6ead2",
+  boxShadow: "0 1px 0 #c9a35a, 0 -1px 0 #c9a35a",
+  fontFamily: "var(--font-cinzel), serif",
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: ".06em",
+  textAlign: "center",
+  textTransform: "uppercase",
+  lineHeight: 1.25,
+};
+
+/** The reset label of a card whose once-per limit is used (`card:<id>` in featureUses), or null while it is ready. */
+function usedLabel(sheet: Parameters<typeof cardAvailability>[0], cardId: string): string | null {
+  const availability = cardAvailability(sheet, cardId);
+  return availability.state === "exhausted" ? availability.label : null;
+}
+
+/**
+ * The board's hand-card face (`hc-face`): domain-coloured head, art with the Recall badge, meta, text, footer.
+ * `used` (the reset label of an exhausted card) greys the card and lays the ribbon over its art.
+ */
+function CardFace({
+  card,
+  focusable,
+  actsShown,
+  used,
+  children,
+}: {
+  card: DomainCard;
+  focusable?: boolean;
+  actsShown?: boolean;
+  used?: string | null;
+  children?: ReactNode;
+}) {
   const domain = getDomain(card.domain);
   const art = card.art ?? DOMAIN_CARD_ART[card.id];
+  const style = { "--dc": domain?.color ?? "#5b2b2b", ...(used ? { filter: "grayscale(.9) brightness(.82)" } : {}) } as CSSProperties;
   return (
     // A hand card is focusable so keyboard users can raise it out of the fan and read it, as the board's tabindex.
-    <article className="dk-face" style={{ "--dc": domain?.color ?? "#5b2b2b" } as CSSProperties} aria-label={card.name} tabIndex={focusable ? 0 : undefined}>
+    <article
+      className="dk-face"
+      style={style}
+      aria-label={used ? `${card.name}, used: ${used}` : card.name}
+      data-exhausted={used ? "true" : undefined}
+      tabIndex={focusable ? 0 : undefined}
+    >
       <header className="dk-face-head">
         <h4 className="dk-face-name">{card.name}</h4>
         <span className="dk-face-lvl" aria-label={`Level ${card.level}`}>
@@ -72,6 +122,8 @@ function CardFace({ card, focusable, actsShown, children }: { card: DomainCard; 
           {card.recallCost}
         </span>
       </div>
+      {/* Outside the aria-hidden art so screen readers read it too; the right padding clears the Recall badge. */}
+      {used ? <p style={USED_RIBBON}>Used · {used}</p> : null}
       <div className="dk-face-meta">
         {domain?.name ?? card.domain} {TYPE_LABEL[card.type]} · Recall {card.recallCost}
       </div>
@@ -81,10 +133,13 @@ function CardFace({ card, focusable, actsShown, children }: { card: DomainCard; 
   );
 }
 
-/** The board's fan: each card turns 7° per step from the middle and drops by the square of its offset. */
-function fan(i: number, n: number): CSSProperties {
+/**
+ * The board's fan: each card turns 7° per step from the middle and drops by the square of its offset. A used card is
+ * turned further and sinks a little (CB p.101: "turn it on its side"); hover and focus still straighten it to read.
+ */
+function fan(i: number, n: number, turned = false): CSSProperties {
   const off = i - (n - 1) / 2;
-  return { "--rot": `${off * 7}deg`, "--ty": `${off * off * 7}px`, zIndex: i + 1 } as CSSProperties;
+  return { "--rot": `${off * 7 + (turned ? 16 : 0)}deg`, "--ty": `${off * off * 7 + (turned ? 14 : 0)}px`, zIndex: i + 1 } as CSSProperties;
 }
 
 /** Level-up mode: offers an owned card for the exchange (CB 110), or shows and cancels the one being exchanged. */
@@ -216,18 +271,21 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
               <p className="dk-empty">Your hand is empty. Take cards from the Domain Deck below, or draw them from your vault.</p>
             ) : (
               <div className="dk-hand-list" role="list" aria-label="Loadout cards">
-                {loadout.map((card, i) => (
-                  <div role="listitem" key={card.id} className="dk-hand-card" style={fan(i, loadout.length)}>
-                    <CardFace card={card} focusable actsShown={leveling}>
-                      {canEdit ? (
-                        <button type="button" className="dk-btn" disabled={busy !== null} onClick={() => void move(card, "vault")}>
-                          Move to vault
-                        </button>
-                      ) : null}
-                      {leveling ? <ExchangeControl card={card} /> : null}
-                    </CardFace>
-                  </div>
-                ))}
+                {loadout.map((card, i) => {
+                  const used = usedLabel(sheet, card.id);
+                  return (
+                    <div role="listitem" key={card.id} className="dk-hand-card" style={fan(i, loadout.length, used !== null)}>
+                      <CardFace card={card} focusable actsShown={leveling} used={used}>
+                        {canEdit ? (
+                          <button type="button" className="dk-btn" disabled={busy !== null} onClick={() => void move(card, "vault")}>
+                            Move to vault
+                          </button>
+                        ) : null}
+                        {leveling ? <ExchangeControl card={card} /> : null}
+                      </CardFace>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -262,7 +320,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
                   const cost = (duringRest && restOpen) || card.recallCost === 0 ? "free" : `${card.recallCost} Stress`;
                   return (
                     <div role="listitem" key={card.id} className="dk-spread-card" style={{ "--d": `${i * 55}ms` } as CSSProperties}>
-                      <CardFace card={card} actsShown>
+                      <CardFace card={card} actsShown used={usedLabel(sheet, card.id)}>
                         {canEdit ? (
                           block ? (
                             <span className="dk-block">{block}</span>
