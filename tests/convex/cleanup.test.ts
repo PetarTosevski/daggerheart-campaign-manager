@@ -552,6 +552,20 @@ describe("cleanup crons", () => {
     expect(crons.crons["expire combat requests"]?.schedule).toEqual({ type: "cron", cron: "11 * * * *" });
   });
 
+  it("a purge not started by the sweep (the GM's Delete permanently) purges only its own campaign (F7)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const chosen = await seedCampaign(t, userId, 1);
+    const old = await seedCampaign(t, userId, NOW - 40 * DAY);
+    const oldBefore = await leftovers(t, old);
+
+    await t.mutation(internal.cleanup.purgeCampaign, { campaignId: chosen.campaignId });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await leftovers(t, chosen)).toEqual({ rows: {}, blobs: [] });
+    expect(await leftovers(t, old)).toEqual(oldBefore);
+  });
+
   it("stops purging a campaign the GM restored", async () => {
     const t = makeTest();
     const userId = await user(t);

@@ -80,8 +80,8 @@ export const expireCombatRequests = internalMutation({
 
 /**
  * Starts purging the oldest campaign deleted more than `PURGE_AFTER_MS` ago.
- * `purgeCampaign` calls this again when it is done, so campaigns are purged
- * one after another until none is due.
+ * `purgeCampaign` calls this again when it is done (only for purges this sweep
+ * started, `sweep: true`), so campaigns are purged one after another until none is due.
  */
 export const purgeDeletedCampaigns = internalMutation({
   args: {},
@@ -93,7 +93,7 @@ export const purgeDeletedCampaigns = internalMutation({
       .query("campaigns")
       .withIndex("by_deletedAt", (q) => q.gte("deletedAt", 0).lte("deletedAt", cutoff))
       .first();
-    if (due !== null) await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId: due._id });
+    if (due !== null) await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId: due._id, sweep: true });
     return null;
   },
 });
@@ -372,12 +372,14 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
  * Deletes a campaign due for purge and everything in it, `BATCH` rows per
  * run: first every indexed step, then a paged scan of `campaignOpens` (it has
  * no campaign index, and players who left keep their rows), then the
- * campaign itself. Stops if the campaign is gone or was restored.
+ * campaign itself. Stops if the campaign is gone or was restored. Only a purge
+ * started by `purgeDeletedCampaigns` (`sweep`) goes on to the next due campaign;
+ * a GM's "Delete permanently" (`campaigns.purge`) purges its campaign alone.
  */
 export const purgeCampaign = internalMutation({
-  args: { campaignId: v.id("campaigns"), opensCursor: v.optional(v.string()) },
+  args: { campaignId: v.id("campaigns"), opensCursor: v.optional(v.string()), sweep: v.optional(v.boolean()) },
   returns: v.null(),
-  handler: async (ctx, { campaignId, opensCursor }) => {
+  handler: async (ctx, { campaignId, opensCursor, sweep }) => {
     const campaign = await ctx.db.get("campaigns", campaignId);
     if (campaign?.deletedAt === undefined || campaign.deletedAt > Date.now() - PURGE_AFTER_MS) return null;
     const budget: Budget = { left: BATCH };
@@ -386,7 +388,7 @@ export const purgeCampaign = internalMutation({
       if (budget.left <= 0) break;
     }
     if (budget.left <= 0) {
-      await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId, opensCursor });
+      await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId, opensCursor, sweep });
       return null;
     }
     const page = await ctx.db.query("campaignOpens").paginate({ numItems: budget.left, cursor: opensCursor ?? null });
@@ -397,11 +399,11 @@ export const purgeCampaign = internalMutation({
       page.page.filter((row) => row.campaignId === campaignId),
     );
     if (!page.isDone) {
-      await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId, opensCursor: page.continueCursor });
+      await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId, opensCursor: page.continueCursor, sweep });
       return null;
     }
     await ctx.db.delete("campaigns", campaignId);
-    await ctx.scheduler.runAfter(0, internal.cleanup.purgeDeletedCampaigns, {});
+    if (sweep === true) await ctx.scheduler.runAfter(0, internal.cleanup.purgeDeletedCampaigns, {});
     return null;
   },
 });
