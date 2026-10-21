@@ -43,6 +43,9 @@
 #     the shared Loading (role=status); 390 px one column, no horizontal scroll, targets >= 44 px, reduced motion respected.
 #   - No new dependency. pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e spec pass in
 #     its worktree; one docs/tasks/TASK-D13-<id>.md per tracer.
+# USER ANSWER Q1 (2026-10-21, binding): (a) the user's own rulebooks (Core Rulebook and Hope & Fear, provided) are the rules source -
+#   private text ingested into the Convex deployment by a local script, never in git, searched per question, excerpts with page
+#   numbers sent to the model. Q2-Q14 still pending.
 plan: d13-lorekeeper
 waves:
   # ---------------------------------------------------------------- wave 1: foundation and pure domain
