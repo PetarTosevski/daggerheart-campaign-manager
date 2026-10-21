@@ -7,6 +7,7 @@ import {
   crossedDifficult,
   defaultMove,
   isBlocked,
+  isDeck,
   isDifficult,
   moveEffect,
   pathBlocked,
@@ -48,11 +49,11 @@ describe("traits (D1, D2)", () => {
   it("Classic kinds: the D1 blockers block, the D2 kinds are difficult, the rest are open", () => {
     const by = (m: string) => OBJECT_KINDS.filter((k) => CLASSIC_MOVE[k] === m).sort();
     expect(by("block")).toEqual(["boulder", "deadtree", "mast", "pillar", "statue", "tree"]);
-    // A hull is a deck (open here, see the deck tests); M2's Classic door kind is a door.
+    // A hull is a deck (open here, see the deck tests); the Classic door kind (M2) is a door.
     expect(CLASSIC_MOVE.hull).toBe("open");
     expect(CLASSIC_MOVE["door"]).toBe("door");
     expect(by("difficult")).toEqual(["bones", "bush", "log", "rubble"]);
-    expect(by("door")).toEqual([]);
+    expect(by("door")).toEqual(["door"]);
   });
 
   it("terrain: wall and void block; water, deep, swamp, snow and lava are difficult", () => {
@@ -152,12 +153,29 @@ describe("the grid", () => {
     expect(isDifficult(g, 2, 2)).toBe(true);
     expect(isDifficult(g, 16, 10)).toBe(true);
     expect(crossedDifficult(g, sq(6, 9), sq(13, 9), 1)).toBe(false);
-    // Without an outline the hull's footprint is the deck; a hull sprite (with its own move) is no deck.
+    // Without an outline the hull's footprint is the deck.
     const bare = grid([{ kind: "hull", x: 3.5, y: 3.5 }], { base: "deep" });
     expect(isDifficult(bare, 3, 3)).toBe(false);
     expect(isDifficult(bare, 5, 3)).toBe(true);
-    const spriteHull = grid([{ kind: "hull", x: 3.5, y: 3.5, move: "open" }], { base: "deep" });
-    expect(isDifficult(spriteHull, 3, 3)).toBe(true);
+  });
+
+  it("M2 follow-up: a Classic hull is a deck whatever its sprite (the ship's-bow sprite keeps its deck walkable)", () => {
+    const deckPoints = [[5, 5], [15, 5], [17, 8], [15, 11], [5, 11]];
+    const bow = sprite("ship-deck/ships-bow", 10, 8, { kind: "hull", points: deckPoints });
+    expect(bow.move).toBe("open");
+    expect(isDeck(bow)).toBe(true);
+    const g = grid([bow], { base: "deep" });
+    expect(isDifficult(g, 8, 8)).toBe(false);
+    expect(isBlocked(g, 8, 8)).toBe(false);
+    expect(crossedDifficult(g, sq(6, 9), sq(13, 9), 1)).toBe(false);
+    expect(isDifficult(g, 2, 2)).toBe(true);
+    // Without an outline the sprite's footprint is the deck; a hull never blocks, even with a sprite whose move does.
+    const bare = grid([sprite("ship-deck/ships-bow", 3.5, 3.5, { kind: "hull" })], { base: "deep" });
+    expect(isDifficult(bare, 3, 3)).toBe(false);
+    const blockingSprite = grid([{ kind: "hull", x: 3.5, y: 3.5, move: "block" }], { base: "deep" });
+    expect(isBlocked(blockingSprite, 3, 3)).toBe(false);
+    expect(isDifficult(blockingSprite, 3, 3)).toBe(false);
+    expect(moveEffect({ kind: "hull", move: "block" })).toBe("open");
   });
 
   it("a blocking square is never also difficult", () => {

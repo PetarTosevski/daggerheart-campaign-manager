@@ -14,7 +14,16 @@ import { useRings } from "../tokens/rings";
 import { SIDES } from "../tokens/sides";
 import { useTokenActions, useTokens, type TokenView } from "../tokens/use-tokens";
 import { useCampaignLight } from "./use-campaign-light";
-import { okView, useViewing, useVisionActions, type OtherToken, type ViewOk, type VisionActions } from "./use-vision";
+import {
+  doorLabels,
+  okView,
+  useDoors,
+  useViewing,
+  useVisionActions,
+  type OtherToken,
+  type ViewOk,
+  type VisionActions,
+} from "./use-vision";
 import { useVisionState, type FogBrush, type FogTool } from "./vision-state";
 
 /** The board's light rule line for the viewer's phase and carried light (R8, R9). */
@@ -65,6 +74,48 @@ function ErrorLine({ actions }: { actions: { error: string | null } }) {
       {actions.error}
     </p>
   ) : null;
+}
+
+/**
+ * The doors the viewer may switch (map-movement M2, D8), each with an Open / Close switch (optimistic): the GM every
+ * door, a player only the doors their characters have seen. Nothing when there is none.
+ */
+function DoorsCard(props: VisionPanelProps) {
+  const doors = useDoors(props);
+  const actions = useVisionActions(props.campaignId);
+  if (doors.length === 0) return null;
+  const labels = doorLabels(doors);
+  const sorted = [...doors].sort((a, b) => a.y - b.y || a.x - b.x);
+  return (
+    <section className="cm-card" aria-labelledby="cm-doors-h">
+      <span id="cm-doors-h" className="cm-lbl">
+        Doors
+      </span>
+      <ul className="cm-vis-doors" role="list">
+        {sorted.map((d) => {
+          const label = labels.get(d._id) ?? "Door";
+          return (
+            <li key={d._id} className="cm-row cm-between cm-vis-tight">
+              <span>
+                {label} <span className="cm-muted cm-vis-small">· {d.open ? "open" : "closed"}</span>
+              </span>
+              <button
+                type="button"
+                className="cm-btn cm-sm"
+                aria-pressed={d.open}
+                aria-label={`${d.open ? "Close" : "Open"} ${label.toLowerCase()}`}
+                onClick={() => void actions.setOpen(d._id, !d.open)}
+              >
+                {d.open ? "Close" : "Open"}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <span className="cm-muted cm-vis-small">A closed door stops movement; a closed solid door blocks sight too. Gates and bars stay see-through.</span>
+      <ErrorLine actions={actions} />
+    </section>
+  );
 }
 
 // ---------------------------------------------------------------- player
@@ -171,6 +222,7 @@ function PlayerPanel(props: VisionPanelProps) {
     <>
       <YourView view={view} props={props} />
       {other ? <OtherCard token={other} onDone={() => props.onSelectToken(null)} /> : null}
+      <DoorsCard {...props} />
     </>
   );
 }
@@ -287,12 +339,18 @@ function useMarks({ campaignId, map }: VisionPanelProps): number[] {
 
 /**
  * Left column (slot `VisionPanel`). Player: the "Your view" card (cone, facing, carried light, the light rule and
- * the dim-phase badge; R6, R8, R9, Q3) and the card of a selected non-PC token. GM in Play: "Vision & fog".
+ * the dim-phase badge; R6, R8, R9, Q3) and the card of a selected non-PC token. GM in Play: "Vision & fog". Both: the
+ * doors they may open and close (map-movement M2).
  */
 export function VisionPanel(props: VisionPanelProps) {
   if (props.role === "player") return <PlayerPanel {...props} />;
   if (props.mode !== "play") return null;
-  return <GmPanel {...props} />;
+  return (
+    <>
+      <GmPanel {...props} />
+      <DoorsCard {...props} />
+    </>
+  );
 }
 
 // ---------------------------------------------------------------- RevealPanel

@@ -28,7 +28,7 @@ export type Terrain = (typeof TERRAINS)[number];
 /** Terrains that block sight (the board's WALLISH). */
 export const SIGHT_BLOCKING_TERRAINS: ReadonlySet<Terrain> = new Set<Terrain>(["wall", "void"]);
 
-/** Object kinds (the board's CMAP.KINDS, incl. walltorch and hull). */
+/** Object kinds (the board's CMAP.KINDS, incl. walltorch and hull; map-movement M2 adds `door`). */
 export const OBJECT_KINDS = [
   "tree",
   "bush",
@@ -52,6 +52,7 @@ export const OBJECT_KINDS = [
   "crystal",
   "bones",
   "hull",
+  "door",
 ] as const;
 export type ObjectKind = (typeof OBJECT_KINDS)[number];
 
@@ -105,6 +106,8 @@ export const mapObjectSchema = z.object({
   sight: z.enum(["block", "cover", "none"]).optional(),
   /** Lights only: false = switched off; unset = lit. */
   lit: z.literal(false).optional(),
+  /** Doors only (map-movement M2): true = open; unset = closed. */
+  open: z.literal(true).optional(),
 });
 export type MapObject = z.infer<typeof mapObjectSchema>;
 
@@ -206,6 +209,7 @@ export function clean(raw: unknown, seed?: number): MapSpec | null {
     if (typeof o.variant === "string" && VARIANT_SET.has(o.variant)) object.variant = o.variant as ObjectVariant;
     if (o.sight === "block" || o.sight === "cover" || o.sight === "none") object.sight = o.sight;
     if (o.lit === false) object.lit = false;
+    if (o.open === true) object.open = true;
     objects.push(object);
   }
 

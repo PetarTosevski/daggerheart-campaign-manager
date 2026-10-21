@@ -30,7 +30,7 @@ import { readSheet } from "./characterSheet";
 import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
 import { atLeast, permissionFor } from "./permissions";
-import { objectTraits, resolveRefs } from "./spriteSources";
+import { objectTraits, resolveRefs, type UploadedSprites } from "./spriteSources";
 import { CELL_LAYERS, tokenSideValidator } from "./validators/combatMaps";
 
 /**
@@ -95,6 +95,12 @@ export const visionMaskValidator = v.object({
 /** Everything vision needs from one map, read once per call. */
 export type Scene = {
   readonly map: Doc<"combatMaps">;
+  /** The map's object rows (map-movement M2: doors are listed from them). */
+  readonly objects: readonly Doc<"combatMapObjects">[];
+  /** The uploaded sprite rows the objects use (resolved once). */
+  readonly uploaded: UploadedSprites;
+  /** The objects as the engine read them, same order as `objects`. */
+  readonly visionObjects: readonly VisionObject[];
   readonly prepared: PreparedMap;
   readonly fog: Record<string, FogMark>;
   readonly tokens: readonly Doc<"combatTokens">[];
@@ -139,7 +145,7 @@ function visionTokenOf(token: Doc<"combatTokens">): VisionToken {
 
 /**
  * The map's objects as the engine reads them (sprite packs P5): kind, position, radius, rotation, the GM's sight
- * override, the light switch and, for a sprite object, its resolved traits (P1 catalog or uploaded row, D3, Q1), so
+ * override, the light switch, the door switch (map-movement M2: an open door blocks no sight) and, for a sprite object, its resolved traits (P1 catalog or uploaded row, D3, Q1), so
  * sight blocking, rect footprints (`rot` turns them) and sprite lights follow the manifest for every viewer and for
  * toggleLight's "has seen" check alike. An unknown or deleted sprite has no traits: its Classic kind decides (D1, D9).
  */
@@ -148,7 +154,11 @@ export async function visionObjects(
   campaignId: Id<"campaigns">,
   objects: readonly Doc<"combatMapObjects">[],
 ): Promise<VisionObject[]> {
-  const uploaded = await resolveRefs(ctx, campaignId, objects.map((o) => o.sprite));
+  return visionObjectsWith(objects, await resolveRefs(ctx, campaignId, objects.map((o) => o.sprite)));
+}
+
+/** `visionObjects` with the uploaded rows already resolved. */
+function visionObjectsWith(objects: readonly Doc<"combatMapObjects">[], uploaded: UploadedSprites): VisionObject[] {
   return objects.map((o) => ({
     kind: o.kind,
     x: o.x,
@@ -157,6 +167,7 @@ export async function visionObjects(
     rot: o.rot,
     sight: o.sight ?? null,
     lit: o.lit ?? null,
+    open: o.open ?? null,
     traits: objectTraits(o, uploaded),
   }));
 }
@@ -174,19 +185,21 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
     .withIndex("by_map_layer_tile", (q) => q.eq("mapId", map._id))
     .take(MAX_CELL_TILES);
   const cells = decodeCells(tiles, map.w, map.h);
+  const uploaded = await resolveRefs(ctx, campaign._id, objects.map((o) => o.sprite));
+  const vision = visionObjectsWith(objects, uploaded);
   const prepared = prepareMap({
     w: map.w,
     h: map.h,
     base: map.base,
     areas: map.areas,
-    objects: await visionObjects(ctx, campaign._id, objects),
+    objects: vision,
     paint: cells.paint,
     block: cells.block,
     image: map.source === "image",
   });
   const tokens = await tokensOnMap(ctx, map._id);
   const phase = await campaignPhase(ctx, campaign);
-  return { map, prepared, fog: cells.fog, tokens, visionTokens: tokens.map(visionTokenOf), phase, light: lightOf(phase ?? "") };
+  return { map, objects, uploaded, visionObjects: vision, prepared, fog: cells.fog, tokens, visionTokens: tokens.map(visionTokenOf), phase, light: lightOf(phase ?? "") };
 }
 
 /** The character's Instinct (R6); an unreadable sheet counts as 0. */

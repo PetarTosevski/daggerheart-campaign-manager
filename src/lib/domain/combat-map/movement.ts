@@ -12,9 +12,13 @@
  * D2 difficult: terrain water, deep, swamp, snow, lava; Classic kinds rubble, bush, log, bones; sprites whose `move`
  *    is "difficult" (a sprite without an explicit `move` of one of those Classic kinds defaults to difficult).
  *    Difficult never blocks.
- * Decks (orchestrator 2026-10-21): a Classic `hull` does not block; the squares inside its outline (its `points`
- *    polygon, else its footprint) are deck, neither blocked nor difficult whatever the terrain under the ship. Objects
- *    on the deck (masts, crates) and painted blockers still count.
+ * Decks (orchestrator 2026-10-21): an object of Classic kind `hull` does not block, whatever its sprite (M2: a Sprites
+ *    ship drawn with the ship's-bow sprite keeps its deck); the squares inside its outline (its `points` polygon, else
+ *    its footprint) are deck, neither blocked nor difficult whatever the terrain under the ship. Objects on the deck
+ *    (masts, crates) and painted blockers still count.
+ * Doors (M2, D7): an object is a door when its sprite `move` is "door", or it has no sprite `move` and its Classic kind
+ *    is `door` (an uploaded sprite whose Classic kind is `door` defaults to "door"). Its optional `open` (absent =
+ *    closed) is read here; sight reads it in sight.ts.
  * D4 path: a move from A to B checks every square the token's footprint covers along the supercover line between
  *    the two positions (both squares at an exact diagonal corner), minus the squares it starts on.
  *
@@ -44,8 +48,8 @@ export const MOVE_BLOCKING_TERRAINS: ReadonlySet<string> = new Set<Terrain>(["wa
 export const DIFFICULT_TERRAINS: ReadonlySet<string> = new Set<Terrain>(["water", "deep", "swamp", "snow", "lava"]);
 
 /**
- * D1, D2: what each Classic object kind does to movement. `hull` is a deck (see `buildMovementGrid`), so "open" here.
- * `door` is M2's Classic door kind (not an ObjectKind yet; listed so M2 only widens OBJECT_KINDS).
+ * D1, D2: what each Classic object kind does to movement. `hull` is a deck (see `buildMovementGrid`), so "open" here;
+ * `door` blocks while closed (M2, D7).
  */
 export const CLASSIC_MOVE: Readonly<Record<ObjectKind, MoveTrait>> & Readonly<Record<string, MoveTrait>> = {
   pillar: "block",
@@ -74,10 +78,12 @@ export const CLASSIC_MOVE: Readonly<Record<ObjectKind, MoveTrait>> & Readonly<Re
 };
 
 /**
- * A sprite's default `move` from its labels (D1, D2): blocks sight and is tall = block; else difficult when its Classic
- * kind is difficult in CLASSIC_MOVE (bush, log, bones, rubble); else open.
+ * A sprite's default `move` from its labels (D1, D2): a door when its Classic kind is `door` (M2: an uploaded door
+ * sprite); else blocks sight and is tall = block; else difficult when its Classic kind is difficult in CLASSIC_MOVE
+ * (bush, log, bones, rubble); else open.
  */
 export function defaultMove(traits: { readonly sight: SightMode; readonly height: string; readonly classicKind?: string }): MoveTrait {
+  if (traits.classicKind !== undefined && CLASSIC_MOVE[traits.classicKind] === "door") return "door";
   if (traits.sight === "block" && traits.height === "tall") return "block";
   return traits.classicKind !== undefined && CLASSIC_MOVE[traits.classicKind] === "difficult" ? "difficult" : "open";
 }
@@ -105,13 +111,22 @@ export type MovementObject = {
   readonly points?: readonly (readonly number[])[];
 };
 
-/** A Classic hull (no sprite `move`): its squares are deck. */
-export function isDeck(object: Pick<MovementObject, "kind" | "move">): boolean {
-  return object.kind === "hull" && (object.move === undefined || object.move === null);
+/** An object of Classic kind `hull`, whatever its sprite (M2 follow-up): its squares are deck. */
+export function isDeck(object: Pick<MovementObject, "kind">): boolean {
+  return object.kind === "hull";
 }
 
-/** The object's movement effect now: its sprite `move`, else its Classic kind's; a door blocks unless open. */
+/** A door (M2, D7): its sprite `move` is "door", or it has none and its Classic kind is `door`. */
+export function isDoor(object: Pick<MovementObject, "kind" | "move">): boolean {
+  return (object.move ?? CLASSIC_MOVE[object.kind]) === "door";
+}
+
+/**
+ * The object's movement effect now: its sprite `move`, else its Classic kind's; a door blocks unless open; a hull is
+ * deck (never blocks, whatever its sprite).
+ */
 export function moveEffect(object: Pick<MovementObject, "kind" | "move" | "open">): MoveEffect {
+  if (isDeck(object)) return "open";
   const trait = object.move ?? CLASSIC_MOVE[object.kind] ?? "open";
   if (trait === "door") return object.open === true ? "open" : "block";
   return trait;

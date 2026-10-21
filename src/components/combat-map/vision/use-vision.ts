@@ -49,6 +49,33 @@ export function useViewing({ campaignId, role, mode, map, previewCharacterId }: 
   return { kind: "gm" };
 }
 
+/** A door the viewer may switch (map-movement M2, `combatVision.doors`). */
+export type DoorView = NonNullable<FunctionReturnType<typeof api.combatVision.doors>>["doors"][number];
+
+/**
+ * The doors the viewer may open and close (D8): the GM every door on the map (Play only), a player the live map's
+ * doors one of their characters has seen (the server never sends the others). Empty while loading or editing.
+ */
+export function useDoors({ campaignId, role, mode, map }: Pick<CombatPageState, "campaignId" | "role" | "mode" | "map">): DoorView[] {
+  const gm = role === "gm";
+  const result = useQuery(api.combatVision.doors, map === null || (gm && mode !== "play") ? "skip" : gm ? { campaignId, mapId: map._id } : { campaignId });
+  if (!result || map === null || result.mapId !== map._id) return [];
+  return result.doors;
+}
+
+/** "door" for a solid door, "gate" for bars and gates (D7), numbered per kind in reading order: "Door 1", "Gate 2". */
+export function doorLabels(doors: readonly DoorView[]): Map<string, string> {
+  const sorted = [...doors].sort((a, b) => a.y - b.y || a.x - b.x);
+  const count = { door: 0, gate: 0 };
+  const out = new Map<string, string>();
+  for (const d of sorted) {
+    const kind = d.solid ? "door" : "gate";
+    count[kind] += 1;
+    out.set(d._id, `${kind === "door" ? "Door" : "Gate"} ${count[kind]}`);
+  }
+  return out;
+}
+
 /** The result when it is a character's view, else null. */
 export function okView(viewing: Viewing): ViewOk | null {
   return viewing.kind !== "gm" && viewing.view?.state === "ok" ? viewing.view : null;
@@ -161,6 +188,18 @@ function patchObject(store: OptimisticLocalStore, objectId: string, change: (o: 
   }
 }
 
+/** Sets a door's open state in every cached door list and layout (map-movement M2; closed = no `open` field). */
+function patchDoor(store: OptimisticLocalStore, objectId: string, open: boolean) {
+  patchObject(store, objectId, ({ open: _was, ...o }) => {
+    void _was;
+    return open ? { ...o, open: true } : o;
+  });
+  for (const { args, value } of store.getAllQueries(api.combatVision.doors)) {
+    if (!value || !value.doors.some((d) => d._id === objectId)) continue;
+    store.setQuery(api.combatVision.doors, args, { ...value, doors: value.doors.map((d) => (d._id === objectId ? { ...d, open } : d)) });
+  }
+}
+
 /** Sets a token's carried light in every cached token list and character view. */
 function patchLight(store: OptimisticLocalStore, tokenId: string, light: CarriedLight) {
   for (const query of [api.combatTokens.list, api.combatTokens.party] as const) {
@@ -215,14 +254,15 @@ export function paintFogCells(tiles: CombatMapLayout["cells"], w: number, square
 }
 
 /**
- * Every vision write: map lights (GM and players, R9), carried lights (Q3), reveals (R10) and the GM's fog brush
- * (R12), each with an optimistic update so a click shows at once. A failure lands in `error`.
+ * Every vision write: map lights (GM and players, R9), doors (map-movement M2, D8), carried lights (Q3), reveals (R10)
+ * and the GM's fog brush (R12), each with an optimistic update so a click shows at once. A failure lands in `error`.
  */
 export function useVisionActions(campaignId: Id<"campaigns">) {
   const [error, setError] = useState<string | null>(null);
   const toggleLight = useMutation(api.combatVision.toggleLight).withOptimisticUpdate((store, { objectId, lit }) =>
     patchObject(store, objectId, (o) => ({ ...o, lit })),
   );
+  const toggleDoor = useMutation(api.combatVision.toggleDoor).withOptimisticUpdate((store, { objectId, open }) => patchDoor(store, objectId, open));
   const setCarriedLight = useMutation(api.combatVision.setCarriedLight).withOptimisticUpdate((store, { tokenId, light }) =>
     patchLight(store, tokenId, light),
   );
@@ -253,6 +293,8 @@ export function useVisionActions(campaignId: Id<"campaigns">) {
     clearError: () => setError(null),
     /** Lights or puts out a campfire / wall torch: `lit` is the wanted state (C7). */
     setLit: (objectId: Id<"combatMapObjects">, lit: boolean) => run(() => toggleLight({ campaignId, objectId, lit })),
+    /** Opens or closes a door: `open` is the wanted state (M2). */
+    setOpen: (objectId: Id<"combatMapObjects">, open: boolean) => run(() => toggleDoor({ campaignId, objectId, open })),
     setCarriedLight: (tokenId: Id<"combatTokens">, light: CarriedLight) => run(() => setCarriedLight({ campaignId, tokenId, light })),
     reveal: (tokenId: Id<"combatTokens">, characterId: Id<"characters">, on: boolean) =>
       run(() => (on ? revealTo({ campaignId, tokenId, characterId }) : unrevealTo({ campaignId, tokenId, characterId }))),
