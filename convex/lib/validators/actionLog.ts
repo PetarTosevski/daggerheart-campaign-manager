@@ -17,6 +17,8 @@ export const actionKindValidator = v.union(
   v.literal("wither"),
   v.literal("session"),
   v.literal("import"),
+  /** A countdown trigger notice (countdowns-advanced D7): GM-only, not undoable, no groupId. */
+  v.literal("countdown"),
 );
 
 /** `public`: every member reads it; `gm`: only the GM (GM free rolls until revealed, decision 2). */

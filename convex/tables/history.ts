@@ -8,6 +8,8 @@ import type { MutationCtx } from "../_generated/server";
 const countdownValue = v.object({
   currentValue: v.number(),
   status: v.union(...COUNTDOWN_STATUSES.map((s) => v.literal(s))),
+  /** Set when the change moved the cycle's start (a loop / increasing / decreasing reset, or its undo); old rows lack it. */
+  startingValue: v.optional(v.number()),
 });
 
 const timeValue = v.object({

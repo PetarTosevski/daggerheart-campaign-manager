@@ -217,6 +217,11 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     await deleteRows(ctx, budget, "actionLog", rows);
   },
   async (ctx, c, budget) => {
+    // The undo record of countdown ticks (countdowns-advanced): goes with its campaign, like actionLog.
+    const rows = await ctx.db.query("countdownTicks").withIndex("by_campaign_at", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "countdownTicks", rows);
+  },
+  async (ctx, c, budget) => {
     const rows = await ctx.db.query("restChoices").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "restChoices", rows);
   },

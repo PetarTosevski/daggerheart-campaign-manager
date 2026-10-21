@@ -44,6 +44,7 @@ import type * as lib_characterSheet from "../lib/characterSheet.js";
 import type * as lib_codex from "../lib/codex.js";
 import type * as lib_combatMaps from "../lib/combatMaps.js";
 import type * as lib_combatVision from "../lib/combatVision.js";
+import type * as lib_countdownTicks from "../lib/countdownTicks.js";
 import type * as lib_dice from "../lib/dice.js";
 import type * as lib_encounters from "../lib/encounters.js";
 import type * as lib_fear from "../lib/fear.js";
@@ -163,6 +164,7 @@ declare const fullApi: ApiFromModules<{
   "lib/codex": typeof lib_codex;
   "lib/combatMaps": typeof lib_combatMaps;
   "lib/combatVision": typeof lib_combatVision;
+  "lib/countdownTicks": typeof lib_countdownTicks;
   "lib/dice": typeof lib_dice;
   "lib/encounters": typeof lib_encounters;
   "lib/fear": typeof lib_fear;
