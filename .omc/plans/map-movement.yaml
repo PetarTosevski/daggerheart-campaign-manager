@@ -77,6 +77,8 @@ waves:
           - src/lib/domain/combat-map/spec.ts
           - src/lib/domain/combat-map/sight.ts
           - src/lib/domain/combat-map/vision.ts
+          - src/lib/domain/combat-map/movement.ts
+          - tests/unit/combat-movement.test.ts
           - src/components/combat-map/vision/**
           - tests/convex/combat-doors.test.ts
           - tests/unit/combat-doors.test.ts
@@ -90,6 +92,7 @@ waves:
           - "combatVision.toggleDoor {objectId, open}: GM always; a player only on the live map after one of their characters has seen it (same rule as toggleLight); INVALID for a non-door; role tests (anonymous, outsider, player who has / hasn't seen it, GM) assert ConvexError.data.code"
           - "Vision: a closed solid door blocks sight, an open one doesn't, bars/gates stay cover; movement (M0) reads `open`; unit and Convex tests for both, incl. a player's view through an opened door"
           - "The vision panel lists doors the viewer can see with an Open / Close switch beside the light switches; optimistic; a player sees only doors they've seen"
+          - "Follow-up from M0 (orchestrator 2026-10-21): an object of Classic kind `hull` is a deck whatever its sprite (a Sprites ship drawn with the ship's-bow sprite keeps its deck walkable, not deep-water difficult); unit test for a sprite hull"
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
   - wave: 3
     tracers:
