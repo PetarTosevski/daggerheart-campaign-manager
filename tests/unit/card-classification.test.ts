@@ -80,11 +80,18 @@ describe("card classification", () => {
 });
 
 describe("card-effect registry", () => {
-  it("ships ten empty domain tables merged into an empty map", () => {
+  it("has one table per domain; every entry is a combat or passive card of that domain (the CE-* tracers fill them)", () => {
     expect(Object.keys(DOMAIN_EFFECT_TABLES)).toEqual(Object.keys(CARD_CLASSIFICATION));
-    for (const table of Object.values(DOMAIN_EFFECT_TABLES)) expect(table).toEqual([]);
-    expect(CARD_EFFECTS.size).toBe(0);
-    expect(cardEffect("bolt-beacon")).toBeUndefined();
+    let total = 0;
+    for (const [domain, table] of Object.entries(DOMAIN_EFFECT_TABLES)) {
+      for (const effect of table) {
+        expect(cardUsage(effect.cardId), effect.cardId).not.toBe("outOfCombat");
+        expect(DOMAIN_CARDS.find((c) => c.id === effect.cardId)?.domain, effect.cardId).toBe(domain);
+        total += 1;
+      }
+    }
+    expect(CARD_EFFECTS.size).toBe(total);
+    expect(cardEffect("no-such-card")).toBeUndefined();
   });
 
   it("merges tables by card id and refuses a card listed twice", () => {
