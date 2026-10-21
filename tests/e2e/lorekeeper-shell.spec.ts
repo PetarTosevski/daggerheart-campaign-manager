@@ -98,6 +98,8 @@ test("the shell fits a phone: one column, the sidebar above the chat, no horizon
   const { campaignId } = await gmCreatesCampaign(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/campaigns/${campaignId}/lorekeeper`);
+  // L7 (Q12): at 390 the sidebar cards sit in the closed "Library & rulings" fold.
+  await page.getByRole("button", { name: "Library & rulings" }).click();
   await expectShell(page);
   await expectNoHorizontalScroll(page);
   const side = (await page.getByRole("complementary", { name: "Library and rulings" }).boundingBox())!;
