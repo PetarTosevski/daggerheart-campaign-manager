@@ -6,8 +6,11 @@
  * per square. A stroke rewrites only the tiles it touches; a tile left fully unpainted is deleted.
  */
 
-import { isLightObject } from "../../../lib/domain/combat-map/light";
+import { TEXTURE_CODES, type SpriteRef as ConvexSpriteRef } from "../../../../convex/lib/validators/combatMaps";
+import { givesLight, type LightSubject } from "../../../lib/domain/combat-map/light";
 import type { ObjectKind, Terrain } from "../../../lib/domain/combat-map/spec";
+import { catalogEntry } from "../../../lib/sprite-packs/catalog/index";
+import type { SpriteRef } from "../../../lib/sprite-packs/traits";
 import { BLOCK_CODE, CELL_TILE_ROWS, CELL_UNPAINTED, codeOfTerrain, tileOf, type CellLayer, type CellTile } from "../map-view/cells";
 
 // ---------------------------------------------------------------- the board's palettes
@@ -50,6 +53,8 @@ export const PLACEABLE_OBJECTS = {
   rubble: { label: "Rubble", r: 1 },
   crystal: { label: "Crystal", r: 0.6 },
   bones: { label: "Bones", r: 0.8 },
+  /** Map-movement M2: a door, placed closed (no `open` field); the door switch opens it. */
+  door: { label: "Door", r: 0.5 },
 } as const satisfies Partial<Record<ObjectKind, { label: string; r: number }>>;
 export type PlaceableKind = keyof typeof PLACEABLE_OBJECTS;
 export const PLACEABLE_KINDS = Object.keys(PLACEABLE_OBJECTS) as PlaceableKind[];
@@ -91,8 +96,12 @@ export function objectRotation(rot: number): number {
   return Math.round((((rot % full) + full) % full) * 10000) / 10000;
 }
 
-/** Whether an object can be switched on and off (campfire, wall torch; R9). */
-export const isSwitchableLight = (kind: string): boolean => isLightObject(kind);
+/**
+ * Whether an object can be switched on and off (R9): a Classic light kind (campfire, wall torch), or a sprite whose
+ * light trait is not none (sprite packs Q1, ORCHESTRATOR NOTE: `givesLight`; a sprite with light "none" on a
+ * Classic light kind is not switchable).
+ */
+export const isSwitchableLight = (kind: string, traits?: LightSubject["traits"]): boolean => givesLight({ kind, traits: traits ?? null });
 
 type Hittable = { readonly _id: string; readonly kind: string; readonly x: number; readonly y: number; readonly r: number };
 
@@ -139,12 +148,19 @@ export function brushSquares(x: number, y: number, brush: number, w: number, h: 
 /** What a stroke paints: a terrain, a sight blocker, or erasing one of the two (Erase terrain / Clear sight). */
 export type PaintValue = Terrain | "block" | "eraseTerrain" | "eraseBlock";
 
-/** The layers a stroke writes, each with the code it puts in every touched square. */
-export function strokeLayers(paint: PaintValue): { layer: Exclude<CellLayer, "fog">; code: string }[] {
+/** A layer a stroke may write: the D9 painted layers and the sprite-packs texture layer (P9). */
+export type StrokeLayer = Exclude<CellLayer, "fog"> | "texture";
+
+/**
+ * The layers a stroke writes, each with the code it puts in every touched square. Painting or erasing terrain also
+ * clears the hand-painted texture there (sprite packs P9), so the texture layer never contradicts the terrain the
+ * vision engine and Classic read; on a map without textures that clear writes nothing.
+ */
+export function strokeLayers(paint: PaintValue): { layer: StrokeLayer; code: string }[] {
   if (paint === "block") return [{ layer: "block", code: BLOCK_CODE }];
-  if (paint === "eraseTerrain") return [{ layer: "terrain", code: CELL_UNPAINTED }];
+  if (paint === "eraseTerrain") return [{ layer: "terrain", code: CELL_UNPAINTED }, { layer: "texture", code: CELL_UNPAINTED }];
   if (paint === "eraseBlock") return [{ layer: "block", code: CELL_UNPAINTED }];
-  return [{ layer: "terrain", code: codeOfTerrain(paint) }];
+  return [{ layer: "terrain", code: codeOfTerrain(paint) }, { layer: "texture", code: CELL_UNPAINTED }];
 }
 
 /** The squares of a stroke grouped by tile, as positions inside each tile's string. */
@@ -183,6 +199,8 @@ export function paintLayoutCells<T extends CellTile>(tiles: readonly T[], w: num
   const byTile = squaresByTile(squares, w);
   let out: CellTile[] = [...tiles];
   for (const { layer, code } of strokeLayers(paint)) {
+    // The texture layer travels apart (`textureCells`); `paintLayoutTextures` updates it.
+    if (layer === "texture") continue;
     for (const [tile, positions] of byTile) {
       const i = out.findIndex((t) => t.layer === layer && t.tile === tile);
       const before = i >= 0 ? out[i]!.cells : null;
@@ -192,6 +210,91 @@ export function paintLayoutCells<T extends CellTile>(tiles: readonly T[], w: num
       else if (i >= 0) out = out.map((t, j) => (j === i ? { layer, tile, cells: after } : t));
       else out.push({ layer, tile, cells: after });
     }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- Sprites style (sprite packs P9)
+
+/** A texture stroke (Sprites style): paints `texture` on the texture layer and its terrain class on the terrain layer. */
+export type TexturePaint = { readonly layer: "texture"; readonly texture: ConvexSpriteRef };
+
+/** Whether two sprite refs name the same sprite. */
+export function sameRef(a: SpriteRef, b: SpriteRef): boolean {
+  return "builtin" in a ? "builtin" in b && a.builtin === b.builtin : "uploaded" in b && a.uploaded === b.uploaded;
+}
+
+/** A sprite's default radius (D4: r = max(w, h) / 2), inside the editor's bounds. */
+export const spriteRadius = (w: number, h: number): number => objectRadius(Math.max(w, h) / 2);
+
+/** What placing an object sprite stores besides its ref: its Classic look (D1, D2) and its default radius (D4). */
+export type SpritePlacement = { kind: ObjectKind; variant?: string; r: number };
+
+/** The placement of a built-in object sprite, or null when the key is not an object in the catalog. */
+export function builtinPlacement(key: string): SpritePlacement | null {
+  const entry = catalogEntry(key);
+  if (entry === null || entry.category !== "object") return null;
+  return { kind: entry.classic.kind, ...(entry.classic.variant === undefined ? {} : { variant: entry.classic.variant }), r: spriteRadius(entry.w, entry.h) };
+}
+
+/** The placement of an uploaded object sprite from its row (`classicKind` / `classicVariant`, w x h squares). */
+export function uploadedPlacement(row: { classicKind: ObjectKind; classicVariant?: string; w: number; h: number }): SpritePlacement {
+  return { kind: row.classicKind, ...(row.classicVariant === undefined ? {} : { variant: row.classicVariant }), r: spriteRadius(row.w, row.h) };
+}
+
+/** The terrain class a built-in texture paints, or null when the key is not a texture in the catalog. */
+export function builtinTextureTerrain(key: string): Terrain | null {
+  const entry = catalogEntry(key);
+  return entry !== null && entry.category === "texture" ? entry.terrain : null;
+}
+
+/** Texture codes present in a map's texture tiles. */
+export function usedTextureCodes(tiles: readonly { readonly cells: string }[]): Set<string> {
+  const out = new Set<string>();
+  for (const { cells } of tiles) for (const ch of cells) if (ch !== CELL_UNPAINTED) out.add(ch);
+  return out;
+}
+
+/**
+ * Where a texture goes in the map's palette (at most TEXTURE_CODES.length = MAX_TEXTURE_PALETTE entries): its
+ * existing slot, else a new one at the end, else the first slot no painted square uses any more (its old texture is
+ * gone from the map). Null when every slot is in use (SPRITE_PALETTE_FULL).
+ */
+export function paletteSlot<R extends SpriteRef>(
+  palette: readonly R[],
+  ref: R,
+  used: ReadonlySet<string>,
+): { palette: R[]; index: number; changed: boolean } | null {
+  const found = palette.findIndex((p) => sameRef(p, ref));
+  if (found >= 0) return { palette: [...palette], index: found, changed: false };
+  if (palette.length < TEXTURE_CODES.length) return { palette: [...palette, ref], index: palette.length, changed: true };
+  const free = palette.findIndex((_, i) => !used.has(TEXTURE_CODES[i]!));
+  if (free < 0) return null;
+  return { palette: palette.map((p, i) => (i === free ? ref : p)), index: free, changed: true };
+}
+
+/** The texture layer's code for palette slot `index`. */
+export const textureCode = (index: number): string => TEXTURE_CODES[index]!;
+
+/**
+ * A map's texture tiles after writing `code` at `squares` (the client's optimistic copy of what `paintCells` stores
+ * on the texture layer): touched tiles rewritten, emptied ones dropped.
+ */
+export function paintLayoutTextures<T extends { tile: number; cells: string }>(
+  tiles: readonly T[],
+  w: number,
+  squares: readonly number[],
+  code: string,
+): { tile: number; cells: string }[] {
+  let out: { tile: number; cells: string }[] = tiles.map(({ tile, cells }) => ({ tile, cells }));
+  for (const [tile, positions] of squaresByTile(squares, w)) {
+    const i = out.findIndex((t) => t.tile === tile);
+    const before = i >= 0 ? out[i]!.cells : null;
+    if (before === null && code === CELL_UNPAINTED) continue;
+    const after = paintTile(before, w, positions, code);
+    if (isEmptyTile(after)) out = out.filter((_, j) => j !== i);
+    else if (i >= 0) out = out.map((t, j) => (j === i ? { tile, cells: after } : t));
+    else out.push({ tile, cells: after });
   }
   return out;
 }

@@ -7,9 +7,10 @@ import { sightOf } from "@/lib/domain/combat-map/sight";
 import type { CombatMapLayout } from "../../../../convex/combatMaps";
 import { useMapView } from "../map-view/context";
 import type { MapLayerProps } from "../slots";
-import { brushSquares, movePoint, objectAt, type PaintValue } from "./edit-model";
+import { brushSquares, movePoint, objectAt, type PaintValue, type TexturePaint } from "./edit-model";
 import { toolFor, useEditor } from "./editor-state";
 import { useEditMutations } from "./use-edit-mutations";
+import { useSpriteEditing, type SpriteEditing } from "./use-sprite-editing";
 
 /** The board's overlay colours. */
 const COLORS = {
@@ -23,7 +24,8 @@ const COLORS = {
   strokeErase: "rgba(240,240,240,0.35)",
 };
 
-type Stroke = { pointerId: number; paint: PaintValue; squares: Set<number> };
+type StrokePaint = PaintValue | TexturePaint;
+type Stroke = { pointerId: number; paint: StrokePaint; squares: Set<number> };
 type ObjectDrag = { pointerId: number; id: string; sx: number; sy: number; moved: boolean; at: { x: number; y: number } | null };
 
 type Overlay = {
@@ -32,6 +34,8 @@ type Overlay = {
   selectedId: string | null;
   ghost: { id: string; x: number; y: number } | null;
   cell: number;
+  /** Sprite traits per object (D3: a sprite's manifest sight is its default). */
+  traitsOf: SpriteEditing["traitsOf"];
 };
 
 /**
@@ -40,7 +44,7 @@ type Overlay = {
  * Vector outlines only, so a full redraw is cheap; the painted map itself is C3's canvas, which repaints only what
  * an edit changed.
  */
-function drawOverlay(canvas: HTMLCanvasElement, { layout, block, selectedId, ghost, cell }: Overlay) {
+function drawOverlay(canvas: HTMLCanvasElement, { layout, block, selectedId, ghost, cell, traitsOf }: Overlay) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   if (canvas.width !== layout.w * cell || canvas.height !== layout.h * cell) {
@@ -59,7 +63,7 @@ function drawOverlay(canvas: HTMLCanvasElement, { layout, block, selectedId, gho
   const isImage = layout.source === "image";
   for (const o of layout.objects) {
     const at = ghost?.id === o._id ? ghost : o;
-    const mode = sightOf(o);
+    const mode = sightOf({ kind: o.kind, sight: o.sight ?? null, traits: traitsOf(o), open: o.open ?? null });
     if (!isImage && mode !== "none") {
       ctx.strokeStyle = mode === "block" ? COLORS.outlineBlock : COLORS.outlineCover;
       ctx.setLineDash(mode === "block" ? [] : [6, 5]);
@@ -88,7 +92,7 @@ function drawStrokeSquares(canvas: HTMLCanvasElement, squares: readonly number[]
   for (const s of squares) ctx.fillRect((s % w) * cell, Math.floor(s / w) * cell, cell, cell);
 }
 
-const strokeColor = (paint: PaintValue) => (paint === "block" ? COLORS.strokeBlock : paint === "eraseTerrain" || paint === "eraseBlock" ? COLORS.strokeErase : COLORS.strokeTerrain);
+const strokeColor = (paint: StrokePaint) => (paint === "block" ? COLORS.strokeBlock : paint === "eraseTerrain" || paint === "eraseBlock" ? COLORS.strokeErase : COLORS.strokeTerrain);
 
 /**
  * Map area in Edit (slot `EditorLayer`): the tools' pointer handling (paint strokes, placing, selecting and
@@ -100,6 +104,7 @@ export function EditorLayer({ campaignId, map, viewport, onSelectToken }: MapLay
   const { layout, cells } = useMapView();
   const editor = useEditor();
   const edits = useEditMutations(campaignId, map._id);
+  const sprites = useSpriteEditing(campaignId, layout);
   const canvas = useRef<HTMLCanvasElement>(null);
   const stroke = useRef<Stroke | null>(null);
   const drag = useRef<ObjectDrag | null>(null);
@@ -107,11 +112,12 @@ export function EditorLayer({ campaignId, map, viewport, onSelectToken }: MapLay
   const tool = toolFor(editor.tool, layout.source === "image");
   const selectedId = layout.objects.some((o) => o._id === editor.selectedObjectId) ? editor.selectedObjectId : null;
 
-  const overlay = (ghost: Overlay["ghost"] = null): Overlay => ({ layout, block: cells.block, selectedId, ghost, cell });
+  const traitsOf = sprites.traitsOf;
+  const overlay = (ghost: Overlay["ghost"] = null): Overlay => ({ layout, block: cells.block, selectedId, ghost, cell, traitsOf });
 
   useEffect(() => {
-    if (canvas.current) drawOverlay(canvas.current, { layout, block: cells.block, selectedId, ghost: null, cell });
-  }, [layout, cells.block, selectedId, cell]);
+    if (canvas.current) drawOverlay(canvas.current, { layout, block: cells.block, selectedId, ghost: null, cell, traitsOf });
+  }, [layout, cells.block, selectedId, cell, traitsOf]);
 
   function select(objectId: string | null) {
     editor.selectObject(objectId);
@@ -129,12 +135,16 @@ export function EditorLayer({ campaignId, map, viewport, onSelectToken }: MapLay
         drag.current = { pointerId: e.pointerId, id: hit._id, sx: e.clientX, sy: e.clientY, moved: false, at: null };
         return;
       }
-      void edits.add(editor.kind, p.x, p.y).then((id) => {
+      // Sprites style (P9): the picked sprite, else the picker's first one; Classic: the picked kind.
+      const sprite = sprites.active ? (editor.sprite ?? sprites.palette.objects[0]?.ref ?? null) : null;
+      const placed = sprite !== null ? edits.addSprite(sprite, p.x, p.y) : edits.add(editor.kind, p.x, p.y);
+      void placed.then((id) => {
         if (id !== null) select(id);
       });
       return;
     }
-    const paint: PaintValue = tool === "terrain" ? editor.terrain : tool;
+    const paint: StrokePaint =
+      tool !== "terrain" ? tool : sprites.active && editor.texture !== null ? { layer: "texture", texture: editor.texture } : editor.terrain;
     const squares = brushSquares(p.x, p.y, editor.brush, w, h);
     e.currentTarget.setPointerCapture(e.pointerId);
     stroke.current = { pointerId: e.pointerId, paint, squares: new Set(squares) };
@@ -164,7 +174,8 @@ export function EditorLayer({ campaignId, map, viewport, onSelectToken }: MapLay
     if (s && s.pointerId === e.pointerId) {
       stroke.current = null;
       // One write per stroke: every touched square in one intent, shown at once by the optimistic update.
-      edits.paint([...s.squares], s.paint);
+      if (typeof s.paint === "string") edits.paint([...s.squares], s.paint);
+      else edits.paintTexture([...s.squares], s.paint.texture);
       if (canvas.current) drawOverlay(canvas.current, overlay());
       return;
     }

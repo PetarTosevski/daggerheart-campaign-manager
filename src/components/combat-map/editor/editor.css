@@ -101,8 +101,58 @@
   pointer-events: none;
 }
 
+/* Sprites style (sprite packs P9): the sprite and texture pickers, thumbnails on a checkerboard (sprites are cut out). */
+.cm-ed-sprites-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.cm-ed-sprites {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+.cm-btn.cm-ed-sprite {
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  text-align: left;
+}
+.cm-ed-sprite-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cm-ed-thumb {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 4px;
+  background-color: #2a3438;
+  background-image:
+    linear-gradient(45deg, #1d2629 25%, transparent 25%), linear-gradient(-45deg, #1d2629 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1d2629 75%), linear-gradient(-45deg, transparent 75%, #1d2629 75%);
+  background-size: 8px 8px;
+  background-position:
+    0 0,
+    0 4px,
+    4px -4px,
+    -4px 0;
+}
+.cm-ed-thumb-missing {
+  display: inline-block;
+}
+
 @media (max-width: 760px) {
   .cm-linkbtn {
     min-height: 44px;
+  }
+  .cm-ed-sprites-scroll {
+    max-height: 420px;
   }
 }

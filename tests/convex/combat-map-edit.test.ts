@@ -301,7 +301,7 @@ describe("combat map editing: objects", () => {
 
 describe("combat map editing: shared rules", () => {
   it("offers every board kind but the hull and mast for placing, all of them real object kinds", () => {
-    expect(PLACEABLE_KINDS).toHaveLength(18);
+    expect(PLACEABLE_KINDS).toHaveLength(19);
     for (const kind of PLACEABLE_KINDS) expect(OBJECT_KINDS).toContain(kind);
     expect(PLACEABLE_KINDS).not.toContain("hull");
   });
