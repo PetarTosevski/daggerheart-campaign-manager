@@ -26,6 +26,7 @@ import {
   long,
   obj,
   tex,
+  glowTex,
   createSpriteLookup,
   folderEntries,
   folderOfKey,
@@ -101,6 +102,15 @@ function parsePromptsDoc(): DocFolder[] {
   }
   return folders;
 }
+
+/** The textures that glow (followups-5 F6, dcm-bxp.91; list in docs/tasks/TASK-F5-F6.md). */
+const GLOWING_TEXTURES: readonly string[] = [
+  "volcanic/glowing-lava",
+  "volcanic/red-hot-cracked-ground",
+  "mushroom-cavern/glowing-moss-floor",
+  "mushroom-cavern/violet-glowing-moss",
+  "mushroom-cavern/crystal-studded-floor",
+];
 
 const DOC = parsePromptsDoc();
 const FOLDER_IDS = Object.keys(CATALOG) as FolderId[];
@@ -353,8 +363,20 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
         "volcanic/island-in-a-lava-lake",
         "volcanic/salamander-nest",
         "volcanic/lava-tube-opening",
+        // Glowing textures (followups-5 F6, dcm-bxp.91).
+        ...GLOWING_TEXTURES,
       ].sort(),
     );
+  });
+
+  it("glowing textures carry the faint-glow light; every other texture gives none (F6)", () => {
+    const glowing = CATALOG_ENTRIES.filter((e) => e.category === "texture" && e.light !== "none").map((e) => e.key);
+    expect(glowing.sort()).toEqual([...GLOWING_TEXTURES].sort());
+    for (const key of GLOWING_TEXTURES) expect(catalogEntry(key), key).toMatchObject({ category: "texture", light: "faintglow" });
+    // Classic lava's textures both glow, so a lava square glows whichever of them it draws.
+    expect(catalogEntry("volcanic/glowing-lava")).toMatchObject({ terrain: "lava" });
+    expect(glowTex("molten rock", "lava", true)).toEqual({ name: "molten rock", terrain: "lava", rotatable: true, light: "faintglow" });
+    expect(tex("ash", "dirt", true)).toEqual({ name: "ash", terrain: "dirt", rotatable: true });
   });
 
   it("flat sprites cast no shadow and are not sight blockers; textures are flat, none, rect with a known terrain (D3, D5, D6)", () => {
@@ -362,7 +384,8 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
       if (e.height === "flat") expect(e.sight, e.key).toBe("none");
       if (e.category === "texture") {
         expect(TERRAINS).toContain(e.terrain);
-        expect([e.sight, e.light, e.height, e.footprint]).toEqual(["none", "none", "flat", "rect"]);
+        expect([e.sight, e.height, e.footprint]).toEqual(["none", "flat", "rect"]);
+        expect(e.light, e.key).toBe(GLOWING_TEXTURES.includes(e.key) ? "faintglow" : "none");
       }
     }
     expect(catalogEntry("forest/oak-tree")).toMatchObject({ sight: "block", height: "tall" });
@@ -597,7 +620,7 @@ describe("movement trait (map-movement M0, D1, D2; doors: user answer 2026-10-21
       expect(e.move, e.key).toBe(expected);
     }
     // User (2026-10-21): red-hot cracked ground is difficult, so it is a lava texture (P11C had made it stone).
-    expect(catalogEntry("volcanic/red-hot-cracked-ground")).toMatchObject({ terrain: "lava", move: "difficult", light: "none" });
+    expect(catalogEntry("volcanic/red-hot-cracked-ground")).toMatchObject({ terrain: "lava", move: "difficult", light: "faintglow" });
   });
 
   it("map-movement M2: the fourteen door sprites (six primary, eight batch 2) map to Classic `door` and keep move \"door\"; exactly those", () => {

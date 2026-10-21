@@ -158,7 +158,8 @@ export type ObjectSpec = Omit<ObjectEntry, "key" | "sheet" | "index" | "w" | "h"
   readonly h?: number;
 };
 
-export type TextureSpec = Pick<TextureEntry, "name" | "terrain" | "rotatable">;
+/** `light` only on glowing textures (F6): "faintglow"; absent = "none". */
+export type TextureSpec = Pick<TextureEntry, "name" | "terrain" | "rotatable"> & { readonly light?: SpriteLight };
 
 /** An object sprite: name, sight (D3), shadow height (D5), Classic kind (D2). */
 export function obj(
@@ -197,6 +198,14 @@ export function long(
 /** A terrain texture: name, Classic terrain class, rotatable (D6). */
 export function tex(name: string, terrain: Terrain, rotatable: boolean): TextureSpec {
   return { name, terrain, rotatable };
+}
+
+/**
+ * A glowing terrain texture (followups-5 F6, dcm-bxp.91): light "faintglow", so every square it covers is a faint
+ * glow at night (very dim light only around its own squares).
+ */
+export function glowTex(name: string, terrain: Terrain, rotatable: boolean): TextureSpec {
+  return { name, terrain, rotatable, light: "faintglow" };
 }
 
 /** Items of extra sheets, by sheet id: object specs on props / large layouts, textures on terrain layouts. */
@@ -251,7 +260,7 @@ export function defineFolder(
     return objectKeys.has(key) ? `${key}${TEXTURE_KEY_SUFFIX}` : key;
   };
   const textures = (specs: readonly TextureSpec[], extraSheet?: string): TextureEntry[] =>
-    specs.map((t, index) => ({
+    specs.map(({ light, ...t }, index) => ({
       ...t,
       category: "texture",
       key: textureKey(t.name),
@@ -261,7 +270,7 @@ export function defineFolder(
       w: TEXTURE_SQUARES,
       h: TEXTURE_SQUARES,
       sight: "none",
-      light: "none",
+      light: light ?? "none",
       height: "flat",
       footprint: "rect",
       move: terrainMove(t.terrain),

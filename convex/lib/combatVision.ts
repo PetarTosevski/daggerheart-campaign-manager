@@ -1,6 +1,8 @@
 import { v, type Infer } from "convex/values";
 
 import { decodeCells } from "../../src/components/combat-map/map-view/cells";
+import { decodeTextureCells, paintSetting } from "../../src/components/combat-map/map-view/paint-spec";
+import { glowingSquares } from "../../src/lib/combat-map/sprites/terrain";
 import { getPhaseName, type CampaignPhaseName } from "../../src/lib/domain/campaign-time/index";
 import {
   SAMPLES_PER_SQUARE,
@@ -30,7 +32,7 @@ import { readSheet } from "./characterSheet";
 import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
 import { atLeast, permissionFor } from "./permissions";
-import { objectTraits, resolveRefs, type UploadedSprites } from "./spriteSources";
+import { mapSpriteRefs, objectTraits, resolveRefs, type UploadedSprites } from "./spriteSources";
 import { CELL_LAYERS, tokenSideValidator } from "./validators/combatMaps";
 
 /**
@@ -185,7 +187,8 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
     .withIndex("by_map_layer_tile", (q) => q.eq("mapId", map._id))
     .take(MAX_CELL_TILES);
   const cells = decodeCells(tiles, map.w, map.h);
-  const uploaded = await resolveRefs(ctx, campaign._id, objects.map((o) => o.sprite));
+  const sprites = map.style === "sprites" && map.source !== "image";
+  const uploaded = await resolveRefs(ctx, campaign._id, sprites ? mapSpriteRefs(map, objects) : objects.map((o) => o.sprite));
   const vision = visionObjectsWith(objects, uploaded);
   const prepared = prepareMap({
     w: map.w,
@@ -196,10 +199,28 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
     paint: cells.paint,
     block: cells.block,
     image: map.source === "image",
+    // F6: on a Sprites map the textures decide which squares glow (as the sprite painter draws them); a Classic map
+    // leaves it to the engine's terrain rule (lava).
+    ...(sprites ? { glow: spriteGlow(map, tiles, cells.paint, uploaded) } : {}),
   });
   const tokens = await tokensOnMap(ctx, map._id);
   const phase = await campaignPhase(ctx, campaign);
   return { map, objects, uploaded, visionObjects: vision, prepared, fog: cells.fog, tokens, visionTokens: tokens.map(visionTokenOf), phase, light: lightOf(phase ?? "") };
+}
+
+/**
+ * The glowing squares of a Sprites map (F6): the sprite painter's choice of texture per square (texture cells, area
+ * textures, the setting's mix, else the Classic terrain), glowing where that texture's light is not none.
+ */
+function spriteGlow(
+  map: Doc<"combatMaps">,
+  tiles: readonly { layer: string; tile: number; cells: string }[],
+  paint: Record<string, string>,
+  uploaded: UploadedSprites,
+): string[] {
+  const textureCells = tiles.flatMap(({ layer, tile, cells }) => (layer === "texture" ? [{ tile, cells }] : []));
+  const textures = decodeTextureCells({ w: map.w, h: map.h, texturePalette: map.texturePalette, textureCells });
+  return glowingSquares(map, paint, textures, paintSetting(map), uploaded);
 }
 
 /** The character's Instinct (R6); an unreadable sheet counts as 0. */

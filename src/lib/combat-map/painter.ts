@@ -27,6 +27,7 @@ import {
   type TerrainGrid,
   type TerrainId,
 } from "./raster";
+import { terrainGlows } from "../domain/combat-map/light";
 
 export const DEFAULT_CELL = 48;
 /** Supersampling of the terrain raster used for soft, noisy edges. */
@@ -65,6 +66,11 @@ export interface PreparedMap {
   /** 1 where a fine cell is within 3 fine cells of a different terrain. */
   readonly edge: Uint8Array;
   readonly crisp: ReadonlySet<TerrainId>;
+  /**
+   * Glowing terrain (F6, lava): per fine cell, 1 on a glowing cell, fading to 0 GLOW_HALO_CELLS away. Absent when no
+   * terrain of the map glows (then every pixel is as before).
+   */
+  readonly glow?: Float32Array;
 }
 
 /** Kinds whose light the GM and players switch (R9). */
@@ -191,7 +197,37 @@ export const prepareMap = (spec: PaintSpec, paint?: PaintedTerrain): PreparedMap
     }
   const crisp = new Set<TerrainId>(["wood"]);
   if (spec.base === "wall" || spec.base === "void") crisp.add("stone");
-  return { spec, w, h, seed: (spec.seed || 1) | 0, grid, fine, edge, crisp };
+  const prepared: PreparedMap = { spec, w, h, seed: (spec.seed || 1) | 0, grid, fine, edge, crisp };
+  const glow = glowField(fine, FW, FH);
+  return glow ? { ...prepared, glow } : prepared;
+};
+
+/** Fine cells a glowing terrain's halo reaches past its edge (3 = three quarters of a square). */
+const GLOW_HALO_CELLS = 3;
+
+/** F6: the glow per fine cell (1 on glowing terrain, fading over GLOW_HALO_CELLS), or null when nothing glows. */
+const glowField = (fine: TerrainGrid, FW: number, FH: number): Float32Array | null => {
+  let any = false;
+  for (let y = 0; y < FH && !any; y++) for (let x = 0; x < FW; x++) if (terrainGlows(fine[y][x])) { any = true; break; }
+  if (!any) return null;
+  const R = GLOW_HALO_CELLS;
+  const out = new Float32Array(FW * FH);
+  for (let y = 0; y < FH; y++)
+    for (let x = 0; x < FW; x++) {
+      if (!terrainGlows(fine[y][x])) continue;
+      for (let dy = -R; dy <= R; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= FH) continue;
+        for (let dx = -R; dx <= R; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= FW) continue;
+          const g = Math.max(0, 1 - Math.hypot(dx, dy) / (R + 1));
+          const i = yy * FW + xx;
+          if (g > out[i]) out[i] = g;
+        }
+      }
+    }
+  return out;
 };
 
 // ---------------------------------------------------------------------------------------------------- terrain pixels
@@ -258,11 +294,19 @@ const paintTerrain = (ctx: CanvasRenderingContext2D, m: PreparedMap, C: number, 
       if (wetEdge && t !== "lava") { r = r * 0.4 + 235 * 0.6; gg = gg * 0.4 + 245 * 0.6; b = b * 0.4 + 245 * 0.6; }
       if ((t === "water" || t === "deep") && vnoise(px * 0.06, py * 0.2, seed + 9) > 0.72) { r += 18; gg += 22; b += 22; }
       if (t === "lava" && n2 > 0.7) { r = 255; gg = 200; b = 80; }
+      const glow = m.glow ? m.glow[fy * FW + fx] : 0;
+      if (glow > 0) {
+        // F6: a subtle warm glow on glowing terrain, fading into its neighbours.
+        r += (255 - r) * GLOW_LIFT[0] * glow; gg += (210 - gg) * GLOW_LIFT[1] * glow; b += (140 - b) * GLOW_LIFT[2] * glow;
+      }
       const i = ((py - y0) * rw + (px - x0)) * 4;
       D[i] = clamp(r, 0, 255); D[i + 1] = clamp(gg, 0, 255); D[i + 2] = clamp(b, 0, 255); D[i + 3] = 255;
     }
   ctx.putImageData(img, x0, y0);
 };
+
+/** F6: how far a glowing pixel moves towards a warm light, per channel (r, g, b), at full glow. */
+const GLOW_LIFT = [0.22, 0.14, 0.06] as const;
 
 const strokeCount: Partial<Record<TerrainId, number>> = { grass: 9, dirt: 4, path: 4, cave: 4, swamp: 5, sand: 3, snow: 2 };
 

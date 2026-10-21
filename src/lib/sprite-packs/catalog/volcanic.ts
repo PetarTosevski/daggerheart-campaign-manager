@@ -1,6 +1,6 @@
 // Built-in catalog: volcanic (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, long, obj, tex } from "./types";
+import { defineFolder, glowTex, long, obj, tex } from "./types";
 
 export const VOLCANIC = defineFolder("volcanic", {
   props: [
@@ -34,7 +34,7 @@ export const VOLCANIC = defineFolder("volcanic", {
   ],
   terrain: [
     tex("black volcanic rock", "stone", true),
-    tex("glowing lava", "lava", true),
+    glowTex("glowing lava", "lava", true),
     tex("ash ground", "dirt", true),
     tex("cracked basalt", "stone", true),
   ],
@@ -75,7 +75,7 @@ export const VOLCANIC = defineFolder("volcanic", {
     ],
     "terrain-2": [
       tex("cooled ropy lava", "stone", true),
-      tex("red-hot cracked ground", "lava", true),
+      glowTex("red-hot cracked ground", "lava", true),
       tex("sulphur crust", "dirt", true),
       tex("obsidian glass", "stone", true),
     ],
