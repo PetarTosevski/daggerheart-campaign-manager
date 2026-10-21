@@ -11,6 +11,10 @@
  * gives a short rest's benefits); `undo` reverts the latest rest's sheets and
  * Fear through the group and reopens it. Project ticks are not reverted
  * (plan note 11).
+ * A finished long rest (not an interrupted one) also ticks each armed, active
+ * long-term dashboard countdown set to Automatic once, keyed on the rest's
+ * campaign row, and the undo takes those ticks back (countdowns-advanced K4,
+ * Q3, D11; convex/countdownTracks.ts).
  */
 import { v } from "convex/values";
 
@@ -34,6 +38,7 @@ import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId, undoEntry } from "./lib/actionLog";
+import { tickLongTermOnRest } from "./countdownTracks";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
@@ -351,7 +356,7 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     });
   }
   const fearText = kind === "long" ? `1d4 ${fearRoll} + ${pcs.length} PCs` : `1d4 ${fearRoll}`;
-  await logAction(ctx, {
+  const campaignRowId = await logAction(ctx, {
     campaignId: campaign._id,
     actorId: ctx.user._id,
     kind: "rest",
@@ -361,6 +366,28 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     fearDelta: gained,
     undoable: true,
   });
+
+  // Long-term countdowns (CB p.164 "During a long rest, you should generally tick down a relevant long-term countdown
+  // once"; Q3): only a finished long rest, after its own effects. The step text stays out of the public rows above.
+  let countdownLines: string[] | undefined;
+  if (!interrupted && rest.kind === "long") {
+    const { lines, reminders } = await tickLongTermOnRest(ctx, campaign._id, campaignRowId, ctx.user._id);
+    const notice = [...lines, ...reminders.map((name) => `Reminder: tick ${name}?`)];
+    // GM-only and in the rest's group, so the rest's undo marks it undone too; skipped only for a party at the group cap.
+    if (notice.length > 0 && pcs.length < REST_PARTY_MAX) {
+      await logAction(ctx, {
+        campaignId: campaign._id,
+        actorId: ctx.user._id,
+        kind: "countdown",
+        visibility: "gm",
+        summary: `Long rest: ${notice.join("; ")}`,
+        groupId,
+        undoable: true,
+      });
+    }
+    if (lines.length > 0) countdownLines = lines;
+  }
+
   await ctx.db.patch("rests", rest._id, {
     status: interrupted ? "interrupted" : "finished",
     finishedAt: Date.now(),
@@ -368,7 +395,7 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     fearGained: gained,
     groupId,
   });
-  return { fearRoll, fearGained: gained };
+  return { fearRoll, fearGained: gained, ...(countdownLines !== undefined ? { countdownLines } : {}) };
 }
 
 async function loadOpenRest(ctx: QueryCtx, campaignId: Id<"campaigns">, restId: Id<"rests">): Promise<Doc<"rests">> {
@@ -378,7 +405,12 @@ async function loadOpenRest(ctx: QueryCtx, campaignId: Id<"campaigns">, restId: 
   return rest;
 }
 
-const endResult = v.object({ fearRoll: v.union(v.number(), v.null()), fearGained: v.number() });
+const endResult = v.object({
+  fearRoll: v.union(v.number(), v.null()),
+  fearGained: v.number(),
+  /** GM only (finish is a GM mutation): each long-term countdown the long rest ticked, with its step (K4). */
+  countdownLines: v.optional(v.array(v.string())),
+});
 
 /** Finishes the open rest and applies it (CB 105-106). GM only. */
 export const finish = keyedGmMutation({
