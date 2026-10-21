@@ -17,6 +17,7 @@ import {
   type PreparedMap,
   type ViewerView,
   type VisionGrid,
+  type VisionObject,
   type VisionToken,
 } from "../../src/lib/domain/combat-map/index";
 import { appError } from "../../src/lib/errors/app-error";
@@ -26,8 +27,10 @@ import { pcPortrait, type TokenView } from "../combatTokens";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { readSheet } from "./characterSheet";
+import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
 import { atLeast, permissionFor } from "./permissions";
+import { objectTraits, resolveRefs } from "./spriteSources";
 import { CELL_LAYERS, tokenSideValidator } from "./validators/combatMaps";
 
 /**
@@ -51,8 +54,8 @@ export const lightLevelValidator = v.union(v.literal("day"), v.literal("dim"), v
 
 /**
  * A token a player sees that is not a PC (adversary, ally, neutral, custom): name, size, side and facing only
- * (R4: never HP, Stress, Difficulty, conditions or anything else). No portrait is stored for these, so the
- * client draws initials from the name. `revealed`: in dim light at night and shown only because the GM revealed
+ * (R4: never HP, Stress, Difficulty, conditions or anything else), plus an adversary's rulebook art; without art
+ * the client draws initials from the name. `revealed`: in dim light at night and shown only because the GM revealed
  * it to this character (R10); the client marks it (the board's dashed outline).
  */
 export const otherTokenValidator = v.object({
@@ -64,6 +67,12 @@ export const otherTokenValidator = v.object({
   size: v.number(),
   face: v.number(),
   revealed: v.boolean(),
+  /**
+   * Adversary tokens only: the rulebook art (an SRD adversary's, or a custom adversary's `basedOn` entry's) as an
+   * image URL. Portraits are public under R4; stats never are. Sent only when there is art, so a row without art
+   * (and every custom token's row) is exactly the D9 shape; `null` is accepted for the client's portrait type.
+   */
+  portrait: v.optional(v.union(v.object({ kind: v.literal("url"), url: v.string() }), v.null())),
 });
 export type OtherToken = Infer<typeof otherTokenValidator>;
 
@@ -129,8 +138,33 @@ function visionTokenOf(token: Doc<"combatTokens">): VisionToken {
 }
 
 /**
+ * The map's objects as the engine reads them (sprite packs P5): kind, position, radius, rotation, the GM's sight
+ * override, the light switch and, for a sprite object, its resolved traits (P1 catalog or uploaded row, D3, Q1), so
+ * sight blocking, rect footprints (`rot` turns them) and sprite lights follow the manifest for every viewer and for
+ * toggleLight's "has seen" check alike. An unknown or deleted sprite has no traits: its Classic kind decides (D1, D9).
+ */
+export async function visionObjects(
+  ctx: QueryCtx,
+  campaignId: Id<"campaigns">,
+  objects: readonly Doc<"combatMapObjects">[],
+): Promise<VisionObject[]> {
+  const uploaded = await resolveRefs(ctx, campaignId, objects.map((o) => o.sprite));
+  return objects.map((o) => ({
+    kind: o.kind,
+    x: o.x,
+    y: o.y,
+    r: o.r,
+    rot: o.rot,
+    sight: o.sight ?? null,
+    lit: o.lit ?? null,
+    traits: objectTraits(o, uploaded),
+  }));
+}
+
+/**
  * Reads a map's objects, painted cells, tokens and the campaign phase, and prepares the blocking grid once
- * (C1 `prepareMap`): terrain walls, painted sight blockers, sight-blocking objects (R7) and lit map lights (R9).
+ * (C1 `prepareMap`): terrain walls, painted sight blockers, sight-blocking objects (R7, with sprite traits) and lit
+ * map lights (R9, sprite lights included).
  * An uploaded image ignores terrain.
  */
 export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: Doc<"combatMaps">): Promise<Scene> {
@@ -145,7 +179,7 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
     h: map.h,
     base: map.base,
     areas: map.areas,
-    objects,
+    objects: await visionObjects(ctx, campaign._id, objects),
     paint: cells.paint,
     block: cells.block,
     image: map.source === "image",
@@ -271,14 +305,23 @@ async function pcView(
   };
 }
 
-/** A non-PC token's name: the tracker instance's label (adversary) or the custom name. Nothing else is read. */
-async function otherName(ctx: QueryCtx, campaign: Doc<"campaigns">, token: Doc<"combatTokens">): Promise<string> {
-  if (token.ref.kind === "custom") return token.ref.name;
+/**
+ * A non-PC token's name (the tracker instance's label for an adversary, or the custom name) and, for an adversary,
+ * its rulebook art (`adversaryArtSrc`). Nothing else is read (R4).
+ */
+async function otherIdentity(
+  ctx: QueryCtx,
+  campaign: Doc<"campaigns">,
+  token: Doc<"combatTokens">,
+): Promise<Pick<OtherToken, "name" | "portrait">> {
+  if (token.ref.kind === "custom") return { name: token.ref.name };
   if (token.ref.kind === "adversary") {
     const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
-    return instance !== null && instance.campaignId === campaign._id ? instance.label : "Unknown";
+    if (instance === null || instance.campaignId !== campaign._id) return { name: "Unknown" };
+    const url = await adversaryArtSrc(ctx, campaign._id, instance);
+    return url === null ? { name: instance.label } : { name: instance.label, portrait: { kind: "url", url } };
   }
-  return "Unknown";
+  return { name: "Unknown" };
 }
 
 export type ViewResult = {
@@ -327,7 +370,7 @@ export async function buildView(
     if (seenAs === "hidden") continue;
     others.push({
       _id: token._id,
-      name: await otherName(ctx, campaign, token),
+      ...(await otherIdentity(ctx, campaign, token)),
       side: token.side,
       x: token.x,
       y: token.y,
