@@ -46,6 +46,17 @@
 # USER ANSWER Q1 (2026-10-21, binding): (a) the user's own rulebooks (Core Rulebook and Hope & Fear, provided) are the rules source -
 #   private text ingested into the Convex deployment by a local script, never in git, searched per question, excerpts with page
 #   numbers sent to the model. Q2-Q14 still pending.
+# USER ANSWERS Q2-Q14 (2026-10-21, binding):
+#   Q2 Sonnet 5.5 answers first; when Sonnet's answer is 'Not in your books' or 'Rules unclear', the server automatically retries
+#      with Opus 5.5 (one retry, shown as 'Checked again with a stronger model'); the internet pass (toggle, as the board) runs only
+#      after Opus also finds nothing.
+#   Q3 conversations are PUBLIC to the campaign by default (everyone in the campaign can read them); the asker can set one private.
+#      GM-only data still never reaches any prompt (Q4), so public conversations leak nothing secret.
+#   Q10 conversations are kept; no automatic deletion and no retention cron for them (a few KB per answer: negligible storage).
+#      Manual delete only by the asker of their own conversation (orchestrator default; user said 'no delete unless good reason').
+#   Q9 caps: 40 questions per person per day; $50 per campaign per month; $150 per month server-wide (the user's Anthropic limit
+#      is $200/month; $50 stays free for map generation and photo import); all changeable in settings without a deploy.
+#   Q4-Q8, Q11-Q14: defaults. Plan status: APPROVED.
 plan: d13-lorekeeper
 waves:
   # ---------------------------------------------------------------- wave 1: foundation and pure domain
