@@ -166,9 +166,9 @@ describe("resolve (D1)", () => {
     expect(grass).toContain(keyUrl("common/grass"));
     expect(terrainTextures("wall", "forest")).toEqual([]);
     expect(terrainTextures("void", "dungeon")).toEqual([]);
-    // Planks and paths are not rotatable, forest floor is.
+    // Planks and cobblestone road are not rotatable (common gravel, a path texture with no direction, is), forest floor is.
     const path = terrainTextures("path", "forest");
-    expect(path.every((t) => !t.rotatable)).toBe(true);
+    expect(path.find((t) => t.url === keyUrl("common/cobblestone-road"))?.rotatable).toBe(false);
     expect(terrainTextures("grass", "forest").some((t) => t.rotatable)).toBe(true);
   });
 });

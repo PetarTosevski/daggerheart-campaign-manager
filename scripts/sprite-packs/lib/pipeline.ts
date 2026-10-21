@@ -6,7 +6,8 @@
  * square side, textures TEXTURE_PX per swatch, seam-fixed, D6).
  */
 
-import { existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import sharp from "sharp";
@@ -18,7 +19,7 @@ import {
   type FolderCatalog,
   type Sheet,
 } from "../../../src/lib/sprite-packs/catalog";
-import { SHEET_GRIDS, cutSheet, cutTerrain, seamFix, tileability, trimToAlpha } from "../../../src/lib/sprite-packs/cut";
+import { SHEET_GRIDS, cutSheet, cutTerrain, magentaScore, seamFix, tileability, trimToAlpha } from "../../../src/lib/sprite-packs/cut";
 import type { Box, CutFlag, RgbaImage, TerrainFlag } from "../../../src/lib/sprite-packs/cut";
 import { activeOverride, type Overrides } from "./overrides";
 
@@ -129,6 +130,56 @@ function terrainFlagText(f: TerrainFlag): string {
     case "magenta-left":
       return `magenta left in swatch #${f.index + 1}`;
   }
+}
+
+export type MagentaFrame = { top: number; bottom: number; left: number; right: number };
+
+/**
+ * Strip a plain magenta outer frame from a terrain sheet before cutTerrain
+ * (P11Z). cutTerrain's frame finder sets the frame colour from the outermost
+ * non-magenta pixels, so a frame that is itself flat magenta (grassland,
+ * town and mountain terrain-2: 24..78 px) is not found and every swatch keeps
+ * a magenta strip on its outer sides. From each edge, the lines whose middle
+ * 60 % is at least half gap magenta (#FF00FF, bright) are cut away; the
+ * transition line counts while it is mostly magenta, and cutTerrain's inset
+ * then clears the JPEG bleed. A sheet without a magenta frame (the white
+ * frames of the primary sheets) comes back unchanged (the same object).
+ */
+export function stripMagentaFrame(img: RgbaImage): { image: RgbaImage; frame: MagentaFrame } {
+  const { width: w, height: h, data } = img;
+  const gap = (x: number, y: number) => {
+    const i = (y * w + x) * 4;
+    const r = data[i] ?? 0;
+    const g = data[i + 1] ?? 0;
+    const b = data[i + 2] ?? 0;
+    return magentaScore(r, g, b) > 0.5 && Math.max(r, b) > 120;
+  };
+  const limit = Math.round(Math.min(w, h) * 0.2);
+  const depth = (n: number, at: (k: number, t: number) => boolean) => {
+    const from = Math.round(n * 0.2);
+    const to = Math.round(n * 0.8);
+    let k = 0;
+    for (; k < limit; k++) {
+      let m = 0;
+      for (let t = from; t < to; t++) if (at(k, t)) m++;
+      if (m < (to - from) * 0.5) break;
+    }
+    return k;
+  };
+  const frame: MagentaFrame = {
+    top: depth(w, (k, x) => gap(x, k)),
+    bottom: depth(w, (k, x) => gap(x, h - 1 - k)),
+    left: depth(h, (k, y) => gap(k, y)),
+    right: depth(h, (k, y) => gap(w - 1 - k, y)),
+  };
+  if (frame.top + frame.bottom + frame.left + frame.right === 0) return { image: img, frame };
+  const box: Box = { x: frame.left, y: frame.top, w: w - frame.left - frame.right, h: h - frame.top - frame.bottom };
+  const out = new Uint8ClampedArray(box.w * box.h * 4);
+  for (let y = 0; y < box.h; y++) {
+    const s = ((box.y + y) * w + box.x) * 4;
+    out.set(data.subarray(s, s + box.w * 4), y * box.w * 4);
+  }
+  return { image: { width: box.w, height: box.h, data: out }, frame };
 }
 
 /**
@@ -360,9 +411,12 @@ export async function processFolder(src: string, folderId: string, overrides: Ov
     let cuts: RgbaImage[];
     let boxes: Box[] = [];
     if (f.sheet === "terrain") {
-      const t = cutTerrain(img);
+      const { image: framed, frame } = stripMagentaFrame(img);
+      const t = cutTerrain(framed);
       cuts = t.swatches.map((s) => s.image);
       result.method = "terrain";
+      if (framed !== img)
+        result.overrideNotes.push(`magenta outer frame stripped (top ${frame.top}, right ${frame.right}, bottom ${frame.bottom}, left ${frame.left} px)`);
       result.flags.push(...t.flags.map(terrainFlagText));
     } else {
       const c = cutSheet(img, { layout: f.sheet });
@@ -375,7 +429,8 @@ export async function processFolder(src: string, folderId: string, overrides: Ov
     result.found = cuts.length;
 
     // Overrides.
-    const { active, notes } = activeOverride(overrides, id, cuts.length);
+    const sha256 = createHash("sha256").update(readFileSync(f.file)).digest("hex");
+    const { active, notes } = activeOverride(overrides, id, cuts.length, sha256);
     result.overrideNotes.push(...notes);
     for (const i of active.unmix ?? []) {
       const box = boxes[i];
