@@ -2,6 +2,7 @@
 
 import { useQuery } from "convex/react";
 import { BookOpen, Play, Plus, Sun, Users } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
@@ -9,8 +10,11 @@ import { LogoMark } from "@/components/brand/brand";
 import { frameName, plural } from "@/lib/campaign-display";
 
 import { api } from "../../../convex/_generated/api";
-import { JoinDialog } from "./join-dialog";
-import { SettingsDialog } from "./settings-dialog";
+
+// CL8: the Settings and Join dialogs (and the zod validation they bundle) load only when first opened. Each mounts on
+// its first open and stays mounted, so closing returns focus as before.
+const SettingsDialog = dynamic(() => import("./settings-dialog").then((m) => m.SettingsDialog), { ssr: false });
+const JoinDialog = dynamic(() => import("./join-dialog").then((m) => m.JoinDialog), { ssr: false });
 
 const ITEM =
   "flex min-h-[76px] w-full cursor-pointer items-center gap-3 rounded-[10px] border border-transparent px-5 py-2.5 text-center text-parchment transition-[background,border-color,box-shadow] duration-200 hover:border-line-2 hover:bg-raised hover:shadow-[inset_3px_0_0_var(--brand)]";
@@ -34,6 +38,8 @@ export function TitleMenu() {
   const settings = useQuery(api.settings.get);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
+  const [settingsMounted, setSettingsMounted] = useState(false);
+  const [joinMounted, setJoinMounted] = useState(false);
   const latest = campaigns?.[0];
 
   return (
@@ -84,7 +90,12 @@ export function TitleMenu() {
             }
           />
         </Link>
-        <button type="button" className={ITEM} aria-haspopup="dialog" onClick={() => setJoinOpen(true)}>
+        <button type="button" className={ITEM} aria-haspopup="dialog" 
+          onClick={() => {
+            setJoinMounted(true);
+            setJoinOpen(true);
+          }}
+        >
           <MenuItem
             icon={<Users className="size-[18px]" strokeWidth={1.5} aria-hidden="true" />}
             label="Join Campaign"
@@ -95,7 +106,10 @@ export function TitleMenu() {
           type="button"
           className={ITEM}
           aria-haspopup="dialog"
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => {
+            setSettingsMounted(true);
+            setSettingsOpen(true);
+          }}
         >
           <MenuItem
             icon={<Sun className="size-[18px]" strokeWidth={1.5} aria-hidden="true" />}
@@ -105,8 +119,8 @@ export function TitleMenu() {
         </button>
       </nav>
 
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <JoinDialog open={joinOpen} onClose={() => setJoinOpen(false)} />
+      {settingsMounted ? <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} /> : null}
+      {joinMounted ? <JoinDialog open={joinOpen} onClose={() => setJoinOpen(false)} /> : null}
 
       <div className="mt-auto pt-12 text-[13px] tracking-[0.1em] text-faint">
         {settings?.tableName || "Daggerheart Campaign Ledger"}
