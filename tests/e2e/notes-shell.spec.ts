@@ -105,7 +105,7 @@ test("a player opens Notes and gets the same shell with the two Shared tabs; an 
     await player.getByRole("navigation", { name: "Campaign sections" }).getByRole("link", { name: "Notes" }).click();
     await expect(player).toHaveURL(`/campaigns/${campaignId}/notes`);
     await expect(player).toHaveTitle(`Notes · ${name}`);
-    await expect(player.getByRole("heading", { level: 1, name: "Your Journal" })).toBeVisible();
+    await expect(player.getByRole("heading", { level: 1, name: "Player’s Journal" })).toBeVisible();
     await expectShell(player);
     await expect(player.getByText("Players’ journals", { exact: true })).toHaveCount(0);
   } finally {
