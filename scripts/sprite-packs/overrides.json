@@ -1,15 +1,45 @@
 {
-  "$comment": "Per-sheet fixes for the sprite cutter (D8). Format: scripts/sprite-packs/lib/overrides.ts. Cut indices are 0-based (the report's #n is index n-1).",
+  "$comment": "Per-sheet fixes for the sprite cutter (D8). Format: scripts/sprite-packs/lib/overrides.ts. Cut indices are 0-based (the report's #n is index n-1). Batch-2 entries (props-2, large-2, large-3) come from docs/tasks/TASK-SP-P11A.md, P11B.md and P11C.md.",
   "sheets": {
     "common/props": { "unpink": [8, 9, 10, 11, 15], "note": "pink glow around the campfire, torch, brazier and lantern; purple ash edge on the burnt-out campfire" },
+    "common/props-2": { "unmix": [10], "note": "oil lamp glass chimney tinted pink by the magenta behind it (P11A)" },
+    "common/large-2": { "rotate": { "1": 90 }, "unmix": [5], "note": "ox drawn upright, the catalog sizes it 2 x 1; magic circle glow came out solid violet (P11A)" },
+    "forest/props-2": { "unpink": [12, 13], "note": "purple fringe on the stepping stones and the forest spring (P11A)" },
+    "forest/large-2": { "unmix": [5], "note": "sapling thicket's thin leaves (P11A)" },
     "mountain-and-cliffs/large": { "rotate": { "6": 90 }, "note": "rope bridge drawn upright; the catalog sizes it 2 x 1" },
+    "mountain-and-cliffs/props-2": { "unpink": [13], "note": "pink glow around the dwarven lantern (P11A)" },
+    "mountain-and-cliffs/large-2": { "unpink": [5, 7], "note": "pink steam on the hot spring pool; pink rim on the dwarven statue head (P11A)" },
     "cave/props": { "unmix": [9], "unpink": [1], "note": "spider web strands; purple fringe on the glowing mushroom cluster" },
     "cave/large": { "unmix": [4], "unpink": [3, 7], "note": "giant spider web strands; pink edges on the chasm crack and collapsed tunnel" },
+    "cave/props-2": { "unpink": [11], "note": "pink glow around the miner's candle (P11A)" },
+    "cave/large-2": { "when": { "found": 9 }, "unpink": [0], "note": "pink rim on the goblin camp (current sheet, which has text labels; regenerate it, P11A)" },
     "dungeon/props": { "unpink": [13], "note": "pink glow around the candle cluster" },
     "dungeon/large": { "unpink": [7, 8], "note": "pink at the foot of the stair down; candle glow on the altar" },
     "crypt-and-graveyard/props": { "unpink": [8], "unmix": [9], "note": "pink glow around the lantern on a post; spiderweb strands" },
     "crypt-and-graveyard/large": { "unpink": [8], "note": "pink edge on the catacomb niche wall" },
+    "crypt-and-graveyard/props-2": { "unmix": [2], "unpink": [12], "note": "ghost tinted pink; purple aura around the ghostly blue candle (P11A)" },
+    "castle-interior/props-2": { "unpink": [15], "note": "pink glow around the reading chair's candle (P11B)" },
+    "castle-interior/large-2": { "unpink": [1], "note": "pink glow under the kitchen hearth (P11B)" },
+    "town-street-and-market/large-2": {
+      "untint": { "8": [[0.52, 0.44, 1, 1], [0.47, 0.63, 1, 1], [0.6, 0.36, 1, 0.44]] },
+      "note": "chicken coop run netting drawn rose-pink (magenta mixed into the fill); the areas cover the run, not the hut"
+    },
+    "town-street-and-market/large-3": [
+      {
+        "when": { "sha256": "93c09597b2743fbe" },
+        "order": [0, 1, 2, 3, 4, 5, 6, 8, 7],
+        "unpink": [7],
+        "note": "this sheet file only: row 3 drawn tannery, canal, gallows (catalog: gallows before canal); pink banks on the canal (cut #8; to be regenerated in catalog order, P11B). unpink indexes the cuts before ordering"
+      },
+      {
+        "when": { "found": 9 },
+        "untint": { "4": [[0.33, 0.86, 0.67, 1]], "5": [[0.38, 0.85, 0.62, 1]] },
+        "note": "pink haze at the market hall and stable entrances (P11B; check again on a regenerated sheet)"
+      }
+    ],
     "temple/props": { "unpink": [0], "note": "pink glow around the candle flame" },
+    "temple/props-2": { "unpink": [4, 6], "note": "pink glow on the votive candles and the eternal flame (P11B)" },
+    "temple/large-2": { "unpink": [6], "note": "pink smoke on the oracle's tripod (P11B)" },
     "swamp/props": { "unpink": [4], "note": "pink aura around the will-o'-wisp" },
     "swamp/large": { "rotate": { "8": 90 }, "note": "broken boardwalk drawn upright; the catalog sizes it 2 x 1" },
     "snow-and-tundra/props": { "unpink": [4, 7], "note": "pink snow edges on the animal tracks and the campfire in snow" },
@@ -21,18 +51,37 @@
       },
       { "when": { "found": 9 }, "unpink": [7, 8], "note": "pink edges on the snow-covered tent and the ice cave mouth" }
     ],
+    "snow-and-tundra/props-2": { "unmix": [5], "note": "snowshoe netting strands (P11B)" },
     "desert/large": { "unpink": [6], "note": "pink edge around the giant skeleton ribs" },
-    "coast-and-beach/props": { "unmix": [4], "note": "fishing net strands" },
-    "town-street-and-market/large-2": {
-      "untint": { "8": [[0.52, 0.44, 1, 1], [0.47, 0.63, 1, 1], [0.6, 0.36, 1, 0.44]] },
-      "note": "chicken coop run netting drawn rose-pink (magenta mixed into the fill); the areas cover the run, not the hut"
+    "desert/props-2": { "unpink": [8, 12], "note": "pink fringe under the half-buried helmet and around the quicksand (P11C)" },
+    "desert/large-2": {
+      "unpink": [2, 7],
+      "untint": { "7": [[0, 0, 1, 1]] },
+      "note": "pink ring round the sandworm; pink rim of the colossus head's sand (unpink leaves a rose edge, untint greys it; P11C)"
     },
+    "coast-and-beach/props": { "unmix": [4], "note": "fishing net strands" },
+    "coast-and-beach/large-2": { "unpink": [3, 8], "note": "pink in the water halo of the fishing boat and the sea-stack arch (P11C)" },
+    "ship-deck/props-2": { "unpink": [9], "note": "pink wet patch under the pile of caught fish (P11Z review)" },
+    "ship-deck/large-2": { "unpink": [7], "note": "grain heap's bottom edge fades into magenta (P11C)" },
     "sewers/large": { "rotate": { "5": 90 }, "note": "stone bridge over the channel drawn upright; the catalog sizes it 2 x 1" },
+    "sewers/large-2": {
+      "unpink": [0, 1, 3, 4, 5, 6, 7, 8],
+      "note": "soft pink halos round the waterfall, ooze pool, shrine candles, gate, boat, pillars, refuse heap and den (regenerate the sheet, P11C)"
+    },
+    "ruins/props-2": { "unpink": [15], "note": "pink patch under the wildflowers (P11C)" },
     "mushroom-cavern/props": {
       "unpink": [0, 14],
       "note": "purple rim on the glowing blue mushroom; pink glow around the drow lantern (not the purple mushroom, which is purple)"
     },
+    "mushroom-cavern/props-2": {
+      "unpink": [1, 3, 6, 8, 12],
+      "unmix": [11],
+      "note": "pink glow on the moth, fern, seed pods, crystal flower and water lily; web strands on the web-wrapped body (P11C)"
+    },
+    "mushroom-cavern/large-2": { "unpink": [5, 7], "note": "pink glow round the crystal throne; purple fringe under the vine curtain (P11C)" },
     "volcanic/props": { "unpink": [1, 4, 6, 8], "note": "pink smoke on the steam vent and smoking crater; purple soot on the scorched bones; magenta specks in the ember pile" },
-    "volcanic/large": { "unpink": [3, 6], "note": "pink smoke on the fire geyser; pink edge on the lava bridge" }
+    "volcanic/large": { "unpink": [3, 6], "note": "pink smoke on the fire geyser; pink edge on the lava bridge" },
+    "volcanic/props-2": { "unpink": [8, 10], "note": "pink smoke on the smouldering backpack and smoking fissure (P11C)" },
+    "volcanic/large-2": { "unpink": [5, 6, 7], "note": "pink glow on the salamander nest; pink smoke on the ash-buried house and the brazier (P11C)" }
   }
 }

@@ -5,7 +5,9 @@
  *
  * Per sheet one override object, or a list of them (each `when` is checked on
  * its own and the active ones are merged in order). Fields, all optional:
- *   when      {found: n}: apply only when the cutter finds n objects, so a
+ *   when      {found: n} and / or {sha256: prefix}: apply only when the cutter
+ *             finds n objects, and / or only to the sheet file whose SHA-256
+ *             starts with the prefix (8..64 hex digits; P11Z), so a
  *             regenerated sheet never gets a stale fix (the report says the
  *             override was inactive).
  *   skip      cut indices (reading order, 0-based) to drop.
@@ -45,7 +47,11 @@ const fraction = z.number().min(0).max(1);
 
 export const sheetOverrideSchema = z
   .object({
-    when: z.object({ found: z.number().int().min(0) }).strict().optional(),
+    when: z
+      .object({ found: z.number().int().min(0).optional(), sha256: z.string().regex(/^[0-9a-f]{8,64}$/).optional() })
+      .strict()
+      .refine((w) => w.found !== undefined || w.sha256 !== undefined, "when needs found or sha256")
+      .optional(),
     skip: indexList.optional(),
     variants: z.record(z.string().regex(/^\d+$/), z.string().regex(/^[a-z0-9-]+$/)).optional(),
     order: indexList.optional(),
@@ -71,15 +77,24 @@ export function loadOverrides(file: string): Overrides {
   return overridesSchema.parse(JSON.parse(readFileSync(file, "utf8")));
 }
 
-/** The overrides active for a sheet with `found` cuts, merged, plus a note per inactive one. */
-export function activeOverride(overrides: Overrides, id: string, found: number): { active: SheetOverride; notes: string[] } {
+/** The overrides active for a sheet with `found` cuts (and file hash `sha256`, hex), merged, plus a note per inactive one. */
+export function activeOverride(
+  overrides: Overrides,
+  id: string,
+  found: number,
+  sha256?: string,
+): { active: SheetOverride; notes: string[] } {
   const raw = overrides.sheets[id];
   const list = raw === undefined ? [] : Array.isArray(raw) ? raw : [raw];
   const active: SheetOverride = {};
   const notes: string[] = [];
   for (const ov of list) {
-    if (ov.when && ov.when.found !== found) {
+    if (ov.when?.found !== undefined && ov.when.found !== found) {
       notes.push(`override inactive: written for ${ov.when.found} cuts, found ${found}${ov.note ? ` (${ov.note})` : ""}`);
+      continue;
+    }
+    if (ov.when?.sha256 !== undefined && !(sha256 ?? "").startsWith(ov.when.sha256)) {
+      notes.push(`override inactive: written for the sheet file ${ov.when.sha256}, this one is ${(sha256 ?? "unknown").slice(0, 12)}${ov.note ? ` (${ov.note})` : ""}`);
       continue;
     }
     if (ov.note) notes.push(ov.note);

@@ -67,7 +67,7 @@ function parsePromptsDoc(): DocFolder[] {
       .filter((s) => s.length > 0);
 
   let section: "shared" | "settings" | null = null;
-  let shared: { folder: string; sheet: Sheet } | null = null;
+  let shared: { folder: string; sheet: Sheet; extra?: string } | null = null;
   let setting: string | null = null;
   for (const line of lines) {
     if (line.startsWith("## ")) {
@@ -77,12 +77,14 @@ function parsePromptsDoc(): DocFolder[] {
       continue;
     }
     if (section === "shared") {
-      const head = /^`([a-z-]+)\/(props|large|terrain)`$/.exec(line.trim());
+      // `common/props`, or an extra sheet `common/props-2` (batch 2, P11Z).
+      const head = /^`([a-z-]+)\/(props|large|terrain)(-[a-z0-9-]+)?`$/.exec(line.trim());
       if (head) {
-        shared = { folder: head[1]!, sheet: head[2] as Sheet };
+        shared = { folder: head[1]!, sheet: head[2] as Sheet, ...(head[3] ? { extra: `${head[2]}${head[3]}` } : {}) };
         continue;
       }
-      if (shared && line.trim()) get(shared.folder)[shared.sheet].push(...items(line));
+      if (shared?.extra && line.trim()) (get(shared.folder).extras[shared.extra] ??= []).push(...items(line));
+      else if (shared && line.trim()) get(shared.folder)[shared.sheet].push(...items(line));
     }
     if (section === "settings") {
       const head = /^### (.+)$/.exec(line);
@@ -138,15 +140,29 @@ describe("catalog vs docs/sprite-packs/prompts.md", () => {
     expect(extras).toEqual(doc.extras);
   });
 
-  it("the one extra sheet today is the village sheet (town-street-and-market/large-2, P4V) with nine items", () => {
-    const extra = CATALOG_ENTRIES.filter((e) => e.extraSheet !== undefined);
-    expect(extra.map((e) => `${folderOfKey(e.key)}/${e.extraSheet}`)).toEqual(Array(9).fill("town-street-and-market/large-2"));
+  it("extra sheets: the village (town-street-and-market/large-2, P4V) and batch 2 (props-2, large-2 or the town's large-3, terrain-2 in every folder, P11)", () => {
+    const counts = new Map<string, number>();
+    for (const e of CATALOG_ENTRIES.filter((x) => x.extraSheet !== undefined)) {
+      const id = `${folderOfKey(e.key)}/${e.extraSheet}`;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    const expected = new Map<string, number>();
+    for (const folder of FOLDER_IDS) {
+      expected.set(`${folder}/props-2`, 16);
+      expected.set(`${folder}/${folder === "town-street-and-market" ? "large-3" : "large-2"}`, 9);
+      expected.set(`${folder}/terrain-2`, 4);
+    }
+    expected.set("town-street-and-market/large-2", 9);
+    expect(Object.fromEntries([...counts].sort())).toEqual(Object.fromEntries([...expected].sort()));
+    // Every extra-sheet object is placed by sprite ref only, never as a Classic stand-in.
+    for (const e of CATALOG_ENTRIES) if (e.extraSheet && e.category === "object") expect(e.standIn, e.key).toBe(false);
   });
 
   it("keys are unique and match <folder>/<slug> (D8)", () => {
     const keys = CATALOG_ENTRIES.map((e) => e.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys).toHaveLength(20 * (16 + 9 + 4) + 9);
+    // 20 folders x 29 primary items, the village (9), batch 2 (20 x 29, P11).
+    expect(keys).toHaveLength(20 * (16 + 9 + 4) + 9 + 20 * (16 + 9 + 4));
     for (const key of keys) expect(key).toMatch(/^[a-z0-9-]+\/[a-z0-9-]+$/);
     expect(catalogEntry("forest/oak-tree")?.name).toBe("oak tree");
     expect(catalogEntry("swamp/will-o-wisp-light")?.name).toBe("will-o'-wisp light");
@@ -252,6 +268,13 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
         "mushroom-cavern/drow-lantern",
         "volcanic/burning-brazier",
         "ship-deck/lantern-on-a-hook",
+        // Batch 2 (P11A, P11B, P11C).
+        "mountain-and-cliffs/dwarven-lantern",
+        "temple/eternal-flame-bowl",
+        "swamp/skull-lantern-on-a-stick",
+        "swamp/skull-shrine",
+        "volcanic/small-fire-elemental",
+        "volcanic/fire-giants-throne",
       ].sort(),
     );
     expect(withLight("campfire")).toEqual(
@@ -265,6 +288,15 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
         "town-street-and-market/blacksmith-forge",
         "volcanic/forge-of-the-fire-giants",
         "tavern/kitchen-stove",
+        // Batch 2 (P11A, P11B, P11C).
+        "common/cooking-pot-on-a-tripod",
+        "common/campsite-with-two-bedrolls",
+        "forest/druid-stone-circle",
+        "cave/goblin-camp",
+        "dungeon/cauldron-of-gruel",
+        "castle-interior/kitchen-hearth-with-a-roasting-spit",
+        "volcanic/burning-bush",
+        "volcanic/giant-brass-brazier",
       ].sort(),
     );
     expect(withLight("faintglow")).toEqual(
@@ -293,6 +325,34 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
         "volcanic/ember-pile",
         "volcanic/fire-geyser",
         "volcanic/lava-bridge",
+        // Batch 2 (P11A, P11B, P11C).
+        "common/oil-lamp",
+        "common/glowing-magic-circle-on-the-ground",
+        "cave/glowworm-cluster",
+        "cave/miners-helmet-with-a-candle",
+        "dungeon/glowing-glyph-trap",
+        "crypt-and-graveyard/ghostly-blue-candle",
+        "crypt-and-graveyard/necromancers-altar",
+        "castle-interior/reading-chair-with-a-candle",
+        "temple/votive-candle-rack",
+        "sewers/beggars-cooking-pot",
+        "sewers/forgotten-shrine",
+        "mushroom-cavern/glowing-moth",
+        "mushroom-cavern/glowing-fern",
+        "mushroom-cavern/glowing-seed-pods",
+        "mushroom-cavern/crystal-flower",
+        "mushroom-cavern/glowing-water-lily",
+        "mushroom-cavern/crystal-throne",
+        "mushroom-cavern/curtain-of-glowing-vines",
+        "volcanic/fire-beetle",
+        "volcanic/small-lava-stream",
+        "volcanic/puddle-of-molten-gold",
+        "volcanic/smoking-fissure",
+        "volcanic/fire-rune-stone",
+        "volcanic/magma-fall",
+        "volcanic/island-in-a-lava-lake",
+        "volcanic/salamander-nest",
+        "volcanic/lava-tube-opening",
       ].sort(),
     );
   });
@@ -424,6 +484,100 @@ describe("movement trait (map-movement M0, D1, D2; doors: user answer 2026-10-21
     "mushroom-cavern/underground-lake": "difficult",
     "mushroom-cavern/dark-pool": "difficult",
     "volcanic/lava-pool": "difficult",
+    // Batch 2 (P11A, P11B, P11C): flat dropped items, rugs, stairs and bridges open; water and puddles difficult;
+    // fences, cells, solid statues and heaps block; the eight batch-2 doors and gates.
+    "common/round-wooden-shield": "open",
+    "common/dropped-longsword": "open",
+    "common/open-spellbook": "open",
+    "common/rolled-up-carpet": "open",
+    "common/supply-dump-of-crates-sacks-and-barrels": "block",
+    "common/wooden-barricade-with-spikes": "block",
+    "common/dragons-hoard-heap-of-gold-coins": "difficult",
+    "forest/pile-of-pinecones": "open",
+    "forest/shed-deer-antlers": "open",
+    "forest/stepping-stones-in-a-stream": "difficult",
+    "forest/forest-spring": "difficult",
+    "forest/forest-stream-bend": "difficult",
+    "forest/archway-of-living-branches": "open",
+    "forest/woodcutters-log-pile": "block",
+    "grassland-and-road/sheaf-of-wheat": "open",
+    "grassland-and-road/pitchfork-and-rake": "open",
+    "grassland-and-road/duck-pond": "difficult",
+    "grassland-and-road/sheep-pen": "block",
+    "grassland-and-road/stone-arch-bridge-over-a-brook": "open",
+    "mountain-and-cliffs/small-waterfall-pool": "difficult",
+    "mountain-and-cliffs/dwarven-mountain-pass-gate": "door",
+    "mountain-and-cliffs/hot-spring-pool": "difficult",
+    "mountain-and-cliffs/wooden-scaffold-walkway": "open",
+    "cave/pick-and-shovel": "open",
+    "cave/rope-ladder-going-down": "open",
+    "cave/mine-cart-track-junction": "open",
+    "cave/dwarven-door-in-the-rock": "door",
+    "dungeon/key-ring-on-a-hook": "open",
+    "dungeon/straw-pile": "open",
+    "dungeon/poison-dart-trap": "open",
+    "dungeon/glowing-glyph-trap": "open",
+    "dungeon/wooden-door-open": "door",
+    "dungeon/wall-manacles": "open",
+    "dungeon/dripping-slime-puddle": "difficult",
+    "dungeon/round-vault-door": "door",
+    "dungeon/row-of-three-prison-cells": "block",
+    "dungeon/spiral-staircase": "open",
+    "crypt-and-graveyard/skeleton-rising-from-the-ground": "open",
+    "crypt-and-graveyard/gravediggers-shovel-and-pick": "open",
+    "crypt-and-graveyard/memorial-wreath": "open",
+    "crypt-and-graveyard/iron-grave-cage": "block",
+    "crypt-and-graveyard/crypt-staircase-going-down": "open",
+    "castle-interior/potted-fern": "open",
+    "castle-interior/gatehouse-portcullis": "door",
+    "tavern/hearth-rug": "open",
+    "tavern/inn-stable-stall-with-a-horse": "block",
+    "town-street-and-market/beggars-bowl-and-mat": "open",
+    "town-street-and-market/topiary-bush": "open",
+    "town-street-and-market/street-drain": "open",
+    "town-street-and-market/town-gate-with-two-towers": "door",
+    "town-street-and-market/canal-with-a-footbridge": "difficult",
+    "temple/guardian-lion-statue": "block",
+    "temple/meditation-cushion": "open",
+    "temple/cloister-garden": "open",
+    "temple/lotus-pond": "difficult",
+    "temple/temple-entrance-steps": "open",
+    "temple/great-brass-bell": "block",
+    "temple/raked-sand-garden": "open",
+    "temple/colonnade": "block",
+    "swamp/fishing-pole-in-the-mud": "open",
+    "swamp/swamp-orchid": "open",
+    "swamp/dead-fish": "open",
+    "swamp/boardwalk-junction": "open",
+    "snow-and-tundra/ice-fishing-hole-with-a-rod": "difficult",
+    "snow-and-tundra/pair-of-snowshoes": "open",
+    "snow-and-tundra/wooden-skis": "open",
+    "snow-and-tundra/dropped-fur-cloak": "open",
+    "snow-and-tundra/ice-sculpture": "block",
+    "snow-and-tundra/small-frozen-pond": "difficult",
+    "snow-and-tundra/ice-bridge": "open",
+    "desert/sunken-tomb-entrance": "open",
+    "ship-deck/hammock": "open",
+    "ship-deck/kraken-tentacles": "block",
+    "ship-deck/gangplank": "open",
+    "ship-deck/brig-cell": "door",
+    "sewers/chalked-thieves-mark": "open",
+    "sewers/rag-bedroll": "open",
+    "sewers/open-drain-cover": "open",
+    "sewers/coins-in-the-muck": "difficult",
+    "sewers/ooze-pool": "difficult",
+    "sewers/forgotten-shrine": "block",
+    "sewers/sluice-gate": "door",
+    "ruins/mosaic-fragment": "open",
+    "ruins/wildflowers-in-cracks": "open",
+    "ruins/giant-stone-hand": "block",
+    "ruins/crumbling-bridge": "open",
+    "ruins/sunken-plaza": "open",
+    "mushroom-cavern/underground-river-bend": "difficult",
+    "mushroom-cavern/giant-fungus-bridge": "open",
+    "mushroom-cavern/curtain-of-glowing-vines": "difficult",
+    "volcanic/puddle-of-molten-gold": "difficult",
+    "volcanic/island-in-a-lava-lake": "difficult",
   };
 
   it("every object has a move: the default (blocks sight and tall = block, else difficult for a bush / log / bones / rubble Classic kind, else open) unless overridden", () => {
@@ -442,9 +596,11 @@ describe("movement trait (map-movement M0, D1, D2; doors: user answer 2026-10-21
       const expected = ["wall", "void"].includes(e.terrain) ? "block" : ["water", "deep", "swamp", "snow", "lava"].includes(e.terrain) ? "difficult" : "open";
       expect(e.move, e.key).toBe(expected);
     }
+    // User (2026-10-21): red-hot cracked ground is difficult, so it is a lava texture (P11C had made it stone).
+    expect(catalogEntry("volcanic/red-hot-cracked-ground")).toMatchObject({ terrain: "lava", move: "difficult", light: "none" });
   });
 
-  it("map-movement M2: the six door sprites map to Classic `door` and keep move \"door\"; exactly those", () => {
+  it("map-movement M2: the fourteen door sprites (six primary, eight batch 2) map to Classic `door` and keep move \"door\"; exactly those", () => {
     const doors = [
       "dungeon/wooden-door-closed",
       "dungeon/portcullis-section",
@@ -452,6 +608,15 @@ describe("movement trait (map-movement M0, D1, D2; doors: user answer 2026-10-21
       "sewers/iron-gate",
       "grassland-and-road/wooden-gate",
       "town-street-and-market/wooden-fence-gate",
+      // Batch 2 (P11A, P11B, P11C).
+      "mountain-and-cliffs/dwarven-mountain-pass-gate",
+      "cave/dwarven-door-in-the-rock",
+      "dungeon/wooden-door-open",
+      "dungeon/round-vault-door",
+      "castle-interior/gatehouse-portcullis",
+      "town-street-and-market/town-gate-with-two-towers",
+      "ship-deck/brig-cell",
+      "sewers/sluice-gate",
     ];
     for (const key of doors) {
       const e = catalogEntry(key);
@@ -556,12 +721,23 @@ describe("mapping (D1)", () => {
   });
 
   it("maps terrains to the setting's textures, else common's, else null", () => {
+    // Extra-sheet textures join the mapping (textures have no standIn flag; P11Z decision): after the primary ones.
     expect(textureCandidates("grass", "forest").map((e) => e.key)).toEqual([
       "forest/forest-floor-with-leaves",
       "forest/moss",
       "forest/tall-grass",
+      "forest/pine-needles",
+      "forest/fern-undergrowth",
+      "forest/red-autumn-leaves",
     ]);
-    expect(pickTexture("dirt", "forest", 3, 3, 1)).toBe("common/packed-dirt");
+    expect(textureCandidates("dirt", "forest").map((e) => e.key)).toEqual([
+      "common/packed-dirt",
+      "common/pebbled-ground",
+      "common/trampled-mud",
+    ]);
+    expect(pickTexture("dirt", "forest", 3, 3, 1)).toBe("common/trampled-mud");
+    // Forest water had no forest texture (common has none either); forest stream pebbles is now its only one.
+    expect(textureCandidates("water", "forest").map((e) => e.key)).toEqual(["forest/forest-stream-pebbles"]);
     expect(pickTexture("lava", "forest", 0, 0, 1)).toBeNull();
     expect(pickTexture("lava", "volcanic", 0, 0, 1)).toBe("volcanic/glowing-lava");
     for (const t of ["wall", "void"] as const) {
@@ -574,7 +750,29 @@ describe("mapping (D1)", () => {
     expect(pickTexture("grass", "forest", 5, 6, 9)).toBe(k);
     expect(pickTexture("grass", "forest", 4, 7, 9)).toBe(k);
     const blocks = new Set(Array.from({ length: 100 }, (_, i) => pickTexture("grass", "forest", i * TEXTURE_SQUARES, 0, 9)));
-    expect(blocks.size).toBe(3);
+    expect(blocks.size).toBe(6);
+  });
+
+  it("extra-sheet textures only add candidates: each terrain's primary candidates stay, in order, ahead of the extras", () => {
+    let gained = 0;
+    let fromCommon = 0;
+    for (const setting of FOLDER_IDS) {
+      for (const terrain of TERRAINS) {
+        const list = textureCandidates(terrain, setting);
+        const firstExtra = list.findIndex((e) => e.extraSheet !== undefined);
+        if (firstExtra < 0) continue;
+        // No primary texture after an extra one.
+        expect(list.slice(firstExtra).every((e) => e.extraSheet !== undefined), `${setting} ${terrain}`).toBe(true);
+        if (firstExtra > 0) gained++;
+        else fromCommon++;
+      }
+    }
+    // 70 (setting, terrain) pairs keep their primary textures and gain variants (common's new gravel, grass,
+    // pebbles and mud reach the settings that fall back to common). 11 pairs had no texture of their own and now
+    // use the setting's batch-2 one: 3 were drawn the Classic way (forest and town water, coast swamp), 8 fell
+    // back to common's (grassland, tavern and snow dirt; crypt, temple and sewers path; ruins grass; mushroom
+    // cavern stone). docs/tasks/TASK-SP-P11Z.md, "Textures".
+    expect([gained, fromCommon]).toEqual([70, 11]);
   });
 });
 
@@ -685,9 +883,13 @@ describe("spriteTraits", () => {
 
 describe("catalog helpers", () => {
   it("folderEntries lists props, large, terrain in order", () => {
+    // Each layout's list holds its primary items, then its extra sheets' (batch 2: props-2, large-2, terrain-2).
     const entries = folderEntries(CATALOG.forest);
-    expect(entries).toHaveLength(29);
+    expect(entries).toHaveLength(58);
     expect(entries[0]?.key).toBe("forest/bush");
-    expect(entries[28]?.key).toBe("forest/muddy-path");
+    expect(entries[16]?.key).toBe("forest/fox");
+    expect(entries[32]?.key).toBe("forest/oak-tree");
+    expect(entries[54]?.key).toBe("forest/pine-needles");
+    expect(entries[57]?.key).toBe("forest/forest-stream-pebbles");
   });
 });

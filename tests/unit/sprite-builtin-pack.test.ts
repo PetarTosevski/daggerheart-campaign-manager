@@ -11,9 +11,10 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { BUILTIN_LOOKUP, BUILTIN_MANIFEST, builtinSpriteUrl } from "../../src/lib/sprite-packs/builtin";
-import { CATALOG_ENTRIES } from "../../src/lib/sprite-packs/catalog";
+import { CATALOG, CATALOG_ENTRIES } from "../../src/lib/sprite-packs/catalog";
 import { builtinManifestSchema, type ManifestFile } from "../../src/lib/sprite-packs/manifest";
-import { untint } from "../../scripts/sprite-packs/lib/pipeline";
+import { activeOverride, loadOverrides } from "../../scripts/sprite-packs/lib/overrides";
+import { stripMagentaFrame, untint } from "../../scripts/sprite-packs/lib/pipeline";
 
 const ROOT = resolve(__dirname, "../..");
 const PUBLIC = join(ROOT, "public/sprite-packs");
@@ -130,9 +131,8 @@ describe("public/sprite-packs", () => {
 });
 
 describe("the village extra sheet (tracer P4V)", () => {
-  it("holds 589 sprites, nine of them from town-street-and-market/large-2", () => {
-    expect(sprites).toHaveLength(589);
-    const village = CATALOG_ENTRIES.filter((e) => e.extraSheet === "large-2").map((e) => e.key);
+  it("holds nine sprites from town-street-and-market/large-2", () => {
+    const village = CATALOG_ENTRIES.filter((e) => e.extraSheet === "large-2" && e.key.startsWith("town-street-and-market/")).map((e) => e.key);
     expect(village).toHaveLength(9);
     for (const key of village) expect(BUILTIN_LOOKUP.get(key)?.art, key).not.toBeNull();
   });
@@ -148,5 +148,74 @@ describe("the village extra sheet (tracer P4V)", () => {
     expect(a).toBe(255);
     expect([...out.data.slice(4, 8)]).toEqual(wood);
     expect([...out.data.slice(12, 16)]).toEqual(rose);
+  });
+});
+
+describe("batch 2 (tracer P11Z)", () => {
+  it("holds 1169 sprites: 580 primary, the village's 9 and batch 2's 580 (props-2, large-2 / large-3, terrain-2)", () => {
+    expect(sprites).toHaveLength(1169);
+    const batch2 = CATALOG_ENTRIES.filter(
+      (e) => e.extraSheet !== undefined && !(e.extraSheet === "large-2" && e.key.startsWith("town-street-and-market/")),
+    );
+    expect(batch2).toHaveLength(580);
+    for (const e of batch2) expect(BUILTIN_LOOKUP.get(e.key)?.art, e.key).not.toBeNull();
+  });
+
+  it("every overrides.json sheet is a sheet the catalog draws, and every index is in range", () => {
+    const overrides = loadOverrides(join(ROOT, "scripts/sprite-packs/overrides.json"));
+    for (const [id, raw] of Object.entries(overrides.sheets)) {
+      const [folder = "", sheetId = ""] = id.split("/");
+      const sheet = sheetId.replace(/-.*$/, "") as "props" | "large" | "terrain";
+      const entries = CATALOG[folder as keyof typeof CATALOG][sheet].filter((e) => (e.extraSheet ?? sheet) === sheetId);
+      expect(entries.length, id).toBeGreaterThan(0);
+      for (const ov of Array.isArray(raw) ? raw : [raw]) {
+        const n = ov.when?.found ?? entries.length;
+        const indices = [
+          ...(ov.unpink ?? []),
+          ...(ov.unmix ?? []),
+          ...(ov.skip ?? []),
+          ...(ov.order ?? []),
+          ...Object.keys(ov.untint ?? {}).map(Number),
+          ...Object.keys(ov.rotate ?? {}).map(Number),
+          ...Object.keys(ov.variants ?? {}).map(Number),
+        ];
+        for (const i of indices) expect(i, `${id} #${i + 1}`).toBeLessThan(n);
+        if (ov.order) expect([...ov.order].sort((a, b) => a - b), id).toEqual(Array.from({ length: entries.length }, (_, i) => i));
+      }
+    }
+    // The town's current large-3 is drawn tannery, canal, gallows (the catalog lists gallows before the canal): the
+    // order fix applies to that file only (its SHA-256), so a sheet regenerated in catalog order is not reordered.
+    const town = (sha256?: string) => activeOverride(overrides, "town-street-and-market/large-3", 9, sha256);
+    expect(town("93c09597b2743fbe0b730f1b05737f7932e0a70628eff08d78f66b74d3eb6c5d").active).toMatchObject({ order: [0, 1, 2, 3, 4, 5, 6, 8, 7], unpink: [7] });
+    const regenerated = town("0123456789abcdef");
+    expect(regenerated.active.order).toBeUndefined();
+    expect(regenerated.active.unpink).toBeUndefined();
+    expect(Object.keys(regenerated.active.untint ?? {})).toEqual(["4", "5"]);
+    expect(regenerated.notes[0]).toMatch(/^override inactive: written for the sheet file 93c09597b2743fbe/);
+  });
+
+  it("stripMagentaFrame cuts a plain magenta outer frame away and leaves a white frame (cutTerrain's job) alone", () => {
+    const MAGENTA = [255, 0, 255, 255];
+    const GRASS = [70, 130, 50, 255];
+    const WHITE = [250, 250, 250, 255];
+    const sheet = (size: number, frame: number, frameColour: number[]) => {
+      const data = new Uint8ClampedArray(size * size * 4);
+      for (let y = 0; y < size; y++)
+        for (let x = 0; x < size; x++) {
+          const inFrame = x < frame || y < frame || x >= size - frame || y >= size - frame;
+          data.set(inFrame ? frameColour : GRASS, (y * size + x) * 4);
+        }
+      return { width: size, height: size, data };
+    };
+    const { image, frame } = stripMagentaFrame(sheet(100, 8, MAGENTA));
+    expect(frame).toEqual({ top: 8, bottom: 8, left: 8, right: 8 });
+    expect([image.width, image.height]).toEqual([84, 84]);
+    expect([...image.data.slice(0, 4)]).toEqual(GRASS);
+    // The swatches' magenta cross (a thin line through the middle) is not a frame.
+    const crossed = sheet(100, 0, MAGENTA);
+    for (let i = 0; i < 100; i++) crossed.data.set(MAGENTA, (50 * 100 + i) * 4);
+    expect(stripMagentaFrame(crossed).image).toBe(crossed);
+    const white = sheet(100, 8, WHITE);
+    expect(stripMagentaFrame(white).image).toBe(white);
   });
 });

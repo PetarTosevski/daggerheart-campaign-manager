@@ -75,7 +75,7 @@ export const VOLCANIC = defineFolder("volcanic", {
     ],
     "terrain-2": [
       tex("cooled ropy lava", "stone", true),
-      tex("red-hot cracked ground", "stone", true),
+      tex("red-hot cracked ground", "lava", true),
       tex("sulphur crust", "dirt", true),
       tex("obsidian glass", "stone", true),
     ],
