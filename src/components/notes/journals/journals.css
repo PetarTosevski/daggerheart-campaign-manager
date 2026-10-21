@@ -1,0 +1,162 @@
+/*
+ * Players' journals, Past journals and the read-only journal view (D11 N8; not on the board, in its look): list rows
+ * like the board's page buttons (l.287), the view's page strip like its tape tabs. Tokens from notes.css.
+ */
+
+.bj-jl-list,
+.bj-jv-pages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bj-jl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bj-jl-btn {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--bj-text);
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid transparent;
+  text-align: left;
+}
+.bj-jl-btn:hover {
+  background: var(--bj-hover);
+}
+.bj-jl-btn[aria-current="page"] {
+  background: var(--bj-hover);
+  border-color: var(--bj-acc);
+}
+.bj-jl-btn:focus-visible,
+.bj-jv-page:focus-visible {
+  outline: 2px solid var(--bj-acc);
+  outline-offset: 2px;
+}
+.bj-jl-mark {
+  width: 22px;
+  flex: none;
+  text-align: center;
+  font-size: 16px;
+  color: var(--bj-acc);
+}
+.bj-jl-mark-past {
+  color: var(--bj-muted);
+}
+.bj-jl-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.bj-jl-name,
+.bj-jl-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bj-jl-name {
+  font-size: 15px;
+}
+.bj-jl-sub {
+  font-size: 12px;
+  color: var(--bj-muted);
+}
+
+/* ---------------------------------------------------------------- the journal view */
+
+.bj-jv {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.bj-jv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+.bj-jv-title {
+  margin: 0;
+  font-family: var(--bj-display);
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--bj-text);
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+.bj-jv-status {
+  margin: 0;
+  font-size: 14px;
+  color: var(--bj-muted);
+  letter-spacing: 0.02em;
+}
+.bj-jv-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bj-jv-page {
+  min-height: 44px;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--bj-text);
+  background: var(--bj-card);
+  border: 1px solid var(--bj-card-border);
+  box-sizing: border-box;
+}
+.bj-jv-page:hover {
+  background: var(--bj-hover);
+}
+.bj-jv-page[aria-current="page"] {
+  border-color: var(--bj-acc);
+  background: var(--bj-hover);
+}
+.bj-jv-tab {
+  width: 10px;
+  height: 22px;
+  flex: none;
+  border-radius: 2px;
+}
+.bj-jv-page-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bj-jv-count {
+  font-size: 12px;
+  color: var(--bj-muted);
+}
+.bj-jv-heading {
+  margin: 0;
+  font-family: var(--bj-hand);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--bj-ink);
+  line-height: 1.1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bj-jv-chip {
+  cursor: default;
+  max-width: 100%;
+}
