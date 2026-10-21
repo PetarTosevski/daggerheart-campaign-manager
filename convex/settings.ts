@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { DEFAULT_ACCENT, settingsSchema } from "../src/lib/validation/campaigns";
+import { parseSettingsBackup } from "../src/lib/validation/settings-backup";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { userMutation, userQuery } from "./lib/functions";
@@ -57,6 +58,41 @@ export const update = userMutation({
     } else {
       await ctx.db.patch("settings", row._id, settings);
     }
+    return null;
+  },
+});
+
+/**
+ * Restores a pasted settings backup (TitleMenu "Saved data", D12 H17). The text is parsed here, not trusted from the
+ * client: `parseSettingsBackup` checks the backup format, dispatches on `schemaVersion` and refuses unknown fields, and
+ * its `ZodError` becomes `INVALID`. A refused backup changes nothing. The backup replaces every setting.
+ */
+export const restore = userMutation({
+  args: { text: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { text }) => {
+    const { expansions, ...rest } = parseSettingsBackup(text);
+    const settings = {
+      ...rest,
+      expansions: expansions.hopeAndFear === undefined ? {} : { hopeAndFear: expansions.hopeAndFear },
+    };
+    const row = await settingsRow(ctx, ctx.user);
+    if (row === null) {
+      await ctx.db.insert("settings", { ownerId: ctx.user._id, ...settings });
+    } else {
+      await ctx.db.patch("settings", row._id, settings);
+    }
+    return null;
+  },
+});
+
+/** "Reset settings…": deletes the caller's settings row, so `get` returns the defaults again. Campaigns are untouched. */
+export const reset = userMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const row = await settingsRow(ctx, ctx.user);
+    if (row !== null) await ctx.db.delete("settings", row._id);
     return null;
   },
 });
