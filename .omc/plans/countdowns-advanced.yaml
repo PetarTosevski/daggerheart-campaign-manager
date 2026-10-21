@@ -1,0 +1,396 @@
+# Countdowns-advanced plan (bead dcm-bxp.70, under epic dcm-bxp). The Core Book's countdown types on the dashboard countdowns:
+# standard countdowns that tick on every PC action roll, dynamic progress / consequence countdowns that tick by the roll's outcome,
+# chase countdowns as a linked pair, long-term countdowns with a track of foreshadowing steps that tick on a long rest, and the
+# advanced features loop, increasing, decreasing and randomized starting value.
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation.
+# Book pages: CB = Core Book, PRINTED pages. In the extracted core.txt the "===== PAGE N =====" block holds printed page N-1
+#   (checked 2026-10-21: the countdown rules sit in blocks 163-165 with footers 162, 163, 164; Tag Team in block 98, footer 97).
+#   Each tracer that cites a page re-checks it (.reference-private/, pdfjs-dist; never commit the books) and quotes it in its task doc.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+# Status: DRAFT 2026-10-21. U1 is the user's decision (binding). QUESTIONS Q1-Q5 have defaults; a tracer whose acceptance cites a
+#   Qn does not start until the user has answered or accepted that default.
+#
+# Rules from the book (binding; tracers quote the ones they implement in their task doc):
+#   R1  Countdown die (CB p.162): 'Each time the countdown ticks down, turn the die to reduce its value by one. When the countdown
+#       ticks down from 1 to 0 (which doesn't appear on the die), the countdown ends and triggers the event you were counting down to.'
+#   R2  STANDARD COUNTDOWN (CB p.162): 'the die begins on a specific number (such as "Countdown 4") and ticks down every time a
+#       player makes an action roll, regardless of the result. When the countdown die reaches 0, the countdown's effect triggers
+#       immediately after the last action roll is resolved.'
+#   R3  DYNAMIC COUNTDOWN (CB p.162): 'it's influenced by the outcome of their rolls or choices ... Typically, these countdowns have a
+#       starting value of 5-10 ... either a progress countdown (if players are working toward a desired outcome) or a consequence
+#       countdown (if players are trying to avoid a dreaded outcome). The Dynamic Countdown Advancement table suggests how much to
+#       tick down the countdown die each time a PC makes an action roll.'
+#   R4  Dynamic Countdown Advancement table (CB p.163), ticks per PC action roll as progress / consequence:
+#       Failure with Fear 0 / 3; Failure with Hope 0 / 2; Success with Fear 1 / 1; Success with Hope 2 / 0; Critical Success 3 / 0.
+#   R5  Randomized Starting Value (CB p.163): 'a "Countdown (1d6)" means that you roll 1d6 and use the result as the countdown's
+#       starting value.'
+#   R6  Loop (CB p.163): 'After this type of countdown triggers and you apply its effects, it resets to its starting value and begins
+#       counting down again. For example, "Countdown (Loop 5)" resets after 5 ticks.'
+#   R7  Increasing or Decreasing (CB p.163): 'Some countdowns repeat like loops, but the starting value ... increases or decreases
+#       with each loop ... "Countdown (Increasing 8)" begins at 8, then after its effect triggers, the starting value resets to 9, then
+#       10, and so on ... "Countdown (Decreasing 8)" begins at 8, then resets to 7, then 6, and so on. Once a decreasing countdown
+#       reaches 0, a major event triggers.'
+#   R8  CHASE COUNTDOWNS (CB p.163): 'set two countdowns: one for the pursuing party and one for the escaping party ... set that die
+#       at its highest value. Next, select another die with the same starting value for the escapee's countdown, but set that die at
+#       a lower value to reflect how much of a lead they have (1 lower for a small lead, 3 lower for a decent lead, 5 lower for a
+#       substantial lead) ... each tick of the countdown could represent one range band ... Regardless of whether the PCs are
+#       pursuing or escaping, their action rolls advance both countdowns, as shown on the earlier Dynamic Countdown Advancement
+#       table. When a PC succeeds on an action roll, it ticks down their countdown, which is a progress countdown. When they fail on
+#       an action roll - or roll a success with Fear - it ticks down the other party's countdown, which is a consequence countdown.'
+#       (Book example: the PCs' d6 progress countdown starts at 6, the thief's consequence countdown at 3; a success with Hope ticks
+#       the PCs' 6 -> 4, a failure with Fear ticks the thief's 3 -> 1.)
+#   R9  LONG-TERM COUNTDOWNS (CB p.164): 'track long-term events during a campaign ... decide how far out the event should be
+#       (usually between 4 and 12 ticks) and ... create small boxes for each tick. Starting from the first and working towards the
+#       last, write some events that may occur along the way that foreshadow the final event. These steps can alternate between
+#       softer and harder moves ... During a long rest, you should generally tick down a relevant long-term countdown once.'
+#       (Book example tracker: a line per value 8, 7, ... 1, 0, the 0 line being the final event; '*' marks steps where news would
+#       reach the party.)
+#   R10 Tag Team (CB p.97): 'A Tag Team Roll counts as a single action roll for the purposes of any countdowns or features that track
+#       action rolls.'
+#   R11 Reaction rolls (CB p.99): 'Reaction rolls work similarly to action rolls, except they don't generate Hope, Fear, or additional
+#       GM moves.' They are not action rolls, so they never advance a countdown.
+#
+# User decision 2026-10-21 (binding):
+#   U1  'implement dynamic, chase long term countdowns & the advanced countdown features'. This supersedes the D2/D8 decision that
+#       loop countdowns start at N and are restarted by hand.
+#
+# Derived rules (binding unless a QUESTION overrides them; tracers cite them as Dn):
+#   D1  A countdown's mode: standard (1 tick per counted roll, R2), progress or consequence (R4 table), longTerm (never ticks on rolls;
+#       ticks by hand or on a long rest, R9). A stored countdown without a mode is standard and unarmed: it behaves exactly as today.
+#   D2  Counted rolls: a PC's action roll (rolls.actionRoll and manualRoll with kind 'action'), and an applied Tag Team result ONCE for
+#       the pair (R10: rolls.tagTeamApply, with the chosen roll's outcome). Never: reaction rolls (R11), Tag Team rolls still waiting
+#       for their pick, damage rolls, GM free rolls (adversary rolls are not PC action rolls), undone rows.
+#   D3  The outcome is the roll as recorded (RollRecord.outcome). An action roll without a Difficulty is recorded as a success by
+#       actionOutcome (src/lib/domain/duality.ts) and counts as one; a later change of the outcome (Witch's Charm) is not re-applied.
+#   D4  Armed = ticks automatically. Standard, progress, consequence and chase countdowns tick on counted rolls while armed and
+#       active (Q1); a longTerm countdown ticks on a finished long rest while armed (Q3). Paused, completed and cancelled countdowns
+#       never tick automatically. Frame-owned countdowns (ownerKey set: objectives, Lycanthropy, projects) are never armed and never
+#       ticked by rolls or rests. Countdowns created by the dashboard dialog and by an environment's Start button are armed by
+#       default (the dialog has the box); countdowns.create without `armed` (old callers, tests) stays unarmed.
+#   D5  One roll ticks one countdown at most once: a (roll row, countdown) pair is recorded in `countdownTicks`; the automatic tick
+#       and the feed button never double up (COUNTDOWN_RULE on a second apply). A Tag Team result is keyed on its group's first
+#       result row.
+#   D6  The tick is applied in the same mutation as the roll, after the roll's Hope, Stress and Fear (R2 'immediately after the last
+#       action roll is resolved'); a tick larger than the value left stops at 0 (a dynamic tick of 3 on 2 left triggers, it does not
+#       carry over).
+#   D7  Triggering (Q2 default): reaching 0 triggers. A non-repeating countdown completes (status 'completed', completedAt, as
+#       today). A loop resets to its starting value, increasing to start + 1, decreasing to start - 1, in the same mutation, staying
+#       active; triggerCount + 1, lastTriggeredAt set. A decreasing countdown whose next start would be 0 instead completes for good
+#       with the notice 'major event' (R7). Every trigger writes a history row (action 'trigger') and one feed notice row (actionLog
+#       kind 'countdown', visibility 'gm', undoable false): '<name> triggered (2nd time): <consequence>'. A manual Tick -1 to 0
+#       triggers the same way. Increasing has no cap below 100 (MAX_COUNTDOWN_START 20 caps only what the GM types or rolls).
+#   D8  Randomized start (R5): the server rolls the dice (convex/lib/dice rollDice) at creation; the formula is kept on the row. A
+#       repeating countdown with dice resets to the value rolled at creation (Q4 default).
+#   D9  Chase (R8): two rows linked to each other; both store the same startingValue N; the pursuers' currentValue is N, the
+#       escapee's N - lead (lead 1 small, 3 decent, 5 substantial, or a typed number 1..N-1). The PCs' row is mode progress, the
+#       rivals' row mode consequence, whether the PCs pursue or escape; one counted roll ticks both by the R4 table. The chase ends
+#       when either row reaches 0 (it completes; the card says 'Caught' or 'Got away' from the PCs' role); afterwards neither row ticks
+#       automatically until the GM reopens the completed one (Borrowed Time). Chase rows never repeat. Arm, visibility and cancel act
+#       on the pair.
+#   D10 Long-term (R9): mode longTerm, starting value 1..20 (the dialog suggests 4-12), a track of optional steps: one entry per value
+#       from the start down to 0 ({ value, text <= 200, news?: true } where news marks a step that reaches the party). Ticks by hand
+#       (existing Tick -1 / Borrowed Time) and once per finished long rest while armed (Q3); an interrupted long rest does not tick.
+#       Steps are GM-only: players never receive their text.
+#   D11 Undo (Q5 default): undoing a roll or a rest (actionLog.undo, rests.undo, both through undoEntry) takes back the ticks recorded
+#       for its rows, newest first, for each countdown that has not changed since the tick (its state equals the tick's `after`);
+#       a changed countdown keeps its value. A taken-back trigger restores the value, start, status and triggerCount from before and
+#       marks its notice row undone; each revert writes a compensating history row (action 'undo'). The undo results keep their shape.
+#   D12 Players (existing presets apply, CV1): mode, repeat and triggerCount travel with 'progress' (blanked when progress is hidden);
+#       armed, the dice formula and the long-term steps are GM-only (null for players); a chase pair shares one visibility. Feed
+#       notices are GM-only.
+#
+# Existing behaviour to keep (tests exist; tracers extend, never weaken):
+#   E1  applyCountdownAction rules (manual advance / reverse +-1, correction by any amount also while paused, a completed countdown
+#       reopens only by a positive reverse or correction, reaching 0 completes once, cancelled is final) and their unit tests
+#       (tests/unit/countdown-domain.test.ts, countdown-validation.test.ts).
+#   E2  Categories threat / project / consequence / other, MAX_COUNTDOWN_START 20 for created values, the three visibility presets and
+#       server-side redaction (countdownForPlayer; tests/convex/countdowns.test.ts, tests/e2e/visual/CV1.spec.ts, players.spec.ts).
+#   E3  Every countdown change writes one history row in the same mutation (tests/convex/history.test.ts); history rows of old
+#       countdowns read unchanged.
+#   E4  Environment Start (convex/environmentActions.ts startCountdown): name, description, category, Private, dice rolled at start;
+#       its arguments and result keep their shape (tests/convex/environment-actions.test.ts, tests/e2e/environments.spec.ts).
+#   E5  Frame-tracker countdowns (ownerKey/kind/revealed: Five Banners objectives, Lycanthropy, Work on a Project ticks in
+#       convex/rests.ts) are untouched and stay off the dashboard list (tests/convex/five-banners.test.ts, rests.test.ts,
+#       rest-frame-hooks.test.ts).
+#   E6  rolls.actionRoll / manualRoll / tagTeam / tagTeamApply / damageRoll and actionLog.undo keep their arguments and results;
+#       tests/convex/rolls.test.ts, rolls-session-features.test.ts and every dice e2e pass unchanged.
+#   E7  The dashboard list, its dialog and card look and work as today for a countdown without the new fields
+#       (tests/e2e/dashboard.spec.ts, sessions-flow.spec.ts, session-wrap.spec.ts, visual D10-S6).
+#
+# Data model (K0 creates every field; widen only, every new field optional, no migration, no shape edited in place):
+#   countdowns (convex/tables/countdowns.ts) gains:
+#     mode?: 'standard' | 'progress' | 'consequence' | 'longTerm'   absent = standard (D1)
+#     armed?: boolean                                              absent = false (D4)
+#     repeat?: 'loop' | 'increasing' | 'decreasing'                absent = none (R6, R7)
+#     initialValue?: number        the first starting value ('Increasing 8'); startingValue is the current cycle's start
+#     startDice?: { count: 1..4, sides: 4 | 6 | 8 | 10 | 12 | 20 }  the randomized formula (R5, D8)
+#     triggerCount?: number, lastTriggeredAt?: number                (D7)
+#     chase?: { partnerId: Id<'countdowns'>, side: 'party' | 'rivals', party: 'pursuing' | 'escaping' }   (D9)
+#     steps?: array (<= 21) of { value: int 0..20, text: string <= 200, news?: boolean }   longTerm only (D10); bounded by the start,
+#       so an array in the row, not a table (rule 6 covers growing collections only)
+#     new index by_campaign_armed [campaignId, armed]: the roll and rest paths read only armed countdowns
+#   countdownTicks (new table, convex/tables/countdowns.ts): one row per countdown change caused by a log row (D5, D11):
+#     { campaignId, countdownId, entryId: Id<'actionLog'>, source: 'roll' | 'feed' | 'rest', amount, before, after (each
+#       { currentValue, startingValue, status, triggerCount }), noticeId?: Id<'actionLog'>, revertedAt?: number, at }
+#     indexes by_entry [entryId], by_entry_countdown [entryId, countdownId], by_campaign_at [campaignId, at]. Grows with play:
+#     deleted with its campaign in convex/cleanup.ts (as actionLog); no TTL (it is the undo record of live rows).
+#   history (convex/tables/history.ts): countdownValue gains startingValue?: number (a reset changes the start; old rows read as is).
+#   actionLog (convex/lib/validators/actionLog.ts): actionKindValidator gains 'countdown' (trigger notices).
+#   No new error module: refusals use COUNTDOWN_RULE, INVALID, NOT_FOUND, FORBIDDEN; a tracer needing another code stops and reports.
+#   docs/data-model.md is updated by the orchestrator from K0's report.
+#
+# Shared files: src/lib/domain/countdowns/**, src/lib/validation/countdowns.ts, convex/tables/countdowns.ts, convex/tables/history.ts,
+#   convex/lib/validators/actionLog.ts, convex/lib/actionLog.ts (the undo hook), convex/lib/countdownTicks.ts (the one server path that
+#   ticks, triggers, resets, records history, notices and reverts) and convex/cleanup.ts belong to K0 only; later tracers read them and
+#   stop and report when one needs a change. K0 also splits C/countdowns.tsx into C/countdowns/ (index.tsx, card.tsx, new-dialog.tsx,
+#   visibility.tsx) without changing behaviour, so the UI tracers own disjoint files. convex/countdowns.ts belongs to K0 (view and
+#   create), then K2 (wave 2), then K3 (wave 3).
+#
+# Out of scope (K5 files beads; ask the user before designing them): Start buttons for adversary stat-block countdowns (SRD adversaries
+#   name 'Countdown (Loop 1d6)', 'Countdown (Decreasing 8)', 'Countdown (1d12)'); turning frame-tracker countdowns into new modes;
+#   authz-matrix entries (D12 of the rebuild).
+#
+# QUESTIONS (defaults apply once the user accepts them; cited as Qn):
+#   Q1  Which rolls advance a standard or dynamic countdown? (a) only rolls the GM applies afterwards from the roll feed ('Tick
+#       countdowns' on an action-roll row); (b) armed countdowns tick automatically on every counted PC action roll (D2) while armed;
+#       (c) both. DEFAULT (c): armed countdowns tick by themselves, and the feed button covers unarmed ones and rolls the GM wants to
+#       count after the fact (each roll counts once per countdown, D5). Cited by K1, K2, K3.
+#   Q2  What happens when a countdown reaches 0? (a) it triggers at once: a repeating one (loop / increasing / decreasing) resets
+#       immediately and keeps counting, the card shows 'Triggered n times' and the GM's feed gets a notice; (b) it stops at 0 with a
+#       'Triggered' banner and a 'Reset' button the GM presses after applying the effect, and rolls don't tick it until then.
+#       DEFAULT (a) (D7); the notice is GM-only in both. Cited by K0, K1, K2.
+#   Q3  Long-term countdowns on a long rest: (a) armed long-term countdowns tick once automatically when a long rest finishes; (b) the
+#       rest's finish step lists them with a checkbox each and the GM picks; (c) never automatic, a reminder only. DEFAULT (a) (D10);
+#       the GM disarms one that isn't relevant. Cited by K4.
+#   Q4  A repeating countdown with a random start ('Countdown (Loop 1d6)'): on reset, (a) go back to the number rolled at the start, or
+#       (b) roll again each time. DEFAULT (a) (D8, the book's 'resets to its starting value'). Cited by K0.
+#   Q5  Undoing a roll (or a rest) that ticked countdowns: (a) the ticks are taken back too, when the countdown hasn't changed since;
+#       (b) the ticks stay and the GM corrects by hand (as Work on a Project ticks today). DEFAULT (a) (D11). Cited by K0, K1, K4.
+#
+# Rules for every tracer (part of every acceptance list, not repeated):
+#   - Every new or changed public function uses the wrappers in convex/lib/functions.ts (keyedGmMutation / campaignQuery / gmQuery;
+#     keyedUserMutation only where the existing function already is one); access only through permissionFor. Identity from ctx.user.
+#   - `args` and `returns` validators on every new function and on every changed one, no v.any(); schema-guard RETURNS_PENDING never
+#     grows.
+#   - Its own Convex test covers anonymous, outsider, player and GM for each new or changed function, with the codes
+#     tests/convex/countdowns.test.ts asserts for those roles, through the errorCode helper (ConvexError.data.code), never message text.
+#   - Intents only: ids, a mode, a single field, a lead size, a step's value and text; the server rolls every die, computes every tick
+#     amount, trigger and reset through K0's domain; the client never sends a value to store. Optimistic updates on arm, manual ticks,
+#     the feed apply and step edits (computed with the same domain functions; no second copy of a rule).
+#   - Indexed reads only (no .filter on queries), bounded takes; no Date.now() in queries.
+#   - Every useQuery subtree sits inside an error boundary; loading uses the shared Loading with role=status.
+#   - UI in the dashboard's existing countdown look; 1440 and 1024 px layouts; 390 px: one column, no horizontal page scroll, touch
+#     targets >= 44 px, a label on every control, keyboard reachable.
+#   - Visual acceptance for UI tracers: tests/e2e/visual/CD-<id>.spec.ts (tag @visual, E2E_VISUAL=1) shoots its regions at 1440x900,
+#     1024x768 and 390x844; the task doc lists the shots with a verdict per region and every deliberate deviation.
+#   - pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e specs pass in its worktree; the
+#     orchestrator runs the full e2e suite after each wave.
+#   - Every tracer owns docs/tasks/TASK-CD-<id>.md and quotes the R rules it implements with their pages.
+plan: countdowns-advanced
+waves:
+  # ---------------------------------------------------------------- wave 1: data, pure domain, the one tick path, UI split
+  - wave: 1
+    tracers:
+      - id: K0
+        foundation: true
+        title: Foundation - countdown fields and tick table, pure countdown rules, the server tick path with undo, dashboard split
+        size: L
+        goal: Countdowns carry mode, armed, repeat, dice, chase and track fields, a pure tested module answers every tick amount, trigger and reset, one server helper ticks, triggers, records and reverts countdown changes (hooked into undo), create and the list accept and show the new fields, and the dashboard countdown UI is split into files without changing what it does.
+        depends_on: []
+        owns:
+          - src/lib/domain/countdowns/**
+          - src/lib/validation/countdowns.ts
+          - convex/tables/countdowns.ts
+          - convex/tables/history.ts
+          - convex/lib/validators/actionLog.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/countdownTicks.ts
+          - convex/cleanup.ts
+          - convex/countdowns.ts
+          - src/app/(gm)/campaigns/[campaignId]/countdowns.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/**
+          - tests/unit/countdown-advanced.test.ts
+          - tests/convex/countdown-ticks.test.ts
+          - docs/tasks/TASK-CD-K0.md
+        reads:
+          - src/lib/domain/duality.ts
+          - src/lib/domain/environments/index.ts
+          - src/lib/srd/environments.ts
+          - convex/lib/dice.ts
+          - convex/lib/mechanics.ts
+          - convex/lib/permissions.ts
+          - convex/lib/functions.ts
+          - convex/feed.ts
+          - convex/rests.ts
+          - convex/environmentActions.ts
+          - tests/convex/countdowns.test.ts
+          - tests/convex/history.test.ts
+          - tests/unit/countdown-domain.test.ts
+          - tests/e2e/dashboard.spec.ts
+          - tests/e2e/visual/CV1.spec.ts
+        acceptance:
+          - "convex/tables/countdowns.ts gains the optional countdown fields, the by_campaign_armed index and the countdownTicks table of the data model; convex/tables/history.ts countdownValue gains optional startingValue; actionKindValidator gains 'countdown'; schema.ts needs no edit (the tables spread); every existing test passes unchanged (E1-E7)"
+          - "Pure domain (src/lib/domain/countdowns, new modules beside index.ts, which keeps every export): rollTicks(mode, outcome) = 1 for standard, the R4 table for progress / consequence, 0 for longTerm and for 'none'; chaseTicks(pair, outcome) -> { party, rivals } by R4/R8; countsAsActionRoll(roll, context) per D2/D3; tickCountdown(state, amount) clamps at 0 (D6) and returns { next, triggered, reset, finished, notice } with loop / increasing / decreasing resets, the decreasing 'major event' end (R6, R7, D7) and start reuse for dice (D8, Q4); chaseEnded(pair) (D9); chaseStart(N, lead) -> pursuers N, escapee N - lead (R8 example 6 and 3); parseCountdownLabel(label) -> { mode, repeat, start: fixed n | dice, longTerm } for every label in src/lib/srd/environments.ts ('Countdown (Loop 1d4)', 'Long-Term Countdown (8)', 'Progress Countdown (4)', 'Consequence Countdown (6)', 'Countdown (Increasing 8)', 'Countdown (Decreasing 8)', 'Countdown (1d6)'); validateSteps(start, steps) (D10); countdownForPlayer extended per D12"
+          - "src/lib/validation/countdowns.ts: countdownDetailsSchema gains optional mode, repeat, startDice (exactly one of startingValue or startDice), armed, steps (longTerm only, values within 0..start, text <= 200, at most one per value); repeat refused for longTerm; tests/unit/countdown-advanced.test.ts covers every rule above, the R4 table cell by cell and the book's chase example"
+          - "convex/lib/countdownTicks.ts: applyTick(ctx, countdown, amount, cause: { source, entryId?, actorId }) patches the row through tickCountdown, writes one history row (action 'roll' | 'feed' | 'rest' | 'advance' | 'trigger'), on a trigger logs the GM-only notice row (D7), and with an entryId inserts the countdownTicks row (refusing a second tick of the same pair with COUNTDOWN_RULE, D5); revertTicks(ctx, entryIds) takes back unreverted ticks newest first when the countdown still equals `after`, restores before (value, start, status, triggerCount), marks the notice undone and writes a history 'undo' row (D11); undoEntry in convex/lib/actionLog.ts calls revertTicks for every row of the undone group, its result unchanged (E6, Q5)"
+          - "convex/countdowns.ts: create gains the optional mode, repeat, startDice (rolled on the server with rollDice, capped 1..MAX_COUNTDOWN_START), armed and steps args (absent = today's countdown, D4); listByCampaign's view gains mode, armed, repeat, initialValue, startDice, triggerCount, lastTriggeredAt, chase and steps, redacted for players per D12; the returns validator says so"
+          - "convex/cleanup.ts deletes a purged campaign's countdownTicks in its batched purge, like actionLog"
+          - "tests/convex/countdown-ticks.test.ts: create with each new field for anonymous, outsider, player and GM; applyTick through a test mutation: standard tick, dynamic tick of 3 on 2 left (clamps, triggers), loop reset, increasing 8 -> 9, decreasing 1 -> major event and completion, dice start kept on reset, double tick refused, revert of a trigger, revert skipped after a later manual change, one history row per change; a player's list has no steps, armed or dice; a stored countdown without the new fields lists and operates as before"
+          - "C/countdowns.tsx becomes C/countdowns/index.tsx (list, header, New button), card.tsx (one card), new-dialog.tsx and visibility.tsx; page.tsx's import './countdowns' still resolves; no visible or behavioural change: tests/e2e/dashboard.spec.ts, players.spec.ts and tests/e2e/visual/CV1.spec.ts pass unchanged"
+
+  # ---------------------------------------------------------------- wave 2: rolls tick countdowns; the dashboard knows the types
+  - wave: 2
+    tracers:
+      - id: K1
+        title: Rolls tick countdowns - armed countdowns on every counted PC action roll, Tag Team once, the feed's Tick countdowns button
+        size: M
+        goal: A PC's action roll ticks every armed standard, dynamic and chase countdown by its outcome right after the roll resolves, an applied Tag Team counts once, reaction rolls never count, and the GM can apply any action roll in the feed to the countdowns of their choice, each roll at most once per countdown and taken back when the roll is undone.
+        depends_on: [K0]
+        owns:
+          - convex/rolls.ts
+          - convex/countdownRolls.ts
+          - src/components/party/dice/roll-feed.tsx
+          - src/components/party/dice/tick-countdowns.tsx
+          - tests/convex/countdown-rolls.test.ts
+          - tests/e2e/countdown-rolls.spec.ts
+          - tests/e2e/visual/CD-K1.spec.ts
+          - docs/tasks/TASK-CD-K1.md
+        reads:
+          - src/lib/domain/countdowns/**
+          - convex/lib/countdownTicks.ts
+          - convex/lib/actionLog.ts
+          - convex/tables/countdowns.ts
+          - convex/feed.ts
+          - convex/countdowns.ts
+          - tests/convex/rolls.test.ts
+          - tests/convex/rolls-session-features.test.ts
+        acceptance:
+          - "rolls.actionRoll and manualRoll (kind 'action'): after the roll's effects, every armed active dashboard countdown of the campaign (by_campaign_armed, ownerKey unset, mode not longTerm) ticks through applyTick with source 'roll' and the roll row as entryId by rollTicks / chaseTicks; a chase pair ticks both rows once and not at all once chaseEnded (D9); reaction rolls, damage rolls, GM rolls and the pending tagTeam rolls tick nothing (D2, R10, R11, Q1)"
+          - "rolls.tagTeamApply ticks once for the pair with the chosen outcome, keyed on the group's first result row (R10, D5); arguments and results of every rolls function unchanged (E6)"
+          - "countdownRolls.preview (gmQuery { entryId }): for a counted roll row of the campaign, each active dashboard countdown that is not longTerm with the amount it would tick and whether this roll already ticked it; NOT_FOUND for another campaign's row; INVALID for a row that is not a counted roll (D2)"
+          - "countdownRolls.applyRoll (keyedGmMutation { entryId, countdownIds }): ticks each chosen countdown by the roll's outcome with source 'feed' (armed or not, paused refused with COUNTDOWN_RULE), refusing a pair already ticked (COUNTDOWN_RULE, D5), an undone row or a non-counted roll (INVALID), a countdown of another campaign or frame-owned (NOT_FOUND); returns each countdown's new value and whether it triggered"
+          - "Roll feed (GM only): a 'Tick countdowns' button on counted action-roll rows opens tick-countdowns.tsx, a list of the preview with a checkbox per countdown showing '-2' etc., already-ticked ones checked and disabled; Apply calls applyRoll with an optimistic update of countdowns.listByCampaign computed by K0's rollTicks; players never see the button; trigger notices show in the GM's feed (D7)"
+          - "actionLog.undo of a roll takes back the ticks it caused through K0's hook (D11, Q5); tested here end to end with a real roll"
+          - "tests/convex/countdown-rolls.test.ts covers preview and applyRoll for anonymous, outsider, player and GM, and: standard ticks on each outcome; progress and consequence by the R4 table, including no tick for progress on a failure; a roll without a Difficulty counts as a success (D3); reaction roll ticks nothing; a paused, completed, unarmed or frame-owned countdown is not auto-ticked; Tag Team counts once; a chase pair moves both rows and stops after one completes; a loop resets on a roll and keeps counting; the feed apply after an automatic tick is refused; undo restores; tests/convex/rolls.test.ts and rolls-session-features.test.ts pass unchanged"
+          - "e2e: the GM creates 'Countdown 4' (existing dialog, unarmed); the player makes a manual action roll with Hope; the GM opens 'Tick countdowns' on that row, applies it (the card shows 3); the same row shows it already ticked; the player undoes the roll within the minute and the card shows 4 again; the visual spec shoots the button and the open list"
+      - id: K2
+        title: Dashboard types - mode, loop / increasing / decreasing, dice start and Armed in the dialog and the card; environment labels
+        size: M
+        goal: The GM creates standard, progress and consequence countdowns with a fixed or rolled start and an optional loop, increasing or decreasing repeat, arms or disarms them on the card, sees what each will do and how often it has triggered, a manual tick to 0 triggers and resets like a roll, and an environment's Start button creates the countdown its label describes.
+        depends_on: [K0]
+        owns:
+          - convex/countdowns.ts
+          - convex/environmentActions.ts
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/card.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/new-dialog.tsx
+          - tests/convex/countdowns-modes.test.ts
+          - tests/e2e/countdowns-modes.spec.ts
+          - tests/e2e/visual/CD-K2.spec.ts
+          - docs/tasks/TASK-CD-K2.md
+        reads:
+          - src/lib/domain/countdowns/**
+          - src/lib/domain/environments/index.ts
+          - src/lib/validation/countdowns.ts
+          - convex/lib/countdownTicks.ts
+          - convex/tables/countdowns.ts
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/index.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/visibility.tsx
+          - src/components/adversaries/environments/feature-actions.tsx
+          - tests/convex/countdowns.test.ts
+          - tests/convex/environment-actions.test.ts
+        acceptance:
+          - "countdowns.setArmed (keyedGmMutation { countdownId, armed }): GM only; NOT_FOUND for frame-owned or another campaign's countdown; refused for a cancelled one (COUNTDOWN_RULE); a chase row arms its partner too (D9); one history-free patch (arming changes no value)"
+          - "countdowns.operate: advance and correction go through K0's applyTick (source 'advance'), so a manual tick to 0 triggers, resets a repeating countdown and writes the notice exactly like a roll (D7, Q2); every existing operate test passes unchanged (E1, E3)"
+          - "environmentActions.startCountdown builds the countdown from parseCountdownLabel: mode progress / consequence / longTerm / standard, repeat loop / increasing / decreasing, startDice kept and rolled, armed true (D4); name, description, category, Private and its result unchanged (E4)"
+          - "New countdown dialog: Type (Standard: ticks on every action roll; Progress; Consequence; each with one plain-language line and, for the two dynamic ones, the R4 table), Start (a number 1-20, or dice: count 1-4 and a die), Repeats (No / Loop / Increasing / Decreasing, with the R6/R7 line), 'Advance automatically on action rolls' (checked by default); the existing fields, category and visibility unchanged; long-term and chase are not in this dialog (K3, K4)"
+          - "Card: a type badge ('Progress', 'Loop 5', 'Increasing 8 -> 9', 'Decreasing 8 -> 7', 'Rolled 1d6: 4'), an Armed switch (aria-pressed, optimistic) for the GM, 'Triggered n times' after a trigger, the R4 amounts in a tooltip for dynamic countdowns; players see the badge per D12 and never the switch; a countdown without the new fields renders as today (E7)"
+          - "tests/convex/countdowns-modes.test.ts covers setArmed and the changed operate and startCountdown for anonymous, outsider, player and GM, and: create of each type with fixed and dice starts, manual tick of a loop at 1 resets it, decreasing at 1 completes with the major event, increasing goes past 20, each environment label in parseCountdownLabel's list creates the right row; tests/convex/countdowns.test.ts and environment-actions.test.ts pass unchanged"
+          - "e2e: the GM creates 'Countdown (Loop 2)' armed, ticks it twice by hand (the card shows it triggered once and back at 2) and disarms it; creates a progress countdown with a 1d6 start (a value 1-6 shows); starts an environment's 'Countdown (Loop 1d4)' and sees a Loop badge; a player sees the public countdown's badge and no switch; the visual spec shoots the dialog and the card states"
+
+  # ---------------------------------------------------------------- wave 3: chase pair and long-term track, in parallel
+  - wave: 3
+    tracers:
+      - id: K3
+        title: Chase countdowns - New chase, the linked pair card, pair-wide arm, visibility and cancel
+        size: M
+        goal: The GM starts a chase with a die size and a lead, the PCs pursuing or escaping, and sees one pair card whose two tracks move together on every counted roll until one side reaches 0 and the card says who won.
+        depends_on: [K1, K2]
+        owns:
+          - convex/countdowns.ts
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/index.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/chase.tsx
+          - tests/convex/countdowns-chase.test.ts
+          - tests/e2e/countdowns-chase.spec.ts
+          - tests/e2e/visual/CD-K3.spec.ts
+          - docs/tasks/TASK-CD-K3.md
+        reads:
+          - src/lib/domain/countdowns/**
+          - convex/lib/countdownTicks.ts
+          - convex/countdownRolls.ts
+          - convex/rolls.ts
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/card.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/visibility.tsx
+          - src/components/party/dice/**
+        acceptance:
+          - "countdowns.createChase (keyedGmMutation { name, description, startingValue 2-20, lead: 'small' | 'decent' | 'substantial' | n, party: 'pursuing' | 'escaping', visibility?, armed? }): inserts both rows in one mutation with chaseStart (pursuers N, escapee N - lead, lead below N), the PCs' row mode progress and the rivals' mode consequence, each linked to the other, two history 'create' rows; INVALID for a lead not below N (R8, D9)"
+          - "setVisibility, setArmed and operate 'cancel' on a chase row act on both rows; pause / resume likewise; reopening the completed row by Borrowed Time lets the pair tick again (D9); every existing countdowns test still passes"
+          - "Dashboard: a 'New chase' button beside 'New countdown' (GM only) opens chase.tsx's dialog (die size with the R8 range-band hint, lead with the three book sizes, PCs pursuing or escaping); the list shows a pair as ONE card: two tracks labelled 'The party' and the rivals' name, each with its value and the R4 line ('Your successes move this' / 'Failures and success with Fear move this'), one Armed switch, manual ticks per side; when one side is at 0 the card says 'Caught!' or 'Got away!' from the PCs' role; players see the pair per its visibility (D12)"
+          - "tests/convex/countdowns-chase.test.ts covers createChase and the pair-wide operations for anonymous, outsider, player and GM, and: the book example (d6, thief at 3: a success with Hope moves the party 6 -> 4, a failure with Fear moves the thief 3 -> 1) through a real rolls.manualRoll; a success with Fear moves both; the pair stops after the thief reaches 0; undoing that roll reopens it (D11)"
+          - "e2e: the GM starts a chase (d6, decent lead, PCs pursuing); the player's manual action rolls move the tracks as R4 says; the escapee reaches 0 and the card says 'Got away!'; the visual spec shoots the dialog and the pair card at the three widths"
+      - id: K4
+        title: Long-term countdowns - the track of steps, dashboard create and edit, a tick on every finished long rest
+        size: M
+        goal: The GM creates a long-term countdown with a written step per box, sees the track with the current step highlighted, edits steps later, and every finished long rest ticks each armed long-term countdown once with its step shown to the GM.
+        depends_on: [K2]
+        owns:
+          - convex/countdownTracks.ts
+          - convex/rests.ts
+          - src/components/party/rest/**
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/card.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/new-dialog.tsx
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/track.tsx
+          - tests/convex/countdowns-long-term.test.ts
+          - tests/e2e/countdowns-long-term.spec.ts
+          - tests/e2e/visual/CD-K4.spec.ts
+          - docs/tasks/TASK-CD-K4.md
+        reads:
+          - src/lib/domain/countdowns/**
+          - src/lib/domain/rest/**
+          - convex/lib/countdownTicks.ts
+          - convex/lib/actionLog.ts
+          - convex/countdowns.ts
+          - tests/convex/rests.test.ts
+          - tests/convex/rest-frame-hooks.test.ts
+        acceptance:
+          - "countdownTracks.setStep (keyedGmMutation { countdownId, value, text, news? }): writes one step of a longTerm dashboard countdown through validateSteps (empty text removes it); NOT_FOUND for frame-owned or another campaign's countdown, COUNTDOWN_RULE for a countdown that is not longTerm or a value outside 0..start (D10)"
+          - "rests.finish of a long rest (not interrupt, not a short rest): after the existing effects, each armed active longTerm dashboard countdown ticks once through applyTick with source 'rest' and the rest's campaign row as entryId; the GM's result gains optional `countdownLines` ('Invasion: 5 left - The theocracy's troops gather at the border'), the step text only in the GM's result and the GM notice, never in a public row; rests.undo takes the ticks back through K0's hook (D10, D11, Q3, Q5); Work on a Project ticks and every rests test unchanged (E5)"
+          - "New countdown dialog: a 'Long-term' type with a start (suggested 4-12) and a step editor (one line per value from the start down to 0, the 0 line labelled 'Final event', a 'News reaches the party' box per line, R9); no repeat, no dice, armed means 'Tick on every long rest'"
+          - "Card (track.tsx): the boxes of the track, ticked boxes filled, the current step highlighted with its text and the next one below, steps editable inline by the GM (optimistic); players see the boxes per visibility and never the step text (D12); the rest panel shows the countdownLines after a long rest for the GM"
+          - "tests/convex/countdowns-long-term.test.ts covers setStep and the changed rests.finish for anonymous, outsider, player and GM, and: a long rest ticks an armed long-term countdown once and an unarmed or paused one not at all; an interrupted long rest and a short rest tick nothing; a tick to 0 completes it with the final step in the notice; rests.undo restores the value; a player's list carries no step text"
+          - "e2e: the GM creates 'Invasion' (long-term 8, three steps written); the party takes a long rest and the GM finishes it: the card shows 7 with step 7 highlighted and the rest panel lists it; the GM undoes the rest and the card shows 8; the visual spec shoots the dialog's step editor and the track"
+
+  # ---------------------------------------------------------------- wave 4: end to end
+  - wave: 4
+    tracers:
+      - id: K5
+        title: End-to-end pass, docs and follow-ups
+        size: S
+        goal: One browser flow plays a scene with a standard loop, a progress and a consequence countdown, a chase and a long-term countdown, through rolls, a Tag Team, a reaction roll, the feed button, undo and a long rest, and every rule, decision and kept behaviour is checked against the app with gaps filed.
+        depends_on: [K3, K4]
+        owns:
+          - tests/e2e/countdowns-flow.spec.ts
+          - docs/tasks/TASK-CD-K5.md
+        reads:
+          - convex/countdowns.ts
+          - convex/countdownRolls.ts
+          - convex/countdownTracks.ts
+          - convex/rolls.ts
+          - convex/rests.ts
+          - src/lib/domain/countdowns/**
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/**
+          - src/components/party/dice/**
+        acceptance:
+          - "One spec at 1440 and 1024 px: the GM arms 'Countdown (Loop 3)', a progress 6 and a consequence 6 and starts a chase; the players' manual action rolls (success with Hope, failure with Fear, a critical) move each as R2/R4/R8 say; a reaction roll moves nothing; a Tag Team counts once; the loop triggers, the GM's feed shows the notice and it is back at 3; the GM applies an older roll to an unarmed countdown from the feed; a player undoes a roll and its ticks come back; a long rest ticks the armed long-term countdown once"
+          - "A player sees public countdowns with their badges, no Armed switch, no steps, no feed notices and no 'Tick countdowns' button (D12)"
+          - "Checks every R1-R11, D1-D12 and E1-E7 against the app and lists any gap in the task doc; each gap is filed as a bead under dcm-bxp; bead dcm-bxp.70 closes when merged"
+          - "Files follow-up beads: Start buttons for adversary stat-block countdowns (loop / decreasing / dice labels), authz-matrix entries for every function this plan added or changed"
