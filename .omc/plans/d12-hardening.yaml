@@ -19,6 +19,11 @@
 #   tracer (it owns no convex/ file): file a bead, give the entry the CORRECT expectation plus `knownBug: "<bead id>"` (the
 #   harness runs it as it.fails), and list it in the task doc.
 # Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+# USER ANSWERS (2026-10-21, binding): "default" for all 15 QUESTIONS in .omc/autopilot/d12-analysis.md (settings-only backup as
+#   copy-and-paste text; Reset settings; generated signed-out + stranger sweep; four roles plus another player and an edit-grant
+#   player; one file per area plus authz-matrix.test.ts; zero serious/critical axe findings; 768x1024 and 1024x768; only error
+#   screens, axe, README and the matrix from hardening.yaml; drop the old upload tables; close dcm-bxp.21; lighter slow tests with
+#   one 15 s limit; the listed live-update checks; drop plain-text errors; short README; remove the AGENTS.md 'keep UI minimal' line).
 plan: d12-hardening
 waves:
   # ---------------------------------------------------------------- wave 1: foundations and independent fixes
