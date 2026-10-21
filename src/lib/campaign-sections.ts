@@ -4,9 +4,10 @@ export const CAMPAIGN_SECTIONS = [
   { slug: "party", label: "Party", phase: "D4" },
   { slug: "world", label: "World", phase: "D6" },
   { slug: "codex", label: "Characters & Locations", phase: "D7" },
-  { slug: "adversaries", label: "Adversaries", phase: "D8", gmOnly: true },
-  { slug: "combat-map", label: "Combat Map", phase: "D9" },
+  // Sessions is the hub (user 2026-10-21): it comes first, then the two tabs its Play stage pulls in.
   { slug: "sessions", label: "Sessions", phase: "D10" },
+  { slug: "combat-map", label: "Combat Map", phase: "D9" },
+  { slug: "adversaries", label: "Adversaries", phase: "D8", gmOnly: true },
   { slug: "notes", label: "Notes", phase: "D11" },
 ] as const;
 

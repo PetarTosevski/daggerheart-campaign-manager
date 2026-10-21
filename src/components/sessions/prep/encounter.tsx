@@ -17,6 +17,7 @@ import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { encounterTrackerHref } from "../session-chip";
 
 type Summary = NonNullable<FunctionReturnType<typeof api.sessionPrep.get>["encounter"]>;
 type Ids = { campaignId: Id<"campaigns">; sessionId: Id<"sessions"> };
@@ -180,7 +181,7 @@ function Builder({ campaignId, sessionId, view, partyTier }: Ids & { view: Encou
           <button type="button" className="enc-ghost" onClick={() => setAdding(true)}>
             + Add adversary
           </button>
-          <Link className="enc-ghost" href={`/campaigns/${campaignId}/adversaries`}>
+          <Link className="enc-ghost" href={encounterTrackerHref(campaignId, encounter._id)}>
             Open Adversaries
           </Link>
           <button type="button" className="enc-ghost" onClick={() => run(unlink({ campaignId, sessionId }))}>

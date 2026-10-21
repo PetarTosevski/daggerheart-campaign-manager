@@ -70,6 +70,7 @@
 }
 .trk-top > div { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
 .trk-top-name { flex: 1 1 240px; }
+.trk-notice > .trk-top-name { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .trk-status { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #2d2614; color: var(--adv-acc); }
 .trk-status[data-status="running"] { background: #20352b; color: #9fdcb6; }
 .trk-turn { font-family: var(--adv-font-head); font-size: 16px; font-weight: 700; color: var(--adv-name); }

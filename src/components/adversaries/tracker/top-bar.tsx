@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useIntent } from "@/lib/use-intent";
 
 import { Modal } from "@/components/brand/modal";
+import { TrackerSessionChip } from "@/components/sessions/session-chip";
 import { battlePoints } from "@/lib/domain/encounters/budget";
 import { MAX_FEAR } from "@/lib/domain/fear";
 
@@ -94,6 +95,7 @@ export function TopBar({ campaignId, view, fear, actions }: { campaignId: Id<"ca
         <span className="trk-status" data-status={encounter.status}>
           {STATUS_LABEL[encounter.status]}
         </span>
+        <TrackerSessionChip campaignId={campaignId} encounterId={encounter._id} />
       </div>
       <div className="trk-top-turn">
         <span className="trk-turn" data-testid="gm-turn">
