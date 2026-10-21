@@ -82,6 +82,10 @@ waves:
           - src/components/combat-map/vision/**
           - tests/convex/combat-doors.test.ts
           - tests/unit/combat-doors.test.ts
+          - tests/unit/combat-map-spec.test.ts
+          - convex/combatMaps.ts
+          - src/lib/sprite-packs/catalog/**
+          - tests/unit/sprite-catalog.test.ts
           - docs/tasks/TASK-MV-M2.md
         reads:
           - docs/tasks/TASK-MV-M0.md
