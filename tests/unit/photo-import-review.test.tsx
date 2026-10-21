@@ -65,8 +65,9 @@ describe("photo import review", () => {
   });
 
   it("is disabled while saving", () => {
-    const { save } = renderForm({ initial: validDraft(), saving: true });
+    renderForm({ initial: validDraft(), saving: true });
     expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
-    expect(() => save()).toThrow();
+    // queryByRole, not a throwing getByRole: the miss error prints the whole form and its role list, which took seconds.
+    expect(screen.queryByRole("button", { name: "Save character" })).toBeNull();
   });
 });

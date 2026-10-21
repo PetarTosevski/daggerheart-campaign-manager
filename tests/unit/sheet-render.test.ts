@@ -34,6 +34,22 @@ vi.mock("@/app/(gm)/campaigns/[campaignId]/campaign-shell", () => ({
   useCampaign: () => ({ _id: "k1", frameId: "witherwild", options: { hopeAndFear: false } }),
 }));
 
+// Elements named by aria-label or aria-labelledby are found with getByLabelText: getByRole computes the accessible
+// name, and so getComputedStyle up the tree, of every candidate on the sheet for each lookup, which is slow in jsdom
+// under the full parallel run (dcm-t30). Role queries stay where visibility is under test (face-down cards).
+const BUTTON = { selector: "button" };
+const ARTICLE = { selector: "article" };
+const LIST = { selector: "[role=list], ul, ol" };
+const REGION = { selector: "section" };
+const TABLIST = { selector: "[role=tablist]" };
+
+/** A tab of the sheet pages or the card collections, looked up inside the two tablists only. */
+function tab(name: string) {
+  const found = screen.getAllByLabelText(/^(Sheet pages|Card collections)$/, TABLIST).flatMap((list) => within(list).queryAllByRole("tab", { name }));
+  expect(found).toHaveLength(1);
+  return found[0]!;
+}
+
 const { CharacterSheetView } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet");
 
 function character(overrides: Partial<CharacterView> = {}): CharacterView {
@@ -90,7 +106,7 @@ describe("character sheet", () => {
 
   it("renders the board shell: page tabs, Domains sub-tabs with counts, close link to the roster", () => {
     show();
-    const pages = screen.getByRole("tablist", { name: "Sheet pages" });
+    const pages = screen.getByLabelText("Sheet pages", TABLIST);
     expect(within(pages).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Character Sheet", "Story & Advancement", "Domains"]);
     expect(within(pages).getByRole("tab", { name: "Character Sheet" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("link", { name: "Close character sheet" })).toHaveAttribute("href", "/campaigns/k1/party");
@@ -108,13 +124,13 @@ describe("character sheet", () => {
     expect(domains).toHaveAttribute("tabindex", "0");
     expect(screen.getByRole("tabpanel", { name: "Domains" })).toBeInTheDocument();
 
-    const collections = screen.getByRole("tablist", { name: "Card collections" });
+    const collections = screen.getByLabelText("Card collections", TABLIST);
     const cards = within(collections).getByRole("tab", { name: "Domain Cards" });
     expect(cards).toHaveAttribute("aria-selected", "true");
     expect(cards).toHaveTextContent("Domain Cards2");
     fireEvent.keyDown(cards, { key: "ArrowRight" });
     expect(within(collections).getByRole("tab", { name: "Heritage & Subclass" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("list", { name: "Heritage and subclass cards" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Heritage and subclass cards", LIST)).toBeInTheDocument();
   });
 
   it("shows page one with computed thresholds and proficiency dice", () => {
@@ -129,9 +145,9 @@ describe("character sheet", () => {
 
   it("marks HP, Stress and Hope by tapping slots", () => {
     show();
-    fireEvent.click(screen.getByRole("button", { name: "Hit Point 3 of 5" }));
-    fireEvent.click(screen.getByRole("button", { name: "Stress 1 of 6" }));
-    fireEvent.click(screen.getByRole("button", { name: "Hope 2 of 6" }));
+    fireEvent.click(screen.getByLabelText("Hit Point 3 of 5", BUTTON));
+    fireEvent.click(screen.getByLabelText("Stress 1 of 6", BUTTON));
+    fireEvent.click(screen.getByLabelText("Hope 2 of 6", BUTTON));
     expect(calls.map((c) => c.args)).toEqual([
       { characterId: "c1", resource: "hp", delta: 2 },
       { characterId: "c1", resource: "stress", delta: 1 },
@@ -154,9 +170,9 @@ describe("character sheet", () => {
 
   it("polish 31: with no rest open the vault button shows the real Recall Cost, even with the rest box ticked", () => {
     show();
-    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Domain Cards" }));
-    const vault = screen.getByRole("list", { name: "Vault cards" });
+    fireEvent.click(tab("Domains"));
+    fireEvent.click(tab("Domain Cards"));
+    const vault = screen.getByLabelText("Vault cards", LIST);
     expect(within(vault).getByRole("button", { name: "Move to loadout (2 Stress)" })).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/Swapping during a rest/));
     expect(within(vault).getByRole("button", { name: "Move to loadout (2 Stress)" })).toBeInTheDocument();
@@ -166,12 +182,12 @@ describe("character sheet", () => {
   it("moves domain cards between loadout and vault", async () => {
     restsCurrent = { open: openShortRest(), shortRestsSinceLong: 0, last: null };
     show();
-    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
-    const loadout = screen.getByRole("list", { name: "Loadout cards" });
+    fireEvent.click(tab("Domains"));
+    const loadout = screen.getByLabelText("Loadout cards", LIST);
     await act(async () => {
       fireEvent.click(within(loadout).getByRole("button", { name: "Move to vault" }));
     });
-    const vault = screen.getByRole("list", { name: "Vault cards" });
+    const vault = screen.getByLabelText("Vault cards", LIST);
     fireEvent.click(screen.getByLabelText(/Swapping during a rest/));
     await act(async () => {
       fireEvent.click(within(vault).getByRole("button", { name: "Move to loadout (free)" }));
@@ -184,24 +200,24 @@ describe("character sheet", () => {
 
   it("Domain Deck: no picks left at level 1, owned badges, face-down cards above the level, filters and hide toggle", () => {
     show();
-    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
+    fireEvent.click(tab("Domains"));
     expect(screen.getByText("2 of 2 cards chosen")).toBeInTheDocument();
-    const deck = screen.getByRole("region", { name: "Domain Deck" });
-    const grid = within(deck).getByRole("list", { name: "Domain Deck cards" });
+    const deck = screen.getByLabelText("Domain Deck", REGION);
+    const grid = within(deck).getByLabelText("Domain Deck cards", LIST);
     const takeable = DOMAIN_CARDS.find((c) => c.domain === "grace" && c.level === 1 && c.id !== "deft-deceiver" && c.source === "core")!;
-    expect(within(grid).getByRole("button", { name: `No picks left for ${takeable.name}` })).toBeDisabled();
-    expect(within(grid).queryAllByRole("button", { name: /^Take / })).toHaveLength(0);
-    expect(within(within(grid).getByRole("article", { name: "Book of Ava" })).getByText("In vault")).toBeInTheDocument();
-    expect(within(within(grid).getByRole("article", { name: "Deft Deceiver" })).getByText("In loadout")).toBeInTheDocument();
+    expect(within(grid).getByLabelText(`No picks left for ${takeable.name}`, BUTTON)).toBeDisabled();
+    expect(within(grid).queryAllByLabelText(/^Take /, BUTTON)).toHaveLength(0);
+    expect(within(within(grid).getByLabelText("Book of Ava", ARTICLE)).getByText("In vault")).toBeInTheDocument();
+    expect(within(within(grid).getByLabelText("Deft Deceiver", ARTICLE)).getByText("In loadout")).toBeInTheDocument();
     // A level-2 card is face down: its back is the button, its face is hidden until turned over.
     const level2 = DOMAIN_CARDS.find((c) => c.domain === "codex" && c.level === 2 && c.source === "core")!;
     const item = within(grid).getByText(level2.name).closest<HTMLElement>("[role=listitem]")!;
-    const back = within(item).getByRole("button", { name: "Face-down level 2 Codex card. Turn it over to read it." });
+    const back = within(item).getByLabelText("Face-down level 2 Codex card. Turn it over to read it.", BUTTON);
     expect(within(grid).queryByRole("article", { name: level2.name })).toBeNull();
     fireEvent.click(back);
     const face = within(grid).getByRole("article", { name: level2.name });
     expect(within(face).getByText("Unlocks at level 2")).toBeInTheDocument();
-    expect(within(face).getByRole("button", { name: `Turn over ${level2.name}` })).toHaveFocus();
+    expect(within(face).getByLabelText(`Turn over ${level2.name}`, BUTTON)).toHaveFocus();
     // Filters and the hide toggle.
     const filters = within(deck).getByRole("group", { name: "Filter by domain" });
     expect(within(filters).getAllByRole("button").map((b) => b.textContent)).toEqual(["All", "Grace", "Codex"]);
@@ -209,30 +225,30 @@ describe("character sheet", () => {
     expect(within(filters).getByRole("button", { name: "Codex" })).toHaveAttribute("aria-pressed", "true");
     expect(within(grid).queryByRole("article", { name: "Deft Deceiver" })).toBeNull();
     fireEvent.click(within(deck).getByLabelText("Hide cards above my level"));
-    expect(within(grid).queryAllByRole("button", { name: /^Face-down/ })).toHaveLength(0);
+    expect(within(grid).queryAllByLabelText(/^Face-down/, BUTTON)).toHaveLength(0);
     expect(within(grid).getByRole("article", { name: "Book of Ava" })).toBeInTheDocument();
   });
 
   it("Domain Deck: takes a card while picks are left", async () => {
     current = character({ sheet: { ...character().sheet, level: 2 } });
     show();
-    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
-    const grid = screen.getByRole("list", { name: "Domain Deck cards" });
+    fireEvent.click(tab("Domains"));
+    const grid = screen.getByLabelText("Domain Deck cards", LIST);
     const takeable = DOMAIN_CARDS.find((c) => c.domain === "codex" && c.level === 2 && c.source === "core")!;
     await act(async () => {
-      fireEvent.click(within(grid).getByRole("button", { name: `Take ${takeable.name}` }));
+      fireEvent.click(within(grid).getByLabelText(`Take ${takeable.name}`, BUTTON));
     });
     expect(calls).toEqual([{ name: "characters:takeCard", args: { characterId: "c1", cardId: takeable.id } }]);
   });
 
   it("saves notes on blur and shows subclass tiers", () => {
     show();
-    fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Heritage & Subclass" }));
-    expect(screen.getByRole("article", { name: "Subclass: Troubadour Foundation" })).toBeInTheDocument();
-    expect(screen.getByRole("article", { name: "Subclass: Troubadour Mastery (locked)" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Story & Advancement" }));
-    const notes = screen.getByRole("textbox", { name: "Notes" });
+    fireEvent.click(tab("Domains"));
+    fireEvent.click(tab("Heritage & Subclass"));
+    expect(screen.getByLabelText("Subclass: Troubadour Foundation", ARTICLE)).toBeInTheDocument();
+    expect(screen.getByLabelText("Subclass: Troubadour Mastery (locked)", ARTICLE)).toBeInTheDocument();
+    fireEvent.click(tab("Story & Advancement"));
+    const notes = screen.getByLabelText("Notes", { selector: "textarea, input" });
     fireEvent.blur(notes, { target: { value: "Paid the innkeeper." } });
     expect(calls.map((c) => c.args)).toEqual([{ characterId: "c1", patch: { notes: "Paid the innkeeper." } }]);
   });
@@ -240,42 +256,42 @@ describe("character sheet", () => {
   it("▲ starts the guided level-up: the ribbon's steps switch pages, the summary lists problems, Cancel ends it", () => {
     current = character({ sheet: { ...character().sheet, levelUpPending: true } as CharacterView["sheet"] });
     show();
-    const pages = screen.getByRole("tablist", { name: "Sheet pages" });
+    const pages = screen.getByLabelText("Sheet pages", TABLIST);
     fireEvent.click(within(pages).getByRole("tab", { name: "Domains" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Heritage & Subclass" }));
-    fireEvent.click(screen.getByRole("button", { name: "Level up to 2" }));
+    fireEvent.click(tab("Heritage & Subclass"));
+    fireEvent.click(screen.getByLabelText("Level up to 2", BUTTON));
 
-    const ribbon = screen.getByRole("region", { name: "Level-up to 2" });
-    expect(screen.queryByRole("button", { name: "Level up to 2" })).toBeNull();
+    const ribbon = screen.getByLabelText("Level-up to 2", REGION);
+    expect(screen.queryByLabelText("Level up to 2", BUTTON)).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(within(ribbon).getByText(/Level 2 achievements: a new Experience at \+2 and \+1 Proficiency\./)).toBeInTheDocument();
-    const steps = within(ribbon).getByRole("list", { name: "Level-up steps" });
+    const steps = within(ribbon).getByLabelText("Level-up steps", LIST);
     expect(within(steps).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["1New Experience", "2Advancements (0/2)", "3Domain card", "4Finish"]);
     expect(within(steps).getAllByRole("listitem")[0]).toHaveAttribute("aria-current", "step");
     // The Experience step opens the Character Sheet page and focuses the Experiences heading.
     expect(within(pages).getByRole("tab", { name: "Character Sheet" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("heading", { name: "Experiences" })).toHaveFocus();
+    expect(within(screen.getByLabelText("Experiences", REGION)).getByRole("heading", { name: "Experiences" })).toHaveFocus();
     expect(within(ribbon).getByRole("button", { name: "Back" })).toBeDisabled();
 
     fireEvent.click(within(ribbon).getByRole("button", { name: "Next" }));
     expect(within(pages).getByRole("tab", { name: "Story & Advancement" })).toHaveAttribute("aria-selected", "true");
     fireEvent.click(within(ribbon).getByRole("button", { name: "Next" }));
     expect(within(pages).getByRole("tab", { name: "Domains" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Domain Cards" })).toHaveAttribute("aria-selected", "true");
+    expect(tab("Domain Cards")).toHaveAttribute("aria-selected", "true");
     fireEvent.click(within(ribbon).getByRole("button", { name: "Next" }));
 
     expect(within(steps).getAllByRole("listitem")[3]).toHaveAttribute("aria-current", "step");
     expect(within(ribbon).getByRole("heading", { name: "Summary" })).toHaveFocus();
-    expect(within(ribbon).getByRole("list", { name: "Your choices" })).toHaveTextContent("Domain card: not chosen yet.");
+    expect(within(ribbon).getByLabelText("Your choices", LIST)).toHaveTextContent("Domain card: not chosen yet.");
     expect(within(ribbon).getByRole("button", { name: "Finish level-up" })).toBeDisabled();
-    const todo = within(ribbon).getByRole("list", { name: "Still to do" });
+    const todo = within(ribbon).getByLabelText("Still to do", LIST);
     fireEvent.click(within(todo).getByRole("button", { name: "Name the new Experience (up to 80 characters)." }));
     expect(within(pages).getByRole("tab", { name: "Character Sheet" })).toHaveAttribute("aria-selected", "true");
     expect(within(steps).getAllByRole("listitem")[0]).toHaveAttribute("aria-current", "step");
 
     fireEvent.click(within(ribbon).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("region", { name: "Level-up to 2" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Level up to 2" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Level-up to 2", REGION)).toBeNull();
+    expect(screen.getByLabelText("Level up to 2", BUTTON)).toBeInTheDocument();
     expect(calls).toEqual([]);
   });
 
@@ -283,23 +299,23 @@ describe("character sheet", () => {
     current = character({ canEdit: false, mine: false });
     show();
     expect(screen.getByTestId("read-only-note")).toBeInTheDocument();
-    const paper = screen.getByRole("article", { name: "Liriel" });
+    const paper = screen.getByLabelText("Liriel", ARTICLE);
     const nonTab = within(paper)
-      .queryAllByRole("button")
+      .queryAllByRole("button", { hidden: true })
       .filter((b) => b.getAttribute("role") !== "tab");
     expect(nonTab).toHaveLength(0);
     expect(within(paper).queryAllByRole("textbox")).toHaveLength(0);
     expect(within(paper).queryAllByRole("combobox")).toHaveLength(0);
     expect(within(paper).queryAllByRole("checkbox")).toHaveLength(0);
     expect(screen.getByRole("img", { name: "Hit Point: 1 of 5 marked" })).toBeInTheDocument();
-    for (const tab of ["Story & Advancement", "Domains", "Heritage & Subclass"]) {
-      fireEvent.click(screen.getByRole("tab", { name: tab }));
+    for (const name of ["Story & Advancement", "Domains", "Heritage & Subclass"]) {
+      fireEvent.click(tab(name));
       // The Domain Deck keeps its viewing controls (filters, More, card backs, hide toggle) but has no Take buttons.
-      const deck = screen.queryByRole("region", { name: "Domain Deck" });
+      const deck = screen.queryByLabelText("Domain Deck", REGION);
       const outsideDeck = (els: HTMLElement[]) => els.filter((b) => !deck?.contains(b));
-      expect(outsideDeck(within(paper).queryAllByRole("button")).filter((b) => b.getAttribute("role") !== "tab")).toHaveLength(0);
+      expect(outsideDeck(within(paper).queryAllByRole("button", { hidden: true })).filter((b) => b.getAttribute("role") !== "tab")).toHaveLength(0);
       expect(within(paper).queryAllByRole("textbox")).toHaveLength(0);
-      if (deck) expect(within(deck).queryAllByRole("button", { name: /^(Take|No picks left)/ })).toHaveLength(0);
+      if (deck) expect(within(deck).queryAllByLabelText(/^(Take|No picks left)/, BUTTON)).toHaveLength(0);
     }
   });
 });
