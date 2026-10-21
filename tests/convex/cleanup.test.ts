@@ -134,7 +134,7 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     const encounterId = await ins("encounters", { campaignId: c, name: "Ambush", status: "running", pcs: 4, adjustments: ["hard"], gmTurn: 1, createdAt: now, updatedAt: now });
     const instance = { campaignId: c, encounterId, order: 0, summoned: false, hp: 0, stress: 0, defeated: false, conditions: [], tags: [], spotlights: 0, spotlightTurn: 1, updatedAt: now };
     const stats = { difficulty: 12, major: 7, severe: 12, hpMax: 6, stressMax: 3 };
-    await ins("encounterAdversaries", { ...instance, source: { kind: "custom", customId }, label: "Bog Hag", stats });
+    const instanceId = await ins("encounterAdversaries", { ...instance, source: { kind: "custom", customId }, label: "Bog Hag", stats });
     await ins("encounterAdversaries", {
       ...instance,
       order: 1,
@@ -173,6 +173,8 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
       revealedTo: [],
     });
     await ins("combatExplored", { mapId: combatMapId, characterId, bits: "", updatedAt: now });
+    // A reaction window still open on the map (combat-actions AA0).
+    await ins("combatRequests", combatRequest(c, userId, characterId, instanceId, { encounterId, mapId: combatMapId, at: now }));
     // A session with its prep (linking the encounter), a log line and a spotlight count (D10).
     const sessionId = await ins("sessions", { campaignId: c, n: 1, title: "The Bridge at Dawn", status: "live", startedAt: now, createdAt: now, updatedAt: now });
     await ins("sessionPrep", { campaignId: c, sessionId, scenes: [{ id: "s1", type: "combat", text: "Ambush" }], hooks: "", encounterId, updatedAt: now });
@@ -249,8 +251,47 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("grants", { ...grant, resourceType: "codexEntry", resourceId: entryId });
     await ins("grants", { ...grant, resourceType: "character", resourceId: characterId });
     await ins("grants", { ...grant, resourceType: "campaign", resourceId: "elsewhere", principalKind: "campaign", principalId: c });
-    return { campaignId, characterId, entryId, combatMapId, sessionId, encounterId, blobs: Object.values(blobs), touched: [...touched] };
+    return { campaignId, characterId, entryId, combatMapId, sessionId, encounterId, instanceId, blobs: Object.values(blobs), touched: [...touched] };
   });
+}
+
+/** An `incomingHit` combat request (plan combat-actions AA0), open unless `status` says otherwise. */
+function combatRequest(
+  campaignId: Id<"campaigns">,
+  userId: Id<"users">,
+  characterId: Id<"characters">,
+  instanceId: Id<"encounterAdversaries">,
+  o: {
+    at: number;
+    status?: "open" | "resolved" | "declined";
+    resolvedAt?: number;
+    encounterId?: Id<"encounters">;
+    mapId?: Id<"combatMaps">;
+  },
+): NewDoc<"combatRequests"> {
+  return {
+    campaignId,
+    encounterId: o.encounterId,
+    mapId: o.mapId,
+    kind: "incomingHit",
+    status: o.status ?? "open",
+    createdBy: userId,
+    createdAt: o.at,
+    payload: {
+      schemaVersion: 1,
+      kind: "incomingHit",
+      attacker: { instanceId, label: "Bog Hag" },
+      targetCharacterId: characterId,
+      damage: 9,
+      damageType: "physical",
+      direct: false,
+      critical: false,
+      groupId: `g${o.at}`,
+      responders: [{ characterId, role: "target", cardIds: [] }],
+    },
+    responses: [],
+    resolvedAt: o.resolvedAt,
+  };
 }
 
 type Seeded = Awaited<ReturnType<typeof seedCampaign>>;
@@ -476,6 +517,39 @@ describe("cleanup crons", () => {
       kinds: (await ctx.db.query("lorekeeperUsage").collect()).map((row) => row.kind).sort(),
     }));
     expect(kept).toEqual({ books: 2, kinds: ["campaign", "deployment", "user"] });
+  });
+
+  it("expires resolved and declined combat requests a day after resolvedAt, in batches, and keeps open or recent ones (AA0)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const s = await seedCampaign(t, userId, undefined);
+    const req = (o: Parameters<typeof combatRequest>[4]) => combatRequest(s.campaignId, userId, s.characterId, s.instanceId, o);
+    const kept = await t.run(async (ctx) => {
+      for (let i = 0; i < BATCH + 30; i++) {
+        const status = i % 2 === 0 ? "resolved" : "declined";
+        await ctx.db.insert("combatRequests", req({ at: NOW - 3 * DAY, status, resolvedAt: NOW - 2 * DAY + i }));
+      }
+      return [
+        // Resolved 23 hours ago: still inside its day.
+        await ctx.db.insert("combatRequests", req({ at: NOW - DAY, status: "resolved", resolvedAt: NOW - 23 * HOUR })),
+        // Open for three days: an open row waits for its answer or the campaign purge.
+        await ctx.db.insert("combatRequests", req({ at: NOW - 3 * DAY })),
+      ];
+    });
+
+    await t.mutation(internal.cleanup.expireCombatRequests, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const left = await t.run((ctx) => ctx.db.query("combatRequests").collect());
+    // The two kept rows plus the seeded campaign's own open request.
+    expect(left).toHaveLength(3);
+    expect(left.map((r) => r._id)).toEqual(expect.arrayContaining(kept));
+    expect(left.filter((r) => r.status !== "open").map((r) => r._id)).toEqual([kept[0]]);
+  });
+
+  it("runs the combat-request expiry hourly (AA0)", async () => {
+    const crons = (await import("../../convex/crons")).default as unknown as { crons: Record<string, { schedule: { type: string; cron?: string } }> };
+    expect(crons.crons["expire combat requests"]?.schedule).toEqual({ type: "cron", cron: "11 * * * *" });
   });
 
   it("stops purging a campaign the GM restored", async () => {

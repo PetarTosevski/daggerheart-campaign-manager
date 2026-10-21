@@ -25,6 +25,8 @@ export const PURGE_AFTER_MS = 30 * DAY;
 export const ORPHAN_AGE_MS = 2 * HOUR;
 /** Photo-import photos are deleted once read; ones never read expire after this long (D5 T7). */
 export const PHOTO_IMPORT_TTL_MS = HOUR;
+/** A resolved or declined combat request (plan combat-actions AA0) is kept this long after `resolvedAt`, then swept. */
+export const COMBAT_REQUEST_TTL_MS = DAY;
 
 /** Deletes a blob. A failure (already gone) is logged, not thrown, so the rest of the batch still runs. */
 async function deleteBlob(ctx: MutationCtx, storageId: Id<"_storage">): Promise<void> {
@@ -47,6 +49,31 @@ export const expireOperations = internalMutation({
       .take(BATCH);
     for (const row of rows) await ctx.db.delete("operations", row._id);
     if (rows.length === BATCH) await ctx.scheduler.runAfter(0, internal.cleanup.expireOperations, {});
+    return null;
+  },
+});
+
+/**
+ * Deletes resolved and declined `combatRequests` rows whose `resolvedAt` is older than `COMBAT_REQUEST_TTL_MS`
+ * (rule 8; plan combat-actions AA0). Open rows stay until answered or purged with their campaign. `BATCH` rows per
+ * run across both statuses, rescheduling itself while a full batch was deleted. A closed row without `resolvedAt`
+ * (never written that way) sorts first in the index and is swept too.
+ */
+export const expireCombatRequests = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - COMBAT_REQUEST_TTL_MS;
+    const budget: Budget = { left: BATCH };
+    for (const status of ["resolved", "declined"] as const) {
+      const rows = await ctx.db
+        .query("combatRequests")
+        .withIndex("by_status_resolved", (q) => q.eq("status", status).lt("resolvedAt", cutoff))
+        .take(budget.left);
+      await deleteRows(ctx, budget, "combatRequests", rows);
+      if (budget.left <= 0) break;
+    }
+    if (budget.left <= 0) await ctx.scheduler.runAfter(0, internal.cleanup.expireCombatRequests, {});
     return null;
   },
 });
@@ -328,6 +355,12 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("lorekeeperUsage").withIndex("by_campaign_period", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "lorekeeperUsage", rows);
+  },
+  // Combat requests (plan combat-actions AA0): GM sanctions and reaction windows; they reference characters,
+  // encounters and maps only by id, so their order here does not matter.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("combatRequests").withIndex("by_campaign_status", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "combatRequests", rows);
   },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);

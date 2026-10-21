@@ -6,6 +6,7 @@ import { campaignTables } from "./tables/campaigns";
 import { characterTables } from "./tables/characters";
 import { codexTables } from "./tables/codex";
 import { combatMapTables } from "./tables/combatMaps";
+import { combatRequestTables } from "./tables/combatRequests";
 import { encounterTables } from "./tables/encounters";
 import { countdownTables } from "./tables/countdowns";
 import { fileTables } from "./tables/files";
@@ -37,6 +38,7 @@ export default defineSchema({
   ...restTables,
   ...encounterTables,
   ...combatMapTables,
+  ...combatRequestTables,
   ...sessionTables,
   ...spritePackTables,
   ...notesTables,
