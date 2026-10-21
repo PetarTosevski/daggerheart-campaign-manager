@@ -86,6 +86,7 @@ import type * as lib_validators_sessions from "../lib/validators/sessions.js";
 import type * as lib_validators_spritePacks from "../lib/validators/spritePacks.js";
 import type * as lib_validators_wither from "../lib/validators/wither.js";
 import type * as lorekeeperAsks from "../lorekeeperAsks.js";
+import type * as lorekeeperLibrary from "../lorekeeperLibrary.js";
 import type * as lorekeeperRetention from "../lorekeeperRetention.js";
 import type * as lorekeeperRulings from "../lorekeeperRulings.js";
 import type * as lorekeeperUsage from "../lorekeeperUsage.js";
@@ -230,6 +231,7 @@ declare const fullApi: ApiFromModules<{
   "lib/validators/spritePacks": typeof lib_validators_spritePacks;
   "lib/validators/wither": typeof lib_validators_wither;
   lorekeeperAsks: typeof lorekeeperAsks;
+  lorekeeperLibrary: typeof lorekeeperLibrary;
   lorekeeperRetention: typeof lorekeeperRetention;
   lorekeeperRulings: typeof lorekeeperRulings;
   lorekeeperUsage: typeof lorekeeperUsage;
