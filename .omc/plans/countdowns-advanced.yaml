@@ -435,6 +435,8 @@ waves:
           - tests/convex/countdown-rolls.test.ts
           - tests/unit/countdown-advanced.test.ts
           - tests/unit/countdown-domain.test.ts
+          - tests/unit/countdown-actions.test.ts
+          - tests/convex/history.test.ts
           - tests/e2e/countdowns-chase.spec.ts
           - tests/e2e/countdown-rolls.spec.ts
           - docs/tasks/TASK-CD-K6.md
