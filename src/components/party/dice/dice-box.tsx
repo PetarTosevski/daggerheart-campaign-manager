@@ -241,13 +241,15 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const showTide = sheet !== null && holdsTide(sheet) && mode === "action";
   const tideCount = showTide ? Math.min(tideSpend, tideHeld) : 0;
 
-  /** What the result row says the roll was: "Presence +2 action roll vs 12", "Primary: Rapier (1d8) · critical". */
+  /** What the result row says the roll was: "Presence +2 action roll vs 12", "Primary: Rapier (1d8) · Waxing Moon +2 · critical". */
   function rollLabel(): string {
     if (mode === "damage") {
       const name =
         weapons.find((w) => w.key === damageSourceKey)?.label ??
         (damageSourceKey === "ikonis" ? ikonisLabel : (overrides.find((o) => o.key === damageSourceKey)?.label ?? `${toInt(customCount) ?? 0}d${customSides}`));
-      return `${name}${critical ? " · critical" : ""}`;
+      // Automatic options (Waxing Moon +2, dcm-bxp.66) are added by the server without a pick: the label names them.
+      const auto = options.filter((o) => o.auto).map((o) => ` · ${o.label}`).join("");
+      return `${name}${auto}${critical ? " · critical" : ""}`;
     }
     const diff = toInt(difficulty);
     const tide = tideCount > 0 ? ` · Know the Tide +${tideCount}` : "";

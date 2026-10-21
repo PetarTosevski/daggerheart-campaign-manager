@@ -22,38 +22,46 @@ const SIDES = [4, 6, 8, 10, 12, 20] as const;
 const BTN = "min-h-10 cursor-pointer rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40";
 const INPUT = "min-h-10 rounded-[9px] border border-[#33444a] bg-[#10181b] px-3 text-[14px] text-[#e6ecea]";
 
-/** Whether the feed is folded away, remembered per device (browser storage is for conveniences only). */
-const COLLAPSED_KEY = "dcm:roll-feed-collapsed";
-const COLLAPSED_EVENT = "dcm-roll-feed-collapsed";
-/** The last choice, for when storage throws (private windows, blocked site data). */
-let collapsedFallback = false;
-
-function readCollapsed(): boolean {
-  try {
-    return window.localStorage.getItem(COLLAPSED_KEY) === "1";
-  } catch {
-    return collapsedFallback;
-  }
-}
-
-function writeCollapsed(collapsed: boolean): void {
-  collapsedFallback = collapsed;
-  try {
-    window.localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
-  } catch {
-    // Storage blocked: the fallback above keeps the choice for this page.
-  }
-  window.dispatchEvent(new Event(COLLAPSED_EVENT));
-}
-
-function subscribeCollapsed(onChange: () => void): () => void {
-  window.addEventListener(COLLAPSED_EVENT, onChange);
-  window.addEventListener("storage", onChange);
-  return () => {
-    window.removeEventListener(COLLAPSED_EVENT, onChange);
-    window.removeEventListener("storage", onChange);
+/**
+ * A per-device on/off choice in browser storage (conveniences only): read and written with try/catch, with an
+ * in-memory fallback for when storage throws (private windows, blocked site data). Read with useSyncExternalStore.
+ */
+function deviceFlag(key: string) {
+  const event = `dcm-flag:${key}`;
+  let fallback = false;
+  return {
+    read(): boolean {
+      try {
+        return window.localStorage.getItem(key) === "1";
+      } catch {
+        return fallback;
+      }
+    },
+    write(on: boolean): void {
+      fallback = on;
+      try {
+        window.localStorage.setItem(key, on ? "1" : "0");
+      } catch {
+        // Storage blocked: the fallback above keeps the choice for this page.
+      }
+      window.dispatchEvent(new Event(event));
+    },
+    subscribe(onChange: () => void): () => void {
+      window.addEventListener(event, onChange);
+      window.addEventListener("storage", onChange);
+      return () => {
+        window.removeEventListener(event, onChange);
+        window.removeEventListener("storage", onChange);
+      };
+    },
   };
 }
+
+/** Whether the feed is folded away, remembered per device. */
+const feedCollapsed = deviceFlag("dcm:roll-feed-collapsed");
+/** Whether the GM's secret roll form is folded away, remembered per device (dcm-bxp.34; default open). */
+const gmFormCollapsed = deviceFlag("dcm:gm-roll-form-collapsed");
+const serverFalse = () => false;
 
 function time(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -80,6 +88,7 @@ function GmRollForm({ campaignId }: { campaignId: Id<"campaigns"> }) {
 
   return (
     <form
+      id="gm-roll-form"
       aria-label="GM roll"
       className="flex flex-wrap items-end gap-2"
       onSubmit={(e) => {
@@ -121,6 +130,29 @@ function GmRollForm({ campaignId }: { campaignId: Id<"campaigns"> }) {
 }
 
 /**
+ * The GM's secret roll form behind a disclosure button (dcm-bxp.34): open by default, the choice remembered on this
+ * device. Folding it hides only the form; the feed list below stays.
+ */
+function GmRollSection({ campaignId }: { campaignId: Id<"campaigns"> }) {
+  const collapsed = useSyncExternalStore(gmFormCollapsed.subscribe, gmFormCollapsed.read, serverFalse);
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        aria-controls="gm-roll-form"
+        className="flex min-h-10 cursor-pointer items-center gap-2 self-start border-0 bg-transparent p-0 text-[13px] font-semibold tracking-[0.08em] text-[#c9d2cf] uppercase hover:text-[#e6ecea]"
+        onClick={() => gmFormCollapsed.write(!collapsed)}
+      >
+        <ChevronDown aria-hidden="true" className={`size-4 text-[#8fa3a8] transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+        Secret GM roll
+      </button>
+      {collapsed ? null : <GmRollForm campaignId={campaignId} />}
+    </div>
+  );
+}
+
+/**
  * The roll feed on the dashboard: every member sees player rolls live; GM
  * free rolls only reach players once revealed (the server filters them).
  * Undo for the roller and the GM; Reveal for the GM. The GM can also delete a
@@ -137,7 +169,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
   const [clearing, setClearing] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  const collapsed = useSyncExternalStore(subscribeCollapsed, readCollapsed, () => false);
+  const collapsed = useSyncExternalStore(feedCollapsed.subscribe, feedCollapsed.read, serverFalse);
   // GM only: which loaded rows are counted action rolls, so they carry "Tick countdowns" (countdowns-advanced K1).
   const candidates = isGm ? results.filter((r) => r.kind === "roll" && r.roll?.kind === "action" && !r.undone).slice(0, COUNTED_MAX).map((r) => r._id) : [];
   const counted = useQuery(api.countdownRolls.countedRows, isGm && candidates.length > 0 ? { campaignId, entryIds: candidates } : "skip");
@@ -152,7 +184,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
             aria-expanded={!collapsed}
             aria-controls="feed-body"
             className="flex min-h-10 cursor-pointer items-center gap-2 border-0 bg-transparent p-0 font-[inherit] text-inherit"
-            onClick={() => writeCollapsed(!collapsed)}
+            onClick={() => feedCollapsed.write(!collapsed)}
           >
             Roll Feed
             <ChevronDown aria-hidden="true" className={`size-5 text-[#8fa3a8] transition-transform ${collapsed ? "-rotate-90" : ""}`} />
@@ -194,7 +226,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
       </div>
       {collapsed ? null : (
       <div id="feed-body" className="flex flex-col gap-3">
-      {isGm ? <GmRollForm campaignId={campaignId} /> : null}
+      {isGm ? <GmRollSection campaignId={campaignId} /> : null}
       <p aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
         {undo.error ?? feedError}
       </p>
