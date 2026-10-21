@@ -1,7 +1,9 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
 import { signInAsTestGm } from "./fixtures";
-import { expectNoHorizontalScroll, openSessions } from "./visual/helpers";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+import { convexAs, expectNoHorizontalScroll, openSessions } from "./visual/helpers";
 
 // D10 S4: Prep (B3, K6, K10, Q1). The GM plans a Combat and a Social scene, writes hooks, creates the session's D8
 // encounter and builds it with D8's Battle Points panel and add dialog; everything survives a reload. A player who
@@ -100,14 +102,20 @@ test("the GM plans scenes and hooks and builds the session encounter; reload kee
   // A player (the session played, so they may see it) opening ?stage=prep gets the read-only view only (K10, Q4).
   await page.getByRole("region", { name: "Session", exact: true }).getByRole("button", { name: "Mark as played" }).click();
   await expect(page.getByRole("button", { name: "Mark as not played" })).toBeVisible();
-  // The button flips optimistically; a reload shows the server has it before the player looks.
-  await page.reload();
-  await expect(page.getByRole("button", { name: "Mark as not played" })).toBeVisible();
+  // The button flips optimistically: wait for the server before playerJoins leaves the page (a pending write could be dropped).
+  const client = await convexAs(page);
+  const sessionId = sessionUrl.searchParams.get("s");
+  await expect
+    .poll(async () => (await client.query(api.sessionRecords.list, { campaignId: campaignId as Id<"campaigns"> })).find((x) => x._id === sessionId)?.status)
+    .toBe("played");
   const { player, close } = await playerJoins(page, browser, campaignId, campaignName);
   try {
-    await player.goto(`${url}?s=${sessionUrl.searchParams.get("s")}&stage=prep`);
     const view = player.getByRole("region", { name: "Session detail" }).getByRole("region", { name: "Session", exact: true });
-    await expect(view.getByRole("heading", { name: "Recap" })).toBeVisible();
+    // "Mark as played" flips optimistically: retry until the server has it and the player may see the session.
+    await expect(async () => {
+      await player.goto(`${url}?s=${sessionUrl.searchParams.get("s")}&stage=prep`);
+      await expect(view.getByRole("heading", { name: "Recap" })).toBeVisible({ timeout: 3_000 });
+    }).toPass({ timeout: 30_000 });
     await expect(player.getByRole("tablist", { name: "Session stage" })).toHaveCount(0);
     await expect(player.getByRole("heading", { name: "Planned scenes" })).toHaveCount(0);
     await expect(player.getByText("The miller owes Thane money.")).toHaveCount(0);
