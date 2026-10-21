@@ -254,3 +254,30 @@ waves:
           - "lint, typecheck, pnpm test (authz matrix and notes privacy tests) pass; notes-*.spec.ts pass"
           - "perf-reads.test.ts (convex-test, read counter): notesSharing.shared and notesJournals.playerJournals on a journal with 600 pages stay under 1,500 reads (today they can pass 4,096); a player's feed.list read count does not grow with the number of campaign grants"
           - "members.roster and combatMaps.list run their per-row gets in one Promise.all batch; reads per call unchanged or lower"
+  - wave: 5
+    tracers:
+      - id: PF11
+        title: Dashboard bundle - lazy dice box, party-card and level-up badge split, SRD leaf imports, small domains module
+        size: M
+        # ORCHESTRATOR NOTE (2026-10-21): PF5 reached 1,447 / 510 KB on the dashboard; the rest is held by files outside its owns
+        #   (docs/tasks/TASK-PF-PF5.md items 1-5, diff at scratchpad/pf5/outside-owns.diff). Starts after followups-5 F8 (dice/**).
+        goal: Reach the PF5 target (dashboard <= 1,250 KB raw / <= 450 KB gzip) and get domain-cards, equipment-tiers and zod off the dashboard.
+        depends_on: [PF5]
+        owns:
+          - src/components/party/dice/index.tsx
+          - src/components/party/party-display.ts
+          - src/components/party/party-card.tsx
+          - src/components/party/level-up/index.tsx
+          - src/components/party/level-up/badge.tsx
+          - src/lib/srd/domains.ts
+          - src/lib/domain/characters/spellcast.ts
+          - src/lib/domain/session-features/holders.ts
+          - tests/unit/lazy-boundaries-2.test.ts
+          - docs/tasks/TASK-PF-PF11.md
+        reads:
+          - docs/tasks/TASK-PF-PF5.md
+          - docs/performance.md
+        acceptance:
+          - "Dashboard initial JS <= 1,250 KB raw / <= 450 KB gzip (scripts/perf/bundle.mjs), domain-cards / equipment-tiers / zod not on the dashboard; other routes not larger"
+          - "Lazy pieces keep working (dice box, level-up badge and history); e2e for dashboard, party, dice and level-up pass; a test fails if the static imports come back"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
