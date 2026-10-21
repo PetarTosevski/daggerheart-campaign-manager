@@ -1,0 +1,46 @@
+import type { Area } from "./harness";
+
+/** Authz matrix: world (maps, codex, scenes). Filled by tracer H9 (.omc/plans/d12-hardening.yaml). */
+const area: Area = {
+  area: "world",
+  entries: [],
+  pending: [
+    "codex:attachImage",
+    "codex:create",
+    "codex:entryText",
+    "codex:imageUploadUrl",
+    "codex:importPins",
+    "codex:list",
+    "codex:remove",
+    "codex:removeImage",
+    "codex:seed",
+    "codex:setCover",
+    "codex:setImageShown",
+    "codex:setPin",
+    "codex:update",
+    "maps:addCustomType",
+    "maps:addToken",
+    "maps:attachMapImage",
+    "maps:clearTrail",
+    "maps:get",
+    "maps:locations",
+    "maps:mapImageUploadUrl",
+    "maps:moveParty",
+    "maps:moveToHex",
+    "maps:paintCells",
+    "maps:placePartyHex",
+    "maps:removeMapImage",
+    "maps:removeToken",
+    "maps:renameType",
+    "maps:setCrawlDay",
+    "maps:setHexGrid",
+    "maps:setOptions",
+    "maps:setTerrain",
+    "maps:setTravelRules",
+    "maps:updateHex",
+    "maps:updateToken",
+    "scenes:end",
+  ],
+};
+
+export default area;
