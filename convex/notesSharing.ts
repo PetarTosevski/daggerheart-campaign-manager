@@ -6,9 +6,8 @@ import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import { readSheet } from "./lib/characterSheet";
 import { campaignMutation, campaignQuery } from "./lib/functions";
-import { departed } from "./lib/journalState";
 import { assertAction, findPage, notesRole, resolvePage, type NotesCtx, type NotesMutationCtx } from "./lib/notes";
-import { permissionFor } from "./lib/permissions";
+import { cachedDeparted, cachedJournal, pageReadCache, permissionFor } from "./lib/permissions";
 import { MAX_PAGES, pageKindValidator, pageRefValidator, pageVisibilityValidator } from "./lib/validators/notes";
 
 /**
@@ -96,24 +95,43 @@ async function memberRows(ctx: NotesCtx): Promise<Doc<"campaignMembers">[]> {
     .take(MEMBERS_TAKE);
 }
 
-/** Each player's name: their newest live character's name in the campaign, else their account name. */
-async function playerNames(ctx: NotesCtx, userIds: readonly Id<"users">[]): Promise<Map<Id<"users">, string>> {
-  const characters = await ctx.db
-    .query("characters")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", ctx.campaign._id))
-    .take(MEMBERS_TAKE);
-  const live = characters
-    .filter((c) => c.status !== "dead" && c.status !== "retired")
-    .sort((a, b) => a.createdAt - b.createdAt || a._creationTime - b._creationTime);
-  const byOwner = new Map<Id<"users">, Doc<"characters">>();
-  for (const c of live) byOwner.set(c.ownerId, c);
-  const names = new Map<Id<"users">, string>();
-  for (const userId of userIds) {
-    const character = byOwner.get(userId) ?? null;
-    const label = authorLabel({ isGm: false, characterName: characterName(character), accountName: accountName(await ctx.db.get("users", userId)) });
-    names.set(userId, label);
-  }
-  return names;
+type PlayerNames = (userIds: readonly Id<"users">[]) => Promise<Map<Id<"users">, string>>;
+
+/**
+ * Each player's name: their newest live character's name in the campaign, else their account name. The returned
+ * function reads the campaign's characters once and each user row once, however often a list calls it (PF10).
+ */
+function playerNamer(ctx: NotesCtx): PlayerNames {
+  let byOwner: Promise<Map<Id<"users">, Doc<"characters">>> | undefined;
+  const labels = new Map<Id<"users">, Promise<string>>();
+  const characters = () =>
+    (byOwner ??= ctx.db
+      .query("characters")
+      .withIndex("by_campaign", (q) => q.eq("campaignId", ctx.campaign._id))
+      .take(MEMBERS_TAKE)
+      .then((rows) => {
+        const live = rows
+          .filter((c) => c.status !== "dead" && c.status !== "retired")
+          .sort((a, b) => a.createdAt - b.createdAt || a._creationTime - b._creationTime);
+        const map = new Map<Id<"users">, Doc<"characters">>();
+        for (const c of live) map.set(c.ownerId, c);
+        return map;
+      }));
+  const label = (userId: Id<"users">) => {
+    let known = labels.get(userId);
+    if (known === undefined) {
+      known = Promise.all([characters(), ctx.db.get("users", userId)]).then(([map, user]) =>
+        authorLabel({ isGm: false, characterName: characterName(map.get(userId) ?? null), accountName: accountName(user) }),
+      );
+      labels.set(userId, known);
+    }
+    return known;
+  };
+  return async (userIds) => {
+    const names = new Map<Id<"users">, string>();
+    for (const userId of userIds) names.set(userId, await label(userId));
+    return names;
+  };
 }
 
 /**
@@ -243,7 +261,7 @@ export const recipients = campaignQuery({
       for (const row of await recipientRows(ctx, access.page._id)) chosen.add(row.userId);
     }
     const players = (await memberRows(ctx)).map((m) => m.userId).filter((id) => id !== ctx.user._id);
-    const names = await playerNames(ctx, players);
+    const names = await playerNamer(ctx)(players);
     const rows: RecipientRow[] = [];
     if (role !== "gm") rows.push({ userId: ctx.campaign.ownerId, name: "GM", isGm: true, chosen: chosen.has(ctx.campaign.ownerId) });
     for (const userId of players) rows.push({ userId, name: names.get(userId) ?? "Player", isGm: false, chosen: chosen.has(userId) });
@@ -278,7 +296,7 @@ export const shared = campaignQuery({
       .query("journalPageRecipients")
       .withIndex("by_campaign_user", (q) => q.eq("campaignId", ctx.campaign._id).eq("userId", ctx.user._id))
       .take(SHARED_TAKE);
-    for (const row of ticked) add(await ctx.db.get("journalPages", row.pageId));
+    for (const page of await Promise.all(ticked.map((row) => ctx.db.get("journalPages", row.pageId)))) add(page);
 
     if (tab === "players") {
       for (const visibility of isGm ? (["gm", "everyone"] as const) : (["players", "everyone"] as const)) {
@@ -305,10 +323,13 @@ export const shared = campaignQuery({
       }
     }
 
+    // One read of each journal, its owner and its departure for the whole list (PF10), not one per page.
+    const cache = pageReadCache(ctx.user, ctx.campaign);
+    const playerNames = playerNamer(ctx);
     const journals = new Map<Id<"journals">, { journal: Doc<"journals">; departed: boolean; ownerName: string } | null>();
     async function journalInfo(id: Id<"journals">) {
       if (!journals.has(id)) {
-        const journal = await ctx.db.get("journals", id);
+        const journal = await cachedJournal(ctx, id, cache);
         if (journal === null) journals.set(id, null);
         else {
           const ownerIsGm = journal.userId === gmId;
@@ -316,7 +337,7 @@ export const shared = campaignQuery({
           const ownerName = ownerIsGm
             ? "Game Master"
             : authorLabel({ isGm: false, characterName: characterName(character), accountName: accountName(await ctx.db.get("users", journal.userId)) });
-          journals.set(id, { journal, departed: await departed(ctx, ctx.campaign, journal), ownerName });
+          journals.set(id, { journal, departed: await cachedDeparted(ctx, ctx.campaign, journal, cache), ownerName });
         }
       }
       return journals.get(id) ?? null;
@@ -331,11 +352,11 @@ export const shared = campaignQuery({
       if (own && tab === "players") continue;
       const info = await journalInfo(page.journalId);
       if (info === null || info.departed) continue;
-      const permission = await permissionFor(ctx, ctx.user, { type: "journalPage", campaign: ctx.campaign, journal: info.journal, page });
+      const permission = await permissionFor(ctx, ctx.user, { type: "journalPage", campaign: ctx.campaign, journal: info.journal, page, cache });
       if (permission === null) continue;
       let chip = visibilityLabel(page.visibility, ownerIsGm);
       if (own && page.visibility === "chosen") {
-        const names = await playerNames(ctx, (await recipientRows(ctx, page._id)).map((r) => r.userId));
+        const names = await playerNames((await recipientRows(ctx, page._id)).map((r) => r.userId));
         chip = names.size > 0 ? `${chip} · ${[...names.values()].join(", ")}` : `${chip} · nobody yet`;
       }
       rows.push({

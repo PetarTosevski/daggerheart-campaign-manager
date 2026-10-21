@@ -39,7 +39,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId, undoEntry } from "./lib/actionLog";
 import { tickLongTermOnRest } from "./countdownTracks";
-import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { assertCanAct, loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
 import { campaignQuery, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
@@ -99,23 +99,25 @@ async function recentRests(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<
 }
 
 async function choicesOf(ctx: QueryCtx, restId: Id<"rests">): Promise<Doc<"restChoices">[]> {
-  // One row per character of one party.
+  // One row per resting PC (at most REST_PARTY_MAX), so the campaign's character cap bounds it.
   return ctx.db
     .query("restChoices")
     .withIndex("by_rest_character", (q) => q.eq("restId", restId))
-    .collect();
+    .take(MAX_CHARACTERS_PER_CAMPAIGN);
 }
 
 /** A resting PC: active (not dead, retired or away, HF 127). Unconscious PCs rest but pick no moves (decision 9). */
 const resting = (c: Doc<"characters">) => c.status === "active";
 
-/** Each resting PC's pickable moves for this rest. A sheet that fails to read gets the core moves. */
+/**
+ * Each resting PC's pickable moves for this rest. A sheet that fails to read gets the core moves. Read only while a
+ * rest is open (`current`), bounded by the campaign's character cap.
+ */
 async function pickableMoves(ctx: QueryCtx, campaign: Doc<"campaigns">, kind: RestKind): Promise<{ characterId: Id<"characters">; moves: RestMove[] }[]> {
-  // One party: a handful of characters.
   const party = await ctx.db
     .query("characters")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
-    .collect();
+    .take(MAX_CHARACTERS_PER_CAMPAIGN);
   return party.filter(resting).map((c) => {
     let sheet: Pick<CharacterSheet, "classId" | "multiclass">;
     try {

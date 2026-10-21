@@ -41,12 +41,15 @@ const rosterReturns = v.union(
   }),
 );
 
+/** One table's players are a handful; this bounds the read. */
+const ROSTER_MAX = 200;
+
 async function members(ctx: QueryCtx, campaignId: Id<"campaigns">) {
-  // One table's players: a handful of rows.
   const rows = await ctx.db
     .query("campaignMembers")
     .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaignId))
-    .collect();
+    .take(ROSTER_MAX);
+  // The user rows in one batch (PF10), not one awaited get after another.
   return Promise.all(
     rows.map(async (m) => {
       const user = await ctx.db.get("users", m.userId);
