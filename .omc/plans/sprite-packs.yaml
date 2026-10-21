@@ -9,7 +9,7 @@
 #   src/components/combat-map/editor/**, C7 convex/combatVision.ts + convex/lib/combatVision.ts), convex/lib/files.ts.
 # Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation.
 # Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
-# Status: DRAFT 2026-10-21. Defaults for the QUESTIONS below are written into the acceptance lists and marked (Qn); an answer
+# Status: APPROVED 2026-10-21 (Q1 = b; Q2-Q5 defaults). Defaults for the QUESTIONS below are written into the acceptance lists and marked (Qn); an answer
 #   that differs changes only the tracers that cite that Qn. Tracers do not start until the user has answered or accepted them.
 #
 # User decisions (2026-10-21, binding; tracers quote the one they implement in their task doc):
@@ -91,7 +91,16 @@
 #       never proof of access.
 #   E8  Duplicating a map copies its new fields too (style, setting, texture palette, sprite and texture refs, texture cells).
 #
-# QUESTIONS (open; each has a recommended default that the acceptance lists already use):
+# QUESTIONS (ANSWERED by the user 2026-10-21; binding):
+#   ANSWER Q1 = (b): the torch-like and campfire-like kinds of (a), PLUS a new "faint glow" map-light reach for things that only
+#       glow (candles, candelabra, glowing mushrooms, luminous moss, crystals, wisps, lava, glowing lichen...): FAINT_GLOW_REACH =
+#       clear to 1 square (Melee), dim to 3 squares (Very Close), one named constant in src/lib/domain/combat-map/light.ts next to
+#       MAP_LIGHT_REACH (tunable; the orchestrator told the user this value). Faint-glow lights are switchable like other map lights
+#       and follow R9-R11 (dim hides tokens at night). Owned by P3 (vision traits) and P1 (catalog flags); the GM can set any
+#       sprite to none / faint glow / torch / campfire in P8's labelling screen and P9's editor.
+#   ANSWER Q2 = (a) two calls, one generation. ANSWER Q3 = (c) per-pack New setting / Add to <built-in>. ANSWER Q4 = (a) Classic for new
+#       maps until the user picks. ANSWER Q5 = (a) sharp pinned to Next's 0.34.5 as a devDependency.
+# (Original question text kept below for reference.)
 #   Q1  Light from sprite kinds beyond R9. R9 defines three map lights: wall torch / torch [6, 12], campfire [12, 24]. The packs add
 #       braziers, standing torches, street lamps, lanterns on posts, fireplaces, forges, stoves, candles, candelabras, glowing
 #       mushrooms, luminous moss, crystals, will-o'-wisps, lava pools. Options: (a) only R9's two reaches exist: torch-like
