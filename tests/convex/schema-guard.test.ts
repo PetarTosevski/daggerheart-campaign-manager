@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { describe, expect, test } from "vitest";
 
 import schema from "../../convex/schema";
-import { modules } from "./setup";
+import { makeTest, modules } from "./setup";
 
 /**
  * Locks in the schema and function rules a reviewer would otherwise have to
@@ -288,5 +288,138 @@ describe("public functions", () => {
     const functions = await publicFunctions();
     expect(functions.length).toBeGreaterThan(0);
     expect(functions.filter(({ fn }) => fn.exportReturns() === "null").map(({ name }) => name)).toEqual([]);
+  });
+});
+
+/**
+ * Plan combat-actions, CA0: the widened fields (rule 7, widen only). Rows stored before the widening still validate
+ * and read back unchanged; rows with the new fields validate; a value outside the new unions is refused.
+ */
+describe("combat-actions widening (CA0)", () => {
+  async function seed() {
+    const t = makeTest();
+    const ids = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", { email: "ca0@example.com", emailVerificationTime: 1 });
+      const campaignId = await ctx.db.insert("campaigns", {
+        ownerId: userId,
+        frameId: "witherwild",
+        name: "CA0",
+        nameKey: "ca0",
+        tier: 1,
+        level: 1,
+        createdAt: 1,
+        lastOpenedAt: 1,
+      });
+      const encounterId = await ctx.db.insert("encounters", {
+        campaignId,
+        name: "Ambush",
+        status: "running",
+        pcs: 4,
+        adjustments: [],
+        gmTurn: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { userId, campaignId, encounterId };
+    });
+    return { t, ...ids };
+  }
+
+  const stats = { difficulty: 12, major: 7, severe: 12, hpMax: 6, stressMax: 3 };
+  const block = {
+    name: "Bog Hag",
+    tier: 1,
+    type: "Solo" as const,
+    description: "",
+    motives: "",
+    difficulty: 12,
+    thresholds: { major: 7, severe: 12 },
+    hp: 6,
+    stress: 3,
+    attack: { modifier: 2, name: "Claws", range: "Melee", damage: "1d8+2 phy" },
+    experiences: [],
+    features: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  test("old actionLog, instance and custom adversary rows read back unchanged", async () => {
+    const { t, userId, campaignId, encounterId } = await seed();
+    await t.run(async (ctx) => {
+      const log = { campaignId, actorId: userId, kind: "roll" as const, visibility: "public" as const, summary: "rolled", undoable: true, at: 1 };
+      const logId = await ctx.db.insert("actionLog", log);
+      const instance = {
+        campaignId,
+        encounterId,
+        source: { kind: "srd" as const, adversaryId: "bear" },
+        label: "Bear",
+        order: 0,
+        summoned: false,
+        stats,
+        hp: 0,
+        stress: 0,
+        defeated: false,
+        conditions: [],
+        tags: [],
+        spotlights: 0,
+        spotlightTurn: 1,
+        updatedAt: 1,
+      };
+      const instanceId = await ctx.db.insert("encounterAdversaries", instance);
+      const customId = await ctx.db.insert("customAdversaries", { campaignId, ...block });
+      expect(await ctx.db.get("actionLog", logId)).toMatchObject(log);
+      expect(await ctx.db.get("actionLog", logId)).not.toHaveProperty("adversaryBefore");
+      expect(await ctx.db.get("encounterAdversaries", instanceId)).toMatchObject(instance);
+      expect(await ctx.db.get("encounterAdversaries", instanceId)).not.toHaveProperty("resistance");
+      expect(await ctx.db.get("customAdversaries", customId)).not.toHaveProperty("resistance");
+    });
+  });
+
+  test("new fields validate: adversaryBefore, combat kinds, resistance, the conditional toggle, instance effects", async () => {
+    const { t, userId, campaignId, encounterId } = await seed();
+    await t.run(async (ctx) => {
+      const instanceId = await ctx.db.insert("encounterAdversaries", {
+        campaignId,
+        encounterId,
+        source: { kind: "srd", adversaryId: "sand-wyrm" },
+        label: "Wyrm",
+        order: 0,
+        summoned: false,
+        stats,
+        hp: 2,
+        stress: 1,
+        defeated: false,
+        conditions: ["vulnerable"],
+        tags: ["Enraptured"],
+        spotlights: 0,
+        spotlightTurn: 1,
+        updatedAt: 1,
+        resistance: { physical: "resistant", magic: "none", conditional: "While underground" },
+        resistanceActive: true,
+        effects: [{ id: "e1", source: "Glyph of Nightfall", label: "Difficulty -2", difficulty: -2, until: "temporary" }],
+      });
+      await ctx.db.insert("customAdversaries", { campaignId, ...block, resistance: { physical: "immune", magic: "resistant" } });
+      const before = [{ instanceId, hp: 0, stress: 0, defeated: false, minionCount: 3, conditions: [], tags: [] }];
+      for (const kind of ["combat", "adversary"] as const) {
+        const logId = await ctx.db.insert("actionLog", {
+          campaignId,
+          actorId: userId,
+          kind,
+          visibility: "gm",
+          summary: "Mira hits the Wyrm: 14 phy, Major, 2 HP",
+          groupId: "g1",
+          adversaryBefore: before,
+          undoable: true,
+          at: 1,
+        });
+        expect((await ctx.db.get("actionLog", logId))?.adversaryBefore).toEqual(before);
+      }
+    });
+  });
+
+  test("a resistance level outside none | resistant | immune is refused", async () => {
+    const { t, campaignId } = await seed();
+    const bad = { campaignId, ...block, resistance: { physical: "weak", magic: "none" } };
+    await expect(t.run((ctx) => ctx.db.insert("customAdversaries", bad as never))).rejects.toThrow();
   });
 });

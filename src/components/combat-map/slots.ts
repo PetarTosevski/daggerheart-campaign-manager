@@ -197,3 +197,42 @@ export type PacksScreenProps = { campaignId: Id<"campaigns"> };
 export function packsHref(campaignId: Id<"campaigns">): string {
   return `/campaigns/${campaignId}/combat-map/packs`;
 }
+
+// ---------------------------------------------------------------- combat actions (plan .omc/plans/combat-actions.yaml)
+//
+// | Folder                | Tracer   | Exports (mounted by the page)                                                   |
+// |-----------------------|----------|----------------------------------------------------------------------------------|
+// | `actions/`            | CA5      | `ActionsProvider`, `ActionsPanel` (player column), `Resolutions` (GM column),    |
+// |                       |          | `TargetsLayer` (map layer, Play); re-exports `targets/` and `gm/`                |
+// | `actions/attack/`     | CA5      | `AttackBar` (inside `ActionsPanel`)                                              |
+// | `actions/targets/`    | CA5      | `TargetsLayer`, `TargetList` (inside `ActionsPanel`)                             |
+// | `actions/dice/`       | CA5      | `MapDice` (inside `ActionsPanel`)                                                |
+// | `actions/gm/`         | CA5      | `Resolutions`                                                                    |
+// | `actions/hand/`       | CA6      | `Hand` (inside `ActionsPanel`; the first tab of the phone bottom sheet)          |
+// | `actions/adversary/`  | AA5      | `AdversaryPanel` (GM column, Play), `HitFlashLayer` (map layer, Play)            |
+// | `actions/reactions/`  | AA4      | `IncomingHit` (player column, first)                                             |
+//
+// CA0 ships every export as a stub that renders nothing (providers render their children). The page mounts each in
+// its own error boundary: in Play only, with a map on screen. Order: player column IncomingHit, ActionsPanel, then
+// the view and token cards; GM column Combatants, the token card, AdversaryPanel, Reveal, Vision, Resolutions. Map
+// layers draw after the vision layer (fog), TargetsLayer then HitFlashLayer, so rings and flashes stay visible.
+// Picked targets are shared state of `ActionsProvider` (vision-layer's selection adds to it, the Attack bar and the
+// Hand read it); the page does not hold them. Players never get enemy numbers from any of these (U1).
+
+/** The props every combat-actions panel gets: the page state with the map on screen. */
+export type ActionsSlotProps = CombatPageState & { map: CombatMapSummary };
+
+/** Player column: the Hand, the Attack bar, target list, map dice box and mini feed; a bottom sheet at <=760px (Q11). */
+export type ActionsPanelProps = ActionsSlotProps;
+
+/** GM column, last: the latest resolutions of the map's encounter with Undo (U4, Q10). */
+export type ResolutionsProps = ActionsSlotProps;
+
+/** GM column, under the token card: Attack and feature buttons for the selected adversary token (Q12, Q16, Q19). */
+export type AdversaryPanelProps = ActionsSlotProps;
+
+/** Player column, first: the open incoming hit on the player's character (armor choice) or an ally's (reaction cards; Q13, Q14). */
+export type IncomingHitProps = ActionsSlotProps;
+
+/** Map layers of the combat actions (target rings, hit flashes): the usual layer props. */
+export type ActionsLayerProps = MapLayerProps;

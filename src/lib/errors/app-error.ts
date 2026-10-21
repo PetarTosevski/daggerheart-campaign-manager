@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 
 import { actionLogMessages } from "./actionLog";
 import { classFeatureMessages } from "./classFeatures";
+import { combatActionMessages } from "./combatActions";
 import { combatMapMessages } from "./combatMap";
 import { commonMessages } from "./common";
 import { deathMessages } from "./death";
@@ -34,6 +35,7 @@ export type AppErrorCode =
   | keyof typeof photoImportMessages
   | keyof typeof encounterMessages
   | keyof typeof combatMapMessages
+  | keyof typeof combatActionMessages
   | keyof typeof sessionMessages
   | keyof typeof spritePackMessages
   | keyof typeof noteMessages

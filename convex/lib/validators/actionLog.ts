@@ -1,6 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 import type { RollRecord } from "../../../src/lib/domain/duality";
+import { encounterConditionValidator } from "./encounters";
 
 /**
  * Validators of the action log (D5 T0, CD19). The roll mirrors `RollRecord`
@@ -19,6 +20,10 @@ export const actionKindValidator = v.union(
   v.literal("import"),
   /** A countdown trigger notice (countdowns-advanced D7): GM-only, not undoable, no groupId. */
   v.literal("countdown"),
+  /** A PC's weapon attack or domain card used on the Combat Map (plan combat-actions, CA3 / CA4). */
+  v.literal("combat"),
+  /** An adversary's attack or feature against PCs (plan combat-actions, AA2). */
+  v.literal("adversary"),
 );
 
 /** `public`: every member reads it; `gm`: only the GM (GM free rolls until revealed, decision 2). */
@@ -56,6 +61,20 @@ export const rollValidator = v.object({
   manual: v.boolean(),
 });
 
+/**
+ * One adversary instance as it was before a combat action changed it (plan combat-actions CA0, U4): undo writes these
+ * fields back to the `encounterAdversaries` row. `conditions` and `tags` are set when the action changed them.
+ */
+export const adversaryBeforeValidator = v.object({
+  instanceId: v.id("encounterAdversaries"),
+  hp: v.number(),
+  stress: v.number(),
+  defeated: v.boolean(),
+  minionCount: v.optional(v.number()),
+  conditions: v.optional(v.array(encounterConditionValidator)),
+  tags: v.optional(v.array(v.string())),
+});
+
 /** The stored fields of one `actionLog` row (see convex/tables/actionLog.ts). */
 export const actionLogFields = {
   campaignId: v.id("campaigns"),
@@ -72,6 +91,8 @@ export const actionLogFields = {
   groupId: v.optional(v.string()),
   /** The character's stored sheet before the change, as JSON; undo restores it through `readSheet`. */
   before: v.optional(v.string()),
+  /** Adversary instances before a combat action (CA0, widened; rows written before it have none). Undo restores them. */
+  adversaryBefore: v.optional(v.array(adversaryBeforeValidator)),
   /** GM Fear this row gained (positive) or removed (negative); undo reverts it through `revertFear`. */
   fearDelta: v.optional(v.number()),
   undoable: v.boolean(),
@@ -87,6 +108,7 @@ export const actionLogRowValidator = v.object({ _id: v.id("actionLog"), _creatio
 export type ActionKind = Infer<typeof actionKindValidator>;
 export type Visibility = Infer<typeof visibilityValidator>;
 export type StoredRoll = Infer<typeof rollValidator>;
+export type AdversaryBefore = Infer<typeof adversaryBeforeValidator>;
 
 // Drift checks: each type must be assignable to the other.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
