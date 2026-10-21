@@ -4,7 +4,7 @@ import "./notes.css";
 
 import { Caveat } from "next/font/google";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Component, Suspense, useState, type ReactNode } from "react";
+import { Component, Suspense, useId, useState, type ReactNode } from "react";
 
 import { BinView, TornOutPages } from "@/components/notes/bin";
 import { DownloadJournalButton } from "@/components/notes/export";
@@ -12,6 +12,7 @@ import { JournalHeading } from "@/components/notes/header";
 import { PageGroups } from "@/components/notes/index-column";
 import { JournalsList, JournalView } from "@/components/notes/journals";
 import { JournalPage } from "@/components/notes/page";
+import { selectedPage, useJournal } from "@/components/notes/page/use-journal";
 import { JournalSearch, useJournalSearch } from "@/components/notes/search";
 import { SharedPageView, SharedSection } from "@/components/notes/shared";
 import { parseView, type NotesSlotProps, type NotesView } from "@/components/notes/slots";
@@ -101,6 +102,11 @@ function NotesBody({ campaign, isGm }: { campaign: CampaignSummary; isGm: boolea
   const params = useSearchParams();
   const [search, setSearch] = useState("");
   const matchingPageIds = useJournalSearch({ campaignId, search });
+  // At <= 720 px (no board layout) the whole index column sits behind the 'Pages' disclosure (N9); picking anything
+  // in it closes it again. Wider screens always show the column (notes.css).
+  const [indexOpen, setIndexOpen] = useState(false);
+  const indexId = useId();
+  const journal = useJournal(campaignId);
 
   /** Rewrites `?view` / `?page` / `?journal` (null removes one) without a scroll jump or a new history entry. */
   function navigate(next: { view?: NotesView | null; page?: string | null; journal?: string | null }) {
@@ -111,15 +117,19 @@ function NotesBody({ campaign, isGm }: { campaign: CampaignSummary; isGm: boolea
       else query.set(name, value);
     }
     const text = query.toString();
+    setIndexOpen(false);
     router.replace(text ? `${pathname}?${text}` : pathname, { scroll: false });
   }
+
+  const view = parseView(params.get("view"));
+  const current = view === "page" && journal ? selectedPage(journal, params.get("page")) : null;
 
   const slot: NotesSlotProps = {
     campaignId,
     access: { isGm },
     journalId: params.get("journal"),
     pageId: params.get("page"),
-    view: parseView(params.get("view")),
+    view,
     search,
     matchingPageIds,
     onPage: (page, view) => navigate({ page, ...(view ? { view } : {}) }),
@@ -147,30 +157,42 @@ function NotesBody({ campaign, isGm }: { campaign: CampaignSummary; isGm: boolea
       </header>
       <main className="bj-main">
         <aside className="bj-index" aria-label="Journal index">
-          <SlotBoundary label="Search">
-            <JournalSearch {...slot} />
-          </SlotBoundary>
-          <SlotBoundary label="Your pages">
-            <PageGroups {...slot} />
-          </SlotBoundary>
-          <SlotBoundary label="Shared pages">
-            <SharedSection {...slot} />
-          </SlotBoundary>
-          <SlotBoundary label="Journals">
-            <JournalsList {...slot} />
-          </SlotBoundary>
-          <SlotBoundary label="Torn-out pages">
-            <TornOutPages {...slot} />
-          </SlotBoundary>
-          <div className="bj-card">
-            <span className="bj-lbl">Quick keys</span>
-            <span>
-              Start a line with <strong>*</strong> task · <strong>o</strong> event · <strong>-</strong> note · <strong>!</strong> idea ·{" "}
-              <strong className="bj-k-hope">+</strong> Hope · <strong className="bj-k-fear">^</strong> Fear
-            </span>
-            <span>
-              Type <strong>@name</strong> to link someone or somewhere from Characters &amp; Locations.
-            </span>
+          <button
+            type="button"
+            className="bj-ghost bj-index-toggle"
+            aria-expanded={indexOpen}
+            aria-controls={indexId}
+            onClick={() => setIndexOpen(!indexOpen)}
+          >
+            <span aria-hidden="true">{indexOpen ? "▾" : "▸"}</span> Pages
+            {current ? <span className="bj-index-current">· {current.title}</span> : null}
+          </button>
+          <div id={indexId} className="bj-index-body" data-open={indexOpen}>
+            <SlotBoundary label="Search">
+              <JournalSearch {...slot} />
+            </SlotBoundary>
+            <SlotBoundary label="Your pages">
+              <PageGroups {...slot} />
+            </SlotBoundary>
+            <SlotBoundary label="Shared pages">
+              <SharedSection {...slot} />
+            </SlotBoundary>
+            <SlotBoundary label="Journals">
+              <JournalsList {...slot} />
+            </SlotBoundary>
+            <SlotBoundary label="Torn-out pages">
+              <TornOutPages {...slot} />
+            </SlotBoundary>
+            <div className="bj-card">
+              <span className="bj-lbl">Quick keys</span>
+              <span>
+                Start a line with <strong>*</strong> task · <strong>o</strong> event · <strong>-</strong> note · <strong>!</strong> idea ·{" "}
+                <strong className="bj-k-hope">+</strong> Hope · <strong className="bj-k-fear">^</strong> Fear
+              </span>
+              <span>
+                Type <strong>@name</strong> to link someone or somewhere from Characters &amp; Locations.
+              </span>
+            </div>
           </div>
         </aside>
         <section className="bj-sheet" aria-label="Journal page">

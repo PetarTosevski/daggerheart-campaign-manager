@@ -132,6 +132,34 @@
   gap: 14px;
   min-width: 0;
 }
+.bj-index-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+/* The 'Pages' disclosure (N9) covers the whole index column at <= 720 px; it is hidden on wider screens. It replaces
+   N2's own-pages toggle, so that one never shows and its list always renders inside the column. */
+.bj-index .bj-index-toggle {
+  display: none;
+  justify-content: flex-start;
+  width: 100%;
+  font-weight: 600;
+}
+.bj-index-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--bj-muted);
+}
+.bj-index .bj-pages-toggle {
+  display: none;
+}
+.bj-index .bj-pages-list[data-open="false"] {
+  display: flex;
+}
 .bj-sheet {
   min-width: 0;
 }
@@ -533,6 +561,12 @@
     grid-template-columns: minmax(0, 1fr);
     padding: 18px 16px 32px;
     gap: 18px;
+  }
+  .bj-index .bj-index-toggle {
+    display: inline-flex;
+  }
+  .bj-index-body[data-open="false"] {
+    display: none;
   }
   .bj-paper {
     padding: 56px 16px 28px 40px;
