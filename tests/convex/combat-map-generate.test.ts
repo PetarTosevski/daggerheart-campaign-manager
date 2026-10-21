@@ -106,6 +106,11 @@ describe("combat map generation", () => {
     const body = JSON.parse(init!.body as string) as { model: string; messages: { content: string }[] };
     expect(body.model).toBe(DEFAULT_MODEL);
     expect(body.messages[0]!.content).toBe(scenePrompt("A bandit camp in an autumn forest clearing", 30, 20));
+    // The frame and vegetation follow the setting; the GM's exclusions win; towns get buildings (user 2026-10-21).
+    const prompt = scenePrompt("A ruined village, not in a forest", 22, 15);
+    expect(prompt).toContain("never use anything the SCENE rules out");
+    expect(prompt).toContain("Towns, villages and streets");
+    expect(prompt).not.toContain("trees mostly near edges");
     expect(body.messages[0]!.content).not.toContain("Variation #");
 
     const map = await f.get();
