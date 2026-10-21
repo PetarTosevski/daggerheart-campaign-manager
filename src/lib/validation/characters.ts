@@ -85,6 +85,14 @@ export type SubclassRank = (typeof SUBCLASS_RANKS)[number];
 export const EFFECT_UNTIL = ["rest", "longRest", "session", "hit", "scene", "manual"] as const;
 export const HELD_DIE_UNTIL = ["session", "longRest", "manual"] as const;
 export const FEATURE_USE_UNTIL = ["rest", "longRest", "session"] as const;
+/** Labels for the `pronouns` field (dcm-bxp.35): "gender" is the default. */
+export const PRONOUNS_LABELS = ["gender", "pronouns"] as const;
+export type PronounsLabel = (typeof PRONOUNS_LABELS)[number];
+
+/** The `pronouns` field's label: "Gender" unless the character chose "Pronouns" (dcm-bxp.35). */
+export function pronounsFieldLabel(flag: PronounsLabel | undefined): "Gender" | "Pronouns" {
+  return flag === "pronouns" ? "Pronouns" : "Gender";
+}
 export const HELD_DIE_KINDS = ["rally", "prayer", "patron", "combo"] as const;
 
 /** The level-up options (CB 110; `comboDie`: Brawler only, HF 10). Proficiency and multiclass take both picks of a level. */
@@ -275,6 +283,11 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   sessionFeatures: sessionFeaturesSchema.optional(),
   /** Tokens on domain cards, one entry per card holding any (plan combat-actions, CA0; optional, widened, no version bump). */
   cardTokens: z.array(cardTokensSchema).max(20).optional(),
+  /**
+   * How the `pronouns` field is labelled for this character (dcm-bxp.35, F9): "Gender" when missing or "gender",
+   * "Pronouns" when "pronouns". Label only; the text stays in `pronouns`. Optional (widened, no version bump).
+   */
+  pronounsLabel: z.enum(PRONOUNS_LABELS).optional(),
 });
 
 /** The stored sheet's current `schemaVersion`. */
@@ -298,6 +311,7 @@ export const characterDraftSchema = z
     traits: traitsSchema,
     name: z.string().trim().min(1, "Give your character a name.").max(NAME),
     pronouns: z.string().trim().max(NAME),
+    pronounsLabel: z.enum(PRONOUNS_LABELS).optional(),
     description: z.string().max(TEXT),
     /** Empty in a Motherboard campaign, where an Ikonis replaces weapons (CB 301); the server requires it elsewhere. */
     primaryWeaponId: z.string().max(100),
@@ -323,6 +337,7 @@ export const sheetPatchSchema = characterSheetSchema
   .pick({
     name: true,
     pronouns: true,
+    pronounsLabel: true,
     description: true,
     traits: true,
     evasion: true,

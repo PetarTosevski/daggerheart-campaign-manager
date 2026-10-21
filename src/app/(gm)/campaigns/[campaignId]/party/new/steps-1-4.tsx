@@ -18,6 +18,7 @@ import {
 } from "@/lib/srd";
 import { TRAIT_POOL } from "@/lib/domain/characters";
 import { cn } from "@/lib/utils";
+import { pronounsFieldLabel } from "@/lib/validation/characters";
 
 import {
   assignTrait,
@@ -505,15 +506,36 @@ export function InfoStep({ state, update }: StepProps) {
           <input id="cc-name" className="wz-in" type="text" maxLength={80} placeholder="Name your hero" value={state.name} onChange={(e) => update({ name: e.target.value })} />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="cc-pron" className="wz-lbl flex min-h-8 items-center">
-            Pronouns
-          </label>
+          <div className="flex min-h-8 items-center justify-between gap-2">
+            <label htmlFor="cc-pron" className="wz-lbl">
+              {pronounsFieldLabel(state.pronounsLabel)}
+            </label>
+            {/* Label only (dcm-bxp.35): the text stays the same whichever label is shown. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={state.pronounsLabel === "pronouns"}
+              aria-label="Label as Pronouns"
+              className="wz-hint flex items-center gap-1.5 bg-transparent p-0 text-[13px]"
+              onClick={() => update({ pronounsLabel: state.pronounsLabel === "pronouns" ? "gender" : "pronouns" })}
+            >
+              <span aria-hidden="true" className={cn("relative inline-block h-4 w-7 rounded-full border border-current transition-colors", state.pronounsLabel === "pronouns" && "bg-current")}>
+                <span
+                  className={cn(
+                    "absolute top-[2px] left-[2px] h-2.5 w-2.5 rounded-full bg-current transition-transform",
+                    state.pronounsLabel === "pronouns" && "translate-x-3 bg-[#0f0d15]",
+                  )}
+                />
+              </span>
+              Pronouns
+            </button>
+          </div>
           <input
             id="cc-pron"
             className="wz-in"
             type="text"
             maxLength={80}
-            placeholder="e.g. she/her, they/them (optional)"
+            placeholder={state.pronounsLabel === "pronouns" ? "e.g. she/her, they/them (optional)" : "Optional"}
             value={state.pronouns}
             onChange={(e) => update({ pronouns: e.target.value })}
           />

@@ -259,6 +259,7 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
   const sheet: CharacterSheetInput = {
     name: draft.name,
     pronouns: draft.pronouns,
+    ...(draft.pronounsLabel ? { pronounsLabel: draft.pronounsLabel } : {}),
     description: draft.description,
     level: 1,
     classId: cls.id,
