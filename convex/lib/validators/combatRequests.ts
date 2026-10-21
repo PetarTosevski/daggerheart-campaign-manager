@@ -16,7 +16,11 @@ import { traitIdValidator } from "./characters";
  * mutations enforce the caps (CD8).
  */
 
-export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"));
+/**
+ * `minionOffer` (CA3, widened; Q6, CB p.201): the extra Minions a PC's attack may defeat, waiting for the attacker's
+ * pick (`combatActions.pickMinions`). Resolved by the pick, declined when the attack is undone or the encounter ends.
+ */
+export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"), v.literal("minionOffer"));
 
 /** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
 export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"));
@@ -46,6 +50,8 @@ export const sanctionRollOptionsValidator = v.object({
   ikonis: v.optional(v.boolean()),
   slayerDice: v.optional(v.number()),
   tideTokens: v.optional(v.number()),
+  /** The damage roll's chosen `rollOptions` keys (a weapon attack, CA3; widened). Auto options apply anyway. */
+  damageOptions: v.optional(v.array(v.string())),
 });
 
 /** A player's pick for a card use (`NumberChoice` amounts, `choose` / `optional` option ids; card-effects/types.ts). */
@@ -126,8 +132,33 @@ export const incomingHitPayloadValidator = v.object({
   responders: v.array(hitResponderValidator),
 });
 
+/** A Minion group (or single Minion) the attacker may pick from: still standing, within range, its Difficulty beaten. */
+export const minionCandidateValidator = v.object({
+  instanceId: v.id("encounterAdversaries"),
+  tokenId: v.id("combatTokens"),
+  /** Minions of this instance that may be picked: its unmarked HP (one HP per Minion), capped at the offer's `extra`. */
+  available: v.number(),
+});
+
+/**
+ * Q6 (CB p.201, "Minion (X)"): "For every X damage a PC deals to this adversary, defeat an additional Minion within range
+ * the attack would succeed against. … let them choose which Minions they defeat." Written by CA3's attack (widened).
+ */
+export const minionOfferPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("minionOffer"),
+  characterId: v.id("characters"),
+  /** The attack's actionLog group; the pick logs into it, so undoing the attack undoes the pick too. */
+  groupId: v.string(),
+  /** The attack's public actionLog row (the id the attacker passes to `pickMinions`). */
+  entryId: v.id("actionLog"),
+  /** How many extra Minions the attacker may defeat in all. */
+  extra: v.number(),
+  candidates: v.array(minionCandidateValidator),
+});
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
-export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator);
+export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator, minionOfferPayloadValidator);
 
 /**
  * One answer in a reaction window (Q13): `armor` (mark Armor Slots; `slots` above 1 only where a card allows it,
@@ -180,3 +211,4 @@ export type CombatRequestPayload = Infer<typeof combatRequestPayloadValidator>;
 export type HitResponder = Infer<typeof hitResponderValidator>;
 export type HitChoice = Infer<typeof hitChoiceValidator>;
 export type CombatResponse = Infer<typeof combatResponseValidator>;
+export type MinionOfferPayload = Infer<typeof minionOfferPayloadValidator>;

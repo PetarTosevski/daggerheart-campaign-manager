@@ -14,7 +14,10 @@
  * - One action touching several characters (rest, tag team, Life Support)
  *   gives every row the same `groupId` (`newGroupId()`); they undo together.
  * - `undoable: false` for rows with their own undo path (level-up).
- * - `visibility: "gm"` only for GM free rolls (decision 2); everything else is public.
+ * - `visibility: "gm"` only for GM free rolls (decision 2) and the GM's row of a combat action (CA3: damage, severity,
+ *   HP; U1); everything else is public.
+ * - A combat action passes `adversaryBefore` (the instances before it, on its GM row); undo restores them (U4) unless an
+ *   instance changed after the group's newest row (UNDO_STALE), and declines the group's open Minion offer.
  *
  * ```ts
  * const groupId = newGroupId();
@@ -30,10 +33,11 @@ import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { assertOneActive, readSheet, storedSheet } from "./characterSheet";
+import { declineGroupOffers } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
 import { campaignAccess } from "./permissions";
-import type { ActionKind, StoredRoll, Visibility } from "./validators/actionLog";
+import type { ActionKind, AdversaryBefore, StoredRoll, Visibility } from "./validators/actionLog";
 
 /** The longest feed line; longer summaries are cut. */
 export const SUMMARY_MAX = 300;
@@ -59,7 +63,11 @@ export type LogEntry = {
   groupId?: string;
   /** The character's sheet before the change; needs `characterId`. */
   before?: CharacterSheetInput;
+  /** Adversary instances before a combat action (CA3): undo writes them back. */
+  adversaryBefore?: AdversaryBefore[];
   fearDelta?: number;
+  /** An action roll with Hope: whether it gave the Hope (`rolls.storeSlayerDie` takes it back). */
+  hopeGained?: boolean;
   undoable: boolean;
 };
 
@@ -131,6 +139,27 @@ async function assertNothingNewer(ctx: MutationCtx, characterId: Id<"characters"
 }
 
 /**
+ * The adversary instances a group changed (`adversaryBefore`, plan combat-actions CA0 / CA3), each with its oldest
+ * snapshot (its state before the whole action). Refused with UNDO_STALE when an instance changed after the group's
+ * newest row (a tracker click, another attack): undo would wipe it, as for sheets. A deleted instance is skipped.
+ */
+async function adversariesToRestore(ctx: MutationCtx, group: Doc<"actionLog">[]): Promise<AdversaryBefore[]> {
+  const latest = Math.max(...group.map((r) => r.at));
+  const oldest = new Map<string, AdversaryBefore>();
+  for (const r of [...group].sort(byTime)) {
+    for (const b of r.adversaryBefore ?? []) if (!oldest.has(b.instanceId)) oldest.set(b.instanceId, b);
+  }
+  const restore: AdversaryBefore[] = [];
+  for (const b of oldest.values()) {
+    const instance = await ctx.db.get("encounterAdversaries", b.instanceId);
+    if (instance === null || instance.campaignId !== group[0]!.campaignId) continue;
+    if (instance.updatedAt > latest) throw appError("UNDO_STALE");
+    restore.push(b);
+  }
+  return restore;
+}
+
+/**
  * Undoes a row and the rest of its group. Allowed for the row's actor and the
  * campaign's GM (`permissionFor`); others with access get FORBIDDEN, outsiders
  * NOT_FOUND. Refused with UNDO_STALE when the row is not undoable, already
@@ -169,7 +198,8 @@ export async function undoEntry(
   if (group.some((r) => !r.undoable || r.undoneAt !== undefined)) throw appError("UNDO_STALE");
 
   const now = Date.now();
-  const dice = group.filter((r) => r.roll !== undefined && (r.kind === "roll" || r.kind === "death"));
+  // A combat attack (CA3) is a dice row too: its player has the same minute (no rerolling by undo).
+  const dice = group.filter((r) => r.roll !== undefined && (r.kind === "roll" || r.kind === "death" || r.kind === "combat"));
   if (!isGm && dice.some((r) => now - r.at > PLAYER_DICE_UNDO_MS)) {
     throw appError("UNDO_STALE", "Only the GM can undo a roll after the first minute.");
   }
@@ -184,6 +214,8 @@ export async function undoEntry(
       inGroup,
     );
   }
+
+  const adversaries = await adversariesToRestore(ctx, group);
 
   // A death move starts from an active character; if its row took them out of
   // play (dead or away) and nothing changed them since, undo puts them back.
@@ -213,6 +245,21 @@ export async function undoEntry(
     if (character && campaign) await assertOneActive(ctx, campaign, character.ownerId, id);
     await ctx.db.patch("characters", id, { status: "active", away: undefined, updatedAt: now });
   }
+
+  // Adversary instances a combat action changed (CA3, U4): back to their state before the whole action.
+  for (const b of adversaries) {
+    await ctx.db.patch("encounterAdversaries", b.instanceId, {
+      hp: b.hp,
+      stress: b.stress,
+      defeated: b.defeated,
+      ...(b.minionCount !== undefined ? { minionCount: b.minionCount } : {}),
+      ...(b.conditions !== undefined ? { conditions: b.conditions } : {}),
+      ...(b.tags !== undefined ? { tags: b.tags } : {}),
+      updatedAt: now,
+    });
+  }
+  // An attack's open Minion offer goes with it.
+  if (row.groupId !== undefined && group.some((r) => r.kind === "combat")) await declineGroupOffers(ctx, row.campaignId, row.groupId, user._id);
 
   const fear = group.reduce((sum, r) => sum + (r.fearDelta ?? 0), 0);
   const fearReverted = fear === 0 ? 0 : (await revertFear(ctx, row.campaignId, fear)).reverted;

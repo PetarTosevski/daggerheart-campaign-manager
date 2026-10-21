@@ -22,6 +22,7 @@ import {
   MIN_PCS,
   startEncounter,
 } from "./lib/encounters";
+import { closeEncounterRequests } from "./lib/combatRequests";
 import { gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import {
   adversarySourceValidator,
@@ -283,7 +284,7 @@ export const start = gmMutation({
   },
 });
 
-/** Ends the running encounter; ENCOUNTER_NOT_RUNNING otherwise. */
+/** Ends the running encounter and declines its open combat requests (CA3); ENCOUNTER_NOT_RUNNING otherwise. */
 export const end = gmMutation({
   args: { encounterId: v.string() },
   returns: v.null(),
@@ -292,17 +293,20 @@ export const end = gmMutation({
     if (encounter.status !== "running") throw appError("ENCOUNTER_NOT_RUNNING");
     const now = Date.now();
     await ctx.db.patch("encounters", encounter._id, { status: "ended", endedAt: now, updatedAt: now });
+    // Open combat requests of the encounter (GM sanctions, Minion offers) close with it (plan combat-actions CA3).
+    await closeEncounterRequests(ctx, ctx.campaign._id, encounter._id, ctx.user._id);
     return null;
   },
 });
 
-/** Deletes the encounter and its instances (at most MAX_INSTANCES) in one transaction. */
+/** Deletes the encounter and its instances (at most MAX_INSTANCES) in one transaction; its open combat requests are declined (CA3). */
 export const remove = gmMutation({
   args: { encounterId: v.string() },
   returns: v.null(),
   handler: async (ctx, { encounterId }) => {
     const encounter = await loadEncounter(ctx, ctx.campaign._id, encounterId);
     for (const row of await instancesOf(ctx, encounter._id)) await ctx.db.delete("encounterAdversaries", row._id);
+    await closeEncounterRequests(ctx, ctx.campaign._id, encounter._id, ctx.user._id);
     await ctx.db.delete("encounters", encounter._id);
     return null;
   },
