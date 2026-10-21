@@ -91,11 +91,11 @@
 .dc-total{font-family:var(--font-cinzel),serif;font-size:30px;font-weight:900;color:var(--sheet-ink,#2a1f14)}
 .dc-last-text{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
 .dc-outcome{font-family:var(--font-cinzel),serif;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
-.dc-outcome.crit{color:#8a6a00}
-.dc-outcome.hope{color:#9a6b10}
+.dc-outcome.crit{color:#7d6000}
+.dc-outcome.hope{color:#855d0d}
 .dc-outcome.fear{color:#6b3fae}
 .dc-outcome.dmg{color:#8e2b2b}
-.dc-manual{margin-left:8px;font-size:11px;letter-spacing:.12em;color:var(--sheet-label,#8a6d4a)}
+.dc-manual{margin-left:8px;font-size:11px;letter-spacing:.12em;color:var(--sheet-label,#6d563a)}
 .dc-prompt{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .dc-earlier{flex:0 1 260px;display:flex;flex-direction:column;gap:2px;color:#6a5236;padding:8px 4px}
 .dc-earlier ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
@@ -114,6 +114,12 @@
 .dc-tile.dmg{background:linear-gradient(145deg,#e8a08f,#8e2b2b);color:#fff4ec}
 .dc-tile.dropped{opacity:.45;text-decoration:line-through}
 .dc-tile-sides{position:absolute;right:3px;bottom:1px;font-family:var(--font-garamond),serif;font-size:9px;font-weight:400;opacity:.8}
+
+/* Tablet or touch: the board's controls grow to 44 px targets, the layout stays. */
+@media (max-width:1100px),(pointer:coarse){
+  .dc-bar .dc-go,.dc-crit,.dc-toggle,.dc-chip,.dc-seg-opt{min-height:44px}
+  .dc-step{width:44px;height:44px}
+}
 
 /* Phone: keep the app's stacked layout with 44 px targets. */
 @media (max-width:640px){

@@ -8,7 +8,7 @@
 .sh-h{margin:0 0 2px;display:flex;align-items:center;justify-content:center;gap:14px;font-family:var(--font-cinzel),serif;font-size:19px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--sheet-green,#3d5e2e);text-align:center}
 .sh-h::before,.sh-h::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--sheet-gold-line,#b08a3e))}
 .sh-h::after{background:linear-gradient(90deg,var(--sheet-gold-line,#b08a3e),transparent)}
-.sh-lbl{font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--sheet-label,#8a6d4a)}
+.sh-lbl{font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--sheet-label,#6d563a)}
 .sh-small{font-family:var(--font-garamond),serif;font-size:15px;line-height:1.45;color:var(--sheet-ink-soft,#4a3a26)}
 
 /* Fields. */

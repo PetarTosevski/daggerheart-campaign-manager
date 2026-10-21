@@ -18,7 +18,7 @@
 .lu-rb-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;box-sizing:border-box;border-radius:50%;border:1.5px solid currentColor;font-size:11px}
 .lu-rb-steps li[data-done="true"] .lu-rb-num{border-color:var(--sheet-green,#3d5e2e);background:var(--sheet-green,#3d5e2e);color:#f3f7ee}
 .lu-rb-summary{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:10px;border:1px solid var(--sheet-line,#d1b98b);background:rgba(255,250,240,.75)}
-.lu-rb-sub{margin:0;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--sheet-label,#8a6d4a)}
+.lu-rb-sub{margin:0;font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--sheet-label,#6d563a)}
 .lu-rb-choices{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:2px;font-size:16px}
 .lu-rb-problems{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
 .lu-rb-problem{width:100%;min-height:44px;box-sizing:border-box;padding:6px 12px;border-radius:10px;border:1px solid rgba(142,43,43,.35);background:rgba(142,43,43,.08);color:#8e2b2b;font-family:inherit;font-size:16px;text-align:left;cursor:pointer}

@@ -135,19 +135,16 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
               key={g.key}
               className={cn("cx-thumb", hidden && "hid")}
               style={{ ...(g.url ? { backgroundImage: `url(${g.url})` } : {}), borderColor: gm && g.shown ? "#3d7a55" : "#253338" }}
-              onClick={() => onOpen(g.key)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onOpen(g.key);
-                }
-              }}
-              role="button"
-              tabIndex={0}
-              aria-label={`Open image of ${name}${gm ? (g.shown ? " (revealed)" : " (hidden from players)") : ""}`}
             >
+              {/* The open button covers the tile; the GM's tools sit above it as siblings, so no control is nested in another. */}
+              <button
+                type="button"
+                className="cx-thumb-open"
+                onClick={() => onOpen(g.key)}
+                aria-label={`Open image of ${name}${gm ? (g.shown ? " (revealed)" : " (hidden from players)") : ""}`}
+              />
               {gm ? (
-                <div className="cx-tools" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                <div className="cx-tools">
                   <button
                     type="button"
                     className={cn("cx-tb", g.shown && "on")}

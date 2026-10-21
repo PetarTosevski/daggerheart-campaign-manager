@@ -187,7 +187,7 @@ export function RosterCard({
             <PortraitUpload character={character} />
             <BenchButton character={character} busy={busy} onSet={(status) => void run(() => setStatus({ characterId: character._id, status }))} />
             {isGm && table ? (
-              <label className="flex min-w-0 flex-1 items-center gap-2 text-[13px] text-[#9fb2b6]">
+              <label className="flex min-w-[10rem] flex-1 items-center gap-2 text-[13px] text-[#9fb2b6]">
                 <span className="sr-only sm:not-sr-only">Player</span>
                 <select
                   aria-label={`Assign ${name} to`}

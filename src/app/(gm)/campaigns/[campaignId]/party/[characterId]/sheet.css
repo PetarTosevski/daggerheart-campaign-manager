@@ -1,7 +1,7 @@
 /* Character sheet tokens, shell and page grids, ported from the Party board; plus the few cs-* field rules fields.tsx still uses.
  * The board's primitives (sh-*) live in src/components/party/sheet-ui/sheet-ui.css and read these tokens. */
 :root{
-  --sheet-paper:#efe3c8;--sheet-ink:#2a1f14;--sheet-ink-soft:#4a3a26;--sheet-label:#8a6d4a;
+  --sheet-paper:#efe3c8;--sheet-ink:#2a1f14;--sheet-ink-soft:#4a3a26;--sheet-label:#6d563a;
   --sheet-gold:#c9962e;--sheet-gold-line:#b08a3e;--sheet-line:#d1b98b;--sheet-field-line:#d9c59c;
   --sheet-green:#3d5e2e;--sheet-green-bright:#4d7a3a;--sheet-wine:#5b2b2b;--sheet-red:#b04a45;--sheet-blue:#4f6a86;
   --sheet-backdrop:radial-gradient(ellipse at 50% 0%,#24343a 0%,#121b1f 55%,#0a1013 100%);
