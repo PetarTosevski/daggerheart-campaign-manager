@@ -31,13 +31,19 @@
   color: var(--cm-danger);
   font-size: 14px;
 }
+/* Sprite packs P7: the Setting picker fills the card's width. */
+.cm-scene-setting {
+  width: 100%;
+  max-width: 100%;
+}
 .cm-scene .cm-upload {
   align-self: flex-start;
 }
 
 @media (max-width: 600px) {
   .cm-scene-actions .cm-go,
-  .cm-scene-actions .cm-btn {
+  .cm-scene-actions .cm-btn,
+  .cm-scene-setting {
     min-height: 44px;
   }
 }
