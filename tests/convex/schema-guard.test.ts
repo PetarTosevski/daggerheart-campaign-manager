@@ -236,7 +236,6 @@ const CONFIG_MODULES = ["convex.config", "auth.config", "schema"];
  * shrinks (and it also proves the module scan finds functions at all).
  */
 const RETURNS_PENDING = [
-  "countdowns:operate",
   "fear:adjust",
   "fear:set",
   "members:access",
