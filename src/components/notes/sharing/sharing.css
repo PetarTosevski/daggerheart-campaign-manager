@@ -1,0 +1,96 @@
+/*
+ * The sharing chip and dialog (D11 N6; not on the board, in its look): the chip is a paper chip in the page toolbar,
+ * the dialog sits on the board's dark card with the accent for the chosen option. Tokens from the page's notes.css.
+ */
+
+.bj-share-chip {
+  max-width: 100%;
+  min-width: 0;
+}
+.bj-share-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+dialog.bj-share-dialog {
+  max-width: 520px;
+  background: var(--bj-card);
+  border-color: var(--bj-card-border);
+  color: var(--bj-text);
+  font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+}
+dialog.bj-share-dialog h2 {
+  font-family: var(--bj-display);
+  font-size: 26px;
+}
+.bj-share-set {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.bj-share-set legend {
+  margin-bottom: 8px;
+}
+.bj-share-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--bj-border);
+  border-radius: 10px;
+  background: var(--bj-field);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.bj-share-option:hover {
+  background: var(--bj-hover);
+}
+.bj-share-option[data-checked="true"],
+.bj-share-option:has(input:checked) {
+  border-color: var(--bj-acc);
+}
+.bj-share-option input {
+  margin: 3px 0 0;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: var(--bj-acc);
+}
+.bj-share-option input:focus-visible {
+  outline: 2px solid var(--bj-acc);
+  outline-offset: 2px;
+}
+.bj-share-person {
+  align-items: center;
+}
+.bj-share-person input {
+  margin: 0;
+}
+.bj-share-label {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+}
+.bj-share-hint {
+  display: block;
+  font-size: 13px;
+  color: var(--bj-muted);
+  margin-top: 2px;
+}
+.bj-share-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bj-danger);
+}
+.bj-share-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
