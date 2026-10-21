@@ -38,4 +38,46 @@ export const MUSHROOM_CAVERN = defineFolder("mushroom-cavern", {
     tex("fungal carpet", "cave", true),
     tex("black underground water", "water", true),
   ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11C): new items, not variants, in sheet order. Props 1 x 1; large
+  // against the 2 x 2 giant glowing mushroom: the mushroom house, the circle of mushroom folk, the river bend and the
+  // fungus bridge 3 x 3. Light (D2): the glowing moth, fern, seed pods, crystal flower and water lily, the crystal
+  // throne and the vine curtain glow faintly (like the glowing mushrooms and giant crystal). The vine curtain blocks
+  // sight but can be pushed through (difficult); the river bend is difficult (water); the fungus bridge is open.
+  extras: {
+    "props-2": [
+      obj("mushroom-folk sprout", "none", "low", "mushroom", { standIn: false }),
+      obj("glowing moth", "none", "low", "rock", { light: "faintglow", standIn: false }),
+      obj("giant slug", "none", "low", "rock", { standIn: false }),
+      obj("glowing fern", "cover", "low", "bush", { light: "faintglow", standIn: false }),
+      obj("puffball cluster", "none", "low", "mushroom", { standIn: false }),
+      obj("rock with shelf fungus", "cover", "low", "rock", { standIn: false }),
+      obj("glowing seed pods", "none", "low", "mushroom", { light: "faintglow", standIn: false }),
+      obj("mushroom stool", "none", "low", "mushroom", { standIn: false }),
+      obj("crystal flower", "none", "low", "crystal", { light: "faintglow", standIn: false }),
+      obj("cave crab", "none", "low", "rock", { standIn: false }),
+      obj("dark elf crossbow", "none", "flat", "bones", { standIn: false }),
+      obj("web-wrapped body", "none", "flat", "bones", { standIn: false }),
+      obj("glowing water lily", "none", "flat", "mushroom", { light: "faintglow", standIn: false }),
+      obj("fungal vine", "none", "flat", "log", { standIn: false }),
+      obj("orange ember-cap mushroom", "none", "low", "mushroom", { standIn: false }),
+      obj("spore pile", "none", "flat", "rubble", { standIn: false }),
+    ],
+    "large-2": [
+      obj("mushroom house", "block", "tall", "pillar", { w: 3, h: 3, standIn: false }),
+      obj("circle of mushroom folk", "none", "low", "mushroom", { w: 3, h: 3, standIn: false }),
+      obj("underground river bend", "none", "flat", "rock", { move: "difficult", footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("giant fungus bridge", "none", "flat", "log", { move: "open", footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("dark elf tent", "block", "tall", "tent", { standIn: false }),
+      obj("crystal throne", "block", "tall", "crystal", { light: "faintglow", standIn: false }),
+      obj("giant puffball", "block", "tall", "mushroom", { standIn: false }),
+      obj("curtain of glowing vines", "block", "tall", "bush", { move: "difficult", light: "faintglow", footprint: "rect", standIn: false }),
+      obj("spider-goddess shrine", "cover", "low", "statue", { standIn: false }),
+    ],
+    "terrain-2": [
+      tex("violet glowing moss", "cave", true),
+      tex("crystal-studded floor", "cave", true),
+      tex("spore-dust ground", "cave", true),
+      tex("wet obsidian", "stone", true),
+    ],
+  },
 });
