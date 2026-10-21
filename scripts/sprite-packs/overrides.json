@@ -1,0 +1,34 @@
+{
+  "$comment": "Per-sheet fixes for the sprite cutter (D8). Format: scripts/sprite-packs/lib/overrides.ts. Cut indices are 0-based (the report's #n is index n-1).",
+  "sheets": {
+    "common/props": { "unpink": [8, 9, 10, 11, 15], "note": "pink glow around the campfire, torch, brazier and lantern; purple ash edge on the burnt-out campfire" },
+    "mountain-and-cliffs/large": { "rotate": { "6": 90 }, "note": "rope bridge drawn upright; the catalog sizes it 2 x 1" },
+    "cave/props": { "unmix": [9], "unpink": [1], "note": "spider web strands; purple fringe on the glowing mushroom cluster" },
+    "cave/large": { "unmix": [4], "unpink": [3, 7], "note": "giant spider web strands; pink edges on the chasm crack and collapsed tunnel" },
+    "dungeon/props": { "unpink": [13], "note": "pink glow around the candle cluster" },
+    "dungeon/large": { "unpink": [7, 8], "note": "pink at the foot of the stair down; candle glow on the altar" },
+    "crypt-and-graveyard/props": { "unpink": [8], "unmix": [9], "note": "pink glow around the lantern on a post; spiderweb strands" },
+    "crypt-and-graveyard/large": { "unpink": [8], "note": "pink edge on the catacomb niche wall" },
+    "temple/props": { "unpink": [0], "note": "pink glow around the candle flame" },
+    "swamp/props": { "unpink": [4], "note": "pink aura around the will-o'-wisp" },
+    "swamp/large": { "rotate": { "8": 90 }, "note": "broken boardwalk drawn upright; the catalog sizes it 2 x 1" },
+    "snow-and-tundra/props": { "unpink": [4, 7], "note": "pink snow edges on the animal tracks and the campfire in snow" },
+    "snow-and-tundra/large": [
+      {
+        "when": { "found": 10 },
+        "variants": { "9": "igloo" },
+        "note": "the first generation drew a second igloo as cut #10; it becomes igloo variant 2"
+      },
+      { "when": { "found": 9 }, "unpink": [7, 8], "note": "pink edges on the snow-covered tent and the ice cave mouth" }
+    ],
+    "desert/large": { "unpink": [6], "note": "pink edge around the giant skeleton ribs" },
+    "coast-and-beach/props": { "unmix": [4], "note": "fishing net strands" },
+    "sewers/large": { "rotate": { "5": 90 }, "note": "stone bridge over the channel drawn upright; the catalog sizes it 2 x 1" },
+    "mushroom-cavern/props": {
+      "unpink": [0, 14],
+      "note": "purple rim on the glowing blue mushroom; pink glow around the drow lantern (not the purple mushroom, which is purple)"
+    },
+    "volcanic/props": { "unpink": [1, 4, 6, 8], "note": "pink smoke on the steam vent and smoking crater; purple soot on the scorched bones; magenta specks in the ember pile" },
+    "volcanic/large": { "unpink": [3, 6], "note": "pink smoke on the fire geyser; pink edge on the lava bridge" }
+  }
+}

@@ -1,6 +1,6 @@
 // Built-in catalog: forest (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
 
-import { defineFolder, obj, tex } from "./types";
+import { defineFolder, long, obj, tex } from "./types";
 
 export const FOREST = defineFolder("forest", {
   props: [
@@ -28,7 +28,7 @@ export const FOREST = defineFolder("forest", {
     obj("dead tree", "none", "tall", "deadtree"),
     obj("giant mushroom", "block", "tall", "mushroom", { standIn: false }),
     obj("autumn maple tree", "block", "tall", "tree", { variant: "autumn" }),
-    obj("thick hedge", "block", "tall", "bush", { footprint: "rect", standIn: false }),
+    long("thick hedge", "block", "tall", "bush", { standIn: false }),
     obj("hunter's lean-to", "block", "tall", "tent", { footprint: "rect" }),
     obj("ancient tree with roots", "block", "tall", "tree", { variant: "dark" }),
   ],

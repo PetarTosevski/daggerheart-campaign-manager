@@ -6,8 +6,37 @@ single sprites (by finding each object on the flat background, so a slightly une
 them in the order the prompt lists them. The upload screen shows every cut sprite with its name, so a wrong one
 can be fixed by hand.
 
-Status: prompts only. The cutter, the pack format, GM uploads and the painter using the sprites are planned
-work (bd: sprite packs), not built yet.
+Status: the cutter is built and the 60 sheets are imported as the built-in packs (tracer P4,
+docs/tasks/TASK-SP-P4.md). GM uploads and the painter using the sprites are planned work (bd: sprite packs).
+
+### Cutter and built-in packs
+
+- `pnpm sprites:cut [--src <dir>] [--setting <folder>]...` cuts the sheets (default `--src` is
+  `/mnt/c/Users/Petar/sprite-sheets`; `.jpg`, `.png` or `.webp`), names the cuts in the order the lists below
+  give them and writes a review to `sprite-sheets/_out/` (git-ignored): `report.html`, `summary.txt`, a contact
+  sheet per folder (`contact-<folder>.png`, every sprite on a checkerboard with its name, size, sight, light and
+  the app's shadow; every terrain tiled 3 × 3) and `contact-overall.png`. Nothing in the repo changes.
+- `pnpm sprites:build` with the same arguments writes `public/sprite-packs/<folder>/<slug>.<hash>.webp`
+  (objects 160 px per square, terrain 512 px per swatch, seam-fixed) and
+  `src/lib/sprite-packs/builtin/manifest.ts`. Commit both. Never commit the sheets.
+- **Regenerate one sheet:** save the new sheet over the old one, run `pnpm sprites:cut --setting <folder>`,
+  check `sprite-sheets/_out/contact-<folder>.png`, then `pnpm sprites:build --setting <folder>`. Only that
+  folder's files and manifest entries change; keys (`<folder>/<slug>`) stay, so placed objects keep working.
+- **Fixes the cutter cannot decide** go in `scripts/sprite-packs/overrides.json` (format in
+  `scripts/sprite-packs/lib/overrides.ts`): skip a cut, reorder, name an extra cut as a numbered variant of an
+  item, remove a pink glow (`unpink`), keep thin web strands (`unmix`), rotate a long item drawn upright. A
+  `when: {found: n}` override applies only while the cutter finds n cuts, so it goes quiet on a regenerated sheet.
+  The cut indices are 0-based (the report's #n is index n-1).
+- **Extra sheets:** a file named `<props|large|terrain>-<anything>` (e.g. `town-street-and-market/large-2.jpg`)
+  is cut too when present. New items on it are new catalog items (own keys and traits), not variants: add a line
+  `- large-2: cottage · garden fence · …` under the setting below and the same names, in reading order, under
+  `extras: { "large-2": [...] }` in `src/lib/sprite-packs/catalog/<folder>.ts`; the cutter then names the sheet's
+  cuts from that list. `overrides.json` can still name a cut as a numbered variant of an existing item; any other
+  cut is listed in the report as unassigned. No extra sheet exists today.
+- **Tolerances:** a flat outer frame of any colour around a terrain sheet (the white one) is found and cut off,
+  and the swatches are inset past the JPEG bleed; thin drawn grid lines (up to about 12 px at 2048) are removed
+  before cutting, and dark-magenta grid lines key out with the background. Soft glows and smoke over magenta keep
+  a pink aura; `unpink` removes it per sprite (never on purple objects).
 
 ## How to run them
 
@@ -175,7 +204,7 @@ Each setting has three sheets. Lists are in grid order (left to right, top to bo
 
 ### sewers
 - props: grate · rat · sewage puddle · pipe outlet · broken crate · ladder up · lost dagger · fungus patch · bones · rusty chain · valve wheel · sludge pile · candle stub · bucket · torn sack · eel
-- large: sewer channel (two squares) · arched tunnel mouth · cistern · collapsed pipe · rat nest · stone bridge over channel · thieves' hideout corner · iron gate · flooded chamber
+- large: sewer channel crossing · arched tunnel mouth · cistern · collapsed pipe · rat nest · stone bridge over channel · thieves' hideout corner · iron gate · flooded chamber
 - terrain: wet sewer stone · sewage water · slimy brick floor · mossy drainage stone
 
 ### ruins
