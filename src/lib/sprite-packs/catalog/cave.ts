@@ -38,4 +38,44 @@ export const CAVE = defineFolder("cave", {
     tex("cave gravel", "cave", true),
     tex("underground water (shallow)", "water", true),
   ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11A): new items, not variants. Light by D2 / Q1: the glowworm
+  // cluster and the miner's candle glow faintly, the goblin camp has a burning campfire. The goblin camp is 3 x 3, the
+  // rest 2 x 2; the dwarven door is a door (blocks while closed).
+  extras: {
+    "props-2": [
+      obj("giant spider", "none", "low", "rock", { standIn: false }),
+      obj("giant centipede", "none", "low", "rock", { standIn: false }),
+      obj("kobold", "none", "low", "rock", { standIn: false }),
+      obj("goblin totem", "none", "tall", "pillar", { standIn: false }),
+      obj("pick and shovel", "none", "flat", "bones", { move: "open", standIn: false }),
+      obj("kobold snare trap", "none", "flat", "rubble", { standIn: false }),
+      obj("slab with cave paintings", "none", "flat", "rock", { standIn: false }),
+      obj("glowworm cluster", "none", "flat", "mushroom", { light: "faintglow", standIn: false }),
+      obj("small sinkhole", "none", "flat", "rubble", { standIn: false }),
+      obj("guano pile", "none", "flat", "rubble", { standIn: false }),
+      obj("rope ladder going down", "none", "flat", "rubble", { move: "open", standIn: false }),
+      obj("miner's helmet with a candle", "none", "low", "crystal", { light: "faintglow", standIn: false }),
+      obj("broken lantern", "none", "low", "crate", { standIn: false }),
+      obj("geode cut open", "none", "low", "crystal", { standIn: false }),
+      obj("fallen stalactite", "cover", "low", "rock", { standIn: false }),
+      obj("cave moth", "none", "low", "rock", { standIn: false }),
+    ],
+    "large-2": [
+      obj("goblin camp", "cover", "tall", "campfire", { light: "campfire", w: 3, h: 3, standIn: false }),
+      obj("mine-cart track junction", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
+      obj("stone ledge over a chasm", "none", "flat", "rubble", { footprint: "rect", standIn: false }),
+      obj("cave bear den", "none", "flat", "bones", { standIn: false }),
+      obj("underground waterfall", "block", "tall", "boulder", { footprint: "rect", standIn: false }),
+      obj("dwarven door in the rock", "block", "tall", "door", { move: "door", footprint: "rect", standIn: false }),
+      obj("cave troll", "cover", "tall", "rock", { standIn: false }),
+      obj("giant stalactite cluster", "block", "tall", "pillar", { standIn: false }),
+      obj("giant worm burrow", "none", "flat", "rubble", { standIn: false }),
+    ],
+    "terrain-2": [
+      tex("muddy cave floor", "cave", true),
+      tex("limestone flowstone", "cave", true),
+      tex("crystal-flecked rock", "cave", true),
+      tex("bat guano ground", "cave", true),
+    ],
+  },
 });
