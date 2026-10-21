@@ -24,6 +24,7 @@
  */
 import {
   countdownNoticeText,
+  resumeAtZero,
   tickCountdown,
   type CountdownTickState,
 } from "../../src/lib/domain/countdowns/advanced";
@@ -38,7 +39,7 @@ import { applyRule } from "./mechanics";
 /** Most countdowns one log row can have ticked (a campaign has few dashboard countdowns). */
 const TICKS_PER_ENTRY = 100;
 
-export type TickSource = "roll" | "feed" | "rest" | "advance" | "correction";
+export type TickSource = "roll" | "feed" | "rest" | "advance" | "correction" | "resume";
 
 export type TickCause = {
   source: TickSource;
@@ -89,7 +90,7 @@ export async function applyTick(
   countdown: Doc<"countdowns">,
   amount: number,
   cause: TickCause,
-  options: { whilePaused?: boolean } = {},
+  options: { whilePaused?: boolean; resume?: boolean } = {},
 ): Promise<ApplyTickResult> {
   if (countdown.ownerKey !== undefined) throw appError("NOT_FOUND");
   const logged = cause.source === "roll" || cause.source === "feed" || cause.source === "rest";
@@ -98,7 +99,10 @@ export async function applyTick(
     throw appError("COUNTDOWN_RULE", "That roll already ticked this countdown.");
   }
 
-  const result = applyRule("COUNTDOWN_RULE", CountdownRuleError, () => tickCountdown(countdown, amount, options));
+  // `resume`: the GM resumes a countdown corrected to 0 while paused; its trigger (or completion) happens now (K6).
+  const result = applyRule("COUNTDOWN_RULE", CountdownRuleError, () =>
+    options.resume === true ? resumeAtZero(countdown) : tickCountdown(countdown, amount, options),
+  );
   const before = tickStateOf(countdown);
   const unchanged =
     result.next.currentValue === before.currentValue &&
@@ -161,6 +165,19 @@ export async function applyTick(
   return { changed: true, before, after, triggered: result.triggered, reset: result.reset, finished: result.finished, noticeId, tickId };
 }
 
+/**
+ * A chase side moved off 0 (Borrowed Time, a correction up, an undone roll): the GM's call on a double-zero end
+ * (`chaseResult`, K6) no longer applies, so it is cleared on both rows. Nothing for other countdowns.
+ */
+export async function clearChaseResult(ctx: MutationCtx, countdown: Doc<"countdowns">): Promise<void> {
+  if (countdown.chase === undefined) return;
+  if (countdown.chaseResult !== undefined) await ctx.db.patch("countdowns", countdown._id, { chaseResult: undefined });
+  const partner = await ctx.db.get("countdowns", countdown.chase.partnerId);
+  if (partner !== null && partner.campaignId === countdown.campaignId && partner.chaseResult !== undefined) {
+    await ctx.db.patch("countdowns", partner._id, { chaseResult: undefined });
+  }
+}
+
 function sameState(countdown: Doc<"countdowns">, state: StoredTickState): boolean {
   return (
     countdown.currentValue === state.currentValue &&
@@ -221,6 +238,7 @@ export async function revertTicks(ctx: MutationCtx, entryIds: readonly Id<"actio
       if (notice !== null && notice.undoneAt === undefined) await ctx.db.patch("actionLog", notice._id, { undoneAt: now, undoneBy: actorId });
     }
     await ctx.db.patch("countdownTicks", tick._id, { revertedAt: now });
+    if (b.currentValue > 0) await clearChaseResult(ctx, countdown);
     out.reverted.push(countdown._id);
   }
   return out;

@@ -11,6 +11,7 @@ import {
   COUNTDOWN_MODES,
   COUNTDOWN_REPEATS,
   COUNTDOWN_REST_MODES,
+  CHASE_RESULTS,
 } from "../../src/lib/domain/countdowns/advanced";
 
 /** Who sees a dashboard countdown (CV1): private, or public with some fields hidden from players. */
@@ -27,6 +28,8 @@ export const countdownModeValidator = v.union(...COUNTDOWN_MODES.map((m) => v.li
 export const countdownRepeatValidator = v.union(...COUNTDOWN_REPEATS.map((r) => v.literal(r)));
 /** A long-term countdown on a finished long rest (Q3): auto | remind; absent = auto. */
 export const countdownRestModeValidator = v.union(...COUNTDOWN_REST_MODES.map((r) => v.literal(r)));
+/** The GM's call on a chase whose two sides reached 0 together (K6): caught | escaped. */
+export const countdownChaseResultValidator = v.union(...CHASE_RESULTS.map((r) => v.literal(r)));
 /** A randomized start (R5, D8): 1-4 dice of one size (counts checked by countdownDetailsSchema). */
 export const countdownStartDiceValidator = v.object({
   count: v.number(),
@@ -97,6 +100,11 @@ export const countdownTables = {
     steps: v.optional(v.array(countdownStepValidator)),
     /** longTerm only: absent = auto (Q3). */
     restMode: v.optional(countdownRestModeValidator),
+    /**
+     * Chase rows only (K6, dcm-bxp.73): the GM's call when both sides reached 0 at once, set on both rows; cleared when
+     * a side reopens. Absent while undecided or when only one side reached 0 (that side tells the outcome).
+     */
+    chaseResult: v.optional(countdownChaseResultValidator),
   })
     /** The dashboard list: `ownerKey` undefined, i.e. countdowns no frame tracker owns. */
     .index("by_campaign_owner", ["campaignId", "ownerKey"])

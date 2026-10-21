@@ -147,6 +147,13 @@ const previewRow = v.object({
   amount: v.number(),
   /** This roll already ticked it (automatically or from the feed, D5). */
   ticked: v.boolean(),
+  /**
+   * A chase pair is ONE row (K6, dcm-bxp.77): this row is the party's side and `partner` the rivals' side, each with its
+   * chaseTicks amount; applying the row ticks both. Absent for countdowns outside a chase.
+   */
+  partner: v.optional(
+    v.object({ countdownId: v.id("countdowns"), name: v.string(), currentValue: v.number(), amount: v.number(), ticked: v.boolean() }),
+  ),
 });
 
 /**
@@ -166,7 +173,31 @@ export const preview = gmQuery({
     const ticked = await tickedBy(ctx, entryId);
     const countdowns = [];
     for (const c of all) {
-      if (c.status !== "active" || c.mode === "longTerm") continue;
+      if (c.mode === "longTerm") continue;
+      // A chase pair is one row, at the party's side, listing the rivals' side as `partner` (K6).
+      const partner = c.chase === undefined ? undefined : partners.get(c.chase.partnerId);
+      if (c.chase !== undefined && partner && partner.status !== "cancelled") {
+        if (c.chase.side !== "party" || c.status === "cancelled") continue;
+        if (c.status !== "active" && partner.status !== "active") continue;
+        countdowns.push({
+          countdownId: c._id,
+          name: c.name,
+          mode: c.mode ?? "standard",
+          armed: c.armed ?? false,
+          currentValue: c.currentValue,
+          amount: await amountFor(ctx, c, outcome, partners),
+          ticked: ticked.has(c._id),
+          partner: {
+            countdownId: partner._id,
+            name: partner.name,
+            currentValue: partner.currentValue,
+            amount: await amountFor(ctx, partner, outcome, partners),
+            ticked: ticked.has(partner._id),
+          },
+        });
+        continue;
+      }
+      if (c.status !== "active") continue;
       countdowns.push({
         countdownId: c._id,
         name: c.name,
@@ -185,7 +216,8 @@ export const preview = gmQuery({
  * Ticks the chosen countdowns by a counted roll's outcome (GM only, source "feed"), armed or not; each pair at most
  * once (D5). Refusals: NOT_FOUND (a row or countdown of another campaign, a frame-owned countdown), INVALID (an undone
  * or not counted row), COUNTDOWN_RULE (a pair already ticked, a countdown that is not active, a long-term countdown).
- * All or nothing. Returns each countdown's value after the tick and whether it triggered.
+ * All or nothing. A chase side brings its partner along (one roll moves both sides, K6). Returns each countdown's value
+ * after the tick and whether it triggered, the partner included.
  */
 export const applyRoll = keyedGmMutation({
   rateLimit: "roll",
@@ -205,10 +237,27 @@ export const applyRoll = keyedGmMutation({
         if (c.mode === "longTerm") throw appError("COUNTDOWN_RULE", "Long-term countdowns don't tick on rolls.");
         rows.push(c);
       }
+      // One roll moves both sides of a chase (R8, K6 dcm-bxp.77): choosing either side ticks its partner too, by its
+      // chaseTicks amount, under the same roll row, so undoing the roll takes both back.
+      const chosen = new Set<string>(rows.map((c) => c._id));
+      const added = new Set<string>();
+      for (const c of [...rows]) {
+        if (c.chase === undefined || chosen.has(c.chase.partnerId)) continue;
+        const partner = await ctx.db.get("countdowns", c.chase.partnerId);
+        if (partner === null || partner.campaignId !== ctx.campaign._id || partner.ownerKey !== undefined || partner.status === "cancelled") continue;
+        rows.push(partner);
+        chosen.add(partner._id);
+        added.add(partner._id);
+      }
       // Amounts from the countdowns as they stand before any moves (a chase pair reads the same pair for both sides).
       const partners = new Map<string, Doc<"countdowns"> | null>(rows.map((c) => [c._id, c]));
       const plan: { id: Id<"countdowns">; amount: number }[] = [];
-      for (const c of rows) plan.push({ id: c._id, amount: await amountFor(ctx, c, outcome, partners) });
+      for (const c of rows) {
+        const amount = await amountFor(ctx, c, outcome, partners);
+        // A partner the GM didn't pick moves only when the roll moves it (a 0 on its side writes nothing).
+        if (added.has(c._id) && amount === 0) continue;
+        plan.push({ id: c._id, amount });
+      }
       const out = [];
       for (const { id, amount } of plan) {
         const countdown = (await ctx.db.get("countdowns", id))!;

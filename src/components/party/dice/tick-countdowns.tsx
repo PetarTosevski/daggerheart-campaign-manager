@@ -23,8 +23,14 @@ type CountdownList = NonNullable<ReturnType<typeof useQuery<typeof api.countdown
  * The optimistic list after the GM applies a roll to countdowns: each chosen countdown ticks by the same domain rules
  * the server runs (rollTicks / chaseTicks, then tickCountdown), from the pair as it stood before the roll.
  */
-function tickedList(list: CountdownList, ids: readonly Id<"countdowns">[], outcome: RollOutcome): CountdownList {
+function tickedList(list: CountdownList, chosen: readonly Id<"countdowns">[], outcome: RollOutcome): CountdownList {
   const byId = new Map(list.map((c) => [c._id, c]));
+  // A chase side brings its partner along (one roll moves both sides, K6), as the server does.
+  const ids = new Set<Id<"countdowns">>(chosen);
+  for (const id of chosen) {
+    const partnerId = byId.get(id)?.chase?.partnerId;
+    if (partnerId !== undefined && byId.has(partnerId)) ids.add(partnerId);
+  }
   const amounts = new Map<string, number>();
   for (const id of ids) {
     const c = byId.get(id);
@@ -62,7 +68,9 @@ function optimisticApply(campaignId: Id<"campaigns">, outcome: RollOutcome) {
     if (preview) {
       store.setQuery(api.countdownRolls.preview, { campaignId, entryId }, {
         ...preview,
-        countdowns: preview.countdowns.map((c) => (countdownIds.includes(c.countdownId) ? { ...c, ticked: true } : c)),
+        countdowns: preview.countdowns.map((c) =>
+          countdownIds.includes(c.countdownId) ? { ...c, ticked: true, ...(c.partner ? { partner: { ...c.partner, ticked: c.partner.amount > 0 } } : {}) } : c,
+        ),
       });
     }
   };
@@ -71,6 +79,12 @@ function optimisticApply(campaignId: Id<"campaigns">, outcome: RollOutcome) {
 function amountLabel(amount: number): string {
   return amount === 0 ? "no tick" : `−${amount}`;
 }
+
+type PreviewRow = NonNullable<ReturnType<typeof useQuery<typeof api.countdownRolls.preview>>>["countdowns"][number];
+
+/** A chase pair is one row (K6): it counts as ticked when either side was, and moves when either side would. */
+const rowTicked = (c: PreviewRow) => c.ticked || c.partner?.ticked === true;
+const rowAmount = (c: PreviewRow) => c.amount + (c.partner?.amount ?? 0);
 
 /** The preview list with a box per countdown; already-ticked ones stay checked and locked (D5). */
 function TickList({ campaignId, entryId, onDone }: { campaignId: Id<"campaigns">; entryId: Id<"actionLog">; onDone: () => void }) {
@@ -88,7 +102,7 @@ function TickList({ campaignId, entryId, onDone }: { campaignId: Id<"campaigns">
       </p>
     );
   }
-  const open = preview.countdowns.filter((c) => !c.ticked && c.amount > 0);
+  const open = preview.countdowns.filter((c) => !rowTicked(c) && rowAmount(c) > 0);
   const picked = open.filter((c) => chosen.has(c.countdownId)).map((c) => c.countdownId);
 
   return (
@@ -116,16 +130,19 @@ function TickList({ campaignId, entryId, onDone }: { campaignId: Id<"campaigns">
       ) : (
         <ul aria-label="Countdowns to tick" className="m-0 flex list-none flex-col gap-2 p-0">
           {preview.countdowns.map((c) => {
-            const locked = c.ticked || c.amount === 0;
+            const ticked = rowTicked(c);
+            const locked = ticked || rowAmount(c) === 0;
             return (
               <li key={c.countdownId}>
                 <label
+                  data-chase={c.partner ? "true" : undefined}
                   className={`flex min-h-11 items-center gap-3 rounded-[10px] border border-[#253338] bg-[#10181b] px-3 py-2 text-[15px] text-[#e6ecea] ${locked ? "opacity-70" : "cursor-pointer"}`}
                 >
                   <input
                     type="checkbox"
-                    className="size-5 accent-[#c9a45c]"
-                    checked={c.ticked || chosen.has(c.countdownId)}
+                    className="size-5 flex-none accent-[#c9a45c]"
+                    aria-label={c.partner ? `Chase: ${c.name} and ${c.partner.name}` : undefined}
+                    checked={ticked || chosen.has(c.countdownId)}
                     disabled={locked}
                     onChange={(e) =>
                       setChosen((prev) => {
@@ -136,10 +153,29 @@ function TickList({ campaignId, entryId, onDone }: { campaignId: Id<"campaigns">
                       })
                     }
                   />
-                  <span className="flex-1">
-                    {c.name} <span className="text-[13px] text-[#9fb2b6]">({c.currentValue} left)</span>
-                  </span>
-                  <span className="text-[14px] font-semibold text-[#f4e3bd]">{c.ticked ? "ticked" : amountLabel(c.amount)}</span>
+                  {c.partner ? (
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="text-[12px] tracking-[0.12em] text-[#8fa3a8] uppercase">Chase · both sides move</span>
+                      {[
+                        { name: c.name, left: c.currentValue, amount: c.amount },
+                        { name: c.partner.name, left: c.partner.currentValue, amount: c.partner.amount },
+                      ].map((side, i) => (
+                        <span key={i} className="flex items-baseline gap-2">
+                          <span className="min-w-0 flex-1 truncate">
+                            {side.name} <span className="text-[13px] text-[#9fb2b6]">({side.left} left)</span>
+                          </span>
+                          <span className="flex-none text-[14px] font-semibold text-[#f4e3bd]">{ticked ? "" : amountLabel(side.amount)}</span>
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="flex-1">
+                      {c.name} <span className="text-[13px] text-[#9fb2b6]">({c.currentValue} left)</span>
+                    </span>
+                  )}
+                  {c.partner && !ticked ? null : (
+                    <span className="flex-none text-[14px] font-semibold text-[#f4e3bd]">{ticked ? "ticked" : amountLabel(c.amount)}</span>
+                  )}
                 </label>
               </li>
             );

@@ -106,3 +106,80 @@ test("the GM starts a chase; the player's rolls move both tracks by R4 until the
   await expect.poll(async () => (await gm.query(api.countdowns.listByCampaign, { campaignId })).length).toBe(0);
   await context.close();
 });
+
+// K6 (dcm-bxp.73, the user's answer "gm decides"): both sides at 1, a success with Fear takes both to 0; the card asks
+// the GM "Caught!" or "Got away!", players see "The GM is deciding", and the stored call shows as the banner for both.
+test("both chase sides reach 0 on one roll: the GM decides, the player waits and then sees the call", async ({ page, browser }) => {
+  const campaignId = await newCampaign(page);
+  const campaignUrl = page.url();
+  const gm = await convexAs(page);
+  const grid = page.getByRole("region", { name: "Countdowns" });
+
+  const { joinCode } = await gm.query(api.members.access, { campaignId });
+  const context = await browser.newContext();
+  const player = await context.newPage();
+  await signInAsTestGm(player, PLAYER);
+  await expect(player).toHaveURL("/");
+  const asPlayer = await convexAs(player);
+  await asPlayer.mutation(api.members.joinByCode, { code: joinCode! });
+  const { characterId } = await asPlayer.mutation(api.characters.create, {
+    campaignId,
+    draft: bardDraft(`Liriel ${crypto.randomUUID().slice(0, 6)}`),
+    idempotencyKey: crypto.randomUUID(),
+  });
+
+  // d4, small lead: the party 4, the thief 3; the GM ticks them by hand to 1 and 1.
+  await page.getByRole("button", { name: "+ New chase" }).click();
+  const dialog = page.getByRole("dialog", { name: "New chase" });
+  await dialog.getByLabel("Rivals").fill("The thief");
+  await dialog.getByRole("radio", { name: "d4", exact: true }).click();
+  await dialog.getByRole("radio", { name: "Small lead" }).click();
+  await dialog.getByRole("button", { name: "Start chase" }).click();
+  await expect(dialog).toBeHidden();
+  const card = grid.getByRole("article", { name: "Chase: The thief" });
+  for (const [label, times] of [
+    ["The party", 3],
+    ["The thief", 2],
+  ] as const) {
+    for (let k = 0; k < times; k++) {
+      const button = card.getByRole("button", { name: `Tick ${label} down one` });
+      await expect(button).toBeEnabled();
+      await button.click();
+    }
+  }
+  await expect.poll(async () => (await gm.query(api.countdowns.listByCampaign, { campaignId })).map((c) => c.currentValue)).toEqual([1, 1]);
+
+  // Success with Fear (no Difficulty): the party's progress -1 and the thief's consequence -1, both at 0.
+  await asPlayer.mutation(api.rolls.manualRoll, { characterId, roll: agility, values: [3, 8], idempotencyKey: crypto.randomUUID() });
+  const deciding = card.getByTestId("chase-deciding");
+  await expect(deciding).toContainText("Both sides reached 0");
+  await expect(card.getByTestId("chase-outcome")).toHaveCount(0);
+  const caught = deciding.getByRole("button", { name: "Caught!" });
+  await expect(deciding.getByRole("button", { name: "Got away!" })).toBeVisible();
+  expect((await caught.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+  await player.goto(campaignUrl);
+  const theirs = player.getByRole("region", { name: "Countdowns" }).getByRole("article", { name: "Chase: The thief" });
+  await expect(theirs.getByTestId("chase-deciding")).toContainText("The GM is deciding");
+  await expect(theirs.getByRole("button")).toHaveCount(0);
+
+  // Screenshots of the double-zero card at 1440 and 390.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await player.setViewportSize({ width: 1440, height: 900 });
+  await card.scrollIntoViewIfNeeded();
+  await card.screenshot({ path: "test-results/visual/CD-K6/double-zero-1440.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await card.scrollIntoViewIfNeeded();
+  await card.screenshot({ path: "test-results/visual/CD-K6/double-zero-390.png" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await theirs.screenshot({ path: "test-results/visual/CD-K6/double-zero-player-1440.png" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await caught.click();
+  await expect(card.getByTestId("chase-outcome")).toHaveText("Caught!");
+  await expect(card.getByRole("status").filter({ hasText: "Caught!" })).toContainText("The party caught The thief.");
+  await expect.poll(async () => (await gm.query(api.countdowns.listByCampaign, { campaignId })).map((c) => c.chaseResult)).toEqual(["caught", "caught"]);
+  await expect(theirs.getByTestId("chase-outcome")).toHaveText("Caught!");
+  await card.screenshot({ path: "test-results/visual/CD-K6/double-zero-decided-1440.png" });
+  await context.close();
+});

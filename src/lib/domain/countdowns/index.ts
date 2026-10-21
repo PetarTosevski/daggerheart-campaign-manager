@@ -124,7 +124,9 @@ export class CountdownRuleError extends Error {
  * `operate_campaign_countdown` SQL: advance/reverse move ±1 and are blocked
  * while paused; a correction moves by any non-zero amount, also while paused;
  * a completed countdown reopens only by a positive reverse or correction;
- * reaching 0 completes it; a cancelled countdown is final.
+ * reaching 0 completes it, except while paused: a paused countdown stays paused
+ * (at 0 too) until Resume, which then completes it at 0 (K6); a cancelled
+ * countdown is final.
  * `completedNow` is true when this change completes an open countdown, so the
  * completion time is recorded once per active lifecycle.
  */
@@ -144,6 +146,9 @@ export function applyCountdownAction(
   }
   if (action === "resume") {
     if (state.status !== "paused") throw new CountdownRuleError("Only a paused countdown can be resumed.");
+    // A countdown corrected to 0 while paused stays paused (K6, dcm-bxp.74); resuming it completes it now. A repeating
+    // one triggers and resets instead (`resumeAtZero` in ./advanced, run by the server's tick path).
+    if (state.currentValue === 0) return { ...unchanged, status: "completed", completedNow: true };
     return { ...unchanged, status: "active" };
   }
   if (action === "cancel") {
@@ -165,7 +170,8 @@ export function applyCountdownAction(
   }
 
   const currentValue = calculateCountdownValue(state.currentValue, amount, state.startingValue);
-  const status = statusAfterCountdownChange(state.status, currentValue);
+  // A paused countdown stays paused whatever the correction, 0 included; only Resume un-pauses it (K6, dcm-bxp.74).
+  const status = state.status === "paused" ? "paused" : statusAfterCountdownChange(state.status, currentValue);
   return {
     startingValue: state.startingValue,
     currentValue,
@@ -217,7 +223,7 @@ type CountdownDetails = {
 };
 
 /** Advanced fields (countdowns-advanced D12) that travel with "progress": blanked when the GM hides the progress. */
-export const COUNTDOWN_PROGRESS_FIELDS = ["mode", "repeat", "initialValue", "triggerCount", "lastTriggeredAt"] as const;
+export const COUNTDOWN_PROGRESS_FIELDS = ["mode", "repeat", "initialValue", "triggerCount", "lastTriggeredAt", "chaseResult"] as const;
 /** Advanced fields only the GM ever receives (D12): null for every player. */
 export const COUNTDOWN_GM_ONLY_FIELDS = ["armed", "startDice", "steps", "restMode"] as const;
 
@@ -237,7 +243,7 @@ export type CountdownForPlayer<T> = { [K in keyof T]: K extends BlankedField ? T
 /**
  * What a player may see of a countdown: `null` for a private one (players never receive it), otherwise
  * the countdown with every hidden field set to `null` (hidden progress blanks both values; the status stays).
- * Advanced fields present on the countdown (D12): mode, repeat, initialValue, triggerCount and lastTriggeredAt go with
+ * Advanced fields present on the countdown (D12): mode, repeat, initialValue, triggerCount, lastTriggeredAt and chaseResult go with
  * "progress"; armed, startDice, steps and restMode are always `null`. Fields the countdown lacks stay absent.
  */
 export function countdownForPlayer<T extends CountdownDetails>(countdown: T, visibility: CountdownVisibility): CountdownForPlayer<T> | null {

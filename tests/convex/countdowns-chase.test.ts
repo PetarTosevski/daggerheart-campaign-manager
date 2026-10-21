@@ -306,6 +306,79 @@ describe("chase countdowns (countdowns-advanced K3)", () => {
     });
   });
 
+  describe("both sides at 0 on one roll: the GM decides (K6, dcm-bxp.73)", () => {
+    /** A pair at 1 / 1 (d2, small lead, the party ticked once by hand), then a success with Fear takes both to 0. */
+    async function doubleZero() {
+      const ctx = await setup();
+      const { partyId, rivalsId } = await ctx.createChase({ startingValue: 2, lead: "small", armed: true });
+      await ctx.op(partyId, "advance");
+      const { entryId } = await ctx.roll("successFear");
+      const decide = (countdownId: Id<"countdowns">, result: "caught" | "escaped", who: typeof ctx.gm | typeof ctx.t = ctx.gm) =>
+        who.mutation(api.countdowns.decideChase, { campaignId: ctx.campaignId, countdownId, result, idempotencyKey: key() });
+      return { ...ctx, partyId, rivalsId, entryId, decide };
+    }
+
+    it("decideChase: anonymous UNAUTHENTICATED, outsider NOT_FOUND, player FORBIDDEN, GM ok", async () => {
+      const { t, out, p1, decide, partyId } = await doubleZero();
+      expect(await codeOf(decide(partyId, "caught", t))).toBe("UNAUTHENTICATED");
+      expect(await codeOf(decide(partyId, "caught", out))).toBe("NOT_FOUND");
+      expect(await codeOf(decide(partyId, "caught", p1))).toBe("FORBIDDEN");
+      expect(await decide(partyId, "caught")).toEqual({ result: "caught" });
+    });
+
+    it("the pair waits for the call (no result, players see it undecided), then both rows carry it, with history", async () => {
+      const { values, row, list, gm, p1, decide, partyId, rivalsId, history } = await doubleZero();
+      expect(await values(partyId, rivalsId)).toEqual([0, 0]);
+      expect([(await row(partyId)).status, (await row(rivalsId)).status]).toEqual(["completed", "completed"]);
+      expect((await list(p1)).map((c) => c.chaseResult)).toEqual([null, null]);
+      await decide(rivalsId, "escaped");
+      expect([(await row(partyId)).chaseResult, (await row(rivalsId)).chaseResult]).toEqual(["escaped", "escaped"]);
+      expect((await list(gm)).map((c) => c.chaseResult)).toEqual(["escaped", "escaped"]);
+      expect((await list(p1)).map((c) => c.chaseResult)).toEqual(["escaped", "escaped"]);
+      expect((await history(partyId)).at(-1)).toMatchObject({ action: "decide", after: { currentValue: 0, status: "completed" } });
+      // The GM may change the call.
+      await decide(partyId, "caught");
+      expect((await row(rivalsId)).chaseResult).toBe("caught");
+    });
+
+    it("COUNTDOWN_RULE while only one side (or neither) is at 0, and for a countdown outside a chase", async () => {
+      const { createChase, campaignId, gm } = await setup();
+      const { partyId } = await createChase();
+      const decide = (countdownId: Id<"countdowns">) =>
+        gm.mutation(api.countdowns.decideChase, { campaignId, countdownId, result: "caught", idempotencyKey: key() });
+      expect(await codeOf(decide(partyId))).toBe("COUNTDOWN_RULE");
+      const { countdownId } = await gm.mutation(api.countdowns.create, {
+        campaignId,
+        name: "Doom",
+        description: "",
+        category: "threat",
+        startingValue: 1,
+        consequence: "",
+        idempotencyKey: key(),
+      });
+      expect(await codeOf(decide(countdownId))).toBe("COUNTDOWN_RULE");
+    });
+
+    it("players never see the call while the GM hides the progress", async () => {
+      const { setVisibility, decide, list, p1, partyId } = await doubleZero();
+      await decide(partyId, "caught");
+      await setVisibility(partyId, { mode: "public", hidden: ["progress"] });
+      expect((await list(p1)).map((c) => c.chaseResult)).toEqual([null, null]);
+    });
+
+    it("undoing the roll reopens both sides and clears the call; Borrowed Time clears it too", async () => {
+      const { values, row, undo, entryId, decide, partyId, rivalsId, roll, op } = await doubleZero();
+      await decide(partyId, "caught");
+      await undo(entryId);
+      expect(await values(partyId, rivalsId)).toEqual([1, 1]);
+      expect([(await row(partyId)).chaseResult, (await row(rivalsId)).chaseResult]).toEqual([undefined, undefined]);
+      await roll("successFear");
+      await decide(partyId, "escaped");
+      await op(rivalsId, "reverse");
+      expect([(await row(partyId)).chaseResult, (await row(rivalsId)).chaseResult]).toEqual([undefined, undefined]);
+    });
+  });
+
   it("players see the pair per its shared visibility, without armed (D12)", async () => {
     const { createChase, list, p1 } = await setup();
     await createChase({ armed: true, visibility: { mode: "public", hidden: ["progress"] } });

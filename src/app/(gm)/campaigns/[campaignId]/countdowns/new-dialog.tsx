@@ -235,6 +235,12 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
               <Choice name={`${ids}-start`} label="Roll dice" hint="Rolled when you start it." checked={rolled} onChange={() => setRolled(true)} />
             </div>
           )}
+          {mode === "progress" || mode === "consequence" ? (
+            // CB p.162: "Typically, these countdowns have a starting value of 5-10" (R3, K6 dcm-bxp.75).
+            <p className="m-0 text-[13px] text-[#c9d2cf]" data-testid="dynamic-start-hint">
+              Dynamic countdowns typically start at 5-10.
+            </p>
+          ) : null}
           {rolled && !longTerm ? (
             <div className="grid grid-cols-2 gap-2">
               <select aria-label="Number of dice" value={diceCount} onChange={(e) => setDiceCount(Number(e.target.value))} className={SELECT}>

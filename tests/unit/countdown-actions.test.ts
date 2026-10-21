@@ -41,7 +41,9 @@ describe("applyCountdownAction", () => {
     expect(() => applyCountdownAction(at(3, "paused"), "advance")).toThrow("Resume the countdown");
     expect(() => applyCountdownAction(at(3, "paused"), "reverse")).toThrow("Resume the countdown");
     expect(applyCountdownAction(at(3, "paused"), "correction", -2)).toMatchObject({ currentValue: 1, status: "paused" });
-    expect(applyCountdownAction(at(3, "paused"), "correction", -3)).toMatchObject({ currentValue: 0, status: "completed", completedNow: true });
+    // K6 (dcm-bxp.74): a paused countdown stays paused at 0; Resume then completes it.
+    expect(applyCountdownAction(at(3, "paused"), "correction", -3)).toMatchObject({ currentValue: 0, status: "paused", completedNow: false });
+    expect(applyCountdownAction(at(0, "paused"), "resume")).toMatchObject({ currentValue: 0, status: "completed", completedNow: true });
   });
 
   it("reopens a completed countdown only with a positive correction", () => {

@@ -69,7 +69,7 @@ describe("history", () => {
       expect.objectContaining({ kind: "countdown", action: "create", countdownId, before: null, after: { currentValue: 3, status: "active" } }),
       expect.objectContaining({ action: "advance", before: { currentValue: 3, status: "active" }, after: { currentValue: 2, status: "active" } }),
       expect.objectContaining({ action: "pause", before: { currentValue: 2, status: "active" }, after: { currentValue: 2, status: "paused" } }),
-      expect.objectContaining({ action: "correction", before: { currentValue: 2, status: "paused" }, after: { currentValue: 0, status: "completed" } }),
+      expect.objectContaining({ action: "correction", before: { currentValue: 2, status: "paused" }, after: { currentValue: 0, status: "paused" } }),
     ]);
   });
 
