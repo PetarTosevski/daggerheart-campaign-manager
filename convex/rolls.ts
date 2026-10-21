@@ -19,6 +19,10 @@
  * - `pendingChoices` / `storeSlayerDie`: the Slayer choice after an action roll with Hope (U2), and the
  *   pending Tag Team pick, which either participant's editor or the GM makes (U9).
  *
+ * Countdowns (plan countdowns-advanced K1): a counted action roll (`actionRoll` / `manualRoll` kind "action") and
+ * an applied Tag Team result (once, on the group's first result row) tick the campaign's armed countdowns right
+ * after the roll resolves (`tickArmedCountdowns` in ./countdownRolls); undo takes the ticks back.
+ *
  * Class-feature hooks run in the campaign's `FeatureScope`: a Hope & Fear
  * class's options, overrides and prompts only with `hopeAndFear` on, and no
  * Combat Training in Motherboard (CB 295). `physicalOnly` options (Combat
@@ -53,6 +57,7 @@ import {
   type DualityInput,
   type Rng,
 } from "../src/lib/domain/dice/index";
+import { countsAsActionRoll } from "../src/lib/domain/countdowns/advanced";
 import type { RollRecord } from "../src/lib/domain/duality";
 import {
   featuresOf,
@@ -74,6 +79,7 @@ import { FRAME_OF, TRAIT_LABEL } from "../src/lib/frames/extras/common";
 import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import { motherboardState } from "./characterExtras";
+import { tickArmedCountdowns } from "./countdownRolls";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { latestLiveRow, logAction, newGroupId } from "./lib/actionLog";
@@ -312,6 +318,10 @@ async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded
     ...(gained !== 0 ? { fearDelta: gained } : {}),
     undoable: true,
   });
+  // Armed countdowns tick right after the action roll resolves (countdowns-advanced K1, CB p.162); never a reaction roll (CB p.99).
+  if (countsAsActionRoll(roll, { logKind: "roll", undone: false })) {
+    await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: roll.outcome, actorId: ctx.user._id });
+  }
   // Reaction rolls prompt too (Strange Patterns: "a Duality Die shows it", CB 50); prompts that need Hope check the roll kind.
   const prompts = afterDualityRoll(next, { hope: rolled.hope, fear: rolled.fear, roll }, CLASS_FEATURES, scope);
   return { entryId, roll, fearGained: gained, prompts };
@@ -684,6 +694,7 @@ export const tagTeamApply = keyedUserMutation({
 
       const effects = dualityEffects("action", chosen.outcome);
       const { gained } = effects.fear > 0 ? await gainFear(ctx, lead.campaign._id, effects.fear * group.length) : { gained: 0 };
+      let firstResult: Id<"actionLog"> | null = null;
       for (const [i, r] of group.entries()) {
         const character = await ctx.db.get("characters", r.characterId!);
         if (character === null) continue;
@@ -693,7 +704,7 @@ export const tagTeamApply = keyedUserMutation({
         const sheetChanged = changed(sheet, next);
         if (sheetChanged) await saveSheet(ctx, character._id, next);
         const gain = effects.hope > 0 ? (next.hope > sheet.hope ? " gains a Hope" : " (Hope full)") : "";
-        await logAction(ctx, {
+        const resultId = await logAction(ctx, {
           campaignId: lead.campaign._id,
           characterId: character._id,
           actorId: ctx.user._id,
@@ -706,6 +717,11 @@ export const tagTeamApply = keyedUserMutation({
           ...(i === 0 && gained !== 0 ? { fearDelta: gained } : {}),
           undoable: true,
         });
+        firstResult ??= resultId;
+      }
+      // R10 (CB p.97): the pair's Tag Team counts as one action roll for countdowns, keyed on the group's first result row.
+      if (firstResult !== null && countsAsActionRoll(chosen, { logKind: "roll", undone: false, tagTeam: "result" })) {
+        await tickArmedCountdowns(ctx, { campaignId: lead.campaign._id, entryId: firstResult, outcome: chosen.outcome, actorId: ctx.user._id });
       }
       return { outcome: chosen.outcome, fearGained: gained };
     }),
