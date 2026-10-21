@@ -63,6 +63,31 @@ export function TagTeam({ campaignId, character, disabled, pending }: { campaign
     }
   }
 
+  // After a pick the confirmation stays until closed, also in a box whose panel was never opened (the partner's,
+  // dcm-bxp.67): `pending` empties as soon as the pick lands.
+  if (applied !== null && pending === null) {
+    return (
+      <section aria-label="Tag Team Roll" className="dc-tag">
+        <div className="flex items-center justify-between gap-2">
+          <span className="sh-lbl">Tag Team Roll</span>
+          <button
+            type="button"
+            className="sh-pill"
+            onClick={() => {
+              setApplied(null);
+              setOpen(false);
+            }}
+          >
+            Close
+          </button>
+        </div>
+        <p role="status" className="sh-small m-0">
+          {applied}
+        </p>
+      </section>
+    );
+  }
+
   if (!open && pending === null) {
     return (
       <div>
@@ -144,7 +169,7 @@ export function TagTeam({ campaignId, character, disabled, pending }: { campaign
         </div>
       )}
       <p aria-live="polite" className="sh-small m-0 empty:hidden">
-        {start.error ?? apply.error ?? applied}
+        {start.error ?? apply.error}
       </p>
     </section>
   );
