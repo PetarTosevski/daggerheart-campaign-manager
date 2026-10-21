@@ -5,8 +5,12 @@ import { useEffect, useEffectEvent, useRef, useState, type CSSProperties, type K
 import { designAsset } from "@/lib/design-assets";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
+import { useMapView } from "../map-view/context";
+import { MovementOverlay, useLayoutMovementGrid, type SeenMasks } from "../map-view/movement-overlay";
 import type { MapLayerProps } from "../slots";
+import { okView, useFogMasks, useStoredExplored, useViewing } from "../vision/use-vision";
 import { initialsOf, snapTurn, TURN_BUTTON_STEP } from "./geometry";
+import { clearNotice, useMoveNotes } from "./move-notes";
 import { useRings } from "./rings";
 import { SIDES } from "./sides";
 import { useTokenActions, useTokens, type TokenView } from "./use-tokens";
@@ -37,6 +41,9 @@ const SIDE_BACKGROUND: Record<TokenView["side"], string> = {
   ally: "radial-gradient(circle at 35% 30%, #2f5a40, #10241a)",
   neutral: "radial-gradient(circle at 35% 30%, #4a5a60, #1a2428)",
 };
+
+/** How long a move announcement ("Blocked", the GM's warning) stays on screen. */
+const NOTICE_MS = 4000;
 
 type Drag =
   | { kind: "move"; id: TokenView["_id"]; pointerId: number; sx: number; sy: number; moved: boolean; canMove: boolean }
@@ -74,6 +81,23 @@ export function TokensLayer(props: MapLayerProps) {
   const editing = gm && mode === "edit";
   const { cell, zoom, pad } = viewport;
   const selected = tokens?.find((t) => t._id === selectedTokenId) ?? null;
+
+  // Movement (map-movement M1): the hatch over difficult squares the viewer can see (the GM's own view: all of them; a
+  // player or the GM's preview: the squares that character sees or has explored, from the vision slot's queries, which
+  // Convex shares), and the announcements of the last move ("Blocked", the GM's warning).
+  const { layout, cells } = useMapView();
+  const grid = useLayoutMovementGrid(layout, cells);
+  const viewing = useViewing(props);
+  const stored = useStoredExplored(campaignId, viewing);
+  const fog = useFogMasks(editing ? null : okView(viewing), stored.mask);
+  const seen: SeenMasks | null | "loading" = viewing.kind === "gm" ? null : (fog ?? "loading");
+  const notes = useMoveNotes();
+  const notice = notes.notice;
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => clearNotice(notice.seq), NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   // R / Delete (the board's shortcuts); Escape and N are the map board's. Arrow keys or WASD move a token one square (it faces
   // the way it moves) and Q / E turn it (user 2026-10-21): the GM's selected token, a player's selected token or else their own PC,
@@ -170,8 +194,14 @@ export function TokensLayer(props: MapLayerProps) {
   }
 
   const ringed = tokens.filter((t) => rings.on(t._id));
+  // The announcement sits above the token it is about (stage pixels), or at the stage's corner.
+  const noticeToken = notice ? tokens.find((t) => t._id === notice.tokenId) : undefined;
+  const noticeAt: CSSProperties | undefined = noticeToken
+    ? { left: (noticeToken.x + pad + noticeToken.size / 2) * cell * zoom, top: (noticeToken.y + pad) * cell * zoom - 6 }
+    : undefined;
   return (
     <>
+    {grid && !editing ? <MovementOverlay grid={grid} masks={seen} pad={pad} step={cell * zoom} /> : null}
     <div
       className={editing ? "cm-tokens cm-tokens-idle" : "cm-tokens"}
       data-testid="combat-tokens"
@@ -211,7 +241,8 @@ export function TokensLayer(props: MapLayerProps) {
           const hpLeft = s && s.hpMax > 0 ? Math.max(0, s.hpMax - s.hp) / s.hpMax : 0;
           const hpRatio = s && s.hpMax > 0 ? s.hp / s.hpMax : 0;
           const showKnob = (on || t.mine) && t.canMove && !editing;
-          const classes = ["cm-tok", on ? "sel" : "", t.mine ? "mine" : "", t.canMove ? "" : "fixed", moving ? "dragging" : ""].filter(Boolean).join(" ");
+          const bumped = notes.bump?.tokenId === t._id;
+          const classes = ["cm-tok", on ? "sel" : "", t.mine ? "mine" : "", t.canMove ? "" : "fixed", moving ? "dragging" : "", bumped ? "bump" : ""].filter(Boolean).join(" ");
           const shadow = on
             ? `0 3px 8px rgba(0,0,0,.6), 0 0 0 3px #fff, 0 0 18px ${side.colour}`
             : t.mine
@@ -300,6 +331,17 @@ export function TokensLayer(props: MapLayerProps) {
         })}
       </div>
     </div>
+    {/* Always mounted, so a screen reader hears "Blocked" (politely) the moment it appears. */}
+    <p
+      className={notice ? `cm-move-notice ${notice.kind}` : "cm-move-notice cm-move-notice-empty"}
+      role="status"
+      data-testid="combat-move-notice"
+      data-kind={notice?.kind ?? ""}
+      data-seq={notice?.seq ?? 0}
+      style={noticeAt}
+    >
+      {notice?.text ?? ""}
+    </p>
     {actions.error ? (
       <p role="alert" className="cm-alert cm-tokens-error">
         {actions.error}

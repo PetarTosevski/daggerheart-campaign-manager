@@ -1,9 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useQuery } from "convex/react";
+import { useMemo, useState } from "react";
 
+import { isDifficult } from "@/lib/domain/combat-map/movement";
+
+import { api } from "../../../../convex/_generated/api";
+import { decodeCells } from "../map-view/cells";
+import { useLayoutMovementGrid } from "../map-view/movement-overlay";
 import type { TokenPanelProps } from "../slots";
 import { normalizeAngle, TURN_BUTTON_STEP } from "./geometry";
+import { DIFFICULT_TEXT, useMoveNotes } from "./move-notes";
 import { useRings } from "./rings";
 import { PC_CONDITIONS, SIDES, TRACKER_CONDITIONS } from "./sides";
 import { useTokenActions, useTokens, type TokenActions, type TokenView } from "./use-tokens";
@@ -84,6 +91,25 @@ function CustomName({ token, actions }: { token: TokenView; actions: TokenAction
   );
 }
 
+/**
+ * D5: whether the token's card shows "a movement roll is needed": its last move on this screen crossed or ended on
+ * difficult terrain (combatTokens.move's `difficult`) and it is still there, or it stands on a difficult square now
+ * (from the layout the map board already reads, so the GM sees it after a player's move too).
+ */
+function useDifficultNote({ campaignId, role, map }: TokenPanelProps, token: TokenView): boolean {
+  const gm = role === "gm";
+  const gmLayout = useQuery(api.combatMaps.get, gm ? { campaignId, mapId: map._id } : "skip");
+  const liveLayout = useQuery(api.combatMaps.live, gm ? "skip" : { campaignId });
+  const layout = gm ? gmLayout : liveLayout?._id === map._id ? liveLayout : null;
+  const cells = useMemo(() => (layout ? decodeCells(layout.cells, layout.w, layout.h) : null), [layout]);
+  const grid = useLayoutMovementGrid(layout, cells);
+  const crossed = useMoveNotes().difficult.get(token._id);
+  if (crossed && crossed.x === token.x && crossed.y === token.y) return true;
+  if (!grid) return false;
+  for (let y = token.y; y < token.y + token.size; y++) for (let x = token.x; x < token.x + token.size; x++) if (isDifficult(grid, x, y)) return true;
+  return false;
+}
+
 function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: TokenView[]; props: TokenPanelProps }) {
   const { campaignId, role, map, onSelectToken } = props;
   const gm = role === "gm";
@@ -95,6 +121,8 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
   const editStats = gm || token.mine;
   const trackerClosed = token.kind === "adversary" && token.tracked !== true;
   const canEdit = editStats && !trackerClosed;
+  // D5: the note is for the token's owner and the GM.
+  const difficult = useDifficultNote(props, token) && (gm || token.mine);
 
   return (
     <section className="cm-card cm-tokcard" aria-label="Selected token" style={{ borderColor: side.colour }}>
@@ -103,6 +131,11 @@ function SelectedToken({ token, tokens, props }: { token: TokenView; tokens: Tok
         {gm && token.kind === "custom" ? <CustomName key={token._id} token={token} actions={actions} /> : <strong className="cm-tokname">{token.name}</strong>}
       </div>
       <span className="cm-muted">{subLine(token, gm)}</span>
+      {difficult ? (
+        <p className="cm-move-note" data-testid="combat-difficult-note">
+          {DIFFICULT_TEXT}
+        </p>
+      ) : null}
 
       {s && s.hpMax > 0 ? (
         <div className="cm-tokfield">

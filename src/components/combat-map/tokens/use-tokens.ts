@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery } from "convex/react";
 import type { OptimisticLocalStore } from "convex/browser";
+import { ConvexError } from "convex/values";
 import { useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
@@ -14,6 +15,14 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import type { TokenView } from "../../../../convex/combatTokens";
 import type { CombatMapSummary, CombatRole } from "../slots";
 import { moveToken, snapTurn } from "./geometry";
+import { noteBlocked, noteMove } from "./move-notes";
+
+/** Whether a Convex function refused a move because something blocks the way (map-movement M0, D3). */
+function isMoveBlocked(error: unknown): boolean {
+  if (!(error instanceof ConvexError)) return false;
+  const data: unknown = error.data;
+  return typeof data === "object" && data !== null && (data as { code?: unknown }).code === "MOVE_BLOCKED";
+}
 
 export type { TokenView };
 export type TrackerCondition = "hidden" | "restrained" | "vulnerable" | "distracted";
@@ -133,7 +142,21 @@ export function useTokenActions(campaignId: Id<"campaigns">, map: CombatMapSumma
   return {
     error,
     clearError: () => setError(null),
-    move: (tokenId: Id<"combatTokens">, x: number, y: number) => run(() => move({ campaignId, tokenId, x, y })),
+    /**
+     * Moves a token (optimistic). A player's move through a wall is refused (MOVE_BLOCKED): Convex rolls the
+     * optimistic move back and the layer announces "Blocked" instead of an error card. The result's `blocked` (the
+     * GM's warning) and `difficult` (the card's note) go to `move-notes.ts` (map-movement M1).
+     */
+    move: async (tokenId: Id<"combatTokens">, x: number, y: number) => {
+      setError(null);
+      try {
+        const result = await move({ campaignId, tokenId, x, y });
+        noteMove(tokenId, result, result);
+      } catch (e) {
+        if (isMoveBlocked(e)) noteBlocked(tokenId);
+        else setError(errorMessage(e));
+      }
+    },
     turn: (tokenId: Id<"combatTokens">, angle: number) => run(() => turn({ campaignId, tokenId, angle })),
     /** HP or Stress by a delta on the token's own source: the sheet (PC), the tracker (adversary) or the token (custom). */
     mark: (token: TokenView, track: "hp" | "stress", delta: number) => {
