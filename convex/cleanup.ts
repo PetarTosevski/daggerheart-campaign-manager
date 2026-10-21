@@ -103,7 +103,7 @@ function grantsOn(ctx: MutationCtx, resourceType: Doc<"grants">["resourceType"],
  * every table with a `campaignId` field is covered.
  */
 const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Promise<void>)[] = [
-  // A codex entry's text, legacy images and grants go before the entry.
+  // A codex entry's text and grants go before the entry; its image is a `files` row (kind "codexImage").
   async (ctx, c, budget) => {
     const entries = await ctx.db
       .query("codexEntries")
@@ -115,29 +115,19 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
         .withIndex("by_entry", (q) => q.eq("entryId", entry._id))
         .take(budget.left);
       await deleteRows(ctx, budget, "codexEntryText", text);
-      const images = await ctx.db
-        .query("codexImages")
-        .withIndex("by_entry", (q) => q.eq("entryId", entry._id))
-        .take(budget.left);
-      await deleteRows(ctx, budget, "codexImages", images, (row) => row.storageId);
       await deleteRows(ctx, budget, "grants", await grantsOn(ctx, "codexEntry", entry._id, budget.left));
       // Out of budget: the entry may still have children; the next run finishes it.
       if (budget.left <= 0) return;
       await deleteRows(ctx, budget, "codexEntries", [entry]);
     }
   },
-  // A character's legacy portraits and grants go before the character.
+  // A character's grants go before the character; its portrait is a `files` row (kind "portrait").
   async (ctx, c, budget) => {
     const characters = await ctx.db
       .query("characters")
       .withIndex("by_campaign", (q) => q.eq("campaignId", c))
       .take(budget.left);
     for (const character of characters) {
-      const portraits = await ctx.db
-        .query("portraitUploads")
-        .withIndex("by_character", (q) => q.eq("characterId", character._id))
-        .take(budget.left);
-      await deleteRows(ctx, budget, "portraitUploads", portraits, (row) => row.storageId);
       await deleteRows(ctx, budget, "grants", await grantsOn(ctx, "character", character._id, budget.left));
       if (budget.left <= 0) return;
       await deleteRows(ctx, budget, "characters", [character]);
@@ -179,10 +169,6 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("files").withIndex("by_campaign_kind", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "files", rows, (row) => row.storageId);
-  },
-  async (ctx, c, budget) => {
-    const rows = await ctx.db.query("mapUploads").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
-    await deleteRows(ctx, budget, "mapUploads", rows, (row) => row.storageId);
   },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("characterExtras").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
@@ -354,16 +340,13 @@ export const purgeCampaign = internalMutation({
   },
 });
 
-/** Whether any `files` row, or a deprecated upload row not yet moved to `files`, claims the blob. */
-async function isClaimedAnywhere(ctx: MutationCtx, storageId: Id<"_storage">): Promise<boolean> {
-  for (const table of ["files", "mapUploads", "codexImages", "portraitUploads"] as const) {
-    const row = await ctx.db
-      .query(table)
-      .withIndex("by_storage", (q) => q.eq("storageId", storageId))
-      .first();
-    if (row !== null) return true;
-  }
-  return false;
+/** Whether a `files` row claims the blob. */
+async function isClaimedByFile(ctx: MutationCtx, storageId: Id<"_storage">): Promise<boolean> {
+  const row = await ctx.db
+    .query("files")
+    .withIndex("by_storage", (q) => q.eq("storageId", storageId))
+    .first();
+  return row !== null;
 }
 
 /**
@@ -401,7 +384,7 @@ export const sweepOrphanUploads = internalMutation({
       .withIndex("by_creation_time", (q) => q.lt("_creationTime", cutoff))
       .paginate({ numItems: BATCH, cursor: args.cursor ?? null });
     for (const blob of page.page) {
-      if (!(await isClaimedAnywhere(ctx, blob._id))) await deleteBlob(ctx, blob._id);
+      if (!(await isClaimedByFile(ctx, blob._id))) await deleteBlob(ctx, blob._id);
     }
     if (!page.isDone) await ctx.scheduler.runAfter(0, internal.cleanup.sweepOrphanUploads, { cutoff, cursor: page.continueCursor });
     return null;

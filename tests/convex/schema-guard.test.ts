@@ -89,9 +89,6 @@ const RETENTION: Record<string, string> = {
   operations: "idempotency records expire after 7 days",
   campaigns: "soft-deleted campaigns are purged after 30 days",
   files: "unclaimed storage blobs are swept; a campaign's files go with its purge",
-  portraitUploads: "deprecated; emptied by migrations/uploads:moveUploadsToFiles",
-  mapUploads: "deprecated; emptied by migrations/uploads:moveUploadsToFiles",
-  codexImages: "deprecated; emptied by migrations/uploads:moveUploadsToFiles",
 };
 const CAMPAIGN_SCOPED = [
   "campaignOpens",

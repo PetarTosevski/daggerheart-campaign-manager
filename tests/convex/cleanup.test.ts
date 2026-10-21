@@ -32,9 +32,9 @@ async function blob(ctx: { storage: { store(blob: Blob): Promise<Id<"_storage">>
 }
 
 /**
- * A campaign with a row in every campaign-scoped table (plus grants, a
- * legacy portrait and a combat map's children, which reach it only through ids), `extraHistory` more
- * history rows, and three blobs. Returns the tables it wrote and the blobs.
+ * A campaign with a row in every campaign-scoped table (plus grants and a
+ * combat map's children, which reach it only through ids), `extraHistory` more
+ * history rows, and its blobs. Returns the tables it wrote and the blobs.
  */
 async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | undefined, extraHistory = 0) {
   return t.run(async (ctx) => {
@@ -58,7 +58,6 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     const c = campaignId;
     const blobs = {
       file: await blob(ctx),
-      mapUpload: await blob(ctx),
       codexImage: await blob(ctx),
       portrait: await blob(ctx),
       combatImage: await blob(ctx),
@@ -212,9 +211,8 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("journalPageRecipients", { campaignId: c, pageId, userId, addedAt: now });
     await ins("journalEntries", { campaignId: c, journalId, pageId, authorId: userId, kind: "task", state: "open", star: false, text: "Find the well", order: 0, open: true, createdAt: now, updatedAt: now });
     await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
-    await ins("mapUploads", { storageId: blobs.mapUpload, campaignId: c, uploadedBy: userId, createdAt: now });
-    await ins("codexImages", { storageId: blobs.codexImage, campaignId: c, entryId, uploadedBy: userId, createdAt: now });
-    await ins("portraitUploads", { storageId: blobs.portrait, userId, characterId, createdAt: now });
+    await ins("files", { storageId: blobs.codexImage, campaignId: c, uploadedBy: userId, kind: "codexImage", refId: entryId, createdAt: now });
+    await ins("files", { storageId: blobs.portrait, campaignId: c, uploadedBy: userId, kind: "portrait", refId: characterId, createdAt: now });
     await ins("operations", {
       scopeKey: `campaign:${c}`,
       idempotencyKey: "k",
@@ -250,7 +248,6 @@ async function leftovers(t: Test, s: Seeded) {
           row.campaignId === s.campaignId ||
           (name === "campaigns" && row._id === s.campaignId) ||
           (name === "grants" && (ids.has(row.resourceId as string) || row.principalId === s.campaignId)) ||
-          (name === "portraitUploads" && row.characterId === s.characterId) ||
           // Combat map children have no campaignId; they belong to the campaign through their map.
           row.mapId === s.combatMapId,
       );
@@ -392,7 +389,7 @@ describe("cleanup crons", () => {
     const due = await seedCampaign(t, userId, NOW - 31 * DAY);
     const live = await seedCampaign(t, userId, undefined);
     const liveBefore = await leftovers(t, live);
-    expect(liveBefore.rows).toMatchObject({ spritePacks: 1, spritePackSprites: 1, files: 3 });
+    expect(liveBefore.rows).toMatchObject({ spritePacks: 1, spritePackSprites: 1, files: 5 });
 
     await t.mutation(internal.cleanup.purgeDeletedCampaigns, {});
     await t.finishAllScheduledFunctions(vi.runAllTimers);
@@ -457,7 +454,7 @@ describe("cleanup crons", () => {
     const exists = (id: Id<"_storage">) => t.run(async (ctx) => (await ctx.db.system.get("_storage", id)) !== null);
     expect(await exists(old.orphan)).toBe(false);
     expect(await exists(recent)).toBe(true);
-    // Claimed by files and by the deprecated upload tables, all older than 2 hours.
+    // Claimed by `files` rows, all older than 2 hours.
     for (const id of s.blobs) expect(await exists(id)).toBe(true);
   });
 
