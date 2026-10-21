@@ -5,6 +5,7 @@ import { campaignMessages } from "../src/lib/errors/campaigns";
 import { frameHasMechanic } from "../src/lib/frames/index";
 import { isCampaignOptionId, optionsFor, resolveOptions } from "../src/lib/frames/options";
 import { campaignNameKey, createCampaignSchema, startingLevel } from "../src/lib/validation/campaigns";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { normalizeEmail } from "./lib/allowlist";
@@ -341,10 +342,70 @@ export const restore = userMutation({
     if (permission === null || (campaign.deletedAt !== undefined && !owner)) throw appError("NOT_FOUND");
     if (!owner) throw appError("FORBIDDEN");
     if (campaign.deletedAt === undefined) return null;
+    // Being deleted permanently: part of its data may already be gone, so it can't come back.
+    if (campaign.deletedAt === PURGE_REQUESTED_AT) throw appError("NOT_FOUND");
     if ((await liveNamesake(ctx, campaign.ownerId, campaign.nameKey)) !== null) {
       throw appError("NAME_TAKEN", "Another campaign now uses that name.");
     }
     await ctx.db.patch("campaigns", campaign._id, { deletedAt: undefined });
+    return null;
+  },
+});
+
+/**
+ * The `deletedAt` that marks a campaign its GM asked to delete permanently (`purge`). It is older than any real
+ * deletion, so `internal.cleanup.purgeCampaign` (which purges only campaigns deleted more than `PURGE_AFTER_MS` ago)
+ * accepts it, and `listDeleted` and `restore` treat the campaign as gone at once.
+ */
+export const PURGE_REQUESTED_AT = 1;
+
+/** The most deleted campaigns Load Campaign lists. */
+const DELETED_LIST_MAX = 50;
+
+const deletedCampaignValidator = v.object({
+  _id: v.id("campaigns"),
+  name: v.string(),
+  frameId: frameIdValidator,
+  createdAt: v.number(),
+  deletedAt: v.number(),
+});
+
+export type DeletedCampaign = Infer<typeof deletedCampaignValidator>;
+
+/** The caller's own deleted campaigns (restorable or deletable for good), most recently deleted first; at most 50. */
+export const listDeleted = userQuery({
+  args: {},
+  returns: v.array(deletedCampaignValidator),
+  handler: async (ctx) => {
+    const rows = await ctx.db
+      .query("campaigns")
+      .withIndex("by_owner_deletedAt_lastOpened", (q) => q.eq("ownerId", ctx.user._id).gt("deletedAt", PURGE_REQUESTED_AT))
+      .order("desc")
+      .take(DELETED_LIST_MAX);
+    return rows.map((c) => ({ _id: c._id, name: c.name, frameId: c.frameId, createdAt: c.createdAt, deletedAt: c.deletedAt ?? 0 }));
+  },
+});
+
+/**
+ * Deletes a deleted campaign for good (its GM only; bead dcm-bxp.30): marks it `PURGE_REQUESTED_AT` and schedules the
+ * batched `internal.cleanup.purgeCampaign`. Like `restore`, not a campaign wrapper: a deleted campaign is `NOT_FOUND`
+ * to anyone who does not own it. A live campaign is `INVALID` (delete it first); asking again while the purge runs is
+ * a no-op.
+ */
+export const purge = userMutation({
+  args: { campaignId: v.id("campaigns") },
+  returns: v.null(),
+  handler: async (ctx, { campaignId }) => {
+    const campaign = await ctx.db.get("campaigns", campaignId);
+    if (campaign === null) throw appError("NOT_FOUND");
+    const permission = await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "owner");
+    const owner = atLeast(permission, "owner");
+    if (permission === null || (campaign.deletedAt !== undefined && !owner)) throw appError("NOT_FOUND");
+    if (!owner) throw appError("FORBIDDEN");
+    if (campaign.deletedAt === undefined) throw appError("INVALID", "Delete the campaign before deleting it permanently.");
+    if (campaign.deletedAt === PURGE_REQUESTED_AT) return null;
+    await ctx.db.patch("campaigns", campaign._id, { deletedAt: PURGE_REQUESTED_AT });
+    await ctx.scheduler.runAfter(0, internal.cleanup.purgeCampaign, { campaignId: campaign._id });
     return null;
   },
 });

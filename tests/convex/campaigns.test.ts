@@ -215,6 +215,89 @@ describe("campaigns", () => {
     expect((await gm.query(api.campaigns.list, {})).map((c) => c.name)).toEqual(["Back"]);
   });
 
+  describe("delete permanently (dcm-bxp.30)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("lists the GM's own deleted campaigns, newest deletion first", async () => {
+      const { gm, other } = await setup();
+      const a = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "First", idempotencyKey: "a" });
+      const b = await gm.mutation(api.campaigns.create, { frameId: "beast-feast", name: "Second", idempotencyKey: "b" });
+      await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Live", idempotencyKey: "c" });
+      const theirs = await other.mutation(api.campaigns.create, { frameId: "witherwild", name: "Theirs", idempotencyKey: "d" });
+      vi.setSystemTime(10_000_000);
+      await gm.mutation(api.campaigns.remove, { campaignId: a.campaignId });
+      vi.setSystemTime(20_000_000);
+      await gm.mutation(api.campaigns.remove, { campaignId: b.campaignId });
+      await other.mutation(api.campaigns.remove, { campaignId: theirs.campaignId });
+      const deleted = await gm.query(api.campaigns.listDeleted, {});
+      expect(deleted).toMatchObject([
+        { _id: b.campaignId, name: "Second", frameId: "beast-feast", deletedAt: 20_000_000 },
+        { _id: a.campaignId, name: "First", frameId: "witherwild", deletedAt: 10_000_000 },
+      ]);
+    });
+
+    it("purges one deleted campaign with its data, and only that one", async () => {
+      const { t, gm } = await setup();
+      const gone = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Gone", idempotencyKey: "a" });
+      const kept = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Kept", idempotencyKey: "b" });
+      await gm.mutation(api.campaigns.remove, { campaignId: gone.campaignId });
+      await gm.mutation(api.campaigns.remove, { campaignId: kept.campaignId });
+
+      await gm.mutation(api.campaigns.purge, { campaignId: gone.campaignId });
+      // Gone from the list at once, before the purge runs; restoring it is refused.
+      expect((await gm.query(api.campaigns.listDeleted, {})).map((c) => c.name)).toEqual(["Kept"]);
+      expect(errorCode(await gm.mutation(api.campaigns.restore, { campaignId: gone.campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+      // Asking twice is a no-op.
+      await gm.mutation(api.campaigns.purge, { campaignId: gone.campaignId });
+
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      const state = await t.run(async (ctx) => ({
+        gone: await ctx.db.get("campaigns", gone.campaignId),
+        kept: await ctx.db.get("campaigns", kept.campaignId),
+        goneState: await ctx.db
+          .query("campaignState")
+          .withIndex("by_campaign", (q) => q.eq("campaignId", gone.campaignId))
+          .unique(),
+        keptState: await ctx.db
+          .query("campaignState")
+          .withIndex("by_campaign", (q) => q.eq("campaignId", kept.campaignId))
+          .unique(),
+      }));
+      expect(state.gone).toBeNull();
+      expect(state.goneState).toBeNull();
+      expect(state.kept).not.toBeNull();
+      expect(state.keptState).not.toBeNull();
+      expect((await gm.query(api.campaigns.listDeleted, {})).map((c) => c.name)).toEqual(["Kept"]);
+      // Once purged, the id is unknown.
+      expect(errorCode(await gm.mutation(api.campaigns.purge, { campaignId: gone.campaignId }).catch((e) => e))).toBe("NOT_FOUND");
+    });
+
+    it("refuses a live campaign (INVALID) and anyone but its GM", async () => {
+      const { t, gm, other } = await setup();
+      const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Live", idempotencyKey: "a" });
+      const otherId = await t.run(async (ctx) => (await ctx.db.query("users").withIndex("email", (q) => q.eq("email", OTHER_EMAIL)).unique())!._id);
+      // `other` plays at the table.
+      await t.run((ctx) => ctx.db.insert("campaignMembers", { campaignId, userId: otherId, joinedAt: 1, lastOpenedAt: 1 }));
+      const code = async (p: Promise<unknown>) => errorCode(await p.catch((e) => e));
+
+      expect(await code(gm.mutation(api.campaigns.purge, { campaignId }))).toBe("INVALID");
+      expect(await code(other.mutation(api.campaigns.purge, { campaignId }))).toBe("FORBIDDEN");
+      expect(await code(t.mutation(api.campaigns.purge, { campaignId }))).toBe("UNAUTHENTICATED");
+
+      await gm.mutation(api.campaigns.remove, { campaignId });
+      // Deleted: the player can't tell it exists.
+      expect(await code(other.mutation(api.campaigns.purge, { campaignId }))).toBe("NOT_FOUND");
+      expect(await other.query(api.campaigns.listDeleted, {})).toEqual([]);
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect(await t.run((ctx) => ctx.db.get("campaigns", campaignId))).not.toBeNull();
+    });
+  });
+
   it("records opens in campaignOpens, at most every 5 minutes, without touching the campaign", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
