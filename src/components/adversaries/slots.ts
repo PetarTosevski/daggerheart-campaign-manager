@@ -27,6 +27,8 @@ export type BuilderProps = {
   /** Active characters in the party: the default Battle Points party size (CB p.197). */
   activePcs: number;
   onOpenEncounter: (encounterId: string) => void;
+  /** The encounter selected at first (a `?encounter=` deep link from the Sessions hub); none: the first active one. */
+  initialEncounterId?: string | null;
 };
 
 /** Encounters tab: the live tracker of the open encounter (A4); `encounterId` null = none open. `fear` = GM Fear 0–12. */

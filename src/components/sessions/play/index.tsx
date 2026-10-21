@@ -15,9 +15,11 @@ import type { SessionLogEntry, SpotlightEntry } from "../../../../convex/session
 import { SESSION_TEXT_MAX } from "../../../../convex/lib/validators/sessions";
 import type { PlayStageProps } from "../slots";
 
+import { EncounterCard } from "./encounter-card";
+
 /**
  * Play slot (D10 S5, board Sessions.dc.html l.144-183, rule B4): the Spotlight (K7, Q12), the read-only Session
- * tally (Q3) and the Session log. Each card reads its own GM-only query (convex/sessionPlay.ts) inside its own error
+ * tally (Q3), the Encounter card (TASK-SESSIONS-HUB: the session's linked D8 encounter) and the Session log. Each card reads its own GM-only query (convex/sessionPlay.ts) inside its own error
  * boundary; spotlight taps and log adds / removes update the cached query optimistically (CL4).
  */
 export function PlayStage({ campaignId, sessionId }: PlayStageProps) {
@@ -31,9 +33,14 @@ export function PlayStage({ campaignId, sessionId }: PlayStageProps) {
           <TallyCard campaignId={campaignId} sessionId={sessionId} />
         </CardBoundary>
       </div>
-      <CardBoundary label="Session log">
-        <LogCard campaignId={campaignId} sessionId={sessionId} />
-      </CardBoundary>
+      <div className="ss-play-col">
+        <CardBoundary label="Encounter">
+          <EncounterCard campaignId={campaignId} sessionId={sessionId} />
+        </CardBoundary>
+        <CardBoundary label="Session log">
+          <LogCard campaignId={campaignId} sessionId={sessionId} />
+        </CardBoundary>
+      </div>
     </section>
   );
 }

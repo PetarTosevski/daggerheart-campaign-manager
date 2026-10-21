@@ -4,11 +4,12 @@ import "../catalogue/catalogue.css";
 import "./tracker.css";
 
 import { useQuery } from "convex/react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { TrackerProps } from "../slots";
+import { TrackerSessionChip } from "@/components/sessions/session-chip";
 import { spotlightCostsFear, turnSpotlights } from "@/lib/domain/encounters/spotlight";
 
 import { InstanceCard } from "./instance-card";
@@ -17,10 +18,13 @@ import { SelectedBlock } from "./selected-block";
 import { TopBar } from "./top-bar";
 import { useTracker, type TrackerView } from "./use-tracker";
 
-function Notice({ title, children }: { title: string; children: string }) {
+function Notice({ title, children, chip }: { title: string; children: string; chip?: ReactNode }) {
   return (
     <section className="trk-card trk-notice" aria-label="Encounter tracker">
-      <h2 className="trk-h">{title}</h2>
+      <div className="trk-top-name">
+        <h2 className="trk-h">{title}</h2>
+        {chip}
+      </div>
       <p className="trk-muted">{children}</p>
     </section>
   );
@@ -91,7 +95,7 @@ function OpenEncounter({ campaignId, encounterId, fear }: { campaignId: Id<"camp
   if (view === null) return <Notice title="Encounter tracker">That encounter no longer exists. Pick another one in the builder above.</Notice>;
   if (view.encounter.status !== "running") {
     return (
-      <Notice title={view.encounter.name}>
+      <Notice title={view.encounter.name} chip={<TrackerSessionChip campaignId={campaignId} encounterId={view.encounter._id} />}>
         {view.encounter.status === "draft"
           ? "This encounter is a draft. Start it in the builder above to track HP, Stress, conditions and the spotlight here."
           : "This encounter has ended. Start it again in the builder above to keep tracking it."}

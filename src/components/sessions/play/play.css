@@ -154,3 +154,77 @@
     height: 44px;
   }
 }
+
+/* ---------------------------------------------------------------- encounter (TASK-SESSIONS-HUB) */
+
+.ss-enc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.ss-chip.ss-enc-status[data-status="running"] {
+  background: #1d3a2a;
+  color: #9fe7bb;
+}
+.ss-chip.ss-enc-status[data-status="ended"] {
+  background: #20292c;
+  color: var(--ss-muted);
+}
+.ss-enc-name {
+  margin: 0;
+  font-family: var(--ss-serif);
+  font-size: 19px;
+  overflow-wrap: anywhere;
+}
+.ss-enc-link {
+  color: var(--ss-acc);
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.ss-enc-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ss-enc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #1f2b30;
+}
+.ss-enc-row[data-defeated="true"] .ss-enc-label {
+  text-decoration: line-through;
+  color: var(--ss-muted);
+}
+.ss-enc-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+.ss-enc-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 14px;
+  color: var(--ss-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ss-enc-defeated {
+  color: var(--ss-danger);
+}
+.ss-enc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ss-enc-start {
+  border-color: var(--ss-live);
+  color: #d8f0e0;
+}

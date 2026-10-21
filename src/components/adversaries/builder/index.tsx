@@ -39,11 +39,11 @@ function EncounterItem({ encounter, current, onPick }: { encounter: EncounterSum
  * and the selected encounter's detail with the Battle Points panel. Starting an encounter, or "Open in tracker",
  * hands it to the tracker through `onOpenEncounter`.
  */
-export function EncounterBuilder({ campaignId, activePcs, onOpenEncounter }: BuilderProps) {
+export function EncounterBuilder({ campaignId, activePcs, onOpenEncounter, initialEncounterId = null }: BuilderProps) {
   const [endedLimit, setEndedLimit] = useState(ENDED_PAGE);
   const list = useQuery(api.encounters.list, { campaignId, endedLimit });
   const campaign = useQuery(api.campaigns.get, { campaignId });
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialEncounterId);
   const create = useIntent(api.encounters.create);
 
   if (list === undefined || campaign === undefined) {

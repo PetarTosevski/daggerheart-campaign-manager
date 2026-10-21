@@ -64,6 +64,22 @@ export async function sessionPrepOf(ctx: QueryCtx, sessionId: Id<"sessions">): P
     .unique();
 }
 
+/**
+ * The live session, else the newest planned one (B11), with its linked D8 encounter when that still exists in this
+ * campaign; null without such a session or link (a dangling link reads as none). Used by the Combat Map's
+ * '+ Session encounter' (S8) and the Sessions hub's tracker chip (`sessionPrep.current`).
+ */
+export async function currentSessionEncounter(
+  ctx: QueryCtx,
+  campaignId: Id<"campaigns">,
+): Promise<{ session: Doc<"sessions">; encounter: Doc<"encounters"> } | null> {
+  const session = (await liveSession(ctx, campaignId)) ?? (await newestPlannedSession(ctx, campaignId));
+  if (session === null) return null;
+  const encounterId = (await sessionPrepOf(ctx, session._id))?.encounterId;
+  const encounter = encounterId === undefined ? null : await ctx.db.get("encounters", encounterId);
+  return encounter !== null && encounter.campaignId === campaignId ? { session, encounter } : null;
+}
+
 // ---------------------------------------------------------------- numbers and caps
 
 /** The number a new session gets: the highest + 1, or 1 (B1; gaps after a delete are kept). */

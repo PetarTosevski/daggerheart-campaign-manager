@@ -9,6 +9,7 @@ import { ScenePanel } from "@/components/combat-map/generate";
 import { MapBoard, MapHeaderLine, MapsPanel, useCurrentMap } from "@/components/combat-map/maps";
 import { PacksLink } from "@/components/combat-map/packs";
 import { StyleSwitch } from "@/components/combat-map/style";
+import { LiveSessionChip } from "@/components/sessions/session-chip";
 import type { CombatMode, CombatPageState, CombatRole, MapLayerProps } from "@/components/combat-map/slots";
 import { CombatantsPanel, TokenPanel, TokensLayer, TokensProvider } from "@/components/combat-map/tokens";
 import { LightPill, PreviewPicker, RevealPanel, VisionLayer, VisionPanel, VisionProvider } from "@/components/combat-map/vision";
@@ -275,6 +276,8 @@ function CombatHeader({ campaign, state, loading }: { campaign: CampaignSummary;
         </SlotBoundary>
         {state.role === "gm" ? (
           <>
+            {/* Sessions hub: while a session is live, a chip back to its Play stage. */}
+            <LiveSessionChip campaignId={campaign._id} />
             <FearPill campaignId={campaign._id} fear={campaign.fear} />
             {state.map ? (
               <SlotBoundary label="Map style">

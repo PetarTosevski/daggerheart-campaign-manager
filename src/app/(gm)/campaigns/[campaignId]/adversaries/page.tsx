@@ -3,7 +3,8 @@
 import "./adversaries.css";
 
 import { useQuery } from "convex/react";
-import { Component, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { Component, Suspense, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { AddToEncounter, EncounterBuilder } from "@/components/adversaries/builder";
 import { Catalogue } from "@/components/adversaries/catalogue";
@@ -27,6 +28,11 @@ const TABS = [
   { id: "environment", label: "Environment" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
+
+/** The tab a `?tab=` value names; anything else (or none) is the Catalogue, the page's default. */
+function parseTab(value: string | null): TabId {
+  return TABS.find((t) => t.id === value)?.id ?? "catalogue";
+}
 
 /** An adversary opened from an environment's Potential Adversaries (EV1), shown at the top of the Catalogue tab. */
 type OpenedFromEnvironment = { adversaryId: string; environmentId: string; environmentName: string };
@@ -87,7 +93,15 @@ function CatalogueTab({ campaign }: { campaign: CampaignSummary }) {
   );
 }
 
-function Builder({ campaignId, onOpenEncounter }: { campaignId: Id<"campaigns">; onOpenEncounter: (id: string) => void }) {
+function Builder({
+  campaignId,
+  onOpenEncounter,
+  initialEncounterId,
+}: {
+  campaignId: Id<"campaigns">;
+  onOpenEncounter: (id: string) => void;
+  initialEncounterId: string | null;
+}) {
   const party = useQuery(api.characters.listByCampaign, { campaignId });
   if (party === undefined) {
     return (
@@ -97,15 +111,16 @@ function Builder({ campaignId, onOpenEncounter }: { campaignId: Id<"campaigns">;
     );
   }
   const activePcs = party.filter((c) => c.status === "active").length;
-  return <EncounterBuilder campaignId={campaignId} activePcs={activePcs} onOpenEncounter={onOpenEncounter} />;
+  return <EncounterBuilder campaignId={campaignId} activePcs={activePcs} onOpenEncounter={onOpenEncounter} initialEncounterId={initialEncounterId} />;
 }
 
-function EncountersTab({ campaign }: { campaign: CampaignSummary }) {
-  const [openEncounter, setOpenEncounter] = useState<string | null>(null);
+/** `initialEncounter`: a deep link's `?encounter=` (Sessions hub), opened in both the builder and the tracker. */
+function EncountersTab({ campaign, initialEncounter }: { campaign: CampaignSummary; initialEncounter: string | null }) {
+  const [openEncounter, setOpenEncounter] = useState<string | null>(initialEncounter);
   return (
     <>
       <SlotBoundary label="Encounters">
-        <Builder campaignId={campaign._id} onOpenEncounter={setOpenEncounter} />
+        <Builder campaignId={campaign._id} onOpenEncounter={setOpenEncounter} initialEncounterId={initialEncounter} />
       </SlotBoundary>
       <SlotBoundary label="The encounter tracker">
         <EncounterTracker campaignId={campaign._id} encounterId={openEncounter} fear={campaign.fear} />
@@ -155,8 +170,12 @@ function AdversaryTabs({ tab, onTab }: { tab: TabId; onTab: (tab: TabId) => void
   );
 }
 
-function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
-  const [tab, setTab] = useState<TabId>("catalogue");
+/**
+ * `initialTab` / `initialEncounter` come from the URL (`?tab=encounters&encounter=<id>`, the Sessions hub's deep link);
+ * after that the tabs are local state again and a tab change writes nothing to the URL.
+ */
+function GmAdversaries({ campaign, initialTab, initialEncounter }: { campaign: CampaignSummary; initialTab: TabId; initialEncounter: string | null }) {
+  const [tab, setTab] = useState<TabId>(initialTab);
   const [opened, setOpened] = useState<OpenedFromEnvironment | null>(null);
   // The selected environment lives here so it survives a tab switch.
   const [environmentId, setEnvironmentId] = useState<string | null>(null);
@@ -186,7 +205,7 @@ function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
           {tab === "catalogue" ? (
             <CatalogueTab campaign={campaign} />
           ) : tab === "encounters" ? (
-            <EncountersTab campaign={campaign} />
+            <EncountersTab campaign={campaign} initialEncounter={initialEncounter} />
           ) : (
             <>
               {/* A Potential Adversary opens right here, above the environments (user 2026-10-19). */}
@@ -222,6 +241,17 @@ function GmAdversaries({ campaign }: { campaign: CampaignSummary }) {
   );
 }
 
+/**
+ * Reads the deep link once per URL: a new `?tab=` / `?encounter=` (a link followed while the page is open) starts the
+ * page over from it, keyed on the link itself, never on live data (CL7).
+ */
+function DeepLinkedAdversaries({ campaign }: { campaign: CampaignSummary }) {
+  const params = useSearchParams();
+  const tab = parseTab(params.get("tab"));
+  const encounter = tab === "encounters" ? params.get("encounter") || null : null;
+  return <GmAdversaries key={`${tab}:${encounter ?? ""}`} campaign={campaign} initialTab={tab} initialEncounter={encounter} />;
+}
+
 /** Adversaries (D8): the SRD catalogue and the GM's encounters. GM-only; players get a panel and no data request. */
 export default function AdversariesPage() {
   const campaign = useCampaign();
@@ -229,7 +259,16 @@ export default function AdversariesPage() {
     <div className="adv-root">
       <title>Adversaries</title>
       {campaign.role === "gm" ? (
-        <GmAdversaries campaign={campaign} />
+        // `useSearchParams` needs a Suspense boundary.
+        <Suspense
+          fallback={
+            <p role="status" className="adv-count">
+              Loading…
+            </p>
+          }
+        >
+          <DeepLinkedAdversaries campaign={campaign} />
+        </Suspense>
       ) : (
         <main className="adv-main">
           <section aria-labelledby="adv-gm-only-h" className="adv-gm-only">

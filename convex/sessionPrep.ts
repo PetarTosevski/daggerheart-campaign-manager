@@ -8,7 +8,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { loadEncounter, MAX_ENCOUNTERS, MAX_INSTANCES, MAX_PCS } from "./lib/encounters";
 import { gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
-import { cleanText, loadSession, sessionPrepOf } from "./lib/sessions";
+import { cleanText, currentSessionEncounter, loadSession, sessionPrepOf } from "./lib/sessions";
 import { encounterStatusValidator } from "./lib/validators/encounters";
 import { MAX_SCENES, sessionSceneTypeValidator, sessionSceneValidator } from "./lib/validators/sessions";
 
@@ -143,6 +143,25 @@ export const get = gmQuery({
       };
     }
     return { scenes: prep?.scenes ?? [], hooks: prep?.hooks ?? "", encounter: summary };
+  },
+});
+
+/**
+ * The Sessions hub's link back (TASK-SESSIONS-HUB): the live session, else the newest planned one, when it links an
+ * encounter that still exists, with that encounter's id; null otherwise. The encounter tracker shows a 'Session N'
+ * chip when its open encounter is this one. GM-only (K10: players never see session prep).
+ */
+export const current = gmQuery({
+  args: {},
+  returns: v.union(
+    v.object({ sessionId: v.id("sessions"), n: v.number(), live: v.boolean(), encounterId: v.id("encounters") }),
+    v.null(),
+  ),
+  handler: async (ctx) => {
+    const found = await currentSessionEncounter(ctx, ctx.campaign._id);
+    if (found === null) return null;
+    const { session, encounter } = found;
+    return { sessionId: session._id, n: session.n, live: session.status === "live", encounterId: encounter._id };
   },
 });
 

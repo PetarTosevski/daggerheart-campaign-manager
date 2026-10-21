@@ -25,7 +25,7 @@ import { adversaryArtSrc, MAX_INSTANCES, startEncounter } from "./lib/encounters
 import { ownFileUrl } from "./lib/files";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
-import { liveSession, newestPlannedSession, sessionPrepOf } from "./lib/sessions";
+import { currentSessionEncounter } from "./lib/sessions";
 import { carriedLightValidator, tokenSideValidator } from "./lib/validators/combatMaps";
 import { encounterConditionValidator, encounterStatusValidator } from "./lib/validators/encounters";
 
@@ -222,19 +222,6 @@ async function insertTokens(ctx: MutationCtx, map: Doc<"combatMaps">, existing: 
     );
   }
   return ids;
-}
-
-/**
- * The session the Combat Map's "＋ Session encounter" uses (B11: the live session, else the newest planned one) and
- * its linked encounter (S4: `sessionPrep.encounterId`), or null when there is no such session, it links none, or the
- * link dangles (D8 deleted the encounter) or points outside the campaign.
- */
-async function sessionEncounterOf(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<{ session: Doc<"sessions">; encounter: Doc<"encounters"> } | null> {
-  const session = (await liveSession(ctx, campaignId)) ?? (await newestPlannedSession(ctx, campaignId));
-  if (session === null) return null;
-  const encounterId = (await sessionPrepOf(ctx, session._id))?.encounterId;
-  const encounter = encounterId === undefined ? null : await ctx.db.get("encounters", encounterId);
-  return encounter !== null && encounter.campaignId === campaignId ? { session, encounter } : null;
 }
 
 /** The encounter's instances in order (at most MAX_INSTANCES). */
@@ -455,7 +442,7 @@ export const sessionEncounter = gmQuery({
   returns: sessionEncounterValidator,
   handler: async (ctx, { mapId }) => {
     const campaignId = ctx.campaign._id;
-    const found = await sessionEncounterOf(ctx, campaignId);
+    const found = await currentSessionEncounter(ctx, campaignId);
     if (found === null) return { title: sessionEncounterTitle(null), session: null };
     const { session, encounter } = found;
     const instances = await instancesOf(ctx, encounter._id);
@@ -550,7 +537,7 @@ export const placeSessionEncounter = keyedGmMutation({
     ctx.once("combat_place_session_encounter", { mapId }, async () => {
       const campaignId = ctx.campaign._id;
       const map = await loadCombatMap(ctx, campaignId, mapId);
-      const found = await sessionEncounterOf(ctx, campaignId);
+      const found = await currentSessionEncounter(ctx, campaignId);
       if (found === null) throw appError("SESSION_NO_ENCOUNTER");
       const { session, encounter } = found;
       const started = await startEncounter(ctx, campaignId, encounter, "End the running encounter first.");
