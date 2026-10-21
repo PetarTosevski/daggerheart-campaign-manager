@@ -34,4 +34,5 @@ export const lorekeeperMessages = {
   LOREKEEPER_ASK_NOT_FOUND: "That request isn't there anymore.",
   /** One open Ask-the-GM per answer (Q8). */
   LOREKEEPER_ASK_EXISTS: "This answer was already sent to the GM.",
+  LOREKEEPER_CONVERSATION_FULL: "This conversation is full. Start a new conversation.",
 } as const satisfies Record<string, string>;
