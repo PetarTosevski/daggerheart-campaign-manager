@@ -352,6 +352,11 @@ waves:
           - tests/unit/sprite-builtin-pack.test.ts
           - docs/sprite-packs/prompts.md
           - docs/tasks/TASK-SP-P4.md
+          # Added 2026-10-21 (P1 merged): the user's P4 answers edit the catalog - new items from the extra sheets, the sewer
+          # channel as a 2x2 crossing, the forest hedge 2x1 and the temple pew row 2x2; the tavern/temple/ruins terrain sheets
+          # were regenerated (old ones in _replaced).
+          - src/lib/sprite-packs/catalog/**
+          - tests/unit/sprite-catalog.test.ts
         reads:
           - src/lib/sprite-packs/catalog/**
           - src/lib/sprite-packs/manifest.ts
