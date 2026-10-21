@@ -48,13 +48,16 @@ export const SIGHT_LABEL: Readonly<Record<SightMode, string>> = {
 
 export type SightSubject = {
   readonly kind: string;
-  /** GM override; unset (or null) = the R7 default for the kind. */
+  /** GM override; unset (or null) = the traits' sight, else the R7 default for the kind. */
   readonly sight?: SightMode | null;
+  /** Sprite traits (sprite-packs P3, D3); absent on Classic objects. */
+  readonly traits?: { readonly sight?: SightMode | null } | null;
 };
 
-/** The object's effective sight mode: the override, else the R7 default. */
+/** The object's effective sight mode (D3): the override, else the sprite's traits, else the R7 default. */
 export function sightOf(object: SightSubject): SightMode {
   if (object.sight) return object.sight;
+  if (object.traits?.sight) return object.traits.sight;
   return (SIGHT_DEFAULTS as Readonly<Record<string, SightMode>>)[object.kind] ?? "none";
 }
 

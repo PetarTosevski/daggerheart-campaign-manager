@@ -14,3 +14,4 @@ export * from "./sight";
 export * from "./ranges";
 export * from "./light";
 export * from "./vision";
+export * from "./traits";
