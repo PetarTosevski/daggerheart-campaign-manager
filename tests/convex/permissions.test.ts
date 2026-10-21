@@ -134,3 +134,233 @@ describe("permissionFor read cost", () => {
     expect(await readsFor(t, ids.outsider, campaignId, "owner")).toEqual(before);
   });
 });
+
+// ---------------------------------------------------------------- D11 journal pages (N0)
+
+const OWNER = "owner@example.com";
+const CHOSEN = "chosen@example.com";
+const UNCHOSEN = "unchosen@example.com";
+
+describe("journal pages (D11): visibility x reader x departure", () => {
+  useAllowlist(`${GM},${OWNER},${CHOSEN},${UNCHOSEN},${OUTSIDER}`);
+
+  const PLAYER_VISIBILITIES = ["gm", "private", "players", "everyone", "chosen"] as const;
+  const GM_VISIBILITIES = ["private", "everyone", "chosen"] as const;
+  type Reader = "owner" | "gm" | "chosen" | "unchosen" | "outsider";
+  const READERS: Reader[] = ["owner", "gm", "chosen", "unchosen", "outsider"];
+  type State = "present" | "removed" | "dead" | "retired" | "away" | "rejoined";
+  const STATES: State[] = ["present", "removed", "dead", "retired", "away", "rejoined"];
+
+  /**
+   * A campaign with a GM, three players who joined by code (the owner, a chosen player, a player not chosen) and an
+   * outsider. The owner's character journal has one page per player visibility; the 'chosen' page names the chosen
+   * player. The GM's journal has one page per GM visibility; its 'chosen' page names the chosen player too.
+   */
+  async function setup() {
+    const t = makeTest();
+    const ids = await t.run(async (ctx) => ({
+      gm: await ctx.db.insert("users", { email: GM, emailVerificationTime: 1 }),
+      owner: await ctx.db.insert("users", { email: OWNER, emailVerificationTime: 1 }),
+      chosen: await ctx.db.insert("users", { email: CHOSEN, emailVerificationTime: 1 }),
+      unchosen: await ctx.db.insert("users", { email: UNCHOSEN, emailVerificationTime: 1 }),
+      outsider: await ctx.db.insert("users", { email: OUTSIDER, emailVerificationTime: 1 }),
+    }));
+    const as = (id: string) => t.withIdentity({ subject: `${id}|s` });
+    const gm = as(ids.gm);
+    const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Journals", idempotencyKey: key() });
+    const join = async (id: Id<"users">) => {
+      const code = await gm.mutation(api.members.rotateJoinCode, { campaignId });
+      expect(await as(id).mutation(api.members.joinByCode, { code })).toEqual({ ok: true, campaignId });
+    };
+    for (const id of [ids.owner, ids.chosen, ids.unchosen]) await join(id);
+    const made = await t.run(async (ctx) => {
+      const now = Date.now();
+      const characterId = await ctx.db.insert("characters", { campaignId, ownerId: ids.owner, createdBy: ids.owner, status: "active", sheet: {}, createdAt: now, updatedAt: now });
+      const counts = { pageCount: 0, entryCount: 0, openCount: 0, createdAt: now, updatedAt: now };
+      const playerJournal = await ctx.db.insert("journals", { campaignId, userId: ids.owner, characterId, ...counts });
+      const gmJournal = await ctx.db.insert("journals", { campaignId, userId: ids.gm, ...counts });
+      const page = (journalId: Id<"journals">, ownerId: Id<"users">, visibility: Doc<"journalPages">["visibility"]) =>
+        ctx.db.insert("journalPages", { campaignId, journalId, ownerId, kind: "collection", title: visibility, tape: 0, visibility, entryCount: 0, openCount: 0, createdAt: now, updatedAt: now });
+      const playerPages = {} as Record<(typeof PLAYER_VISIBILITIES)[number], Id<"journalPages">>;
+      for (const vis of PLAYER_VISIBILITIES) playerPages[vis] = await page(playerJournal, ids.owner, vis);
+      const gmPages = {} as Record<(typeof GM_VISIBILITIES)[number], Id<"journalPages">>;
+      for (const vis of GM_VISIBILITIES) gmPages[vis] = await page(gmJournal, ids.gm, vis);
+      for (const pageId of [playerPages.chosen, gmPages.chosen]) {
+        await ctx.db.insert("journalPageRecipients", { campaignId, pageId, userId: ids.chosen, addedAt: now });
+      }
+      return { characterId, playerJournal, gmJournal, playerPages, gmPages };
+    });
+
+    /** Puts the owner (and their character) into a departure state. */
+    async function enter(state: State) {
+      if (state === "removed" || state === "rejoined") await gm.mutation(api.members.removePlayer, { campaignId, userId: ids.owner });
+      if (state === "rejoined") await join(ids.owner);
+      if (state === "dead" || state === "retired" || state === "away") {
+        await t.run((ctx) => ctx.db.patch("characters", made.characterId, { status: state }));
+      }
+    }
+
+    /** permissionFor of one reader on a page. */
+    async function read(pageId: Id<"journalPages">, reader: Reader) {
+      return t.run(async (ctx) => {
+        const campaign = (await ctx.db.get("campaigns", campaignId))!;
+        const page = (await ctx.db.get("journalPages", pageId))!;
+        const journal = (await ctx.db.get("journals", page.journalId))!;
+        const user = (await ctx.db.get("users", ids[reader]))!;
+        return permissionFor(ctx, user, { type: "journalPage", campaign, journal, page });
+      });
+    }
+    return { t, ids, gm, as, campaignId, ...made, enter, read, join };
+  }
+
+  /** The analysis 3.1 table for a player's page (A3, A4, A5, Q2, Q4, D4, Q12). */
+  function expectedPlayerPage(visibility: (typeof PLAYER_VISIBILITIES)[number], reader: Reader, state: State): Permission | null {
+    if (reader === "outsider") return null;
+    if (reader === "owner") return state === "removed" ? null : "owner";
+    if (visibility === "private") return null;
+    if (state === "removed" || state === "dead" || state === "retired") return "view";
+    if (visibility === "everyone") return "view";
+    if (visibility === "gm") return reader === "gm" ? "view" : null;
+    if (visibility === "players") return reader === "gm" ? null : "view";
+    return reader === "chosen" ? "view" : null;
+  }
+
+  /** A GM's page: the GM owns it and it never departs (the owner's state does not touch it). */
+  function expectedGmPage(visibility: (typeof GM_VISIBILITIES)[number], reader: Reader, state: State): Permission | null {
+    if (reader === "outsider") return null;
+    if (reader === "gm") return "owner";
+    // The removed owner is an outsider now.
+    if (reader === "owner" && state === "removed") return null;
+    if (visibility === "private") return null;
+    if (visibility === "everyone") return "view";
+    return reader === "chosen" ? "view" : null;
+  }
+
+  for (const state of STATES) {
+    it(`every visibility x reader, owner ${state}`, async () => {
+      const s = await setup();
+      await s.enter(state);
+      const got: Record<string, Permission | null> = {};
+      const want: Record<string, Permission | null> = {};
+      for (const vis of PLAYER_VISIBILITIES) {
+        for (const reader of READERS) {
+          got[`player:${vis}:${reader}`] = await s.read(s.playerPages[vis], reader);
+          want[`player:${vis}:${reader}`] = expectedPlayerPage(vis, reader, state);
+        }
+      }
+      for (const vis of GM_VISIBILITIES) {
+        for (const reader of READERS) {
+          got[`gm:${vis}:${reader}`] = await s.read(s.gmPages[vis], reader);
+          want[`gm:${vis}:${reader}`] = expectedGmPage(vis, reader, state);
+        }
+      }
+      expect(got).toEqual(want);
+    });
+  }
+
+  it("a GM 'chosen' page reaches the chosen player only", async () => {
+    const s = await setup();
+    expect(await Promise.all(READERS.map((r) => s.read(s.gmPages.chosen, r)))).toEqual([null, "owner", "view", null, null]);
+  });
+
+  it("a player's 'chosen' page is hidden from the GM until the GM is a recipient (D4)", async () => {
+    const s = await setup();
+    expect(await s.read(s.playerPages.chosen, "gm")).toBeNull();
+    await s.t.run((ctx) => ctx.db.insert("journalPageRecipients", { campaignId: s.campaignId, pageId: s.playerPages.chosen, userId: s.ids.gm, addedAt: Date.now() }));
+    expect(await s.read(s.playerPages.chosen, "gm")).toBe("view");
+    expect(await s.read(s.playerPages.chosen, "unchosen")).toBeNull();
+  });
+
+  it("a departed player's 'players' page reaches the GM, its 'private' page stays the owner's; a rejoin hides it again", async () => {
+    const s = await setup();
+    expect(await s.read(s.playerPages.players, "gm")).toBeNull();
+    await s.gm.mutation(api.members.removePlayer, { campaignId: s.campaignId, userId: s.ids.owner });
+    expect(await s.read(s.playerPages.players, "gm")).toBe("view");
+    expect(await s.read(s.playerPages.private, "gm")).toBeNull();
+    expect(await s.read(s.playerPages.private, "chosen")).toBeNull();
+    await s.join(s.ids.owner);
+    expect(await s.read(s.playerPages.players, "gm")).toBeNull();
+    expect(await s.read(s.playerPages.players, "unchosen")).toBe("view");
+    expect(await s.read(s.playerPages.private, "owner")).toBe("owner");
+  });
+
+  it("a status set back to 'active' restores the previous visibility", async () => {
+    const s = await setup();
+    await s.enter("dead");
+    expect(await s.read(s.playerPages.players, "gm")).toBe("view");
+    await s.t.run((ctx) => ctx.db.patch("characters", s.characterId, { status: "active" }));
+    expect(await s.read(s.playerPages.players, "gm")).toBeNull();
+  });
+
+  it("the character moving to another account or vanishing is a departure, and so is leaving", async () => {
+    const s = await setup();
+    await s.t.run((ctx) => ctx.db.patch("characters", s.characterId, { ownerId: s.ids.chosen }));
+    expect(await s.read(s.playerPages.players, "gm")).toBe("view");
+    await s.t.run((ctx) => ctx.db.patch("characters", s.characterId, { ownerId: s.ids.owner }));
+    expect(await s.read(s.playerPages.players, "gm")).toBeNull();
+    await s.t.run((ctx) => ctx.db.delete("characters", s.characterId));
+    expect(await s.read(s.playerPages.gm, "unchosen")).toBe("view");
+
+    const fresh = await setup();
+    await fresh.as(fresh.ids.owner).mutation(api.members.leave, { campaignId: fresh.campaignId });
+    expect(await fresh.read(fresh.playerPages.gm, "unchosen")).toBe("view");
+    expect(await fresh.read(fresh.playerPages.gm, "owner")).toBeNull();
+  });
+
+  it("a torn-out page is readable only by its owner and by the GM who tore it out", async () => {
+    const s = await setup();
+    await s.t.run((ctx) => ctx.db.patch("journalPages", s.playerPages.everyone, { binnedAt: Date.now(), binnedBy: s.ids.owner }));
+    expect(await Promise.all(READERS.map((r) => s.read(s.playerPages.everyone, r)))).toEqual(["owner", null, null, null, null]);
+    // A departed journal's page the GM tore out (D2): the GM reads it in the bin, other members do not.
+    await s.enter("retired");
+    await s.t.run((ctx) => ctx.db.patch("journalPages", s.playerPages.gm, { binnedAt: Date.now(), binnedBy: s.ids.gm }));
+    expect(await Promise.all(READERS.map((r) => s.read(s.playerPages.gm, r)))).toEqual(["owner", "view", null, null, null]);
+    // The binner keeps it only while they would read it unbinned: a 'players' page the GM tore out of the retired
+    // journal is out of the GM's reach once the character is active again (N1 canRestore).
+    await s.t.run((ctx) => ctx.db.patch("journalPages", s.playerPages.players, { binnedAt: Date.now(), binnedBy: s.ids.gm }));
+    expect(await s.read(s.playerPages.players, "gm")).toBe("view");
+    await s.t.run((ctx) => ctx.db.patch("characters", s.characterId, { status: "active" }));
+    expect(await s.read(s.playerPages.players, "gm")).toBeNull();
+    expect(await s.read(s.playerPages.gm, "gm")).toBe("view");
+  });
+
+  it("an unattached player journal departs only with its owner's role; the GM's journal never departs", async () => {
+    const s = await setup();
+    await s.t.run((ctx) => ctx.db.patch("journals", s.playerJournal, { characterId: undefined }));
+    await s.enter("dead");
+    expect(await s.read(s.playerPages.players, "gm")).toBeNull();
+    await s.enter("removed");
+    expect(await s.read(s.playerPages.players, "gm")).toBe("view");
+    // Even with the GM journal pointing at a dead character, the GM's private page stays private.
+    await s.t.run((ctx) => ctx.db.patch("journals", s.gmJournal, { characterId: s.characterId }));
+    expect(await s.read(s.gmPages.private, "chosen")).toBeNull();
+    expect(await s.read(s.gmPages.chosen, "unchosen")).toBeNull();
+  });
+
+  it("a page whose campaign or journal does not match is nobody's", async () => {
+    const s = await setup();
+    const { campaignId: other } = await s.gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Elsewhere", idempotencyKey: key() });
+    const result = await s.t.run(async (ctx) => {
+      const elsewhere = (await ctx.db.get("campaigns", other))!;
+      const home = (await ctx.db.get("campaigns", s.campaignId))!;
+      const page = (await ctx.db.get("journalPages", s.gmPages.everyone))!;
+      const journal = (await ctx.db.get("journals", page.journalId))!;
+      const mismatched = (await ctx.db.get("journals", s.playerJournal))!;
+      const user = (await ctx.db.get("users", s.ids.gm))!;
+      return [
+        await permissionFor(ctx, user, { type: "journalPage", campaign: elsewhere, journal, page }),
+        await permissionFor(ctx, user, { type: "journalPage", campaign: home, journal: mismatched, page }),
+      ];
+    });
+    expect(result).toEqual([null, null]);
+  });
+
+  it("a grant on the campaign gives no journal page", async () => {
+    const s = await setup();
+    await s.t.run((ctx) =>
+      upsertGrant(ctx, { resourceType: "campaign", resourceId: s.campaignId, principalKind: "user", principalId: s.ids.outsider, permission: "owner", createdBy: s.ids.gm }),
+    );
+    expect(await s.read(s.gmPages.everyone, "outsider")).toBeNull();
+    expect(await s.read(s.playerPages.everyone, "outsider")).toBeNull();
+  });
+});

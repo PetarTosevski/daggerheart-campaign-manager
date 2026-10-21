@@ -204,6 +204,13 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ctx.db.patch("files", spriteFileId, { refId: spriteId });
     await ctx.db.patch("combatMaps", combatMapId, { style: "sprites", setting: { pack: packId }, settingPicked: true, texturePalette: [{ uploaded: spriteId }] });
     await ins("combatMapObjects", { mapId: combatMapId, kind: "statue", x: 6, y: 6, r: 0.5, rot: 0, sprite: { uploaded: spriteId } });
+    // A journal with a shared page, its chosen reader and an entry, plus a torn-out page (D11).
+    const journalId = await ins("journals", { campaignId: c, userId, characterId, pageCount: 1, entryCount: 1, openCount: 1, createdAt: now, updatedAt: now });
+    const page = { campaignId: c, journalId, ownerId: userId, kind: "log" as const, title: "Session 1", tape: 0, entryCount: 1, openCount: 1, createdAt: now, updatedAt: now };
+    const pageId = await ins("journalPages", { ...page, visibility: "chosen", sessionId });
+    await ins("journalPages", { ...page, title: "Torn", visibility: "gm", binnedAt: now, binnedBy: userId, entryCount: 0, openCount: 0 });
+    await ins("journalPageRecipients", { campaignId: c, pageId, userId, addedAt: now });
+    await ins("journalEntries", { campaignId: c, journalId, pageId, authorId: userId, kind: "task", state: "open", star: false, text: "Find the well", order: 0, open: true, createdAt: now, updatedAt: now });
     await ins("files", { storageId: blobs.file, campaignId: c, uploadedBy: userId, kind: "map", refId: c, createdAt: now });
     await ins("mapUploads", { storageId: blobs.mapUpload, campaignId: c, uploadedBy: userId, createdAt: now });
     await ins("codexImages", { storageId: blobs.codexImage, campaignId: c, entryId, uploadedBy: userId, createdAt: now });
@@ -356,6 +363,27 @@ describe("cleanup crons", () => {
     expect(await leftovers(t, live)).toEqual(liveBefore);
     expect(liveBefore.rows).toMatchObject({ combatMaps: 1, combatTokens: 1, combatMapObjects: 2, combatMapCells: 1, combatExplored: 1 });
     expect(liveBefore.rows).toMatchObject({ sessions: 1, sessionPrep: 1, sessionLog: 1, sessionSpotlights: 1 });
+  });
+
+  it("purges a campaign's journals, pages (torn-out ones too), recipients and entries in batches (D11)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const due = await seedCampaign(t, userId, NOW - 31 * DAY);
+    const live = await seedCampaign(t, userId, undefined);
+    await t.run(async (ctx) => {
+      const page = await ctx.db.query("journalPages").withIndex("by_campaign_visibility_binned", (q) => q.eq("campaignId", due.campaignId).eq("visibility", "chosen")).first();
+      for (let i = 0; i < BATCH + 30; i++) {
+        await ctx.db.insert("journalEntries", { campaignId: due.campaignId, journalId: page!.journalId, pageId: page!._id, authorId: userId, kind: "note", state: "open", star: false, text: `Line ${i}`, order: i + 1, open: false, createdAt: NOW, updatedAt: NOW });
+      }
+    });
+    const liveBefore = await leftovers(t, live);
+    expect(liveBefore.rows).toMatchObject({ journals: 1, journalPages: 2, journalPageRecipients: 1, journalEntries: 1 });
+
+    await t.mutation(internal.cleanup.purgeDeletedCampaigns, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await leftovers(t, due)).toEqual({ rows: {}, blobs: [] });
+    expect(await leftovers(t, live)).toEqual(liveBefore);
   });
 
   it("purges a campaign's sprite packs, uploaded sprites and their sprite files with blobs (sprite packs P0)", async () => {

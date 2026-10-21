@@ -11,6 +11,7 @@ import { countdownTables } from "./tables/countdowns";
 import { fileTables } from "./tables/files";
 import { historyTables } from "./tables/history";
 import { mapTables } from "./tables/maps";
+import { notesTables } from "./tables/notes";
 import { operationTables } from "./tables/operations";
 import { restTables } from "./tables/rests";
 import { sessionTables } from "./tables/sessions";
@@ -37,4 +38,5 @@ export default defineSchema({
   ...combatMapTables,
   ...sessionTables,
   ...spritePackTables,
+  ...notesTables,
 });

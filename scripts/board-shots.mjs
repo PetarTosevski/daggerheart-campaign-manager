@@ -25,6 +25,13 @@
 // planned, 2 dated; 3 has scenes, hooks, encounter roles, spotlight counts, a tally, log lines, recap, loot, threads and
 // the milestone). `empty` has no sessions; `live` marks Session 3 live; the stages click their tab on Session 3 (the
 // board selects the newest session).
+//   node scripts/board-shots.mjs notes:all                # Notes regions (.omc/plans/d11-notes.yaml)
+// Notes: shot at 1440x900 only (the board has no phone layout) as notes-<region>-1440.png, each region on a fresh page
+// whose localStorage holds one story. `empty`: no journal, so the board writes the GM's default pages; `player`: a
+// party of one (Liriel the Seraph) and 'Writing as' Liriel, so her default pages; `page`, `threads`, `search` and
+// `tear`: the GM journal's 'Session 1' with an entry of every kind and task state, a star and an @mention of Mira (a
+// Codex character), plus a second page with an open task and a Fear. `threads` presses Open threads, `search` types
+// "ferry", `tear` clicks Tear out twice and shoots mid-rip (animations left running).
 
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -222,6 +229,88 @@ const HUB_REGIONS = {
   "wither-panel": { board: HUB_BOARD, find: (p) => p.locator('section[aria-labelledby="wither-h"]') },
 };
 
+const NOTES_BOARD = pathToFileURL(join(ROOT, "reference/designs/project/Notes.dc.html")).href;
+const NOTES_VIEWPORTS = [{ width: 1440, height: 900 }];
+const NOTES_ENTRIES = [
+  { id: "e1", k: "event", text: "Crossed the river at dawn with @Mira", s: "open" },
+  { id: "e2", k: "task", text: "Ask the ferryman about the well", s: "open", star: true },
+  { id: "e3", k: "task", text: "Pay the toll", s: "done" },
+  { id: "e4", k: "task", text: "Map the ford", s: "migrated" },
+  { id: "e5", k: "task", text: "Visit the shrine", s: "scheduled" },
+  { id: "e6", k: "task", text: "Chase the goat", s: "struck" },
+  { id: "e7", k: "note", text: "The ferryman owes Mira a favour", s: "open" },
+  { id: "e8", k: "idea", text: "A rival crew on the river?", s: "open" },
+  { id: "e9", k: "hope", text: "The grove spirits are friendly", s: "open" },
+  { id: "e10", k: "fear", text: "Wither spreading through the Grove", s: "open" },
+  { id: "e11", k: "fear", text: "Bandits at the ford", s: "done" },
+];
+const NOTES_STORY = {
+  "dh.witherwild.codex": { chars: [{ id: "c1", name: "Mira", role: "Ferry captain", known: true }], locs: [] },
+  "dh.witherwild.journal": {
+    pages: [
+      { id: "p1", kind: "log", title: "Session 1", tape: 0, created: 1790000000000, entries: NOTES_ENTRIES },
+      { id: "p2", kind: "collection", title: "Rumors & hooks", tape: 1, created: 1790000000001, entries: [{ id: "r1", k: "task", text: "Find who poisoned the well", s: "open" }, { id: "r2", k: "fear", text: "The Doom countdown", s: "open" }] },
+      { id: "p3", kind: "collection", title: "Loot & debts", tape: 2, created: 1790000000002, entries: [] },
+      { id: "p4", kind: "future", title: "Future log", tape: 3, created: 1790000000003, entries: [] },
+    ],
+  },
+};
+const PAPER = (p) => p.locator('section[aria-label="Journal page"]');
+/** Notes region -> story, what to do first and what to shoot (null = the whole page). */
+const NOTES_REGIONS = {
+  empty: { story: {}, find: () => null },
+  page: { find: PAPER },
+  threads: { prepare: (p) => p.getByRole("button", { name: /Open threads/ }).click(), find: PAPER },
+  search: { prepare: (p) => p.getByRole("searchbox", { name: "Search the journal" }).fill("ferry"), find: (p) => p.locator("main") },
+  player: {
+    story: {
+      "dh.witherwild.party": [{ cls: 5, clsName: "Seraph", hpMax: 6, hp: 0, stressMax: 6, stress: 0, hope: 2, f: { name: "Liriel" } }],
+      "dh.witherwild.journalWho": "pc-liriel",
+    },
+    find: () => null,
+  },
+  tear: {
+    prepare: async (p) => {
+      const button = p.getByRole("button", { name: "Tear out page" });
+      await button.click();
+      await p.getByRole("button", { name: "Click again to tear out" }).click();
+      await p.waitForTimeout(500);
+    },
+    find: PAPER,
+    running: true,
+  },
+};
+
+/** Shoots one Notes region at one viewport on a fresh page seeded with the region's story. */
+async function shootNotes(browser, viewport, name, region) {
+  const page = await browser.newPage({ viewport });
+  const path = join(OUT, `notes-${name}-${viewport.width}.png`);
+  try {
+    await page.goto(NOTES_BOARD);
+    await page.evaluate((list) => {
+      window.localStorage.clear();
+      for (const [key, value] of list) window.localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+    }, Object.entries(region.story ?? NOTES_STORY));
+    await page.reload();
+    await page.locator("main").first().waitFor({ timeout: 20000 });
+    if (region.prepare) await region.prepare(page);
+    const target = region.find(page);
+    const animations = region.running ? "allow" : "disabled";
+    if (target === null) await page.screenshot({ path, fullPage: true, animations });
+    else {
+      await target.first().waitFor({ timeout: 5000 });
+      await target.first().screenshot({ path, animations });
+    }
+    console.log(path);
+    return 0;
+  } catch (error) {
+    console.error(`notes:${name} @ ${viewport.width}: not found (${error.message.split("\n")[0]})`);
+    return 1;
+  } finally {
+    await page.close();
+  }
+}
+
 /** Shoots one sessions / hub region at one viewport on a fresh page seeded with the region's story. */
 async function shootD10(browser, viewport, prefix, name, region) {
   const page = await browser.newPage({ viewport });
@@ -265,11 +354,12 @@ if (wanted.length === 0) {
       `Combat regions: ${Object.keys(COMBAT_REGIONS).map((r) => `combat:${r}`).join(", ")}\n` +
       `Sessions regions: ${Object.keys(SESSION_REGIONS).map((r) => `sessions:${r}`).join(", ")}\n` +
       `Dashboard regions: ${Object.keys(HUB_REGIONS).map((r) => `hub:${r}`).join(", ")}\n` +
-      "Usage: node scripts/board-shots.mjs <region...> | all | adversaries:all | combat:all | sessions:all | hub:all",
+      `Notes regions: ${Object.keys(NOTES_REGIONS).map((r) => `notes:${r}`).join(", ")}\n` +
+      "Usage: node scripts/board-shots.mjs <region...> | all | adversaries:all | combat:all | sessions:all | hub:all | notes:all",
   );
   process.exit(0);
 }
-const PREFIXES = ["adversaries:", "combat:", "sessions:", "hub:"];
+const PREFIXES = ["adversaries:", "combat:", "sessions:", "hub:", "notes:"];
 const prefixed = (prefix, regions) => {
   const list = wanted.filter((n) => n.startsWith(prefix)).map((n) => n.slice(prefix.length));
   return list.includes("all") ? Object.keys(regions) : list;
@@ -278,6 +368,7 @@ const advNames = prefixed("adversaries:", ADVERSARY_REGIONS);
 const combatNames = prefixed("combat:", COMBAT_REGIONS);
 const sessionNames = prefixed("sessions:", SESSION_REGIONS);
 const hubNames = prefixed("hub:", HUB_REGIONS);
+const notesNames = prefixed("notes:", NOTES_REGIONS);
 const partyWanted = wanted.filter((n) => !PREFIXES.some((p) => n.startsWith(p)));
 const names = partyWanted.includes("all") ? Object.keys(REGIONS) : partyWanted;
 const unknown = [
@@ -286,6 +377,7 @@ const unknown = [
   ...combatNames.filter((n) => !COMBAT_REGIONS[n]).map((n) => `combat:${n}`),
   ...sessionNames.filter((n) => !SESSION_REGIONS[n]).map((n) => `sessions:${n}`),
   ...hubNames.filter((n) => !HUB_REGIONS[n]).map((n) => `hub:${n}`),
+  ...notesNames.filter((n) => !NOTES_REGIONS[n]).map((n) => `notes:${n}`),
 ];
 if (unknown.length) {
   console.error(`Unknown region(s): ${unknown.join(", ")}. Run without arguments for the list.`);
@@ -297,6 +389,9 @@ const browser = await chromium.launch();
 let failed = 0;
 try {
   for (const viewport of combatNames.length ? COMBAT_VIEWPORTS : []) failed += await shootCombat(browser, viewport, combatNames);
+  for (const viewport of notesNames.length ? NOTES_VIEWPORTS : []) {
+    for (const name of notesNames) failed += await shootNotes(browser, viewport, name, NOTES_REGIONS[name]);
+  }
   for (const viewport of sessionNames.length || hubNames.length ? D10_VIEWPORTS : []) {
     for (const name of sessionNames) failed += await shootD10(browser, viewport, "sessions", name, SESSION_REGIONS[name]);
     for (const name of hubNames) failed += await shootD10(browser, viewport, "hub", name, HUB_REGIONS[name]);
