@@ -767,12 +767,12 @@ describe("mapping (D1)", () => {
         else fromCommon++;
       }
     }
-    // 70 (setting, terrain) pairs keep their primary textures and gain variants (common's new gravel, grass,
-    // pebbles and mud reach the settings that fall back to common). 11 pairs had no texture of their own and now
-    // use the setting's batch-2 one: 3 were drawn the Classic way (forest and town water, coast swamp), 8 fell
-    // back to common's (grassland, tavern and snow dirt; crypt, temple and sewers path; ruins grass; mushroom
-    // cavern stone). docs/tasks/TASK-SP-P11Z.md, "Textures".
-    expect([gained, fromCommon]).toEqual([70, 11]);
+    // 78 (setting, terrain) pairs keep their primary textures and gain variants: 70 gain the setting's or common's
+    // batch-2 textures, and 8 that fell back to common keep common's primary texture and gain the setting's batch-2
+    // one (grassland, tavern and snow dirt; crypt, temple and sewers path; ruins grass; mushroom cavern stone;
+    // texturePool in mapping.ts, F4). 3 pairs had no primary texture anywhere and use the setting's batch-2 one
+    // only (forest and town water, coast swamp). docs/tasks/TASK-SP-P11Z.md, "Textures"; docs/tasks/TASK-F4-F4.md.
+    expect([gained, fromCommon]).toEqual([78, 3]);
   });
 });
 

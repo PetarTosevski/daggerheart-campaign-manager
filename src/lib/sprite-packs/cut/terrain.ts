@@ -1,9 +1,12 @@
 /**
  * Terrain sheets (sprite packs P2, D6): four ground swatches in a 2 x 2 grid
  * with a thin magenta cross between them, and often a flat outer frame (the
- * user's sheets have a white one) that is not magenta.
+ * user's primary sheets have a white one; some extra sheets a plain magenta
+ * one, TASK-SP-P11Z).
  *
- * cutTerrain finds the frame (flat lines from each edge inward), then the
+ * cutTerrain first cuts away a plain magenta outer frame (the same rule as the
+ * build script's stripMagentaFrame), then finds a flat frame of another colour
+ * (flat lines from each edge inward), then the
  * magenta cross inside it (the column / row with the most magenta near the
  * middle), insets each swatch past the JPEG bleed and crops it to a centred
  * square. seamFix makes a swatch tile (offset by half, cross-blend the seam
@@ -108,8 +111,53 @@ function square(box: Box): Box {
   return { x: box.x + Math.floor((box.w - s) / 2), y: box.y + Math.floor((box.h - s) / 2), w: s, h: s };
 }
 
-/** Cut a terrain sheet into its four square swatches (reading order). The input is not changed. */
+/**
+ * How many lines from each edge form a plain magenta frame: lines whose middle
+ * 60 % is at least half gap magenta, up to 20 % of the short side. The same
+ * rule as `stripMagentaFrame` in scripts/sprite-packs/lib/pipeline.ts, so a GM
+ * upload and the build script cut the same swatches. The cross is a thin line
+ * through the middle, so it never counts as a frame line.
+ */
+function magentaFrame(img: RgbaImage): { top: number; right: number; bottom: number; left: number } {
+  const { width: w, height: h } = img;
+  const limit = Math.round(Math.min(w, h) * 0.2);
+  const depth = (n: number, at: (k: number, t: number) => boolean) => {
+    const from = Math.round(n * 0.2);
+    const to = Math.round(n * 0.8);
+    let k = 0;
+    for (; k < limit; k++) {
+      let m = 0;
+      for (let t = from; t < to; t++) if (at(k, t)) m++;
+      if (m < (to - from) * 0.5) break;
+    }
+    return k;
+  };
+  const gap = (x: number, y: number) => isGapMagenta(...px(img, x, y));
+  return {
+    top: depth(w, (k, x) => gap(x, k)),
+    right: depth(h, (k, y) => gap(w - 1 - k, y)),
+    bottom: depth(w, (k, x) => gap(x, h - 1 - k)),
+    left: depth(h, (k, y) => gap(k, y)),
+  };
+}
+
+/**
+ * Cut a terrain sheet into its four square swatches (reading order). A plain
+ * magenta outer frame is cut away first; boxes are on the input sheet either
+ * way. The input is not changed.
+ */
 export function cutTerrain(img: RgbaImage): TerrainCut {
+  const m = magentaFrame(img);
+  if (m.top + m.right + m.bottom + m.left === 0) return cutInsideFrame(img);
+  const t = cutInsideFrame(
+    crop(img, { x: m.left, y: m.top, w: img.width - m.left - m.right, h: img.height - m.top - m.bottom }),
+  );
+  const shift = (b: Box): Box => ({ ...b, x: b.x + m.left, y: b.y + m.top });
+  return { ...t, inner: shift(t.inner), swatches: t.swatches.map((s) => ({ ...s, box: shift(s.box) })) };
+}
+
+/** cutTerrain on a sheet without a magenta frame: a flat frame of another colour, the cross, the swatches. */
+function cutInsideFrame(img: RgbaImage): TerrainCut {
   const { width: w, height: h } = img;
   const flags: TerrainFlag[] = [];
   const limit = Math.round(Math.min(w, h) * 0.2);

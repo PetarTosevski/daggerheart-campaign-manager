@@ -13,6 +13,7 @@ import {
   trimToAlpha,
 } from "../../src/lib/sprite-packs/cut";
 import type { RgbaImage, SpriteCut } from "../../src/lib/sprite-packs/cut";
+import { stripMagentaFrame } from "../../scripts/sprite-packs/lib/pipeline";
 import {
   PALETTE,
   blank,
@@ -310,6 +311,42 @@ describe("cutTerrain", () => {
     expect(cut.flags).toEqual([]);
     // 147 px swatches minus the bleed inset on both sides.
     for (const s of cut.swatches) expect(s.box.w).toBe(142);
+  });
+
+  /** A sheet drawn inside a plain magenta outer frame `m` px wide (TASK-SP-P11Z's batch-2 terrain sheets). */
+  function inMagentaFrame(sheet: RgbaImage, m: number): RgbaImage {
+    const out = blank(sheet.width + 2 * m, sheet.height + 2 * m, [255, 0, 255]);
+    for (let y = 0; y < sheet.height; y++)
+      out.data.set(sheet.data.subarray(y * sheet.width * 4, (y + 1) * sheet.width * 4), ((y + m) * out.width + m) * 4);
+    return out;
+  }
+
+  it("strips a plain magenta outer frame, with or without a white frame inside it", () => {
+    for (const white of [0, 16]) {
+      const { img: plain, bases } = terrainSheet(300, white, 6);
+      const before = cutTerrain(plain);
+      const cut = cutTerrain(inMagentaFrame(plain, 30));
+      expect(cut.flags).toEqual([]);
+      // The same cut as on the sheet without the magenta frame, moved by the frame on the input sheet.
+      expect(cut.inner).toEqual({ ...before.inner, x: before.inner.x + 30, y: before.inner.y + 30 });
+      cut.swatches.forEach((s, i) => {
+        const b = before.swatches[i];
+        if (!b) throw new Error("missing swatch");
+        expect(s.box).toEqual({ ...b.box, x: b.box.x + 30, y: b.box.y + 30 });
+        expect(s.image).toEqual(b.image);
+        const [r, g, bl] = getPx(s.image, Math.floor(s.image.width / 2), Math.floor(s.image.height / 2));
+        expect(near([r, g, bl], bases[i] ?? [0, 0, 0], 30)).toBe(true);
+      });
+    }
+  });
+
+  it("cuts the same swatches as the build script's stripMagentaFrame then cutTerrain", () => {
+    const framed = inMagentaFrame(terrainSheet(320, 12, 8).img, 24);
+    jpegLike(framed, 3);
+    const viaScript = cutTerrain(stripMagentaFrame(framed).image);
+    const direct = cutTerrain(framed);
+    expect(direct.flags).toEqual(viaScript.flags);
+    expect(direct.swatches.map((s) => s.image)).toEqual(viaScript.swatches.map((s) => s.image));
   });
 
   it("flags a sheet without a cross and splits it in the middle", () => {
