@@ -150,6 +150,9 @@
 #   name 'Countdown (Loop 1d6)', 'Countdown (Decreasing 8)', 'Countdown (1d12)'); turning frame-tracker countdowns into new modes;
 #   authz-matrix entries (D12 of the rebuild).
 #
+# USER ANSWERS Q1, Q2, Q4, Q5 (2026-10-21, binding): all recommended defaults - Q1 (c) armed countdowns tick automatically AND the
+#   GM's feed button; Q2 (a) trigger at once, repeating countdowns reset immediately, GM-only notice; Q4 (a) a randomized loop resets to
+#   the value first rolled; Q5 (a) undo takes ticks back when nothing changed the countdown since. Status: APPROVED.
 # USER ANSWER Q3 (2026-10-21, binding): each long-term countdown has a switch "On long rest: Automatic / Reminder", default
 #   Automatic. Automatic = option (a): it ticks once when a long rest finishes (an interrupted rest doesn't count). Reminder = option
 #   (c): finishing the long rest only reminds the GM ("Tick <name>?" with a one-click tick), nothing moves by itself.
