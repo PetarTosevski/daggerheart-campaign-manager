@@ -1,14 +1,19 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
+import { Component, useEffect, useEffectEvent, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import { givesLight } from "@/lib/domain/combat-map/light";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 import { spriteTraits } from "@/lib/sprite-packs/traits";
 
+import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { brushSquares, objectLabel } from "../editor/edit-model";
+import { spriteName } from "../editor/sprite-palette";
 import { useMapView } from "../map-view/context";
+import { hasUploadedRefs } from "../map-view/paint-spec";
 import type { MapLayerProps } from "../slots";
 import { initialsOf } from "../tokens/geometry";
 import { useRings } from "../tokens/rings";
@@ -229,13 +234,14 @@ export function VisionLayer(props: MapLayerProps) {
   const labels = doorLabels(doors);
 
   // ---- lights the viewer may switch (R9): the GM every campfire and wall torch; a player those seen or explored.
-  const lights = editing
-    ? []
-    : layout.objects.filter((o) => {
-        if (!givesLight({ kind: o.kind, traits: o.sprite ? spriteTraits(o.sprite) : null })) return false;
-        if (gm) return true;
-        return masks !== null && (maskAt(masks.seen, masks, o.x, o.y) || maskAt(masks.explored, masks, o.x, o.y));
-      });
+  // Uploaded sprites' light comes from their rows (`spriteSources`, read only when the map has uploaded refs).
+  const lightProps: LightSwitchesProps = {
+    objects: editing ? [] : layout.objects,
+    visible: (o) => gm || (masks !== null && (maskAt(masks.seen, masks, o.x, o.y) || maskAt(masks.explored, masks, o.x, o.y))),
+    step,
+    pad,
+    onSwitch: (id, lit) => void actions.setLit(id, lit),
+  };
 
   const marks = gm && viewing.kind === "gm" ? cells.fog : {};
   const hidePath = squaresPath(Object.keys(marks).filter((k) => marks[k] === "hide"), w, pad);
@@ -283,29 +289,13 @@ export function VisionLayer(props: MapLayerProps) {
         {view ? <ConeOutline view={view} w={w} h={h} pad={pad} /> : null}
         {strokeSquares.length > 0 ? <path d={squaresPath(strokeSquares, w, pad)} fill="rgba(255,240,200,0.35)" /> : null}
       </svg>
-      {lights.length > 0 ? (
-        <div className="cm-vis-lights">
-          {lights.map((o) => {
-            const lit = o.lit !== false;
-            const label = objectLabel(o.kind);
-            const size = Math.max(0.9, o.r * 1.6) * step;
-            return (
-              <button
-                key={o._id}
-                type="button"
-                className="cm-vis-light"
-                data-testid="combat-light"
-                aria-pressed={lit}
-                aria-label={`${lit ? "Put out" : "Light"} the ${label.toLowerCase()}`}
-                title={`${label}: ${lit ? "lit, click to put it out" : "out, click to light it"}`}
-                style={{ left: (o.x + pad) * step, top: (o.y + pad) * step, width: size, height: size }}
-                onPointerDown={(e) => e.preventDefault()}
-                onClick={() => void actions.setLit(o._id as Id<"combatMapObjects">, !lit)}
-              />
-            );
-          })}
-        </div>
-      ) : null}
+      {editing ? null : hasUploadedRefs(layout) ? (
+        <SourcesBoundary resetKey={layout._id} fallback={<LightSwitches {...lightProps} uploaded={NO_UPLOADS} />}>
+          <LightSwitchesWithSources {...lightProps} campaignId={campaignId} mapId={layout._id} />
+        </SourcesBoundary>
+      ) : (
+        <LightSwitches {...lightProps} uploaded={NO_UPLOADS} />
+      )}
       {doors.length > 0 && !editing ? (
         <div className="cm-vis-lights">
           {doors.map((d) => {
@@ -366,6 +356,93 @@ export function VisionLayer(props: MapLayerProps) {
       ) : null}
     </>
   );
+}
+
+type LayoutObject = ReturnType<typeof useMapView>["layout"]["objects"][number];
+/** An uploaded sprite row from `spriteSources`: the GM's carries its name, a player's does not (D10). */
+type SourceSprite = FunctionReturnType<typeof api.combatMapStyle.spriteSources>["sprites"][number];
+type UploadedLookup = ReadonlyMap<string, SourceSprite>;
+const NO_UPLOADS: UploadedLookup = new Map();
+const NO_NAMED = new Map<never, never>();
+
+type LightSwitchesProps = {
+  objects: readonly LayoutObject[];
+  visible: (o: LayoutObject) => boolean;
+  step: number;
+  pad: number;
+  onSwitch: (id: Id<"combatMapObjects">, lit: boolean) => void;
+};
+
+/** The name a light switch reads: the sprite's (built-in, or uploaded for the GM), else the Classic kind's (G5). */
+function lightLabel(o: Pick<LayoutObject, "kind" | "sprite">, uploaded: UploadedLookup): string {
+  if (o.sprite) {
+    if ("builtin" in o.sprite) {
+      const name = spriteName(o.sprite, NO_NAMED);
+      if (name) return name;
+    } else {
+      const row = uploaded.get(o.sprite.uploaded);
+      if (row && "name" in row && row.name.trim()) return row.name;
+    }
+  }
+  return objectLabel(o.kind);
+}
+
+/** Reads the map's uploaded sprites (the subscription the canvas already holds) for the light switches. */
+function LightSwitchesWithSources({ campaignId, mapId, ...props }: LightSwitchesProps & { campaignId: Id<"campaigns">; mapId: string }) {
+  const sources = useQuery(api.combatMapStyle.spriteSources, { campaignId, mapId });
+  const uploaded = useMemo<UploadedLookup>(() => (sources ? new Map(sources.sprites.map((s) => [s._id as string, s])) : NO_UPLOADS), [sources]);
+  return <LightSwitches {...props} uploaded={uploaded} />;
+}
+
+/**
+ * The Play-mode light switches (R9) over every object that gives light: a Classic light kind, or a sprite whose
+ * light trait is not none (sprite packs Q1, D2; uploaded sprites through their rows, as the server's toggleLight).
+ */
+function LightSwitches({ objects, visible, step, pad, onSwitch, uploaded }: LightSwitchesProps & { uploaded: UploadedLookup }) {
+  const lookup = { uploaded: (id: string) => uploaded.get(id) };
+  const lights = objects.filter((o) => givesLight({ kind: o.kind, traits: o.sprite ? spriteTraits(o.sprite, lookup) : null }) && visible(o));
+  if (lights.length === 0) return null;
+  return (
+    <div className="cm-vis-lights">
+      {lights.map((o) => {
+        const lit = o.lit !== false;
+        const label = lightLabel(o, uploaded);
+        const size = Math.max(0.9, o.r * 1.6) * step;
+        return (
+          <button
+            key={o._id}
+            type="button"
+            className="cm-vis-light"
+            data-testid="combat-light"
+            aria-pressed={lit}
+            aria-label={`${lit ? "Put out" : "Light"} the ${label.toLowerCase()}`}
+            title={`${label}: ${lit ? "lit, click to put it out" : "out, click to light it"}`}
+            style={{ left: (o.x + pad) * step, top: (o.y + pad) * step, width: size, height: size }}
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={() => onSwitch(o._id as Id<"combatMapObjects">, !lit)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** Keeps a failed `spriteSources` read (a map that just stopped being live) from breaking the layer (map-canvas's twin). */
+class SourcesBoundary extends Component<{ children: ReactNode; fallback: ReactNode; resetKey: string }, { failed: string | null }> {
+  state = { failed: null as string | null };
+
+  static getDerivedStateFromError() {
+    return { failed: "" };
+  }
+
+  static getDerivedStateFromProps(props: { resetKey: string }, state: { failed: string | null }) {
+    if (state.failed === "") return { failed: props.resetKey };
+    return state.failed !== null && state.failed !== props.resetKey ? { failed: null } : null;
+  }
+
+  render() {
+    return this.state.failed !== null ? this.props.fallback : this.props.children;
+  }
 }
 
 /**
