@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import type { CampaignListItem } from "../../../../convex/campaigns";
+import type { CampaignListItem, DeletedCampaign } from "../../../../convex/campaigns";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
@@ -147,6 +147,99 @@ function Band({
   );
 }
 
+/** One deleted campaign: Restore, or Delete permanently behind an in-page confirm that names it (dcm-bxp.30). */
+function DeletedRow({ campaign, onRestored, onPurged }: { campaign: DeletedCampaign; onRestored: () => void; onPurged: () => void }) {
+  const restore = useMutation(api.campaigns.restore);
+  const purge = useMutation(api.campaigns.purge);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = (action: Promise<null>, done: () => void) => {
+    setError(null);
+    setBusy(true);
+    action.then(done, (e) => {
+      setBusy(false);
+      setError(errorMessage(e));
+    });
+  };
+
+  return (
+    <li className="flex flex-col gap-3 rounded-xl border border-[#272434] bg-[#15141d] px-4 py-3.5 sm:px-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        <span className="flex min-w-0 flex-[1_1_220px] flex-col gap-0.5">
+          <span className="font-display text-[20px] font-bold tracking-[0.03em] break-words">{campaign.name}</span>
+          <span className="text-[14px] text-label">
+            {frameName(campaign.frameId)} · Deleted {dateFormat.format(campaign.deletedAt)}
+          </span>
+        </span>
+        <div className="flex flex-wrap gap-2.5">
+          <BrandButton
+            variant="outline"
+            className="border-brand text-brand"
+            aria-label={`Restore ${campaign.name}`}
+            disabled={busy}
+            onClick={() => run(restore({ campaignId: campaign._id }), onRestored)}
+          >
+            Restore
+          </BrandButton>
+          <BrandButton
+            variant="danger"
+            aria-label={`Delete ${campaign.name} permanently`}
+            aria-expanded={confirming}
+            disabled={busy}
+            onClick={() => setConfirming(true)}
+          >
+            <Trash2 className="!size-4" strokeWidth={1.8} aria-hidden="true" />
+            Delete permanently
+          </BrandButton>
+        </div>
+      </div>
+      {confirming ? (
+        <div
+          role="alertdialog"
+          aria-label="Confirm permanent delete"
+          className="flex flex-wrap items-center gap-3 rounded-[10px] border border-danger-line bg-danger-bg px-4 py-3.5"
+        >
+          <span className="flex-[1_1_260px] text-[15px] text-[#ffd9d6]">
+            Delete <strong>{campaign.name}</strong> permanently? Its characters, sessions, notes and maps are erased for
+            good. This can&apos;t be undone.
+          </span>
+          <BrandButton variant="outline" className="border-[#5a3a3a]" disabled={busy} onClick={() => setConfirming(false)}>
+            Keep it
+          </BrandButton>
+          <BrandButton variant="dangerSolid" disabled={busy} onClick={() => run(purge({ campaignId: campaign._id }), onPurged)}>
+            Delete {campaign.name} forever
+          </BrandButton>
+        </div>
+      ) : null}
+      {error ? (
+        <p role="alert" className="m-0 text-[14px] text-danger">
+          {error}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+/** The GM's deleted campaigns, under the saved ones; hidden when there are none. */
+function DeletedCampaigns({ onRestored, onPurged }: { onRestored: (id: Id<"campaigns">) => void; onPurged: (id: Id<"campaigns">) => void }) {
+  const deleted = useQuery(api.campaigns.listDeleted);
+  if (!deleted || deleted.length === 0) return null;
+  return (
+    <section aria-labelledby="deleted-campaigns" className="mt-4 flex flex-none flex-col gap-3">
+      <h2 id="deleted-campaigns" className="m-0 text-[13px] tracking-[0.22em] text-muted-text uppercase">
+        Deleted campaigns
+      </h2>
+      <ul className="m-0 flex list-none flex-col gap-3 p-0">
+        {deleted.map((c) => (
+          <DeletedRow key={c._id} campaign={c} onRestored={() => onRestored(c._id)} onPurged={() => onPurged(c._id)} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** Chronicle board: the GM's saved campaigns. */
 export function Chronicle() {
   const campaigns = useQuery(api.campaigns.list);
@@ -216,6 +309,16 @@ export function Chronicle() {
               />
             ))
           )}
+
+          <DeletedCampaigns
+            onRestored={(id) => {
+              setOpenId(id);
+              if (deleted?._id === id) setDeleted(null);
+            }}
+            onPurged={(id) => {
+              if (deleted?._id === id) setDeleted(null);
+            }}
+          />
         </div>
 
         {campaigns && campaigns.length > 1 ? (
