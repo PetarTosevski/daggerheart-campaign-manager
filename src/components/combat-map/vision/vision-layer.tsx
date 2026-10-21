@@ -397,6 +397,8 @@ function OtherTokens({
           const on = t._id === selectedTokenId;
           const side = SIDES[t.side];
           const deg = (t.face * 180) / Math.PI;
+          // The adversary's rulebook art when it has some (user 2026-10-21), else the side's colour and initials.
+          const art = t.portrait?.kind === "url" ? t.portrait.url : null;
           return (
             <button
               key={t._id}
@@ -413,7 +415,7 @@ function OtherTokens({
                 top: t.y * cell + 3,
                 width: t.size * cell - 6,
                 height: t.size * cell - 6,
-                background: SIDE_BACKGROUND[t.side],
+                ...(art ? { backgroundImage: `url(${art})`, backgroundSize: "cover", backgroundPosition: "center 25%" } : { background: SIDE_BACKGROUND[t.side] }),
                 border: `3px solid ${side.colour}`,
                 boxShadow: on ? `0 3px 8px rgba(0,0,0,.6), 0 0 0 3px #fff, 0 0 18px ${side.colour}` : "0 3px 8px rgba(0,0,0,.6)",
                 zIndex: on ? 30 : 10,
@@ -422,9 +424,11 @@ function OtherTokens({
               onClick={() => onSelect(t._id)}
             >
               <span className="cm-face" aria-hidden="true" style={{ transform: `rotate(${deg}deg)`, ["--tc" as string]: side.colour }} />
-              <span className="cm-ini" aria-hidden="true" style={{ fontSize: Math.round(t.size * cell * 0.34) }}>
-                {initialsOf(t.name, t.size)}
-              </span>
+              {art ? null : (
+                <span className="cm-ini" aria-hidden="true" style={{ fontSize: Math.round(t.size * cell * 0.34) }}>
+                  {initialsOf(t.name, t.size)}
+                </span>
+              )}
               <span className="cm-tag" aria-hidden="true" style={{ top: t.size * cell - 4 }}>
                 {t.name}
               </span>
