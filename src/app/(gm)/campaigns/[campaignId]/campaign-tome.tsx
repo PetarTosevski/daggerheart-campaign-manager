@@ -1,60 +1,41 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import dynamic from "next/dynamic";
+import { useState } from "react";
 
-import { TomeBook } from "@/components/tome/tome-book";
-import { campaignArt } from "@/lib/campaign-art";
-import { getPublishedFrame } from "@/lib/frames";
-import { TOMES, type TomeChapterId } from "@/lib/frames/tomes";
+import type { TomeChapterId } from "@/lib/frames/tomes";
 
-import { api } from "../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../convex/campaigns";
 
-const EMPTY_TOME = { overview: "", incident: "", mechanics: "" };
+/** Shown while the tome's chunk loads: the book's leather cover over the dialog backdrop (Tome* boards). */
+function TomeLoading() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(4_8_10/0.78)] p-3">
+      <p
+        role="status"
+        className="m-0 rounded-2xl border border-[#5c4430] bg-[#3b2b1d] px-8 py-6 font-display text-[22px] text-[#f1e3c4] shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
+      >
+        Opening the tome…
+      </p>
+    </div>
+  );
+}
 
-/** The campaign's tome: the frame's lore book, or the GM-written book of a custom campaign. */
-export function CampaignTome({
-  campaign,
-  chapter,
-  onChapter,
-  onClose,
-}: {
+// CL8: the book and every frame's lore (tomes.ts) load only when the tome is first opened.
+const CampaignTomeBook = dynamic(() => import("./campaign-tome-book").then((m) => m.CampaignTomeBook), {
+  ssr: false,
+  loading: TomeLoading,
+});
+
+/** The campaign's tome: the frame's lore book, or the GM-written book of a custom campaign. Mounts on first open. */
+export function CampaignTome(props: {
   campaign: CampaignSummary;
   chapter: TomeChapterId | null;
   onChapter: (chapter: TomeChapterId) => void;
   onClose: () => void;
 }) {
-  const updateTome = useMutation(api.campaigns.updateTome);
-  const art = campaignArt(campaign.frameId, campaign.custom?.background);
-  const frame = campaign.frameId === "custom" ? null : getPublishedFrame(campaign.frameId)!;
-
-  const content = frame
-    ? ({ kind: "published", tome: TOMES[frame.id] } as const)
-    : ({
-        kind: "custom",
-        text: campaign.tome ?? EMPTY_TOME,
-        onSave:
-          campaign.role === "gm"
-            ? (c: TomeChapterId, text: string) => updateTome({ campaignId: campaign._id, chapter: c, text })
-            : undefined,
-        setup: [
-          { label: "Pitch", value: campaign.custom?.pitch ?? "" },
-          { label: "Themes", value: campaign.custom?.themes ?? "" },
-          { label: "Touchstones", value: campaign.custom?.touchstones ?? "" },
-          { label: "Tone", value: (campaign.custom?.tones ?? []).join(", ") },
-        ].filter((row) => row.value.trim()),
-      } as const);
-
-  return (
-    <TomeBook
-      open={chapter !== null}
-      onClose={onClose}
-      chapter={chapter ?? "overview"}
-      onChapter={onChapter}
-      kicker={frame ? `Campaign Frame · ${frame.expansion ? "Hope & Fear" : "Core Rulebook"}` : "Custom Campaign Frame"}
-      title={frame ? frame.name : campaign.name}
-      art={art}
-      content={content}
-    />
-  );
+  // Stays mounted after the first open, so closing the dialog returns focus as before.
+  const [opened, setOpened] = useState(false);
+  if (props.chapter !== null && !opened) setOpened(true);
+  return opened ? <CampaignTomeBook {...props} /> : null;
 }

@@ -5,10 +5,13 @@
 // of the spell it enhances. The bonus is an effect (`channel-raw-power-<bonus>`, until the scene ends) that
 // the dice box offers as a damage option; End it after that roll.
 import { applyResourceDelta } from "../../characters/index";
-import { getDomainCard } from "../../../srd/index";
+import { DOMAIN_CARDS } from "../../../srd/domain-cards";
 import type { CharacterSheet } from "../../../validation/characters";
 import type { ClassFeatures, FeatureMeta } from "../types";
 import { dieContribution, HOPE_COST, refuse, withEffect } from "./shared";
+
+// CL9: the SRD leaf module, not the srd barrel.
+const getDomainCard = (id: string) => DOMAIN_CARDS.find((c) => c.id === id);
 
 const CHANNEL = "channel-raw-power-";
 
