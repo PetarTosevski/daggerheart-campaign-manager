@@ -91,7 +91,13 @@ function setup(view: CharacterView = character(), { start = true, hopeAndFear = 
   return { navigate, draft: () => ref.current! };
 }
 
-const box = (name: string) => screen.getByRole("checkbox", { name });
+// Checkboxes are found by their aria-label: getByRole would compute the accessible name (and so getComputedStyle up
+// the tree) of every box on the board for each lookup, which is slow in jsdom under the full parallel run (dcm-t30).
+const CHECKBOX = { selector: "input[type=checkbox]" };
+const GROUP = { selector: "[role=group]" };
+const ARTICLE = { selector: "article" };
+const box = (name: string) => screen.getByLabelText(name, CHECKBOX);
+const noBox = (name: string | RegExp) => expect(screen.queryByLabelText(name, CHECKBOX)).toBeNull();
 
 describe("TierBoxes in the guided level-up", () => {
   beforeEach(() => {
@@ -101,11 +107,11 @@ describe("TierBoxes in the guided level-up", () => {
 
   it("is the advancements target and stays read-only outside the mode", () => {
     setup(character(), { start: false });
-    const region = screen.getByRole("region", { name: "Level Up" });
+    const region = screen.getByLabelText("Level Up", { selector: "section" });
     expect(region.id).toBe("lu-target-advancements");
-    expect(within(region).getAllByRole("checkbox").every((c) => (c as HTMLInputElement).disabled)).toBe(true);
+    expect(within(region).getAllByRole("checkbox", { hidden: true }).every((c) => (c as HTMLInputElement).disabled)).toBe(true);
     expect(screen.queryByText(/picks$/)).toBeNull();
-    expect(screen.queryByRole("checkbox", { name: /for level 2/ })).toBeNull();
+    noBox(/for level 2/);
   });
 
   it("makes the open tier's options tickable for the new level; a ticked box is a green draft mark", () => {
@@ -114,7 +120,7 @@ describe("TierBoxes in the guided level-up", () => {
     const hp = box("Tier 2: +1 Hit Point slot for level 2");
     expect((hp as HTMLInputElement).disabled).toBe(false);
     // Tier 3 is still locked at level 2.
-    expect(screen.queryByRole("checkbox", { name: /^Tier 3: .* for level 2/ })).toBeNull();
+    noBox(/^Tier 3: .* for level 2/);
 
     fireEvent.click(hp);
     expect(draft().draft.picks).toEqual([{ option: "hp", tier: 2 }]);
@@ -140,7 +146,7 @@ describe("TierBoxes in the guided level-up", () => {
   it("shows two unmarked traits to raise under a ticked traits option", () => {
     const { draft } = setup(character({ traitMarks: { agility: 1 } }));
     fireEvent.click(box("Tier 2: +1 to two unmarked traits for level 2"));
-    const group = screen.getByRole("group", { name: "Traits to raise for level 2" });
+    const group = screen.getByLabelText("Traits to raise for level 2", GROUP);
     const agility = within(group).getByRole("button", { name: /Agility/ }) as HTMLButtonElement;
     expect(agility.disabled).toBe(true);
     expect(agility.textContent).toContain("(marked)");
@@ -162,8 +168,8 @@ describe("TierBoxes in the guided level-up", () => {
     fireEvent.click(box("Tier 2: +1 to two unmarked traits for level 2"));
     fireEvent.click(box("Tier 2: +1 to two unmarked traits for level 2 (second pick)"));
     expect(screen.getByText("Level 2: 2 / 2 picks")).toBeTruthy();
-    const first = screen.getByRole("group", { name: "Traits to raise for level 2" });
-    const second = screen.getByRole("group", { name: "Traits to raise for level 2 (second pick)" });
+    const first = screen.getByLabelText("Traits to raise for level 2", GROUP);
+    const second = screen.getByLabelText("Traits to raise for level 2 (second pick)", GROUP);
 
     fireEvent.click(within(first).getByRole("button", { name: /Presence/ }));
     fireEvent.click(within(first).getByRole("button", { name: /Knowledge/ }));
@@ -185,8 +191,8 @@ describe("TierBoxes in the guided level-up", () => {
     // Unticking the FIRST box removes the first pick; the second pick keeps its traits.
     fireEvent.click(box("Tier 2: +1 to two unmarked traits for level 2"));
     expect(draft().draft.picks).toEqual([{ option: "traits", tier: 2, targets: ["finesse", "instinct"] }]);
-    expect(screen.queryByRole("group", { name: "Traits to raise for level 2 (second pick)" })).toBeNull();
-    expect(within(screen.getByRole("group", { name: "Traits to raise for level 2" })).getByRole("button", { name: /Finesse/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByLabelText("Traits to raise for level 2 (second pick)", GROUP)).toBeNull();
+    expect(within(screen.getByLabelText("Traits to raise for level 2", GROUP)).getByRole("button", { name: /Finesse/ })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("sends the Experiences option to the Experiences box and the extra card to the Domain Deck", () => {
@@ -206,7 +212,7 @@ describe("TierBoxes in the guided level-up", () => {
     expect(earlier.checked && earlier.disabled).toBe(true);
     expect(earlier.classList.contains("draft")).toBe(false);
     // Every HP slot of tier 2 is marked: nothing to tick there.
-    expect(screen.queryByRole("checkbox", { name: "Tier 2: +1 Hit Point slot for level 5" })).toBeNull();
+    noBox("Tier 2: +1 Hit Point slot for level 5");
 
     fireEvent.click(box("Tier 3: +1 Hit Point slot for level 5"));
     const proficiency = box("Tier 3: +1 Proficiency (both picks) for level 5") as HTMLInputElement;
@@ -220,7 +226,7 @@ describe("TierBoxes in the guided level-up", () => {
     fireEvent.click(box("Tier 3: Upgraded subclass card for level 5"));
     // GL5: the upgraded subclass card itself, as the Heritage & Subclass tab's hero card.
     expect(screen.getByText("At level 5 you take your specialization card.")).toBeTruthy();
-    const card = screen.getByRole("article", { name: "Subclass: Troubadour Specialization" });
+    const card = screen.getByLabelText("Subclass: Troubadour Specialization", ARTICLE);
     const troubadour = SUBCLASSES.find((s) => s.id === "troubadour")!;
     expect(within(card).getByRole("heading", { name: "Troubadour" })).toBeTruthy();
     expect(within(card).getByText("Subclass")).toBeTruthy();
@@ -231,7 +237,7 @@ describe("TierBoxes in the guided level-up", () => {
   it("shows the mastery card when the subclass is already specialized (GL5)", () => {
     setup(character({ ...LEVEL_4, subclassRank: "specialization" } as Partial<CharacterView["sheet"]>));
     fireEvent.click(box("Tier 3: Upgraded subclass card for level 5"));
-    expect(screen.getByRole("article", { name: "Subclass: Troubadour Mastery" })).toBeTruthy();
+    expect(screen.getByLabelText("Subclass: Troubadour Mastery", ARTICLE)).toBeTruthy();
   });
 
   it("shows the multiclass class, domain and foundation selects under a ticked multiclass", () => {
@@ -263,10 +269,10 @@ describe("TierBoxes in the guided level-up", () => {
     const panel = screen.getByRole("group", { name: "Multiclass for level 5" });
     fireEvent.change(within(panel).getByRole("combobox", { name: "Class" }), { target: { value: "wizard" } });
     fireEvent.change(within(panel).getByRole("combobox", { name: "Domain" }), { target: { value: "splendor" } });
-    expect(screen.queryByRole("group", { name: "Spellcast trait for Spellcast Rolls" })).toBeNull();
+    expect(screen.queryByLabelText("Spellcast trait for Spellcast Rolls", GROUP)).toBeNull();
     fireEvent.change(within(panel).getByRole("combobox", { name: "Foundation card" }), { target: { value: "school-of-knowledge" } });
 
-    const choice = screen.getByRole("group", { name: "Spellcast trait for Spellcast Rolls" });
+    const choice = screen.getByLabelText("Spellcast trait for Spellcast Rolls", GROUP);
     const options = within(choice).getAllByRole("button");
     expect(options.map((b) => b.textContent)).toEqual(["Presence (Troubadour)", "Knowledge (School of Knowledge)"]);
     expect(draft().problems).toContain("Choose the Spellcast trait for Spellcast Rolls.");
@@ -280,7 +286,7 @@ describe("TierBoxes in the guided level-up", () => {
     fireEvent.change(within(panel).getByRole("combobox", { name: "Domain" }), { target: { value: "blade" } });
     fireEvent.change(within(panel).getByRole("combobox", { name: "Foundation card" }), { target: { value: "call-of-the-brave" } });
     expect(draft().draft.multiclass?.spellcastTrait).toBeUndefined();
-    expect(screen.queryByRole("group", { name: "Spellcast trait for Spellcast Rolls" })).toBeNull();
+    expect(screen.queryByLabelText("Spellcast trait for Spellcast Rolls", GROUP)).toBeNull();
   });
 
   it("notes the forced Spellcast trait when the original subclass has none (SS2)", () => {
@@ -290,7 +296,7 @@ describe("TierBoxes in the guided level-up", () => {
     fireEvent.change(within(panel).getByRole("combobox", { name: "Class" }), { target: { value: "wizard" } });
     fireEvent.change(within(panel).getByRole("combobox", { name: "Domain" }), { target: { value: "codex" } });
     fireEvent.change(within(panel).getByRole("combobox", { name: "Foundation card" }), { target: { value: "school-of-knowledge" } });
-    expect(screen.queryByRole("group", { name: "Spellcast trait for Spellcast Rolls" })).toBeNull();
+    expect(screen.queryByLabelText("Spellcast trait for Spellcast Rolls", GROUP)).toBeNull();
     expect(within(panel).getByText(/You had no Spellcast trait, so your Spellcast Rolls use School of Knowledge's: Knowledge\./)).toBeTruthy();
   });
 

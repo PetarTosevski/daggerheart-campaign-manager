@@ -16,6 +16,10 @@ import {
 } from "@/app/(gm)/campaigns/[campaignId]/party/new/steps-5-9";
 import { emptyWizard, type WizardState } from "@/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic";
 
+// Radios are found by their label: getByRole computes the accessible name, and so getComputedStyle up the tree, of
+// every class, subclass and gear radio for each lookup, which is slow in jsdom under the full parallel run (dcm-t30).
+const RADIO = { selector: "input[type=radio]" };
+
 const CORE = { hopeAndFear: false };
 const ALL = { hopeAndFear: true };
 
@@ -32,25 +36,23 @@ describe("wizard steps", () => {
   it("step 1 offers classes as radios and hides Hope & Fear classes when the option is off", () => {
     const update = vi.fn();
     const { unmount } = render(<ClassStep state={emptyWizard()} update={update} opts={CORE} />);
-    expect(screen.queryByRole("radio", { name: /Witch/ })).toBeNull();
-    fireEvent.click(screen.getByRole("radio", { name: /^Guardian/ }));
+    expect(screen.queryByLabelText(/Witch/, RADIO)).toBeNull();
+    fireEvent.click(screen.getByLabelText(/^Guardian/, RADIO));
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ classId: "guardian", subclassId: null }));
     unmount();
     render(<ClassStep state={guardian} update={update} opts={ALL} />);
-    expect(screen.getByRole("radio", { name: /Witch/ })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Stalwart" })).toBeChecked();
+    expect(screen.getByLabelText(/Witch/, RADIO)).toBeInTheDocument();
+    expect(screen.getByLabelText("Stalwart", RADIO)).toBeChecked();
     expect(screen.getByText("No Spellcast trait")).toBeInTheDocument();
-    // Accessible-name lookups over every class and subclass radio are CPU-bound
-    // in jsdom; under the full parallel run this first render can pass 5s.
-  }, 15_000);
+  });
 
   it("step 2 shows Shapeshifter only with Hope & Fear", () => {
     const { unmount } = render(<HeritageStep state={guardian} update={vi.fn()} opts={CORE} />);
-    expect(screen.queryByRole("radio", { name: /Shapeshifter/ })).toBeNull();
-    expect(screen.getByRole("radio", { name: "Dwarf" })).toBeChecked();
+    expect(screen.queryByLabelText(/Shapeshifter/, RADIO)).toBeNull();
+    expect(screen.getByLabelText("Dwarf", RADIO)).toBeChecked();
     unmount();
     render(<HeritageStep state={{ ...guardian, ancestryMode: "shapeshifter", shapeForm: "elf" }} update={vi.fn()} opts={ALL} />);
-    expect(screen.getByRole("radio", { name: /Shapeshifter/ })).toBeChecked();
+    expect(screen.getByLabelText(/Shapeshifter/, RADIO)).toBeChecked();
     expect(screen.getByRole("group", { name: /Only Skin Deep/ })).toBeInTheDocument();
   });
 
@@ -58,7 +60,7 @@ describe("wizard steps", () => {
     const update = vi.fn();
     render(<TraitsStep state={guardian} update={update} opts={CORE} />);
     const agility = screen.getByRole("radiogroup", { name: "Agility" });
-    fireEvent.click(within(agility).getByRole("radio", { name: "Agility +2" }));
+    fireEvent.click(within(agility).getByLabelText("Agility +2", RADIO));
     expect(update).toHaveBeenLastCalledWith({ traits: { agility: 2 } });
     fireEvent.click(screen.getByRole("button", { name: "Use suggested" }));
     expect(Object.keys(update.mock.lastCall?.[0].traits ?? {})).toHaveLength(6);
@@ -69,14 +71,14 @@ describe("wizard steps", () => {
     expect(screen.getByLabelText("Character name")).toBeInTheDocument();
     expect(screen.getByLabelText("Pronouns")).toBeInTheDocument();
     const portraits = screen.getByRole("group", { name: "Portrait" });
-    expect(within(portraits).getByRole("radio", { name: "Stalwart" })).toBeChecked();
-    expect(within(portraits).getByRole("radio", { name: "Dwarf" })).toBeInTheDocument();
+    expect(within(portraits).getByLabelText("Stalwart", RADIO)).toBeChecked();
+    expect(within(portraits).getByLabelText("Dwarf", RADIO)).toBeInTheDocument();
   });
 
   it("step 5 hides magic weapons without a Spellcast trait and blocks a secondary with two hands", () => {
     render(<EquipmentStep state={{ ...guardian, primaryWeaponId: "greatsword" }} update={vi.fn()} opts={CORE} />);
-    expect(screen.queryByRole("radio", { name: /Arcane Gauntlets/ })).toBeNull();
-    expect(screen.getByRole("radio", { name: /Round Shield/ })).toBeDisabled();
+    expect(screen.queryByLabelText(/Arcane Gauntlets/, RADIO)).toBeNull();
+    expect(screen.getByLabelText(/Round Shield/, RADIO)).toBeDisabled();
     expect(screen.getByRole("group", { name: "Class item" })).toBeInTheDocument();
   });
 

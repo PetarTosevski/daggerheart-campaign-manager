@@ -29,6 +29,14 @@ vi.mock("@/app/(gm)/campaigns/[campaignId]/campaign-shell", () => ({
   useCampaign: () => ({ _id: "k1", frameId: "witherwild", options: { hopeAndFear: false } }),
 }));
 
+// Elements named by aria-label or aria-labelledby are found with getByLabelText: getByRole computes the accessible
+// name, and so getComputedStyle up the tree, of every candidate on the sheet for each lookup, which is slow in jsdom
+// under the full parallel run (dcm-t30).
+const BUTTON = { selector: "button" };
+const ARTICLE = { selector: "article" };
+const LIST = { selector: "[role=list], ul, ol" };
+const REGION = { selector: "section" };
+
 const { CharacterSheetView } = await import("@/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet");
 
 const core = (domain: string, level: number, not: string[] = []) => DOMAIN_CARDS.filter((c) => c.domain === domain && c.level === level && c.source === "core" && !not.includes(c.id));
@@ -84,11 +92,11 @@ function character(canEdit = true): CharacterView {
 /** Renders the sheet, starts the level-up and goes to the Domain Deck step. */
 function startAtDeck() {
   render(createElement(CharacterSheetView, { characterId: "c1" }));
-  fireEvent.click(screen.getByRole("button", { name: "Level up to 2" }));
-  const ribbon = screen.getByRole("region", { name: "Level-up to 2" });
+  fireEvent.click(screen.getByLabelText("Level up to 2", BUTTON));
+  const ribbon = screen.getByLabelText("Level-up to 2", REGION);
   fireEvent.click(within(ribbon).getByRole("button", { name: /Domain card/ }));
-  const deck = screen.getByRole("region", { name: "Domain Deck" });
-  return { ribbon, deck, grid: within(deck).getByRole("list", { name: "Domain Deck cards" }) };
+  const deck = screen.getByLabelText("Domain Deck", REGION);
+  return { ribbon, deck, grid: within(deck).getByLabelText("Domain Deck cards", LIST) };
 }
 
 const summary = (ribbon: HTMLElement) => {
@@ -107,25 +115,25 @@ describe("Domain Deck in level-up mode", () => {
     const { ribbon, deck, grid } = startAtDeck();
     expect(deck).toHaveAttribute("id", "lu-target-deck");
     expect(within(deck).getByText("Level 2: choose 1 domain card below.")).toBeInTheDocument();
-    expect(within(grid).queryAllByRole("button", { name: /^Take |^No picks left/ })).toHaveLength(0);
+    expect(within(grid).queryAllByLabelText(/^Take |^No picks left/, BUTTON)).toHaveLength(0);
     // A level-2 card is face up now; a level-3 card stays face down and can't be chosen.
     const level2 = within(grid).getByRole("article", { name: LEVEL2.name });
     expect(within(grid).queryByRole("article", { name: LEVEL3.name })).toBeNull();
-    expect(within(grid).queryByRole("button", { name: `Choose ${LEVEL3.name} for level 2` })).toBeNull();
+    expect(within(grid).queryByLabelText(`Choose ${LEVEL3.name} for level 2`, BUTTON)).toBeNull();
     // Owned cards can't be chosen again.
-    expect(within(within(grid).getByRole("article", { name: "Deft Deceiver" })).queryByRole("button", { name: /^Choose/ })).toBeNull();
+    expect(within(within(grid).getByLabelText("Deft Deceiver", ARTICLE)).queryByLabelText(/^Choose/, BUTTON)).toBeNull();
 
-    fireEvent.click(within(level2).getByRole("button", { name: `Choose ${LEVEL2.name} for level 2` }));
+    fireEvent.click(within(level2).getByLabelText(`Choose ${LEVEL2.name} for level 2`, BUTTON));
     expect(within(level2).getByText("Chosen for level 2")).toBeInTheDocument();
     expect(level2).toHaveClass("lu-chosen");
     expect(within(deck).getByText(/every new domain card is chosen/)).toBeInTheDocument();
     // With the one slot filled, the other cards' Choose buttons are disabled.
-    expect(within(grid).getByRole("button", { name: `Choose ${GRACE1.name} for level 2` })).toBeDisabled();
+    expect(within(grid).getByLabelText(`Choose ${GRACE1.name} for level 2`, BUTTON)).toBeDisabled();
     expect(calls).toEqual([]);
 
-    fireEvent.click(within(level2).getByRole("button", { name: `Undo choice of ${LEVEL2.name}` }));
+    fireEvent.click(within(level2).getByLabelText(`Undo choice of ${LEVEL2.name}`, BUTTON));
     expect(within(level2).queryByText("Chosen for level 2")).toBeNull();
-    fireEvent.click(within(grid).getByRole("button", { name: `Choose ${GRACE1.name} for level 2` }));
+    fireEvent.click(within(grid).getByLabelText(`Choose ${GRACE1.name} for level 2`, BUTTON));
     expect(summary(ribbon)).toHaveTextContent(`Domain card: ${GRACE1.name}`);
   });
 
@@ -136,40 +144,40 @@ describe("Domain Deck in level-up mode", () => {
     );
     render(createElement(CharacterSheetView, { characterId: "c1" }));
     fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
-    const deck = screen.getByRole("region", { name: "Domain Deck" });
-    const grid = within(deck).getByRole("list", { name: "Domain Deck cards" });
+    const deck = screen.getByLabelText("Domain Deck", REGION);
+    const grid = within(deck).getByLabelText("Domain Deck cards", LIST);
     expect(within(deck).getByText("Level 2: choose 1 domain card below.")).toBeInTheDocument();
-    fireEvent.click(within(grid).getByRole("button", { name: `Choose ${LEVEL2.name} for level 2` }));
+    fireEvent.click(within(grid).getByLabelText(`Choose ${LEVEL2.name} for level 2`, BUTTON));
     expect(within(grid).getAllByText("Chosen for level 2")).toHaveLength(2);
-    const ribbon = screen.getByRole("region", { name: "Level-up to 2" });
+    const ribbon = screen.getByLabelText("Level-up to 2", REGION);
     // Choosing the last card goes on to the summary by itself.
     expect(within(ribbon).getByRole("list", { name: "Your choices" })).toHaveTextContent(LEVEL2.name);
     expect(within(ribbon).getByRole("button", { name: "Finish level-up" })).toBeEnabled();
 
     // Undo empties the pick again.
-    fireEvent.click(within(grid).getByRole("button", { name: `Undo choice of ${LEVEL2.name}` }));
+    fireEvent.click(within(grid).getByLabelText(`Undo choice of ${LEVEL2.name}`, BUTTON));
     expect(within(grid).getAllByText("Chosen for level 2")).toHaveLength(1);
     expect(within(ribbon).getByRole("button", { name: "Finish level-up" })).toBeDisabled();
   });
 
   it("exchanges an owned card from the hand for a deck card of the same level or lower", () => {
     const { ribbon, deck, grid } = startAtDeck();
-    const hand = screen.getByRole("list", { name: "Loadout cards" });
-    const vault = screen.getByRole("list", { name: "Vault cards" });
-    expect(within(vault).getByRole("button", { name: "Exchange Book of Ava at level-up" })).toBeInTheDocument();
-    fireEvent.click(within(hand).getByRole("button", { name: "Exchange Deft Deceiver at level-up" }));
+    const hand = screen.getByLabelText("Loadout cards", LIST);
+    const vault = screen.getByLabelText("Vault cards", LIST);
+    expect(within(vault).getByLabelText("Exchange Book of Ava at level-up", BUTTON)).toBeInTheDocument();
+    fireEvent.click(within(hand).getByLabelText("Exchange Deft Deceiver at level-up", BUTTON));
     expect(within(hand).getByText("Exchanging at level 2")).toBeInTheDocument();
     expect(within(deck).getByText(/Exchanging Deft Deceiver: take a card of level 1 or lower/)).toBeInTheDocument();
     // Deft Deceiver is level 1: a level-2 card can't come in for it.
-    expect(within(grid).queryByRole("button", { name: `Take ${LEVEL2.name} in exchange for Deft Deceiver` })).toBeNull();
-    fireEvent.click(within(grid).getByRole("button", { name: `Take ${GRACE1.name} in exchange for Deft Deceiver` }));
-    const incoming = within(grid).getByRole("article", { name: GRACE1.name });
+    expect(within(grid).queryByLabelText(`Take ${LEVEL2.name} in exchange for Deft Deceiver`, BUTTON)).toBeNull();
+    fireEvent.click(within(grid).getByLabelText(`Take ${GRACE1.name} in exchange for Deft Deceiver`, BUTTON));
+    const incoming = within(grid).getByLabelText(GRACE1.name, ARTICLE);
     expect(within(incoming).getByText("Exchange for Deft Deceiver at level 2")).toBeInTheDocument();
-    expect(within(grid).queryAllByRole("button", { name: /in exchange for/ })).toHaveLength(0);
+    expect(within(grid).queryAllByLabelText(/in exchange for/, BUTTON)).toHaveLength(0);
     expect(summary(ribbon)).toHaveTextContent(`Exchange Deft Deceiver for ${GRACE1.name}`);
 
     // Cancel exchange on the hand card drops it.
-    fireEvent.click(within(hand).getByRole("button", { name: "Cancel exchange of Deft Deceiver" }));
+    fireEvent.click(within(hand).getByLabelText("Cancel exchange of Deft Deceiver", BUTTON));
     expect(within(ribbon).getByRole("list", { name: "Your choices" })).not.toHaveTextContent("Exchange Deft Deceiver");
     expect(within(grid).queryByText(/Exchange for Deft Deceiver/)).toBeNull();
   });
@@ -177,9 +185,9 @@ describe("Domain Deck in level-up mode", () => {
   it("outside the mode the deck takes cards and the hand offers no exchange", () => {
     render(createElement(CharacterSheetView, { characterId: "c1" }));
     fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
-    const deck = screen.getByRole("region", { name: "Domain Deck" });
-    expect(within(deck).queryAllByRole("button", { name: /for level 2$/ })).toHaveLength(0);
-    expect(within(deck).getByRole("button", { name: `No picks left for ${GRACE1.name}` })).toBeDisabled();
-    expect(screen.queryAllByRole("button", { name: /Exchange .* at level-up/ })).toHaveLength(0);
+    const deck = screen.getByLabelText("Domain Deck", REGION);
+    expect(within(deck).queryAllByLabelText(/for level 2$/, BUTTON)).toHaveLength(0);
+    expect(within(deck).getByLabelText(`No picks left for ${GRACE1.name}`, BUTTON)).toBeDisabled();
+    expect(screen.queryAllByLabelText(/Exchange .* at level-up/, BUTTON)).toHaveLength(0);
   });
 });
