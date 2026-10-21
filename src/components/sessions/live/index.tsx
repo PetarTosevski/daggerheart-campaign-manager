@@ -88,10 +88,12 @@ export function WitherChoiceField({ choice }: { choice: WitherChoice }) {
 
 /** The End dialog's text, matching the Wither choice. */
 export function endDialogText(choice: WitherChoice): string {
-  if (!choice.applies) return "Session effects end and unspent Rally and Prayer Dice are cleared.";
+  // Session-bound features too (dcm-bxp.58): Slayer Dice become Hope, Tide tokens clear, the moon die ends.
+  const features = "unspent Rally and Prayer Dice are cleared, Slayer Dice turn into Hope, Tide tokens clear and the moon die ends";
+  if (!choice.applies) return `Session effects end, ${features}.`;
   return choice.convert
-    ? "Session effects end, unspent Rally and Prayer Dice are cleared, and every Wither token on the PCs' sheets becomes GM Fear (up to 12)."
-    : "Session effects end and unspent Rally and Prayer Dice are cleared. Wither tokens stay on the PCs' sheets.";
+    ? `Session effects end, ${features}, and every Wither token on the PCs' sheets becomes GM Fear (up to 12).`
+    : `Session effects end, ${features}. Wither tokens stay on the PCs' sheets.`;
 }
 
 /** What the Start told the GM: the session ended first (B6), the Prayer Dice rolled (B10), Luckbringer and the moon dice (U1, U6). */
@@ -138,7 +140,7 @@ function Card({ campaignId, sessionId, onStage }: LiveCardProps) {
     ? `${since !== null ? `Live since ${hhmm(since)}` : "Live"}. Party sheets know the session is running.`
     : session.status === "played"
       ? "This session has been played. Starting it again re-rolls Prayer Dice and refreshes Rally."
-      : "Start the session when you sit down at the table. Seraphs roll their Prayer Dice and the Bard’s Rally refreshes.";
+      : "Start the session when you sit down at the table. Seraphs roll their Prayer Dice, the Bard’s Rally refreshes, Luckbringer gives everyone a Hope and Moon Witches roll their moon die.";
   const shown = report !== null && report.sessionId === sessionId ? report : null;
   const error = start.error ?? end.error ?? extrasError;
 
@@ -229,7 +231,7 @@ function Card({ campaignId, sessionId, onStage }: LiveCardProps) {
             </>
           ) : (
             <>
-              <p className="ss-m0">Start-of-session features (such as Prayer Dice) are given out.</p>
+              <p className="ss-m0">Start-of-session features are given out: Prayer Dice, Luckbringer’s Hope and the moon die.</p>
               {session.status === "played" ? <p className="ss-m0">This session has been played. Starting it again re-rolls Prayer Dice and refreshes Rally.</p> : null}
               {otherRunning ? <p className="ss-m0 ss-live-other">{otherText}</p> : null}
             </>
