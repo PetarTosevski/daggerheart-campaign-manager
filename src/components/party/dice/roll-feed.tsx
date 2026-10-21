@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, usePaginatedQuery } from "convex/react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { ChevronDown, X } from "lucide-react";
 import { useRef, useState, useSyncExternalStore } from "react";
 
@@ -13,8 +13,11 @@ import { play3d } from "./dice3d";
 import { DiceFaces, DiceSettingsToggles } from "./parts";
 import { canAnimate3d, useDiceSettings } from "./settings";
 import { playRollSound } from "./sound";
+import { TickCountdownsButton } from "./tick-countdowns";
 
 const PAGE = 15;
+/** Most rows one countedRows call asks about (the server's cap). */
+const COUNTED_MAX = 100;
 const SIDES = [4, 6, 8, 10, 12, 20] as const;
 const BTN = "min-h-10 cursor-pointer rounded-[9px] border border-[#33444a] bg-transparent px-3 text-[14px] text-[#e6ecea] hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40";
 const INPUT = "min-h-10 rounded-[9px] border border-[#33444a] bg-[#10181b] px-3 text-[14px] text-[#e6ecea]";
@@ -121,8 +124,9 @@ function GmRollForm({ campaignId }: { campaignId: Id<"campaigns"> }) {
  * The roll feed on the dashboard: every member sees player rolls live; GM
  * free rolls only reach players once revealed (the server filters them).
  * Undo for the roller and the GM; Reveal for the GM. The GM can also delete a
- * row or clear the feed for everyone (display only: nothing is undone). Anyone
- * can fold the feed away on their device.
+ * row or clear the feed for everyone (display only: nothing is undone), and
+ * apply a counted action roll to countdowns ("Tick countdowns"). Anyone can
+ * fold the feed away on their device.
  */
 export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
   const { results, status, loadMore } = usePaginatedQuery(api.feed.list, { campaignId }, { initialNumItems: PAGE });
@@ -134,6 +138,10 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
   const [feedError, setFeedError] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const collapsed = useSyncExternalStore(subscribeCollapsed, readCollapsed, () => false);
+  // GM only: which loaded rows are counted action rolls, so they carry "Tick countdowns" (countdowns-advanced K1).
+  const candidates = isGm ? results.filter((r) => r.kind === "roll" && r.roll?.kind === "action" && !r.undone).slice(0, COUNTED_MAX).map((r) => r._id) : [];
+  const counted = useQuery(api.countdownRolls.countedRows, isGm && candidates.length > 0 ? { campaignId, entryIds: candidates } : "skip");
+  const countedIds = new Set<string>(counted ?? []);
 
   return (
     <section aria-labelledby="feed-h" className="flex flex-col gap-3 rounded-2xl border border-[#2a3a40] bg-[#141e22] p-6">
@@ -228,8 +236,8 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
               </div>
               {row.roll ? <DiceFaces dice={row.roll.dice} /> : null}
               {/* A rest is undone from the rest panel (rests.undo reopens it); actionLog.undo refuses it. */}
-              {(row.canUndo && row.kind !== "rest") || ("revealable" in row && row.revealable) ? (
-                <div className="flex gap-2">
+              {(row.canUndo && row.kind !== "rest") || ("revealable" in row && row.revealable) || countedIds.has(row._id) ? (
+                <div className="flex flex-wrap gap-2">
                   {"revealable" in row && row.revealable ? (
                     <button
                       type="button"
@@ -247,6 +255,7 @@ export function RollFeedPanel({ campaignId, isGm }: { campaignId: Id<"campaigns"
                       Undo
                     </button>
                   ) : null}
+                  {countedIds.has(row._id) ? <TickCountdownsButton campaignId={campaignId} entryId={row._id} summary={row.summary} /> : null}
                 </div>
               ) : null}
             </li>

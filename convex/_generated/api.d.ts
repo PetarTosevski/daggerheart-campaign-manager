@@ -24,6 +24,7 @@ import type * as combatMapStyle from "../combatMapStyle.js";
 import type * as combatMaps from "../combatMaps.js";
 import type * as combatTokens from "../combatTokens.js";
 import type * as combatVision from "../combatVision.js";
+import type * as countdownRolls from "../countdownRolls.js";
 import type * as countdowns from "../countdowns.js";
 import type * as crons from "../crons.js";
 import type * as customAdversaries from "../customAdversaries.js";
@@ -144,6 +145,7 @@ declare const fullApi: ApiFromModules<{
   combatMaps: typeof combatMaps;
   combatTokens: typeof combatTokens;
   combatVision: typeof combatVision;
+  countdownRolls: typeof countdownRolls;
   countdowns: typeof countdowns;
   crons: typeof crons;
   customAdversaries: typeof customAdversaries;
