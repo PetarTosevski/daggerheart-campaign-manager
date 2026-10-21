@@ -1,6 +1,7 @@
 "use client";
 
 import { SheetDiceBox } from "@/components/party/dice";
+import { LunarPhasesSlot } from "@/components/party/lunar";
 import type { ClassDef } from "@/lib/srd";
 
 import { ClassFeaturesBox } from "./sections/class-features";
@@ -31,6 +32,7 @@ export function PageOne({ cls }: { cls: ClassDef | undefined }) {
         <div className="cs-col">
           <ActiveArmorBox />
           <ClassFeaturesBox cls={cls} />
+          <LunarPhasesSlot {...slot} />
         </div>
         <DowntimeBox />
       </div>
