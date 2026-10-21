@@ -3,7 +3,8 @@
 # once-per cards grey out until they come back.
 # Status: APPROVED 2026-10-21. USER ANSWERS Q1-Q12 (binding): Q1 an attack or card use on a target outside its range needs the
 #   GM's sanction (the action waits as a pending request; the GM approves or declines; nothing is rolled before approval);
-#   Q2-Q12 the defaults below.
+#   Q2-Q11 the defaults below; Q12 adversary actions IN scope. Part B (adversary actions, tracers AA0-AA6 and AE-*) added
+#   2026-10-21 with USER ANSWERS Q12-Q16; Q17-Q19 are open with defaults (Part B tracers that cite them wait for the answer).
 # Former status: DRAFT. Analysis, inventory, quoted rules and QUESTIONS Q1-Q12:
 #   .omc/autopilot/combat-actions-analysis.md. Defaults for open questions are written into acceptance lists and marked (Qn);
 #   an answer that differs changes only the tracers that cite that Qn. Tracers do not start until the user has answered or
@@ -36,7 +37,34 @@
 #   disadvantage; Q3 rest / long rest resets, shared featureUses keys card:<id>, session does not reset; Q4 "on a success" uses
 #   only on success; Q5 player sees own damage total; Q6 player sees Defeated and picks extra Minions; Q7 server rolls enemy
 #   reaction d20; Q8 SRD resistance table + GM toggle for conditional + custom picker; Q9 movement as prompts, manual steps
-#   listed; Q10 no approval step, GM Resolutions list with Undo; Q11 mobile bottom sheet; Q12 adversary attacks out of scope.
+#   listed; Q10 no approval step, GM Resolutions list with Undo; Q11 mobile bottom sheet; Q12 adversary actions IN scope (user answer, Part B).
+#
+# PART B - adversary actions (analysis Part B; rules AR1-AR11 quoted there with printed pages):
+#   AR1 d20 (+extra d20 for advantage/disadvantage) + ATK vs the PC's Evasion, Fear may add an Experience (CB p.160);
+#   AR2 a natural 20 succeeds and crits: max dice + roll (CB p.148); AR3 PC thresholds 1/2/3 HP, last HP -> death move (CB p.91);
+#   AR4 one Armor Slot per damage lowers severity one step, never on direct damage (CB p.114, p.99); AR5 Stress overflow to HP
+#   (CB p.92), adversary Stress costs (CB p.194); AR6 Fear spends, spotlight, actions need the spotlight (CB p.153-154, p.194-195);
+#   AR7 one roll vs every target (CB p.161), areas (CB p.196); AR8 reactions on triggers, no Fear unless stated (CB p.195);
+#   AR9 Minion Group Attack, combined X damage (CB p.201); AR10 Horde X at half HP (CB p.199); AR11 PC reaction rolls (CB p.99).
+# USER ANSWERS Part B (2026-10-21, binding):
+#   Q12 "GM can use the encounter tab to use abilities, they will show up on combat, he can also use combat map if he wants".
+#   Q13 The hit PC's player chooses whether to mark an Armor Slot; the damage waits for that choice. Allies may respond with
+#       their abilities (e.g. "I Am Your Shield", CB p.341): a reaction window after each adversary hit, in which the target and
+#       allies answer with eligible cards (closed vocabulary) before the damage resolves.
+#   Q14 Players see that they were hit, not the attack roll. Decision (analysis B0): the hit PC's player sees the damage amount
+#       and its severity against their own thresholds (they need it to choose armor); other players see only "X hit Y".
+#   Q15 Automate EVERY adversary feature (267 SRD adversaries, 928 features; custom ones where structured), split by tier and
+#       source into parallel tracers.
+#   Q16 Fear and adversary control live on the Encounter tab with today's logic; the GM moves tokens, attacks, uses features and
+#       spends Fear there, the visuals show on the Combat Map, and the map accepts the same GM actions.
+# Open defaults Part B (analysis B4): Q17 the window resolves when the target chose armor and every eligible ally answered, or
+#   on the GM's "Resolve now", no timer; Q18 without a live map the GM picks PCs from the party list, no range check; Q19 Fear is
+#   spent only on an explicit GM tap (prompts for Fear features, extra spotlights, optional reactions), Momentum-style gains auto.
+#
+# Cross-plan sequencing (orchestrator): D12 H0 owns convex/schema.ts (AA0 waits for H0 or runs before it); D12 H21 owns
+#   src/components/adversaries/**, adversaries/**, party/** and H22 owns src/components/combat-map/**, combat-map/**: every tracer
+#   here owning files under those globs (CA0, CA5, CA6, CA7, AA3, AA4, AA5) runs before D12 wave 3 starts or after H21/H22 merge.
+#   performance PF9 owns convex/characters.ts, which this plan only reads.
 #
 # In-flight tracers this plan avoids (2026-10-21): M1 (map-movement) owns src/components/combat-map/tokens/**,
 #   map-view/{movement-overlay.tsx,paint-spec.ts,map-canvas.tsx}, src/lib/combat-map/painter.ts, src/lib/combat-map/sprites/**;
@@ -88,6 +116,8 @@ waves:
           - src/components/combat-map/actions/dice/index.tsx
           - src/components/combat-map/actions/targets/index.tsx
           - src/components/combat-map/actions/gm/index.tsx
+          - src/components/combat-map/actions/adversary/index.tsx
+          - src/components/combat-map/actions/reactions/index.tsx
           - tests/convex/schema-guard.test.ts
           - tests/unit/card-classification.test.ts
           - docs/tasks/TASK-CA-CA0.md
@@ -104,10 +134,10 @@ waves:
           - "actionLog rows accept an optional adversaryBefore list ({instanceId, hp, stress, defeated, minionCount?}); existing rows still validate (widen only, rule 7)"
           - "The sheet validator accepts optional cardTokens [{cardId, count}]; encounterAdversaries and customAdversaries accept optional resistance {physical, magic: none|resistant|immune} and a conditional flag (Q8); old rows read back unchanged"
           - "src/lib/errors/combatActions.ts defines COMBAT_TARGET_INVALID, COMBAT_NO_LINE_OF_SIGHT, CARD_NOT_IN_LOADOUT, CARD_EXHAUSTED, CARD_NOT_COMBAT, CARD_COST_UNPAID, COMBAT_NOT_YOUR_CHARACTER, wired into AppErrorCode and the client message map"
-          - "card-effects/types.ts defines the closed vocabulary from the analysis section 3.1 (costs, limit incl. onSuccess, roll, targets, per-hit outcomes, self/ally effects, tokens, manual, passive) with no any"
+          - "card-effects/types.ts defines the closed vocabulary from the analysis section 3.1 (costs, limit incl. onSuccess, roll, targets, per-hit outcomes, self/ally effects, tokens, manual, passive) with no any; it also has triggers for reaction cards (whenAllyWouldTakeDamage, whenYouWouldTakeDamage, whenAttacked, afterAllyRolls) and outcomes redirectDamage (become the target) and extraArmorSlots, so 'I Am Your Shield' (CB p.341) is expressible (Q13)"
           - "classification.ts lists all 210 card ids as combat | passive | outOfCombat; a unit test checks the count matches DOMAIN_CARDS and that the 14 out-of-combat cards of the analysis are listed (the task doc lists every card for the user to review)"
           - "The ten per-domain files export empty readonly arrays; index.ts merges them into a map by card id"
-          - "The Combat Map page mounts ActionsPanel from actions/index.tsx in the player column and Resolutions in the GM column (stubs render nothing harmful); slots.ts documents the new slots"
+          - "The Combat Map page mounts ActionsPanel from actions/index.tsx in the player column, Resolutions and AdversaryPanel (actions/adversary) in the GM column and IncomingHit (actions/reactions) for players (stubs render nothing harmful); slots.ts documents the new slots"
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
       - id: CA2
         title: Adversary resistance table from stat-block text
@@ -161,6 +191,49 @@ waves:
           - "run(effect, context) returns an ordered plan (pay cost, roll, per-target outcome, self effects, tokens, manual prompts); spending Hope from the same roll is allowed (R8, CB p.90 quoted)"
           - "Every rule function cites its page in a comment and has a unit test whose expected values come from the book's own examples (CB p.98 Nolan 3d6+6 = 20; Rune crit 2d6+1 = 22; CB p.99 26 phy resisted = 13)"
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AA0
+        foundation: true
+        title: Adversary-actions foundation (combatRequests table, cleanup cron, error codes, adversary effect vocabulary types, empty per-group tables)
+        size: M
+        goal: The combatRequests table holds GM sanctions (Q1) and incoming hits waiting in a reaction window (Q13) and is swept by a cron; the adversary-actions error codes exist; the adversary effect vocabulary types and an empty registry of eight tier/source tables exist.
+        depends_on: [CA0]
+        owns:
+          - convex/schema.ts
+          - convex/tables/combatRequests.ts
+          - convex/lib/validators/combatRequests.ts
+          - convex/cleanup.ts
+          - convex/crons.ts
+          - src/lib/errors/adversaryActions.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - src/lib/domain/adversary-effects/types.ts
+          - src/lib/srd/adversary-effects/index.ts
+          - src/lib/srd/adversary-effects/t1-core.ts
+          - src/lib/srd/adversary-effects/t1-hf.ts
+          - src/lib/srd/adversary-effects/t2-core.ts
+          - src/lib/srd/adversary-effects/t2-hf.ts
+          - src/lib/srd/adversary-effects/t3-core.ts
+          - src/lib/srd/adversary-effects/t3-hf.ts
+          - src/lib/srd/adversary-effects/t4-core.ts
+          - src/lib/srd/adversary-effects/t4-hf.ts
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/unit/adversary-effects-types.test.ts
+          - docs/tasks/TASK-CA-AA0.md
+        reads:
+          - .omc/autopilot/combat-actions-analysis.md
+          - src/lib/domain/card-effects/types.ts
+          - src/lib/srd/adversaries.ts
+          - src/lib/srd/types.ts
+          - convex/tables/actionLog.ts
+          - docs/best-practices.md
+        acceptance:
+          - "combatRequests {campaignId, encounterId?, mapId?, kind: sanction | incomingHit, status: open | resolved | declined, createdBy, payload (typed union, no v.any), responses[], resolvedAt?} with indexes by_campaign_status and by_status_resolved; schemaVersion on the payload (rule 7)"
+          - "An internal, batched, self-rescheduling cron deletes resolved / declined rows older than a day (rule 8); purgeCampaign removes the campaign's rows; cleanup tests cover both"
+          - "src/lib/errors/adversaryActions.ts defines ADVERSARY_NOT_SPOTLIT, ADVERSARY_FEATURE_UNAVAILABLE, NOT_ENOUGH_FEAR, REQUEST_NOT_OPEN, NOT_A_RESPONDER, wired into AppErrorCode and the client message map"
+          - "adversary-effects/types.ts reuses the card vocabulary's outcome steps and adds costs (spend N Fear, mark N adversary Stress), needsSpotlight, reaction triggers (onDamaged, onHit, onMarkHp, allyDealtDamage, onDefeated), passives as modifiers (resistance, attack bonus, hordeX, minionX, relentless), group attack, summon prompt, countdown prompt, manual; no any"
+          - "The eight tier/source files export empty readonly arrays; index.ts maps adversary id to its feature effects"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
   # ---------------------------------------------------------------- wave 3: server attack + the ten domain tables (parallel)
   - wave: 3
     tracers:
@@ -168,13 +241,15 @@ waves:
         title: Server - weapon attacks on enemy tokens with automatic damage and undo
         size: L
         goal: A player attacks one or more enemy tokens from their PC token with a weapon; the server rolls, decides hit or miss per target, rolls damage, marks HP on the encounter instances, and writes a public feed row (hit or miss only) and a GM row (damage, severity, HP) that the existing undo reverts.
-        depends_on: [CA1]
+        depends_on: [CA1, AA0]
         owns:
           - convex/rolls.ts
           - convex/lib/rolls.ts
           - convex/combatActions.ts
           - convex/lib/combatActions.ts
           - convex/lib/actionLog.ts
+          - convex/combatRequests.ts
+          - convex/lib/combatRequests.ts
           - tests/convex/combat-attack.test.ts
           - tests/convex/combat-attack-authz.test.ts
           - docs/tasks/TASK-CA-CA3.md
@@ -193,7 +268,7 @@ waves:
         acceptance:
           - "The duality and damage internals move from convex/rolls.ts to convex/lib/rolls.ts unchanged in behaviour (CF8); every existing rolls test passes untouched"
           - "combatActions.attack {characterId, mapId, targetTokenIds, slot, ...duality options} is a keyed campaign mutation with need edit on the character; the attacker is that character's PC token on the live map; targets must be enemy tokens linked to running encounter instances (else COMBAT_TARGET_INVALID)"
-          - "No line of sight to a target refuses it with COMBAT_NO_LINE_OF_SIGHT (Q2); an out-of-range target turns the action into a pending GM-sanction request (Q1): the GM approves (then it resolves as normal) or declines; nothing is rolled or charged before approval; role tests for request, approve, decline"
+          - "No line of sight to a target refuses it with COMBAT_NO_LINE_OF_SIGHT (Q2); an out-of-range target turns the action into a pending GM-sanction request (Q1): the GM approves (then it resolves as normal) or declines; nothing is rolled or charged before approval; role tests for request, approve, decline; requests are combatRequests rows (kind sanction); combatRequests.sanction {requestId, approve} (GM) and combatRequests.mine (the player's open requests) exist"
           - "One duality roll (Hope/Fear/crit effects, GM Fear, countdown ticks exactly as actionRoll); on any hit one damage roll at Proficiency with crit max (R2); each hit target takes the total through applyDamageTo; instances update hp/stress/defeated in the same mutation (U4)"
           - "One actionLog group: a public row whose summary and roll show the attack roll, the damage dice and total (Q5) and Hit / Miss / Defeated per target, with no HP, Stress, threshold or Difficulty value (U1); a gm row with damage, severity and HP marked per target, storing adversaryBefore"
           - "actionLog undo of the group (actor or GM) restores the sheet and every adversaryBefore row and takes back Fear; stale undo still refuses with UNDO_STALE (U4)"
@@ -391,6 +466,34 @@ waves:
           - "Each entry quotes its card text in a comment (HF p.180-181); its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text (Blighting Strike: d6+1 with Hope, d10+1 with Fear)"
           - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AA1
+        title: Adversary-action engine and reaction window (pure)
+        size: L
+        goal: Pure functions roll an adversary attack against each target's Evasion, compute damage and the PC's severity from their thresholds, apply the Armor Slot step-down and direct damage, and run the reaction-window state machine that ends in the final HP / Stress / Armor marks.
+        depends_on: [AA0, CA1]
+        owns:
+          - src/lib/domain/adversary-actions/**
+          - src/lib/domain/adversary-effects/run.ts
+          - tests/unit/adversary-actions/**
+          - docs/tasks/TASK-CA-AA1.md
+        reads:
+          - src/lib/domain/adversary-effects/types.ts
+          - src/lib/domain/card-effects/**
+          - src/lib/domain/combat-actions/**
+          - src/lib/domain/characters/index.ts
+          - src/lib/domain/characters/derived.ts
+          - src/lib/domain/encounters/**
+          - src/lib/domain/adversaries/index.ts
+          - src/components/adversaries/tracker/rules.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "adversaryAttack(atk, adv, experienceBonus, targets) rolls one d20 (two with advantage/disadvantage, keep high/low) for all targets; hit when total >= Evasion; a natural 20 always hits and crits (AR1, AR2, AR7; CB p.160, p.148, p.161 quoted)"
+          - "Damage: stat-block dice with crit max + roll; Horde X once half the HP is marked; Minion Group Attack sums X per Minion in range (AR9, AR10; CB p.201, p.199)"
+          - "pcSeverity(damage, thresholds) and the window plan: armor step-down by one threshold with one slot (not on direct damage, forced 'mark an Armor Slot without its benefit' handled), Stress overflow to HP, last HP flags a death move (AR3-AR5; CB p.91, p.114, p.99, p.92)"
+          - "Reaction window: open(hit) lists responders (the target for armor; allies whose loadout has a card with a matching trigger and range); respond(armor | card | pass) folds in card outcomes such as redirectDamage and extraArmorSlots (I Am Your Shield, CB p.341); the window is complete when the target chose and every responder answered, or on resolveNow (Q13, Q17)"
+          - "run(featureEffect, context) returns an ordered plan for actions, reactions and passives, including Fear and adversary-Stress costs and spotlight checks (AR6, AR8)"
+          - "Unit tests take expected values from the book's examples (CB p.148: 2d8+2 crit with 5 and 7 = 30; CB p.114 Rune: Major with an Armor Slot = Minor)"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
   # ---------------------------------------------------------------- wave 4: card server, map UI, sheet once-per
   - wave: 4
     tracers:
@@ -478,6 +581,150 @@ waves:
           - "A loadout card whose featureUses card:<id> entry exists renders turned and greyed with 'Back after a rest' or 'Back after a long rest' (Q3, CB p.101 quoted); after a rest finishes it is ready again with no extra code (expire already clears it)"
           - "Unit test with a sheet fixture for both limits"
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AE-t1-core
+        title: Adversary feature effects - tier 1 core (52 adversaries, 140 features)
+        size: L
+        goal: Every feature of every tier 1 core SRD adversary has an effect entry the adversary runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [AA1]
+        owns:
+          - src/lib/srd/adversary-effects/t1-core.ts
+          - tests/unit/adversary-effects/t1-core.test.ts
+          - docs/tasks/TASK-CA-AE-t1-core.md
+        reads:
+          - src/lib/domain/adversary-effects/**
+          - src/lib/srd/adversaries.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every feature of every tier 1 core adversary has exactly one entry; a test fails on a missing or extra feature (Q15)"
+          - "Each entry quotes its feature text in a comment; its test runs it through run() with a fixed RNG and checks costs (Fear, adversary Stress), spotlight need, trigger, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AE-t1-hf
+        title: Adversary feature effects - tier 1 Hope & Fear (35 adversaries, 103 features)
+        size: L
+        goal: Every feature of every tier 1 Hope & Fear SRD adversary has an effect entry the adversary runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [AA1]
+        owns:
+          - src/lib/srd/adversary-effects/t1-hf.ts
+          - tests/unit/adversary-effects/t1-hf.test.ts
+          - docs/tasks/TASK-CA-AE-t1-hf.md
+        reads:
+          - src/lib/domain/adversary-effects/**
+          - src/lib/srd/adversaries.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every feature of every tier 1 Hope & Fear adversary has exactly one entry; a test fails on a missing or extra feature (Q15)"
+          - "Each entry quotes its feature text in a comment; its test runs it through run() with a fixed RNG and checks costs (Fear, adversary Stress), spotlight need, trigger, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AE-t2-core
+        title: Adversary feature effects - tier 2 core (36 adversaries, 108 features)
+        size: L
+        goal: Every feature of every tier 2 core SRD adversary has an effect entry the adversary runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [AA1]
+        owns:
+          - src/lib/srd/adversary-effects/t2-core.ts
+          - tests/unit/adversary-effects/t2-core.test.ts
+          - docs/tasks/TASK-CA-AE-t2-core.md
+        reads:
+          - src/lib/domain/adversary-effects/**
+          - src/lib/srd/adversaries.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every feature of every tier 2 core adversary has exactly one entry; a test fails on a missing or extra feature (Q15)"
+          - "Each entry quotes its feature text in a comment; its test runs it through run() with a fixed RNG and checks costs (Fear, adversary Stress), spotlight need, trigger, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AE-t2-hf
+        title: Adversary feature effects - tier 2 Hope & Fear (42 adversaries, 138 features)
+        size: L
+        goal: Every feature of every tier 2 Hope & Fear SRD adversary has an effect entry the adversary runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [AA1]
+        owns:
+          - src/lib/srd/adversary-effects/t2-hf.ts
+          - tests/unit/adversary-effects/t2-hf.test.ts
+          - docs/tasks/TASK-CA-AE-t2-hf.md
+        reads:
+          - src/lib/domain/adversary-effects/**
+          - src/lib/srd/adversaries.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every feature of every tier 2 Hope & Fear adversary has exactly one entry; a test fails on a missing or extra feature (Q15)"
+          - "Each entry quotes its feature text in a comment; its test runs it through run() with a fixed RNG and checks costs (Fear, adversary Stress), spotlight need, trigger, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AE-t3-core
+        title: Adversary feature effects - tier 3 core (23 adversaries, 87 features)
+        size: L
+        goal: Every feature of every tier 3 core SRD adversary has an effect entry the adversary runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [AA1]
+        owns:
+          - src/lib/srd/adversary-effects/t3-core.ts
+          - tests/unit/adversary-effects/t3-core.test.ts
+          - docs/tasks/TASK-CA-AE-t3-core.md
+        reads:
+          - src/lib/domain/adversary-effects/**
+          - src/lib/srd/adversaries.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every feature of every tier 3 core adversary has exactly one entry; a test fails on a missing or extra feature (Q15)"
+          - "Each entry quotes its feature text in a comment; its test runs it through run() with a fixed RNG and checks costs (Fear, adversary Stress), spotlight need, trigger, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AE-t3-hf
+        title: Adversary feature effects - tier 3 Hope & Fear (32 adversaries, 135 features)
+        size: L
+        goal: Every feature of every tier 3 Hope & Fear SRD adversary has an effect entry the adversary runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [AA1]
+        owns:
+          - src/lib/srd/adversary-effects/t3-hf.ts
+          - tests/unit/adversary-effects/t3-hf.test.ts
+          - docs/tasks/TASK-CA-AE-t3-hf.md
+        reads:
+          - src/lib/domain/adversary-effects/**
+          - src/lib/srd/adversaries.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every feature of every tier 3 Hope & Fear adversary has exactly one entry; a test fails on a missing or extra feature (Q15)"
+          - "Each entry quotes its feature text in a comment; its test runs it through run() with a fixed RNG and checks costs (Fear, adversary Stress), spotlight need, trigger, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AE-t4-core
+        title: Adversary feature effects - tier 4 core (18 adversaries, 82 features)
+        size: L
+        goal: Every feature of every tier 4 core SRD adversary has an effect entry the adversary runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [AA1]
+        owns:
+          - src/lib/srd/adversary-effects/t4-core.ts
+          - tests/unit/adversary-effects/t4-core.test.ts
+          - docs/tasks/TASK-CA-AE-t4-core.md
+        reads:
+          - src/lib/domain/adversary-effects/**
+          - src/lib/srd/adversaries.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every feature of every tier 4 core adversary has exactly one entry; a test fails on a missing or extra feature (Q15)"
+          - "Each entry quotes its feature text in a comment; its test runs it through run() with a fixed RNG and checks costs (Fear, adversary Stress), spotlight need, trigger, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: AE-t4-hf
+        title: Adversary feature effects - tier 4 Hope & Fear (29 adversaries, 135 features)
+        size: L
+        goal: Every feature of every tier 4 Hope & Fear SRD adversary has an effect entry the adversary runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [AA1]
+        owns:
+          - src/lib/srd/adversary-effects/t4-hf.ts
+          - tests/unit/adversary-effects/t4-hf.test.ts
+          - docs/tasks/TASK-CA-AE-t4-hf.md
+        reads:
+          - src/lib/domain/adversary-effects/**
+          - src/lib/srd/adversaries.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every feature of every tier 4 Hope & Fear adversary has exactly one entry; a test fails on a missing or extra feature (Q15)"
+          - "Each entry quotes its feature text in a comment; its test runs it through run() with a fixed RNG and checks costs (Fear, adversary Stress), spotlight need, trigger, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
   # ---------------------------------------------------------------- wave 5: the Hand on the map
   - wave: 5
     tracers:
@@ -507,6 +754,42 @@ waves:
           - "Results follow CA5's result view (U1, Q5); on mobile the Hand is the first tab of the bottom sheet with a horizontal card strip (Q11)"
           - "e2e: a player uses Bolt Beacon on a Bandit (Hope spent, Hit, the card stays ready) and a once-per-rest card that greys out and returns after a GM rest; visual spec at desktop and 390px"
           - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
+      - id: AA2
+        title: Server - adversary attacks and features against PCs, reaction window, Fear
+        size: L
+        goal: The GM makes an adversary attack or use a feature against PCs; the server rolls, opens a reaction window per hit, lets the target choose armor and allies answer with eligible cards, then marks HP / Stress / Armor on the PCs, applies feature effects, spends Fear and logs it all as one undoable group.
+        depends_on: [CA4, AA1]
+        owns:
+          - convex/adversaryActions.ts
+          - convex/lib/adversaryActions.ts
+          - convex/lib/incomingHits.ts
+          - tests/convex/adversary-actions.test.ts
+          - tests/convex/adversary-actions-authz.test.ts
+          - docs/tasks/TASK-CA-AA2.md
+        reads:
+          - convex/lib/functions.ts
+          - convex/lib/combatRequests.ts
+          - convex/lib/combatActions.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/rolls.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/characterSheet.ts
+          - convex/lib/fear.ts
+          - convex/encounterTracking.ts
+          - convex/characters.ts
+          - src/lib/domain/adversary-actions/**
+          - src/lib/srd/adversary-effects/**
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "adversaryActions.attack {instanceId, targets (characterIds or tokenIds), advantage?, experience?} is a keyed GM mutation on a running encounter; with a live map the targets are PC tokens checked for line of sight like CA3 (Q2), without one any party PC (Q18); spotlight and Fear follow the tracker's rules (an extra spotlight asks for 1 Fear; AR6, Q19)"
+          - "adversaryActions.useFeature {instanceId, feature, targets, choices} pays Fear / adversary Stress, refuses NOT_ENOUGH_FEAR / ADVERSARY_FEATURE_UNAVAILABLE, and runs the feature plan; summons and countdowns become GM prompts"
+          - "Each hit opens a combatRequests incomingHit row; adversaryActions.respond {requestId, characterId, choice: armor | noArmor | card{cardId} | pass} (need edit on that character) is allowed only to listed responders (NOT_A_RESPONDER); adversaryActions.resolve {requestId} lets the GM close it early; the hit resolves in the same mutation as the last answer (Q13, Q17)"
+          - "Damage to a PC goes through the sheet helpers (thresholds, one Armor Slot, Stress overflow, death-move flag) without editing convex/characters.ts; card responses run through cardRunner and their costs and once-per uses are recorded"
+          - "adversaryActions.pending {characterId} (need view) returns the open hit for that character with the damage amount and its severity against the character's own thresholds and the eligible responses, but no attack roll and no adversary stats (Q14, CF6)"
+          - "One actionLog group per action: a public row 'Bandit hit Mira' / 'Bandit missed Mira' with no roll; a gm row with the roll, damage, severity and marks; undo restores the PCs' sheets, the adversaries' Stress and the Fear (U4)"
+          - "Reactions with triggers (Momentum gains a Fear automatically; Heavy Hitter offers a Fear prompt) fire from the plan (AR8, Q19)"
+          - "adversary-actions-authz.test.ts covers anonymous, outsider, player (target, ally, other) and GM for attack, useFeature, respond, resolve and pending, asserting ConvexError.data.code"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
   # ---------------------------------------------------------------- wave 6: end-to-end, a11y, docs
   - wave: 6
     tracers:
@@ -531,4 +814,99 @@ waves:
           - "coverage.test.ts: every card classified combat or passive has an effect entry and every effect runs through run() without throwing (U3); it prints the count of manual steps per domain"
           - "Flow e2e: two players and a GM; attacks, a multi-target card, a Stress card, a reaction-roll card, a Minion pick, a recall, a rest that brings back a card, and GM undo; the player's network responses contain no enemy hp, stress, major, severe or difficulty field (U1)"
           - "axe finds no serious violations on the Hand, Attack bar, dice box and Resolutions at desktop and 390px"
+          - "pnpm lint, typecheck, vitest and the full e2e suite pass; tracer-guard passes"
+      - id: AA3
+        title: Encounter tab - target PCs, attack and use features, Fear prompts, reaction-window status, map pane
+        size: L
+        goal: On the Encounter tab the GM picks PC targets, attacks with the selected adversary or uses any of its features through the server, answers Fear prompts with today's logic, watches open reaction windows, and moves tokens in a compact map pane that mirrors the Combat Map.
+        depends_on: [AA2]
+        owns:
+          - src/components/adversaries/tracker/**
+          - tests/unit/tracker-actions.test.tsx
+          - tests/e2e/encounter-actions.spec.ts
+          - tests/e2e/visual/CA-AA3.spec.ts
+          - docs/tasks/TASK-CA-AA3.md
+        reads:
+          - src/components/combat-map/**
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/page.tsx
+          - convex/adversaryActions.ts
+          - convex/encounterTracking.ts
+          - convex/combatTokens.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Runs after D12 H21 merges or before D12 wave 3 starts. The selected block's Roll attack becomes Attack: pick targets (party list without a live map, tokens with one; Q18), optional advantage and Experience (asks for 1 Fear), fire adversaryActions.attack once; the GM sees roll, hit/miss per target and damage"
+          - "Every feature of the selected adversary has a Use button (passives show as modifiers) with its cost; Fear-cost and extra-spotlight prompts reuse the tracker's spotlightCostsFear and Spend Fear logic (Q16, Q19)"
+          - "Open reaction windows list who still has to answer, with Resolve now (Q17)"
+          - "A compact map pane (reusing the map-view and tokens components read-only, plus combatTokens.move for drags) shows the live map's tokens; moves made here show on the Combat Map (Q16)"
+          - "Every useQuery subtree has an error boundary; no mutation fires from an effect (rules 11, 13)"
+          - "e2e: the GM attacks Mira from the Encounter tab, Mira's player marks an Armor Slot, the hit resolves and the token flashes on the Combat Map; visual spec"
+          - "pnpm lint, typecheck, vitest and the adversaries e2e specs pass; tracer-guard passes"
+      - id: AA4
+        title: Player side - incoming-hit prompt (armor choice, ally reactions) on the map and the sheet
+        size: M
+        goal: A hit PC's player sees the damage against their own thresholds and chooses whether to mark an Armor Slot; allies with an eligible reaction card see Use / Pass; the prompt appears on the Combat Map and on the character sheet.
+        depends_on: [AA2, CA6]
+        owns:
+          - src/components/combat-map/actions/reactions/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/incoming-hit.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-one.tsx
+          - tests/unit/incoming-hit.test.tsx
+          - tests/e2e/incoming-hit.spec.ts
+          - docs/tasks/TASK-CA-AA4.md
+        reads:
+          - src/components/combat-map/actions/**
+          - convex/adversaryActions.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/damage-calculator.tsx
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Runs after D12 H21 / H22 merge or before D12 wave 3 starts. The target sees e.g. '14 damage: Major (2 HP). Mark an Armor Slot to make it Minor?' with Mark / Don't (no slot or direct damage: only OK), never the attack roll (Q13, Q14; CB p.114 quoted)"
+          - "Allies with an eligible reaction card see the card with Use / Pass (e.g. I Am Your Shield: mark a Stress, become the target, may mark any number of Armor Slots, CB p.341); answers call adversaryActions.respond once"
+          - "Other players see only 'Bandit hit Mira' (Q14); on mobile the prompt is a bottom sheet with 44px buttons (Q11)"
+          - "e2e: an adversary hit on Mira, Tabby answers with I Am Your Shield, Tabby marks two Armor Slots, the hit resolves on Tabby"
+          - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
+      - id: AA5
+        title: Combat Map - GM adversary controls and hit visuals
+        size: M
+        goal: On the Combat Map the GM selects an adversary token and attacks or uses its features with the same panel and rules as the Encounter tab; every adversary action shows on the map as a flash on the target tokens and an entry in the mini feed, whichever page started it.
+        depends_on: [AA2, CA5]
+        owns:
+          - src/components/combat-map/actions/adversary/**
+          - tests/unit/adversary-panel.test.tsx
+          - tests/e2e/combat-adversary.spec.ts
+          - tests/e2e/visual/CA-AA5.spec.ts
+          - docs/tasks/TASK-CA-AA5.md
+        reads:
+          - src/components/combat-map/**
+          - src/components/adversaries/tracker/**
+          - convex/adversaryActions.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Runs after D12 H22 merges or before D12 wave 3 starts. Selecting an enemy token as GM opens the adversary panel: Attack (targets = PC tokens with range bands and line of sight), feature Use buttons, Fear prompts, identical to the Encounter tab (Q12, Q16, Q19)"
+          - "Hits and misses from either page flash the target tokens (own overlay, not map-canvas) and appear in the mini feed; the GM's Resolutions list includes adversary actions with Undo (U4)"
+          - "e2e: the GM attacks from the map and the result appears on the Encounter tab; visual spec at desktop and 390px"
+          - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 7: adversary end to end
+  - wave: 7
+    tracers:
+      - id: AA6
+        title: Adversary actions end to end, feature coverage, accessibility and recorded rulings
+        size: M
+        goal: The adversary flow is checked end to end from both pages, every SRD feature runs through the runner, the new panels pass axe, and docs/game-interpretation.md records Q12-Q19.
+        depends_on: [AA3, AA4, AA5, CA8, AE-t1-core, AE-t1-hf, AE-t2-core, AE-t2-hf, AE-t3-core, AE-t3-hf, AE-t4-core, AE-t4-hf]
+        owns:
+          - tests/e2e/adversary-actions-flow.spec.ts
+          - tests/e2e/adversary-actions-a11y.spec.ts
+          - tests/unit/adversary-effects/coverage.test.ts
+          - docs/game-interpretation.md
+          - docs/tasks/TASK-CA-AA6.md
+        reads:
+          - src/components/adversaries/tracker/**
+          - src/components/combat-map/**
+          - convex/adversaryActions.ts
+          - src/lib/srd/adversary-effects/**
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "coverage.test.ts: every feature of all 267 SRD adversaries has an entry and runs through run() without throwing (Q15); it prints the manual-step count per group"
+          - "Flow e2e: the GM attacks from the Encounter tab and from the map, a multi-target Fear feature, a Minion Group Attack, a reaction window with armor and I Am Your Shield, a Momentum Fear gain, GM undo; player network responses contain no adversary attack roll or stats (Q14, U1)"
+          - "axe finds no serious violations on the Encounter-tab action panel, the adversary panel and the incoming-hit prompt at desktop and 390px"
           - "pnpm lint, typecheck, vitest and the full e2e suite pass; tracer-guard passes"
