@@ -21,7 +21,7 @@ import {
   loadCombatToken,
   tokensOnMap,
 } from "./lib/combatMaps";
-import { MAX_INSTANCES, startEncounter } from "./lib/encounters";
+import { adversaryArtSrc, MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { ownFileUrl } from "./lib/files";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
@@ -57,7 +57,7 @@ const MAX_PLACE = MAX_INSTANCES;
 
 const tokenKindValidator = v.union(v.literal("pc"), v.literal("adversary"), v.literal("custom"));
 
-/** A PC's portrait: their uploaded image, the chosen or default design art (an asset id), or none (initials). */
+/** A token's portrait: an uploaded image or rulebook art (url), the chosen or default design art (an asset id), or none (initials). */
 const portraitValidator = v.union(
   v.null(),
   v.object({ kind: v.literal("url"), url: v.string() }),
@@ -176,6 +176,12 @@ async function adversaryType(ctx: QueryCtx, campaignId: Id<"campaigns">, instanc
   if (instance.source.kind === "srd") return SRD_TYPES.get(instance.source.adversaryId) ?? null;
   const block = await ctx.db.get("customAdversaries", instance.source.customId);
   return block !== null && block.campaignId === campaignId ? block.type : null;
+}
+
+/** An adversary token's portrait: its rulebook art as an image URL, or null (initials). */
+async function adversaryPortrait(ctx: QueryCtx, campaignId: Id<"campaigns">, instance: Doc<"encounterAdversaries">): Promise<TokenView["portrait"]> {
+  const src = await adversaryArtSrc(ctx, campaignId, instance);
+  return src === null ? null : { kind: "url", url: src };
 }
 
 /** Squares new tokens may stand on: not wall, void, deep water or lava (the board's `walkable`); any square on an image. */
@@ -336,7 +342,8 @@ async function viewsOf(ctx: CampaignCtx<QueryCtx>, tokens: Doc<"combatTokens">[]
         instanceId: instance._id,
         name: instance.label,
         sub: [type, encounter?.name].filter(Boolean).join(" · "),
-        portrait: null,
+        // The rulebook art when the adversary has it (user 2026-10-21), else the side's colour and initials.
+        portrait: await adversaryPortrait(ctx, ctx.campaign._id, instance),
         canMove: gm,
         mine: false,
         stats: {
