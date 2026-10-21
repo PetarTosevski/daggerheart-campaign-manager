@@ -13,6 +13,7 @@
 
 import type { CampaignPhaseName } from "../campaign-time";
 import { RANGE_SQUARES } from "./ranges";
+import type { LightTrait } from "./traits";
 
 /** "day": full vision; "dim": full vision + disadvantage badge; "night": lights only. */
 export type LightLevel = "day" | "dim" | "night";
@@ -70,18 +71,54 @@ export const CARRIED_LIGHT_LABEL: Readonly<Record<CarriedLight, string>> = {
   alistair: "Alistair’s Torch",
 };
 
-/** R9 map lights (objects the GM and players switch on and off). */
+/**
+ * Sprite-packs Q1 (answered b): faint glow, for things that only glow (candles,
+ * candelabra, glowing mushrooms, luminous moss, crystals, wisps, lava): clear
+ * in Melee (1), dim to Very Close (3). Tunable here. A switchable map light
+ * like the others; its dim band hides tokens at night (R10).
+ */
+export const FAINT_GLOW_REACH: LightReach = [RANGE_SQUARES.melee, RANGE_SQUARES.veryClose];
+
+/**
+ * R9 map lights (objects the GM and players switch on and off), keyed by
+ * Classic kind, plus `faintglow`, the sprite light trait of Q1 (no Classic
+ * object kind has that name).
+ */
 export const MAP_LIGHT_REACH: Readonly<Record<string, LightReach>> = {
   torch: [RANGE_SQUARES.close, RANGE_SQUARES.far],
   walltorch: [RANGE_SQUARES.close, RANGE_SQUARES.far],
   campfire: [RANGE_SQUARES.far, RANGE_SQUARES.far * 2],
+  faintglow: FAINT_GLOW_REACH,
 };
 
 export function isLightObject(kind: string): boolean {
   return Object.prototype.hasOwnProperty.call(MAP_LIGHT_REACH, kind);
 }
 
+/** An object as the light rules read it: a Classic kind, optionally sprite traits (P3). */
+export type LightSubject = {
+  readonly kind: string;
+  readonly lit?: boolean | null;
+  readonly traits?: { readonly light?: LightTrait | null } | null;
+};
+
+/**
+ * The reach of an object's light when lit, or null if it gives none: the
+ * sprite's light trait when it has one (Q1; "none" = no light, even on a
+ * Classic light kind), else the Classic kind (R9, D2).
+ */
+export function mapLightReach(object: LightSubject): LightReach | null {
+  const trait = object.traits?.light;
+  if (trait) return trait === "none" ? null : (MAP_LIGHT_REACH[trait] ?? null);
+  return isLightObject(object.kind) ? MAP_LIGHT_REACH[object.kind] : null;
+}
+
+/** A switchable map light: a Classic light kind, or a sprite whose light trait is not none. */
+export function givesLight(object: LightSubject): boolean {
+  return mapLightReach(object) !== null;
+}
+
 /** A map light is lit unless switched off (`lit === false`), as on the board. */
-export function isLit(object: { readonly kind: string; readonly lit?: boolean | null }): boolean {
-  return isLightObject(object.kind) && object.lit !== false;
+export function isLit(object: LightSubject): boolean {
+  return givesLight(object) && object.lit !== false;
 }

@@ -17,9 +17,10 @@
  * 2 = clear.
  */
 
-import { CARRIED_LIGHT_REACH, MAP_LIGHT_REACH, isLit, lightOf, type CarriedLight, type LightLevel } from "./light";
+import { CARRIED_LIGHT_REACH, isLit, lightOf, mapLightReach, type CarriedLight, type LightLevel } from "./light";
 import { blockRadiusFactor, blocksSight, type SightMode } from "./sight";
 import { SIGHT_BLOCKING_TERRAINS, type Terrain } from "./spec";
+import { defaultTraitRadius, type VisionTraits } from "./traits";
 
 // ---------------------------------------------------------------- constants
 
@@ -76,6 +77,10 @@ export type VisionObject = {
   readonly r?: number;
   readonly sight?: SightMode | null;
   readonly lit?: boolean | null;
+  /** Rotation in radians (turns rect footprints). */
+  readonly rot?: number | null;
+  /** Sprite traits (sprite-packs P3); absent = the Classic kind's behaviour, unchanged. */
+  readonly traits?: VisionTraits | null;
 };
 
 export type VisionMapInput = {
@@ -215,8 +220,42 @@ function fillSquare(out: Uint8Array | Int8Array, sw: number, sh: number, x: numb
 }
 
 /**
+ * Block a rect footprint (sprite-packs D4): w x h squares centred on the
+ * object, scaled by r / (max(w, h) / 2) when r is set, turned by rot. Marks
+ * every sample whose centre lies inside the rotated rectangle.
+ */
+function blockRect(out: Uint8Array, sw: number, sh: number, o: VisionObject, t: VisionTraits): void {
+  const tw = t.w > 0 ? t.w : 1;
+  const th = t.h > 0 ? t.h : 1;
+  const scale = o.r ? o.r / defaultTraitRadius({ w: tw, h: th }) : 1;
+  const hw = (tw * scale) / 2;
+  const hh = (th * scale) / 2;
+  const rot = Number.isFinite(o.rot) ? (o.rot as number) : 0;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const ex = Math.abs(hw * cos) + Math.abs(hh * sin);
+  const ey = Math.abs(hw * sin) + Math.abs(hh * cos);
+  const sx0 = Math.max(0, Math.floor((o.x - ex) * S));
+  const sx1 = Math.min(sw, Math.ceil((o.x + ex) * S));
+  const sy0 = Math.max(0, Math.floor((o.y - ey) * S));
+  const sy1 = Math.min(sh, Math.ceil((o.y + ey) * S));
+  const eps = 1e-9;
+  for (let sy = sy0; sy < sy1; sy++) {
+    const dy = (sy + 0.5) / S - o.y;
+    for (let sx = sx0; sx < sx1; sx++) {
+      const dx = (sx + 0.5) / S - o.x;
+      // Into the object's frame: rotate by -rot.
+      const lx = dx * cos + dy * sin;
+      const ly = -dx * sin + dy * cos;
+      if (Math.abs(lx) <= hw + eps && Math.abs(ly) <= hh + eps) out[sy * sw + sx] = 1;
+    }
+  }
+}
+
+/**
  * Build the blocking grid (terrain walls, painted blockers, sight-blocking
- * objects, R7) and the list of lit map lights (R9).
+ * objects, R7) and the list of lit map lights (R9). Objects with sprite
+ * traits (P3) use their sight default (D3), light (Q1) and footprint (D4).
  */
 export function prepareMap(input: VisionMapInput): PreparedMap {
   const w = Math.max(1, Math.trunc(input.w));
@@ -233,11 +272,16 @@ export function prepareMap(input: VisionMapInput): PreparedMap {
   for (const o of input.objects ?? []) {
     if (!o || !Number.isFinite(o.x) || !Number.isFinite(o.y)) continue;
     if (isLit(o)) {
-      const [clear, dim] = MAP_LIGHT_REACH[o.kind];
+      const [clear, dim] = mapLightReach(o)!;
       lights.push({ x: o.x, y: o.y, clear, dim });
     }
     if (!blocksSight(o)) continue;
-    const rr = (o.r || 1) * blockRadiusFactor(o.kind);
+    const t = o.traits;
+    if (t && t.footprint === "rect") {
+      blockRect(blocked, sw, sh, o, t);
+      continue;
+    }
+    const rr = (o.r || (t ? defaultTraitRadius(t) : 1)) * blockRadiusFactor(o.kind);
     const sy0 = Math.max(0, Math.floor((o.y - rr) * S));
     const sy1 = Math.min(sh, Math.ceil((o.y + rr) * S));
     const sx0 = Math.max(0, Math.floor((o.x - rr) * S));
