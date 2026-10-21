@@ -9,21 +9,16 @@
  */
 import { v } from "convex/values";
 
-import type { FeatureScope } from "../src/lib/domain/class-features/types";
 import { bumpMoonDie as bump, phaseOf } from "../src/lib/domain/session-features/index";
-import { FRAME_OF } from "../src/lib/frames/extras/common";
-import { resolveOptions } from "../src/lib/frames/options";
-import type { Doc } from "./_generated/dataModel";
 import { env, internalMutation } from "./_generated/server";
 import { logAction } from "./lib/actionLog";
 import { isE2EDeployment } from "./lib/allowlist";
 import { assertCanAct, editable, readSheet, saveSheet } from "./lib/characterSheet";
+import { featureScope } from "./lib/featureScope";
 import { keyedUserMutation } from "./lib/functions";
 
-/** What the campaign lets features answer to (Lunar Phases only with Hope & Fear on); the same as rolls.ts. */
-export function featureScope(campaign: Doc<"campaigns">): FeatureScope {
-  return { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear, ikonis: campaign.frameId === FRAME_OF.motherboard };
-}
+/** Re-exported for `convex/characters.ts`; the one copy of the rule is `convex/lib/featureScope.ts` (dcm-bxp.68). */
+export { featureScope };
 
 /**
  * Spends a Hope to raise the moon die by one, 6 -> 1, once per rest (owner or GM). Refusals: CLASS_FEATURE_RULE

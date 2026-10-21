@@ -238,3 +238,26 @@ describe("characters.applyDamage negateMinor (New moon)", () => {
     expect(await p1.mutation(api.characters.applyDamage, damage(mira, major))).toMatchObject({ severity: "minor", marks: 1 });
   });
 });
+
+describe("rolls.storeSlayerDie after a roll that paid an Experience at Hope max (dcm-bxp.65, K2, CB p.48)", () => {
+  useAllowlist(EMAILS);
+
+  const action = { kind: "action" as const, trait: "agility" as const, modifier: 0, advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
+  /** Hope 8, Fear 3: a success with Hope. */
+  const WITH_HOPE = [8, 3];
+
+  // dcm-bxp.65, skipped until the planned widen lands (convex/lib/validators/actionLog.ts is owned by tracer CA0):
+  // the roll row gets `hopeGained: v.optional(v.boolean())`, set by the Duality roll and tagTeamApply and read by
+  // storeSlayerDie (docs/tasks/TASK-F4-F3.md has the diff). Today storeSlayerDie derives the gain from the row's
+  // `before` (the sheet before the roll's costs); at Hope 6 the Experience's Hope (6 -> 5) and the roll's Hope
+  // (5 -> 6) leave the sheet unchanged, so the row has no `before` and the store keeps the 6 instead of 5.
+  it.skip("takes back the Hope the roll gave: Hope 6, pay 1 for an Experience (5), roll with Hope (6), store -> 5", async () => {
+    const { p2, bryn, patch, sheetOf } = await setup();
+    await patch(bryn, { subclassId: "call-of-the-slayer", hope: 6, proficiency: 2 });
+    const exp = (await sheetOf(bryn)).experiences[0]!;
+    const { entryId } = await p2.mutation(api.rolls.manualRoll, { characterId: bryn, roll: { ...action, experienceIds: [exp.id] }, values: WITH_HOPE, idempotencyKey: key() });
+    expect((await sheetOf(bryn)).hope).toBe(6);
+    expect(await p2.mutation(api.rolls.storeSlayerDie, { characterId: bryn, entryId, idempotencyKey: key() })).toEqual({ slayerDice: 1, capacity: 2, hope: 5 });
+    expect((await sheetOf(bryn)).hope).toBe(5);
+  });
+});

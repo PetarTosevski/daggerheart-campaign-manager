@@ -76,7 +76,6 @@ import { appError } from "../src/lib/errors/app-error";
 import { getWeapon } from "../src/lib/srd/index";
 import type { TraitId } from "../src/lib/srd/types";
 import { FRAME_OF, TRAIT_LABEL } from "../src/lib/frames/extras/common";
-import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import { motherboardState } from "./characterExtras";
 import { tickArmedCountdowns } from "./countdownRolls";
@@ -85,6 +84,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { latestLiveRow, logAction, newGroupId } from "./lib/actionLog";
 import { assertCanAct, findCharacter, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
+import { featureScope } from "./lib/featureScope";
 import { gainFear } from "./lib/fear";
 import { gmMutation, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
 import { applyRule } from "./lib/mechanics";
@@ -182,11 +182,6 @@ function changed(a: CharacterSheet, b: CharacterSheet): boolean {
 
 function signed(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`;
-}
-
-/** What the campaign lets class modules offer (Hope & Fear classes, Combat Training outside Motherboard). */
-function scopeOf(campaign: Doc<"campaigns">): FeatureScope {
-  return { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear, ikonis: campaign.frameId === FRAME_OF.motherboard };
 }
 
 /**
@@ -294,7 +289,7 @@ async function criticalRolled(ctx: QueryCtx, characterId: Id<"characters">): Pro
 async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
   assertCanAct(character, sheet);
-  const scope = scopeOf(campaign);
+  const scope = featureScope(campaign);
   const ikonis = args.ikonis ? await loadIkonis(ctx, campaign, character, sheet) : null;
   const { paid, input, extras } = rules(() => prepareDuality(sheet, args, scope, ikonis));
   const trait = ikonis?.trait ?? args.trait;
@@ -404,7 +399,7 @@ async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded,
   const { campaign, character, sheet } = loaded;
   assertCanAct(character, sheet);
   const ikonis = args.source.kind === "ikonis" ? await loadIkonis(ctx, campaign, character, sheet) : null;
-  const { paid, input, label } = rules(() => prepareDamage(sheet, args, scopeOf(campaign), ikonis));
+  const { paid, input, label } = rules(() => prepareDamage(sheet, args, featureScope(campaign), ikonis));
   const slayer = rollSlayerDice(args.slayerDice ?? 0);
   const roll: RollRecord = withSlayerDamage({ ...rules(() => rollDamage(input, rng)), manual }, slayer);
   const critical = !args.critical ? "" : (await criticalRolled(ctx, character._id)) ? "critical " : "critical (declared) ";
