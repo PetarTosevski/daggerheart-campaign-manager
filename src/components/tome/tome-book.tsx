@@ -1,7 +1,7 @@
 "use client";
 
 import { MapPin, PenLine, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { TOME_CHAPTERS, type Tome, type TomeChapterId } from "@/lib/frames/tomes";
 import { cn } from "@/lib/utils";
@@ -199,7 +199,7 @@ function CustomChapter({
       </div>
       {chapter === "overview" && content.setup.length ? (
         <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md border border-[#cdb88f] bg-[#e8d9b8] px-4 py-3 text-[16px]">
-          <div className="col-span-2 font-display text-[12px] tracking-[0.18em] text-[#7a5b2e]">FROM YOUR FRAME SETUP</div>
+          <div className="col-span-2 font-display text-[12px] tracking-[0.18em] text-[#6f5530]">FROM YOUR FRAME SETUP</div>
           {content.setup.map((row) => (
             <div key={row.label} className="contents">
               <dt className="font-semibold">{row.label}</dt>
@@ -263,6 +263,7 @@ export function TomeBook({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const chapterHeadingId = useId();
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
@@ -351,7 +352,7 @@ export function TomeBook({
               />
               {note ? (
                 <div className="hidden rounded-md border border-[#cdb88f] bg-[#e8d9b8] px-4 py-3.5 text-[16px] leading-normal text-[#4a3a26] italic lg:block">
-                  <span className="mb-1 block font-display text-[12px] tracking-[0.18em] text-[#7a5b2e] not-italic">
+                  <span className="mb-1 block font-display text-[12px] tracking-[0.18em] text-[#6f5530] not-italic">
                     FOR THE GAME MASTER
                   </span>
                   {note}
@@ -364,11 +365,20 @@ export function TomeBook({
                 <span className="font-display text-[22px]" style={{ color: RUBRIC }}>
                   {current.numeral}.
                 </span>
-                <h3 className="m-0 font-display text-[26px] font-bold lg:text-[32px]">{current.title}</h3>
+                <h3 id={chapterHeadingId} className="m-0 font-display text-[26px] font-bold lg:text-[32px]">
+                  {current.title}
+                </h3>
               </div>
               {sub ? <div className="-mt-2 font-display text-[18px] text-[#6a4a22]">{sub}</div> : null}
               <div className="h-px bg-[#cdb88f]" />
-              <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pr-3.5 text-[18px] leading-[1.65] lg:text-[19px]">
+              {/* Focusable so keyboard users can scroll a long chapter (axe scrollable-region-focusable). */}
+              <div
+                ref={bodyRef}
+                tabIndex={0}
+                role="region"
+                aria-labelledby={chapterHeadingId}
+                className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pr-3.5 text-[18px] leading-[1.65] lg:text-[19px]"
+              >
                 {body}
               </div>
               <div className="flex items-center justify-between gap-3 border-t border-[#cdb88f] pt-3.5">
@@ -384,7 +394,7 @@ export function TomeBook({
                     </button>
                   ) : null}
                 </div>
-                <span className="font-display text-[14px] text-[#8a7350]">— {current.numeral} —</span>
+                <span className="font-display text-[14px] text-[#735a3a]">— {current.numeral} —</span>
                 <div className="flex justify-end sm:min-w-[120px]">
                   {next ? (
                     <button

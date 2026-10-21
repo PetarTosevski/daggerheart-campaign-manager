@@ -93,7 +93,8 @@
   --label: #b9b2c7;
   --muted-text: #a39cb2;
   --subtle: #8d869c;
-  --faint: #6f6880;
+  /* Lifted from #6f6880 (3.7:1 on --ink) to pass WCAG AA 4.5:1 on --ink, --ink-2 and the panels (dcm-o95). */
+  --faint: #817a93;
   --hope-bg: #2a2416;
   --hope: #f0cf8a;
   --fear-bg: #231d36;

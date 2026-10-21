@@ -77,7 +77,7 @@ const CampaignNav = memo(function CampaignNav({ campaignId, isGm }: { campaignId
             href={href}
             aria-current={current ? "page" : undefined}
             className={cn(
-              "inline-flex min-h-10 items-center rounded-lg px-3.5 text-[14px]",
+              "inline-flex min-h-11 items-center rounded-lg px-3.5 text-[14px]",
               current ? "bg-brand text-brand-ink" : "text-[#e6ecea] hover:bg-white/10",
             )}
           >
