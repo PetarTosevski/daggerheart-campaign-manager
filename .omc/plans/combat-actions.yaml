@@ -1,0 +1,531 @@
+# Combat-actions plan: players hold their domain cards on the Combat Map and use them there, attack enemy tokens with weapon
+# damage dice, roll dice from the map; enemies take the final damage against their thresholds (HP) or Stress automatically;
+# once-per cards grey out until they come back.
+# Status: DRAFT: QUESTIONS pending user answer. Analysis, inventory, quoted rules and QUESTIONS Q1-Q12:
+#   .omc/autopilot/combat-actions-analysis.md. Defaults for open questions are written into acceptance lists and marked (Qn);
+#   an answer that differs changes only the tracers that cite that Qn. Tracers do not start until the user has answered or
+#   accepted the defaults.
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation.
+# Book pages: CB = Core Book, HF = Hope & Fear, PRINTED pages. In the extracted core.txt / hopefear.txt the "===== PAGE N ====="
+#   block holds printed page N-1. Each tracer re-checks the pages it cites (.reference-private/, never commit the books) and
+#   quotes them in its task doc.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+#
+# USER ANSWERS (2026-10-21, binding; tracers quote the one they implement in their task doc):
+#   U1  Players never see an enemy's HP, Stress or thresholds. They only learn hit or miss.
+#   U2  Rolls made on the map also appear in the roll feed.
+#   U3  Automate EVERY domain card usable in combat (196 of 210 by the analysis' classification; CA0 fixes the list), through a
+#       per-card effect table split by domain so the domain tracers run in parallel.
+#   U4  Damage applies automatically; the GM can undo it.
+#   U5  Mechanics follow the book rules quoted in the analysis (R1-R12) wherever the book decides.
+#
+# Rules (binding; full quotes in the analysis section 2):
+#   R1 attack vs Difficulty, one roll for all targets (CB p.96, p.193); crit counts as Hope success (CB p.90).
+#   R2 damage = Proficiency x weapon dice + modifier; card dice "using your Proficiency / Spellcast trait"; crit = max dice + roll;
+#      damage of one move is totalled before thresholds (CB p.98).
+#   R3 Minor 1 / Major 2 / Severe 3 HP; 0 or less marks none (CB p.91); adversaries alike (CB p.193); Massive off for adversaries;
+#      Minion (X) (CB p.201); Horde (X) (CB p.199).
+#   R5 a full Stress track marks 1 HP instead (CB p.92).  R6 usage limits (CB p.101), rests (CB p.105).  R7 recall cost (CB p.101,
+#      p.26).  R8 Hope features (CB p.90).  R9 multiple targets / groups (CB p.104).  R10 resistance / immunity (CB p.99).
+#   R11 Defined Ranges and line of sight (CB p.103-104).  R12 adversary reaction rolls d20 (CB p.161).
+#
+# Defaults of open questions used below (analysis section 4): Q1 range warns only; Q2 line of sight required, cover gives
+#   disadvantage; Q3 rest / long rest resets, shared featureUses keys card:<id>, session does not reset; Q4 "on a success" uses
+#   only on success; Q5 player sees own damage total; Q6 player sees Defeated and picks extra Minions; Q7 server rolls enemy
+#   reaction d20; Q8 SRD resistance table + GM toggle for conditional + custom picker; Q9 movement as prompts, manual steps
+#   listed; Q10 no approval step, GM Resolutions list with Undo; Q11 mobile bottom sheet; Q12 adversary attacks out of scope.
+#
+# In-flight tracers this plan avoids (2026-10-21): M1 (map-movement) owns src/components/combat-map/tokens/**,
+#   map-view/{movement-overlay.tsx,paint-spec.ts,map-canvas.tsx}, src/lib/combat-map/painter.ts, src/lib/combat-map/sprites/**;
+#   P10 (sprite-packs) owns e2e specs only; N9 (d11-notes) owns notes/page.tsx and notes.css. No tracer here owns those files.
+#   CA5 and CA6 start only after M1 is merged (they read tokens/**). D12 owns tests/convex/authz-matrix.test.ts; the new public
+#   functions are listed in the analysis section 6 for D12, and each tracer tests its own authz in its own test file.
+#
+# Shared files belong to CA0 only: convex/lib/validators/actionLog.ts, convex/lib/validators/characters.ts,
+#   src/lib/validation/characters.ts, convex/lib/validators/encounters.ts, src/lib/errors/app-error.ts, src/lib/convex-errors.ts,
+#   C/combat-map/page.tsx, src/components/combat-map/slots.ts, tests/convex/schema-guard.test.ts. docs/data-model.md is updated
+#   by the orchestrator.
+plan: combat-actions
+waves:
+  # ---------------------------------------------------------------- wave 1: foundation, resistance table
+  - wave: 1
+    tracers:
+      - id: CA0
+        foundation: true
+        title: Combat-actions foundation (widened validators, error codes, effect vocabulary types, card classification, empty domain tables, stub slots)
+        size: M
+        goal: The actionLog row can carry the adversaries' before-state for undo, the sheet can carry tokens on cards, encounter instances and custom adversaries can carry resistances; the combat-actions error codes exist; the card-effect vocabulary types and an empty per-domain registry exist; every one of the 210 cards is classified combat / passive / out-of-combat; the Combat Map page mounts the actions stubs.
+        depends_on: []
+        owns:
+          - convex/lib/validators/actionLog.ts
+          - convex/lib/validators/characters.ts
+          - convex/lib/validators/encounters.ts
+          - src/lib/validation/characters.ts
+          - src/lib/errors/combatActions.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - src/lib/domain/card-effects/types.ts
+          - src/lib/srd/card-effects/index.ts
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/card-effects/arcana.ts
+          - src/lib/srd/card-effects/blade.ts
+          - src/lib/srd/card-effects/bone.ts
+          - src/lib/srd/card-effects/codex.ts
+          - src/lib/srd/card-effects/grace.ts
+          - src/lib/srd/card-effects/midnight.ts
+          - src/lib/srd/card-effects/sage.ts
+          - src/lib/srd/card-effects/splendor.ts
+          - src/lib/srd/card-effects/valor.ts
+          - src/lib/srd/card-effects/dread.ts
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/components/combat-map/slots.ts
+          - src/components/combat-map/actions/index.tsx
+          - src/components/combat-map/actions/attack/index.tsx
+          - src/components/combat-map/actions/hand/index.tsx
+          - src/components/combat-map/actions/dice/index.tsx
+          - src/components/combat-map/actions/targets/index.tsx
+          - src/components/combat-map/actions/gm/index.tsx
+          - tests/convex/schema-guard.test.ts
+          - tests/unit/card-classification.test.ts
+          - docs/tasks/TASK-CA-CA0.md
+        reads:
+          - .omc/autopilot/combat-actions-analysis.md
+          - src/lib/srd/domain-cards.ts
+          - src/lib/srd/types.ts
+          - convex/lib/actionLog.ts
+          - src/lib/domain/characters/expiry.ts
+          - convex/tables/encounters.ts
+          - src/components/combat-map/**
+          - docs/best-practices.md
+        acceptance:
+          - "actionLog rows accept an optional adversaryBefore list ({instanceId, hp, stress, defeated, minionCount?}); existing rows still validate (widen only, rule 7)"
+          - "The sheet validator accepts optional cardTokens [{cardId, count}]; encounterAdversaries and customAdversaries accept optional resistance {physical, magic: none|resistant|immune} and a conditional flag (Q8); old rows read back unchanged"
+          - "src/lib/errors/combatActions.ts defines COMBAT_TARGET_INVALID, COMBAT_NO_LINE_OF_SIGHT, CARD_NOT_IN_LOADOUT, CARD_EXHAUSTED, CARD_NOT_COMBAT, CARD_COST_UNPAID, COMBAT_NOT_YOUR_CHARACTER, wired into AppErrorCode and the client message map"
+          - "card-effects/types.ts defines the closed vocabulary from the analysis section 3.1 (costs, limit incl. onSuccess, roll, targets, per-hit outcomes, self/ally effects, tokens, manual, passive) with no any"
+          - "classification.ts lists all 210 card ids as combat | passive | outOfCombat; a unit test checks the count matches DOMAIN_CARDS and that the 14 out-of-combat cards of the analysis are listed (the task doc lists every card for the user to review)"
+          - "The ten per-domain files export empty readonly arrays; index.ts merges them into a map by card id"
+          - "The Combat Map page mounts ActionsPanel from actions/index.tsx in the player column and Resolutions in the GM column (stubs render nothing harmful); slots.ts documents the new slots"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CA2
+        title: Adversary resistance table from stat-block text
+        size: S
+        goal: Every SRD adversary whose feature text grants an always-on resistance or immunity has a typed entry; conditional ones are flagged for the GM toggle.
+        depends_on: []
+        owns:
+          - src/lib/srd/adversary-resistance.ts
+          - tests/unit/adversary-resistance.test.ts
+          - docs/tasks/TASK-CA-CA2.md
+        reads:
+          - src/lib/srd/adversaries.ts
+          - src/lib/srd/types.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "ADVERSARY_RESISTANCE maps adversary id to {physical, magic: none|resistant|immune, conditional?: string} for every feature text with 'resistan' or 'immune' to damage (CB p.99 quoted); 'immune to abilities … thoughts' and 'double damage from fire' are excluded and listed in the task doc"
+          - "A unit test fails when an SRD feature mentions resistance or immunity to damage without a table entry or an explicit exclusion"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 2: pure engine and effect runner
+  - wave: 2
+    tracers:
+      - id: CA1
+        title: Combat engine and card-effect runner (pure)
+        size: L
+        goal: Pure functions decide range, line of sight, hit or miss per target, damage per target after resistance, HP or Stress marked (with Minion and Horde rules), once-per availability and costs, and turn a card effect plus a context into an ordered step plan.
+        depends_on: [CA0, CA2]
+        owns:
+          - src/lib/domain/combat-actions/**
+          - src/lib/domain/card-effects/run.ts
+          - src/lib/domain/card-effects/availability.ts
+          - tests/unit/combat-actions/**
+          - tests/unit/card-effects/run.test.ts
+          - docs/tasks/TASK-CA-CA1.md
+        reads:
+          - src/lib/domain/encounters/damage.ts
+          - src/lib/domain/adversaries/index.ts
+          - src/lib/domain/combat-map/ranges.ts
+          - src/lib/domain/combat-map/vision.ts
+          - src/lib/domain/combat-map/sight.ts
+          - src/lib/domain/dice/index.ts
+          - src/lib/domain/characters/expiry.ts
+          - src/lib/domain/card-effects/types.ts
+          - src/lib/srd/adversary-resistance.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "tokenDistance counts squares between the nearest edges of two footprints (size 1-3), a diagonal = 1; rangeCheck returns the band and inRange, used as a warning only (Q1, CB p.103 quoted)"
+          - "lineOfSight uses vision.los from the attacker's centre to any sample of the target footprint; cover between them returns disadvantage (Q2, CB p.104 quoted)"
+          - "resolveHits(total, crit, targets) marks a target hit when total >= its Difficulty or on a critical (R1, CB p.96, p.90); one roll for all targets (R9)"
+          - "applyDamageTo(target, amount, type) applies immunity, then resistance (halve, round down; both types needed for phy/mag), then thresholds 1/2/3 HP, none at 0 or less, no Massive; Minion targets are defeated and return extra-defeat counts per X; Stress over the track marks 1 HP (R3, R5, R10) - reusing encounters/damage.ts"
+          - "cardAvailability(sheet, cardId) reads featureUses key card:<id> (until rest | longRest) and returns ready | exhausted with the reset label; 'on a success' limits are consumed only on success (Q3, Q4)"
+          - "run(effect, context) returns an ordered plan (pay cost, roll, per-target outcome, self effects, tokens, manual prompts); spending Hope from the same roll is allowed (R8, CB p.90 quoted)"
+          - "Every rule function cites its page in a comment and has a unit test whose expected values come from the book's own examples (CB p.98 Nolan 3d6+6 = 20; Rune crit 2d6+1 = 22; CB p.99 26 phy resisted = 13)"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 3: server attack + the ten domain tables (parallel)
+  - wave: 3
+    tracers:
+      - id: CA3
+        title: Server - weapon attacks on enemy tokens with automatic damage and undo
+        size: L
+        goal: A player attacks one or more enemy tokens from their PC token with a weapon; the server rolls, decides hit or miss per target, rolls damage, marks HP on the encounter instances, and writes a public feed row (hit or miss only) and a GM row (damage, severity, HP) that the existing undo reverts.
+        depends_on: [CA1]
+        owns:
+          - convex/rolls.ts
+          - convex/lib/rolls.ts
+          - convex/combatActions.ts
+          - convex/lib/combatActions.ts
+          - convex/lib/actionLog.ts
+          - tests/convex/combat-attack.test.ts
+          - tests/convex/combat-attack-authz.test.ts
+          - docs/tasks/TASK-CA-CA3.md
+        reads:
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - convex/combatTokens.ts
+          - convex/lib/combatVision.ts
+          - convex/encounterTracking.ts
+          - convex/lib/encounters.ts
+          - convex/feed.ts
+          - convex/actionLog.ts
+          - src/lib/domain/combat-actions/**
+          - src/lib/domain/dice/index.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "The duality and damage internals move from convex/rolls.ts to convex/lib/rolls.ts unchanged in behaviour (CF8); every existing rolls test passes untouched"
+          - "combatActions.attack {characterId, mapId, targetTokenIds, slot, ...duality options} is a keyed campaign mutation with need edit on the character; the attacker is that character's PC token on the live map; targets must be enemy tokens linked to running encounter instances (else COMBAT_TARGET_INVALID)"
+          - "No line of sight to a target refuses it with COMBAT_NO_LINE_OF_SIGHT (Q2); out of range is returned as a warning band, not refused (Q1)"
+          - "One duality roll (Hope/Fear/crit effects, GM Fear, countdown ticks exactly as actionRoll); on any hit one damage roll at Proficiency with crit max (R2); each hit target takes the total through applyDamageTo; instances update hp/stress/defeated in the same mutation (U4)"
+          - "One actionLog group: a public row whose summary and roll show the attack roll, the damage dice and total (Q5) and Hit / Miss / Defeated per target, with no HP, Stress, threshold or Difficulty value (U1); a gm row with damage, severity and HP marked per target, storing adversaryBefore"
+          - "actionLog undo of the group (actor or GM) restores the sheet and every adversaryBefore row and takes back Fear; stale undo still refuses with UNDO_STALE (U4)"
+          - "combatActions.targets {characterId, mapId} (need edit) returns for each visible enemy token only {tokenId, band, inRange, lineOfSight, cover}; its returns validator has no stat field (U1, CF6)"
+          - "combatActions.pickMinions {entryId, instanceIds} lets the attacker defeat the extra Minions offered (within range, Difficulty beaten) once (Q6, CB p.201 quoted)"
+          - "combat-attack-authz.test.ts covers anonymous, outsider, player (own and other character) and GM for attack, targets and pickMinions, asserting ConvexError.data.code"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-arcana
+        title: Card effects - Arcana (21 cards)
+        size: M
+        goal: Every combat or passive Arcana card from classification.ts has an effect entry that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/arcana.ts
+          - tests/unit/card-effects/arcana.test.ts
+          - docs/tasks/TASK-CA-CE-arcana.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Arcana card classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment; its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-blade
+        title: Card effects - Blade (21 cards)
+        size: M
+        goal: Every combat or passive Blade card from classification.ts has an effect entry that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/blade.ts
+          - tests/unit/card-effects/blade.test.ts
+          - docs/tasks/TASK-CA-CE-blade.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Blade card classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment; its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-bone
+        title: Card effects - Bone (21 cards)
+        size: M
+        goal: Every combat or passive Bone card from classification.ts has an effect entry that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/bone.ts
+          - tests/unit/card-effects/bone.test.ts
+          - docs/tasks/TASK-CA-CE-bone.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Bone card classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment; its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text (Splintering Strike's damage split per CB p.332)"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-codex
+        title: Card effects - Codex (21 cards, 13 grimoires with several spells each)
+        size: L
+        goal: Every combat or passive Codex card from classification.ts has an effect entry, one per grimoire spell, that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/codex.ts
+          - tests/unit/card-effects/codex.test.ts
+          - docs/tasks/TASK-CA-CE-codex.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Codex card classified combat or passive has exactly one entry, and each grimoire lists its spells as separately usable effects; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment; its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text (Mystic Tether: Restrained + 1 Stress, CB p.333)"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-grace
+        title: Card effects - Grace (16 combat cards)
+        size: M
+        goal: Every combat or passive Grace card from classification.ts has an effect entry that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/grace.ts
+          - tests/unit/card-effects/grace.test.ts
+          - docs/tasks/TASK-CA-CE-grace.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Grace card classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment; its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-midnight
+        title: Card effects - Midnight (19 combat cards)
+        size: M
+        goal: Every combat or passive Midnight card from classification.ts has an effect entry that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/midnight.ts
+          - tests/unit/card-effects/midnight.test.ts
+          - docs/tasks/TASK-CA-CE-midnight.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Midnight card classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment; its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text (Rain of Blades: +1d8 against Vulnerable targets)"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-sage
+        title: Card effects - Sage (18 combat cards)
+        size: M
+        goal: Every combat or passive Sage card from classification.ts has an effect entry that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/sage.ts
+          - tests/unit/card-effects/sage.test.ts
+          - docs/tasks/TASK-CA-CE-sage.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Sage card classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment; its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-splendor
+        title: Card effects - Splendor (20 combat cards)
+        size: M
+        goal: Every combat or passive Splendor card from classification.ts has an effect entry that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/splendor.ts
+          - tests/unit/card-effects/splendor.test.ts
+          - docs/tasks/TASK-CA-CE-splendor.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Splendor card classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment; its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text (Bolt Beacon: spend a Hope on success, d8+2 mag using Proficiency, Vulnerable, CB p.340)"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-valor
+        title: Card effects - Valor (21 cards)
+        size: M
+        goal: Every combat or passive Valor card from classification.ts has an effect entry that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/valor.ts
+          - tests/unit/card-effects/valor.test.ts
+          - docs/tasks/TASK-CA-CE-valor.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Valor card classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment; its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text (Goad Them On: Presence Roll, target marks a Stress, CB p.341)"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CE-dread
+        title: Card effects - Dread (21 cards, Hope & Fear)
+        size: M
+        goal: Every combat or passive Dread card from classification.ts has an effect entry that the runner can execute; whatever the vocabulary cannot express is a manual step with a note.
+        depends_on: [CA1]
+        owns:
+          - src/lib/srd/card-effects/dread.ts
+          - tests/unit/card-effects/dread.test.ts
+          - docs/tasks/TASK-CA-CE-dread.md
+        reads:
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/classification.ts
+          - src/lib/srd/domain-cards.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Every Dread card classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its card text in a comment (HF p.180-181); its test runs the effect through run() with a fixed RNG and checks costs, limit, roll, targets and outcomes against the text (Blighting Strike: d6+1 with Hope, d10+1 with Fear)"
+          - "The task doc lists every manual step and every ruling the text leaves open (Q9) for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 4: card server, map UI, sheet once-per
+  - wave: 4
+    tracers:
+      - id: CA4
+        title: Server - use a domain card (costs, limits, rolls, targets, outcomes, tokens, manual steps)
+        size: L
+        goal: A player uses a loadout card from the map; the server checks the loadout and the once-per limit, pays Hope / Stress, rolls, applies damage, Stress and conditions to enemy instances and effects to self or allies, records the use, and logs public and GM rows that undo reverts.
+        depends_on: [CA3]
+        owns:
+          - convex/combatCards.ts
+          - convex/lib/cardRunner.ts
+          - tests/convex/combat-cards.test.ts
+          - tests/convex/combat-cards-authz.test.ts
+          - docs/tasks/TASK-CA-CA4.md
+        reads:
+          - convex/lib/combatActions.ts
+          - convex/lib/rolls.ts
+          - convex/lib/actionLog.ts
+          - convex/characters.ts
+          - src/lib/domain/card-effects/**
+          - src/lib/domain/combat-actions/**
+          - src/lib/srd/card-effects/**
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "combatCards.useCard {characterId, mapId, cardId, spell?, targetTokenIds, choices} is a keyed campaign mutation (need edit); a card not in the loadout, out-of-combat, exhausted or unaffordable is refused with its code (CARD_NOT_IN_LOADOUT, CARD_NOT_COMBAT, CARD_EXHAUSTED, CARD_COST_UNPAID)"
+          - "Hope and Stress costs are paid through the existing sheet helpers; Hope gained on the same roll can pay (R8); 'once per X' writes featureUses card:<id> with until rest | longRest, only on success for 'on a success' cards (Q3, Q4, R6)"
+          - "Damage outcomes follow R2 (Proficiency / Spellcast trait count, crit max) and are applied with applyDamageTo; 'target marks N Stress' marks Stress with overflow to HP (R5); conditions set the instance condition; enemy reaction rolls are a server d20 vs the card's Difficulty, half or none on success as the card says (Q7, R12)"
+          - "Self or ally effects become sheet effects with the card's until; tokens on the card update cardTokens; manual steps post a feed row 'Mira used <card>: <step text>' and need no server effect"
+          - "The public row shows the roll, the damage total (Q5) and Hit / Miss / Defeated per target only (U1); the gm row shows the full resolution with adversaryBefore; actionLog undo restores everything including the featureUses entry and cardTokens (U4)"
+          - "combatCards.hand {characterId} (need view on the character) returns the loadout and vault with per-card ready / exhausted / passive / outOfCombat state, reset label, tokens and recall cost; no enemy data"
+          - "A table-driven test runs one card per domain from each CE table end to end against convex-test"
+          - "combat-cards-authz.test.ts covers anonymous, outsider, player (own and other character) and GM for useCard and hand, asserting ConvexError.data.code"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: CA5
+        title: Map UI - attack bar, target picking, map dice box, mini feed, GM resolutions, mobile sheet
+        size: L
+        goal: On the Combat Map a player picks enemy tokens as targets, sees range and line-of-sight hints, attacks with a weapon, rolls free dice in a compact dice box whose rolls land in the shared feed, and the GM sees a Resolutions list with Undo; at phone width all of it lives in a bottom sheet.
+        depends_on: [CA3]
+        owns:
+          - src/components/combat-map/actions/index.tsx
+          - src/components/combat-map/actions/actions.css
+          - src/components/combat-map/actions/attack/**
+          - src/components/combat-map/actions/targets/**
+          - src/components/combat-map/actions/dice/**
+          - src/components/combat-map/actions/gm/**
+          - src/components/combat-map/vision/vision-layer.tsx
+          - tests/unit/combat-actions-ui.test.tsx
+          - tests/e2e/combat-attack.spec.ts
+          - tests/e2e/visual/CA-CA5.spec.ts
+          - docs/tasks/TASK-CA-CA5.md
+        reads:
+          - src/components/combat-map/**
+          - src/components/party/dice/**
+          - convex/combatActions.ts
+          - convex/feed.ts
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/combat-map.css
+          - docs/best-practices.md
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "Starts after M1 is merged. A player taps or clicks an enemy token (vision-layer's selection) to add it as a target; selected targets get a ring drawn by actions/targets (own overlay, not map-canvas); each shows its band and 'Out of range' or 'No line of sight' / 'Cover: disadvantage' from combatActions.targets (Q1, Q2)"
+          - "The Attack bar shows the primary and secondary weapon with damage at Proficiency (e.g. '2d8+3 phy'), the duality options of the sheet dice box (experiences, advantage, help), and fires combatActions.attack once per click with an optimistic 'Rolling…' state (rule 12)"
+          - "The result shows the duality dice, the outcome, the damage total and Hit / Miss / Defeated per target, never HP or thresholds (U1, Q5); a Minion offer opens the pick dialog (Q6)"
+          - "The map dice box reuses DiceBox in a compact layout; its rolls appear in the dashboard feed and in a mini feed on the map (U2)"
+          - "GM column: Resolutions lists the last resolutions of the map's encounter (from the gm feed rows) with Undo (U4, Q10)"
+          - "At <=760px the actions open in a bottom sheet with tabs Hand / Attack / Dice / Feed under the map, 44px targets, no horizontal scroll (Q11)"
+          - "Every useQuery subtree has an error boundary (rule 11); no mutation fires from an effect (rule 13)"
+          - "Unit tests for the target list and result view; e2e: a player attacks a Bandit, sees Hit, the GM sees 2 HP marked and undoes it; visual spec at desktop and 390px"
+          - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
+      - id: CA7
+        title: Sheet shows the same once-per state on domain cards
+        size: S
+        goal: A card used on the map is greyed on the character sheet's felt table with its reset label, and the sheet's card view reads the same featureUses entry.
+        depends_on: [CA1]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.tsx
+          - tests/unit/domains-exhausted.test.tsx
+          - docs/tasks/TASK-CA-CA7.md
+        reads:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-helpers.ts
+          - src/lib/domain/card-effects/availability.ts
+          - src/lib/domain/characters/expiry.ts
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "A loadout card whose featureUses card:<id> entry exists renders turned and greyed with 'Back after a rest' or 'Back after a long rest' (Q3, CB p.101 quoted); after a rest finishes it is ready again with no extra code (expire already clears it)"
+          - "Unit test with a sheet fixture for both limits"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 5: the Hand on the map
+  - wave: 5
+    tracers:
+      - id: CA6
+        title: Map UI - the Hand (loadout cards with Use, greyed exhausted cards, recall from the vault, choices dialog)
+        size: L
+        goal: A player holds their loadout cards on the Combat Map, uses any combat card against the picked targets or on self or allies with its choices asked first, sees exhausted cards greyed until they come back, and recalls a vault card by paying its recall cost.
+        depends_on: [CA4, CA5]
+        owns:
+          - src/components/combat-map/actions/hand/**
+          - tests/unit/combat-hand.test.tsx
+          - tests/e2e/combat-cards.spec.ts
+          - tests/e2e/visual/CA-CA6.spec.ts
+          - docs/tasks/TASK-CA-CA6.md
+        reads:
+          - src/components/combat-map/actions/**
+          - src/components/combat-map/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.tsx
+          - convex/combatCards.ts
+          - convex/characters.ts
+          - src/lib/srd/card-effects/**
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "The Hand lists the loadout from combatCards.hand with card art, cost and limit badges; passive cards have no Use button; exhausted cards are greyed and turned with the reset label (R6, Q3)"
+          - "Use opens a dialog only when the card needs a choice (grimoire spell, number of Hope, damage split, ally) and then fires combatCards.useCard once with the picked targets; manual steps show the card text and a Done button"
+          - "The vault lists cards with 'Recall: N Stress' (free during an open rest) and calls characters.moveCard (R7, CB p.101 quoted)"
+          - "Results follow CA5's result view (U1, Q5); on mobile the Hand is the first tab of the bottom sheet with a horizontal card strip (Q11)"
+          - "e2e: a player uses Bolt Beacon on a Bandit (Hope spent, Hit, the card stays ready) and a once-per-rest card that greys out and returns after a GM rest; visual spec at desktop and 390px"
+          - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 6: end-to-end, a11y, docs
+  - wave: 6
+    tracers:
+      - id: CA8
+        title: Combat actions end to end, accessibility and the recorded rulings
+        size: M
+        goal: The whole flow is checked end to end (player attacks and uses cards, the GM sees and undoes, players never see enemy stats), the panels pass axe, and docs/game-interpretation.md records the rulings (U1-U5 and the answered Qn).
+        depends_on: [CA6, CA7, CE-arcana, CE-blade, CE-bone, CE-codex, CE-grace, CE-midnight, CE-sage, CE-splendor, CE-valor, CE-dread]
+        owns:
+          - tests/e2e/combat-actions-flow.spec.ts
+          - tests/e2e/combat-actions-a11y.spec.ts
+          - tests/unit/card-effects/coverage.test.ts
+          - docs/game-interpretation.md
+          - docs/tasks/TASK-CA-CA8.md
+        reads:
+          - src/components/combat-map/**
+          - convex/combatActions.ts
+          - convex/combatCards.ts
+          - src/lib/srd/card-effects/**
+          - .omc/autopilot/combat-actions-analysis.md
+        acceptance:
+          - "coverage.test.ts: every card classified combat or passive has an effect entry and every effect runs through run() without throwing (U3); it prints the count of manual steps per domain"
+          - "Flow e2e: two players and a GM; attacks, a multi-target card, a Stress card, a reaction-roll card, a Minion pick, a recall, a rest that brings back a card, and GM undo; the player's network responses contain no enemy hp, stress, major, severe or difficulty field (U1)"
+          - "axe finds no serious violations on the Hand, Attack bar, dice box and Resolutions at desktop and 390px"
+          - "pnpm lint, typecheck, vitest and the full e2e suite pass; tracer-guard passes"
