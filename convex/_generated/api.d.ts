@@ -93,6 +93,7 @@ import type * as migrations_trackers from "../migrations/trackers.js";
 import type * as migrations_uploads from "../migrations/uploads.js";
 import type * as notes from "../notes.js";
 import type * as notesEntries from "../notesEntries.js";
+import type * as notesThreads from "../notesThreads.js";
 import type * as photoImport from "../photoImport.js";
 import type * as rests from "../rests.js";
 import type * as rolls from "../rolls.js";
@@ -222,6 +223,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/uploads": typeof migrations_uploads;
   notes: typeof notes;
   notesEntries: typeof notesEntries;
+  notesThreads: typeof notesThreads;
   photoImport: typeof photoImport;
   rests: typeof rests;
   rolls: typeof rolls;
