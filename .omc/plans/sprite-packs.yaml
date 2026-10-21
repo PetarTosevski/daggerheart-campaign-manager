@@ -401,6 +401,32 @@ waves:
           - "Tests: a sprite wall section hides a token behind it for the player, a sprite pool does not, a deleted uploaded sprite falls back to its classic kind, a player cannot read spriteSources of a non-live map, the read-cost of spriteSources and playerView on a 300-object map stays within the C1 budget"
 
   # ---------------------------------------------------------------- wave 3: painter + switch, setting picker + generation, uploads
+  - wave: 2
+    tracers:
+      - id: P4V
+        title: Village extra sheet (town-street-and-market/large-2) - nine new catalog items cut into the built-in pack
+        size: S
+        # USER REQUEST (2026-10-21): the village sheet from the cottage prompt, saved as large-2.jpg. Items in reading order:
+        #   thatched cottage, stone cottage, timber barn, wooden fence section, wooden fence gate, vegetable garden plot,
+        #   haystack, woodpile with chopping block, chicken coop with fenced run.
+        goal: Add the nine village items as catalog extras with sizes and traits, cut them, and rebuild the built-in pack.
+        depends_on: [P4]
+        owns:
+          - scripts/sprite-packs/**
+          - public/sprite-packs/**
+          - src/lib/sprite-packs/builtin/**
+          - src/lib/sprite-packs/catalog/**
+          - tests/unit/sprite-catalog.test.ts
+          - tests/unit/sprite-builtin-pack.test.ts
+          - docs/sprite-packs/prompts.md
+          - docs/tasks/TASK-SP-P4V.md
+        reads:
+          - docs/tasks/TASK-SP-P4.md
+          - src/lib/sprite-packs/**
+        acceptance:
+          - "The nine items are catalog extras of town-street-and-market with keys, sizes and traits (buildings block movement and sight; fence and gate block movement, not sight; garden plot difficult terrain; haystack, woodpile and coop as their nearest existing kinds), the prompts doc has the '- large-2:' line, and the catalog tests cover them"
+          - "The built-in pack holds 589 items; magenta, its shadows and the pink tint in the coop's netting are removed (overrides as needed); a contact sheet of the nine is reviewed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
   - wave: 3
     tracers:
       - id: P6
