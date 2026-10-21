@@ -1,0 +1,79 @@
+# Map-movement plan (bead dcm-bxp.80, under epic dcm-bxp): tokens on the Combat Map are stopped by walls and buildings, and
+# difficult terrain is marked. Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L).
+#
+# USER ANSWER (2026-10-21, binding): "tokens stopped by walls and buildings, difficult terrain requires movement rolls to pass on
+#   the same turn (logic will be implemented later)". So: blocking is enforced now; difficult terrain is only marked now (the map
+#   shows it and the token says a movement roll is needed to pass this turn); the roll itself is a later plan.
+#
+# DEFAULTS (orchestrator, 2026-10-21; reversible, reported to the user):
+#   D1 What blocks movement: painted terrain `wall` and `void`; Classic kinds pillar, statue, boulder, hull, mast, tree, deadtree;
+#      sprites whose catalog `move` is "block". A sprite's `move` defaults from its traits: sight "block" + height "tall" -> block,
+#      otherwise open; the catalog may override per item (fences and palisades block, gates and doors are open, a flat rug is open).
+#      Custom uploaded sprites (P8) use the same default from their labels; no new label field now.
+#   D2 What is difficult: painted terrain water, deep, swamp, snow, lava; Classic kinds rubble, bush, log, bones; sprites whose
+#      catalog `move` is "difficult" (e.g. garden plot, rubble piles, brambles, mud, fallen trunks, sludge). Difficult never blocks.
+#   D3 Who is blocked: a player's move of their own token is refused on the server when its path crosses a blocking square
+#      (MOVE_BLOCKED). The GM's moves are never refused; the GM sees a warning when a token ends on or crossed a blocking square.
+#   D4 Path: a move from A to B checks every square the token's footprint passes through on the straight (supercover) line,
+#      including both squares at a diagonal corner (no squeezing between two diagonal blockers). Keyboard steps are one square.
+#   D5 Difficult terrain: squares are tinted with a hatch for everyone who can see them; a token that ends a move on or crossed a
+#      difficult square shows "Difficult terrain: a movement roll is needed to pass this turn" on its card for its owner and the GM.
+#      No roll, no block, no turn tracking now.
+#   D6 Fog and secrecy: the server never tells a player about blocking or difficult squares they haven't explored beyond what the
+#      refusal itself reveals (MOVE_BLOCKED carries no position).
+plan: map-movement
+waves:
+  - wave: 1
+    tracers:
+      - id: M0
+        title: Movement rules - blocking and difficult squares from terrain, Classic kinds and sprite traits; the server refuses blocked player moves
+        size: M
+        goal: Pure movement rules and a `move` sprite trait, and combatTokens.move refuses a player's blocked move (D1-D4, D6).
+        depends_on: []
+        owns:
+          - src/lib/domain/combat-map/movement.ts
+          - src/lib/sprite-packs/traits.ts
+          - src/lib/sprite-packs/catalog/**
+          - convex/combatTokens.ts
+          - convex/lib/combatMovement.ts
+          - src/lib/errors/combatMap.ts
+          - tests/unit/combat-movement.test.ts
+          - tests/unit/sprite-catalog.test.ts
+          - tests/convex/combat-token-movement.test.ts
+          - docs/tasks/TASK-MV-M0.md
+        reads:
+          - src/lib/domain/combat-map/**
+          - convex/lib/spriteSources.ts
+          - convex/lib/combatVision.ts
+          - convex/combatMapStyle.ts
+          - docs/tasks/TASK-SP-P1.md
+          - docs/tasks/TASK-SP-P5.md
+        acceptance:
+          - "movement.ts (framework-free) builds a blocking set and a difficult set for a map from terrain cells, Classic objects (with their footprints and rotation) and sprite traits, and answers pathBlocked(from, to, size) and crossedDifficult(from, to, size) per D4; unit tests cover walls, rotated objects, 2x2 and 3x3 tokens, diagonal corners, a 3x4 barn sprite, a gate gap in a fence"
+          - "Every catalog item has a `move` (explicit or by the D1 default); the catalog test pins the defaults and the overrides (fences/palisade block, gates/doors open, garden plot/rubble/brambles difficult)"
+          - "combatTokens.move: a player's blocked move throws ConvexError {code: MOVE_BLOCKED} with no position; the GM's move succeeds and returns {blocked: true} when it crossed a blocker; both return difficult: boolean; reads stay indexed and bounded; role tests (anonymous, outsider, player on own token, player on another token, GM) assert ConvexError.data.code"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  - wave: 2
+    tracers:
+      - id: M1
+        title: Movement on the map - blocked moves stop with feedback, the GM warning, difficult squares hatched, the token's movement-roll note
+        size: M
+        goal: The token layer and map view show M0's rules (D3, D5) for drag and keyboard moves, players and GM.
+        depends_on: [M0]
+        owns:
+          - src/components/combat-map/tokens/**
+          - src/components/combat-map/map-view/movement-overlay.tsx
+          - src/components/combat-map/map-view/paint-spec.ts
+          - src/components/combat-map/map-view/map-canvas.tsx
+          - tests/e2e/combat-movement.spec.ts
+          - tests/e2e/visual/MV-M1.spec.ts
+          - docs/tasks/TASK-MV-M1.md
+        reads:
+          - docs/tasks/TASK-MV-M0.md
+          - docs/tasks/TASK-SP-P6.md
+          - src/components/combat-map/**
+        acceptance:
+          - "A player's drag or arrow/WASD step into a wall or building snaps back (optimistic move rolled back on MOVE_BLOCKED) with a short polite 'Blocked' announcement (aria-live); the GM's move goes through with a visible warning"
+          - "Difficult squares the viewer can see are hatched in Classic and Sprites styles; a token that crossed or ends on one shows the D5 note on its card for its owner and the GM; reduced motion respected"
+          - "e2e at 1440 and 390: a player can't walk through a wall or a cottage, can walk through a gate, gets the difficult note in a garden plot; the GM can move through a wall with the warning; screenshots of the hatch in both styles"
+          - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
