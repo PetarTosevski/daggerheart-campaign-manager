@@ -44,6 +44,51 @@ export const adversaryTypeValidator = v.union(...ADVERSARY_TYPES.map((t) => v.li
 export const FEATURE_KINDS = ["passive", "action", "reaction", "evolution"] as const;
 export const featureKindValidator = v.union(...FEATURE_KINDS.map((k) => v.literal(k)));
 
+/** How a creature takes one damage type (CB p.99): halve it, take none, or take it as is. Same values as CA2's table. */
+export const RESISTANCE_LEVELS = ["none", "resistant", "immune"] as const;
+export const resistanceLevelValidator = v.union(...RESISTANCE_LEVELS.map((l) => v.literal(l)));
+export type ResistanceLevel = (typeof RESISTANCE_LEVELS)[number];
+
+/**
+ * Resistance and immunity per damage type (plan combat-actions CA0, Q8; CB p.99). `conditional`: the resistance holds
+ * only in a state the engine cannot see ("While underground"); the text names it, and the instance's
+ * `resistanceActive` switches it on (a GM toggle). Absent = always on. Shape of `AdversaryResistance`
+ * (src/lib/srd/adversary-resistance.ts) without its display fields.
+ */
+export const resistanceValidator = v.object({
+  physical: resistanceLevelValidator,
+  magic: resistanceLevelValidator,
+  conditional: v.optional(v.string()),
+});
+export type Resistance = Infer<typeof resistanceValidator>;
+
+/** How long an instance modifier lasts: until the GM clears it, the instance's next attack, the end of the scene, or for good. */
+export const INSTANCE_EFFECT_UNTIL = ["temporary", "hit", "scene", "permanent"] as const;
+
+/**
+ * A modifier on one adversary instance from a card or a feature (plan combat-actions CA0): Glyph of Nightfall "reducing
+ * the target's Difficulty", Corrosive Projectile's Corroded, a feature's attack or damage bonus. The engine adds the
+ * deltas; the GM ends it from the tracker. The fields mirror the card vocabulary's `Mod`s an adversary can carry
+ * (src/lib/domain/card-effects/types.ts).
+ */
+export const instanceEffectValidator = v.object({
+  id: v.string(),
+  /** What made it, e.g. "Glyph of Nightfall". */
+  source: v.string(),
+  label: v.string(),
+  difficulty: v.optional(v.number()),
+  attack: v.optional(v.number()),
+  damage: v.optional(v.number()),
+  /** Chains of Affliction: the targets of its hits mark this many more (negative: fewer) HP. */
+  hpMarked: v.optional(v.number()),
+  /** Blighting Strike: its next successful attack deals half damage. */
+  halfDamage: v.optional(v.boolean()),
+  /** Goad Them On: its next attack is made with disadvantage. */
+  disadvantage: v.optional(v.boolean()),
+  until: v.union(...INSTANCE_EFFECT_UNTIL.map((u) => v.literal(u))),
+});
+export type InstanceEffect = Infer<typeof instanceEffectValidator>;
+
 /** Where an instance's stat block comes from: an SRD entry by its slug, or one of the campaign's custom adversaries. */
 export const adversarySourceValidator = v.union(
   v.object({ kind: v.literal("srd"), adversaryId: v.string() }),
@@ -102,6 +147,12 @@ export const encounterAdversaryFields = {
   spotlightTurn: v.number(),
   note: v.optional(v.string()),
   updatedAt: v.number(),
+  /** Copied from the stat block when added (CA2's table or the custom block) or set by the GM (Q8). Absent = none. */
+  resistance: v.optional(resistanceValidator),
+  /** The GM's toggle for a `conditional` resistance (Q8). Absent = off. */
+  resistanceActive: v.optional(v.boolean()),
+  /** Card and feature modifiers on this instance (CA0). Absent = none. */
+  effects: v.optional(v.array(instanceEffectValidator)),
 };
 
 const thresholdsValidator = v.object({ major: v.union(v.number(), v.null()), severe: v.union(v.number(), v.null()) });
@@ -133,6 +184,8 @@ export const customAdversaryFields = {
   features: v.array(featureValidator),
   /** The SRD entry it was duplicated from. */
   basedOn: v.optional(v.string()),
+  /** Resistance and immunity from the custom adversary form's picker (Q8, CA0). Absent = none. */
+  resistance: v.optional(resistanceValidator),
   createdAt: v.number(),
   updatedAt: v.number(),
 };

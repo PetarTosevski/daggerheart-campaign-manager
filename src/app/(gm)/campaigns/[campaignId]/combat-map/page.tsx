@@ -4,6 +4,9 @@ import "./combat-map.css";
 
 import { Component, useState, type ReactNode } from "react";
 
+import { ActionsPanel, ActionsProvider, Resolutions, TargetsLayer } from "@/components/combat-map/actions";
+import { AdversaryPanel, HitFlashLayer } from "@/components/combat-map/actions/adversary";
+import { IncomingHit } from "@/components/combat-map/actions/reactions";
 import { EditorLayer, EditorProvider, EditToolsPanel } from "@/components/combat-map/editor";
 import { ScenePanel } from "@/components/combat-map/generate";
 import { MapBoard, MapHeaderLine, MapsPanel, useCurrentMap } from "@/components/combat-map/maps";
@@ -106,7 +109,10 @@ function ModeSwitch({ mode, onMode }: { mode: CombatMode; onMode: (mode: CombatM
   );
 }
 
-/** The map layers in drawing order: editor (Edit only), tokens, then vision (fog over everything). */
+/**
+ * The map layers in drawing order: editor (Edit only), tokens, vision (fog over everything), then the combat-action
+ * overlays in Play (target rings, hit flashes; plan combat-actions), which stay visible above the fog.
+ */
 function Layers(layer: MapLayerProps) {
   return (
     <>
@@ -121,11 +127,24 @@ function Layers(layer: MapLayerProps) {
       <SlotBoundary label="Vision">
         <VisionLayer {...layer} />
       </SlotBoundary>
+      {layer.mode === "play" ? (
+        <>
+          <SlotBoundary label="Targets">
+            <TargetsLayer {...layer} />
+          </SlotBoundary>
+          <SlotBoundary label="Hits">
+            <HitFlashLayer {...layer} />
+          </SlotBoundary>
+        </>
+      ) : null}
     </>
   );
 }
 
-/** GM left column: maps, the mode switch, then Scene + Edit tools (Edit) or Combatants, the token and vision cards (Play). */
+/**
+ * GM left column: maps, the mode switch, then Scene + Edit tools (Edit) or Combatants, the token card, the adversary
+ * controls, Reveal, Vision and the Resolutions list (Play).
+ */
 function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
   state: CombatPageState;
   selectedMapId: Id<"combatMaps"> | null;
@@ -169,11 +188,17 @@ function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
           <SlotBoundary label="The selected token">
             <TokenPanel {...state} map={map} />
           </SlotBoundary>
+          <SlotBoundary label="Adversary actions">
+            <AdversaryPanel {...state} map={map} />
+          </SlotBoundary>
           <SlotBoundary label="Reveal">
             <RevealPanel {...state} map={map} />
           </SlotBoundary>
           <SlotBoundary label="Vision and fog">
             <VisionPanel {...state} map={map} />
+          </SlotBoundary>
+          <SlotBoundary label="Resolutions">
+            <Resolutions {...state} map={map} />
           </SlotBoundary>
         </>
       ) : null}
@@ -181,12 +206,21 @@ function GmColumn({ state, selectedMapId, onSelectMap, onMode }: {
   );
 }
 
-/** Player left column: their own view card, then the selected token (their own PC, R4). */
+/**
+ * Player left column: an incoming hit to answer, the combat actions (Hand, Attack, dice; plan combat-actions), their
+ * own view card, then the selected token (their own PC, R4).
+ */
 function PlayerColumn({ state }: { state: CombatPageState }) {
   const { map } = state;
   if (!map) return null;
   return (
     <>
+      <SlotBoundary label="Incoming hit">
+        <IncomingHit {...state} map={map} />
+      </SlotBoundary>
+      <SlotBoundary label="Combat actions">
+        <ActionsPanel {...state} map={map} />
+      </SlotBoundary>
       <SlotBoundary label="Your view">
         <VisionPanel {...state} map={map} />
       </SlotBoundary>
@@ -305,9 +339,11 @@ export default function CombatMapPage() {
       <EditorProvider>
         <TokensProvider>
           <VisionProvider>
-            <SlotBoundary label="The combat map">
-              <CombatBody campaign={campaign} role={role} />
-            </SlotBoundary>
+            <ActionsProvider>
+              <SlotBoundary label="The combat map">
+                <CombatBody campaign={campaign} role={role} />
+              </SlotBoundary>
+            </ActionsProvider>
           </VisionProvider>
         </TokensProvider>
       </EditorProvider>

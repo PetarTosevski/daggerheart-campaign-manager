@@ -168,6 +168,8 @@ const d5SheetFields = {
       moonDie: v.optional(v.number()),
     }),
   ),
+  /** Tokens on domain cards (`cardTokensSchema`, plan combat-actions CA0): one `{cardId, count}` per card holding any. */
+  cardTokens: v.optional(v.array(v.object({ cardId: v.string(), count: v.number() }))),
 };
 
 /** The current sheet (`characterSheetSchema`, version 2) as queries return it. Keep in step with the zod schema. */

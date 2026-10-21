@@ -142,7 +142,22 @@ export const heldDieSchema = z.object({
   fromCharacterId: z.string().min(1).max(40).optional(),
 });
 
-export const featureUseSchema = z.object({ key: z.string().min(1).max(40), until: z.enum(FEATURE_USE_UNTIL) });
+/**
+ * One used "once per X" feature. Keys: class features (`rally`, `tagTeam`, …) and domain cards (`card:<cardId>` or
+ * `card:<cardId>:<useId>`, plan combat-actions). The key cap was widened from 40 to 80 for the card keys (CA0; widen
+ * only, stored sheets still parse).
+ */
+export const featureUseSchema = z.object({ key: z.string().min(1).max(80), until: z.enum(FEATURE_USE_UNTIL) });
+
+/** Most tokens or dice one card holds (Dark Army places 8; Sigil of Retribution holds up to your level in d8s). */
+export const CARD_TOKENS_MAX = 99;
+
+/**
+ * Tokens (or dice) kept on one domain card (CB p.101: "If you still have tokens on your card at the end of a session
+ * and aren't told to clear them, ensure you track the number you have left"). Plan combat-actions, CA0. A card with
+ * no entry holds no tokens; for a card holding a die (Zone of Protection) `count` is the die's value.
+ */
+export const cardTokensSchema = z.object({ cardId: z.string().min(1).max(60), count: z.number().int().min(0).max(CARD_TOKENS_MAX) });
 
 /** Flat per-class counters (spec section C). All optional; a class reads only its own. */
 export const classStateSchema = z.object({
@@ -187,6 +202,7 @@ export type AdvancementPick = z.infer<typeof advancementPickSchema>;
 export type Effect = z.infer<typeof effectSchema>;
 export type HeldDie = z.infer<typeof heldDieSchema>;
 export type FeatureUse = z.infer<typeof featureUseSchema>;
+export type CardTokens = z.infer<typeof cardTokensSchema>;
 export type ClassState = z.infer<typeof classStateSchema>;
 export type SessionFeatures = z.infer<typeof sessionFeaturesSchema>;
 
@@ -238,8 +254,11 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   effects: z.array(effectSchema).max(20).default([]),
   /** Dice held for later (Rally, Prayer, patron, combo). */
   heldDice: z.array(heldDieSchema).max(20).default([]),
-  /** "Once per rest/long rest/session" features already used. */
-  featureUses: z.array(featureUseSchema).max(20).default([]),
+  /**
+   * "Once per rest/long rest/session" features already used, class features and domain cards alike (one shared record:
+   * a card used on the map is exhausted on the sheet too, Q3). Widened from 20 to 40 entries for the cards (CA0).
+   */
+  featureUses: z.array(featureUseSchema).max(40).default([]),
   /** Small per-class counters (spec section C); lists with an `until` live in the three arrays above. */
   classState: classStateSchema.default({}),
   /** Wither tokens (Witherwild, CB 261): no per-character cap. */
@@ -254,6 +273,8 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   slotBonuses: z.array(z.string().min(1).max(60)).max(20).optional(),
   /** Slayer Dice, Know the Tide tokens and the Lunar Phases die (session-features F0; optional, widened, no version bump). */
   sessionFeatures: sessionFeaturesSchema.optional(),
+  /** Tokens on domain cards, one entry per card holding any (plan combat-actions, CA0; optional, widened, no version bump). */
+  cardTokens: z.array(cardTokensSchema).max(20).optional(),
 });
 
 /** The stored sheet's current `schemaVersion`. */
