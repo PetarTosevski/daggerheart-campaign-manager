@@ -34,6 +34,7 @@ waves:
           - src/lib/sprite-packs/mapping.ts
           - tests/unit/sprite-cut.test.ts
           - tests/unit/sprite-mapping.test.ts
+          - tests/unit/sprite-catalog.test.ts
           - docs/tasks/TASK-F4-F4.md
         reads:
           - docs/tasks/TASK-SP-P11Z.md
