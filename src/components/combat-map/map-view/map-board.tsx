@@ -25,9 +25,9 @@ const NAMES_KEY = "dh.combat.names";
 
 /** The board's hint under the map, per view. */
 const HINT = {
-  player: "Drag your own token to move · drag the gold knob to turn · click a torch or campfire to light it · click any token for its range circles.",
+  player: "Arrow keys or WASD move your token, Q / E turn it · or drag it and the gold knob · click a torch or campfire to light it · click any token for its range circles.",
   edit: "Paint with the chosen tool · click an object to select it, drag to move it · right-drag or ✋ to pan · Ctrl + scroll to zoom.",
-  play: "Drag tokens to move (they face the way they move) · drag the knob on a selected token to turn it · click torches and campfires to light them · Ctrl + scroll to zoom · N names · Delete removes.",
+  play: "Drag tokens to move, or arrow keys / WASD for the selected one (they face the way they move) · drag the knob or Q / E to turn · click torches and campfires to light them · Ctrl + scroll to zoom · N names · Delete removes.",
 };
 
 /** An image loaded for drawing (null until it has loaded, or without a URL). */

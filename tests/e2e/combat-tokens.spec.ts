@@ -128,6 +128,16 @@ test("the GM places the party and an encounter, moves, turns and marks an advers
     await expect(mine).toHaveAttribute("data-face", "0");
     // The GM's map follows.
     await expect(board.getByRole("button", { name: /^Ash, Party/ })).toHaveAttribute("data-square", `${mx + 1},${my}`);
+    // Keyboard (user 2026-10-21): with nothing focused, ArrowDown moves the player's own token one square and turns it south;
+    // E turns it a step clockwise.
+    await player.keyboard.press("Escape");
+    await player.locator("body").click({ position: { x: 5, y: 5 } });
+    await player.keyboard.press("ArrowDown");
+    await expect(mine).toHaveAttribute("data-square", `${mx + 1},${my + 1}`);
+    await expect(board.getByRole("button", { name: /^Ash, Party/ })).toHaveAttribute("data-square", `${mx + 1},${my + 1}`);
+    const faceBefore = Number(await mine.getAttribute("data-face"));
+    await player.keyboard.press("e");
+    await expect.poll(async () => Number(await mine.getAttribute("data-face"))).not.toBe(faceBefore);
 
     const before = await theirs.getAttribute("data-square");
     await dragBy(player, theirs, 0, playerStep * 2);
