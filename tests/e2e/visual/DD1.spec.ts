@@ -20,12 +20,16 @@ test("DD1 domain deck at 1440 and 390", { tag: "@visual" }, async ({ page }) => 
   await expect(grid.getByRole("button", { name: `Take ${firstCore("codex", 2).name}` })).toBeVisible();
   await shoot(deck, "domain-deck");
 
-  // One card turned over (its face greyed with "Unlocks at level 3" and Turn over), one card's text expanded.
+  // One card turned over (its face greyed with "Unlocks at level 3" and Turn over); More opens the large card (SC1).
   const item = grid.getByRole("listitem").filter({ hasText: firstCore("grace", 3).name });
   await item.getByRole("button", { name: /^Face-down/ }).click();
   await expect(item.getByRole("button", { name: /^Turn over/ })).toBeFocused();
   await expect(item.getByText("Unlocks at level 3")).toBeVisible();
-  await grid.getByRole("button", { name: "More about Book of Ava" }).click();
-  await expect(grid.getByRole("button", { name: "Less about Book of Ava" })).toHaveAttribute("aria-expanded", "true");
+  const more = grid.getByRole("button", { name: "More about Book of Ava" });
+  await more.click();
+  await expect(page.getByRole("dialog", { name: "Book of Ava" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Book of Ava" })).toHaveCount(0);
+  await expect(more).toBeFocused();
   await shoot(deck, "domain-deck-flipped");
 });

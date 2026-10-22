@@ -311,9 +311,11 @@ describe("character sheet", () => {
     for (const name of ["Story & Advancement", "Domains", "Heritage & Subclass"]) {
       fireEvent.click(tab(name));
       // The Domain Deck keeps its viewing controls (filters, More, card backs, hide toggle) but has no Take buttons.
+      // Hand and vault cards keep 'More' (SC1): it only opens the large card to read.
       const deck = screen.queryByLabelText("Domain Deck", REGION);
       const outsideDeck = (els: HTMLElement[]) => els.filter((b) => !deck?.contains(b));
-      expect(outsideDeck(within(paper).queryAllByRole("button", { hidden: true })).filter((b) => b.getAttribute("role") !== "tab")).toHaveLength(0);
+      const isMore = (b: HTMLElement) => /^More about /.test(b.getAttribute("aria-label") ?? "");
+      expect(outsideDeck(within(paper).queryAllByRole("button", { hidden: true })).filter((b) => b.getAttribute("role") !== "tab" && !isMore(b))).toHaveLength(0);
       expect(within(paper).queryAllByRole("textbox")).toHaveLength(0);
       if (deck) expect(within(deck).queryAllByLabelText(/^(Take|No picks left)/, BUTTON)).toHaveLength(0);
     }

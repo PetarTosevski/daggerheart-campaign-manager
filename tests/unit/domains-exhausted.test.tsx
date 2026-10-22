@@ -1,5 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { featureUseKey } from "../../src/lib/domain/card-effects/availability";
 import { expire } from "../../src/lib/domain/characters/expiry";
@@ -105,5 +105,43 @@ describe("domain cards used on the map (CA7)", () => {
     render(<DomainCardsSection cls={undefined} />);
     const vault = screen.getByRole("list", { name: "Vault cards" });
     expect(within(vault).getByRole("article", { name: /^Lean on Me/ })).toHaveAccessibleName("Lean on Me, used: Back after a long rest");
+  });
+});
+
+describe("'More' on every sheet card (SC1)", () => {
+  beforeAll(() => {
+    // jsdom has no showModal/close; model the browser's: close() drops `open` and fires the close event.
+    HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+      this.setAttribute("open", "");
+    };
+    HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+      this.removeAttribute("open");
+      this.dispatchEvent(new Event("close"));
+    };
+  });
+
+  it("gives each hand and vault card 'More', in the footer after the text, before Move to vault", () => {
+    current = { ...sheet([]), domainCards: { owned: LOADOUT, loadout: ["bare-bones", "lean-on-me"] } };
+    render(<DomainCardsSection cls={undefined} />);
+    for (const name of ["Bare Bones", "Lean on Me"]) {
+      const card = handCard(name);
+      const footer = card.querySelector("footer");
+      expect(footer?.previousElementSibling).toHaveClass("dk-face-text");
+      const buttons = within(footer as HTMLElement).getAllByRole("button");
+      expect(buttons.map((b) => b.textContent)).toEqual(["More", "Move to vault"]);
+      expect(buttons[0]).toHaveAccessibleName(`More about ${name}`);
+    }
+    const vault = screen.getByRole("list", { name: "Vault cards" });
+    expect(within(vault).getByRole("button", { name: "More about Critical Inspiration" })).toBeInTheDocument();
+  });
+
+  it("opens the large card with the used state from a hand card and gives focus back on close", () => {
+    show(sheet(USED));
+    fireEvent.click(within(handCard("Lean on Me")).getByRole("button", { name: "More about Lean on Me" }));
+    const dialog = screen.getByRole("dialog", { name: "Lean on Me" });
+    expect(within(dialog).getByText("Used · Back after a long rest")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(within(handCard("Lean on Me")).getByRole("button", { name: "More about Lean on Me" })).toHaveFocus();
   });
 });
