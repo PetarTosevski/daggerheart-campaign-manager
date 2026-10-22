@@ -206,6 +206,22 @@
     border-radius: 16px 16px 0 0;
     box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
   }
+  /* The GM's own PC (AA5): in the GM column, not a sheet over the adversary controls. */
+  .ih-gm .ih-wrap[data-variant="map"] .ih-dock {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    background: none;
+    border-top: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .ih-gm .ih-wrap[data-variant="map"] .ih-dock .ih-card {
+    box-shadow: 0 0 0 3px rgba(227, 180, 90, 0.12);
+    padding: 16px 18px;
+    border: 1px solid var(--ih-border);
+  }
   .ih-wrap[data-variant="map"] .ih-dock .ih-card {
     box-shadow: none;
     padding: 12px 4px;

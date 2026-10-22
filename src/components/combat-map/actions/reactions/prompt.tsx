@@ -45,6 +45,10 @@ export class HitBoundary extends Component<{ children: ReactNode }, { failed: bo
     return { failed: true };
   }
 
+  componentDidCatch(error: unknown) {
+    console.error("The incoming hit failed to load", error);
+  }
+
   render() {
     if (!this.state.failed) return this.props.children;
     return (
