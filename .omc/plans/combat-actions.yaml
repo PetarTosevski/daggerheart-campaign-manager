@@ -827,6 +827,7 @@ waves:
         #   turns on a 'Play for this character' switch; then Use / Recall work and are logged as the GM acting for that
         #   character. CA4's useCard must accept the GM for any character in the campaign.
         goal: A player holds their loadout cards on the Combat Map, uses any combat card against the picked targets or on self or allies with its choices asked first, sees exhausted cards greyed until they come back, and recalls a vault card by paying its recall cost.
+        # ORCHESTRATOR NOTE 2026-10-22: reuse SC1's CardDialog / CardMore (src/components/cards/) for 'More' on map cards.
         depends_on: [CA4, CA5]
         owns:
           - src/components/combat-map/actions/hand/**
