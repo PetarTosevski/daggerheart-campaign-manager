@@ -10,6 +10,7 @@
 
 import type * as accounts from "../accounts.js";
 import type * as actionLog from "../actionLog.js";
+import type * as adversaryActions from "../adversaryActions.js";
 import type * as auth from "../auth.js";
 import type * as campaignTime from "../campaignTime.js";
 import type * as campaigns from "../campaigns.js";
@@ -42,6 +43,7 @@ import type * as history from "../history.js";
 import type * as http from "../http.js";
 import type * as levelUp from "../levelUp.js";
 import type * as lib_actionLog from "../lib/actionLog.js";
+import type * as lib_adversaryActions from "../lib/adversaryActions.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_blobs from "../lib/blobs.js";
@@ -61,6 +63,7 @@ import type * as lib_fear from "../lib/fear.js";
 import type * as lib_featureScope from "../lib/featureScope.js";
 import type * as lib_files from "../lib/files.js";
 import type * as lib_functions from "../lib/functions.js";
+import type * as lib_incomingHits from "../lib/incomingHits.js";
 import type * as lib_journalState from "../lib/journalState.js";
 import type * as lib_lorekeeper_caps from "../lib/lorekeeper/caps.js";
 import type * as lib_lorekeeper_context from "../lib/lorekeeper/context.js";
@@ -167,6 +170,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
   actionLog: typeof actionLog;
+  adversaryActions: typeof adversaryActions;
   auth: typeof auth;
   campaignTime: typeof campaignTime;
   campaigns: typeof campaigns;
@@ -199,6 +203,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   levelUp: typeof levelUp;
   "lib/actionLog": typeof lib_actionLog;
+  "lib/adversaryActions": typeof lib_adversaryActions;
   "lib/allowlist": typeof lib_allowlist;
   "lib/auth": typeof lib_auth;
   "lib/blobs": typeof lib_blobs;
@@ -218,6 +223,7 @@ declare const fullApi: ApiFromModules<{
   "lib/featureScope": typeof lib_featureScope;
   "lib/files": typeof lib_files;
   "lib/functions": typeof lib_functions;
+  "lib/incomingHits": typeof lib_incomingHits;
   "lib/journalState": typeof lib_journalState;
   "lib/lorekeeper/caps": typeof lib_lorekeeper_caps;
   "lib/lorekeeper/context": typeof lib_lorekeeper_context;
