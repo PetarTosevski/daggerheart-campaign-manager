@@ -831,6 +831,10 @@ waves:
         depends_on: [CA4, CA5]
         owns:
           - src/components/combat-map/actions/hand/**
+          # ORCHESTRATOR NOTE 2026-10-22: mounts the GM's Hand above Resolutions; also keeps the last attack result across the
+          #   760px layout switch (USER ANSWER 2026-10-22: "Keep the result").
+          - src/components/combat-map/actions/index.tsx
+          - src/components/combat-map/actions/attack/**
           - tests/unit/combat-hand.test.tsx
           - tests/e2e/combat-cards.spec.ts
           - tests/e2e/visual/CA-CA6.spec.ts
@@ -844,6 +848,7 @@ waves:
           - src/lib/srd/card-effects/**
           - .omc/autopilot/combat-actions-analysis.md
         acceptance:
+          - "The last attack result survives resizing across 760px (desktop cards <-> bottom sheet); unit test"
           - "The Hand lists the loadout from combatCards.hand with card art, cost and limit badges; passive cards have no Use button; exhausted cards are greyed and turned with the reset label (R6, Q3)"
           - "Use opens a dialog only when the card needs a choice (grimoire spell, number of Hope, damage split, ally) and then fires combatCards.useCard once with the picked targets; manual steps show the card text and a Done button"
           - "The vault lists cards with 'Recall: N Stress' (free during an open rest) and calls characters.moveCard (R7, CB p.101 quoted)"
