@@ -9,6 +9,7 @@ import {
   mergeExplored,
   objectSampleBox,
   pointLevel,
+  sampleLevel,
   sightOf,
   visibleSquares,
   type VisionObject,
@@ -266,16 +267,21 @@ export const markExplored = campaignMutation({
     if (viewer === null) throw appError("COMBAT_NO_CHARACTER");
     const seen = seenMask(visibleSquares(viewer.view));
     for (let i = 0; i < delta.length; i++) if (!seen[i]) delta[i] = 0;
-    const row = await exploredRow(ctx, map._id, character._id);
-    const prev = storedExplored(row, map.w, map.h);
-    if (!exploredGrows(prev, delta)) return { grew: false };
-    const next = encodeExplored(mergeExplored(prev, delta));
-    const updatedAt = Date.now();
-    if (row === null) await ctx.db.insert("combatExplored", { mapId: map._id, characterId: character._id, bits: next, updatedAt });
-    else await ctx.db.patch("combatExplored", row._id, { bits: next, updatedAt });
-    return { grew: true };
+    return { grew: await addExplored(ctx, map, character._id, delta) };
   },
 });
+
+/** Merges `delta` into the (map, character) explored row; writes only when it grows. True when it grew. */
+async function addExplored(ctx: MutationCtx, map: Doc<"combatMaps">, characterId: Id<"characters">, delta: Uint8Array): Promise<boolean> {
+  const row = await exploredRow(ctx, map._id, characterId);
+  const prev = storedExplored(row, map.w, map.h);
+  if (!exploredGrows(prev, delta)) return false;
+  const next = encodeExplored(mergeExplored(prev, delta));
+  const updatedAt = Date.now();
+  if (row === null) await ctx.db.insert("combatExplored", { mapId: map._id, characterId, bits: next, updatedAt });
+  else await ctx.db.patch("combatExplored", row._id, { bits: next, updatedAt });
+  return true;
+}
 
 /** GM: shows a token in dim light to one character (R10, after a successful roll). Idempotent. */
 export const revealTo = gmMutation({
@@ -346,14 +352,14 @@ export const toggleLight = campaignMutation({
 
 /** The views of the characters the caller plays (edit permission) on the scene's map, with their explored masks. */
 async function ownViewers(ctx: CampaignCtx<QueryCtx>, scene: Scene) {
-  const out: { view: NonNullable<ReturnType<typeof viewOf>>["view"]; explored: Uint8Array }[] = [];
+  const out: { characterId: Id<"characters">; view: NonNullable<ReturnType<typeof viewOf>>["view"]; explored: Uint8Array }[] = [];
   for (const token of scene.tokens) {
     if (token.ref.kind !== "pc") continue;
     const character = await ctx.db.get("characters", token.ref.characterId);
     if (character === null || character.campaignId !== ctx.campaign._id || !(await canActFor(ctx, character))) continue;
     const viewer = viewOf(scene, character);
     if (viewer === null) continue;
-    out.push({ view: viewer.view, explored: storedExplored(await exploredRow(ctx, scene.map._id, character._id), scene.map.w, scene.map.h) });
+    out.push({ characterId: character._id, view: viewer.view, explored: storedExplored(await exploredRow(ctx, scene.map._id, character._id), scene.map.w, scene.map.h) });
   }
   return out;
 }
@@ -393,6 +399,22 @@ function sceneDoors(scene: Scene): { row: Doc<"combatMapObjects">; vision: Visio
 function doorSeen(scene: Scene, viewers: Awaited<ReturnType<typeof ownViewers>>, door: VisionObject): boolean {
   const box = objectSampleBox(scene.prepared, door);
   return viewers.some(({ view, explored }) => boxSeen(view, box, explored));
+}
+
+/**
+ * Stores the door's samples each viewer sees now as explored (dcm-bxp.121): the player who switches a door has seen it,
+ * so it stays theirs to switch after they walk through and turn their back on it. The client's throttled explored
+ * sync cannot promise that: it keeps only what the character sees when the write arrives, so a door looked at for
+ * less than EXPLORED_THROTTLE_MS (open it, step through) was never stored and dropped out of `doors`.
+ */
+async function exploreDoor(ctx: CampaignCtx<MutationCtx>, scene: Scene, viewers: Awaited<ReturnType<typeof ownViewers>>, door: VisionObject) {
+  const box = objectSampleBox(scene.prepared, door);
+  const { sw } = scene.prepared;
+  for (const { characterId, view, explored } of viewers) {
+    const delta = new Uint8Array(explored.length);
+    for (let sy = box.sy0; sy < box.sy1; sy++) for (let sx = box.sx0; sx < box.sx1; sx++) if (sampleLevel(view, sx, sy) > 0) delta[sy * sw + sx] = 1;
+    await addExplored(ctx, scene.map, characterId, delta);
+  }
 }
 
 function doorView(row: Doc<"combatMapObjects">, vision: VisionObject): DoorView {
@@ -460,7 +482,9 @@ export const toggleDoor = campaignMutation({
         if (vision !== undefined && doorSeen(scene, await ownViewers(ctx, scene), vision)) throw appError("INVALID", "Only doors open and close.");
         throw appError("COMBAT_OBJECT_NOT_FOUND");
       }
-      if (!doorSeen(scene, await ownViewers(ctx, scene), door.vision)) throw appError("COMBAT_OBJECT_NOT_FOUND");
+      const viewers = await ownViewers(ctx, scene);
+      if (!doorSeen(scene, viewers, door.vision)) throw appError("COMBAT_OBJECT_NOT_FOUND");
+      await exploreDoor(ctx, scene, viewers, door.vision);
     }
     if ((object.open === true) !== open) await ctx.db.patch("combatMapObjects", object._id, { open: open ? true : undefined });
     return { open };
