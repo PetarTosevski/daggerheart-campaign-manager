@@ -2,6 +2,7 @@
 // reference/designs/project/Lorekeeper.dc.html; the others fill states the board lacks (analysis 1.4) or come from
 // the user's answers (Q2 retry note). Pure module: L6 / L7 render these, copyText builds the Copy action's text.
 
+import type { AnswerPhase } from "./flow";
 import type { ParsedAnswer, Verdict } from "./types";
 
 /** board: chat header. */
@@ -90,6 +91,17 @@ export const RETRIED_NOTE = "Checked again with a stronger model";
 
 /** board: thinking row. */
 export const THINKING_TEXT = "Searching your books…";
+/** L11 (user decision 2026-10-22): the thinking row while an uncertain answer waits for the final check. */
+export const RETRY_THINKING_TEXT = "Checking again with a stronger model…";
+export const WEB_THINKING_TEXT = "Searching the internet…";
+
+/** L11: the thinking row's text per answer phase (flow.ts `AnswerPhase`; 'done' never shows a thinking row). */
+export const PHASE_TEXT = {
+  books: THINKING_TEXT,
+  retry: RETRY_THINKING_TEXT,
+  web: WEB_THINKING_TEXT,
+  done: THINKING_TEXT,
+} as const satisfies Record<AnswerPhase, string>;
 /** board: the asker's own name on question bubbles. */
 export const YOU_LABEL = "You";
 

@@ -2,6 +2,7 @@ import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
 import {
+  answerPhaseValidator,
   askResolutionValidator,
   conversationVisibilityValidator,
   failureCodeValidator,
@@ -92,6 +93,8 @@ export const lorekeeperTables = {
     model: v.optional(v.string()),
     /** Q2: Sonnet found nothing and Opus answered ('Checked again with a stronger model'). */
     checkedAgain: v.optional(v.boolean()),
+    /** L11: the answer's phase while it runs (books → retry → web → done); absent on older rows. */
+    phase: v.optional(answerPhaseValidator),
     /** What caps.reserve booked for this answer (answer rows only). */
     reserved: v.optional(reservationValidator),
     createdAt: v.number(),

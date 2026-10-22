@@ -53,6 +53,31 @@ describe("AnswerCard", () => {
     expect(screen.getByText("Searching your books…")).toBeTruthy();
   });
 
+  it("shows the run's phase in a polite live region while an uncertain answer waits (L11)", () => {
+    const view = card(message({ status: "streaming", text: "", phase: "retry" }));
+    const status = screen.getByRole("status");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.textContent).toBe("Checking again with a stronger model…");
+    expect(screen.queryByRole("article")).toBeNull();
+    view.rerender(
+      <AnswerCard campaignId={CAMPAIGN} answer={message({ status: "streaming", text: "", phase: "web" })} question="Q" titles={titles} isGm={false} mine sentToGm={false} />,
+    );
+    // The same live region, its text changed in place.
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status.textContent).toBe("Searching the internet…");
+    view.rerender(
+      <AnswerCard campaignId={CAMPAIGN} answer={message({ status: "done", phase: "done", parts: { verdict: "unclear", quotes: [], call: "Your call." } })} question="Q" titles={titles} isGm={false} mine sentToGm={false} />,
+    );
+    expect(screen.queryByText("Searching the internet…")).toBeNull();
+    expect(screen.getByText("Rules unclear")).toBeTruthy();
+  });
+
+  it("an answer stopped before any finished answer shows only the stopped note", () => {
+    card(message({ status: "stopped", text: "", phase: "done" }));
+    expect(screen.getByText("Stopped.")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
   it("renders the verdict pill, prose, a quote with its book and page chip, and the board's actions", () => {
     card(
       message({

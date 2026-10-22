@@ -11,8 +11,8 @@ import {
   ASK_GM_SENT,
   ERROR_TEXT,
   GM_CALL_LABEL,
+  PHASE_TEXT,
   RETRIED_NOTE,
-  THINKING_TEXT,
   TRY_AGAIN_LABEL,
   VERDICT_COPY,
   WEB_DISCLAIMER,
@@ -58,8 +58,13 @@ export type AnswerCardProps = {
   onRetry?: () => void;
 };
 
-/** The thinking row (board): the mini sigil, three dots (static under reduced motion) and 'Searching your books…'. */
-export function ThinkingRow() {
+/**
+ * The thinking row (board): the mini sigil, three dots (static under reduced motion, lorekeeper.css) and the phase
+ * text (L11): 'Searching your books…', then 'Checking again with a stronger model…' and 'Searching the internet…'
+ * while an uncertain answer waits for the final check. The text is a polite live region, so a screen reader hears
+ * each step once; it changes in place, with no animation.
+ */
+export function ThinkingRow({ phase = "books" }: { phase?: MessageView["phase"] }) {
   return (
     <div className="lk-a">
       <MiniSigil />
@@ -69,14 +74,16 @@ export function ThinkingRow() {
           <i />
           <i />
         </span>
-        {THINKING_TEXT}
+        <span role="status" aria-live="polite" aria-atomic="true">
+          {PHASE_TEXT[phase]}
+        </span>
       </div>
     </div>
   );
 }
 
 /**
- * One answer in the stream: the thinking row while nothing has streamed, then the board's parchment card with the
+ * One answer in the stream: the thinking row (with the run's phase, L11) while no text is shown, then the board's parchment card with the
  * verdict pill, the prose (plain text), up to three quotes with their '📖 <book> · p.<page>' chips (a chip opens the
  * page), the 'Suggested GM call' box, the unofficial internet block and the actions. Stopped and failed answers keep
  * the card with a note ('Try again' re-asks the same question).
@@ -84,7 +91,7 @@ export function ThinkingRow() {
 export function AnswerCard(props: AnswerCardProps) {
   const { answer } = props;
   const inFlight = answer.status === "pending" || answer.status === "streaming";
-  if (inFlight && answer.text === "") return <ThinkingRow />;
+  if (inFlight && answer.text === "") return <ThinkingRow phase={answer.phase} />;
   if (answer.status === "error") return <ErrorCard {...props} />;
   return <ParchmentCard {...props} inFlight={inFlight} />;
 }
