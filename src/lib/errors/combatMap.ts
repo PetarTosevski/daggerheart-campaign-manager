@@ -32,6 +32,11 @@ export const combatMapMessages = {
   /** A player switching a map light their character has never seen (R9, C7). */
   COMBAT_LIGHT_NOT_SEEN: "Your character hasn't seen that light.",
   /**
+   * A player switching a door or a map light when none of their character tokens on the live map stands within Melee
+   * of it (1 square, CB p.103; plan d12-bugs B4). Carries no position: the refusal itself is all a player learns.
+   */
+  COMBAT_OUT_OF_REACH: "Move next to it first.",
+  /**
    * A player's move whose path crosses or ends on a wall, a building or a closed door (map-movement M0, D3). Carries
    * no position (D6): the refusal itself is all a player learns.
    */

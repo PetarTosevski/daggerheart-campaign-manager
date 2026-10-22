@@ -78,7 +78,8 @@ function ErrorLine({ actions }: { actions: { error: string | null } }) {
 
 /**
  * The doors the viewer may switch (map-movement M2, D8), each with an Open / Close switch (optimistic): the GM every
- * door, a player only the doors their characters have seen. Nothing when there is none.
+ * door, a player only the doors their characters have seen. A player's switch is disabled with "Move next to it" while
+ * none of their character tokens stands within Melee of the door (`reach`, plan d12-bugs B4). Nothing when there is none.
  */
 function DoorsCard(props: VisionPanelProps) {
   const doors = useDoors(props);
@@ -99,15 +100,24 @@ function DoorsCard(props: VisionPanelProps) {
               <span>
                 {label} <span className="cm-muted cm-vis-small">· {d.open ? "open" : "closed"}</span>
               </span>
-              <button
-                type="button"
-                className="cm-btn cm-sm"
-                aria-pressed={d.open}
-                aria-label={`${d.open ? "Close" : "Open"} ${label.toLowerCase()}`}
-                onClick={() => void actions.setOpen(d._id, !d.open)}
-              >
-                {d.open ? "Close" : "Open"}
-              </button>
+              <span className="cm-row cm-vis-tight">
+                {d.reach ? null : (
+                  <span className="cm-muted cm-vis-small" id={`cm-door-reach-${d._id}`}>
+                    Move next to it
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="cm-btn cm-sm"
+                  aria-pressed={d.open}
+                  aria-label={`${d.open ? "Close" : "Open"} ${label.toLowerCase()}`}
+                  aria-describedby={d.reach ? undefined : `cm-door-reach-${d._id}`}
+                  disabled={!d.reach}
+                  onClick={() => void actions.setOpen(d._id, !d.open)}
+                >
+                  {d.open ? "Close" : "Open"}
+                </button>
+              </span>
             </li>
           );
         })}

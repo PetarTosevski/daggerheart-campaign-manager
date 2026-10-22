@@ -157,16 +157,23 @@ for (const viewport of VIEWPORTS) {
       await expect.poll(async () => Number(await hatch.getAttribute("data-squares"))).toBeGreaterThan(0);
 
       // The door: closed, it blocks and hides the Ghoul; the player opens it on the map, sees the Ghoul, walks through
-      // and closes it again.
+      // and closes it again. From (7, 16) the door is 2 squares away, out of reach (plan d12-bugs B4): its switch is
+      // disabled and says "Move next to it"; one step east puts Ash next to it.
       await place(7, 16);
       await expect(mine).toHaveAttribute("data-square", "7,16");
       const ghoul = board.getByRole("button", { name: /^Ghoul, Enemy/ });
       await expect(ghoul).toHaveCount(0);
+      const doorSwitch = board.getByRole("button", { name: "Open door 1" });
+      await expect(doorSwitch).toHaveAttribute("aria-disabled", "true");
+      await doorSwitch.hover();
+      await expect(doorSwitch.getByText("Move next to it")).toBeVisible();
+      await player.locator("body").click({ position: { x: 2, y: 2 } });
       await press("d");
       await expect(mine).toHaveAttribute("data-square", "8,16");
       await expect.poll(() => serverSquare(playerClient)).toBe("8,16");
       await expectBlocked(() => press("d"), "8,16");
-      await board.getByRole("button", { name: "Open door 1" }).click();
+      await expect(doorSwitch).not.toHaveAttribute("aria-disabled");
+      await doorSwitch.click();
       await expect(board.getByRole("button", { name: "Close door 1" })).toHaveAttribute("aria-pressed", "true");
       await expect.poll(doorOpen).toBe(true);
       await expect(ghoul).toBeVisible();

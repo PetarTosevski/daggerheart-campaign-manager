@@ -89,20 +89,6 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
     await expect(gmBandit).toHaveAttribute("data-square", "20,9");
     await expect(playerBandit).toHaveAttribute("data-square", "20,9");
 
-    // ---- Doors: closed, the door hides the Ghoul. The GM opens it from the Doors card: the player's door switch
-    // flips and the Ghoul appears; the player closes it on the map: the GM's card flips back and the Ghoul goes.
-    const ghoul = board.getByRole("button", { name: /^Ghoul, Enemy/ });
-    await expect(ghoul).toHaveCount(0);
-    await expect(board.getByRole("button", { name: "Open door 1" })).toHaveAttribute("aria-pressed", "false");
-    await tools.getByRole("button", { name: "Open door 1" }).click();
-    await expect(tools.getByRole("button", { name: "Close door 1" })).toHaveAttribute("aria-pressed", "true");
-    await expect(board.getByRole("button", { name: "Close door 1" })).toHaveAttribute("aria-pressed", "true");
-    await expect(ghoul).toBeVisible();
-    await board.getByRole("button", { name: "Close door 1" }).click();
-    await expect(board.getByRole("button", { name: "Open door 1" })).toHaveAttribute("aria-pressed", "false");
-    await expect(tools.getByRole("button", { name: "Open door 1" })).toHaveAttribute("aria-pressed", "false");
-    await expect(ghoul).toHaveCount(0);
-
     // ---- The GM previews Liriel's view: (8, 10), behind her, is unseen fog.
     await gm.getByRole("button", { name: /Player view/ }).click();
     await gm.getByRole("menu", { name: "Open the player view as" }).getByRole("menuitemradio", { name: characterName }).click();
@@ -131,6 +117,52 @@ test("live combat map: map switch, tokens both ways, explored areas, fog, doors 
       .toBe(true);
     await tools.getByRole("group", { name: "See the map as" }).getByRole("button", { name: "GM (everything)" }).click();
     await expect(gm.getByTestId("combat-fog")).toBeHidden();
+
+    // ---- Doors: closed, the door hides the Ghoul. From (15, 10) it is 9 squares away, out of the player's reach (plan
+    // d12-bugs B4): their switch is disabled and says "Move next to it", while the GM's never is. Liriel walks east to
+    // (23, 10), next to it. The GM opens it from the Doors card: the player's door switch flips and the Ghoul appears;
+    // the player closes it on the map: the GM's card flips back and the Ghoul goes. Liriel then walks back to (15, 10).
+    // (This runs after the preview checks above: walking back west lets her see (8, 10).)
+    const ghoul = board.getByRole("button", { name: /^Ghoul, Enemy/ });
+    await expect(ghoul).toHaveCount(0);
+    const playerDoor = board.getByRole("button", { name: "Open door 1" });
+    await expect(playerDoor).toHaveAttribute("aria-pressed", "false");
+    await expect(playerDoor).toHaveAttribute("aria-disabled", "true");
+    await playerDoor.hover();
+    await expect(playerDoor.getByText("Move next to it")).toBeVisible();
+    await expect(tools.getByRole("button", { name: "Open door 1" })).toBeEnabled();
+    await player.locator("body").click({ position: { x: 2, y: 2 } });
+    for (let x = 16; x <= 23; x++) {
+      await player.keyboard.press("ArrowRight");
+      await expect(mine).toHaveAttribute("data-square", `${x},10`);
+    }
+    await expect(gmLiriel).toHaveAttribute("data-square", "23,10");
+    await expect(board.getByRole("button", { name: "Open door 1" })).not.toHaveAttribute("aria-disabled");
+    await tools.getByRole("button", { name: "Open door 1" }).click();
+    await expect(tools.getByRole("button", { name: "Close door 1" })).toHaveAttribute("aria-pressed", "true");
+    await expect(board.getByRole("button", { name: "Close door 1" })).toHaveAttribute("aria-pressed", "true");
+    await expect(ghoul).toBeVisible();
+    await board.getByRole("button", { name: "Close door 1" }).click();
+    await expect(board.getByRole("button", { name: "Open door 1" })).toHaveAttribute("aria-pressed", "false");
+    await expect(tools.getByRole("button", { name: "Open door 1" })).toHaveAttribute("aria-pressed", "false");
+    await expect(ghoul).toHaveCount(0);
+    await player.locator("body").click({ position: { x: 2, y: 2 } });
+    for (let x = 22; x >= 15; x--) {
+      await player.keyboard.press("ArrowLeft");
+      await expect(mine).toHaveAttribute("data-square", `${x},10`);
+    }
+    // Facing east again (the GM turns her once her last step is on the server, which faced her west), so the Bandit is
+    // in her view for the fog brush below.
+    await expect(gmLiriel).toHaveAttribute("data-square", "15,10");
+    await expect
+      .poll(async () => {
+        const t = (await client.query(api.combatTokens.list, { campaignId, mapId })).find((x) => x._id === liriel._id)!;
+        return `${t.x},${t.y}`;
+      })
+      .toBe("15,10");
+    await seed(() => client.mutation(api.combatTokens.turn, { campaignId, tokenId: liriel._id, angle: 0 }));
+    await expect(gmLiriel).toHaveAttribute("data-face", "0");
+    await expect(mine).toHaveAttribute("data-face", "0");
 
     // ---- Fog: the GM's Hide brush over the Bandit hides it from the player; Erase brings it back.
     const vision = tools.getByRole("region", { name: "Vision and fog" });
