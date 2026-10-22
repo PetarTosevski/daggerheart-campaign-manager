@@ -1,0 +1,80 @@
+# D12 bug fixes (user 2026-10-22: "fix 4 bugs & close d12 if fixed well"). Format: docs/workflow.md.
+# Four bugs found by H24: dcm-bxp.120-123. dcm-bxp.122 (notesSharing sort tie-break) is a one-line orchestrator fix.
+# The user asked for fewer agents at once: these three run in parallel, nothing else does.
+plan: d12-bugs
+waves:
+  - wave: 1
+    tracers:
+      - id: B1
+        title: players.spec signs up with its own password-only email (dcm-bxp.120)
+        size: S
+        goal: The 'email + password' players test passes on a fresh backend in the full alphabetical run, whatever ran before it.
+        depends_on: []
+        owns:
+          - tests/e2e/players.spec.ts
+          - scripts/e2e-setup.mjs
+          - docs/testing.md
+          - docs/tasks/TASK-BUG-120.md
+        reads:
+          - tests/e2e/lorekeeper-shell.spec.ts
+          - tests/e2e/notes-*.spec.ts
+          - tests/e2e/visual/D11-N6.spec.ts
+          - tests/e2e/helpers/**
+        acceptance:
+          - "players.spec.ts uses an allowlisted email that no other spec signs in through the test sign-in; scripts/e2e-setup.mjs allowlists it; docs/testing.md notes the rule (one email per sign-in method)"
+          - "On a fresh e2e backend (pnpm e2e:setup in the worktree), players.spec passes after running lorekeeper-shell and notes-shell first in the same run, and alone"
+          - "pnpm lint, typecheck pass; tracer-guard passes"
+      - id: B2
+        title: Closing a door no longer freezes the player's map page (dcm-bxp.121)
+        size: M
+        goal: Find and fix the main-thread hang after the player walks through an open door and clicks Close door; combat-movement.spec passes repeatedly at 1440 and 390.
+        depends_on: []
+        owns:
+          - src/components/combat-map/**
+          - src/lib/combat-map/**
+          - src/lib/domain/combat-map/**
+          - convex/combatVision.ts
+          - convex/lib/combatVision.ts
+          - convex/combatTokens.ts
+          - convex/lib/combatMovement.ts
+          - tests/e2e/combat-movement.spec.ts
+          - tests/unit/combat-doors*.test.ts
+          - tests/unit/combat-vision*.test.ts
+          - tests/unit/combat-movement*.test.ts
+          - tests/convex/combat-doors.test.ts
+          - docs/tasks/TASK-BUG-121.md
+        reads:
+          - docs/tasks/TASK-MV-M0.md
+          - docs/tasks/TASK-MV-M1.md
+          - docs/tasks/TASK-MV-M2.md
+          - docs/tasks/TASK-SP-F6.md
+        acceptance:
+          - "Root cause found with evidence (trace, profile or a unit reproduction) and written in the task doc; the fix removes it, not the test's symptom (no longer timeouts, no retries added)"
+          - "A unit or component test reproduces the loop/hang condition and passes after the fix"
+          - "combat-movement.spec.ts passes with --repeat-each 5 at both widths on the worktree backend"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
+      - id: B3
+        title: A rejected cached token refreshes instead of showing 'Your session has ended' (dcm-bxp.123)
+        size: M
+        goal: Fix the race where a campaign query answers UNAUTHENTICATED with a rejected cached token and reaches the route error boundary before Convex Auth refreshes; auth-single-run.spec passes repeatedly.
+        depends_on: []
+        owns:
+          - src/app/convex-client-provider.tsx
+          - src/lib/auth/**
+          - src/proxy.ts
+          - src/components/route-error.tsx
+          - src/lib/errors/common.ts
+          - tests/e2e/auth-single-run.spec.ts
+          - tests/unit/auth-*.test.ts
+          - tests/unit/route-error*.test.tsx
+          - docs/tasks/TASK-BUG-123.md
+        reads:
+          - docs/tasks/TASK-PF-PF2.md
+          - docs/tasks/TASK-PF-PF3.md
+          - src/app/**/error.tsx
+          - convex/lib/functions.ts
+        acceptance:
+          - "Root cause found with evidence and written in the task doc; the fix keeps PF3's single Authenticate per page load (auth-single-run.spec's other tests still pass)"
+          - "A truly signed-out or revoked user still gets the sign-in path (no infinite refresh loop); unit test for the decision"
+          - "auth-single-run.spec.ts passes with --repeat-each 8 on the worktree backend"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
