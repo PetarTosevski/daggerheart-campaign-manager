@@ -423,6 +423,8 @@ waves:
           - "The answer card shows an 'unclear' answer with both its book quotes and the web block (disclaimer included); unit test"
           - "The web-pass failure log includes the reason; no secrets logged"
           - "pnpm lint, typecheck, vitest and the lorekeeper e2e specs pass; tracer-guard passes"
+  - wave: 7
+    tracers:
       - id: L11
         title: Think before showing - clear answers stream, uncertain ones wait for the final check with a visible process
         size: M
