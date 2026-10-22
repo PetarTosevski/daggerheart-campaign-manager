@@ -185,3 +185,70 @@
 /* Spotlight at (or past) its limit for this GM turn: the warning colour of the counter. */
 .trk-spot-btn[data-maxed="true"] { background: #6b2620; border-color: #e0705a; color: #ffe1d8; }
 .trk-spot-btn[data-maxed="true"]:hover { background: #7d2d25; }
+
+/*
+ * Adversary actions (plan combat-actions AA3): the actions panel inside the parchment (targets, advantage, Experience,
+ * Attack, the Fear question, the result and the feature Use buttons), the reaction windows and the live map pane on the
+ * dark shell. Same chips and buttons as above; parchment variants use the stat block's ink and rules.
+ */
+.trk-act { display: flex; flex-direction: column; gap: 10px; padding: 12px 0; border-top: 1px dashed var(--adv-divider); border-bottom: 1px dashed var(--adv-divider); font-family: var(--adv-font-ui); color: var(--adv-ink); }
+.trk-act-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.trk-act-h strong { font-family: var(--adv-font-head); font-size: 13px; letter-spacing: 0.06em; color: var(--adv-label); text-transform: uppercase; }
+.trk-act-sub { font-size: 12px; color: var(--adv-ink-soft); }
+.trk-act-note { margin: 0; font-size: 13px; color: var(--adv-ink-soft); }
+.trk-act-err { margin: 0; font-size: 13px; color: #8a2a1c; font-weight: 600; }
+.trk-act-err:empty { display: none; }
+.trk-act-targets,
+.trk-act-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.trk-chip-parch { border-color: var(--adv-ink); color: var(--adv-ink); }
+.trk-chip-parch:hover { border-color: var(--adv-parch-rule); }
+.trk-chip-parch[aria-pressed="true"] { background: var(--adv-ink); border-color: var(--adv-ink); color: var(--adv-parch); }
+.trk-seg { display: inline-flex; border: 1px solid var(--adv-ink); border-radius: 999px; overflow: hidden; }
+.trk-seg button { min-height: 44px; padding: 0 12px; border: none; background: transparent; color: var(--adv-ink); font-family: inherit; font-size: 13px; cursor: pointer; }
+.trk-seg button + button { border-left: 1px solid var(--adv-ink); }
+.trk-seg button[aria-pressed="true"] { background: var(--adv-ink); color: var(--adv-parch); font-weight: 600; }
+.trk-seg button:focus-visible { outline: 2px solid var(--adv-parch-rule); outline-offset: -3px; }
+.trk-act-field { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--adv-ink-soft); }
+.trk-in-parch { background: var(--adv-parch-head, #f4ead5); color: var(--adv-ink); border-color: var(--adv-ink); font-size: 14px; max-width: 100%; }
+.trk-btn-attack { background: var(--adv-parch-rule); border-color: var(--adv-parch-rule); color: var(--adv-atk-text); font-weight: 700; font-size: 14px; padding: 0 18px; }
+.trk-btn-attack:hover { filter: brightness(1.08); }
+.trk-btn-sm { min-width: 56px; }
+.trk-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--adv-kind-fear); background: rgba(91, 74, 143, 0.12); }
+.trk-confirm p { flex: 1 1 100%; margin: 0; font-weight: 600; color: var(--adv-ink); }
+
+.trk-res { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--adv-parch-rule); background: rgba(255, 255, 255, 0.35); }
+.trk-res-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.trk-res-h strong { font-family: var(--adv-font-head); font-size: 15px; }
+.trk-res-roll,
+.trk-res-line { margin: 0; font-size: 14px; }
+.trk-res ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.trk-res-targets li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.trk-res-verdict { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--adv-ink-soft); color: var(--adv-parch); }
+.trk-res-targets li[data-hit="true"] .trk-res-verdict { background: var(--adv-parch-rule); color: var(--adv-atk-text); }
+.trk-res-wait { font-size: 12px; font-style: italic; color: var(--adv-ink-soft); }
+.trk-res-offers li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.trk-act-feats { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.trk-act-feats li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 44px; }
+.trk-act-fname { font-weight: 700; font-size: 14px; }
+.trk-act-feats li > button,
+.trk-act-feats li > .trk-act-note { margin-left: auto; }
+
+/* Reaction windows (dark shell) */
+.trk-windows { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; border: 1px solid var(--adv-hf-border); border-radius: 14px; background: var(--adv-list); }
+.trk-windows-h { margin: 0; font-family: var(--adv-font-head); font-size: 16px; font-weight: 700; color: var(--adv-name); }
+.trk-windows ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.trk-window { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 8px 0; border-top: 1px solid var(--adv-border-row); }
+.trk-window:first-child { border-top: none; }
+.trk-window-what { flex: 1 1 280px; font-size: 14px; }
+.trk-window-who { flex: 1 1 220px; font-size: 13px; color: var(--adv-hf-fear); }
+.trk-boundary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+/* The live map pane: the Combat Map's board, shorter */
+.trk-map { display: flex; flex-direction: column; gap: 8px; padding: 14px 18px; border: 1px solid var(--adv-border); border-radius: 14px; background: var(--adv-list); min-width: 0; }
+.trk-map-root { background: transparent; border-radius: 12px; min-width: 0; }
+.trk-map-root .cm-vp.cm-vp-map { height: 420px; min-height: 0; max-height: none; }
+@media (max-width: 760px) {
+  .trk-map { padding: 12px; }
+  .trk-map-root .cm-vp.cm-vp-map { height: 320px; }
+}
