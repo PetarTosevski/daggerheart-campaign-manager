@@ -6,6 +6,8 @@ import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { derivedThresholds } from "../../src/lib/domain/characters/derived";
+import { expire } from "../../src/lib/domain/characters/expiry";
+import { holdsWeaponSpecialist, rerollSlayerOnes, weaponSpecialistUsed } from "../../src/lib/domain/session-features/index";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { errorCode, key, useAllowlist } from "./helpers";
@@ -256,5 +258,36 @@ describe("rolls.storeSlayerDie after a roll that paid an Experience at Hope max 
     expect((await sheetOf(bryn)).hope).toBe(6);
     expect(await p2.mutation(api.rolls.storeSlayerDie, { characterId: bryn, entryId, idempotencyKey: key() })).toEqual({ slayerDice: 1, capacity: 2, hope: 5 });
     expect((await sheetOf(bryn)).hope).toBe(5);
+  });
+});
+
+describe("Weapon Specialist rules (Call of the Slayer specialization, CB 48; dcm-bxp.62)", () => {
+  const base = { subclassId: "call-of-the-slayer", subclassRank: "specialization" as const, featureUses: [] as CharacterSheet["featureUses"] };
+  const queue = (...values: number[]) => () => values.shift()!;
+
+  it("is held at specialization and mastery, never at foundation or through a multiclass", () => {
+    expect(holdsWeaponSpecialist(base)).toBe(true);
+    expect(holdsWeaponSpecialist({ ...base, subclassRank: "mastery" })).toBe(true);
+    expect(holdsWeaponSpecialist({ ...base, subclassRank: "foundation" })).toBe(false);
+    expect(holdsWeaponSpecialist({ subclassId: "call-of-the-brave", subclassRank: "mastery", multiclass: { classId: "warrior", domainId: "blade", subclassId: "call-of-the-slayer" } })).toBe(false);
+  });
+
+  it("rerolls each 1 once and marks the use until the long rest, which expires it", () => {
+    const sheet = base as unknown as CharacterSheet;
+    const out = rerollSlayerOnes(sheet, [{ sides: 6, value: 1 }, { sides: 6, value: 4 }, { sides: 6, value: 1 }], queue(6, 1));
+    expect(out.dice.map((d) => d.value)).toEqual([6, 4, 1]);
+    expect(out.label).toBe("Weapon Specialist: 1 -> 6, 1 -> 1");
+    expect(weaponSpecialistUsed(out.sheet)).toBe(true);
+    // Spent: later 1s stand.
+    expect(rerollSlayerOnes(out.sheet, [{ sides: 6, value: 1 }], queue(5)).dice[0]!.value).toBe(1);
+    expect(weaponSpecialistUsed(expire(out.sheet, "shortRest"))).toBe(true);
+    expect(weaponSpecialistUsed(expire(out.sheet, "longRest"))).toBe(false);
+  });
+
+  it("without a 1 or without the feature, nothing changes", () => {
+    const sheet = base as unknown as CharacterSheet;
+    expect(rerollSlayerOnes(sheet, [{ sides: 6, value: 3 }], queue(6))).toEqual({ sheet, dice: [{ sides: 6, value: 3 }] });
+    const foundation = { ...base, subclassRank: "foundation" } as unknown as CharacterSheet;
+    expect(rerollSlayerOnes(foundation, [{ sides: 6, value: 1 }], queue(6)).dice[0]!.value).toBe(1);
   });
 });

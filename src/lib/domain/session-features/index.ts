@@ -9,6 +9,7 @@
 // |----------------------------------|----------------------|---------------|------------------------------------------------------------|
 // | Luckbringer (Halfling, CB 64)    | holdsLuckbringer     | none          | partyHope, applyLuckbringer                                |
 // | Slayer (Call of the Slayer, CB 48)| holdsSlayer         | slayerDice, slayerClaim | canStore, rollGaveHope, storeSlayerDie, spendSlayerDice, clearSlayerAtEnd |
+// | Weapon Specialist (Slayer spec., CB 48)| holdsWeaponSpecialist | featureUses weaponSpecialistReroll | rerollSlayerOnes, weaponSpecialistUsed |
 // | Know the Tide (Seaborne, CB 77)  | holdsTide            | tideTokens    | placeTideToken, spendTideTokens, clearTideAtEnd            |
 // | Lunar Phases (Moon mastery, HF 17)| holdsLunarPhases(scope) | moonDie    | phaseOf, lunarBonuses, rollMoonDie, bumpMoonDie, canNegateMinor, negateMinor, endMoon |
 //
@@ -29,9 +30,22 @@
 // The dice-box hooks (Waxing Moon damage option, the slayerStore prompt) are added by class-features/hooks.ts, and
 // derived Evasion and thresholds by characters/derived.ts, both through `lunarBonuses` / `canStore`.
 export { featuresOf, withFeatures } from "./state";
-export { CALL_OF_THE_SLAYER, EVERYTHING, HALFLING, holdsLuckbringer, holdsLunarPhases, holdsSlayer, holdsTide, LUCKBRINGER, MOON, SEABORNE } from "./holders";
+export { CALL_OF_THE_SLAYER, EVERYTHING, HALFLING, holdsLuckbringer, holdsLunarPhases, holdsSlayer, holdsTide, holdsWeaponSpecialist, LUCKBRINGER, MOON, SEABORNE } from "./holders";
 export { applyLuckbringer, partyHope } from "./luckbringer";
-export { canStore, clearSlayerAtEnd, rollGaveHope, SLAYER_DIE_SIDES, slayerCapacity, slayerDice, spendSlayerDice, storeSlayerDie, WITH_HOPE } from "./slayer";
+export {
+  canStore,
+  clearSlayerAtEnd,
+  rerollSlayerOnes,
+  rollGaveHope,
+  SLAYER_DIE_SIDES,
+  slayerCapacity,
+  slayerDice,
+  spendSlayerDice,
+  storeSlayerDie,
+  WEAPON_SPECIALIST_KEY,
+  weaponSpecialistUsed,
+  WITH_HOPE,
+} from "./slayer";
 export { clearTideAtEnd, placeTideToken, spendTideTokens, tideCapacity, tideTokens, WITH_FEAR } from "./tide";
 export {
   bumpMoonDie,

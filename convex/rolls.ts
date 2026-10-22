@@ -12,7 +12,8 @@
  *
  * Session features (plan session-features F2, rules in src/lib/domain/session-features):
  * - `slayerDice` (attack and damage rolls): spends Slayer Dice, rolled with the server rng (also for a
- *   manual roll) and added as extra d6s labelled "Slayer d6" (K2, U3).
+ *   manual roll) and added as extra d6s labelled "Slayer d6" (K2, U3). Weapon Specialist (CB p.48, dcm-bxp.62)
+ *   rerolls their 1s once per long rest, automatically (`rerollSlayerOnes`, in convex/lib/rolls.ts).
  * - `tideTokens` (action rolls): spends Know the Tide tokens for +1 each (K3, U5).
  * - a roll with Fear places a Tide token in the same saved sheet and log row (U4, Q1): action rolls and the
  *   applied Tag Team result for both PCs, never a reaction roll or a critical.

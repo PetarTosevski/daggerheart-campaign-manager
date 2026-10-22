@@ -38,7 +38,7 @@ import {
 } from "../../src/lib/domain/dice/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import type { RollRecord } from "../../src/lib/domain/duality";
-import { placeTideToken, rollGaveHope, SLAYER_DIE_SIDES, spendSlayerDice, spendTideTokens, WITH_HOPE } from "../../src/lib/domain/session-features/index";
+import { placeTideToken, rerollSlayerOnes, rollGaveHope, SLAYER_DIE_SIDES, spendSlayerDice, spendTideTokens, WITH_HOPE } from "../../src/lib/domain/session-features/index";
 import { appError } from "../../src/lib/errors/app-error";
 import { getWeapon } from "../../src/lib/srd/index";
 import type { TraitId } from "../../src/lib/srd/types";
@@ -189,9 +189,15 @@ export function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: 
   };
 }
 
-/** One Slayer d6 each, rolled with the server's rng whatever the roll's own dice come from (U3). */
-function rollSlayerDice(n: number): { sides: number; value: number }[] {
-  return Array.from({ length: n }, () => ({ sides: SLAYER_DIE_SIDES, value: rollDie(SLAYER_DIE_SIDES) }));
+/**
+ * One Slayer d6 each, rolled with the server's rng whatever the roll's own dice come from (U3). Weapon Specialist
+ * (CB 48, dcm-bxp.62) then rerolls any 1s once per long rest, with the same rng: `sheet` comes back with the use marked
+ * and `labels` names the reroll.
+ */
+function rollSlayerDice(sheet: CharacterSheet, n: number): { sheet: CharacterSheet; dice: { sides: number; value: number }[]; labels: string[] } {
+  const rolled = Array.from({ length: n }, () => ({ sides: SLAYER_DIE_SIDES, value: rollDie(SLAYER_DIE_SIDES) }));
+  const specialist = rerollSlayerOnes(sheet, rolled, rollDie);
+  return { sheet: specialist.sheet, dice: specialist.dice, labels: specialist.label !== undefined ? [specialist.label] : [] };
 }
 
 /** "Slayer d6 ×2 (4, 6)". */
@@ -211,8 +217,13 @@ function spendSessionFeatures(sheet: CharacterSheet, args: DualityArgs, attack: 
   const afterSlayer = spendSlayerDice(sheet, slayerCount);
   const tide = spendTideTokens(afterSlayer, tideCount);
   if (tideCount !== 0 && args.kind !== "action") throw new DiceRuleError("Know the Tide tokens add to action rolls only.");
-  const slayer = rollSlayerDice(slayerCount);
-  return { sheet: tide.sheet, tide: tide.modifier, slayer, labels: [...(tide.modifier > 0 ? [`Know the Tide +${tide.modifier}`] : []), ...slayerLabel(slayer)] };
+  const slayer = rollSlayerDice(tide.sheet, slayerCount);
+  return {
+    sheet: slayer.sheet,
+    tide: tide.modifier,
+    slayer: slayer.dice,
+    labels: [...(tide.modifier > 0 ? [`Know the Tide +${tide.modifier}`] : []), ...slayerLabel(slayer.dice), ...slayer.labels],
+  };
 }
 
 /** " vs 14" when the GM set the Difficulty, " vs DC 14 (player)" when a player typed it (review M1). */
@@ -381,15 +392,15 @@ export async function resolveDamage(ctx: QueryCtx, loaded: Loaded, args: DamageA
   const { campaign, character, sheet } = loaded;
   assertCanAct(character, sheet);
   const ikonis = args.source.kind === "ikonis" ? await loadIkonis(ctx, campaign, character, sheet) : null;
-  const { paid, input, label } = rules(() => prepareDamage(sheet, args, featureScope(campaign), ikonis));
-  const slayer = rollSlayerDice(args.slayerDice ?? 0);
-  const roll: RollRecord = withSlayerDamage({ ...rules(() => rollDamage(input, rng)), manual }, slayer);
-  return { paid, roll, label, slayer };
+  const prepared = rules(() => prepareDamage(sheet, args, featureScope(campaign), ikonis));
+  const { sheet: paid, dice: slayer, labels } = rollSlayerDice(prepared.paid, args.slayerDice ?? 0);
+  const roll: RollRecord = withSlayerDamage({ ...rules(() => rollDamage(prepared.input, rng)), manual }, slayer);
+  return { paid, roll, label: prepared.label, slayer, slayerLabels: [...slayerLabel(slayer), ...labels] };
 }
 
 export async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DamageArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
-  const { paid, roll, label, slayer } = await resolveDamage(ctx, loaded, args, rng, manual);
+  const { paid, roll, label, slayerLabels } = await resolveDamage(ctx, loaded, args, rng, manual);
   const critical = !args.critical ? "" : (await criticalRolled(ctx, character._id)) ? "critical " : "critical (declared) ";
   const sheetChanged = changed(sheet, paid);
   if (sheetChanged) await saveSheet(ctx, character._id, paid);
@@ -399,7 +410,7 @@ export async function damage(ctx: MutationCtx & { user: Doc<"users"> }, loaded: 
     actorId: ctx.user._id,
     kind: "roll",
     visibility: "public",
-    summary: `${sheet.name}: ${critical}damage ${roll.total}${typedLabel(args.modifier)} (${[label, ...slayerLabel(slayer)].join(", ")})${manual ? " [manual]" : ""}`,
+    summary: `${sheet.name}: ${critical}damage ${roll.total}${typedLabel(args.modifier)} (${[label, ...slayerLabels].join(", ")})${manual ? " [manual]" : ""}`,
     roll,
     ...(sheetChanged ? { before: sheet } : {}),
     undoable: true,
