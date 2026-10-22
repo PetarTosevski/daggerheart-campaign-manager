@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 
 import { LogoMark } from "@/components/brand/brand";
+import { SignInUrl } from "@/lib/auth/sign-in-url";
 
 import { E2ESignInForm } from "./e2e-sign-in-form";
 import { GoogleSignInButton } from "./google-sign-in-button";
@@ -39,6 +40,9 @@ export default function SignInPage() {
         </Suspense>
         {showE2EForm ? <E2ESignInForm /> : null}
       </div>
+      {/* A session that ended mid-use can render this page under the old URL; keep that URL as `next` (B5). */}
+      <SignInUrl />
+
     </main>
   );
 }

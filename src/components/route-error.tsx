@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import { brandButton } from "@/components/brand/buttons";
+import { useSessionEndedRedirect } from "@/lib/auth/use-session-ended-redirect";
 import { errorMessage } from "@/lib/convex-errors";
 
 /** The props Next 16 passes to every `error.tsx` and `global-error.tsx`. */
@@ -24,7 +25,15 @@ export function RouteError({
   back = { href: "/", label: "Back to the main menu" },
   layout = "page",
 }: RouteErrorProps & { title: string; what: string; back?: Back; layout?: "page" | "inline" }) {
-  const body = (
+  // A session that ended mid-use goes to sign-in and back instead of this screen (B5); everything else stays here.
+  const sessionEnded = useSessionEndedRedirect(error);
+  const body = sessionEnded ? (
+    <div className="flex w-full max-w-[640px] flex-col gap-5">
+      <p role="status" className="m-0 font-display text-[22px] leading-snug text-parchment sm:text-[26px]">
+        Your session ended – taking you to sign in…
+      </p>
+    </div>
+  ) : (
     <div className="flex w-full max-w-[640px] flex-col gap-5">
       <h1 className="m-0 font-display text-[32px] leading-tight font-bold text-parchment sm:text-[40px]">{title}</h1>
       <div
