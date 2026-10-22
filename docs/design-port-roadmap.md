@@ -47,6 +47,6 @@ Renumbered 2026-10-19: Combat Map became D9, so Sessions, Notes and Hardening mo
 | D9 | Combat Map | `Combat` | Several battle maps per campaign (uploaded or laid out by Claude), hand editing, tokens on the encounter tracker, range circles, facing, vision cones, light and fog of war, player view. Rules: `docs/combat-map-brief.md`, bd `dcm-bxp.32`. |
 | D10 | Sessions | `Sessions` | Prep / Play / Wrap-up, live session start/end synced to the party. |
 | D11 | Notes | `Notes` | Per-person bullet journals with optional PIN. |
-| D12 | Hardening and docs | all | Live-update e2e, unauthenticated sweep test, accessibility and tablet pass, settings backup/restore, README and AGENTS. |
+| D12 | Hardening and docs | all | **Done 2026-10-22** (plan `d12-hardening`, H0–H24; `docs/tasks/TASK-D12-H*.md`). Live-update e2e, unauthenticated sweep test, accessibility and tablet pass, settings backup/restore, README and AGENTS, plus the authz matrix over every public function with no pending list. The final suite runs found four bugs, filed as dcm-bxp.120-123. |
 
 Exploratory boards that are not on the design canvas (`FearOptions`, `TomeGrimoire`, `TomeCodex`) and `CycleIcons` (icon ideas) are references only.
