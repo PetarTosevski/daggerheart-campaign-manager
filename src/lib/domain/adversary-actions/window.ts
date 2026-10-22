@@ -43,6 +43,11 @@ export interface WindowHit extends PcHit {
   attackTotal?: number;
   /** The attacker's band from the target (`from: "melee"` cards); unknown = any (Q18). */
   attackerBand?: Range;
+  /**
+   * The hit carries a condition rider for whoever takes it (AA2b: Bite's Restrained moves with the damage), so the target
+   * may answer a `wouldGainCondition` reaction (Bold Presence, CB p.341: "When you would gain a condition").
+   */
+  conditionRiders?: boolean;
 }
 
 /** A PC at the table, as the window needs them: defenses, Evasion, loadout cards with effects, and distance to the target. */
@@ -82,6 +87,8 @@ export type Fold =
   | { kind: "reduceDamage"; amount: number; targetIds: string[] }
   | { kind: "negateDamage" }
   | { kind: "negateAttack" }
+  /** AA2b: the hit's condition riders don't land (Bold Presence). */
+  | { kind: "negateCondition" }
   | { kind: "evasion"; amount: number; targetIds: string[] }
   | { kind: "convert"; into: "stress" | "hope"; targetIds: string[] }
   | { kind: "manual"; text: string };
@@ -127,6 +134,8 @@ export function triggerFits(trigger: Trigger, role: "target" | "ally", pc: Windo
       return role === "target" && (trigger.stage === "rolled" || trigger.stage === "succeeded") && typeOk(trigger.damageType) && fromOk(trigger.from);
     case "whenArmorSlotMarked":
       return role === "target" && trigger.who === "self" && armorCapable;
+    case "wouldGainCondition":
+      return role === "target" && hit.conditionRiders === true;
     default:
       return false;
   }
@@ -286,6 +295,7 @@ export function foldsFromPlan(plan: Pick<RunPlan, "steps">, responderId: string)
       case "negate":
         if (step.what === "damage") out.push({ kind: "negateDamage" });
         else if (step.what === "attack") out.push({ kind: "negateAttack" });
+        else if (step.what === "condition") out.push({ kind: "negateCondition" });
         else out.push({ kind: "manual", text: step.note ?? `Negate ${step.what}` });
         break;
       case "modifyRoll":
@@ -346,6 +356,8 @@ export interface WindowResolution {
   manual: string[];
   /** The armor answer used. */
   armorSlotsChosen: number;
+  /** AA2b: a card answer (Bold Presence) keeps the hit's condition riders off the target. */
+  conditionNegated: boolean;
 }
 
 const applies = (targetIds: readonly string[], state: WindowState) =>
@@ -375,8 +387,9 @@ export function resolveWindow(state: WindowState, party: readonly PcDefense[]): 
   const armorAnswer = [...state.responses].reverse().find((r) => r.characterId === state.targetId && isArmorAnswer(r.choice));
   const armorSlotsChosen = armorAnswer?.choice.kind === "armor" ? Math.max(1, armorAnswer.choice.slots ?? 1) : 0;
   const reflected = reflects.map((f) => ({ to: f.to, targetIds: f.targetIds, amount: state.hit.amount }));
+  const conditionNegated = folds.some((f) => f.kind === "negateCondition");
   if (!target || missed) {
-    return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result: null, reflected, manual, armorSlotsChosen };
+    return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result: null, reflected, manual, armorSlotsChosen, conditionNegated };
   }
 
   let extra: number | "any" = 0;
@@ -397,7 +410,58 @@ export function resolveWindow(state: WindowState, party: readonly PcDefense[]): 
     negate: negated,
     ...(convert ? { convert } : {}),
   });
-  return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result, reflected, manual, armorSlotsChosen };
+  return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result, reflected, manual, armorSlotsChosen, conditionNegated };
+}
+
+// ---------------------------------------------------------------- after the hit (AA2b)
+
+/** What the resolved hit did to the PC who took it, for the card uses it sets off (CE-valor "For AA2"). */
+export interface MarkFacts {
+  hpMarked: number;
+  /** The hit marked their last Hit Point (CB p.91: a death move is due). */
+  deathMove: boolean;
+  /** Armor Slots they marked for its benefit. */
+  armorSlots: number;
+  /** The damage came from an attack (adversary attacks and features, a card's attack on an ally). */
+  fromAttack: boolean;
+}
+
+/** Whether a "you mark HP" / "you would make a death move" trigger fits the resolved hit. */
+export function afterHitTriggerFits(trigger: Trigger, facts: MarkFacts): boolean {
+  switch (trigger.kind) {
+    case "whenYouMarkHp":
+      return (
+        facts.hpMarked > 0 &&
+        (trigger.fromAttack !== true || facts.fromAttack) &&
+        (trigger.withoutArmor !== true || facts.armorSlots === 0) &&
+        (trigger.last !== true || facts.deathMove)
+      );
+    case "wouldMakeDeathMove":
+      return trigger.who === "self" && facts.deathMove;
+    default:
+      return false;
+  }
+}
+
+/**
+ * The card uses a resolved hit sets off for the PC who took it (CE-valor): `auto` uses run at once (Rise Up's "clear a
+ * Stress", Valor-Touched's "clear an Armor Slot"), ready and affordable `reaction` uses are offered (Unbreakable, CB p.342:
+ * "When you mark your last Hit Point, instead of making a death move, you can roll a d6 and clear that many Hit Points").
+ */
+export function afterHitUses(pc: WindowPc, facts: MarkFacts): { auto: { cardId: string; useId: string }[]; offers: string[] } {
+  const auto: { cardId: string; useId: string }[] = [];
+  const offers: string[] = [];
+  for (const card of pc.cards) {
+    for (const use of card.uses) {
+      const a = use.activation;
+      if ((a.kind !== "auto" && a.kind !== "reaction") || !afterHitTriggerFits(a.trigger, facts)) continue;
+      if (use.limit && cardAvailability(pc, card.cardId, { useId: use.id, limit: use.limit }).state !== "ready") continue;
+      if (!affordable(use, pc)) continue;
+      if (a.kind === "auto") auto.push({ cardId: card.cardId, useId: use.id });
+      else if (!offers.includes(card.cardId)) offers.push(card.cardId);
+    }
+  }
+  return { auto, offers };
 }
 
 /** What the hit PC's prompt shows (Q14): the damage, its severity against their thresholds, and the slots they may mark. */

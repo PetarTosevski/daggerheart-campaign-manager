@@ -611,7 +611,43 @@ export function runCard(built: BuiltRun, pick: CardPick, rng: Rng): RunOutcome {
     }
   }
   if (asks.length > 0) return { kind: "needsChoice", asks, dice: first.values };
-  return { kind: "plan", plan, picked: context.picked ?? [], dice: first.values };
+  return { kind: "plan", plan: withOnslaught(plan, built.paidSheet, pick.use), picked: context.picked ?? [], dice: first.values };
+}
+
+/** Whether a use deals the weapon's damage (a `damage` step rolling `weapon`, nested steps included). */
+export function dealsWeaponDamage(steps: readonly unknown[]): boolean {
+  for (const s of steps) {
+    if (s === null || typeof s !== "object") continue;
+    const step = s as { kind?: unknown; roll?: { kind?: unknown } };
+    if (step.kind === "damage" && step.roll?.kind === "weapon") return true;
+    for (const value of Object.values(s)) {
+      if (Array.isArray(value) && dealsWeaponDamage(value)) return true;
+      if (value !== null && typeof value === "object" && Array.isArray((value as { steps?: unknown }).steps) && dealsWeaponDamage((value as { steps: unknown[] }).steps)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Onslaught (Blade 10, CB p.330): "When you successfully make an attack with your weapon, you never deal damage beneath a
+ * target's Major damage threshold (the target always marks a minimum of 2 Hit Points)." User answer 2026-10-22 (bead
+ * dcm-bxp.99.23): the floor applies to any weapon-damage hit, cards attacking with the weapon's damage included (CA4b
+ * applied it to plain attacks in `resolveAttack`). A Minor hit on an enemy the use hit becomes Major: one more HP.
+ */
+export function withOnslaught(plan: RunPlan, sheet: CharacterSheet, use: CardUse): RunPlan {
+  if (!sheet.domainCards.loadout.includes("onslaught") || !plan.success || !dealsWeaponDamage(use.steps)) return plan;
+  const missed = new Set(plan.hits.filter((h) => !h.hit).map((h) => h.id));
+  let creatures = plan.creatures;
+  const steps = plan.steps.map((s): PlanStep => {
+    if (s.kind !== "damage" || s.result.severity !== "minor" || missed.has(s.result.targetId)) return s;
+    const r = s.result;
+    const extra = Math.min(1, Math.max(0, r.after.hpMax - r.after.hp));
+    const hp = r.after.hp + extra;
+    const defeated = r.after.defeated || hp >= r.after.hpMax;
+    creatures = creatures.map((c) => (c.id === r.targetId ? { ...c, after: { ...c.after, hp: Math.min(c.after.hpMax, c.after.hp + extra), defeated: c.after.defeated || c.after.hp + extra >= c.after.hpMax } } : c));
+    return { ...s, result: { ...r, severity: "major", hpMarked: r.hpMarked + extra, defeated, after: { ...r.after, hp, defeated } } };
+  });
+  return { ...plan, steps, creatures };
 }
 
 /** The map tokens of runner ids (the actor's id is its own token). */

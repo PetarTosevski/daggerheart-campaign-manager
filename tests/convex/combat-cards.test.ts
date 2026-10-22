@@ -442,3 +442,67 @@ describe("combatCards: one card per domain end to end", () => {
     });
   }
 });
+
+describe("AA2b: card damage to another PC, Onslaught on card attacks", () => {
+  allowWorldEmails();
+
+  const WALL = { spell: "wall-of-flame-cross", choices: [{ id: "situations", value: ["A creature passes through your Wall of Flame"] }] };
+  const hitRows = (a: Awaited<ReturnType<typeof arena>>) => a.t.run(async (ctx) => (await ctx.db.query("combatRequests").collect()).filter((h) => h.kind === "incomingHit"));
+
+  it("card damage to an ally opens the same incoming hit (user answer 2026-10-22): the ally answers, the hit resolves; undo reverts it", async () => {
+    const a = await arena();
+    await a.holding(["book-of-grynn"]);
+    await a.edit(() => ({ hp: 0, armorMarked: 0, armorId: "chainmail-armor" }), a.w.characterB);
+    const other = a.w.as("otherPlayer");
+    const r = resolved(await a.use(a.player, "book-of-grynn", [a.bryn], WALL));
+    // No manual "mark it on the sheet" prompt: the damage waits in Bryn's reaction window.
+    expect(r.prompts.filter((p) => p.kind === "pcDamage")).toEqual([]);
+    const [hit] = await hitRows(a);
+    expect(hit!.payload.kind === "incomingHit" && hit!.payload.attacker).toEqual({ kind: "pc", characterId: a.w.characterA, label: "Ash", cardId: "book-of-grynn", feature: "Book of Grynn" });
+    expect(hit!.payload.kind === "incomingHit" && hit!.payload.targetCharacterId).toBe(a.w.characterB);
+    expect(hit!.status).toBe("open");
+    const windows = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    expect(windows[0]).toMatchObject({ requestId: hit!._id, attackerCharacterId: a.w.characterA, attackerLabel: "Ash", targetName: "Bryn" });
+    expect("instanceId" in windows[0]!).toBe(false);
+    // Ash doesn't answer their own card's hit; Bryn sees their own numbers.
+    expect(await a.player.query(api.adversaryActions.pending, { campaignId: a.campaignId, characterId: a.w.characterA })).toEqual([]);
+    const [view] = await other.query(api.adversaryActions.pending, { campaignId: a.campaignId, characterId: a.w.characterB });
+    expect(view).toMatchObject({ requestId: hit!._id, role: "target", attackerLabel: "Ash", maxSlots: 1 });
+    const answer = await other.mutation(api.adversaryActions.respond, { campaignId: a.campaignId, requestId: hit!._id, characterId: a.w.characterB, choice: { kind: "noArmor" }, idempotencyKey: key() });
+    expect(answer.status).toBe("resolved");
+    expect((await a.sheet(a.w.characterB)).hp).toBeGreaterThan(0);
+    const all = await a.rows();
+    const took = all.find((row) => row.characterId === a.w.characterB && row.summary.startsWith("Bryn took Ash's hit"));
+    expect(took?.groupId).toBe(all.find((row) => row._id === r.entryId)!.groupId);
+    // The card use's undo takes the hit back with it.
+    await a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
+    expect((await a.sheet(a.w.characterB)).hp).toBe(0);
+  });
+
+  it("undoing a card use with the ally's hit still open declines the hit", async () => {
+    const a = await arena();
+    await a.holding(["book-of-grynn"]);
+    await a.edit(() => ({ hp: 0, armorMarked: 0, armorId: "chainmail-armor" }), a.w.characterB);
+    const r = resolved(await a.use(a.player, "book-of-grynn", [a.bryn], WALL));
+    const [hit] = await hitRows(a);
+    expect(hit!.status).toBe("open");
+    await a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
+    expect((await a.t.run((ctx) => ctx.db.get("combatRequests", hit!._id)))!.status).toBe("declined");
+    expect((await a.sheet(a.w.characterB)).hp).toBe(0);
+  });
+
+  it("Onslaught (CB p.330): a card attacking with the weapon's damage never deals beneath Major (user answer 2026-10-22)", async () => {
+    const a = await arena();
+    const plain = await a.enemy("Bandit", 6, 10);
+    await a.holding(["whirlwind"]);
+    resolved(await a.use(a.player, "whirlwind", [plain.tokenId]));
+    expect((await a.instance(plain.instanceId)).hp).toBe(1);
+
+    const b = await arena();
+    const bandit = await b.enemy("Bandit", 6, 10);
+    await b.holding(["whirlwind", "onslaught"]);
+    resolved(await b.use(b.player, "whirlwind", [bandit.tokenId]));
+    expect((await b.instance(bandit.instanceId)).hp).toBe(2);
+    expect((await b.rows()).find((row) => row.visibility === "gm")!.summary).toMatch(/Major/);
+  });
+});

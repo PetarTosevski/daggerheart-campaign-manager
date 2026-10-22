@@ -105,6 +105,10 @@ export interface PassiveSummary {
   attackDamageType?: DamageType;
   /** Card flags on self (flying, cannotBeRestrained, …) and any other self mod as is. */
   flags: string[];
+  /** AA2b (bead dcm-vv2 3): rolls it makes with advantage (`advantage` self mods: Aquatic Attacker, Out of Nowhere). */
+  advantage?: RollFilter[];
+  /** AA2b: rolls made against it with disadvantage (`disadvantageAgainst` self mods: Wind Lord). */
+  disadvantageAgainst?: RollFilter[];
   /** Mods and condition auras on others, for the server to show or apply. */
   auras: Extract<AdversaryModifier, { kind: "mod" | "conditionAura" }>[];
 }
@@ -112,9 +116,15 @@ export interface PassiveSummary {
 const LEVELS: readonly ResistanceLevel[] = ["none", "resistant", "immune"];
 const stronger = (a: ResistanceLevel, b: ResistanceLevel) => (LEVELS.indexOf(b) > LEVELS.indexOf(a) ? b : a);
 
-/** A minimal number environment for passives and prompts: tokens, Fear, the adversary's tracks; no PC traits. */
-export function adversaryNumberEnv(s: Pick<AdversaryState, "hp" | "stress" | "tokens">, tier: 1 | 2 | 3 | 4, gmFear = 0): NumberEnv {
+/**
+ * A minimal number environment for passives, costs and prompts: tokens, Fear, the adversary's tracks; no PC traits.
+ * AA2b (beads dcm-vv2 7 / 9, dcm-yle): `extra` carries what the use knows: the trigger's amount (My Turn's Fear,
+ * Summoning Ritual's tick), the latest roll (To Me, My Pretties' summon count) and the target counts (Endless Legions).
+ */
+export function adversaryNumberEnv(s: Pick<AdversaryState, "hp" | "stress" | "tokens">, tier: 1 | 2 | 3 | 4, gmFear = 0, extra: Partial<Pick<NumberEnv, "triggerAmount" | "lastRoll" | "targetCount">> = {}): NumberEnv {
   return {
+    ...(extra.triggerAmount !== undefined ? { triggerAmount: extra.triggerAmount } : {}),
+    ...(extra.lastRoll !== undefined ? { lastRoll: extra.lastRoll } : {}),
     traits: { agility: 0, strength: 0, finesse: 0, instinct: 0, presence: 0, knowledge: 0 },
     spellcast: 0,
     proficiency: 1,
@@ -126,11 +136,14 @@ export function adversaryNumberEnv(s: Pick<AdversaryState, "hp" | "stress" | "to
     gmFear,
     self: { hp: s.hp, stress: s.stress },
     markedThisMove: { self: {}, byTarget: {} },
-    targetCount: { picked: 0, hit: 0, failedSave: 0 },
+    targetCount: extra.targetCount ?? { picked: 0, hit: 0, failedSave: 0 },
     loadoutDomains: [],
     vaultDomains: [],
   };
 }
+
+/** A dice text's modifier: "+2", "-1" (bead dcm-vv2 4: Will-o'-the-Wisps' Horde (1d4-1) once read "1d4+-1"), "" for 0. */
+const plusText = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `${n}` : "");
 
 /** Every `passive` use whose requirements hold. */
 export function activePassives(effects: readonly AdversaryFeatureEffect[], s: AdversaryState): { effect: AdversaryFeatureEffect; use: AdversaryFeatureUse }[] {
@@ -148,8 +161,9 @@ export function activePassives(effects: readonly AdversaryFeatureEffect[], s: Ad
  * direct attacks, standard-attack damage changes, flags and auras. Dice in a passive's number are rolled with `rng`
  * (none in the SRD; a fixed 1 is used without one).
  */
-export function passiveSummary(effects: readonly AdversaryFeatureEffect[], s: AdversaryState, tier: 1 | 2 | 3 | 4 = 1, rng: Rng = () => 1): PassiveSummary {
-  const env = adversaryNumberEnv(s, tier);
+export function passiveSummary(effects: readonly AdversaryFeatureEffect[], s: AdversaryState, tier: 1 | 2 | 3 | 4 = 1, rng: Rng = () => 1, gmFear = 0): PassiveSummary {
+  // AA2b (bead dcm-vv2 6): the GM's Fear now (The Beast Unleashed, Terror-Fueled read it).
+  const env = adversaryNumberEnv(s, tier, gmFear);
   const n = (src: Parameters<typeof resolveNumber>[0]) => resolveNumber(src, env, rng);
   const out: PassiveSummary = {
     attackBonus: 0,
@@ -161,6 +175,8 @@ export function passiveSummary(effects: readonly AdversaryFeatureEffect[], s: Ad
     directAttacks: false,
     attackDamageAdd: 0,
     flags: [],
+    advantage: [],
+    disadvantageAgainst: [],
     auras: [],
   };
   const selfMod = (m: Mod) => {
@@ -172,6 +188,8 @@ export function passiveSummary(effects: readonly AdversaryFeatureEffect[], s: Ad
       if (m.type !== "physical") r.magic = stronger(r.magic, m.level);
       out.resistance = r;
     } else if (m.kind === "flag") out.flags.push(m.flag);
+    else if (m.kind === "advantage") (out.advantage ??= []).push(m.on);
+    else if (m.kind === "disadvantageAgainst") (out.disadvantageAgainst ??= []).push(m.on);
   };
   for (const { use } of activePassives(effects, s)) {
     for (const mod of use.modifiers ?? []) {
@@ -185,7 +203,7 @@ export function passiveSummary(effects: readonly AdversaryFeatureEffect[], s: Ad
           out.horde =
             d.kind === "flat"
               ? String(n(d.amount))
-              : `${n(d.dice.count)}d${d.dice.sides}${d.dice.plus ? `+${n(d.dice.plus)}` : ""}`;
+              : `${n(d.dice.count)}d${d.dice.sides}${plusText(d.dice.plus ? n(d.dice.plus) : 0)}`;
           break;
         }
         case "minion":

@@ -11,7 +11,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { cardChoicesValidator, cardRollValidator, dropDice, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll, type DiceSlot } from "./lib/cardChoices";
 import { handCardValidator, handOf } from "./lib/cardHand";
-import { damageRolls, gmLines, instanceWrites, needsChoiceValidator, pendingCardValidator, promptsOf, publicTargets, resolvedCardValidator, rollText, writeInstances, type ResolvedCard } from "./lib/cardRows";
+import { damageRolls, gmLines, instanceWrites, needsChoiceValidator, openCardHits, pendingCardValidator, promptsOf, publicTargets, resolvedCardValidator, rollText, writeInstances, type ResolvedCard } from "./lib/cardRows";
 import { actorSheetAfter, buildRun, difficultyOf, pickCard, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type RunOutcome } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { attackScene, type AttackScene } from "./lib/combatActions";
@@ -146,7 +146,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   let next = actorSheetAfter(built.paidSheet, plan, actorToken, pick.name);
   const healed = siphonHeal(plan);
   if (healed > 0) next = { ...next, hp: Math.max(0, next.hp - healed) };
-  const prompts = promptsOf(plan, built).filter((p) => !(healed > 0 && p.kind === "manual" && p.text.startsWith("You clear a number of Hit Points")));
+  let prompts = promptsOf(plan, built).filter((p) => !(healed > 0 && p.kind === "manual" && p.text.startsWith("You clear a number of Hit Points")));
 
   // Allies: tracks from the plan's creatures, Hope / effects / conditions from its steps.
   const allyRows: { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }[] = [];
@@ -221,6 +221,9 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: plan.roll.record.outcome, actorId });
   }
 
+  // AA2b: card damage to another PC opens their incoming hit (armor, ally reactions) instead of a manual prompt.
+  const hitTokens = await openCardHits(ctx, { plan, built, campaignId: campaign._id, groupId, actorId, attacker: { characterId: character._id, label: sheet.name, cardId: plan.cardId, feature: pick.name } });
+  prompts = prompts.filter((p) => !(p.kind === "pcDamage" && p.tokenIds.every((t) => hitTokens.has(t))));
   const minionOffer = await offerMinions(ctx, req, built, plan, { groupId, entryId, actorId });
   await dropDice(ctx, slotOf(req));
   return {
