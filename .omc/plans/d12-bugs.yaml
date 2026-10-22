@@ -157,3 +157,42 @@ waves:
           - "e2e: a signed-in GM on a campaign page whose session is revoked server-side (delete the auth session row via a test-only path that already exists, or expire it) ends on /signin with next set, signs in and is back on the page; no redirect loop; at 1440 and 390"
           - "auth-single-run.spec.ts still passes (B3's retry and PF3's single Authenticate kept)"
           - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
+  - wave: 3
+    tracers:
+      - id: B6
+        title: D12 follow-ups - drop the authz pending field, rename the test-sign-in email, unique jti on access tokens
+        size: S
+        # USER (2026-10-22): "finish the 3 small d12 followups" = dcm-bxp.119, dcm-bxp.124, dcm-bxp.125.
+        # Also (B5 Q2, orchestrator default): auth-session-ended.spec gets its own password-only account instead of
+        #   borrowing players.spec's.
+        goal: Close dcm-bxp.119, .124 and .125 with no behaviour change except distinct tokens.
+        depends_on: [B1, B3, B5]
+        owns:
+          - tests/convex/authz/**
+          - tests/convex/authz-matrix.test.ts
+          - tests/convex/authz-synth.test.ts
+          - tests/convex/unauthenticated-sweep.test.ts
+          - docs/tasks/TASK-D12-H0.md
+          - docs/testing.md
+          - scripts/e2e-setup.mjs
+          - tests/e2e/lorekeeper-shell.spec.ts
+          - tests/e2e/notes-sharing.spec.ts
+          - tests/e2e/notes-shell.spec.ts
+          - tests/e2e/notes-flow.spec.ts
+          - tests/e2e/notes-journals.spec.ts
+          - tests/e2e/visual/D11-N6.spec.ts
+          - tests/e2e/auth-session-ended.spec.ts
+          - convex/auth.ts
+          - tests/convex/auth-jti.test.ts
+          - docs/tasks/TASK-BUG-B6.md
+        reads:
+          - docs/tasks/TASK-D12-H24.md
+          - docs/tasks/TASK-BUG-120.md
+          - docs/tasks/TASK-BUG-123.md
+          - docs/tasks/TASK-BUG-B5.md
+          - node_modules/@convex-dev/auth/**
+        acceptance:
+          - "dcm-bxp.119: `pending` is gone from the Area type, every *.entries.ts, the harness, authz-synth, the unauthenticated sweep and the docs; the inventory guard still fails a public function without an entry (self-test kept)"
+          - "dcm-bxp.124: e2e-password@example.test is renamed (e.g. e2e-player2@example.test) in the specs, scripts/e2e-setup.mjs and docs/testing.md; auth-session-ended.spec uses its own allowlisted password-only email; the one-email-per-sign-in-method table in docs/testing.md is current"
+          - "dcm-bxp.125: access tokens carry a random `jti` (convexAuth jwt.customClaims or the library's supported hook), so two tokens minted for one session in the same second differ; a convex test proves it; B3's client retry stays"
+          - "pnpm lint, typecheck, vitest pass; on a fresh e2e backend the renamed specs plus auth-single-run, auth-session-ended and players pass; tracer-guard passes"
