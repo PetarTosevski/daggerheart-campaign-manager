@@ -1,10 +1,11 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, usePreloadedQuery, useQuery, type Preloaded } from "convex/react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BookOpen, Users } from "lucide-react";
-import { createContext, memo, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { BackLink, Wordmark } from "@/components/brand/brand";
 import { Modal } from "@/components/brand/modal";
@@ -290,9 +291,81 @@ export function CampaignSectionLoading({ label = "Loading page" }: { label?: str
 const MemoTome = memo(CampaignTome);
 const MemoPlayersDialog = memo(PlayersDialog);
 
-/** Shared campaign chrome from the dashboard boards: art header and section nav. */
-export function CampaignShell({ campaignId, children }: { campaignId: string; children: ReactNode }) {
-  const campaign = useQuery(api.campaigns.get, { campaignId });
+/** `campaigns.get` as the campaign layout preloads it on the server (PF4, CL5). */
+export type PreloadedCampaign = Preloaded<typeof api.campaigns.get>;
+
+type ShellProps = { campaignId: string; preloaded: PreloadedCampaign | null; children: ReactNode };
+
+/**
+ * Shared campaign chrome from the dashboard boards: art header and section nav. With the layout's preloaded summary the
+ * shell renders the campaign at once (on the server and at hydration) and keeps it live through the same subscription;
+ * without it (the server read failed) it reads the campaign on the client and shows the skeleton meanwhile.
+ */
+export function CampaignShell({ campaignId, preloaded, children }: ShellProps) {
+  return preloaded ? (
+    <PreloadedCampaignShell preloaded={preloaded}>{children}</PreloadedCampaignShell>
+  ) : (
+    <LiveCampaignShell campaignId={campaignId}>{children}</LiveCampaignShell>
+  );
+}
+
+function PreloadedCampaignShell({ preloaded, children }: { preloaded: PreloadedCampaign; children: ReactNode }) {
+  return <CampaignShellView campaign={useSameContent(usePreloadedQuery(preloaded))}>{children}</CampaignShellView>;
+}
+
+/**
+ * Keeps the previous summary while nothing a campaign page reads has changed, so `useCampaign()` readers do not all
+ * re-render for nothing right after a load: the first live `campaigns.get` result is a new object equal to the preloaded
+ * one, and the shell's own `markOpened` write changes only `lastOpenedAt` (read by Load Campaign, not by any campaign
+ * page). Real changes pass through in the same render, so the not-found switch still wins over the page's own failing
+ * queries.
+ */
+function useSameContent(value: CampaignSummary | null): CampaignSummary | null {
+  const [kept, setKept] = useState(value);
+  if (kept !== value && pageContent(kept) !== pageContent(value)) {
+    setKept(value);
+    return value;
+  }
+  return kept;
+}
+
+function pageContent(summary: CampaignSummary | null): string {
+  return JSON.stringify(summary === null ? null : { ...summary, lastOpenedAt: 0 });
+}
+
+/** The shell while the campaign summary loads: the header band and the page skeleton. */
+export function CampaignShellLoading() {
+  return (
+    <div className="min-h-screen bg-[#0d1417] font-sans text-[#e6ecea]">
+      <div aria-hidden="true" className="h-[92px] border-b border-[#1c272b] bg-[#101a1d]" />
+      <CampaignSectionLoading label="Loading campaign" />
+    </div>
+  );
+}
+
+const noSubscription = () => () => undefined;
+
+/**
+ * False in the server render and during hydration, true from then on (and at once on client navigations). The shell
+ * keeps the page out of the server HTML and renders it right after hydration, in the same task, so its queries still
+ * go out with campaigns.get. Server-rendered, the page would sit in a streamed Suspense boundary that React reveals up
+ * to 300 ms later; any context change above it meanwhile (Convex auth confirming, for one) makes React drop that HTML
+ * and render the page again, with both copies in the DOM for a moment. Its art would also compete with the scripts for
+ * bandwidth before hydration.
+ */
+function useHydrated(): boolean {
+  return useSyncExternalStore(
+    noSubscription,
+    () => true,
+    () => false,
+  );
+}
+
+function LiveCampaignShell({ campaignId, children }: { campaignId: string; children: ReactNode }) {
+  return <CampaignShellView campaign={useQuery(api.campaigns.get, { campaignId })}>{children}</CampaignShellView>;
+}
+
+function CampaignShellView({ campaign, children }: { campaign: CampaignSummary | null | undefined; children: ReactNode }) {
   const markOpened = useMutation(api.campaigns.markOpened);
   const pathname = usePathname();
   const [playersOpen, setPlayersOpen] = useState(false);
@@ -300,20 +373,14 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
   const openOverview = useCallback(() => setTomeChapter("overview"), []);
   const closeTome = useCallback(() => setTomeChapter(null), []);
   const closePlayers = useCallback(() => setPlayersOpen(false), []);
+  const hydrated = useHydrated();
 
   const foundId = campaign ? campaign._id : null;
   useEffect(() => {
     if (foundId) void markOpened({ campaignId: foundId }).catch(() => undefined);
   }, [foundId, markOpened]);
 
-  if (campaign === undefined) {
-    return (
-      <div className="min-h-screen bg-[#0d1417] font-sans text-[#e6ecea]">
-        <div aria-hidden="true" className="h-[92px] border-b border-[#1c272b] bg-[#101a1d]" />
-        <CampaignSectionLoading label="Loading campaign" />
-      </div>
-    );
-  }
+  if (campaign === undefined) return <CampaignShellLoading />;
   if (campaign === null) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-5 bg-[#0d1417] p-6 text-center text-parchment">
@@ -333,11 +400,19 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
       <OpenTomeContext.Provider value={setTomeChapter}>
       <div className="relative min-h-screen overflow-hidden bg-[#0d1417] font-sans text-[#e6ecea]">
         <section aria-label="Campaign header" className="relative overflow-hidden">
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 bg-cover bg-no-repeat"
-            style={{ backgroundImage: art.image, backgroundPosition: art.position }}
-          />
+          {art.src ? (
+            // The header art is the page's LCP element (CL10): resized and re-encoded by next/image, and preloaded
+            // (`preload` is Next 16's name for the deprecated `priority`).
+            <Image
+              src={art.src}
+              alt=""
+              fill
+              preload
+              sizes="100vw"
+              className="object-cover"
+              style={{ objectPosition: art.position }}
+            />
+          ) : null}
           <div aria-hidden="true" className="absolute inset-0 bg-[rgb(6_12_14/0.62)]" />
           <div className="relative mx-auto flex max-w-[1344px] flex-wrap items-center justify-between gap-4 px-4 pt-[22px] pb-6 sm:px-12">
             <div className="flex flex-wrap items-center gap-[18px]">
@@ -367,7 +442,8 @@ export function CampaignShell({ campaignId, children }: { campaignId: string; ch
             <DashboardHero campaign={campaign} onOpenTome={openOverview} />
           ) : null}
         </section>
-        {children}
+        {/* The page renders from hydration on, not into the server HTML (see useHydrated). */}
+        {hydrated ? children : <CampaignSectionLoading />}
         <MemoTome campaign={campaign} chapter={tomeChapter} onChapter={setTomeChapter} onClose={closeTome} />
         {campaign.role === "gm" ? (
           <MemoPlayersDialog campaignId={campaign._id} open={playersOpen} onClose={closePlayers} />

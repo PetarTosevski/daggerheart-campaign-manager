@@ -68,7 +68,7 @@ const observe = (ms: number) => new Promise<void>((resolve) => setTimeout(resolv
 
 /** The server accepts the page's current identity: a GM-only mutation round-trips. */
 async function expectFearWorks(page: Page) {
-  const fear = page.getByTestId("fear-value");
+  const fear = page.getByRole("region", { name: "GM Fear" }).getByTestId("fear-value");
   await page.getByRole("button", { name: "Fear 5 of 12" }).click();
   await expect(fear).toHaveText("V");
   await page.getByRole("button", { name: "Fear 5 of 12" }).click();
@@ -82,7 +82,7 @@ test("a hard load of a campaign sends one Authenticate and no token refresh", as
   const seen = watchAuth(page);
   await page.goto(url);
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
-  await expect(page.getByTestId("fear-value")).toBeVisible();
+  await expect(page.getByRole("region", { name: "GM Fear" }).getByTestId("fear-value")).toBeVisible();
   // A negative assertion over the acceptance window (the first 5 s): there is
   // no event that says "no refresh is coming". The old behavior refreshed
   // about 0.3-1 s after the first queries.
@@ -185,7 +185,8 @@ test("a refresh that returns the rejected token again is retried once", async ({
   await page.goto(url);
 
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible({ timeout: 15_000 });
-  expect(sameTokenServed).toBe(true);
+  // The heading is server-rendered since PF4 (the layout preloads the campaign), so it no longer waits for the refresh.
+  await expect.poll(() => sameTokenServed, { timeout: 15_000 }).toBe(true);
   await expect.poll(() => seen.authPosts.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
   const users = seen.auths.filter((a) => a.tokenType === "User").map((a) => a.value);
   expect(users.at(-1)).not.toBe(cached);
