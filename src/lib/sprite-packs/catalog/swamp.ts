@@ -29,7 +29,8 @@ export const SWAMP = defineFolder("swamp", {
     obj("bog pool", "none", "flat", "rock", { move: "difficult", standIn: false }),
     obj("giant lily pad", "none", "flat", "bush", { standIn: false }),
     long("rotting log", "cover", "low", "log", { move: "difficult" }),
-    obj("witch's cauldron", "cover", "low", "barrel", { standIn: false }),
+    // dcm-bxp.90 (user 2026-10-22, Q-P1-1): the witch's cauldron glows faintly.
+    obj("witch's cauldron", "cover", "low", "barrel", { light: "faintglow", standIn: false }),
     long("broken boardwalk (two squares)", "none", "flat", "log", { move: "open", standIn: false }),
   ],
   terrain: [

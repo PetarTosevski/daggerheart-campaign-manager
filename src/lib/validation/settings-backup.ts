@@ -21,8 +21,18 @@ export const NOT_A_BACKUP =
   "That doesn’t look like a settings backup. Paste the full text you copied from “Show backup”.";
 export const NEWER_BACKUP = "That backup comes from a newer version of the app. Update the app and try again.";
 
+/** The two map styles (convex/lib/validators/combatMaps.ts `MAP_STYLES`). */
+const mapStyle = z.enum(["classic", "sprites"]);
+
+/**
+ * Version 1, widened (rule 7: widen, no migration needed for pasted text): `defaultMapStyle` (dcm-bxp.89) is optional, so
+ * a backup made before it existed still restores (and puts new maps back to Classic).
+ */
 const backupSettingsV1 = settingsSchema
-  .extend({ expansions: z.object({ hopeAndFear: z.boolean().optional() }).strict() })
+  .extend({
+    expansions: z.object({ hopeAndFear: z.boolean().optional() }).strict(),
+    defaultMapStyle: mapStyle.optional(),
+  })
   .strict();
 
 type BackupSettings = z.infer<typeof backupSettingsV1>;
@@ -81,11 +91,13 @@ export type SettingsView = {
   gmName: string;
   accent: string;
   expansions: { hopeAndFear?: boolean };
+  /** The style new blank maps get (dcm-bxp.89); absent = Classic. */
+  defaultMapStyle?: "classic" | "sprites";
 };
 
 /** The text "Show backup" puts in the textarea. */
 export function settingsBackupText(settings: SettingsView): string {
-  const { tableName, gmName, accent, expansions } = settings;
+  const { tableName, gmName, accent, expansions, defaultMapStyle } = settings;
   return JSON.stringify({
     daggerheartBackup: BACKUP_FORMAT,
     kind: "settings",
@@ -95,6 +107,7 @@ export function settingsBackupText(settings: SettingsView): string {
       gmName,
       accent,
       expansions: expansions.hopeAndFear === undefined ? {} : { hopeAndFear: expansions.hopeAndFear },
+      ...(defaultMapStyle === undefined ? {} : { defaultMapStyle }),
     },
   });
 }

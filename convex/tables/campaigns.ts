@@ -2,6 +2,7 @@ import { defineTable } from "convex/server";
 import { v } from "convex/values";
 
 import { customFrameValidator, frameIdValidator, tomeValidator } from "../lib/validators/campaigns";
+import { mapStyleValidator } from "../lib/validators/combatMaps";
 
 export { customFrameValidator, frameIdValidator };
 
@@ -96,5 +97,7 @@ export const campaignTables = {
     accent: v.string(),
     /** XS1: defaults for new campaigns; an unset key keeps each frame's own default. */
     expansions: v.optional(v.object({ hopeAndFear: v.optional(v.boolean()) })),
+    /** dcm-bxp.89: the style new blank maps get (Settings slider); absent = Classic. Existing maps keep theirs (E3). */
+    defaultMapStyle: v.optional(mapStyleValidator),
   }).index("by_owner", ["ownerId"]),
 };

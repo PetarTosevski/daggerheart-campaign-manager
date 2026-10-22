@@ -29,6 +29,14 @@ describe("settings backup text (H17)", () => {
     expect(parseSettingsBackup(settingsBackupText(unset))).toEqual(unset);
   });
 
+  it("carries the default map style when set, and still reads a backup without it (dcm-bxp.89, widened v1)", () => {
+    const sprites = { ...settings, defaultMapStyle: "sprites" as const };
+    expect(JSON.parse(settingsBackupText(sprites)).settings.defaultMapStyle).toBe("sprites");
+    expect(parseSettingsBackup(settingsBackupText(sprites))).toEqual(sprites);
+    expect(parseSettingsBackup(backup(settings)).defaultMapStyle).toBeUndefined();
+    expect(readSettingsBackup(backup({ ...settings, defaultMapStyle: "pixel" }))).toEqual({ ok: false, message: NOT_A_BACKUP });
+  });
+
   it("trims names like the settings form", () => {
     expect(parseSettingsBackup(backup({ ...settings, tableName: "  Crew  " })).tableName).toBe("Crew");
   });

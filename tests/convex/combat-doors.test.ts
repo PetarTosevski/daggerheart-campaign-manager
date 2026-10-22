@@ -9,7 +9,8 @@ import { errorCode, errorData, key, setupWithCampaign, useAllowlist } from "./he
 // Map movement M2 (plan .omc/plans/map-movement.yaml): doors open and close (D7, D8). combatVision.doors lists the doors
 // the caller may switch; combatVision.toggleDoor opens or closes one: the GM always, a player only on the live map and
 // only a door one of their characters has seen (else COMBAT_OBJECT_NOT_FOUND, as if it were not there) and only from
-// Melee (plan d12-bugs B4: one of their character tokens within 1 square of the door, else COMBAT_OUT_OF_REACH). A closed
+// Melee (plan d12-bugs B4: a token within 1 square of the door, of a character who has seen it (dcm-bxp.130), else
+// COMBAT_OUT_OF_REACH). A closed
 // door blocks movement (combatTokens.move), a closed solid door blocks sight (playerView), an open one does neither.
 
 type Setup = Awaited<ReturnType<typeof setupWithCampaign>>;
@@ -170,6 +171,34 @@ describe("combat doors: access", () => {
     await f.place(f.ashToken, 5, 10, 0);
     expect(await reachOf(f.gm)).toBe(true);
     expect(await toggle(f.gm, false)).toEqual({ open: false });
+  });
+
+  it("the character next to the door must be one who has seen it (dcm-bxp.130): Ash's sight and Cole's reach don't add up", async () => {
+    const f = await withDoorway();
+    const { campaignId } = f;
+    const door = await f.addObject({ kind: "door", x: 10.5, y: 10.5 });
+    // The player's second character, Cole, stands next to the door with his back to it and has explored nothing;
+    // Ash sees the door from (5, 10), 5 squares away.
+    // XC1: the GM allows extra characters for the running session, so the player may play two.
+    await f.gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+    await f.gm.mutation(api.sessions.allowExtraCharacters, { campaignId, allow: true, idempotencyKey: key() });
+    const { characterId: cole } = await f.player.mutation(api.characters.create, { campaignId, draft: draft("Cole"), idempotencyKey: key() });
+    const coleToken = await f.t.run(async (c) => {
+      const { _id, _creationTime, ...fields } = (await c.db.get("combatTokens", f.ashToken))!;
+      void _id;
+      void _creationTime;
+      return c.db.insert("combatTokens", { ...fields, ref: { kind: "pc", characterId: cole } });
+    });
+    await f.place(coleToken, 9, 10, Math.PI);
+    const toggle = () => f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: true });
+    const reachOf = async () => ((await f.player.query(api.combatVision.doors, { campaignId }))?.doors ?? []).find((d) => d._id === door)?.reach;
+    expect(await reachOf()).toBe(false);
+    expect(await code(toggle())).toBe("COMBAT_OUT_OF_REACH");
+    expect((await f.objectRow(door))?.open).toBeUndefined();
+    // Cole turns round and sees the door himself: he may open it.
+    await f.place(coleToken, 9, 10, 0);
+    expect(await reachOf()).toBe(true);
+    expect(await toggle()).toEqual({ open: true });
   });
 
   it("INVALID for a non-door (GM, and a player who has seen it); not-live maps and bad ids are refused", async () => {

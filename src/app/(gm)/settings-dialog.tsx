@@ -133,7 +133,7 @@ function SavedData({ settings, onReplaced }: { settings: SettingsView; onReplace
           className="flex flex-wrap items-center gap-2.5 rounded-[10px] border border-[#8e2b2b] bg-[#2a1012] p-3.5"
         >
           <span id="set-reset-text" className="flex-[1_1_240px] text-[14px] text-[#ffd9d6]">
-            Put your table name, name, accent colour and expansion defaults back to their defaults? Your campaigns
+            Put your table name, name, accent colour, expansion defaults and map style back to their defaults? Your campaigns
             are not affected.
           </span>
           <button
@@ -153,6 +153,61 @@ function SavedData({ settings, onReplaced }: { settings: SettingsView; onReplace
           </button>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+type MapStyle = "classic" | "sprites";
+
+/**
+ * "Maps": the style new blank maps get (dcm-bxp.89, user 2026-10-21: a slider Classic / Sprites, Classic by default).
+ * One intent (the style) per click, shown at once by the optimistic update; existing maps keep their own style and
+ * switch on the Combat Map header.
+ */
+function MapStyleSlider({ style, onError }: { style: MapStyle; onError: (message: string | null) => void }) {
+  const update = useMutation(api.settings.update).withOptimisticUpdate((store, args) => {
+    const current = store.getQuery(api.settings.get, {});
+    if (current && args.defaultMapStyle) store.setQuery(api.settings.get, {}, { ...current, defaultMapStyle: args.defaultMapStyle });
+  });
+  const sprites = style === "sprites";
+  const choose = (next: MapStyle) => {
+    if (next === style) return;
+    onError(null);
+    update({ defaultMapStyle: next }).catch((e) => onError(errorMessage(e)));
+  };
+  return (
+    <section aria-labelledby="set-maps" className="flex flex-col gap-2.5">
+      <SectionTitle id="set-maps">Maps</SectionTitle>
+      <span id="set-map-style" className="text-[14px]">
+        Style of new maps <span className="text-muted-text">· existing maps keep theirs</span>
+      </span>
+      <div className="flex min-h-11 items-center gap-3 text-[14px]">
+        <span aria-hidden="true" className={sprites ? "text-muted-text" : "font-semibold text-parchment"}>
+          Classic
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={sprites}
+          aria-labelledby="set-map-style"
+          aria-describedby="set-map-style-value"
+          data-testid="default-map-style"
+          onClick={() => choose(sprites ? "classic" : "sprites")}
+          className="relative h-7 w-14 flex-none cursor-pointer rounded-full border border-line-2 bg-[#1d1a27]"
+        >
+          <span
+            aria-hidden="true"
+            className="absolute top-[3px] size-5 rounded-full bg-brand transition-[left] duration-150"
+            style={{ left: sprites ? "calc(100% - 23px)" : "3px" }}
+          />
+        </button>
+        <span aria-hidden="true" className={sprites ? "font-semibold text-parchment" : "text-muted-text"}>
+          Sprites
+        </span>
+        <span id="set-map-style-value" className="sr-only">
+          {sprites ? "Sprites" : "Classic"}
+        </span>
+      </div>
     </section>
   );
 }
@@ -266,6 +321,8 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               </button>
             ) : null}
           </section>
+
+          <MapStyleSlider style={settings.defaultMapStyle} onError={setError} />
 
           <SavedData
             settings={settings}

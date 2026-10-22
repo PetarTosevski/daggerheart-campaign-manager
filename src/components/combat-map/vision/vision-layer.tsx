@@ -240,11 +240,12 @@ export function VisionLayer(props: MapLayerProps) {
 
   // ---- lights the viewer may switch (R9): the GM every campfire and wall torch; a player those seen or explored.
   // Uploaded sprites' light comes from their rows (`spriteSources`, read only when the map has uploaded refs).
-  // A player switches only from Melee (plan d12-bugs B4): their character tokens (`canMove`) measured as the server does.
+  // A player switches only from Melee (plan d12-bugs B4), and only by a character who has seen it (dcm-bxp.130): the masks
+  // above are the viewing character's, so only that character's tokens (`mine`) count, measured as the server does.
   const lightProps: LightSwitchesProps = {
     objects: editing ? [] : layout.objects,
     visible: (o) => gm || (masks !== null && (maskAt(masks.seen, masks, o.x, o.y) || maskAt(masks.explored, masks, o.x, o.y))),
-    reachFrom: gm ? null : (view?.pcs.filter((t) => t.canMove) ?? []),
+    reachFrom: gm ? null : (view?.pcs.filter((t) => t.mine) ?? []),
     step,
     pad,
     onSwitch: (id, lit) => void actions.setLit(id, lit),

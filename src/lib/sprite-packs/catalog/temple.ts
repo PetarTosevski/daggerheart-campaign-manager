@@ -7,7 +7,8 @@ export const TEMPLE = defineFolder("temple", {
     obj("candle stand", "none", "tall", "crystal", { light: "faintglow" }),
     obj("offering bowl", "none", "low", "barrel", { standIn: false }),
     obj("prayer mat", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
-    obj("incense burner", "none", "low", "barrel", { standIn: false }),
+    // dcm-bxp.90 (user 2026-10-22, Q-P1-1): the incense burner glows faintly.
+    obj("incense burner", "none", "low", "barrel", { light: "faintglow", standIn: false }),
     obj("holy book on a lectern", "cover", "low", "table", { standIn: false }),
     obj("bell", "cover", "low", "barrel", { standIn: false }),
     obj("small statue", "cover", "low", "statue", { standIn: false }),

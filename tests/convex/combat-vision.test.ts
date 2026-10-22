@@ -451,6 +451,32 @@ describe("combat vision: lights and explored areas", () => {
     expect(await toggle(f.gm, false)).toEqual({ lit: false });
   });
 
+  it("the character next to a light must be one who has seen it (dcm-bxp.130): Ash's sight and Cole's reach don't add up", async () => {
+    const f = await withScene();
+    const { campaignId, mapId } = f;
+    const { objectId: fire } = await f.gm.mutation(api.combatMapEdit.addObject, { campaignId, mapId, kind: "campfire", x: 12.5, y: 10.5 });
+    await f.t.run((c) => c.db.patch("combatMapObjects", fire, { lit: false }));
+    // The player's second character, Cole, stands next to the (unlit) campfire with his back to it and has explored
+    // nothing; Ash sees it from (5, 10).
+    // XC1: the GM allows extra characters for the running session, so the player may play two.
+    await f.gm.mutation(api.sessions.start, { campaignId, idempotencyKey: key() });
+    await f.gm.mutation(api.sessions.allowExtraCharacters, { campaignId, allow: true, idempotencyKey: key() });
+    const { characterId: cole } = await f.player.mutation(api.characters.create, { campaignId, draft: draft("Cole"), idempotencyKey: key() });
+    const coleToken = await f.t.run(async (c) => {
+      const { _id, _creationTime, ...fields } = (await c.db.get("combatTokens", f.ashToken))!;
+      void _id;
+      void _creationTime;
+      return c.db.insert("combatTokens", { ...fields, ref: { kind: "pc", characterId: cole } });
+    });
+    await f.place(coleToken, 11, 10, Math.PI);
+    const toggle = () => f.player.mutation(api.combatVision.toggleLight, { campaignId, objectId: fire, lit: true });
+    expect(await code(toggle())).toBe("COMBAT_OUT_OF_REACH");
+    expect((await f.t.run((c) => c.db.get("combatMapObjects", fire)))?.lit).toBe(false);
+    // Cole turns round and sees it himself: he may light it.
+    await f.place(coleToken, 11, 10, 0);
+    expect(await toggle()).toEqual({ lit: true });
+  });
+
   it("a light the player switched stays theirs to switch after they turn away (B4, as dcm-bxp.121 for doors)", async () => {
     const f = await withScene();
     const { campaignId, mapId } = f;
