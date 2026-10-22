@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -507,5 +507,77 @@ describe("rolls: trust (review H2, M1)", () => {
     await p1.mutation(api.rolls.manualRoll, { characterId: a, values: [8, 3], roll: agility, idempotencyKey: key() });
     const again = await p1.mutation(api.rolls.damageRoll, { characterId: a, ...crit, idempotencyKey: key() });
     expect(await summaryOf(t, again.entryId)).toContain("critical (declared)");
+  });
+});
+
+describe("rolls: Weapon Specialist rerolls 1s on Slayer Dice once per long rest (CB 48, dcm-bxp.62)", () => {
+  useAllowlist(EMAILS);
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The server's next d6 results, in order (`rollDie` maps a random word w to w % 6 + 1). */
+  function serverD6(...values: number[]) {
+    const queue = [...values];
+    vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(<T extends ArrayBufferView | null>(buf: T): T => {
+      const next = queue.shift();
+      if (next === undefined) throw new Error("serverD6: no die value left");
+      (buf as unknown as Uint32Array)[0] = next - 1;
+      return buf;
+    });
+  }
+
+  const d6 = { kind: "damage" as const, source: { kind: "dice" as const, dice: [{ count: 1, sides: 6 }] }, critical: false, modifier: 0, options: [] };
+  const attack = { ...agility, attack: true };
+
+  async function slayerAt(rank: CharacterSheet["subclassRank"]) {
+    const s = await setup();
+    await s.edit(s.a, { subclassId: "call-of-the-slayer", subclassRank: rank, proficiency: 4, sessionFeatures: { slayerDice: 4 } });
+    return s;
+  }
+
+  it("a damage roll rerolls each 1 once, marks the use until the long rest and names it in the feed", async () => {
+    const { t, p1, a, sheetOf } = await slayerAt("specialization");
+    serverD6(1, 3, 1, 5, 1);
+    const { entryId, roll } = await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { ...d6, slayerDice: 3 }, values: [4], idempotencyKey: key() });
+    expect(roll.dice.filter((d) => d.role === "extra").map((d) => d.value)).toEqual([5, 3, 1]);
+    expect(roll.total).toBe(4 + 5 + 3 + 1 + roll.modifier);
+    const sheet = await sheetOf(a);
+    expect(sheet.featureUses).toContainEqual({ key: "weaponSpecialistReroll", until: "longRest" });
+    expect(sheet.sessionFeatures?.slayerDice).toBe(1);
+    const row = await t.run((ctx) => ctx.db.get("actionLog", entryId));
+    expect(row!.summary).toContain("Slayer d6 ×3 (5, 3, 1)");
+    expect(row!.summary).toContain("Weapon Specialist: 1 -> 5, 1 -> 1");
+  });
+
+  it("an attack roll rerolls too; once used, later 1s stand until the long rest", async () => {
+    const { p1, a, sheetOf } = await slayerAt("mastery");
+    serverD6(1, 6);
+    const first = await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { ...attack, slayerDice: 1 }, values: [8, 3], idempotencyKey: key() });
+    expect(first.roll.dice.filter((d) => d.role !== "hope" && d.role !== "fear").map((d) => d.value)).toEqual([6]);
+    serverD6(1);
+    const second = await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { ...d6, slayerDice: 1 }, values: [2], idempotencyKey: key() });
+    expect(second.roll.dice.filter((d) => d.role === "extra").map((d) => d.value)).toEqual([1]);
+    expect((await sheetOf(a)).featureUses.filter((u) => u.key === "weaponSpecialistReroll")).toHaveLength(1);
+  });
+
+  it("no 1 keeps the use; a foundation-rank Slayer never rerolls; undo gives the use back", async () => {
+    const { p1, a, sheetOf, edit } = await slayerAt("specialization");
+    serverD6(4, 2);
+    await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { ...d6, slayerDice: 2 }, values: [3], idempotencyKey: key() });
+    expect((await sheetOf(a)).featureUses.some((u) => u.key === "weaponSpecialistReroll")).toBe(false);
+
+    serverD6(1, 6);
+    const { entryId } = await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { ...d6, slayerDice: 1 }, values: [3], idempotencyKey: key() });
+    expect((await sheetOf(a)).featureUses.some((u) => u.key === "weaponSpecialistReroll")).toBe(true);
+    vi.restoreAllMocks();
+    await p1.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() });
+    expect((await sheetOf(a)).featureUses.some((u) => u.key === "weaponSpecialistReroll")).toBe(false);
+
+    await edit(a, { subclassRank: "foundation" });
+    serverD6(1);
+    const plain = await p1.mutation(api.rolls.manualRoll, { characterId: a, roll: { ...d6, slayerDice: 1 }, values: [3], idempotencyKey: key() });
+    expect(plain.roll.dice.filter((d) => d.role === "extra").map((d) => d.value)).toEqual([1]);
+    expect((await sheetOf(a)).featureUses.some((u) => u.key === "weaponSpecialistReroll")).toBe(false);
   });
 });

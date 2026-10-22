@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import type { Doc, Id, TableNames } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
-import { BATCH } from "../../convex/cleanup";
+import { ACTION_LOG_STRIP_BATCH, ACTION_LOG_STRIP_WINDOW_MS, BATCH } from "../../convex/cleanup";
 import { deleteSessionRows } from "../../convex/lib/sessions";
-import { GM_EMAIL, key, useAllowlist } from "./helpers";
+import { errorCode, GM_EMAIL, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const HOUR = 60 * 60 * 1000;
@@ -662,5 +662,87 @@ describe("cleanup crons", () => {
 
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(await count()).toBe(0);
+  });
+
+  describe("action log snapshots (dcm-c26)", () => {
+    /** A GM's campaign and a logger of undoable rows at the current (fake) time. */
+    async function campaignWithLog(t: Test) {
+      const userId = await user(t);
+      const gm = t.withIdentity({ subject: `${userId}|s` });
+      const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Log", idempotencyKey: key() });
+      const log = (count: number, extra: Partial<NewDoc<"actionLog">> = {}) =>
+        t.run(async (ctx) => {
+          const ids: Id<"actionLog">[] = [];
+          for (let i = 0; i < count; i++) {
+            ids.push(
+              await ctx.db.insert("actionLog", {
+                campaignId,
+                actorId: userId,
+                kind: "feature",
+                visibility: "public",
+                summary: `row ${i}`,
+                before: "{}",
+                undoable: true,
+                at: Date.now(),
+                ...extra,
+              }),
+            );
+          }
+          return ids;
+        });
+      return { gm, campaignId, log };
+    }
+    const rowsOf = (t: Test, ids: Id<"actionLog">[]) => t.run(async (ctx) => Promise.all(ids.map((id) => ctx.db.get("actionLog", id))));
+
+    it("strips before-snapshots older than 30 days in batches; the rows stay, no longer undoable", async () => {
+      const t = makeTest();
+      const { gm, campaignId, log } = await campaignWithLog(t);
+      const old = await log(ACTION_LOG_STRIP_BATCH + 5);
+      const [combat] = await log(1, { kind: "combat", before: undefined, adversaryBefore: [] });
+      const [plain] = await log(1, { kind: "levelUp", before: undefined, undoable: false });
+      vi.setSystemTime(NOW + 25 * DAY);
+      const recent = await log(1);
+      vi.setSystemTime(NOW + 31 * DAY);
+
+      await t.mutation(internal.cleanup.stripActionLogSnapshots, {});
+      // One batch per run, then it reschedules itself.
+      expect((await rowsOf(t, old)).filter((r) => r!.before === undefined)).toHaveLength(ACTION_LOG_STRIP_BATCH);
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+      for (const row of await rowsOf(t, [...old, combat!])) {
+        expect(row).not.toBeNull();
+        expect(row).not.toHaveProperty("before");
+        expect(row).not.toHaveProperty("adversaryBefore");
+        expect(row!.undoable).toBe(false);
+      }
+      expect((await rowsOf(t, [plain!]))[0]).toMatchObject({ summary: "row 0", undoable: false });
+      expect((await rowsOf(t, recent))[0]).toMatchObject({ before: "{}", undoable: true });
+
+      // The feed shows no Undo for a stripped row, and undo refuses it.
+      const page = await gm.query(api.feed.list, { campaignId, paginationOpts: { numItems: 500, cursor: null } });
+      const shown = new Map(page.page.map((r) => [r._id, r.canUndo]));
+      expect(shown.get(old[0]!)).toBe(false);
+      expect(shown.get(recent[0]!)).toBe(true);
+      expect(errorCode(await gm.mutation(api.actionLog.undo, { entryId: old[0]!, idempotencyKey: key() }).catch((e: unknown) => e))).toBe("UNDO_STALE");
+    });
+
+    it("looks back one window by default; from: 0 backfills older rows", async () => {
+      const t = makeTest();
+      const { log } = await campaignWithLog(t);
+      const ancient = await log(1);
+      vi.setSystemTime(NOW + ACTION_LOG_STRIP_WINDOW_MS + 2 * DAY);
+      const inWindow = await log(1);
+      vi.setSystemTime(NOW + ACTION_LOG_STRIP_WINDOW_MS + 2 * DAY + 31 * DAY);
+
+      await t.mutation(internal.cleanup.stripActionLogSnapshots, {});
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect((await rowsOf(t, inWindow))[0]!.undoable).toBe(false);
+      expect((await rowsOf(t, ancient))[0]!.undoable).toBe(true);
+
+      await t.mutation(internal.cleanup.stripActionLogSnapshots, { from: 0 });
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      expect((await rowsOf(t, ancient))[0]).toMatchObject({ undoable: false });
+      expect((await rowsOf(t, ancient))[0]).not.toHaveProperty("before");
+    });
   });
 });

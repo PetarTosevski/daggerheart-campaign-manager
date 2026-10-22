@@ -8,11 +8,17 @@
 //
 // K5: a critical counts as a roll with Hope (CB 90), so it offers the choice too; storing replaces only the Hope,
 // the critical's cleared Stress stays. Reaction rolls generate no Hope (CB 99), so they never offer it.
+//
+// Weapon Specialist (Call of the Slayer specialization, CB 48): "once per long rest when you roll your Slayer Dice,
+// reroll any 1s" (dcm-bxp.62, user 2026-10-22: automated in the dice roller). `rerollSlayerOnes` rerolls each 1 once
+// (a rerolled 1 stands) and marks the featureUses entry `weaponSpecialistReroll` until "longRest". A roll without a
+// 1 rerolls nothing and keeps the use.
 import { RuleError } from "../../errors/app-error";
 import { applyResourceDelta, hopeMax } from "../characters/index";
 import type { RollKind, RollOutcome } from "../duality";
 import type { CharacterSheet } from "../../validation/characters";
-import { holdsSlayer } from "./holders";
+import type { Rng } from "../class-features/types";
+import { holdsSlayer, holdsWeaponSpecialist } from "./holders";
 import { featuresOf, withFeatures } from "./state";
 
 /** Slayer Dice are d6s. */
@@ -82,4 +88,27 @@ export function clearSlayerAtEnd<T extends CharacterSheet>(sheet: T): { sheet: T
   if (cleared === 0) return { sheet, cleared, hopeGained: 0 };
   const next = applyResourceDelta(withFeatures(sheet, { slayerDice: undefined }), "hope", cleared);
   return { sheet: next, cleared, hopeGained: next.hope - sheet.hope };
+}
+
+/** The featureUses key of Weapon Specialist's once-per-long-rest reroll (CB 48). */
+export const WEAPON_SPECIALIST_KEY = "weaponSpecialistReroll";
+
+/** Whether Weapon Specialist's reroll is spent until the next long rest. */
+export function weaponSpecialistUsed(sheet: Pick<CharacterSheet, "featureUses">): boolean {
+  return sheet.featureUses.some((u) => u.key === WEAPON_SPECIALIST_KEY);
+}
+
+type RolledD6 = { sides: number; value: number };
+
+/**
+ * Weapon Specialist (CB 48): for a holder whose reroll is unspent this long rest, rerolls every 1 among the Slayer
+ * Dice just rolled (once each, with `rng`) and marks the use until "longRest". Otherwise, and when no die shows a 1,
+ * returns the sheet and dice unchanged. `label` names the reroll for the feed, e.g. "Weapon Specialist: 1 -> 4, 1 -> 1".
+ */
+export function rerollSlayerOnes<T extends CharacterSheet>(sheet: T, dice: readonly RolledD6[], rng: Rng): { sheet: T; dice: RolledD6[]; label?: string } {
+  if (!holdsWeaponSpecialist(sheet) || weaponSpecialistUsed(sheet) || !dice.some((d) => d.value === 1)) return { sheet, dice: [...dice] };
+  const rerolled = dice.map((d) => (d.value === 1 ? { ...d, value: rng(d.sides) } : d));
+  const changes = dice.flatMap((d, i) => (d.value === 1 ? [`1 -> ${rerolled[i]!.value}`] : []));
+  const next = { ...sheet, featureUses: [...sheet.featureUses, { key: WEAPON_SPECIALIST_KEY, until: "longRest" as const }] };
+  return { sheet: next, dice: rerolled, label: `Weapon Specialist: ${changes.join(", ")}` };
 }

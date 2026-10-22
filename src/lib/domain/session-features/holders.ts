@@ -36,6 +36,14 @@ export function holdsSlayer(sheet: Subclassed): boolean {
   return sheet.subclassId === CALL_OF_THE_SLAYER || sheet.multiclass?.subclassId === CALL_OF_THE_SLAYER;
 }
 
+/**
+ * Weapon Specialist (Call of the Slayer specialization, CB 48): the subclass at specialization or mastery rank. A
+ * multiclass gives only the foundation card (CB 111), so never through it.
+ */
+export function holdsWeaponSpecialist(sheet: Subclassed): boolean {
+  return sheet.subclassId === CALL_OF_THE_SLAYER && (sheet.subclassRank === "specialization" || sheet.subclassRank === "mastery");
+}
+
 /** Know the Tide (Seaborne community, CB 77). */
 export function holdsTide(sheet: Pick<CharacterSheet, "communityId">): boolean {
   return sheet.communityId === SEABORNE;

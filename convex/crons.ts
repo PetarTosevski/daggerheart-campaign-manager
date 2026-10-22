@@ -16,6 +16,8 @@ crons.cron("expire operations", "17 3 * * *", internal.cleanup.expireOperations,
 crons.cron("sweep orphan uploads", "53 3 * * *", internal.cleanup.sweepOrphanUploads, {});
 // Notes bin (D11 N7, Q11): torn-out journal pages older than 30 days, with their entries and recipients.
 crons.cron("purge torn-out journal pages", "23 4 * * *", internal.notesBin.purgeBinned, {});
+// Action log (dcm-c26): undo snapshots of rows older than 30 days are stripped; the rows stay, no longer undoable.
+crons.cron("strip old action log snapshots", "7 5 * * *", internal.cleanup.stripActionLogSnapshots, {});
 // Abandoned photo-import photos (D5 R3, review M4): hourly, so none outlives
 // its one-hour TTL by more than another hour.
 crons.cron("expire photo imports", "41 * * * *", internal.cleanup.expirePhotoImports, {});
