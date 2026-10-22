@@ -215,11 +215,12 @@ describe("adversary-effect registry", () => {
     for (const a of ADVERSARIES) expect([a.id, new Set(a.features.map((f) => f.name)).size]).toEqual([a.id, a.features.length]);
   });
 
-  it("ships the eight tables empty and the merged map built from them", () => {
-    for (const table of Object.values(ADVERSARY_EFFECT_TABLES)) expect(table).toEqual([]);
-    expect(ADVERSARY_EFFECTS.size).toBe(0);
-    expect(adversaryEffects("acid-burrower")).toEqual([]);
-    expect(adversaryFeatureEffect("acid-burrower", "Relentless (3)")).toBeUndefined();
+  // The AE-* tracers fill the eight tables; this only checks the merged map is built from whatever they hold.
+  it("builds the merged map from the eight tables", () => {
+    const entries = Object.values(ADVERSARY_EFFECT_TABLES).flat();
+    expect(ADVERSARY_EFFECTS.size).toBe(new Set(entries.map((e) => e.adversaryId)).size);
+    for (const e of entries) expect(adversaryFeatureEffect(e.adversaryId, e.feature)).toBe(e);
+    expect(adversaryEffects("no-such-adversary")).toEqual([]);
   });
 
   it("merges entries by adversary id in table order and throws on a feature listed twice", () => {
