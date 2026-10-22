@@ -54,7 +54,7 @@ export type Entry = {
   setup?: (w: World) => Promise<void>;
   /** World options for this entry (another frame), over the area's. */
   world?: WorldOptions;
-  /** A bead id: the expectations are correct but the code is not yet; all rows run as one it.fails. */
+  /** An open bead id (`dcm-...`): the expectations are correct but the code is not yet; all rows run as one it.fails. */
   knownBug?: string;
   note?: string;
 };
@@ -68,7 +68,10 @@ export type Area = {
   /** NAME_HINTS additions or replacements for this area's string ids. */
   nameHints?: NameHints;
   entries: Entry[];
-  /** Names (`<module>:<export>`) still without an entry; each runs as it.todo. Must be empty when the area is done. */
+  /**
+   * Always empty. D12 H24 removed pending support: every public function needs an entry (or an exemption), and the
+   * guard fails on any name listed here. The field stays only because the area files still carry `pending: []`.
+   */
   pending: string[];
   /** Public functions the matrix does not run, with the reason (the Convex Auth exports). */
   exempt?: Record<string, string>;
@@ -217,8 +220,8 @@ async function runRow(area: Area, entry: Entry, fn: Resolved, role: Role, expect
 }
 
 /**
- * Declares the vitest suite for one area: a describe per entry with an it per role (one it.fails for a knownBug entry)
- * and an it.todo per pending name. Rows run in ROLES order on worlds no earlier row changed (see WorldSlot).
+ * Declares the vitest suite for one area: a describe per entry with an it per role (one it.fails for a knownBug entry).
+ * Rows run in ROLES order on worlds no earlier row changed (see WorldSlot).
  */
 export function runMatrix(area: Area) {
   describe(`authz matrix: ${area.area}`, () => {
@@ -270,7 +273,5 @@ export function runMatrix(area: Area) {
         }
       });
     }
-
-    for (const name of area.pending) it.todo(name);
   });
 }
