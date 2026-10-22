@@ -195,6 +195,8 @@ waves:
         goal: "The [campaignId] layout preloads campaigns.get on the server (preloadQuery with convexAuthNextjsToken, CL5) and the shell reads it with usePreloadedQuery, so pages mount at hydration and subscribe in the first Convex flight; the header art becomes next/image with priority and sizes (CL10)."
         depends_on: [PF1, PF7]
         owns:
+          # ORCHESTRATOR NOTE 2026-10-22: B3's spec checks the refresh after the h1, which PF4 now server-renders.
+          - tests/e2e/auth-single-run.spec.ts
           - src/app/(gm)/campaigns/[campaignId]/layout.tsx
           - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
           - src/lib/campaign-art.ts
