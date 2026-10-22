@@ -15,6 +15,7 @@ import {
   type VisionObject,
 } from "../src/lib/domain/combat-map/index";
 import { isDoor } from "../src/lib/domain/combat-map/movement";
+import { anyInMelee } from "../src/lib/domain/combat-map/reach";
 import { spriteMove } from "../src/lib/sprite-packs/index";
 import { appError } from "../src/lib/errors/app-error";
 import { tokenViewValidator } from "./combatTokens";
@@ -64,10 +65,12 @@ import { carriedLightValidator } from "./lib/validators/combatMaps";
  * - `revealTo` / `unrevealTo` (GM): a dim-light token shown to one character (R10).
  * - `setCarriedLight`: any token's light for the GM, a player's own PC token's (R9, Q3).
  * - `toggleLight`: a map light on or off; the GM always, a player only when one of their characters on the live
- *   map sees it now or has explored its square (COMBAT_LIGHT_NOT_SEEN, R9).
- * - `doors` / `toggleDoor` (map-movement M2, D7, D8): the doors the caller may switch, and a door opened or closed;
- *   the GM always, a player only on the live map and only a door one of their characters sees now or has explored
- *   (an unseen door answers COMBAT_OBJECT_NOT_FOUND, as if it were not there).
+ *   map sees it now or has explored its square (COMBAT_LIGHT_NOT_SEEN, R9) and one of their character tokens stands
+ *   within Melee of it (COMBAT_OUT_OF_REACH, plan d12-bugs B4); the light is then stored as explored.
+ * - `doors` / `toggleDoor` (map-movement M2, D7, D8): the doors the caller may switch (each with `reach`), and a door
+ *   opened or closed; the GM always, a player only on the live map, only a door one of their characters sees now or
+ *   has explored (an unseen door answers COMBAT_OBJECT_NOT_FOUND, as if it were not there), and only from Melee
+ *   (COMBAT_OUT_OF_REACH, B4).
  * - `explored` / `markExplored`: a character's explored samples (R11), merged, written only when they grow.
  * - `paintFog` (GM): reveal / hide / erase marks on the fog layer (R12); they decide token visibility too (user
  *   2026-10-20: "reveal" squares are clear, "hide" squares unseen).
@@ -123,6 +126,11 @@ const doorViewValidator = v.object({
   rot: v.number(),
   open: v.boolean(),
   solid: v.boolean(),
+  /**
+   * Whether the caller may switch it from where their tokens stand now (plan d12-bugs B4): always for the GM; for a
+   * player, one of their character tokens is within Melee (1 square, CB p.103) of the door's footprint.
+   */
+  reach: v.boolean(),
 });
 export type DoorView = Infer<typeof doorViewValidator>;
 
@@ -329,8 +337,11 @@ export const setCarriedLight = campaignMutation({
 /**
  * Switches a map light (campfire, wall torch, or a sprite whose light trait is not none: `givesLight`, sprite packs
  * Q1) on or off: `lit` is the wanted state, so a double click cannot
- * undo itself. The GM always; a player only on the live map and only when one of the characters they play has
- * the light in view now (C1 `pointLevel` > 0) or has explored its square (COMBAT_LIGHT_NOT_SEEN, R9).
+ * undo itself. The GM always; a player only on the live map, only when one of the characters they play has
+ * the light in view now (C1 `pointLevel` > 0) or has explored its square (COMBAT_LIGHT_NOT_SEEN, R9), and only when one
+ * of their character tokens stands within Melee of it (COMBAT_OUT_OF_REACH, plan d12-bugs B4: checked after "seen",
+ * so an unseen light still answers COMBAT_LIGHT_NOT_SEEN). A player's switch stores the light's samples their
+ * characters see now as explored (`exploreObject`, as for doors), so it stays theirs after they turn away.
  */
 export const toggleLight = campaignMutation({
   need: "view",
@@ -343,35 +354,60 @@ export const toggleLight = campaignMutation({
     if (!givesLight({ kind: object.kind, lit: object.lit, traits })) throw appError("INVALID", "Only map lights can be lit.");
     if (!atLeast(ctx.permission, "owner")) {
       if (!map.live) throw appError("COMBAT_MAP_NOT_FOUND");
-      if (!(await hasSeen(ctx, map, object))) throw appError("COMBAT_LIGHT_NOT_SEEN");
+      const scene = await loadScene(ctx, ctx.campaign, map);
+      const viewers = await ownViewers(ctx, scene);
+      if (!lightSeen(scene, viewers, object)) throw appError("COMBAT_LIGHT_NOT_SEEN");
+      const vision = scene.visionObjects[scene.objects.findIndex((row) => row._id === object._id)] ?? { ...object, traits };
+      if (!inReach(viewers, vision)) throw appError("COMBAT_OUT_OF_REACH");
+      await exploreObject(ctx, scene, viewers, vision);
     }
     if ((object.lit !== false) !== lit) await ctx.db.patch("combatMapObjects", object._id, { lit });
     return { lit };
   },
 });
 
-/** The views of the characters the caller plays (edit permission) on the scene's map, with their explored masks. */
+/**
+ * The views of the characters the caller plays (edit permission) on the scene's map, with their tokens and explored
+ * masks.
+ */
 async function ownViewers(ctx: CampaignCtx<QueryCtx>, scene: Scene) {
-  const out: { characterId: Id<"characters">; view: NonNullable<ReturnType<typeof viewOf>>["view"]; explored: Uint8Array }[] = [];
+  const out: {
+    characterId: Id<"characters">;
+    token: Doc<"combatTokens">;
+    view: NonNullable<ReturnType<typeof viewOf>>["view"];
+    explored: Uint8Array;
+  }[] = [];
   for (const token of scene.tokens) {
     if (token.ref.kind !== "pc") continue;
     const character = await ctx.db.get("characters", token.ref.characterId);
     if (character === null || character.campaignId !== ctx.campaign._id || !(await canActFor(ctx, character))) continue;
     const viewer = viewOf(scene, character);
     if (viewer === null) continue;
-    out.push({ characterId: character._id, view: viewer.view, explored: storedExplored(await exploredRow(ctx, scene.map._id, character._id), scene.map.w, scene.map.h) });
+    out.push({ characterId: character._id, token, view: viewer.view, explored: storedExplored(await exploredRow(ctx, scene.map._id, character._id), scene.map.w, scene.map.h) });
   }
   return out;
 }
 
-/** Whether a character the caller plays (edit permission) on this map sees the object now or has explored its square. */
-async function hasSeen(ctx: CampaignCtx<MutationCtx>, map: Doc<"combatMaps">, object: Doc<"combatMapObjects">): Promise<boolean> {
-  const scene = await loadScene(ctx, ctx.campaign, map);
-  for (const { view, explored } of await ownViewers(ctx, scene)) {
+type Viewers = Awaited<ReturnType<typeof ownViewers>>;
+
+/** Whether one of the viewers sees the light's centre now or has explored its square (R9). */
+function lightSeen(scene: Scene, viewers: Viewers, object: Doc<"combatMapObjects">): boolean {
+  for (const { view, explored } of viewers) {
     if (pointLevel(view, object.x, object.y) > 0) return true;
     if (explored[sampleIndex(scene.prepared, object.x, object.y)]) return true;
   }
   return false;
+}
+
+/**
+ * Whether one of the viewers' tokens stands within Melee of the object's footprint (plan d12-bugs B4; CB p.103 "Melee:
+ * 1 square"; reach.ts measures Chebyshev from any token square to any footprint square, rotation included).
+ */
+function inReach(viewers: Viewers, object: VisionObject): boolean {
+  return anyInMelee(
+    viewers.map(({ token }) => token),
+    object,
+  );
 }
 
 // ---------------------------------------------------------------- doors (map-movement M2)
@@ -396,19 +432,19 @@ function sceneDoors(scene: Scene): { row: Doc<"combatMapObjects">; vision: Visio
  * Whether any of the viewers sees any sample the door stands on now, or has explored one (D8, the toggleLight rule
  * over the door's footprint: a closed door hides its own centre from anyone looking at its face).
  */
-function doorSeen(scene: Scene, viewers: Awaited<ReturnType<typeof ownViewers>>, door: VisionObject): boolean {
+function doorSeen(scene: Scene, viewers: Viewers, door: VisionObject): boolean {
   const box = objectSampleBox(scene.prepared, door);
   return viewers.some(({ view, explored }) => boxSeen(view, box, explored));
 }
 
 /**
- * Stores the door's samples each viewer sees now as explored (dcm-bxp.121): the player who switches a door has seen it,
- * so it stays theirs to switch after they walk through and turn their back on it. The client's throttled explored
- * sync cannot promise that: it keeps only what the character sees when the write arrives, so a door looked at for
- * less than EXPLORED_THROTTLE_MS (open it, step through) was never stored and dropped out of `doors`.
+ * Stores the samples of a door or light each viewer sees now as explored (dcm-bxp.121 for doors; plan d12-bugs B4 for
+ * lights): the player who switches it has seen it, so it stays theirs to switch after they walk through and turn their
+ * back on it. The client's throttled explored sync cannot promise that: it keeps only what the character sees when the
+ * write arrives, so an object looked at for less than EXPLORED_THROTTLE_MS (open it, step through) was never stored.
  */
-async function exploreDoor(ctx: CampaignCtx<MutationCtx>, scene: Scene, viewers: Awaited<ReturnType<typeof ownViewers>>, door: VisionObject) {
-  const box = objectSampleBox(scene.prepared, door);
+async function exploreObject(ctx: CampaignCtx<MutationCtx>, scene: Scene, viewers: Viewers, object: VisionObject) {
+  const box = objectSampleBox(scene.prepared, object);
   const { sw } = scene.prepared;
   for (const { characterId, view, explored } of viewers) {
     const delta = new Uint8Array(explored.length);
@@ -417,7 +453,7 @@ async function exploreDoor(ctx: CampaignCtx<MutationCtx>, scene: Scene, viewers:
   }
 }
 
-function doorView(row: Doc<"combatMapObjects">, vision: VisionObject): DoorView {
+function doorView(row: Doc<"combatMapObjects">, vision: VisionObject, reach: boolean): DoorView {
   return {
     _id: row._id,
     x: row.x,
@@ -426,13 +462,15 @@ function doorView(row: Doc<"combatMapObjects">, vision: VisionObject): DoorView 
     rot: row.rot,
     open: row.open === true,
     solid: sightOf({ ...vision, open: false }) === "block",
+    reach,
   };
 }
 
 /**
  * The doors the caller may switch on a map (D8): the GM every door on `mapId` (default: the live map); a player the
  * live map's doors one of their characters sees now or has explored, and nothing else (a door they have not seen is
- * never sent). Null without a map.
+ * never sent). `reach` tells whether one of the player's character tokens stands within Melee of it now (B4; always
+ * true for the GM), so the UI can disable a switch out of reach. Null without a map.
  */
 export const doors = campaignQuery({
   need: "view",
@@ -444,21 +482,22 @@ export const doors = campaignQuery({
     if (map === null) return null;
     const scene = await loadScene(ctx, ctx.campaign, map);
     const all = sceneDoors(scene);
-    if (atLeast(ctx.permission, "owner")) return { mapId: map._id, doors: all.map(({ row, vision }) => doorView(row, vision)) };
+    if (atLeast(ctx.permission, "owner")) return { mapId: map._id, doors: all.map(({ row, vision }) => doorView(row, vision, true)) };
     if (all.length === 0) return { mapId: map._id, doors: [] };
     const viewers = await ownViewers(ctx, scene);
     return {
       mapId: map._id,
-      doors: all.filter(({ vision }) => doorSeen(scene, viewers, vision)).map(({ row, vision }) => doorView(row, vision)),
+      doors: all.filter(({ vision }) => doorSeen(scene, viewers, vision)).map(({ row, vision }) => doorView(row, vision, inReach(viewers, vision))),
     };
   },
 });
 
 /**
  * Opens or closes a door (D7, D8): `open` is the wanted state, so a double click cannot undo itself. The GM always;
- * a player only on the live map (COMBAT_MAP_NOT_FOUND) and only a door one of their characters sees now or has
+ * a player only on the live map (COMBAT_MAP_NOT_FOUND), only a door one of their characters sees now or has
  * explored (else COMBAT_OBJECT_NOT_FOUND, exactly as for an object that is not there, so a refusal tells a player
- * nothing about doors they have not seen). INVALID for an object that is not a door. Closed is stored as an absent
+ * nothing about doors they have not seen), and only when one of their character tokens stands within Melee of it
+ * (COMBAT_OUT_OF_REACH, plan d12-bugs B4, checked after "seen" and carrying no position). INVALID for an object that is not a door. Closed is stored as an absent
  * `open`. A closed door blocks movement (M0 `movement.ts` reads `open`); a closed solid door blocks sight
  * (`sightOf`); an open door does neither.
  */
@@ -484,7 +523,8 @@ export const toggleDoor = campaignMutation({
       }
       const viewers = await ownViewers(ctx, scene);
       if (!doorSeen(scene, viewers, door.vision)) throw appError("COMBAT_OBJECT_NOT_FOUND");
-      await exploreDoor(ctx, scene, viewers, door.vision);
+      if (!inReach(viewers, door.vision)) throw appError("COMBAT_OUT_OF_REACH");
+      await exploreObject(ctx, scene, viewers, door.vision);
     }
     if ((object.open === true) !== open) await ctx.db.patch("combatMapObjects", object._id, { open: open ? true : undefined });
     return { open };

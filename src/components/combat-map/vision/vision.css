@@ -56,6 +56,34 @@
 .cm-vis-light[aria-pressed="false"]:focus-visible {
   border-style: dashed;
 }
+/* A switch out of the player's reach (plan d12-bugs B4): no glow, and "Move next to it" while hovered or focused. */
+.cm-vis-light[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+.cm-vis-light[aria-disabled="true"]:hover,
+.cm-vis-light[aria-disabled="true"]:focus-visible {
+  border-color: rgba(220, 220, 220, 0.6);
+  border-style: dotted;
+  box-shadow: none;
+}
+.cm-vis-reach {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(15, 12, 8, 0.9);
+  color: #f3e6c8;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.cm-vis-light:hover .cm-vis-reach,
+.cm-vis-light:focus-visible .cm-vis-reach {
+  display: block;
+}
 /* A switch over a door (map-movement M2): like a light switch, but square; dashed while the door is closed. */
 .cm-vis-door {
   border-radius: 4px;

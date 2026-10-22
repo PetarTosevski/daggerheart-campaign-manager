@@ -6,6 +6,8 @@ import { Component, useEffect, useEffectEvent, useMemo, useRef, useState, type P
 
 import { givesLight } from "@/lib/domain/combat-map/light";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
+import { anyInMelee } from "@/lib/domain/combat-map/reach";
+import type { Footprint } from "@/lib/domain/combat-actions/distance";
 import { spriteTraits } from "@/lib/sprite-packs/traits";
 
 import { api } from "../../../../convex/_generated/api";
@@ -235,9 +237,11 @@ export function VisionLayer(props: MapLayerProps) {
 
   // ---- lights the viewer may switch (R9): the GM every campfire and wall torch; a player those seen or explored.
   // Uploaded sprites' light comes from their rows (`spriteSources`, read only when the map has uploaded refs).
+  // A player switches only from Melee (plan d12-bugs B4): their character tokens (`canMove`) measured as the server does.
   const lightProps: LightSwitchesProps = {
     objects: editing ? [] : layout.objects,
     visible: (o) => gm || (masks !== null && (maskAt(masks.seen, masks, o.x, o.y) || maskAt(masks.explored, masks, o.x, o.y))),
+    reachFrom: gm ? null : (view?.pcs.filter((t) => t.canMove) ?? []),
     step,
     pad,
     onSwitch: (id, lit) => void actions.setLit(id, lit),
@@ -308,12 +312,17 @@ export function VisionLayer(props: MapLayerProps) {
                 className="cm-vis-light cm-vis-door"
                 data-testid="combat-door"
                 aria-pressed={d.open}
+                aria-disabled={d.reach ? undefined : true}
                 aria-label={`${d.open ? "Close" : "Open"} ${label}`}
-                title={`${label}: ${d.open ? "open, click to close it" : "closed, click to open it"}`}
+                title={d.reach ? `${label}: ${d.open ? "open, click to close it" : "closed, click to open it"}` : `${label}: ${OUT_OF_REACH}`}
                 style={{ left: (d.x + pad) * step, top: (d.y + pad) * step, width: size, height: size }}
                 onPointerDown={(e) => e.preventDefault()}
-                onClick={() => void actions.setOpen(d._id, !d.open)}
-              />
+                onClick={() => {
+                  if (d.reach) void actions.setOpen(d._id, !d.open);
+                }}
+              >
+                {d.reach ? null : <ReachNote />}
+              </button>
             );
           })}
         </div>
@@ -365,9 +374,23 @@ type UploadedLookup = ReadonlyMap<string, SourceSprite>;
 const NO_UPLOADS: UploadedLookup = new Map();
 const NO_NAMED = new Map<never, never>();
 
+/** The visible text on a door or light switch out of the player's reach (plan d12-bugs B4). */
+const OUT_OF_REACH = "Move next to it";
+
+/** Shown on an out-of-reach switch while it is hovered or focused (the switch itself is invisible until then). */
+function ReachNote() {
+  return (
+    <span className="cm-vis-reach" data-testid="combat-out-of-reach">
+      {OUT_OF_REACH}
+    </span>
+  );
+}
+
 type LightSwitchesProps = {
   objects: readonly LayoutObject[];
   visible: (o: LayoutObject) => boolean;
+  /** The tokens a player switches from (Melee, B4); null = no limit (the GM). */
+  reachFrom: readonly Footprint[] | null;
   step: number;
   pad: number;
   onSwitch: (id: Id<"combatMapObjects">, lit: boolean) => void;
@@ -398,9 +421,10 @@ function LightSwitchesWithSources({ campaignId, mapId, ...props }: LightSwitches
  * The Play-mode light switches (R9) over every object that gives light: a Classic light kind, or a sprite whose
  * light trait is not none (sprite packs Q1, D2; uploaded sprites through their rows, as the server's toggleLight).
  */
-function LightSwitches({ objects, visible, step, pad, onSwitch, uploaded }: LightSwitchesProps & { uploaded: UploadedLookup }) {
+function LightSwitches({ objects, visible, reachFrom, step, pad, onSwitch, uploaded }: LightSwitchesProps & { uploaded: UploadedLookup }) {
   const lookup = { uploaded: (id: string) => uploaded.get(id) };
-  const lights = objects.filter((o) => givesLight({ kind: o.kind, traits: o.sprite ? spriteTraits(o.sprite, lookup) : null }) && visible(o));
+  const traitsOf = (o: LayoutObject) => (o.sprite ? spriteTraits(o.sprite, lookup) : null);
+  const lights = objects.filter((o) => givesLight({ kind: o.kind, traits: traitsOf(o) }) && visible(o));
   if (lights.length === 0) return null;
   return (
     <div className="cm-vis-lights">
@@ -408,6 +432,7 @@ function LightSwitches({ objects, visible, step, pad, onSwitch, uploaded }: Ligh
         const lit = o.lit !== false;
         const label = lightLabel(o, uploaded);
         const size = Math.max(0.9, o.r * 1.6) * step;
+        const reach = reachFrom === null || anyInMelee(reachFrom, { kind: o.kind, x: o.x, y: o.y, r: o.r, rot: o.rot, traits: traitsOf(o) });
         return (
           <button
             key={o._id}
@@ -415,12 +440,17 @@ function LightSwitches({ objects, visible, step, pad, onSwitch, uploaded }: Ligh
             className="cm-vis-light"
             data-testid="combat-light"
             aria-pressed={lit}
+            aria-disabled={reach ? undefined : true}
             aria-label={`${lit ? "Put out" : "Light"} the ${label.toLowerCase()}`}
-            title={`${label}: ${lit ? "lit, click to put it out" : "out, click to light it"}`}
+            title={reach ? `${label}: ${lit ? "lit, click to put it out" : "out, click to light it"}` : `${label}: ${OUT_OF_REACH}`}
             style={{ left: (o.x + pad) * step, top: (o.y + pad) * step, width: size, height: size }}
             onPointerDown={(e) => e.preventDefault()}
-            onClick={() => onSwitch(o._id as Id<"combatMapObjects">, !lit)}
-          />
+            onClick={() => {
+              if (reach) onSwitch(o._id as Id<"combatMapObjects">, !lit);
+            }}
+          >
+            {reach ? null : <ReachNote />}
+          </button>
         );
       })}
     </div>

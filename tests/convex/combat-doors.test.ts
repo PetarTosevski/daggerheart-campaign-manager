@@ -4,12 +4,13 @@ import { api } from "../../convex/_generated/api";
 import { decodeExplored } from "../../src/lib/domain/combat-map/vision";
 import type { Id } from "../../convex/_generated/dataModel";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
-import { errorCode, key, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, errorData, key, setupWithCampaign, useAllowlist } from "./helpers";
 
 // Map movement M2 (plan .omc/plans/map-movement.yaml): doors open and close (D7, D8). combatVision.doors lists the doors
 // the caller may switch; combatVision.toggleDoor opens or closes one: the GM always, a player only on the live map and
-// only a door one of their characters has seen (else COMBAT_OBJECT_NOT_FOUND, as if it were not there). A closed door
-// blocks movement (combatTokens.move), a closed solid door blocks sight (playerView), an open one does neither.
+// only a door one of their characters has seen (else COMBAT_OBJECT_NOT_FOUND, as if it were not there) and only from
+// Melee (plan d12-bugs B4: one of their character tokens within 1 square of the door, else COMBAT_OUT_OF_REACH). A closed
+// door blocks movement (combatTokens.move), a closed solid door blocks sight (playerView), an open one does neither.
 
 type Setup = Awaited<ReturnType<typeof setupWithCampaign>>;
 type Client = Setup["gm"];
@@ -88,10 +89,12 @@ async function outsider(t: Setup["t"]) {
 describe("combat doors: access", () => {
   useAllowlist("gm@example.com,other@example.com,outsider@example.com");
 
-  it("toggleDoor and doors: anonymous UNAUTHENTICATED, outsider NOT_FOUND, player who has seen it ok, GM ok", async () => {
+  it("toggleDoor and doors: anonymous UNAUTHENTICATED, outsider NOT_FOUND, player who has seen it from Melee ok, GM ok", async () => {
     const f = await withDoorway();
     const { campaignId } = f;
     const door = await f.addObject({ kind: "door", x: 10.5, y: 10.5 });
+    // Ash next to the doorway, looking at the door (B4: a player switches only from Melee).
+    await f.place(f.ashToken, 9, 10, 0);
     const out = await outsider(f.t);
     const calls = {
       toggleDoor: (c: Client) => c.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: true }),
@@ -128,13 +131,52 @@ describe("combat doors: access", () => {
     await f.player.mutation(api.combatVision.markExplored, { campaignId, mapId: f.mapId, characterId: view.characterId, bits: view.vision.seen });
     await f.place(f.ashToken, 5, 10, Math.PI);
     expect(await f.doorIds(f.player)).toContain(unseen);
+    // Seen, but 5 squares away: out of reach (B4). Diagonally next to it, its back still turned: ok.
+    expect(await code(f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: unseen, open: true }))).toBe("COMBAT_OUT_OF_REACH");
+    await f.place(f.ashToken, 5, 5, Math.PI);
     expect(await code(f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: unseen, open: true }))).toBe("ok");
+  });
+
+  it("a player switches a door only from Melee (B4): adjacent, diagonal or overlapping; the GM from anywhere", async () => {
+    const f = await withDoorway();
+    const { campaignId } = f;
+    const door = await f.addObject({ kind: "door", x: 10.5, y: 10.5 });
+    const toggle = (c: Client, open: boolean) => c.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open });
+    const reachOf = async (c: Client) => ((await c.query(api.combatVision.doors, { campaignId }))?.doors ?? []).find((d) => d._id === door)?.reach;
+    // Ash sees the door from (5, 10), 5 squares away; (8, 10) is 2 away: both out of reach, nothing changes.
+    expect(await reachOf(f.player)).toBe(false);
+    const refusal = await toggle(f.player, true).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(errorCode(refusal)).toBe("COMBAT_OUT_OF_REACH");
+    // The refusal carries no position (D6, B4): only the code.
+    expect(Object.keys(errorData(refusal) as object).sort()).toEqual(["code"]);
+    await f.place(f.ashToken, 8, 10, 0);
+    expect(await code(toggle(f.player, true))).toBe("COMBAT_OUT_OF_REACH");
+    expect((await f.objectRow(door))?.open).toBeUndefined();
+    // Adjacent (9, 10): ok, and `doors` says so.
+    await f.place(f.ashToken, 9, 10, 0);
+    expect(await reachOf(f.player)).toBe(true);
+    expect(await toggle(f.player, true)).toEqual({ open: true });
+    // Diagonal (9, 9), facing the door: ok.
+    await f.place(f.ashToken, 9, 9, Math.PI / 4);
+    expect(await toggle(f.player, false)).toEqual({ open: false });
+    // Overlapping: Ash in the open doorway.
+    await toggle(f.player, true);
+    await f.place(f.ashToken, 10, 10, 0);
+    expect(await toggle(f.player, true)).toEqual({ open: true });
+    // The GM is never limited: Bryn is in the far corner, and the GM has no token anywhere near.
+    await f.place(f.ashToken, 5, 10, 0);
+    expect(await reachOf(f.gm)).toBe(true);
+    expect(await toggle(f.gm, false)).toEqual({ open: false });
   });
 
   it("INVALID for a non-door (GM, and a player who has seen it); not-live maps and bad ids are refused", async () => {
     const f = await withDoorway();
     const { campaignId } = f;
     const crate = await f.addObject({ kind: "crate", x: 8.5, y: 10.5, r: 0.5 });
+    await f.place(f.ashToken, 7, 10, 0);
     const hiddenCrate = await f.addObject({ kind: "crate", x: 3.5, y: 2.5, r: 0.5 });
     expect(await code(f.gm.mutation(api.combatVision.toggleDoor, { campaignId, objectId: crate, open: true }))).toBe("INVALID");
     expect(await code(f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: crate, open: true }))).toBe("INVALID");
@@ -182,15 +224,17 @@ describe("combat doors: sight and movement", () => {
     const door = await f.addObject({ kind: "door", x: 10.5, y: 10.5 });
     expect(await f.sees()).toEqual([]);
     expect(await code(f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 12, y: 10 }))).toBe("MOVE_BLOCKED");
-    expect((await f.player.query(api.combatVision.doors, { campaignId }))?.doors).toMatchObject([{ _id: door, open: false, solid: true }]);
+    expect((await f.player.query(api.combatVision.doors, { campaignId }))?.doors).toMatchObject([{ _id: door, open: false, solid: true, reach: false }]);
 
+    // Ash walks up to the door (B4: Melee) and opens it.
+    await f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 9, y: 10 });
     await f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: true });
     expect(await f.sees()).toEqual(["Goblin"]);
     expect(await f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 12, y: 10 })).toMatchObject({ blocked: false });
 
     // Back through, then closed again: blocked once more. Walking west turned Ash away from the door, but switching it
     // stored the door as explored (dcm-bxp.121), so it is still Ash's to switch.
-    await f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 8, y: 10 });
+    await f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 9, y: 10 });
     await f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: false });
     expect(await code(f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 12, y: 10 }))).toBe("MOVE_BLOCKED");
     // The GM's move is never refused; it reports the closed door.
@@ -200,6 +244,7 @@ describe("combat doors: sight and movement", () => {
   it("a wooden door sprite blocks sight while closed; a portcullis stays see-through but blocks movement until opened", async () => {
     const f = await withDoorway();
     const { campaignId } = f;
+    await f.place(f.ashToken, 9, 10, 0);
     const wooden = await f.addObject({ kind: "crate", x: 10.5, y: 10.5, r: 0.5, sprite: { builtin: "dungeon/wooden-door-closed" } });
     expect(await f.sees()).toEqual([]);
     await f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: wooden, open: true });
@@ -220,11 +265,12 @@ describe("combat doors: sight and movement", () => {
     const door = await f.addObject({ kind: "door", x: 10.5, y: 10.5 });
     // Ash looks at the closed door from (8, 10); nothing is explored (no markExplored: the client's throttled sync never
     // got a write in while Ash faced the door).
-    await f.place(f.ashToken, 8, 10, 0);
+    await f.place(f.ashToken, 9, 10, 0);
     expect(await f.doorIds(f.player)).toEqual([door]);
     await f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: true });
-    // Through the doorway to (12, 10), still facing east: the door is behind Ash, outside the cone.
-    expect(await f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 12, y: 10 })).toMatchObject({ blocked: false });
+    // Ash steps up to it (B4: Melee) and through the doorway to (11, 10), still facing east: the door is behind Ash,
+    // outside the cone, and still within Melee.
+    await f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 11, y: 10 });
     expect(await f.doorIds(f.player)).toEqual([door]);
     expect(await f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: false })).toEqual({ open: false });
     expect((await f.objectRow(door))?.open).toBeUndefined();

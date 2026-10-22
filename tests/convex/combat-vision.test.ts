@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { decodeExplored, exploredLength } from "../../src/lib/domain/combat-map/index";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
-import { errorCode, key, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, errorData, key, setupWithCampaign, useAllowlist } from "./helpers";
 
 // D9 C7: vision on the server (R8-R12, Q1, Q3, Q4). Access: playerView / explored / markExplored /
 // setCarriedLight / toggleLight are every member's (a player only for their own character, on the live map);
@@ -128,6 +128,8 @@ describe("combat vision: access", () => {
     const f = await withScene();
     const { campaignId, mapId } = f;
     const { objectId } = await f.gm.mutation(api.combatMapEdit.addObject, { campaignId, mapId, kind: "campfire", x: 12.5, y: 10.5 });
+    // Ash next to the campfire, looking at it (plan d12-bugs B4: a player switches a light only from Melee).
+    await f.place(f.ashToken, 11, 10, 0);
     const members = {
       playerView: (c: Client) => c.query(api.combatVision.playerView, { campaignId }),
       explored: (c: Client) => c.query(api.combatVision.explored, { campaignId, characterId: f.ash }),
@@ -373,9 +375,11 @@ describe("combat vision: lights and explored areas", () => {
     );
   });
 
-  it("lets a player switch only a light their character sees or has seen; the GM any (R9)", async () => {
+  it("lets a player switch only a light their character sees or has seen, from Melee; the GM any (R9, B4)", async () => {
     const f = await withScene();
     const { campaignId, mapId } = f;
+    // Ash next to the campfire ahead (B4: Melee), looking east at it.
+    await f.place(f.ashToken, 11, 10, 0);
     const add = (x: number, y: number, kind: "campfire" | "walltorch" | "crate" = "campfire") =>
       f.gm.mutation(api.combatMapEdit.addObject, { campaignId, mapId, kind, x, y }).then((r) => r.objectId);
     const ahead = await add(12.5, 10.5);
@@ -390,21 +394,29 @@ describe("combat vision: lights and explored areas", () => {
     expect(await toggle(f.player, ahead, false)).toEqual({ lit: false }); // a double click changes nothing
     expect(await code(toggle(f.player, behind, false))).toBe("COMBAT_LIGHT_NOT_SEEN");
     expect(await code(toggle(f.player, crate, false))).toBe("INVALID");
-    // At night an unlit campfire straight ahead but 7 squares away is dark: not seen now, never explored
-    // (the other lights are out, so nothing lights it).
+    // At night an unlit campfire straight ahead but 7 squares away is dark: not seen now (the other lights are out, so
+    // nothing lights it). Switching it at (11, 10) stored it as explored, so this is a fresh scene's campfire.
+    const far = await add(12.5, 12.5);
     await toggle(f.gm, behind, false);
     await toggle(f.gm, corner, false);
+    await toggle(f.gm, far, false);
+    await f.place(f.ashToken, 5, 12, 0);
     await f.setTime(NIGHT);
-    expect(await code(toggle(f.player, ahead, true))).toBe("COMBAT_LIGHT_NOT_SEEN");
-    expect(await toggle(f.gm, ahead, true)).toEqual({ lit: true });
-    // Lit, it lights itself: now the player sees it and may put it out.
-    expect(await toggle(f.player, ahead, false)).toEqual({ lit: false });
+    expect(await code(toggle(f.player, far, true))).toBe("COMBAT_LIGHT_NOT_SEEN");
+    expect(await toggle(f.gm, far, true)).toEqual({ lit: true });
+    // Lit, it lights itself: now the player sees it, but from 7 squares away it is out of reach (B4) until Ash walks up.
+    expect(await code(toggle(f.player, far, false))).toBe("COMBAT_OUT_OF_REACH");
+    await f.place(f.ashToken, 11, 12, 0);
+    expect(await toggle(f.player, far, false)).toEqual({ lit: false });
 
-    // Seen once (explored), then out of sight: still allowed.
+    // Seen once (explored), then out of sight: still allowed, from next to it (Ash at (2, 10), its back to it).
     await f.setTime(DAY);
+    await f.place(f.ashToken, 5, 10, 0);
     await f.player.mutation(api.combatTokens.turn, { campaignId, tokenId: f.ashToken, angle: Math.PI });
     await f.player.mutation(api.combatVision.markExplored, { campaignId, mapId, characterId: f.ash, bits: "_".repeat(400) });
     await f.player.mutation(api.combatTokens.turn, { campaignId, tokenId: f.ashToken, angle: 0 });
+    expect(await code(toggle(f.player, behind, true))).toBe("COMBAT_OUT_OF_REACH");
+    await f.place(f.ashToken, 2, 10, 0);
     expect(await toggle(f.player, behind, true)).toEqual({ lit: true });
     expect(await litOf(behind)).toBe(true);
     // The GM switches anything; a player never on a map that is not live.
@@ -413,6 +425,50 @@ describe("combat vision: lights and explored areas", () => {
       f.gm.mutation(api.combatMaps.setLive, { campaignId, mapId: other }),
     );
     expect(await code(toggle(f.player, ahead, true))).toBe("COMBAT_MAP_NOT_FOUND");
+  });
+
+  it("a player switches a light only from Melee: adjacent or diagonal, never 2 away; the GM from anywhere (B4)", async () => {
+    const f = await withScene();
+    const { campaignId, mapId } = f;
+    const { objectId: fire } = await f.gm.mutation(api.combatMapEdit.addObject, { campaignId, mapId, kind: "campfire", x: 12.5, y: 10.5 });
+    const toggle = (c: Client, lit: boolean) => c.mutation(api.combatVision.toggleLight, { campaignId, objectId: fire, lit });
+    // Seen from (10, 10), 2 squares away: refused with the code only (no position).
+    await f.place(f.ashToken, 10, 10, 0);
+    const refusal = await toggle(f.player, false).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(errorCode(refusal)).toBe("COMBAT_OUT_OF_REACH");
+    expect(Object.keys(errorData(refusal) as object).sort()).toEqual(["code"]);
+    // Diagonal (11, 9), facing it: ok.
+    await f.place(f.ashToken, 11, 9, Math.PI / 4);
+    expect(await toggle(f.player, false)).toEqual({ lit: false });
+    // Standing on it: ok.
+    await f.place(f.ashToken, 12, 10, 0);
+    expect(await toggle(f.player, true)).toEqual({ lit: true });
+    // The GM is never limited.
+    await f.place(f.ashToken, 5, 10, 0);
+    expect(await toggle(f.gm, false)).toEqual({ lit: false });
+  });
+
+  it("a light the player switched stays theirs to switch after they turn away (B4, as dcm-bxp.121 for doors)", async () => {
+    const f = await withScene();
+    const { campaignId, mapId } = f;
+    const { objectId: fire } = await f.gm.mutation(api.combatMapEdit.addObject, { campaignId, mapId, kind: "campfire", x: 12.5, y: 10.5 });
+    const toggle = (lit: boolean) => f.player.mutation(api.combatVision.toggleLight, { campaignId, objectId: fire, lit });
+    // Ash looks at the campfire from next to it; nothing is explored (no markExplored).
+    await f.place(f.ashToken, 11, 10, 0);
+    expect(await f.player.query(api.combatVision.explored, { campaignId, characterId: f.ash })).toMatchObject({ bits: expect.any(String) });
+    expect(await toggle(false)).toEqual({ lit: false });
+    // Ash turns west: the campfire is behind, out of the cone, and out (so nothing lights it either).
+    await f.place(f.ashToken, 11, 10, Math.PI);
+    expect(await toggle(true)).toEqual({ lit: true });
+    // Only the light's samples were stored: its centre's, at most a handful.
+    const row = await f.player.query(api.combatVision.explored, { campaignId, characterId: f.ash });
+    const mask = decodeExplored(row!.bits, row!.length);
+    const sw = 30 * 2;
+    expect(mask[21 * sw + 25]).toBe(1);
+    expect(mask.reduce((n, b) => n + b, 0)).toBeLessThanOrEqual(16);
   });
 });
 

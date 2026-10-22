@@ -112,11 +112,25 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
       .poll(async () => (await playerClient.query(api.combatVision.explored, { campaignId, characterId: ash.characterId! }))?.bits.replace(/A/g, "").length ?? 0)
       .toBeGreaterThan(10);
 
-    // The player puts out the wall torch they can see (R9, C7's toggleLight), with an optimistic switch.
+    // The player puts out the wall torch they can see (R9, C7's toggleLight), with an optimistic switch. From (4, 10) it
+    // is 3 squares away, out of reach (plan d12-bugs B4): the switch is disabled and says "Move next to it". Ash walks
+    // up to (6, 11), the torch straight ahead, and switches it there.
     const torchSwitch = playerBoard.getByRole("button", { name: "Put out the wall torch" });
+    const ashToken = playerBoard.getByRole("button", { name: /^Ash, Party/ });
+    await expect(torchSwitch).toHaveAttribute("aria-disabled", "true");
+    await torchSwitch.hover();
+    await expect(torchSwitch.getByText("Move next to it")).toBeVisible();
+    await playerClient.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 6, y: 11 });
+    await playerClient.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
+    await expect(ashToken).toHaveAttribute("data-square", "6,11");
+    await expect(torchSwitch).not.toHaveAttribute("aria-disabled");
     await torchSwitch.click();
     await expect(playerBoard.getByRole("button", { name: "Light the wall torch" })).toHaveAttribute("aria-pressed", "false");
     await expect.poll(async () => (await client.query(api.combatMaps.get, { campaignId, mapId }))?.objects.find((o) => o._id === torchId)?.lit).toBe(false);
+    // Back to (4, 10), facing east, for the rest of the scene.
+    await playerClient.mutation(api.combatTokens.move, { campaignId, tokenId: ash._id, x: 4, y: 10 });
+    await playerClient.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
+    await expect(ashToken).toHaveAttribute("data-square", "4,10");
 
     // ---- The GM reveals the Bandit to Ash: it appears for the player, live, with the dashed outline.
     await page.goto(url);

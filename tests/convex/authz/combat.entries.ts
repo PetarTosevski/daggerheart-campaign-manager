@@ -13,10 +13,13 @@ import { freshKey } from "./synth";
  * token at (5, 10) facing east, characterB's at (5, 14), a custom enemy token at (15, 10), and a closed door at
  * (8.5, 10.5) and a campfire at (7.5, 10.5), both in characterA's view. So the player rows of the player-facing
  * functions (playerView, explored, markExplored, move, turn, setCarriedLight, toggleLight, doors, toggleDoor,
- * spriteSources) act on the live map, with the player's own token and objects their character sees.
+ * spriteSources) act on the live map, with the player's own token and objects their character sees. A player switches
+ * a door or light only from Melee (plan d12-bugs B4), so the toggleLight and toggleDoor rows first step characterA's
+ * token to (7, 10): on the campfire's square and next to the door, still facing both (`inReach`).
  *
  * Domain refusals a player meets past the access check (COMBAT_NOT_YOUR_TOKEN, COMBAT_MAP_NOT_FOUND on a map that is
- * not live, COMBAT_OBJECT_NOT_FOUND for an unseen door, COMBAT_LIGHT_NOT_SEEN) are not matrix outcomes; combat.test.ts
+ * not live, COMBAT_OBJECT_NOT_FOUND for an unseen door, COMBAT_LIGHT_NOT_SEEN, COMBAT_OUT_OF_REACH) are not matrix
+ * outcomes; combat.test.ts, combat-doors.test.ts and combat-vision.test.ts
  * asserts them, together with what the players' reads leave out (other maps, unseen tokens and doors, adversary
  * stats, GM packs and sprite labels).
  */
@@ -48,6 +51,19 @@ export async function setup(w: World) {
   w.set("campfireId", ids.campfire);
   w.use("combatTokens", ids.tokenA);
   w.use("combatMapObjects", ids.door);
+}
+
+/** characterA's token steps next to the setup's door and onto its campfire's square (B4: Melee), facing east. */
+async function inReach(w: World) {
+  const characterA = w.characterA;
+  await w.t.run(async (ctx) => {
+    const tokens = await ctx.db
+      .query("combatTokens")
+      .withIndex("by_map", (q) => q.eq("mapId", w.ids.mapId as Id<"combatMaps">))
+      .collect();
+    const token = tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === characterA)!;
+    await ctx.db.patch(token._id, { x: 7, y: 10, face: 0 });
+  });
 }
 
 /** A file stored directly (no upload URL), unclaimed: the `_storage` row synthesis uses. */
@@ -202,10 +218,10 @@ const vision: Entry[] = [
   { fn: api.combatVision.revealTo, access: "gm", args: (w) => ({ tokenId: w.ids.customTokenId }) },
   { fn: api.combatVision.unrevealTo, access: "gm", args: (w) => ({ tokenId: w.ids.customTokenId }) },
   { fn: api.combatVision.setCarriedLight, access: "view", args: () => ({ light: "torch" }) },
-  { fn: api.combatVision.toggleLight, access: "view", args: (w) => ({ objectId: w.ids.campfireId, lit: false }) },
-  // The player lists and switches only doors their character has seen (the setup's door is in view).
+  { fn: api.combatVision.toggleLight, access: "view", setup: inReach, args: (w) => ({ objectId: w.ids.campfireId, lit: false }) },
+  // The player lists and switches only doors their character has seen (the setup's door is in view), from Melee (B4).
   { fn: api.combatVision.doors, access: "view", expect: { otherPlayer: "ok" } },
-  { fn: api.combatVision.toggleDoor, access: "view", args: () => ({ open: true }) },
+  { fn: api.combatVision.toggleDoor, access: "view", setup: inReach, args: () => ({ open: true }) },
   { fn: api.combatVision.paintFog, access: "gm", args: () => ({ squares: [0], mark: "reveal" }) },
 ];
 
