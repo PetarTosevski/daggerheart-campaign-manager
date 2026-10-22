@@ -15,7 +15,7 @@ const KIND_LABEL = { short: "Short rest", long: "Long rest" } as const;
 /** The dashboard's rest panel: the GM starts, finishes, interrupts and undoes party rests; players see the open rest. */
 export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
   const state = useQuery(api.rests.current, { campaignId });
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const party = useQuery(api.characters.partySummary, { campaignId });
   const start = useIntent(api.rests.start);
   const finish = useIntent(api.rests.finish);
   const interrupt = useIntent(api.rests.interrupt);

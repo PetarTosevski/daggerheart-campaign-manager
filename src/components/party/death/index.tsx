@@ -1,6 +1,6 @@
 "use client";
 
-import type { CharacterSlot } from "../slots";
+import type { CardSlot, CharacterSlot } from "../slots";
 
 import { DeathBadges } from "./badges";
 import { DeathBoundary } from "./boundary";
@@ -28,7 +28,7 @@ export const DeathBannerBadges: CharacterSlot = (props) => (
 );
 
 /** Unconscious / away (with "Requested", LL1) / journey-ends badge on the dashboard party card. */
-export const DeathCardBadge: CharacterSlot = (props) => (
+export const DeathCardBadge: CardSlot = (props) => (
   <DeathBoundary>
     <DeathBadges {...props} showAway tone="card" />
   </DeathBoundary>

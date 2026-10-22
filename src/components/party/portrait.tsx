@@ -16,7 +16,11 @@ import { fitWithin, portraitSource } from "./party-display";
 
 const MAX_SIDE = 1024;
 
-type PortraitCharacter = Pick<CharacterView, "_id" | "sheet">;
+/** What the portrait reads: the id, the sheet fields `portraitSource` uses, and the resolved upload URL when known. */
+type PortraitCharacter = Pick<CharacterView, "_id"> & {
+  sheet: Pick<CharacterView["sheet"], "portrait" | "subclassId" | "ancestry" | "name" | "classId">;
+  portraitUrl?: string | null;
+};
 
 /**
  * A character's portrait: their uploaded image, else the chosen design art,
@@ -38,7 +42,7 @@ export function CharacterPortrait({
 }) {
   const source = portraitSource(character.sheet);
   // The list query already resolves uploaded portraits; fall back to a lookup for other callers.
-  const preloaded = "portraitUrl" in character ? (character as { portraitUrl?: string | null }).portraitUrl : undefined;
+  const preloaded = character.portraitUrl;
   const fetched = useQuery(
     api.characters.portraitUrl,
     source.kind === "upload" && preloaded === undefined ? { characterId: character._id } : "skip",

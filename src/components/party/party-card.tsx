@@ -10,13 +10,12 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import type { CharacterView } from "../../../convex/characters";
 
 import { DeathCardBadge } from "./death";
 import { LevelUpCardBadge } from "./level-up/badge";
 import { applyResourceDelta, classLines, resourceTiles, segments, TILE_ART, tileLook, type Resource, type Tile } from "./party-display";
 import { CharacterPortrait } from "./portrait";
-import type { SlotProps } from "./slots";
+import type { CardCharacter, CardSlotProps } from "./slots";
 import { WitherCardBadge } from "./wither";
 
 const STEP_BTN =
@@ -67,7 +66,7 @@ export function FallenOverlay({ name, canEdit, onRevive, busy }: { name: string;
  * (X6: one active character per player). Shown to the owner and the GM; the
  * server refuses a second active character.
  */
-export function BenchButton({ character, busy, onSet }: { character: CharacterView; busy?: boolean; onSet: (status: "active" | "away") => void }) {
+export function BenchButton({ character, busy, onSet }: { character: CardCharacter; busy?: boolean; onSet: (status: "active" | "away") => void }) {
   if (!character.canEdit || character.corrupt) return null;
   const name = character.sheet.name;
   const bring = character.status === "away" && character.benched === true;
@@ -202,13 +201,23 @@ export function PartyCard({
   hopeAndFear = false,
 }: {
   campaignId: Id<"campaigns">;
-  character: CharacterView;
+  character: CardCharacter;
   isGm?: boolean;
   hopeAndFear?: boolean;
 }) {
   const adjust = useMutation(api.characters.adjustResource).withOptimisticUpdate((store, { characterId, resource, delta }) => {
+    if (resource === "armor") return;
+    // The dashboard reads the party summary (PF9); the roster reads the full list.
+    const summary = store.getQuery(api.characters.partySummary, { campaignId });
+    if (summary) {
+      store.setQuery(
+        api.characters.partySummary,
+        { campaignId },
+        summary.map((c) => (c._id === characterId ? { ...c, sheet: applyResourceDelta(c.sheet, resource, delta) } : c)),
+      );
+    }
     const list = store.getQuery(api.characters.listByCampaign, { campaignId });
-    if (!list || resource === "armor") return;
+    if (!list) return;
     store.setQuery(
       api.characters.listByCampaign,
       { campaignId },
@@ -223,7 +232,7 @@ export function PartyCard({
   const name = sheet.name;
   const dead = character.status === "dead";
   const { line, sub } = classLines(sheet);
-  const slot: SlotProps = { campaignId, character, canEdit, isGm, hopeAndFear };
+  const slot: CardSlotProps = { campaignId, character, canEdit, isGm, hopeAndFear };
 
   const run = async (op: () => Promise<unknown>) => {
     setError(null);

@@ -11,12 +11,12 @@ import { useIntent } from "@/lib/use-intent";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
-import type { SlotProps } from "../slots";
+import type { CardSlotProps } from "../slots";
 
 const BADGE = "inline-flex min-h-6 items-center rounded-full px-2.5 font-display text-[11px] font-bold tracking-[0.08em] uppercase";
 
 /** "Away · in the infirmary" / "Away · sent home" / "Away · benched" (HF 127, X6). */
-export function awayLabel(character: Pick<SlotProps["character"], "away" | "benched">): string {
+export function awayLabel(character: Pick<CardSlotProps["character"], "away" | "benched">): string {
   return `Away${character.away ? ` · ${AWAY_REASON_LABELS[character.away.reason]}` : character.benched ? " · benched" : ""}`;
 }
 
@@ -26,7 +26,7 @@ export function awayLabel(character: Pick<SlotProps["character"], "away" | "benc
  * `tone: "banner"` renders them as the board's FALLEN pills in the sheet's banner;
  * `showAway` is off there, because the banner's status badge already shows the away status.
  */
-export function DeathBadges({ character, canEdit, isGm, showAway, tone }: SlotProps & { showAway: boolean; tone: "banner" | "card" }) {
+export function DeathBadges({ character, canEdit, isGm, showAway, tone }: CardSlotProps & { showAway: boolean; tone: "banner" | "card" }) {
   const back = useIntent(api.deathMoves.returnFromAway);
   const unconscious = character.status === "active" && character.sheet.conditions?.includes("unconscious");
   const away = character.status === "away";
@@ -104,7 +104,7 @@ export function DeathBadges({ character, canEdit, isGm, showAway, tone }: SlotPr
  * LL1: a player's less-lethal pick is a request until the GM settles it. Everyone
  * sees "Requested"; the GM gets "Confirm" and "Change to …" (the GM's choice is final).
  */
-function AwayRequest({ character, isGm, tone }: { character: SlotProps["character"]; isGm: boolean; tone: "banner" | "card" }) {
+function AwayRequest({ character, isGm, tone }: { character: CardSlotProps["character"]; isGm: boolean; tone: "banner" | "card" }) {
   const state = useQuery(api.deathMoves.state, { characterId: character._id });
   const settle = useIntent(api.deathMoves.settleAway);
   const reason = character.away?.reason;
