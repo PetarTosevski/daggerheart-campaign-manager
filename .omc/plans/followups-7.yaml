@@ -1,0 +1,104 @@
+# Follow-ups 7 (2026-10-23): answered beads, batched. Format: docs/workflow.md. USER ANSWERS live in each bead (binding).
+plan: followups-7
+waves:
+  - wave: 1
+    tracers:
+      - id: H1
+        title: Sprites as the default style for new maps (dcm-bxp.135)
+        size: S
+        goal: A GM who never chose gets Sprites for new maps; the Settings switch still flips it.
+        depends_on: []
+        owns:
+          - convex/settings.ts
+          - convex/combatMaps.ts
+          - src/lib/validation/settings-backup.ts
+          - src/app/(gm)/settings-dialog.tsx
+          - tests/convex/settings.test.ts
+          - tests/convex/campaigns.test.ts
+          - tests/convex/combat-maps.test.ts
+          - tests/unit/settings-backup.test.ts
+          - tests/e2e/settings-backup.spec.ts
+          - docs/tasks/TASK-F7-H1.md
+        reads: [docs/tasks/TASK-F6-G5.md]
+        acceptance:
+          - "settings.get defaults defaultMapStyle to 'sprites'; new maps of a GM with no stored choice are Sprites; existing maps keep their stored style; restore of a backup without the field gives Sprites; tests"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
+      - id: H2
+        title: Martial Preparation downtime move; rest undo reads undoable; actionLog undoable index (dcm-bxp.63)
+        size: M
+        goal: Martial Preparation works as the user answered, and the snapshot cleanup reads an index.
+        depends_on: []
+        owns:
+          - convex/lib/validators/rests.ts
+          - src/lib/domain/rest/**
+          - convex/lib/restHooks.ts
+          - convex/rests.ts
+          - src/components/party/rest/**
+          - src/lib/domain/session-features/**
+          - convex/tables/actionLog.ts
+          - convex/cleanup.ts
+          - tests/convex/rests.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/convex/schema-guard.test.ts
+          - tests/unit/rest-*.test.ts
+          - tests/e2e/rest.spec.ts
+          - docs/tasks/TASK-F7-H2.md
+        reads: [docs/tasks/TASK-F6-G6.md]
+        acceptance:
+          - "Martial Preparation offered on short and long rests when the party has a Slayer at mastery rank; each taker gains a d6 Slayer Die: the Slayer's joins their pool (cap Proficiency), an ally's is held up to their Proficiency, cleared at session end for a Hope each, spendable on attack or damage rolls; CB p.48 quoted; tests"
+          - "rests.status offers Undo only when the rest row is still undoable; actionLog gains index [undoable, at] and the snapshot job reads it; schema-guard notes actionLog retention; tests"
+          - "pnpm lint, typecheck, vitest and rest e2e pass; tracer-guard passes"
+      - id: H3
+        title: Adversary rows carry target ids; GM sees adversary tokens flash; the hit prompt retries by itself
+        size: S
+        goal: Flashes match by id, the GM sees affected adversaries, and a failed prompt load retries quietly.
+        depends_on: []
+        owns:
+          - convex/lib/adversaryActions.ts
+          - convex/lib/adversaryHits.ts
+          - convex/lib/validators/actionLog.ts
+          - convex/feed.ts
+          - src/components/combat-map/actions/adversary/**
+          - src/components/combat-map/actions/reactions/**
+          - tests/convex/adversary-actions.test.ts
+          - tests/convex/feed.test.ts
+          - tests/unit/adversary-panel.test.tsx
+          - tests/unit/incoming-hit.test.tsx
+          - tests/e2e/combat-adversary.spec.ts
+          - docs/tasks/TASK-F7-H3.md
+        reads: [docs/tasks/TASK-CA-AA5.md, docs/tasks/TASK-CA-AA2c.md]
+        acceptance:
+          - "The public adversary row stores target token ids (ids only, widen-only field) and feed.list passes them; the flash matches by id, not names; players still receive no numbers; tests"
+          - "USER ANSWER: adversary tokens touched by a feature flash for the GM only; tests"
+          - "USER ANSWER: the incoming-hit prompt retries a failed load a few times (backoff) before showing 'Try again'; unit test"
+          - "pnpm lint, typecheck, vitest and combat-adversary e2e pass; tracer-guard passes"
+      - id: H4
+        title: Map Hand follow-ups - view another player's hand read-only, hide-hands switches, card target rings, roll options on cards (dcm-bxp.99.24)
+        size: M
+        goal: Close dcm-bxp.99.24 per the user's answers.
+        depends_on: []
+        owns:
+          - src/components/combat-map/actions/hand/**
+          - src/components/combat-map/actions/targets/**
+          - convex/combatCards.ts
+          - convex/lib/cardHand.ts
+          - convex/campaigns.ts
+          - convex/lib/validators/campaigns.ts
+          - convex/characters.ts
+          - src/components/combat-map/settings/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.tsx
+          - tests/convex/combat-cards.test.ts
+          - tests/convex/combat-cards-authz.test.ts
+          - tests/convex/authz/combat.entries.ts
+          - tests/convex/authz/core.entries.ts
+          - tests/convex/authz/characters.entries.ts
+          - tests/unit/combat-hand.test.tsx
+          - tests/e2e/combat-cards.spec.ts
+          - docs/tasks/TASK-F7-H4.md
+        reads: [docs/tasks/TASK-CA-CA6.md, docs/tasks/TASK-CA-CA5.md, docs/tasks/TASK-CA-CA4.md]
+        acceptance:
+          - "Selecting another player's token shows that player's hand read-only (no Use/Recall) unless hidden; combatCards.hand lets other players read when allowed; matrix + role tests"
+          - "Hide hands = BOTH: a GM campaign switch 'Players can see each other's cards' (on by default) and, when allowed, each player can hide their own hand; the GM always sees all; tests"
+          - "Creatures picked in a card dialog also get target rings on the map (toggleExtraTarget)"
+          - "The card Use dialog has the Attack bar's roll options (Experiences, advantage, Help) for cards that roll; tests"
+          - "pnpm lint, typecheck, vitest and combat-cards e2e pass; tracer-guard passes"
