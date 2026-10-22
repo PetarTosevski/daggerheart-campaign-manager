@@ -29,6 +29,7 @@ import {
   answerActions,
   answerCopyText,
   firstBookQuote,
+  isStoppedEarly,
   pinDraft,
   quoteChip,
   quoteSection,
@@ -68,16 +69,23 @@ export function ThinkingRow({ phase = "books" }: { phase?: MessageView["phase"] 
   return (
     <div className="lk-a">
       <MiniSigil />
-      <div className="lk-thinking">
-        <span className="lk-dots" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
-        <span role="status" aria-live="polite" aria-atomic="true">
-          {PHASE_TEXT[phase]}
-        </span>
-      </div>
+      <PhaseStatus phase={phase} />
+    </div>
+  );
+}
+
+/** The dots and the phase text in a polite live region (the thinking row's, and under a kept answer, L12). */
+function PhaseStatus({ phase = "books" }: { phase?: MessageView["phase"] }) {
+  return (
+    <div className="lk-thinking">
+      <span className="lk-dots" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span role="status" aria-live="polite" aria-atomic="true">
+        {PHASE_TEXT[phase]}
+      </span>
     </div>
   );
 }
@@ -86,7 +94,8 @@ export function ThinkingRow({ phase = "books" }: { phase?: MessageView["phase"] 
  * One answer in the stream: the thinking row (with the run's phase, L11) while no text is shown, then the board's parchment card with the
  * verdict pill, the prose (plain text), up to three quotes with their '📖 <book> · p.<page>' chips (a chip opens the
  * page), the 'Suggested GM call' box, the unofficial internet block and the actions. Stopped and failed answers keep
- * the card with a note ('Try again' re-asks the same question).
+ * the card with a note ('Try again' re-asks the same question). L12: while the internet pass runs under a kept book
+ * answer, its status stays under that answer; an early Stop shows its note and no actions.
  */
 export function AnswerCard(props: AnswerCardProps) {
   const { answer } = props;
@@ -159,6 +168,8 @@ function ParchmentCard(props: AnswerCardProps & { inFlight: boolean }) {
             <p>{parts.call}</p>
           </div>
         ) : null}
+        {/* L12: the kept book answer is shown while the internet pass runs; its status stays under it. */}
+        {inFlight && answer.phase === "web" ? <PhaseStatus phase="web" /> : null}
         {parts?.web && parts.web.length > 0 ? (
           <div className="lk-web">
             <div className="lk-disc">
@@ -186,7 +197,7 @@ function ParchmentCard(props: AnswerCardProps & { inFlight: boolean }) {
           </div>
         ) : null}
         {answer.status === "stopped" ? <span className="lk-retried">{STOPPED_TEXT}</span> : null}
-        {answer.status === "done" || (answer.status === "stopped" && answer.text) ? (
+        {answer.status === "done" || (answer.status === "stopped" && answer.text && !isStoppedEarly(answer)) ? (
           <Actions {...props} onOpenBook={() => {
             const quote = firstBookQuote(parts);
             if (quote) openQuote(quote.bookId, quote.page);

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { RetrievedChunk } from "../../convex/lib/lorekeeper/retrieve";
-import { BOOKS_ONLY_MISS } from "../../src/lib/lorekeeper/copy";
+import { BOOKS_ONLY_MISS, STOPPED_EARLY_NOTE } from "../../src/lib/lorekeeper/copy";
 import { SYSTEM_PROMPT } from "../../src/lib/lorekeeper/prompt";
 import { sseFixture, sseResponse } from "../fixtures/lorekeeper/sse";
 import { errorCode, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
@@ -207,59 +207,143 @@ describe("lorekeeper chat", () => {
     expect(await s.campaignCost()).toBe(done!.usage!.costMicros);
   });
 
-  describe("think before showing (L11)", () => {
+  describe("think before showing (L11) and the kept pass writes out live (L12)", () => {
     const FIRST = "VERDICT: unclear\nThe books don't settle it.\nGM CALL: Your call.";
     const RETRY = "VERDICT: unclear\nTwo Hexes are not covered.\nGM CALL: Apply only the strongest one.";
+    const RETRY_RULES = "VERDICT: rules\nOnly the strongest Hex applies, per the book.";
     /** Everything but the end of the reply: all text deltas are sent, the block and message stay open. */
     const holdAt = (text: string) => text.indexOf("event: content_block_stop");
     const view = async (s: Awaited<ReturnType<typeof setup>>, conversationId: Id<"lorekeeperConversations">) =>
       (await s.gm.query(api.lorekeeper.listMessages, { campaignId: s.campaignId, conversationId, paginationOpts: { numItems: 10, cursor: null } })).page[0]!;
+    /** The newest answer row (the run reads it while fetch is called, before the test knows its id). */
+    const newestAnswer = (s: Awaited<ReturnType<typeof setup>>) =>
+      s.t.run(async (c) => (await c.db.query("lorekeeperMessages").order("desc").take(5)).find((m) => m.role === "answer") ?? null);
+    type Seen = { status: string; phase: string; text: string };
+    /** Records every distinct (status, phase, text) of the row until it ends. */
+    const trace = (s: Awaited<ReturnType<typeof setup>>, answerId: Id<"lorekeeperMessages">) => {
+      const seen: Seen[] = [];
+      const done = waitFor(
+        async () => {
+          const r = await s.row(answerId);
+          const next = { status: r?.status ?? "gone", phase: r?.phase ?? "books", text: r?.text ?? "" };
+          const last = seen.at(-1);
+          if (!last || last.status !== next.status || last.phase !== next.phase || last.text !== next.text) seen.push(next);
+          return r;
+        },
+        (r) => r !== null && TERMINAL.has(r.status) && r.usage !== undefined,
+        20_000,
+      );
+      return { seen, done };
+    };
+    /** Shown text only ever grows: each text extends the one before it (L12). */
+    const expectOnlyGrows = (seen: Seen[]) => {
+      let before = "";
+      for (const { text } of seen) {
+        expect(text.startsWith(before), `"${text}" does not extend "${before}"`).toBe(true);
+        before = text;
+      }
+    };
 
-    it("an unclear answer never shows the first pass or the retry while they run, then reveals the final answer once", async () => {
+    it("the phase stays 'books' through the first verdict line, becomes 'retry' only as the Opus pass starts, and a retry 'rules' writes out live", async () => {
+      const s = await setup();
+      const releases: (() => void)[] = [];
+      const replies = [textReply(FIRST), textReply(RETRY_RULES, "claude-opus-5-5")];
+      let phaseAtRetry: string | undefined;
+      fetchMock.mockImplementation(async (_url, init) => {
+        if (releases.length === 1) phaseAtRetry = (await newestAnswer(s))?.phase;
+        const text = replies[releases.length]!;
+        const g = gated(text, holdAt(text), init?.signal);
+        releases.push(g.release);
+        return g.response;
+      });
+      const { answerId, conversationId } = await s.ask(undefined, { question: "Do two Hexes stack?", webSearch: true });
+      const { seen, done } = trace(s, answerId);
+
+      // The first pass's verdict line ('unclear') arrived, but the Opus pass hasn't started: still 'Searching your books…'.
+      await waitFor(async () => releases.length, (n) => n === 1);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      let row = await s.row(answerId);
+      expect([row!.status, row!.phase, row!.text, row!.parts]).toEqual(["pending", "books", "", undefined]);
+      expect((await view(s, conversationId)).phase).toBe("books");
+
+      // The retry's request goes out only after the row says 'retry'; its 'rules' answer writes out live.
+      releases[0]!();
+      row = await waitFor(() => s.row(answerId), (r) => r?.text !== "" && r?.status === "streaming");
+      expect(phaseAtRetry).toBe("retry");
+      expect([row!.phase, row!.text, row!.parts?.verdict]).toEqual(["retry", "Only the strongest Hex applies, per the book.", "rules"]);
+      expect((await view(s, conversationId)).text).toBe("Only the strongest Hex applies, per the book.");
+
+      releases[1]!();
+      const final = await done;
+      expect([final!.status, final!.phase, final!.text, final!.checkedAgain]).toEqual(["done", "done", "Only the strongest Hex applies, per the book.", true]);
+      expect(seen.map((x) => x.phase).filter((p, i, a) => a.indexOf(p) === i)).toEqual(["books", "retry", "done"]);
+      expect(seen.filter((x) => x.phase === "books").every((x) => x.text === "")).toBe(true);
+      expectOnlyGrows(seen);
+      expect(final!.reserved?.micros).toBe(0);
+      expect(await s.campaignCost()).toBe(final!.usage!.costMicros);
+    });
+
+    it("with search off a retry 'unclear' is final, so it writes out live with its GM call", async () => {
+      const s = await setup();
+      let release = () => {};
+      const retryText = textReply(RETRY, "claude-opus-5-5");
+      fetchMock.mockResolvedValueOnce(sseResponse(textReply(FIRST))).mockImplementationOnce((_url, init) => {
+        const g = gated(retryText, holdAt(retryText), init?.signal);
+        release = g.release;
+        return Promise.resolve(g.response);
+      });
+      const { answerId } = await s.ask(undefined, { question: "Do two Hexes stack?", webSearch: false });
+      const { seen, done } = trace(s, answerId);
+      const live = await waitFor(() => s.row(answerId), (r) => r?.text !== "" && r?.status === "streaming");
+      expect([live!.phase, live!.text, live!.parts?.verdict, live!.parts?.call]).toEqual(["retry", "Two Hexes are not covered.", "unclear", "Apply only the strongest one."]);
+      release();
+      const final = await done;
+      expect([final!.status, final!.text, final!.parts?.call, final!.checkedAgain]).toEqual(["done", "Two Hexes are not covered.", "Apply only the strongest one.", true]);
+      expectOnlyGrows(seen);
+    });
+
+    it("with search on a retry 'unclear' stays hidden; the web pass then shows the kept book answer and adds its part under it", async () => {
       const s = await setup();
       const releases: (() => void)[] = [];
       const replies = [textReply(FIRST), textReply(RETRY, "claude-opus-5-5")];
       fetchMock.mockImplementation((_url, init) => {
+        if (releases.length === 2) return Promise.resolve(sseResponse(sseFixture("web-search")));
         const text = replies[releases.length]!;
         const g = gated(text, holdAt(text), init?.signal);
         releases.push(g.release);
         return Promise.resolve(g.response);
       });
-      const { answerId, conversationId } = await s.ask(undefined, { question: "Do two Hexes stack?" });
+      const { answerId, conversationId } = await s.ask(undefined, { question: "Do two Hexes stack?", webSearch: true });
+      const { seen, done } = trace(s, answerId);
 
-      // The first pass's verdict line arrived: the row says 'Checking again…' and holds the text back.
-      await waitFor(() => s.row(answerId), (r) => r?.phase === "retry");
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      let row = await s.row(answerId);
-      expect([row!.status, row!.text, row!.parts, row!.checkedAgain]).toEqual(["streaming", "", undefined, undefined]);
-      // The GM (another reader) sees the same phase and no text.
-      let seen = await view(s, conversationId);
-      expect([seen.phase, seen.text, seen.parts]).toEqual(["retry", "", undefined]);
-
-      // The retry runs hidden too.
+      await waitFor(async () => releases.length, (n) => n === 1);
       releases[0]!();
       await waitFor(async () => releases.length, (n) => n === 2);
       await new Promise((resolve) => setTimeout(resolve, 600));
-      row = await s.row(answerId);
-      expect([row!.phase, row!.text, row!.parts]).toEqual(["retry", "", undefined]);
-      seen = await view(s, conversationId);
-      expect([seen.phase, seen.text, seen.checkedAgain]).toEqual(["retry", "", undefined]);
+      const row = await s.row(answerId);
+      expect([row!.phase, row!.text, row!.parts, row!.checkedAgain]).toEqual(["retry", "", undefined, undefined]);
+      const seenNow = await view(s, conversationId);
+      expect([seenNow.phase, seenNow.text, seenNow.checkedAgain]).toEqual(["retry", "", undefined]);
 
       releases[1]!();
-      const done = await s.finished(answerId);
-      expect([done!.status, done!.phase, done!.text, done!.parts?.verdict, done!.parts?.call, done!.checkedAgain]).toEqual([
+      const final = await done;
+      expect([final!.status, final!.text, final!.parts?.verdict, final!.parts?.call, final!.checkedAgain]).toEqual([
         "done",
-        "done",
-        "Two Hexes are not covered.",
+        "Two Hexes are not covered.\n\nTables online mostly let only the strongest apply.",
         "unclear",
         "Apply only the strongest one.",
         true,
       ]);
-      expect(done!.reserved?.micros).toBe(0);
-      expect(await s.campaignCost()).toBe(done!.usage!.costMicros);
+      // Nothing showed during 'books' or 'retry'; the first text shown is the kept book answer; text only grew.
+      expect(seen.filter((x) => x.phase === "books" || x.phase === "retry").every((x) => x.text === "")).toBe(true);
+      expect(seen.find((x) => x.text !== "")!.text.startsWith("Two Hexes are not covered.")).toBe(true);
+      expect(seen.some((x) => x.text.includes("The books don't settle it"))).toBe(false);
+      expectOnlyGrows(seen);
+      expect(final!.reserved?.micros).toBe(0);
+      expect(await s.campaignCost()).toBe(final!.usage!.costMicros);
     });
 
-    it("Stop during the retry keeps the first pass's finished answer, never the retry's partial text", async () => {
+    it("Stop during a hidden retry keeps the first pass's finished answer, never the retry's partial text", async () => {
       const s = await setup();
       let retrySignal: AbortSignal | null | undefined;
       const retryText = textReply(RETRY, "claude-opus-5-5");
@@ -267,7 +351,7 @@ describe("lorekeeper chat", () => {
         retrySignal = init?.signal;
         return Promise.resolve(gated(retryText, holdAt(retryText), init?.signal).response);
       });
-      const { answerId } = await s.ask(undefined, { question: "Do two Hexes stack?" });
+      const { answerId } = await s.ask(undefined, { question: "Do two Hexes stack?", webSearch: true });
       await waitFor(async () => fetchMock.mock.calls.length, (n) => n === 2);
       await new Promise((resolve) => setTimeout(resolve, 300));
       await s.player.mutation(api.lorekeeper.stop, { campaignId: s.campaignId, answerId });
@@ -287,31 +371,63 @@ describe("lorekeeper chat", () => {
       expect(await s.campaignCost()).toBe(stopped!.usage!.costMicros);
     });
 
-    it("Stop during a hidden first pass ends with no text: no finished answer exists yet", async () => {
+    it("Stop during a live retry keeps the retry's text so far, never swaps back to the first answer", async () => {
+      const s = await setup();
+      const retryText = textReply(RETRY, "claude-opus-5-5");
+      fetchMock
+        .mockResolvedValueOnce(sseResponse(textReply(FIRST)))
+        .mockImplementationOnce((_url, init) => Promise.resolve(gated(retryText, holdAt(retryText), init?.signal).response));
+      const { answerId } = await s.ask(undefined, { question: "Do two Hexes stack?", webSearch: false });
+      await waitFor(() => s.row(answerId), (r) => r?.text !== "" && r?.status === "streaming");
+      await s.player.mutation(api.lorekeeper.stop, { campaignId: s.campaignId, answerId });
+      const stopped = await waitFor(() => s.row(answerId), (r) => r?.usage !== undefined);
+      expect([stopped!.status, stopped!.text, stopped!.parts?.verdict]).toEqual(["stopped", "Two Hexes are not covered.", "unclear"]);
+      expect(stopped!.reserved?.micros).toBe(0);
+      expect(await s.campaignCost()).toBe(stopped!.usage!.costMicros);
+    });
+
+    it("Stop during the first pass before any answer is ready stores the early-Stop note", async () => {
       const s = await setup();
       fetchMock.mockImplementation((_url, init) => Promise.resolve(gated(textReply(FIRST), holdAt(textReply(FIRST)), init?.signal).response));
       const { answerId } = await s.ask(undefined, { question: "Do two Hexes stack?" });
-      await waitFor(() => s.row(answerId), (r) => r?.phase === "retry");
+      await waitFor(async () => fetchMock.mock.calls.length, (n) => n === 1);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect((await s.row(answerId))!.phase).toBe("books");
       await s.player.mutation(api.lorekeeper.stop, { campaignId: s.campaignId, answerId });
       const stopped = await waitFor(() => s.row(answerId), (r) => r?.usage !== undefined);
-      expect([stopped!.status, stopped!.text, stopped!.parts]).toEqual(["stopped", "", undefined]);
+      expect([stopped!.status, stopped!.phase, stopped!.text, stopped!.parts]).toEqual(["stopped", "done", STOPPED_EARLY_NOTE, undefined]);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(stopped!.reserved?.micros).toBe(0);
       expect(await s.campaignCost()).toBe(stopped!.usage!.costMicros);
     });
 
-    it("listMessages never returns text or parts for an in-flight answer in a hidden phase", async () => {
+    it("an answer stopped before its run started gets the early-Stop note when the run releases it", async () => {
+      const s = await setup();
+      const answerId = await s.t.run(async (c) => {
+        const user = (await c.db.query("users").take(5)).find((u) => u.email === OTHER_EMAIL)!;
+        const conversationId = await c.db.insert("lorekeeperConversations", { campaignId: s.campaignId, userId: user._id, title: "Stopped", visibility: "campaign", webSearch: true, messageCount: 2, lastAt: 1, createdAt: 1 });
+        const base = { conversationId, campaignId: s.campaignId, userId: user._id, createdAt: 1, updatedAt: 1 };
+        await c.db.insert("lorekeeperMessages", { ...base, role: "question", status: "done", text: "Q?" });
+        return c.db.insert("lorekeeperMessages", { ...base, role: "answer", status: "stopped", text: "", phase: "done" });
+      });
+      await s.t.action(internal.lorekeeperRun.run, { answerId });
+      const row = await s.row(answerId);
+      expect([row!.status, row!.text]).toEqual(["stopped", STOPPED_EARLY_NOTE]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("listMessages returns what the run wrote: the kept book answer during the internet pass", async () => {
       const s = await setup();
       const { conversationId, answerId } = await s.t.run(async (c) => {
         const user = (await c.db.query("users").take(5)).find((u) => u.email === OTHER_EMAIL)!;
-        const conversationId = await c.db.insert("lorekeeperConversations", { campaignId: s.campaignId, userId: user._id, title: "Hidden", visibility: "campaign", webSearch: true, messageCount: 2, lastAt: 1, createdAt: 1 });
+        const conversationId = await c.db.insert("lorekeeperConversations", { campaignId: s.campaignId, userId: user._id, title: "Web", visibility: "campaign", webSearch: true, messageCount: 2, lastAt: 1, createdAt: 1 });
         const base = { conversationId, campaignId: s.campaignId, userId: user._id, createdAt: 1, updatedAt: 1 };
         await c.db.insert("lorekeeperMessages", { ...base, role: "question", status: "done", text: "Q?" });
-        const answerId = await c.db.insert("lorekeeperMessages", { ...base, role: "answer", status: "streaming", text: "Draft", parts: { verdict: "unclear", quotes: [] }, checkedAgain: true, phase: "web" });
+        const answerId = await c.db.insert("lorekeeperMessages", { ...base, role: "answer", status: "streaming", text: "Kept", parts: { verdict: "unclear", quotes: [] }, checkedAgain: true, phase: "web" });
         return { conversationId, answerId };
       });
       const seen = await view(s, conversationId);
-      expect([seen._id, seen.phase, seen.text, seen.parts, seen.checkedAgain]).toEqual([answerId, "web", "", undefined, undefined]);
+      expect([seen._id, seen.phase, seen.text, seen.parts?.verdict, seen.checkedAgain]).toEqual([answerId, "web", "Kept", "unclear", true]);
     });
   });
 
@@ -336,7 +452,17 @@ describe("lorekeeper chat", () => {
     chunks.value = [];
     fetchMock.mockImplementation(() => Promise.resolve(sseResponse(textReply("VERDICT: none\nNothing in the books."))));
     const { answerId } = await s.ask(undefined, { question: "What is the capital of France?", webSearch: false });
-    const done = await s.finished(answerId);
+    // L12: a retry 'none' with search off is replaced by the miss text, so it never writes out.
+    let shown = false;
+    const done = await waitFor(
+      async () => {
+        const r = await s.row(answerId);
+        if (r !== null && !TERMINAL.has(r.status) && r.text !== "") shown = true;
+        return r;
+      },
+      (r) => r !== null && TERMINAL.has(r.status),
+    );
+    expect(shown).toBe(false);
     expect(done!.status).toBe("done");
     expect(done!.parts).toEqual({ verdict: "none", quotes: [] });
     expect(done!.text).toBe(BOOKS_ONLY_MISS);

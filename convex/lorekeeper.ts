@@ -83,29 +83,25 @@ function toConversationView(row: Doc<"lorekeeperConversations">, me: Id<"users">
 }
 
 /**
- * An in-flight answer in a hidden phase (the stronger-model check or the internet pass, L11) shows no text or parts:
- * the run never writes them there, and this keeps it so even if a row says otherwise.
+ * L12: the row is the view. The run writes text and parts only for a pass whose answer it keeps (a live book pass,
+ * the kept book answer and the web part during the internet pass), so an in-flight row in 'retry' or 'web' may carry
+ * text; a hidden pass never writes any (L11's blanking here is gone: it would hide the live retry and web pass).
  */
-function hiddenNow(row: Doc<"lorekeeperMessages">): boolean {
-  return (row.status === "pending" || row.status === "streaming") && (row.phase === "retry" || row.phase === "web");
-}
-
 function toMessageView(row: Doc<"lorekeeperMessages">): MessageView {
-  const hidden = hiddenNow(row);
   const view: MessageView = {
     _id: row._id,
     _creationTime: row._creationTime,
     conversationId: row.conversationId,
     role: row.role,
     status: row.status,
-    text: hidden ? "" : row.text,
+    text: row.text,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
-  if (row.parts !== undefined && !hidden) view.parts = row.parts;
+  if (row.parts !== undefined) view.parts = row.parts;
   if (row.errorCode !== undefined) view.errorCode = row.errorCode;
   if (row.model !== undefined) view.model = row.model;
-  if (row.checkedAgain !== undefined && !hidden) view.checkedAgain = row.checkedAgain;
+  if (row.checkedAgain !== undefined) view.checkedAgain = row.checkedAgain;
   if (row.phase !== undefined) view.phase = row.phase;
   return view;
 }
@@ -264,7 +260,8 @@ export const ask = campaignMutation({
 });
 
 /**
- * Stops the caller's own answer (Q11): it ends as `stopped` with the text so far; the run sees it at its next patch
+ * Stops the caller's own answer (Q11): it ends as `stopped` with the text so far (or, with no answer ready yet, the
+ * run's `finalize` / `release` stores STOPPED_EARLY_NOTE, L12); the run sees it at its next patch
  * and aborts the stream. The open reservation is released now; the run settles what the stream really cost. A finished
  * answer is left as it is.
  */

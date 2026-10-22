@@ -61,6 +61,41 @@ function webReply(content: unknown, text: string, citations: Record<string, unkn
 
 const result = (title: string, url: string) => ({ type: "web_search_result", title, url, encrypted_content: "x", page_age: null });
 
+/** A stream that sends `text` up to `splitAt`, then waits for `release()` (or the request's abort). */
+function gated(text: string, splitAt: number, signal: AbortSignal | null | undefined) {
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      controller.enqueue(encoder.encode(text.slice(0, splitAt)));
+      const aborted = new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+      await Promise.race([gate, aborted]);
+      if (signal?.aborted) {
+        controller.error(new DOMException("aborted", "AbortError"));
+        return;
+      }
+      controller.enqueue(encoder.encode(text.slice(splitAt)));
+      controller.close();
+    },
+  });
+  return { response: new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }), release: () => release() };
+}
+
+/** Everything of a web reply but the end of its text block: the text and its citations are sent. */
+const beforeLastBlockStop = (text: string) => text.lastIndexOf("event: content_block_stop");
+const CITED = { type: "web_search_result_location", cited_text: "Most tables apply only the strongest.", url: "https://example.com/t/1", title: "Do two curses stack?", encrypted_index: "y" };
+
+type Seen = { status: string; phase: string; text: string };
+/** Shown text only ever grows: each text extends the one before it (L12). */
+function expectOnlyGrows(seen: Seen[]) {
+  let before = "";
+  for (const { text } of seen) {
+    expect(text.startsWith(before), `"${text}" does not extend "${before}"`).toBe(true);
+    before = text;
+  }
+}
+
 async function waitFor<T>(read: () => Promise<T>, ok: (value: T) => boolean, ms = 15_000): Promise<T> {
   const until = Date.now() + ms;
   for (;;) {
@@ -87,12 +122,28 @@ async function setup() {
   const row = (id: Id<"lorekeeperMessages">) => t.run((c) => c.db.get("lorekeeperMessages", id));
   const finished = (id: Id<"lorekeeperMessages">) => waitFor(() => row(id), (r) => r !== null && TERMINAL.has(r.status));
   const ask = (webSearch: boolean, question = "Do two Hexes stack?") => player.mutation(api.lorekeeper.ask, { campaignId, question, webSearch });
+  /** Records every distinct (status, phase, text) of the row until it ends. */
+  const trace = (answerId: Id<"lorekeeperMessages">, ms = 20_000) => {
+    const seen: Seen[] = [];
+    const done = waitFor(
+      async () => {
+        const r = await row(answerId);
+        const next = { status: r?.status ?? "gone", phase: r?.phase ?? "books", text: r?.text ?? "" };
+        const last = seen.at(-1);
+        if (!last || last.status !== next.status || last.phase !== next.phase || last.text !== next.text) seen.push(next);
+        return r;
+      },
+      (r) => r !== null && TERMINAL.has(r.status) && r.usage !== undefined,
+      ms,
+    );
+    return { seen, done };
+  };
   const campaignCost = () =>
     t.run(async (c) => {
       const rows = await c.db.query("lorekeeperUsage").withIndex("by_campaign_period", (q) => q.eq("campaignId", campaignId)).take(5);
       return rows.reduce((sum, r) => sum + r.costMicros, 0);
     });
-  return { ...ctx, player, row, finished, ask, campaignCost };
+  return { ...ctx, player, row, finished, ask, campaignCost, trace };
 }
 
 describe("lorekeeper internet pass", () => {
@@ -268,7 +319,7 @@ describe("lorekeeper internet pass", () => {
     expect(done!.reserved?.micros).toBe(0);
   });
 
-  it("Stop during the web pass keeps the retry's finished answer, the web pass costed (L11)", async () => {
+  it("Stop during the web pass keeps the retry's finished answer (shown under 'web'), the web pass costed (L11, L12)", async () => {
     const s = await setup();
     let webSignal: AbortSignal | null | undefined;
     let webCalled = false;
@@ -289,7 +340,15 @@ describe("lorekeeper internet pass", () => {
       });
     const { answerId } = await s.ask(true);
     const searching = await waitFor(() => s.row(answerId), (r) => r?.phase === "web" && webCalled);
-    expect([searching!.status, searching!.text, searching!.parts]).toEqual(["streaming", "", undefined]);
+    // L12: the kept book answer shows (with its 'Checked again' note) while the internet pass runs.
+    expect([searching!.status, searching!.text, searching!.parts?.verdict, searching!.parts?.call, searching!.parts?.web, searching!.checkedAgain]).toEqual([
+      "streaming",
+      "Two Hexes are not covered.",
+      "unclear",
+      "Apply only the strongest one.",
+      undefined,
+      true,
+    ]);
     await s.player.mutation(api.lorekeeper.stop, { campaignId: s.campaignId, answerId });
     const stopped = await waitFor(() => s.row(answerId), (r) => r?.usage !== undefined);
     expect(webSignal?.aborted).toBe(true);
@@ -303,6 +362,75 @@ describe("lorekeeper internet pass", () => {
     ]);
     expect(stopped!.reserved?.micros).toBe(0);
     expect(await s.campaignCost()).toBe(stopped!.usage!.costMicros);
+  });
+
+  it("unclear + web: the kept book answer shows when the web pass starts, then the web part writes out under it (L12)", async () => {
+    const s = await setup();
+    let release = () => {};
+    let webStartedAt: { phase?: string; text?: string } | null = null;
+    const web = webReply([result("Do two curses stack?", "https://example.com/t/1")], "Tables online mostly let only the strongest apply.", [CITED]);
+    fetchMock
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nThe books don't settle it.")))
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nTwo Hexes are not covered.\nGM CALL: Apply only the strongest one.", "claude-opus-5-5")))
+      .mockImplementationOnce(async (_url, init) => {
+        const r = await s.t.run(async (c) => (await c.db.query("lorekeeperMessages").order("desc").take(5)).find((m) => m.role === "answer"));
+        webStartedAt = { phase: r?.phase, text: r?.text };
+        const g = gated(web, beforeLastBlockStop(web), init?.signal);
+        release = g.release;
+        return g.response;
+      });
+    const { answerId } = await s.ask(true);
+    const { seen, done } = s.trace(answerId);
+    // The web part writes out live once the pass has a result (its citation), under the book answer.
+    const live = await waitFor(() => s.row(answerId), (r) => r?.status === "streaming" && (r.text ?? "").includes("Tables online"));
+    expect(webStartedAt).toEqual({ phase: "web", text: "Two Hexes are not covered." });
+    expect([live!.phase, live!.text, live!.parts?.call, live!.parts?.web?.map((w) => w.url)]).toEqual([
+      "web",
+      "Two Hexes are not covered.\n\nTables online mostly let only the strongest apply.",
+      "Apply only the strongest one.",
+      ["https://example.com/t/1"],
+    ]);
+    release();
+    const final = await done;
+    expect([final!.status, final!.text, final!.checkedAgain]).toEqual(["done", "Two Hexes are not covered.\n\nTables online mostly let only the strongest apply.", true]);
+    expect(seen.filter((x) => x.phase === "books" || x.phase === "retry").every((x) => x.text === "")).toBe(true);
+    expectOnlyGrows(seen);
+    expect(final!.reserved?.micros).toBe(0);
+    expect(await s.campaignCost()).toBe(final!.usage!.costMicros);
+  });
+
+  it("none + web: nothing shows before the web pass has a result, then the web answer writes out (L12)", async () => {
+    const s = await setup();
+    let release = () => {};
+    const web = webReply([result("Do two curses stack?", "https://example.com/t/1")], "Tables online mostly let only the strongest apply.", [CITED]);
+    fetchMock
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: none\nNothing in the books.")))
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: none\nStill nothing.", "claude-opus-5-5")))
+      .mockImplementationOnce((_url, init) => {
+        const g = gated(web, beforeLastBlockStop(web), init?.signal);
+        release = g.release;
+        return Promise.resolve(g.response);
+      });
+    const { answerId } = await s.ask(true);
+    const { seen, done } = s.trace(answerId);
+    const live = await waitFor(() => s.row(answerId), (r) => r?.status === "streaming" && r.text !== "");
+    expect([live!.phase, live!.text, live!.parts?.verdict, live!.parts?.web?.length]).toEqual(["web", "Tables online mostly let only the strongest apply.", "none", 1]);
+    release();
+    const final = await done;
+    expect([final!.status, final!.text, final!.parts?.verdict]).toEqual(["done", "Tables online mostly let only the strongest apply.", "none"]);
+    expect(seen.some((x) => /Nothing in the books|Still nothing/.test(x.text))).toBe(false);
+    expectOnlyGrows(seen);
+  });
+
+  it("a web miss never shows the web pass's text: the row goes from empty to the web miss (L12)", async () => {
+    const s = await setup();
+    missThen(webReply({ type: "web_search_tool_result_error", error_code: "unavailable" }, "VERDICT: none\nThe search failed.", [], 0));
+    const { answerId } = await s.ask(true);
+    const { seen, done } = s.trace(answerId);
+    const final = await done;
+    expect(final!.text).toBe(WEB_MISS);
+    expect(seen.filter((x) => x.status !== "done").every((x) => x.text === "")).toBe(true);
+    expect(seen.some((x) => x.text.includes("The search failed"))).toBe(false);
   });
 
   it("an 'unclear' answer with the toggle off makes no web call", async () => {
@@ -369,22 +497,17 @@ describe("lorekeeper internet pass with the e2e fake model (L10)", () => {
   it("'Do our Hexes stack?' with the toggle on keeps the unclear answer, its book quote and GM call, and adds web results", async () => {
     const s = await setup();
     const { answerId } = await s.ask(true, "Do our Hexes stack?");
-    // L11: watch the row while it runs: the phases in order, and never any text or parts before it ends.
-    const phases: string[] = [];
-    let shownEarly = false;
-    const done = await waitFor(
-      async () => {
-        const r = await s.row(answerId);
-        if (r !== null && !TERMINAL.has(r.status) && (r.text !== "" || r.parts !== undefined)) shownEarly = true;
-        const phase = r?.phase ?? "none";
-        if (phases.at(-1) !== phase) phases.push(phase);
-        return r;
-      },
-      (r) => r !== null && TERMINAL.has(r.status),
-      45_000,
-    );
-    expect(shownEarly).toBe(false);
-    expect(phases).toEqual(["books", "retry", "web", "done"]);
+    // L11/L12: watch the row while it runs: the phases in order; no text during 'books' or 'retry'; the kept book
+    // answer first shows under 'web', then the web part is added under it; the text only grows.
+    const { seen, done: finished } = s.trace(answerId, 45_000);
+    const done = await finished;
+    expect(seen.map((x) => x.phase).filter((p, i, a) => a.indexOf(p) === i)).toEqual(["books", "retry", "web", "done"]);
+    expect(seen.filter((x) => x.phase === "books" || x.phase === "retry").every((x) => x.text === "")).toBe(true);
+    const firstShown = seen.find((x) => x.text !== "")!;
+    expect(firstShown.phase).toBe("web");
+    expect(firstShown.text).toMatch(/^The books describe one Hex at a time/);
+    expect(firstShown.text).not.toContain("Online, players");
+    expectOnlyGrows(seen);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(done!.status).toBe("done");
     expect(done!.checkedAgain).toBe(true);

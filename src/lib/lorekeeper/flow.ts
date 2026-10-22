@@ -16,15 +16,26 @@
 // ```
 //
 // L11 (user decision 2026-10-22, binding): clear answers stream, uncertain ones wait for the final check and the
-// reader sees the process. Only the first pass with the verdict 'rules' streams (`streamsLive`); every other pass is
-// written once, when the run knows it is the answer it keeps. Meanwhile the answer row carries a phase:
+// reader sees the process. L12 (user answers 2026-10-22, binding): a pass streams live whenever its text is known to
+// be the text the run keeps, and the phase names the pass that is really running.
+//
+// - A book pass (Sonnet, then the Opus retry) streams once its verdict line says the run ends with it
+//   (`nextStep(...) === "done"`): a first-pass 'rules'; a retry 'rules', or a retry 'unclear' with internet search
+//   off. A retry 'none' with search off ends as the books-only miss and a retry 'unclear'/'none' with search on goes
+//   to the web pass, so those stay hidden: no text is ever shown and later replaced.
+// - The web pass always streams (it is the last pass) once it has a web result (lorekeeperRun.ts); before that a
+//   web miss is still possible, and a miss stores WEB_MISS.
+// - The phase is set when a pass starts (`phaseForPass`): 'books' while Sonnet runs (whatever its verdict line says),
+//   'retry' only once the Opus pass starts, 'web' only once the internet pass starts, 'done' at the end.
 //
 // ```ts
-// streamsLive("primary", "rules");     // true: shown as it arrives (a 'rules' answer is never retried)
-// streamsLive("primary", "unclear");   // false: hidden; the row shows phaseForStep("retry")
-// phaseForStep("retry");               // "retry" ('Checking again with a stronger model…')
-// phaseForStep("web");                 // "web"   ('Searching the internet…')
-// phaseForStep("booksOnlyMiss");       // "done"
+// streamsLive("primary", "rules", true);     // true: shown as it arrives (a 'rules' answer is never retried)
+// streamsLive("primary", "unclear", true);   // false: hidden; the row keeps 'Searching your books…'
+// streamsLive("retry", "unclear", false);    // true: search is off, the retry's answer is final
+// streamsLive("retry", "unclear", true);     // false: the web pass follows
+// streamsLive("retry", "none", false);       // false: the books-only miss replaces it
+// phaseForPass("retry");                     // "retry" ('Checking again with a stronger model…')
+// phaseForPass("web");                       // "web"   ('Searching the internet…')
 // ```
 
 import { PRIMARY_MODEL, RETRY_MODEL } from "./pricing";
@@ -33,16 +44,20 @@ import type { Verdict } from "./types";
 /** L11: where an answer is while it runs (convex/lib/validators/lorekeeper.ts `answerPhaseValidator`). */
 export type AnswerPhase = "books" | "retry" | "web" | "done";
 
-/** L11: a pass is shown while it streams only when it is the first pass and its verdict is 'rules'. */
-export function streamsLive(pass: Pass, verdict: Verdict | null): boolean {
-  return pass === "primary" && verdict === "rules";
+/**
+ * L12: a book pass is shown while it streams once its verdict is known and the run ends with this pass's text. The
+ * web pass is never decided by a verdict (the run shows it once it has a web result), so it answers false here.
+ */
+export function streamsLive(pass: Pass, verdict: Verdict | null, webSearch: boolean): boolean {
+  if (pass === "web" || verdict === null) return false;
+  return nextStep({ pass, verdict, webSearch }) === "done";
 }
 
-/** L11: the phase the row shows for the step that comes next. */
-export function phaseForStep(step: NextStep): AnswerPhase {
-  if (step === "retry") return "retry";
-  if (step === "web") return "web";
-  return "done";
+/** L12: the phase the row shows while `pass` runs; set when the pass starts, never earlier. */
+export function phaseForPass(pass: Pass): AnswerPhase {
+  if (pass === "retry") return "retry";
+  if (pass === "web") return "web";
+  return "books";
 }
 
 /** primary = Sonnet's answer, retry = the Opus re-check, web = the internet pass. */
