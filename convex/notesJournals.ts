@@ -23,8 +23,8 @@ import { MAX_PAGES, pageKindValidator } from "./lib/validators/notes";
  * | Function         | Kind          | Args      | Who                                                       | Errors           |
  * |------------------|---------------|-----------|-----------------------------------------------------------|------------------|
  * | `playerJournals` | campaignQuery | -         | the GM: present player journals; a player: []             | NOT_FOUND (grant only) |
- * | `pastJournals`   | campaignQuery | -         | every member: departed journals with readable page counts | NOT_FOUND (grant only) |
- * | `journalView`    | campaignQuery | journalId | every member: the journal's pages they can read           | NOT_FOUND (unknown, other campaign, grant only) |
+ * | `pastJournals`   | campaignQuery | -         | every member: departed journals with a page they can read | NOT_FOUND (grant only) |
+ * | `journalView`    | campaignQuery | journalId | the GM: any journal; a player: own and departed journals  | NOT_FOUND (unknown, other campaign, another's present journal for a player, grant only) |
  *
  * Common to all: anonymous UNAUTHENTICATED, outsider and removed players NOT_FOUND (the wrapper, `need: "view"`).
  */
@@ -181,7 +181,8 @@ export const playerJournals = campaignQuery({
 /**
  * 'Past journals' (Q12): every departed journal (D1: the player left or was removed, or the character died, retired,
  * was deleted or changed hands), named '<character>’s journal', with the number of its pages the caller can read
- * (Private pages only for their owner); sorted by name. For every member.
+ * (Private pages only for their owner); a journal with no page the caller can read is left out (dcm-bxp.108); sorted
+ * by name. For every member.
  */
 export const pastJournals = campaignQuery({
   need: "view",
@@ -193,8 +194,11 @@ export const pastJournals = campaignQuery({
     const rows: PastJournalRow[] = [];
     for (const journal of await campaignJournals(ctx)) {
       if (journal.userId === ctx.campaign.ownerId || !(await cachedDeparted(ctx, ctx.campaign, journal, cache))) continue;
+      // dcm-bxp.108: a departed journal with no page the caller can read is not listed.
+      const pageCount = await readableCount(ctx, journal, cache);
+      if (pageCount === 0) continue;
       const owner = await ownerOf(ctx, journal);
-      rows.push({ journalId: journal._id, name: pastJournalTitle(owner), pageCount: await readableCount(ctx, journal, cache) });
+      rows.push({ journalId: journal._id, name: pastJournalTitle(owner), pageCount });
     }
     return rows.sort((a, b) => a.name.localeCompare(b.name) || a.journalId.localeCompare(b.journalId));
   },
@@ -204,22 +208,27 @@ export const pastJournals = campaignQuery({
  * One journal, read through the caller's eyes (Q2, Q3, Q12): its live pages the caller can read (`pageAccess`, so
  * Private pages of a departed journal never and pages hidden from the GM never for the GM), with the chip label and
  * the caller's add / tear-out flags (D2: no adds on a departed journal; the GM tears out its non-private pages). An
- * unknown id, a malformed one or another campaign's journal is NOT_FOUND.
+ * unknown id, a malformed one, another campaign's journal, or for a player another person's present journal
+ * (dcm-bxp.109) is NOT_FOUND.
  */
 export const journalView = campaignQuery({
   need: "view",
   args: { journalId: v.string() },
   returns: journalViewValidator,
   handler: async (ctx, args): Promise<JournalViewData> => {
-    await notesRole(ctx);
+    const role = await notesRole(ctx);
     const id = ctx.db.normalizeId("journals", args.journalId);
     const journal = id === null ? null : await ctx.db.get("journals", id);
     if (journal === null || journal.campaignId !== ctx.campaign._id) throw appError("NOT_FOUND");
-    const owner = await ownerOf(ctx, journal);
     // One read of the caller's role and the journal's departure for all its pages (PF10).
     const cache = pageReadCache(ctx.user, ctx.campaign);
     cache.journals.set(journal._id, Promise.resolve(journal));
     const isDeparted = await cachedDeparted(ctx, ctx.campaign, journal, cache);
+    // dcm-bxp.109: only the GM opens another person's present journal; a player opens their own and past journals,
+    // and reads other players' shared pages in the Shared tabs.
+    const own = journal.userId === ctx.user._id;
+    if (role !== "gm" && !own && !isDeparted) throw appError("NOT_FOUND");
+    const owner = await ownerOf(ctx, journal);
     const pages: JournalViewPage[] = [];
     for (const page of await livePages(ctx, journal._id)) {
       let access: PageAccess;
@@ -248,7 +257,7 @@ export const journalView = campaignQuery({
       title: journalTitle(whoName),
       ownerName: whoName,
       ownerIsGm: owner.isGm,
-      own: journal.userId === ctx.user._id,
+      own,
       departed: isDeparted,
       pages,
     };

@@ -114,7 +114,7 @@ function AddRow({ campaignId, onAdd }: { campaignId: Id<"campaigns">; onAdd: (ki
 
   function pick(next: EntryKind, focus: "input" | "chip") {
     setKind(next);
-    if (focus === "input") box.current?.querySelector<HTMLInputElement>(".bj-addrow input")?.focus();
+    if (focus === "input") box.current?.querySelector<HTMLElement>('.bj-addrow [role="textbox"]')?.focus();
     else box.current?.querySelector<HTMLButtonElement>(`[data-kind="${next}"]`)?.focus();
   }
 

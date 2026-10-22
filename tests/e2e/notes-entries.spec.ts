@@ -65,7 +65,7 @@ async function write(page: Page, line: string, area: Locator = paper(page)) {
   const input = area.getByRole("textbox", { name: "New entry" });
   await input.fill(line);
   await input.press("Enter");
-  await expect(input).toHaveValue("");
+  await expect(input).toHaveText("");
 }
 
 test("the GM adds, completes, stars, edits, moves and deletes entries and migrates an open task", async ({ page }) => {
@@ -89,7 +89,7 @@ test("the GM adds, completes, stars, edits, moves and deletes entries and migrat
   await expect(rowOf(page, "pay the ferryman")).toBeVisible();
   await expect(input).toBeFocused();
   await expect(note).toHaveAttribute("aria-checked", "true");
-  await expect(input).toHaveValue("");
+  await expect(input).toHaveText("");
   await write(page, "^ ambush at the ford");
   await expect(rowOf(page, "ambush at the ford").getByRole("button", { name: "Fear. Click to mark resolved." })).toHaveText("☠");
   await expect(rowOf(page, "Old Mag runs the ferry").getByRole("button", { name: "Note. Click to mark resolved." })).toHaveText("–");

@@ -96,14 +96,19 @@ export type JournalSearchArgs = { campaignId: Id<"campaigns">; search: string };
 /** `EntryText` (N5): an entry's text with D7 mention tokens rendered for the viewer. */
 export type EntryTextProps = { campaignId: Id<"campaigns">; text: string };
 
-/** `MentionInput` (N5): the add / edit input with the @ picker (Q6). */
+/** `MentionInput` (N5): the add / edit field with the @ picker (Q6); mentions show as name chips (dcm-bxp.106). */
 export type MentionInputProps = {
   campaignId: Id<"campaigns">;
   label: string;
   placeholder: string;
   className?: string;
+  /** The stored text (with D7 tokens) the field starts with. */
   defaultValue?: string;
+  /** Focus the field with the caret at the end when it mounts (the edit row). */
+  autoFocus?: boolean;
   /** Enter with text: the token-carrying text to save. */
   onSubmit: (text: string) => void;
   onCancel?: () => void;
+  /** The field lost focus: its token-carrying text (the edit row saves on blur). */
+  onBlurText?: (text: string) => void;
 };

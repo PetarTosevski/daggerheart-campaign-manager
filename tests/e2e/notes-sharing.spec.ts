@@ -94,7 +94,7 @@ async function write(page: Page, line: string) {
   const input = paper(page).getByRole("textbox", { name: "New entry" });
   await input.fill(line);
   await input.press("Enter");
-  await expect(input).toHaveValue("");
+  await expect(input).toHaveText("");
 }
 
 for (const viewport of [

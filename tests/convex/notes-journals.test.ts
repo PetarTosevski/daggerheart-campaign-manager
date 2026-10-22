@@ -85,6 +85,7 @@ async function setup() {
   await titled(null, "chosen gm", "chosen", ["gm", "p2"]);
   await titled(null, "chosen p2", "chosen", ["p2"]);
   await as("p2").mutation(api.notesEntries.add, { campaignId, page: { template: 0 }, kind: "task", text: "buy rope" });
+  const gmPage = (await as("gm").mutation(api.notesEntries.add, { campaignId, page: { template: 0 }, kind: "note", text: "prep" })).pageId;
 
   const journalOf = async (who: "p1" | "p2") => {
     const view = await as(who).query(api.notes.journal, { campaignId });
@@ -93,6 +94,7 @@ async function setup() {
   };
   const p1Journal = await journalOf("p1");
   const p2Journal = await journalOf("p2");
+  const gmJournal = await t.run(async (ctx) => (await ctx.db.get("journalPages", gmPage))!.journalId);
 
   const call = {
     playerJournals: (who: Role) => client(who).query(api.notesJournals.playerJournals, { campaignId }),
@@ -107,7 +109,7 @@ async function setup() {
   const rejoin = () => join("p1");
   const add = (who: Who, pageId: Id<"journalPages">) =>
     as(who).mutation(api.notesEntries.add, { campaignId, page: pageId, kind: "note", text: "late" });
-  return { t, ids, as, campaignId, ash, bram, pages, p1Journal, p2Journal, call, titles, setStatus, remove, rejoin, add };
+  return { t, ids, as, campaignId, ash, bram, pages, p1Journal, p2Journal, gmJournal, call, titles, setStatus, remove, rejoin, add };
 }
 
 type Setup = Awaited<ReturnType<typeof setup>>;
@@ -152,10 +154,23 @@ const ROLE_TABLE: {
     expected: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", p1: "ok", gm: "ok", p2: "ok" },
   },
   {
+    // dcm-bxp.109: only the GM opens another person's present journal by URL.
     fn: "journalView (P1's journal)",
     scenario: "present",
     run: (s, who) => s.call.journalView(who),
-    expected: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", p1: "ok", gm: "ok", p2: "ok" },
+    expected: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", p1: "ok", gm: "ok", p2: "NOT_FOUND" },
+  },
+  {
+    fn: "journalView (P2's journal)",
+    scenario: "present",
+    run: (s, who) => s.call.journalView(who, s.p2Journal),
+    expected: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", p1: "NOT_FOUND", gm: "ok", p2: "ok" },
+  },
+  {
+    fn: "journalView (the GM's journal)",
+    scenario: "present",
+    run: (s, who) => s.call.journalView(who, s.gmJournal),
+    expected: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", p1: "NOT_FOUND", gm: "ok", p2: "NOT_FOUND" },
   },
   {
     fn: "playerJournals, P1 removed (departed owner)",
@@ -243,7 +258,10 @@ describe("players' journals (Q2, D4)", () => {
     expect(gmView).toMatchObject({ title: "Ash’s Journal", ownerName: "Ash", ownerIsGm: false, own: false, departed: false });
     expect(gmView.pages.map((p) => [p.title, p.canAdd, p.canBin])).toEqual(GM_TITLES.map((t) => [t, true, false]));
     expect(gmView.pages.find((p) => p.title === "gm")?.chip).toBe("Private · GM can read");
-    expect(await s.titles("p2")).toEqual(P2_TITLES);
+    // dcm-bxp.109: P2 reads P1's shared pages in the Shared tabs only, never through P1's journal.
+    expect(await codeOf(s.titles("p2"))).toBe("NOT_FOUND");
+    const shared = await s.as("p2").query(api.notesSharing.shared, { campaignId: s.campaignId, tab: "players" });
+    expect(shared.filter((r) => r.ownerName === "Ash").map((r) => r.title).sort()).toEqual([...P2_TITLES].sort());
     const own = await s.call.journalView("p1");
     expect(own.pages.map((p) => [p.title, p.canAdd, p.canBin])).toEqual(ALL_TITLES.map((t) => [t, true, true]));
     expect(own.own).toBe(true);
@@ -280,7 +298,7 @@ async function expectDeparted(s: Setup, ownerIsMember: boolean) {
 async function expectPresent(s: Setup) {
   for (const who of ["gm", "p1", "p2"] as const) expect(await s.call.pastJournals(who)).toEqual([]);
   expect(await s.titles("gm")).toEqual(GM_TITLES);
-  expect(await s.titles("p2")).toEqual(P2_TITLES);
+  expect(await codeOf(s.titles("p2"))).toBe("NOT_FOUND");
   expect(await s.titles("p1")).toEqual(ALL_TITLES);
   expect((await s.call.playerJournals("gm")).map((r) => [r.name, r.pageCount])).toEqual([
     ["Ash", GM_TITLES.length],
@@ -340,7 +358,7 @@ describe("departure and return (Q12, D1, D2)", () => {
 
     await s.setStatus("active");
     expect(await s.titles("gm")).toEqual(GM_TITLES);
-    expect(await s.titles("p2")).toEqual(P2_TITLES.filter((t) => t !== "players"));
+    expect(await codeOf(s.titles("p2"))).toBe("NOT_FOUND");
     expect(await s.titles("p1")).toEqual(ALL_TITLES.filter((t) => t !== "players"));
     expect(await s.call.pastJournals("gm")).toEqual([]);
   });
@@ -349,9 +367,52 @@ describe("departure and return (Q12, D1, D2)", () => {
     const s = await setup();
     // An unattached journal of a player without a character, who then leaves.
     const p3 = await s.t.run((ctx) => ctx.db.insert("users", { email: "p3@example.com", emailVerificationTime: 1, name: "Rhea" }));
+    await s.t.run(async (ctx) => {
+      const journalId = await ctx.db.insert("journals", {
+        campaignId: s.campaignId,
+        userId: p3,
+        pageCount: 1,
+        entryCount: 0,
+        openCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("journalPages", {
+        campaignId: s.campaignId,
+        journalId,
+        ownerId: p3,
+        kind: "log",
+        title: "Session 1",
+        tape: 0,
+        visibility: "gm",
+        entryCount: 0,
+        openCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+    expect((await s.call.pastJournals("gm")).map((r) => [r.name, r.pageCount])).toEqual([["Rhea’s journal", 1]]);
+  });
+
+  it("dcm-bxp.108: a past journal with no page the caller can read (torn out, or only Private left) is not listed", async () => {
+    const s = await setup();
+    await s.setStatus("dead");
+    // An unattached journal with no page at all, of a player who left: never listed.
+    const p3 = await s.t.run((ctx) => ctx.db.insert("users", { email: "p3@example.com", emailVerificationTime: 1, name: "Rhea" }));
     await s.t.run((ctx) =>
       ctx.db.insert("journals", { campaignId: s.campaignId, userId: p3, pageCount: 0, entryCount: 0, openCount: 0, createdAt: 1, updatedAt: 1 }),
     );
-    expect((await s.call.pastJournals("gm")).map((r) => [r.name, r.pageCount])).toEqual([["Rhea’s journal", 0]]);
+    for (const title of PAST_TITLES.slice(1)) {
+      await s.as("gm").mutation(api.notesBin.binPage, { campaignId: s.campaignId, page: s.pages[title]! });
+    }
+    for (const who of ["gm", "p2"] as const) {
+      expect(await s.call.pastJournals(who)).toEqual([{ journalId: s.p1Journal, name: "Ash’s journal", pageCount: 1 }]);
+    }
+    await s.as("gm").mutation(api.notesBin.binPage, { campaignId: s.campaignId, page: s.pages["gm"]! });
+    // Only the Private page is left: nobody but its owner reads it, so only the owner still finds the journal.
+    for (const who of ["gm", "p2"] as const) expect(await s.call.pastJournals(who)).toEqual([]);
+    expect(await s.call.pastJournals("p1")).toEqual([{ journalId: s.p1Journal, name: "Ash’s journal", pageCount: 1 }]);
+    // The view still opens for those who reach a departed journal; it simply has no page for them.
+    expect((await s.call.journalView("p2")).pages).toEqual([]);
   });
 });

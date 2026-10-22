@@ -94,7 +94,7 @@ async function write(page: Page, line: string) {
   const input = paperColumn(page).getByRole("textbox", { name: "New entry" });
   await input.fill(line);
   await input.press("Enter");
-  await expect(input).toHaveValue("");
+  await expect(input).toHaveText("");
 }
 
 async function share(page: Page, option: RegExp, chosen: string[] = []) {
@@ -326,3 +326,49 @@ for (const viewport of [
     });
   });
 }
+
+// dcm-bxp.106: the add and edit fields are a rich editor; a mention is a name chip while writing and editing, and the
+// stored text keeps the '@[name](id)' token.
+test("mentions are name chips while writing and editing; the server stores the token", async ({ page }) => {
+  const { campaignId } = await gmCreatesCampaign(page);
+  const gm = await convexAs(page);
+  const { entryId: npc } = await gm.mutation(api.codex.create, { campaignId, kind: "character", idempotencyKey: crypto.randomUUID() });
+  await gm.mutation(api.codex.update, { entryId: npc, patch: { name: "Marlow", role: "Ferryman" } });
+  await page.goto(`/campaigns/${campaignId}/notes?page=template-0`);
+
+  const input = paperColumn(page).getByRole("textbox", { name: "New entry" });
+  await input.click();
+  await input.pressSequentially("* ask @mar");
+  const listbox = paperColumn(page).getByRole("listbox", { name: "Characters & Locations" });
+  await expect(listbox.getByRole("option", { name: /Marlow/ })).toHaveAttribute("aria-selected", "true");
+  await input.press("Enter");
+  await expect(listbox).toHaveCount(0);
+  await expect(input.locator(".bj-mi-chip")).toHaveText(["Marlow"]);
+  await expect(input).not.toContainText("@[");
+  await input.pressSequentially("about the toll");
+  await expect(input).toHaveText(/^\* ask Marlow\s+about the toll$/);
+  await input.press("Enter");
+  await expect(input).toHaveText("");
+  const stored = async () => (await gm.query(api.notesEntries.entries, { campaignId, page: { template: 0 } })).entries.map((e) => e.text);
+  await expect.poll(stored).toEqual([`ask @[Marlow](${npc}) about the toll`]);
+
+  // Backspace removes a chip whole.
+  await input.pressSequentially("@mar");
+  await input.press("Enter");
+  await expect(input.locator(".bj-mi-chip")).toHaveCount(1);
+  await input.press("Backspace");
+  await input.press("Backspace");
+  await expect(input.locator(".bj-mi-chip")).toHaveCount(0);
+
+  // Editing shows the chip again, never the token; the edit keeps the token.
+  await rowOf(page, "about the toll").getByText("about the toll").dblclick();
+  const edit = paperColumn(page).getByRole("textbox", { name: "Edit entry" });
+  await expect(edit).toBeFocused();
+  await expect(edit.locator(".bj-mi-chip")).toHaveText(["Marlow"]);
+  await expect(edit).not.toContainText("@[");
+  await edit.press("End");
+  await edit.pressSequentially(" today");
+  await edit.press("Enter");
+  await expect(rowOf(page, "today").getByRole("link", { name: "Marlow" })).toBeVisible();
+  await expect.poll(stored).toEqual([`ask @[Marlow](${npc}) about the toll today`]);
+});

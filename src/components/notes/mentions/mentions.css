@@ -9,7 +9,7 @@
   min-width: 0;
   display: flex;
 }
-.bj-mi > input {
+.bj-mi > .bj-mi-ed {
   flex: 1;
   min-width: 0;
   width: 100%;
@@ -65,4 +65,33 @@
   align-items: center;
   font-size: 14px;
   color: var(--bj-ink-soft, #6a5236);
+}
+
+/*
+ * The rich editor (dcm-bxp.106): the add / edit field is a single-line contenteditable whose mentions are name chips in
+ * the board's `.bj-mention` gold. It keeps `bj-add` / `bj-edit` from notes.css; these rules make a div behave like
+ * that input (one wrapping line, caret cursor, placeholder while empty).
+ */
+.bj-mi > .bj-mi-ed {
+  display: block;
+  box-sizing: border-box;
+  min-height: 1.5em;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.bj-mi-ed[data-empty]::before {
+  content: attr(aria-placeholder);
+  color: var(--bj-ink-soft, #6a5236);
+  opacity: 0.75;
+  pointer-events: none;
+}
+.bj-mi-chip {
+  background: rgba(227, 180, 90, 0.35);
+  border-radius: 4px;
+  padding: 0 3px;
+  border-bottom: 2px solid #b8842a;
+  white-space: nowrap;
+  user-select: all;
 }

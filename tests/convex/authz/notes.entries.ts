@@ -111,7 +111,7 @@ const area: Area = {
     // notesJournals: the GM lists present player journals (a player gets []); journalView shows readable pages only.
     { fn: api.notesJournals.playerJournals, access: "view", expect: { player: "empty", otherPlayer: "empty" } },
     { fn: api.notesJournals.pastJournals, access: "view", expect: OWN_JOURNAL },
-    { fn: api.notesJournals.journalView, access: "view", expect: { otherPlayer: "ok", grantee: "ok" }, note: "the GM gets the journal without the `players` page" },
+    { fn: api.notesJournals.journalView, access: "view", expect: { otherPlayer: "NOT_FOUND", grantee: "NOT_FOUND" }, note: "the GM gets the journal without the `players` page; another player is refused a present journal (dcm-bxp.109)" },
 
     // notesSharing: the owner shares; a reader may not see or change the recipients.
     { fn: api.notesSharing.setVisibility, access: "view", args: () => ({ visibility: "everyone" }), expect: PAGE_OWNER },

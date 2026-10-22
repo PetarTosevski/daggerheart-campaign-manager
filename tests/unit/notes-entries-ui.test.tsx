@@ -57,6 +57,22 @@ vi.mock("convex/react", () => ({
 
 const { Entries, MigrateButton } = await import("@/components/notes/entries");
 
+/**
+ * Replaces the text of the rich entry editor (a contenteditable since dcm-bxp.106; jsdom has no editing) and puts the
+ * caret at its end, then fires `input` as typing would.
+ */
+function write(editor: HTMLElement, text: string) {
+  act(() => {
+    const node = document.createTextNode(text);
+    editor.replaceChildren(node);
+    const range = document.createRange();
+    range.setStart(node, node.length);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+    fireEvent.input(editor);
+  });
+}
+
 const CAMPAIGN = "c1" as Id<"campaigns">;
 
 function row(id: string, patch: Partial<EntryRow> = {}): EntryRow {
@@ -137,7 +153,7 @@ describe("Entries (D11 N3)", () => {
     cache.set(page([]));
     render(<Entries {...props({ pageId: "template-0" })} />);
     const input = screen.getByRole("textbox", { name: "New entry" });
-    fireEvent.change(input, { target: { value: "^ ambush" } });
+    write(input, "^ ambush");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(named("add").map((c) => c.args)).toEqual([{ campaignId: CAMPAIGN, page: { template: 0 }, kind: "fear", text: "ambush" }]);
     const list = screen.getByRole("list", { name: "Entries" });
@@ -152,7 +168,7 @@ describe("Entries (D11 N3)", () => {
     fireEvent.click(within(group).getByRole("radio", { name: /Hope/ }));
     const input = screen.getByRole("textbox", { name: "New entry" });
     expect(input).toHaveFocus();
-    fireEvent.change(input, { target: { value: "Old Mag runs the ferry" } });
+    write(input, "Old Mag runs the ferry");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(named("add").map((c) => c.args)).toEqual([{ campaignId: CAMPAIGN, page: { template: 0 }, kind: "hope", text: "Old Mag runs the ferry" }]);
 
@@ -166,12 +182,12 @@ describe("Entries (D11 N3)", () => {
     expect(input).toHaveFocus();
     expect(within(group).getByRole("radio", { name: /Hope/ })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText("Old Mag runs the ferry")).toBeInTheDocument();
-    fireEvent.change(input, { target: { value: "typed while loading" } });
+    write(input, "typed while loading");
 
     act(() => cache.set(page([row("e1", { kind: "hope", text: "Old Mag runs the ferry" })])));
     expect(screen.getByRole("textbox", { name: "New entry" })).toBe(input);
     expect(input).toHaveFocus();
-    expect(input).toHaveValue("typed while loading");
+    expect(input).toHaveTextContent("typed while loading");
     expect(within(group).getByRole("radio", { name: /Hope/ })).toHaveAttribute("aria-checked", "true");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(named("add")[1]!.args).toEqual({ campaignId: CAMPAIGN, page: "page9", kind: "hope", text: "typed while loading" });
@@ -250,13 +266,31 @@ describe("Entries (D11 N3)", () => {
     expect(screen.queryByRole("textbox", { name: "Edit entry" })).toBeNull();
     fireEvent.click(within(screen.getByText("first").closest("li")!).getByRole("button", { name: "Edit entry" }));
     const again = screen.getByRole("textbox", { name: "Edit entry" });
-    fireEvent.change(again, { target: { value: "first, revised" } });
+    write(again, "first, revised");
     fireEvent.keyDown(again, { key: "Enter" });
     expect(screen.getByText("first, revised")).toBeInTheDocument();
     fireEvent.click(within(screen.getByText("first, revised").closest("li")!).getByRole("button", { name: "Delete entry" }));
     expect(screen.queryByText("first, revised")).toBeNull();
     expect(calls.map((c) => c.name.split(":")[1])).toEqual(["toggleStar", "moveUp", "setText", "remove"]);
     expect(named("setText")[0]!.args).toEqual({ campaignId: CAMPAIGN, entryId: "e1", text: "first, revised" });
+  });
+
+  it("editing an entry with a mention shows a name chip, not the token, and blur saves the token text once (dcm-bxp.106)", () => {
+    cache.set(page([row("e1", { text: "met @[Marlow](k1) at dusk" })]));
+    render(<Entries {...props()} />);
+    fireEvent.click(within(screen.getByRole("list", { name: "Entries" })).getByRole("button", { name: "Edit entry" }));
+    const edit = screen.getByRole("textbox", { name: "Edit entry" });
+    expect(edit).toHaveFocus();
+    expect(edit).toHaveTextContent("met Marlow at dusk");
+    expect(edit.textContent).not.toContain("k1");
+    expect(edit.querySelector(".bj-mi-chip")).toHaveTextContent("Marlow");
+    act(() => {
+      edit.append(document.createTextNode(" by the ford"));
+      fireEvent.input(edit);
+    });
+    act(() => edit.blur());
+    expect(named("setText").map((c) => c.args.text)).toEqual(["met @[Marlow](k1) at dusk by the ford"]);
+    expect(screen.queryByRole("textbox", { name: "Edit entry" })).toBeNull();
   });
 
   it("search highlights matching rows by their text, mention names included", () => {

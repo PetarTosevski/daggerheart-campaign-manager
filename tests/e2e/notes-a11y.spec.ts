@@ -119,7 +119,7 @@ for (const viewport of [
         await expect(listbox).toHaveCount(0);
         await page.keyboard.type("about the toll");
         await page.keyboard.press("Enter");
-        await expect(input).toHaveValue("");
+        await expect(input).toHaveText("");
         const row = ownPaper(page).getByRole("listitem").filter({ hasText: "about the toll" });
         await expect(row.getByRole("link")).toHaveText("Marlow");
         // The first write creates the journal: the page ref changes from 'template-0' to the new id and the entries

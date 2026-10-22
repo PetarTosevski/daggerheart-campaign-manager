@@ -9,11 +9,6 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import type { EntryRow as Row } from "../../../../convex/notesEntries";
 import { EntryText, MentionInput } from "../mentions";
 
-/** Focuses the edit input when it mounts (the board's autoFocus); a ref callback, not an effect. */
-function focusInput(element: HTMLSpanElement | null) {
-  element?.querySelector("input")?.focus();
-}
-
 export type RowActions = {
   cycle: (entryId: Id<"journalEntries">) => void;
   toggleStar: (entryId: Id<"journalEntries">) => void;
@@ -81,21 +76,16 @@ export function EntryRowView({ campaignId, row, first, search, editing, onEdit, 
         {glyphFor(row)}
       </button>
       {editing ? (
-        <span
-          className="bj-edit-wrap"
-          ref={focusInput}
-          onBlur={(event) => {
-            const target = event.target as HTMLInputElement | null;
-            if (target && "value" in target) save(target.value);
-          }}
-        >
+        <span className="bj-edit-wrap">
           <MentionInput
             campaignId={campaignId}
             label="Edit entry"
             placeholder=""
             className="bj-edit"
             defaultValue={row.text}
+            autoFocus
             onSubmit={save}
+            onBlurText={save}
             onCancel={() => {
               saved.current = true;
               onEdit(null);
