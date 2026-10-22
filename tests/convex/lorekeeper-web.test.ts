@@ -268,6 +268,43 @@ describe("lorekeeper internet pass", () => {
     expect(done!.reserved?.micros).toBe(0);
   });
 
+  it("Stop during the web pass keeps the retry's finished answer, the web pass costed (L11)", async () => {
+    const s = await setup();
+    let webSignal: AbortSignal | null | undefined;
+    let webCalled = false;
+    fetchMock
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nThe books don't settle it.")))
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nTwo Hexes are not covered.\nGM CALL: Apply only the strongest one.", "claude-opus-5-5")))
+      .mockImplementationOnce((_url, init) => {
+        webSignal = init?.signal;
+        webCalled = true;
+        // A web reply that never ends until the request is aborted.
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(webReply([], "x").slice(0, 300)));
+            webSignal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")));
+          },
+        });
+        return Promise.resolve(new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }));
+      });
+    const { answerId } = await s.ask(true);
+    const searching = await waitFor(() => s.row(answerId), (r) => r?.phase === "web" && webCalled);
+    expect([searching!.status, searching!.text, searching!.parts]).toEqual(["streaming", "", undefined]);
+    await s.player.mutation(api.lorekeeper.stop, { campaignId: s.campaignId, answerId });
+    const stopped = await waitFor(() => s.row(answerId), (r) => r?.usage !== undefined);
+    expect(webSignal?.aborted).toBe(true);
+    expect([stopped!.status, stopped!.text, stopped!.parts?.verdict, stopped!.parts?.call, stopped!.parts?.web, stopped!.checkedAgain]).toEqual([
+      "stopped",
+      "Two Hexes are not covered.",
+      "unclear",
+      "Apply only the strongest one.",
+      undefined,
+      true,
+    ]);
+    expect(stopped!.reserved?.micros).toBe(0);
+    expect(await s.campaignCost()).toBe(stopped!.usage!.costMicros);
+  });
+
   it("an 'unclear' answer with the toggle off makes no web call", async () => {
     const s = await setup();
     fetchMock
@@ -332,7 +369,22 @@ describe("lorekeeper internet pass with the e2e fake model (L10)", () => {
   it("'Do our Hexes stack?' with the toggle on keeps the unclear answer, its book quote and GM call, and adds web results", async () => {
     const s = await setup();
     const { answerId } = await s.ask(true, "Do our Hexes stack?");
-    const done = await waitFor(() => s.row(answerId), (r) => r !== null && TERMINAL.has(r.status), 45_000);
+    // L11: watch the row while it runs: the phases in order, and never any text or parts before it ends.
+    const phases: string[] = [];
+    let shownEarly = false;
+    const done = await waitFor(
+      async () => {
+        const r = await s.row(answerId);
+        if (r !== null && !TERMINAL.has(r.status) && (r.text !== "" || r.parts !== undefined)) shownEarly = true;
+        const phase = r?.phase ?? "none";
+        if (phases.at(-1) !== phase) phases.push(phase);
+        return r;
+      },
+      (r) => r !== null && TERMINAL.has(r.status),
+      45_000,
+    );
+    expect(shownEarly).toBe(false);
+    expect(phases).toEqual(["books", "retry", "web", "done"]);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(done!.status).toBe("done");
     expect(done!.checkedAgain).toBe(true);

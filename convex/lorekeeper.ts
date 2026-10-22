@@ -10,6 +10,7 @@ import { lorekeeperAvailable, modelFor } from "./lib/claude";
 import { campaignMutation, campaignQuery } from "./lib/functions";
 import { reserve } from "./lib/lorekeeper/caps";
 import {
+  answerPhaseValidator,
   conversationVisibilityValidator,
   failureCodeValidator,
   IN_FLIGHT_STATUSES,
@@ -60,6 +61,8 @@ const messageView = v.object({
   errorCode: v.optional(failureCodeValidator),
   model: v.optional(v.string()),
   checkedAgain: v.optional(v.boolean()),
+  /** L11 (widened): where an in-flight answer is; the card shows it while no final text is visible. */
+  phase: v.optional(answerPhaseValidator),
   createdAt: v.number(),
   updatedAt: v.number(),
 });
@@ -79,21 +82,31 @@ function toConversationView(row: Doc<"lorekeeperConversations">, me: Id<"users">
   };
 }
 
+/**
+ * An in-flight answer in a hidden phase (the stronger-model check or the internet pass, L11) shows no text or parts:
+ * the run never writes them there, and this keeps it so even if a row says otherwise.
+ */
+function hiddenNow(row: Doc<"lorekeeperMessages">): boolean {
+  return (row.status === "pending" || row.status === "streaming") && (row.phase === "retry" || row.phase === "web");
+}
+
 function toMessageView(row: Doc<"lorekeeperMessages">): MessageView {
+  const hidden = hiddenNow(row);
   const view: MessageView = {
     _id: row._id,
     _creationTime: row._creationTime,
     conversationId: row.conversationId,
     role: row.role,
     status: row.status,
-    text: row.text,
+    text: hidden ? "" : row.text,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
-  if (row.parts !== undefined) view.parts = row.parts;
+  if (row.parts !== undefined && !hidden) view.parts = row.parts;
   if (row.errorCode !== undefined) view.errorCode = row.errorCode;
   if (row.model !== undefined) view.model = row.model;
-  if (row.checkedAgain !== undefined) view.checkedAgain = row.checkedAgain;
+  if (row.checkedAgain !== undefined && !hidden) view.checkedAgain = row.checkedAgain;
+  if (row.phase !== undefined) view.phase = row.phase;
   return view;
 }
 
@@ -243,7 +256,7 @@ export const ask = campaignMutation({
     }
     const base = { conversationId, campaignId: ctx.campaign._id, userId: ctx.user._id, createdAt: now, updatedAt: now };
     await ctx.db.insert("lorekeeperMessages", { ...base, role: "question", status: "done", text: question });
-    const answerId = await ctx.db.insert("lorekeeperMessages", { ...base, role: "answer", status: "pending", text: "", reserved });
+    const answerId = await ctx.db.insert("lorekeeperMessages", { ...base, role: "answer", status: "pending", text: "", phase: "books", reserved });
     await ctx.scheduler.runAfter(0, internal.lorekeeperRun.run, { answerId });
     await ctx.scheduler.runAfter(WATCHDOG_MS, internal.lorekeeperRun.watchdog, { answerId });
     return { conversationId, answerId };
@@ -263,7 +276,7 @@ export const stop = campaignMutation({
     const row = await ctx.db.get("lorekeeperMessages", answerId);
     if (row === null || row.campaignId !== ctx.campaign._id || row.userId !== ctx.user._id || row.role !== "answer") throw appError("LOREKEEPER_NOT_FOUND");
     if (row.status !== "pending" && row.status !== "streaming") return null;
-    await ctx.db.patch("lorekeeperMessages", row._id, { status: "stopped", updatedAt: Date.now() });
+    await ctx.db.patch("lorekeeperMessages", row._id, { status: "stopped", phase: "done", updatedAt: Date.now() });
     await settleReservation(ctx, row, row.reserved?.micros ?? 0, 0);
     return null;
   },

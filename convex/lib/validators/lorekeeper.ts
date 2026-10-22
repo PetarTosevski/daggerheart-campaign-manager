@@ -63,6 +63,14 @@ export const messageStatusValidator = v.union(
 export type MessageStatus = Infer<typeof messageStatusValidator>;
 export const IN_FLIGHT_STATUSES = ["pending", "streaming"] as const satisfies readonly MessageStatus[];
 
+/**
+ * Where an in-flight answer is (L11, widened 2026-10-22; absent on older rows = 'books'): searching the books (the
+ * first pass; a 'rules' answer streams under it), checking again with the stronger model, searching the internet, or
+ * done (the run ended). Uncertain passes are never shown while they run: the card shows the phase instead.
+ */
+export const answerPhaseValidator = v.union(v.literal("books"), v.literal("retry"), v.literal("web"), v.literal("done"));
+export type AnswerPhase = Infer<typeof answerPhaseValidator>;
+
 /** The answer's verdict pill: ✓ From the rules, ? Rules unclear, ✕ Not in your books. */
 export const verdictValidator = v.union(v.literal("rules"), v.literal("unclear"), v.literal("none"));
 export type Verdict = Infer<typeof verdictValidator>;

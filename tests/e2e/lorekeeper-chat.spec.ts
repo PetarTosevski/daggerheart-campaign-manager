@@ -8,7 +8,8 @@ import { gmAndPlayer } from "./live";
 // D13 L6: the Lorekeeper's chat column with the e2e fake model (convex/lib/claude.ts, LOREKEEPER_FAKE_MODEL, honoured
 // only on the local e2e deployment). A player asks via the 'Critical hits' chip and sees the streamed 'From the rules'
 // answer with a quote chip, asks the Hex question and sees 'Rules unclear' with a GM call, stops an answer, keeps the
-// history over a reload, and sends the unclear answer to the GM, who pins it as a table ruling.
+// history over a reload, and sends the unclear answer to the GM, who pins it as a table ruling. L11: the Hex answer
+// shows no provisional text, only 'Checking again with a stronger model…' and 'Searching the internet…' until it ends.
 //
 // Until L9 moves it into scripts/e2e-setup.mjs, this spec turns the fake model on and ingests the invented mini-book
 // (tests/fixtures/lorekeeper/mini-book.txt) as the core book on the e2e backend itself. Never the real API.
@@ -57,10 +58,33 @@ test("a player asks, stops an answer, keeps the history; the GM pins the unclear
     await expect(book).toBeHidden();
 
     // 2. The Hex chip: 'Rules unclear' with a Suggested GM call, checked again by the stronger model (Q2).
+    // L11: an uncertain answer is never shown before the final check; the row shows the process instead. A
+    // MutationObserver records every phase text and whether any answer text showed while the answer was in flight.
     await expect(composer.getByRole("button", { name: "Do Hexes stack?" })).toBeEnabled();
+    await log.evaluate((root) => {
+      const seen = { early: false, phases: [] as string[] };
+      (window as unknown as { __lkSeen: typeof seen }).__lkSeen = seen;
+      const check = () => {
+        for (const status of root.querySelectorAll(".lk-thinking [role=status]")) {
+          const text = status.textContent ?? "";
+          if (text && seen.phases.at(-1) !== text) seen.phases.push(text);
+        }
+        for (const busy of root.querySelectorAll('article[aria-busy="true"]')) {
+          if (/Hex|Rules unclear|Online, players/.test(busy.textContent ?? "")) seen.early = true;
+        }
+      };
+      new MutationObserver(check).observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+    });
     await composer.getByRole("button", { name: "Do Hexes stack?" }).click();
     const hex = answers.filter({ hasText: "Rules unclear" });
     await expect(hex.getByText("Suggested GM call")).toBeVisible({ timeout: 40_000 });
+    const seen = await player.evaluate(() => (window as unknown as { __lkSeen: { early: boolean; phases: string[] } }).__lkSeen);
+    expect(seen.early).toBe(false);
+    expect(seen.phases).toEqual(expect.arrayContaining(["Checking again with a stronger model…", "Searching the internet…"]));
+    expect(seen.phases.indexOf("Checking again with a stronger model…")).toBeLessThan(seen.phases.indexOf("Searching the internet…"));
+    // The final answer appears once, with the internet block (search is on by default).
+    await expect(hex.getByText(/^The books describe one Hex at a time/)).toBeVisible();
+    await expect(hex.getByText("From the internet · unofficial.")).toBeVisible();
     await expect(hex.getByText("Apply only the strongest Hex, and say so at the table.")).toBeVisible();
     await expect(hex.getByText("Checked again with a stronger model")).toBeVisible();
     // The actions show once the retry has finished.

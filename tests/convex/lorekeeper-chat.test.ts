@@ -142,6 +142,8 @@ describe("lorekeeper chat", () => {
     const partial = await waitFor(() => s.row(answerId), (r) => r?.status === "streaming" && r.text.length > 0);
     expect(partial!.text).toBe("A critical hit always succeeds —");
     expect(partial!.parts?.verdict).toBe("rules");
+    // L11: a first-pass 'rules' answer streams under the 'books' phase.
+    expect(partial!.phase).toBe("books");
     release();
 
     const done = await s.finished(answerId);
@@ -155,6 +157,7 @@ describe("lorekeeper chat", () => {
     expect(done!.usage?.output).toBe(412);
     expect(done!.usage?.costMicros).toBeGreaterThan(0);
     expect(done!.checkedAgain).toBeUndefined();
+    expect(done!.phase).toBe("done");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     // The reservation is settled to the real cost.
     expect(done!.reserved?.micros).toBe(0);
@@ -202,6 +205,114 @@ describe("lorekeeper chat", () => {
     // Both passes are settled: the counter holds their real cost, nothing stays reserved.
     expect(done!.reserved?.micros).toBe(0);
     expect(await s.campaignCost()).toBe(done!.usage!.costMicros);
+  });
+
+  describe("think before showing (L11)", () => {
+    const FIRST = "VERDICT: unclear\nThe books don't settle it.\nGM CALL: Your call.";
+    const RETRY = "VERDICT: unclear\nTwo Hexes are not covered.\nGM CALL: Apply only the strongest one.";
+    /** Everything but the end of the reply: all text deltas are sent, the block and message stay open. */
+    const holdAt = (text: string) => text.indexOf("event: content_block_stop");
+    const view = async (s: Awaited<ReturnType<typeof setup>>, conversationId: Id<"lorekeeperConversations">) =>
+      (await s.gm.query(api.lorekeeper.listMessages, { campaignId: s.campaignId, conversationId, paginationOpts: { numItems: 10, cursor: null } })).page[0]!;
+
+    it("an unclear answer never shows the first pass or the retry while they run, then reveals the final answer once", async () => {
+      const s = await setup();
+      const releases: (() => void)[] = [];
+      const replies = [textReply(FIRST), textReply(RETRY, "claude-opus-5-5")];
+      fetchMock.mockImplementation((_url, init) => {
+        const text = replies[releases.length]!;
+        const g = gated(text, holdAt(text), init?.signal);
+        releases.push(g.release);
+        return Promise.resolve(g.response);
+      });
+      const { answerId, conversationId } = await s.ask(undefined, { question: "Do two Hexes stack?" });
+
+      // The first pass's verdict line arrived: the row says 'Checking again…' and holds the text back.
+      await waitFor(() => s.row(answerId), (r) => r?.phase === "retry");
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      let row = await s.row(answerId);
+      expect([row!.status, row!.text, row!.parts, row!.checkedAgain]).toEqual(["streaming", "", undefined, undefined]);
+      // The GM (another reader) sees the same phase and no text.
+      let seen = await view(s, conversationId);
+      expect([seen.phase, seen.text, seen.parts]).toEqual(["retry", "", undefined]);
+
+      // The retry runs hidden too.
+      releases[0]!();
+      await waitFor(async () => releases.length, (n) => n === 2);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      row = await s.row(answerId);
+      expect([row!.phase, row!.text, row!.parts]).toEqual(["retry", "", undefined]);
+      seen = await view(s, conversationId);
+      expect([seen.phase, seen.text, seen.checkedAgain]).toEqual(["retry", "", undefined]);
+
+      releases[1]!();
+      const done = await s.finished(answerId);
+      expect([done!.status, done!.phase, done!.text, done!.parts?.verdict, done!.parts?.call, done!.checkedAgain]).toEqual([
+        "done",
+        "done",
+        "Two Hexes are not covered.",
+        "unclear",
+        "Apply only the strongest one.",
+        true,
+      ]);
+      expect(done!.reserved?.micros).toBe(0);
+      expect(await s.campaignCost()).toBe(done!.usage!.costMicros);
+    });
+
+    it("Stop during the retry keeps the first pass's finished answer, never the retry's partial text", async () => {
+      const s = await setup();
+      let retrySignal: AbortSignal | null | undefined;
+      const retryText = textReply(RETRY, "claude-opus-5-5");
+      fetchMock.mockResolvedValueOnce(sseResponse(textReply(FIRST))).mockImplementationOnce((_url, init) => {
+        retrySignal = init?.signal;
+        return Promise.resolve(gated(retryText, holdAt(retryText), init?.signal).response);
+      });
+      const { answerId } = await s.ask(undefined, { question: "Do two Hexes stack?" });
+      await waitFor(async () => fetchMock.mock.calls.length, (n) => n === 2);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await s.player.mutation(api.lorekeeper.stop, { campaignId: s.campaignId, answerId });
+      await waitFor(async () => retrySignal?.aborted === true, (aborted) => aborted);
+      const stopped = await waitFor(() => s.row(answerId), (r) => r?.usage !== undefined);
+      expect([stopped!.status, stopped!.phase, stopped!.text, stopped!.parts?.verdict, stopped!.parts?.call]).toEqual([
+        "stopped",
+        "done",
+        "The books don't settle it.",
+        "unclear",
+        "Your call.",
+      ]);
+      expect(stopped!.text).not.toContain("Hexes are not covered");
+      expect(stopped!.checkedAgain).toBeUndefined();
+      // Both passes are costed (the retry with what streamed before the Stop); nothing stays reserved.
+      expect(stopped!.reserved?.micros).toBe(0);
+      expect(await s.campaignCost()).toBe(stopped!.usage!.costMicros);
+    });
+
+    it("Stop during a hidden first pass ends with no text: no finished answer exists yet", async () => {
+      const s = await setup();
+      fetchMock.mockImplementation((_url, init) => Promise.resolve(gated(textReply(FIRST), holdAt(textReply(FIRST)), init?.signal).response));
+      const { answerId } = await s.ask(undefined, { question: "Do two Hexes stack?" });
+      await waitFor(() => s.row(answerId), (r) => r?.phase === "retry");
+      await s.player.mutation(api.lorekeeper.stop, { campaignId: s.campaignId, answerId });
+      const stopped = await waitFor(() => s.row(answerId), (r) => r?.usage !== undefined);
+      expect([stopped!.status, stopped!.text, stopped!.parts]).toEqual(["stopped", "", undefined]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(stopped!.reserved?.micros).toBe(0);
+      expect(await s.campaignCost()).toBe(stopped!.usage!.costMicros);
+    });
+
+    it("listMessages never returns text or parts for an in-flight answer in a hidden phase", async () => {
+      const s = await setup();
+      const { conversationId, answerId } = await s.t.run(async (c) => {
+        const user = (await c.db.query("users").take(5)).find((u) => u.email === OTHER_EMAIL)!;
+        const conversationId = await c.db.insert("lorekeeperConversations", { campaignId: s.campaignId, userId: user._id, title: "Hidden", visibility: "campaign", webSearch: true, messageCount: 2, lastAt: 1, createdAt: 1 });
+        const base = { conversationId, campaignId: s.campaignId, userId: user._id, createdAt: 1, updatedAt: 1 };
+        await c.db.insert("lorekeeperMessages", { ...base, role: "question", status: "done", text: "Q?" });
+        const answerId = await c.db.insert("lorekeeperMessages", { ...base, role: "answer", status: "streaming", text: "Draft", parts: { verdict: "unclear", quotes: [] }, checkedAgain: true, phase: "web" });
+        return { conversationId, answerId };
+      });
+      const seen = await view(s, conversationId);
+      expect([seen._id, seen.phase, seen.text, seen.parts, seen.checkedAgain]).toEqual([answerId, "web", "", undefined, undefined]);
+    });
   });
 
   it("without budget for the re-check the first answer is kept", async () => {

@@ -14,9 +14,36 @@
 // nextStep({ pass: "retry", verdict: "none", webSearch: false });      // "booksOnlyMiss"
 // modelForPass("retry");                                               // "claude-opus-5-5"
 // ```
+//
+// L11 (user decision 2026-10-22, binding): clear answers stream, uncertain ones wait for the final check and the
+// reader sees the process. Only the first pass with the verdict 'rules' streams (`streamsLive`); every other pass is
+// written once, when the run knows it is the answer it keeps. Meanwhile the answer row carries a phase:
+//
+// ```ts
+// streamsLive("primary", "rules");     // true: shown as it arrives (a 'rules' answer is never retried)
+// streamsLive("primary", "unclear");   // false: hidden; the row shows phaseForStep("retry")
+// phaseForStep("retry");               // "retry" ('Checking again with a stronger model…')
+// phaseForStep("web");                 // "web"   ('Searching the internet…')
+// phaseForStep("booksOnlyMiss");       // "done"
+// ```
 
 import { PRIMARY_MODEL, RETRY_MODEL } from "./pricing";
 import type { Verdict } from "./types";
+
+/** L11: where an answer is while it runs (convex/lib/validators/lorekeeper.ts `answerPhaseValidator`). */
+export type AnswerPhase = "books" | "retry" | "web" | "done";
+
+/** L11: a pass is shown while it streams only when it is the first pass and its verdict is 'rules'. */
+export function streamsLive(pass: Pass, verdict: Verdict | null): boolean {
+  return pass === "primary" && verdict === "rules";
+}
+
+/** L11: the phase the row shows for the step that comes next. */
+export function phaseForStep(step: NextStep): AnswerPhase {
+  if (step === "retry") return "retry";
+  if (step === "web") return "web";
+  return "done";
+}
 
 /** primary = Sonnet's answer, retry = the Opus re-check, web = the internet pass. */
 export type Pass = "primary" | "retry" | "web";
