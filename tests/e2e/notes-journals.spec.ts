@@ -10,7 +10,8 @@ import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers"
 // ('Bram'). A writes a 'players' page and a 'private' page (seeded through Convex; writing and sharing are N2 / N6):
 // the GM opens Ash's journal and sees neither. The GM retires Ash: everyone finds the 'players' page under Past
 // journals and nobody but A the private one; the GM tears it out; Ash is active again and the remaining pages return
-// with their visibility. Then the same for a death, and for a removal followed by a rejoin. Every change is confirmed
+// with their visibility (and B, a player, may no longer open the present journal by URL: dcm-bxp.109). Then the same
+// for a death, and for a removal followed by a rejoin. Every change is confirmed
 // on the server (expect.poll through a Convex client) before another browser checks it. Runs at 1440 and 390.
 
 const PLAYER_A = "e2e-player@example.test";
@@ -202,7 +203,11 @@ for (const viewport of [
         await expectStrip(B.page, ["Session 1", "My goals"]);
         await setStatus("active");
         await expect.poll(() => pastNames(B)).toEqual([]);
-        await expect(paperColumn(B.page).getByText("read only", { exact: true })).toBeVisible();
+        // dcm-bxp.109: Ash's journal is present again, so B (a player) may no longer open it; the URL is refused.
+        await expect(paperColumn(B.page).getByRole("alert")).toContainText("The journal failed to load");
+        await B.page.reload();
+        await expect(paperColumn(B.page).getByRole("alert")).toContainText("The journal failed to load");
+        await expect(paperColumn(B.page).getByText("met the ferryman")).toHaveCount(0);
 
         // ---- Removed: a past journal for those who stay, nothing for A; the rejoin restores it.
         const members = await gm.client.query(api.notesSharing.recipients, { campaignId, page: { template: 0 } });

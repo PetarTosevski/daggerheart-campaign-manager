@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { key, useAllowlist } from "./helpers";
+import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 // PF10 (.omc/plans/performance.yaml): server reads stay bounded at scale. Each query is measured inside one transaction
@@ -137,6 +137,15 @@ describe("PF10: Notes lists stay under the read budget with 600 pages per journa
         [p1Journal, "p1"],
         [p2Journal, "p2"],
       ] as const) {
+        if (label === "p3" && name !== "p2") {
+          // dcm-bxp.109: a player opens only their own and departed journals; the GM's and p1's present ones are refused.
+          const refused = await t
+            .withIdentity({ subject: `${who}|s` })
+            .query(api.notesJournals.journalView, { campaignId, journalId })
+            .then(() => "ok", errorCode);
+          expect(refused, `${label} journalView ${name}`).toBe("NOT_FOUND");
+          continue;
+        }
         await measure(`${label} journalView ${name}`, who, (c) => c.runQuery(api.notesJournals.journalView, { campaignId, journalId }));
       }
     }

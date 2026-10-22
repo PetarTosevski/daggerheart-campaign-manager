@@ -49,7 +49,7 @@ async function write(page: Page, line: string) {
   const input = paper(page).getByRole("textbox", { name: "New entry" });
   await input.fill(line);
   await input.press("Enter");
-  await expect(input).toHaveValue("");
+  await expect(input).toHaveText("");
 }
 
 /** The entry texts on the caller's own first page ('Session 1'), read on the server. */

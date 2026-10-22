@@ -68,10 +68,10 @@ test("the GM mentions an unmet NPC and renames it; the player gets it only once 
   await expect(input).toHaveAttribute("aria-activedescendant", (await listbox.getByRole("option", { name: /Marlow/ }).getAttribute("id"))!);
   await input.press("Enter");
   await expect(listbox).toHaveCount(0);
-  await expect(input).toHaveValue(`* ask @[Marlow](${npc}) `);
+  await expect(input).toHaveText(/^\* ask Marlow\s*$/);
   await input.pressSequentially("about the toll");
   await input.press("Enter");
-  await expect(input).toHaveValue("");
+  await expect(input).toHaveText("");
 
   const gmLink = rowOf(page, "about the toll").getByRole("link");
   await expect(gmLink).toHaveText("Marlow");
@@ -103,7 +103,7 @@ test("the GM mentions an unmet NPC and renames it; the player gets it only once 
     await playerInput.press("Enter");
     await playerInput.pressSequentially("at the ford");
     await playerInput.press("Enter");
-    await expect(playerInput).toHaveValue("");
+    await expect(playerInput).toHaveText("");
     const playerRow = rowOf(player, "at the ford");
     await expect(playerRow.getByRole("link")).toHaveText("Marlow the Grey");
     await expect
@@ -150,7 +150,7 @@ test("at 390 px: the picker is usable by touch, 44 px options, no horizontal scr
   await expectNoHorizontalScroll(page);
   await option.click();
   await expect(input).toBeFocused();
-  await expect(input).toHaveValue(`camped at @[Mabry Ford](${ford}) `);
+  await expect(input).toHaveText(/^camped at Mabry Ford\s*$/);
   await input.press("Enter");
   const link = rowOf(page, "camped at").getByRole("link", { name: "Mabry Ford" });
   await expect(link).toHaveAttribute("title", "Location");

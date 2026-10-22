@@ -1,7 +1,9 @@
 import { entryActions, pageActions } from "../../src/lib/domain/notes/actions";
+import { newPageTape, sessionLogTitle } from "../../src/lib/domain/notes/defaults";
 import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { departed } from "./journalState";
 import { cachedDeparted, cachedJournal, cachedRole, campaignRole, permissionFor, type PageReadCache, type Role } from "./permissions";
 import {
   defaultVisibility,
@@ -30,6 +32,7 @@ import {
  * | `findPage`        | A page ref in a query: access, or null for a template ref before the journal exists        |
  * | `resolvePage`     | A page ref in a mutation: creates the journal for a template ref                           |
  * | `insertPage`      | A new page (NOTE_PAGE_LIMIT, bin included)                                                 |
+ * | `addSessionPages` | A 'Session N' page linked to a session that goes live, in every present journal (.111)    |
  * | `deletePageRows`  | Deletes up to n of a page's entries and recipients                                         |
  * | `bumpCounts` / `bumpJournal` | Keeps the page and journal counters in step                                     |
  */
@@ -364,7 +367,7 @@ export async function resolvePage(ctx: NotesMutationCtx, ref: PageRef): Promise<
  * the journal's counter plus a bounded range of its torn-out pages. Bumps `pageCount`.
  */
 export async function insertPage(
-  ctx: NotesMutationCtx,
+  ctx: MutationCtx,
   journal: Doc<"journals">,
   fields: { kind: PageKind; title: string; tape: number; visibility: PageVisibility; sessionId?: Id<"sessions"> },
 ): Promise<Id<"journalPages">> {
@@ -386,6 +389,44 @@ export async function insertPage(
   });
   await bumpJournal(ctx, journal._id, { pages: 1 });
   return id;
+}
+
+/**
+ * dcm-bxp.111 (user answer: every session gets its own 'Session N' page): when a session goes live (`sessions.start`),
+ * every journal of the campaign gets a log page 'Session N[: title]' (`sessionLogTitle`) linked to that session, with
+ * its owner's default visibility and the next tape. Idempotent: a journal that already has a page linked to the session
+ * (torn out included, so a restart never brings a torn-out page back) gets none. Skipped: departed journals (frozen,
+ * D2) and full ones (MAX_PAGES, torn-out pages included, Q10). Journals created later get theirs from
+ * `ensureJournal` ('Session 1' linked to the live session, D6). Returns how many pages it added.
+ */
+export async function addSessionPages(
+  ctx: MutationCtx,
+  campaign: Doc<"campaigns">,
+  session: Pick<Doc<"sessions">, "_id" | "n" | "title">,
+): Promise<number> {
+  const journals = await ctx.db
+    .query("journals")
+    .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaign._id))
+    .take(200);
+  let added = 0;
+  for (const journal of journals) {
+    if (await departed(ctx, campaign, journal)) continue;
+    const pages = await ctx.db
+      .query("journalPages")
+      .withIndex("by_journal_binned", (q) => q.eq("journalId", journal._id))
+      .take(MAX_PAGES);
+    if (pages.length >= MAX_PAGES || pages.some((p) => p.sessionId === session._id)) continue;
+    const live = pages.filter((p) => p.binnedAt === undefined);
+    await insertPage(ctx, journal, {
+      kind: "log",
+      title: sessionLogTitle(session),
+      tape: newPageTape(live),
+      visibility: defaultVisibility(journal.userId === campaign.ownerId),
+      sessionId: session._id,
+    });
+    added += 1;
+  }
+  return added;
 }
 
 /** Adds to a journal's counters (they cover pages that are not torn out). */

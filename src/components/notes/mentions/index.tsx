@@ -4,14 +4,23 @@ import "./mentions.css";
 
 import { useQuery } from "convex/react";
 import Link from "next/link";
-import { Fragment, useId, useImperativeHandle, useRef, useState, type KeyboardEvent, type Ref } from "react";
-import { flushSync } from "react-dom";
+import { Fragment, useCallback, useId, useImperativeHandle, useRef, useState, type KeyboardEvent, type Ref } from "react";
 
-import { activeMentionQuery, countMentions, insertMention, MAX_MENTIONS, parseTokens, renderParts, type TextPart } from "@/lib/domain/notes";
+import { countMentions, MAX_MENTIONS, parseTokens, renderParts, type TextPart } from "@/lib/domain/notes";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { EntryTextProps, MentionInputProps } from "../slots";
+import {
+  caretMention,
+  countChips,
+  fillEditor,
+  insertChip,
+  insertPlainText,
+  placeCaret,
+  serializeEditor,
+  type CaretMention,
+} from "./editor-dom";
 import { codexHref, pickerOptions, visibleRefs, type PickerOption } from "./options";
 
 /**
@@ -49,45 +58,105 @@ function MentionedText({ campaignId, parts }: { campaignId: Id<"campaigns">; par
 type PickerHandle = { count: () => number; choose: (index: number) => boolean };
 
 /**
- * The add / edit input with the @ picker (D11 N5; Q6, D7). Typing '@' (at the start or after a space) opens a
- * listbox of the Characters & Locations entries the writer can see, filtered by what follows the '@'. Arrow keys move,
- * Enter or a click inserts the N1 token '@[name](id)' with a space after it, Escape closes the list (a second Escape
- * cancels an edit). Existing tokens stay as written. At most MAX_MENTIONS tokens per entry: then the list only says so.
- * Enter without an open choice submits the trimmed text, as before.
+ * The add / edit field with the @ picker (D11 N5; Q6, D7) as a rich editor (dcm-bxp.106): a single-line
+ * contenteditable in which every mention is a name chip while writing and editing, never the raw token. Typing '@'
+ * (at the start, after a space or right after a chip) opens a listbox of the Characters & Locations entries the
+ * writer can see, filtered by what follows the '@'. Arrow keys move, Enter or a click puts a chip there with a space
+ * after it, Escape closes the list (a second Escape cancels an edit). Backspace removes a chip whole. At most
+ * MAX_MENTIONS chips per entry: then the list only says so. Enter without an open choice submits the stored text
+ * (chips as '@[name](id)' tokens), trimmed; paste inserts plain text only; line breaks never enter.
  *
- * ARIA: the ARIA 1.1 combobox pattern (a `combobox` wrapper owning the listbox, the input a `textbox` with
- * `aria-autocomplete`, `aria-controls` and `aria-activedescendant`), so the input keeps its textbox role and name
- * ('New entry' / 'Edit entry') for the entries slot and its tests.
+ * The editor's DOM is the state (editor-dom.ts): React renders no children into it, so live updates never reset the
+ * caret; `defaultValue` fills it once when it mounts. A chip shows the name its token stores.
+ *
+ * ARIA: the ARIA 1.1 combobox pattern (a `combobox` wrapper owning the listbox; the editor a single-line `textbox` with
+ * `aria-autocomplete`, `aria-controls` and `aria-activedescendant`), so the field keeps its textbox role and name
+ * ('New entry' / 'Edit entry'). The placeholder is `aria-placeholder` (and `placeholder`, drawn by CSS while empty).
  */
-export function MentionInput({ campaignId, label, placeholder, className, defaultValue, onSubmit, onCancel }: MentionInputProps) {
-  const [value, setValue] = useState(defaultValue ?? "");
-  /** The caret while the input has focus; null otherwise (the list shows only while focused). */
-  const [caret, setCaret] = useState<number | null>(null);
-  /** The '@' index whose list Escape closed. */
-  const [dismissed, setDismissed] = useState<number | null>(null);
-  const [active, setActive] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
+export function MentionInput({
+  campaignId,
+  label,
+  placeholder,
+  className,
+  defaultValue,
+  autoFocus,
+  onSubmit,
+  onCancel,
+  onBlurText,
+}: MentionInputProps) {
+  const editor = useRef<HTMLDivElement | null>(null);
   const picker = useRef<PickerHandle>(null);
+  /** The '@query' at the caret while the editor has focus; null otherwise (the list shows only while focused). */
+  const [mention, setMention] = useState<CaretMention | null>(null);
+  /** The '@' whose list Escape closed. */
+  const [dismissed, setDismissed] = useState<{ node: Text; start: number } | null>(null);
+  const [active, setActive] = useState(0);
+  const [empty, setEmpty] = useState(!defaultValue);
+  const [full, setFull] = useState(() => countMentions(defaultValue ?? "") >= MAX_MENTIONS);
   const listId = useId();
 
-  const mention = caret === null ? null : activeMentionQuery(value, caret);
-  const open = mention !== null && mention.start !== dismissed && !/^\s/.test(mention.query);
-  const full = countMentions(value) >= MAX_MENTIONS;
+  /** Fills the editor once when it mounts (a ref callback, not an effect) and, for an edit, focuses it at the end. */
+  const attach = useCallback(
+    (element: HTMLDivElement | null) => {
+      const fresh = element !== null && editor.current !== element;
+      editor.current = element;
+      if (!fresh) return;
+      fillEditor(element, defaultValue ?? "");
+      if (autoFocus) {
+        element.focus();
+        placeCaret(element);
+      }
+    },
+    [defaultValue, autoFocus],
+  );
+
+  const open =
+    mention !== null &&
+    !(dismissed !== null && dismissed.node === mention.node && dismissed.start === mention.start) &&
+    !/^\s/.test(mention.query);
   const optionId = (index: number) => `${listId}-${index}`;
 
-  function choose(option: PickerOption) {
-    if (mention === null || caret === null) return;
-    const next = insertMention(value, mention.start, caret, { id: option.id, name: option.name });
-    flushSync(() => {
-      setValue(next.text);
-      setCaret(next.caret);
-      setActive(0);
-    });
-    input.current?.setSelectionRange(next.caret, next.caret);
+  /** Reads the caret's '@query', emptiness and the chip count from the editor (after any change or caret move). */
+  function sync() {
+    const element = editor.current;
+    if (element === null) return;
+    const next = caretMention(element);
+    setMention((prev) =>
+      prev !== null && next !== null && prev.node === next.node && prev.start === next.start && prev.end === next.end && prev.query === next.query
+        ? prev
+        : next,
+    );
+    if (next === null) setDismissed(null);
+    setEmpty(serializeEditor(element) === "");
+    setFull(countChips(element) >= MAX_MENTIONS);
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function choose(option: PickerOption) {
+    const element = editor.current;
+    if (element === null || mention === null) return;
+    insertChip(element, mention, { id: option.id, name: option.name });
+    setActive(0);
+    sync();
+  }
+
+  function submit() {
+    const element = editor.current;
+    if (element === null) return;
+    const text = serializeEditor(element).trim();
+    if (!text) return;
+    onSubmit(text);
+    element.replaceChildren();
+    setDismissed(null);
+    sync();
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.nativeEvent.isComposing) return;
+    // Plain text only: no bold / italic / underline shortcuts.
+    if ((event.ctrlKey || event.metaKey) && ["b", "i", "u"].includes(event.key.toLowerCase())) {
+      event.preventDefault();
+      return;
+    }
     if (open && mention !== null) {
       const count = picker.current?.count() ?? 0;
       if ((event.key === "ArrowDown" || event.key === "ArrowUp") && count > 0) {
@@ -102,44 +171,57 @@ export function MentionInput({ campaignId, label, placeholder, className, defaul
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        setDismissed(mention.start);
+        setDismissed({ node: mention.node, start: mention.start });
         return;
       }
     }
     if (event.key === "Escape") onCancel?.();
     if (event.key !== "Enter") return;
     event.preventDefault();
-    const text = value.trim();
-    if (!text) return;
-    onSubmit(text);
-    setValue("");
-    setDismissed(null);
+    submit();
   }
 
   return (
     <span className="bj-mi" role="combobox" aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-owns={open ? listId : undefined}>
-      <input
-        ref={input}
-        className={className ?? "bj-add"}
-        type="text"
+      <div
+        ref={attach}
+        className={`${className ?? "bj-add"} bj-mi-ed`}
+        role="textbox"
+        tabIndex={0}
+        contentEditable
+        suppressContentEditableWarning
+        spellCheck
         aria-label={label}
+        aria-multiline="false"
         aria-autocomplete="list"
+        aria-placeholder={placeholder || undefined}
+        {...{ placeholder: placeholder || undefined }}
+        data-empty={empty || undefined}
         aria-controls={open ? listId : undefined}
         aria-activedescendant={open ? optionId(active) : undefined}
-        autoComplete="off"
-        placeholder={placeholder}
-        value={value}
-        onChange={(event) => {
-          const next = event.currentTarget.value;
-          const at = event.currentTarget.selectionStart ?? next.length;
-          setValue(next);
-          setCaret(at);
+        onInput={() => {
           setActive(0);
-          if (activeMentionQuery(next, at) === null) setDismissed(null);
+          sync();
         }}
-        onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-        onFocus={(event) => setCaret(event.currentTarget.selectionStart)}
-        onBlur={() => setCaret(null)}
+        onKeyUp={(event) => {
+          if (!["Enter", "Escape", "ArrowDown", "ArrowUp"].includes(event.key)) sync();
+        }}
+        onSelect={sync}
+        onClick={sync}
+        onFocus={sync}
+        onBlur={() => {
+          setMention(null);
+          const element = editor.current;
+          if (element !== null) onBlurText?.(serializeEditor(element));
+        }}
+        onPaste={(event) => {
+          event.preventDefault();
+          const element = editor.current;
+          if (element === null) return;
+          insertPlainText(element, event.clipboardData.getData("text/plain"));
+          sync();
+        }}
+        onDrop={(event) => event.preventDefault()}
         onKeyDown={onKeyDown}
       />
       {open && mention !== null ? (

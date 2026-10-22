@@ -55,7 +55,7 @@ async function setup() {
     t.run(async (ctx) => saveSheet(ctx, id, f(readSheet((await ctx.db.get("characters", id))!.sheet))));
   const fear = () => t.run(async (ctx) => (await campaignFearState(ctx, campaignId)).fear);
   const setFear = (value: number) => gm.mutation(api.fear.set, { campaignId, value, idempotencyKey: key() });
-  return { t, gm, p1, out, anon: t, campaignId, a, b, sheetOf, change, fear, setFear };
+  return { t, gm, p1, p2, out, anon: t, campaignId, a, b, sheetOf, change, fear, setFear };
 }
 
 async function codeOf(p: Promise<unknown>): Promise<unknown> {
@@ -245,6 +245,69 @@ describe("sessions per session (D10 S3)", () => {
     expect(await startOf(env, sessionId)).toEqual({ startedAt: result.startedAt, alreadyStarted: true });
     expect(await startOf(env)).toEqual({ startedAt: result.startedAt, alreadyStarted: true });
     expect(await logOf(env, sessionId)).toHaveLength(1);
+  });
+
+  it("dcm-bxp.111: start gives every present journal one 'Session N[: title]' page linked to the session, once", async () => {
+    const env = await setup();
+    const { campaignId } = env;
+    // Three journals (GM, P1, P2) before any session exists: their default 'Session 1' links to nothing.
+    for (const who of [env.gm, env.p1, env.p2]) {
+      await who.mutation(api.notesEntries.add, { campaignId, page: { template: 0 }, kind: "note", text: "hello" });
+    }
+    /** [owner, title, kind, visibility, journal pageCount] of every page linked to the session, by owner. */
+    const sessionPages = (sessionId: Id<"sessions">) =>
+      env.t.run(async (ctx) => {
+        const journals = await ctx.db
+          .query("journals")
+          .withIndex("by_campaign_user", (q) => q.eq("campaignId", campaignId))
+          .collect();
+        const rows: [string, string, string, string, number][] = [];
+        for (const journal of journals) {
+          const pages = await ctx.db
+            .query("journalPages")
+            .withIndex("by_journal_binned", (q) => q.eq("journalId", journal._id))
+            .collect();
+          const owner = (await ctx.db.get("users", journal.userId))!.email!.split("@")[0]!;
+          for (const page of pages) {
+            if (page.sessionId === sessionId && page.binnedAt === undefined) rows.push([owner, page.title, page.kind, page.visibility, journal.pageCount]);
+          }
+        }
+        return rows.sort((x, y) => x[0].localeCompare(y[0]));
+      });
+
+    const one = await create(env);
+    await env.gm.mutation(api.sessionRecords.setTitle, { campaignId, sessionId: one.sessionId, title: "The Ford" });
+    await startOf(env, one.sessionId);
+    expect(await sessionPages(one.sessionId)).toEqual([
+      ["gm", "Session 1: The Ford", "log", "private", 5],
+      ["p1", "Session 1: The Ford", "log", "gm", 5],
+      ["p2", "Session 1: The Ford", "log", "gm", 5],
+    ]);
+    // A restart of the same session adds nothing.
+    await endOf(env);
+    await startOf(env, one.sessionId);
+    expect((await sessionPages(one.sessionId)).map((r) => r[4])).toEqual([5, 5, 5]);
+
+    // Bryn dies: P2's journal is departed (frozen) and gets no page.
+    await env.gm.mutation(api.characters.setStatus, { characterId: env.b, status: "dead" });
+    const two = await create(env);
+    await startOf(env, two.sessionId);
+    expect(await sessionPages(two.sessionId)).toEqual([
+      ["gm", "Session 2", "log", "private", 6],
+      ["p1", "Session 2", "log", "gm", 6],
+    ]);
+    // The GM tears out their Session 2 page; restarting the session does not bring a new one.
+    const gmPage = await env.t.run(async (ctx) => {
+      const pages = await ctx.db
+        .query("journalPages")
+        .withIndex("by_campaign_visibility_binned", (q) => q.eq("campaignId", campaignId).eq("visibility", "private"))
+        .collect();
+      return pages.find((p) => p.sessionId === two.sessionId)!._id;
+    });
+    await env.gm.mutation(api.notesBin.binPage, { campaignId, page: gmPage });
+    await endOf(env);
+    await startOf(env, two.sessionId);
+    expect(await sessionPages(two.sessionId)).toEqual([["p1", "Session 2", "log", "gm", 6]]);
   });
 
   it("B8: start without a sessionId takes the newest planned session, or creates one", async () => {

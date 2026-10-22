@@ -15,6 +15,8 @@
  *   Slayer Dice for a Hope each, Tide tokens and the moon die (`sessionEndFeatures`, every PC). Both run inside the
  *   same sheet change as the class hooks, so they share the PC's row in the undoable group; their notes come back in
  *   `features` and join the log stamp.
+ * - `start` also gives every present journal a 'Session N[: title]' log page linked to the session, once per session
+ *   (dcm-bxp.111, `addSessionPages` in convex/lib/notes.ts).
  * - Both stamp the session's log with the board's auto lines (B10) and, in Journey to Horizon, report the Doom Track
  *   reminder (Q6). `reminders` (Q8) stays in the results for older callers but is always empty: the four features it
  *   reminded of are automated.
@@ -43,6 +45,7 @@ import { rollDie } from "./lib/dice";
 import { featureScope } from "./lib/featureScope";
 import { campaignFearState, gainFear } from "./lib/fear";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
+import { addSessionPages } from "./lib/notes";
 import { insertSession, liveSession, loadSession, newestPlannedSession, tallyRows } from "./lib/sessions";
 import { MAX_LOG_ENTRIES, SESSION_TEXT_MAX } from "./lib/validators/sessions";
 
@@ -337,6 +340,8 @@ export const start = keyedGmMutation({
       const fresh = await campaignFearState(ctx, campaignId);
       await ctx.db.patch("campaignState", fresh._id, { sessionStartedAt: startedAt, extraCharactersSession: undefined, liveSessionId: target._id });
       await ctx.db.patch("sessions", target._id, { status: "live", startedAt, updatedAt: startedAt });
+      // dcm-bxp.111: every present journal gets this session's 'Session N' page (once per session).
+      await addSessionPages(ctx, ctx.campaign, target);
       const groupId = newGroupId();
       const active = (await party(ctx, campaignId)).filter(({ character }) => character.status === "active");
       // Class hooks first (Prayer Dice, Rally), then the session features on the result (F0: a changed sheet is a new reference).
