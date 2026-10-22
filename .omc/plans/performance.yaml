@@ -221,6 +221,11 @@ waves:
         goal: "The dashboard party section reads a characters.partySummary projection (name, portrait, HP, stress, hope, armor, level, class) instead of full sheets, so an HP tick re-sends a few hundred bytes per character, not the whole sheet."
         depends_on: [PF4]
         owns:
+          # ORCHESTRATOR NOTE 2026-10-22: the dashboard's other listByCampaign readers and PartyCard's optimistic update.
+          - src/components/party/party-card.tsx
+          - src/components/party/rest/launcher.tsx
+          - src/app/(gm)/campaigns/[campaignId]/wither-panel.tsx
+          - src/components/party/slots.ts
           - convex/characters.ts
           - src/app/(gm)/campaigns/[campaignId]/party-section.tsx
           - tests/convex/characters-summary.test.ts
