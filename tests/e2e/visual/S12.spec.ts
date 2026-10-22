@@ -30,10 +30,12 @@ test("S12 domain cards and hero cards at 1440 and 390", { tag: "@visual" }, asyn
   await expect(felt.getByRole("list", { name: "Vault cards" }).getByRole("button", { name: "Move to loadout (2 Stress)" })).toBeVisible();
   await shoot(felt, "vault-spread");
 
-  // A hand card is keyboard focusable and shows its footer action.
+  // A hand card is keyboard focusable and shows its footer: 'More' first (SC1), then its action.
   const hand = felt.getByRole("list", { name: "Loadout cards" }).getByRole("article", { name: "Deft Deceiver" });
   await hand.focus();
   await expect(hand).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(hand.getByRole("button", { name: "More about Deft Deceiver" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(hand.getByRole("button", { name: "Move to vault" })).toBeFocused();
 

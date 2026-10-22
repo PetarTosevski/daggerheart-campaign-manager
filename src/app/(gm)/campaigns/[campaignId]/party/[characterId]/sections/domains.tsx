@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
+import { CardMore } from "@/components/cards/card-dialog";
 import { DOMAIN_ICONS } from "@/components/party/party-display";
 import { Label, SheetBox, Small } from "@/components/party/sheet-ui";
 import { assetBackground } from "@/lib/design-assets";
@@ -85,17 +86,17 @@ function usedLabel(sheet: Parameters<typeof cardAvailability>[0], cardId: string
 /**
  * The board's hand-card face (`hc-face`): domain-coloured head, art with the Recall badge, meta, text, footer.
  * `used` (the reset label of an exhausted card) greys the card and lays the ribbon over its art.
+ * The footer sits under the text, never over it (SC1, dcm-bxp.126): 'More' first, on the left that the next card
+ * in the fan never covers, opens the whole card in CardDialog; then the face's own buttons (`children`).
  */
 function CardFace({
   card,
   focusable,
-  actsShown,
   used,
   children,
 }: {
   card: DomainCard;
   focusable?: boolean;
-  actsShown?: boolean;
   used?: string | null;
   children?: ReactNode;
 }) {
@@ -128,7 +129,10 @@ function CardFace({
         {domain?.name ?? card.domain} {TYPE_LABEL[card.type]} · Recall {card.recallCost}
       </div>
       <p className="dk-face-text">{card.text}</p>
-      {children ? <footer className={`dk-face-acts${actsShown ? " show" : ""}`}>{children}</footer> : null}
+      <footer className="dk-face-acts">
+        <CardMore card={card} used={used} className="dk-more" />
+        {children}
+      </footer>
     </article>
   );
 }
@@ -275,7 +279,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
                   const used = usedLabel(sheet, card.id);
                   return (
                     <div role="listitem" key={card.id} className="dk-hand-card" style={fan(i, loadout.length, used !== null)}>
-                      <CardFace card={card} focusable actsShown={leveling} used={used}>
+                      <CardFace card={card} focusable used={used}>
                         {canEdit ? (
                           <button type="button" className="dk-btn" disabled={busy !== null} onClick={() => void move(card, "vault")}>
                             Move to vault
@@ -320,7 +324,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
                   const cost = (duringRest && restOpen) || card.recallCost === 0 ? "free" : `${card.recallCost} Stress`;
                   return (
                     <div role="listitem" key={card.id} className="dk-spread-card" style={{ "--d": `${i * 55}ms` } as CSSProperties}>
-                      <CardFace card={card} actsShown used={usedLabel(sheet, card.id)}>
+                      <CardFace card={card} used={usedLabel(sheet, card.id)}>
                         {canEdit ? (
                           block ? (
                             <span className="dk-block">{block}</span>
@@ -525,7 +529,6 @@ function DeckCard({
   levelUp?: ReactNode;
 }) {
   const { sheet } = useSheet();
-  const [open, setOpen] = useState(false);
   const [flipped, setFlipped] = useState(false);
   const backRef = useRef<HTMLButtonElement>(null);
   const turnRef = useRef<HTMLButtonElement>(null);
@@ -546,7 +549,7 @@ function DeckCard({
   return (
     <div className={`dkf${locked ? " face" : " plain"}${flipped ? " flipped" : ""}`}>
       <article
-        className={`dkc${locked ? " locked" : ""}${owned ? " owned" : ""}${chosen ? " lu-chosen" : ""}${open ? " open" : ""}`}
+        className={`dkc${locked ? " locked" : ""}${owned ? " owned" : ""}${chosen ? " lu-chosen" : ""}`}
         style={{ "--dc": domain?.color ?? "#5b2b2b" } as CSSProperties}
         aria-label={card.name}
         aria-hidden={faceDown || undefined}
@@ -563,15 +566,11 @@ function DeckCard({
         <div className="dkc-meta">
           {domainName} {TYPE_LABEL[card.type]} · Recall {card.recallCost}
         </div>
-        {/* More makes the text scroll inside the fixed-size card; it is then focusable so the keyboard can scroll it. */}
-        <p className="dkc-text" role={open ? "region" : undefined} tabIndex={open && !faceDown ? 0 : undefined} aria-label={open ? `${card.name} text` : undefined}>
-          {card.text}
-        </p>
+        {/* The fixed-size card shows the start of the text; More opens the whole card in CardDialog (SC1). */}
+        <p className="dkc-text">{card.text}</p>
         {locked ? <span className="dkc-lock">{unlocks ? `Unlocks at level ${unlocks}` : "Out of reach"}</span> : null}
         <footer className="dkc-foot">
-          <button type="button" className="dkc-more" aria-expanded={open} aria-label={`${open ? "Less" : "More"} about ${card.name}`} onClick={() => setOpen((o) => !o)}>
-            {open ? "Less" : "More"}
-          </button>
+          <CardMore card={card} used={usedLabel(sheet, card.id)} className="dkc-more" />
           <span className="flex-1" />
           {owned ? <span className="dkc-badge">{sheet.domainCards.loadout.includes(card.id) ? "In loadout" : "In vault"}</span> : null}
           {locked ? (
