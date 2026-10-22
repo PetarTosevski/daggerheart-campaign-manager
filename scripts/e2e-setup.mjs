@@ -14,8 +14,17 @@ import { e2ePorts } from "./e2e-ports.mjs";
 
 const ENV_FILE = ".env.e2e.local";
 const E2E_GM_EMAIL = "e2e-gm@example.test";
-// Extra allowlisted accounts: a player, and an email + password account.
-const E2E_ALLOWED = [E2E_GM_EMAIL, "e2e-player@example.test", "e2e-password@example.test"];
+// Extra allowlisted accounts: two players that sign in through the test form
+// (e2e-password@ is the second player / outsider despite its name), and a
+// password-only account that only players.spec uses. One email per sign-in
+// method: an email first used by the test sign-in cannot sign up with a password.
+const E2E_PASSWORD_ONLY_EMAIL = "e2e-password-only@example.test";
+const E2E_ALLOWED = [
+  E2E_GM_EMAIL,
+  "e2e-player@example.test",
+  "e2e-password@example.test",
+  E2E_PASSWORD_ONLY_EMAIL,
+];
 
 function readEnvFile() {
   if (!existsSync(ENV_FILE)) return {};
