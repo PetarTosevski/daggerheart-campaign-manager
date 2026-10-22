@@ -255,6 +255,8 @@ export async function undoEntry(
       ...(b.minionCount !== undefined ? { minionCount: b.minionCount } : {}),
       ...(b.conditions !== undefined ? { conditions: b.conditions } : {}),
       ...(b.tags !== undefined ? { tags: b.tags } : {}),
+      // CA4b: card modifiers the action put on the instance go too (an empty list clears the field).
+      ...(b.effects !== undefined ? { effects: b.effects.length > 0 ? b.effects : undefined } : {}),
       updatedAt: now,
     });
   }

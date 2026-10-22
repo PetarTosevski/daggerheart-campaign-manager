@@ -105,6 +105,16 @@ describe("combat attack: access by role", () => {
     });
   });
 
+  it("attack with two targets (CA4b): access first, then COMBAT_TARGET_INVALID for the player and the GM", async () => {
+    expect(await rows((w, s, role) => w.as(role).mutation(api.combatActions.attack, attackArgs(w, s, [s.packToken, s.archerToken])))).toEqual({
+      anon: "UNAUTHENTICATED",
+      outsider: "NOT_FOUND",
+      otherPlayer: "FORBIDDEN",
+      player: "COMBAT_TARGET_INVALID",
+      gm: "COMBAT_TARGET_INVALID",
+    });
+  });
+
   it("targets: the character's player and the GM", async () => {
     expect(await rows((w, s, role) => w.as(role).query(api.combatActions.targets, { campaignId: w.campaignId, characterId: w.characterA, mapId: s.mapId }))).toEqual({
       anon: "UNAUTHENTICATED",

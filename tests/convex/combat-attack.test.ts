@@ -227,6 +227,22 @@ describe("combatActions.attack: hit, damage and the two rows", () => {
     expect((await a.rows()).find((row) => row.visibility === "gm")!.summary).toContain(`resistant: ${halved}`);
   });
 
+  it("Onslaught in the loadout (CB p.330): a weapon hit marks at least Major, 2 HP; a miss marks nothing (CA4b)", async () => {
+    const a = await arena();
+    await a.t.run(async (ctx) => {
+      const s = readSheet((await ctx.db.get("characters", a.w.characterA))!.sheet);
+      await saveSheet(ctx, a.w.characterA, { ...s, domainCards: { owned: [...s.domainCards.owned, "onslaught"], loadout: [...s.domainCards.loadout.slice(0, 4), "onslaught"] } });
+    });
+    // Thresholds 100 / 200: any damage is Minor (1 HP) without the floor.
+    const bandit = await a.enemy("Bandit", 6, 10);
+    resolved(await a.attack(a.player, [bandit.tokenId]));
+    expect((await a.instance(bandit.instanceId)).hp).toBe(2);
+    const gmRow = (await a.rows()).find((row) => row.kind === "combat" && row.visibility === "gm")!;
+    expect(gmRow.summary).toContain("Major (Onslaught) → 2 HP");
+    const pub = (await a.rows()).find((row) => row.kind === "combat" && row.visibility === "public")!;
+    expect(pub.summary).not.toMatch(STAT_WORDS);
+  });
+
   it("ticks armed countdowns like an action roll", async () => {
     const a = await arena();
     const bandit = await a.enemy("Bandit", 6, 10);
@@ -270,6 +286,21 @@ describe("combatActions.attack: targets, line of sight and range", () => {
     await a.t.run((ctx) => ctx.db.patch("encounters", a.encounterId, { status: "ended" }));
     expect(await code(a.attack(a.player, [bandit.tokenId]))).toBe("COMBAT_TARGET_INVALID");
     expect((await a.rows()).filter((row) => row.kind === "combat")).toEqual([]);
+  });
+
+  it("a plain weapon attack takes one target (CA4b, bead dcm-bxp.99.18): two are COMBAT_TARGET_INVALID with nothing rolled", async () => {
+    const a = await arena();
+    const one = await a.enemy("Bandit", 6, 10);
+    const two = await a.enemy("Bandit 2", 7, 10);
+    const hopeBefore = (await a.sheet()).hope;
+    expect(await code(a.attack(a.player, [one.tokenId, two.tokenId]))).toBe("COMBAT_TARGET_INVALID");
+    // Out of range too: still refused, not sent to the GM.
+    const far = await a.enemy("Archer", 15, 10);
+    expect(await code(a.attack(a.player, [one.tokenId, far.tokenId]))).toBe("COMBAT_TARGET_INVALID");
+    expect((await a.rows()).filter((row) => row.kind === "combat")).toEqual([]);
+    expect(await a.requests()).toEqual([]);
+    expect((await a.sheet()).hope).toBe(hopeBefore);
+    expect(resolved(await a.attack(a.player, [one.tokenId])).targets).toHaveLength(1);
   });
 
   it("refuses an attacker with no token on the live map, and a map that is not live", async () => {

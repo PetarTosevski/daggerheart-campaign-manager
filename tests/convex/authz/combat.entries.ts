@@ -348,6 +348,7 @@ async function sanctioned(w: World) {
 const NOT_THEIRS = { otherPlayer: "FORBIDDEN" } as const;
 
 const attacks: Entry[] = [
+  // One target only (CA4b, bead dcm-bxp.99.18): two are COMBAT_TARGET_INVALID after the access check (combat-attack.test.ts).
   { fn: api.combatActions.attack, access: "view", setup: arena, args: (w) => attackArgs(w, w.ids.packToken!), expect: NOT_THEIRS },
   { fn: api.combatActions.targets, access: "view", setup: arena, args: (w) => ({ characterId: w.characterA, mapId: w.ids.mapId }), expect: NOT_THEIRS },
   { fn: api.combatActions.pickMinions, access: "view", setup: attacked, args: (w) => ({ entryId: w.ids.entryId, instanceIds: [w.ids.packId] }), expect: NOT_THEIRS },
@@ -382,6 +383,7 @@ async function cardSanctioned(w: World) {
 
 const cards: Entry[] = [
   // The GM may play for any character (user answer 2026-10-22); another player is refused by `loadCharacter` (edit).
+  // CA4b changed no access: kept dice and range origins act after the access check (combat-cards.test.ts).
   { fn: api.combatCards.useCard, access: "view", setup: holdingCards, args: (w) => cardArgs(w, w.ids.packToken!), expect: NOT_THEIRS },
   { fn: api.combatCards.hand, access: "view", setup: holdingCards, args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
   { fn: api.combatCards.sanction, access: "gm", setup: cardSanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },

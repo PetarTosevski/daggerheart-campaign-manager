@@ -1,7 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 import type { RollRecord } from "../../../src/lib/domain/duality";
-import { encounterConditionValidator } from "./encounters";
+import { encounterConditionValidator, instanceEffectValidator } from "./encounters";
 
 /**
  * Validators of the action log (D5 T0, CD19). The roll mirrors `RollRecord`
@@ -73,6 +73,8 @@ export const adversaryBeforeValidator = v.object({
   minionCount: v.optional(v.number()),
   conditions: v.optional(v.array(encounterConditionValidator)),
   tags: v.optional(v.array(v.string())),
+  /** The instance's card / feature modifiers, set when the action changed them (CA4b, widened; Glyph of Nightfall...). */
+  effects: v.optional(v.array(instanceEffectValidator)),
 });
 
 /** The stored fields of one `actionLog` row (see convex/tables/actionLog.ts). */
