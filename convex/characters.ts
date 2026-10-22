@@ -6,7 +6,6 @@ import {
   BASE_HOPE_MAX,
   hitPointsToMark,
   hopeMax,
-  markStress,
   MAX_BAGS,
   MAX_HANDFULS,
   STARTING_EXPERIENCE_VALUE,
@@ -47,6 +46,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { installedAugments, seedMotherboard } from "./characterExtras";
 import { logAction } from "./lib/actionLog";
+import { moveCardFor } from "./lib/cardHand";
 import { featureScope } from "./sessionFeatures";
 import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
@@ -638,42 +638,14 @@ export const applyDamage = keyedUserMutation({
 });
 
 /**
- * Moves a domain card between loadout (max 5) and vault. From the vault into
- * the loadout costs the card's Recall Cost in Stress unless it happens during
- * a rest (CB 101, 105: swaps are free "when you start a rest"): `duringRest`
- * counts only while the campaign has an open party rest. Owner or GM.
+ * Moves a domain card between loadout (max 5) and vault; from the vault it costs the card's Recall Cost in Stress unless
+ * during an open party rest (CB 101, 105). The character's player, or the GM for any character of the campaign, logged as
+ * the GM acting for it (CA4b). See `moveCardFor` in convex/lib/cardHand.ts.
  */
 export const moveCard = userMutation({
   args: { characterId: v.id("characters"), cardId: v.string(), to: v.union(v.literal("loadout"), v.literal("vault")), duringRest: v.optional(v.boolean()) },
   returns: v.null(),
-  handler: async (ctx, { characterId, cardId, to, duringRest }) => {
-    const { campaign, character, sheet: s } = await editable(ctx, ctx.user, characterId);
-    if (!s.domainCards.owned.includes(cardId)) invalid("That card isn't in your deck.");
-    const inLoadout = s.domainCards.loadout.includes(cardId);
-    let next: CharacterSheet = { ...s };
-    if (to === "vault") {
-      if (!inLoadout) return null;
-      next.domainCards = { ...s.domainCards, loadout: s.domainCards.loadout.filter((c) => c !== cardId) };
-    } else {
-      if (inLoadout) return null;
-      if (s.domainCards.loadout.length >= 5) invalid("Your loadout holds at most 5 cards; vault one first.");
-      if ((getDomainCard(cardId)?.level ?? 99) > s.level) invalid("That card is above your level.");
-      next.domainCards = { ...s.domainCards, loadout: [...s.domainCards.loadout, cardId] };
-      const recall = getDomainCard(cardId)?.recallCost ?? 0;
-      const resting =
-        duringRest === true &&
-        (await ctx.db
-          .query("rests")
-          .withIndex("by_campaign_status_started", (q) => q.eq("campaignId", campaign._id).eq("status", "open"))
-          .first()) !== null;
-      if (!resting && recall > 0) {
-        const { stress, hp } = markStress(next, recall);
-        next = { ...next, stress, hp };
-      }
-    }
-    await saveSheet(ctx, character._id, next);
-    return null;
-  },
+  handler: (ctx, { characterId, cardId, to, duringRest }) => moveCardFor(ctx, ctx.user, characterId, cardId, to, duringRest),
 });
 
 /**

@@ -202,12 +202,19 @@ export type CheckedTarget = {
 };
 
 /**
- * Checks every named target, in order: on the map and seen with a clear line (else COMBAT_NO_LINE_OF_SIGHT, Q2), an
- * enemy token linked to an undefeated instance of a running encounter (else COMBAT_TARGET_INVALID). Seen first, so a
- * token the player can't see answers the same whatever it is. All targets must share one encounter.
+ * A plain weapon attack takes one target (CA4b user answer, bead dcm-bxp.99.18: "Plain weapon attacks take one
+ * target"); more than one is COMBAT_TARGET_INVALID. Card effects keep their own bound (MAX_CARD_TARGETS).
+ */
+export const WEAPON_ATTACK_TARGETS = 1;
+
+/**
+ * Checks the named target: exactly one (`WEAPON_ATTACK_TARGETS`), on the map and seen with a clear line (else
+ * COMBAT_NO_LINE_OF_SIGHT, Q2), an enemy token linked to an undefeated instance of a running encounter (else
+ * COMBAT_TARGET_INVALID). Seen first, so a token the player can't see answers the same whatever it is. Kept as a list
+ * (a stored sanction holds `targetTokenIds`); several targets would have to share one encounter.
  */
 export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon, tokenIds: readonly Id<"combatTokens">[]): Promise<CheckedTarget[]> {
-  if (tokenIds.length === 0 || tokenIds.length > MAX_TARGETS || new Set(tokenIds).size !== tokenIds.length) throw appError("COMBAT_TARGET_INVALID");
+  if (tokenIds.length === 0 || tokenIds.length > Math.min(MAX_TARGETS, WEAPON_ATTACK_TARGETS) || new Set(tokenIds).size !== tokenIds.length) throw appError("COMBAT_TARGET_INVALID");
   const range = rangeFromWeapon(weapon.range);
   const checked: CheckedTarget[] = [];
   for (const id of tokenIds) {
@@ -324,6 +331,15 @@ function diceList(roll: RollRecord): string {
 
 // ---------------------------------------------------------------- resolving
 
+/**
+ * Onslaught (Blade 10, CB p.330; Blade table's `floor` use, CA4b): "When you successfully make an attack with your weapon,
+ * you never deal damage beneath a target's Major damage threshold (the target always marks a minimum of 2 Hit Points)."
+ * While the card is in the loadout, a weapon hit that deals damage marks at least Major (2 HP); no damage stays none.
+ */
+function hasOnslaught(sheet: CharacterSheet): boolean {
+  return sheet.domainCards.loadout.includes("onslaught");
+}
+
 export type AttackRequest = {
   loaded: Loaded;
   /** Who the rows belong to (the attacker's user; on a GM approval, the player who asked). */
@@ -366,6 +382,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const finalSheet = damage?.paid ?? duality.next;
 
   const type = damageTypeOf(weapon);
+  const onslaught = hasOnslaught(sheet);
   const now = Date.now();
   const before: AdversaryBefore[] = [];
   const outcomes: { tokenId: Id<"combatTokens">; hit: boolean; defeated: boolean }[] = [];
@@ -393,9 +410,9 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       extra += fell > 0 ? result.minionExtra : 0;
       detail = `${result.incoming} ${SHORT_TYPE[type]}${result.resisted !== "none" ? ` (${result.resisted}: ${result.taken})` : ""} → ${fell > 0 ? `a Minion falls, +${result.minionExtra} to pick` : "no damage"} (${hp}/${t.instance.stats.hpMax} HP)`;
     } else {
-      const result = applyDamageTo(combatantOf(t.instance, block), total, type);
+      const result = applyDamageTo(combatantOf(t.instance, block), total, type, onslaught ? { minimumSeverity: "major" } : {});
       hp = result.after.hp;
-      detail = `${result.incoming} ${SHORT_TYPE[type]}${result.resisted !== "none" ? ` (${result.resisted}: ${result.taken})` : ""} → ${SEVERITY_LABEL[result.severity]} → ${result.hpMarked} HP (${hp}/${t.instance.stats.hpMax})`;
+      detail = `${result.incoming} ${SHORT_TYPE[type]}${result.resisted !== "none" ? ` (${result.resisted}: ${result.taken})` : ""} → ${SEVERITY_LABEL[result.severity]}${onslaught ? " (Onslaught)" : ""} → ${result.hpMarked} HP (${hp}/${t.instance.stats.hpMax})`;
     }
     const defeated = t.instance.defeated || hp >= t.instance.stats.hpMax;
     await ctx.db.patch("encounterAdversaries", t.instance._id, { hp, defeated, updatedAt: now });

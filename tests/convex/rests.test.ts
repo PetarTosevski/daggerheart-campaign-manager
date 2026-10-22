@@ -319,3 +319,60 @@ describe("rests", () => {
     });
   });
 });
+
+describe("rests: card timing uses (CA4b)", () => {
+  useAllowlist(EMAILS);
+
+  /** Ash holds the cards (owned and loadout) and has the given Presence. */
+  const holding = (s: CharacterSheet, cards: string[], presence = 2): CharacterSheet => ({
+    ...s,
+    traits: { ...s.traits, presence },
+    domainCards: { owned: cards, loadout: cards },
+  });
+
+  it("Wild Surge drops on any rest before expiry: its die and effect go and one more Stress is marked (CB p.339)", async () => {
+    const { a, sheetOf, edit, start, finish, t, campaignId } = await setup();
+    await edit(a, (s) => ({
+      ...holding(s, ["wild-surge"]),
+      stress: 1,
+      cardTokens: [{ cardId: "wild-surge", count: 3 }],
+      effects: [{ id: "card:wild-surge:1", source: "Wild Surge", text: "Wild Surge", until: "manual" }],
+    }));
+    const { restId } = await start("short");
+    await finish(restId);
+    const ash = await sheetOf(a);
+    expect(ash.stress).toBe(2);
+    expect(ash.cardTokens?.find((c) => c.cardId === "wild-surge")).toBeUndefined();
+    expect(ash.effects.some((e) => e.id.startsWith("card:wild-surge"))).toBe(false);
+    const rows = await t.run((ctx) => ctx.db.query("actionLog").withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId)).collect());
+    expect(rows.find((r) => r.characterId === a)!.summary).toContain("Wild Surge: the form drops on a rest");
+  });
+
+  it("Wild Surge without its form active does nothing on a rest", async () => {
+    const { a, sheetOf, edit, start, finish } = await setup();
+    await edit(a, (s) => ({ ...holding(s, ["wild-surge"]), stress: 1 }));
+    const { restId } = await start("short");
+    await finish(restId);
+    expect((await sheetOf(a)).stress).toBe(1);
+  });
+
+  it("Inspirational Words: a finished long rest sets Presence tokens; a short or interrupted long rest leaves them; undo restores", async () => {
+    const { a, gm, campaignId, sheetOf, edit, start, finish } = await setup();
+    await edit(a, (s) => ({ ...holding(s, ["inspirational-words"], 3), cardTokens: [{ cardId: "inspirational-words", count: 1 }] }));
+    const tokens = async () => (await sheetOf(a)).cardTokens?.find((c) => c.cardId === "inspirational-words")?.count ?? 0;
+
+    const short = await start("short");
+    await finish(short.restId);
+    expect(await tokens()).toBe(1);
+
+    const interrupted = await start("long");
+    await gm.mutation(api.rests.interrupt, { campaignId, restId: interrupted.restId, idempotencyKey: key() });
+    expect(await tokens()).toBe(1);
+
+    const long = await start("long");
+    await finish(long.restId);
+    expect(await tokens()).toBe(3);
+    await gm.mutation(api.rests.undo, { campaignId, restId: long.restId, idempotencyKey: key() });
+    expect(await tokens()).toBe(1);
+  });
+});

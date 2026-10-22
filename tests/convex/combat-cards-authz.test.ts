@@ -118,6 +118,29 @@ describe("combat cards: access by role", () => {
     });
   });
 
+  it("kept dice (CA4b) belong to the character: another player is FORBIDDEN and leaves them; the GM playing for the character answers with them", async () => {
+    const w = await buildWorld();
+    const s = await scene(w);
+    await w.t.run(async (ctx) => {
+      const sheet = readSheet((await ctx.db.get("characters", w.characterA))!.sheet);
+      await saveSheet(ctx, w.characterA, { ...sheet, stress: 0, domainCards: { owned: ["dark-whispers"], loadout: ["dark-whispers"] } });
+    });
+    const touched = { id: "situations", value: ["You've made physical contact with them"] };
+    const base = useArgs(w, s, s.banditToken);
+    const darkWhispers = (choices: { id: string; value: string[] }[]) => ({ ...base, idempotencyKey: key(), cardId: "dark-whispers", choices });
+    const kept = () => w.t.run(async (ctx) => (await ctx.db.query("operations").collect()).filter((o) => o.kind === "card_dice").map((o) => o.result as { values: number[] }));
+
+    expect((await w.as("player").mutation(api.combatCards.useCard, darkWhispers([touched]))).status).toBe("needsChoice");
+    const [before] = await kept();
+    expect(await code(w.as("otherPlayer").mutation(api.combatCards.useCard, darkWhispers([touched, { id: "opt:question", value: ["where"] }])))).toBe("FORBIDDEN");
+    expect(await code(w.as("outsider").mutation(api.combatCards.useCard, darkWhispers([touched])))).toBe("NOT_FOUND");
+    expect(await kept()).toEqual([before]);
+    const r = await w.as("gm").mutation(api.combatCards.useCard, darkWhispers([touched, { id: "opt:question", value: ["where"] }]));
+    if (r.status !== "resolved") throw new Error(`expected resolved, got ${r.status}`);
+    expect(r.roll!.dice.map((d) => d.value)).toEqual(before!.values.slice(0, r.roll!.dice.length));
+    expect(await kept()).toEqual([]);
+  });
+
   it("another player sees none of characterA's pending card uses; a weapon sanction is not a card sanction", async () => {
     const w = await buildWorld();
     const s = await scene(w);

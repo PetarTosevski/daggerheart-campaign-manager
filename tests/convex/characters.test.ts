@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api, internal } from "../../convex/_generated/api";
-import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
+import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
+import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, getDomainCard, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
 import { errorCode, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
@@ -153,6 +154,50 @@ describe("characters", () => {
     const c = await p1.query(api.characters.get, { characterId });
     expect(c!.sheet.domainCards.loadout).toContain(card);
     expect(c!.sheet.stress).toBe(0);
+  });
+
+  it("moveCard (CA4b): the GM moves and recalls for any character, logged as the GM for it; players only their own", async () => {
+    const { t, gm, p1, p2, ids, campaignId } = await setup();
+    const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
+    // A card with a Recall Cost, owned and in the vault.
+    const card = getDomainCard("bolt-beacon")!;
+    expect(card.recallCost).toBeGreaterThan(0);
+    await t.run(async (ctx) => {
+      const s = readSheet((await ctx.db.get("characters", characterId))!.sheet);
+      await saveSheet(ctx, characterId, { ...s, stress: 0, domainCards: { owned: [...s.domainCards.owned, card.id], loadout: s.domainCards.loadout } });
+    });
+    const strangerId = await t.run((ctx) => ctx.db.insert("users", { email: "x@example.com" }));
+    process.env.ALLOWED_EMAILS += ",x@example.com";
+    const stranger = t.withIdentity({ subject: `${strangerId}|s` });
+    const move = (to: "loadout" | "vault") => ({ characterId, cardId: card.id, to });
+    const codeOf = (p: Promise<unknown>) => p.then(() => "ok", (e: unknown) => errorCode(e));
+    const rows = () => t.run((ctx) => ctx.db.query("actionLog").collect());
+
+    expect(await codeOf(t.mutation(api.characters.moveCard, move("loadout")))).toBe("UNAUTHENTICATED");
+    expect(await codeOf(stranger.mutation(api.characters.moveCard, move("loadout")))).toBe("NOT_FOUND");
+    expect(await codeOf(p2.mutation(api.characters.moveCard, move("loadout")))).toBe("FORBIDDEN");
+    expect(await rows()).toEqual([]);
+
+    // The GM recalls it: the Recall Cost is paid and the row names the GM as actor and the character.
+    await gm.mutation(api.characters.moveCard, move("loadout"));
+    const after = (await p1.query(api.characters.get, { characterId }))!.sheet;
+    expect(after.domainCards.loadout).toContain(card.id);
+    expect(after.stress).toBe(card.recallCost);
+    const [recall] = await rows();
+    expect(recall).toMatchObject({ actorId: ids.gm, characterId, kind: "feature", visibility: "public", undoable: true, summary: `GM for ${after.name} recalls ${card.name} (${card.recallCost} Stress)` });
+    await gm.mutation(api.actionLog.undo, { entryId: recall!._id, idempotencyKey: key() });
+    expect((await p1.query(api.characters.get, { characterId }))!.sheet).toMatchObject({ stress: 0 });
+
+    // The player recalls their own: the Stress is logged with them as actor; vaulting their own card writes no row.
+    await p1.mutation(api.characters.moveCard, move("loadout"));
+    const mine = (await rows()).find((r) => r.actorId === ids.p1)!;
+    expect(mine.summary).toBe(`${after.name} recalls ${card.name} (${card.recallCost} Stress)`);
+    await p1.mutation(api.characters.moveCard, move("vault"));
+    expect((await rows()).filter((r) => r.actorId === ids.p1)).toHaveLength(1);
+    // The GM vaults it for them: logged.
+    await gm.mutation(api.characters.moveCard, move("loadout"));
+    await gm.mutation(api.characters.moveCard, move("vault"));
+    expect((await rows()).some((r) => r.actorId === ids.gm && r.summary === `GM for ${after.name} vaults ${card.name}`)).toBe(true);
   });
 
   it("strangers can't see characters; only the GM deletes", async () => {

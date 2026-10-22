@@ -111,7 +111,12 @@ const area: Area = {
       okCodes: ["CLASS_FEATURE_RULE"],
       note: "bead dcm-bxp.64: the negateMinor path; with no New moon the owner and GM get CLASS_FEATURE_RULE after the access check",
     },
-    { fn: api.characters.moveCard, access: "own", args: async (w) => ({ cardId: (await sheetA(w)).domainCards.loadout[0]!, to: "vault" }) },
+    {
+      fn: api.characters.moveCard,
+      access: "own",
+      args: async (w) => ({ cardId: (await sheetA(w)).domainCards.loadout[0]!, to: "vault" }),
+      note: "CA4b: the GM moves / recalls for any character of the campaign, logged as the GM for it (characters.test.ts)",
+    },
     {
       fn: api.characters.takeCard,
       access: "own",

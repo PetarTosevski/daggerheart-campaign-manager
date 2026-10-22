@@ -9,34 +9,10 @@ import { tickArmedCountdowns } from "./countdownRolls";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
-import {
-  actorSheetAfter,
-  buildRun,
-  cardChoicesValidator,
-  cardRollValidator,
-  damageRolls,
-  difficultyOf,
-  gmLines,
-  handCardValidator,
-  handOf,
-  instanceWrites,
-  needsChoiceValidator,
-  parseChoices,
-  pendingCardValidator,
-  pickCard,
-  promptsOf,
-  publicTargets,
-  resolvedCardValidator,
-  rollText,
-  runCard,
-  writeInstances,
-  writeSheetChanges,
-  type BuiltRun,
-  type CardChoice,
-  type CardPick,
-  type CardRoll,
-  type ResolvedCard,
-} from "./lib/cardRunner";
+import { cardChoicesValidator, cardRollValidator, dropDice, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll, type DiceSlot } from "./lib/cardChoices";
+import { handCardValidator, handOf } from "./lib/cardHand";
+import { damageRolls, gmLines, instanceWrites, needsChoiceValidator, pendingCardValidator, promptsOf, publicTargets, resolvedCardValidator, rollText, writeInstances, type ResolvedCard } from "./lib/cardRows";
+import { actorSheetAfter, buildRun, difficultyOf, pickCard, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type RunOutcome } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { attackScene, type AttackScene } from "./lib/combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openRequests } from "./lib/combatRequests";
@@ -57,6 +33,10 @@ import type { RunPlan } from "../src/lib/domain/card-effects/run";
  * - `useCard`: uses a loadout card: checks, pays, rolls, applies, logs one undoable group (public: hit / miss; GM:
  *   the full resolution). A target outside the card's range turns it into a GM sanction (Q1).
  * - `sanction` (GM): approves or declines a card use waiting for the GM; `pending`: the open card sanctions (own / all).
+ *
+ * CA4b (docs/tasks/TASK-CA-CA4b.md): picked / ally / follow-up creatures are range-checked from the origin the card names
+ * (out of range → the GM's sanction); card effects on enemies land on the instance and undo with the group; a choice
+ * asked after the roll keeps the dice, so the call that answers it (or asks again) resolves with the same dice.
  *
  * What a player receives never holds an enemy's HP, Stress, thresholds or Difficulty (U1).
  */
@@ -103,6 +83,20 @@ type UseRequest = {
   choices: readonly CardChoice[];
   roll: CardRoll;
 };
+
+/** Where this use's dice are kept while it waits for a choice (convex/lib/cardChoices.ts). */
+const slotOf = (req: UseRequest): DiceSlot => ({ campaignId: req.campaign._id, characterId: req.character._id, cardId: req.pick.effect.cardId, useId: req.pick.use.id });
+
+/**
+ * Runs the use with the dice kept for its choice when there are some (CA4b: a choice made after the roll never rerolls;
+ * asking again replays the same dice). A use that still needs a choice keeps the dice it rolled, `userId` as their keeper.
+ */
+async function runKept(ctx: MutationCtx, req: UseRequest, built: BuiltRun, userId: Id<"users">): Promise<RunOutcome> {
+  const kept = await keptDice(ctx, slotOf(req));
+  const outcome = runCard(built, req.pick, kept ? replaying(kept, rollDie) : rollDie);
+  if (outcome.kind === "needsChoice") await keepDice(ctx, slotOf(req), outcome.dice, userId);
+  return outcome;
+}
 
 async function build(ctx: QueryCtx, req: UseRequest): Promise<BuiltRun> {
   const fear = await campaignFearState(ctx, req.campaign._id);
@@ -164,7 +158,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     if (changed(c.sheet, after)) allyRows.push({ character: c.character, before: c.sheet, after });
   }
 
-  const writes = instanceWrites(plan, built.creatures);
+  const writes = instanceWrites(plan, built.creatures, pick.name);
   await writeInstances(ctx, writes);
   const fearDelta = await applyFear(ctx, campaign._id, plan.gmFearDelta);
   const sheetChanged = changed(sheet, next);
@@ -228,6 +222,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   }
 
   const minionOffer = await offerMinions(ctx, req, built, plan, { groupId, entryId, actorId });
+  await dropDice(ctx, slotOf(req));
   return {
     status: "resolved",
     entryId,
@@ -288,7 +283,7 @@ const useArgs = {
   /** The use: a grimoire spell or a card part (`CardUse.id`); default the card's first action use. */
   spell: v.optional(v.string()),
   targetTokenIds: v.array(v.id("combatTokens")),
-  /** The player's picks as `{id, value}` (see `parseChoices` in convex/lib/cardRunner.ts for the ids). */
+  /** The player's picks as `{id, value}` (see `parseChoices` in convex/lib/cardChoices.ts for the ids). */
   choices: cardChoicesValidator,
   roll: v.optional(cardRollValidator),
 };
@@ -314,11 +309,13 @@ export const useCard = keyedCampaignMutation({
       const req: UseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: args.targetTokenIds, choices: args.choices, roll: args.roll ?? {} };
       const built = await build(ctx, req);
       // Refusals (exhausted, cost, condition) and missing choices come first, whether or not the GM must approve.
-      const outcome = runCard(built, pick, rollDie);
+      const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
       if (built.outOfRange.length === 0) return resolveUse(ctx, req, built, outcome.plan, ctx.user._id);
 
-      // Q1: wait for the GM; the dry run above is thrown away (nothing rolled, paid or logged is kept).
+      // Q1: wait for the GM; nothing paid or logged is kept. The dry run's dice are kept, so the approval resolves with
+      // them (CA4b: no rerolling by asking again).
+      await keepDice(ctx, slotOf(req), outcome.dice, ctx.user._id);
       const encounter = built.targets.find((t) => t.kind === "enemy");
       const requestId = await ctx.db.insert("combatRequests", {
         campaignId: campaign._id,
@@ -370,7 +367,7 @@ export const sanction = keyedGmMutation({
       const pick = pickCard(sheet, action.cardId, action.useId);
       const req: UseRequest = { campaign: ctx.campaign, character, sheet, scene, pick, targetTokenIds: action.targetTokenIds, choices: action.choices, roll: action.roll ?? {} };
       const built = await build(ctx, req);
-      const outcome = runCard(built, pick, rollDie);
+      const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
       const result = await resolveUse(ctx, req, built, outcome.plan, row.createdBy);
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);

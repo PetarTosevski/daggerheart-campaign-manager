@@ -4,7 +4,9 @@
  * The GM starts a short or long rest (`start`; a fourth short rest in a row
  * is refused), each player picks two moves for their own character
  * (`choose`, one `restChoices` row per character), and the GM finishes it
- * (`finish`): server dice, the moves, expiry and class hooks, a long rest
+ * (`finish`): server dice, the moves, the loadout cards' rest timing uses (CA4b:
+ * `afterRest` before expiry, `afterLongRest` after a finished long rest's
+ * expiry; convex/lib/cardHand.ts), expiry and class hooks, a long rest
  * wakes the Unconscious, GM Fear, frame hooks (convex/lib/restHooks.ts), and
  * one actionLog row per resting PC plus a campaign row, all in one group.
  * `interrupt` ends a rest early (a short rest gives nothing, a long rest
@@ -39,6 +41,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId, undoEntry } from "./lib/actionLog";
 import { tickLongTermOnRest } from "./countdownTracks";
+import { runRestTiming } from "./lib/cardHand";
 import { assertCanAct, loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
@@ -297,10 +300,22 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
   for (const [id, sheet] of before) input[id] = sheet;
   const moved = applyMoves(kind, input, choices, rollDie);
 
+  // Card timing uses (CA4b, convex/lib/cardHand.ts): `afterRest` before the rest's expiry (Wild Surge needs its effect
+  // active to drop it), `afterLongRest` after a finished long rest's expiry (Inspirational Words' tokens).
   const sheets = new Map<Id<"characters">, CharacterSheet>();
+  const cardLines = new Map<Id<"characters">, string[]>();
   for (const pc of pcs) {
     const sheet = moved.sheets[pc._id] ?? before.get(pc._id)!;
-    sheets.set(pc._id, restedSheet(sheet, kind));
+    const timed = runRestTiming(sheet, pc._id, "afterRest", rollDie);
+    let rested = restedSheet(timed.sheet, kind);
+    const lines = [...timed.lines];
+    if (kind === "long") {
+      const long = runRestTiming(rested, pc._id, "afterLongRest", rollDie);
+      rested = long.sheet;
+      lines.push(...long.lines);
+    }
+    sheets.set(pc._id, rested);
+    cardLines.set(pc._id, lines);
   }
   const hookLines = await runRestHooks(ctx, { campaign, rest, kind, interrupted, actorId: ctx.user._id, choices: allChoices, sheets, rng: rollDie });
 
@@ -344,7 +359,7 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
   for (const pc of pcs) {
     const after = sheets.get(pc._id)!;
     await saveSheet(ctx, pc._id, after);
-    const lines = moved.lines[pc._id] ?? [];
+    const lines = [...(moved.lines[pc._id] ?? []), ...(cardLines.get(pc._id) ?? [])];
     await logAction(ctx, {
       campaignId: campaign._id,
       characterId: pc._id,

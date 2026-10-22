@@ -315,6 +315,102 @@ describe("combatCards.useCard: resolving", () => {
   });
 });
 
+describe("combatCards (CA4b): ranges from the card's origin, enemy effects, kept dice", () => {
+  allowWorldEmails();
+
+  it("Vicious Entangle's extra adversary is measured from the target: near it resolves, beyond Very Close of it waits for the GM", async () => {
+    const a = await arena();
+    const bandit = await a.enemy("Bandit", 7, 10);
+    const near = await a.enemy("Thug", 9, 10);
+    // 7 squares from Ash (Far: in the pick's range from the caster) but 5 from the target (Close, beyond Very Close).
+    const far = await a.enemy("Lookout", 12, 10);
+    await a.holding(["vicious-entangle"], { hope: 4 });
+    const second = (picked: Id<"combatTokens">) => ({ choices: [{ id: "optional:second", value: true }, { id: "picked", value: [picked] }] });
+    const pending = await a.use(a.player, "vicious-entangle", [bandit.tokenId], second(far.tokenId));
+    if (pending.status !== "pending") throw new Error(`expected pending, got ${pending.status}`);
+    expect(pending.outOfRange).toEqual([{ tokenId: far.tokenId, band: "close" }]);
+    expect((await a.rows()).filter((row) => row.kind === "combat")).toHaveLength(0);
+    // The GM sanctions it (Q1): it resolves with the waived range.
+    const approved = resolved(await a.gm.mutation(api.combatCards.sanction, { campaignId: a.campaignId, requestId: pending.requestId, approve: true, idempotencyKey: key() }));
+    expect(approved.targets).toEqual([{ tokenId: bandit.tokenId, hit: true, defeated: false }]);
+    expect((await a.instance(far.instanceId)).conditions).toContain("restrained");
+
+    const r = resolved(await a.use(a.player, "vicious-entangle", [bandit.tokenId], second(near.tokenId)));
+    expect(r.status).toBe("resolved");
+    expect((await a.instance(near.instanceId)).conditions).toContain("restrained");
+  });
+
+  it("Chain Lightning checks each jump from the creature before it: a chain in Close links resolves, a gap waits for the GM", async () => {
+    const a = await arena();
+    const imp = await a.enemy("Imp", 8, 10, { hpMax: 30 });
+    const link = await a.enemy("Imp 2", 13, 10, { hpMax: 30 });
+    const link2 = await a.enemy("Imp 3", 18, 10, { hpMax: 30 });
+    await a.holding(["chain-lightning"], { stress: 0 });
+    // Imp 2 is 5 squares from Imp (Close), Imp 3 is 5 from Imp 2: each jump is in range though Imp 3 is Very Far from Ash.
+    const chained = resolved(await a.use(a.player, "chain-lightning", [], { choices: [{ id: "followUp", value: [link.tokenId, link2.tokenId] }] }));
+    expect(chained.targets.map((t) => t.tokenId)).toEqual([imp.tokenId]);
+    await a.edit(() => ({ stress: 0 }));
+    // Imp 3 alone is 10 squares from Imp (Far): beyond the chain's Close.
+    const gap = await a.use(a.player, "chain-lightning", [], { choices: [{ id: "followUp", value: [link2.tokenId] }] });
+    if (gap.status !== "pending") throw new Error(`expected pending, got ${gap.status}`);
+    expect(gap.outOfRange).toEqual([{ tokenId: link2.tokenId, band: "far" }]);
+  });
+
+  it("Glyph of Nightfall lowers the instance's Difficulty in its effects; undo takes the effect back (adversaryBefore.effects)", async () => {
+    const a = await arena();
+    const bandit = await a.enemy("Bandit", 6, 10);
+    await a.holding(["glyph-of-nightfall"], { hope: 3 });
+    const r = resolved(await a.use(a.player, "glyph-of-nightfall", [bandit.tokenId]));
+    const knowledge = Math.max(1, (await a.sheet()).traits.knowledge);
+    const effects = (await a.instance(bandit.instanceId)).effects ?? [];
+    expect(effects).toEqual([{ id: "card:glyph-of-nightfall:1", source: "Glyph of Nightfall", label: "Glyph of Nightfall", difficulty: -knowledge, until: "temporary" }]);
+    expectNoStats(r);
+    const gmRow = (await a.rows()).find((row) => row.kind === "combat" && row.visibility === "gm")!;
+    expect(gmRow.adversaryBefore).toEqual([{ instanceId: bandit.instanceId, hp: 0, stress: 0, defeated: false, conditions: [], tags: [], effects: [] }]);
+    const pub = (await a.rows()).find((row) => row._id === r.entryId)!;
+    expect(pub.summary).not.toMatch(STAT_WORDS);
+
+    await a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
+    expect((await a.instance(bandit.instanceId)).effects).toBeUndefined();
+  });
+
+  it("Blighting Strike's half damage lands on the instance as a modifier until its next hit", async () => {
+    const a = await arena();
+    const bandit = await a.enemy("Bandit", 6, 10);
+    await a.holding(["blighting-strike"]);
+    resolved(await a.use(a.player, "blighting-strike", [bandit.tokenId]));
+    expect((await a.instance(bandit.instanceId)).effects).toEqual([
+      { id: "card:blighting-strike:1", source: "Blighting Strike", label: "Blighted: next successful attack deals half damage", halfDamage: true, until: "hit" },
+    ]);
+  });
+
+  it("a choice after the roll keeps the dice: asking again and answering resolve with the same dice, then they are dropped", async () => {
+    const a = await arena();
+    const bandit = await a.enemy("Bandit", 6, 10);
+    await a.holding(["dark-whispers"], { stress: 0 });
+    const touched = { id: "situations", value: ["You've made physical contact with them"] };
+    const kept = () => a.t.run(async (ctx) => (await ctx.db.query("operations").collect()).filter((o) => o.kind === "card_dice"));
+
+    const first = await a.use(a.player, "dark-whispers", [bandit.tokenId], { choices: [touched] });
+    expect(first.status).toBe("needsChoice");
+    expectNoStats(first);
+    const [row] = await kept();
+    const values = (row!.result as { values: number[] }).values;
+    expect(values.length).toBeGreaterThanOrEqual(2);
+    expect((await a.sheet()).stress).toBe(0);
+
+    // Asking again (fishing) replays the kept dice: they don't change.
+    expect((await a.use(a.player, "dark-whispers", [bandit.tokenId], { choices: [touched] })).status).toBe("needsChoice");
+    expect(((await kept())[0]!.result as { values: number[] }).values).toEqual(values);
+
+    // The answer resolves with the same Hope and Fear dice.
+    const r = resolved(await a.use(a.player, "dark-whispers", [bandit.tokenId], { choices: [touched, { id: "opt:question", value: ["where"] }] }));
+    expect(r.roll!.dice.map((d) => d.value)).toEqual(values.slice(0, r.roll!.dice.length));
+    expect(r.prompts.some((p) => p.text === "Ask the GM: Where are they?")).toBe(true);
+    expect(await kept()).toEqual([]);
+  });
+});
+
 describe("combatCards: one card per domain end to end", () => {
   allowWorldEmails();
 
