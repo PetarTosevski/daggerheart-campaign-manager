@@ -344,7 +344,8 @@ export const shared = campaignQuery({
     }
 
     const rows: SharedRow[] = [];
-    for (const page of candidates.values()) {
+    // Creation order first, so the stable sort below breaks createdAt ties the same way every time (dcm-bxp.122).
+    for (const page of [...candidates.values()].sort((a, b) => a._creationTime - b._creationTime)) {
       const ownerIsGm = page.ownerId === gmId;
       if (tab === "players" ? ownerIsGm : !ownerIsGm) continue;
       const own = page.ownerId === ctx.user._id;
