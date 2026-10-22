@@ -466,3 +466,49 @@ waves:
           - "Stop during the retry or web pass keeps the best finished answer (the first pass's), never a hidden partial; costs and reservations settle as before"
           - "Tests: unit (phase sequence per path), convex with the fake model (rules streams; unclear holds then reveals; unclear + web; Stop mid-retry), e2e: on an unclear question no provisional text is visible before the final answer"
           - "pnpm lint, typecheck, vitest and the lorekeeper e2e specs pass; tracer-guard passes"
+  - wave: 8
+    tracers:
+      - id: L12
+        title: Process follow-ups - the retry status starts with the retry, a note on an early Stop, the kept pass writes out live
+        size: S
+        # USER ANSWERS to L11's questions (2026-10-22, binding):
+        #   1 "No, start it when the model starts": 'Checking again with a stronger model…' appears when the Opus pass
+        #     starts (after the first pass ends), not when the first pass's verdict line says unclear/none; until then the
+        #     row keeps 'Searching your books…'.
+        #   2 "yes add a note": a Stop before any answer finished shows a short note (copy.ts), e.g. "Stopped before an
+        #     answer was ready. Ask again to get one."
+        #   3 "write it out for the stronger model as well (& if it goes to the internet also write it out)": a pass whose
+        #     answer is known to be kept streams live. Retry: streams live when its verdict is 'rules' or internet search is
+        #     off (it is then final); with search on and verdict 'unclear'/'none' it stays hidden. Web pass: always streams
+        #     live (it is the last pass); for 'unclear' + web the kept book answer (L10 D2) is shown first, then the web
+        #     note and results write out under it; for 'none' + web the web answer writes out; a web miss shows WEB_MISS.
+        #     Never show text that is later replaced.
+        goal: The status matches what is really running, an early Stop explains itself, and every kept answer writes out live.
+        depends_on: [L11]
+        owns:
+          - convex/lorekeeperRun.ts
+          - convex/lorekeeper.ts
+          - convex/tables/lorekeeper.ts
+          - convex/lib/validators/lorekeeper.ts
+          - src/lib/lorekeeper/flow.ts
+          - src/lib/lorekeeper/copy.ts
+          - src/components/lorekeeper/answer/**
+          - src/components/lorekeeper/chat/**
+          - tests/unit/lorekeeper/**
+          - tests/unit/lorekeeper-ui/**
+          - tests/convex/lorekeeper-chat.test.ts
+          - tests/convex/lorekeeper-web.test.ts
+          - tests/convex/authz/lorekeeper-chat.entries.ts
+          - tests/e2e/lorekeeper-chat.spec.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-D13-L12.md
+        reads:
+          - docs/tasks/TASK-D13-L10.md
+          - docs/tasks/TASK-D13-L11.md
+          - src/lib/lorekeeper/answer.ts
+          - convex/lib/claude.ts
+        acceptance:
+          - "The phase becomes 'retry' only when the Opus pass starts; unit and convex tests check the order"
+          - "Stop before any finished answer stores the note text; the card shows it; tests"
+          - "Retry with verdict 'rules', or with search off, streams live; retry 'unclear'/'none' with search on stays hidden; the web pass streams live (unclear + web shows the kept book answer then the web part writing out; none + web writes out the web answer); no text is ever replaced; convex tests with the fake model and the e2e MutationObserver check extended (text only grows, never swaps)"
+          - "pnpm lint, typecheck, vitest and the lorekeeper e2e specs pass; tracer-guard passes"
