@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import { play3d } from "@/components/party/dice/dice3d";
 import { canAnimate3d, useDiceSettings } from "@/components/party/dice/settings";
@@ -13,7 +13,7 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { StatBlock } from "../catalogue/stat-block";
 import { attackRoll, damageRoll, isNatural20, type BlockRules, type DicePool } from "./rules";
-import type { TrackerActions, TrackerInstance } from "./use-tracker";
+import type { TrackerInstance } from "./use-tracker";
 
 type Rolled = { text: string; crit: boolean };
 
@@ -24,26 +24,25 @@ function diceText(dice: readonly { sides: number; value: number }[]): string {
 /**
  * The selected instance's parchment stat block (A2's StatBlock) with the tracker's head actions: "Roll attack"
  * (d20 + ATK, CB p.160) and "Roll damage" go through the GM's hidden roll (rolls.gmRoll: players see it only once the
- * GM reveals it in the roll feed); a natural 20 offers "Critical damage" (CB p.148). Above the features, buttons spend
- * Fear for a Fear-cost feature or to add an Experience (CB p.194: "+N, 1 Fear"). Rolls play the 3D dice and the dice
- * sound like the GM roll form (dice settings: 3D off, reduced motion or sound off fall back as there).
+ * GM reveals it in the roll feed); a natural 20 offers "Critical damage" (CB p.148). These stay as the GM's untargeted
+ * rolls; the targeted Attack and the feature Use buttons (plan combat-actions AA3) are the actions panel above the
+ * features (`renderActions`), which goes through the server. Rolls play the 3D dice and the dice sound like the GM
+ * roll form (dice settings: 3D off, reduced motion or sound off fall back as there).
  */
 export function SelectedBlock({
   campaignId,
   instance,
   rules,
-  fear,
-  actions,
+  renderActions,
 }: {
   campaignId: Id<"campaigns">;
   instance: TrackerInstance;
   rules: BlockRules;
-  fear: number;
-  actions: TrackerActions;
+  /** The adversary actions panel (AA3), given the 3D dice for the server's attack rolls. */
+  renderActions: (onDice: (dice: Parameters<typeof play3d>[1]["dice"]) => void) => ReactNode;
 }) {
   const roll = useIntent(api.rolls.gmRoll);
   const [rolled, setRolled] = useState<Rolled | null>(null);
-  const [spent, setSpent] = useState<string | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const [settings] = useDiceSettings();
   const { block } = rules;
@@ -79,12 +78,6 @@ export function SelectedBlock({
     if (result) setRolled({ text: `${critical ? "Critical damage" : "Damage"} ${result.roll.total} (${diceText(result.roll.dice)}${pool.modifier ? `, +${pool.modifier}` : ""})`, crit: false });
   }
 
-  async function spend(amount: number, reason: "feature" | "experience", what: string) {
-    const result = await actions.spendFear(amount, reason, instance._id);
-    if (result) setSpent(`Spent ${amount} Fear: ${what}`);
-  }
-
-  const fearFeatures = block.features.filter((f) => f.fearCost);
   const head = (
     <div className="trk-rolls">
       <button type="button" className="trk-btn trk-btn-parch" disabled={!attack || roll.pending} onClick={() => void rollAttack()}>
@@ -109,31 +102,5 @@ export function SelectedBlock({
     </div>
   );
 
-  const fearPanel =
-    fearFeatures.length > 0 || block.experiences.length > 0 ? (
-      <div className="trk-fear-acts" role="group" aria-label="Spend Fear for this adversary">
-        <strong>Spend Fear</strong>
-        {fearFeatures.map((f) => (
-          <button
-            key={f.name}
-            type="button"
-            className="trk-btn trk-btn-fear"
-            disabled={fear < (f.fearCost ?? 1)}
-            onClick={() => void spend(f.fearCost ?? 1, "feature", f.name)}
-          >
-            Spend {f.fearCost} Fear: {f.name}
-          </button>
-        ))}
-        {block.experiences.map((x) => (
-          <button key={x.name} type="button" className="trk-btn trk-btn-fear" disabled={fear < 1} onClick={() => void spend(1, "experience", x.name)}>
-            {x.name} +{x.value}, 1 Fear
-          </button>
-        ))}
-        <span className="trk-roll-out" aria-live="polite">
-          {spent}
-        </span>
-      </div>
-    ) : null;
-
-  return <StatBlock adversary={block} actions={head} tracker={fearPanel} />;
+  return <StatBlock adversary={block} actions={head} tracker={renderActions((dice) => void animate(dice))} />;
 }
