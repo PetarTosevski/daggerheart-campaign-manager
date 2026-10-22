@@ -1,0 +1,615 @@
+/*
+ * Combat actions on the Combat Map (plan combat-actions CA5): target list and rings, Attack bar and result, the
+ * compact dice box, mini feed, the GM's Resolutions, and the phone bottom sheet (Q11). Colours and shared classes come
+ * from the page's combat-map.css (--cm-* variables, cm-card, cm-btn, cm-chip, cm-go, cm-lbl).
+ */
+
+.cma-card {
+  gap: 10px;
+}
+.cma-note {
+  margin: 0;
+  font-size: 14px;
+  font-style: italic;
+}
+.cma-small {
+  font-size: 13px;
+}
+.cma-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cma-error {
+  margin: 0;
+  color: var(--cm-danger);
+  font-size: 14px;
+}
+.cma-error:empty {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- targets */
+
+.cma-targets-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cma-targets {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cma-target {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--cm-border);
+  background: var(--cm-field);
+  color: var(--cm-text);
+  font: inherit;
+  font-size: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "check name band" "check hint hint";
+  align-items: center;
+  column-gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+.cma-target:hover {
+  background: var(--cm-hover);
+}
+.cma-target:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 2px;
+}
+.cma-target[aria-pressed="true"] {
+  border-color: var(--cm-acc);
+  background: var(--cm-acc-bg);
+}
+.cma-target-check {
+  grid-area: check;
+  font-size: 18px;
+  color: var(--cm-acc-soft);
+}
+.cma-target-name {
+  grid-area: name;
+  font-family: var(--cm-display);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cma-band {
+  grid-area: band;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cm-muted);
+}
+.cma-hint {
+  grid-area: hint;
+  font-size: 13px;
+  color: #9fe7bb;
+}
+.cma-target[data-tone="cover"] .cma-hint {
+  color: var(--cm-acc-soft);
+}
+.cma-target[data-tone="range"] .cma-hint {
+  color: #f0b77a;
+}
+.cma-target[data-tone="sight"] .cma-hint,
+.cma-target[data-tone="none"] .cma-hint {
+  color: var(--cm-danger);
+}
+
+/* Rings on picked targets: above the fog and the tokens, never catching the pointer. */
+.cma-rings {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+.cma-ring {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 3px solid var(--ring, #f3cf86);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.55),
+    0 0 14px var(--ring, #f3cf86);
+}
+.cma-ring[data-tone="range"],
+.cma-ring[data-tone="none"] {
+  border-style: dashed;
+}
+.cma-ring-lbl {
+  position: absolute;
+  left: 50%;
+  top: -22px;
+  transform: translateX(-50%);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(7, 11, 12, 0.85);
+  color: var(--ring, #f3cf86);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- attack bar */
+
+.cma-attack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cma-weapons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.cma-weapon {
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--cm-border);
+  background: var(--cm-field);
+  color: var(--cm-text);
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  cursor: pointer;
+}
+.cma-weapon:hover {
+  background: var(--cm-hover);
+}
+.cma-weapon:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 2px;
+}
+.cma-weapon[aria-pressed="true"] {
+  border-color: var(--cm-acc);
+  background: var(--cm-acc-bg);
+}
+.cma-weapon .cm-lbl {
+  font-size: 11px;
+}
+.cma-weapon-name {
+  font-family: var(--cm-display);
+  font-size: 15px;
+  font-weight: 700;
+}
+.cma-weapon-meta {
+  font-size: 13px;
+  color: var(--cm-muted);
+}
+.cma-weapon-meta strong {
+  color: var(--cm-acc-soft);
+}
+.cma-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cma-select {
+  width: 100%;
+}
+.cma-opts {
+  border-top: 1px dashed var(--cm-card-border);
+  padding-top: 6px;
+}
+.cma-opts > summary {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+.cma-opts > summary::-webkit-details-marker {
+  display: none;
+}
+.cma-opts > summary::before {
+  content: "▸";
+  font-size: 11px;
+  transition: transform 0.15s;
+}
+.cma-opts[open] > summary::before {
+  transform: rotate(90deg);
+}
+.cma-opts > summary:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.cma-opts-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 6px;
+}
+.cma-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.cma-chips > .cm-lbl {
+  flex-basis: 100%;
+}
+.cm-chip[aria-pressed="true"] {
+  border-color: var(--cm-acc);
+  background: var(--cm-acc-bg);
+  color: var(--cm-acc-soft);
+}
+.cma-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cma-stepper-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cma-stepper-val {
+  min-width: 96px;
+  text-align: center;
+  font-size: 14px;
+}
+.cma-go {
+  width: 100%;
+  padding: 0 14px;
+}
+.cma-go[disabled] {
+  cursor: not-allowed;
+}
+.cma-go[aria-busy="true"] {
+  cursor: wait;
+}
+.cma-rolling,
+.cma-waiting {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--cm-border);
+  font-size: 14px;
+  font-style: italic;
+  text-align: center;
+}
+.cma-waiting {
+  border-color: #8a6a3a;
+  color: var(--cm-acc-soft);
+  text-align: left;
+}
+
+/* The result: the player's own dice, total, damage and Hit / Miss / Defeated (U1). */
+.cma-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #0f181b;
+  border: 1px solid var(--cm-card-border);
+}
+.cma-result-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.cma-result-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.cma-total {
+  font-family: var(--cm-display);
+  font-size: 30px;
+  font-weight: 900;
+  color: var(--cm-text);
+}
+.cma-total.dmg {
+  color: #ffb4a8;
+}
+.cma-result-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cma-outcome {
+  font-family: var(--cm-display);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 14px;
+}
+.cma-outcome.crit {
+  color: #ffe08a;
+}
+.cma-outcome.hope {
+  color: var(--cm-acc-soft);
+}
+.cma-outcome.fear {
+  color: var(--cm-fear-text);
+}
+.cma-outcome.dmg {
+  color: #ffb4a8;
+}
+.cma-result .dc-tile {
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+}
+.cma-result .dc-tile.hope,
+.cma-result .dc-tile.fear {
+  width: 44px;
+  height: 44px;
+  font-size: 21px;
+}
+.cma-verdicts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cma-verdict {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--cm-field);
+  font-size: 15px;
+}
+.cma-verdict strong {
+  font-family: var(--cm-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.cma-verdict[data-verdict="hit"] strong {
+  color: #9fe7bb;
+}
+.cma-verdict[data-verdict="miss"] strong {
+  color: var(--cm-muted);
+}
+.cma-verdict[data-verdict="defeated"] strong {
+  color: #ffb4a8;
+}
+.cma-requests {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cma-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #8a6a3a;
+  background: var(--cm-acc-bg);
+  color: var(--cm-acc-soft);
+  font-size: 14px;
+}
+.cma-minions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- compact dice box (the sheet's DiceBox) */
+
+.cma-dice .sh-box.dc-box,
+.cma-dice .dc-box {
+  padding: 12px;
+  gap: 8px;
+  border-radius: 12px;
+}
+.cma-dice .dc-bar {
+  gap: 8px;
+}
+.cma-dice .dc-bar .dc-h {
+  flex-basis: 100%;
+  margin: 0;
+}
+.cma-dice .dc-seg {
+  flex: 1 1 100%;
+}
+.cma-dice .dc-seg-opt {
+  flex: 1;
+  justify-content: center;
+}
+.cma-dice .dc-trait,
+.cma-dice .dc-source {
+  flex-basis: 100%;
+}
+.cma-dice .dc-narrow,
+.cma-dice .dc-bar .dc-diff {
+  flex: 1 1 70px;
+}
+.cma-dice .dc-adv {
+  flex: 1 1 100%;
+}
+.cma-dice .dc-adv-row {
+  justify-content: space-between;
+}
+.cma-dice .dc-bar .dc-go {
+  flex: 1 1 100%;
+}
+.cma-dice .dc-end {
+  flex: 1 1 100%;
+  margin-left: 0;
+}
+.cma-dice .dc-results {
+  flex-direction: column;
+}
+.cma-dice .dc-last,
+.cma-dice .dc-rolling {
+  flex-basis: auto;
+}
+.cma-dice .dc-last-main {
+  min-width: 0;
+}
+.cma-dice .dc-earlier {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- mini feed and resolutions */
+
+.cma-feed,
+.cma-res-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cma-feed-row,
+.cma-res {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--cm-field);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.cma-feed-row.undone .cma-feed-text,
+.cma-res.undone .cma-res-text {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.cma-feed-time {
+  font-size: 12px;
+  color: var(--cm-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cma-feed-text,
+.cma-res-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cma-feed-total {
+  font-family: var(--cm-display);
+  font-size: 16px;
+  color: var(--cm-acc-soft);
+}
+.cma-sanctions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cma-sanctions .cma-res {
+  grid-template-columns: minmax(0, 1fr);
+  border: 1px solid #8a6a3a;
+}
+
+/* ---------------------------------------------------------------- phone bottom sheet (Q11) */
+
+.cma-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: var(--cm-card);
+  border-top: 1px solid var(--cm-acc);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.55);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.cma-sheet-body {
+  max-height: 58vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cma-sheet-bar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--cm-card-border);
+}
+.cma-sheet[data-open="false"] .cma-sheet-bar {
+  border-top: 0;
+}
+.cma-tabs {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+.cma-tab {
+  min-height: 44px;
+  min-width: 44px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--cm-muted);
+  font-family: var(--cm-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.cma-tab[aria-selected="true"] {
+  background: var(--cm-acc-bg);
+  border-color: var(--cm-acc);
+  color: var(--cm-acc-soft);
+}
+.cma-tab:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 1px;
+}
+.cma-hide {
+  flex: none;
+  color: var(--cm-text);
+  border-color: var(--cm-border);
+}
+/* Room under the page for the closed sheet's bar, so the map's bottom stays reachable. */
+.cm-root:has(.cma-sheet) .cm-main {
+  padding-bottom: 96px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cma-opts > summary::before {
+    transition: none;
+  }
+}
