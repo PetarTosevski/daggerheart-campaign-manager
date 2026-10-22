@@ -150,3 +150,45 @@ test("a cached token the server rejects is replaced by a refreshed one", async (
   await expectFearWorks(page);
   await expect(page).toHaveURL(url);
 });
+
+test("a refresh that returns the rejected token again is retried once", async ({ context }) => {
+  // dcm-bxp.123: Convex Auth's JWT is deterministic with `iat` in whole seconds, so a refresh in the same second as
+  // the sign-in returns the cached token byte for byte, and the Convex client used to give up ("Your session has
+  // ended"). Pin that case: the first refresh answers with the very token the server just rejected.
+  const { url, name } = await campaignDashboard(context);
+
+  const page = await context.newPage();
+  let cached: string | null = null;
+  await page.routeWebSocket(CONVEX_WS, (ws) => {
+    const server = ws.connectToServer();
+    ws.onMessage((message) => {
+      const m = isAuthenticate(message);
+      if (m && m.tokenType === "User" && m.value && cached === null) {
+        cached = m.value;
+        server.send(JSON.stringify({ ...JSON.parse(message as string), value: `${m.value.slice(0, -8)}AAAAAAAA` }));
+        return;
+      }
+      server.send(message);
+    });
+  });
+  let sameTokenServed = false;
+  await page.route("**/api/auth", async (route) => {
+    const body = route.request().postData() ?? "";
+    if (!sameTokenServed && cached !== null && body.includes('"refreshToken"')) {
+      sameTokenServed = true;
+      await route.fulfill({ json: { tokens: { token: cached, refreshToken: "dummy" } } });
+      return;
+    }
+    await route.continue();
+  });
+  const seen = watchAuth(page);
+  await page.goto(url);
+
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible({ timeout: 15_000 });
+  expect(sameTokenServed).toBe(true);
+  await expect.poll(() => seen.authPosts.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+  const users = seen.auths.filter((a) => a.tokenType === "User").map((a) => a.value);
+  expect(users.at(-1)).not.toBe(cached);
+  await expectFearWorks(page);
+  await expect(page).toHaveURL(url);
+});
