@@ -18,6 +18,13 @@ waves:
           - tests/convex/combat-maps.test.ts
           - tests/unit/settings-backup.test.ts
           - tests/e2e/settings-backup.spec.ts
+          # ORCHESTRATOR NOTE 2026-10-23: tests that assume Classic set the GM to Classic explicitly (option A); the e2e
+          #   fixture's GM defaults to Classic so existing specs keep their meaning; Sprites specs choose Sprites themselves.
+          - tests/convex/combat-map-generate.test.ts
+          - tests/convex/combat-map-generate-sprites.test.ts
+          - tests/convex/combat-map-style.test.ts
+          - tests/convex/sprite-fields.test.ts
+          - tests/e2e/fixtures.ts
           - docs/tasks/TASK-F7-H1.md
         reads: [docs/tasks/TASK-F6-G5.md]
         acceptance:
