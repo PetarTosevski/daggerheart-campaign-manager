@@ -124,3 +124,36 @@ waves:
           - "toggleLight stores the light's seen samples as explored for the switching player's characters (same addExplored helper as B2); a convex test: switch a light, turn away, still switchable"
           - "Vision panel and on-map door clicks: out-of-reach switches are disabled with visible text 'Move next to it'; optimistic updates still roll back on refusal; every e2e spec that toggles doors or lights as a player moves the token next to the object first"
           - "pnpm lint, typecheck, vitest and the combat-map e2e specs that switch doors or lights pass; tracer-guard passes"
+      - id: B5
+        title: A session that ends mid-use signs out and redirects to sign-in, then back to the page
+        size: S
+        # USER ANSWER (2026-10-22, binding): "redirect the user to sign in" (B3's Q2: a session whose refresh is really
+        #   revoked/expired mid-use landed on the 'Your session has ended' error boundary).
+        # DEFAULTS (orchestrator, reported to the user): when an UNAUTHENTICATED error reaches a route error boundary (or
+        #   global-error), the app clears the local session (Convex Auth signOut, so the proxy's JWT cookie is gone and
+        #   /signin doesn't bounce back), then router.replace('/signin?next=<current path+search>'); after signing in the
+        #   user returns to that path (same `next` handling the proxy already uses). A short polite status "Your session
+        #   ended - taking you to sign in" shows meanwhile. Other error codes keep the error screen. No redirect loop: a
+        #   second UNAUTHENTICATED on /signin itself never redirects.
+        goal: A revoked or expired session mid-use goes to sign-in and back, never the error screen or a loop.
+        depends_on: [B3]
+        owns:
+          - src/components/route-error.tsx
+          - src/app/global-error.tsx
+          - src/lib/auth/**
+          - src/app/signin/page.tsx
+          - tests/unit/route-error*.test.tsx
+          - tests/unit/auth-*.test.ts
+          - tests/e2e/auth-session-ended.spec.ts
+          - docs/tasks/TASK-BUG-B5.md
+        reads:
+          - docs/tasks/TASK-BUG-123.md
+          - docs/tasks/TASK-PF-PF2.md
+          - src/proxy.ts
+          - src/app/convex-client-provider.tsx
+          - src/lib/errors/common.ts
+        acceptance:
+          - "An UNAUTHENTICATED error in any route segment signs the user out locally and lands on /signin?next=<path>; signing in returns to that path; other codes still show the error screen; unit tests for the decision (incl. never redirecting from /signin)"
+          - "e2e: a signed-in GM on a campaign page whose session is revoked server-side (delete the auth session row via a test-only path that already exists, or expire it) ends on /signin with next set, signs in and is back on the page; no redirect loop; at 1440 and 390"
+          - "auth-single-run.spec.ts still passes (B3's retry and PF3's single Authenticate kept)"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
