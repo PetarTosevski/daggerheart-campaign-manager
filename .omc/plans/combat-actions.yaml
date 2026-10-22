@@ -529,6 +529,8 @@ waves:
           - convex/lib/cardRunner.ts
           - tests/convex/combat-cards.test.ts
           - tests/convex/combat-cards-authz.test.ts
+          # ORCHESTRATOR NOTE 2026-10-22: the authz inventory guard is strict since H24/B6 - CA4 adds its matrix entries.
+          - tests/convex/authz/combat.entries.ts
           - docs/tasks/TASK-CA-CA4.md
         reads:
           - convex/lib/combatActions.ts
