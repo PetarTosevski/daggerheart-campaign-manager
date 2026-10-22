@@ -24,6 +24,9 @@ waves:
           - tests/unit/card-dialog.test.tsx
           - tests/e2e/sheet-cards.spec.ts
           - tests/e2e/visual/SC1.spec.ts
+          # ORCHESTRATOR NOTE 2026-10-22: tests that pinned the old inline More toggle.
+          - tests/unit/sheet-render.test.ts
+          - tests/e2e/visual/DD1.spec.ts
           - docs/tasks/TASK-SC-SC1.md
         reads:
           - docs/tasks/TASK-CA-CA7.md
