@@ -897,6 +897,51 @@ waves:
           - "adversary-actions-authz.test.ts covers anonymous, outsider, player (target, ally, other) and GM for attack, useFeature, respond, resolve and pending, asserting ConvexError.data.code"
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
   # ---------------------------------------------------------------- wave 6: end-to-end, a11y, docs
+  - wave: 6.5
+    tracers:
+      - id: AA2b
+        title: Adversary server follow-ups - death-move prompt, riders follow the shield, PC attackers in hits (card damage to allies), undo closes hits, per-instance limits, Onslaught on card attacks, runner fixes
+        size: M
+        # Beads dcm-bxp.99.23 and dcm-bxp.99.22. USER ANSWERS (2026-10-22, binding): a hit that takes a PC to their last HP
+        #   prompts that player's death move at once; I Am Your Shield moves the attack's riders with the damage to the ally;
+        #   card damage to another PC opens the same incoming-hit prompt; Onslaught's Major floor applies to any weapon-damage
+        #   hit (plain attacks and cards attacking with the weapon's damage).
+        goal: Close AA2's and CA4b's open items and the user's answers on the server side of adversary and card hits.
+        depends_on: [AA2, CA4b]
+        owns:
+          - convex/adversaryActions.ts
+          - convex/lib/adversaryActions.ts
+          - convex/lib/incomingHits.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/validators/combatRequests.ts
+          - convex/lib/validators/encounters.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/cardRows.ts
+          - src/lib/domain/adversary-effects/run.ts
+          - src/lib/domain/adversary-actions/**
+          - tests/convex/adversary-actions.test.ts
+          - tests/convex/adversary-actions-authz.test.ts
+          - tests/convex/authz/adversary-actions.entries.ts
+          - tests/convex/combat-cards.test.ts
+          - tests/unit/adversary-actions*.test.ts
+          - tests/unit/adversary-effects-run*.test.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-CA-AA2b.md
+        reads:
+          - docs/tasks/TASK-CA-AA2.md
+          - docs/tasks/TASK-CA-CA4b.md
+          - docs/tasks/TASK-CA-AA1.md
+          - docs/tasks/TASK-CA-CE-valor.md
+          - docs/tasks/TASK-CA-AE-*.md
+        acceptance:
+          - "A hit that leaves a PC at their last HP returns / stores a death-move prompt for that player (the existing death-move flow), tested"
+          - "I Am Your Shield: the attack's riders land on the ally who took the hit; tested"
+          - "incomingHit attacker widened (widen only) for a PC attacker; CA4's card damage to another PC opens an incoming hit instead of a manual prompt; tested"
+          - "actionLog undo declines open incomingHit rows of the undone group"
+          - "Encounter instances get optional featureUses (widen only); once-per-scene adversary features are enforced and reset at scene end (encounter end) - GM 'New scene' is bead dcm-bxp.117"
+          - "Onslaught's floor on card attacks that deal weapon damage; CE-valor after-hit uses offered after resolve (Unbreakable, Rise Up / Valor-Touched autos, Bold Presence)"
+          - "The AA1 runner problems in TASK-CA-AA2.md (bead dcm-vv2, dcm-yle) fixed with unit tests"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
   - wave: 6
     tracers:
       - id: CA8
@@ -953,6 +998,8 @@ waves:
         goal: A hit PC's player sees the damage against their own thresholds and chooses whether to mark an Armor Slot; allies with an eligible reaction card see Use / Pass; the prompt appears on the Combat Map and on the character sheet.
         depends_on: [AA2, CA6]
         owns:
+          # ORCHESTRATOR NOTE 2026-10-22: AA4 mounts its prompt (and AA5's panel later) in the actions panel.
+          - src/components/combat-map/actions/index.tsx
           - src/components/combat-map/actions/reactions/**
           - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/incoming-hit.tsx
           - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-one.tsx
