@@ -909,6 +909,8 @@ waves:
         goal: Close AA2's and CA4b's open items and the user's answers on the server side of adversary and card hits.
         depends_on: [AA2, CA4b]
         owns:
+          # ORCHESTRATOR NOTE 2026-10-22: resolveUse opens card hits with its groupId.
+          - convex/combatCards.ts
           - convex/adversaryActions.ts
           - convex/lib/adversaryActions.ts
           - convex/lib/incomingHits.ts
