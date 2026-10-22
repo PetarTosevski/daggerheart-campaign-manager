@@ -116,6 +116,8 @@ export interface AdversaryRunContext {
   instance?: InstanceModifiers;
   /** Answers `allyWithin` requirements; absent (no map, Q18): they hold. */
   allyWithin?: AdversaryState["allyWithin"];
+  /** AA2b (bead dcm-vv2 10): roll a dice Attack Modifier only for a use that attacks (the server sets it). */
+  attackDiceOnAttacks?: boolean;
   rng: Rng;
 }
 
@@ -176,6 +178,11 @@ export interface AdversaryPlan {
   /** Fear paid by this use (feature costs, the Experience). */
   fearSpent: number;
   incoming: IncomingHitDraft[];
+  /**
+   * AA2b (AE-t2-core note 2): the PC reaction rolls the use asks for (its `prompt pcSave` steps) with the save as the
+   * entry wrote it, so adversary-only steps in its branches (Petrifying Gaze's Petrification countdown) keep their kind.
+   */
+  saves?: { targetIds: string[]; step: Extract<AdversaryStep, { kind: "save" }> }[];
   /** PCs whose last HP was marked by a forced mark in this plan (the window flags death moves for hits). */
   deathMoves: string[];
   /** Group Attack: the other Minions that took part (the server spotlights them, CB p.201). */
@@ -251,12 +258,27 @@ export function standardAttackEffect(adversaryId: string, attack: Pick<StandardA
 const fixed = (value: number): NumberSource => ({ kind: "fixed", value });
 
 /** Fear an upfront cost list asks for (with the GM's `either` picks), to ask "Spend N Fear?" first (Q19). */
-export function upfrontFear(costs: readonly AdversaryCost[] | undefined, context: Pick<AdversaryRunContext, "eitherCosts" | "self" | "tokens" | "tier" | "gmFear" | "rng">): number {
+export function upfrontFear(costs: readonly AdversaryCost[] | undefined, context: Pick<AdversaryRunContext, "eitherCosts" | "self" | "tokens" | "tier" | "gmFear" | "rng"> & Partial<Pick<AdversaryRunContext, "trigger" | "targets">>): number {
   if (!costs || costs.length === 0) return 0;
-  const env = adversaryNumberEnv({ hp: context.self.hp, stress: context.self.stress, tokens: context.tokens ?? 0 }, context.tier, context.gmFear);
+  // AA2b (bead dcm-yle): a cost read from the trigger (My Turn: "spend a number of Fear equal to the HP marked") asks first.
+  const env = adversaryNumberEnv({ hp: context.self.hp, stress: context.self.stress, tokens: context.tokens ?? 0 }, context.tier, context.gmFear, {
+    ...(context.trigger?.amount !== undefined ? { triggerAmount: context.trigger.amount } : {}),
+    targetCount: { picked: context.targets?.length ?? 0, hit: 0, failedSave: 0 },
+  });
   let i = 0;
   const paid = resolveCosts(costs as readonly Cost[], (c) => resolveNumber(c.amount, env, context.rng), () => context.eitherCosts?.[i++] ?? 0);
   return paid.filter((c) => c.resource === "fear").reduce((s, c) => s + c.amount, 0);
+}
+
+/** Whether a step list holds a `followUp` that makes an adversary attack roll (Double Swipe, Discordant Visions). */
+export function hasFollowUpAttack(steps: readonly AdversaryStep[]): boolean {
+  return steps.some((s) => {
+    if (s.kind === "followUp") return s.roll?.kind === "adversaryAttack" || hasFollowUpAttack(s.steps);
+    if (s.kind === "optional") return hasFollowUpAttack(s.steps);
+    if (s.kind === "choose") return s.options.some((o) => hasFollowUpAttack(o.steps));
+    if (s.kind === "check") return hasFollowUpAttack(s.then) || hasFollowUpAttack(s.otherwise);
+    return false;
+  });
 }
 
 const refuse = (reason: AdversaryRunRefusal["reason"], code: AdversaryActionErrorCode | null, detail: string): AdversaryRunRefusal => ({
@@ -305,8 +327,11 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
   const passives = context.passives;
   const instance = context.instance ?? {};
   const atk = parseAttackModifier(context.attack.modifier);
-  const bonusDice = atk.dice ? Array.from({ length: atk.dice.count }, () => context.rng(atk.dice!.sides)) : [];
   const isAttack = use.roll?.kind === "adversaryAttack";
+  // AA2b (bead dcm-vv2 10): with `attackDiceOnAttacks` (the server), a dice Attack Modifier ("+2d4") is rolled only for a
+  // use that attacks. Off by default: the AE tables' fixed dice still feed it on every run (see TASK-CA-AA2b.md).
+  const attacks = isAttack || (use.roll === undefined && hasFollowUpAttack(use.steps));
+  const bonusDice = atk.dice && (attacks || context.attackDiceOnAttacks !== true) ? Array.from({ length: atk.dice.count }, () => context.rng(atk.dice!.sides)) : [];
   const rollModifier = isAttack
     ? atk.flat + bonusDice.reduce((s, n) => s + n, 0) + (context.experience?.value ?? 0) + (passives?.attackBonus ?? 0) + (instance.attack ?? 0)
     : 0;
@@ -319,6 +344,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
 
   // ---- translate the feature into a card use
   const prompts = new Map<Step, AdversaryOnlyStep>();
+  const saves = new Map<Step, Extract<AdversaryStep, { kind: "save" }>>();
   const translate = (list: readonly AdversaryStep[]): Step[] => list.map((s) => translateStep(s));
   const translateStep = (step: AdversaryStep): Step => {
     switch (step.kind) {
@@ -335,8 +361,11 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
         return { ...step, ...(step.costs ? { costs: step.costs as readonly Cost[] } : {}), steps: translate(step.steps) };
       case "choose":
         return { ...step, options: step.options.map((o) => ({ ...o, steps: translate(o.steps) })) };
-      case "save":
-        return { ...step, onFail: translate(step.onFail), onSuccess: translate(step.onSuccess) };
+      case "save": {
+        const translated: Step = { ...step, onFail: translate(step.onFail), onSuccess: translate(step.onSuccess) };
+        saves.set(translated, step);
+        return translated;
+      }
       case "check":
         return { ...step, then: translate(step.then), otherwise: translate(step.otherwise) };
       case "followUp":
@@ -420,9 +449,29 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
   const plan = result.plan;
 
   // ---- adversary-only steps back in place, their numbers resolved now
-  const env = () => adversaryNumberEnv({ hp: plan.actor.after.hp, stress: plan.actor.after.stress, tokens: plan.actor.after.cardTokens }, context.tier, context.gmFear + plan.gmFearDelta);
+  // AA2b (bead dcm-vv2 7 / 9, AE-t2-core 1): prompt numbers read the trigger's amount, the latest roll before them and the
+  // use's target counts (Summoning Ritual's tick, To Me, My Pretties' summon count, Endless Legions' "twice the PCs").
+  const targetCount = {
+    picked: context.targets?.length ?? 0,
+    hit: plan.hits.filter((h) => h.hit).length,
+    failedSave: plan.steps.filter((s) => s.kind === "save" && !s.success).length,
+  };
+  let lastRoll: number | undefined;
+  const savesOut: NonNullable<AdversaryPlan["saves"]> = [];
+  for (const s of plan.steps) {
+    const original = s.kind === "prompt" && s.prompt === "pcSave" && s.step ? saves.get(s.step) : undefined;
+    if (original && s.kind === "prompt") savesOut.push({ targetIds: [...s.targetIds], step: original });
+  }
+  const env = () =>
+    adversaryNumberEnv({ hp: plan.actor.after.hp, stress: plan.actor.after.stress, tokens: plan.actor.after.cardTokens }, context.tier, context.gmFear + plan.gmFearDelta, {
+      ...(context.trigger?.amount !== undefined ? { triggerAmount: context.trigger.amount } : {}),
+      ...(lastRoll !== undefined ? { lastRoll } : {}),
+      targetCount,
+    });
   const num = (src: NumberSource) => resolveNumber(src, env(), context.rng);
   const outSteps: AdversaryPlanStep[] = plan.steps.map((s): AdversaryPlanStep => {
+    if (s.kind === "check") lastRoll = s.total;
+    else if (s.kind === "damageRoll") lastRoll = s.record.total;
     const original = s.kind === "prompt" && s.step ? prompts.get(s.step) : undefined;
     if (!original) return s;
     const note = original.note !== undefined ? { note: original.note } : {};
@@ -497,7 +546,10 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
   const deathMoves = creatures.filter((c) => c.after.side === "pc" && c.before.hp < c.before.hpMax && c.after.hp >= c.after.hpMax).map((c) => c.id);
 
   // ---- the adversary itself
-  let selfAfter: Combatant = { ...self, hp: plan.actor.after.hp, stress: plan.actor.after.stress, defeated: self.defeated || plan.actor.after.hp >= self.hpMax };
+  // AA2b (bead dcm-vv2 5): a feature that clears a defeated instance's HP brings it back (The Work Never Ends, Come Back
+  // Worse); a defeated instance whose HP stayed put stays defeated.
+  const hpAfter = plan.actor.after.hp;
+  let selfAfter: Combatant = { ...self, hp: hpAfter, stress: plan.actor.after.stress, defeated: hpAfter >= self.hpMax || (self.defeated && hpAfter >= self.hp) };
   for (const s of plan.steps) {
     if (s.kind === "condition" && s.targetId === self.id) {
       const c = s.condition;
@@ -535,6 +587,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       fearSpent,
       incoming,
       deathMoves,
+      ...(savesOut.length > 0 ? { saves: savesOut } : {}),
       group: use.groupAttack ? (context.group ?? []).map((c) => c.id) : [],
       modifiers: use.modifiers ?? [],
       excluded: plan.excluded,

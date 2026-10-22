@@ -158,7 +158,17 @@ export const encounterAdversaryFields = {
    * Candlemaker's five, a Pool. Read by `tokens` requirements and the `tokens` outcome of adversary features. Absent = 0.
    */
   tokens: v.optional(v.number()),
+  /**
+   * Limited feature uses of this instance (plan combat-actions AA2b; widened, absent = none): "Once per scene" and the
+   * like (TASK-CA-AA1 Q4). `key` is `adversaryFeatureUseKey`, `until` the limit's period as the runner records it, `scene`
+   * the encounter's `startedAt` when it was used: an entry from an earlier run of the encounter no longer counts, so
+   * per-scene limits reset when the encounter ends (a restart is a new scene). At most `MAX_INSTANCE_FEATURE_USES`.
+   */
+  featureUses: v.optional(v.array(v.object({ key: v.string(), until: v.union(v.literal("rest"), v.literal("longRest"), v.literal("session")), scene: v.number() }))),
 };
+
+/** The most `featureUses` entries one instance keeps (oldest dropped first). */
+export const MAX_INSTANCE_FEATURE_USES = 40;
 
 const thresholdsValidator = v.object({ major: v.union(v.number(), v.null()), severe: v.union(v.number(), v.null()) });
 const attackValidator = v.object({ modifier: v.number(), name: v.string(), range: v.string(), damage: v.string() });

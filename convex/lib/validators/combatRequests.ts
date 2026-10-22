@@ -1,6 +1,6 @@
 import { v, type Infer } from "convex/values";
 
-import { traitIdValidator } from "./characters";
+import { conditionValidator, effectValidator, traitIdValidator } from "./characters";
 
 /**
  * Validators of `combatRequests` (plan combat-actions, tracer AA0; table: convex/tables/combatRequests.ts). One row is
@@ -107,16 +107,60 @@ export const hitResponderValidator = v.object({
  * GM's actionLog row; players never see it, Q14). `damage` is the rolled total before armor; the server derives the
  * severity against the character's own thresholds when it answers `pending`.
  */
+/** The adversary instance that made the hit (AA0's attacker shape, unchanged). */
+export const adversaryAttackerValidator = v.object({
+  instanceId: v.id("encounterAdversaries"),
+  /** The instance label at the time of the hit ("Bandit 2"), for "Bandit hit Mira". */
+  label: v.string(),
+  /** The feature used, as printed; unset for the standard attack. The server re-reads its effect from the registry. */
+  feature: v.optional(v.string()),
+});
+
+/**
+ * A PC whose domain card damaged another PC (AA2b, widened; user answer 2026-10-22: "card damage to another PC opens the
+ * same incoming-hit prompt as an adversary attack"). Told apart from the adversary shape by `kind`.
+ */
+export const pcAttackerValidator = v.object({
+  kind: v.literal("pc"),
+  characterId: v.id("characters"),
+  /** The character's name at the time of the hit ("Ash"), for "Ash hit Mira". */
+  label: v.string(),
+  /** The card used. */
+  cardId: v.string(),
+  /** The card's printed name. */
+  feature: v.optional(v.string()),
+});
+
+/**
+ * What an attack does to whoever takes its hit besides the damage (AA2b; user answer 2026-10-22: "the attack's rider
+ * (e.g. Bite's Restrained) MOVES WITH THE DAMAGE to that ally"). Applied when the hit resolves, to the PC who took it,
+ * unless the hit was avoided. `fromCondition` marks a card tag's effect (Bold Presence avoids it with the condition).
+ */
+export const hitRiderValidator = v.union(
+  v.object({ kind: v.literal("condition"), condition: conditionValidator }),
+  v.object({ kind: v.literal("effect"), effect: effectValidator, fromCondition: v.optional(v.boolean()) }),
+  v.object({ kind: v.literal("stress"), amount: v.number() }),
+  v.object({ kind: v.literal("hp"), amount: v.number() }),
+  v.object({ kind: v.literal("hope"), delta: v.number() }),
+);
+
+/**
+ * After the hit resolved (AA2b, CE-valor "For AA2"): the PC who took it may still answer a card its marks set off
+ * (Unbreakable "When you mark your last Hit Point, instead of making a death move", CB p.342). While set and the row is
+ * open, the row waits only for that character's `card` or `pass`; the damage is already on the sheet.
+ */
+export const afterHitValidator = v.object({
+  characterId: v.id("characters"),
+  cardIds: v.array(v.string()),
+  severity: v.union(v.literal("none"), v.literal("minor"), v.literal("major"), v.literal("severe")),
+  hpMarked: v.number(),
+  deathMove: v.boolean(),
+});
+
 export const incomingHitPayloadValidator = v.object({
   schemaVersion: v.literal(1),
   kind: v.literal("incomingHit"),
-  attacker: v.object({
-    instanceId: v.id("encounterAdversaries"),
-    /** The instance label at the time of the hit ("Bandit 2"), for "Bandit hit Mira". */
-    label: v.string(),
-    /** The feature used, as printed; unset for the standard attack. The server re-reads its effect from the registry. */
-    feature: v.optional(v.string()),
-  }),
+  attacker: v.union(adversaryAttackerValidator, pcAttackerValidator),
   targetCharacterId: v.id("characters"),
   /** The target's PC token on the live map, when there is one. */
   targetTokenId: v.optional(v.id("combatTokens")),
@@ -130,7 +174,14 @@ export const incomingHitPayloadValidator = v.object({
   /** Rows of one adversary action (several targets) share it, so they resolve into one actionLog group. */
   groupId: v.string(),
   responders: v.array(hitResponderValidator),
+  /** AA2b (widened): the attack's riders, landing on whoever takes the hit. At most `MAX_RIDERS`. */
+  riders: v.optional(v.array(hitRiderValidator)),
+  /** AA2b (widened): set when the hit resolved and its target still has an after-hit card to answer. */
+  afterHit: v.optional(afterHitValidator),
 });
+
+/** The most riders one hit carries. */
+export const MAX_RIDERS = 20;
 
 /** A Minion group (or single Minion) the attacker may pick from: still standing, within range, its Difficulty beaten. */
 export const minionCandidateValidator = v.object({
@@ -207,6 +258,10 @@ export type CombatRequestStatus = Infer<typeof combatRequestStatusValidator>;
 export type SanctionPayload = Infer<typeof sanctionPayloadValidator>;
 export type SanctionAction = Infer<typeof sanctionActionValidator>;
 export type IncomingHitPayload = Infer<typeof incomingHitPayloadValidator>;
+export type HitRider = Infer<typeof hitRiderValidator>;
+export type AfterHit = Infer<typeof afterHitValidator>;
+export type AdversaryAttacker = Infer<typeof adversaryAttackerValidator>;
+export type PcAttacker = Infer<typeof pcAttackerValidator>;
 export type CombatRequestPayload = Infer<typeof combatRequestPayloadValidator>;
 export type HitResponder = Infer<typeof hitResponderValidator>;
 export type HitChoice = Infer<typeof hitChoiceValidator>;

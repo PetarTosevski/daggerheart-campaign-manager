@@ -33,7 +33,7 @@ import type { CharacterSheetInput } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { assertOneActive, readSheet, storedSheet } from "./characterSheet";
-import { declineGroupOffers } from "./combatRequests";
+import { closeRequest, declineGroupOffers, openRequests } from "./combatRequests";
 import { revertTicks } from "./countdownTicks";
 import { revertFear } from "./fear";
 import { campaignAccess } from "./permissions";
@@ -160,6 +160,16 @@ async function adversariesToRestore(ctx: MutationCtx, group: Doc<"actionLog">[])
 }
 
 /**
+ * Declines the open `incomingHit` rows of an undone group (AA2b; AA2's open item: "actionLog undo declines open incomingHit
+ * rows of the undone group"). Open requests per campaign are few (`openRequests` is bounded).
+ */
+async function declineGroupHits(ctx: MutationCtx, campaignId: Id<"campaigns">, groupId: string, by: Id<"users">): Promise<void> {
+  for (const r of await openRequests(ctx, campaignId)) {
+    if (r.payload.kind === "incomingHit" && r.payload.groupId === groupId) await closeRequest(ctx, r._id, "declined", by);
+  }
+}
+
+/**
  * Undoes a row and the rest of its group. Allowed for the row's actor and the
  * campaign's GM (`permissionFor`); others with access get FORBIDDEN, outsiders
  * NOT_FOUND. Refused with UNDO_STALE when the row is not undoable, already
@@ -262,6 +272,8 @@ export async function undoEntry(
   }
   // An attack's open Minion offer goes with it.
   if (row.groupId !== undefined && group.some((r) => r.kind === "combat")) await declineGroupOffers(ctx, row.campaignId, row.groupId, user._id);
+  // AA2b: the action's open incoming hits (reaction windows, after-hit offers) close with it.
+  if (row.groupId !== undefined) await declineGroupHits(ctx, row.campaignId, row.groupId, user._id);
 
   const fear = group.reduce((sum, r) => sum + (r.fearDelta ?? 0), 0);
   const fearReverted = fear === 0 ? 0 : (await revertFear(ctx, row.campaignId, fear)).reverted;

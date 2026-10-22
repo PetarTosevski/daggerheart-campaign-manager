@@ -18,7 +18,7 @@
  * Attack; AR10 CB p.199 Horde; Q2 cover gives the roll disadvantage (CB p.104).
  */
 import { pickAdversaryUse, run, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFear, type AdversaryPlan, type AdversaryPlanStep, type AdversaryRunContext, type InstanceModifiers, type StandardAttack } from "../../src/lib/domain/adversary-effects/run";
-import type { AdversaryFeatureEffect, AdversaryFeatureUse } from "../../src/lib/domain/adversary-effects/types";
+import type { AdversaryFeatureEffect, AdversaryFeatureUse, AdversaryStep } from "../../src/lib/domain/adversary-effects/types";
 import { passiveSummary, spotlightCost, triggeredUses, type AdversaryEvent, type AdversaryState, type TriggeredUse } from "../../src/lib/domain/adversary-actions/index";
 import { featureFearCost, hordeDamage, relentlessValue } from "../../src/lib/domain/adversaries/index";
 import type { PlanStep } from "../../src/lib/domain/card-effects/run";
@@ -31,7 +31,7 @@ import { ADVERSARIES } from "../../src/lib/srd/adversaries";
 import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
 import type { AdversaryDef } from "../../src/lib/srd/types";
-import type { CharacterSheet } from "../../src/lib/validation/characters";
+import type { CharacterSheet, FeatureUse } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
@@ -41,11 +41,12 @@ import { liveCombatMap, tokensOnMap } from "./combatMaps";
 import { loadScene, type Scene } from "./combatVision";
 import { assertRunning, loadEncounter, loadInstance, MAX_INSTANCES } from "./encounters";
 import { campaignFearState, gainFear, spendFear } from "./fear";
-import { bandsOnMap, openIncomingHit, partyMembers, type BandBetween, type HitDraft, type HitResolution, type PartyMember } from "./incomingHits";
+import { attackerInstanceId, bandsOnMap, openIncomingHit, partyMembers, type BandBetween, type HitDraft, type HitResolution, type PartyMember } from "./incomingHits";
 import { rollDie } from "./dice";
 import { rules } from "./rolls";
 import type { AdversaryBefore, StoredRoll } from "./validators/actionLog";
-import { ENCOUNTER_CONDITIONS, type EncounterCondition } from "./validators/encounters";
+import type { HitRider } from "./validators/combatRequests";
+import { ENCOUNTER_CONDITIONS, MAX_INSTANCE_FEATURE_USES, type EncounterCondition } from "./validators/encounters";
 
 /** The most creatures one action names in each list (targets, picked, allies, follow-up); bounds the hit rows (CD8). */
 export const MAX_ACTION_TARGETS = 20;
@@ -256,6 +257,52 @@ async function groupOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries">, oth
 export type Prompt = { kind: "manual" | "move" | "pcSave" | "summon" | "countdown" | "spotlight" | "choice"; text: string };
 export type Offer = { feature: string; useId: string; trigger: string };
 
+/** A fixed number's value, else "some" (a branch's numbers aren't rolled until the GM applies it). */
+const fixedText = (n: { kind: string; value?: number } | undefined) => (n?.kind === "fixed" && n.value !== undefined ? String(n.value) : "some");
+
+/** The adversary-only steps (summon, countdown, spotlight) of a save branch as GM prompts, nested steps included. */
+export function adversaryOnlyPrompts(steps: readonly AdversaryStep[]): Prompt[] {
+  const out: Prompt[] = [];
+  for (const s of steps) {
+    if (s.kind === "summon") out.push({ kind: "summon", text: `Summon ${fixedText(s.count)} ${s.label}${s.range ? ` within ${s.range}` : ""}` });
+    else if (s.kind === "countdown") out.push({ kind: "countdown", text: `Countdown ${s.label}: ${s.op}${s.start ? ` at ${fixedText(s.start)}` : ""}${s.note ? ` (${s.note})` : ""}` });
+    else if (s.kind === "spotlight") out.push({ kind: "spotlight", text: `Spotlight ${s.who}${s.name ? ` (${s.name})` : ""}` });
+    else if (s.kind === "optional" || s.kind === "followUp") out.push(...adversaryOnlyPrompts(s.steps));
+    else if (s.kind === "choose") for (const o of s.options) out.push(...adversaryOnlyPrompts(o.steps));
+    else if (s.kind === "check") out.push(...adversaryOnlyPrompts(s.then), ...adversaryOnlyPrompts(s.otherwise));
+    else if (s.kind === "save") out.push(...adversaryOnlyPrompts(s.onFail), ...adversaryOnlyPrompts(s.onSuccess));
+  }
+  return out;
+}
+
+/** The scene an encounter's run is: its latest `startedAt` (a restart is a new scene). */
+const sceneOf = (encounter: Doc<"encounters">) => encounter.startedAt ?? encounter.createdAt;
+
+/**
+ * The instance's limited feature uses that still count (AA2b; "Once per scene", TASK-CA-AA1 Q4): the entries recorded
+ * in this run of the encounter. Ending the encounter ends the scene, so a restarted encounter starts with none.
+ */
+export function instanceUses(instance: Doc<"encounterAdversaries">, encounter: Doc<"encounters">): FeatureUse[] {
+  const scene = sceneOf(encounter);
+  return (instance.featureUses ?? []).filter((u) => u.scene === scene).map((u) => ({ key: u.key, until: u.until }));
+}
+
+/**
+ * The riders a plan puts on a hit PC (AA2b): what `writeSheetChanges` would add to their sheet (conditions, effects,
+ * Hope), as stored riders. A card tag's effect is marked `fromCondition` (Bold Presence avoids it with the conditions).
+ */
+export function ridersOf(before: CharacterSheet, after: CharacterSheet, steps: readonly PlanStep[], who: string): HitRider[] {
+  const out: HitRider[] = [];
+  for (const c of after.conditions) if (!before.conditions.includes(c)) out.push({ kind: "condition", condition: c });
+  const tags = new Set(steps.flatMap((s) => (s.kind === "condition" && s.targetId === who && s.condition.kind === "tag" ? [s.condition.tag] : [])));
+  for (const e of after.effects) {
+    if (before.effects.some((b) => b.id === e.id)) continue;
+    out.push({ kind: "effect", effect: e, ...(tags.has(e.text.split(";")[0] ?? "") ? { fromCondition: true } : {}) });
+  }
+  if (after.hope !== before.hope) out.push({ kind: "hope", delta: after.hope - before.hope });
+  return out;
+}
+
 /** What one action changes, gathered from its plans (the main use, opted-in reactions, automatic uses) before writing. */
 class Work {
   selfAfter: Combatant;
@@ -263,19 +310,24 @@ class Work {
   fearDelta = 0;
   readonly sheets = new Map<string, { member: PartyMember; after: CharacterSheet }>();
   readonly allies = new Map<string, { instance: Doc<"encounterAdversaries">; after: Combatant }>();
-  readonly hits: { targetId: Id<"characters">; hit: HitDraft }[] = [];
+  readonly hits: { targetId: Id<"characters">; hit: HitDraft; riders: HitRider[] }[] = [];
   readonly prompts: Prompt[] = [];
   readonly gm: string[] = [];
   readonly spotlit = new Set<string>();
+  /** The instance's limited uses this scene (the runs' `featureUses`), and the ones this action recorded. */
+  readonly baseUses: FeatureUse[];
+  readonly addedUses: FeatureUse[] = [];
 
   constructor(
     readonly instance: Doc<"encounterAdversaries">,
     readonly block: Block,
     readonly party: readonly PartyMember[],
     readonly encounterInstances: readonly Doc<"encounterAdversaries">[],
+    readonly encounter: Doc<"encounters">,
   ) {
     this.selfAfter = selfCombatant(instance, block);
     this.tokensAfter = instance.tokens ?? 0;
+    this.baseUses = instanceUses(instance, encounter);
   }
 
   nameOf(id: string): string {
@@ -285,30 +337,18 @@ class Work {
     return this.encounterInstances.find((a) => a._id === id.split("#")[0])?.label ?? "someone";
   }
 
-  /** Folds one plan in: the adversary itself, Fear, PCs marked directly, allies, hits for the window, prompts. */
+  /**
+   * Folds one plan in: the adversary itself, Fear, PCs marked directly, allies, hits for the window, prompts. A PC with a
+   * hit waiting gets this plan's other marks on them as the hit's riders (AA2b; user answer 2026-10-22: Bite's
+   * Restrained moves with the damage to whoever takes it): conditions, effects, Hope, Stress and forced HP land when the
+   * hit resolves, on the PC who took it; a forced Armor Slot from a later plan (Rending Chomp) joins the hit's `forcedArmor`.
+   */
   absorb(plan: AdversaryPlan, feature: string) {
     this.selfAfter = plan.self.after;
     this.tokensAfter = plan.self.tokens.after;
     this.fearDelta += plan.gmFearDelta;
-    for (const c of plan.creatures) {
-      if (c.id === this.instance._id) continue;
-      const member = this.party.find((m) => m.character._id === c.id);
-      if (member) {
-        const sheet = this.sheets.get(c.id)?.after ?? member.sheet;
-        this.sheets.set(c.id, { member, after: { ...sheet, hp: Math.min(sheet.hpMax, c.after.hp), stress: Math.min(sheet.stressMax, c.after.stress), armorMarked: c.after.armor ?? sheet.armorMarked } });
-        continue;
-      }
-      const ally = this.encounterInstances.find((a) => a._id === c.id);
-      if (ally) this.allies.set(c.id, { instance: ally, after: c.after });
-    }
-    // Conditions, effects and Hope on PCs (Restrained on a hit, a sheet effect), with the feature as the effect's source.
-    const touched = new Set(plan.steps.flatMap((s) => ("targetId" in s && ["condition", "clearCondition", "effect", "hope"].includes(s.kind) ? [s.targetId] : [])));
-    for (const id of touched) {
-      const member = this.party.find((m) => m.character._id === id);
-      if (!member) continue;
-      const sheet = this.sheets.get(id)?.after ?? member.sheet;
-      this.sheets.set(id, { member, after: writeSheetChanges(sheet, plan.steps.filter((s): s is PlanStep => s.kind !== "summon" && s.kind !== "countdown" && s.kind !== "spotlight"), id, `${plan.adversaryId}/${plan.feature}`, feature, false, false) });
-    }
+    // Limited uses this plan recorded (every run starts from the instance's stored uses, AA2b).
+    for (const u of plan.self.featureUses.slice(this.baseUses.length)) this.addedUses.push(u);
     for (const hit of plan.incoming) {
       const member = this.party.find((m) => m.character._id === hit.targetId);
       if (!member) continue;
@@ -319,12 +359,65 @@ class Work {
         prior.hit.forcedArmor += hit.forcedArmor;
         if (prior.hit.type !== hit.type) prior.hit.type = "both";
       } else {
-        this.hits.push({ targetId: member.character._id, hit: { amount: hit.amount, type: hit.type, direct: hit.direct, forcedArmor: hit.forcedArmor, critical: hit.critical, ...(hit.attackTotal !== undefined ? { attackTotal: hit.attackTotal } : {}) } });
+        this.hits.push({ targetId: member.character._id, hit: { amount: hit.amount, type: hit.type, direct: hit.direct, forcedArmor: hit.forcedArmor, critical: hit.critical, ...(hit.attackTotal !== undefined ? { attackTotal: hit.attackTotal } : {}) }, riders: [] });
       }
+    }
+    const pending = (id: string) => this.hits.find((h) => h.targetId === id);
+    const inPlan = new Set(plan.incoming.map((h) => h.targetId));
+    const marks = (id: string, track: "stress" | "hp" | "armor", noBenefit?: boolean) =>
+      plan.steps.reduce((n, s) => n + (s.kind === "mark" && s.targetId === id && s.track === track && (noBenefit === undefined || (s.noBenefit === true) === noBenefit) ? s.amount : 0), 0);
+    for (const c of plan.creatures) {
+      if (c.id === this.instance._id) continue;
+      const member = this.party.find((m) => m.character._id === c.id);
+      if (member) {
+        const sheet = this.sheets.get(c.id)?.after ?? member.sheet;
+        const hit = pending(c.id);
+        if (hit) {
+          // Stress and forced HP ride with the hit; a forced Armor Slot of a later plan joins its `forcedArmor` (CB p.195).
+          let armor = c.after.armor ?? sheet.armorMarked;
+          if (!inPlan.has(c.id)) {
+            const forced = Math.min(marks(c.id, "armor", true), Math.max(0, armor - (c.before.armor ?? 0)));
+            hit.hit.forcedArmor += forced;
+            armor -= forced;
+          }
+          const stress = marks(c.id, "stress");
+          const hp = marks(c.id, "hp");
+          if (stress > 0) hit.riders.push({ kind: "stress", amount: stress });
+          if (hp > 0) hit.riders.push({ kind: "hp", amount: hp });
+          if (armor !== sheet.armorMarked) this.sheets.set(c.id, { member, after: { ...sheet, armorMarked: armor } });
+          continue;
+        }
+        this.sheets.set(c.id, { member, after: { ...sheet, hp: Math.min(sheet.hpMax, c.after.hp), stress: Math.min(sheet.stressMax, c.after.stress), armorMarked: c.after.armor ?? sheet.armorMarked } });
+        continue;
+      }
+      const ally = this.encounterInstances.find((a) => a._id === c.id);
+      if (ally) this.allies.set(c.id, { instance: ally, after: c.after });
+    }
+    // Conditions, effects and Hope on PCs (Restrained on a hit, a sheet effect), with the feature as the effect's source.
+    const cardSteps = plan.steps.filter((s): s is PlanStep => s.kind !== "summon" && s.kind !== "countdown" && s.kind !== "spotlight");
+    const touched = new Set(plan.steps.flatMap((s) => ("targetId" in s && ["condition", "clearCondition", "effect", "hope"].includes(s.kind) ? [s.targetId] : [])));
+    for (const id of touched) {
+      const member = this.party.find((m) => m.character._id === id);
+      if (!member) continue;
+      const sheet = this.sheets.get(id)?.after ?? member.sheet;
+      const after = writeSheetChanges(sheet, cardSteps, id, `${plan.adversaryId}/${plan.feature}`, feature, false, false);
+      const hit = pending(id);
+      if (hit) {
+        hit.riders.push(...ridersOf(sheet, after, cardSteps, id));
+        continue;
+      }
+      this.sheets.set(id, { member, after });
     }
     for (const step of plan.steps) {
       const p = this.promptOf(step);
       if (p) this.prompts.push(p);
+    }
+    // AA2b (AE-t2-core note 2): adversary-only steps in a PC save's branches come back as their own prompts.
+    for (const save of plan.saves ?? []) {
+      const who = save.targetIds.map((id) => this.nameOf(id)).join(", ");
+      for (const [branch, list] of [["fails", save.step.onFail], ["succeeds", save.step.onSuccess]] as const) {
+        for (const p of adversaryOnlyPrompts(list)) this.prompts.push({ kind: p.kind, text: `If ${who} ${branch}: ${p.text}` });
+      }
     }
     for (const id of plan.group) this.spotlit.add(id.split("#")[0]!);
     for (const id of plan.deathMoves) this.gm.push(`${this.nameOf(id)} marked their last HP: death move`);
@@ -362,10 +455,11 @@ async function commit(ctx: MutationCtx, w: Work, log: { campaignId: Id<"campaign
   await ctx.db.patch("encounterAdversaries", w.instance._id, {
     hp,
     stress: Math.max(0, Math.min(w.instance.stats.stressMax, s.stress)),
-    defeated: w.instance.defeated || hp >= w.instance.stats.hpMax,
+    defeated: hp >= w.instance.stats.hpMax || (w.instance.defeated && s.defeated),
     conditions: [...new Set(s.conditions.filter((c): c is EncounterCondition => ENCOUNTER_SET.has(c)))],
     tags: [...new Set(s.tags ?? [])].slice(0, 20),
     tokens: Math.max(0, w.tokensAfter),
+    ...(w.addedUses.length > 0 ? { featureUses: [...(w.instance.featureUses ?? []).filter((u) => u.scene === sceneOf(w.encounter)), ...w.addedUses.map((u) => ({ ...u, scene: sceneOf(w.encounter) }))].slice(-MAX_INSTANCE_FEATURE_USES) } : {}),
     ...(spotlight ? applySpotlight({ spotlights: w.instance.spotlights, spotlightTurn: w.instance.spotlightTurn }, spotlight.gmTurn) : {}),
     updatedAt: now,
   });
@@ -375,7 +469,7 @@ async function commit(ctx: MutationCtx, w: Work, log: { campaignId: Id<"campaign
     await ctx.db.patch("encounterAdversaries", instance._id, {
       hp: ahp,
       stress: Math.max(0, Math.min(instance.stats.stressMax, after.stress)),
-      defeated: instance.defeated || ahp >= instance.stats.hpMax,
+      defeated: ahp >= instance.stats.hpMax || (instance.defeated && after.defeated),
       conditions: [...new Set(after.conditions.filter((c): c is EncounterCondition => ENCOUNTER_SET.has(c)))],
       tags: [...new Set(after.tags ?? [])].slice(0, 20),
       updatedAt: now,
@@ -477,7 +571,7 @@ export type ActionArgs = {
   reactions?: string[];
 };
 
-export type TargetOutcome = { characterId?: Id<"characters">; instanceId?: Id<"encounterAdversaries">; hit: boolean; requestId?: Id<"combatRequests">; damage?: number; resolved: boolean };
+export type TargetOutcome = { characterId?: Id<"characters">; instanceId?: Id<"encounterAdversaries">; hit: boolean; requestId?: Id<"combatRequests">; damage?: number; resolved: boolean; deathMove?: boolean };
 
 export type ConfirmFear = { status: "confirmFear"; fear: number; spotlight: number; feature: number; experience: number };
 export type ActionResult = {
@@ -537,7 +631,9 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
 
   // Spotlight (CB p.153, p.194): spotlit this GM turn, or spotlight it now (the turn's second spotlight costs a Fear).
   const spotlit = instance.spotlightTurn === encounter.gmTurn && instance.spotlights > 0;
-  const passives = passiveSummary(block.effects, adversaryState(instance), block.tier, rollDie);
+  const fearNow = (await campaignFearState(ctx, campaign._id)).fear;
+  // AA2b (bead dcm-vv2 3 / 6): passives read the GM's Fear and the situations the GM confirmed.
+  const passives = passiveSummary(block.effects, { ...adversaryState(instance), situations: args.situations ?? [] }, block.tier, rollDie, fearNow);
   const spotlightFear =
     needsSpotlight && !spotlit
       ? spotlightCost({ spotlightsThisTurn: turnSpotlights(others, encounter.gmTurn), instanceSpotlights: 0, relentless: passives.relentless ?? block.relentless, costsFear: passives.spotlightCostsFear }).fear
@@ -545,17 +641,16 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
 
   const experience = args.experience === undefined ? undefined : block.experiences.find((e) => e.name === args.experience);
   if (args.experience !== undefined && !experience) throw appError("INVALID", "The adversary has no such Experience.");
-  const featureFear = use ? upfrontFear(use.costs, { self, tokens: instance.tokens ?? 0, tier: block.tier, gmFear: 0, rng: rollDie, ...(args.eitherCosts ? { eitherCosts: args.eitherCosts } : {}) }) : (manualFeature!.fearCost ?? featureFearCost(manualFeature!.text) ?? 0);
+  const featureFear = use ? upfrontFear(use.costs, { self, tokens: instance.tokens ?? 0, tier: block.tier, gmFear: 0, rng: rollDie, ...(args.eitherCosts ? { eitherCosts: args.eitherCosts } : {}), ...(args.trigger?.amount !== undefined ? { trigger: { amount: args.trigger.amount } } : {}) }) : (manualFeature!.fearCost ?? featureFearCost(manualFeature!.text) ?? 0);
   const experienceFear = experience ? 1 : 0;
   const asked = spotlightFear + featureFear + experienceFear;
-  const fearNow = (await campaignFearState(ctx, campaign._id)).fear;
   if (asked > 0 && (args.spendFear ?? 0) < asked) return { status: "confirmFear", fear: asked, spotlight: spotlightFear, feature: featureFear, experience: experienceFear };
   if (asked > fearNow) throw appError("NOT_ENOUGH_FEAR");
 
   const scene = await actionScene(ctx, campaign, instance);
   const base = { encounter, self: instance, block, scene };
   const groupId = newGroupId();
-  const w = new Work(instance, block, scene.party, others);
+  const w = new Work(instance, block, scene.party, others, encounter);
   const label = instance.label;
   const featureName = args.feature ?? block.attack.name;
 
@@ -583,7 +678,7 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     attack: block.attack,
     tier: block.tier,
     tokens: instance.tokens ?? 0,
-    featureUses: [],
+    featureUses: w.baseUses,
     gmFear: fearNow - spotlightFear,
     spotlit: true,
     fearConfirmed: true,
@@ -598,11 +693,12 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     ...(args.eitherCosts ? { eitherCosts: args.eitherCosts } : {}),
     ...(args.splits ? { splits: Object.fromEntries(args.splits.map((s) => [s.id, s.amount])) } : {}),
     situations: args.situations ?? [],
-    advantage: args.advantage ?? 0,
+    advantage: (args.advantage ?? 0) + (attack && (passives.advantage ?? []).some((on) => on === "attack" || on === "any") ? 1 : 0),
     disadvantage: (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0),
     ...(experience ? { experience } : {}),
     ...(group.length ? { group } : {}),
     hordeX: block.hordeX,
+    attackDiceOnAttacks: true,
     passives,
     instance: instanceModifiers(instance),
     rng: rollDie,
@@ -669,7 +765,7 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   } else gmText.push(`${label} used ${featureName}`);
   if (spotlightFear > 0) gmText.push("1 Fear for the spotlight");
   if (experience) gmText.push(`Experience ${experience.name} +${experience.value} (1 Fear)`);
-  for (const h of w.hits) gmText.push(`${w.nameOf(h.targetId)}: ${h.hit.amount} ${h.hit.type}${h.hit.direct ? " direct" : ""}${h.hit.forcedArmor ? `, ${h.hit.forcedArmor} forced Armor Slot` : ""} (waiting for armor)`);
+  for (const h of w.hits) gmText.push(`${w.nameOf(h.targetId)}: ${h.hit.amount} ${h.hit.type}${h.hit.direct ? " direct" : ""}${h.hit.forcedArmor ? `, ${h.hit.forcedArmor} forced Armor Slot` : ""}${h.riders.length ? `, ${h.riders.length} rider${h.riders.length === 1 ? "" : "s"} with the hit` : ""} (waiting for armor)`);
   w.fearDelta -= spotlightFear;
   return finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, spotlightFear: 0, roll: plan.roll?.record ?? null, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
 }
@@ -734,11 +830,12 @@ async function finish(ctx: MutationCtx, f: FinishInput): Promise<ActionResult> {
       targetCharacterId: h.targetId,
       ...(token ? { targetTokenId: token._id } : {}),
       hit: h.hit,
+      riders: h.riders,
       party,
       bands,
     });
     const o = outcomes.find((x) => x.characterId === h.targetId);
-    const entry = { characterId: h.targetId, hit: true, requestId, damage: h.hit.amount, resolved: resolution !== null };
+    const entry = { characterId: h.targetId, hit: true, requestId, damage: h.hit.amount, resolved: resolution !== null, ...(resolution?.deathMove ? { deathMove: true } : {}) };
     if (o) Object.assign(o, entry);
     else outcomes.push(entry);
     if (resolution) await afterHitTriggers(ctx, resolution, f.user._id);
@@ -754,8 +851,9 @@ async function finish(ctx: MutationCtx, f: FinishInput): Promise<ActionResult> {
  * (they fire them through `useFeature` with the trigger). Nothing happens when the encounter no longer runs.
  */
 export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, actorId: Id<"users">): Promise<void> {
-  if (res.negated) return;
-  const instance = await ctx.db.get("encounterAdversaries", res.attacker.instanceId);
+  const instanceId = attackerInstanceId(res.attacker);
+  if (res.negated || instanceId === null) return;
+  const instance = await ctx.db.get("encounterAdversaries", instanceId);
   if (instance === null || instance.defeated) return;
   const encounter = await ctx.db.get("encounters", instance.encounterId);
   if (encounter === null || encounter.status !== "running") return;
@@ -774,7 +872,7 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
     .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounter._id))
     .take(MAX_INSTANCES + 1);
   const party = await partyMembers(ctx, instance.campaignId);
-  const w = new Work(instance, block, party, others);
+  const w = new Work(instance, block, party, others, encounter);
   const target = party.find((m) => m.character._id === res.targetId);
   const fear = (await campaignFearState(ctx, instance.campaignId)).fear;
   const lines: string[] = [];
@@ -791,7 +889,7 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
       attack: block.attack,
       tier: block.tier,
       tokens: w.tokensAfter,
-      featureUses: [],
+      featureUses: w.baseUses,
       gmFear: Math.max(0, fear + w.fearDelta),
       spotlit: true,
       fearConfirmed: true,
@@ -799,6 +897,7 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
       ...(target ? { targets: [pcCombatant(target.character._id, target.sheet)] } : {}),
       trigger: { amount: res.taken, source: selfCombatant(instance, block), ...(target ? { subject: pcCombatant(target.character._id, target.sheet) } : {}) },
       situations: [],
+      attackDiceOnAttacks: true,
       rng: rollDie,
     });
     w.absorb(plan, t.effect.feature);
@@ -821,6 +920,6 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
   const bands = await bandsOnMap(ctx, map?._id);
   for (const h of w.hits) {
     // A hit from an automatic use (rare): its own window, in the same group; its triggers don't chain further.
-    await openIncomingHit(ctx, { campaignId: instance.campaignId, encounterId: encounter._id, ...(map ? { mapId: map._id } : {}), createdBy: actorId, groupId, attacker: { instanceId: instance._id, label: instance.label }, targetCharacterId: h.targetId, hit: h.hit, party: await partyMembers(ctx, instance.campaignId), bands });
+    await openIncomingHit(ctx, { campaignId: instance.campaignId, encounterId: encounter._id, ...(map ? { mapId: map._id } : {}), createdBy: actorId, groupId, attacker: { instanceId: instance._id, label: instance.label }, targetCharacterId: h.targetId, hit: h.hit, riders: h.riders, party: await partyMembers(ctx, instance.campaignId), bands });
   }
 }

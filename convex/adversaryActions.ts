@@ -8,7 +8,7 @@ import { adversaryAction, afterHitTriggers, type ActionArgs } from "./lib/advers
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
 import { campaignQuery, gmQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
-import { groupUndone, hitView, isHitRow, memberId, rebuildWindow, resolveIncomingHit, respondToHit, type HitRow } from "./lib/incomingHits";
+import { groupUndone, hasAfterHit, hitView, isHitRow, isPcAttacker, memberId, rebuildWindow, resolveIncomingHit, respondAfterHit, respondToHit, type HitResolution, type HitRow } from "./lib/incomingHits";
 import { rollValidator } from "./lib/validators/actionLog";
 import { hitChoiceValidator } from "./lib/validators/combatRequests";
 
@@ -81,6 +81,8 @@ const resolvedActionValidator = v.object({
       requestId: v.optional(v.id("combatRequests")),
       damage: v.optional(v.number()),
       resolved: v.boolean(),
+      /** AA2b: resolved at once and it marked the last HP of the PC who took it (their death move is due). */
+      deathMove: v.optional(v.boolean()),
     }),
   ),
   fearDelta: v.number(),
@@ -145,7 +147,14 @@ async function liveHit(ctx: Parameters<typeof closeRequest>[0], campaignId: Id<"
   return row;
 }
 
-const answerResult = v.object({ status: v.union(v.literal("open"), v.literal("resolved"), v.literal("declined")), requestId: v.id("combatRequests") });
+const answerResult = v.object({
+  status: v.union(v.literal("open"), v.literal("resolved"), v.literal("declined")),
+  requestId: v.id("combatRequests"),
+  /** AA2b: the hit marked the last HP of the PC who took it; their sheet's death move is due now. */
+  deathMove: v.optional(v.boolean()),
+  /** AA2b: the hit resolved, and the PC who took it may still answer an after-hit card (`pending` lists it). */
+  afterHit: v.optional(v.boolean()),
+});
 
 /**
  * An answer in a hit's reaction window (Q13, Q17), for a character the caller edits (its player or the GM): the target's
@@ -167,15 +176,27 @@ export const respond = keyedCampaignMutation({
       if (args.choice.kind === "card") assertCanAct(character, readSheet(character.sheet));
       const row = await liveHit(ctx, ctx.campaign._id, args.requestId, ctx.user._id);
       if (row === null) return { status: "declined" as const, requestId: args.requestId };
+      // AA2b: a resolved hit waiting for the target's after-hit card (Unbreakable) takes only that answer.
+      if (hasAfterHit(row)) return { status: await respondAfterHit(ctx, { row, characterId: args.characterId, choice: args.choice, by: ctx.user._id }), requestId: row._id };
       const { complete } = await respondToHit(ctx, { row, characterId: args.characterId, choice: args.choice, by: ctx.user._id });
       if (!complete) return { status: "open" as const, requestId: row._id };
       const fresh = await ctx.db.get("combatRequests", row._id);
       if (fresh === null || !isHitRow(fresh)) throw new Error("respond: the hit row is gone.");
       const res = await resolveIncomingHit(ctx, { row: fresh, by: ctx.user._id, early: false });
       await afterHitTriggers(ctx, res, row.createdBy);
-      return { status: "resolved" as const, requestId: row._id };
+      return { status: "resolved" as const, requestId: row._id, ...resolutionFlags(res) };
     }),
 });
+
+/** Who made a hit, for `windows`: the instance, or (AA2b) the PC whose card it was. One shape, both fields optional. */
+function attackerIds(attacker: HitRow["payload"]["attacker"]): { instanceId?: Id<"encounterAdversaries">; attackerCharacterId?: Id<"characters"> } {
+  return isPcAttacker(attacker) ? { attackerCharacterId: attacker.characterId } : { instanceId: attacker.instanceId };
+}
+
+/** The AA2b flags of a resolution on an answer: the death move now due, an after-hit card still to answer. */
+function resolutionFlags(res: HitResolution): { deathMove?: boolean; afterHit?: boolean } {
+  return { ...(res.deathMove ? { deathMove: true } : {}), ...(res.afterHit ? { afterHit: true } : {}) };
+}
 
 /** The GM's "Resolve now" (Q17): whoever hasn't answered takes no armor and plays no card. */
 export const resolve = keyedGmMutation({
@@ -195,6 +216,12 @@ export const resolve = keyedGmMutation({
     ctx.once("adversary_resolve", { requestId }, async () => {
       const row = await liveHit(ctx, ctx.campaign._id, requestId, ctx.user._id);
       if (row === null) return { status: "declined" as const, requestId };
+      if (hasAfterHit(row)) {
+        // AA2b: the hit already resolved; "Resolve now" passes the after-hit offer.
+        const offer = row.payload.afterHit;
+        await closeRequest(ctx, row._id, "resolved", ctx.user._id);
+        return { status: "resolved" as const, requestId, targetId: offer.characterId, severity: offer.severity, hpMarked: offer.hpMarked, deathMove: offer.deathMove };
+      }
       const res = await resolveIncomingHit(ctx, { row, by: ctx.user._id, early: true });
       await afterHitTriggers(ctx, res, row.createdBy);
       return { status: "resolved" as const, requestId, targetId: res.targetId, severity: res.severity, hpMarked: res.hpMarked, deathMove: res.deathMove };
@@ -237,6 +264,12 @@ export const pending = campaignQuery({
       direct: v.optional(v.boolean()),
       maxSlots: v.optional(v.number()),
       armorPreview: v.optional(v.array(armorStepValidator)),
+      /** AA2b: the hit resolved; answer an after-hit card in `cardIds` (Unbreakable) with `card` or `pass`. */
+      afterHit: v.optional(v.boolean()),
+      /** AA2b: with `afterHit`, the hit marked this character's last HP. */
+      deathMove: v.optional(v.boolean()),
+      /** AA2b: after a redirect (I Am Your Shield), the PC hit first. */
+      originalTargetName: v.optional(v.string()),
     }),
   ),
   handler: async (ctx, { characterId }) => {
@@ -258,7 +291,10 @@ export const windows = gmQuery({
     v.object({
       requestId: v.id("combatRequests"),
       encounterId: v.optional(v.id("encounters")),
-      instanceId: v.id("encounterAdversaries"),
+      /** The attacking instance; absent when a PC's card made the hit (AA2b: `attackerCharacterId` instead). */
+      instanceId: v.optional(v.id("encounterAdversaries")),
+      /** AA2b: the PC whose card made the hit (card damage to an ally). */
+      attackerCharacterId: v.optional(v.id("characters")),
       attackerLabel: v.string(),
       feature: v.optional(v.string()),
       originalTargetId: v.id("characters"),
@@ -271,6 +307,8 @@ export const windows = gmQuery({
       awaiting: v.array(v.object({ characterId: v.id("characters"), name: v.string(), role: v.union(v.literal("target"), v.literal("ally")) })),
       answers: v.number(),
       createdAt: v.number(),
+      /** AA2b: the hit resolved; only its target's after-hit answer (`awaiting`) is left. */
+      afterHit: v.optional(v.boolean()),
     }),
   ),
   handler: async (ctx) => {
@@ -279,10 +317,12 @@ export const windows = gmQuery({
       const { state, members } = await rebuildWindow(ctx, row);
       const nameOf = (id: string) => members.find((m: { character: Doc<"characters"> }) => m.character._id === id)?.sheet.name ?? "Unknown";
       const p = row.payload;
+      const offer = p.afterHit;
       out.push({
         requestId: row._id,
         ...(row.encounterId ? { encounterId: row.encounterId } : {}),
-        instanceId: p.attacker.instanceId,
+        ...attackerIds(p.attacker),
+        ...(offer ? { afterHit: true } : {}),
         attackerLabel: p.attacker.label,
         ...(p.attacker.feature !== undefined ? { feature: p.attacker.feature } : {}),
         originalTargetId: p.targetCharacterId,
@@ -292,7 +332,7 @@ export const windows = gmQuery({
         damageType: p.damageType,
         direct: p.direct,
         critical: p.critical,
-        awaiting: awaiting(state).map((id) => ({ characterId: memberId(members, id, p.targetCharacterId), name: nameOf(id), role: state.responders.find((r) => r.characterId === id)?.role ?? ("ally" as const) })),
+        awaiting: offer ? [{ characterId: offer.characterId, name: nameOf(offer.characterId), role: "target" as const }] : awaiting(state).map((id) => ({ characterId: memberId(members, id, p.targetCharacterId), name: nameOf(id), role: state.responders.find((r) => r.characterId === id)?.role ?? ("ally" as const) })),
         answers: row.responses.length,
         createdAt: row.createdAt,
       });

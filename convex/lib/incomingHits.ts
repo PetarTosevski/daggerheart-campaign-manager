@@ -21,13 +21,20 @@
  *
  * Every actionLog row written here carries the request's `createdBy` (the GM who made the attack) as actor, so a player
  * can't undo an adversary's hit by undoing their own armor answer; the GM undoes the whole group.
+ *
+ * AA2b (docs/tasks/TASK-CA-AA2b.md; user answers 2026-10-22): the attacker may be a PC (a card's damage to an ally); the
+ * attack's riders (conditions, effects, Stress, Hope) wait in the row and land on whoever takes the hit, so they follow
+ * I Am Your Shield; a hit that marks the target's last HP makes the sheet's death move due at once (`deathMoveSpent`
+ * cleared, `deathMove` returned); the hit PC's after-hit card uses run (Rise Up, Valor-Touched) or are offered with the
+ * row kept open (`afterHit`: Unbreakable); Bold Presence keeps condition riders off.
  */
-import { applyDamageTo, rangeCheck, type Combatant } from "../../src/lib/domain/combat-actions/index";
-import type { PlanStep, RunPlan, RunRefusal } from "../../src/lib/domain/card-effects/run";
+import { applyDamageTo, applyStressTo, rangeCheck, type Combatant } from "../../src/lib/domain/combat-actions/index";
+import { run as runCardUse, type PlanStep, type RunPlan, type RunRefusal } from "../../src/lib/domain/card-effects/run";
 import type { Range } from "../../src/lib/domain/card-effects/types";
 import { derivedThresholds } from "../../src/lib/domain/characters/derived";
 import { hopeMax } from "../../src/lib/domain/characters/index";
 import {
+  afterHitUses,
   armorPreview,
   awaiting as awaitingOf,
   isComplete,
@@ -57,7 +64,7 @@ import { partyOf, readSheet, saveSheet } from "./characterSheet";
 import { tokensOnMap } from "./combatMaps";
 import { closeRequest } from "./combatRequests";
 import type { AdversaryBefore } from "./validators/actionLog";
-import type { HitResponder, IncomingHitPayload } from "./validators/combatRequests";
+import { MAX_RIDERS, type AfterHit, type HitResponder, type HitRider, type IncomingHitPayload, type PcAttacker } from "./validators/combatRequests";
 
 /** The most responders one window lists (the party cap the validator names, CD8). */
 export const MAX_RESPONDERS = 12;
@@ -74,6 +81,16 @@ export type HitDraft = {
 };
 
 export type HitAttacker = IncomingHitPayload["attacker"];
+
+/** A PC attacker (a card's damage to an ally, AA2b); otherwise the attacker is an adversary instance. */
+export function isPcAttacker(attacker: HitAttacker): attacker is PcAttacker {
+  return "kind" in attacker && attacker.kind === "pc";
+}
+
+/** The attacking instance, or null for a PC attacker. */
+export function attackerInstanceId(attacker: HitAttacker): Id<"encounterAdversaries"> | null {
+  return isPcAttacker(attacker) ? null : attacker.instanceId;
+}
 
 /** An active character of the campaign with a readable sheet. */
 export type PartyMember = { character: Doc<"characters">; sheet: CharacterSheet };
@@ -186,18 +203,31 @@ export type OpenHitInput = {
   hit: HitDraft;
   party: readonly PartyMember[];
   bands: BandBetween;
+  /** AA2b: the attack's riders, for whoever takes the hit (at most MAX_RIDERS). */
+  riders?: readonly HitRider[];
 };
 
-function windowHitOf(attacker: HitAttacker, hit: Pick<HitDraft, "amount" | "type" | "direct" | "forcedArmor" | "critical" | "attackTotal">): WindowHit {
+function windowHitOf(attacker: HitAttacker, hit: Pick<HitDraft, "amount" | "type" | "direct" | "forcedArmor" | "critical" | "attackTotal">, riders: readonly HitRider[] = []): WindowHit {
   return {
     amount: hit.amount,
     type: hit.type,
     direct: hit.direct,
     ...(hit.forcedArmor > 0 ? { forcedArmor: hit.forcedArmor } : {}),
-    attackerId: attacker.instanceId,
+    attackerId: isPcAttacker(attacker) ? attacker.characterId : attacker.instanceId,
     critical: hit.critical,
     ...(hit.attackTotal !== undefined ? { attackTotal: hit.attackTotal } : {}),
+    ...(riders.some(isConditionRider) ? { conditionRiders: true } : {}),
   };
+}
+
+/** A rider Bold Presence avoids ("when you would gain a condition"): a condition, or a card tag's effect. */
+function isConditionRider(r: HitRider): boolean {
+  return r.kind === "condition" || (r.kind === "effect" && r.fromCondition === true);
+}
+
+/** The party a hit's window reads: a PC attacker doesn't answer their own card's hit. */
+function respondingParty(party: readonly PartyMember[], attacker: HitAttacker): readonly PartyMember[] {
+  return isPcAttacker(attacker) ? party.filter((m) => m.character._id !== attacker.characterId) : party;
 }
 
 /**
@@ -205,12 +235,13 @@ function windowHitOf(attacker: HitAttacker, hit: Pick<HitDraft, "amount" | "type
  * eligible card) and every ally with an eligible reaction card (at most MAX_RESPONDERS). A window nobody has to answer
  * resolves in the same mutation. Returns the row and, when it resolved, the resolution.
  *
- * Card damage to another PC (user answer 2026-10-22) opens the same row. AA0's payload names an adversary instance as
- * the attacker; a PC attacker needs a widened `attacker` (see the task doc's QUESTIONS).
+ * Card damage to another PC (user answer 2026-10-22) opens the same row with a PC `attacker` (AA2b, widened); that PC
+ * doesn't answer their own card's hit.
  */
 export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Promise<{ requestId: Id<"combatRequests">; resolution: HitResolution | null }> {
-  const party = windowParty(input.party, input.targetCharacterId, input.bands);
-  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit), targetId: input.targetCharacterId, party });
+  const riders = (input.riders ?? []).slice(0, MAX_RIDERS);
+  const party = windowParty(respondingParty(input.party, input.attacker), input.targetCharacterId, input.bands);
+  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders), targetId: input.targetCharacterId, party });
   const responders: HitResponder[] = state.responders.slice(0, MAX_RESPONDERS).map((r) => ({
     characterId: memberId(input.party, r.characterId, input.targetCharacterId),
     role: r.role,
@@ -238,6 +269,7 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
       critical: input.hit.critical,
       groupId: input.groupId,
       responders,
+      ...(riders.length > 0 ? { riders: [...riders] } : {}),
     },
   });
   if (!isComplete({ ...state, responders: state.responders.slice(0, MAX_RESPONDERS) })) return { requestId, resolution: null };
@@ -254,9 +286,17 @@ export function isHitRow(row: Doc<"combatRequests">): row is HitRow {
   return row.kind === "incomingHit" && row.payload.kind === "incomingHit";
 }
 
-/** The attacking instance as a creature (the card runner's trigger `source`); null when it is gone. */
-async function attackerCombatant(ctx: QueryCtx, row: HitRow): Promise<{ instance: Doc<"encounterAdversaries">; combatant: Combatant } | null> {
-  const instance = await ctx.db.get("encounterAdversaries", row.payload.attacker.instanceId);
+/**
+ * The attacker as a creature (the card runner's trigger `source`): the instance, or a PC attacker's character (AA2b,
+ * `instance` null); null when it is gone.
+ */
+async function attackerCombatant(ctx: QueryCtx, row: HitRow, members: readonly PartyMember[]): Promise<{ instance: Doc<"encounterAdversaries"> | null; combatant: Combatant } | null> {
+  const attacker = row.payload.attacker;
+  if (isPcAttacker(attacker)) {
+    const member = members.find((m) => m.character._id === attacker.characterId);
+    return member ? { instance: null, combatant: pcCombatant(member.character._id, member.sheet) } : null;
+  }
+  const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
   if (instance === null || instance.campaignId !== row.campaignId) return null;
   return {
     instance,
@@ -296,11 +336,12 @@ export type Rebuilt = { state: WindowState; party: WindowPc[]; members: PartyMem
 /** The row's window now: opened with today's party and the stored responders, then every stored answer replayed. */
 export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: number): Promise<Rebuilt> {
   const p = row.payload;
-  const members = await partyMembers(ctx, row.campaignId);
+  const everyone = await partyMembers(ctx, row.campaignId);
+  const members = [...respondingParty(everyone, p.attacker)];
   const bands = await bandsOnMap(ctx, row.mapId);
   const party = windowParty(members, p.targetCharacterId, bands);
-  const attacker = await attackerCombatant(ctx, row);
-  const hit = windowHitOf(p.attacker, { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(attackTotal !== undefined ? { attackTotal } : {}) });
+  const attacker = await attackerCombatant(ctx, row, everyone);
+  const hit = windowHitOf(p.attacker, { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(attackTotal !== undefined ? { attackTotal } : {}) }, p.riders ?? []);
   let state: WindowState = { ...openWindow({ hit, targetId: p.targetCharacterId, party }), responders: p.responders.map((r) => ({ ...r, cardIds: [...r.cardIds] })) };
   for (const [i, answer] of row.responses.entries()) {
     let folds;
@@ -432,7 +473,73 @@ export type HitResolution = {
   manual: string[];
   /** The window's raw resolution (the adversary side reads it for its triggers). */
   window: WindowResolution;
+  /** AA2b: the riders that landed on the target (none when the hit was avoided or Bold Presence kept them off). */
+  ridersApplied: number;
+  /** AA2b: after-hit card uses that ran at once (Rise Up, Valor-Touched), by card name. */
+  autos: string[];
+  /** AA2b: set when the target still has an after-hit card to answer (the row stays open for it). */
+  afterHit: AfterHit | null;
 };
+
+// ---------------------------------------------------------------- riders and after-hit uses (AA2b)
+
+const EFFECT_ID = /^(.*):(\d+)$/;
+
+/** An effect id not on the sheet yet (a rider's effect keeps its id unless the target already has it). */
+function freeEffectId(effects: readonly { id: string }[], id: string): string {
+  if (!effects.some((e) => e.id === id)) return id;
+  const base = EFFECT_ID.exec(id)?.[1] ?? id.slice(0, 36);
+  for (let n = 1; n < 100; n++) {
+    const next = `${base}:${n}`.slice(-40);
+    if (!effects.some((e) => e.id === next)) return next;
+  }
+  return id;
+}
+
+/**
+ * The riders on the sheet of whoever took the hit (user answer 2026-10-22: the rider moves with the damage): conditions,
+ * effects (the sheet keeps at most 20), Hope, Stress (a full track marks HP instead, CB p.92), forced HP. Bold Presence's
+ * fold (`skipConditions`) keeps conditions and card tags off.
+ */
+export function applyRiders(sheet: CharacterSheet, riders: readonly HitRider[], skipConditions: boolean): { sheet: CharacterSheet; applied: number } {
+  let next = sheet;
+  let applied = 0;
+  for (const r of riders) {
+    if (skipConditions && isConditionRider(r)) continue;
+    applied++;
+    switch (r.kind) {
+      case "condition":
+        if (!next.conditions.includes(r.condition)) next = { ...next, conditions: [...next.conditions, r.condition] };
+        break;
+      case "effect":
+        next = { ...next, effects: [...next.effects, { ...r.effect, id: freeEffectId(next.effects, r.effect.id) }].slice(-20) };
+        break;
+      case "hope":
+        next = { ...next, hope: Math.max(0, Math.min(hopeMax(next.scars, next.hopeSlotBonus), next.hope + r.delta)) };
+        break;
+      case "stress": {
+        const marked = applyStressTo(pcCombatant("rider", next), r.amount).after;
+        next = { ...next, stress: Math.min(next.stressMax, marked.stress), hp: Math.min(next.hpMax, marked.hp) };
+        break;
+      }
+      case "hp":
+        next = { ...next, hp: Math.min(next.hpMax, next.hp + Math.max(0, Math.trunc(r.amount))) };
+        break;
+    }
+  }
+  return { sheet: next, applied };
+}
+
+/** Runs one of the hit PC's after-hit card uses with the hit as its trigger (dice seeded from the row: no fishing). */
+function runAfterHitCard(member: PartyMember, sheet: CharacterSheet, cardId: string, useId: string | undefined, trigger: { amount: number; source?: Combatant }, seed: string): { plan: RunPlan; cardName: string } | RunRefusal {
+  const card = cardEffect(cardId);
+  if (!card) return { ok: false, reason: "noUse", detail: cardId };
+  const actor = cardActor(member.character._id, sheet, cardId, undefined);
+  const reactionUse = useId ?? card.uses.find((u) => u.activation.kind === "reaction")?.id;
+  const result = runCardUse(card, { actor, gmFear: 0, ...(reactionUse ? { useId: reactionUse } : {}), trigger: { amount: trigger.amount, subject: pcCombatant(member.character._id, sheet), ...(trigger.source ? { source: trigger.source } : {}) }, rng: seededRng(seed) });
+  if (!result.ok) return result;
+  return { plan: result.plan, cardName: getDomainCard(cardId)?.name ?? cardId };
+}
 
 const SEVERITY_WORD: Record<PcSeverity, string> = { none: "No damage", minor: "Minor", major: "Major", severe: "Severe" };
 const TYPE_WORD = { physical: "phy", magic: "mag", both: "phy/mag" } as const;
@@ -454,17 +561,45 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
   const gm: string[] = [];
   const targetName = target?.sheet.name ?? "The target";
 
+  let ridersApplied = 0;
+  let deathMove = false;
+  let afterHit: AfterHit | null = null;
+  const autos: string[] = [];
+  const kind = isPcAttacker(p.attacker) ? ("combat" as const) : ("adversary" as const);
+
   if (target && result) {
     const sheet = target.sheet;
-    const next: CharacterSheet = { ...sheet, hp: result.after.hp, stress: result.after.stress, armorMarked: result.after.armor, hope: Math.max(0, result.after.hope) };
+    let next: CharacterSheet = { ...sheet, hp: result.after.hp, stress: result.after.stress, armorMarked: result.after.armor, hope: Math.max(0, result.after.hope) };
+    // The attack's riders land on whoever took the hit (user answer 2026-10-22), unless it was avoided.
+    if (!res.negated && (p.riders?.length ?? 0) > 0) {
+      const landed = applyRiders(next, p.riders ?? [], res.conditionNegated);
+      next = landed.sheet;
+      ridersApplied = landed.applied;
+      gm.push(`riders on ${targetName}: ${ridersApplied}${res.conditionNegated ? " (conditions avoided)" : ""}`);
+    }
+    const hpMarked = Math.max(0, next.hp - sheet.hp);
+    deathMove = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
+    // After-hit card uses (CE-valor): autos run now; reactions are offered with the row kept open.
+    const facts = { hpMarked, deathMove, armorSlots: result.armorSlots, fromAttack: true };
+    const uses = afterHitUses(windowPcOf({ character: target.character, sheet: next }), facts);
+    for (const [i, u] of uses.auto.entries()) {
+      const ran = runAfterHitCard(target, next, u.cardId, u.useId, { amount: result.taken, ...(rebuilt.attacker ? { source: rebuilt.attacker.combatant } : {}) }, `${row._id}:after:${i}`);
+      if ("ok" in ran) continue;
+      next = sheetAfterCard(next, ran.plan, target.character._id, ran.cardName);
+      autos.push(ran.cardName);
+    }
+    if (autos.length > 0) gm.push(`${targetName}: ${autos.join(", ")}`);
+    if (uses.offers.length > 0) afterHit = { characterId: target.character._id, cardIds: uses.offers.slice(0, 10), severity: result.severity, hpMarked, deathMove };
     await saveSheet(ctx, target.character._id, next);
+    // The sheet's death move is due at once (user answer 2026-10-22; CB p.91): a new last HP clears an earlier "spent".
+    if (deathMove) await ctx.db.patch("characters", target.character._id, { deathMoveSpent: undefined });
     await logAction(ctx, {
       campaignId: row.campaignId,
       characterId: target.character._id,
       actorId: row.createdBy,
-      kind: "adversary",
+      kind,
       visibility: "public",
-      summary: res.negated ? `${targetName} avoided ${p.attacker.label}'s hit` : `${targetName} took ${p.attacker.label}'s hit${result.deathMove ? " and must make a death move" : ""}`,
+      summary: res.negated ? `${targetName} avoided ${p.attacker.label}'s hit` : `${targetName} took ${p.attacker.label}'s hit${deathMove ? " and must make a death move" : ""}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}`,
       groupId: p.groupId,
       before: sheet,
       undoable: true,
@@ -474,20 +609,24 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     const resisted = result.resisted !== "none" ? ` (${result.resisted}: ${result.taken})` : "";
     const marks = [result.hpMarked > 0 ? `${result.hpMarked} HP (${result.after.hp}/${sheet.hpMax})` : "no HP", ...(result.stressMarked > 0 ? [`${result.stressMarked} Stress`] : []), ...(result.hopeSpent > 0 ? [`${result.hopeSpent} Hope`] : [])];
     gm.push(
-      `${targetName}: ${result.incoming} ${TYPE_WORD[p.damageType]}${resisted} → ${SEVERITY_WORD[result.severityBefore]}${armor}${forced} → ${SEVERITY_WORD[result.severity]} → ${marks.join(", ")}${result.deathMove ? "; death move" : ""}`,
+      `${targetName}: ${result.incoming} ${TYPE_WORD[p.damageType]}${resisted} → ${SEVERITY_WORD[result.severityBefore]}${armor}${forced} → ${SEVERITY_WORD[result.severity]} → ${marks.join(", ")}${deathMove ? "; death move" : ""}`,
     );
   } else if (target) {
     gm.push(`${targetName}: ${res.missed ? "the hit became a miss" : "no damage"}`);
-    await logAction(ctx, { campaignId: row.campaignId, actorId: row.createdBy, kind: "adversary", visibility: "public", summary: `${targetName} avoided ${p.attacker.label}'s hit`, groupId: p.groupId, undoable: true });
+    await logAction(ctx, { campaignId: row.campaignId, actorId: row.createdBy, kind, visibility: "public", summary: `${targetName} avoided ${p.attacker.label}'s hit`, groupId: p.groupId, undoable: true });
   }
+  if (afterHit) gm.push(`${targetName} may answer ${afterHit.cardIds.map((id) => getDomainCard(id)?.name ?? id).join(", ")}`);
   if (res.targetId !== res.originalTargetId) gm.push(`(redirected from ${rebuilt.members.find((m) => m.character._id === res.originalTargetId)?.sheet.name ?? "the first target"})`);
   if (input.early) gm.push("(resolved by the GM)");
 
   // Damage a card sends back (Arcane Reflection): the attacker takes it against its thresholds (CB p.91, p.99).
   const adversaryBefore: AdversaryBefore[] = [];
   const reflectedToAttacker = res.reflected.filter((r) => r.to === "attacker").reduce((n, r) => n + r.amount, 0);
-  if (reflectedToAttacker > 0 && rebuilt.attacker) {
-    const { instance, combatant } = rebuilt.attacker;
+  if (reflectedToAttacker > 0 && rebuilt.attacker && rebuilt.attacker.instance === null) {
+    gm.push(`Reflected ${reflectedToAttacker} damage to ${p.attacker.label}: mark it on their sheet`);
+  } else if (reflectedToAttacker > 0 && rebuilt.attacker && rebuilt.attacker.instance !== null) {
+    const { combatant } = rebuilt.attacker;
+    const instance = rebuilt.attacker.instance;
     const dealt = applyDamageTo(combatant, reflectedToAttacker, p.damageType);
     adversaryBefore.push({ instanceId: instance._id, hp: instance.hp, stress: instance.stress, defeated: instance.defeated, conditions: instance.conditions, tags: instance.tags });
     const hp = Math.min(instance.stats.hpMax, dealt.after.hp);
@@ -500,14 +639,16 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
   await logAction(ctx, {
     campaignId: row.campaignId,
     actorId: row.createdBy,
-    kind: "adversary",
+    kind,
     visibility: "gm",
     summary: `${p.attacker.label} → ${gm.join("; ")}`,
     groupId: p.groupId,
     ...(adversaryBefore.length > 0 ? { adversaryBefore } : {}),
     undoable: true,
   });
-  await closeRequest(ctx, row._id, "resolved", input.by);
+  // An after-hit card to answer keeps the row open for that character alone (AA2b); otherwise it closes.
+  if (afterHit) await ctx.db.patch("combatRequests", row._id, { payload: { ...p, afterHit } });
+  else await closeRequest(ctx, row._id, "resolved", input.by);
   return {
     requestId: row._id,
     groupId: p.groupId,
@@ -520,11 +661,60 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     hpMarked: result?.hpMarked ?? 0,
     stressMarked: result?.stressMarked ?? 0,
     armorMarked: (result?.armorSlots ?? 0) + (result?.forcedArmor ?? 0),
-    deathMove: result?.deathMove ?? false,
+    deathMove,
     taken: result?.taken ?? 0,
     manual: res.manual,
     window: res,
+    ridersApplied,
+    autos,
+    afterHit,
   };
+}
+
+/**
+ * An answer to an after-hit offer (AA2b; the row's `afterHit`): `card` runs the offered card with the hit as its trigger
+ * (Unbreakable: 1d6 HP cleared, the card to the vault, CB p.342) and logs a public row in the hit's group; `pass` (or any
+ * armor answer) declines it. A death-move offer whose moment passed (the character is no longer at their last HP or
+ * left play) declines the row. NOT_A_RESPONDER for anyone else or a card not offered. Closes the row.
+ */
+export async function respondAfterHit(ctx: MutationCtx, input: RespondInput & { row: HitRow & { payload: { afterHit: AfterHit } } }): Promise<"resolved" | "declined"> {
+  const { row, characterId, choice } = input;
+  const offer = row.payload.afterHit;
+  if (offer.characterId !== characterId) throw appError("NOT_A_RESPONDER");
+  if (choice.kind !== "card") {
+    await closeRequest(ctx, row._id, "resolved", input.by);
+    return "resolved";
+  }
+  if (!offer.cardIds.includes(choice.cardId)) throw appError("NOT_A_RESPONDER", choice.cardId);
+  const members = await partyMembers(ctx, row.campaignId);
+  const member = members.find((m) => m.character._id === characterId);
+  if (!member || (offer.deathMove && member.sheet.hp < member.sheet.hpMax)) {
+    await closeRequest(ctx, row._id, "declined", input.by);
+    return "declined";
+  }
+  const ran = runAfterHitCard(member, member.sheet, choice.cardId, choice.useId, { amount: offer.hpMarked }, `${row._id}:afterHit`);
+  if ("ok" in ran) throw cardRefusal(ran);
+  const next = sheetAfterCard(member.sheet, ran.plan, characterId, ran.cardName);
+  await saveSheet(ctx, characterId, next);
+  await logAction(ctx, {
+    campaignId: row.campaignId,
+    characterId,
+    actorId: row.createdBy,
+    kind: isPcAttacker(row.payload.attacker) ? "combat" : "adversary",
+    visibility: "public",
+    summary: `${member.sheet.name} uses ${ran.cardName}${offer.deathMove ? " instead of a death move" : ""}`,
+    groupId: row.payload.groupId,
+    before: member.sheet,
+    undoable: true,
+  });
+  await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice, by: input.by, at: Date.now() }] });
+  await closeRequest(ctx, row._id, "resolved", input.by);
+  return "resolved";
+}
+
+/** A hit row waiting only for its after-hit answer. */
+export function hasAfterHit(row: HitRow): row is HitRow & { payload: { afterHit: AfterHit } } {
+  return row.payload.afterHit !== undefined;
 }
 
 // ---------------------------------------------------------------- reading
@@ -554,16 +744,44 @@ export type HitView = {
   direct?: boolean;
   maxSlots?: number;
   armorPreview?: { slots: number; severity: PcSeverity; hp: number }[];
+  /**
+   * AA2b: the hit already resolved and this character (who took it) may answer an after-hit card (`cardIds`, e.g.
+   * Unbreakable) with `card` or `pass`; no armor choice. `deathMove`: the hit marked their last HP.
+   */
+  afterHit?: boolean;
+  deathMove?: boolean;
+  /** AA2b: after a redirect (I Am Your Shield), who was hit first ("Tabby stepped in" on their line). */
+  originalTargetName?: string;
 };
 
 /** What one character sees of an open hit: the target their own numbers (Q14), an ally only who was hit and their cards. */
 export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"characters">): Promise<HitView | null> {
+  const offer = row.payload.afterHit;
+  if (offer) {
+    if (offer.characterId !== characterId) return null;
+    const member = (await partyMembers(ctx, row.campaignId)).find((m) => m.character._id === characterId);
+    return {
+      requestId: row._id,
+      attackerLabel: row.payload.attacker.label,
+      targetCharacterId: characterId,
+      targetName: member?.sheet.name ?? "Unknown",
+      role: "target",
+      awaiting: true,
+      cardIds: offer.cardIds,
+      createdAt: row.createdAt,
+      afterHit: true,
+      deathMove: offer.deathMove,
+    };
+  }
   const { state, party, members } = await rebuildWindow(ctx, row);
   const responder = state.responders.find((r) => r.characterId === characterId);
   const isTarget = state.targetId === characterId;
   if (!responder && !isTarget && row.payload.targetCharacterId !== characterId) return null;
   const awaiting = awaitingOf(state).includes(characterId);
   const target = members.find((m) => m.character._id === state.targetId);
+  // AA2b: a card this character already played in this window isn't offered again (I Am Your Shield after its use).
+  const played = new Set(state.responses.flatMap((r) => (r.characterId === characterId && r.choice.kind === "card" ? [r.choice.cardId] : [])));
+  const redirected = state.targetId !== state.originalTargetId;
   const view: HitView = {
     requestId: row._id,
     attackerLabel: row.payload.attacker.label,
@@ -571,8 +789,9 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
     targetName: target?.sheet.name ?? "Unknown",
     role: isTarget ? "target" : "ally",
     awaiting,
-    cardIds: responder?.cardIds ?? [],
+    cardIds: (responder?.cardIds ?? []).filter((id) => !played.has(id)),
     createdAt: row.createdAt,
+    ...(redirected ? { originalTargetName: members.find((m) => m.character._id === state.originalTargetId)?.sheet.name ?? "Unknown" } : {}),
   };
   const defense = party.find((p) => p.id === characterId);
   if (isTarget && defense) {

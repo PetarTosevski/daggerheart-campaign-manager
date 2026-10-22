@@ -15,9 +15,10 @@ import type { RollRecord } from "../../src/lib/domain/duality";
 import { SEVERITY_LABEL } from "../../src/lib/domain/encounters/damage";
 import { TRAIT_LABEL } from "../../src/lib/frames/extras/common";
 import type { TraitId } from "../../src/lib/srd/types";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { difficultyOf, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
+import { bandsOnMap, openIncomingHit, partyMembers } from "./incomingHits";
 import { ENCOUNTER_CONDITIONS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
 import { rollValidator, type AdversaryBefore } from "./validators/actionLog";
 import { rangeBandValidator } from "./validators/combatRequests";
@@ -311,4 +312,53 @@ export function promptsOf(plan: RunPlan, built: BuiltRun): CardPrompt[] {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------- card damage to another PC (AA2b)
+
+/**
+ * Card damage to another PC opens the same incoming hit as an adversary attack (user answer 2026-10-22, bead
+ * dcm-bxp.99.22: "a card that damages an ally (e.g. Fireball's blast) gives that ally the same incoming-hit prompt (armor
+ * choice, ally reactions)"). One row per PC the plan's `pcDamage` steps name (their damage totalled, R2), with a PC
+ * `attacker`, in the card use's actionLog group so the use's undo declines or reverts it. Returns the map tokens whose
+ * damage became a hit (their `pcDamage` prompts are dropped by the caller).
+ */
+export async function openCardHits(
+  ctx: MutationCtx,
+  input: { plan: RunPlan; built: BuiltRun; campaignId: Id<"campaigns">; groupId: string; actorId: Id<"users">; attacker: { characterId: Id<"characters">; label: string; cardId: string; feature: string } },
+): Promise<Set<string>> {
+  const { plan, built } = input;
+  const totals = new Map<string, { amount: number; type: "physical" | "magic" | "both"; direct: boolean }>();
+  for (const s of plan.steps) {
+    if (s.kind !== "pcDamage") continue;
+    const prior = totals.get(s.targetId);
+    totals.set(s.targetId, prior ? { amount: prior.amount + s.amount, type: prior.type === s.type ? prior.type : "both", direct: prior.direct || s.direct } : { amount: s.amount, type: s.type, direct: s.direct });
+  }
+  const handled = new Set<string>();
+  if (totals.size === 0) return handled;
+  const encounter = await ctx.db
+    .query("encounters")
+    .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", input.campaignId).eq("status", "running"))
+    .first();
+  const mapId = built.creatures.scene.map._id;
+  const bands = await bandsOnMap(ctx, mapId);
+  for (const [targetId, hit] of totals) {
+    const c = built.creatures.get(targetId);
+    if (c?.kind !== "pc" || hit.amount <= 0) continue;
+    await openIncomingHit(ctx, {
+      campaignId: input.campaignId,
+      ...(encounter ? { encounterId: encounter._id } : {}),
+      mapId,
+      createdBy: input.actorId,
+      groupId: input.groupId,
+      attacker: { kind: "pc", characterId: input.attacker.characterId, label: input.attacker.label, cardId: input.attacker.cardId, feature: input.attacker.feature },
+      targetCharacterId: c.character._id,
+      targetTokenId: c.tokenId,
+      hit: { amount: hit.amount, type: hit.type, direct: hit.direct, forcedArmor: 0, critical: plan.roll?.critical ?? false },
+      party: await partyMembers(ctx, input.campaignId),
+      bands,
+    });
+    handled.add(c.tokenId);
+  }
+  return handled;
 }

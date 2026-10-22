@@ -266,9 +266,13 @@ describe("adversaryActions.useFeature", () => {
     const r = resolved(await a.feature(a.bear, "Bite", [a.w.characterA]));
     expect((await a.instance(a.bear)).stress).toBe(1);
     expect(r.targets[0]).toMatchObject({ characterId: a.w.characterA, hit: true });
-    expect((await a.sheet()).conditions).toContain("restrained");
+    // AA2b: Restrained rides with the hit and lands when it resolves on whoever takes it.
+    expect((await a.sheet()).conditions).not.toContain("restrained");
     const row = await a.request(r.targets[0]!.requestId!);
     expect(row.payload.kind === "incomingHit" && row.payload.attacker.feature).toBe("Bite");
+    expect(row.payload.kind === "incomingHit" && row.payload.riders).toEqual([{ kind: "condition", condition: "restrained" }]);
+    await a.respond(a.player, r.targets[0]!.requestId!, a.w.characterA, { kind: "noArmor" });
+    expect((await a.sheet()).conditions).toContain("restrained");
     // A defeated adversary can't act.
     await a.t.run((ctx) => ctx.db.patch(a.bear, { defeated: true }));
     expect(await code(a.feature(a.bear, "Bite", [a.w.characterA]))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
@@ -363,9 +367,10 @@ describe("adversaryActions: undo and the encounter's end", () => {
     const a = await arena();
     const { r, requestId } = await bearHitsAsh(a);
     await a.gm.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() });
-    expect(await a.pending(a.player, a.w.characterA)).toEqual([]);
-    expect((await a.respond(a.player, requestId, a.w.characterA, { kind: "noArmor" })).status).toBe("declined");
+    // AA2b: undo declines the group's open hit at once.
     expect((await a.request(requestId)).status).toBe("declined");
+    expect(await a.pending(a.player, a.w.characterA)).toEqual([]);
+    expect(await code(a.respond(a.player, requestId, a.w.characterA, { kind: "noArmor" }))).toBe("REQUEST_NOT_OPEN");
     expect((await a.sheet()).hp).toBe(0);
   });
 
@@ -397,5 +402,140 @@ describe("adversaryActions: the live map (Q2, Q18)", () => {
   it("without a token of its own the adversary targets the party list (Q18)", async () => {
     const a = await arena({ map: true });
     resolved(await a.attack(a.dummy, [a.w.characterB], { disadvantage: 1 }));
+  });
+});
+
+describe("AA2b: death move, riders, after-hit cards, scene limits", () => {
+  allowWorldEmails();
+
+  /** Ash one HP from their last (any Bear hit marks at least one). */
+  const nearDeath = (a: Arena) => a.edit((s) => ({ hp: s.hpMax - 1 }));
+
+  it("a hit that marks the last HP makes the death move due at once (user answer 2026-10-22; CB p.91)", async () => {
+    const a = await arena();
+    await nearDeath(a);
+    await a.t.run((ctx) => ctx.db.patch(a.w.characterA, { deathMoveSpent: true }));
+    const { requestId } = await bearHitsAsh(a);
+    const answer = await a.respond(a.player, requestId, a.w.characterA, { kind: "noArmor" });
+    expect(answer).toMatchObject({ status: "resolved", deathMove: true });
+    const s = await a.sheet();
+    expect(s.hp).toBe(s.hpMax);
+    expect((await a.t.run((ctx) => ctx.db.get("characters", a.w.characterA)))!.deathMoveSpent).toBeUndefined();
+    // The sheet's existing death-move flow takes over.
+    expect((await a.player.query(api.deathMoves.state, { characterId: a.w.characterA })).awaitingMove).toBe(true);
+    const pub = (await a.rows()).find((row) => row.visibility === "public" && row.summary.startsWith("Ash took Bear's hit"))!;
+    expect(pub.summary).toContain("must make a death move");
+  });
+
+  it("I Am Your Shield: Bite's Restrained moves with the damage to Bryn (user answer 2026-10-22)", async () => {
+    const a = await arena();
+    await a.edit(() => ({ domainCards: { owned: ["i-am-your-shield"], loadout: ["i-am-your-shield"] } }), a.w.characterB);
+    const r = resolved(await a.feature(a.bear, "Bite", [a.w.characterA]));
+    const requestId = r.targets[0]!.requestId!;
+    expect((await a.respond(a.other, requestId, a.w.characterB, { kind: "card", cardId: "i-am-your-shield" })).status).toBe("open");
+    // The played card isn't offered again; Bryn's line names who was hit first.
+    const [bryn] = await a.pending(a.other, a.w.characterB);
+    expect(bryn).toMatchObject({ requestId, role: "target", targetName: "Bryn", originalTargetName: "Ash", cardIds: [] });
+    const [ash] = await a.pending(a.player, a.w.characterA);
+    expect(ash).toMatchObject({ role: "ally", targetName: "Bryn", originalTargetName: "Ash", awaiting: false });
+    expect((await a.respond(a.other, requestId, a.w.characterB, { kind: "armor", slots: 1 })).status).toBe("resolved");
+    expect((await a.sheet(a.w.characterB)).conditions).toContain("restrained");
+    expect((await a.sheet()).conditions).not.toContain("restrained");
+  });
+
+  it("Bold Presence (CB p.341): the hit PC avoids Bite's Restrained in the window", async () => {
+    const a = await arena();
+    await a.edit(() => ({ domainCards: { owned: ["bold-presence"], loadout: ["bold-presence"] } }));
+    const r = resolved(await a.feature(a.bear, "Bite", [a.w.characterA]));
+    const requestId = r.targets[0]!.requestId!;
+    const [view] = await a.pending(a.player, a.w.characterA);
+    expect(view!.cardIds).toEqual(["bold-presence"]);
+    expect((await a.respond(a.player, requestId, a.w.characterA, { kind: "card", cardId: "bold-presence", useId: "condition" })).status).toBe("open");
+    expect((await a.respond(a.player, requestId, a.w.characterA, { kind: "noArmor" })).status).toBe("resolved");
+    const s = await a.sheet();
+    expect(s.conditions).not.toContain("restrained");
+    expect(s.hp).toBeGreaterThan(0);
+    expect(s.featureUses.some((u) => u.key.startsWith("card:bold-presence"))).toBe(true);
+  });
+
+  it("Unbreakable (CB p.342) is offered after the hit marks the last HP: the row waits for it; using it clears HP and vaults the card", async () => {
+    const a = await arena();
+    await a.edit((s) => ({ hp: s.hpMax - 1, domainCards: { owned: ["unbreakable"], loadout: ["unbreakable"] } }));
+    const { requestId } = await bearHitsAsh(a);
+    expect(await a.respond(a.player, requestId, a.w.characterA, { kind: "noArmor" })).toMatchObject({ status: "resolved", deathMove: true, afterHit: true });
+    expect((await a.request(requestId)).status).toBe("open");
+    const [view] = await a.pending(a.player, a.w.characterA);
+    expect(view).toMatchObject({ requestId, afterHit: true, deathMove: true, cardIds: ["unbreakable"], role: "target", awaiting: true });
+    expect(view!.damage).toBeUndefined();
+    const windows = await a.gm.query(api.adversaryActions.windows, { campaignId: a.campaignId });
+    expect(windows[0]).toMatchObject({ requestId, afterHit: true, awaiting: [{ characterId: a.w.characterA, role: "target" }] });
+    // Only Ash answers it.
+    expect(await code(a.respond(a.other, requestId, a.w.characterB, { kind: "pass" }))).toBe("NOT_A_RESPONDER");
+    expect((await a.respond(a.player, requestId, a.w.characterA, { kind: "card", cardId: "unbreakable" })).status).toBe("resolved");
+    const s = await a.sheet();
+    expect(s.hp).toBeLessThan(s.hpMax);
+    expect(s.domainCards.loadout).not.toContain("unbreakable");
+    expect((await a.request(requestId)).status).toBe("resolved");
+    expect(await a.pending(a.player, a.w.characterA)).toEqual([]);
+  });
+
+  it("the GM's Resolve now passes an after-hit offer; undo declines an open one", async () => {
+    const a = await arena();
+    await a.edit((s) => ({ hp: s.hpMax - 1, domainCards: { owned: ["unbreakable"], loadout: ["unbreakable"] } }));
+    const first = await bearHitsAsh(a);
+    await a.respond(a.player, first.requestId, a.w.characterA, { kind: "noArmor" });
+    const r = await a.gm.mutation(api.adversaryActions.resolve, { campaignId: a.campaignId, requestId: first.requestId, idempotencyKey: key() });
+    expect(r).toMatchObject({ status: "resolved", deathMove: true, targetId: a.w.characterA });
+    expect((await a.request(first.requestId)).status).toBe("resolved");
+
+    const b = await arena();
+    await b.edit((s) => ({ hp: s.hpMax - 1, domainCards: { owned: ["unbreakable"], loadout: ["unbreakable"] } }));
+    const second = await bearHitsAsh(b);
+    await b.respond(b.player, second.requestId, b.w.characterA, { kind: "noArmor" });
+    await b.gm.mutation(api.actionLog.undo, { entryId: second.r.entryId, idempotencyKey: key() });
+    expect((await b.request(second.requestId)).status).toBe("declined");
+  });
+
+  it("Rise Up's automatic use (CB p.341) clears a Stress when the hit marks HP", async () => {
+    const a = await arena();
+    await a.edit(() => ({ stress: 2, domainCards: { owned: ["rise-up"], loadout: ["rise-up"] } }));
+    const { requestId } = await bearHitsAsh(a);
+    await a.respond(a.player, requestId, a.w.characterA, { kind: "noArmor" });
+    const s = await a.sheet();
+    expect(s.hp).toBeGreaterThan(0);
+    expect(s.stress).toBe(1);
+    expect((await a.rows()).some((row) => row.visibility === "public" && row.summary.includes("(Rise Up)"))).toBe(true);
+  });
+
+  it("a once-per-scene feature is refused the second time and comes back when the encounter runs again", async () => {
+    const a = await arena();
+    const now = Date.now();
+    const captain = await a.t.run((ctx) =>
+      ctx.db.insert("encounterAdversaries", {
+        campaignId: a.campaignId,
+        encounterId: a.encounterId,
+        source: { kind: "srd", adversaryId: "pirate-captain" },
+        label: "Captain",
+        order: 9,
+        summoned: false,
+        stats: { difficulty: 14, major: 9, severe: 17, hpMax: 7, stressMax: 5 },
+        hp: 0,
+        stress: 0,
+        defeated: false,
+        conditions: [],
+        tags: [],
+        spotlights: 0,
+        spotlightTurn: 0,
+        updatedAt: now,
+      }),
+    );
+    const first = resolved(await a.feature(captain, "Reinforcements", []));
+    expect(first.prompts.some((p) => p.kind === "summon")).toBe(true);
+    expect((await a.instance(captain)).featureUses).toHaveLength(1);
+    expect(await code(a.feature(captain, "Reinforcements", []))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
+    // Ending the encounter ends the scene: started again, the limit is back.
+    await a.gm.mutation(api.encounters.end, { campaignId: a.campaignId, encounterId: a.encounterId });
+    await a.t.run((ctx) => ctx.db.patch(a.encounterId, { status: "running", startedAt: now + 1000 }));
+    resolved(await a.feature(captain, "Reinforcements", [], { spendFear: 1 }));
   });
 });
