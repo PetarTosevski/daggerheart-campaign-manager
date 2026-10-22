@@ -750,6 +750,68 @@ waves:
           - "Each entry quotes its feature text in a comment; its test runs it through run() with a fixed RNG and checks costs (Fear, adversary Stress), spotlight need, trigger, targets and outcomes against the text"
           - "The task doc lists every manual step and every ruling the text leaves open for the user; a bead is filed for each vocabulary gap; the vocabulary types are not changed"
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 4b: CA4 follow-ups (2026-10-22)
+  - wave: 4.5
+    tracers:
+      - id: CA4b
+        title: Card server follow-ups - undoable adversary effects, stored dice for post-roll choices, wording-based ranges, one-target attacks, Onslaught, rest timing, GM recall, file split
+        size: M
+        # USER ANSWERS (2026-10-22, binding):
+        #   - "Plain weapon attacks take one target" (bead dcm-bxp.99.18): combatActions.attack refuses more than one target
+        #     with COMBAT_TARGET_INVALID; MAX_TARGETS for card effects is unchanged.
+        #   - Card range for extra creatures: "Depends how aoe is worded, some cards may need to check range from the target
+        #     initially hit (chain lightning) but yes, range matters for extra creatures too": every picked / ally /
+        #     follow-up creature is range-checked from the origin the card text names (the caster by default; the first
+        #     target for chains like Chain Lightning; the area's point for areas). Out of range follows Q1 (GM sanction).
+        #     Where the vocabulary can't name the origin, file a gap bead and fall back to the caster.
+        #   - The GM may play a PC's cards after turning on a switch (CA6 builds the UI): characters.moveCard (recall/vault)
+        #     accepts the GM for any character in the campaign, logged as the GM acting for that character.
+        # ORCHESTRATOR DECISIONS (technical, reported): widen adversaryBeforeValidator with an optional `effects` field so
+        #   card effects on adversaries (Glyph of Nightfall, Corroded...) are applied and undone (widen only); a choice made
+        #   after the roll must not reroll - store the rolled dice with the needsChoice answer (short-lived, keyed by the
+        #   idempotency key / a request row) and resolve the second call with the same dice; split convex/lib/cardRunner.ts
+        #   under the 800-line limit (keep cardActor, pcCombatant, writeSheetChanges exported from cardRunner.ts for AA2);
+        #   Onslaught's damage floor in CA3's attack path; card timing uses at rests (Wild Surge before expire,
+        #   Inspirational Words' long-rest tokens).
+        goal: Close CA4's open items and the user's answers on the card and attack server.
+        depends_on: [CA4]
+        owns:
+          - convex/lib/cardRunner.ts
+          - convex/lib/cardHand.ts
+          - convex/lib/cardRows.ts
+          - convex/lib/cardChoices.ts
+          - convex/combatCards.ts
+          - convex/lib/validators/actionLog.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/combatActions.ts
+          - convex/combatActions.ts
+          - convex/rests.ts
+          - convex/characters.ts
+          - tests/convex/combat-cards.test.ts
+          - tests/convex/combat-cards-authz.test.ts
+          - tests/convex/combat-attack.test.ts
+          - tests/convex/combat-attack-authz.test.ts
+          - tests/convex/rests.test.ts
+          - tests/convex/characters.test.ts
+          - tests/convex/authz/combat.entries.ts
+          - tests/convex/authz/characters.entries.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-CA-CA4b.md
+        reads:
+          - docs/tasks/TASK-CA-CA4.md
+          - docs/tasks/TASK-CA-CA3.md
+          - docs/tasks/TASK-CA-CE-*.md
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/card-effects/**
+        acceptance:
+          - "combatActions.attack with two targets -> COMBAT_TARGET_INVALID; tests updated; card multi-target unchanged"
+          - "Extra creatures are range-checked from the origin the card names (caster / first target / area point); out of range -> sanction; Chain Lightning checks each jump from the previous target; tests"
+          - "Adversary effects from cards are applied to instances and undone by actionLog undo (adversaryBefore.effects, widen only); tests"
+          - "A needsChoice after the roll keeps the dice: the second call resolves with the same dice and can't fish for a better roll; test"
+          - "Onslaught's damage floor applies in the attack path; Wild Surge and Inspirational Words' rest timing run at rests; tests"
+          - "characters.moveCard: the GM may move/recall for any character (logged as GM for the character), players only their own; role tests"
+          - "convex/lib/cardRunner.ts under 800 lines; AA2's imports (cardActor, pcCombatant, writeSheetChanges) unchanged"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
   # ---------------------------------------------------------------- wave 5: the Hand on the map
   - wave: 5
     tracers:
@@ -799,6 +861,9 @@ waves:
           - convex/lib/incomingHits.ts
           - tests/convex/adversary-actions.test.ts
           - tests/convex/adversary-actions-authz.test.ts
+          # ORCHESTRATOR NOTE 2026-10-22: its own matrix area (combat.entries.ts belongs to CA4b).
+          - tests/convex/authz/adversary-actions.entries.ts
+          - tests/convex/authz/adversary-actions.test.ts
           - docs/tasks/TASK-CA-AA2.md
         reads:
           - convex/lib/functions.ts
@@ -815,6 +880,7 @@ waves:
           - src/lib/srd/adversary-effects/**
           - .omc/autopilot/combat-actions-analysis.md
         acceptance:
+          - "USER ANSWER 2026-10-22: card damage to another PC (e.g. a Fireball blast catching an ally) opens the same incoming-hit prompt as an adversary attack (armor choice, ally reactions). AA2 exposes the incomingHits API for it; wiring CA4's card path to it is a follow-up bead once both merge"
           - "adversaryActions.attack {instanceId, targets (characterIds or tokenIds), advantage?, experience?} is a keyed GM mutation on a running encounter; with a live map the targets are PC tokens checked for line of sight like CA3 (Q2), without one any party PC (Q18); spotlight and Fear follow the tracker's rules (an extra spotlight asks for 1 Fear; AR6, Q19)"
           - "adversaryActions.useFeature {instanceId, feature, targets, choices} pays Fear / adversary Stress, refuses NOT_ENOUGH_FEAR / ADVERSARY_FEATURE_UNAVAILABLE, and runs the feature plan; summons and countdowns become GM prompts"
           - "Each hit opens a combatRequests incomingHit row; adversaryActions.respond {requestId, characterId, choice: armor | noArmor | card{cardId} | pass} (need edit on that character) is allowed only to listed responders (NOT_A_RESPONDER); adversaryActions.resolve {requestId} lets the GM close it early; the hit resolves in the same mutation as the last answer (Q13, Q17)"
