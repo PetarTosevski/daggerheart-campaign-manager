@@ -106,6 +106,15 @@ waves:
           - tests/convex/combat-map-style.test.ts
           - tests/convex/authz/combat.entries.ts
           - tests/convex/authz/core.entries.ts
+          # ORCHESTRATOR NOTE 2026-10-22: the per-GM default map style (dcm-bxp.89).
+          - convex/tables/campaigns.ts
+          - convex/combatMaps.ts
+          - convex/combatMapGenerate.ts
+          - src/app/(gm)/settings-dialog.tsx
+          - src/lib/validation/settings-backup.ts
+          - tests/unit/settings-backup*.test.ts
+          - tests/convex/settings*.test.ts
+          - tests/convex/combat-maps.test.ts
           - docs/tasks/TASK-F6-G5.md
         reads: [docs/tasks/TASK-BUG-B4.md, docs/tasks/TASK-SP-P1.md]
         acceptance:
