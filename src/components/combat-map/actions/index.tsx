@@ -13,6 +13,7 @@ import { GmHand, Hand } from "./hand";
 import { TargetList } from "./targets";
 import { useActor } from "./targets/state";
 
+export { IncomingHit } from "./reactions";
 export { TargetsLayer } from "./targets";
 export { ActionsProvider, useCombatTargets, type CombatTargets } from "./targets/state";
 
@@ -186,7 +187,8 @@ export function ActionsPanel(props: ActionsPanelProps) {
 
 /**
  * GM column, last (the page's Resolutions slot): the Hand of the selected PC with "Play for this character" and the
- * card uses waiting for the GM (CA6), then CA5's Resolutions.
+ * card uses waiting for the GM (CA6), then CA5's Resolutions. The player's incoming-hit prompt (AA4, `./reactions`) is
+ * mounted by the page first in the player column; the GM answers open hits with "Resolve now" from AA5's adversary panel.
  */
 export function Resolutions(props: ResolutionsProps) {
   return (
@@ -194,6 +196,11 @@ export function Resolutions(props: ResolutionsProps) {
       <PartBoundary label="The hand">
         <GmHand {...props} />
       </PartBoundary>
+      {/*
+        ADVERSARY PANEL SLOT (AA5): the page already mounts `AdversaryPanel` from `./adversary` in the GM column (under the
+        token card, its own boundary). If AA5 wants its open-hit list ("Resolve now") here instead, it adds this one line:
+        <PartBoundary label="Adversary actions"><AdversaryPanel {...props} /></PartBoundary>
+      */}
       <GmResolutions {...props} />
     </>
   );
