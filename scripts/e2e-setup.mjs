@@ -6,6 +6,11 @@
 // The e2e backend is the project's local, account-free Convex deployment
 // (CONVEX_AGENT_MODE=anonymous). It never touches a cloud deployment.
 // Respects E2E_PORT / E2E_CONVEX_PORT (see docs/testing.md).
+//
+// The Lorekeeper (D13 L9): turns on its fake model (LOREKEEPER_FAKE_MODEL, which
+// convex/lib/claude.ts honours only on this local e2e deployment, so no test
+// ever calls the real API) and ingests the invented mini-book
+// (tests/fixtures/lorekeeper/mini-book.txt, no rulebook text) as the core book.
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -66,6 +71,11 @@ const vars = {
   ALLOWED_EMAILS: E2E_ALLOWED.join(","),
   E2E_AUTH_ENABLED: "true",
   E2E_AUTH_SECRET: secret,
+  // Canned answers instead of the Messages API (honoured only on this deployment).
+  LOREKEEPER_FAKE_MODEL: "true",
+  // The test accounts ask far more than 40 questions a day across repeated runs;
+  // the cap itself is tested with a lowered campaign budget (lorekeeper-flow).
+  LOREKEEPER_DAILY_QUESTIONS: "1000",
 };
 if (!/^JWT_PRIVATE_KEY=/m.test(existing) || !/^JWKS=/m.test(existing)) {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -80,4 +90,10 @@ if (!/^JWT_PRIVATE_KEY=/m.test(existing) || !/^JWKS=/m.test(existing)) {
 for (const [name, value] of Object.entries(vars)) {
   convex(["env", "set"], [name, value]);
 }
-console.log(`e2e backend ready; test GM is ${E2E_GM_EMAIL}`);
+// The mini-book as the core book (re-running replaces its chunks).
+execFileSync(
+  process.execPath,
+  ["scripts/lorekeeper-ingest.mjs", "core", "tests/fixtures/lorekeeper/mini-book.txt", "--e2e"],
+  { stdio: "inherit" },
+);
+console.log(`e2e backend ready; test GM is ${E2E_GM_EMAIL}; Lorekeeper fake model on, mini-book ingested`);
