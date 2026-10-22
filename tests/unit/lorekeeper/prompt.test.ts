@@ -156,6 +156,18 @@ describe("requestBody", () => {
     expect(custom.body.tools).toEqual([{ type: WEB_SEARCH_TOOL_TYPE, name: "web_search", max_uses: 1 }]);
   });
 
+  it("tells the web pass what the books found and to search before answering (L10)", () => {
+    const none = (requestBody("Do Hexes stack?", [], [], empty, [], { model: "m", web: {} }).body.messages.at(-1)!.content as TextBlock[])[0]!.text;
+    expect(none).toMatch(/books had nothing/);
+    expect(none).toMatch(/Run at least one web search/);
+    const unclear = (requestBody("Do Hexes stack?", [], [], empty, [], { model: "m", web: { books: "unclear" } }).body.messages.at(-1)!.content as TextBlock[])[0]!.text;
+    expect(unclear).toMatch(/touch on this question but don't settle it/);
+    expect(unclear).not.toMatch(/books had nothing/);
+    expect(unclear).toMatch(/Run at least one web search/);
+    expect(unclear).toContain("<question>\nDo Hexes stack?\n</question>");
+    expect(unclear).toContain("Campaign frame: none");
+  });
+
   it("puts the history before the question turn", () => {
     const history: HistoryTurn[] = [
       { role: "question", text: "Earlier?" },

@@ -96,8 +96,11 @@ export type RequestOptions = {
   effort?: Effort;
   /** Add `fallbacks: "default"` (server-side refusal fallback; Claude API, Sonnet / Opus 5.5). Default false. */
   refusalFallback?: boolean;
-  /** Add the web search server tool (L8's second pass). */
-  web?: { maxUses?: number; blockedDomains?: readonly string[] };
+  /**
+   * Add the web search server tool (L8's second pass). `books` is what the book passes found (L10): 'none' (default,
+   * the books had nothing) or 'unclear' (the books touch on it but don't settle it).
+   */
+  web?: { maxUses?: number; blockedDomains?: readonly string[]; books?: "none" | "unclear" };
 };
 
 /** A custom-content document block with citations enabled. */
@@ -209,9 +212,7 @@ export function requestBody(
 
   const tail: string[] = [];
   if (options.web) {
-    tail.push(
-      "The table's books had nothing on this question. Search the web for how other Daggerheart players handle it, then answer with the verdict \"none\" and summarise what you found as unofficial readings.",
-    );
+    tail.push(webInstruction(options.web.books ?? "none"));
   }
   tail.push(campaignDataBlock(context));
   tail.push(`<question>\n${escapeData(cut(question.trim(), QUESTION_MAX_CHARS))}\n</question>`);
@@ -239,6 +240,22 @@ export function requestBody(
   }
   if (options.refusalFallback) body.fallbacks = "default";
   return { body, sources };
+}
+
+/** The web pass always searches (L10 D4): the model must not decide without searching that the web has nothing. */
+const WEB_SEARCH_ALWAYS =
+  "Run at least one web search for the question before you answer (Daggerheart rulings, designer answers, forum readings); do not decide without searching that the web has nothing.";
+
+/**
+ * The web pass's instruction (L8; L10 D4): what the books found, then search and summarise as unofficial readings.
+ * Only the question is searched for: the web pass sends no campaign data.
+ */
+export function webInstruction(books: "none" | "unclear"): string {
+  const found =
+    books === "unclear"
+      ? "The table's books touch on this question but don't settle it. Search the web for how other Daggerheart players and GMs rule on it, then answer with the verdict \"unclear\" and summarise what you found as unofficial readings in one or two sentences."
+      : "The table's books had nothing on this question. Search the web for how other Daggerheart players handle it, then answer with the verdict \"none\" and summarise what you found as unofficial readings.";
+  return `${found} ${WEB_SEARCH_ALWAYS}`;
 }
 
 /**

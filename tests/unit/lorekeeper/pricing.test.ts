@@ -114,9 +114,11 @@ describe("flow (Q2)", () => {
     expect(nextStep({ pass: "primary", verdict: "none", webSearch: true })).toBe("retry");
   });
 
-  it("runs the internet pass only after the retry also finds nothing and the toggle is on", () => {
+  it("runs the internet pass after a retry 'unclear' or 'none' when the toggle is on (L10 D1)", () => {
     expect(nextStep({ pass: "retry", verdict: "rules", webSearch: true })).toBe("done");
-    expect(nextStep({ pass: "retry", verdict: "unclear", webSearch: true })).toBe("done");
+    expect(nextStep({ pass: "retry", verdict: "rules", webSearch: false })).toBe("done");
+    expect(nextStep({ pass: "retry", verdict: "unclear", webSearch: true })).toBe("web");
+    expect(nextStep({ pass: "retry", verdict: "unclear", webSearch: false })).toBe("done");
     expect(nextStep({ pass: "retry", verdict: "none", webSearch: true })).toBe("web");
     expect(nextStep({ pass: "retry", verdict: "none", webSearch: false })).toBe("booksOnlyMiss");
     expect(nextStep({ pass: "web", verdict: "none", webSearch: true })).toBe("done");

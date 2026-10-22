@@ -7,6 +7,7 @@ import {
   SUGGESTIONS,
   VERDICT_COPY,
   WEB_DISCLAIMER,
+  WEB_MISS,
   booksIndexedLabel,
   copyText,
   pinnedLabel,
@@ -36,6 +37,7 @@ describe("board copy", () => {
     expect(COMPOSER_PLACEHOLDER).toBe("Ask The Lorekeeper a rules question…");
     expect(WEB_DISCLAIMER).toMatch(/^These are other people’s readings/);
     expect(BOOKS_ONLY_MISS).toContain("internet search is off");
+    expect(WEB_MISS).toBe("I couldn’t find this in your books or online. Ask your GM.");
   });
 
   it("formats counts", () => {

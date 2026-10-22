@@ -1,13 +1,15 @@
 // Which pass runs next (D13 L1; user answer Q2, binding). Pure module for L3's run action and L8's web pass.
 //
 // Q2: Sonnet 5.5 answers first. When its verdict is 'none' ("Not in your books") or 'unclear' ("Rules unclear"),
-// the server retries once with Opus 5.5 (shown as "Checked again with a stronger model"). The internet pass runs
-// only after Opus also finds nothing ('none'), and only when the conversation's toggle is "Search the internet too";
-// with the toggle on "Books only" the answer is the books-only miss.
+// the server retries once with Opus 5.5 (shown as "Checked again with a stronger model"). L10 (D1): when the
+// conversation's toggle is "Search the internet too", the internet pass runs after the Opus retry when its verdict is
+// 'unclear' or 'none'; 'rules' never searches. With the toggle on "Books only" an 'unclear' answer stands and a
+// 'none' ends as the books-only miss.
 //
 // ```ts
 // nextStep({ pass: "primary", verdict: "unclear", webSearch: true });  // "retry"
-// nextStep({ pass: "retry", verdict: "unclear", webSearch: true });    // "done" (keep Opus's answer and GM call)
+// nextStep({ pass: "retry", verdict: "unclear", webSearch: true });    // "web" (the book answer is kept, web added)
+// nextStep({ pass: "retry", verdict: "unclear", webSearch: false });   // "done" (keep Opus's answer and GM call)
 // nextStep({ pass: "retry", verdict: "none", webSearch: true });       // "web"
 // nextStep({ pass: "retry", verdict: "none", webSearch: false });      // "booksOnlyMiss"
 // modelForPass("retry");                                               // "claude-opus-5-5"
@@ -25,8 +27,9 @@ export function nextStep(input: { pass: Pass; verdict: Verdict; webSearch: boole
   const { pass, verdict, webSearch } = input;
   if (pass === "web") return "done";
   if (pass === "primary") return verdict === "rules" ? "done" : "retry";
-  if (verdict !== "none") return "done";
-  return webSearch ? "web" : "booksOnlyMiss";
+  if (verdict === "rules") return "done";
+  if (webSearch) return "web";
+  return verdict === "none" ? "booksOnlyMiss" : "done";
 }
 
 /**
