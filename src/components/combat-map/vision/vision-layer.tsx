@@ -16,6 +16,7 @@ import { brushSquares, objectLabel } from "../editor/edit-model";
 import { spriteName } from "../editor/sprite-palette";
 import { useMapView } from "../map-view/context";
 import { hasUploadedRefs } from "../map-view/paint-spec";
+import { useCombatTargets } from "../actions/targets/state";
 import type { MapLayerProps } from "../slots";
 import { initialsOf } from "../tokens/geometry";
 import { useRings } from "../tokens/rings";
@@ -158,6 +159,8 @@ export function VisionLayer(props: MapLayerProps) {
   const roleTokens = useTokens(campaignId, role, map._id);
   const tokens = gm ? roleTokens : undefined;
   const rings = useRings();
+  // Combat actions (plan combat-actions CA5): a player's click on an enemy token also toggles it as a target.
+  const targets = useCombatTargets();
   const canvas = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -338,6 +341,8 @@ export function VisionLayer(props: MapLayerProps) {
           selectedTokenId={selectedTokenId}
           onSelect={onSelectToken}
           ringsOn={(id) => rings.on(id)}
+          targeted={targets.targetTokenIds}
+          onTarget={targets.toggleTarget}
         />
       ) : null}
       {brushing ? (
@@ -479,7 +484,7 @@ class SourcesBoundary extends Component<{ children: ReactNode; fallback: ReactNo
  * The non-PC tokens a player sees (C7's `others`: name, side, size, facing, `revealed`; never stats, R4), in C6's
  * token look (side ring, initials, facing arrow, name tag) plus the board's dashed outline and eye badge for a token
  * the GM revealed in dim light (R10). They cannot be moved; a click selects one (its card is in the vision panel)
- * and R shows its range circles (R3).
+ * and R shows its range circles (R3). A click on an enemy also toggles it as a combat target (plan combat-actions CA5).
  */
 function OtherTokens({
   others,
@@ -491,6 +496,8 @@ function OtherTokens({
   selectedTokenId,
   onSelect,
   ringsOn,
+  targeted,
+  onTarget,
 }: {
   others: OtherToken[];
   w: number;
@@ -501,6 +508,9 @@ function OtherTokens({
   selectedTokenId: string | null;
   onSelect: (id: Id<"combatTokens"> | null) => void;
   ringsOn: (id: string) => boolean;
+  /** The picked targets (CA5's `ActionsProvider`) and the toggle a click on an enemy token calls. */
+  targeted: readonly string[];
+  onTarget: (id: Id<"combatTokens">) => void;
 }) {
   return (
     <div className="cm-tokens cm-vis-others" data-testid="combat-other-tokens" style={{ width: (w + 2 * pad) * cell, height: (h + 2 * pad) * cell, transform: `scale(${zoom})` }}>
@@ -545,7 +555,7 @@ function OtherTokens({
               data-testid="combat-token"
               data-square={`${t.x},${t.y}`}
               data-face={Math.round(deg)}
-              aria-label={`${t.name}, ${side.label}${t.revealed ? ", revealed to you" : ""}`}
+              aria-label={`${t.name}, ${side.label}${t.revealed ? ", revealed to you" : ""}${targeted.includes(t._id) ? ", your target" : ""}`}
               aria-pressed={on}
               style={{
                 left: t.x * cell + 3,
@@ -558,7 +568,10 @@ function OtherTokens({
                 zIndex: on ? 30 : 10,
               }}
               onPointerDown={(e) => e.preventDefault()}
-              onClick={() => onSelect(t._id)}
+              onClick={() => {
+                onSelect(t._id);
+                if (t.side === "enemy") onTarget(t._id);
+              }}
             >
               <span className="cm-face" aria-hidden="true" style={{ transform: `rotate(${deg}deg)`, ["--tc" as string]: side.colour }} />
               {art ? null : (
