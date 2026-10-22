@@ -1,5 +1,6 @@
 import { api } from "../../../convex/_generated/api";
 import type { Id, TableNames } from "../../../convex/_generated/dataModel";
+import { readSheet, saveSheet } from "../../../convex/lib/characterSheet";
 import { PLACEABLE_KINDS } from "../../../src/components/combat-map/editor/edit-model";
 import type { Area, Entry, Outcome, Role, World } from "./harness";
 import { freshKey } from "./synth";
@@ -354,10 +355,43 @@ const attacks: Entry[] = [
   { fn: api.combatRequests.mine, access: "view", setup: sanctioned, expect: { otherPlayer: "ok" } },
 ];
 
+/**
+ * Domain cards (plan combat-actions CA4): characterA holds Cinder Grasp (a melee spell) in the `arena` above, so a use
+ * on the pack resolves and a use on the archer waits for the GM. Content checks: combat-cards*.test.ts.
+ */
+async function holdingCards(w: World) {
+  await arena(w);
+  const characterA = w.characterA;
+  await w.t.run(async (ctx) => {
+    const sheet = readSheet((await ctx.db.get("characters", characterA))!.sheet);
+    await saveSheet(ctx, characterA, { ...sheet, domainCards: { owned: ["cinder-grasp"], loadout: ["cinder-grasp"] } });
+  });
+}
+
+function cardArgs(w: World, target: string) {
+  return { characterId: w.characterA, mapId: w.ids.mapId, cardId: "cinder-grasp", targetTokenIds: [target], choices: [] };
+}
+
+/** characterA's player casts Cinder Grasp at the archer, out of melee: an open card sanction (`requestId`). */
+async function cardSanctioned(w: World) {
+  await holdingCards(w);
+  const r = await w.as("player").mutation(api.combatCards.useCard, { campaignId: w.campaignId, idempotencyKey: freshKey(), ...cardArgs(w, w.ids.archerToken!) } as never);
+  if (r.status !== "pending") throw new Error("expected a pending card use");
+  w.set("requestId", r.requestId);
+}
+
+const cards: Entry[] = [
+  // The GM may play for any character (user answer 2026-10-22); another player is refused by `loadCharacter` (edit).
+  { fn: api.combatCards.useCard, access: "view", setup: holdingCards, args: (w) => cardArgs(w, w.ids.packToken!), expect: NOT_THEIRS },
+  { fn: api.combatCards.hand, access: "view", setup: holdingCards, args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
+  { fn: api.combatCards.sanction, access: "gm", setup: cardSanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
+  { fn: api.combatCards.pending, access: "view", setup: cardSanctioned, expect: { otherPlayer: "ok" } },
+];
+
 const area: Area = {
   area: "combat",
   setup,
-  entries: [...maps, ...edit, ...generate, ...style, ...tokens, ...vision, ...packs, ...attacks],
+  entries: [...maps, ...edit, ...generate, ...style, ...tokens, ...vision, ...packs, ...attacks, ...cards],
 };
 
 export default area;
