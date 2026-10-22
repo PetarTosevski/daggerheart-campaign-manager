@@ -103,4 +103,18 @@ describe("CardDialog", () => {
     expect(dialog.querySelector("img")).toBeNull();
     expect(dialog.querySelector(".cd-text")?.textContent).toBe(noArt.text);
   });
+
+  it("lists a grimoire's used spells without marking the card used (G3)", () => {
+    const illiat = card("book-of-illiat");
+    render(<CardMore card={illiat} spells={["Used: Arcane Barrage - back after a rest"]} />);
+    const dialog = openMore(illiat.name);
+    expect(dialog).not.toHaveAttribute("data-exhausted");
+    const list = within(dialog).getByRole("list", { name: "Used spells" });
+    expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Used: Arcane Barrage - back after a rest"]);
+  });
+
+  it("shows no used-spell list when none is used", () => {
+    render(<CardMore card={ava} spells={[]} />);
+    expect(within(openMore()).queryByRole("list", { name: "Used spells" })).toBeNull();
+  });
 });

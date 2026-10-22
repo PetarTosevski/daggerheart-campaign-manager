@@ -27,16 +27,19 @@ const TYPE_LABEL: Record<DomainCard["type"], string> = { ability: "Ability", spe
  * The modal large card. Controlled: render it with `open`, and `onClose` runs on Escape, the close button and a click
  * on the backdrop. `returnFocus` (the 'More' button) gets focus back once the dialog closes.
  * `used` is the reset label of a card whose once-per limit is spent ("Back after a rest"), or null while it is ready.
+ * `spells` lists a grimoire's used spells ("Used: Arcane Barrage - back after a rest", G3); the card itself stays ready.
  */
 export function CardDialog({
   card,
   used,
+  spells,
   open,
   onClose,
   returnFocus,
 }: {
   card: CardDialogCard;
   used?: string | null;
+  spells?: readonly string[];
   open: boolean;
   onClose: () => void;
   returnFocus?: RefObject<HTMLElement | null>;
@@ -44,17 +47,19 @@ export function CardDialog({
   // Rendered into <body> only while open, so the card's own tree (a list item, a turned or greyed hand card) holds no
   // dialog and the server render has no portal.
   if (!open) return null;
-  return createPortal(<OpenCardDialog card={card} used={used ?? null} onClose={onClose} returnFocus={returnFocus} />, document.body);
+  return createPortal(<OpenCardDialog card={card} used={used ?? null} spells={spells ?? []} onClose={onClose} returnFocus={returnFocus} />, document.body);
 }
 
 function OpenCardDialog({
   card,
   used,
+  spells,
   onClose,
   returnFocus,
 }: {
   card: CardDialogCard;
   used: string | null;
+  spells: readonly string[];
   onClose: () => void;
   returnFocus?: RefObject<HTMLElement | null>;
 }) {
@@ -108,6 +113,13 @@ function OpenCardDialog({
           </span>
         </div>
         {used ? <p className="cd-used">Used · {used}</p> : null}
+        {spells.length > 0 ? (
+          <ul className="cd-spells" aria-label="Used spells">
+            {spells.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : null}
         <dl className="cd-meta">
           <div>
             <dt>Domain</dt>
@@ -136,7 +148,17 @@ function OpenCardDialog({
  * A card face's 'More' button with its CardDialog. The visible text is "More"; the accessible name names the card.
  * `className` styles the button for the face it sits on.
  */
-export function CardMore({ card, used, className }: { card: CardDialogCard; used?: string | null; className?: string }) {
+export function CardMore({
+  card,
+  used,
+  spells,
+  className,
+}: {
+  card: CardDialogCard;
+  used?: string | null;
+  spells?: readonly string[];
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   return (
@@ -144,7 +166,7 @@ export function CardMore({ card, used, className }: { card: CardDialogCard; used
       <button ref={button} type="button" className={className ?? "cd-more"} aria-haspopup="dialog" aria-label={`More about ${card.name}`} onClick={() => setOpen(true)}>
         More
       </button>
-      <CardDialog card={card} used={used} open={open} onClose={() => setOpen(false)} returnFocus={button} />
+      <CardDialog card={card} used={used} spells={spells} open={open} onClose={() => setOpen(false)} returnFocus={button} />
     </>
   );
 }

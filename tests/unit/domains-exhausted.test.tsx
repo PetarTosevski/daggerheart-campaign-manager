@@ -108,6 +108,57 @@ describe("domain cards used on the map (CA7)", () => {
   });
 });
 
+describe("grimoire cards list their used spells (G3, dcm-bxp.99.20)", () => {
+  // Book of Illiat (Codex grimoire): Slumber has no limit, Arcane Barrage is "Once per rest". A spell is used once its
+  // featureUses key `card:book-of-illiat:<useId>` is spent; the card itself stays ready (CA7: only `card:<id>` greys it).
+  const GRIMOIRE = ["book-of-illiat", "bare-bones"];
+  const grimoireSheet = (featureUses: FeatureUse[]): Sheet => ({ ...sheet(featureUses), domainCards: { owned: GRIMOIRE, loadout: GRIMOIRE } });
+  const spells = (card: HTMLElement) => {
+    const list = within(card).queryByRole("list", { name: "Used spells" });
+    return list ? within(list).getAllByRole("listitem").map((li) => li.textContent) : [];
+  };
+
+  it("keeps the grimoire ready and lists 'Used: <spell> - back after a rest' per used spell, in printed order", () => {
+    show(
+      grimoireSheet([
+        { key: featureUseKey("book-of-illiat", "arcane-barrage"), until: "rest" },
+        { key: featureUseKey("book-of-illiat", "slumber"), until: "longRest" },
+      ]),
+    );
+    const card = handCard("Book of Illiat");
+    expect(card).toHaveAccessibleName("Book of Illiat");
+    expect(card).not.toHaveAttribute("data-exhausted");
+    expect(card.style.filter).toBe("");
+    expect(card.parentElement?.style.getPropertyValue("--rot")).toBe("-3.5deg");
+    expect(spells(card)).toEqual(["Used: Slumber - back after a long rest", "Used: Arcane Barrage - back after a rest"]);
+  });
+
+  it("lists nothing on a grimoire with no used spell, and nothing on a non-grimoire card", () => {
+    show(grimoireSheet([{ key: "card:bare-bones:other", until: "rest" }]));
+    expect(spells(handCard("Book of Illiat"))).toEqual([]);
+    expect(spells(handCard("Bare Bones"))).toEqual([]);
+  });
+
+  it("drops a spell from the list after the rest that ends its limit (expire)", () => {
+    const used = grimoireSheet([{ key: featureUseKey("book-of-illiat", "arcane-barrage"), until: "rest" }]);
+    show(expire(used, "shortRest"));
+    expect(spells(handCard("Book of Illiat"))).toEqual([]);
+  });
+
+  it("lists the used spells on the grimoire in the vault and in its large card", () => {
+    current = { ...grimoireSheet([{ key: featureUseKey("book-of-illiat", "arcane-barrage"), until: "rest" }]), domainCards: { owned: GRIMOIRE, loadout: ["bare-bones"] } };
+    HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+      this.setAttribute("open", "");
+    };
+    render(<DomainCardsSection cls={undefined} />);
+    const vault = screen.getByRole("list", { name: "Vault cards" });
+    const card = within(vault).getByRole("article", { name: "Book of Illiat" });
+    expect(spells(card)).toEqual(["Used: Arcane Barrage - back after a rest"]);
+    fireEvent.click(within(card).getByRole("button", { name: "More about Book of Illiat" }));
+    expect(spells(screen.getByRole("dialog", { name: "Book of Illiat" }))).toEqual(["Used: Arcane Barrage - back after a rest"]);
+  });
+});
+
 describe("'More' on every sheet card (SC1)", () => {
   beforeAll(() => {
     // jsdom has no showModal/close; model the browser's: close() drops `open` and fires the close event.

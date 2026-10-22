@@ -21,6 +21,8 @@
 
 /* CA7's ribbon, larger: the once-per state in words. Right padding clears the Recall badge. */
 .cd-used{margin:0;padding:7px 60px 7px 14px;background:rgba(26,20,36,.92);color:#f6ead2;box-shadow:0 1px 0 #c9a35a,0 -1px 0 #c9a35a;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;letter-spacing:.08em;text-align:center;text-transform:uppercase}
+/* A grimoire's used spells (G3): the card stays ready, so no grey; one line per spell in the ribbon's ink. */
+.cd-spells{margin:0;padding:6px 60px 6px 14px;list-style:none;background:rgba(26,20,36,.08);border-bottom:1px solid rgba(201,163,90,.55);font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;letter-spacing:.04em;color:#3a2a14}
 
 .cd-meta{display:flex;flex-wrap:wrap;gap:4px 18px;margin:0;padding:14px 60px 10px 18px;border-bottom:1px solid rgba(201,163,90,.55)}
 .cd-meta>div{display:flex;flex-direction:column}

@@ -86,3 +86,43 @@ test("sheet cards: hand buttons under the text, 'More' opens the large card on h
   await openAndClose(page, grid.getByRole("button", { name: `More about ${ava.name}` }), ava.name, "Close");
   await expect(grid.getByRole("button", { name: /^Less about/ })).toHaveCount(0);
 });
+
+// G3 (dcm-bxp.132): every hand card, and every vault card, has one height whatever its name and text length; the footer
+// sits at the bottom of each face. At level 4 the Bard holds Book of Ava (a long grimoire text), Inspirational Words (a
+// long name) and Troublemaker (a short text); the vault holds Deft Deceiver (the shortest text) and Book of Vagras (the
+// longest).
+test("sheet cards: every hand card and every vault card share one height", async ({ page }) => {
+  const { client, characterId, sheet } = await openSheet(page);
+  await client.mutation(api.levelUp.correctLevel, { characterId, level: 4, idempotencyKey: crypto.randomUUID() });
+  for (const cardId of ["inspirational-words", "troublemaker", "book-of-vagras"]) await client.mutation(api.characters.takeCard, { characterId, cardId });
+  for (const cardId of ["deft-deceiver", "book-of-vagras"]) await client.mutation(api.characters.moveCard, { characterId, cardId, to: "vault" });
+  await openTab(page, "Domains");
+  const hand = sheet.getByRole("list", { name: "Loadout cards" });
+  const vault = sheet.getByRole("list", { name: "Vault cards" });
+  await expect(hand.getByRole("article")).toHaveCount(3);
+  await expect(vault.getByRole("article")).toHaveCount(2);
+
+  /** Each face's layout height and the gap under its footer (layout offsets, which the fan's rotation does not skew). */
+  const measure = (list: Locator) =>
+    list.locator("article.dk-face").evaluateAll((faces) =>
+      faces.map((el) => {
+        const face = el as HTMLElement;
+        const footer = face.querySelector<HTMLElement>("footer")!;
+        return { name: face.getAttribute("aria-label"), height: face.offsetHeight, gap: face.offsetHeight - (footer.offsetTop + footer.offsetHeight) };
+      }),
+    );
+
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    await expectNoHorizontalScroll(page);
+    for (const [where, list] of [
+      ["hand", hand],
+      ["vault", vault],
+    ] as const) {
+      const faces = await measure(list);
+      const heights = faces.map((f) => f.height);
+      expect(Math.max(...heights) - Math.min(...heights), `${where} at ${viewport.width}: ${JSON.stringify(faces)}`).toBeLessThanOrEqual(1);
+      for (const f of faces) expect(f.gap, `${where} ${f.name} footer at ${viewport.width}`).toBeLessThanOrEqual(1);
+    }
+  }
+});

@@ -7,6 +7,7 @@ import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
 import { CardMore } from "@/components/cards/card-dialog";
+import { usedSpellLines } from "@/components/cards/used-spells";
 import { DOMAIN_ICONS } from "@/components/party/party-display";
 import { Label, SheetBox, Small } from "@/components/party/sheet-ui";
 import { assetBackground } from "@/lib/design-assets";
@@ -42,6 +43,10 @@ import { recallBlock, resolveCards, vaultCardIds } from "../sheet-helpers";
 // turned, and a ribbon names when it comes back, from the same cardAvailability the map's Hand and the server use.
 // CB p.101, "Usage Limits": "If you use that card, you'll need a way to remember that it's temporarily unavailable. You
 // might choose to … turn it on its side". Rests clear the entry through `expire`, so the card is ready again by itself.
+// A grimoire with a used spell (`card:<id>:<useId>`) stays ready and lists it: "Used: Arcane Barrage - back after a rest"
+// (G3, dcm-bxp.99.20). Every hand card, and every vault card, has one height whatever its text (G3, dcm-bxp.132): the
+// fan stretches its cards to the tallest, the vault's grid rows are all as tall as the tallest, and each face's footer
+// sits at its bottom.
 
 const TYPE_LABEL: Record<DomainCard["type"], string> = { ability: "Ability", spell: "Spell", grimoire: "Grimoire" };
 
@@ -60,32 +65,21 @@ const CARD_BACKS: Record<string, string> = {
   valor: "4c7f9d2c0b0c64af54dbf902ac891ffe",
 };
 
-/** The ribbon under an exhausted card's art (the board's felt palette): the state in words, never by the grey alone. */
-const USED_RIBBON: CSSProperties = {
-  flex: "none",
-  margin: 0,
-  padding: "4px 30px 4px 6px",
-  background: "rgba(26,20,36,.9)",
-  color: "#f6ead2",
-  boxShadow: "0 1px 0 #c9a35a, 0 -1px 0 #c9a35a",
-  fontFamily: "var(--font-cinzel), serif",
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: ".06em",
-  textAlign: "center",
-  textTransform: "uppercase",
-  lineHeight: 1.25,
-};
-
 /** The reset label of a card whose once-per limit is used (`card:<id>` in featureUses), or null while it is ready. */
 function usedLabel(sheet: Parameters<typeof cardAvailability>[0], cardId: string): string | null {
   const availability = cardAvailability(sheet, cardId);
   return availability.state === "exhausted" ? availability.label : null;
 }
 
+/** A grimoire's used spells, one line each (G3); other cards have none. */
+function usedSpells(sheet: Parameters<typeof usedSpellLines>[0], card: DomainCard): string[] {
+  return card.type === "grimoire" ? usedSpellLines(sheet, card.id) : [];
+}
+
 /**
  * The board's hand-card face (`hc-face`): domain-coloured head, art with the Recall badge, meta, text, footer.
- * `used` (the reset label of an exhausted card) greys the card and lays the ribbon over its art.
+ * `used` (the reset label of an exhausted card) greys the card and lays the ribbon over its art. `spells` (a grimoire's
+ * used spells) are listed under the art; the card stays ready.
  * The footer sits under the text, never over it (SC1, dcm-bxp.126): 'More' first, on the left that the next card
  * in the fan never covers, opens the whole card in CardDialog; then the face's own buttons (`children`).
  */
@@ -93,11 +87,13 @@ function CardFace({
   card,
   focusable,
   used,
+  spells = [],
   children,
 }: {
   card: DomainCard;
   focusable?: boolean;
   used?: string | null;
+  spells?: readonly string[];
   children?: ReactNode;
 }) {
   const domain = getDomain(card.domain);
@@ -124,13 +120,20 @@ function CardFace({
         </span>
       </div>
       {/* Outside the aria-hidden art so screen readers read it too; the right padding clears the Recall badge. */}
-      {used ? <p style={USED_RIBBON}>Used · {used}</p> : null}
+      {used ? <p className="dk-face-used">Used · {used}</p> : null}
+      {spells.length > 0 ? (
+        <ul className="dk-face-spells" aria-label="Used spells">
+          {spells.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
       <div className="dk-face-meta">
         {domain?.name ?? card.domain} {TYPE_LABEL[card.type]} · Recall {card.recallCost}
       </div>
       <p className="dk-face-text">{card.text}</p>
       <footer className="dk-face-acts">
-        <CardMore card={card} used={used} className="dk-more" />
+        <CardMore card={card} used={used} spells={spells} className="dk-more" />
         {children}
       </footer>
     </article>
@@ -279,7 +282,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
                   const used = usedLabel(sheet, card.id);
                   return (
                     <div role="listitem" key={card.id} className="dk-hand-card" style={fan(i, loadout.length, used !== null)}>
-                      <CardFace card={card} focusable used={used}>
+                      <CardFace card={card} focusable used={used} spells={usedSpells(sheet, card)}>
                         {canEdit ? (
                           <button type="button" className="dk-btn" disabled={busy !== null} onClick={() => void move(card, "vault")}>
                             Move to vault
@@ -324,7 +327,7 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
                   const cost = (duringRest && restOpen) || card.recallCost === 0 ? "free" : `${card.recallCost} Stress`;
                   return (
                     <div role="listitem" key={card.id} className="dk-spread-card" style={{ "--d": `${i * 55}ms` } as CSSProperties}>
-                      <CardFace card={card} used={usedLabel(sheet, card.id)}>
+                      <CardFace card={card} used={usedLabel(sheet, card.id)} spells={usedSpells(sheet, card)}>
                         {canEdit ? (
                           block ? (
                             <span className="dk-block">{block}</span>
@@ -570,7 +573,7 @@ function DeckCard({
         <p className="dkc-text">{card.text}</p>
         {locked ? <span className="dkc-lock">{unlocks ? `Unlocks at level ${unlocks}` : "Out of reach"}</span> : null}
         <footer className="dkc-foot">
-          <CardMore card={card} used={usedLabel(sheet, card.id)} className="dkc-more" />
+          <CardMore card={card} used={usedLabel(sheet, card.id)} spells={usedSpells(sheet, card)} className="dkc-more" />
           <span className="flex-1" />
           {owned ? <span className="dkc-badge">{sheet.domainCards.loadout.includes(card.id) ? "In loadout" : "In vault"}</span> : null}
           {locked ? (
