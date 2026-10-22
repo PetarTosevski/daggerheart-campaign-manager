@@ -1019,12 +1019,81 @@ waves:
           - "Other players see only 'Bandit hit Mira' (Q14); on mobile the prompt is a bottom sheet with 44px buttons (Q11)"
           - "e2e: an adversary hit on Mira, Tabby answers with I Am Your Shield, Tabby marks two Armor Slots, the hit resolves on Tabby"
           - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 7: adversary end to end
+  - wave: 7.5
+    tracers:
+      - id: AA2c
+        title: Adversary server follow-ups 2 - riders when the attack hit, session limits across encounters, undo restores limits, reflected damage as a hit, a 'what does this use ask' query
+        size: M
+        # USER ANSWERS (2026-10-22, binding): riders land whenever the attack hit, even if its damage was negated (only a
+        #   miss or full avoidance stops them); 'once per session' adversary features last the whole session (reset at
+        #   session end); undo gives an adversary's limited use back; damage reflected at a PC attacker opens the normal
+        #   incoming-hit prompt; the GM's feature choices are asked in a dialog (AA3b) - so the server exposes a query
+        #   describing what a feature use needs (options, picks, allies, splits, situations, cost choices, Fear amount).
+        goal: Server side of the user's AA2b answers, plus the feature-ask query AA3b's dialog reads.
+        depends_on: [AA2b]
+        owns:
+          - convex/adversaryActions.ts
+          - convex/lib/adversaryActions.ts
+          - convex/lib/incomingHits.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/validators/actionLog.ts
+          - convex/lib/validators/encounters.ts
+          - convex/lib/adversaryHits.ts
+          - convex/lib/adversaryFeatures.ts
+          - tests/convex/adversary-actions.test.ts
+          - tests/convex/adversary-actions-authz.test.ts
+          - tests/convex/authz/adversary-actions.entries.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-CA-AA2c.md
+        reads:
+          - docs/tasks/TASK-CA-AA2.md
+          - docs/tasks/TASK-CA-AA2b.md
+          - src/lib/domain/adversary-effects/**
+          - src/lib/domain/adversary-actions/**
+        acceptance:
+          - "Riders land when the attack hit even if its damage was negated; a miss or full avoidance stops them; tests"
+          - "Session-limited adversary features stay spent across encounters until the session ends (scene limits still reset at encounter end); tests"
+          - "adversaryBefore widened (widen only) with featureUses; undo restores an instance's limited use; tests"
+          - "Damage reflected at a PC attacker opens an incoming hit for that PC; tests"
+          - "adversaryActions.featureAsk {instanceId, feature, use?} (GM) returns exactly what the use needs before it runs; matrix entry + role tests"
+          - "Split convex/lib/incomingHits.ts and convex/lib/adversaryActions.ts under 800 lines (new adversaryHits.ts / adversaryFeatures.ts), public API unchanged"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
+      - id: AA3b
+        title: Encounter tab follow-ups - remove the old untargeted roll buttons, a choices dialog for features, read-only map pane
+        size: S
+        # USER ANSWERS (2026-10-22): remove the head's 'Roll attack' / 'Roll damage' (the targeted Attack is the one way);
+        #   features that need choices ask in a dialog (reads AA2c's featureAsk). ORCHESTRATOR: the map pane must not delete
+        #   tokens (read-only flag on TokensLayer for moves only).
+        goal: The Encounter tab has one way to attack, asks feature choices first, and its map pane can't delete tokens.
+        depends_on: [AA2c, AA3]
+        owns:
+          - src/components/adversaries/tracker/**
+          - src/components/combat-map/tokens/tokens-layer.tsx
+          - tests/unit/tracker-actions.test.tsx
+          - tests/e2e/encounter-actions.spec.ts
+          - tests/e2e/encounter-tracker.spec.ts
+          - tests/e2e/visual/CA-AA3.spec.ts
+          - docs/tasks/TASK-CA-AA3b.md
+        reads:
+          - docs/tasks/TASK-CA-AA3.md
+          - docs/tasks/TASK-CA-AA2c.md
+        acceptance:
+          - "Old 'Roll attack' / 'Roll damage' buttons removed; encounter-tracker.spec updated to the targeted Attack"
+          - "A feature that needs choices opens a dialog built from featureAsk before useFeature; unit + e2e"
+          - "The map pane can move tokens but not delete them (TokensLayer gains a no-delete flag; the Combat Map is unchanged)"
+          - "pnpm lint, typecheck, vitest and the adversaries e2e specs pass; tracer-guard passes"
+  - wave: 7.6
+    tracers:
       - id: AA5
         title: Combat Map - GM adversary controls and hit visuals
         size: M
         goal: On the Combat Map the GM selects an adversary token and attacks or uses its features with the same panel and rules as the Encounter tab; every adversary action shows on the map as a flash on the target tokens and an entry in the mini feed, whichever page started it.
         depends_on: [AA2, CA5]
         owns:
+          # ORCHESTRATOR NOTE 2026-10-22: the AA5 slot in Resolutions (AA4 left the comment) and GM-owned PC prompts.
+          - src/components/combat-map/actions/index.tsx
+          - src/components/combat-map/actions/reactions/**
           - src/components/combat-map/actions/adversary/**
           - tests/unit/adversary-panel.test.tsx
           - tests/e2e/combat-adversary.spec.ts
@@ -1036,11 +1105,11 @@ waves:
           - convex/adversaryActions.ts
           - .omc/autopilot/combat-actions-analysis.md
         acceptance:
+          - "USER ANSWER 2026-10-22: a PC the GM owns gets the same incoming-hit prompt in the GM column on the map (AA4's prompt component)"
           - "Runs after D12 H22 merges or before D12 wave 3 starts. Selecting an enemy token as GM opens the adversary panel: Attack (targets = PC tokens with range bands and line of sight), feature Use buttons, Fear prompts, identical to the Encounter tab (Q12, Q16, Q19)"
           - "Hits and misses from either page flash the target tokens (own overlay, not map-canvas) and appear in the mini feed; the GM's Resolutions list includes adversary actions with Undo (U4)"
           - "e2e: the GM attacks from the map and the result appears on the Encounter tab; visual spec at desktop and 390px"
           - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
-  # ---------------------------------------------------------------- wave 7: adversary end to end
   - wave: 7
     tracers:
       - id: AA6
