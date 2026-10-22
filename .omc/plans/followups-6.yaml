@@ -82,6 +82,18 @@ waves:
           - tests/unit/notes-*.test.tsx
           - tests/e2e/notes-journals.spec.ts
           - tests/e2e/notes-flow.spec.ts
+          # ORCHESTRATOR NOTE 2026-10-22: specs pinned to the old input, the journalView matrix row, PF10's read test, and
+          #   the Session N page at session start (USER ANSWER: when the session starts, every journal gets a 'Session N' page).
+          - tests/e2e/notes-entries.spec.ts
+          - tests/e2e/notes-mentions.spec.ts
+          - tests/e2e/notes-sharing.spec.ts
+          - tests/e2e/live-notes.spec.ts
+          - tests/e2e/notes-a11y.spec.ts
+          - tests/e2e/visual/D11-N5.spec.ts
+          - tests/convex/authz/notes.entries.ts
+          - tests/convex/perf-reads.test.ts
+          - convex/sessions.ts
+          - tests/convex/sessions.test.ts
           - docs/tasks/TASK-F6-G4.md
         reads: [docs/tasks/TASK-D11-N*.md]
         acceptance:
@@ -116,6 +128,7 @@ waves:
           - tests/convex/settings*.test.ts
           - tests/convex/combat-maps.test.ts
           - src/components/combat-map/vision/vision-layer.tsx
+          - tests/convex/campaigns.test.ts
           - docs/tasks/TASK-F6-G5.md
         reads: [docs/tasks/TASK-BUG-B4.md, docs/tasks/TASK-SP-P1.md]
         acceptance:
