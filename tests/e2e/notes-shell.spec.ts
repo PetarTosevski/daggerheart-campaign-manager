@@ -11,7 +11,7 @@ import { expectNoHorizontalScroll, visual } from "./visual/helpers";
 
 const PLAYER = "e2e-player@example.test";
 // An allowlisted account (scripts/e2e-setup.mjs) that is not in the campaign.
-const OUTSIDER = "e2e-password@example.test";
+const OUTSIDER = "e2e-player2@example.test";
 
 async function gmCreatesCampaign(page: Page) {
   await signInAsTestGm(page);

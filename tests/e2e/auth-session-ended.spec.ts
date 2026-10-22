@@ -12,11 +12,11 @@ import { api } from "../../convex/_generated/api";
 // Convex schedules shortly before the token expires (about an hour); the init script below holds such long timers
 // and the test fires them once the session is revoked.
 //
-// Signing back in uses the email + password form, because the test-only form always goes to "/". The account is the
-// password-only one (docs/testing.md: never signed in through the test form), with the password players.spec uses.
+// Signing back in uses the email + password form, because the test-only form always goes to "/". The account is this
+// spec's own password-only one (docs/testing.md: one email per sign-in method; never signed in through the test form).
 
-const PASSWORD_ONLY_EMAIL = "e2e-password-only@example.test";
-const PASSWORD = "correct-horse-battery";
+const PASSWORD_ONLY_EMAIL = "e2e-session-ended@example.test";
+const PASSWORD = "session-ended-horse-battery";
 const unique = (label: string) => `${label} ${crypto.randomUUID().slice(0, 8)}`;
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 

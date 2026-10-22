@@ -197,7 +197,6 @@ const weredragon = onFrame(WEREDRAGON, [
 const area: Area = {
   area: "trackers",
   entries: [...ageOfUmbra, ...andaluria, ...colossus, ...fiveBanners, ...horizon, ...weredragon],
-  pending: [],
 };
 
 export default area;

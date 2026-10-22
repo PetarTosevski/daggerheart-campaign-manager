@@ -171,7 +171,6 @@ const area: Area = {
     },
     { fn: api.photoImport.create, access: "gm", args: () => ({ draft: validDraft() }) },
   ],
-  pending: [],
 };
 
 export default area;

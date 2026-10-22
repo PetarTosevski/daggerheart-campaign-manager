@@ -120,7 +120,6 @@ const extended: Area = {
     // A row whose expectation the code does not meet fails its entry; knownBug turns the entry into one it.fails.
     { fn: api.trackers.ageOfUmbra.get, access: "view", expect: { player: "FORBIDDEN" }, knownBug: "demo (players may read the tracker)" },
   ],
-  pending: [],
 };
 
 runMatrix(extended);

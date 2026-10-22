@@ -119,7 +119,6 @@ const area: Area = {
     // A character read: strangers get null instead of NOT_FOUND (no existence leak); party members may view.
     { fn: api.characters.get, access: "own", expect: { outsider: "null" } },
   ],
-  pending: [],
   exempt: {
     "auth:signIn": "Convex Auth's sign-in action: public by design; covered by tests/e2e/auth.spec.ts and create-or-update-user.test.ts",
     "auth:signOut": "Convex Auth's sign-out action: public by design and acts only on the caller's own session; covered by tests/e2e/auth.spec.ts",

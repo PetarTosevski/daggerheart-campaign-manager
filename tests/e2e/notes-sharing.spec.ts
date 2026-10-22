@@ -14,7 +14,7 @@ import { bardDraft, convexAs, expectNoHorizontalScroll } from "./visual/helpers"
 
 const PLAYER_A = "e2e-player@example.test";
 // The e2e allowlist (scripts/e2e-setup.mjs) has two non-GM accounts; notes-shell.spec.ts also signs this one in by the test form.
-const PLAYER_B = "e2e-password@example.test";
+const PLAYER_B = "e2e-player2@example.test";
 
 type Seat = { page: Page; client: ConvexHttpClient };
 

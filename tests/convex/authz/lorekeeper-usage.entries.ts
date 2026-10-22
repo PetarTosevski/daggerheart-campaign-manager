@@ -16,6 +16,5 @@ const area: Area = {
       expect: { otherPlayer: "ok", grantee: "ok" },
     },
   ],
-  pending: [],
 };
 export default area;

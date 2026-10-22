@@ -1,16 +1,38 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Locator, type Page } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { signInAsTestGm } from "../fixtures";
-import { bardDraft, convexAs, visual } from "./helpers";
+import { bardDraft, convexAs, visual, VIEWPORTS } from "./helpers";
 
 // D11 N6 visual spec (E2E_VISUAL=1): the sharing dialog (GM and player), the Shared tabs and a shared page, at
 // 1440x900 and 390x844. Not on the board: judged against the board's tokens (docs/tasks/TASK-D11-N6.md).
 
 const PLAYER_A = "e2e-player@example.test";
-// The e2e allowlist (scripts/e2e-setup.mjs) has two non-GM accounts; notes-shell.spec.ts also signs this one in by the test form.
-const PLAYER_B = "e2e-password@example.test";
+// The second test-sign-in player (docs/testing.md, one email per sign-in method).
+const PLAYER_B = "e2e-player2@example.test";
+
+/** At 390 px the whole index column sits behind the 'Pages' disclosure (N9); opens it when it is closed. */
+async function openIndex(page: Page) {
+  const toggle = page.getByRole("complementary", { name: "Journal index" }).getByRole("button", { name: /^Pages/ });
+  await expect(page.getByRole("complementary", { name: "Journal index" })).toBeVisible();
+  if (!(await toggle.isVisible())) return;
+  // Retried: a click that lands before hydration does nothing.
+  await expect(async () => {
+    if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass();
+}
+
+/** Like `visual(...).shoot`, for a region of the journal index: opens the 'Pages' disclosure at each viewport first. */
+async function shootIndex(page: Page, locator: Locator, name: string) {
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    await openIndex(page);
+    await visual(page, "D11-N6", [viewport]).shoot(locator, name);
+  }
+  await page.setViewportSize(VIEWPORTS[0]);
+}
 
 test("D11 N6 sharing dialog, Shared tabs and a shared page at 1440 and 390", { tag: "@visual" }, async ({ page, browser }) => {
   test.setTimeout(180_000);
@@ -83,10 +105,10 @@ test("D11 N6 sharing dialog, Shared tabs and a shared page at 1440 and 390", { t
   await page.goto(`/campaigns/${campaignId}/notes`);
   const shared = page.getByRole("complementary", { name: "Journal index" }).getByRole("region", { name: "Shared" });
   await expect(shared.getByRole("group", { name: "Ash" })).toBeVisible();
-  await gmShots.shoot(shared, "shared-players-gm");
+  await shootIndex(page, shared, "shared-players-gm");
   await shared.getByRole("tab", { name: "Shared by GM" }).click();
   await expect(shared.getByRole("button", { name: /Rumors & hooks/ })).toBeVisible();
-  await gmShots.shoot(shared, "shared-gm-gm");
+  await shootIndex(page, shared, "shared-gm-gm");
 
   // A shared page read by the GM, with the add row.
   await page.goto(`/campaigns/${campaignId}/notes?view=shared-players&page=${ashLog}`);
@@ -99,7 +121,7 @@ test("D11 N6 sharing dialog, Shared tabs and a shared page at 1440 and 390", { t
   const ashShared = a.page.getByRole("complementary", { name: "Journal index" }).getByRole("region", { name: "Shared" });
   await ashShared.getByRole("tab", { name: "Shared by GM" }).click();
   await expect(ashShared.getByRole("button", { name: /Rumors & hooks/ })).toBeVisible();
-  await playerShots.shoot(ashShared, "shared-gm-player");
+  await shootIndex(a.page, ashShared, "shared-gm-player");
   await ashShared.getByRole("button", { name: /Rumors & hooks/ }).click();
   await expect(a.page.getByText("Game Master’s page · read only")).toBeVisible();
   await playerShots.shoot(a.page.getByRole("region", { name: "Journal page" }), "shared-page-player");

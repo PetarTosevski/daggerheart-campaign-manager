@@ -19,6 +19,5 @@ const area: Area = {
     },
     { fn: api.settings.reset, access: "user" },
   ],
-  pending: [],
 };
 export default area;

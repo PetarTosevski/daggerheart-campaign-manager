@@ -62,6 +62,16 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     }),
     e2eProvider,
   ],
+  jwt: {
+    // dcm-bxp.125: a random id per access token. Convex Auth signs only
+    // { sub, iss, aud, iat, exp } with `iat` in whole seconds, so two tokens
+    // minted for one session in the same second were byte-identical and the
+    // Convex client refused the refresh as "not new" (dcm-bxp.123). Convex
+    // Auth reserves the `jti` name in customClaims (it throws on it), so the
+    // id goes in `token_id`. Verification is unchanged: the server still
+    // checks the signature, issuer, audience and expiry of every token.
+    customClaims: async () => ({ token_id: crypto.randomUUID() }),
+  },
   callbacks: {
     // The callback's ctx is typed for any data model; this app's schema is
     // the one in convex/schema.ts.

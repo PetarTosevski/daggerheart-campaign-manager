@@ -113,7 +113,6 @@ const area: Area = {
     gm({ fn: api.encounterTracking.endGmTurn }),
     gm({ fn: api.encounterTracking.spendFear, setup: oneFear, args: () => ({ amount: 1, reason: "move" }) }),
   ],
-  pending: [],
 };
 
 export default area;

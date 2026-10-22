@@ -68,6 +68,5 @@ const area: Area = {
     { fn: api.lorekeeper.setVisibility, access: "view", expect: ASKER_ONLY },
     { fn: api.lorekeeper.removeConversation, access: "view", expect: ASKER_ONLY },
   ],
-  pending: [],
 };
 export default area;

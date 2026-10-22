@@ -141,7 +141,6 @@ const area: Area = {
       args: () => ({ environmentId: "mountain-pass", featureName: "Icy Winds" }),
     },
   ],
-  pending: [],
 };
 
 export default area;
