@@ -423,3 +423,44 @@ waves:
           - "The answer card shows an 'unclear' answer with both its book quotes and the web block (disclaimer included); unit test"
           - "The web-pass failure log includes the reason; no secrets logged"
           - "pnpm lint, typecheck, vitest and the lorekeeper e2e specs pass; tracer-guard passes"
+      - id: L11
+        title: Think before showing - clear answers stream, uncertain ones wait for the final check with a visible process
+        size: M
+        # BEAD dcm-bxp.82.1. USER DECISION (2026-10-22, binding): "show clear answers immediately, hold uncertain answers
+        #   until final model check, show the process searching... checking w stronger searching the internet".
+        #   Full design in `bd show dcm-bxp.82.1` (design field): first line VERDICT decides; 'rules' streams; 'unclear' /
+        #   'none' hide the draft and show 'Checking again with a stronger model…'; the retry is never shown while
+        #   streaming; with search on and still unclear/none 'Searching the internet…' then the final answer; Stop keeps
+        #   the best finished answer; costs per pass unchanged.
+        goal: No provisional answer is ever shown and then swapped; the reader sees the process instead.
+        depends_on: [L10]
+        owns:
+          - convex/lorekeeperRun.ts
+          - convex/lorekeeper.ts
+          - convex/tables/lorekeeper.ts
+          - convex/lib/validators/lorekeeper.ts
+          - src/lib/lorekeeper/flow.ts
+          - src/lib/lorekeeper/copy.ts
+          - src/components/lorekeeper/answer/**
+          - src/components/lorekeeper/chat/**
+          - tests/unit/lorekeeper/**
+          - tests/unit/lorekeeper-ui/**
+          - tests/convex/lorekeeper-chat.test.ts
+          - tests/convex/lorekeeper-web.test.ts
+          - tests/convex/authz/lorekeeper-chat.entries.ts
+          - tests/e2e/lorekeeper-chat.spec.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-D13-L11.md
+        reads:
+          - docs/tasks/TASK-D13-L3.md
+          - docs/tasks/TASK-D13-L6.md
+          - docs/tasks/TASK-D13-L10.md
+          - src/lib/lorekeeper/answer.ts
+          - convex/lib/claude.ts
+        acceptance:
+          - "Answer rows carry a phase the UI reads (widen-only, optional field): books -> retry -> web -> done; players and the GM see the same phase; the returns validators widen only"
+          - "Verdict 'rules' on the first pass streams as today; 'unclear'/'none' never expose the first-pass text or the retry's partial text; the final text appears once (or streams only for the kept pass when it is known to be final)"
+          - "The answer row shows 'Searching your books…', 'Checking again with a stronger model…', 'Searching the internet…' as the phase changes (polite live region, reduced motion respected)"
+          - "Stop during the retry or web pass keeps the best finished answer (the first pass's), never a hidden partial; costs and reservations settle as before"
+          - "Tests: unit (phase sequence per path), convex with the fake model (rules streams; unclear holds then reveals; unclear + web; Stop mid-retry), e2e: on an unclear question no provisional text is visible before the final answer"
+          - "pnpm lint, typecheck, vitest and the lorekeeper e2e specs pass; tracer-guard passes"
