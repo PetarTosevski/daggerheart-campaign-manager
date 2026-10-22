@@ -379,3 +379,47 @@ waves:
           - "Visual pass at 1440x900 and 390x844 for page, drawer, empty, error and cap states, verdict per region in the task doc"
           - "docs/lorekeeper.md: how to ingest books (commands, where the text lives, never in git), the env vars (ANTHROPIC_API_KEY, LOREKEEPER_MODEL, LOREKEEPER_MONTHLY_USD), costs, retention and the privacy rules; docs/data-model.md lists the D13 tables"
           - "Follow-up beads filed: move combatMapGenerate.ts and photoImport.ts onto convex/lib/claude.ts; measured token and cost numbers from fake-free manual runs recorded by the user (not run by agents)"
+  - wave: 6
+    tracers:
+      - id: L10
+        title: Internet search also runs when the books are unclear, and a web miss says so
+        size: S
+        # USER REPORT (2026-10-22): "its selected still doesnt search net" - with "Search the internet too" on, 'Do our
+        #   Hexes stack?' ended 'Rules unclear' (Opus retry) with no web pass, and 'Whats the meaning of life' ended with
+        #   the books-only miss text "internet search is off" although the web pass ran (the model made no search ->
+        #   ClaudeFailure "no answer", logged without its reason).
+        # DEFAULTS (orchestrator, reported to the user):
+        #   D1 With the toggle on, the web pass runs after the Opus retry when its verdict is 'unclear' OR 'none'
+        #      (was: 'none' only). 'rules' still never searches.
+        #   D2 'unclear' + web results: keep the book answer (verdict 'unclear', its quotes and GM call) and add the web
+        #      results under it with the existing unofficial disclaimer; the prose gets the web note appended. 'unclear'
+        #      + no web results: keep the Opus 'unclear' answer unchanged.
+        #   D3 'none' + web pass ran but found nothing: a new copy line "I couldn't find this in your books or online.
+        #      Ask your GM." instead of the books-only miss ("internet search is off" only when the toggle is off).
+        #   D4 The web prompt tells the model to search for the question (Daggerheart rulings, forum readings) rather
+        #      than decide not to; an off-topic question may still find nothing (then D3).
+        #   D5 Log the failure reason (ClaudeFailure.reason, never the key or the body) when the web pass fails.
+        goal: With internet search on, unclear or missing book answers get a web pass, and the miss text tells the truth.
+        depends_on: [L8]
+        owns:
+          - src/lib/lorekeeper/flow.ts
+          - src/lib/lorekeeper/copy.ts
+          - src/lib/lorekeeper/prompt.ts
+          - convex/lorekeeperRun.ts
+          - convex/lib/lorekeeper/web.ts
+          - src/components/lorekeeper/answer/**
+          - tests/unit/lorekeeper/**
+          - tests/unit/lorekeeper-ui/**
+          - tests/convex/lorekeeper-web.test.ts
+          - tests/convex/lorekeeper-chat.test.ts
+          - docs/tasks/TASK-D13-L10.md
+        reads:
+          - docs/tasks/TASK-D13-L3.md
+          - docs/tasks/TASK-D13-L8.md
+          - convex/lib/claude.ts
+        acceptance:
+          - "nextStep: retry + 'unclear' + toggle on -> web; retry + 'none' + toggle on -> web; toggle off -> unchanged; unit tests"
+          - "Run (convex tests with the fake model): unclear + web results stores verdict 'unclear', the book quotes and GM call, plus web results; unclear + no web results keeps the unclear answer; none + web nothing stores the new D3 text; toggle off still stores the books-only miss; costs settle for every pass"
+          - "The answer card shows an 'unclear' answer with both its book quotes and the web block (disclaimer included); unit test"
+          - "The web-pass failure log includes the reason; no secrets logged"
+          - "pnpm lint, typecheck, vitest and the lorekeeper e2e specs pass; tracer-guard passes"
