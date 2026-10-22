@@ -78,3 +78,49 @@ waves:
           - "A truly signed-out or revoked user still gets the sign-in path (no infinite refresh loop); unit test for the decision"
           - "auth-single-run.spec.ts passes with --repeat-each 8 on the worktree backend"
           - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
+  - wave: 2
+    tracers:
+      - id: B4
+        title: Players switch doors and lights only from Melee range; a light they switch stays theirs like a door
+        size: M
+        # USER ANSWERS (2026-10-22, binding): "yes to both" - (1) a door a player switches is stored as explored (B2's
+        #   reading of D8 confirmed); (2) apply the same fix to light switches. "Make sure that player tokens need to be in
+        #   melee range to interact with doors or light sources (turn on off close open)".
+        # DEFAULTS (orchestrator, reported to the user): Melee = 1 square (CB p.103 Defined Ranges), measured Chebyshev
+        #   from any square of one of the player's character tokens on the live map to any square of the object's
+        #   (rotated) footprint, so adjacent incl. diagonal or overlapping counts. The GM is never range-limited. Seeing
+        #   the object (D8) is still required too. The server refuses with a new code COMBAT_OUT_OF_REACH (no position in
+        #   the payload). The vision panel and on-map door clicks show an out-of-reach switch disabled with the text
+        #   "Move next to it" (not colour only); a carried light (setCarriedLight) is not an object and is unaffected.
+        goal: toggleDoor and toggleLight require a player's character token within Melee of the object (server and UI), and toggleLight stores the light as explored like B2 did for doors.
+        depends_on: [B2]
+        owns:
+          - convex/combatVision.ts
+          - convex/lib/combatVision.ts
+          - src/lib/domain/combat-map/reach.ts
+          - src/lib/errors/combatMap.ts
+          - src/components/combat-map/vision/**
+          - src/components/combat-map/tokens/**
+          - src/components/combat-map/map-view/**
+          - tests/convex/combat-doors.test.ts
+          - tests/convex/combat-lights*.test.ts
+          - tests/convex/combat-vision*.test.ts
+          - tests/convex/authz/combat.entries.ts
+          - tests/unit/combat-reach.test.ts
+          - tests/e2e/combat-movement.spec.ts
+          - tests/e2e/combat-vision*.spec.ts
+          - tests/e2e/sprite-packs-flow.spec.ts
+          - tests/e2e/live-combat*.spec.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-BUG-B4.md
+        reads:
+          - docs/tasks/TASK-BUG-121.md
+          - docs/tasks/TASK-MV-M2.md
+          - src/lib/domain/combat-actions/distance.ts
+          - src/lib/domain/combat-map/ranges.ts
+        acceptance:
+          - "reach.ts (framework-free): inMelee(tokenFootprint, objectFootprint incl. rotation) per the default; unit tests for adjacent, diagonal, overlapping, 2 away, 2x2 token, rotated multi-square object"
+          - "toggleDoor and toggleLight: a player whose character tokens are all beyond Melee gets ConvexError {code: COMBAT_OUT_OF_REACH}; within Melee (and seen) succeeds; the GM succeeds from anywhere; role tests assert ConvexError.data.code; the authz matrix setups put the player's token in reach so the player still gets ok"
+          - "toggleLight stores the light's seen samples as explored for the switching player's characters (same addExplored helper as B2); a convex test: switch a light, turn away, still switchable"
+          - "Vision panel and on-map door clicks: out-of-reach switches are disabled with visible text 'Move next to it'; optimistic updates still roll back on refusal; every e2e spec that toggles doors or lights as a player moves the token next to the object first"
+          - "pnpm lint, typecheck, vitest and the combat-map e2e specs that switch doors or lights pass; tracer-guard passes"
