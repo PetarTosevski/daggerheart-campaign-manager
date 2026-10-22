@@ -115,6 +115,7 @@ waves:
           - tests/unit/settings-backup*.test.ts
           - tests/convex/settings*.test.ts
           - tests/convex/combat-maps.test.ts
+          - src/components/combat-map/vision/vision-layer.tsx
           - docs/tasks/TASK-F6-G5.md
         reads: [docs/tasks/TASK-BUG-B4.md, docs/tasks/TASK-SP-P1.md]
         acceptance:
