@@ -22,7 +22,7 @@
 import type { ReactNode } from "react";
 
 import type { Id } from "../../../convex/_generated/dataModel";
-import type { CharacterView } from "../../../convex/characters";
+import type { CharacterView, PartyMember } from "../../../convex/characters";
 
 /** What every campaign-wide slot knows. */
 export type CampaignSlotProps = {
@@ -42,3 +42,18 @@ export type SlotProps = CampaignSlotProps & {
 
 export type CharacterSlot = (props: SlotProps) => ReactNode;
 export type CampaignSlot = (props: CampaignSlotProps) => ReactNode;
+
+/**
+ * What a party card knows of a character: a `characters.partySummary` row (PF9: name, class line, portrait, tiles,
+ * status and the badges' fields). A full `CharacterView` is one too, so card slots also mount on the roster and sheet.
+ */
+export type CardCharacter = PartyMember;
+
+/** What a party-card slot knows: `SlotProps` with the card's slice of the character. */
+export type CardSlotProps = CampaignSlotProps & {
+  character: CardCharacter;
+  /** The viewer is the character's owner or the GM. */
+  canEdit: boolean;
+};
+
+export type CardSlot = (props: CardSlotProps) => ReactNode;

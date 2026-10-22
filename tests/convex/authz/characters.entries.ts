@@ -72,6 +72,7 @@ const area: Area = {
   entries: [
     // ---------------------------------------------------------------- characters: party and creation
     { fn: api.characters.listByCampaign, access: "view" },
+    { fn: api.characters.partySummary, access: "view", note: "PF9: the dashboard party cards; every member sees every card, like listByCampaign" },
     {
       fn: api.characters.create,
       access: "view",

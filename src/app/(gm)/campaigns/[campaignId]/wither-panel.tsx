@@ -22,7 +22,7 @@ import type { CampaignSummary } from "../../../../../convex/campaigns";
  */
 
 function Panel({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
-  const characters = useQuery(api.characters.listByCampaign, { campaignId });
+  const characters = useQuery(api.characters.partySummary, { campaignId });
   const current = useQuery(api.sessions.current, isGm ? { campaignId } : "skip");
   const end = useIntent(api.sessions.end);
   const [confirm, setConfirm] = useState(false);

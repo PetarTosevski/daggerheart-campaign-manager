@@ -12,7 +12,7 @@ import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../convex/_generated/api";
 import { SlotBoundary } from "../session/boundary";
-import type { CharacterSlot, SlotProps } from "../slots";
+import type { CardSlot, CharacterSlot, SlotProps } from "../slots";
 
 // D5 Wither tokens, Witherwild only (T5). Contract: ../slots.ts. Rules: CB 261.
 
@@ -81,7 +81,7 @@ export const WitherCounter: CharacterSlot = (props) => (
 );
 
 /** The Wither badge on the dashboard party card: shown while the character holds tokens. */
-export const WitherCardBadge: CharacterSlot = ({ character }) => {
+export const WitherCardBadge: CardSlot = ({ character }) => {
   const tokens = character.sheet.wither ?? 0;
   if (tokens === 0) return null;
   return (

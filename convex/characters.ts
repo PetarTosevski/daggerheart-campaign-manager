@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import {
   applyResourceDelta,
@@ -152,33 +152,128 @@ async function toView(ctx: QueryCtx, c: Doc<"characters">, sheet: CharacterSheet
   };
 }
 
+/** Every character in the campaign as a view; a sheet that fails to read comes back marked `corrupt`. */
+async function partyViews(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, permission: Permission): Promise<CharacterView[]> {
+  // One party: a handful of characters.
+  const rows = await ctx.db
+    .query("characters")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .collect();
+  // Edit on the campaign edits every sheet; otherwise only your own.
+  const editsAll = atLeast(permission, "edit");
+  return Promise.all(
+    rows.map(async (c): Promise<CharacterView> => {
+      let sheet: CharacterSheet;
+      try {
+        sheet = readSheet(c.sheet);
+      } catch {
+        const mine = c.ownerId === user._id;
+        return { _id: c._id, ownerId: c.ownerId, status: c.status, ...awayView(c), sheet: placeholderSheet(c.sheet), portraitUrl: null, canEdit: false, mine, updatedAt: c.updatedAt, corrupt: true };
+      }
+      return toView(ctx, c, sheet, user, editsAll || c.ownerId === user._id);
+    }),
+  );
+}
+
 /** Every character in the campaign; everyone in it can read every sheet. A sheet that fails to read comes back marked `corrupt`. */
 export const listByCampaign = campaignQuery({
   need: "view",
-  // Edit on the campaign edits every sheet; otherwise only your own.
   enough: "edit",
   args: {},
   returns: v.array(characterViewValidator),
-  handler: async (ctx) => {
-    // One party: a handful of characters.
-    const rows = await ctx.db
-      .query("characters")
-      .withIndex("by_campaign", (q) => q.eq("campaignId", ctx.campaign._id))
-      .collect();
-    const editsAll = atLeast(ctx.permission, "edit");
-    return Promise.all(
-      rows.map(async (c): Promise<CharacterView> => {
-        let sheet: CharacterSheet;
-        try {
-          sheet = readSheet(c.sheet);
-        } catch {
-          const mine = c.ownerId === ctx.user._id;
-          return { _id: c._id, ownerId: c.ownerId, status: c.status, ...awayView(c), sheet: placeholderSheet(c.sheet), portraitUrl: null, canEdit: false, mine, updatedAt: c.updatedAt, corrupt: true };
-        }
-        return toView(ctx, c, sheet, ctx.user, editsAll || c.ownerId === ctx.user._id);
-      }),
-    );
-  },
+  handler: (ctx) => partyViews(ctx, ctx.user, ctx.campaign._id, ctx.permission),
+});
+
+// ---------------------------------------------------------------- the dashboard's party summary (PF9)
+
+/**
+ * The sheet fields the dashboard party card and its badges read: name, class line (class, subclass, ancestry,
+ * community, level), portrait, the HP/Stress/Hope tiles (with scars and Light in the Dark), armor, and the D5 badges
+ * (level-up pending, conditions for "Unconscious", Wither tokens, journey ends). The optional ones come back only when
+ * they show something, so an HP tick re-sends a few hundred bytes per character instead of the whole sheet. Every
+ * field has `CharacterView`'s type, so a full view is also a `PartyMember` (the party card takes either).
+ */
+const partySheetValidator = v.object({
+  name: v.string(),
+  level: v.number(),
+  classId: v.string(),
+  subclassId: v.string(),
+  ancestry: characterViewValidator.fields.sheet.fields.ancestry,
+  communityId: v.string(),
+  portrait: characterViewValidator.fields.sheet.fields.portrait,
+  hp: v.number(),
+  hpMax: v.number(),
+  stress: v.number(),
+  stressMax: v.number(),
+  hope: v.number(),
+  scars: v.number(),
+  armorMarked: v.number(),
+  hopeSlotBonus: v.optional(v.number()),
+  levelUpPending: v.optional(v.boolean()),
+  conditions: characterViewValidator.fields.sheet.fields.conditions,
+  wither: v.optional(v.number()),
+  journeyEnds: v.optional(v.boolean()),
+});
+
+/** One dashboard party card: `CharacterView` without `ownerId`, `mine`, `updatedAt` and most of the sheet. */
+export const partyMemberValidator = v.object({
+  _id: v.id("characters"),
+  status: characterViewValidator.fields.status,
+  away: characterViewValidator.fields.away,
+  benched: characterViewValidator.fields.benched,
+  sheet: partySheetValidator,
+  portraitUrl: v.union(v.string(), v.null()),
+  canEdit: v.boolean(),
+  corrupt: v.optional(v.literal(true)),
+});
+
+export type PartyMember = Infer<typeof partyMemberValidator>;
+
+/** The card's slice of a view; drops what the card never shows, and the optional fields that show nothing. */
+function partyMember(view: CharacterView): PartyMember {
+  const { sheet: s } = view;
+  return {
+    _id: view._id,
+    status: view.status,
+    ...(view.away === undefined ? {} : { away: view.away }),
+    ...(view.benched === undefined ? {} : { benched: view.benched }),
+    sheet: {
+      name: s.name,
+      level: s.level,
+      classId: s.classId,
+      subclassId: s.subclassId,
+      ancestry: s.ancestry,
+      communityId: s.communityId,
+      ...(s.portrait === undefined ? {} : { portrait: s.portrait }),
+      hp: s.hp,
+      hpMax: s.hpMax,
+      stress: s.stress,
+      stressMax: s.stressMax,
+      hope: s.hope,
+      scars: s.scars,
+      armorMarked: s.armorMarked,
+      ...(s.hopeSlotBonus ? { hopeSlotBonus: s.hopeSlotBonus } : {}),
+      ...(s.levelUpPending ? { levelUpPending: true as const } : {}),
+      ...(s.conditions?.length ? { conditions: s.conditions } : {}),
+      ...(s.wither ? { wither: s.wither } : {}),
+      ...(s.journeyEnds ? { journeyEnds: true as const } : {}),
+    },
+    portraitUrl: view.portraitUrl,
+    canEdit: view.canEdit,
+    ...(view.corrupt ? { corrupt: true as const } : {}),
+  };
+}
+
+/**
+ * The dashboard's party (PF9): `listByCampaign`'s rows cut to what a party card shows. Same access, same reads (the
+ * party's characters and their portrait files); everyone in the campaign sees every card, as with `listByCampaign`.
+ */
+export const partySummary = campaignQuery({
+  need: "view",
+  enough: "edit",
+  args: {},
+  returns: v.array(partyMemberValidator),
+  handler: async (ctx) => (await partyViews(ctx, ctx.user, ctx.campaign._id, ctx.permission)).map(partyMember),
 });
 
 /** One character, or null when the id is bad, it is gone, or the caller can't see it. A corrupt sheet throws CHARACTER_CORRUPT. */
