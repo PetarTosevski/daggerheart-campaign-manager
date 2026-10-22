@@ -7,6 +7,8 @@ import { ANCESTRIES, ARMOR, cardsForDomains, COMMUNITIES, getClass, subclassesFo
 import { signInAsTestGm } from "./fixtures";
 
 const PLAYER = "e2e-player@example.test";
+/** Allowlisted in scripts/e2e-setup.mjs; signs in only with email + password, never through the test sign-in. */
+const PASSWORD_ONLY_EMAIL = "e2e-password-only@example.test";
 const unique = (label: string) => `${label} ${Date.now().toString(36)}`;
 
 async function gmCreatesCampaign(page: Page, frameId = "witherwild") {
@@ -92,7 +94,8 @@ test("an email invite shows the campaign in the player's Load Campaign", async (
 });
 
 test("email + password: create an account (or sign in if it exists)", async ({ page }) => {
-  const email = "e2e-password@example.test";
+  // Password-only: no spec may sign this email in through the test sign-in (docs/testing.md).
+  const email = PASSWORD_ONLY_EMAIL;
   const password = "correct-horse-battery";
   await page.goto("/signin");
   await page.getByRole("button", { name: "New here? Create an account" }).click();
@@ -121,7 +124,7 @@ test("email + password: create an account (or sign in if it exists)", async ({ p
 test("a wrong password and a non-allowlisted sign-up are refused", async ({ page }) => {
   await page.goto("/signin");
   const signIn = page.getByRole("form", { name: "Sign in with email" });
-  await signIn.getByLabel("Email").fill("e2e-password@example.test");
+  await signIn.getByLabel("Email").fill(PASSWORD_ONLY_EMAIL);
   await signIn.getByLabel("Password").fill("not-the-password");
   await signIn.getByRole("button", { name: "Sign in" }).click();
   await expect(signIn.getByRole("alert")).toBeVisible();

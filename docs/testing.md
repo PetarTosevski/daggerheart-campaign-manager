@@ -24,9 +24,18 @@ local, account-free Convex backend (`CONVEX_AGENT_MODE=anonymous`, deployment
 
 `pnpm e2e:setup` (idempotent) writes `.env.e2e.local` (git-ignored) with a
 random `E2E_AUTH_SECRET`, pushes the functions once, and sets the backend's
-env vars: `ALLOWED_EMAILS` (the three test accounts), `E2E_AUTH_ENABLED`,
+env vars: `ALLOWED_EMAILS` (the four test accounts), `E2E_AUTH_ENABLED`,
 `E2E_AUTH_SECRET`, `SITE_URL`, and a freshly generated `JWT_PRIVATE_KEY` /
 `JWKS` pair. No real secret is needed anywhere.
+
+**One email per sign-in method.** A user created through the test sign-in has
+no password account, so a later password sign-up with that email fails (and
+so does the password sign-in), whatever spec ran first. The test sign-in
+accounts are `e2e-gm@`, `e2e-player@` and `e2e-password@example.test` (the
+last is the second player / outsider despite its name);
+`e2e-password-only@example.test` is used only by the email + password tests in
+`tests/e2e/players.spec.ts`. A new spec that needs another account gets its own
+email in `E2E_ALLOWED` (`scripts/e2e-setup.mjs`), then `pnpm e2e:setup`.
 
 `pnpm test:e2e` then starts two servers (see `playwright.config.ts`):
 
