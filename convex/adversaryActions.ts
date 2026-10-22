@@ -5,6 +5,7 @@ import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { adversaryAction, afterHitTriggers, type ActionArgs } from "./lib/adversaryActions";
+import { featureAsk as featureAskOf } from "./lib/adversaryFeatures";
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
 import { campaignQuery, gmQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
@@ -134,6 +135,54 @@ export const useFeature = keyedGmMutation({
       checkArgs(args);
       return adversaryAction(ctx, ctx.campaign, ctx.user, args);
     }),
+});
+
+const targetAskValidator = v.union(
+  v.null(),
+  v.object({ side: v.string(), range: v.string(), count: v.union(v.literal("one"), v.literal("upTo"), v.literal("all"), v.literal("any")), max: v.union(v.number(), v.null()), sight: v.boolean() }),
+);
+const costAskValidator = { fear: v.number(), stress: v.number(), hp: v.number(), label: v.string() };
+
+/** What one feature use needs before it runs (AA2c; docs/tasks/TASK-CA-AA2c.md has the shape for AA3b's dialog). */
+const featureAskValidator = v.object({
+  feature: v.string(),
+  useId: v.string(),
+  uses: v.array(v.object({ id: v.string(), activation: v.union(v.literal("action"), v.literal("reaction"), v.literal("auto"), v.literal("passive")) })),
+  automated: v.boolean(),
+  text: v.optional(v.string()),
+  activation: v.union(v.literal("action"), v.literal("reaction"), v.literal("auto")),
+  needsSpotlight: v.boolean(),
+  spotlit: v.boolean(),
+  available: v.boolean(),
+  unavailable: v.array(v.string()),
+  attack: v.boolean(),
+  followUpAttack: v.boolean(),
+  targets: targetAskValidator,
+  picked: targetAskValidator,
+  allies: targetAskValidator,
+  followUp: targetAskValidator,
+  trigger: v.union(v.null(), v.object({ kind: v.string(), text: v.optional(v.string()), source: v.boolean(), subject: v.boolean(), amount: v.boolean() })),
+  options: v.array(v.object({ id: v.string(), label: v.string(), count: v.union(v.number(), v.null()), distinct: v.boolean(), options: v.array(v.object({ id: v.string(), label: v.string() })) })),
+  optionals: v.array(v.object({ id: v.string(), label: v.string(), fear: v.number(), stress: v.number() })),
+  situations: v.array(v.object({ text: v.string(), feature: v.string() })),
+  splits: v.array(v.object({ what: v.union(v.literal("damage"), v.literal("clear")), among: v.string(), track: v.optional(v.string()) })),
+  eitherCosts: v.array(v.object({ index: v.number(), options: v.array(v.object({ index: v.number(), ...costAskValidator })) })),
+  fear: v.object({ total: v.number(), spotlight: v.number(), feature: v.number(), perTrigger: v.boolean(), gmFear: v.number(), enough: v.boolean() }),
+  stress: v.number(),
+  experiences: v.array(v.object({ name: v.string(), value: v.number() })),
+  reactions: v.array(v.object({ feature: v.string(), useId: v.string() })),
+});
+
+/**
+ * What one use of an adversary feature needs from the GM before `useFeature` runs it (AA2c; user answer 2026-10-22:
+ * AA3b asks the GM's choices in a dialog): targets and the other creature lists, `choose` options, optional steps,
+ * situations to confirm, damage splits, `either` cost picks, the Fear it will ask for, and whether it is available now.
+ * Reads only. GM only (it carries the stat block's numbers; players never receive them).
+ */
+export const featureAsk = gmQuery({
+  args: { instanceId: v.string(), feature: v.string(), use: v.optional(v.string()) },
+  returns: featureAskValidator,
+  handler: async (ctx, args) => featureAskOf(ctx, ctx.campaign, args),
 });
 
 /** The hit row when it can still be answered; a hit whose encounter ended or whose action was undone is declined (null). */

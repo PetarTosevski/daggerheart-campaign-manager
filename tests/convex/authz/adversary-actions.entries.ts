@@ -76,6 +76,8 @@ const entries: Entry[] = [
   { fn: api.adversaryActions.resolve, access: "gm", args: (w) => ({ requestId: w.ids.requestId }) },
   { fn: api.adversaryActions.pending, access: "view", args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
   { fn: api.adversaryActions.windows, access: "gm" },
+  // AA2c: what a feature use needs (GM only: the stat block's numbers).
+  { fn: api.adversaryActions.featureAsk, access: "gm", args: (w) => ({ instanceId: w.ids.bear, feature: "Bite" }) },
 ];
 
 const area: Area = { area: "adversary-actions", setup, entries };

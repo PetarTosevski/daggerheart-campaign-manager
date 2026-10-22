@@ -13,6 +13,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { campaignFearState } from "../../convex/lib/fear";
+import { openIncomingHit, partyMembers, seededRng } from "../../convex/lib/incomingHits";
 import { pcSeverity, stepDown, hpForSeverity } from "../../src/lib/domain/adversary-actions/index";
 import { derivedThresholds } from "../../src/lib/domain/characters/derived";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
@@ -537,5 +538,203 @@ describe("AA2b: death move, riders, after-hit cards, scene limits", () => {
     await a.gm.mutation(api.encounters.end, { campaignId: a.campaignId, encounterId: a.encounterId });
     await a.t.run((ctx) => ctx.db.patch(a.encounterId, { status: "running", startedAt: now + 1000 }));
     resolved(await a.feature(captain, "Reinforcements", [], { spendFear: 1 }));
+  });
+});
+
+describe("AA2c: riders on a negated hit, session limits, undo of limits, reflected damage, featureAsk", () => {
+  allowWorldEmails();
+
+  /** An SRD adversary added to the arena's running encounter. */
+  const addAdversary = (a: Arena, adversaryId: string, label: string, stressMax = 5) =>
+    a.t.run((ctx) =>
+      ctx.db.insert("encounterAdversaries", {
+        campaignId: a.campaignId,
+        encounterId: a.encounterId,
+        source: { kind: "srd", adversaryId },
+        label,
+        order: 10,
+        summoned: false,
+        stats: { difficulty: 14, major: 9, severe: 17, hpMax: 7, stressMax },
+        hp: 0,
+        stress: 0,
+        defeated: false,
+        conditions: [],
+        tags: [],
+        spotlights: 0,
+        spotlightTurn: 0,
+        updatedAt: Date.now(),
+      }),
+    );
+  const setSession = (a: Arena, startedAt: number | undefined) =>
+    a.t.run(async (ctx) => {
+      const s = await campaignFearState(ctx, a.campaignId);
+      await ctx.db.patch(s._id, { sessionStartedAt: startedAt });
+    });
+  const restartEncounter = async (a: Arena, at: number) => {
+    await a.gm.mutation(api.encounters.end, { campaignId: a.campaignId, encounterId: a.encounterId });
+    await a.t.run((ctx) => ctx.db.patch(a.encounterId, { status: "running", startedAt: at }));
+  };
+  const ask = (a: Arena, instanceId: Id<"encounterAdversaries">, feature: string, use?: string) =>
+    a.gm.query(api.adversaryActions.featureAsk, { campaignId: a.campaignId, instanceId, feature, ...(use ? { use } : {}) });
+  const groupOf = async (a: Arena, id: Id<"combatRequests">) => {
+    const row = await a.request(id);
+    return row.payload.kind === "incomingHit" ? row.payload.groupId : null;
+  };
+
+  it("riders land when only the damage was negated: Arcane Deflection stops Bite's damage, not its Restrained (user answer 2026-10-22)", async () => {
+    const a = await arena();
+    await a.edit(() => ({ hope: 2, domainCards: { owned: ["book-of-grynn"], loadout: ["book-of-grynn"] } }));
+    const r = resolved(await a.feature(a.bear, "Bite", [a.w.characterA]));
+    const requestId = r.targets[0]!.requestId!;
+    expect((await a.respond(a.player, requestId, a.w.characterA, { kind: "card", cardId: "book-of-grynn", useId: "arcane-deflection" })).status).toBe("open");
+    expect((await a.respond(a.player, requestId, a.w.characterA, { kind: "noArmor" })).status).toBe("resolved");
+    const s = await a.sheet();
+    expect(s.hp).toBe(0);
+    expect(s.conditions).toContain("restrained");
+    expect((await a.rows()).some((row) => row.visibility === "public" && row.summary === "Ash took no damage from Bear's hit")).toBe(true);
+  });
+
+  it("a full avoidance stops the riders: Scramble avoids Bite, so no Restrained", async () => {
+    const a = await arena();
+    await a.edit(() => ({ domainCards: { owned: ["scramble"], loadout: ["scramble"] } }));
+    const r = resolved(await a.feature(a.bear, "Bite", [a.w.characterA]));
+    const requestId = r.targets[0]!.requestId!;
+    await a.respond(a.player, requestId, a.w.characterA, { kind: "card", cardId: "scramble" });
+    if ((await a.request(requestId)).status === "open") await a.respond(a.player, requestId, a.w.characterA, { kind: "noArmor" });
+    expect((await a.request(requestId)).status).toBe("resolved");
+    const s = await a.sheet();
+    expect(s.hp).toBe(0);
+    expect(s.conditions).not.toContain("restrained");
+    expect((await a.rows()).some((row) => row.visibility === "public" && row.summary === "Ash avoided Bear's hit")).toBe(true);
+  });
+
+  it("a once-per-session feature stays spent across encounter runs until the session ends (user answer 2026-10-22)", async () => {
+    const a = await arena();
+    await a.setFear(12);
+    const now = Date.now();
+    await setSession(a, now - 5000);
+    const oracle = await addAdversary(a, "oracle-of-doom", "Oracle");
+    resolved(await a.feature(oracle, "Summon Tormentors", [a.w.characterA], { spendFear: 3 }));
+    expect((await a.instance(oracle)).featureUses).toEqual([expect.objectContaining({ session: now - 5000 })]);
+    expect(await code(a.feature(oracle, "Summon Tormentors", [a.w.characterA], { spendFear: 3 }))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
+    // A new run of the encounter is a new scene, not a new session.
+    await restartEncounter(a, now + 1000);
+    expect(await code(a.feature(oracle, "Summon Tormentors", [a.w.characterA], { spendFear: 3 }))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
+    expect(await ask(a, oracle, "Summon Tormentors")).toMatchObject({ available: false, unavailable: ["Used up this session"] });
+    // The session ends (sessions.end clears sessionStartedAt): the feature is back.
+    await setSession(a, undefined);
+    expect((await ask(a, oracle, "Summon Tormentors")).available).toBe(true);
+    resolved(await a.feature(oracle, "Summon Tormentors", [a.w.characterA], { spendFear: 3 }));
+  });
+
+  it("the GM's undo gives an instance's limited use back (adversaryBefore.featureUses)", async () => {
+    const a = await arena();
+    const captain = await addAdversary(a, "pirate-captain", "Captain");
+    const first = resolved(await a.feature(captain, "Reinforcements", []));
+    expect((await a.instance(captain)).featureUses).toHaveLength(1);
+    const gmRow = (await a.rows()).find((row) => row._id === first.entryId)!;
+    expect(gmRow.adversaryBefore?.[0]).toMatchObject({ instanceId: captain, featureUses: [] });
+    await a.gm.mutation(api.actionLog.undo, { entryId: first.entryId, idempotencyKey: key() });
+    expect((await a.instance(captain)).featureUses).toBeUndefined();
+    resolved(await a.feature(captain, "Reinforcements", []));
+  });
+
+  it("damage reflected at a PC attacker opens an incoming hit on that PC (user answer 2026-10-22)", async () => {
+    const a = await arena();
+    await a.edit(() => ({ hope: 3, domainCards: { owned: ["arcane-reflection"], loadout: ["arcane-reflection"] } }));
+    // Bryn's card catches Ash for 6 magic damage; find a row whose seeded d6 for Arcane Reflection is a 6.
+    let requestId: Id<"combatRequests"> | null = null;
+    for (let i = 0; i < 80 && requestId === null; i++) {
+      const opened = await a.t.run(async (ctx) =>
+        openIncomingHit(ctx, {
+          campaignId: a.campaignId,
+          encounterId: a.encounterId,
+          createdBy: a.w.users.gm,
+          groupId: `card-group-${i}`,
+          attacker: { kind: "pc", characterId: a.w.characterB, label: "Bryn", cardId: "chain-lightning" },
+          targetCharacterId: a.w.characterA,
+          hit: { amount: 6, type: "magic", direct: false, forcedArmor: 0, critical: false },
+          party: await partyMembers(ctx, a.campaignId),
+          bands: () => undefined,
+        }),
+      );
+      if (seededRng(`${opened.requestId}:0`)(6) === 6) requestId = opened.requestId;
+      else await a.t.run((ctx) => ctx.db.patch(opened.requestId, { status: "declined" }));
+    }
+    expect(requestId).not.toBeNull();
+    const id = requestId!;
+    const [view] = await a.pending(a.player, a.w.characterA);
+    expect(view!.cardIds).toContain("arcane-reflection");
+    await a.respond(a.player, id, a.w.characterA, { kind: "card", cardId: "arcane-reflection" });
+    if ((await a.request(id)).status === "open") await a.respond(a.player, id, a.w.characterA, { kind: "noArmor" });
+    expect((await a.request(id)).status).toBe("resolved");
+    expect((await a.sheet()).hp).toBe(0);
+    // Bryn now has the normal incoming-hit prompt, from Ash's Arcane Reflection, in the same group.
+    const [bryn] = await a.pending(a.other, a.w.characterB);
+    expect(bryn).toMatchObject({ role: "target", targetCharacterId: a.w.characterB, attackerLabel: "Ash", damage: 6, awaiting: true });
+    const reflected = await a.request(bryn!.requestId);
+    expect(reflected.payload.kind === "incomingHit" && reflected.payload.attacker).toMatchObject({ kind: "pc", characterId: a.w.characterA, cardId: "arcane-reflection" });
+    expect(await groupOf(a, bryn!.requestId)).toBe(await groupOf(a, id));
+    expect((await a.respond(a.other, bryn!.requestId, a.w.characterB, { kind: "noArmor" })).status).toBe("resolved");
+    expect((await a.sheet(a.w.characterB)).hp).toBeGreaterThan(0);
+  });
+
+  it("featureAsk: an attack with a Stress cost and its target; nothing written", async () => {
+    const a = await arena();
+    const before = await a.rows();
+    const bite = await ask(a, a.bear, "Bite");
+    expect(bite).toMatchObject({
+      feature: "Bite",
+      useId: "main",
+      automated: true,
+      activation: "action",
+      needsSpotlight: true,
+      available: true,
+      attack: true,
+      targets: { side: "enemy", range: "melee", count: "one", max: 1 },
+      picked: null,
+      allies: null,
+      options: [],
+      optionals: [],
+      splits: [],
+      eitherCosts: [],
+      stress: 1,
+      fear: { total: 0, spotlight: 0, feature: 0, perTrigger: false },
+    });
+    expect(await a.rows()).toHaveLength(before.length);
+  });
+
+  it("featureAsk: optional steps with their Fear, choose options, a situation trigger, either costs, the spotlight's Fear, a used-up limit, a manual feature", async () => {
+    const a = await arena();
+    await a.setFear(5);
+    const defender = await addAdversary(a, "deeproot-defender", "Defender");
+    expect((await ask(a, defender, "Grab and Drag")).optionals).toEqual([{ id: "drag", label: expect.any(String), fear: 1, stress: 0 }]);
+
+    const elemental = await addAdversary(a, "minor-fire-elemental", "Elemental");
+    const kindling = await ask(a, elemental, "Consume Kindling");
+    expect(kindling).toMatchObject({ activation: "reaction", needsSpotlight: false, trigger: { kind: "situation", text: "The Elemental moves onto highly flammable objects" } });
+    expect(kindling.options).toEqual([{ id: "consume", label: "Clear a HP or a Stress", count: 1, distinct: false, options: [{ id: "hp", label: "Clear a HP" }, { id: "stress", label: "Clear a Stress" }] }]);
+
+    const monarch = await addAdversary(a, "monarch", "Monarch");
+    const execute = await ask(a, monarch, "Execute Them!");
+    expect(execute.eitherCosts).toHaveLength(1);
+    expect(execute.eitherCosts[0]!.options).toHaveLength(12);
+    expect(execute.eitherCosts[0]!.options[3]).toMatchObject({ index: 3, fear: 4, label: "4 Fear" });
+    // Nobody is spotlit yet: the first option's 1 Fear only.
+    expect(execute.fear).toMatchObject({ feature: 1, spotlight: 0, total: 1, gmFear: 5, enough: true });
+
+    // A second adversary spotlit in the GM turn costs a Fear (CB p.153).
+    resolved(await a.attack(a.bear, [a.w.characterA]));
+    expect((await ask(a, monarch, "Execute Them!")).fear).toMatchObject({ spotlight: 1, total: 2 });
+
+    const captain = await addAdversary(a, "pirate-captain", "Captain");
+    resolved(await a.feature(captain, "Reinforcements", [], { spendFear: 1 }));
+    expect(await ask(a, captain, "Reinforcements")).toMatchObject({ available: false, unavailable: ["Used up this scene"] });
+
+    expect(await ask(a, a.dummy, "Taunt")).toMatchObject({ automated: false, text: "Spend a Fear to taunt a PC.", activation: "action", fear: { feature: 1 } });
+    // A passive has no use to run (as useFeature).
+    const ogre = await addAdversary(a, "cave-ogre", "Ogre");
+    expect(await code(ask(a, ogre, "Bone Breaker"))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
+    expect(await code(ask(a, a.bear, "No Such Feature"))).toBe("ADVERSARY_FEATURE_UNAVAILABLE");
   });
 });

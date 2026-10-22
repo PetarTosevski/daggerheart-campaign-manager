@@ -1,7 +1,7 @@
 /**
  * Roles on adversary actions (plan combat-actions AA2): anonymous, outsider, the hit PC's player (target), an ally's
  * player holding I Am Your Shield, another player with no part in the hit, and the GM, for attack, useFeature, respond,
- * resolve, pending and windows. Every refusal is asserted on ConvexError.data.code. Each role runs on a fresh world.
+ * resolve, pending, windows and (AA2c) featureAsk. Every refusal is asserted on ConvexError.data.code. Each role runs on a fresh world.
  */
 import { describe, expect, it } from "vitest";
 
@@ -51,6 +51,7 @@ const calls: Record<string, Call> = {
   pendingAsh: (c, x) => c.query(api.adversaryActions.pending, { campaignId: x.w.campaignId, characterId: x.w.characterA }),
   pendingBryn: (c, x) => c.query(api.adversaryActions.pending, { campaignId: x.w.campaignId, characterId: x.w.characterB }),
   windows: (c, x) => c.query(api.adversaryActions.windows, { campaignId: x.w.campaignId }),
+  featureAsk: (c, x) => c.query(api.adversaryActions.featureAsk, { campaignId: x.w.campaignId, instanceId: x.bear, feature: "Bite" }),
 };
 
 // player = Ash's player (the target); otherPlayer = Bryn's player (the ally with I Am Your Shield).
@@ -63,6 +64,8 @@ const expected: Record<string, Partial<Record<Role, string>>> = {
   pendingAsh: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "ok", otherPlayer: "FORBIDDEN", gm: "ok" },
   pendingBryn: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "FORBIDDEN", otherPlayer: "ok", gm: "ok" },
   windows: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "FORBIDDEN", otherPlayer: "FORBIDDEN", gm: "ok" },
+  // AA2c: the stat block's numbers stay with the GM; the target's and the ally's players are refused alike.
+  featureAsk: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", player: "FORBIDDEN", otherPlayer: "FORBIDDEN", gm: "ok" },
 };
 
 describe("adversaryActions roles: target, ally, other, GM", () => {

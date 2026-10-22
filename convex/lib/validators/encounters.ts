@@ -89,6 +89,19 @@ export const instanceEffectValidator = v.object({
 });
 export type InstanceEffect = Infer<typeof instanceEffectValidator>;
 
+/**
+ * One limited feature use of an instance (`encounterAdversaries.featureUses`, AA2b). `scene` is the encounter's
+ * `startedAt` when it was used. AA2c (widened, absent = none): `session`, the live session's `sessionStartedAt`, on a
+ * "once per session" use made while a session runs; such an entry counts until that session ends, across encounters.
+ */
+export const instanceFeatureUseValidator = v.object({
+  key: v.string(),
+  until: v.union(v.literal("rest"), v.literal("longRest"), v.literal("session")),
+  scene: v.number(),
+  session: v.optional(v.number()),
+});
+export type InstanceFeatureUse = Infer<typeof instanceFeatureUseValidator>;
+
 /** Where an instance's stat block comes from: an SRD entry by its slug, or one of the campaign's custom adversaries. */
 export const adversarySourceValidator = v.union(
   v.object({ kind: v.literal("srd"), adversaryId: v.string() }),
@@ -163,8 +176,10 @@ export const encounterAdversaryFields = {
    * like (TASK-CA-AA1 Q4). `key` is `adversaryFeatureUseKey`, `until` the limit's period as the runner records it, `scene`
    * the encounter's `startedAt` when it was used: an entry from an earlier run of the encounter no longer counts, so
    * per-scene limits reset when the encounter ends (a restart is a new scene). At most `MAX_INSTANCE_FEATURE_USES`.
+   * AA2c: an entry's optional `session` keeps a "once per session" use spent until that session ends
+   * (`instanceFeatureUseValidator`).
    */
-  featureUses: v.optional(v.array(v.object({ key: v.string(), until: v.union(v.literal("rest"), v.literal("longRest"), v.literal("session")), scene: v.number() }))),
+  featureUses: v.optional(v.array(instanceFeatureUseValidator)),
 };
 
 /** The most `featureUses` entries one instance keeps (oldest dropped first). */

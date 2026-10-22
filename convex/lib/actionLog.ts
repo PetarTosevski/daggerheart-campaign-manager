@@ -267,6 +267,8 @@ export async function undoEntry(
       ...(b.tags !== undefined ? { tags: b.tags } : {}),
       // CA4b: card modifiers the action put on the instance go too (an empty list clears the field).
       ...(b.effects !== undefined ? { effects: b.effects.length > 0 ? b.effects : undefined } : {}),
+      // AA2c: a limited feature use the action recorded is given back (an empty list clears the field).
+      ...(b.featureUses !== undefined ? { featureUses: b.featureUses.length > 0 ? b.featureUses : undefined } : {}),
       updatedAt: now,
     });
   }
