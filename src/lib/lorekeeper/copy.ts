@@ -86,6 +86,12 @@ export const BOOKS_ONLY_MISS =
 /** L10 (D3): nothing in the books and the internet pass (toggle on) found nothing usable either. */
 export const WEB_MISS = "I couldn’t find this in your books or online. Ask your GM.";
 
+/**
+ * L12 (user answer 2026-10-22): stored as the text of an answer stopped before any answer was ready (nothing shown
+ * live and no finished pass to keep); the card shows it under 'Stopped.'.
+ */
+export const STOPPED_EARLY_NOTE = "Stopped before an answer was ready. Ask again to get one.";
+
 /** Q2: shown on an answer that came from the automatic Opus retry. */
 export const RETRIED_NOTE = "Checked again with a stronger model";
 

@@ -1,10 +1,10 @@
 import { v, type Infer } from "convex/values";
 
-import { createAnswerParser, type AnswerSnapshot, type ApiCitation } from "../src/lib/lorekeeper/answer";
-import { BOOKS_ONLY_MISS, WEB_MISS } from "../src/lib/lorekeeper/copy";
-import { modelForPass, nextStep, phaseForStep, streamsLive, type AnswerPhase, type Pass } from "../src/lib/lorekeeper/flow";
+import { createAnswerParser, webResultsFromToolContent, type AnswerSnapshot, type ApiCitation } from "../src/lib/lorekeeper/answer";
+import { BOOKS_ONLY_MISS, STOPPED_EARLY_NOTE, WEB_MISS } from "../src/lib/lorekeeper/copy";
+import { modelForPass, nextStep, phaseForPass, streamsLive, type AnswerPhase, type Pass } from "../src/lib/lorekeeper/flow";
 import { addUsage, costMicros, ZERO_USAGE, type TokenUsage } from "../src/lib/lorekeeper/pricing";
-import { REFUSAL_FALLBACK_BETA, requestBody, WEB_SEARCH_MAX_USES } from "../src/lib/lorekeeper/prompt";
+import { REFUSAL_FALLBACK_BETA, requestBody, WEB_BLOCKED_DOMAINS, WEB_SEARCH_MAX_USES } from "../src/lib/lorekeeper/prompt";
 import type { HistoryTurn, PromptChunk, PromptContext, PromptRuling, Quote as ParsedQuote } from "../src/lib/lorekeeper/types";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -13,7 +13,7 @@ import { ClaudeFailure, messagesStream, modelFor, OPUS, SONNET, type StreamResul
 import { buildContext } from "./lib/lorekeeper/context";
 import { reservePass, settle, type UsageScopes } from "./lib/lorekeeper/caps";
 import { retrieve } from "./lib/lorekeeper/retrieve";
-import { webPass } from "./lib/lorekeeper/web";
+import type { WebPassResult } from "./lib/lorekeeper/web";
 import { answerPhaseValidator, LOREKEEPER_LIMITS, verdictValidator, webResultValidator, type AnswerParts, type FailureCode, type Quote } from "./lib/validators/lorekeeper";
 
 /**
@@ -32,12 +32,20 @@ import { answerPhaseValidator, LOREKEEPER_LIMITS, verdictValidator, webResultVal
  *   budget): WEB_MISS (D3).
  * With the toggle off an 'unclear' answer stands and a 'none' stores the books-only miss.
  *
- * Think before showing (L11, user decision 2026-10-22, binding): only a first pass whose verdict line says 'rules'
- * streams into the row (`streamsLive`). Every other pass runs hidden: its text and parts are never written to the
- * row while it runs; the row's `phase` says what is happening ('books' -> 'retry' -> 'web' -> 'done') and `finalize`
- * writes the kept answer once. A Stop keeps the best finished answer (the first pass's while the retry runs, the
- * retry's while the web pass runs), never a hidden partial. While a pass runs hidden the writer still touches
- * `updatedAt` every HEARTBEAT_MS, so the watchdog sees progress.
+ * Think before showing (L11, user decision 2026-10-22, binding), widened by L12 (user answers 2026-10-22, binding):
+ * a pass writes into the row live only when its text is known to be the text the run keeps, and shown text only ever
+ * grows (the writer never writes a text that does not extend what it wrote before).
+ * - A book pass streams once its verdict line says the run ends with it (`streamsLive`): a first-pass 'rules'; a
+ *   retry 'rules', or a retry 'unclear' with search off. Any other book pass runs hidden.
+ * - The web pass streams once it has its first web result (until then a web miss is still possible). For 'unclear'
+ *   the kept book answer is written when the web pass starts and the web note writes out under it; for 'none' the web
+ *   answer writes out; a miss stores WEB_MISS (never shown before).
+ * - The row's `phase` names the pass really running, set as the pass starts (`phaseForPass`): 'books' -> 'retry'
+ *   (only once the Opus pass starts) -> 'web' (only once the internet pass starts) -> 'done'.
+ * A Stop keeps what the reader sees (a live pass's text so far), else the best finished answer (the first pass's
+ * while the retry runs hidden, the retry's while the web pass runs), never a hidden partial; with neither it stores
+ * STOPPED_EARLY_NOTE. While a pass runs hidden the writer still touches `updatedAt` every HEARTBEAT_MS, so the
+ * watchdog sees progress.
  *
  * Money (L5's contract, docs/tasks/TASK-D13-L5.md): `ask` reserves the primary pass's worst case; before the Opus
  * retry and the web pass the run reserves that pass (`caps.reservePass`; refused = the pass is skipped and the answer
@@ -215,7 +223,8 @@ function isInFlight(row: Doc<"lorekeeperMessages"> | null): row is Doc<"lorekeep
 
 /**
  * One streaming patch: the text so far and the parts known so far (only for a pass shown live), a new `phase`
- * (L11), or `touch` (a hidden pass made progress: only `updatedAt` moves, for the watchdog). Fenced: only an
+ * (L11), `checkedAgain` (L12: the kept retry answer shown while the web pass runs), or `touch` (a hidden pass made
+ * progress: only `updatedAt` moves, for the watchdog). Fenced: only an
  * in-flight row is patched, and never with an older `at` than its last patch. Returns `go: false` once the row is
  * stopped, ended by the watchdog or gone. With nothing to write it only answers the question (the run's Stop check
  * while the model thinks).
@@ -228,19 +237,21 @@ export const appendAnswer = internalMutation({
     parts: v.optional(streamPartsValidator),
     phase: v.optional(answerPhaseValidator),
     touch: v.optional(v.boolean()),
+    checkedAgain: v.optional(v.literal(true)),
   },
   returns: v.object({ go: v.boolean() }),
-  handler: async (ctx, { answerId, at, text, parts, phase, touch }) => {
+  handler: async (ctx, { answerId, at, text, parts, phase, touch, checkedAgain }) => {
     const row = await ctx.db.get("lorekeeperMessages", answerId);
     if (!isInFlight(row)) return { go: false };
     if (at < row.updatedAt) return { go: true };
-    if (text === undefined && parts === undefined && phase === undefined && touch !== true) return { go: true };
+    if (text === undefined && parts === undefined && phase === undefined && touch !== true && checkedAgain === undefined) return { go: true };
     await ctx.db.patch("lorekeeperMessages", row._id, {
       status: "streaming",
       updatedAt: at,
       ...(phase === undefined ? {} : { phase }),
       ...(text === undefined ? {} : { text: text.slice(0, LOREKEEPER_LIMITS.answer) }),
       ...(parts === undefined ? {} : { parts: storedParts(ctx, parts) }),
+      ...(checkedAgain === undefined ? {} : { checkedAgain }),
     });
     return { go: true };
   },
@@ -250,7 +261,7 @@ const usageArg = v.object({ input: v.number(), output: v.number(), cacheRead: v.
 
 /**
  * The run's last write: `done` with the final text and parts, `stopped` (the stream was aborted) with the text so
- * far, or `error` with a failure code and no text. Records the usage of every pass (each was settled by
+ * far (STOPPED_EARLY_NOTE when there is none, L12), or `error` with a failure code and no text. Records the usage of every pass (each was settled by
  * `settlePass`) and releases any reservation still open. A row a Stop already
  * ended keeps `stopped` and takes the final text so far; a row the watchdog ended keeps its error and takes only the
  * usage.
@@ -274,9 +285,11 @@ export const finalize = internalMutation({
     const now = Math.max(Date.now(), row.updatedAt);
     const usage = { ...args.usage, costMicros: args.costMicros };
     const common = { usage, updatedAt: now, ...(args.model === undefined ? {} : { model: args.model }), ...(args.checkedAgain ? { checkedAgain: true } : {}) };
+    // L12: a Stop before any answer was ready stores the note instead of an empty answer.
+    const stoppedEarly = args.outcome === "stopped" && args.text.trim().length === 0;
     const content = {
-      text: args.outcome === "error" ? "" : args.text.slice(0, LOREKEEPER_LIMITS.answer),
-      parts: args.parts === undefined ? undefined : storedParts(ctx, args.parts),
+      text: args.outcome === "error" ? "" : stoppedEarly ? STOPPED_EARLY_NOTE : args.text.slice(0, LOREKEEPER_LIMITS.answer),
+      parts: args.parts === undefined || stoppedEarly ? undefined : storedParts(ctx, args.parts),
     };
     if (row.status === "pending" || row.status === "streaming") {
       await ctx.db.patch("lorekeeperMessages", row._id, {
@@ -289,7 +302,9 @@ export const finalize = internalMutation({
     } else if (row.status === "stopped" && args.outcome !== "error") {
       await ctx.db.patch("lorekeeperMessages", row._id, { ...common, ...content, phase: "done" });
     } else {
-      await ctx.db.patch("lorekeeperMessages", row._id, { usage, updatedAt: now });
+      // A row the watchdog ended keeps its error; a stopped row whose run then failed still gets the note (L12).
+      const note = row.status === "stopped" && row.text === "" ? { text: STOPPED_EARLY_NOTE, phase: "done" as const } : {};
+      await ctx.db.patch("lorekeeperMessages", row._id, { usage, updatedAt: now, ...note });
     }
     await settleReservation(ctx, row, row.reserved?.micros ?? 0, 0);
     return null;
@@ -324,13 +339,19 @@ export const settlePass = internalMutation({
   },
 });
 
-/** Releases the reservation of an answer the run will not answer (stopped or gone before it started). */
+/**
+ * Releases the reservation of an answer the run will not answer (stopped or gone before it started). A row stopped
+ * before the run started gets STOPPED_EARLY_NOTE (L12).
+ */
 export const release = internalMutation({
   args: { answerId: v.id("lorekeeperMessages") },
   returns: v.null(),
   handler: async (ctx, { answerId }) => {
     const row = await ctx.db.get("lorekeeperMessages", answerId);
     if (row === null || row.status === "pending" || row.status === "streaming") return null;
+    if (row.role === "answer" && row.status === "stopped" && row.text === "") {
+      await ctx.db.patch("lorekeeperMessages", row._id, { text: STOPPED_EARLY_NOTE, phase: "done" });
+    }
     await settleReservation(ctx, row, row.reserved?.micros ?? 0, 0);
     return null;
   },
@@ -378,25 +399,32 @@ function streamParts(verdict: AnswerParts["verdict"], quotes: ParsedQuote[], cal
   return parts;
 }
 
+/** What the row shows of the answer: its text and the parts known so far (L12: written only for a kept pass). */
+type AnswerView = { text: string; parts?: StreamParts; checkedAgain?: true };
+
+/** A snapshot of a book pass as the row shows it. */
+function viewOf(snapshot: AnswerSnapshot): AnswerView {
+  return snapshot.verdict === null ? { text: snapshot.prose } : { text: snapshot.prose, parts: streamParts(snapshot.verdict, snapshot.quotes, snapshot.call) };
+}
+
 /**
  * Patches the answer row while a pass streams: at most one patch in flight, one every PATCH_MS (or sooner after
  * PATCH_CHARS new characters), and a Stop check every PATCH_MS while nothing new arrived. When the row stops being in
  * flight it aborts `controller` (the Messages API stream).
  *
- * L11: the text is written only after `show()` (a first pass whose verdict is 'rules'); before that, snapshots only
- * count as progress (a `touch` every HEARTBEAT_MS) and `setPhase` writes the phase the card shows instead.
+ * L11/L12: the run calls `show(view)` only for a pass whose text it keeps; a hidden pass calls `tick()`, which only
+ * counts as progress (a `touch` every HEARTBEAT_MS). `setPhase` writes the phase of the pass that starts. Shown text
+ * only grows: a view whose text does not extend the text already shown keeps the shown text (its parts still update).
  */
 class AnswerWriter {
   readonly controller = new AbortController();
-  private snapshot: AnswerSnapshot | null = null;
+  private view: AnswerView | null = null;
   private dirty = false;
-  private visible = false;
   private phase: AnswerPhase = "books";
   private phaseDirty = false;
   private hiddenProgress = false;
   private lastWriteAt = Date.now();
   private charsSinceFlush = 0;
-  private lastTextLength = 0;
   private chain: Promise<void> = Promise.resolve();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
@@ -423,56 +451,60 @@ class AnswerWriter {
     }, PATCH_MS);
   }
 
-  /** True once the text streams into the row (a first pass with the verdict 'rules'). */
-  get shown(): boolean {
-    return this.visible;
+  /** What the reader sees (or will at the next patch); null while nothing was shown. */
+  get shown(): AnswerView | null {
+    return this.view;
   }
 
-  /** From now on the snapshots are written to the row (L11 `streamsLive`). */
-  show() {
-    this.visible = true;
-  }
-
-  /** Writes a new phase at once (no-op when it is the current one). */
-  setPhase(phase: AnswerPhase) {
-    if (phase === this.phase) return;
+  /**
+   * Writes a new phase at once (no-op when it is the current one), with any view not yet written. The run awaits it
+   * before the pass's request goes out, so the row names a pass only once it really starts (L12).
+   */
+  setPhase(phase: AnswerPhase): Promise<void> {
+    if (phase === this.phase) return this.chain;
     this.phase = phase;
     this.phaseDirty = true;
-    void this.flush();
+    return this.flush();
   }
 
-  update(snapshot: AnswerSnapshot) {
-    if (!this.visible) {
-      this.hiddenProgress = true;
-      return;
-    }
-    this.charsSinceFlush += Math.max(0, snapshot.prose.length - this.lastTextLength);
-    this.lastTextLength = snapshot.prose.length;
-    this.snapshot = snapshot;
+  /** A kept pass's view: written to the row (text only ever grows). */
+  show(next: AnswerView) {
+    const before = this.view?.text ?? "";
+    const text = next.text.startsWith(before) ? next.text : before;
+    this.charsSinceFlush += text.length - before.length;
+    this.view = { ...next, text };
     this.dirty = true;
     if (this.charsSinceFlush >= PATCH_CHARS) this.flush();
+  }
+
+  /** A hidden pass made progress: nothing is written but the heartbeat. */
+  tick() {
+    this.hiddenProgress = true;
   }
 
   /** Queues one patch (or a Stop check when nothing changed) behind the previous one. */
   flush(): Promise<void> {
     const now = Date.now();
-    const snapshot = this.dirty ? this.snapshot : null;
-    const changed = this.dirty;
+    const view = this.dirty ? this.view : null;
     const phase = this.phaseDirty ? this.phase : undefined;
     const touch = this.hiddenProgress && now - this.lastWriteAt >= HEARTBEAT_MS;
     this.dirty = false;
     this.phaseDirty = false;
     if (touch) this.hiddenProgress = false;
     this.charsSinceFlush = 0;
-    if ((changed && snapshot !== null) || phase !== undefined || touch) this.lastWriteAt = now;
+    if (view !== null || phase !== undefined || touch) this.lastWriteAt = now;
     this.chain = this.chain.then(async () => {
       if (this.stopped) return;
-      const args: { answerId: Id<"lorekeeperMessages">; at: number; text?: string; parts?: StreamParts; phase?: AnswerPhase; touch?: boolean } = { answerId: this.answerId, at: Date.now() };
+      const args: { answerId: Id<"lorekeeperMessages">; at: number; text?: string; parts?: StreamParts; phase?: AnswerPhase; touch?: boolean; checkedAgain?: true } = {
+        answerId: this.answerId,
+        at: Date.now(),
+      };
       if (phase !== undefined) args.phase = phase;
       if (touch) args.touch = true;
-      if (changed && snapshot !== null) {
-        args.text = snapshot.prose;
-        if (snapshot.verdict !== null) args.parts = streamParts(snapshot.verdict, snapshot.quotes, snapshot.call, snapshot.web);
+      if (view !== null) {
+        args.text = view.text;
+        if (view.parts !== undefined) args.parts = view.parts;
+        if (view.checkedAgain) args.checkedAgain = true;
       }
       try {
         const { go } = await this.ctx.runMutation(internal.lorekeeperRun.appendAnswer, args);
@@ -508,6 +540,14 @@ function usageOf(result: StreamResult): TokenUsage {
   return { ...result.usage };
 }
 
+/** The web pass's campaign-data block: empty on purpose (convex/lib/lorekeeper/web.ts). */
+const NO_CAMPAIGN_DATA: PromptContext = { frame: null, characters: [], party: [] };
+
+/** The book answer's prose and the web pass's prose, as one text (L10 D2). */
+function joinProse(book: string, web: string): string {
+  return [book.trim(), web.trim()].filter((p) => p.length > 0).join("\n\n");
+}
+
 /**
  * Streams one answer. Never throws for a model failure: every path ends in one `finalize` (done, stopped or error)
  * that books the real cost of all passes.
@@ -527,7 +567,6 @@ export const run = internalAction({
     let usageTotal: TokenUsage = { ...ZERO_USAGE };
     let cost = 0;
     let checkedAgain = false;
-    let lastSnapshot: AnswerSnapshot | null = null;
     /** The best finished answer so far (L11: what a Stop keeps when no text is shown live). */
     let kept: PassResult | null = null;
     let model: string | undefined;
@@ -556,26 +595,25 @@ export const run = internalAction({
     /** Reserves a later pass; null = skip it. */
     const reserveNext = (pass: Pass, webSearches?: number) =>
       ctx.runMutation(internal.lorekeeperRun.reserveNextPass, { answerId, model: modelForPass(pass, override), ...(webSearches === undefined ? {} : { webSearches }) });
-    const stoppedParts = () => (lastSnapshot?.verdict ? streamParts(lastSnapshot.verdict, lastSnapshot.quotes, lastSnapshot.call) : undefined);
 
-    /** One streamed pass; throws ClaudeFailure (usage of the partial reply already counted). */
+    /** One streamed book pass; throws ClaudeFailure (usage of the partial reply already counted). */
     const streamPass = async (pass: Pass, reservedMicros: number): Promise<PassResult> => {
       const passModel = modelForPass(pass, override);
       const fallback = passModel === SONNET || passModel === OPUS;
       const { body, sources } = requestBody(prep.question, prep.chunks, prep.rulings, prep.context, prep.history, { model: passModel, refusalFallback: fallback });
       const parser = createAnswerParser(sources);
       let decided = false;
+      let live = false;
       const onProgress = () => {
         const snapshot = parser.snapshot();
-        lastSnapshot = snapshot;
-        // L11: the verdict line decides once: 'rules' on the first pass streams; anything else stays hidden and the
-        // row shows the next step instead ('Checking again with a stronger model…').
-        if (pass === "primary" && !decided && snapshot.verdict !== null) {
+        // The verdict line decides once (L12 `streamsLive`): a pass the run ends with streams; any other stays hidden.
+        // The phase is not touched here: it names the pass that runs, not the one the verdict line points to.
+        if (!decided && snapshot.verdict !== null) {
           decided = true;
-          if (streamsLive(pass, snapshot.verdict)) writer.show();
-          else writer.setPhase(phaseForStep(nextStep({ pass, verdict: snapshot.verdict, webSearch: prep.webSearch })));
+          live = streamsLive(pass, snapshot.verdict, prep.webSearch);
         }
-        writer.update(snapshot);
+        if (live) writer.show(viewOf(snapshot));
+        else writer.tick();
       };
       try {
         const result = await messagesStream(
@@ -601,12 +639,54 @@ export const run = internalAction({
       }
     };
 
+    /**
+     * The internet pass (L8's request, convex/lib/lorekeeper/web.ts `webPass`: the question and the table rulings
+     * only, the empty campaign-data block, no book excerpts, no history), streamed (L12): `onResults` gets the web
+     * prose so far each time it changes once there is at least one web result. Throws ClaudeFailure("no answer") for
+     * a completed call without usable results, or the client's failure; the caller settles the pass.
+     */
+    const streamWeb = async (books: "none" | "unclear", onResults: (prose: string, web: NonNullable<StreamParts["web"]>) => void, onHidden: () => void): Promise<WebPassResult> => {
+      const webModel = modelFor("web");
+      const { body, sources } = requestBody(prep.question, [], prep.rulings, NO_CAMPAIGN_DATA, [], {
+        model: webModel,
+        web: { maxUses: WEB_SEARCH_MAX_USES, blockedDomains: WEB_BLOCKED_DOMAINS, books },
+      });
+      const parser = createAnswerParser(sources);
+      const onProgress = () => {
+        const snapshot = parser.snapshot();
+        if (snapshot.web.length > 0) onResults(snapshot.prose, snapshot.web);
+        else onHidden();
+      };
+      const result = await messagesStream(
+        body,
+        (delta) => {
+          parser.pushText(delta);
+          onProgress();
+        },
+        (citation) => {
+          parser.pushCitation(citation as ApiCitation);
+          onProgress();
+        },
+        writer.controller.signal,
+      );
+      // Cited results were added while streaming; the tool's other results fill the remaining places.
+      for (const block of result.blocks) {
+        if (block?.type === "other" && block.blockType === "web_search_tool_result") {
+          parser.pushWebResults(webResultsFromToolContent(block.raw.content));
+        }
+      }
+      const answer = parser.finish();
+      if (answer.web.length === 0) throw new ClaudeFailure("no answer", result);
+      return { prose: answer.prose.trim(), web: answer.web, usage: usageOf(result), model: result.model || webModel };
+    };
+
     /** The passes of Q2; returns how the answer ends. */
     const answerFlow = async (): Promise<Parameters<typeof finalize>> => {
-      // A Stop keeps what the reader already sees (a live 'rules' answer), else the best finished answer, never a
-      // hidden partial (L11).
+      // A Stop keeps what the reader already sees (a live pass), else the best finished answer, never a hidden
+      // partial (L11); with neither, `finalize` stores the early-Stop note (L12).
       const stoppedNow = (): Parameters<typeof finalize> => {
-        if (writer.shown) return ["stopped", lastSnapshot?.prose ?? "", stoppedParts()];
+        const shown = writer.shown;
+        if (shown !== null) return ["stopped", shown.text, shown.parts];
         if (kept !== null) return ["stopped", kept.final.prose, streamParts(kept.final.verdict, kept.final.quotes, kept.final.call, kept.final.web)];
         return ["stopped", ""];
       };
@@ -622,12 +702,13 @@ export const run = internalAction({
 
       kept = answer;
       let step = nextStep({ pass: "primary", verdict: answer.final.verdict, webSearch: prep.webSearch });
-      if (step === "retry") writer.setPhase(phaseForStep(step));
       const retryReserved = step === "retry" ? await reserveNext("retry") : null;
       if (step === "retry" && retryReserved === null) {
         // A budget (or a Stop) leaves no room for the re-check: keep the first answer.
         step = "done";
       } else if (step === "retry" && retryReserved !== null) {
+        // L12: 'Checking again with a stronger model…' starts with the Opus pass, not with the first verdict line.
+        await writer.setPhase(phaseForPass("retry"));
         try {
           answer = await streamPass("retry", retryReserved);
           kept = answer;
@@ -643,7 +724,8 @@ export const run = internalAction({
       }
 
       const final = answer.final;
-      const bookEnding = (): Parameters<typeof finalize> => ["done", final.prose, streamParts(final.verdict, final.quotes, final.call, final.web)];
+      const bookParts = (web?: StreamParts["web"]) => streamParts(final.verdict, final.quotes, final.call, web);
+      const bookEnding = (): Parameters<typeof finalize> => ["done", final.prose, bookParts(final.web)];
       if (step === "booksOnlyMiss") return ["done", BOOKS_ONLY_MISS, streamParts("none", [])];
       if (step !== "web") return bookEnding();
 
@@ -651,19 +733,23 @@ export const run = internalAction({
       // and a miss says that the internet was searched too (D3).
       const books = final.verdict === "unclear" ? "unclear" : "none";
       const withoutWeb = (): Parameters<typeof finalize> => (books === "unclear" ? bookEnding() : ["done", WEB_MISS, streamParts("none", [])]);
-      writer.setPhase(phaseForStep(step));
       const webReserved = await reserveNext("web", WEB_SEARCH_MAX_USES);
       if (webReserved === null) return withoutWeb();
+      // L12: the web pass is the last pass, so what it adds is kept. For 'unclear' the kept book answer shows first
+      // (with its 'Checked again' note) and the web part writes out under it once it has a result; for 'none' the
+      // web answer writes out once it has a result. The phase moves to 'web' as the pass starts.
+      if (books === "unclear") writer.show({ text: final.prose.trim(), parts: bookParts(), checkedAgain: true });
+      await writer.setPhase(phaseForPass("web"));
+      const onResults = (prose: string, web: NonNullable<StreamParts["web"]>) =>
+        books === "unclear"
+          ? writer.show({ text: joinProse(final.prose, prose), parts: bookParts(web), checkedAgain: true })
+          : writer.show({ text: prose, parts: streamParts("none", [], null, web) });
       try {
-        const web = await webPass(prep.question, prep.rulings, writer.controller.signal, books);
-        if (web !== null) {
-          await addPass(web.usage, web.model, webReserved);
-          model = web.model;
-          if (books === "none") return ["done", web.prose, streamParts("none", [], null, web.web)];
-          const prose = [final.prose.trim(), web.prose].filter((p) => p.length > 0).join("\n\n");
-          return ["done", prose, streamParts("unclear", final.quotes, final.call, web.web)];
-        }
-        await addPass({ ...ZERO_USAGE }, modelForPass("web", override), webReserved);
+        const web = await streamWeb(books, onResults, () => writer.tick());
+        await addPass(web.usage, web.model, webReserved);
+        model = web.model;
+        if (books === "none") return ["done", web.prose, streamParts("none", [], null, web.web)];
+        return ["done", joinProse(final.prose, web.prose), bookParts(web.web)];
       } catch (error) {
         await addPass(error instanceof ClaudeFailure ? usageOf(error.partial) : { ...ZERO_USAGE }, modelForPass("web", override), webReserved);
         if (isAbort(error)) return stoppedNow();

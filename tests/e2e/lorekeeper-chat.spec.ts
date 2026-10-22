@@ -9,7 +9,9 @@ import { gmAndPlayer } from "./live";
 // only on the local e2e deployment). A player asks via the 'Critical hits' chip and sees the streamed 'From the rules'
 // answer with a quote chip, asks the Hex question and sees 'Rules unclear' with a GM call, stops an answer, keeps the
 // history over a reload, and sends the unclear answer to the GM, who pins it as a table ruling. L11: the Hex answer
-// shows no provisional text, only 'Checking again with a stronger model…' and 'Searching the internet…' until it ends.
+// shows no provisional text, only 'Checking again with a stronger model…' and 'Searching the internet…'. L12: the kept
+// book answer then shows under 'Searching the internet…' and the web part writes out under it; with 'Books only' the
+// retry writes out live. Answer text only ever grows: a MutationObserver fails the run if a shown text is replaced.
 //
 // Until L9 moves it into scripts/e2e-setup.mjs, this spec turns the fake model on and ingests the invented mini-book
 // (tests/fixtures/lorekeeper/mini-book.txt) as the core book on the e2e backend itself. Never the real API.
@@ -22,6 +24,44 @@ test.beforeAll(() => {
   execFileSync(process.execPath, ["scripts/convex-e2e.mjs", "env", "set", "--", "LOREKEEPER_FAKE_MODEL", "true"], { env, stdio: "ignore" });
   execFileSync(process.execPath, ["scripts/lorekeeper-ingest.mjs", "core", "tests/fixtures/lorekeeper/mini-book.txt", "--e2e"], { env, stdio: "ignore" });
 });
+
+type Seen = { events: string[]; swaps: string[] };
+
+/**
+ * Watches the conversation log (L11, L12): `events` lists each new phase text ('phase:<text>') and the first time an
+ * in-flight answer shows text ('text'), in order; `swaps` lists every answer text that did not extend the text the
+ * same card showed before (text must only grow, never be replaced).
+ */
+async function watchAnswers(log: ReturnType<typeof chat>["log"]) {
+  await log.evaluate((root) => {
+    const seen = { events: [] as string[], swaps: [] as string[] };
+    (window as unknown as { __lkSeen: typeof seen }).__lkSeen = seen;
+    const texts = new WeakMap<Element, string>();
+    const textShown = new WeakSet<Element>();
+    let phase = "";
+    const check = () => {
+      const statuses = [...root.querySelectorAll(".lk-thinking [role=status]")].map((status) => status.textContent ?? "");
+      const now = statuses.at(-1) ?? "";
+      if (now && now !== phase) {
+        seen.events.push(`phase:${now}`);
+        phase = now;
+      }
+      for (const article of root.querySelectorAll("article.lk-a")) {
+        const text = article.querySelector(":scope > .lk-ab > p")?.textContent ?? "";
+        const before = texts.get(article) ?? "";
+        if (!text.startsWith(before)) seen.swaps.push(`${before} -> ${text}`);
+        texts.set(article, text);
+        if (text && article.getAttribute("aria-busy") === "true" && !textShown.has(article)) {
+          textShown.add(article);
+          seen.events.push("text");
+        }
+      }
+    };
+    new MutationObserver(check).observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+  });
+}
+
+const readSeen = (page: Page) => page.evaluate(() => (window as unknown as { __lkSeen: Seen }).__lkSeen);
 
 function chat(page: Page) {
   const column = page.getByRole("region", { name: "The Lorekeeper" });
@@ -58,33 +98,22 @@ test("a player asks, stops an answer, keeps the history; the GM pins the unclear
     await expect(book).toBeHidden();
 
     // 2. The Hex chip: 'Rules unclear' with a Suggested GM call, checked again by the stronger model (Q2).
-    // L11: an uncertain answer is never shown before the final check; the row shows the process instead. A
-    // MutationObserver records every phase text and whether any answer text showed while the answer was in flight.
+    // L11/L12: the first pass and the retry stay hidden behind their phases; the kept book answer shows when the
+    // internet pass starts (under 'Searching the internet…') and the web part writes out under it. The observer
+    // records the phases and the first text in order, and every text that was replaced instead of extended.
     await expect(composer.getByRole("button", { name: "Do Hexes stack?" })).toBeEnabled();
-    await log.evaluate((root) => {
-      const seen = { early: false, phases: [] as string[] };
-      (window as unknown as { __lkSeen: typeof seen }).__lkSeen = seen;
-      const check = () => {
-        for (const status of root.querySelectorAll(".lk-thinking [role=status]")) {
-          const text = status.textContent ?? "";
-          if (text && seen.phases.at(-1) !== text) seen.phases.push(text);
-        }
-        for (const busy of root.querySelectorAll('article[aria-busy="true"]')) {
-          if (/Hex|Rules unclear|Online, players/.test(busy.textContent ?? "")) seen.early = true;
-        }
-      };
-      new MutationObserver(check).observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
-    });
+    await watchAnswers(log);
     await composer.getByRole("button", { name: "Do Hexes stack?" }).click();
     const hex = answers.filter({ hasText: "Rules unclear" });
-    await expect(hex.getByText("Suggested GM call")).toBeVisible({ timeout: 40_000 });
-    const seen = await player.evaluate(() => (window as unknown as { __lkSeen: { early: boolean; phases: string[] } }).__lkSeen);
-    expect(seen.early).toBe(false);
-    expect(seen.phases).toEqual(expect.arrayContaining(["Checking again with a stronger model…", "Searching the internet…"]));
-    expect(seen.phases.indexOf("Checking again with a stronger model…")).toBeLessThan(seen.phases.indexOf("Searching the internet…"));
-    // The final answer appears once, with the internet block (search is on by default).
-    await expect(hex.getByText(/^The books describe one Hex at a time/)).toBeVisible();
-    await expect(hex.getByText("From the internet · unofficial.")).toBeVisible();
+    // The web part is added at the end; the GM call comes with the book answer.
+    await expect(hex.getByText("From the internet · unofficial.")).toBeVisible({ timeout: 40_000 });
+    await expect(hex).not.toHaveAttribute("aria-busy", "true");
+    const seen = await readSeen(player);
+    expect(seen.swaps).toEqual([]);
+    expect(seen.events).toEqual(["phase:Searching your books…", "phase:Checking again with a stronger model…", "phase:Searching the internet…", "text"]);
+    // The final answer: the book answer, then the web note under it, with the internet block (search is on by default).
+    await expect(hex.getByText(/^The books describe one Hex at a time[\s\S]*Online, players describe/)).toBeVisible();
+    await expect(hex.getByText("Suggested GM call")).toBeVisible();
     await expect(hex.getByText("Apply only the strongest Hex, and say so at the table.")).toBeVisible();
     await expect(hex.getByText("Checked again with a stronger model")).toBeVisible();
     // The actions show once the retry has finished.
@@ -142,6 +171,17 @@ test("the composer at 390 px: one column, no sideways scroll, a new conversation
     const toggle = composer.getByRole("group", { name: "Internet search" });
     await toggle.getByRole("button", { name: "Books only" }).click();
     await expect(toggle.getByRole("button", { name: "Books only" })).toHaveAttribute("aria-pressed", "true");
+
+    // L12: with 'Books only' the stronger model's answer is final, so it writes out live once the retry starts.
+    await watchAnswers(chat(player).log);
+    await composer.getByRole("button", { name: "Do Hexes stack?" }).click();
+    const hex = answers.filter({ hasText: "Rules unclear" });
+    await expect(hex.getByRole("button", { name: "Copy" })).toBeVisible({ timeout: 40_000 });
+    await expect(hex.getByText("Suggested GM call")).toBeVisible();
+    await expect(hex.getByText("From the internet · unofficial.")).toHaveCount(0);
+    const seen = await readSeen(player);
+    expect(seen.swaps).toEqual([]);
+    expect(seen.events).toEqual(["phase:Searching your books…", "phase:Checking again with a stronger model…", "text"]);
 
     // New conversation, then delete the first one from the menu (confirm dialog, Q10).
     await column.getByRole("button", { name: "Conversations" }).click();

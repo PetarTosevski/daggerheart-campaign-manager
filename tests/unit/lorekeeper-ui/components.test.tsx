@@ -78,6 +78,45 @@ describe("AnswerCard", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("an early Stop shows its note under 'Stopped.' with no actions (L12)", () => {
+    card(message({ status: "stopped", text: "Stopped before an answer was ready. Ask again to get one.", phase: "done" }));
+    expect(screen.getByText("Stopped.")).toBeTruthy();
+    expect(screen.getByText("Stopped before an answer was ready. Ask again to get one.")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("during the internet pass the kept book answer shows with 'Searching the internet…' under it, then the web part grows (L12)", () => {
+    const book = { verdict: "unclear" as const, quotes: [], call: "Your call." };
+    const view = card(message({ status: "streaming", phase: "web", text: "The books don't settle it.", parts: book, checkedAgain: true }));
+    const article = screen.getByRole("article");
+    expect(article.getAttribute("aria-busy")).toBe("true");
+    expect(within(article).getByText("The books don't settle it.")).toBeTruthy();
+    expect(within(article).getByText("Rules unclear")).toBeTruthy();
+    expect(within(article).getByRole("status").textContent).toBe("Searching the internet…");
+    expect(within(article).queryByRole("button", { name: "Copy" })).toBeNull();
+    const web = [{ title: "Table talk", site: "example.com", url: "https://example.com/t", snippet: "" }];
+    view.rerender(
+      <AnswerCard
+        campaignId={CAMPAIGN}
+        answer={message({ status: "done", phase: "done", text: "The books don't settle it.\n\nOnline, tables pick one.", parts: { ...book, web }, checkedAgain: true })}
+        question="Q"
+        titles={titles}
+        isGm={false}
+        mine
+        sentToGm={false}
+      />,
+    );
+    expect(screen.queryByText("Searching the internet…")).toBeNull();
+    expect(screen.getByText(/^The books don't settle it\.\s+Online, tables pick one\.$/)).toBeTruthy();
+    expect(screen.getByText("From the internet · unofficial.")).toBeTruthy();
+  });
+
+  it("a live retry streams its text with no status row under it (L12)", () => {
+    card(message({ status: "streaming", phase: "retry", text: "Two Hexes are", parts: { verdict: "rules", quotes: [] } }));
+    expect(screen.getByText("Two Hexes are")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("renders the verdict pill, prose, a quote with its book and page chip, and the board's actions", () => {
     card(
       message({

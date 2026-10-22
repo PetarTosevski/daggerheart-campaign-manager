@@ -12,6 +12,7 @@ import {
   citesRange,
   errorCode,
   isBooksOnlyMiss,
+  isStoppedEarly,
   pinDraft,
   quoteChip,
   safeUrl,
@@ -186,5 +187,15 @@ describe("conversation selection and names", () => {
     expect(names.get("g")).toBe("Gail");
     expect(names.get("p")).toBe("Moss");
     expect(askerNames(undefined).size).toBe(0);
+  });
+});
+
+describe("isStoppedEarly (L12)", () => {
+  it("is only a stopped answer whose text is the early-Stop note", () => {
+    const note = "Stopped before an answer was ready. Ask again to get one.";
+    expect(isStoppedEarly({ status: "stopped", text: note })).toBe(true);
+    expect(isStoppedEarly({ status: "stopped", text: "Roll two d12s" })).toBe(false);
+    expect(isStoppedEarly({ status: "stopped", text: "" })).toBe(false);
+    expect(isStoppedEarly({ status: "done", text: note })).toBe(false);
   });
 });

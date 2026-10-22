@@ -2,7 +2,7 @@ import { ConvexError } from "convex/values";
 
 import type { MessageView } from "../../../../convex/lorekeeper";
 import type { AnswerParts, Quote as StoredQuote, Verdict } from "../../../../convex/lib/validators/lorekeeper";
-import { ACTION_LABELS, BOOKS_ONLY_MISS, QUOTE_BOOK_ICON, RULING_ICON, VERDICT_COPY, WEB_MISS, copyText } from "@/lib/lorekeeper/copy";
+import { ACTION_LABELS, BOOKS_ONLY_MISS, QUOTE_BOOK_ICON, RULING_ICON, STOPPED_EARLY_NOTE, VERDICT_COPY, WEB_MISS, copyText } from "@/lib/lorekeeper/copy";
 import type { Quote as ParsedQuote } from "@/lib/lorekeeper/types";
 
 /**
@@ -46,6 +46,11 @@ export function citesRange(parts: AnswerParts | undefined): boolean {
 export function isBooksOnlyMiss(answer: Pick<MessageView, "text" | "parts">): boolean {
   if (answer.parts === undefined) return answer.text === BOOKS_ONLY_MISS || answer.text === WEB_MISS;
   return answer.parts.verdict === "none" && (answer.parts.web?.length ?? 0) === 0;
+}
+
+/** L12: an answer stopped before any answer was ready (its text is the early-Stop note; it gets no actions). */
+export function isStoppedEarly(answer: Pick<MessageView, "status" | "text">): boolean {
+  return answer.status === "stopped" && answer.text === STOPPED_EARLY_NOTE;
 }
 
 /**
