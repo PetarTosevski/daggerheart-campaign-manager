@@ -226,6 +226,11 @@ waves:
           - src/components/party/rest/launcher.tsx
           - src/app/(gm)/campaigns/[campaignId]/wither-panel.tsx
           - src/components/party/slots.ts
+          - src/components/party/level-up/badge.tsx
+          - src/components/party/wither/index.tsx
+          - src/components/party/death/index.tsx
+          - src/components/party/death/badges.tsx
+          - src/components/party/portrait.tsx
           - convex/characters.ts
           - src/app/(gm)/campaigns/[campaignId]/party-section.tsx
           - tests/convex/characters-summary.test.ts
