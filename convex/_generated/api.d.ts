@@ -44,6 +44,8 @@ import type * as http from "../http.js";
 import type * as levelUp from "../levelUp.js";
 import type * as lib_actionLog from "../lib/actionLog.js";
 import type * as lib_adversaryActions from "../lib/adversaryActions.js";
+import type * as lib_adversaryFeatures from "../lib/adversaryFeatures.js";
+import type * as lib_adversaryHits from "../lib/adversaryHits.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_blobs from "../lib/blobs.js";
@@ -207,6 +209,8 @@ declare const fullApi: ApiFromModules<{
   levelUp: typeof levelUp;
   "lib/actionLog": typeof lib_actionLog;
   "lib/adversaryActions": typeof lib_adversaryActions;
+  "lib/adversaryFeatures": typeof lib_adversaryFeatures;
+  "lib/adversaryHits": typeof lib_adversaryHits;
   "lib/allowlist": typeof lib_allowlist;
   "lib/auth": typeof lib_auth;
   "lib/blobs": typeof lib_blobs;
