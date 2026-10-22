@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
+import { decodeExplored } from "../../src/lib/domain/combat-map/vision";
 import type { Id } from "../../convex/_generated/dataModel";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
 import { errorCode, key, setupWithCampaign, useAllowlist } from "./helpers";
@@ -187,11 +188,9 @@ describe("combat doors: sight and movement", () => {
     expect(await f.sees()).toEqual(["Goblin"]);
     expect(await f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 12, y: 10 })).toMatchObject({ blocked: false });
 
-    // Back through, then closed again: blocked once more.
+    // Back through, then closed again: blocked once more. Walking west turned Ash away from the door, but switching it
+    // stored the door as explored (dcm-bxp.121), so it is still Ash's to switch.
     await f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 8, y: 10 });
-    // Walking west turned Ash away from the door (and nothing was explored): it is no longer Ash's to switch.
-    expect(await code(f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: false }))).toBe("COMBAT_OBJECT_NOT_FOUND");
-    await f.place(f.ashToken, 8, 10, 0);
     await f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: false });
     expect(await code(f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 12, y: 10 }))).toBe("MOVE_BLOCKED");
     // The GM's move is never refused; it reports the closed door.
@@ -213,6 +212,30 @@ describe("combat doors: sight and movement", () => {
     expect(await code(f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 12, y: 10 }))).toBe("MOVE_BLOCKED");
     await f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: gate, open: true });
     expect(await code(f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 12, y: 10 }))).toBe("ok");
+  });
+
+  it("a door the player opened stays theirs to close after they walk through and turn their back on it (dcm-bxp.121)", async () => {
+    const f = await withDoorway();
+    const { campaignId } = f;
+    const door = await f.addObject({ kind: "door", x: 10.5, y: 10.5 });
+    // Ash looks at the closed door from (8, 10); nothing is explored (no markExplored: the client's throttled sync never
+    // got a write in while Ash faced the door).
+    await f.place(f.ashToken, 8, 10, 0);
+    expect(await f.doorIds(f.player)).toEqual([door]);
+    await f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: true });
+    // Through the doorway to (12, 10), still facing east: the door is behind Ash, outside the cone.
+    expect(await f.player.mutation(api.combatTokens.move, { campaignId, tokenId: f.ashToken, x: 12, y: 10 })).toMatchObject({ blocked: false });
+    expect(await f.doorIds(f.player)).toEqual([door]);
+    expect(await f.player.mutation(api.combatVision.toggleDoor, { campaignId, objectId: door, open: false })).toEqual({ open: false });
+    expect((await f.objectRow(door))?.open).toBeUndefined();
+    // Only samples Ash saw were stored: the door's, not the far side of the wall Ash never looked at.
+    const view = await f.player.query(api.combatVision.playerView, { campaignId });
+    if (view.state !== "ok") throw new Error("no view");
+    const row = await f.player.query(api.combatVision.explored, { campaignId, characterId: view.characterId });
+    const mask = decodeExplored(row!.bits, row!.length);
+    const sw = W * 2;
+    expect(mask[21 * sw + 20] || mask[20 * sw + 21] || mask[21 * sw + 21] || mask[20 * sw + 20]).toBe(1);
+    expect(mask.reduce((n, b) => n + b, 0)).toBeLessThanOrEqual(16);
   });
 
   it("the GM's preview follows the door too", async () => {
