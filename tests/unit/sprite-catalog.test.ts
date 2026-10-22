@@ -335,6 +335,9 @@ describe("traits (D2, D3, D4, D5, D6, Q1)", () => {
         "volcanic/ember-pile",
         "volcanic/fire-geyser",
         "volcanic/lava-bridge",
+        // dcm-bxp.90 (user 2026-10-22, Q-P1-1): the witch's cauldron and the incense burner glow faintly.
+        "swamp/witchs-cauldron",
+        "temple/incense-burner",
         // Batch 2 (P11A, P11B, P11C).
         "common/oil-lamp",
         "common/glowing-magic-circle-on-the-ground",

@@ -95,6 +95,50 @@ async function rejection(call: Promise<unknown>): Promise<{ code?: string }> {
   return (error as ConvexError<{ code?: string }>).data;
 }
 
+describe("settings: default map style (dcm-bxp.89)", () => {
+  const previous = process.env.GM_EMAILS;
+  beforeEach(() => {
+    process.env.GM_EMAILS = GM_EMAIL;
+  });
+  afterEach(() => {
+    process.env.GM_EMAILS = previous;
+  });
+  const backup = (settings: Record<string, unknown>) => JSON.stringify({ daggerheartBackup: 2, kind: "settings", schemaVersion: 1, settings });
+  const valid = { tableName: "Crew", gmName: "Ana", accent: "#6fb8a6", expansions: {} };
+
+  it("is Classic by default, saves Sprites alone, and keeps the other settings", async () => {
+    const { gm } = await setup();
+    expect((await gm.query(api.settings.get, {})).defaultMapStyle).toBe("classic");
+    await gm.mutation(api.settings.update, { tableName: "Thursday Crew" });
+    await gm.mutation(api.settings.update, { defaultMapStyle: "sprites" });
+    expect(await gm.query(api.settings.get, {})).toMatchObject({ tableName: "Thursday Crew", defaultMapStyle: "sprites" });
+    // Another field's update leaves it alone.
+    await gm.mutation(api.settings.update, { gmName: "Ana" });
+    expect((await gm.query(api.settings.get, {})).defaultMapStyle).toBe("sprites");
+    await gm.mutation(api.settings.update, { defaultMapStyle: "classic" });
+    expect((await gm.query(api.settings.get, {})).defaultMapStyle).toBe("classic");
+  });
+
+  it("the backup carries it; an older backup without it restores Classic; reset puts Classic back", async () => {
+    const { gm } = await setup();
+    await gm.mutation(api.settings.update, { defaultMapStyle: "sprites" });
+    const shown = await gm.query(api.settings.get, {});
+    expect(JSON.parse(settingsBackupText(shown)).settings.defaultMapStyle).toBe("sprites");
+    await gm.mutation(api.settings.restore, { text: backup(valid) });
+    expect((await gm.query(api.settings.get, {})).defaultMapStyle).toBe("classic");
+    await gm.mutation(api.settings.restore, { text: settingsBackupText(shown) });
+    expect(await gm.query(api.settings.get, {})).toEqual(shown);
+    await gm.mutation(api.settings.reset, {});
+    expect((await gm.query(api.settings.get, {})).defaultMapStyle).toBe("classic");
+  });
+
+  it("a backup with Sprites restores it on an account that has no settings yet", async () => {
+    const { gm } = await setup();
+    await gm.mutation(api.settings.restore, { text: backup({ ...valid, defaultMapStyle: "sprites" }) });
+    expect((await gm.query(api.settings.get, {})).defaultMapStyle).toBe("sprites");
+  });
+});
+
 describe("settings: backup, restore and reset (H17)", () => {
   const previous = process.env.GM_EMAILS;
   beforeEach(() => {
@@ -128,7 +172,7 @@ describe("settings: backup, restore and reset (H17)", () => {
     const { gm } = await setup();
     await gm.mutation(api.settings.update, { tableName: "Old", expansions: { hopeAndFear: true } });
     await gm.mutation(api.settings.restore, { text: backup({ ...valid, expansions: {} }) });
-    expect(await gm.query(api.settings.get, {})).toEqual({ ...valid, expansions: {} });
+    expect(await gm.query(api.settings.get, {})).toEqual({ ...valid, expansions: {}, defaultMapStyle: "classic" });
   });
 
   it.each([
@@ -140,6 +184,7 @@ describe("settings: backup, restore and reset (H17)", () => {
     ["an unknown top-level field", backup(valid, { extra: true })],
     ["an unknown settings field", backup({ ...valid, theme: "dark" })],
     ["an unknown expansion", backup({ ...valid, expansions: { hopeAndFear: true, other: true } })],
+    ["an unknown map style", backup({ ...valid, defaultMapStyle: "pixel" })],
     ["an accent outside the palette", backup({ ...valid, accent: "#000000" })],
     ["a name over the limit", backup({ ...valid, tableName: "x".repeat(81) })],
     ["a missing field", backup({ tableName: "T", gmName: "G", expansions: {} })],
@@ -165,7 +210,7 @@ describe("settings: backup, restore and reset (H17)", () => {
 
     await a.mutation(api.settings.reset, {});
     expect(await a.query(api.settings.get, {})).toEqual(defaults);
-    expect(await b.query(api.settings.get, {})).toEqual(valid);
+    expect(await b.query(api.settings.get, {})).toEqual({ ...valid, defaultMapStyle: "classic" });
     expect(await a.query(api.campaigns.get, { campaignId })).not.toBeNull();
     // Resetting with nothing saved is a no-op, not an error.
     await expect(a.mutation(api.settings.reset, {})).resolves.toBeNull();

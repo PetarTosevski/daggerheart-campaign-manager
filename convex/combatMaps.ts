@@ -21,6 +21,7 @@ import {
   tokensOnMap,
 } from "./lib/combatMaps";
 import { claimFile, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
+import { keywordSetting } from "./lib/spriteSources";
 import { campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import {
   CELL_LAYERS,
@@ -36,6 +37,7 @@ import {
   spriteRefValidator,
   type CombatGrid,
 } from "./lib/validators/combatMaps";
+import { defaultMapStyleOf } from "./settings";
 
 /**
  * Combat maps (D9 C3, plan `.omc/plans/d9-combat-map.yaml`): the GM's maps of a campaign (list, create blank,
@@ -356,7 +358,11 @@ export const tokenCount = gmQuery({
 
 // ---------------------------------------------------------------- maps
 
-/** GM: a blank map of the board's Small / Medium / Large size; the campaign's first map is live at once (R2). */
+/**
+ * GM: a blank map of the board's Small / Medium / Large size; the campaign's first map is live at once (R2). It is
+ * drawn in the GM's default map style (dcm-bxp.89, the Settings slider; Classic unless they picked Sprites). A Sprites
+ * map also stores the keyword-picked setting, as a first `setStyle` switch to Sprites does (D7).
+ */
 export const create = keyedGmMutation({
   args: { size: sizeValidator, name: v.optional(v.string()) },
   returns: v.object({ mapId: v.id("combatMaps") }),
@@ -367,9 +373,15 @@ export const create = keyedGmMutation({
       const count = (await mapsOf(ctx, campaignId)).length;
       const hasLive = (await liveCombatMap(ctx, campaignId)) !== null;
       const { w, h } = MAP_SIZES[size];
+      const title = name === undefined ? nextMapName(count) : mapName(name);
+      // Classic stays an absent `style` (E3: maps without one are Classic), so a Classic default writes nothing new.
+      const sprites =
+        (await defaultMapStyleOf(ctx, ctx.user)) === "sprites"
+          ? { style: "sprites" as const, setting: keywordSetting({ name: title }), settingPicked: false }
+          : {};
       const mapId = await ctx.db.insert("combatMaps", {
         campaignId,
-        name: name === undefined ? nextMapName(count) : mapName(name),
+        name: title,
         live: !hasLive,
         source: "blank",
         w,
@@ -377,6 +389,7 @@ export const create = keyedGmMutation({
         base: "grass",
         areas: [],
         seed: 1,
+        ...sprites,
         schemaVersion: COMBAT_MAP_SCHEMA_VERSION,
         updatedAt: now(),
       });

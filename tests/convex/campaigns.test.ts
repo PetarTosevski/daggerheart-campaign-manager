@@ -395,6 +395,7 @@ describe("settings", () => {
       gmName: "",
       accent: "#e3b45a",
       expansions: {},
+      defaultMapStyle: "classic",
     });
     await gm.mutation(api.settings.update, { tableName: " Thursday Crew " });
     await gm.mutation(api.settings.update, { accent: "#8f78d8" });
@@ -403,6 +404,7 @@ describe("settings", () => {
       gmName: "",
       accent: "#8f78d8",
       expansions: {},
+      defaultMapStyle: "classic",
     });
   });
 
