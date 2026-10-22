@@ -1,12 +1,16 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect as baseExpect, test, type Browser, type Page } from "@playwright/test";
 
 import { signInAsTestGm } from "./fixtures";
 import { expectNoHorizontalScroll } from "./visual/helpers";
 
 // D13 L0: the Lorekeeper page shell (.omc/plans/d13-lorekeeper.yaml). The GM and a player each open Lorekeeper from
-// the nav and get the board's layout: the sidebar (stub cards) and the chat panel with the sigil, 'The Lorekeeper'
-// and 'Keeper of your rulebooks · answers rule questions'. An outsider gets the campaign not-found page. L0 has no
-// Lorekeeper functions yet: the slots are stubs.
+// the nav and get the board's layout: the sidebar (its three cards) and the chat panel with the sigil, 'The Lorekeeper'
+// and 'Keeper of your rulebooks · answers rule questions'. An outsider gets the campaign not-found page.
+
+// Two or three sign-ins and a join per test: the 30 s default timed out under load (dcm-bxp.82.8).
+test.describe.configure({ timeout: 120_000 });
+// `configure` returns a new expect; it does not change the imported one.
+const expect = baseExpect.configure({ timeout: 20_000 });
 
 const PLAYER = "e2e-player@example.test";
 // An allowlisted account (scripts/e2e-setup.mjs) that is not in the campaign.

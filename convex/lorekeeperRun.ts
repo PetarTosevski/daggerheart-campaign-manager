@@ -1,10 +1,10 @@
 import { v, type Infer } from "convex/values";
 
-import { createAnswerParser, webResultsFromToolContent, type AnswerSnapshot, type ApiCitation } from "../src/lib/lorekeeper/answer";
-import { BOOKS_ONLY_MISS, STOPPED_EARLY_NOTE, WEB_MISS } from "../src/lib/lorekeeper/copy";
+import { createAnswerParser, type AnswerSnapshot, type ApiCitation } from "../src/lib/lorekeeper/answer";
+import { BOOKS_ONLY_MISS, STOPPED_EARLY_NOTE, WEB_MISS, WEB_UNAVAILABLE } from "../src/lib/lorekeeper/copy";
 import { modelForPass, nextStep, phaseForPass, streamsLive, type AnswerPhase, type Pass } from "../src/lib/lorekeeper/flow";
 import { addUsage, costMicros, ZERO_USAGE, type TokenUsage } from "../src/lib/lorekeeper/pricing";
-import { REFUSAL_FALLBACK_BETA, requestBody, WEB_BLOCKED_DOMAINS, WEB_SEARCH_MAX_USES } from "../src/lib/lorekeeper/prompt";
+import { REFUSAL_FALLBACK_BETA, requestBody, WEB_SEARCH_MAX_USES } from "../src/lib/lorekeeper/prompt";
 import type { HistoryTurn, PromptChunk, PromptContext, PromptRuling, Quote as ParsedQuote } from "../src/lib/lorekeeper/types";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -13,7 +13,7 @@ import { ClaudeFailure, messagesStream, modelFor, OPUS, SONNET, type StreamResul
 import { buildContext } from "./lib/lorekeeper/context";
 import { reservePass, settle, type UsageScopes } from "./lib/lorekeeper/caps";
 import { retrieve } from "./lib/lorekeeper/retrieve";
-import type { WebPassResult } from "./lib/lorekeeper/web";
+import { webPass } from "./lib/lorekeeper/web";
 import { answerPhaseValidator, LOREKEEPER_LIMITS, verdictValidator, webResultValidator, type AnswerParts, type FailureCode, type Quote } from "./lib/validators/lorekeeper";
 
 /**
@@ -28,8 +28,8 @@ import { answerPhaseValidator, LOREKEEPER_LIMITS, verdictValidator, webResultVal
  * or 'none' gets the internet pass (L10 D1):
  * - 'unclear' + web results: the book answer (verdict, quotes, GM call) is kept, its prose gets the web note
  *   appended and the web results go under it (D2); 'unclear' + no web results: the Opus answer unchanged;
- * - 'none' + web results: the web answer (verdict 'none'); 'none' + nothing usable (or the pass failed or had no
- *   budget): WEB_MISS (D3).
+ * - 'none' + web results: the web answer (verdict 'none'); 'none' + a search that found nothing usable: WEB_MISS
+ *   (D3); 'none' + a pass that couldn't run (no budget, HTTP error, timeout): WEB_UNAVAILABLE (dcm-bxp.82.5).
  * With the toggle off an 'unclear' answer stands and a 'none' stores the books-only miss.
  *
  * Think before showing (L11, user decision 2026-10-22, binding), widened by L12 (user answers 2026-10-22, binding):
@@ -39,7 +39,7 @@ import { answerPhaseValidator, LOREKEEPER_LIMITS, verdictValidator, webResultVal
  *   retry 'rules', or a retry 'unclear' with search off. Any other book pass runs hidden.
  * - The web pass streams once it has its first web result (until then a web miss is still possible). For 'unclear'
  *   the kept book answer is written when the web pass starts and the web note writes out under it; for 'none' the web
- *   answer writes out; a miss stores WEB_MISS (never shown before).
+ *   answer writes out; a miss stores WEB_MISS or WEB_UNAVAILABLE (never shown before).
  * - The row's `phase` names the pass really running, set as the pass starts (`phaseForPass`): 'books' -> 'retry'
  *   (only once the Opus pass starts) -> 'web' (only once the internet pass starts) -> 'done'.
  * A Stop keeps what the reader sees (a live pass's text so far), else the best finished answer (the first pass's
@@ -540,9 +540,6 @@ function usageOf(result: StreamResult): TokenUsage {
   return { ...result.usage };
 }
 
-/** The web pass's campaign-data block: empty on purpose (convex/lib/lorekeeper/web.ts). */
-const NO_CAMPAIGN_DATA: PromptContext = { frame: null, characters: [], party: [] };
-
 /** The book answer's prose and the web pass's prose, as one text (L10 D2). */
 function joinProse(book: string, web: string): string {
   return [book.trim(), web.trim()].filter((p) => p.length > 0).join("\n\n");
@@ -639,47 +636,6 @@ export const run = internalAction({
       }
     };
 
-    /**
-     * The internet pass (L8's request, convex/lib/lorekeeper/web.ts `webPass`: the question and the table rulings
-     * only, the empty campaign-data block, no book excerpts, no history), streamed (L12): `onResults` gets the web
-     * prose so far each time it changes once there is at least one web result. Throws ClaudeFailure("no answer") for
-     * a completed call without usable results, or the client's failure; the caller settles the pass.
-     */
-    const streamWeb = async (books: "none" | "unclear", onResults: (prose: string, web: NonNullable<StreamParts["web"]>) => void, onHidden: () => void): Promise<WebPassResult> => {
-      const webModel = modelFor("web");
-      const { body, sources } = requestBody(prep.question, [], prep.rulings, NO_CAMPAIGN_DATA, [], {
-        model: webModel,
-        web: { maxUses: WEB_SEARCH_MAX_USES, blockedDomains: WEB_BLOCKED_DOMAINS, books },
-      });
-      const parser = createAnswerParser(sources);
-      const onProgress = () => {
-        const snapshot = parser.snapshot();
-        if (snapshot.web.length > 0) onResults(snapshot.prose, snapshot.web);
-        else onHidden();
-      };
-      const result = await messagesStream(
-        body,
-        (delta) => {
-          parser.pushText(delta);
-          onProgress();
-        },
-        (citation) => {
-          parser.pushCitation(citation as ApiCitation);
-          onProgress();
-        },
-        writer.controller.signal,
-      );
-      // Cited results were added while streaming; the tool's other results fill the remaining places.
-      for (const block of result.blocks) {
-        if (block?.type === "other" && block.blockType === "web_search_tool_result") {
-          parser.pushWebResults(webResultsFromToolContent(block.raw.content));
-        }
-      }
-      const answer = parser.finish();
-      if (answer.web.length === 0) throw new ClaudeFailure("no answer", result);
-      return { prose: answer.prose.trim(), web: answer.web, usage: usageOf(result), model: result.model || webModel };
-    };
-
     /** The passes of Q2; returns how the answer ends. */
     const answerFlow = async (): Promise<Parameters<typeof finalize>> => {
       // A Stop keeps what the reader already sees (a live pass), else the best finished answer, never a hidden
@@ -732,9 +688,12 @@ export const run = internalAction({
       // The internet pass (toggle on; Opus said 'unclear' or 'none'). Without a usable result the unclear answer stays,
       // and a miss says that the internet was searched too (D3).
       const books = final.verdict === "unclear" ? "unclear" : "none";
-      const withoutWeb = (): Parameters<typeof finalize> => (books === "unclear" ? bookEnding() : ["done", WEB_MISS, streamParts("none", [])]);
+      // dcm-bxp.82.5: for 'none', a search that ran and found nothing says WEB_MISS; a pass that couldn't run (no
+      // budget, an HTTP error, a timeout, nothing sent) says WEB_UNAVAILABLE.
+      const withoutWeb = (searched: boolean): Parameters<typeof finalize> =>
+        books === "unclear" ? bookEnding() : ["done", searched ? WEB_MISS : WEB_UNAVAILABLE, streamParts("none", [])];
       const webReserved = await reserveNext("web", WEB_SEARCH_MAX_USES);
-      if (webReserved === null) return withoutWeb();
+      if (webReserved === null) return withoutWeb(false);
       // L12: the web pass is the last pass, so what it adds is kept. For 'unclear' the kept book answer shows first
       // (with its 'Checked again' note) and the web part writes out under it once it has a result; for 'none' the
       // web answer writes out once it has a result. The phase moves to 'web' as the pass starts.
@@ -744,20 +703,32 @@ export const run = internalAction({
         books === "unclear"
           ? writer.show({ text: joinProse(final.prose, prose), parts: bookParts(web), checkedAgain: true })
           : writer.show({ text: prose, parts: streamParts("none", [], null, web) });
+      let web: Awaited<ReturnType<typeof webPass>>;
       try {
-        const web = await streamWeb(books, onResults, () => writer.tick());
-        await addPass(web.usage, web.model, webReserved);
-        model = web.model;
-        if (books === "none") return ["done", web.prose, streamParts("none", [], null, web.web)];
-        return ["done", joinProse(final.prose, web.prose), bookParts(web.web)];
+        // L8's request through webPass (dcm-bxp.82.2): its progress streams once it has a web result, else it only
+        // counts as hidden progress for the heartbeat.
+        web = await webPass(prep.question, prep.rulings, writer.controller.signal, books, (progress) => {
+          if (progress.web.length > 0) onResults(progress.prose, progress.web);
+          else writer.tick();
+        });
       } catch (error) {
         await addPass(error instanceof ClaudeFailure ? usageOf(error.partial) : { ...ZERO_USAGE }, modelForPass("web", override), webReserved);
         if (isAbort(error)) return stoppedNow();
         if (!(error instanceof ClaudeFailure)) throw error;
         // The reason only (D5): never the key or the request body.
         console.error(`Lorekeeper: the internet pass failed (${error.reason}); answering without it.`);
+        // 'no answer' is a completed call with no usable result: the search ran and found nothing.
+        return withoutWeb(error.reason === "no answer");
       }
-      return withoutWeb();
+      if (web === null) {
+        // Nothing was sent (a blank question): release the pass's reservation.
+        await addPass({ ...ZERO_USAGE }, modelForPass("web", override), webReserved);
+        return withoutWeb(false);
+      }
+      await addPass(web.usage, web.model, webReserved);
+      model = web.model;
+      if (books === "none") return ["done", web.prose, streamParts("none", [], null, web.web)];
+      return ["done", joinProse(final.prose, web.prose), bookParts(web.web)];
     };
 
     writer.start();

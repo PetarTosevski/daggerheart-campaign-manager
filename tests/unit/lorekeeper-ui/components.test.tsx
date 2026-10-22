@@ -315,10 +315,32 @@ describe("Composer", () => {
 
   it("disables asking with the reason and the questions left", () => {
     composer({ disabled: "You’ve asked the most questions allowed today. Try again tomorrow.", questionsLeft: 0 });
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByRole("alert").textContent).toContain("You’ve asked the most questions allowed today.");
     expect(screen.getByText("0 questions left today")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Critical hits" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("textbox", { name: "Your question" }) as HTMLTextAreaElement).disabled).toBe(true);
+  });
+
+  it("puts the blocked notice in the question box's spot: first in the composer, which moves above the stream (dcm-bxp.82.10)", () => {
+    composer({ disabled: "This campaign has used this month’s Lorekeeper budget." });
+    const group = screen.getByRole("group", { name: "Ask the Lorekeeper" });
+    expect(group.hasAttribute("data-blocked")).toBe(true);
+    const alert = within(group).getByRole("alert");
+    expect(group.firstElementChild).toBe(alert);
+    // Before the chips and the box, and the box points at it.
+    const box = within(group).getByRole("textbox", { name: "Your question" });
+    expect(alert.compareDocumentPosition(screen.getByRole("button", { name: "Critical hits" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(box.getAttribute("aria-describedby")).toContain(alert.id);
+  });
+
+  it("keeps other notices under the toggles and the composer in place when asking is on", () => {
+    composer({ notice: { text: "Too many questions in a short time. Wait a moment and ask again.", newConversation: false }, questionsLeft: 3 });
+    const group = screen.getByRole("group", { name: "Ask the Lorekeeper" });
+    expect(group.hasAttribute("data-blocked")).toBe(false);
+    const alert = within(group).getByRole("alert");
+    expect(group.lastElementChild).toBe(alert);
+    expect(alert.textContent).toContain("3 questions left today");
   });
 
   it("offers 'Start a new conversation' when the conversation is full", () => {

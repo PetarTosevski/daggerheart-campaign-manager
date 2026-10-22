@@ -11,8 +11,8 @@ This page is for whoever runs the deployment. How the code works is in `docs/tas
 ## What you need
 
 1. The D13 functions deployed (`npx convex dev` for the dev deployment, `npx convex deploy` for production).
-2. `ANTHROPIC_API_KEY` set on the deployment (below). Without it, the page says "The Lorekeeper isn't set up on
-   this server." and the drawer pill is hidden.
+2. `ANTHROPIC_API_KEY` set on the deployment (below). Without it, the composer's notice says "The Lorekeeper isn't
+   set up on this server." (once, above the conversation) and the drawer pill is hidden.
 3. At least one book ingested. Without books, every question ends as "Not in your books".
 
 ## Books: once per deployment, shared by every campaign
@@ -24,7 +24,10 @@ This page is for whoever runs the deployment. How the code works is in `docs/tas
   - on: the Core Rulebook, Hope & Fear, and the campaign's own frame book;
   - off: 'House rules (notes)'. When a GM turns it on, the GM's journal pages shared with everyone become extra
     reading for the Lorekeeper.
-- The '＋ Add PDF' button only explains the ingest command below. A book is added by you, on your machine.
+- GMs see an 'About books' button with a plain note: "Your server's admin adds rulebooks once for everyone; switch
+  books on/off for this campaign here; use House rules (notes) for table rules." Every GM sees the same note; there
+  is no admin role in the app. The admin is whoever can run the commands below against the deployment, on their
+  own machine.
 
 ### Book keys
 
@@ -100,8 +103,28 @@ pnpm lorekeeper:ingest core ~/books/core.txt --prod
   get a corrected PDF.
 - The script splits the text into page-tagged chunks of at most 4,000 characters and sends them through internal
   mutations (`npx convex run`, with your admin rights). No public function can write books.
-- There is no remove command yet. Re-ingest to replace a book.
+- To replace a book, re-ingest it. To take it away, remove it (below).
 - The e2e backend gets an invented 13-page test book instead (`pnpm e2e:setup`), never real book text.
+
+## Removing a book
+
+```bash
+pnpm lorekeeper:ingest hopeFear --remove           # the dev deployment
+pnpm lorekeeper:ingest hopeFear --remove --prod    # production
+```
+
+- The script finds the book on the target deployment, names it with its chunk count and the target, and asks you to
+  type the book key to confirm. Anything else cancels and removes nothing.
+- Then it deletes, in this order: the book's text (its chunks, in batches), every campaign's on/off switch for it, and
+  the book's library row. Every campaign's Library card drops it at once.
+- `--yes` skips the question (for scripts). Without a terminal and without `--yes` the script refuses.
+- The same targets as an ingest: `--prod`, `--deployment <name>`, `--env-file <file>`, `CONVEX_DEPLOY_KEY`, `--e2e`.
+- Old answers that quoted the book keep their text; their 'Open in the book' says "That book isn't in this campaign's library."
+- Ingesting the book again later adds it back with the default switches (on for core, Hope & Fear and the campaign's
+  own frame book).
+- `houseRules` can be removed the same way, but any later ingest of another book adds its switch back.
+- It runs through internal functions (`lorekeeperLibrary:findBook`, `:clearChunks`, `:clearSwitches`,
+  `:deleteBook`) with your admin rights. No public function can remove books.
 
 ## Environment variables
 
@@ -146,8 +169,13 @@ How the caps work:
 - Before each pass the server books that pass's worst case (Sonnet $0.07, Opus $0.14, internet pass $0.10) against
   the person's day and the campaign's and the server's month. After the pass it replaces the booking with the real
   cost from the API's usage numbers. A stopped or failed pass is charged for what it used.
-- Past the daily question cap or a money cap, the composer turns off for the people concerned and says why. A retry
-  or internet pass that no longer fits the budget is skipped, and the answer found so far stands.
+- Past the daily question cap or a money cap, the composer turns off for the people concerned and says why. The
+  notice comes first in the composer, which then moves above the conversation, so it is on the first screen on a
+  laptop and a phone.
+- A retry or internet pass that no longer fits the budget is skipped, and the answer found so far stands. When the
+  books had nothing and the internet pass couldn't run (no budget left, an HTTP error, a timeout), the answer says
+  "I couldn’t find this in your books, and couldn’t search the internet just now. Try again later or ask your GM."
+  A search that ran and found nothing says "I couldn’t find this in your books or online. Ask your GM."
 - Other limits: 30 questions an hour per person (bursts of 10), one answer on its way per person per campaign,
   1,000 characters per question, 200 messages per conversation (then 'Start a new conversation').
 

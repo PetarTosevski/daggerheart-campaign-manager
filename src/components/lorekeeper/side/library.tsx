@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { Modal } from "@/components/brand/modal";
 import { errorMessage } from "@/lib/convex-errors";
-import { ADD_PDF_LABEL, BOOK_INDEXED, BOOK_OFF, LIBRARY_COPY, LIBRARY_EMPTY, LIBRARY_TITLE, booksIndexedLabel } from "@/lib/lorekeeper/copy";
+import { ABOUT_BOOKS_LABEL, ABOUT_BOOKS_NOTE, ABOUT_BOOKS_TITLE, BOOK_INDEXED, BOOK_OFF, LIBRARY_COPY, LIBRARY_EMPTY, LIBRARY_TITLE, booksIndexedLabel } from "@/lib/lorekeeper/copy";
 
 import { api } from "../../../../convex/_generated/api";
 import type { LibraryBook } from "../../../../convex/lorekeeperLibrary";
@@ -21,12 +21,12 @@ function coverClass(cover: string): string {
 /**
  * The Library card (board Lorekeeper.dc.html, page variant): every book the campaign shows with its spine, name,
  * subtitle and the green 'Indexed' / red 'Off' pill. The GM's pill is a switch (optimistic, lorekeeperLibrary.setEnabled);
- * players read it. '＋ Add PDF' (GM) explains the local ingest script (Q6).
+ * players read it. 'About books' (GM) opens a plain note on where books come from (dcm-bxp.82.4).
  */
 export function LibraryCard({ campaignId, access }: LorekeeperSideProps) {
   const library = useQuery(api.lorekeeperLibrary.list, { campaignId });
   const setEnabled = useMutation(api.lorekeeperLibrary.setEnabled).withOptimisticUpdate(setEnabledLocally);
-  const [addOpen, setAddOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function toggle(book: LibraryBook) {
@@ -43,8 +43,8 @@ export function LibraryCard({ campaignId, access }: LorekeeperSideProps) {
       <div className="lk-cardhead">
         <h2 className="lk-h">{LIBRARY_TITLE}</h2>
         {access.isGm ? (
-          <button type="button" className="lk-act lk-act-dark" aria-haspopup="dialog" onClick={() => setAddOpen(true)}>
-            {ADD_PDF_LABEL}
+          <button type="button" className="lk-act lk-act-dark" aria-haspopup="dialog" onClick={() => setAboutOpen(true)}>
+            {ABOUT_BOOKS_LABEL}
           </button>
         ) : null}
       </div>
@@ -92,40 +92,20 @@ export function LibraryCard({ campaignId, access }: LorekeeperSideProps) {
           {error}
         </p>
       ) : null}
-      {access.isGm ? <AddPdfDialog open={addOpen} onClose={() => setAddOpen(false)} /> : null}
+      {access.isGm ? <AboutBooksDialog open={aboutOpen} onClose={() => setAboutOpen(false)} /> : null}
     </section>
   );
 }
 
-/** Q6: books are added on the GM's computer with `pnpm lorekeeper:ingest`; the dialog says how. */
-function AddPdfDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+/**
+ * dcm-bxp.82.4 (user answer 2026-10-22): every GM sees the same plain note; there is no admin role. How the server's
+ * admin ingests a book (commands, --prod, page numbers) is in docs/lorekeeper.md.
+ */
+function AboutBooksDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Modal open={open} onClose={onClose} title="Add a PDF" className="lk-dialog">
+    <Modal open={open} onClose={onClose} title={ABOUT_BOOKS_TITLE} className="lk-dialog">
       <div className="lk-help">
-        <p className="lk-dialog-text">
-          Books are added from your computer, so their text stays on your machine and in your own server. Nothing is uploaded here.
-        </p>
-        <ol className="lk-steps">
-          <li>
-            Extract the PDF&apos;s text into a file outside the project folder, one <code>===== PAGE N =====</code> block per
-            printed page.
-          </li>
-          <li>
-            In the project folder, run:
-            <pre className="lk-code">
-              <code>pnpm lorekeeper:ingest &lt;book&gt; &lt;text file&gt;</code>
-            </pre>
-            for example <code>pnpm lorekeeper:ingest core ~/books/core.txt</code>.
-          </li>
-          <li>
-            The book is one of <code>core</code>, <code>hopeFear</code>, <code>frame:&lt;frame id&gt;</code> or{" "}
-            <code>houseRules</code>. Add <code>--prod</code> for the live server.
-          </li>
-          <li>Running it again replaces that book&apos;s text. The book then shows here as Indexed.</li>
-        </ol>
-        <p className="lk-muted">
-          <code>pnpm lorekeeper:ingest --help</code> lists every option.
-        </p>
+        <p className="lk-dialog-text">{ABOUT_BOOKS_NOTE}</p>
         <div className="lk-formacts">
           <button type="button" className="lk-send" onClick={onClose}>
             Got it

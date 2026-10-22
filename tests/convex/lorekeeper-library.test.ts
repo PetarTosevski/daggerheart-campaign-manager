@@ -12,6 +12,7 @@ import {
   checkTextPath,
   parseArgs,
   parseRunOutput,
+  removeBook,
   toRows,
 } from "../../scripts/lorekeeper-ingest.mjs";
 import { chunkBook } from "../../src/lib/lorekeeper/chunk";
@@ -134,6 +135,94 @@ describe("lorekeeper ingest (internal)", () => {
   });
 });
 
+describe("lorekeeper remove a book (--remove, dcm-bxp.82.10)", () => {
+  allowWorldEmails();
+
+  /** The script's runner, on convex-test: `lorekeeperLibrary:<name>` → the internal function. */
+  function runner(w: World) {
+    const calls: string[] = [];
+    const run = (fn: string, args: object): Promise<unknown> => {
+      calls.push(fn);
+      const lib = internal.lorekeeperLibrary;
+      const a = args as { bookKey: string; bookId: Id<"lorekeeperBooks">; cursor: string | null };
+      if (fn === "lorekeeperLibrary:findBook") return w.t.query(lib.findBook, { bookKey: a.bookKey });
+      if (fn === "lorekeeperLibrary:clearChunks") return w.t.mutation(lib.clearChunks, { bookId: a.bookId });
+      if (fn === "lorekeeperLibrary:clearSwitches") return w.t.mutation(lib.clearSwitches, { bookId: a.bookId, cursor: a.cursor });
+      if (fn === "lorekeeperLibrary:deleteBook") return w.t.mutation(lib.deleteBook, { bookId: a.bookId });
+      throw new Error(`unexpected ${fn}`);
+    };
+    return { run, calls };
+  }
+
+  async function switches(w: World) {
+    return w.t.run((ctx) => ctx.db.query("lorekeeperLibrary").collect());
+  }
+
+  it("asks first, then deletes the book's chunks, every campaign's switch for it and its row; other books stay", async () => {
+    const w = await buildWorld();
+    const core = await ingestMini(w, "core");
+    const hope = await ingestMini(w, "hopeFear");
+    const { campaignId: second } = await w.as("gm").mutation(api.campaigns.create, { frameId: "witherwild", name: "Second", idempotencyKey: crypto.randomUUID() });
+    for (const campaignId of [w.campaignId, second]) {
+      await w.as("gm").mutation(api.lorekeeperLibrary.setEnabled, { campaignId, bookId: core, enabled: false });
+      await w.as("gm").mutation(api.lorekeeperLibrary.setEnabled, { campaignId, bookId: hope, enabled: false });
+    }
+    const { run, calls } = runner(w);
+    const questions: string[] = [];
+    const lines: string[] = [];
+    const code = await removeBook(run, "core", async (q: string) => (questions.push(q), true), "the local e2e backend", (l: string) => lines.push(l));
+
+    expect(code).toBe(0);
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toContain('Remove "Daggerheart Core Rulebook" (core, 13 chunks)');
+    expect(questions[0]).toContain("the local e2e backend");
+    expect(calls[0]).toBe("lorekeeperLibrary:findBook");
+    expect(calls.at(-1)).toBe("lorekeeperLibrary:deleteBook");
+    expect(lines.at(-1)).toBe("Done: removed core (13 chunks, 2 campaign switches).");
+    expect(await w.t.run((ctx) => ctx.db.get("lorekeeperBooks", core))).toBeNull();
+    expect(await chunkCount(w, core)).toBe(0);
+    expect((await switches(w)).map((r) => r.bookId)).toEqual([hope, hope]);
+    expect(await chunkCount(w, hope)).toBe(13);
+    // The library no longer lists it.
+    const library = await w.as("player").query(api.lorekeeperLibrary.list, { campaignId: w.campaignId });
+    expect(library.books.map((b) => b.key)).not.toContain("core");
+  });
+
+  it("removes nothing when the confirmation is refused or the book is absent", async () => {
+    const w = await buildWorld();
+    const core = await ingestMini(w, "core");
+    const { run, calls } = runner(w);
+    const lines: string[] = [];
+    expect(await removeBook(run, "core", async () => false, "x", (l: string) => lines.push(l))).toBe(1);
+    expect(lines).toEqual(["Cancelled. Nothing removed."]);
+    expect(calls).toEqual(["lorekeeperLibrary:findBook"]);
+    expect(await chunkCount(w, core)).toBe(13);
+    expect(await removeBook(run, "hopeFear", async () => true, "x", (l: string) => lines.push(l))).toBe(1);
+    expect(lines.at(-1)).toBe("hopeFear: no such book on x. Nothing removed.");
+  });
+
+  it("refuses to delete a book row while chunks are left, and is idempotent once it is gone", async () => {
+    const w = await buildWorld();
+    const core = await ingestMini(w, "core");
+    const error = await w.t.mutation(internal.lorekeeperLibrary.deleteBook, { bookId: core }).catch((e: unknown) => e);
+    expect(errorCode(error)).toBe("INVALID");
+    await w.t.mutation(internal.lorekeeperLibrary.clearChunks, { bookId: core });
+    expect(await w.t.mutation(internal.lorekeeperLibrary.deleteBook, { bookId: core })).toEqual({ deleted: true });
+    expect(await w.t.mutation(internal.lorekeeperLibrary.deleteBook, { bookId: core })).toEqual({ deleted: false });
+    expect(await w.t.query(internal.lorekeeperLibrary.findBook, { bookKey: "core" })).toBeNull();
+  });
+
+  it("walks the campaigns page by page with a cursor", async () => {
+    const w = await buildWorld();
+    const core = await ingestMini(w, "core");
+    await w.as("gm").mutation(api.lorekeeperLibrary.setEnabled, { campaignId: w.campaignId, bookId: core, enabled: false });
+    const first = await w.t.mutation(internal.lorekeeperLibrary.clearSwitches, { bookId: core, cursor: null });
+    expect(first).toMatchObject({ deleted: 1, done: true });
+    expect(typeof first.cursor).toBe("string");
+    expect(await switches(w)).toEqual([]);
+  });
+});
+
 describe("lorekeeper ingest script helpers", () => {
   it("parses the command line, with the Witherwild page range by default", () => {
     expect(parseArgs(["core", "/books/core.txt"])).toMatchObject({ bookKey: "core", textFile: "/books/core.txt", dryRun: false });
@@ -145,6 +234,17 @@ describe("lorekeeper ingest script helpers", () => {
     expect(() => parseArgs(["core"])).toThrow();
     expect(() => parseArgs(["core", "/b.txt", "--pages", "9-2"])).toThrow();
     expect(() => parseArgs(["core", "/b.txt", "--e2e", "--prod"])).toThrow();
+  });
+
+  it("parses --remove: no text file, --yes only with it, no ingest options (dcm-bxp.82.10)", () => {
+    expect(parseArgs(["core", "--remove"])).toMatchObject({ bookKey: "core", remove: true, yes: false });
+    expect(parseArgs(["frame:witherwild", "--remove", "--yes", "--prod"])).toMatchObject({ bookKey: "frame:witherwild", remove: true, yes: true, cli: ["--prod"] });
+    expect(parseArgs(["frame:witherwild", "--remove"]).pages).toBeUndefined();
+    expect(() => parseArgs(["core", "/b.txt", "--remove"])).toThrow(/no text file/);
+    expect(() => parseArgs(["core", "--remove", "--dry-run"])).toThrow();
+    expect(() => parseArgs(["core", "--remove", "--pages", "1-2"])).toThrow();
+    expect(() => parseArgs(["core", "/b.txt", "--yes"])).toThrow(/--yes/);
+    expect(() => parseArgs(["core", "--remove", "--e2e", "--prod"])).toThrow();
   });
 
   it("refuses text inside the repository except tests/fixtures", () => {
@@ -162,6 +262,8 @@ describe("lorekeeper ingest script helpers", () => {
     expect(byBytes.length).toBeGreaterThan(1);
     for (const batch of byBytes) expect(JSON.stringify(batch).length).toBeLessThan(100_000);
     expect(parseRunOutput('- Running...\n{\n  "done": true\n}\n')).toEqual({ done: true });
+    expect(parseRunOutput("- Running...\nnull\n")).toBeNull();
+    expect(parseRunOutput('{\n  "a": null\n}\n')).toEqual({ a: null });
   });
 });
 

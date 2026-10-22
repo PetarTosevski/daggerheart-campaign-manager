@@ -5,7 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { ClaudeFailure } from "../../convex/lib/claude";
 import type { RetrievedChunk } from "../../convex/lib/lorekeeper/retrieve";
 import { webPass } from "../../convex/lib/lorekeeper/web";
-import { BOOKS_ONLY_MISS, WEB_MISS } from "../../src/lib/lorekeeper/copy";
+import { BOOKS_ONLY_MISS, WEB_MISS, WEB_UNAVAILABLE } from "../../src/lib/lorekeeper/copy";
 import { WEB_BLOCKED_DOMAINS } from "../../src/lib/lorekeeper/prompt";
 import { sseFixture, sseResponse } from "../fixtures/lorekeeper/sse";
 import { OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
@@ -265,6 +265,61 @@ describe("lorekeeper internet pass", () => {
     expect(logged.some((line) => line.includes("internet pass failed (no answer)"))).toBe(true);
     expect(logged.join("\n")).not.toContain(API_KEY);
     expect(logged.join("\n")).not.toContain("meaning of life");
+  });
+
+  // dcm-bxp.82.5: a web pass that couldn't run (HTTP error, timeout, no budget) says so instead of WEB_MISS.
+  it.each([500, 429, 529])("a 'none' answer whose web pass fails with HTTP %i stores the couldn't-search message, the pass costed", async (status) => {
+    const s = await setup();
+    fetchMock
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: none\nNothing in the books.")))
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: none\nStill nothing.", "claude-opus-5-5")))
+      .mockResolvedValueOnce(new Response("{}", { status }));
+    const { answerId } = await s.ask(true);
+    const { seen, done } = s.trace(answerId);
+    const final = await done;
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect([final!.status, final!.text]).toEqual(["done", WEB_UNAVAILABLE]);
+    expect(final!.text).not.toBe(WEB_MISS);
+    expect(final!.parts).toEqual({ verdict: "none", quotes: [] });
+    expect(seen.filter((x) => x.status !== "done").every((x) => x.text === "")).toBe(true);
+    // Sonnet 2,400 + Opus 4,800; the failed web pass used nothing.
+    expect(final!.usage?.costMicros).toBe(2_400 + 4_800);
+    expect(final!.reserved?.micros).toBe(0);
+    expect(await s.campaignCost()).toBe(final!.usage!.costMicros);
+    const logged = vi.mocked(console.error).mock.calls.map((args) => args.map(String).join(" "));
+    expect(logged.some((line) => line.includes(`internet pass failed (HTTP ${status})`))).toBe(true);
+  });
+
+  it("a 'none' answer with no budget left for the web pass stores the couldn't-search message and makes no web call", async () => {
+    const s = await setup();
+    try {
+      fetchMock
+        .mockResolvedValueOnce(sseResponse(textReply("VERDICT: none\nNothing in the books.")))
+        .mockImplementationOnce(() => {
+          // The Opus pass is already reserved; the campaign budget now has no room for the web pass ($0.10).
+          process.env.LOREKEEPER_CAMPAIGN_MONTHLY_USD = "0.05";
+          return Promise.resolve(sseResponse(textReply("VERDICT: none\nStill nothing.", "claude-opus-5-5")));
+        });
+      const { answerId } = await s.ask(true);
+      const done = await s.finished(answerId);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect([done!.status, done!.text, done!.checkedAgain]).toEqual(["done", WEB_UNAVAILABLE, true]);
+      expect(done!.parts).toEqual({ verdict: "none", quotes: [] });
+      expect(done!.reserved?.micros).toBe(0);
+    } finally {
+      delete process.env.LOREKEEPER_CAMPAIGN_MONTHLY_USD;
+    }
+  });
+
+  it("an 'unclear' answer whose web pass fails with an HTTP error keeps the Opus answer (no couldn't-search message)", async () => {
+    const s = await setup();
+    fetchMock
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nThe books don't settle it.")))
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nTwo Hexes are not covered.\nGM CALL: Apply only the strongest one.", "claude-opus-5-5")))
+      .mockResolvedValueOnce(new Response("{}", { status: 500 }));
+    const { answerId } = await s.ask(true);
+    const done = await s.finished(answerId);
+    expect([done!.status, done!.text, done!.parts?.verdict, done!.parts?.call]).toEqual(["done", "Two Hexes are not covered.", "unclear", "Apply only the strongest one."]);
   });
 
   it("an 'unclear' Opus answer with the toggle on gets a web pass: the book answer stays and the web results are added", async () => {
@@ -586,6 +641,18 @@ describe("webPass", () => {
     stop.abort();
     fetchMock.mockImplementationOnce((_url, init) => (init?.signal?.aborted ? Promise.reject(new DOMException("aborted", "AbortError")) : Promise.resolve(sseResponse(""))));
     await expect(webPass("q?", [], stop.signal)).rejects.toMatchObject({ reason: "aborted" });
+  });
+
+  it("reports its progress to onProgress after each delta and citation: prose so far, results once cited (dcm-bxp.82.2)", async () => {
+    const web = webReply([result("Do two curses stack?", "https://example.com/t/1")], "VERDICT: none\nTables online mostly let only the strongest apply.", [CITED]);
+    fetchMock.mockResolvedValue(sseResponse(web));
+    const progress: { prose: string; web: string[] }[] = [];
+    const out = await webPass("Do two Hexes stack?", [], undefined, "none", (p) => progress.push({ prose: p.prose, web: p.web.map((w) => w.url) }));
+    expect(progress.length).toBeGreaterThanOrEqual(2);
+    // The text delta first (no result yet), then the citation brings the cited result.
+    expect(progress[0]).toEqual({ prose: "Tables online mostly let only the strongest apply.", web: [] });
+    expect(progress.at(-1)).toEqual({ prose: "Tables online mostly let only the strongest apply.", web: ["https://example.com/t/1"] });
+    expect(out?.web.map((w) => w.url)).toEqual(["https://example.com/t/1"]);
   });
 
   it("sends nothing for a blank question", async () => {

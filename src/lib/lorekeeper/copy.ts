@@ -47,7 +47,15 @@ export const VERDICT_COPY: Record<Verdict, VerdictCopy> = {
 export const LEGEND_TITLE = "How I answer";
 export const LIBRARY_TITLE = "Library";
 export const LIBRARY_COPY = "The Lorekeeper only answers from these books. Turn one off to leave it out.";
-export const ADD_PDF_LABEL = "＋ Add PDF";
+/**
+ * dcm-bxp.82.4 (user answer 2026-10-22): every GM gets a plain note about books instead of the ingest commands (those
+ * live in docs/lorekeeper.md). The button that opens it.
+ */
+export const ABOUT_BOOKS_LABEL = "About books";
+export const ABOUT_BOOKS_TITLE = "About books";
+/** dcm-bxp.82.4: the note, verbatim from the user's answer. */
+export const ABOUT_BOOKS_NOTE =
+  "Your server's admin adds rulebooks once for everyone; switch books on/off for this campaign here; use House rules (notes) for table rules.";
 export const BOOK_INDEXED = "Indexed";
 export const BOOK_OFF = "Off";
 export const RULINGS_TITLE = "Table rulings";
@@ -85,6 +93,12 @@ export const BOOKS_ONLY_MISS =
 
 /** L10 (D3): nothing in the books and the internet pass (toggle on) found nothing usable either. */
 export const WEB_MISS = "I couldn’t find this in your books or online. Ask your GM.";
+
+/**
+ * dcm-bxp.82.5 (user answer 2026-10-22): nothing in the books, search on, but the internet pass couldn't run (no
+ * budget left, an HTTP error, a timeout). WEB_MISS stays for a search that ran and found nothing.
+ */
+export const WEB_UNAVAILABLE = "I couldn’t find this in your books, and couldn’t search the internet just now. Try again later or ask your GM.";
 
 /**
  * L12 (user answer 2026-10-22): stored as the text of an answer stopped before any answer was ready (nothing shown

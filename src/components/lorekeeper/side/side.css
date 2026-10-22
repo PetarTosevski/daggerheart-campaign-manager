@@ -34,12 +34,8 @@
 .lk-root .lk-ask { padding: 10px; border-radius: 10px; background: #2a2010; border: 1px dashed #8a6a2a; display: flex; flex-direction: column; gap: 4px; }
 .lk-root .lk-askq { font-family: var(--lk-serif); font-size: 16px; color: var(--lk-text); overflow-wrap: anywhere; }
 
-/* Add PDF help */
+/* About books dialog */
 .lk-root .lk-help { display: flex; flex-direction: column; gap: 14px; }
-.lk-root .lk-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.5; color: var(--lk-text); }
-.lk-root .lk-help code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; padding: 1px 5px; border-radius: 5px; background: #0b1214; border: 1px solid var(--lk-line); color: #f3cf86; overflow-wrap: anywhere; }
-.lk-root .lk-code { margin: 6px 0; padding: 10px 12px; border-radius: 10px; background: #0b1214; border: 1px solid var(--lk-line); overflow-x: auto; white-space: pre-wrap; }
-.lk-root .lk-code code { padding: 0; border: none; background: transparent; }
 .lk-root .lk-help .lk-send { min-height: 48px; }
 .lk-root .lk-dialog .lk-danger { background: #b8463c; border-color: #b8463c; color: #fff4f2; min-height: 48px; padding: 0 16px; }
 

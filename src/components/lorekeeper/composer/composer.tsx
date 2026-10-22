@@ -49,6 +49,11 @@ export type ComposerProps = {
  * The composer (board): suggestion chips, the question box (Enter sends, Shift+Enter a new line, 1,000 characters with
  * the count near the end), 'Ask' / 'Stop', the 'If the books don’t say' toggle and, not on the board, who can read
  * the conversation (Q3), the questions left today and why asking is off.
+ *
+ * dcm-bxp.82.10 (user answer 2026-10-22): while asking is off (a cap, not set up) the notice takes the question box's
+ * spot so it is seen without scrolling at 1440x900 and 390x844: it comes first in the composer, and the composer
+ * (`data-blocked`, chat.css) moves above the conversation, since at 390 px the column's bottom is below the first
+ * screen. Any other notice (a failed ask, the questions left) stays under the toggles.
  */
 export function Composer(props: ComposerProps) {
   const { disabled, questionsLeft, streaming, sending, onAsk, onStop, webSearch, onWebSearch, visibility, notice, onNewConversation } = props;
@@ -57,6 +62,8 @@ export function Composer(props: ComposerProps) {
   const noticeId = useId();
   const blocked = disabled !== null || streaming || sending;
   const counter = counterText(draft.length);
+  const showLeft = questionsLeft !== undefined && questionsLeft <= LEFT_FROM;
+  const left = showLeft ? <span className="lk-left">{questionsLeftLabel(Math.max(0, questionsLeft))}</span> : null;
 
   const send = async (text: string) => {
     const question = text.trim();
@@ -68,7 +75,13 @@ export function Composer(props: ComposerProps) {
   };
 
   return (
-    <div className="lk-compose" aria-label="Ask the Lorekeeper" role="group">
+    <div className="lk-compose" aria-label="Ask the Lorekeeper" role="group" data-blocked={disabled !== null ? "" : undefined}>
+      {disabled !== null ? (
+        <div id={noticeId} className="lk-notice lk-notice-blocked" role="alert">
+          <span>{disabled}</span>
+          {left}
+        </div>
+      ) : null}
       <div className="lk-sugs">
         {SUGGESTIONS.map((suggestion) => (
           <button key={suggestion.key} type="button" className="lk-sug" disabled={blocked} onClick={() => void send(suggestion.question)}>
@@ -132,11 +145,11 @@ export function Composer(props: ComposerProps) {
           <span className="lk-vistext">{visibility.value === "private" ? VISIBILITY_PRIVATE : VISIBILITY_PUBLIC}</span>
         ) : null}
       </div>
-      {disabled || notice || (questionsLeft !== undefined && questionsLeft <= LEFT_FROM) ? (
-        <div id={noticeId} className="lk-notice" role={disabled || notice ? "alert" : "status"}>
-          {disabled ? <span>{disabled}</span> : notice ? <span>{notice.text}</span> : null}
-          {questionsLeft !== undefined && questionsLeft <= LEFT_FROM ? <span className="lk-left">{questionsLeftLabel(Math.max(0, questionsLeft))}</span> : null}
-          {notice?.newConversation && !disabled ? (
+      {disabled === null && (notice || showLeft) ? (
+        <div id={noticeId} className="lk-notice" role={notice ? "alert" : "status"}>
+          {notice ? <span>{notice.text}</span> : null}
+          {left}
+          {notice?.newConversation ? (
             <button type="button" className="lk-act lk-act-dark" onClick={onNewConversation}>
               Start a new conversation
             </button>

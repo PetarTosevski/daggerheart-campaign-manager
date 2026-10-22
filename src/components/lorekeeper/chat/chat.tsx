@@ -3,7 +3,7 @@
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { EMPTY_INTRO, NEW_CONVERSATION_LABEL, NOT_SET_UP, YOU_LABEL } from "@/lib/lorekeeper/copy";
+import { EMPTY_INTRO, NEW_CONVERSATION_LABEL, YOU_LABEL } from "@/lib/lorekeeper/copy";
 import { askLocally, isLocalMessage, setVisibilityLocally, setWebSearchLocally, stopLocally } from "@/lib/optimistic/lorekeeper";
 
 import { api } from "../../../../convex/_generated/api";
@@ -264,7 +264,8 @@ function Stream(
       {empty ? (
         <div className="lk-intro">
           <Sigil />
-          <p className="lk-muted">{props.available === false ? NOT_SET_UP : EMPTY_INTRO}</p>
+          {/* dcm-bxp.82.10: 'not set up' is said once, by the composer's notice; the intro then has no text. */}
+          {props.available === false ? null : <p className="lk-muted">{EMPTY_INTRO}</p>}
         </div>
       ) : null}
       {messages.map((message, index) => {
