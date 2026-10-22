@@ -125,7 +125,6 @@ const area: Area = {
     { fn: api.notesThreads.search, access: "view", args: () => ({ text: "key" }), expect: OWN_JOURNAL },
     { fn: api.notesThreads.exportPage, access: "view", expect: OWN_JOURNAL },
   ],
-  pending: [],
 };
 
 export default area;

@@ -50,12 +50,11 @@ export const STRANGER_OWN: Record<string, string> = {
 
 const AREAS = Object.values(import.meta.glob("./authz/*.entries.ts", { eager: true, import: "default" }) as Record<string, Area>);
 
-/** The matrix area that lists a function (entry or pending), and its entry when it has one: reused, never required. */
-function listing(name: string): { area: Area; entry?: Entry } | null {
+/** The matrix area and entry that list a function: reused, never required. */
+function listing(name: string): { area: Area; entry: Entry } | null {
   for (const area of AREAS) {
     const entry = area.entries.find((e) => getFunctionName(e.fn) === name);
     if (entry !== undefined) return { area, entry };
-    if (area.pending.includes(name)) return { area };
   }
   return null;
 }
@@ -184,7 +183,7 @@ async function argsFor(f: PublicFunction): Promise<{ w: World; args: Record<stri
   const synthesized = await synthArgs(f.fn.exportArgs(), w, { ...NAME_HINTS, ...Object.fromEntries(areaHints) });
   let overrides: Record<string, unknown> = {};
   try {
-    overrides = (await listed?.entry?.args?.(w)) ?? {};
+    overrides = (await listed?.entry.args?.(w)) ?? {};
   } catch {
     overrides = {};
   }

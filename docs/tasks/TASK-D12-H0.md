@@ -8,7 +8,7 @@ Plan `.omc/plans/d12-hardening.yaml`, tracer H0 (wave 1, foundation). Bead dcm-b
 
 | File | Role |
 |---|---|
-| `tests/convex/authz-matrix.test.ts` | The guard: inventory == union of every area's `entries`, `pending` and `exempt`; no name twice; access class agrees with the wrapper; plus self-tests of each check. |
+| `tests/convex/authz-matrix.test.ts` | The guard: inventory == union of every area's `entries` and `exempt`; no name twice; access class agrees with the wrapper; plus self-tests of each check. |
 | `tests/convex/authz/inventory.ts` | `publicFunctions()` (runtime, `isPublic`), `publicFunction(name)`, `wrapperOf(name)` (raw source scan). |
 | `tests/convex/authz/world.ts` | `buildWorld(options)`, the `World` type, `Role`, `ROLES`, `allowWorldEmails()`. |
 | `tests/convex/authz/synth.ts` | `synthArgs(exportArgs, w, hints)`, `NAME_HINTS`, `freshKey()`. |
@@ -32,8 +32,8 @@ sessions 32, notes 27, trackers 39.
 
 ## How to fill an area (H5-H14)
 
-You own `tests/convex/authz/<area>.entries.ts` and `<area>.test.ts`. Move every name from `pending` to `entries`;
-leave `pending` empty. Run `pnpm vitest run tests/convex/authz/<area>.test.ts tests/convex/authz-matrix.test.ts`.
+You own `tests/convex/authz/<area>.entries.ts` and `<area>.test.ts`. Give every public function of the area an entry
+(H0 wrote the names into a `pending` list; D12 H24 and B6 removed it, see below). Run `pnpm vitest run tests/convex/authz/<area>.test.ts tests/convex/authz-matrix.test.ts`.
 
 ### An entry
 
@@ -73,7 +73,7 @@ Fields of an `Entry`:
 | `note?: string` | Free text. |
 
 Fields of an `Area`: `area` (unique name), `world?` (options for all its worlds, such as `{ frameId }`), `setup?`,
-`nameHints?` (extra or replacement NAME_HINTS), `entries`, `pending`, `exempt?`.
+`nameHints?` (extra or replacement NAME_HINTS), `entries`, `exempt?`.
 
 ### Outcomes
 
@@ -159,10 +159,11 @@ correct expectations and `knownBug: "<bead id>"`, and list it in your task doc. 
 `it.fails` test over all its rows: it stays green while some row is wrong and turns red once the code is fixed, which
 tells the fixer to remove `knownBug`.
 
-### pending
+### pending (removed)
 
-Names without an entry yet; each shows as `it.todo`, so CI is green while the gap is visible. The guard counts them as
-listed. H24 removes `pending` support; after that a new public function fails `pnpm test` until it has an entry.
+H0 shipped a `pending` list of names without an entry yet (each an `it.todo`). D12 H24 removed its support and
+B6 (dcm-bxp.119) removed the field from the `Area` type and every area file. A new public function fails `pnpm test`
+until it has an entry; the guard's self-test "a public function with no entry fails" proves it.
 
 ### Exemptions
 
@@ -173,7 +174,7 @@ core.entries.ts (H5 owns them).
 ### The guard (authz-matrix.test.ts)
 
 1. Missing: a public function no area lists fails, naming it. Stale: a listed name that is not a public function fails.
-2. A name listed twice (in one area or across areas, in any of entries, pending, exempt) fails.
+2. A name listed twice (in one area or across areas, in entries or exempt) fails.
 3. Access class versus wrapper: gm* → `gm`; campaign* `need: "view"` → `view`, `need: "edit"` → `edit`
    (`need: "owner"` → `gm`); userQuery/userMutation/keyedUserMutation/userAction → `own`, `scoped` or `user`;
    maybeUserQuery → `maybe`.
@@ -191,7 +192,7 @@ New area files are picked up by glob (`./authz/*.entries.ts`); no shared index t
 - Rate-limited functions: each world is a fresh convex-test instance with its own limiter, so the matrix never hits a
   limit.
 
-## Guard proofs (temporary edits, reverted)
+## Guard proofs (temporary edits, reverted; from H0, when `pending` still existed)
 
 In `core.entries.ts`, deleted `"members:roster"` from `pending` and filed `fear:adjust` as `view`, then ran
 `pnpm vitest run tests/convex/authz-matrix.test.ts`:

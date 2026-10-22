@@ -68,11 +68,6 @@ export type Area = {
   /** NAME_HINTS additions or replacements for this area's string ids. */
   nameHints?: NameHints;
   entries: Entry[];
-  /**
-   * Always empty. D12 H24 removed pending support: every public function needs an entry (or an exemption), and the
-   * guard fails on any name listed here. The field stays only because the area files still carry `pending: []`.
-   */
-  pending: string[];
   /** Public functions the matrix does not run, with the reason (the Convex Auth exports). */
   exempt?: Record<string, string>;
 };

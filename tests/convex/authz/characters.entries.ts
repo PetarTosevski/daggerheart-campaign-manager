@@ -196,7 +196,6 @@ const area: Area = {
     // ---------------------------------------------------------------- characterExtras: Castle High
     { fn: api.characterExtras.saveSkyshard, access: "own", world: CASTLE_HIGH, args: () => ({ skyshard: { name: "Old broom", description: "" } }) },
   ],
-  pending: [],
 };
 
 export default area;

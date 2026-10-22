@@ -60,6 +60,5 @@ const area: Area = {
     { fn: api.lorekeeperAsks.listOpen, access: "gm", expect: GM_ONLY },
     { fn: api.lorekeeperAsks.resolve, access: "gm", expect: GM_ONLY },
   ],
-  pending: [],
 };
 export default area;

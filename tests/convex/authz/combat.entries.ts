@@ -358,7 +358,6 @@ const area: Area = {
   area: "combat",
   setup,
   entries: [...maps, ...edit, ...generate, ...style, ...tokens, ...vision, ...packs, ...attacks],
-  pending: [],
 };
 
 export default area;

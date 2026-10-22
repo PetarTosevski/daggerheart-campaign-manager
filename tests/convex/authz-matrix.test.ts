@@ -2,9 +2,8 @@
  * The authz matrix guard (rule 14, TE2; analysis 2.5). Every public Convex function appears here: this file loads every
  * area's `authz/<area>.entries.ts` and fails when the runtime inventory of public functions differs from the union of
  * the areas' entries and exemptions, when a name is listed twice, when an entry's access class contradicts the wrapper
- * that defines the function, when an area still lists a pending name, or when a knownBug is not a bead id. There is no
- * pending list any more (D12 H24): a new public function fails here until it has an entry. The rows themselves run in `authz/<area>.test.ts` (one vitest file
- * per area, so they run in parallel). How to write an entry: docs/tasks/TASK-D12-H0.md.
+ * that defines the function, or when a knownBug is not a bead id. A new public function fails here until it has an
+ * entry. The rows themselves run in `authz/<area>.test.ts` (one vitest file per area, so they run in parallel). How to write an entry: docs/tasks/TASK-D12-H0.md.
  */
 import { getFunctionName, makeFunctionReference } from "convex/server";
 import { beforeAll, describe, expect, test } from "vitest";
@@ -41,11 +40,6 @@ export function coverageProblems(inventory: string[], areas: Area[]) {
       (name) => `${name} (${listed.filter((l) => l.name === name).map((l) => `${l.area} ${l.as}`).join(", ")})`,
     ),
   };
-}
-
-/** Names still in an area's pending list: pending support is gone, so each one is a failure. */
-export function pendingProblems(areas: Area[]): string[] {
-  return areas.flatMap((a) => a.pending.map((name) => `${name}: pending in ${a.area}; give it an entry`));
 }
 
 /** A knownBug must name a bead (`dcm-<id>`), so the failing entry points at open work. */
@@ -116,10 +110,6 @@ describe("authz matrix guard", () => {
     expect(stale, "listed names that are not public functions").toEqual([]);
   });
 
-  test("no area lists a pending name", () => {
-    expect(pendingProblems(AREAS)).toEqual([]);
-  });
-
   test("every knownBug names a bead", () => {
     expect(knownBugProblems(AREAS)).toEqual([]);
   });
@@ -155,7 +145,7 @@ describe("authz matrix guard", () => {
 
 describe("the guard's checks catch what they should", () => {
   const fakeRef = (name: string) => makeFunctionReference<"mutation">(name);
-  const area = (patch: Partial<Area>): Area => ({ area: "fake", entries: [], pending: [], ...patch });
+  const area = (patch: Partial<Area>): Area => ({ area: "fake", entries: [], ...patch });
 
   test("a missing name, a stale name and a duplicate", () => {
     const one = { fn: fakeRef("a:one"), access: "gm" as const };
@@ -163,10 +153,8 @@ describe("the guard's checks catch what they should", () => {
     expect(result).toEqual({ missing: ["a:two"], stale: ["a:gone"], duplicates: ["a:one (fake entry, other entry)"] });
   });
 
-  test("a pending name no longer counts as listed and fails on its own", () => {
-    const areas = [area({ pending: ["a:one"] })];
-    expect(coverageProblems(["a:one"], areas).missing).toEqual(["a:one"]);
-    expect(pendingProblems(areas)).toEqual(["a:one: pending in fake; give it an entry"]);
+  test("a public function with no entry fails, even when its area exists", () => {
+    expect(coverageProblems(["a:one"], [area({})]).missing).toEqual(["a:one"]);
   });
 
   test("a knownBug that is not a bead id", () => {

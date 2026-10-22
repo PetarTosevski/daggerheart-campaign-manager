@@ -144,7 +144,6 @@ const area: Area = {
   // codex.setPin's `tokenId` is a world-map marker number, not a combat token.
   nameHints: { tokenId: () => null },
   entries: [...codex, ...maps, { fn: api.scenes.end, access: "gm" }],
-  pending: [],
 };
 
 export default area;

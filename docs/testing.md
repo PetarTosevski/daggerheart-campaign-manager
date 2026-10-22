@@ -24,18 +24,25 @@ local, account-free Convex backend (`CONVEX_AGENT_MODE=anonymous`, deployment
 
 `pnpm e2e:setup` (idempotent) writes `.env.e2e.local` (git-ignored) with a
 random `E2E_AUTH_SECRET`, pushes the functions once, and sets the backend's
-env vars: `ALLOWED_EMAILS` (the four test accounts), `E2E_AUTH_ENABLED`,
+env vars: `ALLOWED_EMAILS` (the five test accounts), `E2E_AUTH_ENABLED`,
 `E2E_AUTH_SECRET`, `SITE_URL`, and a freshly generated `JWT_PRIVATE_KEY` /
 `JWKS` pair. No real secret is needed anywhere.
 
 **One email per sign-in method.** A user created through the test sign-in has
 no password account, so a later password sign-up with that email fails (and
-so does the password sign-in), whatever spec ran first. The test sign-in
-accounts are `e2e-gm@`, `e2e-player@` and `e2e-password@example.test` (the
-last is the second player / outsider despite its name);
-`e2e-password-only@example.test` is used only by the email + password tests in
-`tests/e2e/players.spec.ts`. A new spec that needs another account gets its own
-email in `E2E_ALLOWED` (`scripts/e2e-setup.mjs`), then `pnpm e2e:setup`.
+so does the password sign-in), whatever spec ran first. Every allowlisted
+account (`E2E_ALLOWED` in `scripts/e2e-setup.mjs`) uses exactly one method:
+
+| Email | Sign-in method | Used by |
+|---|---|---|
+| `e2e-gm@example.test` | test sign-in | the GM in most specs |
+| `e2e-player@example.test` | test sign-in | the first player |
+| `e2e-player2@example.test` | test sign-in | the second player / outsider (lorekeeper-shell, notes-*, visual/D11-N6) |
+| `e2e-password-only@example.test` | email + password | `tests/e2e/players.spec.ts` only |
+| `e2e-session-ended@example.test` | email + password | `tests/e2e/auth-session-ended.spec.ts` only |
+
+A new spec that needs another account, or signs up with a password, gets its
+own email in `E2E_ALLOWED`, then `pnpm e2e:setup`.
 
 `pnpm test:e2e` then starts two servers (see `playwright.config.ts`):
 
@@ -120,7 +127,7 @@ access class, and errors are asserted on `ConvexError.data.code`. The full API
 | File | Role |
 | --- | --- |
 | `tests/convex/authz-matrix.test.ts` | The inventory guard (below). |
-| `tests/convex/authz/<area>.entries.ts` | One per area (core, countdowns, characters, play, world, adversaries, combat, sessions, notes, trackers, settings-backup, lorekeeper-*): `{ area, world?, setup?, nameHints?, entries, pending, exempt? }`. |
+| `tests/convex/authz/<area>.entries.ts` | One per area (core, countdowns, characters, play, world, adversaries, combat, sessions, notes, trackers, settings-backup, lorekeeper-*): `{ area, world?, setup?, nameHints?, entries, exempt? }`. |
 | `tests/convex/authz/<area>.test.ts` | Three lines, `runMatrix(area)`; one vitest file per area, so areas run in parallel. |
 | `tests/convex/authz/harness.ts` | `Entry`, `Area`, `Access`, `Outcome`, the class defaults, `runMatrix`. |
 | `tests/convex/authz/world.ts` | `buildWorld()`: GM, playerA (owns characterA), playerB (owns characterB), outsider, a grantee with an `edit` grant, one campaign. |

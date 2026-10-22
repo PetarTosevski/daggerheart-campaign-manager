@@ -30,6 +30,5 @@ const area: Area = {
     { fn: api.lorekeeperLibrary.pageText, access: "view", args: () => ({ page: 2 }), expect: { otherPlayer: "ok" } },
     { fn: api.lorekeeperLibrary.setEnabled, access: "gm", args: () => ({ enabled: false }), expect: { otherPlayer: "FORBIDDEN" } },
   ],
-  pending: [],
 };
 export default area;

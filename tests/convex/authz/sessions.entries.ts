@@ -102,7 +102,6 @@ const area: Area = {
     await w.as("gm").mutation(api.sessionRecords.create, { campaignId: w.campaignId, idempotencyKey: freshKey() });
   },
   entries: [...sessions, ...records, ...prep, ...play, ...wrap],
-  pending: [],
 };
 
 export default area;
