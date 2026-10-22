@@ -540,6 +540,7 @@ waves:
           - src/lib/srd/card-effects/**
           - .omc/autopilot/combat-actions-analysis.md
         acceptance:
+          - "combatCards.hand {characterId}: the character's player and the GM (any character in the campaign) may read it; other players get FORBIDDEN (user answer 2026-10-22: the GM sees a selected PC's cards on the map); matrix entry and role tests"
           - "combatCards.useCard {characterId, mapId, cardId, spell?, targetTokenIds, choices} is a keyed campaign mutation (need edit); a card not in the loadout, out-of-combat, exhausted or unaffordable is refused with its code (CARD_NOT_IN_LOADOUT, CARD_NOT_COMBAT, CARD_EXHAUSTED, CARD_COST_UNPAID)"
           - "Hope and Stress costs are paid through the existing sheet helpers; Hope gained on the same roll can pay (R8); 'once per X' writes featureUses card:<id> with until rest | longRest, only on success for 'on a success' cards (Q3, Q4, R6)"
           - "Damage outcomes follow R2 (Proficiency / Spellcast trait count, crit max) and are applied with applyDamageTo; 'target marks N Stress' marks Stress with overflow to HP (R5); conditions set the instance condition; enemy reaction rolls are a server d20 vs the card's Difficulty, half or none on success as the card says (Q7, R12)"
@@ -753,6 +754,10 @@ waves:
       - id: CA6
         title: Map UI - the Hand (loadout cards with Use, greyed exhausted cards, recall from the vault, choices dialog)
         size: L
+        # USER ANSWER (2026-10-22, binding): "GMs should also be able to see players cards on combat map if they select
+        #   their token". DEFAULT (orchestrator, reported): when the GM selects a PC token, the Hand panel shows that
+        #   character's loadout and vault read-only (same art, badges and greyed exhausted state, no Use / Recall buttons);
+        #   CA4's combatCards.hand must allow the GM for any character in the campaign (view), players only their own.
         goal: A player holds their loadout cards on the Combat Map, uses any combat card against the picked targets or on self or allies with its choices asked first, sees exhausted cards greyed until they come back, and recalls a vault card by paying its recall cost.
         depends_on: [CA4, CA5]
         owns:
@@ -774,6 +779,7 @@ waves:
           - "Use opens a dialog only when the card needs a choice (grimoire spell, number of Hope, damage split, ally) and then fires combatCards.useCard once with the picked targets; manual steps show the card text and a Done button"
           - "The vault lists cards with 'Recall: N Stress' (free during an open rest) and calls characters.moveCard (R7, CB p.101 quoted)"
           - "Results follow CA5's result view (U1, Q5); on mobile the Hand is the first tab of the bottom sheet with a horizontal card strip (Q11)"
+          - "GM selects a PC token: the Hand shows that character's loadout and vault read-only (no Use / Recall); e2e at desktop and 390px; a player selecting another PC's token sees no cards"
           - "e2e: a player uses Bolt Beacon on a Bandit (Hope spent, Hit, the card stays ready) and a once-per-rest card that greys out and returns after a GM rest; visual spec at desktop and 390px"
           - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
       - id: AA2
