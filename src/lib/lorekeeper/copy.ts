@@ -82,6 +82,9 @@ export const WEB_DISCLAIMER =
 export const BOOKS_ONLY_MISS =
   "I couldn’t find this in your books, and internet search is off. Ask your GM, or turn on “Search the internet too”.";
 
+/** L10 (D3): nothing in the books and the internet pass (toggle on) found nothing usable either. */
+export const WEB_MISS = "I couldn’t find this in your books or online. Ask your GM.";
+
 /** Q2: shown on an answer that came from the automatic Opus retry. */
 export const RETRIED_NOTE = "Checked again with a stronger model";
 

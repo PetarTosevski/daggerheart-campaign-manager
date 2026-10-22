@@ -5,14 +5,15 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { ClaudeFailure } from "../../convex/lib/claude";
 import type { RetrievedChunk } from "../../convex/lib/lorekeeper/retrieve";
 import { webPass } from "../../convex/lib/lorekeeper/web";
-import { BOOKS_ONLY_MISS } from "../../src/lib/lorekeeper/copy";
+import { BOOKS_ONLY_MISS, WEB_MISS } from "../../src/lib/lorekeeper/copy";
 import { WEB_BLOCKED_DOMAINS } from "../../src/lib/lorekeeper/prompt";
 import { sseFixture, sseResponse } from "../fixtures/lorekeeper/sse";
 import { OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 // D13 L8: the internet pass. After Sonnet and the Opus retry both say 'none' and the conversation's toggle is on,
 // the run makes one more Messages API call with the web search server tool and stores its results as the answer's
-// internet block. fetch is stubbed with recorded-shape SSE (tests/fixtures/lorekeeper/web-search.sse and built
+// internet block. L10: the web pass also runs after an Opus 'unclear' (the book answer is kept and the web results are
+// added), and a web miss says the internet was searched. fetch is stubbed with recorded-shape SSE (tests/fixtures/lorekeeper/web-search.sse and built
 // streams): no test reaches the API. `retrieve` is mocked so the first passes have book chunks.
 
 const chunks = vi.hoisted(() => ({ value: [] as RetrievedChunk[] }));
@@ -181,19 +182,101 @@ describe("lorekeeper internet pass", () => {
     expect(done!.parts?.web).toBeUndefined();
   });
 
-  it("a server-tool error result (HTTP 200) degrades to the books-only miss, and the pass is still costed", async () => {
+  it("a server-tool error result (HTTP 200) degrades to the web miss (D3), and the pass is still costed", async () => {
     const s = await setup();
     missThen(webReply({ type: "web_search_tool_result_error", error_code: "unavailable" }, "VERDICT: none\nThe search failed.", [], 0));
     const { answerId } = await s.ask(true);
     const done = await s.finished(answerId);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(done!.status).toBe("done");
-    expect(done!.text).toBe(BOOKS_ONLY_MISS);
+    expect(done!.text).toBe(WEB_MISS);
     expect(done!.parts).toEqual({ verdict: "none", quotes: [] });
     // Sonnet 2,400 + Opus 4,800 + the web pass's tokens (2,000/100 on Sonnet = 5,000), no search billed.
     expect(done!.usage?.costMicros).toBe(2_400 + 4_800 + 5_000);
     expect(await s.campaignCost()).toBe(done!.usage!.costMicros);
     expect(done!.reserved?.micros).toBe(0);
+  });
+
+  it("a web pass where the model runs no search stores the web miss and logs the reason, never the key (D3, D5)", async () => {
+    const s = await setup();
+    missThen(textReply("VERDICT: none\nThe meaning of life is not a rules question."));
+    const { answerId } = await s.ask(true, "Whats the meaning of life");
+    const done = await s.finished(answerId);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(done!.text).toBe(WEB_MISS);
+    expect(done!.text).not.toContain("internet search is off");
+    expect(done!.parts).toEqual({ verdict: "none", quotes: [] });
+    // Sonnet 2,400 + Opus 4,800 + the web pass's tokens (900/60 on Sonnet = 2,400).
+    expect(done!.usage?.costMicros).toBe(2_400 + 4_800 + 2_400);
+    expect(await s.campaignCost()).toBe(done!.usage!.costMicros);
+    expect(done!.reserved?.micros).toBe(0);
+    const logged = vi.mocked(console.error).mock.calls.map((args) => args.map(String).join(" "));
+    expect(logged.some((line) => line.includes("internet pass failed (no answer)"))).toBe(true);
+    expect(logged.join("\n")).not.toContain(API_KEY);
+    expect(logged.join("\n")).not.toContain("meaning of life");
+  });
+
+  it("an 'unclear' Opus answer with the toggle on gets a web pass: the book answer stays and the web results are added", async () => {
+    const s = await setup();
+    fetchMock
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nThe books don't settle it.")))
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nTwo Hexes are not covered.\nGM CALL: Apply only the strongest one.", "claude-opus-5-5")))
+      .mockResolvedValueOnce(sseResponse(sseFixture("web-search")));
+    const { answerId } = await s.ask(true);
+    const done = await s.finished(answerId);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(done!.status).toBe("done");
+    expect(done!.text).toBe("Two Hexes are not covered.\n\nTables online mostly let only the strongest apply.");
+    expect(done!.parts).toEqual({
+      verdict: "unclear",
+      quotes: [],
+      call: "Apply only the strongest one.",
+      web: [{ title: "Do two curses stack?", site: "example.com", url: "https://example.com/t/1", snippet: "We only apply the biggest one." }],
+    });
+    expect(done!.checkedAgain).toBe(true);
+    expect(done!.usage?.webSearches).toBe(1);
+    expect(done!.usage?.costMicros).toBe(2_400 + 4_800 + 7_200 + 10_000);
+    expect(await s.campaignCost()).toBe(done!.usage!.costMicros);
+    expect(done!.reserved?.micros).toBe(0);
+
+    // The web request says the books were unclear, sends the question, keeps the cap and blocked hosts, and carries
+    // no book excerpts and no campaign data.
+    const web = bodies()[2]!;
+    expect(web.tools).toEqual([{ type: "web_search_20260209", name: "web_search", max_uses: 3, blocked_domains: [...WEB_BLOCKED_DOMAINS] }]);
+    const text = web.messages[0]!.content.at(-1)!.text!;
+    expect(text).toContain("touch on this question but don't settle it");
+    expect(text).not.toContain("books had nothing");
+    expect(text).toContain("Do two Hexes stack?");
+    expect(text).toContain("Campaign frame: none\nAsker's characters: none\nParty classes: none");
+    expect(JSON.stringify(web)).not.toContain("Roll two d12s.");
+  });
+
+  it("an 'unclear' answer whose web pass finds nothing keeps the Opus answer unchanged, the pass costed", async () => {
+    const s = await setup();
+    fetchMock
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nThe books don't settle it.")))
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nTwo Hexes are not covered.\nGM CALL: Apply only the strongest one.", "claude-opus-5-5")))
+      .mockResolvedValueOnce(sseResponse(webReply({ type: "web_search_tool_result_error", error_code: "unavailable" }, "VERDICT: unclear\nThe search failed.", [], 0)));
+    const { answerId } = await s.ask(true);
+    const done = await s.finished(answerId);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(done!.text).toBe("Two Hexes are not covered.");
+    expect(done!.parts).toEqual({ verdict: "unclear", quotes: [], call: "Apply only the strongest one." });
+    expect(done!.model).toBe("claude-opus-5-5");
+    expect(done!.usage?.costMicros).toBe(2_400 + 4_800 + 5_000);
+    expect(await s.campaignCost()).toBe(done!.usage!.costMicros);
+    expect(done!.reserved?.micros).toBe(0);
+  });
+
+  it("an 'unclear' answer with the toggle off makes no web call", async () => {
+    const s = await setup();
+    fetchMock
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nThe books don't settle it.")))
+      .mockResolvedValueOnce(sseResponse(textReply("VERDICT: unclear\nTwo Hexes are not covered.\nGM CALL: Apply only the strongest one.", "claude-opus-5-5")));
+    const { answerId } = await s.ask(false);
+    const done = await s.finished(answerId);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(done!.parts).toEqual({ verdict: "unclear", quotes: [], call: "Apply only the strongest one." });
   });
 
   it("stores result text as plain text: at most 3 results, cited ones first, non-http urls dropped, snippets cut to 300", async () => {
@@ -224,6 +307,53 @@ describe("lorekeeper internet pass", () => {
     expect(done!.text).toBe("**Most** tables <i>let</i> the GM decide.");
     expect(done!.usage?.webSearches).toBe(2);
   });
+});
+
+describe("lorekeeper internet pass with the e2e fake model (L10)", () => {
+  useAllowlist();
+  const fetchMock = vi.fn<typeof fetch>();
+  beforeEach(() => {
+    process.env.CONVEX_CLOUD_URL = "http://127.0.0.1:3212";
+    process.env.LOREKEEPER_FAKE_MODEL = "true";
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.LOREKEEPER_MODEL;
+    delete process.env.ANTHROPIC_MODEL;
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    delete process.env.CONVEX_CLOUD_URL;
+    delete process.env.LOREKEEPER_FAKE_MODEL;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("'Do our Hexes stack?' with the toggle on keeps the unclear answer, its book quote and GM call, and adds web results", async () => {
+    const s = await setup();
+    const { answerId } = await s.ask(true, "Do our Hexes stack?");
+    const done = await waitFor(() => s.row(answerId), (r) => r !== null && TERMINAL.has(r.status), 45_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(done!.status).toBe("done");
+    expect(done!.checkedAgain).toBe(true);
+    expect(done!.parts?.verdict).toBe("unclear");
+    expect(done!.parts?.quotes).toEqual([expect.objectContaining({ kind: "book", page: 2, section: "Core Mechanics → Duality Dice" })]);
+    expect(done!.parts?.call).toBe("Apply only the strongest Hex, and say so at the table.");
+    expect(done!.parts?.web?.map((w) => w.url)).toEqual(["https://example.com/forum/thread-1", "https://example.org/blog/rulings"]);
+    expect(done!.text).toMatch(/^The books describe one Hex at a time[\s\S]*\n\nOnline, players describe/);
+    expect(done!.usage?.webSearches).toBe(1);
+    expect(await s.campaignCost()).toBe(done!.usage!.costMicros);
+    expect(done!.reserved?.micros).toBe(0);
+  }, 60_000);
+
+  it("the same question with the toggle off keeps the unclear answer without a web block", async () => {
+    const s = await setup();
+    const { answerId } = await s.ask(false, "Do our Hexes stack?");
+    const done = await waitFor(() => s.row(answerId), (r) => r !== null && TERMINAL.has(r.status), 45_000);
+    expect(done!.parts?.verdict).toBe("unclear");
+    expect(done!.parts?.web).toBeUndefined();
+    expect(done!.usage?.webSearches).toBe(0);
+  }, 60_000);
 });
 
 describe("webPass", () => {

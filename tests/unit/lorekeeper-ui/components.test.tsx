@@ -110,6 +110,36 @@ describe("AnswerCard", () => {
     expect(screen.getByText("Bad link")).toBeTruthy();
   });
 
+  it("shows an unclear answer with its book quote, the GM call and the internet block with its disclaimer (L10)", () => {
+    card(
+      message({
+        checkedAgain: true,
+        text: "The books describe one Hex at a time.\n\nOnline, most tables apply only the strongest.",
+        parts: {
+          verdict: "unclear",
+          quotes: [{ kind: "book", text: "A Hex marks one target.", bookId: BOOK, page: 7, section: "Witch → Hex" }],
+          call: "Apply only the strongest Hex.",
+          web: [{ title: "Table talk", site: "example.com", url: "https://example.com/t", snippet: "Most tables let the GM call it." }],
+        },
+      }),
+    );
+    const article = screen.getByRole("article", { name: "The Lorekeeper's answer" });
+    expect(within(article).getByText("Rules unclear")).toBeTruthy();
+    expect(within(article).getByText("A Hex marks one target.")).toBeTruthy();
+    expect(within(article).getByRole("button", { name: "📖 Daggerheart Core Rulebook · p.7" })).toBeTruthy();
+    expect(within(article).getByText("Apply only the strongest Hex.")).toBeTruthy();
+    expect(within(article).getByText("From the internet · unofficial.")).toBeTruthy();
+    expect(within(article).getByText(/other people’s readings and house rules found online/)).toBeTruthy();
+    expect(within(article).getByRole("link", { name: "Table talk" }).getAttribute("href")).toBe("https://example.com/t");
+    expect(within(article).getByRole("button", { name: "Ask the GM" })).toBeTruthy();
+  });
+
+  it("offers only Ask the GM on the web miss", () => {
+    card(message({ text: "I couldn’t find this in your books or online. Ask your GM.", parts: { verdict: "none", quotes: [] } }));
+    const article = screen.getByRole("article");
+    expect(within(article).getAllByRole("button").map((b) => b.textContent)).toEqual(["Ask the GM"]);
+  });
+
   it("offers only Ask the GM on the books-only miss", () => {
     card(message({ text: "I couldn’t find this in your books, and internet search is off. Ask your GM, or turn on “Search the internet too”.", parts: { verdict: "none", quotes: [] } }));
     expect(screen.getByText("Not in your books")).toBeTruthy();

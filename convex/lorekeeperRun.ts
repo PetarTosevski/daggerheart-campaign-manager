@@ -1,7 +1,7 @@
 import { v, type Infer } from "convex/values";
 
 import { createAnswerParser, type AnswerSnapshot, type ApiCitation } from "../src/lib/lorekeeper/answer";
-import { BOOKS_ONLY_MISS } from "../src/lib/lorekeeper/copy";
+import { BOOKS_ONLY_MISS, WEB_MISS } from "../src/lib/lorekeeper/copy";
 import { modelForPass, nextStep, type Pass } from "../src/lib/lorekeeper/flow";
 import { addUsage, costMicros, ZERO_USAGE, type TokenUsage } from "../src/lib/lorekeeper/pricing";
 import { REFUSAL_FALLBACK_BETA, requestBody, WEB_SEARCH_MAX_USES } from "../src/lib/lorekeeper/prompt";
@@ -24,8 +24,13 @@ import { LOREKEEPER_LIMITS, verdictValidator, webResultValidator, type AnswerPar
  * makes it answer false, and the run aborts its stream.
  *
  * Passes (Q2, `nextStep`): Sonnet answers; a verdict other than 'rules' gets one automatic Opus retry ('Checked again
- * with a stronger model'; the row's text restarts); when Opus also finds nothing ('none') the internet pass runs if
- * the conversation's toggle is on, else the books-only miss is stored.
+ * with a stronger model'; the row's text restarts). With the conversation's toggle on, an Opus verdict of 'unclear'
+ * or 'none' gets the internet pass (L10 D1):
+ * - 'unclear' + web results: the book answer (verdict, quotes, GM call) is kept, its prose gets the web note
+ *   appended and the web results go under it (D2); 'unclear' + no web results: the Opus answer unchanged;
+ * - 'none' + web results: the web answer (verdict 'none'); 'none' + nothing usable (or the pass failed or had no
+ *   budget): WEB_MISS (D3).
+ * With the toggle off an 'unclear' answer stands and a 'none' stores the books-only miss.
  *
  * Money (L5's contract, docs/tasks/TASK-D13-L5.md): `ask` reserves the primary pass's worst case; before the Opus
  * retry and the web pass the run reserves that pass (`caps.reservePass`; refused = the pass is skipped and the answer
@@ -581,26 +586,35 @@ export const run = internalAction({
         }
       }
 
-      const webReserved = step === "web" ? await reserveNext("web", WEB_SEARCH_MAX_USES) : null;
-      if (step === "web" && webReserved !== null) {
-        try {
-          const web = await webPass(prep.question, prep.rulings, writer.controller.signal);
-          if (web !== null) {
-            await addPass(web.usage, web.model, webReserved);
-            model = web.model;
-            return ["done", web.prose, streamParts("none", [], null, web.web)];
-          }
-          await addPass({ ...ZERO_USAGE }, modelForPass("web", override), webReserved);
-        } catch (error) {
-          await addPass(error instanceof ClaudeFailure ? usageOf(error.partial) : { ...ZERO_USAGE }, modelForPass("web", override), webReserved);
-          if (isAbort(error)) return stoppedNow();
-          console.error("Lorekeeper: the internet pass failed; storing the books-only miss.", error instanceof Error ? error.name : typeof error);
-        }
-        return ["done", BOOKS_ONLY_MISS, streamParts("none", [])];
-      }
-      if (step === "web" || step === "booksOnlyMiss") return ["done", BOOKS_ONLY_MISS, streamParts("none", [])];
       const final = answer.final;
-      return ["done", final.prose, streamParts(final.verdict, final.quotes, final.call, final.web)];
+      const bookEnding = (): Parameters<typeof finalize> => ["done", final.prose, streamParts(final.verdict, final.quotes, final.call, final.web)];
+      if (step === "booksOnlyMiss") return ["done", BOOKS_ONLY_MISS, streamParts("none", [])];
+      if (step !== "web") return bookEnding();
+
+      // The internet pass (toggle on; Opus said 'unclear' or 'none'). Without a usable result the unclear answer stays,
+      // and a miss says that the internet was searched too (D3).
+      const books = final.verdict === "unclear" ? "unclear" : "none";
+      const withoutWeb = (): Parameters<typeof finalize> => (books === "unclear" ? bookEnding() : ["done", WEB_MISS, streamParts("none", [])]);
+      const webReserved = await reserveNext("web", WEB_SEARCH_MAX_USES);
+      if (webReserved === null) return withoutWeb();
+      try {
+        const web = await webPass(prep.question, prep.rulings, writer.controller.signal, books);
+        if (web !== null) {
+          await addPass(web.usage, web.model, webReserved);
+          model = web.model;
+          if (books === "none") return ["done", web.prose, streamParts("none", [], null, web.web)];
+          const prose = [final.prose.trim(), web.prose].filter((p) => p.length > 0).join("\n\n");
+          return ["done", prose, streamParts("unclear", final.quotes, final.call, web.web)];
+        }
+        await addPass({ ...ZERO_USAGE }, modelForPass("web", override), webReserved);
+      } catch (error) {
+        await addPass(error instanceof ClaudeFailure ? usageOf(error.partial) : { ...ZERO_USAGE }, modelForPass("web", override), webReserved);
+        if (isAbort(error)) return stoppedNow();
+        if (!(error instanceof ClaudeFailure)) throw error;
+        // The reason only (D5): never the key or the request body.
+        console.error(`Lorekeeper: the internet pass failed (${error.reason}); answering without it.`);
+      }
+      return withoutWeb();
     };
 
     writer.start();

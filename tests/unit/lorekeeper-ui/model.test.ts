@@ -27,6 +27,7 @@ import {
   CAP_USER_TEXT,
   NOT_SET_UP,
   RATE_LIMITED_TEXT,
+  WEB_MISS,
 } from "../../../src/lib/lorekeeper/copy";
 
 const BOOK = "book1" as Id<"lorekeeperBooks">;
@@ -71,6 +72,15 @@ describe("answer actions (board order, roles)", () => {
     expect(isBooksOnlyMiss(web)).toBe(false);
     expect(answerActions(miss, { isGm: false, mine: true })).toEqual(["askGm"]);
     expect(answerActions(miss, { isGm: true, mine: true })).toEqual([]);
+  });
+
+  it("treats the web miss like the books-only miss, and an unclear answer with web results like an unclear one (L10)", () => {
+    expect(isBooksOnlyMiss(answer({ verdict: "none", quotes: [] }, WEB_MISS))).toBe(true);
+    expect(isBooksOnlyMiss(answer(undefined, WEB_MISS))).toBe(true);
+    expect(isBooksOnlyMiss(answer(undefined, BOOKS_ONLY_MISS))).toBe(true);
+    const unclearWeb = answer({ ...unclear.parts!, web: web.parts!.web });
+    expect(isBooksOnlyMiss(unclearWeb)).toBe(false);
+    expect(answerActions(unclearWeb, { isGm: false, mine: true })).toEqual(["askGm", "copy"]);
   });
 
   it("shows Show on Combat Map only when a quote cites the range section", () => {
