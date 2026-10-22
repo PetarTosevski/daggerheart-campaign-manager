@@ -4,14 +4,15 @@ import "./actions.css";
 
 import { Component, useId, useState, useSyncExternalStore, type ReactNode } from "react";
 
-import type { ActionsPanelProps } from "../slots";
+import type { ActionsPanelProps, ResolutionsProps } from "../slots";
 import { AttackBar } from "./attack";
+import { PanelMemoryProvider } from "./attack/memory";
 import { MapDice, MiniFeed } from "./dice";
-import { Hand } from "./hand";
+import { Resolutions as GmResolutions } from "./gm";
+import { GmHand, Hand } from "./hand";
 import { TargetList } from "./targets";
 import { useActor } from "./targets/state";
 
-export { Resolutions } from "./gm";
 export { TargetsLayer } from "./targets";
 export { ActionsProvider, useCombatTargets, type CombatTargets } from "./targets/state";
 
@@ -106,7 +107,7 @@ function TabBody({ tab, props }: { tab: SheetTab; props: ActionsPanelProps }) {
 
 /** Phone: the bottom sheet. Closed it is a bar of tabs under the map; a tab opens it, the open tab (or Hide) closes it. */
 function BottomSheet(props: ActionsPanelProps) {
-  const [tab, setTab] = useState<SheetTab>("attack");
+  const [tab, setTab] = useState<SheetTab>("hand");
   const [open, setOpen] = useState(false);
   const id = useId();
   return (
@@ -171,10 +172,29 @@ function Cards(props: ActionsPanelProps) {
   );
 }
 
-/** Player column: everything a player does on the map, once their character has a token on the live map. */
+/**
+ * Player column: everything a player does on the map, once their character has a token on the live map. The panel
+ * memory sits above the layout switch, so the last attack and card results survive crossing 760 px (user answer
+ * 2026-10-22).
+ */
 export function ActionsPanel(props: ActionsPanelProps) {
   const phone = usePhoneLayout();
   const actor = useActor(props);
   if (!actor) return null;
-  return phone ? <BottomSheet {...props} /> : <Cards {...props} />;
+  return <PanelMemoryProvider>{phone ? <BottomSheet {...props} /> : <Cards {...props} />}</PanelMemoryProvider>;
+}
+
+/**
+ * GM column, last (the page's Resolutions slot): the Hand of the selected PC with "Play for this character" and the
+ * card uses waiting for the GM (CA6), then CA5's Resolutions.
+ */
+export function Resolutions(props: ResolutionsProps) {
+  return (
+    <>
+      <PartBoundary label="The hand">
+        <GmHand {...props} />
+      </PartBoundary>
+      <GmResolutions {...props} />
+    </>
+  );
 }

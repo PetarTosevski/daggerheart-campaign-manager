@@ -22,6 +22,7 @@ import type { CharacterView } from "../../../../../convex/characters";
 import type { ActionsPanelProps } from "../../slots";
 import { BAND_LABEL, type RangeBand } from "../targets";
 import { seenTargets, useActor, useCombatTargets, type WeaponSlot } from "../targets/state";
+import { usePanelMemory } from "./memory";
 
 /**
  * The Attack bar (plan combat-actions CA5): the primary and secondary weapon with damage at Proficiency, the duality
@@ -160,7 +161,8 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
   const [edge, setEdge] = useState(0);
   const [help, setHelp] = useState(0);
   const [trait, setTrait] = useState<TraitId>("strength");
-  const [last, setLast] = useState<Last | null>(null);
+  // Kept above the desktop / phone layout switch (user answer 2026-10-22), per character.
+  const [last, setLast] = usePanelMemory<Last | null>(`attack:${characterId}`, null);
   const [pickFor, setPickFor] = useState<Id<"combatRequests"> | null>(null);
 
   if (character === undefined) {
