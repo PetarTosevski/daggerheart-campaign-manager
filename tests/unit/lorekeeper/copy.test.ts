@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import * as lorekeeper from "../../../src/lib/lorekeeper";
 import {
+  ABOUT_BOOKS_LABEL,
+  ABOUT_BOOKS_NOTE,
   BOOKS_ONLY_MISS,
   COMPOSER_PLACEHOLDER,
   SUGGESTIONS,
   VERDICT_COPY,
   WEB_DISCLAIMER,
   WEB_MISS,
+  WEB_UNAVAILABLE,
   booksIndexedLabel,
   copyText,
   pinnedLabel,
@@ -38,6 +41,19 @@ describe("board copy", () => {
     expect(WEB_DISCLAIMER).toMatch(/^These are other people’s readings/);
     expect(BOOKS_ONLY_MISS).toContain("internet search is off");
     expect(WEB_MISS).toBe("I couldn’t find this in your books or online. Ask your GM.");
+  });
+
+  it("has the couldn't-search message apart from the web miss (dcm-bxp.82.5)", () => {
+    expect(WEB_UNAVAILABLE).toBe("I couldn’t find this in your books, and couldn’t search the internet just now. Try again later or ask your GM.");
+    expect(WEB_UNAVAILABLE).not.toBe(WEB_MISS);
+  });
+
+  it("has the About books note for GMs, with no ingest command (dcm-bxp.82.4)", () => {
+    expect(ABOUT_BOOKS_LABEL).toBe("About books");
+    expect(ABOUT_BOOKS_NOTE).toBe(
+      "Your server's admin adds rulebooks once for everyone; switch books on/off for this campaign here; use House rules (notes) for table rules.",
+    );
+    expect(ABOUT_BOOKS_NOTE).not.toContain("pnpm");
   });
 
   it("formats counts", () => {

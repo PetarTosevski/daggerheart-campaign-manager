@@ -2,7 +2,7 @@ import { ConvexError } from "convex/values";
 
 import type { MessageView } from "../../../../convex/lorekeeper";
 import type { AnswerParts, Quote as StoredQuote, Verdict } from "../../../../convex/lib/validators/lorekeeper";
-import { ACTION_LABELS, BOOKS_ONLY_MISS, QUOTE_BOOK_ICON, RULING_ICON, STOPPED_EARLY_NOTE, VERDICT_COPY, WEB_MISS, copyText } from "@/lib/lorekeeper/copy";
+import { ACTION_LABELS, BOOKS_ONLY_MISS, QUOTE_BOOK_ICON, RULING_ICON, STOPPED_EARLY_NOTE, VERDICT_COPY, WEB_MISS, WEB_UNAVAILABLE, copyText } from "@/lib/lorekeeper/copy";
 import type { Quote as ParsedQuote } from "@/lib/lorekeeper/types";
 
 /**
@@ -42,9 +42,9 @@ export function citesRange(parts: AnswerParts | undefined): boolean {
   return (parts?.quotes ?? []).some((quote) => quote.kind === "book" && /\branges?\b/i.test(quote.section));
 }
 
-/** A miss: nothing in the books and no internet results (toggle off: BOOKS_ONLY_MISS; web found nothing: WEB_MISS). */
+/** A miss: nothing in the books and no internet results (toggle off: BOOKS_ONLY_MISS; web found nothing: WEB_MISS; web couldn't run: WEB_UNAVAILABLE). */
 export function isBooksOnlyMiss(answer: Pick<MessageView, "text" | "parts">): boolean {
-  if (answer.parts === undefined) return answer.text === BOOKS_ONLY_MISS || answer.text === WEB_MISS;
+  if (answer.parts === undefined) return answer.text === BOOKS_ONLY_MISS || answer.text === WEB_MISS || answer.text === WEB_UNAVAILABLE;
   return answer.parts.verdict === "none" && (answer.parts.web?.length ?? 0) === 0;
 }
 

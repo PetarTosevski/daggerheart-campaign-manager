@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect as baseExpect, test, type Locator, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
+import { CAP_CAMPAIGN_TEXT, EMPTY_INTRO, NEW_CONVERSATION_LABEL, NOT_SET_UP } from "../../src/lib/lorekeeper/copy";
 import { gmAndPlayer } from "./live";
 
 // D13 L6: the Lorekeeper's chat column with the e2e fake model (convex/lib/claude.ts, LOREKEEPER_FAKE_MODEL, honoured
@@ -13,17 +14,12 @@ import { gmAndPlayer } from "./live";
 // book answer then shows under 'Searching the internet…' and the web part writes out under it; with 'Books only' the
 // retry writes out live. Answer text only ever grows: a MutationObserver fails the run if a shown text is replaced.
 //
-// Until L9 moves it into scripts/e2e-setup.mjs, this spec turns the fake model on and ingests the invented mini-book
-// (tests/fixtures/lorekeeper/mini-book.txt) as the core book on the e2e backend itself. Never the real API.
+// `pnpm e2e:setup` (scripts/e2e-setup.mjs) turns the fake model on and ingests the invented mini-book
+// (tests/fixtures/lorekeeper/mini-book.txt) as the core book; rerun it once per checkout after pulling. Never the real API.
 
 test.describe.configure({ timeout: 180_000 });
-expect.configure({ timeout: 20_000 });
-
-test.beforeAll(() => {
-  const env = { ...process.env, E2E_CONVEX_PORT: process.env.E2E_CONVEX_PORT ?? "3212" };
-  execFileSync(process.execPath, ["scripts/convex-e2e.mjs", "env", "set", "--", "LOREKEEPER_FAKE_MODEL", "true"], { env, stdio: "ignore" });
-  execFileSync(process.execPath, ["scripts/lorekeeper-ingest.mjs", "core", "tests/fixtures/lorekeeper/mini-book.txt", "--e2e"], { env, stdio: "ignore" });
-});
+// `configure` returns a new expect; it does not change the imported one (dcm-bxp.82.8).
+const expect = baseExpect.configure({ timeout: 20_000 });
 
 type Seen = { events: string[]; swaps: string[] };
 
@@ -195,6 +191,67 @@ test("the composer at 390 px: one column, no sideways scroll, a new conversation
     await expect(confirm).toBeHidden();
     await column.getByRole("button", { name: "Conversations" }).click();
     await expect(mine.getByText("No conversations yet.")).toBeVisible();
+  } finally {
+    await table.close();
+  }
+});
+
+function convexEnv(args: string[]) {
+  const env = { ...process.env, E2E_CONVEX_PORT: process.env.E2E_CONVEX_PORT ?? "3212" };
+  execFileSync(process.execPath, ["scripts/convex-e2e.mjs", "env", ...args], { env, stdio: "ignore" });
+}
+
+/** The notice's box lies inside the viewport with the page scrolled to the top (seen without scrolling). */
+async function expectOnFirstScreen(page: Page, notice: Locator) {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const box = (await notice.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+}
+
+// dcm-bxp.82.10: the cap / not-set-up notice takes the question box's spot and is on the first screen at 1440x900 and
+// 390x844, with a conversation in the column; 'not set up' is said once (the intro has no text then).
+test("the cap and not-set-up notices are seen without scrolling; 'not set up' is said once", async ({ browser }) => {
+  const table = await gmAndPlayer(browser);
+  try {
+    const { player, campaignId } = table;
+    await player.goto(`/campaigns/${campaignId}/lorekeeper`);
+    const { column, composer, answers } = chat(player);
+    await composer.getByRole("button", { name: "Critical hits" }).click();
+    await expect(answers.filter({ hasText: "From the rules" }).getByRole("button", { name: "Copy" })).toBeVisible();
+
+    convexEnv(["set", "--", "LOREKEEPER_CAMPAIGN_MONTHLY_USD", "0"]);
+    try {
+      await player.goto(`/campaigns/${campaignId}/lorekeeper`);
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        await player.setViewportSize(viewport);
+        const notice = composer.getByRole("alert");
+        await expect(notice).toHaveText(CAP_CAMPAIGN_TEXT);
+        await expect(composer.getByRole("textbox", { name: "Your question" })).toBeDisabled();
+        await expectOnFirstScreen(player, notice);
+      }
+    } finally {
+      convexEnv(["remove", "--", "LOREKEEPER_CAMPAIGN_MONTHLY_USD"]);
+    }
+
+    // Not set up (no key, fake model off): said once, by the notice, also in an empty conversation.
+    convexEnv(["remove", "--", "LOREKEEPER_FAKE_MODEL"]);
+    try {
+      await player.goto(`/campaigns/${campaignId}/lorekeeper`);
+      await column.getByRole("button", { name: "Conversations" }).click();
+      await column.getByRole("button", { name: NEW_CONVERSATION_LABEL }).click();
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        await player.setViewportSize(viewport);
+        const notice = composer.getByRole("alert");
+        await expect(notice).toHaveText(NOT_SET_UP);
+        await expect(column.getByText(NOT_SET_UP)).toHaveCount(1);
+        await expect(column.getByText(EMPTY_INTRO)).toHaveCount(0);
+        await expectOnFirstScreen(player, notice);
+      }
+    } finally {
+      convexEnv(["set", "--", "LOREKEEPER_FAKE_MODEL", "true"]);
+    }
   } finally {
     await table.close();
   }

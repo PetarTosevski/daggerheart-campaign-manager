@@ -10,6 +10,9 @@
  * and :ingestChunks (batches of at most 100 chunks). Re-running replaces the book's chunks. No public function can
  * write books or chunks.
  *
+ * `--remove` (dcm-bxp.82.10) deletes a book instead, after a confirmation: :findBook, then :clearChunks (repeated),
+ * :clearSwitches (every campaign's on/off switch, repeated) and :deleteBook.
+ *
  * The deployment: .env.local's CONVEX_DEPLOYMENT by default (or CONVEX_DEPLOY_KEY when set); --prod,
  * --deployment <name> and --env-file <file> pass through to the CLI; --e2e targets the local e2e backend
  * (scripts/convex-e2e.mjs). The deployment must already run the D13 functions (`npx convex dev` / deploy).
@@ -18,9 +21,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const USAGE = `Usage: pnpm lorekeeper:ingest <bookKey> <textFile> [options]
+       pnpm lorekeeper:ingest <bookKey> --remove [--yes] [target]
 
   bookKey   core | hopeFear | frame:<frameId> | houseRules
   textFile  text extracted from your own PDF ("===== PAGE N =====" blocks), kept outside the repository;
@@ -33,6 +38,8 @@ Options
   --subtitle <text>    library subtitle
   --cover <token>      cover token (core | hopeFear | frame | houseRules)
   --dry-run            chunk and print the counts; send nothing
+  --remove             delete the book (its text, every campaign's switch, its library row); asks first
+  --yes                with --remove: skip the question (for scripts)
   --prod               the project's production deployment
   --deployment <name>  a named deployment
   --env-file <file>    read CONVEX_DEPLOYMENT / CONVEX_DEPLOY_KEY from this file instead of .env.local
@@ -41,7 +48,8 @@ Options
 Examples
   pnpm lorekeeper:ingest core ~/books/core.txt
   pnpm lorekeeper:ingest hopeFear ~/books/hopefear.txt
-  pnpm lorekeeper:ingest frame:witherwild ~/books/core.txt`;
+  pnpm lorekeeper:ingest frame:witherwild ~/books/core.txt
+  pnpm lorekeeper:ingest hopeFear --remove --prod`;
 
 /** The plan's page range per frame book cut from the core rulebook (core pp. 254-261 = The Witherwild). */
 /** @type {Record<string, PageRange>} */
@@ -57,7 +65,7 @@ const KEY_PATTERN = /^(core|hopeFear|houseRules|frame:[a-z0-9-]+)$/;
 /**
  * @typedef {{ from: number, to: number }} PageRange
  * @typedef {{
- *   positional: string[], dryRun: boolean, e2e: boolean, cli: string[], help?: boolean,
+ *   positional: string[], dryRun: boolean, e2e: boolean, cli: string[], help?: boolean, remove: boolean, yes: boolean,
  *   bookKey?: string, textFile?: string, pages?: PageRange, title?: string, subtitle?: string, cover?: string
  * }} IngestOptions
  * @typedef {{ page: number, section: string, text: string, ord: number }} ChunkRow
@@ -70,7 +78,7 @@ const KEY_PATTERN = /^(core|hopeFear|houseRules|frame:[a-z0-9-]+)$/;
  */
 export function parseArgs(argv) {
   /** @type {IngestOptions} */
-  const opts = { positional: [], dryRun: false, e2e: false, cli: [] };
+  const opts = { positional: [], dryRun: false, e2e: false, cli: [], remove: false, yes: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = () => {
@@ -84,6 +92,8 @@ export function parseArgs(argv) {
     else if (arg === "--cover") opts.cover = value();
     else if (arg === "--dry-run") opts.dryRun = true;
     else if (arg === "--e2e") opts.e2e = true;
+    else if (arg === "--remove") opts.remove = true;
+    else if (arg === "--yes") opts.yes = true;
     else if (arg === "--prod") opts.cli.push("--prod");
     else if (arg === "--deployment" || arg === "--env-file") opts.cli.push(arg, value());
     else if (arg === "-h" || arg === "--help") opts.help = true;
@@ -95,9 +105,18 @@ export function parseArgs(argv) {
   if (!bookKey) throw new Error("Give a book key.");
   if (!KEY_PATTERN.test(bookKey)) throw new Error(`Unknown book key "${bookKey}".`);
   if (rest.length > 0) throw new Error("Too many arguments.");
+  if (opts.e2e && opts.cli.length > 0) throw new Error("--e2e cannot be combined with --prod, --deployment or --env-file.");
+  if (opts.yes && !opts.remove) throw new Error("--yes only goes with --remove.");
+  if (opts.remove) {
+    if (textFile) throw new Error("--remove takes no text file.");
+    if (opts.dryRun || opts.pages || opts.title || opts.subtitle || opts.cover) {
+      throw new Error("--remove cannot be combined with --dry-run, --pages, --title, --subtitle or --cover.");
+    }
+    opts.bookKey = bookKey;
+    return opts;
+  }
   if (bookKey !== "houseRules" && !textFile) throw new Error("Give the text file to ingest.");
   if (bookKey === "houseRules" && textFile) throw new Error("houseRules takes no text file (it reads the Notes tab).");
-  if (opts.e2e && opts.cli.length > 0) throw new Error("--e2e cannot be combined with --prod, --deployment or --env-file.");
   opts.bookKey = bookKey;
   opts.textFile = textFile;
   opts.pages ??= FRAME_PAGES[bookKey];
@@ -169,8 +188,9 @@ export function toRows(bookChunks) {
   return { rows, pages: new Set(rows.map((row) => row.page)).size };
 }
 
-/** The JSON value `convex run` printed (it prints the function's return value last). */
+/** The JSON value `convex run` printed (it prints the function's return value last): an object, or null. */
 export function parseRunOutput(stdout) {
+  if (/(^|\n)null\s*$/.test(stdout)) return null;
   const start = stdout.indexOf("{");
   if (start === -1) throw new Error("convex run printed no result.");
   return JSON.parse(stdout.slice(start));
@@ -232,6 +252,65 @@ function makeRunner(root, opts) {
   };
 }
 
+/** Which deployment a run targets, in words, for the --remove question. */
+export function targetLabel(opts) {
+  if (opts.e2e) return "the local e2e backend";
+  if (opts.cli.length > 0) return `the deployment chosen by ${opts.cli.join(" ")}`;
+  return process.env.CONVEX_DEPLOY_KEY ? "the deployment of CONVEX_DEPLOY_KEY" : "the deployment in .env.local";
+}
+
+/**
+ * `--remove`: finds the book, asks `confirm` (resolves true to go on), then deletes its chunks, every campaign's
+ * switch and its row, each step repeated until done. `run` calls one internal function (makeRunner); `log` prints.
+ * Returns the exit code.
+ * @param {(fn: string, args: object) => any} run  sync (the CLI) or async (tests): each result is awaited
+ * @param {string} bookKey
+ * @param {(question: string) => Promise<boolean>} confirm
+ * @param {string} target
+ * @param {(line: string) => void} log
+ */
+export async function removeBook(run, bookKey, confirm, target, log = console.log) {
+  const book = await run("lorekeeperLibrary:findBook", { bookKey });
+  if (book === null) {
+    log(`${bookKey}: no such book on ${target}. Nothing removed.`);
+    return 1;
+  }
+  const ok = await confirm(
+    `Remove "${book.title}" (${bookKey}, ${book.chunkCount} chunks) and every campaign's switch for it from ${target}? Type ${bookKey} to confirm: `,
+  );
+  if (!ok) {
+    log("Cancelled. Nothing removed.");
+    return 1;
+  }
+  let chunks = 0;
+  for (;;) {
+    const { deleted, done } = await run("lorekeeperLibrary:clearChunks", { bookId: book.bookId });
+    chunks += deleted;
+    if (done) break;
+  }
+  let switches = 0;
+  let cursor = null;
+  for (;;) {
+    const page = await run("lorekeeperLibrary:clearSwitches", { bookId: book.bookId, cursor });
+    switches += page.deleted;
+    cursor = page.cursor;
+    if (page.done) break;
+  }
+  await run("lorekeeperLibrary:deleteBook", { bookId: book.bookId });
+  log(`Done: removed ${bookKey} (${chunks} chunks, ${switches} campaign switches).`);
+  return 0;
+}
+
+/** Asks on the terminal; true only when the answer is exactly `expected`. */
+async function askTerminal(question, expected) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question(question)).trim() === expected;
+  } finally {
+    rl.close();
+  }
+}
+
 export async function main(argv) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   let opts;
@@ -244,6 +323,16 @@ export async function main(argv) {
   if (opts.help || argv.length === 0) {
     console.log(USAGE);
     return argv.length === 0 ? 1 : 0;
+  }
+
+  if (opts.remove) {
+    const bookKey = /** @type {string} */ (opts.bookKey);
+    if (!opts.yes && !process.stdin.isTTY) {
+      console.error("--remove asks for a confirmation on the terminal; add --yes to run it without one.");
+      return 1;
+    }
+    const confirm = opts.yes ? async () => true : (question) => askTerminal(question, bookKey);
+    return removeBook(makeRunner(root, opts), bookKey, confirm, targetLabel(opts));
   }
 
   let rows = [];

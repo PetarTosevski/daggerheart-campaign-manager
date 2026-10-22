@@ -1,8 +1,7 @@
-import { execFileSync } from "node:child_process";
-
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect as baseExpect, test, type Locator, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
+import { ABOUT_BOOKS_NOTE } from "../../src/lib/lorekeeper/copy";
 import { gmAndPlayer } from "./live";
 
 // D13 L7: the Lorekeeper's sidebar cards and the drawer, with the e2e fake model (convex/lib/claude.ts,
@@ -11,17 +10,12 @@ import { gmAndPlayer } from "./live";
 // another); the drawer opens from the Party page and answers a chip question; at 390 the cards fold under
 // 'Library & rulings' and the drawer takes the full width.
 //
-// Until L9 moves it into scripts/e2e-setup.mjs, this spec turns the fake model on and ingests the invented mini-book
-// (tests/fixtures/lorekeeper/mini-book.txt) as the core book on the e2e backend itself. Never the real API.
+// `pnpm e2e:setup` (scripts/e2e-setup.mjs) turns the fake model on and ingests the invented mini-book
+// (tests/fixtures/lorekeeper/mini-book.txt) as the core book; rerun it once per checkout after pulling. Never the real API.
 
 test.describe.configure({ timeout: 180_000 });
-expect.configure({ timeout: 20_000 });
-
-test.beforeAll(() => {
-  const env = { ...process.env, E2E_CONVEX_PORT: process.env.E2E_CONVEX_PORT ?? "3212" };
-  execFileSync(process.execPath, ["scripts/convex-e2e.mjs", "env", "set", "--", "LOREKEEPER_FAKE_MODEL", "true"], { env, stdio: "ignore" });
-  execFileSync(process.execPath, ["scripts/lorekeeper-ingest.mjs", "core", "tests/fixtures/lorekeeper/mini-book.txt", "--e2e"], { env, stdio: "ignore" });
-});
+// `configure` returns a new expect; it does not change the imported one (dcm-bxp.82.8).
+const expect = baseExpect.configure({ timeout: 20_000 });
 
 function side(page: Page) {
   const aside = page.getByRole("complementary", { name: "Library and rulings" });
@@ -40,7 +34,7 @@ function chatIn(scope: Locator) {
   };
 }
 
-test("the GM switches a book off and the player sees Off; legend and Add PDF help", async ({ browser }) => {
+test("the GM switches a book off and the player sees Off; legend and the About books note", async ({ browser }) => {
   const table = await gmAndPlayer(browser);
   try {
     const { gm, player, campaignId } = table;
@@ -75,17 +69,18 @@ test("the GM switches a book off and the player sees Off; legend and Add PDF hel
     const row = playerLibrary.getByRole("listitem").filter({ hasText: "Daggerheart Core Rulebook" });
     await expect(row.getByText("Off", { exact: true })).toBeVisible();
     await expect(playerLibrary.getByRole("switch")).toHaveCount(0);
-    await expect(playerLibrary.getByRole("button", { name: "＋ Add PDF" })).toHaveCount(0);
+    await expect(playerLibrary.getByRole("button", { name: "About books" })).toHaveCount(0);
 
     // Back on: the player's open page follows without a reload.
     await core.click();
     await expect(core).toHaveAttribute("aria-checked", "true");
     await expect(row.getByText("Indexed", { exact: true })).toBeVisible();
 
-    // '＋ Add PDF' explains the local ingest script (Q6).
-    await library.getByRole("button", { name: "＋ Add PDF" }).click();
-    const help = gm.getByRole("dialog", { name: "Add a PDF" });
-    await expect(help.getByText("pnpm lorekeeper:ingest <book> <text file>")).toBeVisible();
+    // 'About books' (dcm-bxp.82.4): a plain note for every GM, no ingest commands.
+    await library.getByRole("button", { name: "About books" }).click();
+    const help = gm.getByRole("dialog", { name: "About books" });
+    await expect(help.getByText(ABOUT_BOOKS_NOTE)).toBeVisible();
+    await expect(help.getByText("pnpm lorekeeper:ingest")).toHaveCount(0);
     await help.getByRole("button", { name: "Got it" }).click();
     await expect(help).toBeHidden();
   } finally {

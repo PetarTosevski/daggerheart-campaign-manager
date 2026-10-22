@@ -41,6 +41,9 @@
 .lk-root .lk-vistext { font-size: 12px; color: var(--lk-muted); }
 .lk-root .lk-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-radius: 10px; background: #2a2010; border: 1px solid #4a3a1a; color: #f3cf86; font-size: 13.5px; line-height: 1.45; }
 .lk-root .lk-left { color: var(--lk-muted); }
+/* dcm-bxp.82.10: while asking is off the composer sits above the conversation, its notice first, so the reason is on
+   the first screen at 1440x900 and 390x844. */
+.lk-root .lk-compose[data-blocked] { order: -1; border-top: none; border-bottom: 1px solid var(--lk-line); }
 .lk-root .lk-sug:disabled { opacity: .55; cursor: default; }
 .lk-root .lk-in:disabled { opacity: .6; }
 

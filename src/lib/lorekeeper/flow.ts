@@ -24,7 +24,7 @@
 //   off. A retry 'none' with search off ends as the books-only miss and a retry 'unclear'/'none' with search on goes
 //   to the web pass, so those stay hidden: no text is ever shown and later replaced.
 // - The web pass always streams (it is the last pass) once it has a web result (lorekeeperRun.ts); before that a
-//   web miss is still possible, and a miss stores WEB_MISS.
+//   web miss is still possible. A miss stores WEB_MISS, or WEB_UNAVAILABLE when the pass couldn't run (dcm-bxp.82.5).
 // - The phase is set when a pass starts (`phaseForPass`): 'books' while Sonnet runs (whatever its verdict line says),
 //   'retry' only once the Opus pass starts, 'web' only once the internet pass starts, 'done' at the end.
 //

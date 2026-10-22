@@ -29,6 +29,7 @@ import {
   NOT_SET_UP,
   RATE_LIMITED_TEXT,
   WEB_MISS,
+  WEB_UNAVAILABLE,
 } from "../../../src/lib/lorekeeper/copy";
 
 const BOOK = "book1" as Id<"lorekeeperBooks">;
@@ -79,6 +80,9 @@ describe("answer actions (board order, roles)", () => {
     expect(isBooksOnlyMiss(answer({ verdict: "none", quotes: [] }, WEB_MISS))).toBe(true);
     expect(isBooksOnlyMiss(answer(undefined, WEB_MISS))).toBe(true);
     expect(isBooksOnlyMiss(answer(undefined, BOOKS_ONLY_MISS))).toBe(true);
+    // dcm-bxp.82.5: the couldn't-search message is a miss too (only 'Ask the GM').
+    expect(isBooksOnlyMiss(answer({ verdict: "none", quotes: [] }, WEB_UNAVAILABLE))).toBe(true);
+    expect(isBooksOnlyMiss(answer(undefined, WEB_UNAVAILABLE))).toBe(true);
     const unclearWeb = answer({ ...unclear.parts!, web: web.parts!.web });
     expect(isBooksOnlyMiss(unclearWeb)).toBe(false);
     expect(answerActions(unclearWeb, { isGm: false, mine: true })).toEqual(["askGm", "copy"]);

@@ -3,7 +3,7 @@ import { v, type Infer } from "convex/values";
 import { getPublishedFrame } from "../src/lib/frames/index";
 import { appError } from "../src/lib/errors/app-error";
 import type { Id } from "./_generated/dataModel";
-import { internalMutation, type MutationCtx } from "./_generated/server";
+import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { campaignQuery, gmMutation } from "./lib/functions";
 import { campaignBook, campaignBooks } from "./lib/lorekeeper/retrieve";
 import {
@@ -18,7 +18,8 @@ import {
  * The Lorekeeper's rules source (D13 L2, plan `.omc/plans/d13-lorekeeper.yaml`, Q1, Q5, Q6, Q7): the library a
  * campaign sees, the GM's per-campaign book switches, the 'Open in the book' page text, and the internal ingest the
  * local script `pnpm lorekeeper:ingest` (scripts/lorekeeper-ingest.mjs) calls through `npx convex run` with the
- * deployment's admin rights. No public function writes books or chunks, and none returns a book whole: `pageText`
+ * deployment's admin rights (`--remove` deletes a book: its chunks, every campaign's switch, then the book row). No
+ * public function writes books or chunks, and none returns a book whole: `pageText`
  * returns one page of a book the campaign has switched on.
  *
  * | Function       | Kind              | Args                 | Errors                                       |
@@ -29,6 +30,9 @@ import {
  * | `ingestBook`   | internalMutation  | bookKey, meta, pages | INVALID (unknown key)                        |
  * | `clearChunks`  | internalMutation  | bookId               | LOREKEEPER_BOOK_NOT_FOUND                    |
  * | `ingestChunks` | internalMutation  | bookId, chunks ≤ 100 | INVALID, LOREKEEPER_BOOK_NOT_FOUND           |
+ * | `findBook`     | internalQuery     | bookKey              | - (null when absent)                         |
+ * | `clearSwitches`| internalMutation  | bookId, cursor       | -                                            |
+ * | `deleteBook`   | internalMutation  | bookId               | INVALID (chunks left)                        |
  *
  * Common: anonymous UNAUTHENTICATED, outsider NOT_FOUND, a player calling `setEnabled` FORBIDDEN (the wrappers).
  */
@@ -289,5 +293,68 @@ export const ingestChunks = internalMutation({
     const chunkCount = book.chunkCount + chunks.length;
     await ctx.db.patch("lorekeeperBooks", bookId, { chunkCount });
     return { inserted: chunks.length, chunkCount };
+  },
+});
+
+// ---------------------------------------------------------------- internal: removing a book (`--remove`, dcm-bxp.82.10)
+
+/** Campaigns checked per `clearSwitches` call. */
+export const SWITCH_CAMPAIGNS_BATCH = 200;
+
+/** The book with `bookKey`, for the script's confirmation; null when the deployment has no such book. */
+export const findBook = internalQuery({
+  args: { bookKey: v.string() },
+  returns: v.union(v.null(), v.object({ bookId: v.id("lorekeeperBooks"), title: v.string(), chunkCount: v.number() })),
+  handler: async (ctx, { bookKey }) => {
+    const book = await ctx.db
+      .query("lorekeeperBooks")
+      .withIndex("by_key", (q) => q.eq("key", bookKey))
+      .first();
+    return book === null ? null : { bookId: book._id, title: book.title, chunkCount: book.chunkCount };
+  },
+});
+
+/**
+ * Deletes the campaigns' on/off switches (`lorekeeperLibrary` rows) for a book, one page of campaigns per call: each
+ * campaign's row is found by `by_campaign_book`, so no unindexed scan. The script repeats it with the returned cursor
+ * until `done`.
+ */
+export const clearSwitches = internalMutation({
+  args: { bookId: v.id("lorekeeperBooks"), cursor: v.union(v.string(), v.null()) },
+  returns: v.object({ deleted: v.number(), cursor: v.string(), done: v.boolean() }),
+  handler: async (ctx, { bookId, cursor }) => {
+    const page = await ctx.db.query("campaigns").paginate({ cursor, numItems: SWITCH_CAMPAIGNS_BATCH });
+    let deleted = 0;
+    for (const campaign of page.page) {
+      const row = await ctx.db
+        .query("lorekeeperLibrary")
+        .withIndex("by_campaign_book", (q) => q.eq("campaignId", campaign._id).eq("bookId", bookId))
+        .first();
+      if (row !== null) {
+        await ctx.db.delete("lorekeeperLibrary", row._id);
+        deleted++;
+      }
+    }
+    return { deleted, cursor: page.continueCursor, done: page.isDone };
+  },
+});
+
+/**
+ * Deletes the book's row once its chunks are gone (`clearChunks` until done); a book with chunks left is refused, so
+ * the script's order (chunks, switches, book) is the only way. Idempotent: an absent book returns `deleted: false`.
+ */
+export const deleteBook = internalMutation({
+  args: { bookId: v.id("lorekeeperBooks") },
+  returns: v.object({ deleted: v.boolean() }),
+  handler: async (ctx, { bookId }) => {
+    const book = await ctx.db.get("lorekeeperBooks", bookId);
+    if (book === null) return { deleted: false };
+    const left = await ctx.db
+      .query("lorekeeperChunks")
+      .withIndex("by_book_page", (q) => q.eq("bookId", bookId))
+      .first();
+    if (left !== null) throw appError("INVALID", "Clear the book's chunks first.");
+    await ctx.db.delete("lorekeeperBooks", bookId);
+    return { deleted: true };
   },
 });
