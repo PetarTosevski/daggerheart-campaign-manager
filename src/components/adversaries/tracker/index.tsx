@@ -65,8 +65,6 @@ function SelectedSide({
   return (
     <SelectedBlock
       key={instance._id}
-      campaignId={campaignId}
-      instance={instance}
       rules={rules}
       renderActions={(onDice) => {
         if (data === undefined) {
@@ -91,6 +89,7 @@ function SelectedSide({
             onTargets={onTargets}
             acts={acts}
             onDice={onDice}
+            adversaries={instances.filter((i) => !i.defeated).map((i) => ({ id: i._id, name: i.label }))}
           />
         );
       }}
@@ -223,9 +222,10 @@ function RunningEncounter({ campaignId, fear }: { campaignId: Id<"campaigns">; f
 /**
  * The live encounter tracker (D8 A4), below the builder on the Encounters tab: the encounter the builder opened (or the
  * running one) with its top bar (GM turn, Fear, Battle Points), one card per adversary instance and the selected
- * instance's stat block with attack and damage rolls. AA3 (plan combat-actions): the selected block's actions panel
+ * instance's stat block. AA3 (plan combat-actions): the selected block's actions panel
  * (targets, Attack, feature Use, Fear prompts) over AA2's server, the open reaction windows with "Resolve now", and a
- * compact pane of the live Combat Map whose token drags show on the Combat Map (Q12, Q16-Q19).
+ * compact pane of the live Combat Map whose token drags show on the Combat Map (Q12, Q16-Q19). AA3b: the targeted
+ * Attack is the only attack, a feature that needs choices asks them in a dialog first, and the map pane can't delete.
  */
 export function EncounterTracker({ campaignId, encounterId, fear }: TrackerProps) {
   return encounterId === null ? (

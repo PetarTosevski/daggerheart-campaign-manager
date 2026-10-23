@@ -12,7 +12,9 @@ import { bardDraft, convexAs, expectNoHorizontalScroll, openCombatMap } from "./
 // reaction window lists who still has to answer; Mira's player marks an Armor Slot (AA4 builds that prompt; here the
 // player's own client answers through adversaryActions.respond) and the hit resolves: the sheet and Mira's token on the
 // Combat Map show the marks. A Fear-cost feature asks "Spend 1 Fear?" first (Q19); "Resolve now" settles an open window
-// (Q17); a token moved in the map pane moves on the Combat Map (Q16). Axe at desktop and 390 px.
+// (Q17); a token moved in the map pane moves on the Combat Map (Q16). Axe at desktop and 390 px. AA3b: a feature that
+// needs choices (Deeproot Defender's Grab and Drag: its optional Fear step) asks them in a dialog before useFeature, and
+// the map pane can't delete tokens (Delete / Backspace do nothing there).
 
 const PLAYER = "e2e-player@example.test";
 
@@ -45,8 +47,11 @@ type Scene = {
   closePlayer: () => Promise<void>;
 };
 
-/** The GM's campaign with a live map: the player's Mira at (5, 10) and the Bandit beside her, in a running encounter. */
-async function scene(page: Page, browser: Browser): Promise<Scene> {
+/**
+ * The GM's campaign with a live map: the player's Mira at (5, 10) and the Bandit beside her, in a running encounter.
+ * `srd` adds SRD adversaries to the encounter (no token: they target the party list).
+ */
+async function scene(page: Page, browser: Browser, srd: readonly string[] = []): Promise<Scene> {
   const { client, campaignId, url } = await openCombatMap(page);
   const context = await browser.newContext();
   const player = await context.newPage();
@@ -59,6 +64,9 @@ async function scene(page: Page, browser: Browser): Promise<Scene> {
   const { customId } = await client.mutation(api.customAdversaries.create, { campaignId, adversary: SURE_BANDIT, idempotencyKey: crypto.randomUUID() });
   const { encounterId } = await client.mutation(api.encounters.create, { campaignId, name: "Road ambush", idempotencyKey: crypto.randomUUID() });
   const { instanceIds } = await client.mutation(api.encounters.addAdversary, { campaignId, encounterId, source: { kind: "custom", customId }, count: 1, summoned: false, idempotencyKey: crypto.randomUUID() });
+  for (const adversaryId of srd) {
+    await client.mutation(api.encounters.addAdversary, { campaignId, encounterId, source: { kind: "srd", adversaryId }, count: 1, summoned: false, idempotencyKey: crypto.randomUUID() });
+  }
   await client.mutation(api.encounters.start, { campaignId, encounterId });
   const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
@@ -178,6 +186,52 @@ test("a Fear-cost feature asks first (Q19), Resolve now settles a window (Q17), 
         return tokens.find((t) => t._id === s.miraToken)?.y;
       })
       .toBe(11);
+    // AA3b: the pane moves tokens but never deletes them (the Combat Map keeps its Delete).
+    await token.focus();
+    await token.press("Delete");
+    await token.press("Backspace");
+    await expect(pane.getByRole("button", { name: /^Mira, / })).toBeVisible();
+    const maps = await s.client.query(api.combatMaps.list, { campaignId: s.campaignId });
+    const left = await s.client.query(api.combatTokens.list, { campaignId: s.campaignId, mapId: maps[0]!._id });
+    expect(left.some((t) => t._id === s.miraToken)).toBe(true);
+  } finally {
+    await s.closePlayer();
+  }
+});
+
+test("a feature that needs choices asks them in a dialog before useFeature (AA3b)", async ({ page, browser }) => {
+  test.setTimeout(240_000);
+  const s = await scene(page, browser, ["deeproot-defender"]);
+  try {
+    const tracker = await openTracker(page, s.campaignId);
+    await tracker.getByRole("article", { name: "Deeproot Defender", exact: true }).getByRole("button", { name: "Deeproot Defender", exact: true }).click();
+    const panel = tracker.getByRole("article", { name: "Deeproot Defender stat block" }).getByRole("region", { name: "Adversary actions" });
+    // Not on the live map: the party list (Q18).
+    await expect(panel).toContainText("The party");
+    await panel.getByRole("group", { name: "Targets" }).getByRole("button", { name: "Mira" }).click();
+
+    const use = panel.getByRole("list", { name: "Features" }).getByRole("button", { name: "Use Grab and Drag (1 Fear)" });
+    await expect(use).toHaveAttribute("aria-haspopup", "dialog");
+    await use.click();
+    const dialog = page.getByRole("dialog", { name: "Deeproot Defender: Grab and Drag" });
+    await expect(dialog).toBeVisible();
+    // The panel's target carries over; the optional Fear step is off until ticked (Q19 default No).
+    await expect(dialog.getByRole("radio", { name: "Mira" })).toBeChecked();
+    const drag = dialog.getByRole("checkbox", { name: /^Spend a Fear to pull them in.*\(1 Fear\)$/ });
+    await expect(drag).not.toBeChecked();
+    await expect(panel.getByRole("region", { name: "Action result" })).toHaveCount(0);
+    await expectNoSeriousA11yViolations(page, { include: "dialog[open]" });
+    await drag.check();
+    await dialog.getByRole("button", { name: "Use Grab and Drag" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // The server may still ask for the spotlight's Fear (Q19); then the attack runs with the drag ticked.
+    const question = panel.getByRole("group", { name: "Spend Fear?" });
+    const result = panel.getByRole("region", { name: "Action result" });
+    await expect(question.or(result)).toBeVisible();
+    if (await question.isVisible()) await question.getByRole("button", { name: /^Spend \d+ Fear$/ }).click();
+    await expect(result).toContainText("Deeproot Defender uses Grab and Drag");
+    await expect(result.getByTestId("tracker-action-roll")).toHaveText(/^Roll \d+ \(d20 \d+, \+2\)/);
   } finally {
     await s.closePlayer();
   }

@@ -3,6 +3,9 @@
 import { useState } from "react";
 
 import type { StatBlockAdversary } from "../../catalogue/stat-block";
+import { needsChoices, type Creature, type FeatureAsk } from "./ask";
+import { FeatureChoices, type ChoiceArgs } from "./choices";
+import { FeatureUse } from "./feature-use";
 import { fearPrompt, toggled, usable, type TargetOption } from "./model";
 import { ActionResultView } from "./result";
 import type { AdversaryActions, Intent, Resolved } from "./use-adversary-actions";
@@ -25,7 +28,9 @@ function namesOf(ids: readonly string[], options: readonly TargetOption[]): stri
  * party list without a live map, the PCs on the map with one; Q18), choose advantage, an Experience (1 Fear) and the
  * attack reactions to use, then Attack, or Use any non-passive feature. Everything goes through AA2's server: it rolls,
  * opens the reaction windows and asks before spending Fear (Q19), which this panel shows as a "Spend N Fear?" question.
- * Passive features apply on their own and are listed as modifiers.
+ * Passive features apply on their own and are listed as modifiers. AA3b: a feature that needs the GM's choices (AA2c's
+ * `featureAsk`: options, creature lists, splits, situations, cost picks, optional steps) asks them in a dialog before
+ * `useFeature`; `adversaries` (the encounter's other instances) feeds its ally lists (without it they list no one).
  */
 export function ActionPanel({
   instanceId,
@@ -40,6 +45,7 @@ export function ActionPanel({
   onTargets,
   acts,
   onDice,
+  adversaries = [],
 }: {
   instanceId: string;
   actor: string;
@@ -53,7 +59,10 @@ export function ActionPanel({
   onTargets: (ids: string[]) => void;
   acts: AdversaryActions;
   onDice: (dice: NonNullable<Resolved["roll"]>["dice"]) => void;
+  /** The encounter's adversaries still standing ({instance id, label}), for the choices dialog's ally lists (AA3b). */
+  adversaries?: readonly { id: string; name: string }[];
 }) {
+  const [choosing, setChoosing] = useState<FeatureAsk | null>(null);
   const [edge, setEdge] = useState<Edge>("none");
   const [experience, setExperience] = useState("");
   const [reactions, setReactions] = useState<string[]>([]);
@@ -79,6 +88,9 @@ export function ActionPanel({
   const busy = acts.pending || defeated;
   const who = namesOf(picked, options);
   const nameOf = (id: string) => options.find((o) => o.characterId === id)?.name ?? "a target";
+  const creatures: Creature[] = [...options.map((o) => ({ id: o.characterId, name: o.name, kind: "pc" as const })), ...adversaries.map((a) => ({ ...a, kind: "adversary" as const }))];
+  const sendFeature = (feature: string, extra: Partial<ChoiceArgs> = {}) =>
+    void fire({ kind: "feature", label: `${actor} uses ${feature}`, actor, args: { ...shared, feature, ...extra } });
 
   return (
     <section className="trk-act" aria-label="Adversary actions">
@@ -178,21 +190,39 @@ export function ActionPanel({
             <span className={`adc-kind adc-kind-${f.kind}`}>{KIND_LABEL[f.kind]}</span>
             {f.fearCost ? <span className="adc-kind adc-kind-fear">Fear {f.fearCost}</span> : null}
             {usable(f.kind) ? (
-              <button
-                type="button"
-                className="trk-btn trk-btn-parch trk-btn-sm"
-                aria-label={`Use ${f.name}${f.fearCost ? ` (${f.fearCost} Fear)` : ""}`}
+              <FeatureUse
+                campaignId={acts.campaignId}
+                instanceId={instanceId}
+                feature={f.name}
+                fearCost={f.fearCost}
                 disabled={busy}
-                onClick={() => void fire({ kind: "feature", label: `${actor} uses ${f.name}`, actor, args: { ...shared, feature: f.name } })}
-              >
-                Use
-              </button>
+                live={!defeated}
+                onUse={(ask) => (ask && needsChoices(ask) ? setChoosing(ask) : sendFeature(f.name))}
+              />
             ) : (
               <span className="trk-act-note">Modifier: applies on its own</span>
             )}
           </li>
         ))}
       </ul>
+      {choosing ? (
+        <FeatureChoices
+          key={choosing.feature}
+          campaignId={acts.campaignId}
+          instanceId={instanceId}
+          actor={actor}
+          first={choosing}
+          creatures={creatures}
+          panelTargets={picked}
+          fear={fear}
+          pending={acts.pending}
+          onClose={() => setChoosing(null)}
+          onUse={(args) => {
+            setChoosing(null);
+            sendFeature(choosing.feature, args);
+          }}
+        />
+      ) : null}
     </section>
   );
 }

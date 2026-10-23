@@ -14,7 +14,8 @@ import type { MapToken } from "./model";
 /**
  * A compact copy of the live Combat Map on the Encounter tab (plan combat-actions AA3, Q16): the Combat Map's own board
  * and tokens layer in Play, so a token dragged here moves through `combatTokens.move` and shows on the Combat Map at
- * once. Clicking a PC token picks or drops it as a target; clicking an adversary token selects that adversary.
+ * once. Clicking a PC token picks or drops it as a target; clicking an adversary token selects that adversary. Tokens
+ * can't be deleted here (AA3b: `noDelete`); that stays on the Combat Map.
  */
 export function MapPane({
   campaignId,
@@ -47,7 +48,7 @@ export function MapPane({
       <h3 className="trk-windows-h">Live map: {map.name}</h3>
       <p className="trk-muted">Drag tokens to move them on the Combat Map. Click a PC to target it, an adversary to select it.</p>
       <div className="cm-root trk-map-root">
-        <MapBoard {...state} renderLayers={(layer) => <TokensLayer {...layer} />} />
+        <MapBoard {...state} renderLayers={(layer) => <TokensLayer {...layer} noDelete />} />
       </div>
     </section>
   );

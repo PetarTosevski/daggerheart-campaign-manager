@@ -252,3 +252,21 @@
   .trk-map { padding: 12px; }
   .trk-map-root .cm-vp.cm-vp-map { height: 320px; }
 }
+
+/* AA3b: the stat block's head holds only the dice stage (no gap while it is empty; it keeps its width for play3d) */
+.adc-sb-actions:has(> .trk-dice-stage:empty) { margin-top: 0; }
+
+/* AA3b: a feature's choices dialog (brand Modal, dark shell) */
+.trk-ask { gap: 14px; }
+.trk-ask-set { margin: 0; padding: 10px 14px 12px; border: 1px solid var(--adv-border); border-radius: 12px; display: flex; flex-wrap: wrap; gap: 4px 14px; min-width: 0; }
+.trk-ask-set legend { padding: 0 6px; font-family: var(--adv-font-head); font-size: 13px; letter-spacing: 0.06em; color: var(--adv-name); }
+.trk-ask-opt { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; color: var(--adv-text); cursor: pointer; overflow-wrap: anywhere; }
+.trk-ask-opt input { width: 20px; height: 20px; flex: none; accent-color: var(--adv-acc); }
+.trk-ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.trk-ask-field { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--adv-muted); }
+.trk-ask-field .trk-in { max-width: 100%; }
+.trk-ask-note { flex: 1 1 100%; margin: 0; font-size: 14px; color: var(--adv-muted); }
+.trk-ask-err { margin: 0; font-size: 14px; font-weight: 600; color: var(--adv-error-text); }
+.trk-ask-trigger { margin: 0; font-size: 15px; font-style: italic; color: var(--adv-hf-fear); }
+.trk-ask-cost { margin: 0; font-size: 14px; color: var(--adv-text); }
+.trk-act-why { flex: 1 1 100%; margin: 0; font-size: 12px; font-style: italic; color: var(--adv-ink-soft); text-align: right; }
