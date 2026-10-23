@@ -433,3 +433,13 @@
     transition: none;
   }
 }
+
+/* F8-I1: the roll-options strip above the loadout (applies to the next card that rolls). */
+.cmh-rolls {
+  border-top: 0;
+  padding-top: 0;
+}
+.cma-opts-set {
+  text-transform: none;
+  letter-spacing: normal;
+}

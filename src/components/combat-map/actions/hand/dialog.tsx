@@ -25,7 +25,7 @@ import {
   type HandUse,
   type RecipientKey,
 } from "./model";
-import { rollProblem, RollOptions, type Roller } from "./roll-options";
+import { NO_ROLL_OPTIONS, rollProblem, rollSummary, type Roller, type RollValues } from "../roll-controls";
 import type { UseRequest } from "./use-card";
 
 /**
@@ -35,7 +35,8 @@ import type { UseRequest } from "./use-card";
  * `needsChoice` (a choose step or a damage split) and resubmits through `useCardActions.answer`.
  *
  * F7-H4 (dcm-bxp.99.24): every creature picked here (targets and the card's other creatures) also gets CA5's target ring
- * on the map (`toggleExtraTarget`), and a card that rolls offers the Attack bar's roll options.
+ * on the map (`toggleExtraTarget`). F8-I1 (dcm-bxp.99.28): a rolling card uses the Hand's roll-options strip; the dialog
+ * only names what the strip holds.
  */
 
 /** Every creature the dialog's answers name (targets and recipients), once each. */
@@ -108,6 +109,7 @@ function UseForm({
   pickedEnemies,
   gm,
   roller,
+  rollOptions,
   pending,
   error,
   onCancel,
@@ -118,6 +120,7 @@ function UseForm({
   pickedEnemies: readonly string[];
   gm: boolean;
   roller: Roller | null;
+  rollOptions: RollValues;
   pending: boolean;
   error: string | null;
   onCancel: () => void;
@@ -127,7 +130,8 @@ function UseForm({
   const [values, setValues] = useState<FormValues>(() => initialValues(form, pickedEnemies));
   const { targetTokenIds, toggleExtraTarget } = useCombatTargets();
   const problem =
-    formProblem(form, values) ?? (form.gmDifficulty && gm && values.difficulty === undefined ? "Set the Difficulty." : null) ?? (form.rolls ? rollProblem(roller, values) : null);
+    formProblem(form, values) ?? (form.gmDifficulty && gm && values.difficulty === undefined ? "Set the Difficulty." : null) ?? (form.rolls ? rollProblem(roller, rollOptions) : null);
+  const rollNote = form.rolls ? rollSummary(rollOptions) : null;
 
   function set(patch: Partial<FormValues>) {
     setValues((v) => ({ ...v, ...patch }));
@@ -151,7 +155,7 @@ function UseForm({
 
   function submit() {
     if (problem) return;
-    const roll = rollOf(form, values, gm);
+    const roll = rollOf(form, values, gm, rollOptions);
     onSubmit({
       spell: use.id,
       targetTokenIds: values.targets as UseRequest["targetTokenIds"],
@@ -277,7 +281,11 @@ function UseForm({
           <p className="cmh-note">The card names no Difficulty: the GM decides how the roll lands.</p>
         )
       ) : null}
-      {form.rolls ? <RollOptions roller={roller} values={values} onChange={set} /> : null}
+      {rollNote ? (
+        <p className="cmh-note" data-testid="combat-card-roll-note">
+          Roll options from the Hand: {rollNote}
+        </p>
+      ) : null}
       <p aria-live="polite" className="cma-error">
         {error ?? ""}
       </p>
@@ -302,6 +310,7 @@ export function UseDialog({
   pickedEnemies,
   gm,
   roller = null,
+  rollOptions = NO_ROLL_OPTIONS,
   open,
   pending,
   error,
@@ -314,8 +323,10 @@ export function UseDialog({
   creatures: readonly Creature[];
   pickedEnemies: readonly string[];
   gm: boolean;
-  /** The acting character's Experiences and Hope, for the roll options (null while unknown: no Experience chips). */
+  /** The acting character's Experiences and Hope, for the Hope check (null while unknown). */
   roller?: Roller | null;
+  /** The Hand's roll-options strip, applied when the use rolls (F8-I1). */
+  rollOptions?: RollValues;
   open: boolean;
   pending: boolean;
   error: string | null;
@@ -348,6 +359,7 @@ export function UseDialog({
           pickedEnemies={pickedEnemies}
           gm={gm}
           roller={roller}
+          rollOptions={rollOptions}
           pending={pending}
           error={error}
           onCancel={onClose}

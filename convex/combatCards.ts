@@ -73,7 +73,7 @@ export const hand = campaignQuery({
   handler: async (ctx, { characterId }) => {
     const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "view", "owner");
     if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-    if (!atLeast(permission, "edit") && !(await handSharedWithPlayers(ctx, campaign, characterId))) throw appError("FORBIDDEN");
+    if (!atLeast(permission, "edit") && !handSharedWithPlayers(campaign, character)) throw appError("FORBIDDEN");
     return { characterId, ...handOf(readSheet(character.sheet)) };
   },
 });

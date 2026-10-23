@@ -8,7 +8,6 @@
  * rest (CB p.105), so only `afterRest` runs.
  */
 import { v, type Infer } from "convex/values";
-import { z } from "zod";
 
 import { cardAvailability, RESET_LABEL } from "../../src/lib/domain/card-effects/availability";
 import { run } from "../../src/lib/domain/card-effects/run";
@@ -24,7 +23,6 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
 import { actorSheetAfter, cardActor, cardIdOfEffect } from "./cardRunner";
 import { loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./characterSheet";
-import { readTracker, TRACKER_SCHEMA_VERSION, writeTracker } from "./trackers";
 
 export const handUseValidator = v.object({
   useId: v.string(),
@@ -122,41 +120,39 @@ export function handOf(sheet: CharacterSheet): { loadout: HandCard[]; vault: Han
  * Hiding hands (user answer 2026-10-22, dcm-bxp.99.24): "BOTH - a GM campaign switch 'Players can see each other's
  * cards' (on by default) and, when allowed, each player can hide their own hand. The GM always sees every hand."
  *
- * Storage (docs/tasks/TASK-F7-H4.md): the GM's switch is the key `playersSeeHands` of the campaign's `options` record
- * (the GM's per-campaign switches; absent = on; `resolveOptions` reads only the frame's optional rules, so the key does
- * not leak into them). The characters whose players hide their hand are one `frameTrackers` row per campaign, key
- * `handPrivacy`, a versioned blob `{ schemaVersion, hidden: characterId[] }` capped at the campaign's character cap:
- * no schema change, one indexed read per `hand` call, and a player's switch never writes the campaign document that
- * every campaign query reads (CD10).
+ * Storage (F8-I1, dcm-bxp.99.27; docs/tasks/TASK-F8-I1.md): the GM's switch is the typed campaign field
+ * `playersSeeHands` (absent = on), and a hidden hand is the character's own `handHidden: true` (absent = shared),
+ * listed from the campaign's capped `by_campaign` characters. A player's switch writes only their character, never the campaign
+ * document every campaign query reads (CD10). F7-H4 kept both in `campaigns.options.playersSeeHands` and a
+ * `frameTrackers` `handPrivacy` blob; `migrations/handSharing` moves those over and deletes the old key and row.
  */
-export const PLAYERS_SEE_HANDS = "playersSeeHands";
-export const HAND_PRIVACY_KEY = "handPrivacy";
-
-const handPrivacySchema = z.object({ hidden: z.array(z.string()).max(MAX_CHARACTERS_PER_CAMPAIGN) });
 
 /** The GM's switch "Players can see each other's cards" (on unless the GM turned it off). */
-export function playersSeeHands(campaign: Pick<Doc<"campaigns">, "options">): boolean {
-  return campaign.options?.[PLAYERS_SEE_HANDS] !== false;
+export function playersSeeHands(campaign: Pick<Doc<"campaigns">, "playersSeeHands">): boolean {
+  return campaign.playersSeeHands !== false;
 }
 
-/** The characters whose player hides their hand (TRACKER_CORRUPT on a bad blob). */
+/** The characters whose player hides their hand (at most the campaign's character cap). */
 export async function hiddenHands(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Id<"characters">[]> {
-  const stored = await readTracker(ctx, campaignId, HAND_PRIVACY_KEY, handPrivacySchema);
-  return (stored?.hidden ?? []).flatMap((id) => ctx.db.normalizeId("characters", id) ?? []);
+  // The campaign's characters are capped; an index on `handHidden` would be a field-prefix duplicate of `by_campaign`.
+  const rows = await ctx.db.query("characters").withIndex("by_campaign", (q) => q.eq("campaignId", campaignId)).take(MAX_CHARACTERS_PER_CAMPAIGN);
+  return rows.flatMap((row) => (row.handHidden === true ? [row._id] : []));
 }
 
-/** Hides or shows one character's hand from the other players; writes only when it changes. */
+/**
+ * Hides or shows one character's hand from the other players; writes only when it changes. Callers check access
+ * first; a character missing or in another campaign is left alone.
+ */
 export async function writeHandHidden(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, hidden: boolean): Promise<void> {
-  const current = await hiddenHands(ctx, campaignId);
-  if (current.includes(characterId) === hidden) return;
-  const next = hidden ? [...current, characterId] : current.filter((id) => id !== characterId);
-  await writeTracker(ctx, campaignId, HAND_PRIVACY_KEY, { hidden: next.slice(-MAX_CHARACTERS_PER_CAMPAIGN) }, TRACKER_SCHEMA_VERSION);
+  const character = await ctx.db.get("characters", characterId);
+  if (character === null || character.campaignId !== campaignId) return;
+  if ((character.handHidden === true) === hidden) return;
+  await ctx.db.patch("characters", characterId, { handHidden: hidden ? true : undefined });
 }
 
 /** Whether the campaign's other players may read this character's hand: the GM's switch on and the hand not hidden. */
-export async function handSharedWithPlayers(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">): Promise<boolean> {
-  if (!playersSeeHands(campaign)) return false;
-  return !(await hiddenHands(ctx, campaign._id)).includes(characterId);
+export function handSharedWithPlayers(campaign: Pick<Doc<"campaigns">, "playersSeeHands">, character: Pick<Doc<"characters">, "handHidden">): boolean {
+  return playersSeeHands(campaign) && character.handHidden !== true;
 }
 
 // ---------------------------------------------------------------- loadout and vault

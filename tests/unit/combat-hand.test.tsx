@@ -4,8 +4,9 @@
  * Use on combat cards (once per click, picked targets), no button on passive cards, exhausted cards greyed with their
  * reset label, Recall from the vault (free during an open rest), the GM's locked view, the after-the-roll choice
  * resubmitted; the result view (U1); and the panel memory that keeps results across the 760 px layout switch.
- * F7-H4 (dcm-bxp.99.24): a rolling card's dialog with the Attack bar's roll options, dialog picks ringed on the map
- * (`toggleExtraTarget`), another player's hand read only or hidden, the player's and the GM's sharing switches.
+ * F7-H4 (dcm-bxp.99.24): dialog picks ringed on the map (`toggleExtraTarget`), another player's hand read only or
+ * hidden, the player's and the GM's sharing switches. F8-I1 (dcm-bxp.99.28): the roll-options strip in the Hand applies
+ * to the next card that rolls, and a rolling card with an enemy picked and nothing else to ask fires at once.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
@@ -28,10 +29,12 @@ import {
   playableUses,
   recallLabel,
   rollOf,
+  usedRollOptions,
   type HandCard,
   type ResolvedUse,
 } from "@/components/combat-map/actions/hand/model";
 import { CardResult } from "@/components/combat-map/actions/hand/result";
+import { NO_ROLL_OPTIONS, rollSummary } from "@/components/combat-map/actions/roll-controls";
 import { cardEffect } from "@/lib/srd/card-effects";
 import type { CardUse } from "@/lib/domain/card-effects/types";
 import type { RollRecord } from "@/lib/domain/duality";
@@ -155,11 +158,12 @@ const resolved = (extra: Partial<ResolvedUse> = {}): ResolvedUse => ({
 });
 
 describe("what a use asks first", () => {
-  it("Bolt Beacon rolls, so it always opens the dialog for its roll options (F7-H4), with the picked enemy as its target", () => {
+  it("Bolt Beacon rolls but asks nothing else, so with an enemy picked it fires at once (F8-I1); without one the dialog asks", () => {
     const form = formFor(use("bolt-beacon"));
     expect(form.targets).toEqual({ side: "enemy", max: 1, range: "far" });
     expect(form.rolls).toBe(true);
-    expect(needsDialog(form, { spells: 1, pickedEnemies: 1, gm: false })).toBe(true);
+    expect(needsDialog(form, { spells: 1, pickedEnemies: 1, gm: false })).toBe(false);
+    expect(needsDialog(form, { spells: 1, pickedEnemies: 0, gm: false })).toBe(true);
     expect(initialValues(form, [ARCHER, BANDIT]).targets).toEqual([BANDIT]);
     expect(choicesOf(form, initialValues(form, [BANDIT]))).toEqual([]);
   });
@@ -171,15 +175,23 @@ describe("what a use asks first", () => {
     expect(needsDialog(form, { spells: 1, pickedEnemies: 0, gm: false })).toBe(true);
   });
 
-  it("roll options become useCard's roll: Experiences, advantage or disadvantage, Help; nothing set → no roll", () => {
+  it("the strip's roll options become useCard's roll: Experiences, advantage or disadvantage, Help; nothing set → no roll", () => {
     const form = formFor(use("bolt-beacon"));
     const values = initialValues(form, [BANDIT]);
-    expect(rollOf(form, values, false)).toBeUndefined();
-    expect(rollOf(form, { ...values, experienceIds: ["e1"], edge: 2, help: 1 }, false)).toEqual({ experienceIds: ["e1"], advantage: 2, help: 1 });
-    expect(rollOf(form, { ...values, edge: -1 }, false)).toEqual({ disadvantage: 1 });
+    expect(rollOf(form, values, false, NO_ROLL_OPTIONS)).toBeUndefined();
+    expect(rollOf(form, null, false, { experienceIds: ["e1"], edge: 2, help: 1 })).toEqual({ experienceIds: ["e1"], advantage: 2, help: 1 });
+    expect(rollOf(form, values, false, { ...NO_ROLL_OPTIONS, edge: -1 })).toEqual({ disadvantage: 1 });
+    // The dialog's Difficulty only for the GM.
+    expect(rollOf(form, { ...values, difficulty: 12 }, true, NO_ROLL_OPTIONS)).toEqual({ difficulty: 12 });
+    expect(rollOf(form, { ...values, difficulty: 12 }, false, NO_ROLL_OPTIONS)).toBeUndefined();
     // A card that doesn't roll sends none of them.
     const deadly = formFor(use("deadly-focus"));
-    expect(rollOf(deadly, { ...initialValues(deadly, [BANDIT]), experienceIds: ["e1"], edge: 1 }, false)).toBeUndefined();
+    expect(rollOf(deadly, initialValues(deadly, [BANDIT]), false, { experienceIds: ["e1"], edge: 1, help: 0 })).toBeUndefined();
+    expect(usedRollOptions({ roll: { experienceIds: ["e1"] } })).toBe(true);
+    expect(usedRollOptions({ roll: { difficulty: 12 } })).toBe(false);
+    expect(usedRollOptions({})).toBe(false);
+    expect(rollSummary({ experienceIds: ["e1", "e2"], edge: -1, help: 1 })).toBe("Disadvantage ×1 · 2 Experiences · 1 Help die");
+    expect(rollSummary(NO_ROLL_OPTIONS)).toBeNull();
   });
 
   it("a grimoire asks which spell; Arcane Barrage asks the Hope to spend (n:hope)", () => {
@@ -280,14 +292,11 @@ describe("the Hand", () => {
     expect(within(vault).getByRole("button", { name: "Recall: 2 Stress, Book of Ava" })).toBeEnabled();
   });
 
-  it("Use on Bolt Beacon with the Bandit picked opens the dialog with the Bandit picked; Use fires useCard once and shows Hit", async () => {
+  it("Use on Bolt Beacon with the Bandit picked fires useCard once with no dialog (F8-I1) and shows Hit", async () => {
     withHand([BOLT]);
     results["combatCards:useCard"] = [resolved()];
     render(<HandBody {...props()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
-    const dialog = screen.getByRole("dialog", { name: "Bolt Beacon" });
-    expect(within(dialog).getByRole("button", { name: "Bandit" })).toHaveAttribute("aria-pressed", "true");
-    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Use Bolt Beacon" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" })));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(useCalls()).toHaveLength(1);
     expect(useCalls()[0]!.args).toMatchObject({ cardId: "bolt-beacon", spell: "main", targetTokenIds: [BANDIT], choices: [] });
@@ -333,8 +342,7 @@ describe("the Hand", () => {
       resolved(),
     ];
     render(<HandBody {...props()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
-    await act(async () => fireEvent.click(within(screen.getByRole("dialog", { name: "Bolt Beacon" })).getByRole("button", { name: "Use Bolt Beacon" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" })));
     const dialog = screen.getByRole("dialog", { name: "Bolt Beacon" });
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Option A" }));
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Continue" })));
@@ -369,35 +377,67 @@ function Rings() {
   return <output data-testid="rings">{targetTokenIds.join(",")}</output>;
 }
 
-describe("F7-H4: roll options and rings in the card dialog", () => {
-  it("a rolling card's dialog offers the Attack bar's roll options and sends them with the use", async () => {
+describe("F8-I1: the roll-options strip; rings in the card dialog", () => {
+  it("the Hand's strip applies to the next card that rolls: it fires at once with them, then the strip clears", async () => {
     withHand([BOLT]);
     queries["characters:get"] = { sheet: SHEET };
-    results["combatCards:useCard"] = [resolved()];
+    results["combatCards:useCard"] = [resolved(), resolved()];
     render(<HandBody {...props()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
-    const dialog = screen.getByRole("dialog", { name: "Bolt Beacon" });
-    const options = within(dialog).getByTestId("combat-card-roll-options");
-    fireEvent.click(within(options).getByRole("button", { name: "Sellsword (+2)" }));
-    fireEvent.click(within(options).getByRole("button", { name: "More advantage" }));
-    fireEvent.click(within(options).getByRole("button", { name: "More help dice" }));
-    // Two Experiences with 1 Hope: refused before the call.
-    fireEvent.click(within(options).getByRole("button", { name: "Lockpick (+1)" }));
-    expect(within(dialog).getByRole("button", { name: "Not enough Hope for those Experiences." })).toBeDisabled();
-    fireEvent.click(within(options).getByRole("button", { name: "Lockpick (+1)" }));
-    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Use Bolt Beacon" })));
+    const strip = screen.getByTestId("combat-hand-roll-options");
+    expect(strip).toHaveTextContent("Applies to the next card that rolls.");
+    fireEvent.click(within(strip).getByRole("button", { name: "Sellsword (+2)" }));
+    fireEvent.click(within(strip).getByRole("button", { name: "More advantage" }));
+    fireEvent.click(within(strip).getByRole("button", { name: "More help dice" }));
+    // Two Experiences with 1 Hope: a rolling card waits until the strip is fixed.
+    fireEvent.click(within(strip).getByRole("button", { name: "Lockpick (+1)" }));
+    expect(screen.getByText("Not enough Hope for those Experiences.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use Bolt Beacon" })).toBeDisabled();
+    fireEvent.click(within(strip).getByRole("button", { name: "Lockpick (+1)" }));
+    expect(within(strip).getByText(/Advantage ×1 · 1 Experience · 1 Help die/)).toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" })));
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(useCalls()).toHaveLength(1);
     expect(useCalls()[0]!.args).toMatchObject({ targetTokenIds: [BANDIT], roll: { experienceIds: ["x1"], advantage: 1, help: 1 } });
+    // Cleared: the next card rolls plainly.
+    expect(within(strip).getByRole("button", { name: "Sellsword (+2)" })).toHaveAttribute("aria-pressed", "false");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" })));
+    expect(useCalls()[1]!.args).not.toHaveProperty("roll");
   });
 
-  it("a card that does not roll has no roll options", () => {
+  it("a rolling card that opens the dialog names the strip's options and sends them", async () => {
+    withHand([BOLT]);
+    queries["characters:get"] = { sheet: SHEET };
+    results["combatCards:useCard"] = [resolved({ targets: [{ tokenId: ARCHER, hit: true, defeated: false }] })];
+    render(<HandBody {...props({ pickedEnemies: [] })} />);
+    fireEvent.click(within(screen.getByTestId("combat-hand-roll-options")).getByRole("button", { name: "Less advantage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
+    const dialog = screen.getByRole("dialog", { name: "Bolt Beacon" });
+    expect(within(dialog).getByTestId("combat-card-roll-note")).toHaveTextContent("Roll options from the Hand: Disadvantage ×1");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archer" }));
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Use Bolt Beacon" })));
+    expect(useCalls()[0]!.args).toMatchObject({ targetTokenIds: [ARCHER], roll: { disadvantage: 1 } });
+  });
+
+  it("a card that does not roll leaves the strip alone and its dialog names no roll options", async () => {
     withHand([ILLIAT]);
+    results["combatCards:useCard"] = [resolved({ cardId: "book-of-illiat", useId: "arcane-barrage", roll: null })];
     render(<HandBody {...props()} />);
+    const strip = screen.getByTestId("combat-hand-roll-options");
+    fireEvent.click(within(strip).getByRole("button", { name: "More help dice" }));
     fireEvent.click(screen.getByRole("button", { name: "Use Book of Illiat" }));
     const dialog = screen.getByRole("dialog", { name: "Book of Illiat" });
     // Arcane Barrage deals damage with no roll.
     fireEvent.click(within(dialog).getByRole("button", { name: "Arcane Barrage" }));
-    expect(within(dialog).queryByTestId("combat-card-roll-options")).toBeNull();
+    expect(within(dialog).queryByTestId("combat-card-roll-note")).toBeNull();
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Use Arcane Barrage" })));
+    expect(useCalls()[0]!.args).not.toHaveProperty("roll");
+    expect(within(strip).getByRole("group", { name: "Help dice" })).toHaveTextContent("1");
+  });
+
+  it("the GM's locked view has no strip", () => {
+    withHand([BOLT]);
+    render(<HandBody {...props({ gm: true, canPlay: false })} />);
+    expect(screen.queryByTestId("combat-hand-roll-options")).toBeNull();
   });
 
   it("creatures picked in the dialog get target rings on the map; unpicking one drops its ring", () => {

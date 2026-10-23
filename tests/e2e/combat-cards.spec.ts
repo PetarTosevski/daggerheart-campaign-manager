@@ -12,7 +12,8 @@ import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 // and comes back after the GM's rest, and a vault card is recalled for free while the rest is open (CB p.101, p.105);
 // the GM selecting a PC token sees the Hand greyed until "Play for this character" is on, then plays Bolt Beacon for Ash
 // (desktop and 390 px). Axe on each view.
-// F7-H4 (dcm-bxp.99.24): a rolling card opens the dialog with the Attack bar's roll options; a player selecting another
+// F8-I1 (dcm-bxp.99.28): the roll options sit in the Hand's strip; Bolt Beacon with the Bandit picked fires at once.
+// F7-H4 (dcm-bxp.99.24): a player selecting another
 // PC's token sees that Hand read only (no Use / Recall), and nothing once the GM turns "Players can see each other's
 // cards" off; the player's "Hide my hand" switch; a creature the GM picks in a card dialog gets a target ring on the map.
 
@@ -106,18 +107,16 @@ test("a player uses Bolt Beacon on the Bandit with roll options: Hope spent, Hit
     await expect(hand.getByRole("article", { name: "Book of Illiat" }).getByRole("list", { name: "Cost and limit" })).toHaveText("3 spells");
     await expectNoSeriousA11yViolations(player, { include: ".cm-aside" });
 
-    // Pick the Bandit on the map; Bolt Beacon rolls, so Use opens the dialog with the Bandit picked and the roll options.
-    await player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Bandit, Enemy/ }).click();
-    const hopeBefore = (await sheetOf(s)).hope;
-    await bolt.getByRole("button", { name: "Use Bolt Beacon" }).click();
-    const dialog = player.getByRole("dialog", { name: "Bolt Beacon" });
-    await expect(dialog.getByRole("button", { name: "Bandit" })).toHaveAttribute("aria-pressed", "true");
-    const options = dialog.getByTestId("combat-card-roll-options");
+    // F8-I1 (dcm-bxp.99.28): advantage in the Hand's roll-options strip; pick the Bandit on the map; Bolt Beacon asks
+    // nothing else, so Use fires at once with the strip's options (no dialog), and the strip clears.
+    const options = hand.getByTestId("combat-hand-roll-options");
     await options.getByText("Roll options").click();
     await options.getByRole("button", { name: "More advantage" }).click();
     await expect(options.getByRole("group", { name: "Advantage" })).toContainText("Advantage ×1");
-    await expectNoSeriousA11yViolations(player, { include: "dialog[open]" });
-    await dialog.getByRole("button", { name: "Use Bolt Beacon" }).click();
+    await expectNoSeriousA11yViolations(player, { include: ".cm-aside" });
+    await player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Bandit, Enemy/ }).click();
+    const hopeBefore = (await sheetOf(s)).hope;
+    await bolt.getByRole("button", { name: "Use Bolt Beacon" }).click();
     await expect(player.getByRole("dialog")).toHaveCount(0);
     const result = hand.getByRole("region", { name: "Card result" });
     await expect(result.getByTestId("combat-card-verdict")).toHaveText(/Bandit\s*Hit/);
@@ -125,6 +124,7 @@ test("a player uses Bolt Beacon on the Bandit with roll options: Hope spent, Hit
     await expect(result).not.toContainText(/\b(HP|Stress|Difficulty|threshold|Minor|Major|Severe)\b/);
     const outcome = (await result.locator(".cma-outcome").first().textContent())!.trim();
     await expect.poll(async () => (await sheetOf(s)).hope).toBe(hopeAfter(hopeBefore, outcome));
+    await expect(options.getByRole("group", { name: "Advantage" })).toContainText("Normal");
     // Bolt Beacon has no usage limit: it stays ready.
     await expect(hand.getByRole("article", { name: "Bolt Beacon" })).not.toHaveAttribute("data-exhausted", "true");
     await expect(bolt.getByRole("button", { name: "Use Bolt Beacon" })).toBeEnabled();

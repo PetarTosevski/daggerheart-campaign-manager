@@ -5,6 +5,7 @@ import type { TraitId } from "@/lib/srd/types";
 
 import type { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import type { RollValues } from "../roll-controls";
 
 /**
  * The Hand's pure model (plan combat-actions CA6): what a card use asks before it runs, read from the card's effect
@@ -46,7 +47,7 @@ export type UseForm = {
   gmDifficulty: boolean;
   /** `choose` steps asked before the roll (`timing: "beforeRoll"`). */
   choose: { stepId: string; label: string; options: { id: string; label: string }[]; count: number | null }[];
-  /** The use makes an action roll: the dialog offers the Attack bar's roll options (Experiences, advantage, Help; F7-H4). */
+  /** The use makes an action roll: the Hand's roll-options strip applies to it (Experiences, advantage, Help; F8-I1). */
   rolls: boolean;
 };
 
@@ -187,12 +188,13 @@ export function fitsSide(c: Creature, side: TargetSpec["side"]): boolean {
 
 /**
  * Whether Use needs the dialog: a grimoire spell to pick, a number, a cost option, a situation to confirm, an optional
- * part, creatures beyond one enemy target, a weapon or trait, the GM's Difficulty, or a roll (its roll options:
- * Experiences, advantage, Help; F7-H4, user answer 2026-10-22 "for any card that rolls"). A one-enemy card that does not
- * roll, with an enemy already picked on the map, fires at once (CA6: "a dialog only when the card needs a choice").
+ * part, creatures beyond one enemy target, a weapon or trait, or the GM's Difficulty. A one-enemy card with an enemy
+ * already picked on the map fires at once (CA6: "a dialog only when the card needs a choice"), whether or not it rolls:
+ * the roll options live in the Hand's strip (F8-I1, dcm-bxp.99.28, user answer 2026-10-23: "a rolling card with an
+ * enemy picked and nothing else to ask fires at once").
  */
 export function needsDialog(form: UseForm, opts: { spells: number; pickedEnemies: number; gm: boolean }): boolean {
-  if (opts.spells > 1 || form.rolls) return true;
+  if (opts.spells > 1) return true;
   if (form.numbers.length || form.eithers.length || form.situations.length || form.optionals.length || form.recipients.length || form.choose.length) return true;
   if (form.weapon || form.traits || (form.gmDifficulty && opts.gm)) return true;
   if (form.targets === null) return false;
@@ -211,10 +213,6 @@ export type FormValues = {
   trait?: TraitId;
   difficulty?: number;
   options: Readonly<Record<string, readonly string[]>>;
-  /** Roll options (F7-H4): Experiences used (1 Hope each, CB p.90), advantage (negative: disadvantage), Help dice. */
-  experienceIds: readonly string[];
-  edge: number;
-  help: number;
 };
 
 /** The starting answers: numbers at their minimum, default-on optionals on, the picked enemies as targets. */
@@ -231,9 +229,6 @@ export function initialValues(form: UseForm, pickedEnemies: readonly string[]): 
     ...(form.weapon ? { weapon: "primary" as const } : {}),
     ...(form.traits ? { trait: form.traits[0] } : {}),
     options: {},
-    experienceIds: [],
-    edge: 0,
-    help: 0,
   };
 }
 
@@ -264,9 +259,6 @@ export function choicesOf(form: UseForm, values: FormValues): CardChoice[] {
   return out;
 }
 
-/** The most advantage, disadvantage or Help dice the roll options offer (the Attack bar's and the dice box's limit). */
-export const ROLL_DICE_LIMIT = 6;
-
 export type RollAnswers = {
   trait?: TraitId;
   difficulty?: number;
@@ -276,19 +268,29 @@ export type RollAnswers = {
   help?: number;
 };
 
-/** `combatCards.useCard`'s `roll` from the dialog's answers, or undefined when nothing is set (the GM's Difficulty only for the GM). */
-export function rollOf(form: UseForm, values: FormValues, gm: boolean): RollAnswers | undefined {
+/**
+ * `combatCards.useCard`'s `roll`, or undefined when nothing is set: the dialog's trait and (GM only) Difficulty, plus the
+ * Hand's roll-options strip (Experiences, advantage or disadvantage, Help; F8-I1) when the use rolls. A quick use (no
+ * dialog) passes no dialog answers.
+ */
+export function rollOf(form: Pick<UseForm, "rolls">, values: Pick<FormValues, "trait" | "difficulty"> | null, gm: boolean, rollOptions: RollValues): RollAnswers | undefined {
   const roll: RollAnswers = {
-    ...(values.trait ? { trait: values.trait } : {}),
-    ...(gm && values.difficulty !== undefined ? { difficulty: values.difficulty } : {}),
+    ...(values?.trait ? { trait: values.trait } : {}),
+    ...(gm && values?.difficulty !== undefined ? { difficulty: values.difficulty } : {}),
   };
   if (form.rolls) {
-    if (values.experienceIds.length > 0) roll.experienceIds = [...values.experienceIds];
-    if (values.edge > 0) roll.advantage = values.edge;
-    if (values.edge < 0) roll.disadvantage = -values.edge;
-    if (values.help > 0) roll.help = values.help;
+    if (rollOptions.experienceIds.length > 0) roll.experienceIds = [...rollOptions.experienceIds];
+    if (rollOptions.edge > 0) roll.advantage = rollOptions.edge;
+    if (rollOptions.edge < 0) roll.disadvantage = -rollOptions.edge;
+    if (rollOptions.help > 0) roll.help = rollOptions.help;
   }
   return Object.keys(roll).length > 0 ? roll : undefined;
+}
+
+/** Whether a use request carried any of the strip's roll options (so the strip clears once it lands; F8-I1). */
+export function usedRollOptions(request: { roll?: RollAnswers }): boolean {
+  const r = request.roll;
+  return r !== undefined && ((r.experienceIds?.length ?? 0) > 0 || (r.advantage ?? 0) > 0 || (r.disadvantage ?? 0) > 0 || (r.help ?? 0) > 0);
 }
 
 /** The server's after-the-roll asks answered: `opt:<step>` for a choose step, `split:<tokenId>` for a damage share. */

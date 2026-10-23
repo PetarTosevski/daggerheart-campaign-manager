@@ -525,7 +525,10 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
     expect(await code(a.player.query(api.combatCards.hand, args))).toBe("ok");
     expect(await code(a.gm.query(api.combatCards.hand, args))).toBe("ok");
     expect((await other.query(api.combatCards.handSharing, { campaignId: a.campaignId })).playersSeeHands).toBe(false);
-    // The switch is not one of the frame's optional rules: campaigns.get's options don't list it.
+    // F8-I1: the switch is the campaign's typed field, never an `options` key (and so never one of the optional rules).
+    const campaign = await a.t.run((ctx) => ctx.db.get("campaigns", a.campaignId));
+    expect(campaign!.playersSeeHands).toBe(false);
+    expect(campaign!.options ?? {}).not.toHaveProperty("playersSeeHands");
     expect(Object.keys((await a.gm.query(api.campaigns.get, { campaignId: a.campaignId }))!.options)).not.toContain("playersSeeHands");
 
     // On again, and Ash's player hides the hand (twice: one entry): other players are refused; the GM still sees it.
@@ -536,17 +539,14 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
     expect(await code(other.query(api.combatCards.hand, args))).toBe("FORBIDDEN");
     expect(await code(a.gm.query(api.combatCards.hand, args))).toBe("ok");
     expect(await code(a.player.query(api.combatCards.hand, args))).toBe("ok");
-    const stored = await a.t.run((ctx) =>
-      ctx.db
-        .query("frameTrackers")
-        .withIndex("by_campaign_key", (q) => q.eq("campaignId", a.campaignId).eq("key", "handPrivacy"))
-        .collect(),
-    );
-    expect(stored.map((r) => r.data)).toEqual([{ hidden: [a.w.characterA], schemaVersion: 1 }]);
+    // F8-I1: stored on the character, no tracker row.
+    expect((await a.t.run((ctx) => ctx.db.get("characters", a.w.characterA)))!.handHidden).toBe(true);
+    expect(await a.t.run((ctx) => ctx.db.query("frameTrackers").withIndex("by_campaign_key", (q) => q.eq("campaignId", a.campaignId).eq("key", "handPrivacy")).collect())).toEqual([]);
 
-    // Shown again: readable.
+    // Shown again: readable, and the field is unset again.
     await a.player.mutation(api.combatCards.setHandHidden, { ...args, hidden: false });
     expect(await other.query(api.combatCards.hand, args)).toEqual(own);
+    expect((await a.t.run((ctx) => ctx.db.get("characters", a.w.characterA)))!.handHidden).toBeUndefined();
   });
 
   it("another player can't hide Ash's hand; removing a character drops it from the hidden list", async () => {
@@ -559,12 +559,15 @@ describe("F7-H4 (dcm-bxp.99.24): who reads a hand, roll options on cards", () =>
     expect((await a.gm.query(api.combatCards.handSharing, { campaignId: a.campaignId })).hidden).toEqual([a.w.characterB]);
   });
 
-  it("a hidden-hands blob that doesn't parse is TRACKER_CORRUPT for another player; the character's own player never reads it", async () => {
+  it("F8-I1: the old storage (an options key, a handPrivacy tracker) is no longer read; only the typed fields count", async () => {
     const a = await arena();
-    await a.t.run((ctx) => ctx.db.insert("frameTrackers", { campaignId: a.campaignId, key: "handPrivacy", data: { schemaVersion: 1, hidden: "nope" }, updatedAt: 0 }));
+    await a.t.run(async (ctx) => {
+      await ctx.db.patch("campaigns", a.campaignId, { options: { playersSeeHands: false } });
+      await ctx.db.insert("frameTrackers", { campaignId: a.campaignId, key: "handPrivacy", data: { schemaVersion: 1, hidden: [a.w.characterA] }, updatedAt: 0 });
+    });
     const args = { campaignId: a.campaignId, characterId: a.w.characterA };
-    expect(await code(a.w.as("otherPlayer").query(api.combatCards.hand, args))).toBe("TRACKER_CORRUPT");
-    expect(await code(a.player.query(api.combatCards.hand, args))).toBe("ok");
+    expect(await code(a.w.as("otherPlayer").query(api.combatCards.hand, args))).toBe("ok");
+    expect(await a.player.query(api.combatCards.handSharing, { campaignId: a.campaignId })).toEqual({ playersSeeHands: true, hidden: [] });
   });
 
   it("roll options on a card: an Experience costs a Hope and adds its value; advantage and Help add their dice", async () => {

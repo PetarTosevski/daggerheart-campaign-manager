@@ -29,6 +29,12 @@ export const characterTables = {
      * one again brings the prompt back. Absent on every older row.
      */
     deathMoveSpent: v.optional(v.literal(true)),
+    /**
+     * F7-H4 / F8-I1 (dcm-bxp.99.27): set while the character's player hides their hand from the other players on the
+     * Combat Map (unset = shared while the GM's switch is on). `combatCards.setHandHidden` writes it;
+     * `migrations/handSharing:moveHidden` moved it here from the `frameTrackers` `handPrivacy` blob.
+     */
+    handHidden: v.optional(v.literal(true)),
     sheet: v.any(),
     createdAt: v.number(),
     updatedAt: v.number(),
