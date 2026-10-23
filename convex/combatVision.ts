@@ -73,6 +73,8 @@ import { carriedLightValidator } from "./lib/validators/combatMaps";
  *   has explored (an unseen door answers COMBAT_OBJECT_NOT_FOUND, as if it were not there), and only from Melee
  *   by such a character (COMBAT_OUT_OF_REACH, B4, dcm-bxp.130).
  * - `explored` / `markExplored`: a character's explored samples (R11), merged, written only when they grow.
+ * - `forgetExplored` (GM): deletes a map's explored rows, every character's or one character's (the board's "Forget
+ *   explored", dcm-bxp.52).
  * - `paintFog` (GM): reveal / hide / erase marks on the fog layer (R12); they decide token visibility too (user
  *   2026-10-20: "reveal" squares are clear, "hide" squares unseen).
  */
@@ -292,6 +294,29 @@ async function addExplored(ctx: MutationCtx, map: Doc<"combatMaps">, characterId
   else await ctx.db.patch("combatExplored", row._id, { bits: next, updatedAt });
   return true;
 }
+
+/** Explored rows one `forgetExplored` call deletes (a map has one row per character ever placed on it). */
+export const FORGET_EXPLORED_BATCH = 100;
+
+/**
+ * GM: forgets the explored areas on a map (the board's "Forget explored", dcm-bxp.52): every character's, or only
+ * `characterId`'s. Players then see only what their characters see now (their client stores that again). Deletes at
+ * most FORGET_EXPLORED_BATCH rows per call; `more` is true when rows may remain, and the caller calls again.
+ */
+export const forgetExplored = gmMutation({
+  args: { mapId: v.string(), characterId: v.optional(v.string()) },
+  returns: v.object({ deleted: v.number(), more: v.boolean() }),
+  handler: async (ctx, { mapId, characterId }) => {
+    const map = await loadCombatMap(ctx, ctx.campaign._id, mapId);
+    const character = characterId === undefined ? null : await campaignCharacter(ctx, characterId);
+    const rows = await ctx.db
+      .query("combatExplored")
+      .withIndex("by_map_character", (q) => (character === null ? q.eq("mapId", map._id) : q.eq("mapId", map._id).eq("characterId", character._id)))
+      .take(FORGET_EXPLORED_BATCH);
+    for (const row of rows) await ctx.db.delete("combatExplored", row._id);
+    return { deleted: rows.length, more: rows.length === FORGET_EXPLORED_BATCH };
+  },
+});
 
 /** GM: shows a token in dim light to one character (R10, after a successful roll). Idempotent. */
 export const revealTo = gmMutation({

@@ -28,21 +28,38 @@ export type { TokenView };
 export type TrackerCondition = "hidden" | "restrained" | "vulnerable" | "distracted";
 
 /**
- * The tokens on screen: the GM's `combatTokens.list` (every token with stats) or, for a player, `combatTokens.party`
- * (the PC tokens only, until C7's filtered view). `undefined` while loading.
+ * The tokens on screen: the GM's `combatTokens.list` (every token with stats) or, for a player, the PC tokens of
+ * C7's `combatVision.playerView` (`pcs`, with public sheet numbers, Q4): the same subscription the vision layer
+ * reads, so a player holds one query for the map's tokens (dcm-bxp.53). Only while that view has none (the player
+ * has no character on the map, `noCharacter`, or the view is of another map) does a player read
+ * `combatTokens.party`. `undefined` while loading.
  */
 export function useTokens(campaignId: Id<"campaigns">, role: CombatRole, mapId: Id<"combatMaps">): TokenView[] | undefined {
-  const gm = useQuery(api.combatTokens.list, role === "gm" ? { campaignId, mapId } : "skip");
-  const party = useQuery(api.combatTokens.party, role === "player" ? { campaignId, mapId } : "skip");
-  return role === "gm" ? gm : party;
+  const player = role === "player";
+  const gm = useQuery(api.combatTokens.list, player ? "skip" : { campaignId, mapId });
+  const view = useQuery(api.combatVision.playerView, player ? { campaignId } : "skip");
+  const fromView = view?.state === "ok" && view.mapId === mapId ? view.pcs : null;
+  const party = useQuery(api.combatTokens.party, player && view !== undefined && fromView === null ? { campaignId, mapId } : "skip");
+  if (!player) return gm;
+  if (view === undefined) return undefined;
+  return fromView ?? party;
 }
 
-/** Applies `change` to every loaded token list (GM and party queries) that holds a matching token (CL4). */
-function patchTokens(store: OptimisticLocalStore, match: (t: TokenView) => boolean, change: (t: TokenView) => TokenView) {
+/**
+ * Applies `change` to every loaded token list that holds a matching token (CL4): the GM's list, the party list and
+ * the PC tokens of the character views (`playerView`, the GM's `previewAs`).
+ */
+export function patchTokens(store: OptimisticLocalStore, match: (t: TokenView) => boolean, change: (t: TokenView) => TokenView) {
   for (const query of [api.combatTokens.list, api.combatTokens.party]) {
     for (const { args, value } of store.getAllQueries(query)) {
       if (value === undefined || !value.some(match)) continue;
       store.setQuery(query, args, value.map((t) => (match(t) ? change(t) : t)));
+    }
+  }
+  for (const query of [api.combatVision.playerView, api.combatVision.previewAs]) {
+    for (const { args, value } of store.getAllQueries(query)) {
+      if (value?.state !== "ok" || !value.pcs.some(match)) continue;
+      store.setQuery(query, args, { ...value, pcs: value.pcs.map((t) => (match(t) ? change(t) : t)) });
     }
   }
 }

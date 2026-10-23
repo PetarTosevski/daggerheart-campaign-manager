@@ -42,6 +42,10 @@ async function squareCentre(stage: Locator, w: number, x: number, y: number) {
   return { x: box.x + (x + 0.5) * step, y: box.y + (y + 0.5) * step };
 }
 
+/** C1's explored codec alphabet (`src/lib/domain/combat-map/vision.ts`): six samples per character. */
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const popcount = (n: number): number => (n <= 0 ? 0 : (n & 1) + popcount(n >> 1));
+
 test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the GM's preview and fog brush", async ({ page, browser }) => {
   test.setTimeout(240_000);
   const { client, campaignId, url } = await openCombatMap(page);
@@ -187,6 +191,24 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     await page.mouse.click(again.x, again.y);
     await expect(board.getByTestId("combat-fog-marks-hide")).toHaveCount(0);
     await expect(playerBoard.getByRole("button", { name: "Bandit, Enemy" })).toBeVisible();
+
+    // ---- "Forget explored" (dcm-bxp.52, two clicks): Ash looks west too, so the explored area holds both sides; after
+    // the GM forgets it, the player's client stores only what Ash sees now (east), fewer samples than before.
+    const exploredCount = async () => {
+      const row = await playerClient.query(api.combatVision.explored, { campaignId, characterId: ash.characterId! });
+      return [...(row?.bits ?? "")].reduce((n, ch) => n + popcount(B64.indexOf(ch)), 0);
+    };
+    const eastOnly = await exploredCount();
+    await playerClient.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: Math.PI });
+    await expect.poll(exploredCount).toBeGreaterThan(eastOnly);
+    await playerClient.mutation(api.combatTokens.turn, { campaignId, tokenId: ash._id, angle: 0 });
+    const bothSides = await exploredCount();
+    const forget = vision.getByRole("button", { name: "Forget explored" });
+    await forget.click();
+    await vision.getByRole("button", { name: "Click again to forget" }).click();
+    await expect(forget).toBeVisible();
+    await expect.poll(exploredCount).toBeLessThan(bothSides);
+    await expect.poll(exploredCount).toBeGreaterThan(0);
     await expect(page.locator(".cm-root").getByRole("alert")).toHaveCount(0);
     await expect(player.locator(".cm-root").getByRole("alert")).toHaveCount(0);
   } finally {

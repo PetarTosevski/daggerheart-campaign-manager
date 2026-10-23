@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { FORGET_EXPLORED_BATCH } from "../../convex/combatVision";
 import { decodeExplored, exploredLength } from "../../src/lib/domain/combat-map/index";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
 import { errorCode, errorData, key, setupWithCampaign, useAllowlist } from "./helpers";
@@ -115,6 +116,7 @@ describe("combat vision: access", () => {
       revealTo: (c: Client) => c.mutation(api.combatVision.revealTo, { campaignId, tokenId: goblin, characterId: f.ash }),
       unrevealTo: (c: Client) => c.mutation(api.combatVision.unrevealTo, { campaignId, tokenId: goblin, characterId: f.ash }),
       paintFog: (c: Client) => c.mutation(api.combatVision.paintFog, { campaignId, mapId, squares: [0, 1], mark: "hide" }),
+      forgetExplored: (c: Client) => c.mutation(api.combatVision.forgetExplored, { campaignId, mapId }),
     };
     const names = Object.keys(gmOnly) as (keyof typeof gmOnly)[];
     const out = await outsider(f.t);
@@ -373,6 +375,63 @@ describe("combat vision: lights and explored areas", () => {
     expect((await f.gm.query(api.combatVision.explored, { campaignId, characterId: f.ash }))!.bits).toBe(
       (await f.player.query(api.combatVision.explored, { campaignId, characterId: f.ash }))!.bits,
     );
+  });
+
+  it("lets the GM forget a map's explored areas, every character's or one character's, in batches (dcm-bxp.52)", async () => {
+    const f = await withScene();
+    const { campaignId, mapId } = f;
+    const length = exploredLength(30, 20);
+    const all = "_".repeat(Math.ceil(length / 6));
+    const count = (m: Uint8Array) => m.reduce((n, b) => n + b, 0);
+    const stored = async (characterId: Id<"characters">) => {
+      const row = await f.gm.query(api.combatVision.explored, { campaignId, characterId });
+      return count(decodeExplored(row!.bits, length));
+    };
+    const forget = (args: { mapId?: string; characterId?: string } = {}) =>
+      f.gm.mutation(api.combatVision.forgetExplored, { campaignId, mapId, ...args });
+    const explore = async () => {
+      expect(await f.player.mutation(api.combatVision.markExplored, { campaignId, mapId, characterId: f.ash, bits: all })).toEqual({ grew: true });
+      expect(await f.gm.mutation(api.combatVision.markExplored, { campaignId, mapId, characterId: f.bryn, bits: all })).toEqual({ grew: true });
+    };
+    // A row on another map stays.
+    const { mapId: other } = await f.gm.mutation(api.combatMaps.create, { campaignId, size: "small", idempotencyKey: key() });
+    await f.t.run((c) => c.db.insert("combatExplored", { mapId: other, characterId: f.ash, bits: "_", updatedAt: 0 }));
+    const rowsOn = (id: Id<"combatMaps">) =>
+      f.t.run(async (c) => (await c.db.query("combatExplored").withIndex("by_map_character", (q) => q.eq("mapId", id)).collect()).length);
+
+    await explore();
+    expect(await stored(f.ash)).toBeGreaterThan(0);
+    expect(await stored(f.bryn)).toBeGreaterThan(0);
+
+    // One character: only that character's row goes.
+    expect(await forget({ characterId: f.bryn })).toEqual({ deleted: 1, more: false });
+    expect(await stored(f.bryn)).toBe(0);
+    expect(await stored(f.ash)).toBeGreaterThan(0);
+
+    // Every character on the map; the other map's row stays; nothing left forgets nothing.
+    expect(await forget()).toEqual({ deleted: 1, more: false });
+    expect(await stored(f.ash)).toBe(0);
+    expect(await rowsOn(mapId)).toBe(0);
+    expect(await rowsOn(other)).toBe(1);
+    expect(await forget()).toEqual({ deleted: 0, more: false });
+
+    // The player stores what Ash sees now again.
+    expect(await f.player.mutation(api.combatVision.markExplored, { campaignId, mapId, characterId: f.ash, bits: all })).toEqual({ grew: true });
+
+    // A full batch says `more`; the next call takes the rest.
+    await f.t.run(async (c) => {
+      for (let i = 0; i < FORGET_EXPLORED_BATCH; i++) await c.db.insert("combatExplored", { mapId, characterId: f.bryn, bits: "_", updatedAt: 0 });
+    });
+    expect(await forget()).toEqual({ deleted: FORGET_EXPLORED_BATCH, more: true });
+    expect(await forget()).toEqual({ deleted: 1, more: false });
+    expect(await rowsOn(mapId)).toBe(0);
+
+    // Unknown map or character, or one from another campaign: not found.
+    expect(await code(forget({ mapId: "nope" }))).toBe("COMBAT_MAP_NOT_FOUND");
+    expect(await code(forget({ characterId: "nope" }))).toBe("NOT_FOUND");
+    const { campaignId: mine } = await f.gm.mutation(api.campaigns.create, { name: "Other", frameId: "witherwild", idempotencyKey: key() });
+    const { characterId: stranger } = await f.gm.mutation(api.characters.create, { campaignId: mine, draft: draft("Cael"), idempotencyKey: key() });
+    expect(await code(forget({ characterId: stranger }))).toBe("NOT_FOUND");
   });
 
   it("lets a player switch only a light their character sees or has seen, from Melee; the GM any (R9, B4)", async () => {

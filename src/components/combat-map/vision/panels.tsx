@@ -262,6 +262,7 @@ function GmPanel(props: VisionPanelProps) {
   const viewing = useViewing(props);
   const actions = useVisionActions(campaignId);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmForget, setConfirmForget] = useState(false);
   const pcs = pcTokens(tokens);
   const previewed = pcs.find((p) => p.characterId === previewCharacterId);
   const view = okView(viewing);
@@ -326,8 +327,26 @@ function GmPanel(props: VisionPanelProps) {
           >
             {confirmClear ? "Click again to clear" : "Clear marks"}
           </button>
+          <button
+            type="button"
+            className="cm-btn cm-sm"
+            onClick={() => {
+              if (!confirmForget) {
+                setConfirmForget(true);
+                return;
+              }
+              setConfirmForget(false);
+              void actions.forgetExplored(map._id);
+            }}
+            onBlur={() => setConfirmForget(false)}
+          >
+            {confirmForget ? "Click again to forget" : "Forget explored"}
+          </button>
         </div>
-        <span className="cm-muted cm-vis-small">Reveal shows those squares and the tokens on them to every player; Hide hides them; Erase returns them to normal sight.</span>
+        <span className="cm-muted cm-vis-small">
+          Reveal shows those squares and the tokens on them to every player; Hide hides them; Erase returns them to normal sight. Forget
+          explored clears every character’s explored areas on this map.
+        </span>
       </div>
       <ErrorLine actions={actions} />
     </section>
