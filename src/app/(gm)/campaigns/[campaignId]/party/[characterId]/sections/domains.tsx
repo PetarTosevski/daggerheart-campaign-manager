@@ -7,6 +7,7 @@ import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
 import { CardMore } from "@/components/cards/card-dialog";
+import { CARD_BACKS, deckBacks, fan, GENERIC_BACK } from "@/components/cards/fan";
 import { usedSpellLines } from "@/components/cards/used-spells";
 import { DOMAIN_ICONS } from "@/components/party/party-display";
 import { Label, SheetBox, Small } from "@/components/party/sheet-ui";
@@ -49,21 +50,6 @@ import { recallBlock, resolveCards, vaultCardIds } from "../sheet-helpers";
 // sits at its bottom.
 
 const TYPE_LABEL: Record<DomainCard["type"], string> = { ability: "Ability", spell: "Spell", grimoire: "Grimoire" };
-
-/** Card backs per domain (board `cb-*`), used for the vault deck stack; the first is the generic back. */
-const GENERIC_BACK = "5bb6a224f710a73fa7d826fa6616fa4d";
-const CARD_BACKS: Record<string, string> = {
-  arcana: "441cbcb568c811cfa8cc0a651f8f5752",
-  blade: "27c8715ef459943156831f0e3c127f38",
-  bone: "8c20795f8598bcf81e2f2b55c7c8ac3b",
-  codex: "579e104068411cf05c61eaeed505b377",
-  dread: "0dd77e7e8b4429d3db87d24a0572de31",
-  grace: "644d29b2887b48454029477addb6e286",
-  midnight: "58b2cb9a99716b7fdb31aa94614c4017",
-  sage: "10d9bc629f16468099536863f2db622b",
-  splendor: "4482af05fe6a1c75febf11dab6da1510",
-  valor: "4c7f9d2c0b0c64af54dbf902ac891ffe",
-};
 
 /** The reset label of a card whose once-per limit is used (`card:<id>` in featureUses), or null while it is ready. */
 function usedLabel(sheet: Parameters<typeof cardAvailability>[0], cardId: string): string | null {
@@ -140,15 +126,6 @@ function CardFace({
   );
 }
 
-/**
- * The board's fan: each card turns 7° per step from the middle and drops by the square of its offset. A used card is
- * turned further and sinks a little (CB p.101: "turn it on its side"); hover and focus still straighten it to read.
- */
-function fan(i: number, n: number, turned = false): CSSProperties {
-  const off = i - (n - 1) / 2;
-  return { "--rot": `${off * 7 + (turned ? 16 : 0)}deg`, "--ty": `${off * off * 7 + (turned ? 14 : 0)}px`, zIndex: i + 1 } as CSSProperties;
-}
-
 /** Level-up mode: offers an owned card for the exchange (CB 110), or shows and cancels the one being exchanged. */
 function ExchangeControl({ card }: { card: DomainCard }) {
   const lu = useLevelUpDraft();
@@ -194,7 +171,11 @@ export function DomainCardsSection({ cls }: { cls: ClassDef | undefined }) {
   const allowed = cardsAllowed(sheet);
   const bonus = allowed - sheet.level - 1;
   const pips = Math.max(allowed, owned);
-  const backs = [0, 1, 2].map((i) => CARD_BACKS[vault[vault.length - 1 - i]?.domain ?? cls?.domains[i % cls.domains.length] ?? ""] ?? GENERIC_BACK);
+  // The fan and the deck's backs: the shared hand maths (src/components/cards/fan.ts, also the Combat Map's Hand).
+  const backs = deckBacks(
+    vault.map((c) => c.domain),
+    cls?.domains ?? [],
+  );
   const deckLabel = `${vaultOpen ? "Close" : "Open"} vault, ${vault.length} card${vault.length === 1 ? "" : "s"}`;
 
   async function move(card: DomainCard, to: "loadout" | "vault") {

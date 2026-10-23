@@ -7,20 +7,26 @@
  * F7-H4 (dcm-bxp.99.24): dialog picks ringed on the map (`toggleExtraTarget`), another player's hand read only or
  * hidden, the player's and the GM's sharing switches. F8-I1 (dcm-bxp.99.28): the roll-options strip in the Hand applies
  * to the next card that rolls, and a rolling card with an enemy picked and nothing else to ask fires at once.
+ * HF1 (plan hand-fan, dcm-bxp.99.30): the fan docked along the bottom of the map. A card dragged onto the table goes
+ * the same way as its Use; a one-enemy card with no enemy picked waits for the enemy tapped on the map; used, greyed
+ * and read-only cards don't drag; "Hide cards" leaves the peek tab and is remembered per player; the dock portals into
+ * the map board.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { PanelMemoryProvider, usePanelMemory } from "@/components/combat-map/actions/attack/memory";
-import { Hand, HandBody, type BodyProps } from "@/components/combat-map/actions/hand";
+import { Hand, HandBody, HandColumn, handHiddenKey, type BodyProps } from "@/components/combat-map/actions/hand";
 import { HideHandSwitch } from "@/components/combat-map/actions/hand/sharing";
 import { ActionsProvider, useCombatTargets } from "@/components/combat-map/actions/targets/state";
 import { HandSharingSwitch } from "@/components/combat-map/settings/hand-sharing";
 import type { ActionsPanelProps } from "@/components/combat-map/slots";
 import {
+  aimsOnMap,
   answerChoices,
   cardBadges,
+  dropsOnTable,
   choicesOf,
   formFor,
   formProblem,
@@ -288,6 +294,9 @@ describe("the Hand", () => {
     const bones = within(loadout).getByRole("article", { name: "Bare Bones" });
     expect(within(bones).queryByRole("button", { name: /^Use/ })).toBeNull();
     expect(within(bones).getByRole("button", { name: "More about Bare Bones" })).toBeInTheDocument();
+    // HF1: the vault opens from the deck at the bar's right end.
+    expect(screen.queryByRole("list", { name: "Vault" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open vault, 1 card" }));
     const vault = screen.getByRole("list", { name: "Vault" });
     expect(within(vault).getByRole("button", { name: "Recall: 2 Stress, Book of Ava" })).toBeEnabled();
   });
@@ -354,6 +363,7 @@ describe("the Hand", () => {
   it("Recall calls characters.moveCard into the loadout, free during an open rest", async () => {
     withHand([BOLT], [AVA], true);
     render(<HandBody {...props()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open vault, 1 card" }));
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Recall: free, Book of Ava" })));
     expect(calls.find((c) => c.name === "characters:moveCard")?.args).toEqual({ characterId: "ch1", cardId: "book-of-ava", to: "loadout", duringRest: true });
   });
@@ -515,13 +525,21 @@ describe("F7-H4: another player's hand and the sharing switches", () => {
     expect(screen.getByTestId("combat-hand-hidden")).toHaveTextContent("The GM keeps every player’s cards private.");
   });
 
-  it("the player's own hand (own token or nothing selected) has Use and the 'Hide my hand' switch", async () => {
+  it("the player's own hand (own token or nothing selected) has Use; the column's Hand card has the 'Hide my hand' switch", async () => {
     withHand([BOLT]);
     queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
-    render(<Hand {...playerPanel(ASH)} />);
+    render(
+      <>
+        <Hand {...playerPanel(ASH)} />
+        <HandColumn {...playerPanel(ASH)} />
+      </>,
+    );
     const hand = screen.getByRole("region", { name: "Your hand" });
     expect(within(hand).getByRole("button", { name: "Use Bolt Beacon" })).toBeEnabled();
-    const hide = within(hand).getByRole("switch", { name: "Hide my hand from the other players" });
+    expect(within(hand).queryByRole("switch")).toBeNull();
+    const column = screen.getByRole("region", { name: "Hand" });
+    expect(column).toHaveTextContent("Your cards lie along the bottom of the map.");
+    const hide = within(column).getByRole("switch", { name: "Hide my hand from the other players" });
     expect(hide).not.toBeChecked();
     await act(async () => fireEvent.click(hide));
     expect(calls.find((c) => c.name === "combatCards:setHandHidden")?.args).toEqual({ campaignId: "c1", characterId: ASH_CH, hidden: true });
@@ -540,6 +558,249 @@ describe("F7-H4: another player's hand and the sharing switches", () => {
     expect(sw).toBeChecked();
     await act(async () => fireEvent.click(sw));
     expect(calls.find((c) => c.name === "campaigns:setPlayersSeeHands")?.args).toEqual({ campaignId: "c1", enabled: false });
+  });
+});
+
+type Rect = { left: number; top: number; right: number; bottom: number };
+const box = ({ left, top, right, bottom }: Rect) => ({ left, top, right, bottom, x: left, y: top, width: right - left, height: bottom - top, toJSON: () => ({}) }) as DOMRect;
+/** The map's viewport is 800 x 600 at the origin; the hand's tray covers its bottom 150 px. */
+const TABLE: Rect = { left: 0, top: 0, right: 800, bottom: 600 };
+const TRAY: Rect = { left: 0, top: 450, right: 800, bottom: 600 };
+
+/** Lays out the page for a drag: a map viewport (`.cm-vp`) and the tray's box, as getBoundingClientRect reports them. */
+function layOut() {
+  const vp = document.createElement("div");
+  vp.className = "cm-vp";
+  document.body.appendChild(vp);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function rect(this: HTMLElement) {
+    if (this.classList.contains("cm-vp")) return box(TABLE);
+    if (this.classList.contains("cmh-tray")) return box(TRAY);
+    return box({ left: 0, top: 0, right: 0, bottom: 0 });
+  });
+  return () => vp.remove();
+}
+
+/** Drags the card named `name` from the fan (inside the tray) to `to`, as a mouse would. */
+function drag(name: RegExp | string, to: { x: number; y: number }) {
+  const slot = screen.getByRole("article", { name }).closest("li")!;
+  fireEvent.pointerDown(slot, { pointerId: 1, button: 0, clientX: 400, clientY: 520 });
+  fireEvent.pointerMove(slot, { pointerId: 1, clientX: to.x, clientY: to.y });
+  fireEvent.pointerUp(slot, { pointerId: 1, clientX: to.x, clientY: to.y });
+}
+
+/** Stands in for the map: a click on the Bandit's token picks it (the vision layer calls toggleTarget). */
+function MapClick({ tokenId }: { tokenId: Id<"combatTokens"> }) {
+  const { toggleTarget } = useCombatTargets();
+  return (
+    <button type="button" onClick={() => toggleTarget(tokenId)}>
+      Bandit on the map
+    </button>
+  );
+}
+
+describe("HF1: the fan along the bottom of the map", () => {
+  let cleanUp = () => {};
+  beforeAll(() => {
+    // jsdom has no pointer capture.
+    HTMLElement.prototype.setPointerCapture ??= () => {};
+  });
+  afterEach(() => {
+    cleanUp();
+    cleanUp = () => {};
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+  });
+
+  it("model: a card let go on the table outside the tray plays; a one-enemy card with no enemy picked aims on the map", () => {
+    expect(dropsOnTable({ x: 400, y: 200 }, TABLE, TRAY)).toBe(true);
+    expect(dropsOnTable({ x: 400, y: 500 }, TABLE, TRAY)).toBe(false);
+    expect(dropsOnTable({ x: 900, y: 200 }, TABLE, TRAY)).toBe(false);
+    expect(dropsOnTable({ x: 400, y: 200 }, null, TRAY)).toBe(false);
+    expect(dropsOnTable({ x: 400, y: 200 }, TABLE, null)).toBe(true);
+    const bolt = formFor(use("bolt-beacon"));
+    expect(aimsOnMap(bolt, { spells: 1, pickedEnemies: 0, gm: false })).toBe(true);
+    // An enemy already picked: it fires at once instead; the GM picks in the dialog.
+    expect(aimsOnMap(bolt, { spells: 1, pickedEnemies: 1, gm: false })).toBe(false);
+    expect(aimsOnMap(bolt, { spells: 1, pickedEnemies: 0, gm: true })).toBe(false);
+    // A grimoire (a spell to pick) or a card with other questions opens the dialog, as Use does.
+    expect(aimsOnMap(formFor(use("book-of-illiat", "slumber")), { spells: 3, pickedEnemies: 0, gm: false })).toBe(false);
+    expect(aimsOnMap(formFor(use("mending-touch")), { spells: 1, pickedEnemies: 0, gm: false })).toBe(false);
+    // Nothing to target: it never waits.
+    expect(aimsOnMap(formFor(use("deft-maneuvers")), { spells: 1, pickedEnemies: 0, gm: false })).toBe(false);
+  });
+
+  it("the loadout is a fan: each card turned 7° per step, a used card turned further", () => {
+    withHand([BOLT, DEFT, ILLIAT]);
+    render(<HandBody {...props()} />);
+    const slots = [...screen.getByRole("list", { name: "Loadout" }).querySelectorAll<HTMLElement>(":scope > li")];
+    expect(slots.map((li) => li.style.getPropertyValue("--rot"))).toEqual(["-7deg", "16deg", "7deg"]);
+    expect(slots.map((li) => li.style.zIndex)).toEqual(["1", "2", "3"]);
+  });
+
+  it("dragging Bolt Beacon onto the table with the Bandit picked plays it the way Use does: one useCard, same request", async () => {
+    cleanUp = layOut();
+    withHand([BOLT]);
+    results["combatCards:useCard"] = [resolved(), resolved()];
+    render(<HandBody {...props()} />);
+    expect(screen.getByRole("article", { name: "Bolt Beacon" }).closest("li")).toHaveAttribute("data-draggable", "true");
+    await act(async () => drag("Bolt Beacon", { x: 400, y: 200 }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useCalls()).toHaveLength(1);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" })));
+    expect(useCalls()).toHaveLength(2);
+    const [dragged, used] = useCalls().map((c) => ({ ...c.args, idempotencyKey: "fresh per click" }));
+    expect(dragged).toEqual(used);
+    expect(dragged).toMatchObject({ cardId: "bolt-beacon", spell: "main", targetTokenIds: [BANDIT], choices: [] });
+    expect(screen.getByTestId("combat-card-verdict")).toHaveTextContent(/Bandit\s*Hit/);
+  });
+
+  it("let go over the tray or off the map, or only tapped, the card stays in the hand; a tap raises it (focus)", () => {
+    cleanUp = layOut();
+    withHand([BOLT]);
+    render(<HandBody {...props()} />);
+    drag("Bolt Beacon", { x: 400, y: 500 });
+    drag("Bolt Beacon", { x: 900, y: 200 });
+    expect(useCalls()).toHaveLength(0);
+    const slot = screen.getByRole("article", { name: "Bolt Beacon" }).closest("li")!;
+    fireEvent.pointerDown(slot, { pointerId: 2, button: 0, clientX: 400, clientY: 520 });
+    fireEvent.pointerUp(slot, { pointerId: 2, clientX: 401, clientY: 521 });
+    expect(slot).toHaveFocus();
+    expect(useCalls()).toHaveLength(0);
+  });
+
+  it("dragged with no enemy picked, Bolt Beacon waits; the enemy then tapped on the map is its target, with the roll options", async () => {
+    cleanUp = layOut();
+    withHand([BOLT]);
+    queries["characters:get"] = { sheet: SHEET };
+    results["combatCards:useCard"] = [resolved()];
+    render(
+      <ActionsProvider>
+        <MapClick tokenId={BANDIT} />
+        <HandBody {...props({ pickedEnemies: [] })} />
+      </ActionsProvider>,
+    );
+    act(() => drag("Bolt Beacon", { x: 400, y: 200 }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useCalls()).toHaveLength(0);
+    expect(screen.getByTestId("combat-hand-aim")).toHaveTextContent("Bolt Beacon: tap an enemy on the map to target it.");
+    expect(screen.getByRole("article", { name: "Bolt Beacon" }).closest("li")).toHaveAttribute("data-aiming", "true");
+    // Roll options set while it waits still apply.
+    fireEvent.click(within(screen.getByTestId("combat-hand-roll-options")).getByRole("button", { name: "More advantage" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Bandit on the map" })));
+    expect(useCalls()).toHaveLength(1);
+    expect(useCalls()[0]!.args).toMatchObject({ cardId: "bolt-beacon", targetTokenIds: [BANDIT], choices: [], roll: { advantage: 1 } });
+    expect(screen.queryByTestId("combat-hand-aim")).toBeNull();
+  });
+
+  it("a waiting card can be cancelled, or its target picked from a list instead", () => {
+    cleanUp = layOut();
+    withHand([BOLT]);
+    render(
+      <ActionsProvider>
+        <MapClick tokenId={BANDIT} />
+        <HandBody {...props({ pickedEnemies: [] })} />
+      </ActionsProvider>,
+    );
+    act(() => drag("Bolt Beacon", { x: 400, y: 200 }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByTestId("combat-hand-aim")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Bandit on the map" }));
+    expect(useCalls()).toHaveLength(0);
+    act(() => drag("Bolt Beacon", { x: 400, y: 200 }));
+    fireEvent.click(screen.getByRole("button", { name: "Pick from a list" }));
+    expect(screen.getByRole("dialog", { name: "Bolt Beacon" })).toBeInTheDocument();
+  });
+
+  it("a used card, a card that can't be played and the GM's locked view don't drag", () => {
+    cleanUp = layOut();
+    withHand([BOLT, DEFT, BONES]);
+    const { unmount } = render(<HandBody {...props()} />);
+    expect(screen.getByRole("article", { name: /^Deft Maneuvers, used/ }).closest("li")).not.toHaveAttribute("data-draggable");
+    expect(screen.getByRole("article", { name: "Bare Bones" }).closest("li")).not.toHaveAttribute("data-draggable");
+    drag(/^Deft Maneuvers, used/, { x: 400, y: 200 });
+    drag("Bare Bones", { x: 400, y: 200 });
+    expect(useCalls()).toHaveLength(0);
+    unmount();
+    render(<HandBody {...props({ gm: true, canPlay: false, pickedEnemies: [] })} />);
+    expect(document.querySelectorAll("[data-draggable]")).toHaveLength(0);
+    drag("Bolt Beacon", { x: 400, y: 200 });
+    expect(useCalls()).toHaveLength(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("another player's hand is a read-only fan: nothing drags", () => {
+    cleanUp = layOut();
+    withHand([BOLT]);
+    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
+    render(<Hand {...playerPanel(MIRA)} />);
+    const hand = screen.getByRole("region", { name: "Hand of Mira" });
+    expect(within(hand).getByRole("list", { name: "Loadout" })).toBeInTheDocument();
+    expect(hand.querySelectorAll("[data-draggable]")).toHaveLength(0);
+    drag("Bolt Beacon", { x: 400, y: 200 });
+    expect(useCalls()).toHaveLength(0);
+  });
+
+  it("the GM's dragged card asks its target in the dialog (GM map clicks select tokens)", () => {
+    cleanUp = layOut();
+    withHand([BOLT]);
+    render(
+      <ActionsProvider>
+        <HandBody {...props({ gm: true, pickedEnemies: [] })} />
+      </ActionsProvider>,
+    );
+    act(() => drag("Bolt Beacon", { x: 400, y: 200 }));
+    expect(screen.queryByTestId("combat-hand-aim")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Bolt Beacon" })).toBeInTheDocument();
+  });
+
+  it("'Hide cards' leaves the peek tab 'Show cards (N)', remembered per campaign and character; Show brings the fan back", () => {
+    withHand([BOLT, DEFT]);
+    const { unmount } = render(<HandBody {...props()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Hide cards" }));
+    expect(screen.getByRole("button", { name: "Show cards (2)" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Use Bolt Beacon" })).toBeNull();
+    expect(screen.queryByTestId("combat-hand-roll-options")).toBeNull();
+    expect(window.localStorage.getItem(handHiddenKey("c1" as Id<"campaigns">, "ch1" as Id<"characters">))).toBe("1");
+    unmount();
+    // The next visit to this campaign's map, in this browser, starts hidden; another character's hand does not.
+    const again = render(<HandBody {...props()} />);
+    expect(screen.getByRole("button", { name: "Show cards (2)" })).toBeInTheDocument();
+    again.unmount();
+    render(<HandBody {...props({ characterId: "ch9" as Id<"characters"> })} />);
+    expect(screen.getByRole("button", { name: "Hide cards" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("without storage (a private window) the hand renders shown and Hide still works for the visit", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    withHand([BOLT]);
+    render(<HandBody {...props()} />);
+    expect(screen.getByRole("button", { name: "Use Bolt Beacon" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hide cards" }));
+    expect(screen.getByRole("button", { name: "Show cards (1)" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show cards (1)" }));
+    expect(screen.getByRole("button", { name: "Use Bolt Beacon" })).toBeInTheDocument();
+  });
+
+  it("on the Combat Map page the hand docks into the map board; elsewhere it renders in place", () => {
+    withHand([BOLT]);
+    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
+    const main = document.createElement("main");
+    main.className = "cm-main";
+    main.innerHTML = '<aside class="cm-aside"></aside><div class="cm-area"><section class="cm-board" aria-label="Battle map"></section></div>';
+    document.body.appendChild(main);
+    try {
+      render(<Hand {...playerPanel(ASH)} />, { container: main.querySelector("aside")! });
+      const board = screen.getByRole("region", { name: "Battle map" });
+      expect(within(board).getByRole("region", { name: "Your hand" })).toBeInTheDocument();
+      expect(main.querySelector("aside .cmh-hand")).toBeNull();
+    } finally {
+      main.remove();
+    }
   });
 });
 
