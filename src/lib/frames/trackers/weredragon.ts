@@ -2,6 +2,8 @@
 // pp.140-141). Pure module: bundled into Convex functions, relative imports only.
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
+
 export const WEREDRAGON_FRAME_ID = "reign-of-the-weredragon";
 export const WEREDRAGON_TRACKER_KEY = "weredragon";
 
@@ -153,7 +155,7 @@ export function isDie(value: unknown): value is number {
 }
 
 export function nightSkyEntry(kind: RevelationKind, die: number): NightSkyCell {
-  if (!isDie(die)) throw new Error("A Night Sky die is a whole number from 1 to 6.");
+  if (!isDie(die)) throw new RuleError("INVALID", "A Night Sky die is a whole number from 1 to 6.");
   return NIGHT_SKY[kind][die - 1];
 }
 
@@ -163,12 +165,12 @@ export function nightSkyEntry(kind: RevelationKind, die: number): NightSkyCell {
  * column" and all five dice are used, so it must be a permutation of 0..4.
  */
 export function assertAssignment(roll: readonly number[], assignment: readonly number[]): void {
-  if (roll.length !== READING_DICE || !roll.every(isDie)) throw new Error("A reading is five d6.");
-  if (assignment.length !== READING_DICE) throw new Error("Assign one die to each of the five revelations.");
+  if (roll.length !== READING_DICE || !roll.every(isDie)) throw new RuleError("INVALID", "A reading is five d6.");
+  if (assignment.length !== READING_DICE) throw new RuleError("INVALID", "Assign one die to each of the five revelations.");
   const seen = new Set<number>();
   for (const i of assignment) {
     if (!Number.isInteger(i) || i < 0 || i >= READING_DICE || seen.has(i)) {
-      throw new Error("Each die goes to exactly one revelation.");
+      throw new RuleError("INVALID", "Each die goes to exactly one revelation.");
     }
     seen.add(i);
   }

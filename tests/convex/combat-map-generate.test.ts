@@ -168,6 +168,26 @@ describe("combat map generation", () => {
     expect(result).toMatchObject({ saved: true, drawnBy: "keywords", claude: "failed", reason: "network" });
   });
 
+  // dcm-bxp.82.6: the call goes through convex/lib/claude.ts (messagesCreate): its 120 s timeout and its reasons.
+  it("falls back to keywords after a refusal, and after the 120 s timeout of convex/lib/claude.ts", async () => {
+    const f = await withMap();
+    fetchMock.mockImplementation(() => Promise.resolve(reply("No.", "refusal")));
+    expect(await f.generate()).toMatchObject({ drawnBy: "keywords", claude: "failed", reason: "refusal" });
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fetchMock.mockImplementation(
+        (_url, init) => new Promise<Response>((_resolve, reject) => init!.signal!.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))),
+      );
+      const running = f.generate();
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await running).toMatchObject({ saved: true, drawnBy: "keywords", claude: "failed", reason: "timeout" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("regenerating keeps tokens (moved inside the new size) and clears explored areas, painted cells and fog marks", async () => {
     const f = await withMap();
     await f.generate();

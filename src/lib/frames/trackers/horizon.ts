@@ -2,6 +2,7 @@
 // and the Soul Echoes count. Pure: shared by Convex and the dashboard.
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
 import { DOOM_BOXES } from "../doom-track";
 
 export const HORIZON_TRACKER_KEY = "horizon";
@@ -30,9 +31,12 @@ export type DoomTierNumber = 1 | 2 | 3 | 4;
 
 export const INITIAL_HORIZON_STATE: HorizonState = { boxes: {}, echoesCollected: FIRST_ECHO };
 
-/** Stored state (or null when never written) checked against the schema. */
+/** Stored state (or null when never written) checked against the schema; malformed data is TRACKER_CORRUPT. */
 export function parseHorizonState(data: unknown): HorizonState {
-  return data === null || data === undefined ? INITIAL_HORIZON_STATE : horizonStateSchema.parse(data);
+  if (data === null || data === undefined) return INITIAL_HORIZON_STATE;
+  const parsed = horizonStateSchema.safeParse(data);
+  if (!parsed.success) throw new RuleError("TRACKER_CORRUPT", "This tracker's saved data is damaged.");
+  return parsed.data;
 }
 
 const BOX_BY_ID = new Map(DOOM_BOXES.map((b) => [b.id, b]));

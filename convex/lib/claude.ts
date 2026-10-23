@@ -1,15 +1,14 @@
 /**
- * The Claude Messages API client of the Lorekeeper (D13 L0, analysis 4 and 5.1): raw `fetch` with `stream: true`,
- * the SSE parser, a 120 s timeout, caller aborts (Stop) and `ClaudeFailure` reasons. The only module that reads
+ * The Claude Messages API client (D13 L0, analysis 4 and 5.1): raw `fetch` with `stream: true` for the Lorekeeper
+ * (`messagesStream`), one plain call for the combat map generator and photo import (`messagesCreate`), the SSE
+ * parser, a 120 s timeout, caller aborts (Stop) and `ClaudeFailure` reasons. The only module that reads
  * `ANTHROPIC_API_KEY` (CF19: through the typed `env`, inside calls, never at module scope). The key is never
  * returned, logged or put into an error. Runs in an action (`fetch` and timers); no "use node" needed.
  *
  * On the local e2e deployment only, `LOREKEEPER_FAKE_MODEL=true` replaces the API with canned answers that go
  * through the same parser (`fakeStream`), so browser tests never call the real API. Anywhere else the flag is
- * ignored, key or no key.
- *
- * `convex/combatMapGenerate.ts` and `convex/photoImport.ts` still call the API themselves (a follow-up moves them
- * here).
+ * ignored, key or no key. `messagesCreate` never uses the fake model: without a key it fails `unavailable`, as the
+ * combat map and photo import always did.
  */
 import { env } from "../_generated/server";
 import { isE2EDeployment } from "./allowlist";
@@ -42,6 +41,11 @@ export function fakeModelEnabled(): boolean {
 /** Whether the Lorekeeper can answer on this deployment (L3's `lorekeeper.available`, a boolean only). */
 export function lorekeeperAvailable(): boolean {
   return apiKey() !== undefined || fakeModelEnabled();
+}
+
+/** The model of the combat map generator and photo import: ANTHROPIC_MODEL, else Sonnet 5.5 (decision 14). */
+export function defaultModel(): string {
+  return env.ANTHROPIC_MODEL?.trim() || SONNET;
 }
 
 /** The model for a task: `retry` is Opus 5.5; otherwise LOREKEEPER_MODEL, else ANTHROPIC_MODEL, else Sonnet 5.5. */
@@ -373,6 +377,87 @@ export async function messagesStream(
   }
 }
 
+/** The reply of a plain (non-streamed) call: its model, the first text block, the stop reason and every block. */
+export type MessageReply = {
+  model: string;
+  text: string;
+  stopReason: string | null;
+  content: Record<string, unknown>[];
+};
+
+export type CreateOptions = {
+  /** Who is calling, for the server log ("Combat map", "Photo import"). */
+  label: string;
+  /** `anthropic-beta` values. */
+  betas?: string[];
+};
+
+/** An empty partial result, for the failures of a plain call (nothing streamed). */
+function emptyResult(model: string): StreamResult {
+  return { model, text: "", blocks: [], stopReason: null, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearches: 0 } };
+}
+
+/**
+ * One plain (non-streamed) Messages API call; no retry. `body` is the request object (its `model` defaults to
+ * `defaultModel()`), or the request already serialized to JSON (photo import joins its base64 photos into the string
+ * itself, so a request is never stringified twice). Resolves with the reply when it ends with `end_turn` and holds a
+ * text block. Throws `ClaudeFailure` on a missing key ("unavailable"), the 120 s timeout, a network error, an HTTP
+ * error, a refusal, `max_tokens` ("too long") or any other incomplete reply ("no answer"). Never uses the e2e fake.
+ */
+export async function messagesCreate(body: MessagesBody | string, options: CreateOptions): Promise<MessageReply> {
+  const request = typeof body === "string" ? body : JSON.stringify({ ...body, model: body.model ?? defaultModel() });
+  const model = typeof body === "string" ? defaultModel() : (body.model ?? defaultModel());
+  const fail = (reason: ClaudeFailureReason) => new ClaudeFailure(reason, emptyResult(model));
+  const key = apiKey();
+  if (key === undefined) throw fail("unavailable");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
+  try {
+    let response: Response;
+    try {
+      response = await fetch(MESSAGES_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": key,
+          "anthropic-version": ANTHROPIC_VERSION,
+          ...(options.betas?.length ? { "anthropic-beta": options.betas.join(",") } : {}),
+        },
+        body: request,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) throw fail("timeout");
+      console.error(`${options.label}: the Messages API request failed.`, errorName(error));
+      throw fail("network");
+    }
+    if (!response.ok) {
+      console.error(`${options.label}: the Messages API answered ${response.status}.`, (await safeText(response)).slice(0, 500));
+      throw fail(`HTTP ${response.status}`);
+    }
+    let answer: unknown;
+    try {
+      answer = await response.json();
+    } catch (error) {
+      if (controller.signal.aborted) throw fail("timeout");
+      console.error(`${options.label}: the Messages API reply was not JSON.`, errorName(error));
+      throw fail("no answer");
+    }
+    const reply = isObject(answer) ? answer : {};
+    const content = Array.isArray(reply.content) ? (reply.content as unknown[]).filter(isObject) : [];
+    const stopReason = typeof reply.stop_reason === "string" ? reply.stop_reason : null;
+    const text = content.find((block) => block.type === "text" && typeof block.text === "string")?.text;
+    if (stopReason !== "end_turn" || typeof text !== "string") {
+      console.error(`${options.label}: no complete answer (stop reason ${stopReason ?? "none"}).`);
+      throw fail(stopReason === "max_tokens" ? "too long" : stopReason === "refusal" ? "refusal" : "no answer");
+    }
+    return { model: typeof reply.model === "string" ? reply.model : model, text, stopReason, content };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function* readerChunks(body: ReadableStream<Uint8Array>): AsyncIterable<Uint8Array> {
   const reader = body.getReader();
   try {
@@ -403,6 +488,12 @@ function errorName(error: unknown): string {
 
 /** Delay between canned stream events, so the e2e answer visibly streams and can be stopped. */
 const FAKE_EVENT_MS = 60;
+
+/**
+ * A question containing this makes the fake stream fail with `overloaded_error` (ClaudeFailure "HTTP 529", so the
+ * answer ends LOREKEEPER_FAILED and shows the error card). Only the fake model reads it (dcm-bxp.82.9).
+ */
+export const FAKE_FAIL = /FAKE-FAIL/;
 
 type FakeDocument = { title: string; text: string };
 
@@ -447,6 +538,12 @@ export function fakeEvents(request: MessagesBody): Json[] {
   };
   const words = (text: string) => text.match(/^\s+|\S+\s*/g) ?? [text];
   let searches = 0;
+
+  if (FAKE_FAIL.test(question)) {
+    // dcm-bxp.82.9: a canned failure for the answer error card; the stream reports overloaded_error before any text.
+    events.push({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } });
+    return events;
+  }
 
   if (web) {
     searches = 1;

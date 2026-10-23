@@ -4,6 +4,8 @@
 
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
+
 export const FIVE_BANNERS_FRAME_ID = "five-banners-burning";
 /** frameTrackers key holding the campaign's Five Banners state. */
 export const FIVE_BANNERS_KEY = "fiveBanners.state";
@@ -51,7 +53,7 @@ export type PairKey = `${NationId}|${NationId}`;
 
 /** Order-independent key for a nation pair. */
 export function pairKey(a: NationId, b: NationId): PairKey {
-  if (a === b) throw new Error("A nation has no relationship with itself.");
+  if (a === b) throw new RuleError("INVALID", "A nation has no relationship with itself.");
   return NATION_IDS.indexOf(a) < NATION_IDS.indexOf(b) ? `${a}|${b}` : `${b}|${a}`;
 }
 
@@ -210,7 +212,7 @@ export function loadState(raw: unknown): FiveBannersState {
   const seed = seedState();
   if (raw === null || raw === undefined) return seed;
   const parsed = fiveBannersStateSchema.safeParse(raw);
-  if (!parsed.success) throw new Error("TRACKER_CORRUPT");
+  if (!parsed.success) throw new RuleError("TRACKER_CORRUPT", "TRACKER_CORRUPT: the saved Five Banners state is damaged.");
   const data = parsed.data;
   return {
     week: data.week,
@@ -326,13 +328,13 @@ export function planWeekAdvance(
   const seen = new Set<NationId>();
   const advance: WeekObjective[] = [];
   for (const pick of picks) {
-    if (seen.has(pick.nation)) throw new Error(`Pick only one countdown for ${NATION_NAMES[pick.nation]}.`);
+    if (seen.has(pick.nation)) throw new RuleError("WEEK_RULE", `Pick only one countdown for ${NATION_NAMES[pick.nation]}.`);
     seen.add(pick.nation);
     const objective = objectives.find((o) => o.id === pick.objectiveId);
     if (!objective || objective.nation !== pick.nation) {
-      throw new Error(`That countdown is not one of ${NATION_NAMES[pick.nation]}’s objectives.`);
+      throw new RuleError("WEEK_RULE", `That countdown is not one of ${NATION_NAMES[pick.nation]}’s objectives.`);
     }
-    if (!canAdvanceObjective(objective)) throw new Error(`${objective.name} is not running, so it cannot advance.`);
+    if (!canAdvanceObjective(objective)) throw new RuleError("WEEK_RULE", `${objective.name} is not running, so it cannot advance.`);
     advance.push(objective);
   }
   const completing = advance.filter((o) => o.currentValue === 1);

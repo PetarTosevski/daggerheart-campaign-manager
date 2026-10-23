@@ -9,8 +9,9 @@ import { draftFromReading, SHEET_READING_JSON_SCHEMA, sheetPrompt, sheetReadingS
 import { characterSheetSchema } from "../src/lib/validation/characters";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { env, internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { logAction } from "./lib/actionLog";
+import { apiKey, ClaudeFailure, defaultModel, messagesCreate, SONNET } from "./lib/claude";
 import { storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
 import { gmMutation, gmQuery, keyedGmMutation, userAction } from "./lib/functions";
@@ -23,12 +24,13 @@ import { traitsValidator, goldValidator } from "./lib/validators/characters";
  * `photoImport` on the campaign), `read` sends them to the Claude Messages API
  * once and deletes them whatever happens, and `create` saves the sheet the GM
  * reviewed. Hidden unless `ANTHROPIC_API_KEY` is set on the deployment; the key
- * never leaves the server. Abandoned photos expire through `cleanup.ts`.
+ * never leaves the server and is read only in `convex/lib/claude.ts`, which
+ * makes the call (`messagesCreate`, 120 s timeout). Abandoned photos expire
+ * through `cleanup.ts`.
  */
 
 /** The model used unless `ANTHROPIC_MODEL` names another (decision 14). */
-export const DEFAULT_MODEL = "claude-sonnet-5-5";
-const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
+export const DEFAULT_MODEL = SONNET;
 /**
  * The largest photo `claim` keeps (review M4). The Messages API limits each
  * image to 5 MB of base64, which is 3.75 MB of raw bytes; 3.5 MB leaves
@@ -36,12 +38,6 @@ const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
  * The browser shrinks photos far below this.
  */
 export const PHOTO_MAX_BYTES = 3.5 * 1024 * 1024;
-
-/** The API key, read in the handler (CF19); undefined when unset or blank. */
-function apiKey(): string | undefined {
-  const key = env.ANTHROPIC_API_KEY?.trim();
-  return key ? key : undefined;
-}
 
 // ---------------------------------------------------------------- validators
 
@@ -209,7 +205,7 @@ type Photo = { mediaType: string; data: string };
  */
 function requestBody(images: Photo[], hopeAndFear: boolean): string {
   const head = JSON.stringify({
-    model: env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL,
+    model: defaultModel(),
     max_tokens: 8000,
     output_config: { effort: "low", format: { type: "json_schema", schema: SHEET_READING_JSON_SCHEMA } },
   });
@@ -220,27 +216,13 @@ function requestBody(images: Photo[], hopeAndFear: boolean): string {
 }
 
 /** One Messages API call with the photos; no retry (decision 14). Returns Claude's reading, or throws PHOTO_IMPORT_FAILED. */
-async function askClaude(key: string, body: string): Promise<unknown> {
-  let response: Response;
+async function askClaude(body: string): Promise<unknown> {
+  let text: string;
   try {
-    response = await fetch(MESSAGES_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body,
-    });
+    text = (await messagesCreate(body, { label: "Photo import" })).text;
   } catch (error) {
-    console.error("Photo import: the Messages API request failed.", error);
-    throw appError("PHOTO_IMPORT_FAILED");
-  }
-  if (!response.ok) {
-    console.error(`Photo import: the Messages API answered ${response.status}.`, (await response.text()).slice(0, 500));
-    throw appError("PHOTO_IMPORT_FAILED");
-  }
-  const answer = (await response.json()) as { stop_reason?: string; content?: { type: string; text?: string }[] };
-  const text = answer.content?.find((block) => block.type === "text")?.text;
-  if (answer.stop_reason !== "end_turn" || text === undefined) {
-    console.error(`Photo import: no answer (stop reason ${answer.stop_reason ?? "none"}).`);
-    throw appError("PHOTO_IMPORT_FAILED");
+    if (!(error instanceof ClaudeFailure)) throw error;
+    throw appError(error.reason === "unavailable" ? "PHOTO_IMPORT_UNAVAILABLE" : "PHOTO_IMPORT_FAILED");
   }
   try {
     return JSON.parse(text);
@@ -263,8 +245,7 @@ export const read = userAction({
   handler: async (ctx, { campaignId }): Promise<PhotoReadResult> => {
     const { hopeAndFear, storageIds } = await ctx.runQuery(internal.photoImport.readContext, { userId: ctx.user._id, campaignId });
     try {
-      const key = apiKey();
-      if (key === undefined) throw appError("PHOTO_IMPORT_UNAVAILABLE");
+      if (apiKey() === undefined) throw appError("PHOTO_IMPORT_UNAVAILABLE");
       const images: Photo[] = [];
       for (const id of storageIds) {
         const blob = await ctx.storage.get(id);
@@ -274,7 +255,7 @@ export const read = userAction({
       if (images.length === 0) throw appError("PHOTO_IMPORT_RULE", "Upload at least one photo first.");
       const body = requestBody(images, hopeAndFear);
       images.length = 0; // drop the per-photo strings before the request is in flight
-      const reading = sheetReadingSchema.safeParse(await askClaude(key, body));
+      const reading = sheetReadingSchema.safeParse(await askClaude(body));
       if (!reading.success) {
         console.error("Photo import: the answer didn't match the schema.", reading.error.issues[0]);
         throw appError("PHOTO_IMPORT_FAILED");

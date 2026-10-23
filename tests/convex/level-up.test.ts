@@ -303,6 +303,13 @@ describe("levelUp", () => {
       expect(await gm.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
     });
 
+    it("dcm-bxp.61 (narrowed by dcm-bxp.48): a pre-D10 'Session started' / 'Session ended' log row without a session row is no boundary", async () => {
+      const { t, p1, campaignId, a, ids } = await leveled(1000);
+      await t.run((ctx) => logAction(ctx, { campaignId, actorId: ids.gm, kind: "session", visibility: "public", summary: "Session started", undoable: true }));
+      await t.run((ctx) => logAction(ctx, { campaignId, actorId: ids.gm, kind: "session", visibility: "public", summary: "Session ended.", undoable: true }));
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+    });
+
     it("an older entry without `at` is GM only", async () => {
       const { t, gm, p1, p2, a } = await leveled();
       await patchLatest(t, a, () => ({}));

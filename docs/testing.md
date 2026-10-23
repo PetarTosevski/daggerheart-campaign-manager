@@ -28,6 +28,15 @@ env vars: `ALLOWED_EMAILS` (the five test accounts), `E2E_AUTH_ENABLED`,
 `E2E_AUTH_SECRET`, `SITE_URL`, and a freshly generated `JWT_PRIVATE_KEY` /
 `JWKS` pair. No real secret is needed anywhere.
 
+It also turns on the Lorekeeper's fake model (`LOREKEEPER_FAKE_MODEL=true`,
+honoured only on this local backend; `convex/lib/claude.ts` `fakeEvents`) and
+ingests the invented mini-book as the core book, so Lorekeeper specs need no
+setup of their own; rerun `pnpm e2e:setup` once per checkout after pulling. A
+question containing `FAKE-FAIL` makes the fake model's stream fail
+(`overloaded_error`), which ends the answer `LOREKEEPER_FAILED` and shows the
+error card with Try again (`tests/e2e/visual/D13-L6.spec.ts`). The combat map
+generator and photo import never use the fake model.
+
 **One email per sign-in method.** A user created through the test sign-in has
 no password account, so a later password sign-up with that email fails (and
 so does the password sign-in), whatever spec ran first. Every allowlisted
@@ -184,8 +193,8 @@ there is no shared index to edit.
 
 ## Accessibility and tablet specs
 
-`tests/e2e/a11y-*.spec.ts` (entry, party, play, smoke) use
-`tests/e2e/a11y.ts`:
+`tests/e2e/a11y-*.spec.ts` (entry, party, play, smoke) and
+`tests/e2e/notes-a11y.spec.ts` use `tests/e2e/a11y.ts` (`@axe-core/playwright`):
 
 - `expectNoSeriousA11yViolations(page, { include?, exclude?, reason? })`: axe
   with WCAG 2.0, 2.1 and 2.2 A/AA tags; fails on any serious or critical
