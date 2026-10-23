@@ -9,7 +9,9 @@
 //   rotated tiles do not show. A faint low-frequency brightness variation hides the repeat of single textures.
 // - Boundaries: the noisy edge displacement of the Classic painter (same noise, so textured and Classic edges agree)
 //   plus a feather of about 0.35 square (nine jittered taps). Terrains without a texture (wall, void, ... when the packs have
-//   none) keep the Classic pixels already painted underneath and are feathered the same way.
+//   none) keep the Classic pixels already painted underneath and are feathered the same way. Texture-to-texture
+//   boundaries inside one terrain class (a painted moss patch on grass, an area texture on its own class) get the same
+//   noisy, feathered edge (followups-8 I4, dcm-bxp.85); only class edges get the wall rim.
 
 import { terrainGlows } from "../../domain/combat-map/light";
 import type { PreparedMap } from "../painter";
@@ -39,6 +41,11 @@ export interface TexturePlan {
   readonly cells: Uint16Array;
   /** sources[0] is the empty source. */
   readonly sources: readonly TextureSource[];
+  /**
+   * Per fine cell: 1 within EDGE_REACH fine cells of a cell that draws another source (a texture edge inside one
+   * terrain class too, dcm-bxp.85). These pixels are composited like terrain edges (noisy displacement + feather).
+   */
+  readonly tedge: Uint8Array;
   /** URLs of the glowing textures among the sources (F6); absent or empty = nothing glows (pixels as before). */
   readonly glow?: ReadonlySet<string>;
 }
@@ -55,6 +62,11 @@ const MACRO_SQUARES = 3;
 const MACRO_AMP = 0.09;
 /** Darkening of textured pixels within 7 and 14 px of a wall (the Classic painter's rim). */
 const WALL_RIM = [0.58, 0.82] as const;
+/**
+ * Fine cells around a source change that are blended (the Classic painter's edge band, 3 sub-cells = 0.75 square):
+ * wider than the farthest a feathered pixel samples (displacement 0.38 + jitter 0.09 + tap 0.175 square).
+ */
+const EDGE_REACH = 3;
 /** Spacing in pixels of the grid the low-frequency noise is evaluated on (interpolated in between). */
 const NOISE_STEP = 8;
 
@@ -252,11 +264,30 @@ export function planTextures(
       cells[y * fw + x] = s > 0 ? s : mapped(t);
     }
   }
+  const tedge = sourceEdges(cells, fw, fh);
   // F6: the glowing textures among the sources (built-in by catalog light, uploaded by the row's light).
   const glow = new Set<string>();
   for (const s of sources) for (const a of s.arts) if (BUILTIN_GLOW_URLS.has(a.url)) glow.add(a.url);
   for (const row of uploaded.values()) if (row.category === "texture" && row.light !== "none" && row.url !== null) glow.add(row.url);
-  return glow.size === 0 ? { ff, fw, fh, cells, sources } : { ff, fw, fh, cells, sources, glow };
+  return glow.size === 0 ? { ff, fw, fh, cells, sources, tedge } : { ff, fw, fh, cells, sources, tedge, glow };
+}
+
+/** 1 for every fine cell within EDGE_REACH (Chebyshev) of a cell with another source; all 0 when one source covers the map. */
+export function sourceEdges(cells: Uint16Array, fw: number, fh: number): Uint8Array {
+  const out = new Uint8Array(fw * fh);
+  for (let y = 0; y < fh; y++)
+    for (let x = 0; x < fw; x++) {
+      const s = cells[y * fw + x]!;
+      // A change between this cell and its right / lower neighbour marks EDGE_REACH cells around both of them (a
+      // generous band: a marked pixel of a uniform region composites exactly as an unmarked one).
+      const right = x + 1 < fw && cells[y * fw + x + 1]! !== s;
+      const down = y + 1 < fh && cells[(y + 1) * fw + x]! !== s;
+      if (!right && !down) continue;
+      const y0 = Math.max(0, y - EDGE_REACH), y1 = Math.min(fh - 1, y + 1 + EDGE_REACH);
+      const x0 = Math.max(0, x - EDGE_REACH), x1 = Math.min(fw - 1, x + 1 + EDGE_REACH);
+      for (let yy = y0; yy <= y1; yy++) out.fill(1, yy * fw + x0, yy * fw + x1 + 1);
+    }
+  return out;
 }
 
 /** Every texture URL a plan may draw (the canvas repaints the map when one of them arrives). */
@@ -358,7 +389,7 @@ export function compositeTextures(
   if (!tiles.some((t) => t.length > 0)) return false;
 
   const { fine, edge, crisp, seed } = prepared;
-  const { ff, fw, fh, cells } = plan;
+  const { ff, fw, fh, cells, tedge } = plan;
   const FC = C / ff;
   const amp = C * 0.38, fq = 1 / (C * 1.1);
   const feather = FEATHER * C;
@@ -450,7 +481,8 @@ export function compositeTextures(
       const o = ((py - y0) * rw + (px - x0)) * 4;
       rgb[0] = 0; rgb[1] = 0; rgb[2] = 0;
       glowShare = 0;
-      if (!edge[fy * fw + fx]) {
+      const classEdge = edge[fy * fw + fx] === 1;
+      if (!classEdge && !tedge[fy * fw + fx]) {
         const list = tiles[cells[fy * fw + fx]!]!;
         if (list.length === 0) continue;
         noiseAt(px, py);
@@ -482,7 +514,7 @@ export function compositeTextures(
         }
         // A textured pixel along a wall gets the Classic painter's dark rim (7 and 14 px), so walls keep their depth.
         let shade = 1;
-        if (centre !== 0 && !WALLISH.has(terrainAt(px + ox, py + oy))) {
+        if (classEdge && centre !== 0 && !WALLISH.has(terrainAt(px + ox, py + oy))) {
           const near = (k: number) =>
             WALLISH.has(terrainAt(px + ox + k, py + oy)) ||
             WALLISH.has(terrainAt(px + ox - k, py + oy)) ||

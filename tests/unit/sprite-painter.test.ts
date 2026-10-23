@@ -15,6 +15,7 @@ import {
 } from "../../src/lib/combat-map/sprites/painter";
 import { objectArt, terrainTextures } from "../../src/lib/combat-map/sprites/resolve";
 import { SHADOW_DIR, shadowSpec } from "../../src/lib/combat-map/sprites/shadows";
+import { sourceEdges } from "../../src/lib/combat-map/sprites/terrain";
 import { BUILTIN_LOOKUP, builtinSpriteUrl } from "../../src/lib/sprite-packs/builtin/index";
 
 // Sprite painter (sprite packs P6). jsdom has no canvas: a mock 2D context records every call and keeps a real RGBA
@@ -340,6 +341,47 @@ describe("sprite painter", () => {
     const at = (b: Uint8ClampedArray) => [...b.subarray(((5 * CELL + 4) * 24 * CELL + 5 * CELL + 4) * 4, ((5 * CELL + 4) * 24 * CELL + 5 * CELL + 4) * 4 + 3)];
     expect(at(painted.buffer)).not.toEqual(at(r.buffer));
     expect(mapUrls(m).textures.has(keyUrl("forest/muddy-path"))).toBe(true);
+  });
+
+  it("a texture edge inside one terrain class is feathered like a class edge, about 0.35 square wide (dcm-bxp.85)", () => {
+    const N = 12;
+    const spec: SpritePaintSpec = { w: N, h: N, seed: 31, base: "grass", areas: [], objects: [], setting: "forest" };
+    const patch: SpritePaintSpec = { ...spec, textures: { "5,5": { builtin: "forest/muddy-path" }, "6,5": { builtin: "forest/muddy-path" } } };
+    const plain = recorder(N * CELL, N * CELL);
+    paintMap(plain.ctx, spec, { cell: CELL, art: fakeArt(), grid: false, vignette: false });
+    const painted = recorder(N * CELL, N * CELL);
+    paintMap(painted.ctx, patch, { cell: CELL, art: fakeArt(), grid: false, vignette: false });
+    const differs = (x: number, y: number) => {
+      const i = (y * N * CELL + x) * 4;
+      return painted.buffer[i] !== plain.buffer[i] || painted.buffer[i + 1] !== plain.buffer[i + 1] || painted.buffer[i + 2] !== plain.buffer[i + 2];
+    };
+    // The patch is squares 5..6 x 5 (pixels 40..55 x 40..47). Outside it, the blend reaches a little way (the edge is
+    // soft, not a straight square edge) and nothing changes past one square.
+    let near = 0, far = 0;
+    for (let y = 0; y < N * CELL; y++)
+      for (let x = 0; x < N * CELL; x++) {
+        const dx = Math.max(5 * CELL - 1 - x, x - 7 * CELL, 0), dy = Math.max(5 * CELL - 1 - y, y - 6 * CELL, 0);
+        const d = Math.max(dx, dy);
+        if (d === 0 || !differs(x, y)) continue;
+        if (d <= CELL) near++;
+        else far++;
+      }
+    expect(near).toBeGreaterThan(0);
+    expect(far).toBe(0);
+    // Inside the patch the boundary is blended too: a pixel just inside its left edge is not the pure patch texture.
+    const plan = prepareMap(patch).plan;
+    const fx = 5 * plan.ff, fy = 5 * plan.ff + 1;
+    expect(plan.tedge[fy * plan.fw + fx]).toBe(1);
+    expect(plan.tedge[1 * plan.fw + 1]).toBe(0);
+  });
+
+  it("sourceEdges marks the band around a source change and nothing in a uniform region", () => {
+    const fw = 20, fh = 4;
+    const cells = new Uint16Array(fw * fh).fill(1);
+    expect(sourceEdges(cells, fw, fh).every((v) => v === 0)).toBe(true);
+    for (let y = 0; y < fh; y++) for (let x = 10; x < fw; x++) cells[y * fw + x] = 2;
+    const band = sourceEdges(cells, fw, fh);
+    for (let x = 0; x < fw; x++) expect(band[x]).toBe(x >= 6 && x <= 13 ? 1 : 0);
   });
 
   it("mapUrls lists every sprite with its bounds, for the repaint when an image arrives", () => {
