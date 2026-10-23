@@ -21,10 +21,19 @@
 // limitConsumed({ per: "rest", consumedOn: "success" }, false); // false (Q4)
 // recordUse(sheet.featureUses, featureUseKey("earthquake"), { per: "rest" }); // [..., { key: "card:earthquake", until: "rest" }]
 // ```
+//
+// Plan sheet-drawer, SD1 (cards and features alike):
+// - `keyAvailability` answers for any `featureUses` key, so the feature runner's `feat:<featureId>[:<useId>]` keys
+//   (src/lib/domain/feature-effects) share one rule with the cards. `featureLimitUntil` stores a "once per scene" feature
+//   limit as `scene` (Q7: the scene ends with the encounter, the GM's End scene or the session); cards keep `session`
+//   (`limitUntil`) until their tables move over.
+// - NV1: a `tokens` cost may spend Favor, Focus or held dice (`pool`); `unaffordable` checks each pool on its own.
+// - NV7: a `situation` requirement with a `check` is decided from `RequirementState.facts` when the facts it needs are
+//   known; otherwise the player's confirmation of its text still decides it (Q13).
 
 import type { FeatureUse } from "../../validation/characters";
 import { RANGE_SQUARES } from "../combat-map/ranges";
-import type { Cost, Limit, Range, Requirement, Track } from "./types";
+import type { ConditionRef, Cost, HeldDieKind, Limit, Range, Requirement, StateCheck, TokenPool, Track } from "./types";
 import type { DomainId } from "../../srd/types";
 
 /** Prefix of every domain-card key in `featureUses`. */
@@ -43,6 +52,14 @@ export function featureUseKey(cardId: string, useId?: string, targetId?: string)
  */
 export function limitUntil(per: Limit["per"]): FeatureUse["until"] {
   return per === "scene" ? "session" : per;
+}
+
+/**
+ * The `until` a feature's limit is stored with (SD1, Q3, Q7): the limit's own period, `scene` included ("once per
+ * scene"; CB p.107: "a scene continues until the current narrative situation has played out").
+ */
+export function featureLimitUntil(per: Limit["per"]): FeatureUse["until"] {
+  return per;
 }
 
 /** The label of an exhausted card (CA5 Hand, CA7 sheet). */
@@ -77,10 +94,18 @@ export function cardAvailability(
   options: AvailabilityOptions = {},
 ): Availability {
   const key = featureUseKey(cardId, options.useId, options.limit?.perTarget ? options.targetId : undefined);
+  return keyAvailability(sheet, key, options.limit);
+}
+
+/**
+ * Whether the `featureUses` key `key` is ready or used up under `limit` (`times` uses per period; without a limit one
+ * entry exhausts it). Cards and features share it (SD1). An exhausted key names the longest `until` among its entries.
+ */
+export function keyAvailability(sheet: { readonly featureUses?: readonly FeatureUse[] }, key: string, limit?: Limit): Availability {
   const entries = (sheet.featureUses ?? []).filter((u) => u.key === key);
-  const times = Math.max(1, options.limit?.times ?? 1);
-  if (entries.length < times) return options.limit?.times ? { state: "ready", usesLeft: times - entries.length } : { state: "ready" };
-  const order: FeatureUse["until"][] = ["rest", "longRest", "session"];
+  const times = Math.max(1, limit?.times ?? 1);
+  if (entries.length < times) return limit?.times ? { state: "ready", usesLeft: times - entries.length } : { state: "ready" };
+  const order: FeatureUse["until"][] = ["scene", "rest", "longRest", "session"];
   const until = entries.map((e) => e.until).reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a));
   return { state: "exhausted", until, label: RESET_LABEL[until] };
 }
@@ -115,13 +140,103 @@ export interface RequirementState {
   nearestEnemy?: number;
   /** Situation texts the player confirmed ("While you're shrouded in low light"). */
   situations: readonly string[];
+  /** SD1 (NV7): what the engine knows for `situation.check`; an unknown fact leaves the check to the player. */
+  facts?: StateFacts;
+}
+
+/** A creature's state as a `StateCheck` reads it (the trigger's subject, the target). */
+export interface CreatureFacts {
+  conditions: readonly string[];
+  tags?: readonly string[];
+  hp: number;
+  hpMax: number;
+}
+
+/**
+ * The facts the server reads for `situation.check` (NV7). Every member is optional: absent means "not known here", and
+ * the check then falls back to the player's confirmation (Q13).
+ * - `conditions` / `tags`: the actor's standard conditions and condition tags; `flying` the Flying toggle (Q16).
+ * - `featureEffects`: the actor's active feature effects (`featureId`, and the `option` an effect step named).
+ * - `beastformId`: the form while in Beastform, null when not transformed.
+ * - `activeStance`: the active martial stance slug, null when none (Q5).
+ * - `areas`: the live map areas the actor stands in (Q14), with whether the actor drew them.
+ * - `isolation`: squares from the actor (`self`) and from the target (`target`) to the nearest other creature.
+ */
+export interface StateFacts {
+  conditions?: readonly string[];
+  tags?: readonly string[];
+  flying?: boolean;
+  featureEffects?: readonly { featureId: string; option?: string }[];
+  beastformId?: string | null;
+  rollUsedExperience?: boolean;
+  activeStance?: string | null;
+  areas?: readonly { featureId: string; own: boolean }[];
+  isolation?: { self?: number; target?: number };
+  subject?: CreatureFacts;
+  target?: CreatureFacts;
 }
 
 const reach = (range: Range) => (range === "veryFar" ? Infinity : RANGE_SQUARES[range]);
 
 const marked = (s: RequirementState, track: Track) => (track === "hp" ? s.hp : track === "stress" ? s.stress : s.armor);
 
-/** Whether one requirement holds. A `situation` holds when the player confirmed its text. */
+const hasRef = (ref: ConditionRef, conditions: readonly string[], tags: readonly string[] | undefined): boolean | undefined => {
+  if (ref.kind === "standard") return conditions.includes(ref.condition);
+  return tags === undefined ? undefined : tags.includes(ref.tag);
+};
+
+const STANCE_PREFIX = "stance:martial-artist:";
+
+/**
+ * Decides a `situation.check` from the known facts (NV7): true or false, or undefined when a fact it needs is not known
+ * (then the player's confirmation decides, Q13).
+ */
+export function stateCheckMet(check: StateCheck, s: RequirementState): boolean | undefined {
+  const f = s.facts ?? {};
+  switch (check.kind) {
+    case "hasCondition": {
+      const who = check.who ?? "self";
+      if (who === "self") return f.conditions === undefined ? undefined : hasRef(check.condition, f.conditions, f.tags);
+      const c = who === "subject" ? f.subject : f.target;
+      return c === undefined ? undefined : hasRef(check.condition, c.conditions, c.tags);
+    }
+    case "flying":
+      return f.flying;
+    case "featureEffect":
+      return f.featureEffects?.some((e) => e.featureId === check.featureId && (check.option === undefined || e.option === check.option));
+    case "inBeastform":
+      return f.beastformId === undefined ? undefined : f.beastformId !== null && (check.formId === undefined || f.beastformId === check.formId);
+    case "hopeAtLeast":
+      return s.hope >= check.value;
+    case "hpUnmarkedAtMost": {
+      if (check.who === "self") return s.hpMax - s.hp <= check.value;
+      const c = check.who === "subject" ? f.subject : f.target;
+      return c === undefined ? undefined : c.hpMax - c.hp <= check.value;
+    }
+    case "rollUsedExperience":
+      return f.rollUsedExperience;
+    case "activeStance": {
+      if (f.activeStance === undefined) return undefined;
+      const slug = check.stance.startsWith(STANCE_PREFIX) ? check.stance.slice(STANCE_PREFIX.length) : check.stance;
+      return f.activeStance === slug;
+    }
+    case "inArea":
+      return f.areas?.some((a) => a.featureId === check.featureId && (check.owner !== "self" || a.own));
+    case "isolated": {
+      const away = (n: number | undefined) => (n === undefined ? undefined : n > reach(check.range));
+      const self = away(f.isolation?.self);
+      if (check.who === "self" || self === false) return self;
+      const target = away(f.isolation?.target);
+      if (target === false) return false;
+      return self === undefined || target === undefined ? undefined : true;
+    }
+  }
+}
+
+/**
+ * Whether one requirement holds. A `situation` holds when the engine can decide its `check` and it holds, or, when it
+ * cannot, when the player confirmed its text (Q13).
+ */
 export function requirementMet(req: Requirement, s: RequirementState): boolean {
   switch (req.kind) {
     case "loadoutDomainCount":
@@ -142,8 +257,10 @@ export function requirementMet(req: Requirement, s: RequirementState): boolean {
       return s.nearestEnemy === undefined || s.nearestEnemy > reach(req.range);
     case "effectActive":
       return s.activeCardEffects.includes(req.cardId);
-    case "situation":
-      return s.situations.includes(req.text);
+    case "situation": {
+      const decided = req.check ? stateCheckMet(req.check, s) : undefined;
+      return decided ?? s.situations.includes(req.text);
+    }
   }
 }
 
@@ -167,10 +284,22 @@ export interface PayerState {
   /** Adversary features (AA0): the GM's Fear and gold handfuls. */
   fear?: number;
   gold?: number;
+  /** SD1 (NV1): Warlock Favor, Martial Focus and the held dice of each kind, for `tokens` costs with a `pool`. */
+  favor?: number;
+  focus?: number;
+  heldDice?: Partial<Record<HeldDieKind, number>>;
 }
 
-/** A cost with its amount resolved; `either` resolved to the picked option. */
-export type PaidCost = { resource: "hope" | "stress" | "hp" | "armor" | "tokens" | "fear" | "gold"; amount: number };
+/**
+ * A cost with its amount resolved; `either` resolved to the picked option. SD1 (NV1): a `tokens` cost that spends another
+ * pool than the card's tokens names it in `pool` (Favor, Focus, a held-die kind); `values` are the spent dice's values.
+ */
+export type PaidCost = {
+  resource: "hope" | "stress" | "hp" | "armor" | "tokens" | "fear" | "gold";
+  amount: number;
+  pool?: Exclude<TokenPool, "card">;
+  values?: number[];
+};
 
 /**
  * Flattens costs into resource amounts. `amountOf` resolves a cost's `NumberSource` (numbers.ts); `pickEither(i)` names
@@ -185,7 +314,9 @@ export function resolveCosts(costs: readonly Cost[], amountOf: (cost: Exclude<Co
         const pick = pickEither(eitherIndex++);
         walk(cost.options[pick] ?? cost.options[0] ?? []);
       } else if (cost.kind === "gold") out.push({ resource: "gold", amount: cost.handfuls });
-      else out.push({ resource: cost.kind, amount: Math.max(0, amountOf(cost)) });
+      else if (cost.kind === "tokens" && cost.pool !== undefined && cost.pool !== "card") {
+        out.push({ resource: "tokens", amount: Math.max(0, amountOf(cost)), pool: cost.pool });
+      } else out.push({ resource: cost.kind, amount: Math.max(0, amountOf(cost)) });
     }
   };
   walk(costs);
@@ -194,7 +325,7 @@ export function resolveCosts(costs: readonly Cost[], amountOf: (cost: Exclude<Co
 
 /** The resources a list of resolved costs is short of (empty = affordable). Stress, HP and Armor need free slots (CB p.90). */
 export function unaffordable(costs: readonly PaidCost[], s: PayerState): PaidCost["resource"][] {
-  const total = (r: PaidCost["resource"]) => costs.filter((c) => c.resource === r).reduce((n, c) => n + c.amount, 0);
+  const total = (r: PaidCost["resource"]) => costs.filter((c) => c.resource === r && c.pool === undefined).reduce((n, c) => n + c.amount, 0);
   const room: Record<PaidCost["resource"], number> = {
     hope: s.hope,
     stress: s.stressMax - s.stress,
@@ -204,5 +335,11 @@ export function unaffordable(costs: readonly PaidCost[], s: PayerState): PaidCos
     fear: s.fear ?? 0,
     gold: s.gold ?? 0,
   };
-  return (Object.keys(room) as PaidCost["resource"][]).filter((r) => total(r) > room[r]);
+  const short = (Object.keys(room) as PaidCost["resource"][]).filter((r) => total(r) > room[r]);
+  // NV1: each other pool on its own (Favor, Focus, each held-die kind); a short pool reads as "tokens".
+  const pooled = new Map<string, number>();
+  for (const c of costs) if (c.pool !== undefined) pooled.set(c.pool, (pooled.get(c.pool) ?? 0) + c.amount);
+  const poolRoom = (pool: string): number => (pool === "favor" ? (s.favor ?? 0) : pool === "focus" ? (s.focus ?? 0) : (s.heldDice?.[pool as HeldDieKind] ?? 0));
+  const poolShort = [...pooled].some(([pool, n]) => n > poolRoom(pool));
+  return poolShort && !short.includes("tokens") ? [...short, "tokens"] : short;
 }
