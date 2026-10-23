@@ -172,7 +172,12 @@ describe("Class Features chips (U7)", () => {
   });
 
   it("hides a non-holder's stray values", () => {
-    expect(chips({ classId: "bard", subclassId: "troubadour", sessionFeatures: { slayerDice: 2, tideTokens: 1, moonDie: 1 } })).toBeNull();
+    expect(chips({ classId: "bard", subclassId: "troubadour", sessionFeatures: { tideTokens: 1, moonDie: 1 } })).toBeNull();
+  });
+
+  // Martial Preparation (CB p.48, H2): an ally holding a Slayer Die sees and can spend it.
+  it("shows an ally's Slayer Die from Martial Preparation", () => {
+    expect(chips({ classId: "bard", subclassId: "troubadour", sessionFeatures: { slayerDice: 1 } })).not.toBeNull();
   });
 
   it("hides the moon die with Hope & Fear off", () => {
