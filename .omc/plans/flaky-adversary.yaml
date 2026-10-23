@@ -1,0 +1,18 @@
+# Flaky adversary-actions tests (2026-10-23, dcm-bxp.99.29): two tests flaked once each in full-suite runs.
+plan: flaky-adversary
+waves:
+  - wave: 1
+    tracers:
+      - id: FX1
+        title: Make tests/convex/adversary-actions.test.ts deterministic (dcm-bxp.99.29)
+        size: S
+        goal: Every test in the file gives the same result on every run; no production behaviour changes.
+        depends_on: []
+        owns:
+          - tests/convex/adversary-actions.test.ts
+          - tests/convex/helpers/**
+          - docs/tasks/TASK-FX-FX1.md
+        reads: [convex/lib/incomingHits.ts, convex/lib/adversaryActions.ts]
+        acceptance:
+          - "Root cause named in the task doc (which rolls make the two tests flip)"
+          - "The file passes 50 consecutive runs; full vitest, lint, typecheck and tracer-guard pass"
