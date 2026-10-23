@@ -4,6 +4,8 @@
 
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
+
 import { RELIC_VALUE, SCRAP_CATEGORIES, SCRAP_TABLES, STARTING_QUANTUM, scrapValue, type GatheredScrap } from "../../domain/frames/motherboard";
 import type { Range } from "../../srd/types";
 import { rangeSchema, traitIdSchema } from "./common";
@@ -129,7 +131,7 @@ export function augmentDefense(installed: readonly string[]): { armorScore: numb
 const have = (s: MotherboardState, name: string) => s.scrap[name] ?? 0;
 const withScrap = (s: MotherboardState, name: string, delta: number): MotherboardState => {
   const next = have(s, name) + delta;
-  if (next < 0) throw new Error(`Not enough ${name}.`);
+  if (next < 0) throw new RuleError("EXTRA_RULE", `Not enough ${name}.`);
   return { ...s, scrap: { ...s.scrap, [name]: next } };
 };
 
@@ -149,11 +151,11 @@ export function applyGather(s: MotherboardState, gathered: GatheredScrap[]): Mot
 /** Scrap shack: "each piece of scrap is worth its value… whether players are buying or selling" (p.303). */
 export function trade(s: MotherboardState, name: string, quantity: number, direction: "buy" | "sell"): MotherboardState {
   const value = scrapValue(name);
-  if (value === undefined || name === "Relic") throw new Error("Unknown scrap.");
-  if (!Number.isInteger(quantity) || quantity < 1) throw new Error("Trade at least one piece.");
+  if (value === undefined || name === "Relic") throw new RuleError("EXTRA_RULE", "Unknown scrap.");
+  if (!Number.isInteger(quantity) || quantity < 1) throw new RuleError("EXTRA_RULE", "Trade at least one piece.");
   const cost = value * quantity;
   if (direction === "sell") return { ...withScrap(s, name, -quantity), quantum: s.quantum + cost };
-  if (s.quantum < cost) throw new Error(`That costs ${cost} quantum; you have ${s.quantum}.`);
+  if (s.quantum < cost) throw new RuleError("EXTRA_RULE", `That costs ${cost} quantum; you have ${s.quantum}.`);
   return { ...withScrap(s, name, quantity), quantum: s.quantum - cost };
 }
 
@@ -163,23 +165,23 @@ export function addRelic(s: MotherboardState, relic: Relic): MotherboardState {
 
 /** "Relics are worth 20 quantum." */
 export function sellRelic(s: MotherboardState, relicId: string): MotherboardState {
-  if (!s.relics.some((r) => r.id === relicId)) throw new Error("That relic is gone.");
+  if (!s.relics.some((r) => r.id === relicId)) throw new RuleError("EXTRA_RULE", "That relic is gone.");
   return { ...s, relics: s.relics.filter((r) => r.id !== relicId), quantum: s.quantum + RELIC_VALUE };
 }
 
 /** Craft (downtime): checks the precompile, spends the recipe; "a PC can spend any Relic they have". */
 export function craft(s: MotherboardState, augmentId: string, tier: number): MotherboardState {
   const aug = getAugment(augmentId);
-  if (!aug) throw new Error("Unknown augment.");
-  if (s.built.some((b) => b.id === aug.id)) throw new Error(`${aug.name} is already built.`);
-  if (tier < aug.precompileTier) throw new Error(`${aug.name} needs Tier ${aug.precompileTier} (precompile).`);
+  if (!aug) throw new RuleError("EXTRA_RULE", "Unknown augment.");
+  if (s.built.some((b) => b.id === aug.id)) throw new RuleError("EXTRA_RULE", `${aug.name} is already built.`);
+  if (tier < aug.precompileTier) throw new RuleError("EXTRA_RULE", `${aug.name} needs Tier ${aug.precompileTier} (precompile).`);
   let next = s;
   const missing: string[] = [];
   for (const [name, qty] of Object.entries(aug.recipe)) {
     const owned = name === "Relic" ? s.relics.length : have(s, name);
     if (owned < qty) missing.push(`${qty - owned} ${name}`);
   }
-  if (missing.length) throw new Error(`Missing ${missing.join(", ")}.`);
+  if (missing.length) throw new RuleError("EXTRA_RULE", `Missing ${missing.join(", ")}.`);
   let spentRelics: Relic[] = [];
   for (const [name, qty] of Object.entries(aug.recipe)) {
     if (name === "Relic") {
@@ -194,7 +196,7 @@ export function craft(s: MotherboardState, augmentId: string, tier: number): Mot
 export function salvage(s: MotherboardState, augmentId: string): MotherboardState {
   const entry = s.built.find((b) => b.id === augmentId);
   const aug = getAugment(augmentId);
-  if (!entry || !aug) throw new Error("That augment isn't built.");
+  if (!entry || !aug) throw new RuleError("EXTRA_RULE", "That augment isn't built.");
   let next: MotherboardState = {
     ...s,
     built: s.built.filter((b) => b.id !== augmentId),
@@ -207,10 +209,10 @@ export function salvage(s: MotherboardState, augmentId: string): MotherboardStat
 
 /** Install/swap (downtime): built augments only, up to the tier's slots. */
 export function install(s: MotherboardState, ids: string[], tier: number): MotherboardState {
-  if (new Set(ids).size !== ids.length) throw new Error("Install each augment once.");
-  if (ids.some((id) => !s.built.some((b) => b.id === id))) throw new Error("Only built augments can be installed.");
+  if (new Set(ids).size !== ids.length) throw new RuleError("EXTRA_RULE", "Install each augment once.");
+  if (ids.some((id) => !s.built.some((b) => b.id === id))) throw new RuleError("EXTRA_RULE", "Only built augments can be installed.");
   const slots = augmentSlots(tier);
-  if (ids.length > slots) throw new Error(`Your Ikonis has ${slots} augment slots at Tier ${tier}.`);
+  if (ids.length > slots) throw new RuleError("EXTRA_RULE", `Your Ikonis has ${slots} augment slots at Tier ${tier}.`);
   return { ...s, installed: [...ids] };
 }
 

@@ -4,6 +4,8 @@
 
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
+
 export const SETTLEMENT_MAX = 60;
 export const MAX_WATCHERS = 8;
 /** How many Lurking Darkness rolls the tracker keeps for the GM. */
@@ -59,7 +61,7 @@ export const watchersSchema = z
 
 function findPyre(state: UmbraState, id: string): Pyre {
   const pyre = state.pyres.find((p) => p.id === id);
-  if (!pyre) throw new Error("That Sacred Pyre is gone.");
+  if (!pyre) throw new RuleError("TRACKER_RULE", "That Sacred Pyre is gone.");
   return pyre;
 }
 
@@ -69,7 +71,7 @@ const withPyre = (state: UmbraState, id: string, patch: Partial<Pyre>): UmbraSta
 };
 
 export function addPyre(state: UmbraState, settlement: string, lit: boolean): { state: UmbraState; pyreId: string } {
-  if (state.pyres.length >= MAX_PYRES) throw new Error(`A campaign can track at most ${MAX_PYRES} pyres.`);
+  if (state.pyres.length >= MAX_PYRES) throw new RuleError("TRACKER_RULE", `A campaign can track at most ${MAX_PYRES} pyres.`);
   const pyreId = `p${state.nextPyreId}`;
   return {
     state: { ...state, pyres: [...state.pyres, { id: pyreId, settlement, lit }], nextPyreId: state.nextPyreId + 1 },
@@ -87,7 +89,7 @@ export function removePyre(state: UmbraState, id: string): UmbraState {
 }
 
 export function adjustBranches(state: UmbraState, delta: 1 | -1): UmbraState {
-  if (state.blessedBranches + delta < 0) throw new Error("The party has no Blessed Branch.");
+  if (state.blessedBranches + delta < 0) throw new RuleError("TRACKER_RULE", "The party has no Blessed Branch.");
   return { ...state, blessedBranches: state.blessedBranches + delta };
 }
 
@@ -98,10 +100,10 @@ export type BranchUse = { mode: "relight"; pyreId: string } | { mode: "found"; s
  * extinguished Sacred Pyre or create a new Sacred Pyre" (p.288).
  */
 export function igniteBranch(state: UmbraState, use: BranchUse): { state: UmbraState; pyreId: string; reminder: string } {
-  if (state.blessedBranches < 1) throw new Error("The party has no Blessed Branch.");
+  if (state.blessedBranches < 1) throw new RuleError("TRACKER_RULE", "The party has no Blessed Branch.");
   const spent = { ...state, blessedBranches: state.blessedBranches - 1 };
   if (use.mode === "relight") {
-    if (findPyre(state, use.pyreId).lit) throw new Error("That Sacred Pyre is already burning.");
+    if (findPyre(state, use.pyreId).lit) throw new RuleError("TRACKER_RULE", "That Sacred Pyre is already burning.");
     return { state: setPyreLit(spent, use.pyreId, true), pyreId: use.pyreId, reminder: BRANCH_HOPE_REMINDER };
   }
   const added = addPyre(spent, use.settlement, true);
@@ -110,7 +112,7 @@ export function igniteBranch(state: UmbraState, use: BranchUse): { state: UmbraS
 
 /** The Lurking Darkness list (p.289). */
 export function lurkingOutcome(result: number): LurkingOutcome {
-  if (!Number.isInteger(result) || result < 1 || result > 12) throw new Error("A Lurking Darkness roll is a d12.");
+  if (!Number.isInteger(result) || result < 1 || result > 12) throw new RuleError("TRACKER_RULE", "A Lurking Darkness roll is a d12.");
   if (result <= 2) return "conflict";
   if (result <= 5) return "fear2";
   if (result <= 9) return "fear1";
@@ -147,7 +149,7 @@ export function resolveLurking(
 
 /** "When the party finishes a short or long rest while not in the vicinity of a Sacred Pyre" (p.289). */
 export function assertCanRollLurking(state: UmbraState): void {
-  if (state.atPyre) throw new Error("The party rests at a Sacred Pyre: the Lurking Darkness can't reach them.");
+  if (state.atPyre) throw new RuleError("TRACKER_RULE", "The party rests at a Sacred Pyre: the Lurking Darkness can't reach them.");
 }
 
 export function logLurking(state: UmbraState, entry: LurkingRoll): UmbraState {

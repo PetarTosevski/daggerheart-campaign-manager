@@ -1,45 +1,26 @@
-import { readdirSync } from "node:fs";
-import path from "node:path";
-
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { expectNoSeriousA11yViolations, summarizeViolations } from "./a11y";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs } from "./visual/helpers";
 
 // D11 N9: Notes accessibility (.omc/plans/d11-notes.yaml, TE13). axe on the page view, the threads view, the sharing
 // dialog, the @ picker, a Shared tab, a journal view and the bin: zero serious or critical violations inside the Notes
-// page (`.bj-root`; the campaign shell around it is checked by its own boards). Keyboard only (Tab / arrows / Enter /
+// page (`.bj-root`), and on the whole page once (the campaign shell around it, dcm-bxp.112). Keyboard only (Tab / arrows / Enter /
 // Escape, never a click): add an entry with a mention, cycle its bullet, open the sharing dialog and pick an option,
 // switch Shared tabs, tear out a page and undo it. At 1440x900 and 390x844 (at 390 the index is behind 'Pages').
 //
-// axe-core is not a direct dependency (no new dependency in D11); the copy pnpm installs for eslint-plugin-jsx-a11y is
-// injected as a script. Follow-up: bead dcm-bxp.112 adds @axe-core/playwright as a devDependency.
+// axe runs through the shared helper (tests/e2e/a11y.ts: @axe-core/playwright, WCAG 2.2 AA tags; dcm-bxp.112).
 
 const PLAYER = "e2e-player@example.test";
 
-function axeScript(): string {
-  const store = path.join(process.cwd(), "node_modules", ".pnpm");
-  const dir = readdirSync(store).find((name) => name.startsWith("axe-core@"));
-  if (!dir) throw new Error("axe-core is not installed (pnpm install)");
-  return path.join(store, dir, "node_modules", "axe-core", "axe.min.js");
-}
-
-type AxeViolation = { id: string; impact: string | null; help: string; nodes: { target: string[] }[] };
-
-/** Serious and critical axe violations inside the Notes page. */
-async function axe(page: Page, label: string) {
-  if (!(await page.evaluate(() => "axe" in window))) await page.addScriptTag({ path: axeScript() });
-  const violations = await page.evaluate(async () => {
-    const run = (window as unknown as { axe: { run: (ctx: unknown, opts: unknown) => Promise<{ violations: AxeViolation[] }> } }).axe.run;
-    const result = await run({ include: [".bj-root"] }, { resultTypes: ["violations"] });
-    return result.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.map((n) => n.target) }));
-  });
-  const serious = violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+/** Serious and critical axe violations inside the Notes page (or the whole page with `whole`); the rest is recorded. */
+async function axe(page: Page, label: string, { whole = false } = {}) {
+  const rest = await expectNoSeriousA11yViolations(page, whole ? {} : { include: ".bj-root" });
   // Minor and moderate findings are recorded (task doc), not failed.
-  test.info().annotations.push({ type: `axe ${label}`, description: JSON.stringify(violations.map((v) => `${v.impact} ${v.id} x${v.nodes.length}`)) });
-  expect(serious, `${label}: ${JSON.stringify(serious, null, 2)}`).toEqual([]);
+  test.info().annotations.push({ type: `axe ${label}`, description: JSON.stringify(summarizeViolations(rest)) });
 }
 
 /** Presses Tab (Shift+Tab when `back`) until the locator has focus; fails when it is not reachable. */
@@ -109,6 +90,7 @@ for (const viewport of [
         await expect(page.getByRole("heading", { level: 1, name: "Game Master’s Journal" })).toBeVisible();
         await expect(ownPaper(page).getByLabel("Page title")).toHaveValue("Session 1");
         await axe(page, "page view");
+        await axe(page, "campaign shell", { whole: true });
         const input = ownPaper(page).getByRole("textbox", { name: "New entry" });
         await tabTo(page, input);
         await page.keyboard.type("* ask @mar");

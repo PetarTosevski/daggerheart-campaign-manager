@@ -2,6 +2,8 @@
 // Pure module: bundled into Convex functions, relative imports only.
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
+
 export const ANDALURIA_FRAME_ID = "dark-heart-of-andaluria";
 export const ANDALURIA_TRACKER_KEY = "andaluria";
 
@@ -110,7 +112,7 @@ export type CluePatch = z.infer<typeof cluePatchSchema>;
 
 function findHunt(state: AndaluriaState, huntId: string): Hunt {
   const hunt = state.hunts.find((h) => h.id === huntId);
-  if (!hunt) throw new Error("That hunt no longer exists.");
+  if (!hunt) throw new RuleError("INVALID", "That hunt no longer exists.");
   return hunt;
 }
 
@@ -120,7 +122,7 @@ function mapHunt(state: AndaluriaState, huntId: string, fn: (h: Hunt) => Hunt): 
 }
 
 export function createHunt(state: AndaluriaState, id: string, title: string, now: number): AndaluriaState {
-  if (state.hunts.length >= MAX_HUNTS) throw new Error(`A campaign can hold at most ${MAX_HUNTS} hunts.`);
+  if (state.hunts.length >= MAX_HUNTS) throw new RuleError("INVALID", `A campaign can hold at most ${MAX_HUNTS} hunts.`);
   const hunt: Hunt = {
     id,
     title: huntTitleSchema.parse(title),
@@ -153,7 +155,7 @@ export function removeHunt(state: AndaluriaState, huntId: string): AndaluriaStat
 export function addClue(state: AndaluriaState, huntId: string, clueId: string, text: string): AndaluriaState {
   const clean = clueTextSchema.parse(text);
   return mapHunt(state, huntId, (h) => {
-    if (h.clues.length >= MAX_CLUES) throw new Error(`A hunt can hold at most ${MAX_CLUES} clues.`);
+    if (h.clues.length >= MAX_CLUES) throw new RuleError("INVALID", `A hunt can hold at most ${MAX_CLUES} clues.`);
     return { ...h, clues: [...h.clues, { id: clueId, text: clean, revealed: false, note: "" }] };
   });
 }
@@ -161,14 +163,14 @@ export function addClue(state: AndaluriaState, huntId: string, clueId: string, t
 export function patchClue(state: AndaluriaState, huntId: string, clueId: string, patch: CluePatch): AndaluriaState {
   const p = cluePatchSchema.parse(patch);
   return mapHunt(state, huntId, (h) => {
-    if (!h.clues.some((c) => c.id === clueId)) throw new Error("That clue no longer exists.");
+    if (!h.clues.some((c) => c.id === clueId)) throw new RuleError("INVALID", "That clue no longer exists.");
     return { ...h, clues: h.clues.map((c) => (c.id === clueId ? { ...c, ...p } : c)) };
   });
 }
 
 export function removeClue(state: AndaluriaState, huntId: string, clueId: string): AndaluriaState {
   return mapHunt(state, huntId, (h) => {
-    if (!h.clues.some((c) => c.id === clueId)) throw new Error("That clue no longer exists.");
+    if (!h.clues.some((c) => c.id === clueId)) throw new RuleError("INVALID", "That clue no longer exists.");
     return { ...h, clues: h.clues.filter((c) => c.id !== clueId) };
   });
 }

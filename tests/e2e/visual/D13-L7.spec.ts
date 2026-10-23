@@ -1,9 +1,8 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { expect, test } from "@playwright/test";
+import { expect as baseExpect, test } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
 import { gmAndPlayer } from "../live";
@@ -13,18 +12,15 @@ import { gmAndPlayer } from "../live";
 // from a copy with the board's own config switched to `"layout": "drawer"` (written under test-results, never into
 // reference/). Shots land in test-results/visual/D13-L7/: app side-1440, drawer-1440, drawer-390, fold-390;
 // board board-side-1440, board-drawer-1440, board-drawer-390. Verdicts in docs/tasks/TASK-D13-L7.md.
+// `pnpm e2e:setup` (scripts/e2e-setup.mjs) turns the fake model on and ingests the invented mini-book as the core
+// book; rerun it once per checkout after pulling (dcm-bxp.82.8).
 
 test.describe.configure({ timeout: 240_000 });
-expect.configure({ timeout: 20_000 });
+// `configure` returns a new expect; it does not change the imported one (dcm-bxp.82.8).
+const expect = baseExpect.configure({ timeout: 20_000 });
 
 const OUT = "test-results/visual/D13-L7";
 const BOARD_FILE = join(process.cwd(), "reference/designs/project/Lorekeeper.dc.html");
-
-test.beforeAll(() => {
-  const env = { ...process.env, E2E_CONVEX_PORT: process.env.E2E_CONVEX_PORT ?? "3212" };
-  execFileSync(process.execPath, ["scripts/convex-e2e.mjs", "env", "set", "--", "LOREKEEPER_FAKE_MODEL", "true"], { env, stdio: "ignore" });
-  execFileSync(process.execPath, ["scripts/lorekeeper-ingest.mjs", "core", "tests/fixtures/lorekeeper/mini-book.txt", "--e2e"], { env, stdio: "ignore" });
-});
 
 /** A copy of the board with its CFG switched to the drawer layout (the template string is JSON-escaped in the bundle). */
 function boardDrawerUrl(): string {

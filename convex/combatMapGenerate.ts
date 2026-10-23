@@ -8,7 +8,7 @@ import { fallbackDescription, spriteFallback } from "../src/lib/sprite-packs/spr
 import { buildPalette, cleanSpriteLayout, spritePrompt, type SpritePalette } from "../src/lib/sprite-packs/sprite-layout";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { env, internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import {
   CELL_LAYERS,
   combatAreaValidator,
@@ -35,16 +35,16 @@ import {
   objectsOnMap,
   tokensOnMap,
 } from "./lib/combatMaps";
+import { apiKey, ClaudeFailure, messagesCreate } from "./lib/claude";
 import { deleteOwnFile } from "./lib/files";
 import { gmMutation, userAction } from "./lib/functions";
 import { campaignAccess } from "./lib/permissions";
-import { DEFAULT_MODEL } from "./photoImport";
 
 /**
  * Claude lays out a combat map from the GM's description (D9 C4, plan `.omc/plans/d9-combat-map.yaml`; R2:
  * "Generated layouts can be edited by hand AND regenerated"). `generate` sends the board's scene prompt
- * (reference/designs/project/Combat.dc.html, `scenePrompt`) to the Messages API once, as convex/photoImport.ts
- * does (ANTHROPIC_API_KEY stays on the server), cleans the reply with C1's `clean()` and saves the areas and
+ * (reference/designs/project/Combat.dc.html, `scenePrompt`) to the Messages API once through convex/lib/claude.ts
+ * (`messagesCreate`; ANTHROPIC_API_KEY stays on the server and is read only there), cleans the reply with C1's `clean()` and saves the areas and
  * objects through one internal mutation. Without the key, or when Claude's reply is unusable, C2's keyword
  * layout is drawn instead and the result says which. GM only; 10 generations per user per hour (Q5).
  *
@@ -61,9 +61,6 @@ import { DEFAULT_MODEL } from "./photoImport";
  * keyword layout is drawn as today and, on a Sprites map, mapped to the setting (`spriteFallback`).
  */
 
-const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
-/** How long the Messages API may take before the keyword layout is drawn instead. */
-const CLAUDE_TIMEOUT_MS = 120_000;
 /** Room for 90 objects and 60 areas of JSON. */
 const MAX_TOKENS = 16_000;
 /** A reply with fewer areas plus objects than this is treated as unusable (the board's rule). */
@@ -74,12 +71,6 @@ const MAX_CELL_TILES = CELL_LAYERS.length * Math.ceil(MAX_MAP_H / CELL_TILE_ROWS
 const MAX_EXPLORED_ROWS = 200;
 /** The default name C3 gives a new map ("Map N"); such a map takes the layout's title when first generated. */
 const DEFAULT_NAME = /^Map \d+$/;
-
-/** The API key, read in the handler (CF19); undefined when unset or blank. */
-function apiKey(): string | undefined {
-  const key = env.ANTHROPIC_API_KEY?.trim();
-  return key ? key : undefined;
-}
 
 // ---------------------------------------------------------------- the board's prompt
 
@@ -193,49 +184,20 @@ function parseReply(text: string): unknown {
   }
 }
 
-/** Thrown inside `askClaude` with a short reason for the GM ("timeout", "HTTP 529", "no JSON"...). */
-class ClaudeFailure extends Error {}
+/** Thrown inside `generate` when Claude answered but the reply is unusable ("no JSON", "unusable layout"). */
+class UnusableReply extends Error {}
 
-/** One Messages API call; no retry. Returns the parsed JSON reply, or throws ClaudeFailure. */
-async function askClaude(key: string, prompt: string): Promise<unknown> {
-  const parsed = parseReply(await askClaudeText(key, prompt, MAX_TOKENS));
-  if (parsed === null) throw new ClaudeFailure("no JSON");
+/** One Messages API call; no retry. Returns the parsed JSON reply, or throws ClaudeFailure / UnusableReply. */
+async function askClaude(prompt: string): Promise<unknown> {
+  const parsed = parseReply(await askClaudeText(prompt, MAX_TOKENS));
+  if (parsed === null) throw new UnusableReply("no JSON");
   return parsed;
 }
 
-/** One Messages API call of at most `maxTokens`; no retry. Returns the reply's text, or throws ClaudeFailure. */
-async function askClaudeText(key: string, prompt: string, maxTokens: number): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
-  let response: Response;
-  try {
-    response = await fetch(MESSAGES_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL,
-        max_tokens: maxTokens,
-        messages: [{ role: "user", content: prompt }],
-      }),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    console.error("Combat map: the Messages API request failed.", error);
-    throw new ClaudeFailure(controller.signal.aborted ? "timeout" : "network");
-  } finally {
-    clearTimeout(timer);
-  }
-  if (!response.ok) {
-    console.error(`Combat map: the Messages API answered ${response.status}.`, (await response.text()).slice(0, 500));
-    throw new ClaudeFailure(`HTTP ${response.status}`);
-  }
-  const answer = (await response.json()) as { stop_reason?: string; content?: { type: string; text?: string }[] };
-  const text = answer.content?.find((block) => block.type === "text")?.text;
-  if (answer.stop_reason !== "end_turn" || text === undefined) {
-    console.error(`Combat map: no complete answer (stop reason ${answer.stop_reason ?? "none"}).`);
-    throw new ClaudeFailure(answer.stop_reason === "max_tokens" ? "too long" : "no answer");
-  }
-  return text;
+/** One Messages API call of at most `maxTokens` (convex/lib/claude.ts: 120 s timeout, no retry); the reply's text. */
+async function askClaudeText(prompt: string, maxTokens: number): Promise<string> {
+  const reply = await messagesCreate({ max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }, { label: "Combat map" });
+  return reply.text;
 }
 
 // ---------------------------------------------------------------- setting (sprite packs P7)
@@ -475,22 +437,23 @@ export const generate = userAction({
     const seed = 1 + Math.floor(Math.random() * 9999);
     const variation = another ? seed : undefined;
     const sprites = fence.style === "sprites";
-    const key = apiKey();
+    const hasKey = apiKey() !== undefined;
     let layout: Layout | null = null;
-    let claude: GenerateResult["claude"] = key === undefined ? "unavailable" : "ok";
+    let claude: GenerateResult["claude"] = !hasKey ? "unavailable" : "ok";
     let reason: string | undefined;
     const fail = (error: unknown) => {
-      if (!(error instanceof ClaudeFailure)) throw error;
+      if (error instanceof ClaudeFailure) reason = error.reason;
+      else if (error instanceof UnusableReply) reason = error.message;
+      else throw error;
       claude = "failed";
-      reason = error.message;
     };
 
     // The setting (D7, Q2): the GM's pick; on a Sprites map Claude's classification; else the keyword picker.
     const options = settingOptions(fence.packs);
     let chosen: SettingRef | undefined = picked;
-    if (chosen === undefined && sprites && key !== undefined) {
+    if (chosen === undefined && sprites && hasKey) {
       try {
-        chosen = parseSetting(await askClaudeText(key, settingPrompt(desc, options), CLASSIFY_MAX_TOKENS), options)?.ref;
+        chosen = parseSetting(await askClaudeText(settingPrompt(desc, options), CLASSIFY_MAX_TOKENS), options)?.ref;
       } catch (error) {
         fail(error);
       }
@@ -509,16 +472,16 @@ export const generate = userAction({
       palette = buildPalette(folder, uploaded);
     }
 
-    if (key !== undefined && claude === "ok") {
+    if (hasKey && claude === "ok") {
       try {
         if (palette !== null) {
-          layout = cleanSpriteLayout(await askClaude(key, spritePrompt(desc, w, h, label, palette, variation)), palette, w, h, seed);
+          layout = cleanSpriteLayout(await askClaude(spritePrompt(desc, w, h, label, palette, variation)), palette, w, h, seed);
         } else {
           // A Classic map keeps the board's prompt (E6); a setting the GM picked is named in the scene.
           const scene = picked === undefined ? desc : `${desc}\nSetting: ${label}.`;
-          layout = toLayout(await askClaude(key, scenePrompt(scene, w, h, variation)), w, h, seed);
+          layout = toLayout(await askClaude(scenePrompt(scene, w, h, variation)), w, h, seed);
         }
-        if (layout === null) throw new ClaudeFailure("unusable layout");
+        if (layout === null) throw new UnusableReply("unusable layout");
       } catch (error) {
         fail(error);
       }

@@ -3,6 +3,8 @@
 
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
+
 import { BEASTFORMS } from "../../srd/beastforms";
 import type { Beastform, Feature, Range, TraitId } from "../../srd/types";
 import { formatDamage, parseDamage, stepDie, traitIdSchema } from "./common";
@@ -44,45 +46,45 @@ const formById = (formId: string) => BEASTFORMS.find((b) => b.id === formId);
 /** Throws a readable Error when the choice breaks a Beastform rule at this character tier. */
 export function validateBeastform(state: BeastformState, tier: number): void {
   if (state.formId === null) {
-    if (state.baseFormId || state.hybrid || state.evolutionTrait) throw new Error("Choose a form first.");
+    if (state.baseFormId || state.hybrid || state.evolutionTrait) throw new RuleError("EXTRA_RULE", "Choose a form first.");
     return;
   }
   const form = formById(state.formId);
-  if (!form) throw new Error("Unknown Beastform.");
-  if (form.tier > tier) throw new Error(`${form.name} needs Tier ${form.tier}; you can take forms of your tier or lower.`);
+  if (!form) throw new RuleError("EXTRA_RULE", "Unknown Beastform.");
+  if (form.tier > tier) throw new RuleError("EXTRA_RULE", `${form.name} needs Tier ${form.tier}; you can take forms of your tier or lower.`);
 
   const evolved = EVOLVED[form.id];
   if (evolved) {
     const base = state.baseFormId ? formById(state.baseFormId) : undefined;
     if (!base || !evolved.baseTiers.includes(base.tier) || EVOLVED[base.id] || HYBRID[base.id]) {
-      throw new Error(`${form.name} upgrades a Tier ${evolved.baseTiers.join(" or ")} form; choose which.`);
+      throw new RuleError("EXTRA_RULE", `${form.name} upgrades a Tier ${evolved.baseTiers.join(" or ")} form; choose which.`);
     }
   } else if (state.baseFormId) {
-    throw new Error("Only an Evolved form upgrades another form.");
+    throw new RuleError("EXTRA_RULE", "Only an Evolved form upgrades another form.");
   }
 
   const hybrid = HYBRID[form.id];
   if (hybrid) {
     const h = state.hybrid;
-    if (!h) throw new Error(`${form.name} combines ${hybrid.sources} forms; choose them.`);
+    if (!h) throw new RuleError("EXTRA_RULE", `${form.name} combines ${hybrid.sources} forms; choose them.`);
     const sources = h.sources.map(formById);
     if (
       sources.length !== hybrid.sources ||
       new Set(h.sources).size !== h.sources.length ||
       sources.some((s) => !s || s.tier > hybrid.maxTier || EVOLVED[s.id] || HYBRID[s.id])
     ) {
-      throw new Error(`Choose ${hybrid.sources} different forms from Tiers 1–${hybrid.maxTier}.`);
+      throw new RuleError("EXTRA_RULE", `Choose ${hybrid.sources} different forms from Tiers 1–${hybrid.maxTier}.`);
     }
     const advantages = new Set(sources.flatMap((s) => s!.advantages));
     const features = new Set(sources.flatMap((s) => s!.features.map((f) => f.name)));
     if (h.advantages.length !== hybrid.advantages || new Set(h.advantages).size !== h.advantages.length || h.advantages.some((a) => !advantages.has(a))) {
-      throw new Error(`Choose ${hybrid.advantages} advantages from those forms.`);
+      throw new RuleError("EXTRA_RULE", `Choose ${hybrid.advantages} advantages from those forms.`);
     }
     if (h.features.length !== hybrid.features || new Set(h.features).size !== h.features.length || h.features.some((f) => !features.has(f))) {
-      throw new Error(`Choose ${hybrid.features} features from those forms.`);
+      throw new RuleError("EXTRA_RULE", `Choose ${hybrid.features} features from those forms.`);
     }
   } else if (state.hybrid) {
-    throw new Error("Only a Hybrid form combines other forms.");
+    throw new RuleError("EXTRA_RULE", "Only a Hybrid form combines other forms.");
   }
 }
 

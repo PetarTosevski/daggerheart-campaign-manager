@@ -2,6 +2,8 @@
 
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
+
 import type { Range } from "../../srd/types";
 import { RANGES } from "./common";
 
@@ -100,15 +102,15 @@ export function companionStats(s: CompanionState, level: number) {
 export function validateCompanion(s: CompanionState, level: number): void {
   for (const key of Object.keys(s.training)) {
     const option = TRAINING.find((t) => t.id === key);
-    if (!option) throw new Error("Unknown training option.");
-    if (s.training[key] > option.max) throw new Error(`${option.name} can be taken ${option.max === 1 ? "once" : `${option.max} times`}.`);
+    if (!option) throw new RuleError("EXTRA_RULE", "Unknown training option.");
+    if (s.training[key] > option.max) throw new RuleError("EXTRA_RULE", `${option.name} can be taken ${option.max === 1 ? "once" : `${option.max} times`}.`);
   }
   const stats = companionStats(s, level);
-  if (stats.trainingUsed > stats.trainingCap) throw new Error(`Your companion can have ${stats.trainingCap} training option(s) at level ${level}.`);
-  if (s.vicious.length !== count(s, "vicious")) throw new Error("Choose damage die or range for each Vicious mark.");
+  if (stats.trainingUsed > stats.trainingCap) throw new RuleError("EXTRA_RULE", `Your companion can have ${stats.trainingCap} training option(s) at level ${level}.`);
+  if (s.vicious.length !== count(s, "vicious")) throw new RuleError("EXTRA_RULE", "Choose damage die or range for each Vicious mark.");
   const dieSteps = s.vicious.filter((v) => v === "die").length;
-  if (dieSteps > COMPANION_DICE.length - 1) throw new Error("The damage die can't go past d12.");
-  if (s.vicious.length - dieSteps > RANGES.length - 1) throw new Error("The range can't go past Very Far.");
-  if (s.stress > stats.stressMax) throw new Error(`Your companion has ${stats.stressMax} Stress slots.`);
-  if (s.experiences.length > stats.experienceLimit) throw new Error(`Your companion can have ${stats.experienceLimit} Experiences at level ${level}.`);
+  if (dieSteps > COMPANION_DICE.length - 1) throw new RuleError("EXTRA_RULE", "The damage die can't go past d12.");
+  if (s.vicious.length - dieSteps > RANGES.length - 1) throw new RuleError("EXTRA_RULE", "The range can't go past Very Far.");
+  if (s.stress > stats.stressMax) throw new RuleError("EXTRA_RULE", `Your companion has ${stats.stressMax} Stress slots.`);
+  if (s.experiences.length > stats.experienceLimit) throw new RuleError("EXTRA_RULE", `Your companion can have ${stats.experienceLimit} Experiences at level ${level}.`);
 }

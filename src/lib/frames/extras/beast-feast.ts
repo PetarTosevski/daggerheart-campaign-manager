@@ -2,6 +2,8 @@
 
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
+
 import { FLAVORS, type Flavor } from "../../domain/frames/beast-feast";
 
 export const MAX_STRENGTH = 3;
@@ -33,12 +35,12 @@ export function ingredientCapacity(traits: Record<string, number>): number {
 }
 
 export function addIngredient(state: BeastFeastState, ingredient: Ingredient, capacity: number): BeastFeastState {
-  if (state.ingredients.length >= capacity) throw new Error(`You can carry ${capacity} ingredient(s) (your highest trait).`);
+  if (state.ingredients.length >= capacity) throw new RuleError("EXTRA_RULE", `You can carry ${capacity} ingredient(s) (your highest trait).`);
   return { ingredients: [...state.ingredients, ingredient] };
 }
 
 export function removeIngredient(state: BeastFeastState, id: string): BeastFeastState {
-  if (!state.ingredients.some((i) => i.id === id)) throw new Error("That ingredient is gone.");
+  if (!state.ingredients.some((i) => i.id === id)) throw new RuleError("EXTRA_RULE", "That ingredient is gone.");
   return { ingredients: state.ingredients.filter((i) => i.id !== id) };
 }
 

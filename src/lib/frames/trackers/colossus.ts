@@ -4,6 +4,8 @@
 
 import { z } from "zod";
 
+import { RuleError } from "../../errors/app-error";
+
 /** "The Siphoning Track starts with one slot marked" (p.327); the sheet has 10 slots. */
 export const SIPHON_SLOTS = 10;
 /** "Once all nine colossi have been slain or his Power reaches 100, Kudamat emerges" (p.327). */
@@ -79,7 +81,7 @@ export function resolveSiphon(
 ): { state: ColossusState; roll: SiphonRoll } {
   const dice = roll(state.siphonMarked);
   if (dice.length !== state.siphonMarked || dice.some((d) => !Number.isInteger(d) || d < 1 || d > 12)) {
-    throw new Error("The siphon needs one d12 per marked slot.");
+    throw new RuleError("TRACKER_RULE", "The siphon needs one d12 per marked slot.");
   }
   const gained = Math.max(...dice);
   const kudamatPower = state.kudamatPower + gained;
@@ -101,7 +103,7 @@ export function markRest(
   roll: RollD12s,
   at: number,
 ): { state: ColossusState; rolls: SiphonRoll[] } {
-  if (state.phase !== "hunt") throw new Error("Rests mark the Siphoning Track only during the hunt phase.");
+  if (state.phase !== "hunt") throw new RuleError("TRACKER_RULE", "Rests mark the Siphoning Track only during the hunt phase.");
   let next = state;
   const rolls: SiphonRoll[] = [];
   for (let i = 0; i < (kind === "long" ? 2 : 1); i++) {
@@ -128,7 +130,7 @@ export function defeatColossus(
   roll: RollD12s,
   at: number,
 ): { state: ColossusState; roll: SiphonRoll; notice: string } {
-  if (state.colossiDefeated >= COLOSSI_TOTAL) throw new Error("All nine colossi are already slain.");
+  if (state.colossiDefeated >= COLOSSI_TOTAL) throw new RuleError("TRACKER_RULE", "All nine colossi are already slain.");
   const resolved = resolveSiphon(state, "defeat", roll, at);
   const colossiDefeated = state.colossiDefeated + 1;
   return {
