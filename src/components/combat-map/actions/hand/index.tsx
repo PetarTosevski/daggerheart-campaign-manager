@@ -18,7 +18,8 @@ import { BAND_LABEL } from "../targets";
 import { seenTargets, useActor, useCombatTargets } from "../targets/state";
 import { AfterRollDialog, UseDialog } from "./dialog";
 import { HandCardFace } from "./face";
-import { formFor, LOADOUT_MAX, needsDialog, playableUses, recallLabel, type Creature, type HandCard, type UseOutcome } from "./model";
+import { NO_ROLL_OPTIONS, rollProblem, RollOptions, type Roller, type RollValues } from "../roll-controls";
+import { formFor, LOADOUT_MAX, needsDialog, playableUses, recallLabel, rollOf, usedRollOptions, type Creature, type HandCard, type UseOutcome } from "./model";
 import { CardResult, type LastCard } from "./result";
 import { handShared, HideHandSwitch, useHandSharing } from "./sharing";
 import { useCardActions, useRecall, type UseRequest } from "./use-card";
@@ -32,6 +33,9 @@ import { useCardActions, useRecall, type UseRequest } from "./use-card";
  * F7-H4 (dcm-bxp.99.24): a player who selects another player's token sees that character's Hand read only (no Use /
  * Recall) while the GM's switch "Players can see each other's cards" is on and its player has not hidden it; each
  * player can hide their own hand under it. The GM always sees every hand. No enemy numbers anywhere (U1).
+ * F8-I1 (dcm-bxp.99.28, user answer 2026-10-23): the roll options (Experiences, advantage, Help) are a small strip above
+ * the loadout that applies to the next card that rolls; a rolling card with an enemy picked and nothing else to ask
+ * fires at once with them.
  */
 
 // ---------------------------------------------------------------- creatures
@@ -70,12 +74,16 @@ const GM_LOCKED = "Turn on “Play for this character” to use or recall these 
 export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnemies, gm, canPlay, lockedNote = GM_LOCKED }: BodyProps) {
   const hand = useQuery(api.combatCards.hand, { campaignId, characterId });
   const rests = useQuery(api.rests.current, { campaignId });
-  // The acting character's Experiences and Hope for a rolling card's roll options (the Attack bar's subscription).
+  // The acting character's Experiences and Hope for the roll-options strip (the Attack bar's subscription).
   const character = useQuery(api.characters.get, canPlay ? { characterId } : "skip");
   const actions = useCardActions({ campaignId, mapId, characterId });
   const recall = useRecall({ campaignId, characterId });
   const [dialogFor, setDialogFor] = useState<string | null>(null);
   const [last, setLast] = usePanelMemory<LastCard | null>(`card:${characterId}`, null);
+  // F8-I1 (dcm-bxp.99.28): the roll options for the next card that rolls, kept across the layout switch.
+  const [rollOptions, setRollOptions] = usePanelMemory<RollValues>(`rolls:${characterId}`, NO_ROLL_OPTIONS);
+  const roller: Roller | null = character ? { experiences: character.sheet.experiences, hope: character.sheet.hope } : null;
+  const rollBlock = rollProblem(roller, rollOptions);
   const names = new Map<string, string>(creatures.map((c) => [c.tokenId, c.side === "self" ? "You" : c.name]));
   const restOpen = Boolean(rests?.open);
   const vaultId = useId();
@@ -88,32 +96,41 @@ export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnem
     );
   }
 
-  function settle(card: HandCard, out: UseOutcome | undefined) {
+  function settle(card: HandCard, request: UseRequest, out: UseOutcome | undefined) {
     if (!out) return;
     // A choice after the roll: the Use dialog gives way to the after-the-roll dialog (never two dialogs at once).
     setDialogFor(null);
     if (out.status === "needsChoice") return;
+    // The strip applies to the next card (F8-I1): a use that took its options clears it.
+    if (usedRollOptions(request)) setRollOptions(NO_ROLL_OPTIONS);
     setLast(out.status === "resolved" ? { kind: "resolved", cardName: card.name, result: out, names, done: [] } : { kind: "pending", cardName: card.name, outOfRange: out.outOfRange, names });
   }
 
   async function submit(card: HandCard, request: UseRequest) {
-    settle(card, await actions.submit(request));
+    settle(card, request, await actions.submit(request));
+  }
+
+  /** The card's first ready action use and its form, or null when nothing can start. */
+  function firstUse(card: HandCard) {
+    const first = playableUses(card).find((u) => u.ready);
+    const effectUse = first ? cardEffect(card.cardId)?.uses.find((u) => u.id === first.useId) : undefined;
+    return first && effectUse ? { first, form: formFor(effectUse) } : null;
   }
 
   function use(card: HandCard) {
     actions.clearError();
-    const uses = playableUses(card).filter((u) => u.ready);
-    const effect = cardEffect(card.cardId);
-    const first = uses[0];
-    const effectUse = first ? effect?.uses.find((u) => u.id === first.useId) : undefined;
-    if (!first || !effectUse) return;
-    const form = formFor(effectUse);
+    const start = firstUse(card);
+    if (!start) return;
+    const { first, form } = start;
     if (needsDialog(form, { spells: playableUses(card).length, pickedEnemies: pickedEnemies.length, gm })) {
       setDialogFor(card.cardId);
       return;
     }
+    // Nothing to ask (F8-I1, dcm-bxp.99.28): it fires at once, with the strip's roll options when it rolls.
+    if (form.rolls && rollBlock) return;
     const targets = form.targets ? pickedEnemies.slice(-1) : [];
-    void submit(card, { cardId: card.cardId, spell: first.useId, targetTokenIds: [...targets], choices: [] });
+    const roll = rollOf(form, null, gm, rollOptions);
+    void submit(card, { cardId: card.cardId, spell: first.useId, targetTokenIds: [...targets], choices: [], ...(roll ? { roll } : {}) });
   }
 
   const dialogCard = hand.loadout.find((c) => c.cardId === dialogFor);
@@ -122,6 +139,19 @@ export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnem
 
   return (
     <div className="cmh-body">
+      {canPlay && hand.loadout.length > 0 ? (
+        <>
+          <RollOptions
+            className="cmh-rolls"
+            testId="combat-hand-roll-options"
+            roller={roller}
+            values={rollOptions}
+            onChange={(patch) => setRollOptions({ ...rollOptions, ...patch })}
+            hint="Applies to the next card that rolls."
+          />
+          {rollBlock ? <p className="cma-error">{rollBlock}</p> : null}
+        </>
+      ) : null}
       {hand.loadout.length === 0 ? (
         <p className="cm-muted cma-note">No cards in the loadout.</p>
       ) : (
@@ -129,6 +159,8 @@ export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnem
           {hand.loadout.map((card) => {
             const playable = playableUses(card);
             const ready = card.state === "ready" && playable.some((u) => u.ready);
+            // Too many Experiences for the Hope: a card that rolls waits until the strip is fixed.
+            const blocked = rollBlock !== null && firstUse(card)?.form.rolls === true;
             return (
               <li key={card.cardId} className="cmh-slot">
                 <HandCardFace card={card} locked={!canPlay}>
@@ -138,7 +170,8 @@ export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnem
                     <button
                       type="button"
                       className="cmh-use"
-                      disabled={!ready || actions.pending}
+                      disabled={!ready || actions.pending || blocked}
+                      title={blocked ? (rollBlock ?? undefined) : undefined}
                       aria-label={`Use ${card.name}`}
                       aria-busy={actions.pending && dialogFor === null}
                       onClick={() => use(card)}
@@ -208,7 +241,8 @@ export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnem
           creatures={creatures}
           pickedEnemies={pickedEnemies}
           gm={gm}
-          roller={character ? { experiences: character.sheet.experiences, hope: character.sheet.hope } : null}
+          roller={roller}
+          rollOptions={rollOptions}
           open
           pending={actions.pending}
           error={actions.waiting ? null : actions.error}
@@ -224,7 +258,10 @@ export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnem
           pending={actions.pending}
           error={actions.error}
           onCancel={() => actions.cancelWaiting()}
-          onAnswer={(choices) => void actions.answer(choices).then((out) => settle(waitingCard, out))}
+          onAnswer={(choices) => {
+            const request = actions.waiting?.request;
+            void actions.answer(choices).then((out) => request && settle(waitingCard, request, out));
+          }}
         />
       ) : null}
     </div>

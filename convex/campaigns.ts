@@ -9,7 +9,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { normalizeEmail } from "./lib/allowlist";
-import { PLAYERS_SEE_HANDS, playersSeeHands } from "./lib/cardHand";
+import { playersSeeHands } from "./lib/cardHand";
 import { seedCodex } from "./lib/codex";
 import { campaignFearState } from "./lib/fear";
 import {
@@ -446,8 +446,8 @@ export const setOption = gmMutation({
 });
 
 /**
- * The GM's switch "Players can see each other's cards" (F7-H4, dcm-bxp.99.24; on by default): stored as the
- * `playersSeeHands` key of the campaign's `options` record, which `resolveOptions` ignores. GM only.
+ * The GM's switch "Players can see each other's cards" (F7-H4, dcm-bxp.99.24; on by default): the campaign's typed
+ * `playersSeeHands` field (F8-I1, dcm-bxp.99.27). GM only.
  */
 export const setPlayersSeeHands = gmMutation({
   args: { enabled: v.boolean() },
@@ -455,7 +455,7 @@ export const setPlayersSeeHands = gmMutation({
   handler: async (ctx, { enabled }) => {
     const campaign = ctx.campaign;
     if (playersSeeHands(campaign) === enabled) return null;
-    await ctx.db.patch("campaigns", campaign._id, { options: { ...(campaign.options ?? {}), [PLAYERS_SEE_HANDS]: enabled } });
+    await ctx.db.patch("campaigns", campaign._id, { playersSeeHands: enabled });
     return null;
   },
 });

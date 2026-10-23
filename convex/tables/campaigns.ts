@@ -26,6 +26,11 @@ export const campaignTables = {
     joinCode: v.optional(v.string()),
     /** GM switches for optional rules (see `src/lib/frames/options.ts`); unset keys use the frame default. */
     options: v.optional(v.record(v.string(), v.boolean())),
+    /**
+     * The GM's switch "Players can see each other's cards" (F7-H4, dcm-bxp.99.24); unset = on. F8-I1 moved it here from
+     * the `options` key of the same name (`migrations/handSharing:moveSwitch`).
+     */
+    playersSeeHands: v.optional(v.boolean()),
     /** Custom frame only: the GM's own tome chapters (plain text). */
     tome: v.optional(tomeValidator),
     /** When the GM last cleared the roll feed (`feed.clear`): the feed shows only rows after it. */

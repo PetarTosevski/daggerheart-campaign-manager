@@ -22,6 +22,7 @@ import type { CharacterView } from "../../../../../convex/characters";
 import type { ActionsPanelProps } from "../../slots";
 import { BAND_LABEL, type RangeBand } from "../targets";
 import { seenTargets, useActor, useCombatTargets, type WeaponSlot } from "../targets/state";
+import { NO_ROLL_OPTIONS, rollProblem, RollOptions, signed, Stepper, type Roller, type RollValues } from "../roll-controls";
 import { usePanelMemory } from "./memory";
 
 /**
@@ -36,11 +37,6 @@ export type AttackOutcome = FunctionReturnType<typeof api.combatActions.attack>;
 export type ResolvedAttack = Extract<AttackOutcome, { status: "resolved" }>;
 type MineRow = FunctionReturnType<typeof api.combatRequests.mine>[number];
 type MinionOfferRow = Extract<MineRow, { kind: "minionOffer" }>;
-
-/** The most advantage, disadvantage or help dice the bar offers (the dice box's limit). */
-const DICE_LIMIT = 6;
-
-const signed = (n: number) => (n >= 0 ? `+${n}` : `−${-n}`);
 
 /** "2d8+3 phy": the weapon's damage at the character's Proficiency, as the sheet shows it. */
 export function damageLabel(weapon: Pick<Weapon, "damage">, proficiency: number): string {
@@ -124,26 +120,6 @@ export function AttackResult({ result, names, weaponName }: { result: Pick<Resol
   );
 }
 
-/** A labelled − n + stepper in the map's style (advantage, help dice). */
-function Stepper({ label, value, min, max, text, onChange }: { label: string; value: number; min: number; max: number; text: string; onChange: (n: number) => void }) {
-  return (
-    <div className="cma-stepper" role="group" aria-label={label}>
-      <span className="cm-lbl">{label}</span>
-      <span className="cma-stepper-row">
-        <button type="button" className="cm-btn cm-sm" aria-label={`Less ${label.toLowerCase()}`} disabled={value <= min} onClick={() => onChange(value - 1)}>
-          −
-        </button>
-        <output className="cma-stepper-val" aria-live="polite">
-          {text}
-        </output>
-        <button type="button" className="cm-btn cm-sm" aria-label={`More ${label.toLowerCase()}`} disabled={value >= max} onClick={() => onChange(value + 1)}>
-          +
-        </button>
-      </span>
-    </div>
-  );
-}
-
 type Last = { kind: "resolved"; result: ResolvedAttack; names: Map<string, string>; weaponName: string } | { kind: "pending"; outOfRange: { tokenId: string; band: RangeBand }[]; names: Map<string, string> };
 
 /** Player column: the Attack bar. Renders nothing for a character without a token on the live map. */
@@ -157,9 +133,8 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
   const character = useQuery(api.characters.get, { characterId });
   const { targetTokenIds, slot, setSlot } = useCombatTargets();
   const attack = useIntent(api.combatActions.attack);
-  const [experienceIds, setExperienceIds] = useState<string[]>([]);
-  const [edge, setEdge] = useState(0);
-  const [help, setHelp] = useState(0);
+  const [rollValues, setRollValues] = useState<RollValues>(NO_ROLL_OPTIONS);
+  const { experienceIds, edge, help } = rollValues;
   const [trait, setTrait] = useState<TraitId>("strength");
   // Kept above the desktop / phone layout switch (user answer 2026-10-22), per character.
   const [last, setLast] = usePanelMemory<Last | null>(`attack:${characterId}`, null);
@@ -179,7 +154,8 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
   // A plain weapon attack targets one enemy (user answer 2026-10-22, CB p.96): the latest pick.
   const picked = seenTargets(targetTokenIds, enemies).slice(-1);
   const names = new Map<string, string>(enemies.map((t) => [t._id, t.name]));
-  const notEnoughHope = experienceIds.length > sheet.hope;
+  const roller: Roller = { experiences: sheet.experiences, hope: sheet.hope };
+  const notEnoughHope = rollProblem(roller, rollValues);
   const canAttack = chosen !== undefined && picked.length > 0 && !attack.pending && !notEnoughHope;
 
   async function fire() {
@@ -193,14 +169,14 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
       slot: chosen.slot,
       ...(chosen.weapon.trait === "choice" ? { trait } : {}),
       modifier: 0,
-      experienceIds,
+      experienceIds: [...experienceIds],
       advantage: Math.max(0, edge),
       disadvantage: Math.max(0, -edge),
       help,
       options: [],
     });
     if (!out) return;
-    setExperienceIds([]);
+    setRollValues((v) => ({ ...v, experienceIds: [] }));
     if (out.status === "resolved") {
       setLast({ kind: "resolved", result: out, names, weaponName });
       if (out.minionOffer) setPickFor(out.minionOffer.requestId);
@@ -238,40 +214,8 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
           </select>
         </label>
       ) : null}
-      <details className="cma-opts">
-        <summary className="cm-lbl">Roll options</summary>
-        <div className="cma-opts-body">
-          {sheet.experiences.length > 0 ? (
-            <div className="cma-chips" role="group" aria-label="Experiences (1 Hope each)">
-              <span className="cm-lbl">Experiences (1 Hope each)</span>
-              {sheet.experiences.map((e) => {
-                const on = experienceIds.includes(e.id);
-                return (
-                  <button
-                    key={e.id}
-                    type="button"
-                    className="cm-chip"
-                    aria-pressed={on}
-                    onClick={() => setExperienceIds((ids) => (on ? ids.filter((id) => id !== e.id) : [...ids, e.id]))}
-                  >
-                    {e.name} ({signed(e.value)})
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-          <Stepper
-            label="Advantage"
-            value={edge}
-            min={-DICE_LIMIT}
-            max={DICE_LIMIT}
-            text={edge === 0 ? "Normal" : edge > 0 ? `Advantage ×${edge}` : `Disadvantage ×${-edge}`}
-            onChange={setEdge}
-          />
-          <Stepper label="Help dice" value={help} min={0} max={DICE_LIMIT} text={String(help)} onChange={setHelp} />
-        </div>
-      </details>
-      {notEnoughHope ? <p className="cma-error">Not enough Hope for those Experiences.</p> : null}
+      <RollOptions roller={roller} values={rollValues} onChange={(patch) => setRollValues((v) => ({ ...v, ...patch }))} />
+      {notEnoughHope ? <p className="cma-error">{notEnoughHope}</p> : null}
       <button type="button" className="cm-go cma-go" disabled={!canAttack} aria-busy={attack.pending} onClick={() => void fire()}>
         {attack.pending ? "Rolling…" : picked.length === 0 ? "Pick a target to attack" : `⚔ Attack ${names.get(picked[0]!) ?? "target"}${chosen ? ` with ${chosen.weapon.name}` : ""}`}
       </button>
