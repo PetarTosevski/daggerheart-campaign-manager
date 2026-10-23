@@ -2,11 +2,10 @@
 # screen on phones) with HP / Stress / Hope / Armor trackers and every Hope, class, subclass, ancestry and community feature
 # with its Use button, FULLY AUTOMATED through effect tables run by the card-effect runner (map targeting, costs, limits,
 # the reaction window, U1 hit/miss only, GM undo); a link to the full sheet for everything else.
-# Status: DRAFT 2026-10-23. Analysis, inventory (217 features classified), vocabulary gaps NV1-NV19 and QUESTIONS Q1-Q16:
-#   .omc/autopilot/sheet-drawer-analysis.md. Defaults for open questions (the recommended option (a) of each) are written into
-#   acceptance lists and marked (Qn); an answer that differs changes only the tracers that cite that Qn. Tracers do not start
-#   until the user has answered or accepted the defaults. USER ANSWER 2026-10-23: the drawer blocks launch (dcm-bxp.133).
-# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation, needs_answer.
+# Status: APPROVED 2026-10-23. Analysis, inventory (217 features classified), vocabulary gaps NV1-NV19 and the answered
+#   questions Q1-Q16: .omc/autopilot/sheet-drawer-analysis.md. Acceptance lists cite the answer they implement as (Qn).
+#   USER ANSWER 2026-10-23: the drawer blocks launch (dcm-bxp.133).
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation, answers.
 # Book pages: CB = Core Book, HF = Hope & Fear, PRINTED pages ("===== PAGE N =====" in .reference-private/text holds printed
 #   page N-1). Each tracer re-checks the pages it cites and quotes them in its task doc; never commit the books.
 #
@@ -18,21 +17,25 @@
 #   incoming damage, rerolls, after-roll features, rounding up, end of the scene (CB p.107); usage limits (CB p.101); rests
 #   (CB p.105); multiclass (CB p.110-111); mixed ancestry (CB p.71); temporary conditions (CB p.102).
 #
-# Defaults of open questions used below (analysis section 6, option (a) each):
+# USER ANSWERS 2026-10-23 (binding; also on bead dcm-bxp.99.19): Q1-Q14 and Q16 option (a), Q15 option (b):
 #   Q1 after-roll step on the player's own map rolls, only when an eligible after-roll feature is ready; Q2 before-roll prompt
 #   for PCs holding a before-roll defence, after-roll answers in the reaction window; Q3 Not This Time in any hit's window when
 #   the attacker is within Far of the wizard; Q4 companion token + Command; Q5 the 16 martial stances as rule data, Focus track,
 #   automated; Q6 every halving rounds up (resistance too); Q7 scene ends with the encounter, a GM 'End scene' button or the
 #   session; Q8 Act of Reprisal: the ally is within Melee of you; Q9 Sneak Attack and Cloaked from map positions and vision;
 #   Q10 Beastform attack, Evasion and its 45 features automated; Q11 transformations in scope; Q12 named Help an Ally;
-#   Q13 situational conditions confirmed by the player (check box); Q14 live map areas, Dark Cloud blocks sight; Q15 out-of-
-#   combat features listed as text plus existing D5 Use, social advantages as roll options, rest-time ones a follow-up bead;
-#   Q16 a 'Flying' toggle in the drawer.
+#   Q13 situational conditions confirmed by the player (check box); user note: Dedicated is the Orderborne community feature,
+#   so only Orderborne characters have it; Q14 live map areas, Dark Cloud blocks sight; Q15 (b) out-of-combat features listed
+#   as text plus existing D5 Use, social advantages as roll options, AND the rest-time features (Hardy, Efficient, Celestial
+#   Trance, Oasis) automated in this plan (tracer SD-R on convex/rests.ts); Q16 a 'Flying' toggle in the drawer.
 #
 # Cross-plan sequencing (orchestrator):
-#   - followups-8 wave 1 must be merged first: I1 owns actions/hand/**, actions/attack/**, convex/combatCards.ts,
-#     convex/lib/cardHand.ts; I5 owns vision/**, tokens/**, tests/convex/authz/combat.entries.ts; I6 owns src/lib/errors/**,
-#     convex/actionLog.ts, convex/feed.ts, src/components/party/dice/**.
+#   - followups-8 (I1-I7) is merged into rebuild; no wait.
+#   - hand-fan HF1 (.omc/plans/hand-fan.yaml, running) owns src/components/combat-map/actions/hand/**, actions/index.tsx,
+#     actions/targets/**, actions/actions.css, src/components/cards/fan.ts and the domains tab section files. The only tracer
+#     here that owns one of them is SD-H (actions/hand/roll-options.tsx): SD-H starts only after HF1 is merged (cross-plan
+#     dependency, noted on SD-H; plan-check takes only same-plan ids in depends_on). SD7 reads actions/hand/** and should
+#     run after HF1 too, so it builds on the fanned Hand.
 #   - CA8 (dcm-bxp.99.4) and AA6 (dcm-bxp.99.9) own docs/game-interpretation.md; SD9 runs after both are merged.
 #   - Shared files belong to SD0 only: src/lib/domain/card-effects/types.ts (vocabulary, widen only), the character / combat
 #     request / combat map validators, convex/schema.ts, convex/cleanup.ts, convex/crons.ts, src/lib/errors/app-error.ts,
@@ -117,7 +120,7 @@ waves:
       - id: SD-ST
         title: Martial stances rule data (Q5)
         size: S
-        needs_answer: [Q5]
+        answers: [Q5]
         goal: The 16 martial stances of HF p.12 and the Focus rules exist as typed rule data the stance table and the drawer can read.
         depends_on: []
         owns:
@@ -344,14 +347,14 @@ waves:
           - docs/tasks/TASK-SD-FE-heritage-hf.md
         reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/session-features/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/heritage.ts, .omc/autopilot/sheet-drawer-analysis.md]
         acceptance:
-          - "Every H&F ancestry and community feature classified combat or passive has exactly one entry; out-of-combat social advantages (Privilege, Well-Read, Steady, Scoundrel, Low-Light Living, Lightfoot, Dread Visage, Natural Climber) are roll-option entries with a situation confirmation (Q13, Q15); a test fails on a missing or extra id"
-          - "Each entry quotes its text with the printed page; tests through runFeature (Dedicated d20 Hope Die once per rest, CB p.75; Unbound and Hallowed Aura with Hope instead of Fear, Q1; Celestial Wings once per scene, Q7; Brave Face Hope instead of Stress; Close-Knit Hope to an ally within Far; Know the Tide and Luckbringer delegated to the session features)"
+          - "Every H&F ancestry and community feature classified combat or passive has exactly one entry; out-of-combat social advantages (Privilege, Well-Read, Steady, Scoundrel, Low-Light Living, Lightfoot, Dread Visage, Natural Climber) are roll-option entries with a situation confirmation (Q13, Q15); the rest-time features (Hardy, Efficient, Celestial Trance, Oasis) have rest-trigger entries that SD-R runs (Q15 b); a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature (Dedicated d20 Hope Die once per rest, Orderborne only, CB p.75, Q13; Unbound and Hallowed Aura with Hope instead of Fear, Q1; Celestial Wings once per scene, Q7; Brave Face Hope instead of Stress; Close-Knit Hope to an ally within Far; Know the Tide and Luckbringer delegated to the session features)"
           - "The task doc lists every manual step and open ruling; a bead per vocabulary gap; the vocabulary is not changed"
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
       - id: FE-beastforms
         title: Feature effects - Beastforms (24 forms, 45 features) (Q10)
         size: M
-        needs_answer: [Q10]
+        answers: [Q10]
         goal: Every Beastform's attack, Evasion and trait bonus and each of its 45 features has an entry the runner executes while the druid is transformed.
         depends_on: [SD1]
         owns:
@@ -366,7 +369,7 @@ waves:
       - id: FE-transformations
         title: Feature effects - Transformations (6 transformations, 12 features) (Q11)
         size: S
-        needs_answer: [Q11]
+        answers: [Q11]
         goal: Every transformation feature classified combat or passive has an entry the runner executes, drawbacks included.
         depends_on: [SD1]
         owns:
@@ -380,7 +383,7 @@ waves:
       - id: FE-stances
         title: Feature effects - Martial stances (16) (Q5)
         size: S
-        needs_answer: [Q5]
+        answers: [Q5]
         goal: Every martial stance has an entry the runner executes while it is the active stance, and shifting, dropping out and refocusing follow HF p.12.
         depends_on: [SD1, SD-ST]
         owns:
@@ -499,7 +502,7 @@ waves:
         acceptance:
           - "The drawer is a modal dialog (role dialog, labelled, focus trap, Esc closes, focus returns to the Sheet button); the map stays mounted and live behind it (no remount, no key= on live content, CL rules); full screen at 760 px and below"
           - "Trackers use the sheet's existing intent mutations (characters.adjustResource and the armor intent) with optimistic updates (rule 12), the same limits as the sheet"
-          - "Sections in order: Hope feature, class features, subclass cards (rank locks), ancestry, community, transformation (Q11), Beastform and stance controls (Q5, Q10), 'Other features' (Q15), Flying toggle when a flying feature is held (Q16); each feature shows its badge (Use / Reaction / With an attack / Automatic / Passive / text), cost and limit badges, greyed when exhausted with the reset label; 'Full sheet' links to the Party sheet"
+          - "Sections in order: Hope feature, class features, subclass cards (rank locks), ancestry, community, transformation (Q11), Beastform and stance controls (Q5, Q10), 'Other features' (Q15: text, existing D5 Use, rest-time features marked 'applied at rest'), Flying toggle when a flying feature is held (Q16); each feature shows its badge (Use / Reaction / With an attack / Automatic / Passive / text), cost and limit badges, greyed when exhausted with the reset label; 'Full sheet' links to the Party sheet"
           - "Each useQuery subtree is inside an error boundary (rule 11); loading and empty states; the GM's view of a PC is greyed until CA6's 'Play for this character' switch"
           - "Unit tests; visual spec at 1280, 1024x768, 768x1024 and 390 px; e2e opens, uses a tracker and closes without the map losing its pan / zoom or selection"
           - "pnpm lint, typecheck, vitest and the drawer e2e pass; tracer-guard passes"
@@ -533,6 +536,31 @@ waves:
           - "runRestTiming covers feature timing triggers and tokens (clear at rest / long rest as each text says); D5 onRest / onSessionEnd hooks still run once"
           - "End scene buttons on the Combat Map GM column and the Encounter tab top bar; authz entries for combatScenes.end"
           - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: SD-R
+        title: Rest-time heritage features in the rest flow (Q15 b) - Hardy, Efficient, Celestial Trance, Oasis
+        size: M
+        answers: [Q15]
+        goal: When a rest finishes or a downtime move is picked, the rest flow applies the rest-time heritage features a character holds - Frostborne Hardy clears a Hit Point on any rest, Clank Efficient lets a short rest pick a long rest move, Elf Celestial Trance adds one downtime move, Duneborne Oasis lets the character or an ally reroll a downtime die on a short rest and keep the higher result.
+        depends_on: [SD1, FE-ancestry-core, FE-heritage-hf]
+        owns:
+          - convex/rests.ts
+          - src/lib/domain/rest/feature-moves.ts
+          - src/components/party/rest/**
+          - tests/convex/rests-features.test.ts
+          - tests/unit/rest-feature-moves.test.ts
+          - docs/tasks/TASK-SD-SD-R.md
+        reads:
+          - src/lib/domain/rest/**
+          - convex/lib/restHooks.ts
+          - src/lib/domain/feature-effects/**
+          - src/lib/srd/feature-effects/**
+          - src/lib/srd/heritage.ts
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "feature-moves.ts (pure) reads owned() and the rest-trigger entries: Hardy clears 1 HP at the end of any rest (HF p.29 quoted); Efficient offers the long rest moves on a short rest (CB p.53); Celestial Trance adds one downtime move slot (CB p.56); Oasis offers a reroll of one downtime-move die on a short rest, for the holder or an ally, keeping the higher result (HF p.27); mixed ancestries resolve through owned(); unit tests with book texts"
+          - "convex/rests.ts applies them in the existing rest mutations (one transaction, the rest's actionLog group, undoable as rests are today); every existing rests test passes unchanged; convex tests per feature incl. an interrupted long rest counting as a short rest (CB p.105)"
+          - "The rest picker shows the extra move slot, the long-rest moves for Efficient and an Oasis 'Reroll (keep higher)' button on a rolled downtime die; 44 px targets; unit test"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
   # ---------------------------------------------------------------- wave 5: drawer Use flow and the answer-dependent integrations
   - wave: 5
     tracers:
@@ -540,6 +568,7 @@ waves:
         title: Drawer Use flow - choices, targets, results, GM sanctions
         size: M
         goal: Use on a drawer feature asks only what the feature needs (choices, targets on the map, situation confirmation, times), fires useFeature once, shows the result as the Hand does (hit / miss only), and the GM approves or declines out-of-range feature uses from the same pending list as cards.
+        # CROSS-PLAN: run after hand-fan HF1 is merged (it reuses the Hand dialog and result view HF1 is changing).
         depends_on: [SD6, SD5]
         owns:
           - src/components/combat-map/drawer/use/**
@@ -562,7 +591,7 @@ waves:
       - id: SD-C
         title: Beastbound companion on the map (Q4)
         size: M
-        needs_answer: [Q4]
+        answers: [Q4]
         goal: A Beastbound ranger places their companion as an ally token, commands it from the drawer (Spellcast Roll, then its attack with the ranger's Proficiency and its die), adversaries can attack it (any damage marks a Stress), and Battle-Bonded and Loyal Friend read its position.
         depends_on: [SD6, SD4]
         owns:
@@ -589,7 +618,7 @@ waves:
       - id: SD-A
         title: Map areas and auras (Q14)
         size: L
-        needs_answer: [Q14]
+        answers: [Q14]
         goal: Area features (Circle of Power, Moonbeam, Elemental Aura, Dark Cloud) create a map area whose members are worked out from token positions at each roll; Dark Cloud blocks line of sight; the GM can remove an area; areas end with their duration.
         depends_on: [SD6, SD5]
         owns:
@@ -618,8 +647,9 @@ waves:
       - id: SD-H
         title: Named Help an Ally and its features (Q12)
         size: M
-        needs_answer: [Q12]
+        answers: [Q12]
         goal: A PC helps a named ally from their drawer (paying their Hope, or nothing with Eloquent), the ally's next action roll uses that advantage die (d6, d8 with Enchanted Aid, d10 with Epic Poetry), and Enchanted Aid's Duality swap is offered to the helper; anonymous Help dice stay available.
+        # CROSS-PLAN: starts only after hand-fan HF1 is merged (HF1 owns actions/hand/**, which includes roll-options.tsx).
         depends_on: [SD6, SD5]
         owns:
           - convex/lib/rolls.ts
@@ -648,7 +678,7 @@ waves:
         title: Sheet drawer end to end, feature coverage, accessibility, tablet, live two-browser and recorded rulings
         size: M
         goal: The whole drawer flow is checked end to end for players and the GM, every classified feature runs through the runner, the drawer passes axe and the tablet specs, a second browser sees changes live, and docs/game-interpretation.md records Q1-Q16.
-        depends_on: [SD2, SD4, SD5, SD7, SD8, SD-C, SD-A, SD-H, FE-beastforms, FE-transformations, FE-stances]
+        depends_on: [SD2, SD4, SD5, SD7, SD8, SD-R, SD-C, SD-A, SD-H, FE-beastforms, FE-transformations, FE-stances]
         owns:
           - tests/e2e/sheet-drawer-flow.spec.ts
           - tests/e2e/a11y-sheet-drawer.spec.ts
@@ -668,5 +698,5 @@ waves:
           - "Flow e2e (two players and a GM): a Hope feature on an enemy, a reaction in the window, an attack rider, an after-roll reroll, a passive changing Evasion, a once-per-scene feature returning at End scene, GM undo; player network responses contain no enemy hp, stress, major, severe or difficulty field (U1)"
           - "a11y-sheet-drawer.spec.ts: zero serious or critical axe findings on the open drawer, its Use dialog and the before-roll / after-roll prompts; no sideways scroll and 44 px touch targets at 768x1024 and 1024x768; full-screen drawer at 390 px"
           - "live-sheet-drawer.spec.ts: the GM and a player side by side; a feature used in the player's drawer updates the GM's token card and feed, and a GM rest greys back in the player's drawer, without a reload"
-          - "docs/game-interpretation.md records Q1-Q16 with the user's answers and the quoted pages"
+          - "docs/game-interpretation.md records Q1-Q16 with the user's answers (Q15 b) and the quoted pages; the flow e2e also finishes a short rest for a Frostborne Clank (Hardy, Efficient)"
           - "pnpm lint, typecheck, vitest and the full e2e suite pass; tracer-guard passes"
