@@ -13,9 +13,14 @@
 // resolveNumber({ kind: "calc", of: { kind: "trait", trait: "agility" }, divide: 2 }, env, rng); // half Agility, rounded up
 // resolveDice({ count: { kind: "proficiency" }, sides: 8, plus: { kind: "fixed", value: 2 } }, env, rng); // { count: 3, sides: 8, plus: 2 }
 // ```
+//
+// Plan sheet-drawer, SD1 (NV1, NV12): a `DiceExpr` with `sidesOf` rolls the actor's own class die (`env.dieSides`, read
+// from the sheet: Rally, Prayer, Patron, Slayer, Combo, Unstoppable), else its printed `sides`; a `dice` source with
+// `keep: "countAtLeast"` is the number of dice that rolled `atLeast` or more (Deathless Embrace, HF p.13: "clear a Hit
+// Point for each result of 4 or higher"), every die without `atLeast`, plus the expression's `plus`.
 
 import type { Rng } from "../dice/index";
-import type { DiceExpr, NumberSource, Resource, Track } from "../card-effects/types";
+import type { DiceExpr, HeldDieKind, NumberSource, Resource, Track } from "../card-effects/types";
 import type { DomainId, TraitId } from "../../srd/types";
 
 /** A creature's tracks, as `marked` reads them. */
@@ -53,6 +58,8 @@ export interface NumberEnv {
   vaultDomains: readonly DomainId[];
   /** The total of the latest dice this use rolled (`dice` sources and `check` steps write it). */
   lastRoll?: number;
+  /** SD1 (NV1): the size of the actor's class dice, for `DiceExpr.sidesOf` (absent: the expression's own `sides`). */
+  dieSides?: Partial<Record<HeldDieKind | "unstoppable", number>>;
 }
 
 /** Rolls `count` d`sides`; returns the dice. */
@@ -105,7 +112,13 @@ export function resolveNumber(source: NumberSource, env: NumberEnv, rng: Rng): n
     case "dice": {
       const d = resolveDice(source.dice, env, rng);
       const rolled = rollDice(d.count, d.sides, rng);
-      const value = (source.keep === "highest" ? Math.max(0, ...rolled) : rolled.reduce((s, n) => s + n, 0)) + d.plus;
+      const kept =
+        source.keep === "highest"
+          ? Math.max(0, ...rolled)
+          : source.keep === "countAtLeast"
+            ? rolled.filter((n) => n >= (source.atLeast ?? -Infinity)).length
+            : rolled.reduce((s, n) => s + n, 0);
+      const value = kept + d.plus;
       env.lastRoll = value;
       return value;
     }
@@ -141,7 +154,7 @@ export interface ResolvedDice {
 export function resolveDice(dice: DiceExpr, env: NumberEnv, rng: Rng): ResolvedDice {
   return {
     count: Math.max(0, resolveNumber(dice.count, env, rng)),
-    sides: dice.sides,
+    sides: (dice.sidesOf !== undefined ? env.dieSides?.[dice.sidesOf] : undefined) ?? dice.sides,
     plus: dice.plus ? resolveNumber(dice.plus, env, rng) : 0,
   };
 }

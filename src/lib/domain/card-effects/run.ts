@@ -25,6 +25,24 @@
 // - CB p.107: "if you need to round to a whole number, round up unless otherwise specified" (half Proficiency, half damage
 //   from a save). Resistance halving rounds down (combat-actions/damage.ts; QUESTIONS in the task doc).
 //
+// Plan sheet-drawer, SD1: the runner executes SD0's vocabulary NV1-NV19 for cards and features alike (the feature runner
+// in src/lib/domain/feature-effects/run.ts wraps `run`):
+// - NV1: `tokens` costs spend Favor, Focus or held dice (`pool`); a held die's value is its stored value or a roll; the
+//   `resource` step changes Favor or Focus ("You can hold a maximum of 6 Focus", HF p.12).
+// - NV2: a `delegate` step asks `context.delegate` (the D5 feature, feature-effects/delegate.ts) and takes back the
+//   resources it changed; without a handler the plan carries the step for the server.
+// - NV3 upgrades are applied by the feature runner before the use runs. NV5 `endsOn`, NV7 `effect.option`, NV9 `versus`
+//   and NV14 / NV19 mods travel on the plan's condition and effect steps. NV15: a trait mod with `choice` takes the
+//   player's pick; `holdLimit` is resolved for the server.
+// - NV4 `adjustHpMarked`, NV18 `addTargets` and roll changes on another roll (NV8) are `fold` steps with their numbers.
+// - NV8 damage changes on this move's damage: reroll chosen or low dice, double matching or chosen dice, a secondary
+//   weapon die, an extra die dropping the lowest, ones as the maximum or plus a die, a die size step, added damage of
+//   another type. "When a feature allows you to reroll a die, you always take the new result" (CB p.107).
+// - Q6 / CB p.107 rounding up: "halve incoming damage" against a known incoming amount folds the halved amount, rounded up.
+// - NV11 `area`, NV19 `help` and NV13 (`actor: "companion"`, the companion recipient) are plan steps / fields.
+// - NV17 `replaceHopeGain` takes back the Hope this move's roll gave and gives a Favor or removes a Fear instead.
+// - `context.limitKeys` names the `featureUses` key and `until` of a limit (cards: `card:` keys, scene stored as session).
+//
 // ```ts
 // const result = run(boltBeacon, { actor, gmFear: 3, targets: [bandit], rng });
 // if (!result.ok) throw refusal(result.reason);      // CARD_EXHAUSTED, CARD_COST_UNPAID, …
@@ -39,8 +57,8 @@ import { applyDamageTo, applyHpTo, applyStressTo, clearTrack, type Combatant, ty
 import { resolveHits, type HitResult } from "../combat-actions/hits";
 import { resolveDice, resolveNumber, rollDice, type NumberEnv } from "../combat-actions/numbers";
 import {
-  cardAvailability,
   featureUseKey,
+  keyAvailability,
   limitConsumed,
   limitUntil,
   resolveCosts,
@@ -48,8 +66,10 @@ import {
   unmetRequirements,
   type PaidCost,
   type RequirementState,
+  type StateFacts,
 } from "./availability";
 import type {
+  AreaSpec,
   CardEffect,
   CardUse,
   ConditionRef,
@@ -57,14 +77,19 @@ import type {
   DamageChange,
   DamageRoll,
   DamageType,
+  DieSides,
   Duration,
+  EndEvent,
   Gate,
+  HeldDieKind,
+  Limit,
   Mod,
   ModStat,
   NumberSource,
   OutcomeStep,
   Range,
   Recipient,
+  Resource,
   RollFilter,
   RollSpec,
   SaveDifficulty,
@@ -72,9 +97,10 @@ import type {
   Step,
   TargetSpec,
   Track,
+  Versus,
 } from "./types";
 import type { FeatureUse } from "../../validation/characters";
-import type { DomainId, TraitId } from "../../srd/types";
+import { TRAIT_IDS, type DomainId, type TraitId } from "../../srd/types";
 
 // ---------------------------------------------------------------- inputs
 
@@ -109,7 +135,50 @@ export interface ActorState extends Combatant {
   readonly cardTokens: number;
   readonly featureUses: readonly FeatureUse[];
   readonly weapons: { readonly primary?: WeaponInfo; readonly secondary?: WeaponInfo };
+  // ---- SD1 (sheet-drawer), all optional: absent reads as none / unknown.
+  /** Warlock Favor (`classState.favor`, HF p.14). */
+  readonly favor?: number;
+  /** Martial Focus (`classState.martial.focus`, HF p.12). */
+  readonly focus?: number;
+  /** Held dice (Rally, Prayer, Patron, Combo; Slayer Dice as unrolled d6s), spent by `tokens` costs with a held-die `pool`. */
+  readonly heldDice?: readonly HeldDieState[];
+  /** The size of the actor's class dice, for `DiceExpr.sidesOf`. */
+  readonly dieSides?: Partial<Record<HeldDieKind | "unstoppable", number>>;
+  /** What `situation.check` reads (NV7). */
+  readonly facts?: StateFacts;
 }
+
+/** A held die as the runner spends it: `value` when it was rolled on receipt (Prayer Dice), else it is rolled when spent. */
+export interface HeldDieState {
+  readonly id: string;
+  readonly kind: HeldDieKind;
+  readonly sides: number;
+  readonly value?: number;
+}
+
+/** The actor's resources a D5 feature reads and changes (NV2). */
+export interface DelegateSnapshot {
+  hope: number;
+  stress: number;
+  hp: number;
+  armor: number;
+  favor?: number;
+  focus?: number;
+  heldDice: readonly HeldDieState[];
+  featureUses: readonly FeatureUse[];
+}
+
+/** What a `delegate` step asks: the D5 `FeatureMeta.key`, its `FeatureParams`, and the actor's resources now. */
+export interface DelegateRequest {
+  feature: string;
+  params: { choice?: string; amount?: number; targetId?: string; dieIndexes?: number[] };
+  actor: DelegateSnapshot;
+}
+
+/** The D5 feature's answer: the actor's resources after it, its feed line and any Fear it gave the GM; or a refusal. */
+export type DelegateAnswer = { ok: true; actor: DelegateSnapshot; summary: string; fearDelta?: number } | { ok: false; detail: string };
+
+export type DelegateHandler = (request: DelegateRequest) => DelegateAnswer;
 
 export interface RunContext {
   actor: ActorState;
@@ -156,13 +225,27 @@ export interface RunContext {
   /** An adversary's standard attack damage (AA1 reuse: `damage.roll.kind === "standardAttack"`), e.g. "1d8+2 phy". */
   attackDamage?: string;
   rng: Rng;
+  // ---- SD1 (sheet-drawer)
+  /**
+   * The `featureUses` key and `until` of a limit (`useId` the use, or `<useId>:<optionalId>` for an optional step's
+   * limit). Default: the card keys (`featureUseKey`) and `limitUntil` (scene stored as session).
+   */
+  limitKeys?: { key: (useId: string, targetId?: string) => string; until: (per: Limit["per"]) => FeatureUse["until"] };
+  /** Runs a `delegate` step's D5 feature (NV2). Without it the plan carries the step undone, for the server. */
+  delegate?: DelegateHandler;
+  /** The actor's companion (Q4): the creature of a `companion` pick. */
+  companion?: Combatant;
+  /** Damage dice the player picked, by index among this move's damage dice: to reroll (`rerollChosen`), to double (`doubleDice` chosen). */
+  damageDice?: { reroll?: readonly number[]; double?: readonly number[] };
+  /** Held dice picked for a delegated D5 feature (`FeatureParams.dieIndexes`, Prayer Dice). */
+  dieIndexes?: readonly number[];
 }
 
 // ---------------------------------------------------------------- outputs
 
 /** A modifier with its numbers resolved. */
 export type ResolvedMod =
-  | { kind: "stat"; stat: ModStat; delta: number }
+  | { kind: "stat"; stat: ModStat; delta: number; versus?: Versus }
   | { kind: "trait"; trait: TraitId | "all"; delta: number }
   | { kind: "set"; stat: ModStat | TraitId; to: number }
   | Extract<Mod, { kind: "advantage" | "disadvantageAgainst" | "resistance" | "flag" }>;
@@ -194,9 +277,30 @@ export type PlanStep =
   | { kind: "clear"; targetId: string; track: Track; amount: number }
   | { kind: "hope"; targetId: string; delta: number }
   | { kind: "fear"; delta: number }
-  | { kind: "condition"; targetId: string; condition: ConditionRef; duration: Duration; endsWhen?: string }
+  | { kind: "condition"; targetId: string; condition: ConditionRef; duration: Duration; endsWhen?: string; endsOn?: readonly EndEvent[] }
   | { kind: "clearCondition"; targetId: string; condition: ConditionRef }
-  | { kind: "effect"; targetId: string; label: string; mods: ResolvedMod[]; duration: Duration; endsWhen?: string }
+  | {
+      kind: "effect";
+      targetId: string;
+      label: string;
+      mods: ResolvedMod[];
+      duration: Duration;
+      endsWhen?: string;
+      /** SD1: the events that also end it (NV5) and the option it stands for (NV7, "Channeling Fire"). */
+      endsOn?: readonly EndEvent[];
+      option?: string;
+    }
+  /**
+   * SD1 (NV2): a D5 feature run inside this use. `done`: the handler ran it (`summary` is its feed line); otherwise the
+   * server runs it with `params`.
+   */
+  | { kind: "delegate"; feature: string; params: DelegateRequest["params"]; targetIds: string[]; done: boolean; summary?: string }
+  /** SD1 (NV1): Favor or Focus changed. */
+  | { kind: "resource"; targetId: string; resource: "favor" | "focus"; before: number; after: number }
+  /** SD1 (NV11, Q14): a live map area; `centreId` is the creature it is centred on (null: a picked square). */
+  | { kind: "area"; area: Omit<AreaSpec, "mods"> & { mods: ResolvedMod[] }; centreId: string | null; targetIds: string[] }
+  /** SD1 (NV19, Q12): a named Help an Ally: the ally's next action roll gets a d`die` advantage die; `free`: no Hope. */
+  | { kind: "help"; targetId: string; die: DieSides; free: boolean }
   | { kind: "tokens"; op: "set" | "add" | "spend" | "clear"; before: number; after: number; die?: number }
   | { kind: "toVault"; permanent: boolean }
   | { kind: "save"; targetId: string; record: RollRecord; difficulty: number; success: boolean }
@@ -241,6 +345,10 @@ export interface RunPlan {
   excluded: string[];
   /** "only one creature at a time": the server ends this card's previous effect. */
   exclusive: boolean;
+  /** SD1 (NV15): "up to N creatures at once": past N the server ends the oldest. */
+  holdLimit?: number;
+  /** SD1 (NV13, Q4): the companion makes this use (from its own token). */
+  actorKind?: "companion";
 }
 
 export interface ActorResources {
@@ -249,6 +357,10 @@ export interface ActorResources {
   hp: number;
   armor: number;
   cardTokens: number;
+  /** SD1 (NV1): present when the actor has them. */
+  favor?: number;
+  focus?: number;
+  heldDice?: HeldDieState[];
 }
 
 export type RunRefusal = {
@@ -271,6 +383,28 @@ export function pickUse(effect: CardEffect, useId?: string): CardUse | undefined
 const refuse = (reason: RunRefusal["reason"], detail: string): RunRefusal => ({ ok: false, reason, detail });
 
 const MOVE_GATES = new Set<string>(["success", "failure", "critical", "withHope", "withFear"]);
+
+/** NV8 damage changes that work on the rolled dice. */
+const DICE_CHANGES = new Set<DamageChange["kind"]>(["rerollChosen", "doubleDice", "addWeaponDie", "extraDie", "ones", "dieSize"]);
+
+const DIE_SIZES: readonly DieSides[] = [4, 6, 8, 10, 12, 20];
+
+/** A die `steps` sizes up (or down) the d4-d6-d8-d10-d12-d20 ladder (Mythic Beast, CB p.35: "d6 becomes d8, d8 becomes d10"). */
+export function stepDie(sides: number, steps: number): number {
+  const at = DIE_SIZES.indexOf(sides as DieSides);
+  if (at < 0) return sides;
+  return DIE_SIZES[Math.max(0, Math.min(DIE_SIZES.length - 1, at + steps))]!;
+}
+
+/** Held dice per kind, for the payer's room (NV1). */
+function heldCounts(dice: readonly HeldDieState[]): Partial<Record<HeldDieKind, number>> {
+  const out: Partial<Record<HeldDieKind, number>> = {};
+  for (const d of dice) out[d.kind] = (out[d.kind] ?? 0) + 1;
+  return out;
+}
+
+const FOCUS_MAX = 6;
+const FAVOR_MAX = 99;
 
 /** Whether a roll filter matches a roll spec (riders: "Before you make an attack"). Exported for the server's rider offers. */
 export function rollMatches(filter: RollFilter, roll: RollSpec | undefined): boolean {
@@ -376,15 +510,18 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     activeCardEffects: a.activeCardEffects,
     nearestEnemy: context.nearestEnemy,
     situations: context.situations ?? [],
+    ...(a.facts ? { facts: a.facts } : {}),
   });
   const unmet = unmetRequirements(use.requires, reqState(actor0));
   if (unmet.length > 0) return refuse("requirement", unmet.map((r) => r.kind).join(", "));
 
   // ---- limit (CB p.101, Q3)
   const targets0 = context.targets ?? [];
-  const limitKey = use.limit ? featureUseKey(effect.cardId, use.id, use.limit.perTarget ? targets0[0]?.id : undefined) : null;
-  if (use.limit) {
-    const availability = cardAvailability(actor0, effect.cardId, { useId: use.id, limit: use.limit, targetId: targets0[0]?.id });
+  const keyOf = context.limitKeys?.key ?? ((useId: string, targetId?: string) => featureUseKey(effect.cardId, useId, targetId));
+  const untilOf = context.limitKeys?.until ?? limitUntil;
+  const limitKey = use.limit ? keyOf(use.id, use.limit.perTarget ? targets0[0]?.id : undefined) : null;
+  if (use.limit && limitKey) {
+    const availability = keyAvailability(actor0, limitKey, use.limit);
     if (availability.state === "exhausted") return refuse("exhausted", availability.label);
   }
 
@@ -392,7 +529,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   let actor: ActorState = { ...actor0 };
   const creatures = new Map<string, Combatant>();
   const before = new Map<string, Combatant>();
-  for (const c of [...targets0, ...(context.picked ?? []), ...(context.allies ?? []), ...(context.followUp ?? []), context.trigger?.source, context.trigger?.subject]) {
+  for (const c of [...targets0, ...(context.picked ?? []), ...(context.allies ?? []), ...(context.followUp ?? []), context.trigger?.source, context.trigger?.subject, context.companion]) {
     if (c && c.id !== actor.id && !creatures.has(c.id)) {
       creatures.set(c.id, c);
       before.set(c.id, c);
@@ -404,9 +541,21 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     else creatures.set(c.id, c);
   };
   let gmFearDelta = 0;
+  /** NV2: a delegated D5 feature refused (its RuleError text); the whole use is refused, nothing is written. */
+  let delegateRefusal: string | null = null;
+  const snapshot = (): DelegateSnapshot => ({
+    hope: actor.hope,
+    stress: actor.stress,
+    hp: actor.hp,
+    armor: actor.armor,
+    heldDice: actor.heldDice ?? [],
+    featureUses: actor.featureUses,
+    ...(actor.favor !== undefined ? { favor: actor.favor } : {}),
+    ...(actor.focus !== undefined ? { focus: actor.focus } : {}),
+  });
   const steps: PlanStep[] = [];
   const choices: Record<string, number> = { ...(context.choices ?? {}) };
-  const spent: Partial<Record<PaidCost["resource"], number>> = {};
+  const spent: Partial<Record<Resource, number>> = {};
   const markedSelf: Partial<Record<Track, number>> = {};
   const markedBy: Record<string, Partial<Record<Track, number>>> = {};
   const counts = { picked: targets0.length, hit: 0, failedSave: 0 };
@@ -432,6 +581,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     loadoutDomains: actor.loadoutDomains,
     vaultDomains: actor.vaultDomains,
     lastRoll,
+    ...(actor.dieSides ? { dieSides: actor.dieSides } : {}),
   });
   const num = (source: NumberSource, target?: Combatant): number => {
     const e = env(target);
@@ -489,9 +639,35 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     armorMax: actor.armorMax,
     cardTokens: actor.cardTokens,
     fear: Math.max(0, context.gmFear + gmFearDelta),
+    favor: actor.favor ?? 0,
+    focus: actor.focus ?? 0,
+    heldDice: heldCounts(actor.heldDice ?? []),
   });
-  const payCosts = (paid: readonly PaidCost[]) => {
-    for (const c of paid) {
+  /** NV1: spends from Favor, Focus or held dice; the spent dice's values (stored, else rolled) feed `spent: heldDie`. */
+  const payPool = (c: PaidCost): PaidCost => {
+    const pool = c.pool!;
+    if (pool === "favor") {
+      actor = { ...actor, favor: (actor.favor ?? 0) - c.amount };
+      spent.favor = (spent.favor ?? 0) + c.amount;
+      return c;
+    }
+    if (pool === "focus") {
+      actor = { ...actor, focus: (actor.focus ?? 0) - c.amount };
+      spent.focus = (spent.focus ?? 0) + c.amount;
+      return c;
+    }
+    const held = actor.heldDice ?? [];
+    const dice = held.filter((d) => d.kind === pool).slice(0, c.amount);
+    const values = dice.map((d) => d.value ?? rng(d.sides));
+    const ids = new Set(dice.map((d) => d.id));
+    actor = { ...actor, heldDice: held.filter((d) => !ids.has(d.id)) };
+    spent.heldDie = (spent.heldDie ?? 0) + values.reduce((s, n) => s + n, 0);
+    return { ...c, values };
+  };
+  /** Pays resolved costs; returns them with the spent dice's values filled in. */
+  const payCosts = (paid: readonly PaidCost[]): PaidCost[] =>
+    paid.map((c) => {
+      if (c.pool !== undefined) return payPool(c);
       spent[c.resource] = (spent[c.resource] ?? 0) + c.amount;
       if (c.resource === "hope") actor = { ...actor, hope: actor.hope - c.amount };
       if (c.resource === "stress") {
@@ -508,14 +684,13 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       }
       if (c.resource === "tokens") actor = { ...actor, cardTokens: actor.cardTokens - c.amount };
       if (c.resource === "fear") gmFearDelta -= c.amount;
-    }
-  };
+      return c;
+    });
   const upfront = resolveCosts(use.costs ?? [], costAmount, pickEither);
   const short = unaffordable(upfront, payer());
   if (short.length > 0) return refuse("cost", short.join(", "));
   if (upfront.length > 0) {
-    payCosts(upfront);
-    steps.push({ kind: "pay", phase: "upfront", costs: upfront, paid: true });
+    steps.push({ kind: "pay", phase: "upfront", costs: payCosts(upfront), paid: true });
   }
 
   // ---- the roll (R1, R9)
@@ -584,6 +759,74 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     return { info, hits };
   };
 
+  /**
+   * NV8: a change to rolled damage dice (CB p.107: a reroll always takes the new result). Dice picks are indexes among
+   * the move's damage dice that are not dropped (`context.damageDice`); a change it can't make returns the record as is.
+   */
+  function changeDice(record: RollRecord, ch: DamageChange): RollRecord {
+    type Die = RollRecord["dice"][number];
+    const live = (d: Die) => d.role === "damage" && !d.dropped;
+    const byPick = (picks: readonly number[], f: (d: Die) => Die) => {
+      const chosen = new Set(picks);
+      let i = 0;
+      return record.dice.map((d) => (live(d) ? (chosen.has(i++) ? f(d) : d) : d));
+    };
+    let dice: Die[] = record.dice;
+    let modifier = record.modifier;
+    switch (ch.kind) {
+      case "rerollChosen": {
+        if (ch.below) {
+          const below = num(ch.below);
+          dice = record.dice.map((d) => (live(d) && d.value < below ? { ...d, value: rng(d.sides) } : d));
+        } else dice = byPick(context.damageDice?.reroll ?? [], (d) => ({ ...d, value: rng(d.sides) }));
+        break;
+      }
+      case "doubleDice": {
+        if (ch.which === "matching") {
+          const seen = new Map<number, number>();
+          for (const d of record.dice) if (live(d)) seen.set(d.value, (seen.get(d.value) ?? 0) + 1);
+          dice = record.dice.map((d) => (live(d) && (seen.get(d.value) ?? 0) > 1 ? { ...d, value: d.value * 2 } : d));
+        } else dice = byPick((context.damageDice?.double ?? []).slice(0, ch.count ?? 1), (d) => ({ ...d, value: d.value * 2 }));
+        break;
+      }
+      case "addWeaponDie": {
+        const weapon = actor.weapons[ch.weapon];
+        const sides = weapon ? weaponDice(weapon.damage, 1).dice[0]?.sides : undefined;
+        if (sides === undefined) return record;
+        dice = [...record.dice, { sides, value: rng(sides), role: "damage" }];
+        break;
+      }
+      case "extraDie": {
+        const first = record.dice.find(live);
+        if (!first) return record;
+        const all: Die[] = [...record.dice, { sides: first.sides, value: rng(first.sides), role: "damage" }];
+        let lowest = -1;
+        all.forEach((d, i) => {
+          if (live(d) && (lowest < 0 || d.value < all[lowest]!.value)) lowest = i;
+        });
+        dice = all.map((d, i) => (i === lowest ? { ...d, dropped: true } : d));
+        break;
+      }
+      case "ones": {
+        const ones = record.dice.filter((d) => live(d) && d.value === 1).length;
+        if (ch.asMax) dice = record.dice.map((d) => (live(d) && d.value === 1 ? { ...d, value: d.sides } : d));
+        else if (ch.add) {
+          const added: Die[] = [];
+          for (let n = 0; n < ones; n++) {
+            const d = resolveDice(ch.add, env(), rng);
+            for (const value of rollDice(d.count, d.sides, rng)) added.push({ sides: d.sides, value, role: "damage" });
+            modifier += d.plus;
+          }
+          dice = [...record.dice, ...added];
+        }
+        break;
+      }
+      default:
+        return record;
+    }
+    return { ...record, dice, modifier, total: Math.max(0, dice.reduce((s, d) => s + (d.dropped ? 0 : d.value), 0) + modifier) };
+  }
+
   function weaponFor(ref: "primary" | "secondary" | "either"): WeaponInfo | undefined {
     const slot = ref === "either" ? (context.roll?.weapon ?? "primary") : ref;
     return actor.weapons[slot] ?? (ref === "either" ? actor.weapons.primary ?? actor.weapons.secondary : undefined);
@@ -591,6 +834,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
 
   let mainRoll: RollInfo | null = null;
   let mainHits: Map<string, boolean> | null = null;
+  /** The Hope this move's roll actually gave (NV17 takes it back). */
+  let rollHopeGained = 0;
   if (use.roll) {
     const { info, hits } = rollOnce(use.roll, targets);
     mainRoll = info;
@@ -603,7 +848,11 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     }
     // R8: the roll's Hope (and a critical's Stress) lands before any later payment.
     const fx = info.effects;
-    if (fx.hope) actor = { ...actor, hope: Math.min(actor.hopeMax, actor.hope + fx.hope) };
+    if (fx.hope) {
+      const hope = Math.min(actor.hopeMax, actor.hope + fx.hope);
+      rollHopeGained = hope - actor.hope;
+      actor = { ...actor, hope };
+    }
     if (fx.clearStress) actor = { ...actor, stress: Math.max(0, actor.stress - fx.clearStress) };
     if (fx.fear) gmFearDelta += fx.fear;
   }
@@ -616,6 +865,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   let typeOverride: DamageType | undefined;
   let lastDamageTotal = 0;
   let anyDamageRolled = false;
+  /** The latest damage roll's plan entry, for NV8 changes made after it was rolled. */
+  let lastDamage: { index: number; key: string; record: RollRecord } | null = null;
 
   const flush = () => {
     for (const [id, p] of pending) {
@@ -673,10 +924,14 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       critical = false;
       flat = roll.kind === "flat" ? num(roll.amount) : roll.kind === "sameAsTrigger" ? (context.trigger?.amount ?? 0) : lastDamageTotal;
     }
+    // NV8: "Your damage die increases by one size" (Mythic Beast, CB p.35) before the dice are rolled.
+    const sizeSteps = preDamage.reduce((n, ch) => n + (ch.kind === "dieSize" ? ch.steps : 0), 0);
+    if (sizeSteps !== 0) pool = pool.map((p) => ({ ...p, sides: stepDie(p.sides, sizeSteps) }));
     let record = pool.length > 0 ? rollDamage({ dice: pool, flat, critical }, rng) : ({ kind: "damage", dice: [], modifier: flat, total: Math.max(0, flat), outcome: "none", manual: false } as RollRecord);
     for (const ch of preDamage) {
       if (ch.kind === "reroll") record = rerollLow(record, ch.atMost, rng);
       if (ch.kind === "maxDice") record = maxLowest(record, ch.count);
+      record = changeDice(record, ch);
     }
     const out = { record, type };
     damageCache.set(key, out);
@@ -745,7 +1000,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       return targetGate(g, actor, scope);
     });
 
-  const recipientsOf = (to: Recipient, gates: readonly Gate[] | undefined, scope: Scope): Combatant[] => {
+  const recipientsOf = (to: Recipient, gates: readonly Gate[] | undefined, scope: Scope, pick?: TargetSpec): Combatant[] => {
     let list: Combatant[];
     switch (to) {
       case "self":
@@ -755,7 +1010,9 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         list = scope.targets.map(get);
         break;
       case "picked":
-        list = (context.picked ?? []).map((c) => get(c.id));
+        // NV13 (Q4): a companion pick is the actor's companion.
+        if (pick?.companion) list = context.companion ? [get(context.companion.id)] : [];
+        else list = (context.picked ?? []).map((c) => get(c.id));
         break;
       case "triggerSource":
         list = context.trigger?.source ? [get(context.trigger.source.id)] : [];
@@ -777,8 +1034,13 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
 
   const resolveMods = (mods: readonly Mod[], target?: Combatant): ResolvedMod[] =>
     mods.map((m) => {
-      if (m.kind === "stat") return { kind: "stat", stat: m.stat, delta: num(m.delta, target) };
-      if (m.kind === "trait") return { kind: "trait", trait: m.trait, delta: num(m.delta, target) };
+      if (m.kind === "stat") return { kind: "stat", stat: m.stat, delta: num(m.delta, target), ...(m.versus ? { versus: m.versus } : {}) };
+      if (m.kind === "trait") {
+        // NV15: "choose one trait to raise" takes the player's pick in that choice id (a trait id), else the default.
+        const picked = m.choice ? context.options?.[m.choice]?.[0] : undefined;
+        const trait = picked !== undefined && (TRAIT_IDS as readonly string[]).includes(picked) ? (picked as TraitId) : m.trait;
+        return { kind: "trait", trait, delta: num(m.delta, target) };
+      }
       if (m.kind === "set") return { kind: "set", stat: m.stat, to: num(m.to, target) };
       return m;
     });
@@ -798,14 +1060,14 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         if (!stepGate(step.when, scope)) return true;
         const costs = resolveCosts(step.costs, costAmount, pickEither);
         const ok = unaffordable(costs, payer()).length === 0;
-        if (ok) payCosts(costs);
-        steps.push({ kind: "pay", phase: "afterRoll", costs, paid: ok });
+        steps.push({ kind: "pay", phase: "afterRoll", costs: ok ? payCosts(costs) : costs, paid: ok });
         return ok;
       }
       case "optional": {
         if (!(context.optionals ?? []).includes(step.id) || !stepGate(step.when, scope)) return true;
+        const optionalKey = keyOf(`${use.id}:${step.id}`);
         if (step.limit) {
-          const availability = cardAvailability(actor, effect.cardId, { useId: `${use.id}:${step.id}`, limit: step.limit });
+          const availability = keyAvailability(actor, optionalKey, step.limit);
           if (availability.state === "exhausted") return true;
         }
         const costs = resolveCosts(step.costs ?? [], costAmount, pickEither);
@@ -814,12 +1076,11 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
           return true;
         }
         if (costs.length > 0) {
-          payCosts(costs);
-          steps.push({ kind: "pay", phase: "optional", costs, paid: true });
+          steps.push({ kind: "pay", phase: "optional", costs: payCosts(costs), paid: true });
         }
         runSteps(step.steps, scope);
         if (step.limit && limitConsumed(step.limit, success)) {
-          actor = { ...actor, featureUses: [...actor.featureUses, { key: featureUseKey(effect.cardId, `${use.id}:${step.id}`), until: limitUntil(step.limit.per) }] };
+          actor = { ...actor, featureUses: [...actor.featureUses, { key: optionalKey, until: untilOf(step.limit.per) }] };
         }
         return true;
       }
@@ -918,7 +1179,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   const crit = () => mainRoll !== null && mainRoll.critical && use.roll?.kind !== "reaction";
 
   const runOutcome = (step: OutcomeStep, scope: Scope): void => {
-    const recipients = recipientsOf(step.to, step.when, scope);
+    const recipients = recipientsOf(step.to, step.when, scope, step.pick);
     const ids = recipients.map((r) => r.id);
     const noRecipientStep = step.kind === "fear" || step.kind === "toVault" || step.kind === "tokens" || step.kind === "manual";
     if (noRecipientStep && !stepGate(step.when, scope)) return;
@@ -943,6 +1204,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         }
         lastDamageTotal = total;
         steps.push({ kind: "damageRoll", record, type });
+        lastDamage = { index: steps.length - 1, key: JSON.stringify(step.roll), record };
         const dieSides = record.dice.find((d) => d.role === "damage")?.sides ?? 0;
         const damageDice = record.dice.filter((d) => d.role === "damage" && !d.dropped).map((d) => d.value).sort((a, b) => a - b);
         recipients.forEach((r, index) => {
@@ -981,6 +1243,33 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
           if (!use.steps.some((s) => s.kind === "damage")) steps.push({ kind: "fold", step, targetIds: ids, amount: ch.kind === "proficiency" ? ch.delta : undefined });
           return;
         }
+        // NV8: dice changes ride on this move's damage roll: before it is rolled they wait for it; after it, they change
+        // it and the creatures' pending damage by the difference. Without a damage roll of its own it is a fold.
+        if (DICE_CHANGES.has(ch.kind)) {
+          if (!anyDamageRolled && use.steps.some((s) => s.kind === "damage")) {
+            preDamage.push(ch);
+            return;
+          }
+          if (lastDamage && withPending.length > 0 && ch.kind !== "dieSize") {
+            const next = changeDice(lastDamage.record, ch);
+            const delta = next.total - lastDamage.record.total;
+            const entry = steps[lastDamage.index];
+            if (entry && entry.kind === "damageRoll") steps[lastDamage.index] = { ...entry, record: next };
+            const cached = damageCache.get(lastDamage.key);
+            if (cached) damageCache.set(lastDamage.key, { ...cached, record: next });
+            lastDamage = { ...lastDamage, record: next };
+            lastDamageTotal += delta;
+            for (const r of withPending) pending.get(r.id)!.amount += delta;
+            return;
+          }
+          steps.push({ kind: "fold", step, targetIds: ids, ...(ch.kind === "rerollChosen" && ch.below ? { amount: num(ch.below) } : {}) });
+          return;
+        }
+        // Q6, CB p.107 "round up": halving incoming damage the trigger carries folds the halved amount.
+        if (ch.kind === "halve" && withPending.length === 0 && context.trigger?.amount !== undefined) {
+          steps.push({ kind: "fold", step, targetIds: ids, amount: Math.ceil(context.trigger.amount / 2) });
+          return;
+        }
         if (ch.kind === "type" && !anyDamageRolled) {
           typeOverride = ch.type;
           if (!use.steps.some((s) => s.kind === "damage")) steps.push({ kind: "fold", step, targetIds: ids });
@@ -995,7 +1284,11 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         const hp = ch.kind === "replaceWithHp" ? num(ch.amount) : 0;
         for (const r of withPending) {
           const p = pending.get(r.id)!;
-          if (ch.kind === "add") p.amount += added;
+          if (ch.kind === "add") {
+            p.amount += added;
+            // NV8: added damage of another type makes the total both types (as two damage steps do; CB p.99).
+            if (ch.type && p.type !== ch.type) p.type = "both";
+          }
           if (ch.kind === "multiply") p.amount *= ch.factor;
           if (ch.kind === "halve") p.amount = Math.ceil(p.amount / 2);
           if (ch.kind === "type") p.type = ch.type;
@@ -1086,7 +1379,14 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             const implied = (cond.implies ?? []).filter((x) => !c.conditions.includes(x));
             put({ ...c, tags: [...new Set([...(c.tags ?? []), cond.tag])], conditions: [...c.conditions, ...implied] });
           }
-          steps.push({ kind: "condition", targetId: r.id, condition: cond, duration: step.duration, ...(step.endsWhen ? { endsWhen: step.endsWhen } : {}) });
+          steps.push({
+            kind: "condition",
+            targetId: r.id,
+            condition: cond,
+            duration: step.duration,
+            ...(step.endsWhen ? { endsWhen: step.endsWhen } : {}),
+            ...(step.endsOn ? { endsOn: step.endsOn } : {}),
+          });
         }
         return;
       }
@@ -1112,6 +1412,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             mods: resolveMods(step.mods, r),
             duration: step.duration,
             ...(step.endsWhen ? { endsWhen: step.endsWhen } : {}),
+            ...(step.endsOn ? { endsOn: step.endsOn } : {}),
+            ...(step.option ? { option: step.option } : {}),
           });
         }
         return;
@@ -1154,10 +1456,99 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         return;
       case "modifyRoll": {
         const ch = step.change;
-        const amount = ch.kind === "add" || ch.kind === "evasion" ? num(ch.amount) : undefined;
+        const amount = ch.kind === "add" || ch.kind === "evasion" || ch.kind === "dieBonus" ? num(ch.amount) : undefined;
         steps.push({ kind: "fold", step, targetIds: ids, ...(amount !== undefined ? { amount } : {}) });
         return;
       }
+      // ---- SD1: the sheet-drawer outcomes (NV1, NV2, NV4, NV11, NV17, NV18, NV19)
+      case "delegate": {
+        const p = step.params;
+        const choice = p?.choice ?? (p?.choiceFrom ? context.options?.[p.choiceFrom]?.[0] : undefined);
+        const other = recipients.find((r) => r.id !== actor.id);
+        const params: DelegateRequest["params"] = {
+          ...(choice !== undefined ? { choice } : {}),
+          ...(p?.amount ? { amount: num(p.amount) } : {}),
+          ...(other ? { targetId: other.id } : {}),
+          ...(context.dieIndexes ? { dieIndexes: [...context.dieIndexes] } : {}),
+        };
+        if (!context.delegate) {
+          steps.push({ kind: "delegate", feature: step.feature, params, targetIds: ids, done: false });
+          return;
+        }
+        const answer = context.delegate({ feature: step.feature, params, actor: snapshot() });
+        if (!answer.ok) {
+          delegateRefusal = answer.detail;
+          return;
+        }
+        const a = answer.actor;
+        actor = {
+          ...actor,
+          hope: a.hope,
+          stress: a.stress,
+          hp: a.hp,
+          armor: a.armor,
+          heldDice: a.heldDice,
+          featureUses: a.featureUses,
+          ...(a.favor !== undefined ? { favor: a.favor } : {}),
+          ...(a.focus !== undefined ? { focus: a.focus } : {}),
+        };
+        if (answer.fearDelta) {
+          const current = context.gmFear + gmFearDelta;
+          gmFearDelta += Math.max(0, Math.min(MAX_FEAR, current + answer.fearDelta)) - current;
+        }
+        steps.push({ kind: "delegate", feature: step.feature, params, targetIds: ids, done: true, summary: answer.summary });
+        return;
+      }
+      case "adjustHpMarked":
+        steps.push({ kind: "fold", step, targetIds: ids, amount: num(step.amount) });
+        return;
+      case "resource": {
+        for (const r of recipients) {
+          if (r.id !== actor.id) continue;
+          const max = step.resource === "focus" ? FOCUS_MAX : FAVOR_MAX;
+          const before = (step.resource === "focus" ? actor.focus : actor.favor) ?? 0;
+          const n = num(step.amount);
+          const raw = step.change === "gain" ? before + n : step.change === "lose" ? before - n : n;
+          const after = Math.max(0, Math.min(max, raw));
+          actor = step.resource === "focus" ? { ...actor, focus: after } : { ...actor, favor: after };
+          steps.push({ kind: "resource", targetId: r.id, resource: step.resource, before, after });
+        }
+        return;
+      }
+      case "area": {
+        const spec = step.area;
+        const centreId = spec.centre === "self" ? actor.id : spec.centre === "target" ? (scope.targets[0] ?? ids.find((id) => id !== actor.id) ?? null) : null;
+        steps.push({ kind: "area", area: { ...spec, mods: resolveMods(spec.mods ?? []) }, centreId, targetIds: ids });
+        return;
+      }
+      case "replaceHopeGain": {
+        // NV17: only the Hope this move's own roll gave can be taken instead; for another roll it is a fold.
+        if (rollHopeGained <= 0) {
+          steps.push({ kind: "fold", step, targetIds: ids });
+          return;
+        }
+        rollHopeGained -= 1;
+        actor = { ...actor, hope: actor.hope - 1 };
+        steps.push({ kind: "hope", targetId: actor.id, delta: -1 });
+        if (step.with === "favor") {
+          const before = actor.favor ?? 0;
+          const after = Math.min(FAVOR_MAX, before + 1);
+          actor = { ...actor, favor: after };
+          steps.push({ kind: "resource", targetId: actor.id, resource: "favor", before, after });
+        } else {
+          const current = context.gmFear + gmFearDelta;
+          const next = Math.max(0, current - 1);
+          gmFearDelta += next - current;
+          steps.push({ kind: "fear", delta: next - current });
+        }
+        return;
+      }
+      case "addTargets":
+        steps.push({ kind: "fold", step, targetIds: ids, amount: num(step.count) });
+        return;
+      case "help":
+        for (const r of recipients) steps.push({ kind: "help", targetId: r.id, die: step.die, free: step.free === true });
+        return;
       case "redirectDamage":
       case "negate":
       case "convertMarks":
@@ -1169,17 +1560,27 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
 
   runSteps(use.steps, { targets: targets.map((t) => t.id), hits: mainHits, roll: mainRoll });
   flush();
+  if (delegateRefusal !== null) return refuse("choice", delegateRefusal);
 
   // ---- the limit (Q3, Q4)
   let limit: RunPlan["limit"] = null;
   if (use.limit && limitKey) {
     const consumed = limitConsumed(use.limit, success);
-    const until = limitUntil(use.limit.per);
+    const until = untilOf(use.limit.per);
     limit = { key: limitKey, until, consumed };
     if (consumed) actor = { ...actor, featureUses: [...actor.featureUses, { key: limitKey, until }] };
   }
 
-  const resources = (a: ActorState): ActorResources => ({ hope: a.hope, stress: a.stress, hp: a.hp, armor: a.armor, cardTokens: a.cardTokens });
+  const resources = (a: ActorState): ActorResources => ({
+    hope: a.hope,
+    stress: a.stress,
+    hp: a.hp,
+    armor: a.armor,
+    cardTokens: a.cardTokens,
+    ...(a.favor !== undefined ? { favor: a.favor } : {}),
+    ...(a.focus !== undefined ? { focus: a.focus } : {}),
+    ...(a.heldDice !== undefined ? { heldDice: [...a.heldDice] } : {}),
+  });
   const changed = [...creatures.entries()]
     .filter(([id, c]) => c !== before.get(id))
     .map(([id, c]) => ({ id, before: before.get(id)!, after: c }));
@@ -1201,6 +1602,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       gmFearDelta,
       excluded,
       exclusive: use.exclusive === true,
+      ...(use.holdLimit ? { holdLimit: num(use.holdLimit) } : {}),
+      ...(use.actor === "companion" ? { actorKind: "companion" as const } : {}),
     },
   };
 }
