@@ -56,6 +56,13 @@ waves:
         goal: The card vocabulary carries every new piece the features need (widen only), a typed FeatureEffect registry with ids and twelve empty group tables exists, all 217 features plus Beastform, transformation and stance features are classified, the sheet and combat-request validators accept the new state, the error codes exist, and the Combat Map page mounts a Sheet button with a drawer stub.
         depends_on: []
         owns:
+          - src/lib/domain/card-effects/availability.ts
+          - src/lib/domain/class-features/index.ts
+          - src/components/party/features/panel.tsx
+          - convex/lib/adversaryFeatures.ts
+          - convex/lib/adversaryHits.ts
+          - convex/combatTokens.ts
+          - convex/combatCards.ts
           - src/lib/domain/card-effects/types.ts
           - src/lib/domain/feature-effects/types.ts
           - src/lib/domain/feature-effects/ids.ts
@@ -144,6 +151,7 @@ waves:
         goal: Pure functions say which features a sheet holds and with which upgrades, check their availability and costs, and run a feature use (including the new vocabulary and D5 delegation) into the same ordered plan the card server already executes.
         depends_on: [SD0]
         owns:
+          - src/lib/domain/combat-actions/numbers.ts
           - src/lib/domain/card-effects/run.ts
           - src/lib/domain/card-effects/availability.ts
           - src/lib/domain/feature-effects/index.ts
@@ -622,6 +630,7 @@ waves:
         goal: Area features (Circle of Power, Moonbeam, Elemental Aura, Dark Cloud) create a map area whose members are worked out from token positions at each roll; Dark Cloud blocks line of sight; the GM can remove an area; areas end with their duration.
         depends_on: [SD6, SD5]
         owns:
+          - convex/lib/combatMaps.ts
           - convex/combatAreas.ts
           - convex/lib/featureAreas.ts
           - convex/lib/featureRunner.ts
