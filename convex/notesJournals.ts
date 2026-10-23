@@ -63,6 +63,11 @@ export const journalViewPageValidator = v.object({
   kind: pageKindValidator,
   tape: v.number(),
   createdAt: v.number(),
+  /**
+   * The linked D10 session when the caller can see it (D6, D10 Q4: any for the GM, live / played for a player), so the
+   * page meta shows its date live, as the own page does (dcm-bxp.110). Absent for an unlinked page.
+   */
+  session: v.optional(v.object({ n: v.number(), date: v.optional(v.string()) })),
   entryCount: v.number(),
   openCount: v.number(),
   /** Who reads it now (Q14 labels, after the departed rule). */
@@ -148,6 +153,23 @@ async function readableCount(ctx: NotesCtx, journal: Doc<"journals">, cache: Pag
   return count;
 }
 
+/**
+ * A page's linked session as `{ session: { n, date } }` when the caller may see it (D10 Q4: any for the GM, live / played
+ * for a player; the same rule as `notes.journal`), else `{}` (dcm-bxp.110). `sessions` reads each session once per view.
+ */
+async function linkedSession(
+  ctx: NotesCtx,
+  isGm: boolean,
+  page: Doc<"journalPages">,
+  sessions: Map<Id<"sessions">, Doc<"sessions"> | null>,
+): Promise<{ session?: { n: number; date?: string } }> {
+  if (page.sessionId === undefined) return {};
+  if (!sessions.has(page.sessionId)) sessions.set(page.sessionId, await ctx.db.get("sessions", page.sessionId));
+  const session = sessions.get(page.sessionId) ?? null;
+  if (session === null || session.campaignId !== ctx.campaign._id || (!isGm && session.status === "planned")) return {};
+  return { session: { n: session.n, ...(session.date !== undefined ? { date: session.date } : {}) } };
+}
+
 function isCode(error: unknown, code: string): boolean {
   const data = (error as { data?: unknown } | null)?.data;
   return typeof data === "object" && data !== null && (data as { code?: unknown }).code === code;
@@ -207,7 +229,8 @@ export const pastJournals = campaignQuery({
 /**
  * One journal, read through the caller's eyes (Q2, Q3, Q12): its live pages the caller can read (`pageAccess`, so
  * Private pages of a departed journal never and pages hidden from the GM never for the GM), with the chip label and
- * the caller's add / tear-out flags (D2: no adds on a departed journal; the GM tears out its non-private pages). An
+ * the caller's add / tear-out flags (D2: no adds on a departed journal; the GM tears out its non-private pages) and the
+ * linked session the caller can see (dcm-bxp.110). An
  * unknown id, a malformed one, another campaign's journal, or for a player another person's present journal
  * (dcm-bxp.109) is NOT_FOUND.
  */
@@ -230,6 +253,7 @@ export const journalView = campaignQuery({
     if (role !== "gm" && !own && !isDeparted) throw appError("NOT_FOUND");
     const owner = await ownerOf(ctx, journal);
     const pages: JournalViewPage[] = [];
+    const sessions = new Map<Id<"sessions">, Doc<"sessions"> | null>();
     for (const page of await livePages(ctx, journal._id)) {
       let access: PageAccess;
       try {
@@ -244,6 +268,7 @@ export const journalView = campaignQuery({
         kind: page.kind,
         tape: page.tape,
         createdAt: page.createdAt,
+        ...(await linkedSession(ctx, role === "gm", page, sessions)),
         entryCount: page.entryCount,
         openCount: page.openCount,
         chip: visibilityLabel(effectiveReaders(page.visibility, { ownerIsGm: owner.isGm, departed: isDeparted }).visibility, owner.isGm),

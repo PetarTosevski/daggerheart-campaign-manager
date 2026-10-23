@@ -75,6 +75,12 @@ test("D11 N9 notes regions at 1440 and 390", { tag: "@visual" }, async ({ page, 
   await page.goto(`/campaigns/${campaignId}/notes?page=${session}`);
   await expect(paperColumn(page).getByRole("link", { name: "Mira" })).toBeVisible();
   await shoot(paperColumn(page), "page");
+  // dcm-bxp.113: one-line entry rows sit 41 px apart, as on the board (40 px rows and the 1 px gap).
+  const tops = await paperColumn(page)
+    .locator(".bj-rows > .bj-row")
+    .evaluateAll((rows) => rows.slice(0, 3).map((row) => row.getBoundingClientRect().top));
+  expect(tops[1]! - tops[0]!).toBeCloseTo(41, 0);
+  expect(tops[2]! - tops[1]!).toBeCloseTo(41, 0);
 
   // notes:search - 'ferry' (index matches and highlighted rows).
   await page.getByRole("searchbox", { name: "Search the journal" }).fill("ferry");

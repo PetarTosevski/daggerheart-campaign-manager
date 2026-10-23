@@ -11,6 +11,14 @@
   flex-direction: column;
   gap: 1px;
 }
+/*
+ * dcm-bxp.113: the board's `.bj-row { min-height: 34px; padding: 3px 6px }` is content-box (40 px rows, 41 px apart with
+ * the 1 px gap); the app's preflight makes every box border-box, which shrank the rows to 36 px. 40 px restores the
+ * board's pitch.
+ */
+.bj-rows .bj-row {
+  min-height: 40px;
+}
 .bj-hit {
   background: rgba(227, 180, 90, 0.28);
 }

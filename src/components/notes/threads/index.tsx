@@ -6,13 +6,13 @@ import { useMutation, useQuery } from "convex/react";
 import type { CSSProperties } from "react";
 
 import { authorSuffix, BULLETS, bulletTip, glyphFor, isDimmed, isStruck, THREADS_COPY, threadPageLink, threadsButtonLabel } from "@/lib/domain/notes";
+import { threadsCycleUpdate } from "@/lib/optimistic/notes-threads";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { ThreadRow } from "../../../../convex/notesThreads";
 import { EntryText } from "../mentions";
 import type { NotesSlotProps } from "../slots";
-import { threadsCycleUpdate } from "./optimistic";
 
 /** The caller's open threads (`notesThreads.threads`); the button and the view share this one subscription. */
 function useThreads(campaignId: Id<"campaigns">) {

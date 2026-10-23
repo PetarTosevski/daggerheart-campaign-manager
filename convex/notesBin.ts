@@ -15,7 +15,7 @@ import { BIN_TTL_MS, MAX_PAGES, pageKindValidator, pageRefValidator, type PageVi
  * The bin (D11 N7, plan `.omc/plans/d11-notes.yaml`; Q11, Q12, D2; board B8). Tearing out a page sets `binnedAt` /
  * `binnedBy` and takes it out of its journal's counters, so it leaves every list (each list reads `binnedAt` =
  * undefined through its index) and every reader but its owner and the GM who tore it out (permissionFor). Whoever tore
- * it out restores it within 30 days ('Undo' for 10 seconds, then 'Torn-out pages'); afterwards the daily cron
+ * it out restores it within 30 days (or its owner, once its journal is present again, dcm-bxp.81) ('Undo' for 10 seconds, then 'Torn-out pages'); afterwards the daily cron
  * `purge torn-out journal pages` deletes it with its entries and recipients (rule 8, CD17). Access goes only through
  * `pageAccess` (canBin / canRestore, analysis 3.2).
  *
@@ -23,7 +23,7 @@ import { BIN_TTL_MS, MAX_PAGES, pageKindValidator, pageRefValidator, type PageVi
  * |----------------|-------------------|---------------------------------------------------------|------------------------------------------|
  * | `bin`          | campaignQuery     | any member: the pages they tore out that they can still restore | NOT_FOUND (grant only)          |
  * | `binPage`      | campaignMutation  | owner of a present journal; the GM for a non-private page of a departed journal | NOTE_PAGE_NOT_FOUND, NOTE_FORBIDDEN_ACTION, NOTE_JOURNAL_CLOSED |
- * | `restorePage`  | campaignMutation  | whoever tore it out, while they can still read it      | NOTE_PAGE_NOT_FOUND, NOTE_NOT_BINNED     |
+ * | `restorePage`  | campaignMutation  | whoever tore it out, while they can still read it; the owner of a present journal | NOTE_PAGE_NOT_FOUND, NOTE_NOT_BINNED     |
  * | `purgeBinned`  | internalMutation  | the cron                                                | -                                        |
  *
  * Common to the public ones: anonymous UNAUTHENTICATED, outsider NOT_FOUND (the wrapper, `need: "view"`).
@@ -84,8 +84,8 @@ function isCode(error: unknown, code: string): boolean {
 // ---------------------------------------------------------------- query
 
 /**
- * 'Torn-out pages': the pages the caller tore out and may still restore (canRestore), newest first. Candidates are
- * the torn-out pages of the caller's own journals (`by_journal_binned`) and the campaign's torn-out shareable pages
+ * 'Torn-out pages': the pages the caller may restore (canRestore), newest first. Candidates are the torn-out pages
+ * of the caller's own journals (`by_journal_binned`; whoever tore them out, dcm-bxp.81) and the campaign's torn-out shareable pages
  * they tore out (`by_campaign_visibility_binned`, the departed pages they tore out, Q12); each passes `pageAccess`,
  * so a page the binner can no longer read (a departed player rejoined) drops out. Bounded by BIN_LIST_MAX.
  */
@@ -105,7 +105,9 @@ export const bin = campaignQuery({
         .query("journalPages")
         .withIndex("by_journal_binned", (q) => q.eq("journalId", journal._id).gte("binnedAt", 0))
         .take(BIN_LIST_MAX);
-      for (const page of pages) if (page.binnedBy === ctx.user._id) candidates.set(page._id, page);
+      // Any tear-out of the caller's own pages: canRestore below lets the owner restore one the GM tore out once the
+      // journal is present again (dcm-bxp.81), and drops it while the journal is still departed.
+      for (const page of pages) candidates.set(page._id, page);
     }
     // Pages of other journals the caller tore out (only the GM can, D2; pageAccess below decides, not a role check).
     for (const visibility of SHAREABLE) {
@@ -175,8 +177,8 @@ export const binPage = campaignMutation({
 
 /**
  * 'Undo' / 'Restore' (Q11): puts a torn-out page back where it was, with its entries and sharing. Whoever tore it out,
- * while they can still read it (canRestore); a page that is not torn out, or that someone else tore out, answers
- * NOTE_NOT_BINNED. NOTE_PAGE_LIMIT is not checked again: the bin already counts toward MAX_PAGES (Q10).
+ * while they can still read it, or the page's owner once its journal is present (dcm-bxp.81) (canRestore); a page
+ * that is not torn out, or that someone else tore out (the owner of a still-departed journal), answers NOTE_NOT_BINNED. NOTE_PAGE_LIMIT is not checked again: the bin already counts toward MAX_PAGES (Q10).
  */
 export const restorePage = campaignMutation({
   need: "view",

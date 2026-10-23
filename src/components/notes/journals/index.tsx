@@ -160,7 +160,7 @@ export function JournalView(props: NotesSlotProps) {
           <div className={`bj-tape bj-tape-${selected.tape}`}>{selected.title}</div>
           <div className="bj-toolbar">
             <h3 className="bj-jv-heading">{selected.title}</h3>
-            <span className="bj-page-meta">{pageMeta({ kind: selected.kind, createdAt: selected.createdAt })}</span>
+            <span className="bj-page-meta">{pageMeta({ kind: selected.kind, createdAt: selected.createdAt }, selected.session ?? null)}</span>
             <span className="bj-chip bj-jv-chip">
               <span aria-hidden="true">👁</span>
               {selected.chip}
