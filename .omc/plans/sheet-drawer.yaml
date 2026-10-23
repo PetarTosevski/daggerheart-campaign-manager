@@ -214,6 +214,7 @@ waves:
           - src/lib/srd/feature-effects/**
           - .omc/autopilot/sheet-drawer-analysis.md
         acceptance:
+          - "SD1 follow-ups: the D5 feed line for Rally reads the die from runFeature (Epic Poetry d10, not d6); per-target limit keys stay within the 80-character cap for the longest feature ids (test)"
           - "cardRunner's card pick is generalised to a pick of {effect, use, name, limitKey} so cards and features share buildRun / runCard / writeSheetChanges / actorSheetAfter and the cardRows public and GM rows; every combat-cards test passes untouched; classFeatures.ts's payCost moves to convex/lib/classFeatureCost.ts unchanged in behaviour (its tests pass untouched)"
           - "combatFeatures.drawer {characterId}: the character's player and the GM always, other players read only under the hand-sharing switch (as combatCards.hand); returns trackers (HP, Stress, Hope, Armor with maxima), every owned feature with source, card, state ready | exhausted (reset label) | passive | outOfCombat | narrative, cost and limit badges, tokens, D5 counters, uses and their activation; a returns validator with no enemy field (U1, CF6)"
           - "combatFeatures.useFeature {characterId, mapId?, featureId, useId?, targetTokenIds, choices, roll?} is a keyed campaign mutation (need edit on the character; the GM for any character, CA6's switch): FEATURE_NOT_OWNED, FEATURE_EXHAUSTED, FEATURE_COST_UNPAID, FEATURE_NOT_COMBAT (passive / narrative uses), FEATURE_NEEDS_MAP (enemy targets without a live map); out-of-range targets become a GM sanction (combat-actions Q1); line of sight as cards (Q2)"
@@ -411,6 +412,8 @@ waves:
         goal: Always-on and state-gated passive features change Evasion, thresholds, Armor Score, roll and damage modifiers and the defences adversary attacks check, read from the feature tables instead of hand-kept lists.
         depends_on: [SD1, FE-bard-wizard, FE-druid-sorcerer, FE-guardian-warrior, FE-ranger-rogue, FE-seraph-witch, FE-assassin-brawler, FE-warlock, FE-ancestry-core, FE-heritage-hf]
         owns:
+          - src/lib/domain/encounters/damage.ts
+          - tests/unit/encounter-damage.test.ts
           - src/lib/domain/characters/derived.ts
           - src/lib/domain/feature-effects/passives.ts
           - src/lib/domain/adversary-actions/attack.ts
@@ -422,6 +425,7 @@ waves:
           - src/lib/domain/characters/**
           - src/lib/domain/adversary-actions/**
         acceptance:
+          - "Q6 (a): resistance halving in src/lib/domain/encounters/damage.ts rounds up too (Math.ceil), tests updated (SD1 follow-up)"
           - "passiveMods(sheet, state) sums the passive entries a sheet holds (owned + upgrades + requirements): Shell + Proficiency thresholds, Nimble +1 Evasion, Stoneskin +1 Armor and thresholds, Conjure Shield with 2+ Hope, Rise to the Challenge, Elemental Dominion while Channeling, Combat Training stays a D5 roll option; derived.ts's SUBCLASS_BONUSES is replaced by the Stalwart / Nightwalker / Winged Sentinel / Juggernaut entries and every existing derived test passes unchanged"
           - "The adversary attack roll reads PC passives: Sturdy's disadvantage at 1 HP left, Elusive Predator / Scorpion's Poise / Battle-Bonded Evasion against the matching attacker, Vexing Malison on the PC side (NV9)"
           - "Unit tests take expected values from the book texts (CB p.36, p.55, HF p.18-24)"
@@ -520,6 +524,7 @@ waves:
         goal: Scene limits and scene effects come back and end when the encounter ends, when the GM presses End scene, or at session end (Q7), and feature tokens and timings (Toxic Concoctions, Enchanted Talisman, Walk Between Worlds, stances' Focus) follow their rest and long-rest rules.
         depends_on: [SD3]
         owns:
+          - src/lib/domain/class-features/classes/seraph.ts
           - src/lib/domain/characters/expiry.ts
           - convex/encounters.ts
           - convex/combatScenes.ts
@@ -539,6 +544,7 @@ waves:
           - src/lib/srd/feature-effects/**
           - .omc/autopilot/sheet-drawer-analysis.md
         acceptance:
+          - "Devout (Divine Wielder upgrade): the seraph session-start Prayer Dice roll one extra die and discard the lowest (SD1 follow-up)"
           - "expire(sheet, 'scene') ends featureUses with until scene and effects with until scene; session end also ends the scene; rest and long rest behave as before (Q3); unit tests"
           - "combatScenes.end (GM, keyed) expires the scene for every PC of the campaign in one mutation with one undoable actionLog group; ending the running encounter does the same (Q7, CB p.107 quoted); bead dcm-bxp.117 closed"
           - "runRestTiming covers feature timing triggers and tokens (clear at rest / long rest as each text says); D5 onRest / onSessionEnd hooks still run once"
