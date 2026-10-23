@@ -1,0 +1,176 @@
+# Follow-ups 8 (2026-10-23): small beads that need no user input (user: "work on any smaller items you dont need my input for").
+# Each tracer reads its beads (`bd show`); anything a bead leaves undecided -> stop and report it as a multiple-choice question.
+plan: followups-8
+waves:
+  - wave: 1
+    tracers:
+      - id: I1
+        title: Map Hand roll-options strip; typed hand-sharing fields; shared roll controls (dcm-bxp.99.28, dcm-bxp.99.27)
+        size: M
+        goal: Roll options live in the Hand panel, hand sharing uses typed fields, and the roll controls are one component.
+        depends_on: []
+        owns:
+          - src/components/combat-map/actions/hand/**
+          - src/components/combat-map/actions/attack/**
+          - src/components/combat-map/actions/roll-controls/**
+          - src/components/combat-map/settings/**
+          - convex/combatCards.ts
+          - convex/lib/cardHand.ts
+          - convex/campaigns.ts
+          - convex/tables/campaigns.ts
+          - convex/tables/characters.ts
+          - convex/migrations.ts
+          - tests/convex/combat-cards.test.ts
+          - tests/convex/combat-cards-authz.test.ts
+          - tests/convex/migrations*.test.ts
+          - tests/unit/combat-hand.test.tsx
+          - tests/unit/combat-actions-ui.test.tsx
+          - tests/e2e/combat-cards.spec.ts
+          - tests/e2e/combat-attack.spec.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-F8-I1.md
+        reads: [docs/tasks/TASK-F7-H4.md, docs/tasks/TASK-CA-CA6.md]
+        acceptance:
+          - "Each bead's acceptance; widen -> migrate (batched, @convex-dev/migrations) -> narrow for the moved fields; tests"
+          - "pnpm lint, typecheck, vitest and combat e2e pass; tracer-guard passes"
+      - id: I2
+        title: Adversary side-effect flash for PCs (dcm-bxp.99.26)
+        size: S
+        goal: PCs changed by an adversary feature without being named flash as 'affected'.
+        depends_on: []
+        owns:
+          - convex/lib/adversaryActions.ts
+          - convex/lib/adversaryHits.ts
+          - src/components/combat-map/actions/adversary/**
+          - tests/convex/adversary-actions.test.ts
+          - tests/unit/adversary-panel.test.tsx
+          - docs/tasks/TASK-F8-I2.md
+        reads: [docs/tasks/TASK-F7-H3.md]
+        acceptance:
+          - "A PC whose sheet a feature changed gets a targets entry with tone 'effect' and flashes; players still get no numbers; tests"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
+      - id: I3
+        title: Notes small fixes (dcm-bxp.81, .110, .113, .105)
+        size: S
+        goal: Close the four small Notes beads.
+        depends_on: []
+        owns:
+          - src/components/notes/**
+          - src/lib/optimistic/notes-*.ts
+          - convex/notesBin.ts
+          - convex/notesJournals.ts
+          - convex/lib/notes.ts
+          - tests/convex/notes-bin.test.ts
+          - tests/convex/notes-journals.test.ts
+          - tests/unit/notes-*.test.tsx
+          - tests/e2e/notes-bin.spec.ts
+          - tests/e2e/visual/D11-*.spec.ts
+          - docs/tasks/TASK-F8-I3.md
+        reads: [docs/tasks/TASK-D11-*.md, docs/tasks/TASK-F6-G4.md]
+        acceptance:
+          - "Each bead's acceptance with tests"
+          - "pnpm lint, typecheck, vitest and notes e2e pass; tracer-guard passes"
+      - id: I4
+        title: Sprite pack fixes (dcm-bxp.84, .85, .86, .92, .93, .94, .95, .96, .97, .98)
+        size: M
+        goal: Close the sprite-pack G2-G16 beads that are settled.
+        depends_on: []
+        owns:
+          - convex/spritePacks.ts
+          - convex/lib/spriteSources.ts
+          - convex/lib/spritePacks.ts
+          - convex/combatMapStyle.ts
+          - convex/combatMapEdit.ts
+          - src/lib/sprite-packs/**
+          - src/lib/combat-map/**
+          - src/components/combat-map/packs/**
+          - src/components/combat-map/editor/**
+          - src/components/combat-map/maps/**
+          - tests/convex/sprite-*.test.ts
+          - tests/convex/combat-map-style.test.ts
+          - tests/convex/combat-map-edit.test.ts
+          - tests/unit/sprite-*.test.ts
+          - tests/e2e/sprite-*.spec.ts
+          - docs/tasks/TASK-F8-I4.md
+        reads: [docs/tasks/TASK-SP-*.md]
+        acceptance:
+          - "Each settled bead closed with tests; an unsettled one reported as a multiple-choice question"
+          - "pnpm lint, typecheck, vitest and sprite e2e pass; tracer-guard passes"
+      - id: I5
+        title: Combat Map small items - GM 'Forget explored', players read PC tokens in one query (dcm-bxp.52, .53)
+        size: S
+        goal: Close the two Combat Map beads.
+        depends_on: []
+        owns:
+          - convex/combatVision.ts
+          - convex/lib/combatVision.ts
+          - src/components/combat-map/vision/**
+          - src/components/combat-map/tokens/**
+          - tests/convex/combat-vision*.test.ts
+          - tests/unit/combat-vision*.test.ts
+          - tests/e2e/combat-vision.spec.ts
+          - tests/convex/authz/combat.entries.ts
+          - docs/tasks/TASK-F8-I5.md
+        reads: [docs/tasks/TASK-D9-*.md]
+        acceptance:
+          - "Each bead's acceptance; matrix entry + role tests for a new public function"
+          - "pnpm lint, typecheck, vitest and combat-vision e2e pass; tracer-guard passes"
+      - id: I6
+        title: Backup notes privacy, D5 follow-ups, Codex pins (dcm-bxp.101, .31, .16)
+        size: M
+        goal: Close the three beads.
+        depends_on: []
+        owns:
+          - convex/settingsBackup.ts
+          - src/lib/validation/settings-backup.ts
+          - convex/actionLog.ts
+          - convex/feed.ts
+          - src/lib/errors/**
+          - src/components/party/dice/**
+          - convex/codex.ts
+          - convex/maps.ts
+          - src/components/tome/**
+          - src/app/(gm)/campaigns/[campaignId]/world/**
+          - tests/convex/settings-backup*.test.ts
+          - tests/convex/action-log*.test.ts
+          - tests/convex/feed.test.ts
+          - tests/convex/codex*.test.ts
+          - tests/convex/maps*.test.ts
+          - tests/e2e/codex*.spec.ts
+          - tests/e2e/world*.spec.ts
+          - docs/tasks/TASK-F8-I6.md
+        reads: [docs/tasks/TASK-D5-*.md, docs/tasks/TASK-D12-H17.md]
+        acceptance:
+          - "Each bead's acceptance with tests; matrix entries for changed public functions"
+          - "pnpm lint, typecheck, vitest and the named e2e pass; tracer-guard passes"
+      - id: I7
+        title: Test and code chores (dcm-bxp.107, .112, .60, .61, .15, .27, dcm-hlj, dcm-bxp.82.8, .82.9, .82.6)
+        size: M
+        goal: Close the listed chores.
+        depends_on: []
+        owns:
+          - scripts/e2e-setup.mjs
+          - package.json
+          - pnpm-lock.yaml
+          - tests/e2e/notes-a11y.spec.ts
+          - tests/e2e/visual/D13-L6.spec.ts
+          - tests/e2e/visual/D13-L7.spec.ts
+          - convex/lib/claude.ts
+          - convex/combatMapGenerate.ts
+          - convex/photoImport.ts
+          - tests/convex/combat-map-generate*.test.ts
+          - tests/convex/photo-import*.test.ts
+          - tests/unit/frames/**
+          - tests/unit/level-up*.test.ts
+          - tests/convex/level-up*.test.ts
+          - src/lib/frames/**
+          - src/lib/domain/frames/**
+          - src/lib/display/**
+          - src/app/(gm)/campaigns/[campaignId]/fear-panel.tsx
+          - src/app/(gm)/campaigns/[campaignId]/dashboard.css
+          - docs/testing.md
+          - docs/tasks/TASK-F8-I7.md
+        reads: [docs/tasks/TASK-D10-*.md, docs/tasks/TASK-D12-H20.md]
+        acceptance:
+          - "Each chore bead closed with tests or a recorded check; anything needing a decision reported as a multiple-choice question"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"
