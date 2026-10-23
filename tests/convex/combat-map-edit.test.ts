@@ -180,6 +180,18 @@ describe("combat map editing: painting", () => {
     expect(await f.tiles()).toEqual([]);
   });
 
+  it("refuses a texture stroke on a Classic-style map with INVALID and writes nothing (G14)", async () => {
+    const f = await withMap();
+    await f.gm.mutation(api.combatMapStyle.setStyle, { campaignId: f.campaignId, mapId: f.mapId, style: "classic" });
+    const stroke = { campaignId: f.campaignId, mapId: f.mapId, squares: [0, 1], paint: { layer: "texture" as const, texture: { builtin: "forest/moss" } } };
+    expect(await code(f.gm.mutation(api.combatMapEdit.paintCells, stroke))).toBe("INVALID");
+    expect(await f.tiles()).toEqual([]);
+    expect((await f.get()).texturePalette).toBeUndefined();
+    // The same stroke paints once the map is in the Sprites style.
+    await f.gm.mutation(api.combatMapStyle.setStyle, { campaignId: f.campaignId, mapId: f.mapId, style: "sprites" });
+    expect(await code(f.gm.mutation(api.combatMapEdit.paintCells, stroke))).toBe("ok");
+  });
+
   it("paints every square of the largest map in one stroke", async () => {
     const ctx = await setupWithCampaign();
     // Large is 40 x 27; a map that grows to 44 x 32 only comes from an image, so the largest blank one is used.

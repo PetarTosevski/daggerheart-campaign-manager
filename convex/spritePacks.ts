@@ -257,24 +257,35 @@ export const spriteUploadUrl = gmMutation({
 });
 
 /**
- * GM: adds a just-uploaded sprite to a pack with its labels. The labels are checked first (INVALID, thrown: the
- * file is still unclaimed and the orphan sweep removes it). The file must be unclaimed (else NOT_FOUND; a storage
- * id is no proof of access, CF17), a PNG, JPEG, WebP or GIF of at most MAX_SPRITE_BYTES, with a pixel size of at
- * most MAX_SPRITE_PX, and the pack must have room (MAX_PACK_SPRITES); otherwise the file is deleted and
- * `{ok: false, code}` is returned (E7). The file is claimed as kind "sprite" with refId = the new sprite.
+ * GM: adds a just-uploaded sprite to a pack with its labels. The file must be unclaimed (else NOT_FOUND, thrown,
+ * and the file is kept; a storage id is no proof of access, CF17). Then the labels must be valid (name, sizes,
+ * texture terrain, D2 Classic look), the file a PNG, JPEG, WebP or GIF of at most MAX_SPRITE_BYTES, with a pixel
+ * size of at most MAX_SPRITE_PX, and the pack must have room (MAX_PACK_SPRITES); otherwise the file is deleted and
+ * `{ok: false, code}` is returned (E7, G12). The file is claimed as kind "sprite" with refId = the new sprite.
  */
 export const attachSprite = gmMutation({
   args: { packId: v.string(), storageId: v.id("_storage"), ...labelArgs },
   returns: attachResultValidator,
   handler: async (ctx, { packId, storageId, ...labels }): Promise<Infer<typeof attachResultValidator>> => {
     const pack = await loadPack(ctx, packId);
-    const name = spriteName(labels.name);
-    if (!validSquares(labels.w) || !validSquares(labels.h)) throw appError("INVALID", "Sprite sizes are 1 to 4 squares per side.");
-    if (labels.category === "texture" && labels.terrain === undefined) throw appError("INVALID", "A texture needs a terrain class.");
-    if (!classicFits(labels.classicKind, labels.light)) throw appError("INVALID", "The Classic look must give the same light as the sprite.");
     const meta = await ctx.db.system.get(storageId);
     // Only an unclaimed file may be attached, so the rejections below only ever delete unclaimed files.
     if (meta === null || (await isClaimed(ctx, storageId))) throw appError("NOT_FOUND");
+    const name = cleanName(labels.name, MAX_SPRITE_NAME);
+    const labelError =
+      name === null
+        ? `Sprite names are 1 to ${MAX_SPRITE_NAME} characters.`
+        : !validSquares(labels.w) || !validSquares(labels.h)
+          ? "Sprite sizes are 1 to 4 squares per side."
+          : labels.category === "texture" && labels.terrain === undefined
+            ? "A texture needs a terrain class."
+            : !classicFits(labels.classicKind, labels.light)
+              ? "The Classic look must give the same light as the sprite."
+              : null;
+    if (labelError !== null || name === null) {
+      await ctx.storage.delete(storageId);
+      return { ok: false, code: "INVALID", message: labelError ?? "" };
+    }
     if (!isAllowedImage(meta, MAX_SPRITE_BYTES)) {
       await ctx.storage.delete(storageId);
       return { ok: false, code: "INVALID", message: "Sprites must be PNG, JPEG, WebP or GIF files of at most 1 MB." };

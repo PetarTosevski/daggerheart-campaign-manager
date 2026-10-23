@@ -230,9 +230,8 @@ describe("sprite packs: uploads", () => {
     expect(await f.sprite(spriteId)).not.toBeNull();
   });
 
-  it("refuses bad labels with INVALID before touching the file", async () => {
+  it("refuses bad labels with ok: false, INVALID and deletes the file at once (G12)", async () => {
     const f = await withPack();
-    const storageId = await f.store();
     for (const labels of [
       { name: " " },
       { name: "x".repeat(61) },
@@ -244,12 +243,13 @@ describe("sprite packs: uploads", () => {
       { light: "none" as const, classicKind: "campfire" as const },
       { light: "faintglow" as const, classicKind: "walltorch" as const },
     ]) {
-      expect([labels, await code(f.gm.mutation(api.spritePacks.attachSprite, { campaignId: f.campaignId, packId: f.packId, storageId, ...LABELS, ...labels }))]).toEqual([
-        labels,
-        "INVALID",
-      ]);
+      const storageId = await f.store();
+      const result = await f.gm.mutation(api.spritePacks.attachSprite, { campaignId: f.campaignId, packId: f.packId, storageId, ...LABELS, ...labels });
+      expect([labels, result]).toMatchObject([labels, { ok: false, code: "INVALID" }]);
+      expect([labels, await f.t.run((c) => c.storage.getUrl(storageId))]).toEqual([labels, null]);
     }
-    expect(await f.t.run((c) => c.storage.getUrl(storageId))).not.toBeNull();
+    expect(await f.files()).toEqual([]);
+    expect((await f.packs())[0]!.sprites).toEqual([]);
   });
 
   it("returns SPRITE_LIMIT and deletes the file past MAX_PACK_SPRITES", async () => {

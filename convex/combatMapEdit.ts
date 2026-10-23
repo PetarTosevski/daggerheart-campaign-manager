@@ -135,7 +135,7 @@ async function spritePlacement(ctx: MutationCtx, campaignId: Id<"campaigns">, re
  * blockers; user 2026-10-20: two separate tools), or `{layer: "texture", texture}` (Sprites style, P9). Only the
  * tiles the stroke touches are written, so a stroke is one small write however long the GM drags.
  *
- * A texture: a built-in key must be a catalog texture (SPRITE_UNKNOWN), an uploaded one this campaign's texture
+ * A texture: the map must be in the Sprites style (INVALID on a Classic map, G14), a built-in key must be a catalog texture (SPRITE_UNKNOWN), an uploaded one this campaign's texture
  * (SPRITE_NOT_FOUND / INVALID). It takes its slot in `texturePalette` (added when absent; a slot no square uses any
  * more is reused; SPRITE_PALETTE_FULL when all MAX_TEXTURE_PALETTE are in use), then the stroke writes the texture
  * layer and the texture's terrain class on the terrain layer in this one mutation.
@@ -150,6 +150,7 @@ export const paintCells = gmMutation({
       throw appError("INVALID", "A stroke touches squares inside the map only.");
     }
     if (typeof paint !== "string") {
+      if ((map.style ?? "classic") !== "sprites") throw appError("INVALID", "Textures are painted on Sprites-style maps only.");
       const terrain = await textureTerrain(ctx, ctx.campaign._id, paint.texture);
       if (squares.length === 0) return null;
       const slot = paletteSlot(map.texturePalette ?? [], paint.texture, usedTextureCodes(await layerTiles(ctx, map._id, "texture")));
