@@ -125,6 +125,13 @@ describe("action rows: flashes by target id (followups-7 H3)", () => {
     expect(newActionFlashes(rows, new Set(), tokens, false).map((f) => f.tokenId)).toEqual(["t-mira"]);
   });
 
+  it("a PC the feature changed without naming them flashes '!' for players and the GM (followups-8 I2)", () => {
+    const rows = [row("r9", "Demon used All Must Fall", { targets: [{ tokenId: "t-tabby", side: "pc", tone: "effect" }] })];
+    for (const gm of [false, true]) {
+      expect(newActionFlashes(rows, new Set(), tokens, gm).map((f) => [f.tokenId, f.tone, f.label])).toEqual([["t-tabby", "effect", "!"]]);
+    }
+  });
+
   it("lists the GM's adversary rows for Resolutions", () => {
     const rows = [row("a", "x", { visibility: "gm" }), row("b", "y"), row("c", "z", { kind: "combat", visibility: "gm" }), row("d", "w", { visibility: "gm" })];
     expect(adversaryResolutionsOf(rows, 1).map((r) => r._id)).toEqual(["a"]);
