@@ -79,6 +79,18 @@ export const adversaryBeforeValidator = v.object({
   featureUses: v.optional(v.array(instanceFeatureUseValidator)),
 });
 
+/**
+ * One creature a public adversary action named (followups-7 H3, widened): its token on the live map, whether it is a PC
+ * or an adversary token, and how the action touched it. Ids and a tone only, never a number (Q14): the map flashes the
+ * token by id. Players receive only the `pc` entries (`feed.list`); adversary tokens flash for the GM only.
+ */
+export const actionTargetValidator = v.object({
+  tokenId: v.id("combatTokens"),
+  side: v.union(v.literal("pc"), v.literal("adversary")),
+  /** The attack hit it, missed it, or a feature without a roll touched it. */
+  tone: v.union(v.literal("hit"), v.literal("miss"), v.literal("effect")),
+});
+
 /** The stored fields of one `actionLog` row (see convex/tables/actionLog.ts). */
 export const actionLogFields = {
   campaignId: v.id("campaigns"),
@@ -101,6 +113,8 @@ export const actionLogFields = {
   fearDelta: v.optional(v.number()),
   /** An action roll with Hope: whether it gave the Hope (false at Hope max after its costs). `rolls.storeSlayerDie` takes it back (K2, dcm-bxp.65). */
   hopeGained: v.optional(v.boolean()),
+  /** The public row of an adversary action (H3, widened; older rows have none): the token ids it named on the live map. */
+  targets: v.optional(v.array(actionTargetValidator)),
   undoable: v.boolean(),
   undoneAt: v.optional(v.number()),
   undoneBy: v.optional(v.id("users")),
@@ -115,6 +129,7 @@ export type ActionKind = Infer<typeof actionKindValidator>;
 export type Visibility = Infer<typeof visibilityValidator>;
 export type StoredRoll = Infer<typeof rollValidator>;
 export type AdversaryBefore = Infer<typeof adversaryBeforeValidator>;
+export type ActionTarget = Infer<typeof actionTargetValidator>;
 
 // Drift checks: each type must be assignable to the other.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;

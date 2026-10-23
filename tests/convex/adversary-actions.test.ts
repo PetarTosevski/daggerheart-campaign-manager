@@ -406,6 +406,54 @@ describe("adversaryActions: the live map (Q2, Q18)", () => {
   });
 });
 
+describe("the public row's target token ids (followups-7 H3)", () => {
+  allowWorldEmails();
+
+  const publicRow = async (a: Arena) => (await a.rows()).find((row) => row.kind === "adversary" && row.visibility === "public" && row.characterId === undefined)!;
+
+  it("names the hit PC's token by id; feed.list passes it to players, with no numbers (Q14)", async () => {
+    const a = await arena({ map: true });
+    const tokens = await a.gm.query(api.combatTokens.list, { campaignId: a.campaignId, mapId: a.mapId! });
+    const ash = tokens.find((t) => t.characterId === a.w.characterA)!._id;
+    resolved(await a.attack(a.bear, [a.w.characterA]));
+    expect((await publicRow(a)).targets).toEqual([{ tokenId: ash, side: "pc", tone: "hit" }]);
+    for (const client of [a.player, a.other, a.gm]) {
+      const row = (await a.feed(client)).page.find((r) => r.kind === "adversary" && r.visibility === "public" && r.summary === "Bear hit Ash")!;
+      expect(row.targets).toEqual([{ tokenId: ash, side: "pc", tone: "hit" }]);
+      expect(keysOf(row.targets).filter((k) => ROLL_KEYS.includes(k))).toEqual([]);
+    }
+  });
+
+  it("a feature without a roll names its targets with the tone 'effect'", async () => {
+    const a = await arena({ map: true });
+    const tokens = await a.gm.query(api.combatTokens.list, { campaignId: a.campaignId, mapId: a.mapId! });
+    const ash = tokens.find((t) => t.characterId === a.w.characterA)!._id;
+    await a.setFear(5);
+    resolved(await a.feature(a.dummy, "Taunt", [a.w.characterA], { spendFear: 1 }));
+    expect((await publicRow(a)).targets).toEqual([{ tokenId: ash, side: "pc", tone: "effect" }]);
+  });
+
+  it("an adversary token the action touched reaches the GM only", async () => {
+    const a = await arena({ map: true });
+    const dummyToken = await a.t.run((ctx) =>
+      ctx.db.insert("combatTokens", { campaignId: a.campaignId, mapId: a.mapId!, size: 1, light: "none", revealedTo: [], ref: { kind: "adversary", adversaryId: a.dummy }, side: "enemy", x: 7, y: 10, face: 0 }),
+    );
+    const r = resolved(await a.attack(a.bear, [a.dummy]));
+    const tone = r.targets[0]!.hit ? "hit" : "miss";
+    expect((await publicRow(a)).targets).toEqual([{ tokenId: dummyToken, side: "adversary", tone }]);
+    const gmRow = (await a.feed(a.gm)).page.find((row) => row.kind === "adversary" && row.visibility === "public" && row.summary.startsWith("Bear "))!;
+    expect(gmRow.targets).toEqual([{ tokenId: dummyToken, side: "adversary", tone }]);
+    const playerRow = (await a.feed(a.player)).page.find((row) => row.kind === "adversary" && row.summary.startsWith("Bear "))!;
+    expect(playerRow.targets).toEqual([]);
+  });
+
+  it("without a live map the row carries no targets", async () => {
+    const a = await arena();
+    resolved(await a.attack(a.bear, [a.w.characterA]));
+    expect((await publicRow(a)).targets).toBeUndefined();
+  });
+});
+
 describe("AA2b: death move, riders, after-hit cards, scene limits", () => {
   allowWorldEmails();
 

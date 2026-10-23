@@ -37,9 +37,19 @@ import {
 
 export type PromptVariant = "map" | "sheet";
 
-/** Keeps a failing `pending` read (rule 11) from taking the page down; "Try again" remounts it. */
-export class HitBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
+/** Waits before each quiet retry of a failed prompt load (followups-7 H3): 3 retries, then "Try again". */
+export const HIT_RETRY_DELAYS_MS = [500, 1500, 4000] as const;
+/** A retried prompt that stays up this long has recovered: the next failure starts the retries afresh. */
+export const HIT_RETRY_STABLE_MS = 10_000;
+
+/**
+ * Keeps a failing `pending` read (rule 11) from taking the page down. A failed load (a transient error would otherwise
+ * hide an owed prompt) is retried by itself a few times with backoff, showing nothing meanwhile (user answer,
+ * TASK-CA-AA5 Q5); only then "Try again", which remounts it with fresh retries.
+ */
+export class HitBoundary extends Component<{ children: ReactNode }, { failed: boolean; attempts: number }> {
+  state = { failed: false, attempts: 0 };
+  private timer: ReturnType<typeof setTimeout> | null = null;
 
   static getDerivedStateFromError() {
     return { failed: true };
@@ -47,14 +57,36 @@ export class HitBoundary extends Component<{ children: ReactNode }, { failed: bo
 
   componentDidCatch(error: unknown) {
     console.error("The incoming hit failed to load", error);
+    this.clearTimer();
+    const delay = HIT_RETRY_DELAYS_MS[this.state.attempts];
+    if (delay === undefined) return;
+    this.timer = setTimeout(() => {
+      this.setState((s) => ({ failed: false, attempts: s.attempts + 1 }));
+      // No new failure for a while: recovered, so the retries start afresh next time.
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.setState({ attempts: 0 });
+      }, HIT_RETRY_STABLE_MS);
+    }, delay);
+  }
+
+  componentWillUnmount() {
+    this.clearTimer();
+  }
+
+  private clearTimer() {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
   }
 
   render() {
     if (!this.state.failed) return this.props.children;
+    // Retrying quietly.
+    if (this.state.attempts < HIT_RETRY_DELAYS_MS.length) return null;
     return (
       <div role="alert" className="ih-alert">
         <span>The incoming hit failed to load.</span>
-        <button type="button" className="ih-btn" onClick={() => this.setState({ failed: false })}>
+        <button type="button" className="ih-btn" onClick={() => this.setState({ failed: false, attempts: 0 })}>
           Try again
         </button>
       </div>

@@ -59,7 +59,7 @@ import { MAX_INSTANCES } from "./encounters";
 import { campaignFearState, gainFear, spendFear } from "./fear";
 import { attackerInstanceId, bandsOnMap, openIncomingHit, partyMembers, type BandBetween, type HitDraft, type HitResolution, type PartyMember } from "./incomingHits";
 import { rollDie } from "./dice";
-import type { AdversaryBefore, StoredRoll } from "./validators/actionLog";
+import type { ActionTarget, AdversaryBefore, StoredRoll } from "./validators/actionLog";
 import type { HitRider } from "./validators/combatRequests";
 import { ENCOUNTER_CONDITIONS, type EncounterCondition } from "./validators/encounters";
 
@@ -627,11 +627,14 @@ async function finish(ctx: MutationCtx, f: FinishInput): Promise<ActionResult> {
     ...(fearDelta !== 0 ? { fearDelta } : {}),
     undoable: true,
   });
-  await logAction(ctx, { ...log, kind: "adversary", visibility: "public", summary: f.publicText, undoable: true });
-
   const map = await liveCombatMap(ctx, campaign._id);
   const bands = await bandsOnMap(ctx, map?._id);
   const tokens = map ? await tokensOnMap(ctx, map._id) : [];
+  const publicId = await logAction(ctx, { ...log, kind: "adversary", visibility: "public", summary: f.publicText, undoable: true });
+  // H3: the tokens it named, by id, so the map flashes them without reading names out of the text.
+  const targets = publicTargets(tokens, f.outcomes, w, f.roll !== null);
+  if (targets.length > 0) await ctx.db.patch("actionLog", publicId, { targets });
+
   const outcomes = [...f.outcomes];
   for (const h of w.hits) {
     // Read again for each hit: an earlier hit that resolved at once changed a sheet.
@@ -658,6 +661,27 @@ async function finish(ctx: MutationCtx, f: FinishInput): Promise<ActionResult> {
     if (resolution) await afterHitTriggers(ctx, resolution, f.user._id);
   }
   return { status: "resolved", groupId: f.groupId, entryId, roll: f.roll, success: f.success, targets: outcomes, fearDelta, prompts: w.prompts, offers: f.offers };
+}
+
+/**
+ * The public row's `targets` (followups-7 H3): the live map's token of each creature the action named (hit, missed, or
+ * touched by a feature without a roll), then each other adversary its feature changed (allies; tone "effect"). PCs and
+ * adversaries without a token on the live map are left out. Ids and tones only (Q14).
+ */
+function publicTargets(tokens: readonly Doc<"combatTokens">[], outcomes: readonly TargetOutcome[], w: Work, rolled: boolean): ActionTarget[] {
+  const out: ActionTarget[] = [];
+  const add = (token: Doc<"combatTokens"> | undefined, side: ActionTarget["side"], tone: ActionTarget["tone"]) => {
+    if (token && !out.some((t) => t.tokenId === token._id)) out.push({ tokenId: token._id, side, tone });
+  };
+  const pcToken = (id: string) => tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === id);
+  const adversaryToken = (id: string) => tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === id);
+  for (const o of outcomes) {
+    const tone = rolled ? (o.hit ? "hit" : "miss") : "effect";
+    if (o.characterId !== undefined) add(pcToken(o.characterId), "pc", tone);
+    else if (o.instanceId !== undefined) add(adversaryToken(o.instanceId), "adversary", tone);
+  }
+  for (const { instance } of w.allies.values()) if (instance._id !== w.instance._id) add(adversaryToken(instance._id), "adversary", "effect");
+  return out;
 }
 
 // ---------------------------------------------------------------- after a hit resolves

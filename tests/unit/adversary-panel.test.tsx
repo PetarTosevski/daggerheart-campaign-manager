@@ -1,7 +1,7 @@
 /**
  * The GM's adversary controls on the Combat Map and the hit flashes (plan combat-actions AA5) with Convex mocked: the
- * action-row parser and the flashes (rows already in the feed don't replay; hits, misses and roll-less features flash
- * the named PC tokens; GM rows and undone rows never do), the range / sight rows (CB p.103-104, Q2), the panel acting
+ * flashes (rows already in the feed don't replay; hits, misses and roll-less features flash the tokens the row's
+ * `targets` name by id, followups-7 H3; adversary tokens for the GM only; GM rows and undone rows never do), the range / sight rows (CB p.103-104, Q2), the panel acting
  * for the selected adversary token with the Encounter tab's own controls (Attack fired once with the picked targets; a
  * PC out of sight not offered; the adversary stays picked when a PC token is selected), the GM's adversary
  * resolutions with Undo (U4), and the incoming-hit prompt for a PC the GM owns (user answer 2026-10-22).
@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AdversaryControls } from "@/components/combat-map/actions/adversary/controls";
 import { HitFlashLayer } from "@/components/combat-map/actions/adversary/flash";
-import { adversaryResolutionsOf, attackBand, newActionFlashes, parseActionRow, rangeRows } from "@/components/combat-map/actions/adversary/model";
+import { adversaryResolutionsOf, attackBand, newActionFlashes, rangeRows } from "@/components/combat-map/actions/adversary/model";
 import { AdversaryResolutions } from "@/components/combat-map/actions/adversary/resolutions";
 import { GmOwnHits } from "@/components/combat-map/actions/reactions";
 import type { AdversaryPanelProps, ActionsLayerProps } from "@/components/combat-map/slots";
@@ -64,36 +64,14 @@ const state = (over: Partial<AdversaryPanelProps> = {}): AdversaryPanelProps => 
   ...over,
 });
 
-describe("action rows (AA2's public text)", () => {
-  it("reads hits and misses of one roll, with or without a feature", () => {
-    expect(parseActionRow("Bandit hit Mira")).toEqual({ attacker: "Bandit", feature: null, marks: [{ name: "Mira", tone: "hit" }] });
-    expect(parseActionRow("Jagged Knife Bandit used Bite: hit Mira, Tabby; missed Ash")).toEqual({
-      attacker: "Jagged Knife Bandit",
-      feature: "Bite",
-      marks: [
-        { name: "Mira", tone: "hit" },
-        { name: "Tabby", tone: "hit" },
-        { name: "Ash", tone: "miss" },
-      ],
-    });
-    expect(parseActionRow("Bandit missed Mira")?.marks).toEqual([{ name: "Mira", tone: "miss" }]);
-  });
-
-  it("reads a feature with no roll as an effect, and ignores rows that aren't actions", () => {
-    expect(parseActionRow("Bandit used Roar on Mira, Tabby")?.marks).toEqual([
-      { name: "Mira", tone: "effect" },
-      { name: "Tabby", tone: "effect" },
-    ]);
-    expect(parseActionRow("Bandit used Roar")).toEqual({ attacker: "Bandit", feature: "Roar", marks: [] });
-    expect(parseActionRow("Mira took Bandit's hit")).toBeNull();
-    expect(parseActionRow("Tabby uses I Am Your Shield for Mira")).toBeNull();
-  });
-
+describe("action rows: flashes by target id (followups-7 H3)", () => {
   const tokens = [
-    { _id: "t-mira", name: "Mira", x: 2, y: 3, size: 1 },
-    { _id: "t-tabby", name: "Tabby", x: 8, y: 3, size: 1 },
+    { _id: "t-mira", x: 2, y: 3, size: 1 },
+    { _id: "t-tabby", x: 8, y: 3, size: 1 },
+    { _id: "t-wolf", x: 5, y: 5, size: 2 },
   ];
-  const row = (id: string, summary: string, over: Partial<{ kind: string; visibility: string; undone: boolean }> = {}) => ({
+  type Target = { tokenId: string; side: "pc" | "adversary"; tone: "hit" | "miss" | "effect" };
+  const row = (id: string, summary: string, over: Partial<{ kind: string; visibility: string; undone: boolean; targets: Target[] }> = {}) => ({
     _id: id,
     kind: "adversary",
     visibility: "public",
@@ -102,20 +80,49 @@ describe("action rows (AA2's public text)", () => {
     ...over,
   });
 
-  it("flashes each named PC token for new public action rows only", () => {
+  it("flashes each target token by id for new public action rows only", () => {
     const rows = [
-      row("r3", "Bandit hit Mira; missed Tabby"),
-      row("r2", "Bandit → Mira 9 phy", { visibility: "gm" }),
-      row("r1", "Bandit hit Tabby", { undone: true }),
-      row("r0", "Bandit hit Mira"),
+      row("r3", "Bandit hit Mira; missed Tabby", {
+        targets: [
+          { tokenId: "t-mira", side: "pc", tone: "hit" },
+          { tokenId: "t-tabby", side: "pc", tone: "miss" },
+        ],
+      }),
+      row("r2", "Bandit → Mira 9 phy", { visibility: "gm", targets: [{ tokenId: "t-mira", side: "pc", tone: "hit" }] }),
+      row("r1", "Bandit hit Tabby", { undone: true, targets: [{ tokenId: "t-tabby", side: "pc", tone: "hit" }] }),
+      row("r0", "Bandit hit Mira", { targets: [{ tokenId: "t-mira", side: "pc", tone: "hit" }] }),
     ];
-    const flashes = newActionFlashes(rows, new Set(["r0"]), tokens);
+    const flashes = newActionFlashes(rows, new Set(["r0"]), tokens, false);
     expect(flashes.map((f) => [f.tokenId, f.tone, f.label])).toEqual([
       ["t-mira", "hit", "Hit"],
       ["t-tabby", "miss", "Miss"],
     ]);
     expect(flashes[0]).toMatchObject({ x: 2, y: 3, size: 1, key: "r3:t-mira" });
-    expect(newActionFlashes([row("r4", "Bandit hit Mira", { kind: "combat" })], new Set(), tokens)).toEqual([]);
+    expect(newActionFlashes([row("r4", "Bandit hit Mira", { kind: "combat", targets: [{ tokenId: "t-mira", side: "pc", tone: "hit" }] })], new Set(), tokens, false)).toEqual([]);
+  });
+
+  it("matches ids, never names: a row without targets flashes nothing, an unknown token id is skipped", () => {
+    expect(newActionFlashes([row("r5", "Bandit hit Mira")], new Set(), tokens, true)).toEqual([]);
+    expect(newActionFlashes([row("r6", "Bandit hit Mira", { targets: [{ tokenId: "t-gone", side: "pc", tone: "hit" }] })], new Set(), tokens, true)).toEqual([]);
+    // A name with ", " in it is just text: the id decides.
+    const comma = newActionFlashes([row("r7", "Bandit hit Mira, the Bold", { targets: [{ tokenId: "t-mira", side: "pc", tone: "hit" }] })], new Set(), tokens, false);
+    expect(comma.map((f) => f.tokenId)).toEqual(["t-mira"]);
+  });
+
+  it("adversary tokens touched by a feature flash for the GM only", () => {
+    const rows = [
+      row("r8", "Leader used Rally on Wolf, Mira", {
+        targets: [
+          { tokenId: "t-wolf", side: "adversary", tone: "effect" },
+          { tokenId: "t-mira", side: "pc", tone: "effect" },
+        ],
+      }),
+    ];
+    expect(newActionFlashes(rows, new Set(), tokens, true).map((f) => [f.tokenId, f.label, f.size])).toEqual([
+      ["t-wolf", "!", 2],
+      ["t-mira", "!", 1],
+    ]);
+    expect(newActionFlashes(rows, new Set(), tokens, false).map((f) => f.tokenId)).toEqual(["t-mira"]);
   });
 
   it("lists the GM's adversary rows for Resolutions", () => {
@@ -265,23 +272,26 @@ const layer = (role: "gm" | "player"): ActionsLayerProps => ({
   ...state({ role }),
   viewport: { cell: 40, zoom: 1, w: 20, h: 20, pad: 0, toSquares: () => ({ x: 0, y: 0 }), showNames: false },
 });
-const feed = (rows: { _id: string; kind: string; visibility: string; summary: string; undone?: boolean }[]) => ({
+type FeedTarget = { tokenId: string; side: "pc" | "adversary"; tone: "hit" | "miss" | "effect" };
+const feed = (rows: { _id: string; kind: string; visibility: string; summary: string; undone?: boolean; targets?: FeedTarget[] }[]) => ({
   page: rows.map((r) => ({ at: 1, actorId: "u", canUndo: false, undone: false, ...r })),
   isDone: true,
   continueCursor: "",
 });
 
 describe("HitFlashLayer", () => {
+  const MIRA_HIT: FeedTarget[] = [{ tokenId: "t-mira", side: "pc", tone: "hit" }];
+
   it("doesn't replay old rows, flashes a new hit on the PC token, and drops it after its animation", () => {
     queries["combatTokens:party"] = [{ _id: "t-mira", name: "Mira", x: 2, y: 3, size: 1 }];
-    queries["feed:list"] = feed([{ _id: "old", kind: "adversary", visibility: "public", summary: "Bandit hit Mira" }]);
+    queries["feed:list"] = feed([{ _id: "old", kind: "adversary", visibility: "public", summary: "Bandit hit Mira", targets: MIRA_HIT }]);
     const { rerender } = render(<HitFlashLayer {...layer("player")} />);
     rerender(<HitFlashLayer {...layer("player")} />);
     expect(screen.queryByTestId("combat-hit-flash")).toBeNull();
 
     queries["feed:list"] = feed([
-      { _id: "new", kind: "adversary", visibility: "public", summary: "Bandit hit Mira" },
-      { _id: "old", kind: "adversary", visibility: "public", summary: "Bandit hit Mira" },
+      { _id: "new", kind: "adversary", visibility: "public", summary: "Bandit hit Mira", targets: MIRA_HIT },
+      { _id: "old", kind: "adversary", visibility: "public", summary: "Bandit hit Mira", targets: MIRA_HIT },
     ]);
     rerender(<HitFlashLayer {...layer("player")} />);
     const flash = screen.getByTestId("combat-hit-flash");
@@ -293,6 +303,21 @@ describe("HitFlashLayer", () => {
     fireEvent.animationEnd(flash);
     fireEvent(flash, new Event("webkitAnimationEnd", { bubbles: true }));
     expect(screen.queryByTestId("combat-hit-flash")).toBeNull();
+  });
+
+  it("the GM reads every token and sees an adversary token a feature touched flash", () => {
+    queries["combatTokens:list"] = [
+      { _id: "t-mira", name: "Mira", x: 2, y: 3, size: 1 },
+      { _id: "t-wolf", name: "Wolf", x: 6, y: 1, size: 1 },
+    ];
+    queries["feed:list"] = feed([]);
+    const { rerender } = render(<HitFlashLayer {...layer("gm")} />);
+    rerender(<HitFlashLayer {...layer("gm")} />);
+    queries["feed:list"] = feed([{ _id: "rally", kind: "adversary", visibility: "public", summary: "Leader used Rally on Wolf", targets: [{ tokenId: "t-wolf", side: "adversary", tone: "effect" }] }]);
+    rerender(<HitFlashLayer {...layer("gm")} />);
+    const flash = screen.getByTestId("combat-hit-flash");
+    expect(flash.getAttribute("data-tone")).toBe("effect");
+    expect(flash.style.left).toBe("240px");
   });
 });
 
