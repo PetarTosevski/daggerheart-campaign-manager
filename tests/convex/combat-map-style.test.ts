@@ -28,6 +28,8 @@ async function withMaps() {
   const { t, gm, other: player, campaignId } = ctx;
   const joinCode = await gm.mutation(api.members.rotateJoinCode, { campaignId });
   await player.mutation(api.members.joinByCode, { code: joinCode });
+  // These tests are about Classic maps: since dcm-bxp.135 a GM who never chose gets Sprites, so pick Classic first.
+  await gm.mutation(api.settings.update, { defaultMapStyle: "classic" });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const { mapId: hidden } = await gm.mutation(api.combatMaps.create, { campaignId, size: "small", idempotencyKey: key() });
   const gmId = await t.run(async (c) => (await c.db.query("users").first())!._id);

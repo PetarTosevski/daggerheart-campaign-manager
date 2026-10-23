@@ -190,6 +190,8 @@ describe("sprite fields: reads", () => {
 
   it("a D9 row without any new field reads exactly as before (E3, E4)", async () => {
     const f = await setupWithCampaign();
+    // A D9 map is Classic: since dcm-bxp.135 a GM who never chose gets Sprites, so pick Classic first.
+    await f.gm.mutation(api.settings.update, { defaultMapStyle: "classic" });
     const { mapId } = await f.gm.mutation(api.combatMaps.create, { campaignId: f.campaignId, size: "small", idempotencyKey: key() });
     await f.t.run((c) => c.db.insert("combatMapObjects", { mapId, kind: "campfire", x: 3, y: 3, r: 1, rot: 0 }));
     const map = (await f.gm.query(api.combatMaps.get, { campaignId: f.campaignId, mapId }))!;

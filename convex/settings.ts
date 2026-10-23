@@ -9,8 +9,11 @@ import { mapStyleValidator, type MapStyle } from "./lib/validators/combatMaps";
 
 const DEFAULTS = { tableName: "", gmName: "", accent: DEFAULT_ACCENT };
 
-/** dcm-bxp.89 (user 2026-10-21): new maps are Classic until the GM moves the Settings slider to Sprites. */
-export const DEFAULT_MAP_STYLE: MapStyle = "classic";
+/**
+ * dcm-bxp.89 added the Settings slider; dcm-bxp.135 (user 2026-10-22) made Sprites the default: a GM who never chose
+ * (no stored field) gets Sprites for new maps. Existing maps keep their stored style.
+ */
+export const DEFAULT_MAP_STYLE: MapStyle = "sprites";
 
 const expansionsValidator = v.object({ hopeAndFear: v.optional(v.boolean()) });
 
@@ -20,7 +23,7 @@ const settingsView = v.object({
   accent: v.string(),
   /** Defaults for new campaigns; an unset key keeps each frame's own default. */
   expansions: expansionsValidator,
-  /** The style new blank maps get (dcm-bxp.89); Classic until the GM picks Sprites. */
+  /** The style new blank maps get (dcm-bxp.89); Sprites unless the GM picked Classic (dcm-bxp.135). */
   defaultMapStyle: mapStyleValidator,
 });
 
@@ -31,7 +34,7 @@ export const settingsRow = (ctx: QueryCtx, user: Doc<"users">) =>
     .unique();
 
 /**
- * The style a new blank map of this GM gets (dcm-bxp.89): their Settings slider, else Classic. Read by
+ * The style a new blank map of this GM gets (dcm-bxp.89): their Settings slider, else Sprites (dcm-bxp.135). Read by
  * `combatMaps.create` only; existing maps keep their stored style (sprite packs E3).
  */
 export async function defaultMapStyleOf(ctx: QueryCtx, user: Doc<"users">): Promise<MapStyle> {
@@ -89,7 +92,7 @@ export const update = userMutation({
  * Restores a pasted settings backup (TitleMenu "Saved data", D12 H17). The text is parsed here, not trusted from the
  * client: `parseSettingsBackup` checks the backup format, dispatches on `schemaVersion` and refuses unknown fields, and
  * its `ZodError` becomes `INVALID`. A refused backup changes nothing. The backup replaces every setting: a backup made
- * before the default map style existed puts it back to Classic.
+ * before the default map style existed puts it back to the default, Sprites (dcm-bxp.135).
  */
 export const restore = userMutation({
   args: { text: v.string() },
@@ -104,7 +107,7 @@ export const restore = userMutation({
     if (row === null) {
       await ctx.db.insert("settings", { ownerId: ctx.user._id, ...settings, ...(defaultMapStyle === undefined ? {} : { defaultMapStyle }) });
     } else {
-      // `undefined` removes the stored field (back to Classic).
+      // `undefined` removes the stored field (back to the default, Sprites).
       await ctx.db.patch("settings", row._id, { ...settings, defaultMapStyle });
     }
     return null;

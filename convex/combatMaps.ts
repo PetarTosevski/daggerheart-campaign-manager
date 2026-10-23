@@ -360,7 +360,7 @@ export const tokenCount = gmQuery({
 
 /**
  * GM: a blank map of the board's Small / Medium / Large size; the campaign's first map is live at once (R2). It is
- * drawn in the GM's default map style (dcm-bxp.89, the Settings slider; Classic unless they picked Sprites). A Sprites
+ * drawn in the GM's default map style (dcm-bxp.89, the Settings slider; Sprites unless they picked Classic, dcm-bxp.135). A Sprites
  * map also stores the keyword-picked setting, as a first `setStyle` switch to Sprites does (D7).
  */
 export const create = keyedGmMutation({

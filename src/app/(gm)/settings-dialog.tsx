@@ -160,7 +160,8 @@ function SavedData({ settings, onReplaced }: { settings: SettingsView; onReplace
 type MapStyle = "classic" | "sprites";
 
 /**
- * "Maps": the style new blank maps get (dcm-bxp.89, user 2026-10-21: a slider Classic / Sprites, Classic by default).
+ * "Maps": the style new blank maps get (dcm-bxp.89, user 2026-10-21: a slider Classic / Sprites;
+ * dcm-bxp.135, user 2026-10-22: Sprites by default).
  * One intent (the style) per click, shown at once by the optimistic update; existing maps keep their own style and
  * switch on the Combat Map header.
  */
