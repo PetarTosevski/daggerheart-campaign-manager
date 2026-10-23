@@ -4,7 +4,7 @@ import { checkGroups, codexPatchSchema, emptyEntry, MAX_CODEX_IMAGE_BYTES, MAX_C
 import { coverOf, regionOf, toPlayerEntry, type GmEntry, type PlayerEntry } from "../src/lib/codex/view";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   campaignEntries,
   codexImageFiles,
@@ -25,7 +25,7 @@ import {
   type EntrySummary,
 } from "./lib/codex";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
-import { playerTokenFilter } from "./lib/maps";
+import { playerTokenFilter, tokenRow, toToken, writableMap, writeToken } from "./lib/maps";
 import { campaignMutation, keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
 import { atLeast, liveCampaign, permissionFor, requirePermission, type Permission } from "./lib/permissions";
 import { codexKindValidator, codexListValidator, codexPatchValidator, codexTextValidator } from "./lib/validators/codex";
@@ -166,7 +166,29 @@ export const seed = campaignMutation({
   handler: async (ctx) => seedCodex(ctx, ctx.campaign._id, ctx.campaign.frameId),
 });
 
-/** GM only: edits name, role, known, what players know, GM notes, allegiances and region. Text and summary are stored apart. */
+/** The longest World map marker name (`mapTokenSchema`). */
+const MAX_PIN_NAME = 80;
+
+/**
+ * Renames the World map marker a location is pinned to (dcm-bxp.16), only for
+ * a caller who may edit the map: a codex grant alone never writes the map. A
+ * blank name or a marker no longer on the map changes nothing. A version 1
+ * map is split into rows first, so the marker has a row to rename.
+ */
+async function renamePin(ctx: MutationCtx, user: Doc<"users">, campaign: Doc<"campaigns">, tokenId: number, name: string): Promise<void> {
+  const pinName = name.trim().slice(0, MAX_PIN_NAME);
+  if (pinName === "") return;
+  if (!atLeast(await permissionFor(ctx, user, { type: "map", campaign }, "edit"), "edit")) return;
+  await writableMap(ctx, campaign);
+  const row = await tokenRow(ctx, campaign._id, tokenId);
+  if (row === null || row.name === pinName) return;
+  await writeToken(ctx, campaign._id, row._id, { ...toToken(row), name: pinName });
+}
+
+/**
+ * GM only: edits name, role, known, what players know, GM notes, allegiances and region. Text and summary are stored apart.
+ * Renaming a pinned location also renames its World map marker (`renamePin`).
+ */
 export const update = userMutation({
   args: { entryId: v.id("codexEntries"), patch: codexPatchValidator },
   returns: v.null(),
@@ -181,6 +203,9 @@ export const update = userMutation({
       const groupError = checkGroups(campaign.frameId, next);
       if (groupError) invalid(groupError);
       await saveSummary(ctx, entry, next);
+      if (fields.name !== undefined && fields.name !== summary.name && summary.tokenId !== null) {
+        await renamePin(ctx, ctx.user, campaign, summary.tokenId, fields.name);
+      }
     }
     return null;
   },
