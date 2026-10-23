@@ -19,7 +19,7 @@ waves:
           - convex/campaigns.ts
           - convex/tables/campaigns.ts
           - convex/tables/characters.ts
-          - convex/migrations.ts
+          - convex/migrations/handSharing.ts
           - tests/convex/combat-cards.test.ts
           - tests/convex/combat-cards-authz.test.ts
           - tests/convex/migrations*.test.ts
