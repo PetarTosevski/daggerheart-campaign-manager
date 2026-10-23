@@ -20,6 +20,7 @@ import { favorOf, warlockSpellcast } from "../class-features/classes/warlock";
 import { onRest } from "../class-features/hooks";
 import type { Registry } from "../class-features/index";
 import type { Rng } from "../class-features/types";
+import { gainMartialPreparationDie } from "../session-features/slayer";
 import { ALLY_MOVES, MOVE_LABELS, MOVES_PER_REST, REST_MOVES, type ChosenMove, type RestChoice, type RestKind, type RestMove } from "./moves";
 
 export * from "./moves";
@@ -65,6 +66,7 @@ const SHORT_EQUIVALENT: Partial<Record<RestMove, RestMove>> = {
   clearAllStress: "clearStress",
   repairAllArmor: "repairArmor",
   tribute: "tribute",
+  martialPreparation: "martialPreparation",
 };
 
 /**
@@ -72,7 +74,7 @@ const SHORT_EQUIVALENT: Partial<Record<RestMove, RestMove>> = {
  * rest gives nothing; an interrupted long rest gives "the benefits of a short
  * rest", so each long-rest move becomes its short-rest counterpart and Work on
  * a Project (long rest only) is lost. Tribute (a downtime move on either
- * rest, HF 14) stays; the frame moves are dropped (their hooks read the
+ * rest, HF 14) and Martial Preparation (either rest, CB 48) stay; the frame moves are dropped (their hooks read the
  * picks themselves).
  */
 export function interruptedMoves(kind: RestKind, moves: readonly ChosenMove[]): ChosenMove[] {
@@ -99,7 +101,9 @@ export type MovesResult = {
  * tier, CB 105). A move on a character missing from `sheets` (not resting) is
  * skipped. Prepare together gives 2 Hope to everyone who chose it when two or
  * more PCs did, otherwise 1 Hope like Prepare. Tribute gains Favor equal to
- * the Warlock's Spellcast trait, at least 0 (HF 14). Make a Feast, Keep Watch
+ * the Warlock's Spellcast trait, at least 0 (HF 14). Martial Preparation
+ * gives the mover a d6 Slayer Die, up to their Proficiency (CB 48,
+ * `gainMartialPreparationDie`). Make a Feast, Keep Watch
  * and halting lycanthropy are applied by the frame hooks, not here.
  */
 export function applyMoves(kind: RestKind, input: Readonly<Record<string, CharacterSheet>>, choices: readonly RestChoice[], rng: Rng): MovesResult {
@@ -173,6 +177,17 @@ export function applyMoves(kind: RestKind, input: Readonly<Record<string, Charac
           const next = Math.min(99, favor + warlockSpellcast(self));
           sheets[choice.characterId] = { ...self, classState: { ...self.classState, favor: next } };
           say(choice.characterId, `Tribute: +${next - favor} Favor (${favor} to ${next})`);
+          break;
+        }
+        case "martialPreparation": {
+          const gain = gainMartialPreparationDie(sheets[choice.characterId]!);
+          sheets[choice.characterId] = gain.sheet;
+          say(
+            choice.characterId,
+            gain.gained
+              ? `Martial Preparation: +1 Slayer Die (${gain.held}/${gain.capacity})`
+              : `Martial Preparation: Slayer Dice full (${gain.held}/${gain.capacity})`,
+          );
           break;
         }
         case "makeAFeast":

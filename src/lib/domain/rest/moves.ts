@@ -18,7 +18,8 @@ export type RestMove =
   | "makeAFeast"
   | "tribute"
   | "keepWatch"
-  | "haltLycanthropy";
+  | "haltLycanthropy"
+  | "martialPreparation";
 
 /** One chosen move, with plain id strings (the Convex caller converts). */
 export type ChosenMove = { move: RestMove; targetId?: string; countdownId?: string };
@@ -52,6 +53,7 @@ export const MOVE_LABELS: Record<RestMove, string> = {
   tribute: "Tribute",
   keepWatch: "Keep Watch",
   haltLycanthropy: "Halt lycanthropy",
+  martialPreparation: "Martial Preparation",
 };
 
 /**

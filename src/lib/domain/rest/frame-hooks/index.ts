@@ -178,7 +178,12 @@ export type RestMoveRules = {
   transformations: boolean;
   /** The PC is a Warlock (class or multiclass) and the campaign offers the Warlock's features. */
   warlock: boolean;
+  /** A resting PC of the party holds Martial Preparation (Call of the Slayer mastery, CB 48). */
+  martialPreparation?: boolean;
 };
+
+/** CB 48, Martial Preparation: "Your party gains access to the Martial Preparation downtime move." */
+export const MARTIAL_PREPARATION_MOVE: RestMove = "martialPreparation";
 
 /**
  * The frame and class downtime moves of one PC, on either rest, and the core
@@ -190,12 +195,15 @@ export type RestMoveRules = {
  *   lycanthropy, offered to every PC (whether a PC carries the countdown is
  *   not checked; see TASK-D5-TI-b questions).
  * - A Warlock (HF 14): Tribute.
+ * - Every PC while the party has a Slayer at mastery rank (CB 48; user
+ *   2026-10-22, dcm-bxp.63): Martial Preparation, on short and long rests.
  */
-export function frameRestMoves({ frameId, transformations, warlock }: RestMoveRules): { extra: RestMove[]; forbidden: readonly RestMove[] } {
+export function frameRestMoves({ frameId, transformations, warlock, martialPreparation = false }: RestMoveRules): { extra: RestMove[]; forbidden: readonly RestMove[] } {
   const extra: RestMove[] = [];
   if (frameId === FRAME_IDS.beastFeast) extra.push(FEAST_MOVE);
   if (frameId === FRAME_IDS.ageOfUmbra) extra.push(KEEP_WATCH_MOVE);
   if (frameId === FRAME_IDS.andaluria && transformations) extra.push(HALT_LYCANTHROPY_MOVE);
   if (warlock) extra.push(TRIBUTE_MOVE);
+  if (martialPreparation) extra.push(MARTIAL_PREPARATION_MOVE);
   return { extra, forbidden: frameId === FRAME_IDS.beastFeast ? FEAST_FORBIDDEN : [] };
 }

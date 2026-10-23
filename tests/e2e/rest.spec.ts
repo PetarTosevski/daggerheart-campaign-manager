@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+
 import { ConvexHttpClient } from "convex/browser";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
@@ -112,6 +114,48 @@ test("a short party rest: the player clears Stress twice, the GM finishes, GM Fe
   await expect(page.getByRole("button", { name: "Fear 1 of 12" })).toHaveAttribute("aria-pressed", "true");
   await expect(picker).toHaveCount(0);
   await close();
+});
+
+test("Martial Preparation (CB 48): with a mastery Slayer in the party, an ally takes the move and holds a Slayer Die", async ({ page }) => {
+  const { campaignId } = await gmCreatesCampaign(page);
+  const gmApi = await convexAs(page);
+  const slayer = unique("Kael");
+  const ally = unique("Liriel");
+  const slayerDraft = {
+    ...bardDraft(slayer),
+    classId: "warrior",
+    subclassId: "call-of-the-slayer",
+    traits: { agility: 2, strength: 1, finesse: 0, instinct: 1, presence: -1, knowledge: 0 },
+    primaryWeaponId: "longsword",
+    armorId: "chainmail-armor",
+    domainCards: ["get-back-up", "not-good-enough"],
+  };
+  const slayerId = (await gmApi.mutation(api.characters.create, { campaignId, draft: slayerDraft, idempotencyKey: crypto.randomUUID() })).characterId;
+  const allyId = (await gmApi.mutation(api.characters.create, { campaignId, draft: bardDraft(ally), idempotencyKey: crypto.randomUUID() })).characterId;
+  // No public call sets a subclass rank directly: the internal e2e seed does (as in session-features-sheet.spec.ts).
+  execFileSync(process.execPath, ["scripts/convex-e2e.mjs", "run", "sessionFeatures:seedForE2e", JSON.stringify({ characterId: slayerId, subclassRank: "mastery", level: 7 })], {
+    stdio: "pipe",
+  });
+
+  const rest = page.getByRole("region", { name: "Rest", exact: true });
+  await rest.getByRole("button", { name: "Start short rest" }).click();
+  await expect(rest.getByTestId("open-rest")).toContainText("Short rest under way");
+
+  // The ally's sheet offers the move; picking it explains the die.
+  await page.goto(`/campaigns/${campaignId}/party/${allyId}`);
+  const picker = page.getByRole("region", { name: "Downtime moves" });
+  const chip = picker.getByRole("group", { name: "Move 1" }).getByRole("button", { name: "Martial Preparation" });
+  await chip.click();
+  await expect(chip).toHaveAttribute("aria-pressed", "true");
+  await expect(picker).toContainText("You gain a d6 Slayer Die, up to your Proficiency");
+  await picker.getByRole("group", { name: "Move 2" }).getByRole("button", { name: "Prepare", exact: true }).click();
+  await picker.getByRole("button", { name: "Save moves" }).click();
+  await expect(picker.getByText(/^Saved\./)).toBeVisible();
+
+  await gmApi.mutation(api.rests.finish, { campaignId, restId: (await gmApi.query(api.rests.current, { campaignId })).open!._id, idempotencyKey: crypto.randomUUID() });
+  await expect(picker).toHaveCount(0);
+  // The ally holds the die: the sheet shows the pool chip like a Slayer's.
+  await expect(page.getByRole("article", { name: ally }).getByRole("list", { name: "Session features" })).toContainText("Slayer Dice 1/1");
 });
 
 test("after three short rests the GM's Start short rest is disabled with the rule (CB 105, HF 176)", async ({ page }) => {

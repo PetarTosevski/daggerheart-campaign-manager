@@ -77,7 +77,7 @@ function MoveForm({
 }: {
   restId: Id<"rests">;
   kind: RestKind;
-  /** The moves this PC can pick: the rest's core moves with the frame and class moves (Make a Feast, Keep Watch, halt lycanthropy, Tribute). */
+  /** The moves this PC can pick: the rest's core moves with the frame and class moves (Make a Feast, Keep Watch, halt lycanthropy, Tribute, Martial Preparation). */
   moves: readonly RestMove[];
   character: CharacterView;
   allies: CharacterView[];
@@ -161,6 +161,12 @@ function MoveForm({
       ))}
       {picks.some((p) => p.move === "workOnProject" && p.countdownId === undefined) ? (
         <Small as="p">The GM asks for an action roll to gauge the project&apos;s progress: roll it in the dice box.</Small>
+      ) : null}
+      {picks.some((p) => p.move === "martialPreparation") ? (
+        <Small as="p">
+          Martial Preparation (CB 48): describe how you train with the party. You gain a d6 Slayer Die, up to your Proficiency, to spend on an
+          attack or damage roll in the dice box. Unspent dice clear at the end of the session for a Hope each.
+        </Small>
       ) : null}
       <div className="rp-actions">
         <Pill type="submit" variant="solid" disabled={choose.pending}>

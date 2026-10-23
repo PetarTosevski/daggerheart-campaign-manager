@@ -144,6 +144,7 @@ const ALSO_RETENTION: Record<string, string> = {
   lorekeeperUsage:
     "usage counters expire 13 months after their last update (D13 L0 cron); per-user and deployment rows have no campaign",
   combatRequests: "resolved and declined requests are swept a day after resolvedAt (combat-actions AA0 cron)",
+  actionLog: "undo snapshots are stripped 30 days after `at`, the rows stay, no longer undoable (dcm-c26 cron, reads by_undoable_at)",
 };
 /**
  * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge

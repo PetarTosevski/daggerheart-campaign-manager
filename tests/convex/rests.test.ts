@@ -376,3 +376,127 @@ describe("rests: card timing uses (CA4b)", () => {
     expect(await tokens()).toBe(1);
   });
 });
+
+describe("rests: Martial Preparation (CB 48, dcm-bxp.63)", () => {
+  useAllowlist(EMAILS);
+
+  const slayer =
+    (rank: CharacterSheet["subclassRank"], proficiency = 2) =>
+    (s: CharacterSheet): CharacterSheet => ({ ...s, subclassId: "call-of-the-slayer", subclassRank: rank, proficiency });
+  type Fixture = Awaited<ReturnType<typeof setup>>;
+  /** Per resting PC (in party order): whether Martial Preparation is among its pickable moves. */
+  const offered = async ({ gm, campaignId }: Fixture) =>
+    ((await gm.query(api.rests.current, { campaignId })).open?.moves ?? []).map((m) => m.moves.includes("martialPreparation"));
+  const martial = [{ move: "martialPreparation" as const }, { move: "prepare" as const }];
+
+  it("is offered to everyone on short and long rests only while a resting PC is a mastery Slayer", async () => {
+    const f = await setup();
+    const { p2, a, b, edit, start, finish, t } = f;
+    const choose = (restId: Id<"rests">, moves: { move: "martialPreparation" | "prepare"; targetId?: Id<"characters"> }[]) =>
+      codeOf(p2.mutation(api.rests.choose, { restId, characterId: b, moves, idempotencyKey: key() }));
+
+    // A specialization Slayer gives no move.
+    await edit(a, slayer("specialization"));
+    let rest = await start("short");
+    expect(await offered(f)).toEqual([false, false]);
+    expect(await choose(rest.restId, martial)).toBe("REST_RULE");
+    await finish(rest.restId);
+
+    await edit(a, slayer("mastery"));
+    for (const kind of ["short", "long"] as const) {
+      rest = await start(kind);
+      expect(await offered(f)).toEqual([true, true]);
+      expect(await choose(rest.restId, martial)).toBe("ok");
+      // A move on yourself: no ally target.
+      expect(await choose(rest.restId, [{ move: "martialPreparation", targetId: a }, { move: "prepare" }])).toBe("REST_RULE");
+      await finish(rest.restId);
+    }
+
+    // An away Slayer is not resting, so the party has no Martial Preparation.
+    rest = await start("short");
+    await t.run((ctx) => ctx.db.patch("characters", a, { status: "away" }));
+    expect(await offered(f)).toEqual([false]);
+    expect(await choose(rest.restId, martial)).toBe("REST_RULE");
+  });
+
+  it("each taker gains a d6 Slayer Die: the Slayer's joins the pool, an ally's is held up to their Proficiency; undo takes them back", async () => {
+    const { gm, p1, p2, campaignId, a, b, edit, sheetOf, start, finish, t } = await setup();
+    await edit(a, slayer("mastery", 2));
+    await edit(b, (s) => ({ ...s, proficiency: 1 }));
+    const bothTake = async (restId: Id<"rests">) => {
+      await p1.mutation(api.rests.choose, { restId, characterId: a, moves: martial, idempotencyKey: key() });
+      await p2.mutation(api.rests.choose, { restId, characterId: b, moves: martial, idempotencyKey: key() });
+      await finish(restId);
+    };
+    const latestOf = (id: Id<"characters">) =>
+      t.run((ctx) => ctx.db.query("actionLog").withIndex("by_character_at", (q) => q.eq("characterId", id)).order("desc").first());
+
+    await bothTake((await start("short")).restId);
+    expect((await sheetOf(a)).sessionFeatures?.slayerDice).toBe(1);
+    expect((await sheetOf(b)).sessionFeatures?.slayerDice).toBe(1);
+    expect((await latestOf(b))?.summary).toContain("Martial Preparation: +1 Slayer Die (1/1)");
+
+    // A long rest: the Slayer's pool grows to their Proficiency (2); the ally's stays at theirs (1).
+    const beforeA = await sheetOf(a);
+    const long = await start("long");
+    await bothTake(long.restId);
+    expect((await sheetOf(a)).sessionFeatures?.slayerDice).toBe(2);
+    expect((await sheetOf(b)).sessionFeatures?.slayerDice).toBe(1);
+    expect((await latestOf(b))?.summary).toContain("Martial Preparation: Slayer Dice full (1/1)");
+
+    await gm.mutation(api.rests.undo, { campaignId, restId: long.restId, idempotencyKey: key() });
+    expect((await sheetOf(a)).sessionFeatures).toEqual(beforeA.sessionFeatures);
+  });
+
+  it("an interrupted long rest keeps the move (a move of either rest)", async () => {
+    const { gm, p2, campaignId, a, b, edit, sheetOf, start } = await setup();
+    await edit(a, slayer("mastery"));
+    const { restId } = await start("long");
+    await p2.mutation(api.rests.choose, { restId, characterId: b, moves: martial, idempotencyKey: key() });
+    await gm.mutation(api.rests.interrupt, { campaignId, restId, idempotencyKey: key() });
+    expect((await sheetOf(b)).sessionFeatures?.slayerDice).toBe(1);
+  });
+
+  it("an ally spends the die on a damage roll; an unspent one clears at session end for a Hope", async () => {
+    const { gm, p2, campaignId, a, b, edit, sheetOf, start, finish } = await setup();
+    await edit(a, slayer("mastery"));
+    await edit(b, (s) => ({ ...s, proficiency: 2, hope: 2 }));
+    for (let i = 0; i < 2; i++) {
+      const { restId } = await start("short");
+      await p2.mutation(api.rests.choose, { restId, characterId: b, moves: martial, idempotencyKey: key() });
+      await finish(restId);
+    }
+    expect((await sheetOf(b)).sessionFeatures?.slayerDice).toBe(2);
+    const hopeBefore = (await sheetOf(b)).hope;
+
+    const damage = { kind: "damage" as const, source: { kind: "dice" as const, dice: [{ count: 1, sides: 6 }] }, critical: false, modifier: 0, options: [], slayerDice: 1 };
+    const result = await p2.mutation(api.rolls.manualRoll, { characterId: b, roll: damage, values: [4], idempotencyKey: key() });
+    expect(result.roll.dice.filter((d) => d.role === "extra")).toHaveLength(1);
+    expect((await sheetOf(b)).sessionFeatures?.slayerDice).toBe(1);
+
+    const ended = await gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() });
+    expect(ended.features).toContain("Bryn cleared 1 Slayer Die: +1 Hope");
+    expect((await sheetOf(b)).sessionFeatures).toBeUndefined();
+    expect((await sheetOf(b)).hope).toBe(hopeBefore + 1);
+  });
+});
+
+describe("rests: Undo only while the rest's rows are undoable (dcm-c26, dcm-bxp.63)", () => {
+  useAllowlist(EMAILS);
+
+  it("current.last.undoable turns false once the snapshot strip marks the rows not undoable", async () => {
+    const { gm, campaignId, start, finish, t } = await setup();
+    const { restId } = await start("short");
+    await finish(restId);
+    expect((await gm.query(api.rests.current, { campaignId })).last?.undoable).toBe(true);
+    await t.run(async (ctx) => {
+      const rows = await ctx.db
+        .query("actionLog")
+        .withIndex("by_campaign_at", (q) => q.eq("campaignId", campaignId))
+        .collect();
+      for (const r of rows) await ctx.db.patch("actionLog", r._id, { undoable: false, before: undefined });
+    });
+    expect((await gm.query(api.rests.current, { campaignId })).last?.undoable).toBe(false);
+    expect(await codeOf(gm.mutation(api.rests.undo, { campaignId, restId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+  });
+});
