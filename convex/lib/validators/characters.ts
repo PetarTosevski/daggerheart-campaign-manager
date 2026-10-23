@@ -143,6 +143,8 @@ const classStateValidator = v.object({
   comboDie: v.optional(v.number()),
   favor: v.optional(v.number()),
   hexes: v.optional(v.array(v.string())),
+  /** Martial Artist stances and Focus (`martialStateSchema`, plan sheet-drawer SD0, Q5; widened). */
+  martial: v.optional(v.object({ known: v.array(v.string()), active: v.optional(v.string()), focus: v.number() })),
 });
 
 /**
@@ -159,6 +161,7 @@ const d5SheetFields = {
   conditions: v.optional(v.array(conditionValidator)),
   effects: v.optional(v.array(effectValidator)),
   heldDice: v.optional(v.array(heldDieValidator)),
+  /** `until` gained `scene` (plan sheet-drawer SD0, Q7; widened, every stored entry still conforms). */
   featureUses: v.optional(v.array(v.object({ key: v.string(), until: literals(FEATURE_USE_UNTIL) }))),
   classState: v.optional(classStateValidator),
   wither: v.optional(v.number()),

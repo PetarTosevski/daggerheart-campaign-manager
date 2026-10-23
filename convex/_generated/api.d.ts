@@ -144,6 +144,7 @@ import type * as tables_actionLog from "../tables/actionLog.js";
 import type * as tables_campaigns from "../tables/campaigns.js";
 import type * as tables_characters from "../tables/characters.js";
 import type * as tables_codex from "../tables/codex.js";
+import type * as tables_combatAreas from "../tables/combatAreas.js";
 import type * as tables_combatMaps from "../tables/combatMaps.js";
 import type * as tables_combatRequests from "../tables/combatRequests.js";
 import type * as tables_countdowns from "../tables/countdowns.js";
@@ -310,6 +311,7 @@ declare const fullApi: ApiFromModules<{
   "tables/campaigns": typeof tables_campaigns;
   "tables/characters": typeof tables_characters;
   "tables/codex": typeof tables_codex;
+  "tables/combatAreas": typeof tables_combatAreas;
   "tables/combatMaps": typeof tables_combatMaps;
   "tables/combatRequests": typeof tables_combatRequests;
   "tables/countdowns": typeof tables_countdowns;

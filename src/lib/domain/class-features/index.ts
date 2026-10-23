@@ -44,4 +44,6 @@ export const CLASS_STATE_LABELS: Record<keyof ClassState, string> = {
   comboDie: "Combo die",
   favor: "Favor",
   hexes: "Hexed",
+  // Plan sheet-drawer SD0 (Q5): the Martial Artist's stances and Focus (HF p.12).
+  martial: "Stances and Focus",
 };

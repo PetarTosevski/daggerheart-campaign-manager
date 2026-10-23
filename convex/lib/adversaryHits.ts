@@ -232,6 +232,8 @@ export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: nu
   const hit = windowHitOf(p.attacker, { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(attackTotal !== undefined ? { attackTotal } : {}) }, p.riders ?? []);
   let state: WindowState = { ...openWindow({ hit, targetId: p.targetCharacterId, party }), responders: p.responders.map((r) => ({ ...r, cardIds: [...r.cardIds] })) };
   for (const [i, answer] of row.responses.entries()) {
+    // A feature answer (stored responses widened by sheet-drawer SD0); nothing writes one until SD4 folds them in.
+    if (answer.choice.kind === "feature") continue;
     let folds;
     if (answer.choice.kind === "card") {
       const card = cardEffect(answer.choice.cardId);

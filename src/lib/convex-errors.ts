@@ -7,6 +7,7 @@ import { characterMessages } from "./errors/characters";
 import { classFeatureMessages } from "./errors/classFeatures";
 import { codexMessages } from "./errors/codex";
 import { combatActionMessages } from "./errors/combatActions";
+import { combatFeatureMessages } from "./errors/combatFeatures";
 import { combatMapMessages } from "./errors/combatMap";
 import { commonMessages } from "./errors/common";
 import { deathMessages } from "./errors/death";
@@ -55,6 +56,7 @@ const MESSAGES = mergeMessages(
   encounterMessages,
   combatMapMessages,
   combatActionMessages,
+  combatFeatureMessages,
   adversaryActionMessages,
   sessionMessages,
   spritePackMessages,

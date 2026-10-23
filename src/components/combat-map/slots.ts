@@ -236,3 +236,65 @@ export type IncomingHitProps = ActionsSlotProps;
 
 /** Map layers of the combat actions (target rings, hit flashes): the usual layer props. */
 export type ActionsLayerProps = MapLayerProps;
+
+// ---------------------------------------------------------------- sheet drawer (plan .omc/plans/sheet-drawer.yaml)
+//
+// | Folder         | Tracer    | Exports (mounted by the page)                                                    |
+// |----------------|-----------|----------------------------------------------------------------------------------|
+// | `drawer/`      | SD0 → SD6 | `SheetDrawer` (one per page, opened by the page's Sheet button)                  |
+// | `drawer/use/`  | SD0 → SD7 | `FeatureUse` (inside `SheetDrawer`: one feature's Use dialog, choices and result) |
+//
+// The page (SD0) owns the Sheet button: in Play, in the header's tools (the top bar) and, at 760 px and below, in a
+// bar under the map (the bottom bar). It shows for a player whose PC has a token on the live map, and for the GM while
+// a PC token is selected (`sheetCharacterId`). The page mounts `SheetDrawer` once, in its own error boundary, keeps it
+// mounted after the first open (so closing returns focus to the button and the map stays as it was: no remount, no
+// `key=` on live content, CL7) and passes `open` / `onClose`. SD0 ships `SheetDrawer` as a modal with the "Full sheet"
+// link and `FeatureUse` as a stub that renders nothing. Players never get enemy numbers from either (U1).
+
+/**
+ * The drawer over the live map (SD6): the character's HP / Stress / Hope / Armor trackers and every owned feature with
+ * its Use button (`FeatureUse`); a right-side modal dialog, full screen at 760 px and below. `characterId` is the PC
+ * whose sheet it shows: the player's own, or the PC token the GM selected.
+ */
+export type SheetDrawerProps = {
+  campaignId: Id<"campaigns">;
+  role: CombatRole;
+  /** The map on screen, or null (features without enemy targets still work without one). */
+  map: CombatMapSummary | null;
+  characterId: Id<"characters">;
+  open: boolean;
+  onClose: () => void;
+};
+
+/**
+ * One feature's Use flow inside the drawer (SD7): the choices and targets dialog of the Hand (CA6), then the result.
+ * `featureId` is a feature id (src/lib/domain/feature-effects/ids.ts); `useId` one of its uses (default its first).
+ * `onClose` ends the flow (used, passed or cancelled).
+ */
+export type FeatureUseProps = {
+  campaignId: Id<"campaigns">;
+  role: CombatRole;
+  map: CombatMapSummary | null;
+  characterId: Id<"characters">;
+  featureId: string;
+  useId?: string;
+  onClose: () => void;
+};
+
+/** A token as the Sheet button reads it (`combatTokens.party`: the map's PC tokens). */
+export type SheetTokenRef = { _id: Id<"combatTokens">; kind: string; characterId?: Id<"characters">; mine: boolean };
+
+/**
+ * Whose sheet the Sheet button opens, or null for no button: a player's own PC token on the map (`mine`), or, for the
+ * GM, the selected token when it is a PC's.
+ */
+export function sheetCharacterId(role: CombatRole, tokens: readonly SheetTokenRef[], selectedTokenId: Id<"combatTokens"> | null): Id<"characters"> | null {
+  const pc = (t: SheetTokenRef) => t.kind === "pc" && t.characterId !== undefined;
+  const token = role === "gm" ? tokens.find((t) => t._id === selectedTokenId && pc(t)) : tokens.find((t) => t.mine && pc(t));
+  return token?.characterId ?? null;
+}
+
+/** A character's full sheet on the Party page (the drawer's "Full sheet" link). */
+export function sheetHref(campaignId: Id<"campaigns">, characterId: Id<"characters">): string {
+  return `/campaigns/${campaignId}/party/${characterId}`;
+}

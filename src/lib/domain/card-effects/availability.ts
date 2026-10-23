@@ -50,6 +50,8 @@ export const RESET_LABEL: Record<FeatureUse["until"], string> = {
   rest: "Back after a rest",
   longRest: "Back after a long rest",
   session: "Back next session",
+  // Plan sheet-drawer SD0 (Q7): the sheet's `featureUses` gained `scene`; nothing stores it until SD1 / SD8.
+  scene: "Back after the scene",
 };
 
 export type Availability =

@@ -20,7 +20,12 @@ import { conditionValidator, effectValidator, traitIdValidator } from "./charact
  * `minionOffer` (CA3, widened; Q6, CB p.201): the extra Minions a PC's attack may defeat, waiting for the attacker's
  * pick (`combatActions.pickMinions`). Resolved by the pick, declined when the attack is undone or the encounter ends.
  */
-export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"), v.literal("minionOffer"));
+/**
+ * `preRoll` (plan sheet-drawer SD0, widened; Q2, HF p.14): an adversary's attack on a PC, held before its roll for the PCs
+ * holding a ready before-roll defence (Harrowing Invocation, Draining Bane, Keen Defenses, Vigilant). Resolved when every
+ * responder answered (or the GM pressed Resolve now), then the attack rolls; declined when the attack is withdrawn.
+ */
+export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"), v.literal("minionOffer"), v.literal("preRoll"));
 
 /** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
 export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"));
@@ -60,7 +65,10 @@ export const cardChoiceValidator = v.object({
   value: v.union(v.number(), v.string(), v.array(v.string()), v.boolean()),
 });
 
-/** The action a sanction holds: a weapon attack (CA3) or a domain card use (CA4). */
+/**
+ * The action a sanction holds: a weapon attack (CA3), a domain card use (CA4) or, widened by the sheet drawer (SD0), a
+ * Hope / class / subclass / heritage / Beastform / transformation / stance feature use (`combatFeatures.useFeature`, SD3).
+ */
 export const sanctionActionValidator = v.union(
   v.object({
     kind: v.literal("attack"),
@@ -72,6 +80,16 @@ export const sanctionActionValidator = v.union(
     kind: v.literal("card"),
     cardId: v.string(),
     /** The `CardUse.id` ("main", or a grimoire spell's slug). */
+    useId: v.string(),
+    targetTokenIds: v.array(v.id("combatTokens")),
+    choices: v.array(cardChoiceValidator),
+    roll: v.optional(sanctionRollOptionsValidator),
+  }),
+  v.object({
+    kind: v.literal("feature"),
+    /** The feature id (`<source>:<owner>:<slug>`, src/lib/domain/feature-effects/ids.ts). */
+    featureId: v.string(),
+    /** The `CardUse.id` of the feature's use ("main", or an option's slug). */
     useId: v.string(),
     targetTokenIds: v.array(v.id("combatTokens")),
     choices: v.array(cardChoiceValidator),
@@ -208,8 +226,56 @@ export const minionOfferPayloadValidator = v.object({
   candidates: v.array(minionCandidateValidator),
 });
 
+/**
+ * The adversary attack a `preRoll` row holds (Q2): what `adversaryActions.attack` / `useFeature` took, replayed when the
+ * window closes. `feature` / `useId` unset: the standard attack. Bounded by the party (at most 12 targets).
+ */
+export const heldAttackValidator = v.object({
+  instanceId: v.id("encounterAdversaries"),
+  feature: v.optional(v.string()),
+  useId: v.optional(v.string()),
+  /** The attack's targets: PC character ids (the targets of `sharedArgs` resolved). */
+  targetCharacterIds: v.array(v.id("characters")),
+  advantage: v.optional(v.number()),
+  disadvantage: v.optional(v.number()),
+  experience: v.optional(v.string()),
+  spendFear: v.optional(v.number()),
+  reactions: v.optional(v.array(v.string())),
+});
+
+/** Who may answer a before-roll prompt: a PC with a ready, affordable before-roll defence (feature ids, SD0 ids). */
+export const preRollResponderValidator = v.object({
+  characterId: v.id("characters"),
+  featureIds: v.array(v.string()),
+});
+
+/**
+ * Q2 (plan sheet-drawer, widened by SD0): an adversary attack held before its roll ("Bandit attacks you / Mira"). Only PCs
+ * in `responders` see it, with Use / Pass; the GM can Resolve now. No roll is stored: nothing is rolled yet.
+ */
+export const preRollPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("preRoll"),
+  attacker: adversaryAttackerValidator,
+  attack: heldAttackValidator,
+  /** Rows of one adversary action share it with its later `incomingHit` rows, so they resolve into one actionLog group. */
+  groupId: v.string(),
+  responders: v.array(preRollResponderValidator),
+});
+
+/** A before-roll feature used on a `preRoll` prompt (Q2), with its `useFeature` choices. */
+export const preRollFeatureChoiceValidator = v.object({
+  kind: v.literal("feature"),
+  featureId: v.string(),
+  useId: v.optional(v.string()),
+  choices: v.array(cardChoiceValidator),
+});
+
+/** One answer to a `preRoll` prompt: a before-roll feature use or a pass. */
+export const preRollChoiceValidator = v.union(preRollFeatureChoiceValidator, v.object({ kind: v.literal("pass") }));
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
-export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator, minionOfferPayloadValidator);
+export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator, minionOfferPayloadValidator, preRollPayloadValidator);
 
 /**
  * One answer in a reaction window (Q13): `armor` (mark Armor Slots; `slots` above 1 only where a card allows it,
@@ -224,7 +290,8 @@ export const hitChoiceValidator = v.union(
 
 export const combatResponseValidator = v.object({
   characterId: v.id("characters"),
-  choice: hitChoiceValidator,
+  /** An `incomingHit` answer, or (widened, sheet drawer SD0) a `preRoll` feature answer (Q2). */
+  choice: v.union(hitChoiceValidator, preRollFeatureChoiceValidator),
   /** The user who answered (the character's player, or the GM acting for them). */
   by: v.id("users"),
   at: v.number(),
@@ -267,3 +334,6 @@ export type HitResponder = Infer<typeof hitResponderValidator>;
 export type HitChoice = Infer<typeof hitChoiceValidator>;
 export type CombatResponse = Infer<typeof combatResponseValidator>;
 export type MinionOfferPayload = Infer<typeof minionOfferPayloadValidator>;
+export type PreRollPayload = Infer<typeof preRollPayloadValidator>;
+export type HeldAttack = Infer<typeof heldAttackValidator>;
+export type PreRollChoice = Infer<typeof preRollChoiceValidator>;

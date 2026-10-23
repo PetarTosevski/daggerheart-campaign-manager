@@ -160,7 +160,7 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     });
     await ins("combatMapObjects", { mapId: combatMapId, kind: "campfire", x: 4, y: 4, r: 1, rot: 0, lit: false });
     await ins("combatMapCells", { mapId: combatMapId, layer: "block", tile: 0, cells: "#" });
-    await ins("combatTokens", {
+    const pcTokenId = await ins("combatTokens", {
       campaignId: c,
       mapId: combatMapId,
       ref: { kind: "pc", characterId },
@@ -175,6 +175,8 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("combatExplored", { mapId: combatMapId, characterId, bits: "", updatedAt: now });
     // A reaction window still open on the map (combat-actions AA0).
     await ins("combatRequests", combatRequest(c, userId, characterId, instanceId, { encounterId, mapId: combatMapId, at: now }));
+    // A live map area a feature drew (sheet-drawer SD0, Q14).
+    await ins("combatAreas", combatArea(c, combatMapId, characterId, { at: now, centre: { kind: "token", tokenId: pcTokenId } }));
     // A session with its prep (linking the encounter), a log line and a spotlight count (D10).
     const sessionId = await ins("sessions", { campaignId: c, n: 1, title: "The Bridge at Dawn", status: "live", startedAt: now, createdAt: now, updatedAt: now });
     await ins("sessionPrep", { campaignId: c, sessionId, scenes: [{ id: "s1", type: "combat", text: "Ambush" }], hooks: "", encounterId, updatedAt: now });
@@ -291,6 +293,31 @@ function combatRequest(
     },
     responses: [],
     resolvedAt: o.resolvedAt,
+  };
+}
+
+/** A `combatAreas` row (plan sheet-drawer SD0, Q14): Circle of Power around a square, active unless ended. */
+function combatArea(
+  campaignId: Id<"campaigns">,
+  mapId: Id<"combatMaps">,
+  characterId: Id<"characters">,
+  o: { at: number; endedAt?: number; centre?: NewDoc<"combatAreas">["centre"] },
+): NewDoc<"combatAreas"> {
+  return {
+    campaignId,
+    mapId,
+    featureId: "subclass:hedge:circle-of-power",
+    useId: "main",
+    characterId,
+    label: "Circle of Power",
+    shape: "circle",
+    centre: o.centre ?? { kind: "square", x: 3, y: 3 },
+    radius: "veryClose",
+    blocksSight: false,
+    expires: "manual",
+    status: o.endedAt === undefined ? "active" : "ended",
+    createdAt: o.at,
+    endedAt: o.endedAt,
   };
 }
 
@@ -545,6 +572,36 @@ describe("cleanup crons", () => {
     expect(left).toHaveLength(3);
     expect(left.map((r) => r._id)).toEqual(expect.arrayContaining(kept));
     expect(left.filter((r) => r.status !== "open").map((r) => r._id)).toEqual([kept[0]]);
+  });
+
+  it("expires ended map areas a day after endedAt, in batches, and keeps active or recent ones (sheet-drawer SD0)", async () => {
+    const t = makeTest();
+    const userId = await user(t);
+    const s = await seedCampaign(t, userId, undefined);
+    const area = (o: Parameters<typeof combatArea>[3]) => combatArea(s.campaignId, s.combatMapId, s.characterId, o);
+    const kept = await t.run(async (ctx) => {
+      for (let i = 0; i < BATCH + 30; i++) await ctx.db.insert("combatAreas", area({ at: NOW - 3 * DAY, endedAt: NOW - 2 * DAY + i }));
+      return [
+        // Ended 23 hours ago: an undo of the scene end can still bring it back.
+        await ctx.db.insert("combatAreas", area({ at: NOW - DAY, endedAt: NOW - 23 * HOUR })),
+        // Active for three days: an area stays until its scene, session or rest ends it.
+        await ctx.db.insert("combatAreas", area({ at: NOW - 3 * DAY })),
+      ];
+    });
+
+    await t.mutation(internal.cleanup.expireCombatAreas, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const left = await t.run((ctx) => ctx.db.query("combatAreas").collect());
+    // The two kept rows plus the seeded campaign's own active area.
+    expect(left).toHaveLength(3);
+    expect(left.map((r) => r._id)).toEqual(expect.arrayContaining(kept));
+    expect(left.filter((r) => r.status === "ended").map((r) => r._id)).toEqual([kept[0]]);
+  });
+
+  it("runs the map-area expiry hourly, off the hour (sheet-drawer SD0)", async () => {
+    const crons = (await import("../../convex/crons")).default as unknown as { crons: Record<string, { schedule: { type: string; cron?: string } }> };
+    expect(crons.crons["expire combat areas"]?.schedule).toEqual({ type: "cron", cron: "19 * * * *" });
   });
 
   it("runs the combat-request expiry hourly (AA0)", async () => {

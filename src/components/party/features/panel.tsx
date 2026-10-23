@@ -335,7 +335,18 @@ function stateEntries(sheet: Sheet): [string, string][] {
   return (Object.keys(CLASS_STATE_LABELS) as (keyof typeof CLASS_STATE_LABELS)[]).flatMap((k): [string, string][] => {
     const value = state[k];
     if (value === undefined) return [];
-    const text = typeof value === "object" && !Array.isArray(value) ? `${value.value} / d${value.max}` : Array.isArray(value) ? value.join(", ") || "none" : typeof value === "boolean" ? (value ? "yes" : "no") : String(value);
+    const text =
+      typeof value === "object" && !Array.isArray(value)
+        ? "focus" in value
+          ? `${value.focus} Focus${value.active ? ` · ${value.active}` : ""}` // the Martial Artist's stances (sheet-drawer SD0, Q5)
+          : `${value.value} / d${value.max}`
+        : Array.isArray(value)
+          ? value.join(", ") || "none"
+          : typeof value === "boolean"
+            ? value
+              ? "yes"
+              : "no"
+            : String(value);
     return [[CLASS_STATE_LABELS[k], text]];
   });
 }
