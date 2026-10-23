@@ -14,10 +14,13 @@ export const actionLogTables = {
    * - `by_campaign_visibility_at`: the players' feed (`visibility: "public"` only).
    * - `by_character_at`: a character's feed; undo's "latest row" check.
    * - `by_campaign_group`: the rows of one action, undone together.
+   * - `by_undoable_at`: the undoable rows by age, for the daily snapshot strip
+   *   (`cleanup.stripActionLogSnapshots`, dcm-c26 / dcm-bxp.63).
    */
   actionLog: defineTable(actionLogFields)
     .index("by_campaign_at", ["campaignId", "at"])
     .index("by_campaign_visibility_at", ["campaignId", "visibility", "at"])
     .index("by_character_at", ["characterId", "at"])
-    .index("by_campaign_group", ["campaignId", "groupId"]),
+    .index("by_campaign_group", ["campaignId", "groupId"])
+    .index("by_undoable_at", ["undoable", "at"]),
 };

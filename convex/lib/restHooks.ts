@@ -18,7 +18,7 @@
  * - It may throw `REST_RULE` to refuse the rest (Horizon: a long rest outside
  *   a sanctuary); it runs first so nothing is written before a refusal.
  * - `restMovesFor` lists a PC's frame and class downtime moves (Make a Feast,
- *   Keep Watch, halt lycanthropy, Tribute) and the core moves the frame
+ *   Keep Watch, halt lycanthropy, Tribute, Martial Preparation) and the core moves the frame
  *   forbids (Beast Feast); `rests.choose` checks picks against it.
  *
  * ```ts
@@ -124,10 +124,17 @@ export async function runRestHooks(ctx: MutationCtx, input: RestHookInput): Prom
  * the frame forbids (`frameRestMoves`): Make a Feast and the Beast Feast
  * restriction (CB 278), Keep Watch (CB 289), halting lycanthropy (HF 153,
  * transformations on), Tribute for a Warlock while its features are offered
- * (HF 14). `rests.choose` checks picks against it and `rests.current` lists it.
+ * (HF 14), and Martial Preparation for everyone while `party.martialPreparation`
+ * (a resting PC holds the Call of the Slayer mastery card, CB 48; the caller
+ * reads the party). `rests.choose` checks picks against it and `rests.current`
+ * lists it.
  */
-export function restMovesFor(campaign: Doc<"campaigns">, sheet: Pick<CharacterSheet, "classId" | "multiclass">): { extra: RestMove[]; forbidden: readonly RestMove[] } {
+export function restMovesFor(
+  campaign: Doc<"campaigns">,
+  sheet: Pick<CharacterSheet, "classId" | "multiclass">,
+  party: { martialPreparation: boolean } = { martialPreparation: false },
+): { extra: RestMove[]; forbidden: readonly RestMove[] } {
   const options = resolveOptions(campaign.frameId, campaign.options);
   const warlock = [sheet.classId, sheet.multiclass?.classId].includes("warlock") && classFeaturesAvailable("warlock", options.hopeAndFear);
-  return frameRestMoves({ frameId: campaign.frameId, transformations: options.transformations, warlock });
+  return frameRestMoves({ frameId: campaign.frameId, transformations: options.transformations, warlock, martialPreparation: party.martialPreparation });
 }

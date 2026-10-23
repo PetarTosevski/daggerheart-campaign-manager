@@ -30,11 +30,6 @@ export const COMBAT_REQUEST_TTL_MS = DAY;
 
 /** `actionLog` rows keep their undo snapshots this long; older rows stay in the feed, no longer undoable (dcm-c26). */
 export const ACTION_LOG_SNAPSHOT_TTL_MS = 30 * DAY;
-/**
- * How far behind the snapshot cutoff the daily strip looks: rows aged 30 to 37 days, so a week of missed runs is
- * caught up without rereading every old row each day. A run with `from: 0` strips everything older (backfill).
- */
-export const ACTION_LOG_STRIP_WINDOW_MS = 7 * DAY;
 /** Rows one strip run reads: each carries a sheet snapshot of a few KB, so fewer than `BATCH`. */
 export const ACTION_LOG_STRIP_BATCH = 200;
 
@@ -472,25 +467,24 @@ export const sweepOrphanUploads = internalMutation({
 /**
  * Strips the undo snapshots (`before`, `adversaryBefore`) from `actionLog` rows older than
  * `ACTION_LOG_SNAPSHOT_TTL_MS` and marks them not undoable (dcm-c26, user 2026-10-22). The rows stay in the feed, which
- * shows no Undo for them (`feed.list` canUndo reads `undoable`). Reads the rows created in [`from`, `cutoff`) by
- * creation time, `ACTION_LOG_STRIP_BATCH` per run, rescheduling itself with the cursor until the range is done.
- * `from` defaults to `cutoff - ACTION_LOG_STRIP_WINDOW_MS`; `cutoff` is fixed on the first run so the cursor stays valid.
+ * shows no Undo for them (`feed.list` canUndo reads `undoable`). Reads the undoable rows with `at` before `cutoff`
+ * through `by_undoable_at` (dcm-bxp.63), `ACTION_LOG_STRIP_BATCH` per run. Rows that carry a snapshot are undoable
+ * (rows logged `undoable: false` carry none), and a stripped row leaves the index range, so each run reads from the
+ * start of the range and reschedules itself while it found a full batch: no cursor, no lookback window, and the
+ * first run after deploy strips every older row (no backfill needed). `cutoff` is fixed on the first run.
+ * `from` and `cursor` are accepted and ignored, for runs scheduled before the index.
  */
 export const stripActionLogSnapshots = internalMutation({
   args: { from: v.optional(v.number()), cutoff: v.optional(v.number()), cursor: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const cutoff = args.cutoff ?? Date.now() - ACTION_LOG_SNAPSHOT_TTL_MS;
-    const from = args.from ?? cutoff - ACTION_LOG_STRIP_WINDOW_MS;
-    const page = await ctx.db
+    const rows = await ctx.db
       .query("actionLog")
-      .withIndex("by_creation_time", (q) => q.gte("_creationTime", from).lt("_creationTime", cutoff))
-      .paginate({ numItems: ACTION_LOG_STRIP_BATCH, cursor: args.cursor ?? null });
-    for (const row of page.page) {
-      if (!row.undoable && row.before === undefined && row.adversaryBefore === undefined) continue;
-      await ctx.db.patch("actionLog", row._id, { before: undefined, adversaryBefore: undefined, undoable: false });
-    }
-    if (!page.isDone) await ctx.scheduler.runAfter(0, internal.cleanup.stripActionLogSnapshots, { from, cutoff, cursor: page.continueCursor });
+      .withIndex("by_undoable_at", (q) => q.eq("undoable", true).lt("at", cutoff))
+      .take(ACTION_LOG_STRIP_BATCH);
+    for (const row of rows) await ctx.db.patch("actionLog", row._id, { before: undefined, adversaryBefore: undefined, undoable: false });
+    if (rows.length === ACTION_LOG_STRIP_BATCH) await ctx.scheduler.runAfter(0, internal.cleanup.stripActionLogSnapshots, { cutoff });
     return null;
   },
 });

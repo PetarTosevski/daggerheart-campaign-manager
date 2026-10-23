@@ -8,8 +8,9 @@
 // | feature (book)                   | holder (holders.ts)  | state         | rules                                                      |
 // |----------------------------------|----------------------|---------------|------------------------------------------------------------|
 // | Luckbringer (Halfling, CB 64)    | holdsLuckbringer     | none          | partyHope, applyLuckbringer                                |
-// | Slayer (Call of the Slayer, CB 48)| holdsSlayer         | slayerDice, slayerClaim | canStore, rollGaveHope, storeSlayerDie, spendSlayerDice, clearSlayerAtEnd |
+// | Slayer (Call of the Slayer, CB 48)| holdsSlayerFeature  | slayerDice, slayerClaim | canStore, rollGaveHope, storeSlayerDie, spendSlayerDice, clearSlayerAtEnd |
 // | Weapon Specialist (Slayer spec., CB 48)| holdsWeaponSpecialist | featureUses weaponSpecialistReroll | rerollSlayerOnes, weaponSpecialistUsed |
+// | Martial Preparation (Slayer mastery, CB 48)| holdsMartialPreparation (party) | slayerDice (any taker) | gainMartialPreparationDie; holdsSlayer = card or dice held |
 // | Know the Tide (Seaborne, CB 77)  | holdsTide            | tideTokens    | placeTideToken, spendTideTokens, clearTideAtEnd            |
 // | Lunar Phases (Moon mastery, HF 17)| holdsLunarPhases(scope) | moonDie    | phaseOf, lunarBonuses, rollMoonDie, bumpMoonDie, canNegateMinor, negateMinor, endMoon |
 //
@@ -30,11 +31,26 @@
 // The dice-box hooks (Waxing Moon damage option, the slayerStore prompt) are added by class-features/hooks.ts, and
 // derived Evasion and thresholds by characters/derived.ts, both through `lunarBonuses` / `canStore`.
 export { featuresOf, withFeatures } from "./state";
-export { CALL_OF_THE_SLAYER, EVERYTHING, HALFLING, holdsLuckbringer, holdsLunarPhases, holdsSlayer, holdsTide, holdsWeaponSpecialist, LUCKBRINGER, MOON, SEABORNE } from "./holders";
+export {
+  CALL_OF_THE_SLAYER,
+  EVERYTHING,
+  HALFLING,
+  holdsLuckbringer,
+  holdsLunarPhases,
+  holdsMartialPreparation,
+  holdsSlayer,
+  holdsSlayerFeature,
+  holdsTide,
+  holdsWeaponSpecialist,
+  LUCKBRINGER,
+  MOON,
+  SEABORNE,
+} from "./holders";
 export { applyLuckbringer, partyHope } from "./luckbringer";
 export {
   canStore,
   clearSlayerAtEnd,
+  gainMartialPreparationDie,
   rerollSlayerOnes,
   rollGaveHope,
   SLAYER_DIE_SIDES,

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import type { Doc, Id, TableNames } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
-import { ACTION_LOG_STRIP_BATCH, ACTION_LOG_STRIP_WINDOW_MS, BATCH } from "../../convex/cleanup";
+import { ACTION_LOG_STRIP_BATCH, BATCH } from "../../convex/cleanup";
 import { deleteSessionRows } from "../../convex/lib/sessions";
 import { errorCode, GM_EMAIL, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
@@ -726,23 +726,27 @@ describe("cleanup crons", () => {
       expect(errorCode(await gm.mutation(api.actionLog.undo, { entryId: old[0]!, idempotencyKey: key() }).catch((e: unknown) => e))).toBe("UNDO_STALE");
     });
 
-    it("looks back one window by default; from: 0 backfills older rows", async () => {
+    it("reads the undoable rows by age (by_undoable_at): every older row in one pass, undone rows too, no backfill", async () => {
       const t = makeTest();
       const { log } = await campaignWithLog(t);
       const ancient = await log(1);
-      vi.setSystemTime(NOW + ACTION_LOG_STRIP_WINDOW_MS + 2 * DAY);
-      const inWindow = await log(1);
-      vi.setSystemTime(NOW + ACTION_LOG_STRIP_WINDOW_MS + 2 * DAY + 31 * DAY);
+      const [undone] = await log(1, { undoneAt: Date.now() });
+      vi.setSystemTime(NOW + 60 * DAY);
+      const older = await log(1);
+      vi.setSystemTime(NOW + 85 * DAY);
+      const recent = await log(1);
+      vi.setSystemTime(NOW + 100 * DAY);
 
       await t.mutation(internal.cleanup.stripActionLogSnapshots, {});
       await t.finishAllScheduledFunctions(vi.runAllTimers);
-      expect((await rowsOf(t, inWindow))[0]!.undoable).toBe(false);
-      expect((await rowsOf(t, ancient))[0]!.undoable).toBe(true);
-
-      await t.mutation(internal.cleanup.stripActionLogSnapshots, { from: 0 });
-      await t.finishAllScheduledFunctions(vi.runAllTimers);
-      expect((await rowsOf(t, ancient))[0]).toMatchObject({ undoable: false });
-      expect((await rowsOf(t, ancient))[0]).not.toHaveProperty("before");
+      for (const row of await rowsOf(t, [...ancient, undone!, ...older])) {
+        expect(row).toMatchObject({ undoable: false });
+        expect(row).not.toHaveProperty("before");
+      }
+      expect((await rowsOf(t, recent))[0]).toMatchObject({ before: "{}", undoable: true });
+      // Nothing undoable is left before the cutoff, so a rerun reads nothing and schedules nothing.
+      await t.mutation(internal.cleanup.stripActionLogSnapshots, {});
+      expect(await t.run(async (ctx) => (await ctx.db.system.query("_scheduled_functions").collect()).filter((f) => f.state.kind === "pending"))).toEqual([]);
     });
   });
 });

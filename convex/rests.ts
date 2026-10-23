@@ -17,6 +17,11 @@
  * long-term dashboard countdown set to Automatic once, keyed on the rest's
  * campaign row, and the undo takes those ticks back (countdowns-advanced K4,
  * Q3, D11; convex/countdownTracks.ts).
+ * Martial Preparation (CB 48, dcm-bxp.63) is every resting PC's move on either
+ * rest while a resting PC holds the Call of the Slayer mastery card; each
+ * taker gains a Slayer Die (src/lib/domain/rest `applyMoves`). `current`
+ * offers Undo only while the rest's log rows are still undoable (the 30-day
+ * snapshot strip, dcm-c26).
  */
 import { v } from "convex/values";
 
@@ -35,6 +40,7 @@ import {
   type RestKind as DomainRestKind,
   type RestMove as DomainRestMove,
 } from "../src/lib/domain/rest/index";
+import { holdsMartialPreparation } from "../src/lib/domain/session-features/holders";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -121,19 +127,54 @@ async function pickableMoves(ctx: QueryCtx, campaign: Doc<"campaigns">, kind: Re
     .query("characters")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
     .take(MAX_CHARACTERS_PER_CAMPAIGN);
-  return party.filter(resting).map((c) => {
-    let sheet: Pick<CharacterSheet, "classId" | "multiclass">;
-    try {
-      sheet = readSheet(c.sheet);
-    } catch {
-      sheet = { classId: "" };
-    }
-    const rules = restMovesFor(campaign, sheet);
+  const pcs = party.filter(resting).map((c) => ({ c, sheet: sheetOrNull(c) }));
+  const martialPreparation = pcs.some(({ sheet }) => sheet !== null && holdsMartialPreparation(sheet));
+  return pcs.map(({ c, sheet }) => {
+    const rules = restMovesFor(campaign, sheet ?? { classId: "" }, { martialPreparation });
     return { characterId: c._id, moves: allowedMoves(kind, rules.extra, rules.forbidden) };
   });
 }
 
+/** The character's sheet, or null when it fails to read. */
+function sheetOrNull(c: Doc<"characters">): CharacterSheet | null {
+  try {
+    return readSheet(c.sheet);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Martial Preparation (Call of the Slayer mastery, CB 48): "Your party gains access to the Martial Preparation
+ * downtime move" while a resting PC holds the mastery card (user 2026-10-22). Bounded by the campaign's character cap.
+ */
+async function partyHasMartialPreparation(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<boolean> {
+  const party = await ctx.db
+    .query("characters")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .take(MAX_CHARACTERS_PER_CAMPAIGN);
+  return party.some((c) => {
+    if (!resting(c)) return false;
+    const sheet = sheetOrNull(c);
+    return sheet !== null && holdsMartialPreparation(sheet);
+  });
+}
+
 // ---------------------------------------------------------------- reads
+
+/**
+ * Whether the rest's actionLog group can still be undone: its first row is undoable and not undone. The daily
+ * snapshot strip (`cleanup.stripActionLogSnapshots`) marks rows older than 30 days not undoable (dcm-c26), so an old
+ * rest offers no Undo that `undo` would refuse with UNDO_STALE (dcm-bxp.63).
+ */
+async function groupUndoable(ctx: QueryCtx, campaignId: Id<"campaigns">, groupId: string | undefined): Promise<boolean> {
+  if (groupId === undefined) return false;
+  const [row] = await ctx.db
+    .query("actionLog")
+    .withIndex("by_campaign_group", (q) => q.eq("campaignId", campaignId).eq("groupId", groupId))
+    .take(1);
+  return row !== undefined && row.undoable && row.undoneAt === undefined;
+}
 
 const choiceView = v.object({ characterId: v.id("characters"), moves: v.array(restChoiceMoveValidator) });
 const movesView = v.object({ characterId: v.id("characters"), moves: v.array(restMoveValidator) });
@@ -203,7 +244,7 @@ export const current = campaignQuery({
               finishedAt: last.finishedAt ?? null,
               fearRoll: last.fearRoll ?? null,
               fearGained: last.fearGained ?? null,
-              undoable: last.groupId !== undefined,
+              undoable: await groupUndoable(ctx, ctx.campaign._id, last.groupId),
             },
     };
   },
@@ -511,7 +552,7 @@ export const choose = keyedUserMutation({
       assertCanAct(character, sheet);
       if (character.status !== "active") throw appError("CHARACTER_UNAVAILABLE");
       const rest = await loadOpenRest(ctx, campaign._id, restId);
-      const rules = restMovesFor(campaign, sheet);
+      const rules = restMovesFor(campaign, sheet, { martialPreparation: await partyHasMartialPreparation(ctx, campaign._id) });
       validateChoice(
         rest.kind,
         characterId,

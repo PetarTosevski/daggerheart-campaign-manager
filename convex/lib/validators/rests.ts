@@ -15,6 +15,8 @@ export const restStatusValidator = v.union(v.literal("open"), v.literal("finishe
  * (Beast Feast, CB 278), `keepWatch` (The Age of Umbra, CB 289),
  * `haltLycanthropy` (Dark Heart of Andaluria, HF 153) and `tribute` (Warlock
  * Favor, HF 14) are frame and class moves (src/lib/domain/rest/frame-hooks).
+ * `martialPreparation` (Call of the Slayer mastery, CB 48; dcm-bxp.63, widened)
+ * is the party's move on either rest while a resting PC holds the mastery card.
  */
 export const restMoveValidator = v.union(
   v.literal("tendToWounds"),
@@ -30,6 +32,7 @@ export const restMoveValidator = v.union(
   v.literal("tribute"),
   v.literal("keepWatch"),
   v.literal("haltLycanthropy"),
+  v.literal("martialPreparation"),
 );
 
 /** One chosen move: an ally target for Tend to Wounds or Repair Armor, a countdown for Work on a Project. */

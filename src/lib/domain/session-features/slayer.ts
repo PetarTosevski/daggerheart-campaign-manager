@@ -18,7 +18,7 @@ import { applyResourceDelta, hopeMax } from "../characters/index";
 import type { RollKind, RollOutcome } from "../duality";
 import type { CharacterSheet } from "../../validation/characters";
 import type { Rng } from "../class-features/types";
-import { holdsSlayer, holdsWeaponSpecialist } from "./holders";
+import { holdsSlayerFeature, holdsWeaponSpecialist } from "./holders";
 import { featuresOf, withFeatures } from "./state";
 
 /** Slayer Dice are d6s. */
@@ -44,7 +44,7 @@ export function slayerDice(sheet: Pick<CharacterSheet, "sessionFeatures">): numb
  * (critical included) and the pool is below Proficiency. It does not check `slayerClaim` (a new roll is unclaimed).
  */
 export function canStore(sheet: SlayerSheet, outcome: RollOutcome, kind: RollKind): boolean {
-  return holdsSlayer(sheet) && kind === "action" && WITH_HOPE.includes(outcome) && slayerDice(sheet) < slayerCapacity(sheet);
+  return holdsSlayerFeature(sheet) && kind === "action" && WITH_HOPE.includes(outcome) && slayerDice(sheet) < slayerCapacity(sheet);
 }
 
 /**
@@ -62,7 +62,7 @@ export function rollGaveHope(sheetBeforeGain: Pick<CharacterSheet, "hope" | "sca
  * Refuses with CLASS_FEATURE_RULE for a sheet without Slayer, a full pool, or a roll already answered.
  */
 export function storeSlayerDie<T extends CharacterSheet>(sheet: T, { hopeGained, entryId }: { hopeGained: boolean; entryId: string }): T {
-  if (!holdsSlayer(sheet)) throw new RuleError("CLASS_FEATURE_RULE", "Only a Call of the Slayer character stores Slayer Dice.");
+  if (!holdsSlayerFeature(sheet)) throw new RuleError("CLASS_FEATURE_RULE", "Only a Call of the Slayer character stores Slayer Dice.");
   if (featuresOf(sheet).slayerClaim === entryId) throw new RuleError("CLASS_FEATURE_RULE", "You already chose for this roll.");
   const held = slayerDice(sheet);
   if (held >= slayerCapacity(sheet)) throw new RuleError("CLASS_FEATURE_RULE", `Your Slayer Dice pool is full (${held}/${slayerCapacity(sheet)}).`);
@@ -80,6 +80,19 @@ export function spendSlayerDice<T extends CharacterSheet>(sheet: T, n: number): 
   if (!Number.isInteger(n) || n < 0 || n > held) throw new RuleError("DICE_RULE", `You hold ${held} Slayer ${held === 1 ? "Die" : "Dice"}.`);
   if (n === 0) return sheet;
   return withFeatures(sheet, { slayerDice: held - n });
+}
+
+/**
+ * Martial Preparation (Call of the Slayer mastery, CB 48), the downtime move: "You and each ally who chooses this
+ * downtime move gain a d6 Slayer Die." User 2026-10-22 (dcm-bxp.63): the die joins the same pool as the Slayer's own
+ * dice, so the dice box spends it and session end clears it for a Hope; the Slayer's pool is capped at Proficiency and
+ * an ally holds up to their own Proficiency. At the cap nothing is gained (`gained: false`).
+ */
+export function gainMartialPreparationDie<T extends CharacterSheet>(sheet: T): { sheet: T; gained: boolean; held: number; capacity: number } {
+  const held = slayerDice(sheet);
+  const capacity = slayerCapacity(sheet);
+  if (held >= capacity) return { sheet, gained: false, held, capacity };
+  return { sheet: withFeatures(sheet, { slayerDice: held + 1 }), gained: true, held: held + 1, capacity };
 }
 
 /** Session end (K2, U8): empties the pool and gains a Hope per die cleared, capped at the Hope maximum. */
