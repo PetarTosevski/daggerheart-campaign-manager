@@ -1,14 +1,14 @@
 import type { OptimisticLocalStore } from "convex/browser";
 
-import { api } from "../../../../convex/_generated/api";
-import type { Id } from "../../../../convex/_generated/dataModel";
-import type { PageRef } from "../../../../convex/lib/validators/notes";
-import { BIN_DAYS } from "../../../lib/domain/notes/limits";
+import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
+import type { PageRef } from "../../../convex/lib/validators/notes";
+import { BIN_DAYS } from "../domain/notes/limits";
 
 /**
  * Optimistic updaters for the bin (D11 N7, CL4): a torn-out page leaves the own journal and joins 'Torn-out pages' at
  * once; a restored page leaves 'Torn-out pages' (the journal's answer brings it back). They never mutate store objects
- * and skip a query that is not loaded. Kept in the bin folder (the plan gives N7 no file under src/lib/optimistic).
+ * and skip a query that is not loaded.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;

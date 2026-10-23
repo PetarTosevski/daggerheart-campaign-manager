@@ -263,7 +263,7 @@ describe("departed journals (Q12, D2)", () => {
     expect(await codeOf(s.call.binPage("p1", players))).toBe("NOTE_JOURNAL_CLOSED");
     await s.call.binPage("gm", players);
     expect(await s.call.bin("gm")).toMatchObject([{ _id: players, from: "Ash" }]);
-    // The owner sees their page in no list of theirs: the GM tore it out, so only the GM restores it.
+    // The journal is still departed (frozen, D2): the GM's tear-out stands and only the GM restores it.
     expect(await s.call.bin("p1")).toEqual([]);
     expect(await codeOf(s.call.restorePage("p1", players))).toBe("NOTE_NOT_BINNED");
 
@@ -272,6 +272,38 @@ describe("departed journals (Q12, D2)", () => {
     await s.t.run((ctx) => ctx.db.patch("characters", ash, { status: "active" }));
     expect(await s.call.bin("gm")).toEqual([]);
     expect(await codeOf(s.call.restorePage("gm", players))).toBe("NOTE_PAGE_NOT_FOUND");
+    // dcm-bxp.81: the owner of the present journal now finds it in their bin and restores it.
+    expect(await s.call.bin("p1")).toMatchObject([{ _id: players, title: "People we met", from: null }]);
+    await s.call.restorePage("p1", players);
+    const back = await s.page(players);
+    expect([back?.binnedAt, back?.binnedBy, back?.visibility]).toEqual([undefined, undefined, "players"]);
+    const view = await s.call.journal("p1");
+    expect("pages" in view ? view.pages.map((p) => p._id) : []).toContain(players);
+    expect(await s.call.bin("p1")).toEqual([]);
+    expect(await codeOf(s.call.entries("p2", players))).toBe("ok");
+    await s.expectCounters();
+  });
+
+  it("removed player who rejoins: the owner restores the page the GM tore out (dcm-bxp.81); others still cannot", async () => {
+    const { s, everyone } = await departedFixture();
+    await s.as("gm").mutation(api.members.removePlayer, { campaignId: s.campaignId, userId: s.ids.p1 });
+    await s.call.binPage("gm", everyone);
+    await s.expectCounters();
+
+    const code = await s.as("gm").mutation(api.members.rotateJoinCode, { campaignId: s.campaignId });
+    await s.as("p1").mutation(api.members.joinByCode, { code });
+    // Present again: the GM still reads an 'everyone' page, so the GM may restore it too; so may the owner.
+    expect(await s.call.bin("p1")).toMatchObject([{ _id: everyone, from: null }]);
+    expect(await s.call.bin("gm")).toMatchObject([{ _id: everyone, from: "Ash" }]);
+    expect(await codeOf(s.call.restorePage("p2", everyone))).toBe("NOTE_PAGE_NOT_FOUND");
+    expect(await codeOf(s.call.restorePage("p3", everyone))).toBe("NOTE_PAGE_NOT_FOUND");
+    expect(await codeOf(s.call.restorePage("outsider", everyone))).toBe("NOT_FOUND");
+    expect(await codeOf(s.call.restorePage("anon", everyone))).toBe("UNAUTHENTICATED");
+    await s.call.restorePage("p1", everyone);
+    expect(await s.call.bin("p1")).toEqual([]);
+    expect(await s.call.bin("gm")).toEqual([]);
+    expect(await codeOf(s.call.restorePage("gm", everyone))).toBe("NOTE_NOT_BINNED"); // back, readable, not torn out
+    expect(await codeOf(s.call.entries("p2", everyone))).toBe("ok");
     await s.expectCounters();
   });
 });

@@ -210,7 +210,10 @@ export type PageAccess = {
   canAdd: boolean;
   /** Tear out: the owner of a present journal; the GM for a non-private page of a departed journal (Q12, D2). */
   canBin: boolean;
-  /** Restore from the bin: whoever tore it out, while they can still reach it (Q11). */
+  /**
+   * Restore from the bin: whoever tore it out, while they can still reach it (Q11); also the page's owner, on a present
+   * journal, for a page someone else tore out (the GM's tear-out of a departed page after a rejoin, dcm-bxp.81).
+   */
   canRestore: boolean;
   /** Edit an entry's text: its author (D5). */
   canEditEntry: (entry: Pick<Doc<"journalEntries">, "authorId">) => boolean;
@@ -264,7 +267,10 @@ export async function pageAccess(ctx: NotesCtx, pageRef: Id<"journalPages"> | Do
     canEditPage: flags.canEditPage,
     canAdd: flags.canAdd,
     canBin: flags.canBin,
-    canRestore: flags.canRestore,
+    // dcm-bxp.81: after a rejoin (or the character going back to 'active') the GM who tore a departed page out can no
+    // longer read it, so its owner restores it. Not while the journal is still departed: it stays frozen (D2) and the
+    // GM's tear-out stands, restorable by the GM.
+    canRestore: flags.canRestore || (binned && isOwner && !isDeparted),
     canEditEntry: (entry) => entryFlags(entry).canEditEntry,
     canCycle: (entry) => entryFlags(entry).canCycle,
     canDeleteEntry: (entry) => entryFlags(entry).canDeleteEntry,

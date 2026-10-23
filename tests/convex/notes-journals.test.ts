@@ -416,3 +416,56 @@ describe("departure and return (Q12, D1, D2)", () => {
     expect((await s.call.journalView("p2")).pages).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------- linked sessions (dcm-bxp.110, D6, D10 Q4)
+
+describe("journalView: the linked session's number and date", () => {
+  useAllowlist(`${GM},${P1},${P2},${OUTSIDER}`);
+
+  /** Links P1's pages: 'gm' to a played session with a date, 'everyone' to a played one without, 'players' to a planned one. */
+  async function linked() {
+    const s = await setup();
+    const now = Date.now();
+    await s.t.run(async (ctx) => {
+      const played = await ctx.db.insert("sessions", { campaignId: s.campaignId, n: 3, date: "2026-10-24", status: "played", createdAt: now, updatedAt: now });
+      const undated = await ctx.db.insert("sessions", { campaignId: s.campaignId, n: 4, status: "played", createdAt: now, updatedAt: now });
+      const planned = await ctx.db.insert("sessions", { campaignId: s.campaignId, n: 5, date: "2026-11-07", status: "planned", createdAt: now, updatedAt: now });
+      await ctx.db.patch("journalPages", s.pages["gm"]!, { sessionId: played });
+      await ctx.db.patch("journalPages", s.pages["everyone"]!, { sessionId: undated });
+      await ctx.db.patch("journalPages", s.pages["players"]!, { sessionId: planned });
+    });
+    return s;
+  }
+  const sessionsOf = async (s: Setup, who: Who) =>
+    Object.fromEntries((await s.call.journalView(who)).pages.map((p) => [p.title, p.session ?? null]));
+
+  it("the GM sees each linked session (planned too); an unlinked page has none", async () => {
+    const s = await linked();
+    expect(await sessionsOf(s, "gm")).toEqual({ gm: { n: 3, date: "2026-10-24" }, everyone: { n: 4 }, "chosen gm": null });
+  });
+
+  it("a player sees live / played sessions only (D10 Q4), in their own and in a past journal", async () => {
+    const s = await linked();
+    expect(await sessionsOf(s, "p1")).toEqual({
+      gm: { n: 3, date: "2026-10-24" },
+      private: null,
+      players: null,
+      everyone: { n: 4 },
+      "chosen gm": null,
+      "chosen p2": null,
+    });
+    await s.remove();
+    expect(await sessionsOf(s, "p2")).toEqual({ gm: { n: 3, date: "2026-10-24" }, players: null, everyone: { n: 4 }, "chosen gm": null, "chosen p2": null });
+    // The GM still sees the planned one in the past journal.
+    expect((await sessionsOf(s, "gm"))["players"]).toEqual({ n: 5, date: "2026-11-07" });
+  });
+
+  it("a deleted session is not shown", async () => {
+    const s = await linked();
+    await s.t.run(async (ctx) => {
+      const page = await ctx.db.get("journalPages", s.pages["gm"]!);
+      await ctx.db.delete("sessions", page!.sessionId!);
+    });
+    expect((await sessionsOf(s, "gm"))["gm"]).toBeNull();
+  });
+});

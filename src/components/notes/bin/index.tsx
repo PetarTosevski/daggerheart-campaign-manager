@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 
 import { errorMessage } from "@/lib/convex-errors";
 import { binDaysLeft, daysLeftLabel, UNDO_MS } from "@/lib/domain/notes";
+import { binPageLocally, restorePageLocally } from "@/lib/optimistic/notes-bin";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -15,7 +16,6 @@ import type { BinRow } from "../../../../convex/notesBin";
 import { Entries } from "../entries";
 import { selectedPage, useJournal } from "../page/use-journal";
 import { toPageRef, type NotesSlotProps } from "../slots";
-import { binPageLocally, restorePageLocally } from "./optimistic";
 import { playTear } from "./tear-sound";
 import { endTear, hideToast, showToast, startTear, useTearState, type TearFrame } from "./tear-store";
 
