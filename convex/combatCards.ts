@@ -10,7 +10,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { cardChoicesValidator, cardRollValidator, dropDice, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll, type DiceSlot } from "./lib/cardChoices";
-import { handCardValidator, handOf } from "./lib/cardHand";
+import { handCardValidator, handOf, handSharedWithPlayers, hiddenHands, playersSeeHands, writeHandHidden } from "./lib/cardHand";
 import { damageRolls, gmLines, instanceWrites, needsChoiceValidator, openCardHits, pendingCardValidator, promptsOf, publicTargets, resolvedCardValidator, rollText, writeInstances, type ResolvedCard } from "./lib/cardRows";
 import { actorSheetAfter, buildRun, difficultyOf, pickCard, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type RunOutcome } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
@@ -18,7 +18,8 @@ import { attackScene, type AttackScene } from "./lib/combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openRequests } from "./lib/combatRequests";
 import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
-import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { campaignMutation, campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { atLeast } from "./lib/permissions";
 import { changed } from "./lib/rolls";
 import { rangeBandValidator } from "./lib/validators/combatRequests";
 import type { RunPlan } from "../src/lib/domain/card-effects/run";
@@ -29,7 +30,11 @@ import type { RunPlan } from "../src/lib/domain/card-effects/run";
  * so another player's character is FORBIDDEN and an outsider NOT_FOUND (CF2).
  *
  * - `hand`: the loadout and the vault with each card's state (ready / exhausted / passive / outOfCombat), reset label,
- *   tokens and recall cost. The character's player and the GM (who sees a selected PC's cards, user answer 2026-10-22).
+ *   tokens and recall cost. The character's player and the GM (who sees a selected PC's cards, user answer 2026-10-22)
+ *   always; another player of the campaign while the GM's switch "Players can see each other's cards" is on and the
+ *   character's player has not hidden their hand (F7-H4, dcm-bxp.99.24), read only; FORBIDDEN otherwise.
+ * - `handSharing`: the GM's switch and the characters whose hands are hidden (every member); `setHandHidden`: the
+ *   character's player (or the GM) hides or shows that hand to the other players.
  * - `useCard`: uses a loadout card: checks, pays, rolls, applies, logs one undoable group (public: hit / miss; GM:
  *   the full resolution). A target outside the card's range turns it into a GM sanction (Q1).
  * - `sanction` (GM): approves or declines a card use waiting for the GM; `pending`: the open card sanctions (own / all).
@@ -66,8 +71,30 @@ export const hand = campaignQuery({
   args: { characterId: v.id("characters") },
   returns: v.object({ characterId: v.id("characters"), loadout: v.array(handCardValidator), vault: v.array(handCardValidator) }),
   handler: async (ctx, { characterId }) => {
-    const { sheet } = await editableHere(ctx, characterId);
-    return { characterId, ...handOf(sheet) };
+    const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "view", "owner");
+    if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
+    if (!atLeast(permission, "edit") && !(await handSharedWithPlayers(ctx, campaign, characterId))) throw appError("FORBIDDEN");
+    return { characterId, ...handOf(readSheet(character.sheet)) };
+  },
+});
+
+/** Who sees whose hand (F7-H4): the GM's switch and the characters whose player hides their hand. Every member. */
+export const handSharing = campaignQuery({
+  need: "view",
+  args: {},
+  returns: v.object({ playersSeeHands: v.boolean(), hidden: v.array(v.id("characters")) }),
+  handler: async (ctx) => ({ playersSeeHands: playersSeeHands(ctx.campaign), hidden: await hiddenHands(ctx, ctx.campaign._id) }),
+});
+
+/** Hides (or shows again) a character's hand from the other players: its player, or the GM. The GM always sees it. */
+export const setHandHidden = campaignMutation({
+  need: "view",
+  args: { characterId: v.id("characters"), hidden: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { characterId, hidden }) => {
+    await editableHere(ctx, characterId);
+    await writeHandHidden(ctx, ctx.campaign._id, characterId, hidden);
+    return null;
   },
 });
 

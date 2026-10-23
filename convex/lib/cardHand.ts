@@ -8,6 +8,7 @@
  * rest (CB p.105), so only `afterRest` runs.
  */
 import { v, type Infer } from "convex/values";
+import { z } from "zod";
 
 import { cardAvailability, RESET_LABEL } from "../../src/lib/domain/card-effects/availability";
 import { run } from "../../src/lib/domain/card-effects/run";
@@ -19,10 +20,11 @@ import { markStress } from "../../src/lib/domain/characters/index";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
 import { actorSheetAfter, cardActor, cardIdOfEffect } from "./cardRunner";
-import { loadCharacter, readSheet, saveSheet } from "./characterSheet";
+import { loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./characterSheet";
+import { readTracker, TRACKER_SCHEMA_VERSION, writeTracker } from "./trackers";
 
 export const handUseValidator = v.object({
   useId: v.string(),
@@ -112,6 +114,49 @@ export function handOf(sheet: CharacterSheet): { loadout: HandCard[]; vault: Han
   const loadout = sheet.domainCards.loadout.flatMap((id) => handCard(sheet, id, "loadout") ?? []);
   const vault = sheet.domainCards.owned.filter((id) => !sheet.domainCards.loadout.includes(id)).flatMap((id) => handCard(sheet, id, "vault") ?? []);
   return { loadout, vault };
+}
+
+// ---------------------------------------------------------------- who sees a hand (F7-H4, dcm-bxp.99.24)
+
+/**
+ * Hiding hands (user answer 2026-10-22, dcm-bxp.99.24): "BOTH - a GM campaign switch 'Players can see each other's
+ * cards' (on by default) and, when allowed, each player can hide their own hand. The GM always sees every hand."
+ *
+ * Storage (docs/tasks/TASK-F7-H4.md): the GM's switch is the key `playersSeeHands` of the campaign's `options` record
+ * (the GM's per-campaign switches; absent = on; `resolveOptions` reads only the frame's optional rules, so the key does
+ * not leak into them). The characters whose players hide their hand are one `frameTrackers` row per campaign, key
+ * `handPrivacy`, a versioned blob `{ schemaVersion, hidden: characterId[] }` capped at the campaign's character cap:
+ * no schema change, one indexed read per `hand` call, and a player's switch never writes the campaign document that
+ * every campaign query reads (CD10).
+ */
+export const PLAYERS_SEE_HANDS = "playersSeeHands";
+export const HAND_PRIVACY_KEY = "handPrivacy";
+
+const handPrivacySchema = z.object({ hidden: z.array(z.string()).max(MAX_CHARACTERS_PER_CAMPAIGN) });
+
+/** The GM's switch "Players can see each other's cards" (on unless the GM turned it off). */
+export function playersSeeHands(campaign: Pick<Doc<"campaigns">, "options">): boolean {
+  return campaign.options?.[PLAYERS_SEE_HANDS] !== false;
+}
+
+/** The characters whose player hides their hand (TRACKER_CORRUPT on a bad blob). */
+export async function hiddenHands(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<Id<"characters">[]> {
+  const stored = await readTracker(ctx, campaignId, HAND_PRIVACY_KEY, handPrivacySchema);
+  return (stored?.hidden ?? []).flatMap((id) => ctx.db.normalizeId("characters", id) ?? []);
+}
+
+/** Hides or shows one character's hand from the other players; writes only when it changes. */
+export async function writeHandHidden(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, hidden: boolean): Promise<void> {
+  const current = await hiddenHands(ctx, campaignId);
+  if (current.includes(characterId) === hidden) return;
+  const next = hidden ? [...current, characterId] : current.filter((id) => id !== characterId);
+  await writeTracker(ctx, campaignId, HAND_PRIVACY_KEY, { hidden: next.slice(-MAX_CHARACTERS_PER_CAMPAIGN) }, TRACKER_SCHEMA_VERSION);
+}
+
+/** Whether the campaign's other players may read this character's hand: the GM's switch on and the hand not hidden. */
+export async function handSharedWithPlayers(ctx: QueryCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">): Promise<boolean> {
+  if (!playersSeeHands(campaign)) return false;
+  return !(await hiddenHands(ctx, campaign._id)).includes(characterId);
 }
 
 // ---------------------------------------------------------------- loadout and vault

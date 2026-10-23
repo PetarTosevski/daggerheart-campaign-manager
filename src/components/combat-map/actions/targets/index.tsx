@@ -6,6 +6,7 @@ import type { FunctionReturnType } from "convex/server";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { ActionsLayerProps, ActionsPanelProps } from "../../slots";
+import { useTokens } from "../../tokens/use-tokens";
 import type { OtherToken } from "../../vision/use-vision";
 import { seenTargets, useActor, useCombatTargets, type WeaponSlot } from "./state";
 
@@ -53,42 +54,82 @@ const RING_COLOUR: Record<HintTone, string> = {
   none: "#9fb2b6",
 };
 
-/**
- * Map layer (Play, players): a ring and a small label on every picked target the character sees. Drawn above the fog
- * and the tokens, never catching the pointer, so the token under it still takes clicks.
- */
-export function TargetsLayer(props: ActionsLayerProps) {
-  const { campaignId, map, viewport } = props;
-  const actor = useActor(props);
-  const { targetTokenIds, slot } = useCombatTargets();
-  const hints = useTargetHints(campaignId, actor?.characterId ?? null, map._id, slot);
-  if (!actor) return null;
-  const picked = seenTargets(targetTokenIds, actor.enemies);
-  if (picked.length === 0) return null;
+/** A ringed token as the layer draws it: where it stands, and the enemy hint's tone and band (others: "ally", no band). */
+type Ring = { id: Id<"combatTokens">; x: number; y: number; size: number; tone: HintTone | "ally"; band: RangeBand | null };
+
+/** Ring colour of a creature picked in a card dialog that is not an enemy (F7-H4). */
+const ALLY_RING = "#9fd8b0";
+
+function Rings({ rings, viewport }: { rings: readonly Ring[]; viewport: ActionsLayerProps["viewport"] }) {
+  if (rings.length === 0) return null;
   const step = viewport.cell * viewport.zoom;
   const pad = viewport.pad;
-  const byId = new Map<string, OtherToken>(actor.enemies.map((t) => [t._id, t]));
   return (
     <div className="cma-rings" aria-hidden="true" data-testid="combat-target-rings">
-      {picked.map((id) => {
-        const t = byId.get(id)!;
-        const hint = hints?.find((h) => h.tokenId === id);
-        const tone: HintTone = hints === undefined ? "ok" : hintOf(hint).tone;
-        const size = t.size * step;
+      {rings.map((r) => {
+        const size = r.size * step;
         return (
           <div
-            key={id}
+            key={r.id}
             className="cma-ring"
             data-testid="combat-target-ring"
-            data-tone={tone}
-            style={{ left: (t.x + pad) * step - 4, top: (t.y + pad) * step - 4, width: size + 8, height: size + 8, ["--ring" as string]: RING_COLOUR[tone] }}
+            data-tone={r.tone}
+            style={{
+              left: (r.x + pad) * step - 4,
+              top: (r.y + pad) * step - 4,
+              width: size + 8,
+              height: size + 8,
+              ["--ring" as string]: r.tone === "ally" ? ALLY_RING : RING_COLOUR[r.tone],
+            }}
           >
-            {hint ? <span className="cma-ring-lbl">{BAND_LABEL[hint.band]}</span> : null}
+            {r.band ? <span className="cma-ring-lbl">{BAND_LABEL[r.band]}</span> : null}
           </div>
         );
       })}
     </div>
   );
+}
+
+/**
+ * Map layer (Play): a ring on every picked target. Players: each picked token their character sees, an enemy with its
+ * band and hint colour; since F7-H4 also the allies and other creatures picked in a card dialog (`toggleExtraTarget`).
+ * The GM: the creatures picked in a card dialog while playing for a character. Drawn above the fog and the tokens, never
+ * catching the pointer, so the token under it still takes clicks.
+ */
+export function TargetsLayer(props: ActionsLayerProps) {
+  return props.role === "gm" ? <GmRings {...props} /> : <PlayerRings {...props} />;
+}
+
+function PlayerRings(props: ActionsLayerProps) {
+  const { campaignId, map, viewport } = props;
+  const actor = useActor(props);
+  const { targetTokenIds, slot } = useCombatTargets();
+  const hints = useTargetHints(campaignId, actor?.characterId ?? null, map._id, slot);
+  if (!actor) return null;
+  const seen = new Map<string, { _id: Id<"combatTokens">; x: number; y: number; size: number; side: string }>(
+    [...actor.view.pcs, ...actor.view.others].map((t) => [t._id, t]),
+  );
+  const rings: Ring[] = targetTokenIds.flatMap((id): Ring[] => {
+    const t = seen.get(id);
+    if (!t) return [];
+    if (t.side !== "enemy") return [{ id, x: t.x, y: t.y, size: t.size, tone: "ally", band: null }];
+    const hint = hints?.find((h) => h.tokenId === id);
+    return [{ id, x: t.x, y: t.y, size: t.size, tone: hints === undefined ? "ok" : hintOf(hint).tone, band: hint?.band ?? null }];
+  });
+  return <Rings rings={rings} viewport={viewport} />;
+}
+
+function GmRings(props: ActionsLayerProps) {
+  const { campaignId, map, viewport } = props;
+  const { targetTokenIds } = useCombatTargets();
+  const tokens = useTokens(campaignId, "gm", map._id);
+  if (!tokens || targetTokenIds.length === 0) return null;
+  const byId = new Map(tokens.map((t) => [t._id as string, t]));
+  const rings: Ring[] = targetTokenIds.flatMap((id): Ring[] => {
+    const t = byId.get(id);
+    return t ? [{ id, x: t.x, y: t.y, size: t.size, tone: t.side === "enemy" ? "ok" : "ally", band: null }] : [];
+  });
+  return <Rings rings={rings} viewport={viewport} />;
 }
 
 /** One row of the target list: the enemy's name, band and hint, pressed while it is a target. */
