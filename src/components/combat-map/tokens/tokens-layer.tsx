@@ -69,9 +69,10 @@ function ariaLabel(token: TokenView): string {
  * move snaps it to a square and it faces the way it moved; dragging the gold knob turns it in 15 degree steps. A
  * click selects a token (page state). Keys: R range circles of the selected token, Delete removes it (GM), arrows
  * move a focused token. In Edit mode the tokens are drawn but do not take the pointer (the editor's tools do).
+ * `noDelete` (the Encounter tab's map pane, plan combat-actions AA3b): tokens move and turn, Delete does nothing.
  */
-export function TokensLayer(props: MapLayerProps) {
-  const { campaignId, role, mode, map, viewport, selectedTokenId, onSelectToken } = props;
+export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
+  const { campaignId, role, mode, map, viewport, selectedTokenId, onSelectToken, noDelete = false } = props;
   const tokens = useTokens(campaignId, role, map._id);
   const actions = useTokenActions(campaignId, map);
   const rings = useRings();
@@ -121,7 +122,7 @@ export function TokensLayer(props: MapLayerProps) {
     }
     if (!selected) return;
     if (e.key === "r" || e.key === "R") rings.toggle(selected._id);
-    if (gm && (e.key === "Delete" || e.key === "Backspace")) {
+    if (gm && !noDelete && (e.key === "Delete" || e.key === "Backspace")) {
       e.preventDefault();
       onSelectToken(null);
       void actions.remove(selected._id);

@@ -3,13 +3,15 @@
  * live map, PCs on the map with one; Q18), the spotlight note (CB p.153), the Fear question (Q19: nothing paid until
  * the GM taps Spend, then the same intent again with spendFear), Attack fired once per click with the picked targets,
  * Use on every non-passive feature (passives are modifiers), the GM's result (roll, hit / miss, damage, waiting), the
- * reaction offers (default No), and the reaction windows with Resolve now (Q17).
+ * reaction offers (default No), and the reaction windows with Resolve now (Q17). AA3b: a feature that needs choices
+ * (AA2c's featureAsk) asks them in a dialog before useFeature; a used-up feature says why Use is off.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { StatBlockAdversary } from "@/components/adversaries/catalogue/stat-block";
+import { askFear, choiceArgs, initialAnswers, missing, needsChoices, pick, type FeatureAsk } from "@/components/adversaries/tracker/actions/ask";
 import { fearPrompt, rollText, spotlightNote, targetOptions, toggled } from "@/components/adversaries/tracker/actions/model";
 import { ActionPanel } from "@/components/adversaries/tracker/actions/panel";
 import { useAdversaryActions } from "@/components/adversaries/tracker/actions/use-adversary-actions";
@@ -22,8 +24,16 @@ const results: Record<string, unknown[]> = {};
 const queries: Record<string, unknown> = {};
 const functionName = (ref: unknown) => String((ref as Record<symbol, unknown>)[Symbol.for("functionName")] ?? ref);
 
+const queried: { name: string; args: unknown }[] = [];
+
 vi.mock("convex/react", () => ({
-  useQuery: (ref: unknown, args: unknown) => (args === "skip" ? undefined : queries[functionName(ref)]),
+  useQuery: (ref: unknown, args: unknown) => {
+    if (args === "skip") return undefined;
+    const name = functionName(ref);
+    queried.push({ name, args });
+    const q = queries[name];
+    return typeof q === "function" ? (q as (a: unknown) => unknown)(args) : q;
+  },
   useMutation: (ref: unknown) => {
     const name = functionName(ref);
     const run = async (args: Record<string, unknown>) => {
@@ -34,8 +44,21 @@ vi.mock("convex/react", () => ({
   },
 }));
 
+beforeAll(() => {
+  // jsdom has no showModal/close; model the browser: close() drops `open` and fires the dialog's close event.
+  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+    if (!this.hasAttribute("open")) return;
+    this.removeAttribute("open");
+    this.dispatchEvent(new Event("close"));
+  };
+});
+
 afterEach(() => {
   calls.length = 0;
+  queried.length = 0;
   for (const k of Object.keys(results)) delete results[k];
   for (const k of Object.keys(queries)) delete queries[k];
 });
@@ -84,7 +107,7 @@ const RESOLVED = {
 };
 
 /** The panel as the tracker mounts it, with its own target state and the real hook over the mocked Convex. */
-function Harness({ fear = 3, mode = "party" as "party" | "map", spotNote = null as string | null, onDice = () => {} }) {
+function Harness({ fear = 3, mode = "party" as "party" | "map", spotNote = null as string | null, onDice = () => {}, defeated = false }) {
   const acts = useAdversaryActions(CAMPAIGN);
   const [targets, setTargets] = useState<string[]>([]);
   const { options } = targetOptions({ party: PARTY, tokens: null, instanceId: "i1" });
@@ -93,7 +116,7 @@ function Harness({ fear = 3, mode = "party" as "party" | "map", spotNote = null 
       instanceId="i1"
       actor="Bear"
       block={BEAR}
-      defeated={false}
+      defeated={defeated}
       fear={fear}
       spotNote={spotNote}
       mode={mode}
@@ -102,9 +125,94 @@ function Harness({ fear = 3, mode = "party" as "party" | "map", spotNote = null 
       onTargets={setTargets}
       acts={acts}
       onDice={onDice}
+      adversaries={[
+        { id: "i1", name: "Bear" },
+        { id: "i2", name: "Wolf" },
+      ]}
     />
   );
 }
+
+/** A featureAsk with nothing to ask (Bite: one PC target, which the panel's chips name). */
+const PLAIN_ASK: FeatureAsk = {
+  feature: "Bite",
+  useId: "main",
+  uses: [{ id: "main", activation: "action" }],
+  automated: true,
+  activation: "action",
+  needsSpotlight: true,
+  spotlit: false,
+  available: true,
+  unavailable: [],
+  attack: true,
+  followUpAttack: false,
+  targets: { side: "enemy", range: "melee", count: "one", max: 1, sight: true },
+  picked: null,
+  allies: null,
+  followUp: null,
+  trigger: null,
+  options: [],
+  optionals: [],
+  situations: [],
+  splits: [],
+  eitherCosts: [],
+  fear: { total: 0, spotlight: 0, feature: 0, perTrigger: false, gmFear: 3, enough: true },
+  stress: 1,
+  experiences: [],
+  reactions: [],
+};
+
+/** Roar asks: pick a howl (one of two), an optional drag (1 Fear), a situation, an ally, and how to pay (Fear or Stress). */
+const ROAR_ASK: FeatureAsk = {
+  ...PLAIN_ASK,
+  feature: "Roar",
+  attack: false,
+  stress: 0,
+  targets: { side: "enemy", range: "close", count: "upTo", max: 2, sight: false },
+  allies: { side: "ally", range: "far", count: "one", max: 1, sight: false },
+  options: [{ id: "howl", label: "Howl", count: 1, distinct: true, options: [{ id: "fear", label: "Frighten" }, { id: "rally", label: "Rally" }] }],
+  optionals: [{ id: "drag", label: "Drag the target", fear: 1, stress: 0 }],
+  situations: [{ text: "The Bear is cornered", feature: "Roar" }],
+  eitherCosts: [{ index: 0, options: [{ index: 0, fear: 1, stress: 0, hp: 0, label: "Spend a Fear" }, { index: 1, fear: 0, stress: 1, hp: 0, label: "Mark a Stress" }] }],
+  fear: { total: 1, spotlight: 0, feature: 1, perTrigger: false, gmFear: 3, enough: true },
+};
+
+describe("feature asks (AA3b)", () => {
+  it("asks only when the use needs more than the panel's PC targets", () => {
+    expect(needsChoices(PLAIN_ASK)).toBe(false);
+    expect(needsChoices({ ...PLAIN_ASK, targets: { side: "enemy", range: "close", count: "all", max: null, sight: false } })).toBe(false);
+    expect(needsChoices(ROAR_ASK)).toBe(true);
+    expect(needsChoices({ ...PLAIN_ASK, optionals: ROAR_ASK.optionals })).toBe(true);
+    expect(needsChoices({ ...PLAIN_ASK, targets: { side: "ally", range: "far", count: "one", max: 1, sight: false } })).toBe(true);
+    expect(needsChoices({ ...PLAIN_ASK, trigger: { kind: "situation", text: "When hit", source: false, subject: false, amount: false } })).toBe(false);
+    expect(needsChoices({ ...PLAIN_ASK, trigger: { kind: "onDamaged", source: false, subject: false, amount: true } })).toBe(true);
+    expect(needsChoices({ ...PLAIN_ASK, uses: [{ id: "main", activation: "action" }, { id: "react", activation: "reaction" }] })).toBe(true);
+  });
+
+  it("starts from the panel's picks, says what is missing, and builds useFeature's arguments", () => {
+    const a = initialAnswers(ROAR_ASK, ["mira", "tabby", "bram"]);
+    expect(a.targets).toEqual(["mira", "tabby"]);
+    expect(a.eitherCosts).toEqual([0]);
+    expect(missing(ROAR_ASK, a)).toEqual(["Pick one for allies", "Pick 1 for Howl"]);
+    const done = { ...a, allies: ["i2"], options: { howl: ["rally"] }, optionals: ["drag"], eitherCosts: [1] };
+    expect(missing(ROAR_ASK, done)).toEqual([]);
+    expect(askFear(ROAR_ASK, a)).toBe(1);
+    expect(askFear(ROAR_ASK, done)).toBe(0);
+    expect(choiceArgs(ROAR_ASK, done, ["mira"])).toEqual({
+      useId: "main",
+      targets: ["mira", "tabby"],
+      allies: ["i2"],
+      options: [{ id: "howl", values: ["rally"] }],
+      optionals: ["drag"],
+      eitherCosts: [1],
+    });
+    // A use without a pickable target list sends the panel's targets.
+    const noList = { ...PLAIN_ASK, targets: null };
+    expect(choiceArgs(noList, initialAnswers(noList, []), ["mira"])).toEqual({ useId: "main", targets: ["mira"] });
+    expect(pick(["a"], "b", 1)).toEqual(["b"]);
+    expect(pick(["a", "b"], "c", 2)).toEqual(["a", "b"]);
+  });
+});
 
 describe("model", () => {
   it("targets every active party PC without a live map, and only PCs with a token when the adversary is on the map (Q18)", () => {
@@ -282,6 +390,116 @@ describe("ActionPanel", () => {
     });
     expect(within(panel).queryByRole("region", { name: "Action result" })).toBeNull();
     expect(within(panel).getByRole("status")).not.toBeEmptyDOMElement();
+  });
+});
+
+describe("ActionPanel feature choices (AA3b)", () => {
+  const asks = (byFeature: Record<string, FeatureAsk>) => (args: { feature: string; use?: string }) => byFeature[args.feature];
+
+  it("asks a feature's choices in a dialog before useFeature, then sends them once", async () => {
+    queries["adversaryActions:featureAsk"] = asks({ Roar: ROAR_ASK, Bite: PLAIN_ASK, Momentum: { ...PLAIN_ASK, feature: "Momentum" } });
+    results["adversaryActions:useFeature"] = [{ ...RESOLVED, roll: null, targets: [], offers: [], prompts: [], fearDelta: 0 }];
+    render(<Harness />);
+    const panel = screen.getByRole("region", { name: "Adversary actions" });
+    fireEvent.click(within(panel).getByRole("button", { name: "Mira" }));
+    const use = within(panel).getByRole("button", { name: "Use Roar (1 Fear)" });
+    expect(use).toHaveAttribute("aria-haspopup", "dialog");
+    fireEvent.click(use);
+    expect(calls).toHaveLength(0);
+
+    const dialog = screen.getByRole("dialog", { name: "Bear: Roar" });
+    // The panel's pick carries over; the ally list leaves the Bear itself out.
+    expect(within(dialog).getByRole("checkbox", { name: "Mira" })).toBeChecked();
+    expect(within(dialog).queryByRole("radio", { name: "Bear" })).toBeNull();
+    const submit = within(dialog).getByRole("button", { name: "Use Roar" });
+    expect(submit).toBeDisabled();
+    expect(dialog).toHaveTextContent("Pick one for allies. Pick 1 for Howl.");
+    expect(within(dialog).getByRole("checkbox", { name: "Drag the target (1 Fear)" })).not.toBeChecked();
+    expect(within(dialog).getByTestId("feature-ask-cost")).toHaveTextContent("Asks 1 Fear (you hold 3).");
+
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Wolf" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Rally" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Drag the target (1 Fear)" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "The Bear is cornered" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Mark a Stress" }));
+    expect(within(dialog).getByTestId("feature-ask-cost")).toHaveTextContent("No Fear up front.");
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Use Roar" }));
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      name: "adversaryActions:useFeature",
+      args: {
+        instanceId: "i1",
+        feature: "Roar",
+        useId: "main",
+        targets: ["mira"],
+        allies: ["i2"],
+        options: [{ id: "howl", values: ["rally"] }],
+        optionals: ["drag"],
+        situations: ["The Bear is cornered"],
+        eitherCosts: [1],
+      },
+    });
+    expect(screen.getByRole("region", { name: "Action result" })).toHaveTextContent("Bear uses Roar");
+  });
+
+  it("Cancel closes the dialog without a call; a feature with nothing to ask fires at once", async () => {
+    queries["adversaryActions:featureAsk"] = asks({ Roar: ROAR_ASK, Bite: PLAIN_ASK, Momentum: { ...PLAIN_ASK, feature: "Momentum" } });
+    results["adversaryActions:useFeature"] = [{ ...RESOLVED, roll: null, targets: [], offers: [], prompts: [], fearDelta: 0 }];
+    render(<Harness />);
+    const panel = screen.getByRole("region", { name: "Adversary actions" });
+    fireEvent.click(within(panel).getByRole("button", { name: "Use Roar (1 Fear)" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Bear: Roar" })).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toHaveLength(0);
+
+    expect(within(panel).getByRole("button", { name: "Use Bite" })).not.toHaveAttribute("aria-haspopup");
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Use Bite" }));
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls).toEqual([expect.objectContaining({ name: "adversaryActions:useFeature", args: expect.objectContaining({ feature: "Bite" }) })]);
+  });
+
+  it("a feature with two uses asks which, reading the other use's featureAsk", () => {
+    const twoUses: FeatureAsk = { ...PLAIN_ASK, feature: "Momentum", uses: [{ id: "main", activation: "action" }, { id: "react", activation: "reaction" }] };
+    queries["adversaryActions:featureAsk"] = (args: { feature: string; use?: string }) =>
+      args.use === "react" ? { ...twoUses, useId: "react", activation: "reaction", optionals: [{ id: "extra", label: "Gain an extra Fear", fear: 0, stress: 0 }] } : args.feature === "Momentum" ? twoUses : PLAIN_ASK;
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "Use Momentum" }));
+    const dialog = screen.getByRole("dialog", { name: "Bear: Momentum" });
+    expect(within(dialog).getByRole("radio", { name: "Action 1" })).toBeChecked();
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Reaction 2" }));
+    expect(queried).toContainEqual({ name: "adversaryActions:featureAsk", args: expect.objectContaining({ feature: "Momentum", use: "react" }) });
+    expect(within(dialog).getByRole("checkbox", { name: "Gain an extra Fear" })).toBeInTheDocument();
+  });
+
+  it("a used-up feature's Use is off with the server's reason; a defeated adversary reads no featureAsk", () => {
+    queries["adversaryActions:featureAsk"] = asks({ Roar: { ...ROAR_ASK, available: false, unavailable: ["Used up this scene"] }, Bite: PLAIN_ASK, Momentum: PLAIN_ASK });
+    const { unmount } = render(<Harness />);
+    const roar = screen.getByRole("button", { name: "Use Roar (1 Fear)" });
+    expect(roar).toBeDisabled();
+    expect(roar.closest("li")).toHaveTextContent("Used up this scene");
+    unmount();
+    queried.length = 0;
+    render(<Harness defeated />);
+    expect(queried.filter((q) => q.name === "adversaryActions:featureAsk")).toHaveLength(0);
+  });
+
+  it("a refused featureAsk keeps the plain Use, which sends at once", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    queries["adversaryActions:featureAsk"] = () => {
+      throw new Error("ADVERSARY_FEATURE_UNAVAILABLE");
+    };
+    results["adversaryActions:useFeature"] = [{ ...RESOLVED, roll: null, targets: [], offers: [], prompts: [], fearDelta: 0 }];
+    render(<Harness />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Use Bite" }));
+    });
+    expect(calls).toEqual([expect.objectContaining({ name: "adversaryActions:useFeature" })]);
+    vi.restoreAllMocks();
   });
 });
 

@@ -6,7 +6,8 @@ import { VIEWPORTS, bardDraft, expectNoHorizontalScroll, openCombatMap } from ".
 // Shots for the AA3 task doc (E2E_VISUAL=1), at 1440 and 390: the Encounter tab with the selected Bandit's actions
 // panel (a target picked), the "Spend 1 Fear?" question, the attack result with the open reaction window, and the
 // live map pane. The board (reference/designs/project/Adversaries.dc.html) has no actions panel; the shots are
-// compared with its stat block and tracker regions for the parchment, chip and colour language.
+// compared with its stat block and tracker regions for the parchment, chip and colour language. AA3b: the feature
+// choices dialog (Deeproot Defender's Grab and Drag) and the stat block head without the old Roll attack / Roll damage.
 
 const OUT = "test-results/visual/CA-AA3";
 
@@ -36,6 +37,7 @@ async function scene(page: Page) {
   const { customId } = await client.mutation(api.customAdversaries.create, { campaignId, adversary: SURE_BANDIT, idempotencyKey: crypto.randomUUID() });
   const { encounterId } = await client.mutation(api.encounters.create, { campaignId, name: "Road ambush", idempotencyKey: crypto.randomUUID() });
   const { instanceIds } = await client.mutation(api.encounters.addAdversary, { campaignId, encounterId, source: { kind: "custom", customId }, count: 1, summoned: false, idempotencyKey: crypto.randomUUID() });
+  await client.mutation(api.encounters.addAdversary, { campaignId, encounterId, source: { kind: "srd", adversaryId: "deeproot-defender" }, count: 1, summoned: false, idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.encounters.start, { campaignId, encounterId });
   const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "medium", name: "Old road", idempotencyKey: crypto.randomUUID() });
   await client.mutation(api.combatTokens.addParty, { campaignId, mapId, idempotencyKey: crypto.randomUUID() });
@@ -80,5 +82,20 @@ test("AA3 actions panel, Fear question, result with the reaction window, and the
     if (w < 640) await expectNoHorizontalScroll(page);
     await windows.getByRole("button", { name: "Resolve now: Bandit hit Mira" }).click();
     await expect(windows).toHaveCount(0);
+
+    // AA3b: a feature with choices asks them in a dialog first.
+    await tracker.getByRole("article", { name: "Deeproot Defender", exact: true }).getByRole("button", { name: "Deeproot Defender", exact: true }).click();
+    const defender = tracker.getByRole("article", { name: "Deeproot Defender stat block" });
+    await defender.getByRole("group", { name: "Targets" }).getByRole("button", { name: "Mira" }).click();
+    const use = defender.getByRole("button", { name: "Use Grab and Drag (1 Fear)" });
+    await expect(use).toHaveAttribute("aria-haspopup", "dialog");
+    await use.click();
+    const dialog = page.getByRole("dialog", { name: "Deeproot Defender: Grab and Drag" });
+    await expect(dialog.getByRole("button", { name: "Use Grab and Drag" })).toBeVisible();
+    await dialog.screenshot({ path: `${OUT}/choices-dialog-${w}.png`, animations: "disabled" });
+    await page.screenshot({ path: `${OUT}/choices-page-${w}.png`, animations: "disabled" });
+    if (w < 640) await expectNoHorizontalScroll(page);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
   }
 });

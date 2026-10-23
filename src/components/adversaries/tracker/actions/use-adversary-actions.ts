@@ -65,6 +65,8 @@ export function useAdversaryActions(campaignId: Id<"campaigns">) {
   }
 
   return {
+    /** The campaign these actions are for (AA3b: the panel's featureAsk reads it). */
+    campaignId,
     confirm,
     result,
     error,
