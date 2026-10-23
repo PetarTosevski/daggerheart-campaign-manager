@@ -272,6 +272,8 @@ async function viewsOf(ctx: CampaignCtx<QueryCtx>, tokens: Doc<"combatTokens">[]
       ...(gm ? { revealedTo: token.revealedTo } : {}),
     };
     const { ref } = token;
+    // A companion token (token refs widened by sheet-drawer SD0, Q4): its view is SD-C's; nothing places one before it.
+    if (ref.kind === "companion") continue;
     if (ref.kind === "custom") {
       views.push({
         ...base,

@@ -219,7 +219,8 @@ export function instanceUses(instance: Doc<"encounterAdversaries">, encounter: D
 export function storedUses(instance: Doc<"encounterAdversaries">, encounter: Doc<"encounters">, block: Block, added: readonly FeatureUse[], session: number | undefined): InstanceFeatureUse[] {
   const scene = sceneOf(encounter);
   const kept = (instance.featureUses ?? []).filter((u) => useCounts(u, scene, session));
-  const fresh = added.map((u) => ({ key: u.key, until: u.until, scene, ...(session !== undefined && limitPerOf(block, u.key) === "session" ? { session } : {}) }));
+  // A sheet's `featureUses` gained `scene` (sheet-drawer SD0); an instance's scene limit is `session` stamped with `scene`.
+  const fresh = added.map((u) => ({ key: u.key, until: u.until === "scene" ? ("session" as const) : u.until, scene, ...(session !== undefined && limitPerOf(block, u.key) === "session" ? { session } : {}) }));
   return [...kept, ...fresh].slice(-MAX_INSTANCE_FEATURE_USES);
 }
 

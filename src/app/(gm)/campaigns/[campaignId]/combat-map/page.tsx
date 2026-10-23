@@ -2,18 +2,20 @@
 
 import "./combat-map.css";
 
+import { useQuery } from "convex/react";
 import { Component, useState, type ReactNode } from "react";
 
 import { ActionsPanel, ActionsProvider, Resolutions, TargetsLayer } from "@/components/combat-map/actions";
 import { AdversaryPanel, HitFlashLayer } from "@/components/combat-map/actions/adversary";
 import { IncomingHit } from "@/components/combat-map/actions/reactions";
+import { SheetDrawer } from "@/components/combat-map/drawer";
 import { EditorLayer, EditorProvider, EditToolsPanel } from "@/components/combat-map/editor";
 import { ScenePanel } from "@/components/combat-map/generate";
 import { MapBoard, MapHeaderLine, MapsPanel, useCurrentMap } from "@/components/combat-map/maps";
 import { PacksLink } from "@/components/combat-map/packs";
 import { StyleSwitch } from "@/components/combat-map/style";
 import { LiveSessionChip } from "@/components/sessions/session-chip";
-import type { CombatMode, CombatPageState, CombatRole, MapLayerProps } from "@/components/combat-map/slots";
+import { sheetCharacterId, type CombatMode, type CombatPageState, type CombatRole, type MapLayerProps } from "@/components/combat-map/slots";
 import { CombatantsPanel, TokenPanel, TokensLayer, TokensProvider } from "@/components/combat-map/tokens";
 import { LightPill, PreviewPicker, RevealPanel, VisionLayer, VisionPanel, VisionProvider } from "@/components/combat-map/vision";
 import { MAX_FEAR } from "@/lib/domain/fear";
@@ -231,6 +233,36 @@ function PlayerColumn({ state }: { state: CombatPageState }) {
   );
 }
 
+/** Opens the sheet drawer for `characterId` (plan sheet-drawer, SD0). */
+type OpenSheet = (characterId: Id<"characters">) => void;
+
+/**
+ * The Sheet button (plan sheet-drawer, SD0): in Play, for a player whose PC has a token on the map and for the GM while
+ * a PC token is selected (`sheetCharacterId`). `placement` picks the top bar (hidden at 760 px and below) or the bar
+ * under the map (shown only there).
+ */
+function SheetButton({ state, placement, onOpen }: { state: CombatPageState; placement: "top" | "bottom"; onOpen: OpenSheet }) {
+  const tokens = useQuery(api.combatTokens.party, state.map && state.mode === "play" ? { campaignId: state.campaignId, mapId: state.map._id } : "skip");
+  const characterId = tokens ? sheetCharacterId(state.role, tokens, state.selectedTokenId) : null;
+  if (characterId === null) return null;
+  const button = (
+    <button
+      type="button"
+      className="cm-btn cm-sm"
+      aria-haspopup="dialog"
+      data-testid={`sheet-button-${placement}`}
+      onClick={() => onOpen(characterId)}
+    >
+      Sheet
+    </button>
+  );
+  return placement === "top" ? (
+    <div className="max-[760px]:hidden">{button}</div>
+  ) : (
+    <div className="hidden justify-center py-2 max-[760px]:flex">{button}</div>
+  );
+}
+
 /** Everything below the header that depends on the map on screen. */
 function CombatBody({ campaign, role }: { campaign: CampaignSummary; role: CombatRole }) {
   const campaignId = campaign._id;
@@ -238,6 +270,9 @@ function CombatBody({ campaign, role }: { campaign: CampaignSummary; role: Comba
   const [mode, setMode] = useState<CombatMode>("play");
   const [selectedTokenId, setSelectedTokenId] = useState<Id<"combatTokens"> | null>(null);
   const [previewCharacterId, setPreviewCharacterId] = useState<Id<"characters"> | null>(null);
+  // The sheet drawer (SD0): mounted from its first open on and kept mounted, so closing returns focus to the button.
+  const [sheet, setSheet] = useState<{ characterId: Id<"characters">; open: boolean } | null>(null);
+  const openSheet: OpenSheet = (characterId) => setSheet({ characterId, open: true });
   const current = useCurrentMap({ campaignId, role, selectedMapId });
 
   function selectMap(mapId: Id<"combatMaps"> | null) {
@@ -260,7 +295,7 @@ function CombatBody({ campaign, role }: { campaign: CampaignSummary; role: Comba
 
   return (
     <>
-      <CombatHeader campaign={campaign} state={state} loading={current === undefined} />
+      <CombatHeader campaign={campaign} state={state} loading={current === undefined} onOpenSheet={openSheet} />
       <main className={role === "player" && !state.map ? "cm-main cm-solo" : "cm-main"}>
         {role === "gm" ? (
           <aside className="cm-aside" aria-label="Map tools">
@@ -281,14 +316,29 @@ function CombatBody({ campaign, role }: { campaign: CampaignSummary; role: Comba
               <MapBoard {...state} renderLayers={(layer) => <Layers {...layer} />} />
             </SlotBoundary>
           )}
+          <SlotBoundary label="The Sheet button">
+            <SheetButton state={state} placement="bottom" onOpen={openSheet} />
+          </SlotBoundary>
         </div>
       </main>
+      {sheet ? (
+        <SlotBoundary label="The sheet drawer">
+          <SheetDrawer
+            campaignId={campaignId}
+            role={role}
+            map={state.map}
+            characterId={sheet.characterId}
+            open={sheet.open}
+            onClose={() => setSheet({ ...sheet, open: false })}
+          />
+        </SlotBoundary>
+      ) : null}
     </>
   );
 }
 
 /** The board's page header: campaign name, title, header line, light pill, GM Fear and the preview picker. */
-function CombatHeader({ campaign, state, loading }: { campaign: CampaignSummary; state: CombatPageState; loading: boolean }) {
+function CombatHeader({ campaign, state, loading, onOpenSheet }: { campaign: CampaignSummary; state: CombatPageState; loading: boolean; onOpenSheet: OpenSheet }) {
   return (
     <header className="cm-head">
       <div className="cm-head-text">
@@ -305,6 +355,9 @@ function CombatHeader({ campaign, state, loading }: { campaign: CampaignSummary;
         </div>
       </div>
       <div className="cm-head-tools">
+        <SlotBoundary label="The Sheet button">
+          <SheetButton state={state} placement="top" onOpen={onOpenSheet} />
+        </SlotBoundary>
         <SlotBoundary label="Light">
           <LightPill campaignId={campaign._id} />
         </SlotBoundary>

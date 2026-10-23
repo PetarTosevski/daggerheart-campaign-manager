@@ -24,6 +24,8 @@ crons.cron("expire photo imports", "41 * * * *", internal.cleanup.expirePhotoImp
 // Combat requests (plan combat-actions AA0): GM sanctions and reaction windows resolved or declined over a day ago;
 // hourly, so none outlives its day by more than another hour.
 crons.cron("expire combat requests", "11 * * * *", internal.cleanup.expireCombatRequests, {});
+// Map areas (plan sheet-drawer SD0, Q14): areas of ended scenes and sessions, a day after they ended; hourly.
+crons.cron("expire combat areas", "19 * * * *", internal.cleanup.expireCombatAreas, {});
 // Lorekeeper (D13 L0): usage counters older than 13 months; hourly, answers stuck in pending/streaming for over
 // 10 minutes end as errors. Conversations are never expired (Q10: kept until their asker deletes them).
 crons.cron("expire lorekeeper usage", "47 4 * * *", internal.lorekeeperRetention.expireUsage, {});

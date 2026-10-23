@@ -32,8 +32,20 @@ export type Severity = "minor" | "major" | "severe";
 /** Tracks a creature marks. `armor` is Armor Slots (PCs only). */
 export type Track = "hp" | "stress" | "armor";
 
-/** What a cost or a "spent" amount draws from. `fear` and `gold` are for AA0 (adversary features). */
-export type Resource = "hope" | "stress" | "hp" | "armor" | "tokens" | "fear" | "gold";
+/**
+ * What a cost or a "spent" amount draws from. `fear` and `gold` are for AA0 (adversary features).
+ * Plan sheet-drawer, SD0 (NV1, widened): `favor` (Warlock Favor, HF p.14, the sheet's `classState.favor`), `focus` (the
+ * Martial Artist's Focus, HF p.12, `classState.martial.focus`) and `heldDie` (a Rally, Prayer, Patron, Slayer or Combo
+ * die spent; as a `spent` number it is the spent dice's total value: "spend a Prayer Die to reduce incoming damage by
+ * the die's value", CB p.44).
+ */
+export type Resource = "hope" | "stress" | "hp" | "armor" | "tokens" | "fear" | "gold" | "favor" | "focus" | "heldDie";
+
+/**
+ * The held dice a feature can spend or roll (NV1). The sheet keeps Rally, Prayer, Patron and Combo dice in `heldDice`
+ * (`HELD_DIE_KINDS`) and Slayer Dice in `sessionFeatures.slayerDice`; D5 owns both records (NV2 `delegate`).
+ */
+export type HeldDieKind = "rally" | "prayer" | "patron" | "slayer" | "combo";
 
 /**
  * A number on a card. Most are `fixed`; the rest are read from the actor, the move or the target when the runner
@@ -68,8 +80,12 @@ export type NumberSource =
   | { kind: "triggerAmount" }
   /** Cards of a domain in the actor's loadout (or loadout and vault): Fane of the Wilds. */
   | { kind: "domainCards"; domain: DomainId; includeVault: boolean }
-  /** Rolled when the step resolves: "1d4 Stress", "clear 1d4 Hit Points". `keep: "highest"` for "the highest result rolled". */
-  | { kind: "dice"; dice: DiceExpr; keep?: "sum" | "highest" }
+  /**
+   * Rolled when the step resolves: "1d4 Stress", "clear 1d4 Hit Points". `keep: "highest"` for "the highest result rolled".
+   * SD0 (NV12, widened): `keep: "countAtLeast"` counts the dice that rolled `atLeast` or higher (Deathless Embrace "clear a
+   * Hit Point for each result of 4 or higher", HF p.13); without `atLeast` it counts every die.
+   */
+  | { kind: "dice"; dice: DiceExpr; keep?: "sum" | "highest" | "countAtLeast"; atLeast?: number }
   /** The total of the latest dice this use rolled (a `dice` source or a `check`): Thorn Skin "deal that amount of damage back". */
   | { kind: "lastRoll" }
   /** One value per tier (Bare Bones: "Tier 1: 9/19 • Tier 2: 11/24 …" as two sources). */
@@ -97,6 +113,12 @@ export interface DiceExpr {
   count: NumberSource;
   sides: DieSides;
   plus?: NumberSource;
+  /**
+   * SD0 (NV1, widened): the dice are the actor's own class die, whose size the sheet holds (Patron Dice, HF p.14: "roll a
+   * number of Patron Dice equal to the Favor spent"; the Rally, Combo and Unstoppable dice). `sides` is then the size at
+   * level 1, used when the sheet has none.
+   */
+  sidesOf?: HeldDieKind | "unstoppable";
 }
 
 /** How long a condition or effect lasts. Maps onto the sheet's `EFFECT_UNTIL` where one exists (src/lib/validation/characters.ts). */
@@ -118,6 +140,33 @@ export type Duration =
   /** "permanently". */
   | "permanent";
 
+/**
+ * SD0 (NV5): events that end a lasting condition or effect besides its `Duration`, which still ends it too ("until you
+ * take Severe damage or your next rest", Elemental Incarnation, CB p.30: duration `rest`, `endsOn: ["takeSevere"]`).
+ * With duration `manual` only the events (and the End button) end it. The engine watches them (SD1, SD4, SD5, SD8):
+ * - `takeSevere`: the bearer takes Severe damage (Patron's Mantle, HF p.14). `dealSevere`: the bearer deals Severe
+ *   damage (Patron's Fury, HF p.15). `markHp`: the bearer marks a Hit Point (Night's Glamour, HF p.17).
+ * - `rollWithFear`: the bearer rolls with Fear (Vanishing Act, CB p.42). `bearerFails`: the bearer fails a roll
+ *   (Draining Bane's d12 attacks, HF p.14). `bearerMarksStress`: the bearer marks a Stress (Midnight Vine: "until it
+ *   marks a Stress to clear this condition", HF p.9).
+ * - `usedAgain`: the same feature is used again (Eye of the Storm, HF p.23). `dealDamage`: the bearer deals damage
+ *   (Night's Glamour). `attackSucceeds`: the bearer's next successful attack (Menacing Reach, HF p.15). `lastHp`: the
+ *   bearer marks their last Hit Point (Beastform, CB p.30; martial stances, HF p.12). `majorDamage`: the bearer takes
+ *   Major or greater damage (the "Fragile" Beastforms, CB p.32).
+ */
+export type EndEvent =
+  | "takeSevere"
+  | "dealSevere"
+  | "markHp"
+  | "rollWithFear"
+  | "bearerFails"
+  | "bearerMarksStress"
+  | "usedAgain"
+  | "dealDamage"
+  | "attackSucceeds"
+  | "lastHp"
+  | "majorDamage";
+
 /** The conditions the encounter tracker and the sheet already know (src/lib/validation/characters.ts, convex/lib/validators/encounters.ts). */
 export type StandardCondition = "vulnerable" | "restrained" | "hidden" | "distracted" | "cloaked" | "unconscious";
 
@@ -133,6 +182,20 @@ export type ConditionRef =
 
 /** Which weapon an attack or damage uses. `either`: the player picks primary or secondary ("one of your active weapons"). */
 export type WeaponRef = "primary" | "secondary" | "either";
+
+/**
+ * SD0 (NV9): a creature a defence or bonus is keyed to, read from the map and the sheet when the attack resolves:
+ * - `tagged`: the creature carrying the actor's tag (Ranger's Focus, Marked for Death; the instance's GM `tags`).
+ * - `hexed`: a creature the actor Hexed (`classState.hexes`, Vexing Malison, HF p.16).
+ * - `inCompanionReach`: a creature within Melee range of the actor's companion (Battle-Bonded, CB p.38).
+ * - `damagedAlly`: the adversary that damaged an ally within `range` of the actor (Act of Reprisal, Q8: the ally is
+ *   within Melee of the Guardian, CB p.36).
+ */
+export type CreatureKey =
+  | { kind: "tagged"; tag: string }
+  | { kind: "hexed" }
+  | { kind: "inCompanionReach" }
+  | { kind: "damagedAlly"; range: Range };
 
 /** Which rolls a modifier or trigger concerns. */
 export type RollFilter = "any" | "action" | "attack" | "weaponAttack" | "spellcast" | "reaction" | "damage" | TraitId;
@@ -176,6 +239,17 @@ export interface TargetSpec {
   excludeFlying?: boolean;
   /** Disintegration Wave: "adversaries … that have a Difficulty of 18 or lower" (the server filters; players see no number, U1). */
   maxDifficulty?: number;
+  /**
+   * SD0 (NV13, widened): only the actor's companion fits (Q4: the Beastbound companion's ally token next to the ranger's
+   * PC token). With `side: "ally"`: "your companion" (Loyal Friend, CB p.38). A recipient `picked` with this spec is the
+   * companion recipient.
+   */
+  companion?: boolean;
+  /**
+   * SD0 (NV10, widened): "+1 range" steps on this spec's `range` for this use (Manipulate Magic, CB p.47: "Extend the
+   * spell or attack's reach by one range"). The weapon's own range changes through a `range` mod instead.
+   */
+  rangeSteps?: number;
 }
 
 /** The use acts on the trigger's creature instead of picked targets (Encore: "against that same target"; Rapid Riposte: the attacker). */
@@ -231,6 +305,14 @@ export type CheckTest =
 
 // ---------------------------------------------------------------- costs, limits, requirements
 
+/**
+ * SD0 (NV1): the pool a `tokens` cost spends from. `card` (the default) is the tokens on this card or feature (sheet
+ * `cardTokens`); `favor` is Warlock Favor ("spend a Favor", HF p.14); `focus` is the Martial Artist's Focus ("spend a
+ * Focus", HF p.11-12); a held-die kind spends that many held dice of the kind (Prayer Dice, CB p.44; Rally Dice, CB p.28;
+ * Slayer Dice, CB p.48), whose values a `spent` `heldDie` number reads.
+ */
+export type TokenPool = "card" | "favor" | "focus" | HeldDieKind;
+
 /** A price. Upfront costs are paid before the roll (and refuse the use when unaffordable, CARD_COST_UNPAID). */
 export type Cost =
   /** "spend a Hope", "spend any number of Hope" (amount `chosen`). Hope gained on the same roll may pay (R8, CB p.90). */
@@ -241,8 +323,8 @@ export type Cost =
   | { kind: "hp"; amount: NumberSource }
   /** "mark an Armor Slot" (Grace-Touched). */
   | { kind: "armor"; amount: NumberSource }
-  /** "spend a token from this card". */
-  | { kind: "tokens"; amount: NumberSource }
+  /** "spend a token from this card". SD0 (NV1, widened): `pool` names another pool to spend from (`TokenPool`). */
+  | { kind: "tokens"; amount: NumberSource; pool?: TokenPool }
   /** "Spend a Fear" (AA0: adversary features, CB p.194). */
   | { kind: "fear"; amount: NumberSource }
   /** "Spend 3 handfuls of gold" (AA0). */
@@ -285,8 +367,40 @@ export type Requirement =
   | { kind: "noEnemyWithin"; range: Range }
   /** A sheet effect this card created is active (Force of Nature's form, Twilight Toll's target, Smite charged). */
   | { kind: "effectActive"; cardId: string }
-  /** "While you're shrouded in low light", "behind a creature who's about your size", "in a natural environment". */
-  | { kind: "situation"; text: string };
+  /**
+   * "While you're shrouded in low light", "behind a creature who's about your size", "in a natural environment".
+   * SD0 (NV7, widened): `check` is a state the engine can read itself (Vulnerable, flying, Channeling Fire, in
+   * Beastform, at least 2 Hope, the roll used an Experience). A runner that reads `check` decides it and shows no check
+   * box; one that does not yet falls back to the player's confirmation of `text` (Q13), so `text` always says it in words.
+   */
+  | { kind: "situation"; text: string; check?: StateCheck };
+
+/**
+ * SD0 (NV7): engine-readable states for a `situation` requirement (and so for a `requires` gate). "You" is the actor;
+ * `subject` is the trigger's subject (Loyal Protector, CB p.36: "an ally within Close range has 2 or fewer Hit Points
+ * unmarked").
+ */
+export type StateCheck =
+  /** Adrenaline (CB p.42): "While you're Vulnerable". `who: "target"` for a per-target reading. */
+  | { kind: "hasCondition"; condition: ConditionRef; who?: "self" | "target" | "subject" }
+  /** "While flying" (Q16: the drawer's Flying toggle, a sheet effect with the `flying` flag). */
+  | { kind: "flying" }
+  /** A sheet effect a feature created is active, optionally with one of its options (Elemental Incarnation's "Channeling Fire"). */
+  | { kind: "featureEffect"; featureId: string; option?: string }
+  /** "While in Beastform" (Defender, CB p.31); `formId` narrows it to one form. */
+  | { kind: "inBeastform"; formId?: string }
+  /** Conjure Shield (CB p.51): "While you have at least 2 Hope". */
+  | { kind: "hopeAtLeast"; value: number }
+  /** Loyal Protector: the trigger's subject "has 2 or fewer Hit Points unmarked". */
+  | { kind: "hpUnmarkedAtMost"; value: number; who: "self" | "subject" | "target" }
+  /** Adaptability (CB p.65): "When you fail a roll that utilized one of your Experiences". */
+  | { kind: "rollUsedExperience" }
+  /** A martial stance is the active stance (Q5, HF p.12): the stance tables gate on it. */
+  | { kind: "activeStance"; stance: string }
+  /** Inside a live map area a feature drew (Q14: Circle of Power, Moonbeam; `owner: "self"` only the actor's own areas). */
+  | { kind: "inArea"; featureId: string; owner?: "self" | "any" }
+  /** No other creature within `range` of you or the target (the Isolating stance, HF p.12). */
+  | { kind: "isolated"; range: Range; who: "self" | "selfOrTarget" };
 
 // ---------------------------------------------------------------- triggers
 
@@ -322,27 +436,41 @@ export type Trigger =
   | { kind: "afterYouRoll"; roll: RollFilter; result?: "any" | "success" | "failure" | "withHope" | "withFear" | "critical" }
   /** Before your roll: Rage Up ("Before you make an attack"), Codex-Touched, Sage-Touched, Notorious. */
   | { kind: "beforeYouRoll"; roll: RollFilter }
-  /** Your attack resolved: Body Basher (success, melee weapon), Champion's Edge (critical), Glancing Blow (failure). */
+  /**
+   * Your attack resolved: Body Basher (success, melee weapon), Champion's Edge (critical), Glancing Blow (failure).
+   * SD0 (NV6, widened): `successWithFear` (Face Your Fear, CB p.51: "When you succeed with Fear on an attack roll");
+   * `firstInScene` ("The first time in a scene you succeed on an attack", First Strike, HF p.8; Q7).
+   */
   | {
       kind: "whenYouAttack";
-      result: "any" | "success" | "failure" | "critical" | "successWithHope";
+      result: "any" | "success" | "failure" | "critical" | "successWithHope" | "successWithFear";
       weapon?: boolean;
       weaponRange?: Range;
+      firstInScene?: boolean;
     }
   /** Your move dealt damage: Healing Strike, Lead by Example, Jump Scare (magic), Natural Familiar (near the familiar). */
   | { kind: "whenYouDealDamage"; damageType?: DamageType; toEnemy?: boolean }
   /** Encore: "When an ally within Close range deals damage to an adversary". */
   | { kind: "whenAllyDealsDamage"; range: Range }
-  /** Ferocity, Dire Strike: "When a target marks any number of Hit Points from an attack you make". */
-  | { kind: "whenTargetMarksHp" }
-  /** Never Upstaged, Rise Up (`fromAttack`), Valor-Touched (`withoutArmor`), Unbreakable (`last`: "When you mark your last Hit Point"). */
-  | { kind: "whenYouMarkHp"; fromAttack?: boolean; withoutArmor?: boolean; last?: boolean }
+  /**
+   * Ferocity, Dire Strike: "When a target marks any number of Hit Points from an attack you make".
+   * SD0 (NV6, widened): `severity` narrows it to the damage's severity (Death Strike, HF p.8: "When you deal Severe damage").
+   */
+  | { kind: "whenTargetMarksHp"; severity?: Severity }
+  /**
+   * Never Upstaged, Rise Up (`fromAttack`), Valor-Touched (`withoutArmor`), Unbreakable (`last`: "When you mark your last Hit Point").
+   * SD0 (NV6, widened): `sourceWithin` (Eye for an Eye, HF p.10: "an adversary within Melee range makes you mark Hit Points").
+   */
+  | { kind: "whenYouMarkHp"; fromAttack?: boolean; withoutArmor?: boolean; last?: boolean; sourceWithin?: Range }
   /** Brace, Unyielding Armor: "When you mark an Armor Slot to reduce incoming damage". `who: "ally"` for Forest Sprites. */
   | { kind: "whenArmorSlotMarked"; who: "self" | "ally" }
   /** Battle-Hardened ("when you would make a Death Move"), Life Ward (`ally`). */
   | { kind: "wouldMakeDeathMove"; who: "self" | "ally" }
-  /** Savor the Anguish: "When an adversary within Close range takes Severe damage". */
-  | { kind: "whenEnemyTakesDamage"; range?: Range; severity?: Severity }
+  /**
+   * Savor the Anguish: "When an adversary within Close range takes Severe damage".
+   * SD0 (NV6, widened): `byYou` (only damage the actor dealt: Ruthless Predator, CB p.39: "when you deal Severe damage").
+   */
+  | { kind: "whenEnemyTakesDamage"; range?: Range; severity?: Severity; byYou?: boolean }
   /** Gore and Glory ("when you deal enough damage to defeat an enemy"), Invoke Torment (`fullStress`). */
   | { kind: "whenEnemyDefeated"; byYou: boolean; range?: Range; fullStress?: boolean }
   /** Bold Presence: "when you would gain a condition". */
@@ -358,7 +486,40 @@ export type Trigger =
   /** Shared Clarity, Transcendent Union: "when a creature connected by this union would mark Stress or Hit Points". */
   | { kind: "linkedWouldMark"; track: "stress" | "hpOrStress" }
   /** Token set-up: "At the beginning of a session", "After a long rest", "When you take a rest". */
-  | { kind: "timing"; at: "sessionStart" | "sessionEnd" | "afterRest" | "afterLongRest" | "sceneEnd" };
+  | { kind: "timing"; at: "sessionStart" | "sessionEnd" | "afterRest" | "afterLongRest" | "sceneEnd" }
+  // ---- SD0 (NV6): sheet-drawer triggers
+  /**
+   * "When you would mark a Stress" (Unshakable, CB p.59: roll a d6, on a 6 don't); `forced`: Brave Face (HF p.32: "when
+   * you would be forced to mark a Stress").
+   */
+  | { kind: "wouldMarkStress"; forced?: boolean }
+  /** After Stress is marked: `last` = "When you mark your last Stress" (Howling Rampage, HF p.40). */
+  | { kind: "whenYouMarkStress"; last?: boolean }
+  /**
+   * An attack aimed at a creature: `subject` who is attacked (you, an ally, either), `subjectWithin` how close to you they
+   * must be, `attackerWithin` how close the attacker must be to you. `stage` as `whenAttacked` (`targeted` is before the
+   * roll, Q2). Harrowing Invocation (HF p.14): "When an adversary targets you or an ally within Very Close range with an
+   * attack"; Not This Time (CB p.50, Q3): any adversary attack, the attacker within Far.
+   */
+  | {
+      kind: "whenCreatureAttacked";
+      subject: "self" | "ally" | "selfOrAlly";
+      subjectWithin?: Range;
+      attackerWithin?: Range;
+      stage: "targeted" | "rolled" | "succeeded" | "failed";
+    }
+  /** An enemy's attack fails, whoever it targeted; `source` narrows the attacker (Ire of Pale Light, HF p.17: a Hexed creature within Very Far). */
+  | { kind: "whenEnemyFailsAttack"; range?: Range; source?: CreatureKey }
+  /** Attack of Opportunity (CB p.48): "If an adversary within Melee range attempts to leave that range". */
+  | { kind: "whenEnemyLeavesRange"; range: Range }
+  /** Honed Expertise (CB p.50): "When you use an Experience". */
+  | { kind: "whenYouUseExperience" }
+  /** Wolf Form (HF p.40): "When you gain a Hope while in Wolf Form". */
+  | { kind: "whenYouGainHope" }
+  /** Maestro (CB p.28): "When you give a Rally Die to an ally". */
+  | { kind: "whenYouGiveDie"; die: HeldDieKind }
+  /** An ally Helps you or you Help an ally (Enchanted Aid, CB p.47: "When you Help an Ally with a Spellcast Roll"; Q12). */
+  | { kind: "whenHelping"; roll?: RollFilter };
 
 /**
  * How a use is started.
@@ -391,18 +552,60 @@ export type ModStat =
   | "difficulty"
   | "actionRoll"
   /** Chains of Affliction: "the target of their attack marks one fewer Hit Point" (delta −1 on the bearer's hits). */
-  | "hpMarked";
+  | "hpMarked"
+  // ---- SD0 (NV10): ranges, as steps along the Defined Ranges (Melee 0, Very Close 1, Close 2, Far 3, Very Far 4; CB p.103)
+  /** Menacing Reach (HF p.15): "increase the range of your primary weapon by one step" (`stat`, delta 1). */
+  | "primaryRange"
+  /**
+   * Spirit Weapon (CB p.44): "When you have an equipped weapon with a range of Melee or Very Close, it can fly from your
+   * hand to attack an adversary within Close range" (`set` to 2).
+   */
+  | "meleeWeaponRange"
+  /**
+   * Giant Reach (CB p.62): "Treat any weapon, ability, spell, or other feature that has a Melee range as though it has a
+   * Very Close range instead" (`set` to 1).
+   */
+  | "meleeRange"
+  // ---- SD0 (NV14): what a PC puts on an adversary's own rolls
+  /** Draining Bane (HF p.14): "the target uses a d12 instead of a d20 for attack rolls" (`set` to 12). */
+  | "attackDie"
+  /** Arcane Charge (CB p.47): "a +3 bonus to the Difficulty of a reaction roll the spell causes the target to make" (`stat`, 3). */
+  | "reactionDifficulty"
+  // ---- SD0 (NV19): table moves
+  /** Epic Poetry (CB p.29): "when you Help an Ally, … roll a d10 as your advantage die" (`set` to 10); Q12. */
+  | "helpDie"
+  /** Camaraderie (CB p.48): "You can initiate a Tag Team Roll one additional time per session" (`stat`, delta 1). */
+  | "tagTeamUses"
+  /** Camaraderie: "when an ally initiates a Tag Team Roll with you, they only need to spend 2 Hope" (`set` to 2). */
+  | "tagTeamAllyCost"
+  /** Herbal Remedies (HF p.16): a consumable's clear of Hit Points or Stress: "increase the number cleared by 1" (`stat`, 1). */
+  | "consumableClear";
 
-/** A modifier carried by an `effect` step or a passive use. */
+/**
+ * SD0 (NV9): a modifier that holds only against one creature: `attacksByThem` (Elusive Predator, CB p.39: "When your
+ * Focus makes an attack against you, you gain a +2 bonus to your Evasion against the attack") or `attacksAgainstThem`
+ * (Vexing Malison, HF p.16: "You have advantage on attacks against Hexed creatures").
+ */
+export interface Versus {
+  creature: CreatureKey;
+  on: "attacksByThem" | "attacksAgainstThem";
+}
+
+/**
+ * A modifier carried by an `effect` step or a passive use.
+ * SD0 (widened): `versus` (NV9) on `stat`, `advantage` and `disadvantageAgainst` keys the modifier to one creature;
+ * `choice` (NV15) on `trait` makes the trait the one the player picked in that `choices` / `choose` id ("choose one trait
+ * to raise by +1", Evolution, CB p.30; `trait` is then the default shown before the pick).
+ */
 export type Mod =
-  | { kind: "stat"; stat: ModStat; delta: NumberSource }
-  | { kind: "trait"; trait: TraitId | "all"; delta: NumberSource }
+  | { kind: "stat"; stat: ModStat; delta: NumberSource; versus?: Versus }
+  | { kind: "trait"; trait: TraitId | "all"; delta: NumberSource; choice?: string }
   /** Overwhelming Aura: "make your Presence equal to your Spellcast trait"; Bare Bones' base Armor Score and thresholds. */
   | { kind: "set"; stat: ModStat | TraitId; to: NumberSource }
   /** "make attack rolls with advantage", "your allies gain advantage on attack rolls". */
-  | { kind: "advantage"; on: RollFilter }
+  | { kind: "advantage"; on: RollFilter; versus?: Versus }
   /** "attack rolls against them are made with disadvantage" (Invisibility, Eclipse). */
-  | { kind: "disadvantageAgainst"; on: RollFilter }
+  | { kind: "disadvantageAgainst"; on: RollFilter; versus?: Versus }
   /** "resistance to physical damage" (Rejuvenation Barrier), "immune to magic damage" (Book of Yarrow), CB p.99. */
   | { kind: "resistance"; type: DamageType | "both"; level: "resistant" | "immune" }
   /** Rules switches: Frenzy ("you can't use Armor Slots"), Force of Nature ("You can't be Restrained"), Wild Fortress, Stunned, Silenced. */
@@ -420,7 +623,26 @@ export type Mod =
         /** Blighting Strike: "The target's next successful attack deals half damage" (with duration `hit`). */
         | "halfDamage"
         /** On the Brink: "you don't take Minor damage". */
-        | "noMinorDamage";
+        | "noMinorDamage"
+        // ---- SD0 (NV7, NV14): sheet-drawer switches
+        /** Retract (CB p.61): "you have disadvantage on action rolls"; Feed with no tokens (HF p.39). */
+        | "actionDisadvantage"
+        /** Midnight Vine (HF p.9): "The target has disadvantage on attack rolls". */
+        | "attackDisadvantage"
+        /** Corpse Thorn (HF p.9): "The target gains disadvantage on reaction rolls"; Feed with no tokens. */
+        | "reactionDisadvantage"
+        /** Night's Glamour (HF p.17): "adversaries within Close range must mark a Stress to attack you". */
+        | "attackersMarkStress"
+        /** Surefooted (CB p.63): "You ignore disadvantage on Agility Rolls". */
+        | "ignoreAgilityDisadvantage"
+        /** The Anchored stance (HF p.12): "you can't be moved against your will". */
+        | "cannotBeMoved"
+        /** Retract (CB p.61): "you can't move". */
+        | "cannotMove"
+        /** Beastform (CB p.30): "you can't use weapons or cast spells from domain cards" (Q10). */
+        | "noWeaponsOrSpells"
+        /** Ephemeral (HF p.36): the bearer takes double magic damage. */
+        | "doubleMagicDamage";
     };
 
 // ---------------------------------------------------------------- damage
@@ -445,8 +667,11 @@ export type DamageRoll =
 
 /** A change to the damage of the move it rides on (riders and options). */
 export type DamageChange =
-  /** "gain a bonus to your damage roll equal to your Strength", "add a d10 to the damage roll", "+10 bonus to your damage rolls". */
-  | { kind: "add"; amount: NumberSource }
+  /**
+   * "gain a bonus to your damage roll equal to your Strength", "add a d10 to the damage roll", "+10 bonus to your damage rolls".
+   * SD0 (NV8, widened): `type` makes the added damage that type (Face Your Fear, CB p.51: "deal an extra 1d10 magic damage").
+   */
+  | { kind: "add"; amount: NumberSource; type?: DamageType }
   /** Smite: "double the result of your damage roll"; Invoke Torment: "double damage". */
   | { kind: "multiply"; factor: 2 }
   /** Whirlwind's additional targets, Blighting Strike's "next successful attack deals half damage". */
@@ -462,12 +687,40 @@ export type DamageChange =
   /** Onslaught: "you never deal damage beneath a target's Major damage threshold". */
   | { kind: "minimumSeverity"; severity: Severity }
   /** Battle Monster: "force the target to mark a number of Hit Points … instead of rolling for damage". */
-  | { kind: "replaceWithHp"; amount: NumberSource };
+  | { kind: "replaceWithHp"; amount: NumberSource }
+  // ---- SD0 (NV8): sheet-drawer damage changes
+  /**
+   * Reroll the damage dice the player picks (Volatile Magic, CB p.46: "reroll any number of your damage dice"); with
+   * `below`, every die under that number (Deadly Raptor, CB p.35: "reroll all damage dice that rolled a result lower than
+   * your Proficiency"). The new result stands (CB p.107).
+   */
+  | { kind: "rerollChosen"; below?: NumberSource }
+  /**
+   * `matching`: Sacred Resonance (CB p.44): "If any of the die results match, double the value of each matching die".
+   * `chosen`: Manipulate Magic (CB p.47): "Double a damage die of your choice" (`count` dice, default 1).
+   */
+  | { kind: "doubleDice"; which: "matching" | "chosen"; count?: number }
+  /** Weapon Specialist (CB p.48): "add one of the damage dice from your secondary weapon to the damage roll". */
+  | { kind: "addWeaponDie"; weapon: "primary" | "secondary" }
+  /** The Aggressive stance (HF p.12): "roll an additional damage die and discard the lowest result". */
+  | { kind: "extraDie"; drop: "lowest" }
+  /**
+   * A damage die that rolled a 1: `asMax` (the Exacting stance, HF p.12: "treat it as the highest value on the die") or
+   * `add` (Rampage, CB p.33: "roll a d10 and add the result to the damage roll").
+   */
+  | { kind: "ones"; asMax?: boolean; add?: DiceExpr }
+  /** Mythic Beast (CB p.35): "Your damage die increases by one size (d6 becomes d8, d8 becomes d10, etc.)". */
+  | { kind: "dieSize"; steps: number };
 
 /** A change to a roll: the move's own roll (riders) or the trigger's roll (reactions). */
 export type RollChange =
-  /** Reassurance ("your ally can reroll their dice"), Support Tank (`hopeOrFear`), Endless Charisma. */
-  | { kind: "reroll"; dice: "all" | "hope" | "fear" | "hopeOrFear" }
+  /**
+   * Reassurance ("your ally can reroll their dice"), Support Tank (`hopeOrFear`), Endless Charisma.
+   * SD0 (NV8, widened): `ifAtMost` rerolls only a die at or under the number (Internal Compass, CB p.64: "When you roll a
+   * 1 on your Hope Die, you can reroll it"); `advantage` rerolls with advantage (Patron's Boon, HF p.14: "reroll with
+   * advantage").
+   */
+  | { kind: "reroll"; dice: "all" | "hope" | "fear" | "hopeOrFear"; ifAtMost?: number; advantage?: boolean }
   /** Arcana-Touched: "switch the results of your Hope and Fear Dice". */
   | { kind: "swapDuality" }
   /** Adjust Reality: "change the numerical result of that roll to a result of your choice" (plausible for the dice). */
@@ -487,7 +740,31 @@ export type RollChange =
   /** Reckless: "gain advantage on an attack"; Inevitable: "your next action roll has advantage". */
   | { kind: "advantage" }
   /** Premonition: "rescind the move and consequences like they never happened". */
-  | { kind: "rescind" };
+  | { kind: "rescind" }
+  // ---- SD0 (NV8): sheet-drawer roll changes
+  /**
+   * The roll's result becomes this outcome: True Strike (HF p.8: "to make it a success instead"), Witch's Charm (HF p.16:
+   * "to change it into a success with Fear instead").
+   */
+  | { kind: "setOutcome"; outcome: "success" | "successWithFear" | "successWithHope" }
+  /**
+   * Contacts Everywhere (CB p.43): "a +3 bonus to the result of your Hope or Fear Die" (`die` picked by the player when
+   * `hopeOrFear`).
+   */
+  | { kind: "dieBonus"; die: "hope" | "fear" | "hopeOrFear"; amount: NumberSource }
+  /** Feed (HF p.39): "make your Fear Die a d20". */
+  | { kind: "fearDie"; sides: DieSides }
+  /**
+   * An Experience used on the roll: `payWithStress` (Adept, CB p.50: "mark a Stress instead of spending a Hope", with
+   * `double`: "double its modifier"), `freeOnCheck` (Honed Expertise, CB p.50: "roll a d6. On a result of 5 or higher,
+   * you can use it without spending Hope"), `borrowAlly` (Found Family, HF p.31: use an ally's Experience).
+   */
+  | {
+      kind: "experience";
+      change: "payWithStress" | "freeOnCheck" | "borrowAlly";
+      double?: boolean;
+      check?: { sides: DieSides; atLeast: number };
+    };
 
 // ---------------------------------------------------------------- steps
 
@@ -574,7 +851,8 @@ export type OutcomeStep =
   | (OutcomeBase & { kind: "hope"; change: "gain" | "lose"; amount: NumberSource })
   /** The GM's Fear pool: Sigil of Retribution "The GM gains a Fear", Dire Strike "The GM loses a Fear" (`to: "self"` is ignored). */
   | (OutcomeBase & { kind: "fear"; change: "gain" | "lose"; amount: NumberSource })
-  | (OutcomeBase & { kind: "condition"; condition: ConditionRef; duration: Duration; endsWhen?: string })
+  /** SD0 (NV5, widened): `endsOn` also ends it on those events (`EndEvent`). */
+  | (OutcomeBase & { kind: "condition"; condition: ConditionRef; duration: Duration; endsWhen?: string; endsOn?: readonly EndEvent[] })
   | (OutcomeBase & { kind: "clearCondition"; condition: ConditionRef })
   /**
    * Movement, shown as a prompt (Q9): `knockBack` ("knocked back to Far range"), `pull` ("pull the target into Melee
@@ -586,8 +864,20 @@ export type OutcomeStep =
       range?: Range;
       relativeTo?: "self" | "target" | "point" | "triggerSource";
     })
-  /** A lasting effect: a sheet effect on a PC (mods + until), or a modifier on an adversary instance. */
-  | (OutcomeBase & { kind: "effect"; label: string; mods: readonly Mod[]; duration: Duration; endsWhen?: string })
+  /**
+   * A lasting effect: a sheet effect on a PC (mods + until), or a modifier on an adversary instance.
+   * SD0 (widened): `endsOn` (NV5) also ends it on those events; `option` (NV7) names the option it stands for, which a
+   * `featureEffect` state check reads (Elemental Incarnation's "Fire": "Channeling Fire").
+   */
+  | (OutcomeBase & {
+      kind: "effect";
+      label: string;
+      mods: readonly Mod[];
+      duration: Duration;
+      endsWhen?: string;
+      endsOn?: readonly EndEvent[];
+      option?: string;
+    })
   /**
    * Tokens on this card (sheet `cardTokens`): `set` ("place a number of tokens equal to your Agility"), `add`, `spend`,
    * `clear`. `die`: the card holds dice, not tokens (Zone of Protection's d6, Sigil of Retribution's d8s; the count is
@@ -635,7 +925,68 @@ export type OutcomeStep =
   /** Invigoration: "the feature can be used again" (drops the trigger feature's `featureUses` entry). */
   | (OutcomeBase & { kind: "refreshFeature" })
   /** What the engine leaves to the table: shown as the card's words plus a Done button that logs the use (Q9). */
-  | (OutcomeBase & { kind: "manual"; text: string });
+  | (OutcomeBase & { kind: "manual"; text: string })
+  // ---- SD0: sheet-drawer outcomes (NV1, NV2, NV4, NV11, NV17, NV18, NV19)
+  /**
+   * NV2: runs a D5 class feature (`FeatureMeta.use`, src/lib/domain/class-features) inside this use, so D5's
+   * `classState`, held dice and prompts stay the one record (Rally, Prayer Dice, Unstoppable, Hex, Beastform, …).
+   * `feature` is the `FeatureMeta.key`; `params` become its `FeatureParams`. `to` is `self` (or the picked ally the
+   * feature's `target: "ally"` names). The entry's own map steps run after it.
+   */
+  | (OutcomeBase & { kind: "delegate"; feature: string; params?: DelegateParams })
+  /**
+   * NV4: "mark N fewer (or more) Hit Points" after the damage is compared to the thresholds, not a severity step (Scales,
+   * CB p.54: "mark a Stress to mark 1 fewer Hit Points"). Applies to the hit the trigger carries.
+   */
+  | (OutcomeBase & { kind: "adjustHpMarked"; change: "fewer" | "more"; amount: NumberSource })
+  /** NV1: a class resource: "gain a Favor", "gain Focus equal to the highest result" (HF p.12), "clear your Focus track". */
+  | (OutcomeBase & { kind: "resource"; resource: "favor" | "focus"; change: "gain" | "lose" | "set"; amount: NumberSource })
+  /** NV11: a live area on the map (Q14) that this use draws; members are read from token positions at each roll. */
+  | (OutcomeBase & { kind: "area"; area: AreaSpec })
+  /**
+   * NV17: the Hope this roll would give is taken as something else: `favor` (Favor, HF p.14: "when you succeed on an
+   * action roll with Hope, you can choose to gain a Favor instead of a Hope"), `removeFear` (Ethereal Visage, CB p.45:
+   * "you can remove a Fear from the GM's Fear pool instead of gaining Hope").
+   */
+  | (OutcomeBase & { kind: "replaceHopeGain"; with: "favor" | "removeFear" })
+  /**
+   * NV18: the attack this rider rides on also targets more creatures with the same roll (Hold Them Off, CB p.38: "use
+   * that same roll against two additional adversaries within range"). `damage: "half"` for a second target that takes
+   * half (Cannonball, CB p.33).
+   */
+  | (OutcomeBase & { kind: "addTargets"; count: NumberSource; targets: TargetSpec; damage?: "same" | "half" })
+  /**
+   * NV19: a named Help an Ally (Q12, CB p.90: "spend a Hope to Help an Ally … roll a d6 advantage die"): the helper gives
+   * the picked ally's next action roll a `die`-sided advantage die; `free` skips the Hope (Eloquent, CB p.29).
+   */
+  | (OutcomeBase & { kind: "help"; die: DieSides; free?: boolean });
+
+/** NV2: what a `delegate` step passes to the D5 feature (`FeatureParams`): a fixed choice, a choice the player made, or a number. */
+export interface DelegateParams {
+  /** A fixed `FeatureParams.choice` ("fire", a Beastform id). */
+  choice?: string;
+  /** The `FeatureParams.choice` is the player's pick in this `choose` / `choices` id. */
+  choiceFrom?: string;
+  /** `FeatureParams.amount`. */
+  amount?: NumberSource;
+}
+
+/**
+ * NV11 (Q14): a circle on the map. `centre`: the caster's token (`self`, it follows them), a picked token (`target`) or a
+ * square (`point`); `radius` a Defined Range. `side` says whose members gain `mods` while inside; `blocksSight` makes it a
+ * vision blocker in and out (Dark Cloud, CB p.42: "Anyone in this cloud can't see outside of it, and anyone outside of it
+ * can't see in"). `duration` / `endsOn` as an effect; the GM can remove it. Rows: the `combatAreas` table.
+ */
+export interface AreaSpec {
+  label: string;
+  centre: "self" | "target" | "point";
+  radius: Range;
+  side: "allies" | "selfAndAllies" | "enemies" | "all";
+  mods?: readonly Mod[];
+  blocksSight?: boolean;
+  duration: Duration;
+  endsOn?: readonly EndEvent[];
+}
 
 /** One option of a `choose` step. */
 export interface ChooseOption {
@@ -736,6 +1087,14 @@ export const STEP_KINDS = [
   "defeat",
   "refreshFeature",
   "manual",
+  // SD0 (sheet-drawer)
+  "delegate",
+  "adjustHpMarked",
+  "resource",
+  "area",
+  "replaceHopeGain",
+  "addTargets",
+  "help",
 ] as const;
 
 export type StepKind = (typeof STEP_KINDS)[number];
@@ -772,6 +1131,57 @@ export interface CardUse {
   steps: readonly Step[];
   /** "You can only hold this spell on one creature at a time": a new cast ends the previous effect. */
   exclusive?: boolean;
+  /**
+   * SD0 (NV15): "up to N creatures at once" (Hex, HF p.16: Hexed targets up to your Spellcast trait): a cast past the
+   * number ends the oldest. `exclusive` is the one-creature case.
+   */
+  holdLimit?: NumberSource;
+  /**
+   * SD0 (NV13): who makes the use. `companion`: the Beastbound companion acts from its own token (Q4, CB p.40: "When you
+   * command your companion to attack, they gain any benefits that would normally only apply to you … their damage roll
+   * uses your Proficiency and their damage die"). Absent: the actor.
+   */
+  actor?: "companion";
+}
+
+/**
+ * SD0 (NV3): a later card, a level or another feature changes an earlier use's numbers ("Your Rally Die increases to a
+ * d10", Epic Poetry, CB p.29; "uses d8s instead of d6s", Backstab, HF p.8). The runner applies every upgrade whose `when`
+ * holds, in list order, before the use runs; `patch` replaces only what it names.
+ */
+export interface Upgrade {
+  when: UpgradeWhen;
+  /** The use it changes (`CardUse.id`); absent: every use of the entry. */
+  useId?: string;
+  patch: UpgradePatch;
+  /** The upgrading feature in words, for the drawer's badge ("Virtuoso"). */
+  note?: string;
+}
+
+/**
+ * When an upgrade holds: the sheet holds that subclass card rank (`specialization`, `mastery`) or that feature
+ * (`featureId`, see src/lib/domain/feature-effects/ids.ts), or the character is at least `level`.
+ */
+export type UpgradeWhen =
+  | { kind: "rank"; rank: "specialization" | "mastery" }
+  | { kind: "feature"; featureId: string }
+  | { kind: "level"; atLeast: number };
+
+/**
+ * What an upgrade changes. `limitTimes`: "twice instead of once per long rest" (Virtuoso, CB p.28); `dieSides`: the die every dice
+ * expression and held die of the use rolls (Rally d8 at level 5, CB p.28); `range`: the use's target range (Regenerative
+ * Reach, CB p.31: "Very Close"); `extraSteps`: steps appended to the use (Reliable Backup's new Contacts Everywhere
+ * options, CB p.43); `extraOptions`: options added to the use's `choose` step `chooseId` (Venomancer's poisons, HF p.9).
+ */
+export interface UpgradePatch {
+  limitTimes?: number;
+  dieSides?: DieSides;
+  /** "2d10" instead of "1d10" (Fueled by Fear, CB p.51): the dice count of the use's damage and `add` changes. */
+  diceCount?: NumberSource;
+  range?: Range;
+  extraSteps?: readonly Step[];
+  chooseId?: string;
+  extraOptions?: readonly ChooseOption[];
 }
 
 /** The effect entry of one card: every use it offers. Lives in src/lib/srd/card-effects/<domain>.ts. */

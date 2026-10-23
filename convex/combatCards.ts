@@ -428,6 +428,8 @@ async function nameOf(ctx: QueryCtx, row: Doc<"combatRequests">, tokenId: Id<"co
     const character = await ctx.db.get("characters", token.ref.characterId);
     return character === null || character.campaignId !== row.campaignId ? "Unknown" : readSheet(character.sheet).name;
   }
+  // A companion token (token refs widened by sheet-drawer SD0, Q4); nothing places one until SD-C.
+  if (token.ref.kind === "companion") return "Companion";
   const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
   return instance !== null && instance.campaignId === row.campaignId ? instance.label : "Unknown";
 }

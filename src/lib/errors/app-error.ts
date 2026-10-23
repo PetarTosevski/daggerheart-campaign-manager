@@ -4,6 +4,7 @@ import { actionLogMessages } from "./actionLog";
 import { adversaryActionMessages } from "./adversaryActions";
 import { classFeatureMessages } from "./classFeatures";
 import { combatActionMessages } from "./combatActions";
+import { combatFeatureMessages } from "./combatFeatures";
 import { combatMapMessages } from "./combatMap";
 import { commonMessages } from "./common";
 import { deathMessages } from "./death";
@@ -37,6 +38,7 @@ export type AppErrorCode =
   | keyof typeof encounterMessages
   | keyof typeof combatMapMessages
   | keyof typeof combatActionMessages
+  | keyof typeof combatFeatureMessages
   | keyof typeof adversaryActionMessages
   | keyof typeof sessionMessages
   | keyof typeof spritePackMessages

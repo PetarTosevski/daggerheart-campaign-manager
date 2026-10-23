@@ -84,7 +84,12 @@ export type SubclassRank = (typeof SUBCLASS_RANKS)[number];
  */
 export const EFFECT_UNTIL = ["rest", "longRest", "session", "hit", "scene", "manual"] as const;
 export const HELD_DIE_UNTIL = ["session", "longRest", "manual"] as const;
-export const FEATURE_USE_UNTIL = ["rest", "longRest", "session"] as const;
+/**
+ * When a used "once per X" feature comes back. `scene` (plan sheet-drawer SD0, Q7, dcm-bxp.117; widened, no version
+ * bump): "once per scene" limits, cleared when the scene ends (the GM ends the encounter or presses End scene, or the
+ * session ends).
+ */
+export const FEATURE_USE_UNTIL = ["rest", "longRest", "session", "scene"] as const;
 /** Labels for the `pronouns` field (dcm-bxp.35): "gender" is the default. */
 export const PRONOUNS_LABELS = ["gender", "pronouns"] as const;
 export type PronounsLabel = (typeof PRONOUNS_LABELS)[number];
@@ -157,6 +162,13 @@ export const heldDieSchema = z.object({
  */
 export const featureUseSchema = z.object({ key: z.string().min(1).max(80), until: z.enum(FEATURE_USE_UNTIL) });
 
+/**
+ * The most `featureUses` entries a sheet holds (widened from 40 by the sheet drawer, SD0): every once-per feature of a
+ * class, subclass, multiclass, heritage, transformation and Beastform, the per-use and per-target entries of five loadout
+ * cards, and D5's keys.
+ */
+export const FEATURE_USES_MAX = 60;
+
 /** Most tokens or dice one card holds (Dark Army places 8; Sigil of Retribution holds up to your level in d8s). */
 export const CARD_TOKENS_MAX = 99;
 
@@ -166,6 +178,20 @@ export const CARD_TOKENS_MAX = 99;
  * no entry holds no tokens; for a card holding a die (Zone of Protection) `count` is the die's value.
  */
 export const cardTokensSchema = z.object({ cardId: z.string().min(1).max(60), count: z.number().int().min(0).max(CARD_TOKENS_MAX) });
+
+/** The most Focus a Martial Artist holds (HF p.12: "You can hold a maximum of 6 Focus"). */
+export const FOCUS_HOLD_MAX = 6;
+/** The martial stances of HF p.12 (four per tier). */
+export const MARTIAL_STANCES_MAX = 16;
+
+const stanceSlug = z.string().regex(/^[a-z][a-z-]*$/).max(20);
+
+/** A Martial Artist's stances and Focus (Q5). */
+export const martialStateSchema = z.object({
+  known: z.array(stanceSlug).max(MARTIAL_STANCES_MAX),
+  active: stanceSlug.optional(),
+  focus: z.number().int().min(0).max(FOCUS_HOLD_MAX),
+});
 
 /** Flat per-class counters (spec section C). All optional; a class reads only its own. */
 export const classStateSchema = z.object({
@@ -185,6 +211,12 @@ export const classStateSchema = z.object({
   favor: z.number().int().min(0).max(99).optional(),
   /** Witch Hex: hexed targets. */
   hexes: z.array(shortText).max(10).optional(),
+  /**
+   * Martial Artist stances and Focus (plan sheet-drawer SD0, Q5, HF p.11-12; widened, no version bump): the stances the
+   * character knows (`stance:martial-artist:<slug>` slugs, at most the 16 of HF p.12), the active one (absent: not in a
+   * stance), and Focus ("You can hold a maximum of 6 Focus").
+   */
+  martial: martialStateSchema.optional(),
 });
 
 /** The most Slayer Dice or Know the Tide tokens a sheet can hold: Proficiency and level both stop at 10. */
@@ -263,10 +295,12 @@ export const characterSheetSchema = characterSheetV1Schema.extend({
   /** Dice held for later (Rally, Prayer, patron, combo). */
   heldDice: z.array(heldDieSchema).max(20).default([]),
   /**
-   * "Once per rest/long rest/session" features already used, class features and domain cards alike (one shared record:
-   * a card used on the map is exhausted on the sheet too, Q3). Widened from 20 to 40 entries for the cards (CA0).
+   * "Once per rest/long rest/session/scene" features already used, class features, sheet-drawer features and domain cards
+   * alike (one shared record: a card used on the map is exhausted on the sheet too, Q3). Widened from 20 to 40 entries
+   * for the cards (CA0), then to `FEATURE_USES_MAX` for the drawer's features (SD0; worst case in
+   * tests/unit/feature-classification.test.ts).
    */
-  featureUses: z.array(featureUseSchema).max(40).default([]),
+  featureUses: z.array(featureUseSchema).max(FEATURE_USES_MAX).default([]),
   /** Small per-class counters (spec section C); lists with an `until` live in the three arrays above. */
   classState: classStateSchema.default({}),
   /** Wither tokens (Witherwild, CB 261): no per-character cap. */

@@ -249,6 +249,12 @@ export const tokenRefValidator = v.union(
     stressMax: v.number(),
     conditions: v.array(encounterConditionValidator),
   }),
+  /**
+   * A Beastbound ranger's animal companion (plan sheet-drawer SD0, Q4, CB p.38-40; widened): an ally token next to its
+   * ranger's PC token. Its numbers (Evasion, Stress, attack) live in the ranger's companion sheet (`characterExtras`,
+   * src/lib/frames/extras/companion.ts), keyed by the ranger's character id.
+   */
+  v.object({ kind: v.literal("companion"), characterId: v.id("characters") }),
 );
 export type TokenRef = Infer<typeof tokenRefValidator>;
 
@@ -277,4 +283,53 @@ export const combatExploredFields = {
   /** Explored half-squares as a bitmap string; the encoding is C7's (convex/lib/combatVision.ts). */
   bits: v.string(),
   updatedAt: v.number(),
+};
+
+// ---------------------------------------------------------------- areas (plan sheet-drawer SD0, Q14)
+
+/** The Defined Ranges an area's radius can be (CB p.103). */
+export const AREA_RADII = ["melee", "veryClose", "close", "far", "veryFar"] as const;
+export type AreaRadius = (typeof AREA_RADII)[number];
+
+/**
+ * When an area goes away by itself: with its `scene` (the encounter ends, the GM's End scene, or the session ends; Q7),
+ * its `session`, the caster's next `rest` or `longRest`, or only by hand (`manual`: the GM's Remove, or the feature's own
+ * end, such as Circle of Power's "This spell lasts until the last token is removed or you exit the circle", HF p.16). The
+ * hooks that end it (SD8, SD-A) set `status: "ended"`.
+ */
+export const AREA_EXPIRES = ["scene", "session", "rest", "longRest", "manual"] as const;
+export type AreaExpires = (typeof AREA_EXPIRES)[number];
+
+/** Where an area is centred: on a token (it follows the token, Elemental Aura) or on a square. */
+export const areaCentreValidator = v.union(
+  v.object({ kind: v.literal("token"), tokenId: v.id("combatTokens") }),
+  v.object({ kind: v.literal("square"), x: v.number(), y: v.number() }),
+);
+export type AreaCentre = Infer<typeof areaCentreValidator>;
+
+/**
+ * One live map area a feature drew (Q14: Elemental Aura, Dark Cloud, Circle of Power, Moonbeam; NV11 `area` steps). Its
+ * members are worked out from token positions at each roll; the effect entry (`featureId`, `useId`) says what members
+ * gain. Own table: a campaign draws many over time (rule 6). Ended rows are swept a day after `endedAt` (rule 8).
+ */
+export const combatAreaFields = {
+  campaignId: v.id("campaigns"),
+  mapId: v.id("combatMaps"),
+  /** The feature that drew it (`<source>:<owner>:<slug>`) and the use (`CardUse.id`). */
+  featureId: v.string(),
+  useId: v.optional(v.string()),
+  /** The caster. */
+  characterId: v.id("characters"),
+  /** The map's label for it ("Circle of Power"). */
+  label: v.string(),
+  shape: v.literal("circle"),
+  centre: areaCentreValidator,
+  radius: literals(AREA_RADII),
+  /** Dark Cloud (CB p.42): "Anyone in this cloud can't see outside of it, and anyone outside of it can't see in." */
+  blocksSight: v.boolean(),
+  expires: literals(AREA_EXPIRES),
+  status: v.union(v.literal("active"), v.literal("ended")),
+  createdAt: v.number(),
+  /** Set when `status` becomes `ended`; the retention cron reads it (convex/cleanup.ts `expireCombatAreas`). */
+  endedAt: v.optional(v.number()),
 };

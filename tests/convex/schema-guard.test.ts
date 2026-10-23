@@ -134,6 +134,7 @@ const CAMPAIGN_SCOPED = [
   "lorekeeperAsks",
   "lorekeeperUsage",
   "combatRequests",
+  "combatAreas",
 ];
 /**
  * Campaign-scoped tables that also have a retention job of their own (listed once above, so this is a second note,
@@ -144,6 +145,7 @@ const ALSO_RETENTION: Record<string, string> = {
   lorekeeperUsage:
     "usage counters expire 13 months after their last update (D13 L0 cron); per-user and deployment rows have no campaign",
   combatRequests: "resolved and declined requests are swept a day after resolvedAt (combat-actions AA0 cron)",
+  combatAreas: "ended map areas (ended scenes and sessions) are swept a day after endedAt (sheet-drawer SD0 cron)",
   actionLog: "undo snapshots are stripped 30 days after `at`, the rows stay, no longer undoable (dcm-c26 cron, reads by_undoable_at)",
 };
 /**
@@ -585,5 +587,135 @@ describe("combat requests (AA0)", () => {
       { ...row, payload: { ...payload, kind: "duel" } },
     ];
     for (const doc of bad) await expect(t.run((ctx) => ctx.db.insert("combatRequests", doc as never))).rejects.toThrow();
+  });
+
+  // Plan sheet-drawer, SD0: the widened request, token and area shapes store and read back; old rows still conform.
+  test("a feature sanction, a before-roll prompt and a feature answer store and read back (sheet-drawer SD0, Q2)", async () => {
+    const { t, userId, campaignId, characterId, encounterId, instanceId, mapId, tokenId } = await seed();
+    await t.run(async (ctx) => {
+      const sanction = {
+        campaignId,
+        encounterId,
+        mapId,
+        kind: "sanction" as const,
+        status: "open" as const,
+        createdBy: userId,
+        createdAt: 1,
+        payload: {
+          schemaVersion: 1 as const,
+          kind: "sanction" as const,
+          characterId,
+          action: {
+            kind: "feature" as const,
+            featureId: "ancestry:drakona:elemental-breath",
+            useId: "main",
+            targetTokenIds: [tokenId],
+            choices: [{ id: "situation", value: true }],
+            roll: { trait: "instinct" as const },
+          },
+          outOfRange: [{ tokenId, band: "close" as const }],
+        },
+        responses: [],
+      };
+      const preRoll = {
+        campaignId,
+        encounterId,
+        mapId,
+        kind: "preRoll" as const,
+        status: "open" as const,
+        createdBy: userId,
+        createdAt: 1,
+        payload: {
+          schemaVersion: 1 as const,
+          kind: "preRoll" as const,
+          attacker: { instanceId, label: "Bear" },
+          attack: { instanceId, targetCharacterIds: [characterId], advantage: 1 },
+          groupId: "g2",
+          responders: [{ characterId, featureIds: ["subclass:pact-of-the-endless:harrowing-invocation"] }],
+        },
+        responses: [
+          {
+            characterId,
+            choice: { kind: "feature" as const, featureId: "subclass:pact-of-the-endless:harrowing-invocation", choices: [] },
+            by: userId,
+            at: 2,
+          },
+        ],
+      };
+      const sanctionId = await ctx.db.insert("combatRequests", sanction);
+      const preRollId = await ctx.db.insert("combatRequests", preRoll);
+      expect(await ctx.db.get("combatRequests", sanctionId)).toMatchObject(sanction);
+      expect(await ctx.db.get("combatRequests", preRollId)).toMatchObject(preRoll);
+    });
+  });
+
+  test("a before-roll prompt without schemaVersion or with an unknown answer is refused (sheet-drawer SD0)", async () => {
+    const { t, userId, campaignId, characterId, instanceId } = await seed();
+    const payload = {
+      schemaVersion: 1,
+      kind: "preRoll",
+      attacker: { instanceId, label: "Bear" },
+      attack: { instanceId, targetCharacterIds: [characterId] },
+      groupId: "g3",
+      responders: [],
+    };
+    const row = { campaignId, kind: "preRoll", status: "open", createdBy: userId, createdAt: 1, payload, responses: [] };
+    await t.run((ctx) => ctx.db.insert("combatRequests", row as never));
+    const bad = [
+      { ...row, payload: { ...payload, schemaVersion: undefined } },
+      { ...row, payload: { ...payload, attack: { targetCharacterIds: [characterId] } } },
+      { ...row, responses: [{ characterId, choice: { kind: "stance", featureId: "x" }, by: userId, at: 2 }] },
+    ];
+    for (const doc of bad) await expect(t.run((ctx) => ctx.db.insert("combatRequests", doc as never))).rejects.toThrow();
+  });
+
+  test("a companion token and a combat area store and read back; a bad area is refused (sheet-drawer SD0, Q4, Q14)", async () => {
+    const { t, campaignId, characterId, mapId, tokenId } = await seed();
+    await t.run(async (ctx) => {
+      const companion = {
+        campaignId,
+        mapId,
+        ref: { kind: "companion" as const, characterId },
+        side: "ally" as const,
+        x: 2,
+        y: 1,
+        size: 1,
+        face: 0,
+        light: "none" as const,
+        revealedTo: [],
+      };
+      const companionId = await ctx.db.insert("combatTokens", companion);
+      expect(await ctx.db.get("combatTokens", companionId)).toMatchObject(companion);
+
+      const area = {
+        campaignId,
+        mapId,
+        featureId: "subclass:nightwalker:dark-cloud",
+        characterId,
+        label: "Dark Cloud",
+        shape: "circle" as const,
+        centre: { kind: "token" as const, tokenId },
+        radius: "close" as const,
+        blocksSight: true,
+        expires: "scene" as const,
+        status: "active" as const,
+        createdAt: 1,
+      };
+      const areaId = await ctx.db.insert("combatAreas", area);
+      expect(await ctx.db.get("combatAreas", areaId)).toMatchObject(area);
+      const onMap = await ctx.db
+        .query("combatAreas")
+        .withIndex("by_map", (q) => q.eq("mapId", mapId))
+        .take(10);
+      expect(onMap.map((a) => a._id)).toEqual([areaId]);
+
+      const bad = [
+        { ...area, shape: "square" },
+        { ...area, radius: "touch" },
+        { ...area, expires: "hit" },
+        { ...area, centre: { kind: "token" } },
+      ];
+      for (const doc of bad) await expect(ctx.db.insert("combatAreas", doc as never)).rejects.toThrow();
+    });
   });
 });

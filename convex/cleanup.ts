@@ -27,6 +27,11 @@ export const ORPHAN_AGE_MS = 2 * HOUR;
 export const PHOTO_IMPORT_TTL_MS = HOUR;
 /** A resolved or declined combat request (plan combat-actions AA0) is kept this long after `resolvedAt`, then swept. */
 export const COMBAT_REQUEST_TTL_MS = DAY;
+/**
+ * An ended map area (plan sheet-drawer SD0, Q14) is kept this long after `endedAt`, so undoing the scene or session end
+ * that ended it can still bring it back, then swept.
+ */
+export const COMBAT_AREA_TTL_MS = DAY;
 
 /** `actionLog` rows keep their undo snapshots this long; older rows stay in the feed, no longer undoable (dcm-c26). */
 export const ACTION_LOG_SNAPSHOT_TTL_MS = 30 * DAY;
@@ -79,6 +84,27 @@ export const expireCombatRequests = internalMutation({
       if (budget.left <= 0) break;
     }
     if (budget.left <= 0) await ctx.scheduler.runAfter(0, internal.cleanup.expireCombatRequests, {});
+    return null;
+  },
+});
+
+/**
+ * Deletes ended `combatAreas` rows (areas of ended scenes and sessions, or removed by hand) whose `endedAt` is older
+ * than `COMBAT_AREA_TTL_MS` (rule 8; plan sheet-drawer SD0, Q14). Active areas stay until their scene, session or rest
+ * ends them, or their campaign is purged. `BATCH` rows per run, rescheduling itself while a full batch was deleted. An
+ * ended row without `endedAt` (never written that way) sorts first in the index and is swept too.
+ */
+export const expireCombatAreas = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - COMBAT_AREA_TTL_MS;
+    const rows = await ctx.db
+      .query("combatAreas")
+      .withIndex("by_status_ended", (q) => q.eq("status", "ended").lt("endedAt", cutoff))
+      .take(BATCH);
+    await deleteRows(ctx, { left: BATCH }, "combatAreas", rows);
+    if (rows.length === BATCH) await ctx.scheduler.runAfter(0, internal.cleanup.expireCombatAreas, {});
     return null;
   },
 });
@@ -366,6 +392,11 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("combatRequests").withIndex("by_campaign_status", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "combatRequests", rows);
+  },
+  // Map areas drawn by features (plan sheet-drawer SD0, Q14); they reference maps, tokens and characters only by id.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("combatAreas").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "combatAreas", rows);
   },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
