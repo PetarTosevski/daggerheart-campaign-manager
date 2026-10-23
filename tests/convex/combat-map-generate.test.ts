@@ -44,6 +44,9 @@ function reply(text: string, stopReason = "end_turn"): Response {
 async function withMap() {
   const ctx = await setupWithCampaign();
   const { campaignId, gm } = ctx;
+  // The board's scene prompt is the Classic path (E6); since dcm-bxp.135 a GM who never chose gets Sprites, so pick
+  // Classic first. The Sprites path is covered by combat-map-generate-sprites.test.ts.
+  await gm.mutation(api.settings.update, { defaultMapStyle: "classic" });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   const get = async (id: Id<"combatMaps"> = mapId) => (await gm.query(api.combatMaps.get, { campaignId, mapId: id }))!;
   const generate = (c: Client = gm, args: { prompt?: string; size?: "small" | "medium" | "large"; another?: boolean; mapId?: string } = {}) =>

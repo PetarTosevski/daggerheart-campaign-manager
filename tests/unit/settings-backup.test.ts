@@ -29,7 +29,7 @@ describe("settings backup text (H17)", () => {
     expect(parseSettingsBackup(settingsBackupText(unset))).toEqual(unset);
   });
 
-  it("carries the default map style when set, and still reads a backup without it (dcm-bxp.89, widened v1)", () => {
+  it("carries the default map style when set, and still reads a backup without it (dcm-bxp.89, widened v1; absent = Sprites, dcm-bxp.135)", () => {
     const sprites = { ...settings, defaultMapStyle: "sprites" as const };
     expect(JSON.parse(settingsBackupText(sprites)).settings.defaultMapStyle).toBe("sprites");
     expect(parseSettingsBackup(settingsBackupText(sprites))).toEqual(sprites);

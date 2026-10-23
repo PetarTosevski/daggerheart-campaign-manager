@@ -56,6 +56,8 @@ function maxTokens(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>): number[] 
 async function withMap(style: "classic" | "sprites" = "sprites") {
   const ctx = await setupWithCampaign();
   const { t, campaignId, gm } = ctx;
+  // The map starts Classic (since dcm-bxp.135 a GM who never chose gets Sprites) and switches as a GM would.
+  await gm.mutation(api.settings.update, { defaultMapStyle: "classic" });
   const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
   if (style === "sprites") await gm.mutation(api.combatMapStyle.setStyle, { campaignId, mapId, style });
   const gmId = await t.run(async (c) => (await c.db.query("users").first())!._id);

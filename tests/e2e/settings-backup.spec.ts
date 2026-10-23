@@ -60,7 +60,13 @@ for (const { name, viewport } of VIEWPORTS) {
         daggerheartBackup: 2,
         kind: "settings",
         schemaVersion: 1,
-        settings: { tableName, gmName: "Ana", accent: "#d9775b", expansions: gm.original.expansions },
+        settings: {
+          tableName,
+          gmName: "Ana",
+          accent: "#d9775b",
+          expansions: gm.original.expansions,
+          defaultMapStyle: gm.original.defaultMapStyle,
+        },
       });
       expect(
         await gmBox.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd, el.value.length]),

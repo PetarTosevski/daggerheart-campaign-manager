@@ -26,7 +26,7 @@ const mapStyle = z.enum(["classic", "sprites"]);
 
 /**
  * Version 1, widened (rule 7: widen, no migration needed for pasted text): `defaultMapStyle` (dcm-bxp.89) is optional, so
- * a backup made before it existed still restores (and puts new maps back to Classic).
+ * a backup made before it existed still restores (and puts new maps back to the default, Sprites: dcm-bxp.135).
  */
 const backupSettingsV1 = settingsSchema
   .extend({
@@ -91,7 +91,7 @@ export type SettingsView = {
   gmName: string;
   accent: string;
   expansions: { hopeAndFear?: boolean };
-  /** The style new blank maps get (dcm-bxp.89); absent = Classic. */
+  /** The style new blank maps get (dcm-bxp.89); absent = the default, Sprites (dcm-bxp.135). */
   defaultMapStyle?: "classic" | "sprites";
 };
 

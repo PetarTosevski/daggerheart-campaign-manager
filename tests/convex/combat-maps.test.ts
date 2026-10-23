@@ -121,23 +121,27 @@ describe("combat maps: list, create, rename, live", () => {
     expect(await get(large)).toMatchObject({ base: "grass", areas: [], objects: [], cells: [], image: null, seed: 1 });
   });
 
-  it("draws new maps in the GM's default map style (dcm-bxp.89): Classic by default, Sprites once picked; old maps keep theirs", async () => {
+  it("draws new maps in the GM's default map style: Sprites when never chosen (dcm-bxp.135), Classic once picked; old maps keep theirs", async () => {
     const { t, gm, campaignId, mapId, get } = await withMap();
-    // Classic default: no stored style (E3: absent = Classic), as before the setting existed.
-    expect((await t.run((c) => c.db.get("combatMaps", mapId)))?.style).toBeUndefined();
-    expect((await get()).style ?? "classic").toBe("classic");
-    await gm.mutation(api.settings.update, { defaultMapStyle: "sprites" });
+    // Never chosen (no settings row): the first map is Sprites.
+    expect((await t.run((c) => c.db.get("combatMaps", mapId)))?.style).toBe("sprites");
+    // A settings row without the field is still Sprites.
+    await gm.mutation(api.settings.update, { tableName: "Thursday Crew" });
     const { mapId: sprites } = await gm.mutation(api.combatMaps.create, { campaignId, size: "small", name: "Haunted crypt", idempotencyKey: key() });
     // Sprites stores the keyword-picked setting too, as a first switch to Sprites does (D7).
     expect(await get(sprites)).toMatchObject({ style: "sprites", setting: { builtin: "crypt-and-graveyard" }, settingPicked: false });
     expect((await gm.query(api.combatMapStyle.spriteSources, { campaignId, mapId: sprites })).style).toBe("sprites");
-    // The map made before the change keeps its style.
-    expect((await get()).style ?? "classic").toBe("classic");
-    // Back to Classic: the next map is Classic again; the Sprites map stays Sprites.
+    // Classic picked: the next map is Classic (no stored style, E3); the Sprites maps stay Sprites.
     await gm.mutation(api.settings.update, { defaultMapStyle: "classic" });
     const { mapId: classic } = await gm.mutation(api.combatMaps.create, { campaignId, size: "small", idempotencyKey: key() });
+    expect((await t.run((c) => c.db.get("combatMaps", classic)))?.style).toBeUndefined();
     expect((await get(classic)).style ?? "classic").toBe("classic");
     expect((await get(sprites)).style).toBe("sprites");
+    expect((await get()).style).toBe("sprites");
+    // Back to Sprites: the Classic map keeps its style.
+    await gm.mutation(api.settings.update, { defaultMapStyle: "sprites" });
+    await gm.mutation(api.combatMaps.create, { campaignId, size: "small", idempotencyKey: key() });
+    expect((await get(classic)).style ?? "classic").toBe("classic");
   });
 
   it("replays a create with the same idempotency key once", async () => {
