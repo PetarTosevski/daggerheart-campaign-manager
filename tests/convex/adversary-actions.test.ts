@@ -410,6 +410,27 @@ describe("the public row's target token ids (followups-7 H3)", () => {
   allowWorldEmails();
 
   const publicRow = async (a: Arena) => (await a.rows()).find((row) => row.kind === "adversary" && row.visibility === "public" && row.characterId === undefined)!;
+  /** A Minor Demon (CB p.215) in the encounter: All Must Fall makes the trigger's subject lose a Hope. */
+  const demonOf = (a: Arena) =>
+    a.t.run((ctx) =>
+      ctx.db.insert("encounterAdversaries", {
+        campaignId: a.campaignId,
+        encounterId: a.encounterId,
+        source: { kind: "srd", adversaryId: "minor-demon" },
+        label: "Demon",
+        order: 9,
+        summoned: false,
+        stats: { difficulty: 14, major: 8, severe: 15, hpMax: 8, stressMax: 4 },
+        hp: 0,
+        stress: 0,
+        defeated: false,
+        conditions: [],
+        tags: [],
+        spotlights: 0,
+        spotlightTurn: 0,
+        updatedAt: Date.now(),
+      }),
+    );
 
   it("names the hit PC's token by id; feed.list passes it to players, with no numbers (Q14)", async () => {
     const a = await arena({ map: true });
@@ -431,6 +452,41 @@ describe("the public row's target token ids (followups-7 H3)", () => {
     await a.setFear(5);
     resolved(await a.feature(a.dummy, "Taunt", [a.w.characterA], { spendFear: 1 }));
     expect((await publicRow(a)).targets).toEqual([{ tokenId: ash, side: "pc", tone: "effect" }]);
+  });
+
+  it("a PC whose sheet the feature changed without being named gets an 'effect' entry; players get no numbers (followups-8 I2)", async () => {
+    const a = await arena({ map: true });
+    const tokens = await a.gm.query(api.combatTokens.list, { campaignId: a.campaignId, mapId: a.mapId! });
+    const ash = tokens.find((t) => t.characterId === a.w.characterA)!._id;
+    await a.edit(() => ({ hope: 2 }));
+    // Fired by hand: no named targets, Ash is the trigger's subject and loses a Hope.
+    const r = resolved(await a.feature(await demonOf(a), "All Must Fall", [], { trigger: { subjectId: a.w.characterA } }));
+    expect(r.targets).toEqual([]);
+    expect((await a.sheet()).hope).toBe(1);
+    expect((await publicRow(a)).targets).toEqual([{ tokenId: ash, side: "pc", tone: "effect" }]);
+    for (const client of [a.player, a.other]) {
+      const row = (await a.feed(client)).page.find((x) => x.kind === "adversary" && x.visibility === "public" && x.summary.startsWith("Demon used"))!;
+      expect(row.targets).toEqual([{ tokenId: ash, side: "pc", tone: "effect" }]);
+      expect(keysOf(row.targets).filter((k) => ROLL_KEYS.includes(k))).toEqual([]);
+    }
+  });
+
+  it("a named PC the feature also changed is listed once", async () => {
+    const a = await arena({ map: true });
+    const tokens = await a.gm.query(api.combatTokens.list, { campaignId: a.campaignId, mapId: a.mapId! });
+    const ash = tokens.find((t) => t.characterId === a.w.characterA)!._id;
+    await a.edit(() => ({ hope: 2 }));
+    resolved(await a.feature(await demonOf(a), "All Must Fall", [a.w.characterA], { trigger: { subjectId: a.w.characterA } }));
+    expect((await a.sheet()).hope).toBe(1);
+    expect((await publicRow(a)).targets).toEqual([{ tokenId: ash, side: "pc", tone: "effect" }]);
+  });
+
+  it("without a token on the live map, a changed PC is left out", async () => {
+    const a = await arena({ map: true });
+    await a.edit(() => ({ hope: 2 }), a.w.characterB);
+    resolved(await a.feature(await demonOf(a), "All Must Fall", [], { trigger: { subjectId: a.w.characterB } }));
+    expect((await a.sheet(a.w.characterB)).hope).toBe(1);
+    expect((await publicRow(a)).targets).toBeUndefined();
   });
 
   it("an adversary token the action touched reaches the GM only", async () => {

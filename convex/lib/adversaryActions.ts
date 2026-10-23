@@ -665,7 +665,8 @@ async function finish(ctx: MutationCtx, f: FinishInput): Promise<ActionResult> {
 
 /**
  * The public row's `targets` (followups-7 H3): the live map's token of each creature the action named (hit, missed, or
- * touched by a feature without a roll), then each other adversary its feature changed (allies; tone "effect"). PCs and
+ * touched by a feature without a roll), then each other adversary its feature changed (allies; tone "effect"), then each
+ * other PC whose sheet it changed (tone "effect", followups-8 I2). PCs and
  * adversaries without a token on the live map are left out. Ids and tones only (Q14).
  */
 function publicTargets(tokens: readonly Doc<"combatTokens">[], outcomes: readonly TargetOutcome[], w: Work, rolled: boolean): ActionTarget[] {
@@ -681,6 +682,9 @@ function publicTargets(tokens: readonly Doc<"combatTokens">[], outcomes: readonl
     else if (o.instanceId !== undefined) add(adversaryToken(o.instanceId), "adversary", tone);
   }
   for (const { instance } of w.allies.values()) if (instance._id !== w.instance._id) add(adversaryToken(instance._id), "adversary", "effect");
+  // followups-8 I2 (dcm-bxp.99.26): a PC whose sheet the feature changed without naming them (a picked or follow-up PC, a
+  // trigger's subject) flashes too; a named PC keeps its hit / miss tone.
+  for (const id of w.sheets.keys()) add(pcToken(id), "pc", "effect");
   return out;
 }
 
