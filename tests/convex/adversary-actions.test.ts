@@ -6,6 +6,9 @@
  *
  * Dice are the server's own. Ash and Bryn wear Chainmail (4 Armor Slots, thresholds 8 / 16 at level 1). An Evasion
  * effect of -10 makes every attack hit; a custom "Dummy" with ATK -10 rolling with disadvantage misses but on a double 20.
+ * A test that asserts a window's exact responders empties Ash's loadout (NO_CARDS): the Warrior fixture holds Get Back
+ * Up (CB p.329, a reaction to Severe damage), and the Bear's natural 20 makes its damage Severe often enough to offer
+ * it (docs/tasks/TASK-FX-FX1.md).
  */
 import { describe, expect, it } from "vitest";
 
@@ -37,6 +40,9 @@ async function code(p: Promise<unknown>): Promise<unknown> {
     return errorCode(e);
   }
 }
+
+/** An empty loadout: no reaction card can join a window, whatever the dice roll. */
+const NO_CARDS = { domainCards: { owned: [], loadout: [] } };
 
 const EASY = { id: "test:easy", source: "Test", text: "Easy to hit", until: "manual" as const, mods: { evasion: -10 } };
 
@@ -209,7 +215,7 @@ describe("adversaryActions.attack: the hit, armor and the rows", () => {
 
   it("a PC with no free Armor Slot and no card resolves at once", async () => {
     const a = await arena();
-    await a.edit(() => ({ armorMarked: 4 }));
+    await a.edit(() => ({ armorMarked: 4, ...NO_CARDS }));
     const { r } = await (async () => ({ r: resolved(await a.attack(a.bear, [a.w.characterA])) }))();
     expect(r.targets[0]!.resolved).toBe(true);
     expect((await a.sheet()).hp).toBeGreaterThan(0);
@@ -285,6 +291,7 @@ describe("adversaryActions: the reaction window", () => {
 
   it("I Am Your Shield (CB p.341): Bryn marks a Stress, takes the hit and marks two Armor Slots", async () => {
     const a = await arena();
+    await a.edit(() => NO_CARDS);
     await a.edit(() => ({ domainCards: { owned: ["i-am-your-shield"], loadout: ["i-am-your-shield"] } }), a.w.characterB);
     const { requestId, damage } = await bearHitsAsh(a);
     const row = await a.request(requestId);
