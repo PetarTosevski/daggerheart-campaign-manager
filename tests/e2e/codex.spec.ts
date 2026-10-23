@@ -99,3 +99,42 @@ test("players see only the characters the party knows, never the GM's notes", as
   await expect(player.getByLabel("GM notes")).toHaveCount(0);
   await close();
 });
+
+test("renaming a pinned location renames its map marker, and Show on map focuses it (dcm-bxp.16)", async ({ page }) => {
+  const { campaignId } = await gmCreatesCampaign(page, "witherwild");
+  const pin = unique("Oakhollow");
+  const renamed = unique("Keep of Oaks");
+
+  // A marker on the World map.
+  await page.goto(`/campaigns/${campaignId}/world`);
+  const map = page.getByRole("application", { name: /^Map of/ });
+  await expect(map).toBeVisible();
+  await page.getByRole("complementary", { name: "Map tokens" }).getByRole("button", { name: "Village", exact: true }).click();
+  await map.click({ position: { x: 200, y: 180 } });
+  const field = page.getByRole("complementary", { name: "Selected token" }).getByLabel("Name", { exact: true });
+  await expect(field).toHaveValue("Village");
+  await field.fill(pin);
+  await field.press("Enter");
+  await expect(map.getByRole("button", { name: new RegExp(`^${pin}, Village`) })).toBeVisible();
+
+  // A location linked to it, then renamed.
+  await page.goto(`/campaigns/${campaignId}/codex`);
+  const entries = page.getByRole("complementary", { name: "Entries" });
+  await entries.getByRole("tab", { name: /^Locations/ }).click();
+  await page.getByRole("button", { name: "+ New location" }).click();
+  const detail = page.getByRole("region", { name: "Entry detail" });
+  await detail.getByRole("button", { name: "📍 Link to map pin" }).click();
+  await page.getByRole("dialog", { name: /on the map$/ }).getByRole("button", { name: `${pin} — click to link` }).click();
+  const showOnMap = detail.getByRole("link", { name: "🗺 Show on map" });
+  await expect(showOnMap).toBeVisible();
+  const nameInput = detail.getByLabel("Name", { exact: true });
+  await nameInput.fill(renamed);
+  await nameInput.press("Tab");
+  await expect(entries.getByRole("button", { name: new RegExp(renamed) })).toBeVisible();
+
+  // Show on map opens the World board with the marker selected, under its new name.
+  await showOnMap.click();
+  await expect(page).toHaveURL(/\/world\?token=\d+$/);
+  await expect(page.getByRole("complementary", { name: "Selected token" }).getByLabel("Name", { exact: true })).toHaveValue(renamed);
+  await expect(page.getByRole("application", { name: /^Map of/ }).getByRole("button", { name: new RegExp(`^${renamed}, Village`) })).toBeVisible();
+});

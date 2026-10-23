@@ -11,6 +11,11 @@ import { settingsSchema } from "./campaigns";
  * `settings` shape (rule 7 / CD3): the reader dispatches on it, and a version it does not know is refused. Every object
  * is strict, so an unknown field is refused too. Parsing throws a `ZodError`, which the Convex wrappers turn into
  * `{ code: "INVALID", message }`.
+ *
+ * Notes privacy (dcm-bxp.101): the backup carries no journal pages or entries at all, so it never carries a page the GM
+ * may not read (a player's private, players-only or unticked chosen page). A campaign export that adds notes must be a
+ * new `kind` that reads every page and entry through `permissionFor` (journalPage resource) as the GM
+ * (`tests/convex/settings-backup-privacy.test.ts`).
  */
 const BACKUP_FORMAT = 2;
 const SETTINGS_BACKUP_VERSION = 1;

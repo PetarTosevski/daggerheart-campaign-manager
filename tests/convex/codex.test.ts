@@ -264,6 +264,89 @@ describe("codex", () => {
     expect((await gm.query(api.codex.list, { campaignId })).entries[0]).toMatchObject({ tokenId: null, regionAuto: false, region: "Fanewick" });
   });
 
+  describe("renaming a pinned location renames its map marker (dcm-bxp.16)", () => {
+    const pinName = (t: T, campaignId: Id<"campaigns">, tokenId: number) =>
+      t.run(async (ctx) => {
+        const row = await ctx.db
+          .query("mapTokens")
+          .withIndex("by_campaign_token", (q) => q.eq("campaignId", campaignId).eq("tokenId", tokenId))
+          .unique();
+        return row?.name;
+      });
+
+    it("renames only the linked marker, keeps its other fields, and ignores a blank name or an unchanged one", async () => {
+      const { t, gm, campaignId } = await setup();
+      await putTokens(t, campaignId, [token(1, { notes: "Trap", hidden: true, x: 12, y: 34 }), token(2)]);
+      const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "location", idempotencyKey: key() });
+      await gm.mutation(api.codex.setPin, { entryId, tokenId: 1 });
+
+      await gm.mutation(api.codex.update, { entryId, patch: { name: "Gate of Thorns" } });
+      const row = await t.run((ctx) =>
+        ctx.db
+          .query("mapTokens")
+          .withIndex("by_campaign_token", (q) => q.eq("campaignId", campaignId).eq("tokenId", 1))
+          .unique(),
+      );
+      expect(row).toMatchObject({ name: "Gate of Thorns", notes: "Trap", hidden: true, x: 12, y: 34, type: "landmark", location: true });
+      expect(await pinName(t, campaignId, 2)).toBe("Pin 2");
+
+      // A blank name keeps the marker's name; other fields change nothing.
+      await gm.mutation(api.codex.update, { entryId, patch: { name: "   " } });
+      await gm.mutation(api.codex.update, { entryId, patch: { role: "A gate" } });
+      expect(await pinName(t, campaignId, 1)).toBe("Gate of Thorns");
+
+      // The marker name is cut to the map's 80 characters.
+      await gm.mutation(api.codex.update, { entryId, patch: { name: "x".repeat(120) } });
+      expect(await pinName(t, campaignId, 1)).toBe("x".repeat(80));
+    });
+
+    it("an unpinned location or a pin gone from the map writes no marker", async () => {
+      const { t, gm, campaignId } = await setup();
+      await putTokens(t, campaignId, [token(1)]);
+      const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "location", idempotencyKey: key() });
+      await gm.mutation(api.codex.update, { entryId, patch: { name: "Nowhere" } });
+      expect(await pinName(t, campaignId, 1)).toBe("Pin 1");
+
+      await gm.mutation(api.codex.setPin, { entryId, tokenId: 1 });
+      await putTokens(t, campaignId, []);
+      await gm.mutation(api.codex.update, { entryId, patch: { name: "Gone" } });
+      expect(await t.run((ctx) => ctx.db.query("mapTokens").collect())).toEqual([]);
+    });
+
+    it("a map not split into rows yet is split, then the marker renamed", async () => {
+      const { t, gm, campaignId } = await setup();
+      await putV1Map(t, campaignId, [token(4), token(5)]);
+      const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "location", idempotencyKey: key() });
+      await gm.mutation(api.codex.setPin, { entryId, tokenId: 4 });
+      await gm.mutation(api.codex.update, { entryId, patch: { name: "Old Mill" } });
+      expect(await pinName(t, campaignId, 4)).toBe("Old Mill");
+      expect(await pinName(t, campaignId, 5)).toBe("Pin 5");
+      const view = await gm.query(api.maps.get, { campaignId });
+      expect(view.state.tokens.find((x) => x.id === 4)?.name).toBe("Old Mill");
+    });
+
+    it("a player with only an edit grant on the entry renames the entry but never the map marker", async () => {
+      const { t, ids, gm, p1, campaignId } = await setup();
+      await putTokens(t, campaignId, [token(1)]);
+      const { entryId } = await gm.mutation(api.codex.create, { campaignId, kind: "location", idempotencyKey: key() });
+      await gm.mutation(api.codex.setPin, { entryId, tokenId: 1 });
+      await t.run((ctx) =>
+        ctx.db.insert("grants", {
+          resourceType: "codexEntry",
+          resourceId: entryId,
+          principalKind: "user",
+          principalId: ids.p1,
+          permission: "edit",
+          createdBy: ids.gm,
+          createdAt: 0,
+        }),
+      );
+      await p1.mutation(api.codex.update, { entryId, patch: { name: "Player named" } });
+      expect((await gm.query(api.codex.list, { campaignId })).entries.find((e) => e._id === entryId)?.name).toBe("Player named");
+      expect(await pinName(t, campaignId, 1)).toBe("Pin 1");
+    });
+  });
+
   it("map pins also come from a map not split into rows yet", async () => {
     const { t, gm, campaignId } = await setup();
     await putV1Map(t, campaignId, [token(4)]);
