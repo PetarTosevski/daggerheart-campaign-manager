@@ -385,7 +385,10 @@ const cards: Entry[] = [
   // The GM may play for any character (user answer 2026-10-22); another player is refused by `loadCharacter` (edit).
   // CA4b changed no access: kept dice and range origins act after the access check (combat-cards.test.ts).
   { fn: api.combatCards.useCard, access: "view", setup: holdingCards, args: (w) => cardArgs(w, w.ids.packToken!), expect: NOT_THEIRS },
-  { fn: api.combatCards.hand, access: "view", setup: holdingCards, args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
+  // F7-H4: another player reads the hand while hands are shared (the default); switch off / hidden: combat-cards-authz.test.ts.
+  { fn: api.combatCards.hand, access: "view", setup: holdingCards, args: (w) => ({ characterId: w.characterA }), expect: { otherPlayer: "ok" } },
+  { fn: api.combatCards.handSharing, access: "view", expect: { otherPlayer: "ok" } },
+  { fn: api.combatCards.setHandHidden, access: "view", args: (w) => ({ characterId: w.characterA, hidden: true }), expect: NOT_THEIRS },
   { fn: api.combatCards.sanction, access: "gm", setup: cardSanctioned, args: (w) => ({ requestId: w.ids.requestId, approve: false }) },
   { fn: api.combatCards.pending, access: "view", setup: cardSanctioned, expect: { otherPlayer: "ok" } },
 ];

@@ -10,8 +10,11 @@ import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 // Plan combat-actions CA6, in two browsers: the Hand on the Combat Map. A player uses Bolt Beacon on a Bandit (Hope
 // spent, Hit, the card stays ready; never the Bandit's numbers, U1); a once-per-rest card (Deft Maneuvers) greys out
 // and comes back after the GM's rest, and a vault card is recalled for free while the rest is open (CB p.101, p.105);
-// a player selecting another PC's token sees none of that PC's cards; the GM selecting a PC token sees the Hand greyed
-// until "Play for this character" is on, then plays Bolt Beacon for Ash (desktop and 390 px). Axe on each view.
+// the GM selecting a PC token sees the Hand greyed until "Play for this character" is on, then plays Bolt Beacon for Ash
+// (desktop and 390 px). Axe on each view.
+// F7-H4 (dcm-bxp.99.24): a rolling card opens the dialog with the Attack bar's roll options; a player selecting another
+// PC's token sees that Hand read only (no Use / Recall), and nothing once the GM turns "Players can see each other's
+// cards" off; the player's "Hide my hand" switch; a creature the GM picks in a card dialog gets a target ring on the map.
 
 const PLAYER = "e2e-player@example.test";
 
@@ -90,7 +93,7 @@ function hopeAfter(before: number, outcome: string): number {
   return Math.min(6, before + (outcome === "With Fear" ? 0 : 1)) - 1;
 }
 
-test("a player uses Bolt Beacon on the Bandit: Hope spent, Hit, the card stays ready; another PC's token shows no cards", async ({ page, browser }) => {
+test("a player uses Bolt Beacon on the Bandit with roll options: Hope spent, Hit, the card stays ready; another PC's Hand read only", async ({ page, browser }) => {
   test.setTimeout(240_000);
   const s = await cardScene(page, browser, wizardDraft("Ash"));
   const { player } = s;
@@ -103,10 +106,18 @@ test("a player uses Bolt Beacon on the Bandit: Hope spent, Hit, the card stays r
     await expect(hand.getByRole("article", { name: "Book of Illiat" }).getByRole("list", { name: "Cost and limit" })).toHaveText("3 spells");
     await expectNoSeriousA11yViolations(player, { include: ".cm-aside" });
 
-    // Pick the Bandit on the map; Use fires at once (one enemy, already picked: no dialog).
+    // Pick the Bandit on the map; Bolt Beacon rolls, so Use opens the dialog with the Bandit picked and the roll options.
     await player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Bandit, Enemy/ }).click();
     const hopeBefore = (await sheetOf(s)).hope;
     await bolt.getByRole("button", { name: "Use Bolt Beacon" }).click();
+    const dialog = player.getByRole("dialog", { name: "Bolt Beacon" });
+    await expect(dialog.getByRole("button", { name: "Bandit" })).toHaveAttribute("aria-pressed", "true");
+    const options = dialog.getByTestId("combat-card-roll-options");
+    await options.getByText("Roll options").click();
+    await options.getByRole("button", { name: "More advantage" }).click();
+    await expect(options.getByRole("group", { name: "Advantage" })).toContainText("Advantage ×1");
+    await expectNoSeriousA11yViolations(player, { include: "dialog[open]" });
+    await dialog.getByRole("button", { name: "Use Bolt Beacon" }).click();
     await expect(player.getByRole("dialog")).toHaveCount(0);
     const result = hand.getByRole("region", { name: "Card result" });
     await expect(result.getByTestId("combat-card-verdict")).toHaveText(/Bandit\s*Hit/);
@@ -120,10 +131,25 @@ test("a player uses Bolt Beacon on the Bandit: Hope spent, Hit, the card stays r
     // The feed has the public row (U2), without the Bandit's numbers.
     await expect(player.getByRole("region", { name: "Roll feed" }).getByTestId("combat-mini-feed")).toContainText("Ash uses Bolt Beacon");
 
-    // A player selecting another PC's token sees none of that PC's cards.
+    // A player selecting another PC's token sees that Hand read only (F7-H4): no Use, no Recall.
     await player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Mira, / }).click();
-    await expect(player.getByRole("article", { name: /Book of Ava|Deft Deceiver/ })).toHaveCount(0);
+    const miraHand = player.getByRole("region", { name: "Hand of Mira" });
+    await expect(miraHand.getByRole("article", { name: "Book of Ava" })).toBeVisible();
+    await expect(miraHand.getByRole("article", { name: "Deft Deceiver" })).toHaveAttribute("data-locked", "true");
+    await expect(miraHand.getByRole("button", { name: /^(Use|Recall)/ })).toHaveCount(0);
+    await expectNoSeriousA11yViolations(player, { include: "[data-testid=combat-other-hand]" });
+    // The GM turns "Players can see each other's cards" off: no cards, and why.
+    await s.client.mutation(api.campaigns.setPlayersSeeHands, { campaignId: s.campaignId, enabled: false });
+    await expect(miraHand.getByTestId("combat-hand-hidden")).toHaveText("The GM keeps every player’s cards private.");
+    await expect(miraHand.getByRole("article")).toHaveCount(0);
+    await s.client.mutation(api.campaigns.setPlayersSeeHands, { campaignId: s.campaignId, enabled: true });
+    await expect(miraHand.getByRole("article", { name: "Book of Ava" })).toBeVisible();
+    await miraHand.getByRole("button", { name: "Your hand" }).click();
     await expect(hand.getByRole("article", { name: "Bolt Beacon" })).toBeVisible();
+    // The player hides their own hand; the GM still reads it.
+    await hand.getByRole("switch", { name: "Hide my hand from the other players" }).check();
+    await expect.poll(async () => (await s.client.query(api.combatCards.handSharing, { campaignId: s.campaignId })).hidden).toEqual([s.characterId]);
+    expect((await s.client.query(api.combatCards.hand, { campaignId: s.campaignId, characterId: s.characterId })).loadout.length).toBe(2);
 
     // The vault: Book of Illiat (moved there on the sheet) costs 2 Stress to recall (R7, CB p.101).
     await s.playerClient.mutation(api.characters.moveCard, { characterId: s.characterId, cardId: "book-of-illiat", to: "vault" });
@@ -203,9 +229,11 @@ for (const viewport of [
       await expect(bolt).not.toHaveAttribute("data-locked", "true");
       const hopeBefore = (await sheetOf(s)).hope;
       await bolt.getByRole("button", { name: "Use Bolt Beacon" }).click();
-      // The GM has picked no enemy on the map: the dialog asks for the target.
+      // The GM has picked no enemy on the map: the dialog asks for the target; the pick rings the Bandit on the map (F7-H4).
       const dialog = page.getByRole("dialog", { name: "Bolt Beacon" });
+      await expect(page.getByTestId("combat-target-ring")).toHaveCount(0);
       await dialog.getByRole("button", { name: "Bandit" }).click();
+      await expect(page.getByTestId("combat-target-ring")).toHaveCount(1);
       await expectNoSeriousA11yViolations(page, { include: "dialog[open]" });
       await dialog.getByRole("button", { name: "Use Bolt Beacon" }).click();
       await expect(dialog).toHaveCount(0);

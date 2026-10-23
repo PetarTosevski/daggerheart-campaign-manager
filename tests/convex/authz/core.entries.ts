@@ -54,6 +54,7 @@ const area: Area = {
       expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "NOT_FOUND", player: "NOT_FOUND", grantee: "NOT_FOUND", gm: "ok" },
     },
     { fn: api.campaigns.setOption, access: "gm", args: () => ({ option: "witherPersists", enabled: true }) },
+    { fn: api.campaigns.setPlayersSeeHands, access: "gm", args: () => ({ enabled: false }) },
     // Only a custom campaign has a tome: on the witherwild world the GM passes the access check and gets INVALID.
     { fn: api.campaigns.updateTome, access: "gm", args: () => ({ chapter: "overview", text: "Once upon a time" }), okCodes: ["INVALID"] },
 

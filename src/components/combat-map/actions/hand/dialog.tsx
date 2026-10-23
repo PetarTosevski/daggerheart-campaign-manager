@@ -6,6 +6,9 @@ import { Modal } from "@/components/brand/modal";
 import type { CardUse } from "@/lib/domain/card-effects/types";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
 
+import type { Id } from "../../../../../convex/_generated/dataModel";
+import { useCombatTargets } from "../targets/state";
+
 import {
   answerChoices,
   choicesOf,
@@ -14,6 +17,7 @@ import {
   formProblem,
   initialValues,
   RANGE_LABEL,
+  rollOf,
   type ChoiceAsk,
   type Creature,
   type FormValues,
@@ -21,6 +25,7 @@ import {
   type HandUse,
   type RecipientKey,
 } from "./model";
+import { rollProblem, RollOptions, type Roller } from "./roll-options";
 import type { UseRequest } from "./use-card";
 
 /**
@@ -28,7 +33,15 @@ import type { UseRequest } from "./use-card";
  * a cost option, a situation to confirm, an optional part, creatures beyond one enemy, a weapon or trait, the GM's
  * Difficulty) and fires `combatCards.useCard` once with the picks. `AfterRollDialog` answers the server's
  * `needsChoice` (a choose step or a damage split) and resubmits through `useCardActions.answer`.
+ *
+ * F7-H4 (dcm-bxp.99.24): every creature picked here (targets and the card's other creatures) also gets CA5's target ring
+ * on the map (`toggleExtraTarget`), and a card that rolls offers the Attack bar's roll options.
  */
+
+/** Every creature the dialog's answers name (targets and recipients), once each. */
+function dialogPicks(values: FormValues): Set<string> {
+  return new Set<string>([...values.targets, ...Object.values(values.recipients).flatMap((ids) => ids ?? [])]);
+}
 
 const sideWord = (side: string) => (side === "enemy" ? "enemies" : side === "ally" ? "allies" : side === "selfOrAlly" ? "you or allies" : "creatures");
 
@@ -94,6 +107,7 @@ function UseForm({
   creatures,
   pickedEnemies,
   gm,
+  roller,
   pending,
   error,
   onCancel,
@@ -103,6 +117,7 @@ function UseForm({
   creatures: readonly Creature[];
   pickedEnemies: readonly string[];
   gm: boolean;
+  roller: Roller | null;
   pending: boolean;
   error: string | null;
   onCancel: () => void;
@@ -110,18 +125,38 @@ function UseForm({
 }) {
   const form = formFor(use);
   const [values, setValues] = useState<FormValues>(() => initialValues(form, pickedEnemies));
-  const set = (patch: Partial<FormValues>) => setValues((v) => ({ ...v, ...patch }));
-  const problem = formProblem(form, values) ?? (form.gmDifficulty && gm && values.difficulty === undefined ? "Set the Difficulty." : null);
+  const { targetTokenIds, toggleExtraTarget } = useCombatTargets();
+  const problem =
+    formProblem(form, values) ?? (form.gmDifficulty && gm && values.difficulty === undefined ? "Set the Difficulty." : null) ?? (form.rolls ? rollProblem(roller, values) : null);
+
+  function set(patch: Partial<FormValues>) {
+    setValues((v) => ({ ...v, ...patch }));
+  }
+
+  /** A change of picked creatures: the answers, and the map's rings follow (added ones ringed, dropped ones unringed). */
+  function pick(patch: Pick<Partial<FormValues>, "targets" | "recipients">) {
+    const before = dialogPicks(values);
+    const after = dialogPicks({ ...values, ...patch });
+    const ringed = new Set<string>(targetTokenIds);
+    const tokenOf = new Map<string, Id<"combatTokens">>(creatures.map((c) => [c.tokenId, c.tokenId]));
+    for (const id of after) if (!before.has(id) && !ringed.has(id)) toggle(id);
+    for (const id of before) if (!after.has(id) && ringed.has(id)) toggle(id);
+    set(patch);
+
+    function toggle(id: string) {
+      const tokenId = tokenOf.get(id);
+      if (tokenId) toggleExtraTarget(tokenId);
+    }
+  }
 
   function submit() {
     if (problem) return;
+    const roll = rollOf(form, values, gm);
     onSubmit({
       spell: use.id,
       targetTokenIds: values.targets as UseRequest["targetTokenIds"],
       choices: choicesOf(form, values),
-      ...(values.trait || values.difficulty !== undefined
-        ? { roll: { ...(values.trait ? { trait: values.trait } : {}), ...(gm && values.difficulty !== undefined ? { difficulty: values.difficulty } : {}) } }
-        : {}),
+      ...(roll ? { roll } : {}),
     });
   }
 
@@ -134,7 +169,7 @@ function UseForm({
           creatures={creatures.filter((c) => fitsSide(c, t.side))}
           picked={values.targets}
           max={t.max}
-          onChange={(targets) => set({ targets })}
+          onChange={(targets) => pick({ targets })}
         />
       ) : null}
       {form.numbers.map((n) => (
@@ -184,7 +219,7 @@ function UseForm({
           creatures={creatures.filter((c) => fitsSide(c, r.side))}
           picked={values.recipients[r.key] ?? []}
           max={null}
-          onChange={(ids) => set({ recipients: { ...values.recipients, [r.key as RecipientKey]: ids } })}
+          onChange={(ids) => pick({ recipients: { ...values.recipients, [r.key as RecipientKey]: ids } })}
         />
       ))}
       {form.choose.map((c) => (
@@ -242,6 +277,7 @@ function UseForm({
           <p className="cmh-note">The card names no Difficulty: the GM decides how the roll lands.</p>
         )
       ) : null}
+      {form.rolls ? <RollOptions roller={roller} values={values} onChange={set} /> : null}
       <p aria-live="polite" className="cma-error">
         {error ?? ""}
       </p>
@@ -265,6 +301,7 @@ export function UseDialog({
   creatures,
   pickedEnemies,
   gm,
+  roller = null,
   open,
   pending,
   error,
@@ -277,6 +314,8 @@ export function UseDialog({
   creatures: readonly Creature[];
   pickedEnemies: readonly string[];
   gm: boolean;
+  /** The acting character's Experiences and Hope, for the roll options (null while unknown: no Experience chips). */
+  roller?: Roller | null;
   open: boolean;
   pending: boolean;
   error: string | null;
@@ -308,6 +347,7 @@ export function UseDialog({
           creatures={creatures}
           pickedEnemies={pickedEnemies}
           gm={gm}
+          roller={roller}
           pending={pending}
           error={error}
           onCancel={onClose}

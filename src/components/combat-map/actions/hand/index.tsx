@@ -12,6 +12,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { ActionsPanelProps, ResolutionsProps } from "../../slots";
 import { useTokens, type TokenView } from "../../tokens/use-tokens";
+import { HandSharingSwitch } from "../../settings/hand-sharing";
 import { usePanelMemory } from "../attack/memory";
 import { BAND_LABEL } from "../targets";
 import { seenTargets, useActor, useCombatTargets } from "../targets/state";
@@ -19,6 +20,7 @@ import { AfterRollDialog, UseDialog } from "./dialog";
 import { HandCardFace } from "./face";
 import { formFor, LOADOUT_MAX, needsDialog, playableUses, recallLabel, type Creature, type HandCard, type UseOutcome } from "./model";
 import { CardResult, type LastCard } from "./result";
+import { handShared, HideHandSwitch, useHandSharing } from "./sharing";
 import { useCardActions, useRecall, type UseRequest } from "./use-card";
 
 /**
@@ -27,7 +29,9 @@ import { useCardActions, useRecall, type UseRequest } from "./use-card";
  * greyed and turned with their reset label, passive cards without a button, and the vault with Recall (R6, R7, Q3).
  * The GM (user answer 2026-10-22): selecting a PC token shows that character's Hand greyed with no Use / Recall until
  * the GM turns on "Play for this character"; then both work and are logged with the GM as actor for that character.
- * A player only ever sees their own character's cards. No enemy numbers anywhere (U1).
+ * F7-H4 (dcm-bxp.99.24): a player who selects another player's token sees that character's Hand read only (no Use /
+ * Recall) while the GM's switch "Players can see each other's cards" is on and its player has not hidden it; each
+ * player can hide their own hand under it. The GM always sees every hand. No enemy numbers anywhere (U1).
  */
 
 // ---------------------------------------------------------------- creatures
@@ -55,13 +59,19 @@ export type BodyProps = {
   /** Enemies already picked on the map (players: CA5's targets the character sees). */
   pickedEnemies: readonly Id<"combatTokens">[];
   gm: boolean;
-  /** False while the GM has not turned on "Play for this character": greyed, no Use / Recall. */
+  /** False while the GM has not turned on "Play for this character", or for another player's hand: greyed, no Use / Recall. */
   canPlay: boolean;
+  /** The line under a hand that can't be played (why, and how to play it). */
+  lockedNote?: string;
 };
 
-export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnemies, gm, canPlay }: BodyProps) {
+const GM_LOCKED = "Turn on “Play for this character” to use or recall these cards.";
+
+export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnemies, gm, canPlay, lockedNote = GM_LOCKED }: BodyProps) {
   const hand = useQuery(api.combatCards.hand, { campaignId, characterId });
   const rests = useQuery(api.rests.current, { campaignId });
+  // The acting character's Experiences and Hope for a rolling card's roll options (the Attack bar's subscription).
+  const character = useQuery(api.characters.get, canPlay ? { characterId } : "skip");
   const actions = useCardActions({ campaignId, mapId, characterId });
   const recall = useRecall({ campaignId, characterId });
   const [dialogFor, setDialogFor] = useState<string | null>(null);
@@ -79,8 +89,10 @@ export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnem
   }
 
   function settle(card: HandCard, out: UseOutcome | undefined) {
-    if (!out || out.status === "needsChoice") return;
+    if (!out) return;
+    // A choice after the roll: the Use dialog gives way to the after-the-roll dialog (never two dialogs at once).
     setDialogFor(null);
+    if (out.status === "needsChoice") return;
     setLast(out.status === "resolved" ? { kind: "resolved", cardName: card.name, result: out, names, done: [] } : { kind: "pending", cardName: card.name, outOfRange: out.outOfRange, names });
   }
 
@@ -140,9 +152,7 @@ export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnem
           })}
         </ul>
       )}
-      {!canPlay ? (
-        <p className="cm-muted cma-note">Turn on “Play for this character” to use or recall these cards.</p>
-      ) : null}
+      {!canPlay ? <p className="cm-muted cma-note">{lockedNote}</p> : null}
       <p aria-live="polite" className="cma-error">
         {dialogFor === null && !actions.waiting ? actions.error : ""}
       </p>
@@ -198,6 +208,7 @@ export function HandBody({ campaignId, mapId, characterId, creatures, pickedEnem
           creatures={creatures}
           pickedEnemies={pickedEnemies}
           gm={gm}
+          roller={character ? { experiences: character.sheet.experiences, hope: character.sheet.hope } : null}
           open
           pending={actions.pending}
           error={actions.waiting ? null : actions.error}
@@ -238,11 +249,27 @@ function CardsWaiting({ campaignId, characterId, names }: { campaignId: Id<"camp
 
 // ---------------------------------------------------------------- players
 
-/** Player column, first: the player's own Hand. Renders nothing without their character's token on the live map. */
+/**
+ * Player column, first: the player's own Hand, or the Hand of another player's character whose token they selected
+ * (read only, F7-H4). Renders nothing without their character's token on the live map.
+ */
 export function Hand(props: ActionsPanelProps) {
   const actor = useActor(props);
   const { targetTokenIds } = useCombatTargets();
   if (!actor) return null;
+  const other = actor.view.pcs.find((t) => t._id === props.selectedTokenId && !t.mine && t.characterId !== undefined);
+  if (other?.characterId !== undefined) {
+    return (
+      <OtherHand
+        campaignId={props.campaignId}
+        mapId={props.map._id}
+        characterId={other.characterId}
+        name={other.name}
+        creatures={playerCreatures(actor.view)}
+        onBack={() => props.onSelectToken(null)}
+      />
+    );
+  }
   return (
     <section className="cm-card cma-card cmh-card" aria-label="Your hand">
       <h2 className="cm-h">Hand</h2>
@@ -255,6 +282,56 @@ export function Hand(props: ActionsPanelProps) {
         gm={false}
         canPlay
       />
+      <HideHandSwitch campaignId={props.campaignId} characterId={actor.characterId} />
+    </section>
+  );
+}
+
+/** Another player's Hand, read only, or why it is not shown (the GM's switch is off, or its player hid it). */
+function OtherHand({
+  campaignId,
+  mapId,
+  characterId,
+  name,
+  creatures,
+  onBack,
+}: {
+  campaignId: Id<"campaigns">;
+  mapId: Id<"combatMaps">;
+  characterId: Id<"characters">;
+  name: string;
+  creatures: readonly Creature[];
+  onBack: () => void;
+}) {
+  const sharing = useHandSharing(campaignId);
+  return (
+    <section className="cm-card cma-card cmh-card" aria-label={`Hand of ${name}`} data-testid="combat-other-hand">
+      <div className="cma-row">
+        <h2 className="cm-h">Hand · {name}</h2>
+        <button type="button" className="cm-btn cm-sm" onClick={onBack}>
+          Your hand
+        </button>
+      </div>
+      {sharing === undefined ? (
+        <p role="status" className="cm-muted">
+          Loading the hand…
+        </p>
+      ) : handShared(sharing, characterId) ? (
+        <HandBody
+          campaignId={campaignId}
+          mapId={mapId}
+          characterId={characterId}
+          creatures={creatures}
+          pickedEnemies={[]}
+          gm={false}
+          canPlay={false}
+          lockedNote={`Read only: ${name}’s player plays these cards.`}
+        />
+      ) : (
+        <p className="cm-muted cma-note" data-testid="combat-hand-hidden">
+          {sharing.playersSeeHands ? `${name}’s player keeps their hand hidden.` : "The GM keeps every player’s cards private."}
+        </p>
+      )}
     </section>
   );
 }
@@ -291,6 +368,7 @@ function GmHandFor(props: ResolutionsProps) {
   const token = held ? tokens?.find((t) => t.characterId === held) : undefined;
   return (
     <>
+      <HandSharingSwitch campaignId={campaignId} />
       <GmCardSanctions campaignId={campaignId} />
       {held && tokens && token ? (
         <section className="cm-card cma-card cmh-card" aria-label={`Hand of ${token.name}`} data-testid="combat-gm-hand">

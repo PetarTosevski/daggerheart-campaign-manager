@@ -1,6 +1,7 @@
 /**
  * Who may call the domain-card functions (plan combat-actions CA4; rule 14, TE1): anonymous, outsider, player on their
- * own character, player on another player's character, and GM, for combatCards.useCard, hand, sanction and pending.
+ * own character, player on another player's character, and GM, for combatCards.useCard, hand, sanction and pending; and
+ * (F7-H4) hand with the GM's switch off or the hand hidden, handSharing, setHandHidden and campaigns.setPlayersSeeHands.
  * Each row runs on a fresh world. Asserts `ConvexError.data.code` only.
  */
 import { describe, expect, it } from "vitest";
@@ -88,12 +89,64 @@ describe("combat cards: access by role", () => {
     });
   });
 
-  it("hand: the character's player and the GM; another player FORBIDDEN", async () => {
+  it("hand: every member while hands are shared (F7-H4: the GM's switch on by default, nothing hidden)", async () => {
     expect(await rows((w, _s, role) => w.as(role).query(api.combatCards.hand, { campaignId: w.campaignId, characterId: w.characterA }))).toEqual({
+      anon: "UNAUTHENTICATED",
+      outsider: "NOT_FOUND",
+      otherPlayer: "ok",
+      player: "ok",
+      gm: "ok",
+    });
+  });
+
+  it("hand with the GM's switch off: the character's player and the GM; another player FORBIDDEN", async () => {
+    const off = async (w: World) => w.as("gm").mutation(api.campaigns.setPlayersSeeHands, { campaignId: w.campaignId, enabled: false });
+    expect(await rows(async (w, _s, role) => (await off(w), w.as(role).query(api.combatCards.hand, { campaignId: w.campaignId, characterId: w.characterA })))).toEqual({
       anon: "UNAUTHENTICATED",
       outsider: "NOT_FOUND",
       otherPlayer: "FORBIDDEN",
       player: "ok",
+      gm: "ok",
+    });
+  });
+
+  it("hand hidden by its player: the character's player and the GM; another player FORBIDDEN", async () => {
+    const hide = async (w: World) => w.as("player").mutation(api.combatCards.setHandHidden, { campaignId: w.campaignId, characterId: w.characterA, hidden: true });
+    expect(await rows(async (w, _s, role) => (await hide(w), w.as(role).query(api.combatCards.hand, { campaignId: w.campaignId, characterId: w.characterA })))).toEqual({
+      anon: "UNAUTHENTICATED",
+      outsider: "NOT_FOUND",
+      otherPlayer: "FORBIDDEN",
+      player: "ok",
+      gm: "ok",
+    });
+  });
+
+  it("handSharing: every member", async () => {
+    expect(await rows((w, _s, role) => w.as(role).query(api.combatCards.handSharing, { campaignId: w.campaignId }))).toEqual({
+      anon: "UNAUTHENTICATED",
+      outsider: "NOT_FOUND",
+      otherPlayer: "ok",
+      player: "ok",
+      gm: "ok",
+    });
+  });
+
+  it("setHandHidden: the character's player and the GM; another player FORBIDDEN", async () => {
+    expect(await rows((w, _s, role) => w.as(role).mutation(api.combatCards.setHandHidden, { campaignId: w.campaignId, characterId: w.characterA, hidden: true }))).toEqual({
+      anon: "UNAUTHENTICATED",
+      outsider: "NOT_FOUND",
+      otherPlayer: "FORBIDDEN",
+      player: "ok",
+      gm: "ok",
+    });
+  });
+
+  it("campaigns.setPlayersSeeHands: the GM only", async () => {
+    expect(await rows((w, _s, role) => w.as(role).mutation(api.campaigns.setPlayersSeeHands, { campaignId: w.campaignId, enabled: false }))).toEqual({
+      anon: "UNAUTHENTICATED",
+      outsider: "NOT_FOUND",
+      otherPlayer: "FORBIDDEN",
+      player: "FORBIDDEN",
       gm: "ok",
     });
   });

@@ -46,7 +46,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { installedAugments, seedMotherboard } from "./characterExtras";
 import { logAction } from "./lib/actionLog";
-import { moveCardFor } from "./lib/cardHand";
+import { moveCardFor, writeHandHidden } from "./lib/cardHand";
 import { featureScope } from "./sessionFeatures";
 import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
@@ -790,7 +790,7 @@ export const remove = userMutation({
   args: { characterId: v.id("characters") },
   returns: v.null(),
   handler: async (ctx, { characterId }) => {
-    await loadCharacter(ctx, ctx.user, characterId, "owner");
+    const { campaign } = await loadCharacter(ctx, ctx.user, characterId, "owner");
     await deleteFilesOf(ctx, "portrait", characterId);
     // At most one row per extra. Rows still in `frameTrackers` are deleted by
     // `migrations/characterExtras:moveFromTrackers` once their character is gone.
@@ -799,6 +799,8 @@ export const remove = userMutation({
       .withIndex("by_character_extra", (q) => q.eq("characterId", characterId))
       .collect();
     for (const row of extras) await ctx.db.delete("characterExtras", row._id);
+    // F7-H4: a removed character leaves the campaign's hidden-hands list.
+    await writeHandHidden(ctx, campaign._id, characterId, false);
     await ctx.db.delete("characters", characterId);
     return null;
   },

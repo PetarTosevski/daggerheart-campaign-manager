@@ -4,13 +4,19 @@
  * Use on combat cards (once per click, picked targets), no button on passive cards, exhausted cards greyed with their
  * reset label, Recall from the vault (free during an open rest), the GM's locked view, the after-the-roll choice
  * resubmitted; the result view (U1); and the panel memory that keeps results across the 760 px layout switch.
+ * F7-H4 (dcm-bxp.99.24): a rolling card's dialog with the Attack bar's roll options, dialog picks ringed on the map
+ * (`toggleExtraTarget`), another player's hand read only or hidden, the player's and the GM's sharing switches.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { PanelMemoryProvider, usePanelMemory } from "@/components/combat-map/actions/attack/memory";
-import { HandBody, type BodyProps } from "@/components/combat-map/actions/hand";
+import { Hand, HandBody, type BodyProps } from "@/components/combat-map/actions/hand";
+import { HideHandSwitch } from "@/components/combat-map/actions/hand/sharing";
+import { ActionsProvider, useCombatTargets } from "@/components/combat-map/actions/targets/state";
+import { HandSharingSwitch } from "@/components/combat-map/settings/hand-sharing";
+import type { ActionsPanelProps } from "@/components/combat-map/slots";
 import {
   answerChoices,
   cardBadges,
@@ -21,6 +27,7 @@ import {
   needsDialog,
   playableUses,
   recallLabel,
+  rollOf,
   type HandCard,
   type ResolvedUse,
 } from "@/components/combat-map/actions/hand/model";
@@ -148,12 +155,31 @@ const resolved = (extra: Partial<ResolvedUse> = {}): ResolvedUse => ({
 });
 
 describe("what a use asks first", () => {
-  it("Bolt Beacon fires at once with an enemy picked on the map; without one the dialog asks for the target", () => {
+  it("Bolt Beacon rolls, so it always opens the dialog for its roll options (F7-H4), with the picked enemy as its target", () => {
     const form = formFor(use("bolt-beacon"));
     expect(form.targets).toEqual({ side: "enemy", max: 1, range: "far" });
+    expect(form.rolls).toBe(true);
+    expect(needsDialog(form, { spells: 1, pickedEnemies: 1, gm: false })).toBe(true);
+    expect(initialValues(form, [ARCHER, BANDIT]).targets).toEqual([BANDIT]);
+    expect(choicesOf(form, initialValues(form, [BANDIT]))).toEqual([]);
+  });
+
+  it("a one-enemy card that does not roll (Deadly Focus) fires at once with an enemy picked; without one the dialog asks", () => {
+    const form = formFor(use("deadly-focus"));
+    expect(form.rolls).toBe(false);
     expect(needsDialog(form, { spells: 1, pickedEnemies: 1, gm: false })).toBe(false);
     expect(needsDialog(form, { spells: 1, pickedEnemies: 0, gm: false })).toBe(true);
-    expect(choicesOf(form, initialValues(form, [BANDIT]))).toEqual([]);
+  });
+
+  it("roll options become useCard's roll: Experiences, advantage or disadvantage, Help; nothing set → no roll", () => {
+    const form = formFor(use("bolt-beacon"));
+    const values = initialValues(form, [BANDIT]);
+    expect(rollOf(form, values, false)).toBeUndefined();
+    expect(rollOf(form, { ...values, experienceIds: ["e1"], edge: 2, help: 1 }, false)).toEqual({ experienceIds: ["e1"], advantage: 2, help: 1 });
+    expect(rollOf(form, { ...values, edge: -1 }, false)).toEqual({ disadvantage: 1 });
+    // A card that doesn't roll sends none of them.
+    const deadly = formFor(use("deadly-focus"));
+    expect(rollOf(deadly, { ...initialValues(deadly, [BANDIT]), experienceIds: ["e1"], edge: 1 }, false)).toBeUndefined();
   });
 
   it("a grimoire asks which spell; Arcane Barrage asks the Hope to spend (n:hope)", () => {
@@ -254,11 +280,14 @@ describe("the Hand", () => {
     expect(within(vault).getByRole("button", { name: "Recall: 2 Stress, Book of Ava" })).toBeEnabled();
   });
 
-  it("Use on Bolt Beacon with the Bandit picked fires useCard once, with no dialog, and shows Hit", async () => {
+  it("Use on Bolt Beacon with the Bandit picked opens the dialog with the Bandit picked; Use fires useCard once and shows Hit", async () => {
     withHand([BOLT]);
     results["combatCards:useCard"] = [resolved()];
     render(<HandBody {...props()} />);
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" })));
+    fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
+    const dialog = screen.getByRole("dialog", { name: "Bolt Beacon" });
+    expect(within(dialog).getByRole("button", { name: "Bandit" })).toHaveAttribute("aria-pressed", "true");
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Use Bolt Beacon" })));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(useCalls()).toHaveLength(1);
     expect(useCalls()[0]!.args).toMatchObject({ cardId: "bolt-beacon", spell: "main", targetTokenIds: [BANDIT], choices: [] });
@@ -304,7 +333,8 @@ describe("the Hand", () => {
       resolved(),
     ];
     render(<HandBody {...props()} />);
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" })));
+    fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
+    await act(async () => fireEvent.click(within(screen.getByRole("dialog", { name: "Bolt Beacon" })).getByRole("button", { name: "Use Bolt Beacon" })));
     const dialog = screen.getByRole("dialog", { name: "Bolt Beacon" });
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Option A" }));
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Continue" })));
@@ -328,6 +358,148 @@ describe("the Hand", () => {
     expect(screen.queryByRole("button", { name: /^Use/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Recall/ })).toBeNull();
     expect(screen.getByText(/Turn on “Play for this character”/)).toBeInTheDocument();
+  });
+});
+
+const SHEET = { experiences: [{ id: "x1", name: "Sellsword", value: 2 }, { id: "x2", name: "Lockpick", value: 1 }], hope: 1 };
+
+/** Shows the page's picked targets (the map's rings read the same state). */
+function Rings() {
+  const { targetTokenIds } = useCombatTargets();
+  return <output data-testid="rings">{targetTokenIds.join(",")}</output>;
+}
+
+describe("F7-H4: roll options and rings in the card dialog", () => {
+  it("a rolling card's dialog offers the Attack bar's roll options and sends them with the use", async () => {
+    withHand([BOLT]);
+    queries["characters:get"] = { sheet: SHEET };
+    results["combatCards:useCard"] = [resolved()];
+    render(<HandBody {...props()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
+    const dialog = screen.getByRole("dialog", { name: "Bolt Beacon" });
+    const options = within(dialog).getByTestId("combat-card-roll-options");
+    fireEvent.click(within(options).getByRole("button", { name: "Sellsword (+2)" }));
+    fireEvent.click(within(options).getByRole("button", { name: "More advantage" }));
+    fireEvent.click(within(options).getByRole("button", { name: "More help dice" }));
+    // Two Experiences with 1 Hope: refused before the call.
+    fireEvent.click(within(options).getByRole("button", { name: "Lockpick (+1)" }));
+    expect(within(dialog).getByRole("button", { name: "Not enough Hope for those Experiences." })).toBeDisabled();
+    fireEvent.click(within(options).getByRole("button", { name: "Lockpick (+1)" }));
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Use Bolt Beacon" })));
+    expect(useCalls()).toHaveLength(1);
+    expect(useCalls()[0]!.args).toMatchObject({ targetTokenIds: [BANDIT], roll: { experienceIds: ["x1"], advantage: 1, help: 1 } });
+  });
+
+  it("a card that does not roll has no roll options", () => {
+    withHand([ILLIAT]);
+    render(<HandBody {...props()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Use Book of Illiat" }));
+    const dialog = screen.getByRole("dialog", { name: "Book of Illiat" });
+    // Arcane Barrage deals damage with no roll.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Arcane Barrage" }));
+    expect(within(dialog).queryByTestId("combat-card-roll-options")).toBeNull();
+  });
+
+  it("creatures picked in the dialog get target rings on the map; unpicking one drops its ring", () => {
+    withHand([BOLT]);
+    render(
+      <ActionsProvider>
+        <Rings />
+        <HandBody {...props({ pickedEnemies: [] })} />
+      </ActionsProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Use Bolt Beacon" }));
+    const dialog = screen.getByRole("dialog", { name: "Bolt Beacon" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archer" }));
+    expect(screen.getByTestId("rings")).toHaveTextContent(ARCHER);
+    // One target: picking the Bandit moves the ring.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bandit" }));
+    expect(screen.getByTestId("rings").textContent).toBe(BANDIT);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bandit" }));
+    expect(screen.getByTestId("rings").textContent).toBe("");
+  });
+});
+
+const ASH_CH = "ch1" as Id<"characters">;
+const MIRA_CH = "ch2" as Id<"characters">;
+
+/** The player's page state with Ash's view (Mira's PC token next to Ash) and a token selected. */
+function playerPanel(selected: Id<"combatTokens"> | null, onSelectToken = vi.fn()): ActionsPanelProps {
+  const pc = (id: Id<"combatTokens">, name: string, characterId: Id<"characters">, mine: boolean) => ({ _id: id, name, characterId, mine, side: "pc", x: 0, y: 0, size: 1 });
+  queries["combatVision:playerView"] = {
+    state: "ok",
+    mapId: "m1",
+    characterId: ASH_CH,
+    tokenId: ASH,
+    pcs: [pc(ASH, "Ash", ASH_CH, true), pc(MIRA, "Mira", MIRA_CH, false)],
+    others: [],
+  };
+  return {
+    campaignId: "c1" as Id<"campaigns">,
+    role: "player",
+    mode: "play",
+    map: { _id: "m1" as Id<"combatMaps">, name: "Map", live: true, source: "generated", w: 20, h: 20 } as ActionsPanelProps["map"],
+    selectedTokenId: selected,
+    onSelectToken,
+    previewCharacterId: null,
+    onPreview: vi.fn(),
+  };
+}
+
+describe("F7-H4: another player's hand and the sharing switches", () => {
+  it("selecting another player's token shows that hand read only: no Use, no Recall; 'Your hand' goes back", () => {
+    withHand([BOLT], [AVA]);
+    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
+    const onSelect = vi.fn();
+    render(<Hand {...playerPanel(MIRA, onSelect)} />);
+    const hand = screen.getByRole("region", { name: "Hand of Mira" });
+    expect(within(hand).getByRole("article", { name: "Bolt Beacon" })).toHaveAttribute("data-locked", "true");
+    expect(within(hand).queryByRole("button", { name: /^Use/ })).toBeNull();
+    expect(within(hand).queryByRole("button", { name: /^Recall/ })).toBeNull();
+    expect(within(hand).getByText(/Read only: Mira’s player plays these cards/)).toBeInTheDocument();
+    expect(within(hand).queryByRole("switch")).toBeNull();
+    fireEvent.click(within(hand).getByRole("button", { name: "Your hand" }));
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it("a hidden hand, or the GM's switch off, shows no cards and says why", () => {
+    withHand([BOLT]);
+    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [MIRA_CH] };
+    const { unmount } = render(<Hand {...playerPanel(MIRA)} />);
+    expect(screen.queryByRole("article", { name: "Bolt Beacon" })).toBeNull();
+    expect(screen.getByTestId("combat-hand-hidden")).toHaveTextContent("Mira’s player keeps their hand hidden.");
+    unmount();
+    queries["combatCards:handSharing"] = { playersSeeHands: false, hidden: [] };
+    render(<Hand {...playerPanel(MIRA)} />);
+    expect(screen.queryByRole("article", { name: "Bolt Beacon" })).toBeNull();
+    expect(screen.getByTestId("combat-hand-hidden")).toHaveTextContent("The GM keeps every player’s cards private.");
+  });
+
+  it("the player's own hand (own token or nothing selected) has Use and the 'Hide my hand' switch", async () => {
+    withHand([BOLT]);
+    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
+    render(<Hand {...playerPanel(ASH)} />);
+    const hand = screen.getByRole("region", { name: "Your hand" });
+    expect(within(hand).getByRole("button", { name: "Use Bolt Beacon" })).toBeEnabled();
+    const hide = within(hand).getByRole("switch", { name: "Hide my hand from the other players" });
+    expect(hide).not.toBeChecked();
+    await act(async () => fireEvent.click(hide));
+    expect(calls.find((c) => c.name === "combatCards:setHandHidden")?.args).toEqual({ campaignId: "c1", characterId: ASH_CH, hidden: true });
+  });
+
+  it("no 'Hide my hand' switch while the GM keeps hands private", () => {
+    queries["combatCards:handSharing"] = { playersSeeHands: false, hidden: [] };
+    render(<HideHandSwitch campaignId={"c1" as Id<"campaigns">} characterId={ASH_CH} />);
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
+
+  it("the GM's switch 'Players can see each other's cards' is on by default and calls setPlayersSeeHands", async () => {
+    queries["combatCards:handSharing"] = { playersSeeHands: true, hidden: [] };
+    render(<HandSharingSwitch campaignId={"c1" as Id<"campaigns">} />);
+    const sw = screen.getByRole("switch", { name: "Players can see each other's cards" });
+    expect(sw).toBeChecked();
+    await act(async () => fireEvent.click(sw));
+    expect(calls.find((c) => c.name === "campaigns:setPlayersSeeHands")?.args).toEqual({ campaignId: "c1", enabled: false });
   });
 });
 
