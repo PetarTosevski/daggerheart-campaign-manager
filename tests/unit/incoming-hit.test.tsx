@@ -5,10 +5,11 @@
  * "Bandit hit Mira" when nothing is owed (Q14), one `respond` per tap, nothing for the GM on the map, a death move
  * brought up on the map, and the sheet's prompt only for a viewer who edits the character.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { IncomingHit, PendingHits } from "@/components/combat-map/actions/reactions";
+import { HitBoundary, IncomingHit, PendingHits } from "@/components/combat-map/actions/reactions";
+import { HIT_RETRY_DELAYS_MS } from "@/components/combat-map/actions/reactions/prompt";
 import {
   afterAnswer,
   armorQuestion,
@@ -265,5 +266,76 @@ describe("SheetIncomingHit", () => {
     sheetState.canEdit = false;
     const { container } = render(<SheetIncomingHit />);
     expect(container.innerHTML).toBe("");
+  });
+});
+
+describe("HitBoundary: a failed load retries by itself (followups-7 H3)", () => {
+  /** Throws while `failures.failing` (React may render a failing child more than once), else renders the prompt line. */
+  const failures = { failing: false, renders: 0 };
+  function Flaky() {
+    failures.renders += 1;
+    if (failures.failing) throw new Error("pending failed");
+    return <p>Bandit hit Mira</p>;
+  }
+
+  it("retries quietly with backoff and recovers without showing 'Try again'", () => {
+    vi.useFakeTimers();
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      failures.failing = true;
+      render(
+        <HitBoundary>
+          <Flaky />
+        </HitBoundary>,
+      );
+      // Failed: nothing shown while it waits (no alert).
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByText("Bandit hit Mira")).toBeNull();
+      const first = failures.renders;
+      act(() => vi.advanceTimersByTime(HIT_RETRY_DELAYS_MS[0] - 1));
+      expect(failures.renders).toBe(first);
+      // The first retry fails too: still quiet.
+      act(() => vi.advanceTimersByTime(1));
+      expect(failures.renders).toBeGreaterThan(first);
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByText("Bandit hit Mira")).toBeNull();
+      // The second retry, after a longer wait, loads.
+      failures.failing = false;
+      act(() => vi.advanceTimersByTime(HIT_RETRY_DELAYS_MS[1]));
+      expect(screen.getByText("Bandit hit Mira")).toBeTruthy();
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      quiet.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows 'Try again' only after the retries run out; the tap starts afresh", () => {
+    vi.useFakeTimers();
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      failures.failing = true;
+      render(
+        <HitBoundary>
+          <Flaky />
+        </HitBoundary>,
+      );
+      for (const delay of HIT_RETRY_DELAYS_MS) {
+        expect(screen.queryByRole("alert")).toBeNull();
+        act(() => vi.advanceTimersByTime(delay));
+      }
+      const alert = screen.getByRole("alert");
+      expect(alert.textContent).toContain("The incoming hit failed to load.");
+      // No more retries on their own.
+      const renders = failures.renders;
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(failures.renders).toBe(renders);
+      failures.failing = false;
+      fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+      expect(screen.getByText("Bandit hit Mira")).toBeTruthy();
+    } finally {
+      quiet.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

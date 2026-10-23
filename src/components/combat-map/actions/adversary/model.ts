@@ -2,9 +2,7 @@
 // no Convex calls.
 //
 // ```ts
-// parseActionRow("Bandit hit Mira; missed Tabby");      // { attacker: "Bandit", feature: null, marks: [{ name: "Mira", tone: "hit" }, { name: "Tabby", tone: "miss" }] }
-// parseActionRow("Bandit used Roar on Mira, Tabby");    // tones "effect" (a feature with no attack roll)
-// newActionFlashes(rows, seen, tokens);                 // one flash per PC token named by an action row not seen at load
+// newActionFlashes(rows, seen, tokens, gm);             // one flash per token id in an action row's `targets` not seen at load
 // rangeRows(self, pcs, sight, "Melee");                 // [{ name: "Mira", band: "melee", sight: "clear", inAttackRange: true }]
 // ```
 
@@ -12,44 +10,15 @@ import { rangeCheck, rangeFromWeapon, withinRange, type Footprint } from "@/lib/
 import type { SightResult } from "@/lib/domain/combat-actions/sight";
 import type { Range } from "@/lib/domain/card-effects/types";
 
-/** What a flash says about a token: the attack hit it, missed it, or a feature without a roll named it. */
+/** What a flash says about a token: the attack hit it, missed it, or a feature without a roll touched it. */
 export type FlashTone = "hit" | "miss" | "effect";
 
-export type ActionRow = { attacker: string; feature: string | null; marks: { name: string; tone: FlashTone }[] };
-
-const names = (list: string) =>
-  list
-    .split(", ")
-    .map((n) => n.trim())
-    .filter((n) => n.length > 0);
-
-/**
- * Reads the public row AA2 writes for an adversary action (`convex/lib/adversaryActions.ts`, its `publicText`; Q14:
- * players see only who hit whom): "Bandit hit Mira", "Bandit used Bite: hit Mira; missed Tabby" (an attack roll), or
- * "Bandit used Roar on Mira, Tabby" / "Bandit used Roar" (no roll). Null for any other row ("Mira took Bandit's hit",
- * "Tabby uses I Am Your Shield for Mira", a sheet change), which is not an action of its own.
- */
-export function parseActionRow(summary: string): ActionRow | null {
-  const rolled = /^(.+?)(?: used (.+?):)? ((?:hit|missed) .+)$/.exec(summary);
-  if (rolled) {
-    const marks: ActionRow["marks"] = [];
-    for (const part of rolled[3]!.split("; ")) {
-      const verdict = /^(hit|missed) (.+)$/.exec(part);
-      if (!verdict) return null;
-      const tone: FlashTone = verdict[1] === "hit" ? "hit" : "miss";
-      for (const name of names(verdict[2]!)) marks.push({ name, tone });
-    }
-    return { attacker: rolled[1]!, feature: rolled[2] ?? null, marks };
-  }
-  const used = /^(.+?) used (.+?)(?: on (.+))?$/.exec(summary);
-  if (!used || used[2]!.endsWith("'s sheet")) return null;
-  return { attacker: used[1]!, feature: used[2]!, marks: used[3] ? names(used[3]).map((name) => ({ name, tone: "effect" as const })) : [] };
-}
-
+/** A creature the public row names (`feed.list`'s `targets`, H3): its token id, PC or adversary token, and the tone. */
+export type FlashTarget = { tokenId: string; side: "pc" | "adversary"; tone: FlashTone };
 /** A feed row as the flashes read it (`feed.list`, either role's shape). */
-export type FlashFeedRow = { _id: string; kind: string; visibility: string; summary: string; undone: boolean };
-/** A PC token as the flashes read it (`combatTokens.party`). */
-export type FlashToken = { _id: string; name: string; x: number; y: number; size: number };
+export type FlashFeedRow = { _id: string; kind: string; visibility: string; summary: string; undone: boolean; targets?: readonly FlashTarget[] };
+/** A token as the flashes read it (`combatTokens.list` for the GM, `combatTokens.party` for a player). */
+export type FlashToken = { _id: string; x: number; y: number; size: number };
 
 export type Flash = { key: string; rowId: string; tokenId: string; tone: FlashTone; x: number; y: number; size: number; label: string };
 
@@ -57,20 +26,19 @@ const FLASH_LABEL: Record<FlashTone, string> = { hit: "Hit", miss: "Miss", effec
 
 /**
  * The flashes to play: every public adversary action row that was not in the feed when the map opened (`seen`) and is
- * not undone, on each PC token it names (names are the sheet names the tokens carry). Whichever page made the action
+ * not undone, on each token its `targets` name by id (followups-7 H3; never matched by name). Adversary tokens flash
+ * only with `gm` (user answer); the server already sends a player only the PC entries. Whichever page made the action
  * (the Encounter tab or this map), its row is the same, so both flash alike.
  */
-export function newActionFlashes(rows: readonly FlashFeedRow[], seen: ReadonlySet<string>, tokens: readonly FlashToken[]): Flash[] {
+export function newActionFlashes(rows: readonly FlashFeedRow[], seen: ReadonlySet<string>, tokens: readonly FlashToken[], gm: boolean): Flash[] {
   const out: Flash[] = [];
   for (const row of rows) {
     if (seen.has(row._id) || row.undone || row.kind !== "adversary" || row.visibility !== "public") continue;
-    const action = parseActionRow(row.summary);
-    if (!action) continue;
-    for (const mark of action.marks) {
-      for (const t of tokens) {
-        if (t.name !== mark.name) continue;
-        out.push({ key: `${row._id}:${t._id}`, rowId: row._id, tokenId: t._id, tone: mark.tone, x: t.x, y: t.y, size: t.size, label: FLASH_LABEL[mark.tone] });
-      }
+    for (const target of row.targets ?? []) {
+      if (target.side === "adversary" && !gm) continue;
+      const t = tokens.find((token) => token._id === target.tokenId);
+      if (!t) continue;
+      out.push({ key: `${row._id}:${t._id}`, rowId: row._id, tokenId: t._id, tone: target.tone, x: t.x, y: t.y, size: t.size, label: FLASH_LABEL[target.tone] });
     }
   }
   return out;

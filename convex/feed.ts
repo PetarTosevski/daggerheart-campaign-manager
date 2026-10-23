@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { appError } from "../src/lib/errors/app-error";
 import type { Doc } from "./_generated/dataModel";
 import { campaignQuery, gmMutation } from "./lib/functions";
-import { actionKindValidator, rollValidator, visibilityValidator } from "./lib/validators/actionLog";
+import { actionKindValidator, actionTargetValidator, rollValidator, visibilityValidator } from "./lib/validators/actionLog";
 
 /** What every feed row shows. Never the `before` snapshot: it holds the whole sheet, notes included. */
 const common = {
@@ -17,6 +17,8 @@ const common = {
   actorId: v.id("users"),
   /** GM Fear the row gained (positive) or removed. */
   fearDelta: v.optional(v.number()),
+  /** An adversary action's public row (H3): the tokens it named, by id; the map flashes them. Players get only PC tokens. */
+  targets: v.optional(v.array(actionTargetValidator)),
   undone: v.boolean(),
   /** The viewer is the row's actor or the GM, and the row is undoable and not undone (undo may still say UNDO_STALE). */
   canUndo: v.boolean(),
@@ -65,6 +67,8 @@ export const list = campaignQuery({
         ...(row.characterId !== undefined ? { characterId: row.characterId } : {}),
         actorId: row.actorId,
         ...(row.fearDelta !== undefined ? { fearDelta: row.fearDelta } : {}),
+        // Adversary tokens flash for the GM only (H3 user answer).
+        ...(row.targets !== undefined ? { targets: isGm ? row.targets : row.targets.filter((t) => t.side === "pc") } : {}),
         undone: row.undoneAt !== undefined,
         canUndo: row.undoable && row.kind !== "rest" && !(row.groupId !== undefined && restGroups.has(row.groupId)) && row.undoneAt === undefined && (isGm || row.actorId === ctx.user._id),
       };

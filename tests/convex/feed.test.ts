@@ -116,6 +116,63 @@ describe("feed.list", () => {
     const { page: rows } = await p1.query(api.feed.list, { campaignId, paginationOpts: page });
     expect(rows[0]).toMatchObject({ undone: true, canUndo: false });
   });
+
+  it("passes an adversary row's target token ids: the GM gets every one, a player only the PC tokens (H3)", async () => {
+    const { t, ids, gm, p1, campaignId, a } = await setup();
+    const { mapId } = await gm.mutation(api.combatMaps.create, { campaignId, size: "medium", idempotencyKey: key() });
+    const { pcToken, advToken } = await t.run(async (ctx) => {
+      const now = Date.now();
+      const encounterId = await ctx.db.insert("encounters", { campaignId, name: "Ambush", status: "running", pcs: 1, adjustments: [], gmTurn: 1, createdAt: now, updatedAt: now, startedAt: now });
+      const instance = await ctx.db.insert("encounterAdversaries", {
+        campaignId,
+        encounterId,
+        source: { kind: "srd", adversaryId: "bear" },
+        label: "Bear",
+        order: 0,
+        summoned: false,
+        stats: { difficulty: 14, major: 9, severe: 17, hpMax: 7, stressMax: 2 },
+        hp: 0,
+        stress: 0,
+        defeated: false,
+        conditions: [],
+        tags: [],
+        spotlights: 0,
+        spotlightTurn: 0,
+        updatedAt: now,
+      });
+      const token = { campaignId, mapId, size: 1, light: "none" as const, revealedTo: [], face: 0 };
+      const pcToken = await ctx.db.insert("combatTokens", { ...token, ref: { kind: "pc", characterId: a }, side: "pc", x: 1, y: 1 });
+      const advToken = await ctx.db.insert("combatTokens", { ...token, ref: { kind: "adversary", adversaryId: instance }, side: "enemy", x: 2, y: 1 });
+      await ctx.db.insert("actionLog", {
+        campaignId,
+        actorId: ids.gm,
+        kind: "adversary",
+        visibility: "public",
+        summary: "Bear used Roar on Ash, Bear",
+        targets: [
+          { tokenId: pcToken, side: "pc", tone: "effect" },
+          { tokenId: advToken, side: "adversary", tone: "effect" },
+        ],
+        undoable: true,
+        at: now,
+      });
+      return { pcToken, advToken };
+    });
+    const gmRow = (await gm.query(api.feed.list, { campaignId, paginationOpts: page })).page[0]!;
+    expect(gmRow.targets).toEqual([
+      { tokenId: pcToken, side: "pc", tone: "effect" },
+      { tokenId: advToken, side: "adversary", tone: "effect" },
+    ]);
+    const playerRow = (await p1.query(api.feed.list, { campaignId, paginationOpts: page })).page[0]!;
+    expect(playerRow.targets).toEqual([{ tokenId: pcToken, side: "pc", tone: "effect" }]);
+  });
+
+  it("rows without targets read back without the field", async () => {
+    const { p1, campaignId, a } = await setup();
+    await p1.mutation(api.rolls.actionRoll, { characterId: a, ...agility, idempotencyKey: key() });
+    const { page: rows } = await p1.query(api.feed.list, { campaignId, paginationOpts: page });
+    expect(rows[0]).not.toHaveProperty("targets");
+  });
 });
 
 describe("feed.remove and feed.clear", () => {
