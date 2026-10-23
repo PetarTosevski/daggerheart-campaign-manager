@@ -10,7 +10,7 @@ import { useTokens } from "../../tokens/use-tokens";
 import type { OtherToken } from "../../vision/use-vision";
 import { seenTargets, useActor, useCombatTargets, type WeaponSlot } from "./state";
 
-export { ActionsProvider, useCombatTargets, useActor, seenTargets, type CombatTargets, type WeaponSlot, type Actor } from "./state";
+export { ActionsProvider, useCombatTargets, useActor, seenTargets, type Aim, type CombatTargets, type WeaponSlot, type Actor } from "./state";
 
 /**
  * Targets (plan combat-actions CA5): the rings on picked enemy tokens (a map layer of its own, not map-canvas) and the

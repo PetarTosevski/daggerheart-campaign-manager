@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { CombatPageState, ProviderProps } from "../../slots";
@@ -26,9 +26,28 @@ export type CombatTargets = {
   clearTargets: () => void;
   slot: WeaponSlot;
   setSlot: (slot: WeaponSlot) => void;
+  /**
+   * A card the player dragged onto the map that still needs its one enemy target (plan hand-fan HF1, dcm-bxp.99.30:
+   * "targeting on the map happens after it is played"): the next enemy picked on the map (`toggleTarget`) is handed to
+   * `onTarget` in that click's event handler, and the aim ends. null while no card waits.
+   */
+  aim: Aim | null;
+  setAim: Dispatch<SetStateAction<Aim | null>>;
 };
 
-const NO_TARGETS: CombatTargets = { targetTokenIds: [], toggleTarget: () => {}, toggleExtraTarget: () => {}, clearTargets: () => {}, slot: "primary", setSlot: () => {} };
+/** A played card waiting for its target on the map: who plays it, and what to do with the enemy picked. */
+export type Aim = { characterId: Id<"characters">; cardId: string; cardName: string; onTarget: (tokenId: Id<"combatTokens">) => void };
+
+const NO_TARGETS: CombatTargets = {
+  targetTokenIds: [],
+  toggleTarget: () => {},
+  toggleExtraTarget: () => {},
+  clearTargets: () => {},
+  slot: "primary",
+  setSlot: () => {},
+  aim: null,
+  setAim: () => {},
+};
 
 const TargetsContext = createContext<CombatTargets>(NO_TARGETS);
 
@@ -36,17 +55,28 @@ const TargetsContext = createContext<CombatTargets>(NO_TARGETS);
 export function ActionsProvider({ children }: ProviderProps) {
   const [targetTokenIds, setTargets] = useState<readonly Id<"combatTokens">[]>([]);
   const [slot, setSlot] = useState<WeaponSlot>("primary");
+  const [aim, setAim] = useState<Aim | null>(null);
   const value = useMemo<CombatTargets>(
     () => ({
       targetTokenIds,
-      toggleTarget: (tokenId) => setTargets((ids) => (ids.length === 1 && ids[0] === tokenId ? [] : [tokenId])),
+      toggleTarget: (tokenId) => {
+        const picked = !(targetTokenIds.length === 1 && targetTokenIds[0] === tokenId);
+        setTargets(picked ? [tokenId] : []);
+        // A card waiting on the map takes the enemy just picked (in the click's handler, never an effect: rule 13).
+        if (aim && picked) {
+          setAim(null);
+          aim.onTarget(tokenId);
+        }
+      },
       toggleExtraTarget: (tokenId) =>
         setTargets((ids) => (ids.includes(tokenId) ? ids.filter((id) => id !== tokenId) : [...ids, tokenId])),
       clearTargets: () => setTargets([]),
       slot,
       setSlot,
+      aim,
+      setAim,
     }),
-    [targetTokenIds, slot],
+    [targetTokenIds, slot, aim],
   );
   return <TargetsContext.Provider value={value}>{children}</TargetsContext.Provider>;
 }

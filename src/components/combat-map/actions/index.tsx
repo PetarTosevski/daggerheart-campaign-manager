@@ -10,19 +10,21 @@ import { AttackBar } from "./attack";
 import { PanelMemoryProvider } from "./attack/memory";
 import { MapDice, MiniFeed } from "./dice";
 import { Resolutions as GmResolutions } from "./gm";
-import { GmHand, Hand } from "./hand";
+import { GmHand, Hand, HandColumn } from "./hand";
 import { TargetList } from "./targets";
 import { useActor } from "./targets/state";
 
 export { GmOwnHits, IncomingHit } from "./reactions";
 export { TargetsLayer } from "./targets";
-export { ActionsProvider, useCombatTargets, type CombatTargets } from "./targets/state";
+export { ActionsProvider, useCombatTargets, type Aim, type CombatTargets } from "./targets/state";
 
 /**
  * Combat actions slot (plan combat-actions CA5): the player's Hand (CA6), Attack bar with the target list, the map dice
  * box and the mini feed; the GM's Resolutions. On a desktop or tablet they are cards in the player column; at 760 px
  * and below they live in a bottom sheet under the map with the tabs Hand / Attack / Dice / Feed (Q11). Export names and
  * props follow src/components/combat-map/slots.ts.
+ * HF1 (plan hand-fan, dcm-bxp.99.30): the Hand's cards dock along the bottom of the map at every width, mounted once
+ * outside the layout switch; the column's (and the sheet's) Hand card says where they are and holds "Hide my hand".
  */
 
 /** The phone breakpoint of the Combat Map page (combat-map.css). */
@@ -77,8 +79,8 @@ function TabBody({ tab, props }: { tab: SheetTab; props: ActionsPanelProps }) {
   switch (tab) {
     case "hand":
       return (
-        <PartBoundary label="Your hand">
-          <Hand {...props} />
+        <PartBoundary label="The hand card">
+          <HandColumn {...props} />
         </PartBoundary>
       );
     case "attack":
@@ -156,9 +158,7 @@ function BottomSheet(props: ActionsPanelProps) {
 function Cards(props: ActionsPanelProps) {
   return (
     <>
-      <PartBoundary label="Your hand">
-        <Hand {...props} />
-      </PartBoundary>
+      <TabBody tab="hand" props={props} />
       <section className="cm-card cma-card" aria-label="Attack">
         <h2 className="cm-h">Attack</h2>
         <TabBody tab="attack" props={props} />
@@ -183,7 +183,15 @@ export function ActionsPanel(props: ActionsPanelProps) {
   const phone = usePhoneLayout();
   const actor = useActor(props);
   if (!actor) return null;
-  return <PanelMemoryProvider>{phone ? <BottomSheet {...props} /> : <Cards {...props} />}</PanelMemoryProvider>;
+  return (
+    <PanelMemoryProvider>
+      {/* The cards dock over the map's bottom edge at every width (HF1), so they stay mounted across the switch. */}
+      <PartBoundary label="Your hand">
+        <Hand {...props} />
+      </PartBoundary>
+      {phone ? <BottomSheet {...props} /> : <Cards {...props} />}
+    </PanelMemoryProvider>
+  );
 }
 
 /**

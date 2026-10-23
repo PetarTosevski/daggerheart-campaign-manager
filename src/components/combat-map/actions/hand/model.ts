@@ -201,6 +201,34 @@ export function needsDialog(form: UseForm, opts: { spells: number; pickedEnemies
   return !(form.targets.side === "enemy" && form.targets.max === 1 && opts.pickedEnemies > 0);
 }
 
+/**
+ * Whether a card played by dragging it onto the map waits for its target there (plan hand-fan HF1, dcm-bxp.99.30,
+ * user answer 2026-10-23: "targeting on the map happens after it is played"): a one-enemy card whose only missing
+ * answer is that enemy. Everything else goes the way Use goes: at once when nothing is asked (F8-I1), else the dialog.
+ * The GM picks targets in the dialog (GM clicks on the map select tokens), so a GM's card never aims.
+ */
+export function aimsOnMap(form: UseForm, opts: { spells: number; pickedEnemies: number; gm: boolean }): boolean {
+  if (opts.gm || opts.pickedEnemies > 0) return false;
+  return needsDialog(form, { ...opts, pickedEnemies: 0 }) && !needsDialog(form, { ...opts, pickedEnemies: 1 });
+}
+
+/** A screen rectangle (client pixels), as `getBoundingClientRect` gives it. */
+export type Box = { left: number; top: number; right: number; bottom: number };
+
+const inside = (p: { x: number; y: number }, b: Box) => p.x >= b.left && p.x <= b.right && p.y >= b.top && p.y <= b.bottom;
+
+/**
+ * Whether a card let go at `point` lands on the table: inside the map's viewport (`table`) and outside the hand's own
+ * tray (the bar and the fan, which lie over the map's bottom edge). No viewport, no table.
+ */
+export function dropsOnTable(point: { x: number; y: number }, table: Box | null, tray: Box | null): boolean {
+  if (!table || !inside(point, table)) return false;
+  return !(tray && inside(point, tray));
+}
+
+/** Pixels a pointer moves before a press on a card turns into a drag (a shorter press is a tap: it raises the card). */
+export const DRAG_SLOP_PX = 6;
+
 /** The dialog's answers. */
 export type FormValues = {
   targets: readonly string[];
