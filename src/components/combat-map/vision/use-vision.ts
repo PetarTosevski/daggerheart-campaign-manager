@@ -254,8 +254,8 @@ export function paintFogCells(tiles: CombatMapLayout["cells"], w: number, square
 }
 
 /**
- * Every vision write: map lights (GM and players, R9), doors (map-movement M2, D8), carried lights (Q3), reveals (R10)
- * and the GM's fog brush (R12), each with an optimistic update so a click shows at once. A failure lands in `error`.
+ * Every vision write: map lights (GM and players, R9), doors (map-movement M2, D8), carried lights (Q3), reveals (R10),
+ * the GM's fog brush (R12) and "Forget explored" (dcm-bxp.52), each with an optimistic update so a click shows at once. A failure lands in `error`.
  */
 export function useVisionActions(campaignId: Id<"campaigns">) {
   const [error, setError] = useState<string | null>(null);
@@ -279,6 +279,13 @@ export function useVisionActions(campaignId: Id<"campaigns">) {
     }
   });
 
+  const forgetExplored = useMutation(api.combatVision.forgetExplored).withOptimisticUpdate((store, { mapId, characterId }) => {
+    for (const { args, value } of store.getAllQueries(api.combatVision.explored)) {
+      if (!value || value.mapId !== mapId || (characterId !== undefined && value.characterId !== characterId)) continue;
+      store.setQuery(api.combatVision.explored, args, { ...value, bits: "" });
+    }
+  });
+
   async function run(call: () => Promise<unknown>) {
     setError(null);
     try {
@@ -291,6 +298,15 @@ export function useVisionActions(campaignId: Id<"campaigns">) {
   return {
     error,
     clearError: () => setError(null),
+    /**
+     * GM: forgets every character's explored area on the map (dcm-bxp.52), batch by batch until none is left; the
+     * cached explored rows empty at once.
+     */
+    forgetExplored: (mapId: Id<"combatMaps">) =>
+      run(async () => {
+        let more = true;
+        while (more) ({ more } = await forgetExplored({ campaignId, mapId }));
+      }),
     /** Lights or puts out a campfire / wall torch: `lit` is the wanted state (C7). */
     setLit: (objectId: Id<"combatMapObjects">, lit: boolean) => run(() => toggleLight({ campaignId, objectId, lit })),
     /** Opens or closes a door: `open` is the wanted state (M2). */

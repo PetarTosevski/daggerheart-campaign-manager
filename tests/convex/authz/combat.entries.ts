@@ -216,6 +216,7 @@ const vision: Entry[] = [
   { fn: api.combatVision.previewAs, access: "gm" },
   { fn: api.combatVision.explored, access: "view" },
   { fn: api.combatVision.markExplored, access: "view", args: () => ({ bits: "" }) },
+  { fn: api.combatVision.forgetExplored, access: "gm" },
   { fn: api.combatVision.revealTo, access: "gm", args: (w) => ({ tokenId: w.ids.customTokenId }) },
   { fn: api.combatVision.unrevealTo, access: "gm", args: (w) => ({ tokenId: w.ids.customTokenId }) },
   { fn: api.combatVision.setCarriedLight, access: "view", args: () => ({ light: "torch" }) },
