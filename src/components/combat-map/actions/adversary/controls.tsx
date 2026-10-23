@@ -180,6 +180,7 @@ function SelectedAdversary({
         defeated={instance.defeated}
         fear={fear}
         spotNote={spotlightNote(instance, encounter.gmTurn, turnSpotlights(instances, encounter.gmTurn))}
+        adversaries={instances.filter((i) => !i.defeated).map((i) => ({ id: i._id, name: i.label }))}
         mode={mode}
         options={offered}
         targets={targets}
