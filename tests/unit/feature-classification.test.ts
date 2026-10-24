@@ -169,7 +169,7 @@ describe("feature ids and keys (SD0)", () => {
 });
 
 describe("feature-effect registry (SD0)", () => {
-  it("has the twelve group tables, empty until their FE tracers fill them", () => {
+  it("has the twelve group tables, and every entry is a classified feature", () => {
     expect(Object.keys(FEATURE_EFFECT_TABLES)).toEqual([
       "bard-wizard",
       "druid-sorcerer",
@@ -184,9 +184,11 @@ describe("feature-effect registry (SD0)", () => {
       "transformations",
       "stances",
     ]);
-    for (const table of Object.values(FEATURE_EFFECT_TABLES)) expect(table).toEqual([]);
-    expect(FEATURE_EFFECTS.size).toBe(0);
-    expect(featureEffect("hope:guardian")).toBeUndefined();
+    // The FE tracers fill the tables; each entry must name a classified feature, and the merge keeps them all.
+    const entries = Object.values(FEATURE_EFFECT_TABLES).flat();
+    for (const entry of entries) expect(FEATURE_CLASSIFICATION[entry.featureId], entry.featureId).toBeDefined();
+    expect(FEATURE_EFFECTS.size).toBe(entries.length);
+    expect(featureEffect("hope:no-such-class")).toBeUndefined();
   });
 
   it("merges tables by feature id and throws on an id listed twice", () => {
