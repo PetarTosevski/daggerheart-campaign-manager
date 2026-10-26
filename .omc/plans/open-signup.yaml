@@ -31,6 +31,9 @@ waves:
         goal: Any email can create a user; the ALLOWED_EMAILS / GM_EMAILS gate is gone from sign-in and from every call, while the e2e-only and seed-account rails stay.
         depends_on: []
         owns:
+          - tests/convex/functions.test.ts
+          - tests/convex/create-or-update-user.test.ts
+          - tests/e2e/players.spec.ts
           - convex/lib/allowlist.ts
           - convex/lib/auth.ts
           - convex/accounts.ts
