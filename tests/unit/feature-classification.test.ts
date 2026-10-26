@@ -186,7 +186,12 @@ describe("feature-effect registry (SD0)", () => {
     ]);
     // The FE tracers fill the tables; each entry must name a classified feature, and the merge keeps them all.
     const entries = Object.values(FEATURE_EFFECT_TABLES).flat();
-    for (const entry of entries) expect(FEATURE_CLASSIFICATION[entry.featureId], entry.featureId).toBeDefined();
+    // Beastform attacks (`beastformAttackId`) are table entries but not classified features.
+    const formAttacks = new Set(BEASTFORMS.map((form) => beastformAttackId(form.id)));
+    for (const entry of entries) {
+      if (formAttacks.has(entry.featureId)) continue;
+      expect(FEATURE_CLASSIFICATION[entry.featureId], entry.featureId).toBeDefined();
+    }
     expect(FEATURE_EFFECTS.size).toBe(entries.length);
     expect(featureEffect("hope:no-such-class")).toBeUndefined();
   });
