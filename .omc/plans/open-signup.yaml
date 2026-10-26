@@ -1,0 +1,158 @@
+# Open sign-up (2026-10-26, bead dcm-bxp.128): anyone can create an account; password sign-ups verify the email with an emailed 6-digit code.
+# Binding user answers: no allowlist and no invite-only switch; Resend from dualityheart.com (dev: onboarding@resend.dev), key only in the Convex env;
+# forgot password by emailed code; Google stays; separate clear errors; an unverified email never receives invites or links to Google;
+# rate limits on sign-up and code sends; e2e and authz coverage; prod env changes only with the user.
+# Merge order matters: do not deploy `rebuild` to production between OS2 (open) and OS4 (code step), or password sign-ups are open and unverified.
+plan: open-signup
+waves:
+  - wave: 1
+    tracers:
+      - id: OS1
+        title: Email sender, Resend provider factory and a fake sender for tests
+        size: M
+        goal: A Convex Auth email provider factory sends the 6-digit code through the Resend HTTP API from the dualityheart.com sender, and on the local e2e backend sends nothing and always uses the code 123456.
+        depends_on: []
+        owns:
+          - convex/lib/authEmail.ts
+          - convex/convex.config.ts
+          - tests/unit/auth-email.test.ts
+          - docs/tasks/TASK-OS-OS1.md
+        reads: [convex/lib/allowlist.ts, convex/auth.ts, node_modules/@convex-dev/auth/dist/server/types.d.ts]
+        acceptance:
+          - "convex/lib/authEmail.ts exports resendCodeProvider(id) returning an EmailConfig (maxAge 15 minutes, 6-digit generateVerificationToken from crypto) whose sendVerificationRequest POSTs to https://api.resend.com/emails with fetch (no new dependency); the key is AUTH_RESEND_KEY and the sender MAIL_FROM, both read only inside the handler from the typed env and added to convex.config.ts as optional strings; neither appears in Vercel, .env.local or any NEXT_PUBLIC_ variable"
+          - "Two templates (sign-up verification and password reset) with subject, plain text and HTML; the code is shown once; no link"
+          - "On isE2EDeployment(env) with E2E_AUTH_ENABLED=true: no network call, the token is the fixed 123456 (the generator and sender both check, so production can never use it)"
+          - "A missing key or sender on a non-e2e deployment throws a clear server error, never silently skips sending; a Resend non-2xx response throws without logging the key or the code"
+          - "tests/unit/auth-email.test.ts (fetch mocked) covers: request shape and headers, e2e fake mode makes no request, fixed code only in e2e mode, missing key throws, non-2xx throws, token is 6 digits"
+          - "pnpm lint, typecheck, vitest and tracer-guard pass"
+      - id: OS2
+        title: Remove the invite allowlist
+        size: M
+        goal: Any email can create a user; the ALLOWED_EMAILS / GM_EMAILS gate is gone from sign-in and from every call, while the e2e-only and seed-account rails stay.
+        depends_on: []
+        owns:
+          - convex/lib/allowlist.ts
+          - convex/lib/auth.ts
+          - convex/accounts.ts
+          - scripts/e2e-setup.mjs
+          - tests/convex/helpers.ts
+          - tests/convex/require-user.test.ts
+          - tests/convex/settings.test.ts
+          - tests/convex/campaigns.test.ts
+          - tests/convex/characters.test.ts
+          - tests/convex/character-intents.test.ts
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/authz/world.ts
+          - tests/unit/allowlist.test.ts
+          - tests/unit/e2e-profile.test.ts
+          - tests/e2e/auth.spec.ts
+          - tests/e2e/live.ts
+          - docs/tasks/TASK-OS-OS2.md
+        reads: [convex/lib/users.ts, convex/lib/functions.ts, convex/sessionFeatures.ts, convex/lib/claude.ts, AGENTS.md]
+        acceptance:
+          - "allowedEmails, isAllowedEmail, isAllowedProfile and the ALLOWED_EMAILS / GM_EMAILS parsing are deleted; normalizeEmail, isE2EDeployment, buildE2EProfile, constantTimeEqual, seedAccountsEnabled and seedAccountsFor (and so SEED_ACCOUNTS / ALLOW_SEED_ACCOUNTS) stay; the file's header comment is rewritten (open sign-up, rails that remain)"
+          - "sessionUser in convex/lib/auth.ts returns null without a session and the stored user otherwise; a deleted user is still refused; requireUser and getUser keep their codes (UNAUTHENTICATED, FORBIDDEN for a missing user row)"
+          - "scripts/e2e-setup.mjs no longer sets ALLOWED_EMAILS; the account table in its comments is updated; E2E_ALLOWED is deleted or reduced to documentation (accounts need no listing)"
+          - "Test helpers no longer set ALLOWED_EMAILS (withAllowed-style helpers removed or no-ops deleted); every convex test passes without the variable"
+          - "tests/e2e/auth.spec.ts: the 'not allowlisted is refused' test is replaced by one proving any email signs in through the test form"
+          - "convex/lib/users.ts and convex/auth.ts are NOT touched here (OS3 owns them), so createOrUpdateUser still calls isAllowedEmail and will not compile until OS3: therefore OS2 keeps thin exported compatibility shims isAllowedEmail / isAllowedProfile that return true for a non-empty email, marked 'removed by OS3', and OS3 deletes them"
+          - "Grep report for the orchestrator: every remaining mention of ALLOWED_EMAILS, GM_EMAILS or allowlist outside OS2/OS3/OS6 ownership (e2e spec comments, other plans) is listed in the handoff, not edited"
+          - "pnpm lint, typecheck, vitest and tracer-guard pass"
+  - wave: 2
+    tracers:
+      - id: OS3
+        title: Verified password sign-up, forgot password, distinct errors, rate limits
+        size: L
+        goal: Password sign-up, sign-in and reset go through the Convex Auth Password provider with the Resend code provider, an account works only after its code is entered, and each failure reaches the client as its own code.
+        depends_on: [OS1, OS2]
+        owns:
+          - convex/auth.ts
+          - convex/lib/users.ts
+          - convex/lib/authRateLimit.ts
+          - src/lib/errors/auth.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - tests/convex/create-or-update-user.test.ts
+          - tests/convex/auth-signup.test.ts
+          - tests/convex/authz-synth.test.ts
+          - tests/convex/unauthenticated-sweep.test.ts
+          - tests/unit/auth-errors.test.ts
+          - docs/tasks/TASK-OS-OS3.md
+        reads: [convex/lib/allowlist.ts, convex/lib/authEmail.ts, convex/lib/functions.ts, convex/lib/permissions.ts, convex/members.ts, node_modules/@convex-dev/auth/dist/providers/Password.d.ts]
+        acceptance:
+          - "SPIKE FIRST, recorded in docs/tasks/TASK-OS-OS3.md: what Convex Auth lets through to the browser in production for (a) a thrown ConvexError in profile / validatePasswordRequirements / createOrUpdateUser, (b) a wrong or expired code ('Invalid verification code'), (c) an existing email. If a plain Error loses its message, the tracer wraps the step so a ConvexError<AppError> with a code reaches the client; if that needs a new public Convex function, it is a userless-safe action or mutation with an args validator and a returns validator, a rate limit and an entry in tests/convex/authz/*.entries.ts (add the file; the orchestrator wires it), or the open question is returned to the orchestrator"
+          - "Password({ id: 'password', verify: resendCodeProvider('resend-otp'), reset: resendCodeProvider('resend-reset'), profile, validatePasswordRequirements }) in convex/auth.ts; Google and the e2e provider unchanged; the shims from OS2 are deleted"
+          - "A new password account has no emailVerificationTime until the code is accepted, and no session is issued before it; a wrong or expired code issues no session and does not verify the email"
+          - "Three distinct codes from src/lib/errors/auth.ts with the messages 'This email already has an account. Sign in instead.', 'The password needs at least 8 characters.' and 'That code is wrong or has expired. Request a new one.' (bead decision: errors are separate and clear, overriding the enumeration wording of CF20, which OS6 amends); each asserted by ConvexError.data.code, never by message text"
+          - "createOrUpdateUser: Google / e2e profiles need emailVerified === true and reuse an existing user with that email only when that user's email is verified; a Google sign-in for an email held by an UNVERIFIED password account removes that account's password login and sessions and verifies the email (existing behaviour kept); a password sign-up for an email that already has a user is refused with the 'email already has an account' code; the email is normalised to lower case everywhere"
+          - "An unverified email never gains campaign access: permissions.ts already derives the invite email only from a verified user (readonly here); a test proves an invite to X is not reachable by an unverified password account for X, and becomes reachable after the code"
+          - "convex/lib/authRateLimit.ts: a second RateLimiter on components.rateLimiter (convex/lib/functions.ts is not edited) with named limits keyed by normalised email, not by user (callers are anonymous): code sends per email (for example 5 per hour) and sign-up attempts per email, plus a global sign-up bucket as a flood cap; enforced inside createOrUpdateUser / the provider send; skipped on the local e2e backend as functions.ts does, and covered by convex-test; exceeding a limit throws RATE_LIMITED"
+          - "tests/convex/auth-signup.test.ts covers: sign-up creates an unverified user, correct code verifies and signs in, wrong code, expired code (maxAge), password under 8, existing email, password reset by code (old password stops working, sessions of the old password ended), Google linking rules, rate limits"
+          - "pnpm lint, typecheck, vitest and tracer-guard pass"
+  - wave: 3
+    tracers:
+      - id: OS4
+        title: Sign-in page: create account with code, forgot password, clear errors
+        size: M
+        goal: The sign-in page lets anyone create an account, enter the emailed code, reset a forgotten password and see the right error for each failure.
+        depends_on: [OS3]
+        owns:
+          - src/app/signin/**
+          - tests/unit/signin-password-form.test.tsx
+          - tests/e2e/a11y-signin.spec.ts
+          - docs/tasks/TASK-OS-OS4.md
+        reads: [src/lib/errors/auth.ts, src/lib/convex-errors.ts, src/lib/safe-next.ts, convex/auth.ts, src/components/brand/buttons.tsx]
+        acceptance:
+          - "password-form.tsx steps: details (name, email, password) then 'Enter the 6-digit code we emailed to <email>' (one input, inputMode numeric, autocomplete one-time-code, Resend code button with a cooldown, Use a different email); signIn('password', { flow: 'signUp' }) then signIn('password', { flow: 'email-verification', email, code })"
+          - "Forgot password link under the sign-in form: email step (flow 'reset'), then code plus new password step (flow 'reset-verification'), then signed in; the response never says whether the email has an account at the reset step"
+          - "The old combined message 'not invited yet, may already have an account, or shorter than 8' is gone; the three codes show their own text in a role=alert; password length also blocks submit client-side (minLength 8 with a hint under the field); RATE_LIMITED shows a wait message"
+          - "No sign-in, sign-up or reset path depends on the allowlist; the Google button and the e2e test form are unchanged"
+          - "Focus moves to the first field of each step and to the error; keyboard only works; phone and tablet widths work; axe passes on every step (tests/e2e/a11y-signin.spec.ts, using the fixed e2e code 123456)"
+          - "Unit tests cover step transitions, each error text from its code, the resend cooldown and that the code step cannot be skipped"
+          - "pnpm lint, typecheck, vitest, the a11y spec and tracer-guard pass"
+      - id: OS5
+        title: Clean up abandoned unverified sign-ups
+        size: S
+        goal: Password accounts whose code was never entered are removed after a few days by a batched, self-rescheduling cron, so unverified rows and addresses do not pile up.
+        depends_on: [OS3]
+        owns:
+          - convex/cleanup.ts
+          - convex/crons.ts
+          - tests/convex/cleanup-unverified-signups.test.ts
+          - docs/tasks/TASK-OS-OS5.md
+        reads: [convex/lib/users.ts, convex/tables/campaigns.ts, convex/schema.ts]
+        acceptance:
+          - "internal.cleanup.expireUnverifiedSignups deletes, in batches (.take, never .collect) and rescheduling itself until done, users with no emailVerificationTime older than 7 days (by _creationTime) together with their authAccounts, authSessions, authRefreshTokens and authVerificationCodes rows, using indexes only"
+          - "It never touches a user that has a verified email, a campaign, a membership or a character (a test with such a row proves it), nor accounts of other providers"
+          - "Registered in convex/crons.ts daily at an odd minute (rule 8)"
+          - "pnpm lint, typecheck, vitest and tracer-guard pass"
+  - wave: 4
+    tracers:
+      - id: OS6
+        title: e2e sign-up flows, authz matrix coverage, docs and launch checklist
+        size: M
+        goal: Browser specs prove sign-up with a code, reset and the error cases against the fake sender, the matrix and sweep cover every new public function, and the docs describe open sign-up.
+        depends_on: [OS4, OS5]
+        owns:
+          - tests/e2e/signup.spec.ts
+          - tests/e2e/players.spec.ts
+          - tests/e2e/auth-session-ended.spec.ts
+          - tests/e2e/unauthenticated.spec.ts
+          - tests/convex/authz/auth.entries.ts
+          - tests/convex/authz/auth.test.ts
+          - docs/testing.md
+          - docs/best-practices.md
+          - docs/data-model.md
+          - README.md
+          - AGENTS.md
+          - CLAUDE.md
+          - docs/tasks/TASK-OS-OS6.md
+        reads: [tests/e2e/fixtures.ts, scripts/e2e-setup.mjs, tests/convex/authz-matrix.test.ts, tests/convex/authz/harness.ts, convex/lib/authEmail.ts, convex/members.ts]
+        acceptance:
+          - "tests/e2e/signup.spec.ts (fresh unique email per run, code 123456): create account then code then signed in; wrong code shows the code error and a retry works; password under 8 shows its own error; an existing email shows the 'already has an account' error; forgot password changes the password and the new one signs in; no session exists before the code"
+          - "players.spec.ts and auth-session-ended.spec.ts password sign-ups now enter the code; the 'one email per sign-in method' table in docs/testing.md is updated (password sign-ups need no pre-listed email, use unique emails)"
+          - "e2e: a GM invites an email that has no account yet, that player signs up with a password and the code, and sees the campaign; the same invite is not reachable before the code; join by code works for a brand-new account"
+          - "Every public Convex function added by OS3 (if any) has anonymous / outsider / player / GM rows in tests/convex/authz; the sweeps (convex and e2e unauthenticated) still pass; the inventory guard passes"
+          - "AGENTS.md and CLAUDE.md are edited identically (binding-rules sections stay byte-identical); the 'limited to the env allowlist' lines, the Convex-env list (drop ALLOWED_EMAILS / GM_EMAILS, add AUTH_RESEND_KEY and MAIL_FROM, key only in the Convex env), the ownership boundary 'Open sign-up beyond the allowlist without the user's go-ahead' and CF15 / CF20 in docs/best-practices.md are updated; README env table likewise"
+          - "A launch checklist section in docs/tasks/TASK-OS-OS6.md for the user to do, not agents: verify dualityheart.com in Resend (SPF, DKIM DNS at GoDaddy), set AUTH_RESEND_KEY and MAIL_FROM on the Convex prod deployment, remove ALLOWED_EMAILS / GM_EMAILS there, send one real code to a non-Resend-account address before announcing"
+          - "Full e2e suite, pnpm lint, typecheck, vitest and tracer-guard pass"
