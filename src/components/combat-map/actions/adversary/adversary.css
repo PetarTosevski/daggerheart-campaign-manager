@@ -1,0 +1,124 @@
+/*
+ * The GM's adversary controls on the Combat Map and the hit flashes (plan combat-actions AA5). The controls are the
+ * Encounter tab's own panel (tracker.css, trk-*), drawn here in the map's dark card language by pointing the --adv-*
+ * tokens it reads at the board's --cm-* ones (combat-map.css): light ink on the card, the board's gold for labels, the
+ * stat block's red attack strip and the Fear violet. Prefix cmx-. Every control stays at least 44 px high.
+ */
+.cmx-adv {
+  --adv-ink: var(--cm-text);
+  --adv-ink-soft: var(--cm-muted);
+  --adv-label: var(--cm-acc-soft);
+  --adv-label-2: var(--cm-muted);
+  --adv-parch: var(--cm-card);
+  --adv-parch-head: var(--cm-field);
+  --adv-parch-rule: #8e2b2b;
+  --adv-divider: var(--cm-card-border);
+  --adv-atk-text: #f6ead2;
+  --adv-list: var(--cm-field);
+  --adv-name: var(--cm-text);
+  --adv-text: var(--cm-text);
+  --adv-muted: var(--cm-muted);
+  --adv-border-row: var(--cm-card-border);
+  --adv-border-strong: var(--cm-border);
+  --adv-chip-text: var(--cm-text);
+  --adv-chip-hover: #6f8f86;
+  --adv-acc: var(--cm-acc);
+  --adv-acc-ink: var(--cm-acc-ink);
+  --adv-hf-border: var(--cm-fear-border);
+  --adv-hf-bg: #1e1930;
+  --adv-hf-fear: var(--cm-fear-text);
+  --adv-kind-passive: #5d6b4a;
+  --adv-kind-action: #8e2b2b;
+  --adv-kind-reaction: #2f5a7a;
+  --adv-kind-fear: #4a2a7a;
+  --adv-kind-evolution: #9a5a14;
+  --adv-kind-other: #6a5236;
+  --adv-error-border: var(--cm-danger-border);
+  --adv-error-bg: #2a1012;
+  --adv-error-text: var(--cm-danger);
+  --adv-font-head: var(--cm-display);
+  --adv-font-body: var(--cm-serif);
+  --adv-font-ui: inherit;
+}
+
+/* The tracker's parchment-only colours, on the dark card. */
+.cmx-adv .trk-act { padding: 10px 0 0; border-bottom: none; }
+.cmx-adv .trk-act-err { color: var(--cm-danger); }
+.cmx-adv .trk-res { background: var(--cm-field); border-color: var(--cm-card-border); }
+.cmx-adv .trk-confirm { background: var(--cm-fear-bg); border-color: var(--cm-fear-border); }
+.cmx-adv .trk-btn-parch.trk-btn-fear { color: #f3ecff; }
+.cmx-adv .trk-windows { padding: 10px 12px; border-radius: 10px; }
+.cmx-adv .trk-windows-h { font-size: 15px; }
+.cmx-adv .trk-window-what,
+.cmx-adv .trk-window-who { flex-basis: 100%; }
+.cmx-adv .trk-act-feats li > .trk-act-note { flex-basis: 100%; margin-left: 0; text-align: right; }
+
+.cmx-adv-sel { display: flex; flex-direction: column; gap: 10px; }
+.cmx-adv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.cmx-adv-head > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cmx-adv-name { margin: 0; font-family: var(--cm-display); font-size: 17px; font-weight: 700; color: var(--cm-text); overflow-wrap: anywhere; }
+.cmx-adv-head .cm-btn { min-height: 44px; }
+
+.cmx-adv-ranges { display: flex; flex-direction: column; gap: 6px; }
+.cmx-adv-ranges ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.cmx-adv-ranges li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--cm-card-border);
+  background: var(--cm-field);
+  font-size: 14px;
+}
+.cmx-adv-sight { font-size: 13px; color: var(--cm-acc-soft); }
+.cmx-adv-ranges li[data-sight="cover"] .cmx-adv-sight { color: #e8a75a; }
+.cmx-adv-ranges li[data-sight="blocked"] .cmx-adv-sight { color: var(--cm-danger); }
+.cmx-adv-ranges li[data-sight="unknown"] .cmx-adv-sight { color: var(--cm-muted); }
+.cmx-adv-far { flex-basis: 100%; font-size: 12px; font-style: italic; color: var(--cm-muted); }
+.cmx-adv-dice { flex: 1 1 100%; }
+.cmx-adv-dice:empty { display: none; }
+
+/* Hit flashes: above the fog and the target rings (cma-rings: 40), never catching the pointer. */
+.cmx-flashes { position: absolute; inset: 0; z-index: 41; pointer-events: none; }
+.cmx-flash {
+  --flash: #ff6b5a;
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 3px solid var(--flash);
+  box-shadow: 0 0 18px 6px color-mix(in srgb, var(--flash) 70%, transparent), inset 0 0 14px 4px color-mix(in srgb, var(--flash) 55%, transparent);
+  animation: cmx-flash 1.8s ease-out forwards;
+}
+.cmx-flash[data-tone="miss"] { --flash: #b8c6c9; border-style: dashed; box-shadow: 0 0 10px 2px rgba(184, 198, 201, 0.45); }
+.cmx-flash[data-tone="effect"] { --flash: #b9a2f5; }
+.cmx-flash-lbl {
+  position: absolute;
+  left: 50%;
+  top: -24px;
+  transform: translateX(-50%);
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: rgba(8, 12, 14, 0.86);
+  color: var(--flash);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+@keyframes cmx-flash {
+  0% { opacity: 0; transform: scale(0.6); }
+  12% { opacity: 1; transform: scale(1.18); }
+  30% { transform: scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.25); }
+}
+@keyframes cmx-fade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cmx-flash { animation: cmx-fade 1.8s linear forwards; }
+}

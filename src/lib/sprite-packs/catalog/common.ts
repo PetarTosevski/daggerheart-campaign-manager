@@ -1,0 +1,81 @@
+// Built-in catalog: common (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
+
+import { defineFolder, long, obj, tex } from "./types";
+
+export const COMMON = defineFolder("common", {
+  props: [
+    obj("wooden crate", "cover", "low", "crate"),
+    obj("barrel", "cover", "low", "barrel"),
+    obj("treasure chest (closed)", "cover", "low", "chest"),
+    obj("treasure chest (open, coins inside)", "cover", "low", "chest"),
+    obj("sack of grain", "cover", "low", "crate", { standIn: false }),
+    obj("small round table", "cover", "low", "table"),
+    obj("wooden chair", "cover", "low", "table", { standIn: false }),
+    obj("bedroll", "none", "flat", "log", { move: "open", standIn: false }),
+    obj("campfire (burning)", "none", "low", "campfire", { light: "campfire" }),
+    obj("campfire (burnt out, ashes)", "none", "flat", "rubble", { standIn: false }),
+    obj("standing torch (lit)", "none", "tall", "torch", { light: "torch" }),
+    obj("iron brazier (lit)", "none", "low", "torch", { light: "torch" }),
+    obj("pile of rubble", "cover", "low", "rubble", { move: "difficult" }),
+    obj("scattered bones and a skull", "none", "flat", "bones"),
+    obj("weapon rack with swords and spears", "cover", "low", "crate", { footprint: "rect", standIn: false }),
+    obj("coil of rope and a lantern", "none", "low", "crate", { standIn: false }),
+  ],
+  large: [
+    obj("covered wagon", "block", "tall", "tent", { footprint: "rect", standIn: false }),
+    obj("hay cart", "block", "tall", "tent", { footprint: "rect", standIn: false }),
+    long("long feast table with benches", "cover", "low", "table"),
+    long("bookshelf (seen from above, two squares wide)", "block", "tall", "crate", { standIn: false }),
+    obj("canvas tent (closed)", "block", "tall", "tent"),
+    obj("large boulder", "block", "tall", "boulder"),
+    long("fallen tree trunk", "cover", "low", "log", { move: "difficult" }),
+    obj("stone well", "cover", "low", "rock", { standIn: false }),
+    obj("broken statue lying on its side", "cover", "low", "statue", { footprint: "rect", standIn: false }),
+  ],
+  terrain: [
+    tex("grass", "grass", true),
+    tex("packed dirt", "dirt", true),
+    tex("cobblestone road", "path", false),
+    tex("flagstone floor", "stone", false),
+  ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11A): new items, not variants. Light by D2 / Q1: the cooking pot and
+  // the campsite have a burning fire (campfire), the oil lamp and the glowing magic circle glow faintly. Sizes: the horse,
+  // ox and spiked barricade 2 x 1, the palisade 3 x 1, the rest 2 x 2.
+  extras: {
+    "props-2": [
+      obj("leather backpack", "none", "low", "crate", { standIn: false }),
+      obj("quiver of arrows", "none", "low", "crate", { standIn: false }),
+      obj("round wooden shield", "none", "flat", "bones", { move: "open", standIn: false }),
+      obj("dropped longsword", "none", "flat", "bones", { move: "open", standIn: false }),
+      obj("spilled coin pouch", "none", "flat", "chest", { standIn: false }),
+      obj("cluster of potion bottles", "none", "low", "barrel", { standIn: false }),
+      obj("open spellbook", "none", "flat", "bones", { move: "open", standIn: false }),
+      obj("pile of scrolls", "none", "low", "crate", { standIn: false }),
+      obj("cooking pot on a tripod", "none", "low", "campfire", { light: "campfire", standIn: false }),
+      obj("bundle of firewood", "none", "low", "log", { standIn: false }),
+      obj("oil lamp", "none", "low", "crystal", { light: "faintglow", standIn: false }),
+      obj("small iron lockbox", "none", "low", "chest", { standIn: false }),
+      obj("rolled-up carpet", "none", "low", "log", { move: "open", standIn: false }),
+      obj("tool bag with a hammer", "none", "low", "crate", { standIn: false }),
+      obj("bear trap (open)", "none", "flat", "rubble", { standIn: false }),
+      obj("wooden bucket of water", "none", "low", "barrel", { standIn: false }),
+    ],
+    "large-2": [
+      long("saddled horse", "cover", "tall", "rock", { standIn: false }),
+      long("ox", "cover", "tall", "rock", { standIn: false }),
+      obj("wooden palisade section", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 1, standIn: false }),
+      obj("campsite with two bedrolls", "none", "low", "campfire", { light: "campfire", footprint: "rect", standIn: false }),
+      obj("supply dump of crates, sacks and barrels", "cover", "low", "crate", { move: "block", standIn: false }),
+      obj("glowing magic circle on the ground", "none", "flat", "crystal", { light: "faintglow", standIn: false }),
+      long("wooden barricade with spikes", "cover", "low", "log", { move: "block", standIn: false }),
+      obj("dragon's hoard (heap of gold coins)", "cover", "low", "chest", { move: "difficult", standIn: false }),
+      obj("stone portal arch", "block", "tall", "statue", { footprint: "rect", standIn: false }),
+    ],
+    "terrain-2": [
+      tex("gravel", "path", true),
+      tex("dry yellow grass", "grass", true),
+      tex("pebbled ground", "dirt", true),
+      tex("trampled mud", "dirt", true),
+    ],
+  },
+});

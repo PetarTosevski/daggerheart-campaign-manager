@@ -1,0 +1,53 @@
+# Domain Deck plan: the board's Domain Deck browser on the sheet's Domains > Domain Cards tab
+# (reference/designs/project/Party.dc.html, markup "Domain Deck" section, logic in `domainDeck()`), requested by the
+# user 2026-10-18 ("you are missing the domain deck, implement it"). Format: docs/workflow.md.
+#
+# Rules taken from the board and the app's existing level-up rules:
+#   - Picks allowed = level + 1 + one per "additional domain card" advancement (already shown as "N of M cards chosen").
+#   - The deck lists every card of the character's class domains (plus the multiclass domain, as level-up allows),
+#     from the campaign's enabled sources. Cards above the reachable level (cardLimit in src/lib/domain/level-up:
+#     class domain = level, multiclass domain = ceil(level/2)) are face-down card backs ("Unlocks at level N",
+#     "Turn over" to read them) and can't be taken.
+#   - "Take card" adds an owned card: into the loadout when it has room (< 5), else into the vault. No Stress cost.
+#     Disabled with "No picks left" when owned >= allowed. Owned cards show a badge "In loadout" / "In vault".
+#   - Filters: All + one per domain; "Hide cards above my level" toggle; More/Less expands the card text.
+#   - The board's "Remove" (discard an owned card) is NOT in scope (not a book rule; needs the user).
+plan: domain-deck
+waves:
+  - wave: 1
+    tracers:
+      - id: DD1
+        title: Domain Deck browser with Take card
+        size: M
+        goal: Owners and the GM can browse every card of their domains on the Domains tab in the board's Domain Deck format and take a card while they have picks left; the server enforces the same rules.
+        depends_on: []
+        owns:
+          - convex/characters.ts
+          - src/lib/domain/level-up/index.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - src/lib/errors/
+          - tests/convex/domain-deck.test.ts
+          - tests/convex/authz-matrix.test.ts
+          - tests/unit/domain-deck.test.ts
+          - tests/unit/sheet-render.test.ts
+          - tests/e2e/domain-deck.spec.ts
+          - tests/e2e/visual/DD1.spec.ts
+          - docs/tasks/TASK-SR-DD1.md
+          - docs/data-model.md
+        reads:
+          - reference/designs/project/Party.dc.html
+          - .omc/autopilot/sheet-redesign-analysis.md
+          - docs/tasks/TASK-SR-S12.md
+          - convex/lib/functions.ts
+          - convex/lib/characterSheet.ts
+          - tests/e2e/visual/helpers.ts
+          - tests/e2e/fixtures.ts
+        acceptance:
+          - "convex/characters.ts exports takeCard (userMutation via the existing editable() helper: owner or GM; args {characterId, cardId}; returns validator): refuses with INVALID an unknown card, a card from a source the campaign doesn't use, a card outside the class/multiclass domains or above the reachable level (reuse an exported helper from src/lib/domain/level-up, e.g. a cardTakeProblem/cardsWithin, not a copy), an owned card, and owned >= allowed (level + 1 + domainCard advancement picks); otherwise adds to owned and to loadout when loadout < 5, else vault, via saveSheet (updatedAt bumps so undo of older rows stays stale-safe)"
+          - "tests/convex/domain-deck.test.ts covers each refusal (asserting ConvexError.data.code), the loadout-vs-vault placement, the GM taking for a player, and a player of another character being FORBIDDEN; authz-matrix lists takeCard for anonymous, outsider, player and GM"
+          - "Domains > Domain Cards shows a 'Domain Deck' SheetBox below the felt table in the board's dk-grid format: domain-coloured cards (icon, name, level, art when present, meta 'Domain Type · Recall N', text clamped with More/Less), filter group 'Filter by domain' (All + each domain, aria-pressed), 'Hide cards above my level' toggle, 'Take card' / 'No picks left' buttons, owned badges, face-down card backs (per-domain back art from CARD_BACKS) for locked cards with 'Turn over'; the hand-empty text reads as the board's ('Take cards from the Domain Deck below, or draw them from your vault.'). Read-only viewers see the deck without Take buttons. Optimistic update or busy-disable on Take."
+          - "Accessibility and layout: buttons have accessible names (e.g. 'Take Book of Ava'), face-down backs are buttons labelled as the board's backLabel, 44 px targets and no horizontal scroll at 390 px"
+          - "tests/e2e/domain-deck.spec.ts: a GM-created level-1 character with 2 cards sees '2 of 2 cards chosen' and 'No picks left'; after the GM levels or the test raises the level (existing flows/helpers only), taking a card updates the count and puts it into the loadout; hide-above-level and a filter work. tests/e2e/visual/DD1.spec.ts shoots the deck at 1440 and 390 next to scripts/board-shots.mjs output; TASK-SR-DD1.md lists both with verdicts and deviations"
+          - "pnpm lint, pnpm typecheck, pnpm test, and the character-sheet, level-up and domain-deck e2e specs pass in the worktree"

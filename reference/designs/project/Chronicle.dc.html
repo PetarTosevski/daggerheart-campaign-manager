@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Load Campaign</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#101018}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #101018; color: #ece6d6; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box; display: flex; flex-direction: column">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 48px; border-bottom: 1px solid #2a2838">
+<div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap">
+<a href="TitleMenu.dc.html" aria-label="Back to main menu" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #3a3449; color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></a>
+<div style="font-family: 'Cinzel', serif; font-size: 40px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div>
+<h1 style="margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.24em; color: #a39cb2; font-weight: 500">Load Campaign</h1>
+</div>
+<div style="display: flex; gap: 10px; flex-wrap: wrap">
+<button type="button" style="min-height: 44px; padding: 0 18px; border-radius: 8px; border: 1px solid #3a3449; background: transparent; color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit">Import</button>
+<button type="button" style="min-height: 44px; padding: 0 18px; border-radius: 8px; border: 1px solid #3a3449; background: transparent; color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit">Settings</button>
+</div>
+</header>
+
+<div style="flex: 1; display: flex; gap: 24px; padding: 32px 48px 40px; box-sizing: border-box; min-height: 0">
+<div style="flex: 1; min-width: 0; max-height: 760px; overflow-y: auto; scroll-snap-type: y mandatory; display: flex; flex-direction: column; gap: 16px; padding-right: 6px">
+
+<sc-if value="{{ hasUndo }}" hint-placeholder-val="{{ false }}"><div role="status" style="flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-radius: 12px; background: #1c1a27; border: 1px solid #3a3449; font-size: 15px"><span>Deleted {{ undoName }}.</span><button type="button" onClick="{{ undo }}" style="min-height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid {{accent}}; background: transparent; color: {{accent}}; font-family: inherit; font-size: 15px; cursor: pointer">Undo</button></div></sc-if>
+<sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}"><div style="padding: 48px 24px; border-radius: 16px; border: 2px dashed #3a3449; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; color: #b9b2c7; font-size: 16px">No saved campaigns.<a href="FrameSelect.dc.html" style="min-height: 48px; padding: 0 22px; border-radius: 10px; background: {{accent}}; color: #1a1408; font-weight: 600; text-decoration: none; display: flex; align-items: center">Create a campaign</a></div></sc-if>
+<sc-for list="{{ bands }}" as="b" hint-placeholder-count="5">
+<div style="{{ b.wrapStyle }}">
+<button type="button" onClick="{{ b.pick }}" aria-expanded="{{ b.expanded }}" style="width: 100%; min-height: 150px; display: flex; flex-wrap: wrap; align-items: center; gap: 24px 36px; padding: 24px 40px; border: none; background: transparent; color: #ece6d6; cursor: pointer; text-align: left; font-family: inherit; box-sizing: border-box">
+<span style="font-family: 'Cinzel', serif; font-size: 80px; line-height: 1; font-weight: 900; color: {{ b.numColor }}; width: 140px; text-align: center">{{ b.roman }}</span>
+<span style="flex: 1 1 320px; display: flex; flex-direction: column; gap: 8px; min-width: 0">
+<span style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.22em; color: #a39cb2">Tier {{ b.tier }} · Level {{ b.level }}</span>
+<span style="font-family: 'Cinzel', serif; font-size: 34px; font-weight: 700; letter-spacing: 0.03em">{{ b.name }}</span>
+<span style="font-size: 15px; color: #b9b2c7">{{ b.party }} players · {{ b.sessions }} sessions · Last played [date]</span>
+</span>
+<span style="display: flex; gap: 10px">
+<span style="min-width: 76px; padding: 10px 14px; border-radius: 10px; background: #2a2416; color: #f0cf8a; display: flex; flex-direction: column; align-items: center; gap: 2px"><span style="font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase">Hope</span><strong style="font-size: 24px">{{ b.hope }}</strong></span>
+<span style="min-width: 76px; padding: 10px 14px; border-radius: 10px; background: #231d36; color: #c6b6f2; display: flex; flex-direction: column; align-items: center; gap: 2px"><span style="font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase">Fear</span><strong style="font-size: 24px">{{ b.fear }}</strong></span>
+</span>
+</button>
+<sc-if value="{{ b.open }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 0 40px 28px 216px; box-sizing: border-box">
+<div style="font-size: 15px; line-height: 1.6; color: #b9b2c7; max-width: 560px">[Recap of the last session: where the party stands and what threat looms.]</div>
+<div style="display: flex; gap: 12px; flex-wrap: wrap">
+<a href="Party.dc.html" style="min-height: 50px; padding: 0 20px; border-radius: 10px; border: 1px solid #3a3449; background: transparent; color: #ece6d6; font-size: 15px; text-decoration: none; display: flex; align-items: center; box-sizing: border-box">Party roster</a>
+<a href="CampaignHub.dc.html" style="min-height: 50px; padding: 0 28px; border-radius: 10px; background: {{accent}}; color: #1a1408; font-size: 15px; font-weight: 600; text-decoration: none; display: flex; align-items: center; box-sizing: border-box">Resume Campaign</a>
+<button type="button" onClick="{{ b.askDel }}" aria-label="{{ b.delLabel }}" style="min-height: 50px; padding: 0 18px; border-radius: 10px; border: 1px solid #6a2a2a; background: transparent; color: #ff9a92; font-size: 15px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path></svg>Delete</button>
+</div>
+</div>
+<sc-if value="{{ b.confirming }}" hint-placeholder-val="{{ false }}"><div role="alertdialog" aria-label="Confirm delete" style="margin: 0 40px 28px 216px; padding: 14px 16px; border-radius: 10px; border: 1px solid #8e2b2b; background: #2a1012; display: flex; flex-wrap: wrap; align-items: center; gap: 12px"><span style="flex: 1 1 260px; font-size: 15px; color: #ffd9d6">Delete <strong>{{ b.name }}</strong>? It will be removed from your saved campaigns.</span><button type="button" onClick="{{ cancelDel }}" style="min-height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid #5a3a3a; background: transparent; color: #ece6d6; font-family: inherit; font-size: 15px; cursor: pointer">Keep it</button><button type="button" onClick="{{ b.doDel }}" style="min-height: 44px; padding: 0 16px; border-radius: 8px; border: none; background: #b8322a; color: #fff; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer">Delete campaign</button></div></sc-if>
+</sc-if>
+</div>
+</sc-for>
+</div>
+
+<nav aria-label="Jump to campaign" style="flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px">
+<sc-for list="{{ bands }}" as="b" hint-placeholder-count="5">
+<button type="button" onClick="{{ b.pick }}" aria-label="{{ b.jumpLabel }}" style="width: 44px; height: 44px; border: none; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center"><span style="{{ b.dotStyle }}"></span></button>
+</sc-for>
+</nav>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#e3b45a","options":["#e3b45a","#8f78d8","#d9775b","#6fb8a6"]},"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const accent = (() => { try { return (JSON.parse(window.localStorage.getItem('dh.settings') || '{}') || {}).accent; } catch (e) { return null; } })() || this.props.accent || '#e3b45a';
+    const romans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+    const KEY = 'dh.campaigns';
+    const DEFAULTS = [
+      { id: 'c1', name: '[Campaign name]', tier: 2, level: 4, party: 4, sessions: 11, hope: 5, fear: 4 },
+      { id: 'c2', name: '[Campaign name]', tier: 1, level: 2, party: 5, sessions: 3, hope: 3, fear: 2 },
+      { id: 'c3', name: '[Campaign name]', tier: 3, level: 6, party: 4, sessions: 24, hope: 1, fear: 9 },
+      { id: 'c4', name: '[One-shot name]', tier: 1, level: 1, party: 3, sessions: 1, hope: 2, fear: 1 },
+      { id: 'c5', name: '[Campaign name]', tier: 4, level: 9, party: 4, sessions: 41, hope: 6, fear: 6 }
+    ];
+    const load = () => { try { const v = JSON.parse(window.localStorage.getItem(KEY) || 'null'); return Array.isArray(v) ? v : DEFAULTS; } catch (e) { return DEFAULTS; } };
+    const data = st.list ?? load();
+    const save = (list, extra) => { try { window.localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {} this.setState({ list, ...(extra || {}) }); };
+    const open = st.open ?? 0;
+    const bands = data.map((b, i) => {
+      const on = i === open;
+      return {
+        ...b,
+        roman: romans[i] || String(i + 1),
+        open: on,
+        expanded: on ? 'true' : 'false',
+        jumpLabel: 'Campaign ' + (romans[i] || i + 1),
+        numColor: on ? accent : '#3f3a4e',
+        pick: () => this.setState({ open: on ? -1 : i, confirm: null }),
+        confirming: on && st.confirm === b.id,
+        delLabel: 'Delete ' + b.name,
+        askDel: () => this.setState({ confirm: b.id }),
+        doDel: () => save(data.filter((x) => x.id !== b.id), { confirm: null, open: -1, undo: { item: b, idx: i } }),
+        wrapStyle: 'flex: none; border-radius: 16px; scroll-snap-align: start; background: ' + (on ? '#1c1a27' : '#15141d') + '; border: 1px solid ' + (on ? accent : '#272434') + ';',
+        dotStyle: 'display: block; border-radius: 999px; width: 8px; height: ' + (on ? '28px' : '8px') + '; background: ' + (on ? accent : '#4a4458') + ';'
+      };
+    });
+    const u = st.undo;
+    return { accent, bands, empty: data.length === 0,
+      cancelDel: () => this.setState({ confirm: null }),
+      hasUndo: !!u, undoName: u ? u.item.name : '',
+      undo: () => { if (!u) return; const list = data.slice(); list.splice(Math.min(u.idx, list.length), 0, u.item); save(list, { undo: null, open: Math.min(u.idx, list.length - 1) }); } };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,517 @@
+# D10 plan: Sessions (bead dcm-bxp.9). Prep / Play / Wrap-up per session, live session start and end synced to the party, the
+# dashboard's Last Session card, the session boundaries as an indexed field (dcm-bxp.48) and the Combat Map's '+ Session encounter'
+# button (dcm-bxp.50).
+# Board: reference/designs/project/Sessions.dc.html (visual spec and data model). Also CampaignHub.dc.html (hero line 'Session N ·
+#   Next session <date>', 'Start Session' button l.141, 'Last Session' card l.236-243, Witherwild 'Wither Tokens' panel l.263-272) and
+#   Combat.dc.html (session import l.706-770).
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation.
+# Book pages: CB = Core Book, HF = Hope & Fear, PRINTED pages (in the extracted core.txt / hopefear.txt the "===== PAGE N =====" block
+#   carries printed page N in its footer). Each tracer that cites a page re-checks it (.reference-private/, pdfjs-dist; never commit
+#   the books) and quotes it in its task doc.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+# Status: APPROVED 2026-10-20 (all defaults). Defaults for the QUESTIONS below are written into the acceptance lists and marked (Qn); an answer that differs changes
+#   only the tracers that cite that Qn. Tracers do not start until the user has answered or accepted the defaults.
+#
+# Rules the board settles (binding; tracers quote the one they implement in their task doc):
+#   B1  A session has a number (highest + 1 on create; gaps after a delete are kept), a title ('e.g. The Bridge at Dawn'), a date
+#       (calendar date only, 'No date set'), and a status Planned / Live / Played. 'Mark as played' / 'Mark as not played' flips
+#       Played by hand WITHOUT running the start or end effects. Delete asks twice ('Click again to delete'). The list column shows
+#       the newest first: 'SESSION n', status chip, title or 'Untitled session', formatted date. Header line: 'N sessions · M played
+#       · Next: <date of the first planned session that has one>'. '+ New session' opens the new session on Prep.
+#   B2  Three stages per session, as tabs: Prep, Play, Wrap-up. Starting a session switches to Play, ending it to Wrap-up.
+#   B3  Prep: planned scenes (type Combat / Social / Exploration / Downtime + 'What happens here?'), 'Hooks & loose threads' (text),
+#       and the 'Encounter builder' card with Battle Points (see Q1 for what it is built on).
+#   B4  Play: Spotlight (tap a character for each moment; the least-spotlit are ringed as due; 'Reset spotlight'; copy 'Daggerheart
+#       has no initiative, so this helps you share the spotlight'), Session tally (Fear gained, Fear spent, Short rests, Long rests;
+#       see Q3), Session log (time + text, newest first, remove; Enter adds).
+#   B5  Wrap-up: Recap ('This shows on the dashboard as Last Session'), 'Loot & gold', 'Countdowns & threads', and 'Milestone reached:
+#       the party levels up' with 'Open Party to level up' (see Q5).
+#   B6  One live session per campaign. Starting another session while one is live ends the live one first, with its end effects
+#       (board copy: 'Session N is still running. Starting this one ends it.').
+#   B7  A played session can be started again; its start effects run again (board copy: 'This session has been played. Starting it
+#       again re-rolls Prayer Dice and refreshes Rally.').
+#   B8  The dashboard's 'Start Session' (GM) starts the newest planned session, creating one when there is none, and opens it on Play.
+#   B9  Dashboard: hero line 'Session N' (the live one, else the last played, else 'No sessions yet') and 'Next session <date>' /
+#       'Next session not scheduled'; the 'Last Session' card shows the last played session's recap, else 'Session N was played, but
+#       no recap was written. Add one in the session's Wrap-up.', else 'No sessions played yet. Write a recap in a session's Wrap-up
+#       stage and it will appear here.'; 'All sessions' links to the Sessions tab.
+#   B10 Start and end stamp the session log: 'Session started.' / 'Session ended.' plus what the party sync did (Prayer Dice rolled,
+#       unspent dice lost).
+#   B11 Combat Map '+ Session encounter': uses the live session, else the newest planned one; disabled with the title 'No planned
+#       session with an encounter'; enabled title 'Session N: 2× Bruiser, 1× Leader'; Solo adversaries take 2 × 2 squares (see Q2).
+#   B12 Witherwild only (CampaignHub l.263-272): the 'Wither Tokens' panel ('N on sheets · M in pool'; 'At the end of each session,
+#       clear all Wither tokens from the PCs' sheets and gain an equal amount of Fear.') with 'End Session · convert N to Fear'.
+#
+# Rules from the books and earlier decisions (binding):
+#   K1  'Fear carries over between sessions, so note how many Fear you have at the end of each session and begin the next time with
+#       that same pool.' (CB p.154). Start and end never reset GM Fear. Hope: 'Your Hope carries over between sessions' (CB p.90).
+#   K2  'Some features say you can use them "once per session." These features don't refresh during rests, but instead are available
+#       again at the start of your next Daggerheart session.' (CB p.105). Implemented as `expire(sheet, "session")` + featureUses
+#       until 'session' (existing). The same page's 'long session' break refresh is Q9.
+#   K3  Rally: 'Once per session ... At the end of each session, clear all unspent Rally Dice.' (CB p.28). Prayer Dice: 'At the
+#       beginning of each session, roll a number of d4s equal to your subclass's Spellcast trait ... At the end of each session,
+#       clear all unspent Prayer Dice.' (CB p.44). The board rolls Prayer Dice from Strength: WRONG, the decision 'Prayer Dice use
+#       Spellcast trait' (docs/decisions-d3-d11.md) and the existing hook (src/lib/domain/class-features/classes/seraph.ts) win.
+#   K4  Witherwild: 'At the end of each session, clear all Wither tokens from the PCs' sheets and gain an equal amount of Fear.'
+#       (CB p.261); decision: GM Fear capped at 12, the rest shown as 'N Fear lost'.
+#   K5  Level up: 'When your party reaches a milestone in a campaign, the GM will tell you that it's time to level up ... most groups
+#       play at least three sessions between levels.' and 'All party members level up at the same time.' (CB p.109); decision 5:
+#       the GM's 'Party levels up' flags everyone, each owner levels up their own character.
+#   K6  Battle Points: '(3 × the number of PCs in combat) + 2' with the adjustments and costs of CB p.197, already in
+#       src/lib/domain/encounters/budget.ts (D8). D10 reuses it, never a second copy.
+#   K7  Spotlight: 'It's rare that every PC will organically have the same amount of spotlight time during a given session ... you can
+#       help ensure that the story's focus rotates between the PCs' (CB p.176, 'Sharing the Spotlight').
+#   K8  Loot: 'every few sessions, at the end of an arc, or at special moments when it makes sense in the fiction—loot can be an
+#       exciting reward' (CB p.176, 'Session Rewards'). Countdowns: 'If you ever need to continue a countdown across sessions,
+#       record the current countdown value' (CB p.162): countdowns are untouched by start and end.
+#   K9  Horizon: 'At the end of each session, mark a box in the party's tier or below.' (HF p.177, Doom Track); the mark stays the
+#       GM's choice (see Q6).
+#   K10 Decisions: players never see session prep (decisions-d3-d11 'Players see ... Never: ... session prep'); players see the
+#       dashboard's last session. Rests and downtime are their own flow (D5); 'Sessions keeps tallies'. Start/End are GM only.
+#
+# Existing behaviour D10 must keep (tests exist; tracers extend, never weaken):
+#   E1  convex/sessions.ts `start`: idempotent (ctx.once); runs onSessionStart for every ACTIVE PC; one undoable actionLog group
+#       (kind 'session', public): a row per changed PC + the campaign row 'Session started'. Pressing it for the live session is a
+#       no-op returning alreadyStarted.
+#   E2  `end`: for every PC expire(sheet, 'session') + onSessionEnd + wither 0; Wither tokens -> GM Fear capped at 12 ('N Fear lost');
+#       journeyEnds report; ending with nothing to change writes nothing; ending with NO live session still clears session effects
+#       (tests/e2e/class-features.spec.ts relies on it).
+#   E3  XC1 `allowExtraCharacters`: only while a session is live; switched off by end; a new session never inherits it; characters
+#       made active stay active. convex/lib/characterSheet.ts reads campaignState.sessionStartedAt / extraCharactersSession.
+#   E4  SS3 / decision 33: a player may undo a level-up only within the session it happened in (convex/levelUp.ts). D10 replaces the
+#       log-summary matching with the sessions table (dcm-bxp.48), behaviour unchanged.
+#   E5  Scene end (convex/scenes.ts) shares kind 'session' but is no session boundary.
+#   E6  Undoing a Start/End group from the feed restores the sheets and the Fear (Q7: session status stays).
+#   E7  `api.sessions.current/start/end/allowExtraCharacters` keep accepting their current arguments (new arguments are optional), so
+#       tests/convex/{sessions,one-active,scenes,class-features-core,level-up}.test.ts keep passing unchanged.
+#
+# QUESTIONS (ALL ANSWERED by the user 2026-10-20: "default" — every default below is binding; marked in the acceptance lists as (Qn)):
+#   Q1  Encounter builder in Prep. The board's builder is an abstract counter (2× Bruiser, 1× Leader ...) stored on the session; D8
+#       already built a real Battle Points builder on encounters with real stat blocks. Options: (a) the board's abstract counter on
+#       the session; (b) the session links ONE D8 encounter and Prep shows D8's builder for it (create 'Session N encounter' or link
+#       an existing draft); (c) (b) with several encounters per session. DEFAULT (b): one Battle Points source (K6), real stat
+#       blocks reach the tracker and the map; more fights in a session use the Adversaries tab as today. Cited by S0, S4, S8.
+#   Q2  '+ Session encounter' on the Combat Map. Options when the session's encounter is a draft: (a) the button starts it and places
+#       every unplaced, undefeated adversary (Solo 2 × 2); (b) enabled only while that encounter is running; (c) the board's
+#       placeholder tokens (role names, no stats). When ANOTHER encounter is running: refuse with ENCOUNTER_RUNNING ('End the running
+#       encounter first') or end it. DEFAULT (a) + refuse. Board l.709 (which session) and l.767-770. Cited by S8.
+#   Q3  Session tally. Options: (a) automatic and read-only: Fear gained / spent from the Fear history between the session's start
+#       and end (increases = gained, decreases = spent; an 'undo' row cancels the change it undoes), short / long rests from the
+#       FINISHED rests in that window; (b) the board's manual steppers; (c) (a) plus manual +/- corrections. DEFAULT (a): the data is
+#       already recorded (history, rests), manual counts would disagree with it. Restarting a played session (B7) adds the new
+#       window to the stored counts. Cited by S0, S1, S3, S5.
+#   Q4  What players see on the Sessions tab. Options: (a) nothing, the tab is GM-only like Adversaries; (b) a read-only list of
+#       live and played sessions: number, title, date, status, recap; (c) (b) plus 'Loot & gold' and 'Countdowns & threads'.
+#       Always GM-only: planned sessions (only the next date reaches the dashboard), scenes, hooks, the encounter, the spotlight,
+#       the tally and the session log. DEFAULT (b). Basis K10. Cited by S0, S2, S6, S7.
+#   Q5  'Milestone reached: the party levels up'. Options: (a) a one-way action: it runs the roster's 'Party levels up' (flags every
+#       active PC, K5) and records the milestone on the session, then shows 'Open Party to level up'; it cannot be unticked (there is
+#       no 'unflag'); (b) a note only plus the link, the GM still presses 'Party levels up' on the roster; (c) a toggle that flags and
+#       unflags. DEFAULT (a). Cited by S0, S6.
+#   Q6  Horizon Doom Track at session end (K9). Options: (a) the End report reminds the GM ('Mark a Doom Track box (Tier ≤ N)') with a
+#       link to the tracker, and every box marked is stamped with the live session's number, else the last played one's (the
+#       tracker already stores an optional session number; today nothing fills it); (b) a box picker inside the End dialog; (c)
+#       nothing. DEFAULT (a). Cited by S3.
+#   Q7  Undo of Start/End from the feed. Options: (a) as now (E6): sheets and Fear revert, the session's status and times stay; (b)
+#       undo also reverts the status (Played -> Live, Live -> Planned). DEFAULT (a): status is the GM's record, they can 'Mark as not
+#       played' or start again. Cited by S3.
+#   Q8  Session features that are not automated (D5 decision 11: subclass features are text): Luckbringer 'At the start of each
+#       session, everyone in your party gains a Hope.' (CB p.64), Slayer Dice 'At the end of each session, clear any unspent Slayer
+#       Dice ... and gain a Hope per die cleared.' (CB p.48), Know the Tide 'At the end of each session, clear all unspent tokens.'
+#       (CB p.77), Lunar Phases 'At the beginning of each session, roll a d6' (HF p.17). Options: (a) the Start/End reports list a
+#       reminder per PC who has one; (b) automate them in D10; (c) nothing. DEFAULT (a) and a follow-up bead. Cited by S3.
+#   Q9  'If your table decides to play a long session, the GM might decide that all "once per session" abilities are refreshed during
+#       a break in play instead.' (CB p.105). Options: (a) not in D10 (bead); (b) a 'Break: refresh once-per-session features' button
+#       on the live card that runs expire(sheet, 'session') without Wither or Prayer re-rolls. DEFAULT (a). Cited by S9.
+#   Q10 Deleting a live session. The board deletes it and drops the live marker without the end effects. Options: (a) refuse
+#       (SESSION_LIVE, 'End the session first'); (b) the board's behaviour. DEFAULT (a). Cited by S2.
+#   Q11 Sessions played before D10 exist only as 'Session started' / 'Session ended' rows in the roll feed. Options: (a) a migration
+#       creates them as untitled Played sessions numbered in order (keeps SS3 correct, fills the list); (b) no backfill, and SS3 keeps
+#       its log-summary fallback forever. DEFAULT (a). Cited by S3, S9.
+#   Q12 Who the Spotlight lists. The board lists the whole party (dead characters too). Options: (a) active characters only (extras
+#       allowed by XC1 included); (b) everyone on the roster. DEFAULT (a). Cited by S5.
+#
+# Out of scope (stays open): dcm-bxp.47 (encounter tracker <-> party integrations), Notes (D11), authz-matrix (D12).
+#
+# Rules for every tracer (part of every acceptance list, not repeated):
+#   - Every new public function uses the wrappers in convex/lib/functions.ts (campaignQuery / gmQuery / gmMutation / keyedGmMutation /
+#     campaignMutation); authorization only through permissionFor via the wrappers. Every write is GM-only; players get read-only
+#     campaignQuery results filtered on the server (Q4). Outsiders get NOT_FOUND, anonymous UNAUTHENTICATED (as the wrappers do).
+#   - `args` and `returns` validators on every new function, no v.any(); schema-guard RETURNS_PENDING never grows.
+#   - Its own Convex test covers anonymous, outsider, player and GM for each new function (tests/convex/authz-matrix.test.ts does not
+#     exist yet; D12 folds these in) and asserts ConvexError.data.code (errorCode helper), never message text.
+#   - Intents only: ids and single fields (setTitle = session id + title; bumpSpotlight = session id + character id); text fields
+#     save on change/blur, never a whole session object. Optimistic updates on spotlight taps, scene edits, log add/remove and the
+#     played toggle.
+#   - Indexed reads only (no .filter on queries); caps checked with an index `.take`: MAX_SESSIONS 300 per campaign, MAX_SCENES 20 per
+#     session, MAX_LOG_ENTRIES 500 per session; text caps: title 120, scene 300, log line 300, hooks 4000, recap 6000, loot 2000,
+#     threads 4000 characters.
+#   - A new error code is one S0 defines in src/lib/errors/sessions.ts; a code S0 did not add means stop and report.
+#   - No new dependency. Pure logic (status, header line, next / last session, spotlight due, tally aggregation, encounter title)
+#     lives in src/lib/domain/sessions (S1), used by server and client alike.
+#   - Every useQuery subtree sits inside an error boundary; loading uses the shared Loading with role=status.
+#   - UI in the board's look: tokens from C/sessions/sessions.css (S0: ss-card, ss-h, ss-lbl, ss-in, ss-ta, ss-ghost, ss-x, ss-step,
+#     the accent from settings); each later tracer adds CSS only in its own colocated .css. 1440 and 1024 px layouts; 390 px: one
+#     column, no horizontal page scroll, touch targets >= 44 px, labels on every control, keyboard reachable, native <dialog> modals
+#     via src/components/brand/modal.tsx.
+#   - Visual acceptance: the tracer's tests/e2e/visual/D10-<id>.spec.ts (tag @visual, E2E_VISUAL=1) shoots its regions at 1440x900,
+#     1024x768 and 390x844; board counterparts from `node scripts/board-shots.mjs sessions:<region>` / `hub:<region>` (S0 adds them);
+#     the task doc docs/tasks/TASK-D10-<id>.md lists both sets with a verdict per region and every deliberate deviation.
+#   - pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e specs pass in its worktree; the
+#     orchestrator runs the full e2e suite after each wave.
+#   - Every tracer owns docs/tasks/TASK-D10-<id>.md.
+#
+# Data model (S0 creates every table and field; later tracers only add functions). Widen only: no existing validator changes shape.
+#   sessions          one row per session, the fields players may read (Q4): campaignId, n, title?, date? ('YYYY-MM-DD'), status
+#                     ('planned' | 'live' | 'played'), startedAt? (latest start), endedAt? (latest end), recap?, milestoneAt? (Q5),
+#                     tally? {fearGained, fearSpent, shortRests, longRests} (counts of finished live windows, Q3), createdAt,
+#                     updatedAt. Indexes by_campaign_n, by_campaign_status_n, by_campaign_started, by_campaign_ended (the last two
+#                     answer 'did a session start or end after t' for SS3, dcm-bxp.48). Typed, no blob, no schemaVersion.
+#   sessionPrep       one row per session, GM-only: campaignId, sessionId, scenes (<= MAX_SCENES of {id, type, text}), hooks?, loot?,
+#                     threads?, encounterId? (Q1, the linked D8 encounter), updatedAt. Index by_session, by_campaign (purge). Kept
+#                     apart from `sessions` so GM typing never re-runs the players' and the dashboard's queries (CD10).
+#   sessionLog        one row per log line (growing, CD8): campaignId, sessionId, at, text, by (users id), auto (bool: start/end
+#                     stamps, B10). Indexes by_session_at, by_campaign (purge).
+#   sessionSpotlights one row per (session, character): campaignId, sessionId, characterId, count. Indexes by_session_character,
+#                     by_campaign (purge). Own rows so a tap writes one small document.
+#   campaignState     widened: liveSessionId? (id of the live session). sessionStartedAt / extraCharactersSession stay as they are and
+#                     remain the cached 'live since' that XC1 and SS3 read; start/end write both in the same mutation.
+#   encounters        widened: nothing on the encounter row; the link lives on sessionPrep.encounterId (one writer, D8 untouched).
+#   Deleting a session deletes its sessionPrep, sessionLog and sessionSpotlights rows (bounded by the caps) and leaves a linked
+#   encounter in place. purgeCampaign deletes every sessions table's rows.
+#   Migration (S3, widen -> migrate -> narrow): convex/migrations/sessions.ts backfills Played sessions from the actionLog boundary
+#   rows and a Live session from campaignState.sessionStartedAt (Q11); S9 removes the log-summary fallback after the orchestrator has
+#   run it on dev (and prod, if deployed).
+#
+# Shared files: convex/schema.ts, convex/cleanup.ts, convex/tables/campaigns.ts, convex/lib/sessions.ts, src/lib/errors/app-error.ts,
+#   src/lib/convex-errors.ts, tests/convex/schema-guard.test.ts, tests/convex/cleanup.test.ts, tests/e2e/visual/helpers.ts,
+#   scripts/board-shots.mjs belong to S0 only. convex/levelUp.ts belongs to S0 (wave 1: extract the 'Party levels up' body into
+#   convex/lib/partyLevelUp.ts, no behaviour change), then S3 (wave 3: SS3 reads the sessions table), then S9 (wave 5: narrow).
+#   C/sessions/page.tsx belongs to S0, which mounts one stub per feature folder (src/components/sessions/{list,detail,live,prep,play,
+#   wrap}/index.tsx) with typed props from src/components/sessions/slots.ts (campaignId, sessionId, isGm, stage, onStage); the page
+#   keeps the selected session and stage in the URL (?s=<id>&stage=prep|play|wrap). C/page.tsx and C/campaign-shell.tsx belong to S7.
+#   src/components/party/session/boundary.tsx stays (the Wither counter imports it). docs/data-model.md is updated by the orchestrator.
+plan: d10-sessions
+waves:
+  # ---------------------------------------------------------------- wave 1: foundation and pure domain, in parallel
+  - wave: 1
+    tracers:
+      - id: S0
+        foundation: true
+        title: D10 foundation (tables, validators, error module, purge, party level-up helper, route shell with stubs, visual tooling)
+        size: M
+        goal: The sessions tables and the widened campaignState exist and are purged with their campaign, the session error codes and helpers are wired, and /campaigns/<id>/sessions opens a board-look page (header, nav with Sessions current, list column and detail column with stage tabs and stubs) for the GM and a read-only stub for players.
+        depends_on: []
+        owns:
+          - convex/schema.ts
+          - convex/tables/sessions.ts
+          - convex/tables/campaigns.ts
+          - convex/lib/validators/sessions.ts
+          - convex/lib/sessions.ts
+          - convex/lib/partyLevelUp.ts
+          - convex/levelUp.ts
+          - convex/cleanup.ts
+          - src/lib/errors/sessions.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - src/app/(gm)/campaigns/[campaignId]/sessions/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/sessions/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/sessions/sessions.css
+          - src/components/sessions/slots.ts
+          - src/components/sessions/list/index.tsx
+          - src/components/sessions/detail/index.tsx
+          - src/components/sessions/live/index.tsx
+          - src/components/sessions/prep/index.tsx
+          - src/components/sessions/play/index.tsx
+          - src/components/sessions/wrap/index.tsx
+          - scripts/board-shots.mjs
+          - tests/e2e/visual/helpers.ts
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/convex/party-level-up.test.ts
+          - tests/e2e/sessions-shell.spec.ts
+          - docs/tasks/TASK-D10-S0.md
+        reads:
+          - reference/designs/project/Sessions.dc.html
+          - reference/designs/project/CampaignHub.dc.html
+          - convex/sessions.ts
+          - convex/tables/history.ts
+          - convex/tables/rests.ts
+          - convex/tables/encounters.ts
+          - convex/lib/permissions.ts
+          - src/lib/campaign-sections.ts
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+        acceptance:
+          - "convex/tables/sessions.ts defines sessions, sessionPrep, sessionLog, sessionSpotlights with the fields and indexes in the data model; campaignState gains liveSessionId (optional, widen only); validators and caps (MAX_SESSIONS, MAX_SCENES, MAX_LOG_ENTRIES, text caps) live in convex/lib/validators/sessions.ts"
+          - "convex/lib/sessions.ts: loadSession (campaign check, SESSION_NOT_FOUND), liveSession, nextNumber, insertSession (SESSION_LIMIT), deleteSessionRows (prep, log, spotlights; a linked encounter stays), tallyRows(ctx, campaignId, from, to) reading history (kind fear, index by_campaign_at) and rests (by_campaign_started) with a bounded take (Q3)"
+          - "convex/lib/partyLevelUp.ts holds the body of levelUp.partyLevelUp unchanged (flag active PCs below level 10, one public log row each); levelUp.partyLevelUp calls it; tests/convex/party-level-up.test.ts proves the behaviour is identical (Q5 reuse)"
+          - "src/lib/errors/sessions.ts defines every code D10 needs (at least SESSION_NOT_FOUND, SESSION_LIMIT, SESSION_LIVE, SESSION_LOG_LIMIT, SESSION_SCENE_LIMIT, SESSION_NO_ENCOUNTER) and convex-errors combines them"
+          - "purgeCampaign deletes every sessions table's rows; tests/convex/cleanup.test.ts covers it"
+          - "The page shows the board's header ('Sessions', header line slot, '+ New session' slot), the nav with Sessions current, the list column and the detail column with the Prep / Play / Wrap-up tabs driven by ?s and ?stage; players get the read-only stub and no stage tabs (Q4); the tab is not gmOnly"
+          - "board-shots: sessions:empty, sessions:list, sessions:prep, sessions:play, sessions:wrap, sessions:live, hub:last-session, hub:wither-panel"
+      - id: S1
+        title: Pure domain - status, header line, next and last session, spotlight, tally, encounter title
+        size: S
+        goal: A pure, tested TypeScript module answers every derived value the Sessions board and the dashboard show, from plain session, history, rest and instance rows.
+        depends_on: []
+        owns:
+          - src/lib/domain/sessions/index.ts
+          - src/lib/domain/sessions/status.ts
+          - src/lib/domain/sessions/summary.ts
+          - src/lib/domain/sessions/spotlight.ts
+          - src/lib/domain/sessions/tally.ts
+          - src/lib/domain/sessions/encounter-title.ts
+          - tests/unit/sessions-domain.test.ts
+          - docs/tasks/TASK-D10-S1.md
+        reads:
+          - reference/designs/project/Sessions.dc.html
+          - reference/designs/project/CampaignHub.dc.html
+          - reference/designs/project/Combat.dc.html
+          - src/lib/domain/encounters/budget.ts
+          - convex/tables/history.ts
+        acceptance:
+          - "status.ts: statusLabel (Planned / Live / Played), list order newest first, formatDate ('No date set'; weekday, day, month, year) - B1"
+          - "summary.ts: headerLine ('N sessions · M played · Next: <date>'), dashboardNumber ('Session N' / 'No sessions yet'), nextSessionLine ('Next session <date>' / 'Next session not scheduled'), lastSessionText with the board's two fallbacks - B1, B9"
+          - "spotlight.ts: due = the characters with the lowest count (every one when all are equal) - B4, K7"
+          - "tally.ts: from fear history rows (action gain | spend | adjust | set | undo; before, after) and finished rest rows, returns fearGained, fearSpent, shortRests, longRests; increases count as gained, decreases as spent, an undo row cancels the change it reverts; interrupted rests are not counted; adds a stored tally to a live window (Q3, B7)"
+          - "encounter-title.ts: 'Session N: 2× Bruiser, 1× Leader' from instance types in the board's role order, Minion groups as one entry per group; 'No planned session with an encounter' - B11"
+          - "Unit tests cover every function above, including a restarted session's tally and an undone Fear gain"
+
+  # ---------------------------------------------------------------- wave 2: session records, list, header card, player list
+  - wave: 2
+    tracers:
+      - id: S2
+        title: Session records - create, list, title, date, played, delete, header line, player list
+        size: M
+        goal: The GM creates sessions, sees them newest first with their status, edits title and date, marks one played or not, deletes one with a second click, and the header shows the board's line; players see the read-only list of live and played sessions with their recaps.
+        depends_on: [S0, S1]
+        owns:
+          - convex/sessionRecords.ts
+          - src/components/sessions/list/**
+          - src/components/sessions/detail/**
+          - tests/convex/session-records.test.ts
+          - tests/e2e/session-records.spec.ts
+          - tests/e2e/visual/D10-S2.spec.ts
+          - docs/tasks/TASK-D10-S2.md
+        reads:
+          - convex/lib/sessions.ts
+          - convex/lib/validators/sessions.ts
+          - convex/tables/sessions.ts
+          - src/lib/domain/sessions/index.ts
+          - src/components/sessions/slots.ts
+          - reference/designs/project/Sessions.dc.html
+        acceptance:
+          - "keyedGmMutation create (number = highest + 1, status planned, SESSION_LIMIT past MAX_SESSIONS) returns the id; the page opens it on Prep - B1"
+          - "gmMutation setTitle, setDate ('YYYY-MM-DD' or cleared; INVALID otherwise), setPlayed (planned <-> played; never runs start or end effects; a live session refuses with SESSION_LIVE) - B1"
+          - "gmMutation remove: deletes the session and its prep, log and spotlight rows, leaves a linked encounter; a live session refuses with SESSION_LIVE (Q10); the UI asks twice ('Click again to delete')"
+          - "campaignQuery list (returns validator): the GM gets every session (number, title, date, status, startedAt, endedAt); a player gets only live and played sessions with number, title, date, status and recap, never planned ones (Q4)"
+          - "UI: the board's list column (chip colours per status, current item ringed), the session header card (title input, date input, Mark as played / not played, Delete), the header line and '+ New session'; players see the list and the selected session's recap read-only"
+          - "e2e: the GM creates two sessions, titles and dates them, marks the first played, deletes the second with two clicks; a player sees only the played one and its recap, and no Prep / Play / Wrap-up tabs"
+
+  # ---------------------------------------------------------------- wave 3: live, prep, play, wrap-up, in parallel
+  - wave: 3
+    tracers:
+      - id: S3
+        title: Live session - start and end per session, party sync, log stamps, tally freeze, SS3 boundaries, backfill migration
+        size: L
+        goal: The GM starts and ends a chosen session from its live card; the party sync (Prayer Dice, Rally, session effects, Wither to Fear, XC1) runs as today, the session log gets the board's stamps, the tally is frozen at the end, and level-up undo reads the sessions table instead of log summaries.
+        depends_on: [S2]
+        owns:
+          - convex/sessions.ts
+          - convex/levelUp.ts
+          - convex/migrations/sessions.ts
+          - src/components/sessions/live/**
+          - src/app/(gm)/campaigns/[campaignId]/trackers/horizon.tsx
+          - tests/convex/sessions.test.ts
+          - tests/convex/level-up.test.ts
+          - tests/convex/sessions-migration.test.ts
+          - tests/e2e/sessions-live.spec.ts
+          - tests/e2e/visual/D10-S3.spec.ts
+          - docs/tasks/TASK-D10-S3.md
+        reads:
+          - convex/lib/sessions.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/fear.ts
+          - convex/lib/characterSheet.ts
+          - convex/lib/migrations.ts
+          - convex/migrations/run.ts
+          - convex/trackers/horizon.ts
+          - src/lib/domain/class-features/hooks.ts
+          - src/lib/domain/sessions/index.ts
+          - src/components/party/session/index.tsx
+          - reference/designs/project/Sessions.dc.html
+        acceptance:
+          - "start gains an optional sessionId: with it, that session goes live; without it, the newest planned session, created when there is none (B8); a session already live is a no-op (alreadyStarted, E1); another live session is ended first with every end effect (B6); a played session starts again and its start effects run again (B7); status live, startedAt, campaignState.liveSessionId and sessionStartedAt are written in the same mutation; the existing actionLog group is unchanged (E1, E7)"
+          - "end: ends the live session (status played, endedAt, liveSessionId and sessionStartedAt cleared, XC1 off - E3), runs every E2 effect unchanged, adds the window's tally to sessions.tally (S0 tallyRows + S1 tally, Q3); with no live session it still clears session effects as today (E2)"
+          - "Both write the board's auto log lines into sessionLog: 'Session started.' plus each Seraph's Prayer Dice; 'Session ended.' plus unspent Rally / Prayer dice lost and the Wither conversion (B10); the Start/End reports also list the Q8 reminders (Luckbringer, Slayer Dice, Know the Tide, Lunar Phases) for PCs who have them, and for Horizon the Doom Track reminder with a tracker link (Q6)"
+          - "Horizon (Q6): the Doom Track card's mark sends the existing optional session argument (convex/trackers/horizon.ts unchanged): the live session's number, else the last played one's, so the box shows '(session N)'"
+          - "current returns also the live session's id and number (new optional fields, E7); allowExtraCharacters unchanged (E3)"
+          - "Undo of a Start/End group restores sheets and Fear and leaves the session's status and times (Q7, E6)"
+          - "levelUp: sessionBoundaryAfter reads sessions by_campaign_started / by_campaign_ended (a start or end after t); the log-summary scan stays only as the fallback for campaigns the migration has not reached (dcm-bxp.48; narrowed by S9); every SS3 test in tests/convex/level-up.test.ts passes unchanged plus new ones for a restarted session"
+          - "convex/migrations/sessions.ts (batched, idempotent, dry run first): per campaign, Played sessions from the actionLog 'Session started' / 'Session ended' campaign rows in order (startedAt, endedAt, untitled), and a Live session from campaignState.sessionStartedAt with liveSessionId (Q11); tests/convex/sessions-migration.test.ts covers both and a second run changing nothing"
+          - "UI: the board's live card (dot, 'Session in progress' / 'Not running', live and other-live texts, Start / End buttons) with confirm dialogs titled 'Start the session?' / 'End the session?', buttons 'Start session' / 'End session', the reports 'Session started.' / the End report of the dashboard card, and the 'Allow extra characters this session' switch (XC1) while live; Start switches the stage to Play, End to Wrap-up (B2)"
+          - "e2e: the GM starts Session 1 from its card (a Seraph's Prayer Dice appear on the sheet and in the session log), starts Session 2 (Session 1 becomes Played), ends Session 2 with a Wither token on a sheet (Fear rises, 'Session ended.' in the log)"
+      - id: S4
+        title: Prep - planned scenes, hooks, the session's encounter with Battle Points
+        size: M
+        goal: In Prep the GM plans typed scenes, writes hooks, and creates or links the session's D8 encounter, building it with D8's Battle Points builder in place.
+        depends_on: [S2]
+        owns:
+          - convex/sessionPrep.ts
+          - src/components/sessions/prep/**
+          - tests/convex/session-prep.test.ts
+          - tests/e2e/session-prep.spec.ts
+          - tests/e2e/visual/D10-S4.spec.ts
+          - docs/tasks/TASK-D10-S4.md
+        reads:
+          - convex/lib/sessions.ts
+          - convex/lib/encounters.ts
+          - convex/encounters.ts
+          - src/lib/domain/encounters/budget.ts
+          - src/components/adversaries/builder/**
+          - src/components/sessions/slots.ts
+          - reference/designs/project/Sessions.dc.html
+        acceptance:
+          - "gmQuery get (returns validator): the session's scenes, hooks and encounter summary (name, status, Battle Points via budget.ts); players never reach it (FORBIDDEN, K10)"
+          - "gmMutation addScene, setScene (scene id + type or text), removeScene (SESSION_SCENE_LIMIT past MAX_SCENES), setHooks - B3"
+          - "keyedGmMutation createEncounter: a D8 draft encounter named 'Session N encounter' (pcs = active PCs) inserted through the same rules as encounters.create (ENCOUNTER_LIMIT), linked on sessionPrep.encounterId; gmMutation linkEncounter (an existing encounter of the campaign, NOT_FOUND otherwise) and unlinkEncounter; one encounter per session (Q1)"
+          - "UI: the board's Planned scenes card (type select, text, remove, '+ Scene', empty copy), 'Hooks & loose threads', and the 'Encounter builder' card: with no encounter, 'Create the session encounter' and 'Link an encounter'; with one, D8's builder components (budget panel with steppers, adjustments, verdicts, add dialog) for it, reused from src/components/adversaries/builder without copying (a needed change there means stop and report)"
+          - "e2e: the GM adds a Combat and a Social scene, writes hooks, creates the session encounter, adds two Bandits and sees the budget verdict change; reload keeps all of it; a player opening ?stage=prep sees the read-only view only"
+      - id: S5
+        title: Play - spotlight, live tally, session log
+        size: M
+        goal: In Play the GM taps characters into the spotlight (due ones ringed), reads the tally that counts itself from Fear and rests, and keeps a timestamped session log.
+        depends_on: [S2]
+        owns:
+          - convex/sessionPlay.ts
+          - src/components/sessions/play/**
+          - tests/convex/session-play.test.ts
+          - tests/e2e/session-play.spec.ts
+          - tests/e2e/visual/D10-S5.spec.ts
+          - docs/tasks/TASK-D10-S5.md
+        reads:
+          - convex/lib/sessions.ts
+          - convex/characters.ts
+          - convex/lib/fear.ts
+          - convex/rests.ts
+          - src/lib/domain/sessions/index.ts
+          - src/components/sessions/slots.ts
+          - reference/designs/project/Sessions.dc.html
+        acceptance:
+          - "gmQuery spotlight: active characters (Q12) with their counts for the session; keyedGmMutation bumpSpotlight (session id + character id; an inactive or other campaign's character is NOT_FOUND); gmMutation resetSpotlight deletes the session's rows - B4, K7"
+          - "gmQuery tally: the stored tally plus, while live, the window since startedAt (S0 tallyRows + S1 tally); read-only (Q3); a planned session shows dashes"
+          - "gmQuery log (newest first, take MAX_LOG_ENTRIES), keyedGmMutation addLog (text trimmed, 1..300; SESSION_LOG_LIMIT), gmMutation removeLog; auto lines (B10) come from S3 and show the same way"
+          - "UI: the board's Spotlight card (pills with counts, due ones ringed in the accent, 'Reset spotlight', empty copy 'No characters in the party yet.'), the Session tally card (four rows, no steppers, a line saying it counts Fear and finished rests), the Session log card (input + Add, Enter adds, time + text rows, remove); optimistic spotlight taps and log add/remove"
+          - "e2e: the GM taps two characters (the untapped one is ringed as due), adds and removes a log line, gains 2 Fear on the dashboard during a live session and sees 'Fear gained 2' in the tally"
+      - id: S6
+        title: Wrap-up - recap, loot, threads, milestone; the dashboard's last-session query
+        size: M
+        goal: In Wrap-up the GM writes the recap, loot and threads and calls the party's level-up milestone, and a public query hands the dashboard the session number, next date and last recap.
+        depends_on: [S2]
+        owns:
+          - convex/sessionWrap.ts
+          - src/components/sessions/wrap/**
+          - tests/convex/session-wrap.test.ts
+          - tests/e2e/session-wrap.spec.ts
+          - tests/e2e/visual/D10-S6.spec.ts
+          - docs/tasks/TASK-D10-S6.md
+        reads:
+          - convex/lib/sessions.ts
+          - convex/lib/partyLevelUp.ts
+          - src/lib/domain/sessions/index.ts
+          - src/components/party/level-up/index.tsx
+          - src/components/sessions/slots.ts
+          - reference/designs/project/Sessions.dc.html
+          - reference/designs/project/CampaignHub.dc.html
+        acceptance:
+          - "gmMutation setRecap (on sessions), setLoot and setThreads (on sessionPrep, GM-only, Q4); gmQuery get returns all three for the GM"
+          - "keyedGmMutation callMilestone: runs convex/lib/partyLevelUp.ts (K5) and stamps sessions.milestoneAt in the same mutation; a second call is a no-op; no unflag (Q5)"
+          - "campaignQuery dashboard (returns validator, every member): dashboardNumber, nextSessionLine (date of the first planned session with a date; no title), the last played session's number and recap or the board's fallbacks (B9, S1 summary.ts), and the live session's number if any; no planned titles, no prep (Q4)"
+          - "UI: the board's Recap card, 'Loot & gold', 'Countdowns & threads', and the milestone row (box ticked once called, then 'Open Party to level up' linking to the party tab); players see the recap read-only through S2's view"
+          - "e2e: the GM writes a recap and loot, calls the milestone (every active PC shows 'level up pending'); a player reads the recap and never sees loot or threads"
+
+  # ---------------------------------------------------------------- wave 4: dashboard and the Combat Map button
+  - wave: 4
+    tracers:
+      - id: S7
+        title: Dashboard - hero session line, Start Session, Last Session card, Witherwild Wither panel; the temporary card goes
+        size: M
+        goal: The dashboard shows the session number and the next date, the GM's Start Session starts the newest planned session and opens it on Play, the Last Session card shows the last recap, Witherwild shows the Wither Tokens panel with End Session, and the D5 temporary session card is gone.
+        depends_on: [S3, S6]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/last-session.tsx
+          - src/app/(gm)/campaigns/[campaignId]/wither-panel.tsx
+          - src/app/(gm)/campaigns/[campaignId]/dashboard.css
+          - src/components/party/session/index.tsx
+          - tests/e2e/dashboard.spec.ts
+          - tests/e2e/wither.spec.ts
+          - tests/e2e/players.spec.ts
+          - tests/e2e/class-features.spec.ts
+          - tests/e2e/visual/D10-S7.spec.ts
+          - docs/tasks/TASK-D10-S7.md
+        reads:
+          - convex/sessions.ts
+          - convex/sessionWrap.ts
+          - src/components/party/session/boundary.tsx
+          - src/components/sessions/live/**
+          - src/lib/domain/wither/index.ts
+          - reference/designs/project/CampaignHub.dc.html
+        acceptance:
+          - "Hero line (campaign-shell): 'Session N' or 'No sessions yet', 'Tier · Level', 'Next session <date>' / 'Next session not scheduled' from sessionWrap.dashboard, for every member (B9)"
+          - "GM: 'Start Session' in the hero (the board's primary pill) starts the newest planned session or creates one and navigates to /sessions?s=<id>&stage=play (B8); while a session is live it reads 'Session N in progress' and opens it; players see a 'Session N in progress' chip and no button"
+          - "Last Session card: the last played recap or the board's fallbacks, 'All sessions' links to the Sessions tab (B9)"
+          - "Witherwild only: the Wither Tokens panel ('N on sheets · M in pool', the board copy) with 'End Session · convert N to Fear' (GM) opening the same End confirm and report as the live card (B12, K4)"
+          - "The temporary Session card is removed from the dashboard (decision 12); src/components/party/session/boundary.tsx stays; End and the XC1 switch live on the Sessions live card (S3)"
+          - "wither.spec.ts, players.spec.ts and class-features.spec.ts start and end sessions from the Sessions tab (same button and dialog names) and pass unchanged otherwise"
+      - id: S8
+        title: Combat Map '+ Session encounter' (dcm-bxp.50)
+        size: S
+        goal: On the Combat Map the GM places the live (or newest planned) session's encounter with one click; the button shows which session and adversaries it will place, and stays disabled without one.
+        depends_on: [S4]
+        owns:
+          # Added 2026-10-20: D8's start logic extracted into a shared helper (startEncounter) for S8.
+          - convex/lib/encounters.ts
+          - convex/encounters.ts
+          - convex/combatTokens.ts
+          - src/components/combat-map/tokens/combatants-panel.tsx
+          - tests/convex/session-encounter.test.ts
+          - tests/e2e/session-encounter.spec.ts
+          - docs/tasks/TASK-D10-S8.md
+        reads:
+          - convex/lib/sessions.ts
+          - convex/sessionPrep.ts
+          - convex/encounters.ts
+          - convex/lib/encounters.ts
+          - src/lib/domain/sessions/encounter-title.ts
+          - reference/designs/project/Combat.dc.html
+        acceptance:
+          - "gmQuery sessionEncounter (map id): the live session, else the newest planned one (B11), its linked encounter and the title from S1 ('Session N: 2× Bruiser, 1× Leader'), or null with 'No planned session with an encounter'"
+          - "keyedGmMutation placeSessionEncounter (map id): a draft or ended encounter is started first, then every unplaced, undefeated instance is placed like placeAdversaries (Solo 2 × 2, COMBAT_TOKEN_LIMIT); another running encounter refuses with ENCOUNTER_RUNNING; no linked encounter refuses with SESSION_NO_ENCOUNTER (Q2)"
+          - "The button is enabled only with a session encounter and a map, its title is the session title, and a click reports 'Added Session N's encounter.' (board copy); the 'Comes with Sessions' stub is removed"
+          - "e2e: the GM links an encounter with a Solo and two Standards to the planned session, opens a map, clicks '+ Session encounter' (the encounter runs, three tokens appear, the Solo 2 × 2); a second click adds nothing; bead dcm-bxp.50 closes when merged"
+
+  # ---------------------------------------------------------------- wave 5: end to end, narrowing, follow-ups
+  - wave: 5
+    tracers:
+      - id: S9
+        title: D10 end-to-end pass, SS3 narrowing, docs and follow-ups
+        size: S
+        goal: A full GM-and-player session flow passes in the browser at desktop and tablet sizes, SS3 no longer reads log summaries, the task docs are complete and the follow-ups are filed.
+        depends_on: [S5, S7, S8]
+        owns:
+          - convex/levelUp.ts
+          - tests/e2e/sessions-flow.spec.ts
+          - docs/tasks/TASK-D10-S9.md
+        reads:
+          - convex/session*.ts
+          - convex/migrations/sessions.ts
+          - src/components/sessions/**
+          - tests/convex/level-up.test.ts
+        acceptance:
+          - "One spec at 1440 and 1024 px: the GM creates Session 1, preps two scenes and the encounter, starts it from the dashboard (Play opens; a Seraph's Prayer Dice appear), taps the spotlight, logs a line, places the session encounter on the Combat Map, gains Fear, ends the session (tally shows the Fear), writes the recap and calls the milestone; a player sees 'Session 1 in progress' during play, then the recap on the dashboard and in the Sessions list, and never the prep, log, loot or threads"
+          - "After the orchestrator has run migrations/sessions (dry run, then run) on dev and on prod if deployed, the log-summary fallback in convex/levelUp.ts is removed (narrow, dcm-bxp.48) and tests/convex/level-up.test.ts still passes; dcm-bxp.48 closes"
+          - "Checks every B1-B12, K1-K10 and E1-E7 against the app and lists any gap in the task doc; each gap is filed as a bead under dcm-bxp"
+          - "Files follow-ups: authz-matrix entries for every D10 function (D12); Q8 session features (Luckbringer, Slayer Dice, Know the Tide, Lunar Phases) automation; Q9 break refresh if the user wants it"

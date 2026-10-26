@@ -1,0 +1,84 @@
+# Follow-ups 5 (2026-10-21): small user-facing items from the open beads, run alongside combat, D13, D12 and performance.
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size.
+plan: followups-5
+waves:
+  - wave: 1
+    tracers:
+      - id: F6
+        title: Glowing terrain gives very dim light around its own squares (dcm-bxp.91, user answer 2026-10-21)
+        size: M
+        goal: Textures that glow (lava, glowing moss, crystal floors, ember ground ...) light their own squares with the faint-glow reach, in vision (server and client) and in both painters.
+        depends_on: []
+        owns:
+          - src/lib/domain/combat-map/light.ts
+          - src/lib/domain/combat-map/vision.ts
+          - src/lib/sprite-packs/traits.ts
+          - src/lib/sprite-packs/catalog/**
+          - src/lib/combat-map/sprites/terrain.ts
+          - src/lib/combat-map/painter.ts
+          - convex/lib/combatVision.ts
+          - tests/unit/combat-terrain-light.test.ts
+          - tests/unit/sprite-catalog.test.ts
+          - docs/tasks/TASK-F5-F6.md
+        reads:
+          - docs/tasks/TASK-SP-P3.md
+          - docs/tasks/TASK-SP-P11Z.md
+          - src/lib/domain/combat-map/**
+        acceptance:
+          - "Glowing textures and Classic glowing terrains (lava) carry a light trait; a lit square of glowing terrain reveals only itself and its edge (faint-glow reach, D2 rule) at night; a player's view and fog follow it on the server; unit tests incl. the speed budget"
+          - "Both painters show a subtle glow on those squares at night; maps without glowing terrain paint identically"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: F7
+        title: GM 'Delete permanently' for deleted campaigns (dcm-bxp.30)
+        size: S
+        goal: The Load Campaign list's deleted campaigns can be deleted for good by their GM, after an in-page confirm, running the existing campaign purge.
+        depends_on: []
+        owns:
+          - convex/campaigns.ts
+          - src/app/(gm)/campaigns/chronicle.tsx
+          - tests/convex/campaigns.test.ts
+          - tests/convex/authz/core.entries.ts
+          - tests/e2e/campaign-delete-permanently.spec.ts
+          - docs/tasks/TASK-F5-F7.md
+        reads:
+          - convex/cleanup.ts
+        acceptance:
+          - "A GM-only mutation schedules the existing batched purge for one of their soft-deleted campaigns; refuses a live campaign (INVALID) and anyone but its GM (role tests asserting ConvexError.data.code); authz matrix entry added"
+          - "Load Campaign shows 'Delete permanently' on deleted campaigns with an in-page confirm naming the campaign; e2e at 1440 and 390"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: F8
+        title: Dice - collapsible GM roll form (dcm-bxp.34), the Waxing Moon +2 named on damage (dcm-bxp.66), Tag Team partner confirmation (dcm-bxp.67)
+        size: S
+        goal: Close dcm-bxp.34, .66 and .67 in the dice box and roll feed.
+        depends_on: []
+        owns:
+          - src/components/party/dice/**
+          - tests/unit/dice-ui.test.tsx
+          - tests/e2e/dice-followups.spec.ts
+          - docs/tasks/TASK-F5-F8.md
+        reads:
+          - convex/rolls.ts
+          - docs/tasks/**
+        acceptance:
+          - "The GM roll form collapses and remembers its state per device (localStorage with try/catch); the damage result names the automatic Waxing Moon +2 when it applied; the Tag Team partner sees a confirmation after picking the roll"
+          - "Existing dice specs pass; RTL tests for the three; e2e at 1440 and 390"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: F9
+        title: Character field 'Gender' by default with a per-character toggle to label it 'Pronouns' (dcm-bxp.35)
+        size: S
+        goal: The identity field reads 'Gender' by default; a toggle next to it relabels it 'Pronouns' for that character (label only; the value is unchanged).
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/new/steps-1-4.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/new/wizard-logic.ts
+          - src/components/party/import/review.tsx
+          - src/lib/validation/characters.ts
+          - convex/lib/validators/characters.ts
+          - tests/unit/identity-label.test.tsx
+          - docs/tasks/TASK-F5-F9.md
+        reads:
+          - convex/characters.ts
+        acceptance:
+          - "An optional sheet flag (widen only) picks the label; the sheet, the wizard and the photo-import review show 'Gender' or 'Pronouns' accordingly; a one-field intent mutation or the existing sheet update path sets it (no whole-sheet writes)"
+          - "RTL tests; pnpm lint, typecheck and vitest pass; tracer-guard passes"

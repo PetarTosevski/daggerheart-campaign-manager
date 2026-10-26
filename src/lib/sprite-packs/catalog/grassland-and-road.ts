@@ -1,0 +1,81 @@
+// Built-in catalog: grassland and road (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
+
+import { defineFolder, long, obj, tex } from "./types";
+
+export const GRASSLAND_AND_ROAD = defineFolder("grassland-and-road", {
+  props: [
+    obj("milestone", "cover", "low", "rock", { standIn: false }),
+    obj("wildflowers", "none", "flat", "bush", { standIn: false }),
+    obj("haystack (small)", "cover", "low", "bush", { standIn: false }),
+    obj("fence post", "none", "low", "pillar", { standIn: false }),
+    obj("rock", "cover", "low", "rock"),
+    obj("shrub", "cover", "low", "bush"),
+    obj("wooden gate", "cover", "low", "door", { move: "door", footprint: "rect", standIn: false }),
+    obj("scarecrow", "none", "tall", "deadtree", { standIn: false }),
+    obj("beehive", "cover", "low", "barrel", { standIn: false }),
+    obj("trough", "cover", "low", "crate", { footprint: "rect", standIn: false }),
+    obj("roadside shrine", "cover", "low", "statue", { standIn: false }),
+    obj("grave marker", "cover", "low", "rock", { standIn: false }),
+    obj("broken cart wheel", "none", "flat", "rubble", { standIn: false }),
+    obj("picnic blanket", "none", "flat", "rubble", { move: "open", footprint: "rect", standIn: false }),
+    obj("rabbit", "none", "low", "rock", { standIn: false }),
+    obj("crow", "none", "low", "rock", { standIn: false }),
+  ],
+  large: [
+    obj("lone oak tree", "block", "tall", "tree", { variant: "green" }),
+    obj("haystack", "block", "tall", "boulder", { standIn: false }),
+    obj("windmill base", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
+    long("wooden bridge (two squares)", "none", "flat", "log", { move: "open", standIn: false }),
+    obj("farmhouse corner", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
+    obj("standing stones (pair)", "block", "tall", "boulder"),
+    obj("watchtower base", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
+    obj("orchard tree", "block", "tall", "tree", { variant: "olive" }),
+    long("stone wall section", "block", "tall", "pillar", { standIn: false }),
+  ],
+  terrain: [
+    tex("meadow grass", "grass", true),
+    tex("dirt road", "path", false),
+    tex("wheat field", "grass", false),
+    tex("trampled grass", "grass", true),
+  ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11A): new items, not variants. Buildings (windmill, granary, stable),
+  // the sheep pen and the vineyard are 3 x 3 like the village cottages; the duck pond, bridge and ploughed strip 3 x 2;
+  // the rest 2 x 2. The pen's fence blocks like the village coop; water and ploughed earth are difficult.
+  extras: {
+    "props-2": [
+      obj("sheep", "none", "low", "rock", { standIn: false }),
+      obj("cow", "none", "low", "rock", { standIn: false }),
+      obj("pig", "none", "low", "rock", { standIn: false }),
+      obj("goose", "none", "low", "rock", { standIn: false }),
+      obj("sheaf of wheat", "none", "low", "bush", { move: "open", standIn: false }),
+      obj("milk churn", "none", "low", "barrel", { standIn: false }),
+      obj("pitchfork and rake", "none", "flat", "bones", { move: "open", standIn: false }),
+      obj("wheelbarrow", "cover", "low", "crate", { standIn: false }),
+      obj("butter churn", "none", "low", "barrel", { standIn: false }),
+      obj("sunflower patch", "cover", "low", "bush", { standIn: false }),
+      obj("molehill", "none", "flat", "rubble", { standIn: false }),
+      obj("rectangular hay bale", "cover", "low", "crate", { footprint: "rect", standIn: false }),
+      obj("hand water pump", "none", "low", "pillar", { standIn: false }),
+      obj("cabbage patch", "none", "flat", "bush", { standIn: false }),
+      obj("stone sundial", "cover", "low", "statue", { standIn: false }),
+      obj("stone birdbath", "cover", "low", "statue", { standIn: false }),
+    ],
+    "large-2": [
+      obj("duck pond", "none", "flat", "rock", { move: "difficult", footprint: "rect", w: 3, h: 2, standIn: false }),
+      obj("windmill with sails", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("sheep pen", "cover", "low", "log", { move: "block", footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("stone arch bridge over a brook", "none", "flat", "log", { move: "open", footprint: "rect", w: 3, h: 2, standIn: false }),
+      obj("vineyard rows", "cover", "tall", "bush", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("ploughed field strip", "none", "flat", "rubble", { footprint: "rect", w: 3, h: 2, standIn: false }),
+      obj("granary", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("horse stable", "block", "tall", "pillar", { footprint: "rect", w: 3, h: 3, standIn: false }),
+      obj("ox-drawn plough", "cover", "tall", "rock", { standIn: false }),
+    ],
+    "terrain-2": [
+      tex("ploughed soil", "dirt", false),
+      tex("clover meadow", "grass", true),
+      tex("flower meadow", "grass", true),
+      tex("cart-rutted road", "path", false),
+    ],
+  },
+});

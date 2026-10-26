@@ -1,0 +1,34 @@
+# Countdown visibility. User 2026-10-19: "give me the option to A) make the timer entirely private B) make the timer
+# public but the name & description private (or set any field to what i wish) and C) everything public".
+# Players' data must be filtered on the server (D3-D11: anything hidden from players is enforced on the server).
+# Format: docs/workflow.md.
+plan: countdown-visibility
+waves:
+  - wave: 1
+    tracers:
+      - id: CV1
+        title: Countdown visibility - private, public with hidden fields, or public
+        size: M
+        goal: The GM sets each countdown's visibility when creating it and can change it later; players never receive what is hidden.
+        depends_on: []
+        owns:
+          - convex/tables/countdowns.ts
+          - convex/countdowns.ts
+          - src/lib/domain/countdowns/index.ts
+          - src/app/(gm)/campaigns/[campaignId]/countdowns.tsx
+          - src/app/(gm)/campaigns/[campaignId]/dashboard.css
+          - tests/convex/countdowns.test.ts
+          - tests/unit/countdown-actions.test.ts
+          - tests/e2e/dashboard.spec.ts
+          - tests/e2e/visual/CV1.spec.ts
+          - docs/tasks/TASK-CV1.md
+          - docs/data-model.md
+        reads:
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - docs/tasks/TASK-104*.md
+        acceptance:
+          - "countdowns gain optional `visibility` (widen; absent = everything public, so existing countdowns don't change): `{ mode: 'private' } | { mode: 'public', hidden: Array<'name'|'description'|'category'|'consequence'|'progress'> }`; the create mutation takes it (preset A private, B public with name+description hidden, C public), and a GM-only keyed mutation changes it later"
+          - "listByCampaign returns everything to the GM (with the visibility, so the GM sees what players see); for players it drops private countdowns and blanks hidden fields server-side (name -> null shown as 'Hidden countdown', description/consequence -> null, category -> null, progress -> currentValue/startingValue null with only the status kept); the returns validator allows those nulls; players' websocket payload contains none of the hidden values (e2e checks the rendered page and a convex test checks the query result)"
+          - "UI: the create form has a 'Who can see this' control with the three presets (Private / Public, details hidden / Public) and, for the middle one, a checkbox per field (Name, Description, Category, Consequence, Progress) defaulting to Name and Description; each GM countdown card shows a small visibility badge (eye-off 'Private', eye 'Partly hidden', eye 'Public') that opens the same control to change it; player cards render hidden parts as 'Hidden' placeholders in the board's look (a covered hourglass for hidden progress)"
+          - "Convex tests (each preset, change later, player vs GM views, outsider NOT_FOUND, player can't change visibility FORBIDDEN), dashboard e2e (GM sets each mode; a player sees nothing / placeholders / everything), CV1 visual spec at 1440 and 390; pnpm lint, typecheck, test pass"

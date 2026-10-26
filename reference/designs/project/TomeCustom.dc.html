@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Custom Campaign Tome</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a1416}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/f3205851cb5f0694dec14556bfd1988e);background-size:cover;background-position:center 40%;background-repeat:no-repeat}
+.ww-dim{filter:blur(4px) brightness(0.45);transform:scale(1.05)}
+.bgk-custom{background-image:url(/_blob/f3205851cb5f0694dec14556bfd1988e);background-position:center 40%}
+.bgk-witherwild{background-image:url(/_blob/d69136bf0c8eddbad10c2eb636b1b5ca);background-position:center}
+.bgk-fivebanners{background-image:url(/_blob/5273dcaa00f81a748be4d8404ef72b6e);background-position:60% 40%}
+.bgk-beastfeast{background-image:url(/_blob/9ad463b1fc72771176578d77da20984f);background-position:30% center}
+.bgk-umbra{background-image:url(/_blob/53d3e7877e8e687107b1d80149685979);background-position:70% center}
+.bgk-motherboard{background-image:url(/_blob/0b895f62874c5481f3b92d0cd284d3e9);background-position:center}
+.bgk-colossus{background-image:url(/_blob/bf68d5cb6c5931e18f23260203309a75);background-position:center}
+.bgk-castlehigh{background-image:url(/_blob/3514a8aae6b8c0148b3c1df43a1999dd);background-position:center}
+.bgk-weredragon{background-image:url(/_blob/4b69baa5c3ea604607e14579c982c9e9);background-position:center}
+.bgk-andaluria{background-image:url(/_blob/b05e2883f26c65020e038349a2ba07ba);background-position:center}
+.bgk-horizon{background-image:url(/_blob/b0cd8d347b032b78f2c527ddcce21f51);background-position:center}
+.ct-ta{width:100%;box-sizing:border-box;min-height:420px;padding:16px 18px;border-radius:8px;border:1px solid #cdb88f;background:#f6edd8;color:#2a1f14;font-family:'EB Garamond',serif;font-size:19px;line-height:1.6;resize:vertical}
+.ct-ta:focus{outline:2px solid #8e2b2b;outline-offset:1px}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+<sc-if value="{{ standalone }}" hint-placeholder-val="{{ true }}"><div class="ww-bg {{ bgCls }} ww-dim" aria-hidden="true" style="position: absolute; inset: 0"></div></sc-if>
+
+<sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-modal="true" aria-labelledby="tomeA-title" style="position: relative; width: 100%; max-width: 1240px; height: 880px; background: #3b2b1d; border: 1px solid #5c4430; border-radius: 16px; padding: 18px; box-sizing: border-box; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); display: flex">
+
+<button type="button" onClick="{{ close }}" aria-label="Close tome" style="position: absolute; top: -18px; right: -18px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+<div aria-hidden="true" style="position: absolute; top: 0; right: 140px; width: 28px; height: 140px; background: #8e2b2b; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); z-index: 1"></div>
+
+<div style="flex: 1; display: flex; background: #efe3c8; border-radius: 6px; overflow: hidden; min-width: 0">
+
+<div style="flex: 0 0 38%; padding: 48px 40px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid #d3c19c; box-shadow: inset -28px 0 34px -26px rgba(90, 60, 20, 0.4)">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: #7a5b2e">Custom Campaign Frame</div>
+<h2 id="tomeA-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 46px; line-height: 1.05; font-weight: 900; color: #2a1f14">{{ campaignName }}</h2>
+<svg width="220" height="14" viewBox="0 0 220 14" aria-hidden="true"><path d="M0 7h96M124 7h96" stroke="#a68352" stroke-width="1.2"></path><path d="M110 1l6 6-6 6-6-6z" fill="#8e2b2b"></path></svg>
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a5b2e">Contents</div>
+<nav aria-label="Chapters" style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{ t.pick }}" aria-current="{{ t.current }}" style="{{ t.style }}"><span style="font-family: 'Cinzel', serif; font-size: 18px; width: 40px; color: #8e2b2b">{{ t.roman }}</span><span style="flex: 1">{{ t.title }}</span></button>
+</sc-for>
+</nav>
+<div class="ww-bg {{ bgCls }}" aria-hidden="true" style="margin-top: auto; height: 170px; border-radius: 100px 100px 8px 8px; border: 3px double #a68352"></div>
+<div style="padding: 14px 16px; border: 1px solid #cdb88f; border-radius: 6px; background: #e8d9b8; font-size: 16px; line-height: 1.5; font-style: italic; color: #4a3a26; height: 150px; flex: none; box-sizing: border-box; overflow: hidden"><span style="font-style: normal; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.18em; color: #7a5b2e; display: block; margin-bottom: 4px">FOR THE GAME MASTER</span>{{ cur.note }}</div>
+</div>
+
+<div style="flex: 1; min-width: 0; padding: 48px 56px 28px 52px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<span style="font-family: 'Cinzel', serif; font-size: 22px; color: #8e2b2b">{{ cur.roman }}.</span>
+<h3 style="margin: 0; font-family: 'Cinzel', serif; font-size: 32px; font-weight: 700; color: #2a1f14">{{ cur.title }}</h3>
+</div>
+<sc-if value="{{ cur.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-family: 'Cinzel', serif; font-size: 18px; color: #6a4a22; margin-top: -8px">{{ cur.sub }}</div></sc-if>
+<div style="height: 1px; background: #cdb88f"></div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 14px; font-size: 19px; line-height: 1.65; color: #2a1f14; display: flex; flex-direction: column; gap: 14px">
+<div role="note" style="display: flex; gap: 14px; padding: 14px 16px; border-radius: 8px; background: #2f4a3a; color: #eef3ea; font-size: 17px; line-height: 1.5"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"></path></svg><span>{{ cur.must }}</span></div>
+<sc-if value="{{ showSetup }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 8px; font-size: 17px; line-height: 1.5">
+<div style="font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.22em; color: #7a5b2e">FROM YOUR FRAME SETUP</div>
+<sc-for list="{{ setup }}" as="x" hint-placeholder-count="3"><div><strong style="font-family: 'Cinzel', serif; font-size: 14px">{{ x.k }}:</strong> {{ x.v }}</div></sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}"><label for="ct-overview" style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.2em; color: #7a5b2e">YOUR OVERVIEW</label><textarea id="ct-overview" class="ct-ta" data-k="overview" defaultValue="{{ tx.overview }}" onChange="{{ setText }}" placeholder="{{ cur.ph }}"></textarea></sc-if>
+<sc-if value="{{ isIncident }}" hint-placeholder-val="{{ false }}"><label for="ct-incident" style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.2em; color: #7a5b2e">YOUR INCITING INCIDENT</label><textarea id="ct-incident" class="ct-ta" data-k="incident" defaultValue="{{ tx.incident }}" onChange="{{ setText }}" placeholder="{{ cur.ph }}"></textarea></sc-if>
+<sc-if value="{{ isMechanics }}" hint-placeholder-val="{{ false }}"><label for="ct-mechanics" style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.2em; color: #7a5b2e">YOUR CUSTOM MECHANICS</label><textarea id="ct-mechanics" class="ct-ta" data-k="mechanics" defaultValue="{{ tx.mechanics }}" onChange="{{ setText }}" placeholder="{{ cur.ph }}"></textarea></sc-if>
+<div style="font-size: 14px; color: #6a5236">{{ savedLine }}</div>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #cdb88f; padding-top: 14px">
+<div style="min-width: 160px"><sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goPrev }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">‹ {{ prevTitle }}</button></sc-if></div>
+<span style="font-family: 'Cinzel', serif; font-size: 14px; color: #8a7350">— {{ cur.roman }} —</span>
+<div style="min-width: 160px; display: flex; justify-content: flex-end"><sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goNext }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">{{ nextTitle }} ›</button></sc-if></div>
+</div>
+</div>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ closed }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ reopen }}" style="position: relative; min-height: 56px; padding: 0 32px; border-radius: 999px; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.12em; cursor: pointer">Open the Tome</button>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startChapter":{"editor":"enum","options":["overview","incident","mechanics"],"default":"overview"},"embedded":{"editor":null,"default":false},"onClose":{"editor":null},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ids = ['overview', 'incident', 'mechanics'];
+    const idx = st.idx ?? Math.max(0, ids.indexOf(this.props.startChapter ?? 'overview'));
+    const open = st.open ?? true;
+    const chapters = [{"roman": "I", "title": "Overview", "note": "Share your overview with your players before they build characters: the world, its history and what makes it different.", "must": "This is your own campaign, so there is no book text here. You need to write your own lore and setting text for this chapter.", "paras": [""], "ph": "Write your setting here: the world, its history, its peoples, and the pitch you read to your players…"}, {"roman": "II", "title": "The Inciting Incident", "note": "The inciting incident is the event that pulls the party into the story in your first session.", "must": "Write your own inciting incident: the event that throws the party together, where the first session starts, and the key figures involved.", "paras": [""], "ph": "What happens at the start of the first session? Where are the characters, who do they meet, and what goes wrong?"}, {"roman": "III", "title": "Campaign Mechanics", "note": "Campaign mechanics are the special rules that apply only to this campaign. They are optional, but they make a frame feel unique.", "must": "No mechanics come with a custom campaign. You need to write your own custom mechanics: special resources, countdowns, environment rules or changes to the core rules.", "paras": [""], "ph": "e.g. 1. Corruption: when a PC rolls with Fear in a cursed place, they mark a Corruption token…"}];
+    const rules = [];
+    const FIG = [];
+    let CU = {}; try { CU = JSON.parse(window.localStorage.getItem('dh.custom') || '{}') || {}; } catch (e) {}
+    const campaignName = (CU.name || '').trim() || 'Your Campaign'; const bgCls = 'bgk-' + (CU.art || 'custom');
+    let tx = {}; try { tx = JSON.parse(window.localStorage.getItem('dh.custom.tome') || '{}') || {}; } catch (e) {}
+    const c = chapters[idx];
+    const p0 = c.paras[0] || ''; const cur = { ...c, hasSub: !!c.sub, cap: p0.charAt(0), capRest: p0.slice(1), rest: c.paras.slice(1).map((t) => ({ t })) };
+    const tabs = chapters.map((ch, i) => {
+      const on = i === idx;
+      return { roman: ch.roman, title: ch.title, current: on ? 'page' : 'false', pick: () => this.setState({ idx: i }),
+        style: 'min-height: 48px; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 4px; text-align: left; cursor: pointer; font-family: inherit; font-size: 20px; color: #2a1f14; border: none; border-left: 3px solid ' + (on ? '#8e2b2b' : 'transparent') + '; background: ' + (on ? '#e3d2ad' : 'transparent') + '; font-weight: ' + (on ? '500' : '400') + ';' };
+    });
+    return {
+      campaignName, bgCls, tx, savedLine: st.saved ? 'Saved to this browser.' : 'Your text saves automatically as you type.',
+      setup: [['Pitch', CU.pitch], ['Themes', CU.themes], ['Touchstones', CU.touch], ['Tone', (CU.tones || []).join(', ')]].filter((x) => x[1] && String(x[1]).trim()).map(([k, v]) => ({ k, v })),
+      showSetup: idx === 0 && !!(CU.pitch || CU.themes || CU.touch || (CU.tones || []).length),
+      setText: (e) => { const k = e.target.getAttribute('data-k'); if (!k) return; let cur0 = {}; try { cur0 = JSON.parse(window.localStorage.getItem('dh.custom.tome') || '{}') || {}; } catch (er) {} cur0[k] = e.target.value; try { window.localStorage.setItem('dh.custom.tome', JSON.stringify(cur0)); } catch (er) {} if (!this.state || !this.state.saved) this.setState({ saved: true }); },
+      open, closed: !open, cur, tabs, rules, keyFigures: FIG, hasFigures: idx === 1 && FIG.length > 0, startAt: "", pullQuote: "", mechIntro: "",
+      isOverview: idx === 0, isIncident: idx === 1, isMechanics: idx === 2, isProse: idx !== 2,
+      hasPrev: idx > 0, hasNext: idx < chapters.length - 1,
+      prevTitle: idx > 0 ? chapters[idx - 1].title : '', nextTitle: idx < chapters.length - 1 ? chapters[idx + 1].title : '',
+      goPrev: () => this.setState({ idx: Math.max(0, idx - 1) }),
+      goNext: () => this.setState({ idx: Math.min(chapters.length - 1, idx + 1) }),
+      standalone: !this.props.embedded,
+      rootStyle: 'position: relative; min-height: 100vh; ' + (this.props.embedded ? 'background: transparent; ' : 'background: #0a1416; ') + 'color: #2a1f14; font-family: \'EB Garamond\', serif; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 32px; overflow: hidden',
+      close: () => (this.props.onClose ? this.props.onClose() : this.setState({ open: false })),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

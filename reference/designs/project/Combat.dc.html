@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Campaign · Combat Map</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d1417}
+.cm-card{padding:18px;border-radius:14px;background:#141e22;border:1px solid #253338;display:flex;flex-direction:column;gap:12px;box-sizing:border-box}
+.cm-h{margin:0;font-family:'Cinzel',serif;font-size:18px;font-weight:700}
+.cm-lbl{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#9fb2b6}
+.cm-muted{color:#9fb2b6;font-size:14px;line-height:1.5}
+.cm-ta{width:100%;box-sizing:border-box;min-height:96px;padding:12px 14px;border-radius:10px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font-size:17px;line-height:1.5;font-family:'EB Garamond',serif;resize:vertical}
+.cm-in{min-height:40px;padding:0 10px;border-radius:8px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font-size:14px;font-family:inherit;box-sizing:border-box}
+.cm-ta:focus,.cm-in:focus{outline:2px solid #e3b45a;outline-offset:1px}
+.cm-btn{min-height:36px;padding:0 12px;border-radius:8px;border:1px solid #33444a;background:transparent;color:#e6ecea;font-size:14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.cm-btn:hover{background:#1b282d}
+.cm-btn[disabled]{opacity:.45;cursor:not-allowed}
+.cm-btn[aria-pressed="true"]{background:#2d2614;border-color:#e3b45a;color:#f3cf86}
+.cm-btn.sm{min-height:30px;padding:0 9px;font-size:13px}
+.cm-go{min-height:46px;padding:0 22px;border-radius:999px;border:none;background:#e3b45a;color:#1a1408;font-family:'Cinzel',serif;font-size:15px;font-weight:700;letter-spacing:.06em;cursor:pointer}
+.cm-go[disabled]{opacity:.5;cursor:wait}
+.cm-chip{min-height:34px;padding:0 12px;border-radius:999px;border:1px solid #3a4d54;background:#0b1214;color:#e6ecea;font-size:13px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+.cm-chip:hover{border-color:#e3b45a}
+.cm-seg{display:flex;padding:4px;gap:4px;border-radius:12px;background:#0b1214;border:1px solid #253338}
+.cm-seg button{flex:1;min-height:38px;border-radius:8px;border:none;background:transparent;color:#e6ecea;font-family:'Cinzel',serif;font-size:14px;font-weight:700;cursor:pointer}
+.cm-seg button[aria-pressed="true"]{background:#e3b45a;color:#1a1408}
+.cm-live{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;background:#1d3a2a;color:#9fe7bb;font-size:11px;font-weight:700;letter-spacing:.12em}
+.cm-live::before{content:'';width:7px;height:7px;border-radius:50%;background:#5fd38d;box-shadow:0 0 0 3px rgba(95,211,141,.25)}
+#cm-vp{position:relative;overflow:auto;max-height:calc(100vh - 150px);min-height:440px;border-radius:14px;border:1px solid #253338;background:#070b0c;cursor:grab}
+#cm-vp.panning{cursor:grabbing}
+#cm-vp.edit.tool-terrain,#cm-vp.edit.tool-sight,#cm-vp.edit.tool-unsight,#cm-vp.fogbrush{cursor:crosshair}
+#cm-vp.edit.tool-object{cursor:copy}
+#cm-vp.edit.tool-grid{cursor:move}
+.cm-tok{position:absolute;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none;user-select:none;transition:box-shadow .15s}
+.cm-tok.fixed{cursor:pointer}
+.cm-tok.revealed{outline:2px dashed #c6b6f2;outline-offset:5px}
+.cm-ini{font-family:'Cinzel',serif;font-weight:900;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none}
+.cm-tag{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:12px;font-weight:600;padding:1px 6px;border-radius:6px;background:rgba(8,12,14,.86);color:#f2ecdf;pointer-events:none;opacity:0;transition:opacity .12s;z-index:3}
+.cm-tok:hover .cm-tag,.cm-tok.sel .cm-tag,.cm-tok.mine .cm-tag,.cm-tok.revealed .cm-tag,#cm-vp.names .cm-tag{opacity:1}
+.cm-face{position:absolute;inset:-7px;border-radius:50%;pointer-events:none}
+.cm-face::before{content:'';position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-right-color:rgba(255,255,255,.9)}
+.cm-face::after{content:'';position:absolute;right:-7px;top:50%;margin-top:-7px;border-left:10px solid var(--tc,#fff);border-top:7px solid transparent;border-bottom:7px solid transparent;filter:drop-shadow(0 1px 1px rgba(0,0,0,.7))}
+.cm-rot{position:absolute;inset:-24px;border-radius:50%;pointer-events:none}
+.cm-rot i{position:absolute;right:-2px;top:50%;width:16px;height:16px;margin-top:-8px;border-radius:50%;background:#e3b45a;border:2px solid #1a1408;box-shadow:0 0 0 2px rgba(227,180,90,.35);pointer-events:auto;cursor:grab}
+.cm-badge{position:absolute;min-width:18px;height:18px;padding:0 3px;box-sizing:border-box;border-radius:9px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:2}
+.cm-ring{position:absolute;border-radius:50%;pointer-events:none;box-sizing:border-box}
+.cm-ringlbl{position:absolute;font-size:12px;font-weight:700;letter-spacing:.04em;color:#fff;text-shadow:0 1px 3px #000;pointer-events:none;white-space:nowrap}
+.cm-spin{width:18px;height:18px;border-radius:50%;border:2.5px solid #3a4d54;border-top-color:#e3b45a;animation:cmSpin .8s linear infinite;flex:none}
+@keyframes cmSpin{to{transform:rotate(360deg)}}
+.cm-pip{width:20px;height:20px;border-radius:5px;border:2px solid;box-sizing:border-box;padding:0;cursor:pointer}
+.cm-main{flex:1;width:100%;max-width:1600px;margin:0 auto;padding:22px 32px 40px;box-sizing:border-box;display:grid;grid-template-columns:360px minmax(0,1fr);gap:20px;align-items:start}
+.cm-head{position:relative;max-width:1600px;margin:0 auto;padding:22px 32px;box-sizing:border-box;display:flex;flex-direction:column;gap:18px}
+.cm-title{margin:0;font-family:'Cinzel',serif;font-size:40px;line-height:1.05;font-weight:900}
+@media (max-width:1180px){.cm-main{grid-template-columns:300px minmax(0,1fr);padding:16px 18px 28px;gap:14px}.cm-head{padding:16px 18px;gap:12px}.cm-title{font-size:30px}.cm-nav a{padding:0 9px !important;font-size:13px !important;min-height:34px !important}.cm-card{padding:14px}#cm-vp{min-height:400px}}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0d1417; color: #e6ecea; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box; display: flex; flex-direction: column">
+
+<section aria-label="Campaign header" style="position: relative; overflow: hidden">
+<div aria-hidden="true" style="{{ bannerStyle }}"></div>
+<div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(6, 12, 14, 0.74)"></div>
+<div class="cm-head">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px">
+<div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+<sc-if value="{{ gmNav }}" hint-placeholder-val="{{ true }}"><a href="{{ dashHref }}" aria-label="Back to the campaign dashboard" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: rgba(0, 0, 0, 0.3)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></a></sc-if>
+<div style="font-family: 'Cinzel', serif; font-size: 30px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div>
+</div>
+<sc-if value="{{ gmNav }}" hint-placeholder-val="{{ true }}"><nav class="cm-nav" aria-label="Campaign sections" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0, 0, 0, 0.35)"><sc-for list="{{ navItems }}" as="n" hint-placeholder-count="8"><a href="{{ n.href }}" aria-current="{{ n.current }}" style="{{ n.style }}">{{ n.label }}</a></sc-for></nav></sc-if>
+<sc-if value="{{ isPlayer }}" hint-placeholder-val="{{ false }}"><button type="button" class="cm-btn" onClick="{{ viewGm }}" style="background: rgba(0,0,0,.35)">⇦ Back to GM view</button></sc-if>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.24em; color: #c8d3d0">{{ campaignName }}</div>
+<h1 class="cm-title">Combat Map</h1>
+<div style="font-size: 15px; color: #d6dfdc">{{ headerLine }}</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<span style="{{ lightPill }}" title="Light comes from the campaign clock"><span aria-hidden="true">{{ lightIcon }}</span>{{ phase }}<sc-if value="{{ hasLightBadge }}" hint-placeholder-val="{{ false }}"><span style="opacity: .85; font-weight: 500">· {{ lightBadge }}</span></sc-if></span>
+<sc-if value="{{ isGm }}" hint-placeholder-val="{{ true }}"><div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(40, 20, 60, 0.75); border: 1px solid #5b4a8f"><span style="font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: .14em; color: #c6b6f2">GM FEAR</span><button type="button" class="cm-btn sm" onClick="{{ fearDown }}" aria-label="Spend a Fear" style="width: 30px; padding: 0">−</button><strong style="font-family: 'Cinzel', serif; font-size: 20px; min-width: 22px; text-align: center">{{ fear }}</strong><button type="button" class="cm-btn sm" onClick="{{ fearUp }}" aria-label="Gain a Fear" style="width: 30px; padding: 0">+</button></div></sc-if>
+<sc-if value="{{ isGm }}" hint-placeholder-val="{{ true }}"><div style="position: relative"><button type="button" class="cm-btn" onClick="{{ chooseOpen }}" disabled="{{ noPlayersAttr }}" style="background: rgba(0,0,0,.35)">👁 Player view ▾</button>
+<sc-if value="{{ choosingPlayer }}" hint-placeholder-val="{{ false }}"><div role="menu" style="position: absolute; right: 0; top: 44px; z-index: 40; min-width: 220px; padding: 8px; border-radius: 12px; background: #141e22; border: 1px solid #33444a; box-shadow: 0 12px 30px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 4px"><span class="cm-lbl" style="padding: 4px 6px">Open the player view as</span><sc-for list="{{ playerChoices }}" as="pc" hint-placeholder-count="3"><button type="button" class="cm-btn" onClick="{{ pc.pick }}" style="justify-content: flex-start">{{ pc.label }}</button></sc-for></div></sc-if></div></sc-if>
+</div>
+</div>
+</div>
+</section>
+
+<main class="cm-main">
+<aside style="display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{ isGm }}" hint-placeholder-val="{{ true }}"><section class="cm-card" aria-label="Maps">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px"><h2 class="cm-h">Maps</h2><button type="button" class="cm-btn sm" onClick="{{ newMap }}">＋ New map</button></div>
+<sc-if value="{{ hasMaps }}" hint-placeholder-val="{{ true }}"><div style="display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto">
+<sc-for list="{{ mapList }}" as="m" hint-placeholder-count="3"><div style="{{ m.style }}" onClick="{{ m.open }}" aria-current="{{ m.on }}">
+<span role="img" aria-label="Map thumbnail" style="{{ m.thumb }}"></span>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+<sc-if value="{{ m.notRenaming }}" hint-placeholder-val="{{ true }}"><span style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ m.name }}</span></sc-if>
+<sc-if value="{{ m.renaming }}" hint-placeholder-val="{{ false }}"><input class="cm-in" type="text" value="{{ m.name }}" onChange="{{ m.setName }}" onBlur="{{ m.endRename }}" aria-label="Map name" style="min-height: 30px"></sc-if>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9fb2b6"><sc-if value="{{ m.isLive }}" hint-placeholder-val="{{ false }}"><span class="cm-live">LIVE</span></sc-if>{{ m.size }}</span>
+<span style="display: flex; flex-wrap: wrap; gap: 4px"><button type="button" class="cm-btn sm" onClick="{{ m.setLive }}" disabled="{{ m.liveAttr }}">Set live</button><button type="button" class="cm-btn sm" onClick="{{ m.rename }}">Rename</button><button type="button" class="cm-btn sm" onClick="{{ m.dup }}">Duplicate</button><button type="button" class="cm-btn sm" onClick="{{ m.del }}" style="color: #ffb4a8">{{ m.delLabel }}</button></span>
+</div></div></sc-for>
+</div></sc-if>
+<sc-if value="{{ noMapsYet }}" hint-placeholder-val="{{ false }}"><p class="cm-muted" style="margin: 0">No maps yet. Describe a scene below to draw your first one.</p></sc-if>
+</section></sc-if>
+
+<sc-if value="{{ isGm }}" hint-placeholder-val="{{ true }}"><div class="cm-seg" role="group" aria-label="Map mode"><button type="button" aria-pressed="{{ modePlay }}" onClick="{{ toPlay }}">▶ Play</button><button type="button" aria-pressed="{{ modeEdit }}" onClick="{{ toEdit }}">✎ Edit map</button></div></sc-if>
+
+<sc-if value="{{ editing }}" hint-placeholder-val="{{ false }}"><section class="cm-card" aria-label="Scene">
+<h2 class="cm-h">Scene</h2>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="cm-lbl">Describe the battlefield</span><textarea class="cm-ta" placeholder="e.g. A bandit camp in an autumn forest clearing: three tents around a campfire, logs to sit on, a stream on the east side and boulders for cover." value="{{ prompt }}" onChange="{{ setPrompt }}"></textarea></label>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center"><span class="cm-lbl" style="margin-right: 2px">Size</span><sc-for list="{{ sizes }}" as="z" hint-placeholder-count="3"><button type="button" class="cm-btn sm" aria-pressed="{{ z.on }}" onClick="{{ z.pick }}">{{ z.label }}</button></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center"><button type="button" class="cm-go" onClick="{{ generate }}" disabled="{{ busyAttr }}">{{ genLabel }}</button><sc-if value="{{ hasMap }}" hint-placeholder-val="{{ false }}"><button type="button" class="cm-btn" onClick="{{ reroll }}" disabled="{{ busyAttr }}">↻ Another version</button></sc-if></div>
+<sc-if value="{{ busy }}" hint-placeholder-val="{{ false }}"><div role="status" style="display: flex; align-items: center; gap: 10px" class="cm-muted"><span class="cm-spin" aria-hidden="true"></span>Drawing the battlefield… <button type="button" class="cm-btn sm" onClick="{{ stop }}">Stop</button></div></sc-if>
+<sc-if value="{{ hasMsg }}" hint-placeholder-val="{{ false }}"><div role="status" class="cm-muted" style="padding: 8px 10px; border-radius: 8px; background: #0b1214; border: 1px solid #253338">{{ msg }}</div></sc-if>
+<label class="cm-btn" style="position: relative; align-self: flex-start; cursor: pointer">🖼 Use my own map image<input type="file" accept="image/*" onChange="{{ pickImage }}" style="position: absolute; width: 1px; height: 1px; opacity: 0"></label>
+</section></sc-if>
+
+<sc-if value="{{ editTools }}" hint-placeholder-val="{{ false }}"><section class="cm-card" aria-label="Edit tools">
+<h2 class="cm-h">Edit by hand</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{ tools }}" as="tl" hint-placeholder-count="5"><button type="button" class="cm-btn sm" aria-pressed="{{ tl.on }}" onClick="{{ tl.pick }}">{{ tl.label }}</button></sc-for></div>
+<sc-if value="{{ toolTerrain }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 8px"><span class="cm-lbl">Terrain</span><div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px"><sc-for list="{{ terrains }}" as="tr" hint-placeholder-count="8"><button type="button" class="cm-btn sm" aria-pressed="{{ tr.on }}" onClick="{{ tr.pick }}" style="justify-content: flex-start; text-transform: capitalize"><span aria-hidden="true" style="{{ tr.sw }}"></span>{{ tr.label }}</button></sc-for></div>
+<div style="display: flex; align-items: center; gap: 6px"><span class="cm-lbl">Brush</span><sc-for list="{{ brushes }}" as="b" hint-placeholder-count="3"><button type="button" class="cm-btn sm" aria-pressed="{{ b.on }}" onClick="{{ b.pick }}">{{ b.label }}</button></sc-for><sc-if value="{{ hasPaint }}" hint-placeholder-val="{{ false }}"><button type="button" class="cm-btn sm" onClick="{{ clearPaint }}" style="margin-left: auto">Undo all painting</button></sc-if></div></div></sc-if>
+<sc-if value="{{ toolObject }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 8px"><span class="cm-lbl">Click the map to place · click an object to select it · drag to move</span><div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ kinds }}" as="k" hint-placeholder-count="8"><button type="button" class="cm-btn sm" aria-pressed="{{ k.on }}" onClick="{{ k.pick }}">{{ k.label }}</button></sc-for></div></div></sc-if>
+<sc-if value="{{ toolSight }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 6px"><span class="cm-muted">Paint squares that block sight (red). Use this for walls drawn on your own image, or anything the painter can’t know about. Brush:</span><div style="display: flex; gap: 6px"><sc-for list="{{ brushes }}" as="b" hint-placeholder-count="3"><button type="button" class="cm-btn sm" aria-pressed="{{ b.on }}" onClick="{{ b.pick }}">{{ b.label }}</button></sc-for></div></div></sc-if>
+<sc-if value="{{ toolGrid }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 8px"><span class="cm-muted">Match the grid to the squares printed on your image. Drag the map to shift the grid, or nudge it here.</span>
+<div style="display: flex; align-items: center; gap: 6px"><span class="cm-lbl" style="width: 92px">Square</span><button type="button" class="cm-btn sm" onClick="{{ gridSmaller }}" aria-label="Smaller squares">−</button><input class="cm-in" type="text" inputmode="numeric" value="{{ gridCell }}" onChange="{{ setGridCell }}" aria-label="Square size in image pixels" style="width: 64px; text-align: center; min-height: 30px"><button type="button" class="cm-btn sm" onClick="{{ gridBigger }}" aria-label="Bigger squares">+</button><span class="cm-muted" style="font-size: 12px">px</span></div>
+<div style="display: flex; align-items: center; gap: 6px"><span class="cm-lbl" style="width: 92px">Offset</span><button type="button" class="cm-btn sm" onClick="{{ oxL }}" aria-label="Shift grid left">←</button><button type="button" class="cm-btn sm" onClick="{{ oxR }}" aria-label="Shift grid right">→</button><button type="button" class="cm-btn sm" onClick="{{ oyU }}" aria-label="Shift grid up">↑</button><button type="button" class="cm-btn sm" onClick="{{ oyD }}" aria-label="Shift grid down">↓</button><span class="cm-muted" style="font-size: 12px">{{ gridOx }}, {{ gridOy }}</span></div></div></sc-if>
+<sc-if value="{{ hasObj }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px; background: #0b1214; border: 1px solid #e3b45a">
+<strong style="font-family: 'Cinzel', serif">{{ o.label }}</strong>
+<div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ o.sights }}" as="sg" hint-placeholder-count="3"><button type="button" class="cm-btn sm" aria-pressed="{{ sg.on }}" onClick="{{ sg.pick }}">{{ sg.label }}</button></sc-for></div>
+<sc-if value="{{ o.isLight }}" hint-placeholder-val="{{ false }}"><button type="button" class="cm-btn sm" onClick="{{ o.toggleLit }}" style="align-self: flex-start">🔥 {{ o.litText }}</button><span class="cm-muted" style="font-size: 13px">{{ o.lightText }}</span></sc-if>
+<div style="display: flex; flex-wrap: wrap; gap: 4px"><button type="button" class="cm-btn sm" onClick="{{ o.smaller }}">Smaller</button><button type="button" class="cm-btn sm" onClick="{{ o.bigger }}">Bigger</button><button type="button" class="cm-btn sm" onClick="{{ o.rotL }}" aria-label="Rotate left">⟲</button><button type="button" class="cm-btn sm" onClick="{{ o.rotR }}" aria-label="Rotate right">⟳</button></div>
+<div style="display: flex; gap: 6px"><button type="button" class="cm-btn sm" onClick="{{ o.done }}">Done</button><button type="button" class="cm-btn sm" onClick="{{ o.del }}" style="color: #ffb4a8; border-color: #5a3330">Delete</button></div>
+</div></sc-if>
+</section></sc-if>
+
+<sc-if value="{{ playing }}" hint-placeholder-val="{{ true }}"><section class="cm-card" aria-label="Combatants">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px"><h2 class="cm-h">Combatants</h2><span class="cm-muted">{{ tokCount }}</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px">
+<button type="button" class="cm-btn" onClick="{{ addParty }}" disabled="{{ partyDis }}">{{ partyLabel }}</button>
+<button type="button" class="cm-btn" onClick="{{ importSession }}" title="{{ sessTitle }}" disabled="{{ sessDis }}">＋ Session encounter</button>
+<sc-if value="{{ hasTokens }}" hint-placeholder-val="{{ false }}"><button type="button" class="cm-btn" onClick="{{ clearTokens }}" style="color: #ffb4a8; border-color: #5a3330">{{ clearLabel }}</button></sc-if>
+</div>
+<sc-if value="{{ hasQueue }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 10px; background: #1a1311; border: 1px dashed #7a3a33"><span class="cm-lbl" style="color: #f0a99c">From the Adversaries tab</span><div style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{ queue }}" as="q" hint-placeholder-count="2"><button type="button" class="cm-chip" onClick="{{ q.place }}">⚔ {{ q.name }}</button></sc-for></div><button type="button" class="cm-btn sm" onClick="{{ placeAll }}" style="align-self: flex-start">Place all</button></div></sc-if>
+<details><summary class="cm-lbl" style="cursor: pointer">Add a custom token</summary>
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) 70px; gap: 8px; margin-top: 10px"><input class="cm-in" type="text" placeholder="Name (e.g. Bandit Archer)" value="{{ nName }}" onChange="{{ setNName }}" aria-label="Token name"><input class="cm-in" type="text" inputmode="numeric" placeholder="HP" value="{{ nHp }}" onChange="{{ setNHp }}" aria-label="Hit Points"></div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px"><sc-for list="{{ sides }}" as="sd" hint-placeholder-count="3"><button type="button" class="cm-btn sm" aria-pressed="{{ sd.on }}" onClick="{{ sd.pick }}">{{ sd.label }}</button></sc-for></div>
+<button type="button" class="cm-btn" onClick="{{ addCustom }}" style="margin-top: 8px">＋ Add token</button></details>
+</section></sc-if>
+
+<sc-if value="{{ playing }}" hint-placeholder-val="{{ true }}"><section class="cm-card" aria-label="Vision and fog">
+<h2 class="cm-h">Vision &amp; fog</h2>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="cm-lbl">Light</span><select class="cm-in" value="{{ phaseSel }}" onChange="{{ setPhase }}"><sc-for list="{{ phaseOpts }}" as="p" hint-placeholder-count="4"><option value="{{ p.v }}">{{ p.label }}</option></sc-for></select></label>
+<sc-if value="{{ hasPcTokens }}" hint-placeholder-val="{{ true }}"><div style="display: flex; flex-direction: column; gap: 6px"><span class="cm-lbl">See the map as</span><div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ previews }}" as="pv" hint-placeholder-count="3"><button type="button" class="cm-btn sm" aria-pressed="{{ pv.on }}" onClick="{{ pv.pick }}">{{ pv.label }}</button></sc-for></div><sc-if value="{{ previewing }}" hint-placeholder-val="{{ false }}"><span class="cm-muted" style="font-size: 13px; color: #f3cf86">{{ previewText }}</span></sc-if></div></sc-if>
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="cm-lbl">Fog brush (by hand, for every player)</span><div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ fogTools }}" as="ft" hint-placeholder-count="4"><button type="button" class="cm-btn sm" aria-pressed="{{ ft.on }}" onClick="{{ ft.pick }}">{{ ft.label }}</button></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center"><span class="cm-lbl">Brush</span><sc-for list="{{ brushes }}" as="b" hint-placeholder-count="3"><button type="button" class="cm-btn sm" aria-pressed="{{ b.on }}" onClick="{{ b.pick }}">{{ b.label }}</button></sc-for><button type="button" class="cm-btn sm" onClick="{{ clearFog }}" disabled="{{ noFogAttr }}">Clear marks</button><button type="button" class="cm-btn sm" onClick="{{ resetExplored }}">Forget explored</button></div></div>
+</section></sc-if>
+
+<sc-if value="{{ meCard }}" hint-placeholder-val="{{ false }}"><section class="cm-card" aria-label="Your character" style="border-color: #e3b45a">
+<span class="cm-lbl">You are</span>
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px"><strong style="font-family: 'Cinzel', serif; font-size: 22px">{{ meName }}</strong><button type="button" class="cm-btn sm" onClick="{{ meSelect }}">Find me</button></div>
+<span class="cm-muted">{{ mePc }} · {{ meCone }}</span>
+<div style="display: flex; align-items: center; gap: 6px"><span class="cm-lbl" style="margin-right: 4px">Facing</span><button type="button" class="cm-btn sm" onClick="{{ meTurnL }}" aria-label="Turn left">⟲ Turn</button><button type="button" class="cm-btn sm" onClick="{{ meTurnR }}" aria-label="Turn right">Turn ⟳</button></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="cm-lbl">Light you carry</span><div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ meLights }}" as="l" hint-placeholder-count="4"><button type="button" class="cm-btn sm" aria-pressed="{{ l.on }}" onClick="{{ l.pick }}">{{ l.label }}</button></sc-for></div></div>
+<p class="cm-muted" style="margin: 0; font-size: 13px">{{ lightRule }}</p>
+</section></sc-if>
+<sc-if value="{{ meMissing }}" hint-placeholder-val="{{ false }}"><section class="cm-card"><strong style="font-family: 'Cinzel', serif">{{ meName }} isn’t on this map yet</strong><span class="cm-muted">The GM will place you.</span></section></sc-if>
+
+<sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}"><section class="cm-card" aria-label="Selected token" style="border-color: {{ s.border }}">
+<div style="display: flex; align-items: center; gap: 10px"><span aria-hidden="true" style="{{ s.dot }}"></span><input class="cm-in" type="text" value="{{ s.name }}" onChange="{{ s.rename }}" readOnly="{{ s.readOnlyName }}" aria-label="Token name" style="flex: 1; font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700"></div>
+<span class="cm-muted">{{ s.sub }}</span>
+<sc-if value="{{ s.hasHp }}" hint-placeholder-val="{{ true }}"><div style="display: flex; flex-direction: column; gap: 6px"><span class="cm-lbl">Hit Points · {{ s.hpText }}</span><div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ s.hpPips }}" as="p" hint-placeholder-count="6"><button type="button" class="cm-pip" onClick="{{ p.act }}" aria-label="{{ p.label }}" style="{{ p.style }}"></button></sc-for></div></div></sc-if>
+<sc-if value="{{ s.hasSt }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 6px"><span class="cm-lbl">Stress · {{ s.stText }}</span><div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ s.stPips }}" as="p" hint-placeholder-count="4"><button type="button" class="cm-pip" onClick="{{ p.act }}" aria-label="{{ p.label }}" style="{{ p.style }}"></button></sc-for></div></div></sc-if>
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center"><button type="button" class="cm-btn sm" aria-pressed="{{ s.ringsOn }}" onClick="{{ s.toggleRings }}">◎ Range circles</button><sc-if value="{{ s.canTurn }}" hint-placeholder-val="{{ false }}"><button type="button" class="cm-btn sm" onClick="{{ s.turnL }}" aria-label="Turn left">⟲</button><button type="button" class="cm-btn sm" onClick="{{ s.turnR }}" aria-label="Turn right">⟳</button></sc-if></div>
+<sc-if value="{{ s.canLight }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 6px"><span class="cm-lbl">Carried light · {{ s.coneText }}</span><div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ s.lights }}" as="l" hint-placeholder-count="4"><button type="button" class="cm-btn sm" aria-pressed="{{ l.on }}" onClick="{{ l.pick }}">{{ l.label }}</button></sc-for></div></div></sc-if>
+<sc-if value="{{ s.hasReveal }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 10px; background: #1a1630; border: 1px solid #5b4a8f"><span class="cm-lbl" style="color: #c6b6f2">Reveal to…</span><span class="cm-muted" style="font-size: 13px">Hidden in dim light. After a successful roll, reveal it to that player.</span><div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ s.reveal }}" as="rv" hint-placeholder-count="3"><button type="button" class="cm-btn sm" aria-pressed="{{ rv.on }}" onClick="{{ rv.pick }}">{{ rv.label }}</button></sc-for></div></div></sc-if>
+<sc-if value="{{ s.gm }}" hint-placeholder-val="{{ true }}"><div style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 6px"><span class="cm-lbl">Conditions</span><div style="display: flex; flex-wrap: wrap; gap: 4px"><sc-for list="{{ s.conds }}" as="c" hint-placeholder-count="6"><button type="button" class="cm-btn sm" aria-pressed="{{ c.on }}" onClick="{{ c.toggle }}">{{ c.label }}</button></sc-for></div></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center"><span class="cm-lbl" style="margin-right: 4px">Side</span><sc-for list="{{ s.sides }}" as="sd" hint-placeholder-count="4"><button type="button" class="cm-btn sm" aria-pressed="{{ sd.on }}" onClick="{{ sd.pick }}">{{ sd.label }}</button></sc-for></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center"><span class="cm-lbl" style="margin-right: 4px">Size</span><sc-for list="{{ s.sizes }}" as="sz" hint-placeholder-count="3"><button type="button" class="cm-btn sm" aria-pressed="{{ sz.on }}" onClick="{{ sz.pick }}">{{ sz.label }}</button></sc-for></div>
+<div style="display: flex; gap: 6px"><button type="button" class="cm-btn sm" onClick="{{ s.deselect }}">Done</button><button type="button" class="cm-btn sm" onClick="{{ s.remove }}" style="color: #ffb4a8; border-color: #5a3330">Remove from map</button></div>
+</div></sc-if>
+</section></sc-if>
+</aside>
+
+<section aria-label="Battle map" style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+<strong style="font-family: 'Cinzel', serif; font-size: 18px; margin-right: 6px">{{ mapTitle }}</strong>
+<sc-if value="{{ curIsLive }}" hint-placeholder-val="{{ false }}"><span class="cm-live">LIVE</span></sc-if>
+<sc-if value="{{ showSetLive }}" hint-placeholder-val="{{ false }}"><button type="button" class="cm-btn sm" onClick="{{ setCurLive }}">Make live</button></sc-if>
+<span style="margin-right: auto"></span>
+<button type="button" class="cm-btn sm" aria-pressed="{{ namesOn }}" onClick="{{ toggleNames }}" title="Always show token names (N)">Aa Names</button>
+<sc-if value="{{ anyRings }}" hint-placeholder-val="{{ false }}"><button type="button" class="cm-btn sm" onClick="{{ hideRings }}">◎ Hide all circles</button></sc-if>
+<button type="button" class="cm-btn sm" onClick="{{ zoomOut }}" aria-label="Zoom out">−</button><span class="cm-muted" style="min-width: 42px; text-align: center; font-size: 13px">{{ zoomText }}</span><button type="button" class="cm-btn sm" onClick="{{ zoomIn }}" aria-label="Zoom in">+</button><button type="button" class="cm-btn sm" onClick="{{ zoomFit }}">Fit</button>
+</div>
+<div id="cm-vp" class="{{ vpCls }}">
+<sc-if value="{{ noMap }}" hint-placeholder-val="{{ false }}"><div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 30px; text-align: center"><div style="max-width: 460px; display: flex; flex-direction: column; gap: 10px; align-items: center"><div style="font-family: 'Cinzel', serif; font-size: 22px">{{ emptyTitle }}</div><div class="cm-muted">{{ emptyText }}</div></div></div></sc-if>
+<div style="{{ sizer }}">
+<div id="cm-stage" style="{{ stage }}">
+<canvas id="cm-canvas" style="position: absolute; left: 0; top: 0"></canvas>
+<canvas id="cm-fog" style="{{ fogCanvas }}"></canvas>
+<canvas id="cm-over" style="position: absolute; left: 0; top: 0; pointer-events: none"></canvas>
+<sc-for list="{{ rings }}" as="rg" hint-placeholder-count="0"><div><div class="cm-ring" style="{{ rg.style }}"></div><span class="cm-ringlbl" style="{{ rg.lstyle }}">{{ rg.label }}</span></div></sc-for>
+<sc-for list="{{ tokens }}" as="t" hint-placeholder-count="0"><div class="{{ t.cls }}" data-tok="{{ t.id }}" role="button" tabindex="0" aria-label="{{ t.aria }}" style="{{ t.style }}"><span class="cm-face" style="{{ t.faceStyle }}"></span><span class="cm-ini" style="{{ t.iniStyle }}">{{ t.ini }}</span><span class="cm-tag" style="{{ t.tagStyle }}">{{ t.tag }}</span><sc-if value="{{ t.hasBar }}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="{{ t.bar }}"><span style="{{ t.barFill }}"></span></span></sc-if><sc-if value="{{ t.hasCond }}" hint-placeholder-val="{{ false }}"><span aria-hidden="true" style="{{ t.condStyle }}">{{ t.cond }}</span></sc-if><sc-if value="{{ t.hasRev }}" hint-placeholder-val="{{ false }}"><span class="cm-badge" aria-hidden="true" style="left: -8px; top: -8px; background: #5b4a8f; color: #fff">👁</span></sc-if><sc-if value="{{ t.hasLight }}" hint-placeholder-val="{{ false }}"><span class="cm-badge" aria-hidden="true" style="left: -8px; bottom: -6px; background: #3a2410; border: 1px solid #e3b45a; font-size: 10px">{{ t.lightIcon }}</span></sc-if><sc-if value="{{ t.hasRot }}" hint-placeholder-val="{{ false }}"><span class="cm-rot" data-rot="{{ t.id }}" style="{{ t.rotStyle }}"><i title="Drag to turn"></i></span></sc-if></div></sc-for>
+</div>
+</div>
+</div>
+<span class="cm-muted" style="font-size: 13px">{{ hint }}</span>
+</section>
+</main>
+</div>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+// ---- Combat map painter: a scene spec (areas + objects on a square grid) -> hand-painted top-down battle map
+const CMAP = (() => {
+  // seeded random + value noise
+  const rng = (seed) => { let s = (seed >>> 0) || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return ((s >>> 0) % 100000) / 100000; }; };
+  const hash = (x, y, s) => { let h = (x * 374761393 + y * 668265263 + s * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967295; };
+  const vnoise = (x, y, s) => { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi; const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s); return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v; };
+  const fbm = (x, y, s) => vnoise(x, y, s) * 0.55 + vnoise(x * 2.1, y * 2.1, s + 7) * 0.3 + vnoise(x * 4.3, y * 4.3, s + 13) * 0.15;
+  const TER = {
+    grass: { c: [118, 150, 52], c2: [150, 176, 64], var: 26 }, dirt: { c: [150, 122, 84], c2: [128, 101, 68], var: 18 }, path: { c: [160, 134, 96], c2: [138, 112, 78], var: 14 },
+    sand: { c: [222, 200, 150], c2: [200, 178, 128], var: 12 }, water: { c: [70, 150, 190], c2: [52, 120, 168], var: 14 }, deep: { c: [34, 80, 140], c2: [26, 60, 112], var: 12 },
+    swamp: { c: [86, 98, 58], c2: [62, 78, 52], var: 16 }, stone: { c: [150, 146, 136], c2: [124, 120, 112], var: 10 }, cave: { c: [168, 156, 136], c2: [140, 128, 110], var: 14 },
+    wall: { c: [40, 36, 34], c2: [26, 24, 24], var: 6 }, wood: { c: [150, 108, 66], c2: [124, 86, 50], var: 10 }, snow: { c: [236, 240, 244], c2: [212, 220, 230], var: 8 },
+    lava: { c: [230, 92, 30], c2: [170, 40, 20], var: 30 }, void: { c: [14, 14, 16], c2: [8, 8, 10], var: 2 }
+  };
+  const WALLISH = { wall: 1, void: 1 }; const WET = { water: 1, deep: 1, lava: 1 };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  // ---- rasterize areas into a terrain grid
+  const rasterize = (spec, F) => {
+    F = F || 1; const W = spec.w * F, H = spec.h * F; const g = Array.from({ length: H }, () => Array(W).fill(TER[spec.base] ? spec.base : 'grass'));
+    const set = (x, y, t) => { if (x >= 0 && y >= 0 && x < W && y < H) g[y][x] = t; };
+    const inPoly = (px, py, pts) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) c = !c; } return c; };
+    const segD = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay; const t = clamp(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1), 0, 1); return Math.hypot(px - ax - t * dx, py - ay - t * dy); };
+    (spec.areas || []).forEach((a) => { const t = TER[a.terrain] ? a.terrain : null; if (!t) return;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const cx = (x + 0.5) / F, cy = (y + 0.5) / F; let hit = false;
+        if (a.shape === 'rect') hit = cx >= a.x && cx <= a.x + a.w && cy >= a.y && cy <= a.y + a.h;
+        else if (a.shape === 'ellipse') hit = ((cx - a.x) / (a.rx || 1)) ** 2 + ((cy - a.y) / (a.ry || 1)) ** 2 <= 1;
+        else if (a.shape === 'poly' && Array.isArray(a.points) && a.points.length > 2) hit = inPoly(cx, cy, a.points);
+        else if (a.shape === 'path' && Array.isArray(a.points) && a.points.length > 1) { const hw = (a.width || 2) / 2; for (let i = 0; i < a.points.length - 1 && !hit; i++) hit = segD(cx, cy, a.points[i][0], a.points[i][1], a.points[i + 1][0], a.points[i + 1][1]) <= hw; }
+        else if (a.shape === 'border') { const th = a.width || 2; hit = cx < th || cy < th || cx > spec.w - th || cy > spec.h - th; }
+        if (hit) set(x, y, t); } });
+    Object.keys(spec.paint || {}).forEach((k) => { const t = spec.paint[k]; if (!TER[t]) return; const [cx, cy] = k.split(',').map(Number); for (let yy = 0; yy < F; yy++) for (let xx = 0; xx < F; xx++) set(cx * F + xx, cy * F + yy, t); });
+    return g;
+  };
+  // ---- paint
+  const render = (cv, spec, C) => {
+    C = C || 48; const W = spec.w, H = spec.h, PW = W * C, PH = H * C; cv.width = PW; cv.height = PH;
+    const ctx = cv.getContext('2d'); const g = rasterize(spec); const FF = 4, FW = W * FF, FH = H * FF, FC = C / FF; const gF = rasterize(spec, FF); const seed = (spec.seed || 1) | 0; const R = rng(seed);
+    const CRISP = { wood: 1 }; if (spec.base === 'wall' || spec.base === 'void') CRISP.stone = 1;
+    const T = (gx, gy) => gF[clamp(Math.floor(gy * FF), 0, FH - 1)][clamp(Math.floor(gx * FF), 0, FW - 1)];
+    // boundary cells (need multi-sampling)
+    const edge = Array.from({ length: FH }, (_, y) => Array.from({ length: FW }, (_, x) => { const t = gF[y][x]; for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const yy = y + dy, xx = x + dx; if (yy >= 0 && xx >= 0 && yy < FH && xx < FW && gF[yy][xx] !== t) return true; } return false; }));
+    const img = ctx.createImageData(PW, PH); const D = img.data; const amp = C * 0.38, fq = 1 / (C * 1.1);
+    for (let py = 0; py < PH; py++) for (let px = 0; px < PW; px++) {
+      const fx = Math.floor(px / FC), fy = Math.floor(py / FC); let t;
+      let wallEdge = 0, wetEdge = 0, rim = 0;
+      if (edge[fy][fx]) {
+        const t0 = gF[fy][fx]; let ox = (fbm(px * fq, py * fq, seed) - 0.5) * 2 * amp, oy = (fbm(px * fq + 31, py * fq + 17, seed) - 0.5) * 2 * amp;
+        t = T((px + ox) / C, (py + oy) / C); if (CRISP[t0] || CRISP[t]) { t = t0; ox = 0; oy = 0; }
+        const k = 7; const s = [T((px + ox + k) / C, (py + oy) / C), T((px + ox - k) / C, (py + oy) / C), T((px + ox) / C, (py + oy + k) / C), T((px + ox) / C, (py + oy - k) / C)];
+        if (s.some((u) => !!WALLISH[u] !== !!WALLISH[t])) wallEdge = 1;
+        else { const k2 = 14; const s2 = [T((px + ox + k2) / C, (py + oy) / C), T((px + ox - k2) / C, (py + oy) / C), T((px + ox) / C, (py + oy + k2) / C), T((px + ox) / C, (py + oy - k2) / C)]; if (s2.some((u) => !!WALLISH[u] !== !!WALLISH[t])) wallEdge = 2; }
+        if (WET[t] && s.some((u) => !WET[u])) wetEdge = 1;
+        if (t === 'wood' && s.some((u) => u !== 'wood')) rim = 1;
+      } else t = gF[fy][fx];
+      const P = TER[t]; const n = fbm(px * 0.045, py * 0.045, seed + 3); const n2 = vnoise(px * 0.22, py * 0.22, seed + 5);
+      let r = P.c[0] + (P.c2[0] - P.c[0]) * n, gg = P.c[1] + (P.c2[1] - P.c[1]) * n, b = P.c[2] + (P.c2[2] - P.c[2]) * n; const j = (n2 - 0.5) * P.var; r += j; gg += j; b += j;
+      if (t === 'wood') { const plank = Math.floor((spec.plankV ? px : py) / (C / 3)); const seam = ((spec.plankV ? px : py) % (C / 3)) < 1.6; const pv = (hash(plank, Math.floor((spec.plankV ? py : px) / (C * 2.2)), seed) - 0.5) * 22; r += pv; gg += pv * 0.8; b += pv * 0.6; if (seam) { r -= 45; gg -= 40; b -= 32; } }
+      if (t === 'stone') { const bx = (px + (Math.floor(py / (C / 2)) % 2) * C / 4) % (C / 2), by = py % (C / 2); if (bx < 1.5 || by < 1.5) { r -= 38; gg -= 38; b -= 36; } const sv = (hash(Math.floor((px + (Math.floor(py / (C / 2)) % 2) * C / 4) / (C / 2)), Math.floor(py / (C / 2)), seed) - 0.5) * 20; r += sv; gg += sv; b += sv; }
+      if (t === 'wall') { if ((px + py) % 9 < 1.4 && wallEdge) { r += 70; gg += 64; b += 56; } }
+      if (wallEdge === 1) { r = WALLISH[t] ? 92 : r * 0.55; gg = WALLISH[t] ? 80 : gg * 0.55; b = WALLISH[t] ? 66 : b * 0.55; }
+      else if (wallEdge === 2 && !WALLISH[t]) { r *= 0.8; gg *= 0.8; b *= 0.8; }
+      else if (wallEdge === 2 && WALLISH[t] && (px - py + 400) % 6 < 1.6) { r += 50; gg += 45; b += 40; }
+      if (rim) { r = 70; gg = 44; b = 24; }
+      if (wetEdge && t !== 'lava') { r = r * 0.4 + 235 * 0.6; gg = gg * 0.4 + 245 * 0.6; b = b * 0.4 + 245 * 0.6; }
+      if ((t === 'water' || t === 'deep') && vnoise(px * 0.06, py * 0.2, seed + 9) > 0.72) { r += 18; gg += 22; b += 22; }
+      if (t === 'lava' && n2 > 0.7) { r = 255; gg = 200; b = 80; }
+      const i = (py * PW + px) * 4; D[i] = clamp(r, 0, 255); D[i + 1] = clamp(gg, 0, 255); D[i + 2] = clamp(b, 0, 255); D[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    // texture strokes
+    ctx.lineCap = 'round';
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = g[y][x];
+      const n = t === 'grass' ? 9 : t === 'dirt' || t === 'path' || t === 'cave' ? 4 : t === 'swamp' ? 5 : t === 'sand' ? 3 : t === 'snow' ? 2 : 0;
+      for (let k = 0; k < n; k++) { const sx = (x + R()) * C, sy = (y + R()) * C;
+        if (t === 'grass' || t === 'swamp') { const l = 3 + R() * 4; ctx.strokeStyle = R() < 0.5 ? 'rgba(60,92,26,0.55)' : 'rgba(190,214,96,0.45)'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - 2, sy - l); ctx.moveTo(sx, sy); ctx.lineTo(sx + 2, sy - l * 0.9); ctx.stroke(); }
+        else { ctx.fillStyle = t === 'snow' ? 'rgba(170,185,200,0.6)' : 'rgba(80,66,50,0.45)'; ctx.beginPath(); ctx.ellipse(sx, sy, 1.5 + R() * 2.5, 1 + R() * 1.8, R() * 3, 0, 7); ctx.fill(); }
+      }
+      if (t === 'swamp' && R() < 0.3) { ctx.fillStyle = 'rgba(40,70,50,0.6)'; ctx.beginPath(); ctx.ellipse((x + R()) * C, (y + R()) * C, C * 0.4, C * 0.25, R() * 3, 0, 7); ctx.fill(); }
+      if ((t === 'water' || t === 'deep') && R() < 0.35) { ctx.strokeStyle = 'rgba(220,240,255,0.35)'; ctx.lineWidth = 1.4; const sx = (x + R()) * C, sy = (y + R()) * C; ctx.beginPath(); ctx.arc(sx, sy, 6 + R() * 6, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+    }
+    // objects (sorted so shadows go under everything): shadows first, then bodies
+    const objs = (spec.objects || []).filter((o) => o && typeof o.x === 'number' && typeof o.y === 'number').slice(0, 400);
+    const P = (o) => [o.x * C, o.y * C];
+    const shade = (x, y, rx, ry) => { ctx.fillStyle = 'rgba(10,20,8,0.32)'; ctx.beginPath(); ctx.ellipse(x + rx * 0.25, y + ry * 0.3, rx, ry, 0, 0, 7); ctx.fill(); };
+    objs.filter((o) => o.kind === 'hull' && Array.isArray(o.points) && o.points.length > 2).forEach((o) => { const pts = o.points.map(([a, b]) => [a * C, b * C]); const path = () => { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); };
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]); const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys); const horiz = (maxX - minX) >= (maxY - minY);
+      ctx.save(); ctx.lineJoin = 'round'; path(); ctx.strokeStyle = 'rgba(240,250,255,0.35)'; ctx.lineWidth = C * 0.9; ctx.stroke(); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = C * 0.35; ctx.stroke();
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.translate(8, 10); path(); ctx.fill(); ctx.translate(-8, -10);
+      path(); ctx.fillStyle = '#9a6a3c'; ctx.fill(); ctx.save(); path(); ctx.clip(); const pw = C / 3;
+      for (let k = 0; ; k++) { const a = horiz ? minY + k * pw : minX + k * pw; if (a > (horiz ? maxY : maxX)) break; const v = (hash(k, 3, seed) - 0.5) * 26; ctx.fillStyle = 'rgb(' + (154 + v) + ',' + (108 + v * 0.8) + ',' + (62 + v * 0.6) + ')'; if (horiz) ctx.fillRect(minX, a, maxX - minX, pw - 1.4); else ctx.fillRect(a, minY, pw - 1.4, maxY - minY);
+        ctx.fillStyle = 'rgba(60,36,18,0.55)'; for (let q = 0; q < 6; q++) { const b = (horiz ? minX : minY) + hash(k, q, seed) * (horiz ? maxX - minX : maxY - minY); if (horiz) ctx.fillRect(b, a, 1.4, pw); else ctx.fillRect(a, b, pw, 1.4); } }
+      ctx.restore(); path(); ctx.strokeStyle = '#4a2c14'; ctx.lineWidth = C * 0.28; ctx.stroke(); ctx.strokeStyle = '#2a170a'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore(); });
+    objs.forEach((o) => { const [x, y] = P(o); const s = (o.r || o.size || 1) * C; if (/tree|bush/.test(o.kind)) shade(x, y, s * 1.05, s * 0.95); else if (/rock|boulder|tent|statue|pillar/.test(o.kind)) shade(x, y, s * 0.8, s * 0.6); });
+    const canopy = (x, y, rad, col, dark, hi, rnd) => {
+      const blobs = []; const n = 7 + Math.floor(rad / C * 4); for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2 + rnd() * 0.4; const d = rad * (0.55 + rnd() * 0.18); blobs.push([x + Math.cos(a) * d, y + Math.sin(a) * d, rad * (0.38 + rnd() * 0.12)]); }
+      blobs.push([x, y, rad * 0.62]);
+      ctx.fillStyle = '#1d2a12'; blobs.forEach(([bx, by, br]) => { ctx.beginPath(); ctx.arc(bx, by, br + 2.4, 0, 7); ctx.fill(); });
+      ctx.fillStyle = dark; blobs.forEach(([bx, by, br]) => { ctx.beginPath(); ctx.arc(bx, by, br, 0, 7); ctx.fill(); });
+      ctx.fillStyle = col; blobs.forEach(([bx, by, br]) => { ctx.beginPath(); ctx.arc(bx - br * 0.12, by - br * 0.14, br * 0.8, 0, 7); ctx.fill(); });
+      ctx.fillStyle = hi; blobs.forEach(([bx, by, br]) => { ctx.beginPath(); ctx.arc(bx - br * 0.25, by - br * 0.3, br * 0.42, 0, 7); ctx.fill(); });
+      ctx.strokeStyle = 'rgba(25,40,15,0.5)'; ctx.lineWidth = 1.2; for (let i = 0; i < n * 2; i++) { const a = rnd() * 7, d = rnd() * rad * 0.8; const sx = x + Math.cos(a) * d, sy = y + Math.sin(a) * d; ctx.beginPath(); ctx.arc(sx, sy, 3 + rnd() * 3, 0.2, 2.6); ctx.stroke(); }
+    };
+    const PAL = { green: ['#5f8a2e', '#3f6420', '#8fb84a'], dark: ['#3f6a3a', '#2a4a2a', '#6a9a5a'], autumn: ['#c98a24', '#9a5f16', '#e8b44a'], olive: ['#7d8c2c', '#5a6620', '#a8b84a'], pine: ['#2f5a3a', '#1f3f28', '#4f7a52'], pink: ['#c87aa0', '#9a4a76', '#eaa8c8'] };
+    objs.forEach((o) => { const [x, y] = P(o); const s = (o.r || o.size || 1) * C; const rnd = rng(Math.floor(o.x * 97 + o.y * 131) + seed); const rot = o.rot || 0; ctx.save();
+      switch (o.kind) {
+        case 'tree': case 'bush': { const pal = PAL[o.variant] || PAL[['green', 'green', 'dark', 'olive', 'autumn'][Math.floor(rnd() * 5)]]; canopy(x, y, s * (o.kind === 'bush' ? 0.7 : 1), pal[0], pal[1], pal[2], rnd); break; }
+        case 'deadtree': { ctx.strokeStyle = '#e8e2d4'; ctx.lineCap = 'round'; const br = (bx, by, a, l, w, d) => { if (d > 4 || l < 4) return; const ex = bx + Math.cos(a) * l, ey = by + Math.sin(a) * l; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke(); br(ex, ey, a - 0.5 + rnd() * 0.3, l * 0.62, w * 0.62, d + 1); br(ex, ey, a + 0.4 + rnd() * 0.3, l * 0.6, w * 0.6, d + 1); };
+          ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 6; for (let i = 0; i < 6; i++) br(x, y, i / 6 * 6.28 + rnd(), s * 0.55, s * 0.12, 0); ctx.fillStyle = '#d8d0c0'; ctx.beginPath(); ctx.arc(x, y, s * 0.14, 0, 7); ctx.fill(); break; }
+        case 'rock': case 'boulder': { const n = 7 + Math.floor(rnd() * 4); const pts = []; for (let i = 0; i < n; i++) { const a = i / n * 6.28; const d = s * (0.32 + rnd() * 0.16) * (o.kind === 'boulder' ? 1.3 : 1); pts.push([x + Math.cos(a) * d, y + Math.sin(a) * d * 0.85]); }
+          ctx.fillStyle = '#5c5e62'; ctx.strokeStyle = '#1e1f22'; ctx.lineWidth = 2.4; ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#8a8c90'; ctx.beginPath(); ctx.moveTo(pts[n - 2][0], pts[n - 2][1]); for (let i = n - 1; i < n + 2; i++) ctx.lineTo(pts[i % n][0], pts[i % n][1]); ctx.lineTo(x - s * 0.04, y - s * 0.02); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = 'rgba(30,30,34,0.6)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x - s * 0.1, y - s * 0.12); ctx.lineTo(x + s * 0.06, y + s * 0.1); ctx.stroke(); break; }
+        case 'tent': { ctx.translate(x, y); ctx.rotate(rot); const w = s * 1.1, h = s * 0.85; ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(-w / 2 + 6, -h / 2 + 8, w, h);
+          ctx.fillStyle = '#efd9b0'; ctx.strokeStyle = '#5a4126'; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(-w / 2, -h / 2); ctx.lineTo(w / 2, -h / 2); ctx.lineTo(w / 2, 0); ctx.lineTo(-w / 2, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#cfb489'; ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.lineTo(w / 2, 0); ctx.lineTo(w / 2, h / 2); ctx.lineTo(-w / 2, h / 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-w / 2 - 3, 0); ctx.lineTo(w / 2 + 3, 0); ctx.stroke(); break; }
+        case 'campfire': { ctx.fillStyle = 'rgba(40,30,25,0.55)'; ctx.beginPath(); ctx.arc(x, y, s * 0.75, 0, 7); ctx.fill(); for (let i = 0; i < 9; i++) { const a = i / 9 * 6.28; ctx.fillStyle = i % 2 ? '#7a7c80' : '#5c5e62'; ctx.strokeStyle = '#222'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * s * 0.42, y + Math.sin(a) * s * 0.42, s * 0.11, s * 0.08, a, 0, 7); ctx.fill(); ctx.stroke(); }
+          ctx.fillStyle = '#2a2420'; ctx.beginPath(); ctx.arc(x, y, s * 0.3, 0, 7); ctx.fill();
+          if (o.lit !== false) { const gr = ctx.createRadialGradient(x, y, 1, x, y, s * 1.4); gr.addColorStop(0, 'rgba(255,190,80,0.55)'); gr.addColorStop(1, 'rgba(255,140,40,0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, s * 1.4, 0, 7); ctx.fill();
+            ctx.fillStyle = '#ff9a2a'; ctx.beginPath(); ctx.arc(x, y, s * 0.17, 0, 7); ctx.fill(); ctx.fillStyle = '#ffe28a'; ctx.beginPath(); ctx.arc(x, y, s * 0.08, 0, 7); ctx.fill(); }
+          else { ctx.strokeStyle = '#4a3a2c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - s * 0.18, y - s * 0.1); ctx.lineTo(x + s * 0.18, y + s * 0.1); ctx.moveTo(x - s * 0.15, y + s * 0.14); ctx.lineTo(x + s * 0.15, y - s * 0.12); ctx.stroke(); ctx.fillStyle = 'rgba(150,140,130,0.6)'; ctx.beginPath(); ctx.arc(x, y, s * 0.08, 0, 7); ctx.fill(); }
+          break; }
+        case 'log': { ctx.translate(x, y); ctx.rotate(rot); const l = (o.len || 2.5) * C, w = s * 0.32; ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-l / 2 + 4, -w / 2 + 5, l, w); ctx.fillStyle = '#6d4a2c'; ctx.strokeStyle = '#2e1d10'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(-l / 2, -w / 2, l, w, w / 2); ctx.fill(); ctx.stroke();
+          ctx.strokeStyle = 'rgba(40,24,12,0.6)'; ctx.lineWidth = 1.3; for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-l / 2 + w * 0.4, -w * 0.3 + i * w * 0.2); ctx.lineTo(l / 2 - w * 0.4, -w * 0.28 + i * w * 0.2 + (rnd() - 0.5) * 3); ctx.stroke(); }
+          ctx.fillStyle = '#c99a62'; ctx.beginPath(); ctx.ellipse(l / 2 - w * 0.15, 0, w * 0.2, w * 0.46, 0, 0, 7); ctx.fill(); ctx.stroke(); break; }
+        case 'crate': case 'chest': case 'table': { ctx.translate(x, y); ctx.rotate(rot); const w = s * (o.kind === 'table' ? 1.4 : 0.7), h = s * (o.kind === 'table' ? 0.8 : o.kind === 'chest' ? 0.5 : 0.7); ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-w / 2 + 4, -h / 2 + 5, w, h);
+          ctx.fillStyle = o.kind === 'chest' ? '#8a5a2a' : '#a77a48'; ctx.strokeStyle = '#3a2412'; ctx.lineWidth = 2; ctx.fillRect(-w / 2, -h / 2, w, h); ctx.strokeRect(-w / 2, -h / 2, w, h);
+          if (o.kind === 'crate') { ctx.beginPath(); ctx.moveTo(-w / 2, -h / 2); ctx.lineTo(w / 2, h / 2); ctx.moveTo(w / 2, -h / 2); ctx.lineTo(-w / 2, h / 2); ctx.stroke(); }
+          if (o.kind === 'chest') { ctx.fillStyle = '#d6b04a'; ctx.fillRect(-w / 2, -2, w, 4); ctx.fillRect(-3, -h / 2, 6, h); }
+          if (o.kind === 'table') { ctx.strokeStyle = 'rgba(58,36,18,0.5)'; for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-w / 2, -h / 2 + i * h / 4); ctx.lineTo(w / 2, -h / 2 + i * h / 4); ctx.stroke(); } } break; }
+        case 'barrel': { ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.arc(x + 4, y + 5, s * 0.34, 0, 7); ctx.fill(); ctx.fillStyle = '#9a6a3a'; ctx.strokeStyle = '#3a2412'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, s * 0.34, 0, 7); ctx.fill(); ctx.stroke(); ctx.strokeStyle = '#4a4a4a'; ctx.beginPath(); ctx.arc(x, y, s * 0.24, 0, 7); ctx.stroke(); break; }
+        case 'pillar': case 'statue': { ctx.fillStyle = '#9c988e'; ctx.strokeStyle = '#2a2826'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.arc(x, y, s * 0.42, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#c4c0b6'; ctx.beginPath(); ctx.arc(x - s * 0.08, y - s * 0.08, s * 0.24, 0, 7); ctx.fill();
+          if (o.kind === 'statue') { ctx.fillStyle = '#7a776e'; ctx.beginPath(); ctx.arc(x, y, s * 0.16, 0, 7); ctx.fill(); ctx.stroke(); } break; }
+        case 'rubble': { for (let i = 0; i < 9; i++) { const a = rnd() * 6.28, d = rnd() * s * 0.6; ctx.fillStyle = rnd() < 0.5 ? '#77756e' : '#5a5852'; ctx.strokeStyle = '#26241f'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * d, y + Math.sin(a) * d, 3 + rnd() * s * 0.12, 2 + rnd() * s * 0.08, rnd() * 3, 0, 7); ctx.fill(); ctx.stroke(); } break; }
+        case 'mast': { ctx.fillStyle = '#5a3a1e'; ctx.strokeStyle = '#2a180a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, s * 0.2, 0, 7); ctx.fill(); ctx.stroke();
+          if (o.sail !== false) { ctx.translate(x, y); ctx.rotate(rot); const sw = (o.span || 4) * C; ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(10, 10, s * 0.35, sw / 2, 0, 0, 7); ctx.fill(); const d = C * 0.9; ctx.fillStyle = '#f1e6cc'; ctx.strokeStyle = '#7a6440'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-d * 0.2, -sw / 2); ctx.quadraticCurveTo(d * 1.4, 0, -d * 0.2, sw / 2); ctx.lineTo(-d * 0.6, sw / 2); ctx.quadraticCurveTo(d * 0.5, 0, -d * 0.6, -sw / 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = 'rgba(122,100,64,0.45)'; ctx.lineWidth = 1.2; for (let k = 1; k < 4; k++) { const yy = -sw / 2 + k * sw / 4; ctx.beginPath(); ctx.moveTo(-d * 0.55, yy); ctx.lineTo(d * 0.35, yy * 0.92); ctx.stroke(); } ctx.fillStyle = '#5a3a1e'; ctx.fillRect(-d * 0.65, -sw / 2 - 3, 5, sw + 6); } break; }
+        case 'mushroom': { ctx.fillStyle = '#b8443a'; ctx.strokeStyle = '#3a1410'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, s * 0.22, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#f4e8d8'; for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(x + (rnd() - 0.5) * s * 0.25, y + (rnd() - 0.5) * s * 0.25, 2, 0, 7); ctx.fill(); } break; }
+        case 'crystal': { const col = [120, 200, 255]; const gr = ctx.createRadialGradient(x, y, 1, x, y, s * 1.6); gr.addColorStop(0, 'rgba(' + col + ',0.55)'); gr.addColorStop(1, 'rgba(' + col + ',0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, s * 1.6, 0, 7); ctx.fill(); ctx.fillStyle = 'rgb(' + col + ')'; ctx.beginPath(); ctx.arc(x, y, s * 0.12, 0, 7); ctx.fill(); break; }
+        case 'torch': case 'walltorch': { const lit = o.lit !== false; if (lit) { const gr = ctx.createRadialGradient(x, y, 1, x, y, s * 1.8); gr.addColorStop(0, 'rgba(255,170,60,0.6)'); gr.addColorStop(1, 'rgba(255,170,60,0)'); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, s * 1.8, 0, 7); ctx.fill(); }
+          ctx.fillStyle = '#3a2a1a'; ctx.strokeStyle = '#120c06'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.roundRect(x - s * 0.1, y - s * 0.1, s * 0.2, s * 0.32, 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#6a6a6e'; ctx.fillRect(x - s * 0.16, y + s * 0.12, s * 0.32, s * 0.06);
+          if (lit) { ctx.fillStyle = '#ff9a2a'; ctx.beginPath(); ctx.ellipse(x, y - s * 0.14, s * 0.12, s * 0.17, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#ffe28a'; ctx.beginPath(); ctx.ellipse(x, y - s * 0.12, s * 0.05, s * 0.08, 0, 0, 7); ctx.fill(); } else { ctx.fillStyle = '#2a2420'; ctx.beginPath(); ctx.arc(x, y - s * 0.12, s * 0.08, 0, 7); ctx.fill(); }
+          break; }
+        case 'bones': { ctx.strokeStyle = '#ece4d2'; ctx.lineWidth = 3; ctx.lineCap = 'round'; for (let i = 0; i < 4; i++) { const a = rnd() * 6.28; ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * s * 0.3, y + Math.sin(a) * s * 0.3); ctx.lineTo(x - Math.cos(a) * s * 0.3, y - Math.sin(a) * s * 0.3); ctx.stroke(); } break; }
+        default: break; }
+      ctx.restore(); });
+    // grid + soft vignette
+    ctx.strokeStyle = 'rgba(20,24,16,0.22)'; ctx.lineWidth = 1; ctx.beginPath(); for (let x = 0; x <= W; x++) { ctx.moveTo(x * C + 0.5, 0); ctx.lineTo(x * C + 0.5, PH); } for (let y = 0; y <= H; y++) { ctx.moveTo(0, y * C + 0.5); ctx.lineTo(PW, y * C + 0.5); } ctx.stroke();
+    const vg = ctx.createRadialGradient(PW / 2, PH / 2, Math.min(PW, PH) * 0.45, PW / 2, PH / 2, Math.max(PW, PH) * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.35)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, PW, PH);
+    return { grid: g };
+  };
+  // ---- offline generator: keywords -> spec (used when Claude is unavailable, and as Claude's fallback)
+  const generate = (prompt, seed, W0) => {
+    const p = String(prompt || '').toLowerCase(); const R = rng(seed || 7); const has = (re) => re.test(p);
+    const W = W0 || (has(/\b(huge|large|big|vast)\b/) ? 36 : has(/\b(small|tight|tiny|cramped)\b/) ? 22 : 30); const H = Math.round(W * 0.66);
+    const spec = { w: W, h: H, seed: seed || 7, base: 'grass', areas: [], objects: [], title: '' };
+    const A = (a) => spec.areas.push(a); const O = (o) => spec.objects.push(o); const rx = (a, b) => a + R() * (b - a);
+    const free = (x, y, r) => spec.objects.every((o) => Math.hypot(o.x - x, o.y - y) > (o.r || 1) + r);
+    const scatter = (kind, n, opts, inside) => { let tries = 0; while (n > 0 && tries++ < 400) { const x = rx(1, W - 1), y = rx(1, H - 1); const r = opts.r || 1; if (inside && !inside(x, y)) continue; if (!free(x, y, r * 0.8)) continue; O({ kind, x, y, ...opts, r }); n--; } };
+    const ring = (cx, cy, r0) => (x, y) => Math.hypot((x - cx) / 1.15, y - cy) > r0;
+    const cx = W / 2 + rx(-2, 2), cy = H / 2 + rx(-1.5, 1.5);
+    if (has(/\b(ship|boat|deck|galleon|sail|vessel)\b/)) {
+      spec.base = 'deep'; spec.plankV = false; const L = W * 0.72, B = H * 0.38, x0 = (W - L) / 2, y0 = H / 2;
+      O({ kind: 'hull', x: x0 + L / 2, y: y0, r: 1, points: [[x0, y0 - B / 2 + 0.4], [x0 + 0.5, y0 - B / 2], [x0 + L * 0.72, y0 - B / 2], [x0 + L * 0.92, y0 - B * 0.3], [x0 + L, y0], [x0 + L * 0.92, y0 + B * 0.3], [x0 + L * 0.72, y0 + B / 2], [x0 + 0.5, y0 + B / 2], [x0, y0 + B / 2 - 0.4]] });
+      [0.22, 0.5, 0.72].forEach((f) => O({ kind: 'mast', x: x0 + L * f, y: y0, r: 1, span: B * 1.1 })); scatter('barrel', 4, { r: 0.8 }, (x, y) => x > x0 + 1 && x < x0 + L - 2 && Math.abs(y - y0) < B / 2 - 1); scatter('crate', 3, { r: 0.8 }, (x, y) => x > x0 + 1 && x < x0 + L - 2 && Math.abs(y - y0) < B / 2 - 1);
+      spec.title = 'Ship deck at sea'; return spec;
+    }
+    if (has(/\b(cave|cavern|tunnel|mine|underground|grotto|lair)\b/)) {
+      spec.base = 'wall'; const pts = []; let x = 2, y = H / 2; const chambers = [];
+      for (let i = 0; i < 5; i++) { const nx = 3 + (W - 6) * (i + 1) / 5, ny = rx(3, H - 3); A({ terrain: 'cave', shape: 'path', points: [[x, y], [nx, ny]], width: rx(2.4, 3.6) }); const r = rx(2.2, 4); A({ terrain: 'cave', shape: 'ellipse', x: nx, y: ny, rx: r * 1.2, ry: r }); chambers.push([nx, ny, r]); x = nx; y = ny; }
+      const [bx, by, br] = chambers[Math.floor(R() * chambers.length)]; A({ terrain: 'cave', shape: 'ellipse', x: bx, y: by, rx: br + 2, ry: br + 1.5 });
+      if (has(/\b(water|pool|lake|river|underground lake)\b/) || R() < 0.4) A({ terrain: 'water', shape: 'ellipse', x: bx + 1, y: by, rx: br * 0.6, ry: br * 0.45 });
+      if (has(/\blava|magma|fire\b/)) A({ terrain: 'lava', shape: 'ellipse', x: bx, y: by + 1, rx: br * 0.5, ry: br * 0.35 });
+      const inCave = (px, py) => chambers.some(([qx, qy, qr]) => Math.hypot((px - qx) / 1.2, py - qy) < qr - 0.6);
+      scatter('rock', 7, { r: 0.8 }, inCave); scatter('rubble', 3, { r: 1 }, inCave); if (has(/crystal|glow|mushroom|fung/)) { scatter('crystal', 4, { r: 0.6 }, inCave); scatter('mushroom', 5, { r: 0.6 }, inCave); } if (has(/bone|lair|den|beast|dragon/)) scatter('bones', 4, { r: 0.8 }, inCave); if (has(/torch|camp|bandit/)) scatter('torch', 3, { r: 0.5 }, inCave);
+      spec.title = 'Cavern'; return spec;
+    }
+    if (has(/\b(dungeon|crypt|tomb|temple|hall|castle|keep|room|chamber|vault|ruin|ruins|shrine)\b/)) {
+      const ruin = has(/ruin|overgrown|shrine/); spec.base = ruin ? 'grass' : 'wall';
+      const rooms = []; const n = ruin ? 2 : 3 + Math.floor(R() * 2);
+      for (let i = 0; i < n; i++) { const w = rx(6, 11), h = rx(5, 8); const x = rx(1.5, W - w - 1.5), y = rx(1.5, H - h - 1.5); A({ terrain: 'stone', shape: 'rect', x, y, w, h }); rooms.push([x, y, w, h]); }
+      for (let i = 1; i < rooms.length; i++) { const a = rooms[i - 1], b = rooms[i]; A({ terrain: 'stone', shape: 'path', points: [[a[0] + a[2] / 2, a[1] + a[3] / 2], [b[0] + b[2] / 2, a[1] + a[3] / 2], [b[0] + b[2] / 2, b[1] + b[3] / 2]], width: 2.2 }); }
+      rooms.forEach(([x, y, w, h]) => { if (w > 7) { O({ kind: 'pillar', x: x + 1.5, y: y + 1.5, r: 0.9 }); O({ kind: 'pillar', x: x + w - 1.5, y: y + 1.5, r: 0.9 }); O({ kind: 'pillar', x: x + 1.5, y: y + h - 1.5, r: 0.9 }); O({ kind: 'pillar', x: x + w - 1.5, y: y + h - 1.5, r: 0.9 }); } });
+      const inRoom = (px, py) => rooms.some(([x, y, w, h]) => px > x + 1 && px < x + w - 1 && py > y + 1 && py < y + h - 1);
+      if (has(/statue|temple|shrine/)) { const r0 = rooms[0]; O({ kind: 'statue', x: r0[0] + r0[2] / 2, y: r0[1] + r0[3] / 2, r: 1.2 }); }
+      scatter('rubble', ruin ? 6 : 3, { r: 1 }, inRoom); if (has(/chest|treasure|vault/)) scatter('chest', 2, { r: 0.8 }, inRoom); scatter('torch', ruin ? 0 : 4, { r: 0.5 }, inRoom); if (has(/crypt|tomb|bone|undead/)) scatter('bones', 4, { r: 0.8 }, inRoom);
+      if (ruin) { const outside = (x, y) => !rooms.some(([rx0, ry0, w, h]) => x > rx0 - 1 && x < rx0 + w + 1 && y > ry0 - 1 && y < ry0 + h + 1); if (has(/withered|dead|blight|wither|corrupt|haunted/)) scatter('deadtree', 4, { r: 1.8 }, outside); scatter('tree', 8, { r: 1.6, variant: has(/autumn|fall/) ? 'autumn' : undefined }, outside); scatter('bush', 5, { r: 0.9 }, outside); }
+      spec.title = ruin ? 'Overgrown ruins' : 'Dungeon halls'; return spec;
+    }
+    // outdoor scenes
+    spec.base = has(/\b(snow|winter|frozen|ice|tundra)\b/) ? 'snow' : has(/\b(beach|coast|shore|desert|dune)\b/) ? 'sand' : has(/\b(swamp|marsh|bog|fen|mire)\b/) ? 'swamp' : 'grass';
+    if (has(/\b(beach|coast|shore)\b/)) { A({ terrain: 'water', shape: 'rect', x: W * 0.68, y: 0, w: W, h: H }); A({ terrain: 'deep', shape: 'rect', x: W * 0.85, y: 0, w: W, h: H }); }
+    if (has(/\b(river|stream|creek|ford|bridge)\b/)) { const y1 = rx(3, H - 3), y2 = rx(3, H - 3); const pts = [[-1, y1], [W * 0.35, rx(3, H - 3)], [W * 0.7, rx(3, H - 3)], [W + 1, y2]]; A({ terrain: 'water', shape: 'path', points: pts, width: rx(2.4, 3.4) });
+      if (has(/bridge/)) { const bx = W * 0.5; const yy = pts[1][1] + (pts[2][1] - pts[1][1]) * ((bx - pts[1][0]) / (pts[2][0] - pts[1][0])); A({ terrain: 'wood', shape: 'rect', x: bx - 1.2, y: yy - 3, w: 2.4, h: 6 }); spec.plankV = true; } }
+    if (has(/\b(pond|lake|pool|spring)\b/)) { A({ terrain: 'water', shape: 'ellipse', x: rx(6, W - 6), y: rx(5, H - 5), rx: rx(3, 5), ry: rx(2.5, 4) }); }
+    if (spec.base === 'swamp') { for (let i = 0; i < 6; i++) A({ terrain: 'water', shape: 'ellipse', x: rx(2, W - 2), y: rx(2, H - 2), rx: rx(1.2, 3), ry: rx(1, 2.4) }); }
+    if (has(/\b(road|path|trail)\b/)) A({ terrain: 'path', shape: 'path', points: [[-1, rx(3, H - 3)], [cx, cy], [W + 1, rx(3, H - 3)]], width: 2.2 });
+    const clearing = has(/\b(clearing|glade|camp|campsite|camping|tents?|campfire|ambush|meadow)\b/) || !has(/\b(dense|deep)\b/);
+    if (clearing && spec.base === 'grass') A({ terrain: 'dirt', shape: 'ellipse', x: cx, y: cy, rx: rx(3, 4.5), ry: rx(2.2, 3.4) });
+    if (has(/\b(cliff|ridge|ravine|canyon|ledge)\b/)) A({ terrain: 'wall', shape: 'path', points: [[rx(2, 6), -1], [rx(4, 9), H * 0.5], [rx(2, 6), H + 1]], width: 3 });
+    if (has(/\b(camp|campsite|tents?|bandit)\b/)) { const n = has(/\btents\b|several|many/) ? 3 : 2; for (let i = 0; i < n; i++) { const a = -2.2 + i * 0.7; O({ kind: 'tent', x: cx + Math.cos(a) * 4.2, y: cy + Math.sin(a) * 3.4, r: 2, rot: a + Math.PI / 2 }); } }
+    if (has(/\b(camp|campsite|campfire|fire|bonfire|tents?)\b/)) { O({ kind: 'campfire', x: cx, y: cy, r: 1 }); O({ kind: 'log', x: cx - 1.4, y: cy + 1.8, r: 1, len: 2.6, rot: -0.5 }); O({ kind: 'log', x: cx + 1.8, y: cy + 1.4, r: 1, len: 2.4, rot: 0.2 }); }
+    if (has(/\b(rocks?|boulders?|stones?|standing stones|circle)\b/)) { if (has(/standing stones|stone circle|circle of stones/)) for (let i = 0; i < 7; i++) { const a = i / 7 * 6.28; O({ kind: 'boulder', x: cx + Math.cos(a) * 4, y: cy + Math.sin(a) * 3, r: 1 }); } else scatter('rock', 6, { r: 1 }, ring(cx, cy, 2)); }
+    if (has(/\bstatue\b/)) O({ kind: 'statue', x: cx, y: cy - 1, r: 1.2 }); if (has(/\b(crates?|cart|wagon|caravan|supplies)\b/)) scatter('crate', 4, { r: 0.8 }, (x, y) => Math.hypot(x - cx, y - cy) < 6); if (has(/\bbarrels?\b/)) scatter('barrel', 3, { r: 0.8 }, (x, y) => Math.hypot(x - cx, y - cy) < 6);
+    if (has(/\b(withered|dead|blight|wither|corrupt|haunted)\b/)) scatter('deadtree', 4, { r: 1.8 }, ring(cx, cy, 4));
+    const treeN = spec.base === 'sand' ? 3 : has(/\b(forest|woods|wood|jungle|grove|thicket|dense)\b/) ? 30 : spec.base === 'swamp' ? 12 : 16;
+    const variant = has(/autumn|fall/) ? 'autumn' : spec.base === 'snow' ? 'pine' : spec.base === 'swamp' ? 'dark' : null;
+    const wet = (x, y) => { const t = rasterize(spec)[Math.floor(clamp(y, 0, H - 1))][Math.floor(clamp(x, 0, W - 1))]; return t === 'water' || t === 'deep' || t === 'wall' || t === 'path' || t === 'wood'; };
+    let grid = rasterize(spec); const okT = (x, y) => { const t = grid[Math.floor(clamp(y, 0, H - 1))][Math.floor(clamp(x, 0, W - 1))]; return !(t === 'water' || t === 'deep' || t === 'wall' || t === 'path' || t === 'wood' || t === 'dirt'); };
+    scatter('tree', treeN, { r: 1.6, variant: variant || undefined }, (x, y) => okT(x, y) && Math.hypot((x - cx) / 1.3, y - cy) > 5.5 && (x < 3 || x > W - 3 || y < 3 || y > H - 3 || R() < 0.7));
+    scatter('bush', Math.round(treeN / 3), { r: 1, variant: variant || undefined }, (x, y) => okT(x, y) && Math.hypot(x - cx, y - cy) > 3.5);
+    scatter('rock', 3, { r: 0.7 }, (x, y) => okT(x, y) && Math.hypot(x - cx, y - cy) > 2.5);
+    spec.title = (spec.base === 'snow' ? 'Snowy ' : spec.base === 'swamp' ? 'Marsh ' : spec.base === 'sand' ? 'Coastal ' : 'Forest ') + (has(/camp|tent/) ? 'camp' : 'clearing');
+    void wet; return spec;
+  };
+  // ---- validate a spec from Claude
+  const clean = (s, seed) => { if (!s || typeof s !== 'object') return null; const w = clamp(parseInt(s.w, 10) || 30, 12, 44), h = clamp(parseInt(s.h, 10) || 20, 10, 32);
+    const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d); const pts = (a) => (Array.isArray(a) ? a.filter((p) => Array.isArray(p) && p.length >= 2).map((p) => [num(+p[0], 0), num(+p[1], 0)]).slice(0, 40) : []);
+    return { w, h, seed: seed || 7, base: TER[s.base] ? s.base : 'grass', plankV: !!s.plankV, title: String(s.title || '').slice(0, 80),
+      areas: (Array.isArray(s.areas) ? s.areas : []).slice(0, 60).filter((a) => a && TER[a.terrain]).map((a) => ({ terrain: a.terrain, shape: a.shape, x: num(+a.x, 0), y: num(+a.y, 0), w: num(+a.w, 1), h: num(+a.h, 1), rx: num(+a.rx, 1), ry: num(+a.ry, 1), width: num(+a.width, 2), points: pts(a.points) })),
+      objects: (Array.isArray(s.objects) ? s.objects : []).slice(0, 300).filter((o) => o && typeof o.kind === 'string').map((o) => ({ kind: o.kind, x: num(+o.x, 0), y: num(+o.y, 0), r: clamp(num(+o.r, 1), 0.3, 4), rot: num(+o.rot, 0), len: num(+o.len, 2.5), span: num(+o.span, 4), variant: o.variant, points: pts(o.points), sight: /^(block|cover|none)$/.test(o.sight) ? o.sight : undefined, lit: o.lit === false ? false : undefined })) }; };
+  const KINDS = 'tree, bush, deadtree, rock, boulder, tent, campfire, log, crate, barrel, chest, table, pillar, statue, rubble, mast, mushroom, torch, walltorch, crystal, bones, hull';
+  const TERRAINS = Object.keys(TER).join(', ');
+  const SIGHT = { tree: 'block', tent: 'block', boulder: 'block', pillar: 'block', statue: 'block', mast: 'block', bush: 'cover', rock: 'cover', log: 'cover', crate: 'cover', barrel: 'cover', chest: 'cover', table: 'cover', rubble: 'cover', deadtree: 'none', campfire: 'none', torch: 'none', walltorch: 'none', crystal: 'none', mushroom: 'none', bones: 'none', hull: 'none' };
+  const sightOf = (o) => o.sight || SIGHT[o.kind] || 'none';
+  const LIGHTS = { torch: [6, 12], walltorch: [6, 12], campfire: [12, 24] };
+  return { render, generate, rasterize, clean, KINDS, TERRAINS, WALLISH, WET, TER, SIGHT, sightOf, LIGHTS };
+})();
+
+// ---- Vision: what one character can see. States per half-square: 0 unseen, 1 dim (terrain only), 2 clear.
+const VIS = (() => {
+  const S = 2; // samples per square
+  const DAY = ['Dawn', 'Sunrise', 'Morning', 'High Noon', 'Afternoon', 'Sunset', 'Nautical Twilight'];
+  const NIGHT = ['Nightfall', 'Moonrise', 'Deep Night', 'Midnight', 'Witching Hour', 'Small Hours', 'Nautical Dawn'];
+  const DIM = { 'Nautical Twilight': 1, Nightfall: 1, 'Nautical Dawn': 1 };
+  const phaseName = (t) => { if (!t || typeof t.day !== 'number') return 'Morning'; return ((t.night ? NIGHT : DAY)[Math.max(0, Math.min(6, t.day - 1))]) || 'Morning'; };
+  const lightOf = (phase) => (DIM[phase] ? 'dim' : NIGHT.indexOf(phase) >= 0 ? 'night' : 'day');
+  // carried lights: [clear, dim] in squares (night only)
+  const CARRY = { none: [1, 3], torch: [6, 12], lantern: [6, 12], alistair: [12, 12] };
+  const CARRY_LABEL = { none: 'No light', torch: 'Torch', lantern: 'Lantern', alistair: 'Alistair’s Torch' };
+  const coneDeg = (instinct) => Math.max(10, Math.min(180, 70 + 15 * (instinct || 0)));
+  // blocking grid (half-squares) from terrain, painted sight blockers and sight-blocking objects
+  const blockers = (spec, terrain) => {
+    const W = spec.w * S, H = spec.h * S; const B = new Uint8Array(W * H);
+    if (terrain) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const t = terrain[y] && terrain[y][x]; if (t === 'wall' || t === 'void') B[y * W + x] = 1; }
+    Object.keys(spec.block || {}).forEach((k) => { const [cx, cy] = k.split(',').map(Number); for (let yy = 0; yy < S; yy++) for (let xx = 0; xx < S; xx++) { const x = cx * S + xx, y = cy * S + yy; if (x >= 0 && y >= 0 && x < W && y < H) B[y * W + x] = 1; } });
+    (spec.objects || []).forEach((o) => { if (!o || CMAP.sightOf(o) !== 'block') return; const rr = (o.r || 1) * (o.kind === 'tree' ? 0.8 : o.kind === 'tent' ? 0.75 : 0.55);
+      for (let y = Math.max(0, Math.floor((o.y - rr) * S)); y < Math.min(H, Math.ceil((o.y + rr) * S)); y++) for (let x = Math.max(0, Math.floor((o.x - rr) * S)); x < Math.min(W, Math.ceil((o.x + rr) * S)); x++) { if (Math.hypot((x + 0.5) / S - o.x, (y + 0.5) / S - o.y) <= rr) B[y * W + x] = 1; } });
+    return { B, W, H };
+  };
+  const los = (bk, ax, ay, bx, by) => { const { B, W, H } = bk; const d = Math.hypot(bx - ax, by - ay); const n = Math.ceil(d * 5); const tx = Math.floor(bx * S), ty = Math.floor(by * S);
+    for (let i = 1; i < n; i++) { const t = i / n; const px = ax + (bx - ax) * t, py = ay + (by - ay) * t; if (Math.hypot(px - ax, py - ay) < 0.75) continue; const sx = Math.floor(px * S), sy = Math.floor(py * S); if (sx === tx && sy === ty) continue; if (sx < 0 || sy < 0 || sx >= W || sy >= H) return false; if (B[sy * W + sx]) return false; } return true; };
+  // viewer: {x, y (centre, squares), face (radians), cone (deg)}; light: 'day'|'dim'|'night'; sources: [{x,y,clear,dim}]; fog: {"x,y": 'r'|'h'}
+  const compute = (spec, bk, viewer, light, sources, fog) => {
+    const { W, H } = bk; const out = new Uint8Array(W * H); const half = (viewer.cone || 70) / 2 * Math.PI / 180;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const cx = (x + 0.5) / S, cy = (y + 0.5) / S; const dx = cx - viewer.x, dy = cy - viewer.y; const d = Math.hypot(dx, dy);
+      let seen = d < 0.9; if (!seen) { let a = Math.atan2(dy, dx) - viewer.face; a = Math.atan2(Math.sin(a), Math.cos(a)); seen = Math.abs(a) <= half; }
+      if (!seen || !los(bk, viewer.x, viewer.y, cx, cy)) continue;
+      if (light !== 'night') { out[y * W + x] = 2; continue; }
+      let lv = 0; for (const s of sources) { const ds = Math.hypot(cx - s.x, cy - s.y); if (ds > s.dim + 0.5) continue; if (s.self ? true : los(bk, s.x, s.y, cx, cy)) { lv = Math.max(lv, ds <= s.clear + 0.5 ? 2 : 1); if (lv === 2) break; } }
+      out[y * W + x] = lv; }
+    Object.keys(fog || {}).forEach((k) => { const [gx, gy] = k.split(',').map(Number); for (let yy = 0; yy < S; yy++) for (let xx = 0; xx < S; xx++) { const x = gx * S + xx, y = gy * S + yy; if (x < W && y < H) out[y * W + x] = fog[k] === 'r' ? 2 : 0; } });
+    return out; };
+  // state of a token (max over the squares it covers)
+  const tokState = (vis, W, t) => { let m = 0; const sz = t.size || 1; for (let y = t.y * S; y < (t.y + sz) * S; y++) for (let x = t.x * S; x < (t.x + sz) * S; x++) m = Math.max(m, vis[y * W + x] || 0); return m; };
+  return { S, DAY, NIGHT, phaseName, lightOf, CARRY, CARRY_LABEL, coneDeg, blockers, los, compute, tokState };
+})();
+
+const CELL = 48;
+const DEMO = null; /*DEMO*/
+const SIDE = { pc: { label: 'Party', col: '#e3b45a' }, enemy: { label: 'Enemy', col: '#c0392b' }, ally: { label: 'Ally', col: '#4f9e72' }, neutral: { label: 'Neutral', col: '#8a9aa0' } };
+const CONDS = ['Hidden', 'Restrained', 'Vulnerable', 'Distracted', 'Hexed', 'Marked'];
+const ROLE_LABEL = { minion: 'Minion', social: 'Social', support: 'Support', horde: 'Horde', ranged: 'Ranged', skulk: 'Skulk', standard: 'Standard', leader: 'Leader', bruiser: 'Bruiser', solo: 'Solo' };
+const RANGES = [[1, 'Melee', 'rgba(255,255,255,0.8)'], [3, 'Very Close', 'rgba(243,207,134,0.9)'], [6, 'Close', 'rgba(111,184,166,0.9)'], [12, 'Far', 'rgba(198,182,242,0.85)']];
+const PAINT_TERRAINS = ['grass', 'dirt', 'path', 'sand', 'snow', 'swamp', 'water', 'deep', 'stone', 'cave', 'wood', 'wall', 'void', 'lava'];
+const TER_SWATCH = { grass: '#7a9a3a', dirt: '#8f7552', path: '#a08460', sand: '#d8c290', snow: '#e6ebf0', swamp: '#56623c', water: '#4a96be', deep: '#22508c', stone: '#948f86', cave: '#a89c88', wood: '#966c42', wall: '#28241f', void: '#0e0e10', lava: '#e05c1e' };
+const OBJ_KINDS = [['tree', 'Tree'], ['bush', 'Bush'], ['deadtree', 'Dead tree'], ['rock', 'Rock'], ['boulder', 'Boulder'], ['tent', 'Tent'], ['campfire', 'Campfire'], ['walltorch', 'Wall torch'], ['log', 'Log'], ['crate', 'Crate'], ['barrel', 'Barrel'], ['chest', 'Chest'], ['table', 'Table'], ['pillar', 'Pillar'], ['statue', 'Statue'], ['rubble', 'Rubble'], ['crystal', 'Crystal'], ['bones', 'Bones']];
+const OBJ_R = { tree: 1.6, bush: 0.9, deadtree: 1.6, rock: 0.8, boulder: 1.1, tent: 2, campfire: 1, walltorch: 0.6, log: 1, crate: 0.8, barrel: 0.8, chest: 0.8, table: 1, pillar: 0.9, statue: 1.2, rubble: 1, crystal: 0.6, bones: 0.8 };
+const SIGHT_LABEL = { block: 'Blocks sight', cover: 'Cover only', none: 'No effect' };
+const IMGDB = (() => { let p = null; const open = () => { if (!p) p = new Promise((res, rej) => { try { const r = indexedDB.open('dh-images', 1); r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('img')) r.result.createObjectStore('img'); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }); return p; };
+  return { put: (k, v) => open().then((db) => new Promise((res) => { const tx = db.transaction('img', 'readwrite'); tx.objectStore('img').put(v, k); tx.oncomplete = () => res(true); tx.onerror = () => res(false); })).catch(() => false),
+    get: (k) => open().then((db) => new Promise((res) => { const rq = db.transaction('img', 'readonly').objectStore('img').get(k); rq.onsuccess = () => res(rq.result || null); rq.onerror = () => res(null); })).catch(() => null) }; })();
+const findSampler = async () => { const wins = [window]; try { if (window.parent && window.parent !== window) wins.push(window.parent); } catch (e) {} try { if (window.top && wins.indexOf(window.top) < 0) wins.push(window.top); } catch (e) {}
+  for (const w of wins) { try { if (w.claude && typeof w.claude.use === 'function') { const s = await w.claude.use('sample'); if (s) return s; } } catch (e) {} } return null; };
+const scenePrompt = (desc, w, h) => 'You design top-down tabletop battle maps (hand-painted style, square grid, each cell is one 5-foot square). Turn the GM\'s scene into a layout for a renderer.\n'
+  + 'GRID: ' + w + ' columns x ' + h + ' rows. Coordinates are in cells: x from 0 (left) to ' + w + ', y from 0 (top) to ' + h + '. Fractions are fine.\n'
+  + 'Reply with ONLY one JSON object: {"title": short scene name, "w": ' + w + ', "h": ' + h + ', "base": terrain filling the whole map, "plankV": true if wooden planks should run vertically, "areas": [...], "objects": [...]}\n'
+  + 'TERRAINS: ' + CMAP.TERRAINS + '. ("wall" = solid rock/impassable, drawn dark with hatched edges; "cave" = cave floor; "stone" = flagstone floor; "wood" = planks; "deep" = deep water; "void" = black nothing).\n'
+  + 'AREAS are painted in order, later on top. Shapes: {"terrain","shape":"rect","x","y","w","h"} | {"terrain","shape":"ellipse","x","y","rx","ry"} (x,y = centre) | {"terrain","shape":"poly","points":[[x,y],...]} | {"terrain","shape":"path","points":[[x,y],...],"width"} for rivers, roads, corridors, tunnels | {"terrain","shape":"border","width"} for a frame around the edge.\n'
+  + 'OBJECTS: {"kind","x","y","r","rot","variant","sight"} with kind one of: ' + CMAP.KINDS + '. x,y = centre in cells; r = radius in cells (tree 1.2-2.2, bush 0.7-1, rock 0.6-1.2, boulder 1-1.5, tent ~2, campfire ~1, pillar ~0.9, statue ~1.2, walltorch ~0.6 placed against walls); rot = radians (tents, logs, tables, crates); log also takes "len" (cells); tree/bush "variant": green, dark, olive, autumn, pine or pink; mast takes "span" (sail width in cells) and goes on a ship; hull takes "points" (a polygon like a poly area) and draws a whole ship deck with planks and a rim, put masts, crates and barrels on it. "sight" is optional: "block" (big enough to hide behind), "cover" (half cover, does not block sight) or "none".\n'
+  + 'COMPOSITION: make it look like a real painted battle map. Frame the scene with dense edges (trees, cliffs or walls) and keep an open, readable fighting space with cover in the middle. Use organic shapes (paths and ellipses), not boxy grids, unless it is architecture. 25-90 objects, trees mostly near edges, nothing overlapping awkwardly. Interiors: base "wall" or "void", rooms as stone/wood rects joined by path corridors, wall torches along the walls. Ships: base "deep", one hull object, 2-3 masts along it. Caves: base "wall", cave floor carved with paths and ellipses.\n'
+  + 'SCENE: ' + desc;
+const nid = (p) => (p || 't') + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ls = (k, d) => { if (DEMO) return DEMO.ls && DEMO.ls[k] != null ? DEMO.ls[k] : d; try { const v = JSON.parse(window.localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } };
+    const lsSet = (k, v) => { if (DEMO) { DEMO.ls = DEMO.ls || {}; DEMO.ls[k] = v; return; } try { window.localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+    const act = ls('dh.active', null) || { key: 'witherwild', hub: 'CampaignHub.dc.html', name: 'The Witherwild', blob: 'd69136bf0c8eddbad10c2eb636b1b5ca' };
+    const accent = (ls('dh.settings', {}) || {}).accent || '#e3b45a';
+    const K = act.key; const KEY = 'dh.' + K + '.combat2', OLD = 'dh.' + K + '.combat', QKEY = 'dh.' + K + '.combatQueue', PKEY = 'dh.' + K + '.party', FKEY = 'dh.' + K + '.fear', VKEY = 'dh.' + K + '.combatView';
+    if (!this._listen && !DEMO) { this._listen = true; try { window.addEventListener('storage', (e) => { if ([QKEY, PKEY, FKEY, KEY, VKEY, 'dh.' + K + '.time'].indexOf(e.key) >= 0) this.setState({ tick: Date.now(), data: e.key === KEY ? null : (this.state || {}).data }); }); } catch (e) {} }
+    // ---- data: several maps per campaign (migrates the single map from the first version)
+    let data = st.data || ls(KEY, null);
+    if (!data) { const old = ls(OLD, null); data = { maps: [], liveId: null }; if (old && old.spec) { const m = { id: nid('m'), name: (old.spec.title || 'Battlefield'), spec: old.spec, tokens: old.tokens || [], imgKey: old.imgKey || null, prompt: old.prompt || '', size: old.size || 'medium', fog: {}, explored: {} }; data.maps.push(m); data.liveId = m.id; } }
+    const maps = Array.isArray(data.maps) ? data.maps : [];
+    const save = (patch, extra) => { const cur = (this.state || {}).data || ls(KEY, null) || data; const next = { ...cur, ...patch }; lsSet(KEY, next); this.setState({ data: next, ...(extra || {}) }); };
+    const view = st.view || ls(VKEY, null) || (DEMO && DEMO.view) || { mode: 'gm' };
+    const isPlayer = view.mode === 'player';
+    const curId = isPlayer ? data.liveId : (st.mapId && maps.some((m) => m.id === st.mapId) ? st.mapId : (data.liveId || (maps[0] && maps[0].id)));
+    const map = maps.find((m) => m.id === curId) || null;
+    const updMap = (patch, extra) => { if (!map) return; const cur = ((this.state || {}).data || data); save({ maps: (cur.maps || []).map((m) => (m.id === map.id ? { ...m, ...(typeof patch === 'function' ? patch(m) : patch) } : m)) }, extra); };
+    const spec = map ? map.spec : null; const W = spec ? spec.w : 30, H = spec ? spec.h : 20;
+    const tokens = map && Array.isArray(map.tokens) ? map.tokens : [];
+    const party = (() => { const v = ls(PKEY, []); return Array.isArray(v) ? v : []; })();
+    const queue = (() => { const v = ls(QKEY, []); return Array.isArray(v) ? v : []; })();
+    const fear = Math.max(0, Math.min(12, parseInt(ls(FKEY, 0), 10) || 0));
+    const setFear = (v) => { lsSet(FKEY, Math.max(0, Math.min(12, v))); this.setState({ tick: Date.now() }); };
+    const mode = isPlayer ? 'play' : (!maps.length ? 'edit' : (st.mode || (DEMO && DEMO.mode) || 'play'));
+    if (DEMO && DEMO.state && !this._demoInit) { this._demoInit = true; setTimeout(() => this.setState(DEMO.state), 0); }
+    const editing = !isPlayer && mode === 'edit';
+    // ---- light: campaign clock (GM can override for this map)
+    const clock = ls('dh.' + K + '.time', null) || (K === 'witherwild' ? null : null);
+    const clockPhase = VIS.phaseName(clock || { day: 3, night: false });
+    const phase = (map && map.phase) || clockPhase; const light = VIS.lightOf(phase);
+    const pcOf = (t) => (t && t.side === 'pc' && t.pc != null ? party.find((c) => ((c.f && c.f.name) || '') === t.pc) : null);
+    const instinctOf = (t) => { const pc = pcOf(t); return pc ? (parseInt(String((pc.f && pc.f.instinct) || '0').replace('+', ''), 10) || 0) : 0; };
+    const pcTokens = tokens.filter((t) => t.side === 'pc');
+    const meName = isPlayer ? view.pc : null; const me = isPlayer ? tokens.find((t) => t.side === 'pc' && t.pc === meName) : null;
+    const previewName = !isPlayer && mode === 'play' ? (st.preview || (DEMO && DEMO.preview) || '') : '';
+    const viewerTok = me || (previewName ? tokens.find((t) => t.side === 'pc' && t.pc === previewName) : null);
+    const viewerName = isPlayer ? meName : previewName;
+    // ---- vision for the viewing character
+    let vis = null, bk = null; const S = VIS.S;
+    if (spec && viewerTok) {
+      const terr = spec.image ? null : CMAP.rasterize(spec, S); bk = VIS.blockers(spec, terr);
+      const sz = viewerTok.size || 1; const vx = viewerTok.x + sz / 2, vy = viewerTok.y + sz / 2;
+      const sources = [];
+      if (light === 'night') {
+        const own = VIS.CARRY[viewerTok.light || 'none'] || VIS.CARRY.none; sources.push({ x: vx, y: vy, clear: own[0], dim: own[1], self: true });
+        pcTokens.forEach((t) => { if (t.id === viewerTok.id || !t.light || t.light === 'none') return; const c = VIS.CARRY[t.light]; const z = t.size || 1; sources.push({ x: t.x + z / 2, y: t.y + z / 2, clear: c[0], dim: c[1] }); });
+        (spec.objects || []).forEach((o) => { const L = CMAP.LIGHTS[o.kind]; if (L && o.lit !== false) sources.push({ x: o.x, y: o.y, clear: L[0], dim: L[1] }); });
+      }
+      const ck = JSON.stringify([map.id, viewerTok.x, viewerTok.y, viewerTok.face, viewerTok.light, light, (spec.objects || []).map((o) => (o.lit === false ? 0 : 1)).join(''), Object.keys(spec.block || {}).length, Object.keys(spec.paint || {}).length, (spec.objects || []).length, JSON.stringify(map.fog || {}), instinctOf(viewerTok), pcTokens.map((t) => t.x + ',' + t.y + t.light).join(';')]);
+      if (this._visKey !== ck) { this._visKey = ck; this._vis = VIS.compute(spec, bk, { x: vx, y: vy, face: viewerTok.face || 0, cone: VIS.coneDeg(instinctOf(viewerTok)) }, light, sources, map.fog || {}); }
+      vis = this._vis;
+      // remember explored half-squares for this character
+      const ex = (map.explored || {})[viewerName] || ''; let chg = false; const arr = ex.length === vis.length ? ex.split('') : Array(vis.length).fill('0');
+      for (let i = 0; i < vis.length; i++) if (vis[i] && arr[i] !== '1') { arr[i] = '1'; chg = true; }
+      if (chg && !DEMO) { const exs = arr.join(''); setTimeout(() => updMap((m) => ({ explored: { ...(m.explored || {}), [viewerName]: exs } })), 0); }
+      this._explored = chg ? arr.join('') : ex;
+    } else { this._vis = null; this._visKey = null; this._explored = ''; }
+    // ---- draw: map canvas, fog canvas, overlay (cones / edit preview)
+    const specKey = spec ? JSON.stringify([map.id, spec.seed, spec.w, spec.h, spec.image ? map.imgKey + JSON.stringify(spec.grid || {}) : '', JSON.stringify(spec.areas || []).length, JSON.stringify(spec.objects || []), JSON.stringify(spec.paint || {}), spec.title]) : '';
+    if (this._drawn !== specKey) { this._drawn = specKey; setTimeout(() => this.drawMap(spec, map), 0); }
+    const fogKey = JSON.stringify([specKey.length, map && map.id, viewerName, this._visKey, light, isPlayer, editing, (this._explored || '').length, JSON.stringify(map ? map.fog || {} : {}), JSON.stringify(spec ? spec.block || {} : {}), st.fogTool || '', mode]);
+    if (this._fogDrawn !== fogKey) { this._fogDrawn = fogKey; setTimeout(() => this.drawFog(), 0); }
+    this._fogArgs = { spec, vis, explored: this._explored, viewer: !!viewerTok, light, fog: map ? map.fog || {} : {}, editing, gmShowFog: !isPlayer && !viewerTok, block: spec ? spec.block || {} : {}, showBlock: editing || !!st.fogTool };
+    this._overArgs = { spec, viewerTok, cone: viewerTok ? VIS.coneDeg(instinctOf(viewerTok)) : 0, selTok: null };
+    if (!this._wired) setTimeout(() => this.wire(), 0);
+    const z = st.z || 0; this._z = z || this._z || (DEMO && DEMO.z) || 0.6; this._W = W; this._H = H;
+    if (spec && !z) setTimeout(() => this.fit(), 30);
+    // ---- tokens: helpers
+    const occupied = (x, y, ignore) => tokens.some((t) => t.id !== ignore && x < t.x + (t.size || 1) && x + 1 > t.x && y < t.y + (t.size || 1) && y + 1 > t.y);
+    const grid1 = spec && !spec.image ? CMAP.rasterize(spec) : null;
+    const walkable = (x, y) => { if (!grid1) return true; const t = grid1[y] && grid1[y][x]; return t && !CMAP.WALLISH[t] && t !== 'deep' && t !== 'lava'; };
+    const covered = (x, y) => !!spec && (spec.objects || []).some((o) => CMAP.sightOf(o) !== 'none' && Math.hypot(o.x - (x + 0.5), o.y - (y + 0.5)) < (o.r || 1) * 0.85);
+    const freeSpot = (pref, taken) => { const midY = Math.floor(H / 2); const startX = Math.round(pref === 'left' ? W * 0.2 : W * 0.78);
+      const cells = []; for (let x = 1; x < W - 1; x++) for (let y = 1; y < H - 1; y++) cells.push([x, y, Math.abs(x - startX) * 1.4 + Math.abs(y - midY) * 0.8 + ((pref === 'left') === (x > W / 2) ? 40 : 0)]);
+      cells.sort((a, b) => a[2] - b[2]);
+      const ok = (x, y, strict) => walkable(x, y) && !(strict && covered(x, y)) && !occupied(x, y) && !taken.some((p) => p[0] === x && p[1] === y);
+      for (const strict of [true, false]) for (const [x, y] of cells) if (ok(x, y, strict)) return [x, y]; return [1, 1]; };
+    const setTokens = (fn, extra) => updMap((m) => ({ tokens: fn(Array.isArray(m.tokens) ? m.tokens : []) }), extra);
+    const addTokens = (list) => { if (!map) return; const taken = []; const add = list.map((t) => { const [x, y] = freeSpot(t.side === 'pc' || t.side === 'ally' ? 'left' : 'right', taken); taken.push([x, y]); return { id: nid(), size: 1, cond: [], face: t.side === 'pc' || t.side === 'ally' ? 0 : Math.PI, ...t, x, y }; }); setTokens((ts) => ts.concat(add)); };
+    const updTok = (id, patch) => setTokens((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    const canMove = (t) => !isPlayer || (t.side === 'pc' && t.pc === meName);
+    this._canMove = (id) => { const t = tokens.find((q) => q.id === id); return !!t && canMove(t) && !editing; };
+    this._moveTok = (id, x, y) => { const t = tokens.find((q) => q.id === id); if (!t || !canMove(t)) return; const sz = t.size || 1; const nx = Math.max(0, Math.min(W - sz, x)), ny = Math.max(0, Math.min(H - sz, y)); const dx = nx - t.x, dy = ny - t.y; updTok(id, { x: nx, y: ny, face: dx || dy ? Math.atan2(dy, dx) : (t.face || 0) }); };
+    this._turnTok = (id, ang) => { const t = tokens.find((q) => q.id === id); if (!t || !canMove(t)) return; updTok(id, { face: Math.round(ang / (Math.PI / 12)) * (Math.PI / 12) }); };
+    this._select = (id) => this.setState({ sel: id, selObj: null });
+    this._removeSel = () => { const id = (this.state || {}).sel; if (!id || isPlayer) return; setTokens((ts) => ts.filter((t) => t.id !== id), { sel: null }); };
+    this._mode = { isPlayer, editing, tool: st.tool || 'pan', fogTool: st.fogTool || '', brush: st.brush || 1, terrain: st.terrain || 'grass', objKind: st.objKind || 'tree' };
+    // light objects: anyone can click them on / off in play
+    this._toggleLight = (gx, gy) => { if (!spec || editing) return false; const objs = spec.objects || []; let best = -1, bd = 9;
+      objs.forEach((o, i) => { if (!CMAP.LIGHTS[o.kind]) return; const d = Math.hypot(o.x - gx, o.y - gy); if (d < Math.max(0.7, (o.r || 1) * 0.8) && d < bd) { bd = d; best = i; } });
+      if (best < 0) return false; if (isPlayer && vis) { const o = objs[best]; const i = Math.floor(o.y * S) * W * S + Math.floor(o.x * S); if (!vis[i] && (this._explored || '')[i] !== '1') return false; }
+      updMap((m) => ({ spec: { ...m.spec, objects: m.spec.objects.map((o, i) => (i === best ? { ...o, lit: o.lit === false } : o)) } })); return true; };
+    // edit tools
+    this._paintCells = (cells) => { if (!editing) return; const tool = this._mode.tool; updMap((m) => { const sp = { ...m.spec };
+      if (tool === 'terrain') { const p = { ...(sp.paint || {}) }; cells.forEach((k) => { p[k] = (this.state || {}).terrain || 'grass'; }); sp.paint = p; }
+      else if (tool === 'sight') { const b = { ...(sp.block || {}) }; cells.forEach((k) => { b[k] = 1; }); sp.block = b; }
+      else if (tool === 'unsight') { const b = { ...(sp.block || {}) }; cells.forEach((k) => { delete b[k]; }); sp.block = b; }
+      return { spec: sp }; }); };
+    this._fogCells = (cells) => { const ft = (this.state || {}).fogTool; if (!ft) return; updMap((m) => { const f = { ...(m.fog || {}) }; cells.forEach((k) => { if (ft === 'erase') delete f[k]; else f[k] = ft === 'reveal' ? 'r' : 'h'; }); return { fog: f }; }); };
+    this._objAt = (gx, gy) => { if (!spec) return -1; let best = -1, bd = 9; (spec.objects || []).forEach((o, i) => { if (o.kind === 'hull') return; const d = Math.hypot(o.x - gx, o.y - gy); if (d < Math.max(0.6, (o.r || 1) * 0.8) && d < bd) { bd = d; best = i; } }); return best; };
+    this._placeObj = (gx, gy) => { if (!editing) return; const k = (this.state || {}).objKind || 'tree'; const o = { kind: k, x: Math.round(gx * 2) / 2, y: Math.round(gy * 2) / 2, r: OBJ_R[k] || 1, rot: 0 }; updMap((m) => ({ spec: { ...m.spec, objects: (m.spec.objects || []).concat(o) } }), { selObj: (spec.objects || []).length }); };
+    this._moveObj = (i, gx, gy) => updMap((m) => ({ spec: { ...m.spec, objects: m.spec.objects.map((o, j) => (j === i ? { ...o, x: Math.round(gx * 4) / 4, y: Math.round(gy * 4) / 4 } : o)) } }), { selObj: i });
+    this._selObj = (i) => this.setState({ selObj: i, sel: null });
+    this._gridNudge = (dx, dy) => { if (!spec || !spec.image) return; const g = spec.grid || { cell: 64, ox: 0, oy: 0 }; updMap((m) => ({ spec: { ...m.spec, grid: { ...g, ox: g.ox + dx, oy: g.oy + dy } } })); };
+    // ---- maps
+    const SIZES = [['small', 'Small', 22, 15], ['medium', 'Medium', 30, 20], ['large', 'Large', 40, 27]];
+    const sizeK = st.size || (map && map.size) || 'medium';
+    const prompt = st.prompt != null ? st.prompt : ((map && map.prompt) || '');
+    const newMap = (extra) => { const m = { id: nid('m'), name: 'Map ' + (maps.length + 1), spec: null, tokens: [], prompt: '', size: 'medium', fog: {}, explored: {}, ...(extra || {}) }; save({ maps: maps.concat(m), liveId: data.liveId || m.id }, { mapId: m.id, mode: 'edit', sel: null, selObj: null, prompt: null, z: 0 }); return m; };
+    const runGen = async (seed) => {
+      const desc = String((this.state || {}).prompt != null ? this.state.prompt : prompt).trim(); if (!desc) { this.setState({ msg: 'Describe the scene first: where the fight happens and what is there.' }); return; }
+      let target = map; if (!target) target = newMap();
+      const sdz = (this.state || {}).size || (/\b(small|tight|tiny|cramped)\b/i.test(desc) ? 'small' : /\b(huge|large|big|vast)\b/i.test(desc) ? 'large' : sizeK); const [, , gw, gh] = SIZES.find((x) => x[0] === sdz) || SIZES[1];
+      const ctl = new AbortController(); this.setState({ busy: true, msg: '', ctl });
+      let out = null, how = ''; const s = await findSampler();
+      if (s) { try { const raw = await s.json(scenePrompt(desc, gw, gh) + (seed > 1 ? '\n(Variation #' + seed + ': make a different layout from before.)' : ''), { signal: ctl.signal, modelTier: 'default', cache: false }); out = CMAP.clean(raw, seed); if (out && (out.areas.length + out.objects.length) < 3) out = null; how = out ? 'Drawn by Claude from your description.' : ''; }
+        catch (e) { if (e && e.code === 'cancelled') { this.setState({ busy: false, ctl: null }); return; } how = 'Claude couldn’t draw this one (' + ((e && e.code) || 'error') + '), so it was drawn from keywords instead.'; } }
+      else how = 'Drawn from keywords in your description. (Claude isn’t reachable from this view; on claude.ai it draws the scene itself.)';
+      if (!out) out = CMAP.clean(CMAP.generate(desc, seed, gw), seed); out.seed = seed;
+      const cur = ((this.state || {}).data || data); const id = target.id;
+      save({ maps: (cur.maps || []).map((m) => (m.id === id ? { ...m, spec: out, prompt: desc, size: sdz, name: m.spec ? m.name : (out.title || m.name), explored: {}, fog: {}, tokens: (m.tokens || []).map((t) => ({ ...t, x: Math.min(t.x, out.w - (t.size || 1)), y: Math.min(t.y, out.h - (t.size || 1)) })) } : m)) }, { busy: false, ctl: null, msg: how, z: 0, mapId: id });
+    };
+    // ---- view values: tokens
+    const C = CELL; const zz = this._z; const sel = tokens.find((t) => t.id === st.sel) || null;
+    const ringsFor = (t) => (isPlayer ? !!(st.prings || {})[t.id] : !!t.rings);
+    const tokVisible = (t) => { if (!viewerTok || !vis) return { show: true, revealed: false };
+      if (t.id === viewerTok.id) return { show: true, revealed: false };
+      const stt = VIS.tokState(vis, W * S, t); const rev = (t.revealedTo || []).indexOf(viewerName) >= 0;
+      if (stt === 2) return { show: true, revealed: false }; if (stt === 1) return light === 'night' && t.side !== 'pc' ? { show: rev, revealed: rev } : { show: true, revealed: false }; return { show: false, revealed: false }; };
+    const shown = tokens.map((t) => ({ t, v: tokVisible(t) })).filter((x) => x.v.show);
+    const tokView = shown.map(({ t, v }) => { const sz = t.size || 1; const sd = SIDE[t.side] || SIDE.neutral; const pc = pcOf(t);
+      const hp = pc ? (pc.hp || 0) : (t.hp || 0), hpMax = pc ? (pc.hpMax || 0) : (t.hpMax || 0); const down = hpMax > 0 && hp >= hpMax; const on = sel && sel.id === t.id; const mine = isPlayer && t.pc === meName;
+      const ini = String(t.name || '?').split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, sz > 1 ? 3 : 2).toUpperCase();
+      const bg = t.side === 'pc' ? 'radial-gradient(circle at 35% 30%, #4a3a1a, #1d160a)' : t.side === 'enemy' ? 'radial-gradient(circle at 35% 30%, #6a2018, #2a0a08)' : t.side === 'ally' ? 'radial-gradient(circle at 35% 30%, #2f5a40, #10241a)' : 'radial-gradient(circle at 35% 30%, #4a5a60, #1a2428)';
+      const port = pc && pc.f && pc.f.portrait ? 'background-image: url(' + pc.f.portrait + '); background-size: cover; background-position: center 25%;' : 'background: ' + bg + ';';
+      const showStats = !isPlayer || t.side === 'pc';
+      const deg = ((t.face || 0) * 180 / Math.PI);
+      return { id: t.id, cls: 'cm-tok' + (on ? ' sel' : '') + (mine ? ' mine' : '') + (v.revealed ? ' revealed' : '') + (canMove(t) ? '' : ' fixed'), ini: (pc && pc.f && pc.f.portrait) ? '' : ini, tag: t.name || '', aria: (t.name || 'Token') + ', ' + sd.label + (showStats && hpMax ? ', ' + hp + ' of ' + hpMax + ' HP marked' : '') + (v.revealed ? ', revealed to you' : ''),
+        style: 'left: ' + (t.x * C + 3) + 'px; top: ' + (t.y * C + 3) + 'px; width: ' + (sz * C - 6) + 'px; height: ' + (sz * C - 6) + 'px; ' + port + ' border: 3px solid ' + sd.col + '; box-shadow: 0 3px 8px rgba(0,0,0,.6)' + (on ? ', 0 0 0 3px #fff, 0 0 18px ' + sd.col : mine ? ', 0 0 0 3px ' + accent + ', 0 0 22px ' + accent : '') + ';' + (down ? ' filter: grayscale(1) brightness(.6);' : '') + ' z-index: ' + (on ? 30 : mine ? 25 : 10) + ';',
+        iniStyle: 'font-size: ' + Math.round(sz * C * 0.34) + 'px;', tagStyle: 'top: ' + (sz * C - 4) + 'px;',
+        faceStyle: 'transform: rotate(' + deg + 'deg); --tc: ' + sd.col + ';',
+        hasRot: (on || mine) && canMove(t) && !editing, rotStyle: 'transform: rotate(' + deg + 'deg);',
+        hasBar: showStats && hpMax > 0, bar: 'position: absolute; left: 10%; right: 10%; top: -9px; height: 6px; border-radius: 3px; background: rgba(0,0,0,.7); overflow: hidden; pointer-events: none;',
+        barFill: 'display: block; height: 100%; width: ' + Math.round(100 * Math.max(0, hpMax - hp) / (hpMax || 1)) + '%; background: ' + (hp / (hpMax || 1) > 0.66 ? '#e0715f' : hp / (hpMax || 1) > 0.33 ? '#e3b45a' : '#7cc49a') + ';',
+        hasCond: showStats && (t.cond || []).length > 0, cond: (t.cond || []).map((c) => c[0]).join(''), condStyle: 'position: absolute; right: -6px; top: -6px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: #6b3fae; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2;',
+        hasRev: v.revealed, hasLight: t.side === 'pc' && t.light && t.light !== 'none', lightIcon: t.light === 'alistair' ? '✦' : '🔥' }; });
+    const rings = []; shown.forEach(({ t }) => { if (!ringsFor(t)) return; const sz = t.size || 1; const cx = (t.x + sz / 2) * C, cy = (t.y + sz / 2) * C; const sd = SIDE[t.side] || SIDE.neutral;
+      RANGES.forEach(([r, label, col]) => { const rad = (r + sz / 2) * C; rings.push({ label: (t.name || '').split(' ')[0] + ' · ' + label, style: 'left: ' + (cx - rad) + 'px; top: ' + (cy - rad) + 'px; width: ' + 2 * rad + 'px; height: ' + 2 * rad + 'px; border: 2px dashed ' + col + '; box-shadow: inset 0 0 0 1px ' + sd.col + '33;', lstyle: 'left: ' + (cx + rad * 0.71 + 4) + 'px; top: ' + (cy - rad * 0.71 - 18) + 'px;' }); }); });
+    const anyRings = isPlayer ? Object.values(st.prings || {}).some(Boolean) : tokens.some((t) => t.rings);
+    // ---- selected token card
+    const pips = (n, val, col, setV, what) => Array.from({ length: n }, (_, k) => { const on = k < val; return { label: what + ' ' + (k + 1) + (on ? ' marked' : ''), act: () => setV(k + 1 === val ? k : k + 1), style: 'border-color: ' + col + '; background: ' + (on ? col : 'transparent') + ';' }; });
+    let s = { name: '', sub: '', hpPips: [], stPips: [], conds: [], sides: [], sizes: [], hasHp: false, hasSt: false, hpText: '', stText: '', border: '#253338', dot: '', rename: () => {}, remove: () => {}, deselect: () => {}, isPc: false, lights: [], ringsOn: 'false', toggleRings: () => {}, reveal: [], hasReveal: false, coneText: '', turnL: () => {}, turnR: () => {}, canTurn: false, gm: !isPlayer };
+    if (sel && shown.some((x) => x.t.id === sel.id)) { const pc = pcOf(sel); const sd = SIDE[sel.side] || SIDE.neutral;
+      const setPc = (patch) => { const list = ls(PKEY, []); lsSet(PKEY, list.map((c) => (((c.f && c.f.name) || '') === sel.pc ? { ...c, ...patch } : c))); this.setState({ tick: Date.now() }); };
+      const hp = pc ? (pc.hp || 0) : (sel.hp || 0), hpMax = pc ? (pc.hpMax || 0) : (sel.hpMax || 0), stv = pc ? (pc.stress || 0) : (sel.st || 0), stMax = pc ? (pc.stressMax || 6) : (sel.stMax || 0);
+      const showStats = !isPlayer || sel.side === 'pc'; const mine = isPlayer && sel.pc === meName; const editStats = !isPlayer || mine;
+      const ins = instinctOf(sel);
+      s = { name: sel.name || '', sub: pc ? 'Party · ' + ((pc.clsName || '') + ' · level ' + ((pc.f && pc.f.level) || 1)) + (!isPlayer ? ' · changes sync to the character sheet' : '') : isPlayer ? sd.label : sd.label + (sel.dif ? ' · Difficulty ' + sel.dif : '') + (sel.role ? ' · ' + sel.role : ''),
+        border: sd.col, dot: 'width: 16px; height: 16px; border-radius: 50%; flex: none; background: ' + sd.col + ';', gm: !isPlayer, readOnlyName: isPlayer ? true : null,
+        rename: (e) => { if (!isPlayer) updTok(sel.id, { name: e.target.value }); },
+        hasHp: showStats && hpMax > 0, hpText: hp + ' / ' + hpMax + ' marked', hpPips: pips(hpMax, hp, '#c0392b', (v) => { if (!editStats) return; if (pc) setPc({ hp: v }); else updTok(sel.id, { hp: v }); }, 'Hit Point'),
+        hasSt: showStats && stMax > 0, stText: stv + ' / ' + stMax + ' marked', stPips: pips(stMax, stv, '#4f6a86', (v) => { if (!editStats) return; if (pc) setPc({ stress: v }); else updTok(sel.id, { st: v }); }, 'Stress'),
+        conds: CONDS.map((c) => { const on = (sel.cond || []).includes(c); return { label: c, on: on ? 'true' : 'false', toggle: () => { if (!isPlayer) updTok(sel.id, { cond: on ? sel.cond.filter((x) => x !== c) : (sel.cond || []).concat(c) }); } }; }), hasConds: showStats,
+        sides: Object.keys(SIDE).filter((k) => k !== 'pc' || sel.side === 'pc').map((k) => ({ label: SIDE[k].label, on: sel.side === k ? 'true' : 'false', pick: () => updTok(sel.id, { side: k }) })),
+        sizes: [[1, '1×1'], [2, '2×2'], [3, '3×3']].map(([n, label]) => ({ label, on: (sel.size || 1) === n ? 'true' : 'false', pick: () => updTok(sel.id, { size: n }) })),
+        isPc: sel.side === 'pc', canLight: sel.side === 'pc' && (!isPlayer || mine),
+        lights: Object.keys(VIS.CARRY).map((k) => ({ label: VIS.CARRY_LABEL[k], on: (sel.light || 'none') === k ? 'true' : 'false', pick: () => updTok(sel.id, { light: k }) })),
+        coneText: sel.side === 'pc' ? 'Vision cone ' + VIS.coneDeg(ins) + '° (Instinct ' + (ins >= 0 ? '+' : '') + ins + ')' : '',
+        canTurn: canMove(sel), turnL: () => this._turnTok(sel.id, (sel.face || 0) - Math.PI / 4), turnR: () => this._turnTok(sel.id, (sel.face || 0) + Math.PI / 4),
+        ringsOn: ringsFor(sel) ? 'true' : 'false', toggleRings: () => { if (isPlayer) this.setState({ prings: { ...(st.prings || {}), [sel.id]: !ringsFor(sel) } }); else updTok(sel.id, { rings: !sel.rings }); },
+        hasReveal: !isPlayer && sel.side !== 'pc' && light === 'night', reveal: pcTokens.map((p) => { const on = (sel.revealedTo || []).indexOf(p.pc) >= 0; return { label: (on ? '👁 ' : '') + (p.pc || p.name), on: on ? 'true' : 'false', pick: () => updTok(sel.id, { revealedTo: on ? (sel.revealedTo || []).filter((x) => x !== p.pc) : (sel.revealedTo || []).concat(p.pc) }) }; }),
+        remove: () => setTokens((ts) => ts.filter((t) => t.id !== sel.id), { sel: null }), deselect: () => this.setState({ sel: null }) }; }
+    // ---- selected object card (edit)
+    const objs = spec ? spec.objects || [] : []; const so = editing && st.selObj != null && objs[st.selObj] ? objs[st.selObj] : null; const soi = st.selObj;
+    const updObj = (patch) => updMap((m) => ({ spec: { ...m.spec, objects: m.spec.objects.map((o, j) => (j === soi ? { ...o, ...patch } : o)) } }));
+    const o = so ? { label: (OBJ_KINDS.find((k) => k[0] === so.kind) || [so.kind, so.kind])[1], sights: ['block', 'cover', 'none'].map((k) => ({ label: SIGHT_LABEL[k], on: CMAP.sightOf(so) === k ? 'true' : 'false', pick: () => updObj({ sight: k }) })),
+      isLight: !!CMAP.LIGHTS[so.kind], litText: so.lit === false ? 'Unlit · click to light' : 'Lit · click to put out', toggleLit: () => updObj({ lit: so.lit === false }),
+      lightText: CMAP.LIGHTS[so.kind] ? 'At night: clear to ' + CMAP.LIGHTS[so.kind][0] + ' squares, dim to ' + CMAP.LIGHTS[so.kind][1] + '.' : '',
+      bigger: () => updObj({ r: Math.min(4, (so.r || 1) + 0.2) }), smaller: () => updObj({ r: Math.max(0.3, (so.r || 1) - 0.2) }), rotL: () => updObj({ rot: (so.rot || 0) - Math.PI / 12 }), rotR: () => updObj({ rot: (so.rot || 0) + Math.PI / 12 }),
+      del: () => updMap((m) => ({ spec: { ...m.spec, objects: m.spec.objects.filter((_, j) => j !== soi) } }), { selObj: null }), done: () => this.setState({ selObj: null }) } : null;
+    // ---- maps list
+    if (!this._thumbs) this._thumbs = {};
+    const mapList = maps.map((m) => { const live = m.id === data.liveId; const on = map && m.id === map.id; const renaming = st.renaming === m.id;
+      return { liveAttr: live ? true : null, name: m.name || 'Untitled map', size: m.spec ? m.spec.w + ' × ' + m.spec.h + (m.spec.image ? ' · image' : '') : 'Empty', isLive: live, liveText: live ? 'LIVE' : '', on: on ? 'true' : 'false', renaming, notRenaming: !renaming,
+        thumb: 'width: 84px; height: 56px; flex: none; border-radius: 6px; background: #0b1214 center / cover no-repeat' + (m.thumb ? ' url(' + m.thumb + ')' : '') + '; border: 1px solid ' + (live ? '#5fd38d' : '#2b3b40') + ';',
+        style: 'display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 10px; cursor: pointer; border: 1.5px solid ' + (on ? accent : 'transparent') + '; background: ' + (on ? '#1b282d' : '#0f171a') + ';',
+        open: () => this.setState({ mapId: m.id, sel: null, selObj: null, prompt: null, preview: '', z: 0, renaming: null }),
+        setLive: () => save({ liveId: m.id }), rename: () => this.setState({ renaming: m.id }), setName: (e) => save({ maps: maps.map((x) => (x.id === m.id ? { ...x, name: e.target.value } : x)) }), endRename: () => this.setState({ renaming: null }),
+        dup: () => { const c = JSON.parse(JSON.stringify(m)); c.id = nid('m'); c.name = (m.name || 'Map') + ' (copy)'; c.explored = {}; save({ maps: maps.concat(c) }, { mapId: c.id }); },
+        del: () => { if (st.confirmDel !== m.id) { this.setState({ confirmDel: m.id }); setTimeout(() => this.setState({ confirmDel: null }), 3000); return; } const rest = maps.filter((x) => x.id !== m.id); save({ maps: rest, liveId: data.liveId === m.id ? (rest[0] && rest[0].id) || null : data.liveId }, { mapId: null, confirmDel: null }); },
+        delLabel: st.confirmDel === m.id ? 'Sure?' : 'Delete' }; });
+    const liveMap = maps.find((m) => m.id === data.liveId) || null;
+    // ---- session import
+    const sessions = (() => { const v = ls('dh.' + K + '.sessions', []); return Array.isArray(v) ? v : []; })();
+    const liveSess = ls('dh.' + K + '.live', null);
+    const sess = (liveSess && sessions.find((x) => x.id === liveSess.id)) || [...sessions].reverse().find((x) => !x.played) || null;
+    const sessRoles = sess ? Object.entries(sess.roles || {}).filter(([, n]) => n > 0) : [];
+    const onMapPcs = new Set(tokens.filter((t) => t.pc).map((t) => t.pc));
+    const partyLeft = party.filter((c) => !c.dead && !onMapPcs.has((c.f && c.f.name) || ''));
+    const newSide = st.nSide || 'enemy';
+    // ---- player identity
+    const partyNames = party.filter((c) => !c.dead).map((c) => (c.f && c.f.name) || 'Hero');
+    const setView = (v) => { lsSet(VKEY, v); this.setState({ view: v, sel: null, selObj: null, preview: '' }); };
+    const NAV = ['Dashboard', 'Party', 'World', 'Characters & Locations', 'Adversaries', 'Combat Map', 'Sessions', 'Notes'];
+    const HREF = { Dashboard: act.hub || 'CampaignHub.dc.html', Party: 'Party.dc.html', World: 'World.dc.html', 'Characters & Locations': 'Codex.dc.html', Adversaries: 'Adversaries.dc.html', 'Combat Map': 'Combat.dc.html', Sessions: 'Sessions.dc.html', Notes: 'Notes.dc.html' };
+    const lightBadge = light === 'dim' ? 'Dim light: ranged attacks at disadvantage' : light === 'night' ? 'Night: light sources matter' : '';
+    const lightClass = light === 'day' ? 'day' : light === 'dim' ? 'dim' : 'night';
+    const phases = VIS.DAY.concat(VIS.NIGHT);
+    const myTok = me; const myPc = myTok ? pcOf(myTok) : null; const myIns = myTok ? instinctOf(myTok) : 0;
+    const fogTool = st.fogTool || '';
+    return {
+      navItems: NAV.map((label) => { const cur = label === 'Combat Map'; return { label, href: HREF[label], current: cur ? 'page' : 'false', style: 'min-height: 40px; padding: 0 14px; border-radius: 8px; font-size: 14px; display: inline-flex; align-items: center; text-decoration: none; color: ' + (cur ? '#1a1408' : '#e6ecea') + '; background: ' + (cur ? accent : 'transparent') + ';' }; }),
+      gmNav: !isPlayer, dashHref: act.hub || 'CampaignHub.dc.html', campaignName: act.name || 'Campaign',
+      bannerStyle: 'position: absolute; inset: 0; background-size: cover; background-position: center 40%; background-image: url(/_blob/' + (act.blob || 'd69136bf0c8eddbad10c2eb636b1b5ca') + ');',
+      headerLine: isPlayer ? (liveMap ? (liveMap.name || 'Battlefield') + ' · you are ' + meName : 'The GM hasn’t put a map live yet.') : (liveMap ? 'Live: ' + (liveMap.name || 'Battlefield') + ' · ' + maps.length + ' map' + (maps.length === 1 ? '' : 's') : maps.length ? 'No map is live yet' : 'Describe a scene to draw a battle map, then place the party and the encounter.'),
+      fear, fearUp: () => setFear(fear + 1), fearDown: () => setFear(fear - 1), isGm: !isPlayer, isPlayer,
+      phase, lightBadge, hasLightBadge: !!lightBadge, lightPill: 'display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; ' + (lightClass === 'day' ? 'background: rgba(227,180,90,0.18); border: 1px solid #8a6d2a; color: #f3cf86;' : lightClass === 'dim' ? 'background: rgba(160,90,40,0.25); border: 1px solid #b0703a; color: #ffc89a;' : 'background: rgba(40,50,90,0.45); border: 1px solid #4a5a9a; color: #c6d2ff;'),
+      lightIcon: light === 'day' ? '☀' : light === 'dim' ? '◐' : '☾',
+      // view switch
+      viewGm: () => setView({ mode: 'gm' }), playerChoices: partyNames.map((n) => ({ label: n, pick: () => setView({ mode: 'player', pc: n }) })), hasPlayers: partyNames.length > 0,
+      choosingPlayer: !!st.choosePlayer, chooseOpen: () => this.setState({ choosePlayer: !st.choosePlayer }),
+      // maps card
+      mapList, hasMaps: maps.length > 0, noMapsYet: maps.length === 0, noPlayersAttr: partyNames.length ? null : true, editTools: editing && !!spec, showSetLive: !isPlayer && !!map && map.id !== data.liveId, newMap: () => newMap(), mapsTitle: maps.length + ' map' + (maps.length === 1 ? '' : 's'),
+      // mode
+      modePlay: mode === 'play' ? 'true' : 'false', modeEdit: mode === 'edit' ? 'true' : 'false', toPlay: () => this.setState({ mode: 'play', tool: 'pan', selObj: null }), toEdit: () => this.setState({ mode: 'edit', preview: '', fogTool: '', sel: null }),
+      editing, playing: !isPlayer && mode === 'play' && !!map, hasCurMap: !!map, curIsLive: !!map && map.id === data.liveId, curName: map ? map.name || 'Untitled map' : '', setCurLive: () => { if (map) save({ liveId: map.id }); },
+      // scene
+      prompt, setPrompt: (e) => this.setState({ prompt: e.target.value }),
+      sizes: SIZES.map(([k, label]) => ({ label, on: sizeK === k ? 'true' : 'false', pick: () => this.setState({ size: k }) })),
+      generate: () => runGen(1 + Math.floor(Math.random() * 9999)), reroll: () => runGen(1 + Math.floor(Math.random() * 9999)), stop: () => { const c = (this.state || {}).ctl; if (c) c.abort(); this.setState({ busy: false, ctl: null }); },
+      busy: !!st.busy, busyAttr: st.busy ? true : null, genLabel: spec ? '✦ Regenerate map' : '✦ Generate map', hasMap: !!spec && !spec.image, noMap: !spec,
+      msg: st.msg || '', hasMsg: !!st.msg,
+      pickImage: (e) => { const f = e.target.files && e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { const im = new Image(); im.onload = () => { const gw = SIZES.find((x) => x[0] === sizeK)[2]; const cell = Math.max(16, Math.round(im.width / gw)); const k = 'combat:' + K + ':' + Date.now();
+        IMGDB.put(k, rd.result).then(() => { const sp = { w: Math.floor(im.width / cell), h: Math.floor(im.height / cell), image: true, imgW: im.width, imgH: im.height, grid: { cell, ox: 0, oy: 0 }, seed: 1, title: f.name.replace(/\.[^.]+$/, ''), areas: [], objects: [], block: {} };
+          if (map) updMap({ spec: sp, imgKey: k, name: map.spec ? map.name : sp.title, explored: {}, fog: {} }, { msg: 'Using your image. Line the grid up in Edit → Grid, then paint what blocks sight.', z: 0, tool: 'grid' }); else newMap({ spec: sp, imgKey: k, name: sp.title }); }); }; im.src = rd.result; }; rd.readAsDataURL(f); },
+      isImage: !!spec && !!spec.image,
+      gridCell: spec && spec.grid ? spec.grid.cell : 0, gridOx: spec && spec.grid ? spec.grid.ox : 0, gridOy: spec && spec.grid ? spec.grid.oy : 0,
+      gridBigger: () => { const g = spec.grid; const cell = g.cell + 1; updMap((m) => ({ spec: { ...m.spec, grid: { ...g, cell }, w: Math.floor((m.spec.imgW - g.ox) / cell), h: Math.floor((m.spec.imgH - g.oy) / cell) } })); },
+      gridSmaller: () => { const g = spec.grid; const cell = Math.max(8, g.cell - 1); updMap((m) => ({ spec: { ...m.spec, grid: { ...g, cell }, w: Math.floor((m.spec.imgW - g.ox) / cell), h: Math.floor((m.spec.imgH - g.oy) / cell) } })); },
+      setGridCell: (e) => { const g = spec.grid; const cell = Math.max(8, parseInt(e.target.value, 10) || g.cell); updMap((m) => ({ spec: { ...m.spec, grid: { ...g, cell }, w: Math.floor((m.spec.imgW - g.ox) / cell), h: Math.floor((m.spec.imgH - g.oy) / cell) } })); },
+      oxL: () => this._gridNudge(-1, 0), oxR: () => this._gridNudge(1, 0), oyU: () => this._gridNudge(0, -1), oyD: () => this._gridNudge(0, 1),
+      // edit tools
+      tools: [['pan', '✋ Move view'], ['terrain', '🖌 Terrain'], ['object', '🌲 Objects'], ['sight', '▦ Block sight'], ['unsight', '⌫ Clear sight']].concat(spec && spec.image ? [['grid', '⊞ Grid']] : []).map(([k, label]) => ({ label, on: (st.tool || 'pan') === k ? 'true' : 'false', pick: () => this.setState({ tool: k, selObj: null }) })),
+      toolTerrain: (st.tool || 'pan') === 'terrain', toolObject: (st.tool || 'pan') === 'object', toolSight: /sight/.test(st.tool || ''), toolGrid: (st.tool || 'pan') === 'grid',
+      terrains: PAINT_TERRAINS.map((t) => ({ label: t, on: (st.terrain || 'grass') === t ? 'true' : 'false', sw: 'width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(255,255,255,.3); background: ' + TER_SWATCH[t] + ';', pick: () => this.setState({ terrain: t }) })),
+      brushes: [[1, '1'], [2, '2'], [3, '3']].map(([n, l]) => ({ label: l, on: (st.brush || 1) === n ? 'true' : 'false', pick: () => this.setState({ brush: n }) })),
+      kinds: OBJ_KINDS.map(([k, label]) => ({ label, on: (st.objKind || 'tree') === k ? 'true' : 'false', pick: () => this.setState({ objKind: k }) })),
+      hasObj: !!o, o: o || { label: '', sights: [], isLight: false, litText: '', toggleLit: () => {}, lightText: '', bigger: () => {}, smaller: () => {}, rotL: () => {}, rotR: () => {}, del: () => {}, done: () => {} },
+      clearPaint: () => updMap((m) => ({ spec: { ...m.spec, paint: {} } })), hasPaint: !!spec && Object.keys(spec.paint || {}).length > 0,
+      // combatants
+      tokCount: tokens.length ? tokens.filter((t) => t.side === 'pc').length + ' party · ' + tokens.filter((t) => t.side === 'enemy').length + ' enemies' : 'None placed',
+      partyDis: partyLeft.length && map ? null : true, partyLabel: '＋ Party (' + partyLeft.length + ')',
+      addParty: () => { if (!partyLeft.length) return; addTokens(partyLeft.map((c) => ({ side: 'pc', name: (c.f && c.f.name) || 'Hero', pc: (c.f && c.f.name) || '' }))); },
+      sessDis: sessRoles.length && map ? null : true, sessTitle: sess ? 'Session ' + sess.n + ': ' + (sessRoles.map(([k2, n]) => n + '× ' + (ROLE_LABEL[k2] || k2)).join(', ') || 'no adversaries planned') : 'No planned session with an encounter',
+      importSession: () => { if (!sessRoles.length) return; const list = []; const pcs = Math.max(1, party.filter((c) => !c.dead).length || sess.pcs || 4);
+        sessRoles.forEach(([k2, n]) => { const label = ROLE_LABEL[k2] || k2; const count = k2 === 'minion' ? n * pcs : n; for (let i = 0; i < count; i++) list.push({ side: 'enemy', name: label + ' ' + (i + 1), role: label, size: k2 === 'solo' ? 2 : 1, hpMax: k2 === 'minion' ? 1 : 0, hp: 0 }); });
+        addTokens(list); this.setState({ msg: 'Added Session ' + sess.n + '’s encounter as placeholders.' }); },
+      hasTokens: tokens.length > 0, clearLabel: st.confirmClear ? 'Click again to clear' : 'Clear tokens', clearTokens: () => { if (!st.confirmClear) { this.setState({ confirmClear: true }); setTimeout(() => this.setState({ confirmClear: false }), 3000); return; } setTokens(() => [], { sel: null, confirmClear: false }); },
+      hasQueue: queue.length > 0 && !!map, queue: queue.map((q, i) => ({ name: q.name, place: () => { addTokens([{ side: 'enemy', name: q.name, hpMax: q.hp || 0, hp: 0, stMax: q.st || 0, st: 0, dif: q.dif || '', role: q.type || '', size: /solo/i.test(q.type || '') ? 2 : 1 }]); lsSet(QKEY, queue.filter((_, j) => j !== i)); } })),
+      placeAll: () => { addTokens(queue.map((q) => ({ side: 'enemy', name: q.name, hpMax: q.hp || 0, hp: 0, stMax: q.st || 0, st: 0, dif: q.dif || '', role: q.type || '', size: /solo/i.test(q.type || '') ? 2 : 1 }))); lsSet(QKEY, []); },
+      nName: st.nName || '', setNName: (e) => this.setState({ nName: e.target.value }), nHp: st.nHp || '', setNHp: (e) => this.setState({ nHp: e.target.value }),
+      sides: ['enemy', 'ally', 'neutral'].map((k2) => ({ label: SIDE[k2].label, on: newSide === k2 ? 'true' : 'false', pick: () => this.setState({ nSide: k2 }) })),
+      addCustom: () => { const name = String(st.nName || '').trim() || (SIDE[newSide].label + ' ' + (tokens.length + 1)); const hp = parseInt(st.nHp, 10) || 0; addTokens([{ side: newSide, name, hpMax: hp, hp: 0 }]); this.setState({ nName: '', nHp: '' }); },
+      // vision & fog (GM)
+      previews: [{ label: 'GM (everything)', on: !previewName ? 'true' : 'false', pick: () => this.setState({ preview: '' }) }].concat(pcTokens.map((t) => ({ label: t.pc || t.name, on: previewName === t.pc ? 'true' : 'false', pick: () => this.setState({ preview: t.pc }) }))),
+      hasPcTokens: pcTokens.length > 0, previewing: !!previewName && !!viewerTok, previewText: previewName ? 'Showing what ' + previewName + ' sees.' : '',
+      fogTools: [['', 'Off'], ['reveal', 'Reveal'], ['hide', 'Hide'], ['erase', 'Erase']].map(([k2, label]) => ({ label, on: fogTool === k2 ? 'true' : 'false', pick: () => this.setState({ fogTool: k2 }) })),
+      fogCount: map ? Object.keys(map.fog || {}).length : 0, noFogAttr: map && Object.keys(map.fog || {}).length ? null : true, clearFog: () => updMap({ fog: {} }), resetExplored: () => updMap({ explored: {} }),
+      phaseOpts: [{ v: '', label: 'Follow the campaign clock (' + clockPhase + ')' }].concat(phases.map((p) => ({ v: p, label: p + ' · ' + VIS.lightOf(p) }))), phaseSel: (map && map.phase) || '', setPhase: (e) => updMap({ phase: e.target.value || null }),
+      // player
+      meName: meName || '', meCard: !!myTok, meMissing: isPlayer && !myTok, mePc: myPc ? (myPc.clsName || '') + ' · level ' + ((myPc.f && myPc.f.level) || 1) : '',
+      meCone: myTok ? VIS.coneDeg(myIns) + '° vision cone (Instinct ' + (myIns >= 0 ? '+' : '') + myIns + ')' : '',
+      meLight: myTok ? VIS.CARRY_LABEL[myTok.light || 'none'] : '', meLights: myTok ? Object.keys(VIS.CARRY).map((k2) => ({ label: VIS.CARRY_LABEL[k2], on: (myTok.light || 'none') === k2 ? 'true' : 'false', pick: () => updTok(myTok.id, { light: k2 }) })) : [],
+      meTurnL: () => myTok && this._turnTok(myTok.id, (myTok.face || 0) - Math.PI / 4), meTurnR: () => myTok && this._turnTok(myTok.id, (myTok.face || 0) + Math.PI / 4),
+      meSelect: () => myTok && this.setState({ sel: myTok.id }),
+      lightRule: light === 'day' ? 'Daylight: you see everything in your cone that isn’t blocked.' : light === 'dim' ? 'Dim light: you see your whole cone, but ranged attacks are at disadvantage.' : 'Night: ' + (myTok ? ({ none: 'without a light you see clearly only in Melee and dimly to Very Close.', torch: 'your torch lights clearly to Close and dimly to Far.', lantern: 'your lantern lights clearly to Close and dimly to Far.', alistair: 'Alistair’s Torch lights clearly to Far.' })[myTok.light || 'none'] : '') + ' Creatures in dim light stay hidden until the GM reveals them.',
+      hasSel: !!sel && shown.some((x) => x.t.id === (sel && sel.id)), s,
+      // map toolbar
+      mapTitle: map ? (map.name || spec && spec.title || 'Battlefield') : 'Battle map', namesOn: st.names ? 'true' : 'false', toggleNames: () => this.setState({ names: !st.names }),
+      anyRings, hideRings: () => { if (isPlayer) this.setState({ prings: {} }); else setTokens((ts) => ts.map((t) => ({ ...t, rings: false }))); },
+      zoomText: Math.round(zz * 100) + '%', zoomIn: () => this.setZoom(zz * 1.2), zoomOut: () => this.setZoom(zz / 1.2), zoomFit: () => this.fit(),
+      vpCls: [st.names ? 'names' : '', editing ? 'edit tool-' + (st.tool || 'pan') : '', fogTool ? 'fogbrush' : '', isPlayer ? 'player' : ''].filter(Boolean).join(' '),
+      sizer: 'position: relative; width: ' + Math.round(W * C * zz) + 'px; height: ' + Math.round(H * C * zz) + 'px; margin: 0 auto;' + (spec ? '' : ' display: none;'),
+      stage: 'position: absolute; left: 0; top: 0; width: ' + W * C + 'px; height: ' + H * C + 'px; transform: scale(' + zz + '); transform-origin: 0 0;',
+      fogCanvas: 'position: absolute; left: 0; top: 0; width: ' + W * C + 'px; height: ' + H * C + 'px; pointer-events: none;',
+      tokens: tokView, rings, emptyText: isPlayer ? (liveMap ? '' : 'Waiting for the GM to put a map live.') : 'Describe the scene and press Generate, or bring your own map image. Then add the party and the adversaries and drag them into position.',
+      emptyTitle: isPlayer ? 'No battle yet' : 'No battlefield yet', hint: isPlayer ? 'Drag your own token to move · drag the gold knob to turn · click a torch or campfire to light it · click any token for its range circles.' : editing ? 'Paint with the chosen tool · click an object to select it, drag to move it · right-drag or ✋ to pan · Ctrl + scroll to zoom.' : 'Drag tokens to move (they face the way they move) · drag the knob on a selected token to turn it · click torches and campfires to light them · Ctrl + scroll to zoom · N names · Delete removes.'
+    };
+  }
+  setZoom(v) { const z = Math.max(0.15, Math.min(2.5, v)); this._z = z; this.setState({ z }); }
+  fit() { const vp = document.getElementById('cm-vp'); if (!vp || !this._W) return; const r = vp.getBoundingClientRect(); const availH = Math.max(400, window.innerHeight - Math.max(0, r.top) - 60); const z = Math.min((vp.clientWidth - 8) / (this._W * CELL), (Math.min(availH, window.innerHeight - 150) - 8) / (this._H * CELL)); this.setZoom(z > 0 ? z : 0.6); }
+  drawMap(spec, map) {
+    const cv = document.getElementById('cm-canvas'); if (!cv) { this._drawn = null; return; } if (!spec) { cv.width = 0; cv.height = 0; return; }
+    const thumb = () => { try { const t = document.createElement('canvas'); t.width = 168; t.height = Math.round(168 * cv.height / cv.width); t.getContext('2d').drawImage(cv, 0, 0, t.width, t.height); const url = t.toDataURL('image/jpeg', 0.7); if (map && map.thumb !== url && !DEMO && this._thumbFor !== map.id + this._drawn) { this._thumbFor = map.id + this._drawn; const d = (this.state || {}).data; if (d) { const next = { ...d, maps: d.maps.map((m) => (m.id === map.id ? { ...m, thumb: url } : m)) }; try { window.localStorage.setItem('dh.' + ((JSON.parse(window.localStorage.getItem('dh.active') || 'null') || {}).key || 'witherwild') + '.combat2', JSON.stringify(next)); } catch (e) {} this.setState({ data: next }); } }
+      if (DEMO && map && !map.thumb) { map.thumb = url; } } catch (e) {} };
+    if (spec.image) { const g = spec.grid || { cell: 64, ox: 0, oy: 0 }; const go = (src) => { if (!src) return; const im = new Image(); im.onload = () => { cv.width = spec.w * CELL; cv.height = spec.h * CELL; const ctx = cv.getContext('2d'); const k = CELL / g.cell; ctx.drawImage(im, -g.ox * k, -g.oy * k, im.width * k, im.height * k);
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1; ctx.beginPath(); for (let x = 0; x <= spec.w; x++) { ctx.moveTo(x * CELL + 0.5, 0); ctx.lineTo(x * CELL + 0.5, cv.height); } for (let y = 0; y <= spec.h; y++) { ctx.moveTo(0, y * CELL + 0.5); ctx.lineTo(cv.width, y * CELL + 0.5); } ctx.stroke(); thumb(); this.drawFog(); }; im.src = src; };
+      if (DEMO && DEMO.img) go(DEMO.img); else IMGDB.get(map.imgKey).then(go); return; }
+    try { CMAP.render(cv, spec, CELL); thumb(); } catch (e) { this.setState({ msg: 'Couldn’t draw this map: ' + (e && e.message) }); }
+    this.drawFog();
+  }
+  drawFog() {
+    const a = this._fogArgs || {}; const fc = document.getElementById('cm-fog'); const oc = document.getElementById('cm-over'); if (!fc || !oc) return; const spec = a.spec;
+    if (!spec) { fc.width = 0; oc.width = 0; return; }
+    const S = VIS.S, W = spec.w * S, H = spec.h * S; const P = 3; const PW = W + 2 * P, PH = H + 2 * P; const sc = document.createElement('canvas'); sc.width = PW; sc.height = PH; const sctx = sc.getContext('2d'); const img = sctx.createImageData(PW, PH); const D = img.data;
+    const ex = a.explored || '';
+    for (let j = 0; j < PW * PH; j++) { const xx = Math.max(0, Math.min(W - 1, (j % PW) - P)), yy = Math.max(0, Math.min(H - 1, Math.floor(j / PW) - P)); const i = yy * W + xx; let al = 0, r = 4, g = 6, b = 9;
+      if (a.viewer && a.vis) { const v = a.vis[i]; if (v === 2) al = 0; else if (v === 1) { al = 150; r = 8; g = 12; b = 26; } else if (ex[i] === '1') { al = 205; r = 6; g = 9; b = 12; } else al = 250; }
+      else if (a.light === 'night' && !a.editing) { al = 60; r = 10; g = 16; b = 40; }
+      else if (a.light === 'dim' && !a.editing) { al = 40; r = 40; g = 20; b = 10; }
+      D[j * 4] = r; D[j * 4 + 1] = g; D[j * 4 + 2] = b; D[j * 4 + 3] = al; }
+    sctx.putImageData(img, 0, 0); const k = 12; fc.width = spec.w * k; fc.height = spec.h * k; const ctx = fc.getContext('2d'); ctx.clearRect(0, 0, fc.width, fc.height); ctx.imageSmoothingEnabled = true; ctx.filter = 'blur(' + Math.round(k * 0.45) + 'px)'; const u = k / S; ctx.drawImage(sc, -P * u, -P * u, PW * u, PH * u); ctx.filter = 'none';
+    // overlay at full resolution: manual fog marks, sight blockers (edit), cone outline
+    oc.width = spec.w * CELL; oc.height = spec.h * CELL; const o = oc.getContext('2d');
+    if (a.gmShowFog || a.editing) Object.keys(a.fog || {}).forEach((k) => { const [x, y] = k.split(',').map(Number); o.fillStyle = a.fog[k] === 'h' ? 'rgba(20,0,30,0.55)' : 'rgba(255,240,200,0.18)'; o.fillRect(x * CELL, y * CELL, CELL, CELL); if (a.fog[k] === 'h') { o.strokeStyle = 'rgba(200,150,255,0.35)'; o.beginPath(); o.moveTo(x * CELL, y * CELL + CELL); o.lineTo(x * CELL + CELL, y * CELL); o.stroke(); } });
+    if (a.showBlock) Object.keys(a.block || {}).forEach((k) => { const [x, y] = k.split(',').map(Number); o.fillStyle = 'rgba(200,40,60,0.32)'; o.fillRect(x * CELL, y * CELL, CELL, CELL); o.strokeStyle = 'rgba(255,120,140,0.6)'; o.lineWidth = 1.5; o.strokeRect(x * CELL + 1, y * CELL + 1, CELL - 2, CELL - 2); });
+    if (a.editing && spec && !spec.image) { (spec.objects || []).forEach((ob) => { const sg = CMAP.sightOf(ob); if (sg === 'none') return; o.strokeStyle = sg === 'block' ? 'rgba(255,90,110,0.9)' : 'rgba(120,200,255,0.9)'; o.setLineDash(sg === 'block' ? [] : [6, 5]); o.lineWidth = 2; o.beginPath(); o.arc(ob.x * CELL, ob.y * CELL, (ob.r || 1) * CELL * 0.8, 0, 7); o.stroke(); }); o.setLineDash([]); }
+    const ov = this._overArgs || {}; if (ov.viewerTok && !a.editing) { const t = ov.viewerTok; const sz = t.size || 1; const cx = (t.x + sz / 2) * CELL, cy = (t.y + sz / 2) * CELL; const half = ov.cone / 2 * Math.PI / 180; const R = Math.max(spec.w, spec.h) * CELL;
+      o.strokeStyle = 'rgba(243,207,134,0.75)'; o.lineWidth = 2; o.setLineDash([10, 8]); o.beginPath(); o.moveTo(cx, cy); o.lineTo(cx + Math.cos((t.face || 0) - half) * R, cy + Math.sin((t.face || 0) - half) * R); o.moveTo(cx, cy); o.lineTo(cx + Math.cos((t.face || 0) + half) * R, cy + Math.sin((t.face || 0) + half) * R); o.stroke(); o.setLineDash([]); }
+  }
+  wire() {
+    const vp = document.getElementById('cm-vp'); if (!vp) { setTimeout(() => this.wire(), 200); return; } if (this._wired) return; this._wired = true;
+    let drag = null; const z = () => this._z || 1;
+    const gridPt = (e) => { const st = document.getElementById('cm-stage'); const r = st.getBoundingClientRect(); return [(e.clientX - r.left) / z() / CELL, (e.clientY - r.top) / z() / CELL]; };
+    const cellsAround = (gx, gy) => { const n = (this._mode && this._mode.brush) || 1; const out = []; const cx = Math.floor(gx), cy = Math.floor(gy); const lo = -Math.floor((n - 1) / 2); for (let dy = 0; dy < n; dy++) for (let dx = 0; dx < n; dx++) { const x = cx + lo + dx, y = cy + lo + dy; if (x >= 0 && y >= 0 && x < this._W && y < this._H) out.push(x + ',' + y); } return out; };
+    const preview = (cells, col) => { const oc = document.getElementById('cm-over'); if (!oc) return; const o = oc.getContext('2d'); o.fillStyle = col; cells.forEach((k) => { const [x, y] = k.split(',').map(Number); o.fillRect(x * CELL, y * CELL, CELL, CELL); }); };
+    vp.addEventListener('contextmenu', (e) => e.preventDefault());
+    vp.addEventListener('pointerdown', (e) => { const M = this._mode || {}; const rot = e.target.closest && e.target.closest('[data-rot]'); const el = e.target.closest && e.target.closest('[data-tok]');
+      if (e.button === 2 || e.button === 1) { drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, l: vp.scrollLeft, t: vp.scrollTop, moved: false }; vp.classList.add('panning'); return; }
+      if (rot && this._canMove && this._canMove(rot.getAttribute('data-rot'))) { e.preventDefault(); e.stopPropagation(); const tokEl = rot.closest('[data-tok]'); drag = { kind: 'rot', id: rot.getAttribute('data-rot'), tokEl }; return; }
+      if (M.editing) { const [gx, gy] = gridPt(e); const tool = M.tool;
+        if (tool === 'terrain' || tool === 'sight' || tool === 'unsight') { drag = { kind: 'paint', cells: new Set(cellsAround(gx, gy)) }; preview([...drag.cells], tool === 'terrain' ? 'rgba(227,180,90,0.45)' : 'rgba(200,40,60,0.4)'); return; }
+        if (tool === 'object') { const i = this._objAt(gx, gy); if (i >= 0) { drag = { kind: 'obj', i, sx: e.clientX, sy: e.clientY, moved: false }; return; } this._placeObj(gx, gy); return; }
+        if (tool === 'grid') { drag = { kind: 'grid', sx: e.clientX, sy: e.clientY, moved: false }; return; }
+        drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, l: vp.scrollLeft, t: vp.scrollTop, moved: false }; vp.classList.add('panning'); return; }
+      if (M.fogTool && !M.isPlayer) { const [gx, gy] = gridPt(e); drag = { kind: 'fog', cells: new Set(cellsAround(gx, gy)) }; preview([...drag.cells], 'rgba(255,240,200,0.35)'); return; }
+      if (el) { const id = el.getAttribute('data-tok'); if (!this._canMove || !this._canMove(id)) { drag = { kind: 'click', id, sx: e.clientX, sy: e.clientY, moved: false }; return; } e.preventDefault(); drag = { kind: 'tok', el, id, sx: e.clientX, sy: e.clientY, ox: parseFloat(el.style.left) || 0, oy: parseFloat(el.style.top) || 0, moved: false }; try { el.setPointerCapture(e.pointerId); } catch (er) {} el.style.zIndex = 50; return; }
+      drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, l: vp.scrollLeft, t: vp.scrollTop, moved: false, pt: gridPt(e) }; vp.classList.add('panning'); });
+    window.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - (drag.sx || e.clientX), dy = e.clientY - (drag.sy || e.clientY); if (Math.hypot(dx, dy) > 3) drag.moved = true;
+      if (drag.kind === 'tok') { drag.el.style.left = (drag.ox + dx / z()) + 'px'; drag.el.style.top = (drag.oy + dy / z()) + 'px'; }
+      else if (drag.kind === 'pan') { vp.scrollLeft = drag.l - dx; vp.scrollTop = drag.t - dy; }
+      else if (drag.kind === 'rot') { const r = drag.tokEl.getBoundingClientRect(); const ang = Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)); drag.ang = ang; const f = drag.tokEl.querySelectorAll('.cm-face, .cm-rot'); f.forEach((n) => { n.style.transform = 'rotate(' + (ang * 180 / Math.PI) + 'deg)'; }); }
+      else if (drag.kind === 'paint' || drag.kind === 'fog') { const [gx, gy] = gridPt(e); const add = cellsAround(gx, gy).filter((k) => !drag.cells.has(k)); add.forEach((k) => drag.cells.add(k)); preview(add, drag.kind === 'fog' ? 'rgba(255,240,200,0.35)' : (this._mode.tool === 'terrain' ? 'rgba(227,180,90,0.45)' : 'rgba(200,40,60,0.4)')); }
+      else if (drag.kind === 'grid') { /* drag offsets image grid in natural pixels */ } });
+    window.addEventListener('pointerup', (e) => { if (!drag) return; const d = drag; drag = null; vp.classList.remove('panning');
+      if (d.kind === 'tok') { if (!d.moved) { this._select(d.id); return; } const dx = (e.clientX - d.sx) / z(), dy = (e.clientY - d.sy) / z(); const x = Math.round((d.ox - 3 + dx) / CELL), y = Math.round((d.oy - 3 + dy) / CELL); this._moveTok(d.id, x, y); this._select(d.id); }
+      else if (d.kind === 'click') this._select(d.id);
+      else if (d.kind === 'rot') { if (d.ang != null) this._turnTok(d.id, d.ang); }
+      else if (d.kind === 'paint') this._paintCells([...d.cells]);
+      else if (d.kind === 'fog') this._fogCells([...d.cells]);
+      else if (d.kind === 'obj') { if (d.moved) { const [gx, gy] = gridPt(e); this._moveObj(d.i, gx, gy); } else this._selObj(d.i); }
+      else if (d.kind === 'grid') { if (d.moved) { const k = (e.clientX - d.sx) / z() / CELL, k2 = (e.clientY - d.sy) / z() / CELL; this._gridNudge(-Math.round(k * 10), -Math.round(k2 * 10)); } }
+      else if (d.kind === 'pan' && !d.moved) { if (d.pt && this._toggleLight && this._toggleLight(d.pt[0], d.pt[1])) return; this._select(null); } });
+    vp.addEventListener('wheel', (e) => { if (!e.ctrlKey && !e.metaKey) return; e.preventDefault(); this.setZoom(z() * (e.deltaY < 0 ? 1.12 : 1 / 1.12)); }, { passive: false });
+    window.addEventListener('keydown', (e) => { const tag = (e.target && e.target.tagName) || ''; if (/INPUT|TEXTAREA|SELECT/.test(tag)) return; if (e.key === 'n' || e.key === 'N') this.setState({ names: !(this.state || {}).names }); if (e.key === 'Delete' || e.key === 'Backspace') { if (this._removeSel) this._removeSel(); } if (e.key === 'Escape' && this._select) this._select(null); });
+  }
+}
+
+</script>
+</x-dc>
+</body>
+</html>

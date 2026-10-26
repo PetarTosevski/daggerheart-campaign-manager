@@ -1,0 +1,22 @@
+Invented test text for the Lorekeeper chunker. Not from any real book.
+
+===== PAGE 1 =====
+THE TINY TOME  A test book
+
+===== PAGE 2 =====
+WELCOME  This invented book exists only for unit tests. Nothing here is a real rule.  1 Introduction
+
+===== PAGE 3 =====
+LANTERN DICE  Roll two lanterns. If they glow the same colour, you gain a spark.  GLOW SURGE  A glow surge clears one worry and adds a spark.  2   Chapter 1: Core Lanterns
+
+===== PAGE 4 =====
+Sparks carry over between scenes and never expire.  WORRIES  Mark a worry when the GM spends a shadow.  3   Chapter 1: Core Lanterns
+
+===== PAGE 5 =====
+PEBBLE THROWING  4 Chapter 2: Tiny Combat  A pebble flies up to five hops. Beyond five hops it falls short.
+
+===== PAGE 6 =====
+No footer on this page, the counting continues from the block number.  RANGE ON A GRID
+
+===== PAGE 7 =====
+Near is two hops, Middling is four hops and Distant is eight hops.  6   Chapter 2: Tiny Combat

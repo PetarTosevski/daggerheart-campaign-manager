@@ -1,0 +1,295 @@
+# QUESTIONS pending user answer, defaults in .omc/autopilot/perf-analysis.md section 5 (Q1 middleware JWT check, Q2
+#   initialAuthTokenReuse, Q3 prefetch all tabs, Q4 React Compiler, Q5 production baseline).
+#
+# Performance plan (bead dcm-bxp.36: "app feels slow, especially on the first click").
+# Analysis and baseline numbers: .omc/autopilot/perf-analysis.md (local production build + local Convex; "wan" = 80 ms RTT
+#   on HTTP and on the Convex WebSocket; "cpu4" = 4x CPU throttle). Absolute numbers are noisy (loaded machine): every
+#   acceptance compares before/after measured with the PF0 harness in the same worktree, same profile, median of 3 runs.
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L).
+# Every tracer owns its docs/tasks/TASK-PF-<id>.md and records its before/after table there.
+# Starts after: N9 (d11-notes), P10 (sprite-packs), M1 (map-movement) are merged. Wave 4 also waits for D12 H2
+#   (.omc/plans/d12-hardening.yaml), which owns convex/lib/permissions.ts, convex/members.ts and convex/maps.ts.
+# Collisions with D12 avoided on purpose: H4 owns the error.tsx files (this plan adds loading.tsx only), H17 owns
+#   src/app/(gm)/settings-dialog.tsx (PF6 lazy-loads it from title-menu.tsx instead of editing it). If D12 names its authz
+#   area files differently than tests/convex/authz/core.entries.ts and characters.entries.ts, rename here and rerun
+#   plan-check before wave 4.
+# Shared files: package.json / pnpm-lock.yaml are edited by the orchestrator at merge (only PF2 may add `jose`, already a
+#   transitive dependency of @convex-dev/auth; Q4's compiler would add babel-plugin-react-compiler).
+# Rulebook: docs/best-practices.md. Keep every SlotBoundary / error boundary (CL1); intents only (CL3); preload per CL5;
+#   lazy per-frame and SRD code per CL8/CL9; new queries via campaignQuery with returns validators and authz entries.
+# USER ANSWERS (2026-10-21, binding): defaults for all 5 QUESTIONS - local token check in proxy.ts (no Convex call, skip prefetches);
+#   initialAuthTokenReuse on, pinned at 1.46 with a regression e2e; prefetch all 8 tabs; React Compiler not now (decide after PF7);
+#   no production measurement, the user checks the feel after wave 2.
+plan: performance
+waves:
+  # ---------------------------------------------------------------- wave 1: measuring stick
+  - wave: 1
+    tracers:
+      - id: PF0
+        title: Perf harness and recorded baseline
+        size: S
+        goal: "`node scripts/perf/measure.mjs --profile local|wan|cpu4` runs the title menu -> Load Campaign -> dashboard -> every tab (first visit and revisit) and a hard reload against the e2e stack and prints, per step, URL-change time, first query sent, last first-result, queries subscribed, Authenticate frames, POST /api/auth count, JS fetched and main-thread task time; `node scripts/perf/bundle.mjs` prints initial client JS per route and its largest modules from `next experimental-analyze export`; docs/performance.md holds the baseline."
+        depends_on: []
+        owns:
+          - scripts/perf/**
+          - docs/performance.md
+          - docs/tasks/TASK-PF-PF0.md
+        reads:
+          - playwright.config.ts
+          - scripts/e2e-next.mjs
+          - scripts/convex-e2e.mjs
+          - tests/e2e/fixtures.ts
+          - .omc/autopilot/perf-analysis.md
+        acceptance:
+          - "lint and typecheck pass; no app code changes (tracer-guard)"
+          - "measure.mjs --profile wan reproduces the analysis baseline within +-30%: dashboard entry lastData about 730 ms, tab revisit URL change 116-178 ms, hard-load dashboard data about 2.6 s with 2 Authenticate frames"
+          - "bundle.mjs reports /campaigns/[campaignId] initial JS 1,561 KB raw / 541 KB gzip (+-5%) and lists tomes.ts, domain-cards.ts, equipment-tiers.ts on it"
+          - "docs/performance.md has the baseline tables and the exact commands"
+
+  # ---------------------------------------------------------------- wave 2: the first click
+      - id: PF7
+        title: Fear out of the campaign summary; stable campaign context
+        size: M
+        # ORCHESTRATOR NOTE (2026-10-21): pulled forward on the user's request; runs now, before PF0/PF4. PF4 later rebases on
+        #   its campaign-shell split. The authz entry for any new Fear query goes to D12 H5 (core.entries.ts is H0/H5's file);
+        #   PF7 measures with its own fear-render e2e (queries re-sent and main-thread time per Fear click, before/after).
+        goal: "campaigns.get and campaigns.list stop reading campaignState.fear; FearPanel and every fear reader use a small fear query (campaignQuery, returns validator); the shell splits its context into stable identity fields and live fields so a Fear click re-renders only the Fear consumers."
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/app/(gm)/campaigns/chronicle.tsx
+          - src/components/party/dice/dice-box.tsx
+          - src/components/adversaries/tracker/use-tracker.ts
+          - src/components/adversaries/environments/feature-actions.tsx
+          - tests/convex/age-of-umbra.test.ts
+          - tests/convex/encounter-tracking.test.ts
+          - tests/convex/environment-actions.test.ts
+          - tests/convex/fear-spend.test.ts
+          - tests/convex/fear.test.ts
+          - tests/convex/horizon.test.ts
+          - tests/e2e/environments.spec.ts
+          - convex/campaigns.ts
+          - convex/sessions.ts
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/fear-panel.tsx
+          - tests/convex/campaigns.test.ts
+          - tests/e2e/fear-render.spec.ts
+          - docs/tasks/TASK-PF-PF7.md
+        reads:
+          - convex/fear.ts
+          - convex/tables/campaigns.ts
+          - src/lib/optimistic/**
+        acceptance:
+          - "lint, typecheck, pnpm test (including the authz matrix) pass; dashboard.spec.ts Fear test and fear-render.spec.ts pass"
+          - "PF0: one Fear click re-sends exactly 1 query result (baseline 3: campaigns.get, campaigns.list when subscribed, sessions.current)"
+          - "PF0 cpu4: main-thread task time of a Fear click on the dashboard down >= 50% versus the PF0 baseline recorded for that click"
+
+  - wave: 2
+    tracers:
+      - id: PF1
+        title: Instant tab feedback, full prefetch and router cache
+        size: S
+        goal: "Clicking a campaign tab shows the target page or its skeleton at once: the campaign segment and the Load Campaign page get loading.tsx (shared <Loading> skeleton, role=status), the campaign nav links use prefetch={true} (Q3), and next.config sets experimental.staleTimes.dynamic=30 so revisits reuse the router cache."
+        depends_on: [PF0]
+        owns:
+          - next.config.ts
+          - src/app/(gm)/campaigns/loading.tsx
+          - src/app/(gm)/campaigns/[campaignId]/loading.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - tests/e2e/navigation-perf.spec.ts
+          - docs/tasks/TASK-PF-PF1.md
+        reads:
+          - src/lib/campaign-sections.ts
+          - src/components/brand/**
+          - docs/best-practices.md
+        acceptance:
+          - "lint, typecheck, pnpm test pass; dashboard.spec.ts, campaigns.spec.ts and navigation-perf.spec.ts pass"
+          - "PF0 wan: tab revisit URL change <= 40 ms median (baseline 116-178 ms) with 0 RSC requests on revisit inside 30 s"
+          - "PF0 wan: first visit of every tab after the dashboard has settled: URL change <= 60 ms (baseline 210-330 ms) and 0 JS chunks fetched on the click (baseline up to 89 KB)"
+          - "navigation-perf.spec.ts asserts the loading skeleton or page heading is visible within 100 ms of the click"
+
+      - id: PF2
+        title: Middleware checks the JWT locally
+        size: S
+        goal: "src/proxy.ts decides signed-in by verifying the Convex Auth JWT signature and expiry locally against the deployment's JWKS (cached, no Convex call) and skips prefetch requests, so no request waits on auth:isAuthenticated (Q1); redirects behave as today."
+        depends_on: [PF0]
+        owns:
+          - src/proxy.ts
+          - src/lib/auth/verify-jwt.ts
+          - tests/unit/verify-jwt.test.ts
+          - docs/tasks/TASK-PF-PF2.md
+        reads:
+          - convex/auth.ts
+          - convex/auth.config.ts
+          - node_modules/@convex-dev/auth/dist/nextjs/server/**
+        acceptance:
+          - "lint, typecheck, pnpm test pass; auth.spec.ts and the join-link e2e pass"
+          - "verify-jwt.test.ts: valid token -> signed in; expired, wrong-key and malformed tokens -> signed out; JWKS fetched at most once per process per 10 min"
+          - "local backend log: auth:isAuthenticated calls during a PF0 run = 0 (baseline about 1 per document/RSC/prefetch request, 181 over the analysis runs)"
+
+      - id: PF3
+        title: One Authenticate per page load
+        size: S
+        goal: "The Convex client reuses the server-confirmed cached token (initialAuthTokenReuse, Q2), so a hard load sends one Authenticate, makes no immediate POST /api/auth and the server runs each query once."
+        depends_on: [PF0]
+        owns:
+          - src/app/convex-client-provider.tsx
+          - tests/e2e/auth-single-run.spec.ts
+          - docs/tasks/TASK-PF-PF3.md
+        reads:
+          - node_modules/convex/dist/esm-types/browser/sync/client.d.ts
+        acceptance:
+          - "lint, typecheck, pnpm test, auth.spec.ts pass; token refresh before expiry still works (auth-single-run.spec.ts fakes a short-lived token)"
+          - "auth-single-run.spec.ts: a hard load of /campaigns/<id> sends exactly 1 Authenticate frame and 0 POST /api/auth in the first 5 s (baseline 2 and 1)"
+          - "PF0 wan hard-load dashboard data <= 2.0 s (baseline 2.66 s); local <= 1.1 s (baseline 1.6 s)"
+
+      - id: PF5
+        title: Lazy tome, trackers, rest picker and SRD barrel out of the dashboard
+        size: M
+        goal: "Per-frame and SRD-heavy code leaves the dashboard and shell bundles (CL8, CL9): the tome book loads with next/dynamic when opened, each frame tracker loads only for its frame, the rest picker loads when a rest is opened, and src/lib modules on the dashboard path (brawler.ts and friends) import SRD leaf modules instead of the @/lib/srd barrel."
+        depends_on: [PF0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/campaign-tome.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-tome-book.tsx
+          - src/app/(gm)/campaigns/[campaignId]/trackers/index.tsx
+          - src/components/party/rest/index.tsx
+          - src/lib/domain/class-features/**
+          - tests/unit/lazy-boundaries.test.ts
+          - docs/tasks/TASK-PF-PF5.md
+        reads:
+          - src/lib/srd/**
+          - src/lib/frames/tomes.ts
+          - src/components/party/dice/**
+          - src/components/tome/**
+        acceptance:
+          - "lint, typecheck, pnpm test pass; dashboard.spec.ts, rest.spec.ts, the tracker frame specs (five-banners, colossus, age-of-umbra, andaluria, horizon, weredragon) and class-features specs pass"
+          - "bundle.mjs: /campaigns/[campaignId] initial JS <= 1,250 KB raw / <= 450 KB gzip (baseline 1,561 / 541); tomes.ts absent from every campaign route's initial JS; domain-cards.ts and equipment-tiers.ts absent from the dashboard's initial JS"
+          - "PF0 cpu4: Load -> Dashboard main-thread task time down >= 20% (baseline 1,461 ms)"
+
+      - id: PF6
+        title: Lazy add-adversary dialog and title-menu dialogs
+        size: S
+        goal: "The Sessions page stops shipping the 321 KB SRD adversary list (the session-prep add dialog loads with next/dynamic when opened) and the title menu stops shipping zod (Settings and Join dialogs load with next/dynamic when opened)."
+        depends_on: [PF0]
+        owns:
+          - src/components/sessions/prep/encounter.tsx
+          - src/app/(gm)/title-menu.tsx
+          - docs/tasks/TASK-PF-PF6.md
+        reads:
+          - src/components/adversaries/builder/add-dialog.tsx
+          - src/app/(gm)/settings-dialog.tsx
+          - src/app/(gm)/join-dialog.tsx
+        acceptance:
+          - "lint, typecheck, pnpm test pass; sessions e2e specs (prep encounter), campaigns.spec.ts and the settings/join specs pass"
+          - "bundle.mjs: srd/adversaries.ts absent from /campaigns/[campaignId]/sessions initial JS (route <= 950 KB raw, baseline 1,242); pkg:zod absent from / initial JS (route <= 730 KB raw, baseline 804)"
+          - "PF0 wan: first Sessions visit JS on click <= 20 KB (baseline 89 KB, moot if PF1 prefetch already warmed it)"
+
+  # ---------------------------------------------------------------- wave 3: no shell waterfall
+  - wave: 3
+    tracers:
+      - id: PF4
+        title: Preload the campaign in the layout; header art via next/image
+        size: M
+        goal: "The [campaignId] layout preloads campaigns.get on the server (preloadQuery with convexAuthNextjsToken, CL5) and the shell reads it with usePreloadedQuery, so pages mount at hydration and subscribe in the first Convex flight; the header art becomes next/image with priority and sizes (CL10)."
+        depends_on: [PF1, PF7]
+        owns:
+          # ORCHESTRATOR NOTE 2026-10-22: B3's spec checks the refresh after the h1, which PF4 now server-renders.
+          - tests/e2e/auth-single-run.spec.ts
+          - src/app/(gm)/campaigns/[campaignId]/layout.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/lib/campaign-art.ts
+          - tests/e2e/campaign-preload.spec.ts
+          - docs/tasks/TASK-PF-PF4.md
+        reads:
+          - convex/campaigns.ts
+          - src/lib/design-assets.ts
+          - docs/best-practices.md
+        acceptance:
+          - "lint, typecheck, pnpm test pass; dashboard.spec.ts, campaigns.spec.ts, campaign-preload.spec.ts and the not-found campaign path pass"
+          - "PF0 hard reload of /party and /campaigns/<id>: the page's queries are sent in the same ModifyQuerySet flight as the first one (0 ms level gap; baseline: one extra round trip after campaigns.get)"
+          - "PF0 wan: Load -> Dashboard lastData <= 600 ms (baseline 729 ms) and hard-load dashboard data down >= 1 RTT versus the PF3 result"
+          - "no CSS backgroundImage left in campaign-shell.tsx (CL10 lint clean there); LCP image has priority"
+
+  # ---------------------------------------------------------------- wave 4: re-render breadth and server reads (after D12 H2)
+  - wave: 4
+    tracers:
+      - id: PF9
+        title: Dashboard party summary projection
+        size: S
+        goal: "The dashboard party section reads a characters.partySummary projection (name, portrait, HP, stress, hope, armor, level, class) instead of full sheets, so an HP tick re-sends a few hundred bytes per character, not the whole sheet."
+        depends_on: [PF4]
+        owns:
+          # ORCHESTRATOR NOTE 2026-10-22: the dashboard's other listByCampaign readers and PartyCard's optimistic update.
+          - src/components/party/party-card.tsx
+          - src/components/party/rest/launcher.tsx
+          - src/app/(gm)/campaigns/[campaignId]/wither-panel.tsx
+          - src/components/party/slots.ts
+          - src/components/party/level-up/badge.tsx
+          - src/components/party/wither/index.tsx
+          - src/components/party/death/index.tsx
+          - src/components/party/death/badges.tsx
+          - src/components/party/portrait.tsx
+          - convex/characters.ts
+          - src/app/(gm)/campaigns/[campaignId]/party-section.tsx
+          - tests/convex/characters-summary.test.ts
+          - tests/convex/authz/characters.entries.ts
+          - docs/tasks/TASK-PF-PF9.md
+        reads:
+          - convex/lib/characterSheet.ts
+          - src/components/party/**
+        acceptance:
+          - "lint, typecheck, pnpm test (authz matrix) pass; dashboard.spec.ts and party-roster.spec.ts pass"
+          - "PF0: dashboard character payload <= 1.5 KB for 4 characters (baseline characters.listByCampaign 5.9 KB) and the dashboard no longer subscribes to characters.listByCampaign"
+
+      - id: PF10
+        title: Bounded permission and N+1 reads
+        size: M
+        goal: "Notes list queries cache page access per journal (one departed/permission check per journal, not per page), player permission checks stop scanning all campaign grants, members.roster and combatMaps.list batch their per-row gets, and rests.current reads characters only when a rest needs them."
+        depends_on: [PF0]
+        owns:
+          - convex/lib/permissions.ts
+          - convex/lib/notes.ts
+          - convex/notesSharing.ts
+          - convex/notesJournals.ts
+          - convex/notesBin.ts
+          - convex/members.ts
+          - convex/combatMaps.ts
+          - convex/rests.ts
+          - tests/convex/perf-reads.test.ts
+          - docs/tasks/TASK-PF-PF10.md
+        reads:
+          - convex/lib/functions.ts
+          - tests/convex/authz/**
+        acceptance:
+          - "lint, typecheck, pnpm test (authz matrix and notes privacy tests) pass; notes-*.spec.ts pass"
+          - "perf-reads.test.ts (convex-test, read counter): notesSharing.shared and notesJournals.playerJournals on a journal with 600 pages stay under 1,500 reads (today they can pass 4,096); a player's feed.list read count does not grow with the number of campaign grants"
+          - "members.roster and combatMaps.list run their per-row gets in one Promise.all batch; reads per call unchanged or lower"
+  - wave: 5
+    tracers:
+      - id: PF11
+        title: Dashboard bundle - lazy dice box, party-card and level-up badge split, SRD leaf imports, small domains module
+        size: M
+        # ORCHESTRATOR NOTE (2026-10-21): PF5 reached 1,447 / 510 KB on the dashboard; the rest is held by files outside its owns
+        #   (docs/tasks/TASK-PF-PF5.md items 1-5, diff at scratchpad/pf5/outside-owns.diff). Starts after followups-5 F8 (dice/**).
+        goal: Reach the PF5 target (dashboard <= 1,250 KB raw / <= 450 KB gzip) and get domain-cards, equipment-tiers and zod off the dashboard.
+        depends_on: [PF5]
+        owns:
+          - src/components/party/dice/index.tsx
+          - src/components/party/party-display.ts
+          - src/components/party/party-card.tsx
+          - src/components/party/level-up/index.tsx
+          - src/components/party/level-up/badge.tsx
+          - src/lib/srd/domains.ts
+          - src/lib/domain/characters/spellcast.ts
+          - src/lib/domain/session-features/holders.ts
+          - tests/unit/lazy-boundaries-2.test.ts
+          - docs/tasks/TASK-PF-PF11.md
+        reads:
+          - docs/tasks/TASK-PF-PF5.md
+          - docs/performance.md
+        acceptance:
+          - "Dashboard initial JS <= 1,250 KB raw / <= 450 KB gzip (scripts/perf/bundle.mjs), domain-cards / equipment-tiers / zod not on the dashboard; other routes not larger"
+          - "Lazy pieces keep working (dice box, level-up badge and history); e2e for dashboard, party, dice and level-up pass; a test fails if the static imports come back"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"

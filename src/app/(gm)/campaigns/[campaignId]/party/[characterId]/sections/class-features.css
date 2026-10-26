@@ -1,0 +1,11 @@
+/* Styles for sections/class-features.tsx only (sheet redesign wave 2). Tokens and primitives: ../sheet.css, src/components/party/sheet-ui/. */
+
+/* Board: <details><summary class="sh-lbl">Full feature text</summary> over a lined sh-ta. */
+.cf-full>summary{display:flex;align-items:center;gap:6px;min-height:44px;cursor:pointer;list-style:none}
+.cf-full>summary::-webkit-details-marker{display:none}
+.cf-full>summary::before{content:"▸";font-size:12px;transition:transform .15s}
+.cf-full[open]>summary::before{transform:rotate(90deg)}
+.cf-full>summary:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px;border-radius:4px}
+.cf-full-body{display:flex;flex-direction:column;gap:10px;margin-top:6px;padding:4px 14px 10px;border:1px solid var(--sheet-field-line,#d9c59c);border-left:3px solid var(--sheet-gold-line,#b08a3e);border-radius:4px 8px 8px 4px;background-color:#fffbf1;background-image:repeating-linear-gradient(180deg,transparent 0,transparent 27px,rgba(168,134,90,.28) 27px,rgba(168,134,90,.28) 28px)}
+.cf-full-body>p{line-height:28px}
+@media (prefers-reduced-motion:reduce){.cf-full>summary::before{transition:none}}

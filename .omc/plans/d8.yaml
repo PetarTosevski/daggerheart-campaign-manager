@@ -1,0 +1,299 @@
+# D8 plan: Adversaries and encounters (bead dcm-bxp.8). Catalogue of SRD stat blocks + live encounter tracker
+# (decision "D8: catalogue + live encounter tracker (instances, HP/Stress, conditions, BP budget, Spend Fear via dashboard Fear)").
+# Analysis, book quotes, board inventory, screenshots, data model and OPEN QUESTIONS: .omc/autopilot/d8-analysis.md (read it first).
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), timing:
+#   core     = D8 scope; starts as soon as its depends_on are merged.
+#   confirm  = built only if the user answers the linked open question "yes" (otherwise dropped and its owns stay untouched).
+# Book pages: CB = Core Book, HF = Hope & Fear, printed pages (render PDF page = printed + 1). Each tracer re-checks the pages it cites
+#   (.reference-private/, extract with pdfjs-dist, never commit the books) and quotes them in its task doc.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+#
+# BLOCKED ON THE USER: the open questions in .omc/autopilot/d8-analysis.md section 6. Defaults are written into the acceptance lists
+#   below and marked (Qn); an answer that differs changes only the tracer(s) that cite that Qn.
+#
+# Rules for every tracer (part of every acceptance list, not repeated):
+#   - Every new public function is built with the wrappers in convex/lib/functions.ts: gmQuery / gmMutation / keyedGmMutation (need
+#     owner). Adversaries and encounters are GM-only (decisions-d3-d11: players never see "adversaries/encounters"): no player query,
+#     players get FORBIDDEN and outsiders NOT_FOUND from the server. Authorization only through permissionFor via the wrappers.
+#   - `args` and `returns` validators on every new function (queries and mutations), no v.any(); schema-guard RETURNS_PENDING never grows.
+#   - Its own Convex test covers anonymous, outsider, player and GM for each new function (tests/convex/authz-matrix.test.ts does not
+#     exist yet; hardening H25 folds these in later) and asserts ConvexError.data.code (errorCode helper), never message text.
+#   - Intents only (CL3): deltas, ids, single fields; optimistic updates on pip, condition and spotlight clicks (CL4, double click = +2).
+#   - Indexed reads only (no .filter on queries); .collect only on capped results (instances <= 60 per encounter), else .take/.paginate.
+#   - A new error code is one of those A0 defines in src/lib/errors/encounters.ts; a code A0 did not add means stop and report.
+#   - No new dependency. SRD data is imported from the leaf module src/lib/srd/adversaries.ts, never the src/lib/srd barrel (CL9).
+#   - Every useQuery subtree sits inside an error boundary (CL1); loading uses the shared Loading with role=status (CL2).
+#   - UI in the board's look: tokens from C/adversaries/adversaries.css (A0); each wave-2+ tracer adds CSS only in its own colocated
+#     .css. 390 px: no horizontal page scroll (document.documentElement.scrollWidth <= 390), touch targets >= 44 px, labels on every
+#     control, keyboard reachable, native <dialog> modals via src/components/brand/modal.tsx (CL12).
+#   - Visual acceptance: the tracer's tests/e2e/visual/<id>.spec.ts (tag @visual, runs with E2E_VISUAL=1) shoots its regions at
+#     1440x900 and 390x844; board counterparts come from `node scripts/board-shots.mjs adversaries:<region>` (A0 adds them); the task
+#     doc docs/tasks/TASK-D8-<id>.md lists both sets side by side with a verdict per region (oh-my-claudecode:visual-verdict) and every
+#     deliberate deviation. Regions with no board counterpart (builder, tracker, custom editor) are judged against the board's tokens.
+#   - pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e specs pass in its worktree; the
+#     orchestrator runs the full e2e suite after each wave.
+#   - Every tracer owns docs/tasks/TASK-D8-<id>.md (the draft exists; the tracer completes it).
+#
+# Shared files: convex/schema.ts, convex/cleanup.ts, convex/lib/fear.ts, src/lib/errors/app-error.ts, src/lib/convex-errors.ts,
+#   tests/convex/schema-guard.test.ts, tests/convex/cleanup.test.ts, src/lib/campaign-sections.ts, C/campaign-shell.tsx,
+#   tests/e2e/visual/helpers.ts, scripts/board-shots.mjs and playwright.config.ts belong to A0 only. C/adversaries/page.tsx belongs to
+#   A0 (wave 1) and then only to A5 (wave 3). docs/data-model.md is updated by the orchestrator at merge time from each tracer's report.
+# Hotspot and how A0 defuses it: the Adversaries page composes four features. A0 creates the page with tabs Catalogue / Encounters and
+#   mounts one stub per feature folder (src/components/adversaries/{catalogue,builder,tracker,custom}/index.tsx) with typed props from
+#   src/components/adversaries/slots.ts, so feature tracers own only their folder.
+# Follow-up beads the tracers file (not built in D8): environments (Q8), party links (Q9: Hope-feature targets, adversary hits on PCs,
+#   countdown features), Massive Damage toggle if ever wanted (Q3).
+plan: d8
+waves:
+  # ---------------------------------------------------------------- wave 1: foundation + SRD data, in parallel
+  - wave: 1
+    tracers:
+      - id: A0
+        foundation: true
+        title: D8 foundation (tables, validators, error module, Fear spend helper, GM-only route shell with tabs and stubs, visual tooling)
+        timing: core
+        size: M
+        goal: The encounter tables exist and are purged with their campaign, the Fear spend helper and the encounter error codes are wired, and the GM opens /campaigns/<id>/adversaries to a board-look page with Catalogue and Encounters tabs (stubs) while players see no nav item and a GM-only panel.
+        depends_on: []
+        owns:
+          - convex/schema.ts
+          - convex/tables/encounters.ts
+          - convex/lib/validators/encounters.ts
+          - convex/lib/encounters.ts
+          - convex/lib/fear.ts
+          - convex/cleanup.ts
+          - src/lib/errors/encounters.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - src/lib/campaign-sections.ts
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/adversaries.css
+          - src/components/adversaries/slots.ts
+          - src/components/adversaries/catalogue/index.tsx
+          - src/components/adversaries/builder/index.tsx
+          - src/components/adversaries/tracker/index.tsx
+          - src/components/adversaries/custom/index.tsx
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/convex/fear-spend.test.ts
+          - tests/unit/convex-errors.test.ts
+          - tests/e2e/adversaries.spec.ts
+          - tests/e2e/visual/helpers.ts
+          - tests/e2e/visual/A0.spec.ts
+          - scripts/board-shots.mjs
+          - playwright.config.ts
+          - docs/tasks/TASK-D8-A0.md
+        reads:
+          - .omc/autopilot/d8-analysis.md
+          - reference/designs/project/Adversaries.dc.html
+          - reference/designs/project/Sessions.dc.html
+          - reference/designs/CLAUDE.md
+          - docs/decisions-d3-d11.md
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - convex/tables/history.ts
+          - convex/tables/codex.ts
+          - convex/fear.ts
+          - src/lib/domain/fear/index.ts
+          - src/app/(gm)/campaigns/[campaignId]/codex/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/[section]/page.tsx
+          - src/components/brand/modal.tsx
+          - tests/convex/helpers.ts
+          - tests/e2e/fixtures.ts
+          - tests/e2e/codex.spec.ts
+          - tests/e2e/players.spec.ts
+        acceptance:
+          - "convex/tables/encounters.ts and convex/lib/validators/encounters.ts define, as typed validators (no blob, no v.any()), encounters {campaignId, name <=80, status draft|running|ended, pcs 1..12, adjustments (array of easy|twoSolo|dmg|lowTier|noBig|hard), gmTurn, notes?, createdAt, updatedAt, startedAt?, endedAt?} with index by_campaign_status_updated [campaignId, status, updatedAt]; encounterAdversaries {campaignId, encounterId, source (union srd {adversaryId string} | custom {customId Id<customAdversaries>}), label <=60, order, summoned, minionCount?, stats {difficulty, major|null, severe|null, hpMax, stressMax}, hp, stress, defeated, conditions (array of hidden|restrained|vulnerable|distracted), tags (strings <=30, at most 6), spotlights, spotlightTurn, note?, updatedAt} with indexes by_encounter_order [encounterId, order] and by_campaign [campaignId]; customAdversaries (Q6; the stat block fields of the analysis section 3) with index by_campaign_name [campaignId, name]. Validator-side caps are enforced in convex/lib/encounters.ts (MAX_INSTANCES 60, MAX_ENCOUNTERS 200, MAX_CUSTOM 100, string lengths)"
+          - "schema.ts composes encounterTables; schema-guard lists encounters, encounterAdversaries and customAdversaries as CAMPAIGN_SCOPED; convex/cleanup.ts purges them by their campaign index and tests/convex/cleanup.test.ts proves it; no prefix-duplicate index"
+          - "convex/lib/encounters.ts: loadEncounter(ctx, campaignId, encounterId) and loadInstance(ctx, campaignId, instanceId) normalise ids (CD7) and return NOT_FOUND when the row is missing or belongs to another campaign; assertRunning (ENCOUNTER_NOT_RUNNING); countInstances via by_encounter_order .take(MAX_INSTANCES + 1)"
+          - "convex/lib/fear.ts gains spendFear(ctx, campaignId, amount, reason) that refuses with FEAR_EMPTY when GM Fear < amount (CB p.154: spend Fear for an additional GM move, a Fear Feature, an Experience, an interrupt) and records history kind fear action spend; tests/convex/fear-spend.test.ts covers spend, refusal at 0 and the history row"
+          - "src/lib/errors/encounters.ts (as const): ENCOUNTER_RULE, ENCOUNTER_FULL, ENCOUNTER_LIMIT, ENCOUNTER_RUNNING, ENCOUNTER_NOT_RUNNING, ADVERSARY_UNKNOWN, CUSTOM_ADVERSARY_LIMIT, FEAR_EMPTY with user messages; AppErrorCode includes them and convex-errors merges them (convex-errors unit test: no code defined twice)"
+          - "Route C/adversaries/page.tsx ('use client' leaf, title 'Adversaries'): board header (H1 'Adversaries', count line placeholder from props, blurb), role=tablist 'Adversary views' with tabs 'Catalogue' and 'Encounters' (arrow keys), each tab mounting its stub inside an error boundary; error.tsx with retry; adversaries.css holds the board tokens of the analysis section 1 (shell, parchment, pips, badges, H&F pill) as custom properties; fonts Cinzel / EB Garamond / IBM Plex Sans as already loaded by the app or added via next/font in this CSS scope"
+          - "slots.ts types: CatalogueProps {campaignId, hopeAndFear, frameId, renderActions(adversary)}, BuilderProps {campaignId, activePcs}, TrackerProps {campaignId, encounterId, fear}, CustomProps {campaignId}; stubs render a short placeholder line"
+          - "Players: campaign-sections marks Adversaries gmOnly and campaign-shell hides gmOnly items for players; a player who opens the URL sees 'Only the GM can see adversaries and encounters.' and no data request is made"
+          - "tests/e2e/adversaries.spec.ts: the GM opens Adversaries from the nav and switches tabs; a joined player has no Adversaries nav item and sees the GM-only panel at the URL"
+          - "Visual tooling: tests/e2e/visual/helpers.ts gains openAdversaries(page, frame) for a GM campaign; scripts/board-shots.mjs accepts adversaries:<region> (page, header, filters, list, statblock, empty) and shoots reference/designs/project/Adversaries.dc.html from disk at 1440 and 390 into test-results/visual/board/; A0.spec.ts shoots the shell and tabs"
+          - "tests/e2e/codex.spec.ts, dashboard.spec.ts and players.spec.ts pass unchanged"
+      - id: A1
+        title: SRD adversary catalogue as a typed data file (generator + cross-checks)
+        timing: core
+        size: L
+        goal: src/lib/srd/adversaries.ts holds all 267 adversaries (129 Core, 135 Hope & Fear, 3 Reign of the Weredragon) as typed, checked data with parsed numbers and feature kinds, generated by a committed script and verified against the books' indexes and stat lines.
+        depends_on: []
+        owns:
+          - scripts/srd/gen-adversaries.mjs
+          - src/lib/srd/adversaries.ts
+          - src/lib/srd/types.ts
+          - src/lib/domain/adversaries/
+          - tests/unit/srd-adversaries.test.ts
+          - tests/unit/adversary-rules.test.ts
+          - docs/tasks/TASK-D8-A1.md
+        reads:
+          - .omc/autopilot/d8-analysis.md
+          - reference/designs/project/Adversaries.dc.html
+          - .reference-private/
+          - src/lib/srd/index.ts
+          - src/lib/srd/classes.ts
+          - src/lib/srd/equipment-tiers.ts
+          - src/lib/frames/index.ts
+        acceptance:
+          - "scripts/srd/gen-adversaries.mjs (Node, no dependency; book text paths passed as arguments, books never committed) reads the board's ADV constant and the H&F text and writes src/lib/srd/adversaries.ts with a header saying how it was generated and how to rerun it"
+          - "Core 129 come from the board ADV with the patches: Zombie Legion range Melee (CB p.239), Swarm of Rats Horde (10/HP) (CB p.216), Electric Eels Horde (2/HP), the kind split out of the 12 merged feature names (e.g. 'On My Signal' kind reaction, countdown 5); the 10 chapter-4 build examples are not included"
+          - "H&F 135 + Weredrake + Forlorne Lykona (framework, Dragon form, Faun form as separate blocks with the framework features repeated, HF pp.142-143): descriptions, motives and features verbatim from the book (Q1 default; if the user picks the board summaries, take them from ADV), with page numbers; private-use digits mapped, ligature splits and line-end hyphens joined, captions and footers dropped"
+          - "src/lib/srd/types.ts adds AdversaryType, AdversaryFeature {name, kind passive|action|reaction|evolution, text, fearCost?, countdown?}, AdversaryDef {id, name, tier, type, hordePerHp?, description, motives, difficulty, thresholds {major, severe} (numbers or null for None), hp, stress, attack {modifier, name, range, damage}, experiences [{name, value}], features, source core|hope-and-fear, frameId?, page?}; ids are unique slugs; nothing is added to the src/lib/srd barrel"
+          - "src/lib/domain/adversaries/ (pure): minionValue(def) from 'Minion (X)', hordeDamage(def) from 'Horde (X)', relentlessValue(def), featureFearCost(text) from 'Spend a Fear' / 'Spend N Fear', parseDamage('2d10+4 phy') -> {dice, modifier, type}, maxDamage(dice) for criticals (CB p.148), adversariesFor({hopeAndFear, frameId}) (H&F only with the switch on; Weredragon entries only in reign-of-the-weredragon, Q7); tests/unit/adversary-rules.test.ts covers each"
+          - "tests/unit/srd-adversaries.test.ts: 267 entries; per-tier counts Core 52/36/23/18 and H&F (incl. frame) 35/42/32/29 by tier as computed by the script; Core per-type counts Bruiser 17, Horde 9, Leader 16, Minion 16, Ranged 9, Skulk 15, Social 8, Solo 20, Standard 12, Support 7; name sets equal the CB p.209 and HF p.61 indexes (stored as fixtures in the test); every entry has a difficulty, hp, attack and at least one feature; every Minion has null thresholds and a minionValue; every Horde has hordePerHp and hordeDamage; no text contains 'fi ', 'fl ' splits or U+E540-E549"
+          - "The task doc records the generator's cross-check output: Core feature text equal to the extracted CB text after normalising (the 8 blocks on CB pp.224-225 checked from rendered pages), H&F numbers equal to the board's for all 135, and 3 random blocks per tier spot-checked against rendered pages"
+          - "The file stays data-only (CH9 exempt); next build shows the data only in the Adversaries route chunk (no other route imports it)"
+
+  # ---------------------------------------------------------------- wave 2: catalogue and encounter builder, in parallel
+  - wave: 2
+    tracers:
+      - id: A2
+        title: Catalogue browser and parchment stat block (the board)
+        timing: core
+        size: M
+        goal: The GM browses, searches and filters the adversary catalogue in the board's look (tier groups, chips, paging, empty state) and reads any stat block on parchment, with H&F and frame entries following the campaign's switch.
+        depends_on: [A0, A1]
+        owns:
+          - src/components/adversaries/catalogue/
+          - src/lib/adversaries/catalogue.ts
+          - tests/unit/adversary-catalogue.test.ts
+          - tests/e2e/adversary-catalogue.spec.ts
+          - tests/e2e/visual/A2.spec.ts
+          - docs/tasks/TASK-D8-A2.md
+        reads:
+          - .omc/autopilot/d8-analysis.md
+          - reference/designs/project/Adversaries.dc.html
+          - src/lib/srd/adversaries.ts
+          - src/lib/srd/types.ts
+          - src/lib/domain/adversaries/**
+          - src/components/adversaries/slots.ts
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/**
+          - tests/e2e/visual/helpers.ts
+        acceptance:
+          - "src/lib/adversaries/catalogue.ts (pure): search over name, type, motives, description, feature names and text (case- and accent-insensitive); tier, type (Horde (N/HP) counts as Horde) and book filters where clicking the active chip clears it; groups by tier with 'Level 1 / Levels 2–4 / Levels 5–7 / Levels 8–10 · N adversaries'; paging 40 then +60 ('Show 60 more · N left'), reset to 40 on any filter change; unit tests cover each"
+          - "List in the board's look: search box (placeholder 'Search by name, type, motive or feature'), Tier / Type / Book chip rows (Book row only when the campaign has Hope & Fear on), count line '267 adversaries · 129 core, 138 Hope & Fear' / 'N of M shown' computed from the visible set, rows with name, H&F pill, motives, type tag, Diff / HP / Stress (hidden under 980 px), selected row accent bar; the list scrolls inside its panel so 'Show more' is reachable (board bug not ported); empty state 'No adversaries match these filters. Clear the search or pick another tier or type.'"
+          - "Stat block (stat-block.tsx, exported for A3/A4/A5): parchment card with name, H&F pill, 'Tier N Type', italic description, Motives & Tactics, Difficulty / Thresholds / HP / Stress grid, dark attack bar, Experience line, features with kind badges (Passive, Action, Reaction, Evolution; a Fear-cost feature also shows a 'Fear N' badge), H&F source line 'Hope & Fear · p. N'; props `actions` (rendered in the head) and `tracker` (replaces nothing on the catalogue; the board's per-name pip tracker is not ported, encounters own HP/Stress)"
+          - "renderActions from the page is rendered in the stat block head (A3 fills it with 'Add to encounter'); the first visible entry is selected by default; selection is keyboard reachable (list of buttons, aria 'Adversary list'); at 390 the stat block follows the list and no horizontal scroll"
+          - "tests/e2e/adversary-catalogue.spec.ts: search 'burrower' shows Acid Burrower and its stat block (Difficulty 14, Thresholds 8/15, HP 8, Stress 3); Tier 2 + Horde filter; empty state; a Witherwild campaign (H&F off) shows no Hope & Fear entries and a Castle High campaign shows them"
+          - "Visual: A2.spec.ts shoots page, filters, list, statblock and empty at 1440 and 390 against board-shots adversaries:page/filters/list/statblock/empty"
+      - id: A3
+        title: Encounters and the Battle Points builder (Convex + UI)
+        timing: core
+        size: L
+        goal: The GM creates, renames, deletes and starts encounters, adds adversaries from the catalogue (with count, minion group size and summoned flag) and sees the Battle Points budget with adjustments in the Sessions board's builder look.
+        depends_on: [A0, A1]
+        owns:
+          - convex/encounters.ts
+          - src/lib/domain/encounters/budget.ts
+          - src/lib/domain/encounters/instances.ts
+          - src/components/adversaries/builder/
+          - tests/unit/encounter-budget.test.ts
+          - tests/convex/encounters.test.ts
+          - tests/e2e/encounter-builder.spec.ts
+          - tests/e2e/visual/A3.spec.ts
+          - docs/tasks/TASK-D8-A3.md
+        reads:
+          - .omc/autopilot/d8-analysis.md
+          - reference/designs/project/Sessions.dc.html
+          - convex/lib/encounters.ts
+          - convex/lib/functions.ts
+          - convex/lib/validators/encounters.ts
+          - convex/tables/encounters.ts
+          - src/lib/srd/adversaries.ts
+          - src/lib/domain/adversaries/**
+          - src/lib/errors/encounters.ts
+          - src/components/adversaries/slots.ts
+          - tests/convex/helpers.ts
+        acceptance:
+          - "src/lib/domain/encounters/budget.ts (pure, CB p.197): budget = 3 × pcs + 2 + adjustments (easy -1, twoSolo -2, dmg -2, lowTier +1, noBig +1, hard +2); costs Social/Support 1, Horde/Ranged/Skulk/Standard 2, Leader 3, Bruiser 4, Solo 5, Minions 1 per group of pcs (ceil(minions / pcs)); summoned instances excluded; suggested adjustments (2+ Solos, lower-tier adversary present, no Bruiser/Horde/Leader/Solo) flagged as hints, never auto-applied; verdict 'N BP left' / 'Right on budget' / 'Over by N BP'; unit tests cover each line of CB p.197"
+          - "src/lib/domain/encounters/instances.ts (pure): numbered labels ('Bear', 'Bear 2', ...), stats snapshot from an AdversaryDef or custom row (difficulty, major/severe or null, hpMax = hp, or minion group size for minions, stressMax)"
+          - "convex/encounters.ts: list (gmQuery, by_campaign_status_updated, drafts and running first, ended paginated), get (gmQuery: encounter + instances ordered, returns validator), create (keyedGmMutation; pcs defaults to the campaign's active PCs; ENCOUNTER_LIMIT past 200), rename, setNotes, setBudget (pcs, adjustment toggle as intent), start (ENCOUNTER_RUNNING when another is running), end, remove (deletes its instances in the same mutation; capped at 60), addAdversary (keyedGmMutation: source srd adversaryId or custom id of this campaign, count 1..10 or minion group size 1..30, summoned; ADVERSARY_UNKNOWN for an unknown id or another campaign's custom; ENCOUNTER_FULL past 60), removeInstance, reorder"
+          - "tests/convex/encounters.test.ts: anonymous, outsider, player and GM for every function (player FORBIDDEN, outsider NOT_FOUND); create/add/remove happy paths; limits; a second running encounter refused; another campaign's encounter id gives NOT_FOUND; a read-cost check that get reads one encounter + its instances only"
+          - "Builder UI (builder/): encounter list with status chips and 'New encounter'; encounter detail with rename, notes, Start/End, instance list (label, type tag, remove), BP panel in the Sessions board's look (party-size stepper, progress bar coloured over/exact/under, 'Spent X of Y', adjustment rows with check boxes and deltas, the note 'Starting budget is 3 × player characters + 2, per the core rules' encounter guidance.'); 'Add to encounter' action for the catalogue stat block (renderActions) with a small dialog: encounter picker (or create), count / minion group size, Summoned toggle"
+          - "tests/e2e/encounter-builder.spec.ts: the GM creates an encounter, adds 2 Bears and a Jagged Knife Lackey group of 4 from the catalogue, sees 'Spent 9 of 14' for 4 PCs (Bear Bruiser 4 × 2 + 1 minion group), toggles 'Harder or longer fight' to 16, starts it; a player calling encounters.list through the API gets FORBIDDEN"
+          - "Visual: A3.spec.ts shoots the encounter list, the BP panel and the add dialog at 1440 and 390, compared against the Sessions board's builder (node scripts/board-shots.mjs is not required for Sessions; the task doc uses the Sessions board screenshot taken with the same tool or notes its absence)"
+
+  # ---------------------------------------------------------------- wave 3: live tracker and custom adversaries, in parallel
+  - wave: 3
+    tracers:
+      - id: A4
+        title: Live encounter tracker (damage via thresholds, HP/Stress, conditions, spotlight, Fear spend, attack rolls)
+        timing: core
+        size: L
+        goal: During a running encounter the GM marks damage by thresholds, HP and Stress per adversary, minion and horde rules, conditions, spotlights per GM turn and Fear spending (which lowers the dashboard's GM Fear), and rolls adversary attacks into the hidden GM roll feed.
+        depends_on: [A2, A3]
+        owns:
+          - convex/encounterTracking.ts
+          - src/lib/domain/encounters/damage.ts
+          - src/lib/domain/encounters/spotlight.ts
+          - src/components/adversaries/tracker/
+          - tests/unit/encounter-damage.test.ts
+          - tests/convex/encounter-tracking.test.ts
+          - tests/e2e/encounter-tracker.spec.ts
+          - tests/e2e/visual/A4.spec.ts
+          - docs/tasks/TASK-D8-A4.md
+        reads:
+          - .omc/autopilot/d8-analysis.md
+          - reference/designs/project/Adversaries.dc.html
+          - convex/encounters.ts
+          - convex/lib/encounters.ts
+          - convex/lib/fear.ts
+          - convex/rolls.ts
+          - convex/tables/encounters.ts
+          - src/lib/domain/adversaries/**
+          - src/lib/domain/encounters/budget.ts
+          - src/lib/domain/fear/index.ts
+          - src/lib/srd/adversaries.ts
+          - src/components/adversaries/catalogue/**
+          - src/components/adversaries/slots.ts
+          - src/components/party/dice/roll-feed.tsx
+          - src/app/(gm)/campaigns/[campaignId]/fear-panel.tsx
+        acceptance:
+          - "src/lib/domain/encounters/damage.ts (pure): hpForDamage(amount, {major, severe}, resistant) = 0 at <= 0 after halving (resistance halves before thresholds, CB p.99), 1 below Major, 2 at Major, 3 at Severe (CB p.91 via CB p.193); thresholds 'None' (minions) mean any damage defeats; no Massive Damage (Q3); markStress over a full track marks 1 HP instead (Q2, CB p.92); defeated when all HP are marked (CB p.208); hordeHalved when marked >= ceil(hpMax / 2) (CB p.199) so the attack shows the Horde (X) damage; minionDefeats(amount, X) = 1 + floor(amount / X) as a suggestion (CB p.201, Q4); vulnerableFromStress when Stress is full (CB p.178); unit tests for each"
+          - "src/lib/domain/encounters/spotlight.ts (pure): spotlight limit 1 per GM turn, or X with Relentless (X) (CB p.195, p.153); over the limit is a warning, never a block (Q5)"
+          - "convex/encounterTracking.ts (keyedGmMutation each, ENCOUNTER_NOT_RUNNING unless running, returns validators): markHp(instanceId, delta), markStress(instanceId, delta), applyDamage(instanceId, amount, resistant) returning {marked, severity}, defeatMinions(instanceId, count) (shrinks the group's remaining count), toggleCondition(instanceId, condition), setTags, setNote, spotlight(instanceId) (counts for the encounter's gmTurn), endGmTurn(encounterId) (gmTurn + 1; spotlight counts reset by comparing spotlightTurn, so no fan-out write), spendFear(encounterId, amount 1..12, reason spotlight|feature|experience|interrupt|other, instanceId?) through spendFear (FEAR_EMPTY), all clamped and validated in the domain functions"
+          - "tests/convex/encounter-tracking.test.ts: anonymous, outsider, player and GM for every function; damage 7 on Thresholds 8/15 marks 1, 8 marks 2, 15 marks 3, resistant 15 marks 1; Stress overflow marks HP (Q2); a minion group of 6 with Minion (3) hit for 7 suggests 3 and defeatMinions(3) leaves 3; spendFear lowers campaignState.fear and writes history 'spend'; spending more than held gives FEAR_EMPTY; a draft encounter refuses with ENCOUNTER_NOT_RUNNING; a double markHp with one idempotency key applies once"
+          - "Tracker UI (tracker/): top bar (name, status, 'GM turn N', 'End GM turn', GM Fear tokens 0-12 live from the campaign with a 'Spend Fear' menu: additional GM move, Fear feature, Experience, interrupt; BP meter from A3's budget); instance cards with label, type tag, HP and Stress rows of the board's 22 px pips (aria 'Mark Hit Point k of n'), damage number box + Resistant toggle + result line 'Major: 2 HP marked', minion group count with 'Defeat N', Horde halved note, condition chips Hidden / Restrained / Vulnerable / Distracted (+ auto Vulnerable when Stress is full) with clear buttons, tag input, spotlight counter ('Spotlight 1/3' for Relentless), Defeated state; selecting a card shows its parchment stat block (A2) with 'Roll attack' (d20 + ATK through rolls.gmRoll, hidden until revealed; a natural 20 offers 'Critical damage' = maximum dice + roll, CB p.148) and 'Roll damage', and a 'Spend N Fear' button on Fear-cost features and on Experiences ('+N, 1 Fear', CB p.194)"
+          - "Optimistic updates on pips, conditions and spotlight (double click + = 2 marks, RTL test in tests/unit/encounter-damage.test.ts or a colocated test)"
+          - "tests/e2e/encounter-tracker.spec.ts: the GM starts an encounter with a Bear, enters damage 9 and sees 2 HP marked, marks Stress, toggles Vulnerable, spends 1 Fear and the dashboard shows Fear one lower, ends the GM turn and the spotlight counter resets, rolls an attack that the player does not see in the feed until revealed"
+          - "Visual: A4.spec.ts shoots the top bar, an instance card (fresh, damaged, defeated), a minion group and the tracker page at 1440 and 390 (no horizontal scroll)"
+      - id: A5
+        title: Custom adversaries (Duplicate & edit, or blank) usable in encounters
+        timing: confirm
+        size: M
+        goal: The GM duplicates any SRD stat block or starts a blank one (improvised stats by tier prefilled), edits it in a parchment form, sees it in the catalogue under a 'Custom' book chip and adds it to encounters.
+        depends_on: [A2, A3]
+        owns:
+          - convex/customAdversaries.ts
+          - src/lib/adversaries/custom.ts
+          - src/components/adversaries/custom/
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/page.tsx
+          - tests/unit/custom-adversaries.test.ts
+          - tests/convex/custom-adversaries.test.ts
+          - tests/e2e/custom-adversaries.spec.ts
+          - tests/e2e/visual/A5.spec.ts
+          - docs/tasks/TASK-D8-A5.md
+        reads:
+          - .omc/autopilot/d8-analysis.md
+          - convex/lib/encounters.ts
+          - convex/lib/validators/encounters.ts
+          - convex/tables/encounters.ts
+          - convex/encounters.ts
+          - src/lib/srd/adversaries.ts
+          - src/lib/srd/types.ts
+          - src/lib/domain/adversaries/**
+          - src/components/adversaries/catalogue/**
+          - src/components/adversaries/builder/**
+          - src/components/adversaries/slots.ts
+        acceptance:
+          - "Built only if the user answers Q6 'yes'; otherwise the orchestrator drops A5 and files nothing"
+          - "src/lib/adversaries/custom.ts (pure): fromSrd(def) copy, blank(tier, type) prefilled with Improvised Statistics by Tier (CB p.208: attack +1..+4, Difficulty 11/14/17/20, thresholds 7/12, 10/20, 20/32, 25/45), validation (name 1..80, hp 1..30, stress 0..20, features <= 20, text <= 1500) as a RuleError; unit tests"
+          - "convex/customAdversaries.ts: list (gmQuery, by_campaign_name, take 100, returns validator), create (keyedGmMutation, CUSTOM_ADVERSARY_LIMIT past 100), update (single fields or the features list as a whole edit of one adversary, CL3: the client sends the edited fields only), remove (refused with ENCOUNTER_RULE while a running encounter uses it; draft/ended instances keep their snapshot and show 'deleted custom adversary')"
+          - "tests/convex/custom-adversaries.test.ts: anonymous, outsider, player and GM for every function; limits; another campaign's custom id cannot be added to an encounter (ADVERSARY_UNKNOWN, via encounters.addAdversary)"
+          - "UI: 'Duplicate & edit' in the stat block actions and 'New adversary' on the catalogue; parchment editor in a native dialog with the stat block's sections as inputs and a live preview; customs listed with a 'Custom' book chip and pill; page.tsx passes custom entries to the catalogue and the editor actions through renderActions"
+          - "tests/e2e/custom-adversaries.spec.ts: the GM duplicates Bear, renames it 'Cave Bear', sets HP 9, finds it under Custom and adds it to an encounter whose tracker shows 9 HP pips"
+          - "Visual: A5.spec.ts shoots the editor dialog and a custom stat block at 1440 and 390"

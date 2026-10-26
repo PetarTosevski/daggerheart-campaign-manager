@@ -1,0 +1,724 @@
+# Sheet-drawer plan (bead dcm-bxp.99.19): on the Combat Map a 'Sheet' button opens a side drawer over the live map (full
+# screen on phones) with HP / Stress / Hope / Armor trackers and every Hope, class, subclass, ancestry and community feature
+# with its Use button, FULLY AUTOMATED through effect tables run by the card-effect runner (map targeting, costs, limits,
+# the reaction window, U1 hit/miss only, GM undo); a link to the full sheet for everything else.
+# Status: APPROVED 2026-10-23. Analysis, inventory (217 features classified), vocabulary gaps NV1-NV19 and the answered
+#   questions Q1-Q16: .omc/autopilot/sheet-drawer-analysis.md. Acceptance lists cite the answer they implement as (Qn).
+#   USER ANSWER 2026-10-23: the drawer blocks launch (dcm-bxp.133).
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation, answers.
+# Book pages: CB = Core Book, HF = Hope & Fear, PRINTED pages ("===== PAGE N =====" in .reference-private/text holds printed
+#   page N-1). Each tracer re-checks the pages it cites and quotes them in its task doc; never commit the books.
+#
+# Binding answers carried over from plan combat-actions: U1 players see hit / miss only; U2 map rolls in the feed; U4 automatic,
+#   GM undo; U5 the book decides; Q1 out-of-range -> GM sanction; Q2 line of sight required; Q3 rest / long rest reset limits,
+#   session does not; Q4 'on a success' consumes only on success; Q9 movement is a prompt; Q13/Q17 reaction window (target
+#   armor + ally answers, GM 'Resolve now', no timer); Q14 the hit player sees their own damage and severity.
+# Rules (analysis section 4): Hope features (CB p.90); spending resources and repeat activation, simultaneous effects,
+#   incoming damage, rerolls, after-roll features, rounding up, end of the scene (CB p.107); usage limits (CB p.101); rests
+#   (CB p.105); multiclass (CB p.110-111); mixed ancestry (CB p.71); temporary conditions (CB p.102).
+#
+# USER ANSWERS 2026-10-23 (binding; also on bead dcm-bxp.99.19): Q1-Q14 and Q16 option (a), Q15 option (b):
+#   Q1 after-roll step on the player's own map rolls, only when an eligible after-roll feature is ready; Q2 before-roll prompt
+#   for PCs holding a before-roll defence, after-roll answers in the reaction window; Q3 Not This Time in any hit's window when
+#   the attacker is within Far of the wizard; Q4 companion token + Command; Q5 the 16 martial stances as rule data, Focus track,
+#   automated; Q6 every halving rounds up (resistance too); Q7 scene ends with the encounter, a GM 'End scene' button or the
+#   session; Q8 Act of Reprisal: the ally is within Melee of you; Q9 Sneak Attack and Cloaked from map positions and vision;
+#   Q10 Beastform attack, Evasion and its 45 features automated; Q11 transformations in scope; Q12 named Help an Ally;
+#   Q13 situational conditions confirmed by the player (check box); user note: Dedicated is the Orderborne community feature,
+#   so only Orderborne characters have it; Q14 live map areas, Dark Cloud blocks sight; Q15 (b) out-of-combat features listed
+#   as text plus existing D5 Use, social advantages as roll options, AND the rest-time features (Hardy, Efficient, Celestial
+#   Trance, Oasis) automated in this plan (tracer SD-R on convex/rests.ts); Q16 a 'Flying' toggle in the drawer.
+#
+# Cross-plan sequencing (orchestrator):
+#   - followups-8 (I1-I7) is merged into rebuild; no wait.
+#   - hand-fan HF1 (.omc/plans/hand-fan.yaml, running) owns src/components/combat-map/actions/hand/**, actions/index.tsx,
+#     actions/targets/**, actions/actions.css, src/components/cards/fan.ts and the domains tab section files. The only tracer
+#     here that owns one of them is SD-H (actions/hand/roll-options.tsx): SD-H starts only after HF1 is merged (cross-plan
+#     dependency, noted on SD-H; plan-check takes only same-plan ids in depends_on). SD7 reads actions/hand/** and should
+#     run after HF1 too, so it builds on the fanned Hand.
+#   - CA8 (dcm-bxp.99.4) and AA6 (dcm-bxp.99.9) own docs/game-interpretation.md; SD9 runs after both are merged.
+#   - Shared files belong to SD0 only: src/lib/domain/card-effects/types.ts (vocabulary, widen only), the character / combat
+#     request / combat map validators, convex/schema.ts, convex/cleanup.ts, convex/crons.ts, src/lib/errors/app-error.ts,
+#     src/lib/convex-errors.ts, C/combat-map/page.tsx, src/components/combat-map/slots.ts, tests/convex/schema-guard.test.ts.
+#     docs/data-model.md is updated by the orchestrator from each tracer's report.
+#   - Vocabulary rule (as CE-*): only SD0 (types) and SD1 (runner) change the vocabulary; an FE-* tracer that finds a gap writes
+#     a manual step with the feature's words and files a bead labelled feature-effects vocabulary-gap.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+plan: sheet-drawer
+waves:
+  # ---------------------------------------------------------------- wave 1: foundation, stance data
+  - wave: 1
+    tracers:
+      - id: SD0
+        foundation: true
+        title: Sheet-drawer foundation (vocabulary NV1-NV19 types, feature registry and ids, classification, validators, error codes, drawer stubs)
+        size: M
+        goal: The card vocabulary carries every new piece the features need (widen only), a typed FeatureEffect registry with ids and twelve empty group tables exists, all 217 features plus Beastform, transformation and stance features are classified, the sheet and combat-request validators accept the new state, the error codes exist, and the Combat Map page mounts a Sheet button with a drawer stub.
+        depends_on: []
+        owns:
+          - src/lib/domain/card-effects/availability.ts
+          - src/lib/domain/class-features/index.ts
+          - src/components/party/features/panel.tsx
+          - convex/lib/adversaryFeatures.ts
+          - convex/lib/adversaryHits.ts
+          - convex/combatTokens.ts
+          - convex/combatCards.ts
+          - src/lib/domain/card-effects/types.ts
+          - src/lib/domain/feature-effects/types.ts
+          - src/lib/domain/feature-effects/ids.ts
+          - src/lib/srd/feature-effects/index.ts
+          - src/lib/srd/feature-effects/classification.ts
+          - src/lib/srd/feature-effects/bard-wizard.ts
+          - src/lib/srd/feature-effects/druid-sorcerer.ts
+          - src/lib/srd/feature-effects/guardian-warrior.ts
+          - src/lib/srd/feature-effects/ranger-rogue.ts
+          - src/lib/srd/feature-effects/seraph-witch.ts
+          - src/lib/srd/feature-effects/assassin-brawler.ts
+          - src/lib/srd/feature-effects/warlock.ts
+          - src/lib/srd/feature-effects/ancestry-core.ts
+          - src/lib/srd/feature-effects/heritage-hf.ts
+          - src/lib/srd/feature-effects/beastforms.ts
+          - src/lib/srd/feature-effects/transformations.ts
+          - src/lib/srd/feature-effects/stances.ts
+          - src/lib/errors/combatFeatures.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - convex/lib/validators/characters.ts
+          - src/lib/validation/characters.ts
+          - convex/lib/validators/combatRequests.ts
+          - convex/lib/validators/combatMaps.ts
+          - convex/schema.ts
+          - convex/tables/combatAreas.ts
+          - convex/cleanup.ts
+          - convex/crons.ts
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/components/combat-map/slots.ts
+          - src/components/combat-map/drawer/index.tsx
+          - src/components/combat-map/drawer/use/index.tsx
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/unit/feature-classification.test.ts
+          - tests/unit/card-effects/types-widen.test.ts
+          - docs/tasks/TASK-SD-SD0.md
+        reads:
+          - .omc/autopilot/sheet-drawer-analysis.md
+          - .omc/autopilot/combat-actions-analysis.md
+          - src/lib/srd/classes.ts
+          - src/lib/srd/subclasses.ts
+          - src/lib/srd/heritage.ts
+          - src/lib/srd/beastforms.ts
+          - src/lib/srd/card-effects/**
+          - src/lib/domain/class-features/**
+          - src/lib/domain/characters/derived.ts
+          - src/lib/domain/characters/slots.ts
+          - src/components/combat-map/**
+          - docs/best-practices.md
+        acceptance:
+          - "card-effects/types.ts gains NV1-NV19 of the analysis section 3 as widen-only additions (no existing member renamed or narrowed): resources favor / focus / heldDie, a delegate step naming a D5 feature key, upgrades, adjustHpMarked, the new durations, triggers, requirements and gates, roll and damage changes, attacker-keyed defences, range modifiers, areas, dice-at-or-above, companion recipient, adversary-side mods, chosen-trait mods with a hold-count limit, scene limits, 'instead of Hope' conversions, target-adding riders, named Help; STEP_KINDS and the drift check stay exhaustive; no any"
+          - "Every existing CE-* and AE-* table and test compiles and passes unchanged (types-widen.test.ts imports all of them)"
+          - "feature-effects/types.ts defines FeatureEffect {featureId, source: hope | class | subclass | ancestry | community | beastform | transformation | stance, owner, card?: foundation | specialization | mastery, uses: CardUse[], upgrades?}; ids.ts builds '<source>:<owner>:<slug>' ids and the featureUses / cardTokens key 'feat:<featureId>[:<useId>]' (at most 60 characters, a test checks the longest)"
+          - "classification.ts lists every feature of CLASSES, SUBCLASSES, ANCESTRIES and COMMUNITIES (217), BEASTFORMS (45), TRANSFORMATIONS (12) and the 16 stance ids as combat | passive | outOfCombat | narrative with the analysis section 2 readings; a test fails when a data feature has no row or a row has no feature; the task doc lists every row for the user to review"
+          - "The twelve group files export empty readonly arrays; index.ts merges them into FEATURE_EFFECTS by featureId and throws on a duplicate id"
+          - "Sheet validators (widen only, rule 7): FEATURE_USE_UNTIL gains 'scene' (Q7, dcm-bxp.117); classState gains optional martial {known: string[], active?: string, focus: 0-6} (Q5); old sheets read back unchanged"
+          - "combatRequests: the sanction action union gains kind 'feature' {featureId, useId, targetTokenIds, choices, roll?} and a 'preRoll' request kind for Q2's before-roll prompt; combat map token ref gains kind 'companion' {characterId} (Q4); the combatAreas table (Q14) {campaignId, mapId, featureId, characterId, shape, centre (token or square), radius band, blocksSight, expires} has by_map and by_campaign indexes, and an internal batched self-rescheduling cron removes rows of ended scenes and sessions (rules 6, 8); purgeCampaign covers it; cleanup tests"
+          - "src/lib/errors/combatFeatures.ts defines FEATURE_NOT_OWNED, FEATURE_EXHAUSTED, FEATURE_COST_UNPAID, FEATURE_NOT_COMBAT, FEATURE_NEEDS_MAP, FEATURE_STATE_MISSING, wired into AppErrorCode and the client message map"
+          - "The Combat Map page shows a 'Sheet' button (top bar; bottom bar at 760 px and below) for a player with a PC on the map and for the GM with a PC token selected; it mounts the drawer stub from drawer/index.tsx, whose props and the drawer/use stub's props are documented in slots.ts"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: SD-ST
+        title: Martial stances rule data (Q5)
+        size: S
+        answers: [Q5]
+        goal: The 16 martial stances of HF p.12 and the Focus rules exist as typed rule data the stance table and the drawer can read.
+        depends_on: []
+        owns:
+          - src/lib/srd/stances.ts
+          - tests/unit/stances.test.ts
+          - docs/tasks/TASK-SD-ST.md
+        reads:
+          - .omc/autopilot/sheet-drawer-analysis.md
+          - src/lib/srd/types.ts
+          - src/lib/srd/subclasses.ts
+        acceptance:
+          - "STANCES lists 16 stances {id, name, tier 1-4, text} transcribed from HF p.12 (the rule text the mechanic needs, as AGENTS.md allows; the task doc cites the page); FOCUS_MAX = 6 and the refocus rule (once per rest in calm, Instinct d6s, keep the highest) are constants"
+          - "A unit test checks 4 stances per tier, unique ids and that the Martial Artist foundation text still names the Martial Stances sheet"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 2: runner and ownership (pure)
+  - wave: 2
+    tracers:
+      - id: SD1
+        title: Feature runner, ownership, upgrades and D5 delegation (pure)
+        size: L
+        goal: Pure functions say which features a sheet holds and with which upgrades, check their availability and costs, and run a feature use (including the new vocabulary and D5 delegation) into the same ordered plan the card server already executes.
+        depends_on: [SD0]
+        owns:
+          - src/lib/domain/combat-actions/numbers.ts
+          - src/lib/domain/card-effects/run.ts
+          - src/lib/domain/card-effects/availability.ts
+          - src/lib/domain/feature-effects/index.ts
+          - src/lib/domain/feature-effects/owned.ts
+          - src/lib/domain/feature-effects/upgrades.ts
+          - src/lib/domain/feature-effects/delegate.ts
+          - src/lib/domain/feature-effects/run.ts
+          - tests/unit/feature-effects/engine/**
+          - tests/unit/card-effects/run-nv.test.ts
+          - docs/tasks/TASK-SD-SD1.md
+        reads:
+          - .omc/autopilot/sheet-drawer-analysis.md
+          - src/lib/domain/card-effects/types.ts
+          - src/lib/domain/feature-effects/types.ts
+          - src/lib/domain/feature-effects/ids.ts
+          - src/lib/domain/class-features/**
+          - src/lib/domain/characters/**
+          - src/lib/domain/session-features/**
+          - src/lib/domain/combat-actions/**
+          - src/lib/srd/**
+        acceptance:
+          - "owned(sheet, scope) returns the features a sheet holds: the primary class Hope feature only; class features of the class and the multiclass; subclass cards up to subclassRank plus the multiclass foundation (CB p.110-111 quoted); single, mixed (first feature of the first, second of the second, CB p.71) and shapeshifter ancestries; the community; the transformation (Q11); the Beastform's features while transformed (Q10); the known stances (Q5); Hope & Fear content only with the campaign's hopeAndFear option"
+          - "upgrades apply by rank and level (Virtuoso twice per long rest, Fueled by Fear 2d10, Have No Fear 3d10, Ambush / Backstab dice, Rally d8 at level 5 and d10 with Epic Poetry, Regenerative Reach, Devout, Power of the Gods, Poison Compendium / Venomancer poisons); unit tests per upgrade"
+          - "run.ts and availability.ts execute every NV1-NV19 piece for cards and features alike; every existing run / availability test passes unchanged; new tests take expected values from the book (CB p.107: Frontline Tank twice for 6 Hope clears 4 Armor Slots; CB p.99: 26 physical halved; Q6 rounding up for 'halve incoming damage')"
+          - "delegate runs a D5 FeatureMeta.use (Rally, Prayer Dice, Unstoppable, Ranger's Focus, Hex, Marked for Death, Combo Strike, Beastform, Evolution, Channel Raw Power, Strange Patterns, Favor, Patron's Pact) inside the plan, so D5 classState and held dice stay the one record; a feature limit already written by D5 (rally, unstoppable, channelRawPower, commune) reads as exhausted"
+          - "runFeature(effect, use, context) returns the same RunPlan shape as run() with limits recorded under feat:<featureId>[:<useId>] and until rest | longRest | session | scene (Q3, Q7)"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 3: server use path + twelve effect tables (parallel)
+  - wave: 3
+    tracers:
+      - id: SD3
+        title: Server - the drawer query and useFeature (reusing CA4's card path)
+        size: L
+        goal: A player (or the GM playing for them) reads their drawer and uses any owned feature from the map or without one; the server checks ownership, limits and costs, rolls, applies to enemy instances, self and allies through the card runner path, records the use, and logs public (hit / miss) and GM rows that the existing undo reverts.
+        depends_on: [SD1]
+        owns:
+          - convex/combatFeatures.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/featureDrawer.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/cardRows.ts
+          - convex/lib/classFeatureCost.ts
+          - convex/classFeatures.ts
+          - tests/convex/combat-features.test.ts
+          - tests/convex/authz/features.entries.ts
+          - tests/convex/authz/features.test.ts
+          - docs/tasks/TASK-SD-SD3.md
+        reads:
+          - convex/combatCards.ts
+          - convex/lib/cardChoices.ts
+          - convex/lib/cardHand.ts
+          - convex/lib/combatActions.ts
+          - convex/lib/combatRequests.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/characterSheet.ts
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - src/lib/domain/feature-effects/**
+          - src/lib/domain/card-effects/**
+          - src/lib/srd/feature-effects/**
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "SD1 follow-ups: the D5 feed line for Rally reads the die from runFeature (Epic Poetry d10, not d6); per-target limit keys stay within the 80-character cap for the longest feature ids (test)"
+          - "cardRunner's card pick is generalised to a pick of {effect, use, name, limitKey} so cards and features share buildRun / runCard / writeSheetChanges / actorSheetAfter and the cardRows public and GM rows; every combat-cards test passes untouched; classFeatures.ts's payCost moves to convex/lib/classFeatureCost.ts unchanged in behaviour (its tests pass untouched)"
+          - "combatFeatures.drawer {characterId}: the character's player and the GM always, other players read only under the hand-sharing switch (as combatCards.hand); returns trackers (HP, Stress, Hope, Armor with maxima), every owned feature with source, card, state ready | exhausted (reset label) | passive | outOfCombat | narrative, cost and limit badges, tokens, D5 counters, uses and their activation; a returns validator with no enemy field (U1, CF6)"
+          - "combatFeatures.useFeature {characterId, mapId?, featureId, useId?, targetTokenIds, choices, roll?} is a keyed campaign mutation (need edit on the character; the GM for any character, CA6's switch): FEATURE_NOT_OWNED, FEATURE_EXHAUSTED, FEATURE_COST_UNPAID, FEATURE_NOT_COMBAT (passive / narrative uses), FEATURE_NEEDS_MAP (enemy targets without a live map); out-of-range targets become a GM sanction (combat-actions Q1); line of sight as cards (Q2)"
+          - "Situational requirements need the player's confirmation in choices (Q13); repeat activation of a non-roll feature takes a times choice (CB p.107 quoted); refused on the same roll"
+          - "D5-delegated features update classState / held dice in the same mutation as their map steps (Hex tags the instance and lowers its Difficulty and damage by tier; Make a Scene Distracts with Difficulty -2; Square Up makes it Vulnerable; Life Support heals the picked ally token's character)"
+          - "One actionLog group per use: public row (roll, own damage total, Hit / Miss / Defeated per target; U1, combat-actions Q5) and GM row (full resolution, adversaryBefore); undo restores sheets, instances, featureUses and tokens (U4)"
+          - "combatFeatures.pending / sanction (GM) handle kind 'feature' requests; combatFeatures.setFlying (Q16), shiftStance and refocus (Q5) exist as keyed intents"
+          - "features.entries.ts lists every new public function for anonymous, outsider, player (own and other character) and GM; tests assert ConvexError.data.code; the inventory guard passes"
+          - "A table-driven convex-test runs one feature per group table that has entries at merge time (the orchestrator reruns it after wave 3)"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-bard-wizard
+        title: Feature effects - Bard and Wizard (24 features)
+        size: M
+        goal: Every Bard and Wizard Hope, class and subclass feature has an effect entry that the runner executes; whatever the vocabulary cannot express is a manual step with a note and a bead.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/bard-wizard.ts
+          - tests/unit/feature-effects/bard-wizard.test.ts
+          - docs/tasks/TASK-SD-FE-bard-wizard.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/class-features/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/classes.ts, src/lib/srd/subclasses.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every Bard and Wizard feature classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page in a comment; its test runs it through runFeature with a fixed RNG and checks costs, limit, roll, targets and outcomes (Make a Scene Distracted with Difficulty -2, CB p.29; Gifted Performer one use per song, twice with Virtuoso; Not This Time as a window reaction, Q3; Face Your Fear +1d10 magic on a success with Fear and its upgrades)"
+          - "The task doc lists every manual step and every ruling left open for the user; a bead per vocabulary gap; the vocabulary is not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-druid-sorcerer
+        title: Feature effects - Druid and Sorcerer (21 features)
+        size: M
+        goal: Every Druid and Sorcerer Hope, class and subclass feature has an effect entry that the runner executes; whatever the vocabulary cannot express is a manual step with a note and a bead.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/druid-sorcerer.ts
+          - tests/unit/feature-effects/druid-sorcerer.test.ts
+          - docs/tasks/TASK-SD-FE-druid-sorcerer.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/class-features/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/classes.ts, src/lib/srd/subclasses.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every Druid and Sorcerer feature classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature (Elemental Incarnation's four channels until Severe damage or rest, CB p.31; Regeneration 3 Hope 1d4 HP, Very Close with Regenerative Reach; Volatile Magic in the after-roll step, Q1; Transcendence picks two distinct benefits)"
+          - "The task doc lists every manual step and open ruling; a bead per vocabulary gap; the vocabulary is not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-guardian-warrior
+        title: Feature effects - Guardian and Warrior (22 features)
+        size: M
+        goal: Every Guardian and Warrior Hope, class and subclass feature has an effect entry that the runner executes; whatever the vocabulary cannot express is a manual step with a note and a bead.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/guardian-warrior.ts
+          - tests/unit/feature-effects/guardian-warrior.test.ts
+          - docs/tasks/TASK-SD-FE-guardian-warrior.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/class-features/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/classes.ts, src/lib/srd/subclasses.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every Guardian and Warrior feature classified combat or passive has exactly one entry (Stalwart thresholds as passive mods that replace derived.ts's SUBCLASS_BONUSES rows in SD2); a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature (Frontline Tank repeatable, CB p.107; Iron Will and Partners-in-Arms as window reactions, CB p.36; Act of Reprisal with the ally in your Melee range, Q8; Attack of Opportunity one effect, two on a crit; Courage +1 Hope on a failure with Fear)"
+          - "The task doc lists every manual step and open ruling; a bead per vocabulary gap; the vocabulary is not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-ranger-rogue
+        title: Feature effects - Ranger and Rogue (22 features)
+        size: M
+        goal: Every Ranger and Rogue Hope, class and subclass feature has an effect entry that the runner executes; whatever the vocabulary cannot express is a manual step with a note and a bead.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/ranger-rogue.ts
+          - tests/unit/feature-effects/ranger-rogue.test.ts
+          - docs/tasks/TASK-SD-FE-ranger-rogue.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/class-features/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/classes.ts, src/lib/srd/subclasses.ts, src/lib/frames/extras/companion.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every Ranger and Rogue feature classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature (Hold Them Off as a target-adding rider, CB p.38; Ranger's Focus tag, Stress on damage, reroll on a failure; companion uses per Q4; Sneak Attack automatic when Cloaked or an ally is in Melee of the target, Q9, CB p.42; Dark Cloud as a sight-blocking area, Q14)"
+          - "The task doc lists every manual step and open ruling; a bead per vocabulary gap; the vocabulary is not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-seraph-witch
+        title: Feature effects - Seraph and Witch (22 features)
+        size: M
+        goal: Every Seraph and Witch Hope, class and subclass feature has an effect entry that the runner executes; whatever the vocabulary cannot express is a manual step with a note and a bead.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/seraph-witch.ts
+          - tests/unit/feature-effects/seraph-witch.test.ts
+          - docs/tasks/TASK-SD-FE-seraph-witch.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/class-features/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/classes.ts, src/lib/srd/subclasses.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every Seraph and Witch feature classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature (Prayer Dice spent on incoming damage in the window or on a roll after it, CB p.44 and p.107; Spirit Weapon's extra target for a Stress; Hex up to Spellcast targets, - tier Difficulty and damage, HF p.16; Witch's Charm success with Fear, Q1; Circle of Power area and tokens, Q14; Wings of Light while flying, Q16)"
+          - "The task doc lists every manual step and open ruling; a bead per vocabulary gap; the vocabulary is not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-assassin-brawler
+        title: Feature effects - Assassin and Brawler (28 features)
+        size: L
+        goal: Every Assassin and Brawler Hope, class and subclass feature has an effect entry that the runner executes; whatever the vocabulary cannot express is a manual step with a note and a bead.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/assassin-brawler.ts
+          - tests/unit/feature-effects/assassin-brawler.test.ts
+          - docs/tasks/TASK-SD-FE-assassin-brawler.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/class-features/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/classes.ts, src/lib/srd/subclasses.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every Assassin and Brawler feature classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature (Marked for Death one target at a time, + tier d4 / d6 / d8; First Strike once per scene double damage, Q7, HF p.8; Toxic Concoctions tokens and the poison lists by rank, HF p.9; Surrounded's extra Melee targets; Combo Strike delegated to D5; Keen Defenses and Focus Cannon spend Focus, Q5)"
+          - "The task doc lists every manual step and open ruling; a bead per vocabulary gap; the vocabulary is not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-warlock
+        title: Feature effects - Warlock (15 features)
+        size: M
+        goal: Every Warlock Hope, class and subclass feature has an effect entry that the runner executes; whatever the vocabulary cannot express is a manual step with a note and a bead.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/warlock.ts
+          - tests/unit/feature-effects/warlock.test.ts
+          - docs/tasks/TASK-SD-FE-warlock.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/class-features/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/classes.ts, src/lib/srd/subclasses.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every Warlock feature classified combat or passive has exactly one entry; a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature (Favor costs; Harrowing Invocation and Draining Bane as before-roll answers, Q2, HF p.14; Damage Sink halves rounding up, Q6; Deathless Embrace and Deadly Vengeance count Patron Dice of 4+; Patron's Mantle and Patron's Fury until Severe damage or scene end, Q7)"
+          - "The task doc lists every manual step and open ruling; a bead per vocabulary gap; the vocabulary is not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-ancestry-core
+        title: Feature effects - Core ancestries (18 ancestries, 36 features)
+        size: M
+        goal: Every core ancestry feature classified combat or passive has an effect entry that the runner executes; whatever the vocabulary cannot express is a manual step with a note and a bead.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/ancestry-core.ts
+          - tests/unit/feature-effects/ancestry-core.test.ts
+          - docs/tasks/TASK-SD-FE-ancestry-core.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/heritage.ts, src/lib/domain/characters/slots.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every core ancestry feature classified combat or passive has exactly one entry; mixed ancestries resolve through owned(); a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature (Thick Skin 2 Stress instead of 1 HP on Minor and Increased Fortitude halving rounding up, CB p.55, Q6; Scales 1 fewer HP on Severe; Elemental Breath as an Instinct weapon on a group within Very Close; Luckbender, Fearless in the after-roll step, Q1; Wings +2 Evasion while flying, Q2, Q16; Shell, Nimble passive mods)"
+          - "The task doc lists every manual step and open ruling; a bead per vocabulary gap; the vocabulary is not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-heritage-hf
+        title: Feature effects - Hope & Fear ancestries and all communities (12 + 15 features)
+        size: M
+        goal: Every Hope & Fear ancestry feature and every community feature classified combat or passive has an effect entry; the social advantages become roll options; whatever the vocabulary cannot express is a manual step with a note and a bead.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/heritage-hf.ts
+          - tests/unit/feature-effects/heritage-hf.test.ts
+          - docs/tasks/TASK-SD-FE-heritage-hf.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/session-features/**, src/lib/srd/feature-effects/classification.ts, src/lib/srd/heritage.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every H&F ancestry and community feature classified combat or passive has exactly one entry; out-of-combat social advantages (Privilege, Well-Read, Steady, Scoundrel, Low-Light Living, Lightfoot, Dread Visage, Natural Climber) are roll-option entries with a situation confirmation (Q13, Q15); the rest-time features (Hardy, Efficient, Celestial Trance, Oasis) have rest-trigger entries that SD-R runs (Q15 b); a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature (Dedicated d20 Hope Die once per rest, Orderborne only, CB p.75, Q13; Unbound and Hallowed Aura with Hope instead of Fear, Q1; Celestial Wings once per scene, Q7; Brave Face Hope instead of Stress; Close-Knit Hope to an ally within Far; Know the Tide and Luckbringer delegated to the session features)"
+          - "The task doc lists every manual step and open ruling; a bead per vocabulary gap; the vocabulary is not changed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-beastforms
+        title: Feature effects - Beastforms (24 forms, 45 features) (Q10)
+        size: M
+        answers: [Q10]
+        goal: Every Beastform's attack, Evasion and trait bonus and each of its 45 features has an entry the runner executes while the druid is transformed.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/beastforms.ts
+          - tests/unit/feature-effects/beastforms.test.ts
+          - docs/tasks/TASK-SD-FE-beastforms.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/domain/class-features/classes/druid.ts, src/lib/srd/beastforms.ts, src/lib/srd/feature-effects/classification.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Every form has an attack entry (its trait, range and damage using Proficiency, CB p.30) and every feature classified combat or passive has exactly one entry; 'Fragile' drops out on Major or greater damage; a test fails on a missing or extra id"
+          - "Each entry quotes its text with the printed page; tests through runFeature; the task doc lists manual steps and beads per gap"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-transformations
+        title: Feature effects - Transformations (6 transformations, 12 features) (Q11)
+        size: S
+        answers: [Q11]
+        goal: Every transformation feature classified combat or passive has an entry the runner executes, drawbacks included.
+        depends_on: [SD1]
+        owns:
+          - src/lib/srd/feature-effects/transformations.ts
+          - tests/unit/feature-effects/transformations.test.ts
+          - docs/tasks/TASK-SD-FE-transformations.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/srd/heritage.ts, src/lib/srd/feature-effects/classification.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "Gifted +1 to action, reaction and damage rolls; Weight of Divinity (a Stress or a GM Fear on a failure); Ephemeral physical resistance and double magic damage; Fangs, Feed tokens, Wolf Form and Howling Rampage, each quoted with HF page and tested through runFeature"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: FE-stances
+        title: Feature effects - Martial stances (16) (Q5)
+        size: S
+        answers: [Q5]
+        goal: Every martial stance has an entry the runner executes while it is the active stance, and shifting, dropping out and refocusing follow HF p.12.
+        depends_on: [SD1, SD-ST]
+        owns:
+          - src/lib/srd/feature-effects/stances.ts
+          - tests/unit/feature-effects/stances.test.ts
+          - docs/tasks/TASK-SD-FE-stances.md
+        reads: [src/lib/domain/feature-effects/**, src/lib/domain/card-effects/**, src/lib/srd/stances.ts, src/lib/srd/feature-effects/classification.ts, .omc/autopilot/sheet-drawer-analysis.md]
+        acceptance:
+          - "16 entries gated on the active stance; dropping out on Severe damage, the last HP or scene end (HF p.12, Q7); tests through runFeature (Quick extra target for a Focus or Stress, Stable Focus instead of an Armor Slot, Honed +1 Proficiency, Isolating advantage)"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 4: integrations and the drawer shell
+  - wave: 4
+    tracers:
+      - id: SD2
+        title: Passive feature modifiers in derived stats and the adversary attack engine
+        size: M
+        goal: Always-on and state-gated passive features change Evasion, thresholds, Armor Score, roll and damage modifiers and the defences adversary attacks check, read from the feature tables instead of hand-kept lists.
+        depends_on: [SD1, FE-bard-wizard, FE-druid-sorcerer, FE-guardian-warrior, FE-ranger-rogue, FE-seraph-witch, FE-assassin-brawler, FE-warlock, FE-ancestry-core, FE-heritage-hf]
+        owns:
+          - src/lib/domain/encounters/damage.ts
+          - tests/unit/encounter-damage.test.ts
+          - src/lib/domain/characters/derived.ts
+          - src/lib/domain/feature-effects/passives.ts
+          - src/lib/domain/adversary-actions/attack.ts
+          - tests/unit/feature-passives.test.ts
+          - docs/tasks/TASK-SD-SD2.md
+        reads:
+          - src/lib/srd/feature-effects/**
+          - src/lib/domain/feature-effects/**
+          - src/lib/domain/characters/**
+          - src/lib/domain/adversary-actions/**
+        acceptance:
+          - "Q6 (a): resistance halving in src/lib/domain/encounters/damage.ts rounds up too (Math.ceil), tests updated (SD1 follow-up)"
+          - "passiveMods(sheet, state) sums the passive entries a sheet holds (owned + upgrades + requirements): Shell + Proficiency thresholds, Nimble +1 Evasion, Stoneskin +1 Armor and thresholds, Conjure Shield with 2+ Hope, Rise to the Challenge, Elemental Dominion while Channeling, Combat Training stays a D5 roll option; derived.ts's SUBCLASS_BONUSES is replaced by the Stalwart / Nightwalker / Winged Sentinel / Juggernaut entries and every existing derived test passes unchanged"
+          - "The adversary attack roll reads PC passives: Sturdy's disadvantage at 1 HP left, Elusive Predator / Scorpion's Poise / Battle-Bonded Evasion against the matching attacker, Vexing Malison on the PC side (NV9)"
+          - "Unit tests take expected values from the book texts (CB p.36, p.55, HF p.18-24)"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: SD4
+        title: Feature reactions in the reaction window, before-roll prompts and after-hit autos
+        size: L
+        goal: When an adversary attacks or hits a PC, the target and allies are offered every ready feature reaction (armor extras, damage reduction, redirects, rerolls) as well as cards, before-roll defences get their prompt (Q2), and after-hit automatic features run, all inside the existing window and undo group.
+        depends_on: [SD3, FE-bard-wizard, FE-druid-sorcerer, FE-guardian-warrior, FE-ranger-rogue, FE-seraph-witch, FE-assassin-brawler, FE-warlock, FE-ancestry-core, FE-heritage-hf]
+        owns:
+          - src/lib/domain/adversary-actions/window.ts
+          - convex/lib/incomingHits.ts
+          - convex/lib/adversaryHits.ts
+          - convex/lib/adversaryActions.ts
+          - convex/adversaryActions.ts
+          - src/components/combat-map/actions/reactions/**
+          - tests/convex/feature-reactions.test.ts
+          - tests/unit/feature-window.test.ts
+          - tests/e2e/combat-feature-reactions.spec.ts
+          - tests/convex/authz/adversary-actions.entries.ts
+          - docs/tasks/TASK-SD-SD4.md
+        reads:
+          - convex/lib/featureRunner.ts
+          - convex/combatFeatures.ts
+          - src/lib/domain/feature-effects/**
+          - src/lib/srd/feature-effects/**
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "eligibleCards becomes eligibleAnswers: loadout cards plus owned feature uses whose trigger fits (Iron Will, Partners-in-Arms, Loyal Protector, Revenge, Scales, Thick Skin, Increased Fortitude, Damage Sink, Dark Aegis, Prayer Dice, Not This Time within Far of the wizard (Q3), Danger Sense, Wings, Natural Evasion); respond accepts {featureId, useId}; existing card answers behave as before"
+          - "Before-roll prompt (Q2): when the GM attacks, PCs holding a ready, affordable before-roll feature (Harrowing Invocation, Draining Bane, Keen Defenses) get Use / Pass before the roll is resolved; nothing waits for PCs without one; the GM can Resolve now (combat-actions Q17)"
+          - "Halving answers round up (Q6, CB p.107 quoted); Thick Skin and armor apply in the order the player picks (CB p.107)"
+          - "After-hit autos and offers run for features (Unshakable, Brave Face, Not Done Yet, Deadly Vengeance, Eye for an Eye, Elemental Incarnation Fire)"
+          - "Players still see no adversary roll; the hit player sees their own damage and severity (Q14); e2e: a Guardian answers with Iron Will, a dwarf with Increased Fortitude, a warlock's before-roll Harrowing Invocation turns a hit into a miss, GM undo restores all"
+          - "pnpm lint, typecheck, vitest and the combat e2e specs pass; tracer-guard passes"
+      - id: SD5
+        title: Riders on weapon and card attacks, after-roll step on the player's own map rolls, Cloaked from movement
+        size: L
+        goal: A player's map attack (weapon or card) offers every ready rider of their features and cards before or after the roll as the trigger says, applies automatic riders (Sneak Attack from positions), pauses for after-roll features when one is eligible (Q1), and ends Cloaked on attacks and moves in sight of an adversary (Q9).
+        depends_on: [SD3, FE-bard-wizard, FE-druid-sorcerer, FE-guardian-warrior, FE-ranger-rogue, FE-seraph-witch, FE-assassin-brawler, FE-warlock, FE-ancestry-core, FE-heritage-hf]
+        owns:
+          - convex/lib/validators/combatRequests.ts
+          - convex/combatRequests.ts
+          - convex/lib/combatRequests.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - tests/convex/authz/riders.entries.ts
+          - tests/convex/authz/riders.test.ts
+          - convex/combatActions.ts
+          - convex/lib/combatActions.ts
+          - convex/lib/combatMovement.ts
+          - convex/combatCards.ts
+          - src/components/combat-map/actions/attack/**
+          - tests/convex/combat-riders.test.ts
+          - tests/unit/combat-riders.test.tsx
+          - tests/e2e/combat-riders.spec.ts
+          - docs/tasks/TASK-SD-SD5.md
+        reads:
+          - convex/lib/featureRunner.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/rolls.ts
+          - src/lib/domain/feature-effects/**
+          - src/lib/srd/feature-effects/**
+          - src/lib/srd/card-effects/**
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "attack and useCard accept riders [{source: card | feature, id, useId, choices}]; before-roll riders (Rage Up, Elementalist, Apex Predator, Ruthless Predator) change the roll or damage; after-success riders (Hold Them Off and Surrounded add targets on the same roll per CB p.104; Kick, Tusks, Wings of Light, Overwhelm, Thrive in Chaos, Death Strike, Toxic Concoctions, Weapon Specialist, Marked for Death) apply in the same group; costs and limits as useFeature"
+          - "Automatic riders run without a click: Sneak Attack when Cloaked or a PC or ally token is within Melee of the target (Q9), Face Your Fear on a success with Fear, First Strike once per scene (Q7), Pummeljoy on a Melee weapon crit, Onslaught as today"
+          - "After-roll step (Q1): only when an eligible after-roll feature is ready and affordable (Patron's Boon, Witch's Charm, Luckbender, Fearless, Unbound, True Strike, Adaptability, Internal Compass, Prayer Dice, Ranger's Focus reroll; Volatile Magic and Fearsome Attack after the damage roll), the attack waits as a pending request showing Hit / Miss only (U1); Use or Pass resolves it; the GM can Resolve now; otherwise it resolves at once as today"
+          - "Cloaked ends after the rogue attacks or when their token ends a move in line of sight of a revealed adversary token (Q9, CB p.42 quoted)"
+          - "The Attack bar lists the rider toggles with their costs; at 760 px and below in the bottom sheet; unit test; e2e: a rogue's Sneak Attack from positions, a ranger's Hold Them Off, a warlock's Patron's Boon after a miss, Rage Up finally usable"
+          - "pnpm lint, typecheck, vitest and the combat e2e specs pass; tracer-guard passes"
+      - id: SD6
+        title: Drawer UI shell - Sheet button, drawer, trackers, feature list, full-sheet link
+        size: M
+        goal: The Sheet button opens a right-side drawer over the live map (full screen at 760 px and below) with the HP / Stress / Hope / Armor trackers and every owned feature grouped by source with its state, badges and Use button; closing returns to the same map view.
+        depends_on: [SD3]
+        owns:
+          - src/components/combat-map/drawer/*.tsx
+          - src/components/combat-map/drawer/*.css
+          - src/components/combat-map/drawer/trackers/**
+          - src/components/combat-map/drawer/list/**
+          - tests/unit/sheet-drawer.test.tsx
+          - tests/e2e/sheet-drawer.spec.ts
+          - tests/e2e/visual/SD-SD6.spec.ts
+          - docs/tasks/TASK-SD-SD6.md
+        reads:
+          - convex/combatFeatures.ts
+          - convex/characters.ts
+          - src/components/combat-map/**
+          - src/components/party/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/**
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "The drawer is a modal dialog (role dialog, labelled, focus trap, Esc closes, focus returns to the Sheet button); the map stays mounted and live behind it (no remount, no key= on live content, CL rules); full screen at 760 px and below"
+          - "Trackers use the sheet's existing intent mutations (characters.adjustResource and the armor intent) with optimistic updates (rule 12), the same limits as the sheet"
+          - "Sections in order: Hope feature, class features, subclass cards (rank locks), ancestry, community, transformation (Q11), Beastform and stance controls (Q5, Q10), 'Other features' (Q15: text, existing D5 Use, rest-time features marked 'applied at rest'), Flying toggle when a flying feature is held (Q16); each feature shows its badge (Use / Reaction / With an attack / Automatic / Passive / text), cost and limit badges, greyed when exhausted with the reset label; 'Full sheet' links to the Party sheet"
+          - "Each useQuery subtree is inside an error boundary (rule 11); loading and empty states; the GM's view of a PC is greyed until CA6's 'Play for this character' switch"
+          - "Unit tests; visual spec at 1280, 1024x768, 768x1024 and 390 px; e2e opens, uses a tracker and closes without the map losing its pan / zoom or selection"
+          - "pnpm lint, typecheck, vitest and the drawer e2e pass; tracer-guard passes"
+      - id: SD8
+        title: Scene end, rest and session timing for feature limits, effects and tokens
+        size: M
+        goal: Scene limits and scene effects come back and end when the encounter ends, when the GM presses End scene, or at session end (Q7), and feature tokens and timings (Toxic Concoctions, Enchanted Talisman, Walk Between Worlds, stances' Focus) follow their rest and long-rest rules.
+        depends_on: [SD3]
+        owns:
+          - src/lib/domain/class-features/classes/seraph.ts
+          - src/lib/domain/characters/expiry.ts
+          - convex/encounters.ts
+          - convex/combatScenes.ts
+          - convex/lib/cardHand.ts
+          - convex/lib/restHooks.ts
+          - src/components/combat-map/actions/scene/**
+          - src/components/adversaries/tracker/top-bar.tsx
+          - tests/convex/feature-hooks.test.ts
+          - tests/unit/expiry-scene.test.ts
+          - tests/convex/authz/scenes.entries.ts
+          - tests/convex/authz/scenes.test.ts
+          - docs/tasks/TASK-SD-SD8.md
+        reads:
+          - convex/rests.ts
+          - convex/sessions.ts
+          - src/lib/domain/feature-effects/**
+          - src/lib/srd/feature-effects/**
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "Devout (Divine Wielder upgrade): the seraph session-start Prayer Dice roll one extra die and discard the lowest (SD1 follow-up)"
+          - "expire(sheet, 'scene') ends featureUses with until scene and effects with until scene; session end also ends the scene; rest and long rest behave as before (Q3); unit tests"
+          - "combatScenes.end (GM, keyed) expires the scene for every PC of the campaign in one mutation with one undoable actionLog group; ending the running encounter does the same (Q7, CB p.107 quoted); bead dcm-bxp.117 closed"
+          - "runRestTiming covers feature timing triggers and tokens (clear at rest / long rest as each text says); D5 onRest / onSessionEnd hooks still run once"
+          - "End scene buttons on the Combat Map GM column and the Encounter tab top bar; authz entries for combatScenes.end"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: SD-R
+        title: Rest-time heritage features in the rest flow (Q15 b) - Hardy, Efficient, Celestial Trance, Oasis
+        size: M
+        answers: [Q15]
+        goal: When a rest finishes or a downtime move is picked, the rest flow applies the rest-time heritage features a character holds - Frostborne Hardy clears a Hit Point on any rest, Clank Efficient lets a short rest pick a long rest move, Elf Celestial Trance adds one downtime move, Duneborne Oasis lets the character or an ally reroll a downtime die on a short rest and keep the higher result.
+        depends_on: [SD1, FE-ancestry-core, FE-heritage-hf]
+        owns:
+          - convex/rests.ts
+          - src/lib/domain/rest/feature-moves.ts
+          - src/components/party/rest/**
+          - tests/convex/rests-features.test.ts
+          - tests/unit/rest-feature-moves.test.ts
+          - docs/tasks/TASK-SD-SD-R.md
+        reads:
+          - src/lib/domain/rest/**
+          - convex/lib/restHooks.ts
+          - src/lib/domain/feature-effects/**
+          - src/lib/srd/feature-effects/**
+          - src/lib/srd/heritage.ts
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "feature-moves.ts (pure) reads owned() and the rest-trigger entries: Hardy clears 1 HP at the end of any rest (HF p.29 quoted); Efficient offers the long rest moves on a short rest (CB p.53); Celestial Trance adds one downtime move slot (CB p.56); Oasis offers a reroll of one downtime-move die on a short rest, for the holder or an ally, keeping the higher result (HF p.27); mixed ancestries resolve through owned(); unit tests with book texts"
+          - "convex/rests.ts applies them in the existing rest mutations (one transaction, the rest's actionLog group, undoable as rests are today); every existing rests test passes unchanged; convex tests per feature incl. an interrupted long rest counting as a short rest (CB p.105)"
+          - "The rest picker shows the extra move slot, the long-rest moves for Efficient and an Oasis 'Reroll (keep higher)' button on a rolled downtime die; 44 px targets; unit test"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 5: drawer Use flow and the answer-dependent integrations
+  - wave: 5
+    tracers:
+      - id: SD7
+        title: Drawer Use flow - choices, targets, results, GM sanctions
+        size: M
+        goal: Use on a drawer feature asks only what the feature needs (choices, targets on the map, situation confirmation, times), fires useFeature once, shows the result as the Hand does (hit / miss only), and the GM approves or declines out-of-range feature uses from the same pending list as cards.
+        # CROSS-PLAN: run after hand-fan HF1 is merged (it reuses the Hand dialog and result view HF1 is changing).
+        depends_on: [SD6, SD5]
+        owns:
+          - src/components/combat-map/drawer/use/**
+          - src/components/combat-map/actions/gm/**
+          - tests/unit/drawer-use.test.tsx
+          - tests/e2e/sheet-drawer-use.spec.ts
+          - docs/tasks/TASK-SD-SD7.md
+        reads:
+          - src/components/combat-map/actions/hand/**
+          - src/components/combat-map/drawer/**
+          - src/components/cards/**
+          - convex/combatFeatures.ts
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "Use reuses the Hand's choices dialog, target picking on map tokens (the drawer slides aside while picking on phones), roll options and result view; a feature with nothing to ask fires at once"
+          - "Situational features show the confirmation check box (Q13); repeatable features a times stepper (CB p.107); self and ally features work without a live map"
+          - "The GM's pending list shows feature sanctions next to card sanctions with Approve / Decline"
+          - "e2e: a Bard's Make a Scene Distracts a Bandit (players see Hit only), a Seraph's Life Support heals an ally token, Rousing Speech clears allies' Stress, a once-per-long-rest feature greys out and returns after a GM long rest, GM undo; at desktop and 390 px"
+          - "pnpm lint, typecheck, vitest and the drawer e2e pass; tracer-guard passes"
+      - id: SD-C
+        title: Beastbound companion on the map (Q4)
+        size: M
+        answers: [Q4]
+        goal: A Beastbound ranger places their companion as an ally token, commands it from the drawer (Spellcast Roll, then its attack with the ranger's Proficiency and its die), adversaries can attack it (any damage marks a Stress), and Battle-Bonded and Loyal Friend read its position.
+        depends_on: [SD6, SD4]
+        owns:
+          - convex/combatCompanion.ts
+          - convex/lib/companion.ts
+          - src/components/combat-map/actions/companion/**
+          - tests/convex/combat-companion.test.ts
+          - tests/convex/authz/companion.entries.ts
+          - tests/convex/authz/companion.test.ts
+          - tests/e2e/combat-companion.spec.ts
+          - docs/tasks/TASK-SD-SD-C.md
+        reads:
+          - src/lib/frames/extras/companion.ts
+          - convex/characterExtras.ts
+          - convex/combatTokens.ts
+          - convex/lib/combatActions.ts
+          - convex/lib/adversaryActions.ts
+          - src/lib/srd/feature-effects/ranger-rogue.ts
+        acceptance:
+          - "combatCompanion.place / command (need edit on the ranger): one companion token per ranger with ref kind companion; command makes the Spellcast Roll (CB p.40 quoted), then the companion's attack from its token (range, die, damage type from its sheet; Ranger's Focus applies); public rows hit / miss only (U1)"
+          - "Adversary attacks can target the companion token against its Evasion; any damage marks 1 Stress; at full Stress it leaves the scene until the next long rest (CB p.41)"
+          - "Battle-Bonded +2 Evasion when the attacker is within the companion's Melee range; Loyal Friend in the reaction window; authz entries; e2e"
+          - "pnpm lint, typecheck, vitest and the companion e2e pass; tracer-guard passes"
+      - id: SD-A
+        title: Map areas and auras (Q14)
+        size: L
+        answers: [Q14]
+        goal: Area features (Circle of Power, Moonbeam, Elemental Aura, Dark Cloud) create a map area whose members are worked out from token positions at each roll; Dark Cloud blocks line of sight; the GM can remove an area; areas end with their duration.
+        depends_on: [SD6, SD5]
+        owns:
+          - convex/lib/combatMaps.ts
+          - convex/combatAreas.ts
+          - convex/lib/featureAreas.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/combatVision.ts
+          - src/lib/domain/feature-effects/areas.ts
+          - src/components/combat-map/actions/areas/**
+          - tests/convex/combat-areas.test.ts
+          - tests/unit/feature-areas.test.ts
+          - tests/convex/authz/areas.entries.ts
+          - tests/convex/authz/areas.test.ts
+          - tests/e2e/combat-areas.spec.ts
+          - docs/tasks/TASK-SD-SD-A.md
+        reads:
+          - src/lib/domain/combat-map/**
+          - src/lib/domain/combat-actions/**
+          - src/components/combat-map/**
+          - src/lib/srd/feature-effects/**
+        acceptance:
+          - "Using an area feature writes a combatAreas row (centre on the caster's token or a picked square, radius band, blocksSight); the runner context gets area membership from token footprints at each roll (Circle of Power +2 thresholds, attack and Evasion inside and a token per roll or evade, HF p.16 quoted; Moonbeam +1 Spellcast; Elemental Aura's element effects)"
+          - "Dark Cloud blocks sight in and out in the vision engine (CB p.42 quoted); the rogue counts as Cloaked from adversaries it blocks"
+          - "Areas render as an overlay on the map for everyone who can see them; combatAreas.remove (GM); areas end at their duration (scene, rest) through SD8's events and the SD0 cron"
+          - "pnpm lint, typecheck, vitest and the areas e2e pass; tracer-guard passes"
+      - id: SD-H
+        title: Named Help an Ally and its features (Q12)
+        size: M
+        answers: [Q12]
+        goal: A PC helps a named ally from their drawer (paying their Hope, or nothing with Eloquent), the ally's next action roll uses that advantage die (d6, d8 with Enchanted Aid, d10 with Epic Poetry), and Enchanted Aid's Duality swap is offered to the helper; anonymous Help dice stay available.
+        # CROSS-PLAN: starts only after hand-fan HF1 is merged (HF1 owns actions/hand/**, which includes roll-options.tsx).
+        depends_on: [SD6, SD5]
+        owns:
+          - convex/lib/rolls.ts
+          - convex/rolls.ts
+          - convex/lib/help.ts
+          - src/components/combat-map/drawer/help/**
+          - src/components/combat-map/actions/hand/roll-options.tsx
+          - src/components/party/dice/**
+          - tests/convex/help-ally.test.ts
+          - tests/unit/help-ally.test.tsx
+          - tests/convex/authz/help.entries.ts
+          - tests/convex/authz/help.test.ts
+          - docs/tasks/TASK-SD-SD-H.md
+        reads:
+          - convex/combatFeatures.ts
+          - src/lib/srd/feature-effects/**
+          - src/lib/domain/dice/index.ts
+        acceptance:
+          - "rolls.offerHelp (keyed, need edit on the helper; logic in convex/lib/help.ts) records a pending help die {helper, ally, sides} after paying the helper's Hope (CB p.90 quoted); the ally's next action roll on the map or the sheet consumes it; every existing rolls test passes untouched"
+          - "Eloquent's free Help (once per session), Epic Poetry d10, Enchanted Aid d8 and its once-per-long-rest swap after a helped Spellcast Roll; Camaraderie's Tag Team changes in rolls.tagTeam; authz entries for rolls.offerHelp"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 6: end to end, accessibility, tablet, live
+  - wave: 6
+    tracers:
+      - id: SD9
+        title: Sheet drawer end to end, feature coverage, accessibility, tablet, live two-browser and recorded rulings
+        size: M
+        goal: The whole drawer flow is checked end to end for players and the GM, every classified feature runs through the runner, the drawer passes axe and the tablet specs, a second browser sees changes live, and docs/game-interpretation.md records Q1-Q16.
+        depends_on: [SD2, SD4, SD5, SD7, SD8, SD-R, SD-C, SD-A, SD-H, FE-beastforms, FE-transformations, FE-stances]
+        owns:
+          - tests/e2e/sheet-drawer-flow.spec.ts
+          - tests/e2e/a11y-sheet-drawer.spec.ts
+          - tests/e2e/live-sheet-drawer.spec.ts
+          - tests/unit/feature-effects/coverage.test.ts
+          - docs/game-interpretation.md
+          - docs/tasks/TASK-SD-SD9.md
+        reads:
+          - src/components/combat-map/**
+          - convex/combatFeatures.ts
+          - src/lib/srd/feature-effects/**
+          - tests/e2e/a11y.ts
+          - tests/e2e/live.ts
+          - .omc/autopilot/sheet-drawer-analysis.md
+        acceptance:
+          - "coverage.test.ts: every feature classified combat or passive (217 + 45 + 12 + 16 per the answers) has an entry and runs through runFeature without throwing; it prints the manual-step count per group"
+          - "Flow e2e (two players and a GM): a Hope feature on an enemy, a reaction in the window, an attack rider, an after-roll reroll, a passive changing Evasion, a once-per-scene feature returning at End scene, GM undo; player network responses contain no enemy hp, stress, major, severe or difficulty field (U1)"
+          - "a11y-sheet-drawer.spec.ts: zero serious or critical axe findings on the open drawer, its Use dialog and the before-roll / after-roll prompts; no sideways scroll and 44 px touch targets at 768x1024 and 1024x768; full-screen drawer at 390 px"
+          - "live-sheet-drawer.spec.ts: the GM and a player side by side; a feature used in the player's drawer updates the GM's token card and feed, and a GM rest greys back in the player's drawer, without a reload"
+          - "docs/game-interpretation.md records Q1-Q16 with the user's answers (Q15 b) and the quoted pages; the flow e2e also finishes a short rest for a Frostborne Clank (Hardy, Efficient)"
+          - "pnpm lint, typecheck, vitest and the full e2e suite pass; tracer-guard passes"

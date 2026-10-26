@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Journey to Horizon Tome · Open Book</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a1416}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/b0cd8d347b032b78f2c527ddcce21f51);background-size:cover;background-position:center;background-repeat:no-repeat}
+.ww-dim{filter:blur(4px) brightness(0.45);transform:scale(1.05)}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+<sc-if value="{{ standalone }}" hint-placeholder-val="{{ true }}"><div class="ww-bg ww-dim" aria-hidden="true" style="position: absolute; inset: 0"></div></sc-if>
+
+<sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-modal="true" aria-labelledby="tomeA-title" style="position: relative; width: 100%; max-width: 1240px; height: 880px; background: #3b2b1d; border: 1px solid #5c4430; border-radius: 16px; padding: 18px; box-sizing: border-box; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); display: flex">
+
+<button type="button" onClick="{{ close }}" aria-label="Close tome" style="position: absolute; top: -18px; right: -18px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+<div aria-hidden="true" style="position: absolute; top: 0; right: 140px; width: 28px; height: 140px; background: #8e2b2b; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); z-index: 1"></div>
+
+<div style="flex: 1; display: flex; background: #efe3c8; border-radius: 6px; overflow: hidden; min-width: 0">
+
+<div style="flex: 0 0 38%; padding: 48px 40px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid #d3c19c; box-shadow: inset -28px 0 34px -26px rgba(90, 60, 20, 0.4)">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: #7a5b2e">Campaign Frame · Hope &amp; Fear</div>
+<h2 id="tomeA-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 46px; line-height: 1.05; font-weight: 900; color: #2a1f14">Journey to Horizon</h2>
+<svg width="220" height="14" viewBox="0 0 220 14" aria-hidden="true"><path d="M0 7h96M124 7h96" stroke="#a68352" stroke-width="1.2"></path><path d="M110 1l6 6-6 6-6-6z" fill="#8e2b2b"></path></svg>
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a5b2e">Contents</div>
+<nav aria-label="Chapters" style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{ t.pick }}" aria-current="{{ t.current }}" style="{{ t.style }}"><span style="font-family: 'Cinzel', serif; font-size: 18px; width: 40px; color: #8e2b2b">{{ t.roman }}</span><span style="flex: 1">{{ t.title }}</span></button>
+</sc-for>
+</nav>
+<div class="ww-bg" aria-hidden="true" style="margin-top: auto; height: 170px; border-radius: 100px 100px 8px 8px; border: 3px double #a68352"></div>
+<div style="padding: 14px 16px; border: 1px solid #cdb88f; border-radius: 6px; background: #e8d9b8; font-size: 16px; line-height: 1.5; font-style: italic; color: #4a3a26"><span style="font-style: normal; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.18em; color: #7a5b2e; display: block; margin-bottom: 4px">FOR THE GAME MASTER</span>{{ cur.note }}</div>
+</div>
+
+<div style="flex: 1; min-width: 0; padding: 48px 56px 28px 52px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<span style="font-family: 'Cinzel', serif; font-size: 22px; color: #8e2b2b">{{ cur.roman }}.</span>
+<h3 style="margin: 0; font-family: 'Cinzel', serif; font-size: 32px; font-weight: 700; color: #2a1f14">{{ cur.title }}</h3>
+</div>
+<sc-if value="{{ cur.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-family: 'Cinzel', serif; font-size: 18px; color: #6a4a22; margin-top: -8px">{{ cur.sub }}</div></sc-if>
+<div style="height: 1px; background: #cdb88f"></div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 14px; font-size: 19px; line-height: 1.65; color: #2a1f14; display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{ hasFigures }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; color: #7a5b2e">KEY FIGURES</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px">
+<sc-for list="{{ keyFigures }}" as="k" hint-placeholder-count="3"><div style="padding: 12px 14px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 6px; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.25">{{ k.name }}</span><span style="font-size: 14px; color: #6a5236">{{ k.role }}</span><span style="font-size: 15px; line-height: 1.4">{{ k.line }}</span></div></sc-for>
+</div>
+<div style="align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: #2f4a3a; color: #eef3ea; font-size: 15px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>Start: {{ startAt }}</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMechanics }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+<div style="display: flex; gap: 14px; padding: 14px 16px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 8px">
+<span style="width: 32px; height: 32px; flex: none; border-radius: 50%; border: 2px solid #8e2b2b; color: #8e2b2b; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; font-size: 15px">{{ r.n }}</span>
+<div style="display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700">{{ r.head }}</span><span style="font-size: 18px; line-height: 1.55; white-space: pre-line">{{ r.t }}</span></div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ isProse }}" hint-placeholder-val="{{ true }}">
+<p style="margin: 0"><span style="float: left; font-family: 'Cinzel', serif; font-size: 70px; line-height: 0.82; padding: 8px 10px 0 0; color: #8e2b2b">{{ cur.cap }}</span>{{ cur.capRest }}</p>
+<sc-if value="{{ isOverview }}" hint-placeholder-val="{{ false }}"><blockquote style="margin: 4px 0; padding: 6px 0 6px 20px; border-left: 3px solid #8e2b2b; font-family: 'Cinzel', serif; font-size: 21px; line-height: 1.4; color: #5a2a1a">{{ pullQuote }}</blockquote></sc-if>
+<sc-for list="{{ cur.rest }}" as="p" hint-placeholder-count="4"><p style="margin: 0; text-indent: 1.4em">{{ p.t }}</p></sc-for>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #cdb88f; padding-top: 14px">
+<div style="min-width: 160px"><sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goPrev }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">‹ {{ prevTitle }}</button></sc-if></div>
+<span style="font-family: 'Cinzel', serif; font-size: 14px; color: #8a7350">— {{ cur.roman }} —</span>
+<div style="min-width: 160px; display: flex; justify-content: flex-end"><sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goNext }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">{{ nextTitle }} ›</button></sc-if></div>
+</div>
+</div>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ closed }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ reopen }}" style="position: relative; min-height: 56px; padding: 0 32px; border-radius: 999px; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.12em; cursor: pointer">Open the Tome</button>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startChapter":{"editor":"enum","options":["overview","incident","mechanics"],"default":"overview"},"embedded":{"editor":null,"default":false},"onClose":{"editor":null},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ids = ['overview', 'incident', 'mechanics'];
+    const idx = st.idx ?? Math.max(0, ids.indexOf(this.props.startChapter ?? 'overview'));
+    const open = st.open ?? true;
+    const chapters = [{"roman": "I", "title": "Overview", "note": "Share this with your players before they build characters. Summarized here; full text in the Hope & Fear, p. 159.", "paras": ["The goddess Aurelia raised the continent of Valloren from the sea and shaped wondrous landscapes using terrana, a renewable magical essence. She chose thirteen magi to watch over it, and an Age of Wonder followed.", "Two of the magi, the Lovers Yrska and Drago, used terrana recklessly to build ever-grander cities and rebelled when Aurelia told them to stop. They won the other magi over one by one. With terrana nearly exhausted and her side cornered on the eastern coast, Aurelia sacrificed herself: she sealed her shrines behind barriers and brought down the stars, wiping out all thirteen traitors. As she died, she promised to return.", "That catastrophe, the Starfall, devastated the land. For a thousand years—the Long Sorrow—survivors lived sealed inside isolated sanctuaries. When the barriers finally opened, they found New Valloren: wild, transformed by surging terrana, and poisoned by shadowblight seeping from the craters where stars fell, which spawns monsters.", "High Priestess Saraya of the Marrogate sanctuary found a Soul Echo, a fragment of Aurelia's essence. She learned that collecting the Echoes scattered across Valloren and carrying them to the place Aurelia died could bring her back, and she made a Vessel of Light to hold them.", "Enemies are moving. The Cult of the Two-Headed Coin, which worships the Lovers, has planted Fellsworn Templars inside Saraya's order, and shadowy Seekers-in-Shadow are appearing everywhere. When the Templars strike, Saraya hands the Vessel to the PCs and gives her life to cover their escape. Now they must cross a hostile continent, resting only in sanctuaries, to revive the goddess."]}, {"roman": "II", "title": "The Inciting Incident", "note": "A suggested opening scene; adapt it or write your own. Adjust the Soul Echo and Vessel to match your table's descriptions. Summarized here; full text in the Hope & Fear, p. 168.", "paras": ["Setup: Soon after the sanctuary walls fell, Saraya Rinn, a high priestess of the Aurelian Order, found Aurelia's Soul Echo at Marrogate's central shrine. She spent weeks making the Vessel of Light, then planned the trip to the Cliffs of Horizon with her apprentice Tolren and chose local citizens to guard it.", "On departure day, armed priests surround her and Tolren reveals he is a Fellsworn Templar loyal to the Lovers. None of her messages went out and no allies are waiting; he only tipped off the cult so they could take the Vessel.", "Saraya calls on terrana to make plants erupt through the shrine floor, tangling the attackers and bringing the building down. In the confusion, she gives the Vessel to the party, makes them swear to bring it to Horizon, and tells them to find Abbot Kensington in nearby Cinteri.", "Open questions: How will the party slip past the Templars searching the sanctuary? Who can they trust to help them escape? Once outside, will they go straight to Cinteri or take a riskier route to throw off pursuit?"]}, {"roman": "III", "title": "Campaign Mechanics", "sub": "The Hex Crawl", "note": "Rules that apply only to this campaign frame. Summarized here; full text in the Hope & Fear, pp. 169–179.", "paras": [""]}];
+    const rules = [{"n": "1", "head": "The Hex Crawl", "t": "Travel across New Valloren uses a hex map, with each hex roughly 24 miles across (adjust as the story needs). The party moves between sanctuaries one hex at a time and deals with encounters along the way. In the wilderness they can take up to three short rests but no long rests, so they need to manage resources carefully.\n\nThe procedure exists to support the story, not replace it: long stretches of travel go by in montage, with a few scenes played out in detail. Bring players in by asking about rumors, strange sounds in the night, people they know nearby, or old legends of the region. Change or drop rules whenever the story calls for it."}, {"n": "2", "head": "Journeys in Valloren", "t": "The goal is to find nine shrines holding Aurelia's remaining Soul Echoes, add each to the Vessel, and bring the Vessel to the Cliffs of Horizon. Use two copies of the map. The GM's key map records each hex's habitat, terrain, and points of interest or encounters. The players' map shows only sanctuaries and pre-Sorrow geography, and the players fill it in as they explore."}, {"n": "3", "head": "Preparing the GM's Key Map", "t": "Fill in hexes by choosing, rolling, or a mix of both. You only need to prepare the areas the party will probably reach in the next session or two.\n\nPlacing Soul Echoes: before play, choose nine sanctuaries to hold Echoes. Spread them across the continent without an obvious pattern, and roughly from west to east, so early Echoes come quickly and the last one is near Horizon.\n\nFilling wilderness hexes, one region at a time: roll d20 for habitat, d12 for size in contiguous hexes (don't enclose empty hexes), d8+d6 for a signature encounter, d4 for terrain, which sets the days needed to enter each hex, and d100 for a rumor whose truth you decide."}, {"n": "4", "head": "Example Region Generation", "t": "A worked example (p. 170): a GM rolls a small forest region with extreme terrain, a Cult of the Two-Headed Coin encounter, and a rumor about a half-buried clockwork machine. He places the region across the party's most direct route, makes the machine an Age of Wonder relic the cult is after, and plans the fight with the Battle Point system."}, {"n": "5", "head": "Habitat (d20)", "t": "This table sets a region's main habitat: 1 Shadowblighted (roll again for the corrupted habitat; a second 1 means it's almost impassable), 2 Underground, 3–4 Aquatic, 5–6 Wetland, 7–8 Grassland, 9–10 Tropical, 11–12 Forest, 13–14 Drylands, 15–16 Rolling, 17–18 Mountain, 19 Frozen, 20 Badlands. Each entry lists example biomes. Because of terrana, very different biomes can sit side by side, and ordinary lakes and rivers don't need to be tracked. See p. 170."}, {"n": "6", "head": "Encounter (d8 + d6)", "t": "This table gives a 2–14 bell curve of encounter types meant to keep the wilderness dangerous. Results include rolling twice and combining, other travelers, setbacks (optionally the GM gains a Fear per PC), Seekers-in-Shadow, extreme weather, hostile people, a beast's territory, environmental hazards, the Cult, a remarkable site, good luck (optionally each PC gains a Hope), a settlement, and hidden loot. Use them as starting points. See p. 171."}, {"n": "7", "head": "Terrain (d4)", "t": "Terrain sets how many days it takes to enter a hex and is usually the same across a region: 1 Optimal (roads; about 1 day; more fellow travelers), 2 Fair (trails; 2 days), 3 Rough (game tracks and undergrowth; 3 days), 4 Extreme (cliffs, bogs, trackless wilds; 4 days, and may need gear or magic). See p. 171."}, {"n": "8", "head": "Rumors (d100)", "t": "A table of 100 short, strange region hooks. You decide whether each is true, false or partly true, whether the party has heard it, and how they heard it, such as at a sanctuary, from a merchant, or from signs on the road. Full table on pp. 172–173."}, {"n": "9", "head": "Dice Tables for Creating Sanctuaries", "t": "Generate a sanctuary by rolling d20 Trade & Exports, d12 Quirk (customs, art, taboos and the like), d10 Crisis, d10 Drive, d8 Political System, d6 Size (isolated dwelling up to city), and d4 Population (sparse to crowded). Then weave the results into one story. The worked example turns the rolls into a declining port town known for terrana liquors and painted murals, run by a corrupt merchant guild and trying to rebuild its reputation. Build each sanctuary before the session where the party will arrive. Tables on p. 174."}, {"n": "10", "head": "Settlement Name (d100×2)", "t": "Roll d100 twice on a table of name parts and combine one element from each roll to name a settlement, sanctuary or landmark. Table on p. 175."}, {"n": "11", "head": "Tracking the Party's Location", "t": "The players mark their progress on their own map. The PCs are skilled pathfinders, so they know what's in their current hex and the adjacent ones, including any visible landmarks there. The GM decides how much else to tell them."}, {"n": "12", "head": "Travel Days", "t": "A normal travel day is: break camp before dawn, travel about 6–8 hours, stop at midday, travel another 6–8 hours until dusk, then make camp and set a watch. Scouting, foraging, repairs and keeping watch happen in the background. Play them out only if the table enjoys it."}, {"n": "13", "head": "Resting", "t": "There is no ration tracking; rests stand in for supplies. In the wilderness, a short rest means spending a whole day in one place. A long rest takes several days and is only possible inside a sanctuary. Sleeping at night is fiction only and gives no mechanical rest. After three short rests in a row, the next rest must be a long rest (core p. 105), so the party has to head back to civilization to recover fully.\n\nSpecial downtime move, Locate Soul Echoes: a PC communes with the Vessel and learns the general compass direction of the nearest sanctuary holding an Echo. At the GM's discretion, this can also alert nearby Seekers-in-Shadow to the Vessel's general direction."}, {"n": "14", "head": "Encounter Rolls", "t": "When the party enters a hex, roll d6s equal to its terrain rating. Any 1 triggers the region's prepared encounter; otherwise the GM can spend a Fear to trigger one anyway. Use d4s for more dangerous areas or d8s for safer ones. If a region triggers more than once, roll a new encounter or borrow and reskin one from a region the party is skipping. A worked example is on p. 176.\n\nOptional Endurance Countdowns: after a rest, each PC starts an Endurance Countdown (6). On entering a wilderness hex, each player rolls their Hope Die: a result at or below the countdown's current value means they mark a Stress; otherwise the countdown ticks down. When it triggers, the PC is Vulnerable until their next rest. All countdowns end when a rest begins.\n\nWhen disaster looms: if the party is stranded with no short rests and every HP and Stress marked, the GM chooses the outcome. Options include the quest failing, a new party taking up the Vessel (possibly years later), or a rescue or capture that costs them the Vessel and sets up a mission to get it back."}, {"n": "15", "head": "Traveling over Water", "t": "Water travel uses the overland rules with a few changes. Rivers: with a boat and a navigable waterway, going downstream lowers a hex's terrain rating by 1, and going upstream adds a day. Ocean: with a ship, roll a d4 for weather on entering each hex, and the result is the number of days it takes (1 tailwind, 2 fair, 3 rough water, 4 extreme weather). Describe how hard the crew work wears the PCs down."}, {"n": "16", "head": "Character Advancement", "t": "The party levels up each time they add a Soul Echo to the Vessel. They start with one Echo and collect nine more, which takes them from level 1 to level 10."}, {"n": "17", "head": "Doom Track", "t": "The Doom Track (in the appendix, or downloadable) tracks disasters spreading across New Valloren. At the end of each session, mark one box at or below the party's tier; a nested box can only be marked after the box it hangs from. Work each marked event into play when it makes sense, at least once and possibly more. Skip a mark when the heroes push back the darkness, or add extra marks when they dawdle or let evil spread, such as a sanctuary falling to the Cult. It's paced for about 30–40 sessions, so adjust for a shorter or longer campaign."}, {"n": "18", "head": "Campaign Adversaries", "t": "There are two features you can add to any adversary. Shadowblighted (Passive): the creature is visibly corrupted, and in or near shadowblight it crits on 18–20. Terranamancer (Passive): the adversary marks a Stress to use a spell tied to the local habitat. Options include Heat, Overgrowth, Wind, Ice (inflicts Frostbitten, −1 Proficiency), Poison (inflicts Nauseated, no Hope gain), Stone (threshold bonus) and Water. Damage dice scale with the adversary's tier. Details on p. 178."}, {"n": "19", "head": "Full Gameplay Example", "t": "A detailed two-page walkthrough (pp. 178–179) follows a party leaving one sanctuary for another 10 hexes away that may hold an Echo. It shows route choices between terrain types, encounter rolls, rests and Endurance Countdowns in action, with map illustrations that use fog of war."}];
+    const FIG = [{"name": "Saraya Rinn", "role": "Aurelian high priestess", "line": "Discovered the Echo and sacrifices herself to save the Vessel."}, {"name": "Tolren", "role": "Traitorous apprentice, Fellsworn Templar", "line": "Betrays Saraya to the Lovers' cult."}, {"name": "Abbot Kensington", "role": "Potential ally in Cinteri", "line": "The contact Saraya sends the party to find."}];
+    const c = chapters[idx];
+    const p0 = c.paras[0] || ''; const cur = { ...c, hasSub: !!c.sub, cap: p0.charAt(0), capRest: p0.slice(1), rest: c.paras.slice(1).map((t) => ({ t })) };
+    const tabs = chapters.map((ch, i) => {
+      const on = i === idx;
+      return { roman: ch.roman, title: ch.title, current: on ? 'page' : 'false', pick: () => this.setState({ idx: i }),
+        style: 'min-height: 48px; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 4px; text-align: left; cursor: pointer; font-family: inherit; font-size: 20px; color: #2a1f14; border: none; border-left: 3px solid ' + (on ? '#8e2b2b' : 'transparent') + '; background: ' + (on ? '#e3d2ad' : 'transparent') + '; font-weight: ' + (on ? '500' : '400') + ';' };
+    });
+    return {
+      open, closed: !open, cur, tabs, rules, keyFigures: FIG, hasFigures: idx === 1 && FIG.length > 0, startAt: "The shrine of Marrogate sanctuary, at Valloren's southwestern tip", pullQuote: "Carry the goddess home, one hex at a time.", mechIntro: "Rules that apply only to this campaign frame.",
+      isOverview: idx === 0 && true, isIncident: idx === 1, isMechanics: idx === 2, isProse: idx !== 2,
+      hasPrev: idx > 0, hasNext: idx < chapters.length - 1,
+      prevTitle: idx > 0 ? chapters[idx - 1].title : '', nextTitle: idx < chapters.length - 1 ? chapters[idx + 1].title : '',
+      goPrev: () => this.setState({ idx: Math.max(0, idx - 1) }),
+      goNext: () => this.setState({ idx: Math.min(chapters.length - 1, idx + 1) }),
+      standalone: !this.props.embedded,
+      rootStyle: 'position: relative; min-height: 100vh; ' + (this.props.embedded ? 'background: transparent; ' : 'background: #0a1416; ') + 'color: #2a1f14; font-family: \'EB Garamond\', serif; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 32px; overflow: hidden',
+      close: () => (this.props.onClose ? this.props.onClose() : this.setState({ open: false })),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

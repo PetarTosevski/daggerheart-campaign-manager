@@ -1,0 +1,161 @@
+/*
+ * Editing a map by hand (D9 C5): the board's "Edit by hand" card, the selected-object card and the edit overlay
+ * on the map. Shared tokens and classes come from the page's combat-map.css (C0).
+ */
+
+.cm-ed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cm-ed-tools,
+.cm-ed-kinds,
+.cm-ed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cm-ed-kinds,
+.cm-ed-row {
+  gap: 4px;
+}
+.cm-ed-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cm-ed-terrains {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+.cm-btn.cm-ed-terrain {
+  justify-content: flex-start;
+  text-transform: capitalize;
+}
+.cm-ed-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  flex: none;
+}
+.cm-ed-brushes {
+  gap: 6px;
+}
+.cm-ed-push {
+  margin-left: auto;
+}
+.cm-ed-start {
+  align-self: flex-start;
+}
+.cm-ed-obj {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #0b1214;
+  border: 1px solid var(--cm-acc);
+}
+.cm-ed-obj-name {
+  font-family: var(--font-cinzel), "Cinzel", serif;
+}
+.cm-ed-note {
+  font-size: 13px;
+}
+.cm-linkbtn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--cm-acc-soft);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.cm-linkbtn:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 2px;
+}
+
+/* The overlay over the map in Edit: lets every pointer through with Move view, takes the left button otherwise. */
+.cm-ed-layer {
+  position: absolute;
+  touch-action: none;
+}
+.cm-ed-layer.cm-ed-tool-pan {
+  pointer-events: none;
+}
+.cm-ed-layer.cm-ed-tool-terrain,
+.cm-ed-layer.cm-ed-tool-block,
+.cm-ed-layer.cm-ed-tool-erase {
+  cursor: crosshair;
+}
+.cm-ed-layer.cm-ed-tool-object {
+  cursor: copy;
+}
+.cm-ed-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Sprites style (sprite packs P9): the sprite and texture pickers, thumbnails on a checkerboard (sprites are cut out). */
+.cm-ed-sprites-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.cm-ed-sprites {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+.cm-btn.cm-ed-sprite {
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  text-align: left;
+}
+.cm-ed-sprite-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cm-ed-thumb {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 4px;
+  background-color: #2a3438;
+  background-image:
+    linear-gradient(45deg, #1d2629 25%, transparent 25%), linear-gradient(-45deg, #1d2629 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1d2629 75%), linear-gradient(-45deg, transparent 75%, #1d2629 75%);
+  background-size: 8px 8px;
+  background-position:
+    0 0,
+    0 4px,
+    4px -4px,
+    -4px 0;
+}
+.cm-ed-thumb-missing {
+  display: inline-block;
+}
+
+/* Touch targets of at least 44 px on tablets and phones (D12 H22). */
+@media (max-width: 1100px), (pointer: coarse) {
+  .cm-linkbtn {
+    min-height: 44px;
+  }
+}
+@media (max-width: 760px) {
+  .cm-ed-sprites-scroll {
+    max-height: 420px;
+  }
+}

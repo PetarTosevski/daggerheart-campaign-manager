@@ -1,0 +1,75 @@
+/* Character sheet tokens, shell and page grids, ported from the Party board; plus the few cs-* field rules fields.tsx still uses.
+ * The board's primitives (sh-*) live in src/components/party/sheet-ui/sheet-ui.css and read these tokens. */
+:root{
+  --sheet-paper:#efe3c8;--sheet-ink:#2a1f14;--sheet-ink-soft:#4a3a26;--sheet-label:#6d563a;
+  --sheet-gold:#c9962e;--sheet-gold-line:#b08a3e;--sheet-line:#d1b98b;--sheet-field-line:#d9c59c;
+  --sheet-green:#3d5e2e;--sheet-green-bright:#4d7a3a;--sheet-wine:#5b2b2b;--sheet-red:#b04a45;--sheet-blue:#4f6a86;
+  --sheet-backdrop:radial-gradient(ellipse at 50% 0%,#24343a 0%,#121b1f 55%,#0a1013 100%);
+}
+/* Shell: dark backdrop, paper, header row (banner | tabs | level | close), footer. */
+.cs-backdrop{min-height:100dvh;background:var(--sheet-backdrop);padding:28px 20px;box-sizing:border-box}
+@media (max-width:640px){.cs-backdrop{padding:16px 8px}}
+.cs-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px}
+.cs-head-end{display:flex;align-items:center;gap:12px;margin-left:auto}
+.cs-close{width:44px;height:44px;flex:none;border-radius:50%;border:1px solid #b9a27a;background:transparent;color:var(--sheet-ink);display:flex;align-items:center;justify-content:center}
+.cs-close:hover{background:rgba(185,162,122,.2)}
+.cs-close:focus-visible{outline:2px solid var(--sheet-wine);outline-offset:2px}
+.cs-foot{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 16px;margin:0;border-top:1px solid #cdb88f;padding-top:16px}
+.cs-error{margin:0;padding:8px 12px;border-radius:8px;background:#f3e2bd;border:1px solid var(--sheet-wine);border-left-width:4px;color:#4a1c1c;font-size:16px}
+.cs-error:empty{display:none}
+/* Status controls sit under the footer line, so they share its rule instead of drawing a second one. */
+.cs-foot+.st-row{border-top:none;padding-top:0}
+/* Loading and not-found states: a small paper card on the same backdrop. */
+.cs-paper.cs-empty{max-width:560px;align-items:center;text-align:center}
+.cs-empty h1{margin:0;font-family:var(--font-cinzel),serif;font-size:26px;font-weight:700}
+.cs-back{min-height:44px;padding:0 18px;border-radius:999px;background:var(--sheet-wine);color:#f6ead2;font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700;display:inline-flex;align-items:center;text-decoration:none}
+.cs-back:focus-visible{outline:2px solid var(--sheet-wine);outline-offset:2px}
+/* Phone touch targets the 390 px pass found under 44 px (sections/hp-stress.css could own this). */
+@media (max-width:640px){.sh-in.hp-take-in{min-height:44px}}
+/* Domains sub-tabs (board dk-tabs). */
+.dk-tabs{display:inline-flex;flex-wrap:wrap;align-self:flex-start;gap:4px;padding:4px;border-radius:12px;background:#e3d2ad;max-width:100%}
+.dk-tab{min-height:44px;padding:0 16px;border:none;border-radius:9px;background:transparent;font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700;color:#4a3826;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.dk-tab[aria-selected="true"]{background:var(--sheet-wine);color:#f6ead2}
+.dk-tab:focus-visible{outline:2px solid var(--sheet-wine);outline-offset:2px}
+.dk-tabn{min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;border-radius:999px;background:rgba(0,0,0,.12);display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+.dk-tab[aria-selected="true"] .dk-tabn{background:rgba(255,255,255,.18)}
+/* Page grids (board order; stacked below the breakpoints). */
+.cs-page{display:flex;flex-direction:column;gap:16px}
+.cs-top{display:grid;grid-template-columns:240px minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:760px){.cs-top{grid-template-columns:minmax(0,1fr)}}
+.cs-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.cs-grid-story{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px}
+.cs-grid-text{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px}
+@media (min-width:900px){.cs-span-2{grid-column:span 2}}
+.cs-paper{position:relative;max-width:1180px;margin:0 auto;background:var(--sheet-paper);color:var(--sheet-ink);box-sizing:border-box;border-radius:14px;padding:24px 28px 32px;display:flex;flex-direction:column;gap:18px;font-family:var(--font-garamond),serif;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+@media (max-width:640px){.cs-paper{padding:16px 14px 24px;border-radius:10px}}
+.cs-banner{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-height:64px;padding:10px 18px;border-radius:8px;color:#f6ead2;text-shadow:0 1px 3px rgba(0,0,0,.55);box-shadow:0 4px 14px rgba(40,25,8,.25);box-sizing:border-box}
+.cs-banner-name{margin:0;font-family:var(--font-cinzel),serif;font-size:28px;font-weight:700;line-height:1.15;overflow-wrap:anywhere}
+@media (max-width:640px){.cs-banner-name{font-size:24px}}
+.cs-banner-doms{display:flex;align-items:center;gap:8px;font-family:var(--font-cinzel),serif;font-size:16px}
+.cs-dom-ic{display:inline-block;flex:none;width:34px;height:34px;background-size:contain;background-position:center;background-repeat:no-repeat}
+.cs-banner-class{font-family:var(--font-cinzel),serif;font-size:20px;font-weight:700;opacity:.92}
+.cs-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:4px;border-radius:10px;background:#e3d3ae}
+.cs-tab{min-height:44px;padding:0 16px;border:none;border-radius:8px;background:transparent;color:#3a2a14;font-family:var(--font-cinzel),serif;font-size:14px;font-weight:700;cursor:pointer}
+@media (min-width:900px){.cs-tab{white-space:nowrap}}
+.cs-tab[aria-selected="true"]{background:#5b2b2b;color:#f6ead2}
+.cs-tab:focus-visible{outline:2px solid #5b2b2b;outline-offset:2px}
+.cs-lbl{font-family:var(--font-cinzel),serif;font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#7a5e3c}
+.cs-small{font-size:15px;line-height:1.45;color:#4a3a26}
+.cs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:16px}
+.cs-in{width:100%;box-sizing:border-box;min-height:44px;padding:8px 12px;border:1px solid #d9c59c;border-bottom:2px solid #a8865a;border-radius:8px 8px 3px 3px;background:linear-gradient(180deg,#fffcf3 0%,#f8efdc 100%);box-shadow:inset 0 1px 3px rgba(70,45,15,.10);font-family:var(--font-garamond),serif;font-size:19px;color:#2a1f14}
+.cs-in.cs-ro{display:flex;align-items:center;background:linear-gradient(180deg,rgba(240,230,208,.7),rgba(232,220,194,.7))}
+select.cs-in{font-size:17px}
+.cs-in::placeholder,.cs-ta::placeholder{color:#8f7a58;font-style:italic}
+.cs-in:focus,.cs-ta:focus{outline:none;border-color:#b08a3e;background:#fffdf7;box-shadow:0 0 0 3px rgba(227,180,90,.38)}
+.cs-ta{width:100%;box-sizing:border-box;min-height:110px;padding:4px 14px 10px;border:1px solid #d9c59c;border-left:3px solid #b08a3e;border-radius:4px 8px 8px 4px;background-color:#fffbf1;background-image:repeating-linear-gradient(180deg,transparent 0,transparent 27px,rgba(168,134,90,.28) 27px,rgba(168,134,90,.28) 28px);background-attachment:local;font-family:var(--font-garamond),serif;font-size:17px;line-height:28px;color:#2a1f14;resize:vertical;white-space:pre-wrap}
+.cs-step{width:44px;height:44px;flex:none;border-radius:8px;border:1px solid #b9a27a;background:transparent;color:#2a1f14;cursor:pointer;font-size:18px}
+.cs-step:disabled{opacity:.4;cursor:not-allowed}
+.cs-slot-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.cs-pip{position:relative;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:none;background:none;cursor:pointer}
+.cs-pip:disabled{cursor:default}
+.cs-pip::before{content:"";display:block;transition:transform .15s}
+.cs-pip:not(:disabled):hover::before{transform:scale(1.1)}
+.cs-pip:focus-visible{outline:2px solid #5b2b2b;outline-offset:-2px;border-radius:8px}
+.cs-scar::before{width:40px;height:40px;background:var(--coin) center/cover no-repeat;filter:grayscale(1) brightness(.6);opacity:.5}
+.cs-scar::after{content:"";position:absolute;left:50%;top:6px;bottom:6px;width:2px;background:#8e2b2b;transform:rotate(12deg)}

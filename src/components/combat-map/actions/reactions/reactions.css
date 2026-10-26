@@ -1,0 +1,233 @@
+/* The incoming-hit prompt (plan combat-actions AA4). Map: the Combat board's dark card (cm-card palette, Cinzel heading,
+   letter-spaced label), a bottom sheet at <=760px (Q11). Sheet: the parchment of the character sheet with its gold rule. */
+
+.ih-wrap {
+  --ih-bg: var(--cm-card, #141e22);
+  --ih-border: var(--cm-acc, #e3b45a);
+  --ih-text: var(--cm-text, #e6ecea);
+  --ih-muted: var(--cm-muted, #9fb2b6);
+  --ih-field: var(--cm-field, #0b1214);
+  --ih-line: var(--cm-border, #33444a);
+  --ih-acc: var(--cm-acc, #e3b45a);
+  --ih-acc-ink: var(--cm-acc-ink, #1a1408);
+  --ih-danger: var(--cm-danger, #ffb4a8);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.ih-wrap[data-variant="sheet"] {
+  --ih-bg: #f6ecd6;
+  --ih-border: var(--sheet-gold, #c9962e);
+  --ih-text: var(--sheet-ink, #2a1f14);
+  --ih-muted: var(--sheet-label, #6d563a);
+  --ih-field: #fbf4e4;
+  --ih-line: var(--sheet-line, #d1b98b);
+  --ih-acc: var(--sheet-wine, #5b2b2b);
+  --ih-acc-ink: #fbf4e4;
+  --ih-danger: #8a2a24;
+}
+.ih-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ih-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--ih-border);
+  background: var(--ih-bg);
+  color: var(--ih-text);
+  box-shadow: 0 0 0 3px rgba(227, 180, 90, 0.12);
+  min-width: 0;
+}
+.ih-lbl {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ih-muted);
+}
+.ih-h {
+  margin: 0;
+  font-family: var(--font-cinzel), serif;
+  font-size: 18px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.ih-dmg {
+  margin: 0;
+  font-family: var(--font-cinzel), serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ih-acc);
+}
+.ih-wrap[data-variant="map"] .ih-dmg {
+  color: var(--cm-acc-soft, #f3cf86);
+}
+.ih-q {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.ih-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ih-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid var(--ih-line);
+  background: transparent;
+  color: var(--ih-text);
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.ih-btn.ih-go {
+  border-color: var(--ih-acc);
+  background: var(--ih-acc);
+  color: var(--ih-acc-ink);
+  font-weight: 700;
+}
+.ih-btn:focus-visible {
+  outline: 2px solid var(--ih-acc);
+  outline-offset: 2px;
+}
+.ih-btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ih-step {
+  font-weight: 400;
+}
+.ih-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ih-rc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--ih-line);
+  border-left: 4px solid var(--dc);
+  background: var(--ih-field);
+}
+.ih-rc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.ih-rc-name {
+  margin: 0;
+  font-family: var(--font-cinzel), serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+.ih-rc-meta {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ih-muted);
+}
+.ih-rc-text {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ih-text);
+}
+.ih-rc .ih-btn {
+  grid-column: 2;
+  grid-row: 1;
+}
+.ih-line {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--ih-line);
+  background: var(--ih-bg);
+  color: var(--ih-text);
+  font-size: 14px;
+}
+.ih-err {
+  margin: 0;
+  color: var(--ih-danger);
+  font-size: 14px;
+}
+.ih-alert {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.ih-char {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ih-char:empty {
+  display: none;
+}
+
+/* Phone (the Combat Map page's 760px breakpoint): an owed prompt is a bottom sheet over the actions bar (Q11). */
+@media (max-width: 760px) {
+  .ih-wrap[data-variant="map"] .ih-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 80;
+    max-height: 70vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--cm-card, #141e22);
+    border-top: 1px solid var(--cm-acc, #e3b45a);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
+  }
+  /* The GM's own PC (AA5): in the GM column, not a sheet over the adversary controls. */
+  .ih-gm .ih-wrap[data-variant="map"] .ih-dock {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    background: none;
+    border-top: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .ih-gm .ih-wrap[data-variant="map"] .ih-dock .ih-card {
+    box-shadow: 0 0 0 3px rgba(227, 180, 90, 0.12);
+    padding: 16px 18px;
+    border: 1px solid var(--ih-border);
+  }
+  .ih-wrap[data-variant="map"] .ih-dock .ih-card {
+    box-shadow: none;
+    padding: 12px 4px;
+    border: 0;
+  }
+  .ih-actions .ih-btn {
+    flex: 1 1 auto;
+  }
+}

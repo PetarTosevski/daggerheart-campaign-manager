@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Colossus of the Drylands Tome · Open Book</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a1416}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/bf68d5cb6c5931e18f23260203309a75);background-size:cover;background-position:center;background-repeat:no-repeat}
+.ww-dim{filter:blur(4px) brightness(0.45);transform:scale(1.05)}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+<sc-if value="{{ standalone }}" hint-placeholder-val="{{ true }}"><div class="ww-bg ww-dim" aria-hidden="true" style="position: absolute; inset: 0"></div></sc-if>
+
+<sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-modal="true" aria-labelledby="tomeA-title" style="position: relative; width: 100%; max-width: 1240px; height: 880px; background: #3b2b1d; border: 1px solid #5c4430; border-radius: 16px; padding: 18px; box-sizing: border-box; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); display: flex">
+
+<button type="button" onClick="{{ close }}" aria-label="Close tome" style="position: absolute; top: -18px; right: -18px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+<div aria-hidden="true" style="position: absolute; top: 0; right: 140px; width: 28px; height: 140px; background: #8e2b2b; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); z-index: 1"></div>
+
+<div style="flex: 1; display: flex; background: #efe3c8; border-radius: 6px; overflow: hidden; min-width: 0">
+
+<div style="flex: 0 0 38%; padding: 48px 40px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid #d3c19c; box-shadow: inset -28px 0 34px -26px rgba(90, 60, 20, 0.4)">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: #7a5b2e">Campaign Frame · Core Rulebook</div>
+<h2 id="tomeA-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 46px; line-height: 1.05; font-weight: 900; color: #2a1f14">Colossus of the Drylands</h2>
+<svg width="220" height="14" viewBox="0 0 220 14" aria-hidden="true"><path d="M0 7h96M124 7h96" stroke="#a68352" stroke-width="1.2"></path><path d="M110 1l6 6-6 6-6-6z" fill="#8e2b2b"></path></svg>
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a5b2e">Contents</div>
+<nav aria-label="Chapters" style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{ t.pick }}" aria-current="{{ t.current }}" style="{{ t.style }}"><span style="font-family: 'Cinzel', serif; font-size: 18px; width: 40px; color: #8e2b2b">{{ t.roman }}</span><span style="flex: 1">{{ t.title }}</span></button>
+</sc-for>
+</nav>
+<div class="ww-bg" aria-hidden="true" style="margin-top: auto; height: 170px; border-radius: 100px 100px 8px 8px; border: 3px double #a68352"></div>
+<div style="padding: 14px 16px; border: 1px solid #cdb88f; border-radius: 6px; background: #e8d9b8; font-size: 16px; line-height: 1.5; font-style: italic; color: #4a3a26"><span style="font-style: normal; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.18em; color: #7a5b2e; display: block; margin-bottom: 4px">FOR THE GAME MASTER</span>{{ cur.note }}</div>
+</div>
+
+<div style="flex: 1; min-width: 0; padding: 48px 56px 28px 52px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<span style="font-family: 'Cinzel', serif; font-size: 22px; color: #8e2b2b">{{ cur.roman }}.</span>
+<h3 style="margin: 0; font-family: 'Cinzel', serif; font-size: 32px; font-weight: 700; color: #2a1f14">{{ cur.title }}</h3>
+</div>
+<sc-if value="{{ cur.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-family: 'Cinzel', serif; font-size: 18px; color: #6a4a22; margin-top: -8px">{{ cur.sub }}</div></sc-if>
+<div style="height: 1px; background: #cdb88f"></div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 14px; font-size: 19px; line-height: 1.65; color: #2a1f14; display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{ hasFigures }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; color: #7a5b2e">KEY FIGURES</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px">
+<sc-for list="{{ keyFigures }}" as="k" hint-placeholder-count="3"><div style="padding: 12px 14px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 6px; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.25">{{ k.name }}</span><span style="font-size: 14px; color: #6a5236">{{ k.role }}</span><span style="font-size: 15px; line-height: 1.4">{{ k.line }}</span></div></sc-for>
+</div>
+<div style="align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: #2f4a3a; color: #eef3ea; font-size: 15px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>Start: {{ startAt }}</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMechanics }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+<div style="display: flex; gap: 14px; padding: 14px 16px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 8px">
+<span style="width: 32px; height: 32px; flex: none; border-radius: 50%; border: 2px solid #8e2b2b; color: #8e2b2b; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; font-size: 15px">{{ r.n }}</span>
+<div style="display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700">{{ r.head }}</span><span style="font-size: 18px; line-height: 1.55; white-space: pre-line">{{ r.t }}</span></div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ isProse }}" hint-placeholder-val="{{ true }}">
+<p style="margin: 0"><span style="float: left; font-family: 'Cinzel', serif; font-size: 70px; line-height: 0.82; padding: 8px 10px 0 0; color: #8e2b2b">{{ cur.cap }}</span>{{ cur.capRest }}</p>
+<sc-if value="{{ isOverview }}" hint-placeholder-val="{{ false }}"><blockquote style="margin: 4px 0; padding: 6px 0 6px 20px; border-left: 3px solid #8e2b2b; font-family: 'Cinzel', serif; font-size: 21px; line-height: 1.4; color: #5a2a1a">{{ pullQuote }}</blockquote></sc-if>
+<sc-for list="{{ cur.rest }}" as="p" hint-placeholder-count="4"><p style="margin: 0; text-indent: 1.4em">{{ p.t }}</p></sc-for>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #cdb88f; padding-top: 14px">
+<div style="min-width: 160px"><sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goPrev }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">‹ {{ prevTitle }}</button></sc-if></div>
+<span style="font-family: 'Cinzel', serif; font-size: 14px; color: #8a7350">— {{ cur.roman }} —</span>
+<div style="min-width: 160px; display: flex; justify-content: flex-end"><sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goNext }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">{{ nextTitle }} ›</button></sc-if></div>
+</div>
+</div>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ closed }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ reopen }}" style="position: relative; min-height: 56px; padding: 0 32px; border-radius: 999px; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.12em; cursor: pointer">Open the Tome</button>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startChapter":{"editor":"enum","options":["overview","incident","mechanics"],"default":"overview"},"embedded":{"editor":null,"default":false},"onClose":{"editor":null},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ids = ['overview', 'incident', 'mechanics'];
+    const idx = st.idx ?? Math.max(0, ids.indexOf(this.props.startChapter ?? 'overview'));
+    const open = st.open ?? true;
+    const chapters = [{"roman": "I", "title": "Overview", "note": "Share this background with your players before they make characters. Summarized here; full text in the Core Rulebook, pp. 309–310.", "paras": ["An old Drylands prophecy says that the Forgotten God Kudamat, the First Doom, is imprisoned beneath a mountain at the center of the world, and that his nine colossi, the Children of Godfell, will one day free him. He will then tear open the sky, kill the New Gods, drown the Mortal Realm in their blood and fill it with his own monstrous creations. For years, most people treated it as just another tall tale.", "According to myth, the Forgotten Gods made the Mortal Realm and were later overthrown by the New Gods, who imprisoned many of them in the earth. Their divine essence leaks up through the ground in crystal veins called essentia, the source of all magic. Mining it is enormously profitable, and the powerful treat miners' lives as an acceptable price.", "Godfell Mountain rises among dry mesas and holds the continent's richest essentia. Kudamat is trapped inside it. To weaken him, the New Gods cut nine shards from his soul and gave them to nine mortal riders to hide, but the riders didn't take them far enough. Over the centuries, Kudamat stretched his essentia veins out like roots until he found the first shard. Its awakening split the main street of Wyllin's Gulch with an earthquake, and he raised a colossus and a swarm of aberrations to guard it while he draws its power back and hunts for the other eight.", "Preacher Rayos was the first, or at least the loudest, to call this the start of the prophecy. He has brought his congregation from Left Luck Outpost to Wyllin's Gulch, where he warns about charged essentia and urges people to find the shards, and his following grows by the day.", "Wyllin's Gulch cares about money more than any god. Founded about forty years ago at the start of the Essentia Rush, it is now the fortified gateway to Godfell on the western rail line. Factories climb the twin mesas called the Twin Turtles, turning crystal into the batteries that run homes, guns and magic items. The sheriffs work for the mine owners, outlaws steal or sabotage essentia, and every outpost, from a cluster of tents to a real town, is there because of a vein, which makes each one a likely place for the next colossus to rise."]}, {"roman": "II", "title": "The Inciting Incident", "note": "Use this opening hook as written, or swap in one of your own. Summarized here; full text in the Core Rulebook, p. 316.", "paras": ["When the first colossus appears outside Wyllin's Gulch, nothing the town tries works. The sheriff's makeshift army, the miners' barricades and the factories' lockdowns all fail. After most of her deputies die in a single blow, Mayor Logan Hartly posts a bounty: a chest of processed essentia to whoever kills the colossus and its aberrations.", "Baron Ryder Destry ('Baron' is his first name, not a title) has learned that Kudamat's siphoning has made the essentia veins connected to the shard ten times as valuable. He's offering a huge essentia payout to anyone who will help the colossus guard the shard until Kudamat is done, and he claims his factory guards can keep the town safe while his crews mine around the clock.", "The party answered the mayor's bounty, but Destry's offer means rival groups are already heading out to defend the colossus, and more aberrations keep climbing out of the veins. Getting through all of that only gets them to the real problem: bringing down a colossus, which no one in the Drylands has ever done.", "Open questions: will the party honor the mayor's contract or switch to Destry's side? Can they work both? Will Hartly actually pay? Can they stop the colossus before it flattens the Gulch or the smaller outposts nearby? And after it falls, does the prophecy keep unfolding?"]}, {"roman": "III", "title": "Campaign Mechanics", "sub": "Hunts and Interludes", "note": "These rules apply only to this campaign frame. Summarized here; full text in the Core Rulebook, pp. 317–327.", "paras": [""]}];
+    const rules = [{"n": "1", "head": "Tools of the Trade", "t": "Thanks to essentia, the Drylands have firearms and explosives. Encourage players to reskin standard gear to fit a frontier western, and also offer the frame's extra options (stats on p. 317):\n\n• Primary weapons: a Revolver (Finesse, Far) with a 6-token Ammo mechanic, where marking a Stress reloads; a Rifle (Agility, Very Far) that can spend 2 Hope for advantage; and a Shotgun (Strength, Very Close) that hits everything in front of the wielder. Damage rises with each tier.\n• Secondary weapons: a Lasso that can Rope a target (Restrained and Vulnerable while the user stays close) instead of dealing damage, and a Small Revolver that can spend 2 Hope for +4 damage.\n• Consumable: Dynamite, thrown within Close range. Everything within Very Close of where it lands makes a Reaction Roll (14): failure means 1d20+5 physical damage, success means marking a Stress. It deals double damage to objects and structures."}, {"n": "2", "head": "Hunts and Interludes", "t": "Play alternates between two phases. A hunt starts when a new colossus appears: the party rides to the threatened outpost, gathers information, rescues people from aberrations, tracks the colossus down and fights it. A hunt runs from a few days to a week, and the colossus and Kudamat's siphoning should keep the pressure on throughout.\n\nOnce the colossus is dead, an interlude follows, lasting from a few days to several weeks, with smaller personal jobs such as saloon bandits, a missing train or a mystery predator killing livestock."}, {"n": "3", "head": "Colossus Stat Blocks", "t": "Colossus is a new adversary type. Each colossus has an overall framework stat block (size, segment list, thresholds, Stress, Experiences and whole-body features) plus a separate stat block for every body segment, each with its own Difficulty, HP, attack and features, and a list of adjacent segments.\n\nA segment can be Broken, which stops it from taking actions or reactions until the condition clears. A segment that marks its last HP is Destroyed and loses all its features, though it stays attached. The colossus is beaten when every segment is Destroyed, and most also have a quicker win condition.\n\nThe Tier 1 example is Ikeri, Injuries Untold, a stone ape with a bird's head and a mesa on its back, split into head, torso, two arms and two legs (p. 319). It also works as a template for building your own."}, {"n": "4", "head": "Example Colossus Features", "t": "A menu of features made for colossi (p. 320):\n\n• Passives: Fatal (destroying this segment defeats the colossus), Chain (destroying every segment in the chain defeats it), Strike (Range) (immune to damage from attacks outside that range), Armored (marks 1 fewer HP), Climbing (±X) (changes the Difficulty to climb), Not Climbable, and Weak Point (marks an extra HP from Melee hits; feel free to invent other effects).\n• Actions: Shake Off (spend a Fear; everyone on the colossus makes a Strength Reaction Roll or falls and marks HP, and marks Stress even on a success) and Kudamat's Rage (spend 2 Fear; PCs within Very Far who fail a Presence roll become Shaken and lose their next Hope gain).\n• Reactions: Swatting Pests (counterattacks fliers and knocks them down), Collapsed (once every Leg segment has marked HP, high segments can be climbed from the ground), and Colossal Power (the GM gains a Fear whenever the colossus misses).\n\nA feature that names a segment affects only that segment, while one that names the colossus applies to all of it. Always record which segments are adjacent."}, {"n": "5", "head": "Building Colossi as a Puzzle", "t": "Design each colossus as a puzzle, not just a big pile of HP. Some segments might only be vulnerable once others are Destroyed, segments might have their own thresholds, the colossus might only take Major damage, or only a special weapon the party must find might hurt it. Begin simple and add complexity as the table gets comfortable."}, {"n": "6", "head": "Running Colossus Fights", "t": "Scale: describe the colossus in feet (or another real unit) so players can picture it, while still using normal range bands for actions.\n\nMovement: PCs can climb any segment unless its stat block says otherwise, and move freely around a segment once on it. Jumping to an adjacent segment takes an action roll, usually Agility or Strength.\n\nTeamwork: PCs can make as many Tag Team Rolls as they like during a colossus fight.\n\nSpotlight: treat each segment as a separate adversary. Spotlight one as your GM move and spend Fear to spotlight more. The framework can be spotlighted for its own actions, too.\n\nWhile a PC is on a segment, they have advantage against it and it can't use its standard attack on them unless a feature (such as Shake Off) says so. Push and pull effects move the PC, not the colossus. Use the targeted segment's Difficulty, or the highest Difficulty when an effect targets the whole colossus. Effects that hit multiple targets can hit multiple segments.\n\nKeep other adversaries to a minimum and give them a reason to be there. During the hunt, give out clues about weak points through rumors and sensory detail (lights, colors, textures, smells, sounds) so the fight plays out like a puzzle the players can solve (p. 321)."}, {"n": "7", "head": "Example Colossi (Tiers 2–4)", "t": "The book provides complete multi-segment stat blocks for one colossus per higher tier, with segment maps (pp. 322–327): Daktadae, the Cleaver (Tier 2), a steel rhinoceros made from a steam train with a cleaver for a horn; Poy, Sky Skimmer of the Dust Sea (Tier 3), a shoebill stork made of desert dust that traps foes in its beak; and Kelir, the Virulent Hate & Her Hundred, Hundred Children (Tier 4), a mountain-sized crab whose offspring swarm around her. Kelir has Hope-draining claws, a Stress-inflicting gaze, and legs that make her collapse once three are Destroyed."}, {"n": "8", "head": "Leveling Up", "t": "When a colossus dies, the soul shard it guarded shatters and every PC immediately gains a level. After all nine colossi are dead, the party is level 10 and ready for the final hunt against Kudamat."}, {"n": "9", "head": "Emergence of Kudamat", "t": "Track two things: a Siphoning Track, which starts with 1 slot marked, and Kudamat's Power, which starts at 0. During a hunt, mark the track once for each short rest and twice for each long rest. When a colossus is defeated or the track fills up, roll one d12 per marked slot, add the highest result to Kudamat's Power, and reset the track to 1.\n\nKudamat breaks out of Godfell Mountain when all nine colossi are dead or his Power reaches 100. Build him as a Colossus adversary whose Severe threshold equals his Power and whose Major threshold is half that, rounded up."}];
+    const FIG = [{"name": "Mayor Logan Hartly", "role": "Mayor of Wyllin's Gulch", "line": "Offers a chest of essentia for killing the colossus."}, {"name": "Baron Ryder Destry", "role": "Essentia mining baron", "line": "Pays mercenaries to protect the colossus so he can mine."}, {"name": "Preacher Rayos", "role": "Doomsday prophet", "line": "Preaches that the shards must be found to stop Kudamat."}];
+    const c = chapters[idx];
+    const p0 = c.paras[0] || ''; const cur = { ...c, hasSub: !!c.sub, cap: p0.charAt(0), capRest: p0.slice(1), rest: c.paras.slice(1).map((t) => ({ t })) };
+    const tabs = chapters.map((ch, i) => {
+      const on = i === idx;
+      return { roman: ch.roman, title: ch.title, current: on ? 'page' : 'false', pick: () => this.setState({ idx: i }),
+        style: 'min-height: 48px; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 4px; text-align: left; cursor: pointer; font-family: inherit; font-size: 20px; color: #2a1f14; border: none; border-left: 3px solid ' + (on ? '#8e2b2b' : 'transparent') + '; background: ' + (on ? '#e3d2ad' : 'transparent') + '; font-weight: ' + (on ? '500' : '400') + ';' };
+    });
+    return {
+      open, closed: !open, cur, tabs, rules, keyFigures: FIG, hasFigures: idx === 1 && FIG.length > 0, startAt: "Wyllin's Gulch, a mining boomtown on the western rail line", pullQuote: "Every vein of crystal leads back to a god who wants out.", mechIntro: "These rules apply only to this campaign frame.",
+      isOverview: idx === 0 && true, isIncident: idx === 1, isMechanics: idx === 2, isProse: idx !== 2,
+      hasPrev: idx > 0, hasNext: idx < chapters.length - 1,
+      prevTitle: idx > 0 ? chapters[idx - 1].title : '', nextTitle: idx < chapters.length - 1 ? chapters[idx + 1].title : '',
+      goPrev: () => this.setState({ idx: Math.max(0, idx - 1) }),
+      goNext: () => this.setState({ idx: Math.min(chapters.length - 1, idx + 1) }),
+      standalone: !this.props.embedded,
+      rootStyle: 'position: relative; min-height: 100vh; ' + (this.props.embedded ? 'background: transparent; ' : 'background: #0a1416; ') + 'color: #2a1f14; font-family: \'EB Garamond\', serif; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 32px; overflow: hidden',
+      close: () => (this.props.onClose ? this.props.onClose() : this.setState({ open: false })),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

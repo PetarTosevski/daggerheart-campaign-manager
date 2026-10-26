@@ -1,88 +1,111 @@
-# Witherwild Campaign Manager
+# Daggerheart Campaign Manager
 
-A private, single-user web application used by one Game Master to run a
-Daggerheart campaign with the Witherwild campaign frame.
+A private, multi-user live-play console for running Daggerheart campaigns. A
+Game Master picks one of the 10 published campaign frames (or a GM-written
+Custom frame), creates a campaign and runs the table from it: Fear,
+countdowns, the party's character sheets and dice, world maps, the codex,
+adversaries and encounters, the combat map, sessions, notes, and the
+Lorekeeper rules assistant. Players sign in with their own accounts and join a
+campaign by email invite or join code; roles are per campaign, and anything
+hidden from players is enforced on the server. Changes show up live on every
+open screen.
 
-Tasks 001–011C (including 008, 009A, and 011A–011C) are complete. The
-application currently provides authentication and the persistent authenticated
-shell; the Phase 1 database schema; Fear, countdown, and operations tracking;
-the campaign week / day-night cycle with one-day advancement; in-app campaign
-creation and initialization; the character workspace with guided character
-creation, overview, and notes; and PDF-backed character sheet templates —
-private PDF storage and rendering (011A), a GM field-overlay template editor
-with a draft/published version lifecycle (011B), and the interactive character
-sheet runtime that renders a character's pinned published template with
-autosaving HTML field overlays (011C).
+It is not a virtual tabletop, a rules compendium or a replacement for the
+Daggerheart rulebook.
 
-Not yet implemented: food stores, character inventory, Wither tokens, the
-character asset/media library, and the dice engine / roll history (Tasks
-012–016). See `AGENTS.md` and `docs/` for product, architecture, and task
-documentation, and `docs/tasks/` for per-task status.
+## Stack
 
-## Technology stack
-
-- Next.js (App Router) with TypeScript (strict mode)
-- Tailwind CSS and shadcn/ui
-- Supabase (PostgreSQL, Auth, RLS) — local configuration only at this stage
-- Zod for validation
-- Vitest for unit tests, Playwright for end-to-end tests
-- pnpm for package management
-
-## Prerequisites
-
-- Node.js
-- pnpm
-- Supabase CLI (invoked via `pnpm dlx supabase` — no global install required)
+- Next.js 16 (App Router), TypeScript in strict mode
+- Convex 1.46 (database, server functions, live queries, file storage, crons)
+- Convex Auth: Google and email + password, both limited to an allowlist
+- Tailwind CSS and shadcn/ui primitives, Zod for validation
+- Vitest (unit tests in jsdom, Convex function tests with convex-test),
+  Playwright with axe for end-to-end tests
+- pnpm; hosted on Vercel
 
 ## Setup
 
-```bash
-pnpm install
-cp .env.example .env.local   # then fill in local values; never commit secrets
-```
-
-## Common commands
+Prerequisites: Node.js, pnpm and a Convex account.
 
 ```bash
-pnpm dev          # start the development server
-pnpm build        # production build
-pnpm start        # run the production build
-pnpm lint         # ESLint
-pnpm typecheck    # TypeScript type checking (tsc --noEmit)
-pnpm test         # run unit tests (Vitest)
-pnpm test:watch   # unit tests in watch mode
-pnpm test:e2e     # Playwright end-to-end tests
+pnpm install          # also installs the git hooks
+npx convex dev        # once: log in, create your dev deployment, write .env.local
 ```
 
-## Environment variables
+`npx convex dev` writes `CONVEX_DEPLOYMENT` and `NEXT_PUBLIC_CONVEX_URL` to
+`.env.local` (git-ignored; `.env.example` lists the names). Keep it running
+next to `pnpm dev`; it pushes the functions in `convex/` on every change.
 
-Copy `.env.example` to `.env.local` and provide values. The example file lists
-variable names only and contains no secrets.
+### Environment variables
 
-## Local database and reset workflow
+This lists names only; never commit values. Server variables are Convex
+environment variables (`npx convex env set <NAME> <value>`, or the Convex
+dashboard), set separately on the dev and the production deployment. The
+typed list is in `convex/convex.config.ts`.
 
-Local Supabase runs via `pnpm dlx supabase start`. On this machine the default
-`543xx` ports are reserved by the OS, so they are remapped to `545xx` in
-`supabase/config.toml`; the local API is `http://127.0.0.1:54521` and the DB is
-`postgresql://postgres:postgres@127.0.0.1:54522/postgres`.
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | Convex | Google sign-in |
+| `ALLOWED_EMAILS` (legacy `GM_EMAILS`) | Convex | Who may sign in or sign up |
+| `SITE_URL` | Convex | The app's URL, for sign-in redirects |
+| `JWT_PRIVATE_KEY`, `JWKS` | Convex | Convex Auth session signing keys |
+| `ANTHROPIC_API_KEY` | Convex only | Photo import, combat map generation and the Lorekeeper; without it those features are unavailable |
+| `ANTHROPIC_MODEL`, `LOREKEEPER_MODEL` | Convex | Optional model overrides |
+| `LOREKEEPER_DAILY_QUESTIONS`, `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD` | Convex | Lorekeeper usage caps (change without a deploy) |
+| `CONVEX_DEPLOY_KEY` | Vercel (production) | Lets the Vercel build run `npx convex deploy` |
+| `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL` | `.env.local` | Written by `npx convex dev`; on Vercel `npx convex deploy` sets the URL for the build |
 
-Prefer `pnpm dlx supabase migration up` to apply new migrations. **`supabase db
-reset` wipes ALL local data** (it rebuilds from migrations + `seed.sql` only), so
-use it only when a clean slate is required.
+`ANTHROPIC_API_KEY` is a server secret: it lives only in the Convex
+environment, never in Vercel, `.env.local` or anything behind `NEXT_PUBLIC_`.
 
-`supabase/seed.sql` is optional, deterministic, and idempotent. On a fresh reset
-it creates a **local-only** Game Master login and a demo campaign, so the app is
-immediately usable. It derives the owner from the seeded user (no hard-coded
-UUID) and never runs in production.
+Dev and test only, and never set on production: `SEED_ACCOUNTS` and
+`ALLOW_SEED_ACCOUNTS` (test logins on a cloud dev deployment, created with
+`npx convex run accounts:seed`), and `E2E_AUTH_ENABLED`, `E2E_AUTH_SECRET`
+and `LOREKEEPER_FAKE_MODEL` (local e2e backend only; `pnpm e2e:setup` sets
+them).
 
-The application does **not** require a seeded campaign. An authenticated GM with
-no campaign sees a **Create campaign** action on the Campaign page and can create
-the initial campaign in-app; creation is server-validated, RLS-scoped to the
-owner, and seeds the canonical starting state (Week 1, Day cycle, day 1, Fear 0).
-After a reset you can therefore either sign in with the seeded login or create a
-campaign through the UI.
+### Lorekeeper library
 
-## Project layout
+The Lorekeeper answers from rulebook text you load into your own deployment:
 
-The intended application structure is documented in `docs/architecture.md`.
-Rules interpretations, house rules, and task specifications live under `docs/`.
+```bash
+pnpm lorekeeper:ingest <bookKey> <textFile>   # --prod, --deployment <name> or --e2e to pick the target
+```
+
+Book text never goes into git: the script refuses files inside the
+repository (except `tests/fixtures`) and prints none of the text.
+
+## Commands
+
+```bash
+pnpm install        # also points git at the tracked hooks (.beads/hooks)
+pnpm dev            # Next.js; run `npx convex dev` alongside it
+pnpm lint
+pnpm typecheck      # also typechecks convex/
+pnpm test           # vitest projects: unit (jsdom) and convex (convex-test)
+pnpm e2e:setup      # once: configure the local e2e Convex backend
+pnpm test:e2e       # starts the local backend and an e2e build itself
+pnpm build
+```
+
+The end-to-end tests run against a throwaway local Convex backend, never a
+cloud deployment. See `docs/testing.md` for ports, worktrees and the test
+layers (authorization matrix, signed-out sweep, accessibility and tablet
+checks, live two-browser specs).
+
+## Deploying
+
+Vercel builds production with `npx convex deploy --cmd 'pnpm build'`
+(`vercel.json`): it pushes the Convex functions to the production deployment,
+then builds Next.js against it. Only production builds run; previews are
+skipped. Set the Convex variables above on the production deployment and
+`CONVEX_DEPLOY_KEY` in Vercel. Never deploy a locally built output.
+
+## More
+
+- `AGENTS.md`: architecture, conventions, binding rules and the definition of
+  done (for agents and humans alike).
+- `docs/best-practices.md`: the Convex, Next.js, React and testing rulebook.
+- `docs/design-port-roadmap.md`: the phased port of the design boards.
+- `docs/testing.md`, `docs/workflow.md`, `docs/data-model.md`,
+  `docs/game-interpretation.md` and the task documents in `docs/tasks/`.

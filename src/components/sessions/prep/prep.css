@@ -1,0 +1,139 @@
+/*
+ * Prep stage (D10 S4), board Sessions.dc.html l.99-142: two columns (scenes and hooks 1.25fr, the encounter builder
+ * 1fr). The encounter column reuses D8's builder classes (src/components/adversaries/builder/builder.css), whose
+ * tokens D8 reads from the Adversaries page (`--adv-*`); here they map onto the Sessions page tokens.
+ */
+.ssp-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.ssp-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.ssp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ssp-baseline {
+  align-items: baseline;
+}
+.ssp-error {
+  color: var(--ss-danger);
+  font-size: 14px;
+  margin: 0;
+}
+
+/* Planned scenes */
+.ssp-scenes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ssp-scene {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.ssp-type {
+  width: 140px;
+  flex: none;
+}
+.ssp-text {
+  flex: 1;
+  min-width: 0;
+}
+.ssp-scene .ssp-error {
+  flex-basis: 100%;
+}
+.ssp-scene :disabled {
+  opacity: 0.6;
+}
+
+/* No encounter yet: create or link */
+.ssp-link {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ssp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.ssp-field .ss-in {
+  width: 100%;
+}
+
+/* The linked encounter on D8's builder classes */
+.adv-root.ssp-enc {
+  --adv-text: var(--ss-text);
+  --adv-muted: var(--ss-muted);
+  --adv-acc: var(--ss-acc);
+  --adv-acc-ink: var(--ss-acc-ink);
+  --adv-border-strong: var(--ss-border);
+  --adv-chip-text: #cfd9d6;
+  --adv-type-bg: #1f2c31;
+  --adv-hf-bg: #1e1930;
+  --adv-hf-fear: #c6b6f2;
+  --adv-font-head: var(--ss-display);
+  --adv-font-body: var(--ss-serif);
+  --adv-font-ui: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  color: var(--ss-text);
+}
+.ssp-enc-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ssp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ssp-actions a {
+  text-decoration: none;
+}
+
+@media (max-width: 900px) {
+  .ssp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .ssp-type {
+    flex: 1;
+    width: auto;
+  }
+  .ssp-text {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .ssp-link .ss-ghost {
+    flex: 1;
+  }
+  .ssp-actions .enc-ghost {
+    flex: 1 1 auto;
+    white-space: nowrap;
+  }
+}

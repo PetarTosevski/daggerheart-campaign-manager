@@ -1,0 +1,163 @@
+import { ConvexHttpClient } from "convex/browser";
+import { expect, test, type Page } from "@playwright/test";
+
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+import { cardsForDomains, getClass } from "../../src/lib/srd";
+import { signInAsTestGm } from "./fixtures";
+
+const unique = (label: string) => `${label} ${crypto.randomUUID().slice(0, 8)}`;
+
+const common = { pronouns: "", description: "", potion: "Minor Health Potion", classItem: "", background: [], connections: [] };
+
+/** A level-1 Bard (Rally Die d6). */
+const bardDraft = (name: string) => ({
+  ...common,
+  classId: "bard",
+  subclassId: "troubadour",
+  ancestry: { kind: "single", id: "elf" },
+  communityId: "loreborne",
+  traits: { agility: 0, strength: -1, finesse: 1, instinct: 0, presence: 2, knowledge: 1 },
+  name,
+  primaryWeaponId: "rapier",
+  armorId: "gambeson-armor",
+  experiences: ["Wandering minstrel", "Silver tongue"],
+  domainCards: ["deft-deceiver", "book-of-ava"],
+});
+
+/** A level-1 Warrior. */
+const warriorDraft = (name: string) => ({
+  ...common,
+  classId: "warrior",
+  subclassId: "call-of-the-brave",
+  ancestry: { kind: "single", id: "elf" },
+  communityId: "loreborne",
+  traits: { agility: 2, strength: 1, finesse: 0, instinct: 1, presence: -1, knowledge: 0 },
+  name,
+  primaryWeaponId: "longsword",
+  armorId: "chainmail-armor",
+  experiences: ["Sellsword", "Brawler"],
+  domainCards: ["get-back-up", "not-good-enough"],
+});
+
+/** A Convex client authenticated as the page's signed-in user. */
+async function convexAs(page: Page): Promise<ConvexHttpClient> {
+  const token = await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((k) => k.startsWith("__convexAuthJWT"));
+    return key ? localStorage.getItem(key) : null;
+  });
+  expect(token, "Convex Auth token in localStorage").toBeTruthy();
+  const client = new ConvexHttpClient(process.env.E2E_CONVEX_URL!);
+  client.setAuth(token!);
+  return client;
+}
+
+test("a Bard rallies, a Warrior spends the Rally Die on a roll in the dice box, and ending the session clears unspent dice", async ({ page }) => {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const campaign = unique("Rally");
+  await page.goto("/frames/witherwild");
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(campaign);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: campaign })).toBeVisible();
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+
+  // Seed both characters through the API; the UI is for the features.
+  const client = await convexAs(page);
+  const bard = unique("Liriel");
+  const warrior = unique("Brann");
+  const { characterId: bardId } = await client.mutation(api.characters.create, { campaignId, draft: bardDraft(bard), idempotencyKey: crypto.randomUUID() });
+  const { characterId: warriorId } = await client.mutation(api.characters.create, { campaignId, draft: warriorDraft(warrior), idempotencyKey: crypto.randomUUID() });
+
+  // The GM starts a session on the Sessions tab (D10 S3's live card), so the rally below happens inside it.
+  await page.goto(`/campaigns/${campaignId}/sessions`);
+  await page.getByRole("button", { name: "+ New session" }).click();
+  const liveCard = page.getByRole("region", { name: "Live session" });
+  await liveCard.getByRole("button", { name: "Start session" }).click();
+  await page.getByRole("dialog", { name: "Start the session?" }).getByRole("button", { name: "Start session" }).click();
+  await expect(liveCard.getByRole("button", { name: "End session" })).toBeVisible();
+  const sessionUrl = page.url();
+
+  // The Bard rallies: both PCs hold a d6 Rally Die.
+  await page.goto(`/campaigns/${campaignId}/party/${bardId}`);
+  await expect(page.getByRole("heading", { level: 1, name: bard })).toBeVisible();
+  const bardFeatures = page.getByRole("region", { name: "Class Features" });
+  await bardFeatures.getByRole("button", { name: "Use Rally", exact: true }).click();
+  await expect(bardFeatures.getByText("rallied the party: 2 Rally Dice (d6)")).toBeVisible();
+  await expect(bardFeatures.getByRole("list", { name: "Held dice" })).toContainText("Rally d6");
+
+  // The Warrior spends it on an action roll: an extra d6 in the roll, and the die is gone.
+  await page.goto(`/campaigns/${campaignId}/party/${warriorId}`);
+  await expect(page.getByRole("heading", { level: 1, name: warrior })).toBeVisible();
+  const warriorFeatures = page.getByRole("region", { name: "Class Features" });
+  await expect(warriorFeatures.getByRole("list", { name: "Held dice" })).toContainText("Rally d6");
+  // The "Rally Die: clear Stress" action shows only while a Rally Die is held.
+  await expect(warriorFeatures.getByRole("button", { name: "Use Rally Die: clear Stress" })).toBeVisible();
+  const box = page.getByRole("region", { name: "Dice", exact: true });
+  await box.getByLabel("Rally Die d6").check();
+  await box.getByRole("button", { name: "Roll", exact: true }).click();
+  await expect(box.getByTestId("last-roll")).toBeVisible();
+  await expect(box.getByRole("listitem", { name: /^Extra d6: \d$/ })).toHaveCount(1);
+  await expect(warriorFeatures.getByRole("list", { name: "Held dice" })).toHaveCount(0);
+  await expect(warriorFeatures.getByRole("button", { name: "Use Rally Die: clear Stress" })).toHaveCount(0);
+
+  // The GM ends the session: the Bard's unspent die clears.
+  await page.goto(sessionUrl);
+  await liveCard.getByRole("button", { name: "End session" }).click();
+  await page.getByRole("dialog", { name: "End the session?" }).getByRole("button", { name: "End session" }).click();
+  await expect(liveCard.getByText("Session ended.")).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}/party/${bardId}`);
+  await expect(page.getByRole("heading", { level: 1, name: bard })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Class Features" }).getByRole("button", { name: "Use Rally", exact: true })).toBeEnabled();
+  await expect(page.getByRole("region", { name: "Class Features" }).getByRole("list", { name: "Held dice" })).toHaveCount(0);
+});
+
+/** A level-1 Wizard. */
+const wizardDraft = (name: string) => ({
+  ...common,
+  classId: "wizard",
+  subclassId: "school-of-knowledge",
+  ancestry: { kind: "single", id: "elf" },
+  communityId: "loreborne",
+  traits: { agility: 0, strength: -1, finesse: 1, instinct: 0, presence: 1, knowledge: 2 },
+  name,
+  primaryWeaponId: "dagger",
+  armorId: "gambeson-armor",
+  experiences: ["Archivist", "Stargazer"],
+  domainCards: cardsForDomains(getClass("wizard")!.domains, 1)
+    .filter((c) => c.level === 1)
+    .slice(0, 2)
+    .map((c) => c.id),
+});
+
+test("a Wizard picks a Strange Patterns number in the panel and a matching roll offers the benefit", async ({ page }) => {
+  await signInAsTestGm(page);
+  await expect(page).toHaveURL("/");
+  const campaign = unique("Patterns");
+  await page.goto("/frames/witherwild");
+  await page.getByRole("button", { name: "Choose this Frame" }).click();
+  await page.getByRole("dialog", { name: "Name your campaign" }).getByLabel("Campaign name").fill(campaign);
+  await page.getByRole("button", { name: "Start campaign" }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: campaign })).toBeVisible();
+  const campaignId = new URL(page.url()).pathname.split("/")[2] as Id<"campaigns">;
+  const client = await convexAs(page);
+  const hero = unique("Ysolde");
+  const { characterId } = await client.mutation(api.characters.create, { campaignId, draft: wizardDraft(hero), idempotencyKey: crypto.randomUUID() });
+
+  await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  await expect(page.getByRole("heading", { level: 1, name: hero })).toBeVisible();
+  const features = page.getByRole("region", { name: "Class Features" });
+  const patterns = features.getByRole("group", { name: "Strange Patterns", exact: true });
+  await patterns.getByLabel("Number (1-12)").fill("3");
+  await patterns.getByRole("button", { name: "Use Strange Patterns", exact: true }).click();
+  await expect(patterns.getByText("chose the Strange Patterns number: 3")).toBeVisible();
+
+  // A roll whose Hope Die shows 3 offers the Strange Patterns benefit (fixed dice through the server's manual roll;
+  // the sheet has no physical-dice entry), and taking the benefit gives +1 Hope.
+  const agility = { kind: "action" as const, trait: "agility" as const, modifier: 0, experienceIds: [], advantage: 0, disadvantage: 0, help: 0, attack: false, options: [] };
+  const out = await client.mutation(api.rolls.manualRoll, { characterId, roll: agility, values: [3, 8], idempotencyKey: crypto.randomUUID() });
+  expect("prompts" in out ? (out.prompts as { featureKey: string }[]).map((p) => p.featureKey) : []).toEqual(["strangePatternsBenefit"]);
+  const benefit = await client.mutation(api.classFeatures.use, { characterId, featureKey: "strangePatternsBenefit", params: { choice: "hope" }, idempotencyKey: crypto.randomUUID() });
+  expect(benefit.summary).toBe("used Strange Patterns: +1 Hope");
+});

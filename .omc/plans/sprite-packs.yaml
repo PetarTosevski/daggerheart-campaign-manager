@@ -1,0 +1,694 @@
+# Sprite-packs plan: Combat Map sprite packs (bead dcm-bxp.56). The user's 60 AI-generated sprite sheets (20 folders x props /
+# large / terrain) become built-in sprite packs; every map is drawn either "Classic" (today's procedural painter, D9 C2) or
+# "Sprites" (pack sprites with app-added shadows and blended, tiled terrain textures); the Scene card gets a Setting picker; Claude
+# and the keyword fallback lay out sprite maps from the chosen setting's kinds; the vision engine reads sight and light from the
+# pack manifest; GMs upload their own sheets or single sprites per campaign and label them in an upload screen.
+# Sources: docs/sprite-packs/prompts.md (sheet format, style block, per-setting lists in grid order), the D9 plan
+#   .omc/plans/d9-combat-map.yaml (R1-R12, Q1-Q6) and its code (C1 src/lib/domain/combat-map/*, C2 src/lib/combat-map/*, C3
+#   convex/combatMaps.ts + src/components/combat-map/map-view/**, C4 convex/combatMapGenerate.ts, C5 convex/combatMapEdit.ts +
+#   src/components/combat-map/editor/**, C7 convex/combatVision.ts + convex/lib/combatVision.ts), convex/lib/files.ts.
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+# Status: APPROVED 2026-10-21 (Q1 = b; Q2-Q5 defaults). Defaults for the QUESTIONS below are written into the acceptance lists and marked (Qn); an answer
+#   that differs changes only the tracers that cite that Qn. Tracers do not start until the user has answered or accepted them.
+#
+# User decisions (2026-10-21, binding; tracers quote the one they implement in their task doc):
+#   P1  The Scene card gets a Setting picker (forest, tavern, dungeon, ... from the packs), defaulting to "Let Claude choose", in
+#       which case Claude picks the setting from the description.
+#   P2  The user's 60 sheets are built into the app as the default packs for every campaign: processed offline into cut, trimmed,
+#       keyed-to-transparency, resized WebP sprites plus a manifest, which ARE committed; the raw 2048 px sheets are NOT committed
+#       (they stay in the git-ignored sprite-sheets/ folder; the user's copies are in /mnt/c/Users/Petar/sprite-sheets/<setting>/
+#       <props|large|terrain>.jpg). GMs can ALSO upload their own sheets or single sprites per campaign (files table, image
+#       allowlist, size caps), cut and labelled in an upload screen (name / kind, size in squares, blocks sight / cover / none,
+#       gives light).
+#   P3  Both styles stay: each map is drawn in "Classic" (today's procedural painter) or "Sprites", chosen per map by the GM. The
+#       user decides later which one they prefer, so switching is one click and Classic stays fully working.
+#   Earlier (bead dcm-bxp.56 and the brief to this plan): the app adds its own shadows (sprites have none) with one light
+#       direction; terrain textures are tiled with edge blending and variant mixing so seams and repetition do not show; sprite
+#       kinds beyond the fixed 22 need sight defaults, sizes and light flags (a pack manifest per setting); the vision engine (C1)
+#       reads sight / light from the manifest for sprite objects; Claude's layout prompt gets the chosen setting's kinds; the
+#       keyword fallback also works with packs.
+#
+# Derived rules (follow from P1-P3 and the D9 code; binding unless the user objects):
+#   D1  One layout serves both styles. Every map object keeps a Classic `kind` (one of the 22) and MAY carry a `sprite` ref; every
+#       area keeps a Classic `terrain` (one of the 14) and MAY carry a `texture` ref. Classic draws kind / terrain and ignores the
+#       refs; Sprites draws the refs and, where an object or area has none, maps the Classic kind / terrain to the map's setting
+#       through the catalog's mapping tables (deterministic per object id and seed), else to `common`, else draws that one object
+#       or terrain the Classic way. So Classic -> Sprites -> Classic loses nothing and never rewrites rows: `setStyle` writes only
+#       the map's `style` field.
+#   D2  Each manifest entry gives a Classic fallback (kind + variant) whose light behaviour equals the sprite's: a sprite that gives
+#       light maps to a Classic light kind with the same reach (torch / walltorch / campfire), a sprite that gives no light never
+#       maps to one. So C7's toggleLight and C1's isLit work unchanged on sprite objects; a catalog unit test enforces it.
+#   D3  Sight for a sprite object = the GM's per-object override (existing `sight` field, R7) ?? the sprite's manifest default ??
+#       the Classic kind's R7 default. Manifest sight defaults follow R7's own test: "anything big enough to hide behind blocks
+#       sight" (trees, wagons, tents, walls, statues, columns, huts, stalls...), furniture and low objects are cover (tables, beds,
+#       benches, counters, crates, barrels, small rocks...), flat things are none (rugs, pools, pits, bridges, stages, chasms,
+#       puddles, tracks, bones, stains, lily pads). The P1 task doc lists every assignment for the user to review.
+#   D4  Size: props are 1 x 1 square; large objects 2 x 2, except long items 2 x 1 (bridges, wall / channel / boardwalk sections,
+#       bookshelf, bar counter, long tables and benches, pew row, cannon pair); terrain swatches tile at TEXTURE_SQUARES (4) squares
+#       per swatch. An object's `r` scales its sprite (default r = max(w, h) / 2); `rot` rotates it.
+#   D5  Shadows: drawn by the app from each sprite's alpha, one light direction from the top-left (the style block's light), so
+#       shadows fall to the bottom-right; blur and offset by the manifest's `height` (flat = no shadow, low, tall). Constants in one
+#       module (SHADOW_DIR, SHADOW_ALPHA, SHADOW_BLUR, offsets per height) so the user can tune them.
+#   D6  Terrain: textures are tiled in world space; a terrain class with several textures (the setting's + common's) is mixed by a
+#       seeded low-frequency noise mask; rotatable textures (manifest flag; not planks, tiles or paths) get a seeded rotation /
+#       flip per tile; boundaries between terrains are feathered with a noisy alpha mask (about 0.35 square); terrains with no
+#       texture in the setting (wall, void, deep, lava when absent) are painted the Classic way and feathered the same way. The
+#       import (P4) also runs a seam-fix pass on each swatch (offset by half, cross-blend the seam) and reports tileability.
+#   D7  The setting: built-in settings are the 19 setting folders; `common` is not a setting, it is always added to the chosen
+#       setting. A map stores its resolved setting (`setting`) and whether the GM picked it (`settingPicked`; false = Claude or the
+#       keyword picker chose). Maps without a setting (all D9 maps) resolve it at paint time with the keyword picker on the map's
+#       prompt and name, else grassland-and-road; switching to Sprites stores that resolution. Changing the setting re-maps only
+#       objects and areas without a ref (D1); refs to another setting's sprites stay.
+#   D8  Built-in keys are stable: `<setting>/<slug of the prompts-doc name>` (e.g. forest/oak-tree). A regenerated sheet keeps its
+#       keys, so placed objects survive a re-import; WebP files are content-hashed (`<slug>.<hash8>.webp`) so they can be served
+#       immutable. Extra cut sprites beyond a list (snow-and-tundra/large's extra igloo) become numbered variants of the named
+#       sprite (`igloo`, variant 2) through scripts/sprite-packs/overrides.json and are mixed like terrain variants.
+#   D9  Uploaded sprites are cut in the browser (the same pure cut core as the offline script, on canvas ImageData); only the cut,
+#       re-encoded sprites are uploaded (WebP, PNG where the browser cannot encode WebP), never the sheet. Each sprite is one
+#       `files` row (kind "sprite") claimed by its `spritePackSprites` row (CF16, CF17). Deleting an uploaded sprite or pack leaves
+#       objects that referenced it in place; they resolve to their Classic kind (D1), never an error.
+#   D10 Players get exactly what they got before plus the sprite URLs needed to draw the live map; pack lists, labels and the
+#       upload screen are GM-only.
+#
+# Existing behaviour to keep (tests exist; tracers extend, never weaken):
+#   E1  Every D9 rule R1-R12 and answered Q1-Q6 works on Sprites maps exactly as on Classic maps: grid, several maps and one live,
+#       range circles, tokens linked to the tracker and sheets, facing, vision cones, R7 sight, R8 phases (Nautical Dawn is day),
+#       R9 light reaches, R10 dim reveals, R11 per-player view and explored areas, R12 GM preview and fog brush, Q1 hidden edges.
+#   E2  Classic maps paint exactly as today: src/lib/combat-map/painter.ts, raster.ts and fallback-layout.ts are not changed by any
+#       tracer; tests/unit/combat-map-painter.test.ts and the C3-C8 visual specs pass unchanged.
+#   E3  Map rows without `style` are Classic; rows without `setting` / `texturePalette`, objects without `sprite`, areas without
+#       `texture` read and paint as today. No migration is needed (all new fields are optional; combatMaps keeps schemaVersion 1).
+#   E4  Every existing public function keeps accepting its current arguments (new arguments optional), so tests/convex/
+#       {combat-maps,combat-map-generate,combat-map-edit,combat-tokens,combat-vision}.test.ts pass unchanged.
+#   E5  For maps without sprite objects the vision engine returns identical results (tests/unit/combat-map-vision.test.ts and
+#       combat-map-spec.test.ts unchanged); the C1 speed budget (44 x 32 map, 300 objects, one viewer < 50 ms) holds with sprite
+#       traits resolved.
+#   E6  Classic generation: the layout prompt (scenePrompt) and the keyword layout stay word for word; only the setting step (Q2)
+#       is added around them. Regenerating keeps tokens (clamped) and clears explored areas and fog marks, in both styles.
+#   E7  Uploads follow CF16 / CF17: access-checked, rate-limited upload URLs; size and png/jpeg/webp/gif allowlist checked after
+#       upload (never image/*, never SVG); a rejected file is deleted and the mutation RETURNS {ok:false, code}; a storage id is
+#       never proof of access.
+#   E8  Duplicating a map copies its new fields too (style, setting, texture palette, sprite and texture refs, texture cells).
+#
+# ORCHESTRATOR NOTE (2026-10-21, after P3 merged): light can now come from a sprite's traits (`givesLight`, `mapLightReach` in
+#   src/lib/domain/combat-map/light.ts; trait "faintglow" clear 1 / dim 3). Every place that asks "is this a switchable light?"
+#   must use givesLight({kind, lit, traits}) instead of the Classic kind alone: convex/combatVision.ts toggleLight (P0 or P5),
+#   src/components/combat-map/editor/edit-model.ts isSwitchableLight and edit-tools-panel.tsx's reach label via mapLightReach (P9),
+#   and the play-mode light switches in src/components/combat-map/vision/vision-layer.tsx (P6). P5 passes resolved traits and `rot`
+#   on every object given to prepareMap (convex/lib/combatVision.ts).
+# QUESTIONS (ANSWERED by the user 2026-10-21; binding):
+#   ANSWER Q1 = (b): the torch-like and campfire-like kinds of (a), PLUS a new "faint glow" map-light reach for things that only
+#       glow (candles, candelabra, glowing mushrooms, luminous moss, crystals, wisps, lava, glowing lichen...): FAINT_GLOW_REACH =
+#       clear to 1 square (Melee), dim to 3 squares (Very Close), one named constant in src/lib/domain/combat-map/light.ts next to
+#       MAP_LIGHT_REACH (tunable; the orchestrator told the user this value). Faint-glow lights are switchable like other map lights
+#       and follow R9-R11 (dim hides tokens at night). Owned by P3 (vision traits) and P1 (catalog flags); the GM can set any
+#       sprite to none / faint glow / torch / campfire in P8's labelling screen and P9's editor.
+#   ANSWER Q2 = (a) two calls, one generation. ANSWER Q3 = (c) per-pack New setting / Add to <built-in>. ANSWER Q4 = (a) Classic for new
+#       maps until the user picks. ANSWER Q5 = (a) sharp pinned to Next's 0.34.5 as a devDependency.
+# (Original question text kept below for reference.)
+#   Q1  Light from sprite kinds beyond R9. R9 defines three map lights: wall torch / torch [6, 12], campfire [12, 24]. The packs add
+#       braziers, standing torches, street lamps, lanterns on posts, fireplaces, forges, stoves, candles, candelabras, glowing
+#       mushrooms, luminous moss, crystals, will-o'-wisps, lava pools. Options: (a) only R9's two reaches exist: torch-like
+#       (standing torch, iron brazier, burning brazier, lantern on a post, street lamp, floor brazier, drow lantern) and
+#       campfire-like (campfire burning, campfire in snow, hearth fireplace, grand fireplace, fireplace grate, blacksmith forge,
+#       forge of the fire giants, kitchen stove); everything that only glows (candles, candelabra, mushrooms, moss, crystals,
+#       wisps, lava) gives no light by default, and the GM may set any sprite to torch or campfire in the upload screen or per
+#       object; (b) (a) plus a new "faint glow" light (e.g. clear 1, dim 3) for the glowing things, a new rule value;
+#       (c) only the sprites named torch / campfire give light. DEFAULT (a): no new rule values, every reach is R9's. Cited by
+#       P1, P3, P8.
+#   Q2  How Claude picks the setting ("Let Claude choose", P1). Listing every setting's kinds in one prompt is about 580 names.
+#       Options: (a) two calls: a short classification call (description + the setting names, max a few tokens out) picks the
+#       setting, then the layout call gets only that setting's and common's kinds; the rate limit counts the pair as one
+#       generation; (b) one call with every setting's kinds; (c) the keyword picker chooses, Claude only lays out. Also: Classic
+#       maps run the same classification step (their layout prompt stays unchanged, E6), so a later switch to Sprites already has
+#       the right setting. DEFAULT (a), classification for both styles. Cited by P7.
+#   Q3  What an uploaded pack is in the Setting picker. Options: (a) always a setting of its own (with common added); (b) always an
+#       extension of one built-in setting; (c) the GM chooses per pack: "New setting" or "Add to <built-in setting>" (optional
+#       `extends`). DEFAULT (c). Cited by P0, P5, P7, P8.
+#   Q4  Style of new maps. Options: (a) Classic until the user picks a favourite (P3), the GM switches per map; (b) Sprites;
+#       (c) the style the GM last used (per-viewer localStorage). DEFAULT (a). Existing maps are Classic either way (E3). Cited
+#       by P5, P6.
+#   Q5  Image library for the offline cutter (decode JPEG, encode WebP, resize). Options: (a) `sharp` as a devDependency, pinned
+#       to the version Next 16 already installs (sharp 0.34.5 is in node_modules; no new download, respects minimumReleaseAge);
+#       (b) a pure-JS decoder / encoder (new dependencies, slower, worse WebP). DEFAULT (a). The browser path (P8) uses canvas
+#       and needs no library. Cited by P0, P4.
+#
+# Rules for every tracer (part of every acceptance list, not repeated):
+#   - Every new public function uses the wrappers in convex/lib/functions.ts (campaignQuery / gmQuery / gmMutation /
+#     keyedGmMutation / campaignMutation / userAction); authorization only through permissionFor via the wrappers. Style,
+#     setting, generation, editing and every pack / upload function are GM-only; players get read-only campaignQuery results
+#     filtered on the server (D10). Outsiders get NOT_FOUND, anonymous UNAUTHENTICATED (as the wrappers do).
+#   - `args` and `returns` validators on every new function, no v.any(); schema-guard RETURNS_PENDING never grows.
+#   - Its own Convex test covers anonymous, outsider, player and GM for each new function (tests/convex/authz-matrix.test.ts
+#     does not exist yet; D12 folds these in) and asserts ConvexError.data.code (errorCode helper), never message text.
+#   - Intents only: ids and single fields (setStyle = map id + style; setSetting = map id + setting ref; updateSprite = sprite
+#     id + one field); never a whole map, object list, manifest or pack. Optimistic updates on the style switch, the setting
+#     picker, sprite label edits and sprite / pack deletes.
+#   - Indexed reads only (no .filter on queries); caps checked with an index `.take`: MAX_SPRITE_PACKS 20 per campaign,
+#     MAX_PACK_SPRITES 64 per pack, MAX_TEXTURE_PALETTE 16 per map, sprite size 1..4 squares per side, uploaded sprite at most
+#     MAX_SPRITE_BYTES 1 MB and 1024 px per side, pack and sprite names 60 characters. Existing D9 caps unchanged.
+#   - A new error code is one P0 defines in src/lib/errors/spritePacks.ts; a code P0 did not add means stop and report.
+#   - Only the dependency Q5 allows (P0 adds it). Pure logic (catalog, mapping, setting picker, cut core, traits, sprite layout
+#     cleaning) lives in framework-free src/lib/** with relative imports (CH6), used by the scripts, the server and the client.
+#   - Every useQuery subtree sits inside an error boundary; loading uses the shared Loading with role=status. Sprite images load
+#     asynchronously: until a sprite has loaded its object is drawn the Classic way, then that area is repainted (no blank map).
+#   - UI in the Combat Map's look: tokens and classes from C/combat-map/combat-map.css (cm-card, cm-btn, cm-lbl, --cm-*); each
+#     tracer adds CSS only in its own colocated .css. 1440 and 1024 px layouts; 390 px: no horizontal page scroll, touch targets
+#     >= 44 px, labels on every control, keyboard reachable, native <dialog> modals via src/components/brand/modal.tsx.
+#   - Visual acceptance: the tracer's tests/e2e/visual/SP-<id>.spec.ts (tag @visual, E2E_VISUAL=1) shoots its regions at
+#     1440x900, 1024x768 and 390x844. There is no design board for sprites: the counterparts are the same map in Classic and the
+#     P4 contact sheets; the task doc docs/tasks/TASK-SP-<id>.md lists both sets with a verdict per region and every deliberate
+#     deviation.
+#   - pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e specs pass in its worktree; the
+#     orchestrator runs the full e2e suite after each wave. Raw sheets are never committed (the tracer guard rejects any file
+#     under sprite-sheets/); worktrees read them from /mnt/c/Users/Petar/sprite-sheets with the scripts' --src flag.
+#   - Every tracer owns docs/tasks/TASK-SP-<id>.md.
+#
+# Data model (P0 creates every table and field; later tracers only add functions). Widen only: no existing validator changes
+#   shape, every new field is optional, combatMaps keeps schemaVersion 1 (E3).
+#   spriteRef         union {builtin: string (catalog key, D8)} | {uploaded: id("spritePackSprites")} (CD6: uploaded refs are ids).
+#   settingRef        union {builtin: string (setting id)} | {pack: id("spritePacks")}.
+#   combatMaps        widened: style? ("classic" | "sprites"; absent = classic, Q4), setting? (settingRef), settingPicked?
+#                     (bool, D7), texturePalette? (array of spriteRef, <= MAX_TEXTURE_PALETTE; the texture cell layer's codes
+#                     index into it).
+#   combatMaps.areas  each area widened: texture? (spriteRef; Classic ignores it, D1).
+#   combatMapObjects  widened: sprite? (spriteRef). `kind` stays the Classic fallback (D1, D2); `sight` stays the GM override (D3).
+#   combatMapCells    layer widened with "texture" (hand-painted textures for Sprites maps: one character per square indexing
+#                     texturePalette, "." = none); painting a texture also paints its terrain class on the "terrain" layer so
+#                     vision and Classic stay right (P9).
+#   spritePacks       one row per GM pack: campaignId, name, extends? (built-in setting id, Q3), createdBy, createdAt, updatedAt.
+#                     Index by_campaign_updated. At most MAX_SPRITE_PACKS per campaign.
+#   spritePackSprites one row per uploaded sprite: campaignId, packId, fileId (files row), name, slug, category ("object" |
+#                     "texture"), w, h (squares, 1..4), sight ("block" | "cover" | "none"), light ("none" | "torch" | "campfire",
+#                     Q1), height ("flat" | "low" | "tall", D5), footprint ("circle" | "rect"), classicKind, classicVariant?,
+#                     terrain? (texture class, one of the 14 terrains), rotatable? (textures), px {w, h}, order, createdAt.
+#                     Indexes by_pack_order, by_campaign. Typed, no blob. Own table: a pack grows to 64 rows (CD8).
+#   files.kind        widened with "sprite" (refId = the spritePackSprites id).
+#   Built-in manifest src/lib/sprite-packs/builtin/manifest.ts (generated by P4, committed): schemaVersion 1, per setting the
+#                     cut sprites (key, file, px size, variants, seam score) joined at runtime with the hand-curated catalog
+#                     (P1: names, sizes, sight, light, height, footprint, classic fallback, terrain class). Read by server and
+#                     client alike; validated by a zod schema in src/lib/sprite-packs/manifest.ts.
+#   Purge: purgeCampaign deletes spritePacks, spritePackSprites and their "sprite" files. No table only grows (packs and sprites
+#   are capped and deleted by the GM; orphaned upload blobs are already swept by `sweep orphan uploads`), so no new cron.
+#
+# Shared files: package.json, pnpm-lock.yaml, tsconfig.json, next.config.ts, convex/schema.ts, convex/cleanup.ts,
+#   convex/lib/functions.ts (rate limit spriteUpload), convex/tables/combatMaps.ts, convex/tables/files.ts, convex/lib/files.ts,
+#   convex/lib/validators/combatMaps.ts, src/lib/errors/app-error.ts, src/lib/convex-errors.ts, tests/convex/schema-guard.test.ts,
+#   tests/convex/cleanup.test.ts belong to P0 only. P0 also widens the returns validators and projections that echo map, area,
+#   object and cell rows (convex/combatMaps.ts, convex/combatVision.ts) so a row with a new field never breaks a read, and copies
+#   the new fields in `duplicate` (E8). C/combat-map/page.tsx and src/components/combat-map/slots.ts belong to P0, which adds
+#   two stub slots (src/components/combat-map/style/index.tsx: StyleSwitch; src/components/combat-map/packs/index.tsx: PacksLink)
+#   and the GM-only route shell C/combat-map/packs/{page.tsx,error.tsx}. docs/data-model.md is updated by the orchestrator.
+plan: sprite-packs
+waves:
+  # ---------------------------------------------------------------- wave 1: foundation, catalog, cut core, vision traits
+  - wave: 1
+    tracers:
+      - id: P0
+        foundation: true
+        title: Sprite-packs foundation (fields, tables, validators, errors, rate limit, files kind, purge, widened reads, stub slots, packs route shell, tooling)
+        size: M
+        goal: The new map, area, object and cell fields and the spritePacks / spritePackSprites tables exist, are read back by every existing map query without error, are copied by duplicate and purged with their campaign; the error codes, the spriteUpload rate limit and the "sprite" files kind are wired; the Combat Map page mounts the StyleSwitch and PacksLink stubs and /campaigns/<id>/combat-map/packs opens a GM-only shell.
+        depends_on: []
+        owns:
+          # Added 2026-10-21: the cell layer widening needs decodeCells to know the texture layer.
+          - src/components/combat-map/map-view/cells.ts
+          - package.json
+          - pnpm-lock.yaml
+          - tsconfig.json
+          - next.config.ts
+          - convex/schema.ts
+          - convex/tables/combatMaps.ts
+          - convex/tables/spritePacks.ts
+          - convex/tables/files.ts
+          - convex/lib/validators/combatMaps.ts
+          - convex/lib/validators/spritePacks.ts
+          - convex/lib/files.ts
+          - convex/lib/functions.ts
+          - convex/cleanup.ts
+          - convex/combatMaps.ts
+          - convex/combatVision.ts
+          - src/lib/errors/spritePacks.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/packs/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/packs/error.tsx
+          - src/components/combat-map/slots.ts
+          - src/components/combat-map/style/index.tsx
+          - src/components/combat-map/packs/index.tsx
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/convex/sprite-fields.test.ts
+          - tests/e2e/sprite-packs-shell.spec.ts
+          - docs/tasks/TASK-SP-P0.md
+        reads:
+          - docs/sprite-packs/prompts.md
+          - convex/lib/combatMaps.ts
+          - convex/lib/permissions.ts
+          - convex/combatMapEdit.ts
+          - convex/combatMapGenerate.ts
+          - src/lib/domain/combat-map/spec.ts
+          - src/components/combat-map/map-view/**
+        acceptance:
+          - "convex/lib/validators/combatMaps.ts gains spriteRefValidator, settingRefValidator, mapStyleValidator; combatMapFields gain style?, setting?, settingPicked?, texturePalette?; combatAreaValidator gains texture?; combatObjectFields gain sprite?; cellLayerValidator gains \"texture\" (widen only, schemaVersion stays 1, E3)"
+          - "convex/tables/spritePacks.ts defines spritePacks and spritePackSprites with the fields and indexes in the data model; validators and caps (MAX_SPRITE_PACKS, MAX_PACK_SPRITES, MAX_TEXTURE_PALETTE, MAX_SPRITE_BYTES, MAX_SPRITE_PX, name caps, size 1..4) live in convex/lib/validators/spritePacks.ts; files.kind gains \"sprite\""
+          - "src/lib/errors/spritePacks.ts defines every code the plan needs (at least SPRITE_PACK_NOT_FOUND, SPRITE_PACK_LIMIT, SPRITE_NOT_FOUND, SPRITE_LIMIT, SPRITE_UNKNOWN for a built-in key not in the manifest, SPRITE_SETTING_UNKNOWN, SPRITE_PALETTE_FULL) and convex-errors combines them; upload rejections reuse the existing attach codes"
+          - "RATE_LIMITS gains spriteUpload (token bucket 200 per hour, capacity 64: one sheet is up to 16 uploads)"
+          - "convex/combatMaps.ts (get / live / list) and convex/combatVision.ts return the new fields (widened returns validators); duplicate copies style, setting, settingPicked, texturePalette, area textures, object sprites and texture cells (E8); tests/convex/sprite-fields.test.ts writes rows with every new field and reads them back through each query, and shows a D9 row without them still reads (E3, E4)"
+          - "purgeCampaign deletes spritePacks, spritePackSprites and their sprite files; tests/convex/cleanup.test.ts covers it"
+          - "package.json: devDependency sharp pinned to the version already in node_modules (Q5), scripts sprites:cut and sprites:build pointing at scripts/sprite-packs/ (P4 fills them); how the scripts run TypeScript is decided and documented (Node 24 type stripping, with tsconfig allowImportingTsExtensions only if needed)"
+          - "next.config.ts serves /sprite-packs/* with Cache-Control public, max-age=31536000, immutable (files are content-hashed, D8)"
+          - "slots.ts documents StyleSwitch (P6) and PacksLink (P8) props; the page mounts them in their own error boundaries; the packs route renders a GM-only shell (players are sent back to the Combat Map; the server functions refuse them anyway); tests/e2e/sprite-packs-shell.spec.ts covers GM and player"
+
+      - id: P1
+        title: Pure catalog - settings, per-item traits from the prompts doc, mapping tables, keyword setting picker, sprite traits
+        size: M
+        goal: A pure, tested module names every built-in setting and every sprite the prompts doc asks for, with its size, sight, light, shadow height, footprint and Classic fallback, maps Classic kinds and terrains to each setting's sprites and textures, picks a setting from a description by keywords, and resolves a sprite ref to the traits the vision engine needs.
+        depends_on: []
+        owns:
+          - src/lib/sprite-packs/index.ts
+          - src/lib/sprite-packs/settings.ts
+          - src/lib/sprite-packs/manifest.ts
+          - src/lib/sprite-packs/catalog/**
+          - src/lib/sprite-packs/mapping.ts
+          - src/lib/sprite-packs/pick-setting.ts
+          - src/lib/sprite-packs/traits.ts
+          - tests/unit/sprite-catalog.test.ts
+          - docs/tasks/TASK-SP-P1.md
+        reads:
+          - docs/sprite-packs/prompts.md
+          - src/lib/domain/combat-map/spec.ts
+          - src/lib/domain/combat-map/sight.ts
+          - src/lib/domain/combat-map/light.ts
+          - src/lib/combat-map/fallback-layout.ts
+        acceptance:
+          - "settings.ts: the 19 built-in settings (id = folder name, label) plus common, which is never offered as a setting (D7)"
+          - "catalog/<folder>.ts per folder (20 files): props (16), large (9), terrain (4) in the prompts doc's grid order; each entry has key (D8), name, sheet, index, w x h (D4), sight (D3), light (Q1 default list), height (D5), footprint, classic {kind, variant?} (D2); textures add terrain class and rotatable (D6)"
+          - "tests/unit/sprite-catalog.test.ts parses docs/sprite-packs/prompts.md and asserts each catalog list equals the doc's list in order (the cutter labels sprites by this order), keys are unique, every light sprite's classic kind is a light kind with the same reach and no other sprite maps to a light kind (D2), sizes are within 1..4"
+          - "mapping.ts: per setting, Classic kind -> candidate sprite keys and Classic terrain -> texture keys (setting first, then common); pickSprite(kind, variant, setting, objectId, seed) and pickTexture(terrain, setting, x, y, seed) are deterministic; a kind or terrain with no candidate returns null (the painter draws it Classic, D1)"
+          - "pick-setting.ts: keyword scorer over the description (and map name), mirroring fallback-layout's keyword families (forest, snow, swamp, coast, cave, dungeon, ship, tavern, temple, ...); no match gives grassland-and-road (D7); unit tests for ten descriptions"
+          - "manifest.ts: zod schema of the generated built-in manifest (schemaVersion 1; per sprite key, file, px size, variants, seam score) and a lookup joining it with the catalog; an empty manifest is valid (P4 fills it)"
+          - "traits.ts: spriteTraits(ref, lookup) -> {sight, light, height, footprint, w, h} for built-in keys (catalog) and uploaded rows (passed in); a structural type compatible with P3's VisionTraits (P5 checks assignability)"
+          - "The task doc tables every sight, light, size and height assignment for the user to review (D3, D4, Q1)"
+
+      - id: P2
+        title: Pure cut core - magenta keying, defringe, grid-line removal, cell finding, trimming, terrain swatches
+        size: M
+        goal: A pure, tested module turns an RGBA sheet buffer into labelled-order sprite cuts with clean transparent edges (props 4x4, large 3x3, single sprites) or into four terrain swatches, and reports what it had to fix, coping with JPEG fringes, drawn grid lines, an extra object, an object touching the border and an uneven grid.
+        depends_on: []
+        owns:
+          - src/lib/sprite-packs/cut/**
+          - tests/unit/sprite-cut.test.ts
+          - tests/fixtures/sprite-sheets/**
+          - docs/tasks/TASK-SP-P2.md
+        reads:
+          - docs/sprite-packs/prompts.md
+        acceptance:
+          - "Works on a plain {width, height, data: Uint8ClampedArray} buffer, no Node or DOM imports, so the offline script (sharp) and the browser (canvas ImageData, P8) share it"
+          - "key.ts: magenta distance key with a soft alpha ramp (tolerant of JPEG noise), despill of magenta from edge pixels, 1 px alpha erosion; also accepts sheets that are already transparent (GM uploads)"
+          - "lines.ts: removes thin drawn grid lines (long, few px thick, spanning most of the sheet; grassland-and-road/large) before cell finding"
+          - "cells.ts: finds sprites by row and column bands of the non-background mask (works for uneven grids, dungeon/large), unions fragments inside one band cell (sparks, scattered bones), falls back to connected components with nearest-merge when the band count differs from the expected count; returns cuts in reading order with flags: count mismatch (snow-and-tundra/large: 10 found, 9 expected), touches border (mountain-and-cliffs/large; kept, not dropped), lines removed, fringe score"
+          - "trim.ts: trims each cut to its alpha bounds plus a 2 px margin and reports its pixel size"
+          - "terrain.ts: finds the four swatches between the magenta cross and any flat outer frame (the user's terrain sheets have a white frame), insets past JPEG bleed, returns them square; seamFix (offset by half, cross-blend) and a tileability score (D6)"
+          - "tests/unit/sprite-cut.test.ts uses small synthetic sheets (generated in the test or committed fixtures under 200 KB total) for: a clean 4x4, JPEG-like noise on the magenta edge (no magenta left in edge pixels), drawn grid lines, 10 objects for 9 names, an object touching the border, an uneven 3x3, fragments in one cell, an already-transparent sheet, and a framed 2x2 terrain sheet"
+
+      - id: P3
+        title: Vision reads sprite traits (C1 extension)
+        size: S
+        goal: The vision engine takes optional per-object traits (sight default, light, footprint and size) so sprite objects block sight, give cover or light exactly as their manifest says, including long rectangular footprints, while maps without traits give identical results.
+        depends_on: []
+        owns:
+          - src/lib/domain/combat-map/traits.ts
+          - src/lib/domain/combat-map/sight.ts
+          - src/lib/domain/combat-map/light.ts
+          - src/lib/domain/combat-map/vision.ts
+          - src/lib/domain/combat-map/index.ts
+          - tests/unit/combat-map-vision-traits.test.ts
+          - docs/tasks/TASK-SP-P3.md
+        reads:
+          - tests/unit/combat-map-vision.test.ts
+          - tests/unit/combat-map-spec.test.ts
+          - docs/sprite-packs/prompts.md
+        acceptance:
+          - "traits.ts: VisionTraits {sight, light: none | torch | campfire, footprint: circle | rect, w, h}; VisionObject gains optional traits and optional rot"
+          - "sightOf: override ?? traits.sight ?? the kind's R7 default (D3); light: traits.light maps to MAP_LIGHT_REACH torch / campfire (Q1), else the kind (D2); isLit keeps `lit === false` as off"
+          - "prepareMap blocks a rotated rectangle of w x h squares (scaled by r) for rect footprints (wall sections, bridges are none, counters cover) and a circle for circle footprints, using blockRadiusFactor for circles as today"
+          - "tests/unit/combat-map-vision.test.ts and combat-map-spec.test.ts pass unchanged (E5); new tests: a sprite tree blocks, a sprite pool does not, an override beats the manifest, a rotated wall section blocks along its length only, a brazier sprite lights like a torch at night, a candle sprite lights nothing (Q1), the speed budget with 300 sprite objects"
+
+  # ---------------------------------------------------------------- wave 2: built-in packs, server side
+  - wave: 2
+    tracers:
+      - id: P4
+        title: Offline cutter script and the built-in pack import (the user's 60 sheets)
+        size: L
+        goal: pnpm sprites:build cuts the user's 60 sheets into trimmed, keyed, resized, content-hashed WebP sprites and seam-fixed terrain swatches under public/sprite-packs, writes the built-in manifest, and leaves a review report with a contact sheet per sheet; the result is committed (sprites + manifest, never the raw sheets) after the user has seen the contact sheets.
+        depends_on: [P0, P1, P2]
+        owns:
+          - scripts/sprite-packs/**
+          - public/sprite-packs/**
+          - src/lib/sprite-packs/builtin/**
+          - tests/unit/sprite-builtin-pack.test.ts
+          - docs/sprite-packs/prompts.md
+          - docs/tasks/TASK-SP-P4.md
+          # Added 2026-10-21 (P1 merged): the user's P4 answers edit the catalog - new items from the extra sheets, the sewer
+          # channel as a 2x2 crossing, the forest hedge 2x1 and the temple pew row 2x2; the tavern/temple/ruins terrain sheets
+          # were regenerated (old ones in _replaced).
+          - src/lib/sprite-packs/catalog/**
+          - tests/unit/sprite-catalog.test.ts
+        reads:
+          - src/lib/sprite-packs/catalog/**
+          - src/lib/sprite-packs/manifest.ts
+          - src/lib/sprite-packs/cut/**
+          - .gitignore
+        acceptance:
+          - "scripts/sprite-packs/cut-sheets.ts (pnpm sprites:cut --src <dir> [--setting s]): decodes each sheet with sharp (Q5), runs the P2 cut core, labels cuts from the P1 catalog in reading order, applies scripts/sprite-packs/overrides.json (per sheet: skip, reorder, or name an extra cut as a numbered variant, D8; first entry: snow-and-tundra/large's extra igloo), and writes candidates, a manifest draft and the review report to sprite-sheets/_out/ (git-ignored)"
+          - "Review report sprite-sheets/_out/report.html: per sheet a contact sheet on a checkerboard (index, name, size, sight, light, the app shadow preview) and per terrain a 3 x 3 tiled preview; flags count mismatches, border touches, removed grid lines, fringe scores and low tileability, and prints a summary; every flag from P2's known issues is either fixed or listed with the override that resolves it"
+          - "scripts/sprite-packs/build-pack.ts (pnpm sprites:build): writes public/sprite-packs/<setting>/<slug>.<hash8>.webp (objects at SPRITE_PX_PER_SQUARE 160 px per square side, textures 512 px per TEXTURE_SQUARES), and src/lib/sprite-packs/builtin/manifest.ts (schemaVersion 1); rerunning with --setting rebuilds only that setting and keeps keys (D8)"
+          - "tests/unit/sprite-builtin-pack.test.ts: the manifest passes P1's schema, every catalog item has a file (or is listed as missing in the task doc), every file exists and is referenced, each object WebP <= 80 KB and texture <= 200 KB, public/sprite-packs <= 24 MB in total, no file under sprite-sheets/ is tracked"
+          - "Run on /mnt/c/Users/Petar/sprite-sheets: all 60 sheets processed; the task doc records per sheet the verdict and every override; the contact sheets are handed to the orchestrator, who shows them to the user before P4 is merged"
+          - "docs/sprite-packs/prompts.md: Status updated (cutter built; how to regenerate one sheet and rebuild its setting; the white-frame and grid-line tolerances)"
+
+      - id: P5
+        title: Server side - map style, setting, sprite sources for GM and players, traits in server vision
+        size: M
+        goal: The GM switches a map between Classic and Sprites and sets its setting with one intent each, the client gets one query with everything needed to draw a map's sprites (built-in keys, the setting, uploaded sprite URLs) filtered for players to the live map, and the server's player view resolves sprite traits so what players see on Sprites maps follows the manifest.
+        depends_on: [P0, P1, P3]
+        owns:
+          - convex/combatMapStyle.ts
+          - convex/lib/spriteSources.ts
+          - convex/lib/combatVision.ts
+          - tests/convex/combat-map-style.test.ts
+          - tests/convex/combat-vision-sprites.test.ts
+          - docs/tasks/TASK-SP-P5.md
+        reads:
+          - convex/combatMaps.ts
+          - convex/combatVision.ts
+          - convex/lib/combatMaps.ts
+          - convex/lib/validators/combatMaps.ts
+          - convex/lib/validators/spritePacks.ts
+          - convex/tables/spritePacks.ts
+          - src/lib/sprite-packs/index.ts
+          - src/lib/domain/combat-map/index.ts
+        acceptance:
+          - "gmMutation setStyle (map id, classic | sprites): writes only `style` (D1); switching to Sprites with no setting stores the keyword-picked one with settingPicked false (D7); default style of new and old maps is classic (Q4)"
+          - "gmMutation setSetting (map id, settingRef | null for 'Let Claude choose'): a built-in id must exist (SPRITE_SETTING_UNKNOWN), a pack must belong to the campaign (SPRITE_PACK_NOT_FOUND); writes setting and settingPicked"
+          - "gmQuery settings (campaign): built-in settings plus the campaign's packs that are settings of their own, and for packs that extend a built-in setting, the setting they add to (Q3)"
+          - "campaignQuery spriteSources (map id): style, resolved setting, and the uploaded sprites the map can use (GM: the setting's extending packs and every ref on the map, with traits and getUrl links) or, for a player, only the live map and only the uploaded sprites it references (D10); built-in sprites come from the static manifest on the client"
+          - "convex/lib/spriteSources.ts: resolveRefs(ctx, refs) loads uploaded rows by id (bounded by MAX_COMBAT_OBJECTS + MAX_TEXTURE_PALETTE distinct ids), unknown or deleted refs resolve to null (D9)"
+          - "convex/lib/combatVision.ts passes VisionTraits for sprite objects into prepareMap (P3), so playerView, previewAs and toggleLight follow the manifest; P1's traits type is assignable to P3's VisionTraits (compile-time check)"
+          - "Tests: a sprite wall section hides a token behind it for the player, a sprite pool does not, a deleted uploaded sprite falls back to its classic kind, a player cannot read spriteSources of a non-live map, the read-cost of spriteSources and playerView on a 300-object map stays within the C1 budget"
+
+  # ---------------------------------------------------------------- wave 3: painter + switch, setting picker + generation, uploads
+  - wave: 2
+    tracers:
+      - id: P4V
+        title: Village extra sheet (town-street-and-market/large-2) - nine new catalog items cut into the built-in pack
+        size: S
+        # USER REQUEST (2026-10-21): the village sheet from the cottage prompt, saved as large-2.jpg. Items in reading order:
+        #   thatched cottage, stone cottage, timber barn, wooden fence section, wooden fence gate, vegetable garden plot,
+        #   haystack, woodpile with chopping block, chicken coop with fenced run.
+        goal: Add the nine village items as catalog extras with sizes and traits, cut them, and rebuild the built-in pack.
+        depends_on: [P4]
+        owns:
+          - scripts/sprite-packs/**
+          - public/sprite-packs/**
+          - src/lib/sprite-packs/builtin/**
+          - src/lib/sprite-packs/catalog/**
+          - tests/unit/sprite-catalog.test.ts
+          - tests/unit/sprite-builtin-pack.test.ts
+          - docs/sprite-packs/prompts.md
+          - docs/tasks/TASK-SP-P4V.md
+        reads:
+          - docs/tasks/TASK-SP-P4.md
+          - src/lib/sprite-packs/**
+        acceptance:
+          - "The nine items are catalog extras of town-street-and-market with keys, sizes and traits (buildings block movement and sight; fence and gate block movement, not sight; garden plot difficult terrain; haystack, woodpile and coop as their nearest existing kinds), the prompts doc has the '- large-2:' line, and the catalog tests cover them"
+          - "The built-in pack holds 589 items; magenta, its shadows and the pink tint in the coop's netting are removed (overrides as needed); a contact sheet of the nine is reviewed"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  - wave: 3
+    tracers:
+      - id: P6
+        title: Sprite painter and the per-map Classic / Sprites switch
+        size: L
+        goal: A Sprites map is drawn from pack sprites with app-added shadows and blended, variant-mixed terrain textures for the GM and for players (same partial-repaint interface as the Classic painter), and the GM flips any map between Classic and Sprites with one click, seeing the change at once.
+        depends_on: [P4, P5]
+        owns:
+          - src/lib/combat-map/sprites/**
+          - src/components/combat-map/style/**
+          - src/components/combat-map/map-view/map-canvas.tsx
+          - src/components/combat-map/map-view/paint-spec.ts
+          - src/components/combat-map/maps/thumbnail.tsx
+          - tests/unit/sprite-painter.test.ts
+          - tests/e2e/sprite-style.spec.ts
+          - tests/e2e/visual/SP-P6.spec.ts
+          - docs/tasks/TASK-SP-P6.md
+        reads:
+          - src/lib/combat-map/painter.ts
+          - src/lib/combat-map/raster.ts
+          - src/lib/sprite-packs/index.ts
+          - src/lib/sprite-packs/builtin/**
+          - public/sprite-packs/**
+          - convex/combatMapStyle.ts
+          - src/components/combat-map/slots.ts
+          - src/components/combat-map/map-view/**
+        acceptance:
+          - "src/lib/combat-map/sprites/painter.ts exposes the Classic painter's interface (prepare, paintMapRect for a dirty rect, withObjects, paintMap) so C5's partial repaints and C8's player view work unchanged; Classic maps still go through painter.ts untouched (E2)"
+          - "terrain.ts: world-space tiling, variant mixing by seeded noise, seeded rotation / flip for rotatable textures, feathered noisy boundaries, Classic-painted terrains (wall, void, ...) feathered the same way (D6); texture cells (layer texture) painted over areas"
+          - "objects: each object drawn by its sprite ref, else mapped via P1 (D1), scaled by r and rotated by rot (D4); lights keep the Classic glow overlay for lit campfires / torches and none when switched off"
+          - "shadows.ts: shadow from alpha toward the bottom-right per height (D5), computed once per sprite and scale into an offscreen cache"
+          - "loader.ts: loads the setting's and common's built-in WebPs (static manifest) and the uploaded URLs from spriteSources lazily, caches decoded images, repaints the affected rect when an image arrives; unloaded or failed sprites draw Classic"
+          - "map-canvas.tsx picks the painter from the map's style; thumbnail.tsx draws the style's look"
+          - "StyleSwitch (GM, map header): Classic | Sprites segmented control calling setStyle with an optimistic update; players see no switch, only the map in its style"
+          - "Unit tests with a recording mock context and a fixture manifest: deterministic output for a seed, dirty-rect paints touch only that rect, a missing sprite falls back to the Classic drawing"
+          - "e2e: the GM switches a generated map to Sprites and back, a player sees the live map change style live; visual SP-P6: one forest, one tavern, one dungeon map in both styles (no visible tile seams or repeating grid pattern at 1x and 2x zoom, shadows all one direction)"
+
+      - id: P7
+        title: Setting picker on the Scene card; Claude and the keyword fallback lay out sprite maps
+        size: M
+        goal: The Scene card offers the settings (default 'Let Claude choose'); Generate picks the setting (Claude, else keywords), lays out a Classic map with today's prompt or a Sprites map with that setting's sprites and textures, and the keyword fallback produces a sprite layout too.
+        depends_on: [P4, P5]
+        owns:
+          - convex/combatMapGenerate.ts
+          - src/components/combat-map/generate/**
+          - src/lib/sprite-packs/sprite-layout.ts
+          - src/lib/sprite-packs/sprite-fallback.ts
+          - tests/convex/combat-map-generate-sprites.test.ts
+          - tests/unit/sprite-layout.test.ts
+          - tests/e2e/sprite-generate.spec.ts
+          - tests/e2e/visual/SP-P7.spec.ts
+          - docs/tasks/TASK-SP-P7.md
+        reads:
+          - convex/combatMapStyle.ts
+          - convex/lib/spriteSources.ts
+          - src/lib/sprite-packs/index.ts
+          - src/lib/combat-map/fallback-layout.ts
+          - src/lib/domain/combat-map/spec.ts
+          - tests/convex/combat-map-generate.test.ts
+        acceptance:
+          - "generate gains optional setting (settingRef; absent = Let Claude choose); with Claude: a short classification call over the setting names (built-in + the campaign's own-setting packs) when the GM did not pick one, then the layout call; the pair counts as one combatMapGenerate use (Q2); the resolved setting and settingPicked are saved with the layout"
+          - "Classic maps: scenePrompt is word for word today's (E6); tests/convex/combat-map-generate.test.ts passes unchanged"
+          - "Sprites maps: spritePrompt lists the setting's and common's object keys with size and sight, textures with their terrain class, and the uploaded sprites that extend the setting (Q3); reply objects {sprite, x, y, rot, scale}, areas {terrain, texture?, ...}; sprite-layout.ts cleans it like spec.ts clean() (unknown keys dropped, caps, numbers clamped) and fills each object's classic kind from the catalog (D1)"
+          - "Without a key or on a bad reply: pick-setting chooses (unless the GM picked), the Classic keyword layout is made as today and sprite-fallback.ts maps it to the setting (P1 mapping) and scatters 0-6 of the setting's flat or cover props in open squares, deterministic per seed; the card says which path drew it (board copy as today)"
+          - "Scene card: Setting select ('Let Claude choose' first, then the settings by label, then the campaign's packs), shown in both styles; after a generation it shows 'Let Claude choose (chose: Forest)'; changing it calls setSetting optimistically (D7)"
+          - "Convex tests stub fetch (no real API call): Let Claude choose runs two calls; a picked setting runs one; a Classic map gets today's prompt; a Sprites reply with unknown keys keeps the valid parts; the fallback gives a sprite layout for forest, tavern and snow descriptions"
+          - "e2e: the GM picks Tavern, generates a Sprites map (fallback, no key in e2e) and sees tavern sprites; Let Claude choose on 'a frozen lake ambush' resolves to snow-and-tundra"
+
+      - id: P8
+        title: GM upload and labelling screen for custom sheets and single sprites
+        size: L
+        goal: On /campaigns/<id>/combat-map/packs the GM creates a pack (own setting or added to a built-in one), drops a sheet or single sprites, sees them cut in the browser, labels each (name, object or texture, size in squares, blocks sight / cover / none, gives light, shadow height), uploads the chosen ones, edits or deletes them later, and they appear in the Setting picker, the painter and the layout prompt.
+        depends_on: [P2, P5]
+        owns:
+          - convex/spritePacks.ts
+          - src/components/combat-map/packs/**
+          - tests/convex/sprite-packs.test.ts
+          - tests/e2e/sprite-packs-upload.spec.ts
+          - tests/e2e/visual/SP-P8.spec.ts
+          - tests/fixtures/sprite-uploads/**
+          - docs/tasks/TASK-SP-P8.md
+        reads:
+          - convex/lib/files.ts
+          - convex/combatMaps.ts
+          - convex/lib/spriteSources.ts
+          - convex/lib/validators/spritePacks.ts
+          - convex/tables/spritePacks.ts
+          - src/lib/sprite-packs/cut/**
+          - src/lib/sprite-packs/index.ts
+          - src/components/combat-map/slots.ts
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/packs/page.tsx
+        acceptance:
+          - "keyedGmMutation createPack (name, extends? built-in setting id, Q3; SPRITE_PACK_LIMIT), gmMutation renamePack, setPackExtends, deletePack (two-click in the UI; deletes its sprites and their files; objects that used them fall back, D9)"
+          - "gmMutation spriteUploadUrl (rate limit spriteUpload); gmMutation attachSprite (pack id, storage id, label fields): only an unclaimed file, size <= MAX_SPRITE_BYTES and the png/jpeg/webp/gif allowlist checked from the stored metadata, a rejected file deleted and {ok:false, code} returned (E7); SPRITE_LIMIT past MAX_PACK_SPRITES; claims the file as kind sprite"
+          - "gmMutation updateSprite (sprite id + exactly one field: name, category, w, h, sight, light, height, footprint, classicKind, terrain, rotatable), removeSprite, reorderSprite; gmQuery packs (campaign) with sprites, traits and URLs; players and outsiders are refused by the wrappers"
+          - "Browser cutting: the file is read locally (sheets up to 4096 px and 20 MB, never uploaded, D9), keyed and cut with the P2 core on canvas ImageData; a 'Sheet layout' choice (props 4 x 4, large 3 x 3, terrain 2 x 2, single sprite, auto) presets the expected count, size and category; flags from the cut (count mismatch, border touch) are shown"
+          - "Labelling grid: each cut with a checkbox, name, Object / Terrain texture, size w x h (1..4), Blocks sight / Cover / None, Gives light None / Torch / Campfire (Q1), Shadow Flat / Low / Tall, Classic look (auto-suggested from size and sight); 'Upload selected' re-encodes each to WebP (PNG fallback) at most 1024 px and uploads it; per-row progress and error"
+          - "Edit later: label fields save per field with optimistic updates; delete sprite with confirm; the Combat Map's PacksLink opens the screen"
+          - "e2e with a small committed fixture sheet: the GM creates a pack added to Forest, uploads a 4 x 4 sheet, labels one sprite 'Standing stone' 1 x 1 blocking, and sees it in the editor list source (spriteSources) and the Setting picker; a player cannot open the screen; an SVG renamed .png is rejected and deleted"
+
+  # ---------------------------------------------------------------- wave 4: editing sprite maps by hand
+  - wave: 4
+    tracers:
+      - id: P9
+        title: Hand editing in the Sprites style (C5 extension)
+        size: M
+        goal: In edit mode on a Sprites map the GM places, moves, rotates, scales and deletes the setting's sprites (built-in and uploaded), paints terrain textures, and sets any sprite to block sight or not, with the same partial repaints and tools as Classic editing, which stays unchanged.
+        depends_on: [P6, P8]
+        owns:
+          - tests/convex/combat-map-edit.test.ts
+          - src/components/combat-map/map-view/map-canvas.tsx
+          - convex/combatMapEdit.ts
+          - src/components/combat-map/editor/**
+          - tests/convex/combat-map-edit-sprites.test.ts
+          - tests/e2e/sprite-edit.spec.ts
+          - tests/e2e/visual/SP-P9.spec.ts
+          - docs/tasks/TASK-SP-P9.md
+        reads:
+          - convex/combatMapStyle.ts
+          - convex/lib/spriteSources.ts
+          - src/lib/combat-map/sprites/**
+          - src/lib/sprite-packs/index.ts
+          - src/lib/domain/combat-map/index.ts
+          - tests/convex/combat-map-edit.test.ts
+        acceptance:
+          - "addObject gains optional sprite (spriteRef): a built-in key must exist (SPRITE_UNKNOWN), an uploaded sprite must belong to the campaign (SPRITE_NOT_FOUND); the classic kind is filled from the catalog or the uploaded row (D1, D2); C5's existing arguments and tests/convex/combat-map-edit.test.ts unchanged (E4)"
+          - "paintCells accepts layer texture with a texture ref: adds it to texturePalette if absent (SPRITE_PALETTE_FULL past MAX_TEXTURE_PALETTE), writes the texture layer and the texture's terrain class on the terrain layer in the same mutation (vision and Classic stay right); erase clears both"
+          - "Object picker in Sprites style: the setting's sprites, then common, then uploaded ones, with thumbnails and a search box; Terrain palette shows the textures; in Classic style the D9 pickers are unchanged"
+          - "Object panel shows the sprite name and its manifest sight as the 'Default' choice of the existing sight setting (D3); light sprites keep the lit switch"
+          - "Partial repaints through the P6 painter (no full repaint per stroke); optimistic updates as in C5"
+          - "e2e: on a Sprites forest map the GM paints moss, adds an oak tree and an uploaded sprite, sets a bush sprite to block sight; after reload all are there; a player's view hides a token behind the oak"
+
+  # ---------------------------------------------------------------- wave 5: end to end
+  - wave: 5
+    tracers:
+      - id: P10
+        title: Sprite-packs end-to-end pass, docs and follow-ups
+        size: S
+        goal: A full GM-and-player flow on a Sprites map passes in the browser at desktop and tablet sizes, Classic is proven unchanged beside it, the task docs are complete and the follow-ups are filed.
+        depends_on: [P7, P8, P9]
+        owns:
+          - tests/e2e/sprite-packs-flow.spec.ts
+          - tests/e2e/visual/SP-P10.spec.ts
+          - docs/tasks/TASK-SP-P10.md
+        reads:
+          - convex/combat*.ts
+          - convex/spritePacks.ts
+          - src/components/combat-map/**
+          - src/lib/combat-map/**
+          - src/lib/sprite-packs/**
+          - tests/e2e/combat-map-flow.spec.ts
+        acceptance:
+          - "One spec: the GM uploads a pack added to Dungeon, generates a Sprites dungeon (fallback) with Let Claude choose, edits it (texture + uploaded sprite), sets it live, adds the party and an encounter; a player moves at night with a torch, the GM lights a brazier sprite, the player sees the lit area and is hidden from a token behind a sprite pillar; the GM switches the map to Classic and back and the player's view is the same; at 1440 and 1024 px"
+          - "tests/e2e/combat-map-flow.spec.ts (D9 C9) passes unchanged on rebuild (E1, E2)"
+          - "Checks P1-P3, D1-D10 and E1-E8 against the app and lists any gap in the task doc; each gap is filed as a bead under dcm-bxp.56"
+          - "Files follow-ups: authz-matrix entries for every new function (D12); the user's pick between Classic and Sprites as the default (P3, Q4) as an open bead; any sheet the P4 report asked the user to regenerate"
+  - wave: 7
+    tracers:
+      - id: P11A
+        title: Batch 2 sheets into the catalog - common, forest, grassland-and-road, mountain-and-cliffs, cave, dungeon, crypt-and-graveyard
+        size: M
+        # USER (2026-10-21): batch 2 = docs/sprite-packs/batch-2.md; sheets in C:\Users\Petar\sprite-sheets (props-2, large-2 or the
+        #   town's large-3, terrain-2). Catalog extras only; the pack is rebuilt by P11Z.
+        goal: Check every batch-2 sheet of these folders, add their items as catalog extras with sizes, sight, height, footprint, light, Classic kind and move, and record the overrides each sheet needs.
+        depends_on: [P10]
+        owns:
+          - src/lib/sprite-packs/catalog/common.ts
+          - src/lib/sprite-packs/catalog/forest.ts
+          - src/lib/sprite-packs/catalog/grassland-and-road.ts
+          - src/lib/sprite-packs/catalog/mountain-and-cliffs.ts
+          - src/lib/sprite-packs/catalog/cave.ts
+          - src/lib/sprite-packs/catalog/dungeon.ts
+          - src/lib/sprite-packs/catalog/crypt-and-graveyard.ts
+          - docs/tasks/TASK-SP-P11A.md
+        reads:
+          - docs/sprite-packs/batch-2.md
+          - docs/tasks/TASK-SP-P4.md
+          - docs/tasks/TASK-SP-P4V.md
+          - docs/tasks/TASK-MV-M0.md
+          - docs/tasks/TASK-MV-M2.md
+          - scripts/sprite-packs/**
+        acceptance:
+          - "Every batch-2 item of these folders is a catalog extra on its sheet in the doc's order, with traits consistent with existing items (doors get move 'door' and Classic kind 'door'; lights by the D2 rule)"
+          - "Each sheet is cut to a scratch out dir and reviewed: cell count, keying, halos, shadows; the task doc lists per sheet the overrides needed (unpink, unmix, untint, rotate) and any sheet that should be regenerated with the reason"
+          - "pnpm typecheck and lint pass for the catalog files; tracer-guard passes"
+      - id: P11B
+        title: Batch 2 sheets into the catalog - castle-interior, tavern, town-street-and-market, temple, swamp, snow-and-tundra
+        size: M
+        # USER (2026-10-21): batch 2 = docs/sprite-packs/batch-2.md; sheets in C:\Users\Petar\sprite-sheets (props-2, large-2 or the
+        #   town's large-3, terrain-2). Catalog extras only; the pack is rebuilt by P11Z.
+        goal: Check every batch-2 sheet of these folders, add their items as catalog extras with sizes, sight, height, footprint, light, Classic kind and move, and record the overrides each sheet needs.
+        depends_on: [P10]
+        owns:
+          - src/lib/sprite-packs/catalog/castle-interior.ts
+          - src/lib/sprite-packs/catalog/tavern.ts
+          - src/lib/sprite-packs/catalog/town-street-and-market.ts
+          - src/lib/sprite-packs/catalog/temple.ts
+          - src/lib/sprite-packs/catalog/swamp.ts
+          - src/lib/sprite-packs/catalog/snow-and-tundra.ts
+          - docs/tasks/TASK-SP-P11B.md
+        reads:
+          - docs/sprite-packs/batch-2.md
+          - docs/tasks/TASK-SP-P4.md
+          - docs/tasks/TASK-SP-P4V.md
+          - docs/tasks/TASK-MV-M0.md
+          - docs/tasks/TASK-MV-M2.md
+          - scripts/sprite-packs/**
+        acceptance:
+          - "Every batch-2 item of these folders is a catalog extra on its sheet in the doc's order, with traits consistent with existing items (doors get move 'door' and Classic kind 'door'; lights by the D2 rule)"
+          - "Each sheet is cut to a scratch out dir and reviewed: cell count, keying, halos, shadows; the task doc lists per sheet the overrides needed (unpink, unmix, untint, rotate) and any sheet that should be regenerated with the reason"
+          - "pnpm typecheck and lint pass for the catalog files; tracer-guard passes"
+      - id: P11C
+        title: Batch 2 sheets into the catalog - desert, coast-and-beach, ship-deck, sewers, ruins, mushroom-cavern, volcanic
+        size: M
+        # USER (2026-10-21): batch 2 = docs/sprite-packs/batch-2.md; sheets in C:\Users\Petar\sprite-sheets (props-2, large-2 or the
+        #   town's large-3, terrain-2). Catalog extras only; the pack is rebuilt by P11Z.
+        goal: Check every batch-2 sheet of these folders, add their items as catalog extras with sizes, sight, height, footprint, light, Classic kind and move, and record the overrides each sheet needs.
+        depends_on: [P10]
+        owns:
+          - src/lib/sprite-packs/catalog/desert.ts
+          - src/lib/sprite-packs/catalog/coast-and-beach.ts
+          - src/lib/sprite-packs/catalog/ship-deck.ts
+          - src/lib/sprite-packs/catalog/sewers.ts
+          - src/lib/sprite-packs/catalog/ruins.ts
+          - src/lib/sprite-packs/catalog/mushroom-cavern.ts
+          - src/lib/sprite-packs/catalog/volcanic.ts
+          - docs/tasks/TASK-SP-P11C.md
+        reads:
+          - docs/sprite-packs/batch-2.md
+          - docs/tasks/TASK-SP-P4.md
+          - docs/tasks/TASK-SP-P4V.md
+          - docs/tasks/TASK-MV-M0.md
+          - docs/tasks/TASK-MV-M2.md
+          - scripts/sprite-packs/**
+        acceptance:
+          - "Every batch-2 item of these folders is a catalog extra on its sheet in the doc's order, with traits consistent with existing items (doors get move 'door' and Classic kind 'door'; lights by the D2 rule)"
+          - "Each sheet is cut to a scratch out dir and reviewed: cell count, keying, halos, shadows; the task doc lists per sheet the overrides needed (unpink, unmix, untint, rotate) and any sheet that should be regenerated with the reason"
+          - "pnpm typecheck and lint pass for the catalog files; tracer-guard passes"
+  - wave: 8
+    tracers:
+      - id: P11Z
+        title: Batch 2 built into the pack - overrides, cut, rebuild, tests
+        size: M
+        goal: Apply P11A-C's overrides, cut all 60 batch-2 sheets, rebuild the built-in pack, and pin the new items in tests.
+        depends_on: [P11A, P11B, P11C]
+        owns:
+          - tests/unit/sprite-painter.test.ts
+          - src/lib/sprite-packs/catalog/volcanic.ts
+          - scripts/sprite-packs/**
+          - public/sprite-packs/**
+          - src/lib/sprite-packs/builtin/**
+          - src/lib/sprite-packs/catalog/index.ts
+          - src/lib/sprite-packs/catalog/types.ts
+          - tests/unit/sprite-catalog.test.ts
+          - tests/unit/sprite-builtin-pack.test.ts
+          - docs/sprite-packs/prompts.md
+          - docs/sprite-packs/batch-2.md
+          - docs/tasks/TASK-SP-P11Z.md
+        reads:
+          - docs/tasks/TASK-SP-P11A.md
+          - docs/tasks/TASK-SP-P11B.md
+          - docs/tasks/TASK-SP-P11C.md
+        acceptance:
+          - "The pack holds 589 + the batch-2 items that cut cleanly (target 1169); every catalog key has art; pack size and the largest files reported against the limits; a contact sheet per folder reviewed"
+          - "Catalog and pack tests pin the new count, the doors, lights and move values; pnpm lint, typecheck and vitest pass; tracer-guard passes"

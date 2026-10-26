@@ -38,3 +38,10 @@ export function canIncreaseFear(currentFear: number): boolean {
 export function canDecreaseFear(currentFear: number): boolean {
   return currentFear > MIN_FEAR;
 }
+
+/** Validates a Fear total set directly (the dashboard's tokens). */
+export function assertFearValue(value: number): void {
+  if (!Number.isInteger(value) || value < MIN_FEAR || value > MAX_FEAR) {
+    throw new FearRangeError();
+  }
+}

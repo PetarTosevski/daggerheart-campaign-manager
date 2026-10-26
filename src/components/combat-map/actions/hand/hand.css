@@ -1,0 +1,840 @@
+/*
+ * The Hand on the Combat Map (plan combat-actions CA6). The card faces follow the board's hand card (`hc-face`), as
+ * the sheet's felt table and SC1's CardDialog draw it: domain-coloured head in Cinzel caps, art with the blue Recall
+ * badge, parchment body, gold rules. The panels around them use the page's tokens (--cm-*, combat-map.css).
+ * HF1 (plan hand-fan): the loadout is the domains tab's fan docked over the bottom edge of the map (the dock section
+ * at the end of this file); the vault opens from the bar's deck as a horizontal strip of cards above it.
+ */
+
+.cmh-strip {
+  margin: 0;
+  padding: 4px 2px 8px;
+  list-style: none;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+}
+.cmh-slot {
+  flex: none;
+  display: flex;
+  width: 160px;
+  scroll-snap-align: start;
+}
+
+/* ---------------------------------------------------------------- the card face */
+
+.cmh-face {
+  --dc: #5b2b2b;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fffaf0;
+  color: #2a1f14;
+  box-shadow: 0 0 0 2px #c9a35a, 0 8px 18px rgba(0, 0, 0, 0.45);
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+/* An exhausted card is greyed and turned (CB p.101: "turn it on its side"; CA7 greys the sheet's card the same way). */
+.cmh-face[data-exhausted="true"] {
+  filter: grayscale(0.9) brightness(0.82);
+  transform: rotate(-4deg) scale(0.96);
+}
+/* The GM's view before "Play for this character": greyed, not turned (it is not used). */
+.cmh-face[data-locked="true"]:not([data-exhausted="true"]) {
+  filter: grayscale(0.75) brightness(0.86);
+}
+.cmh-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: linear-gradient(100deg, var(--dc), color-mix(in srgb, var(--dc) 65%, #000));
+  color: #f6ead2;
+}
+.cmh-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--cm-display);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.cmh-lvl {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: #f6ead2;
+  color: var(--dc);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--cm-display);
+  font-weight: 900;
+  font-size: 12px;
+}
+.cmh-art {
+  position: relative;
+  flex: none;
+  aspect-ratio: 481 / 300;
+  background: #1a1424;
+}
+.cmh-art-img {
+  object-fit: cover;
+  object-position: center 35%;
+}
+.cmh-rc {
+  position: absolute;
+  right: 6px;
+  bottom: -12px;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #7fb2e0, #2a4f86);
+  color: #fff;
+  font-family: var(--cm-display);
+  font-weight: 900;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px #0e1a2c, 0 0 0 3px #c9a35a;
+}
+.cmh-used {
+  flex: none;
+  margin: 0;
+  padding: 4px 32px 4px 6px;
+  background: rgba(26, 20, 36, 0.92);
+  color: #f6ead2;
+  box-shadow: 0 1px 0 #c9a35a, 0 -1px 0 #c9a35a;
+  font-family: var(--cm-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.25;
+}
+.cmh-meta {
+  padding: 6px 34px 0 8px;
+  font-family: var(--cm-display);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6e5328;
+}
+.cmh-badges {
+  margin: 4px 0 0;
+  padding: 0 8px;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cmh-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid #b08a45;
+  background: #f6e7c4;
+  color: #4a3510;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.cmh-badge[data-kind="limit"] {
+  border-color: #4f78a8;
+  background: #e2ecf7;
+  color: #1f3a5c;
+}
+.cmh-badge[data-kind="how"] {
+  border-color: #8b7a5c;
+  background: transparent;
+  color: #4a3a26;
+  font-style: italic;
+}
+.cmh-text {
+  flex: none;
+  margin: 4px 8px 0;
+  height: calc(1.32em * 4);
+  font-family: var(--cm-serif);
+  font-size: 12.5px;
+  line-height: 1.32;
+  white-space: pre-line;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 65%, transparent);
+  mask-image: linear-gradient(#000 65%, transparent);
+}
+.cmh-acts {
+  flex: none;
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 6px;
+  padding: 6px 8px 8px;
+  border-top: 1px solid rgba(201, 163, 90, 0.55);
+}
+.cmh-more {
+  min-height: 32px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: #6e5328;
+  font-family: var(--cm-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.cmh-use {
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  /* The domain colour as the rim; the fill stays dark so the parchment text reads on every domain (Splendor is gold). */
+  border: 2px solid var(--dc);
+  background: #2a1f14;
+  color: #f6ead2;
+  font-family: var(--cm-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.cmh-recall {
+  padding: 0 10px;
+  font-size: 11px;
+}
+.cmh-use:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cmh-more:focus-visible,
+.cmh-use:focus-visible {
+  outline: 2px solid #5b2b2b;
+  outline-offset: 2px;
+}
+.cmh-status {
+  font-family: var(--cm-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4a3a26;
+}
+
+/* ---------------------------------------------------------------- GM switch, dialog, prompts */
+
+.cmh-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 14px;
+  cursor: pointer;
+  position: relative;
+}
+.cmh-switch input {
+  position: absolute;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.cmh-switch-track {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--cm-field);
+  border: 1px solid var(--cm-border);
+  transition: background 0.15s ease;
+}
+.cmh-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--cm-muted);
+  transition: transform 0.15s ease;
+}
+.cmh-switch input:checked + .cmh-switch-track {
+  background: var(--cm-acc-bg);
+  border-color: var(--cm-acc);
+}
+.cmh-switch input:checked + .cmh-switch-track::after {
+  transform: translateX(20px);
+  background: var(--cm-acc);
+}
+.cmh-switch input:focus-visible + .cmh-switch-track {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 2px;
+}
+
+.cmh-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cmh-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cmh-field > legend {
+  margin-bottom: 6px;
+}
+.cmh-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cmh-pick {
+  min-height: 44px;
+}
+.cmh-pick[aria-pressed="true"] {
+  border-color: var(--cm-acc, #e3b45a);
+  background: var(--cm-acc-bg, #2d2614);
+  color: var(--cm-acc-soft, #f3cf86);
+}
+.cmh-pick:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.cmh-check,
+.cmh-split {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 15px;
+}
+.cmh-check input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.cmh-split {
+  justify-content: space-between;
+}
+.cmh-num {
+  width: 96px;
+  min-height: 44px;
+}
+.cmh-note {
+  margin: 0;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--cm-muted, #9fb2b6);
+}
+
+.cmh-prompts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cmh-prompt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "lbl btn" "text btn";
+  column-gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--cm-border);
+  background: var(--cm-field);
+}
+.cmh-prompt > .cm-lbl {
+  grid-area: lbl;
+}
+.cmh-prompt-text {
+  grid-area: text;
+  font-family: var(--cm-serif);
+  font-size: 15px;
+  line-height: 1.35;
+}
+.cmh-prompt > button {
+  grid-area: btn;
+  align-self: center;
+}
+
+/* ---------------------------------------------------------------- phone: a horizontal strip in the bottom sheet (Q11) */
+
+.cma-sheet-body .cmh-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+@media (max-width: 760px) {
+  .cmh-slot {
+    width: min(56vw, 180px);
+  }
+  .cmh-name {
+    font-size: 14px;
+  }
+  .cmh-text {
+    font-size: 14px;
+  }
+  .cmh-use,
+  .cmh-more {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmh-face,
+  .cmh-switch-track,
+  .cmh-switch-track::after {
+    transition: none;
+  }
+}
+
+/* F8-I1: the roll-options strip above the loadout (applies to the next card that rolls). */
+.cmh-rolls {
+  border-top: 0;
+  padding-top: 0;
+}
+.cma-opts-set {
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ---------------------------------------------------------------- HF1: the hand docked over the map's bottom edge */
+
+/*
+ * The dock is portalled into the map board (.cm-board, a flex column: toolbar, viewport, hint). It sits between the
+ * viewport and the hint with no height of its own, so the hand grows upward over the viewport's bottom edge. Only the
+ * bar, the panels and the cards catch the pointer: the map between and above them still pans and takes clicks.
+ */
+.cm-board > .cm-hint {
+  order: 2;
+}
+.cmh-dock {
+  order: 1;
+  position: relative;
+  z-index: 6;
+  height: 0;
+  margin-top: -10px;
+  pointer-events: none;
+}
+.cmh-hand {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: clip;
+  pointer-events: none;
+}
+/* Outside the map page (no board to dock into) the hand renders in place. */
+.cmh-dock[data-inline="true"] {
+  height: auto;
+  margin: 0;
+}
+.cmh-dock[data-inline="true"] .cmh-hand {
+  position: static;
+}
+.cmh-dock dialog {
+  pointer-events: auto;
+}
+
+/* Panels above the bar: the card waiting for its target, the result, waiting uses, the vault. */
+.cmh-over {
+  /* Above a raised card: the panels hold the buttons that answer what the card asked. */
+  position: relative;
+  z-index: 4;
+  width: min(560px, calc(100% - 24px));
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cmh-over:empty {
+  display: none;
+}
+.cmh-panel {
+  pointer-events: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--cm-card-border);
+  background: color-mix(in srgb, var(--cm-card) 94%, transparent);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+}
+.cmh-result {
+  position: relative;
+  padding-right: 52px;
+}
+.cmh-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.cmh-aim {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-color: var(--cm-acc);
+}
+.cmh-aim-text {
+  margin: 0;
+  font-family: var(--cm-display);
+  font-size: 14px;
+  color: var(--cm-acc-soft);
+}
+.cmh-vault {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cmh-vault > h3 {
+  margin: 0;
+}
+
+/* The tray: the slim bar and the fan under it. */
+.cmh-tray {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.cmh-bar {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 10px;
+  max-width: calc(100% - 16px);
+  box-sizing: border-box;
+  padding: 4px 8px 4px 14px;
+  border-radius: 12px 12px 0 0;
+  border: 1px solid var(--cm-card-border);
+  border-bottom: 0;
+  background: color-mix(in srgb, var(--cm-page) 90%, transparent);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.4);
+}
+.cmh-title {
+  margin: 0;
+  font-family: var(--cm-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--cm-acc-soft);
+  white-space: nowrap;
+}
+.cmh-bar-gap {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.cmh-bar-error {
+  flex-basis: 100%;
+  text-align: center;
+}
+/* The roll options open as a popover above the bar, over the map. */
+.cmh-bar .cmh-rolls {
+  border-top: 0;
+  padding-top: 0;
+}
+.cmh-bar .cmh-rolls > summary {
+  min-height: 36px;
+  white-space: nowrap;
+}
+.cmh-bar .cmh-rolls > .cma-opts-body {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: min(340px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--cm-card-border);
+  background: var(--cm-card);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+}
+.cmh-bar .cmh-switch {
+  font-size: 13px;
+}
+
+/* The vault deck at the right end of the bar: three backs and the count (the domains tab's deck, small). */
+.cmh-deck {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 48px;
+  margin: 2px 6px 2px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.cmh-deck:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+.cmh-deck-card {
+  position: absolute;
+  inset: 3px 9px 3px 7px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #1d1550;
+  box-shadow: 0 0 0 1.5px #c9a35a, 0 3px 8px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s ease;
+}
+.cmh-deck-img {
+  object-fit: cover;
+}
+.cmh-deck-card.v2 {
+  transform: translate(3px, -3px) rotate(3deg);
+}
+.cmh-deck-card.v3 {
+  transform: translate(6px, -6px) rotate(6deg);
+}
+.cmh-deck:hover .cmh-deck-card.v3 {
+  transform: translate(9px, -9px) rotate(10deg);
+}
+.cmh-deck.empty .cmh-deck-card.v2,
+.cmh-deck.empty .cmh-deck-card.v3 {
+  display: none;
+}
+.cmh-deck.empty .cmh-deck-card.v1 {
+  opacity: 0.4;
+  filter: grayscale(0.6);
+}
+.cmh-deck.open .cmh-deck-card.v1 {
+  box-shadow: 0 0 0 1.5px #f3cf86, 0 0 14px rgba(243, 207, 134, 0.6);
+}
+.cmh-deck-count {
+  position: absolute;
+  right: -4px;
+  top: -6px;
+  z-index: 2;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: #5b2b2b;
+  color: #f6ead2;
+  font-family: var(--cm-display);
+  font-size: 11px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 1.5px #c9a35a;
+}
+
+/*
+ * The fan: the domains tab's 7° hand (src/components/cards/fan.ts sets --rot, --ty and the order). The cards hang below
+ * the map's edge with only their tops in view (--peek); the clip opens upward and sideways, so a raised or dragged card
+ * leaves the fan whole while the rest stay cut at the edge. Hover, focus (a tap focuses the card) and the card waiting
+ * for its target raise it out of the fan at full size.
+ */
+.cmh-fan {
+  --w: 168px;
+  --peek: 118px;
+  --raise: 1.1;
+  position: relative;
+  /* Above the bar, so a raised card comes up over it. */
+  z-index: 3;
+  width: 100%;
+  height: var(--peek);
+  margin: 0;
+  padding: 10px 0 0;
+  box-sizing: border-box;
+  list-style: none;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  clip-path: inset(-100vmax -100vmax 0 -100vmax);
+  pointer-events: none;
+}
+.cmh-fan-card {
+  --rot: 0deg;
+  --ty: 0px;
+  --dx: 0px;
+  --dy: 0px;
+  position: relative;
+  flex: none;
+  width: var(--w);
+  margin: 0 calc(var(--w) * -0.16);
+  display: flex;
+  transform-origin: 50% 100%;
+  transform: translateY(var(--ty)) rotate(var(--rot));
+  transition: transform 0.22s ease;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+.cmh-fan-card[data-draggable="true"] {
+  cursor: grab;
+  touch-action: none;
+}
+.cmh-fan-card .cmh-face {
+  flex: 1 1 auto;
+}
+.cmh-fan-card img {
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+/* In the fan the card itself turns (fan.ts); the face's own small turn is for the vault strip. */
+.cmh-fan .cmh-face[data-exhausted="true"] {
+  transform: none;
+}
+/*
+ * Raised: under the mouse, after a tap (the card itself takes focus), or while the keyboard is on its More or Use. A
+ * mouse click on Use leaves no sticky raise (no :focus-visible), so the card drops back once the pointer leaves it.
+ */
+.cmh-fan-card:hover,
+.cmh-fan-card:focus,
+.cmh-fan-card:has(:focus-visible) {
+  transform: translateY(calc(-100% + var(--peek) - 18px)) rotate(0deg) scale(var(--raise));
+  z-index: 30 !important;
+}
+/* The card waiting for its target only lifts and glows, so the map and the "tap an enemy" panel stay clear. */
+.cmh-fan-card[data-aiming="true"]:not(:hover, :focus, :has(:focus-visible)) {
+  transform: translateY(-14px) rotate(0deg);
+  z-index: 30 !important;
+}
+.cmh-fan-card[data-aiming="true"] .cmh-face {
+  box-shadow: 0 0 0 2px #f3cf86, 0 0 26px rgba(243, 207, 134, 0.75);
+}
+.cmh-fan-card[data-dragging="true"] {
+  transform: translate(var(--dx), var(--dy)) translateY(calc(-100% + var(--peek) - 18px)) scale(0.92);
+  transition: none;
+  z-index: 40 !important;
+  cursor: grabbing;
+}
+/* While a card is dragged, the table it can land on is outlined. */
+.cm-board:has(.cmh-fan-card[data-dragging="true"]) .cm-vp {
+  outline: 3px dashed var(--cm-acc);
+  outline-offset: -3px;
+}
+.cmh-instead {
+  pointer-events: auto;
+  margin: 0;
+  padding: 10px 16px 14px;
+  border-radius: 0 0 12px 12px;
+  background: color-mix(in srgb, var(--cm-page) 90%, transparent);
+}
+
+/* Hidden: only the card tops peek at the edge, under the 'Show cards (N)' tab. */
+.cmh-fan[data-peek="true"] {
+  --peek: 28px;
+}
+.cmh-fan[data-peek="true"] .cmh-fan-card {
+  transform: translateY(var(--ty)) rotate(var(--rot));
+  pointer-events: none;
+}
+.cmh-peek-tab {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 12px 12px 0 0;
+  border: 1px solid var(--cm-acc);
+  border-bottom: 0;
+  background: var(--cm-acc-bg);
+  color: var(--cm-acc-soft);
+  font-family: var(--cm-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.cmh-peek-tab:focus-visible,
+.cmh-hide:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1180px) {
+  .cmh-fan {
+    --w: 150px;
+    --peek: 106px;
+  }
+}
+/* A 768 px tablet keeps the 300 px column: five cards still fit the map's width. */
+@media (max-width: 1000px) {
+  .cmh-fan {
+    --w: 124px;
+    --peek: 96px;
+    --raise: 1.25;
+  }
+  .cmh-fan-card {
+    margin: 0 calc(var(--w) * -0.2);
+  }
+}
+@media (max-width: 760px) {
+  .cmh-fan {
+    --w: 104px;
+    --peek: 84px;
+    --raise: 1.45;
+  }
+  .cmh-fan-card {
+    margin: 0 calc(var(--w) * -0.22);
+  }
+  .cmh-fan .cmh-name {
+    font-size: 11px;
+  }
+  .cmh-fan .cmh-text {
+    font-size: 11px;
+  }
+  .cmh-fan .cmh-use,
+  .cmh-fan .cmh-more {
+    min-height: 32px;
+  }
+  .cmh-title {
+    font-size: 13px;
+  }
+}
+/* Touch targets of at least 44 px on tablets and phones (D12 H22), in the bar and on the raised card. */
+@media (max-width: 1100px), (pointer: coarse) {
+  .cmh-bar .cmh-rolls > summary {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmh-fan-card,
+  .cmh-deck-card {
+    transition: none;
+  }
+}

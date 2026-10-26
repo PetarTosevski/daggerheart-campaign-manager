@@ -1,21 +1,37 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
+import type { Metadata, Viewport } from "next";
+import { Cinzel, EB_Garamond, IBM_Plex_Sans } from "next/font/google";
+
+import { ConvexClientProvider } from "./convex-client-provider";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const cinzel = Cinzel({
+  variable: "--font-cinzel",
   subsets: ["latin"],
+  weight: ["500", "700", "900"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const plex = IBM_Plex_Sans({
+  variable: "--font-plex",
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
+});
+
+const garamond = EB_Garamond({
+  variable: "--font-garamond",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  style: ["normal", "italic"],
 });
 
 export const metadata: Metadata = {
-  title: "Witherwild Campaign Manager",
-  description:
-    "Private campaign operations tool for running a Daggerheart Witherwild campaign.",
+  title: "Daggerheart · Campaign Ledger",
+  description: "Private live-play console for running Daggerheart campaigns.",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0c0b11",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -24,11 +40,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
-    </html>
+    <ConvexAuthNextjsServerProvider>
+      <html
+        lang="en"
+        className={`${cinzel.variable} ${plex.variable} ${garamond.variable} h-full antialiased`}
+      >
+        <body className="flex min-h-full flex-col">
+          <ConvexClientProvider>{children}</ConvexClientProvider>
+        </body>
+      </html>
+    </ConvexAuthNextjsServerProvider>
   );
 }

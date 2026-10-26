@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Campaign · Sessions</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d1417}
+.ss-in{min-height:44px;padding:0 12px;border-radius:8px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font-size:15px;font-family:inherit;box-sizing:border-box}
+.ss-ta{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;font-size:17px;line-height:1.55;font-family:'EB Garamond',serif;resize:vertical}
+.ss-in:focus,.ss-ta:focus{outline:2px solid #e3b45a;outline-offset:1px}
+.ss-card{padding:20px;border-radius:14px;background:#141e22;border:1px solid #253338;display:flex;flex-direction:column;gap:12px;box-sizing:border-box}
+.ss-h{margin:0;font-family:'Cinzel',serif;font-size:20px;font-weight:700}
+.ss-lbl{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:#9fb2b6}
+.ss-ghost{min-height:40px;padding:0 14px;border-radius:8px;border:1px solid #33444a;background:transparent;color:#e6ecea;font-size:14px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;box-sizing:border-box}
+.ss-ghost:hover{background:#1b282d}
+.ss-x{width:40px;height:40px;flex:none;border-radius:8px;border:1px solid #33444a;background:transparent;color:#9fb2b6;cursor:pointer;font-size:18px;line-height:1}
+.ss-x:hover{color:#ffb4a8;border-color:#7a3b33}
+.ss-step{width:36px;height:36px;border-radius:8px;border:1px solid #33444a;background:#0b1214;color:#e6ecea;cursor:pointer;font-size:18px;line-height:1;font-family:inherit}
+.ss-step:hover{background:#1b282d}
+.ss-num{min-width:34px;text-align:center;font-family:'Cinzel',serif;font-size:20px;font-weight:700}
+.ss-muted{color:#9fb2b6;font-size:14px;line-height:1.5}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0d1417; color: #e6ecea; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box; display: flex; flex-direction: column">
+
+<section aria-label="Campaign header" style="position: relative; overflow: hidden">
+<div aria-hidden="true" style="{{ bannerStyle }}"></div>
+<div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(6, 12, 14, 0.7)"></div>
+<div style="position: relative; max-width: 1344px; margin: 0 auto; padding: 22px 48px 26px; box-sizing: border-box; display: flex; flex-direction: column; gap: 26px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap">
+<a href="{{ dashHref }}" aria-label="Back to the campaign dashboard" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: rgba(0, 0, 0, 0.3)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></a>
+<div style="font-family: 'Cinzel', serif; font-size: 32px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div>
+</div>
+<nav aria-label="Campaign sections" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0, 0, 0, 0.35)">
+<sc-for list="{{ navItems }}" as="n" hint-placeholder-count="7">
+<sc-if value="{{ n.isLink }}" hint-placeholder-val="{{ true }}"><a href="{{ n.href }}" aria-current="{{ n.current }}" style="{{ n.style }}">{{ n.label }}</a></sc-if>
+<sc-if value="{{ n.isOff }}" hint-placeholder-val="{{ false }}"><span title="Coming soon" style="{{ n.style }}">{{ n.label }}</span></sc-if>
+</sc-for>
+</nav>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.24em; color: #c8d3d0">{{ campaignName }}</div>
+<h1 style="margin: 0; font-family: 'Cinzel', serif; font-size: 44px; line-height: 1.05; font-weight: 900">Sessions</h1>
+<div style="font-size: 15px; color: #d6dfdc">{{ headerLine }}</div>
+</div>
+<button type="button" onClick="{{ addSession }}" style="{{ primaryStyle }}">+ New session</button>
+</div>
+</div>
+</section>
+
+<main style="flex: 1; width: 100%; max-width: 1344px; margin: 0 auto; padding: 28px 48px 48px; box-sizing: border-box; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; align-items: start">
+
+<aside aria-label="Session list" style="display: flex; flex-direction: column; gap: 10px">
+<div class="ss-lbl">All sessions</div>
+<sc-if value="{{ noSessions }}" hint-placeholder-val="{{ false }}"><div style="padding: 18px; border-radius: 12px; border: 1px dashed #33444a; color: #9fb2b6; font-size: 14px; line-height: 1.5">No sessions yet. Create one to start prepping.</div></sc-if>
+<sc-for list="{{ listItems }}" as="it" hint-placeholder-count="3">
+<button type="button" onClick="{{ it.pick }}" aria-current="{{ it.current }}" style="{{ it.style }}">
+<span style="display: flex; justify-content: space-between; align-items: center; gap: 8px"><span style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.14em; color: #9fb2b6">SESSION {{ it.n }}</span><span style="{{ it.chipStyle }}">{{ it.status }}</span></span>
+<span style="font-family: 'Cinzel', serif; font-size: 17px; font-weight: 700; line-height: 1.25">{{ it.title }}</span>
+<span style="font-size: 13px; color: #9fb2b6">{{ it.date }}</span>
+</button>
+</sc-for>
+</aside>
+
+<section aria-label="Session detail" style="min-width: 0">
+<sc-if value="{{ noSelection }}" hint-placeholder-val="{{ false }}">
+<div class="ss-card" style="align-items: flex-start"><h2 class="ss-h">No session selected</h2><p class="ss-muted" style="margin: 0">Pick a session on the left, or create a new one. Each session has three stages: Prep before you play, Play while at the table, and Wrap-up afterwards. The recap you write in Wrap-up appears on the dashboard.</p></div>
+</sc-if>
+
+<sc-for list="{{ details }}" as="s" hint-placeholder-count="1">
+<sc-if value="{{ s.on }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 18px">
+
+<div class="ss-card" style="flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 14px">
+<label style="display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 240px"><span class="ss-lbl">Session {{ s.n }} title</span><input class="ss-in" type="text" data-f="title" defaultValue="{{ s.title }}" onChange="{{ s.setF }}" placeholder="e.g. The Bridge at Dawn" style="font-size: 18px"></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span class="ss-lbl">Date</span><input class="ss-in" type="date" data-f="date" defaultValue="{{ s.date }}" onChange="{{ s.setF }}"></label>
+<button type="button" onClick="{{ s.togglePlayed }}" class="ss-ghost" style="min-height: 44px">{{ s.playedLabel }}</button>
+<button type="button" onClick="{{ s.del }}" class="ss-ghost" style="min-height: 44px; color: #ffb4a8; border-color: #5a3330">{{ s.delLabel }}</button>
+</div>
+
+<div class="ss-card" style="flex-direction: row; flex-wrap: wrap; align-items: center; gap: 14px; border-color: {{ s.liveBorder }}">
+<span aria-hidden="true" style="{{ s.liveDot }}"></span>
+<div style="flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 2px"><strong style="font-family: 'Cinzel', serif; letter-spacing: .06em">{{ s.liveTitle }}</strong><span class="ss-muted">{{ s.liveText }}</span><sc-if value="{{ s.otherLive }}" hint-placeholder-val="{{ false }}"><span class="ss-muted" style="color: #ffb4a8">{{ s.otherLiveText }}</span></sc-if></div>
+<sc-if value="{{ s.notLive }}" hint-placeholder-val="{{ true }}"><button type="button" onClick="{{ s.start }}" style="min-height: 46px; padding: 0 22px; border-radius: 999px; border: none; background: #4f9e72; color: #fff; font-family: 'Cinzel', serif; font-size: 14px; font-weight: 700; letter-spacing: .06em; cursor: pointer">▶ Start session</button></sc-if>
+<sc-if value="{{ s.isLive }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ s.end }}" style="min-height: 46px; padding: 0 22px; border-radius: 999px; border: none; background: #a2463a; color: #fff; font-family: 'Cinzel', serif; font-size: 14px; font-weight: 700; letter-spacing: .06em; cursor: pointer">■ End session</button></sc-if>
+</div>
+<div role="tablist" aria-label="Session stage" style="display: flex; gap: 6px; padding: 4px; border-radius: 12px; background: #141e22; border: 1px solid #253338; align-self: flex-start">
+<sc-for list="{{ s.tabs }}" as="t" hint-placeholder-count="3"><button type="button" role="tab" aria-selected="{{ t.sel }}" onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.label }}</button></sc-for>
+</div>
+
+<sc-if value="{{ s.isPrep }}" hint-placeholder-val="{{ true }}">
+<div style="display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start">
+<div style="display: flex; flex-direction: column; gap: 18px">
+<div class="ss-card">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px"><h2 class="ss-h">Planned scenes</h2><button type="button" class="ss-ghost" onClick="{{ s.addScene }}">+ Scene</button></div>
+<sc-if value="{{ s.noScenes }}" hint-placeholder-val="{{ false }}"><p class="ss-muted" style="margin: 0">Plan a few scenes: a fight, a conversation, a place to explore. Keep them loose; the players will take things elsewhere.</p></sc-if>
+<sc-for list="{{ s.scenes }}" as="c" hint-placeholder-count="2">
+<div style="display: flex; gap: 8px; align-items: center">
+<select class="ss-in" data-i="{{ c.i }}" data-k="type" defaultValue="{{ c.type }}" onChange="{{ s.setScene }}" aria-label="Scene type" style="width: 140px; flex: none"><option>Combat</option><option>Social</option><option>Exploration</option><option>Downtime</option></select>
+<input class="ss-in" type="text" data-i="{{ c.i }}" data-k="text" defaultValue="{{ c.text }}" onChange="{{ s.setScene }}" placeholder="What happens here?" aria-label="Scene description" style="flex: 1; min-width: 0">
+<button type="button" class="ss-x" onClick="{{ c.remove }}" aria-label="Remove scene">×</button>
+</div>
+</sc-for>
+</div>
+<div class="ss-card">
+<h2 class="ss-h">Hooks &amp; loose threads</h2>
+<textarea class="ss-ta" rows="6" data-f="hooks" defaultValue="{{ s.hooks }}" onChange="{{ s.setF }}" placeholder="Rumors to drop, NPCs to bring back, unanswered questions from last time…"></textarea>
+</div>
+</div>
+
+<div class="ss-card">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 10px"><h2 class="ss-h">Encounter builder</h2><span class="ss-muted">Battle Points</span></div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 10px; background: #0b1214">
+<span style="font-size: 15px">Player characters</span>
+<span style="display: flex; align-items: center; gap: 8px"><button type="button" class="ss-step" onClick="{{ s.pcsDown }}" aria-label="Fewer player characters">−</button><span class="ss-num">{{ s.pcs }}</span><button type="button" class="ss-step" onClick="{{ s.pcsUp }}" aria-label="More player characters">+</button></span>
+</div>
+<div style="{{ s.bp.barWrap }}"><div style="{{ s.bp.bar }}"></div></div>
+<div style="display: flex; justify-content: space-between; gap: 10px; font-size: 15px"><span>Spent <strong>{{ s.bp.spent }}</strong> of <strong>{{ s.bp.budget }}</strong></span><span style="{{ s.bp.verdictStyle }}">{{ s.bp.verdict }}</span></div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<sc-for list="{{ s.roles }}" as="r" hint-placeholder-count="10">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid #1f2b30">
+<span style="display: flex; flex-direction: column"><span style="font-size: 15px">{{ r.label }}</span><span style="font-size: 12px; color: #9fb2b6">{{ r.note }}</span></span>
+<span style="display: flex; align-items: center; gap: 8px"><button type="button" class="ss-step" onClick="{{ r.down }}" aria-label="{{ r.downLabel }}">−</button><span class="ss-num">{{ r.count }}</span><button type="button" class="ss-step" onClick="{{ r.up }}" aria-label="{{ r.upLabel }}">+</button></span>
+</div>
+</sc-for>
+</div>
+<div class="ss-lbl" style="margin-top: 4px">Adjustments</div>
+<sc-for list="{{ s.adjs }}" as="a" hint-placeholder-count="6">
+<button type="button" onClick="{{ a.toggle }}" aria-pressed="{{ a.pressed }}" style="{{ a.style }}"><span style="{{ a.boxStyle }}">{{ a.glyph }}</span><span style="flex: 1; text-align: left">{{ a.label }}</span><span style="font-family: 'Cinzel', serif; font-weight: 700">{{ a.delta }}</span></button>
+</sc-for>
+<p class="ss-muted" style="margin: 0; font-size: 13px">Starting budget is 3 × player characters + 2, per the core rules' encounter guidance.</p>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ s.isPlay }}" hint-placeholder-val="{{ false }}">
+<div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 18px; align-items: start">
+<div style="display: flex; flex-direction: column; gap: 18px">
+<div class="ss-card">
+<h2 class="ss-h">Spotlight</h2>
+<p class="ss-muted" style="margin: 0">Tap a character each time they get a moment. Daggerheart has no initiative, so this helps you share the spotlight.</p>
+<sc-if value="{{ s.noParty }}" hint-placeholder-val="{{ false }}"><p class="ss-muted" style="margin: 0">No characters in the party yet.</p></sc-if>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{ s.spot }}" as="p" hint-placeholder-count="4"><button type="button" onClick="{{ p.bump }}" aria-label="{{ p.aria }}" style="{{ p.style }}"><span>{{ p.name }}</span><span style="font-family: 'Cinzel', serif; font-weight: 700">{{ p.count }}</span></button></sc-for>
+</div>
+<button type="button" class="ss-ghost" onClick="{{ s.resetSpot }}" style="align-self: flex-start">Reset spotlight</button>
+</div>
+<div class="ss-card">
+<h2 class="ss-h">Session tally</h2>
+<sc-for list="{{ s.tallies }}" as="t" hint-placeholder-count="4">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid #1f2b30">
+<span style="font-size: 15px">{{ t.label }}</span>
+<span style="display: flex; align-items: center; gap: 8px"><button type="button" class="ss-step" onClick="{{ t.down }}" aria-label="{{ t.downLabel }}">−</button><span class="ss-num">{{ t.count }}</span><button type="button" class="ss-step" onClick="{{ t.up }}" aria-label="{{ t.upLabel }}">+</button></span>
+</div>
+</sc-for>
+</div>
+</div>
+<div class="ss-card">
+<h2 class="ss-h">Session log</h2>
+<div style="display: flex; gap: 8px">
+<input id="ss-log-in" class="ss-in" type="text" placeholder="What just happened?" aria-label="New log entry" onKeyDown="{{ s.logKey }}" style="flex: 1; min-width: 0">
+<button type="button" class="ss-ghost" onClick="{{ s.addLog }}" style="min-height: 44px">Add</button>
+</div>
+<sc-if value="{{ s.noLog }}" hint-placeholder-val="{{ false }}"><p class="ss-muted" style="margin: 0">Quick notes as you play: who did what, names you invented, things to follow up.</p></sc-if>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ s.log }}" as="l" hint-placeholder-count="3">
+<div style="display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #1f2b30">
+<span style="flex: none; font-size: 13px; color: #9fb2b6; padding-top: 3px; width: 44px">{{ l.time }}</span>
+<span style="flex: 1; font-family: 'EB Garamond', serif; font-size: 18px; line-height: 1.45">{{ l.text }}</span>
+<button type="button" class="ss-x" onClick="{{ l.remove }}" aria-label="Remove log entry" style="width: 32px; height: 32px; font-size: 15px">×</button>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ s.isWrap }}" hint-placeholder-val="{{ false }}">
+<div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px; align-items: start">
+<div class="ss-card">
+<h2 class="ss-h">Recap</h2>
+<p class="ss-muted" style="margin: 0">Where the party stands, who they met, and what threat looms next. This shows on the dashboard as "Last Session".</p>
+<textarea class="ss-ta" rows="10" data-f="recap" defaultValue="{{ s.recap }}" onChange="{{ s.setF }}" placeholder="The party crossed the river at dawn…"></textarea>
+</div>
+<div style="display: flex; flex-direction: column; gap: 18px">
+<div class="ss-card">
+<h2 class="ss-h">Loot &amp; gold</h2>
+<textarea class="ss-ta" rows="4" data-f="loot" defaultValue="{{ s.loot }}" onChange="{{ s.setF }}" placeholder="Items found, handfuls / bags / chests of gold…"></textarea>
+</div>
+<div class="ss-card">
+<h2 class="ss-h">Countdowns &amp; threads</h2>
+<textarea class="ss-ta" rows="4" data-f="threads" defaultValue="{{ s.threads }}" onChange="{{ s.setF }}" placeholder="Which countdowns ticked or ended, what changed in the world…"></textarea>
+</div>
+<div class="ss-card">
+<button type="button" onClick="{{ s.toggleLevel }}" aria-pressed="{{ s.levelPressed }}" style="{{ s.levelStyle }}"><span style="{{ s.levelBox }}">{{ s.levelGlyph }}</span><span style="flex: 1; text-align: left">Milestone reached: the party levels up</span></button>
+<sc-if value="{{ s.levelUp }}" hint-placeholder-val="{{ false }}"><a href="Party.dc.html" class="ss-ghost" style="align-self: flex-start">Open Party to level up →</a></sc-if>
+</div>
+</div>
+</div>
+</sc-if>
+
+</div>
+</sc-if>
+</sc-for>
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ls = (k, d) => { try { const v = JSON.parse(window.localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } };
+    const accent = (ls('dh.settings', {}) || {}).accent || '#e3b45a';
+    const act = ls('dh.active', null) || { key: 'witherwild', hub: 'CampaignHub.dc.html', name: 'The Witherwild', blob: 'd69136bf0c8eddbad10c2eb636b1b5ca' };
+    const SKEY = 'dh.' + act.key + '.sessions';
+    const sessions = st.sessions ?? (Array.isArray(ls(SKEY, [])) ? ls(SKEY, []) : []);
+    const party = (() => { const v = ls('dh.' + act.key + '.party', []); return Array.isArray(v) ? v : []; })();
+    const persist = (list, extra) => { try { window.localStorage.setItem(SKEY, JSON.stringify(list)); } catch (e) {} this.setState({ sessions: list, ...(extra || {}) }); };
+    const fmtDate = (d) => { if (!d) return 'No date set'; const t = new Date(d + 'T12:00:00'); return isNaN(t) ? d : t.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); };
+    const blank = (n) => ({ id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), n, title: '', date: '', played: false, scenes: [], hooks: '', pcs: party.length || 4, roles: {}, adj: [], spot: {}, tally: {}, log: [], recap: '', loot: '', threads: '', levelUp: false });
+
+    // ---- live session: starting/ending a session tells the party sheets (they reload when party storage changes)
+    const LKEY = 'dh.' + act.key + '.live'; const PKEY = 'dh.' + act.key + '.party';
+    const live = ls(LKEY, null);
+    const CLS_ORDER = ['Bard', 'Druid', 'Guardian', 'Ranger', 'Rogue', 'Seraph', 'Sorcerer', 'Warrior', 'Wizard', 'Assassin', 'Brawler', 'Warlock', 'Witch'];
+    const modN = (v) => parseInt(String(v == null || v === '' ? '0' : v).replace('+', ''), 10) || 0;
+    const hhmm = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+    const partyEvent = (type, n) => {
+      const list = ls(PKEY, []); if (!Array.isArray(list)) return [];
+      const notes = [];
+      const next = list.map((c) => { const id = c.clsName || CLS_ORDER[c.cls] || ''; const cf = { ...(c.cf || {}) }; const nm = (c.f && c.f.name) || 'Hero';
+        if (type === 'start') {
+          if (id === 'Bard') { cf.rallyUsed = false; }
+          if (id === 'Seraph') { const t = Math.max(0, modN(c.f && c.f.strength)); cf.prayer = Array.from({ length: t }, () => 1 + Math.floor(Math.random() * 4)); notes.push(nm + ' rolled Prayer Dice: ' + (cf.prayer.join(', ') || 'none')); }
+          cf.sessNote = 'Session ' + n + ' started at ' + hhmm(Date.now()) + '.' + (id === 'Seraph' ? ' Prayer Dice rolled: ' + (cf.prayer.join(', ') || 'none (Strength +0)') + '.' : id === 'Bard' ? ' Rally is ready.' : '');
+        } else {
+          const had = (cf.rally ? 1 : 0) + (Array.isArray(cf.prayer) ? cf.prayer.length : 0); if (had) notes.push(nm + ' lost ' + had + ' unspent ' + (had === 1 ? 'die' : 'dice'));
+          cf.rally = ''; cf.prayer = []; if (id === 'Bard') cf.rallyUsed = false;
+          cf.sessNote = 'Session ' + n + ' ended at ' + hhmm(Date.now()) + '. Unspent Rally and Prayer Dice were cleared.';
+        }
+        return { ...c, cf }; });
+      try { window.localStorage.setItem(PKEY, JSON.stringify(next)); } catch (e) {}
+      return notes; };
+    const stamp = (x, text) => (x.log || []).concat({ time: hhmm(Date.now()), text });
+    const startSession = (x, list0) => { const list = list0 || sessions; if (live && live.id && live.id !== x.id) { const prev = list.find((y) => y.id === live.id); if (prev) partyEvent('end', prev.n); }
+      const notes = partyEvent('start', x.n); try { window.localStorage.setItem(LKEY, JSON.stringify({ id: x.id, n: x.n, at: Date.now() })); } catch (e) {}
+      return list.map((y) => (y.id === x.id ? { ...y, liveAt: Date.now(), log: stamp(y, 'Session started.' + (notes.length ? ' ' + notes.join('; ') + '.' : '')) } : y)); };
+    const endSession = (x) => { const notes = partyEvent('end', x.n); try { window.localStorage.removeItem(LKEY); } catch (e) {}
+      return sessions.map((y) => (y.id === x.id ? { ...y, played: true, endedAt: Date.now(), log: stamp(y, 'Session ended.' + (notes.length ? ' ' + notes.join('; ') + '.' : '')) } : y)); };
+    // "Start Session" on the dashboard leaves an intent: open the newest unplayed session on the Play stage
+    let sel = st.sel;
+    let stage = st.stage || 'prep';
+    if (st.sel === undefined) {
+      let intent = null; try { intent = window.localStorage.getItem('dh.sessions.intent'); } catch (e) {}
+      if (intent === 'play') {
+        try { window.localStorage.removeItem('dh.sessions.intent'); } catch (e) {}
+        let target = [...sessions].reverse().find((x) => !x.played);
+        let list = sessions; if (!target) { target = blank(sessions.length + 1); list = sessions.concat(target); }
+        if (!(live && live.id === target.id)) list = startSession(target, list);
+        try { window.localStorage.setItem(SKEY, JSON.stringify(list)); window.localStorage.setItem('dh.sessions.open', JSON.stringify({ sel: target.id, stage: 'play', at: Date.now() })); } catch (e) {}
+        sel = target.id; stage = 'play'; const tid = target.id; setTimeout(() => this.setState({ sessions: list, sel: tid, stage: 'play' }), 0);
+      } else {
+        const o = ls('dh.sessions.open', null);
+        if (o && Date.now() - (o.at || 0) < 15000 && ls(SKEY, []).some((x) => x.id === o.sel)) { sel = o.sel; if (!st.stage) stage = o.stage; }
+        else if (sessions.length) sel = sessions[sessions.length - 1].id;
+      }
+    }
+    const upd = (id, patch) => persist(sessions.map((x) => (x.id === id ? { ...x, ...(typeof patch === 'function' ? patch(x) : patch) } : x)));
+
+    const ROLES = [['minion', 'Minion group', 'One group the size of the party', 1], ['social', 'Social', '', 1], ['support', 'Support', '', 1], ['horde', 'Horde', '', 2], ['ranged', 'Ranged', '', 2], ['skulk', 'Skulk', '', 2], ['standard', 'Standard', '', 2], ['leader', 'Leader', '', 3], ['bruiser', 'Bruiser', '', 4], ['solo', 'Solo', '', 5]];
+    const ADJ = [['easy', 'Easier or shorter fight', -1], ['twoSolo', 'Using 2 or more Solos', -2], ['dmg', '+1d4 (or +2) damage to all adversaries', -2], ['lowTier', 'Including a lower-tier adversary', 1], ['noBig', 'No Bruisers, Hordes, Leaders or Solos', 1], ['hard', 'Harder or longer fight', 2]];
+    const sgn = (n) => (n > 0 ? '+' + n : String(n));
+    const boxCss = (on) => 'width: 22px; height: 22px; flex: none; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #1a1408; border: 1.5px solid ' + (on ? accent : '#4a5c62') + '; background: ' + (on ? accent : 'transparent') + ';';
+    const rowBtn = (on) => 'min-height: 44px; width: 100%; display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 14px; color: #e6ecea; background: ' + (on ? '#1b282d' : 'transparent') + '; border: 1px solid ' + (on ? '#3d5359' : 'transparent') + ';';
+
+    const details = sessions.map((x) => {
+      const on = x.id === sel;
+      const id = x.id;
+      const pcs = x.pcs || 4;
+      const roles = ROLES.map(([k, label, note, cost]) => { const c = (x.roles || {})[k] || 0; const setC = (v) => upd(id, (o) => ({ roles: { ...(o.roles || {}), [k]: Math.max(0, v) } })); return { label, note: (note ? note + ' · ' : '') + cost + ' BP each', count: c, up: () => setC(c + 1), down: () => setC(c - 1), upLabel: 'Add ' + label, downLabel: 'Remove ' + label, cost }; });
+      const adjOn = new Set(x.adj || []);
+      const budget = 3 * pcs + 2 + ADJ.reduce((a, [k, , d]) => a + (adjOn.has(k) ? d : 0), 0);
+      const spent = roles.reduce((a, r) => a + r.count * r.cost, 0);
+      const diff = budget - spent;
+      const pct = budget > 0 ? Math.min(100, Math.round((spent / budget) * 100)) : 100;
+      const barColor = diff < 0 ? '#e0715f' : diff === 0 ? '#7cc49a' : accent;
+      const tl = x.tally || {};
+      const TALLY = [['fearGain', 'Fear gained'], ['fearSpent', 'Fear spent'], ['short', 'Short rests'], ['long', 'Long rests']];
+      const tabsDef = [['prep', 'Prep'], ['play', 'Play'], ['wrap', 'Wrap-up']];
+      const pending = st.confirmDel === id;
+      return {
+        on, n: x.n, title: x.title || '', date: x.date || '', hooks: x.hooks || '', recap: x.recap || '', loot: x.loot || '', threads: x.threads || '',
+        setF: (e) => { const f = e.target.getAttribute('data-f'); if (f) upd(id, { [f]: e.target.value }); },
+        playedLabel: x.played ? 'Mark as not played' : 'Mark as played',
+        togglePlayed: () => upd(id, { played: !x.played }),
+        liveTitle: live && live.id === id ? 'Session in progress' : 'Not running', liveBorder: live && live.id === id ? '#4f9e72' : '#253338',
+        liveDot: 'width: 12px; height: 12px; border-radius: 50%; flex: none; background: ' + (live && live.id === id ? '#5fd38d; box-shadow: 0 0 0 4px rgba(95,211,141,.2)' : '#4a5c62') + ';',
+        isLive: !!(live && live.id === id), notLive: !(live && live.id === id),
+        liveText: live && live.id === id ? 'Live since ' + hhmm(live.at) + '. Party sheets know the session is running.' : x.played ? 'This session has been played. Starting it again re-rolls Prayer Dice and refreshes Rally.' : 'Start the session when you sit down at the table. Seraphs roll their Prayer Dice and the Bard’s Rally refreshes.',
+        otherLive: !!(live && live.id !== id), otherLiveText: live ? 'Session ' + live.n + ' is still running. Starting this one ends it.' : '',
+        start: () => persist(startSession(x), { stage: 'play' }),
+        end: () => persist(endSession(x), { stage: 'wrap' }),
+        delLabel: pending ? 'Click again to delete' : 'Delete',
+        del: () => { if (!pending) { this.setState({ confirmDel: id }); return; } if (live && live.id === id) { try { window.localStorage.removeItem(LKEY); } catch (e) {} } persist(sessions.filter((y) => y.id !== id), { sel: null, confirmDel: null }); },
+        tabs: tabsDef.map(([k, label]) => { const t = stage === k; return { label, sel: t ? 'true' : 'false', pick: () => this.setState({ stage: k }), style: 'min-height: 40px; padding: 0 18px; border-radius: 8px; border: none; cursor: pointer; font-family: inherit; font-size: 14px; color: ' + (t ? '#1a1408' : '#e6ecea') + '; background: ' + (t ? accent : 'transparent') + ';' }; }),
+        isPrep: stage === 'prep', isPlay: stage === 'play', isWrap: stage === 'wrap',
+        scenes: (x.scenes || []).map((c, i) => ({ i: String(i), type: c.type || 'Combat', text: c.text || '', remove: () => upd(id, (o) => ({ scenes: o.scenes.filter((_, j) => j !== i) })) })),
+        noScenes: !(x.scenes || []).length,
+        addScene: () => upd(id, (o) => ({ scenes: (o.scenes || []).concat({ type: 'Combat', text: '' }) })),
+        setScene: (e) => { const i = +e.target.getAttribute('data-i'); const k = e.target.getAttribute('data-k'); const v = e.target.value; upd(id, (o) => ({ scenes: (o.scenes || []).map((c, j) => (j === i ? { ...c, [k]: v } : c)) })); },
+        pcs, pcsUp: () => upd(id, { pcs: Math.min(8, pcs + 1) }), pcsDown: () => upd(id, { pcs: Math.max(1, pcs - 1) }),
+        roles,
+        adjs: ADJ.map(([k, label, d]) => { const a = adjOn.has(k); return { label, delta: sgn(d), pressed: a ? 'true' : 'false', glyph: a ? '✓' : '', boxStyle: boxCss(a), style: rowBtn(a), toggle: () => upd(id, (o) => { const s2 = new Set(o.adj || []); if (s2.has(k)) s2.delete(k); else s2.add(k); return { adj: [...s2] }; }) }; }),
+        bp: { budget, spent, verdict: diff > 0 ? diff + ' BP left' : diff === 0 ? 'Right on budget' : 'Over by ' + -diff + ' BP', verdictStyle: 'font-weight: 600; color: ' + barColor + ';', barWrap: 'height: 10px; border-radius: 999px; background: #0b1214; border: 1px solid #253338; overflow: hidden', bar: 'height: 100%; width: ' + pct + '%; background: ' + barColor + '; border-radius: 999px' },
+        noParty: party.length === 0,
+        spot: party.map((c, i) => { const key = (c.name || (c.f && c.f.name)) || 'pc' + i; const cnt = (x.spot || {})[key] || 0; const min = Math.min(...party.map((p, j) => (x.spot || {})[(p.name || (p.f && p.f.name)) || 'pc' + j] || 0)); const due = cnt === min; return { name: (c.name || (c.f && c.f.name)) || 'Hero ' + (i + 1), count: cnt, aria: ((c.name || (c.f && c.f.name)) || 'Hero') + ', ' + cnt + ' spotlight moments', bump: () => upd(id, (o) => ({ spot: { ...(o.spot || {}), [key]: cnt + 1 } })), style: 'min-height: 44px; display: inline-flex; align-items: center; gap: 10px; padding: 0 14px; border-radius: 999px; cursor: pointer; font-family: inherit; font-size: 15px; color: #e6ecea; background: ' + (due ? '#1b282d' : 'transparent') + '; border: 1.5px solid ' + (due ? accent : '#33444a') + ';' }; }),
+        resetSpot: () => upd(id, { spot: {} }),
+        tallies: TALLY.map(([k, label]) => { const c = tl[k] || 0; const setT = (v) => upd(id, (o) => ({ tally: { ...(o.tally || {}), [k]: Math.max(0, v) } })); return { label, count: c, up: () => setT(c + 1), down: () => setT(c - 1), upLabel: 'Increase ' + label, downLabel: 'Decrease ' + label }; }),
+        log: (x.log || []).map((l, i) => ({ time: l.time, text: l.text, remove: () => upd(id, (o) => ({ log: o.log.filter((_, j) => j !== i) })) })).reverse(),
+        noLog: !(x.log || []).length,
+        addLog: () => { const el = document.getElementById('ss-log-in'); const v = el && el.value.trim(); if (!v) return; const d = new Date(); const time = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); el.value = ''; upd(id, (o) => ({ log: (o.log || []).concat({ time, text: v }) })); },
+        logKey: (e) => { if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value.trim(); if (!v) return; const d = new Date(); const time = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); e.target.value = ''; upd(id, (o) => ({ log: (o.log || []).concat({ time, text: v }) })); } },
+        levelUp: !!x.levelUp, levelPressed: x.levelUp ? 'true' : 'false', levelGlyph: x.levelUp ? '✓' : '', levelBox: boxCss(!!x.levelUp), levelStyle: rowBtn(!!x.levelUp),
+        toggleLevel: () => upd(id, { levelUp: !x.levelUp })
+      };
+    });
+
+    const listItems = [...sessions].reverse().map((x) => {
+      const on = x.id === sel;
+      return { n: x.n, title: x.title || 'Untitled session', date: fmtDate(x.date), status: live && live.id === x.id ? 'Live' : x.played ? 'Played' : 'Planned', current: on ? 'true' : 'false', pick: () => this.setState({ sel: x.id, confirmDel: null }),
+        chipStyle: 'font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; ' + (x.played ? 'background: #20352b; color: #9fdcb6;' : 'background: #2d2614; color: ' + accent + ';'),
+        style: 'width: 100%; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 12px; text-align: left; cursor: pointer; font-family: inherit; color: #e6ecea; box-sizing: border-box; background: ' + (on ? '#1b282d' : '#141e22') + '; border: 1.5px solid ' + (on ? accent : '#253338') + ';' };
+    });
+
+    const played = sessions.filter((x) => x.played).length;
+    const next = sessions.find((x) => !x.played && x.date);
+    const NAV = ['Dashboard', 'Party', 'World', 'Characters & Locations', 'Adversaries', 'Sessions', 'Notes'];
+    const HREF = { Dashboard: act.hub || 'CampaignHub.dc.html', Party: 'Party.dc.html', World: 'World.dc.html', Adversaries: 'Adversaries.dc.html', Sessions: 'Sessions.dc.html', 'Characters & Locations': 'Codex.dc.html', Notes: 'Notes.dc.html' };
+    const navItems = NAV.map((label) => { const cur = label === 'Sessions'; const href = HREF[label]; return { label, href: href || '#', isLink: !!href, isOff: !href, current: cur ? 'page' : 'false', style: 'min-height: 40px; padding: 0 14px; border-radius: 8px; font-size: 14px; display: inline-flex; align-items: center; text-decoration: none; box-sizing: border-box; color: ' + (cur ? '#1a1408' : href ? '#e6ecea' : '#7f9297') + '; background: ' + (cur ? accent : 'transparent') + ';' }; });
+
+    return {
+      accent, navItems, dashHref: act.hub || 'CampaignHub.dc.html', campaignName: act.name || 'Campaign',
+      bannerStyle: 'position: absolute; inset: 0; background-size: cover; background-position: center 40%; background-image: url(/_blob/' + (act.blob || 'd69136bf0c8eddbad10c2eb636b1b5ca') + ');',
+      headerLine: sessions.length + (sessions.length === 1 ? ' session' : ' sessions') + ' · ' + played + ' played' + (next ? ' · Next: ' + fmtDate(next.date) : ''),
+      primaryStyle: 'min-height: 52px; padding: 0 26px; border-radius: 999px; border: none; background: ' + accent + '; color: #1a1408; font-family: \'Cinzel\', serif; font-size: 15px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer',
+      addSession: () => { const s = blank(sessions.length ? Math.max(...sessions.map((x) => x.n || 0)) + 1 : 1); persist(sessions.concat(s), { sel: s.id, stage: 'prep', confirmDel: null }); },
+      noSessions: sessions.length === 0, noSelection: !sessions.some((x) => x.id === sel),
+      listItems, details
+    };
+  }
+}
+</script>
+</body>
+</html>

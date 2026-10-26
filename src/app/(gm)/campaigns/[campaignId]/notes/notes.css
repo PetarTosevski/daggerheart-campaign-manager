@@ -1,0 +1,615 @@
+/*
+ * Notes page (D11): the board's tokens and shared classes (reference/designs/project/Notes.dc.html, lines 12-44 and the
+ * inline styles of the header, index column and page) as custom properties on .bj-root, plus the page shell (hero,
+ * index column, paper column). Feature slots (src/components/notes/*) use these classes and variables and keep their
+ * own rules in their own colocated .css. Class names follow the board (`bj-paper`, `bj-tape`, `bj-row`, `bj-bul`,
+ * `bj-text`, `bj-act`, `bj-ib`, `bj-chip`, `bj-mention`, `bj-add`, `bj-edit`, `bj-key`, `bj-in`, `bj-ghost`, `bj-lbl`);
+ * recurring inline styles got names: `bj-added` (an entry added by a reader, Q3), `bj-card` (the Quick keys card),
+ * `bj-tabs`, `bj-empty`, `bj-alert`, `bj-muted`, `bj-tape-0`..`bj-tape-5` (the six washi tapes, board l.211; N1
+ * defaults.ts TAPES). Fonts: --font-caveat (handwriting, loaded by the page), --font-cinzel, --font-plex.
+ * Not on the board: the 390 px layout (one column, 44 px targets, row actions always visible on touch).
+ */
+.bj-root {
+  --bj-page: #0d1417;
+  --bj-card: #141e22;
+  --bj-card-border: #253338;
+  --bj-field: #0b1214;
+  --bj-border: #33444a;
+  --bj-hover: #1b282d;
+  --bj-text: #e6ecea;
+  --bj-muted: #9fb2b6;
+  --bj-faint: #7f9297;
+  /* Accent: the app's settings accent (the board's gold), with the board's default */
+  --bj-acc: var(--brand, #e3b45a);
+  --bj-acc-ink: #1a1408;
+  --bj-danger: #ffb4a8;
+  /* Paper */
+  --bj-paper: #f3ead4;
+  --bj-ink: #2a1f14;
+  --bj-ink-soft: #6a5236;
+  --bj-ink-faint: #8a7350;
+  --bj-paper-border: #cdb88f;
+  --bj-hope: #9a6b10;
+  --bj-fear: #6b3fae;
+  /* Added entries (Q3): a blue-green ink, distinct from the owner's brown, readable on the paper (7:1) */
+  --bj-added: #1f5a6b;
+  --bj-hand: var(--font-caveat), "Caveat", cursive;
+  --bj-display: var(--font-cinzel), serif;
+
+  min-height: 100%;
+  background: var(--bj-page);
+  color: var(--bj-text);
+  font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------- shell */
+
+.bj-hero {
+  max-width: 1344px;
+  margin: 0 auto;
+  padding: 26px 48px 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.bj-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.bj-campaign {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: #c8d3d0;
+}
+.bj-title {
+  margin: 0;
+  font-family: var(--bj-display);
+  font-size: 44px;
+  line-height: 1.05;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+.bj-sub {
+  font-size: 15px;
+  color: #d6dfdc;
+}
+.bj-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bj-threads {
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.35);
+  color: #ece6d6;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.bj-threads[aria-pressed="true"] {
+  background: var(--bj-acc);
+  color: var(--bj-acc-ink);
+  border-color: transparent;
+}
+.bj-threads:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.bj-threads:focus-visible,
+.bj-ghost:focus-visible,
+.bj-chip:focus-visible,
+.bj-tabs [role="tab"]:focus-visible {
+  outline: 2px solid var(--bj-acc);
+  outline-offset: 2px;
+}
+.bj-main {
+  width: 100%;
+  max-width: 1344px;
+  margin: 0 auto;
+  padding: 28px 48px 56px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+.bj-main.bj-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+.bj-index {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.bj-index-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+/* The 'Pages' disclosure (N9) covers the whole index column at <= 720 px; it is hidden on wider screens. It replaces
+   N2's own-pages toggle, so that one never shows and its list always renders inside the column. */
+.bj-index .bj-index-toggle {
+  display: none;
+  justify-content: flex-start;
+  width: 100%;
+  font-weight: 600;
+}
+.bj-index-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--bj-muted);
+}
+.bj-index .bj-pages-toggle {
+  display: none;
+}
+.bj-index .bj-pages-list[data-open="false"] {
+  display: flex;
+}
+.bj-sheet {
+  min-width: 0;
+}
+.bj-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bj-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.bj-plus {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+.bj-empty {
+  font-size: 13px;
+  color: var(--bj-faint);
+  padding: 4px 2px;
+}
+.bj-muted {
+  color: var(--bj-muted);
+  font-size: 14px;
+}
+.bj-card {
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--bj-card);
+  border: 1px solid var(--bj-card-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--bj-muted);
+  line-height: 1.5;
+}
+.bj-card strong {
+  color: var(--bj-text);
+}
+.bj-card .bj-k-hope {
+  color: #f0cf8a;
+}
+.bj-card .bj-k-fear {
+  color: #c9a8ff;
+}
+.bj-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--bj-field);
+  border: 1px solid var(--bj-card-border);
+}
+.bj-tabs [role="tab"] {
+  flex: 1;
+  min-height: 36px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--bj-muted);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bj-tabs [role="tab"][aria-selected="true"] {
+  background: var(--bj-hover);
+  color: var(--bj-text);
+  box-shadow: inset 0 0 0 1px var(--bj-acc);
+}
+.bj-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #5a3330;
+  background: #2a1714;
+  color: var(--bj-danger);
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- board classes */
+
+.bj-in {
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--bj-border);
+  background: var(--bj-field);
+  color: var(--bj-text);
+  font-size: 15px;
+  font-family: inherit;
+  box-sizing: border-box;
+  width: 100%;
+}
+.bj-in:focus {
+  outline: 2px solid var(--bj-acc);
+  outline-offset: 1px;
+}
+.bj-ghost {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--bj-border);
+  background: transparent;
+  color: var(--bj-text);
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+.bj-ghost:hover:not(:disabled) {
+  background: var(--bj-hover);
+}
+.bj-ghost:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.bj-lbl {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bj-muted);
+}
+.bj-paper {
+  position: relative;
+  border-radius: 6px 14px 14px 6px;
+  background-color: var(--bj-paper);
+  background-image: radial-gradient(circle, rgba(90, 70, 40, 0.28) 1.1px, transparent 1.3px);
+  background-size: 22px 22px;
+  background-position: 11px 11px;
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.55),
+    inset 14px 0 18px -14px rgba(90, 60, 20, 0.45);
+  color: var(--bj-ink);
+  padding: 64px 48px 36px 76px;
+  box-sizing: border-box;
+  min-height: 760px;
+}
+.bj-paper::before {
+  content: "";
+  position: absolute;
+  left: 46px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(176, 58, 46, 0.35);
+}
+.bj-tape {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-1.5deg);
+  padding: 10px 34px 8px;
+  font-family: var(--bj-hand);
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--bj-ink);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+.bj-tape-0 {
+  background: repeating-linear-gradient(45deg, #e8c27a 0 10px, #dcb064 10px 20px);
+}
+.bj-tape-1 {
+  background: repeating-linear-gradient(-45deg, #9fc7a8 0 9px, #8ab995 9px 18px);
+}
+.bj-tape-2 {
+  background: repeating-linear-gradient(90deg, #e9a9a0 0 8px, #f1bdb5 8px 16px);
+}
+.bj-tape-3 {
+  background: radial-gradient(circle at 6px 6px, #fff6 2px, transparent 2.5px) 0 0 / 14px 14px, #a9c3e6;
+}
+.bj-tape-4 {
+  background: repeating-linear-gradient(45deg, #c9a8ff 0 10px, #b894f0 10px 20px);
+}
+.bj-tape-5 {
+  background: repeating-linear-gradient(0deg, #f0e0a8 0 6px, #e6d290 6px 12px);
+}
+.bj-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.bj-paper-btn {
+  min-height: 32px;
+  color: #4a3a26;
+  border-color: var(--bj-paper-border);
+  font-size: 13px;
+}
+.bj-paper-btn:hover:not(:disabled) {
+  background: rgba(120, 90, 40, 0.12);
+}
+.bj-danger {
+  color: #8e2b2b;
+  border-color: #d8a8a0;
+}
+.bj-line {
+  margin: 0 0 10px;
+  font-family: var(--bj-hand);
+  font-size: 24px;
+  color: var(--bj-ink-faint);
+}
+.bj-intro {
+  margin: 0 0 18px;
+  font-family: var(--bj-hand);
+  font-size: 24px;
+  color: var(--bj-ink-soft);
+}
+.bj-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  min-height: 34px;
+}
+.bj-row:hover {
+  background: rgba(120, 90, 40, 0.08);
+}
+.bj-bul {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 30px;
+  text-align: center;
+  padding: 0;
+  font-family: var(--bj-hand);
+  font-weight: 700;
+  border-radius: 6px;
+  color: var(--bj-ink);
+}
+.bj-bul:hover {
+  background: rgba(120, 90, 40, 0.15);
+}
+.bj-text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--bj-hand);
+  font-size: 25px;
+  line-height: 30px;
+  overflow-wrap: break-word;
+}
+.bj-added {
+  color: var(--bj-added);
+}
+.bj-act {
+  opacity: 0;
+  display: flex;
+  gap: 2px;
+  transition: opacity 0.12s;
+}
+.bj-row:hover .bj-act,
+.bj-row:focus-within .bj-act {
+  opacity: 1;
+}
+.bj-ib {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 15px;
+  color: var(--bj-ink-soft);
+  padding: 0;
+}
+.bj-ib:hover {
+  background: rgba(120, 90, 40, 0.15);
+  color: var(--bj-ink);
+}
+.bj-chip {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--bj-paper-border);
+  background: #fbf5e6;
+  color: var(--bj-ink);
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bj-chip[aria-checked="true"] {
+  background: var(--bj-ink);
+  color: var(--bj-paper);
+  border-color: var(--bj-ink);
+}
+.bj-chip:disabled {
+  cursor: default;
+}
+.bj-mention {
+  background: rgba(227, 180, 90, 0.35);
+  border-radius: 4px;
+  padding: 0 3px;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  border-bottom: 2px solid #b8842a;
+}
+.bj-mention:hover {
+  background: rgba(227, 180, 90, 0.6);
+}
+.bj-add {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-bottom: 2px dashed rgba(90, 70, 40, 0.4);
+  background: transparent;
+  font-family: var(--bj-hand);
+  font-size: 25px;
+  color: var(--bj-ink);
+  padding: 4px 2px;
+}
+.bj-add:focus {
+  outline: none;
+  border-bottom-color: #8e2b2b;
+}
+.bj-edit {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--bj-paper-border);
+  border-radius: 6px;
+  background: #fffaf0;
+  font-family: var(--bj-hand);
+  font-size: 25px;
+  color: var(--bj-ink);
+  padding: 0 6px;
+}
+.bj-keybox {
+  margin-top: 34px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(90, 70, 40, 0.35);
+}
+.bj-keyhead {
+  font-family: var(--bj-display);
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: #7a5b2e;
+  margin-bottom: 6px;
+}
+.bj-key {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 14px;
+  font-family: var(--bj-hand);
+  font-size: 21px;
+  color: #4a3a26;
+}
+.bj-key .bj-hope {
+  color: var(--bj-hope);
+}
+.bj-key .bj-fear {
+  color: var(--bj-fear);
+}
+
+/* ---------------------------------------------------------------- narrower screens (not on the board) */
+
+@media (max-width: 1100px) {
+  .bj-hero {
+    padding: 22px 24px 0;
+  }
+  .bj-main {
+    padding: 24px 24px 40px;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+
+@media (max-width: 720px) {
+  .bj-hero {
+    padding: 18px 16px 0;
+  }
+  .bj-title {
+    font-size: 34px;
+  }
+  .bj-main {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px 16px 32px;
+    gap: 18px;
+  }
+  .bj-index .bj-index-toggle {
+    display: inline-flex;
+  }
+  .bj-index-body[data-open="false"] {
+    display: none;
+  }
+  .bj-paper {
+    padding: 56px 16px 28px 40px;
+    min-height: 480px;
+  }
+  .bj-paper::before {
+    left: 26px;
+  }
+  .bj-tape {
+    font-size: 28px;
+    padding: 8px 22px 6px;
+  }
+}
+
+/* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
+@media (max-width: 1100px), (pointer: coarse) {
+  .bj-threads,
+  .bj-ghost,
+  .bj-chip,
+  .bj-tabs [role="tab"],
+  .bj-plus {
+    min-height: 44px;
+  }
+}
+/* The row's bullet and icon buttons grow on phones and touch screens only: on a mouse tablet 44 px icons would squeeze
+   the entry text to a narrow column; a touch screen also wraps the row (entries.css). */
+@media (max-width: 720px), (pointer: coarse) {
+  .bj-bul,
+  .bj-ib {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Touch: row actions are always visible (no hover). */
+@media (hover: none) {
+  .bj-act {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bj-act {
+    transition: none;
+  }
+}

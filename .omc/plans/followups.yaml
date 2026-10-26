@@ -1,0 +1,114 @@
+plan: followups
+waves:
+  - wave: 1
+    tracers:
+      - id: X1
+        goal: SEED_ACCOUNTS work on a deployment only when ALLOW_SEED_ACCOUNTS is "true" (set on cloud dev, never production) or on a local e2e deployment (dcm-bxp.24).
+        depends_on: []
+        owns:
+          - convex/lib/allowlist.ts
+          - convex/accounts.ts
+          - convex/convex.config.ts
+          - tests/unit/allowlist.test.ts
+          - docs/tasks/TASK-105-accounts-and-roles.md
+        reads:
+          - convex/lib/users.ts
+          - convex/auth.ts
+        acceptance:
+          - "allowedEmails includes seed emails on local e2e, or when ALLOW_SEED_ACCOUNTS=true; never otherwise (unit tests)"
+          - "accounts:seed runs on local e2e or with the flag, refuses otherwise (unit tests)"
+          - "TASK-105 documents the flag and that it must never be set on production"
+      - id: X2
+        goal: The GM players dialog explains that email invites work for Google accounts and password accounts must join with the code (dcm-bxp.25).
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - tests/e2e/players.spec.ts
+        reads:
+          - convex/members.ts
+        acceptance:
+          - "The invite section shows the note; players.spec.ts asserts it and still passes"
+  - wave: 2
+    tracers:
+      - id: X3
+        goal: Wrong join codes count against the joinByCode rate limit (joinByCode returns a result instead of throwing for a bad code, so the token isn't rolled back), and the players dialog narrows the roster on its viewer field.
+        depends_on: []
+        owns:
+          - convex/members.ts
+          - tests/convex/members.test.ts
+          - src/app/(gm)/join-dialog.tsx
+          - src/app/(gm)/join/[code]/join-by-link.tsx
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - tests/e2e/players.spec.ts
+        reads:
+          - convex/lib/functions.ts
+        acceptance:
+          - "11 wrong codes in a minute: the 11th returns RATE_LIMITED (convex test)"
+          - "join dialog and join-by-link show the bad-code message from the result; players.spec.ts passes"
+          - "roster's player rows no longer need an email placeholder; players-dialog narrows on roster.viewer"
+  - wave: 3
+    tracers:
+      - id: X4
+        goal: Weredragon-only "Roll the night sky" — any campaign member can roll the Astromancer's 5d6 (HF p.140, "the players collectively rolling 5d6"); assigning dice to revelations stays GM-only.
+        depends_on: []
+        owns:
+          - convex/trackers/weredragon.ts
+          - tests/convex/weredragon.test.ts
+          - src/app/(gm)/campaigns/[campaignId]/trackers/weredragon.tsx
+          - tests/e2e/weredragon.spec.ts
+        reads:
+          - convex/lib/functions.ts
+          - convex/lib/trackers.ts
+        acceptance:
+          - "A player (and the GM) can call the roll; an outsider gets NOT_FOUND; the roll is visible to all members (convex test)"
+          - "A player can roll only while no roll is waiting to be assigned; the GM can always re-roll (convex test)"
+          - "assignReading stays GM-only (convex test)"
+          - "The Weredragon tracker shows players a 'Roll the night sky' button; weredragon.spec.ts covers a player rolling and the GM assigning"
+      - id: X5
+        goal: In Journey to Horizon, players see a map token only when it is not hidden AND it sits in a hex they can see (explored, the party's hex, or adjacent; HF p.176); sanctuary markers stay visible everywhere (HF p.169). Other frames are unchanged.
+        depends_on: []
+        owns:
+          - convex/lib/maps.ts
+          - src/lib/world/map-state.ts
+          - src/lib/world/hex.ts
+          - src/lib/world/token-types.ts
+          - tests/convex/maps.test.ts
+          - tests/unit/world-map-state.test.ts
+          - tests/e2e/horizon.spec.ts
+        reads:
+          - convex/maps.ts
+          - convex/lib/validators/maps.ts
+        acceptance:
+          - "Horizon player view: a non-hidden token in an unexplored, non-adjacent hex is absent; the same token becomes visible when its hex is explored or adjacent to the party (convex test)"
+          - "Sanctuary markers are visible to players in any hex (add a built-in sanctuary token type if none exists)"
+          - "Non-Horizon frames: player token visibility unchanged (existing tests pass)"
+          - "Codex pins pointing at a token the player can't see are omitted (existing codex pin behaviour uses the player view)"
+  - wave: 4
+    tracers:
+      - id: X6
+        goal: Each player has at most one active character per campaign (dead and away characters don't count). A player benches their active character ("Send away") before creating or bringing back another; the campaign cap stays 50 during testing (bead to lower it to 10 later).
+        depends_on: []
+        owns:
+          - convex/characters.ts
+          - convex/deathMoves.ts
+          - convex/lib/validators/characters.ts
+          - src/lib/validation/characters.ts
+          - src/components/party/death/**
+          - src/components/party/party-card.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/roster.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/new/**
+          - tests/convex/characters.test.ts
+          - tests/convex/death-moves.test.ts
+          - tests/unit/party-card.test.ts
+          - tests/e2e/party-roster.spec.ts
+          - tests/e2e/character-wizard.spec.ts
+          - docs/tasks/TASK-X6-one-active-character.md
+        reads:
+          - convex/lib/characterSheet.ts
+          - convex/lib/permissions.ts
+        acceptance:
+          - "A player with an active character can't create another (or be assigned one) until that character is dead or away; GM-owned unassigned characters are exempt (convex tests)"
+          - "A player can send their own active character away (new away reason 'benched'); a player can bring back their own benched character only when they have no other active character; the GM can do both for anyone (convex tests)"
+          - "Death-move away (infirmary / sent home, Castle High) still returns only through the GM"
+          - "Roster and party card show Send away / Bring back to the owner and GM; the wizard explains why it is blocked (e2e)"
+          - "Campaign cap stays MAX_CHARACTERS_PER_CAMPAIGN = 50; MAX_CHARACTERS_PER_PLAYER is replaced by the one-active rule"

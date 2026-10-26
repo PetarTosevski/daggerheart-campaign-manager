@@ -1,0 +1,34 @@
+import { cronJobs } from "convex/server";
+
+import { internal } from "./_generated/api";
+
+/**
+ * Retention jobs (CD17), daily (photo-import expiry hourly) at odd minutes so
+ * they never land on the top of the hour. Each one reschedules itself until its backlog is gone.
+ */
+const crons = cronJobs();
+
+crons.cron("expire operations", "17 3 * * *", internal.cleanup.expireOperations, {});
+// Campaign purge is deliberately not scheduled (user decision 2026-10-18): a
+// deleted campaign stays restorable until a GM chooses "Delete permanently",
+// which will reuse internal.cleanup.purgeCampaign. Enabling the timer is this line:
+// crons.cron("purge deleted campaigns", "37 3 * * *", internal.cleanup.purgeDeletedCampaigns, {});
+crons.cron("sweep orphan uploads", "53 3 * * *", internal.cleanup.sweepOrphanUploads, {});
+// Notes bin (D11 N7, Q11): torn-out journal pages older than 30 days, with their entries and recipients.
+crons.cron("purge torn-out journal pages", "23 4 * * *", internal.notesBin.purgeBinned, {});
+// Action log (dcm-c26): undo snapshots of rows older than 30 days are stripped; the rows stay, no longer undoable.
+crons.cron("strip old action log snapshots", "7 5 * * *", internal.cleanup.stripActionLogSnapshots, {});
+// Abandoned photo-import photos (D5 R3, review M4): hourly, so none outlives
+// its one-hour TTL by more than another hour.
+crons.cron("expire photo imports", "41 * * * *", internal.cleanup.expirePhotoImports, {});
+// Combat requests (plan combat-actions AA0): GM sanctions and reaction windows resolved or declined over a day ago;
+// hourly, so none outlives its day by more than another hour.
+crons.cron("expire combat requests", "11 * * * *", internal.cleanup.expireCombatRequests, {});
+// Map areas (plan sheet-drawer SD0, Q14): areas of ended scenes and sessions, a day after they ended; hourly.
+crons.cron("expire combat areas", "19 * * * *", internal.cleanup.expireCombatAreas, {});
+// Lorekeeper (D13 L0): usage counters older than 13 months; hourly, answers stuck in pending/streaming for over
+// 10 minutes end as errors. Conversations are never expired (Q10: kept until their asker deletes them).
+crons.cron("expire lorekeeper usage", "47 4 * * *", internal.lorekeeperRetention.expireUsage, {});
+crons.cron("end stuck lorekeeper answers", "29 * * * *", internal.lorekeeperRetention.expireStaleRuns, {});
+
+export default crons;
