@@ -1,0 +1,49 @@
+/* The Scene card (D9 C4): the board's layout (Combat.dc.html, section "Scene"). Shared classes come from combat-map.css. */
+
+.cm-scene-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cm-scene-sizes {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cm-scene-sizes .cm-lbl {
+  margin-right: 2px;
+}
+.cm-scene-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cm-scene-busy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cm-scene-msg {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0b1214;
+  border: 1px solid #253338;
+}
+.cm-scene-err {
+  color: var(--cm-danger);
+  font-size: 14px;
+}
+/* Sprite packs P7: the Setting picker fills the card's width. */
+.cm-scene-setting {
+  width: 100%;
+  max-width: 100%;
+}
+.cm-scene .cm-upload {
+  align-self: flex-start;
+}
+
+@media (max-width: 600px) {
+  .cm-scene-actions .cm-go,
+  .cm-scene-actions .cm-btn,
+  .cm-scene-setting {
+    min-height: 44px;
+  }
+}

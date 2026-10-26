@@ -1,0 +1,42 @@
+# Sheet domain cards: readable hand cards and a 'More' popup (beads dcm-bxp.126, dcm-bxp.127). Format: docs/workflow.md.
+# USER (2026-10-22): "drafted cards dont have the 'more' option and can't be read" (screenshot: hand cards' Move to vault /
+#   Exchange at level-up buttons cover the text) and "The 'more' option should open a popup window with a larger version of
+#   the card where the entire text is readable, the current scroll makes some cards difficult to read".
+# DEFAULTS (orchestrator, reported): one shared CardDialog component (native modal <dialog>) that CA6's map Hand can reuse;
+#   'More' on every card face (hand, vault, wizard/level-up pickers where the face is reused) opens it; the inline scroll
+#   expansion goes away; the dialog shows art, name, domain, level, type, recall cost, the full text and the once-per state
+#   (CA7's 'Used · Back after a rest'); Escape / close returns focus to 'More'; fits 390 px with no sideways scroll; the
+#   hand card's buttons sit below the text, never over it.
+plan: sheet-cards
+waves:
+  - wave: 1
+    tracers:
+      - id: SC1
+        title: Hand cards readable with 'More' on every card; 'More' opens a large card popup
+        size: M
+        goal: Every domain card on the sheet has 'More', its buttons never cover the text, and 'More' opens a dialog with the whole card readable.
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.css
+          - src/components/cards/**
+          - tests/unit/domains-exhausted.test.tsx
+          - tests/unit/card-dialog.test.tsx
+          - tests/e2e/sheet-cards.spec.ts
+          - tests/e2e/visual/SC1.spec.ts
+          # ORCHESTRATOR NOTE 2026-10-22: tests that pinned the old inline More toggle.
+          - tests/unit/sheet-render.test.ts
+          - tests/e2e/visual/DD1.spec.ts
+          - tests/e2e/visual/S12.spec.ts
+          - docs/tasks/TASK-SC-SC1.md
+        reads:
+          - docs/tasks/TASK-CA-CA7.md
+          - reference/designs/project/**
+          - src/lib/srd/domain-cards.ts
+          - src/lib/srd/art.ts
+        acceptance:
+          - "Hand (loadout) cards show 'More' and their Move to vault / Exchange at level-up buttons sit below the text (no overlap) at 1440 and 390"
+          - "'More' on any sheet card opens CardDialog: art, name, domain, level, type, recall cost, the full text with no inner scroll at 1440 (page scroll inside the dialog only if taller than the viewport), the once-per state; Escape and the close button return focus to 'More'; accessible name is the card name"
+          - "The inline scroll expansion is removed; CardDialog lives in src/components/cards/ for reuse by the map Hand (CA6)"
+          - "Unit tests for the dialog; e2e opens and closes it on a hand card and a vault card at 1440 and 390 with no horizontal scroll; screenshots compared with the board's card look"
+          - "pnpm lint, typecheck, vitest pass; tracer-guard passes"

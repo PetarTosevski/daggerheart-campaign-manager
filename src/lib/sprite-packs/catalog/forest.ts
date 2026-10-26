@@ -1,0 +1,80 @@
+// Built-in catalog: forest (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
+
+import { defineFolder, long, obj, tex } from "./types";
+
+export const FOREST = defineFolder("forest", {
+  props: [
+    obj("bush", "cover", "low", "bush", { variant: "green" }),
+    obj("fern clump", "cover", "low", "bush"),
+    obj("mushroom ring", "none", "flat", "mushroom"),
+    obj("tree stump", "cover", "low", "log", { standIn: false }),
+    obj("small rock", "cover", "low", "rock"),
+    obj("mossy log (short)", "cover", "low", "log"),
+    obj("berry bush", "cover", "low", "bush"),
+    obj("flower patch", "none", "flat", "bush", { standIn: false }),
+    obj("thorn bramble", "cover", "low", "bush", { move: "difficult" }),
+    obj("hollow log", "cover", "low", "log"),
+    obj("animal carcass", "none", "flat", "bones", { standIn: false }),
+    obj("bird's nest on the ground", "none", "flat", "bones", { standIn: false }),
+    obj("woodcutter's axe in a stump", "cover", "low", "log", { standIn: false }),
+    obj("signpost", "none", "tall", "pillar", { standIn: false }),
+    obj("small pond", "none", "flat", "rock", { move: "difficult", standIn: false }),
+    obj("rabbit burrow", "none", "flat", "rubble", { standIn: false }),
+  ],
+  large: [
+    obj("oak tree", "block", "tall", "tree", { variant: "green" }),
+    obj("pine tree", "block", "tall", "tree", { variant: "pine" }),
+    obj("birch tree", "block", "tall", "tree", { variant: "olive" }),
+    obj("dead tree", "none", "tall", "deadtree"),
+    obj("giant mushroom", "block", "tall", "mushroom", { standIn: false }),
+    obj("autumn maple tree", "block", "tall", "tree", { variant: "autumn" }),
+    long("thick hedge", "block", "tall", "bush", { standIn: false }),
+    obj("hunter's lean-to", "block", "tall", "tent", { footprint: "rect" }),
+    obj("ancient tree with roots", "block", "tall", "tree", { variant: "dark" }),
+  ],
+  terrain: [
+    tex("forest floor with leaves", "grass", true),
+    tex("moss", "grass", true),
+    tex("tall grass", "grass", true),
+    tex("muddy path", "path", false),
+  ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11A): new items, not variants. The druid stone circle has a burning
+  // fire in its middle (campfire light, D2); the elven tree-house and the stone circle are 3 x 3, the rest 2 x 2.
+  extras: {
+    "props-2": [
+      obj("fox", "none", "low", "rock", { standIn: false }),
+      obj("deer", "none", "low", "rock", { standIn: false }),
+      obj("brown bear", "cover", "low", "rock", { standIn: false }),
+      obj("owl perched on a stump", "cover", "low", "log", { standIn: false }),
+      obj("fallen branch", "none", "flat", "log", { standIn: false }),
+      obj("pile of pinecones", "none", "flat", "rubble", { move: "open", standIn: false }),
+      obj("log with bracket fungus", "cover", "low", "log", { standIn: false }),
+      obj("ivy-covered stone", "cover", "low", "rock", { standIn: false }),
+      obj("hunting snare", "none", "flat", "rubble", { standIn: false }),
+      obj("shed deer antlers", "none", "flat", "bones", { move: "open", standIn: false }),
+      obj("wild beehive in a hollow log", "cover", "low", "log", { standIn: false }),
+      obj("small druid standing stone", "block", "tall", "boulder", { standIn: false }),
+      obj("stepping stones in a stream", "none", "flat", "rock", { move: "difficult", standIn: false }),
+      obj("forest spring", "none", "flat", "rock", { move: "difficult", standIn: false }),
+      obj("wild garlic patch", "none", "flat", "bush", { standIn: false }),
+      obj("woodland shrine with offerings", "cover", "low", "statue", { standIn: false }),
+    ],
+    "large-2": [
+      obj("weeping willow tree", "block", "tall", "tree", { variant: "green", standIn: false }),
+      obj("ancient yew tree", "block", "tall", "tree", { variant: "dark", standIn: false }),
+      obj("elven tree-house platform", "block", "tall", "tree", { variant: "green", w: 3, h: 3, standIn: false }),
+      obj("forest stream bend", "none", "flat", "rock", { move: "difficult", footprint: "rect", standIn: false }),
+      obj("archway of living branches", "cover", "tall", "bush", { move: "open", footprint: "rect", standIn: false }),
+      obj("sapling thicket", "cover", "tall", "bush", { standIn: false }),
+      obj("druid stone circle", "cover", "tall", "campfire", { light: "campfire", w: 3, h: 3, standIn: false }),
+      obj("giant hollow stump with steps", "block", "tall", "log", { standIn: false }),
+      obj("woodcutter's log pile", "cover", "low", "log", { move: "block", footprint: "rect", standIn: false }),
+    ],
+    "terrain-2": [
+      tex("pine needles", "grass", true),
+      tex("fern undergrowth", "grass", true),
+      tex("red autumn leaves", "grass", true),
+      tex("forest stream pebbles", "water", true),
+    ],
+  },
+});

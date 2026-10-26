@@ -1,0 +1,514 @@
+# DRAFT: QUESTIONS pending user answer (14 questions, defaults in .omc/autopilot/d13-analysis.md section 10)
+#
+# D13 plan: Chatbot "The Lorekeeper", an AI rules assistant (bead dcm-bxp.82).
+# Board: reference/designs/project/Lorekeeper.dc.html (visual spec; layouts page / drawer / mobile; untracked, read only).
+# Analysis: .omc/autopilot/d13-analysis.md (board inventory, data model, rules-source options, streaming choice, prompt and
+#   context, safety, caps, model costs, QUESTIONS).
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+#
+# Defaults this draft assumes (QUESTIONS 1-14):
+#   Q1 rules source (a): private book text ingested locally into Convex (never git), Convex search index, citations on.
+#   Q2 Sonnet 5.5 answers ('claude-sonnet-5-5', env LOREKEEPER_MODEL overrides), effort low; web fallback on misses with
+#      the board's toggle defaulting to 'Search the internet too'.
+#   Q3 private conversations per user; Q4 context = frame + asker's own characters + party classes + rulings, never GM-only
+#   data for anyone; Q5 'Open in the book' = page text dialog; Q6 ingest via `pnpm lorekeeper:ingest`; Q7 house rules =
+#   GM pages shared with everyone, off by default; Q8 'Ask the GM' -> lorekeeperAsks; Q9 caps 40/day/user, $10/month/
+#   campaign, $25/month/deployment (env LOREKEEPER_MONTHLY_USD); Q10 90-day retention; Q11 Stop button; Q12 mobile fold;
+#   Q13 page + drawer; Q14 GM-only pinning.
+#
+# Starts after: the tracers of d12-hardening, sprite-packs (P11Z), performance (PF7) and combat-actions that own
+#   convex/lib/functions.ts, convex/schema.ts, convex/cleanup.ts, convex/crons.ts, src/lib/errors/app-error.ts,
+#   src/lib/convex-errors.ts, tests/convex/schema-guard.test.ts, src/lib/campaign-sections.ts and C/layout.tsx are merged;
+#   otherwise the orchestrator applies L0's / L7's small edits to those files at merge time (workflow 'Shared files').
+#   D12 H0 (tests/convex/authz harness) should be merged first; if not, each tracer keeps its own role-table test and an
+#   H0-era tracer folds it into tests/convex/authz/lorekeeper-*.entries.ts.
+#
+# Rules for every tracer (part of every acceptance list, not repeated):
+#   - Public functions use convex/lib/functions.ts wrappers only: campaignQuery / campaignMutation (need 'view' for members;
+#     gm* for GM-only) or userQuery for own-row reads; identity from ctx.user (CF3, CF4); args and returns validators, no
+#     v.any(). Internal actions/queries/mutations are scheduled or run only as internal.* (CF9).
+#   - ANTHROPIC_API_KEY is read only in convex/lib/claude.ts via the typed env inside handlers (CF19); never returned, logged
+#     or put in an error; no NEXT_PUBLIC_ var; no file under src/ mentions ANTHROPIC.
+#   - Indexed reads only (no .filter on queries; .take() with caps; counters, never .collect().length).
+#   - Errors are ConvexError {code} from src/lib/errors/lorekeeper.ts (L0) plus common codes; a missing code = stop and ask.
+#     Tests assert ConvexError.data.code, never message text.
+#   - Each tracer's new public functions get matrix entries (anon, outsider, player, otherPlayer, GM) in its own
+#     tests/convex/authz/lorekeeper-<area>.entries.ts + .test.ts (D12 H0 format).
+#   - Book text is never committed: tests use the synthetic fixture tests/fixtures/lorekeeper/mini-book.txt (L0), invented
+#     rules text, never quotes from the PDFs.
+#   - No model call in any test: fetch is stubbed (vi.stubGlobal, as tests/convex/combat-map-generate.test.ts) or the e2e
+#     fake model (LOREKEEPER_FAKE_MODEL, honoured only on E2E deployments) replays canned SSE.
+#   - UI in the board's look (lorekeeper.css tokens from L0); every useQuery subtree inside an error boundary; loading via
+#     the shared Loading (role=status); 390 px one column, no horizontal scroll, targets >= 44 px, reduced motion respected.
+#   - No new dependency. pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e spec pass in
+#     its worktree; one docs/tasks/TASK-D13-<id>.md per tracer.
+# USER ANSWER Q1 (2026-10-21, binding): (a) the user's own rulebooks (Core Rulebook and Hope & Fear, provided) are the rules source -
+#   private text ingested into the Convex deployment by a local script, never in git, searched per question, excerpts with page
+#   numbers sent to the model. Q2-Q14 still pending.
+# USER ANSWERS Q2-Q14 (2026-10-21, binding):
+#   Q2 Sonnet 5.5 answers first; when Sonnet's answer is 'Not in your books' or 'Rules unclear', the server automatically retries
+#      with Opus 5.5 (one retry, shown as 'Checked again with a stronger model'); the internet pass (toggle, as the board) runs only
+#      after Opus also finds nothing.
+#   Q3 conversations are PUBLIC to the campaign by default (everyone in the campaign can read them); the asker can set one private.
+#      GM-only data still never reaches any prompt (Q4), so public conversations leak nothing secret.
+#   Q10 conversations are kept; no automatic deletion and no retention cron for them (a few KB per answer: negligible storage).
+#      Manual delete only by the asker of their own conversation (orchestrator default; user said 'no delete unless good reason').
+#   Q9 caps: 40 questions per person per day; $50 per campaign per month; $150 per month server-wide (the user's Anthropic limit
+#      is $200/month; $50 stays free for map generation and photo import); all changeable in settings without a deploy.
+#   Q4-Q8, Q11-Q14: defaults. Plan status: APPROVED.
+plan: d13-lorekeeper
+waves:
+  # ---------------------------------------------------------------- wave 1: foundation and pure domain
+  - wave: 1
+    tracers:
+      - id: L0
+        foundation: true
+        title: D13 foundation - tables, validators, error codes, rate limit, Claude streaming client, stubs, retention, route shell, nav item
+        size: L
+        goal: The Lorekeeper tables exist and are purged with their campaign and expired by cron, the lorekeeperAsk rate limit and every D13 error code are defined, convex/lib/claude.ts streams a Messages API reply (SSE parsed, usage returned, timeout, fake model on E2E only), the context / retrieve / caps / web hooks exist as stubs, and /campaigns/<id>/lorekeeper opens the board-look shell with slots for GM and players.
+        depends_on: []
+        owns:
+          - src/components/lorekeeper/chat/index.tsx
+          - src/components/lorekeeper/side/index.tsx
+          - convex/convex.config.ts
+          - convex/schema.ts
+          - convex/tables/lorekeeper.ts
+          - convex/lib/validators/lorekeeper.ts
+          - convex/lib/claude.ts
+          - convex/lib/lorekeeper/context.ts
+          - convex/lib/lorekeeper/retrieve.ts
+          - convex/lib/lorekeeper/caps.ts
+          - convex/lib/lorekeeper/web.ts
+          - convex/lorekeeperRetention.ts
+          - convex/lib/functions.ts
+          - convex/cleanup.ts
+          - convex/crons.ts
+          - src/lib/errors/lorekeeper.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - src/lib/campaign-sections.ts
+          - package.json
+          - scripts/lorekeeper-ingest.mjs
+          - "src/app/(gm)/campaigns/[campaignId]/lorekeeper/page.tsx"
+          - "src/app/(gm)/campaigns/[campaignId]/lorekeeper/error.tsx"
+          - "src/app/(gm)/campaigns/[campaignId]/lorekeeper/lorekeeper.css"
+          - src/components/lorekeeper/slots.ts
+          - src/components/lorekeeper/sigil.tsx
+          - tests/fixtures/lorekeeper/**
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/convex/claude-client.test.ts
+          - tests/convex/lorekeeper-retention.test.ts
+          - tests/e2e/lorekeeper-shell.spec.ts
+          - docs/tasks/TASK-D13-L0.md
+        reads:
+          - reference/designs/project/Lorekeeper.dc.html
+          - .omc/autopilot/d13-analysis.md
+          - convex/combatMapGenerate.ts
+          - convex/photoImport.ts
+          - convex/lib/permissions.ts
+          - convex/lib/allowlist.ts
+          - convex/tables/notes.ts
+          - convex/notesBin.ts
+          - "src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx"
+          - "src/app/(gm)/campaigns/[campaignId]/notes/page.tsx"
+          - tests/convex/helpers.ts
+        acceptance:
+          - "convex/tables/lorekeeper.ts defines lorekeeperBooks, lorekeeperChunks (search index search_text on text, filterFields [bookId]), lorekeeperLibrary, lorekeeperConversations, lorekeeperMessages, lorekeeperRulings, lorekeeperAsks and lorekeeperUsage with every field and index of analysis section 2; convex/schema.ts composes them; caps and unions live in convex/lib/validators/lorekeeper.ts"
+          - "src/lib/errors/lorekeeper.ts defines at least LOREKEEPER_UNAVAILABLE, LOREKEEPER_QUESTION_INVALID, LOREKEEPER_BUSY, LOREKEEPER_CAP_USER, LOREKEEPER_CAP_CAMPAIGN, LOREKEEPER_CAP_DEPLOYMENT, LOREKEEPER_NOT_FOUND, LOREKEEPER_FAILED, LOREKEEPER_BOOK_NOT_FOUND, LOREKEEPER_RULING_LIMIT, LOREKEEPER_RULING_NOT_FOUND, LOREKEEPER_ASK_NOT_FOUND; app-error.ts and convex-errors.ts combine them"
+          - "RATE_LIMITS gains lorekeeperAsk (token bucket, 30 per hour, capacity 10) with a one-line reason comment"
+          - "convex/lib/claude.ts exports apiKey(), modelFor(task) (LOREKEEPER_MODEL, else ANTHROPIC_MODEL, else 'claude-sonnet-5-5'), messagesStream(body, onText, onCitation, signal) parsing message_start, content_block_start/delta (text_delta, citations_delta)/stop, message_delta usage, message_stop and error events, with a 120 s timeout and ClaudeFailure reasons (timeout, network, HTTP <status>, refusal, too long); tests/convex/claude-client.test.ts feeds recorded-shape SSE fixtures (split across chunk boundaries) and covers each reason; the key never appears in thrown errors or logs"
+          - "The fake model replays canned SSE only when isE2EDeployment(env) and LOREKEEPER_FAKE_MODEL === 'true'; on any other deployment the flag is ignored (tested)"
+          - "Stubs with final signatures: context.ts buildContext(ctx, user, campaign) -> { frame, characters: [], party: [], rulings: [] }; retrieve.ts retrieve(ctx, campaign, question) -> []; caps.ts reserve / settle / remaining allowing everything; web.ts webPass -> null. Later tracers replace the bodies only"
+          - "convex/lorekeeperRetention.ts: internal batched self-rescheduling expireConversations (lastAt older than 90 days, with messages) and expireUsage (older than 13 months); crons at odd minutes; tests/convex/lorekeeper-retention.test.ts covers both and the reschedule"
+          - "purgeCampaign deletes lorekeeperLibrary, lorekeeperConversations, lorekeeperMessages, lorekeeperRulings, lorekeeperAsks rows and the campaign's usage counters in bounded batches; schema-guard classifies books/chunks BOUNDED, the rest CAMPAIGN_SCOPED, conversations and usage also ALSO_RETENTION; cleanup.test.ts covers the purge"
+          - "package.json gains 'lorekeeper:ingest' pointing at scripts/lorekeeper-ingest.mjs (L0: a usage message only; L2 implements it)"
+          - "campaign-sections.ts gains { slug: 'lorekeeper', label: 'Lorekeeper', phase: 'D13' } visible to players; the page shows the board shell at 1440 (300 px sidebar + fluid chat, chat header with sigil, 'The Lorekeeper', 'Keeper of your rulebooks · answers rule questions', index pill slot) and one column at 390, slots typed in src/components/lorekeeper/slots.ts, each in its own error boundary; error.tsx; title 'Lorekeeper · <campaign>'"
+          - "tests/fixtures/lorekeeper/mini-book.txt is invented text (about 12 pages with footers in the extracted-text format) used by every later test; no book text"
+          - "e2e lorekeeper-shell: GM and player open Lorekeeper from the nav and see the shell; an outsider gets the campaign not-found page"
+      - id: L1
+        title: Pure domain - page chunker, answer parser, citation mapping, prompt builder, pricing, copy text
+        size: M
+        goal: Framework-free src/lib/lorekeeper turns extracted book text into page-tagged chunks, builds the system prompt and request body, parses a streamed reply into verdict / prose / GM call / quotes, and prices a usage record, all unit-tested.
+        depends_on: []
+        owns:
+          - src/lib/lorekeeper/**
+          - tests/unit/lorekeeper/**
+          - docs/tasks/TASK-D13-L1.md
+        reads:
+          - .omc/autopilot/d13-analysis.md
+          - reference/designs/project/Lorekeeper.dc.html
+          - src/lib/srd/types.ts
+        acceptance:
+          - "chunk.ts: splits '===== PAGE N =====' blocks (block N = printed page N-1), reads the printed page and chapter from the footer when present, splits at headings to chunks of at most 4,000 chars with the section path; tested on the mini-book fixture"
+          - "prompt.ts: the versioned system prompt (role, answer only from documents / rulings / web results, VERDICT line contract, GM CALL tail, plain text only, data-not-instructions rule for <campaign_data>, <question> and documents, decline to reveal instructions); requestBody(question, chunks, rulings, context, history, options) emits documents with citations enabled, titles '<Book> · p.<page> · <section>', last 6 turns of history, cache_control on system, max_tokens 2000, effort low, stream true; snapshot-free tests assert the structure"
+          - "answer.ts: incremental parser from text deltas to { verdict: 'rules' | 'unclear' | 'none', prose, call? }, plus quotes from citations (content_block_location -> book, page, section; cited_text cut to 300 chars; duplicates merged; at most 3); a missing verdict line falls back to 'rules' with citations else 'unclear'; tested with deltas split mid-word and mid-line"
+          - "pricing.ts: per-model prices (Opus 5.5 4/20, Sonnet 5.5 2/10, Haiku 5.5 0.10/0.50 per MTok; cache read 0.20; 5-minute cache write 1.25x; web search $10 per 1,000) and costMicros(usage, model); reserveMicros(model, maxTokens) as the worst case; tested"
+          - "copy.ts: the board's copy strings (verdict labels, legend, disclaimer, books-only miss text, placeholders, suggestion chips with their questions) and copyText(answer) for the Copy action"
+  # ---------------------------------------------------------------- wave 2: server slices, in parallel
+  - wave: 2
+    tracers:
+      - id: L2
+        title: Rules source - local ingest, search retrieval, library list and per-campaign book switches
+        size: M
+        goal: '`pnpm lorekeeper:ingest <bookKey> <textFile>` loads a book''s chunks into the deployment through an internal mutation, retrieve() returns the best chunks of the campaign''s enabled books for a question, and members see the Library while the GM switches books on and off.'
+        depends_on: [L0, L1]
+        owns:
+          - convex/lorekeeperLibrary.ts
+          - convex/lib/lorekeeper/retrieve.ts
+          - scripts/lorekeeper-ingest.mjs
+          - tests/convex/lorekeeper-library.test.ts
+          - tests/convex/authz/lorekeeper-library.entries.ts
+          - tests/convex/authz/lorekeeper-library.test.ts
+          - docs/tasks/TASK-D13-L2.md
+        reads:
+          - convex/tables/lorekeeper.ts
+          - convex/lib/validators/lorekeeper.ts
+          - src/lib/lorekeeper/chunk.ts
+          - src/lib/frames/index.ts
+          - tests/fixtures/lorekeeper/mini-book.txt
+        acceptance:
+          - "internal ingestBook(bookKey, title, subtitle, cover) and ingestChunks(bookId, chunks[]) (batches of at most 100) replace a book's chunks; the script reads a local text file, chunks it with L1, and calls them through `npx convex run` (deploy key from the user's env); it refuses paths inside the repo except tests/fixtures and prints nothing of the text; no public function can write books or chunks"
+          - "Frame books: ingest takes --pages a-b to register 'frame:<frameId>' from a page range of the core book (Witherwild = core pp. 254-261)"
+          - "retrieve(ctx, campaign, question): withSearchIndex over each enabled book (lorekeeperLibrary rows, defaults per analysis 2), top 10 plus same-page neighbours, at most about 8k tokens, deduplicated; tested on the fixture for a hit, a miss and a disabled book"
+          - "library.list (campaignQuery view): books with name, subtitle, cover, indexed/off state for this campaign, chunk count, and the header count; never returns chunk text; library.setEnabled (gmMutation) toggles one book; library.pageText (campaignQuery view, Q5) returns the indexed text of one page of an enabled book (LOREKEEPER_BOOK_NOT_FOUND otherwise)"
+          - "Matrix entries: list/pageText view for GM and players, NOT_FOUND outsider, UNAUTHENTICATED anon; setEnabled GM only (FORBIDDEN player)"
+      - id: L3
+        title: Chat server - ask, stream into the answer row, stop, history, delete
+        size: L
+        goal: A member asks a question, the answer row streams in live from the scheduled internal action (verdict, prose, quotes with pages, GM call, usage), can be stopped, survives reloads, and the asker lists, opens and deletes only their own conversations.
+        depends_on: [L0, L1]
+        owns:
+          - convex/lorekeeper.ts
+          - convex/lorekeeperRun.ts
+          - tests/convex/lorekeeper-chat.test.ts
+          - tests/convex/authz/lorekeeper-chat.entries.ts
+          - tests/convex/authz/lorekeeper-chat.test.ts
+          - docs/tasks/TASK-D13-L3.md
+        reads:
+          - convex/lib/claude.ts
+          - convex/lib/lorekeeper/context.ts
+          - convex/lib/lorekeeper/retrieve.ts
+          - convex/lib/lorekeeper/caps.ts
+          - convex/lib/lorekeeper/web.ts
+          - convex/tables/lorekeeper.ts
+          - src/lib/lorekeeper/**
+          - tests/convex/combat-map-generate.test.ts
+        acceptance:
+          - "lorekeeper.available (campaignQuery view) returns a boolean only"
+          - "lorekeeper.ask (campaignMutation view, rateLimit lorekeeperAsk, args conversationId?, question 1..1000 chars, webSearch boolean): LOREKEEPER_UNAVAILABLE without a key; LOREKEEPER_BUSY while the caller has a pending/streaming answer in this campaign; caps.reserve in the same transaction; inserts question + pending answer rows (new conversation when absent; another user's conversation id -> LOREKEEPER_NOT_FOUND), schedules internal lorekeeperRun.run and a 3-minute watchdog"
+          - "lorekeeperRun.run: one runQuery for context + retrieved chunks + rulings + history, messagesStream with the L1 body, appendAnswer patches every ~250 ms or ~200 chars (fenced by status and updatedAt), final patch with parts (verdict, quotes, call), usage, model and caps.settle; a stopped row ends the stream (abort) and keeps the text so far; failures and refusals -> status error with errorCode, generic text only"
+          - "Tests (fetch stubbed with SSE fixtures): a cited answer streams in at least two patches and ends with quotes carrying page and section; an 'unclear' answer stores the GM call; a refusal and an HTTP 529 end as error; Stop mid-stream ends as stopped; the watchdog marks a stuck row error; the outgoing body contains the system prompt, documents with citations enabled and the question, and never the API key"
+          - "lorekeeper.stop (campaignMutation view, own answer only), conversations.list (own, newest first, .take(30)), messages.list (own conversation, paginated, returns validator), conversations.remove (own; deletes messages in bounded batches), conversations.setWebSearch (own)"
+          - "Matrix entries: every function view for members on their own rows; another member's conversation/message -> LOREKEEPER_NOT_FOUND (otherPlayer row and GM row: the GM cannot read a player's conversation, Q3); outsider NOT_FOUND; anon UNAUTHENTICATED"
+      - id: L4
+        title: Campaign context with permission checks, table rulings, Ask the GM, house rules
+        size: M
+        goal: buildContext gives the model only what the asker may see (frame, own characters, party classes, rulings, optional GM-everyone house-rule pages), proven by canary tests for player, second player and GM, and the GM pins and unpins table rulings and answers players' Ask-the-GM requests.
+        depends_on: [L0, L1]
+        owns:
+          - convex/lib/lorekeeper/context.ts
+          - convex/lorekeeperRulings.ts
+          - convex/lorekeeperAsks.ts
+          - tests/convex/lorekeeper-context.test.ts
+          - tests/convex/lorekeeper-rulings.test.ts
+          - tests/convex/authz/lorekeeper-rulings.entries.ts
+          - tests/convex/authz/lorekeeper-rulings.test.ts
+          - docs/tasks/TASK-D13-L4.md
+        reads:
+          - convex/lib/permissions.ts
+          - convex/lib/notes.ts
+          - convex/lib/characterSheet.ts
+          - convex/characters.ts
+          - convex/tables/characters.ts
+          - convex/tables/codex.ts
+          - convex/tables/notes.ts
+          - convex/tables/encounters.ts
+          - convex/tables/countdowns.ts
+          - convex/tables/sessions.ts
+          - convex/tables/lorekeeper.ts
+          - tests/convex/helpers.ts
+        acceptance:
+          - "buildContext(ctx, user, campaign): frame id and name; the caller's characters where permissionFor(character) >= edit (class, subclass, level, heritage names, domain card names, active features); the party's class/subclass list; rulings (newest 50); house-rule pages only when the campaign's house-rules book is enabled, only GM journal pages with visibility 'everyone', each checked with pageAccess as the caller (Q7)"
+          - "context.ts imports no reader of codex, encounters, customAdversaries, countdowns, sessionPrep, fear or other users' journals (a unit test reads the module's imports)"
+          - "tests/convex/lorekeeper-context.test.ts seeds canary strings into a hidden codex entry, a known entry's GM notes, a private GM page, a player page hidden from the GM and others, a custom adversary, an encounter note, a countdown, session prep and another player's sheet; for player, second player and GM, JSON.stringify(buildContext(...)) contains none of them; a player's own sheet name is present; the GM's context has no player sheets unless the GM edits them"
+          - "rulings.list (campaignQuery view), rulings.pin (gmMutation: title <= 80, text <= 600, optional fromMessageId of the GM's own answer and sessionId; LOREKEEPER_RULING_LIMIT at 50), rulings.update and rulings.unpin (gmMutation); meta 'Pinned by the GM · Session N' derived on read"
+          - "asks.send (campaignMutation view: the caller's own answer message; one open ask per message), asks.listOpen (gmQuery: asker name, question text, answer verdict), asks.resolve (gmMutation: dismiss or link a ruling id); a player never reads other players' asks"
+          - "Matrix entries for every rulings and asks function (GM / player / otherPlayer / outsider / anon) with the expected codes"
+      - id: L5
+        title: Cost caps and usage counters
+        size: S
+        goal: Every question reserves its worst-case cost against per-user daily, per-campaign monthly and per-deployment monthly counters, settles to the real usage cost, refuses past a cap with the right code, and the composer can show what remains.
+        depends_on: [L0, L1]
+        owns:
+          - convex/lib/lorekeeper/caps.ts
+          - convex/lorekeeperUsage.ts
+          - tests/convex/lorekeeper-caps.test.ts
+          - tests/convex/authz/lorekeeper-usage.entries.ts
+          - tests/convex/authz/lorekeeper-usage.test.ts
+          - docs/tasks/TASK-D13-L5.md
+        reads:
+          - convex/tables/lorekeeper.ts
+          - convex/lib/validators/lorekeeper.ts
+          - src/lib/lorekeeper/pricing.ts
+        acceptance:
+          - "caps.reserve(ctx, user, campaign, model, now): point reads of the three counters (by_scope); refuses with LOREKEEPER_CAP_USER (40 questions per UTC day), LOREKEEPER_CAP_CAMPAIGN ($10 per calendar month) or LOREKEEPER_CAP_DEPLOYMENT (env LOREKEEPER_MONTHLY_USD, default 25); else increments questions and adds reserveMicros"
+          - "caps.settle(ctx, scopes, reservedMicros, actualMicros) replaces the reservation with the real cost (also on error and stop, with the usage received so far, or 0 before any token)"
+          - "usage.mine (campaignQuery view, coarse day/month passed as args, CF10): questions left today and whether the campaign or deployment cap is reached; never another user's numbers; returns validator"
+          - "Tests: the 41st question of a day fails; a new day resets; a campaign at its cap refuses every member; settle lowers the counter; concurrent reserves never pass a cap (two asks in one test)"
+  # ---------------------------------------------------------------- wave 3: UI ported from the board, web fallback
+  - wave: 3
+    tracers:
+      - id: L6
+        title: Chat column UI - stream, answer cards, composer, actions, empty / loading / error / cap states
+        size: L
+        goal: On the Lorekeeper page the member asks from the composer or a suggestion chip, sees 'Searching your books…', watches the parchment answer stream in with its verdict pill, quotes with book and page chips, GM call and internet block, uses Copy / Pin as table ruling / Ask the GM / Open in the book / Show on Combat Map, stops an answer, and switches between their conversations.
+        depends_on: [L2, L3, L4, L5]
+        owns:
+          - src/components/lorekeeper/chat/**
+          - src/components/lorekeeper/composer/**
+          - src/components/lorekeeper/answer/**
+          - src/components/lorekeeper/conversations/**
+          - src/lib/optimistic/lorekeeper.ts
+          - tests/unit/lorekeeper-ui/**
+          - tests/e2e/lorekeeper-chat.spec.ts
+          - tests/e2e/visual/D13-L6.spec.ts
+          - docs/tasks/TASK-D13-L6.md
+        reads:
+          - reference/designs/project/Lorekeeper.dc.html
+          - "src/app/(gm)/campaigns/[campaignId]/lorekeeper/page.tsx"
+          - "src/app/(gm)/campaigns/[campaignId]/lorekeeper/lorekeeper.css"
+          - src/components/lorekeeper/slots.ts
+          - src/components/lorekeeper/sigil.tsx
+          - src/components/brand/modal.tsx
+          - src/lib/lorekeeper/copy.ts
+          - convex/lorekeeper.ts
+          - convex/lorekeeperRulings.ts
+          - convex/lorekeeperAsks.ts
+          - convex/lorekeeperUsage.ts
+          - convex/lorekeeperLibrary.ts
+        acceptance:
+          - "Stream: role=log aria-live=polite; question bubbles right with 'You'; thinking row with three dots and 'Searching your books…' (dots static under reduced motion); answer card in the board's parchment look with ✓ / ? / ✕ verdict pill, prose, up to 3 quotes with '📖 <book> · p.<page>' chip and section, 'Suggested GM call' box, internet block with the board's disclaimer and result cards (site shown, links rel=noopener nofollow); text renders as plain text only"
+          - "Composer: suggestion chips with the board's labels and questions, textarea with the board's placeholder (Enter sends, Shift+Enter new line, 1,000-char limit shown near the end), 'Ask' becomes 'Stop' while streaming (Q11), the 'If the books don’t say' toggle with aria-pressed persisted per conversation; optimistic question bubble"
+          - "Actions per answer as the board: Copy (copyText), Pin as table ruling (GM only; dialog prefilled from the question and GM call), Ask the GM (players; disabled once sent, 'Sent to the GM'), Open in the book (dialog with library.pageText), Show on Combat Map (link, only when a quote cites the range section); the books-only miss card with its text and only 'Ask the GM'"
+          - "States: empty conversation (sigil, intro line, chips), loading history (Loading), error card with 'Try again' (re-asks the same question), not set up ('The Lorekeeper isn't set up on this server.'), rate limited and caps (composer disabled with the reason and questions left today from usage.mine)"
+          - "Conversations: a 'Conversations' menu in the chat header lists the caller's conversations with 'New conversation' and delete (confirm dialog)"
+          - "e2e lorekeeper-chat (fake model): a player asks via the 'Critical hits' chip and sees the streamed 'From the rules' answer with a quote chip; asks the Hex question and sees 'Rules unclear' with a GM call; Stop ends an answer; reload keeps the history; the GM pins the unclear answer as a ruling"
+          - "Visual: D13-L6 shots of the chat column at 1440x900 and 390x844 compared with board shots; verdict per region and deviations in the task doc"
+      - id: L8
+        title: Internet fallback pass (If the books don't say)
+        size: S
+        goal: When the books give 'none' and the conversation's toggle is on, a second Messages API pass with the web search server tool fills the answer's internet block with unofficial results under the board's disclaimer, costed and capped; with the toggle off the books-only miss is stored.
+        depends_on: [L3, L5]
+        owns:
+          - convex/lib/lorekeeper/web.ts
+          - tests/convex/lorekeeper-web.test.ts
+          - docs/tasks/TASK-D13-L8.md
+        reads:
+          - convex/lorekeeperRun.ts
+          - convex/lib/claude.ts
+          - convex/lib/lorekeeper/caps.ts
+          - src/lib/lorekeeper/**
+        acceptance:
+          - "webPass(question, rulings): web_search_20260209 with max_uses 3 and blocked_domains for piracy/PDF hosts; results become parts.web [{ title, site, url, snippet <= 300 }] (at most 3) and a short prose note; rulings are offered before web results in the prompt; the pass's usage (including web searches at $10 per 1,000) is added to the message's cost and settled against the caps"
+          - "Tests (fetch stubbed): a 'none' verdict with the toggle on triggers exactly one web pass and stores web results; toggle off stores the books-only miss with no second call; a 'rules' verdict never triggers it; a server-tool error result (HTTP 200 error object) degrades to the books-only miss; result text is stored as plain text"
+  # ---------------------------------------------------------------- wave 4: sidebar and drawer (reuses L6's chat components)
+  - wave: 4
+    tracers:
+      - id: L7
+        title: Sidebar cards, mobile fold and the drawer over every campaign page
+        size: M
+        goal: The page's sidebar shows the Library (book rows, Indexed/Off pills, GM switches, Add PDF help), How I answer legend and Table rulings with open Ask-the-GM requests for the GM; on phones they sit in a 'Library & rulings' fold; and a floating Lorekeeper pill opens the chat as a 440 px drawer on every campaign page.
+        depends_on: [L2, L3, L4, L5, L6]
+        owns:
+          - src/components/lorekeeper/side/**
+          - src/components/lorekeeper/drawer/**
+          - "src/app/(gm)/campaigns/[campaignId]/layout.tsx"
+          - tests/e2e/lorekeeper-side.spec.ts
+          - tests/e2e/visual/D13-L7.spec.ts
+          - docs/tasks/TASK-D13-L7.md
+        reads:
+          - reference/designs/project/Lorekeeper.dc.html
+          - "src/app/(gm)/campaigns/[campaignId]/lorekeeper/page.tsx"
+          - "src/app/(gm)/campaigns/[campaignId]/lorekeeper/lorekeeper.css"
+          - src/components/lorekeeper/slots.ts
+          - src/components/lorekeeper/sigil.tsx
+          - src/components/lorekeeper/chat/**
+          - src/components/lorekeeper/composer/**
+          - src/components/lorekeeper/answer/**
+          - src/components/brand/modal.tsx
+          - src/lib/lorekeeper/copy.ts
+          - convex/lorekeeperLibrary.ts
+          - convex/lorekeeperRulings.ts
+          - convex/lorekeeperAsks.ts
+        acceptance:
+          - "Library card: 'Library', copy 'The Lorekeeper only answers from these books. Turn one off to leave it out.', rows with spine gradient, name, subtitle, green 'Indexed' / red 'Off' pill; the GM toggles (optimistic), players read only; '＋ Add PDF' (GM) opens a dialog explaining `pnpm lorekeeper:ingest` (Q6); header pill '<N> books indexed' fed to the chat header slot"
+          - "How I answer: the board's three legend rows verbatim"
+          - "Table rulings: '<N> pinned', copy 'Calls your GM pinned. The Lorekeeper quotes these before the internet.', cards with title, text and 'Pinned by the GM · Session N'; GM edit and unpin; the GM sees open Ask-the-GM requests ('Asked by <name>') with 'Pin a ruling' and 'Dismiss'; empty states 'No rulings yet.'"
+          - "390: the cards move into a 'Library & rulings' disclosure above the chat (Q12); nav hidden as the shell does"
+          - "Drawer: a floating pill bottom-right on every campaign page except the Lorekeeper page opens a native <dialog> side drawer (440 px, full width under 760 px) with the chat column from L6's components, ✕ close, focus returns to the pill; the pill reads 'The Lorekeeper is open' while open; hidden when lorekeeper.available is false"
+          - "e2e lorekeeper-side: the GM switches a book off and the player sees 'Off'; a player's Ask the GM appears in the GM's Rulings card and pinning resolves it; the drawer opens from the Party page and answers a chip question"
+          - "Visual: D13-L7 shots of the sidebar (1440) and drawer (1440 and 390) compared with the board's page and drawer variants"
+  # ---------------------------------------------------------------- wave 5: end to end
+  - wave: 5
+    tracers:
+      - id: L9
+        title: D13 end to end - fake model on the e2e backend, GM and player flows, privacy, a11y, visual pass, docs, follow-up beads
+        size: M
+        goal: With the model mocked on the e2e backend, a GM and two players use the Lorekeeper page and drawer end to end, privacy holds in the browser (no other user's conversation, no GM data, no key), axe finds nothing serious, the 1440 / 390 visual pass is recorded, and the docs and follow-up beads are written.
+        depends_on: [L6, L7, L8]
+        owns:
+          - scripts/e2e-setup.mjs
+          - tests/e2e/lorekeeper-flow.spec.ts
+          - tests/e2e/lorekeeper-privacy.spec.ts
+          - tests/e2e/visual/D13-L9.spec.ts
+          - docs/data-model.md
+          - docs/lorekeeper.md
+          - docs/tasks/TASK-D13-L9.md
+        reads:
+          - .omc/autopilot/d13-analysis.md
+          - reference/designs/project/Lorekeeper.dc.html
+          - tests/e2e/fixtures.ts
+          - convex/lib/claude.ts
+        acceptance:
+          - "scripts/e2e-setup.mjs sets LOREKEEPER_FAKE_MODEL=true on the e2e deployment only and ingests tests/fixtures/lorekeeper/mini-book.txt as the core book"
+          - "e2e lorekeeper-flow (two browsers): player asks the four board samples (rules, unclear with GM call, internet block with disclaimer, books-only miss with the toggle off); GM pins a ruling from the drawer and the player sees it live in Table rulings; caps message appears after the fake usage passes a lowered test cap"
+          - "e2e lorekeeper-privacy: the second player cannot open the first player's conversation by URL or id (not-found card); page sources and network responses contain no 'ANTHROPIC' or 'sk-ant'; a GM canary (hidden codex entry) never appears in any Lorekeeper response the player receives"
+          - "axe on the page and the open drawer: zero serious or critical violations; keyboard: composer, chips, toggle, actions and drawer close are reachable and labelled"
+          - "Visual pass at 1440x900 and 390x844 for page, drawer, empty, error and cap states, verdict per region in the task doc"
+          - "docs/lorekeeper.md: how to ingest books (commands, where the text lives, never in git), the env vars (ANTHROPIC_API_KEY, LOREKEEPER_MODEL, LOREKEEPER_MONTHLY_USD), costs, retention and the privacy rules; docs/data-model.md lists the D13 tables"
+          - "Follow-up beads filed: move combatMapGenerate.ts and photoImport.ts onto convex/lib/claude.ts; measured token and cost numbers from fake-free manual runs recorded by the user (not run by agents)"
+  - wave: 6
+    tracers:
+      - id: L10
+        title: Internet search also runs when the books are unclear, and a web miss says so
+        size: S
+        # USER REPORT (2026-10-22): "its selected still doesnt search net" - with "Search the internet too" on, 'Do our
+        #   Hexes stack?' ended 'Rules unclear' (Opus retry) with no web pass, and 'Whats the meaning of life' ended with
+        #   the books-only miss text "internet search is off" although the web pass ran (the model made no search ->
+        #   ClaudeFailure "no answer", logged without its reason).
+        # DEFAULTS (orchestrator, reported to the user):
+        #   D1 With the toggle on, the web pass runs after the Opus retry when its verdict is 'unclear' OR 'none'
+        #      (was: 'none' only). 'rules' still never searches.
+        #   D2 'unclear' + web results: keep the book answer (verdict 'unclear', its quotes and GM call) and add the web
+        #      results under it with the existing unofficial disclaimer; the prose gets the web note appended. 'unclear'
+        #      + no web results: keep the Opus 'unclear' answer unchanged.
+        #   D3 'none' + web pass ran but found nothing: a new copy line "I couldn't find this in your books or online.
+        #      Ask your GM." instead of the books-only miss ("internet search is off" only when the toggle is off).
+        #   D4 The web prompt tells the model to search for the question (Daggerheart rulings, forum readings) rather
+        #      than decide not to; an off-topic question may still find nothing (then D3).
+        #   D5 Log the failure reason (ClaudeFailure.reason, never the key or the body) when the web pass fails.
+        goal: With internet search on, unclear or missing book answers get a web pass, and the miss text tells the truth.
+        depends_on: [L8]
+        owns:
+          - src/lib/lorekeeper/flow.ts
+          - src/lib/lorekeeper/copy.ts
+          - src/lib/lorekeeper/prompt.ts
+          - convex/lorekeeperRun.ts
+          - convex/lib/lorekeeper/web.ts
+          - src/components/lorekeeper/answer/**
+          - tests/unit/lorekeeper/**
+          - tests/unit/lorekeeper-ui/**
+          - tests/convex/lorekeeper-web.test.ts
+          - tests/convex/lorekeeper-chat.test.ts
+          - docs/tasks/TASK-D13-L10.md
+        reads:
+          - docs/tasks/TASK-D13-L3.md
+          - docs/tasks/TASK-D13-L8.md
+          - convex/lib/claude.ts
+        acceptance:
+          - "nextStep: retry + 'unclear' + toggle on -> web; retry + 'none' + toggle on -> web; toggle off -> unchanged; unit tests"
+          - "Run (convex tests with the fake model): unclear + web results stores verdict 'unclear', the book quotes and GM call, plus web results; unclear + no web results keeps the unclear answer; none + web nothing stores the new D3 text; toggle off still stores the books-only miss; costs settle for every pass"
+          - "The answer card shows an 'unclear' answer with both its book quotes and the web block (disclaimer included); unit test"
+          - "The web-pass failure log includes the reason; no secrets logged"
+          - "pnpm lint, typecheck, vitest and the lorekeeper e2e specs pass; tracer-guard passes"
+  - wave: 7
+    tracers:
+      - id: L11
+        title: Think before showing - clear answers stream, uncertain ones wait for the final check with a visible process
+        size: M
+        # BEAD dcm-bxp.82.1. USER DECISION (2026-10-22, binding): "show clear answers immediately, hold uncertain answers
+        #   until final model check, show the process searching... checking w stronger searching the internet".
+        #   Full design in `bd show dcm-bxp.82.1` (design field): first line VERDICT decides; 'rules' streams; 'unclear' /
+        #   'none' hide the draft and show 'Checking again with a stronger model…'; the retry is never shown while
+        #   streaming; with search on and still unclear/none 'Searching the internet…' then the final answer; Stop keeps
+        #   the best finished answer; costs per pass unchanged.
+        goal: No provisional answer is ever shown and then swapped; the reader sees the process instead.
+        depends_on: [L10]
+        owns:
+          - convex/lorekeeperRun.ts
+          - convex/lorekeeper.ts
+          - convex/tables/lorekeeper.ts
+          - convex/lib/validators/lorekeeper.ts
+          - src/lib/lorekeeper/flow.ts
+          - src/lib/lorekeeper/copy.ts
+          - src/components/lorekeeper/answer/**
+          - src/components/lorekeeper/chat/**
+          - tests/unit/lorekeeper/**
+          - tests/unit/lorekeeper-ui/**
+          - tests/convex/lorekeeper-chat.test.ts
+          - tests/convex/lorekeeper-web.test.ts
+          - tests/convex/authz/lorekeeper-chat.entries.ts
+          - tests/e2e/lorekeeper-chat.spec.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-D13-L11.md
+        reads:
+          - docs/tasks/TASK-D13-L3.md
+          - docs/tasks/TASK-D13-L6.md
+          - docs/tasks/TASK-D13-L10.md
+          - src/lib/lorekeeper/answer.ts
+          - convex/lib/claude.ts
+        acceptance:
+          - "Answer rows carry a phase the UI reads (widen-only, optional field): books -> retry -> web -> done; players and the GM see the same phase; the returns validators widen only"
+          - "Verdict 'rules' on the first pass streams as today; 'unclear'/'none' never expose the first-pass text or the retry's partial text; the final text appears once (or streams only for the kept pass when it is known to be final)"
+          - "The answer row shows 'Searching your books…', 'Checking again with a stronger model…', 'Searching the internet…' as the phase changes (polite live region, reduced motion respected)"
+          - "Stop during the retry or web pass keeps the best finished answer (the first pass's), never a hidden partial; costs and reservations settle as before"
+          - "Tests: unit (phase sequence per path), convex with the fake model (rules streams; unclear holds then reveals; unclear + web; Stop mid-retry), e2e: on an unclear question no provisional text is visible before the final answer"
+          - "pnpm lint, typecheck, vitest and the lorekeeper e2e specs pass; tracer-guard passes"
+  - wave: 8
+    tracers:
+      - id: L12
+        title: Process follow-ups - the retry status starts with the retry, a note on an early Stop, the kept pass writes out live
+        size: S
+        # USER ANSWERS to L11's questions (2026-10-22, binding):
+        #   1 "No, start it when the model starts": 'Checking again with a stronger model…' appears when the Opus pass
+        #     starts (after the first pass ends), not when the first pass's verdict line says unclear/none; until then the
+        #     row keeps 'Searching your books…'.
+        #   2 "yes add a note": a Stop before any answer finished shows a short note (copy.ts), e.g. "Stopped before an
+        #     answer was ready. Ask again to get one."
+        #   3 "write it out for the stronger model as well (& if it goes to the internet also write it out)": a pass whose
+        #     answer is known to be kept streams live. Retry: streams live when its verdict is 'rules' or internet search is
+        #     off (it is then final); with search on and verdict 'unclear'/'none' it stays hidden. Web pass: always streams
+        #     live (it is the last pass); for 'unclear' + web the kept book answer (L10 D2) is shown first, then the web
+        #     note and results write out under it; for 'none' + web the web answer writes out; a web miss shows WEB_MISS.
+        #     Never show text that is later replaced.
+        goal: The status matches what is really running, an early Stop explains itself, and every kept answer writes out live.
+        depends_on: [L11]
+        owns:
+          - convex/lorekeeperRun.ts
+          - convex/lorekeeper.ts
+          - convex/tables/lorekeeper.ts
+          - convex/lib/validators/lorekeeper.ts
+          - src/lib/lorekeeper/flow.ts
+          - src/lib/lorekeeper/copy.ts
+          - src/components/lorekeeper/answer/**
+          - src/components/lorekeeper/chat/**
+          - tests/unit/lorekeeper/**
+          - tests/unit/lorekeeper-ui/**
+          - tests/convex/lorekeeper-chat.test.ts
+          - tests/convex/lorekeeper-web.test.ts
+          - tests/convex/authz/lorekeeper-chat.entries.ts
+          - tests/e2e/lorekeeper-chat.spec.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-D13-L12.md
+        reads:
+          - docs/tasks/TASK-D13-L10.md
+          - docs/tasks/TASK-D13-L11.md
+          - src/lib/lorekeeper/answer.ts
+          - convex/lib/claude.ts
+        acceptance:
+          - "The phase becomes 'retry' only when the Opus pass starts; unit and convex tests check the order"
+          - "Stop before any finished answer stores the note text; the card shows it; tests"
+          - "Retry with verdict 'rules', or with search off, streams live; retry 'unclear'/'none' with search on stays hidden; the web pass streams live (unclear + web shows the kept book answer then the web part writing out; none + web writes out the web answer); no text is ever replaced; convex tests with the fake model and the e2e MutationObserver check extended (text only grows, never swaps)"
+          - "pnpm lint, typecheck, vitest and the lorekeeper e2e specs pass; tracer-guard passes"

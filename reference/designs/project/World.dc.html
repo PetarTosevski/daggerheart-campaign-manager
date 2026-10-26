@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Campaign · World</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,600;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d1417}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/d69136bf0c8eddbad10c2eb636b1b5ca);background-size:cover;background-position:center 45%;background-repeat:no-repeat}
+.wmap{background-image:url(/_blob/30e1f9055a3fb07f7b9757744ff252b7);background-size:100% 100%;background-repeat:no-repeat}
+.pal{display:flex;align-items:center;gap:8px;width:100%;min-height:38px;padding:4px 8px;font-size:13px !important;border-radius:10px;border:1px solid #253338;background:#141e22;color:#e6ecea;font-family:inherit;font-size:14px;cursor:grab;text-align:left;box-sizing:border-box;transition:border-color .15s,background .15s}
+.pal:hover{border-color:#e3b45a}
+.pal[aria-pressed="true"]{border-color:#e3b45a;background:#2a2416}
+.pal:focus-visible,.tok:focus-visible,.zbtn:focus-visible{outline:2px solid #e3b45a;outline-offset:2px}
+.tok{position:absolute;transform:translate(-50%,-50%);padding:0;border:none;background:none;cursor:grab;display:flex;flex-direction:column;align-items:center;gap:2px;touch-action:none;user-select:none;z-index:3}
+.tok:active{cursor:grabbing}
+.tok-ic{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-sizing:border-box;box-shadow:0 3px 8px rgba(0,0,0,.55)}
+.tok-lbl{max-width:110px;padding:0 4px;border-radius:4px;background:rgba(239,227,200,.9);color:#2a1f14;font-family:'Cinzel',serif;font-size:9px;line-height:1.4;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.pal-row{display:flex;gap:4px;align-items:center}
+.pal-edit{flex:none;width:30px;height:30px;padding:0;border-radius:8px;border:1px solid #253338;background:transparent;color:#9fb2b6;cursor:pointer;font-size:13px}
+.pal-edit:hover{border-color:#e3b45a;color:#f3cf86}
+.chk{display:flex;align-items:center;gap:8px;min-height:36px;font-size:13px;color:#e6ecea;cursor:pointer}
+.chk input{width:18px;height:18px;accent-color:#e3b45a}
+.brush{min-height:36px;padding:0 12px;border-radius:9px;border:2px solid transparent;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+.brush[aria-pressed="true"]{border-color:#fff;box-shadow:0 0 0 2px #e3b45a}
+.zbtn{width:40px;height:40px;border-radius:10px;border:1px solid #33444a;background:rgba(13,20,23,.88);color:#e6ecea;font-size:18px;cursor:pointer;font-family:inherit}
+.fld{width:100%;box-sizing:border-box;min-height:40px;padding:8px 10px;border-radius:8px;border:1px solid #33444a;background:#0d1417;color:#e6ecea;font-family:inherit;font-size:14px}
+.fld:focus{outline:2px solid #e3b45a;outline-offset:1px}
+@keyframes partypulse{0%,100%{box-shadow:0 0 0 0 rgba(227,180,90,.6),0 4px 10px rgba(0,0,0,.6)}50%{box-shadow:0 0 0 10px rgba(227,180,90,0),0 4px 10px rgba(0,0,0,.6)}}
+.mseg{min-height:34px;padding:0 12px;border-radius:8px;border:1px solid #33444a;background:transparent;color:#e6ecea;font-size:13px;cursor:pointer;font-family:inherit}
+.mseg[aria-pressed="true"]{background:#e3b45a;border-color:#e3b45a;color:#1a1408;font-weight:700}
+.mchip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#0d1417;border:1px solid #2a3a40;font-size:12px;color:#d6dfdc;white-space:nowrap}
+.mchip i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.m-free{position:absolute;inset:0;z-index:9;cursor:crosshair;touch-action:none}
+#wmap-vp{scrollbar-width:none}
+#wmap-vp::-webkit-scrollbar{display:none}
+.tip{position:relative}
+.tip::after{content:attr(data-tip);position:absolute;left:50%;top:calc(100% + 8px);transform:translate(-50%,-4px);padding:5px 9px;border-radius:7px;background:#05090a;border:1px solid #e3b45a;color:#f3e7c7;font:600 12px/1.2 'IBM Plex Sans',sans-serif;letter-spacing:0;text-transform:none;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .12s .25s,transform .12s .25s;z-index:60;box-shadow:0 4px 12px rgba(0,0,0,.6)}
+.tip:hover::after,.tip:focus-visible::after{opacity:1;transform:translate(-50%,0)}
+.tip[data-tip=""]::after{display:none}
+</style>
+</helmet>
+<div style="position: relative; min-height: 100vh; background: #0d1417; color: #e6ecea; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box">
+
+<section aria-label="Campaign header" style="position: relative; overflow: hidden">
+<div class="ww-bg" aria-hidden="true" style="{{ headerBg }}"></div>
+<div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(6, 12, 14, 0.72)"></div>
+<div style="position: relative; max-width: 1400px; margin: 0 auto; padding: 22px 40px 22px; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap">
+<a href="TitleMenu.dc.html" aria-label="Back to main menu" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: rgba(0, 0, 0, 0.3)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></a>
+<div style="display: flex; flex-direction: column; gap: 2px"><div style="font-family: 'Cinzel', serif; font-size: 28px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div><div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.24em; color: #c8d3d0">{{ worldTitle }}</div></div>
+</div>
+<nav aria-label="Campaign sections" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(0, 0, 0, 0.35)">
+<a href="{{ dashHref }}" style="min-height: 40px; padding: 0 14px; border-radius: 8px; color: #e6ecea; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center">Dashboard</a>
+<a href="Party.dc.html" style="min-height: 40px; padding: 0 14px; border-radius: 8px; color: #e6ecea; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center">Party</a>
+<span aria-current="page" style="min-height: 40px; padding: 0 14px; border-radius: 8px; background: {{ navAccent }}; color: #1a1408; font-size: 14px; display: inline-flex; align-items: center">World</span>
+<a href="Codex.dc.html" style="min-height: 40px; padding: 0 14px; border-radius: 8px; color: #e6ecea; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center">Characters &amp; Locations</a>
+<a href="Adversaries.dc.html" style="min-height: 40px; padding: 0 14px; border-radius: 8px; color: #e6ecea; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center">Adversaries</a>
+<a href="Sessions.dc.html" style="min-height: 40px; padding: 0 14px; border-radius: 8px; color: #e6ecea; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center">Sessions</a>
+<a href="Notes.dc.html" style="min-height: 40px; padding: 0 14px; border-radius: 8px; color: #e6ecea; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center">Notes</a>
+</nav>
+</div>
+</section>
+
+<main style="{{ mainStyle }}">
+
+<sc-if value="{{ gm }}" hint-placeholder-val="{{ true }}"><aside aria-label="Map tokens" style="display: flex; flex-direction: column; gap: 8px; position: sticky; top: 12px">
+<h2 style="margin: 0; font-family: 'Cinzel', serif; font-size: 20px; font-weight: 700">Place on map</h2>
+<p style="margin: 0; font-size: 13px; line-height: 1.45; color: #9fb2b6">Drag a token onto the map, or click one and then click the map.</p>
+<sc-for list="{{ palette }}" as="t" hint-placeholder-count="12">
+<sc-if value="{{ t.renaming }}" hint-placeholder-val="{{ false }}"><div class="pal-row"><input class="fld" type="text" value="{{ t.draft }}" onChange="{{ t.setDraft }}" aria-label="New name for {{ t.label }}" style="min-height: 34px; padding: 4px 8px; font-size: 13px"><button type="button" class="pal-edit" onClick="{{ t.saveName }}" aria-label="Save name">✓</button></div></sc-if>
+<sc-if value="{{ t.notRenaming }}" hint-placeholder-val="{{ true }}"><div class="pal-row"><button type="button" class="pal" draggable="true" onDragStart="{{ t.dragStart }}" onClick="{{ t.pick }}" aria-pressed="{{ t.pressed }}"><span class="tok-ic" style="width: 26px; height: 26px; flex: none; {{ t.icStyle }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ t.d }}"></path></svg></span><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ t.label }}</span></button><button type="button" class="pal-edit tip" onClick="{{ t.startRename }}" aria-label="Rename {{ t.label }}" data-tip="Rename">✎</button></div></sc-if>
+</sc-for>
+<details style="margin-top: 4px; padding: 10px; border-radius: 10px; border: 1px dashed #33444a"><summary style="cursor: pointer; font-size: 13px; color: #f3cf86">+ Custom marker</summary>
+<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px">
+<input class="fld" type="text" placeholder="Name, e.g. Witch hut" value="{{ cmName }}" onChange="{{ setCmName }}" aria-label="Custom marker name" style="min-height: 34px; padding: 4px 8px; font-size: 13px">
+<select class="fld" value="{{ cmIcon }}" onChange="{{ setCmIcon }}" aria-label="Icon" style="min-height: 34px; padding: 4px 8px; font-size: 13px"><sc-for list="{{ iconOptions }}" as="o" hint-placeholder-count="12"><option value="{{ o.id }}">Icon: {{ o.label }}</option></sc-for></select>
+<div role="radiogroup" aria-label="Colour" style="display: flex; flex-wrap: wrap; gap: 6px"><sc-for list="{{ swatches }}" as="w" hint-placeholder-count="8"><button type="button" role="radio" aria-checked="{{ w.checked }}" aria-label="{{ w.c }}" onClick="{{ w.pick }}" style="{{ w.style }}"></button></sc-for></div>
+<button type="button" onClick="{{ addCustom }}" style="min-height: 36px; border-radius: 9px; border: none; background: #e3b45a; color: #1a1408; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit">Add to menu</button>
+</div></details>
+</aside></sc-if>
+
+<section id="wmap-sec" aria-label="{{ mapAria }}" style="{{ secStyle }}">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px">
+<div role="status" style="font-size: 14px; color: {{ hintColor }}">{{ hint }}</div>
+<div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
+<label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9fb2b6">Map width<input class="fld" type="number" min="10" step="10" value="{{ scaleKm }}" onChange="{{ setScale }}" aria-label="Map width in kilometres" style="width: 80px; min-height: 36px; padding: 4px 8px">km</label>
+<sc-if value="{{ mOff }}" hint-placeholder-val="{{ true }}"><label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9fb2b6">Pace<select class="fld" onChange="{{ setPace }}" value="{{ paceSel }}" aria-label="Travel pace" style="min-height: 36px; padding: 4px 8px; width: auto"><sc-for list="{{ paceOptions }}" as="o" hint-placeholder-count="4"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select></label></sc-if>
+<button type="button" class="zbtn tip" onClick="{{ toggleTerrain }}" data-tip="Terrain overlay · T" aria-pressed="{{ terrainPressed }}" style="width: auto; padding: 0 12px; font-size: 13px; {{ terrainBtn }}">🗺 Terrain</button>
+<sc-if value="{{ gm }}" hint-placeholder-val="{{ true }}"><button type="button" class="zbtn tip" onClick="{{ togglePaint }}" data-tip="Paint terrain · P" aria-pressed="{{ paintPressed }}" style="width: auto; padding: 0 12px; font-size: 13px; {{ paintBtn }}">🖌 Paint</button></sc-if>
+<button type="button" class="zbtn tip" onClick="{{ togglePlayer }}" data-tip="Player view · V" aria-pressed="{{ playerPressed }}" style="width: auto; padding: 0 12px; font-size: 13px; {{ playerBtn }}">{{ playerLabel }}</button>
+<button type="button" class="zbtn tip" onClick="{{ toggleMeasure }}" data-tip="Measure / plan a route · M" aria-pressed="{{ measuring }}" style="width: auto; padding: 0 12px; font-size: 13px; {{ measureBtn }}">📏 Measure</button>
+<button type="button" class="zbtn tip" onClick="{{ zoomOut }}" data-tip="Zoom out · −" aria-label="Zoom out">−</button><span style="min-width: 48px; text-align: center; font-size: 13px; color: #9fb2b6">{{ zoomPct }}</span><button type="button" class="zbtn tip" onClick="{{ zoomIn }}" data-tip="Zoom in · +" aria-label="Zoom in">+</button><button type="button" class="zbtn tip" onClick="{{ zoomFit }}" data-tip="Fit the whole map · 0" aria-label="Fit map" style="width: auto; padding: 0 12px; font-size: 13px">Fit</button><button type="button" class="zbtn tip" onClick="{{ toggleToks }}" data-tip="Hide / show all tokens · H" aria-pressed="{{ toksPressed }}" style="width: auto; padding: 0 12px; font-size: 13px; {{ toksBtn }}">{{ toksText }}</button><button type="button" class="zbtn tip" onClick="{{ toggleFs }}" aria-pressed="{{ fsPressed }}" aria-label="{{ fsLabel }}" data-tip="{{ fsLabel }} · F" style="width: auto; padding: 0 12px; font-size: 13px; {{ fsBtn }}">{{ fsText }}</button></div>
+</div>
+<sc-if value="{{ painting }}" hint-placeholder-val="{{ false }}"><div role="toolbar" aria-label="Terrain brushes" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; background: #141e22; border: 1px solid #e3b45a">
+<span style="font-family: 'Cinzel', serif; font-size: 14px; font-weight: 700; color: #f3cf86">Paint terrain</span>
+<sc-for list="{{ brushes }}" as="b" hint-placeholder-count="4"><button type="button" class="brush tip" data-tip="{{ b.tip }}" aria-pressed="{{ b.pressed }}" onClick="{{ b.pick }}" style="background: {{ b.bg }}">{{ b.label }}</button></sc-for>
+<span style="font-size: 12px; color: #9fb2b6; margin-left: 6px" title="Keys 1–7 pick a terrain, [ and ] change the size, Ctrl+Z undoes a stroke">Brush</span>
+<sc-for list="{{ sizes }}" as="z" hint-placeholder-count="3"><button type="button" class="zbtn tip" aria-pressed="{{ z.pressed }}" onClick="{{ z.pick }}" data-tip="{{ z.tip }}" style="width: 36px; height: 36px; font-size: 13px; {{ z.style }}">{{ z.label }}</button></sc-for>
+<span style="flex: 1"></span>
+<button type="button" class="zbtn tip" onClick="{{ undoPaint }}" disabled="{{ noUndo }}" data-tip="Undo last stroke · Ctrl+Z" style="width: auto; padding: 0 12px; font-size: 13px">↶ {{ undoLabel }}</button><span style="font-size: 11px; color: #7f9297">1–7 terrain · [ ] size · Ctrl+Z undo</span><button type="button" class="zbtn" onClick="{{ resetTerrain }}" style="width: auto; padding: 0 12px; font-size: 13px">Reset to suggested</button>
+<button type="button" class="zbtn" onClick="{{ togglePaint }}" style="width: auto; padding: 0 14px; font-size: 13px; background: #e3b45a; color: #1a1408; border-color: #e3b45a; font-weight: 700">Done</button>
+</div></sc-if>
+<sc-if value="{{ mOn }}" hint-placeholder-val="{{ false }}"><div role="region" aria-label="Measure and plan a route" style="display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 12px; background: #141e22; border: 1px solid #e3b45a">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<span style="font-family: 'Cinzel', serif; font-size: 14px; font-weight: 700; color: #f3cf86; margin-right: 4px">Route</span>
+<sc-for list="{{ mModes }}" as="m" hint-placeholder-count="3"><button type="button" class="mseg tip" aria-pressed="{{ m.pressed }}" onClick="{{ m.pick }}" data-tip="{{ m.tip }}">{{ m.label }}</button></sc-for>
+<span style="width: 1px; height: 24px; background: #2a3a40; margin: 0 4px"></span>
+<label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9fb2b6">Travel<select class="fld" onChange="{{ mSetMethod }}" value="{{ mMethod }}" aria-label="Travel method" style="min-height: 34px; padding: 2px 8px; width: auto"><sc-for list="{{ mMethods }}" as="o" hint-placeholder-count="5"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select></label>
+<label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9fb2b6">Pace<select class="fld" onChange="{{ mSetPace }}" value="{{ mPace }}" aria-label="Travel pace" style="min-height: 34px; padding: 2px 8px; width: auto"><option value="slow">Cautious ×0.75</option><option value="normal">Normal</option><option value="fast">Forced march ×1.33</option></select></label>
+<label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9fb2b6">Hours/day<input class="fld" type="number" min="1" max="16" value="{{ mHours }}" onChange="{{ mSetHours }}" aria-label="Travel hours per day" style="width: 64px; min-height: 34px; padding: 2px 8px"></label>
+<button type="button" class="mseg" onClick="{{ mToggleUnits }}" aria-label="Switch units">{{ mUnitsLabel }}</button>
+<span style="flex: 1"></span>
+<button type="button" class="mseg" onClick="{{ mUndo }}" disabled="{{ mNoPts }}">Undo point</button>
+<button type="button" class="mseg" onClick="{{ mClear }}" disabled="{{ mNoPts }}">Clear</button>
+<button type="button" class="mseg tip" onClick="{{ mMoveParty }}" disabled="{{ mNoRoute }}" data-tip="Move the party token along this route">Move party along route</button>
+<button type="button" class="zbtn" onClick="{{ toggleMeasure }}" style="width: auto; padding: 0 14px; font-size: 13px; height: 34px; background: #e3b45a; color: #1a1408; border-color: #e3b45a; font-weight: 700">Done</button>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px">
+<span role="status" style="font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700; color: #f4efe6">{{ mSum.total }}</span>
+<span style="font-size: 13px; color: #9fb2b6">{{ mSum.sub }}</span>
+<sc-for list="{{ mSum.parts }}" as="p" hint-placeholder-count="3"><span class="mchip"><i style="background: {{ p.c }}"></i>{{ p.label }}</span></sc-for>
+<sc-if value="{{ mSum.warn }}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: #f0a37a">{{ mSum.warnText }}</span></sc-if>
+</div>
+</div></sc-if>
+<sc-if value="{{ showLegend }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: #c8d3d0"><sc-for list="{{ legend }}" as="l" hint-placeholder-count="4"><span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 14px; height: 14px; border-radius: 3px; background: {{ l.c }}; border: 1px solid rgba(255, 255, 255, 0.4)"></span>{{ l.label }}</span></sc-for></div></sc-if>
+<sc-if value="{{ noMap }}" hint-placeholder-val="{{ false }}"><div role="note" style="padding: 10px 14px; border-radius: 10px; background: #2a2416; border: 1px solid #5a4a2a; color: #f0dfb8; font-size: 14px; line-height: 1.5">A custom campaign has no published map, so this is a blank parchment. Pins, the party marker, terrain painting and distances all still work.</div></sc-if>
+<div id="wmap-vp" style="{{ vpSize }} position: relative; overflow: auto; border-radius: 14px; border: 1px solid #3a3020; background: #1a140c; box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.6)">
+<div class="wpad" style="{{ padStyle }}"><div data-map="1" class="wmap" onClick="{{ mapClick }}" onDragOver="{{ dragOver }}" onDrop="{{ drop }}" style="{{ mapStyle }}">
+<sc-if value="{{ showTerrain }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 128 98" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none; z-index: 1"><path d="{{ terr.h }}" fill="rgba(176, 58, 46, 0.42)" shape-rendering="crispEdges"></path><path d="{{ terr.w }}" fill="rgba(70, 150, 80, 0.30)" shape-rendering="crispEdges"></path><path d="{{ terr.d }}" fill="rgba(20, 80, 40, 0.55)" shape-rendering="crispEdges"></path><path d="{{ terr.m }}" fill="rgba(70, 120, 110, 0.5)" shape-rendering="crispEdges"></path><path d="{{ terr.r }}" fill="rgba(227, 170, 60, 0.55)" shape-rendering="crispEdges"></path><path d="{{ terr.x }}" fill="{{ waterFill }}" shape-rendering="crispEdges"></path><path d="{{ terr.b }}" fill="rgba(12, 9, 6, 0.78)" shape-rendering="crispEdges"></path></svg></sc-if>
+<sc-if value="{{ showBlockOnly }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 128 98" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none; z-index: 1"><path d="{{ terr.b }}" fill="rgba(12, 9, 6, 0.78)" shape-rendering="crispEdges"></path></svg></sc-if>
+<sc-if value="{{ painting }}" hint-placeholder-val="{{ false }}"><div id="brush-prev" aria-hidden="true" style="{{ brushPrev }}"></div></sc-if>
+<sc-if value="{{ painting }}" hint-placeholder-val="{{ false }}"><div aria-label="Paint terrain on the map" onPointerDown="{{ paintDown }}" onPointerMove="{{ paintMove }}" onPointerUp="{{ paintUp }}" style="position: absolute; inset: 0; z-index: 9; cursor: crosshair; touch-action: none"></div></sc-if>
+<sc-if value="{{ showToks }}" hint-placeholder-val="{{ true }}"><svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none; z-index: 2"><polyline points="{{ trail }}" fill="none" stroke="#8e2b2b" stroke-width="0.35" stroke-dasharray="0.9 0.7" stroke-linecap="round" vector-effect="non-scaling-stroke" style="stroke-width: 3px"></polyline></svg></sc-if>
+<sc-if value="{{ mPath.on }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none; z-index: 7"><polyline points="{{ mPath.all }}" fill="none" stroke="rgba(246, 238, 220, 0.92)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline><sc-for list="{{ mPath.runs }}" as="r" hint-placeholder-count="2"><polyline points="{{ r.pts }}" fill="none" stroke="{{ r.c }}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline></sc-for></svg><sc-for list="{{ mPath.dots }}" as="d" hint-placeholder-count="2"><span aria-hidden="true" style="{{ d }}"></span></sc-for><span role="status" style="{{ mPath.labelStyle }}">{{ mPath.label }}</span></sc-if>
+<sc-if value="{{ mFree }}" hint-placeholder-val="{{ false }}"><div class="m-free" aria-label="Draw a route on the map" onPointerDown="{{ mDown }}" onPointerMove="{{ mMove }}" onPointerUp="{{ mUp }}"></div></sc-if>
+<div aria-hidden="true" style="position: absolute; left: 2%; bottom: 3%; z-index: 4; padding: 6px 10px 4px; border-radius: 6px; background: rgba(239, 227, 200, 0.92); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; gap: 3px; pointer-events: none"><span style="display: block; width: {{ scaleBarPct }}; min-width: 60px; height: 6px; border: 1.5px solid #2a1f14; border-top: none; background: repeating-linear-gradient(90deg, #2a1f14 0 25%, transparent 25% 50%)"></span><span style="font-family: 'Cinzel', serif; font-size: 11px; font-weight: 700; color: #2a1f14">{{ scaleBarLabel }}</span></div>
+<sc-if value="{{ showToks }}" hint-placeholder-val="{{ true }}"><sc-for list="{{ trailDots }}" as="d" hint-placeholder-count="0"><span aria-hidden="true" style="{{ d }}"></span></sc-for></sc-if>
+<sc-for list="{{ mapTokens }}" as="k" hint-placeholder-count="0">
+<button type="button" class="tok" data-tok-id="{{ k.id }}" aria-label="{{ k.aria }}" onDoubleClick="{{ k.rename }}" onPointerDown="{{ k.down }}" onPointerMove="{{ k.move }}" onPointerUp="{{ k.up }}" style="{{ k.pos }}"><span class="tok-ic" style="{{ k.icStyle }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ k.d }}"></path></svg></span><span class="tok-lbl" style="{{ k.lblStyle }}">{{ k.badge }}{{ k.name }}</span></button>
+</sc-for>
+<sc-if value="{{ showToks }}" hint-placeholder-val="{{ true }}"><button type="button" class="tok" aria-label="Party token. Drag to move the party." onPointerDown="{{ party.down }}" onPointerMove="{{ party.move }}" onPointerUp="{{ party.up }}" style="{{ party.pos }}; z-index: 6"><span class="tok-ic" style="width: 32px; height: 32px; background: radial-gradient(circle at 40% 35%, #f3cf86, #b07a22); border: 2px solid #fff3d6; animation: partypulse 2.2s ease-in-out infinite"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2a1a04" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V3 M5 4h11l-2.5 3.5L16 11H5"></path></svg></span><span class="tok-lbl" style="background: #2a1a04; color: #f3cf86">The Party</span></button></sc-if>
+</div></div>
+</div>
+</section>
+
+<sc-if value="{{ gm }}" hint-placeholder-val="{{ true }}"><aside aria-label="Selected token" style="display: flex; flex-direction: column; gap: 14px; position: sticky; top: 12px">
+<sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+<div style="padding: 16px; border-radius: 14px; background: #141e22; border: 1px solid #3a3020; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: center; gap: 10px"><span class="tok-ic" style="{{ sel.icStyle }}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ sel.d }}"></path></svg></span><span style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: #c8b48a">{{ sel.typeLabel }}</span></div>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9fb2b6">Name<input class="fld" type="text" data-name-field="1" value="{{ sel.name }}" onChange="{{ setName }}"></label>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9fb2b6">Notes<textarea class="fld" rows="5" value="{{ sel.notes }}" onChange="{{ setNotes }}" placeholder="Who lives here, what happened, secrets…" style="resize: vertical; font-family: 'EB Garamond', serif; font-size: 16px; line-height: 1.4"></textarea></label>
+<label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9fb2b6">Type<select class="fld" onChange="{{ setType }}" value="{{ sel.type }}"><sc-for list="{{ typeOptions }}" as="o" hint-placeholder-count="12"><option value="{{ o.id }}">{{ o.label }}</option></sc-for></select></label>
+<label class="chk"><input type="checkbox" checked="{{ sel.hidden }}" onChange="{{ toggleHidden }}"> Hidden from players</label>
+<label class="chk"><input type="checkbox" checked="{{ sel.location }}" onChange="{{ toggleLocation }}"> Location · show on dashboard</label>
+<div style="padding: 10px 12px; border-radius: 10px; background: #2a2416; border: 1px solid #5a4a2a; font-size: 13px; color: #f3dfb0"><strong style="font-family: 'Cinzel', serif">From the party:</strong> {{ sel.fromParty }}</div>
+<sc-if value="{{ sel.hasOthers }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; color: #9fb2b6; text-transform: uppercase; letter-spacing: 0.1em">Distances</span><sc-for list="{{ sel.dists }}" as="dd" hint-placeholder-count="3"><div style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid #1f2b30"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ dd.name }}</span><span style="flex: none; color: #c8b48a">{{ dd.text }}</span></div></sc-for></div></sc-if>
+<div style="display: flex; gap: 8px"><button type="button" onClick="{{ moveParty }}" style="flex: 1; min-height: 40px; border-radius: 9px; border: 1px solid #e3b45a; background: transparent; color: #f3cf86; font-size: 13px; cursor: pointer; font-family: inherit">Send party here</button><button type="button" onClick="{{ removeSel }}" style="min-height: 40px; padding: 0 12px; border-radius: 9px; border: 1px solid #8e2b2b; background: transparent; color: #ff9a92; font-size: 13px; cursor: pointer; font-family: inherit">Delete</button></div>
+</div>
+</sc-if>
+<sc-if value="{{ noSel }}" hint-placeholder-val="{{ true }}"><div style="padding: 16px; border-radius: 14px; border: 1px dashed #33444a; font-size: 14px; line-height: 1.5; color: #9fb2b6">Click a token on the map to name it, add notes or delete it. Drag the gold banner to move the party; their path is traced in red. Use Measure to check the distance between any two points.</div></sc-if>
+<div style="padding: 16px; border-radius: 14px; background: #141e22; border: 1px solid #253338; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; align-items: baseline"><h2 style="margin: 0; font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700">On the map</h2><span style="font-size: 13px; color: #9fb2b6">{{ count }}</span></div>
+<sc-for list="{{ tokens }}" as="k" hint-placeholder-count="0"><button type="button" onClick="{{ k.select }}" style="{{ k.rowStyle }}"><span class="tok-ic" style="width: 24px; height: 24px; flex: none; {{ k.icStyle }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ k.d }}"></path></svg></span><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ k.name }}</span><span aria-label="{{ k.flagsAria }}" style="flex: none; font-size: 12px; color: #c8b48a">{{ k.flags }}</span></button></sc-for>
+<div style="font-size: 13px; color: #c8b48a">Party has travelled {{ trailTotal }}</div>
+<button type="button" onClick="{{ clearTrail }}" style="margin-top: 4px; min-height: 36px; border-radius: 9px; border: 1px solid #33444a; background: transparent; color: #c8d3d0; font-size: 13px; cursor: pointer; font-family: inherit">Clear party trail</button>
+</div>
+</aside></sc-if>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dashHref = (() => { try { return (JSON.parse(window.localStorage.getItem('dh.active') || 'null') || {}).hub || 'CampaignHub.dc.html'; } catch (e) { return 'CampaignHub.dc.html'; } })();
+    const navAccent = (() => { try { return (JSON.parse(window.localStorage.getItem('dh.settings') || '{}') || {}).accent; } catch (e) { return null; } })() || '#e3b45a';
+    const st = this.state || {};
+    const ACT = (() => { try { return JSON.parse(window.localStorage.getItem('dh.active') || 'null') || {}; } catch (e) { return {}; } })();
+    const MAPS = { witherwild: ['30e1f9055a3fb07f7b9757744ff252b7', 1553, 1193, 400], fivebanners: ['0324f5cce8dd7ddafaab98afb1e52c35', 3169, 2418, 900], beastfeast: ['2b3cd581f42bb8f5d57baaad854f8fce', 2418, 3169, 300], umbra: ['37022de6c1f227e428f30404da54273d', 3169, 2418, 600], motherboard: ['cededc1a7d491b939156e45165bff355', 3169, 2418, 400], colossus: ['9b5f07cc6f1d2e9889c4121f2f3f03a5', 3169, 2418, 500], castlehigh: ['0b1a7dc08df5c136255e0f50a5101e7f', 3157, 2404, 12], weredragon: ['88ea2d92a5d4d6e732ffe14114d5ab2d', 2404, 3157, 800], andaluria: ['05b31ac534fcba6a871f8dc1b9128e34', 3157, 2404, 400], horizon: ['b39beec08ef477314e2eb8bc801bcb56', 3400, 2228, 2650] };
+    const CKEY = ACT.key || 'witherwild';
+    const MC = MAPS[CKEY] || null;
+    const MW = MC ? MC[1] : 1600, MH = MC ? MC[2] : 1200;
+    const KEY = 'dh.' + CKEY + '.map';
+    const load = () => { try { const v = JSON.parse(window.localStorage.getItem(KEY) || 'null'); return v && Array.isArray(v.tokens) ? v : null; } catch (e) { return null; } };
+    const data = st.map ?? load() ?? { tokens: [], party: { x: 44, y: 52, trail: [] }, nextId: 1 };
+    const save = (m, extra) => { try { window.localStorage.setItem(KEY, JSON.stringify(m)); } catch (e) {} this.setState({ map: m, ...(extra || {}) }); };
+    const TYPES = [
+      { id: 'village', label: 'Village', c: '#5a7a3a', d: 'M3 11 L12 4 L21 11 V20 H3 Z M9 20 V14 H15 V20' },
+      { id: 'city', label: 'City', c: '#3a5a8a', d: 'M3 20 V9 L6 6 L9 9 V20 M9 20 V12 H15 V20 M15 20 V7 L18 4 L21 7 V20 M2 20 H22' },
+      { id: 'cave', label: 'Cave', c: '#5a4a3a', d: 'M2 20 C4 10 8 5 12 5 C16 5 20 10 22 20 Z M8 20 C8 15 10 12 12 12 C14 12 16 15 16 20' },
+      { id: 'ruins', label: 'Ruins', c: '#6a6258', d: 'M4 20 V8 H8 V12 M12 20 V6 H16 V10 M16 13 V20 M19 20 V15 M2 20 H22' },
+      { id: 'temple', label: 'Temple', c: '#8a6a2a', d: 'M3 9 L12 3 L21 9 Z M5 9 V18 M9 9 V18 M15 9 V18 M19 9 V18 M3 18 H21 M2 21 H22' },
+      { id: 'dungeon', label: 'Dungeon', c: '#3a2a3a', d: 'M5 21 V10 A7 7 0 0 1 19 10 V21 Z M12 4 V21 M9 14 H10 M14 14 H15' },
+      { id: 'ambush', label: 'Ambush', c: '#8e2b2b', d: 'M4 4 L15 15 M4 4 H8 M4 4 V8 M20 4 L9 15 M20 4 H16 M20 4 V8 M7 13 L11 17 M17 13 L13 17 M9 17 L6 20 M15 17 L18 20' },
+      { id: 'monster', label: 'Monster lair', c: '#5a2a6a', d: 'M12 3c-4.4 0-7.5 3-7.5 7 0 2.4 1.1 4 2.6 5v2.5c0 .8.6 1.5 1.4 1.5h7c.8 0 1.4-.7 1.4-1.5V15c1.5-1 2.6-2.6 2.6-5 0-4-3.1-7-7.5-7z M9 10.5h.01 M15 10.5h.01 M10 19v2 M14 19v2' },
+      { id: 'camp', label: 'Camp', c: '#9a5a1a', d: 'M3 20 L12 5 L21 20 Z M9 20 L12 14 L15 20' },
+      { id: 'quest', label: 'Quest', c: '#c0902a', d: 'M12 3 a9 9 0 1 0 0.01 0 Z M12 7 V13 M12 16.5 V17' },
+      { id: 'treasure', label: 'Treasure', c: '#a07a1a', d: 'M3 10 H21 V20 H3 Z M3 10 C3 6 21 6 21 10 M10 13 H14 V16 H10 Z' },
+      { id: 'landmark', label: 'Landmark', c: '#2a6a6a', d: 'M12 22 C12 22 5 14 5 9 a7 7 0 0 1 14 0 C19 14 12 22 12 22 Z M10 9 a2 2 0 1 0 4 0 a2 2 0 1 0 -4 0' }
+    ];
+    const BASE = TYPES.map((t) => ({ ...t }));
+    const labels = data.typeLabels || {};
+    BASE.forEach((t) => { if (labels[t.id]) t.label = labels[t.id]; });
+    (data.customTypes || []).forEach((c) => { const ic0 = TYPES.find((t) => t.id === c.icon) || TYPES[0]; BASE.push({ id: c.id, label: labels[c.id] || c.label, c: c.c, d: ic0.d, custom: true }); });
+    const ALL = BASE;
+    const T = (id) => ALL.find((t) => t.id === id) || ALL[ALL.length - 1];
+    const gm = !st.player;
+    const SW = ['#5a7a3a', '#3a5a8a', '#8e2b2b', '#5a2a6a', '#8a6a2a', '#2a6a6a', '#9a5a1a', '#3a3a3a'];
+    const ic = (t) => 'background: ' + t.c + '; border: 2px solid rgba(255, 243, 214, 0.85);';
+    const zoom = st.zoom ?? 1;
+    const W = data.scaleKm || (MC ? MC[3] : 400); const H = W * MH / MW; const pace = 40;
+    const PACES = [{ v: 'foot', label: 'On foot · by terrain' }, { v: 'mount', label: 'Mounted · by terrain' }, { v: '20', label: 'Hard going · 20 km/day' }, { v: '40', label: 'Wilds on foot · 40 km/day' }, { v: '60', label: 'Road on foot · 60 km/day' }, { v: '80', label: 'Mounted · 80 km/day' }];
+    const miles = (a, b) => Math.hypot((a[0] - b[0]) / 100 * W, (a[1] - b[1]) / 100 * H);
+    const fmt = (km) => { const d = km / pace; const days = d < 1 ? '~' + Math.max(1, Math.round(d * 8)) + ' hrs' : '~' + (d < 3 ? d.toFixed(1) : Math.round(d)) + ' days'; return '~' + Math.round(km) + ' km · ' + days; };
+    const TDEF = '..............................................................h...............................................................hh............................................................hhh..............................................................hhh....................................w..ww.....................hh...................................wwwwwww...................hhh....................................wwwwwwww.............h.hhhhh......................................wwwwww...........hhhhhhhhh.....................................wwwwwwww..........hhhhhhhhh....................................wwwwwwwwhhhhh.hhhhhhhhhhhhh.....................................wwhhhhhhhhhhhhhhhhhhhhhhhhhh.......................................hhhhhhhhhhhhhhhhhhhhhhhh....................................w......hhhhhhhhhhhhhhhhhhhhhh..................................hwhh..hhhhhhhhhhhhhhhhhhhhhhhh..................................hwwwwhhhhhhhhhhhhhhhhhhhhhhhh...................................hhwwwwwwwhhhhhhhhhhhhhhhhhhhh.........................rw....hh...rrrwwwwwwwwhhhhhhhhhhhhhhhh.....h......hhh........wwrrwhh.hwrrrrrrrrrrrwwwwwwhhhhhhhhhh......hhhhhhhhhhhhhhwwwwwwwwwrwwwwwwwrrrrrrrrrrrwwwwwwwwwwwwwwhh.......hhhhhhhhhhhhhwwwwwwwwrrwwwwwwwrrrrrrrrrrrrwwwwwwwwwwwwwwww.....hhhhhhhhhhhhhwwwwwwwwwrww.wwwwwrrrrrrrrrrrrwwwwwwwwwwwwwwww......hhhhhhhhhhhhwwwwwwwwwrw..wwwwwrrrrrrrrrrrrwwwwwwwwwrwwwwwww.....hhhhhhhhhhhwwwwwwwwwwrwwwwwwwwwwwrrrrrwwwwwwwwwwwwrwwrrwwwww...wwwwwwwwwwwwwwwwwwwwwwrrwwwwwwwwwwwwrwwwwwwwwwwwwwrwwwwwrwwww...wwwwwwww.....wwwwwwwwwwrwwwwwwwwwwwwrwwwwwwwwhhhhrrhhhhwrrw.....wwwwwwww.....wwwwwwwwwwwrrwwwwwwwwwwrwwwwwwwwhhhrrhhhhhhhh......wwwwwwwwwwwwwwwwwwwwwwwwwwrrrwwwwwwwrwwwwwwwwhhrrhhhhhhhhhhh.....wwwwwwwwwwwwwwwwwwwwwwwwwwwwwrrrrrrrrwwwwwrrrrhhhhhhhhhhhhh.....wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwhhhhhhhhhhhhhhhwww.wwwwwwwwwwwwwhhh.wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwhhhhhhhhhhhhhwwww.wwwwwwwwwwwhhhhwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwhhhhhhhhhhhwww.wwww.wwwwwwwhhhhhwwww.wwwwwwwwwwwww.......wwwwwwwwwwwwwwwwwww.......wwwwwwwhhhhhww..wwwwwwwwwwwwwwwww...hhhhhhhhhhhhhwwwwwwww.........wwwwwhhhhwwwwwwwwwwwwwwwhhwwwwwhhhhhhhhhhhhhhhhhhhww............wwwwwwwwwwwwwwwwwwwwhhhhhhhhhwwhhhhhhhhhhhhhhhhhhhh............wwwwwww........wwwwwwhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh............wwwwww..........wwwwwhhhhhhhhhhhwhhhhhhhhhhhhhhhhhhhh.............wwwwwwwwwwwwwwwwwwwhhhhhhhhhhhwwwhhhhhhhhhhhhhh.................wwwwwwwwwwww...wwwwhhhhhhhhhhhwwwwwwwwhhhhhhhh.................wwwwwwwwwwwwwwwwwwwwhhhhhhhhhhhwwwwwwwwwwwwwwwww................wwwwwwwwww.wwwwwwwwwhhhhhhhhhhhwww.....wwwwwwwww..................wwwww....wwwwwwwwwwhhhhhhhhhhw........wwwwwww....................www..........wwwwwhhhhhhhhhwwww....wwwwwww.......................ww.........wwwwwwwhhhhhhhhwwwwwwwwwwwwww............................wwwwwwwwwwwwwwwhhhhhhwwwwwwwwwwwwwww..........................wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww..........................wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww................................wwwwwwwwwwwwwwwwwwwwwwwwwwwwww....................................ww.wwwwwwwwwwwwwwwwwwwwwwww......................';
+    const TC = 128, TR = 98;
+    const up2 = (g) => { if (!g || g.length !== 64 * 49) return g; let o = ''; for (let r = 0; r < 49; r++) { const row = g.slice(r * 64, r * 64 + 64).split('').map((ch) => ch + ch).join(''); o += row + row; } return o; };
+    const TDEF2 = up2(TDEF);
+    const terrain = (st.paintGrid || up2(data.terrain) || (CKEY === 'witherwild' ? TDEF2 : 'w'.repeat(TC * TR)));
+    const cellAt = (x, y) => { const c = Math.min(TC - 1, Math.max(0, Math.floor(x / 100 * TC))); const r = Math.min(TR - 1, Math.max(0, Math.floor(y / 100 * TR))); return terrain[r * TC + c]; };
+    const mode = data.paceMode || 'foot';
+    const PMAP = { foot: { r: 60, w: 40, m: 15, d: 20, h: 10, '.': 20 }, mount: { r: 80, w: 60, m: 18, d: 30, h: 15, '.': 20 } };
+    const MSPD = { foot: { r: 60, w: 40, m: 15, d: 20, h: 10, '.': 8 }, mount: { r: 80, w: 60, m: 18, d: 30, h: 15, '.': 8 }, wagon: { r: 50, w: 30, m: 6, d: 12, h: 5, '.': 5 }, boat: { r: 30, w: 25, m: 40, d: 15, h: 8, '.': 100 }, fly: { r: 120, w: 120, m: 120, d: 120, h: 120, '.': 120 } };
+    const TCOL = { r: '#e0a93a', w: '#47a55a', m: '#4f8f84', d: '#1d6b36', h: '#d0453a', '.': '#3f86e0', '#': '#0b0907' }; const TNAME = { r: 'Road', w: 'Wilds', m: 'Marshland', d: 'Deep wilds', h: 'Mountains', '.': 'Water', '#': 'Impassable' };
+    const fixed = Number(mode) || 0;
+    const route = (a, b) => { const km = miles(a, b); const steps = Math.max(1, Math.ceil(km / 2)); let days = 0, water = false, blocked = false;
+      for (let i = 0; i < steps; i++) { const t = (i + 0.5) / steps; const t0 = cellAt(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t); if (t0 === '.') water = true; if (t0 === '#') { blocked = true; continue; } days += (km / steps) / (fixed || PMAP[mode][t0] || 40); }
+      return { km, days, water, blocked }; };
+    const fmtR = (r) => { const d = r.days; const tt = d < 1 ? '~' + Math.max(1, Math.round(d * 8)) + ' hrs' : '~' + (d < 3 ? d.toFixed(1) : Math.round(d)) + ' days'; return '~' + Math.round(r.km) + ' km · ' + tt + (r.water ? ' · crosses water' : '') + (r.blocked ? ' · blocked by impassable terrain' : ''); };
+    const terrPaths = (() => { const out = { r: '', w: '', d: '', m: '', h: '', x: '', b: '' };
+      for (let r = 0; r < TR; r++) { let c = 0; while (c < TC) { const ch = terrain[r * TC + c]; let e = c; while (e + 1 < TC && terrain[r * TC + e + 1] === ch) e++; const k = ch === '.' ? 'x' : ch === '#' ? 'b' : ch; if (out[k] !== undefined) out[k] += 'M' + c + ' ' + r + 'h' + (e - c + 1) + 'v1h' + (-(e - c + 1)) + 'Z'; c = e + 1; } }
+      for (const k in out) if (!out[k]) out[k] = 'M0 0'; return out; })();
+    const painting = !!st.painting && !st.player; const brush = st.brush || 'r'; const bsize = st.bsize ?? 2;
+    const paintAt = (e) => { const [x, y] = pct(e); const c0 = Math.floor(x / 100 * TC), r0 = Math.floor(y / 100 * TR); const g = (this._pg || terrain).split('');
+      for (let r = r0 - bsize + 1; r <= r0 + bsize - 1; r++) for (let c = c0 - bsize + 1; c <= c0 + bsize - 1; c++) { if (r < 0 || c < 0 || r >= TR || c >= TC) continue; if (Math.hypot(r - r0, c - c0) > bsize - 0.5) continue; g[r * TC + c] = brush; }
+      this._pg = g.join(''); this.setState({ paintGrid: this._pg }); };
+    const measuring = !!st.measuring; const mp = st.mpts || [];
+    const mmode = st.mmode || 'way';
+    const mo = { method: 'foot', pace: 'normal', hours: 8, units: 'km', ...(data.mopts || {}) };
+    const placing = st.placing || null;
+    const selId = st.sel ?? null;
+    const pct = (e) => { const el = e.currentTarget.closest('[data-map]') || e.currentTarget; const r = el.getBoundingClientRect(); return [Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100)), Math.max(0, Math.min(100, ((e.clientY - r.top) / r.height) * 100))]; };
+    const addToken = (type, x, y) => { const id = data.nextId || 1; const m = { ...data, nextId: id + 1, tokens: data.tokens.concat([{ id, type, x, y, name: T(type).label, notes: '' }]) }; save(m, { placing: null, sel: id }); };
+    const cur = () => this.state.map ?? data;
+    const dragHandlers = (getPos, setPos, onTap, onEnd) => ({
+      down: (e) => { if (e.button !== 0) return; e.stopPropagation(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {} this._drag = { sx: e.clientX, sy: e.clientY, moved: false, start: getPos() }; },
+      move: (e) => { const d = this._drag; if (!d) return; if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return; d.moved = true; const [x, y] = pct(e); setPos(x, y, false); },
+      up: (e) => { e.stopPropagation(); const d = this._drag; this._drag = null; if (!d) return; if (!d.moved) { onTap && onTap(); return; } const [x, y] = pct(e); setPos(x, y, true); onEnd && onEnd(d.start, [x, y]); }
+    });
+    const setTok = (id, patch, persist) => { const m = { ...cur(), tokens: cur().tokens.map((t) => (t.id === id ? { ...t, ...patch } : t)) }; if (persist) save(m); else this.setState({ map: m }); };
+    const visibleTokens = gm ? data.tokens : data.tokens.filter((t) => !t.hidden);
+    if (this._focusPending == null) { try { const f = window.localStorage.getItem('dh.' + CKEY + '.mapFocus'); if (f) { window.localStorage.removeItem('dh.' + CKEY + '.mapFocus'); this._focusPending = Number(f); } else this._focusPending = false; } catch (e) { this._focusPending = false; } if (this._focusPending) { const fid = this._focusPending; setTimeout(() => { this.setState({ sel: fid, zoom: Math.max(this.state.zoom || 1, 1.75) }); setTimeout(() => { try { const el = document.querySelector('[data-tok-id="' + fid + '"]'); el && el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' }); } catch (e) {} }, 120); }, 30); } }
+    // ---- pan (drag the map) & zoom (mouse wheel, anchored on the cursor)
+    this._z = this._z ?? zoom;
+    this._zoomTo = (nz, cx, cy) => {
+      const vp = document.getElementById('wmap-vp'); const oz = this._z || 1;
+      nz = Math.max(0.3, Math.min(6, nz)); if (Math.abs(nz - oz) < 0.001) return;
+      const m0 = vp && vp.querySelector('[data-map]');
+      if (!vp || !m0) { this._z = nz; this.setState({ zoom: +nz.toFixed(3) }); return; }
+      const vr = vp.getBoundingClientRect();
+      const px = cx == null ? vr.left + vp.clientWidth / 2 : cx, py = cy == null ? vr.top + vp.clientHeight / 2 : cy;
+      let fx, fy;
+      if (this._pend) { fx = this._pend.fx; fy = this._pend.fy; } else { const r = m0.getBoundingClientRect(); fx = (px - r.left) / r.width; fy = (py - r.top) / r.height; }
+      const tgt = { fx, fy, px, py }; this._pend = tgt;
+      this._z = nz; this.setState({ zoom: +nz.toFixed(3) });
+      const fix = () => { const m = vp.querySelector('[data-map]'); if (!m) return; const r = m.getBoundingClientRect(); vp.scrollLeft += r.left + fx * r.width - px; vp.scrollTop += r.top + fy * r.height - py; };
+      requestAnimationFrame(() => { fix(); requestAnimationFrame(() => { fix(); if (this._pend === tgt) this._pend = null; }); });
+    };
+    setTimeout(() => {
+      const vp = document.getElementById('wmap-vp'); if (!vp || vp === this._vpEl) return; this._vpEl = vp;
+      vp.scrollLeft = (vp.scrollWidth - vp.clientWidth) / 2; vp.scrollTop = (vp.scrollHeight - vp.clientHeight) / 2;
+      vp.addEventListener('wheel', (e) => { if (e.ctrlKey && Math.abs(e.deltaY) < 1) return; if (e.shiftKey) return;
+        const fitZ = Math.min(1, vp.clientHeight / (vp.clientWidth * MH / MW)); if (e.deltaY > 0 && (this._z || 1) <= fitZ + 0.002) return;
+        e.preventDefault(); const d = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; this._zoomTo(Math.max(fitZ, (this._z || 1) * Math.exp(-d * 0.0015)), e.clientX, e.clientY); }, { passive: false });
+      vp.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
+        const t = e.target; const alt = e.button !== 0;
+        if (t && t.closest && t.closest(alt ? 'input, select, textarea' : '.tok, button, input, select, textarea, a, .m-free, [aria-label="Paint terrain on the map"]')) return;
+        const st0 = this.state || {}; if (!alt && (st0.placing || st0.painting || (st0.measuring && st0.mmode === 'free'))) return;
+        if (alt) e.preventDefault();
+        this._pan = { x: e.clientX, y: e.clientY, sl: vp.scrollLeft, st: vp.scrollTop, moved: false, id: e.pointerId };
+        if (e.button === 1) e.preventDefault();
+      });
+      window.addEventListener('pointermove', (e) => {
+        const p = this._pan; if (!p || e.pointerId !== p.id) return;
+        const dx = e.clientX - p.x, dy = e.clientY - p.y;
+        if (!p.moved && Math.hypot(dx, dy) < 4) return;
+        if (!p.moved) { p.moved = true; vp.style.cursor = 'grabbing'; const m = vp.querySelector('[data-map]'); if (m) m.style.cursor = 'grabbing'; }
+        vp.scrollLeft = p.sl - dx; vp.scrollTop = p.st - dy;
+      });
+      const end = (e) => { const p = this._pan; if (!p || (e && e.pointerId !== p.id)) return; this._pan = null; if (p.moved) this._noCtx = true; vp.style.cursor = ''; const m = vp.querySelector('[data-map]'); if (m) m.style.cursor = 'grab'; if (p.moved) { this._suppressClick = true; setTimeout(() => { this._suppressClick = false; }, 0); } };
+      vp.addEventListener('contextmenu', (e) => { if (this._noCtx || e.target.closest('[data-map]')) e.preventDefault(); this._noCtx = false; });
+      window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
+    }, 0);
+    // ---- route measuring (straight / waypoints / freehand), coloured by terrain
+    const mUnit = mo.units === 'mi' ? 0.621371 : 1; const mUL = mo.units === 'mi' ? 'mi' : 'km';
+    const mPaceK = mo.pace === 'slow' ? 0.75 : mo.pace === 'fast' ? 1.33 : 1;
+    const mHrs = Math.max(1, Math.min(16, Number(mo.hours) || 8));
+    const mFmtT = (days) => { const hrs = days * mHrs; if (hrs < 1) return Math.max(1, Math.round(hrs * 60)) + ' min'; if (days < 1) return (hrs < 3 ? hrs.toFixed(1) : Math.round(hrs)) + ' hrs'; const d = Math.floor(days); const h = Math.round((days - d) * mHrs); return d + (d === 1 ? ' day' : ' days') + (h ? ' ' + h + ' h' : ''); };
+    const mFmtD = (km) => { const v = km * mUnit; return (v < 10 ? v.toFixed(1) : Math.round(v)) + ' ' + mUL; };
+    const analyse = (pts) => {
+      const runs = []; const per = { r: 0, w: 0, m: 0, d: 0, h: 0, '.': 0, '#': 0 }; let km = 0, days = 0; const spd = MSPD[mo.method] || MSPD.foot;
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i]; const seg = miles(a, b); const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.4));
+        for (let k = 0; k < n; k++) {
+          const t0 = k / n, t1 = (k + 1) / n, tm = (k + 0.5) / n;
+          const p0 = [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0], p1 = [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1];
+          const ter = cellAt(a[0] + (b[0] - a[0]) * tm, a[1] + (b[1] - a[1]) * tm); const tk = per[ter] === undefined ? 'w' : ter;
+          const d = seg / n; km += d; per[tk] += d; if (tk !== '#') days += d / ((spd[tk] || 30) * mPaceK);
+          const last = runs[runs.length - 1];
+          if (last && last.t === tk) last.p.push(p1); else runs.push({ t: tk, p: [p0, p1] });
+        }
+      }
+      return { runs, per, km, days, blocked: per['#'] > 0 };
+    };
+    const mRes = mp.length > 1 ? analyse(mp) : null;
+    const mPath = (() => {
+      if (!measuring || !mp.length) return { on: false };
+      const P = (q) => q[0].toFixed(2) + ',' + q[1].toFixed(2);
+      const dot = (q, end) => 'position: absolute; z-index: 8; left: ' + q[0] + '%; top: ' + q[1] + '%; width: ' + (end ? 14 : 10) + 'px; height: ' + (end ? 14 : 10) + 'px; margin: -' + (end ? 7 : 5) + 'px 0 0 -' + (end ? 7 : 5) + 'px; border-radius: 50%; background: ' + (end ? '#f4efe6' : '#1a1408') + '; border: 2px solid ' + (end ? '#1a1408' : '#f4efe6') + '; pointer-events: none; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);';
+      const dots = mmode === 'free' ? [dot(mp[0], true)].concat(mp.length > 1 ? [dot(mp[mp.length - 1], true)] : []) : mp.map((q, i) => dot(q, i === 0 || i === mp.length - 1));
+      const endp = mp[mp.length - 1];
+      return { on: true, all: mp.map(P).join(' '), runs: mRes ? mRes.runs.map((r) => ({ c: TCOL[r.t] || '#47a55a', pts: r.p.map(P).join(' ') })) : [], dots,
+        label: mRes ? mFmtD(mRes.km) + ' · ' + (mRes.blocked ? '⛔ blocked' : mFmtT(mRes.days)) : (mmode === 'free' ? 'Drag to draw' : 'Click the next point'),
+        labelStyle: 'position: absolute; z-index: 9; left: ' + endp[0] + '%; top: ' + endp[1] + '%; transform: translate(-50%, -170%); padding: 4px 9px; border-radius: 7px; background: #1a1408; color: #f4efe6; border: 1px solid #e3b45a; font-size: 12px; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5); pointer-events: none;' };
+    })();
+    const mSum = (() => {
+      if (!mRes) return { total: mp.length ? 'Add another point…' : 'No route yet', sub: mmode === 'free' ? 'Press and drag on the map to draw a path.' : mmode === 'line' ? 'Click two points on the map.' : 'Click to drop waypoints; each click adds a leg.', parts: [], warn: false };
+      const parts = Object.keys(mRes.per).filter((k) => mRes.per[k] > 0.05).map((k) => ({ c: TCOL[k], label: TNAME[k] + ' ' + mFmtD(mRes.per[k]) + ' · ' + Math.round(mRes.per[k] / mRes.km * 100) + '%' }));
+      const water = mRes.per['.'] > 0.05;
+      const warnText = mo.method === 'boat' ? (mRes.per.r + mRes.per.w + mRes.per.m + mRes.per.d + mRes.per.h > 0.05 ? 'Part of this route is overland, so the boat has to be carried (slow).' : '') : mo.method === 'fly' ? '' : (water ? 'This route crosses water: swimming or fording is very slow. Consider a boat.' : '');
+      if (mRes.blocked) return { total: mFmtD(mRes.km) + ' · ⛔ Impassable', sub: 'The route crosses ' + mFmtD(mRes.per['#']) + ' of impassable terrain. Redraw it around the black areas.', parts, warn: false, warnText: '' };
+      return { total: mFmtD(mRes.km) + ' · ' + mFmtT(mRes.days), sub: (mmode === 'line' ? 'Straight line' : mmode === 'free' ? 'Freehand path' : (mp.length - 1) + (mp.length === 2 ? ' leg' : ' legs')) + ' · ' + mHrs + ' h travel per day', parts, warn: !!warnText, warnText };
+    })();
+    const setMo = (patch) => save({ ...cur(), mopts: { ...mo, ...patch } });
+    // ---- keyboard shortcuts + brush preview (wired once)
+    this._bp = { b: bsize, TC, TR };
+    if (!this._hkWired) { this._hkWired = true; try {
+      window.addEventListener('keydown', (e) => {
+        const t = e.target; if (t && (/INPUT|TEXTAREA|SELECT/.test(t.tagName) || t.isContentEditable)) return;
+        const k = this._keys; if (!k) return; const key = e.key;
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (key === 'z' || key === 'Z')) { if (k.canUndo) { e.preventDefault(); k.undo(); } return; }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        const map = { f: k.fs, F: k.fs, p: k.paint, P: k.paint, m: k.measure, M: k.measure, t: k.terrain, T: k.terrain, h: k.toks, H: k.toks, v: k.player, V: k.player, '+': k.zin, '=': k.zin, '-': k.zout, '_': k.zout, '0': k.fit };
+        if (k.painting) { const bi = ['1', '2', '3', '4', '5', '6', '7'].indexOf(key); if (bi >= 0 && k.brushes[bi]) { e.preventDefault(); k.brushes[bi](); return; } if (key === '[') { e.preventDefault(); k.size(-1); return; } if (key === ']') { e.preventDefault(); k.size(1); return; } }
+        if (map[key]) { e.preventDefault(); map[key](); }
+      });
+      document.addEventListener('pointermove', (e) => {
+        const el = document.getElementById('brush-prev'); if (!el) return; const m = el.closest('[data-map]'); if (!m) return;
+        const r = m.getBoundingClientRect(); const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+        const vp = document.getElementById('wmap-vp'); const vr = vp ? vp.getBoundingClientRect() : r; const inVp = e.clientX >= vr.left && e.clientX <= vr.right && e.clientY >= vr.top && e.clientY <= vr.bottom;
+        if (!inside || !inVp) { el.style.visibility = 'hidden'; return; }
+        const bp = this._bp; const c = Math.floor((e.clientX - r.left) / r.width * bp.TC), rr = Math.floor((e.clientY - r.top) / r.height * bp.TR);
+        el.style.left = ((c - (bp.b - 1)) / bp.TC * 100) + '%'; el.style.top = ((rr - (bp.b - 1)) / bp.TR * 100) + '%'; el.style.visibility = 'visible';
+      });
+    } catch (e) {} }
+    const tokens = visibleTokens.map((t) => {
+      const ty = T(t.type); const on = t.id === selId;
+      return { ...t, d: ty.d, aria: (t.name || ty.label) + ', ' + ty.label + (t.hidden ? ' (hidden from players)' : '') + '. Drag to move, click to edit, double-click to rename.',
+        badge: t.location ? '📍 ' : '', lblStyle: t.hidden && gm ? 'opacity: 0.55; text-decoration: line-through;' : '',
+        flags: (t.hidden ? '🚫👁 ' : '') + (t.location ? '📍' : ''), flagsAria: [t.hidden ? 'hidden' : '', t.location ? 'location' : ''].filter(Boolean).join(', '),
+        rename: (e) => { e.stopPropagation(); if (!gm) return; this.setState({ sel: t.id, focusName: Date.now() }); setTimeout(() => { try { const el = document.querySelector('[data-name-field]'); el && (el.focus(), el.select()); } catch (err) {} }, 40); },
+        icStyle: ic(ty) + (on ? ' box-shadow: 0 0 0 3px #e3b45a, 0 3px 8px rgba(0, 0, 0, 0.55);' : '') + (t.hidden && gm ? ' opacity: 0.45; border-style: dashed;' : ''),
+        pos: 'left: ' + t.x + '%; top: ' + t.y + '%;' + (on ? ' z-index: 5;' : ''),
+        rowStyle: 'display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 4px 8px; border-radius: 8px; border: 1px solid ' + (on ? '#e3b45a' : 'transparent') + '; background: ' + (on ? '#2a2416' : 'transparent') + '; color: #e6ecea; font-size: 13px; cursor: pointer; font-family: inherit; text-align: left;',
+        select: () => this.setState({ sel: t.id }),
+        ...dragHandlers(() => [t.x, t.y], (x, y, p) => setTok(t.id, { x: +x.toFixed(2), y: +y.toFixed(2) }, p), () => this.setState({ sel: t.id })) };
+    });
+    const party = data.party || { x: 44, y: 52, trail: [] };
+    const partyH = dragHandlers(() => [party.x, party.y], (x, y, p) => { const c0 = cur(); const m = { ...c0, party: { ...(c0.party || party), x: +x.toFixed(2), y: +y.toFixed(2) } }; if (p) save(m); else this.setState({ map: m }); },
+      null, (start) => { const c0 = cur(); const pp = c0.party; save({ ...c0, party: { ...pp, trail: (pp.trail || []).concat([start]).slice(-12) } }); });
+    const trailPts = (party.trail || []).concat([[party.x, party.y]]);
+    const sel = data.tokens.find((t) => t.id === selId) || null;
+    const selTy = sel ? T(sel.type) : TYPES[0];
+    const RV = { dashHref, navAccent,
+      padStyle: 'box-sizing: content-box; width: ' + (zoom * 100).toFixed(1) + '%; padding: min(38vh, 360px) 50%;',
+      ...(() => { const fs = !!st.fs;
+        const refit = () => setTimeout(() => this._doFit && this._doFit(), 150);
+        const exitFs = () => { try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {} this.setState({ fs: false }); refit(); };
+        if (!this._fsWired) { this._fsWired = true; try {  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && (this.state || {}).fs) { this.setState({ fs: false }); setTimeout(() => this._doFit && this._doFit(), 150); } }); window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (this.state || {}).fs) { try { if (document.fullscreenElement) document.exitFullscreen(); } catch (er) {} this.setState({ fs: false }); setTimeout(() => this._doFit && this._doFit(), 150); } }); } catch (e) {} }
+        return { fsPressed: fs ? 'true' : 'false', fsLabel: fs ? 'Exit full screen (Esc)' : 'Full screen', fsText: fs ? '✕ Exit full screen' : '⛶ Full screen', fsBtn: fs ? 'border-color: #e3b45a; background: #2a2416; color: #f3cf86;' : '',
+          secStyle: fs ? 'position: fixed; inset: 0; z-index: 1000; background: #0d1417; padding: 12px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-width: 0; overflow: auto' : 'display: flex; flex-direction: column; gap: 10px; min-width: 0',
+          vpSize: fs ? 'flex: 1 1 auto; min-height: 320px;' : 'height: min(900px, calc(100vh - 150px)); min-height: 480px;',
+          toggleFs: () => { if (fs) { exitFs(); return; } this.setState({ fs: true }); refit(); try { const el = document.getElementById('wmap-sec'); if (el && el.requestFullscreen && document.fullscreenEnabled) el.requestFullscreen().catch(() => {}); } catch (e) {} } }; })(),
+      showToks: !st.hideToks, mapTokens: st.hideToks ? [] : tokens, toksPressed: st.hideToks ? 'true' : 'false', toksText: st.hideToks ? '👁 Show tokens' : '🙈 Hide all tokens', toksBtn: st.hideToks ? 'border-color: #e3b45a; background: #2a2416; color: #f3cf86;' : '', toggleToks: () => this.setState({ hideToks: !st.hideToks }),
+      brushPrev: (() => { const b = bsize; const n = 2 * b - 1; const col = { r: '#e0a93a', w: '#47a55a', d: '#1d6b36', m: '#4f8f84', h: '#d0453a', '.': '#3f86e0', '#': '#0b0907' }[brush] || '#e3b45a';
+        return 'position: absolute; z-index: 10; pointer-events: none; visibility: hidden; box-sizing: border-box; width: ' + (n / TC * 100).toFixed(3) + '%; height: ' + (n / TR * 100).toFixed(3) + '%; border: 2px solid ' + col + '; outline: 1px solid rgba(255, 248, 228, 0.9); background: ' + col + '33; border-radius: ' + (b > 1 ? '35%' : '2px') + ';'; })(),
+      noMap: !MC, worldTitle: (ACT.name || 'The Witherwild') + ' · World', mapAria: 'Map of ' + (ACT.name || 'the Witherwild'),
+      headerBg: 'position: absolute; inset: 0;' + (ACT.blob ? ' background-image: url(/_blob/' + ACT.blob + ');' : ''),
+      gm, mainStyle: 'padding: 16px 20px 32px; box-sizing: border-box; display: grid; grid-template-columns: ' + (gm ? '176px minmax(0, 1fr) 260px' : 'minmax(0, 1fr)') + '; gap: 14px; align-items: start;',
+      togglePlayer: () => this.setState({ player: !st.player, placing: null, sel: null, measuring: false }),
+      playerPressed: gm ? 'false' : 'true', playerLabel: gm ? '👁 Player view' : '✎ GM view',
+      playerBtn: gm ? '' : 'border-color: #e3b45a; background: #2a2416; color: #f3cf86;',
+      iconOptions: TYPES.map((t) => ({ id: t.id, label: t.label })),
+      cmName: st.cmName || '', setCmName: (e) => this.setState({ cmName: e.target.value }),
+      cmIcon: st.cmIcon || 'landmark', setCmIcon: (e) => this.setState({ cmIcon: e.target.value }),
+      swatches: SW.map((c) => ({ c, checked: (st.cmColor || SW[0]) === c ? 'true' : 'false', pick: () => this.setState({ cmColor: c }),
+        style: 'width: 26px; height: 26px; border-radius: 50%; cursor: pointer; background: ' + c + '; border: 2px solid ' + ((st.cmColor || SW[0]) === c ? '#f3cf86' : 'rgba(255, 255, 255, 0.25)') + ';' })),
+      addCustom: () => { const name = (st.cmName || '').trim(); if (!name) return; const c0 = cur(); const id = 'c' + Date.now();
+        save({ ...c0, customTypes: (c0.customTypes || []).concat([{ id, label: name, icon: st.cmIcon || 'landmark', c: st.cmColor || SW[0] }]) }, { cmName: '', placing: id }); },
+      palette: ALL.map((t) => ({ ...t, icStyle: ic(t), pressed: placing === t.id ? 'true' : 'false',
+        renaming: st.renType === t.id, notRenaming: st.renType !== t.id, draft: st.renDraft ?? t.label,
+        startRename: () => this.setState({ renType: t.id, renDraft: t.label }),
+        setDraft: (e) => this.setState({ renDraft: e.target.value }),
+        saveName: () => { const v = (this.state.renDraft || '').trim(); const c0 = cur(); if (v) save({ ...c0, typeLabels: { ...(c0.typeLabels || {}), [t.id]: v } }, { renType: null, renDraft: null }); else this.setState({ renType: null, renDraft: null }); },
+        dragStart: (e) => { try { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'copy'; } catch (err) {} },
+        pick: () => this.setState({ placing: placing === t.id ? null : t.id }) })),
+      typeOptions: ALL.map((t) => ({ id: t.id, label: t.label })),
+      hint: !gm ? 'Player view: hidden markers and GM tools are tucked away.' : measuring ? (mmode === 'free' ? 'Freehand: press and drag on the map to draw a route.' : mmode === 'line' ? 'Click two points to measure. Drag to pan.' : 'Click to add waypoints. Drag to pan, scroll to zoom.') : placing ? 'Click anywhere on the map to place a ' + T(placing).label.toLowerCase() + '.' : 'Scroll to zoom, drag (or right-drag, in any mode) to pan. Fully zoomed out, scrolling down moves the page (Shift + scroll always does). Drag tokens to move them; the gold banner is your party.',
+      hintColor: measuring || placing ? '#f3cf86' : '#9fb2b6',
+      mapStyle: 'position: relative; width: 100%; aspect-ratio: ' + MW + ' / ' + MH + '; cursor: ' + (placing || measuring ? 'crosshair' : 'grab') + ';' + (MC ? ' background-image: url(/_blob/' + MC[0] + ');' : ' background-color: #e6d8b8; background-image: radial-gradient(ellipse at center, rgba(255, 248, 228, 0.6), rgba(150, 120, 70, 0.25)), linear-gradient(rgba(120, 90, 50, 0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(120, 90, 50, 0.12) 1px, transparent 1px); background-size: 100% 100%, 4% 5.2%, 4% 5.2%;'),
+      zoomPct: Math.round(zoom * 100) + '%',
+      zoomIn: () => this._zoomTo(zoom * 1.25), zoomOut: () => this._zoomTo(zoom / 1.25), zoomFit: (this._doFit = () => { const vp = document.getElementById('wmap-vp'); const z = vp ? Math.min(1, vp.clientHeight / (vp.clientWidth * MH / MW)) : 1; this._z = z; this._pend = null; this.setState({ zoom: +z.toFixed(3) }); const ctr = () => { if (vp) { vp.scrollLeft = (vp.scrollWidth - vp.clientWidth) / 2; vp.scrollTop = (vp.scrollHeight - vp.clientHeight) / 2; } }; requestAnimationFrame(() => { ctr(); requestAnimationFrame(ctr); }); }),
+      mapClick: (e) => { if (this._suppressClick) { this._suppressClick = false; return; } if (e.target && e.target.closest && e.target.closest('.tok')) return; if (measuring) { if (mmode === 'free') return; const q = pct(e); this.setState({ mpts: mmode === 'line' ? (mp.length >= 2 ? [q] : mp.concat([q])) : mp.concat([q]) }); return; } if (placing) { const [x, y] = pct(e); addToken(placing, +x.toFixed(2), +y.toFixed(2)); } else if (selId != null) this.setState({ sel: null }); },
+      dragOver: (e) => { e.preventDefault(); },
+      drop: (e) => { e.preventDefault(); let type = ''; try { type = e.dataTransfer.getData('text/plain'); } catch (err) {} if (!ALL.some((t) => t.id === type)) return; const [x, y] = pct(e); addToken(type, +x.toFixed(2), +y.toFixed(2)); },
+      tokens, count: data.tokens.length + (data.tokens.length === 1 ? ' marker' : ' markers'),
+      party: { ...partyH, pos: 'left: ' + party.x + '%; top: ' + party.y + '%' },
+      trail: trailPts.map((p) => p[0] + ',' + p[1]).join(' '),
+      trailDots: (party.trail || []).map((p, i, a) => 'position: absolute; z-index: 2; left: ' + p[0] + '%; top: ' + p[1] + '%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #8e2b2b; border: 2px solid #efe3c8; opacity: ' + (0.35 + 0.65 * (i + 1) / a.length).toFixed(2) + '; pointer-events: none;'),
+      scaleKm: W, paceSel: mode, paceOptions: PACES,
+      setScale: (e) => { const v = Math.max(10, Number(e.target.value) || 400); save({ ...cur(), scaleKm: v }); },
+      setPace: (e) => save({ ...cur(), paceMode: e.target.value }),
+      showTerrain: !!st.showTerrain || painting, terr: terrPaths, waterFill: painting ? 'rgba(60, 110, 200, 0.35)' : 'transparent',
+      showLegend: !!st.showTerrain || painting, showBlockOnly: measuring && !st.showTerrain && !painting,
+      legend: [{ c: 'rgba(227, 170, 60, 0.85)', label: 'Road · ' + PMAP.foot.r + ' km/day on foot' }, { c: 'rgba(70, 150, 80, 0.7)', label: 'Wilds · ' + PMAP.foot.w + ' km/day' }, { c: 'rgba(20, 80, 40, 0.85)', label: 'Deep wilds · ' + PMAP.foot.d + ' km/day' }, { c: 'rgba(70, 120, 110, 0.85)', label: 'Marshland · ' + PMAP.foot.m + ' km/day' }, { c: 'rgba(176, 58, 46, 0.8)', label: 'Mountains / hard going · ' + PMAP.foot.h + ' km/day' }].concat(painting ? [{ c: 'rgba(60, 110, 200, 0.6)', label: 'Water / no path' }] : []).concat([{ c: 'rgba(12, 9, 6, 0.85)', label: 'Impassable' }]),
+      toggleTerrain: () => this.setState({ showTerrain: !st.showTerrain }), terrainPressed: st.showTerrain ? 'true' : 'false', terrainBtn: st.showTerrain ? 'border-color: #e3b45a; background: #2a2416; color: #f3cf86;' : '',
+      togglePaint: () => { if (painting && this.state.paintGrid) { save({ ...cur(), terrain: this.state.paintGrid }, { painting: false, paintGrid: null }); this._pg = null; } else this.setState({ painting: !painting, placing: null, measuring: false, sel: null }); },
+      painting, paintPressed: painting ? 'true' : 'false', paintBtn: painting ? 'border-color: #e3b45a; background: #2a2416; color: #f3cf86;' : '',
+      brushes: [['r', 'Road', '#b8842a'], ['w', 'Wilds', '#3f7a46'], ['d', 'Deep wilds', '#1a4f2a'], ['m', 'Marshland', '#3f6e66'], ['h', 'Mountains / hard going', '#9a3a2e'], ['.', 'Water / none', '#3a5a9a'], ['#', 'Impassable', '#0b0907; border-color: #6a5a40']].map(([k, label, bg], bi) => ({ label, bg, tip: label + ' · ' + (bi + 1), pressed: brush === k ? 'true' : 'false', pick: () => this.setState({ brush: k }) })),
+      sizes: [1, 2, 4, 6].map((n) => ({ label: { 1: 'XS', 2: 'S', 4: 'M', 6: 'L' }[n], tip: 'Brush size · [ smaller  ] bigger', pressed: bsize === n ? 'true' : 'false', pick: () => this.setState({ bsize: n }), style: bsize === n ? 'border-color: #e3b45a; color: #f3cf86;' : '' })),
+      resetTerrain: () => { this._undo = (this._undo || []).concat([terrain]).slice(-30); this._pg = null; save({ ...cur(), terrain: CKEY === 'witherwild' ? TDEF2 : 'w'.repeat(TC * TR) }, { paintGrid: null, undoN: this._undo.length }); },
+      undoPaint: (this._undoFn = () => { const u = this._undo || []; if (!u.length) return; const prev = u[u.length - 1]; this._undo = u.slice(0, -1); this._pg = null; save({ ...cur(), terrain: prev }, { paintGrid: null, undoN: this._undo.length }); }),
+      noUndo: !(this._undo && this._undo.length), undoLabel: 'Undo stroke' + (this._undo && this._undo.length > 1 ? ' (' + this._undo.length + ')' : ''),
+      paintDown: (e) => { if (e.button !== 0) return; e.stopPropagation(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {} this._painting = true; this._strokeStart = terrain; this._pg = this.state.paintGrid || terrain; paintAt(e); },
+      paintMove: (e) => { if (this._painting) paintAt(e); },
+      paintUp: (e) => { this._painting = false; if (this._pg) { if (this._strokeStart != null && this._strokeStart !== this._pg) this._undo = (this._undo || []).concat([this._strokeStart]).slice(-30); this._strokeStart = null; save({ ...cur(), terrain: this._pg }, { undoN: (this._undo || []).length }); } },
+      measuring: measuring ? 'true' : 'false', measureBtn: measuring ? 'border-color: #e3b45a; background: #2a2416; color: #f3cf86;' : '',
+      toggleMeasure: () => this.setState({ measuring: !measuring, mpts: [], placing: null, painting: false }),
+      mOn: measuring, mOff: !measuring, mPath, mSum, mFree: measuring && mmode === 'free',
+      mModes: [['line', 'Straight line', 'Distance between two points'], ['way', 'Waypoints', 'Click to add points along a route'], ['free', 'Freehand', 'Press and drag to draw a path']].map(([k, label, tip]) => ({ label, tip, pressed: mmode === k ? 'true' : 'false', pick: () => this.setState({ mmode: k, mpts: [] }) })),
+      mMethods: [['foot', 'On foot'], ['mount', 'Mounted'], ['wagon', 'Wagon / cart'], ['boat', 'Boat'], ['fly', 'Flying']].map(([v, label]) => ({ v, label })),
+      mMethod: mo.method, mPace: mo.pace, mHours: String(mHrs), mUnitsLabel: mo.units === 'mi' ? 'Miles' : 'Kilometres',
+      mSetMethod: (e) => setMo({ method: e.target.value }), mSetPace: (e) => setMo({ pace: e.target.value }), mSetHours: (e) => setMo({ hours: Math.max(1, Math.min(16, Number(e.target.value) || 8)) }),
+      mToggleUnits: () => setMo({ units: mo.units === 'mi' ? 'km' : 'mi' }),
+      mNoPts: mp.length === 0, mNoRoute: mp.length < 2,
+      mUndo: () => this.setState({ mpts: mmode === 'free' ? [] : mp.slice(0, -1) }), mClear: () => this.setState({ mpts: [] }),
+      mMoveParty: () => { if (mp.length < 2) return; const c0 = cur(); const pp = c0.party || party; const step = Math.max(1, Math.floor(mp.length / 10)); const via = mp.filter((_, i) => i % step === 0).slice(0, -1); save({ ...c0, party: { ...pp, x: +mp[mp.length - 1][0].toFixed(2), y: +mp[mp.length - 1][1].toFixed(2), trail: (pp.trail || []).concat([[pp.x, pp.y]]).concat(via).slice(-24) } }, { mpts: [] }); },
+      mDown: (e) => { if (e.button !== 0) return; e.stopPropagation(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {} this._mdraw = [pct(e)]; this.setState({ mpts: this._mdraw }); },
+      mMove: (e) => { if (!this._mdraw) return; const q = pct(e); const l = this._mdraw[this._mdraw.length - 1]; if (Math.hypot(q[0] - l[0], q[1] - l[1]) < 0.35) return; this._mdraw = this._mdraw.concat([q]); if (!this._mraf) { this._mraf = requestAnimationFrame(() => { this._mraf = null; this.setState({ mpts: this._mdraw }); }); } },
+      mUp: () => { if (this._mdraw) { const pts = this._mdraw; this._mdraw = null; this.setState({ mpts: pts }); } },
+      ...(() => { const step = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000].reduce((b, v) => (Math.abs(v - W / 8) < Math.abs(b - W / 8) ? v : b), 50); return { scaleBarPct: (step / W * 100).toFixed(1) + '%', scaleBarLabel: step + ' km' }; })(),
+      trailTotal: (() => { const pts = (party.trail || []).concat([[party.x, party.y]]); const t = { km: 0, days: 0, water: false }; for (let i = 1; i < pts.length; i++) { const q = route(pts[i - 1], pts[i]); t.km += q.km; t.days += q.days; t.water = t.water || q.water; } return pts.length > 1 ? fmtR(t) : 'nowhere yet'; })(),
+      hasSel: !!sel, noSel: !sel,
+      sel: sel ? { ...sel, hidden: !!sel.hidden, location: !!sel.location, d: selTy.d, icStyle: ic(selTy), typeLabel: selTy.label, fromParty: fmtR(route([party.x, party.y], [sel.x, sel.y])),
+          hasOthers: data.tokens.length > 1,
+          dists: data.tokens.filter((t) => t.id !== sel.id).map((t) => ({ name: t.name || T(t.type).label, r: route([sel.x, sel.y], [t.x, t.y]) })).sort((a, b) => a.r.days - b.r.days).slice(0, 8).map((x) => ({ name: x.name, text: fmtR(x.r) })) }
+        : { name: '', notes: '', type: 'village', hidden: false, location: false, d: '', icStyle: '', typeLabel: '', fromParty: '', hasOthers: false, dists: [] },
+      setName: (e) => sel && setTok(sel.id, { name: e.target.value }, true),
+      setNotes: (e) => sel && setTok(sel.id, { notes: e.target.value }, true),
+      setType: (e) => sel && setTok(sel.id, { type: e.target.value }, true),
+      toggleHidden: () => sel && setTok(sel.id, { hidden: !sel.hidden }, true),
+      toggleLocation: () => sel && setTok(sel.id, { location: !sel.location }, true),
+      removeSel: () => { if (!sel) return; save({ ...data, tokens: data.tokens.filter((t) => t.id !== sel.id) }, { sel: null }); },
+      moveParty: () => { if (!sel) return; save({ ...data, party: { ...party, x: sel.x, y: sel.y, trail: (party.trail || []).concat([[party.x, party.y]]).slice(-12) } }); },
+      clearTrail: () => save({ ...data, party: { ...party, trail: [] } })
+    };
+    const BR = ['r', 'w', 'd', 'm', 'h', '.', '#']; const SZ = [1, 2, 4, 6];
+    this._keys = { fs: RV.toggleFs, paint: RV.togglePaint, measure: RV.toggleMeasure, terrain: RV.toggleTerrain, toks: RV.toggleToks, player: RV.togglePlayer,
+      zin: RV.zoomIn, zout: RV.zoomOut, fit: RV.zoomFit, undo: RV.undoPaint, canUndo: !!(this._undo && this._undo.length), painting,
+      brushes: BR.map((k) => () => this.setState({ brush: k })), size: (d) => { const i = Math.max(0, Math.min(SZ.length - 1, SZ.indexOf(bsize) + d)); this.setState({ bsize: SZ[i] }); } };
+    return RV;
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,691 @@
+# QUESTIONS pending user answer, defaults in d12-analysis.md
+#
+# D12 plan: Hardening and docs (bead dcm-bxp.11). Roadmap row: live-update e2e, unauthenticated sweep test, accessibility
+# and tablet pass, settings backup/restore, README and AGENTS (docs/design-port-roadmap.md).
+# Analysis: .omc/autopilot/d12-analysis.md (function inventory: 355 wrapped public functions in 54 modules + 3 Convex Auth
+#   exports; matrix design; sweep; live-update scope; a11y/tablet scope; backup options; table removal; error list; QUESTIONS).
+# Folded beads: dcm-bxp.51, .57, .64, .79, .88 (authz-matrix entries), .23 (deprecated upload tables), .29 (string-payload
+#   errors and RETURNS_PENDING), dcm-t30 (unit timeouts under load). dcm-bxp.21 is already done (analysis section 9; H24 closes it).
+# Absorbed from .omc/plans/hardening.yaml (never built): H18 (route error boundaries, rule 11), H24 (axe), H25 (authz matrix),
+#   H33 (README). The rest of hardening waves 7-12 stays there (Q8).
+# Starts after: N9 (d11-notes), P10 (sprite-packs), M1 (map-movement) are merged. Their files (e2e specs,
+#   src/components/combat-map/tokens/**, map-view/**, src/lib/combat-map/painter.ts and sprites/**, notes page.tsx/notes.css)
+#   are free again by then; no D12 tracer starts before they merge.
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), foundation.
+# Every tracer owns its docs/tasks/TASK-D12-<id>.md. The orchestrator updates docs/data-model.md at merge time unless the
+#   tracer owns it (only H16 does).
+# Matrix rule for every area tracer (H5-H14): own only tests/convex/authz/<area>.entries.ts and <area>.test.ts; move every
+#   name of the area from `pending` to `entries`; leave `pending` empty. A real authorization bug is NOT fixed in the area
+#   tracer (it owns no convex/ file): file a bead, give the entry the CORRECT expectation plus `knownBug: "<bead id>"` (the
+#   harness runs it as it.fails), and list it in the task doc.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+# USER ANSWERS (2026-10-21, binding): "default" for all 15 QUESTIONS in .omc/autopilot/d12-analysis.md (settings-only backup as
+#   copy-and-paste text; Reset settings; generated signed-out + stranger sweep; four roles plus another player and an edit-grant
+#   player; one file per area plus authz-matrix.test.ts; zero serious/critical axe findings; 768x1024 and 1024x768; only error
+#   screens, axe, README and the matrix from hardening.yaml; drop the old upload tables; close dcm-bxp.21; lighter slow tests with
+#   one 15 s limit; the listed live-update checks; drop plain-text errors; short README; remove the AGENTS.md 'keep UI minimal' line).
+plan: d12-hardening
+waves:
+  # ---------------------------------------------------------------- wave 1: foundations and independent fixes
+  - wave: 1
+    tracers:
+      - id: H0
+        foundation: true
+        title: Authz matrix harness, argument synthesizer, world fixture and inventory guard
+        size: M
+        goal: authz-matrix.test.ts compares the runtime inventory of public functions with the union of every area's entries, pending names and EXEMPT, so an unlisted function fails CI; the harness runs any area's entries for anon, outsider, player, otherPlayer, grantee and GM on fresh worlds with arguments synthesized from each function's own validator.
+        depends_on: []
+        owns:
+          - tests/convex/authz-matrix.test.ts
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - tests/convex/authz/synth.ts
+          - tests/convex/authz/inventory.ts
+          - tests/convex/authz/*.entries.ts
+          - tests/convex/authz/*.test.ts
+          - tests/convex/authz-synth.test.ts
+          - tests/convex/helpers.ts
+          - tests/fixtures/characters.ts
+          - docs/tasks/TASK-D12-H0.md
+        reads:
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - convex/schema.ts
+          - convex/tables/**
+          - convex/**
+          - tests/convex/setup.ts
+          - tests/convex/schema-guard.test.ts
+          - tests/e2e/visual/helpers.ts
+          - .omc/autopilot/d12-analysis.md
+          - docs/best-practices.md
+        acceptance:
+          - "inventory.ts: publicFunctions() returns every isPublic query/mutation/action as '<module>:<export>' (355 + 3 auth exports on the D12 start commit, count recorded in the task doc) and wrapperOf(name) reads the wrapper from the module's raw source"
+          - "synth.ts builds valid args from fn.exportArgs() (ids from world.idOf(table), NAME_HINTS for v.string ids such as characterId/entryId/mapId/tokenId/sessionId/pageId, fresh idempotencyKey, first union member); authz-synth.test.ts proves it on a gm, a view, an own and a scoped function, and that an area file can extend NAME_HINTS and the world through its own setup without editing harness.ts"
+          - "world.ts buildWorld({ frameId }) creates GM, playerA (owns characterA), playerB (owns characterB), outsider and one campaign through the public API, plus an edit grant for the grantee row"
+          - "harness.ts: class defaults for gm, view, edit, own, user and maybe exactly as analysis section 2.3; scoped entries must state every role; okCodes may not contain UNAUTHENTICATED, NOT_FOUND or FORBIDDEN; errors are asserted on ConvexError.data.code as an object; mutations and actions run on a fresh world per role; knownBug entries run as it.fails"
+          - "One <area>.entries.ts and one <area>.test.ts stub per area of analysis section 1.4 (core, countdowns, characters, play, world, adversaries, combat, sessions, notes, trackers), each listing all of its functions in `pending`, plus EXEMPT for auth:signIn, auth:signOut and auth:isAuthenticated with reasons; pending names appear as it.todo"
+          - "The guard fails on a missing name, a stale name, a name listed twice, and an access class that contradicts the wrapper (gm* -> gm, campaign* view -> view, edit -> edit, user* -> own/scoped/user, maybeUserQuery -> maybe); proven by temporarily deleting one pending name and by filing one gm function as view (recorded in the task doc)"
+          - "core.entries.ts carries 3 worked entries (fear:adjust gm, campaigns:list user, characters:get own) moved out of pending, so the runner is exercised; each area file runs in 60 s or less on the full parallel pnpm test (measured, recorded)"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H1
+        foundation: true
+        title: E2E foundation - axe dependency, accessibility and tablet helpers, two-browser live fixture
+        size: S
+        goal: "@axe-core/playwright is installed, tests/e2e/a11y.ts gives one call for 'no serious or critical axe violations', the tablet viewports, the no-sideways-scroll and 44 px touch-target checks, and tests/e2e/live.ts opens a GM and a player in two browser contexts on one campaign."
+        depends_on: []
+        owns:
+          - package.json
+          - pnpm-lock.yaml
+          - tests/e2e/a11y.ts
+          - tests/e2e/live.ts
+          - tests/e2e/a11y-smoke.spec.ts
+          - docs/tasks/TASK-D12-H1.md
+        reads:
+          - tests/e2e/fixtures.ts
+          - tests/e2e/visual/helpers.ts
+          - tests/e2e/players.spec.ts
+          - playwright.config.ts
+          - docs/testing.md
+        acceptance:
+          - "@axe-core/playwright is added at a version that satisfies pnpm minimumReleaseAge (no exclusion); if N9 already added it, keep its version and record that"
+          - "a11y.ts exports expectNoSeriousA11yViolations(page, { include?, exclude?, reason? }) with tags wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa (an exclude without a reason throws), TABLET_VIEWPORTS (768x1024, 1024x768), expectFitsViewport(page) and expectTouchTargets(locator, 44)"
+          - "live.ts exports gmAndPlayer(browser, { frame }) -> { gm, player, campaignId, characterId, client }: the GM creates the campaign through convexAs, the player joins by code in a second context, characterA is assigned to the player; both pages are signed in and on the dashboard"
+          - "a11y-smoke.spec.ts runs every helper once (signin page, title menu at both tablet sizes, gmAndPlayer opens both dashboards) and passes"
+          - "pnpm lint and pnpm typecheck pass"
+      - id: H2
+        title: Every server error is {code, message}; returns validators finish (dcm-bxp.29)
+        size: S
+        goal: The 10 string-payload ConvexError throws in 6 files become appError object payloads, the client drops the string fallback, a static test forbids new string payloads, and fear and members get returns validators so RETURNS_PENDING is empty.
+        depends_on: []
+        owns:
+          - convex/lib/operations.ts
+          - convex/lib/permissions.ts
+          - convex/lib/auth.ts
+          - convex/lib/users.ts
+          - convex/lib/mechanics.ts
+          - convex/maps.ts
+          - convex/fear.ts
+          - convex/members.ts
+          - src/lib/convex-errors.ts
+          - tests/unit/convex-errors.test.ts
+          - tests/convex/maps.test.ts
+          - tests/convex/permissions.test.ts
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/error-payloads.test.ts
+          - tests/convex/fear.test.ts
+          - tests/convex/members.test.ts
+          - tests/convex/require-user.test.ts
+          - tests/convex/create-or-update-user.test.ts
+          - docs/tasks/TASK-D12-H2.md
+        reads:
+          - src/lib/errors/**
+          - convex/lib/functions.ts
+          - src/app/signin/password-form.tsx
+          - .omc/autopilot/d12-analysis.md
+        acceptance:
+          - "grep -rn 'new ConvexError(\"' convex finds nothing; every throw listed in analysis section 8 uses appError(code)"
+          - "tests/convex/error-payloads.test.ts scans convex/** (raw source) and fails on a ConvexError with a string or bare-identifier payload (proven by a temporary string throw)"
+          - "maps.test.ts and permissions.test.ts assert errorCode(...), never errorData(...) against a string; src/lib/convex-errors.ts has no typeof data === 'string' branch and its unit test covers object payloads only"
+          - "fear.adjust, fear.set, members.access, invite, revokeInvite, removePlayer, leave and rotateJoinCode declare returns; RETURNS_PENDING in schema-guard.test.ts is empty and removed"
+          - "Sign-up refusals still return one code for 'not allowlisted' and 'already registered' (CF20); password-form.tsx needs no change (checked)"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H3
+        title: Unit tests stop timing out under full-suite load (dcm-t30)
+        size: S
+        goal: The five jsdom tests that pass their timeout under the parallel run do less work, the unit project has one 15 s test timeout and no per-test overrides, and five consecutive full pnpm test runs have zero timeouts.
+        depends_on: []
+        owns:
+          - vitest.config.ts
+          - vitest.setup.ts
+          - tests/unit/wizard-steps.test.tsx
+          - tests/unit/domain-deck-level-up.test.ts
+          - tests/unit/photo-import-review.test.tsx
+          - tests/unit/sheet-render.test.ts
+          - tests/unit/tier-boxes.test.ts
+          - docs/tasks/TASK-D12-H3.md
+        reads:
+          - src/app/(gm)/campaigns/[campaignId]/party/**
+          - src/components/party/**
+        acceptance:
+          - "Each of the five files is profiled (slowest test before and after recorded); queries are scoped with within(...) or getByLabelText, or use hidden: true where visibility is not under test; no assertion is weakened"
+          - "vitest.config.ts gives the unit project testTimeout 15000; no per-test timeout argument remains in tests/unit/**; maxWorkers is capped only if the runs below still time out (reason recorded)"
+          - "pnpm test passes 5 times in a row on the full suite with zero timeouts (wall times recorded in the task doc)"
+          - "pnpm lint and pnpm typecheck pass"
+      - id: H4
+        title: Every route segment has an error boundary; the root has global-error (rule 11)
+        size: S
+        goal: Each page segment without one gets an error.tsx built on one shared route-error component (the campaign chrome stays, with the reason and a retry), the root gets global-error.tsx, and an e2e spec proves a failing query shows the boundary instead of a blank page.
+        depends_on: []
+        owns:
+          - src/app/global-error.tsx
+          - src/app/signin/error.tsx
+          - src/app/(gm)/error.tsx
+          - src/app/(gm)/campaigns/error.tsx
+          - src/app/(gm)/new/error.tsx
+          - src/app/(gm)/frames/[frameId]/error.tsx
+          - src/app/(gm)/join/[code]/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/[section]/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/codex/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/new/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/error.tsx
+          - src/components/route-error.tsx
+          - tests/unit/route-error.test.tsx
+          - tests/e2e/error-boundary.spec.ts
+          - docs/tasks/TASK-D12-H4.md
+        reads:
+          - src/app/(gm)/campaigns/[campaignId]/sessions/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/notes/error.tsx
+          - src/lib/convex-errors.ts
+          - node_modules/next/dist/docs/**
+        acceptance:
+          - "find src/app -name page.tsx: every directory holding one also holds an error.tsx (a unit test walks src/app and fails otherwise), and src/app/global-error.tsx exists with its own html and body"
+          - "route-error.tsx shows errorMessage(error) in role=alert with a 'Try again' button that calls the Next 16 retry prop (checked against node_modules/next/dist/docs)"
+          - "error-boundary.spec.ts: a malformed campaign id on party, codex and world shows the boundary text and the campaign nav or title menu link, not a blank page; Try again re-renders"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 2: matrix entries, sweep, tables, backup, live updates
+  - wave: 2
+    tracers:
+      - id: H5
+        title: Authz matrix - core (campaigns, members, settings, users, fear, wither, feed, history, actionLog, campaignTime)
+        size: M
+        goal: The 31 core functions have matrix entries (2 user, 2 maybe, the rest gm, view or scoped), with campaigns.get null for strangers, joinByCode and restore as scoped, and the auth exports in EXEMPT.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/core.entries.ts
+          - tests/convex/authz/core.test.ts
+          - docs/tasks/TASK-D12-H5.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - tests/convex/authz/synth.ts
+          - convex/campaigns.ts
+          - convex/members.ts
+          - convex/settings.ts
+          - convex/users.ts
+          - convex/fear.ts
+          - convex/wither.ts
+          - convex/feed.ts
+          - convex/history.ts
+          - convex/actionLog.ts
+          - convex/campaignTime.ts
+          - tests/convex/campaigns.test.ts
+          - tests/convex/members.test.ts
+          - tests/convex/invite-verification.test.ts
+        acceptance:
+          - "core.entries.ts has no pending names; the guard is green for these modules"
+          - "members:revokeInvite, members:joinByCode, campaigns:restore and actionLog:undo state all four roles; campaigns:markOpened and members:leave cover the player"
+          - "Any bug found is a knownBug with a bead id (listed in the task doc)"
+          - "pnpm test passes"
+      - id: H6
+        title: Authz matrix - countdowns (countdowns, countdownRolls, countdownTracks, environmentActions; dcm-bxp.79)
+        size: S
+        goal: The 16 countdown functions have matrix entries, including countdowns.operate for a hidden versus a revealed countdown (player NOT_FOUND versus ok) and countdowns.listByCampaign filtering for players.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/countdowns.entries.ts
+          - tests/convex/authz/countdowns.test.ts
+          - docs/tasks/TASK-D12-H6.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - convex/countdowns.ts
+          - convex/countdownRolls.ts
+          - convex/countdownTracks.ts
+          - convex/environmentActions.ts
+          - tests/convex/countdown-ticks.test.ts
+          - tests/convex/countdown-rolls.test.ts
+          - tests/convex/countdowns-modes.test.ts
+          - tests/convex/countdowns-chase.test.ts
+          - tests/convex/countdowns-long-term.test.ts
+        acceptance:
+          - "countdowns.entries.ts has no pending names; every function bead dcm-bxp.79 names under 'Added' and 'Changed' (countdowns, countdownRolls, countdownTracks, environmentActions) has an entry; the rolls/rests/actionLog ones are covered by H5 and H8 (cross-referenced in the task doc)"
+          - "pnpm test passes"
+      - id: H7
+        title: Authz matrix - characters and character extras
+        size: M
+        goal: The 45 character functions have matrix entries with the own-resource rows (player owner ok, other player refused, outsider NOT_FOUND or null), characters.listByCampaign and create as view, and characters.applyDamage and toggleCondition as named by beads .64 and .51.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/characters.entries.ts
+          - tests/convex/authz/characters.test.ts
+          - docs/tasks/TASK-D12-H7.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - convex/characters.ts
+          - convex/characterExtras.ts
+          - convex/lib/characterSheet.ts
+          - tests/convex/characters.test.ts
+          - tests/convex/character-extras.test.ts
+          - tests/convex/character-intents.test.ts
+        acceptance:
+          - "characters.entries.ts has no pending names; every own entry runs the otherPlayer row"
+          - "Frame-only extras (Motherboard, Beast Feast, Weredragon) run on a world of that frame via the area setup"
+          - "pnpm test passes"
+      - id: H8
+        title: Authz matrix - play (classFeatures, levelUp, deathMoves, rests, rolls, sessionFeatures, photoImport)
+        size: M
+        goal: The 40 play functions have matrix entries, including the session-features set of bead .64 (rolls.storeSlayerDie, pendingChoices, tagTeamApply either participant, sessionFeatures.bumpMoonDie) and the AI-backed photoImport.read with okCodes for a deployment without a key.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/play.entries.ts
+          - tests/convex/authz/play.test.ts
+          - docs/tasks/TASK-D12-H8.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - convex/classFeatures.ts
+          - convex/levelUp.ts
+          - convex/deathMoves.ts
+          - convex/rests.ts
+          - convex/rolls.ts
+          - convex/sessionFeatures.ts
+          - convex/photoImport.ts
+          - tests/convex/rolls-session-features.test.ts
+          - tests/convex/session-features.test.ts
+          - tests/convex/session-features-boundary.test.ts
+          - tests/convex/rolls.test.ts
+          - tests/convex/rests.test.ts
+        acceptance:
+          - "play.entries.ts has no pending names; rolls:tagTeamApply lets either participant's editor and the GM pick, and refuses others (U9)"
+          - "photoImport:read and other action entries use okCodes (for example PHOTO_IMPORT_UNAVAILABLE) for the GM row instead of skipping it"
+          - "pnpm test passes"
+      - id: H9
+        title: Authz matrix - world (maps, codex, scenes)
+        size: M
+        goal: The 35 world-map, codex and scene functions have matrix entries; the scoped ones (map tokens, codex entries, images) state every role, and the three edit-level codex functions run the grantee row.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/world.entries.ts
+          - tests/convex/authz/world.test.ts
+          - docs/tasks/TASK-D12-H9.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - convex/maps.ts
+          - convex/codex.ts
+          - convex/scenes.ts
+          - tests/convex/maps.test.ts
+          - tests/convex/codex.test.ts
+          - tests/convex/upload-claims.test.ts
+        acceptance:
+          - "world.entries.ts has no pending names; codex:create, codex:seed and codex:importPins pass the grantee row"
+          - "Upload-URL mutations are covered for access only (no blob upload in the matrix)"
+          - "pnpm test passes"
+      - id: H10
+        title: Authz matrix - adversaries (encounters, encounterTracking, customAdversaries)
+        size: S
+        goal: The 27 encounter and custom-adversary functions (all GM-only) have matrix entries on a world with one encounter and one instance.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/adversaries.entries.ts
+          - tests/convex/authz/adversaries.test.ts
+          - docs/tasks/TASK-D12-H10.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - convex/encounters.ts
+          - convex/encounterTracking.ts
+          - convex/customAdversaries.ts
+          - tests/convex/encounters.test.ts
+          - tests/convex/encounter-tracking.test.ts
+          - tests/convex/custom-adversaries.test.ts
+        acceptance:
+          - "adversaries.entries.ts has no pending names"
+          - "pnpm test passes"
+      - id: H11
+        title: Authz matrix - combat map and sprite packs (dcm-bxp.51, .88)
+        size: M
+        goal: The 63 combat-map, token, vision, style, generate and sprite-pack functions have matrix entries, with the player rows that depend on the live map (playerView, spriteSources, markExplored, carried light, doors) set up through the area's setup.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/combat.entries.ts
+          - tests/convex/authz/combat.test.ts
+          - docs/tasks/TASK-D12-H11.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - convex/combatMaps.ts
+          - convex/combatMapEdit.ts
+          - convex/combatMapGenerate.ts
+          - convex/combatMapStyle.ts
+          - convex/combatTokens.ts
+          - convex/combatVision.ts
+          - convex/spritePacks.ts
+          - tests/convex/combat-*.test.ts
+          - tests/convex/sprite-*.test.ts
+        acceptance:
+          - "combat.entries.ts has no pending names; every function listed in beads dcm-bxp.51 and dcm-bxp.88 has an entry (checklist in the task doc)"
+          - "combatMapStyle:spriteSources and combatVision:playerView: player ok only on the live map (setup makes the map live), otherwise the documented null/NOT_FOUND"
+          - "combatMapGenerate:generate (userAction) uses okCodes for the missing API key"
+          - "pnpm test passes"
+      - id: H12
+        title: Authz matrix - sessions (sessions, sessionRecords, sessionPrep, sessionPlay, sessionWrap; dcm-bxp.57)
+        size: S
+        goal: The 32 session functions have matrix entries; sessions.current, sessionRecords.list and sessionWrap.dashboard are view, everything else GM-only, and sessions.start and end are covered for bead .64.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/sessions.entries.ts
+          - tests/convex/authz/sessions.test.ts
+          - docs/tasks/TASK-D12-H12.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - convex/sessions.ts
+          - convex/sessionRecords.ts
+          - convex/sessionPrep.ts
+          - convex/sessionPlay.ts
+          - convex/sessionWrap.ts
+          - tests/convex/session-*.test.ts
+          - tests/convex/sessions.test.ts
+        acceptance:
+          - "sessions.entries.ts has no pending names; every function of bead dcm-bxp.57 has an entry (combatTokens.sessionEncounter and placeSessionEncounter are in H11, cross-referenced)"
+          - "pnpm test passes"
+      - id: H13
+        title: Authz matrix - notes (notes, notesBin, notesEntries, notesJournals, notesSharing, notesThreads)
+        size: S
+        goal: The 27 notes functions (all campaign view) have matrix entries; the player rows act on their own journal, and the privacy rules stay in the notes feature tests.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/notes.entries.ts
+          - tests/convex/authz/notes.test.ts
+          - docs/tasks/TASK-D12-H13.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - convex/notes.ts
+          - convex/notesBin.ts
+          - convex/notesEntries.ts
+          - convex/notesJournals.ts
+          - convex/notesSharing.ts
+          - convex/notesThreads.ts
+          - convex/lib/notes.ts
+          - tests/convex/notes-*.test.ts
+        acceptance:
+          - "notes.entries.ts has no pending names; mutations on another person's page are run as otherPlayer with their documented code"
+          - "pnpm test passes"
+      - id: H14
+        title: Authz matrix - frame trackers (Age of Umbra, Andaluria, Colossus, Five Banners, Horizon, Weredragon)
+        size: S
+        goal: The 39 frame-tracker functions have matrix entries, each on a world of its own frame, with fiveBanners.operateObjective as scoped and the Weredragon player mutations (readNightSky, submitSecret) as view.
+        depends_on: [H0]
+        owns:
+          - tests/convex/authz/trackers.entries.ts
+          - tests/convex/authz/trackers.test.ts
+          - docs/tasks/TASK-D12-H14.md
+        reads:
+          - tests/convex/authz/harness.ts
+          - tests/convex/authz/world.ts
+          - convex/trackers/**
+          - convex/lib/trackers.ts
+          - tests/convex/age-of-umbra.test.ts
+          - tests/convex/andaluria.test.ts
+          - tests/convex/colossus.test.ts
+          - tests/convex/five-banners.test.ts
+          - tests/convex/horizon.test.ts
+          - tests/convex/weredragon.test.ts
+        acceptance:
+          - "trackers.entries.ts has no pending names; a tracker called in a campaign of another frame returns its documented code (MECHANIC_DISABLED or equivalent) for the GM"
+          - "pnpm test passes"
+      - id: H15
+        title: Unauthenticated sweep - generated Convex sweep and signed-out route sweep
+        size: S
+        goal: Every public function, found at runtime with no hand-written list, refuses a signed-out caller and shows a signed-in stranger nothing, and every page route sends a signed-out visitor to sign-in without leaking campaign data.
+        depends_on: [H0]
+        owns:
+          - tests/convex/unauthenticated-sweep.test.ts
+          - tests/e2e/unauthenticated.spec.ts
+          - docs/tasks/TASK-D12-H15.md
+        reads:
+          - tests/convex/authz/inventory.ts
+          - tests/convex/authz/synth.ts
+          - tests/convex/authz/world.ts
+          - src/proxy.ts
+          - tests/e2e/fixtures.ts
+          - tests/e2e/visual/helpers.ts
+        acceptance:
+          - "unauthenticated-sweep.test.ts: for every publicFunctions() name except EXEMPT, a call without identity throws data.code UNAUTHENTICATED (users:viewer and campaigns:get return null); a stranger gets NOT_FOUND, FORBIDDEN, null or empty except the 5 user-class functions; adding a dummy public function in a scratch run makes it fail (recorded)"
+          - "unauthenticated.spec.ts: signed out, every page route of analysis section 3 (with a real campaign, character and join code created first) lands on /signin?next=<path>, and the HTML has neither the campaign nor the character name; a signed-in non-member sees the not-found state"
+          - "pnpm lint, pnpm typecheck and pnpm test pass; the new e2e spec passes"
+      - id: H16
+        title: Remove the deprecated upload tables (dcm-bxp.23)
+        size: S
+        goal: After re-checking that dev has no rows in mapUploads, codexImages and portraitUploads, the three tables, the one-time copy migration, its tests and the cleanup branches that read them are gone, and docs/data-model.md says so (narrow step of widen -> migrate -> narrow).
+        depends_on: [H2]
+        owns:
+          - convex/tables/files.ts
+          - convex/migrations/uploads.ts
+          - convex/migrations/run.ts
+          - convex/cleanup.ts
+          - tests/convex/cleanup.test.ts
+          - tests/convex/migrations.test.ts
+          - tests/convex/schema-guard.test.ts
+          - docs/data-model.md
+          - docs/tasks/TASK-D12-H16.md
+        reads:
+          - convex/schema.ts
+          - convex/lib/files.ts
+          - convex/crons.ts
+          - .omc/autopilot/d12-analysis.md
+        acceptance:
+          - "The task doc records 'npx convex data mapUploads|codexImages|portraitUploads' on dev at tracer start, all empty (stop and report if not); prod is not deployed, e2e is rebuilt by pnpm e2e:setup"
+          - "grep -rn 'mapUploads\\|codexImages\\|portraitUploads\\|moveUploadsToFiles' convex tests docs/data-model.md finds nothing (outside convex/_generated, which the orchestrator regenerates)"
+          - "cleanup.test.ts still proves orphan sweep and campaign purge on files; migrations.test.ts keeps every other migration test"
+          - "After merge the orchestrator runs npx convex codegen and npx convex dev --once on the main checkout (dropping empty tables is accepted) and closes dcm-bxp.23"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H17
+        title: Settings backup, restore and reset (TitleMenu 'Saved data', option A)
+        size: S
+        goal: The Settings dialog's Saved data section shows a copyable versioned backup of the user's settings, restores a pasted one through a typed settings.restore mutation, resets settings after a confirm, and says that campaigns sync through the account.
+        depends_on: [H0, H2]
+        owns:
+          - convex/settings.ts
+          - src/app/(gm)/settings-dialog.tsx
+          - src/lib/validation/settings-backup.ts
+          - tests/convex/settings.test.ts
+          - tests/unit/settings-backup.test.ts
+          - tests/e2e/settings-backup.spec.ts
+          - tests/convex/authz/settings-backup.entries.ts
+          - tests/convex/authz/settings-backup.test.ts
+          - docs/tasks/TASK-D12-H17.md
+        reads:
+          - reference/designs/project/TitleMenu.dc.html
+          - src/lib/validation/campaigns.ts
+          - tests/e2e/fixtures.ts
+          - tests/convex/authz/harness.ts
+          - docs/best-practices.md
+        acceptance:
+          - "'Show backup' fills the textarea with {daggerheartBackup: 2, kind: 'settings', schemaVersion: 1, settings} and selects it; 'Restore from pasted backup' calls settings.restore; a malformed or foreign backup shows the board's error status and changes nothing (rule 7 schemaVersion; validation code INVALID through ZodError)"
+          - "settings.restore and settings.reset are userMutation with full args validators (no v.any) and returns v.null(); 'Reset settings…' asks in an alertdialog first"
+          - "The section copy says campaigns are saved to the account and sync across devices; no localStorage is used for the backup"
+          - "settings-backup.entries.ts lists restore and reset (class user); unit, convex and e2e tests (round trip on two accounts) pass"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H18
+        title: Live-update e2e - dashboard, party and world (two browsers)
+        size: M
+        goal: With the GM and a player open side by side and never reloading, Fear, countdowns, the Witherwild time arc, joining and removal, sheet edits both ways, the roll feed, codex visibility and world map tokens appear on the other screen.
+        depends_on: [H1]
+        owns:
+          - tests/e2e/live-dashboard.spec.ts
+          - tests/e2e/live-party.spec.ts
+          - tests/e2e/live-world.spec.ts
+          - docs/tasks/TASK-D12-H18.md
+        reads:
+          - tests/e2e/live.ts
+          - tests/e2e/fixtures.ts
+          - tests/e2e/visual/helpers.ts
+          - tests/e2e/players.spec.ts
+          - tests/e2e/dashboard.spec.ts
+          - tests/e2e/codex.spec.ts
+          - tests/e2e/world.spec.ts
+        acceptance:
+          - "Every row of analysis section 4 marked H18 has a test; grep finds no reload() and no waitForTimeout in the three specs"
+          - "A failing live update is a test.fixme with a bead id (listed in the task doc), not a deleted test"
+          - "The three specs pass twice in a row; pnpm lint and pnpm typecheck pass"
+      - id: H19
+        title: Live-update e2e - combat map, sessions and notes (two browsers)
+        size: M
+        goal: With the GM and a player open side by side and never reloading, the live combat map (map, tokens, fog, doors, the player's own token), session start and end, and notes sharing and added entries appear on the other screen.
+        depends_on: [H1]
+        owns:
+          - tests/e2e/live-combat.spec.ts
+          - tests/e2e/live-sessions.spec.ts
+          - tests/e2e/live-notes.spec.ts
+          - docs/tasks/TASK-D12-H19.md
+        reads:
+          - tests/e2e/live.ts
+          - tests/e2e/fixtures.ts
+          - tests/e2e/visual/helpers.ts
+          - tests/e2e/combat-vision.spec.ts
+          - tests/e2e/combat-tokens.spec.ts
+          - tests/e2e/sessions-live.spec.ts
+          - tests/e2e/notes-sharing.spec.ts
+        acceptance:
+          - "Every row of analysis section 4 marked H19 has a test; grep finds no reload() and no waitForTimeout in the three specs"
+          - "A failing live update is a test.fixme with a bead id (listed in the task doc)"
+          - "The three specs pass twice in a row; pnpm lint and pnpm typecheck pass"
+
+  # ---------------------------------------------------------------- wave 3: accessibility and tablet pass
+  - wave: 3
+    tracers:
+      - id: H20
+        title: Accessibility and tablet pass - entry flow, Settings, campaign shell and dashboards
+        size: M
+        goal: The title menu, Settings, frame select and intros, new and load campaign, join, sign-in, campaign shell and every frame's dashboard have zero serious or critical axe violations as GM (and player on the dashboard), and work at 768x1024 and 1024x768.
+        depends_on: [H1, H4, H17]
+        owns:
+          - src/app/(gm)/*.tsx
+          - src/app/(gm)/frames/**
+          - src/app/(gm)/new/**
+          - src/app/(gm)/join/**
+          - src/app/(gm)/campaigns/*.tsx
+          - src/app/signin/**
+          - src/app/(gm)/campaigns/[campaignId]/*.tsx
+          - src/app/(gm)/campaigns/[campaignId]/*.css
+          - src/app/(gm)/campaigns/[campaignId]/countdowns/**
+          - src/app/(gm)/campaigns/[campaignId]/trackers/**
+          - src/app/(gm)/campaigns/[campaignId]/[section]/**
+          - src/components/brand/**
+          - src/components/tome/**
+          - src/components/ui/**
+          - src/app/globals.css
+          - src/app/layout.tsx
+          - tests/e2e/a11y-entry.spec.ts
+          - docs/tasks/TASK-D12-H20.md
+        reads:
+          - tests/e2e/a11y.ts
+          - tests/e2e/live.ts
+          - reference/designs/project/TitleMenu.dc.html
+          - reference/designs/project/CampaignHub.dc.html
+          - docs/best-practices.md
+        acceptance:
+          - "a11y-entry.spec.ts: zero serious/critical axe violations on each route and open dialog of analysis section 5 (H20 list), all 11 frame dashboards as GM and Witherwild as player"
+          - "At 768x1024 and 1024x768: no horizontal scroll, campaign nav and each page's primary action visible, primary controls at least 44 px; screenshots saved to test-results/visual/D12-H20/"
+          - "Shared-primitive fixes reported by H21/H22 task docs are landed here; moderate/minor findings are listed in the task doc"
+          - "Visual and e2e specs touching these pages still pass; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H21
+        title: Accessibility and tablet pass - party, sheet, codex, world and adversaries
+        size: M
+        goal: The roster, wizard, sheet (with level-up and dice open), codex (lightbox open), world and adversaries pages have zero serious or critical axe violations as GM and as the player where they can open them, and work at both tablet sizes.
+        depends_on: [H1, H4]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/**
+          - src/app/(gm)/campaigns/[campaignId]/codex/**
+          - src/app/(gm)/campaigns/[campaignId]/world/**
+          - src/app/(gm)/campaigns/[campaignId]/adversaries/**
+          - src/components/party/**
+          - src/components/adversaries/**
+          - tests/e2e/a11y-party.spec.ts
+          - docs/tasks/TASK-D12-H21.md
+        reads:
+          - tests/e2e/a11y.ts
+          - tests/e2e/live.ts
+          - tests/e2e/visual/helpers.ts
+          - docs/best-practices.md
+        acceptance:
+          - "a11y-party.spec.ts: zero serious/critical axe violations on each route and dialog of analysis section 5 (H21 list); the WebGL dice canvas may be excluded with a reason"
+          - "At 768x1024 and 1024x768: no horizontal scroll, primary actions visible, primary controls at least 44 px; screenshots in test-results/visual/D12-H21/"
+          - "Findings in src/components/brand/** or ui/** are written in the task doc for H20, not edited here"
+          - "pnpm lint, pnpm typecheck and pnpm test pass; the party, codex, world and adversaries e2e specs still pass"
+      - id: H22
+        title: Accessibility and tablet pass - combat map, sprite packs, sessions and notes
+        size: M
+        goal: The combat map (GM editor, play mode and player view), sprite packs, sessions and notes pages have zero serious or critical axe violations as GM and player and work at both tablet sizes, reusing N9's notes axe checks.
+        depends_on: [H1, H4]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/combat-map/**
+          - src/app/(gm)/campaigns/[campaignId]/sessions/**
+          - src/app/(gm)/campaigns/[campaignId]/notes/**
+          - src/components/combat-map/**
+          - src/components/sessions/**
+          - src/components/notes/**
+          - tests/e2e/a11y-play.spec.ts
+          - docs/tasks/TASK-D12-H22.md
+        reads:
+          - tests/e2e/a11y.ts
+          - tests/e2e/live.ts
+          - tests/e2e/notes-a11y.spec.ts
+          - tests/e2e/visual/helpers.ts
+          - src/lib/combat-map/**
+          - docs/best-practices.md
+        acceptance:
+          - "a11y-play.spec.ts: zero serious/critical axe violations on each route and state of analysis section 5 (H22 list); the map canvas may be excluded with a reason, its controls may not"
+          - "At 768x1024 and 1024x768: the combat map tool rail stays usable, no horizontal page scroll, primary controls at least 44 px; screenshots in test-results/visual/D12-H22/"
+          - "Findings in src/components/brand/** or ui/** are written in the task doc for H20"
+          - "pnpm lint, pnpm typecheck and pnpm test pass; the combat, sprite, sessions and notes e2e specs still pass"
+
+  # ---------------------------------------------------------------- wave 4: docs
+  - wave: 4
+    tracers:
+      - id: H23
+        title: README, AGENTS, CLAUDE and testing docs match the app
+        size: S
+        goal: README describes the multi-user Convex app (stack, setup, env vars, commands, deploy); AGENTS.md and CLAUDE.md (binding blocks identical) name the wrappers, the authz matrix, the sweep, axe, tablet and live-update specs; docs/testing.md explains how to add a matrix entry.
+        depends_on: [H0, H2, H5, H6, H7, H8, H9, H10, H11, H12, H13, H14, H15, H16, H17, H18, H19, H20, H21, H22]
+        owns:
+          - README.md
+          - AGENTS.md
+          - CLAUDE.md
+          - docs/testing.md
+          - docs/best-practices.md
+          - docs/tasks/TASK-D12-H23.md
+        reads:
+          - .omc/autopilot/d12-analysis.md
+          - package.json
+          - convex/lib/functions.ts
+          - tests/convex/authz/harness.ts
+          - tests/e2e/a11y.ts
+          - tests/e2e/live.ts
+        acceptance:
+          - "README has no Supabase, PostgreSQL, RLS or 'single-user' text; its commands match AGENTS.md Build & Test; env vars match AGENTS.md Deployments"
+          - "AGENTS.md and CLAUDE.md binding blocks are byte-identical (diff in the task doc); the 'requireUser plus the campaign role check' and 'Visual design is pending' lines are replaced as analysis section 11 says"
+          - "docs/testing.md has a 'Authorization matrix' section (files, classes, okCodes, knownBug, adding an area file) and sections for the sweep, a11y-*.spec.ts with tablet sizes, live-*.spec.ts and the unit timeout policy"
+          - "docs/best-practices.md: only Enforced-by lines change (TE2, TE13, CL1); the Top 15 text is untouched"
+
+  # ---------------------------------------------------------------- wave 5: end to end
+  - wave: 5
+    tracers:
+      - id: H24
+        title: D12 end to end - pending list closed, full suite green twice, beads settled
+        size: S
+        goal: The matrix no longer accepts pending names, one flow proves sign-out protection, settings backup, a live GM-player update and a tablet axe check together, the full suite passes twice on rebuild, and the folded beads are closed with follow-ups filed.
+        depends_on: [H0, H1, H2, H3, H4, H5, H6, H7, H8, H9, H10, H11, H12, H13, H14, H15, H16, H17, H18, H19, H20, H21, H22, H23]
+        owns:
+          - tests/convex/authz-matrix.test.ts
+          - tests/convex/authz/harness.ts
+          - tests/e2e/d12-flow.spec.ts
+          - docs/design-port-roadmap.md
+          - docs/tasks/TASK-D12-H24.md
+        reads:
+          - tests/convex/authz/**
+          - tests/e2e/**
+          - .omc/autopilot/d12-analysis.md
+        acceptance:
+          - "The guard fails on any name in pending (pending support removed from harness.ts and the guard); every knownBug names an open bead"
+          - "d12-flow.spec.ts: signed-out redirect, GM backup round trip, player joins and sees a Fear change without reload, dashboard axe clean at 1024x768"
+          - "pnpm lint, pnpm typecheck, pnpm test, pnpm build and the full pnpm test:e2e pass twice in a row on rebuild (times recorded)"
+          - "docs/design-port-roadmap.md marks D12 done; beads dcm-bxp.21, .23, .29, .51, .57, .64, .79, .88 and dcm-t30 are closed with a note; dcm-bxp.11 is closed after the user confirms; knownBug, moderate a11y and backup option B follow-ups are filed as beads"

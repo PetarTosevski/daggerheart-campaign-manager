@@ -1,0 +1,80 @@
+// Built-in catalog: mountain and cliffs (docs/sprite-packs/prompts.md, grid order). Traits: D3 sight, D4 size, D5 height, Q1 light.
+
+import { defineFolder, long, obj, tex } from "./types";
+
+export const MOUNTAIN_AND_CLIFFS = defineFolder("mountain-and-cliffs", {
+  props: [
+    obj("loose rocks", "cover", "low", "rubble", { move: "difficult" }),
+    obj("mountain goat", "none", "low", "rock", { standIn: false }),
+    obj("cairn", "cover", "low", "rock", { standIn: false }),
+    obj("snowy rock", "cover", "low", "rock"),
+    obj("climbing rope with piton", "none", "flat", "rubble", { standIn: false }),
+    obj("cracked boulder", "cover", "low", "rock"),
+    obj("mountain shrub", "cover", "low", "bush"),
+    obj("eagle nest", "none", "flat", "bones", { standIn: false }),
+    obj("old campsite", "none", "flat", "rubble", { standIn: false }),
+    obj("broken pickaxe", "none", "flat", "bones", { standIn: false }),
+    obj("ice patch", "none", "flat", "rock", { move: "difficult", standIn: false }),
+    obj("crystal outcrop", "none", "low", "crystal", { light: "faintglow" }),
+    obj("bones of a climber", "none", "flat", "bones"),
+    obj("rope bridge anchor", "cover", "low", "log", { standIn: false }),
+    obj("lookout flag", "none", "tall", "pillar", { standIn: false }),
+    obj("tiny pine", "cover", "low", "bush", { variant: "pine" }),
+  ],
+  large: [
+    obj("cliff edge rock", "block", "tall", "boulder", { footprint: "rect" }),
+    obj("large boulder pair", "block", "tall", "boulder"),
+    obj("rock spire", "block", "tall", "boulder"),
+    obj("cave mouth", "block", "tall", "boulder", { standIn: false }),
+    obj("pine trees (pair)", "block", "tall", "tree", { variant: "pine" }),
+    obj("rockslide", "cover", "low", "rubble", { move: "difficult" }),
+    long("rope bridge (two squares)", "none", "flat", "log", { move: "open", standIn: false }),
+    obj("stone stair", "none", "low", "rubble", { move: "open", footprint: "rect", standIn: false }),
+    obj("giant's skull", "block", "tall", "bones", { standIn: false }),
+  ],
+  terrain: [
+    tex("rocky ground", "dirt", true),
+    tex("scree and gravel", "path", true),
+    tex("bare granite", "stone", true),
+    tex("alpine grass", "grass", true),
+  ],
+  // Batch 2 (docs/sprite-packs/batch-2.md, tracer P11A): new items, not variants. The dwarven lantern is a lantern
+  // (torch light, D2); the pass gate is a door (blocks while closed), 3 x 2; the rest 2 x 2.
+  extras: {
+    "props-2": [
+      obj("ram with curled horns", "none", "low", "rock", { standIn: false }),
+      obj("mountain lion", "none", "low", "rock", { standIn: false }),
+      obj("marmot", "none", "low", "rock", { standIn: false }),
+      obj("edelweiss patch", "none", "flat", "bush", { standIn: false }),
+      obj("slate slab", "none", "flat", "rock", { footprint: "rect", standIn: false }),
+      obj("dwarven rune stone", "block", "tall", "boulder", { standIn: false }),
+      obj("mine cart on rails", "cover", "low", "crate", { footprint: "rect", standIn: false }),
+      obj("abandoned tent", "block", "tall", "tent", { standIn: false }),
+      obj("climber's backpack", "none", "low", "crate", { standIn: false }),
+      obj("avalanche debris", "cover", "low", "rubble", { move: "difficult", standIn: false }),
+      obj("lichen-covered rock", "cover", "low", "rock", { standIn: false }),
+      obj("small waterfall pool", "none", "flat", "rock", { move: "difficult", standIn: false }),
+      obj("wind-bent juniper", "cover", "low", "bush", { variant: "green", standIn: false }),
+      obj("dwarven lantern", "none", "low", "torch", { light: "torch", standIn: false }),
+      obj("hawk perched on a rock", "cover", "low", "rock", { standIn: false }),
+      obj("line of prayer flags", "none", "low", "pillar", { standIn: false }),
+    ],
+    "large-2": [
+      obj("dwarven mountain-pass gate", "block", "tall", "door", { move: "door", footprint: "rect", w: 3, h: 2, standIn: false }),
+      obj("griffon nest", "cover", "low", "bones", { standIn: false }),
+      obj("waterfall over a cliff", "block", "tall", "boulder", { footprint: "rect", standIn: false }),
+      obj("timber-framed mine entrance", "block", "tall", "boulder", { footprint: "rect", standIn: false }),
+      obj("giant eagle", "cover", "tall", "rock", { standIn: false }),
+      obj("hot spring pool", "none", "flat", "rock", { move: "difficult", standIn: false }),
+      obj("monastery wall corner", "block", "tall", "pillar", { footprint: "rect", standIn: false }),
+      obj("giant dwarven statue head", "block", "tall", "statue", { standIn: false }),
+      obj("wooden scaffold walkway", "none", "low", "log", { move: "open", footprint: "rect", standIn: false }),
+    ],
+    "terrain-2": [
+      tex("slate ledge", "stone", false),
+      tex("mountain moss", "grass", true),
+      tex("rock with snow patches", "stone", true),
+      tex("frosty grass", "grass", true),
+    ],
+  },
+});

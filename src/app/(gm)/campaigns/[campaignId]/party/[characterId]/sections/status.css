@@ -1,0 +1,7 @@
+/* Styles for sections/status.tsx only (sheet redesign wave 2). Tokens and primitives: ../sheet.css, src/components/party/sheet-ui/. */
+/* A small paper row under a rule like the footer's (the board has no status box). */
+.st-row{display:flex;flex-direction:column;gap:10px;border-top:1px solid #cdb88f;padding-top:14px}
+.st-line{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px 14px}
+.st-pills{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.st-confirm{align-self:flex-end;display:flex;flex-direction:column;gap:10px;max-width:520px;padding:10px 14px;border-radius:8px;background:#fffaf0;border:1px dashed var(--sheet-gold,#c9962e)}
+@media (max-width:640px){.st-line{justify-content:flex-start}.st-confirm{align-self:stretch}}

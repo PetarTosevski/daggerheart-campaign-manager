@@ -1,0 +1,812 @@
+# D5 plan: level-up, dice and roll feed, Hope/class features, rests, death moves, Wither, equipment tiers, photo import.
+# Format: docs/workflow.md. Binding: docs/best-practices.md, AGENTS.md, docs/decisions-d3-d11.md ("D5 decisions (defaults,
+#   2026-10-18)" and "Rules settled from the books"), which override .omc/autopilot/d5-spec.md wherever they differ.
+#
+# Extra keys per tracer (plan-check ignores them): title, size (S | M | L), timing:
+#   core       = D5 gameplay; starts as soon as its depends_on are merged.
+#   polish     = can slip to the end of D5 without blocking anything (3D dice).
+#   end-of-D5  = built last on purpose (photo import, decision "build at end of D5").
+# Book pages: CB = Core Book (printed page = PDF page), HF = Hope & Fear interactive PDF page. Each tracer re-checks the text
+#   of the pages it cites (.reference-private/, extract with pdfjs-dist, never commit the books) and quotes them in its task doc.
+# Every tracer also owns docs/tasks/TASK-D5-<id>.md. The orchestrator updates docs/data-model.md at merge time from the
+#   tracer's report, regenerates convex/_generated, and closes beads (dcm-mf7, dcm-bxp.13, dcm-bxp.14) after the user confirms.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below); sheet folder = C/party/[characterId].
+#
+# Rules for every tracer (part of every acceptance list, not repeated):
+#   - Every new public function is built with the wrappers in convex/lib/functions.ts (userQuery/userMutation/
+#     keyedUserMutation/campaignQuery/gmQuery/keyedGmMutation/userAction), authorizes only through permissionFor (campaign
+#     wrappers' `need`, or loadCharacter(ctx, ctx.user, id, need) from convex/lib/characterSheet.ts), and declares `args` and
+#     `returns` validators with no v.any() (tests/convex/schema-guard.test.ts: RETURNS_PENDING only shrinks, so new
+#     mutations need `returns` too).
+#   - Its own Convex test covers anonymous, outsider, player and GM for each new function (H25 folds them into
+#     tests/convex/authz-matrix.test.ts after D5) and asserts ConvexError.data.code, never message text.
+#   - Server-enforced visibility: GM free rolls are visible only to the GM until revealed; player character rolls are public.
+#     Characters that are dead, away (Castle High) or unconscious cannot roll or use features (decision 9): the server
+#     refuses with CHARACTER_UNAVAILABLE, and the UI disables the buttons.
+#   - Every automated state change writes an actionLog row through convex/lib/actionLog.ts, and is undoable unless the
+#     tracer's acceptance says otherwise. Fear gained goes through gainFear (convex/lib/fear.ts), so `history` keeps the
+#     Fear trail, and undo goes through revertFear.
+#   - A new error code goes into the tracer's own src/lib/errors/<domain>.ts (`as const`); T0 wires those modules into
+#     AppErrorCode and src/lib/convex-errors.ts, so no tracer after T0 edits either file.
+#   - A sheet field T0 did not add means stop and report to the orchestrator; only T0 (wave 1) and T9 (wave 3) edit
+#     src/lib/validation/characters.ts.
+#   - pnpm lint (zero warnings in convex/), pnpm typecheck, pnpm test and the tracer's own e2e spec pass in its worktree.
+#
+# Shared files: package.json, pnpm-lock.yaml, convex/convex.config.ts, convex/schema.ts, convex/lib/functions.ts
+#   (RATE_LIMITS), src/lib/convex-errors.ts, src/lib/errors/app-error.ts and tests/convex/schema-guard.test.ts belong to T0
+#   only. eslint.config.mjs needs no D5 change; if a tracer finds it does, the orchestrator edits it at merge.
+# Hotspots and how T0 defuses them:
+#   - Sheet page files: T0 mounts one slot component per feature in sheet.tsx and page-one.tsx; each slot is a stub in
+#     src/components/party/<feature>/ that receives typed SlotProps (src/components/party/slots.ts: campaignId, character
+#     view, canEdit, isGm, hopeAndFear), so feature tracers own only their folder. After T0, page-one.tsx and page-three.tsx
+#     belong to T6 alone (equipment picker, subclass ranks) and damage-calculator.tsx to T5 alone (Withered source).
+#   - Dashboard (C/page.tsx), party card (src/components/party/party-card.tsx) and roster (C/party/page.tsx, roster.tsx):
+#     T0 mounts the roll feed, rest launcher, session buttons, card badges, "Party levels up" and photo-import slots once.
+#   - convex/characters.ts: T0 moves readSheet/storedSheet/saveSheet/loadCharacter/editable into
+#     convex/lib/characterSheet.ts; after that only T5 (wave 2, applyDamage) and T9 (wave 3, Motherboard draft, moveCard)
+#     edit characters.ts.
+#   - Class features: T0 creates the hook contract (src/lib/domain/class-features/types.ts, hooks.ts, empty registry in
+#     index.ts). Dice, rests and sessions call the hooks; T8a fills the registry with 13 class files; T8b and T8c each own
+#     a disjoint set of class files.
+#
+# Changed or dropped from .omc/autopilot/d5-spec.md because of the hardening work:
+#   1. Package 0's `characterLog` becomes `actionLog`, a table of its own, NOT an extension of `history`, because:
+#      (a) `history` is a GM-only audit trail (history.list is a gmQuery) of Fear, countdowns and time, while the feed is
+#      read by players and needs a per-row visibility (GM free rolls hidden) with its own index; (b) undo needs sheet
+#      snapshots and roll dice, which do not belong in history's small typed before/after union; (c) every roll writes a
+#      row, so the feed's volume would swamp the audit trail. Fear changes made by rolls, rests or undo still write
+#      `history` rows through gainFear/revertFear. GM free rolls have no characterId, so the table is not named per character.
+#   2. The spec's untyped `payload` and `before` become a typed `roll` object plus `summary`, and `before` is the stored
+#      sheet serialized as a string, restored through readSheet, so a later SHEET_VERSION bump cannot invalidate old log
+#      rows (a v.object snapshot would fail schema validation of existing rows on the next narrow).
+#   3. `levelHistory[].before` snapshots are dropped: the sheet keeps a small `advancements` list (at most 9) and
+#      level undo inverts the latest advancement (dcm-mf7), so rolls made after the level-up are not reverted.
+#   4. The `rests.picks` map keyed by character id becomes a `restChoices` table (CD6: ids are fields, never keys; CD10:
+#      each player writes their own row). `campaignState.shortRestsSinceLong` is dropped; it is derived from the `rests`
+#      index.
+#   5. `classState` discriminated per class becomes generic sheet lists with an `until` field (`effects`, `heldDice`,
+#      `featureUses`) plus a small flat `classState`, so rests and session end expire them through one pure function
+#      (src/lib/domain/characters/expiry.ts) without class-specific code.
+#   6. `curses` (Weredragon) is dropped from D5; the Weredragon tracker owns curses.
+#   7. `convex/lib/characterAccess.ts` is named convex/lib/characterSheet.ts; loadCharacter already authorizes through
+#      permissionFor since H11. The `validateEquipment` extraction is dropped: T6 is the only page-one editor in wave 2.
+#   8. `@anthropic-ai/sdk` is dropped: the photo-import action calls the Messages API with fetch (no new dependency, CH11).
+#   9. The spec's wave-3 "integration agent" is dissolved: each tracer owns its e2e spec, the orchestrator runs the full
+#      suite after each wave, and closes beads at merge.
+#  10. Advantage follows the settled rule (cancel one for one, then a single d6; Help an Ally adds dice and keeps the
+#      highest), not the spec's "up to 3 dice".
+#  11. Simplified, with follow-up beads filed by the tracer: Blaze of Glory records a narrated critical success and then
+#      death (no auto-crit flag inside the dice box); Druid Evolution is an effect with an End button (no beastform-panel
+#      link); Age of Umbra's Strength of Hate damage bonus is deferred (its last-slot scar uses the journey-ends flag,
+#      labelled "succumbed"); rest undo restores sheets and Fear only, while countdown ticks and frame-tracker changes
+#      keep their own history and controls.
+#  12. Added: moveCard's `duringRest` flag is client-trusted today; T9 checks it against the open rest.
+# Open questions (none block the plan):
+#   - actionLog grows with play and its `before` snapshots are the bulk. It is campaign-scoped like `history`; whether to
+#     strip snapshots older than 7 days by cron is a follow-up decision (T0 files a bead).
+#   - Horizon questions (dcm-bxp.20) stay open; T3b implements only the book's rest rules for Horizon (HF 176-179).
+plan: d5
+waves:
+  # ---------------------------------------------------------------- wave 1: foundation
+  - wave: 1
+    tracers:
+      - id: T0
+        foundation: true
+        title: D5 foundation (tables, sheet fields, action log and undo, hook contract, slots, error modules)
+        timing: core
+        size: L
+        goal: The D5 tables, optional sheet fields, the action log with undo, the class-feature hook contract, per-domain error modules and empty mount slots on the sheet, dashboard, party card and roster exist, and every existing page and test behaves as before.
+        depends_on: []
+        owns:
+          - package.json
+          - pnpm-lock.yaml
+          - convex/convex.config.ts
+          - convex/schema.ts
+          - convex/lib/functions.ts
+          - convex/tables/actionLog.ts
+          - convex/tables/rests.ts
+          - convex/tables/characters.ts
+          - convex/tables/campaigns.ts
+          - convex/tables/files.ts
+          - convex/lib/validators/characters.ts
+          - convex/lib/validators/actionLog.ts
+          - convex/lib/validators/rests.ts
+          - convex/lib/characterSheet.ts
+          - convex/characters.ts
+          - convex/lib/actionLog.ts
+          - convex/actionLog.ts
+          - convex/lib/fear.ts
+          - convex/cleanup.ts
+          - src/lib/validation/characters.ts
+          - src/lib/domain/characters/index.ts
+          - src/lib/domain/characters/expiry.ts
+          - src/lib/domain/characters/effects.ts
+          - src/lib/domain/duality.ts
+          - src/lib/domain/class-features/types.ts
+          - src/lib/domain/class-features/hooks.ts
+          - src/lib/domain/class-features/index.ts
+          - src/lib/frames/index.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/convex-errors.ts
+          - src/lib/errors/actionLog.ts
+          - src/lib/errors/dice.ts
+          - src/lib/errors/levelUp.ts
+          - src/lib/errors/rests.ts
+          - src/lib/errors/death.ts
+          - src/lib/errors/wither.ts
+          - src/lib/errors/classFeatures.ts
+          - src/lib/errors/photoImport.ts
+          - src/components/party/slots.ts
+          - src/components/party/dice/
+          - src/components/party/level-up/
+          - src/components/party/features/
+          - src/components/party/rest/
+          - src/components/party/death/
+          - src/components/party/wither/
+          - src/components/party/session/
+          - src/components/party/import/
+          - src/components/party/party-card.tsx
+          - src/app/(gm)/campaigns/[campaignId]/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/roster.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-one.tsx
+          - tests/convex/schema-guard.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/convex/action-log.test.ts
+          - tests/unit/sheet-d5-fields.test.ts
+          - tests/unit/expiry-effects.test.ts
+          - tests/unit/convex-errors.test.ts
+          - docs/tasks/TASK-D5-T0.md
+        reads:
+          - .omc/autopilot/d5-spec.md
+          - docs/decisions-d3-d11.md
+          - convex/lib/permissions.ts
+          - convex/lib/blobs.ts
+          - convex/lib/dice.ts
+          - convex/lib/mechanics.ts
+          - convex/tables/history.ts
+          - convex/history.ts
+          - tests/convex/helpers.ts
+          - tests/e2e/character-sheet.spec.ts
+          - tests/e2e/dashboard.spec.ts
+          - tests/e2e/party-roster.spec.ts
+        acceptance:
+          - "Dependencies: three@0.160.0, cannon-es@0.20.0 and @types/three (matching 0.160) are installed under minimumReleaseAge; nothing imports them yet"
+          - "convex.config.ts declares ANTHROPIC_API_KEY and ANTHROPIC_MODEL as optional env; RATE_LIMITS gains `roll` (token bucket, 60 per minute, capacity 120) and `photoImport` (10 per hour, decision 14: one call per click)"
+          - "convex/tables/actionLog.ts: actionLog {campaignId, characterId?, actorId, kind (roll|gmRoll|feature|levelUp|rest|death|wither|session|import), visibility (public|gm), summary <= 300 chars, roll? (typed: kind action|reaction|damage|free, dice [{sides, value, role hope|fear|advantage|disadvantage|help|extra|damage, dropped?}], modifier, total, difficulty?, outcome critical|successHope|successFear|failHope|failFear|none, manual), groupId?, before? (stored sheet as a string), fearDelta?, undoable, undoneAt?, undoneBy?, at}; indexes by_campaign_at [campaignId, at] (GM feed, purge), by_campaign_visibility_at [campaignId, visibility, at] (player feed), by_character_at [characterId, at] (undo, character feed), by_campaign_group [campaignId, groupId] (group undo)"
+          - "convex/tables/rests.ts: rests {campaignId, kind short|long, status open|finished|interrupted, startedBy, startedAt, finishedAt?, gmOverride?, fearRoll?, fearGained?, groupId?} with by_campaign_status_started [campaignId, status, startedAt] (the open rest) and by_campaign_started [campaignId, startedAt] (short rests since the last long rest); restChoices {campaignId, restId, characterId, moves (at most 2: move literal, targetId?, countdownId?), updatedBy, updatedAt} with by_rest_character [restId, characterId] and by_campaign [campaignId]"
+          - "characters.status widens with `away` plus optional `away: {reason infirmary|sentHome, note?}` (HF 127); characters.setStatus args keep active|dead|retired; files.kind widens with `photoImport`; campaignState gains optional `sessionStartedAt` (temporary until D9, decision 12)"
+          - "schema.ts composes the new tables; schema-guard classifies actionLog, rests and restChoices as campaign-scoped, and convex/cleanup.ts purges them by campaignId index (cleanup test proves it); no prefix-duplicate index"
+          - "Sheet fields, all optional or defaulted so stored version-2 sheets parse unchanged (no SHEET_VERSION bump) and mirrored in sheetValidator: hopeSlotBonus 0..1 (hope max widens to 7, dcm-bxp.14), subclassRank foundation|specialization|mastery (CB 110), multiclass? {classId, domainId, subclassId} (CB 110-111), advancements (at most 9: level, picks, cardId, tradeOut?, tradeIn?, experienceId?), levelUpPending, conditions (vulnerable|restrained|hidden|cloaked|unconscious|distracted), effects (at most 20: id, source, text, until rest|longRest|session|hit|scene|manual, mods? evasion|attack|damage|trait), heldDice (at most 20: id, kind rally|prayer|patron|combo, sides, value?, until session|longRest|manual, fromCharacterId?), featureUses (at most 20: key, until rest|longRest|session), classState (flat optional fields from the spec's section C table), wither (0..99, no per-PC cap, CB 261), journeyEnds (CB 106)"
+          - "tests/unit/sheet-d5-fields.test.ts: a stored version-2 sheet without the new fields parses with their defaults, round-trips through storedSheet, and passes characterViewValidator"
+          - "Domain: hopeMax = 6 + hopeSlotBonus - scars and applyResourceDelta caps Hope at it (CB 20 Hope slots; dcm-bxp.14); clearing a Hit Point removes `unconscious` (CB 106, Avoid Death); expiry.ts expire(sheet, shortRest|longRest|session|hit) removes effects, heldDice and featureUses by `until` (CB 105 rests refresh rest features); effects.ts withEffects(sheet) adds effect mods to evasion, attack and traits without changing base stats; duality.ts dualityOutcome(hope, fear) gives critical on matching dice, else hope or fear by the higher die (CB 94-95)"
+          - "Class-feature contract (types.ts, hooks.ts, empty registry): rollOptions(sheet, kind), weaponOverrides(sheet), afterDualityRoll(sheet, result) prompts, onRest(sheet, kind), onSessionStart(sheet, rng), onSessionEnd(sheet), hopeFeature and classActions metadata; hooks.ts returns no-op defaults for a class without a registry entry (unit test)"
+          - "src/lib/frames/index.ts adds the exclusive mechanic `witherTokens` to Witherwild (CB 261)"
+          - "convex/lib/characterSheet.ts holds readSheet, storedSheet, saveSheet, loadCharacter, editable and assertCanAct (CHARACTER_UNAVAILABLE for dead, away or unconscious); convex/characters.ts imports them, its behaviour is unchanged, and the existing characters and character-intents tests pass"
+          - "convex/lib/actionLog.ts logAction(...) and undoEntry(...); convex/actionLog.ts `undo` (keyedUserMutation, returns validator): the actor or the GM undoes a row only while it is the latest un-undone undoable row of each character in its group (else UNDO_STALE); it restores each `before` through readSheet, reverts fearDelta through revertFear (floor 0, history action \"undo\") and sets undoneAt"
+          - "tests/convex/action-log.test.ts: undo happy path, stale row, Fear floor at 0, group undo across two characters, a player cannot undo another player's row or a GM row, and anonymous/outsider/player/GM results"
+          - "Error modules (as const): actionLog (UNDO_STALE, CHARACTER_UNAVAILABLE), dice, levelUp, rests, death, wither, classFeatures, photoImport, each with at least its *_RULE code; AppErrorCode includes keyof each module and convex-errors merges them (convex-errors unit test: no code defined twice)"
+          - "Slots: stub components that render nothing, one per folder (dice: sheet dice box + dashboard roll feed; level-up: sheet button, card badge, roster badge, party button; features: sheet panel; rest: sheet picker, dashboard launcher; death: sheet modal, card badge; wither: sheet counter, card badge; session: dashboard buttons; import: roster button), mounted in sheet.tsx, page-one.tsx, C/page.tsx, party-card.tsx, C/party/page.tsx and roster.tsx with typed SlotProps; page-one shows Hope max with hopeSlotBonus and evasion through withEffects; an `away` status shows a badge on the sheet"
+          - "tests/e2e/character-sheet.spec.ts, tests/e2e/dashboard.spec.ts and tests/e2e/party-roster.spec.ts pass unchanged"
+          - "Bead filed for the actionLog snapshot-retention open question"
+
+  # ---------------------------------------------------------------- wave 2: the core features, in parallel
+  - wave: 2
+    tracers:
+      - id: T1
+        title: Server dice, manual entry and the roll feed (2D)
+        timing: core
+        size: L
+        goal: A player rolls Duality or damage dice from the sheet (or types in physical dice, marked manual), the server rolls and applies Hope, Fear, crits and Stress, every member sees the roll in the dashboard feed, GM free rolls stay hidden until revealed, and the roller or GM can undo.
+        depends_on: [T0]
+        owns:
+          - convex/rolls.ts
+          - convex/feed.ts
+          - src/lib/domain/dice/
+          - src/components/party/dice/
+          - src/lib/errors/dice.ts
+          - tests/unit/dice.test.ts
+          - tests/convex/rolls.test.ts
+          - tests/convex/feed.test.ts
+          - tests/e2e/dice.spec.ts
+          - docs/tasks/TASK-D5-T1.md
+        reads:
+          - convex/lib/dice.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/characterSheet.ts
+          - convex/lib/fear.ts
+          - src/lib/domain/duality.ts
+          - src/lib/domain/characters/effects.ts
+          - src/lib/domain/class-features/hooks.ts
+          - src/lib/srd/index.ts
+          - src/lib/frames/extras/common.ts
+          - src/components/party/slots.ts
+        acceptance:
+          - "Pure resolver (injectable RNG) in src/lib/domain/dice: 2d12 + trait + modifiers against Difficulty; matching dice = critical success, +1 Hope and clear 1 Stress; Hope higher = +1 Hope; Fear higher = GM +1 Fear (CB 94-95); Hope capped at hopeMax"
+          - "An Experience costs 1 Hope and adds its value, also on reaction rolls (CB 90; settled rule); reaction rolls give no Hope or Fear and allow no help (CB 99); advantage and disadvantage cancel one for one to a single d6, Help an Ally adds advantage dice and keeps the highest (CB 100); crit damage = maximum dice value + the roll (CB 98); weapon damage rolls Proficiency-many weapon dice (CB 109 Proficiency) plus hook weaponOverrides and rollOptions"
+          - "rolls.actionRoll, rolls.damageRoll and rolls.manualRoll (keyedUserMutation, rateLimit roll, loadCharacter edit, assertCanAct): server dice from convex/lib/dice.ts (manual rows store typed values and are marked manual), Fear through gainFear, one public actionLog row with before and fearDelta, returns the roll"
+          - "rolls.tagTeam: 3 Hope, once per session per player (featureUses key tagTeam until session), two rolls and one result for both; with Hope every involved PC gains Hope, with Fear the GM gains 1 Fear per involved PC (CB 97); logged on both characters in one group"
+          - "rolls.gmRoll (keyedGmMutation) writes a visibility gm row; rolls.reveal (gmMutation) makes it public; feed.list (campaignQuery need view, enough owner, paginated, returns union) serves players only by_campaign_visibility_at public and the GM by_campaign_at; feed.test proves a player's direct API call never returns a gm row"
+          - "UI: the dice box in the sheet slot (trait, modifier, Difficulty, Experience, advantage and disadvantage steppers, reaction, damage with crit), hook prompts from afterDualityRoll rendered generically, the roll feed on the dashboard with Undo for the roller and the GM, a per-device 3D toggle and sound saved in localStorage (try/catch), and an animation seam dice/dice3d/index.ts that T1b fills (no three import in T1)"
+          - "tests/unit/dice.test.ts covers the outcome matrix; tests/convex/rolls.test.ts: a player's Fear roll raises GM Fear, a reaction roll does not, undo reverts Hope, Stress and Fear, an unconscious character gets CHARACTER_UNAVAILABLE"
+          - "tests/e2e/dice.spec.ts: a player rolls from the sheet and GM and player see it in the feed; a GM free roll is hidden from the player until revealed; a manual entry shows \"manual\"; undoing a Fear roll lowers GM Fear"
+      - id: T2
+        title: Level-up engine and stepper, including dcm-mf7
+        timing: core
+        size: L
+        goal: After the GM flags the party, each owner levels up their character through a stepper with two picks per level, achievements, trait marks, domain card and optional trade, can undo the latest level repeatedly, and the GM can correct a level directly.
+        depends_on: [T0]
+        owns:
+          - convex/levelUp.ts
+          - src/lib/domain/level-up/
+          - src/components/party/level-up/
+          - src/lib/errors/levelUp.ts
+          - tests/unit/level-up.test.ts
+          - tests/convex/level-up.test.ts
+          - tests/e2e/level-up.spec.ts
+          - docs/tasks/TASK-D5-T2.md
+        reads:
+          - convex/lib/characterSheet.ts
+          - convex/lib/actionLog.ts
+          - src/lib/domain/characters/index.ts
+          - src/lib/srd/index.ts
+          - src/lib/srd/domain-cards.ts
+          - src/lib/srd/subclasses.ts
+          - src/components/party/slots.ts
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Pure engine (src/lib/domain/level-up): availableOptions, validateLevelUp, applyLevelUp and revertLevelUp; achievements at levels 2, 5 and 8 give a new Experience at +2 and +1 Proficiency, and marks clear at 5 and 8 (CB 110)"
+          - "Two picks per level from the current or a lower tier; slot counts per tier: traits x3, HP x2, Stress x2, Experiences x1, domain card x1, Evasion x1, plus at tiers 3-4 upgraded subclass x1, Proficiency x1 and multiclass x1; Proficiency and multiclass take both picks (CB 110; settled rule)"
+          - "dcm-mf7: the trait option takes exactly two distinct unmarked traits, adds +1 to each and marks them with the current tier; marked traits are disabled in later picks; marks clear on reaching level 5 and 8; revertLevelUp removes the bonus and the marks (CB 110)"
+          - "Domain card option and the level's card: level or lower from the class domains, up to level 4 in tier 2 and 7 in tier 3; the multiclass domain up to half the level rounded up; optional trade of one card for one of equal or lower level (CB 110-111; settled rule)"
+          - "Upgraded subclass moves subclassRank foundation -> specialization -> mastery and crosses out that tier's multiclass; multiclass from level 5, once, class feature only (no second Hope feature), crosses out mastery and the other multiclass option (CB 110-111; settled rule)"
+          - "levelUp.apply (keyedUserMutation, loadCharacter edit; requires levelUpPending unless the caller is GM) raises the level by one, appends one advancement and clears the flag; levelUp.undoLast (owner or GM) reverts the latest advancement and is repeatable (decision 4); levelUp.correctLevel (GM) sets the level with no automation; levelUp.partyLevelUp (keyedGmMutation) flags every active, non-away character (decision 5, CB 109); each writes a public actionLog row with undoable false (level undo is its own path)"
+          - "UI: stepper in the level-up slot (achievements, two picks, pickers, card and trade, summary), the tier grid as read-only history (board :1949), a pending badge on the party card and roster, and the GM \"Party levels up\" button"
+          - "tests/unit/level-up.test.ts: every option applies and reverts exactly, joined options, marks clear at 5 and 8, multiclass crossing out, card caps; tests/convex/level-up.test.ts: owner without the flag is refused with LEVEL_UP_RULE, the GM is not, undo restores the previous sheet fields"
+          - "tests/e2e/level-up.spec.ts: the GM flags the party, the player levels to 2 picking the trait option for two traits, the sheet shows +1 and marks, and Undo returns to level 1"
+      - id: T3
+        title: GM-run party rests and downtime moves
+        timing: core
+        size: L
+        goal: The GM starts a short or long party rest, each player picks two downtime moves on their sheet, and the GM finishes it, applying the moves with server dice, rest Fear, effect expiry and the class hooks, with a block on the fourth short rest and undo.
+        depends_on: [T0]
+        owns:
+          - convex/rests.ts
+          - convex/lib/restHooks.ts
+          - src/lib/domain/rest/
+          - src/components/party/rest/
+          - src/lib/errors/rests.ts
+          - tests/unit/rest.test.ts
+          - tests/convex/rests.test.ts
+          - tests/e2e/rest.spec.ts
+          - docs/tasks/TASK-D5-T3.md
+        reads:
+          - convex/lib/characterSheet.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/fear.ts
+          - convex/lib/dice.ts
+          - convex/countdowns.ts
+          - convex/tables/countdowns.ts
+          - src/lib/domain/countdowns/index.ts
+          - src/lib/domain/characters/expiry.ts
+          - src/lib/domain/class-features/hooks.ts
+          - src/components/party/slots.ts
+        acceptance:
+          - "Short rest: two moves, repeats allowed: Tend to Wounds, Clear Stress and Repair Armor each 1d4 + tier (Wounds and Armor may target an ally), Prepare +1 Hope or +2 Hope each when Preparing together; long rest: Tend to All Wounds, Clear All Stress, Repair All Armor, Prepare, Work on a Project (CB 105)"
+          - "Free domain-card swaps are offered while the rest is open (CB 105, moveCard duringRest); an interrupted short rest gives nothing and an interrupted long rest gives short-rest benefits (CB 105)"
+          - "At most three short rests before a long rest: rests.start refuses the fourth with REST_RULE unless the GM passes override (CB 105; decision 17); the count comes from rests.by_campaign_started"
+          - "rests.finish (keyedGmMutation): server dice, moves applied, expire(shortRest|longRest), hooks.onRest, unconscious characters wake on a long rest (CB 106), GM Fear +1d4 (short) or +1d4 + active non-away PCs (long) through gainFear (CB 105; HF 127 away PCs excluded), convex/lib/restHooks.ts called for frame hooks (empty list until T3b), one actionLog row per PC plus a campaign row in one group"
+          - "rests.current (campaignQuery need view, returns validator), rests.start / rests.interrupt / rests.undo (GM, undo restores every sheet and the Fear through the group), rests.choose (keyedUserMutation, loadCharacter edit, writes only that character's restChoices row; away, dead and unconscious characters are refused); no solo rests (decision 10)"
+          - "Work on a Project: pick or create a Progress Countdown owned by the character (ownerKey = characterId) and tick it through the countdown helpers, or mark \"GM asks for a roll\", which opens the dice box (CB 105; decision 18); rest undo does not revert the tick (plan note 11)"
+          - "tests/unit/rest.test.ts: moves at tiers 1-4, ally targets, Prepare together, interruption; tests/convex/rests.test.ts: the fourth short rest, Fear for short and long with an away PC, a player choosing for another player's character is FORBIDDEN, undo"
+          - "tests/e2e/rest.spec.ts: the GM starts a short rest, the player picks Clear Stress twice, the GM finishes, Stress drops and GM Fear rises"
+      - id: T4
+        title: Death moves, scars and Castle High away
+        timing: core
+        size: M
+        goal: When a character marks their last Hit Point the sheet asks for a death move (Blaze of Glory, Avoid Death, Risk It All) resolved with server dice, scars and the journey-ends flag follow the book, and in Castle High with less-lethal on, death sends the character away until the GM returns them.
+        depends_on: [T0]
+        owns:
+          - convex/deathMoves.ts
+          - src/lib/domain/death/
+          - src/components/party/death/
+          - src/lib/errors/death.ts
+          - tests/unit/death.test.ts
+          - tests/convex/death-moves.test.ts
+          - tests/e2e/death.spec.ts
+          - docs/tasks/TASK-D5-T4.md
+        reads:
+          - convex/lib/characterSheet.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/dice.ts
+          - convex/lib/fear.ts
+          - src/lib/domain/duality.ts
+          - src/lib/frames/options.ts
+          - src/components/party/slots.ts
+        acceptance:
+          - "deathMoves.choose (keyedUserMutation, loadCharacter edit) is allowed only when hp equals hpMax and the character is active (CB 106); otherwise DEATH_MOVE_RULE"
+          - "Blaze of Glory: logs one narrated critical success, then deathMoves.finishBlaze sets the character dead (CB 106; plan note 11)"
+          - "Avoid Death: adds `unconscious` (cleared when an ally clears a Hit Point or on a long rest); the server rolls the Hope Die and a result at or below the level adds a scar; scarring the last Hope slot sets journeyEnds, shown to the GM (CB 106; settled rule)"
+          - "Risk It All: Hope Die higher clears Hit Points and Stress totalling its value, split by the player; Fear Die higher means death; matching dice clear all Hit Points and Stress (CB 106)"
+          - "Dying with Wither tokens adds \"taken by the Witherwild\" to the log summary (CB 261)"
+          - "Castle High less-lethal (option lessLethal on): death becomes status away {reason infirmary|sentHome} instead of dead (HF 127); deathMoves.returnFromAway is GM only (loadCharacter owner); away characters are left out of rests and Fear counts (settled rule)"
+          - "Every death move writes an undoable actionLog row; manual kill and revive through characters.setStatus stay (decision)"
+          - "UI: the death-move modal on the sheet opens when hp equals hpMax; unconscious, away and journey-ends badges on the sheet and party card"
+          - "tests/unit/death.test.ts covers each move's outcomes; tests/convex/death-moves.test.ts covers the scar roll, less-lethal away, return by the GM only, and undo"
+          - "tests/e2e/death.spec.ts: a character at full Hit Points picks Avoid Death and shows Unconscious; clearing one Hit Point removes it"
+      - id: T5
+        title: Wither tokens and temporary Start/End session buttons
+        timing: core
+        size: M
+        goal: In Witherwild, Severe damage from a Withered source adds a Wither token and rolls the Fear Die for a scar, the GM can adjust tokens, and the GM's temporary Start and End session buttons run the session hooks and convert Wither to Fear.
+        depends_on: [T0]
+        owns:
+          - convex/wither.ts
+          - convex/sessions.ts
+          - convex/characters.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/damage-calculator.tsx
+          - src/lib/domain/wither/
+          - src/components/party/wither/
+          - src/components/party/session/
+          - src/lib/errors/wither.ts
+          - tests/unit/wither.test.ts
+          - tests/convex/wither.test.ts
+          - tests/convex/sessions.test.ts
+          - tests/e2e/wither.spec.ts
+          - docs/tasks/TASK-D5-T5.md
+        reads:
+          - convex/lib/characterSheet.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/fear.ts
+          - convex/lib/dice.ts
+          - convex/lib/mechanics.ts
+          - src/lib/domain/characters/expiry.ts
+          - src/lib/domain/class-features/hooks.ts
+          - src/components/party/slots.ts
+        acceptance:
+          - "characters.applyDamage gains optional `withered`; on Severe damage with the witherTokens mechanic it adds one token and rolls the Fear Die (d12) publicly; a roll at or below the tokens adds a scar and clears the tokens, and scarring the last Hope slot sets journeyEnds (CB 261; settled rule); the rest of applyDamage is unchanged"
+          - "wither.gain and wither.adjust (GM, keyed) are gated by assertMechanicEnabled(witherTokens) and write undoable actionLog rows; no per-PC cap, the pool of 20 is shown for reference (decision)"
+          - "sessions.start (keyedGmMutation) sets sessionStartedAt and runs hooks.onSessionStart for every active PC (Prayer Dice arrive with T8b); sessions.end (keyedGmMutation, idempotent) converts every PC's tokens to GM Fear capped at 12 and reports \"N Fear lost\" (CB 261; decision), runs expire(session) and hooks.onSessionEnd, lists journey-ends characters for the GM, and writes one undoable group; sessions.current (campaignQuery need view) returns validator"
+          - "UI: a Withered source checkbox in the damage calculator, Wither counters on the sheet and party card, and Start/End session buttons with a confirm on the GM dashboard (decision 12)"
+          - "tests/unit/wither.test.ts: the Fear Die threshold and token clearing; tests/convex/wither.test.ts: gated outside Witherwild with MECHANIC_DISABLED, Severe adds a token and Minor does not; tests/convex/sessions.test.ts: end converts tokens with the cap and is idempotent, undo restores tokens and Fear, players are FORBIDDEN"
+          - "tests/e2e/wither.spec.ts: in a Witherwild campaign, Severe damage with Withered source shows a token; the GM ends the session and GM Fear rises by the token count"
+      - id: T6
+        title: Tiered equipment, subclass ranks and the multiclass view
+        timing: core
+        size: M
+        goal: Tier 2-4 weapons and armor are in the SRD lookups and the sheet's picker filters them by tier, page three shows the specialization and mastery text the subclass rank unlocks and the multiclass class and domain, and always-on numeric subclass bonuses reach the derived values.
+        depends_on: [T0]
+        owns:
+          - src/lib/srd/index.ts
+          - src/lib/domain/characters/derived.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-one.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-three.tsx
+          - tests/unit/srd-equipment-tiers.test.ts
+          - tests/unit/derived.test.ts
+          - tests/e2e/equipment-tiers.spec.ts
+          - docs/tasks/TASK-D5-T6.md
+        reads:
+          - src/lib/srd/equipment-tiers.ts
+          - src/lib/srd/equipment.ts
+          - src/lib/srd/subclasses.ts
+          - src/lib/srd/classes.ts
+          - convex/characters.ts
+          - src/lib/domain/characters/effects.ts
+        acceptance:
+          - "TIERED_WEAPONS and TIERED_ARMOR are merged into WEAPONS and ARMOR in src/lib/srd/index.ts, so getWeapon and getArmor resolve every tier (CB 112-123 weapon and armor tables; tiers by level, CB 109); ids stay unique (srd test)"
+          - "The page-one picker lists items of the character's tier or lower, matching the server's assertEquipment; page-one stays under 800 lines (CH9)"
+          - "Page three shows the specialization and mastery features once subclassRank reaches them (CB 110), and the multiclass class feature, domain and foundation card when set (CB 110-111)"
+          - "derived.ts applies always-on numeric subclass bonuses, for example Stalwart's threshold bonuses (CB 36-37, Guardian subclasses); other subclass features stay text (decision 11; follow-up bead filed)"
+          - "tests/unit/derived.test.ts covers the Stalwart bonus at each rank; tests/unit/srd-equipment-tiers.test.ts covers the merged lookups"
+          - "tests/e2e/equipment-tiers.spec.ts: a level-5 character can pick a tier-3 weapon and a level-1 character cannot see it"
+      - id: T8a
+        title: Hope features for all 13 classes and the features panel
+        timing: core
+        size: L
+        goal: Every class's Hope feature can be used from the sheet for 3 Hope with its automation, active effects and conditions show with End and Got hit buttons, and cross-character features write the target through the feature only, logged on both characters.
+        depends_on: [T0]
+        owns:
+          - convex/classFeatures.ts
+          - src/lib/domain/class-features/index.ts
+          - src/lib/domain/class-features/classes/
+          - src/components/party/features/
+          - src/lib/errors/classFeatures.ts
+          - tests/unit/hope-features.test.ts
+          - tests/convex/class-features.test.ts
+          - tests/e2e/hope-features.spec.ts
+          - docs/tasks/TASK-D5-T8a.md
+        reads:
+          - src/lib/domain/class-features/types.ts
+          - src/lib/domain/class-features/hooks.ts
+          - src/lib/domain/characters/effects.ts
+          - src/lib/domain/characters/expiry.ts
+          - src/lib/domain/duality.ts
+          - convex/lib/characterSheet.ts
+          - convex/lib/actionLog.ts
+          - convex/lib/fear.ts
+          - convex/lib/dice.ts
+          - src/components/party/slots.ts
+        acceptance:
+          - "The registry (index.ts) has one module per class under classes/ (bard, druid, guardian, ranger, rogue, seraph, sorcerer, warrior, wizard, assassin, brawler, warlock, witch), each exporting its Hope feature; Hope & Fear classes are offered only when the campaign's hopeAndFear option is on"
+          - "classFeatures.use (keyedUserMutation, loadCharacter edit, assertCanAct) dispatches by feature key with typed params (targetId?, choice?, dieIndexes?, amount?); a Hope feature costs 3 Hope (CB 27; NOT_ENOUGH_HOPE otherwise); classFeatures.endEffect and classFeatures.gotHit (expire hit, decision 8) for the sheet's owner or GM"
+          - "Auto: Frontline Tank clears 2 Armor Slots (CB 36), Rogue's Dodge +2 Evasion until hit (CB 42), No Mercy +1 attack until rest (CB 48), Life Support: an ally clears 1 Hit Point (CB 44), Volatile Magic rerolls chosen damage dice of the caster's latest damage roll (CB 46), Deadly Determination clears 2 Stress (HF 8), Patron's Boon rerolls a failed action roll with advantage (HF 14), Witch's Charm turns an ally's latest failed roll into a success with Fear, removing that Hope and giving the GM 1 Fear only when it was with Hope (HF 16; settled rule)"
+          - "Assist (cost paid, reminder shown): Make a Scene (CB 28), Evolution as an effect with an End button (CB 30; plan note 11), Hold Them Off (CB 38), Not This Time (CB 50), Square Up (HF 10)"
+          - "Cross-character features (Life Support, Witch's Charm) write the target only through the feature and log rows on both characters in one group, with no target confirmation (decision 7)"
+          - "UI: the features slot shows the Hope feature button with its cost and text, active effects with End, a Got hit button, conditions, held dice and classState counters rendered generically from the registry metadata"
+          - "tests/unit/hope-features.test.ts covers each Hope feature; tests/convex/class-features.test.ts: Hope below 3 refused, Life Support on another player's character logged on both, a player cannot use a feature for another player's character, undo"
+          - "tests/e2e/hope-features.spec.ts: a Rogue spends 3 Hope on Rogue's Dodge, Evasion shows +2, and Got hit removes it"
+
+  # ---------------------------------------------------------------- wave 3: class features, frame hooks, 3D dice, Motherboard, photo import
+  - wave: 3
+    tracers:
+      - id: T1b
+        title: Lazy 3D dice
+        timing: polish
+        size: M
+        goal: With the per-device toggle on and no reduced-motion request, rolls animate as 3D dice that land on the server's values, loaded only on demand.
+        depends_on: [T1]
+        owns:
+          - src/components/party/dice/dice3d/
+          - tests/e2e/dice-3d.spec.ts
+          - docs/tasks/TASK-D5-T1b.md
+        reads:
+          - src/components/party/dice/
+          - package.json
+        acceptance:
+          - "three and cannon-es are reached only through dynamic import() inside dice3d/, so the sheet and dashboard initial chunks contain neither (next experimental-analyze numbers recorded in the task doc; CL8)"
+          - "Dice settle on the values the server returned; prefers-reduced-motion forces 2D and the toggle off by default on such devices (decision 3; CL14)"
+          - "Sound plays only when the per-device sound setting is on; WebGL failure falls back to 2D without an error"
+          - "tests/e2e/dice-3d.spec.ts: with reduced motion emulated no canvas appears; with it off and the toggle on a canvas appears and the feed shows the same values"
+      - id: T3b
+        title: Frame rest hooks
+        timing: core
+        size: M
+        goal: Finishing a rest runs each frame's own rest rule behind its frame and option checks (Age of Umbra, Colossus, Horizon, Beast Feast, Andaluria, Motherboard).
+        depends_on: [T3]
+        owns:
+          - convex/lib/restHooks.ts
+          - src/lib/domain/rest/frame-hooks/
+          - convex/trackers/ageOfUmbra.ts
+          - convex/trackers/colossus.ts
+          - convex/trackers/horizon.ts
+          - convex/trackers/andaluria.ts
+          - tests/convex/rest-frame-hooks.test.ts
+          - tests/e2e/rest-frame-hooks.spec.ts
+          - docs/tasks/TASK-D5-T3b.md
+        reads:
+          - convex/rests.ts
+          - convex/characterExtras.ts
+          - src/lib/frames/
+          - src/lib/frames/options.ts
+          - convex/lib/trackers.ts
+        acceptance:
+          - "Age of Umbra: Lurking Darkness rolls on a rest away from a pyre, with Keep Watch (CB 288-289)"
+          - "Colossus: Siphoning +1 on a short rest and +2 on a long rest, GM-only as before (CB 309-312)"
+          - "Horizon: a short rest advances one day only while fewer than three short rests are consecutive, a long rest only in a sanctuary, Endurance Countdowns tick when that option is on (HF 176-179); the dcm-bxp.20 questions stay open"
+          - "Beast Feast: Make a Feast replaces the HP, Stress and Hope moves, Berries buy a move (at most 2 per PC) (CB 271-279), applied through exported characterExtras helpers without editing convex/characterExtras.ts"
+          - "Andaluria: Lycanthropy ticks unless halted, when transformations are on (HF 149-153); Motherboard: the Remnant Corruption roll when remnantCorruption is on (CB 295-303)"
+          - "Each hook is off outside its frame or with its option off (convex test per hook, on and off); undo of the rest reverts sheets and Fear only (plan note 11)"
+          - "tests/e2e/rest-frame-hooks.spec.ts: a Colossus campaign's long rest raises the GM-only Siphoning track by 2"
+      - id: T8b
+        title: Class features for the nine Core Book classes
+        timing: core
+        size: L
+        goal: Rally, Unstoppable, Ranger's Focus, Cloaked and Sneak Attack, Prayer Dice, Channel Raw Power, Combat Training, Strange Patterns and the Druid's Beastform and Wildtouch work from the sheet and the dice box, with session and rest resets.
+        depends_on: [T1, T8a, T5]
+        owns:
+          - src/lib/domain/class-features/classes/bard.ts
+          - src/lib/domain/class-features/classes/druid.ts
+          - src/lib/domain/class-features/classes/guardian.ts
+          - src/lib/domain/class-features/classes/ranger.ts
+          - src/lib/domain/class-features/classes/rogue.ts
+          - src/lib/domain/class-features/classes/seraph.ts
+          - src/lib/domain/class-features/classes/sorcerer.ts
+          - src/lib/domain/class-features/classes/warrior.ts
+          - src/lib/domain/class-features/classes/wizard.ts
+          - tests/unit/class-features-core.test.ts
+          - tests/convex/class-features-core.test.ts
+          - tests/e2e/class-features.spec.ts
+          - docs/tasks/TASK-D5-T8b.md
+        reads:
+          - convex/classFeatures.ts
+          - convex/rolls.ts
+          - convex/sessions.ts
+          - src/lib/domain/class-features/index.ts
+          - src/lib/domain/class-features/hooks.ts
+          - src/lib/domain/class-features/types.ts
+        acceptance:
+          - "Bard Rally: once per session, every active non-away PC gets a Rally Die (d6, d8 from level 5) held until session end, spendable on a roll, damage or clearing Stress; unspent dice clear at session end (CB 28; settled rule)"
+          - "Guardian Unstoppable: once per long rest, a d4 (d6 from level 5) on damage that rises by 1 per Hit Point dealt and ends when it would exceed its maximum (CB 36)"
+          - "Ranger's Focus: spend 1 Hope and attack, set the focus on success, end it to reroll the Duality Dice (CB 38); Rogue Cloaked as a condition and Sneak Attack +tier d6 on damage (CB 42)"
+          - "Seraph Prayer Dice: at session start roll Spellcast-trait d4s, 0 when the trait is 0 or less; spend one to reduce damage, add to a roll or gain Hope (CB 44; settled rule)"
+          - "Sorcerer Channel Raw Power: once per long rest, vault a loadout card for Hope equal to its level or for +2x its level to a spell's damage (CB 46); Warrior Combat Training adds the level to physical damage and Attack of Opportunity is an assisted reaction roll (CB 48)"
+          - "Wizard Strange Patterns: a chosen number 1-12; a matching Duality Die prompts +1 Hope or clear 1 Stress, one benefit when both dice match (CB 50; decision 6); Druid Beastform and Wildtouch mark Stress and show text (CB 30)"
+          - "Only the nine class files change; the dispatcher, registry and dice box pick them up through the hook contract (tracer-guard proves the diff)"
+          - "tests/unit/class-features-core.test.ts covers each feature; tests/convex/class-features-core.test.ts: Rally reaches every active non-away PC and clears at session end, Prayer Dice at session start, Strange Patterns prompt after a matching roll, undo"
+          - "tests/e2e/class-features.spec.ts: a Bard rallies, another PC spends the Rally Die on a roll in the dice box, and ending the session clears unspent dice"
+      - id: T8c
+        title: Class features for the four Hope & Fear classes
+        timing: core
+        size: M
+        goal: Assassin, Brawler, Warlock and Witch class features (Marked for Death, Get In & Get Out, I Am the Weapon and Combo Strike, Favor and Patron's Pact, Hex and Commune) work from the sheet and the dice box.
+        depends_on: [T1, T8a, T5]
+        owns:
+          - src/lib/domain/class-features/classes/assassin.ts
+          - src/lib/domain/class-features/classes/brawler.ts
+          - src/lib/domain/class-features/classes/warlock.ts
+          - src/lib/domain/class-features/classes/witch.ts
+          - tests/unit/class-features-hf.test.ts
+          - tests/convex/class-features-hf.test.ts
+          - tests/e2e/class-features-hf.spec.ts
+          - docs/tasks/TASK-D5-T8c.md
+        reads:
+          - convex/classFeatures.ts
+          - convex/rolls.ts
+          - src/lib/domain/class-features/index.ts
+          - src/lib/domain/class-features/hooks.ts
+          - src/lib/domain/class-features/types.ts
+        acceptance:
+          - "Assassin: Marked for Death adds tier d4 to damage against the marked target, Get In & Get Out gives the next roll advantage (HF 8)"
+          - "Brawler: I Am the Weapon gives Brawler's Strike (Proficiency x d8 + Proficiency x d6) and +1 Evasion without an active weapon; crit damage = 14 x Proficiency + the roll; Combo Strike's combo die rises along the chain (HF 10; settled rule)"
+          - "Warlock: Favor starts at 3 and is spent for a patron die (d6, d8 by level); a downtime tribute gains Favor equal to the Spellcast trait (HF 14)"
+          - "Witch: marking Stress to Hex a target, Commune once per long rest (HF 16)"
+          - "Only the four class files change (tracer-guard proves the diff); the features are offered only when hopeAndFear is on"
+          - "tests/unit/class-features-hf.test.ts covers each feature; tests/convex/class-features-hf.test.ts covers Favor spend and tribute, the Brawler crit, Commune reset on a long rest"
+          - "tests/e2e/class-features-hf.spec.ts: a Brawler without a weapon rolls Brawler's Strike damage with Proficiency-many d8 and d6"
+      - id: T9
+        title: Motherboard Ikonis and augments, Light in the Dark, verified rest card swaps (dcm-bxp.13, dcm-bxp.14)
+        timing: core
+        size: M
+        goal: Motherboard characters are created with an Ikonis instead of weapons (Warriors with a Force augment), installed Guard/Deny/Block augments change Armor Score and Evasion, Light in the Dark adds the seventh Hope slot, and free card swaps need an open rest.
+        depends_on: [T6, T3]
+        owns:
+          - convex/characters.ts
+          - convex/characterExtras.ts
+          - src/lib/validation/characters.ts
+          - src/lib/domain/characters/derived.ts
+          - src/lib/frames/extras/motherboard.ts
+          - src/lib/frames/extras/companion.ts
+          - src/components/party/extras/motherboard-panel.tsx
+          - src/components/party/extras/companion-panel.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/new/
+          - tests/unit/motherboard.test.ts
+          - tests/unit/extras-motherboard.test.ts
+          - tests/unit/extras-companion.test.ts
+          - tests/convex/motherboard-ikonis.test.ts
+          - tests/e2e/motherboard-ikonis.spec.ts
+          - docs/tasks/TASK-D5-T9.md
+        reads:
+          - convex/lib/characterSheet.ts
+          - convex/rests.ts
+          - convex/lib/validators/characters.ts
+          - src/lib/srd/index.ts
+        acceptance:
+          - "In a Motherboard campaign the draft needs no primary weapon and an Ikonis instead, which replaces normal weapons and is two-handed (CB 301); a Warrior starts with a Force augment installed (Ikonis Training, CB 295); other frames still require a primary weapon (characters and wizard tests)"
+          - "derivedDefense includes installed Guard, Deny and Block augments (CB 301-303)"
+          - "Companion Light in the Dark sets hopeSlotBonus to 1, so Hope max is 7 and adjustResource accepts the seventh Hope (dcm-bxp.14)"
+          - "characters.moveCard with duringRest succeeds only while the campaign has an open rest; otherwise it charges the Recall Cost (CB 105)"
+          - "tests/e2e/motherboard-ikonis.spec.ts: creating a Motherboard Warrior shows the Ikonis with a Force augment and no weapon picker"
+      - id: T7
+        title: Photo import with GM review
+        timing: end-of-D5
+        size: L
+        goal: When ANTHROPIC_API_KEY is set, the GM uploads up to four photos of a paper sheet, Claude vision reads them into a draft, the photos are deleted, and the GM reviews and edits every field before saving a character at any level; without the key the button is hidden.
+        depends_on: [T6]
+        owns:
+          - convex/photoImport.ts
+          - src/lib/import/
+          - src/components/party/import/
+          - src/lib/errors/photoImport.ts
+          - convex/cleanup.ts
+          - tests/convex/cleanup.test.ts
+          - tests/unit/sheet-photo.test.ts
+          - tests/convex/photo-import.test.ts
+          - tests/unit/photo-import-review.test.tsx
+          - tests/fixtures/photo-import/
+          - tests/e2e/photo-import.spec.ts
+          - docs/tasks/TASK-D5-T7.md
+        reads:
+          - convex/lib/files.ts
+          - convex/lib/characterSheet.ts
+          - convex/lib/actionLog.ts
+          - convex/characters.ts
+          - src/lib/srd/index.ts
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "photoImport.available (gmQuery, returns boolean) is true only when ANTHROPIC_API_KEY is set, read through the typed env inside the handler (CF19); the roster button is hidden otherwise and for players (decision 13)"
+          - "photoImport.uploadUrl (gmMutation, rateLimit uploadUrl) and photoImport.claim accept at most 4 JPEG, PNG or WebP images of at most 5 MB each, recorded as files kind photoImport; rejected files are deleted and return {ok: false, code} (CF16, CF17)"
+          - "photoImport.read (userAction, rateLimit photoImport, GM only through one internal runQuery): one Messages API call per click with no automatic retry, model ANTHROPIC_MODEL or a pinned default (decision 14), classes filtered by hopeAndFear; the response is validated with zod and fuzzy-matched to SRD ids, including tiered equipment, giving a draft plus unreadable[] and unmatched[]; the images and their files rows are deleted in every outcome through one internal runMutation (decision 13; CF8)"
+          - "photoImport.create (keyedGmMutation) saves the reviewed sheet at any level with the server's sheet and equipment checks and logs an `import` row; the review screen highlights flagged fields, lets the GM edit every field and pick the owner, and keeps Save disabled until the sheet validates"
+          - "convex/cleanup.ts also expires photoImport files rows and blobs older than one hour, in the existing batched orphan job (CD17)"
+          - "tests/convex/photo-import.test.ts mocks fetch: a fixture response becomes a draft, the images are gone afterwards, a player is FORBIDDEN, a missing key gives PHOTO_IMPORT_UNAVAILABLE; tests/unit/sheet-photo.test.ts covers fuzzy matching; tests/unit/photo-import-review.test.tsx covers the disabled Save"
+          - "tests/e2e/photo-import.spec.ts: on the e2e backend without ANTHROPIC_API_KEY the import button is absent for the GM"
+  # ---------------------------------------------------------------- wave 4: integration (orchestrator-added from tracer reports)
+  - wave: 4
+    tracers:
+      - id: TI-a
+        title: Integration — dice, class features and the features panel
+        timing: end-of-D5
+        size: L
+        goal: Close the cross-tracer gaps in dice and class features listed as items 1-5, 7, 8, 21-26 of .omc/autopilot/d5-integration.md.
+        depends_on: [T1, T2, T8a, T8b, T8c, T9]
+        owns:
+          - convex/rolls.ts
+          - src/components/party/dice/dice-box.tsx
+          - src/components/party/dice/parts.tsx
+          - src/components/party/dice/roll-feed.tsx
+          - src/components/party/dice/index.tsx
+          - src/lib/domain/dice/**
+          - src/lib/domain/class-features/**
+          - src/components/party/features/**
+          - src/lib/domain/characters/derived.ts
+          - src/lib/domain/level-up/**
+          - src/components/party/level-up/**
+          - tests/unit/dice.test.ts
+          - tests/unit/derived.test.ts
+          - tests/unit/level-up.test.ts
+          - tests/unit/hope-features.test.ts
+          - tests/unit/class-features-core.test.ts
+          - tests/unit/class-features-hf.test.ts
+          - tests/convex/rolls.test.ts
+          - tests/convex/class-features.test.ts
+          - tests/convex/class-features-core.test.ts
+          - tests/convex/class-features-hf.test.ts
+          - tests/e2e/class-features.spec.ts
+          - tests/e2e/class-features-hf.spec.ts
+          - tests/e2e/hope-features.spec.ts
+          - tests/e2e/dice.spec.ts
+          - docs/tasks/TASK-D5-TI-a.md
+        reads:
+          - .omc/autopilot/d5-integration.md
+          - convex/characterExtras.ts
+        acceptance:
+          - "Items 1-5, 7, 8, 21-26 of .omc/autopilot/d5-integration.md are each done or explicitly reported as not done with the reason"
+          - "Each fixed item has a test"
+          - "pnpm lint, typecheck, test pass; touched e2e specs pass"
+      - id: TI-b
+        title: Integration — rests, sheet display, Motherboard and frame follow-ups
+        timing: end-of-D5
+        size: L
+        goal: Close the cross-tracer gaps in rests, the sheet, Motherboard and frames listed as items 6, 9-15, 17-20 of .omc/autopilot/d5-integration.md.
+        depends_on: [T3, T3b, T5, T7, T9]
+        owns:
+          - convex/lib/restHooks.ts
+          - convex/lib/validators/rests.ts
+          - convex/rests.ts
+          - src/lib/domain/rest/**
+          - src/components/party/rest/**
+          - convex/maps.ts
+          - convex/characters.ts
+          - src/lib/import/sheet.ts
+          - src/lib/equipment-rules.ts
+          - src/lib/domain/wither/**
+          - src/lib/domain/characters/index.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-one.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-two.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/roster.tsx
+          - src/app/(gm)/campaigns/[campaignId]/trackers/colossus.tsx
+          - tests/unit/rest.test.ts
+          - tests/unit/wither.test.ts
+          - tests/unit/equipment-rules.test.ts
+          - tests/convex/rests.test.ts
+          - tests/convex/rest-frame-hooks.test.ts
+          - tests/convex/maps.test.ts
+          - tests/convex/characters.test.ts
+          - tests/convex/wither.test.ts
+          - tests/e2e/rest.spec.ts
+          - tests/e2e/rest-frame-hooks.spec.ts
+          - tests/e2e/character-sheet.spec.ts
+          - docs/tasks/TASK-D5-TI-b.md
+        reads:
+          - .omc/autopilot/d5-integration.md
+          - src/lib/domain/class-features/classes/warlock.ts
+          - convex/characterExtras.ts
+        acceptance:
+          - "Items 6, 9-15, 17-20 of .omc/autopilot/d5-integration.md are each done or explicitly reported as not done with the reason"
+          - "Each fixed item has a test"
+          - "pnpm lint, typecheck, test pass; touched e2e specs pass"
+  # ---------------------------------------------------------------- wave 5: review fixes + polish (orchestrator-added)
+  - wave: 5
+    tracers:
+      - id: R1
+        title: Undo integrity and roll trust (review H1, H2, M1, M2, L1, L4-block; polish 28)
+        timing: end-of-D5
+        size: M
+        goal: Undo never overwrites newer state, Tag Team groups stay contiguous, typed roll context is capped and visible, and player re-roll-by-undo is limited.
+        depends_on: [TI-a, TI-b]
+        owns:
+          - convex/lib/actionLog.ts
+          - convex/actionLog.ts
+          - convex/rolls.ts
+          - convex/characterExtras.ts
+          - src/lib/domain/dice/**
+          - src/lib/domain/class-features/classes/sorcerer.ts
+          - src/components/party/dice/**
+          - tests/convex/action-log.test.ts
+          - tests/convex/rolls.test.ts
+          - tests/unit/dice.test.ts
+          - tests/unit/hope-features.test.ts
+          - tests/e2e/dice.spec.ts
+          - docs/tasks/TASK-D5-R1.md
+        reads:
+          - .omc/audit/d5-review.md
+          - .omc/autopilot/d5-integration.md
+        acceptance:
+          - "H1: undo refuses (UNDO_STALE) when a character changed after its newest group row (convex test: roll, unlogged applyDamage, undo refused, damage kept)"
+          - "H2: undo requires contiguous live rows per character; tagTeamApply refuses when a roll happened between tagTeam and apply (convex tests)"
+          - "M1: typed modifier capped at ±10; summaries show typed modifier and player-set Difficulty; an unlinked damage critical is labelled declared (tests)"
+          - "M2: a player may undo a dice-carrying row (roll/death) only within 60 seconds; the GM any time (test)"
+          - "L1: Volatile Magic keeps roll.manual; L4: actionLog.undo refuses kind rest rows (use rests.undo)"
+          - "Polish 28: characterExtras exports motherboardState (with the legacy fallback) and rolls.ts uses it"
+      - id: R2
+        title: Character status, limits, keyed damage and level-up polish (review M3, M5, L2; polish 27, 29, 30, 31)
+        timing: end-of-D5
+        size: M
+        goal: Owners can't revive dead/away characters, parties are bounded with explicit errors, applyDamage is idempotent, and the remaining D5 polish lands.
+        depends_on: [TI-a, TI-b]
+        owns:
+          - tests/convex/rest-frame-hooks.test.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/damage-calculator.tsx
+          - tests/convex/wither.test.ts
+          - convex/characters.ts
+          - convex/lib/functions.ts
+          - convex/rests.ts
+          - convex/sessions.ts
+          - convex/classFeatures.ts
+          - convex/levelUp.ts
+          - convex/trackers/horizon.ts
+          - convex/lib/validators/characters.ts
+          - src/lib/validation/characters.ts
+          - src/lib/domain/level-up/**
+          - src/components/party/level-up/**
+          - src/components/party/features/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-two.tsx
+          - tests/convex/characters.test.ts
+          - tests/convex/rests.test.ts
+          - tests/convex/sessions.test.ts
+          - tests/convex/class-features.test.ts
+          - tests/convex/level-up.test.ts
+          - tests/convex/horizon.test.ts
+          - tests/unit/level-up.test.ts
+          - tests/unit/sheet-render.test.ts
+          - tests/e2e/character-sheet.spec.ts
+          - docs/tasks/TASK-D5-R2.md
+        reads:
+          - .omc/audit/d5-review.md
+          - .omc/autopilot/d5-integration.md
+        acceptance:
+          - "M3: from dead/away only the GM can set a character active; away is cleared (test)"
+          - "M5: at most 50 characters per campaign and 12 per player, create rate-limited; rests over 49 PCs refused; session/classFeatures party reads error instead of silently skipping (tests)"
+          - "L2: applyDamage is a keyed mutation; the sheet passes an idempotency key (replay test)"
+          - "Polish 27: Brawler Combo Die advancement (HF 10), Brawler only, one per tier, applies and reverts (unit + convex)"
+          - "Polish 29: Rally Die clear-Stress works for a Hope & Fear class with the option off (test)"
+          - "Polish 30: rests.start refuses a Horizon long rest outside a sanctuary (test)"
+          - "Polish 31: the vault button shows the real swap cost when no rest is open (sheet-render test mocks rests.current)"
+      - id: R3
+        title: Photo import robustness and worktree ports (review M4, L7; polish 32)
+        timing: end-of-D5
+        size: S
+        goal: Photo import stays within action memory and API limits, abandoned photos expire hourly, double clicks don't double-call, and worktrees get distinct e2e ports.
+        depends_on: [TI-a, TI-b]
+        owns:
+          - tests/unit/photo-import-flow.test.tsx
+          - convex/tables/files.ts
+          - convex/photoImport.ts
+          - convex/crons.ts
+          - convex/cleanup.ts
+          - src/components/party/import/**
+          - src/lib/errors/photoImport.ts
+          - scripts/worktree-setup.mjs
+          - tests/convex/photo-import.test.ts
+          - tests/convex/cleanup.test.ts
+          - tests/unit/workflow-scripts.test.ts
+          - docs/tasks/TASK-D5-R3.md
+        reads:
+          - .omc/audit/d5-review.md
+        acceptance:
+          - "M4: each photo capped at 3.5 MB; the request body is built without redundant full copies; photo-import expiry runs hourly (cron) and reads oldest first (tests)"
+          - "L7: the read button is disabled while a read is in flight (unit test)"
+          - "Polish 32: worktree:setup suggests ports derived from the worktree (distinct per worktree) and verifies they are free (unit test)"

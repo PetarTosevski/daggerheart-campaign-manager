@@ -1,0 +1,872 @@
+# Hardening plan: turns the findings of .omc/audit/*.md into tracers (docs/workflow.md format).
+# Rulebook: docs/best-practices.md (rule ids such as CF3 or CD10 are cited in the goals).
+#
+# Extra keys per tracer (ignored by plan-check): title, timing (before-D5 | after-D5), size (S | M | L).
+#   before-D5 = changes tables or functions that D5 builds on, or fixes security. D5 may start once wave 6 is merged.
+# External prerequisites:
+#   - foundation:T1 (.omc/plans/foundation.yaml) splits convex/tables/* and src/lib/errors/*; every tracer from wave 2 on needs it merged.
+#   - The CI + pre-commit + e2e port-isolation work (another agent) must be merged before wave 9; it currently edits package.json,
+#     eslint.config.mjs, playwright.config.ts and scripts/e2e-*.mjs.
+# Assumed table-file names from foundation:T1: campaigns.ts (campaigns, campaignMembers, campaignInvites, campaignState),
+#   countdowns.ts, campaignTime.ts, characters.ts, trackers.ts (frameTrackers), maps.ts, codex.ts, files.ts, grants.ts,
+#   settings.ts, operations.ts. If T1 names them differently, rename the owns entries before wave 3 and rerun plan-check.
+# Every tracer also owns its own docs/tasks/TASK-hardening-<id>.md. The orchestrator updates docs/data-model.md at merge time.
+# Shared files (package.json, pnpm-lock.yaml, eslint.config.mjs, convex/convex.config.ts, convex/schema.ts composition,
+#   .gitignore, .github/workflows/*) are owned by a W<n>-T0 tracer or marked "orchestrator edits at merge".
+# Paths: C = src/app/(gm)/campaigns/[campaignId] is written out in full below.
+plan: hardening
+waves:
+  # ---------------------------------------------------------------- wave 1: security
+  - wave: 1
+    tracers:
+      - id: H01
+        title: Invites count only for verified emails
+        timing: before-D5
+        size: S
+        goal: An unverified password account whose email the GM invited gets NOT_FOUND and gains no membership; verified (Google) invitees still join (convex-functions M2, CF3).
+        depends_on: []
+        owns:
+          - convex/lib/access.ts
+          - convex/campaigns.ts
+          - tests/convex/invite-verification.test.ts
+        reads:
+          - convex/lib/users.ts
+          - convex/lib/permissions.ts
+          - convex/members.ts
+          - convex/auth.ts
+        acceptance:
+          - "campaignRole, campaigns.list and campaigns.markOpened honour an invite only when user.emailVerificationTime is set"
+          - "tests/convex/invite-verification.test.ts: an unverified invited password user gets NOT_FOUND on campaigns.get, the campaign is missing from campaigns.list, and markOpened creates no campaignMembers row; a verified invitee still becomes a member; joinByCode is unaffected"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H02
+        title: Sign-up, seed-account and env hardening
+        timing: before-D5
+        size: S
+        goal: Sign-up no longer reveals allowlist or registration state, seed accounts exist only on e2e deployments, and Convex reads env through the typed env (convex-functions L4, L5, L6; CF19, CF20).
+        depends_on: []
+        owns:
+          - convex/lib/users.ts
+          - convex/lib/allowlist.ts
+          - convex/lib/auth.ts
+          - convex/accounts.ts
+          - convex/auth.ts
+          - convex/convex.config.ts
+          - tests/unit/allowlist.test.ts
+          - tests/convex/create-or-update-user.test.ts
+          - tests/convex/require-user.test.ts
+        reads:
+          - convex/_generated/server.d.ts
+          - src/app/signin/password-form.tsx
+        acceptance:
+          - "Not allowlisted and already registered return the same error code"
+          - "allowedEmails includes SEED_ACCOUNTS only on an e2e deployment, and accounts:seed refuses to run against *.convex.cloud (unit test)"
+          - "No process.env reads in convex/ except auth.config.ts; env vars are declared and read inside handlers (if the installed convex version cannot declare env, record that in the task doc and keep the reads inside handlers)"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H03
+        title: Upload type allowlist and logged blob deletes
+        timing: before-D5
+        size: S
+        goal: The three attach mutations accept only png/jpeg/webp/gif through one shared check, and failed blob deletes are logged rather than swallowed (convex-functions L2, L11; CF16).
+        depends_on: []
+        owns:
+          - convex/lib/files.ts
+          - convex/maps.ts
+          - convex/codex.ts
+          - convex/characters.ts
+          - tests/convex/upload-claims.test.ts
+        reads:
+          - src/lib/codex/schema.ts
+        acceptance:
+          - "image/svg+xml and image/x-foo are rejected and deleted, while png, jpeg, webp and gif are accepted (upload-claims test)"
+          - "No .catch(() => undefined) remains around ctx.storage.delete"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H04
+        title: Bind the rulebook in agent files (dcm-bxp.22)
+        timing: before-D5
+        size: S
+        goal: AGENTS.md carries the Top 15 rules and a link to docs/best-practices.md; CLAUDE.md points to AGENTS.md, so every D5 agent works under the rulebook.
+        depends_on: []
+        owns:
+          - AGENTS.md
+          - CLAUDE.md
+        reads:
+          - docs/best-practices.md
+          - docs/workflow.md
+        acceptance:
+          - "AGENTS.md has a 'Best practices' section with the Top 15 rules, verbatim from docs/best-practices.md"
+          - "The duplicate Beads block in AGENTS.md is removed, and docs/data-model.md is no longer described as '(once created)'"
+          - "CLAUDE.md template placeholders are replaced by a pointer to AGENTS.md (the Beads block stays)"
+          - "Close bead dcm-bxp.22 after the user confirms; the lint and memory parts are covered by tracers W2-T0, W8-T0 and W9-T0"
+
+  # ---------------------------------------------------------------- wave 2: auth wrappers (dcm-bxp.21)
+  - wave: 2
+    tracers:
+      - id: W2-T0
+        foundation: true
+        title: Dependencies, Convex components and the raw-builder warning
+        timing: before-D5
+        size: S
+        goal: convex-helpers, @convex-dev/rate-limiter and @convex-dev/migrations are installed and registered, and ESLint warns on raw query/mutation/action outside the allowed files (CF1).
+        depends_on: [H02]
+        owns:
+          - package.json
+          - pnpm-lock.yaml
+          - eslint.config.mjs
+          - convex/convex.config.ts
+        reads:
+          - docs/best-practices.md
+        acceptance:
+          - "pnpm install succeeds under minimumReleaseAge, and npx convex codegen succeeds with both components registered"
+          - "no-restricted-imports warns (not errors) on query/mutation/action imported from */_generated/server, except in convex/lib/functions.ts, convex/auth.ts and convex/http.ts; internal* builders are not flagged"
+          - "pnpm lint exits 0"
+      - id: H05
+        title: Wrapper core on permissionFor; Fear converted end to end
+        timing: before-D5
+        size: L
+        goal: userQuery/userMutation/userAction/maybeUserQuery and campaign wrappers ({need}) built only on permissionFor exist, with idempotency, rate limits and error normalisation; convex/fear.ts uses them end to end (dcm-bxp.21; CF1, CF2, CF4, CF12, CF13, CF14, CF15).
+        depends_on: [W2-T0, H01]
+        owns:
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - convex/lib/access.ts
+          - convex/lib/auth.ts
+          - convex/lib/operations.ts
+          - convex/lib/mechanics.ts
+          - convex/lib/fear.ts
+          - convex/fear.ts
+          - src/lib/errors/app-error.ts
+          - src/lib/errors/common.ts
+          - tests/convex/functions.test.ts
+          - tests/convex/fear.test.ts
+          - tests/convex/permissions.test.ts
+          - tests/convex/run-rollback.test.ts
+        reads:
+          - .omc/audit/convex-functions.md
+          - convex/convex.config.ts
+          - src/lib/domain/**
+          - src/lib/convex-errors.ts
+        acceptance:
+          - "The wrappers put user, campaign and permission on ctx; the campaign role comes from permissionFor (lib/access.ts becomes a shim over it, removed in H17)"
+          - "An edit grant on a resource raises access through the wrappers (test)"
+          - "The keyed variant exposes ctx.once: a replay by a different user is rejected, and requestHash is a SHA-256 (test)"
+          - "A RuleError or ZodError becomes ConvexError {code, message}, and a TypeError is rethrown unchanged (test)"
+          - "A rateLimit option rejects with RATE_LIMITED past its limit (test)"
+          - "AppError/AppErrorCode are exported from src/lib/errors, all payloads are objects, and NOT_FOUND reads 'That no longer exists.'"
+          - "convex/fear.ts has no raw builders, and fear e2e (dashboard.spec.ts) passes"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 3: migrations framework + domain conversions
+  - wave: 3
+    tracers:
+      - id: H06
+        title: Migrations framework and versioned blob reader
+        timing: before-D5
+        size: M
+        goal: Data migrations run through @convex-dev/migrations from convex/migrations/<domain>.ts, and convex/lib/blobs.ts gives every blob reader parseOrCorrupt plus schemaVersion dispatch (convex-data H1 step 1, L7; CD2, CD3, CD5).
+        depends_on: [H05]
+        owns:
+          - convex/migrations.ts
+          - convex/migrations/run.ts
+          - convex/migrations/uploads.ts
+          - convex/lib/migrations.ts
+          - convex/lib/blobs.ts
+          - tests/convex/migrations.test.ts
+          - tests/unit/blobs.test.ts
+        reads:
+          - convex/convex.config.ts
+          - convex/lib/files.ts
+        acceptance:
+          - "convex/migrations.ts is replaced by convex/migrations/run.ts (runner) and convex/migrations/uploads.ts (moveUploadsToFiles, batched, still idempotent)"
+          - "readVersioned(schemaByVersion, raw, code) upgrades an old-shape document and throws *_CORRUPT on a bad one (unit test)"
+          - "A dry run and a resume are documented in the task doc"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H07
+        title: Campaigns on wrappers; GM-open churn removed
+        timing: before-D5
+        size: M
+        goal: Campaign functions use the wrappers; opening a campaign writes a throttled campaignOpens row instead of the campaign document; deleted campaigns are indexed for purge; the join code is created with the campaign (convex-data M1, L1; client M4; CD10, CD11).
+        depends_on: [H05]
+        owns:
+          - convex/campaigns.ts
+          - convex/tables/campaigns.ts
+          - convex/lib/validators/campaigns.ts
+          - src/lib/errors/campaigns.ts
+          - tests/convex/campaigns.test.ts
+          - tests/convex/options.test.ts
+          - tests/convex/tome.test.ts
+        reads:
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - src/lib/validation/campaigns.ts
+        acceptance:
+          - "markOpened writes campaignOpens {userId, campaignId, lastOpenedAt} (indexes by_user_campaign, by_user_lastOpened), skips the write when the stored value is under 5 minutes old, and never patches campaigns (test)"
+          - "campaigns.list order is unchanged, falling back to campaigns.lastOpenedAt for campaigns with no campaignOpens row"
+          - "No .filter() in campaigns.ts; deletedAt is part of the owner indexes, and campaigns has a by_deletedAt index"
+          - "campaigns.create sets joinCode and is rate-limited"
+          - "No raw builders in campaigns.ts; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H08
+        title: Members on wrappers with rate limits and returns
+        timing: before-D5
+        size: S
+        goal: Member and invite functions use the wrappers, joinByCode and invite are rate-limited, and the roster's returns validator keeps emails away from players (convex-functions L3, M4; convex-data L2; CF6, CF15).
+        depends_on: [H05]
+        owns:
+          - convex/members.ts
+          - src/lib/errors/members.ts
+          - tests/convex/members.test.ts
+        reads:
+          - convex/lib/functions.ts
+          - convex/tables/campaigns.ts
+        acceptance:
+          - "members.ts queries use by_campaign_user and by_campaign_email with a prefix, so the short indexes can be dropped in H17"
+          - "joinByCode (10/min per user) and invite are rate-limited (test)"
+          - "The roster has a returns validator, and players receive no email field (test)"
+          - "No raw builders in members.ts; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H09
+        title: Countdowns, campaign time, settings and users on wrappers
+        timing: before-D5
+        size: M
+        goal: These domains use the wrappers, viewer becomes maybeUserQuery, and the countdown list reads through an owner index instead of collecting every countdown (convex-data L5; convex-functions d3; CD11, CD12).
+        depends_on: [H05]
+        owns:
+          - convex/countdowns.ts
+          - convex/campaignTime.ts
+          - convex/settings.ts
+          - convex/users.ts
+          - convex/tables/countdowns.ts
+          - convex/tables/history.ts
+          - convex/history.ts
+          - convex/fear.ts
+          - convex/lib/fear.ts
+          - tests/convex/history.test.ts
+          - tests/convex/fear.test.ts
+          - src/lib/errors/countdowns.ts
+          - src/lib/errors/campaign-time.ts
+          - src/lib/errors/settings.ts
+          - tests/convex/countdowns.test.ts
+          - tests/convex/campaign-time.test.ts
+        reads:
+          - convex/lib/functions.ts
+          - src/lib/validation/countdowns.ts
+          - src/lib/validation/campaign-time.ts
+        acceptance:
+          - "History tables (dcm-bxp.26): every Fear change, countdown change and campaign-time change writes an event row (campaignId, kind, before, after, by, at) indexed by [campaignId, at]; a GM-only paginated query lists them; tests prove each mutation writes one row and players can't read them"
+          - "countdowns has a by_campaign_owner index; the dashboard list reads ownerKey undefined and excludes cancelled countdowns without collecting the whole table"
+          - "users.viewer returns null when signed out instead of throwing UNAUTHENTICATED"
+          - "Player-facing queries declare returns validators"
+          - "No raw builders in these four files; pnpm lint, pnpm typecheck and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 4: data model D5 builds on
+  - wave: 4
+    tracers:
+      - id: H10
+        title: World map split into rows
+        timing: before-D5
+        size: L
+        goal: The World map is stored as maps (scalars) + mapTokens + mapHexes + mapTerrain tiles, edits patch only the rows they touch, and maps.get still returns the same shape, so the world UI is unchanged (convex-data H2; CD8, CD9, CD10).
+        depends_on: [H06]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/world/map-actions.ts
+          - convex/maps.ts
+          - convex/lib/maps.ts
+          - convex/tables/maps.ts
+          - convex/lib/validators/maps.ts
+          - convex/migrations/maps.ts
+          - src/lib/world/map-state.ts
+          - src/lib/errors/maps.ts
+          - tests/convex/maps.test.ts
+          - tests/convex/maps-migration.test.ts
+          - tests/unit/world-map-state.test.ts
+        reads:
+          - convex/codex.ts
+          - convex/lib/blobs.ts
+          - convex/lib/functions.ts
+          - src/app/(gm)/campaigns/[campaignId]/world/**
+        acceptance:
+          - "mapTokens (by_campaign), mapHexes (by_campaign_q_r) and mapTerrain tiles (by_campaign_tile) exist; paintCells writes only the touched tiles, and addToken/updateToken write one row (test counts writes)"
+          - "lib/maps.ts keeps a listMapTokens(ctx, campaignId) helper, so codex.ts works unchanged and tests/convex/codex.test.ts passes"
+          - "The migration turns an existing map document into rows, and the old document reads the same afterwards (maps-migration test)"
+          - "The rules arg is typed (no v.any); the player view has a returns validator; mapImageUploadUrl is rate-limited"
+          - "No raw builders in maps.ts; tests/e2e/world.spec.ts passes; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H11
+        title: Characters on wrappers, typed sheet and intent mutations
+        timing: before-D5
+        size: L
+        goal: Characters use the wrappers with typed args, a versioned sheet with stable list ids, and intent mutations (adjustGold, setTrait, add/removeInventory, setExperience), so concurrent edits never revert each other (convex-data H1, M4; client H2 server side, L7; CL3).
+        depends_on: [H06]
+        owns:
+          - convex/characters.ts
+          - convex/tables/characters.ts
+          - convex/lib/validators/characters.ts
+          - convex/migrations/characters.ts
+          - src/lib/validation/characters.ts
+          - src/lib/errors/characters.ts
+          - tests/convex/characters.test.ts
+          - tests/convex/character-intents.test.ts
+        reads:
+          - convex/lib/blobs.ts
+          - convex/lib/functions.ts
+          - convex/lib/permissions.ts
+          - src/lib/domain/**
+        acceptance:
+          - "The sheet has schemaVersion; experiences and inventory items carry stable ids; the migration backfills both (test)"
+          - "The draft and patch args are typed (no v.any)"
+          - "Two intents built from the same stale snapshot both apply (character-intents test)"
+          - "One corrupt sheet does not fail listByCampaign: the other characters are returned and the bad one is marked"
+          - "loadCharacter asks for edit, not owner, where owner-level access is unused; get/listByCampaign have returns validators and send no storageId to players; portraitUploadUrl is rate-limited"
+          - "No raw builders in characters.ts; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H12
+        title: Frame trackers on wrappers with validated, versioned reads
+        timing: before-D5
+        size: M
+        goal: Every tracker reads through a schema (TRACKER_CORRUPT on bad data), shares one frameTrackerMutation scaffold, carries schemaVersion and uses the wrappers (testing H1, M7; convex-data L3; convex-functions M5; CD2, CD7).
+        depends_on: [H06, H09]
+        owns:
+          - convex/trackers/**
+          - convex/lib/trackers.ts
+          - convex/tables/trackers.ts
+          - convex/migrations/trackers.ts
+          - src/lib/errors/trackers.ts
+          - tests/convex/andaluria.test.ts
+          - tests/convex/weredragon.test.ts
+          - tests/convex/colossus.test.ts
+          - tests/convex/age-of-umbra.test.ts
+          - tests/convex/five-banners.test.ts
+          - tests/convex/horizon.test.ts
+        reads:
+          - convex/lib/blobs.ts
+          - convex/lib/functions.ts
+          - convex/tables/countdowns.ts
+          - src/lib/frames/trackers/**
+        acceptance:
+          - "readTracker takes a schema; no 'row.data as T' and no bare .parse() remain; there is one corrupt-data test per tracker"
+          - "andaluria and weredragon use the shared frameTrackerMutation; only RuleError/ZodError are converted"
+          - "weredragon authorId and fiveBanners pick.id go through normalizeId; fiveBanners reads countdowns by_campaign_owner"
+          - "Tracker get/state queries have GM/player union returns validators"
+          - "No raw builders in convex/trackers/**; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H13
+        title: permissionFor read cost
+        timing: before-D5
+        size: S
+        goal: For a campaign-scoped resource, permissionFor does at most 4 point reads ({user} and {campaign of the resource}) instead of collecting all of the caller's campaigns and memberships (convex-data M6; CD13).
+        depends_on: [H05]
+        owns:
+          - convex/lib/permissions.ts
+          - tests/convex/permissions.test.ts
+        reads:
+          - convex/tables/files.ts
+          - convex/lib/functions.ts
+        acceptance:
+          - "principals() and its .collect() calls are gone; a counting ctx.db wrapper test shows at most 4 reads for a campaign-scoped resource"
+          - "The permission matrix tests are unchanged and green"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 5: data model, continued
+  - wave: 5
+    tracers:
+      - id: H14
+        title: Character extras in a typed table
+        timing: before-D5
+        size: M
+        goal: Character extras move from encoded frameTrackers keys to a characterExtras table with v.id references, typed args and access through permissionFor; deleting a character removes its extras by index (convex-data M5, M4; convex-functions d1; CD6).
+        depends_on: [H11, H12]
+        owns:
+          - convex/characterExtras.ts
+          - convex/characters.ts
+          - convex/tables/characters.ts
+          - convex/lib/validators/characterExtras.ts
+          - convex/migrations/characterExtras.ts
+          - src/lib/frames/extras/common.ts
+          - src/lib/errors/character-extras.ts
+          - tests/convex/character-extras.test.ts
+        reads:
+          - convex/lib/blobs.ts
+          - convex/lib/functions.ts
+          - convex/lib/trackers.ts
+          - src/lib/frames/extras/**
+        acceptance:
+          - "characterExtras {campaignId, characterId: v.id('characters'), extra: literal union, schemaVersion, data} has a by_character_extra index"
+          - "The migration moves every character:<id>:* frameTrackers row into the table and deletes the old row (test); beastFeast.cookbook stays campaign-level"
+          - "All 7 v.any args are typed; an edit grant on a character allows editing its extras (test)"
+          - "characters.remove deletes extras through by_character_extra (test)"
+          - "No raw builders in characterExtras.ts; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H15
+        title: codex.list read cost
+        timing: before-D5
+        size: M
+        goal: codex.list returns summary fields from a bounded read (pins from mapTokens, long text in codexEntryText, count from a counter doc), and new campaigns are seeded on create instead of by a client effect (convex-data H3; client M4; CD12, CD14, TE6).
+        depends_on: [H10, H07]
+        owns:
+          - tests/unit/codex-view.test.ts
+          - src/app/(gm)/campaigns/[campaignId]/codex/page.tsx
+          - tests/e2e/codex.spec.ts
+          - convex/codex.ts
+          - convex/tables/codex.ts
+          - convex/lib/codex.ts
+          - convex/lib/validators/codex.ts
+          - convex/migrations/codex.ts
+          - convex/campaigns.ts
+          - src/app/(gm)/campaigns/[campaignId]/codex/entry-detail.tsx
+          - src/lib/codex/view.ts
+          - src/lib/errors/codex.ts
+          - tests/convex/codex.test.ts
+          - tests/convex/codex-read-budget.test.ts
+        reads:
+          - convex/lib/maps.ts
+          - convex/lib/blobs.ts
+          - convex/lib/functions.ts
+          - src/lib/codex/schema.ts
+          - src/lib/codex/seed.ts
+        acceptance:
+          - "gmn and pdesc live in codexEntryText, loaded by a codex.entryText query that entry-detail uses; codex.list never reads the map document"
+          - "create, seed and importPins check the entry count through a per-campaign counter, not a full collect"
+          - "With 500 max-size entries, codex.list stays under the read budget (codex-read-budget test)"
+          - "campaigns.create seeds the frame's characters through lib/codex.ts seedCodex; codex.seed stays idempotent for older campaigns"
+          - "The patch arg is typed; entries have schemaVersion; imageUploadUrl is rate-limited; the player list has a returns validator"
+          - "tests/e2e/codex.spec.ts passes; pnpm lint, pnpm typecheck and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 6: cleanup + close out the wrapper migration
+  - wave: 6
+    tracers:
+      - id: H16
+        title: Cleanup crons (operations TTL, campaign purge, orphan uploads)
+        timing: before-D5
+        size: M
+        goal: Internal crons expire operations after 7 days, purge campaigns deleted more than 30 days ago (every campaignId row and its blobs), and sweep storage blobs that no files row claims (convex-data M2, M3; convex-functions M1, L9; CD17, CD18).
+        depends_on: [H07, H10, H11, H14, H15]
+        owns:
+          - convex/crons.ts
+          - convex/cleanup.ts
+          - convex/tables/operations.ts
+          - tests/convex/cleanup.test.ts
+        reads:
+          - convex/schema.ts
+          - convex/tables/**
+          - convex/lib/files.ts
+          - convex/lib/operations.ts
+        acceptance:
+          - "No cron is pinned to minute 0; every job is internal, deletes in batches of at most 500 and reschedules itself until done"
+          - "operations has a by_createdAt index; rows older than 7 days are deleted (test with fake timers)"
+          - "After a purge, no table whose validator has a campaignId field holds the purged id, and its files blobs are gone (the test iterates the schema tables)"
+          - "An unclaimed _storage blob older than 2 hours is deleted, while a claimed one is kept (test)"
+          - "The task doc lists the docs/data-model.md changes for the orchestrator (no hard delete becomes a 30-day purge; operations is no longer a trail)"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H17
+        title: Retire lib/access.ts, drop redundant indexes, add a schema guard
+        timing: before-D5
+        size: S
+        goal: The last role-only authorization path is gone, prefix-duplicate indexes are dropped, and a schema guard test locks in no v.any, no duplicate indexes and a retention list (convex-data L2; convex-functions d1; CD1, CD15, CF2).
+        depends_on: [H07, H08, H09, H10, H11, H12, H14, H15]
+        owns:
+          - convex/lib/access.ts
+          - convex/tables/campaigns.ts
+          - eslint.config.mjs
+          - tests/convex/schema-guard.test.ts
+        reads:
+          - convex/**
+        acceptance:
+          - "convex/lib/access.ts is deleted, with no importers left"
+          - "campaignMembers.by_campaign and campaignInvites.by_campaign are removed"
+          - "The schema guard fails on a v.any field outside the allowlist (operations.result), on a prefix-duplicate index, and on a growing table missing from the retention list"
+          - "pnpm lint reports zero raw-builder warnings in convex/ (the rule stays a warning by decision); no-restricted-syntax warns on v.any in args and on 'as Id<'"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 7: client, part 1
+  - wave: 7
+    tracers:
+      - id: H18
+        title: Error and loading boundaries; campaign preload
+        timing: after-D5
+        size: M
+        goal: Query errors land in error.tsx or per-panel boundaries with friendly messages; the campaign layout preloads campaigns.get, so there is no shell-then-children waterfall; loading states are announced; routes have titles; the accent does not flash (client H1, M2b, L2, L5, L6; CL1, CL2, CL5).
+        depends_on: [H17]
+        owns:
+          - src/app/global-error.tsx
+          - src/app/(gm)/error.tsx
+          - src/app/(gm)/layout.tsx
+          - src/app/(gm)/accent-sync.tsx
+          - src/app/(gm)/campaigns/[campaignId]/error.tsx
+          - src/app/(gm)/campaigns/[campaignId]/layout.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party-section.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/page.tsx
+          - src/components/error-boundary.tsx
+          - src/components/loading.tsx
+          - tests/unit/error-page.test.tsx
+          - tests/e2e/error-boundary.spec.ts
+        reads:
+          - src/lib/convex-errors.ts
+          - src/lib/errors/**
+        acceptance:
+          - "A seeded corrupt tracker document shows an error card while the other dashboard panels still render (error-boundary e2e)"
+          - "error.tsx renders errorMessage(code), and retry works (unit test)"
+          - "campaigns.get is preloaded with preloadQuery and a token in the campaign layout, and the shell uses usePreloadedQuery"
+          - "Loading placeholders use <Loading> with role=status; campaign and sheet routes set a title; the accent is applied server-side"
+          - "Full e2e passes; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H19
+        title: Character sheet without lost updates or wiped typing
+        timing: after-D5
+        size: M
+        goal: Sheet steppers, list edits and extras panels send intents with optimistic updates, text fields keep focus across live updates, and extras panels load per frame (client H2, M3, M6, M1 extras part, L4, L7; CL3, CL4, CL7, CL8).
+        depends_on: [H11, H14]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/**
+          - src/components/party/extras/**
+          - src/components/party/party-card.tsx
+          - src/app/(gm)/campaigns/[campaignId]/fear-panel.tsx
+          - src/lib/use-intent.ts
+          - src/lib/use-blur-field.ts
+          - src/lib/optimistic/**
+          - tests/unit/stepper.test.tsx
+          - tests/unit/use-blur-field.test.tsx
+          - tests/unit/party-card.test.ts
+          - tests/unit/sheet-render.test.ts
+          - tests/e2e/character-sheet.spec.ts
+        reads:
+          - convex/characters.ts
+          - convex/characterExtras.ts
+        acceptance:
+          - "A double click on Stepper '+' gives +2 (RTL test); gold, traits, experiences, inventory, companion stress and motherboard augments use intent mutations"
+          - "One shared optimistic adjustResource patches characters.get and listByCampaign; fear pips are optimistic; useIntent accepts an optimisticUpdate, and its comment is corrected"
+          - "No key={value} or key={JSON.stringify(...)} remains; extras panels are keyed by characterId and loaded with next/dynamic; list keys are stable ids"
+          - "character-sheet e2e passes; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H20
+        title: Per-frame code split (trackers and tomes)
+        timing: after-D5
+        size: M
+        goal: Campaign routes download only the active frame's tracker UI and tome (client M1; CL8).
+        depends_on: [H17]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/trackers/index.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-tome.tsx
+          - src/app/(gm)/frames/[frameId]/frame-intro.tsx
+          - src/lib/frames/tomes.ts
+          - src/lib/frames/tomes/**
+          - tests/unit/tomes.test.ts
+        reads:
+          - convex/**
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+        acceptance:
+          - "Each tracker UI loads through next/dynamic, and the switch is exhaustive (switch-exhaustiveness)"
+          - "Tomes are split per frame and loaded with import() when opened; Convex importers of tomes still compile"
+          - "Before and after numbers from next experimental-analyze for /campaigns/[campaignId] are recorded in the task doc"
+          - "tests/e2e/tome.spec.ts passes; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H21
+        title: No mutations from effects
+        timing: after-D5
+        size: S
+        goal: Visiting the codex or opening the players dialog performs no writes; seeding happens on create, and the join code comes from create or an explicit button (client M4, L8 clipboard; CL6, CL14).
+        depends_on: [H15, H07]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/codex/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - tests/e2e/players.spec.ts
+        reads:
+          - convex/codex.ts
+          - convex/members.ts
+          - convex/campaigns.ts
+        acceptance:
+          - "No useEffect calls seed() or rotateJoinCode(); a campaign without a code shows a 'Create code' button"
+          - "The clipboard timer is cleared on unmount"
+          - "players and codex e2e pass; pnpm lint, pnpm typecheck and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 8: client, part 2
+  - wave: 8
+    tracers:
+      - id: W8-T0
+        foundation: true
+        title: Client lint rules and axe dependency (as warnings)
+        timing: after-D5
+        size: S
+        goal: jsx-a11y recommended, the SRD-barrel import ban, the backgroundImage ban and @axe-core/playwright are installed, with the rules at warn until this wave is clean (CH4).
+        depends_on: [H18, H19, H20, H21]
+        owns:
+          - package.json
+          - pnpm-lock.yaml
+          - eslint.config.mjs
+        reads:
+          - docs/best-practices.md
+        acceptance:
+          - "eslint-plugin-jsx-a11y recommended is on (warn); no-restricted-imports bans @/lib/srd in src/app/** and src/components/** (warn); no-restricted-syntax flags style backgroundImage (warn)"
+          - "pnpm lint exits 0; after wave 8 merges, the orchestrator raises the three rules to error (orchestrator edits at merge)"
+      - id: H22
+        title: Images through next/image with immutable caching
+        timing: after-D5
+        size: M
+        goal: Frame art, header art, portraits and the map render through next/image or pre-encoded webp/avif, with sizes and immutable caching (client H3, L8 focus timer; CL10).
+        depends_on: [W8-T0]
+        owns:
+          - src/app/(gm)/new/frame-select.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/map-view.tsx
+          - src/components/party/portrait.tsx
+          - next.config.ts
+          - public/design-assets/**
+          - src/lib/design-assets.ts
+          - src/lib/design-assets.generated.json
+          - scripts/design-assets-manifest.mjs
+          - scripts/check-image-weight.mjs
+          - tests/unit/image-weight.test.ts
+        reads:
+          - vercel.json
+        acceptance:
+          - "No backgroundImage warnings in the owned files (map tiles allowlisted with a reason); the header art is priority"
+          - "/design-assets/:path* is served with 'public, max-age=31536000, immutable'"
+          - "scripts/check-image-weight.mjs passes: every asset over 500 KB has a webp/avif sibling (the CI wiring is an orchestrator edit at merge)"
+          - "The map-view focus timer is replaced by a ref; world and campaigns e2e pass; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H23
+        title: SRD barrel out of the dashboard and party bundles
+        timing: after-D5
+        size: M
+        goal: Read-only character cards get display fields from the server, and client code imports SRD leaf modules only (client M2; CL9).
+        depends_on: [W8-T0]
+        owns:
+          - src/lib/srd/index.ts
+          - src/components/party/party-display.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/roster.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet.tsx
+          - convex/characters.ts
+          - tests/unit/party-display.test.ts
+          - tests/convex/characters.test.ts
+        reads:
+          - src/lib/srd/**
+        acceptance:
+          - "No @/lib/srd barrel import in src/app/** or src/components/** (zero warnings)"
+          - "CharacterView carries the class name, domain colours and portrait display fields"
+          - "The dashboard chunk size before and after (next experimental-analyze) is recorded in the task doc"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H24
+        title: Accessibility pass (dialogs, nested controls, axe)
+        timing: after-D5
+        size: M
+        goal: The lightbox and pin picker are native dialogs, gallery tiles have no nested controls, clicks in the modal padding no longer close it, reduced motion is respected, and axe runs in e2e (client M5, M7, L8; CL12, CL13, CL14, TE13).
+        depends_on: [W8-T0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/codex/gallery.tsx
+          - src/app/(gm)/campaigns/[campaignId]/codex/pin-picker.tsx
+          - src/components/brand/modal.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/new/wizard.tsx
+          - tests/e2e/a11y.spec.ts
+        reads:
+          - src/components/tome/tome-book.tsx
+        acceptance:
+          - "The lightbox and pin picker use Modal (showModal); the thumbnail is a <button> with sibling tool buttons; gallery and pin-picker images use next/image with sizes, and pin-picker uses a downscaled map"
+          - "A click inside the modal padding does not close it (e2e)"
+          - "The wizard's smooth scroll respects prefers-reduced-motion"
+          - "a11y.spec.ts: zero serious or critical axe violations on the title menu, dashboard, sheet, codex with the lightbox open, and world; zero jsx-a11y warnings in the owned files"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 9: testing and lint
+  - wave: 9
+    tracers:
+      - id: W9-T0
+        foundation: true
+        title: Typed lint, Convex and Playwright lint plugins, coverage config
+        timing: after-D5
+        size: S
+        goal: typescript-eslint typed rules, @convex-dev/eslint-plugin, eslint-plugin-playwright and vitest coverage are configured, with the new rules at warn (CH2, CH3, TE10, TE14).
+        depends_on: [H22, H23, H24]
+        owns:
+          - package.json
+          - pnpm-lock.yaml
+          - eslint.config.mjs
+          - vitest.config.ts
+        reads:
+          - .omc/audit/testing-code-health.md
+          - .omc/audit/convex-data.md
+        acceptance:
+          - "recommendedTypeChecked with projectService (no-floating-promises, no-misused-promises with attributes:false, switch-exhaustiveness-check, no-unnecessary-type-assertion) is on as warn"
+          - "@convex-dev recommended plus no-collect-in-query is on as warn for convex/**, and eslint-plugin-playwright as warn for tests/e2e/**"
+          - "Coverage uses the v8 provider on convex/** and src/lib/**, with a test:coverage script"
+          - "pnpm lint exits 0; after wave 9 merges, the orchestrator raises the clean rules to error (orchestrator edits at merge)"
+      - id: H25
+        title: Authorization role matrix and shared Convex test helpers
+        timing: after-D5
+        size: M
+        goal: Every public Convex function is tested for anon, outsider, player and GM, a guard fails when a function is missing, and the Convex tests share makeUsers and expectConvexError (testing H2, M2; TE1, TE2, TE3).
+        depends_on: [W9-T0]
+        owns:
+          - tests/convex/**
+        reads:
+          - convex/**
+          - tests/fixtures/**
+        acceptance:
+          - "tests/convex/authz-matrix.test.ts covers every api export with the expected UNAUTHENTICATED/NOT_FOUND/FORBIDDEN/ok result per role"
+          - "The guard test enumerates api and fails on an unlisted public function (proven by temporarily removing an entry)"
+          - "Hand-written user inserts and local GM constants are replaced by helpers; no errorData(await x.catch(...)) idiom remains"
+          - "pnpm test passes"
+      - id: H26
+        title: Shared e2e fixtures
+        timing: after-D5
+        size: M
+        goal: Campaign creation, player joining, API seeding and the join code are defined once as Playwright fixtures, and no spec copies them (testing M1, L4, L5; TE9, TE10).
+        depends_on: [W9-T0]
+        owns:
+          - tests/e2e/**
+          - tests/fixtures/**
+        reads:
+          - playwright.config.ts
+        acceptance:
+          - "gmCreatesCampaign, playerJoins, convexAs, createCharacter and joinCode exist only in tests/e2e/fixtures.ts / tests/fixtures/characters.ts (grep)"
+          - "No .last() on 'Start campaign' remains, and eslint-plugin-playwright reports zero warnings"
+          - "The full e2e suite passes"
+      - id: H27
+        title: Typed lint clean in src and unit tests; cheap tsconfig flags
+        timing: after-D5
+        size: M
+        goal: src/** and tests/unit/** have zero typed-lint warnings, and noImplicitReturns, noFallthroughCasesInSwitch and noImplicitOverride are on (testing M3, M4 cheap part; CH1, CH2).
+        depends_on: [W9-T0]
+        owns:
+          - src/**
+          - tests/unit/**
+          - tsconfig.json
+        reads:
+          - eslint.config.mjs
+        acceptance:
+          - "The floating promises in trackers/andaluria.tsx:299 and weredragon.tsx:194 are handled; zero typed-lint warnings in src/** and tests/unit/**"
+          - "The three tsconfig flags are on, and pnpm typecheck passes"
+          - "pnpm lint and pnpm test pass"
+      - id: H28
+        title: Convex lint clean
+        timing: after-D5
+        size: M
+        goal: convex/** has zero @convex-dev and typed-lint warnings, with explicit table ids applied, and a returns-coverage script reports queries without returns (convex-data L6, c; convex-functions L8, c; CD12, CD16, CF6).
+        depends_on: [W9-T0]
+        owns:
+          - convex/**
+          - scripts/check-returns.mjs
+        reads:
+          - eslint.config.mjs
+        acceptance:
+          - "The explicit-table-ids autofix is applied; every remaining no-collect-in-query disable carries a reason"
+          - "scripts/check-returns.mjs lists public queries without returns and exits 0 while it warns"
+          - "convex/_generated is untouched; pnpm lint, pnpm typecheck and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 10: testing, continued
+  - wave: 10
+    tracers:
+      - id: H29
+        title: storageState and parallel e2e
+        timing: after-D5
+        size: M
+        goal: e2e signs in once per role through a setup project, runs fullyParallel with per-worker data, and keeps traces on failure (testing H3, L3; TE7, TE8, TE11).
+        depends_on: [H26]
+        owns:
+          - playwright.config.ts
+          - tests/e2e/**
+        reads:
+          - scripts/e2e-ports.mjs
+          - scripts/e2e-next.mjs
+        acceptance:
+          - "The setup project writes playwright/.auth/gm.json and player.json; only auth.spec.ts drives the sign-in form (adding playwright/.auth to .gitignore is an orchestrator edit at merge)"
+          - "fullyParallel is true and CI runs 2 workers; there are no Date.now() names; trace is retain-on-failure; CI uses the github reporter"
+          - "The full e2e suite passes twice in a row with workers > 1; wall-clock times before and after are recorded in the task doc"
+      - id: H30
+        title: noUncheckedIndexedAccess
+        timing: after-D5
+        size: M
+        goal: Both tsconfigs enable noUncheckedIndexedAccess, and the 164 resulting errors are fixed, starting with src/lib/domain/** and convex/** (testing M4; CH1).
+        depends_on: [H27, H28]
+        owns:
+          - tsconfig.json
+          - convex/tsconfig.json
+          - src/**
+          - convex/**
+          - tests/unit/**
+          - tests/convex/**
+        reads:
+          - eslint.config.mjs
+        acceptance:
+          - "The flag is on in both tsconfigs, and pnpm typecheck passes"
+          - "Every new non-null assertion carries a one-line reason comment"
+          - "pnpm lint and pnpm test pass"
+
+  # ---------------------------------------------------------------- wave 11: code health
+  - wave: 11
+    tracers:
+      - id: H31
+        title: Character display helpers deduplicated (dcm-bxp.15)
+        timing: after-D5
+        size: M
+        goal: One ancestryLabel and one modifier calculation exist, and the wizard and sheet pure logic moves to framework-free src/lib/characters (testing M8, L6; CH6, CH7).
+        depends_on: [H30]
+        owns:
+          - src/components/party/party-display.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/**
+          - src/lib/characters/**
+          - tests/unit/party-display.test.ts
+          - tests/unit/sheet-helpers.test.ts
+          - tests/unit/wizard-logic.test.ts
+          - tests/unit/wizard-steps.test.tsx
+          - tests/unit/sheet-render.test.ts
+        reads:
+          - src/lib/srd/**
+          - src/lib/domain/**
+        acceptance:
+          - "The party-display copies of ancestryLabel and portraitAncestryId are gone; gearSummary uses derivedDefense and damageThresholds"
+          - "wizard-logic and sheet-helpers live in src/lib/characters/** with relative imports (adding src/lib/characters/** to the no-restricted-imports list is an orchestrator edit at merge)"
+          - "Close bead dcm-bxp.15; pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H32
+        title: One upload pipeline, shared limits
+        timing: after-D5
+        size: M
+        goal: All three attach mutations use acceptUpload with one result type, all three clients use uploadToConvex, and byte limits and types come from one shared module (testing M5, M6; CF16, CH5, CH7).
+        depends_on: [H30]
+        owns:
+          - convex/lib/files.ts
+          - convex/maps.ts
+          - convex/characters.ts
+          - convex/codex.ts
+          - src/lib/upload.ts
+          - src/lib/validation/uploads.ts
+          - src/lib/convex-errors.ts
+          - src/components/party/portrait.tsx
+          - src/app/(gm)/campaigns/[campaignId]/codex/gallery.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/map-image.tsx
+          - tests/convex/upload-claims.test.ts
+          - tests/unit/upload.test.ts
+        reads:
+          - src/lib/codex/schema.ts
+          - src/lib/errors/**
+        acceptance:
+          - "acceptUpload(ctx, storageId, {kind}) returns {ok:true, meta} or {ok:false, code} after deleting on rejection, and all three attach mutations use it"
+          - "MAX_* byte limits and allowed types are defined only in src/lib/validation/uploads.ts (grep)"
+          - "uploadToConvex and shrinkToJpeg live in src/lib/upload.ts; errorMessage handles a plain Error, and the triple 'instanceof Error && !(data in e)' idiom is gone"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"
+      - id: H33
+        title: README matches the stack
+        timing: after-D5
+        size: S
+        goal: README describes Convex and Convex Auth setup (or points to the AGENTS.md Commands section), with no Supabase steps (testing H4; CH10).
+        depends_on: []
+        owns:
+          - README.md
+        reads:
+          - AGENTS.md
+        acceptance:
+          - "README has no Supabase, PostgreSQL or RLS references, and its commands match AGENTS.md 'Standard commands'"
+
+  # ---------------------------------------------------------------- wave 12: dead code
+  - wave: 12
+    tracers:
+      - id: H34
+        foundation: true
+        title: knip clean
+        timing: after-D5
+        size: S
+        goal: knip reports no unused files, exports or dependencies, each intentional entry is listed in knip.json with a reason, and fitWithin moves next to the upload helpers (testing L1; CH8).
+        depends_on: [H31, H32]
+        owns:
+          - knip.json
+          - package.json
+          - pnpm-lock.yaml
+          - src/**
+        reads:
+          - scripts/**
+          - convex/**
+        acceptance:
+          - "pnpm dlx knip exits 0 with knip.json (entries scripts/**, convex/**; reference/** ignored; scripts/design-assets-manifest.mjs listed as an entry)"
+          - "@base-ui/react is kept or removed after checking shadcn generation, and the reason is recorded"
+          - "fitWithin lives in src/lib/upload.ts; the CI knip step is an orchestrator edit at merge (.github/workflows/ci.yml)"
+          - "pnpm lint, pnpm typecheck and pnpm test pass"

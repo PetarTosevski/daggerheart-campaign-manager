@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Age of Umbra</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#16151d}
+.au-bg{background-image:url(/_blob/53d3e7877e8e687107b1d80149685979);background-size:cover;background-position:70% center;background-repeat:no-repeat}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.bg-blur{filter:blur(32px) brightness(0.65);transform:scale(1.2)}
+.bg-fit{background-size:contain;background-position:center}
+</style>
+</helmet>
+<div style="position: relative; min-height: 100vh; background: #16151d; color: #ece6d6; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden">
+<div class="au-bg bg-blur" aria-hidden="true" style="position: absolute; inset: 0"></div>
+<div class="au-bg bg-fit" aria-hidden="true" style="position: absolute; inset: 0"></div>
+<div style="{{ scrimStyle }}"></div>
+
+<header style="position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 48px; background: rgba(14, 13, 20, 0.76); border-bottom: 1px solid rgba(255, 255, 255, 0.08)">
+<div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap">
+<a href="FrameSelect.dc.html" aria-label="Back to campaign frames" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #45424f; color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box; background: rgba(0, 0, 0, 0.3)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></a>
+<div style="font-family: 'Cinzel', serif; font-size: 40px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div>
+<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.24em; color: #c3c0cf">Campaign Frame</div>
+</div>
+<ol aria-label="Steps" style="list-style: none; margin: 0; padding: 0; display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px">
+<li style="padding: 8px 14px; border-radius: 999px; background: {{accent}}; color: #1a1408; font-weight: 600">1 · Frame</li>
+<li style="padding: 8px 14px; border-radius: 999px; border: 1px solid #55525f; color: #d0cdd9; background: rgba(0, 0, 0, 0.3)">2 · Party</li>
+<li style="padding: 8px 14px; border-radius: 999px; border: 1px solid #55525f; color: #d0cdd9; background: rgba(0, 0, 0, 0.3)">3 · Session Zero</li>
+</ol>
+</header>
+
+<main style="position: relative; flex: 1; width: 100%; max-width: 1344px; margin: 0 auto; padding: 28px 48px 28px; box-sizing: border-box; display: flex; align-items: flex-start">
+<sc-if value="{{ shown }}" hint-placeholder-val="{{ true }}">
+<section aria-labelledby="au-title" style="width: 100%; max-width: 760px; padding: 28px 32px; border-radius: 18px; background: rgba(15, 14, 21, 0.86); border: 1px solid rgba(255, 255, 255, 0.1); box-sizing: border-box; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.2em; color: #c3c0cf"><span>Core Rulebook</span><span aria-hidden="true">·</span><span>Complexity <span aria-label="3 of 4" style="color: {{accent}}; letter-spacing: 0.15em">◆◆◆◇</span></span></div>
+<h1 id="au-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 52px; line-height: 1.04; font-weight: 900; letter-spacing: 0.04em">The Age of Umbra</h1>
+<p style="margin: 0; font-size: 17px; line-height: 1.5; font-style: italic; color: #e6e4ee">In a dying world immersed in relentless shadow and nightmarish monsters, small communities hold fast to the light, hoping those who endure can find a way to save this broken realm before all is lost to darkness.</p>
+<p style="margin: 0; font-size: 13px; color: #aba8b8">Designed by Matthew Mercer</p>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #aba8b8; font-weight: 500">The Pitch</h2><p style="margin: 0; font-size: 15px; line-height: 1.6; color: #e6e4ee">A century has passed since the God-King Othedias betrayed the Pantheon, provoking divine punishment and abandonment by the gods that left the realm of the Halcyon Domain shattered, desolate, and eternally cursed. Throughout this shadow-choked land of decaying fortresses and dreadful monstrosities, surviving communities cling to hope in the face of lightless oblivion.</p>
+<p style="margin: 0; font-size: 15px; line-height: 1.6; color: #e6e4ee">In an Age of Umbra campaign, you’ll play heroic survivors who protect their community from the terrors beyond their walls, venture out into the unknown to hunt the nightmares that twist and grow with each fallen soul, seek answers to the curses that corrupt this world, and perhaps even discover a way to change its fate.</p></div>
+
+<div style="display: flex; flex-direction: column; gap: 10px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #aba8b8; font-weight: 500">Tone &amp; Feel</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 8px"><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #55525f; font-size: 13px">Ancient</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #55525f; font-size: 13px">Daunting</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #55525f; font-size: 13px">Epic</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #55525f; font-size: 13px">Grim</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #55525f; font-size: 13px">Ominous</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #55525f; font-size: 13px">Terrifying</span><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #55525f; font-size: 13px">Tragic</span></div></div>
+
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 20px">
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #aba8b8; font-weight: 500">Themes</h2><p style="margin: 0; font-size: 15px; line-height: 1.55; color: #e6e4ee">Apocalypse, Corruption, Darkness vs Light, Hope, Redemption, Survival</p></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #aba8b8; font-weight: 500">Touchstones</h2><p style="margin: 0; font-size: 15px; line-height: 1.55; color: #e6e4ee">Dark Souls, Kingdom Death: Monster, Berserk, The Seventh Seal, Blasphemous</p></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #aba8b8; font-weight: 500">Special Mechanics</h2><button type="button" onClick="{{ openMechanics }}" style="min-height: 44px; padding: 0; border: none; background: transparent; color: {{accent}}; font-family: inherit; font-size: 15px; line-height: 1.4; text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 3px">The Strength of Hate &amp; Lurking Darkness ›</button></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><h2 style="margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: #aba8b8; font-weight: 500">Inciting Incident</h2><button type="button" onClick="{{ openIncident }}" style="min-height: 44px; padding: 0; border: none; background: transparent; color: {{accent}}; font-family: inherit; font-size: 15px; line-height: 1.4; text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 3px">The temple in Shalk Chasm ›</button></div>
+</div>
+
+<div style="display: flex; flex-wrap: wrap; gap: 12px; padding-top: 6px">
+<a href="HubAgeOfUmbra.dc.html" style="min-height: 52px; padding: 0 28px; border-radius: 999px; border: none; background: {{accent}}; color: #1a1408; font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; letter-spacing: 0.1em; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box">Choose this Frame</a>
+<button type="button" onClick="{{ openOverview }}" style="min-height: 52px; padding: 0 20px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.3); color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5c2.5-1 5-1 8 1 3-2 5.5-2 8-1v13c-2.5-1-5-1-8 1-3-2-5.5-2-8-1z"></path><path d="M12 6.5v13"></path></svg>Overview</button>
+<button type="button" onClick="{{ toggle }}" style="min-height: 52px; padding: 0 20px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.18); background: transparent; color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 10px; margin-left: auto"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7c2 0 3.7.6 5.1 1.5M22 12s-3.5 7-10 7c-2 0-3.7-.6-5.1-1.5"></path><path d="M3 3l18 18"></path></svg>View full art</button>
+</div>
+</section>
+</sc-if>
+<sc-if value="{{ hidden }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ toggle }}" style="min-height: 48px; padding: 0 20px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(14, 13, 20, 0.82); color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>Show details</button></sc-if>
+</main>
+<sc-if value="{{ tomeOpen }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; z-index: 10; background: rgba(4, 8, 10, 0.72)">
+<dc-import name="TomeAgeOfUmbra" start-chapter="{{ tomeChapter }}" embedded="{{ true }}" on-close="{{ closeTome }}" hint-size="100%,100%"></dc-import>
+</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#e3b45a","options":["#e3b45a","#8f78d8","#d9775b","#6fb8a6"]},"dim":{"editor":"range","min":0,"max":70,"step":5,"unit":"%","default":20},"$preview":{"width":1440,"height":994}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dim = (this.props.dim ?? 20) / 100;
+    return {
+      shown: !(this.state || {}).hidden, hidden: !!(this.state || {}).hidden,
+      toggle: () => this.setState({ hidden: !(this.state || {}).hidden }),
+      tomeOpen: !!(this.state || {}).tome, tomeChapter: (this.state || {}).tome || 'overview',
+      openOverview: () => this.setState({ tome: 'overview' }),
+      openIncident: () => this.setState({ tome: 'incident' }),
+      openMechanics: () => this.setState({ tome: 'mechanics' }),
+      closeTome: () => this.setState({ tome: null }),
+      accent: this.props.accent ?? '#e3b45a',
+      scrimStyle: 'position: absolute; inset: 0; background: rgba(10, 9, 15, ' + dim + ');'
+    };
+  }
+}
+</script>
+</body>
+</html>

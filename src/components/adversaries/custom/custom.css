@@ -1,0 +1,134 @@
+/*
+ * Custom adversaries (D8 A5): the campaign's own stat blocks under the catalogue, and the parchment editor dialog.
+ * On the --adv-* tokens of adversaries.css; the list rows and the stat block reuse the catalogue's adc-* rules.
+ */
+.adx-section { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--adv-border); scroll-margin-top: 16px; }
+.adx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
+.adx-title { margin: 0; font-family: var(--adv-font-head); font-size: 22px; font-weight: 700; color: var(--adv-name); }
+.adx-count { font-size: 13px; color: var(--adv-muted); flex: 1; min-width: 160px; }
+.adx-empty { margin: 0; padding: 22px; border: 1px dashed var(--adv-border-strong); border-radius: 14px; color: var(--adv-muted); font-size: 15px; line-height: 1.5; }
+
+/* The "Custom" pill and book chip: the H&F pill's shape in the accent colour. */
+.adx-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--adv-acc);
+  background: #2d2614;
+  color: var(--adv-acc);
+  font-family: var(--adv-font-head);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.adx-pill-lg { font-size: 12px; padding: 3px 10px; }
+
+.adx-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--adv-border-strong);
+  background: transparent;
+  color: var(--adv-text);
+  font-family: var(--adv-font-ui);
+  font-size: 14px;
+  cursor: pointer;
+}
+.adx-btn:hover { background: #1b282d; }
+.adx-btn:disabled { opacity: 0.5; cursor: default; }
+.adx-btn:focus-visible,
+.adx-primary:focus-visible { outline: 2px solid var(--adv-acc); outline-offset: 2px; }
+.adx-primary {
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: none;
+  background: var(--adv-acc);
+  color: var(--adv-acc-ink);
+  font-family: var(--adv-font-head);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.adx-primary:disabled { opacity: 0.6; cursor: default; }
+/* Buttons on the parchment stat block head. */
+.adc-sb-actions .adx-btn { border-color: var(--adv-divider); color: var(--adv-ink); background: var(--adv-stat-bg); }
+.adc-sb-actions .adx-btn:hover { background: var(--adv-parch-head); }
+.adx-danger { color: #ffb4a8; border-color: #5a3330; }
+.adc-sb-actions .adx-danger { color: var(--adv-parch-rule); border-color: var(--adv-parch-rule); }
+.adx-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--adv-error-border);
+  background: var(--adv-error-bg);
+  color: var(--adv-error-text);
+  font-family: var(--adv-font-ui);
+  font-size: 14px;
+}
+
+/* Editor dialog: parchment form beside a live preview. */
+.adx-dialog { max-width: 1180px; }
+.adx-editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 480px); gap: 22px; align-items: start; color: var(--adv-text); font-family: var(--adv-font-ui); }
+.adx-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 6px;
+  background: var(--adv-parch);
+  color: var(--adv-ink);
+  border-top: 3px solid var(--adv-parch-rule);
+  min-width: 0;
+}
+.adx-preview { position: sticky; top: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.adx-preview-lbl { margin: 0; font-size: 12px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--adv-muted); }
+.adx-fs { margin: 0; padding: 0; border: none; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.adx-legend { padding: 0; margin-bottom: 4px; font-family: var(--adv-font-head); font-size: 14px; font-weight: 700; letter-spacing: 0.12em; color: var(--adv-parch-rule); border-bottom: 1px solid var(--adv-divider); width: 100%; }
+.adx-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.adx-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.adx-lbl { font-family: var(--adv-font-head); font-size: 12px; letter-spacing: 0.06em; color: var(--adv-label); }
+.adx-in,
+.adx-ta {
+  min-height: 44px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--adv-divider);
+  background: #f8f0dc;
+  color: var(--adv-ink);
+  font-family: var(--adv-font-ui);
+  font-size: 15px;
+}
+.adx-ta { padding: 10px; font-family: var(--adv-font-body); font-size: 16px; line-height: 1.45; resize: vertical; }
+.adx-in:focus,
+.adx-ta:focus { outline: 2px solid var(--adv-parch-rule); outline-offset: 1px; }
+.adx-hint { margin: 0; font-size: 13px; color: var(--adv-ink-soft); line-height: 1.45; }
+.adx-form .adx-btn { border-color: var(--adv-divider); color: var(--adv-ink); background: var(--adv-stat-bg); }
+.adx-form .adx-btn:hover { background: var(--adv-parch-head); }
+.adx-form .adx-danger { color: var(--adv-parch-rule); border-color: var(--adv-parch-rule); }
+.adx-item { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--adv-divider); border-radius: 6px; background: var(--adv-stat-bg); }
+.adx-item-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.adx-exp { display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; align-items: end; }
+.adx-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+
+/* Add to encounter dialog */
+.adx-add { display: flex; flex-direction: column; gap: 14px; color: var(--adv-text); font-family: var(--adv-font-ui); }
+.adx-add .adx-in { background: #0b1214; color: var(--adv-text); border-color: var(--adv-border-strong); }
+.adx-add .adx-lbl { color: var(--adv-muted); font-family: var(--adv-font-ui); letter-spacing: 0.2em; text-transform: uppercase; }
+.adx-check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.adx-check input { width: 22px; height: 22px; accent-color: var(--adv-acc); }
+
+@media (max-width: 980px) {
+  .adx-editor { grid-template-columns: minmax(0, 1fr); }
+  .adx-preview { position: static; }
+}
+@media (max-width: 480px) {
+  .adx-form { padding: 14px; }
+  .adx-exp { grid-template-columns: minmax(0, 1fr) 72px; }
+  .adx-exp .adx-btn { grid-column: 1 / -1; }
+}

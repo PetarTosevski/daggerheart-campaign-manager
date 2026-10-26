@@ -1,0 +1,111 @@
+/*
+ * The Shared block and the read-only shared page (D11 N6; not on the board, in its look): rows like the board's page
+ * buttons (l.287: tape tab, title), with the owner or the sharing label under the title. Tokens from notes.css.
+ */
+
+.bj-shared-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.bj-shared-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bj-shared-group-head {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--bj-muted);
+  padding: 0 10px;
+}
+.bj-shared-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bj-shared-btn {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--bj-text);
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid transparent;
+  text-align: left;
+}
+.bj-shared-btn:hover {
+  background: var(--bj-hover);
+}
+.bj-shared-btn[aria-current="page"] {
+  background: var(--bj-hover);
+  border-color: var(--bj-acc);
+}
+.bj-shared-btn:focus-visible {
+  outline: 2px solid var(--bj-acc);
+  outline-offset: 2px;
+}
+.bj-shared-tab {
+  width: 10px;
+  height: 22px;
+  flex: none;
+  border-radius: 2px;
+}
+.bj-shared-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.bj-shared-title,
+.bj-shared-owner {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bj-shared-title {
+  font-size: 15px;
+}
+.bj-shared-owner {
+  font-size: 12px;
+  color: var(--bj-muted);
+}
+
+.bj-shared-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.bj-shared-by {
+  margin: 0;
+  font-size: 14px;
+  color: var(--bj-muted);
+  letter-spacing: 0.02em;
+}
+.bj-shared-heading {
+  margin: 0;
+  font-family: var(--bj-hand);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--bj-ink);
+  line-height: 1.1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.bj-shared-chip {
+  cursor: default;
+  max-width: 100%;
+}

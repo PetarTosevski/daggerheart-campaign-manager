@@ -15,6 +15,8 @@
 
 # next.js
 /.next/
+/.next-e2e/
+/.next-e2e-*/
 /out/
 
 # production
@@ -48,11 +50,6 @@ next-env.d.ts
 /blob-report/
 /playwright/.cache/
 
-# supabase local state
-/supabase/.branches
-/supabase/.temp
-/supabase/.env
-
 # private references (must never be required by build, tests, CI, or deploy)
 .reference-private/
 
@@ -62,3 +59,15 @@ next-env.d.ts
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# OMC runtime state (plans and specs are tracked)
+/.omc/*
+!/.omc/plans/
+!/.omc/specs/
+
+# oh-my-claudecode state created by hooks in subfolders
+**/.omc/state/
+.claude/worktrees/
+
+# Raw sprite sheets generated for sprite packs (large; never committed). See docs/sprite-packs/prompts.md.
+/sprite-sheets/

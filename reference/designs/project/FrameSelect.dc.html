@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Existing Campaign Frame &amp; Custom</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0c0b11}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.art-fivebanners{background-image:url(/_blob/5273dcaa00f81a748be4d8404ef72b6e);background-size:cover;background-position:50% 40%;background-repeat:no-repeat}
+.art-beastfeast{background-image:url(/_blob/9ad463b1fc72771176578d77da20984f);background-size:cover;background-position:50% 50%;background-repeat:no-repeat}
+.art-umbra{background-image:url(/_blob/53d3e7877e8e687107b1d80149685979);background-size:cover;background-position:55% 60%;background-repeat:no-repeat}
+.art-colossus{background-image:url(/_blob/bf68d5cb6c5931e18f23260203309a75);background-size:cover;background-position:40% 35%;background-repeat:no-repeat}
+.art-motherboard{background-image:url(/_blob/0b895f62874c5481f3b92d0cd284d3e9);background-size:cover;background-position:50% 45%;background-repeat:no-repeat}
+.art-andaluria{background-image:url(/_blob/b05e2883f26c65020e038349a2ba07ba);background-size:cover;background-position:60% 40%;background-repeat:no-repeat}
+.art-horizon{background-image:url(/_blob/b0cd8d347b032b78f2c527ddcce21f51);background-size:cover;background-position:45% 55%;background-repeat:no-repeat}
+.art-weredragon{background-image:url(/_blob/4b69baa5c3ea604607e14579c982c9e9);background-size:cover;background-position:40% 30%;background-repeat:no-repeat}
+.art-castle{background-image:url(/_blob/3514a8aae6b8c0148b3c1df43a1999dd);background-size:cover;background-position:50% 40%;background-repeat:no-repeat}
+.art-witherwild{background-image:url(/_blob/d69136bf0c8eddbad10c2eb636b1b5ca);background-size:cover;background-position:60% 45%;background-repeat:no-repeat}
+.art-customdesk{background-image:url(/_blob/f3205851cb5f0694dec14556bfd1988e);background-size:cover;background-position:center 40%;background-repeat:no-repeat}
+.cu-bg-lbl{position:absolute;left:0;right:0;bottom:0;padding:4px 6px;font-size:12px;background:linear-gradient(transparent,rgba(0,0,0,.8));color:#ece6d6;text-align:left}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0c0b11; color: #ece6d6; font-family: 'IBM Plex Sans', sans-serif; box-sizing: border-box; display: flex; flex-direction: column">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 48px; border-bottom: 1px solid #2a2838">
+<div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap">
+<a href="TitleMenu.dc.html" aria-label="Back to main menu" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid #3a3449; color: #ece6d6; display: flex; align-items: center; justify-content: center; box-sizing: border-box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg></a>
+<div style="font-family: 'Cinzel', serif; font-size: 40px; font-weight: 900; letter-spacing: 0.1em">DAGGERHEART</div>
+<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.24em; color: #a39cb2">Create New Campaign</div>
+</div>
+<ol aria-label="Steps" style="list-style: none; margin: 0; padding: 0; display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px">
+<li style="padding: 8px 14px; border-radius: 999px; background: {{accent}}; color: #1a1408; font-weight: 600">1 · Frame</li>
+<li style="padding: 8px 14px; border-radius: 999px; border: 1px solid #3a3449; color: #a39cb2">2 · Party</li>
+<li style="padding: 8px 14px; border-radius: 999px; border: 1px solid #3a3449; color: #a39cb2">3 · Session Zero</li>
+</ol>
+</header>
+
+<main style="flex: 1; width: 1328px; max-width: 1280px; margin: 0 auto; padding: 40px 48px 32px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px; height: 920px">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h1 style="margin: 0; font-family: 'Cinzel', serif; font-size: 44px; font-weight: 700; letter-spacing: 0.04em">Existing Campaign Frame &amp; Custom</h1>
+<p style="margin: 0; font-size: 17px; color: #b9b2c7">Begin from a published frame, or forge your own world from nothing.</p>
+</div>
+
+<div role="radiogroup" aria-label="Campaign type" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px">
+<button type="button" role="radio" aria-checked="{{ frameChecked }}" onClick="{{ pickFrame }}" style="{{ frameCardStyle }}">
+<span style="width: 56px; height: 56px; flex: none; border-radius: 12px; border: 1.5px solid {{ frameIcon }}; display: flex; align-items: center; justify-content: center"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{{ frameIcon }}" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"></path><path d="M8 9h8M8 13h8M8 17h5"></path></svg></span>
+<span style="display: flex; flex-direction: column; gap: 6px"><span style="font-family: 'Cinzel', serif; font-size: 26px; font-weight: 700">Existing Campaign Frame</span><span style="font-size: 15px; line-height: 1.5; color: #a39cb2">Pitch, themes, special mechanics and an inciting incident, ready to play.</span></span>
+</button>
+<button type="button" role="radio" aria-checked="{{ customChecked }}" onClick="{{ pickCustom }}" style="{{ customCardStyle }}">
+<span style="width: 56px; height: 56px; flex: none; border-radius: 12px; border: 1.5px solid {{ customIcon }}; display: flex; align-items: center; justify-content: center"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="{{ customIcon }}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"></path><path d="M14 6l3 3"></path></svg></span>
+<span style="display: flex; flex-direction: column; gap: 6px"><span style="font-family: 'Cinzel', serif; font-size: 26px; font-weight: 700">Custom</span><span style="font-size: 15px; line-height: 1.5; color: #a39cb2">Write your own pitch, tone, themes and touchstones from a blank frame.</span></span>
+</button>
+</div>
+
+<sc-if value="{{ isFrame }}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-wrap: wrap; gap: 24px">
+<div style="flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+<h2 style="margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.22em; color: #a39cb2; font-weight: 500">Campaign Frames</h2>
+<label for="fs-search" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search frames</label>
+<input id="fs-search" type="search" placeholder="Search frames" style="min-height: 44px; width: 200px; padding: 0 12px; border-radius: 8px; border: 1px solid #3a3449; background: #15131c; color: #ece6d6; font-size: 15px; font-family: inherit">
+</div>
+<div style="max-height: 460px; overflow-y: auto; scroll-snap-type: y proximity; display: flex; flex-direction: column; gap: 10px; padding-right: 6px">
+<sc-for list="{{ frames }}" as="f" hint-placeholder-count="6">
+<button type="button" onClick="{{ f.pick }}" aria-pressed="{{ f.pressed }}" style="{{ f.style }}">
+<sc-if value="{{ f.hasArt }}" hint-placeholder-val="{{ false }}"><span class="{{ f.artClass }}" aria-hidden="true" style="position: absolute; inset: 0"></span><span aria-hidden="true" style="position: absolute; inset: 0; background: rgba(8, 10, 14, 0.5)"></span></sc-if>
+<sc-if value="{{ f.noArt }}" hint-placeholder-val="{{ true }}"><span style="width: 60px; height: 60px; flex: none; border-radius: 10px; background: #221f2d; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #8d869c">[Art]</span></sc-if>
+<span style="position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8)"><span style="font-family: 'Cinzel', serif; font-size: 21px; font-weight: 700">{{ f.name }}</span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px"><span style="font-size: 13px; color: {{ f.subColor }}">{{ f.source }}</span><sc-if value="{{ f.exp }}" hint-placeholder-val="{{ false }}"><span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; border: 1px solid #5b4a8f; background: #1e1930; font-family: 'Cinzel', serif; font-size: 12px; font-weight: 700; letter-spacing: 0.08em"><span style="color: #f0cf8a">Hope</span><span style="color: #a39cb2">&amp;</span><span style="color: #c6b6f2">Fear</span></span></sc-if></span></span>
+<span style="position: relative; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8)"><span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: {{ f.subColor }}">Complexity</span><span style="font-size: 15px; letter-spacing: 0.15em; color: {{accent}}">{{ f.dots }}</span></span>
+</button>
+</sc-for>
+</div>
+</div>
+
+<section aria-label="Frame details" style="flex: 1 1 520px; min-width: 0; padding: 28px; border-radius: 16px; background: #15131c; border: 1px solid #2a2536; display: flex; flex-direction: column; gap: 18px; box-sizing: border-box">
+<sc-if value="{{ sel.hasArt }}" hint-placeholder-val="{{ false }}"><div class="{{ sel.artClass }}" role="img" aria-label="{{ sel.artLabel }}" style="height: 140px; border-radius: 12px; background-color: #221f2d"></div></sc-if>
+<sc-if value="{{ sel.noArt }}" hint-placeholder-val="{{ true }}"><div style="height: 140px; border-radius: 12px; background: #221f2d; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #8d869c">[Frame key art]</div></sc-if>
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap">
+<div style="display: flex; flex-direction: column; gap: 8px"><sc-if value="{{ sel.exp }}" hint-placeholder-val="{{ false }}"><span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 999px; border: 1px solid #5b4a8f; background: #1e1930; font-family: 'Cinzel', serif; font-size: 13px; font-weight: 700; letter-spacing: 0.08em"><span style="color: #a39cb2; font-family: 'IBM Plex Sans', sans-serif; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em">Expansion ·</span><span style="color: #f0cf8a">Hope</span><span style="color: #a39cb2">&amp;</span><span style="color: #c6b6f2">Fear</span></span></sc-if><h3 style="margin: 0; font-family: 'Cinzel', serif; font-size: 32px; font-weight: 700">{{ sel.name }}</h3></div>
+<span style="font-size: 14px; color: #a39cb2">Complexity <span style="color: {{accent}}; letter-spacing: 0.15em">{{ sel.dots }}</span></span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; color: #8d869c">The Pitch</span><span style="font-size: 15px; line-height: 1.6; color: #cfc8db">{{ sel.pitchText }}</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><span style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; color: #8d869c">Tone &amp; Feel</span>
+<div style="display: flex; flex-wrap: wrap; gap: 8px"><sc-for list="{{ sel.toneList }}" as="t" hint-placeholder-count="3"><span style="padding: 6px 12px; border-radius: 999px; border: 1px solid #3a3449; font-size: 13px">{{ t.label }}</span></sc-for></div></div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; color: #8d869c">Themes</span><span style="font-size: 15px; line-height: 1.5; color: #cfc8db">{{ sel.themesText }}</span></div>
+<div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.18em; color: #8d869c">Touchstones</span><span style="font-size: 15px; line-height: 1.5; color: #cfc8db">{{ sel.touchText }}</span></div>
+</div>
+<div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: auto">
+<sc-if value="{{ sel.page }}" hint-placeholder-val="{{ false }}"><a href="{{ sel.page }}" style="min-height: 50px; padding: 0 20px; border-radius: 10px; border: 1px solid #3a3449; color: #ece6d6; text-decoration: none; font-size: 15px; display: flex; align-items: center; box-sizing: border-box">Preview full frame</a></sc-if>
+<sc-if value="{{ sel.noPage }}" hint-placeholder-val="{{ true }}"><button type="button" style="min-height: 50px; padding: 0 20px; border-radius: 10px; border: 1px solid #3a3449; background: transparent; color: #ece6d6; font-size: 15px; cursor: pointer; font-family: inherit">Preview full frame</button></sc-if>
+
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ isCustom }}" hint-placeholder-val="{{ false }}">
+<section aria-label="Custom frame" style="padding: 32px; border-radius: 16px; background: #15131c; border: 1px solid #2a2536; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 28px; box-sizing: border-box">
+<div style="display: flex; flex-direction: column; gap: 8px"><label for="cu-name" style="font-size: 14px; color: #b9b2c7">Campaign name</label><input id="cu-name" data-k="name" defaultValue="{{ cu.name }}" onChange="{{ setCu }}" type="text" placeholder="Name your campaign" style="min-height: 50px; padding: 0 14px; border-radius: 10px; border: 1px solid #3a3449; background: #0f0d15; color: #ece6d6; font-size: 16px; font-family: inherit"></div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 8px"><label for="cu-party" style="font-size: 14px; color: #b9b2c7">Party size</label><select id="cu-party" data-k="party" defaultValue="{{ cu.party }}" onChange="{{ setCu }}" style="min-height: 50px; padding: 0 12px; border-radius: 10px; border: 1px solid #3a3449; background: #0f0d15; color: #ece6d6; font-size: 16px; font-family: inherit"><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><label for="cu-tier" style="font-size: 14px; color: #b9b2c7">Starting tier</label><select id="cu-tier" data-k="tier" defaultValue="{{ cu.tier }}" onChange="{{ setCu }}" style="min-height: 50px; padding: 0 12px; border-radius: 10px; border: 1px solid #3a3449; background: #0f0d15; color: #ece6d6; font-size: 16px; font-family: inherit"><option>Tier 1 · Lvl 1</option><option>Tier 2 · Lvl 2</option><option>Tier 3 · Lvl 5</option><option>Tier 4 · Lvl 8</option></select></div>
+</div>
+<div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px"><label for="cu-pitch" style="font-size: 14px; color: #b9b2c7">The pitch</label><textarea id="cu-pitch" data-k="pitch" defaultValue="{{ cu.pitch }}" onChange="{{ setCu }}" rows="3" placeholder="What is this campaign about? Read this to your players." style="padding: 12px 14px; border-radius: 10px; border: 1px solid #3a3449; background: #0f0d15; color: #ece6d6; font-size: 16px; font-family: inherit; resize: vertical"></textarea></div>
+<div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 14px; color: #b9b2c7">Tone &amp; feel</span>
+<div style="display: flex; flex-wrap: wrap; gap: 10px">
+<sc-for list="{{ tones }}" as="t" hint-placeholder-count="8">
+<button type="button" onClick="{{ t.toggle }}" aria-pressed="{{ t.pressed }}" style="{{ t.style }}">{{ t.label }}</button>
+</sc-for>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px"><label for="cu-themes" style="font-size: 14px; color: #b9b2c7">Themes</label><input id="cu-themes" data-k="themes" defaultValue="{{ cu.themes }}" onChange="{{ setCu }}" type="text" placeholder="e.g. found family, cost of power" style="min-height: 50px; padding: 0 14px; border-radius: 10px; border: 1px solid #3a3449; background: #0f0d15; color: #ece6d6; font-size: 16px; font-family: inherit"></div>
+<div style="display: flex; flex-direction: column; gap: 8px"><label for="cu-touch" style="font-size: 14px; color: #b9b2c7">Touchstones</label><input id="cu-touch" data-k="touch" defaultValue="{{ cu.touch }}" onChange="{{ setCu }}" type="text" placeholder="Films, books or games that set the mood" style="min-height: 50px; padding: 0 14px; border-radius: 10px; border: 1px solid #3a3449; background: #0f0d15; color: #ece6d6; font-size: 16px; font-family: inherit"></div>
+<div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 14px; color: #b9b2c7">Dashboard background</span>
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px">
+<sc-for list="{{ bgList }}" as="b" hint-placeholder-count="10">
+<button type="button" onClick="{{ b.pick }}" aria-pressed="{{ b.pressed }}" aria-label="{{ b.label }}" title="{{ b.label }}" class="{{ b.cls }}" style="{{ b.style }}"><span class="cu-bg-lbl">{{ b.label }}</span></button>
+</sc-for>
+</div>
+</div>
+<div style="grid-column: 1 / -1; padding: 14px 16px; border-radius: 10px; border: 1px dashed #4a4360; color: #b9b2c7; font-size: 14px; line-height: 1.5">A custom campaign starts with a blank tome. You write the Overview, Inciting Incident and Campaign Mechanics yourself from the campaign dashboard.</div>
+</section>
+</sc-if>
+</main>
+
+<footer style="border-top: 1px solid #2a2838; padding: 20px 48px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px">
+<a href="TitleMenu.dc.html" style="min-height: 50px; padding: 0 22px; border-radius: 10px; border: 1px solid #3a3449; color: #ece6d6; text-decoration: none; font-size: 15px; display: flex; align-items: center; box-sizing: border-box">Back</a>
+<span style="font-size: 14px; color: #a39cb2">{{ summary }}</span>
+<sc-if value="{{ canStart }}" hint-placeholder-val="{{ true }}"><a href="{{ startHref }}" style="min-height: 50px; padding: 0 32px; border-radius: 999px; border: none; font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; letter-spacing: 0.1em; box-sizing: border-box; display: inline-flex; align-items: center; text-decoration: none; background: {{accent}}; color: #1a1408; cursor: pointer">Start Campaign</a></sc-if><sc-if value="{{ noStart }}" hint-placeholder-val="{{ false }}"><button type="button" disabled title="Custom campaigns are coming soon. Pick a frame to start." style="min-height: 50px; padding: 0 32px; border-radius: 999px; border: none; font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; letter-spacing: 0.1em; box-sizing: border-box; display: inline-flex; align-items: center; text-decoration: none; background: #2a2838; color: #8a8398; cursor: not-allowed">Start Campaign</button></sc-if>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#e3b45a","options":["#e3b45a","#8f78d8","#d9775b","#6fb8a6"]},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    let cu = {}; try { cu = JSON.parse(window.localStorage.getItem('dh.custom') || '{}') || {}; } catch (e) {}
+    this.state = { kind: 'frame', frame: 0, cu: { party: '4', tier: 'Tier 1 · Lvl 1', art: 'custom', tones: ['Adventurous', 'Heroic'], ...cu } };
+  }
+  renderVals() {
+    const accent = this.props.accent ?? '#e3b45a';
+    const { kind, frame, cu } = this.state; const tones = cu.tones || [];
+    const saveCu = (patch) => { const n = { ...this.state.cu, ...patch }; try { window.localStorage.setItem('dh.custom', JSON.stringify(n)); } catch (e) {} this.setState({ cu: n }); };
+    const data = [
+      // c = complexity 1–4; null until confirmed from the book
+      { name: 'The Witherwild', source: 'Core Rulebook', c: 1, exp: false,
+        pitch: 'When an invading nation attacks an ancient forest deity, a virulent overgrowth spreads throughout the land.',
+        tones: ['Adventurous', 'Dynamic', 'Epic', 'Heroic', 'Thrilling', 'Uncanny', 'Whimsical'],
+        themes: 'Cultural Clash, Ends Justify Means, Grief, People vs. Nature, Transformation and Change, Survival',
+        touch: 'Princess Mononoke, The Legend of Zelda, The Dark Crystal, Nausicaä of the Valley of the Wind', page: 'Witherwild.dc.html', art: 'art-witherwild' },
+      { name: 'Five Banners Burning', source: 'Core Rulebook', c: 2, exp: false,
+        pitch: 'Long-brewing tensions between rival nations boil over, threatening all-out war.',
+        tones: ['Adventurous', 'Dramatic', 'Intimate', 'Political', 'Serious', 'Sweeping'],
+        themes: 'Divided Loyalties, The Nature of Power, The Price of Ambition, Tradition vs. Innovation',
+        touch: 'A Song of Ice & Fire, Avatar: The Last Airbender, Babylon 5, Friends at the Table’s PARTIZAN, Born to the Blade, Court of Blades, Dragon Age: Inquisition, Eberron: Rising from the Last War', page: 'FiveBanners.dc.html', art: 'art-fivebanners' },
+      { name: 'Beast Feast', source: 'Core Rulebook', c: 2, exp: false,
+        pitch: 'When a small village’s monster defense system fails, the local heroes must venture into the endless caverns below to fix it—and cook up trouble for the creatures that stand in their way!',
+        tones: ['Absurd', 'Comedic', 'Creepy', 'Fun', 'Lighthearted', 'Silly'],
+        themes: 'Circle of Life, Friendship & Loyalty, Nature’s Bounty, Overcoming Fear, Violence & Peace',
+        touch: 'Delicious in Dungeon, Monster Hunter World, One Piece', page: 'BeastFeast.dc.html', art: 'art-beastfeast' },
+      { name: 'The Age of Umbra', source: 'Core Rulebook', c: 3, exp: false,
+        pitch: 'In a dying world immersed in relentless shadow and nightmarish monsters, small communities hold fast to the light, hoping those who endure can find a way to save this broken realm before all is lost to darkness.',
+        tones: ['Ancient', 'Daunting', 'Epic', 'Grim', 'Ominous', 'Terrifying', 'Tragic'],
+        themes: 'Apocalypse, Corruption, Darkness vs Light, Hope, Redemption, Survival',
+        touch: 'Dark Souls, Kingdom Death: Monster, Berserk, The Seventh Seal, Blasphemous', page: 'AgeOfUmbra.dc.html', art: 'art-umbra' },
+      { name: 'Motherboard', source: 'Core Rulebook', c: 3, exp: false,
+        pitch: 'In a world where magic takes the form of the technology left behind by a long-fallen civilization, a new threat rises as a malicious virus spreads through the machines that wander the Wastes.',
+        tones: ['Adventurous', 'Epic', 'Innovative', 'Mysterious', 'Post-Post-Apocalyptic', 'Technological'],
+        themes: 'Artificial Intelligence, Identity & Personhood, Innovation, Technology vs. Humanity',
+        touch: 'Horizon Zero Dawn, Mortal Engines, Mad Max: Fury Road, The Final Fantasy Series, Fullmetal Alchemist, Slugblaster', page: 'Motherboard.dc.html', art: 'art-motherboard' },
+      { name: 'Colossus of the Drylands', source: 'Core Rulebook', c: 4, exp: false,
+        pitch: 'A prosperous region of gunslingers and outlaws has fallen into terror as colossal creatures awaken from beneath the earth.',
+        tones: ['Awe-Inspiring', 'Dusty', 'Eerie', 'Gritty', 'Larger than Life', 'Terrifying'],
+        themes: 'Breaking Cycles, The Burden of Heroism, Faith vs. Doubt, Greed, Ordinary People Accomplishing the Extraordinary',
+        touch: 'Shadow of the Colossus, Red Dead Redemption, Deadlands, On the Shoulders of Colossus', page: 'Colossus.dc.html', art: 'art-colossus' },
+      { name: 'Castle High', source: 'Expansion', c: 1, exp: true,
+        pitch: 'In a modern fantasy world, teenagers attend a boarding school in the clouds—sneaking out of class to fly brooms, explore floating islands, and save their friends.',
+        tones: ['Adventurous', 'Dreamy', 'Full-Hearted', 'Melodramatic', 'Modern', 'Playful', 'Thrilling'],
+        themes: 'Coming of Age, Curiosity & Rebellion, Friendship & Loyalty, Magical vs. Modern',
+        touch: 'Kids on Brooms, Kiki’s Delivery Service, The Legend of Zelda: Skyward Sword, Little Witch Academia, Onward, The Owl House, She-Ra and the Princesses of Power, Slugblaster',
+        page: 'CastleHigh.dc.html', art: 'art-castle' },
+      { name: 'Reign of the Weredragon', source: 'Expansion', c: 2, exp: true,
+        pitch: 'In a land ruled by a violent weredragon tyrant, heroes ordained by the stars to defeat her must rise to the challenge and defend their people.',
+        tones: ['Epic', 'Fairy Tale-Like', 'Grim', 'Hopeful'],
+        themes: 'Astrology, Fate Written in the Stars, Swords & Sorcery, Tyranny’s Rise and Fall',
+        touch: 'The Black Cauldron, Conan the Barbarian, For the Queen, The Little Mermaid, Sleeping Beauty, The Sword and the Sorcerer, The Wolfman',
+        page: 'Weredragon.dc.html', art: 'art-weredragon' },
+      { name: 'Dark Heart of Andaluria', source: 'Expansion', c: 3, exp: true,
+        pitch: 'As the nights grow long in a land of rich wine and ancient superstitions, a band of monster hunters battles the creatures that stalk the shadows.',
+        tones: ['Gothic', 'Grim', 'Heroic', 'Intriguing', 'Monstrous', 'Mysterious', 'Romantic', 'Spooky', 'Thrilling'],
+        themes: 'Battle Not with Monsters Lest Ye Become One, Dangerous Secrets, Driving Back the Darkness, Faith & Tradition, The Nature of Evil, Power & Politics',
+        touch: 'Bloodborne, Castlevania, Curse of Strahd, Hellboy, John Constantine: Hellblazer, Monster of the Week, Night’s Black Agents, Slayers, Supernatural, Vaesen, Vampire Hunter D, Van Helsing, The Witcher, World of Darkness', page: 'Andaluria.dc.html', art: 'art-andaluria' },
+      { name: 'Journey to Horizon', source: 'Expansion', c: 4, exp: true,
+        pitch: 'After a thousand-year cataclysm, a fellowship of heroes embarks from their magically protected sanctuary to journey across a broken continent and resurrect the fallen goddess who can heal their world.',
+        tones: ['Adventurous', 'Epic', 'Hopeful', 'Magical', 'Mysterious', 'Sprawling', 'Wondrous'],
+        themes: 'Faith in Friendship, Growing Shadows, Hope Rekindled, New Beginnings, Pathways Long & Winding, Points of Light in a Ruined World',
+        touch: 'The Dragon Prince, Fallout, Final Fantasy VII, Kipo and the Age of the Wonderbeasts, The Legend of Zelda: Breath of the Wild, The Lord of the Rings Trilogy, Lunar, Willow', page: 'Horizon.dc.html', art: 'art-horizon' }
+    ];
+    const dots = (n) => n ? '◆'.repeat(n) + '◇'.repeat(4 - n) : '[ ? ]';
+    const frames = data.map((f, i) => {
+      const on = i === frame;
+      return {
+        ...f, dots: dots(f.c), pressed: on ? 'true' : 'false', page: f.page || '', noPage: !f.page, hasArt: !!f.art, noArt: !f.art, artClass: f.art || '', artLabel: 'Key art for ' + f.name,
+        pitchText: f.pitch || "[The frame's pitch to read to players at the table.]",
+        toneList: (f.tones || ['[Tone]', '[Tone]', '[Tone]']).map((t) => ({ label: t })),
+        themesText: f.themes || '[Theme], [Theme], [Theme]',
+        touchText: f.touch || '[Film, book or game]', subColor: f.art ? '#d4dbe0' : '#a39cb2',
+        pick: () => this.setState({ frame: i }),
+        style: 'position: relative; overflow: hidden; flex: none; width: 100%; min-height: 84px; display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-radius: 12px; text-align: left; cursor: pointer; font-family: inherit; color: #ece6d6; scroll-snap-align: start; box-sizing: border-box; background: ' + (on ? '#1d1a27' : '#13111a') + '; border: 1px solid ' + (on ? accent : '#2a2536') + ';'
+      };
+    });
+    const sel = frames[frame];
+    const card = (on) => 'min-height: 120px; display: flex; align-items: center; gap: 20px; padding: 22px 26px; border-radius: 16px; text-align: left; cursor: pointer; font-family: inherit; color: #ece6d6; box-sizing: border-box; background: ' + (on ? '#1d1a27' : '#13111a') + '; border: 2px solid ' + (on ? accent : '#2a2536') + ';';
+    const toneList = ['Adventurous', 'Heroic', 'Dark', 'Whimsical', 'Mysterious', 'Political', 'Epic', 'Cozy'].map((label) => {
+      const on = tones.includes(label);
+      return {
+        label, pressed: on ? 'true' : 'false',
+        toggle: () => saveCu({ tones: on ? tones.filter((t) => t !== label) : tones.concat(label) }),
+        style: 'min-height: 44px; padding: 0 18px; border-radius: 999px; cursor: pointer; font-family: inherit; font-size: 15px; color: ' + (on ? '#1a1408' : '#ece6d6') + '; background: ' + (on ? accent : 'transparent') + '; border: 1px solid ' + (on ? accent : '#3a3449') + ';'
+      };
+    });
+    const isFrame = kind === 'frame';
+    const BGS = [['custom','Cartographer\'s Desk','art-customdesk'],['witherwild','The Witherwild','art-witherwild'],['fivebanners','Five Banners','art-fivebanners'],['beastfeast','Beast Feast','art-beastfeast'],['umbra','Age of Umbra','art-umbra'],['motherboard','Motherboard','art-motherboard'],['colossus','Colossus','art-colossus'],['castlehigh','Castle High','art-castle'],['weredragon','Weredragon','art-weredragon'],['andaluria','Andaluria','art-andaluria'],['horizon','Horizon','art-horizon']];
+    const bgList = BGS.map(([k, label, cls]) => { const on = (cu.art || 'custom') === k; return { label, cls, pressed: on ? 'true' : 'false', pick: () => saveCu({ art: k }), style: 'position: relative; overflow: hidden; height: 76px; border-radius: 10px; cursor: pointer; padding: 0; background-color: #1d1a27; border: 2px solid ' + (on ? accent : '#2a2536') + '; opacity: ' + (on ? '1' : '0.7') + ';' }; });
+    const cuName = (cu.name || '').trim();
+    return {
+      accent, frames, sel, tones: toneList, cu, bgList,
+      setCu: (e) => { const k = e.target.getAttribute('data-k'); if (k) saveCu({ [k]: e.target.value }); },
+      isFrame, isCustom: !isFrame,
+      frameChecked: isFrame ? 'true' : 'false', customChecked: isFrame ? 'false' : 'true',
+      frameCardStyle: card(isFrame), customCardStyle: card(!isFrame),
+      frameIcon: isFrame ? accent : '#5c556b', customIcon: isFrame ? '#5c556b' : accent,
+      pickFrame: () => this.setState({ kind: 'frame' }),
+      pickCustom: () => this.setState({ kind: 'custom' }),
+      summary: isFrame ? 'Frame: ' + sel.name : (cuName ? 'Custom: ' + cuName + ' · ' + tones.length + ' tones' : 'Name your campaign to start'),
+      ...(() => { const hub = isFrame ? (sel && sel.page ? (sel.page === 'Witherwild.dc.html' ? 'CampaignHub.dc.html' : 'Hub' + sel.page) : '') : (cuName ? 'HubCustom.dc.html' : ''); return { canStart: !!hub, noStart: !hub, startHref: hub || '#' }; })()
+    };
+  }
+}
+</script>
+</body>
+</html>

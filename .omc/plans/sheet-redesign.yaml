@@ -1,0 +1,413 @@
+# Sheet redesign plan: rebuild the in-app character sheet to the Party board's sheet
+# (reference/designs/project/Party.dc.html, markup lines 751-1195, CSS in the helmet), and place every feature added
+# after the board (D5 and later) in the board's format.
+# Analysis, screenshots and the placement map: .omc/autopilot/sheet-redesign-analysis.md (read it first).
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L), timing.
+#
+# Paths: C = src/app/(gm)/campaigns/[campaignId]/party/[characterId] (written out in full below).
+#
+# Binding rules for every tracer (part of every acceptance list, not repeated):
+#   - UI only. No file under convex/ changes, no Convex function, validator, table or argument changes; no change to
+#     src/lib/validation/**, src/lib/domain/** or src/lib/srd/**. A design element that needs new data is out of scope:
+#     stop and report it to the orchestrator (it is listed under "needs user confirmation" in the analysis).
+#   - Accessibility is kept: every control keeps a visible or accessible label, roles stay correct (tablist/tab/tabpanel
+#     with arrow keys, dialog with focus trap and Escape, group/radiogroup), all controls reachable by keyboard, focus
+#     visible, touch targets at least 44 px on the 390 px layout.
+#   - Permissions stay as now: controls the viewer cannot use stay hidden or disabled exactly as today (canEdit = owner
+#     or GM, isGm for GM-only controls such as the level correction, "Return to play", Withered damage source).
+#   - The 390 px layout must work: no horizontal page scroll (document.documentElement.scrollWidth <= 390), stacked
+#     columns. The board itself breaks at 390 (its top grid overflows to 489 px); keep the app's stacked mobile order
+#     and take only the board's look there.
+#   - Accessible names and data-testids used by tests/e2e/** do not change after wave 1. If a tracer must change one,
+#     it updates the specs it owns; a spec it does not own means stop and report.
+#   - Styling: the board's tokens and primitives come from C/sheet.css and src/components/party/sheet-ui/ (wave 1).
+#     Wave-2 tracers add CSS only in their own colocated .css file (imported by their own component) and never edit
+#     C/sheet.css, C/sheet.tsx or the page-*.tsx compositions.
+#   - Visual acceptance: the tracer's tests/e2e/visual/<id>.spec.ts (tagged @visual, run with E2E_VISUAL=1) shoots its
+#     regions at 1440x900 and 390x844, scripts/board-shots.mjs shoots the matching board regions, and the task doc
+#     docs/tasks/TASK-SR-<id>.md lists both sets of paths side by side with a verdict per region (layout, type, colour,
+#     spacing; oh-my-claudecode:visual-verdict) and every deliberate deviation with its reason.
+#   - pnpm lint, pnpm typecheck, pnpm test (including tests/unit/sheet-render.test.ts) and the e2e specs the tracer owns
+#     or lists under acceptance pass in its worktree. The orchestrator runs the full e2e suite after each wave.
+#   - Every tracer owns docs/tasks/TASK-SR-<id>.md and tests/e2e/visual/<id>.spec.ts.
+#
+# Decisions taken by this plan (the analysis marks the ones that still need the user):
+#   - The sheet stays a route (/campaigns/<id>/party/<characterId>), not an overlay on the roster as on the board; it
+#     takes the board's look: dark backdrop, parchment dialog-like paper, close button (x) top right linking back to the
+#     roster in place of the board's closeSheet.
+#   - Pages follow the board: "Character Sheet", "Story & Advancement", "Domains" (with sub-tabs "Domain Cards" and
+#     "Heritage & Subclass"). Notes move to Story & Advancement.
+#   - New board-look modals (level-up stepper, death move, Beastform and Companion sheets) use a parchment modal from
+#     sheet-ui (the board's advPick and cs-sheet dialogs), not the dark brand Modal.
+plan: sheet-redesign
+waves:
+  # ---------------------------------------------------------------- wave 1: shell foundation
+  - wave: 1
+    tracers:
+      - id: S0
+        foundation: true
+        title: Board sheet shell, tokens, shared primitives, section split and mount points
+        timing: core
+        size: L
+        goal: The sheet renders in the board's shell (paper, header with banner, page tabs Character Sheet / Story & Advancement / Domains with Domain Cards and Heritage & Subclass sub-tabs, level circle position, close button, board section order and grids), with every existing piece of content and every D5 slot moved into its board position in one file per section, shared board tokens and primitives available, visual tooling in place, and behaviour unchanged.
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/fields.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-helpers.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-one.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-two.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-three.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/damage-calculator.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/
+          - src/components/party/sheet-ui/
+          - src/components/party/features/index.tsx
+          - src/components/party/level-up/index.tsx
+          - src/components/party/extras/character-extras.tsx
+          - src/components/party/dice/index.tsx
+          - src/components/party/rest/index.tsx
+          - src/components/party/death/index.tsx
+          - src/components/party/wither/index.tsx
+          - tests/e2e/character-sheet.spec.ts
+          - tests/e2e/equipment-tiers.spec.ts
+          - tests/unit/sheet-render.test.ts
+          - tests/e2e/visual/helpers.ts
+          - tests/e2e/visual/S0.spec.ts
+          - scripts/board-shots.mjs
+          - playwright.config.ts
+          - docs/tasks/TASK-SR-S0.md
+        reads:
+          - reference/designs/project/Party.dc.html
+          - reference/designs/CLAUDE.md
+          - docs/design-port-roadmap.md
+          - .omc/autopilot/sheet-redesign-analysis.md
+          - src/components/party/slots.ts
+          - src/components/brand/modal.tsx
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - tests/e2e/fixtures.ts
+          - tests/e2e/**
+        acceptance:
+          - "Shell: dark backdrop, parchment paper max-width 1180 px (padding 24/28/32, radius 14), header row = domain banner (class name + domain icons/names) | tablist | level circle (66 px double ring) with the existing LevelUpButton mounted beside it | round close button (44 px, aria-label 'Close character sheet') linking to the roster; footer 'All changes save automatically.' / 'Updates live as the table plays.'"
+          - "Tabs: role=tablist 'Sheet pages' with tabs 'Character Sheet', 'Story & Advancement', 'Domains' (arrow keys, roving tabIndex, aria-controls); Domains has a second tablist 'Card collections' with 'Domain Cards' and 'Heritage & Subclass' and count badges, in the board's dk-tabs style"
+          - "Character Sheet page in board order: portrait arch (240 px column) + Experiences under it | identity grid (3 columns) + traits grid (3x2); Defence | Hope; Dice (full width); Hit Points & Stress | Active Weapons; Active Armor + Class Features | Downtime; frame extras region; status. Story & Advancement page: Wealth | Inventory (span 2); Character Description | Background Questions | Connections; Level Up region; Notes. Domains page: Domain Cards sub-tab (domains box, loadout felt, vault) and Heritage & Subclass sub-tab (heritage cards)"
+          - "One file per section under C/sections/ with a colocated empty .css imported by it: header, identity, defence-hope, hp-stress, equipment, class-features, downtime, frame-extras, status, story, domains, heritage; page-one/two/three.tsx only compose sections"
+          - "Mount points (stubs return null unless stated): HopeFeatureSlot (features/index.tsx) inside the Hope box, FeaturesPanel inside the Class Features box; AdvancementTiers (level-up/index.tsx) in the Level Up region of Story & Advancement; ClassExtras (Beastform, Companion) inside Class Features and FrameExtras (Motherboard, Beast Feast, Castle High) in the frame extras region, split from CharacterExtras with unchanged rendering; WitherCounter inside the Hit Points & Stress section; RestPicker inside the Downtime section; DeathMoveModal and death badges in the header section; SheetDiceBox in the Dice position"
+          - "sheet-ui exports the board primitives for every later tracer: SheetBox (sh-box + sh-h heading rules), Label (sh-lbl), Small (sh-small), PaperInput/PaperTextarea/PaperNumber styles (sh-in, sh-ta, sh-num), Pill buttons (dmg-mark outline, solid, gradient roll), SlotRow (12-column pip grid), Pip kinds (heart, diamond, armor, coin, scar, sword), PaperModal (parchment dialog: Cinzel title, focus trap, Escape, 44 px controls), Launcher row (cs-launch + cs-open), Badge (FALLEN-style pill), EffectRow (dashed gold row with End button); the board's CSS tokens (paper, ink, gold, green, wine, blue) live once in sheet.css as custom properties"
+          - "Behaviour unchanged: every mutation, permission check and existing control works as before; only tab names changed (old 'Domain Cards' / 'Heritage & Story' page tabs), and tests/e2e/character-sheet.spec.ts and tests/e2e/equipment-tiers.spec.ts are updated for them"
+          - "tests/e2e/character-sheet.spec.ts, equipment-tiers, dice, dice-3d, class-features, class-features-hf, hope-features, level-up, rest, rest-frame-hooks, death, wither, motherboard-ikonis, party-roster and character-wizard specs pass"
+          - "Visual tooling: tests/e2e/visual/helpers.ts (create a GM campaign of a given frame and a character through the UI like the specs, open the sheet, shoot(locator, name) at 1440x900 and 390x844 into test-results/visual/<tracer>/), playwright.config.ts skips @visual unless E2E_VISUAL=1, scripts/board-shots.mjs <region...> opens the board from disk (seeded Test Bard, reload once, 'Open character sheet') and shoots named board regions into test-results/visual/board/"
+          - "S0's own visual spec shoots the whole sheet per page at 1440 and 390; at 390 there is no horizontal scroll"
+  # ---------------------------------------------------------------- wave 2: restyle and place, one area per tracer
+  - wave: 2
+    tracers:
+      - id: S1
+        title: Identity, portrait, traits, Experiences (and Transformation if confirmed)
+        timing: core
+        size: M
+        goal: The top of page 1 matches the board (arched portrait frame, Experiences box, 3-column identity grid with locked fields, trait cards with green Cinzel headers, ringed number and mark dot, italic verbs), with the existing edit controls restyled in place.
+        depends_on: [S0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.css
+          - tests/e2e/visual/S1.spec.ts
+          - docs/tasks/TASK-SR-S1.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/components/party/portrait.tsx
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Identity grid shows Name, Pronouns (the board's Gender slot), Ancestry, Community, Subclass and Class (or Transformation if the user confirms it) with sh-locked styling for set-at-creation fields"
+          - "Trait card: mark dot is the board's trait-mark (shown, not toggled: marks change only through level-up); the +/- trait stepper stays for editors, styled as small paper steppers under the ring"
+          - "Experiences keep add/remove/rename/value controls in board sh-in rows (name input + 50 px value)"
+          - tests/e2e/character-sheet.spec.ts and tests/e2e/character-wizard.spec.ts pass unchanged
+          - visual comparison of board regions portrait, identity, traits, experiences at 1440 and 390
+      - id: S2
+        title: Defence and Hope boxes (scars, Light in the Dark 7th slot)
+        timing: core
+        size: M
+        goal: Defence (Evasion and Armor circles, 6-column armor slot grid) and Hope (Hope max, Scars stepper, Hope coin row with scarred coins and the 7th Light in the Dark slot, the two italic rules lines, class Hope feature text) match the board.
+        depends_on: [S0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/defence-hope.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/defence-hope.css
+          - tests/e2e/visual/S2.spec.ts
+          - docs/tasks/TASK-SR-S2.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/lib/domain/characters/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Evasion shows the derived value in the 76 px circle; the editable base Evasion stays for editors as a small labelled input under it; gear/subclass/effect modifiers as an sh-small line"
+          - "Light in the Dark: the 7th coin sits in the same coin row with a gold ring and title 'Light in the Dark'; lost slots (scars) render as the board's hope-scar split coin"
+          - tests/e2e/hope-features.spec.ts and tests/e2e/character-sheet.spec.ts pass unchanged
+          - visual comparison of board regions defence and hope at 1440 and 390
+      - id: S3
+        title: Hit Points & Stress, damage calculator, Wither counter
+        timing: core
+        size: M
+        goal: The Hit Points & Stress box matches the board (three wine threshold heads with ranges, threshold pills with breakdown parts, inline Take damage row, 12-column heart and diamond slot rows with +/- slot steppers), the damage calculator lives in the board's thr-take row, and the Wither counter sits in the same box as a slot row.
+        depends_on: [S0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/hp-stress.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/hp-stress.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/damage-calculator.tsx
+          - src/components/party/wither/
+          - tests/e2e/wither.spec.ts
+          - tests/e2e/visual/S3.spec.ts
+          - docs/tasks/TASK-SR-S3.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-helpers.ts
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Damage calculator: 'Take damage' number input, armor-slot and Withered toggles as small paper toggles, Apply as dmg-mark pill, preview as italic sh-small; same mutation and idempotency key per click as today"
+          - "'Mark 1/2/3 HP' under each threshold head stay text unless the user confirms they become buttons (adjustResource hp +1/+2/+3)"
+          - "Wither: label 'Wither', token count as a slot row of dark tokens, +/- as 32 px paper steppers, Fear Die result as role=status sh-small line; Witherwild campaigns only, as today"
+          - tests/e2e/wither.spec.ts, tests/e2e/death.spec.ts and tests/e2e/character-sheet.spec.ts pass
+          - visual comparison of board region hp-stress at 1440 and 390 (Wither shot from the app only, board has none)
+      - id: S4
+        title: Active Weapons, Active Armor, Ikonis block
+        timing: core
+        size: M
+        goal: Active Weapons (proficiency swords with the why line, primary/secondary blocks in a 2-column Name / Trait & Range / Damage dice / Feature grid) and Active Armor (2-column grid with the cracked split threshold field) match the board, and the Motherboard Ikonis replaces the weapon blocks in the same format.
+        depends_on: [S0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/equipment.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/equipment.css
+          - tests/e2e/equipment-tiers.spec.ts
+          - tests/e2e/visual/S4.spec.ts
+          - docs/tasks/TASK-SR-S4.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/lib/frames/extras/motherboard.ts
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Weapon and armor names stay selects for editors (tier-filtered as today), read-only fields otherwise; derived values in sh-locked fields; the armor Base thresholds field is the board's thr-split (Major top-left, Severe bottom-right, crack svg), read-only"
+          - "Ikonis: Cinzel green 'Ikonis' title and the same 2-column field grid, data-testid ikonis-weapon kept"
+          - tests/e2e/equipment-tiers.spec.ts, tests/e2e/motherboard-ikonis.spec.ts and tests/e2e/character-sheet.spec.ts pass
+          - visual comparison of board regions weapons and armor at 1440 and 390, plus an app-only Motherboard shot
+      - id: S5
+        title: Dice box in the board's dice toolbar format
+        timing: core
+        size: M
+        goal: The sheet's dice box is the board's Dice section (one wrapping toolbar row of labelled fields, gradient 'Roll Hope & Fear' pill, divider, damage field, crit toggle, wine 'Roll damage' pill, 3D and sound toggles and GM Fear at the right; result row with Hope and Fear dice tiles, big total, coloured outcome and italic lines; Earlier list), with every current roll option kept.
+        depends_on: [S0]
+        owns:
+          - src/components/party/dice/dice-box.tsx
+          - src/components/party/dice/parts.tsx
+          - src/components/party/dice/tag-team.tsx
+          - src/components/party/dice/dice.css
+          - tests/e2e/dice.spec.ts
+          - tests/e2e/dice-3d.spec.ts
+          - tests/e2e/visual/S5.spec.ts
+          - docs/tasks/TASK-SR-S5.md
+        reads:
+          - src/components/party/dice/index.tsx
+          - src/components/party/dice/roll-feed.tsx
+          - src/components/party/dice/dice3d/**
+          - src/components/party/dice/settings.ts
+          - src/components/party/sheet-ui/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Roll type radiogroup becomes a compact dk-tabs style segmented control at the left of the toolbar; Experiences (1 Hope each) and Features options move into a 'Roll options' disclosure row under the toolbar, in board chip style; physical dice entry and tag team keep their controls in that row"
+          - "Advantage/disadvantage keeps its rules; shown as the board's − Normal + stepper"
+          - "region 'Dice', region 'Last roll' and data-testid last-roll keep their names; roll-feed.tsx (dashboard) is not changed"
+          - tests/e2e/dice.spec.ts, tests/e2e/dice-3d.spec.ts, tests/e2e/class-features.spec.ts and tests/e2e/class-features-hf.spec.ts pass
+          - visual comparison of board region dice (idle and after a roll) at 1440 and 390
+      - id: S6
+        title: Hope and class features, effects, held dice in the board's Hope and Class Features boxes
+        timing: core
+        size: M
+        goal: The class Hope feature button, its pickers and active effects render inside the Hope box (board hf block), and class feature actions, held dice, conditions and class state render as the board's cf rows inside the Class Features box with the full feature text in a 'Full feature text' disclosure.
+        depends_on: [S0]
+        owns:
+          - src/components/party/features/
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/class-features.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/class-features.css
+          - tests/e2e/class-features.spec.ts
+          - tests/e2e/class-features-hf.spec.ts
+          - tests/e2e/hope-features.spec.ts
+          - tests/e2e/visual/S6.spec.ts
+          - docs/tasks/TASK-SR-S6.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/lib/domain/class-features/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "HopeFeatureSlot: full-width gold outline pill '✦ Use <feature> · 3 Hope' (board hf button), role=status message box, ally/trait picker rows, 'Active effects' list of EffectRow items with End buttons"
+          - "FeaturesPanel: one cf row per class action (Cinzel title, sh-small text, chips/buttons), held dice and conditions as thr-pill chips, class state as a 2-column dl; heading stays 'Features' as an accessible region name or the specs are updated in this tracer"
+          - "Unavailable characters (dead, away, unconscious) still see disabled controls with the reason, as today"
+          - tests/e2e/class-features.spec.ts, tests/e2e/class-features-hf.spec.ts and tests/e2e/hope-features.spec.ts pass
+          - visual comparison of board regions hope (with hf block) and class-features at 1440 and 390
+      - id: S7
+        title: Class and frame extras (Beastform, Companion, Motherboard augments, Beast Feast, Castle High)
+        timing: core
+        size: L
+        goal: Beastform and Companion open from board launcher rows inside Class Features into parchment overlay sheets in the board's cs-sheet style, and the frame extras (Motherboard module and augments, Beast Feast ingredients and cookbook, Castle High skyshard) render as parchment boxes in the board's sh-box and cs-plaque style instead of the dark dashboard cards.
+        depends_on: [S0]
+        owns:
+          - src/components/party/extras/
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/frame-extras.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/frame-extras.css
+          - tests/e2e/motherboard-ikonis.spec.ts
+          - tests/e2e/visual/S7.spec.ts
+          - docs/tasks/TASK-SR-S7.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/lib/frames/extras/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Launcher rows use cs-launch (green tint row, sh-small text, green 'Beastform' / 'Companion' pill with paw icon); the sheets are PaperModal dialogs labelled 'Druid Beastform' and 'Ranger Companion', with tier sections as cs-tier plaques and Stress diamonds"
+          - "Frame extras: one SheetBox per extra with the frame name as kicker; inputs use sh-in, pips use the sheet-ui Pip kinds; data-testids ikonis-augments, ikonis-damage and character-extras kept"
+          - "Player view: everyone in the campaign sees the extras, only owner and GM edit, as today"
+          - tests/e2e/motherboard-ikonis.spec.ts, tests/e2e/rest-frame-hooks.spec.ts and tests/e2e/character-sheet.spec.ts pass
+          - visual comparison of board overlays csComp and csBeast and of an app Motherboard and Beast Feast panel at 1440 and 390
+      - id: S8
+        title: Level circle, level-up stepper, advancements tier grid and history
+        timing: core
+        size: L
+        goal: Levelling happens from the board's level circle (▲ when a level-up is allowed, − for undo), the stepper is a parchment dialog in the board's advPick style, and the advancements appear on Story & Advancement as the board's three tier boxes with adv-box checkboxes, budget pill and locked tiers, with the GM level correction under them.
+        depends_on: [S0]
+        owns:
+          - src/components/party/level-up/
+          - tests/e2e/level-up.spec.ts
+          - tests/e2e/visual/S8.spec.ts
+          - docs/tasks/TASK-SR-S8.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/lib/domain/level-up/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "LevelUpButton renders the lvl-wrap: 66 px circle with level number, 'Level' and a green ▲ badge when canLevel (accessible name 'Level up to N+1'), the small − button for 'Undo level N' when canUndo; 'Level up pending' as a green badge for viewers who cannot level"
+          - "Stepper and subclass/multiclass/trait/domain-card picks keep every step and validation; dialog name stays 'Level up to N'; options are board-style option buttons (aria-pressed) in PaperModal"
+          - "AdvancementTiers: 'Level Up' heading with '<used> / <total> advancements used' adv-budget pill and the board note; Tier 2/3/4 boxes with the wine intro, choose line, option rows of adv-box checkboxes (read-only display of taken advancements, joined boxes for 2-slot options, crossed multiclass/subclass options) and the outro; tiers above the character's tier show 'Reach level N to unlock'"
+          - "The 'Advancements' modal is removed only if AdvancementTiers shows the same history; the GM 'Correct level' control moves under the tiers (isGm only)"
+          - tests/e2e/level-up.spec.ts and tests/e2e/party-roster.spec.ts pass
+          - visual comparison of board regions level circle and level-up tiers at 1440 and 390, plus the stepper dialog
+      - id: S9
+        title: Header status, death-move modal and badges, status controls
+        timing: core
+        size: M
+        goal: The header carries the board's status pills (FALLEN for dead, plus Retired, Away with its reason, Unconscious and Journey ends badges, GM 'Return to play'), the death-move modal is a parchment dialog, and the status controls sit in the board's style.
+        depends_on: [S0]
+        owns:
+          - src/components/party/death/
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/header.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/header.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/status.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/status.css
+          - tests/e2e/death.spec.ts
+          - tests/e2e/visual/S9.spec.ts
+          - docs/tasks/TASK-SR-S9.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/lib/domain/death/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Badges sit in the banner like the board's FALLEN pill (Cinzel 12 px, 0.18em, dark pill); data-testids character-status, death-unconscious, death-away, death-journey-ends and read-only-note kept"
+          - "Death move: PaperModal titled 'Death move', moves as large option buttons, Risk It All split and Blaze of Glory finish keep their controls; undo stays"
+          - "Status controls (Active / Dead / Retired with confirm) follow the home the user confirms (default: a small paper row under the footer line); confirm stays an alertdialog"
+          - tests/e2e/death.spec.ts and tests/e2e/character-sheet.spec.ts pass
+          - visual comparison of the board header (alive and FALLEN) at 1440 and 390, plus the app death-move dialog
+      - id: S10
+        title: Downtime box with the rest picker
+        timing: core
+        size: S
+        goal: The board's Downtime box (short and long rest move reference text) is on page 1, and when the GM has a rest open the rest picker renders at the top of that box in the board's format.
+        depends_on: [S0]
+        owns:
+          - src/components/party/rest/picker.tsx
+          - src/components/party/rest/rest.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/downtime.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/downtime.css
+          - tests/e2e/rest.spec.ts
+          - tests/e2e/rest-frame-hooks.spec.ts
+          - tests/e2e/visual/S10.spec.ts
+          - docs/tasks/TASK-SR-S10.md
+        reads:
+          - src/components/party/rest/index.tsx
+          - src/components/party/rest/launcher.tsx
+          - src/components/party/sheet-ui/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Reference text copied from the board (SHORT REST and LONG REST blocks); the move the player has picked is highlighted in the list when a rest is open"
+          - "Picker: region 'Downtime moves' kept, moves as board chips (aria-pressed), targets (self or ally) as select, confirm as solid pill; launcher.tsx (dashboard) not changed"
+          - tests/e2e/rest.spec.ts and tests/e2e/rest-frame-hooks.spec.ts pass
+          - visual comparison of board region downtime at 1440 and 390, plus the app picker with a rest open
+      - id: S11
+        title: Story & Advancement page (wealth, inventory, description, questions, notes)
+        timing: core
+        size: M
+        goal: Story & Advancement matches the board above the Level Up region (Wealth with coin and bag pips and the chest, Inventory with starting inventory note and item list, Character Description, Background Questions, Connections) with Notes below the tiers.
+        depends_on: [S0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/story.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/story.css
+          - tests/e2e/visual/S11.spec.ts
+          - docs/tasks/TASK-SR-S11.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/lib/srd/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Wealth: handfuls and bags as up to 10 pips each (board coin and bag images from public/design-assets), clicking a pip sets the count through the existing gold update; counts above 10 keep a stepper; chest as the board's gold-chest toggle (aria-pressed); 'Other' field only if the user confirms a home for it"
+          - "Inventory: starting inventory line from the class (board efe3c8 note), then the existing add/remove item list in sh-in rows"
+          - "Description: one PaperTextarea for the existing description field with the class's clothes/attitude prompts as the board's line labels (single field unless the user confirms otherwise)"
+          - "Background and Connections: questions as 17 px semibold labels over lined sh-ta textareas"
+          - tests/e2e/character-sheet.spec.ts passes unchanged
+          - visual comparison of board regions wealth, inventory, description, background, connections at 1440 and 390
+      - id: S12
+        title: Domains page (domain cards felt hand and vault, heritage and subclass cards with ranks and multiclass)
+        timing: core
+        size: M
+        goal: Domain Cards matches the board (class domains box with count pips and the rest swap toggle, green felt Loadout table with the hand of cards and the vault deck that spreads its cards) and Heritage & Subclass matches the board's hero-card grid, including subclass rank locks and multiclass cards.
+        depends_on: [S0]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/domains.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/heritage.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/heritage.css
+          - tests/e2e/visual/S12.spec.ts
+          - docs/tasks/TASK-SR-S12.md
+        reads:
+          - src/components/party/sheet-ui/**
+          - src/lib/srd/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Loadout cards as the board's fanned hand-card faces (keyboard focusable, 'Move to vault' in the card footer); vault as the stacked deck button (aria-expanded) that spreads the vault cards with 'Move to loadout (<cost>)'; the no-open-rest warning keeps data-testid no-open-rest"
+          - "Heritage: board hc cards (art header with kind tag, Cinzel name, tier, text, lock line); Specialization and Mastery locks follow subclassRank; multiclass shows the second class and its foundation card; mastery shows 'Crossed out: you multiclassed' as today"
+          - "The board's Domain Deck (all class cards, filters, take card) is not built unless the user confirms (it needs a take-card mutation)"
+          - tests/e2e/character-sheet.spec.ts and tests/e2e/level-up.spec.ts pass unchanged
+          - visual comparison of board regions domains box, loadout felt, vault spread and hero cards at 1440 and 390
+  # ---------------------------------------------------------------- wave 3: integration polish
+  - wave: 3
+    tracers:
+      - id: S13
+        title: Whole-sheet polish, player view and 390 px pass
+        timing: polish
+        size: M
+        goal: The merged sheet is consistent with the board across all pages for GM and player at 1440 and 390, leftover pre-redesign styles are removed, and the full e2e suite passes.
+        depends_on: [S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12]
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet.css
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-one.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-two.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/page-three.tsx
+          - src/components/party/sheet-ui/
+          - tests/unit/sheet-render.test.ts
+          - tests/e2e/visual/S13.spec.ts
+          - docs/tasks/TASK-SR-S13.md
+        reads:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/**
+          - src/components/party/**
+          - reference/designs/project/Party.dc.html
+        acceptance:
+          - "Unused cs-* rules from the old sheet.css are deleted (grep shows no remaining users) and no dark-theme (text-parchment, muted-text, bg-[#141e22]) classes remain inside the sheet"
+          - "Player view (tests/e2e/visual/S13.spec.ts signs in a player through the fixtures) shows read-only fields in the board's locked style and no editor-only controls"
+          - "At 390 px every page and sub-tab has no horizontal scroll and every control is at least 44 px"
+          - the full e2e suite passes on the merged branch
+          - visual comparison of every page and sub-tab against the board at 1440 and 390, GM and player

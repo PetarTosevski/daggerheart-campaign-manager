@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dark Heart of Andaluria Tome · Open Book</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&amp;family=EB+Garamond:ital,wght@0,400;0,500;1,400&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a1416}
+a{color:#e3b45a}a:hover{color:#f3cf86}
+.ww-bg{background-image:url(/_blob/b05e2883f26c65020e038349a2ba07ba);background-size:cover;background-position:center;background-repeat:no-repeat}
+.ww-dim{filter:blur(4px) brightness(0.45);transform:scale(1.05)}
+</style>
+</helmet>
+<div style="{{ rootStyle }}">
+<sc-if value="{{ standalone }}" hint-placeholder-val="{{ true }}"><div class="ww-bg ww-dim" aria-hidden="true" style="position: absolute; inset: 0"></div></sc-if>
+
+<sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-modal="true" aria-labelledby="tomeA-title" style="position: relative; width: 100%; max-width: 1240px; height: 880px; background: #3b2b1d; border: 1px solid #5c4430; border-radius: 16px; padding: 18px; box-sizing: border-box; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); display: flex">
+
+<button type="button" onClick="{{ close }}" aria-label="Close tome" style="position: absolute; top: -18px; right: -18px; width: 48px; height: 48px; border-radius: 50%; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+<div aria-hidden="true" style="position: absolute; top: 0; right: 140px; width: 28px; height: 140px; background: #8e2b2b; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%); z-index: 1"></div>
+
+<div style="flex: 1; display: flex; background: #efe3c8; border-radius: 6px; overflow: hidden; min-width: 0">
+
+<div style="flex: 0 0 38%; padding: 48px 40px 36px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid #d3c19c; box-shadow: inset -28px 0 34px -26px rgba(90, 60, 20, 0.4)">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.28em; text-transform: uppercase; color: #7a5b2e">Campaign Frame · Hope &amp; Fear</div>
+<h2 id="tomeA-title" style="margin: 0; font-family: 'Cinzel', serif; font-size: 46px; line-height: 1.05; font-weight: 900; color: #2a1f14">Dark Heart of Andaluria</h2>
+<svg width="220" height="14" viewBox="0 0 220 14" aria-hidden="true"><path d="M0 7h96M124 7h96" stroke="#a68352" stroke-width="1.2"></path><path d="M110 1l6 6-6 6-6-6z" fill="#8e2b2b"></path></svg>
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a5b2e">Contents</div>
+<nav aria-label="Chapters" style="display: flex; flex-direction: column; gap: 6px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{ t.pick }}" aria-current="{{ t.current }}" style="{{ t.style }}"><span style="font-family: 'Cinzel', serif; font-size: 18px; width: 40px; color: #8e2b2b">{{ t.roman }}</span><span style="flex: 1">{{ t.title }}</span></button>
+</sc-for>
+</nav>
+<div class="ww-bg" aria-hidden="true" style="margin-top: auto; height: 170px; border-radius: 100px 100px 8px 8px; border: 3px double #a68352"></div>
+<div style="padding: 14px 16px; border: 1px solid #cdb88f; border-radius: 6px; background: #e8d9b8; font-size: 16px; line-height: 1.5; font-style: italic; color: #4a3a26"><span style="font-style: normal; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.18em; color: #7a5b2e; display: block; margin-bottom: 4px">FOR THE GAME MASTER</span>{{ cur.note }}</div>
+</div>
+
+<div style="flex: 1; min-width: 0; padding: 48px 56px 28px 52px; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; gap: 16px">
+<span style="font-family: 'Cinzel', serif; font-size: 22px; color: #8e2b2b">{{ cur.roman }}.</span>
+<h3 style="margin: 0; font-family: 'Cinzel', serif; font-size: 32px; font-weight: 700; color: #2a1f14">{{ cur.title }}</h3>
+</div>
+<sc-if value="{{ cur.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-family: 'Cinzel', serif; font-size: 18px; color: #6a4a22; margin-top: -8px">{{ cur.sub }}</div></sc-if>
+<div style="height: 1px; background: #cdb88f"></div>
+<div style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 14px; font-size: 19px; line-height: 1.65; color: #2a1f14; display: flex; flex-direction: column; gap: 14px">
+
+<sc-if value="{{ hasFigures }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px">
+<div style="font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.22em; color: #7a5b2e">KEY FIGURES</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px">
+<sc-for list="{{ keyFigures }}" as="k" hint-placeholder-count="3"><div style="padding: 12px 14px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 6px; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700; line-height: 1.25">{{ k.name }}</span><span style="font-size: 14px; color: #6a5236">{{ k.role }}</span><span style="font-size: 15px; line-height: 1.4">{{ k.line }}</span></div></sc-for>
+</div>
+<div style="align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: #2f4a3a; color: #eef3ea; font-size: 15px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 1114 0c0 4.8-7 11-7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>Start: {{ startAt }}</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isMechanics }}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<sc-for list="{{ rules }}" as="r" hint-placeholder-count="4">
+<div style="display: flex; gap: 14px; padding: 14px 16px; background: #e3d2ad; border: 1px solid #cdb88f; border-radius: 8px">
+<span style="width: 32px; height: 32px; flex: none; border-radius: 50%; border: 2px solid #8e2b2b; color: #8e2b2b; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-weight: 700; font-size: 15px">{{ r.n }}</span>
+<div style="display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'Cinzel', serif; font-size: 16px; font-weight: 700">{{ r.head }}</span><span style="font-size: 18px; line-height: 1.55; white-space: pre-line">{{ r.t }}</span></div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{ isProse }}" hint-placeholder-val="{{ true }}">
+<p style="margin: 0"><span style="float: left; font-family: 'Cinzel', serif; font-size: 70px; line-height: 0.82; padding: 8px 10px 0 0; color: #8e2b2b">{{ cur.cap }}</span>{{ cur.capRest }}</p>
+<sc-if value="{{ isOverview }}" hint-placeholder-val="{{ false }}"><blockquote style="margin: 4px 0; padding: 6px 0 6px 20px; border-left: 3px solid #8e2b2b; font-family: 'Cinzel', serif; font-size: 21px; line-height: 1.4; color: #5a2a1a">{{ pullQuote }}</blockquote></sc-if>
+<sc-for list="{{ cur.rest }}" as="p" hint-placeholder-count="4"><p style="margin: 0; text-indent: 1.4em">{{ p.t }}</p></sc-for>
+</sc-if>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #cdb88f; padding-top: 14px">
+<div style="min-width: 160px"><sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goPrev }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">‹ {{ prevTitle }}</button></sc-if></div>
+<span style="font-family: 'Cinzel', serif; font-size: 14px; color: #8a7350">— {{ cur.roman }} —</span>
+<div style="min-width: 160px; display: flex; justify-content: flex-end"><sc-if value="{{ hasNext }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ goNext }}" style="min-height: 44px; padding: 0 14px; border: none; background: transparent; color: #6a4a22; font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.08em; cursor: pointer">{{ nextTitle }} ›</button></sc-if></div>
+</div>
+</div>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ closed }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ reopen }}" style="position: relative; min-height: 56px; padding: 0 32px; border-radius: 999px; border: 2px solid #b8955a; background: #3b2b1d; color: #f1e3c4; font-family: 'Cinzel', serif; font-size: 18px; letter-spacing: 0.12em; cursor: pointer">Open the Tome</button>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startChapter":{"editor":"enum","options":["overview","incident","mechanics"],"default":"overview"},"embedded":{"editor":null,"default":false},"onClose":{"editor":null},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const ids = ['overview', 'incident', 'mechanics'];
+    const idx = st.idx ?? Math.max(0, ids.indexOf(this.props.startChapter ?? 'overview'));
+    const open = st.open ?? true;
+    const chapters = [{"roman": "I", "title": "Overview", "note": "Share this with your players before they build characters. Summarized here; full text in the Hope & Fear, p. 145.", "paras": ["Andaluria is a hot, volcanic wine country that won independence from Emperor Arcedrio in a revolt a hundred years ago. It is now run by the Council of Five and grows rich on vineyards and harbor trade, but old rituals, secret deals and hungry monsters still shape life there.", "The dormant Serracorte volcanoes in the north shelter vineyards and shepherd country. The Valmorria River runs south through the valleys to the coastal capital, Jesaña, famous for its summer music, dancing and drinking.", "Monsters such as ghosts and ghouls have always preyed on Andalurians. For generations, people kept them at bay with the Church of the Golden Eminence's rites and the folk magic of the nomadic Caio. Those protections are now failing.", "This year, each night stretches longer and grows deadlier as the solstice approaches. The moon hangs in the sky too long, monsters roam the fields, and the rich hide at masked balls in the hilltop castillo of Condesa Ysabela Delamoña IV. People fear the coming Midsummer Festival will end in bloodshed. Meanwhile, Archbishop Veyra wins followers by preaching a purified faith that condemns Caio \"heresy.\"", "Ordinary Andalurians have started hunting monsters themselves, and secret cells of the Sombral Spade, led by the mysterious Julio Cantafierro, fight back with steel, fire and forbidden lore. The common people cheer them, the church calls them heretics, and the powerful put up with them because they need them. The PCs are one such band of hunters, and they risk becoming monsters themselves."]}, {"roman": "II", "title": "The Inciting Incident", "note": "A suggested opening scene; adapt it or write your own. Summarized here; full text in the Hope & Fear, p. 151.", "paras": ["Setup: At Santavio's wine festival, the first barrels of Condesa Delamoña's prized vintage are opened and give off a foul reek. Monsters made of vine, claw and bloody pulp burst out and drag villagers off into the vineyards.", "The Council of Five sends the Nightwatch under Andrea Nocta. Their real orders are to protect the remaining casks, not the villagers, and they are not trained to fight monsters if the creatures come back.", "The villagers barricade themselves indoors and argue over the cause. Some say the Condesa waters her vines with innocent blood and the vengeful dead now live in the grapes. Archbishop Mateo Veyra blames Caio heretics and calls the frightened villagers into his church.", "Julio Cantafierro of the Sombral Spade asks the party to track the creatures, rescue anyone still alive, and destroy whatever is corrupting the vineyard so this can't happen again.", "Open questions: What ties the party to Cantafierro and the Spade, and what drives them: pay, honor or something else? Will they go after the people who were taken or protect the ones left behind? What detail in witness accounts frightens them most, and what trail did the monsters leave?"]}, {"roman": "III", "title": "Campaign Mechanics", "sub": "Monster-Hunting Equipment", "note": "Rules that apply only to this campaign frame. Summarized here; full text in the Hope & Fear, pp. 152–157.", "paras": [""]}];
+    const rules = [{"n": "1", "head": "Monster-Hunting Equipment", "t": "Encourage players to reskin standard gear to fit the gothic monster-hunter style. The frame also adds new options that can be picked at character creation or handed out as loot:\n\nPrimary weapons: Blessed Brass Knuckles, Holy Shotgun, Repeating Crossbow.\nSecondary weapons: Wooden Stake, Hallowed Shield, Chain Whip.\nArmor: Coffinwood Armor, Leather Longcoat, Silverweave Armor.\n\nEach weapon's damage scales by tier, and each armor's thresholds and score scale by tier. They carry features such as hitting everything in front of you, adding a quick extra target, bonus damage when paired, extra Hope on a crit, pulling targets into Melee, bonus thresholds from unmarked Armor Slots, quieter movement, and reduced magic damage. Full tables are on pp. 152–153."}, {"n": "2", "head": "Transformations: Reanimated", "t": "If a PC dies, ask the player whether they'd like the character to come back reanimated. If so, decide together between sessions where they wake up (a hidden lab, workshop or place of power). They gain the Reanimated transformation and their maximum loadout drops to one. Each rest, they can spend a downtime move to raise it by one, back up to the usual five."}, {"n": "3", "head": "Transformations: Vampire", "t": "Give a major vampire adversary the Vampire's Curse action. On a successful Melee attack, the GM can spend a Fear to bite the target, dealing physical damage of a number of d8s equal to the vampire's tier, and then rolls a d6. If the d6 matches any of the damage dice, the target marks all their Stress and becomes a Vampire. If a player wants their PC turned, the attack simply succeeds."}, {"n": "4", "head": "Transformations: Werewolf", "t": "Give a major werewolf adversary the Wolf's Curse action. On a successful Melee attack, the GM can spend a Fear to bite, dealing physical damage of a number of d20s equal to the werewolf's tier. If the bite deals Major damage or more, the target starts a long-term Lycanthropy Countdown (6). It ticks down at each rest where the PC doesn't spend a downtime move to slow the curse, and when it triggers the PC becomes a Werewolf. A willing player's PC is hit automatically and starts the countdown no matter how much damage they took."}, {"n": "5", "head": "Implementing & Removing Transformations", "t": "Check with the group before using transformations at all. If you leave them out, explain in the fiction why the PCs are immune, for example through charms, tattoos, tonics brewed in downtime, or an inherited resistance. If you use them, plan ways a PC could undo the change, such as a faction's ritual, a rare remedy in a distant village, or a known healer of the cursed. Player consent and agency come first."}, {"n": "6", "head": "The Hunt", "t": "An optional framework for building a monster session or short arc, and it works for any major villain. It has five beats:\n\n• Arrival: a strange event pulls the PCs in.\n• Investigation: they follow leads and collect clues.\n• Escalation: they pull their findings together and make a plan.\n• Confrontation: they banish, bind or kill the monster.\n• Epilogue: loose ends are tied up.\n\nUse whatever parts help your table."}, {"n": "7", "head": "Making a Monster", "t": "Monsters in this frame are tainted by the hellgate beneath the Serracorte and want to destroy, devour or corrupt Andalurians. Build one by answering four questions:\n\n• What is it? A folklore creature, an unusual cryptid, a corrupted human, or something new. Give it a twist.\n• What does it want? Pick a drive such as wrath, lust, power, sorrow, revenge, greed, hunger, envy or fear.\n• Where can you find it? A lair or hunting ground that makes a good set piece.\n• How can you defeat it? Every monster has a weakness: a material, a ritual, a circumstance, or a combination. Killed any other way, it escapes or comes back stronger.\n\nOptionally, add complications such as minions, vulnerable bystanders, and key events or places that show off the monster."}, {"n": "8", "head": "Preparing Liminal Clues", "t": "Before play, answer the four monster questions, then write 4–6 Liminal Clues: pieces of evidence that each point toward an answer. Keep them on cards. They aren't tied to any location; one appears whenever the PCs investigate or take a risk somewhere it would fit. Once a clue is revealed, it becomes fixed fact. Mix broad clues that could turn up almost anywhere with specific ones that suit particular scenes.\n\nIt takes practice. Players may need to see the same information several ways before acting on it, and it's fine to repeat or reword a clue. When every clue has been found, the PCs should be ready to confront the monster."}, {"n": "9", "head": "Structure of a Hunt", "t": "Guidance for each beat:\n\nArrival: an opening scene that hooks the PCs with something uncanny.\nInvestigation: the PCs follow leads, and clues come out through evidence, witnesses, experts, rumors, research or magic.\nEscalation: the PCs connect what they know and plan. If they stall, have the monster or its allies come after them or someone they care about.\nConfrontation: the PCs use the monster's weakness against it, usually in a fight.\nEpilogue: tie up threads, push long-term projects forward, and hint at the next mystery."}, {"n": "10", "head": "Example of Play", "t": "A worked example (pp. 156–157) follows a GM building a ghost story: a drowned girl's spirit draining villagers in their sleep, with an old well as the setting, a list of Liminal Clues, and a planned outline for each beat. It then shows the session as played, including how the players' conclusions changed both the monster's lair and its weakness from the GM's plan, and why the GM went along with them."}];
+    const FIG = [{"name": "Julio Cantafierro", "role": "Sombral Spade leader", "line": "Hires the party to hunt the vineyard horrors."}, {"name": "Condesa Ysabela Delamoña IV", "role": "Reclusive noble vintner", "line": "Her cursed wine unleashed the monsters; rumors swirl about her."}, {"name": "Archbishop Mateo Veyra", "role": "Zealous church leader", "line": "Blames the Caio and exploits the panic to gain followers."}];
+    const c = chapters[idx];
+    const p0 = c.paras[0] || ''; const cur = { ...c, hasSub: !!c.sub, cap: p0.charAt(0), capRest: p0.slice(1), rest: c.paras.slice(1).map((t) => ({ t })) };
+    const tabs = chapters.map((ch, i) => {
+      const on = i === idx;
+      return { roman: ch.roman, title: ch.title, current: on ? 'page' : 'false', pick: () => this.setState({ idx: i }),
+        style: 'min-height: 48px; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 4px; text-align: left; cursor: pointer; font-family: inherit; font-size: 20px; color: #2a1f14; border: none; border-left: 3px solid ' + (on ? '#8e2b2b' : 'transparent') + '; background: ' + (on ? '#e3d2ad' : 'transparent') + '; font-weight: ' + (on ? '500' : '400') + ';' };
+    });
+    return {
+      open, closed: !open, cur, tabs, rules, keyFigures: FIG, hasFigures: idx === 1 && FIG.length > 0, startAt: "The village of Santavio, the night of its wine festival", pullQuote: "When the festival wine runs red, someone has to hunt what crawled out of the cask.", mechIntro: "Rules that apply only to this campaign frame.",
+      isOverview: idx === 0 && true, isIncident: idx === 1, isMechanics: idx === 2, isProse: idx !== 2,
+      hasPrev: idx > 0, hasNext: idx < chapters.length - 1,
+      prevTitle: idx > 0 ? chapters[idx - 1].title : '', nextTitle: idx < chapters.length - 1 ? chapters[idx + 1].title : '',
+      goPrev: () => this.setState({ idx: Math.max(0, idx - 1) }),
+      goNext: () => this.setState({ idx: Math.min(chapters.length - 1, idx + 1) }),
+      standalone: !this.props.embedded,
+      rootStyle: 'position: relative; min-height: 100vh; ' + (this.props.embedded ? 'background: transparent; ' : 'background: #0a1416; ') + 'color: #2a1f14; font-family: \'EB Garamond\', serif; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 48px 32px; overflow: hidden',
+      close: () => (this.props.onClose ? this.props.onClose() : this.setState({ open: false })),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

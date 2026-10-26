@@ -1,0 +1,44 @@
+/* CardDialog (card-dialog.tsx): the large domain card. Board look: Party.dc.html `hc-face` / `dkc` (domain head, Cinzel
+   caps, parchment, gold rules, blue Recall badge). The dialog itself scrolls only when the card is taller than the
+   viewport; the text never scrolls on its own. The padding sits on the inner card, so clicks on the dialog's own box
+   are backdrop clicks (CL12). */
+
+.cd-dialog{--dc:#5b2b2b;box-sizing:border-box;font-family:var(--font-garamond),serif;width:min(560px,calc(100% - 32px));max-width:none;max-height:calc(100dvh - 32px);margin:auto;padding:0;border:none;border-radius:16px;background:transparent;color:#2a1f14;overflow-y:auto;overscroll-behavior:contain}
+.cd-dialog::backdrop{background:rgba(12,8,18,.72)}
+.cd-card{display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:#fffaf0;box-shadow:inset 0 0 0 2px #c9a35a}
+.cd-dialog[data-exhausted="true"] .cd-art{filter:grayscale(.9) brightness(.82)}
+
+.cd-head{display:flex;align-items:center;gap:10px;padding:10px 10px 10px 18px;background:linear-gradient(100deg,var(--dc),color-mix(in srgb,var(--dc) 65%,#000));color:#f6ead2;border-bottom:2px solid #c9a35a}
+.cd-name{flex:1;min-width:0;margin:0;font-family:var(--font-cinzel),serif;font-size:24px;font-weight:700;line-height:1.15;letter-spacing:.04em;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,.6);overflow-wrap:anywhere}
+.cd-lvl{width:36px;height:36px;flex:none;border-radius:50%;background:#f6ead2;color:var(--dc);display:flex;align-items:center;justify-content:center;font-family:var(--font-cinzel),serif;font-weight:900;font-size:18px;box-shadow:0 0 0 2px #c9a35a}
+.cd-close{width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(246,234,210,.5);background:rgba(0,0,0,.18);color:#f6ead2;cursor:pointer}
+.cd-close:hover{background:rgba(0,0,0,.32)}
+.cd-close:focus-visible{outline:3px solid #f3cf86;outline-offset:2px}
+
+.cd-art{position:relative;flex:none;aspect-ratio:481/300;background:#1a1424}
+.cd-art-img{object-fit:cover;object-position:center 35%}
+.cd-rc{position:absolute;right:14px;bottom:-18px;z-index:2;width:38px;height:38px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#7fb2e0,#2a4f86);color:#fff;font-family:var(--font-cinzel),serif;font-weight:900;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #0e1a2c,0 0 0 3.5px #c9a35a}
+
+/* CA7's ribbon, larger: the once-per state in words. Right padding clears the Recall badge. */
+.cd-used{margin:0;padding:7px 60px 7px 14px;background:rgba(26,20,36,.92);color:#f6ead2;box-shadow:0 1px 0 #c9a35a,0 -1px 0 #c9a35a;font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;letter-spacing:.08em;text-align:center;text-transform:uppercase}
+/* A grimoire's used spells (G3): the card stays ready, so no grey; one line per spell in the ribbon's ink. */
+.cd-spells{margin:0;padding:6px 60px 6px 14px;list-style:none;background:rgba(26,20,36,.08);border-bottom:1px solid rgba(201,163,90,.55);font-family:var(--font-cinzel),serif;font-size:13px;font-weight:700;letter-spacing:.04em;color:#3a2a14}
+
+.cd-meta{display:flex;flex-wrap:wrap;gap:4px 18px;margin:0;padding:14px 60px 10px 18px;border-bottom:1px solid rgba(201,163,90,.55)}
+.cd-meta>div{display:flex;flex-direction:column}
+.cd-meta dt{font-family:var(--font-cinzel),serif;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8a6d3b}
+.cd-meta dd{margin:0;font-family:var(--font-cinzel),serif;font-size:15px;font-weight:700;color:#3a2a14}
+
+.cd-text{margin:0;padding:14px 18px 20px;font-size:18px;line-height:1.5;color:#2a1f14;white-space:pre-line;overflow-wrap:break-word}
+
+/* The plain 'More' button for faces that bring no style of their own. */
+.cd-more{min-height:44px;min-width:44px;padding:0 4px;border:none;background:none;color:#8a6d3b;font-size:14px;text-decoration:underline;cursor:pointer}
+.cd-more:focus-visible{outline:2px solid var(--sheet-wine,#5b2b2b);outline-offset:2px}
+
+@media (max-width:640px){
+  .cd-dialog{width:calc(100% - 24px);max-height:calc(100dvh - 24px)}
+  .cd-head{padding-left:14px}
+  .cd-name{font-size:19px}
+  .cd-meta{padding:12px 54px 8px 14px}
+  .cd-text{padding:12px 14px 18px;font-size:17px}
+}

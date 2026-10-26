@@ -1,0 +1,143 @@
+/*
+ * The own page's header (D11 N2, board Notes.dc.html l.130-134) and the session picker (Q5, not on the board: the
+ * board's tokens). Shared tokens and classes come from the page's notes.css (--bj-*, bj-toolbar, bj-paper-btn).
+ */
+
+.bj-page-title {
+  flex: 1;
+  min-width: 200px;
+  border: none;
+  border-bottom: 1px solid rgba(90, 70, 40, 0.3);
+  background: transparent;
+  font-family: var(--bj-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--bj-ink);
+  padding: 4px 0;
+  min-height: 32px;
+  box-sizing: border-box;
+}
+.bj-page-title:focus {
+  outline: none;
+  border-bottom: 2px solid #8e2b2b;
+}
+.bj-page-meta {
+  font-family: var(--bj-hand);
+  font-size: 22px;
+  color: var(--bj-ink-soft);
+}
+.bj-page-error {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #8e2b2b;
+}
+
+/* ---------------------------------------------------------------- session picker (native <dialog>) */
+
+.bj-picker-dialog {
+  max-width: 460px;
+}
+.bj-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.bj-picker-list {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+}
+.bj-picker-legend {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bj-muted, #9fb2b6);
+  margin-bottom: 8px;
+  padding: 0;
+}
+.bj-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--bj-card-border, #253338);
+  background: var(--bj-card, #141e22);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.bj-picker-option:has(input:checked) {
+  border-color: var(--bj-acc, #e3b45a);
+  background: var(--bj-hover, #1b282d);
+}
+.bj-picker-option input {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: var(--bj-acc, #e3b45a);
+}
+.bj-picker-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.bj-picker-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--bj-text, #e6ecea);
+  overflow-wrap: anywhere;
+}
+.bj-picker-meta,
+.bj-picker-muted {
+  font-size: 13px;
+  color: var(--bj-muted, #9fb2b6);
+}
+.bj-picker-error {
+  margin: 0;
+  font-size: 14px;
+  color: var(--bj-danger, #ffb4a8);
+}
+.bj-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.bj-picker-confirm {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 8px;
+  border: none;
+  background: var(--bj-acc, #e3b45a);
+  color: var(--bj-acc-ink, #1a1408);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bj-picker-confirm:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.bj-picker-confirm:focus-visible,
+.bj-picker-option:focus-within {
+  outline: 2px solid var(--bj-acc, #e3b45a);
+  outline-offset: 2px;
+}
+.bj-picker .bj-ghost {
+  min-height: 44px;
+}
+
+@media (max-width: 720px) {
+  .bj-page-title {
+    min-width: 0;
+    flex-basis: 100%;
+    min-height: 44px;
+  }
+}

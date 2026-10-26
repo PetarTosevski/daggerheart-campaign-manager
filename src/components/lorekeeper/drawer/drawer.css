@@ -1,0 +1,42 @@
+/*
+ * The drawer (D13 L7, board Lorekeeper.dc.html drawer variant): the dialog covers the viewport; its backdrop dims the
+ * campaign page (the board's saturate(.6) brightness(.45)); the panel (lorekeeper.css .lk-drawer: 440 px, border,
+ * shadow) sits on the right, full height; the decorative 'The Lorekeeper is open' pill sits 466 px from the right
+ * edge as on the board. Under 760 px the panel takes the full width and the decorative pill is hidden.
+ */
+.lk-root.lk-drawerdlg {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: hidden;
+}
+.lk-root.lk-drawerdlg::backdrop {
+  background: rgba(4, 8, 10, .25);
+  backdrop-filter: saturate(.6) brightness(.5);
+}
+.lk-root .lk-drawerpanel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+}
+.lk-root .lk-drawerpanel .lk-chathead { flex: none; }
+.lk-root .lk-drawerpanel .lk-body { min-height: 0; }
+.lk-root .lk-drawerclose { flex: none; min-width: 44px; min-height: 44px; font-size: 16px; }
+.lk-root .lk-drawerclose:focus-visible { outline: 2px solid var(--lk-gold); outline-offset: 2px; }
+.lk-root .lk-drawerfab { position: absolute; right: 466px; bottom: 24px; pointer-events: none; }
+.lk-root .lk-fabmini { width: 30px; height: 30px; }
+
+@media (max-width: 760px) {
+  .lk-root .lk-drawerpanel { width: 100%; border-left: 0; }
+  .lk-root .lk-drawerfab { display: none; }
+  .lk-root .lk-drawerpanel .lk-chathead { flex-wrap: nowrap; }
+}

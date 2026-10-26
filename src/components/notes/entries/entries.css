@@ -1,0 +1,130 @@
+/*
+ * Entries (D11 N3): the rows, the add row and the KEY on the paper. Shared classes (bj-row, bj-bul, bj-text, bj-act,
+ * bj-ib, bj-chip, bj-add, bj-edit, bj-key, bj-added) come from the page's notes.css; these are the board's remaining
+ * inline styles (Notes.dc.html l.139-157) with names, plus the 390 px layout (not on the board).
+ */
+.bj-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/*
+ * dcm-bxp.113: the board's `.bj-row { min-height: 34px; padding: 3px 6px }` is content-box (40 px rows, 41 px apart with
+ * the 1 px gap); the app's preflight makes every box border-box, which shrank the rows to 36 px. 40 px restores the
+ * board's pitch.
+ */
+.bj-rows .bj-row {
+  min-height: 40px;
+}
+.bj-hit {
+  background: rgba(227, 180, 90, 0.28);
+}
+.bj-row[data-pending] {
+  opacity: 0.7;
+}
+.bj-bul[aria-disabled="true"] {
+  cursor: default;
+}
+.bj-bul[aria-disabled="true"]:hover {
+  background: transparent;
+}
+.bj-bul:focus-visible,
+.bj-ib:focus-visible {
+  outline: 2px solid #8e2b2b;
+  outline-offset: 1px;
+}
+.bj-ib:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.bj-ib[aria-pressed="true"] {
+  color: #b8842a;
+}
+/* Inside the text (between bullet and words, as on the board); inline-block keeps a struck line's strike off it. */
+.bj-star {
+  display: inline-block;
+  margin-right: 8px;
+  font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+  font-size: 18px;
+  color: #b8842a;
+}
+.bj-author {
+  white-space: nowrap;
+}
+.bj-edit-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.bj-edit-wrap .bj-edit {
+  width: 100%;
+}
+.bj-addbox {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bj-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bj-chip-glyph {
+  font-family: var(--bj-hand);
+  font-weight: 700;
+  font-size: 20px;
+}
+.bj-addrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bj-addbul {
+  width: 30px;
+  flex: none;
+  text-align: center;
+  font-family: var(--bj-hand);
+  font-weight: 700;
+  font-size: 26px;
+}
+.bj-entry-error {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: #8e2b2b;
+}
+.bj-toolbar .bj-entry-error {
+  margin: 0;
+}
+/* 390 px and touch screens: the row actions go under the text so the text keeps its width (44 px targets, notes.css). */
+/* 390 px: the row actions go under the text so the text keeps its width (targets are 44 px from notes.css). */
+@media (max-width: 720px), (pointer: coarse) {
+  .bj-row {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .bj-row .bj-text,
+  .bj-row .bj-edit-wrap {
+    flex-basis: calc(100% - 64px);
+  }
+  .bj-row .bj-act {
+    margin-left: auto;
+  }
+  .bj-addbul {
+    width: 44px;
+  }
+}
+
+/* Narrow with a pointer: the action line appears on hover or keyboard focus only, so hidden actions take no room. */
+@media (max-width: 720px) and (hover: hover) {
+  .bj-row .bj-act {
+    display: none;
+  }
+  .bj-row:hover .bj-act,
+  .bj-row:focus-within .bj-act {
+    display: flex;
+  }
+}

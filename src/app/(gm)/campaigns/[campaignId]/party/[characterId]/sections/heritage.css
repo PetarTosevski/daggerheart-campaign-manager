@@ -1,0 +1,4 @@
+/* Styles for sections/heritage.tsx only (sheet redesign wave 2). Tokens and primitives: ../sheet.css, src/components/party/sheet-ui/. */
+/* Board: Party.dc.html .hc-grid. The card itself (.hc-card and its parts): src/components/party/hero-card.css. */
+
+.hc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:16px;align-items:stretch}

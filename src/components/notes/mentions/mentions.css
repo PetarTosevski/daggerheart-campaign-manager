@@ -1,0 +1,97 @@
+/*
+ * The @ picker (D11 N5). Not on the board, so it uses the board's paper tokens: the edit field's cream (#fffaf0), the
+ * paper border, the ink, and the mention's gold wash for the active option. Options are 44 px tall (touch).
+ * Links use the board's `.bj-mention` (notes.css).
+ */
+.bj-mi {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.bj-mi > .bj-mi-ed {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+.bj-mi-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: min(360px, 100%);
+  min-width: min(240px, 100%);
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  box-sizing: border-box;
+  background: #fffaf0;
+  border: 1px solid var(--bj-paper-border, #cdb88f);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  color: var(--bj-ink, #2a1f14);
+  font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+}
+.bj-mi-opt {
+  min-height: 44px;
+  padding: 4px 10px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 6px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+.bj-mi-opt[aria-selected="true"] {
+  background: rgba(227, 180, 90, 0.35);
+  border-left-color: #b8842a;
+}
+.bj-mi-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.bj-mi-tip {
+  font-size: 13px;
+  color: var(--bj-ink-soft, #6a5236);
+}
+.bj-mi-note {
+  min-height: 44px;
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: var(--bj-ink-soft, #6a5236);
+}
+
+/*
+ * The rich editor (dcm-bxp.106): the add / edit field is a single-line contenteditable whose mentions are name chips in
+ * the board's `.bj-mention` gold. It keeps `bj-add` / `bj-edit` from notes.css; these rules make a div behave like
+ * that input (one wrapping line, caret cursor, placeholder while empty).
+ */
+.bj-mi > .bj-mi-ed {
+  display: block;
+  box-sizing: border-box;
+  min-height: 1.5em;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.bj-mi-ed[data-empty]::before {
+  content: attr(aria-placeholder);
+  color: var(--bj-ink-soft, #6a5236);
+  opacity: 0.75;
+  pointer-events: none;
+}
+.bj-mi-chip {
+  background: rgba(227, 180, 90, 0.35);
+  border-radius: 4px;
+  padding: 0 3px;
+  border-bottom: 2px solid #b8842a;
+  white-space: nowrap;
+  user-select: all;
+}

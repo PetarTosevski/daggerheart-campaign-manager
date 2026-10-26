@@ -1,398 +1,395 @@
 # AGENTS.md
 
+## Binding rules
+
+These rules bind every agent and human working in this repository. They are
+stated in both `AGENTS.md` and `CLAUDE.md`; keep the two copies identical.
+Only the user's explicit current instructions override them.
+
+### Best practices: Top 15 rules
+
+Verbatim from `docs/best-practices.md`. The full rulebook in that file (Convex,
+Next.js, React and testing rules, each with its reason and enforcement) is
+binding too; read the sections that apply before you change code.
+
+1. Every client-callable Convex function is `userQuery` / `userMutation` / `userAction` (or a campaign wrapper built on them) from `convex/lib/functions.ts`. Raw `query`/`mutation`/`action` appear only in that file, `convex/auth.ts` and `convex/http.ts`; `internal*` functions are exempt.
+2. Campaign and GM access is decided only by `permissionFor` (wrapper option `need: "view" | "edit" | "owner"`). No role checks anywhere else.
+3. Identify the caller from `ctx.auth` (via the wrapper's `ctx.user`), never from an argument and never from an unverified email.
+4. Every public function has an `args` validator with no `v.any()`. No stored field is `v.any()` (only exception: `operations.result`). Player-facing queries declare a `returns` validator.
+5. Queries on growing tables use `.withIndex()`. No `.filter()` on database queries; `.collect()` only on provably small results, otherwise `.take()`, `.paginate()` or a counter.
+6. Growing collections are their own table with a back-reference index, never an array inside one document. Fields that change often live outside documents that many queries read.
+7. Every JSON blob that is not yet a typed validator carries `schemaVersion`. Change a shape by widen → migrate (`@convex-dev/migrations`, batched) → narrow; never edit a validator in place.
+8. Every table that only grows (idempotency records, soft-deleted campaigns, orphan uploads) has an internal, batched, self-rescheduling cleanup cron in `convex/crons.ts`.
+9. Throw `ConvexError<AppError>` with an object payload `{ code, message? }` from `src/lib/errors/*`. Convert only `RuleError` and `ZodError`; let programming errors throw.
+10. Uploads: issue URLs only from access-checked, rate-limited mutations; after upload check size and an explicit type allowlist (png/jpeg/webp/gif); delete rejected files; never accept a storage id as proof of access.
+11. Wrap every `useQuery` subtree in an error boundary; every route segment has `error.tsx`, the root has `global-error.tsx`.
+12. Mutations send intents (delta, id, single field), never a client-computed snapshot of a whole object; add an optimistic update wherever a click has visible latency.
+13. Never fire mutations from effects, never copy props into state in effects, never `key=` a subtree on live content.
+14. Every public Convex function appears in `tests/convex/authz-matrix.test.ts` for anonymous, outsider, player and GM. Tests assert `ConvexError.data.code`, never message text.
+15. Work in tracer bullets in worktrees (`docs/workflow.md`): change only your tracer's `owns`, and run lint, typecheck and tests before handoff. New lint rules land as warnings and are raised to errors once they are clean.
+
+### Convex function wrappers
+
+Every client-callable Convex function is defined with `userQuery`,
+`userMutation` or `userAction` (or `maybeUserQuery`, or a campaign wrapper
+built on them) from `convex/lib/functions.ts`. Raw `query`, `mutation` and
+`action` from `convex/_generated/server` are allowed only in
+`convex/lib/functions.ts`, `convex/auth.ts` and `convex/http.ts`; ESLint
+(`no-restricted-imports`) warns on them anywhere else. Fix that warning; do
+not ignore it. `internalQuery`, `internalMutation` and `internalAction` are
+exempt. (Rule CF1 in `docs/best-practices.md`.)
+
+### Build plans: tracer bullets in worktrees
+
+Every build plan is a list of tracer bullets, written and run as
+`docs/workflow.md` describes:
+
+- The plan lives in `.omc/plans/<plan>.yaml`; each tracer has a `goal`,
+  `depends_on`, `owns`, `reads` and `acceptance`.
+- Each tracer runs in its own git worktree, branched from `rebuild` (first
+  step, before any edit: `git switch -C <worktree branch> rebuild`).
+- A tracer changes only the files in its `owns` list
+  (`pnpm tracer:guard <plan> <tracer>` checks this), runs lint, typecheck and
+  tests, commits once on its branch and never pushes.
+- Only the orchestrator merges tracers into `rebuild`: in dependency order,
+  one squashed commit per tracer; then it regenerates `convex/_generated` and
+  reruns the checks.
+
+### Project rules
+
+- **Commits:** the author is petar (the existing git config). Never add a
+  `Co-Authored-By` trailer; Vercel Hobby blocks co-authored commits.
+- **Pushing:** never push (git or `bd dolt push`) unless the user asks.
+- **Task tracking:** use `bd` (beads) for all task tracking and `bd remember`
+  for persistent knowledge. No TodoWrite, TaskCreate, markdown TODO lists or
+  MEMORY.md files.
+- **Subagents:** every subagent runs on Opus (pass `model: opus` on every
+  Agent call).
+- **Unspecified mechanics:** before designing any mechanic the user has not
+  specified, ask whether it is core or frame-exclusive and how it works. Never
+  guess.
+
 ## Project overview
 
-This repository contains a private web application used by one Game Master to
-run a Daggerheart campaign using the official **Witherwild** campaign frame.
+This repository contains a private, multi-user web application for running
+Daggerheart campaigns during live play: the Game Master runs the table, and
+players join with their own accounts. It is being rebuilt (branch `rebuild`);
+the previous Witherwild-only app is preserved at tag `witherwild-final`.
 
-The application is a campaign operations tool. It is not a virtual tabletop, a
+The application is a **live-play GM console**. It is not a virtual tabletop, a
 rules compendium, or a replacement for the Daggerheart rulebook.
 
-Primary capabilities:
+Flow: sign in, pick a **campaign frame**, pick or create a **campaign** in that
+frame, land on the campaign's live table view.
 
-- Track campaign weeks and the Witherwild weekly day/night cycle.
-- Track current Fear and its history.
-- Create and operate countdowns.
-- Store player-character records and tracked resources.
-- Manage character and shared-party inventory.
-- Track food stores, consumption, spoilage, and shortages.
-- Track Wither tokens and other confirmed campaign-specific mechanics.
-- Preserve an auditable history of important state changes.
-- Work effectively on a tablet or laptop during live play.
+### Frames and mechanics
+
+- Frames ship in code (`src/lib/frames/`): the 10 published frames plus a
+  GM-written Custom frame. New frames are development tasks, not in-app content.
+- Every mechanic is either **core** (available in every campaign) or
+  **frame-exclusive** (switched on by the campaign's frame).
+- Core: Fear, countdowns, rests and downtime moves (frames may add their own
+  moves), session log, adversaries and encounters.
+- Witherwild-exclusive: campaign time (weeks and the DAY/NIGHT cycle of 7 named
+  phases each).
+- **Before designing any mechanic the user has not specified, ask the user
+  whether it is core or frame-exclusive and how it works.** Never assume.
+
+The active plan is `docs/design-port-roadmap.md` (a phased port of the Claude
+Design boards in `reference/designs/`; it supersedes Phases 2–7 of
+`.omc/plans/campaign-manager-rebuild.md`). Each phase has a task document in
+`docs/tasks/`. D12 (hardening and docs) is `.omc/plans/d12-hardening.yaml`;
+the Lorekeeper rules assistant (D13) is `.omc/plans/d13-lorekeeper.yaml`.
+Design images live in `public/design-assets/`; after adding any,
+run `node scripts/design-assets-manifest.mjs`.
 
 ## Source-of-truth hierarchy
 
 For every task, use this precedence:
 
 1. The user's explicit current task instructions.
-2. Existing implemented behavior and committed database migrations.
-3. An approved task specification in `docs/tasks/`.
-4. `docs/campaign-house-rules.md` for explicit mechanical overrides.
-5. `docs/game-interpretation.md` for application behavior derived from rules.
-6. `docs/product-spec.md` for product scope and user workflows.
-7. `docs/architecture.md` and `docs/data-model.md` for technical design.
-8. `docs/witherwild-notes.md` for campaign-specific context.
-9. The official SRD indexed by `docs/rules-index.md`.
+2. The approved task document in `docs/tasks/`.
+3. Existing implemented behaviour and the Convex schema in `convex/`.
+4. `docs/game-interpretation.md` for application behaviour derived from rules,
+   including explicit house-rule overrides.
+5. `docs/data-model.md` for the Convex schema.
+6. The official SRD indexed by `docs/rules-index.md`; terminology in
+   `docs/glossary.md`.
 
 Existing code is not automatically correct. When implementation conflicts with
-documentation, identify the conflict before changing either side. Do not silently
-rewrite requirements to match accidental implementation details.
+documentation, identify the conflict before changing either side.
 
-Files inside `.reference-private/` are optional local references. They must
-never be required by builds, tests, CI, deployment, or another developer.
+`reference/legacy-sql/` holds the old Postgres functions as read-only reference
+for porting behaviour. They are not executed and are deleted once the Convex
+port matches them in tests.
 
 ## Required context for a task
 
-Before planning or implementing:
-
 1. Read this file.
-2. Read the relevant task file in `docs/tasks/`.
-3. Read only the relevant sections of:
-   - `docs/product-spec.md`
-   - `docs/architecture.md`
-   - `docs/data-model.md`
-   - `docs/game-interpretation.md`
-   - `docs/campaign-house-rules.md`
-   - `docs/witherwild-notes.md`
-   - `docs/open-questions.md`
-4. Inspect the existing code, migrations, tests, and package scripts.
-5. Compare the task against the implementation before proposing changes.
+2. Read the assigned task document in `docs/tasks/` in full.
+3. Read only the relevant sections of `docs/game-interpretation.md`,
+   `docs/rules-index.md`, `docs/glossary.md`, `docs/data-model.md` and
+   `docs/open-questions.md`.
+4. Inspect the existing code, tests and package scripts.
 
-Do not load every document or the entire SRD for unrelated work.
-
-If no task file exists for a non-trivial change, create or update one before
+If no task document exists for a non-trivial change, create one before
 implementation.
 
 ## Rules-source policy
 
-The authoritative public rules reference is:
+- Authoritative public rules reference: `reference/daggerheart-srd.pdf`.
+- Project index and interpretations: `docs/rules-index.md`,
+  `docs/game-interpretation.md`.
+- `.reference-private/` files are optional local references and must never be
+  required by builds, tests, CI or deployment.
 
-- `reference/daggerheart-srd.pdf`
+Before implementing a game mechanic: locate it in `docs/rules-index.md`, verify
+the SRD section, record the application interpretation in
+`docs/game-interpretation.md`, express it as acceptance criteria and tests, and
+implement only the confirmed behaviour.
 
-The project-maintained index and interpretations are:
+When a material rule is unclear: do not guess, add an entry to
+`docs/open-questions.md`, and continue only with unaffected work.
 
-- `docs/rules-index.md`
-- `docs/game-interpretation.md`
-- `docs/campaign-house-rules.md`
-- `docs/witherwild-notes.md`
-
-The optional private rulebook may exist at:
-
-- `.reference-private/daggerheart-core-rulebook.pdf`
-
-Use the SRD as the primary source for standard mechanics and terminology.
-House rules override official rules only where the override is explicit.
-
-Before implementing a game mechanic:
-
-1. Locate it in `docs/rules-index.md`.
-2. Verify the cited SRD section.
-3. Check `docs/campaign-house-rules.md`.
-4. Check `docs/witherwild-notes.md`.
-5. Record the application interpretation in `docs/game-interpretation.md`.
-6. Express the behavior as acceptance criteria and tests.
-7. Implement only the confirmed behavior.
-
-When a material rule is unclear:
-
-- Do not guess.
-- Add or update an item in `docs/open-questions.md`.
-- Make the behavior configurable only when that is a deliberate product choice.
-- Continue only with unaffected work.
-
-Do not reproduce substantial rulebook text, protected art, card layouts, or
-protected narrative content in source code or application assets.
+Do not reproduce substantial rulebook text, protected art, card layouts or
+protected narrative content in code or assets, except the frame lore, tomes and
+art from the Claude Design boards, which the user approved for this private app
+(2026-10-17, `docs/design-port-roadmap.md`).
 
 ## Product principles
 
-1. Optimize for one GM during live play.
-2. Common actions should require no more than one or two primary interactions.
-3. Current campaign state must be visible at a glance.
-4. Important changes must be recoverable or correctable.
-5. Historical events must not silently disappear.
-6. Preview compound effects before commitment where practical.
-7. Prefer complete vertical slices over broad partial implementation.
-8. Do not build multiplayer collaboration unless explicitly requested.
-9. Do not build a general-purpose virtual tabletop.
-10. Never invent game rules.
+1. Optimise for one GM during live play on a tablet or laptop.
+2. Common actions take no more than one or two primary interactions.
+3. Current campaign state is visible at a glance.
+4. Important changes are recoverable or correctable.
+5. Historical events never silently disappear.
+6. Prefer complete vertical slices over broad partial implementation.
+7. Multi-user (user decision 2026-10-17): roles are per campaign. A campaign's
+   creator is its GM; players join by email invite or join code. Anything
+   hidden from players is enforced on the server, never only in the UI.
+   Sign-up stays limited to the env allowlist until the user opens it.
+8. Never invent game rules.
 
 ## Approved technology stack
 
-Unless an approved task explicitly changes it, use:
+- Next.js App Router, TypeScript strict mode
+- Convex (database, queries, mutations, live updates)
+- Convex Auth with Google and email + password sign-in, both limited to the
+  env allowlist
+- Tailwind CSS and shadcn/ui primitives
+- Zod for input validation
+- Vitest (unit, and convex-test for Convex functions), Playwright (e2e)
+- pnpm; hosting on Vercel
 
-- Next.js App Router
-- TypeScript in strict mode
-- React Server Components by default
-- Client Components only for required browser interaction
-- Tailwind CSS
-- shadcn/ui primitives
-- Supabase PostgreSQL
-- Supabase Authentication
-- Supabase Row-Level Security
-- Zod
-- Vitest
-- Playwright
-- pnpm
+Do not introduce another backend, ORM, state-management library, component
+library, form library or paid service without approval. The versions and
+scripts in `package.json` are authoritative. Respect the pnpm
+`minimumReleaseAge` policy: pick an older version rather than adding an
+exclusion.
 
-Do not introduce another ORM, backend framework, state-management library,
-component library, form library, or paid service without documenting the need
-and obtaining approval.
+### Convex layout
 
-The installed package versions and scripts in `package.json` are authoritative.
-Do not assume versions from this document.
+- `convex/schema.ts`: the schema (includes Convex Auth's `authTables`).
+- `convex/auth.ts`: Convex Auth. Google (with a `profile()` override that
+  keeps `email_verified`), email + password (`password`), and the local-only
+  e2e provider; `createOrUpdateUser` (`convex/lib/users.ts`) applies the
+  allowlist and refuses a new password account for an email that already has
+  a user.
+- `convex/lib/allowlist.ts`: pure sign-in policy (allowlist =
+  `ALLOWED_EMAILS` ∪ legacy `GM_EMAILS` ∪ `SEED_ACCOUNTS` emails, verified
+  email for OAuth, local-only e2e sign-in). Unit-tested.
+- `convex/lib/functions.ts`: the auth wrappers. Every client-callable function is
+  `userQuery` / `userMutation` / `userAction` or a campaign/GM wrapper built on
+  them; they put `user` (and `campaign`, `permission`) on `ctx`.
+- `convex/lib/permissions.ts`: `permissionFor` — the single authorization model
+  (campaign role plus `grants`); wrappers and entry-scoped functions use it.
+- `convex/accounts.ts`: `accounts:seed` creates the `SEED_ACCOUNTS` test
+  logins (`npx convex run accounts:seed`; local e2e or cloud dev only).
+- `convex/tables/*`: the table definitions, one file per area, which
+  `convex/schema.ts` combines.
+- `convex/migrations/*`: `@convex-dev/migrations` migrations (`run.ts` runs
+  them).
+- `convex/crons.ts` and `convex/cleanup.ts`: the batched, self-rescheduling
+  retention jobs for the tables that only grow (rule 8).
+- `convex/convex.config.ts`: the components (rate limiter, migrations) and the
+  typed list of Convex environment variables.
+- `convex/lorekeeper*.ts`, `convex/lib/lorekeeper/*`, `convex/lib/claude.ts`:
+  the Lorekeeper (rules Q&A over book text ingested into the deployment) and
+  its usage caps.
+- Convex functions import shared code from `src/lib/{domain,validation}` with
+  relative paths; ESLint forbids `@/`, React and Next imports there.
 
-## Repository layout
+### Deployments and environments
 
-Expected documentation layout:
+- Production: a cloud deployment, deployed by Vercel (production builds
+  only, `vercel.json`) with `npx convex deploy --cmd 'pnpm build'`.
+  Env vars on Convex: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`,
+  `ALLOWED_EMAILS` (or the legacy `GM_EMAILS`), `SITE_URL`,
+  `JWT_PRIVATE_KEY`, `JWKS`; optional `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+  `LOREKEEPER_MODEL` and the Lorekeeper caps `LOREKEEPER_DAILY_QUESTIONS`,
+  `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD`
+  (`convex/convex.config.ts`). Env var on Vercel: `CONVEX_DEPLOY_KEY`;
+  `npx convex deploy` sets `NEXT_PUBLIC_CONVEX_URL` for the build.
+- `ANTHROPIC_API_KEY` lives only in the Convex env, never in Vercel,
+  `.env.local` or a `NEXT_PUBLIC_` variable.
+- Dev-only variables never go to production: `SEED_ACCOUNTS` and
+  `ALLOW_SEED_ACCOUNTS` (cloud dev test logins), and `E2E_AUTH_ENABLED`,
+  `E2E_AUTH_SECRET` and `LOREKEEPER_FAKE_MODEL` (local e2e backend only).
+- Lorekeeper book text is loaded with `pnpm lorekeeper:ingest <bookKey>
+  <textFile>` (`--prod`, `--deployment <name>` or `--e2e` picks the target).
+  Book text never goes into the repository; the script refuses files inside
+  it.
+- Everyday development (`pnpm dev`, `.env.local`): the GM's personal cloud dev
+  deployment.
+- Tests: the project's local, account-free backend (`.convex/local`,
+  `.env.e2e.local`), set up with `pnpm e2e:setup`. The test-only sign-in exists
+  only there; it needs a localhost backend and `E2E_AUTH_ENABLED=true`.
+- The e2e build goes to `.next-e2e`; never deploy a locally built output.
 
-```text
-AGENTS.md
-docs/
-  architecture.md
-  campaign-house-rules.md
-  data-model.md
-  game-interpretation.md
-  glossary.md
-  implementation-priorities.md
-  open-questions.md
-  product-spec.md
-  rules-index.md
-  witherwild-notes.md
-  tasks/
-reference/
-  daggerheart-srd.pdf
-.reference-private/
-  daggerheart-core-rulebook.pdf
-```
+### Server vs. client components
 
-Expected application layout is documented in `docs/architecture.md`. Inspect the
-actual repository before creating or moving directories.
+- Server Components for layout, the auth gate and static shells.
+- Client Components with Convex `useQuery`/`useMutation` for live mechanic
+  panels (needed for live updates across devices).
 
 ## Architectural boundaries
 
-- Keep presentation, domain logic, validation, and database access separate.
-- Use Server Components for initial reads and protected rendering by default.
-- Use named Server Actions or route handlers for mutations.
-- Authenticate, authorize, and validate every mutation on the server.
-- Enforce campaign ownership with Row-Level Security.
-- Keep service-role credentials out of browser code.
-- Do not scatter direct database calls through presentation components.
+- Keep presentation, domain logic, validation and data access separate.
+- Pure game rules live in `src/lib/domain/*` and validation in
+  `src/lib/validation/*`. These modules must not import React, Next or
+  `@/components`; Convex functions call them.
+- Authenticate and authorise every Convex query and mutation on the server
+  through the wrappers in `convex/lib/functions.ts` (`userQuery`,
+  `userMutation`, `userAction`, `maybeUserQuery` and the campaign/GM wrappers
+  built on them), with access decided by `permissionFor`. The proxy
+  (`src/proxy.ts`) is only a UX redirect.
 - Do not duplicate authoritative game calculations in client and server code.
-- Do not add a global client-state library without a demonstrated need.
+- Keep deploy keys and secrets out of browser code.
 
-## Database and history rules
+## Data and history rules (Convex)
 
-- Commit every schema change as a Supabase migration.
-- Never edit a migration already applied to a shared or production database.
-- Update `docs/data-model.md` whenever the implemented schema changes.
-- Use database constraints for persistent invariants.
-- Use explicit transactional database functions for compound domain operations
-  unless an approved architecture decision says otherwise.
-- Protect retryable compound operations with idempotency keys.
-- Preserve event or transaction history for Fear, countdowns, weeks, inventory,
-  food, and undo/correction operations.
-- Current totals may be cached, but must be changed atomically with their
-  corresponding history record.
-- Prefer compensating events and archival state over silent history edits.
-- Prefer storing canonical state rather than presentation values.
-    Example:
-
-    Store
-
-      - cycle = DAY
-      - cycle_day = 4
-
-    instead of
-
-      - "Forenoon"
-
-- Presentation strings should be derived whenever practical.
+- Every schema change goes in `convex/schema.ts` and is documented in
+  `docs/data-model.md`.
+- Compound domain operations run inside a single Convex mutation, which is
+  transactional.
+- Retryable operations are protected by idempotency keys stored in the
+  `operations` table; a replay with a different request is rejected.
+- Preserve event history for Fear, countdowns, campaign time and corrections.
+  Cached totals change in the same mutation as their history record.
+- Prefer compensating events over silent history edits.
+- Store canonical state, not presentation values (store `cycle = DAY`,
+  `cycleDay = 4`, never "Forenoon"); derive display strings.
 
 ## Testing requirements
 
-Every feature must include tests appropriate to its risk:
-
 - Unit tests for pure domain rules and Zod schemas.
-- Integration tests for database functions, constraints, RLS, transactions, and
-  idempotency.
-- Playwright tests for critical user workflows.
+- Convex function tests (convex-test) for atomicity, idempotency,
+  authorisation and campaign isolation.
+- Playwright tests for critical workflows, run against a throwaway local Convex
+  backend.
+- The authorization matrix (`tests/convex/authz-matrix.test.ts` plus one
+  `tests/convex/authz/<area>.entries.ts` per area): every public function has
+  an entry for each role of its access class. The inventory guard fails
+  `pnpm test` when a public function has no entry, so a new function ships
+  with its entry (`docs/testing.md`, "Authorization matrix").
+- The unauthenticated sweep: `tests/convex/unauthenticated-sweep.test.ts`
+  calls every public function signed out and as a stranger;
+  `tests/e2e/unauthenticated.spec.ts` checks that every page sends a signed-out
+  visitor to sign-in.
+- Accessibility and tablet specs (`tests/e2e/a11y-*.spec.ts`, helpers in
+  `tests/e2e/a11y.ts`): zero serious or critical axe findings, no sideways
+  scroll and 44 px touch targets at 768x1024 and 1024x768.
+- Live-update specs (`tests/e2e/live-*.spec.ts`, fixture in
+  `tests/e2e/live.ts`): GM and player side by side in two browsers; the change
+  must reach the other screen without a reload.
+- Error boundaries: every route segment with a page has `error.tsx`
+  (`tests/unit/route-error.test.tsx`); `tests/e2e/error-boundary.spec.ts`
+  proves a failing query shows the error screen.
 
-At minimum, verify:
-
-- Fear cannot become negative.
-- A Fear adjustment creates one event and one total change.
-- Countdown boundaries and status transitions are enforced.
-- Countdown completion effects cannot apply twice.
-- Week advancement is atomic and idempotent.
-- Inventory and food transfers preserve quantity.
-- Unauthorized users cannot access another campaign.
-- Undo or correction preserves an audit trail.
+At minimum verify: Fear stays within 0–12; one Fear adjustment creates one
+event and one total change; countdown boundaries and status transitions;
+countdown completion cannot apply twice; week advancement is atomic and
+idempotent; one campaign's data never appears in another; corrections preserve
+the audit trail.
 
 Do not claim a command passed unless it was executed successfully.
 
-## Standard commands
-
-Use the scripts that actually exist in `package.json`. Expected commands are:
+## Build & Test
 
 ```bash
-pnpm install
-pnpm dev
+pnpm install        # also points git at the tracked hooks (.beads/hooks)
+pnpm dev            # Next.js; run `npx convex dev` alongside it
 pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
+pnpm typecheck      # also typechecks convex/
+pnpm test           # vitest projects: unit (jsdom) and convex (convex-test)
+pnpm e2e:setup      # once: configure the local e2e Convex backend
+pnpm test:e2e       # starts the local backend and an e2e build itself
 pnpm build
 ```
 
-Before declaring implementation complete, run all applicable checks. If a
-listed script does not exist, report that discrepancy rather than inventing a
-result.
+`pnpm test:e2e` needs Playwright's Chromium and its system libraries
+(`pnpm exec playwright install chromium`, then
+`sudo pnpm exec playwright install-deps chromium`). It refuses to start when
+its ports are taken (stale servers); run on other ports with
+`E2E_PORT=<port> E2E_CONVEX_PORT=<port> pnpm test:e2e` (in a worktree, use the ports `pnpm worktree:setup` prints; they differ per worktree). On a loaded machine,
+start the backend and the e2e build by hand and run Playwright with
+`E2E_REUSE_SERVERS=1` (`docs/performance.md`, `docs/testing.md`). The pre-commit hook runs
+ESLint on staged files plus `pnpm typecheck` (never e2e). CI
+(`.github/workflows/ci.yml`) runs lint, typecheck, test and e2e. Details:
+`docs/testing.md`.
+
+If a listed script does not exist, report the discrepancy rather than inventing
+a result.
 
 ## Agent workflow
 
-For every non-trivial task:
-
 1. Read the applicable context.
-2. Inspect existing implementation and migrations.
-3. Reconcile task status with actual code and tests.
-4. State the intended change and acceptance criteria.
-5. Identify schema, authorization, and migration implications.
-6. Implement the smallest coherent vertical slice.
-7. Add or update tests.
-8. Run relevant checks.
-9. Review the diff for unrelated changes.
-10. Update affected documentation and task status.
-11. Report files changed, commands run, results, and unresolved questions.
-
-Do not redesign unrelated areas during a feature task.
+2. Inspect the existing implementation.
+3. State the intended change and acceptance criteria.
+4. Implement the smallest coherent vertical slice.
+5. Add or update tests and run the checks.
+6. Review the diff for unrelated changes.
+7. Update affected documentation and task status.
+8. Report files changed, commands run, results and unresolved questions.
 
 ## Task-status rules
 
-Task status must reflect evidence:
-
-- `Draft`: not approved for implementation.
-- `Ready`: acceptance criteria are approved.
+- `Draft`: not approved.
+- `Ready`: acceptance criteria approved.
 - `In progress`: implementation has begun.
 - `Blocked`: a named decision or dependency prevents progress.
-- `Review`: implementation is reported or present but has not passed the full
-  verification checklist.
-- `Complete`: acceptance criteria, documentation, and required checks have been
-  verified.
-
-A checkmark in `implementation-priorities.md` is not sufficient evidence by
-itself. Reconcile it with code, migrations, and test results.
+- `Review`: implemented but not fully verified.
+- `Complete`: acceptance criteria, documentation and required checks verified.
 
 ## Change boundaries
 
-Agents may add application code, tests, migrations, and documentation directly
-related to an approved task.
-
 Agents must not, without explicit approval:
 
-- Replace the selected framework or Supabase.
-- introduce a paid service.
-- Disable authentication or RLS.
-- Perform a destructive production migration.
+- Replace Next.js or Convex.
+- Introduce a paid service.
+- Disable authentication or authorisation checks.
 - Remove event history.
-- Add public registration, player editing, or multiplayer support.
+- Open sign-up beyond the allowlist without the user's go-ahead.
 - Add arbitrary executable custom mechanics.
-- Copy protected rules text or artwork into the application.
-- Expand the project into a public SaaS product.
-- Redesign unrelated pages.
+- Copy protected rules text or artwork into the application beyond what the
+  user approved (frame lore, tomes and design art; rule text needed to run a
+  mechanic). Never commit the rulebook PDFs (`.reference-private/`).
+- Redesign unrelated pages. The Claude Design boards are the visual spec;
+  follow the porting rules in `docs/design-port-roadmap.md`.
 
 ## Definition of done
 
-A feature is complete only when:
+A feature is complete only when acceptance criteria are satisfied,
+authorisation and validation are enforced, loading/empty/failure/accessibility
+states are handled, required tests, lint, typecheck and build pass,
+documentation and task status are updated, and no unrelated changes are
+included.
 
-- Acceptance criteria are satisfied.
-- Implementation matches current migrations and documentation.
-- Authorization and validation are enforced.
-- Loading, empty, failure, and accessibility states are handled.
-- Required unit, integration, and end-to-end tests pass.
-- Linting, type checking, and production build pass.
-- Relevant documentation and task status are updated.
-- No unrelated changes are included.
+## Task boundary rule
 
-## Task Boundary Rule
-
-Implement only the requirements defined in the currently assigned task.
-
-Do not implement requirements from future task documents, even when:
-
-- placeholder UI already exists,
-- database fields suggest later functionality,
-- TODO comments reference future work,
-- implementing a future feature would simplify the current task.
-
-When future functionality affects the current design, create only the minimum extension point required for the current task. Document the deferred work clearly and leave implementation to its assigned task.
-
-Do not begin the next task automatically. Stop after completing and verifying the assigned task.
-
-## Task Document Authority
-
-For implementation work:
-
-1. Read `AGENTS.md`.
-2. Read the assigned task document in full.
-3. Treat the assigned task document as the scope contract.
-4. Follow repository conventions where the task document is silent.
-5. Report contradictions or blockers instead of guessing.
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:46cd31e7 -->
-## Beads Issue Tracker
-
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/core-concepts/sync-concepts.md for details and anti-patterns.
-
-## Agent Context Profiles
-
-The managed Beads block is task-tracking guidance, not permission to override repository, user, or orchestrator instructions.
-
-- **Conservative (default)**: Use `bd` for task tracking. Do not run git commits, git pushes, or Dolt remote sync unless explicitly asked. At handoff, report changed files, validation, and suggested next commands.
-- **Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.
-- **Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current "do not commit" or "do not push" instruction still wins.
-
-## Session Completion
-
-This protocol applies when ending a Beads implementation workflow. It is subordinate to explicit user, repository, and orchestrator instructions.
-
-1. **File issues for remaining work** - Create beads for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **Handle git/sync by active profile**:
-   ```bash
-   # Conservative/minimal/default: report status and proposed commands; wait for approval.
-   git status
-
-   # Team-maintainer opt-in only, unless current instructions forbid it:
-   git pull --rebase
-   bd dolt push
-   git push
-   git status
-   ```
-5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
-
-**Critical rules:**
-- Explicit user or orchestrator instructions override this Beads block.
-- Do not commit or push without clear authority from the active profile or the current user request.
-- If a required sync or push is blocked, stop and report the exact command and error.
-<!-- END BEADS INTEGRATION -->
+Implement only the requirements of the currently assigned task. Do not
+implement future tasks, even when placeholders or schema fields suggest them.
+Stop after completing and verifying the assigned task.
 
 <!-- BEGIN BEADS CODEX SETUP: generated by bd setup codex -->
 ## Beads Issue Tracker
@@ -417,3 +414,13 @@ bd prime                # Refresh Beads context
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/core-concepts/sync-concepts.md for details and anti-patterns.
 <!-- END BEADS CODEX SETUP -->
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

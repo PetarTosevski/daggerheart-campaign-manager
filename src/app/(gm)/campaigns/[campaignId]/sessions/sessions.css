@@ -1,0 +1,425 @@
+/*
+ * Sessions page (D10): the board's tokens and shared classes (reference/designs/project/Sessions.dc.html, lines
+ * 12-28 and the inline styles of the header, list and tabs) as custom properties on .ss-root, plus the page shell
+ * (header, list column, detail column, stage tabs). Feature slots (src/components/sessions/{list,detail,live,prep,
+ * play,wrap}) use these classes and variables and keep their own rules in their own colocated .css. Class names follow
+ * the board (`ss-card`, `ss-h`, `ss-lbl`, `ss-in`, `ss-ta`, `ss-ghost`, `ss-x`, `ss-step`, `ss-num`, `ss-muted`);
+ * the board's inline styles that recur got names: `ss-primary` (the gold pill), `ss-chip` (status chip),
+ * `ss-item` (a list entry), `ss-empty` (dashed empty box), `ss-alert`, `ss-dot`. Fonts come from the root layout:
+ * --font-cinzel (headings, numbers), --font-garamond (text areas), --font-plex (UI).
+ */
+.ss-root {
+  --ss-page: #0d1417;
+  --ss-card: #141e22;
+  --ss-card-border: #253338;
+  --ss-field: #0b1214;
+  --ss-border: #33444a;
+  --ss-hover: #1b282d;
+  --ss-text: #e6ecea;
+  --ss-muted: #9fb2b6;
+  /* Accent: the app's settings accent (the board's gold), with the board's default */
+  --ss-acc: var(--brand, #e3b45a);
+  --ss-acc-bg: #2d2614;
+  --ss-acc-ink: #1a1408;
+  --ss-danger: #ffb4a8;
+  --ss-danger-border: #5a3330;
+  /* Status chips (board l.340): planned gold on brown, played green; live uses the live-card green */
+  --ss-played-bg: #20352b;
+  --ss-played-text: #9fdcb6;
+  --ss-live: #4f9e72;
+  /* White text on --ss-live is 3.2:1; the Start buttons use this darker green (4.7:1, D12 H22, as H21's --enc-start). */
+  --ss-live-btn: #40815d;
+  --ss-live-dot: #5fd38d;
+  --ss-end: #a2463a;
+  --ss-idle-dot: #4a5c62;
+  --ss-display: var(--font-cinzel), serif;
+  --ss-serif: var(--font-garamond), serif;
+
+  background: var(--ss-page);
+  color: var(--ss-text);
+  font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------- shared classes (board) */
+
+.ss-card {
+  padding: 20px;
+  border-radius: 14px;
+  background: var(--ss-card);
+  border: 1px solid var(--ss-card-border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.ss-start {
+  align-items: flex-start;
+}
+.ss-h {
+  margin: 0;
+  font-family: var(--ss-display);
+  font-size: 20px;
+  font-weight: 700;
+}
+.ss-lbl {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ss-muted);
+}
+.ss-muted {
+  color: var(--ss-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ss-m0 {
+  margin: 0;
+}
+.ss-in {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ss-border);
+  background: var(--ss-field);
+  color: var(--ss-text);
+  font-size: 15px;
+  font-family: inherit;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.ss-ta {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--ss-border);
+  background: var(--ss-field);
+  color: var(--ss-text);
+  font-size: 17px;
+  line-height: 1.55;
+  font-family: var(--ss-serif);
+  resize: vertical;
+}
+.ss-in:focus-visible,
+.ss-ta:focus-visible {
+  outline: 2px solid var(--ss-acc);
+  outline-offset: 1px;
+}
+.ss-ghost {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ss-border);
+  background: transparent;
+  color: var(--ss-text);
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+.ss-ghost:hover {
+  background: var(--ss-hover);
+}
+.ss-ghost.ss-danger {
+  color: var(--ss-danger);
+  border-color: var(--ss-danger-border);
+}
+.ss-x {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 8px;
+  border: 1px solid var(--ss-border);
+  background: transparent;
+  color: var(--ss-muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+.ss-x:hover {
+  color: var(--ss-danger);
+  border-color: #7a3b33;
+}
+.ss-step {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--ss-border);
+  background: var(--ss-field);
+  color: var(--ss-text);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  font-family: inherit;
+}
+.ss-step:hover {
+  background: var(--ss-hover);
+}
+.ss-num {
+  min-width: 34px;
+  text-align: center;
+  font-family: var(--ss-display);
+  font-size: 20px;
+  font-weight: 700;
+}
+.ss-primary {
+  min-height: 52px;
+  padding: 0 26px;
+  border-radius: 999px;
+  border: none;
+  background: var(--ss-acc);
+  color: var(--ss-acc-ink);
+  font-family: var(--ss-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.ss-primary[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.ss-ghost:focus-visible,
+.ss-x:focus-visible,
+.ss-step:focus-visible,
+.ss-primary:focus-visible,
+.ss-item:focus-visible,
+.ss-tabs button:focus-visible {
+  outline: 2px solid var(--ss-acc);
+  outline-offset: 2px;
+}
+.ss-chip {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ss-acc-bg);
+  color: var(--ss-acc);
+}
+.ss-chip[data-status="played"] {
+  background: var(--ss-played-bg);
+  color: var(--ss-played-text);
+}
+.ss-chip[data-status="live"] {
+  background: #1d3a2a;
+  color: #9fe7bb;
+}
+.ss-empty {
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px dashed var(--ss-border);
+  color: var(--ss-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+/* A list entry (board l.65, l.341): the S2 list renders <button class="ss-item" aria-current="true|false">. */
+.ss-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--ss-text);
+  box-sizing: border-box;
+  background: var(--ss-card);
+  border: 1.5px solid var(--ss-card-border);
+}
+.ss-item[aria-current="true"] {
+  background: var(--ss-hover);
+  border-color: var(--ss-acc);
+}
+.ss-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--ss-danger-border);
+  background: #1a1311;
+  color: var(--ss-danger);
+  font-size: 14px;
+}
+/* A card laid out as a row (the header card and the live card, board l.82, l.89). */
+.ss-row-card {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+.ss-grow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ss-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ss-idle-dot);
+}
+.ss-dot[data-live="true"] {
+  background: var(--ss-live-dot);
+  box-shadow: 0 0 0 4px rgb(95 211 141 / 0.2);
+}
+.ss-live-title {
+  font-family: var(--ss-display);
+  letter-spacing: 0.06em;
+}
+
+/* ---------------------------------------------------------------- page shell */
+
+.ss-head {
+  max-width: 1344px;
+  margin: 0 auto;
+  padding: 26px 48px 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ss-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ss-campaign {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: #c8d3d0;
+}
+.ss-title {
+  margin: 0;
+  font-family: var(--ss-display);
+  font-size: 44px;
+  line-height: 1.05;
+  font-weight: 900;
+}
+.ss-headline {
+  font-size: 15px;
+  color: #d6dfdc;
+}
+.ss-main {
+  width: 100%;
+  max-width: 1344px;
+  margin: 0 auto;
+  padding: 28px 48px 48px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.ss-main.ss-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ss-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.ss-detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.ss-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--ss-card);
+  border: 1px solid var(--ss-card-border);
+  align-self: flex-start;
+}
+.ss-tabs button {
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ss-text);
+  background: transparent;
+}
+.ss-tabs button[aria-selected="true"] {
+  color: var(--ss-acc-ink);
+  background: var(--ss-acc);
+}
+.ss-panel {
+  min-width: 0;
+}
+
+/* Tablet: the board's two columns with a narrower list and gutters. */
+@media (max-width: 1100px) {
+  .ss-head {
+    padding: 22px 24px 0;
+  }
+  .ss-main {
+    padding: 24px 24px 40px;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+
+/* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
+@media (max-width: 1100px), (pointer: coarse) {
+  .ss-ghost,
+  .ss-tabs button {
+    min-height: 44px;
+  }
+  .ss-x,
+  .ss-step {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Phone: one column (list first), 16 px gutters (the board has no phone layout). */
+@media (max-width: 720px) {
+  .ss-head {
+    padding: 18px 16px 0;
+  }
+  .ss-title {
+    font-size: 34px;
+  }
+  .ss-main {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 18px 16px 32px;
+    gap: 18px;
+  }
+  .ss-primary {
+    width: 100%;
+  }
+  .ss-tabs {
+    align-self: stretch;
+  }
+  .ss-tabs button {
+    flex: 1;
+    padding: 0 10px;
+  }
+  .ss-card {
+    padding: 16px;
+  }
+}

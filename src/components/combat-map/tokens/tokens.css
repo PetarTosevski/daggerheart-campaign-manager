@@ -1,0 +1,390 @@
+/*
+ * Tokens (D9 C6): the board's token, range circle and selected-token styles (reference/designs/project/Combat.dc.html,
+ * lines 40-56 and the Combatants / Selected token cards). Shared tokens and classes come from the page's combat-map.css.
+ */
+
+/* ---------------------------------------------------------------- the layer: board pixels, scaled by the zoom */
+
+.cm-tokens {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.cm-tokens-map {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.cm-tokens-error {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 60;
+  margin: 0;
+  max-width: min(420px, calc(100% - 20px));
+}
+
+/* ---------------------------------------------------------------- a token */
+
+.cm-tok {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition: box-shadow 0.15s;
+  pointer-events: auto;
+  font: inherit;
+  color: inherit;
+}
+.cm-tok.fixed {
+  cursor: pointer;
+}
+.cm-tok.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+.cm-tokens-idle .cm-tok {
+  pointer-events: none;
+}
+.cm-tok:focus-visible {
+  outline: 3px solid var(--cm-acc);
+  outline-offset: 4px;
+}
+.cm-ini {
+  font-family: var(--cm-display);
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+.cm-tag {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(8, 12, 14, 0.86);
+  color: #f2ecdf;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 3;
+}
+.cm-tok:hover .cm-tag,
+.cm-tok:focus-visible .cm-tag,
+.cm-tok.sel .cm-tag,
+.cm-tok.mine .cm-tag,
+.cm-vp.names .cm-tag {
+  opacity: 1;
+}
+/* Facing (R5): a white arc on the front and an arrow in the side's colour. */
+.cm-face {
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.cm-face::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-right-color: rgba(255, 255, 255, 0.9);
+}
+.cm-face::after {
+  content: "";
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  margin-top: -7px;
+  border-left: 10px solid var(--tc, #fff);
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
+}
+/* The turn knob (R5), on the token's front edge. */
+.cm-rot {
+  position: absolute;
+  inset: -24px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.cm-rot i {
+  position: absolute;
+  right: -2px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: #e3b45a;
+  border: 2px solid #1a1408;
+  box-shadow: 0 0 0 2px rgba(227, 180, 90, 0.35);
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+/* A larger invisible grip on touch screens. */
+@media (pointer: coarse) {
+  .cm-rot i::after {
+    content: "";
+    position: absolute;
+    inset: -12px;
+    border-radius: 50%;
+  }
+}
+.cm-badge {
+  position: absolute;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+.cm-tok-light {
+  left: -8px;
+  bottom: -6px;
+  background: #3a2410;
+  border: 1px solid #e3b45a;
+  font-size: 10px;
+}
+.cm-tok-bar {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: -9px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  pointer-events: none;
+}
+.cm-tok-bar > span {
+  display: block;
+  height: 100%;
+}
+.cm-tok-cond {
+  position: absolute;
+  right: -6px;
+  top: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: #6b3fae;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ---------------------------------------------------------------- range circles (R3) */
+
+.cm-ring {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.cm-ringlbl {
+  position: absolute;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- cards */
+
+.cm-tight {
+  gap: 4px;
+}
+.cm-small {
+  font-size: 13px;
+}
+.cm-self-start {
+  align-self: flex-start;
+}
+.cm-inline-lbl {
+  margin-right: 4px;
+}
+.cm-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #1a1311;
+  border: 1px dashed #7a3a33;
+}
+.cm-queue-lbl {
+  color: #f0a99c;
+}
+.cm-custom summary {
+  cursor: pointer;
+}
+.cm-custom-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cm-custom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px;
+  gap: 8px;
+}
+.cm-tokhead {
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+.cm-tokdot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex: none;
+}
+.cm-tokname {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--cm-display);
+  font-size: 16px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.cm-tokfield {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cm-tokgm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cm-pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cm-pip[disabled] {
+  cursor: default;
+  opacity: 0.85;
+}
+.cm-pip:focus-visible {
+  outline: 2px solid var(--cm-acc);
+  outline-offset: 2px;
+}
+
+/* Touch targets of at least 44 px on tablets and phones (D12 H22). */
+@media (max-width: 1100px), (pointer: coarse) {
+  .cm-pip {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+  }
+  .cm-custom-grid .cm-in {
+    min-height: 44px;
+  }
+}
+
+/* ---------------------------------------------------------------- movement (map-movement M1) */
+
+/* The hatch over difficult squares: over the map canvas, under the fog (z 1, earlier in the stage than the fog). */
+.cm-move-hatch {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+/* "Blocked" (a player's refused move) or the GM's warning, above the token it is about. */
+.cm-move-notice {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  z-index: 60;
+  margin: 0;
+  transform: translate(-50%, -100%);
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+.cm-move-notice.blocked {
+  background: #3a1210;
+  border: 1px solid #e0715f;
+  color: #ffd9d2;
+}
+.cm-move-notice.warning {
+  background: #3a2c0c;
+  border: 1px solid #e3b45a;
+  color: #fbe7bd;
+  white-space: normal;
+  width: max-content;
+}
+/* Empty: kept in the page (a live region must exist before it speaks) but invisible. */
+.cm-move-notice-empty {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  box-shadow: none;
+}
+/* A refused move: the token shakes once where it snapped back. */
+.cm-tok.bump {
+  animation: cm-tok-bump 0.32s ease-in-out;
+}
+@keyframes cm-tok-bump {
+  20% { translate: -4px 0; }
+  50% { translate: 4px 0; }
+  80% { translate: -2px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm-tok.bump {
+    animation: none;
+  }
+}
+/* The movement-roll note on the token card (D5). */
+.cm-move-note {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px dashed rgba(255, 226, 150, 0.6);
+  background: rgba(255, 226, 150, 0.08);
+  font-size: 13px;
+}

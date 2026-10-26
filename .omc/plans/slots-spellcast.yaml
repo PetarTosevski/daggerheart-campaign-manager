@@ -1,0 +1,121 @@
+# Feature slots and multiclass Spellcast trait (user answers to AFK decisions 8 and 9, 2026-10-18).
+# Format: docs/workflow.md.
+#
+# Decision 8 ("yes, raise max"): features that grant a slot raise the stored maximum when they are gained.
+#   - Subclass foundations: Vengeance "At Ease: Gain an additional Stress slot." (CB 36); School of War "Battlemage:
+#     ... Gain an additional Hit Point slot." (CB 51). Gained at creation (own subclass) or when multiclassing into
+#     that subclass's foundation (level-up); undoing that level-up takes the slot back.
+#   - Ancestry features with the same wording (also not applied until now): Giant "Endurance: Gain an additional Hit
+#     Point slot at character creation." and Human "High Stamina: Gain an additional Stress slot at character
+#     creation." (src/lib/srd/heritage.ts), including a mixed ancestry that took that feature.
+#   - Existing characters get the bonus once through a batched @convex-dev/migrations migration (widen/migrate rule),
+#     recorded on the sheet so it is never applied twice (e.g. `slotBonuses: string[]` of feature keys applied).
+#   - Match by data, not by name strings scattered in code: one table in src/lib/domain/characters (feature key ->
+#     { hp | stress: 1 }), keyed by subclass id / ancestry feature id.
+#
+# Decision 9 ("when multiclassing, the player should choose which spellcast modifier is used for the new class"),
+# CB 111: "If that foundation card has a Spellcast trait on it, you can choose to use that trait when making a
+# Spellcast Roll or use the Spellcast trait from your original subclass. If you did not previously have a Spellcast
+# trait and now require one for your multiclass, you must use the Spellcast trait noted on your new subclass."
+#   - The multiclass choice gains `spellcastTrait` (optional, widened): asked in the level-up multiclass chooser only
+#     when both subclasses have a (different) Spellcast trait; forced to the new one when the original has none.
+#   - One helper `spellcastTraitOf(sheet)` gives the effective trait (multiclass choice, else own subclass), used by
+#     magic-weapon eligibility (equipment-rules, characters.create/updateSheet checks), the class features that read
+#     a Spellcast trait (warlock, witch, seraph), and the sheet's displays (heritage tag, equipment note).
+plan: slots-spellcast
+waves:
+  - wave: 1
+    tracers:
+      - id: SS1
+        title: Feature slots raise the maximum (subclass and ancestry)
+        size: M
+        goal: Vengeance, School of War, Giant Endurance and Human High Stamina add their slot to the stored maximum when gained (creation or multiclass level-up, reverted on undo), and existing characters get it once by migration.
+        depends_on: []
+        owns:
+          - src/lib/domain/characters/index.ts
+          - src/lib/domain/characters/slots.ts
+          - src/lib/domain/level-up/index.ts
+          - src/lib/validation/characters.ts
+          - convex/characters.ts
+          - convex/migrations/slotBonuses.ts
+          - convex/migrations/run.ts
+          - convex/convex.config.ts
+          - tests/unit/feature-slots.test.ts
+          - tests/unit/level-up.test.ts
+          - tests/convex/feature-slots.test.ts
+          - docs/tasks/TASK-SS1.md
+          - docs/data-model.md
+        reads:
+          - src/lib/srd/subclasses.ts
+          - src/lib/srd/heritage.ts
+          - convex/migrations/characters.ts
+          - docs/best-practices.md
+        acceptance:
+          - "A data table maps the four features to {hp|stress: 1}; characters.create adds them (own subclass foundation, ancestry incl. mixed-ancestry feature picks); applyLevelUp adds the multiclass subclass's foundation slot and revertLevelUp takes it back; hp/stress stay within the new maximum"
+          - "The sheet records which bonuses were applied (optional field, widened in the zod schema with no version break) so the migration is idempotent; the migration (batched, @convex-dev/migrations, listed in run.ts) adds missing bonuses to existing characters"
+          - "Unit tests for the table and engine (create, multiclass add and undo); convex tests for create and the migration (run twice = applied once)"
+          - "pnpm lint, typecheck, test pass; docs/data-model.md notes the new field"
+  - wave: 2
+    tracers:
+      - id: SS2
+        title: Multiclass Spellcast trait choice
+        size: M
+        goal: When multiclassing into a subclass with a Spellcast trait, the player chooses which Spellcast trait to use (forced to the new one if the original has none); every Spellcast check reads the effective trait.
+        depends_on: [SS1]
+        owns:
+          - src/lib/domain/level-up/index.ts
+          - src/lib/validation/characters.ts
+          - src/lib/domain/characters/spellcast.ts
+          - convex/lib/validators/characters.ts
+          - src/lib/equipment-rules.ts
+          - src/lib/domain/class-features/classes/warlock.ts
+          - src/lib/domain/class-features/classes/witch.ts
+          - src/lib/domain/class-features/classes/seraph.ts
+          - convex/characters.ts
+          - convex/levelUp.ts
+          - src/components/party/level-up/tier-pickers.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/heritage.tsx
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/equipment.tsx
+          - tests/unit/spellcast-trait.test.ts
+          - tests/unit/tier-boxes.test.ts
+          - tests/unit/level-up.test.ts
+          - tests/convex/level-up.test.ts
+          - docs/tasks/TASK-SS2.md
+          - docs/data-model.md
+        reads:
+          - docs/tasks/TASK-GL1.md
+          - docs/tasks/TASK-GL5.md
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/level-up-draft.tsx
+        acceptance:
+          - "multiclass gains optional spellcastTrait (zod schema and convex/levelUp.ts choiceValidator, widened); validateLevelUp requires it when both subclasses have different Spellcast traits, forces the new trait when the original has none, and rejects a trait that is neither; applyLevelUp stores it; revertLevelUp removes it with the multiclass"
+          - "spellcastTraitOf(sheet) is the one source for: magic weapon eligibility (equipment-rules and the convex checks), warlock/witch/seraph trait reads, the heritage tag and the equipment note"
+          - "The tier-box multiclass chooser shows 'Spellcast trait for Spellcast Rolls' with the two options (original vs new, named with the trait) only when a choice exists, and a note when it is forced; useLevelUpDraft.setMulticlass carries the field (level-up-draft.tsx is not owned: pass it inside the existing multiclass object)"
+          - "Unit and convex tests; pnpm lint, typecheck, test pass"
+  - wave: 3
+    tracers:
+      - id: SS3
+        title: Players undo a level-up only within the session it happened
+        size: S
+        goal: "User answer to AFK decision 33 (2026-10-18): 'let a player undo only for the session they did the levelup'. The GM can undo any time; a player can undo their latest level-up only until the campaign's session boundary after it (a session starts or ends after the level-up). Decision 16 (undo sets 'level up pending' again; refused after a GM correction) is confirmed and stays."
+        depends_on: [SS2]
+        owns:
+          - convex/lib/validators/characters.ts
+          - convex/levelUp.ts
+          - src/lib/validation/characters.ts
+          - src/lib/domain/level-up/index.ts
+          - src/components/party/level-up/index.tsx
+          - src/lib/errors/
+          - tests/convex/level-up.test.ts
+          - tests/unit/level-up.test.ts
+          - docs/tasks/TASK-SS3.md
+          - docs/data-model.md
+          - docs/decisions-d3-d11.md
+          - .omc/autopilot/decisions-pending.md
+        reads:
+          - convex/sessions.ts
+          - convex/tables/
+        acceptance:
+          - "Each advancement entry records when it was taken (optional `at`, widened; applyLevelUp takes it from the caller); undoLast by a non-GM is refused with a coded error (e.g. LEVEL_UP_RULE 'Only the GM can undo a level-up from an earlier session.') when a session started or ended after `at` (read through an index on the sessions table, no scans), or when the entry has no `at` (older data); the GM is never refused"
+          - "The header's − undo button is hidden for players once undo is no longer allowed (same rule, from data the sheet query already returns or a small added field), shown for the GM always"
+          - "Convex tests: player undo in the same session ok; after session end or a new start refused; GM ok; old entry without `at` refused for players"
+          - "decisions-pending.md marks 16 confirmed and 33 answered; docs/decisions-d3-d11.md records the rule; pnpm lint, typecheck, test pass"

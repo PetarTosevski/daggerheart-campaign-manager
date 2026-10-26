@@ -1,0 +1,97 @@
+/*
+ * Wrap-up stage (D10 S6): the board's layout (Sessions.dc.html l.186-207) - the Recap card on the left (1.3fr), Loot,
+ * Threads and the milestone row stacked on the right (1fr) - and the milestone row's look (board `rowBtn` / `boxCss`,
+ * l.282-283). Tokens and shared classes come from the page's sessions.css.
+ */
+.sw-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.sw-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.sw-row {
+  min-height: 44px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ss-text);
+  background: transparent;
+  border: 1px solid transparent;
+  text-align: left;
+}
+.sw-row:hover:not(:disabled) {
+  background: var(--ss-hover);
+}
+.sw-row:focus-visible {
+  outline: 2px solid var(--ss-acc);
+  outline-offset: 1px;
+}
+.sw-row[aria-pressed="true"] {
+  background: var(--ss-hover);
+  border-color: #3d5359;
+  cursor: default;
+}
+.sw-row:disabled {
+  opacity: 1;
+}
+.sw-box {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ss-acc-ink);
+  border: 1.5px solid var(--ss-idle-dot);
+  background: transparent;
+}
+.sw-row[aria-pressed="true"] .sw-box {
+  border-color: var(--ss-acc);
+  background: var(--ss-acc);
+}
+.sw-row-label {
+  flex: 1;
+}
+.sw-status:empty {
+  display: none;
+}
+.sw-link {
+  align-self: flex-start;
+}
+.sw-error {
+  margin: 0;
+  color: var(--ss-danger);
+  font-size: 14px;
+}
+
+/* Narrow detail column (tablet portrait) and phone: one column, Recap first. */
+@media (max-width: 899px) {
+  .sw-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
+@media (max-width: 1100px), (pointer: coarse) {
+  .sw-link {
+    min-height: 44px;
+  }
+}
+
+/* The milestone's confirm step (user 2026-10-20). */
+.sw-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sw-confirm > button { min-height: 44px; }

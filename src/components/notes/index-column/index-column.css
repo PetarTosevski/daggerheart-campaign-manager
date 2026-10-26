@@ -1,0 +1,110 @@
+/*
+ * The index column's own pages (D11 N2, board Notes.dc.html l.95-101 and the page button style at l.287): tape tab,
+ * title, visibility mark (not on the board), count. At 390 px (not on the board) the groups sit behind a 'Pages'
+ * disclosure. Tokens and shared classes come from the page's notes.css.
+ */
+
+.bj-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.bj-pages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bj-pages-toggle {
+  display: none;
+  justify-content: flex-start;
+  width: 100%;
+  font-weight: 600;
+}
+.bj-pages-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--bj-muted);
+}
+.bj-page-btn {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--bj-text);
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid transparent;
+  text-align: left;
+}
+.bj-page-btn:hover {
+  background: var(--bj-hover);
+}
+.bj-page-btn[aria-current="page"] {
+  background: var(--bj-hover);
+  border-color: var(--bj-acc);
+}
+.bj-page-btn:focus-visible {
+  outline: 2px solid var(--bj-acc);
+  outline-offset: 2px;
+}
+.bj-page-tab {
+  width: 10px;
+  height: 22px;
+  flex: none;
+  border-radius: 2px;
+}
+.bj-page-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bj-page-vis {
+  display: inline-flex;
+  flex: none;
+  color: var(--bj-faint);
+}
+.bj-page-count {
+  font-size: 12px;
+  color: var(--bj-muted);
+  flex: none;
+}
+.bj-pages-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bj-danger);
+}
+
+@media (max-width: 720px) {
+  .bj-pages-toggle {
+    display: inline-flex;
+  }
+  .bj-pages-list[data-open="false"] {
+    display: none;
+  }
+}
+/* Touch targets of at least 44 px on tablets and phones (D12 H22); desktop keeps the board's sizes. */
+@media (max-width: 1100px), (pointer: coarse) {
+  .bj-page-btn {
+    min-height: 44px;
+  }
+}
+
+/* The board's small '＋' (l.97: 28 px high, 8 px padding) on desktop; tablets and phones keep 44 px (notes.css). */
+@media (min-width: 1101px) and (pointer: fine) {
+  .bj-group-head .bj-plus {
+    min-height: 28px;
+    padding: 0 8px;
+  }
+}

@@ -1,0 +1,48 @@
+# Follow-ups 4 (2026-10-21): server-side session-feature fixes and sprite cutter/mapping follow-ups, run alongside D12/D13/combat.
+# Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size.
+plan: followups-4
+waves:
+  - wave: 1
+    tracers:
+      - id: F3
+        title: Session features - Slayer Die stored at Hope max keeps the Hope (dcm-bxp.65); one featureScope helper (dcm-bxp.68)
+        size: S
+        goal: Close dcm-bxp.65 and dcm-bxp.68 without changing any other behaviour.
+        depends_on: []
+        owns:
+          - convex/rolls.ts
+          - convex/sessions.ts
+          - convex/sessionFeatures.ts
+          - convex/lib/featureScope.ts
+          - convex/lib/validators/actionLog.ts
+          - tests/convex/rolls-session-features.test.ts
+          - tests/convex/session-features.test.ts
+          - tests/convex/rolls.test.ts
+          - docs/tasks/TASK-F4-F3.md
+        reads:
+          - docs/tasks/**
+          - src/lib/domain/**
+        acceptance:
+          - "Storing a Slayer Die after a roll at Hope max that paid an Experience refunds/handles Hope as the plan G3 intended (bead .65 has the analysis); a Convex test reproduces the bug first and passes after"
+          - "featureScope lives once in convex/lib/featureScope.ts and the three callers import it; all existing session-feature, rolls and sessions tests pass unchanged"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+      - id: F4
+        title: Sprite cutter strips a magenta outer frame for GM uploads; texture picks stay stable when a setting gains variants
+        size: S
+        goal: Close the two P11Z follow-up beads.
+        depends_on: []
+        owns:
+          - src/lib/sprite-packs/cut/terrain.ts
+          - src/lib/sprite-packs/mapping.ts
+          - tests/unit/sprite-cut.test.ts
+          - tests/unit/sprite-mapping.test.ts
+          - tests/unit/sprite-catalog.test.ts
+          - docs/tasks/TASK-F4-F4.md
+        reads:
+          - docs/tasks/TASK-SP-P11Z.md
+          - scripts/sprite-packs/lib/pipeline.ts
+          - src/lib/sprite-packs/**
+        acceptance:
+          - "cutTerrain (the browser upload path) strips a plain magenta outer frame like the script's stripMagentaFrame; unit test with a framed fixture; the script and the browser give the same swatches"
+          - "pickTexture keeps each block's pick from the primary textures when extra-sheet variants exist (extras only add choices without reshuffling primary picks), per the P11Z task doc's suggestion; a test pins that adding variants doesn't change existing primary picks; the existing sprite tests pass (update pins only where the doc says)"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"

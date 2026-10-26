@@ -1,0 +1,127 @@
+# Map-movement plan (bead dcm-bxp.80, under epic dcm-bxp): tokens on the Combat Map are stopped by walls and buildings, and
+# difficult terrain is marked. Format: docs/workflow.md. Extra keys per tracer (plan-check ignores them): title, size (S | M | L).
+#
+# USER ANSWER (2026-10-21, binding): "tokens stopped by walls and buildings, difficult terrain requires movement rolls to pass on
+#   the same turn (logic will be implemented later)". So: blocking is enforced now; difficult terrain is only marked now (the map
+#   shows it and the token says a movement roll is needed to pass this turn); the roll itself is a later plan.
+#
+# DEFAULTS (orchestrator, 2026-10-21; reversible, reported to the user):
+#   D1 What blocks movement: painted terrain `wall` and `void`; Classic kinds pillar, statue, boulder, hull, mast, tree, deadtree;
+#      sprites whose catalog `move` is "block". A sprite's `move` defaults from its traits: sight "block" + height "tall" -> block,
+#      otherwise open; the catalog may override per item (fences and palisades block, gates and doors are open, a flat rug is open).
+#      Custom uploaded sprites (P8) use the same default from their labels; no new label field now.
+#   D2 What is difficult: painted terrain water, deep, swamp, snow, lava; Classic kinds rubble, bush, log, bones; sprites whose
+#      catalog `move` is "difficult" (e.g. garden plot, rubble piles, brambles, mud, fallen trunks, sludge). Difficult never blocks.
+#   D3 Who is blocked: a player's move of their own token is refused on the server when its path crosses a blocking square
+#      (MOVE_BLOCKED). The GM's moves are never refused; the GM sees a warning when a token ends on or crossed a blocking square.
+#   D4 Path: a move from A to B checks every square the token's footprint passes through on the straight (supercover) line,
+#      including both squares at a diagonal corner (no squeezing between two diagonal blockers). Keyboard steps are one square.
+#   D5 Difficult terrain: squares are tinted with a hatch for everyone who can see them; a token that ends a move on or crossed a
+#      difficult square shows "Difficult terrain: a movement roll is needed to pass this turn" on its card for its owner and the GM.
+#      No roll, no block, no turn tracking now.
+#   D6 Fog and secrecy: the server never tells a player about blocking or difficult squares they haven't explored beyond what the
+#      refusal itself reveals (MOVE_BLOCKED carries no position).
+# USER ANSWER (2026-10-21, binding): "doors need to be able to be opened and closed. closed doors block opened doors do not. add a
+#   switch similar to light campfire to open the doors. closed doors also block sights".
+#   D7 Doors: catalog `move: "door"` items (dungeon wooden door, portcullis section, crypt gate, sewers iron gate, grassland wooden
+#      gate, village fence gate) and a new Classic kind `door`. Map objects gain optional `open` (absent = closed). Closed blocks
+#      movement; open never blocks. Sight: a closed SOLID door (wooden door, Classic door) blocks sight; bars and gates (portcullis,
+#      crypt gate, iron gate, wooden gates) block movement when closed but stay see-through (cover) - default, reported to the user.
+#   D8 The switch works like the light switch (combatVision.toggleLight): the GM always; a player only on the live map when one of
+#      their characters has seen the door. Open is drawn as the door swung 90 degrees on its hinge edge (or a paired open sprite when
+#      the catalog has one); closed as placed.
+plan: map-movement
+waves:
+  - wave: 1
+    tracers:
+      - id: M0
+        title: Movement rules - blocking and difficult squares from terrain, Classic kinds and sprite traits; the server refuses blocked player moves
+        size: M
+        goal: Pure movement rules and a `move` sprite trait, and combatTokens.move refuses a player's blocked move (D1-D4, D6).
+        depends_on: []
+        owns:
+          - src/lib/domain/combat-map/movement.ts
+          - src/lib/sprite-packs/traits.ts
+          - src/lib/sprite-packs/catalog/**
+          - convex/combatTokens.ts
+          - convex/lib/combatMovement.ts
+          - src/lib/errors/combatMap.ts
+          - tests/unit/combat-movement.test.ts
+          - tests/unit/sprite-catalog.test.ts
+          - tests/convex/combat-token-movement.test.ts
+          - tests/convex/combat-tokens.test.ts
+          - docs/tasks/TASK-MV-M0.md
+        reads:
+          - src/lib/domain/combat-map/**
+          - convex/lib/spriteSources.ts
+          - convex/lib/combatVision.ts
+          - convex/combatMapStyle.ts
+          - docs/tasks/TASK-SP-P1.md
+          - docs/tasks/TASK-SP-P5.md
+        acceptance:
+          - "movement.ts (framework-free) builds a blocking set and a difficult set for a map from terrain cells, Classic objects (with their footprints and rotation) and sprite traits, and answers pathBlocked(from, to, size) and crossedDifficult(from, to, size) per D4; unit tests cover walls, rotated objects, 2x2 and 3x3 tokens, diagonal corners, a 3x4 barn sprite, a gate gap in a fence"
+          - "Every catalog item has a `move` (explicit or by the D1 default); the catalog test pins the defaults and the overrides (fences/palisade block, gates/doors open, garden plot/rubble/brambles difficult)"
+          - "combatTokens.move: a player's blocked move throws ConvexError {code: MOVE_BLOCKED} with no position; the GM's move succeeds and returns {blocked: true} when it crossed a blocker; both return difficult: boolean; reads stay indexed and bounded; role tests (anonymous, outsider, player on own token, player on another token, GM) assert ConvexError.data.code"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  - wave: 2
+    tracers:
+      - id: M2
+        title: Doors - open/closed field, the door switch like the light switch, closed doors block sight and movement, Classic door kind
+        size: M
+        goal: Map doors open and close (D7, D8) on the server, in vision and from the vision panel; M1 draws them.
+        depends_on: [M0]
+        owns:
+          - convex/lib/validators/combatMaps.ts
+          - convex/combatVision.ts
+          - convex/lib/combatVision.ts
+          - src/lib/domain/combat-map/spec.ts
+          - src/lib/domain/combat-map/sight.ts
+          - src/lib/domain/combat-map/vision.ts
+          - src/lib/domain/combat-map/movement.ts
+          - tests/unit/combat-movement.test.ts
+          - src/components/combat-map/vision/**
+          - tests/convex/combat-doors.test.ts
+          - tests/unit/combat-doors.test.ts
+          - tests/unit/combat-map-spec.test.ts
+          - convex/combatMaps.ts
+          - src/lib/sprite-packs/catalog/**
+          - tests/unit/sprite-catalog.test.ts
+          - docs/tasks/TASK-MV-M2.md
+        reads:
+          - docs/tasks/TASK-MV-M0.md
+          - src/lib/domain/combat-map/movement.ts
+          - src/lib/sprite-packs/**
+        acceptance:
+          - "combatMapObjects gain optional `open` (widen only); OBJECT_KINDS gains `door` (widen the validator; Classic kinds stay valid); door sprites map to Classic `door`"
+          - "combatVision.toggleDoor {objectId, open}: GM always; a player only on the live map after one of their characters has seen it (same rule as toggleLight); INVALID for a non-door; role tests (anonymous, outsider, player who has / hasn't seen it, GM) assert ConvexError.data.code"
+          - "Vision: a closed solid door blocks sight, an open one doesn't, bars/gates stay cover; movement (M0) reads `open`; unit and Convex tests for both, incl. a player's view through an opened door"
+          - "The vision panel lists doors the viewer can see with an Open / Close switch beside the light switches; optimistic; a player sees only doors they've seen"
+          - "Follow-up from M0 (orchestrator 2026-10-21): an object of Classic kind `hull` is a deck whatever its sprite (a Sprites ship drawn with the ship's-bow sprite keeps its deck walkable, not deep-water difficult); unit test for a sprite hull"
+          - "pnpm lint, typecheck and vitest pass; tracer-guard passes"
+  - wave: 3
+    tracers:
+      - id: M1
+        title: Movement on the map - blocked moves stop with feedback, the GM warning, difficult squares hatched, the token's movement-roll note
+        size: M
+        goal: The token layer and map view show M0's rules (D3, D5) for drag and keyboard moves, players and GM, and draw doors open or closed (D8). Starts after sprite P6 is merged.
+        depends_on: [M0, M2]
+        owns:
+          - src/components/combat-map/tokens/**
+          - src/components/combat-map/map-view/movement-overlay.tsx
+          - src/components/combat-map/map-view/paint-spec.ts
+          - src/components/combat-map/map-view/map-canvas.tsx
+          - src/lib/combat-map/painter.ts
+          - src/lib/combat-map/sprites/**
+          - tests/e2e/combat-movement.spec.ts
+          - tests/e2e/visual/MV-M1.spec.ts
+          - docs/tasks/TASK-MV-M1.md
+        reads:
+          - docs/tasks/TASK-MV-M0.md
+          - docs/tasks/TASK-SP-P6.md
+          - src/components/combat-map/**
+        acceptance:
+          - "A player's drag or arrow/WASD step into a wall or building snaps back (optimistic move rolled back on MOVE_BLOCKED) with a short polite 'Blocked' announcement (aria-live); the GM's move goes through with a visible warning"
+          - "Difficult squares the viewer can see are hatched in Classic and Sprites styles; a token that crossed or ends on one shows the D5 note on its card for its owner and the GM; reduced motion respected"
+          - "e2e at 1440 and 390: a player can't walk through a wall or a cottage, can walk through a gate, gets the difficult note in a garden plot; the GM can move through a wall with the warning; screenshots of the hatch in both styles"
+          - "Doors are drawn closed or swung open in Classic and Sprites; clicking a door the viewer may switch toggles it (same rule as M2); e2e: a player opens a closed door, walks and sees through it, closes it again"
+          - "pnpm lint, typecheck, vitest and the combat-map e2e specs pass; tracer-guard passes"
