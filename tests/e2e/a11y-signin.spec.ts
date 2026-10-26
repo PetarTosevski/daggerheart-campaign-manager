@@ -23,17 +23,18 @@ test("every step of create account and forgot password passes axe", async ({ pag
   await scan(page);
 
   await page.getByRole("button", { name: "New here? Create an account" }).click();
-  await expect(page.getByLabel("Name")).toBeFocused();
+  const signUp = page.getByRole("form", { name: "Create account" });
+  await expect(signUp.getByLabel("Name")).toBeFocused();
   await scan(page);
 
-  await page.getByLabel("Name").fill("Os Four");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("short");
-  await page.getByRole("button", { name: "Create account" }).click();
+  await signUp.getByLabel("Name").fill("Os Four");
+  await signUp.getByLabel("Email").fill(email);
+  await signUp.getByLabel("Password").fill("short");
+  await signUp.getByRole("button", { name: "Create account" }).click();
   // minLength 8 blocks the submit in the browser: still on the details step.
-  await expect(page.getByLabel("Password")).toBeVisible();
-  await page.getByLabel("Password").fill("a-long-enough-password");
-  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(signUp.getByLabel("Password")).toBeVisible();
+  await signUp.getByLabel("Password").fill("a-long-enough-password");
+  await signUp.getByRole("button", { name: "Create account" }).click();
 
   await expect(page.getByLabel("6-digit code")).toBeFocused();
   await expect(page.getByText(`Enter the 6-digit code we emailed to ${email}.`)).toBeVisible();
@@ -41,7 +42,7 @@ test("every step of create account and forgot password passes axe", async ({ pag
 
   await page.getByLabel("6-digit code").fill("000000");
   await page.getByRole("button", { name: "Verify email" }).click();
-  await expect(page.getByRole("alert")).toContainText("Request a new one");
+  await expect(page.getByRole("form", { name: "Enter the code" }).getByRole("alert")).toContainText("Request a new one");
   await scan(page);
 
   await page.getByLabel("6-digit code").fill(FIXED_CODE);
@@ -53,13 +54,14 @@ test("forgot password steps pass axe and phone and tablet widths fit", async ({ 
   const sizes = [{ width: 390, height: 844 }, ...TABLET_VIEWPORTS];
   await page.goto("/signin");
   await page.getByRole("button", { name: "Forgot password?" }).click();
-  await expect(page.getByLabel("Email")).toBeFocused();
+  const reset = page.getByRole("form", { name: "Reset password" });
+  await expect(reset.getByLabel("Email")).toBeFocused();
   for (const size of sizes) {
     await page.setViewportSize(size);
     await scan(page);
   }
 
-  await page.getByLabel("Email").fill(freshEmail());
+  await reset.getByLabel("Email").fill(freshEmail());
   await page.getByRole("button", { name: "Send code" }).click();
   await expect(page.getByLabel("6-digit code")).toBeFocused();
   for (const size of sizes) {
