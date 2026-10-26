@@ -9,6 +9,9 @@ import { v } from "convex/values";
  * fails closed when one is missing, and photo import (D5) is hidden without
  * `ANTHROPIC_API_KEY`; `ANTHROPIC_MODEL` overrides its pinned default model.
  *
+ * Emailed sign-up codes (`lib/authEmail.ts`): `AUTH_RESEND_KEY` (Resend API key) and `MAIL_FROM` (sender on the
+ * verified dualityheart.com domain); set with `npx convex env set`, never in Vercel or `.env.local`.
+ *
  * The Lorekeeper (D13, `convex/lib/claude.ts`, `convex/lib/lorekeeper/caps.ts`):
  * `LOREKEEPER_MODEL` overrides the answer model (else `ANTHROPIC_MODEL`, else
  * Sonnet 5.5); `LOREKEEPER_FAKE_MODEL=true` replays canned answers, honoured
@@ -25,6 +28,8 @@ const app = defineApp({
     ALLOW_SEED_ACCOUNTS: v.optional(v.string()),
     E2E_AUTH_ENABLED: v.optional(v.string()),
     E2E_AUTH_SECRET: v.optional(v.string()),
+    AUTH_RESEND_KEY: v.optional(v.string()),
+    MAIL_FROM: v.optional(v.string()),
     ANTHROPIC_API_KEY: v.optional(v.string()),
     ANTHROPIC_MODEL: v.optional(v.string()),
     LOREKEEPER_MODEL: v.optional(v.string()),
