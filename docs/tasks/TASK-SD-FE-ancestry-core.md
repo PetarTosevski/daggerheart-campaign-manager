@@ -7,7 +7,7 @@ pages; CB = Core Book. The core ancestries are on CB p.53 (Clank) to p.70 (Simia
 
 | File | What |
 |------|------|
-| `src/lib/srd/feature-effects/ancestry-core.ts` | `ANCESTRY_CORE_EFFECTS`: 27 entries (19 combat + 8 passive), each quoting its feature with the page |
+| `src/lib/srd/feature-effects/ancestry-core.ts` | `ANCESTRY_CORE_EFFECTS`: 28 entries (19 combat + 9 passive), each quoting its feature with the page |
 | `tests/unit/feature-effects/ancestry-core.test.ts` | 31 tests: the table matches the classification exactly (a missing or extra id fails); mixed and single ancestries resolve through `owned()`; every entry runs through `runFeature` with `queueRng`, and the dice queue must be used up exactly |
 
 No vocabulary type changed. Four gaps became `manual` steps, situation confirmations or notes, each with a bead (below).
@@ -28,7 +28,7 @@ and the second from another" (mixed ancestries come through `owned()`).
 
 ## Scope: which core features have an entry here
 
-- **27 entries**: every core ancestry feature classified combat or passive in `classification.ts`, except Luckbringer.
+- **28 entries**: every core ancestry feature classified combat or passive in `classification.ts`; Luckbringer is a session-start use delegated to the session feature `luckbringer`.
 - **Luckbringer** (halfling, CB p.64, passive): no entry here. FE-heritage-hf's acceptance names it ("Know the Tide and
   Luckbringer delegated to the session features"), and two entries for one id throw in `mergeFeatureTables`. The test
   lists it as owned elsewhere. **Orchestrator: confirm FE-heritage-hf wrote it**; if it did not, it is a two-line

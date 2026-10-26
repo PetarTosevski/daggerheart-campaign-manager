@@ -79,20 +79,17 @@ function resolvedMods(mods: readonly Mod[], over: Partial<ActorState> = {}) {
 }
 
 const CORE = new Set(ANCESTRIES.filter((a) => a.source === "core").map((a) => a.id));
-/** Luckbringer's entry belongs to FE-heritage-hf (its acceptance: "Luckbringer delegated to the session features"). */
-const ELSEWHERE = new Set(["ancestry:halfling:luckbringer"]);
 
 describe("the core ancestry table", () => {
-  it("has exactly one entry per core ancestry feature classified combat or passive (Luckbringer is FE-heritage-hf's)", () => {
+  it("has exactly one entry per core ancestry feature classified combat or passive", () => {
     const expected = Object.entries(FEATURE_CLASSIFICATION)
       .filter(([id, c]) => id.startsWith("ancestry:") && CORE.has(id.split(":")[1]!) && c.usage !== "outOfCombat" && c.usage !== "narrative")
       .map(([id]) => id)
-      .filter((id) => !ELSEWHERE.has(id))
       .sort();
     const ids = ANCESTRY_CORE_EFFECTS.map((e) => e.featureId);
     expect([...ids].sort()).toEqual(expected);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toHaveLength(27);
+    expect(ids).toHaveLength(28);
   });
 
   it("every entry is a real core ancestry feature, keyed as owned() keys it, with unique use ids", () => {
@@ -108,7 +105,8 @@ describe("the core ancestry table", () => {
 
   it("passive features have no action use (the drawer shows them without a Use button)", () => {
     for (const effect of ANCESTRY_CORE_EFFECTS) {
-      if (FEATURE_CLASSIFICATION[effect.featureId]?.usage !== "passive") continue;
+      // Luckbringer is classified passive but is a session-start timing use (delegated to the session features).
+      if (FEATURE_CLASSIFICATION[effect.featureId]?.usage !== "passive" || effect.featureId === "ancestry:halfling:luckbringer") continue;
       expect(effect.uses.every((u) => u.activation.kind === "passive")).toBe(true);
     }
   });
@@ -303,6 +301,13 @@ describe("Goblin (CB p.63)", () => {
 });
 
 describe("Halfling (CB p.64)", () => {
+  it("Luckbringer: a session-start use delegated to the session features, no cost", () => {
+    expect(entry("ancestry:halfling:luckbringer").uses[0]!.activation).toEqual({ kind: "auto", trigger: { kind: "timing", at: "sessionStart" } });
+    const plan = ok("ancestry:halfling:luckbringer", ctx([]));
+    expect(ofKind(plan, "delegate")).toEqual([expect.objectContaining({ feature: "luckbringer", done: false })]);
+    expect(plan.actor.after).toMatchObject({ hope: 4, stress: 1 });
+  });
+
   it("Internal Compass: a Use / Pass reroll of a Hope Die that rolled a 1", () => {
     const use = entry("ancestry:halfling:internal-compass").uses[0]!;
     expect(use.activation.kind).toBe("reaction");

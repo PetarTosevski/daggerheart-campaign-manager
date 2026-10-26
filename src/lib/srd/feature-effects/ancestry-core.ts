@@ -2,9 +2,8 @@
 // Pure data: no framework imports, relative imports only (bundled into Convex). Each entry quotes its feature with the
 // printed page and uses only the vocabulary of src/lib/domain/card-effects/types.ts (a gap is a `manual` step plus a bead).
 //
-// One entry per core ancestry feature classified combat or passive in ./classification.ts, except Luckbringer (halfling,
-// CB p.64): the plan gives its entry to FE-heritage-hf ("Know the Tide and Luckbringer delegated to the session
-// features"), and two entries for one id would throw in the registry. The out-of-combat ones (Efficient, Celestial Trance,
+// One entry per core ancestry feature classified combat or passive in ./classification.ts. Luckbringer (halfling, CB p.64)
+// is a session-start use delegated to the session features. The out-of-combat ones (Efficient, Celestial Trance,
 // Dread Visage, Natural Climber, Fungril Network) are FE-heritage-hf's roll-option and rest-trigger entries; the narrative
 // ones (Caprine Leap, Death Connection, Amphibious) have no entry. Mixed ancestries need nothing here: `owned()` (CB p.71)
 // picks the features and each keeps its own entry. Readings, manual steps and open rulings:
@@ -270,6 +269,18 @@ export const ANCESTRY_CORE_EFFECTS: readonly FeatureEffect[] = [
   ]),
 
   // ---------------------------------------------------------------- Halfling (CB p.64)
+  // Luckbringer (CB p.64): "At the start of each session, everyone in your party gains a Hope." The party's Hope is the
+  // session features' record (src/lib/domain/session-features/luckbringer.ts: `applyLuckbringer` at `sessions.start`, capped
+  // at each Hope maximum), so this use is a session-start timing that only names the delegate.
+  ancestry("halfling", "luckbringer", [
+    {
+      id: "main",
+      name: "Luckbringer",
+      activation: { kind: "auto", trigger: { kind: "timing", at: "sessionStart" } },
+      steps: [{ kind: "delegate", to: "self", feature: "luckbringer", note: "Everyone in your party gains a Hope (session features)" }],
+    },
+  ]),
+
   // Internal Compass (CB p.64): "When you roll a 1 on your Hope Die, you can reroll it." A choice ("you can"), so a
   // Use / Pass answer in the after-roll step (Q1), not automatic: a 1 on both dice is a critical the player may keep.
   ancestry("halfling", "internal-compass", [
