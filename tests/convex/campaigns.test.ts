@@ -30,14 +30,6 @@ const CUSTOM = {
 };
 
 describe("campaigns", () => {
-  const previous = process.env.GM_EMAILS;
-  beforeEach(() => {
-    process.env.GM_EMAILS = `${GM_EMAIL},${OTHER_EMAIL}`;
-  });
-  afterEach(() => {
-    process.env.GM_EMAILS = previous;
-  });
-
   it("creates a frame campaign with Fear 0 at tier 1, level 1", async () => {
     const { gm } = await setup();
     const { campaignId } = await gm.mutation(api.campaigns.create, {
@@ -68,7 +60,6 @@ describe("campaigns", () => {
   });
 
   it("campaigns.fear: the GM and a player read it; outsiders get NOT_FOUND, the signed-out UNAUTHENTICATED", async () => {
-    process.env.GM_EMAILS = `${GM_EMAIL},${OTHER_EMAIL},player@example.com`;
     const { t, gm, other } = await setup();
     const { campaignId } = await gm.mutation(api.campaigns.create, { frameId: "witherwild", name: "Read", idempotencyKey: "k1" });
     await gm.mutation(api.fear.set, { campaignId, value: 3, idempotencyKey: "f1" });
@@ -380,14 +371,6 @@ describe("campaigns", () => {
 });
 
 describe("settings", () => {
-  const previous = process.env.GM_EMAILS;
-  beforeEach(() => {
-    process.env.GM_EMAILS = GM_EMAIL;
-  });
-  afterEach(() => {
-    process.env.GM_EMAILS = previous;
-  });
-
   it("returns defaults, then saves partial updates", async () => {
     const { gm } = await setup();
     expect(await gm.query(api.settings.get, {})).toEqual({

@@ -98,8 +98,9 @@ const fail = (p: Promise<unknown>) => p.then(() => new Error("expected a failure
 describe("user wrappers", () => {
   useAllowlist(`${GM},${PLAYER},${OUTSIDER}`);
 
-  it("put the signed-in user on ctx, reject anonymous and revoked callers", async () => {
+  it("put the signed-in user on ctx, reject anonymous and deleted-user callers", async () => {
     const { t, ids, gm, revoked } = await setup();
+    await t.run((ctx) => ctx.db.delete("users", ids.revoked));
     expect(await gm.query(ref.whoami, {})).toBe(ids.gm);
     expect(await gm.action(ref.whoamiAction, {})).toBe(ids.gm);
     expect(errorCode(await fail(t.query(ref.whoami, {})))).toBe("UNAUTHENTICATED");
