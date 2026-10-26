@@ -92,7 +92,7 @@ waves:
   - wave: 3
     tracers:
       - id: OS4
-        title: Sign-in page: create account with code, forgot password, clear errors
+        title: "Sign-in page - create account with code, forgot password, clear errors"
         size: M
         goal: The sign-in page lets anyone create an account, enter the emailed code, reset a forgotten password and see the right error for each failure.
         depends_on: [OS3]
