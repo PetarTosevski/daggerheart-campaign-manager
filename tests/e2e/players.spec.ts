@@ -105,12 +105,17 @@ test("email + password: create an account (or sign in if it exists)", async ({ p
   await signUp.getByLabel("Password").fill(password);
   await signUp.getByRole("button", { name: "Create account" }).click();
 
-  // On a backend where the account already exists, sign up fails; sign in instead.
+  // Sign-up stops at the code step (the e2e backend accepts the fixed code 123456). If the account already exists,
+  // sign up fails with an alert; sign in instead.
+  const codeForm = page.getByRole("form", { name: "Enter the code" });
   const outcome = await Promise.race([
-    page.waitForURL("/").then(() => "in"),
+    codeForm.waitFor().then(() => "code"),
     signUp.getByRole("alert").waitFor().then(() => "exists"),
   ]);
-  if (outcome === "exists") {
+  if (outcome === "code") {
+    await codeForm.getByLabel("6-digit code").fill("123456");
+    await codeForm.getByRole("button", { name: "Verify email" }).click();
+  } else {
     await page.getByRole("button", { name: "Have an account? Sign in" }).click();
     const signIn = page.getByRole("form", { name: "Sign in with email" });
     await signIn.getByLabel("Email").fill(email);

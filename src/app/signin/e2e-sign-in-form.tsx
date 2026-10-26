@@ -33,13 +33,13 @@ export function E2ESignInForm() {
     >
       <label className="flex flex-col gap-1 text-sm">
         Email
-        <input name="email" type="email" required className="rounded-md border px-3 py-2" />
+        <input name="email" type="email" required className="min-h-11 rounded-md border px-3 py-2" />
       </label>
       <label className="flex flex-col gap-1 text-sm">
         Secret
-        <input name="secret" type="password" required className="rounded-md border px-3 py-2" />
+        <input name="secret" type="password" required className="min-h-11 rounded-md border px-3 py-2" />
       </label>
-      <Button type="submit" variant="outline">
+      <Button type="submit" variant="outline" className="min-h-11">
         Test sign-in
       </Button>
       {error ? (

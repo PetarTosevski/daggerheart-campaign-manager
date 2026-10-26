@@ -25,7 +25,10 @@ const RATE_LIMIT_TEXT = "Too many tries for this email. Wait a few minutes, then
 /** The text for a failed auth call; `fallback` covers the library's own opaque errors (for example a wrong password). */
 export function authErrorText(error: unknown, fallback: string): string {
   const data: unknown = error instanceof ConvexError ? error.data : null;
-  const code = typeof data === "object" && data !== null ? (data as { code?: unknown }).code : undefined;
+  let code: unknown = typeof data === "object" && data !== null ? (data as { code?: unknown }).code : undefined;
+  // The Next.js auth proxy (/api/auth) answers a failed sign-in with only `error.message`, so the browser gets a plain
+  // Error whose text carries the serialized payload ("Uncaught ConvexError: {"code":"CODE_INVALID",...}").
+  if (code === undefined && error instanceof Error) code = /"code":"([A-Z_]+)"/.exec(error.message)?.[1];
   if (code === "RATE_LIMITED") return RATE_LIMIT_TEXT;
   if (code === "EMAIL_TAKEN" || code === "PASSWORD_TOO_SHORT" || code === "CODE_INVALID") return authMessages[code];
   return fallback;
