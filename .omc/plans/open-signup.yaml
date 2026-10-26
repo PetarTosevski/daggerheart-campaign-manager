@@ -126,13 +126,28 @@ waves:
           - "It never touches a user that has a verified email, a campaign, a membership or a character (a test with such a row proves it), nor accounts of other providers"
           - "Registered in convex/crons.ts daily at an odd minute (rule 8)"
           - "pnpm lint, typecheck, vitest and tracer-guard pass"
+      - id: OS7
+        title: Email invites send a real email (user answer 2026-10-26)
+        size: S
+        goal: When a GM invites a player by email, the invited address gets an email via the OS1 sender with a link to join, rate limited, and only after the invite row is stored.
+        depends_on: [OS1, OS3]
+        owns:
+          - convex/members.ts
+          - convex/lib/inviteEmail.ts
+          - tests/convex/members-invite-email.test.ts
+          - docs/tasks/TASK-OS-OS7.md
+        reads: [convex/lib/authEmail.ts, convex/lib/functions.ts, convex/lib/permissions.ts, docs/best-practices.md]
+        acceptance:
+          - "members.invite schedules an internal action that sends the invite email through the OS1 sender (fake sender on the e2e backend); the email names the campaign and links to sign in / join; the address is never echoed to other players"
+          - "Per-campaign and per-recipient rate limits; a failed send never rolls back the invite row; an unverified account never receives an invite (bead rule)"
+          - "Matrix entries unchanged or updated for any argument change; pnpm lint, typecheck, vitest and tracer-guard pass"
   - wave: 4
     tracers:
       - id: OS6
         title: e2e sign-up flows, authz matrix coverage, docs and launch checklist
         size: M
         goal: Browser specs prove sign-up with a code, reset and the error cases against the fake sender, the matrix and sweep cover every new public function, and the docs describe open sign-up.
-        depends_on: [OS4, OS5]
+        depends_on: [OS4, OS5, OS7]
         owns:
           - tests/e2e/signup.spec.ts
           - tests/e2e/players.spec.ts
