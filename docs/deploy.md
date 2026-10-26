@@ -88,7 +88,7 @@ Generate the key pair (run locally, pipe straight into Convex, never print or sa
 
 ```bash
 node --input-type=module -e '
-import { exportJWK, exportPKCS8, generateKeyPair } from "jose";
+import { exportJWK, exportPKCS8, generateKeyPair } from "./node_modules/.pnpm/jose@5.10.0/node_modules/jose/dist/node/esm/index.js";
 const { publicKey, privateKey } = await generateKeyPair("RS256", { extractable: true });
 const pk = (await exportPKCS8(privateKey)).trimEnd().replace(/\n/g, " ");
 const jwks = JSON.stringify({ keys: [{ use: "sig", ...(await exportJWK(publicKey)) }] });
@@ -99,12 +99,12 @@ npx convex env set --prod JWKS -- "$(node -p 'require(process.argv[1]).jwks' "$S
 rm "$SCRATCH/keys.json"
 ```
 
-(`jose` is available through `@convex-dev/auth`; `npx @convex-dev/auth` can also do this interactively.)
+(`jose` is not a direct dependency, so import it by its pnpm path as above (check the version with `ls node_modules/.pnpm | grep jose`). Check both values are non-empty afterwards: `npx convex env get --prod JWKS | wc -c`. `npx @convex-dev/auth` can also do this interactively.)
 Setting `JWT_PRIVATE_KEY` and `JWKS` before the first production sign-in matters: changing them later signs everyone out.
 
 ### Convex production: must NOT be set
 
-- `ALLOWED_EMAILS`, `GM_EMAILS`: the invite allowlist. Open sign-up (dcm-bxp.128) deletes it from the code; until
+- `ALLOWED_EMAILS`, `GM_EMAILS`: the invite allowlist. (2026-10-26: the user chose an invite-only launch first, so `GM_EMAILS` IS set on prod, copied from dev; remove it when open sign-up lands.) Open sign-up (dcm-bxp.128) deletes it from the code; until
   that lands, an unset list means nobody can sign up. **Blocker: do not launch before dcm-bxp.128 is merged.**
 - `SEED_ACCOUNTS`, `ALLOW_SEED_ACCOUNTS`, `E2E_AUTH_ENABLED`, `E2E_AUTH_SECRET`, `LOREKEEPER_FAKE_MODEL`:
   test rails, off in production.
