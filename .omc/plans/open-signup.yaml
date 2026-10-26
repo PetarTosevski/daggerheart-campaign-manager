@@ -113,6 +113,22 @@ waves:
           - "Focus moves to the first field of each step and to the error; keyboard only works; phone and tablet widths work; axe passes on every step (tests/e2e/a11y-signin.spec.ts, using the fixed e2e code 123456)"
           - "Unit tests cover step transitions, each error text from its code, the resend cooldown and that the code step cannot be skipped"
           - "pnpm lint, typecheck, vitest, the a11y spec and tracer-guard pass"
+      - id: OS4b
+        title: Fix the sign-in e2e failures found at merge (touch targets, ambiguous Email label, players sign-up code step, InvalidSecret)
+        size: S
+        goal: tests/e2e/auth.spec.ts, players.spec.ts and a11y-signin.spec.ts pass on the merged rebuild.
+        depends_on: [OS4]
+        owns:
+          - src/app/signin/**
+          - tests/e2e/a11y-signin.spec.ts
+          - tests/e2e/players.spec.ts
+          - tests/e2e/auth.spec.ts
+          - tests/unit/signin-password-form.test.tsx
+          - scripts/e2e-setup.mjs
+          - docs/tasks/TASK-OS-OS4b.md
+        reads: [docs/tasks/TASK-OS-OS3.md, docs/tasks/TASK-OS-OS4.md, convex/auth.ts, convex/lib/authEmail.ts]
+        acceptance:
+          - "The three e2e specs pass with E2E_PORT=3100 E2E_CONVEX_PORT=3312; vitest, lint, typecheck and tracer-guard pass"
       - id: OS5
         title: Clean up abandoned unverified sign-ups
         size: S
