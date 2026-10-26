@@ -4,7 +4,7 @@
  * the day it lands, whether or not the authz matrix lists it yet), with arguments synthesized from its own validator:
  *
  * - signed out, the call must throw `ConvexError` code UNAUTHENTICATED (the two `maybeUserQuery` reads return null);
- * - as a signed-in stranger (an allowlisted account that is in no campaign), it must show nothing: NOT_FOUND,
+ * - as a signed-in stranger (a verified account that is in no campaign), it must show nothing: NOT_FOUND,
  *   FORBIDDEN, null or an empty list/object. Only the functions on the caller's own rows (`STRANGER_OWN`) are skipped.
  *
  * The world is the matrix world (tests/convex/authz/world.ts): a real campaign with a GM, players and characters. Every
@@ -20,7 +20,7 @@ import type { TableNames } from "../../convex/_generated/dataModel";
 import type { Area, Entry } from "./authz/harness";
 import { publicFunctions, wrapperOf, type PublicFunction } from "./authz/inventory";
 import { NAME_HINTS, synthArgs } from "./authz/synth";
-import { allowWorldEmails, buildWorld, type Client, type World } from "./authz/world";
+import { buildWorld, type Client, type World } from "./authz/world";
 
 declare global {
   interface ImportMeta {
@@ -192,9 +192,6 @@ async function argsFor(f: PublicFunction): Promise<{ w: World; args: Record<stri
 }
 
 describe("unauthenticated sweep", () => {
-  allowWorldEmails();
-  // No beforeAll world: it would run before the per-test email allowlist (TASK-D12-H0 pitfalls).
-
   it("finds the public functions at runtime and lists only real exemptions", () => {
     const names = INVENTORY.map((f) => f.name);
     expect(names.length).toBeGreaterThan(300);

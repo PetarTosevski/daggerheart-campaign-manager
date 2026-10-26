@@ -66,23 +66,6 @@ export function seedAccountsFor(env: Env): SeedAccount[] {
 }
 
 /**
- * Compatibility shims, removed by OS3 (which owns convex/lib/users.ts, the
- * only remaining caller). Sign-up is open: any non-empty email passes.
- */
-export function isAllowedEmail(email: unknown, env?: Env): email is string {
-  void env;
-  return typeof email === "string" && email.trim().length > 0;
-}
-
-export function isAllowedProfile(
-  profile: { email?: unknown; emailVerified?: unknown },
-  env?: Env,
-): boolean {
-  void env;
-  return profile.emailVerified === true && isAllowedEmail(profile.email);
-}
-
-/**
  * True only for a Convex backend running on this machine. Cloud deployments
  * (`*.convex.cloud`) are rejected explicitly as well, as defence in depth.
  */

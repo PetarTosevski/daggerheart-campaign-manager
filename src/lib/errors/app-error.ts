@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 
 import { actionLogMessages } from "./actionLog";
 import { adversaryActionMessages } from "./adversaryActions";
+import { authMessages } from "./auth";
 import { classFeatureMessages } from "./classFeatures";
 import { combatActionMessages } from "./combatActions";
 import { combatFeatureMessages } from "./combatFeatures";
@@ -27,6 +28,7 @@ import { witherMessages } from "./wither";
  */
 export type AppErrorCode =
   | keyof typeof commonMessages
+  | keyof typeof authMessages
   | keyof typeof actionLogMessages
   | keyof typeof diceMessages
   | keyof typeof levelUpMessages
@@ -78,11 +80,14 @@ export class RuleError extends Error {
   }
 }
 
+/** Codes with a standard text: the common ones and the sign-in ones. */
+const STANDARD_MESSAGES = { ...commonMessages, ...authMessages };
+
 /**
- * A `ConvexError<AppError>` to throw. Without a `message`, a common code
- * carries its standard text, so the client can show it as is.
+ * A `ConvexError<AppError>` to throw. Without a `message`, a common or sign-in
+ * code carries its standard text, so the client can show it as is.
  */
 export function appError(code: AppErrorCode, message?: string): ConvexError<AppError> {
-  const text = message ?? (commonMessages as Partial<Record<AppErrorCode, string>>)[code];
+  const text = message ?? (STANDARD_MESSAGES as Partial<Record<AppErrorCode, string>>)[code];
   return new ConvexError<AppError>(text === undefined ? { code } : { code, message: text });
 }
