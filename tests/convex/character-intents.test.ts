@@ -137,7 +137,6 @@ describe("character intents", () => {
     expect(errorCode(await p2.mutation(api.characters.addInventory, { characterId, name: "Rope" }).catch((e) => e))).toBe("FORBIDDEN");
     expect(errorCode(await p2.mutation(api.characters.adjustGold, { characterId, coin: "bags", delta: 1 }).catch((e) => e))).toBe("FORBIDDEN");
     const strangerId = await t.run((ctx) => ctx.db.insert("users", { email: "x@example.com" }));
-    process.env.ALLOWED_EMAILS = `${EMAILS},x@example.com`;
     const stranger = t.withIdentity({ subject: `${strangerId}|s` });
     expect(errorCode(await stranger.mutation(api.characters.setTrait, { characterId, trait: "agility", value: 1 }).catch((e) => e))).toBe("NOT_FOUND");
     expect(errorCode(await t.mutation(api.characters.setGoldChest, { characterId, chest: true }).catch((e) => e))).toBe("UNAUTHENTICATED");

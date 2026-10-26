@@ -4,11 +4,11 @@ import { createOrUpdateUser } from "../../convex/lib/users";
 import { errorCode } from "./helpers";
 import { makeTest } from "./setup";
 
-const env = { GM_EMAILS: "gm@example.com" };
+const env = {};
 const verifiedGm = { email: "GM@example.com", emailVerified: true };
 
 describe("createOrUpdateUser (sign-in callback)", () => {
-  it("creates one user for a verified, allowlisted email and reuses it", async () => {
+  it("creates one user for a verified email and reuses it", async () => {
     const t = makeTest();
     const first = await t.run((ctx) =>
       createOrUpdateUser(ctx, { existingUserId: null, profile: verifiedGm }, env),
@@ -38,43 +38,24 @@ describe("createOrUpdateUser (sign-in callback)", () => {
     expect(await t.run((ctx) => ctx.db.query("users").collect())).toEqual([]);
   });
 
-  it("refuses a verified email that is not allowlisted and creates no user", async () => {
+  it("accepts any verified email (sign-up is open)", async () => {
     const t = makeTest();
-    const error = await t
-      .run((ctx) =>
-        createOrUpdateUser(
-          ctx,
-          { existingUserId: null, profile: { email: "intruder@example.com", emailVerified: true } },
-          env,
-        ),
-      )
-      .catch((e) => e);
-    expect(errorCode(error)).toBe("FORBIDDEN");
-    expect(await t.run((ctx) => ctx.db.query("users").collect())).toEqual([]);
-  });
-
-  it("refuses a returning account whose email was removed from the allowlist", async () => {
-    const t = makeTest();
-    const userId = await t.run((ctx) =>
-      ctx.db.insert("users", { email: "gm@example.com" }),
+    const id = await t.run((ctx) =>
+      createOrUpdateUser(
+        ctx,
+        { existingUserId: null, profile: { email: "newcomer@example.com", emailVerified: true } },
+        env,
+      ),
     );
-    const error = await t
-      .run((ctx) =>
-        createOrUpdateUser(
-          ctx,
-          { existingUserId: userId, profile: verifiedGm },
-          { GM_EMAILS: "someone-else@example.com" },
-        ),
-      )
-      .catch((e) => e);
-    expect(errorCode(error)).toBe("FORBIDDEN");
+    const user = await t.run((ctx) => ctx.db.get(id));
+    expect(user?.email).toBe("newcomer@example.com");
   });
 
   describe("password accounts", () => {
     const password = { id: "password" };
-    const penv = { ALLOWED_EMAILS: "player@example.com, gm@example.com" };
+    const penv = {};
 
-    it("creates a user for an allowlisted email without requiring verification", async () => {
+    it("creates a user for any email without requiring verification", async () => {
       const t = makeTest();
       const id = await t.run((ctx) =>
         createOrUpdateUser(
@@ -86,17 +67,6 @@ describe("createOrUpdateUser (sign-in callback)", () => {
       const user = await t.run((ctx) => ctx.db.get(id));
       expect(user).toMatchObject({ email: "player@example.com", name: "Ana" });
       expect(user?.emailVerificationTime).toBeUndefined();
-    });
-
-    it("refuses an email outside the allowlist", async () => {
-      const t = makeTest();
-      const error = await t
-        .run((ctx) =>
-          createOrUpdateUser(ctx, { existingUserId: null, provider: password, profile: { email: "x@example.com" } }, penv),
-        )
-        .catch((e) => e);
-      expect(errorCode(error)).toBe("FORBIDDEN");
-      expect(await t.run((ctx) => ctx.db.query("users").collect())).toEqual([]);
     });
 
     it("refuses a new password account for an existing email with the same code as a non-allowlisted one", async () => {

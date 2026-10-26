@@ -1,36 +1,26 @@
 /**
- * Sign-in policy. Pure functions only: they take the environment as an
+ * Sign-in rails. Pure functions only: they take the environment as an
  * argument so they can be unit-tested; Convex callers pass the typed `env`
  * from `_generated/server`, read inside their handlers.
  *
- * Sign-up is limited for now to an allowlist (user decision 2026-10-17): the
- * union of `ALLOWED_EMAILS`, the legacy `GM_EMAILS` and, where seed accounts
- * are enabled (`seedAccountsEnabled`), the emails of the env-defined test
- * accounts in `SEED_ACCOUNTS`. Everything fails closed: a missing or malformed value means
- * "not allowed".
+ * Sign-up is open (user decision 2026-10-23): any email may create an
+ * account, and there is no invite-only list. The rails that remain are
+ * separate safety gates: the local e2e sign-in (`isE2EDeployment`,
+ * `buildE2EProfile`) and the seed accounts, which exist only on a local e2e
+ * deployment or where `ALLOW_SEED_ACCOUNTS` is `"true"` (never production).
+ * The file name is historical.
  */
 
 /**
- * Environment lookups used here: `ALLOWED_EMAILS`, `GM_EMAILS`,
- * `SEED_ACCOUNTS`, `ALLOW_SEED_ACCOUNTS`, `CONVEX_CLOUD_URL`,
- * `E2E_AUTH_ENABLED` and `E2E_AUTH_SECRET`. Typed as a plain record so the typed Convex `env` (or a
- * test fixture) can be passed directly.
+ * Environment lookups used here: `SEED_ACCOUNTS`, `ALLOW_SEED_ACCOUNTS`,
+ * `CONVEX_CLOUD_URL`, `E2E_AUTH_ENABLED` and `E2E_AUTH_SECRET`. Typed as a
+ * plain record so the typed Convex `env` (or a test fixture) can be passed
+ * directly.
  */
 export type Env = Readonly<Record<string, string | undefined>>;
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
-}
-
-/** Parses the comma-separated `GM_EMAILS` value into normalised addresses. */
-export function parseGmEmails(raw: string | undefined): Set<string> {
-  if (!raw) return new Set();
-  return new Set(
-    raw
-      .split(",")
-      .map(normalizeEmail)
-      .filter((email) => email.length > 0),
-  );
 }
 
 export type SeedAccount = { email: string; password: string };
@@ -75,32 +65,21 @@ export function seedAccountsFor(env: Env): SeedAccount[] {
   return parseSeedAccounts(env.SEED_ACCOUNTS);
 }
 
-export function allowedEmails(env: Env): Set<string> {
-  return new Set([
-    ...parseGmEmails(env.ALLOWED_EMAILS),
-    ...parseGmEmails(env.GM_EMAILS),
-    // Seed accounts have env-stored passwords; allowlist them only where enabled.
-    ...(seedAccountsEnabled(env) ? parseSeedAccounts(env.SEED_ACCOUNTS).map((a) => a.email) : []),
-  ]);
-}
-
-export function isAllowedEmail(
-  email: unknown,
-  env: Env,
-): email is string {
-  if (typeof email !== "string" || email.trim().length === 0) return false;
-  return allowedEmails(env).has(normalizeEmail(email));
-}
-
 /**
- * An OAuth (or e2e) sign-in is allowed only when the provider vouches that
- * the email is verified (`emailVerified === true`) and it is allowlisted.
+ * Compatibility shims, removed by OS3 (which owns convex/lib/users.ts, the
+ * only remaining caller). Sign-up is open: any non-empty email passes.
  */
+export function isAllowedEmail(email: unknown, env?: Env): email is string {
+  void env;
+  return typeof email === "string" && email.trim().length > 0;
+}
+
 export function isAllowedProfile(
   profile: { email?: unknown; emailVerified?: unknown },
-  env: Env,
+  env?: Env,
 ): boolean {
-  return profile.emailVerified === true && isAllowedEmail(profile.email, env);
+  void env;
+  return profile.emailVerified === true && isAllowedEmail(profile.email);
 }
 
 /**

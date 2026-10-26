@@ -20,16 +20,12 @@ import { e2ePorts } from "./e2e-ports.mjs";
 const ENV_FILE = ".env.e2e.local";
 const E2E_GM_EMAIL = "e2e-gm@example.test";
 // One email per sign-in method: an email first used by the test sign-in cannot
-// sign up with a password (docs/testing.md). Test sign-in: the GM and two
-// players (e2e-player2@ is the second player / outsider). Email + password only:
-// one account per spec that signs up, so neither depends on the other's password.
-const E2E_ALLOWED = [
-  E2E_GM_EMAIL,
-  "e2e-player@example.test",
-  "e2e-player2@example.test",
-  "e2e-password-only@example.test", // tests/e2e/players.spec.ts
-  "e2e-session-ended@example.test", // tests/e2e/auth-session-ended.spec.ts
-];
+// sign up with a password (docs/testing.md). Sign-up is open, so accounts need
+// no listing; this documents who uses which method. Test sign-in: the GM
+// (e2e-gm@) and two players (e2e-player@, and e2e-player2@, the second player /
+// outsider). Email + password only: one account per spec that signs up
+// (e2e-password-only@ in tests/e2e/players.spec.ts, e2e-session-ended@ in
+// tests/e2e/auth-session-ended.spec.ts), so neither depends on the other's password.
 
 function readEnvFile() {
   if (!existsSync(ENV_FILE)) return {};
@@ -68,7 +64,6 @@ const existing = convex(["env", "list"]);
 const vars = {
   // Only OAuth redirects use it; the e2e tests sign in with the test form.
   SITE_URL: `http://localhost:${e2ePorts().next}`,
-  ALLOWED_EMAILS: E2E_ALLOWED.join(","),
   E2E_AUTH_ENABLED: "true",
   E2E_AUTH_SECRET: secret,
   // Canned answers instead of the Messages API (honoured only on this deployment).
