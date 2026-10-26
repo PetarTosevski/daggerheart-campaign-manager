@@ -6,6 +6,9 @@
  * U1: the public words and the returns hold Hit / Miss / Defeated, the player's own dice and card text; an enemy's HP,
  * Stress, thresholds, Difficulty and modifiers are only on the GM's row. U4: every changed instance's `adversaryBefore`
  * (with `effects` when the use changed them, CA4b's widened validator) goes on the GM row so undo puts it back.
+ *
+ * Plan sheet-drawer SD3: a feature use writes the same rows. Its modifiers on an instance are `feat:<featureId>:<n>`
+ * (Hex's lower Difficulty and damage, Make a Scene's Distracted); a card's stay `card:<cardId>:<n>`.
  */
 import { v, type Infer } from "convex/values";
 
@@ -17,7 +20,7 @@ import { TRAIT_LABEL } from "../../src/lib/frames/extras/common";
 import type { TraitId } from "../../src/lib/srd/types";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { difficultyOf, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
+import { difficultyOf, isFeatureUseId, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
 import { bandsOnMap, openIncomingHit, partyMembers } from "./incomingHits";
 import { ENCOUNTER_CONDITIONS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
 import { rollValidator, type AdversaryBefore } from "./validators/actionLog";
@@ -122,7 +125,17 @@ const INSTANCE_UNTIL: Record<Duration, InstanceEffect["until"]> = {
 
 /** The most modifiers kept on one instance (the oldest go first). */
 const INSTANCE_EFFECTS_MAX = 20;
-const CARD_INSTANCE_EFFECT = /^card:([a-z0-9-]+):\d+$/;
+
+/** The prefix of a use's instance modifiers: `card:<cardId>`, or `feat:<featureId>` for a feature (SD3). */
+function instanceKey(id: string): string {
+  return isFeatureUseId(id) ? `feat:${id}` : `card:${id}`;
+}
+
+/** Whether an instance modifier belongs to this card or feature (`<prefix>:<n>`). */
+function ownsInstanceEffect(effectId: string, id: string): boolean {
+  const prefix = `${instanceKey(id)}:`;
+  return effectId.startsWith(prefix) && /^\d+$/.test(effectId.slice(prefix.length));
+}
 
 /**
  * The instance modifier a card's `effect` step on an enemy becomes (CA0's `instanceEffectValidator`): Difficulty, attack,
@@ -130,9 +143,10 @@ const CARD_INSTANCE_EFFECT = /^card:([a-z0-9-]+):\d+$/;
  */
 function instanceEffect(existing: readonly InstanceEffect[], cardId: string, cardName: string, step: Extract<PlanStep, { kind: "effect" }>): InstanceEffect {
   let n = 1;
-  while (existing.some((e) => e.id === `card:${cardId}:${n}`) && n < 99) n++;
+  const key = instanceKey(cardId);
+  while (existing.some((e) => e.id === `${key}:${n}`) && n < 99) n++;
   const sum = (stat: string) => step.mods.reduce((s, m: ResolvedMod) => s + (m.kind === "stat" && m.stat === stat ? m.delta : 0), 0);
-  const effect: InstanceEffect = { id: `card:${cardId}:${n}`, source: cardName.slice(0, 80), label: step.label.slice(0, 120), until: INSTANCE_UNTIL[step.duration] };
+  const effect: InstanceEffect = { id: `${key}:${n}`, source: cardName.slice(0, 80), label: step.label.slice(0, 120), until: INSTANCE_UNTIL[step.duration] };
   for (const [stat, field] of [["difficulty", "difficulty"], ["attack", "attack"], ["damage", "damage"], ["hpMarked", "hpMarked"]] as const) {
     const delta = sum(stat);
     if (delta !== 0) effect[field] = delta;
@@ -151,7 +165,7 @@ function effectsAfter(plan: RunPlan, creatures: Creatures, cardName: string): Ma
     let list = out.get(step.targetId);
     if (list === undefined) {
       const own = c.instance.effects ?? [];
-      list = plan.exclusive ? own.filter((e) => CARD_INSTANCE_EFFECT.exec(e.id)?.[1] !== plan.cardId) : [...own];
+      list = plan.exclusive ? own.filter((e) => !ownsInstanceEffect(e.id, plan.cardId)) : [...own];
     }
     out.set(step.targetId, [...list, instanceEffect(list, plan.cardId, cardName, step)].slice(-INSTANCE_EFFECTS_MAX));
   }

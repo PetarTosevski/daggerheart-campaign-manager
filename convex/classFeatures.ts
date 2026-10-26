@@ -17,12 +17,11 @@
  */
 import { v } from "convex/values";
 
-import { applyResourceDelta } from "../src/lib/domain/characters/index";
 import { expire } from "../src/lib/domain/characters/expiry";
 import { findFeature, hopeFeature } from "../src/lib/domain/class-features/hooks";
 import { rallyDieStress } from "../src/lib/domain/class-features/held-dice";
 import { CLASS_FEATURES, classFeaturesAvailable } from "../src/lib/domain/class-features/index";
-import type { FeatureCost, FeatureMeta, OtherSheet } from "../src/lib/domain/class-features/types";
+import type { FeatureMeta, OtherSheet } from "../src/lib/domain/class-features/types";
 import { appError } from "../src/lib/errors/app-error";
 import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
@@ -30,6 +29,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { assertCanAct, editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { payCost } from "./lib/classFeatureCost";
 import { rollDie } from "./lib/dice";
 import { gainFear, revertFear } from "./lib/fear";
 import { keyedUserMutation, userQuery } from "./lib/functions";
@@ -54,27 +54,6 @@ async function latestRoll(ctx: QueryCtx, characterId: Id<"characters">): Promise
 function grantingClass(sheet: CharacterSheet, key: string): string | undefined {
   if (hopeFeature(sheet)?.key === key) return sheet.classId;
   return [sheet.classId, sheet.multiclass?.classId].find((id) => id !== undefined && CLASS_FEATURES[id]?.classActions?.some((f) => f.key === key));
-}
-
-/** The sheet with the cost paid, or a refusal. */
-function payCost(sheet: CharacterSheet, cost: FeatureCost | undefined): CharacterSheet {
-  if (cost === undefined) return sheet;
-  let next = sheet;
-  if (cost.hope) {
-    if (next.hope < cost.hope) throw appError("NOT_ENOUGH_HOPE", `This costs ${cost.hope} Hope.`);
-    next = { ...next, hope: next.hope - cost.hope };
-  }
-  if (cost.stress) next = applyResourceDelta(next, "stress", cost.stress);
-  const { heldDieId, use } = cost;
-  if (heldDieId !== undefined) {
-    if (!next.heldDice.some((d) => d.id === heldDieId)) throw appError("CLASS_FEATURE_RULE", "That die is not held.");
-    next = { ...next, heldDice: next.heldDice.filter((d) => d.id !== heldDieId) };
-  }
-  if (use !== undefined) {
-    if (next.featureUses.some((u) => u.key === use.key)) throw appError("CLASS_FEATURE_RULE", "Already used; it refreshes later.");
-    next = { ...next, featureUses: [...next.featureUses, use] };
-  }
-  return next;
 }
 
 /** A target character: same campaign, present (not dead or away). */

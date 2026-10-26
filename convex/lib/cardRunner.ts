@@ -19,10 +19,21 @@
  *   the card's wording names (`rangeOrigin`).
  * - U1: what a player receives holds hit / miss / defeated, their own dice and their own sheet changes; an enemy's HP,
  *   Stress, thresholds and Difficulty are only on the GM's row.
+ *
+ * Plan sheet-drawer SD3 (docs/tasks/TASK-SD-SD3.md): the card pick is a `UsePick` {effect, use, name, limitKey} that a
+ * Hope / class / subclass / heritage / Beastform / transformation / stance feature fills too (convex/lib/featureRunner.ts),
+ * with its own runner (`runFeature`, D5 delegation), refusal codes and actor extras. A feature use without a live map
+ * builds its run with no scene (self and party uses only; a token target is FEATURE_NEEDS_MAP). A feature's effects on a
+ * sheet are `feat:<hash>:<n>` (sheet effect ids hold 40 characters, a feature id up to 53), on an instance
+ * `feat:<featureId>:<n>`; its tokens are `cardTokens` under `feat:<featureId>`.
  */
 import { type Infer } from "convex/values";
 
 import { pickUse, run, type ActorState, type PlanStep, type ResolvedMod, type RunContext, type RunPlan, type RunRefusal, type WeaponInfo } from "../../src/lib/domain/card-effects/run";
+import type { OtherSheet } from "../../src/lib/domain/class-features/types";
+import type { RollRecord } from "../../src/lib/domain/duality";
+import { featureKey, parseFeatureId } from "../../src/lib/domain/feature-effects/ids";
+import { FEATURE_CLASSIFICATION } from "../../src/lib/srd/feature-effects/classification";
 import type { CardEffect, CardUse, Duration, Range, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { lineOfSight, rangeCheck, rangeFromWeapon, tokenDistance, type Combatant, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
@@ -38,7 +49,7 @@ import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
 import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
-import { CONDITIONS, type CharacterSheet, type Effect } from "../../src/lib/validation/characters";
+import { CONDITIONS, FEATURE_USES_MAX, type CharacterSheet, type Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import type { AttackScene } from "./combatActions";
@@ -52,7 +63,30 @@ const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]
 
 // ---------------------------------------------------------------- the card and its use
 
-export type CardPick = { effect: CardEffect; use: CardUse; name: string };
+/** What a feature's D5 delegation left behind (convex/lib/featureRunner.ts): the actor's sheet, other sheets, D5 rolls. */
+export type Delegated = { sheet?: CharacterSheet; others: OtherSheet[]; rolls: RollRecord[] };
+
+/** A runner's answer: the card runner's `run`, or the feature runner's `runFeature` with what its D5 features changed. */
+export type UseRunResult = { ok: true; plan: RunPlan; delegated?: Delegated } | RunRefusal;
+
+/**
+ * The use asked for (SD3: cards and features alike). `limitKey`: the `cardTokens` id of its tokens, the card id for a
+ * card and `feat:<featureId>` for a feature. A feature brings its own runner (`runFeature` with D5 delegation and
+ * upgrades), its refusal codes (FEATURE_*) and the actor's extras (Favor, Focus, held dice, the facts its requirements
+ * read).
+ */
+export type UsePick = {
+  effect: CardEffect;
+  use: CardUse;
+  name: string;
+  limitKey: string;
+  run?: (context: RunContext) => UseRunResult;
+  refusal?: (r: RunRefusal) => Error;
+  actor?: (actor: ActorState) => ActorState;
+};
+
+/** A domain card's pick (the CA4 name, kept). */
+export type CardPick = UsePick;
 
 const invalid = (what: string) => appError("INVALID", what);
 
@@ -68,7 +102,7 @@ export function pickCard(sheet: CharacterSheet, cardId: string, spell: string | 
   const use = pickUse(effect, spell);
   if (use === undefined) throw invalid(`${card.name} has no "${spell ?? ""}".`);
   if (use.activation.kind === "passive") throw appError("CARD_NOT_COMBAT", `${use.name} is always on.`);
-  return { effect, use, name: card.name };
+  return { effect, use, name: card.name, limitKey: cardId };
 }
 
 // ---------------------------------------------------------------- combatants
@@ -113,7 +147,10 @@ export function pcCombatant(id: string, sheet: CharacterSheet): Combatant & { ar
   };
 }
 
-/** The PC using the card, with the values the runner reads (traits after effects, Spellcast value, the card's tokens). */
+/**
+ * The PC using the card, with the values the runner reads (traits after effects, Spellcast value, the card's tokens).
+ * `cardId` is the `cardTokens` id: the card id, or `feat:<featureId>` for a feature (SD3).
+ */
 export function cardActor(id: string, sheet: CharacterSheet, cardId: string, trait: TraitId | undefined): ActorState {
   const live = withEffects(sheet);
   const spellTrait = spellcastTraitOf(sheet);
@@ -230,9 +267,20 @@ export class Creatures {
   constructor(
     private readonly ctx: QueryCtx,
     private readonly campaignId: Id<"campaigns">,
-    readonly scene: AttackScene,
+    private readonly liveScene: AttackScene | null,
     readonly actorSheet: CharacterSheet,
   ) {}
+
+  /** The live map (SD3: a feature used without one has none; asking for it is FEATURE_NEEDS_MAP). */
+  get scene(): AttackScene {
+    if (this.liveScene === null) throw appError("FEATURE_NEEDS_MAP");
+    return this.liveScene;
+  }
+
+  /** Whether the use runs on a live map. */
+  get onMap(): boolean {
+    return this.liveScene !== null;
+  }
 
   get all(): Creature[] {
     return [...this.byId.values()];
@@ -272,6 +320,7 @@ export class Creatures {
   /** Every enemy token the actor sees with a clear line that can be attacked (for "all targets" and Minion offers). */
   async visibleEnemies(): Promise<EnemyCreature[]> {
     const out: EnemyCreature[] = [];
+    if (this.liveScene === null) return out;
     for (const [i, token] of this.scene.scene.tokens.entries()) {
       if (i === this.scene.viewer.index || token.side !== "enemy" || !seenBy(this.scene, i)) continue;
       try {
@@ -348,7 +397,8 @@ export type CardRequest = {
   campaign: Doc<"campaigns">;
   character: Doc<"characters">;
   sheet: CharacterSheet;
-  scene: AttackScene;
+  /** The live map; null for a feature used without one (SD3: self and party uses only). */
+  scene: AttackScene | null;
   pick: CardPick;
   targetTokenIds: readonly string[];
   choices: ParsedChoices;
@@ -412,7 +462,8 @@ function combatantOf(c: Creature, actor: ActorState): Combatant {
 export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRun> {
   const { sheet, scene, pick, choices, roll } = req;
   const { effect, use } = pick;
-  const actorTokenId = scene.attacker._id;
+  // Without a map (SD3) the actor's runner id is its character id; nothing on the map can be named.
+  const actorTokenId: string = scene ? scene.attacker._id : req.character._id;
   const creatures = new Creatures(ctx, req.campaign._id, scene, sheet);
 
   // Experiences: 1 Hope each, their value added to the roll (CB p.90).
@@ -420,7 +471,8 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   const exp = rules(() => experienceBonus(sheet.experiences, roll.experienceIds ?? []));
   if (exp.hope > 0 && use.roll === undefined) throw invalid("This card makes no roll to add an Experience to.");
   const paidSheet = rules(() => spendHope(sheet, exp.hope));
-  const actor = cardActor(actorTokenId, paidSheet, effect.cardId, roll.trait);
+  const base = cardActor(actorTokenId, paidSheet, pick.limitKey, roll.trait);
+  const actor = pick.actor ? pick.actor(base) : base;
   const spec = specOf(use);
   const range = rangeOf(spec, actor, choices.weapon);
 
@@ -434,10 +486,10 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     targets.push(c);
   }
   // "all targets within Close range" (CB p.104, R9): with none named, every enemy the actor sees in range.
-  if (targets.length === 0 && spec?.count.kind === "all" && (spec.side === "enemy" || spec.side === "any") && (spec.area === undefined || spec.area === "aroundSelf")) {
+  if (scene && targets.length === 0 && spec?.count.kind === "all" && (spec.side === "enemy" || spec.side === "any") && (spec.area === undefined || spec.area === "aroundSelf")) {
     targets = (await creatures.visibleEnemies()).filter((e) => rangeCheck(scene.attacker, e.token, range).inRange);
   }
-  if (spec?.side === "self" && targets.length === 0) targets = [{ kind: "self", tokenId: actorTokenId, token: scene.attacker }];
+  if (scene && spec?.side === "self" && targets.length === 0) targets = [{ kind: "self", tokenId: scene.attacker._id, token: scene.attacker }];
   const encounters = new Set(targets.flatMap((t) => (t.kind === "enemy" ? [t.encounter._id] : [])));
   if (encounters.size > 1) throw appError("COMBAT_TARGET_INVALID");
 
@@ -466,15 +518,15 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   };
   const anchored = spec?.area === "aroundPoint" || spec?.area === "aroundTarget";
   for (const [i, t] of targets.entries()) {
-    if (anchored && i > 0 && spec?.areaRange !== undefined) flag(t, rangeOrigin(scene, { ...spec, area: "aroundTarget" }, range, targets.slice(0, 1), t));
-    else flag(t, rangeOrigin(scene, spec && { ...spec, area: spec.area === "aroundSelf" ? "aroundSelf" : undefined }, range, [], t));
+    if (anchored && i > 0 && spec?.areaRange !== undefined) flag(t, rangeOrigin(creatures.scene, { ...spec, area: "aroundTarget" }, range, targets.slice(0, 1), t));
+    else flag(t, rangeOrigin(creatures.scene, spec && { ...spec, area: spec.area === "aroundSelf" ? "aroundSelf" : undefined }, range, [], t));
   }
   const specs = extraSpecs(use);
   const extraRange = (s: TargetSpec | undefined) => (s === undefined ? "unlimited" : s.range === "weapon" ? (actor.weapons[choices.weapon ?? "primary"]?.range ?? "melee") : s.range);
-  for (const c of picked) flag(c, rangeOrigin(scene, specs.picked, extraRange(specs.picked), targets, c));
-  for (const c of allies) flag(c, rangeOrigin(scene, specs.allies, extraRange(specs.allies), targets, c));
+  for (const c of picked) flag(c, rangeOrigin(creatures.scene, specs.picked, extraRange(specs.picked), targets, c));
+  for (const c of allies) flag(c, rangeOrigin(creatures.scene, specs.allies, extraRange(specs.allies), targets, c));
   const chain = CHAIN_CARDS.has(effect.cardId);
-  for (const [i, c] of followUp.entries()) flag(c, rangeOrigin(scene, specs.followUp, extraRange(specs.followUp), chain ? [...targets, ...followUp.slice(0, i)] : targets, c));
+  for (const [i, c] of followUp.entries()) flag(c, rangeOrigin(creatures.scene, specs.followUp, extraRange(specs.followUp), chain ? [...targets, ...followUp.slice(0, i)] : targets, c));
 
   // ---- the roll: cover gives one disadvantage (Q2); an attack roll adds the effects' attack bonus (CB p.96).
   const cover = targets.some((t) => t.kind === "enemy" && t.sight.cover);
@@ -496,7 +548,7 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   for (const id of DEFAULT_OPTIONALS[effect.cardId] ?? []) if (!choices.declined.has(id)) optionals.add(id);
 
   const enemies = await creatures.visibleEnemies();
-  const nearest = enemies.length === 0 ? undefined : Math.min(...enemies.map((e) => tokenDistance(scene.attacker, e.token)));
+  const nearest = !scene || enemies.length === 0 ? undefined : Math.min(...enemies.map((e) => tokenDistance(scene.attacker, e.token)));
 
   const trigger: NonNullable<RunContext["trigger"]> = {};
   const source = await triggerOf(choices.triggerSource);
@@ -509,7 +561,8 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
     actor,
     gmFear: req.gmFear,
     useId: use.id,
-    targets: targets.map((t) => combatantOf(t, actor)),
+    // Off the map a self use targets the actor itself (SD3).
+    targets: !scene && spec?.side === "self" ? [actor] : targets.map((t) => combatantOf(t, actor)),
     picked: picked.map((t) => combatantOf(t, actor)),
     allies: allies.map((t) => combatantOf(t, actor)),
     followUp: followUp.map((t) => combatantOf(t, actor)),
@@ -575,7 +628,7 @@ export function replaying(values: readonly number[], base: Rng): Rng {
   };
 }
 
-export type RunOutcome = ({ kind: "plan"; plan: RunPlan; picked: readonly Combatant[] } | { kind: "needsChoice"; asks: ChoiceAsks }) & {
+export type RunOutcome = ({ kind: "plan"; plan: RunPlan; picked: readonly Combatant[]; delegated?: Delegated } | { kind: "needsChoice"; asks: ChoiceAsks }) & {
   /** Every die value the use rolled, in order (kept for a choice after the roll, convex/lib/cardChoices.ts). */
   dice: number[];
 };
@@ -588,9 +641,12 @@ export type RunOutcome = ({ kind: "plan"; plan: RunPlan; picked: readonly Combat
  */
 export function runCard(built: BuiltRun, pick: CardPick, rng: Rng): RunOutcome {
   const first = recording(rng);
+  const runner = pick.run ?? ((context: RunContext): UseRunResult => run(pick.effect, context));
+  let delegated: Delegated | undefined;
   const once = (context: Omit<RunContext, "rng">, r: Rng) => {
-    const result = rules(() => run(pick.effect, { ...context, rng: r }));
-    if (!result.ok) throw refusalError(result);
+    const result = rules(() => runner({ ...context, rng: r }));
+    if (!result.ok) throw (pick.refusal ?? refusalError)(result);
+    delegated = result.delegated;
     return result.plan;
   };
   let context = built.context;
@@ -611,7 +667,7 @@ export function runCard(built: BuiltRun, pick: CardPick, rng: Rng): RunOutcome {
     }
   }
   if (asks.length > 0) return { kind: "needsChoice", asks, dice: first.values };
-  return { kind: "plan", plan: withOnslaught(plan, built.paidSheet, pick.use), picked: context.picked ?? [], dice: first.values };
+  return { kind: "plan", plan: withOnslaught(plan, built.paidSheet, pick.use), picked: context.picked ?? [], dice: first.values, ...(delegated ? { delegated } : {}) };
 }
 
 /** Whether a use deals the weapon's damage (a `damage` step rolling `weapon`, nested steps included). */
@@ -653,7 +709,7 @@ export function withOnslaught(plan: RunPlan, sheet: CharacterSheet, use: CardUse
 /** The map tokens of runner ids (the actor's id is its own token). */
 export function tokenIdsOf(built: BuiltRun, ids: readonly string[]): Id<"combatTokens">[] {
   return ids.flatMap((id) => {
-    if (id === built.context.actor.id) return [built.creatures.scene.attacker._id];
+    if (id === built.context.actor.id) return built.creatures.onMap ? [built.creatures.scene.attacker._id] : [];
     const c = built.creatures.get(id);
     return c ? [c.tokenId] : [];
   });
@@ -692,18 +748,74 @@ function sheetMods(mods: readonly ResolvedMod[]): { mods: NonNullable<Effect["mo
   return { mods: out, text };
 }
 
+// ---- SD3: which use an effect belongs to (cards `card:<cardId>:<n>`, features `feat:<hash>:<n>`)
+
+/** FNV-1a (32 bit) in base 36: a short, stable name for a feature id. */
+function shortHash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
+/** Whether a runner id is a feature id (`<source>:<owner>[:<slug>]`); a card id has no colon. */
+export function isFeatureUseId(id: string): boolean {
+  return parseFeatureId(id) !== null;
+}
+
+/** The `cardTokens` id of a use's tokens: the card id, or `feat:<featureId>` for a feature. */
+export function tokenKeyOf(id: string): string {
+  return isFeatureUseId(id) ? featureKey(id) : id;
+}
+
+/**
+ * The prefix of a use's sheet effect ids: `card:<cardId>`, or `feat:<hash>` for a feature (sheet effect ids hold at most
+ * 40 characters and a feature id up to 53; `featureIdOfEffect` reads the hash back).
+ */
+export function effectKeyOf(id: string): string {
+  return isFeatureUseId(id) ? `feat:${shortHash(id)}` : `card:${id}`;
+}
+
+const FEATURE_BY_HASH = new Map(Object.keys(FEATURE_CLASSIFICATION).map((id) => [effectKeyOf(id), id]));
+
+/** Whether a sheet effect belongs to this card or feature (`<prefix>:<n>`). */
+export function ownsEffect(effect: Pick<Effect, "id">, id: string): boolean {
+  const prefix = `${effectKeyOf(id)}:`;
+  return effect.id.startsWith(prefix) && /^\d+$/.test(effect.id.slice(prefix.length));
+}
+
+/** The feature id of a sheet effect written by a feature use, or null (NV7 `featureEffect` facts read it). */
+export function featureIdOfEffect(effect: Pick<Effect, "id">): string | null {
+  const m = /^(feat:[a-z0-9]+):\d+$/.exec(effect.id);
+  return m ? (FEATURE_BY_HASH.get(m[1]!) ?? null) : null;
+}
+
+/** The text segment that names an effect step's option ("Channeling Fire", NV7); `effectOption` reads it back. */
+const OPTION_PREFIX = "option: ";
+
+/** The option a feature effect stands for (NV7), from its text. */
+export function effectOption(effect: Pick<Effect, "text">): string | undefined {
+  return effect.text
+    .split("; ")
+    .find((part) => part.startsWith(OPTION_PREFIX))
+    ?.slice(OPTION_PREFIX.length);
+}
+
 function nextEffectId(effects: readonly Effect[], cardId: string): string {
+  const key = effectKeyOf(cardId);
   for (let n = 1; n < 100; n++) {
-    const id = `card:${cardId}:${n}`;
+    const id = `${key}:${n}`;
     if (!effects.some((e) => e.id === id)) return id;
   }
-  return `card:${cardId}:0`;
+  return `${key}:0`;
 }
 
 /** The sheet effect a card's `effect` step (or a card tag on a PC) becomes, with the card's until (CA4 acceptance). */
-function addEffect(effects: Effect[], cardId: string, source: string, label: string, mods: readonly ResolvedMod[], duration: Duration, endsWhen: string | undefined): Effect[] {
+function addEffect(effects: Effect[], cardId: string, source: string, label: string, mods: readonly ResolvedMod[], duration: Duration, endsWhen: string | undefined, option?: string): Effect[] {
   const { mods: stored, text } = sheetMods(mods);
-  const words = [label, ...text, ...(endsWhen ? [`ends when ${endsWhen}`] : [])].join("; ");
+  const words = [label, ...(option ? [`${OPTION_PREFIX}${option}`] : []), ...text, ...(endsWhen ? [`ends when ${endsWhen}`] : [])].join("; ");
   const effect: Effect = { id: nextEffectId(effects, cardId), source: source.slice(0, 80), text: words.slice(0, 300), until: UNTIL[duration], ...(Object.keys(stored).length > 0 ? { mods: stored } : {}) };
   // The sheet holds at most 20 effects: the oldest goes first.
   return [...effects, effect].slice(-20);
@@ -715,7 +827,7 @@ function addEffect(effects: Effect[], cardId: string, source: string, label: str
  * removed. Tracks (HP, Stress, Armor) come from the caller.
  */
 export function writeSheetChanges(sheet: CharacterSheet, steps: readonly PlanStep[], who: string, cardId: string, cardName: string, exclusive: boolean, isActor: boolean): CharacterSheet {
-  let effects = exclusive ? sheet.effects.filter((e) => cardIdOfEffect(e) !== cardId) : [...sheet.effects];
+  let effects = exclusive ? sheet.effects.filter((e) => !ownsEffect(e, cardId)) : [...sheet.effects];
   let conditions = [...sheet.conditions];
   let hope = sheet.hope;
   for (const step of steps) {
@@ -730,9 +842,9 @@ export function writeSheetChanges(sheet: CharacterSheet, steps: readonly PlanSte
     } else if (step.kind === "clearCondition") {
       const cond = step.condition;
       if (cond.kind === "standard") conditions = conditions.filter((c) => c !== cond.condition);
-      else effects = effects.filter((e) => !(cardIdOfEffect(e) !== null && e.text.split(";")[0] === cond.tag));
+      else effects = effects.filter((e) => !((cardIdOfEffect(e) !== null || featureIdOfEffect(e) !== null) && e.text.split(";")[0] === cond.tag));
     } else if (step.kind === "effect") {
-      effects = addEffect(effects, cardId, cardName, step.label, step.mods, step.duration, step.endsWhen);
+      effects = addEffect(effects, cardId, cardName, step.label, step.mods, step.duration, step.endsWhen, step.option);
     } else if (step.kind === "hope" && !isActor) {
       hope += step.delta;
     }
@@ -741,20 +853,33 @@ export function writeSheetChanges(sheet: CharacterSheet, steps: readonly PlanSte
   return { ...sheet, effects, conditions, hope: Math.max(0, Math.min(max, hope)) };
 }
 
-/** The actor's sheet after the plan: resources, the limit entries, the card's tokens, effects, conditions, the vault. */
+/**
+ * The actor's sheet after the plan: resources, the limit entries, the card's tokens, effects, conditions, the vault.
+ * SD3: a feature's Favor, Focus and held dice too (the runner's `after`; a held die it spent is gone). `paidSheet` is the
+ * sheet the plan started from (a feature's D5 delegation passes the sheet its D5 features left: classState, held dice).
+ */
 export function actorSheetAfter(paidSheet: CharacterSheet, plan: RunPlan, actorId: string, cardName: string): CharacterSheet {
   const after = plan.actor.after;
   const base = writeSheetChanges(paidSheet, plan.steps, actorId, plan.cardId, cardName, plan.exclusive, true);
-  const others = (paidSheet.cardTokens ?? []).filter((t) => t.cardId !== plan.cardId);
-  const cardTokens = after.cardTokens > 0 ? [...others, { cardId: plan.cardId, count: Math.min(99, after.cardTokens) }] : others;
+  const tokenKey = tokenKeyOf(plan.cardId);
+  const others = (paidSheet.cardTokens ?? []).filter((t) => t.cardId !== tokenKey);
+  const cardTokens = after.cardTokens > 0 ? [...others, { cardId: tokenKey, count: Math.min(99, after.cardTokens) }] : others;
   const toVault = plan.steps.some((s) => s.kind === "toVault");
+  const kept = after.heldDice ? new Set(after.heldDice.map((d) => d.id)) : null;
+  const classState = {
+    ...base.classState,
+    ...(after.favor !== undefined ? { favor: after.favor } : {}),
+    ...(after.focus !== undefined && base.classState.martial ? { martial: { ...base.classState.martial, focus: after.focus } } : {}),
+  };
   return {
     ...base,
     hope: after.hope,
     stress: Math.min(paidSheet.stressMax, after.stress),
     hp: Math.min(paidSheet.hpMax, after.hp),
     armorMarked: Math.max(0, after.armor),
-    featureUses: plan.actor.featureUses.slice(-40),
+    featureUses: plan.actor.featureUses.slice(-FEATURE_USES_MAX),
+    classState,
+    ...(kept ? { heldDice: base.heldDice.filter((d) => kept.has(d.id)) } : {}),
     cardTokens,
     ...(toVault ? { domainCards: { ...paidSheet.domainCards, loadout: paidSheet.domainCards.loadout.filter((c) => c !== plan.cardId) } } : {}),
   };
