@@ -466,6 +466,13 @@ waves:
         goal: A player's map attack (weapon or card) offers every ready rider of their features and cards before or after the roll as the trigger says, applies automatic riders (Sneak Attack from positions), pauses for after-roll features when one is eligible (Q1), and ends Cloaked on attacks and moves in sight of an adversary (Q9).
         depends_on: [SD3, FE-bard-wizard, FE-druid-sorcerer, FE-guardian-warrior, FE-ranger-rogue, FE-seraph-witch, FE-assassin-brawler, FE-warlock, FE-ancestry-core, FE-heritage-hf]
         owns:
+          - convex/lib/validators/combatRequests.ts
+          - convex/combatRequests.ts
+          - convex/lib/combatRequests.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - tests/convex/authz/riders.entries.ts
+          - tests/convex/authz/riders.test.ts
           - convex/combatActions.ts
           - convex/lib/combatActions.ts
           - convex/lib/combatMovement.ts
