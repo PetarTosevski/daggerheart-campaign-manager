@@ -345,3 +345,68 @@ describe("rate limits (per email, anonymous callers)", () => {
     expect(limited).toBeLessThanOrEqual(63);
   }, 120_000);
 });
+
+describe("e2e fake-code mode (dcm-bxp.128.2)", () => {
+  const FAKE = { CONVEX_CLOUD_URL: "http://127.0.0.1:3210", E2E_AUTH_ENABLED: "true", E2E_AUTH_SECRET: "e2e-secret" };
+  const saved: Record<string, string | undefined> = {};
+  const setFake = (env: Record<string, string | undefined>) => {
+    for (const [name, value] of Object.entries(env)) {
+      if (!(name in saved)) saved[name] = process.env[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+  beforeEach(() => setFake(FAKE));
+  afterEach(() => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  const readCode = async (t: ReturnType<typeof makeTest>, email: string, secret = "e2e-secret") => {
+    const res = await t.fetch(`/e2e/code?email=${encodeURIComponent(email)}&secret=${secret}`);
+    return { status: res.status, code: res.status === 200 ? ((await res.json()) as { code: string }).code : null };
+  };
+
+  it("two sign-ups pending at once both verify, each with its own code, and no email is sent", async () => {
+    const t = makeTest();
+    await signUp(t, "one@example.com");
+    await signUp(t, "two@example.com");
+    expect(sent).toEqual([]);
+    const one = await readCode(t, "One@Example.com");
+    const two = await readCode(t, "two@example.com");
+    expect(one.code).toMatch(/^\d{6}$/);
+    expect(two.code).toMatch(/^\d{6}$/);
+    expect((await verify(t, "one@example.com", one.code!)).tokens?.token).toEqual(expect.any(String));
+    expect((await verify(t, "two@example.com", two.code!)).tokens?.token).toEqual(expect.any(String));
+  });
+
+  it("a new code for an email replaces the stored one", async () => {
+    const t = makeTest();
+    await signUp(t, "one@example.com");
+    await signInPw(t, "one@example.com", GOOD);
+    const rowsLeft = await t.run((ctx) => ctx.db.query("e2eCodes").collect());
+    expect(rowsLeft).toHaveLength(1);
+  });
+
+  it("the route answers 404 for a wrong secret, an unknown email and a missing secret", async () => {
+    const t = makeTest();
+    await signUp(t, "one@example.com");
+    expect((await readCode(t, "one@example.com", "nope")).status).toBe(404);
+    expect((await readCode(t, "nobody@example.com")).status).toBe(404);
+    expect((await t.fetch("/e2e/code?email=one%40example.com")).status).toBe(404);
+  });
+
+  it("outside the e2e rails nothing is stored and the route is 404 (cloud URL, or e2e auth off)", async () => {
+    const t = makeTest();
+    setFake({ CONVEX_CLOUD_URL: "https://happy-otter-123.convex.cloud" });
+    await signUp(t, "one@example.com");
+    expect(sent).toHaveLength(1);
+    expect(await t.run((ctx) => ctx.db.query("e2eCodes").collect())).toEqual([]);
+    expect((await readCode(t, "one@example.com")).status).toBe(404);
+    await t.run((ctx) => ctx.db.insert("e2eCodes", { email: "one@example.com", code: "111111", createdAt: 0 }));
+    expect((await readCode(t, "one@example.com")).status).toBe(404);
+    setFake({ CONVEX_CLOUD_URL: FAKE.CONVEX_CLOUD_URL, E2E_AUTH_ENABLED: undefined });
+    expect((await readCode(t, "one@example.com")).status).toBe(404);
+  });
+});

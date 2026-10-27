@@ -5,6 +5,21 @@ import { api } from "../../convex/_generated/api";
 
 export const E2E_GM_EMAIL = "e2e-gm@example.test";
 
+/**
+ * The code the e2e backend "sent" to an email (it sends no email and every code is random). Read through
+ * `GET /e2e/code`, gated by the e2e secret (convex/e2e.ts); the HTTP-actions port is the Convex port plus one.
+ */
+export async function readEmailedCode(email: string): Promise<string> {
+  const url = new URL(process.env.E2E_CONVEX_URL!);
+  url.port = String(Number(url.port) + 1);
+  url.pathname = "/e2e/code";
+  url.searchParams.set("email", email);
+  url.searchParams.set("secret", process.env.E2E_AUTH_SECRET ?? "");
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`No e2e code for ${email}: HTTP ${res.status}`);
+  return ((await res.json()) as { code: string }).code;
+}
+
 /** The signed-in user's Convex Auth token, or null before sign-in completes. */
 const readToken = () => {
   const key = Object.keys(localStorage).find((k) => k.startsWith("__convexAuthJWT"));
