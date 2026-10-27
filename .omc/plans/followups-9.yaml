@@ -21,3 +21,21 @@ waves:
           - "Root cause documented: how a ConvexError from Convex Auth's signIn action reaches the browser through the Next auth proxy in production (where messages are redacted to '[Request ID] Server Error') vs dev"
           - "The proxy or auth route passes the AppError code to the client in a production-safe way (no stack, no secrets); password-form maps it; unit tests cover the redacted-message case"
           - "pnpm lint, typecheck, vitest, tests/e2e/auth.spec.ts and tracer-guard pass"
+  - wave: 2
+    tracers:
+      - id: J2
+        title: Leaving paint mode keeps the World map's zoom and position (dcm-bxp.139)
+        size: S
+        goal: Toggling paint mode on or off never changes the World map's zoom or pan.
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/world/use-pan-zoom.ts
+          - src/app/(gm)/campaigns/[campaignId]/world/world-board.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/map-view.tsx
+          - tests/unit/world-pan-zoom.test.ts
+          - tests/e2e/world.spec.ts
+          - docs/tasks/TASK-F9-J2.md
+        reads: [docs/best-practices.md]
+        acceptance:
+          - "Root cause named (what resets the view on leaving paint mode: remount via key, a fit() call, or a size change); after entering and leaving paint mode the zoom and pan are identical (e2e asserts the transform before and after)"
+          - "No mutations or prop-copying in effects (rule 13); pnpm lint, typecheck, vitest, tests/e2e/world.spec.ts and tracer-guard pass"
