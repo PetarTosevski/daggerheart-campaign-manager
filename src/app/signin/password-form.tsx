@@ -27,7 +27,8 @@ export function authErrorText(error: unknown, fallback: string): string {
   const data: unknown = error instanceof ConvexError ? error.data : null;
   let code: unknown = typeof data === "object" && data !== null ? (data as { code?: unknown }).code : undefined;
   // The Next.js auth proxy (/api/auth) answers a failed sign-in with only `error.message`, so the browser gets a plain
-  // Error whose text carries the serialized payload ("Uncaught ConvexError: {"code":"CODE_INVALID",...}").
+  // Error. Its text carries the serialized payload (`ConvexError: {"code":"CODE_INVALID"}`): dev Convex gives it, and
+  // src/lib/auth-errors.ts restores it where production redacts the message.
   if (code === undefined && error instanceof Error) code = /"code":"([A-Z_]+)"/.exec(error.message)?.[1];
   if (code === "RATE_LIMITED") return RATE_LIMIT_TEXT;
   if (code === "EMAIL_TAKEN" || code === "PASSWORD_TOO_SHORT" || code === "CODE_INVALID") return authMessages[code];

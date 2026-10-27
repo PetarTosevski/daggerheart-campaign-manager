@@ -101,6 +101,9 @@ describe("PasswordForm", () => {
     expect(authErrorText(new ConvexError({ code: "PASSWORD_TOO_SHORT" }), "x")).toMatch(/at least 8/);
     expect(authErrorText(new ConvexError({ code: "CODE_INVALID" }), "x")).toMatch(/new one/);
     expect(authErrorText(new ConvexError({ code: "RATE_LIMITED" }), "x")).toMatch(/Wait a few minutes/);
+    // The message the auth proxy forwards once src/lib/auth-errors.ts has restored the code of a redacted error.
+    expect(authErrorText(new Error('ConvexError: {"code":"EMAIL_TAKEN"}'), "x")).toMatch(/already has an account/);
+    expect(authErrorText(new Error("[Request ID: abc] Server Error"), "Wrong email or password.")).toBe("Wrong email or password.");
     expect(authErrorText(new Error("Server Error"), "Wrong email or password.")).toBe("Wrong email or password.");
   });
 
