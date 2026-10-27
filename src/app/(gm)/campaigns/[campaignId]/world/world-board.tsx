@@ -322,7 +322,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (painting) {
-      const bi = ["1", "2", "3", "4", "5", "6", "7"].indexOf(e.key);
+      const bi = ["1", "2", "3", "4", "5", "6", "7", "8", "9"].indexOf(e.key);
       if (bi >= 0) {
         e.preventDefault();
         setBrush(BRUSHES[bi].code);
@@ -534,7 +534,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
                 {b.label}
               </button>
             ))}
-            <span className="ml-1.5 text-[12px] text-[#9fb2b6]" title="Keys 1–7 pick a terrain, [ and ] change the size, Ctrl+Z undoes a stroke">
+            <span className="ml-1.5 text-[12px] text-[#9fb2b6]" title="Keys 1–9 pick a terrain, [ and ] change the size, Ctrl+Z undoes a stroke">
               Brush
             </span>
             {BRUSH_SIZES.map((z) => (
@@ -555,7 +555,7 @@ export function WorldBoard({ campaignId, campaignName, data, focusId }: { campai
             <button type="button" className="zbtn zw tip" onClick={undoPaint} disabled={!undoCount} data-tip="Undo last stroke · Ctrl+Z">
               ↶ Undo stroke{undoCount > 1 ? ` (${undoCount})` : ""}
             </button>
-            <span className="text-[11px] text-[#7f9297]">1–7 terrain · [ ] size · Ctrl+Z undo</span>
+            <span className="text-[11px] text-[#7f9297]">1–9 terrain · [ ] size · Ctrl+Z undo</span>
             <button type="button" className="zbtn zw" onClick={resetTerrain}>
               Reset to suggested
             </button>

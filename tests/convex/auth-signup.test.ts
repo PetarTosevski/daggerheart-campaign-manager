@@ -333,13 +333,15 @@ describe("rate limits (per email, anonymous callers)", () => {
   it("the global sign-up bucket stops a flood across many addresses", async () => {
     const t = makeTest();
     let limited = 0;
-    for (let i = 0; i < 62 && limited === 0; i += 1) {
+    // The bucket refills one slot every 12 s (300/hour); this loop can take that long, so allow a refill or two.
+    for (let i = 0; i < 70 && limited === 0; i += 1) {
       const error = await caught(signUp(t, `flood${i}@example.com`));
       if (error !== undefined) {
         expect(errorCode(error)).toBe("RATE_LIMITED");
         limited = i + 1;
       }
     }
-    expect(limited).toBe(61);
+    expect(limited).toBeGreaterThanOrEqual(61);
+    expect(limited).toBeLessThanOrEqual(63);
   }, 120_000);
 });

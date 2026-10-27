@@ -2,7 +2,7 @@
 
 import "./lorekeeper.css";
 
-import { Component, type ReactNode } from "react";
+import { Component, useLayoutEffect, useRef, type ReactNode } from "react";
 
 import { ConversationsMenu, LorekeeperChat } from "@/components/lorekeeper/chat";
 import { IndexPill, LorekeeperSide } from "@/components/lorekeeper/side";
@@ -47,8 +47,24 @@ export default function LorekeeperPage() {
   const access = { isGm: campaign.role === "gm" };
   const chat: LorekeeperChatProps = { campaignId: campaign._id, access, variant: "page" };
   const side: LorekeeperSideProps = { campaignId: campaign._id, access };
+  const root = useRef<HTMLDivElement>(null);
+  // The campaign header above this page has no fixed height: measure it into --lk-top (DOM only, no state) so the
+  // page is one viewport tall and does not scroll; the chat and library scroll inside it.
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const measure = () => el.style.setProperty("--lk-top", `${Math.round(el.getBoundingClientRect().top + window.scrollY)}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(document.body);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
   return (
-    <div className="lk-root" data-role={access.isGm ? "gm" : "player"}>
+    <div ref={root} className="lk-root" data-page="" data-role={access.isGm ? "gm" : "player"}>
       <title>{`Lorekeeper · ${campaign.name}`}</title>
       <main className="lk-main">
         <aside className="lk-side" aria-label="Library and rulings">

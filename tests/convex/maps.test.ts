@@ -139,6 +139,11 @@ describe("World map", () => {
     // The folded-in trail table from an older client is accepted and not kept.
     await gm.mutation(api.maps.setTravelRules, { campaignId, rules: { ...custom, trail: { foot: table, mount: table } } });
     expect((await gm.query(api.maps.get, { campaignId })).state.options.rules).toEqual(custom);
+    // Hills is stored when given; a table without it stays valid.
+    const withHills = { ...custom, speeds: { ...custom.speeds, foot: { ...table, hills: 22, plains: 55 } } };
+    await gm.mutation(api.maps.setTravelRules, { campaignId, rules: withHills });
+    expect((await gm.query(api.maps.get, { campaignId })).state.options.rules).toEqual(withHills);
+    await gm.mutation(api.maps.setTravelRules, { campaignId, rules: custom });
     expect(errorCode(await gm.mutation(api.maps.setTravelRules, { campaignId, rules: { ...custom, slow: 0 } }).catch((e) => e))).toBe("INVALID");
     await gm.mutation(api.maps.setTravelRules, { campaignId, rules: null });
     expect((await gm.query(api.maps.get, { campaignId })).state.options.rules).toBeUndefined();

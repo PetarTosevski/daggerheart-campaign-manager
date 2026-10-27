@@ -227,6 +227,8 @@ function Stream(
   const { messages, conversation, loading, showPending } = props;
   const ref = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
+  // Only drives the 'Jump to latest' button; set from the scroll event handler, never from an effect.
+  const [away, setAway] = useState(false);
   const last = messages[messages.length - 1];
   const mine = conversation?.mine ?? false;
   const asker = mine ? YOU_LABEL : conversation ? (props.names.get(conversation.userId) ?? "A player") : YOU_LABEL;
@@ -240,6 +242,7 @@ function Stream(
   const empty = !loading && messages.length === 0 && !showPending;
 
   return (
+    <div className="lk-streamwrap">
     <div
       ref={ref}
       className="lk-stream"
@@ -248,7 +251,9 @@ function Stream(
       aria-label="Conversation"
       onScroll={(event) => {
         const el = event.currentTarget;
-        stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        stuck.current = atBottom;
+        setAway(!atBottom);
       }}
     >
       {props.canLoadMore ? (
@@ -301,6 +306,22 @@ function Stream(
           </div>
           <ThinkingRow />
         </>
+      ) : null}
+    </div>
+      {away ? (
+        <button
+          type="button"
+          className="lk-act lk-act-dark lk-jump"
+          onClick={() => {
+            const el = ref.current;
+            if (!el) return;
+            stuck.current = true;
+            el.scrollTop = el.scrollHeight;
+            setAway(false);
+          }}
+        >
+          Jump to latest
+        </button>
       ) : null}
     </div>
   );

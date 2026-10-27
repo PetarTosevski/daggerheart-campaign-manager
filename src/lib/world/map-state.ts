@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 
-import { DEFAULT_TRAVEL_RULES, LEGACY_TRAIL_MODES, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, trailMethod, type SpeedTerrain } from "../domain/travel/index";
+import { DEFAULT_TRAVEL_RULES, OPTIONAL_SPEED_TERRAINS, LEGACY_TRAIL_MODES, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, trailMethod, type SpeedTerrain } from "../domain/travel/index";
 import type { PublishedFrameId } from "../frames/index";
 import { MAX_HEX_SIZE, MIN_HEX_SIZE, pixelToHex, visibleHexKeys, hexKey, type Hex, type HexGrid } from "./hex";
 import { BLANK_TERRAIN, TERRAIN_COLUMNS, TERRAIN_ROWS, WITHERWILD_TERRAIN } from "./terrain";
@@ -62,7 +62,8 @@ export const mapTokenSchema = z.object({
 
 // 0 = this method can't cross the terrain (e.g. Water on foot).
 const speed = z.number().min(0).max(1000);
-const speedTable = z.object(Object.fromEntries(SPEED_TERRAINS.map((t) => [t, speed])) as Record<SpeedTerrain, typeof speed>);
+// Hills and Plains are optional: rules stored before they existed lack them and read as defaults (`tableSpeed`).
+const speedTable = z.object(Object.fromEntries(SPEED_TERRAINS.map((t) => [t, OPTIONAL_SPEED_TERRAINS.includes(t) ? speed.optional() : speed])) as Record<Exclude<SpeedTerrain, "hills" | "plains">, typeof speed> & Record<"hills" | "plains", z.ZodOptional<typeof speed>>);
 
 /**
  * GM overrides of the house-rule travel speeds (`DEFAULT_TRAVEL_RULES`).
@@ -129,7 +130,7 @@ export const mapStateSchema = z.object({
   nextId: z.number().int().min(1),
   party: z.object({ x: pct, y: pct, trail: z.array(z.object({ x: pct, y: pct })).max(12) }),
   /** TERRAIN_COLUMNS × TERRAIN_ROWS characters from TERRAIN_CODES. */
-  terrain: z.string().length(TERRAIN_COLUMNS * TERRAIN_ROWS).regex(/^[rwdmh.#]*$/),
+  terrain: z.string().length(TERRAIN_COLUMNS * TERRAIN_ROWS).regex(/^[rwpdkmh.#]*$/),
   scaleKm: z.number().min(1).max(100000),
   options: z.object({
     method: z.enum(TRAVEL_METHODS),

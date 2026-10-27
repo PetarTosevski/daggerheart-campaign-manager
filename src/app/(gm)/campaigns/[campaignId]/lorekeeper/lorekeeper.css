@@ -40,8 +40,14 @@
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 22px;
-  align-items: start;
+  align-items: stretch;
 }
+/* The page (not the drawer) fills the viewport below the campaign header: page.tsx measures that header into
+   --lk-top, so the document is exactly one screen tall and only the message list and the library scroll. */
+.lk-root[data-page] { height: max(calc(100dvh - var(--lk-top, 240px)), 460px); overflow: hidden; }
+.lk-root[data-page] .lk-main { height: 100%; grid-template-rows: minmax(0, 1fr); padding-bottom: 22px; }
+.lk-root[data-page] .lk-side { overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+.lk-root[data-page] .lk-chat { min-height: 0; height: 100%; }
 .lk-root .lk-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .lk-root .lk-card { padding: 16px; border-radius: 14px; background: var(--lk-card); border: 1px solid var(--lk-card-border); display: flex; flex-direction: column; gap: 10px; }
 .lk-root .lk-cardhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -153,6 +159,7 @@
 /* Phones (the board's 760 px query; 44 px targets added) */
 @media (max-width: 760px) {
   .lk-root .lk-main { grid-template-columns: minmax(0, 1fr); padding: 12px 12px 20px; gap: 12px; }
+  .lk-root[data-page] .lk-main { grid-template-rows: minmax(0, 72px) minmax(0, 1fr); padding-bottom: 12px; }
   .lk-root .lk-q { max-width: 88%; }
   .lk-root .lk-a { max-width: 100%; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; }
   .lk-root .lk-mini { width: 28px; height: 28px; }
@@ -163,6 +170,10 @@
   .lk-root .lk-sigil { width: 44px; height: 44px; }
   .lk-root .lk-name { font-size: 19px; }
   .lk-root .lk-chat { min-height: calc(100vh - 80px); border-radius: 12px; }
+  .lk-root[data-page] .lk-chat { min-height: 0; }
+  .lk-root[data-page] .lk-chathead { flex-wrap: nowrap; padding: 8px 12px; }
+  .lk-root[data-page] .lk-sigil { width: 32px; height: 32px; }
+  .lk-root[data-page] .lk-chathead-text .lk-muted { font-size: 12px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .lk-root .lk-compose { padding: 10px; }
   .lk-root .lk-act,
   .lk-root .lk-sug,
