@@ -112,10 +112,12 @@ describe("Sprites editing: placing sprites", () => {
     expect(oak).toMatchObject({ kind: "tree", variant: "green", r: 1, x: 6, y: 8, rot: 0, sprite: OAK });
     const bush = await f.object(await f.addSprite(BUSH, 2, 2));
     expect(bush).toMatchObject({ kind: "bush", r: 0.5, sprite: BUSH });
-    // `kind` is ignored when a sprite is given; the layout echoes the ref.
-    const id = (await f.gm.mutation(api.combatMapEdit.addObject, { campaignId: f.campaignId, mapId: f.mapId, kind: "crate", sprite: OAK, x: 1, y: 1 })).objectId;
-    expect((await f.object(id))?.kind).toBe("tree");
-    expect((await f.get()).objects.find((o) => o._id === id)?.sprite).toEqual(OAK);
+  });
+
+  it("refuses kind and sprite together with INVALID (G14b)", async () => {
+    const f = await withMap();
+    expect(await code(f.gm.mutation(api.combatMapEdit.addObject, { campaignId: f.campaignId, mapId: f.mapId, kind: "crate", sprite: OAK, x: 1, y: 1 }))).toBe("INVALID");
+    expect((await f.get()).objects).toHaveLength(0);
   });
 
   it("places doors closed: the Classic Door and a door sprite get kind door and no `open` field (map-movement M2)", async () => {

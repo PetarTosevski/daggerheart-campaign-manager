@@ -1,0 +1,74 @@
+# Follow-ups 9 (2026-10-27): low-hanging items the user picked; run one tracer at a time (credits).
+plan: followups-9
+waves:
+  - wave: 1
+    tracers:
+      - id: J1
+        title: Auth errors reach the browser with their code in production (dcm-bxp.128.1)
+        size: S
+        goal: On the deployed site, sign-up/sign-in/reset failures show their own message (EMAIL_TAKEN, PASSWORD_TOO_SHORT, CODE_INVALID, RATE_LIMITED, wrong password) instead of a generic Server Error.
+        depends_on: []
+        owns:
+          - src/proxy.ts
+          - src/app/api/auth/**
+          - src/app/signin/password-form.tsx
+          - src/lib/auth-errors.ts
+          - tests/unit/auth-proxy-errors.test.ts
+          - tests/unit/signin-password-form.test.tsx
+          - docs/tasks/TASK-F9-J1.md
+        reads: [docs/tasks/TASK-OS-OS3.md, docs/tasks/TASK-OS-OS4.md, docs/tasks/TASK-OS-OS4b.md, convex/auth.ts, src/lib/convex-errors.ts]
+        acceptance:
+          - "Root cause documented: how a ConvexError from Convex Auth's signIn action reaches the browser through the Next auth proxy in production (where messages are redacted to '[Request ID] Server Error') vs dev"
+          - "The proxy or auth route passes the AppError code to the client in a production-safe way (no stack, no secrets); password-form maps it; unit tests cover the redacted-message case"
+          - "pnpm lint, typecheck, vitest, tests/e2e/auth.spec.ts and tracer-guard pass"
+  - wave: 2
+    tracers:
+      - id: J2
+        title: Leaving paint mode keeps the World map's zoom and position; Terrain view shows Water blue (dcm-bxp.139)
+        size: S
+        goal: Toggling paint mode on or off never changes the World map's zoom or pan.
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/world/use-pan-zoom.ts
+          - src/app/(gm)/campaigns/[campaignId]/world/world-board.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/map-view.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/terrain-overlay.tsx
+          - src/lib/world/terrain-overlay.ts
+          - tests/unit/world-pan-zoom.test.ts
+          - tests/e2e/world.spec.ts
+          - docs/tasks/TASK-F9-J2.md
+        reads: [docs/best-practices.md]
+        acceptance:
+          - "Root cause named (what resets the view on leaving paint mode: remount via key, a fit() call, or a size change); after entering and leaving paint mode the zoom and pan are identical (e2e asserts the transform before and after)"
+          - "The Terrain view (not painting) tints Water cells blue like Paint mode does (user screenshot 2026-10-27: water shows the bare parchment); unit test on the overlay colour per terrain code"
+          - "No mutations or prop-copying in effects (rule 13); pnpm lint, typecheck, vitest, tests/e2e/world.spec.ts and tracer-guard pass"
+  - wave: 3
+    tracers:
+      - id: J3
+        title: Small decided fixes - per-email e2e sign-up code, sprite-pack answers G14b/G16, three stale visual specs (dcm-bxp.128.2, .96, .98, .99.31, .137)
+        size: S
+        goal: The e2e fake sign-up code no longer collides; addObject refuses kind+sprite; playerView sends portrait null; the CA-CA6, D11-N7 and D11-N8 visual specs match today's layouts.
+        depends_on: []
+        owns:
+          - convex/lib/authEmail.ts
+          - tests/unit/auth-email.test.ts
+          - tests/e2e/players.spec.ts
+          - tests/e2e/a11y-signin.spec.ts
+          - tests/e2e/auth.spec.ts
+          - tests/e2e/fixtures.ts
+          - convex/combatMapEdit.ts
+          - tests/convex/combat-map-edit.test.ts
+          - tests/convex/combat-map-edit-sprites.test.ts
+          - convex/lib/combatVision.ts
+          - tests/convex/combat-vision.test.ts
+          - tests/convex/combat-vision-sprites.test.ts
+          - tests/e2e/visual/CA-CA6.spec.ts
+          - tests/e2e/visual/D11-N7.spec.ts
+          - tests/e2e/visual/D11-N8.spec.ts
+          - docs/tasks/TASK-F9-J3.md
+        reads: [docs/tasks/TASK-OS-OS5.md, docs/tasks/TASK-F8-I4.md, docs/tasks/TASK-HF-HF1.md, docs/tasks/TASK-F8-I3.md]
+        acceptance:
+          - "dcm-bxp.128.2: on the e2e deployment the fake code is derived per email (one exported helper the specs use), so two pending sign-ups never share a code hash; specs use the helper instead of 123456"
+          - "dcm-bxp.96 (b): addObject with both kind and sprite fails INVALID (flip the old assertion); dcm-bxp.98: adversaries and custom tokens without art send portrait: null (R4 key test updated)"
+          - "dcm-bxp.99.31, dcm-bxp.137: CA-CA6 reads the card result above the docked Hand fan; D11-N7 / D11-N8 find their regions (fix the locators to today's labels; don't weaken checks)"
+          - "pnpm lint, typecheck, vitest, the touched e2e/visual specs (E2E_VISUAL=1) and tracer-guard pass"

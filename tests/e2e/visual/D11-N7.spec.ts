@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -8,6 +8,17 @@ import { convexAs, VIEWPORTS, visual } from "./helpers";
 // D11 N7 visual spec (E2E_VISUAL=1): the rip mid-animation, the 'Page torn out · Undo' toast, the Torn-out pages list
 // and a torn-out page, at 1440x900 and 390x844, for the GM. Board counterpart: `node scripts/board-shots.mjs notes:tear`
 // (test-results/visual/board/notes-tear-1440.png); the toast and the bin are not on the board (judged on its tokens).
+
+/** Shoots a region of the journal index at each viewport; below 721 px the index hides behind its 'Pages' toggle, so open it first. */
+async function shootInIndex(page: Page, tracer: string, locator: Locator, name: string) {
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    const toggle = page.getByRole("complementary", { name: "Journal index" }).getByRole("button", { name: /^Pages/ });
+    if ((await toggle.isVisible()) && (await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+    await visual(page, tracer, [viewport]).shoot(locator, name);
+  }
+  await page.setViewportSize(VIEWPORTS[0]);
+}
 
 const paper = (page: Page) => page.getByRole("region", { name: "Journal page" }).getByRole("article", { name: "Page" });
 
@@ -69,7 +80,7 @@ test("D11 N7 bin at 1440 and 390", { tag: "@visual" }, async ({ page }) => {
   await shoot(toast, "toast");
   const bin = page.getByRole("region", { name: "Torn-out pages" });
   await expect(bin.getByRole("listitem")).toHaveCount(2);
-  await shoot(bin, "bin");
+  await shootInIndex(page, "D11-N7", bin, "bin");
   await bin.getByRole("button", { name: /^Session 1/ }).click();
   await shoot(page.getByRole("region", { name: "Journal page" }).getByRole("article", { name: "Torn-out page" }), "bin-page");
 });

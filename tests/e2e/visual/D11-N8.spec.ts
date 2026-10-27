@@ -1,12 +1,23 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { signInAsTestGm } from "../fixtures";
-import { bardDraft, convexAs, visual } from "./helpers";
+import { bardDraft, convexAs, VIEWPORTS, visual } from "./helpers";
 
 // D11 N8 visual spec (E2E_VISUAL=1): 'Players’ journals', a player's journal opened by the GM, 'Past journals' and a
 // past journal, at 1440x900 and 390x844. Not on the board: judged against its tokens (index-column rows, paper, tapes).
+
+/** Shoots a region of the journal index at each viewport; below 721 px the index hides behind its 'Pages' toggle, so open it first. */
+async function shootInIndex(page: Page, tracer: string, locator: Locator, name: string) {
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    const toggle = page.getByRole("complementary", { name: "Journal index" }).getByRole("button", { name: /^Pages/ });
+    if ((await toggle.isVisible()) && (await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+    await visual(page, tracer, [viewport]).shoot(locator, name);
+  }
+  await page.setViewportSize(VIEWPORTS[0]);
+}
 
 const index = (page: Page) => page.getByRole("complementary", { name: "Journal index" });
 const paperColumn = (page: Page) => page.getByRole("region", { name: "Journal page" });
@@ -52,7 +63,7 @@ test("D11 N8 journals at 1440 and 390", { tag: "@visual" }, async ({ page, brows
     await page.goto(`/campaigns/${campaignId}/notes`);
     const players = index(page).getByRole("region", { name: "Players’ journals" });
     await expect(players.getByRole("button", { name: /^Ash/ })).toBeVisible();
-    await shoot(players, "players-journals");
+    await shootInIndex(page, "D11-N8", players, "players-journals");
     await players.getByRole("button", { name: /^Ash/ }).click();
     await expect(paperColumn(page).getByText("The ferryman lies - GM")).toBeVisible();
     await shoot(paperColumn(page), "journal-view");
@@ -60,7 +71,7 @@ test("D11 N8 journals at 1440 and 390", { tag: "@visual" }, async ({ page, brows
     await gm.mutation(api.characters.setStatus, { characterId, status: "retired" });
     const past = index(page).getByRole("region", { name: "Past journals" });
     await expect(past.getByRole("button", { name: /^Ash’s journal/ })).toBeVisible();
-    await shoot(past, "past-journals");
+    await shootInIndex(page, "D11-N8", past, "past-journals");
     await past.getByRole("button", { name: /^Ash’s journal/ }).click();
     await expect(paperColumn(page).getByText("Past journal · read only")).toBeVisible();
     await shoot(paperColumn(page), "past-journal-view");

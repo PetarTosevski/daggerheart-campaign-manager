@@ -192,7 +192,7 @@ export const clearPaint = gmMutation({
  * GM: places an object at a point (snapped to half squares), at its default size: one of the board's kinds, or a
  * sprite (Sprites style, P9). A sprite's Classic kind and variant come from the catalog (a built-in key, else
  * SPRITE_UNKNOWN) or from the uploaded row (this campaign's, else SPRITE_NOT_FOUND), its radius is max(w, h) / 2
- * (D4); `kind` is then ignored. One of `kind` and `sprite` is required.
+ * (D4). Exactly one of `kind` and `sprite` is required: both is INVALID.
  */
 export const addObject = gmMutation({
   args: { mapId: v.string(), kind: v.optional(placeableKindValidator), sprite: v.optional(spriteRefValidator), x: v.number(), y: v.number() },
@@ -200,6 +200,7 @@ export const addObject = gmMutation({
   handler: async (ctx, { mapId, kind, sprite, x, y }) => {
     const map = await loadCombatMap(ctx, ctx.campaign._id, mapId);
     if (!finite(x) || !finite(y)) throw appError("INVALID", "An object needs a position on the map.");
+    if (kind !== undefined && sprite !== undefined) throw appError("INVALID", "Pick an object or a sprite, not both.");
     let placement: SpritePlacement;
     if (sprite !== undefined) placement = await spritePlacement(ctx, ctx.campaign._id, sprite);
     else if (kind !== undefined) placement = { kind, r: PLACEABLE_OBJECTS[kind].r };

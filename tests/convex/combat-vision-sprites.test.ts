@@ -274,8 +274,8 @@ describe("adversary tokens show their rulebook art to players (R4: portrait only
     const v = await f.okView();
     const row = (name: string) => v.others.find((o) => o.name === name)!;
     expect(row(artLabel).portrait).toEqual({ kind: "url", url: adversaryArt(withArt.id)!.src });
-    expect(Object.keys(row(plainLabel))).not.toContain("portrait");
-    expect(Object.keys(row("Bandit"))).not.toContain("portrait");
+    expect(row(plainLabel).portrait).toBeNull();
+    expect(row("Bandit").portrait).toBeNull();
     expect(JSON.stringify(v.others)).not.toMatch(/hp|stress|difficulty|conditions|revealedTo/i);
     // The GM's preview is the player's result.
     expect(await f.gm.query(api.combatVision.previewAs, { campaignId, characterId: f.ash })).toEqual(v);
