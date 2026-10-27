@@ -8,10 +8,14 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: max(480px, calc(100vh - 226px));
 }
 .lk-root .lk-chatcol[data-variant="drawer"] { height: 100%; }
 .lk-root .lk-chatcol .lk-stream { min-height: 0; }
+/* The scroll area is bottom-anchored: a short conversation sits against the composer, a long one scrolls up. */
+.lk-root .lk-streamwrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.lk-root .lk-streamwrap .lk-stream { flex: 1; overscroll-behavior: contain; }
+.lk-root .lk-stream > :first-child { margin-top: auto; }
+.lk-root .lk-jump { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); box-shadow: 0 6px 18px rgba(0, 0, 0, .5); }
 .lk-root .lk-loading { margin: auto; }
 .lk-root .lk-earlier { align-self: center; }
 
@@ -91,4 +95,14 @@
   .lk-root .lk-earlier { min-height: 44px; }
   .lk-root .lk-inrow { flex-wrap: nowrap; }
   .lk-root .lk-send { padding: 0 16px; min-width: 64px; }
+}
+
+/* Phones: the page is one screen, so the composer keeps to one row of suggestions (scrolls sideways) and the stream gets the rest. */
+@media (max-width: 760px) {
+  .lk-root[data-page] .lk-sugs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .lk-root[data-page] .lk-sug { flex: none; }
+  .lk-root[data-page] .lk-togglerow { flex-wrap: nowrap; overflow-x: auto; }
+  .lk-root[data-page] .lk-togglerow > * { flex: none; }
+  .lk-root[data-page] .lk-vistext { white-space: nowrap; }
+  .lk-root[data-page] .lk-compose { gap: 6px; }
 }
