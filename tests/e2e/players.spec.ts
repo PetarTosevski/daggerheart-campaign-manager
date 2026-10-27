@@ -4,7 +4,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { ANCESTRIES, ARMOR, cardsForDomains, COMMUNITIES, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd";
-import { signInAsTestGm } from "./fixtures";
+import { readEmailedCode, signInAsTestGm } from "./fixtures";
 
 const PLAYER = "e2e-player@example.test";
 /** Allowlisted in scripts/e2e-setup.mjs; signs in only with email + password, never through the test sign-in. */
@@ -105,7 +105,7 @@ test("email + password: create an account (or sign in if it exists)", async ({ p
   await signUp.getByLabel("Password").fill(password);
   await signUp.getByRole("button", { name: "Create account" }).click();
 
-  // Sign-up stops at the code step (the e2e backend accepts the fixed code 123456). If the account already exists,
+  // Sign-up stops at the code step (the e2e backend sends no email: the code is read from /e2e/code). If the account already exists,
   // sign up fails with an alert; sign in instead.
   const codeForm = page.getByRole("form", { name: "Enter the code" });
   const outcome = await Promise.race([
@@ -113,7 +113,7 @@ test("email + password: create an account (or sign in if it exists)", async ({ p
     signUp.getByRole("alert").waitFor().then(() => "exists"),
   ]);
   if (outcome === "code") {
-    await codeForm.getByLabel("6-digit code").fill("123456");
+    await codeForm.getByLabel("6-digit code").fill(await readEmailedCode(email));
     await codeForm.getByRole("button", { name: "Verify email" }).click();
   } else {
     await page.getByRole("button", { name: "Have an account? Sign in" }).click();

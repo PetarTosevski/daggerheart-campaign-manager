@@ -8,6 +8,7 @@ import { codexTables } from "./tables/codex";
 import { combatAreaTables } from "./tables/combatAreas";
 import { combatMapTables } from "./tables/combatMaps";
 import { combatRequestTables } from "./tables/combatRequests";
+import { e2eTables } from "./tables/e2e";
 import { encounterTables } from "./tables/encounters";
 import { countdownTables } from "./tables/countdowns";
 import { fileTables } from "./tables/files";
@@ -45,4 +46,5 @@ export default defineSchema({
   ...spritePackTables,
   ...notesTables,
   ...lorekeeperTables,
+  ...e2eTables,
 });

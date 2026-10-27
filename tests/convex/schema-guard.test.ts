@@ -154,7 +154,7 @@ const ALSO_RETENTION: Record<string, string> = {
  */
 const MAP_SCOPED = ["combatMapObjects", "combatMapCells", "combatExplored"];
 /** Lorekeeper books and their chunks (D13): one set per deployment (about 20 books), replaced on re-ingest. */
-const BOUNDED = ["settings", "grants", "lorekeeperBooks", "lorekeeperChunks", ...Object.keys(authTables)];
+const BOUNDED = ["settings", "grants", "lorekeeperBooks", "lorekeeperChunks", "e2eCodes", ...Object.keys(authTables)];
 
 describe("stored fields", () => {
   test("no v.any() outside the allowlist", () => {

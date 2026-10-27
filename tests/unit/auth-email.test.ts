@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../convex/_generated/server", () => ({ env: {} }));
 
 import {
-  E2E_FIXED_CODE,
   RESEND_URL,
   codeEmail,
   generateCode,
@@ -42,11 +41,21 @@ describe("sendCodeEmail", () => {
     expect(body.text).not.toMatch(/https?:/);
   });
 
-  it("makes no request in e2e fake mode", async () => {
+  it("makes no request in e2e fake mode and stores the code through ctx", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    await sendCodeEmail(e2e, "verify", "a@b.com", E2E_FIXED_CODE);
+    const runMutation = vi.fn().mockResolvedValue(null);
+    await sendCodeEmail(e2e, "verify", "a@b.com", "246810", { runMutation });
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation.mock.calls[0]![1]).toEqual({ email: "a@b.com", code: "246810" });
+  });
+
+  it("never stores a code outside e2e fake mode", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+    const runMutation = vi.fn();
+    await sendCodeEmail(prod, "verify", "a@b.com", "246810", { runMutation });
+    expect(runMutation).not.toHaveBeenCalled();
   });
 
   it("throws on a missing key or sender", async () => {
@@ -84,13 +93,14 @@ describe("sendCodeEmail", () => {
 });
 
 describe("codes", () => {
-  it("uses the fixed code only in e2e mode", () => {
-    expect(generateCode(e2e)).toBe(E2E_FIXED_CODE);
-    expect(generateCode({ ...e2e, E2E_AUTH_ENABLED: undefined })).toMatch(/^\d{6}$/);
+  it("generated codes are random 6 digits, never one fixed value", () => {
+    const seen = new Set<string>();
     for (let i = 0; i < 50; i++) {
-      expect(generateCode(prod)).toMatch(/^\d{6}$/);
-      expect(generateCode({ ...prod, E2E_AUTH_ENABLED: "true" })).toMatch(/^\d{6}$/);
+      const code = generateCode();
+      expect(code).toMatch(/^\d{6}$/);
+      seen.add(code);
     }
+    expect(seen.size).toBeGreaterThan(40);
   });
 
   it("random tokens are 6 digits", () => {
