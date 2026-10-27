@@ -83,3 +83,31 @@ describe("terrain cell diffs", () => {
     expect(applyTerrainCells(withTheirs, undo.indexes, undo.codes)).toBe(paintTerrain(BLANK_TERRAIN, 60, 60, 2, "d"));
   });
 });
+
+describe("Plains terrain", () => {
+  it("is yellow, after Wilds in the brushes; Road is stone grey; grids validate", async () => {
+    const t = await import("@/lib/world/terrain");
+    expect(t.TERRAIN_NAMES.p).toBe("Plains");
+    expect(t.TERRAIN_COLOURS.r).toBe("#b9b2a4");
+    const codes = t.BRUSHES.map((b) => b.code);
+    expect(codes.indexOf("p")).toBe(codes.indexOf("w") + 1);
+    const grid = paintTerrain(BLANK_TERRAIN, 10, 10, 3, "p");
+    expect(terrainPaths(grid).p).not.toBe("M0 0");
+    expect(mapStateSchema.shape.terrain.safeParse(grid).success).toBe(true);
+  });
+});
+
+describe("Hills terrain", () => {
+  it("has a code, a name, an orange colour and a brush after Deep wilds; grids with it validate", async () => {
+    const t = await import("@/lib/world/terrain");
+    expect(t.TERRAIN_CODES).toContain("k");
+    expect(t.TERRAIN_NAMES.k).toBe("Hills");
+    expect(t.TERRAIN_COLOURS.k).not.toBe(t.TERRAIN_COLOURS.r);
+    expect(t.TERRAIN_COLOURS.k).not.toBe(t.TERRAIN_COLOURS.h);
+    const codes = t.BRUSHES.map((b) => b.code);
+    expect(codes.indexOf("k")).toBe(codes.indexOf("d") + 1);
+    const grid = paintTerrain(BLANK_TERRAIN, 10, 10, 3, "k");
+    expect(terrainPaths(grid).k).not.toBe("M0 0");
+    expect(mapStateSchema.shape.terrain.safeParse(grid).success).toBe(true);
+  });
+});

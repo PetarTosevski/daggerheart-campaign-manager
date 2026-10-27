@@ -19,6 +19,7 @@ import {
   trailMethod,
   trailTotal,
   type Point,
+  type SpeedTable,
 } from "@/lib/domain/travel";
 
 const all = (code: string) => () => code;
@@ -35,7 +36,7 @@ describe("travel distances (house rule)", () => {
 
   it("uses the board's speeds", () => {
     // Water 8: the party swims it on foot, only a stretch it can cross in a day (user 2026-10-19).
-    expect(DEFAULT_TRAVEL_RULES.speeds.foot).toEqual({ road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 8 });
+    expect(DEFAULT_TRAVEL_RULES.speeds.foot).toEqual({ road: 60, wilds: 40, plains: 50, marsh: 15, deep: 20, hills: 20, mountains: 10, water: 8 });
     expect(DEFAULT_TRAVEL_RULES.speeds.wagon.water).toBe(0);
     expect(DEFAULT_TRAVEL_RULES.speeds.boat.water).toBe(100);
     expect([DEFAULT_TRAVEL_RULES.slow, DEFAULT_TRAVEL_RULES.fast]).toEqual([0.75, 1.33]);
@@ -166,5 +167,53 @@ describe("the Measure tool", () => {
     expect(scaleBar(400)).toEqual({ percent: 12.5, label: "50 km" });
     expect(scaleBar(12).label).toBe("1 km");
     expect(scaleBar(2650).label).toBe("200 km");
+  });
+});
+
+describe("Plains", () => {
+  it("defaults per method, and a stored table without plains reads the same", () => {
+    expect(TRAVEL_METHODS.map((m) => DEFAULT_TRAVEL_RULES.speeds[m].plains)).toEqual([50, 70, 40, 25, 120]);
+    for (const m of TRAVEL_METHODS) {
+      const table: SpeedTable = { ...DEFAULT_TRAVEL_RULES.speeds[m] };
+      delete table.plains;
+      const stored = { ...DEFAULT_TRAVEL_RULES, speeds: { ...DEFAULT_TRAVEL_RULES.speeds, [m]: table } };
+      expect(terrainSpeed(stored, m, "normal", "p")).toBe(DEFAULT_TRAVEL_RULES.speeds[m].plains);
+    }
+  });
+
+  it("is counted by Measure", () => {
+    const r = analyseRoute([{ x: 0, y: 0 }, { x: 50, y: 0 }], mapScale(100, 100, 100), () => "p", { method: "foot", pace: "normal" });
+    expect(r.per.p).toBeCloseTo(50, 5);
+    expect(r.days).toBeCloseTo(1, 5);
+  });
+});
+
+describe("Hills", () => {
+  it("defaults to the Deep wilds speed for every method", () => {
+    for (const m of TRAVEL_METHODS) expect(DEFAULT_TRAVEL_RULES.speeds[m].hills).toBe(DEFAULT_TRAVEL_RULES.speeds[m].deep);
+    expect(DEFAULT_TRAVEL_RULES.speeds.foot.hills).toBe(20);
+  });
+
+  it("reads a stored table without hills as its deep value, and uses its own value when set", () => {
+    const footNoHills: SpeedTable = { ...DEFAULT_TRAVEL_RULES.speeds.foot };
+    delete footNoHills.hills;
+    delete footNoHills.plains;
+    const stored = { ...DEFAULT_TRAVEL_RULES, speeds: { ...DEFAULT_TRAVEL_RULES.speeds, foot: { ...footNoHills, deep: 25 } } };
+    expect(terrainSpeed(stored, "foot", "normal", "k")).toBe(25);
+    const own = { ...stored, speeds: { ...stored.speeds, foot: { ...stored.speeds.foot, hills: 7 } } };
+    expect(terrainSpeed(own, "foot", "normal", "k")).toBe(7);
+  });
+
+  it("is counted by Measure and the trail", () => {
+    const scale = mapScale(100, 100, 100);
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 50, y: 0 },
+    ];
+    const hills = () => "k";
+    const r = analyseRoute(pts, scale, hills, { method: "foot", pace: "normal" });
+    expect(r.per.k).toBeCloseTo(50, 5);
+    expect(r.days).toBeCloseTo(50 / 20, 5);
+    expect(trailTotal(pts, scale, hills, "foot")?.days).toBeCloseTo(50 / 20, 5);
   });
 });

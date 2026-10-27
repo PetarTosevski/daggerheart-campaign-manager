@@ -102,6 +102,8 @@ test("the travel-speed legend follows the travel method, the pace and the GM's s
   const row = (terrain: string) => legend.getByRole("listitem").filter({ hasText: terrain });
   await expect(legend.getByTestId("legend-method")).toHaveText("On foot · Normal · km/day");
   await expect(row("Deep wilds")).toContainText("20 km/day");
+  await expect(row("Hills")).toContainText("20 km/day");
+  await expect(row("Plains")).toContainText("50 km/day");
   await expect(row("Impassable")).toContainText("can’t cross");
 
   // The pace offers only the travel methods, by terrain.
@@ -126,7 +128,7 @@ test("the travel-speed legend follows the travel method, the pace and the GM's s
   await legend.getByRole("button", { name: "Travel speeds" }).click();
   await expect(legend.getByRole("listitem")).toHaveCount(0);
   await legend.getByRole("button", { name: "Travel speeds" }).click();
-  await expect(legend.getByRole("listitem")).toHaveCount(7);
+  await expect(legend.getByRole("listitem")).toHaveCount(9);
 });
 
 test("a custom campaign's GM sees the map upload control", async ({ page }) => {
