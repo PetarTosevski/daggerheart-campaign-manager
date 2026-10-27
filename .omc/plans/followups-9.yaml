@@ -101,3 +101,25 @@ waves:
           - "Two unverified sign-ups pending at once on the e2e deployment both verify (convex test proves it); no fixed shared code hash"
           - "The mechanism is e2e-only (isE2EDeployment + E2E_AUTH_ENABLED), safe under concurrent requests (no module-level mutable state shared across requests), adds no public function reachable outside e2e (any new public endpoint is gated like the existing e2e rails and has authz/unauthenticated-sweep coverage)"
           - "e2e specs read the code through the new mechanism; docs/testing.md explains it; pnpm lint, typecheck, vitest, the three sign-in e2e specs and tracer-guard pass"
+  - wave: 5
+    tracers:
+      - id: J5
+        title: Google-only accounts can add a password through the sign-up code flow (dcm-bxp.128.3)
+        size: S
+        goal: A user who signed up with Google can create a password for the same email via Create account; after the emailed code the password account links to their existing user.
+        depends_on: []
+        owns:
+          - convex/auth.ts
+          - convex/lib/users.ts
+          - convex/lib/authEmail.ts
+          - src/app/signin/password-form.tsx
+          - tests/convex/auth-signup.test.ts
+          - tests/convex/create-or-update-user.test.ts
+          - tests/unit/signin-password-form.test.tsx
+          - tests/e2e/auth.spec.ts
+          - docs/tasks/TASK-F9-J5.md
+        reads: [docs/tasks/TASK-OS-OS3.md, docs/tasks/TASK-F9-J4.md, docs/best-practices.md]
+        acceptance:
+          - "Sign-up with an email whose user has only a Google account sends the code; entering it creates a password authAccount linked to that same user id (no second user, same campaigns); a wrong/expired code leaves the user unchanged"
+          - "An email that already has a password account still gets EMAIL_TAKEN; the code step text says 'add a password to your account' in this case if it can be told apart without revealing anything new to a stranger"
+          - "Sign-in afterwards works with both Google and the password; convex tests cover link, no-duplicate and EMAIL_TAKEN; pnpm lint, typecheck, vitest, tests/e2e/auth.spec.ts and tracer-guard pass"
