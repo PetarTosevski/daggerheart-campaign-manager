@@ -1,0 +1,23 @@
+# Follow-ups 9 (2026-10-27): low-hanging items the user picked; run one tracer at a time (credits).
+plan: followups-9
+waves:
+  - wave: 1
+    tracers:
+      - id: J1
+        title: Auth errors reach the browser with their code in production (dcm-bxp.128.1)
+        size: S
+        goal: On the deployed site, sign-up/sign-in/reset failures show their own message (EMAIL_TAKEN, PASSWORD_TOO_SHORT, CODE_INVALID, RATE_LIMITED, wrong password) instead of a generic Server Error.
+        depends_on: []
+        owns:
+          - src/proxy.ts
+          - src/app/api/auth/**
+          - src/app/signin/password-form.tsx
+          - src/lib/auth-errors.ts
+          - tests/unit/auth-proxy-errors.test.ts
+          - tests/unit/signin-password-form.test.tsx
+          - docs/tasks/TASK-F9-J1.md
+        reads: [docs/tasks/TASK-OS-OS3.md, docs/tasks/TASK-OS-OS4.md, docs/tasks/TASK-OS-OS4b.md, convex/auth.ts, src/lib/convex-errors.ts]
+        acceptance:
+          - "Root cause documented: how a ConvexError from Convex Auth's signIn action reaches the browser through the Next auth proxy in production (where messages are redacted to '[Request ID] Server Error') vs dev"
+          - "The proxy or auth route passes the AppError code to the client in a production-safe way (no stack, no secrets); password-form maps it; unit tests cover the redacted-message case"
+          - "pnpm lint, typecheck, vitest, tests/e2e/auth.spec.ts and tracer-guard pass"
