@@ -42,3 +42,32 @@ waves:
           - "Root cause named (what resets the view on leaving paint mode: remount via key, a fit() call, or a size change); after entering and leaving paint mode the zoom and pan are identical (e2e asserts the transform before and after)"
           - "The Terrain view (not painting) tints Water cells blue like Paint mode does (user screenshot 2026-10-27: water shows the bare parchment); unit test on the overlay colour per terrain code"
           - "No mutations or prop-copying in effects (rule 13); pnpm lint, typecheck, vitest, tests/e2e/world.spec.ts and tracer-guard pass"
+  - wave: 3
+    tracers:
+      - id: J3
+        title: Small decided fixes - per-email e2e sign-up code, sprite-pack answers G14b/G16, three stale visual specs (dcm-bxp.128.2, .96, .98, .99.31, .137)
+        size: S
+        goal: The e2e fake sign-up code no longer collides; addObject refuses kind+sprite; playerView sends portrait null; the CA-CA6, D11-N7 and D11-N8 visual specs match today's layouts.
+        depends_on: []
+        owns:
+          - convex/lib/authEmail.ts
+          - tests/unit/auth-email.test.ts
+          - tests/e2e/players.spec.ts
+          - tests/e2e/a11y-signin.spec.ts
+          - tests/e2e/auth.spec.ts
+          - tests/e2e/fixtures.ts
+          - convex/combatMapEdit.ts
+          - tests/convex/combat-map-edit.test.ts
+          - tests/convex/combat-map-edit-sprites.test.ts
+          - convex/lib/combatVision.ts
+          - tests/convex/combat-vision.test.ts
+          - tests/e2e/visual/CA-CA6.spec.ts
+          - tests/e2e/visual/D11-N7.spec.ts
+          - tests/e2e/visual/D11-N8.spec.ts
+          - docs/tasks/TASK-F9-J3.md
+        reads: [docs/tasks/TASK-OS-OS5.md, docs/tasks/TASK-F8-I4.md, docs/tasks/TASK-HF-HF1.md, docs/tasks/TASK-F8-I3.md]
+        acceptance:
+          - "dcm-bxp.128.2: on the e2e deployment the fake code is derived per email (one exported helper the specs use), so two pending sign-ups never share a code hash; specs use the helper instead of 123456"
+          - "dcm-bxp.96 (b): addObject with both kind and sprite fails INVALID (flip the old assertion); dcm-bxp.98: adversaries and custom tokens without art send portrait: null (R4 key test updated)"
+          - "dcm-bxp.99.31, dcm-bxp.137: CA-CA6 reads the card result above the docked Hand fan; D11-N7 / D11-N8 find their regions (fix the locators to today's labels; don't weaken checks)"
+          - "pnpm lint, typecheck, vitest, the touched e2e/visual specs (E2E_VISUAL=1) and tracer-guard pass"
