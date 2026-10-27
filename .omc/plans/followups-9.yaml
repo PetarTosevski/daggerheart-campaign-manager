@@ -89,6 +89,7 @@ waves:
           - tests/unit/auth-email.test.ts
           - tests/convex/auth-signup.test.ts
           - tests/convex/authz/e2e.entries.ts
+          - tests/convex/schema-guard.test.ts
           - tests/e2e/fixtures.ts
           - tests/e2e/players.spec.ts
           - tests/e2e/a11y-signin.spec.ts
