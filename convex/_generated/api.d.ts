@@ -76,6 +76,7 @@ import type * as lib_featureScope from "../lib/featureScope.js";
 import type * as lib_files from "../lib/files.js";
 import type * as lib_functions from "../lib/functions.js";
 import type * as lib_incomingHits from "../lib/incomingHits.js";
+import type * as lib_inviteEmail from "../lib/inviteEmail.js";
 import type * as lib_journalState from "../lib/journalState.js";
 import type * as lib_lorekeeper_caps from "../lib/lorekeeper/caps.js";
 import type * as lib_lorekeeper_context from "../lib/lorekeeper/context.js";
@@ -251,6 +252,7 @@ declare const fullApi: ApiFromModules<{
   "lib/files": typeof lib_files;
   "lib/functions": typeof lib_functions;
   "lib/incomingHits": typeof lib_incomingHits;
+  "lib/inviteEmail": typeof lib_inviteEmail;
   "lib/journalState": typeof lib_journalState;
   "lib/lorekeeper/caps": typeof lib_lorekeeper_caps;
   "lib/lorekeeper/context": typeof lib_lorekeeper_context;

@@ -6,6 +6,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { deleteInvites, freshJoinCode } from "./campaigns";
 import { normalizeEmail } from "./lib/allowlist";
+import { scheduleInviteEmail } from "./lib/inviteEmail";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, userMutation } from "./lib/functions";
 import { campaignAccess } from "./lib/permissions";
 
@@ -120,7 +121,10 @@ export const invite = gmMutation({
       .withIndex("by_campaign_email", (q) => q.eq("campaignId", campaignId).eq("email", email))
       .first();
     if (pending) return pending._id;
-    return ctx.db.insert("campaignInvites", { campaignId, email, invitedBy: ctx.user._id, createdAt: Date.now() });
+    const inviteId = await ctx.db.insert("campaignInvites", { campaignId, email, invitedBy: ctx.user._id, createdAt: Date.now() });
+    // The row is stored first; the email is best effort (limits, e2e and unverified accounts skip it, a failed send is only logged).
+    await scheduleInviteEmail(ctx, { inviteId, campaignId, email });
+    return inviteId;
   },
 });
 
