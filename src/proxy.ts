@@ -4,9 +4,14 @@ import {
   nextjsMiddlewareRedirect,
 } from "@convex-dev/auth/nextjs/server";
 
+import { withAuthErrorCode } from "@/lib/auth-errors";
 import { convexSiteUrl, createJwtVerifier, type JwtVerifier } from "@/lib/auth/verify-jwt";
 
-const isSignInPage = createRouteMatcher(["/signin"]);
+// The auth proxy answers a failed signIn with only `error.message`, which production Convex redacts. Wrapping `fetch`
+// keeps the AppError code in that message (src/lib/auth-errors.ts, dcm-bxp.128.1).
+globalThis.fetch = withAuthErrorCode(globalThis.fetch, process.env.NEXT_PUBLIC_CONVEX_URL);
+
+const isSignInPage =createRouteMatcher(["/signin"]);
 
 // The access token is checked locally against the deployment's JWKS (src/lib/auth/verify-jwt.ts), not with a
 // Convex `auth:isAuthenticated` call per request (plan performance.yaml, PF2). One verifier, and so one JWKS cache, per

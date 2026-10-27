@@ -30,5 +30,7 @@ crons.cron("expire combat areas", "19 * * * *", internal.cleanup.expireCombatAre
 // 10 minutes end as errors. Conversations are never expired (Q10: kept until their asker deletes them).
 crons.cron("expire lorekeeper usage", "47 4 * * *", internal.lorekeeperRetention.expireUsage, {});
 crons.cron("end stuck lorekeeper answers", "29 * * * *", internal.lorekeeperRetention.expireStaleRuns, {});
+// Open sign-up (plan open-signup OS5): password accounts whose code was never entered, after 7 days; daily.
+crons.cron("expire unverified sign-ups", "13 4 * * *", internal.cleanup.expireUnverifiedSignups, {});
 
 export default crons;
