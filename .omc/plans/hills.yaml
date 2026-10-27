@@ -1,0 +1,28 @@
+# Hills terrain (2026-10-27): orange, Deep-wilds speed (dcm-bxp.138).
+plan: hills
+waves:
+  - wave: 1
+    tracers:
+      - id: HL1
+        title: Hills terrain on the World map, orange, Deep-wilds speed (dcm-bxp.138)
+        size: S
+        goal: GMs can paint Hills (orange) on the World map; Measure, the party trail, token distances, the legend and Edit speeds treat Hills with its own speed, defaulting to the Deep wilds value.
+        depends_on: []
+        owns:
+          - src/lib/world/**
+          - src/lib/domain/travel/**
+          - convex/lib/validators/maps.ts
+          - convex/maps.ts
+          - src/app/(gm)/campaigns/[campaignId]/world/**
+          - tests/unit/**travel**
+          - tests/unit/**terrain**
+          - tests/unit/**world**
+          - tests/convex/maps*.test.ts
+          - tests/e2e/world.spec.ts
+          - docs/tasks/TASK-HL-HL1.md
+        reads: [docs/best-practices.md, docs/tasks/TASK-PD1.md]
+        acceptance:
+          - "New terrain code for Hills with label 'Hills' and an orange colour and brush (distinct from Road's amber and Mountains' red), added after Deep wilds in the brush order"
+          - "SpeedTerrain gains 'hills'; DEFAULT_TRAVEL_RULES hills equals deep for every method; stored rules without hills read as their deep value (widen only, validator optional field, no migration needed); setTravelRules accepts and saves hills"
+          - "Terrain grid validation accepts the new code; existing grids unchanged; Edit speeds and the legend show a Hills row"
+          - "pnpm lint, typecheck, vitest, tests/e2e/world.spec.ts and tracer-guard pass"
