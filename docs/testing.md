@@ -53,6 +53,15 @@ account (`E2E_ALLOWED` in `scripts/e2e-setup.mjs`) uses exactly one method:
 A new spec that needs another account, or signs up with a password, gets its
 own email in `E2E_ALLOWED`, then `pnpm e2e:setup`.
 
+Sign-up and reset codes on the e2e backend: no email is sent and each code is
+random (Convex Auth looks codes up by hash with `unique()`, so one fixed code
+shared by two pending sign-ups broke verification). The fake sender stores
+`{ email, code }` in the `e2eCodes` table (one row per email); a spec reads it
+with `readEmailedCode(email)` from `tests/e2e/fixtures.ts`, which calls
+`GET <convex site>/e2e/code?email=&secret=`. The route answers 404 unless the
+e2e rails are open (`isE2EDeployment`, `E2E_AUTH_ENABLED=true`, matching
+`E2E_AUTH_SECRET`). Never hard-code a code in a spec.
+
 `pnpm test:e2e` then starts two servers (see `playwright.config.ts`):
 
 1. `node scripts/convex-e2e.mjs dev`: the local backend with live function

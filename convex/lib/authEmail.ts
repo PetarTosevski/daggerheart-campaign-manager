@@ -5,26 +5,26 @@
  * (plain `fetch`, no dependency). `AUTH_RESEND_KEY` and `MAIL_FROM` are read only inside the handler through the
  * typed `env` (CF19), live only in the Convex env, and are never logged or put into an error.
  *
- * On the local e2e backend (`isE2EDeployment` and `E2E_AUTH_ENABLED=true`) nothing is sent and the code is always
- * `123456`. Both the generator and the sender check, so a cloud deployment can never use the fixed code.
+ * On the local e2e backend (`isE2EDeployment` and `E2E_AUTH_ENABLED=true`) nothing is sent: the code is random like
+ * any other, and the sender stores `{ email, code }` in `e2eCodes` for the specs (`convex/e2e.ts`). Convex Auth looks
+ * codes up by hash with `unique()`, so one code shared by two pending sign-ups broke verification; random codes do
+ * not collide in practice. The sender checks `fakeCodeMode`, so a cloud deployment always sends the real email.
  * Runs in an action (`fetch`); no "use node" needed.
  */
 import { Email } from "@convex-dev/auth/providers/Email";
 
-import { env as typedEnv } from "../_generated/server";
+import { internal } from "../_generated/api";
+import { env as typedEnv, type ActionCtx } from "../_generated/server";
 import { isE2EDeployment, type Env } from "./allowlist";
 
 export const RESEND_URL = "https://api.resend.com/emails";
 /** The code is valid for 15 minutes. */
 export const CODE_MAX_AGE_SECONDS = 15 * 60;
-/** The only code used on the local e2e backend. */
-export const E2E_FIXED_CODE = "123456";
-
 export type CodeEmailKind = "verify" | "reset";
 
 export type CodeEmail = { subject: string; text: string; html: string };
 
-/** True only on the local e2e backend with the test sign-in enabled: no email is sent, the code is fixed. */
+/** True only on the local e2e backend with the test sign-in enabled: no email is sent, the code is stored for specs. */
 export function fakeCodeMode(env: Env): boolean {
   return isE2EDeployment(env) && env.E2E_AUTH_ENABLED === "true";
 }
@@ -39,8 +39,8 @@ export function randomSixDigitCode(): string {
   return String(buf[0]! % 1_000_000).padStart(6, "0");
 }
 
-export function generateCode(env: Env): string {
-  return fakeCodeMode(env) ? E2E_FIXED_CODE : randomSixDigitCode();
+export function generateCode(): string {
+  return randomSixDigitCode();
 }
 
 /** The email for one code: subject, plain text and HTML. The code is shown once; there is no link. */
@@ -71,8 +71,13 @@ export async function sendCodeEmail(
   kind: CodeEmailKind,
   to: string,
   code: string,
+  /** Where the e2e fake mode stores the code; without it nothing is stored. */
+  ctx?: Pick<ActionCtx, "runMutation">,
 ): Promise<void> {
-  if (fakeCodeMode(env)) return;
+  if (fakeCodeMode(env)) {
+    await ctx?.runMutation(internal.e2e.recordCode, { email: to, code });
+    return;
+  }
   const key = env.AUTH_RESEND_KEY?.trim();
   const from = env.MAIL_FROM?.trim();
   if (!key) throw new Error("Email is not configured: AUTH_RESEND_KEY is missing.");
@@ -98,12 +103,12 @@ export function resendCodeProvider(id: string) {
     id,
     maxAge: CODE_MAX_AGE_SECONDS,
     async generateVerificationToken() {
-      const env: Env = typedEnv;
-      return generateCode(env);
+      return generateCode();
     },
-    async sendVerificationRequest({ identifier, token }) {
+    // Convex Auth passes the action ctx as a second argument (its typings omit it).
+    async sendVerificationRequest({ identifier, token }, ctx?: unknown) {
       const env: Env = typedEnv;
-      await sendCodeEmail(env, kind, identifier, token);
+      await sendCodeEmail(env, kind, identifier, token, ctx as ActionCtx | undefined);
     },
   });
 }
