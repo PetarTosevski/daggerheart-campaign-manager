@@ -1,20 +1,15 @@
-import { afterEach, beforeEach } from "vitest";
-
 import { api } from "../../convex/_generated/api";
 import { makeTest } from "./setup";
 
 export const GM_EMAIL = "gm@example.com";
 export const OTHER_EMAIL = "other@example.com";
 
-/** Allowlists the test accounts (both by default) for the duration of each test. */
-export function useAllowlist(emails = `${GM_EMAIL},${OTHER_EMAIL}`) {
-  const previous = process.env.ALLOWED_EMAILS;
-  beforeEach(() => {
-    process.env.ALLOWED_EMAILS = emails;
-  });
-  afterEach(() => {
-    process.env.ALLOWED_EMAILS = previous;
-  });
+/**
+ * Deprecated no-op kept so the many test files that call it still compile:
+ * sign-up is open, so no test needs an allowlist. Delete the calls over time.
+ */
+export function useAllowlist(emails?: string) {
+  void emails;
 }
 
 export function errorData(error: unknown): unknown {
