@@ -1,6 +1,6 @@
 import { v, type VFloat64 } from "convex/values";
 
-import { LEGACY_TRAIL_MODES, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, type SpeedTerrain, type TravelMethod } from "../../../src/lib/domain/travel/index";
+import { LEGACY_TRAIL_MODES, OPTIONAL_SPEED_TERRAINS, SPEED_TERRAINS, TRAVEL_METHODS, TRAVEL_PACES, type SpeedTerrain, type TravelMethod } from "../../../src/lib/domain/travel/index";
 import { HORIZON_TRAVEL_MODES } from "../../../src/lib/world/map-state";
 import { frameIdValidator } from "./campaigns";
 
@@ -38,7 +38,7 @@ export const crawlHexFields = {
   poi: v.optional(v.object({ text: v.string(), hidden: v.boolean() })),
 };
 
-const speedTable = v.object(Object.fromEntries(SPEED_TERRAINS.map((t) => [t, v.number()])) as Record<SpeedTerrain, VFloat64<number>>);
+const speedTable = v.object(Object.fromEntries(SPEED_TERRAINS.map((t) => [t, OPTIONAL_SPEED_TERRAINS.includes(t) ? v.optional(v.number()) : v.number()])) as Record<Exclude<SpeedTerrain, "hills" | "plains">, VFloat64<number>> & Record<"hills" | "plains", ReturnType<typeof v.optional<VFloat64<number>>>>);
 
 /**
  * GM overrides of the travel speeds (`travelRulesSchema` checks the ranges).

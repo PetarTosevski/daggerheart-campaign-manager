@@ -5,11 +5,14 @@
 /** A map point in percent of the map's width (x) and height (y), 0–100. */
 export type Point = { x: number; y: number };
 
-/** Terrain codes of the 128 × 98 grid: r Road, w Wilds, m Marsh, d Deep wilds, h Mountains, . Water, # Impassable. */
-export type TerrainCode = "r" | "w" | "m" | "d" | "h" | "." | "#";
+/** Terrain codes of the 128 × 98 grid: r Road, w Wilds, p Plains, m Marsh, d Deep wilds, k Hills, h Mountains, . Water, # Impassable. */
+export type TerrainCode = "r" | "w" | "p" | "m" | "d" | "k" | "h" | "." | "#";
 /** Terrain that has a travel speed (impassable never does). */
-export type SpeedTerrain = "road" | "wilds" | "marsh" | "deep" | "mountains" | "water";
-export type SpeedTable = Record<SpeedTerrain, number>;
+export type SpeedTerrain = "road" | "wilds" | "plains" | "marsh" | "deep" | "hills" | "mountains" | "water";
+/** `hills` and `plains` are optional: rules stored before they existed lack them (`tableSpeed` reads the defaults). */
+export type SpeedTable = Record<Exclude<SpeedTerrain, "hills" | "plains">, number> & { hills?: number; plains?: number };
+/** Speed terrains older stored rules lack. */
+export const OPTIONAL_SPEED_TERRAINS: readonly SpeedTerrain[] = ["hills", "plains"];
 
 export const TRAVEL_METHODS = ["foot", "mount", "wagon", "boat", "fly"] as const;
 export type TravelMethod = (typeof TRAVEL_METHODS)[number];
@@ -29,9 +32,19 @@ export function trailMethod(mode: TravelMethod | LegacyTrailMode): TravelMethod 
   return (TRAVEL_METHODS as readonly string[]).includes(mode) ? (mode as TravelMethod) : "foot";
 }
 
-export const SPEED_TERRAINS: readonly SpeedTerrain[] = ["road", "wilds", "deep", "marsh", "mountains", "water"];
-export const SPEED_TERRAIN_CODE: Record<SpeedTerrain, TerrainCode> = { road: "r", wilds: "w", marsh: "m", deep: "d", mountains: "h", water: "." };
-const CODE_TERRAIN: Partial<Record<string, SpeedTerrain>> = { r: "road", w: "wilds", m: "marsh", d: "deep", h: "mountains", ".": "water" };
+export const SPEED_TERRAINS: readonly SpeedTerrain[] = ["road", "wilds", "plains", "deep", "hills", "marsh", "mountains", "water"];
+export const SPEED_TERRAIN_CODE: Record<SpeedTerrain, TerrainCode> = { road: "r", wilds: "w", plains: "p", marsh: "m", deep: "d", hills: "k", mountains: "h", water: "." };
+const CODE_TERRAIN: Partial<Record<string, SpeedTerrain>> = { r: "road", w: "wilds", p: "plains", m: "marsh", d: "deep", k: "hills", h: "mountains", ".": "water" };
+
+/** Plains km/day per method when stored rules lack it (user 2026-10-27). */
+const PLAINS_DEFAULTS: Record<TravelMethod, number> = { foot: 50, mount: 70, wagon: 40, boat: 25, fly: 120 };
+
+/** km/day of `terrain` in `method`'s speed table; a missing Hills value reads as Deep wilds, a missing Plains value as the Plains default. */
+export function tableSpeed(table: SpeedTable, terrain: SpeedTerrain, method: TravelMethod): number {
+  if (terrain === "hills") return table.hills ?? table.deep;
+  if (terrain === "plains") return table.plains ?? PLAINS_DEFAULTS[method];
+  return table[terrain];
+}
 
 export type TravelRules = {
   /**
@@ -52,11 +65,11 @@ export type TravelRules = {
  */
 export const DEFAULT_TRAVEL_RULES: TravelRules = {
   speeds: {
-    foot: { road: 60, wilds: 40, marsh: 15, deep: 20, mountains: 10, water: 8 },
-    mount: { road: 80, wilds: 60, marsh: 18, deep: 30, mountains: 15, water: 8 },
-    wagon: { road: 50, wilds: 30, marsh: 6, deep: 12, mountains: 5, water: 0 },
-    boat: { road: 30, wilds: 25, marsh: 40, deep: 15, mountains: 8, water: 100 },
-    fly: { road: 120, wilds: 120, marsh: 120, deep: 120, mountains: 120, water: 120 },
+    foot: { road: 60, wilds: 40, plains: 50, marsh: 15, deep: 20, hills: 20, mountains: 10, water: 8 },
+    mount: { road: 80, wilds: 60, plains: 70, marsh: 18, deep: 30, hills: 30, mountains: 15, water: 8 },
+    wagon: { road: 50, wilds: 30, plains: 40, marsh: 6, deep: 12, hills: 12, mountains: 5, water: 0 },
+    boat: { road: 30, wilds: 25, plains: 25, marsh: 40, deep: 15, hills: 15, mountains: 8, water: 100 },
+    fly: { road: 120, wilds: 120, plains: 120, marsh: 120, deep: 120, hills: 120, mountains: 120, water: 120 },
   },
   slow: 0.75,
   fast: 1.33,
@@ -88,9 +101,9 @@ export function distanceKm(a: Point, b: Point, scale: MapScale): number {
 
 export type TerrainLookup = (p: Point) => string;
 
-function speedOf(table: SpeedTable, code: string): number | undefined {
+function speedOf(table: SpeedTable, code: string, method: TravelMethod): number | undefined {
   const key = CODE_TERRAIN[code];
-  return key ? table[key] : undefined;
+  return key ? tableSpeed(table, key, method) : undefined;
 }
 
 /** `wideWater`: a stretch of Water too wide to swim in one day (it blocks); `waterRun` is the Water km the leg ends in. */
@@ -99,7 +112,7 @@ export type LegResult = { km: number; days: number; water: boolean; blocked: boo
 /** km per day for `method` on terrain `code` after the pace multiplier; unpainted or unknown ground counts as Wilds. */
 export function terrainSpeed(rules: TravelRules, method: TravelMethod, pace: TravelPace, code: string): number {
   const table = rules.speeds[method] ?? rules.speeds.foot;
-  return (speedOf(table, code) ?? table.wilds) * paceFactor(pace, rules);
+  return (speedOf(table, code, method) ?? table.wilds) * paceFactor(pace, rules);
 }
 
 /** Methods that swim Water and so can't stay in it longer than a day (boats and flying aren't limited). */
@@ -116,7 +129,7 @@ export function maxSwimKm(rules: TravelRules, method: TravelMethod, pace: Travel
 export function canCross(rules: TravelRules, method: TravelMethod, code: string): boolean {
   if (code === "#") return false;
   const table = rules.speeds[method] ?? rules.speeds.foot;
-  return (speedOf(table, code) ?? table.wilds) > 0;
+  return (speedOf(table, code, method) ?? table.wilds) > 0;
 }
 
 /**
@@ -204,7 +217,7 @@ export function paceFactor(pace: TravelPace, rules: TravelRules = DEFAULT_TRAVEL
  */
 export function analyseRoute(points: Point[], scale: MapScale, terrainAt: TerrainLookup, opts: Pick<RouteOptions, "method" | "pace">, rules: TravelRules = DEFAULT_TRAVEL_RULES): RouteAnalysis {
   const runs: RouteRun[] = [];
-  const per: Record<TerrainCode, number> = { r: 0, w: 0, m: 0, d: 0, h: 0, ".": 0, "#": 0 };
+  const per: Record<TerrainCode, number> = { r: 0, w: 0, p: 0, m: 0, d: 0, k: 0, h: 0, ".": 0, "#": 0 };
   const spd = rules.speeds[opts.method] ?? rules.speeds.foot;
   const k = paceFactor(opts.pace, rules);
   let km = 0;
@@ -229,7 +242,7 @@ export function analyseRoute(points: Point[], scale: MapScale, terrainAt: Terrai
       const d = seg / n;
       km += d;
       per[tk] += d;
-      const speed = tk === "#" ? 0 : (speedOf(spd, tk) ?? spd.wilds);
+      const speed = tk === "#" ? 0 : (speedOf(spd, tk, opts.method) ?? spd.wilds);
       waterRun = tk === "." ? waterRun + d : 0;
       if (speed <= 0) blocked = true;
       else if (tk === "." && waterRun > maxSwim + 1e-9) {
@@ -268,7 +281,7 @@ export function formatDistance(km: number, units: "km" | "mi"): string {
 
 /** The overland/water warning under the route summary. */
 export function routeWarning(r: RouteAnalysis, method: TravelMethod): string {
-  if (method === "boat") return r.per.r + r.per.w + r.per.m + r.per.d + r.per.h > 0.05 ? "Part of this route is overland, so the boat has to be carried (slow)." : "";
+  if (method === "boat") return r.per.r + r.per.w + r.per.p + r.per.m + r.per.d + r.per.k + r.per.h > 0.05 ? "Part of this route is overland, so the boat has to be carried (slow)." : "";
   if (method === "fly") return "";
   return r.per["."] > 0.05 ? "This route crosses water: swimming or fording is very slow. Consider a boat." : "";
 }
