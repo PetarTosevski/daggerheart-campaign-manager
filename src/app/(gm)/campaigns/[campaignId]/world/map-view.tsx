@@ -5,6 +5,7 @@ import { useMemo, useRef, useState, type CSSProperties, type DragEvent, type Key
 import type { Point, RouteAnalysis } from "@/lib/domain/travel";
 import { hexesCovering, hexesPath, neighbours, type Hex, type HexGrid } from "@/lib/world/hex";
 import type { HexCrawl, MapToken } from "@/lib/world/map-state";
+import { TERRAIN_OVERLAY_FILLS } from "@/lib/world/terrain-overlay";
 import { TERRAIN_COLOURS, TERRAIN_COLUMNS, TERRAIN_ROWS, terrainPaths, type TerrainCode } from "@/lib/world/terrain";
 import { tokenType, type TokenType } from "@/lib/world/token-types";
 
@@ -284,15 +285,9 @@ export function MapView(props: MapViewProps) {
       >
         {paths && props.showTerrain ? (
           <svg viewBox="0 0 128 98" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[1]">
-            <path d={paths.h} fill="rgba(176, 58, 46, 0.42)" shapeRendering="crispEdges" />
-            <path d={paths.w} fill="rgba(70, 150, 80, 0.30)" shapeRendering="crispEdges" />
-            <path d={paths.p} fill="rgba(232, 209, 58, 0.4)" shapeRendering="crispEdges" />
-            <path d={paths.d} fill="rgba(20, 80, 40, 0.55)" shapeRendering="crispEdges" />
-            <path d={paths.k} fill="rgba(240, 122, 30, 0.5)" shapeRendering="crispEdges" />
-            <path d={paths.m} fill="rgba(70, 120, 110, 0.5)" shapeRendering="crispEdges" />
-            <path d={paths.r} fill="rgba(185, 178, 164, 0.6)" shapeRendering="crispEdges" />
-            <path d={paths.x} fill={props.painting ? "rgba(60, 110, 200, 0.35)" : "transparent"} shapeRendering="crispEdges" />
-            <path d={paths.b} fill="rgba(12, 9, 6, 0.78)" shapeRendering="crispEdges" />
+            {(Object.keys(TERRAIN_OVERLAY_FILLS) as (keyof typeof paths)[]).map((k) => (
+              <path key={k} d={paths[k]} fill={TERRAIN_OVERLAY_FILLS[k]} shapeRendering="crispEdges" />
+            ))}
           </svg>
         ) : null}
         {paths && !props.showTerrain && props.showBlockOnly ? (

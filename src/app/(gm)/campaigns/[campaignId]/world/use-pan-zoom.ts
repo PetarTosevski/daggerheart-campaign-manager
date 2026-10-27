@@ -7,6 +7,14 @@ export type View = { z: number; x: number; y: number; /** viewport width the vie
 
 export const MIN_ZOOM = 0.3;
 export const MAX_ZOOM = 6;
+/** A width change up to this many px is a scrollbar, not a resize: keep the view instead of refitting. */
+export const SCROLLBAR_SLACK = 24;
+
+/** The same zoom and the same map point in view after the viewport width changes from `from` to `to`. */
+export function rescaleView(view: Omit<View, "w">, from: number, to: number): Omit<View, "w"> {
+  const r = from > 0 ? to / from : 1;
+  return { z: view.z, x: view.x * r, y: view.y * r };
+}
 
 /**
  * Pan and zoom for the World map viewport: wheel zoom anchored on the cursor,
@@ -73,6 +81,7 @@ export function usePanZoom(viewport: RefObject<HTMLDivElement | null>, aspect: n
   }
 
   const onFit = useEffectEvent(fit);
+  const onRescale = useEffectEvent((from: number, to: number) => setView(rescaleView(viewRef.current, from, to)));
   const onWheel = useEffectEvent((e: WheelEvent) => {
     if (e.shiftKey) return;
     const fz = fitZoom();
@@ -94,13 +103,19 @@ export function usePanZoom(viewport: RefObject<HTMLDivElement | null>, aspect: n
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
-    let first = true;
+    // Refit only on a real width change (window, full screen). A height change or a scrollbar
+    // appearing (the paint toolbar makes the page scroll) keeps the GM's zoom and pan.
+    let lastWidth = el.clientWidth;
     const observer =
       typeof ResizeObserver === "undefined"
         ? null
         : new ResizeObserver(() => {
-            if (first) first = false;
-            else onFit();
+            const w = el.clientWidth;
+            if (w === lastWidth) return;
+            const prev = lastWidth;
+            lastWidth = w;
+            if (Math.abs(w - prev) > SCROLLBAR_SLACK) onFit();
+            else onRescale(prev, w);
           });
     observer?.observe(el);
     const wheel = (e: WheelEvent) => onWheel(e);
