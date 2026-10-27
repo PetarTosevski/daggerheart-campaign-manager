@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -7,8 +7,8 @@ import { VIEWPORTS, bardDraft, convexAs, openCombatMap } from "./helpers";
 
 // Shots for the CA6 task doc (E2E_VISUAL=1), at 1440 and 390: the player's Hand (loadout with art, badges, Use; the
 // vault with Recall), the Use dialog of a grimoire, a card result, an exhausted card greyed and turned with its reset
-// label, the phone bottom sheet's Hand tab (a horizontal strip), and the GM's Hand of a selected PC, greyed and then
-// with "Play for this character" on. The board (reference/designs/project/Combat.dc.html) has no Hand: the faces are
+// label, the phone layout (the fan docked along the bottom of the map keeps the card result above it; HF1,
+// dcm-bxp.99.31), and the GM's Hand of a selected PC, greyed and then with "Play for this character" on. The board (reference/designs/project/Combat.dc.html) has no Hand: the faces are
 // compared with Party.dc.html's hand cards (`hc-face`) and SC1's CardDialog, the column with combat:player-day.
 
 const PLAYER = "e2e-player@example.test";
@@ -58,6 +58,13 @@ async function cardScene(page: Page, browser: Browser, draft: ReturnType<typeof 
   return { client, playerClient, campaignId, characterId: characterId as Id<"characters">, url, player, closePlayer: () => context.close() };
 }
 
+/** The non-drag way to play a card (WCAG 2.5.7): focus raises it out of the fan, Enter presses its Use. */
+async function playCard(hand: Locator, name: string) {
+  const button = hand.getByRole("button", { name: `Use ${name}` });
+  await button.focus();
+  await button.press("Enter");
+}
+
 async function settle(page: Page) {
   await page.waitForLoadState("networkidle");
 }
@@ -76,9 +83,10 @@ test("CA6 the Hand: player, dialog, result, phone strip and the GM's view", { ta
     await player.screenshot({ path: `${OUT}/player-page-1440.png`, animations: "disabled" });
     await hand.screenshot({ path: `${OUT}/hand-1440.png`, animations: "disabled" });
 
+    await hand.getByRole("button", { name: "Open vault, 1 card" }).click();
     await hand.getByRole("list", { name: "Vault" }).getByRole("button", { name: /^Recall: 2 Stress/ }).click();
     await expect(hand.getByRole("list", { name: "Loadout" }).getByRole("article", { name: "Book of Illiat" })).toBeVisible();
-    await hand.getByRole("button", { name: "Use Book of Illiat" }).click();
+    await playCard(hand, "Book of Illiat");
     const dialog = player.getByRole("dialog", { name: "Book of Illiat" });
     await dialog.getByRole("button", { name: "Arcane Barrage" }).click();
     await settle(player);
@@ -86,20 +94,19 @@ test("CA6 the Hand: player, dialog, result, phone strip and the GM's view", { ta
     await dialog.getByRole("button", { name: "Cancel" }).click();
 
     await player.getByRole("region", { name: "Battle map" }).getByRole("button", { name: /^Bandit, Enemy/ }).click();
-    await hand.getByRole("button", { name: "Use Bolt Beacon" }).click();
+    await playCard(hand, "Bolt Beacon");
     await expect(hand.getByRole("region", { name: "Card result" })).toBeVisible();
     await settle(player);
     await hand.screenshot({ path: `${OUT}/hand-result-1440.png`, animations: "disabled" });
 
-    // ---- Phone: the Hand tab of the bottom sheet (the result is kept across the layout switch).
+    // ---- Phone: the fan stays docked along the bottom of the map and the card result sits above it (kept across the
+    // layout switch); the sheet's Hand tab holds only the column's card.
     await player.setViewportSize(VIEWPORTS[1]);
-    const sheet = player.getByTestId("combat-actions-sheet");
-    await sheet.getByRole("tab", { name: "Hand" }).click();
-    await expect(sheet.getByRole("tabpanel").getByRole("region", { name: "Card result" })).toBeVisible();
+    await expect(hand.getByRole("region", { name: "Card result" })).toBeVisible();
     expect(await player.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await settle(player);
-    await player.screenshot({ path: `${OUT}/sheet-hand-390.png`, animations: "disabled" });
-    await sheet.getByRole("tabpanel").getByRole("button", { name: "Use Book of Illiat" }).click();
+    await player.screenshot({ path: `${OUT}/hand-dock-390.png`, animations: "disabled" });
+    await playCard(hand, "Book of Illiat");
     await settle(player);
     await player.screenshot({ path: `${OUT}/dialog-illiat-390.png`, animations: "disabled" });
     await player.getByRole("dialog", { name: "Book of Illiat" }).getByRole("button", { name: "Cancel" }).click();
@@ -133,11 +140,11 @@ test("CA6 an exhausted card, greyed and turned with its reset label", { tag: "@v
   try {
     await player.goto(s.url);
     const hand = player.getByRole("region", { name: "Your hand" });
-    await hand.getByRole("button", { name: "Use Deft Maneuvers" }).click({ timeout: 30_000 });
+    await expect(hand.getByRole("article", { name: "Deft Maneuvers" })).toBeVisible({ timeout: 30_000 });
+    await playCard(hand, "Deft Maneuvers");
     await expect(hand.getByRole("article", { name: "Deft Maneuvers, used: Back after a rest" })).toBeVisible();
     for (const viewport of VIEWPORTS) {
       await player.setViewportSize(viewport);
-      if (viewport.width <= 760) await player.getByTestId("combat-actions-sheet").getByRole("tab", { name: "Hand" }).click();
       await settle(player);
       await player.getByRole("region", { name: "Your hand" }).screenshot({ path: `${OUT}/hand-exhausted-${viewport.width}.png`, animations: "disabled" });
     }

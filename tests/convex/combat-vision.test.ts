@@ -308,7 +308,7 @@ describe("combat vision: what a player sees", () => {
     await f.enemy("Bandit", 12, 10);
     const v = await f.okView();
     expect(v.others.map((o) => o.name).sort()).toEqual(["Bandit", "Bear"]);
-    for (const row of v.others) expect(Object.keys(row).sort()).toEqual(["_id", "face", "name", "revealed", "side", "size", "x", "y"]);
+    for (const row of v.others) expect(Object.keys(row).sort()).toEqual(["_id", "face", "name", "portrait", "revealed", "side", "size", "x", "y"]);
     expect(JSON.stringify(v.others)).not.toMatch(/hp|stress|difficulty|conditions|light|revealedTo/i);
     expect(JSON.stringify(v)).not.toMatch(/difficulty|revealedTo/);
   });
