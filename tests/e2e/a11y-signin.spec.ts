@@ -1,11 +1,11 @@
 // OS4 (.omc/plans/open-signup.yaml): axe on every step of the sign-in page, keyboard focus per step, and phone and
-// tablet widths. The local e2e backend sends no email and accepts the fixed code 123456.
+// tablet widths. The local e2e backend sends no email; the specs read the random code from /e2e/code.
 
 import { expect, test, type Page } from "@playwright/test";
 
+import { readEmailedCode } from "./fixtures";
 import { expectFitsViewport, expectNoSeriousA11yViolations, expectTouchTargets, TABLET_VIEWPORTS } from "./a11y";
 
-const FIXED_CODE = "123456";
 
 function freshEmail() {
   return `os4-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
@@ -45,7 +45,7 @@ test("every step of create account and forgot password passes axe", async ({ pag
   await expect(page.getByRole("form", { name: "Enter the code" }).getByRole("alert")).toContainText("Request a new one");
   await scan(page);
 
-  await page.getByLabel("6-digit code").fill(FIXED_CODE);
+  await page.getByLabel("6-digit code").fill(await readEmailedCode(email));
   await page.getByRole("button", { name: "Verify email" }).click();
   await expect(page).not.toHaveURL(/\/signin/);
 });
