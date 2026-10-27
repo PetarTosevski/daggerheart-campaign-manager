@@ -33,6 +33,11 @@ export const COMBAT_REQUEST_TTL_MS = DAY;
  */
 export const COMBAT_AREA_TTL_MS = DAY;
 
+/** A password account whose code was never entered is removed after this long (by the user's `_creationTime`; plan open-signup OS5). */
+export const UNVERIFIED_SIGNUP_TTL_MS = 7 * DAY;
+/** Users one `expireUnverifiedSignups` run examines; each may carry a few auth rows, so fewer than `BATCH`. */
+export const UNVERIFIED_SIGNUP_BATCH = 100;
+
 /** `actionLog` rows keep their undo snapshots this long; older rows stay in the feed, no longer undoable (dcm-c26). */
 export const ACTION_LOG_SNAPSHOT_TTL_MS = 30 * DAY;
 /** Rows one strip run reads: each carries a sheet snapshot of a few KB, so fewer than `BATCH`. */
@@ -519,3 +524,79 @@ export const stripActionLogSnapshots = internalMutation({
     return null;
   },
 });
+
+/**
+ * Deletes abandoned password sign-ups (rule 8; plan open-signup OS5): users with no `emailVerificationTime` created
+ * over `UNVERIFIED_SIGNUP_TTL_MS` ago, with their `authAccounts`, `authSessions`, `authRefreshTokens` and
+ * `authVerificationCodes` rows. A user is kept when it has a campaign, a membership, a character, or an account of
+ * another provider than "password". Users are read by `_creationTime` in pages of `UNVERIFIED_SIGNUP_BATCH` after the
+ * cursor `after`; verified or kept users stay and only move the cursor, and the job reschedules itself with the new
+ * cursor while a full page was read.
+ */
+export const expireUnverifiedSignups = internalMutation({
+  args: { after: v.optional(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, { after }) => {
+    const cutoff = Date.now() - UNVERIFIED_SIGNUP_TTL_MS;
+    const users = await ctx.db
+      .query("users")
+      .withIndex("by_creation_time", (q) =>
+        after === undefined ? q.lt("_creationTime", cutoff) : q.gt("_creationTime", after).lt("_creationTime", cutoff),
+      )
+      .take(UNVERIFIED_SIGNUP_BATCH);
+    for (const user of users) {
+      if (user.emailVerificationTime !== undefined) continue;
+      if (await isKeptUnverifiedUser(ctx, user._id)) continue;
+      await deleteUnverifiedUser(ctx, user._id);
+    }
+    const last = users.at(-1);
+    if (users.length === UNVERIFIED_SIGNUP_BATCH && last !== undefined) {
+      await ctx.scheduler.runAfter(0, internal.cleanup.expireUnverifiedSignups, { after: last._creationTime });
+    }
+    return null;
+  },
+});
+
+/** True when the user owns or plays anything, or signs in some other way than the password. */
+async function isKeptUnverifiedUser(ctx: MutationCtx, userId: Id<"users">): Promise<boolean> {
+  const campaign = await ctx.db
+    .query("campaigns")
+    .withIndex("by_owner_deletedAt_lastOpened", (q) => q.eq("ownerId", userId))
+    .first();
+  if (campaign !== null) return true;
+  const member = await ctx.db.query("campaignMembers").withIndex("by_user", (q) => q.eq("userId", userId)).first();
+  if (member !== null) return true;
+  const character = await ctx.db.query("characters").withIndex("by_owner", (q) => q.eq("ownerId", userId)).first();
+  if (character !== null) return true;
+  const accounts = await ctx.db
+    .query("authAccounts")
+    .withIndex("userIdAndProvider", (q) => q.eq("userId", userId))
+    .take(10);
+  return accounts.some((account) => account.provider !== "password");
+}
+
+/** Deletes the user, its accounts (with their codes) and its sessions (with their refresh tokens). */
+async function deleteUnverifiedUser(ctx: MutationCtx, userId: Id<"users">): Promise<void> {
+  const accounts = await ctx.db
+    .query("authAccounts")
+    .withIndex("userIdAndProvider", (q) => q.eq("userId", userId))
+    .take(10);
+  for (const account of accounts) {
+    const codes = await ctx.db
+      .query("authVerificationCodes")
+      .withIndex("accountId", (q) => q.eq("accountId", account._id))
+      .take(10);
+    for (const code of codes) await ctx.db.delete(code._id);
+    await ctx.db.delete(account._id);
+  }
+  const sessions = await ctx.db.query("authSessions").withIndex("userId", (q) => q.eq("userId", userId)).take(20);
+  for (const session of sessions) {
+    const tokens = await ctx.db
+      .query("authRefreshTokens")
+      .withIndex("sessionId", (q) => q.eq("sessionId", session._id))
+      .take(50);
+    for (const token of tokens) await ctx.db.delete(token._id);
+    await ctx.db.delete(session._id);
+  }
+  await ctx.db.delete(userId);
+}
