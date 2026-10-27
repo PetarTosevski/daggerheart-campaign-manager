@@ -341,21 +341,21 @@ async function pcView(
 
 /**
  * A non-PC token's name (the tracker instance's label for an adversary, or the custom name) and, for an adversary,
- * its rulebook art (`adversaryArtSrc`). Nothing else is read (R4).
+ * its rulebook art (`adversaryArtSrc`). Nothing else is read (R4). With no art the portrait is `null`, never absent.
  */
 async function otherIdentity(
   ctx: QueryCtx,
   campaign: Doc<"campaigns">,
   token: Doc<"combatTokens">,
 ): Promise<Pick<OtherToken, "name" | "portrait">> {
-  if (token.ref.kind === "custom") return { name: token.ref.name };
+  if (token.ref.kind === "custom") return { name: token.ref.name, portrait: null };
   if (token.ref.kind === "adversary") {
     const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
-    if (instance === null || instance.campaignId !== campaign._id) return { name: "Unknown" };
+    if (instance === null || instance.campaignId !== campaign._id) return { name: "Unknown", portrait: null };
     const url = await adversaryArtSrc(ctx, campaign._id, instance);
-    return url === null ? { name: instance.label } : { name: instance.label, portrait: { kind: "url", url } };
+    return url === null ? { name: instance.label, portrait: null } : { name: instance.label, portrait: { kind: "url", url } };
   }
-  return { name: "Unknown" };
+  return { name: "Unknown", portrait: null };
 }
 
 export type ViewResult = {
