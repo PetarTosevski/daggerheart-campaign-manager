@@ -1,0 +1,24 @@
+# Lorekeeper chat scroll (2026-10-27): newest message on screen, scroll up for history, page does not scroll.
+plan: lorekeeper-scroll
+waves:
+  - wave: 1
+    tracers:
+      - id: LK1
+        title: Lorekeeper chat opens at the latest message; history scrolls up; page fixed
+        size: S
+        goal: The Lorekeeper page fills the viewport without page scroll; the message list is a bottom-anchored scroll area showing the newest message on open, older ones above; the composer stays pinned at the bottom.
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/lorekeeper/**
+          - src/components/lorekeeper/chat/**
+          - src/components/lorekeeper/composer/**
+          - src/components/lorekeeper/conversations/**
+          - tests/unit/lorekeeper-ui/**
+          - tests/e2e/lorekeeper-chat.spec.ts
+          - docs/tasks/TASK-LK-LK1.md
+        reads: [src/components/lorekeeper/slots.ts, src/components/lorekeeper/side/**, docs/best-practices.md]
+        acceptance:
+          - "On open and on switching conversation the newest message is visible at the bottom without scrolling; scrolling up shows older messages; the document body does not scroll (page height = viewport) at desktop, tablet and phone widths"
+          - "A new question/answer keeps the list pinned to the bottom unless the user scrolled up (then a 'Jump to latest' button appears); streaming answers stay in view"
+          - "Composer pinned at the bottom of the chat pane; no mutations in effects (rule 13); e2e chat spec asserts the latest message is in view on load and the page does not scroll"
+          - "pnpm lint, typecheck, vitest, the lorekeeper e2e chat spec and tracer-guard pass"
