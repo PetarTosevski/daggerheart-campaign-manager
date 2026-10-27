@@ -59,6 +59,23 @@ async function watchAnswers(log: ReturnType<typeof chat>["log"]) {
 
 const readSeen = (page: Page) => page.evaluate(() => (window as unknown as { __lkSeen: Seen }).__lkSeen);
 
+/** LK1: the log is scrolled to its end, the composer is on screen and the document is exactly one screen tall. */
+async function expectPinnedAndFixed(page: Page) {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const log = document.querySelector<HTMLElement>(".lk-stream")!;
+        const compose = document.querySelector<HTMLElement>(".lk-compose")!.getBoundingClientRect();
+        return {
+          atEnd: log.scrollHeight - log.scrollTop - log.clientHeight < 48,
+          composerOnScreen: compose.bottom <= window.innerHeight + 1 && compose.top >= 0,
+          pageScrolls: document.documentElement.scrollHeight > window.innerHeight + 1,
+        };
+      }),
+    )
+    .toEqual({ atEnd: true, composerOnScreen: true, pageScrolls: false });
+}
+
 function chat(page: Page) {
   const column = page.getByRole("region", { name: "The Lorekeeper" });
   return {
@@ -127,6 +144,12 @@ test("a player asks, stops an answer, keeps the history; the GM pins the unclear
     await player.reload();
     await expect(chat(player).log.locator(".lk-q")).toHaveCount(3);
     await expect(chat(player).answers.filter({ hasText: "Rules unclear" })).toBeVisible();
+    // LK1: it opens on the newest message (bottom of the log, composer visible), and the page itself does not scroll.
+    await expectPinnedAndFixed(player);
+    await chat(player).log.evaluate((el) => (el.scrollTop = 0));
+    await expect(chat(player).column.getByRole("button", { name: "Jump to latest" })).toBeVisible();
+    await chat(player).column.getByRole("button", { name: "Jump to latest" }).click();
+    await expectPinnedAndFixed(player);
 
     // 5. The player sends the unclear answer to the GM; the GM opens the shared conversation and pins it.
     const hexAgain = chat(player).answers.filter({ hasText: "Rules unclear" });
@@ -162,6 +185,13 @@ test("the composer at 390 px: one column, no sideways scroll, a new conversation
     await composer.getByRole("button", { name: "Critical hits" }).click();
     await expect(answers.filter({ hasText: "From the rules" }).getByRole("button", { name: "Copy" })).toBeVisible();
     await expect.poll(() => player.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await expectPinnedAndFixed(player);
+    // Tablet and desktop widths keep the same one-screen page.
+    for (const size of [{ width: 820, height: 1180 }, { width: 1440, height: 900 }]) {
+      await player.setViewportSize(size);
+      await expectPinnedAndFixed(player);
+    }
+    await player.setViewportSize({ width: 390, height: 844 });
 
     // Books only: the toggle is pressed and stays with the conversation.
     const toggle = composer.getByRole("group", { name: "Internet search" });
