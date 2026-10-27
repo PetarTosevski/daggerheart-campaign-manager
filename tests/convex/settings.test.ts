@@ -1,5 +1,5 @@
 import { ConvexError } from "convex/values";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import { settingsBackupText } from "../../src/lib/validation/settings-backup";
@@ -22,14 +22,6 @@ async function hopeAndFearOf(gm: Gm, frameId: "witherwild" | "castle-high", name
 }
 
 describe("settings: Expansions default (XS1)", () => {
-  const previous = process.env.GM_EMAILS;
-  beforeEach(() => {
-    process.env.GM_EMAILS = GM_EMAIL;
-  });
-  afterEach(() => {
-    process.env.GM_EMAILS = previous;
-  });
-
   it("is unset by default and saves alongside the other settings", async () => {
     const { gm } = await setup();
     expect((await gm.query(api.settings.get, {})).expansions).toEqual({});
@@ -96,13 +88,6 @@ async function rejection(call: Promise<unknown>): Promise<{ code?: string }> {
 }
 
 describe("settings: default map style (dcm-bxp.89)", () => {
-  const previous = process.env.GM_EMAILS;
-  beforeEach(() => {
-    process.env.GM_EMAILS = GM_EMAIL;
-  });
-  afterEach(() => {
-    process.env.GM_EMAILS = previous;
-  });
   const backup = (settings: Record<string, unknown>) => JSON.stringify({ daggerheartBackup: 2, kind: "settings", schemaVersion: 1, settings });
   const valid = { tableName: "Crew", gmName: "Ana", accent: "#6fb8a6", expansions: {} };
 
@@ -145,13 +130,6 @@ describe("settings: default map style (dcm-bxp.89)", () => {
 });
 
 describe("settings: backup, restore and reset (H17)", () => {
-  const previous = process.env.GM_EMAILS;
-  beforeEach(() => {
-    process.env.GM_EMAILS = `${GM_EMAIL},b@example.com`;
-  });
-  afterEach(() => {
-    process.env.GM_EMAILS = previous;
-  });
   const backup = (settings: Record<string, unknown>, envelope: Record<string, unknown> = {}) =>
     JSON.stringify({ daggerheartBackup: 2, kind: "settings", schemaVersion: 1, settings, ...envelope });
   const valid = { tableName: "Thursday Crew", gmName: "Ana", accent: "#6fb8a6", expansions: { hopeAndFear: true } };

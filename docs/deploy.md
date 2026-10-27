@@ -158,7 +158,7 @@ npx convex run --prod migrations/run:run '{fn: "migrations/maps:splitMaps"}'
 npx convex run --prod migrations/run:run '{fn: "migrations/mapTrailMode:rewriteTrailMode"}'
 npx convex run --prod migrations/run:run '{fn: "migrations/codex:splitText"}'
 npx convex run --prod migrations/run:run '{fn: "migrations/codex:countEntries"}'
-npx convex run --prod migrations/run:run '{fn: "migrations/sessions:backfillSessions"}'
+npx convex run --prod migrations/sessions:backfillSessions '{}'   # a runner series: call it directly
 npx convex run --prod migrations/run:run '{fn: "migrations/slotBonuses:applySlotBonuses"}'
 npx convex run --prod migrations/run:run '{fn: "migrations/motherboardEconomy:addTetherAndQuantum"}'
 ```

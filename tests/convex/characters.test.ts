@@ -167,7 +167,6 @@ describe("characters", () => {
       await saveSheet(ctx, characterId, { ...s, stress: 0, domainCards: { owned: [...s.domainCards.owned, card.id], loadout: s.domainCards.loadout } });
     });
     const strangerId = await t.run((ctx) => ctx.db.insert("users", { email: "x@example.com" }));
-    process.env.ALLOWED_EMAILS += ",x@example.com";
     const stranger = t.withIdentity({ subject: `${strangerId}|s` });
     const move = (to: "loadout" | "vault") => ({ characterId, cardId: card.id, to });
     const codeOf = (p: Promise<unknown>) => p.then(() => "ok", (e: unknown) => errorCode(e));
@@ -204,7 +203,6 @@ describe("characters", () => {
     const { t, gm, p1, campaignId } = await setup();
     const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
     const strangerId = await t.run((ctx) => ctx.db.insert("users", { email: "x@example.com" }));
-    process.env.ALLOWED_EMAILS += ",x@example.com";
     const stranger = t.withIdentity({ subject: `${strangerId}|s` });
     expect(await stranger.query(api.characters.get, { characterId })).toBeNull();
     expect(errorCode(await p1.mutation(api.characters.remove, { characterId }).catch((e) => e))).toBe("FORBIDDEN");

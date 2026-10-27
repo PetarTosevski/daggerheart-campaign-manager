@@ -8,7 +8,7 @@ test("a signed-out visitor is redirected to sign-in", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Sign in with Google" })).toBeVisible();
 });
 
-test("the allowlisted test GM can sign in and out", async ({ page }) => {
+test("the test GM can sign in and out", async ({ page }) => {
   await signInAsTestGm(page);
   await expectSignedInAs(page);
 
@@ -29,11 +29,8 @@ test("a wrong secret is refused", async ({ page }) => {
   await expect(page).toHaveURL("/signin");
 });
 
-test("an email that is not allowlisted is refused", async ({ page }) => {
-  await signInAsTestGm(page, "intruder@example.test");
-  await expect(
-    page.getByRole("form", { name: "Test sign-in" }).getByRole("alert"),
-  ).toHaveText("Test sign-in failed.");
-  await page.goto("/");
-  await expect(page).toHaveURL("/signin");
+test("any email signs in through the test form (sign-up is open)", async ({ page }) => {
+  const email = `anyone-${Date.now()}@example.test`;
+  await signInAsTestGm(page, email);
+  await expectSignedInAs(page, email);
 });

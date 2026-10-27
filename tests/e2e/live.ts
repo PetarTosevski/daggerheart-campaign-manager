@@ -11,7 +11,7 @@ import type { PublishedFrameId } from "../../src/lib/frames";
 import { signInAsTestGm } from "./fixtures";
 import { bardDraft, convexAs, type Draft } from "./visual/helpers";
 
-/** The allowlisted player account of the e2e backend (`pnpm e2e:setup`). */
+/** The player account of the e2e backend (`pnpm e2e:setup`). */
 export const E2E_PLAYER_EMAIL = "e2e-player@example.test";
 
 export type LiveTable = {

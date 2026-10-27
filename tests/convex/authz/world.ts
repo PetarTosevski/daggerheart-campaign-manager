@@ -8,7 +8,6 @@
  * `w.use(table, id)`.
  */
 import type { TestConvex } from "convex-test";
-import { afterEach, beforeEach } from "vitest";
 
 import { api } from "../../../convex/_generated/api";
 import type { Id, TableNames } from "../../../convex/_generated/dataModel";
@@ -32,17 +31,8 @@ export const WORLD_EMAILS = {
   outsider: "outsider@example.com",
 } as const;
 
-/** Allowlists the world's accounts for each test of the calling file (the allowlist is re-read on every call). */
-export function allowWorldEmails() {
-  let previous: string | undefined;
-  beforeEach(() => {
-    previous = process.env.ALLOWED_EMAILS;
-    process.env.ALLOWED_EMAILS = Object.values(WORLD_EMAILS).join(",");
-  });
-  afterEach(() => {
-    process.env.ALLOWED_EMAILS = previous;
-  });
-}
+/** Deprecated no-op kept for its callers: sign-up is open, so the world's accounts need no listing. */
+export function allowWorldEmails() {}
 
 type Test = TestConvex<typeof schema>;
 /** A caller: the test instance with (or, for `anon`, without) an identity. */

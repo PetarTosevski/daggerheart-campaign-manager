@@ -49,6 +49,8 @@ import type * as lib_adversaryFeatures from "../lib/adversaryFeatures.js";
 import type * as lib_adversaryHits from "../lib/adversaryHits.js";
 import type * as lib_allowlist from "../lib/allowlist.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_authEmail from "../lib/authEmail.js";
+import type * as lib_authRateLimit from "../lib/authRateLimit.js";
 import type * as lib_blobs from "../lib/blobs.js";
 import type * as lib_cardChoices from "../lib/cardChoices.js";
 import type * as lib_cardHand from "../lib/cardHand.js";
@@ -220,6 +222,8 @@ declare const fullApi: ApiFromModules<{
   "lib/adversaryHits": typeof lib_adversaryHits;
   "lib/allowlist": typeof lib_allowlist;
   "lib/auth": typeof lib_auth;
+  "lib/authEmail": typeof lib_authEmail;
+  "lib/authRateLimit": typeof lib_authRateLimit;
   "lib/blobs": typeof lib_blobs;
   "lib/cardChoices": typeof lib_cardChoices;
   "lib/cardHand": typeof lib_cardHand;

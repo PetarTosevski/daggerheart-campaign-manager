@@ -34,6 +34,7 @@ type Env = {
   readonly ALLOW_SEED_ACCOUNTS: string | undefined;
   readonly ANTHROPIC_API_KEY: string | undefined;
   readonly ANTHROPIC_MODEL: string | undefined;
+  readonly AUTH_RESEND_KEY: string | undefined;
   readonly E2E_AUTH_ENABLED: string | undefined;
   readonly E2E_AUTH_SECRET: string | undefined;
   readonly GM_EMAILS: string | undefined;
@@ -42,6 +43,7 @@ type Env = {
   readonly LOREKEEPER_FAKE_MODEL: string | undefined;
   readonly LOREKEEPER_MODEL: string | undefined;
   readonly LOREKEEPER_MONTHLY_USD: string | undefined;
+  readonly MAIL_FROM: string | undefined;
   readonly SEED_ACCOUNTS: string | undefined;
 };
 

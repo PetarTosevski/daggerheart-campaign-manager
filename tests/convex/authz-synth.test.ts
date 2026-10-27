@@ -11,16 +11,14 @@ import { readSheet } from "../../convex/lib/characterSheet";
 import { runMatrix, type Area } from "./authz/harness";
 import { publicFunction, publicFunctions } from "./authz/inventory";
 import { freshKey, NAME_HINTS, synthArgs } from "./authz/synth";
-import { buildWorld, allowWorldEmails, type World } from "./authz/world";
-
-allowWorldEmails();
+import { buildWorld, type World } from "./authz/world";
 
 const argsOf = async (name: string) => (await publicFunction(name)).fn.exportArgs();
 /** The exportArgs JSON of an args object, as Convex serializes it for a registered function. */
 const objectArgs = (fields: PropertyValidators) => (v.object(fields) as unknown as { json: object }).json;
 
 describe("synthArgs", () => {
-  // One world for these checks, built in the first test: the allowlist is set per test (beforeEach), after beforeAll.
+  // One world for these checks, built lazily in the first test.
   let w: World;
   let built: Promise<World> | null = null;
   beforeAll(() => publicFunctions(), 120_000);

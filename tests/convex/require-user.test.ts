@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { requireUser } from "../../convex/lib/auth";
 import { errorCode } from "./helpers";
@@ -7,15 +7,7 @@ import { makeTest } from "./setup";
 const GM_EMAIL = "gm@example.com";
 
 describe("requireUser", () => {
-  const previous = process.env.GM_EMAILS;
-  beforeEach(() => {
-    process.env.GM_EMAILS = GM_EMAIL;
-  });
-  afterEach(() => {
-    process.env.GM_EMAILS = previous;
-  });
-
-  it("returns the stored user for an allowlisted user", async () => {
+  it("returns the stored user for a stored user", async () => {
     const t = makeTest();
     const userId = await t.run((ctx) =>
       ctx.db.insert("users", { email: GM_EMAIL }),
@@ -25,22 +17,22 @@ describe("requireUser", () => {
     expect(user._id).toBe(userId);
   });
 
-  it("throws FORBIDDEN for a stored user who is not allowlisted", async () => {
+  it("returns any stored user, whatever the email (sign-up is open)", async () => {
     const t = makeTest();
     const userId = await t.run((ctx) =>
-      ctx.db.insert("users", { email: "intruder@example.com" }),
+      ctx.db.insert("users", { email: "newcomer@example.com" }),
     );
-    const asOther = t.withIdentity({ subject: `${userId}|session` });
-    const error = await asOther.run((ctx) => requireUser(ctx)).catch((e) => e);
-    expect(errorCode(error)).toBe("FORBIDDEN");
+    const asNew = t.withIdentity({ subject: `${userId}|session` });
+    const user = await asNew.run((ctx) => requireUser(ctx));
+    expect(user._id).toBe(userId);
   });
 
-  it("throws FORBIDDEN when the GM is removed from the allowlist", async () => {
+  it("throws FORBIDDEN when the user row was deleted", async () => {
     const t = makeTest();
     const userId = await t.run((ctx) =>
       ctx.db.insert("users", { email: GM_EMAIL }),
     );
-    process.env.GM_EMAILS = "someone-else@example.com";
+    await t.run((ctx) => ctx.db.delete("users", userId));
     const asGm = t.withIdentity({ subject: `${userId}|session` });
     const error = await asGm.run((ctx) => requireUser(ctx)).catch((e) => e);
     expect(errorCode(error)).toBe("FORBIDDEN");
