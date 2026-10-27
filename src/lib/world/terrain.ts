@@ -48,10 +48,10 @@ export const BRUSHES: readonly { code: TerrainCode; label: string; bg: string }[
 
 /** Brush sizes (radius in cells) and their labels. */
 export const BRUSH_SIZES: readonly { size: number; label: string }[] = [
-  { size: 1, label: "XS" },
-  { size: 2, label: "S" },
-  { size: 4, label: "M" },
-  { size: 6, label: "L" },
+  { size: 1, label: "S" },
+  { size: 2, label: "M" },
+  { size: 4, label: "L" },
+  { size: 6, label: "XL" },
 ];
 
 /** The board's suggested Witherwild terrain at half resolution (64 × 49). */
