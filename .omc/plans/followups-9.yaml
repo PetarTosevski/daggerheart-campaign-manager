@@ -61,6 +61,7 @@ waves:
           - tests/convex/combat-map-edit-sprites.test.ts
           - convex/lib/combatVision.ts
           - tests/convex/combat-vision.test.ts
+          - tests/convex/combat-vision-sprites.test.ts
           - tests/e2e/visual/CA-CA6.spec.ts
           - tests/e2e/visual/D11-N7.spec.ts
           - tests/e2e/visual/D11-N8.spec.ts
