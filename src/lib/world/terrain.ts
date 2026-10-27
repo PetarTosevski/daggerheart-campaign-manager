@@ -4,8 +4,8 @@
 export const TERRAIN_COLUMNS = 128;
 export const TERRAIN_ROWS = 98;
 
-/** Terrain cells, row-major: r Road, w Wilds, d Deep wilds, m Marsh, h Mountains, . Water, # Impassable. */
-export const TERRAIN_CODES = ["r", "w", "d", "m", "h", ".", "#"] as const;
+/** Terrain cells, row-major: r Road, w Wilds, p Plains, d Deep wilds, k Hills, m Wetlands, h Mountains, . Water, # Impassable. */
+export const TERRAIN_CODES = ["r", "w", "p", "d", "k", "m", "h", ".", "#"] as const;
 
 export type TerrainCode = (typeof TERRAIN_CODES)[number];
 
@@ -13,28 +13,34 @@ export type TerrainCode = (typeof TERRAIN_CODES)[number];
 export const TERRAIN_NAMES: Record<TerrainCode, string> = {
   r: "Road",
   w: "Wilds",
-  m: "Marshland",
+  p: "Plains",
+  m: "Wetlands",
   d: "Deep wilds",
+  k: "Hills",
   h: "Mountains",
   ".": "Water",
   "#": "Impassable",
 };
 export const TERRAIN_COLOURS: Record<TerrainCode, string> = {
-  r: "#e0a93a",
+  r: "#b9b2a4",
   w: "#47a55a",
+  p: "#e8d13a",
   m: "#4f8f84",
   d: "#1d6b36",
+  k: "#f07a1e",
   h: "#d0453a",
   ".": "#3f86e0",
   "#": "#0b0907",
 };
 
-/** Paint brushes in key order 1–7: code, label, button colour. */
+/** Paint brushes in key order 1–9: code, label, button colour. */
 export const BRUSHES: readonly { code: TerrainCode; label: string; bg: string }[] = [
-  { code: "r", label: "Road", bg: "#b8842a" },
+  { code: "r", label: "Road", bg: "#8f897c" },
   { code: "w", label: "Wilds", bg: "#3f7a46" },
+  { code: "p", label: "Plains", bg: "#a8962a" },
   { code: "d", label: "Deep wilds", bg: "#1a4f2a" },
-  { code: "m", label: "Marshland", bg: "#3f6e66" },
+  { code: "k", label: "Hills", bg: "#b85a14" },
+  { code: "m", label: "Wetlands", bg: "#3f6e66" },
   { code: "h", label: "Mountains / hard going", bg: "#9a3a2e" },
   { code: ".", label: "Water / none", bg: "#3a5a9a" },
   { code: "#", label: "Impassable", bg: "#0b0907" },
@@ -172,11 +178,11 @@ export function applyTerrainCells(grid: string, indexes: readonly number[], code
   return g.join("");
 }
 
-export type TerrainPaths = Record<"r" | "w" | "d" | "m" | "h" | "x" | "b", string>;
+export type TerrainPaths = Record<"r" | "w" | "p" | "d" | "k" | "m" | "h" | "x" | "b", string>;
 
 /** One SVG path per terrain (viewBox 0 0 128 98), merging horizontal runs. Water is `x`, impassable `b`. */
 export function terrainPaths(grid: string): TerrainPaths {
-  const out: TerrainPaths = { r: "", w: "", d: "", m: "", h: "", x: "", b: "" };
+  const out: TerrainPaths = { r: "", w: "", p: "", d: "", k: "", m: "", h: "", x: "", b: "" };
   for (let r = 0; r < TERRAIN_ROWS; r++) {
     let c = 0;
     while (c < TERRAIN_COLUMNS) {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { Modal } from "@/components/brand/modal";
-import { DEFAULT_TRAVEL_RULES, METHOD_LABELS, SPEED_TERRAINS, SPEED_TERRAIN_CODE, TRAVEL_METHODS, type SpeedTerrain, type TravelRules } from "@/lib/domain/travel";
+import { DEFAULT_TRAVEL_RULES, METHOD_LABELS, SPEED_TERRAINS, SPEED_TERRAIN_CODE, TRAVEL_METHODS, tableSpeed, type SpeedTable, type SpeedTerrain, type TravelMethod, type TravelRules } from "@/lib/domain/travel";
 import { TERRAIN_NAMES } from "@/lib/world/terrain";
 
 import type { MapActions } from "./map-actions";
@@ -11,13 +11,14 @@ import type { MapActions } from "./map-actions";
 /** The painted terrain's names, as on the brushes and the Travel speeds legend. */
 const TERRAIN_LABEL = Object.fromEntries(SPEED_TERRAINS.map((t) => [t, TERRAIN_NAMES[SPEED_TERRAIN_CODE[t]]])) as Record<SpeedTerrain, string>;
 
-type Row = { key: string; label: string; get: (r: TravelRules) => Record<SpeedTerrain, number>; set: (r: TravelRules, t: Record<SpeedTerrain, number>) => TravelRules };
+type Row = { key: string; method: TravelMethod; label: string; get: (r: TravelRules) => SpeedTable; set: (r: TravelRules, t: SpeedTable) => TravelRules };
 
 const ROWS: Row[] = TRAVEL_METHODS.map((m) => ({
   key: m,
+  method: m,
   label: METHOD_LABELS[m],
   get: (r: TravelRules) => r.speeds[m],
-  set: (r: TravelRules, t: Record<SpeedTerrain, number>) => ({ ...r, speeds: { ...r.speeds, [m]: t } }),
+  set: (r: TravelRules, t: SpeedTable) => ({ ...r, speeds: { ...r.speeds, [m]: t } }),
 }));
 
 /** The campaign's travel speeds (house rule), km per day, editable by the GM. */
@@ -73,8 +74,8 @@ function RulesForm({ rules, actions, onClose }: { rules: TravelRules; actions: M
                       max={1000}
                       required
                       aria-label={`${row.label}, ${TERRAIN_LABEL[t]}, km per day`}
-                      value={row.get(draft)[t]}
-                      onChange={(e) => setDraft(row.set(draft, { ...row.get(draft), [t]: num(e.target.value) }))}
+                      value={tableSpeed(row.get(draft), t, row.method)}
+                      onChange={(e) => setDraft(row.set(draft, { ...row.get(draft), hills: tableSpeed(row.get(draft), "hills", row.method), plains: tableSpeed(row.get(draft), "plains", row.method), [t]: num(e.target.value) }))}
                     />
                   </td>
                 ))}
