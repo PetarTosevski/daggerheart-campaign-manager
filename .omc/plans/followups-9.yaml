@@ -72,3 +72,31 @@ waves:
           - "dcm-bxp.96 (b): addObject with both kind and sprite fails INVALID (flip the old assertion); dcm-bxp.98: adversaries and custom tokens without art send portrait: null (R4 key test updated)"
           - "dcm-bxp.99.31, dcm-bxp.137: CA-CA6 reads the card result above the docked Hand fan; D11-N7 / D11-N8 find their regions (fix the locators to today's labels; don't weaken checks)"
           - "pnpm lint, typecheck, vitest, the touched e2e/visual specs (E2E_VISUAL=1) and tracer-guard pass"
+  - wave: 4
+    tracers:
+      - id: J4
+        title: e2e sign-up codes never collide (dcm-bxp.128.2)
+        size: S
+        goal: On the local e2e deployment two pending sign-ups can both be verified; real deployments are unchanged.
+        depends_on: []
+        owns:
+          - convex/auth.ts
+          - convex/lib/authEmail.ts
+          - convex/http.ts
+          - convex/e2e.ts
+          - convex/schema.ts
+          - convex/tables/e2e.ts
+          - tests/unit/auth-email.test.ts
+          - tests/convex/auth-signup.test.ts
+          - tests/convex/authz/e2e.entries.ts
+          - tests/e2e/fixtures.ts
+          - tests/e2e/players.spec.ts
+          - tests/e2e/a11y-signin.spec.ts
+          - tests/e2e/auth.spec.ts
+          - docs/testing.md
+          - docs/tasks/TASK-F9-J4.md
+        reads: [docs/tasks/TASK-OS-OS1.md, docs/tasks/TASK-OS-OS3.md, docs/tasks/TASK-F9-J3.md, convex/lib/allowlist.ts]
+        acceptance:
+          - "Two unverified sign-ups pending at once on the e2e deployment both verify (convex test proves it); no fixed shared code hash"
+          - "The mechanism is e2e-only (isE2EDeployment + E2E_AUTH_ENABLED), safe under concurrent requests (no module-level mutable state shared across requests), adds no public function reachable outside e2e (any new public endpoint is gated like the existing e2e rails and has authz/unauthenticated-sweep coverage)"
+          - "e2e specs read the code through the new mechanism; docs/testing.md explains it; pnpm lint, typecheck, vitest, the three sign-in e2e specs and tracer-guard pass"
