@@ -61,6 +61,19 @@ test("the GM places markers and measures; players see only visible markers", asy
   await expect(route.getByTestId("route-total")).toHaveText(/^\d+(\.\d)? mi · /);
   await route.getByRole("button", { name: "Done" }).click();
 
+  // Entering and leaving Paint mode keeps the map's zoom and position.
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  const view = async () => ({ transform: await page.locator("[data-map]").first().evaluate((el) => (el as HTMLElement).style.transform + (el as HTMLElement).style.width), zoom: await page.getByLabel("Zoom level").textContent() });
+  const before = await view();
+  await page.getByRole("button", { name: /Paint/ }).click();
+  await expect(page.getByRole("toolbar", { name: "Terrain brushes" })).toBeVisible();
+  expect(await view()).toEqual(before);
+  await page.getByRole("toolbar", { name: "Terrain brushes" }).getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("toolbar", { name: "Terrain brushes" })).toHaveCount(0);
+  await page.waitForTimeout(500);
+  expect(await view()).toEqual(before);
+
   // A player joins and sees the visible marker only.
   await page.getByRole("button", { name: "Players", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Players" });
