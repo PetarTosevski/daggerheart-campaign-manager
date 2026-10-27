@@ -4,7 +4,7 @@
 export const TERRAIN_COLUMNS = 128;
 export const TERRAIN_ROWS = 98;
 
-/** Terrain cells, row-major: r Road, w Wilds, d Deep wilds, m Marsh, h Mountains, . Water, # Impassable. */
+/** Terrain cells, row-major: r Road, w Wilds, d Deep wilds, m Wetlands, h Mountains, . Water, # Impassable. */
 export const TERRAIN_CODES = ["r", "w", "d", "m", "h", ".", "#"] as const;
 
 export type TerrainCode = (typeof TERRAIN_CODES)[number];
@@ -13,7 +13,7 @@ export type TerrainCode = (typeof TERRAIN_CODES)[number];
 export const TERRAIN_NAMES: Record<TerrainCode, string> = {
   r: "Road",
   w: "Wilds",
-  m: "Marshland",
+  m: "Wetlands",
   d: "Deep wilds",
   h: "Mountains",
   ".": "Water",
@@ -34,7 +34,7 @@ export const BRUSHES: readonly { code: TerrainCode; label: string; bg: string }[
   { code: "r", label: "Road", bg: "#b8842a" },
   { code: "w", label: "Wilds", bg: "#3f7a46" },
   { code: "d", label: "Deep wilds", bg: "#1a4f2a" },
-  { code: "m", label: "Marshland", bg: "#3f6e66" },
+  { code: "m", label: "Wetlands", bg: "#3f6e66" },
   { code: "h", label: "Mountains / hard going", bg: "#9a3a2e" },
   { code: ".", label: "Water / none", bg: "#3a5a9a" },
   { code: "#", label: "Impassable", bg: "#0b0907" },
