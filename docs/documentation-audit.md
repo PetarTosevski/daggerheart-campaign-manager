@@ -1,5 +1,11 @@
 # Documentation Audit
 
+> **Historical (pre-Convex).** This review is not a description of the current
+> app. It names files that are not in this repository, including
+> `docs/architecture.md` and `docs/product-spec.md`. Do not create those files
+> from this audit. The shipped app is Next.js and Convex on Vercel, not
+> Supabase. Tasks 001–005 are not the current task list.
+
 ## Scope
 
 Reviewed:

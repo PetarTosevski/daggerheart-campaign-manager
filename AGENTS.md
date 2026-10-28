@@ -167,15 +167,14 @@ art from the Claude Design boards, which the user approved for this private app
 7. Multi-user (user decision 2026-10-17): roles are per campaign. A campaign's
    creator is its GM; players join by email invite or join code. Anything
    hidden from players is enforced on the server, never only in the UI.
-   Sign-up stays limited to the env allowlist until the user opens it.
+   Sign-up is open (user decision 2026-10-23): any email may create an account.
 8. Never invent game rules.
 
 ## Approved technology stack
 
 - Next.js App Router, TypeScript strict mode
 - Convex (database, queries, mutations, live updates)
-- Convex Auth with Google and email + password sign-in, both limited to the
-  env allowlist
+- Convex Auth with Google and email + password sign-in. Sign-up is open.
 - Tailwind CSS and shadcn/ui primitives
 - Zod for input validation
 - Vitest (unit, and convex-test for Convex functions), Playwright (e2e)
@@ -192,12 +191,10 @@ exclusion.
 - `convex/schema.ts`: the schema (includes Convex Auth's `authTables`).
 - `convex/auth.ts`: Convex Auth. Google (with a `profile()` override that
   keeps `email_verified`), email + password (`password`), and the local-only
-  e2e provider; `createOrUpdateUser` (`convex/lib/users.ts`) applies the
-  allowlist and refuses a new password account for an email that already has
-  a user.
-- `convex/lib/allowlist.ts`: pure sign-in policy (allowlist =
-  `ALLOWED_EMAILS` ∪ legacy `GM_EMAILS` ∪ `SEED_ACCOUNTS` emails, verified
-  email for OAuth, local-only e2e sign-in). Unit-tested.
+  e2e provider; `createOrUpdateUser` (`convex/lib/users.ts`) refuses a new
+  password account for an email that already has a user. Sign-up is open.
+- `convex/lib/allowlist.ts`: local e2e sign-in and seed-account rails. The
+  file name is historical: there is no email allowlist. Unit-tested.
 - `convex/lib/functions.ts`: the auth wrappers. Every client-callable function is
   `userQuery` / `userMutation` / `userAction` or a campaign/GM wrapper built on
   them; they put `user` (and `campaign`, `permission`) on `ctx`.
@@ -223,8 +220,7 @@ exclusion.
 
 - Production: a cloud deployment, deployed by Vercel (production builds
   only, `vercel.json`) with `npx convex deploy --cmd 'pnpm build'`.
-  Env vars on Convex: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`,
-  `ALLOWED_EMAILS` (or the legacy `GM_EMAILS`), `SITE_URL`,
+  Env vars on Convex: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `SITE_URL`,
   `JWT_PRIVATE_KEY`, `JWKS`; optional `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
   `LOREKEEPER_MODEL` and the Lorekeeper caps `LOREKEEPER_DAILY_QUESTIONS`,
   `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD`
@@ -232,6 +228,8 @@ exclusion.
   `npx convex deploy` sets `NEXT_PUBLIC_CONVEX_URL` for the build.
 - `ANTHROPIC_API_KEY` lives only in the Convex env, never in Vercel,
   `.env.local` or a `NEXT_PUBLIC_` variable.
+- `ALLOWED_EMAILS` and the legacy `GM_EMAILS` are still declared and ignored.
+  Sign-up is open; a leftover value does not decide who may create an account.
 - Dev-only variables never go to production: `SEED_ACCOUNTS` and
   `ALLOW_SEED_ACCOUNTS` (cloud dev test logins), and `E2E_AUTH_ENABLED`,
   `E2E_AUTH_SECRET` and `LOREKEEPER_FAKE_MODEL` (local e2e backend only).
@@ -369,7 +367,7 @@ Agents must not, without explicit approval:
 - Introduce a paid service.
 - Disable authentication or authorisation checks.
 - Remove event history.
-- Open sign-up beyond the allowlist without the user's go-ahead.
+- Close sign-up, or limit it to an email allowlist, without the user's go-ahead.
 - Add arbitrary executable custom mechanics.
 - Copy protected rules text or artwork into the application beyond what the
   user approved (frame lore, tomes and design art; rule text needed to run a

@@ -37,7 +37,7 @@ Renumbered 2026-10-19: Combat Map became D9, so Sessions, Notes and Hardening mo
 |---|---|---|---|
 | D1 | Design foundation and entry flow | `TitleMenu` (+ Settings), `FrameSelect`, the 10 frame intros, `Chronicle`, campaign shell + nav | Theme tokens and fonts, frame registry, `campaigns` and `settings` tables, create/list/resume/delete campaign. Dashboard and other tabs are placeholders. |
 | D2 | Dashboard core mechanics | `CampaignHub` | GM Fear (tokens), countdowns, Witherwild time arc, last session card. Includes old plan Phases 3–5; resolve the board-vs-SQL conflicts first. |
-| D2.5 | Accounts and roles | — | Email+password sign-up beside Google (both allowlisted by `ALLOWED_EMAILS` for now), env-defined test accounts, `campaignMembers` (gm/player), email invites and join codes, membership-based authorization for every existing function, player-visible filtering, joined campaigns in Load Campaign. |
+| D2.5 | Accounts and roles | — | Email+password sign-up beside Google (sign-up is open; user decision 2026-10-23), env-defined test accounts, `campaignMembers` (gm/player), email invites and join codes, membership-based authorization for every existing function, player-visible filtering, joined campaigns in Load Campaign. |
 | D3 | Frame dashboards and tomes | `Hub*`, `HubCustom`, `Tome*`, `TomeOpenBook` | Per-frame dashboard looks, the lore books, the Custom frame (tome, background picker). |
 | D4 | Party: roster and character creation | `Party` (roster, wizard, sheet) | Portraits in Convex file storage. |
 | D5 | Party: level-up, Hope and class features, dice | `Party` | Includes `dcm-mf7` (+1 to two unmarked traits). 3D dice (three + cannon-es). Photo import last. |

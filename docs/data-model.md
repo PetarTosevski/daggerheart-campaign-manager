@@ -1,7 +1,8 @@
 # Data model (Convex)
 
 Source of truth: `convex/schema.ts`. Every public function calls `requireUser`
-(signed in and on the sign-up allowlist). Campaign data is reached through
+(the signed-in user; sign-up is open, so there is no further gate). Campaign
+data is reached through
 `loadCampaign` (`convex/lib/access.ts`), which returns the caller's role
 (maps, codex and characters check access through `permissionFor` in
 `convex/lib/permissions.ts`, which starts from the same role; see `grants`): the

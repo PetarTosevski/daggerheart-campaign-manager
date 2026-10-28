@@ -1,26 +1,28 @@
-# Production launch runbook: dualityheart.com
+# Production runbook: dualityheart.com
 
-Status when written (2026-10-26): everything below is prepared, nothing is live. Tracked in dcm-bxp.133 (go live),
-dcm-bxp.128 (open sign-up) and dcm-bxp.136 (Resend sender domain). Steps marked **USER** need the account owner;
-the rest an agent can run once the user confirms each step.
+The site is live on Vercel at https://dualityheart.com. Open sign-up is on `master` (dcm-bxp.128). Tag `v1.0.0`
+(2026-10-26, "Release: rebuild (dualityheart.com launch)") is an ancestor of `origin/master`. This file started as
+the pre-launch runbook (dcm-bxp.133). Steps that are done are marked **Finished**. The rest is still operational.
+Steps marked **USER** need the account owner. Do not record secret values here.
 
 Hosting: Vercel project `petartosevski/daggerheart-campaign-manager` (linked in `.vercel/`), Convex production
-deployment (already exists; its deploy key is already in Vercel as `CONVEX_DEPLOY_KEY`, Production only).
-Vercel builds from `master` (`vercel.json`: `npx convex deploy --cmd 'pnpm build'`; the `ignoreCommand` skips every
-non-production build, so branches and PRs do not deploy).
+deployment. Vercel builds from `master` (`vercel.json`: `npx convex deploy --cmd 'pnpm build'`; the `ignoreCommand`
+skips every non-production build, so branches and PRs do not deploy).
 
-## 0. State already prepared
+## 0. Prepared before launch — Finished
 
-- `dualityheart.com` and `www.dualityheart.com` are added to the Vercel project (verified in the project, DNS not yet
-  pointing at Vercel, so the domains show "not configured" until step 1).
-- The Convex production deployment exists and has only `ANTHROPIC_API_KEY` set (`npx convex env list --prod`).
-- Vercel Production env has only `CONVEX_DEPLOY_KEY`. `NEXT_PUBLIC_CONVEX_URL` is injected by `convex deploy`
-  during the build, so it is not set by hand.
+- `dualityheart.com` and `www.dualityheart.com` are on the Vercel project, and the site is served at
+  https://dualityheart.com.
+- The Convex production deployment exists. Production deploys run inside the Vercel build.
+- A 2026-10-26 snapshot said Convex production had only `ANTHROPIC_API_KEY`, and Vercel Production had only
+  `CONVEX_DEPLOY_KEY`. That inventory is not current. This runbook does not list which values are set now.
+  `NEXT_PUBLIC_CONVEX_URL` is injected by `convex deploy` during the build, so it is not set by hand.
 
-## 1. GoDaddy DNS (USER)
+## 1. GoDaddy DNS — Finished
 
-The domain stays at GoDaddy's nameservers (`ns19/ns20.domaincontrol.com`); add these records in GoDaddy
-DNS Management. Delete any existing `A` record on `@` (the GoDaddy "parked" one) and any `CNAME` on `www` first.
+The domain stays at GoDaddy's nameservers (`ns19/ns20.domaincontrol.com`). https://dualityheart.com serves the
+Vercel project, so DNS points at Vercel. The records below are the ones this runbook specified. Re-check them;
+do not add a second set.
 
 | Type | Name | Value | TTL |
 |---|---|---|---|
@@ -32,15 +34,16 @@ DNS Management. Delete any existing `A` record on `@` (the GoDaddy "parked" one)
 Re-read them any time: `vercel domains verify dualityheart.com` and `vercel domains verify www.dualityheart.com`.
 Do not touch GoDaddy's MX or TXT records; Resend's records (step 2) are added next to them.
 
-Optional: in Vercel, Project Settings, Domains, set `www.dualityheart.com` to redirect to `dualityheart.com`.
+Optional, and not recorded here: in Vercel, Project Settings, Domains, `www.dualityheart.com` may redirect to
+`dualityheart.com`.
 
-Warning: once these records resolve, `dualityheart.com` serves the project's current production deployment. Do this
-step at launch (after step 7), not earlier, unless the old master site may be shown.
-
-Check: `vercel domains inspect dualityheart.com` shows no warning; `curl -I https://dualityheart.com` returns 200
-once a deployment is live (certificates issue automatically within minutes).
+Check: `vercel domains inspect dualityheart.com` shows no warning; `curl -I https://dualityheart.com` returns 200.
 
 ## 2. Resend sender domain (USER first, then an agent)
+
+Still operational. The sign-up and reset code mail is built (`convex/lib/authEmail.ts`). Invite mail uses the same
+sender (`convex/lib/inviteEmail.ts`). Convex env names: `AUTH_RESEND_KEY` and `MAIL_FROM`. This runbook does not
+record whether the domain is verified or what `MAIL_FROM` is set to.
 
 1. **USER**: accept the Resend terms in the browser: https://vercel.com/petartosevski/~/integrations/accept-terms/resend?source=cli
 2. Agent: install the integration (`vercel integration add resend`, load the `vercel:marketplace` skill first).
@@ -48,11 +51,9 @@ once a deployment is live (certificates issue automatically within minutes).
    which keeps the apex mail records clean). Resend then shows the exact DKIM (TXT), SPF (TXT) and return-path (MX)
    records for that domain. **These come from the Resend dashboard after install; copy them from there.**
 4. **USER**: add those records at GoDaddy, then press Verify in Resend. Verification can take up to a day.
-5. Create a Resend API key restricted to sending. Store it only in the Convex production env (step 4), never in Vercel
-   or git. The sender address will be on the verified domain, for example `Duality Heart <noreply@dualityheart.com>`.
-
-Note: the sign-up code email itself (Convex Auth `Password` provider with `verify` and a Resend provider) is bead
-dcm-bxp.128 and is not built yet. Its exact env var name is fixed when it lands; update step 4 then.
+5. Create a Resend API key restricted to sending. Store it only as `AUTH_RESEND_KEY` in the Convex production env
+   (step 4), never in Vercel or git. Set `MAIL_FROM` to a sender on the verified domain, for example
+   `Duality Heart <noreply@dualityheart.com>`.
 
 ## 3. Convex production deployment
 
@@ -74,17 +75,19 @@ Found by grepping `env.*` / `process.env.*` in `convex/`, `src/`, `scripts/`.
 
 | Variable | Needed | Who | Notes |
 |---|---|---|---|
-| `ANTHROPIC_API_KEY` | yes | already set | Lorekeeper, map generation, photo import. |
+| `ANTHROPIC_API_KEY` | yes | — | Lorekeeper, map generation, photo import. Recorded as set on 2026-10-26; not re-checked here. |
 | `SITE_URL` | yes | agent | `https://dualityheart.com`. Convex Auth redirects here after OAuth. Dev has its own value; do not copy it. |
-| `JWT_PRIVATE_KEY` | yes | agent generates | RS256 private key (PKCS8). Generate fresh for production, see below. |
-| `JWKS` | yes | agent generates | Matching public JWKS. |
+| `JWT_PRIVATE_KEY` | yes | agent, only if unset | RS256 private key (PKCS8). The site is live: do not generate a new pair if one is already set. Regenerating signs everyone out. |
+| `JWKS` | yes | agent, only if unset | Matching public JWKS. Same warning. |
 | `AUTH_GOOGLE_ID` | yes | **USER** | Google OAuth client id (see step 5). |
 | `AUTH_GOOGLE_SECRET` | yes | **USER** | Google OAuth client secret. |
-| Resend key | yes | **USER** | Name decided in dcm-bxp.128 (Convex Auth convention is `AUTH_RESEND_KEY`). Only in Convex env. |
+| `AUTH_RESEND_KEY` | yes | **USER** | Resend API key. Convex env only. |
+| `MAIL_FROM` | yes | **USER** | Sender on the verified domain. Convex env only. |
 | `CONVEX_SITE_URL` | automatic | none | Provided by Convex itself to `convex/auth.config.ts`. Do not set. |
 | `LOREKEEPER_MODEL`, `LOREKEEPER_DAILY_QUESTIONS`, `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD`, `ANTHROPIC_MODEL` | optional | user | Defaults are fine; see `docs/lorekeeper.md`. |
 
-Generate the key pair (run locally, pipe straight into Convex, never print or save it):
+Generate the key pair only when production has neither key. The site is live; a new pair signs everyone out.
+Run locally, pipe straight into Convex, never print or save it:
 
 ```bash
 node --input-type=module -e '
@@ -100,12 +103,13 @@ rm "$SCRATCH/keys.json"
 ```
 
 (`jose` is not a direct dependency, so import it by its pnpm path as above (check the version with `ls node_modules/.pnpm | grep jose`). Check both values are non-empty afterwards: `npx convex env get --prod JWKS | wc -c`. `npx @convex-dev/auth` can also do this interactively.)
-Setting `JWT_PRIVATE_KEY` and `JWKS` before the first production sign-in matters: changing them later signs everyone out.
+Changing `JWT_PRIVATE_KEY` or `JWKS` signs everyone out. Do not rotate them on the live site.
 
 ### Convex production: must NOT be set
 
-- `ALLOWED_EMAILS`, `GM_EMAILS`: the invite allowlist. (2026-10-26: the user chose an invite-only launch first, so `GM_EMAILS` IS set on prod, copied from dev; remove it when open sign-up lands.) Open sign-up (dcm-bxp.128) deletes it from the code; until
-  that lands, an unset list means nobody can sign up. **Blocker: do not launch before dcm-bxp.128 is merged.**
+- `ALLOWED_EMAILS`, `GM_EMAILS`: unused. Open sign-up is on `master` (dcm-bxp.128). The code does not read them, so a
+  leftover value does not decide who may sign up. The 2026-10-26 launch blocker is finished. Do not set them to
+  limit sign-up. This runbook does not say whether a leftover value is still present on the deployment.
 - `SEED_ACCOUNTS`, `ALLOW_SEED_ACCOUNTS`, `E2E_AUTH_ENABLED`, `E2E_AUTH_SECRET`, `LOREKEEPER_FAKE_MODEL`:
   test rails, off in production.
 
@@ -136,9 +140,10 @@ client for production):
 - Give the agent the client id and secret to set as `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (step 4), or set them
   yourself with `npx convex env set --prod`.
 
-## 6. Data migrations (run after the first production deploy, step 7)
+## 6. Data migrations
 
-The production deployment may hold data from old master. All migrations are idempotent and resumable. Dry run
+The first production deploy already happened (step 7). These commands are still the migration runbook. This file
+does not record whether they have been run. All migrations are idempotent and resumable. Dry run
 first (one batch, rolled back): add `, dryRun: true`. Run each once:
 
 ```bash
@@ -166,9 +171,11 @@ npx convex run --prod migrations/run:run '{fn: "migrations/motherboardEconomy:ad
 Status: `npx convex run --prod --component migrations lib:getStatus --watch`. If the migrations folder has gained
 files since this was written, run `ls convex/migrations` and add them.
 
-## 7. Merge rebuild into master (agent, user confirms each command)
+## 7. Merge rebuild into master — Finished
 
-Vercel keeps deploying `master`, so the merge is the deploy. Run from a clean checkout.
+Done 2026-10-26. Tag `v1.0.0` is that merge; `pre-rebuild-master` is the rollback anchor. `master` has commits after
+the tag. Do not run this merge again. The commands below are the record of what shipped. Vercel still deploys
+`master`.
 
 ```bash
 git switch rebuild && pnpm lint && pnpm typecheck && pnpm test   # all green first
@@ -181,10 +188,9 @@ git tag -a v1.0.0 -m "dualityheart.com launch"
 git push origin master v1.0.0                                       # triggers the Vercel production build
 ```
 
-Do steps 1 to 5 before this push. The build runs `convex deploy`, which pushes the new functions and schema to
-the production Convex deployment: that is the moment production data is read by the new code, so run the step 6
-migrations right after the deployment turns Ready (`vercel ls`, or the Vercel dashboard). If production holds old
-data, run the two hand-sharing migrations before opening the site to players.
+The launch push already happened. That build ran `convex deploy` and pushed the functions and schema to the
+production Convex deployment. Step 6 remains the migration runbook; this file does not record whether those
+commands have been run.
 
 ## 8. Books for the Lorekeeper (agent; text files stay outside the repo)
 
@@ -198,10 +204,12 @@ pnpm lorekeeper:ingest frame:witherwild ~/books/core.txt --prod     # core pp. 2
 pnpm lorekeeper:ingest houseRules --prod                            # the switch only
 ```
 
-Requires `ANTHROPIC_API_KEY` on the production deployment (already set). Set an Anthropic console spend limit as
-the last line of defence.
+Requires `ANTHROPIC_API_KEY` on the production deployment. The 2026-10-26 runbook recorded it as set; this file
+does not re-check env. Set an Anthropic console spend limit as the last line of defence.
 
 ## 9. Smoke test (https://dualityheart.com, a private window)
+
+Not recorded as run. The site being live does not check these boxes.
 
 - [ ] `https://dualityheart.com` and `https://www.dualityheart.com` load over HTTPS with a valid certificate.
 - [ ] Sign up with a new email and password: a 6-digit code arrives from the dualityheart.com sender, entering it
@@ -225,9 +233,9 @@ the last line of defence.
 - **Full rollback to old master**: `git switch master && git revert -m 1 <merge commit>` (or reset master to the
   `pre-rebuild-master` tag and force-push, only with the user's explicit approval), push; Vercel rebuilds and
   `convex deploy` restores the old functions. Data migrations are one way for new-shape rows: restore from a Convex
-  backup if needed. Take one before step 7: Convex dashboard, production, Settings, Backups, "Backup now"
-  (**USER**), and note the time.
-- **Sign-in broken** (auth env wrong): fix `SITE_URL`, `AUTH_GOOGLE_*`, the Resend key with
+  backup if needed. Before a full rollback, take one: Convex dashboard, production, Settings, Backups,
+  "Backup now" (**USER**), and note the time. This file does not record whether a backup was taken before launch.
+- **Sign-in broken** (auth env wrong): fix `SITE_URL`, `AUTH_GOOGLE_*`, `AUTH_RESEND_KEY` or `MAIL_FROM` with
   `npx convex env set --prod`; no redeploy needed. Never regenerate `JWT_PRIVATE_KEY`/`JWKS` as a fix, it signs
   everyone out.
 - **Lorekeeper cost runaway**: `npx convex env set --prod LOREKEEPER_DAILY_QUESTIONS 0` or lower the monthly caps.
