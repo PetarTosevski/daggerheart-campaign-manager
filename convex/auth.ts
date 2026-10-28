@@ -69,8 +69,10 @@ type Authorize = (params: Record<string, unknown>, ctx: ActionCtx) => Promise<un
  * as "Server Error" with no message. This wraps the provider's `authorize` so each expected failure is a
  * `ConvexError<AppError>` with its own code (TASK-OS-OS3 has the spike):
  * - wrong, expired or unknown-account code -> `CODE_INVALID` (same answer for all three, no account probing);
- * - an existing email on sign-up -> `EMAIL_TAKEN`, except an abandoned UNVERIFIED account, which is replaced: its
- *   password becomes the new one and a fresh code is sent;
+ * - an existing password account on sign-up -> `EMAIL_TAKEN`, except one still UNVERIFIED (abandoned, or a link to a
+ *   Google user waiting for its code), which is replaced: its password becomes the new one and a fresh code is sent;
+ *   an email held only by a verified (Google) user is not an error: the sign-up creates a pending password account
+ *   on that user (`createOrUpdateUser`) and the code links it;
  * - a reset for an unknown email answers like a known one (no error, no email), so reset reveals nothing;
  * - too many wrong passwords -> `RATE_LIMITED`.
  * It also lower-cases `params.email`, because Convex Auth compares the raw value with the stored account id.
@@ -94,9 +96,9 @@ function withAuthErrors(base: ReturnType<typeof Password>) {
           },
         );
         if (found !== null) {
-          if (found.account.emailVerified !== undefined || found.user.emailVerificationTime !== undefined) {
-            throw appError("EMAIL_TAKEN");
-          }
+          // A password account whose code was never entered is pending, whoever holds the user (an abandoned
+          // sign-up, or a Google user's link waiting for its code). A verified one belongs to its owner.
+          if (found.account.emailVerified !== undefined) throw appError("EMAIL_TAKEN");
           await modifyAccountCredentials(ctx, {
             provider: PASSWORD_PROVIDER_ID,
             account: { id: email, secret: params.password as string },

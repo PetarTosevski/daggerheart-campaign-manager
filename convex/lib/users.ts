@@ -20,8 +20,10 @@ export type SignInArgs = {
  * - Google / e2e: a verified email is required. An existing user with that email is reused only when verified; a
  *   user held by an UNVERIFIED password account loses that password login, its codes and sessions, and is verified.
  * - Password sign-up: the account starts unverified (no `emailVerificationTime`, no session until the code is
- *   entered). An email that already has a user is refused with `EMAIL_TAKEN`; otherwise registering someone's email
- *   would take over their account. (An abandoned unverified password account is replaced earlier, in `auth.ts`.)
+ *   entered). An email whose user is VERIFIED and has no password account (a Google user) gets a pending password
+ *   account on that SAME user: nothing on the user changes, and the account cannot sign in until the emailed code
+ *   marks it verified (the library sends a code instead of a session for an unverified account). Any other existing
+ *   user is refused with `EMAIL_TAKEN`. (An abandoned unverified password account is replaced earlier, in `auth.ts`.)
  * The email is normalised to lower case.
  */
 export async function createOrUpdateUser(
@@ -51,7 +53,15 @@ export async function createOrUpdateUser(
     .withIndex("email", (q) => q.eq("email", email))
     .unique();
   if (existing !== null) {
-    if (isPassword) throw appError("EMAIL_TAKEN");
+    if (isPassword) {
+      if (existing.emailVerificationTime === undefined) throw appError("EMAIL_TAKEN");
+      const held = await ctx.db
+        .query("authAccounts")
+        .withIndex("userIdAndProvider", (q) => q.eq("userId", existing._id).eq("provider", PASSWORD_PROVIDER_ID))
+        .first();
+      if (held !== null) throw appError("EMAIL_TAKEN");
+      return existing._id;
+    }
     if (existing.emailVerificationTime === undefined) {
       // A password account was registered for this address before its owner proved ownership; whoever chose that
       // password must not keep access.

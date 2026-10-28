@@ -165,11 +165,67 @@ describe("password sign-up with an emailed code", () => {
     expect((await rows(t)).users).toHaveLength(1);
   });
 
-  it("an email held by a Google user is EMAIL_TAKEN", async () => {
+  it("an email held by a Google user gets the code and a code links a password to the SAME user", async () => {
     const t = makeTest();
-    await t.run((ctx) => ctx.db.insert("users", { email: "ana@example.com", emailVerificationTime: 1 }));
+    const googleId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", { email: "ana@example.com", emailVerificationTime: 1, name: "Ana G" });
+      await ctx.db.insert("authAccounts", { userId, provider: "google", providerAccountId: "sub-1" });
+      return userId;
+    });
+    const result = await signUp(t, "ANA@example.com", GOOD, "Someone Else");
+    expect(result.tokens ?? null).toBeNull();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].to).toBe("ana@example.com");
+    // Pending: no session, the user is untouched, and the password cannot sign in before the code.
+    let state = await rows(t);
+    expect(state.users).toHaveLength(1);
+    expect(state.users[0]).toMatchObject({ _id: googleId, name: "Ana G", emailVerificationTime: 1 });
+    expect(state.sessions).toEqual([]);
+    expect((await signInPw(t, "ana@example.com", GOOD)).tokens ?? null).toBeNull();
+    expect(state.accounts.find((a) => a.provider === "password")?.emailVerified).toBeUndefined();
+    // A wrong code changes nothing.
+    expect(errorCode(await caught(verify(t, "ana@example.com", sent[sent.length - 1].code === "000000" ? "111111" : "000000")))).toBe("CODE_INVALID");
+    expect((await rows(t)).sessions).toEqual([]);
+    // The right code (the newest: the sign-in attempt above sent a fresh one) links the password account to the same
+    // user and signs in.
+    const verified = await verify(t, "ana@example.com", sent[sent.length - 1].code);
+    expect(verified.tokens?.token).toEqual(expect.any(String));
+    state = await rows(t);
+    expect(state.users).toHaveLength(1);
+    expect(state.users[0]).toMatchObject({ _id: googleId, name: "Ana G" });
+    expect(state.accounts.map((a) => a.provider).sort()).toEqual(["google", "password"]);
+    expect(state.accounts.every((a) => a.userId === googleId)).toBe(true);
+    expect(state.sessions[0]?.userId).toBe(googleId);
+    // Afterwards the password signs in directly, and the Google account is still there.
+    expect((await signInPw(t, "ana@example.com", GOOD)).tokens?.token).toEqual(expect.any(String));
+    // And now the email is taken like any other password account.
+    expect(errorCode(await caught(signUp(t, "ana@example.com", "another password")))).toBe("EMAIL_TAKEN");
+  });
+
+  it("a stranger's pending password on a Google user is replaced by the owner's own sign-up and never works", async () => {
+    const t = makeTest();
+    const googleId = await t.run((ctx) => ctx.db.insert("users", { email: "ana@example.com", emailVerificationTime: 1 }));
+    await signUp(t, "ana@example.com", "stranger pass");
+    const strangerCode = sent[0].code;
+    await signUp(t, "ana@example.com", "owner password");
+    expect(sent).toHaveLength(2);
+    if (sent[1].code !== strangerCode) {
+      expect(errorCode(await caught(verify(t, "ana@example.com", strangerCode)))).toBe("CODE_INVALID");
+    }
+    expect((await signInPw(t, "ana@example.com", "stranger pass").catch(() => ({}) as SignInResult)).tokens ?? null).toBeNull();
+    expect((await verify(t, "ana@example.com", sent[sent.length - 1].code)).tokens?.token).toEqual(expect.any(String));
+    const { users, accounts } = await rows(t);
+    expect(users).toHaveLength(1);
+    expect(accounts.find((a) => a.provider === "password")?.userId).toBe(googleId);
+    expect(await caught(signInPw(t, "ana@example.com", "stranger pass"))).toBeDefined();
+    expect((await signInPw(t, "ana@example.com", "owner password")).tokens?.token).toEqual(expect.any(String));
+  });
+
+  it("an unverified user with no password account is still EMAIL_TAKEN", async () => {
+    const t = makeTest();
+    await t.run((ctx) => ctx.db.insert("users", { email: "ana@example.com" }));
     expect(errorCode(await caught(signUp(t, "ana@example.com")))).toBe("EMAIL_TAKEN");
-    expect((await rows(t)).users).toHaveLength(1);
+    expect(sent).toEqual([]);
   });
 
   it("a new sign-up replaces an abandoned unverified account: new password, fresh code, old password dead", async () => {
@@ -323,8 +379,10 @@ describe("rate limits (per email, anonymous callers)", () => {
 
   it("the eleventh sign-up attempt for one address within an hour is RATE_LIMITED", async () => {
     const t = makeTest();
-    await t.run((ctx) => ctx.db.insert("users", { email: "ana@example.com", emailVerificationTime: 1 }));
-    for (let i = 0; i < 10; i += 1) {
+    await signUp(t, "ana@example.com");
+    await verify(t, "ana@example.com", sent[0].code);
+    // The first sign-up above was attempt 1 of 10.
+    for (let i = 0; i < 9; i += 1) {
       expect(errorCode(await caught(signUp(t, "ana@example.com")))).toBe("EMAIL_TAKEN");
     }
     expect(errorCode(await caught(signUp(t, "ana@example.com")))).toBe("RATE_LIMITED");

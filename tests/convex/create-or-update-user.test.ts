@@ -94,9 +94,36 @@ describe("createOrUpdateUser (sign-in callback)", () => {
       expect(user?.emailVerificationTime).toBeUndefined();
     });
 
-    it("refuses a new password account for an existing email with EMAIL_TAKEN", async () => {
+    it("links a new password account of a verified user without a password account to that same user", async () => {
       const t = makeTest();
-      await t.run((ctx) => ctx.db.insert("users", { email: "gm@example.com", emailVerificationTime: 1 }));
+      const id = await t.run((ctx) => ctx.db.insert("users", { email: "gm@example.com", emailVerificationTime: 1 }));
+      const linked = await t.run((ctx) =>
+        createOrUpdateUser(ctx, { existingUserId: null, provider: password, profile: { email: "GM@example.com", name: "Other" } }),
+      );
+      expect(linked).toBe(id);
+      expect(await t.run((ctx) => ctx.db.query("users").collect())).toEqual([
+        expect.objectContaining({ _id: id, email: "gm@example.com", emailVerificationTime: 1 }),
+      ]);
+      expect((await t.run((ctx) => ctx.db.get(id)))?.name).toBeUndefined();
+    });
+
+    it("refuses a new password account for a verified user that already has one with EMAIL_TAKEN", async () => {
+      const t = makeTest();
+      await t.run(async (ctx) => {
+        const userId = await ctx.db.insert("users", { email: "gm@example.com", emailVerificationTime: 1 });
+        await ctx.db.insert("authAccounts", { userId, provider: "password", providerAccountId: "gm@example.com", secret: "x" });
+      });
+      const error = await t
+        .run((ctx) =>
+          createOrUpdateUser(ctx, { existingUserId: null, provider: password, profile: { email: "GM@example.com" } }),
+        )
+        .catch((e) => e);
+      expect(errorCode(error)).toBe("EMAIL_TAKEN");
+    });
+
+    it("refuses a new password account for an UNVERIFIED existing user with EMAIL_TAKEN", async () => {
+      const t = makeTest();
+      await t.run((ctx) => ctx.db.insert("users", { email: "gm@example.com" }));
       const error = await t
         .run((ctx) =>
           createOrUpdateUser(ctx, { existingUserId: null, provider: password, profile: { email: "GM@example.com" } }),
