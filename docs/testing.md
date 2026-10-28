@@ -24,9 +24,9 @@ local, account-free Convex backend (`CONVEX_AGENT_MODE=anonymous`, deployment
 
 `pnpm e2e:setup` (idempotent) writes `.env.e2e.local` (git-ignored) with a
 random `E2E_AUTH_SECRET`, pushes the functions once, and sets the backend's
-env vars: `ALLOWED_EMAILS` (the five test accounts), `E2E_AUTH_ENABLED`,
-`E2E_AUTH_SECRET`, `SITE_URL`, and a freshly generated `JWT_PRIVATE_KEY` /
-`JWKS` pair. No real secret is needed anywhere.
+env vars: `E2E_AUTH_ENABLED`, `E2E_AUTH_SECRET`, `SITE_URL`, and, when missing,
+a `JWT_PRIVATE_KEY` / `JWKS` pair. No real secret is needed anywhere. Sign-up
+is open, so it does not set an email allowlist.
 
 It also turns on the Lorekeeper's fake model (`LOREKEEPER_FAKE_MODEL=true`,
 honoured only on this local backend; `convex/lib/claude.ts` `fakeEvents`) and
@@ -39,8 +39,9 @@ generator and photo import never use the fake model.
 
 **One email per sign-in method.** A user created through the test sign-in has
 no password account, so a later password sign-up with that email fails (and
-so does the password sign-in), whatever spec ran first. Every allowlisted
-account (`E2E_ALLOWED` in `scripts/e2e-setup.mjs`) uses exactly one method:
+so does the password sign-in), whatever spec ran first. Sign-up is open, so
+these addresses are not an allowlist. The comment in `scripts/e2e-setup.mjs`
+records who uses which method; each address uses exactly one:
 
 | Email | Sign-in method | Used by |
 |---|---|---|
@@ -50,8 +51,8 @@ account (`E2E_ALLOWED` in `scripts/e2e-setup.mjs`) uses exactly one method:
 | `e2e-password-only@example.test` | email + password | `tests/e2e/players.spec.ts` only |
 | `e2e-session-ended@example.test` | email + password | `tests/e2e/auth-session-ended.spec.ts` only |
 
-A new spec that needs another account, or signs up with a password, gets its
-own email in `E2E_ALLOWED`, then `pnpm e2e:setup`.
+A new spec that needs another account, or signs up with a password, uses its
+own email. Nothing has to list it.
 
 Sign-up and reset codes on the e2e backend: no email is sent and each code is
 random (Convex Auth looks codes up by hash with `unique()`, so one fixed code
