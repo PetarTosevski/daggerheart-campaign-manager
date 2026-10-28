@@ -17,7 +17,7 @@ Daggerheart rulebook.
 
 - Next.js 16 (App Router), TypeScript in strict mode
 - Convex 1.46 (database, server functions, live queries, file storage, crons)
-- Convex Auth: Google and email + password, both limited to an allowlist
+- Convex Auth: Google and email + password. Sign-up is open.
 - Tailwind CSS and shadcn/ui primitives, Zod for validation
 - Vitest (unit tests in jsdom, Convex function tests with convex-test),
   Playwright with axe for end-to-end tests
@@ -46,7 +46,7 @@ typed list is in `convex/convex.config.ts`.
 | Variable | Where | Purpose |
 | --- | --- | --- |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | Convex | Google sign-in |
-| `ALLOWED_EMAILS` (legacy `GM_EMAILS`) | Convex | Who may sign in or sign up |
+| `ALLOWED_EMAILS` (legacy `GM_EMAILS`) | Convex | Declared and ignored. Sign-up is open. |
 | `SITE_URL` | Convex | The app's URL, for sign-in redirects |
 | `JWT_PRIVATE_KEY`, `JWKS` | Convex | Convex Auth session signing keys |
 | `ANTHROPIC_API_KEY` | Convex only | Photo import, combat map generation and the Lorekeeper; without it those features are unavailable |
