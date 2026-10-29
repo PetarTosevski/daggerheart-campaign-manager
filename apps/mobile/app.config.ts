@@ -23,6 +23,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     userInterfaceStyle: "automatic",
     ios: {
       bundleIdentifier: bundleId,
+      usesAppleSignIn: true,
     },
     android: {
       package: bundleId,
@@ -31,6 +32,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         backgroundColor: "#1a1408",
       },
     },
-    plugins: ["expo-router"],
+    plugins: ["expo-router", "expo-apple-authentication"],
   };
 };

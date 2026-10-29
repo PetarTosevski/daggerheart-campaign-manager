@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { authErrorText } from "./auth-error";
+import { SocialSignIn } from "./social-sign-in";
 
 /** Seconds before "Resend code" works again. The server also allows 5 sends per hour per email. */
 export const RESEND_COOLDOWN_SECONDS = 30;
@@ -244,6 +245,7 @@ export function PasswordForm() {
       <Pressable accessibilityRole="button" disabled={pending} onPress={onSubmit} style={styles.button}>
         <Text>{submitLabel}</Text>
       </Pressable>
+      {step === "signIn" ? <SocialSignIn /> : null}
       {error ? (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}
