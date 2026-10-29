@@ -1,6 +1,6 @@
 import { FOG_PAD_SQUARES } from "../../../../../src/lib/domain/combat-map/vision";
 import { paintMap } from "../../../../../src/lib/combat-map/painter";
-import { paintMap as paintSpriteMap } from "../../../../../src/lib/combat-map/sprites/painter";
+import { paintMap as paintSpriteMap, mapUrls, prepareMap } from "../../../../../src/lib/combat-map/sprites/painter";
 import { renderShadow, type ShadowCanvas } from "../../../../../src/lib/combat-map/sprites/shadows";
 import { decodeCells } from "../../../../../src/components/combat-map/map-view/cells";
 import { toPaintSpec, toSpritePaintSpec } from "../../../../../src/components/combat-map/map-view/paint-spec";
@@ -12,6 +12,7 @@ import { loadSkia, type SkiaApi } from "./canvas/skia-runtime";
 import { SPRITE_MARK } from "./canvas/paint-frame";
 import type { CombatMapLayout } from "./contract";
 import { MAP_CELL } from "./constants";
+import { loadSpriteArt } from "./sprite-art";
 
 export type PaintedFrame = {
   width: number;
@@ -92,8 +93,14 @@ export async function paintCombatLayout(
 
   if (layout.style === "sprites") {
     const spec = toSpritePaintSpec(layout, new Map());
+    const prepared = prepareMap(spec, cells.paint);
+    const needed = mapUrls(prepared, MAP_CELL);
+    const art =
+      process.env.JEST_WORKER_ID === undefined
+        ? ((await loadSpriteArt(skia, [...needed.objects.keys(), ...needed.textures])) ?? stubSpriteArt(skia))
+        : stubSpriteArt(skia);
     paintSpriteMap(mapCtx as unknown as CanvasRenderingContext2D, spec, {
-      art: stubSpriteArt(skia),
+      art,
       cell: MAP_CELL,
       paint: cells.paint,
     });

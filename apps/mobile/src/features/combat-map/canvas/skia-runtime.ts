@@ -107,6 +107,7 @@ export interface SkiaApi {
   RRectXY(rect: SkRect, rx: number, ry: number): unknown;
   Image: {
     MakeImage(info: SkImageInfo, data: SkData, bytesPerRow: number): SkImage | null;
+    MakeImageFromEncoded(encoded: SkData): SkImage | null;
   };
   Data: { fromBytes(bytes: Uint8Array): SkData };
   Shader: {
