@@ -1,7 +1,7 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { Redirect, Slot, useSegments } from "expo-router";
-
 import { StyleSheet, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AppAuthProvider } from "../src/auth/provider";
 import { useBrandFonts } from "../src/theme/fonts";
@@ -12,9 +12,11 @@ export { RouteErrorBoundary as ErrorBoundary } from "../src/shell/route-error";
 export default function RootLayout() {
   useBrandFonts();
   return (
-    <AppAuthProvider>
-      <SessionGate />
-    </AppAuthProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <AppAuthProvider>
+        <SessionGate />
+      </AppAuthProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -54,5 +56,6 @@ function SessionGate() {
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   slot: { backgroundColor: colors.ink, flex: 1 },
 });
