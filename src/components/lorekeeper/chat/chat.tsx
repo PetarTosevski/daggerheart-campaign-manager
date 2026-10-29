@@ -18,13 +18,21 @@ import { askerNames } from "../conversations/names";
 import { Sigil } from "../sigil";
 import type { LorekeeperChatProps } from "../slots";
 import { ChatBoundary } from "./boundary";
+import { editLocally } from "./edit";
+import { QuestionBubble } from "./question";
 import { resolveSelection, useSelection } from "./selection";
+
+/** LK3: why Save on an edited question waits (the server refuses an edit while an answer is on its way). */
+const EDIT_WAITS_FOR_ANSWER = "Save is ready once the current answer finishes, or Stop it.";
+const EDIT_WAITS_FOR_SEND = "Sending…";
 
 /** Messages per page of history (newest first; 'Show earlier messages' loads more). */
 const PAGE = 40;
 
 type Pending = { question: string; conversationId?: Id<"lorekeeperConversations"> };
 type Notice = { text: string; newConversation: boolean };
+/** LK3: saves an edit of the caller's question (replaces from there on); resolves false when it failed. */
+type EditFn = (questionId: Id<"lorekeeperMessages">, question: string) => Promise<boolean>;
 type AskFn = (question: string, target: { conversationId?: Id<"lorekeeperConversations">; webSearch: boolean; visibility: ConversationVisibility }) => Promise<boolean>;
 
 /**
@@ -44,6 +52,7 @@ export function ChatView({ campaignId, access, variant }: LorekeeperChatProps) {
   const [selection, select] = useSelection(campaignId);
   const current = resolveSelection(selection, lists?.mine);
   const ask = useMutation(api.lorekeeper.ask).withOptimisticUpdate((store, args) => askLocally(store, args));
+  const edit = useMutation(api.lorekeeper.editQuestion).withOptimisticUpdate((store, args) => editLocally(store, args));
   const [pending, setPending] = useState<Pending | null>(null);
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -79,6 +88,20 @@ export function ChatView({ campaignId, access, variant }: LorekeeperChatProps) {
     }
   };
 
+  const editQuestion: EditFn = async (questionId, question) => {
+    setNotice(null);
+    setSending(true);
+    try {
+      await edit({ campaignId, questionId, question });
+      return true;
+    } catch (error) {
+      setNotice(askFailure(error));
+      return false;
+    } finally {
+      setSending(false);
+    }
+  };
+
   const startNew = () => {
     setNotice(null);
     select("new");
@@ -97,6 +120,7 @@ export function ChatView({ campaignId, access, variant }: LorekeeperChatProps) {
     sending,
     notice,
     onAsk: askQuestion,
+    onEdit: editQuestion,
     onNewConversation: startNew,
     newWeb,
     setNewWeb,
@@ -135,6 +159,7 @@ type PaneProps = {
   sending: boolean;
   notice: Notice | null;
   onAsk: AskFn;
+  onEdit: EditFn;
   onNewConversation: () => void;
   newWeb: boolean;
   setNewWeb: (on: boolean) => void;
@@ -176,6 +201,7 @@ function ConversationPane(props: PaneProps) {
         loading={loading}
         showPending={showPending}
         canLoadMore={history.status === "CanLoadMore"}
+        answering={streamingAnswer !== null}
         onLoadMore={() => history.loadMore(PAGE)}
         onRetry={
           target
@@ -220,6 +246,8 @@ function Stream(
     loading: boolean;
     showPending: boolean;
     canLoadMore: boolean;
+    /** The caller's answer is on its way here: no question can be edited until it ends. */
+    answering: boolean;
     onLoadMore: () => void;
     onRetry?: (question: string) => void;
   },
@@ -288,11 +316,16 @@ function Stream(
       ) : null}
       {messages.map((message, index) => {
         if (message.role === "question") {
+          // LK3: the asker edits their own question; Save asks again, nothing is answered while editing.
+          const editable = mine && props.available === true && !isLocalMessage(message._id);
           return (
-            <div key={message._id} className="lk-q">
-              <span className="lk-who">{asker}</span>
-              <div className="lk-qb">{message.text}</div>
-            </div>
+            <QuestionBubble
+              key={message._id}
+              asker={asker}
+              text={message.text}
+              onEdit={editable ? (question) => props.onEdit(message._id, question) : undefined}
+              waiting={props.disabled ?? (props.answering ? EDIT_WAITS_FOR_ANSWER : props.sending ? EDIT_WAITS_FOR_SEND : null)}
+            />
           );
         }
         const before = messages[index - 1];

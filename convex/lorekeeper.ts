@@ -25,6 +25,7 @@ import { deleteConversationBatch, settleReservation, WATCHDOG_MS } from "./lorek
  * The Lorekeeper's chat (D13 L3, plan `.omc/plans/d13-lorekeeper.yaml`; analysis 4, option A). `ask` stores the
  * question and a pending answer row and schedules `lorekeeperRun.run`, which streams the Messages API reply into
  * that row (patched about every 250 ms); clients see it through `listMessages`. `stop` ends an answer (Q11).
+ * `editQuestion` (LK3) rewrites one of the asker's questions, drops everything after it and asks it again.
  *
  * Who reads what (Q3, Q10): a conversation is readable by every campaign member unless its asker made it private;
  * a private one exists only for its asker (anyone else gets LOREKEEPER_NOT_FOUND, the GM included). Only the asker
@@ -256,6 +257,75 @@ export const ask = campaignMutation({
     await ctx.scheduler.runAfter(0, internal.lorekeeperRun.run, { answerId });
     await ctx.scheduler.runAfter(WATCHDOG_MS, internal.lorekeeperRun.watchdog, { answerId });
     return { conversationId, answerId };
+  },
+});
+
+/**
+ * LK3 (user 2026-10-29): edits the caller's own earlier question and asks it again, as ChatGPT and Claude do. One
+ * intent: the question's new text. In one transaction it deletes the question's answer and every later message of
+ * the conversation (and the Ask-the-GM requests on those answers; pinned rulings are their own rows and stay),
+ * stores the edited text on the question, and schedules a fresh answer exactly as `ask` does (the same rate limit,
+ * one answer in flight, the caps). Only the question's asker may edit it; anyone else gets LOREKEEPER_NOT_FOUND.
+ */
+export const editQuestion = campaignMutation({
+  need: "view",
+  rateLimit: "lorekeeperAsk",
+  args: { questionId: v.id("lorekeeperMessages"), question: v.string() },
+  returns: v.object({ conversationId: v.id("lorekeeperConversations"), answerId: v.id("lorekeeperMessages") }),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get("lorekeeperMessages", args.questionId);
+    if (row === null || row.campaignId !== ctx.campaign._id || row.userId !== ctx.user._id || row.role !== "question") throw appError("LOREKEEPER_NOT_FOUND");
+    const conversation = await ownConversation(ctx, row.conversationId);
+    const question = args.question.trim();
+    if (question.length === 0 || question.length > LOREKEEPER_LIMITS.question) throw appError("LOREKEEPER_QUESTION_INVALID");
+    if (!lorekeeperAvailable()) throw appError("LOREKEEPER_UNAVAILABLE");
+    if ((await inFlightAnswer(ctx)) !== null) throw appError("LOREKEEPER_BUSY");
+
+    const now = Date.now();
+    const reserved = await reserve(ctx, ctx.user, ctx.campaign, modelForPass("primary", modelFor("answer")), now);
+
+    // A conversation holds at most messagesPerConversation messages, so one bounded read takes every later one.
+    const later = await ctx.db
+      .query("lorekeeperMessages")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", conversation._id).gt("_creationTime", row._creationTime))
+      .take(LOREKEEPER_LIMITS.messagesPerConversation);
+    for (const message of later) {
+      if (message.role === "answer") {
+        const asks = await ctx.db
+          .query("lorekeeperAsks")
+          .withIndex("by_message", (q) => q.eq("messageId", message._id))
+          .take(10);
+        for (const ask of asks) await ctx.db.delete("lorekeeperAsks", ask._id);
+      }
+      await ctx.db.delete("lorekeeperMessages", message._id);
+    }
+    const earlier = await ctx.db
+      .query("lorekeeperMessages")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", conversation._id).lt("_creationTime", row._creationTime))
+      .first();
+
+    await ctx.db.patch("lorekeeperMessages", row._id, { text: question, updatedAt: now });
+    await ctx.db.patch("lorekeeperConversations", conversation._id, {
+      messageCount: Math.max(2, conversation.messageCount - later.length + 1),
+      lastAt: now,
+      // The title is the first question: editing that one renames the conversation.
+      ...(earlier === null ? { title: titleOf(question) } : {}),
+    });
+    const answerId = await ctx.db.insert("lorekeeperMessages", {
+      conversationId: conversation._id,
+      campaignId: ctx.campaign._id,
+      userId: ctx.user._id,
+      createdAt: now,
+      updatedAt: now,
+      role: "answer",
+      status: "pending",
+      text: "",
+      phase: "books",
+      reserved,
+    });
+    await ctx.scheduler.runAfter(0, internal.lorekeeperRun.run, { answerId });
+    await ctx.scheduler.runAfter(WATCHDOG_MS, internal.lorekeeperRun.watchdog, { answerId });
+    return { conversationId: conversation._id, answerId };
   },
 });
 

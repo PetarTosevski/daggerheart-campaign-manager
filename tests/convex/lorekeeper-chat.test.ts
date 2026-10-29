@@ -586,6 +586,107 @@ describe("lorekeeper chat", () => {
     });
   });
 
+  describe("editQuestion (LK3: an edit replaces from that question on)", () => {
+    const list = async (s: Awaited<ReturnType<typeof setup>>, conversationId: Id<"lorekeeperConversations">) =>
+      (await s.player.query(api.lorekeeper.listMessages, { campaignId: s.campaignId, conversationId, paginationOpts: { numItems: 20, cursor: null } })).page
+        .reverse()
+        .map((m) => [m.role, m.text]);
+    const questionIds = (s: Awaited<ReturnType<typeof setup>>, conversationId: Id<"lorekeeperConversations">) =>
+      s.t.run(async (c) =>
+        (await c.db.query("lorekeeperMessages").withIndex("by_conversation", (q) => q.eq("conversationId", conversationId)).take(20))
+          .filter((m) => m.role === "question")
+          .map((m) => m._id),
+      );
+
+    it("removes the old answer and every later message, and answers the edited text with the earlier turns as history", async () => {
+      const s = await setup();
+      let n = 0;
+      fetchMock.mockImplementation(() => Promise.resolve(sseResponse(textReply(`VERDICT: rules\nAnswer ${++n}.`))));
+      const first = await s.ask(undefined, { question: "What is Hope?" });
+      await s.finished(first.answerId);
+      const { conversationId } = first;
+      const second = await s.ask(undefined, { conversationId, question: "What does a critical hit do?" });
+      await s.finished(second.answerId);
+      const third = await s.ask(undefined, { conversationId, question: "And a failure with Fear?" });
+      await s.finished(third.answerId);
+      const playerId = (await s.row(third.answerId))!.userId;
+      await s.t.run((c) => c.db.insert("lorekeeperAsks", { campaignId: s.campaignId, messageId: third.answerId, askedBy: playerId, askedAt: 1 }));
+      const ruling = await s.t.run((c) =>
+        c.db.insert("lorekeeperRulings", { campaignId: s.campaignId, title: "Crits", text: "House call.", fromMessageId: second.answerId, pinnedBy: playerId, pinnedAt: 1, updatedAt: 1 }),
+      );
+      const [, q2] = await questionIds(s, conversationId);
+      const usageBefore = await s.player.query(api.lorekeeperUsage.mine, { campaignId: s.campaignId, day: new Date().toISOString().slice(0, 10), month: new Date().toISOString().slice(0, 7) });
+
+      const edited = await s.player.mutation(api.lorekeeper.editQuestion, { campaignId: s.campaignId, questionId: q2!, question: "  What does a critical success do?  " });
+      expect(edited.conversationId).toBe(conversationId);
+      const done = await s.finished(edited.answerId);
+      expect(done!.text).toBe("Answer 4.");
+
+      expect(await list(s, conversationId)).toEqual([
+        ["question", "What is Hope?"],
+        ["answer", "Answer 1."],
+        ["question", "What does a critical success do?"],
+        ["answer", "Answer 4."],
+      ]);
+      // The request asks the edited text with only the turns before it.
+      const body = String(fetchMock.mock.calls[3]![1]?.body);
+      expect(body).toContain("What does a critical success do?");
+      expect(body).not.toContain("What does a critical hit do?");
+      expect(body).not.toContain("And a failure with Fear?");
+      expect((JSON.parse(body) as { messages: unknown[] }).messages.length).toBe(3);
+
+      const left = await s.t.run(async (c) => ({
+        conversation: await c.db.get("lorekeeperConversations", conversationId),
+        asks: await c.db.query("lorekeeperAsks").withIndex("by_message", (q) => q.eq("messageId", third.answerId)).take(5),
+        ruling: await c.db.get("lorekeeperRulings", ruling),
+      }));
+      expect([left.conversation!.messageCount, left.conversation!.title]).toEqual([4, "What is Hope?"]);
+      expect(left.asks).toEqual([]);
+      // A pinned ruling is the GM's row: it stays.
+      expect(left.ruling?.text).toBe("House call.");
+      // The edit counts as a question against the daily cap.
+      const usageAfter = await s.player.query(api.lorekeeperUsage.mine, { campaignId: s.campaignId, day: new Date().toISOString().slice(0, 10), month: new Date().toISOString().slice(0, 7) });
+      expect(usageAfter.questionsLeft).toBe(usageBefore.questionsLeft - 1);
+    });
+
+    it("editing the first question renames the conversation", async () => {
+      const s = await setup();
+      fetchMock.mockImplementation(() => Promise.resolve(sseResponse(textReply("VERDICT: rules\nYes."))));
+      const { answerId, conversationId } = await s.ask(undefined, { question: "What is Hope?" });
+      await s.finished(answerId);
+      const [q1] = await questionIds(s, conversationId);
+      const edited = await s.player.mutation(api.lorekeeper.editQuestion, { campaignId: s.campaignId, questionId: q1!, question: "What is Fear?" });
+      await s.finished(edited.answerId);
+      const conversation = await s.player.query(api.lorekeeper.getConversation, { campaignId: s.campaignId, conversationId });
+      expect([conversation.title, conversation.messageCount]).toEqual(["What is Fear?", 2]);
+      expect(await s.row(answerId)).toBeNull();
+    });
+
+    it("only the asker edits; the text is validated; refused while an answer is on its way", async () => {
+      const s = await setup();
+      const text = sseFixture("answer-cited");
+      fetchMock.mockImplementation((_url, init) => Promise.resolve(gated(text, 10, init?.signal).response));
+      const { answerId, conversationId } = await s.ask();
+      const [q1] = await questionIds(s, conversationId);
+      const edit = (client: typeof s.gm, question: string, questionId: Id<"lorekeeperMessages"> = q1!) =>
+        code(client.mutation(api.lorekeeper.editQuestion, { campaignId: s.campaignId, questionId, question }));
+
+      // The conversation is public: the GM reads it, yet cannot edit its question.
+      expect(await edit(s.gm, "Hijacked?")).toBe("LOREKEEPER_NOT_FOUND");
+      // An answer is not a question.
+      expect(await edit(s.player, "An answer?", answerId)).toBe("LOREKEEPER_NOT_FOUND");
+      expect(await edit(s.player, "   ")).toBe("LOREKEEPER_QUESTION_INVALID");
+      expect(await edit(s.player, "x".repeat(1001))).toBe("LOREKEEPER_QUESTION_INVALID");
+      expect(await edit(s.player, "Edited while answering")).toBe("LOREKEEPER_BUSY");
+      await s.player.mutation(api.lorekeeper.stop, { campaignId: s.campaignId, answerId });
+      expect((await s.row(answerId))!.status).toBe("stopped");
+      // Nothing changed by the refused edits.
+      expect((await s.t.run((c) => c.db.get("lorekeeperMessages", q1!)))!.text).toBe("What does a critical hit do?");
+      delete process.env.ANTHROPIC_API_KEY;
+      expect(await edit(s.player, "Without a key")).toBe("LOREKEEPER_UNAVAILABLE");
+    });
+  });
+
   describe("conversations (Q3: public by default, private on request; Q10: the asker deletes)", () => {
     it("members read public conversations; a private one exists only for its asker", async () => {
       const s = await setup();
