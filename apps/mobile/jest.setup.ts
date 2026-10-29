@@ -6,6 +6,16 @@
 // for its own file (this setup runs first; that file's jest.mock runs next).
 import { jest } from "@jest/globals";
 
+jest.mock("react-native-safe-area-context", () => {
+  const inset = { top: 0, right: 0, bottom: 0, left: 0 };
+  return {
+    SafeAreaProvider: ({ children }: { children: unknown }) => children,
+    SafeAreaView: ({ children }: { children: unknown }) => children,
+    useSafeAreaInsets: () => inset,
+    initialWindowMetrics: { insets: inset, frame: { x: 0, y: 0, width: 0, height: 0 } },
+  };
+});
+
 type Hooks = {
   useQuery: (ref: unknown, ...args: unknown[]) => unknown;
   useMutation: (ref: unknown) => (args?: unknown) => unknown;

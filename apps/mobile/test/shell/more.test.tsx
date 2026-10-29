@@ -40,8 +40,8 @@ test("the tab bar shows the four sections and More", async () => {
 
 test("a player More sheet has no Adversaries", async () => {
   const screen = await render(<MoreSheet isGm={false} onClose={() => undefined} onSelect={() => undefined} open />);
-  expect(screen.getByRole("button", { name: "World" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Characters & Locations" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Codex" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "World Map" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Notes" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Lorekeeper" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Players" })).toBeTruthy();

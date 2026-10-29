@@ -17,10 +17,10 @@ function useWatched(ref: unknown, args: unknown): unknown {
   const id = useId();
   useEffect(() => {
     if (skip) return undefined;
+    client.watch(name, id);
     return () => client.unwatch(name, id);
   }, [client, skip, name, id]);
   if (skip) return undefined;
-  client.watch(name, id);
   return client.queryResult(name, args);
 }
 

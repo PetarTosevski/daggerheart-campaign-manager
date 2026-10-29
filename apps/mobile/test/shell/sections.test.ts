@@ -4,8 +4,8 @@ import { CAMPAIGN_SECTIONS, visibleToPlayers } from "../../../../src/lib/campaig
 import { activeTab, moreItems, sectionHref, tabItems } from "../../src/shell/sections";
 
 const PLAYER_MORE = [
-  "World",
-  "Characters & Locations",
+  "Codex",
+  "World Map",
   "Notes",
   "Lorekeeper",
   "Players",
@@ -22,8 +22,8 @@ test("tabs are Dashboard, Party, Combat Map, and Sessions", () => {
 test("More lists the shared destinations, and Adversaries only for the GM", () => {
   expect(moreItems(false).map((item) => item.label)).toEqual(PLAYER_MORE);
   expect(moreItems(true).map((item) => item.label)).toEqual([
-    "World",
-    "Characters & Locations",
+    "Codex",
+    "World Map",
     "Adversaries",
     "Notes",
     "Lorekeeper",

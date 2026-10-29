@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test } from "@jest/globals";
 
 import { convexDir, GM_EXPORT_PATTERN, scanGmFunctions } from "./gm-functions";
@@ -13,34 +14,26 @@ const REQUIRED = [
   "members:access",
 ];
 
-/** `rg --count-matches` totals. Exit 1 means zero matches. */
-function rgExportCount(root: string): number {
-  try {
-    const output = execFileSync(
-      "rg",
-      [
-        "--count-matches",
-        GM_EXPORT_PATTERN,
-        "--glob",
-        "*.ts",
-        "--glob",
-        "!**/*.d.ts",
-        "--glob",
-        "!**/_generated/**",
-        root,
-      ],
-      { encoding: "utf8" },
-    );
-    return output
-      .trim()
-      .split("\n")
-      .filter((line) => line.length > 0)
-      .reduce((sum, line) => sum + Number(line.slice(line.lastIndexOf(":") + 1)), 0);
-  } catch (error) {
-    const failed = error as { status?: number };
-    if (failed.status === 1) return 0;
-    throw error;
-  }
+/** Line count of the same export pattern, without the `rg` binary (GitHub runners do not have it). */
+function exportCount(root: string): number {
+  const pattern = new RegExp(GM_EXPORT_PATTERN);
+  let count = 0;
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "_generated" || entry.name === "node_modules") continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.name.endsWith(".ts") || entry.name.endsWith(".d.ts")) continue;
+      for (const line of fs.readFileSync(full, "utf8").split("\n")) {
+        if (pattern.test(line)) count += 1;
+      }
+    }
+  };
+  walk(root);
+  return count;
 }
 
 test("the source scan lists the GM exports and matches the rg count", () => {
@@ -48,5 +41,5 @@ test("the source scan lists the GM exports and matches the rg count", () => {
   for (const name of REQUIRED) {
     expect(names).toContain(name);
   }
-  expect(names).toHaveLength(rgExportCount(convexDir()));
+  expect(names).toHaveLength(exportCount(convexDir()));
 });
