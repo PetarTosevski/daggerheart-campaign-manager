@@ -15,7 +15,9 @@
 .lk-root .lk-streamwrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 .lk-root .lk-streamwrap .lk-stream { flex: 1; overscroll-behavior: contain; }
 .lk-root .lk-stream > :first-child { margin-top: auto; }
-.lk-root .lk-jump { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); box-shadow: 0 6px 18px rgba(0, 0, 0, .5); }
+/* LK2: bottom-right of the message area, a solid card (not see-through over the answer text), a 44 px target. */
+.lk-root .lk-act.lk-jump { position: absolute; right: 14px; bottom: 14px; z-index: 2; min-height: 44px; padding: 0 16px; border-color: var(--lk-gold-deep); background: var(--lk-card); color: var(--lk-text); font-size: 14px; font-weight: 600; box-shadow: 0 6px 18px rgba(0, 0, 0, .5); }
+.lk-root .lk-act.lk-jump:hover { background: var(--lk-line); }
 .lk-root .lk-loading { margin: auto; }
 .lk-root .lk-earlier { align-self: center; }
 

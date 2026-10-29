@@ -132,10 +132,31 @@ test("a player asks, stops an answer, keeps the history; the GM pins the unclear
     // The actions show once the retry has finished.
     await expect(hex.getByRole("button", { name: "Copy" })).toBeVisible({ timeout: 40_000 });
 
-    // 3. Stop (Q11): 'Ask' becomes 'Stop' while the answer streams; Stop ends it.
+    // LK2: scrolled up, 'Jump to latest' sits at the bottom-right of the log on a solid background, 44 px tall.
+    await log.evaluate((el) => (el.scrollTop = 0));
+    const jump = player.getByRole("button", { name: "Jump to latest" });
+    await expect(jump).toBeVisible();
+    const placed = await jump.evaluate((button) => {
+      const own = button.getBoundingClientRect();
+      const area = document.querySelector<HTMLElement>(".lk-stream")!.getBoundingClientRect();
+      const style = getComputedStyle(button);
+      return {
+        right: area.right - own.right < 40,
+        bottom: area.bottom - own.bottom < 40,
+        notCentred: own.left > area.left + area.width / 2,
+        tall: own.height >= 44,
+        solid: !/rgba\(.*,\s*0\)$|transparent/.test(style.backgroundColor),
+      };
+    });
+    expect(placed).toEqual({ right: true, bottom: true, notCentred: true, tall: true, solid: true });
+
+    // 3. Stop (Q11): 'Ask' becomes 'Stop' while the answer streams; Stop ends it. LK2: asking while scrolled up brings
+    // the log to the latest message.
     const box = composer.getByRole("textbox", { name: "Your question" });
     await box.fill("What happens when the twin dice match?");
     await box.press("Enter");
+    await expect(log.locator(".lk-q").filter({ hasText: "What happens when the twin dice match?" })).toBeInViewport();
+    await expect(jump).toBeHidden();
     await composer.getByRole("button", { name: "Stop" }).click();
     await expect(log.getByText("Stopped.")).toBeVisible();
     await expect(composer.getByRole("button", { name: "Ask" })).toBeVisible();

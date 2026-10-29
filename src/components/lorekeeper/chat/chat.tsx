@@ -233,10 +233,23 @@ function Stream(
   const mine = conversation?.mine ?? false;
   const asker = mine ? YOU_LABEL : conversation ? (props.names.get(conversation.userId) ?? "A player") : YOU_LABEL;
 
-  // Follow the stream while the reader is at the bottom (scrolling up stops it). DOM only, no state.
+  // What was last seen at the end of the log, so an arrival can be told from an answer growing. A ref, not state.
+  const seen = useRef<{ id?: string; live: boolean; pending: boolean; loading: boolean } | null>(null);
+
+  // LK2: an arrival (open or conversation switch, a new question or answer, the pending question, an answer starting
+  // to stream) always brings the log to its end, even if the reader had scrolled up. Between arrivals the stream is
+  // followed only while the reader is at the bottom; after scrolling up, 'Jump to latest' returns. DOM only, no state.
   useLayoutEffect(() => {
     const el = ref.current;
-    if (el && stuck.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const id = last?._id as string | undefined;
+    const live = last?.status === "streaming";
+    const before = seen.current;
+    const arrived =
+      before === null || before.id !== id || before.pending !== showPending || before.loading !== loading || (live && !before.live);
+    seen.current = { id, live: live || (before !== null && before.id === id && before.live), pending: showPending, loading };
+    if (arrived) stuck.current = true;
+    if (stuck.current) el.scrollTop = el.scrollHeight;
   }, [last?._id, last?.text.length, last?.status, showPending, loading]);
 
   const empty = !loading && messages.length === 0 && !showPending;
