@@ -39,3 +39,28 @@ waves:
           - "Jump to latest sits at the bottom-right of the message area with a solid background and >=44px target, not centred over text"
           - "When a new message or answer arrives (incl. streaming start), the list scrolls to the bottom even if the user had scrolled up; scrolling up afterwards shows Jump to latest, which returns to the bottom"
           - "Rule 13 holds; pnpm lint, typecheck, vitest, tests/e2e/lorekeeper-chat.spec.ts and tracer-guard pass"
+  - wave: 3
+    tracers:
+      - id: LK3
+        title: Edit a sent question; the answer waits for the edit and replaces everything after it (dcm-bxp.82.13)
+        size: M
+        goal: A user can edit their own earlier question in a conversation; saving the edit removes that question's answer and every later message and asks the Lorekeeper again with the edited text; nothing is answered while editing.
+        depends_on: [LK2]
+        owns:
+          - convex/lorekeeper.ts
+          - convex/lorekeeperAsks.ts
+          - convex/lorekeeperRun.ts
+          - convex/lib/lorekeeper/**
+          - src/components/lorekeeper/chat/**
+          - src/components/lorekeeper/composer/**
+          - tests/convex/lorekeeper-chat.test.ts
+          - tests/convex/authz/lorekeeper-chat.entries.ts
+          - tests/convex/authz/lorekeeper-chat.test.ts
+          - tests/unit/lorekeeper-ui/**
+          - tests/e2e/lorekeeper-chat.spec.ts
+          - docs/tasks/TASK-LK-LK3.md
+        reads: [docs/tasks/TASK-LK-LK1.md, docs/tasks/TASK-LK-LK2.md, docs/lorekeeper.md, docs/best-practices.md]
+        acceptance:
+          - "Each of the user's own questions has an Edit action; edit mode shows the text in place with Save / Cancel; no answer is generated while editing; Save runs one intent mutation that deletes that question's answer and all later messages of the conversation and re-asks with the edited text (usage caps and rate limits apply as for a new question)"
+          - "Only the author can edit their own question (permissionFor + author check); others' and GM-pinned rulings are unaffected; matrix entries for the new public function"
+          - "pnpm lint, typecheck, vitest, tests/e2e/lorekeeper-chat.spec.ts and tracer-guard pass"
