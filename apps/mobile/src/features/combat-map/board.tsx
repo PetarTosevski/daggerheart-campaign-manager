@@ -1,7 +1,8 @@
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LayoutChangeEvent, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { type Id } from "../../convex";
 import { useCampaign } from "../../shell/campaign-provider";
 import { sectionLabel } from "../../shell/sections";
 import { colors } from "../../theme/colors";
@@ -13,6 +14,7 @@ import { useMapPanZoom } from "../world/pan-zoom";
 import type { CombatMapLayout, CombatPlayerView } from "./contract";
 import { CombatEditSlot } from "./edit";
 import { CombatGmSlot } from "./gm";
+import { CombatHudBar } from "./hud-bar";
 import { CombatMapCanvas } from "./map-canvas";
 import { CombatPlaySlot } from "./play";
 import { stageAspect } from "./paint-layout";
@@ -31,11 +33,18 @@ export function CombatBoard({
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const aspect = layout ? stageAspect(layout, player) : 1;
   const panZoom = useMapPanZoom(viewport.w, viewport.h, aspect);
+  const fitted = useRef(false);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     setViewport({ w: width, h: height });
   };
+
+  useEffect(() => {
+    if (fitted.current || viewport.w <= 0 || viewport.h <= 0) return;
+    fitted.current = true;
+    panZoom.fit();
+  }, [panZoom, viewport.h, viewport.w]);
 
   const panStart = useRef({ x: 0, y: 0 });
   /* eslint-disable react-hooks/refs -- RNGH callbacks run outside React render. */
@@ -76,24 +85,8 @@ export function CombatBoard({
   const slotProps = { campaignId: campaign._id, isGm, layout, view };
 
   return (
-    <ScrollView contentContainerStyle={styles.stack}>
-      <Text style={styles.eyebrow}>{sectionLabel("combat-map")}</Text>
-      <Text accessibilityRole="header" style={styles.title}>
-        {layout.name}
-      </Text>
-      <Text style={styles.hint}>Pinch to zoom and drag to pan.</Text>
-      <View style={styles.toolbar}>
-        <Button onPress={() => panZoom.zoomAt(panZoom.view.z / 1.25)} variant="outline">
-          Zoom out
-        </Button>
-        <Text style={styles.zoom}>{Math.round(panZoom.view.z * 100)}%</Text>
-        <Button onPress={() => panZoom.zoomAt(panZoom.view.z * 1.25)} variant="outline">
-          Zoom in
-        </Button>
-        <Button onPress={panZoom.fit} variant="outline">
-          Fit map
-        </Button>
-      </View>
+    <View style={styles.screen}>
+      <CombatHudBar campaignId={campaign._id as Id<"campaigns">} mapId={layout._id} />
       <GestureDetector gesture={gesture}>
         <View onLayout={onLayout} style={styles.mapShell} testID="combat-viewport">
           {viewport.w > 0 ? (
@@ -104,20 +97,37 @@ export function CombatBoard({
               panView={panZoom.view}
               view={view}
             />
-          ) : (
-            <View style={styles.mapPlaceholder} />
-          )}
+          ) : null}
         </View>
       </GestureDetector>
-      {isGm ? <CombatGmSlot {...slotProps} /> : <CombatPlaySlot {...slotProps} />}
-      <CombatEditSlot {...slotProps} />
-    </ScrollView>
+      <View style={styles.dock}>
+        <View style={styles.toolbar}>
+          <Button onPress={() => panZoom.zoomAt(panZoom.view.z / 1.25)} variant="outline">
+            Zoom out
+          </Button>
+          <Text style={styles.zoom}>{Math.round(panZoom.view.z * 100)}%</Text>
+          <Button onPress={() => panZoom.zoomAt(panZoom.view.z * 1.25)} variant="outline">
+            Zoom in
+          </Button>
+          <Button onPress={panZoom.fit} variant="outline">
+            Fit map
+          </Button>
+        </View>
+        {isGm ? <CombatGmSlot {...slotProps} /> : <CombatPlaySlot {...slotProps} />}
+        <CombatEditSlot {...slotProps} />
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    backgroundColor: colors.ink,
+    flex: 1,
+  },
   stack: {
     gap: space[3],
+    padding: space[4],
     paddingBottom: space[8],
   },
   eyebrow: {
@@ -133,16 +143,23 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: type.displayBold.fontWeight,
   },
-  hint: {
-    color: colors.subtle,
-    fontFamily: type.sans.fontFamily,
-    fontSize: 13,
-  },
   empty: {
     color: colors.subtle,
     fontFamily: type.sans.fontFamily,
     fontSize: 15,
     paddingVertical: space[6],
+  },
+  mapShell: {
+    backgroundColor: "#0b1214",
+    flex: 1,
+    overflow: "hidden",
+  },
+  dock: {
+    backgroundColor: colors.panel,
+    borderTopColor: colors.line,
+    borderTopWidth: 1,
+    gap: space[2],
+    padding: space[3],
   },
   toolbar: {
     alignItems: "center",
@@ -156,16 +173,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     minWidth: 48,
     textAlign: "center",
-  },
-  mapShell: {
-    flexGrow: 1,
-    minHeight: 320,
-    overflow: "hidden",
-  },
-  mapPlaceholder: {
-    backgroundColor: colors.ink2,
-    borderRadius: 10,
-    flex: 1,
-    minHeight: 280,
   },
 });
