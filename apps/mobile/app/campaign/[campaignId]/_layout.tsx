@@ -1,5 +1,6 @@
 import { Stack, useLocalSearchParams } from "expo-router";
 import { StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CampaignProvider, firstParam, useCampaignState } from "../../../src/shell/campaign-provider";
 import { LiveOffline } from "../../../src/shell/offline";
@@ -20,6 +21,7 @@ export default function CampaignLayout() {
 }
 
 function CampaignShell({ campaignId }: { campaignId: string }) {
+  const insets = useSafeAreaInsets();
   const state = useCampaignState();
   const campaign = state.status === "ready" ? state.campaign : null;
   const isGm = campaign?.role === "gm";
@@ -29,7 +31,7 @@ function CampaignShell({ campaignId }: { campaignId: string }) {
   return (
     <LiveOffline>
       <View style={styles.screen}>
-        <View style={styles.body}>
+        <View style={[styles.body, { paddingTop: insets.top }]}>
           <Stack screenOptions={{ contentStyle: { backgroundColor: colors.ink }, headerShown: false }}>
             <Stack.Screen name="index" options={{ title: "Dashboard" }} />
             {tabs.map((tab) => (
