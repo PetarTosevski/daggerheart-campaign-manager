@@ -13,9 +13,11 @@ import { appError } from "../src/lib/errors/app-error";
 import { internal } from "./_generated/api";
 import { env, internalQuery, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { buildE2EProfile, normalizeEmail } from "./lib/allowlist";
+import { fetchAppleIdentityKeys, verifyAppleIdentityToken } from "./lib/appleIdentity";
 import { resendCodeProvider } from "./lib/authEmail";
 import { enforceAuthLimit } from "./lib/authRateLimit";
 import { isAccountSuspended } from "./lib/functions";
+import { nativeRedirectTarget } from "./lib/nativeRedirect";
 import {
   createOrUpdateUser,
   PASSWORD_PROVIDER_ID,
@@ -58,6 +60,7 @@ async function refuseSuspendedSignIn<T>(ctx: ActionCtx, result: T): Promise<T> {
 }
 
 const E2E_PROVIDER_ID = "e2e";
+const APPLE_PROVIDER_ID = "apple-native";
 
 // Test-only sign-in. Always registered, so no env var is read at module scope;
 // `buildE2EProfile` refuses every call unless this is a local backend with e2e
@@ -169,6 +172,57 @@ function withAuthErrors(base: ReturnType<typeof Password>) {
   return { ...base, options: { ...options, authorize } } as unknown as typeof base;
 }
 
+/**
+ * Native Sign in with Apple. The app sends the identity token from
+ * `AppleAuthentication.signInAsync`; this does not use Apple's OAuth redirect
+ * and does not read an Apple client secret. A verified email joins an existing
+ * verified user. A Hide My Email address is a different email, so it creates
+ * its own user. A later sign-in can omit the email when this Apple user id
+ * already has an account.
+ */
+const appleNativeProvider = ConvexCredentials({
+  id: APPLE_PROVIDER_ID,
+  authorize: async (credentials, ctx) => {
+    const identityToken = credentials.identityToken;
+    const nonce = credentials.nonce;
+    if (typeof identityToken !== "string" || typeof nonce !== "string") throw appError("INVALID");
+    if (identityToken.length === 0 || identityToken.length > 8192 || nonce.length === 0 || nonce.length > 256) {
+      throw appError("INVALID");
+    }
+    const name = typeof credentials.name === "string" ? credentials.name.trim().slice(0, 80) : "";
+    let identity;
+    try {
+      identity = await verifyAppleIdentityToken({
+        identityToken,
+        nonce,
+        keys: await fetchAppleIdentityKeys(),
+      });
+    } catch (error) {
+      if (error instanceof ConvexError) throw error;
+      throw appError("FORBIDDEN");
+    }
+    const existing = await retrieveAccount(ctx, {
+      provider: APPLE_PROVIDER_ID,
+      account: { id: identity.subject },
+    }).catch((error: unknown) => {
+      if (error instanceof Error && error.message === "InvalidAccountId") return null;
+      throw error;
+    });
+    // Convex Auth finishes an existing account's sign-in without createOrUpdateUser, so check suspension here (AD14).
+    if (existing !== null) return refuseSuspendedSignIn(ctx as unknown as ActionCtx, { userId: existing.user._id });
+    const { user } = await createAccount(ctx, {
+      provider: APPLE_PROVIDER_ID,
+      account: { id: identity.subject },
+      profile: {
+        ...(identity.email !== undefined ? { email: identity.email } : {}),
+        emailVerified: identity.emailVerified,
+        ...(name ? { name } : {}),
+      },
+    });
+    return { userId: user._id };
+  },
+});
+
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
     Google({
@@ -184,6 +238,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         };
       },
     }),
+    appleNativeProvider,
     // Email + password. Sign-up follows the owner's sign-up mode (AD4); a new account works only after the emailed 6-digit code is entered
     // (`verify`), and a forgotten password is reset by another emailed code (`reset`).
     withAuthErrors(
@@ -214,6 +269,11 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
     customClaims: async () => ({ token_id: crypto.randomUUID() }),
   },
   callbacks: {
+    async redirect({ redirectTo }) {
+      const siteUrl = process.env.SITE_URL;
+      if (siteUrl === undefined) throw new Error("Missing environment variable `SITE_URL`");
+      return nativeRedirectTarget(redirectTo, siteUrl);
+    },
     // The callback's ctx is typed for any data model; this app's schema is
     // the one in convex/schema.ts.
     createOrUpdateUser: (ctx, args) =>
