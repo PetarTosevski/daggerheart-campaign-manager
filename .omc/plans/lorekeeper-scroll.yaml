@@ -22,3 +22,20 @@ waves:
           - "A new question/answer keeps the list pinned to the bottom unless the user scrolled up (then a 'Jump to latest' button appears); streaming answers stay in view"
           - "Composer pinned at the bottom of the chat pane; no mutations in effects (rule 13); e2e chat spec asserts the latest message is in view on load and the page does not scroll"
           - "pnpm lint, typecheck, vitest, the lorekeeper e2e chat spec and tracer-guard pass"
+  - wave: 2
+    tracers:
+      - id: LK2
+        title: Jump to latest bottom-right with a solid background; new answers always scroll to the latest (dcm-bxp.82.12)
+        size: S
+        goal: The Jump to latest button never covers text unreadably; a new question/answer always brings the view to the latest message.
+        depends_on: [LK1]
+        owns:
+          - src/components/lorekeeper/chat/**
+          - tests/unit/lorekeeper-ui/**
+          - tests/e2e/lorekeeper-chat.spec.ts
+          - docs/tasks/TASK-LK-LK2.md
+        reads: [docs/tasks/TASK-LK-LK1.md, docs/best-practices.md]
+        acceptance:
+          - "Jump to latest sits at the bottom-right of the message area with a solid background and >=44px target, not centred over text"
+          - "When a new message or answer arrives (incl. streaming start), the list scrolls to the bottom even if the user had scrolled up; scrolling up afterwards shows Jump to latest, which returns to the bottom"
+          - "Rule 13 holds; pnpm lint, typecheck, vitest, tests/e2e/lorekeeper-chat.spec.ts and tracer-guard pass"
