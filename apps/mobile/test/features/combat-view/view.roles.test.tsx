@@ -94,7 +94,13 @@ const forbidden = ["combatMaps:list", "combatMaps:get", "combatTokensReads:list"
 test("a player combat screen subscribes to live and playerView only among combat queries", async () => {
   const screen = await renderAsPlayer(screenFor(), { queries: playerQueries });
   layoutViewport(screen);
-  expect(screen.client.subscribed).toEqual(["campaigns:get", "combatMaps:live", "combatVision:playerView"]);
+  expect(screen.client.subscribed).toEqual([
+    "campaigns:get",
+    "combatMaps:live",
+    "combatVision:playerView",
+    "combatHud:party",
+    "combatHud:scene",
+  ]);
   for (const name of forbidden) {
     expect(screen.client.subscribed).not.toContain(name);
   }
