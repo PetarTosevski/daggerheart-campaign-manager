@@ -36,6 +36,7 @@ export function createFakeConvex(role: Role, handlers: FakeHandlers = {}): FakeC
   const subscribed: string[] = [];
   const called: string[] = [];
   const active = new Map<string, Set<string>>();
+  const addedThisRender = new Map<string, Set<string>>();
   const gm = gmFunctionNames();
   const queries = handlers.queries ?? {};
   const mutations = handlers.mutations ?? {};
@@ -46,19 +47,28 @@ export function createFakeConvex(role: Role, handlers: FakeHandlers = {}): FakeC
     subscribed,
     called,
     watch(name, id) {
-      const holders = active.get(name);
-      if (holders?.has(id)) return;
+      const holders = active.get(name) ?? new Set<string>();
+      if (holders.has(id)) return;
       if (role === "player" && gm.has(name)) {
         subscribed.push(name);
         throw new Error(`Player subscribed to GM function ${name}`);
       }
-      if (holders !== undefined && holders.size > 0) {
+      const seen = addedThisRender.get(name);
+      if (seen !== undefined && !seen.has(id)) {
         throw new Error(`Duplicate subscription ${name}`);
       }
-      const next = holders ?? new Set<string>();
-      next.add(id);
-      active.set(name, next);
-      subscribed.push(name);
+      // A strict-mode remount gets a new id before the previous one is released.
+      holders.clear();
+      holders.add(id);
+      active.set(name, holders);
+      const nextSeen = seen ?? new Set<string>();
+      nextSeen.add(id);
+      addedThisRender.set(name, nextSeen);
+      if (!subscribed.includes(name)) subscribed.push(name);
+      queueMicrotask(() => {
+        const current = addedThisRender.get(name);
+        if (current === nextSeen) addedThisRender.delete(name);
+      });
     },
     unwatch(name, id) {
       const holders = active.get(name);
