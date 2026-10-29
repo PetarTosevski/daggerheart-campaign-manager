@@ -132,4 +132,21 @@ test("shows an empty state when no map is live", async () => {
     },
   });
   expect(screen.getByText("The GM has not shown a map yet.")).toBeTruthy();
+  expect(screen.queryByTestId("combat-empty-gm")).toBeNull();
+  expect(screen.client.subscribed).not.toContain("combatMaps:list");
+});
+
+test("a GM with no live map can start one without opening the other GM tools", async () => {
+  const screen = await renderAsGm(screenFor(), {
+    queries: {
+      ...gmQueries,
+      "combatMaps:live": null,
+      "combatVision:playerView": { state: "noMap" },
+      "combatMaps:list": [],
+    },
+  });
+  expect(screen.getByTestId("combat-empty-gm")).toBeTruthy();
+  expect(screen.getByText("New Small map")).toBeTruthy();
+  expect(screen.client.subscribed).toContain("combatMaps:list");
+  expect(screen.client.subscribed).not.toContain("combatTokensReads:list");
 });
