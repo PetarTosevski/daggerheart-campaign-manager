@@ -15,6 +15,7 @@ import { FOG_PAD_SQUARES } from "../../../../../src/lib/domain/combat-map/vision
 
 import type { CombatMapLayout, CombatPlayerView } from "./contract";
 import { CombatEditSlot } from "./edit";
+import { EmptyGmMaps } from "./gm/empty-maps";
 import { CombatGmSlot } from "./gm";
 import { CombatHudBar } from "./hud-bar";
 import { CombatMapCanvas } from "./map-canvas";
@@ -82,7 +83,13 @@ export function CombatBoard({
         <Text accessibilityRole="header" style={styles.title}>
           {campaign.name}
         </Text>
-        <Text style={styles.empty}>{player ? "The GM has not shown a map yet." : "No battlefield yet. Generate or upload a map on the website."}</Text>
+        {layout === null && player ? (
+          <Text style={styles.empty}>The GM has not shown a map yet.</Text>
+        ) : layout !== null ? (
+          <Text style={styles.empty}>Loading the battlefield…</Text>
+        ) : (
+          <EmptyGmMaps />
+        )}
       </ScrollView>
     );
   }
