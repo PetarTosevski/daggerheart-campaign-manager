@@ -11,6 +11,8 @@ import { space } from "../../theme/spacing";
 import { Button } from "../../ui/button";
 import { useMapPanZoom } from "../world/pan-zoom";
 
+import { FOG_PAD_SQUARES } from "../../../../../src/lib/domain/combat-map/vision";
+
 import type { CombatMapLayout, CombatPlayerView } from "./contract";
 import { CombatEditSlot } from "./edit";
 import { CombatGmSlot } from "./gm";
@@ -32,7 +34,10 @@ export function CombatBoard({
 
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const aspect = layout ? stageAspect(layout, player) : 1;
-  const panZoom = useMapPanZoom(viewport.w, viewport.h, aspect);
+  const pad = player ? FOG_PAD_SQUARES : 0;
+  const frameW = layout ? layout.w / (layout.w + 2 * pad) : 1;
+  const frameH = layout ? layout.h / (layout.h + 2 * pad) : 1;
+  const panZoom = useMapPanZoom(viewport.w, viewport.h, aspect, frameW, frameH);
   const fitted = useRef(false);
 
   const onLayout = (e: LayoutChangeEvent) => {

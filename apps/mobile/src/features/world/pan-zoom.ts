@@ -11,8 +11,12 @@ export function rescaleView(view: Omit<View, "w">, from: number, to: number): Om
   return { z: view.z, x: view.x * r, y: view.y * r };
 }
 
-/** Pan and zoom state for the native map viewport (same math as the website board). */
-export function useMapPanZoom(viewportW: number, viewportH: number, aspect: number) {
+/**
+ * Pan and zoom for a native map viewport. Zoom 1 draws the stage as wide as the viewport.
+ * `frameW` and `frameH` are the fraction of that stage the Fit button should fill (1 frames the whole stage).
+ * Combat passes the battlefield's share, leaving the fog margin outside the frame.
+ */
+export function useMapPanZoom(viewportW: number, viewportH: number, aspect: number, frameW = 1, frameH = 1) {
   const [view, setViewState] = useState<View>({ z: 1, x: 0, y: 0, w: viewportW });
   const viewRef = useRef(view);
 
@@ -38,8 +42,12 @@ export function useMapPanZoom(viewportW: number, viewportH: number, aspect: numb
   const fitZoom = useCallback(() => {
     const w = viewportW || 1;
     const h = viewportH || 1;
-    return Math.min(1, h / (w * aspect));
-  }, [aspect, viewportH, viewportW]);
+    const fw = frameW > 0 ? frameW : 1;
+    const fh = frameH > 0 ? frameH : 1;
+    const byWidth = 1 / fw;
+    const byHeight = h / (w * aspect * fh);
+    return Math.min(MAX_ZOOM, byWidth, byHeight);
+  }, [aspect, frameH, frameW, viewportH, viewportW]);
 
   const fit = useCallback(() => {
     const w = viewportW || 1;
