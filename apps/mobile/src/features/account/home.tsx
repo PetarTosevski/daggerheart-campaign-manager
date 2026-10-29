@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { frameName, plural } from "../../../../../src/lib/campaign-display";
 import { api } from "../../convex";
@@ -15,6 +16,7 @@ export function HomeScreen() {
   const campaigns = useQuery(api.campaigns.list);
   const settings = useQuery(api.settings.get);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const latest = campaigns?.[0];
 
   if (campaigns === undefined || settings === undefined) {
@@ -22,7 +24,7 @@ export function HomeScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.content} style={accountStyles.screen}>
+    <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + space[4] }]} style={accountStyles.screen}>
       <View style={styles.hero}>
         <Text accessibilityRole="header" style={styles.title}>
           DAGGERHEART
@@ -105,8 +107,9 @@ const styles = StyleSheet.create({
   title: {
     ...type.displayBold,
     color: colors.parchment,
-    fontSize: 36,
-    letterSpacing: 2.8,
+    fontSize: 32,
+    letterSpacing: 1.4,
+    paddingHorizontal: space[10],
     textAlign: "center",
   },
 });
