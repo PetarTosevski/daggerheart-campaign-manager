@@ -11,7 +11,7 @@ import { newKey } from "../../adversaries/intent";
 import { useCombatGm } from "./context";
 import { gmStyles } from "./styles";
 
-type MineRow = FunctionReturnType<typeof api.combatRequests.mine>[number];
+type MineRow = FunctionReturnType<typeof api.combatRequestsReads.mine>[number];
 type SanctionRow = Extract<MineRow, { kind: "sanction" }>;
 
 export function CombatGmSanctions() {

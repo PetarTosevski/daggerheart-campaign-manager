@@ -101,7 +101,7 @@ export function EncountersTab({
   onMoreEnded: () => void;
 }) {
   const writes = useWritesEnabled();
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const fear = useQuery(api.campaigns.fear, { campaignId });
   const create = useIntent(api.encounters.create);
   const [selected, setSelected] = useState<string | null>(null);

@@ -90,7 +90,7 @@ export function inCampaign(role: "gm" | "player", ui: ReactElement, offline = fa
 export function queriesFor(role: "gm" | "player", characters: unknown) {
   return {
     "campaigns:get": campaignRecord(role),
-    "characters:listByCampaign": characters,
+    "charactersReads:listByCampaign": characters,
     "members:roster": tableRecord,
   };
 }

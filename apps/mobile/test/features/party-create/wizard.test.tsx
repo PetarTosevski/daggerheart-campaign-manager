@@ -102,7 +102,7 @@ test("a restored complete draft can call characters.create", async () => {
     draft: expect.objectContaining({ name: "Brakka Stonefist", classId: "guardian" }),
   });
   expect(mockReplace).toHaveBeenCalledWith("/campaign/campaign-1/party/char-new");
-  expect(screen.client.subscribed).toEqual(["campaigns:get", "characters:listByCampaign"]);
+  expect(screen.client.subscribed).toEqual(["campaigns:get", "charactersReads:listByCampaign"]);
 });
 
 test("a player never subscribes to photoImport", async () => {

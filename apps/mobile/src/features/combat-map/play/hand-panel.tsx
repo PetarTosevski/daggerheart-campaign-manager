@@ -24,7 +24,7 @@ export function HandPanel({
   layout: CombatSlotProps["layout"];
   view: OkView;
 }) {
-  const hand = useQuery(api.combatCards.hand, { campaignId, characterId: view.characterId });
+  const hand = useQuery(api.combatCardsReads.hand, { campaignId, characterId: view.characterId });
   const useCard = useIntent(api.combatCards.useCard);
   const { targetTokenId } = usePlayTargets();
   const writes = useWritesEnabled();

@@ -82,14 +82,14 @@ export function gmSlotQueries(live: CombatMapLayout) {
     "combatMaps:live": live,
     "combatVision:playerView": { state: "noCharacter", mapId: live._id },
     "combatMaps:list": mapList(live),
-    "combatTokens:combatants": { partyLeft: 1, encounter: { _id: "enc-1", name: "Ambush" }, queue: [] },
-    "combatTokens:list": tokenList(),
-    "combatCards:handSharing": { playersSeeHands: true, hidden: [] },
+    "combatTokensReads:combatants": { partyLeft: 1, encounter: { _id: "enc-1", name: "Ambush" }, queue: [] },
+    "combatTokensReads:list": tokenList(),
+    "combatCardsReads:handSharing": { playersSeeHands: true, hidden: [] },
     "combatVision:doors": { mapId: live._id, doors: [] },
     "encounters:list": {
       active: [{ _id: "enc-1", name: "Ambush", status: "running" as const }],
       planned: [],
     },
-    "combatRequests:mine": [],
+    "combatRequestsReads:mine": [],
   };
 }

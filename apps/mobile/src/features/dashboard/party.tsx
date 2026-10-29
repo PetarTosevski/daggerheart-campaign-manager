@@ -12,7 +12,7 @@ import { Button } from "../../ui/button";
 import { PanelBoundary, QueryLoading } from "./chrome";
 import { RestLauncher } from "./rests";
 
-export type PartyMember = FunctionReturnType<typeof api.characters.partySummary>[number];
+export type PartyMember = FunctionReturnType<typeof api.charactersReads.partySummary>[number];
 type ResourceName = "hp" | "stress" | "hope";
 
 export function PartyBlock({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
@@ -24,7 +24,7 @@ export function PartyBlock({ campaignId, isGm }: { campaignId: Id<"campaigns">; 
 }
 
 function PartyQuery({ campaignId, isGm }: { campaignId: Id<"campaigns">; isGm: boolean }) {
-  const party = useQuery(api.characters.partySummary, { campaignId });
+  const party = useQuery(api.charactersReads.partySummary, { campaignId });
   return (
     <View style={styles.block}>
       <PartySection isGm={isGm} party={party} />

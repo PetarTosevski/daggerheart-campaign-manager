@@ -53,22 +53,22 @@ function ui(isGm: boolean, offline = false) {
 test("a player with no open rest does not mount Rest or afterRest", async () => {
   const screen = await renderAsPlayer(ui(false), {
     queries: {
-      "characters:partySummary": [briar],
-      "rests:current": restState(),
+      "charactersReads:partySummary": [briar],
+      "restsReads:current": restState(),
     },
   });
   expect(screen.getByText("Briar")).toBeTruthy();
   expect(screen.queryByRole("header", { name: "Rest" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Start short rest" })).toBeNull();
-  expect(screen.client.subscribed).toEqual(["characters:partySummary", "rests:current"]);
+  expect(screen.client.subscribed).toEqual(["charactersReads:partySummary", "restsReads:current"]);
   expect(screen.client.subscribed).not.toContain("countdownTracks:afterRest");
 });
 
 test("an open rest shows the player's moves and hides Finish", async () => {
   const screen = await renderAsPlayer(ui(false), {
     queries: {
-      "characters:partySummary": [briar],
-      "rests:current": openRest,
+      "charactersReads:partySummary": [briar],
+      "restsReads:current": openRest,
     },
   });
   expect(screen.getByText("Short rest under way. Each player picks two moves on their sheet.")).toBeTruthy();
@@ -82,8 +82,8 @@ test("the GM starts, finishes, undoes, and sees a long-rest tick only after a fi
   const starts: { kind: string }[] = [];
   const idle = await renderAsGm(ui(true), {
     queries: {
-      "characters:partySummary": [briar],
-      "rests:current": restState({ shortRestsSinceLong: 3 }),
+      "charactersReads:partySummary": [briar],
+      "restsReads:current": restState({ shortRestsSinceLong: 3 }),
       "countdownTracks:afterRest": { restId: "rest-1", lines: [], reminders: [] },
     },
     mutations: {
@@ -105,8 +105,8 @@ test("the GM starts, finishes, undoes, and sees a long-rest tick only after a fi
   const finishes: { restId: string }[] = [];
   const running = await renderAsGm(ui(true), {
     queries: {
-      "characters:partySummary": [briar, ash],
-      "rests:current": openRest,
+      "charactersReads:partySummary": [briar, ash],
+      "restsReads:current": openRest,
     },
     mutations: {
       "rests:finish": (args) => {
@@ -127,7 +127,7 @@ test("rests cover loading, an empty party, a failed query, and offline", async (
   expect(loading.getByText("Loading rests")).toBeTruthy();
 
   const empty = await renderAsPlayer(ui(false), {
-    queries: { "characters:partySummary": [], "rests:current": restState({ last: null }) },
+    queries: { "charactersReads:partySummary": [], "restsReads:current": restState({ last: null }) },
   });
   expect(empty.getByText("No characters yet. Open the Party tab to create the first hero.")).toBeTruthy();
   expect(empty.queryByRole("header", { name: "Rest" })).toBeNull();
@@ -137,15 +137,15 @@ test("rests cover loading, an empty party, a failed query, and offline", async (
     <PanelBoundary title="Rest">
       <RestLauncher campaignId={campaignId} isGm={false} party={[briar]} />
     </PanelBoundary>,
-    { queries: { "rests:current": failQuery } },
+    { queries: { "restsReads:current": failQuery } },
   );
   expect(broken.getByRole("header", { name: "Rest" })).toBeTruthy();
   expect(broken.getByText(ERROR_TEXT)).toBeTruthy();
 
   const offline = await renderAsGm(ui(true, true), {
     queries: {
-      "characters:partySummary": [briar],
-      "rests:current": restState({ last: null }),
+      "charactersReads:partySummary": [briar],
+      "restsReads:current": restState({ last: null }),
       "countdownTracks:afterRest": { restId: "rest-1", lines: [], reminders: [] },
     },
   });

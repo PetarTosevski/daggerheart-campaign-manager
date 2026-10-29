@@ -580,7 +580,7 @@ export function ClassFeaturesPanel(props: SheetSlotProps) {
         (f) => f.target === "ally" || (f.inputs ?? []).some((i) => i.kind === "ally"),
       ));
   const party = useQuery(
-    api.characters.listByCampaign,
+    api.charactersReads.listByCampaign,
     needsParty ? { campaignId: campaignId as Id<"campaigns"> } : "skip",
   );
 

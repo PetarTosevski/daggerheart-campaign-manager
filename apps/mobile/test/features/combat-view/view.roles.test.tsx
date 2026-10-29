@@ -89,7 +89,7 @@ function layoutViewport(screen: Awaited<ReturnType<typeof renderAsPlayer>>) {
   });
 }
 
-const forbidden = ["combatMaps:list", "combatMaps:get", "combatTokens:list", "combatVision:previewAs"];
+const forbidden = ["combatMaps:list", "combatMaps:get", "combatTokensReads:list", "combatVision:previewAs"];
 
 test("a player combat screen subscribes to live and playerView only among combat queries", async () => {
   const screen = await renderAsPlayer(screenFor(), { queries: playerQueries });

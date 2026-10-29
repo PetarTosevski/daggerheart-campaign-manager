@@ -2,7 +2,7 @@ import type { FunctionReturnType } from "convex/server";
 
 import type { api } from "../../../convex";
 
-export type HandCard = FunctionReturnType<typeof api.combatCards.hand>["loadout"][number];
+export type HandCard = FunctionReturnType<typeof api.combatCardsReads.hand>["loadout"][number];
 type HandUse = HandCard["uses"][number];
 
 /** Action uses the player can start from the phone (no reaction / passive cards). */

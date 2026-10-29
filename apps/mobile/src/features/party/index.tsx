@@ -28,7 +28,7 @@ export function PartyScreen() {
 
 function PartyBody() {
   const campaign = useCampaign();
-  const listed = useQuery(api.characters.listByCampaign, { campaignId: campaign._id });
+  const listed = useQuery(api.charactersReads.listByCampaign, { campaignId: campaign._id });
   const roster = useQuery(api.members.roster, { campaignId: campaign._id });
   const [openId, setOpenId] = useState<string | null>(null);
   if (openId) {

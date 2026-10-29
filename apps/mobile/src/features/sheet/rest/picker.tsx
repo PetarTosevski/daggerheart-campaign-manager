@@ -22,7 +22,7 @@ import type { SheetCharacter } from "../types";
 import { readParty } from "../types";
 import { useIntent } from "./intent";
 
-type RestState = FunctionReturnType<typeof api.rests.current>;
+type RestState = FunctionReturnType<typeof api.restsReads.current>;
 type OpenRest = NonNullable<RestState["open"]>;
 type Pick = { move: RestMove; targetId?: Id<"characters">; countdownId?: Id<"countdowns"> };
 
@@ -41,7 +41,7 @@ export function RestPicker({
   const kindLabel = open.kind === "short" ? "Short rest" : "Long rest";
   const unavailable = character.status !== "active" ? character.status : null;
 
-  const partyRaw = useQuery(api.characters.listByCampaign, canEdit ? { campaignId } : "skip");
+  const partyRaw = useQuery(api.charactersReads.listByCampaign, canEdit ? { campaignId } : "skip");
   const party = canEdit ? readParty(partyRaw) : null;
   if (canEdit && party === undefined) {
     return (
@@ -101,7 +101,7 @@ function MoveForm({
   initial: Pick[];
 }) {
   const choose = useIntent(api.rests.choose);
-  const projects = useQuery(api.rests.projects, kind === "long" ? { characterId: character._id } : "skip");
+  const projects = useQuery(api.restsReads.projects, kind === "long" ? { characterId: character._id } : "skip");
   const writes = useWritesEnabled();
   const [picks, setPicks] = useState<Pick[]>(() =>
     Array.from({ length: MOVES_PER_REST }, (_, index) => initial[index] ?? { move: moves[0] ?? "prepare" }),

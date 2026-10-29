@@ -51,7 +51,7 @@ export function CharacterWizard() {
   const ikonis = campaign.frameId === FRAME_OF.motherboard;
   const opts = useMemo(() => ({ hopeAndFear: campaign.options.hopeAndFear, ikonis }), [campaign.options.hopeAndFear, ikonis]);
   const roster = useQuery(api.members.roster, isGm ? { campaignId } : "skip");
-  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const party = useQuery(api.charactersReads.listByCampaign, { campaignId });
   const create = useIntent(api.characters.create);
 
   const [raw, setRaw] = useState<WizardState | null>(null);

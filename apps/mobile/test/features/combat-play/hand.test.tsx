@@ -21,8 +21,8 @@ test("use card calls combatCards:useCard with the picked target", async () => {
   const card = handCard("bolt-beacon", "Bolt Beacon");
   const screen = await renderAsPlayer(<CombatPlaySlot {...props} />, {
     queries: {
-      "combatCards:hand": { characterId: okCharacterId(props), loadout: [card], vault: [] },
-      "characters:get": characterForAttack(),
+      "combatCardsReads:hand": { characterId: okCharacterId(props), loadout: [card], vault: [] },
+      "charactersReads:get": characterForAttack(),
       "adversaryActions:pending": [],
     },
     mutations: {

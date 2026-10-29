@@ -42,7 +42,7 @@ async function openTools(screen: Awaited<ReturnType<typeof renderAsGm>>) {
 }
 
 test("a closed GM slot does not subscribe to GM-only combat reads", async () => {
-  const forbidden = ["combatMaps:list", "combatTokens:list", "combatVision:previewAs"];
+  const forbidden = ["combatMaps:list", "combatTokensReads:list", "combatVision:previewAs"];
   const screen = await renderAsGm(gmSlot(true), { queries: gmSlotQueries(live) });
   expect(screen.getByRole("button", { name: "Open GM combat tools" })).toBeTruthy();
   for (const name of forbidden) {
@@ -67,11 +67,11 @@ test("the GM combat tools subscribe to map, token, vision and encounter reads", 
   expect(screen.getByTestId("combat-fear")).toBeTruthy();
   expect(screen.getByTestId("combat-hand-sharing")).toBeTruthy();
   expect(screen.client.subscribed).toContain("combatMaps:list");
-  expect(screen.client.subscribed).toContain("combatTokens:list");
-  expect(screen.client.subscribed).toContain("combatTokens:combatants");
-  expect(screen.client.subscribed).toContain("combatCards:handSharing");
+  expect(screen.client.subscribed).toContain("combatTokensReads:list");
+  expect(screen.client.subscribed).toContain("combatTokensReads:combatants");
+  expect(screen.client.subscribed).toContain("combatCardsReads:handSharing");
   expect(screen.client.subscribed).toContain("encounters:list");
-  expect(screen.client.subscribed).toContain("combatRequests:mine");
+  expect(screen.client.subscribed).toContain("combatRequestsReads:mine");
 });
 
 test("Make live sends combatMaps:setLive", async () => {

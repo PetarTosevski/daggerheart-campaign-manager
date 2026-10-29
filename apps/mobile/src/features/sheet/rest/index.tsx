@@ -5,7 +5,7 @@ import { api, type Id } from "../../../convex";
 import type { SheetSlotProps } from "../contract";
 import { RestPicker } from "./picker";
 
-export type RestSheetState = FunctionReturnType<typeof api.rests.current>;
+export type RestSheetState = FunctionReturnType<typeof api.restsReads.current>;
 
 /**
  * Downtime move picker while a party rest is open (CB 105). The sheet body
