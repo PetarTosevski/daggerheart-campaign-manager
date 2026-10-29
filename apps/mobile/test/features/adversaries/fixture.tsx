@@ -96,7 +96,7 @@ export function gmQueries(overrides: Record<string, unknown> = {}) {
     "campaigns:get": campaignRecord("gm"),
     "encounters:list": encounterList(),
     "customAdversaries:list": [],
-    "characters:listByCampaign": [{ _id: "pc-1", status: "active" }, { _id: "pc-2", status: "active" }],
+    "charactersReads:listByCampaign": [{ _id: "pc-1", status: "active" }, { _id: "pc-2", status: "active" }],
     "campaigns:fear": 4,
     "encounters:get": encounterView(),
     ...overrides,

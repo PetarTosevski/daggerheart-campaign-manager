@@ -24,7 +24,7 @@ export function AttackPanel({
   layout: CombatSlotProps["layout"];
   view: OkView;
 }) {
-  const character = useQuery(api.characters.get, { characterId: view.characterId });
+  const character = useQuery(api.charactersReads.get, { characterId: view.characterId });
   const attack = useIntent(api.combatActions.attack);
   const { targetTokenId } = usePlayTargets();
   const writes = useWritesEnabled();

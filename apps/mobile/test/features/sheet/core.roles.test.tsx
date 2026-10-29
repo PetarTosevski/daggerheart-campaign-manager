@@ -34,7 +34,7 @@ test("readCharacter keeps session and play fields for dice and lunar panels", ()
 function sheetQueries(role: "gm" | "player", character: unknown) {
   return {
     "campaigns:get": campaignRecord(role),
-    "characters:get": character,
+    "charactersReads:get": character,
   };
 }
 
@@ -52,8 +52,8 @@ test("a reader sees the sheet and no steppers", async () => {
   expect(screen.queryByRole("button", { name: "Decrease Hit Points" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Increase Agility" })).toBeNull();
   expect(screen.queryByLabelText("Name")).toBeNull();
-  expect(screen.client.subscribed).toEqual(["campaigns:get", "characters:get"]);
-  expect(screen.client.subscribed).not.toContain("rests:current");
+  expect(screen.client.subscribed).toEqual(["campaigns:get", "charactersReads:get"]);
+  expect(screen.client.subscribed).not.toContain("restsReads:current");
 });
 
 test("an editor sends a resource delta, and a second tap sends another", async () => {
@@ -68,7 +68,7 @@ test("an editor sends a resource delta, and a second tap sends another", async (
     },
   });
   expect(screen.getByLabelText("Hope 2 of 6")).toBeTruthy();
-  expect(screen.client.subscribed).toContain("rests:current");
+  expect(screen.client.subscribed).toContain("restsReads:current");
   await fireEvent.press(screen.getByRole("button", { name: "Increase Hope" }));
   await fireEvent.press(screen.getByRole("button", { name: "Increase Hope" }));
   expect(calls).toEqual([
@@ -135,7 +135,7 @@ test("loading, missing, and offline states", async () => {
 
 test("a failing character query shows the error", async () => {
   function BrokenSheet() {
-    useQuery(api.characters.get, { characterId: "char-1" as Id<"characters"> });
+    useQuery(api.charactersReads.get, { characterId: "char-1" as Id<"characters"> });
     return <Text>Ready</Text>;
   }
   const screen = await renderAsPlayer(
@@ -144,7 +144,7 @@ test("a failing character query shows the error", async () => {
     </QueryBoundary>,
     {
       queries: {
-        "characters:get": () => {
+        "charactersReads:get": () => {
           throw new Error("sheet down");
         },
       },

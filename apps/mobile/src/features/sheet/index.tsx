@@ -57,7 +57,7 @@ export function CharacterSheet({
 
 function CharacterBody({ characterId, onClose }: { characterId: string; onClose?: () => void }) {
   const campaign = useCampaign();
-  const raw = useQuery(api.characters.get, { characterId });
+  const raw = useQuery(api.charactersReads.get, { characterId });
   if (raw === undefined) return <Loading label="Loading character" />;
   if (raw === null) {
     return (
@@ -95,7 +95,7 @@ function LoadedSheet({
 }) {
   const motherboard = frameId === FRAME_OF.motherboard && character.corrupt !== true;
   const extras = useQuery(api.characterExtras.get, motherboard ? { characterId: character._id } : "skip");
-  const rest = useQuery(api.rests.current, character.canEdit ? { campaignId } : "skip");
+  const rest = useQuery(api.restsReads.current, character.canEdit ? { campaignId } : "skip");
   const [page, setPage] = useState<PageId>("sheet");
   const [error, setError] = useState<string | null>(null);
   const adjustResource = useMutation(api.characters.adjustResource);

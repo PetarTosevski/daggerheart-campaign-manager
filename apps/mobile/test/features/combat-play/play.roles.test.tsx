@@ -40,8 +40,8 @@ test("combat play subscribes to player combat mutations only", async () => {
   const props = slotProps();
   const screen = await renderAsPlayer(<CombatPlaySlot {...props} />, {
     queries: {
-      "combatCards:hand": { characterId: okCharacterId(props), loadout: [], vault: [] },
-      "characters:get": characterForAttack(),
+      "combatCardsReads:hand": { characterId: okCharacterId(props), loadout: [], vault: [] },
+      "charactersReads:get": characterForAttack(),
       "adversaryActions:pending": [],
     },
   });
@@ -50,6 +50,6 @@ test("combat play subscribes to player combat mutations only", async () => {
   expect(screen.getByTestId("combat-play-token")).toBeTruthy();
   expectNoGm(screen);
   expect([...screen.client.subscribed].sort()).toEqual(
-    ["adversaryActions:pending", "characters:get", "combatCards:hand"].sort(),
+    ["adversaryActions:pending", "charactersReads:get", "combatCardsReads:hand"].sort(),
   );
 });

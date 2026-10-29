@@ -20,8 +20,8 @@ test("attack calls combatActions:attack", async () => {
   const props = slotProps();
   const screen = await renderAsPlayer(<CombatPlaySlot {...props} />, {
     queries: {
-      "combatCards:hand": { characterId: okCharacterId(props), loadout: [], vault: [] },
-      "characters:get": characterForAttack(),
+      "combatCardsReads:hand": { characterId: okCharacterId(props), loadout: [], vault: [] },
+      "charactersReads:get": characterForAttack(),
       "adversaryActions:pending": [],
     },
     mutations: {

@@ -25,7 +25,7 @@ export function WitherPanel({ campaign }: { campaign: TrackerCampaign }) {
 }
 
 function Panel({ campaign }: { campaign: TrackerCampaign }) {
-  const characters = useQuery(api.characters.partySummary, { campaignId: campaign._id });
+  const characters = useQuery(api.charactersReads.partySummary, { campaignId: campaign._id });
   const persists = Boolean(campaign.options?.witherPersists);
   const [choice, setChoice] = useState<boolean | null>(null);
   const convert = choice ?? !persists;

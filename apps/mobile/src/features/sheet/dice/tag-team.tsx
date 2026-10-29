@@ -36,7 +36,7 @@ export function TagTeam({
 }) {
   const writes = useWritesEnabled();
   const [open, setOpen] = useState(false);
-  const party = useQuery(api.characters.listByCampaign, open || pending !== null ? { campaignId } : "skip");
+  const party = useQuery(api.charactersReads.listByCampaign, open || pending !== null ? { campaignId } : "skip");
   const [partnerId, setPartnerId] = useState("");
   const [mine, setMine] = useState<TraitId>("agility");
   const [theirs, setTheirs] = useState<TraitId>("agility");

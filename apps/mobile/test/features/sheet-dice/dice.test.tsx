@@ -299,7 +299,7 @@ test("Tag Team apply picks a roll for both characters", async () => {
           ],
         },
       },
-      "characters:listByCampaign": [
+      "charactersReads:listByCampaign": [
         characterRecord({ canEdit: true, name: "Mira" }),
         { ...characterRecord({ canEdit: true, name: "Bryn", mine: false }), _id: "char-2" },
       ],

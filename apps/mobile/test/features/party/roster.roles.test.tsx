@@ -35,7 +35,7 @@ test("a player sees the roster and no GM controls", async () => {
   expect(screen.queryByRole("button", { name: "Party levels up" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Delete Mira" })).toBeNull();
   expect(screen.queryByText("Unassigned (GM)")).toBeNull();
-  expect(screen.client.subscribed).toEqual(["campaigns:get", "characters:listByCampaign", "members:roster"]);
+  expect(screen.client.subscribed).toEqual(["campaigns:get", "charactersReads:listByCampaign", "members:roster"]);
   expect(screen.client.called).toEqual([]);
 });
 
@@ -114,7 +114,7 @@ test("loading, empty, unreadable, and offline states", async () => {
 
 test("a failing party query shows the error", async () => {
   function BrokenRoster() {
-    useQuery(api.characters.listByCampaign, { campaignId: "campaign-1" as Id<"campaigns"> });
+    useQuery(api.charactersReads.listByCampaign, { campaignId: "campaign-1" as Id<"campaigns"> });
     return <Text>Ready</Text>;
   }
   const screen = await renderAsPlayer(
@@ -123,7 +123,7 @@ test("a failing party query shows the error", async () => {
     </QueryBoundary>,
     {
       queries: {
-        "characters:listByCampaign": () => {
+        "charactersReads:listByCampaign": () => {
           throw new Error("roster down");
         },
       },
@@ -139,11 +139,11 @@ test("opening a card shows that character's sheet", async () => {
   const screen = await renderAsPlayer(inCampaign("player", <PartyScreen />), {
     queries: {
       ...queriesFor("player", [characterRecord({ canEdit: true })]),
-      "characters:get": characterRecord({ canEdit: true }),
+      "charactersReads:get": characterRecord({ canEdit: true }),
     },
   });
   await fireEvent.press(screen.getByRole("button", { name: "Open character sheet" }));
   expect(screen.getByRole("header", { name: "Mira" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Close character sheet" })).toBeTruthy();
-  expect(screen.client.subscribed).toContain("characters:get");
+  expect(screen.client.subscribed).toContain("charactersReads:get");
 });

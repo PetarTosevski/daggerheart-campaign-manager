@@ -13,7 +13,7 @@ import { AlertLine, Panel, QueryLoading } from "./chrome";
 import { useIntent } from "./intent";
 import type { PartyMember } from "./party";
 
-type RestState = FunctionReturnType<typeof api.rests.current>;
+type RestState = FunctionReturnType<typeof api.restsReads.current>;
 const KIND_LABEL = { short: "Short rest", long: "Long rest" } as const;
 
 export function RestLauncher({
@@ -25,7 +25,7 @@ export function RestLauncher({
   isGm: boolean;
   party: PartyMember[] | undefined;
 }) {
-  const state = useQuery(api.rests.current, { campaignId });
+  const state = useQuery(api.restsReads.current, { campaignId });
   if (!isGm && state !== undefined && state.open === null) return null;
   return (
     <Panel title="Rest">

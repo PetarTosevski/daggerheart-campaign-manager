@@ -362,7 +362,7 @@ test("the GM applies a night-sky reading", async () => {
 test("a player reads Wither tokens and cannot end the session", async () => {
   const screen = await renderAsPlayer(<CampaignFramePanels campaign={table("witherwild", "player")} />, {
     queries: {
-      "characters:partySummary": [
+      "charactersReads:partySummary": [
         { corrupt: false, sheet: { wither: 3 } },
         { corrupt: true, sheet: { wither: 9 } },
         { sheet: { wither: 2 } },
@@ -373,7 +373,7 @@ test("a player reads Wither tokens and cannot end the session", async () => {
   expect(screen.getByTestId("wither-panel-count")).toHaveTextContent("5 on sheets · 15 in pool");
   expect(screen.getByText(/clear all Wither tokens/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: /End Session/ })).toBeNull();
-  expect(screen.client.subscribed).toEqual(["characters:partySummary"]);
+  expect(screen.client.subscribed).toEqual(["charactersReads:partySummary"]);
   expectNoGm(screen);
 });
 
@@ -381,7 +381,7 @@ test("the GM ends a Witherwild session and converts tokens to Fear", async () =>
   const seen: unknown[] = [];
   const screen = await renderAsGm(<CampaignFramePanels campaign={table("witherwild", "gm")} />, {
     queries: {
-      "characters:partySummary": [{ sheet: { wither: 4 } }],
+      "charactersReads:partySummary": [{ sheet: { wither: 4 } }],
       "sessions:current": { extraCharacters: true },
     },
     mutations: {
@@ -396,7 +396,7 @@ test("the GM ends a Witherwild session and converts tokens to Fear", async () =>
   await fireEvent.press(screen.getByRole("button", { name: "End session" }));
   expect(seen[0]).toMatchObject({ campaignId: "campaign-1", convertWither: true });
   expect(screen.getByText("Session ended. 4 Wither tokens → +4 Fear.")).toBeTruthy();
-  expect(screen.client.subscribed).toEqual(["characters:partySummary", "sessions:current"]);
+  expect(screen.client.subscribed).toEqual(["charactersReads:partySummary", "sessions:current"]);
   expect(screen.client.called).toEqual(["sessions:end"]);
 });
 
@@ -406,7 +406,7 @@ test("the house rule keeps Wither when the GM ends the session", async () => {
     <CampaignFramePanels campaign={table("witherwild", "gm", { witherPersists: true })} />,
     {
       queries: {
-        "characters:partySummary": [{ sheet: { wither: 1 } }],
+        "charactersReads:partySummary": [{ sheet: { wither: 1 } }],
         "sessions:current": { extraCharacters: false },
       },
       mutations: {

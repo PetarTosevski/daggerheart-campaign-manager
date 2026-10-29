@@ -102,7 +102,7 @@ test("the Encounters tab loads the party, Fear and the selected encounter, and c
     "campaigns:get",
     "encounters:list",
     "customAdversaries:list",
-    "characters:listByCampaign",
+    "charactersReads:listByCampaign",
     "campaigns:fear",
     "encounters:get",
   ]);

@@ -12,12 +12,12 @@ export type CombatGmData = {
   layout: CombatSlotProps["layout"];
   fear: number | undefined;
   maps: FunctionReturnType<typeof api.combatMaps.list> | undefined;
-  combatants: FunctionReturnType<typeof api.combatTokens.combatants> | undefined;
-  tokens: FunctionReturnType<typeof api.combatTokens.list> | undefined;
-  handSharing: FunctionReturnType<typeof api.combatCards.handSharing> | undefined;
+  combatants: FunctionReturnType<typeof api.combatTokensReads.combatants> | undefined;
+  tokens: FunctionReturnType<typeof api.combatTokensReads.list> | undefined;
+  handSharing: FunctionReturnType<typeof api.combatCardsReads.handSharing> | undefined;
   doors: FunctionReturnType<typeof api.combatVision.doors> | undefined;
   encounters: FunctionReturnType<typeof api.encounters.list> | undefined;
-  requests: FunctionReturnType<typeof api.combatRequests.mine> | undefined;
+  requests: FunctionReturnType<typeof api.combatRequestsReads.mine> | undefined;
 };
 
 const Ctx = createContext<CombatGmData | null>(null);
@@ -31,12 +31,12 @@ export function CombatGmProvider({ campaignId, layout, children }: Pick<CombatSl
     layout,
     fear: useQuery(api.campaigns.fear, { campaignId: cid }),
     maps: useQuery(api.combatMaps.list, { campaignId: cid }),
-    combatants: useQuery(api.combatTokens.combatants, { campaignId: cid, mapId }),
-    tokens: useQuery(api.combatTokens.list, { campaignId: cid, mapId }),
-    handSharing: useQuery(api.combatCards.handSharing, { campaignId: cid }),
+    combatants: useQuery(api.combatTokensReads.combatants, { campaignId: cid, mapId }),
+    tokens: useQuery(api.combatTokensReads.list, { campaignId: cid, mapId }),
+    handSharing: useQuery(api.combatCardsReads.handSharing, { campaignId: cid }),
     doors: useQuery(api.combatVision.doors, { campaignId: cid, mapId }),
     encounters: useQuery(api.encounters.list, { campaignId: cid }),
-    requests: useQuery(api.combatRequests.mine, { campaignId: cid }),
+    requests: useQuery(api.combatRequestsReads.mine, { campaignId: cid }),
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

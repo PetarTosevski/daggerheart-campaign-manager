@@ -54,6 +54,11 @@ function openRest(kind: "short" | "long"): RestSheetState {
             kind === "short"
               ? ["tendToWounds", "clearStress", "repairArmor", "prepare"]
               : ["tendToAllWounds", "clearAllStress", "workOnProject", "prepare"],
+          efficient: [],
+          slots: 2,
+          trance: false,
+          extraMoves: 0,
+          oasis: false,
         },
       ],
     },
@@ -128,7 +133,7 @@ test("a player saves two short-rest moves", async () => {
   const seen: unknown[] = [];
   const screen = await renderAsPlayer(<RestSlot {...slot(true)} restState={openRest("short")} />, {
     queries: {
-      "characters:listByCampaign": [characterRecord({ canEdit: true }), ally],
+      "charactersReads:listByCampaign": [characterRecord({ canEdit: true }), ally],
     },
     mutations: {
       "rests:choose": (args) => {
@@ -149,7 +154,7 @@ test("a player saves two short-rest moves", async () => {
     ],
   });
   expect(typeof (seen[0] as { idempotencyKey: unknown }).idempotencyKey).toBe("string");
-  expect(screen.client.subscribed).toEqual(["characters:listByCampaign"]);
+  expect(screen.client.subscribed).toEqual(["charactersReads:listByCampaign"]);
   expect(screen.client.called).toEqual(["rests:choose"]);
   expectNoGm(screen);
 });
@@ -158,8 +163,8 @@ test("a player targets an ally and creates a project on a long rest", async () =
   const seen: unknown[] = [];
   const screen = await renderAsPlayer(<RestSlot {...slot(true)} restState={openRest("long")} />, {
     queries: {
-      "characters:listByCampaign": [characterRecord({ canEdit: true }), ally],
-      "rests:projects": [{ _id: "proj-1", name: "Forge", startingValue: 4, currentValue: 3, status: "active" }],
+      "charactersReads:listByCampaign": [characterRecord({ canEdit: true }), ally],
+      "restsReads:projects": [{ _id: "proj-1", name: "Forge", startingValue: 4, currentValue: 3, status: "active" }],
     },
     mutations: {
       "rests:choose": (args) => {
@@ -187,7 +192,7 @@ test("a player targets an ally and creates a project on a long rest", async () =
       { move: "clearAllStress" },
     ],
   });
-  expect(screen.client.subscribed).toEqual(["characters:listByCampaign", "rests:projects"]);
+  expect(screen.client.subscribed).toEqual(["charactersReads:listByCampaign", "restsReads:projects"]);
   expect(screen.client.called).toEqual(["rests:createProject", "rests:choose"]);
   expectNoGm(screen);
 });
