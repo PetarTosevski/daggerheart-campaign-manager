@@ -230,6 +230,23 @@ export class SkiaCanvasContext {
     this.canvas.restore();
   }
 
+  /** Draws a decoded image across this whole surface. */
+  blitImage(image: SkImage): void {
+    const paint = this.skia.Paint();
+    paint.setAntiAlias(true);
+    this.canvas.save();
+    this.useDeviceSpace();
+    this.canvas.drawImageRectOptions(
+      image,
+      this.skia.XYWHRect(0, 0, image.width(), image.height()),
+      this.skia.XYWHRect(0, 0, this.width, this.height),
+      FilterMode.Linear,
+      MipmapMode.None,
+      paint,
+    );
+    this.canvas.restore();
+  }
+
   getImageData(sx: number, sy: number, sw: number, sh: number): PixelBuffer {
     const width = Math.max(0, Math.floor(sw));
     const height = Math.max(0, Math.floor(sh));
