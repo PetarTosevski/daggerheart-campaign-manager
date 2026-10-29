@@ -89,15 +89,22 @@ export function useMapPanZoom(viewportW: number, viewportH: number, aspect: numb
     [aspect, setView, viewportH, viewportW],
   );
 
+  const frameKey = `${frameW}:${frameH}`;
+  const framed = useRef(frameKey);
+  const fittedOnce = useRef(false);
+
   useEffect(() => {
     if (viewportW <= 0) return;
     const prev = viewRef.current;
-    if (prev.w > 0 && Math.abs(prev.w - viewportW) <= 24) {
+    const frameChanged = framed.current !== frameKey;
+    framed.current = frameKey;
+    if (fittedOnce.current && !frameChanged && prev.w > 0 && Math.abs(prev.w - viewportW) <= 24) {
       setView(rescaleView(prev, prev.w, viewportW));
       return;
     }
+    fittedOnce.current = true;
     fit();
-  }, [aspect, fit, setView, viewportW]);
+  }, [aspect, fit, frameKey, setView, viewportW]);
 
   return { view, viewRef, setView, fit, fitZoom, zoomAt, panBy, centreOn };
 }
