@@ -47,6 +47,8 @@ export type MapViewProps = {
   onMoveToken: (id: number, p: Point) => void;
   onMoveParty: (p: Point) => void;
   onDropType: (type: string, p: Point) => void;
+  /** Age of Umbra (dcm-bxp.18): markers linked to a Sacred Pyre, by marker id → whether it burns. */
+  pyres?: ReadonlyMap<number, boolean>;
 };
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
@@ -369,13 +371,15 @@ export function MapView(props: MapViewProps) {
               const pos = dragPos?.id === t.id ? dragPos.p : t;
               const on = t.id === props.selectedId;
               const dim = t.hidden && editable;
+              const pyreLit = props.pyres?.get(t.id);
+              const pyreLabel = pyreLit === undefined ? "" : pyreLit ? " Sacred Pyre, burning." : " Sacred Pyre, extinguished.";
               return (
                 <button
                   key={t.id}
                   type="button"
                   className="tok"
                   data-tok-id={t.id}
-                  aria-label={`${t.name || type.label}, ${type.label}${t.hidden ? " (hidden from players)" : ""}.${editable ? " Drag or use the arrow keys to move, click to edit." : ""}`}
+                  aria-label={`${t.name || type.label}, ${type.label}${t.hidden ? " (hidden from players)" : ""}.${pyreLabel}${editable ? " Drag or use the arrow keys to move, click to edit." : ""}`}
                   aria-pressed={editable ? on : undefined}
                   style={{ left: `${pos.x}%`, top: `${pos.y}%`, zIndex: on ? 5 : undefined }}
                   onKeyDown={(e) => nudge(e, t, (p) => props.onMoveToken(t.id, p))}
@@ -403,6 +407,11 @@ export function MapView(props: MapViewProps) {
                       <path d={type.path} />
                     </svg>
                   </span>
+                  {pyreLit === undefined ? null : (
+                    <span className={pyreLit ? "tok-pyre lit" : "tok-pyre"} data-testid={`pyre-badge-${t.id}`} aria-hidden="true">
+                      {pyreLit ? "🔥" : "○"}
+                    </span>
+                  )}
                   <span className="tok-lbl" style={dim ? { opacity: 0.55, textDecoration: "line-through" } : undefined}>
                     {t.location ? "📍 " : ""}
                     {t.name}

@@ -3,6 +3,8 @@ import { v } from "convex/values";
 import { checkGroups, codexPatchSchema, emptyEntry, MAX_CODEX_IMAGE_BYTES, MAX_CODEX_IMAGES } from "../src/lib/codex/schema";
 import { coverOf, regionOf, toPlayerEntry, type GmEntry, type PlayerEntry } from "../src/lib/codex/view";
 import { appError } from "../src/lib/errors/app-error";
+import { HORIZON_FRAME, mapImageSize, MAX_TOKENS, snapToHexCentre } from "../src/lib/world/map-state";
+import { isBuiltinType, tokenType, tokenTypes } from "../src/lib/world/token-types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -25,7 +27,8 @@ import {
   type EntrySummary,
 } from "./lib/codex";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed } from "./lib/files";
-import { playerTokenFilter, tokenRow, toToken, writableMap, writeToken } from "./lib/maps";
+import { lastTokenId, playerTokenFilter, tokenCount, tokenRow, toToken, writableMap, writeToken } from "./lib/maps";
+import { campaignScope, runOnce } from "./lib/operations";
 import { campaignMutation, keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
 import { atLeast, liveCampaign, permissionFor, requirePermission, type Permission } from "./lib/permissions";
 import { codexKindValidator, codexListValidator, codexPatchValidator, codexTextValidator } from "./lib/validators/codex";
@@ -223,6 +226,50 @@ export const setPin = userMutation({
     const stored = tokenId !== null && (await hasToken(ctx, entry.campaignId, tokenId)) ? tokenId : null;
     await saveSummary(ctx, entry, { ...summary, tokenId: stored });
     return { tokenId: stored };
+  },
+});
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * GM only (dcm-bxp.16): from the Codex pin picker, drops a new World map pin
+ * for the entry, or moves its linked pin, with a marker type. Needs edit on
+ * the entry and on the map (a codex grant alone never writes the map). A new
+ * pin is named after the entry, ticked "Location", and hidden from players
+ * while the party doesn't know the entry. In Journey to Horizon the pin snaps
+ * to its hex's centre, as on the World board. Writes only the marker's row and
+ * the entry's summary.
+ */
+export const dropPin = userMutation({
+  args: { entryId: v.id("codexEntries"), type: v.string(), x: v.number(), y: v.number(), idempotencyKey: v.string() },
+  returns: v.object({ tokenId: v.number(), created: v.boolean() }),
+  handler: async (ctx, { entryId, type, x, y, idempotencyKey }) => {
+    const { campaign, entry, summary } = await loadEntryForGm(ctx, ctx.user, entryId);
+    if (!atLeast(await permissionFor(ctx, ctx.user, { type: "map", campaign }, "edit"), "edit")) throw appError("FORBIDDEN");
+    const campaignId = campaign._id;
+    return runOnce(
+      ctx,
+      { scopeKey: campaignScope(campaignId), key: idempotencyKey, kind: "codex_drop_pin", request: { entryId, type, x, y }, createdBy: ctx.user._id, campaignId },
+      async () => {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) invalid("A pin goes on the map.");
+        const { scalars } = await writableMap(ctx, campaign);
+        if (!isBuiltinType(type) && !scalars.customTypes.some((c) => c.id === type)) invalid("Unknown marker type.");
+        const crawl = campaign.frameId === HORIZON_FRAME ? scalars.hexCrawl : undefined;
+        const at = crawl ? snapToHexCentre({ x, y }, mapImageSize(campaign.frameId, scalars), crawl.grid) : { x, y };
+        const point = { x: round2(at.x), y: round2(at.y) };
+        const linked = summary.tokenId === null ? null : await tokenRow(ctx, campaignId, summary.tokenId);
+        if (linked !== null) {
+          await writeToken(ctx, campaignId, linked._id, { ...toToken(linked), type, ...point });
+          return { tokenId: linked.tokenId, created: false };
+        }
+        if ((await tokenCount(ctx, campaignId)) >= MAX_TOKENS) invalid(`A map holds at most ${MAX_TOKENS} markers.`);
+        const tokenId = Math.max(scalars.nextId, (await lastTokenId(ctx, campaignId)) + 1);
+        const name = summary.name.trim().slice(0, MAX_PIN_NAME) || tokenType(tokenTypes(scalars), type).label;
+        await writeToken(ctx, campaignId, null, { id: tokenId, type, ...point, name, notes: "", hidden: !summary.known, location: true });
+        await saveSummary(ctx, entry, { ...summary, tokenId });
+        return { tokenId, created: true };
+      },
+    );
   },
 });
 

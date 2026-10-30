@@ -1,6 +1,6 @@
 import { v, type Infer } from "convex/values";
 
-import { appError } from "../../src/lib/errors/app-error";
+import { appError, RuleError } from "../../src/lib/errors/app-error";
 import {
   FIRST_ECHO,
   HORIZON_TRACKER_KEY,
@@ -11,21 +11,54 @@ import {
   horizonStateSchema,
   markRefusal,
   occurredEvents,
+  tierRuleActive,
   unmarkRefusal,
   withMark,
   withoutMark,
 } from "../../src/lib/frames/trackers/horizon";
 import { ENDURANCE_START, enduranceOwnerKey, horizonDaysPassed } from "../../src/lib/domain/rest/frame-hooks/index";
 import { resolveOptions } from "../../src/lib/frames/options";
-import { hexKey } from "../../src/lib/world/hex";
+import { hexKey, hexToPixel } from "../../src/lib/world/hex";
+import {
+  addRegionEncounter,
+  BEARINGS,
+  collectEcho as collect,
+  crawlStateSchema,
+  echoBearing,
+  generateRegion as generate,
+  HABITAT_IDS,
+  HORIZON_CRAWL_KEY,
+  INITIAL_CRAWL_STATE,
+  MAX_REGIONS,
+  nearestEcho,
+  REGION_KEY_PREFIX,
+  regionKey,
+  regionNameSchema,
+  regionSchema,
+  RUMOR_TEXT_MAX,
+  setEcho as placeEcho,
+  setEncounterUsed,
+  type Region,
+} from "../../src/lib/world/hex-crawl";
 import { mapImageSize, SANCTUARY_TYPE, tokenHex } from "../../src/lib/world/map-state";
 import type { Doc } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { rollDie } from "../lib/dice";
 import { gainFear } from "../lib/fear";
-import { campaignQuery, keyedGmMutation } from "../lib/functions";
-import { listMapTokens, saveScalars, writableMap } from "../lib/maps";
+import { campaignQuery, keyedGmMutation, type Once } from "../lib/functions";
+import { listMapTokens, saveScalars, tokenRow, writableMap } from "../lib/maps";
 import type { RestHook } from "../lib/restHooks";
-import { assertTrackerFrame, frameTrackerMutation, loadTracker, type FrameTracker } from "../lib/trackers";
+import {
+  assertTrackerFrame,
+  deleteTracker,
+  frameTrackerMutation,
+  loadTracker,
+  readTracker,
+  readTrackerRows,
+  TRACKER_SCHEMA_VERSION,
+  writeTracker,
+  type FrameTracker,
+} from "../lib/trackers";
 import { recordHistory } from "../tables/history";
 
 /** Journey to Horizon only; enforced here, not only in the UI. */
@@ -157,6 +190,269 @@ export const setEchoes = keyedGmMutation({
       };
     });
   },
+});
+
+// ---- Hex crawl: regions, Soul Echo sanctuaries, Locate Soul Echoes (HF pp.169–176, dcm-bxp.17)
+
+/** The crawl's campaign-level state: regions counter, Echo sanctuaries, last Locate Soul Echoes. */
+export const crawlTracker: FrameTracker<typeof crawlStateSchema> = {
+  frameId: "journey-to-horizon",
+  key: HORIZON_CRAWL_KEY,
+  schema: crawlStateSchema,
+  initial: () => INITIAL_CRAWL_STATE,
+  ruleCode: "TRACKER_RULE",
+};
+
+const regionValidator = v.object({
+  id: v.number(),
+  name: v.string(),
+  habitatRolls: v.array(v.number()),
+  habitat: v.union(...HABITAT_IDS.map((h) => v.literal(h))),
+  shadowblighted: v.boolean(),
+  impassable: v.boolean(),
+  size: v.number(),
+  terrain: v.number(),
+  encounters: v.array(v.object({ dice: v.array(v.number()), total: v.number(), used: v.boolean() })),
+  rumor: v.object({ roll: v.number(), text: v.string(), known: v.boolean() }),
+  createdAt: v.number(),
+});
+const bearingValidator = v.union(...BEARINGS.map((b) => v.literal(b)));
+
+const crawlView = v.union(
+  v.object({
+    role: v.literal("gm"),
+    regions: v.array(regionValidator),
+    echoes: v.array(v.object({ tokenId: v.number(), collected: v.boolean() })),
+    located: v.union(v.object({ bearing: bearingValidator, day: v.number(), tokenId: v.number(), seekersAlerted: v.boolean() }), v.null()),
+  }),
+  v.object({
+    role: v.literal("player"),
+    /** Rumors the party knows, by region name. */
+    rumors: v.array(v.object({ regionId: v.number(), name: v.string(), text: v.string() })),
+    located: v.union(v.object({ bearing: bearingValidator, day: v.number() }), v.null()),
+  }),
+);
+
+export type CrawlView = Infer<typeof crawlView>;
+
+function readRegions(ctx: QueryCtx, campaignId: Doc<"campaigns">["_id"]) {
+  return readTrackerRows(ctx, campaignId, REGION_KEY_PREFIX, regionSchema, MAX_REGIONS);
+}
+
+/**
+ * The hex crawl's regions, Echo sanctuaries and last Locate Soul Echoes. The
+ * GM gets everything; players get the rumors they know and the last bearing
+ * only (encounters, Echo locations and the Seekers flag are GM only).
+ */
+export const crawl = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: crawlView,
+  handler: async (ctx): Promise<CrawlView> => {
+    assertTrackerFrame(ctx.campaign, crawlTracker);
+    const state = await loadTracker(ctx, ctx.campaign._id, crawlTracker);
+    const regions = await readRegions(ctx, ctx.campaign._id);
+    if (ctx.permission === "owner") return { role: "gm", regions, echoes: state.echoes, located: state.located };
+    return {
+      role: "player",
+      rumors: regions.filter((r) => r.rumor.known && r.rumor.text.trim() !== "").map((r) => ({ regionId: r.id, name: r.name, text: r.rumor.text })),
+      located: state.located ? { bearing: state.located.bearing, day: state.located.day } : null,
+    };
+  },
+});
+
+/** One idempotent change of a region's row; TRACKER_RULE when the region is gone. */
+function regionMutation<R>(
+  ctx: MutationCtx & { campaign: Doc<"campaigns">; once: Once },
+  op: { kind: string; regionId: number; request: object },
+  run: (region: Region) => { region: Region; result: R },
+): Promise<R> {
+  assertTrackerFrame(ctx.campaign, crawlTracker);
+  const campaignId = ctx.campaign._id;
+  return ctx.once(op.kind, { regionId: op.regionId, ...op.request }, async () => {
+    const key = regionKey(op.regionId);
+    const region = Number.isInteger(op.regionId) && op.regionId > 0 ? await readTracker(ctx, campaignId, key, regionSchema) : null;
+    if (region === null) throw appError("TRACKER_RULE", "That region is gone.");
+    const next = run(region);
+    await writeTracker(ctx, campaignId, key, regionSchema.parse(next.region), TRACKER_SCHEMA_VERSION);
+    return next.result;
+  });
+}
+
+/**
+ * Generates a wilderness region (HF p.170): the server rolls d20 habitat
+ * (Shadowblighted rerolls; with the Doom Track's Tier 2 rule a 1 counts as a
+ * double 1), d12 size, d8+d6 encounter, d4 terrain and d100 rumor. The GM then
+ * paints the region onto hexes (`maps.updateHex`) and writes the rumor.
+ */
+export const generateRegion = keyedGmMutation({
+  args: { name: v.optional(v.string()) },
+  returns: regionValidator,
+  handler: (ctx, { name }) => {
+    assertTrackerFrame(ctx.campaign, crawlTracker);
+    const campaignId = ctx.campaign._id;
+    return ctx.once("horizon_generate_region", { name: name ?? null }, async () => {
+      const state = await loadTracker(ctx, campaignId, crawlTracker);
+      if (state.regionCount >= MAX_REGIONS) throw appError("TRACKER_RULE", `A hex crawl holds at most ${MAX_REGIONS} regions.`);
+      const doom = await loadTracker(ctx, campaignId, horizonTracker);
+      const id = state.nextRegionId;
+      const regionName = regionNameSchema.parse(name?.trim() ? name : `Region ${id}`);
+      const region = generate(rollDie, { id, name: regionName, oneIsDouble: tierRuleActive(doom, 2), now: Date.now() });
+      await writeTracker(ctx, campaignId, regionKey(id), region, TRACKER_SCHEMA_VERSION);
+      await writeTracker(ctx, campaignId, crawlTracker.key, { ...state, nextRegionId: id + 1, regionCount: state.regionCount + 1 }, TRACKER_SCHEMA_VERSION);
+      return region;
+    });
+  },
+});
+
+/** Deletes a region (its hexes keep their painted name, habitat and terrain). */
+export const removeRegion = keyedGmMutation({
+  args: { regionId: v.number() },
+  returns: v.null(),
+  handler: (ctx, { regionId }) => {
+    assertTrackerFrame(ctx.campaign, crawlTracker);
+    const campaignId = ctx.campaign._id;
+    return ctx.once("horizon_remove_region", { regionId }, async () => {
+      const key = regionKey(regionId);
+      if (!Number.isInteger(regionId) || regionId < 1 || (await readTracker(ctx, campaignId, key, regionSchema)) === null) return null;
+      const state = await loadTracker(ctx, campaignId, crawlTracker);
+      await deleteTracker(ctx, campaignId, key);
+      await writeTracker(ctx, campaignId, crawlTracker.key, { ...state, regionCount: Math.max(0, state.regionCount - 1) }, TRACKER_SCHEMA_VERSION);
+      return null;
+    });
+  },
+});
+
+/** Another Encounter-table roll (d8+d6) for the region. */
+export const rollRegionEncounter = keyedGmMutation({
+  args: { regionId: v.number() },
+  returns: v.object({ total: v.number() }),
+  handler: (ctx, { regionId }) =>
+    regionMutation(ctx, { kind: "horizon_region_encounter", regionId, request: {} }, (region) => {
+      const next = addRegionEncounter(region, rollDie);
+      return { region: next, result: { total: next.encounters[next.encounters.length - 1].total } };
+    }),
+});
+
+/** Marks a region's encounter used (or unused again). */
+export const setRegionEncounterUsed = keyedGmMutation({
+  args: { regionId: v.number(), index: v.number(), used: v.boolean() },
+  returns: v.null(),
+  handler: (ctx, { regionId, index, used }) =>
+    regionMutation(ctx, { kind: "horizon_region_encounter_used", regionId, request: { index, used } }, (region) => ({
+      region: setEncounterUsed(region, index, used),
+      result: null,
+    })),
+});
+
+/** The region's rumor text (the GM's, from the d100 Rumors table) and whether the party knows it. */
+export const setRegionRumor = keyedGmMutation({
+  args: { regionId: v.number(), text: v.optional(v.string()), known: v.optional(v.boolean()) },
+  returns: v.null(),
+  handler: (ctx, { regionId, text, known }) =>
+    regionMutation(ctx, { kind: "horizon_region_rumor", regionId, request: { text: text ?? null, known: known ?? null } }, (region) => {
+      if (text !== undefined && text.length > RUMOR_TEXT_MAX) throw appError("INVALID", `Keep the rumor under ${RUMOR_TEXT_MAX + 1} characters.`);
+      return {
+        region: { ...region, rumor: { ...region.rumor, ...(text !== undefined ? { text: text.trim() } : {}), ...(known !== undefined ? { known } : {}) } },
+        result: null,
+      };
+    }),
+});
+
+/** A sanctuary marker on the map (INVALID otherwise). */
+async function sanctuaryToken(ctx: QueryCtx, campaignId: Doc<"campaigns">["_id"], tokenId: number) {
+  const row = Number.isInteger(tokenId) && tokenId > 0 ? await tokenRow(ctx, campaignId, tokenId) : null;
+  if (row === null || row.type !== SANCTUARY_TYPE) throw appError("INVALID", "Pick a sanctuary marker on the map.");
+  return row;
+}
+
+/** "Choose nine sanctuaries in which a Soul Echo can be located" (HF p.169): places or removes an Echo. GM only. */
+export const setEcho = keyedGmMutation({
+  args: { tokenId: v.number(), hasEcho: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { tokenId, hasEcho }) => {
+    assertTrackerFrame(ctx.campaign, crawlTracker);
+    if (hasEcho) await sanctuaryToken(ctx, ctx.campaign._id, tokenId);
+    return frameTrackerMutation(ctx, crawlTracker, { kind: "horizon_set_echo", request: { tokenId, hasEcho } }, (state) => ({
+      state: placeEcho(state, tokenId, hasEcho),
+      result: null,
+    }));
+  },
+});
+
+/**
+ * Collects the Soul Echo at a sanctuary: the sanctuary's Echo is marked
+ * collected and the Soul Echoes count rises by one in the same mutation
+ * ("The party levels up each time they add a new Soul Echo", HF p.177; 10
+ * unlocks Horizon).
+ */
+export const collectEcho = keyedGmMutation({
+  args: { tokenId: v.number() },
+  returns: echoesChange,
+  handler: (ctx, { tokenId }) => {
+    assertTrackerFrame(ctx.campaign, crawlTracker);
+    const campaignId = ctx.campaign._id;
+    return ctx.once("horizon_collect_echo", { tokenId }, async () => {
+      const crawlState = await loadTracker(ctx, campaignId, crawlTracker);
+      const doom = await loadTracker(ctx, campaignId, horizonTracker);
+      if (doom.echoesCollected >= MAX_ECHOES) throw appError("ECHO_RANGE", `Soul Echoes run from ${FIRST_ECHO} to ${MAX_ECHOES}.`);
+      const next = collect(crawlState, tokenId);
+      const previousValue = doom.echoesCollected;
+      const newValue = previousValue + 1;
+      await writeTracker(ctx, campaignId, crawlTracker.key, next, TRACKER_SCHEMA_VERSION);
+      await writeTracker(ctx, campaignId, horizonTracker.key, { ...doom, echoesCollected: newValue }, TRACKER_SCHEMA_VERSION);
+      return { previousValue, newValue, levelUps: 1, horizonUnlocked: newValue === MAX_ECHOES };
+    });
+  },
+});
+
+/**
+ * Locate Soul Echoes (HF p.176): "The PC learns the direction (north, south,
+ * east, west, or a combination) of the nearest sanctuary with a Soul Echo at
+ * its shrine." The bearing runs from the party's hex to the nearest sanctuary
+ * (by hexes) whose Echo is not yet collected; players see the bearing.
+ * `seekersAlerted`: "At the GM's discretion, using this downtime move alerts
+ * nearby Seekers-in-Shadow" (GM only).
+ */
+export const locateEchoes = keyedGmMutation({
+  args: { seekersAlerted: v.boolean() },
+  returns: v.object({ bearing: bearingValidator }),
+  handler: async (ctx, { seekersAlerted }) => {
+    assertTrackerFrame(ctx.campaign, crawlTracker);
+    const campaign = ctx.campaign;
+    return ctx.once("horizon_locate_echoes", { seekersAlerted }, async () => {
+      const state = await loadTracker(ctx, campaign._id, crawlTracker);
+      const { scalars } = await writableMap(ctx, campaign);
+      const hexCrawl = scalars.hexCrawl;
+      if (!hexCrawl?.party) throw appError("TRACKER_RULE", "Place the party on a hex first.");
+      const image = mapImageSize(campaign.frameId, scalars);
+      const open = new Set(state.echoes.filter((e) => !e.collected).map((e) => e.tokenId));
+      const sanctuaries = (await listMapTokens(ctx, campaign._id))
+        .filter((t) => open.has(t.id))
+        .map((t) => {
+          const at = { x: (t.x / 100) * image.width, y: (t.y / 100) * image.height };
+          return { tokenId: t.id, at, hex: tokenHex(t, image, hexCrawl.grid) };
+        });
+      const nearest = nearestEcho(hexCrawl.party, sanctuaries);
+      if (nearest === null) throw appError("TRACKER_RULE", "No uncollected Soul Echo is placed in a sanctuary on the map.");
+      const result = echoBearing(hexCrawl.party, hexToPixel(hexCrawl.party, hexCrawl.grid), nearest);
+      const located = { bearing: result, day: hexCrawl.day, tokenId: nearest.tokenId, seekersAlerted };
+      await writeTracker(ctx, campaign._id, crawlTracker.key, { ...state, located }, TRACKER_SCHEMA_VERSION);
+      return { bearing: result };
+    });
+  },
+});
+
+/** Sets or clears "Seekers alerted" on the last Locate Soul Echoes (GM only). */
+export const setSeekersAlerted = keyedGmMutation({
+  args: { alerted: v.boolean() },
+  returns: v.null(),
+  handler: (ctx, { alerted }) =>
+    frameTrackerMutation(ctx, crawlTracker, { kind: "horizon_seekers", request: { alerted } }, (state) => {
+      if (state.located === null) throw new RuleError("TRACKER_RULE", "Locate the Soul Echoes first.");
+      return { state: { ...state, located: { ...state.located, seekersAlerted: alerted } }, result: null };
+    }),
 });
 
 /** The crawl's day counter's upper bound (`hexCrawlSchema`). */

@@ -1,19 +1,24 @@
 "use client";
 
 import { useMutation } from "convex/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
 import { assetBackground } from "@/lib/design-assets";
 import type { GmEntry } from "@/lib/codex/view";
-import { WORLD_MAPS } from "@/lib/world/map-state";
+import { BUILTIN_TOKEN_TYPES, WORLD_MAPS } from "@/lib/world/map-state";
+import { TOKEN_TYPE_ART } from "@/lib/world/token-types";
+import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
-type Pin = { id: number; name: string; x: number; y: number; hidden: boolean };
+type Pin = { id: number; name: string; x: number; y: number; hidden: boolean; type?: string };
 
-/** Links a location to one of the World map's pins (pins are placed on the World board). */
+/**
+ * Links a location to one of the World map's pins, or (dcm-bxp.16) drops a new
+ * pin of the chosen type where the GM clicks, or moves the location's own pin there.
+ */
 export function PinPicker({
   frameId,
   entry,
@@ -28,7 +33,10 @@ export function PinPicker({
   onClose: () => void;
 }) {
   const setPin = useMutation(api.codex.setPin);
+  const dropPin = useIntent(api.codex.dropPin);
   const [error, setError] = useState<string | null>(null);
+  const own = pins.find((p) => p.id === entry.tokenId);
+  const [pinType, setPinType] = useState<string>(own?.type ?? "landmark");
   const map = (WORLD_MAPS as Record<string, { asset: string; width: number; height: number } | undefined>)[frameId];
   const title = `Place “${entry.name || "this location"}” on the map`;
 
@@ -54,6 +62,17 @@ export function PinPicker({
     }
   }
 
+  async function drop(e: MouseEvent<HTMLDivElement>) {
+    // Clicks on a pin link it instead.
+    if (e.target !== e.currentTarget || dropPin.pending) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - box.left) / box.width) * 100;
+    const y = ((e.clientY - box.top) / box.height) * 100;
+    setError(null);
+    const result = await dropPin.fire({ entryId: entry._id as Id<"codexEntries">, type: pinType, x, y });
+    if (result) onClose();
+  }
+
   return (
     <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[100] box-border flex items-center justify-center bg-[rgb(3_6_7/0.9)] p-4 sm:p-6">
       <div className="box-border flex max-h-full w-full max-w-[1100px] flex-col gap-3 overflow-auto rounded-[14px] border border-brand bg-[#141e22] p-[18px]">
@@ -63,9 +82,26 @@ export function PinPicker({
             Cancel
           </button>
         </div>
-        <p className="cx-muted m-0">Click a pin to link this location to it. Pins are placed and moved on the World map.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="cx-muted m-0 flex-1">
+            Click a pin to link this location to it, or click anywhere on the map to {own ? "move this location’s pin there" : "drop a new pin there"}.
+          </p>
+          <label className="cx-muted flex items-center gap-2">
+            Pin type
+            <select className="cx-in w-auto" value={pinType} onChange={(e) => setPinType(e.target.value)}>
+              {own?.type && !(BUILTIN_TOKEN_TYPES as readonly string[]).includes(own.type) ? <option value={own.type}>Current type</option> : null}
+              {BUILTIN_TOKEN_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {TOKEN_TYPE_ART[t].label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <div
-          className="relative mx-auto w-full overflow-hidden rounded-[10px] bg-[#e6d8b8] bg-no-repeat"
+          data-testid="pin-picker-map"
+          onClick={(e) => void drop(e)}
+          className="relative mx-auto w-full cursor-crosshair overflow-hidden rounded-[10px] bg-[#e6d8b8] bg-no-repeat"
           style={{
             aspectRatio: map ? `${map.width} / ${map.height}` : "4 / 3",
             maxHeight: "calc(100vh - 260px)",
@@ -107,9 +143,9 @@ export function PinPicker({
             );
           })}
         </div>
-        {error ? (
+        {error || dropPin.error ? (
           <div role="alert" className="text-[14px] text-[#ffb4a8]">
-            {error}
+            {error ?? dropPin.error}
           </div>
         ) : null}
       </div>

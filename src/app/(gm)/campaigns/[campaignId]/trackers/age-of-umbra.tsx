@@ -2,17 +2,18 @@
 
 import { useQuery } from "convex/react";
 import { Flame } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { Modal } from "@/components/brand/modal";
-import { MAX_WATCHERS, SETTLEMENT_MAX, type Pyre } from "@/lib/frames/trackers/age-of-umbra";
+import { MAX_VICINITY_KM, MAX_WATCHERS, MIN_VICINITY_KM, SETTLEMENT_MAX, type Pyre } from "@/lib/frames/trackers/age-of-umbra";
 import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { CampaignSummary } from "../../../../../../convex/campaigns";
-import type { LurkingResult, UmbraView } from "../../../../../../convex/trackers/ageOfUmbra";
+import type { LurkingResult, PyreMapView, UmbraView } from "../../../../../../convex/trackers/ageOfUmbra";
 import { TRACKER_BTN, TrackerCard } from "./tracker-card";
 
 type Props = { campaign: CampaignSummary };
@@ -31,9 +32,15 @@ export function AgeOfUmbraTracker({ campaign }: Props) {
   );
 }
 
+type Marker = { id: number; name: string };
+
 function PyresCard({ campaign, view }: Props & { view: UmbraView }) {
   const readOnly = campaign.role !== "gm";
   const campaignId = campaign._id;
+  // dcm-bxp.18: the pyres' World map links, and the GM's markers to link them to.
+  const pyreMap = useQuery(api.trackers.ageOfUmbra.pyreMap, { campaignId });
+  const map = useQuery(api.maps.get, readOnly ? "skip" : { campaignId });
+  const markers: Marker[] = map ? map.state.tokens.map((t) => ({ id: t.id, name: t.name || `Marker ${t.id}` })) : [];
   const addPyre = useIntent(api.trackers.ageOfUmbra.addPyre);
   const setLit = useIntent(api.trackers.ageOfUmbra.setLit);
   const branches = useIntent(api.trackers.ageOfUmbra.adjustBranches);
@@ -55,6 +62,7 @@ function PyresCard({ campaign, view }: Props & { view: UmbraView }) {
         />
         The party is at a Sacred Pyre
       </label>
+      {pyreMap ? <VicinityControls campaignId={campaignId} readOnly={readOnly} pyreMap={pyreMap} /> : null}
 
       {view.pyres.length ? (
         <ul aria-label="Sacred Pyres" className="m-0 flex list-none flex-col gap-2 p-0">
@@ -62,6 +70,8 @@ function PyresCard({ campaign, view }: Props & { view: UmbraView }) {
             <PyreRow
               key={pyre.id}
               pyre={pyre}
+              tokenId={pyreMap?.links.find((l) => l.pyreId === pyre.id)?.tokenId ?? null}
+              markers={markers}
               readOnly={readOnly}
               campaignId={campaignId}
               onToggle={() => void setLit.fire({ campaignId, pyreId: pyre.id, lit: !pyre.lit })}
@@ -147,14 +157,74 @@ function PyresCard({ campaign, view }: Props & { view: UmbraView }) {
   );
 }
 
+/**
+ * dcm-bxp.18 (user 2026-10-30): with a pyre linked to a World marker, "at a
+ * Sacred Pyre" follows the map (the party marker within N km of a lit linked
+ * pyre) until the GM ticks or clears the box; "Follow the map" hands it back.
+ */
+function VicinityControls({ campaignId, readOnly, pyreMap }: { campaignId: CampaignSummary["_id"]; readOnly: boolean; pyreMap: PyreMapView }) {
+  const setVicinity = useIntent(api.trackers.ageOfUmbra.setVicinity);
+  const atPyre = useIntent(api.trackers.ageOfUmbra.setAtPyre);
+  const [draft, setDraft] = useState<string | null>(null);
+  const km = Number(draft);
+  const valid = draft !== null && draft.trim() !== "" && Number.isFinite(km) && km >= MIN_VICINITY_KM && km <= MAX_VICINITY_KM;
+  const auto = pyreMap.mode === "auto";
+  return (
+    <div className="flex flex-col gap-2 text-[13px] text-[#9fb2b6]">
+      <p className="m-0" data-testid="pyre-mode">
+        {auto
+          ? `Follows the map: the party marker within ${pyreMap.vicinityKm} km of a burning pyre linked to a World marker${pyreMap.nearLitPyre ? " (it is)." : "."}`
+          : `Set by the GM${pyreMap.nearLitPyre ? " (the map puts the party at a burning pyre)." : "."}`}
+      </p>
+      {readOnly ? null : (
+        <div className="flex flex-wrap items-center gap-2">
+          {auto ? null : (
+            <button type="button" className={TRACKER_BTN} disabled={atPyre.pending} onClick={() => void atPyre.fire({ campaignId, atPyre: null })}>
+              Follow the map
+            </button>
+          )}
+          <form
+            className="flex items-center gap-2"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!valid) return;
+              if (await setVicinity.fire({ campaignId, km })) setDraft(null);
+            }}
+          >
+            <label className="flex items-center gap-2">
+              Vicinity (km)
+              <input
+                inputMode="decimal"
+                value={draft ?? String(pyreMap.vicinityKm)}
+                onChange={(e) => setDraft(e.target.value)}
+                className={cn(INPUT, "w-20")}
+              />
+            </label>
+            <button type="submit" className={TRACKER_BTN} disabled={!valid || setVicinity.pending}>
+              Save
+            </button>
+          </form>
+        </div>
+      )}
+      <p aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
+        {setVicinity.error ?? atPyre.error}
+      </p>
+    </div>
+  );
+}
+
 function PyreRow({
   pyre,
+  tokenId,
+  markers,
   readOnly,
   campaignId,
   onToggle,
   toggling,
 }: {
   pyre: Pyre;
+  tokenId: number | null;
+  markers: Marker[];
   readOnly: boolean;
   campaignId: CampaignSummary["_id"];
   onToggle: () => void;
@@ -162,8 +232,9 @@ function PyreRow({
 }) {
   const rename = useIntent(api.trackers.ageOfUmbra.renamePyre);
   const remove = useIntent(api.trackers.ageOfUmbra.removePyre);
+  const link = useIntent(api.trackers.ageOfUmbra.linkPyre);
   const [editing, setEditing] = useState<string | null>(null);
-  const error = rename.error ?? remove.error;
+  const error = rename.error ?? remove.error ?? link.error;
 
   return (
     <li aria-label={pyre.settlement} data-lit={pyre.lit} className="flex flex-wrap items-center gap-2 rounded-[10px] bg-[#10181b] px-3 py-2">
@@ -207,8 +278,28 @@ function PyreRow({
         <>
           <span className="min-w-0 flex-1 truncate text-[15px] text-[#e6ecea]">{pyre.settlement}</span>
           <span className="text-[12px] tracking-[0.12em] text-[#8fa3a8] uppercase">{pyre.lit ? "Burning" : "Out"}</span>
+          {tokenId !== null ? (
+            <Link className={cn(TRACKER_BTN, "inline-flex items-center no-underline")} href={`/campaigns/${campaignId}/world?token=${tokenId}`} aria-label={`Show ${pyre.settlement} on the map`}>
+              Show on map
+            </Link>
+          ) : null}
           {readOnly ? null : (
             <>
+              <select
+                aria-label={`World marker for ${pyre.settlement}`}
+                value={tokenId === null ? "" : String(tokenId)}
+                disabled={link.pending}
+                onChange={(e) => void link.fire({ campaignId, pyreId: pyre.id, tokenId: e.target.value === "" ? null : Number(e.target.value) })}
+                className={cn(INPUT, "max-w-[12rem]")}
+              >
+                <option value="">No World marker</option>
+                {tokenId !== null && !markers.some((m) => m.id === tokenId) ? <option value={String(tokenId)}>Marker {tokenId}</option> : null}
+                {markers.map((m) => (
+                  <option key={m.id} value={String(m.id)}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
               <button type="button" className={TRACKER_BTN} aria-label={`Rename ${pyre.settlement}`} onClick={() => setEditing(pyre.settlement)}>
                 Rename
               </button>
