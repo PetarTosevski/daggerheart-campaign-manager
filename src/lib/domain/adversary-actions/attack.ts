@@ -48,7 +48,7 @@ export function parseAttackModifier(modifier: number | string): AttackModifier {
   return { flat: Number.isFinite(n) ? Math.trunc(n) : 0, dice: null };
 }
 
-/** Extra d20s: each advantage or disadvantage source; they cancel one for one (CB p.161 keeps one extra die). */
+/** Extra d20s: each advantage or disadvantage source of the roll; they cancel one for one (CB p.161 keeps one extra die). */
 export interface AttackAdvantage {
   advantage?: number;
   disadvantage?: number;
@@ -56,7 +56,8 @@ export interface AttackAdvantage {
 
 /**
  * A PC an attack is made against: their Evasion is the Difficulty (AR1). `advantage` / `disadvantage` are the sources the
- * target's passives put on an attack against them (Sturdy, CB p.68); `pcTarget` fills all three.
+ * target's passives put on an attack against them (Sturdy, CB p.68); `pcTarget` fills all three. Several disadvantage
+ * sources count as one (DA17).
  */
 export interface EvasionTarget {
   readonly id: string;
@@ -116,15 +117,24 @@ export function keptDie(first: number, second: number | null, net: number): numb
 }
 
 /**
- * The extra disadvantage sources each target puts on one attack roll against several targets (DA1; user 2026-10-30):
- * Sturdy (CB p.68) and Harrowing Invocation (HF p.14) count only against their own target. What every target shares
- * (`common`) counts for the whole roll; `residual` is what is left, by target id. A single target, or targets that all
- * carry the same, leave no residual: the roll is made as before.
+ * A target's own disadvantage sources on an attack against them, on or off (DA17; user 2026-10-30): Sturdy (CB p.68)
+ * and Harrowing Invocation (HF p.14) on the same PC give that PC one disadvantage, which one advantage source cancels.
+ */
+export function ownDisadvantage(sources: number | undefined): 0 | 1 {
+  return (sources ?? 0) > 0 ? 1 : 0;
+}
+
+/**
+ * The extra disadvantage each target puts on one attack roll against several targets (DA1; user 2026-10-30): Sturdy
+ * (CB p.68) and Harrowing Invocation (HF p.14) count only against their own target, and several of them on one target
+ * count once (DA17, `ownDisadvantage`). What every target shares (`common`) counts for the whole roll; `residual` is what
+ * is left, by target id. A single target, or targets that all carry it, leave no residual: the roll is made as before.
  */
 export function splitTargetDisadvantage(extra: readonly { id: string; disadvantage: number }[]): { common: number; residual: Map<string, number> } {
-  const common = extra.length === 0 ? 0 : Math.min(...extra.map((t) => Math.max(0, t.disadvantage)));
+  const own = extra.map((t) => ({ id: t.id, disadvantage: ownDisadvantage(t.disadvantage) }));
+  const common = own.length === 0 ? 0 : Math.min(...own.map((t) => t.disadvantage));
   const residual = new Map<string, number>();
-  for (const t of extra) if (t.disadvantage - common > 0) residual.set(t.id, t.disadvantage - common);
+  for (const t of own) if (t.disadvantage - common > 0) residual.set(t.id, t.disadvantage - common);
   return { common, residual };
 }
 
@@ -151,7 +161,8 @@ export function adversaryAttack(
   const advantage = (adv.advantage ?? 0) + (targets.some((t) => t.advantage) ? 1 : 0);
   const disadvantage = (adv.disadvantage ?? 0) + (targets.some((t) => t.disadvantage) ? 1 : 0);
   const base = (adv.advantage ?? 0) - (adv.disadvantage ?? 0);
-  const netOf = (t: EvasionTarget) => base + (t.advantage ?? 0) - (t.disadvantage ?? 0);
+  // DA17: a target's own disadvantage sources count once (on / off); one advantage source cancels them.
+  const netOf = (t: EvasionTarget) => base + (t.advantage ?? 0) - ownDisadvantage(t.disadvantage);
   const twoDice = advantage - disadvantage !== 0 || targets.some((t) => netOf(t) !== 0);
   const first = rng(20);
   const second = twoDice ? rng(20) : null;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { adversaryAttack, keptDie, splitTargetDisadvantage } from "@/lib/domain/adversary-actions";
+import { adversaryAttack, keptDie, ownDisadvantage, splitTargetDisadvantage } from "@/lib/domain/adversary-actions";
 import { queueRng } from "@/lib/domain/dice";
 
 // Plan drawer-answers, tracer DA1 (bead dcm-bxp.99.19.45 (3), user 2026-10-30): on an adversary attack against several
@@ -39,7 +39,8 @@ describe("splitTargetDisadvantage", () => {
       common: 0,
       residual: new Map([
         ["orc", 1],
-        ["warded", 2],
+        // DA17: Sturdy and Harrowing on the same target count once.
+        ["warded", 1],
       ]),
     });
     expect(splitTargetDisadvantage([])).toEqual({ common: 0, residual: new Map() });
@@ -105,5 +106,49 @@ describe("adversaryAttack: per-target disadvantage (DA1)", () => {
     const r = adversaryAttack(2, {}, 0, [orc], queueRng([15, 4]));
     expect(r.total).toBe(6);
     expect(r.targets[0]).toMatchObject({ natural: 4, hit: false });
+  });
+});
+
+// Plan drawer-answers, tracer DA17 (bead dcm-bxp.99.19.53, user 2026-10-30): several disadvantage sources on the same
+// target (Sturdy, CB p.68, plus Harrowing Invocation, HF p.14: "give them disadvantage on the roll") count once, on or
+// off; one advantage source cancels it. CB "Advantage and Disadvantage": "Advantage and disadvantage always cancel each
+// other out when applied to the same roll"; "if you have two sources of advantage and one of disadvantage, one of the
+// advantage dice and the disadvantage die cancel each other out, so you would have advantage on the roll."
+describe("several disadvantage sources on one target count once (DA17)", () => {
+  const mira = { id: "mira", evasion: 12 };
+  // Sturdy and Harrowing on the orc: two sources, one disadvantage.
+  const orc = { id: "orc", evasion: 10, disadvantage: 2 };
+
+  it("ownDisadvantage is on or off", () => {
+    expect([0, 1, 2, 3].map(ownDisadvantage)).toEqual([0, 1, 1, 1]);
+    expect(ownDisadvantage(undefined)).toBe(0);
+  });
+
+  it("two sources on the orc against Mira with none: the orc keeps the lower die once, as with one source", () => {
+    const r = adversaryAttack(2, {}, 0, [mira, orc], queueRng([15, 4]));
+    expect(r.targets.map((t) => [t.id, t.natural])).toEqual([
+      ["mira", 15],
+      ["orc", 4],
+    ]);
+  });
+
+  it("one advantage source cancels the orc's two sources: the orc keeps the first die, Mira the higher", () => {
+    const r = adversaryAttack(2, { advantage: 1 }, 0, [mira, orc], queueRng([5, 14]));
+    // Orc: net 1 - 1 = 0, the first die 5 + 2 = 7 against 10, a miss (per source it would be -1: still 5).
+    // Mira: advantage, 14 + 2 = 16, a hit.
+    expect(r.targets.map((t) => [t.id, t.natural, t.hit])).toEqual([
+      ["mira", 14, true],
+      ["orc", 5, false],
+    ]);
+  });
+
+  it("one advantage source against the orc alone: one die, no disadvantage left (per source it kept the lower)", () => {
+    const r = adversaryAttack(2, { advantage: 1 }, 0, [orc], queueRng([15, 4]));
+    expect(r.targets[0]).toMatchObject({ natural: 15, total: 17, hit: true });
+  });
+
+  it("two advantage sources against the orc alone: advantage, it keeps the higher (per source the two cancelled)", () => {
+    const r = adversaryAttack(2, { advantage: 2 }, 0, [orc], queueRng([4, 15]));
+    expect(r.targets[0]).toMatchObject({ natural: 15, total: 17, hit: true });
   });
 });

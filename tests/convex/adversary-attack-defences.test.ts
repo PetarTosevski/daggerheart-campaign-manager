@@ -234,6 +234,47 @@ describe("Harrowing Invocation: a Stress when the roll fails against any protect
   });
 });
 
+// DA17 (bead dcm-bxp.99.19.53, user 2026-10-30): several disadvantage sources on the same target count once (on / off),
+// and one advantage source cancels it. Ash is a Pact of the Endless warlock and an orc with 1 HP unmarked: Sturdy (CB
+// p.68) and Harrowing Invocation (HF p.14) both put disadvantage on the attack against Ash.
+describe("Sturdy and Harrowing on the same target count once (DA17)", () => {
+  async function both(a: Arena, targets: Id<"characters">[], dice: number[], advantage: number) {
+    await a.warlock("specialization");
+    await a.sturdy(a.w.characterA);
+    const held = resolved(await a.spit(targets, { advantage })).held!;
+    expect(held).toBeDefined();
+    serverDice(...dice);
+    await a.respond(held, a.w.characterA, HARROWING);
+    vi.restoreAllMocks();
+  }
+
+  it("one advantage source cancels both: one die decides (18, a hit; per source the 2 was kept)", async () => {
+    const a = await arena();
+    // 18 + 3 = 21 meets Ash's Evasion; 2 + 3 = 5 would not.
+    expect(await a.evasion(a.w.characterA)).toBeGreaterThan(5);
+    await both(a, [a.w.characterA], [18, 2], 1);
+    expect(d20s((await a.gmRoll()).roll!)).toEqual([[20, 18, false, "extra"]]);
+    expect((await a.hits()).map((h) => h.payload.kind === "incomingHit" && h.payload.targetCharacterId)).toEqual([a.w.characterA]);
+  });
+
+  it("two advantage sources against both: advantage, the higher die (per source they cancelled to the first die)", async () => {
+    const a = await arena();
+    await both(a, [a.w.characterA], [2, 18], 2);
+    const kept = d20s((await a.gmRoll()).roll!).filter((d) => d[2] === false);
+    expect(kept).toEqual([[20, 18, false, "advantage"]]);
+    expect((await a.hits()).length).toBe(1);
+    expect((await a.burrowerNow()).stress).toBe(0);
+  });
+
+  it("Ash (Sturdy + Harrowing) and Bryn (Harrowing) with one advantage source: no residual, one die for both", async () => {
+    const a = await arena();
+    await both(a, [a.w.characterA, a.w.characterB], [18, 2], 1);
+    expect(d20s((await a.gmRoll()).roll!)).toEqual([[20, 18, false, "extra"]]);
+    expect((await a.gmRoll()).summary).not.toContain("disadvantage against them");
+    expect((await a.hits()).length).toBe(2);
+  });
+});
+
 describe("Drained (HF p.14; dcm-bxp.99.19.49 (1))", () => {
   async function drained(a: Arena, targets: Id<"characters">[], dice: number[], extra: Record<string, unknown> = {}) {
     await a.warlock("mastery");

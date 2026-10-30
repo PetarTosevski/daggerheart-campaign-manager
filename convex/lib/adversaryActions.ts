@@ -688,7 +688,8 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   const advantage = (args.advantage ?? 0) + (attack && (passives.advantage ?? []).some((on) => on === "attack" || on === "any") ? 1 : 0);
   // DA1 (user 2026-10-30): one roll for every target (CB p.161), but a target's own disadvantage (CB p.68 Sturdy; HF p.14
   // Harrowing Invocation for the PCs it protected) counts only against that target. What every target carries counts for
-  // the whole roll; the rest (`residual`) is read from the same pair of dice per target.
+  // the whole roll; the rest (`residual`) is read from the same pair of dice per target. DA17 (user 2026-10-30): several
+  // of a target's own sources (Sturdy and Harrowing) count once; one advantage source cancels them.
   const own = attack ? targets.picks.map((p) => ({ id: p.combatant.id, disadvantage: targetDisadvantage(p, instance) + (p.kind === "pc" ? (replay?.disadvantageAgainst[p.member.character._id] ?? 0) : 0) })) : [];
   const { common, residual } = splitTargetDisadvantage(own);
   const disadvantage = (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0) + common;
