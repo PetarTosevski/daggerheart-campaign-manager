@@ -15,6 +15,7 @@ import { buildRun, replaying, runCard, type BuiltRun, type RunOutcome } from "./
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { attackScene } from "./lib/combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
+import { installedAugments } from "./characterExtras";
 import { rollDie } from "./lib/dice";
 import { drawerOf, drawerValidator, FLYING_FEATURES, REFOCUS_KEY } from "./lib/featureDrawer";
 import {
@@ -76,7 +77,7 @@ export const drawer = campaignQuery({
     const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "view", "owner");
     if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
     if (!atLeast(permission, "edit") && !handSharedWithPlayers(campaign, character)) throw appError("FORBIDDEN");
-    return drawerOf(characterId, readSheet(character.sheet), campaign);
+    return drawerOf(characterId, readSheet(character.sheet), campaign, await installedAugments(ctx, campaign, characterId));
   },
 });
 

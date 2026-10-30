@@ -123,7 +123,7 @@ describe("automated Hope features", () => {
     const { sheet } = use("rogue");
     expect(withEffects(sheet).evasion).toBe(12);
     expect(sheet.effects).toHaveLength(1);
-    expect(use("rogue", { sheet }).sheet.effects).toHaveLength(1); // using it again does not stack
+    expect(refusal(() => use("rogue", { sheet }))).toBe("CLASS_FEATURE_RULE"); // while active it cannot be used again (user 2026-10-30, dcm-bxp.99.19.41)
     expect(expire(sheet, "hit").effects).toEqual([]);
     expect(expire(sheet, "shortRest").effects).toHaveLength(1);
     expect(onRest(expire(sheet, "shortRest"), "short").effects).toEqual([]);

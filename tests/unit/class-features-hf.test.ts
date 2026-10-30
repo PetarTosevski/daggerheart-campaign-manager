@@ -256,7 +256,8 @@ describe("Witch (HF 16)", () => {
     const one = act(sheet, "hex", { params: { choice: "Ghoul" } }).sheet;
     const two = act(one, "hex").sheet;
     expect(two.classState.hexes).toEqual(["Ghoul", "Target 1"]);
-    expect(ruleMessage(() => act(two, "hex"))).toMatch(/at most 2/);
+    expect(act(two, "hex").sheet.classState.hexes).not.toContain("Ghoul"); // at the maximum the oldest Hex ends (user 2026-10-30, dcm-bxp.99.19.26)
+    expect(act(two, "hex").sheet.classState.hexes).toHaveLength(2);
     expect(ruleMessage(() => act(one, "hex", { params: { choice: "Ghoul" } }))).toMatch(/already Hexed/);
     expect(ruleMessage(() => act(sheetOf("witch", { traits: { ...sheet.traits, knowledge: 0 } }), "hex"))).toMatch(/no Hexes/);
 

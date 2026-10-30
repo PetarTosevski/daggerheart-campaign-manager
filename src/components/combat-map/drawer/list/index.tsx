@@ -35,6 +35,9 @@ type ListProps = {
 function stateBadge(f: DrawerFeature): { text: string; tone: "off" | "info" } | null {
   if (REST_TIME_FEATURES.has(f.featureId)) return { text: "Applied at rest", tone: "info" };
   switch (f.state) {
+    case "active":
+      // The banner below the name says it (ActiveBanner).
+      return null;
     case "exhausted":
       return { text: f.resetLabel ? `Used · ${f.resetLabel}` : "Used", tone: "off" };
     case "outOfCombat":
@@ -69,6 +72,19 @@ function UseRow({ feature, use, many, canAct, onUse }: { feature: DrawerFeature;
   );
 }
 
+/**
+ * DA7 (user 2026-10-30): a feature whose effect still holds (Rogue's Dodge's +2) shows "Active" and when it comes back;
+ * its Use stays disabled (the read model marks its uses not ready) until the effect ends.
+ */
+function ActiveBanner({ feature }: { feature: DrawerFeature }) {
+  return (
+    <p className="sd-feature-text sd-active" data-testid="sheet-drawer-active">
+      <span className="sd-badge sd-badge-on">Active</span>
+      {feature.resetLabel ? ` ${feature.resetLabel}.` : null}
+    </p>
+  );
+}
+
 function FeatureRow({ feature, characterId, canAct, onUse }: { feature: DrawerFeature; characterId: Id<"characters">; canAct: boolean; onUse: (use: DrawerUse) => void }) {
   const state = stateBadge(feature);
   const card = cardLabel(feature.card);
@@ -91,6 +107,7 @@ function FeatureRow({ feature, characterId, canAct, onUse }: { feature: DrawerFe
           {state ? <span className={state.tone === "off" ? "sd-badge sd-badge-off" : "sd-badge sd-badge-info"}>{state.text}</span> : null}
         </span>
       </div>
+      {feature.state === "active" ? <ActiveBanner feature={feature} /> : null}
       <p className="sd-feature-text">{feature.text}</p>
       {uses.length > 0 ? (
         <ul className="sd-uses" aria-label={`${feature.name} uses`}>

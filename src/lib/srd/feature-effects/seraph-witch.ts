@@ -21,6 +21,12 @@ const WHILE_FLYING: Requirement = { kind: "situation", text: "While flying", che
 const SELF_OR_ALLY_FAR: TargetSpec = { side: "selfOrAlly", range: "far", count: { kind: "one" } };
 
 const HEXED: ConditionRef = { kind: "tag", tag: "Hexed" };
+
+/**
+ * Hex at the maximum (HF p.16: "The maximum number of creatures you can Hex at one time is equal to your Spellcast
+ * trait"): which Hex the new one ends, by its place in the Hexed list; 0 (the default) ends the oldest.
+ */
+export const HEX_DROP_CHOICE = { id: "dropHex", label: "Hex to end at the maximum", min: 0 } as const;
 const TALISMAN_HOLDER: ConditionRef = { kind: "tag", tag: "Enchanted Talisman" };
 
 const NIGHTS_GLAMOUR = "subclass:moon:nights-glamour";
@@ -70,7 +76,9 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
   // end of each session, clear all unspent Prayer Dice."
   // D5 rolls and clears the dice (seraph.ts `onSessionStart`, session end); here they are spent (NV1 pool `prayer`, the
   // stored values counted as is). Incoming damage is the reaction window's (CB p.107 "Incoming damage"); a roll's result
-  // after the roll is the after-roll step (CB p.107 "Using features after a roll", Q1).
+  // after the roll is the after-roll step (CB p.107 "Using features after a roll", Q1). "a roll" is an action or reaction
+  // roll, never a damage roll (user 2026-10-29, dcm-bxp.99.19.28): the roll use answers `afterAllyRolls` (an action
+  // roll's trigger), and D5's `prayerRoll` refuses a damage roll.
   {
     featureId: "class:seraph:prayer-dice",
     source: "class",
@@ -287,7 +295,9 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
   // gains a penalty to their damage rolls and Difficulty equal to your tier. The maximum number of creatures you can Hex
   // at one time is equal to your Spellcast trait."
   // D5's `hex` keeps the Hexed list (`classState.hexes`, cleared at rest and session end) that Vexing Malison and Ire of
-  // Pale Light read (NV9 `hexed`); D5 refuses a Hex past the maximum (task doc, question 2).
+  // Pale Light read (NV9 `hexed`). At the maximum a new Hex ends the oldest, or the one the player picks before casting
+  // (user 2026-10-29, dcm-bxp.99.19.26): the `dropHex` choice is the picked Hex's place in D5's list (0 = the oldest),
+  // passed to D5 as `amount`; the drawer read model lists the current Hexes as its options (featureDrawer.ts).
   {
     featureId: "class:witch:hex",
     source: "class",
@@ -297,11 +307,12 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
         id: "main",
         name: "Hex",
         activation: { kind: "action" },
+        choices: [HEX_DROP_CHOICE],
         costs: [{ kind: "stress", amount: n(1) }],
         targets: { side: "enemy", range: "far", count: { kind: "one" } },
         holdLimit: { kind: "spellcast" },
         steps: [
-          { kind: "delegate", to: "targets", feature: "hex" },
+          { kind: "delegate", to: "targets", feature: "hex", params: { amount: { kind: "chosen", choice: HEX_DROP_CHOICE.id } } },
           { kind: "condition", to: "targets", condition: HEXED, duration: "temporary" },
           {
             kind: "effect",

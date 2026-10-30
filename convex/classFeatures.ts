@@ -171,7 +171,17 @@ export const use = keyedUserMutation({
     }),
 });
 
-/** Ends one active effect by its End button (owner or GM), e.g. Evolution when the Druid drops out of Beastform. */
+/**
+ * Effects that end together with another (user 2026-10-30, dcm-bxp.99.19.46 (1)): dropping out of Beastform (the drawer's
+ * Drop out, the Party sheet's End) also ends Evolution's +1 trait (CB p.30 Evolution: "choose one trait to raise by +1
+ * until you drop out of that Beastform").
+ */
+const ENDS_WITH: Readonly<Record<string, readonly string[]>> = { beastform: ["evolution"] };
+
+/**
+ * Ends one active effect by its End button (owner or GM), and the effects that end with it (`ENDS_WITH`), in one
+ * write and one undoable actionLog row.
+ */
 export const endEffect = keyedUserMutation({
   args: { characterId: v.id("characters"), effectId: v.string() },
   returns: v.null(),
@@ -180,14 +190,16 @@ export const endEffect = keyedUserMutation({
       const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
       const effect = sheet.effects.find((e) => e.id === effectId);
       if (effect === undefined) throw appError("CLASS_FEATURE_RULE", "That effect has already ended.");
-      await saveSheet(ctx, character._id, { ...sheet, effects: sheet.effects.filter((e) => e.id !== effectId) });
+      const ending = new Set([effectId, ...(ENDS_WITH[effectId] ?? [])]);
+      const ended = sheet.effects.filter((e) => ending.has(e.id));
+      await saveSheet(ctx, character._id, { ...sheet, effects: sheet.effects.filter((e) => !ending.has(e.id)) });
       await logAction(ctx, {
         campaignId: campaign._id,
         characterId: character._id,
         actorId: ctx.user._id,
         kind: "feature",
         visibility: "public",
-        summary: `ended ${effect.source}`,
+        summary: `ended ${ended.map((e) => e.source).join(", ")}`,
         before: sheet,
         undoable: true,
       });

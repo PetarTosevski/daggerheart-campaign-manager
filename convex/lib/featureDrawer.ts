@@ -15,6 +15,8 @@ import type { CardUse, Cost, Limit, NumberSource, TargetSpec } from "../../src/l
 import { derivedDefense } from "../../src/lib/domain/characters/derived";
 import { withEffects } from "../../src/lib/domain/characters/effects";
 import { hopeMax } from "../../src/lib/domain/characters/index";
+import { ROGUES_DODGE_BACK, roguesDodgeActive } from "../../src/lib/domain/class-features/classes/rogue";
+import { hexDropOptions } from "../../src/lib/domain/class-features/classes/witch";
 import { CLASS_STATE_LABELS } from "../../src/lib/domain/class-features/index";
 import { featureKey } from "../../src/lib/domain/feature-effects/ids";
 import { holdingsFor } from "../../src/lib/domain/feature-effects/owned";
@@ -22,6 +24,8 @@ import { asCardEffect, featureAvailability } from "../../src/lib/domain/feature-
 import { activeUpgrades, applyUpgrades } from "../../src/lib/domain/feature-effects/upgrades";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { FEATURE_CLASSIFICATION } from "../../src/lib/srd/feature-effects/classification";
+import { RANGER_ROGUE_IDS } from "../../src/lib/srd/feature-effects/ranger-rogue";
+import { HEX_DROP_CHOICE } from "../../src/lib/srd/feature-effects/seraph-witch";
 import { FOCUS_HOLD_MAX, type CharacterSheet, type ClassState } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import { FLYING_EFFECT_ID, ownedHere } from "./featureRunner";
@@ -38,7 +42,11 @@ export const drawerUseValidator = v.object({
   rolls: v.boolean(),
   /** Who it targets: side, range and count kind; null for trigger targets or none. */
   targets: v.union(v.null(), v.object({ side: v.string(), range: v.string(), count: v.string() })),
-  choices: v.array(v.object({ id: v.string(), label: v.string(), min: v.number() })),
+  /**
+   * Number choices. `options`: the values the player picks from, with labels, when the choice is a pick (DA7: Hex at the
+   * maximum, the current Hexes; value 0 = the oldest, the default); absent for a free number.
+   */
+  choices: v.array(v.object({ id: v.string(), label: v.string(), min: v.number(), options: v.optional(v.array(v.object({ value: v.number(), label: v.string() }))) })),
   /** Cost badges ("3 Hope", "1 Stress or 1 Hope"). */
   costs: v.array(v.string()),
   /** Limit badge ("Once per rest", "Twice per long rest on a success"), null without a limit. */
@@ -73,7 +81,8 @@ export const drawerFeatureValidator = v.object({
   how: v.string(),
   /** Its effect entry exists (an FE-* table filled it): its Use runs on the map. */
   automated: v.boolean(),
-  state: v.union(v.literal("ready"), v.literal("exhausted"), v.literal("passive"), v.literal("outOfCombat"), v.literal("narrative")),
+  /** `active` (DA7): its effect still holds and it can't be used again until it ends (Rogue's Dodge); `resetLabel` says when. */
+  state: v.union(v.literal("ready"), v.literal("exhausted"), v.literal("active"), v.literal("passive"), v.literal("outOfCombat"), v.literal("narrative")),
   resetLabel: v.union(v.null(), v.string()),
   tokens: v.number(),
   /** The upgrades that hold ("level 5", "Epic Poetry"). */
@@ -175,28 +184,53 @@ function specOf(use: CardUse): TargetSpec | undefined {
   return use.targets && use.targets.side !== "trigger" ? (use.targets as TargetSpec) : undefined;
 }
 
+// ---------------------------------------------------------------- active features and picks
+
+/**
+ * Features that can't be used again while their effect holds (user 2026-10-30, dcm-bxp.99.19.41: Rogue's Dodge neither
+ * refreshes nor stacks): feature id → whether the effect holds, and when the feature comes back.
+ */
+const ACTIVE_WHILE: Readonly<Record<string, { holds: (sheet: CharacterSheet) => boolean; back: string }>> = {
+  [RANGER_ROGUE_IDS.roguesDodge]: { holds: roguesDodgeActive, back: ROGUES_DODGE_BACK },
+};
+
+/** The picks a number choice offers, read from the sheet (Hex at the maximum: the current Hexes), or undefined. */
+function choiceOptions(sheet: CharacterSheet, choiceId: string): { value: number; label: string }[] | undefined {
+  if (choiceId === HEX_DROP_CHOICE.id) return hexDropOptions(sheet) ?? undefined;
+  return undefined;
+}
+
 // ---------------------------------------------------------------- the drawer
 
-/** The drawer of one character (their own sheet only, U1). */
-export function drawerOf(characterId: Id<"characters">, sheet: CharacterSheet, campaign: Pick<Doc<"campaigns">, "frameId" | "options">): Drawer {
+/**
+ * The drawer of one character (their own sheet only, U1). `augments`: the character's installed Motherboard augments
+ * (`installedAugments`), counted in the Armor maximum as `characters.adjustResource` counts them (SD6 QUESTION 4).
+ */
+export function drawerOf(characterId: Id<"characters">, sheet: CharacterSheet, campaign: Pick<Doc<"campaigns">, "frameId" | "options">, augments: readonly string[] = []): Drawer {
   const held = ownedHere(sheet, campaign);
   const features = held.map((f) => {
     const entry = featureEffect(f.featureId);
+    const holding = ACTIVE_WHILE[f.featureId];
+    const isActive = holding !== undefined && holding.holds(sheet);
     const holdings = holdingsFor(sheet, held, f.owner);
     const upgraded = entry ? applyUpgrades(entry, holdings) : undefined;
     const uses = (upgraded ? asCardEffect(upgraded).uses : []).map((u) => {
       const a: Availability = entry ? featureAvailability(sheet, entry, u.id, { holdings }) : { state: "ready" };
       const spec = specOf(u);
+      const blocked = isActive && u.activation.kind !== "passive";
       return {
         useId: u.id,
         name: u.name,
         activation: u.activation.kind,
-        ready: a.state === "ready",
-        resetLabel: a.state === "exhausted" ? a.label : null,
+        ready: a.state === "ready" && !blocked,
+        resetLabel: blocked ? holding.back : a.state === "exhausted" ? a.label : null,
         usesLeft: a.state === "ready" && a.usesLeft !== undefined ? a.usesLeft : null,
         rolls: u.roll !== undefined,
         targets: spec ? { side: spec.side, range: spec.range, count: spec.count.kind } : null,
-        choices: (u.choices ?? []).map((c) => ({ id: c.id, label: c.label, min: c.min })),
+        choices: (u.choices ?? []).map((c) => {
+          const options = choiceOptions(sheet, c.id);
+          return { id: c.id, label: c.label, min: c.min, ...(options ? { options } : {}) };
+        }),
         costs: (u.costs ?? []).map(costText),
         limit: u.limit ? limitText(u.limit) : null,
         repeatable: u.roll === undefined && u.limit === undefined && u.activation.kind === "action",
@@ -207,7 +241,10 @@ export function drawerOf(characterId: Id<"characters">, sheet: CharacterSheet, c
     let state: Drawer["features"][number]["state"];
     let resetLabel: string | null = null;
     if (f.usage !== "combat") state = f.usage;
-    else if (active.length > 0 && active.every((u) => !u.ready)) {
+    else if (isActive) {
+      state = "active";
+      resetLabel = holding.back;
+    } else if (active.length > 0 && active.every((u) => !u.ready)) {
       state = "exhausted";
       resetLabel = active.find((u) => u.resetLabel !== null)?.resetLabel ?? RESET_LABEL.rest;
     } else state = "ready";
@@ -230,7 +267,7 @@ export function drawerOf(characterId: Id<"characters">, sheet: CharacterSheet, c
     };
   });
 
-  const defense = derivedDefense(withEffects(sheet));
+  const defense = derivedDefense(withEffects(sheet), augments);
   const counters = (Object.keys(CLASS_STATE_LABELS) as (keyof ClassState)[]).flatMap((key) => {
     const value = sheet.classState[key];
     if (key === "martial" || value === undefined || value === false) return [];

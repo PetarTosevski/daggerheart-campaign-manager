@@ -273,9 +273,9 @@ describe("Hex (HF p.16): a Stress, a target within Far, - tier to its damage and
     expect(plan.holdLimit).toBe(2);
   });
 
-  it("D5 refuses a Hex past your Spellcast trait (question 2 in the task doc)", () => {
+  it("a Hex past your Spellcast trait ends the oldest Hex (user 2026-10-30, dcm-bxp.99.19.26)", () => {
     const full = { ...sheet, classState: { ...sheet.classState, hexes: ["Target 1", "Target 2"] } };
-    expect(runFeature(entry("class:witch:hex"), undefined, { actor: actorOf(full, { spellcast: 2, tier: 2 }), gmFear: 2, rng: queueRng([]), sheet: full, targets: [adversary("bandit")] })).toMatchObject({ ok: false, reason: "choice" });
+    expect(runFeature(entry("class:witch:hex"), undefined, { actor: actorOf(full, { spellcast: 2, tier: 2 }), gmFear: 2, rng: queueRng([]), sheet: full, targets: [adversary("bandit")] })).toMatchObject({ ok: true });
   });
 
   it("at tier 4 the penalty is 4; without a sheet the plan carries the D5 step for the server", () => {
