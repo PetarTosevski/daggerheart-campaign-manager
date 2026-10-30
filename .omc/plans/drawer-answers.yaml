@@ -310,6 +310,7 @@ waves:
           - convex/lib/adversaryActions.ts
           - docs/tasks/TASK-SD-SD4.md
         acceptance:
+          - "USER 2026-10-30: Celestial Wings replaces the hit's one Armor Slot - Wings OR a real Armor Slot on a hit, never both (like Stable)"
           - "CB p.107 'SIMULTANEOUS AND STACKING EFFECTS': '... the player controlling the effects ... can apply the effects in any order.' User 2026-10-30: after the Armor Slot answer every ready reaction that still fits the hit stays offered (not only severity-gated ones), and the player answers them in the order they pick; the 'afterArmor' severity-gated filter is removed; tests"
           - "Stable (HF p.12): 'spend a Focus instead of an Armor Slot to reduce damage'. User: the Focus lowers severity by one, the Armor Slot is NOT marked, never more than 1 step in total with the slot, usable without armor while the PC has Focus (entry uses insteadOfArmorSlot from DA0); tests"
           - "Celestial Wings (HF p.19: 'Once per scene while flying, you can spend a Hope instead of marking an Armor Slot.'): user 2026-10-29: any hit while flying, even with no armor or every slot marked, the Hope lowers severity by one, once per scene; built as the hit's armor reduction (no real slot on top), flagged in the task doc for the user to confirm"
@@ -448,6 +449,7 @@ waves:
           - src/lib/domain/feature-effects/**
           - docs/tasks/TASK-SD-FE-druid-sorcerer.md
         acceptance:
+          - "USER 2026-10-30: Charge - the player picks the Melee square next to the target before rolling; on a success the server moves the token there (not the nearest free square)"
           - "Warden's Protection (CB p.31: 'Once per long rest, spend 2 Hope to clear 2 Hit Points on 1d4 allies within Close range.'): user 2026-10-29: roll the 1d4 first, then pick that many allies (dcm-d95); a keyed public mutation rolls the count on the server and stores it (a combatRequests row kind, widen only; covered by the existing cleanup or a new batched cron, rule 8); useFeature reads it in featureRunner and refuses more allies than rolled; a second roll for the same use is refused until it is used or expires; the client never sends the count; tests"
           - "Charge (CB p.59 Firbolg: 'When you succeed on an Agility Roll to move from Far or Very Far range into Melee range with one or more targets, you can mark a Stress to deal 1d12 physical damage to all targets within Melee range.'): user 2026-10-29: roll first; on a success the server moves the token into Melee range (nearest free reachable square in Melee of the picked target, through combatMovement; flagged for confirmation), then the optional Stress damage hits every enemy in Melee of the new square; on a failure the token stays; undo restores the square"
           - "Authz rows in prompts.entries.ts for every new public function (anonymous, outsider, player own and other, GM); tests assert ConvexError.data.code; the inventory guard passes"
@@ -480,6 +482,7 @@ waves:
           - src/components/combat-map/**
           - docs/tasks/TASK-SD-FE-beastforms.md
         acceptance:
+          - "USER 2026-10-30: Cannonball as the book (CB p.33) - the druid marks the Stress and is thrown; the THROWING ally gets the prompt in their drawer, rolls Agility or Strength (their choice) against a target within Close range; on a success d12+2 physical damage with the thrower's (ally's) Proficiency"
           - "Cannonball (CB p.33: 'Mark a Stress to allow an ally to throw or launch you at an adversary. To do so, the ally makes an attack roll using Agility or Strength (their choice) against a target within Close range. On a success, the adversary takes d12+2 physical damage using the thrower's Proficiency. You can spend a Hope to target an additional adversary within Very Close range of the first. The second target takes half damage.'): user 2026-10-29: the thrown ally gets a prompt and rolls from their own drawer; book check in the task doc: whose Proficiency (the book says 'the thrower's', the thrower is the ally) - quote and confirm before building"
           - "The druid's use pays the Stress and creates the prompt (rolledBy ally from DA0); the ally's drawer shows it with Agility / Strength, the target pick and the optional Hope second target (half damage, rounded up, Q6); the GM sees it in the pending list and can cancel it; public rows hit / miss only (U1); undo restores both sheets and the instances"
           - "Authz rows for the new functions in prompts.entries.ts; e2e: druid in Beastform throws, ally rolls from the drawer, a Bandit takes damage; at desktop and 390 px"
