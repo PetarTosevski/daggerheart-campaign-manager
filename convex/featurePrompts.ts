@@ -9,15 +9,15 @@ import { checkMove } from "../src/lib/domain/combat-map/movement";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
-import { cardRollValidator, keepDice, keptDice, parseChoices } from "./lib/cardChoices";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { cardRollValidator, keepDice, keptDice, parseChoices, type CardRoll } from "./lib/cardChoices";
 import { needsChoiceValidator } from "./lib/cardRows";
 import { buildRun, Creatures, extraSpecs, replaying, runCard } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
 import { attackScene, type AttackScene } from "./lib/combatActions";
-import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
+import { answerCloakDifficulty, movementGrid, uncloakAfterMove } from "./lib/combatMovement";
 import type { MovementGrid } from "../src/lib/domain/combat-map/movement";
-import { closeRequest, loadOpenRequest, openServerMove } from "./lib/combatRequests";
+import { closeRequest, encounterRunning, loadOpenRequest, openDifficulty, openServerMove } from "./lib/combatRequests";
 import { allyRollLive, isAllyRollRow, liveAllyRolls, liveTargetCount, optionalHope, rollAndStoreCount, rolledFirstUse, rollerUse, type AllyRollRow } from "./lib/featurePrompts";
 import {
   featureRefusal,
@@ -33,7 +33,7 @@ import {
 import { rollDie } from "./lib/dice";
 import { campaignFearState } from "./lib/fear";
 import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
-import { atLeast, type Permission } from "./lib/permissions";
+import { atLeast } from "./lib/permissions";
 
 /**
  * Feature uses the server decides in part (plan drawer-answers, tracer DA12; docs/tasks/TASK-DA-DA12.md). Players act for
@@ -48,7 +48,9 @@ import { atLeast, type Permission } from "./lib/permissions";
  * - `charge`: CB p.59 Firbolg, Charge: "When you succeed on an Agility Roll to move from Far or Very Far range into Melee
  *   range with one or more targets, you can mark a Stress to deal 1d12 physical damage to all targets within Melee range."
  *   User 2026-10-29 / 2026-10-30 (dcm-bxp.99.19.16): roll first; before the roll the player picks the Melee square next to
- *   the target; on a success the server moves the token there, on a failure there is no move.
+ *   the target; on a success the server moves the token there, on a failure there is no move. A player's Charge waits for
+ *   the GM's Difficulty (dcm-bxp.99.19.61): `answerDifficulty` (plan lanes B2) runs it, as it runs a Cloaked rogue's
+ *   Finesse roll that waits for one (dcm-bxp.99.19.62 (1)).
  *
  * - `allyRolls` / `allyRoll` / `cancelAllyRoll` (DA13): a use another PC rolls. CB p.33 Cannonball: "the ally makes an
  *   attack roll using Agility or Strength (their choice) against a target within Close range." User 2026-10-30
@@ -184,11 +186,11 @@ function squareProblem(
  * Checks the square before anything is rolled: the target is an enemy token at Far or Very Far range of the Firbolg's
  * token and the square passes `squareProblem`. Returns the token's next placement.
  */
-async function chargeSquare(ctx: QueryCtx & { campaign: Doc<"campaigns">; permission: Permission }, attacker: Doc<"combatTokens">, tokens: readonly Doc<"combatTokens">[], map: Doc<"combatMaps">, args: ChargeArgs) {
+async function chargeSquare(ctx: QueryCtx & { campaign: Doc<"campaigns"> }, attacker: Doc<"combatTokens">, tokens: readonly Doc<"combatTokens">[], map: Doc<"combatMaps">, args: ChargeArgs, gm: boolean) {
   const target = tokens.find((t) => t._id === args.targetTokenId);
   if (target === undefined || target.side !== "enemy") throw appError("COMBAT_TARGET_INVALID");
   if (!chargeable(attacker, target)) throw appError("INVALID", "Charge starts from Far or Very Far range of the target.");
-  const out = squareProblem(await movementGrid(ctx, ctx.campaign._id, map), map, attacker, tokens, target, args.square, atLeast(ctx.permission, "owner"));
+  const out = squareProblem(await movementGrid(ctx, ctx.campaign._id, map), map, attacker, tokens, target, args.square, gm);
   if ("code" in out) throw appError(out.code, out.message);
   return { target, next: out.next };
 }
@@ -264,17 +266,92 @@ export const chargeOptions = campaignQuery({
   },
 });
 
+const chargedValidator = v.object({ status: v.literal("charged"), moved: v.boolean(), use: resolvedFeatureValidator });
+
+type ChargeRun = { mapId: Id<"combatMaps">; targetTokenId: Id<"combatTokens">; square: { x: number; y: number }; stress: boolean; roll: CardRoll & { difficulty: number } };
+
+/**
+ * Runs a Charge with its Difficulty set (the GM's own, or the GM's answer to a player's request): the use runs as from the
+ * square, the server rolls Agility and, on a success, moves the token there (see `charge`). `gm` lets the way pass walls
+ * (the GM's own Charge only); `actorId` owns the rows (the player whose Charge it is).
+ */
+async function runCharge(
+  ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<"campaigns"> },
+  loaded: { campaign: Doc<"campaigns">; character: Doc<"characters">; sheet: CharacterSheet },
+  args: ChargeRun,
+  gm: boolean,
+  actorId: Id<"users">,
+): Promise<{ status: "charged"; moved: boolean; use: Infer<typeof resolvedFeatureValidator> } | Infer<typeof needsChoiceValidator>> {
+  const { campaign, character, sheet } = loaded;
+  const before = await attackScene(ctx, campaign, character, args.mapId);
+  const attacker = before.attacker;
+  const { target, next } = await chargeSquare(ctx, attacker, before.scene.tokens, before.map, args, gm);
+  const from = { x: attacker.x, y: attacker.y, face: attacker.face };
+  const putBack = () => ctx.db.patch("combatTokens", attacker._id, from);
+
+  // Run the use as from the square: the token stands there while the run is built (one transaction; a failure, a
+  // refusal or a missing choice puts it back).
+  await ctx.db.patch("combatTokens", attacker._id, next);
+  const scene = await attackScene(ctx, campaign, character, args.mapId);
+  const party = await partyFor(ctx, campaign._id, character._id, scene, (c) => readSheet(c.sheet));
+  const pick = pickFeature({ sheet, campaign, featureId: CHARGE, useId: "main", times: 1, rollUsedExperience: (args.roll.experienceIds?.length ?? 0) > 0, party, serverMove: true });
+  const choices = [{ id: "optional:stress", value: args.stress }];
+  const req: FeatureUseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: [], choices, roll: args.roll };
+  const fear = await campaignFearState(ctx, campaign._id);
+  // dcm-bxp.99.19.55 (2): every enemy in Melee range of the square, whatever the Firbolg's facing or sight.
+  const built = await buildRun(ctx, { campaign, character, sheet, scene: sightless(scene), pick, targetTokenIds: [], choices: parseChoices(choices), roll: args.roll, gmFear: fear.fear, lastRollWithHope: false });
+  // "into Melee range with one or more targets": the picked target is one of them.
+  if (!built.targets.some((t) => t.tokenId === target._id) || built.outOfRange.length > 0) throw appError("COMBAT_TARGET_INVALID");
+  const kept = await keptDice(ctx, featureSlot(req));
+  const outcome = runCard(built, pick, kept ? replaying(kept, rollDie) : rollDie);
+  if (outcome.kind === "needsChoice") {
+    await keepDice(ctx, featureSlot(req), outcome.dice, ctx.user._id);
+    await putBack();
+    return { status: "needsChoice" as const, asks: outcome.asks };
+  }
+  const moved = outcome.plan.success;
+  if (!moved) await putBack();
+  const use = await resolveFeatureUse(ctx, { ...req, targetTokenIds: built.targets.map((t) => t.tokenId) }, built, outcome, actorId);
+  if (moved) {
+    const entry = await ctx.db.get("actionLog", use.entryId);
+    const encounter = built.targets.find((t) => t.kind === "enemy");
+    if (entry?.groupId !== undefined) {
+      await openServerMove(ctx, {
+        campaignId: campaign._id,
+        ...(encounter?.kind === "enemy" ? { encounterId: encounter.encounter._id } : {}),
+        mapId: before.map._id,
+        createdBy: actorId,
+        payload: { schemaVersion: 1, kind: "serverMove", characterId: character._id, groupId: entry.groupId, tokenId: attacker._id, from, to: next },
+      });
+    }
+    // CB p.42 (Rogue, Cloaked): the Charge ends a move, so a Cloaked Firbolg in sight loses Cloaked (or rolls in dim
+    // light) in the Charge's group: one undo reverts both (dcm-bxp.99.19.59). The Firbolg's own move, whoever clicked.
+    await uncloakAfterMove(ctx, campaign, before.map, { ...attacker, ...next }, actorId, entry?.groupId === undefined ? {} : { groupId: entry.groupId });
+  }
+  return { status: "charged" as const, moved, use };
+}
+
+/** The encounter of an adversary token (a request's encounter: its end declines the request), if any. */
+async function encounterOf(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<Id<"encounters"> | undefined> {
+  if (token.ref.kind !== "adversary") return undefined;
+  const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
+  return instance !== null && instance.campaignId === campaignId ? instance.encounterId : undefined;
+}
+
 /**
  * Charge (CB p.59). The player picks the target and a free square in Melee range of it before the roll; the server runs
  * the use as from that square (its targets are every enemy in Melee range there, seen or not: user 2026-10-30,
- * dcm-bxp.99.19.55 (2)), rolls Agility
- * against the GM's Difficulty (`roll.difficulty`, required) and, on a success, moves the token to the square (the optional
- * Stress, `stress: true`, then deals 1d12 physical damage to each of those targets); on a failure the token stays. One
- * actionLog group: undo restores the sheets, the adversaries and the square (`serverMove`). A Cloaked Firbolg that lands in
- * an enemy's sight loses Cloaked (or rolls Finesse in dim light) in that group (`uncloakAfterMove`). Refusals: FEATURE_NOT_OWNED,
- * FEATURE_EXHAUSTED / FEATURE_COST_UNPAID, COMBAT_TARGET_INVALID (not an enemy), INVALID
- * (not at Far / Very Far, a square off the map or out of Melee, no Difficulty), MOVE_BLOCKED (an occupied square, a
- * blocked way for a player), COMBAT_MAP_NOT_FOUND / COMBAT_TOKEN_NOT_FOUND, CHARACTER_UNAVAILABLE.
+ * dcm-bxp.99.19.55 (2)), rolls Agility against the GM's Difficulty and, on a success, moves the token to the square (the
+ * optional Stress, `stress: true`, then deals 1d12 physical damage to each of those targets); on a failure the token stays.
+ * One actionLog group: undo restores the sheets, the adversaries and the square (`serverMove`). A Cloaked Firbolg that lands
+ * in an enemy's sight loses Cloaked (or rolls Finesse in dim light) in that group (`uncloakAfterMove`).
+ *
+ * The Difficulty is the GM's (CB p.104: "The GM sets this Difficulty"). The GM sends it in `roll.difficulty` and the Charge
+ * runs at once. A player sends none (user 2026-10-30, dcm-bxp.99.19.61): the square is checked now, nothing is rolled or
+ * paid, and the GM gets a `difficulty` request (`requested`); the GM's answer (`answerDifficulty`) runs it. Refusals:
+ * FEATURE_NOT_OWNED, FEATURE_EXHAUSTED / FEATURE_COST_UNPAID, COMBAT_TARGET_INVALID (not an enemy), INVALID (not at Far /
+ * Very Far, a square off the map or out of Melee, a GM's Charge without a Difficulty, a player's with one), MOVE_BLOCKED
+ * (an occupied square, a blocked way for a player), COMBAT_MAP_NOT_FOUND / COMBAT_TOKEN_NOT_FOUND, CHARACTER_UNAVAILABLE.
  */
 export const charge = keyedCampaignMutation({
   need: "view",
@@ -288,58 +365,84 @@ export const charge = keyedCampaignMutation({
     stress: v.boolean(),
     roll: cardRollValidator,
   },
-  returns: v.union(v.object({ status: v.literal("charged"), moved: v.boolean(), use: resolvedFeatureValidator }), needsChoiceValidator),
+  returns: v.union(chargedValidator, needsChoiceValidator, v.object({ status: v.literal("requested"), requestId: v.id("combatRequests") })),
   handler: async (ctx, args) =>
     ctx.once("feature_charge", args, async () => {
       const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
       assertCanAct(character, sheet);
-      if (args.roll.difficulty === undefined) throw appError("INVALID", "Charge needs the GM's Difficulty for the Agility Roll.");
+      const gm = atLeast(ctx.permission, "owner");
+      const difficulty = args.roll.difficulty;
+      if (gm) {
+        if (difficulty === undefined) throw appError("INVALID", "Charge needs your Difficulty for the Agility Roll.");
+        return runCharge(ctx, { campaign, character, sheet }, { ...args, roll: { ...args.roll, difficulty } }, true, ctx.user._id);
+      }
+      if (difficulty !== undefined) throw appError("INVALID", "The GM sets the Difficulty of the Agility Roll.");
+      // The player's Charge waits for the GM: check what can be checked now (the feature, the target, the square).
+      pickFeature({ sheet, campaign, featureId: CHARGE, useId: "main", times: 1, rollUsedExperience: false, party: [], serverMove: true });
+      if (limitUsed(sheet, CHARGE)) throw appError("FEATURE_EXHAUSTED");
       const before = await attackScene(ctx, campaign, character, args.mapId);
-      const attacker = before.attacker;
-      const { target, next } = await chargeSquare(ctx, attacker, before.scene.tokens, before.map, args);
-      const from = { x: attacker.x, y: attacker.y, face: attacker.face };
-      const putBack = () => ctx.db.patch("combatTokens", attacker._id, from);
+      const { target } = await chargeSquare(ctx, before.attacker, before.scene.tokens, before.map, args, false);
+      const encounterId = await encounterOf(ctx, campaign._id, target);
+      const requestId = await openDifficulty(ctx, {
+        campaignId: campaign._id,
+        ...(encounterId === undefined ? {} : { encounterId }),
+        mapId: before.map._id,
+        createdBy: ctx.user._id,
+        payload: { schemaVersion: 1, kind: "difficulty", characterId: character._id, ask: { kind: "charge", targetTokenId: args.targetTokenId, square: args.square, stress: args.stress, roll: args.roll } },
+      });
+      return { status: "requested" as const, requestId };
+    }),
+});
 
-      // Run the use as from the square: the token stands there while the run is built (one transaction; a failure, a
-      // refusal or a missing choice puts it back).
-      await ctx.db.patch("combatTokens", attacker._id, next);
-      const scene = await attackScene(ctx, campaign, character, args.mapId);
-      const party = await partyFor(ctx, campaign._id, character._id, scene, (c) => readSheet(c.sheet));
-      const pick = pickFeature({ sheet, campaign, featureId: CHARGE, useId: "main", times: 1, rollUsedExperience: (args.roll.experienceIds?.length ?? 0) > 0, party, serverMove: true });
-      const choices = [{ id: "optional:stress", value: args.stress }];
-      const req: FeatureUseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: [], choices, roll: args.roll };
-      const fear = await campaignFearState(ctx, campaign._id);
-      // dcm-bxp.99.19.55 (2): every enemy in Melee range of the square, whatever the Firbolg's facing or sight.
-      const built = await buildRun(ctx, { campaign, character, sheet, scene: sightless(scene), pick, targetTokenIds: [], choices: parseChoices(choices), roll: args.roll, gmFear: fear.fear, lastRollWithHope: false });
-      // "into Melee range with one or more targets": the picked target is one of them.
-      if (!built.targets.some((t) => t.tokenId === target._id) || built.outOfRange.length > 0) throw appError("COMBAT_TARGET_INVALID");
-      const kept = await keptDice(ctx, featureSlot(req));
-      const outcome = runCard(built, pick, kept ? replaying(kept, rollDie) : rollDie);
-      if (outcome.kind === "needsChoice") {
-        await keepDice(ctx, featureSlot(req), outcome.dice, ctx.user._id);
-        await putBack();
-        return { status: "needsChoice" as const, asks: outcome.asks };
+/**
+ * The GM answers a `difficulty` request (plan lanes B2; CB p.104 "The GM sets this Difficulty"): `difficulty` (a whole
+ * number, 1 or more) rolls now, `null` declines.
+ * - `charge` (dcm-bxp.99.19.61): the player's Charge runs as `charge` would with that Difficulty (the server rolls Agility
+ *   and moves the token on a success), its rows the player's; the way is checked as for the player (walls stop it).
+ *   Refusals as `charge`'s (the request stays open so the GM can decline it).
+ * - `cloak` (dcm-bxp.99.19.62 (1)): the rogue's Finesse roll against it (`answerCloakDifficulty`); `stale` when the move no
+ *   longer stands (the token moved on, Cloaked ended, the map is no longer live, the move was undone).
+ * A request whose encounter ended is declined. REQUEST_NOT_OPEN once answered; NOT_FOUND for another campaign's or
+ * another kind of request; INVALID for a Difficulty that is not a whole number of 1 or more.
+ */
+export const answerDifficulty = keyedGmMutation({
+  rateLimit: "roll",
+  args: { requestId: v.id("combatRequests"), difficulty: v.union(v.number(), v.null()) },
+  returns: v.union(
+    chargedValidator,
+    v.object({ status: v.literal("rolled"), cloaked: v.boolean() }),
+    v.object({ status: v.literal("declined") }),
+    v.object({ status: v.literal("stale") }),
+  ),
+  handler: async (ctx, { requestId, difficulty }) =>
+    ctx.once("feature_answer_difficulty", { requestId, difficulty }, async () => {
+      const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
+      const p = row.payload;
+      if (p.kind !== "difficulty") throw appError("NOT_FOUND");
+      if (difficulty !== null && (!Number.isInteger(difficulty) || difficulty < 1)) throw appError("INVALID", "The Difficulty is a whole number of 1 or more.");
+      if (difficulty === null || !(await encounterRunning(ctx, row))) {
+        await closeRequest(ctx, row._id, "declined", ctx.user._id);
+        return { status: "declined" as const };
       }
-      const moved = outcome.plan.success;
-      if (!moved) await putBack();
-      const use = await resolveFeatureUse(ctx, { ...req, targetTokenIds: built.targets.map((t) => t.tokenId) }, built, outcome, ctx.user._id);
-      if (moved) {
-        const entry = await ctx.db.get("actionLog", use.entryId);
-        const encounter = built.targets.find((t) => t.kind === "enemy");
-        if (entry?.groupId !== undefined) {
-          await openServerMove(ctx, {
-            campaignId: campaign._id,
-            ...(encounter?.kind === "enemy" ? { encounterId: encounter.encounter._id } : {}),
-            mapId: before.map._id,
-            createdBy: ctx.user._id,
-            payload: { schemaVersion: 1, kind: "serverMove", characterId: character._id, groupId: entry.groupId, tokenId: attacker._id, from, to: next },
-          });
-        }
-        // CB p.42 (Rogue, Cloaked): the Charge ends a move, so a Cloaked Firbolg in sight loses Cloaked (or rolls in dim
-        // light) in the Charge's group: one undo reverts both (dcm-bxp.99.19.59). The Firbolg's own move, whoever clicked.
-        await uncloakAfterMove(ctx, campaign, before.map, { ...attacker, ...next }, ctx.user._id, entry?.groupId === undefined ? {} : { groupId: entry.groupId });
-      }
-      return { status: "charged" as const, moved, use };
+      if (p.ask.kind === "cloak") return answerCloakDifficulty(ctx, ctx.campaign, row, difficulty, ctx.user._id);
+      const character = await ctx.db.get("characters", p.characterId);
+      if (character === null || character.campaignId !== ctx.campaign._id || row.mapId === undefined) throw appError("COMBAT_TARGET_INVALID");
+      const sheet = readSheet(character.sheet);
+      assertCanAct(character, sheet);
+      const ask = p.ask;
+      const roll: ChargeRun["roll"] = {
+        ...(ask.roll.trait === undefined ? {} : { trait: ask.roll.trait }),
+        ...(ask.roll.modifier === undefined ? {} : { modifier: ask.roll.modifier }),
+        ...(ask.roll.experienceIds === undefined ? {} : { experienceIds: ask.roll.experienceIds }),
+        ...(ask.roll.advantage === undefined ? {} : { advantage: ask.roll.advantage }),
+        ...(ask.roll.disadvantage === undefined ? {} : { disadvantage: ask.roll.disadvantage }),
+        ...(ask.roll.help === undefined ? {} : { help: ask.roll.help }),
+        difficulty,
+      };
+      const out = await runCharge(ctx, { campaign: ctx.campaign, character, sheet }, { mapId: row.mapId, targetTokenId: ask.targetTokenId, square: ask.square, stress: ask.stress, roll }, false, row.createdBy);
+      if (out.status === "needsChoice") throw appError("INVALID", "This Charge needs another choice: decline it and play it for the player.");
+      await closeRequest(ctx, row._id, "resolved", ctx.user._id);
+      return out;
     }),
 });
 

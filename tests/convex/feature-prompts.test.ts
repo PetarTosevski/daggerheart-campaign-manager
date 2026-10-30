@@ -240,7 +240,9 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
     // (the token faces the way it moved, and "all targets" are the enemies it sees there, CB p.104).
     const bear = await a.enemy(12, 10);
     const other = await a.enemy(12, 11);
-    const charge = (over: Partial<{ square: { x: number; y: number }; targetTokenId: Id<"combatTokens">; stress: boolean; difficulty: number | undefined }> = {}) =>
+    type Over = Partial<{ square: { x: number; y: number }; targetTokenId: Id<"combatTokens">; stress: boolean; difficulty: number }>;
+    /** The player's Charge: it goes to the GM as a `difficulty` request (dcm-bxp.99.19.61). */
+    const ask = (over: Over = {}) =>
       a.player.mutation(api.featurePrompts.charge, {
         campaignId: a.campaignId,
         characterId: a.w.characterA,
@@ -248,11 +250,21 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
         targetTokenId: over.targetTokenId ?? bear.tokenId,
         square: over.square ?? { x: 11, y: 10 },
         stress: over.stress ?? true,
-        roll: "difficulty" in over ? (over.difficulty === undefined ? {} : { difficulty: over.difficulty }) : { difficulty: 12 },
+        roll: over.difficulty === undefined ? {} : { difficulty: over.difficulty },
         idempotencyKey: key(),
       });
+    const answer = (requestId: Id<"combatRequests">, difficulty: number | null = 12) =>
+      a.gm.mutation(api.featurePrompts.answerDifficulty, { campaignId: a.campaignId, requestId, difficulty, idempotencyKey: key() });
+    /** The player asks, then the GM answers with Difficulty 12: the server rolls Agility. */
+    const charge = async (over: Over = {}) => {
+      const asked = await ask(over);
+      if (asked.status !== "requested") throw new Error(`expected a request, got ${asked.status}`);
+      const out = await answer(asked.requestId);
+      if (out.status !== "charged") throw new Error(`expected a Charge, got ${out.status}`);
+      return out;
+    };
     const instance = (id: Id<"encounterAdversaries">) => a.t.run(async (ctx) => (await ctx.db.get("encounterAdversaries", id))!);
-    return { ...a, bear, other, charge, instance };
+    return { ...a, bear, other, charge, ask, answer, instance };
   }
 
   it("on a success the token moves to the picked square and the Stress deals 1d12 to every enemy in Melee there; undo restores all", async () => {
@@ -320,14 +332,21 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
     expect((await a.sheetOf(a.w.characterA)).conditions).toContain("cloaked");
   });
 
-  it("refuses a square out of Melee, an occupied square, a target in Close range and a roll without the Difficulty", async () => {
+  it("refuses a square out of Melee, an occupied square, a target in Close range, a player's Difficulty and a GM's Charge without one", async () => {
     const a = await firbolg();
-    expect(await codeOf(a.charge({ square: { x: 9, y: 10 } }))).toBe("INVALID");
-    expect(await codeOf(a.charge({ square: { x: 12, y: 11 } }))).toBe("MOVE_BLOCKED");
-    expect(await codeOf(a.charge({ difficulty: undefined }))).toBe("INVALID");
+    expect(await codeOf(a.ask({ square: { x: 9, y: 10 } }))).toBe("INVALID");
+    expect(await codeOf(a.ask({ square: { x: 12, y: 11 } }))).toBe("MOVE_BLOCKED");
+    // CB p.104: "The GM sets this Difficulty": a player cannot.
+    expect(await codeOf(a.ask({ difficulty: 12 }))).toBe("INVALID");
+    expect(
+      await codeOf(
+        a.gm.mutation(api.featurePrompts.charge, { campaignId: a.campaignId, characterId: a.w.characterA, mapId: a.mapId, targetTokenId: a.bear.tokenId, square: { x: 11, y: 10 }, stress: true, roll: {}, idempotencyKey: key() }),
+      ),
+    ).toBe("INVALID");
     const near = await a.enemy(6, 10);
-    expect(await codeOf(a.charge({ targetTokenId: near.tokenId, square: { x: 6, y: 11 } }))).toBe("INVALID");
+    expect(await codeOf(a.ask({ targetTokenId: near.tokenId, square: { x: 6, y: 11 } }))).toBe("INVALID");
     expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
+    expect((await a.requests()).some((r) => r.kind === "difficulty")).toBe(false);
   });
 
   it("hits every enemy in Melee range of the square, also one behind the token", async () => {
@@ -344,7 +363,7 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
   it("a wall on the way refuses the player's Charge; the GM charges through", async () => {
     const a = await firbolg();
     await a.wall(6, 10);
-    expect(await codeOf(a.charge())).toBe("MOVE_BLOCKED");
+    expect(await codeOf(a.ask())).toBe("MOVE_BLOCKED");
     expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
     serverDice(9, 3, 7, 1);
     const result = await a.gm.mutation(api.featurePrompts.charge, {
@@ -375,11 +394,203 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
     expect(bear.squares).toHaveLength(7);
   });
 
+  // dcm-bxp.99.19.61 (user 2026-10-30): the player picks target + square; the GM gets a request with a Difficulty box; on
+  // submit the server rolls Agility and moves the token on success.
+  it("a player's Charge waits for the GM: nothing rolled, paid or moved; both see the request", async () => {
+    const a = await firbolg();
+    const asked = await a.ask();
+    expect(asked.status).toBe("requested");
+    expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
+    expect((await a.sheetOf(a.w.characterA)).stress).toBe(0);
+    expect((await a.t.run((ctx) => ctx.db.query("actionLog").collect())).length).toBe(0);
+    const view = { ask: "charge", characterId: a.w.characterA, characterName: (await a.sheetOf(a.w.characterA)).name, target: { tokenId: a.bear.tokenId, name: "Bear" }, seers: [] };
+    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toMatchObject([view]);
+    expect(await a.player.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toMatchObject([view]);
+    expect(await a.w.as("otherPlayer").query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toEqual([]);
+  });
+
+  it("the GM's Difficulty rolls it: the token moves on a success, the rows are the player's, the request closes", async () => {
+    const a = await firbolg();
+    const asked = await a.ask({ stress: false });
+    if (asked.status !== "requested") throw new Error("not requested");
+    // 9 + 3 + 2 = 14 vs the GM's 12: a success.
+    serverDice(9, 3);
+    const out = await a.answer(asked.requestId, 12);
+    expect(out).toMatchObject({ status: "charged", moved: true, use: { success: true } });
+    expect(await a.token(a.ash)).toMatchObject({ x: 11, y: 10 });
+    const row = await a.t.run(async (ctx) => (await ctx.db.get("combatRequests", asked.requestId))!);
+    expect(row.status).toBe("resolved");
+    if (out.status !== "charged") throw new Error("not charged");
+    const entry = await a.t.run(async (ctx) => (await ctx.db.get("actionLog", out.use.entryId))!);
+    expect(entry.actorId).toBe(a.w.users.player);
+    expect(await codeOf(a.answer(asked.requestId, 12))).toBe("REQUEST_NOT_OPEN");
+    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toEqual([]);
+  });
+
+  it("a Difficulty above the total fails: the token stays", async () => {
+    const a = await firbolg();
+    const asked = await a.ask();
+    if (asked.status !== "requested") throw new Error("not requested");
+    serverDice(9, 3); // 14 vs 20
+    expect(await a.answer(asked.requestId, 20)).toMatchObject({ status: "charged", moved: false, use: { success: false } });
+    expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
+  });
+
+  it("the GM declines; a bad Difficulty is refused and leaves it open; a newer Charge replaces the older request", async () => {
+    const a = await firbolg();
+    const first = await a.ask();
+    const second = await a.ask({ square: { x: 11, y: 9 } });
+    if (first.status !== "requested" || second.status !== "requested") throw new Error("not requested");
+    expect(await codeOf(a.answer(first.requestId))).toBe("REQUEST_NOT_OPEN");
+    expect(await codeOf(a.answer(second.requestId, 0))).toBe("INVALID");
+    expect(await codeOf(a.answer(second.requestId, 2.5))).toBe("INVALID");
+    expect(await a.answer(second.requestId, null)).toEqual({ status: "declined" });
+    expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
+    expect((await a.requests()).filter((r) => r.kind === "difficulty" && r.status === "open")).toHaveLength(0);
+  });
+
+  it("the encounter's end leaves the request out of the queue and the answer declines it", async () => {
+    const a = await firbolg();
+    const asked = await a.ask();
+    if (asked.status !== "requested") throw new Error("not requested");
+    await a.t.run((ctx) => ctx.db.patch("encounters", a.encounterId, { status: "ended" as never }));
+    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toEqual([]);
+    expect(await a.answer(asked.requestId, 12)).toEqual({ status: "declined" });
+  });
+
   it("useFeature refuses Charge: it needs its square", async () => {
     const a = await firbolg();
     const code = await codeOf(
       a.player.mutation(api.combatFeatures.useFeature, { campaignId: a.campaignId, characterId: a.w.characterA, mapId: a.mapId, featureId: "ancestry:firbolg:charge", targetTokenIds: [], choices: [], idempotencyKey: key() }),
     );
     expect(code).toBe("INVALID");
+  });
+});
+
+// ---------------------------------------------------------------- Cloaked: the GM's Difficulty (B2)
+
+/**
+ * dcm-bxp.99.19.62 (1), user 2026-10-30: "an enemy with no Difficulty (custom token, enemy-side PC/companion) that is the
+ * only one seeing the rogue dimly -> the GM gets a prompt to enter a Difficulty, then the Finesse roll happens". CB p.42
+ * (Rogue, Cloaked): "After you make an attack or end a move within line of sight of an adversary, you are no longer
+ * Cloaked." DA18 (dcm-bxp.99.19.53 (4)): seen only in dim light, ONE Finesse action roll; success keeps Cloaked. R9: at
+ * night a token with no light sees clearly only in Melee; 3 squares off is dim.
+ */
+describe("Cloaked seen dimly only by enemies without a Difficulty asks the GM for one (dcm-bxp.99.19.62 (1))", () => {
+  async function dim() {
+    const a = await arena((s) => ({ classId: "rogue", conditions: ["cloaked"], traits: { ...s.traits, finesse: 1 }, hope: 2, stress: 0 }));
+    await a.t.run(async (ctx) => {
+      const time = await ctx.db
+        .query("campaignTime")
+        .withIndex("by_campaign", (q) => q.eq("campaignId", a.campaignId))
+        .unique();
+      await ctx.db.patch("campaignTime", time!._id, { cycle: "NIGHT", cycleDay: 3 });
+    });
+    const custom = (x: number, y: number) =>
+      a.t.run((ctx) =>
+        ctx.db.insert("combatTokens", {
+          campaignId: a.campaignId,
+          mapId: a.mapId,
+          size: 1,
+          light: "none",
+          revealedTo: [],
+          ref: { kind: "custom", name: "Shade", hp: 3, hpMax: 3, stress: 0, stressMax: 1, conditions: [] },
+          side: "enemy",
+          x,
+          y,
+          face: Math.PI,
+        }),
+      );
+    const move = (x: number, y: number) => a.player.mutation(api.combatTokens.move, { campaignId: a.campaignId, tokenId: a.ash, x, y });
+    const answer = (requestId: Id<"combatRequests">, difficulty: number | null) =>
+      a.gm.mutation(api.featurePrompts.answerDifficulty, { campaignId: a.campaignId, requestId, difficulty, idempotencyKey: key() });
+    const cloaked = async () => (await a.sheetOf(a.w.characterA)).conditions.includes("cloaked");
+    const open = async () => (await a.requests()).filter((r) => r.kind === "difficulty" && r.status === "open");
+    const rows = () => a.t.run((ctx) => ctx.db.query("actionLog").collect());
+    return { ...a, custom, move, answer, cloaked, open, rows };
+  }
+
+  it("a custom token alone sees the rogue dimly: no roll yet, the GM gets the request; the GM's Difficulty rolls it", async () => {
+    const a = await dim();
+    const shade = await a.custom(7, 10); // 3 squares from (4, 10): dim
+    await a.move(4, 10);
+    expect(await a.cloaked()).toBe(true);
+    expect((await a.rows()).some((r) => r.kind === "roll")).toBe(false);
+    const [row] = await a.open();
+    expect(row).toBeDefined();
+    expect(await a.gm.query(api.combatRequests.difficulties, { campaignId: a.campaignId })).toMatchObject([{ ask: "cloak", target: null, seers: [{ tokenId: shade, name: "Shade" }] }]);
+    // 3 + 8 + 1 = 12 vs the GM's 14: failure with Fear, Cloaked ends.
+    serverDice(3, 8);
+    expect(await a.answer(row!._id, 14)).toEqual({ status: "rolled", cloaked: false });
+    expect(await a.cloaked()).toBe(false);
+    const roll = (await a.rows()).find((r) => r.kind === "roll" && r.summary.includes("Finesse"))!;
+    expect(roll).toMatchObject({ visibility: "public", actorId: a.w.users.player, characterId: a.w.characterA });
+    expect(roll.roll!.difficulty).toBeUndefined();
+    expect((await a.rows()).find((r) => r.visibility === "gm" && r.groupId === roll.groupId)!.summary).toContain("Difficulty 14");
+    expect(await a.open()).toHaveLength(0);
+  });
+
+  it("a success keeps Cloaked", async () => {
+    const a = await dim();
+    await a.custom(7, 10);
+    await a.move(4, 10);
+    const [row] = await a.open();
+    serverDice(11, 2); // 11 + 2 + 1 = 14 vs 10
+    expect(await a.answer(row!._id, 10)).toEqual({ status: "rolled", cloaked: true });
+    expect(await a.cloaked()).toBe(true);
+  });
+
+  it("an adversary with a Difficulty among the dim seers rolls at once: no request", async () => {
+    const a = await dim();
+    await a.custom(7, 10);
+    await a.enemy(4, 13); // Difficulty 10, 3 squares below: dim
+    serverDice(11, 2);
+    await a.move(4, 10);
+    expect(await a.open()).toHaveLength(0);
+    expect((await a.rows()).some((r) => r.kind === "roll" && r.summary.includes("Finesse"))).toBe(true);
+  });
+
+  it("the rogue moved on: the request is replaced, and an answer to a stale one rolls nothing", async () => {
+    const a = await dim();
+    await a.custom(7, 10);
+    await a.move(4, 10);
+    const [first] = await a.open();
+    await a.move(4, 9); // still dim for the Shade (3 squares and a bit)
+    const now = await a.open();
+    expect(now).toHaveLength(1);
+    expect(now[0]!._id).not.toBe(first!._id);
+    // The token leaves the dim square without a new request: the answer finds the move gone.
+    await a.t.run((ctx) => ctx.db.patch("combatTokens", a.ash, { x: 2, y: 2 }));
+    expect(await a.answer(now[0]!._id, 10)).toEqual({ status: "stale" });
+    expect(await a.cloaked()).toBe(true);
+    expect((await a.rows()).some((r) => r.kind === "roll")).toBe(false);
+  });
+
+  it("the GM declines: Cloaked stays, no roll", async () => {
+    const a = await dim();
+    await a.custom(7, 10);
+    await a.move(4, 10);
+    const [row] = await a.open();
+    expect(await a.answer(row!._id, null)).toEqual({ status: "declined" });
+    expect(await a.cloaked()).toBe(true);
+  });
+
+  it("a player cannot answer it", async () => {
+    const a = await dim();
+    await a.custom(7, 10);
+    await a.move(4, 10);
+    const [row] = await a.open();
+    expect(await codeOf(a.player.mutation(api.featurePrompts.answerDifficulty, { campaignId: a.campaignId, requestId: row!._id, difficulty: 10, idempotencyKey: key() }))).toBe("FORBIDDEN");
+  });
+});
+
+// ---------------------------------------------------------------- the target count payload (dcm-bxp.99.19.60)
+
+describe("a rolled target count writes no expiresAt (dcm-bxp.99.19.60)", () => {
+  it("the targetCount payload has no expiresAt", async () => {
+    const a = await arena(() => ({ classId: "druid", subclassId: "warden-of-renewal", subclassRank: "specialization", hope: 4 }));
+    await a.player.mutation(api.featurePrompts.rollCount, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: WARDEN, idempotencyKey: key() });
+    const [row] = (await a.requests()).filter((r) => r.kind === "targetCount");
+    expect(row!.payload).not.toHaveProperty("expiresAt");
   });
 });

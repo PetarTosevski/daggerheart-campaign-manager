@@ -21,6 +21,8 @@ import { rollValidator } from "./lib/validators/actionLog";
  *   Q1: an attack waiting for an after-roll feature's Use / Pass); for the GM every open one of the campaign (the GM's
  *   queue, with Resolve now). Requests whose encounter is no longer running are left out.
  * - SD5: an approved sanction may itself be held for an after-roll feature (`awaiting`).
+ * - `difficulties` (plan lanes B2): the rolls waiting for the GM's Difficulty (a player's Charge, a Cloaked rogue seen
+ *   dimly by enemies without one); the GM answers them with `featurePrompts.answerDifficulty`.
  * Card sanctions (CA4) and incoming hits (AA2) are answered by their own tracers' functions.
  */
 
@@ -127,7 +129,9 @@ async function tokenName(ctx: QueryCtx, row: Doc<"combatRequests">, tokenId: Doc
   const token = await ctx.db.get("combatTokens", tokenId);
   if (token === null || token.campaignId !== row.campaignId) return "Unknown";
   if (token.ref.kind === "custom") return token.ref.name;
-  if (token.ref.kind !== "adversary") return "Unknown";
+  // B2: an enemy-side PC or companion can see a Cloaked rogue too.
+  if (token.ref.kind === "pc") return characterName(ctx, row, token.ref.characterId);
+  if (token.ref.kind === "companion") return "Companion";
   const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
   return instance !== null && instance.campaignId === row.campaignId ? instance.label : "Unknown";
 }
@@ -207,6 +211,53 @@ export const mine = campaignQuery({
           candidates,
         });
       }
+    }
+    return views;
+  },
+});
+
+/** B2: a roll waiting for the GM's Difficulty, as `difficulties` shows it (names only, U1). */
+const difficultyView = v.object({
+  requestId: v.id("combatRequests"),
+  characterId: v.id("characters"),
+  characterName: v.string(),
+  createdAt: v.number(),
+  /** `charge`: a player's Charge (CB p.59) at `target`; `cloak`: a Cloaked rogue seen dimly by `seers` (CB p.42). */
+  ask: v.union(v.literal("charge"), v.literal("cloak")),
+  target: v.union(v.null(), namedToken),
+  seers: v.array(namedToken),
+});
+
+/**
+ * B2 (plan lanes; CB p.104 "The GM sets this Difficulty"): the rolls waiting for the GM's Difficulty: a player's Charge
+ * (dcm-bxp.99.19.61) and a Cloaked rogue seen dimly only by enemies without one (dcm-bxp.99.19.62 (1)). The GM gets every
+ * open one of the campaign (answered with `featurePrompts.answerDifficulty`); a player only the ones they made (their
+ * drawer's "waiting for the GM"). Requests whose encounter is no longer running are left out. Oldest first.
+ */
+export const difficulties = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: {},
+  returns: v.array(difficultyView),
+  handler: async (ctx) => {
+    const gm = ctx.permission === "owner";
+    const views = [];
+    for (const row of await openRequests(ctx, ctx.campaign._id)) {
+      const p = row.payload;
+      if (p.kind !== "difficulty") continue;
+      if (!gm && row.createdBy !== ctx.user._id) continue;
+      if (!(await encounterRunning(ctx, row))) continue;
+      const seers = [];
+      if (p.ask.kind === "cloak") for (const tokenId of p.ask.seers) seers.push({ tokenId, name: await tokenName(ctx, row, tokenId) });
+      views.push({
+        requestId: row._id,
+        characterId: p.characterId,
+        characterName: await characterName(ctx, row, p.characterId),
+        createdAt: row.createdAt,
+        ask: p.ask.kind,
+        target: p.ask.kind === "charge" ? { tokenId: p.ask.targetTokenId, name: await tokenName(ctx, row, p.ask.targetTokenId) } : null,
+        seers,
+      });
     }
     return views;
   },

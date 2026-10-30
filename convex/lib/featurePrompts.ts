@@ -34,12 +34,6 @@ import { closeRequest, openRequests } from "./combatRequests";
 import { rollDie } from "./dice";
 import type { AllyRollPayload } from "./validators/combatRequests";
 
-/**
- * The payload's `expiresAt` (a required field of `targetCountPayloadValidator`, owned by another lane) no longer limits
- * the roll: it is written as this "never" value and not read (dcm-bxp.99.19.55 (1)).
- */
-export const TARGET_COUNT_NO_EXPIRY = Number.MAX_SAFE_INTEGER;
-
 /** The `featureUses` key prefix that ties an open rolled count to the scene it was rolled in (until "scene"). */
 const COUNT_MARK = "rolledCount:";
 
@@ -128,7 +122,7 @@ export async function rollAndStoreCount(
     createdBy: input.userId,
     createdAt: Date.now(),
     responses: [],
-    payload: { schemaVersion: 1, kind: "targetCount", characterId: input.character._id, featureId: input.featureId, useId: input.use.id, count, expiresAt: TARGET_COUNT_NO_EXPIRY },
+    payload: { schemaVersion: 1, kind: "targetCount", characterId: input.character._id, featureId: input.featureId, useId: input.use.id, count },
   });
   // Keep the marks of the character's other open rolls (another rolled-first feature); drop stale ones.
   const open = (await openRequests(ctx, input.campaignId)).filter((r): r is CountRow => isCountRow(r) && r.payload.characterId === input.character._id);

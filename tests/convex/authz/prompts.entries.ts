@@ -10,7 +10,9 @@ import { freshKey } from "./synth";
  * `loadCharacter(..., "edit")`): another player is FORBIDDEN, the GM plays for anyone.
  *
  * The worlds' characters are warriors without Warden's Protection or Charge, so an allowed row stops at a domain check:
- * `rollCount` FEATURE_NOT_OWNED, `targetCount` null, `charge` INVALID (no Difficulty). Content:
+ * `rollCount` FEATURE_NOT_OWNED, `targetCount` null, `charge` INVALID for the GM (no Difficulty) or FEATURE_NOT_OWNED for
+ * the player (a player's Charge goes to the GM, B2). B2: `answerDifficulty` (GM) answers an open `difficulty` request;
+ * `combatRequests.difficulties` lists them (the GM all, a player their own). Content:
  * tests/convex/feature-prompts.test.ts.
  */
 
@@ -56,6 +58,24 @@ async function allyRollRow(w: World) {
 
 const CANNONBALL = "beastform:armored-sentry:cannonball";
 
+/** B2: an open player's Charge waiting for the GM's Difficulty (`requestId`). */
+async function difficultyRow(w: World) {
+  await board(w);
+  const requestId = await w.t.run((ctx) =>
+    ctx.db.insert("combatRequests", {
+      campaignId: w.campaignId,
+      mapId: w.ids.mapId as Id<"combatMaps">,
+      kind: "difficulty",
+      status: "open",
+      createdBy: w.users.player,
+      createdAt: Date.now(),
+      responses: [],
+      payload: { schemaVersion: 1, kind: "difficulty", characterId: w.characterA, ask: { kind: "charge", targetTokenId: w.ids.tokenId as Id<"combatTokens">, square: { x: 11, y: 10 }, stress: false, roll: {} } },
+    }),
+  );
+  w.set("requestId", requestId);
+}
+
 const entries: Entry[] = [
   // DA13 (Cannonball): the ally's drawer read, the ally's roll (the roller's player or the GM), the GM's cancel.
   { fn: api.featurePrompts.allyRolls, access: "view", args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
@@ -91,8 +111,11 @@ const entries: Entry[] = [
       roll: {},
     }),
     expect: NOT_THEIRS,
-    okCodes: ["INVALID"],
+    okCodes: ["INVALID", "FEATURE_NOT_OWNED"],
   },
+  // B2: the rolls waiting for the GM's Difficulty, and the GM's answer (a decline: nothing is rolled).
+  { fn: api.combatRequests.difficulties, access: "view", args: () => ({}) },
+  { fn: api.featurePrompts.answerDifficulty, access: "gm", setup: difficultyRow, args: (w) => ({ requestId: w.ids.requestId as Id<"combatRequests">, difficulty: null }) },
 ];
 
 const area: Area = { area: "prompts", entries };

@@ -11,6 +11,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { ResolutionsProps } from "../../slots";
 import { BAND_LABEL } from "../targets";
+import { DifficultyRequests } from "../../requests";
 
 /**
  * Resolutions (plan combat-actions CA5; U4, Q10, Q1): the GM column's list of the latest combat resolutions (the GM's
@@ -66,6 +67,7 @@ export function Resolutions({ campaignId }: ResolutionsProps) {
   return (
     <section className="cm-card cma-card" aria-label="Resolutions">
       <h2 className="cm-h">Resolutions</h2>
+      <DifficultyRequests campaignId={campaignId} />
       <Sanctions campaignId={campaignId} />
       <ResolutionList campaignId={campaignId} />
     </section>

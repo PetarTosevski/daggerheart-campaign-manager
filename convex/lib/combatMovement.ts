@@ -17,6 +17,9 @@ import { readSheet, saveSheet } from "./characterSheet";
 import { rollDie } from "./dice";
 import { gainFear } from "./fear";
 import { changed, resolveDuality, type DualityArgs, type Loaded } from "./rolls";
+import { appError } from "../../src/lib/errors/app-error";
+import { closeRequest, openDifficulty } from "./combatRequests";
+import type { DifficultyAsk } from "./validators/combatRequests";
 import { loadScene, type Scene } from "./combatVision";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap } from "./combatMaps";
 import { objectTraits, resolveRefs } from "./spriteSources";
@@ -290,7 +293,7 @@ export async function uncloakAfterMove(
   const sight = enemySightOf(scene, moved, enemies.hidden);
   if (!sight.clear && sight.dim.length === 0) return false;
   if (await cloakedByVanishingAct(ctx, character._id, sheet.name)) return false;
-  if (!sight.clear) return cloakRoll(ctx, { campaign, character, sheet, gm: false }, sight.dim, enemies.difficulty, actorId, groupId);
+  if (!sight.clear) return cloakRoll(ctx, { campaign, character, sheet, gm: false }, { map, token: moved, seers: sight.dim, difficulties: enemies.difficulty }, actorId, groupId);
   return drop(`${sheet.name} ends a move in sight of an adversary and is no longer Cloaked`);
 }
 
@@ -301,30 +304,93 @@ function cloakRollArgs(difficulty: number): DualityArgs {
 
 /**
  * DA18 (user 2026-10-30, dcm-bxp.99.19.53 (4)): a Cloaked rogue who ends a move in dim light in the clear line of revealed
- * enemies (`seers`) makes ONE Finesse action roll against the HIGHEST Difficulty among them. Hope and Fear apply as on any
- * action roll (Hope or a cleared Stress to the rogue, Fear to the GM, armed countdowns tick); success keeps Cloaked,
- * failure ends it. The public `roll` row holds the dice, the total and success / failure but never the Difficulty (U1);
- * a GM row in the same group names it. Undo of the group reverts the roll's Hope / Stress / Fear and the Cloaked change.
- * A seer without a Difficulty (a custom or PC token) is left out; with none left, or a rogue who is away, no roll is made
- * and Cloaked stays (docs/tasks/TASK-LN-C1.md QUESTIONS; an unconscious or dead rogue has already dropped Cloaked in
- * `uncloakAfterMove`). Both rows join `groupId`. Returns whether Cloaked ended.
+ * enemies (`seers`) makes ONE Finesse action roll against the HIGHEST Difficulty among them (`rollCloak`). A seer without a
+ * Difficulty (a custom token, an enemy-side PC or companion) is left out. When NONE of them has one (user 2026-10-30,
+ * dcm-bxp.99.19.62 (1)), the GM is asked for a Difficulty (a `difficulty` request, `ask.kind` `cloak`, plan lanes B2) and
+ * the roll waits for the answer (`answerCloakDifficulty`); Cloaked stays meanwhile. A rogue who is away makes no roll and
+ * gets no request. Returns whether Cloaked ended (never, while the roll waits).
  */
 async function cloakRoll(
   ctx: MutationCtx,
   loaded: Loaded,
-  seers: readonly Doc<"combatTokens">[],
-  difficulties: ReadonlyMap<Id<"combatTokens">, Difficulty>,
+  seen: { map: Doc<"combatMaps">; token: Doc<"combatTokens">; seers: readonly Doc<"combatTokens">[]; difficulties: ReadonlyMap<Id<"combatTokens">, Difficulty> },
   actorId: Id<"users">,
   groupId: string,
 ): Promise<boolean> {
-  const { campaign, character, sheet } = loaded;
+  const { campaign, character } = loaded;
+  if (character.status === "away") return false;
   let highest: Difficulty | null = null;
-  for (const t of seers) {
-    const d = difficulties.get(t._id);
+  for (const t of seen.seers) {
+    const d = seen.difficulties.get(t._id);
     if (d !== undefined && (highest === null || d.value > highest.value)) highest = d;
   }
-  if (highest === null) return false;
-  if (character.status === "away") return false;
+  if (highest === null) {
+    await openDifficulty(ctx, {
+      campaignId: campaign._id,
+      mapId: seen.map._id,
+      createdBy: actorId,
+      payload: {
+        schemaVersion: 1,
+        kind: "difficulty",
+        characterId: character._id,
+        ask: { kind: "cloak", tokenId: seen.token._id, at: { x: seen.token.x, y: seen.token.y }, seers: seen.seers.map((t) => t._id), groupId },
+      },
+    });
+    return false;
+  }
+  return rollCloak(ctx, loaded, highest, actorId, groupId);
+}
+
+/**
+ * B2 (dcm-bxp.99.19.62 (1)): the GM's Difficulty for a waiting Cloaked roll (`row`, an open `difficulty` request whose
+ * `ask.kind` is `cloak`). The roll is made only while the move still stands: the map is live, the rogue's token is still
+ * on the square the move ended on, the rogue is still Cloaked, not away, unconscious or dead. Otherwise the request is
+ * declined and `stale` returned. The roll's rows join the move's group and belong to the player who moved (`createdBy`).
+ */
+export async function answerCloakDifficulty(
+  ctx: MutationCtx,
+  campaign: Doc<"campaigns">,
+  row: Doc<"combatRequests">,
+  difficulty: number,
+  by: Id<"users">,
+): Promise<{ status: "stale" } | { status: "rolled"; cloaked: boolean }> {
+  const p = row.payload;
+  if (p.kind !== "difficulty" || p.ask.kind !== "cloak") throw appError("NOT_FOUND");
+  const ask: Extract<DifficultyAsk, { kind: "cloak" }> = p.ask;
+  const stale = async () => {
+    await closeRequest(ctx, row._id, "declined", by);
+    return { status: "stale" as const };
+  };
+  const character = await ctx.db.get("characters", p.characterId);
+  const token = await ctx.db.get("combatTokens", ask.tokenId);
+  const map = row.mapId === undefined ? null : await ctx.db.get("combatMaps", row.mapId);
+  if (character === null || character.campaignId !== campaign._id || token === null || token.campaignId !== campaign._id || map === null || !map.live) return stale();
+  if (token.mapId !== map._id || token.x !== ask.at.x || token.y !== ask.at.y) return stale();
+  const sheet = readSheet(character.sheet);
+  if (!sheet.conditions.includes("cloaked") || character.status !== "active" || sheet.conditions.includes("unconscious")) return stale();
+  // An undone group (the Charge that made the move) would leave these rows stuck in an undone group.
+  const undone = await ctx.db
+    .query("actionLog")
+    .withIndex("by_campaign_group", (q) => q.eq("campaignId", campaign._id).eq("groupId", ask.groupId))
+    .take(GROUP_SCAN);
+  if (undone.some((r) => r.undoneAt !== undefined)) return stale();
+  const cloakedAfter = !(await rollCloak(ctx, { campaign, character, sheet, gm: false }, { value: difficulty, label: "set by the GM" }, row.createdBy, ask.groupId));
+  await closeRequest(ctx, row._id, "resolved", by);
+  return { status: "rolled", cloaked: cloakedAfter };
+}
+
+/** The rows of a move's group `answerCloakDifficulty` reads (a Charge's group holds a few). */
+const GROUP_SCAN = 50;
+
+/**
+ * DA18's Finesse action roll against `highest`. Hope and Fear apply as on any action roll (Hope or a cleared Stress to the
+ * rogue, Fear to the GM, armed countdowns tick); success keeps Cloaked, failure ends it. The public `roll` row holds the
+ * dice, the total and success / failure but never the Difficulty (U1); a GM row in the same group names it. Undo of the
+ * group reverts the roll's Hope / Stress / Fear and the Cloaked change. Both rows join `groupId`. Returns whether Cloaked
+ * ended.
+ */
+async function rollCloak(ctx: MutationCtx, loaded: Loaded, highest: Difficulty, actorId: Id<"users">, groupId: string): Promise<boolean> {
+  const { campaign, character, sheet } = loaded;
   const { paid, next, roll, effects } = await resolveDuality(ctx, loaded, cloakRollArgs(highest.value), rollDie, false);
   const success = roll.outcome === "critical" || roll.outcome === "successHope" || roll.outcome === "successFear";
   const after = success ? next : uncloaked(next);

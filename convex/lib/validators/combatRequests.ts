@@ -39,14 +39,23 @@ import { conditionValidator, effectValidator, traitIdValidator } from "./charact
  */
 /**
  * `targetCount` (plan drawer-answers DA12, widened; CB p.31 Warden's Protection, user 2026-10-29, dcm-d95): a target count
- * the server rolled before the player picks (the 1d4 allies). Resolved by the use that takes it (`resolveFeatureUse`);
- * declined once it expires (`TARGET_COUNT_TTL_MS`, closed by the next roll).
+ * the server rolled before the player picks (the 1d4 allies). It holds until it is used or the scene ends (user
+ * 2026-10-30, dcm-bxp.99.19.55 (1)): a scene mark on the roller's sheet ties it to the scene (convex/lib/featurePrompts.ts).
+ * Resolved by the use that takes it (`resolveFeatureUse`); declined by the next roll once its scene mark is gone.
  */
 /**
  * `serverMove` (plan drawer-answers DA12, widened; CB p.59 Charge, user 2026-10-30): the square a token left when the
  * server moved it for a feature (Charge's run into Melee range). Open while the move can be undone: undoing the use's
  * actionLog group puts the token back and declines it (`declineGroupOffers`); the character's next server move resolves
  * the older one, and the encounter's end declines it.
+ */
+/**
+ * `difficulty` (plan lanes B2, widened; CB p.104 "The GM sets this Difficulty"; user 2026-10-30): a roll that waits for the
+ * GM's Difficulty. `ask.kind` `charge` (dcm-bxp.99.19.61): a player's Charge (CB p.59), with the target, square, Stress and
+ * roll options the player picked; `cloak` (dcm-bxp.99.19.62 (1)): a Cloaked rogue who ended a move seen only dimly by enemies
+ * none of which has a Difficulty (a custom token, an enemy-side PC or companion). The GM answers with a Difficulty
+ * (`featurePrompts.answerDifficulty`: the server rolls) or declines. Superseded by the character's next request of the same
+ * `ask.kind`, declined when the encounter ends or the move's actionLog group is undone.
  */
 /**
  * `allyRoll` (plan drawer-answers DA13, widened; CB p.33 Cannonball, user 2026-10-29 / 2026-10-30, dcm-bxp.99.19.21): a
@@ -64,6 +73,7 @@ export const combatRequestKindValidator = v.union(
   v.literal("targetCount"),
   v.literal("serverMove"),
   v.literal("allyRoll"),
+  v.literal("difficulty"),
 );
 
 /** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
@@ -436,7 +446,11 @@ export const targetCountPayloadValidator = v.object({
   useId: v.string(),
   /** The rolled count: the most targets the use may take. */
   count: v.number(),
-  expiresAt: v.number(),
+  /**
+   * Retired (dcm-bxp.99.19.60): the count lasts until it is used or the scene ends, so nothing writes or reads this.
+   * Widened to optional; a migration clears it from old rows, then the field is dropped (rule 7).
+   */
+  expiresAt: v.optional(v.number()),
 });
 
 /** A token's square and facing (combatTokens `x`, `y`, `face`). */
@@ -471,6 +485,37 @@ export const allyRollPayloadValidator = v.object({
   expiresAt: v.number(),
 });
 
+/** B2: what a `difficulty` request rolls once the GM sets the Difficulty. */
+export const difficultyAskValidator = v.union(
+  v.object({
+    kind: v.literal("charge"),
+    /** The Charge target (an enemy token at Far or Very Far range) and the square in Melee range of it. */
+    targetTokenId: v.id("combatTokens"),
+    square: v.object({ x: v.number(), y: v.number() }),
+    /** Mark a Stress for the 1d12 (on a success). */
+    stress: v.boolean(),
+    /** The player's roll options (Experiences, advantage, modifier); never a Difficulty. */
+    roll: sanctionRollOptionsValidator,
+  }),
+  v.object({
+    kind: v.literal("cloak"),
+    /** The rogue's token and the square the move ended on: a token that moved on since makes the request stale. */
+    tokenId: v.id("combatTokens"),
+    at: v.object({ x: v.number(), y: v.number() }),
+    /** The enemies that saw it dimly (at most the map's tokens; names for the GM). */
+    seers: v.array(v.id("combatTokens")),
+    /** The move's actionLog group: the roll joins it, and undoing it declines the request. */
+    groupId: v.string(),
+  }),
+);
+
+export const difficultyPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("difficulty"),
+  characterId: v.id("characters"),
+  ask: difficultyAskValidator,
+});
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
 export const combatRequestPayloadValidator = v.union(
   sanctionPayloadValidator,
@@ -482,6 +527,7 @@ export const combatRequestPayloadValidator = v.union(
   targetCountPayloadValidator,
   serverMovePayloadValidator,
   allyRollPayloadValidator,
+  difficultyPayloadValidator,
 );
 
 /**
@@ -551,3 +597,5 @@ export type RiderPickChoice = Infer<typeof riderPickChoiceValidator>;
 export type TargetCountPayload = Infer<typeof targetCountPayloadValidator>;
 export type ServerMovePayload = Infer<typeof serverMovePayloadValidator>;
 export type AllyRollPayload = Infer<typeof allyRollPayloadValidator>;
+export type DifficultyPayload = Infer<typeof difficultyPayloadValidator>;
+export type DifficultyAsk = Infer<typeof difficultyAskValidator>;

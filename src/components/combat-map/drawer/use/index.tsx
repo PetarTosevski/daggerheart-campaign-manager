@@ -9,6 +9,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { FeatureUseProps } from "../../slots";
 import { DrawerBoundary } from "../boundary";
+import { DifficultyRequests, useWaitingDifficulty } from "../../requests";
 import { chargeLine, serverUseOf, squareLabels, targetLabel, validAllies } from "./model";
 import "./use.css";
 
@@ -23,7 +24,9 @@ import "./use.css";
  * - Charge (CB p.59: "When you succeed on an Agility Roll to move from Far or Very Far range into Melee range with one or
  *   more targets, you can mark a Stress to deal 1d12 physical damage to all targets within Melee range."; user
  *   2026-10-29 / 2026-10-30): the target at Far or Very Far range, the square in Melee range of it, the Stress, then the
- *   roll (`featurePrompts.charge`). The Agility Roll's Difficulty is the GM's, so the GM playing for the character sets it.
+ *   roll (`featurePrompts.charge`). The Agility Roll's Difficulty is the GM's (CB p.104): the GM playing for the
+ *   character types it; a player's Charge goes to the GM as a request (plan lanes B2, dcm-bxp.99.19.61), and the drawer
+ *   shows it waiting until the GM answers (the GM's drawer lists it with a Difficulty box, `DifficultyRequests`).
  */
 export function FeatureUse({ campaignId, role, map, characterId, featureId, useId, onClose }: FeatureUseProps) {
   const server = serverUseOf(featureId, useId);
@@ -172,6 +175,7 @@ function ChargeUse({ campaignId, characterId, mapId, gm }: Here & { gm: boolean 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const charge = useMutation(api.featurePrompts.charge);
+  const waiting = useWaitingDifficulty(campaignId, characterId, "charge");
   if (options === undefined) {
     return (
       <p role="status" className="cm-muted">
@@ -183,15 +187,20 @@ function ChargeUse({ campaignId, characterId, mapId, gm }: Here & { gm: boolean 
   const labels = target ? squareLabels(target) : [];
   const square = target ? (target.squares[Number(squareIndex)] ?? null) : null;
   const diff = difficulty === "" ? undefined : Number(difficulty);
-  const ready = target !== null && square !== null && gm && diff !== undefined && Number.isInteger(diff) && diff > 0;
+  // B2 (dcm-bxp.99.19.61): the GM types the Difficulty; a player's Charge goes to the GM, who sets it and rolls.
+  const ready = target !== null && square !== null && (!gm || (diff !== undefined && Number.isInteger(diff) && diff > 0)) && (gm || waiting === null);
   async function go() {
-    if (!target || !square || diff === undefined) return;
+    if (!target || !square || (gm && diff === undefined)) return;
     setError(null);
     setBusy(true);
     try {
-      const out = await charge({ campaignId, idempotencyKey: crypto.randomUUID(), characterId, mapId, targetTokenId: target.tokenId, square: { x: square.x, y: square.y }, stress, roll: { difficulty: diff } });
+      const out = await charge({ campaignId, idempotencyKey: crypto.randomUUID(), characterId, mapId, targetTokenId: target.tokenId, square: { x: square.x, y: square.y }, stress, roll: gm && diff !== undefined ? { difficulty: diff } : {} });
       if (out.status === "needsChoice") setError("Charge needs another choice.");
-      else {
+      else if (out.status === "requested") {
+        setResult(`Charge at ${target.name} sent to the GM, who sets the Difficulty and rolls.`);
+        setTargetId("");
+        setSquareIndex("");
+      } else {
         // Every enemy in Melee range of the square may be hit, seen or not: name the ones the drawer knows.
         const names = new Map(options!.map((t) => [t.tokenId as string, t.name]));
         setResult(chargeLine(out.moved, out.use, names));
@@ -265,12 +274,17 @@ function ChargeUse({ campaignId, characterId, mapId, gm }: Here & { gm: boolean 
               </label>
               <input id={ids.difficulty} type="number" min={1} className="cm-in sdu-num" value={difficulty} onChange={(e) => setDifficulty(e.target.value)} />
             </div>
+          ) : waiting !== null ? (
+            <p className="sdu-note" data-testid="charge-waiting">
+              Waiting for the GM: Charge at {waiting.target?.name ?? "the target"}. The GM sets the Difficulty of the Agility Roll and rolls it.
+            </p>
           ) : (
-            <p className="sdu-note">The GM sets the Difficulty of the Agility Roll: ask the GM to play Charge for you.</p>
+            <p className="sdu-note">The GM sets the Difficulty of the Agility Roll: your Charge goes to the GM, who rolls it.</p>
           )}
           <button type="button" className="cm-btn" disabled={busy || !ready} onClick={() => void go()}>
             Roll Agility and charge
           </button>
+          {gm ? <DifficultyRequests campaignId={campaignId} characterId={characterId} ask="charge" /> : null}
         </>
       )}
       {error ? (

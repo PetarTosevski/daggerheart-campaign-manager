@@ -1,0 +1,39 @@
+/* B2: rolls waiting for the GM's Difficulty (a player's Charge, a Cloaked rogue seen dimly). */
+.dfr {
+  display: grid;
+  gap: 0.4rem;
+  margin-block: 0.5rem;
+}
+
+.dfr-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dfr-row {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.dfr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dfr-actions .cm-btn,
+.dfr-num {
+  min-height: 44px;
+}
+
+.dfr-num {
+  width: 5rem;
+}
+
+.dfr-result {
+  margin: 0;
+}
