@@ -16,6 +16,7 @@ import { actorSheetAfter, buildRun, difficultyOf, pickCard, replaying, runCard, 
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import {
   attackScene,
+  autoRiders,
   changeFear,
   damagePrompts,
   defaultOnRiders,
@@ -24,6 +25,8 @@ import {
   pickRiders,
   recorder,
   resultHolds,
+  rollOnly,
+  rollTargetHolds,
   runRiderPart,
   weaponIn,
   withHopeSides,
@@ -136,6 +139,8 @@ type UseRequest = {
   targetTokenIds: readonly string[];
   choices: readonly CardChoice[];
   roll: CardRoll;
+  /** Plan lanes, E1 (dcm-p1r): the vault card a `loadout` `swapWithVault` step brings in (Codex-Touched, CB p.333). */
+  swapWith?: string;
 };
 
 /** Where this use's dice are kept while it waits for a choice (convex/lib/cardChoices.ts). */
@@ -190,6 +195,22 @@ function siphonHeal(plan: RunPlan): number {
 }
 
 /**
+ * Plan lanes, E1 (dcm-p1r): a `loadout` `swapWithVault` step of the plan (Codex-Touched, CB p.333: "Once per rest,
+ * replace this card with any card from your vault without paying its Recall Cost"): the card goes to the vault and
+ * `swapWith` (a vault card of the deck, at most the character's level) comes into the loadout, with no Stress. INVALID
+ * without a fitting `swapWith`. Returns the sheet and the step's prompt texts (they are done, so no manual row).
+ */
+function swapWithVault(sheet: CharacterSheet, plan: RunPlan, swapWith: string | undefined): { sheet: CharacterSheet; texts: string[] } {
+  const steps = plan.steps.flatMap((st) => (st.kind === "prompt" && st.step?.kind === "loadout" && st.step.op === "swapWithVault" ? [st] : []));
+  if (steps.length === 0) return { sheet, texts: [] };
+  const deck = sheet.domainCards;
+  if (swapWith === undefined || !deck.owned.includes(swapWith) || deck.loadout.includes(swapWith)) throw appError("INVALID", "Pick a card from your vault to swap in.");
+  if ((getDomainCard(swapWith)?.level ?? 99) > sheet.level) throw appError("INVALID", "That card is above your level.");
+  const loadout = deck.loadout.filter((c) => c !== plan.cardId);
+  return { sheet: { ...sheet, domainCards: { ...deck, loadout: [...loadout, swapWith] } }, texts: steps.map((st) => st.text) };
+}
+
+/**
  * Writes the plan in one mutation (U4) and logs one actionLog group: the public row (the roll, the damage dice and
  * total, Hit / Miss / Defeated per target, the actor's `before`), a row per ally whose sheet changed, a public row per
  * manual step ("Mira used <card>: <step text>"), and the GM row (damage, severity, HP, saves, `adversaryBefore`).
@@ -205,7 +226,9 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   for (const roll of actorRolls) unshaken.push({ characterId: character._id, name: req.sheet.name, roll });
   const healed = siphonHeal(plan);
   if (healed > 0) next = { ...next, hp: Math.max(0, next.hp - healed) };
-  let prompts = promptsOf(plan, built).filter((p) => !(healed > 0 && p.kind === "manual" && p.text.startsWith("You clear a number of Hit Points")));
+  const swapped = swapWithVault(next, plan, req.swapWith);
+  next = swapped.sheet;
+  let prompts = promptsOf(plan, built).filter((p) => !(healed > 0 && p.kind === "manual" && p.text.startsWith("You clear a number of Hit Points")) && !(p.kind === "manual" && swapped.texts.includes(p.text)));
 
   // Allies: tracks from the plan's creatures, Hope / effects / conditions from its steps.
   const allyRows: { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }[] = [];
@@ -355,7 +378,41 @@ function cardHost(req: UseRequest, weaponChoice: "primary" | "secondary" | undef
   const slot = roll.kind === "attack" ? (roll.weapon === "either" ? (weaponChoice ?? "primary") : roll.weapon) : undefined;
   const weapon = slot ? weaponIn(req.sheet, slot) : undefined;
   const trait = roll.kind === "trait" ? (typeof roll.trait === "string" ? roll.trait : (req.roll.trait ?? roll.trait[0])) : weapon && weapon.trait !== "choice" ? weapon.trait : req.roll.trait;
-  return { spec: roll, trait, weapon: roll.kind === "attack", weaponRange: weapon ? rangeFromWeapon(weapon.range) : null, damageType: weapon?.damageType === "magic" ? "magic" : "physical" };
+  // Plan lanes, E1: the card's use (`fromUse`), its domain (`cardDomain`: Fane of the Wilds, dcm-z1a), whether it makes a
+  // damage roll (Twilight Toll's `noDamageRoll`, dcm-94h), and a trait roll that is its own weapon (`asWeapon`, dcm-gvr).
+  const domain = getDomainCard(req.pick.effect.cardId)?.domain;
+  return {
+    spec: roll,
+    trait,
+    weapon: roll.kind === "attack" || (roll.kind === "trait" && roll.asWeapon === true),
+    weaponRange: weapon ? rangeFromWeapon(weapon.range) : null,
+    damageType: weapon?.damageType === "magic" ? "magic" : "physical",
+    ...(slot ? { slot } : {}),
+    fromUse: { id: req.pick.effect.cardId, useId: req.pick.use.id },
+    ...(domain ? { cardDomain: domain } : {}),
+    damage: makesDamageRoll(req.pick.use.steps),
+  };
+}
+
+/** Whether a use's steps roll damage (a `damage` step, nested ones included). */
+function makesDamageRoll(steps: readonly Step[]): boolean {
+  return steps.some(
+    (s) =>
+      s.kind === "damage" ||
+      ((s.kind === "optional" || s.kind === "followUp") && makesDamageRoll(s.steps)) ||
+      (s.kind === "choose" && s.options.some((o) => makesDamageRoll(o.steps))) ||
+      (s.kind === "save" && (makesDamageRoll(s.onFail) || makesDamageRoll(s.onSuccess))) ||
+      (s.kind === "check" && (makesDamageRoll(s.then) || makesDamageRoll(s.otherwise))),
+  );
+}
+
+/**
+ * Plan lanes, E1: the automatic uses that ride on a card's roll (a loadout card's or a held feature's `auto` use whose
+ * trigger fits it: Fane of the Wilds' token on a critical Spellcast Roll for a Sage spell, CB p.339, dcm-z1a), before or
+ * after the roll. Damage-phase ones stay with the weapon attack.
+ */
+function cardAutos(req: UseRequest, host: Host): PickedRider[] {
+  return autoRiders(req.sheet, req.campaign, host).filter((r) => r.phase !== "damage");
 }
 
 const fixedN = (value: number) => ({ kind: "fixed" as const, value });
@@ -433,7 +490,7 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
   // DA2: damage-phase riders (Death Strike) are prompts after the card's damage, never run from a toggle; default-on
   // riders (Rise to the Challenge, CB p.48) join unless turned off.
   const chosen = pickRiders(req.sheet, req.campaign, host, riders).filter((r) => r.phase !== "damage");
-  const picked = [...chosen, ...defaultOnRiders(req.sheet, req.campaign, host, riseOff, chosen)];
+  const picked = [...chosen, ...defaultOnRiders(req.sheet, req.campaign, host, riseOff, chosen), ...cardAutos(req, host)];
   const rec = recorder(rollDie);
   const fear = await campaignFearState(ctx, req.campaign._id);
   const env: RiderEnv = { ctx, campaign: req.campaign, character: req.character, scene: req.scene, host, gmFear: fear.fear, rng: rec.rng, rollUsedExperience: (req.roll.experienceIds ?? []).length > 0 };
@@ -461,8 +518,13 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
     return { built, outcome: ran };
   };
   const req1: UseRequest = { ...req, sheet, pick: withFolds(req.pick, folds) };
-  const first = await run(req1, folds, null);
-  if (first.outcome.kind === "needsChoice") return { kind: "needsChoice", outcome: first.outcome };
+  // Plan lanes, E1: automatic uses send plain card uses this way too, so a choice asked after the roll keeps the card's
+  // dice here as `runKept` does (CA4b: asking again never rerolls).
+  const first = await run(req1, folds, await keptDice(ctx, slotOf(req)));
+  if (first.outcome.kind === "needsChoice") {
+    await keepDice(ctx, slotOf(req), first.outcome.dice, actorId);
+    return { kind: "needsChoice", outcome: first.outcome };
+  }
   // The card's own dice (the riders' are not replayed into it).
   const dice = [...first.outcome.dice];
   let built = first.built;
@@ -474,9 +536,11 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
   const hitIds = plan.hits.filter((h) => h.hit).map((h) => built.creatures.get(h.id)?.tokenId ?? h.id);
   const later = emptyFolds();
   const skipped: string[] = [];
+  const lead = built.targets[0];
+  const subject = lead === undefined ? undefined : { token: lead.token, enemy: lead.kind === "enemy", tags: lead.kind === "enemy" ? lead.instance.tags : [], conditions: lead.kind === "enemy" ? lead.instance.conditions : lead.kind === "pc" ? lead.sheet.conditions : [] };
   for (const r of picked.filter((x) => x.phase === "after")) {
-    if (!resultHolds(r.trigger, hostRoll) || (r.trigger.kind !== "afterYouRoll" && hitIds.length === 0)) {
-      skipped.push(r.name);
+    if (!resultHolds(r.trigger, hostRoll) || !rollTargetHolds(r.trigger, host, req.scene.attacker, subject) || (!rollOnly(r.trigger) && hitIds.length === 0)) {
+      if (!r.auto) skipped.push(r.name);
       continue;
     }
     const ran = await runRiderPart(env, r, after, "pre", hostRoll, hitIds, undefined);
@@ -588,14 +652,20 @@ const useArgs = {
    * (an action roll); `false` turns it off for this roll.
    */
   riseToTheChallenge: v.optional(v.boolean()),
+  /** Plan lanes, E1 (dcm-p1r): the vault card a swap step brings in (Codex-Touched, CB p.333). */
+  swapWith: v.optional(v.string()),
 };
 
-/** DA2: whether a default-on rider (Rise to the Challenge) applies to this card's roll now, unless turned off. */
+/**
+ * DA2: whether a default-on rider (Rise to the Challenge) applies to this card's roll now, unless turned off. Plan lanes,
+ * E1: or an automatic use rides on it (`cardAutos`): the card then runs through the rider path too.
+ */
 function riseApplies(req: UseRequest, off: boolean): boolean {
   const roll = req.pick.use.roll;
-  if (off || roll === undefined || roll.kind === "adversaryAttack" || roll.kind === "reaction") return false;
+  if (roll === undefined || roll.kind === "adversaryAttack" || roll.kind === "reaction") return false;
   const host = cardHost(req, parseChoices(req.choices).weapon);
-  return defaultOnRiders(req.sheet, req.campaign, host, false, []).length > 0;
+  if (cardAutos(req, host).length > 0) return true;
+  return !off && defaultOnRiders(req.sheet, req.campaign, host, false, []).length > 0;
 }
 
 /**
@@ -616,7 +686,7 @@ export const useCard = keyedCampaignMutation({
       assertCanAct(character, sheet);
       const scene = await attackScene(ctx, campaign, character, args.mapId);
       const pick = pickCard(sheet, args.cardId, args.spell);
-      const req: UseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: args.targetTokenIds, choices: args.choices, roll: args.roll ?? {} };
+      const req: UseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: args.targetTokenIds, choices: args.choices, roll: args.roll ?? {}, ...(args.swapWith !== undefined ? { swapWith: args.swapWith } : {}) };
       const riders = args.riders ?? [];
       const riseOff = args.riseToTheChallenge === false;
       if (riders.length > 0 || riseApplies(req, riseOff)) {

@@ -10,7 +10,7 @@
 import { v, type Infer } from "convex/values";
 
 import { cardAvailability, RESET_LABEL } from "../../src/lib/domain/card-effects/availability";
-import { run } from "../../src/lib/domain/card-effects/run";
+import { run, type RunPlan } from "../../src/lib/domain/card-effects/run";
 import type { CardUse, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import type { Rng } from "../../src/lib/domain/dice/index";
 import { owned } from "../../src/lib/domain/feature-effects/owned";
@@ -20,6 +20,7 @@ import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard } from "../../src/lib/srd/index";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
+import { resolveOptions } from "../../src/lib/frames/options";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
@@ -168,7 +169,15 @@ export function handSharedWithPlayers(campaign: Pick<Doc<"campaigns">, "playersS
  * for someone else's character, and a recall that cost Stress, write an undoable actionLog row (the GM as actor, the
  * character's id on the row, its sheet before).
  */
-export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characterId: Id<"characters">, cardId: string, to: "loadout" | "vault", duringRest: boolean | undefined): Promise<null> {
+export async function moveCardFor(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  characterId: Id<"characters">,
+  cardId: string,
+  to: "loadout" | "vault",
+  duringRest: boolean | undefined,
+  recallRiders: readonly string[] = [],
+): Promise<null> {
   const { campaign, character, permission } = await loadCharacter(ctx, user, characterId, "edit", "owner");
   const s = readSheet(character.sheet);
   const refuse = (message: string) => appError("INVALID", message);
@@ -178,6 +187,7 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
   let next: CharacterSheet = { ...s };
   let paid = 0;
   let unshakable: UnshakableRoll | null = null;
+  const used: string[] = [];
   if (to === "vault") {
     if (!inLoadout) return null;
     next.domainCards = { ...s.domainCards, loadout: s.domainCards.loadout.filter((c) => c !== cardId) };
@@ -186,13 +196,20 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
     if (s.domainCards.loadout.length >= 5) throw refuse("Your loadout holds at most 5 cards; vault one first.");
     if ((card?.level ?? 99) > s.level) throw refuse("That card is above your level.");
     next.domainCards = { ...s.domainCards, loadout: [...s.domainCards.loadout, cardId] };
-    const recall = card?.recallCost ?? 0;
+    let recall = card?.recallCost ?? 0;
     const resting =
       duringRest === true &&
       (await ctx.db
         .query("rests")
         .withIndex("by_campaign_status_started", (q) => q.eq("campaignId", campaign._id).eq("status", "open"))
         .first()) !== null;
+    if (!resting && recall > 0) {
+      // Plan lanes, E1 (dcm-bxp.99.19.1): a recall rider lowers the Recall Cost (Perfect Recall, CB p.50).
+      const lowered = recallReductions(next, campaign, recall, recallRiders);
+      next = lowered.sheet;
+      recall = lowered.cost;
+      used.push(...lowered.names);
+    }
     if (!resting && recall > 0) {
       // DA10: Unshakable (CB p.59) rolls a d6 for each Stress of the Recall Cost; a 6 skips that one.
       const marked = markStressOn(next, recall);
@@ -203,8 +220,9 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
   }
   await saveSheet(ctx, character._id, next);
   const forSomeone = permission === "owner" && character.ownerId !== user._id;
-  if (forSomeone || paid > 0) {
-    const what = to === "vault" ? `vaults ${card?.name ?? cardId}` : `recalls ${card?.name ?? cardId}${paid > 0 ? ` (${paid} Stress${unshakable ? `; ${unshakableText(unshakable)}` : ""})` : ""}`;
+  if (forSomeone || paid > 0 || used.length > 0) {
+    const uses = used.length > 0 ? `; ${used.join(", ")}` : "";
+    const what = to === "vault" ? `vaults ${card?.name ?? cardId}` : `recalls ${card?.name ?? cardId}${paid > 0 || used.length > 0 ? ` (${paid} Stress${unshakable ? `; ${unshakableText(unshakable)}` : ""}${uses})` : ""}`;
     await logAction(ctx, {
       campaignId: campaign._id,
       characterId: character._id,
@@ -217,6 +235,65 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
     });
   }
   return null;
+}
+
+/** At most this many recall riders per move. */
+const MAX_RECALL_RIDERS = 5;
+
+/** The Recall Cost a `loadout` `reduceRecallCost` step takes off (its fixed amount, 1 by default). */
+function reductionOf(use: CardUse): number {
+  let n = 0;
+  for (const step of use.steps) {
+    if (step.kind !== "loadout" || step.op !== "reduceRecallCost") continue;
+    n += step.amount === undefined ? 1 : step.amount.kind === "fixed" ? step.amount.value : 1;
+  }
+  return n;
+}
+
+/**
+ * Plan lanes, E1 (dcm-bxp.99.19.1): the `whenYouRecall` uses that lower a recall's cost. Perfect Recall (School of
+ * Knowledge, CB p.50): "Once per rest, when you recall a domain card in your vault, you can reduce its Recall Cost by 1."
+ * An `auto` use always runs; a `rider` use runs when the player took it (`riders`: `<featureId or cardId>` or
+ * `<id>:<useId>`). Each runs through the runner (its limit and costs; one that can't run is skipped, a rider the player
+ * took refuses with INVALID) and takes its `reduceRecallCost` amount off. Never below 0.
+ */
+export function recallReductions(sheet: CharacterSheet, campaign: Pick<Doc<"campaigns">, "frameId" | "options">, cost: number, riders: readonly string[]): { sheet: CharacterSheet; cost: number; names: string[] } {
+  if (riders.length > MAX_RECALL_RIDERS) throw appError("INVALID", "Too many recall riders.");
+  let next = sheet;
+  let left = cost;
+  const names: string[] = [];
+  const takes = (id: string, use: CardUse): "auto" | "rider" | null => {
+    const a = use.activation;
+    if ((a.kind !== "auto" && a.kind !== "rider") || a.trigger.kind !== "whenYouRecall" || reductionOf(use) === 0) return null;
+    if (a.kind === "auto") return "auto";
+    return riders.includes(id) || riders.includes(`${id}:${use.id}`) ? "rider" : null;
+  };
+  const apply = (kind: "auto" | "rider", name: string, result: { ok: true; plan: RunPlan } | { ok: false; detail: string }, use: CardUse) => {
+    if (!result.ok) {
+      if (kind === "rider") throw appError("INVALID", `${name}: ${result.detail}`);
+      return;
+    }
+    next = actorSheetAfter(next, result.plan, "self", name);
+    left = Math.max(0, left - reductionOf(use));
+    names.push(use.name);
+  };
+  for (const id of sheet.domainCards.loadout) {
+    const effect = cardEffect(id);
+    if (effect === undefined) continue;
+    for (const use of effect.uses) {
+      const kind = takes(id, use);
+      if (kind !== null && left > 0) apply(kind, use.name, run(effect, { actor: cardActor("self", next, id, undefined), gmFear: 0, useId: use.id, targets: [], rng: () => 1 }), use);
+    }
+  }
+  for (const held of owned(sheet, { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear })) {
+    const entry = featureEffect(held.featureId);
+    if (entry === undefined) continue;
+    for (const use of entry.uses) {
+      const kind = takes(held.featureId, use);
+      if (kind !== null && left > 0) apply(kind, held.name, runFeature(entry, use.id, { actor: cardActor("self", next, tokenKeyOf(held.featureId), undefined), gmFear: 0, targets: [], rng: () => 1 }), use);
+    }
+  }
+  return { sheet: next, cost: left, names };
 }
 
 // ---------------------------------------------------------------- timing uses at a rest

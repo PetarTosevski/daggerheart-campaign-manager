@@ -40,7 +40,14 @@ import {
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { placeTideToken, rerollSlayerOnes, rollGaveHope, SLAYER_DIE_SIDES, spendSlayerDice, spendTideTokens, WITH_HOPE } from "../../src/lib/domain/session-features/index";
+import { requirementMet } from "../../src/lib/domain/card-effects/availability";
+import { run as runCardUse } from "../../src/lib/domain/card-effects/run";
+import type { CardUse, Mod, RollFilter, RollResult, Step } from "../../src/lib/domain/card-effects/types";
+import { runFeature } from "../../src/lib/domain/feature-effects/run";
+import { owned } from "../../src/lib/domain/feature-effects/owned";
 import { appError } from "../../src/lib/errors/app-error";
+import { cardEffect } from "../../src/lib/srd/card-effects/index";
+import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getWeapon } from "../../src/lib/srd/index";
 import type { TraitId } from "../../src/lib/srd/types";
 import { FRAME_OF, TRAIT_LABEL } from "../../src/lib/frames/extras/common";
@@ -53,8 +60,9 @@ import { logAction } from "./actionLog";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./characterSheet";
 import { rollDie } from "./dice";
 import { featureScope } from "./featureScope";
-import { gainFear } from "./fear";
+import { campaignFearState, gainFear } from "./fear";
 import { applyRule } from "./mechanics";
+import { actorSheetAfter, cardActor, cardIdOfEffect, featureIdOfEffect, tokenKeyOf, type HostRoll } from "./cardRunner";
 import { rollValidator } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
 
@@ -82,6 +90,11 @@ export const dualityFields = {
   slayerDice: v.optional(v.number()),
   /** Know the Tide tokens to spend (action rolls only, CB 77): +1 each. */
   tideTokens: v.optional(v.number()),
+  /**
+   * Plan lanes, E1 (dcm-733): the situations the player marks this roll as (Q13), for a live `advantage` mod with a
+   * `situation` (Patron's Mantle, HF p.14: "advantage on action rolls to intimidate a target").
+   */
+  situations: v.optional(v.array(v.string())),
 };
 
 export const poolValidator = v.array(v.object({ count: v.number(), sides: v.number() }));
@@ -128,6 +141,7 @@ export type DualityArgs = {
   ikonis?: boolean;
   slayerDice?: number;
   tideTokens?: number;
+  situations?: string[];
 };
 type DamageSource = { kind: "weapon"; slot: "primary" | "secondary" } | { kind: "override"; key: string } | { kind: "ikonis" } | { kind: "dice"; dice: { count: number; sides: number }[] };
 type DamageArgs = { source: DamageSource; critical: boolean; modifier: number; options: string[]; slayerDice?: number };
@@ -163,9 +177,197 @@ async function loadIkonis(ctx: QueryCtx, campaign: Doc<"campaigns">, character: 
   return weapon;
 }
 
+// ---------------------------------------------------------------- live card-effect mods (plan lanes, E1)
+
+/** A card-effect mod live on a sheet now, with the sheet effect that carries it (none for a passive use). */
+export type LiveMod = { mod: Mod; effectId?: string; endsOnAttack?: boolean };
+
+/** Every step of a list, nested ones included. */
+function nestedSteps(steps: readonly Step[]): Step[] {
+  return steps.flatMap((s) => [
+    s,
+    ...(s.kind === "optional" || s.kind === "followUp" ? nestedSteps(s.steps) : []),
+    ...(s.kind === "choose" ? s.options.flatMap((o) => nestedSteps(o.steps)) : []),
+    ...(s.kind === "save" ? [...nestedSteps(s.onFail), ...nestedSteps(s.onSuccess)] : []),
+    ...(s.kind === "check" ? [...nestedSteps(s.then), ...nestedSteps(s.otherwise)] : []),
+  ]);
+}
+
+/** The requirement state of a sheet for a passive use's conditions (situations are the player's: none confirmed). */
+function passiveState(sheet: CharacterSheet) {
+  const actor = cardActor("self", sheet, "", undefined);
+  return { hp: sheet.hp, hpMax: sheet.hpMax, stress: sheet.stress, stressMax: sheet.stressMax, armor: sheet.armorMarked, hope: sheet.hope, armorWorn: actor.armorWorn, loadoutDomains: actor.loadoutDomains, activeCardEffects: actor.activeCardEffects, situations: [] };
+}
+
+/**
+ * Plan lanes, E1: the card-effect mods live on a sheet that the stored sheet effect can't hold (it keeps Evasion, attack,
+ * damage and one trait): the `passive` uses of the loadout's cards and of the features held whose conditions hold, and
+ * the `effect` steps behind the sheet's effects (found by the effect's owner and its label). Versatile Fighter's
+ * `weaponTrait` (dcm-5dg), Parallela's `extraTargets` (dcm-y3e), Patron's Mantle's situational `advantage` (dcm-733).
+ */
+export function liveMods(sheet: CharacterSheet, scope: Pick<FeatureScope, "hopeAndFear">): LiveMod[] {
+  const out: LiveMod[] = [];
+  const state = passiveState(sheet);
+  const passives = (uses: readonly CardUse[]) => {
+    for (const use of uses) {
+      if (use.activation.kind !== "passive" || use.mods === undefined) continue;
+      if (!(use.requires ?? []).every((r) => r.kind !== "situation" && requirementMet(r, state))) continue;
+      for (const mod of use.mods) out.push({ mod });
+    }
+  };
+  for (const cardId of sheet.domainCards.loadout) passives(cardEffect(cardId)?.uses ?? []);
+  for (const held of owned(sheet, { hopeAndFear: scope.hopeAndFear })) passives(featureEffect(held.featureId)?.uses ?? []);
+  for (const effect of sheet.effects ?? []) {
+    const cardId = cardIdOfEffect(effect);
+    const featureId = cardId === null ? featureIdOfEffect(effect) : null;
+    const uses = cardId !== null ? (cardEffect(cardId)?.uses ?? []) : featureId !== null ? (featureEffect(featureId)?.uses ?? []) : [];
+    const label = effect.text.split("; ")[0];
+    for (const use of uses) {
+      for (const step of nestedSteps(use.steps)) {
+        if (step.kind !== "effect" || step.label !== label) continue;
+        const endsOnAttack = (step.endsOn ?? []).includes("bearerAttacks");
+        for (const mod of step.mods) out.push({ mod, effectId: effect.id, ...(endsOnAttack ? { endsOnAttack } : {}) });
+      }
+    }
+  }
+  return out;
+}
+
+/** Whether a roll filter covers a plain Duality roll (its kind, trait and whether it is an attack). */
+export function filterCoversRoll(on: RollFilter, roll: { kind: "action" | "reaction"; trait: TraitId; attack: boolean }): boolean {
+  switch (on) {
+    case "any":
+      return true;
+    case "action":
+      return roll.kind === "action";
+    case "reaction":
+      return roll.kind === "reaction";
+    case "attack":
+    case "weaponAttack":
+      return roll.attack;
+    case "spellcast":
+    case "damage":
+      return false;
+    default:
+      return roll.trait === on;
+  }
+}
+
+const MAX_SITUATIONS = 10;
+
+/**
+ * Plan lanes, E1: a roll trigger's `result` and `duality` filters on a finished roll. A critical is a success with Hope
+ * (CB p.90). `successWithHope` (Favor, HF p.14; Ethereal Visage, CB p.45; dcm-a9n, dcm-nhr), `successWithFear`
+ * (Dread-Touched, HF p.181; dcm-1o3); `duality` narrows any result to a roll with Hope / Fear (Courage, CB p.48: "When you
+ * fail a roll with Fear"; dcm-5z3).
+ */
+export function rollResultHolds(result: RollResult | undefined, duality: "hope" | "fear" | undefined, roll: HostRoll): boolean {
+  if (duality === "hope" && !roll.withHope) return false;
+  if (duality === "fear" && !roll.withFear) return false;
+  switch (result) {
+    case undefined:
+    case "any":
+      return true;
+    case "success":
+      return roll.success;
+    case "failure":
+      return !roll.success;
+    case "critical":
+      return roll.critical;
+    case "successWithHope":
+      return roll.success && roll.withHope;
+    case "successWithFear":
+      return roll.success && roll.withFear;
+    case "withHope":
+      return roll.withHope;
+    case "withFear":
+      return roll.withFear;
+  }
+}
+
+/** A Duality roll record as a trigger reads it. */
+export function hostRollOfRecord(roll: RollRecord): HostRoll {
+  const critical = roll.outcome === "critical";
+  return { success: critical || roll.outcome === "successHope" || roll.outcome === "successFear", critical, withHope: critical || roll.outcome === "successHope" || roll.outcome === "failHope", withFear: roll.outcome === "successFear" || roll.outcome === "failFear" };
+}
+
+/** Whether a use only touches its actor (no targets, every step on `self`): it can run off the map. */
+function selfOnly(use: CardUse): boolean {
+  if (use.targets !== undefined && use.targets.side !== "self") return false;
+  return nestedSteps(use.steps).every((st) => !("to" in st) || st.to === "self");
+}
+
+/**
+ * Plan lanes, E1: the automatic `afterYouRoll` uses a plain Duality roll sets off (dcm-5z3 Courage, CB p.48: "When you fail
+ * a roll with Fear, you gain a Hope"): the loadout cards' and the held features' `auto` uses whose roll filter covers the
+ * roll and whose result holds, that touch only the actor (a target filter, `fromUse` or `cardDomain` never holds on a plain
+ * roll). Success and failure need the Difficulty: without one only the Hope / Fear and critical filters can hold. A use
+ * that can't run (its limit, a condition, a situation the player has not confirmed) is skipped quietly.
+ */
+export function plainRollAutos(sheet: CharacterSheet, args: Pick<DualityArgs, "kind" | "trait" | "attack">, roll: RollRecord, scope: Pick<FeatureScope, "hopeAndFear">, gmFear: number, rng: Rng): { sheet: CharacterSheet; names: string[]; gmFearDelta: number } {
+  const host = hostRollOfRecord(roll);
+  let next = sheet;
+  const names: string[] = [];
+  let gmFearDelta = 0;
+  const fires = (use: CardUse): boolean => {
+    if (use.activation.kind !== "auto" || use.activation.trigger.kind !== "afterYouRoll") return false;
+    const t = use.activation.trigger;
+    if (t.roll === "damage" || !filterCoversRoll(t.roll, args)) return false;
+    if (t.against !== undefined || t.fromUse !== undefined || t.cardDomain !== undefined) return false;
+    if ((t.result === "success" || t.result === "failure" || t.result === "successWithHope" || t.result === "successWithFear") && roll.difficulty === undefined) return false;
+    return rollResultHolds(t.result, t.duality, host) && selfOnly(use);
+  };
+  for (const cardId of sheet.domainCards.loadout) {
+    const effect = cardEffect(cardId);
+    if (effect === undefined) continue;
+    for (const use of effect.uses) {
+      if (!fires(use)) continue;
+      const result = runCardUse(effect, { actor: cardActor("self", next, cardId, undefined), gmFear, useId: use.id, targets: [], rng });
+      if (!result.ok) continue;
+      next = actorSheetAfter(next, result.plan, "self", use.name, { rng });
+      gmFearDelta += result.plan.gmFearDelta;
+      names.push(use.name);
+    }
+  }
+  for (const held of owned(sheet, { hopeAndFear: scope.hopeAndFear })) {
+    const entry = featureEffect(held.featureId);
+    if (entry === undefined) continue;
+    for (const use of entry.uses) {
+      if (!fires(use)) continue;
+      const result = runFeature(entry, use.id, { actor: cardActor("self", next, tokenKeyOf(held.featureId), undefined), gmFear, targets: [], rng });
+      if (!result.ok) continue;
+      next = actorSheetAfter(next, result.plan, "self", held.name, { rng });
+      gmFearDelta += result.plan.gmFearDelta;
+      names.push(use.name);
+    }
+  }
+  return { sheet: next, names, gmFearDelta };
+}
+
+/**
+ * Plan lanes, E1 (dcm-733, Q13): one advantage die per live `advantage` mod with a `situation` the player marked this roll
+ * as, when its roll filter covers the roll (Patron's Mantle, HF p.14: "advantage on action rolls to intimidate a target").
+ * A mod without a situation is not counted here (the passive features already reach the roll another way).
+ */
+export function situationalAdvantage(sheet: CharacterSheet, args: Pick<DualityArgs, "kind" | "trait" | "attack" | "situations">, scope: Pick<FeatureScope, "hopeAndFear">): { advantage: number; labels: string[] } {
+  const marked = args.situations ?? [];
+  if (marked.length > MAX_SITUATIONS) throw new DiceRuleError("Too many situations.");
+  if (marked.length === 0) return { advantage: 0, labels: [] };
+  let advantage = 0;
+  const labels: string[] = [];
+  for (const { mod } of liveMods(sheet, scope)) {
+    if (mod.kind !== "advantage" || mod.situation === undefined || !marked.includes(mod.situation)) continue;
+    if (!filterCoversRoll(mod.on, args)) continue;
+    advantage += 1;
+    labels.push(`advantage: ${mod.situation}`);
+  }
+  return { advantage, labels };
+}
+
 /** Pays a Duality roll's costs (Experiences, roll options) and builds the resolver's input. */
 export function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DualityInput; extras: string[] } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
+  const situational = situationalAdvantage(sheet, args, scope);
   assertTypedModifier(args.modifier);
   // DA19 (B1, dcm-bxp.99.19.19): the passive features' trait bonuses (a Beastform's statistics, CB p.30) on top of effects.
   const live = withPassiveTraits(withEffects(sheet), scope);
@@ -180,14 +382,14 @@ export function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: 
       trait: live.traits[ikonis?.trait ?? args.trait],
       modifier: args.modifier + exp.value + opts.modifier + spent.tide + (attack ? live.attackBonus : 0) + (ikonis?.attack ?? 0),
       ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}),
-      advantage: args.advantage + opts.advantage + (ikonis?.advantage ? 1 : 0),
+      advantage: args.advantage + opts.advantage + (ikonis?.advantage ? 1 : 0) + situational.advantage,
       disadvantage: args.disadvantage,
       help: args.help,
       extraDice: [...opts.extraDice, ...opts.namedDice],
       // Slayer Dice come last, already rolled by the server rng (a manual roll types in only its own dice).
       fixedDice: [...opts.fixedDice, ...spent.slayer],
     },
-    extras: [...(ikonis ? [ikonis.label, ...ikonis.augments] : []), ...exp.names, ...opts.labels, ...spent.labels],
+    extras: [...(ikonis ? [ikonis.label, ...ikonis.augments] : []), ...exp.names, ...opts.labels, ...spent.labels, ...situational.labels],
   };
 }
 
@@ -286,8 +488,14 @@ export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: Dualit
 /** Rolls (or reads typed-in dice), applies Hope, Stress and Fear, saves and logs. */
 export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
-  const { scope, paid, next, extras, trait, rolled, roll, effects } = await resolveDuality(ctx, loaded, args, rng, manual);
-  const { gained } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
+  const resolved = await resolveDuality(ctx, loaded, args, rng, manual);
+  const { scope, paid, trait, rolled, roll, effects } = resolved;
+  // Plan lanes, E1: the automatic uses the roll sets off (Courage), with the server's dice, in the same row (undo reverts them).
+  const autos = plainRollAutos(resolved.next, args, roll, scope, (await campaignFearState(ctx, campaign._id)).fear, rollDie);
+  const next = autos.sheet;
+  const extras = [...resolved.extras, ...autos.names];
+  const { gained: rolledFear } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
+  const gained = rolledFear + (autos.gmFearDelta > 0 ? (await gainFear(ctx, campaign._id, autos.gmFearDelta)).gained : 0);
   const sheetChanged = changed(sheet, next);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
   const entryId = await logAction(ctx, {

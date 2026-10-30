@@ -29,8 +29,8 @@ import { ConvexError, v, type Infer } from "convex/values";
 
 import { featureUseKey, keyAvailability, requirementMet, stateCheckMet } from "../../src/lib/domain/card-effects/availability";
 import { rollMatches, type PlanStep, type RunPlan } from "../../src/lib/domain/card-effects/run";
-import type { CardUse, DamageType, Range, RollFilter, RollSpec, Step, TargetSpec, Trigger } from "../../src/lib/domain/card-effects/types";
-import { lineOfSight, rangeCheck, rangeFromWeapon, resolveHits, applyDamageTo, type Combatant, type DamageResult, type RangeCheck, type SightResult } from "../../src/lib/domain/combat-actions/index";
+import type { CardUse, CreatureKey, DamageType, Range, RollFilter, RollResult, RollSpec, Step, TargetSpec, Trigger } from "../../src/lib/domain/card-effects/types";
+import { lineOfSight, RANGE_ORDER, rangeCheck, rangeFromWeapon, resolveHits, applyDamageTo, type Combatant, type DamageResult, type RangeCheck, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import { afterDualityRoll, rollOptions } from "../../src/lib/domain/class-features/hooks";
@@ -51,7 +51,7 @@ import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
-import type { AdversaryDef, TraitId, Weapon } from "../../src/lib/srd/types";
+import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -71,7 +71,7 @@ import { closeRequest, openAfterRoll, openMinionOffer, openRiderPick } from "./c
 import { bandsOnMap, partyMembers } from "./adversaryHits";
 import { openIncomingHit } from "./incomingHits";
 import { readSheet } from "./characterSheet";
-import { changed, resolveDamage, resolveDuality, type DualityArgs, type Loaded } from "./rolls";
+import { changed, liveMods, resolveDamage, resolveDuality, rollResultHolds, type DualityArgs, type LiveMod, type Loaded } from "./rolls";
 import type { AdversaryBefore } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
 import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, sanctionRollOptionsValidator, type AfterRollChange, type AfterRollChoice, type Rider, type RiderPickChoice } from "./validators/combatRequests";
@@ -265,7 +265,8 @@ export const WEAPON_ATTACK_TARGETS = 1;
  * (a stored sanction holds `targetTokenIds`); several targets would have to share one encounter.
  */
 export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon, tokenIds: readonly Id<"combatTokens">[]): Promise<CheckedTarget[]> {
-  if (tokenIds.length === 0 || tokenIds.length > Math.min(MAX_TARGETS, WEAPON_ATTACK_TARGETS) || new Set(tokenIds).size !== tokenIds.length) throw appError("COMBAT_TARGET_INVALID");
+  const most = Math.min(MAX_TARGETS, WEAPON_ATTACK_TARGETS + (await extraAttackTargets(ctx, campaign, s)));
+  if (tokenIds.length === 0 || tokenIds.length > most || new Set(tokenIds).size !== tokenIds.length) throw appError("COMBAT_TARGET_INVALID");
   const range = rangeFromWeapon(weapon.range);
   const checked: CheckedTarget[] = [];
   for (const id of tokenIds) {
@@ -283,6 +284,42 @@ export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s:
   return checked;
 }
 
+/**
+ * Plan lanes, E1 (dcm-y3e): the extra targets a weapon attack may take from the attacker's live `extraTargets` mods
+ * (Parallela, CB p.332: "The next time the target makes an attack, they can hit an additional target within range that
+ * their attack roll would succeed against"): each target is checked as the first, and the one roll hits those it beats.
+ */
+export function extraTargetsOf(mods: readonly LiveMod[]): number {
+  let n = 0;
+  for (const { mod } of mods) {
+    if (mod.kind !== "extraTargets" || !(mod.on === "attack" || mod.on === "weaponAttack" || mod.on === "any")) continue;
+    n += mod.count.kind === "fixed" ? mod.count.value : 1;
+  }
+  return Math.max(0, Math.min(n, MAX_TARGETS - WEAPON_ATTACK_TARGETS));
+}
+
+/** The attacker's extra weapon-attack targets (their sheet's live mods); 0 for a token that is not a PC of the campaign. */
+async function extraAttackTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene): Promise<number> {
+  if (s.attacker.ref.kind !== "pc") return 0;
+  const character = await ctx.db.get("characters", s.attacker.ref.characterId);
+  if (character === null || character.campaignId !== campaign._id) return 0;
+  return extraTargetsOf(liveMods(readSheet(character.sheet), featureScope(campaign)));
+}
+
+/**
+ * Plan lanes, E1 (dcm-5dg): the trait a live `weaponTrait` mod makes a weapon attack roll with (Versatile Fighter, CB
+ * p.330: "You can use a different character trait for an equipped weapon, rather than the trait the weapon calls for"): a
+ * fixed trait, or the player's pick (`chosen`) for a mod with a `choice`; undefined when no mod covers the slot (or the
+ * player picked none: the weapon's own trait).
+ */
+export function weaponTraitFor(mods: readonly LiveMod[], slot: WeaponSlot, chosen: TraitId | undefined): TraitId | undefined {
+  for (const { mod } of mods) {
+    if (mod.kind !== "weaponTrait" || (mod.weapon !== "either" && mod.weapon !== slot)) continue;
+    return mod.choice !== undefined ? chosen : mod.trait;
+  }
+  return undefined;
+}
+
 /** The weapon in the slot, or DICE_RULE (as `damageRoll`) when none is equipped. */
 export function equippedWeapon(sheet: CharacterSheet, slot: WeaponSlot): Weapon {
   const weapon = weaponIn(sheet, slot);
@@ -290,9 +327,12 @@ export function equippedWeapon(sheet: CharacterSheet, slot: WeaponSlot): Weapon 
   return weapon;
 }
 
-/** The Duality arguments of a weapon attack (the weapon's trait unless it is the wielder's choice). */
-export function attackDuality(weapon: Weapon, roll: AttackRoll, cover: boolean): DualityArgs {
-  const trait = weapon.trait === "choice" ? roll.trait : weapon.trait;
+/**
+ * The Duality arguments of a weapon attack (the weapon's trait unless it is the wielder's choice). Plan lanes, E1:
+ * `traitOverride`, a `weaponTrait` mod's trait (Versatile Fighter, dcm-5dg).
+ */
+export function attackDuality(weapon: Weapon, roll: AttackRoll, cover: boolean, traitOverride?: TraitId): DualityArgs {
+  const trait = traitOverride ?? (weapon.trait === "choice" ? roll.trait : weapon.trait);
   if (trait === undefined) throw appError("DICE_RULE", "Pick the trait this weapon attacks with.");
   return {
     kind: "action",
@@ -399,8 +439,24 @@ export type AttackRequest = {
 
 // ---------------------------------------------------------------- riders (plan sheet-drawer SD5)
 
-/** What a rider rides on: the attack's roll spec (for `rollMatches`), its trait, the weapon and the weapon's range. */
-export type Host = { spec: RollSpec; trait: TraitId | undefined; weapon: boolean; weaponRange: Range | null; damageType: DamageType };
+/**
+ * What a rider rides on: the attack's roll spec (for `rollMatches`), its trait, the weapon and the weapon's range.
+ * Plan lanes, E1: `slot` (the weapon slot of a weapon attack: `weaponSlot` filters, Ignition, dcm-ab5), `fromUse` (the card
+ * or feature use the roll belongs to: `fromUse` filters, Feed on Fangs, dcm-bn1), `cardDomain` (the domain of the card
+ * cast: Fane of the Wilds, dcm-z1a), `damage` (whether the move makes a damage roll: Twilight Toll's "doesn't result in
+ * making a damage roll", dcm-94h).
+ */
+export type Host = {
+  spec: RollSpec;
+  trait: TraitId | undefined;
+  weapon: boolean;
+  weaponRange: Range | null;
+  damageType: DamageType;
+  slot?: WeaponSlot;
+  fromUse?: { id: string; useId: string };
+  cardDomain?: DomainId;
+  damage?: boolean;
+};
 
 export function hostOf(weapon: Weapon, slot: WeaponSlot, trait: TraitId | undefined): Host {
   return {
@@ -409,7 +465,36 @@ export function hostOf(weapon: Weapon, slot: WeaponSlot, trait: TraitId | undefi
     weapon: true,
     weaponRange: rangeFromWeapon(weapon.range),
     damageType: damageTypeOf(weapon),
+    slot,
+    damage: true,
   };
+}
+
+/**
+ * Plan lanes, E1 (dcm-gvr, dcm-bn1): whether a roll spec is a weapon attack: an `attack` roll, or a trait roll whose
+ * feature is its own weapon (`asWeapon`: Elemental Breath, CB p.54 "treating it as an Instinct weapon"; Long Tongue, CB p.69).
+ */
+export function isWeaponRoll(spec: RollSpec): boolean {
+  return spec.kind === "attack" || (spec.kind === "trait" && spec.asWeapon === true);
+}
+
+/** Plan lanes, E1: `rollMatches` with a feature that is its own weapon counting as a weapon attack and an attack (dcm-gvr). */
+export function hostMatches(filter: RollFilter, host: Pick<Host, "spec" | "trait">): boolean {
+  if (filter === "damage") return false;
+  if ((filter === "attack" || filter === "weaponAttack") && isWeaponRoll(host.spec)) return true;
+  return rollMatches(filter, host.spec) || (host.trait !== undefined && filter === host.trait);
+}
+
+/** Plan lanes, E1 (dcm-bn1, dcm-13s): a trigger's `fromUse` (`<id>` or `<id>:<useId>`) against the host's use. */
+export function fromUseHolds(filter: string | undefined, host: Pick<Host, "fromUse">): boolean {
+  if (filter === undefined) return true;
+  const from = host.fromUse;
+  return from !== undefined && (filter === from.id || filter === `${from.id}:${from.useId}`);
+}
+
+/** Whether `range` is at most `max` along the Defined Ranges (CB p.103: Melee, Very Close, Close, Far, Very Far). */
+function rangeAtMost(range: Range | null, max: Range): boolean {
+  return range !== null && RANGE_ORDER.indexOf(range) <= RANGE_ORDER.indexOf(max);
 }
 
 /** When a rider runs: before the roll, after it (on its result), or after the damage is marked. */
@@ -426,51 +511,119 @@ function changesRoll(steps: readonly Step[]): boolean {
  * `whenYouAttack` and `afterYouRoll` without a roll change on the result (Hold Them Off, Kick, Diminish My Foes);
  * `whenYouDealDamage` (Marked for Death's extra damage); `whenTargetMarksHp` and `whenEnemyTakesDamage` by you after the
  * damage (Death Strike, Ruthless Predator's Severe Stress).
+ *
+ * Plan lanes, E1: the filters V widened hold here: `weaponSlot` (Ignition, HF p.22, dcm-ab5) and `weaponRange` (at most
+ * that range: Surrounded, HF p.10) on `beforeYouRoll`; `weaponSlot` on `whenYouAttack`; `fromUse` on every roll trigger
+ * (Feed on a Fangs attack, HF p.39, dcm-bn1); `cardDomain` on `afterYouRoll` (Fane of the Wilds, CB p.339, dcm-z1a). A
+ * `whenYouAttack` needs an attack roll (a plain trait roll is not one, dcm-bn1), and a feature that is its own weapon
+ * (`asWeapon`) counts as a weapon (dcm-gvr).
  */
 export function riderPhase(trigger: Trigger, host: Host, use: CardUse): RiderPhase | null {
-  const matches = (filter: RollFilter) => rollMatches(filter, host.spec) || (host.trait !== undefined && filter === host.trait);
+  const matches = (filter: RollFilter) => hostMatches(filter, host);
   switch (trigger.kind) {
     case "beforeYouRoll":
+      if (!fromUseHolds(trigger.fromUse, host)) return null;
+      if (trigger.weaponSlot !== undefined && host.slot !== trigger.weaponSlot) return null;
+      if (trigger.weaponRange !== undefined && !rangeAtMost(host.weaponRange, trigger.weaponRange)) return null;
       return trigger.roll === "damage" || matches(trigger.roll) ? "before" : null;
     case "whenYouAttack":
+      if (!matches("attack")) return null;
+      if (!fromUseHolds(trigger.fromUse, host)) return null;
       if (trigger.weapon === true && !host.weapon) return null;
+      if (trigger.weaponSlot !== undefined && host.slot !== trigger.weaponSlot) return null;
       if (trigger.weaponRange !== undefined && host.weaponRange !== trigger.weaponRange) return null;
       return "after";
     case "afterYouRoll":
+      if (!fromUseHolds(trigger.fromUse, host)) return null;
+      if (trigger.cardDomain !== undefined && host.cardDomain !== trigger.cardDomain) return null;
       return trigger.roll !== "damage" && matches(trigger.roll) && !changesRoll(use.steps) ? "after" : null;
+    case "afterAllyRolls":
+      // Plan lanes, E1: "you or an ally" (`includeSelf`): the actor's own roll (Eclipse, CB p.337, dcm-0gi).
+      if (trigger.includeSelf !== true) return null;
+      return matches(trigger.roll ?? "action") && !changesRoll(use.steps) ? "after" : null;
     case "whenYouDealDamage":
-      return "after";
+      return fromUseHolds(trigger.fromUse, host) ? "after" : null;
     case "whenTargetMarksHp":
-      return "damage";
+      return fromUseHolds(trigger.fromUse, host) ? "damage" : null;
     case "whenEnemyTakesDamage":
       return trigger.byYou === true ? "damage" : null;
+    case "gmWouldGainFear":
+      // Plan lanes, E1 (dcm-1o3): the Fear the actor's own roll would give (Dread-Touched, HF p.181: "When you succeed with
+      // Fear, you can mark 2 Stress to prevent the GM from gaining a Fear"); its `negate` step stops that gain.
+      return trigger.byYou === true ? "after" : null;
     default:
       return null;
   }
 }
 
-/** Whether the trigger's result filter holds for the attack's roll (a critical is a success with Hope, CB p.90). */
-export function resultHolds(trigger: Trigger, roll: HostRoll): boolean {
-  const result = trigger.kind === "whenYouAttack" || trigger.kind === "afterYouRoll" || trigger.kind === "afterAllyRolls" ? trigger.result : undefined;
-  switch (result) {
-    case undefined:
-    case "any":
-      return true;
-    case "success":
-      return roll.success;
-    case "failure":
-      return !roll.success;
-    case "critical":
-      return roll.critical;
-    case "successWithHope":
-      return roll.success && roll.withHope;
-    case "successWithFear":
-      return roll.success && roll.withFear;
-    case "withHope":
-      return roll.withHope;
-    case "withFear":
-      return roll.withFear;
+/** The result and Hope / Fear filters of a roll trigger (`whenYouAttack`, `afterYouRoll`, `afterAllyRolls`, `gmWouldGainFear`). */
+function rollFilters(trigger: Trigger): { result: RollResult | undefined; duality: "hope" | "fear" | undefined } {
+  switch (trigger.kind) {
+    case "whenYouAttack":
+      return { result: trigger.result, duality: undefined };
+    case "afterYouRoll":
+    case "afterAllyRolls":
+      return { result: trigger.result, duality: trigger.duality };
+    case "gmWouldGainFear":
+      return { result: trigger.result, duality: undefined };
+    default:
+      return { result: undefined, duality: undefined };
   }
+}
+
+/**
+ * Whether the trigger's result filter holds for the attack's roll (a critical is a success with Hope, CB p.90).
+ * Plan lanes, E1: `duality` narrows it to a roll with Hope / with Fear (Courage, CB p.48: "When you fail a roll with Fear":
+ * `failure` + `fear`, dcm-5z3); `successWithHope` (Favor, HF p.14; Ethereal Visage, CB p.45; dcm-a9n, dcm-nhr) and
+ * `successWithFear` (Dread-Touched, HF p.181; dcm-1o3) hold on every roll trigger.
+ */
+export function resultHolds(trigger: Trigger, roll: HostRoll): boolean {
+  const { result, duality } = rollFilters(trigger);
+  return rollResultHolds(result, duality, roll);
+}
+
+/** A creature a roll was against, as `RollTarget` filters read it. */
+export type RollSubject = { token: Doc<"combatTokens">; enemy: boolean; tags: readonly string[]; conditions: readonly string[] };
+
+/** Whether a creature is the one a `CreatureKey` names (tagged / Hexed); undefined for the keys the player confirms. */
+function creatureKeyHolds(key: CreatureKey, subject: RollSubject): boolean | undefined {
+  switch (key.kind) {
+    case "tagged":
+      return subject.tags.includes(key.tag) || subject.conditions.includes(key.tag);
+    case "hexed":
+      return subject.tags.includes("Hexed") || subject.conditions.includes("Hexed");
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Plan lanes, E1: the target filters of a roll trigger, read from the map (dcm-94h, dcm-0gi, dcm-g6t). `against.enemy` (the
+ * roll was against an adversary), `against.within` (that creature within the range of `from`), `against.creature` (the
+ * tagged / Hexed one: Twilight Toll's mark, CB p.337); `noDamageRoll` (the move made no damage roll: Twilight Toll). A filter
+ * the server can't read (`inArea` of a live area, the other creature keys) is the player's to confirm and holds here
+ * (Q13). With no target an `against` filter fails.
+ */
+export function rollTargetHolds(trigger: Trigger, host: Pick<Host, "damage">, from: Doc<"combatTokens"> | undefined, subject: RollSubject | undefined): boolean {
+  if (trigger.kind !== "afterYouRoll" && trigger.kind !== "afterAllyRolls") return true;
+  if (trigger.kind === "afterYouRoll" && trigger.noDamageRoll === true && host.damage === true) return false;
+  const against = trigger.against;
+  if (against === undefined) return true;
+  if (subject === undefined) return false;
+  if (against.enemy === true && !subject.enemy) return false;
+  if (against.within !== undefined && (from === undefined || !rangeCheck(from, subject.token, against.within).inRange)) return false;
+  if (against.creature !== undefined && creatureKeyHolds(against.creature, subject) === false) return false;
+  return true;
+}
+
+/** An attack target as a `RollSubject`. */
+export function subjectOf(target: CheckedTarget): RollSubject {
+  return { token: target.token, enemy: target.token.side === "enemy", tags: target.instance.tags, conditions: target.instance.conditions };
+}
+
+/** Whether a trigger is about the roll itself, so it holds without a target hit (`afterYouRoll`, `afterAllyRolls`). */
+export function rollOnly(trigger: Trigger): boolean {
+  return trigger.kind === "afterYouRoll" || trigger.kind === "afterAllyRolls" || trigger.kind === "gmWouldGainFear";
 }
 
 /** A rider ready to run: the card or feature, its use, its trigger and phase, the player's choices. */
@@ -553,9 +706,20 @@ export function pickRiders(sheet: CharacterSheet, campaign: Doc<"campaigns">, ho
   return out;
 }
 
-/** The automatic uses that ride on this attack: First Strike, Face Your Fear, Pummeljoy, Marked for Death's damage... */
+/**
+ * The automatic uses that ride on this attack: First Strike, Face Your Fear, Pummeljoy, Marked for Death's damage...
+ * Plan lanes, E1: a loadout card's automatic use too (Eclipse's "succeeds with Hope", CB p.337; Fane of the Wilds' token
+ * on a critical Spellcast Roll for a Sage spell, CB p.339, dcm-z1a); it is skipped quietly when it can't run.
+ */
 export function autoRiders(sheet: CharacterSheet, campaign: Doc<"campaigns">, host: Host): PickedRider[] {
   const out: PickedRider[] = [];
+  for (const cardId of sheet.domainCards.loadout) {
+    const effect = cardEffect(cardId);
+    if (effect === undefined || cardUsage(cardId) === "outOfCombat") continue;
+    for (const { use, trigger, phase } of riderUses(effect.uses, host, ["auto"])) {
+      out.push({ source: "card", id: cardId, useId: use.id, name: use.name, trigger, phase, choices: [], auto: true });
+    }
+  }
   for (const { feature, entry } of heldEntries(sheet, campaign)) {
     if (AUTO_ELSEWHERE.has(feature.featureId)) continue;
     for (const { use, trigger, phase } of riderUses(entry.uses, host, ["auto"])) {
@@ -643,7 +807,12 @@ const RESULT_WORDS: Record<string, string> = {
 function whenText(trigger: Trigger, phase: RiderPhase): string {
   if (phase === "before") return trigger.kind === "beforeYouRoll" && trigger.roll === "damage" ? "On the damage roll" : "Before the roll";
   if (phase === "damage") return trigger.kind === "whenTargetMarksHp" && trigger.severity === "severe" ? "On Severe damage" : "When the target marks Hit Points";
-  if (trigger.kind === "whenYouAttack" || trigger.kind === "afterYouRoll") return RESULT_WORDS[trigger.result ?? "any"] ?? "After the roll";
+  if (trigger.kind === "whenYouAttack" || trigger.kind === "gmWouldGainFear") return RESULT_WORDS[trigger.result ?? "any"] ?? "After the roll";
+  if (trigger.kind === "afterYouRoll") {
+    const words = RESULT_WORDS[trigger.result ?? "any"] ?? "After the roll";
+    // Plan lanes, E1 (Courage, CB p.48: "When you fail a roll with Fear"; dcm-5z3).
+    return trigger.duality === undefined ? words : `${words} with ${trigger.duality === "hope" ? "Hope" : "Fear"}`;
+  }
   return "When you deal damage";
 }
 
@@ -835,6 +1004,13 @@ export type Folds = {
   multiply: number;
   /** DA2: the Hope Die's sides for this roll ("roll a d20 as your Hope Die", Rise to the Challenge, CB p.48). */
   hopeDie?: number;
+  /**
+   * Plan lanes, E1 (dcm-3ou, dcm-jog): bonuses to one duality die's result (Ill Omen, HF p.95: "their Fear Die gains a
+   * bonus equal to the amount of Fear you have"; Backhanded Guidance, HF p.87: "add 1d6 to the result of their Fear Die").
+   */
+  dieBonus: { die: "hope" | "fear"; amount: number }[];
+  /** Plan lanes, E1 (dcm-1o3): the GM gains no Fear from this roll (Dread-Touched's `negate` on `gmWouldGainFear`). */
+  preventFear?: boolean;
   minimumSeverity?: "minor" | "major" | "severe";
   /** "mark an additional Hit Point" after the thresholds (Thrive in Chaos, NV4). */
   extraHp: number;
@@ -845,7 +1021,7 @@ export type Folds = {
 };
 
 export function emptyFolds(): Folds {
-  return { modifier: 0, advantage: 0, damageAdd: 0, addTypes: [], proficiency: 0, multiply: 1, extraHp: 0, addTargets: [], unsupported: [] };
+  return { modifier: 0, advantage: 0, damageAdd: 0, addTypes: [], proficiency: 0, multiply: 1, extraHp: 0, addTargets: [], unsupported: [], dieBonus: [] };
 }
 
 /** Folds a rider plan's `fold` steps into the attack. */
@@ -870,11 +1046,14 @@ export function foldInto(folds: Folds, run: RiderRun): void {
       if (ch.kind === "add") folds.modifier += amount;
       else if (ch.kind === "advantage") folds.advantage += 1;
       else if (ch.kind === "hopeDie") folds.hopeDie = ch.sides;
+      else if (ch.kind === "dieBonus" && ch.die !== "hopeOrFear") folds.dieBonus.push({ die: ch.die, amount });
       else folds.unsupported.push(`${run.name}: ${ch.kind}`);
     } else if (step.kind === "addTargets") {
       folds.addTargets.push({ rider: run.rider, count: amount, spec: step.targets, damage: step.damage ?? "same" });
     } else if (step.kind === "adjustHpMarked") {
       folds.extraHp += (step.change === "more" ? 1 : -1) * amount;
+    } else if (step.kind === "negate" && run.rider.trigger.kind === "gmWouldGainFear") {
+      folds.preventFear = true;
     }
   }
 }
@@ -983,6 +1162,73 @@ async function addedTargets(
   return { adversaries, pcs };
 }
 
+// ---- allies' automatic uses on the roll (plan lanes, E1)
+
+/** An ally's automatic use that ran on the attacker's roll, to write in the attack's group. */
+export type AllyRun = { character: Doc<"characters">; before: CharacterSheet; run: RiderRun };
+
+/**
+ * Plan lanes, E1 (dcm-0gi, dcm-g6t, dcm-3ft): the other PCs' automatic `afterAllyRolls` uses this roll sets off: Eclipse
+ * (CB p.337: "when you or an ally succeeds with Hope against an adversary within this shadow, the target must mark a
+ * Stress"). Each PC on the map other than the roller, within the trigger's `range` of the roller (any range without
+ * one), whose loadout card or held feature has an `auto` use with that trigger whose roll filter (default `action`; `any`
+ * covers every roll), result, Hope / Fear and target filters hold. It runs as that PC's use (their sheet, limits and
+ * costs; `triggerSubject` = the roller) against the targets the roll hit. One that can't run is skipped. A `reaction`
+ * (Adjust Reality, Tactician, Forest Sprites) asks another player and is not run here (follow-up).
+ */
+export async function allyAutoRuns(ctx: MutationCtx, campaign: Doc<"campaigns">, s: AttackScene, roller: Id<"characters">, host: Host, roll: HostRoll, subject: RollSubject | undefined, hitIds: readonly string[], rng: Rng): Promise<AllyRun[]> {
+  const out: AllyRun[] = [];
+  const gmFear = (await campaignFearState(ctx, campaign._id)).fear;
+  for (const token of s.scene.tokens) {
+    if (token._id === s.attacker._id || token.side !== "pc" || token.ref.kind !== "pc" || token.ref.characterId === roller) continue;
+    const character = await ctx.db.get("characters", token.ref.characterId);
+    if (character === null || character.campaignId !== campaign._id || character.status !== "active") continue;
+    let sheet: CharacterSheet;
+    try {
+      sheet = readSheet(character.sheet);
+    } catch {
+      continue;
+    }
+    const fits = (use: CardUse): Trigger | null => {
+      const a = use.activation;
+      if (a.kind !== "auto" || a.trigger.kind !== "afterAllyRolls") return null;
+      const t = a.trigger;
+      if (t.range !== undefined && !rangeCheck(token, s.attacker, t.range).inRange) return null;
+      if (!hostMatches(t.roll ?? "action", host) || !resultHolds(t, roll) || !rollTargetHolds(t, host, token, subject)) return null;
+      return t;
+    };
+    const candidates: PickedRider[] = [];
+    for (const cardId of sheet.domainCards.loadout) {
+      for (const use of cardEffect(cardId)?.uses ?? []) {
+        const t = fits(use);
+        if (t) candidates.push({ source: "card", id: cardId, useId: use.id, name: use.name, trigger: t, phase: "after", choices: [], auto: true });
+      }
+    }
+    for (const { feature, entry } of heldEntries(sheet, campaign)) {
+      for (const use of entry.uses) {
+        const t = fits(use);
+        if (t) candidates.push({ source: "feature", id: feature.featureId, useId: use.id, name: use.name, trigger: t, phase: "after", choices: [], auto: true });
+      }
+    }
+    if (candidates.length === 0) continue;
+    let scene: AttackScene;
+    try {
+      scene = await attackScene(ctx, campaign, character, s.map._id);
+    } catch {
+      continue;
+    }
+    const env: RiderEnv = { ctx, campaign, character, scene, host, gmFear, rng, rollUsedExperience: false };
+    let now = sheet;
+    for (const r of candidates) {
+      const run = await runRiderPart(env, r, now, "whole", roll, hitIds, undefined, s.attacker._id);
+      if (run === null || run === "empty") continue;
+      out.push({ character, before: now, run });
+      now = run.sheet;
+    }
+  }
+  return out;
+}
+
 // ---- Sneak Attack and Cloaked (Q9)
 
 /**
@@ -1002,6 +1248,16 @@ function damageOptionsFor(sheet: CharacterSheet, campaign: Doc<"campaigns">, cho
   const offered = rollOptions(sheet, "damage", CLASS_FEATURES, featureScope(campaign)).some((o) => o.key === SNEAK_ATTACK);
   const rest = chosen.filter((k) => k !== SNEAK_ATTACK);
   return offered && sneak ? [...rest, SNEAK_ATTACK] : rest;
+}
+
+/**
+ * Plan lanes, E1 (dcm-y3e): the sheet without the effects that end when their bearer attacks: an effect carrying an
+ * `extraTargets` mod (Parallela: "The next time the target makes an attack") or one whose step ends on `bearerAttacks`.
+ */
+export function endedByAttack(sheet: CharacterSheet, mods: readonly LiveMod[]): CharacterSheet {
+  const ended = new Set(mods.flatMap((m) => (m.effectId !== undefined && (m.mod.kind === "extraTargets" || m.endsOnAttack === true) ? [m.effectId] : [])));
+  if (ended.size === 0) return sheet;
+  return { ...sheet, effects: sheet.effects.filter((e) => !ended.has(e.id)) };
 }
 
 /** CB p.42: "After you make an attack … you are no longer Cloaked." */
@@ -1052,7 +1308,8 @@ export function afterRollChangeOf(use: CardUse): AfterRollChange | null {
 function ownRollTrigger(trigger: Trigger, host: Host): boolean {
   if (trigger.kind === "afterAllyRolls") return trigger.includeSelf === true;
   if (trigger.kind !== "afterYouRoll" || trigger.roll === "damage") return false;
-  return rollMatches(trigger.roll, host.spec) || (host.trait !== undefined && trigger.roll === host.trait);
+  if (!fromUseHolds(trigger.fromUse, host) || (trigger.cardDomain !== undefined && host.cardDomain !== trigger.cardDomain)) return false;
+  return hostMatches(trigger.roll, host);
 }
 
 /**
@@ -1061,7 +1318,7 @@ function ownRollTrigger(trigger: Trigger, host: Host): boolean {
  * on a 1 on the Hope Die, Luckbender, Prayer Dice, Adaptability when an Experience was used, Ranger's Focus against the
  * Focus). `sheet` is the sheet after the roll's gains: the Hope this roll gave can pay a Hope feature (CB p.90).
  */
-export function afterRollOffers(sheet: CharacterSheet, campaign: Doc<"campaigns">, host: Host, roll: RollRecord, hostRoll: HostRoll, target: CheckedTarget | undefined, rollUsedExperience: boolean): AfterRollOffer[] {
+export function afterRollOffers(sheet: CharacterSheet, campaign: Doc<"campaigns">, host: Host, roll: RollRecord, hostRoll: HostRoll, target: CheckedTarget | undefined, rollUsedExperience: boolean, from?: Doc<"combatTokens">): AfterRollOffer[] {
   const offers: AfterRollOffer[] = [];
   const hopeDie = roll.dice.find((d) => d.role === "hope")?.value ?? 0;
   const actor = { ...cardActor("self", sheet, "", undefined), ...actorExtras(sheet) };
@@ -1076,6 +1333,7 @@ export function afterRollOffers(sheet: CharacterSheet, campaign: Doc<"campaigns"
     for (const use of upgraded.uses) {
       const a = use.activation;
       if ((a.kind !== "reaction" && a.kind !== "rider") || !ownRollTrigger(a.trigger, host) || !resultHolds(a.trigger, hostRoll)) continue;
+      if (!rollTargetHolds(a.trigger, host, from, target ? subjectOf(target) : undefined)) continue;
       const change = afterRollChangeOf(use);
       if (change === null) continue;
       if (change.kind === "reroll" && change.hopeAtMost !== undefined && hopeDie > change.hopeAtMost) continue;
@@ -1177,6 +1435,20 @@ export function hopeDieSwitch(base: Rng): { rng: Rng; arm: (sides: number | unde
   };
 }
 
+/**
+ * Plan lanes, E1 (dcm-3ou, dcm-jog): the roll with a bonus added to one duality die's result, its total and its outcome
+ * read again (the bonus can turn a roll with Hope into one with Fear: Backhanded Guidance, HF p.87). The die keeps its
+ * sides; its value is the result with the bonus.
+ */
+export function withDieBonus(record: RollRecord, die: "hope" | "fear", amount: number): RollRecord {
+  if (amount === 0) return record;
+  const dice = record.dice.map((d) => (d.role === die && !d.dropped ? { ...d, value: d.value + amount } : d));
+  const next = retotal({ ...record, dice });
+  const hope = dice.find((d) => d.role === "hope")?.value ?? 0;
+  const fear = dice.find((d) => d.role === "fear")?.value ?? 0;
+  return { ...next, outcome: actionOutcome(hope, fear, next.total, record.difficulty) };
+}
+
 /** The roll record with its Hope Die's sides set (the value was already drawn from those sides). */
 export function withHopeSides(record: RollRecord, sides: number | undefined): RollRecord {
   if (sides === undefined || sides === 12) return record;
@@ -1225,7 +1497,10 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const rec = recorder(req.held ? replaying(req.held.dice, rollDie) : rollDie);
   // DA2: the Hope Die switch sits outside the recorder, so a held attack replays a d20 Hope Die as drawn.
   const hope = hopeDieSwitch(rec.rng);
-  const host = hostOf(weapon, slot, options.trait);
+  // Plan lanes, E1: the attacker's live card-effect mods (Versatile Fighter's trait, Parallela's extra target).
+  const mods = liveMods(sheet0, featureScope(campaign));
+  const traitOverride = weaponTraitFor(mods, slot, options.trait);
+  const host: Host = { ...hostOf(weapon, slot, options.trait), ...(traitOverride !== undefined ? { trait: traitOverride } : {}) };
   const env: RiderEnv = {
     ctx,
     campaign,
@@ -1271,7 +1546,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
 
   // ---- the roll (R1, R9); cover gives one disadvantage (Q2)
   const cover = allTargets.some((t) => t.sight.cover) || pcTargets.some((t) => t.sight.cover);
-  const args = attackDuality(weapon, { ...options, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage }, cover);
+  const args = attackDuality(weapon, { ...options, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage }, cover, traitOverride);
   const sheetBeforeRoll = sheet;
   const dualityAt = rec.values.length;
   // DA2: Rise to the Challenge's d20 Hope Die (CB p.48), on by default while it applies; the Hope Die is drawn first.
@@ -1280,9 +1555,15 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   hope.arm(undefined);
   let roll = withHopeSides(duality.roll, folds.hopeDie);
   let effects = duality.effects;
+  let finalSheet = duality.next;
+  // Plan lanes, E1: a bonus on one duality die (dcm-3ou, dcm-jog) changes the roll, so its Hope, Stress and Fear follow it.
+  if (folds.dieBonus.length > 0) {
+    for (const b of folds.dieBonus) roll = withDieBonus(roll, b.die, b.amount);
+    effects = dualityEffects("action", roll.outcome);
+    finalSheet = placeTideToken(applyDualityEffects(duality.paid, effects), roll.outcome, "action").sheet;
+  }
   let rolled = { ...duality.rolled, roll };
   let forced = false;
-  let finalSheet = duality.next;
   const hitsOf = (r: RollRecord) => resolveHits(r.total, r.outcome === "critical", allTargets.map((t) => ({ id: t.token._id, difficulty: difficultyOf(t.instance) })));
   let hits = hitsOf(roll);
   const pcHitsOf = (r: RollRecord, more: readonly PcTarget[] = pcTargets) => resolveHits(r.total, forced || r.outcome === "critical", more.map((t) => ({ id: t.token._id, difficulty: t.evasion })));
@@ -1294,7 +1575,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   // ---- the after-roll step (Q1): hold the attack when an after-roll feature is ready and affordable
   let afterRun: RiderRun | null = null;
   if (req.held === undefined) {
-    const offers = afterRollOffers(duality.next, campaign, host, roll, hostRollOf(roll, hits), main, env.rollUsedExperience);
+    const offers = afterRollOffers(duality.next, campaign, host, roll, hostRollOf(roll, hits), main, env.rollUsedExperience, req.scene.attacker);
     if (offers.length > 0) {
       const requestId = await openAfterRoll(ctx, {
         campaignId: campaign._id,
@@ -1368,7 +1649,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const skipped: string[] = [];
   for (const r of [...picked.filter((x) => x.phase === "after"), ...autos.filter((x) => x.phase === "after")]) {
     const ids = hitIds();
-    if (!resultHolds(r.trigger, hostRoll) || (r.trigger.kind !== "afterYouRoll" && ids.length === 0)) {
+    const onTarget = rollTargetHolds(r.trigger, host, req.scene.attacker, main ? subjectOf(main) : undefined);
+    if (!resultHolds(r.trigger, hostRoll) || !onTarget || (!rollOnly(r.trigger) && ids.length === 0)) {
       if (!r.auto) skipped.push(r.name);
       continue;
     }
@@ -1388,6 +1670,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     hits = [...hits, ...moreHits];
     for (const t of more.adversaries) halfDamage.set(t.token._id, add.damage === "half");
   }
+  // Plan lanes, E1 (dcm-1o3): a rider on the GM's Fear from this roll stops it (Dread-Touched).
+  if (folds.preventFear === true && effects.fear > 0) effects = { ...effects, fear: 0 };
   const pcHits = pcHitsOf(roll);
   const anyHit = hits.some((h) => h.hit) || pcHits.some((h) => h.hit);
 
@@ -1511,6 +1795,19 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     await writeRun(run);
     posts.push(run);
   }
+  // Plan lanes, E1: the allies' automatic uses on this roll (Eclipse for an ally's success with Hope, dcm-0gi).
+  const allyRuns = await allyAutoRuns(ctx, campaign, req.scene, character._id, host, hostRoll, main ? subjectOf(main) : undefined, results.filter((x) => x.hit && standing(x)).map((x) => x.target.token._id), hope.rng);
+  const allySheets = new Map<string, { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }>();
+  for (const a of allyRuns) {
+    const writes = instanceWrites(a.run.plan, a.run.built.creatures, a.run.name);
+    await writeInstances(ctx, writes);
+    riderWrites.push(...writes);
+    const lines = gmLines(a.run.plan, a.run.built, writes);
+    riderLines.push(`${a.run.name} (${readSheet(a.character.sheet).name})${lines.length > 0 ? `: ${lines.join("; ")}` : ""}`);
+    riderFear += a.run.plan.gmFearDelta;
+    const seen = allySheets.get(a.character._id);
+    allySheets.set(a.character._id, { character: a.character, before: seen?.before ?? a.before, after: a.run.sheet });
+  }
   // DA2 (HF p.8 Death Strike; user 2026-10-30): a damage-phase rider is never applied without a prompt: the player gets Use /
   // Pass (its cost is optional, "you can"), and picks the ONE creature when several qualify. Opened after the rows below.
   const toPrompt = damagePrompts(sheet0, campaign, host).flatMap((r) => {
@@ -1528,6 +1825,9 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
 
   // ---- CB p.42: "After you make an attack … you are no longer Cloaked."
   sheet = uncloaked(sheet);
+  // Plan lanes, E1 (dcm-y3e): an effect that gave this attack its extra target ends with it (Parallela, CB p.332: "The next
+  // time the target makes an attack"), as does one that ends when its bearer attacks.
+  sheet = endedByAttack(sheet, mods);
   finalSheet = sheet;
 
   const { gained } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
@@ -1598,6 +1898,12 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   }
   for (const p of riderPrompts.filter((x) => x.kind === "manual")) {
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId: req.actorId, kind: "feature", visibility: "public", summary: `${sheet0.name}: ${p.text}`.slice(0, 1000), groupId, undoable: true });
+  }
+  // Plan lanes, E1: an ally whose automatic use ran on this roll: their sheet in the group (undo reverts it).
+  for (const a of allySheets.values()) {
+    if (!changed(a.before, a.after)) continue;
+    await saveSheet(ctx, a.character._id, a.after);
+    await logAction(ctx, { campaignId: campaign._id, characterId: a.character._id, actorId: req.actorId, kind: "feature", visibility: "public", summary: `${a.before.name}: ${allyRuns.filter((r) => r.character._id === a.character._id).map((r) => r.run.name).join(", ")} on ${sheet0.name}'s roll`.slice(0, 1000), groupId, before: a.before, undoable: true });
   }
 
   // Armed countdowns tick right after the attack roll, as for `actionRoll` (countdowns-advanced K1, CB p.162).
