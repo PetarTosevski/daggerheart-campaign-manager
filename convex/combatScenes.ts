@@ -9,6 +9,8 @@
  * - for every active PC `expire(sheet, "scene")`: effects and feature uses that last until the scene, the Unstoppable
  *   Die, the active stance and Walk Between Worlds' tokens (src/lib/domain/characters/expiry.ts);
  * - ends the campaign's live map areas that last until the scene (`combatAreas.expires` `scene`).
+ * The dashboard's End scene (`scenes.end`, RF1) runs the same `endScene`; the session end (`sessions.end`) closes the
+ * `scene` and `session` areas through `endSceneAreas` (plan drawer-answers DA4).
  *
  * One mutation writes one undoable `actionLog` group (kind `session`, a row per changed PC and a campaign row "Scene
  * ended"); undoing the campaign row restores every sheet. Areas keep their own history (like trackers): undo does not
@@ -24,6 +26,7 @@ import type { MutationCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./lib/characterSheet";
 import { keyedGmMutation } from "./lib/functions";
+import type { AreaExpires } from "./lib/validators/combatMaps";
 
 /** Sheets one scene end may change: an undo group holds at most 50 rows (convex/lib/actionLog.ts), one is the campaign's. */
 const PARTY_MAX = 49;
@@ -52,13 +55,21 @@ function sceneThings(before: CharacterSheet, after: CharacterSheet): number {
   );
 }
 
-/** Closes the campaign's live areas that last until the scene; returns how many. */
-export async function endSceneAreas(ctx: MutationCtx, campaignId: Id<"campaigns">, now: number): Promise<number> {
+/**
+ * Closes the campaign's live areas that last until the scene; returns how many. The session end passes
+ * `["scene", "session"]`: it ends the scene too (Q7, CB p.107).
+ */
+export async function endSceneAreas(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  now: number,
+  expires: readonly AreaExpires[] = ["scene"],
+): Promise<number> {
   const rows = await ctx.db
     .query("combatAreas")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
     .take(AREAS_MAX);
-  const live = rows.filter((a) => a.status === "active" && a.expires === "scene");
+  const live = rows.filter((a) => a.status === "active" && expires.includes(a.expires));
   for (const area of live) await ctx.db.patch("combatAreas", area._id, { status: "ended", endedAt: now });
   return live.length;
 }

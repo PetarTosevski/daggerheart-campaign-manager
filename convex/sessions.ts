@@ -7,7 +7,8 @@
  *   it for the live session does nothing (`alreadyStarted`, E1). Another live session is ended first with every end
  *   effect (B6); a played session starts again and its start effects run again (B7).
  * - `end`: ends the live session (status played, `endedAt`, its tally window added to `sessions.tally`, Q3) and, for
- *   every PC, clears session effects (`expire(sheet, "session")`), runs `onSessionEnd`, and turns Wither tokens into Fear (unless the GM keeps them: `convertWither`, house rule `witherPersists`);
+ *   every PC, clears session effects and ends the scene (`expire(sheet, "session")`; the campaign's live map areas
+ *   with `expires` `scene` or `session` close, `endSceneAreas`, plan drawer-answers DA4), runs `onSessionEnd`, and turns Wither tokens into Fear (unless the GM keeps them: `convertWither`, house rule `witherPersists`);
  *   the tokens become GM Fear capped at 12, the rest reported as lost (CB 261; decision). Ending with nothing to
  *   change writes nothing, so a second End is a no-op; with no live session it still clears session effects (E2).
  * - Session features (plan session-features F1, U1, U6, U8): `start` then gives the party its Luckbringer Hope and rolls
@@ -39,6 +40,7 @@ import { resolveOptions } from "../src/lib/frames/options";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { endSceneAreas } from "./combatScenes";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
@@ -200,6 +202,10 @@ async function runEnd(ctx: GmCtx, convertWither?: boolean): Promise<EndResult> {
   const journeyEnds = members
     .filter(({ character, sheet }) => sheet.journeyEnds && character.status !== "dead" && character.status !== "retired")
     .map(({ character, sheet }) => ({ characterId: character._id, name: sheet.name }));
+
+  // The session end ends the scene too (Q7, CB p.107): the scene's and the session's live map areas close. Areas keep
+  // their own history (convex/combatScenes.ts), so this is outside the undo group and a second End closes nothing.
+  await endSceneAreas(ctx, campaignId, Date.now(), ["scene", "session"]);
 
   const started = state.sessionStartedAt !== undefined || live !== null;
   if (!started && changes.every(({ sheet, next }) => same(sheet, next))) {

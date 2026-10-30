@@ -11,6 +11,7 @@ import { PanelMemoryProvider } from "./attack/memory";
 import { MapDice, MiniFeed } from "./dice";
 import { Resolutions as GmResolutions } from "./gm";
 import { GmHand, Hand, HandColumn } from "./hand";
+import { EndSceneButton } from "./scene";
 import { TargetList } from "./targets";
 import { useActor } from "./targets/state";
 
@@ -198,7 +199,8 @@ export function ActionsPanel(props: ActionsPanelProps) {
  * GM column, last (the page's Resolutions slot): the Hand of the selected PC with "Play for this character" and the
  * card uses waiting for the GM (CA6), the latest adversary actions with Undo (AA5, U4), then CA5's Resolutions. The
  * player's incoming-hit prompt (AA4, `./reactions`) is mounted by the page first in the player column; the GM answers
- * open hits with "Resolve now", and a PC the GM owns gets the prompt itself, in AA5's adversary panel.
+ * open hits with "Resolve now", and a PC the GM owns gets the prompt itself, in AA5's adversary panel. Last, the End
+ * scene button (SD8, `combatScenes.end`; CB p.107): it reads nothing, so it needs no boundary.
  */
 export function Resolutions(props: ResolutionsProps) {
   return (
@@ -210,6 +212,12 @@ export function Resolutions(props: ResolutionsProps) {
         <AdversaryResolutions {...props} />
       </PartBoundary>
       <GmResolutions {...props} />
+      <section className="cm-card cma-card" aria-label="Scene">
+        <h2 className="cm-h">Scene</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <EndSceneButton campaignId={props.campaignId} className="cm-btn" />
+        </div>
+      </section>
     </>
   );
 }
