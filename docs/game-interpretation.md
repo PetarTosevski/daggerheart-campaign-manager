@@ -261,8 +261,8 @@ This feature requires a dedicated task before implementation.
 Plan `.omc/plans/combat-actions.yaml`, analysis `.omc/autopilot/combat-actions-analysis.md` (approved 2026-10-21).
 Players hold their domain cards on the Combat Map, attack enemy tokens and use cards there; the server rolls, applies
 the result to the encounter's adversaries and logs it. Book pages are printed pages: CB = Core Book, HF = Hope & Fear.
-The adversary side (adversaries attacking PCs, the reaction window, Fear; Q12-Q19) has its own section, written by
-tracer AA6.
+The adversary side (adversaries attacking PCs, the reaction window, Fear; Q12-Q19) has its own section below,
+"Combat actions on the Combat Map (adversary side)".
 
 ### The user's rulings (2026-10-21, binding)
 
@@ -354,6 +354,106 @@ The user answered Q1 and accepted the defaults of Q2-Q11.
   attack: armor choice and ally reactions.
 - Onslaught's Major floor applies to any hit that deals weapon damage: plain attacks, and cards that attack with the
   weapon's damage.
+
+## Combat actions on the Combat Map (adversary side)
+
+Plan `.omc/plans/combat-actions.yaml`, Part B (tracers AA0-AA6 and AE-*), analysis
+`.omc/autopilot/combat-actions-analysis.md` Part B (approved 2026-10-21). The GM attacks PCs and uses adversary
+features from the Encounter tab or the Combat Map; the server rolls, opens a reaction window per hit PC and logs one
+undoable action. Book pages are printed pages: CB = Core Book, HF = Hope & Fear. The player side, U1-U5 and Q1-Q11,
+is the section above.
+
+### The book's rules for adversary actions (AR1-AR11)
+
+- **AR1 Attack roll** (CB p.160): "You make your attack roll with a d20. If the adversary has advantage or
+  disadvantage on the attack, add an extra d20 to that roll." The stat block's Attack Modifier is added, and "You can
+  also spend a Fear to add an adversary's Experience to the roll's result." The total is compared with the PC's
+  Evasion: "If the attack meets or beats that value, it is successful". The book's "Share your roll total with the
+  player who was attacked" is overridden by Q14: players don't see the roll.
+- **AR2 Critical** (CB p.148): "Whenever you roll a 20 on the d20, your roll automatically succeeds. If you critically
+  succeed on an attack roll, you also deal extra damage. Start with the highest possible value the damage dice can
+  roll, and then make a damage roll as usual, adding it to that value."
+- **AR3 Damage to PCs** (CB p.91): Severe 3 HP, Major 2 HP, Minor 1 HP; damage reduced to 0 or less marks none; "When
+  you mark your last Hit Point, you must make a death move."
+- **AR4 Armor Slots** (CB p.114): "you can negate some (or all) of it by marking an available Armor Slot …, then
+  reducing the severity of the damage by one threshold … Each time your character takes damage, you can only mark 1
+  Armor Slot." Direct damage (CB p.99) can't be reduced by Armor Slots.
+- **AR5 Stress** (CB p.92): "If you're ever forced to mark 1 or more Stress but your slots are already full, you must
+  instead mark 1 Hit Point." An adversary's "mark a Stress" costs are marked on its own track (CB p.194).
+- **AR6 Fear and the spotlight** (CB p.153-154, p.194-195): Fear interrupts, makes an additional GM move (shifting the
+  spotlight to another adversary), pays Fear Features and adds an Experience; at most 12 Fear. "you must spend Fear as
+  described, even if you already spent a Fear to spotlight the adversary." "For an adversary to use an action, they
+  must have the spotlight. Passives and reactions typically don't require the spotlight."
+- **AR7 Several targets** (CB p.161): "When an adversary's action lets you make an attack against multiple targets,
+  you make one attack roll and ask if it hits any of the targets." Example (CB p.196, Explosion): "Make an attack
+  against all targets within Close range."
+- **AR8 Reactions** (CB p.195): "When it triggers, you can choose to immediately use the reaction, and you don't have
+  to spend Fear to interrupt the PCs with this reaction (unless otherwise specified)." Momentum: "When this adversary
+  makes a successful attack against a PC, you gain a Fear."
+- **AR9 Minions** (CB p.201): "Group Attack - Action: Spend a Fear to choose a target and spotlight all adversaries
+  with this name within a certain range of them. Those Minions move into Melee range of the target and make one shared
+  attack roll. On a success, they deal X damage each. Combine this damage."
+- **AR10 Hordes** (CB p.199): "When the Horde has marked half or more of their HP, their standard attack deals X damage
+  instead."
+- **AR11 PC reaction rolls** (CB p.99): an adversary effect asks for e.g. "an Agility Reaction Roll (14)"; the player
+  rolls it. Reaction rolls "don't generate Hope, Fear, or additional GM moves".
+
+### The user's answers (2026-10-21, binding)
+
+- **Q12 Adversary actions are in scope.** "GM can use the encounter tab to use abilities, they will show up on combat,
+  he can also use combat map if he wants". The Encounter tab's action panel and the Combat Map's adversary panel are
+  the same component over the same server calls (`adversaryActions.attack` / `useFeature`), so an action from either
+  page shows on both.
+- **Q13 Armor and the reaction window.** The hit PC's player chooses whether to mark an Armor Slot, and the damage
+  waits for that choice. Allies may answer with their abilities first, e.g. I Am Your Shield (CB p.341: "When an ally
+  within Very Close range would take damage, you can mark a Stress to stand in the way and make yourself the target of
+  the attack instead. When you take damage from this attack, you can mark any number of Armor Slots."). Each adversary
+  hit opens a reaction window in which the target and eligible allies answer before the damage resolves; card effects
+  come from the closed card vocabulary.
+- **Q14 What players see.** Players see that they were hit, not the attack roll. The hit PC's player sees the damage
+  amount and its severity against their own thresholds ("14 damage: Major (2 HP). Mark an Armor Slot to make it
+  Minor?"), because they need it to choose armor and the numbers are their own character's. Other players see only
+  "Bandit hit Mira" and, once resolved, Mira's HP as the party view shows it. No player receives the roll, the
+  adversary's Attack Modifier, its stat block or the GM's before-state (checked over the network in
+  `tests/e2e/adversary-actions-flow.spec.ts`).
+- **Q15 Every adversary feature is automated.** All 267 SRD adversaries and their 928 features have one effect entry
+  each, in eight tier / source tables (`src/lib/srd/adversary-effects/<tier>-<source>.ts`); custom adversaries are
+  automated where their features are structured, else their feature is a GM prompt with its Fear paid. What the
+  vocabulary can't express is a `manual` step (the feature's words and a Done button for the GM).
+  `tests/unit/adversary-effects/coverage.test.ts` checks the entries and runs every use through the runner; it prints
+  the manual steps per table (258 on 2026-10-30: t1-core 29, t1-hf 33, t2-core 18, t2-hf 32, t3-core 26, t3-hf 48,
+  t4-core 21, t4-hf 51) for later lanes to reduce.
+- **Q16 Where the GM acts.** Fear and adversary control live on the Encounter tab with the tracker's existing logic:
+  the GM moves tokens (in its live-map pane), attacks, uses features and spends Fear there, and the visuals (hit
+  flashes, token pips) show on the Combat Map. The map accepts the same GM actions when the GM selects an adversary
+  token.
+- **Q17 (a) When the reaction window closes.** It resolves as soon as the target has chosen armor (or has no slot and
+  no eligible card) and every ally with an eligible reaction has answered Use or Pass. The GM can press "Resolve now"
+  at any time. There is no timer. CB p.114: armor is the player's choice ("you can … mark an available Armor Slot").
+- **Q18 (a) Targets without a live map.** With no live map (or with the adversary not on it) the GM picks targets from
+  the party list, with no range or line-of-sight check. CB p.103: "If the table decides not to implement a map, you
+  still use range, but in a more abstract way. … it's up to the GM to decide roughly how far away everything is." With
+  the adversary on the live map, its PC targets are the tokens in its line of sight (Q2), with their range bands shown;
+  adversary attacks are not refused for range, because the GM sanctions their own actions.
+- **Q19 (a) Fear prompts.** Fear is spent only on the GM's tap. A Fear-cost feature, an Experience and a second
+  spotlight in the same GM turn ask "Spend N Fear?" first, and nothing is rolled or paid before the tap. Optional Fear
+  steps (Heavy Hitter, a feature's "you can spend a Fear to …") are a one-tap prompt that defaults to No.
+  Momentum-style Fear gains happen automatically, with no prompt (CB p.154, p.194, p.195).
+
+### Later user answers on the adversary side (2026-10-22, binding)
+
+- A hit that takes a PC to their last HP prompts that player's death move at once (CB p.91).
+- I Am Your Shield moves the attack's riders (conditions, forced marks) to the ally along with the damage.
+- Riders land whenever the attack hit, even if its damage was negated by armor; only a miss or full avoidance stops
+  them.
+- "Once per session" adversary features last the whole session and reset at its end. Undo gives an adversary's limited
+  use back.
+- Damage reflected at a PC attacker opens the normal incoming-hit prompt.
+- A feature whose use needs choices (options, picks, splits, situations, cost choices) asks them in a dialog before it
+  runs.
+- A PC the GM owns gets the same incoming-hit prompt in the GM column on the Combat Map.
+- The Encounter tab has one way to attack: the targeted Attack (the old untargeted "Roll attack" / "Roll damage" are
+  gone).
 
 ## Corrections and undo
 
