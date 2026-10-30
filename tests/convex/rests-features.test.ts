@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
+import { featureKey } from "../../src/lib/domain/feature-effects/ids";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { errorCode, key, useAllowlist } from "./helpers";
@@ -179,8 +180,10 @@ describe("rest-time heritage features (SD-R)", () => {
     expect((await sheetOf(a)).hope).toBe(6);
   });
 
-  it("Oasis: on a short rest the holder rerolls a downtime die (theirs or an ally's) and keeps the higher result (HF p.27)", async () => {
-    const { a, b, edit, sheetOf, start, finish, choose, p1, p2, rowOf, current } = await setup();
+  // ---------------------------------------------------------------- Oasis (DA5: the player picks the die)
+
+  it("Oasis: after a short rest the holder picks a die (an ally's), the server rerolls it, keeps the higher and clears the difference (HF p.27)", async () => {
+    const { a, b, edit, sheetOf, start, finish, undo, choose, p1, p2, rowOf, current } = await setup();
     await edit(a, { communityId: "duneborne" });
     await edit(b, { stress: 6 });
     const { restId } = await start("short");
@@ -188,34 +191,94 @@ describe("rest-time heritage features (SD-R)", () => {
     expect((await current()).open!.moves.find((m) => m.characterId === b)!.oasis).toBe(false);
     await choose(p1, restId, a, [{ move: "prepare" }, { move: "prepare" }]);
     await choose(p2, restId, b, [{ move: "clearStress" }, { move: "clearStress" }]);
-    // The ally's dice: 1 and 2. Oasis rerolls the 1 to a 3 and keeps the 3. Tier 1: 3 + 1 and 2 + 1 clear all 6 Stress.
-    dice([1, 2, 3]);
+    // No automatic reroll any more: the ally's dice 1 and 2 (tier 1) clear 2 + 3 of 6 Stress.
+    dice([1, 2]);
     await finish(restId);
-    expect(await rowOf(a)).toContain("Oasis: rerolled a d4 (1, then 3), kept 3");
-    expect(await rowOf(b)).toContain("Clear Stress: clears 4 Stress (1d4 3 + tier 1)");
+    expect((await sheetOf(b)).stress).toBe(1);
+    expect(await rowOf(a)).not.toContain("Oasis");
+    const last = (await current()).last!;
+    expect(last.oasisHolders).toEqual([a]);
+    expect(last.dice.map((d) => ({ characterId: d.characterId, move: d.move, rolled: d.rolled, value: d.value, bonus: d.bonus }))).toEqual([
+      { characterId: b, move: "clearStress", rolled: 1, value: 1, bonus: 1 },
+      { characterId: b, move: "clearStress", rolled: 2, value: 2, bonus: 1 },
+    ]);
+
+    // Only a holder rerolls; the ally's own player can't use Oasis for Bryn.
+    expect(await codeOf(p2.mutation(api.rests.oasisReroll, { restId, characterId: b, die: 0, idempotencyKey: key() }))).toBe("REST_RULE");
+    expect(await codeOf(p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 5, idempotencyKey: key() }))).toBe("REST_RULE");
+
+    // Ash rerolls Bryn's 1: a 4, kept. The move would have cleared 3 more; Bryn had 1 Stress left.
+    dice([4]);
+    expect(await p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 0, idempotencyKey: key() })).toEqual({ rolled: 4, kept: 4, cleared: 1 });
     expect((await sheetOf(b)).stress).toBe(0);
+    expect(await rowOf(b)).toContain("Oasis (Ash): rerolled Bryn's Clear Stress d4 (1, then 4), kept 4: clears 1 more Stress");
+    const after = (await current()).last!;
+    expect(after.dice[0]).toMatchObject({ rolled: 1, value: 4, rerolls: [{ holderId: a, rolled: 4, kept: 4 }] });
+
+    // Once per holder per short rest.
+    expect(await codeOf(p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 1, idempotencyKey: key() }))).toBe("REST_RULE");
+
+    // The rest's undo takes the reroll back with the rest, and the stored dice go with it.
+    await undo(restId);
+    expect((await sheetOf(b)).stress).toBe(6);
+    expect((await current()).open?._id).toBe(restId);
+    expect((await current()).last).toBeNull();
   });
 
-  it("Oasis keeps the first result when the reroll is lower, and does nothing on a long rest", async () => {
-    const { a, b, edit, start, finish, choose, p1, p2, rowOf, current } = await setup();
+  it("Oasis only while the results are first shown: once the GM closes them, the server refuses the reroll (user 2026-10-30)", async () => {
+    const { a, b, edit, sheetOf, start, finish, undo, choose, gm, p1, p2, current, campaignId } = await setup();
+    await edit(a, { communityId: "duneborne" });
+    await edit(b, { stress: 6 });
+    const { restId } = await start("short");
+    await choose(p2, restId, b, [{ move: "clearStress" }, { move: "clearStress" }]);
+    // Not before the rest ends.
+    expect(await codeOf(gm.mutation(api.rests.closeResults, { campaignId, restId, idempotencyKey: key() }))).toBe("REST_RULE");
+    dice([1, 1]);
+    await finish(restId);
+    expect((await current()).last!.resultsOpen).toBe(true);
+    await gm.mutation(api.rests.closeResults, { campaignId, restId, idempotencyKey: key() });
+    // Closing twice is harmless.
+    await gm.mutation(api.rests.closeResults, { campaignId, restId, idempotencyKey: key() });
+    expect((await current()).last).toMatchObject({ resultsOpen: false, oasisHolders: [a] });
+    dice([4]);
+    expect(await codeOf(p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 0, idempotencyKey: key() }))).toBe("REST_RULE");
+    expect((await sheetOf(b)).stress).toBe(2);
+
+    // Undo reopens the rest and clears the marker; finishing again shows fresh results.
+    await undo(restId);
+    dice([1, 1]);
+    await finish(restId);
+    expect((await current()).last!.resultsOpen).toBe(true);
+    dice([4]);
+    expect(await p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 0, idempotencyKey: key() })).toMatchObject({ kept: 4 });
+  });
+
+  it("Oasis keeps the first result when the reroll is lower; the GM can reroll for the holder; nothing on a long rest", async () => {
+    const { a, b, edit, sheetOf, start, finish, choose, gm, p1, p2, rowOf, current } = await setup();
     await edit(a, { communityId: "duneborne", stress: 6 });
     const short = await start("short");
     await choose(p1, short.restId, a, [{ move: "clearStress" }, { move: "prepare" }]);
-    dice([3, 1]);
+    dice([3]);
     await finish(short.restId);
-    expect(await rowOf(a)).toContain("Clear Stress: clears 4 Stress (1d4 3 + tier 1)");
-    expect(await rowOf(a)).toContain("Oasis: rerolled a d4 (3, then 1), kept 3");
+    expect((await sheetOf(a)).stress).toBe(2);
+    dice([1]);
+    expect(await gm.mutation(api.rests.oasisReroll, { restId: short.restId, characterId: a, die: 0, idempotencyKey: key() })).toEqual({ rolled: 1, kept: 3, cleared: 0 });
+    expect((await sheetOf(a)).stress).toBe(2);
+    expect(await rowOf(a)).toContain("Oasis (Ash): rerolled Ash's Clear Stress d4 (3, then 1), kept 3");
 
     const long = await start("long");
     expect((await current()).open!.moves.find((m) => m.characterId === a)!.oasis).toBe(false);
+    // While the next rest is open, the last rest's dice are no longer rerollable.
+    expect(await codeOf(p1.mutation(api.rests.oasisReroll, { restId: short.restId, characterId: a, die: 0, idempotencyKey: key() }))).toBe("REST_RULE");
     await choose(p1, long.restId, a, [{ move: "clearAllStress" }, { move: "prepare" }]);
     await choose(p2, long.restId, b, [{ move: "prepare" }, { move: "prepare" }]);
     await finish(long.restId);
-    expect(await rowOf(a)).not.toContain("Oasis");
+    expect((await current()).last).toMatchObject({ dice: [], oasisHolders: [] });
+    expect(await codeOf(p1.mutation(api.rests.oasisReroll, { restId: long.restId, characterId: a, die: 0, idempotencyKey: key() }))).toBe("REST_RULE");
   });
 
-  it("an interrupted long rest runs them as a short rest (CB p.105); an interrupted short rest gives none", async () => {
-    const { a, b, edit, sheetOf, start, finish, interrupt, choose, p1, p2, rowOf } = await setup();
+  it("an interrupted long rest runs them as a short rest (CB p.105): Hardy, the trance's move, Oasis; an interrupted short rest gives none", async () => {
+    const { a, b, edit, sheetOf, start, finish, interrupt, choose, p1, p2, rowOf, current } = await setup();
     await edit(a, { communityId: "frostborne", ancestry: { kind: "single", id: "elf" }, hp: 6, stress: 6 });
     await edit(b, { communityId: "duneborne" });
 
@@ -223,19 +286,51 @@ describe("rest-time heritage features (SD-R)", () => {
     await choose(p1, short.restId, a, [{ move: "prepare" }, { move: "prepare" }]);
     await interrupt(short.restId);
     expect((await sheetOf(a)).hp).toBe(6);
+    expect(await rowOf(a)).not.toContain("Hardy");
+    expect((await current()).last).toMatchObject({ dice: [], oasisHolders: [] });
 
     const long = await start("long");
     // The trance's third move counts too; each long rest move becomes its short rest move.
     await choose(p1, long.restId, a, [{ move: "tendToAllWounds" }, { move: "clearAllStress" }, { move: "prepare" }]);
     await choose(p2, long.restId, b, [{ move: "prepare" }, { move: "prepare" }]);
-    // Tend to Wounds 1 (+1 tier), Clear Stress 2 (+1); Oasis rerolls the 1 to a 4 (kept): 5 HP, then Hardy 1 more.
-    dice([1, 2, 4]);
+    // Tend to Wounds 1 (+1 tier), Clear Stress 2 (+1), then Hardy 1 more HP.
+    dice([1, 2]);
     await interrupt(long.restId);
-    const ash = await sheetOf(a);
-    expect(ash.hp).toBe(0);
-    expect(ash.stress).toBe(3);
+    expect(await sheetOf(a)).toMatchObject({ hp: 3, stress: 3 });
     expect(await rowOf(a)).toContain("Hardy: clears 1 HP");
-    expect(await rowOf(b)).toContain("Oasis: rerolled a d4 (1, then 4), kept 4");
+    expect((await current()).last!.oasisHolders).toEqual([b]);
+    // Bryn's Oasis on Ash's Tend to Wounds die: 1, then 4, kept 4; 3 more HP.
+    dice([4]);
+    await p2.mutation(api.rests.oasisReroll, { restId: long.restId, characterId: b, die: 0, idempotencyKey: key() });
+    expect((await sheetOf(a)).hp).toBe(0);
     expect(await codeOf(finish(long.restId))).toBe("REST_RULE");
+  });
+
+  it("pins (dcm-bxp.99.19.45 (4)): Efficient on an interrupted long rest keeps no long rest move (the moves convert as everyone's)", async () => {
+    // The default party are Clanks (Efficient, CB p.53); an interrupted long rest gives "the benefits of a short rest".
+    const { a, edit, sheetOf, start, interrupt, choose, p1, current } = await setup();
+    await edit(a, { hp: 6 });
+    const long = await start("long");
+    expect((await current()).open!.moves.find((m) => m.characterId === a)!.efficient).toEqual([]);
+    await choose(p1, long.restId, a, [{ move: "tendToAllWounds" }, { move: "prepare" }]);
+    dice([2]);
+    await interrupt(long.restId);
+    // Tend to Wounds 2 + tier 1, not all 6.
+    expect((await sheetOf(a)).hp).toBe(3);
+  });
+
+  it("pins (dcm-bxp.99.19.47 (4)): Toxic Concoctions and Feed tokens are kept on an interrupted long rest, cleared on a finished one", async () => {
+    const { a, b, edit, sheetOf, start, finish, interrupt } = await setup();
+    const TOXIC = featureKey("subclass:poisoners-guild:toxic-concoctions");
+    const FEED = featureKey("transformation:vampire:feed");
+    const tokens = async (id: Id<"characters">, k: string) => (await sheetOf(id)).cardTokens?.find((c) => c.cardId === k)?.count ?? 0;
+    await edit(a, { classId: "assassin", subclassId: "poisoners-guild", cardTokens: [{ cardId: TOXIC, count: 4 }] });
+    await edit(b, { transformationId: "vampire", cardTokens: [{ cardId: FEED, count: 3 }] });
+    await interrupt((await start("long")).restId);
+    expect(await tokens(a, TOXIC)).toBe(4);
+    expect(await tokens(b, FEED)).toBe(3);
+    await finish((await start("long")).restId);
+    expect(await tokens(a, TOXIC)).toBe(0);
+    expect(await tokens(b, FEED)).toBe(2);
   });
 });

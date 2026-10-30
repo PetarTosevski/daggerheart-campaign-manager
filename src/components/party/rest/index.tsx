@@ -22,14 +22,20 @@ function RestLoading() {
 
 // CL8: the picker (and the domain-card list it names swaps from) loads only while a rest is open.
 const Picker = dynamic(() => import("./picker").then((m) => m.Picker), { loading: RestLoading });
+// DA5: the Oasis holder's downtime dice after a short rest, from the same module.
+const OasisDice = dynamic(() => import("./picker").then((m) => m.OasisDice), { loading: RestLoading });
 
 function OpenRestPicker(props: SlotProps) {
   const state = useQuery(api.rests.current, { campaignId: props.campaignId });
   if (state === undefined) return <RestLoading />;
-  return state.open === null ? null : <Picker {...props} />;
+  if (state.open !== null) return <Picker {...props} />;
+  // Oasis (HF 27): while the latest rest's results are first shown (until the GM closes them), a holder's sheet offers the reroll.
+  const last = state.last;
+  if (props.canEdit && last !== null && last.resultsOpen && last.oasisHolders.includes(props.character._id)) return <OasisDice {...props} />;
+  return null;
 }
 
-/** The downtime-move picker on the sheet (page one), shown while a rest is open. */
+/** The downtime-move picker on the sheet (page one), shown while a rest is open; after a short rest, an Oasis holder's dice. */
 export const RestPicker: CharacterSlot = (props) => (
   <RestBoundary>
     <OpenRestPicker {...props} />

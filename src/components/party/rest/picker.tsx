@@ -71,6 +71,71 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
   );
 }
 
+/**
+ * Oasis (Duneborne, HF p.27): "During a short rest, you or an ally can reroll a die used for a downtime move and take the
+ * higher result." On a holder's sheet while the latest short rest's results are first shown (DA5, user 2026-10-30; gone
+ * once the GM closes the results panel): the party's downtime dice, each with its kept result and a "Reroll (keep
+ * higher)" button until the holder has used Oasis this rest. The server rolls,
+ * so the result shows when the rest's row updates; the button is disabled while the call runs.
+ */
+export function OasisDice({ campaignId, character, canEdit }: SlotProps) {
+  const state = useQuery(api.rests.current, { campaignId });
+  const party = useQuery(api.characters.listByCampaign, { campaignId });
+  const reroll = useIntent(api.rests.oasisReroll);
+  const uid = useId();
+  if (state === undefined || party === undefined) {
+    return (
+      <Small as="p" role="status">
+        Loading the rest…
+      </Small>
+    );
+  }
+  const last = state.last;
+  if (last === null || !last.resultsOpen || !last.oasisHolders.includes(character._id)) return null;
+  const nameOf = (id: Id<"characters">) => party.find((c) => c._id === id)?.sheet.name ?? "A PC";
+  const used = last.dice.some((d) => d.rerolls.some((r) => r.holderId === character._id));
+  const can = canEdit && !used;
+
+  return (
+    <section className="rp" aria-label="Oasis">
+      <h4 className="rp-h">Oasis: reroll a downtime die</h4>
+      <Small as="p">
+        Oasis (HF 27): reroll one die used for a downtime move, yours or an ally&apos;s, and take the higher result. Once per short rest.
+        {used ? " Used this rest." : ""}
+      </Small>
+      <ul aria-label="Downtime dice" className="rp-dice">
+        {last.dice.map((d, i) => {
+          const on = d.targetId !== undefined ? ` on ${nameOf(d.targetId)}` : "";
+          const rerolls = d.rerolls.map((r) => `${nameOf(r.holderId)} rerolled ${r.rolled}, kept ${r.kept}`).join("; ");
+          const descId = `${uid}-die-${i}`;
+          return (
+            // The dice never move or go away: the roll order is their identity (the mutation's `die`), so the index is stable.
+            <li key={i}>
+              <span id={descId}>
+                {nameOf(d.characterId)}: {MOVE_LABELS[d.move]}
+                {on}, d{d.sides} <strong>{d.value}</strong> + tier {d.bonus}
+                {rerolls !== "" ? ` (first ${d.rolled}; ${rerolls})` : ""}
+              </span>
+              {can ? (
+                <Pill
+                  aria-describedby={descId}
+                  disabled={reroll.pending}
+                  onClick={() => void reroll.fire({ restId: last._id, characterId: character._id, die: i })}
+                >
+                  Reroll (keep higher)
+                </Pill>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      <p aria-live="polite" className="rp-error">
+        {reroll.error ?? ""}
+      </p>
+    </section>
+  );
+}
+
 function MoveForm({
   restId,
   kind,
@@ -90,7 +155,7 @@ function MoveForm({
   efficient: readonly RestMove[];
   /** Most moves: 2, or 3 with Celestial Trance (CB 56). */
   slots: number;
-  /** Oasis (HF 27): the party's lowest downtime die is rerolled when this short rest ends, keeping the higher result. */
+  /** Oasis (HF 27): after this short rest the PC can reroll one downtime die and keep the higher result (`OasisDice`). */
   oasis: boolean;
   character: CharacterView;
   allies: CharacterView[];
@@ -219,7 +284,7 @@ function MoveForm({
       ) : null}
       {oasis ? (
         <Small as="p">
-          Oasis (HF 27): when the GM ends this rest, the lowest downtime die the party rolled is rerolled and the higher result is kept, for you or an ally.
+          Oasis (HF 27): once the GM ends this rest and the downtime dice are shown, you can reroll one of them, yours or an ally&apos;s, and keep the higher result.
         </Small>
       ) : null}
       {picks.some((p) => p.move === "workOnProject" && p.countdownId === undefined) ? (

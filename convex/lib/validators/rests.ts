@@ -42,6 +42,27 @@ export const restChoiceMoveValidator = v.object({
   countdownId: v.optional(v.id("countdowns")),
 });
 
+/** The downtime moves that roll a die (1d4 + tier, CB 105); mirrors `DiceMove` (src/lib/domain/rest/feature-moves.ts). */
+export const diceMoveValidator = v.union(v.literal("tendToWounds"), v.literal("clearStress"), v.literal("repairArmor"));
+
+/** One Oasis reroll (HF p.27) of a downtime die: the Duneborne holder, the new roll and the result kept (the higher). */
+export const oasisRerollValidator = v.object({ holderId: v.id("characters"), rolled: v.number(), kept: v.number() });
+
+/**
+ * A die a finished short rest (or an interrupted long one) rolled for a downtime move (DA5): the mover, the move, the
+ * ally it targeted, the die, the mover's tier, the first roll, the result the move now uses and each Oasis reroll.
+ */
+export const downtimeDieValidator = v.object({
+  characterId: v.id("characters"),
+  move: diceMoveValidator,
+  targetId: v.optional(v.id("characters")),
+  sides: v.number(),
+  bonus: v.number(),
+  rolled: v.number(),
+  value: v.number(),
+  rerolls: v.array(oasisRerollValidator),
+});
+
 export const restFields = {
   campaignId: v.id("campaigns"),
   kind: restKindValidator,
@@ -60,6 +81,18 @@ export const restFields = {
   fearGained: v.optional(v.number()),
   /** The `actionLog` group of the finished rest, for undo. */
   groupId: v.optional(v.string()),
+  /**
+   * DA5 (widened; rows before it have none): the downtime dice the ended rest rolled, in roll order, for Oasis (HF
+   * p.27). At most three per resting PC (Celestial Trance), so hard-capped by REST_PARTY_MAX (CD8). Cleared by undo.
+   */
+  dice: v.optional(v.array(downtimeDieValidator)),
+  /** DA5 (widened): the resting PCs who held Oasis when a short rest (or an interrupted long one) ended. Cleared by undo. */
+  oasisHolders: v.optional(v.array(v.id("characters"))),
+  /**
+   * DA5 (widened): when the GM closed the ended rest's results panel. Oasis rerolls are possible only while the results
+   * are first shown (user 2026-10-30), so `oasisReroll` refuses once this is set. Cleared by undo.
+   */
+  resultsClosedAt: v.optional(v.number()),
 };
 
 export const restChoiceFields = {
@@ -74,3 +107,4 @@ export const restChoiceFields = {
 
 export type RestKind = Infer<typeof restKindValidator>;
 export type RestMove = Infer<typeof restMoveValidator>;
+export type DiceMove = Infer<typeof diceMoveValidator>;

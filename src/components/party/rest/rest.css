@@ -29,3 +29,7 @@
 /* SD-R: the trance toggle is a 44 px target; an Efficient move greys out once another slot holds one (CB 53). */
 .rp-actions>.sh-pill{min-height:44px}
 .rp-chip:disabled{opacity:.45;cursor:not-allowed}
+/* DA5: the Oasis holder's downtime dice, each with a 44 px "Reroll (keep higher)" pill (HF 27). */
+.rp-dice{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.rp-dice>li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-family:var(--font-garamond),serif;font-size:16px;color:var(--sheet-ink,#2a1f14)}
+.rp-dice .sh-pill{min-height:44px}

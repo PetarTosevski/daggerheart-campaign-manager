@@ -23,13 +23,15 @@
  * Rest-time heritage features (SD-R, src/lib/domain/rest/feature-moves.ts),
  * applied in the same transaction and undo group: Hardy clears a Hit Point on
  * any rest that gives benefits, Efficient lets a short rest take one long rest
- * move, Celestial Trance allows a third move, Oasis rerolls the party's lowest
- * downtime die on a short rest (and an interrupted long rest) and keeps the
- * higher. `current`
+ * move, Celestial Trance allows a third move. Oasis (HF 27; DA5, user
+ * 2026-10-30): a short rest (and an interrupted long rest) stores its downtime
+ * dice and its Oasis holders on the rest row; after the dice are shown each
+ * holder picks one die of any party member (`oasisReroll`), once per short
+ * rest, and keeps the higher result, in the rest's undo group. `current`
  * offers Undo only while the rest's log rows are still undoable (the 30-day
  * snapshot strip, dcm-c26).
  */
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import { applyCountdownAction, CountdownRangeError, CountdownRuleError, MAX_COUNTDOWN_START } from "../src/lib/domain/countdowns/index";
 import {
@@ -45,13 +47,18 @@ import {
   type RestMove as DomainRestMove,
 } from "../src/lib/domain/rest/index";
 import {
+  applyDieDelta,
   applyHardy,
-  applyMovesWithOasis,
+  applyMovesWithDice,
+  DIE_UNIT,
   efficientMoves,
   NO_REST_FEATURES,
+  oasisReroll as rerollDie,
   restFeaturesOf,
   restMoveSlots,
   validateFeatureChoice,
+  type DiceMove as DomainDiceMove,
+  type DowntimeDie,
   type RestFeatures,
 } from "../src/lib/domain/rest/feature-moves";
 import { holdsMartialPreparation } from "../src/lib/domain/session-features/holders";
@@ -69,10 +76,12 @@ import { featureScope } from "./lib/featureScope";
 import { campaignQuery, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
 import { restMovesFor, runRestHooks } from "./lib/restHooks";
 import {
+  downtimeDieValidator,
   restChoiceMoveValidator,
   restKindValidator,
   restMoveValidator,
   restStatusValidator,
+  type DiceMove,
   type RestKind,
   type RestMove,
 } from "./lib/validators/rests";
@@ -83,8 +92,12 @@ import { assertSanctuaryLongRest } from "./trackers/horizon";
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 const kindMatches: Same<RestKind, DomainRestKind> = true;
 const moveMatches: Same<RestMove, DomainRestMove> = true;
+const diceMoveMatches: Same<DiceMove, DomainDiceMove> = true;
 void kindMatches;
 void moveMatches;
+void diceMoveMatches;
+
+type StoredDie = Infer<typeof downtimeDieValidator>;
 
 /** Rests read back to count short rests; a long rest is never this far back in practice. */
 const REST_SCAN = 50;
@@ -216,7 +229,7 @@ const movesView = v.object({
   /** Efficient (CB 53): the long rest moves the PC can take one of on this short rest, with `choose`'s `efficient`. */
   efficient: v.array(restMoveValidator),
   slots: v.number(),
-  /** The PC holds Oasis and this is a short rest: a downtime die is rerolled at the end (HF 27). */
+  /** The PC holds Oasis and this is a short rest: after the dice are shown, they can reroll one downtime die (HF 27). */
   oasis: v.boolean(),
 });
 
@@ -253,6 +266,12 @@ export const current = campaignQuery({
         fearRoll: v.union(v.number(), v.null()),
         fearGained: v.union(v.number(), v.null()),
         undoable: v.boolean(),
+        /** The downtime dice it rolled, in roll order (`oasisReroll`'s `die` is the index); empty for older rows. */
+        dice: v.array(downtimeDieValidator),
+        /** The resting PCs who held Oasis when it ended; each can reroll one die (HF 27). */
+        oasisHolders: v.array(v.id("characters")),
+        /** The results panel is still up (dice rolled, the GM has not closed it): Oasis rerolls are open (DA5). */
+        resultsOpen: v.boolean(),
       }),
       v.null(),
     ),
@@ -286,6 +305,9 @@ export const current = campaignQuery({
               fearRoll: last.fearRoll ?? null,
               fearGained: last.fearGained ?? null,
               undoable: await groupUndoable(ctx, ctx.campaign._id, last.groupId),
+              dice: last.dice ?? [],
+              oasisHolders: last.oasisHolders ?? [],
+              resultsOpen: (last.dice ?? []).length > 0 && last.resultsClosedAt === undefined,
             },
     };
   },
@@ -381,8 +403,18 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
   const input: Record<string, CharacterSheet> = {};
   for (const [id, sheet] of before) input[id] = sheet;
   const features = new Map<Id<"characters">, RestFeatures>(pcs.map((c) => [c._id, featuresOf(campaign, before.get(c._id)!)]));
-  const oasisHolders = pcs.filter((c) => features.get(c._id)!.oasis).map((c) => c._id);
-  const moved = applyMovesWithOasis(kind, input, choices, rollDie, oasisHolders);
+  const moved = applyMovesWithDice(kind, input, choices, rollDie);
+  // The dice's ids are the resting PCs' (the moves' keys): map them back to typed ids without a cast (CD7).
+  const pcIds = new Map<string, Id<"characters">>(pcs.map((c) => [c._id, c._id]));
+  const storedDie = (d: DowntimeDie): StoredDie => {
+    const characterId = pcIds.get(d.characterId)!;
+    const targetId = d.targetId !== undefined ? pcIds.get(d.targetId) : undefined;
+    return { characterId, move: d.move, ...(targetId !== undefined ? { targetId } : {}), sides: d.sides, bonus: d.bonus, rolled: d.rolled, value: d.value, rerolls: [] };
+  };
+  // Oasis (HF 27, "During a short rest"): on a short rest (an interrupted long rest runs as one) the dice and the
+  // holders who can still act are stored, and each holder picks a die to reroll afterwards (`oasisReroll`).
+  const oasisHolders =
+    kind === "short" ? pcs.filter((c) => features.get(c._id)!.oasis && !before.get(c._id)!.conditions.includes("unconscious")).map((c) => c._id) : [];
 
   // Card timing uses (CA4b, convex/lib/cardHand.ts): `afterRest` before the rest's expiry (Wild Surge needs its effect
   // active to drop it), `afterLongRest` after a finished long rest's expiry (Inspirational Words' tokens).
@@ -499,6 +531,8 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     fearRoll,
     fearGained: gained,
     groupId,
+    ...(kind === "short" && moved.dice.length > 0 ? { dice: moved.dice.map(storedDie) } : {}),
+    ...(oasisHolders.length > 0 ? { oasisHolders } : {}),
   });
   return { fearRoll, fearGained: gained, ...(countdownLines !== undefined ? { countdownLines } : {}) };
 }
@@ -573,8 +607,109 @@ export const undo = keyedGmMutation({
         fearRoll: undefined,
         fearGained: undefined,
         groupId: undefined,
+        dice: undefined,
+        oasisHolders: undefined,
+        resultsClosedAt: undefined,
       });
       return { fearReverted };
+    }),
+});
+
+/**
+ * Closes the latest ended rest's results panel (DA5, user 2026-10-30): Oasis rerolls are open only while the short
+ * rest's results are first shown, so this ends them (`resultsClosedAt`, checked by `oasisReroll`). Closing twice is a
+ * no-op. REST_RULE for a rest that is not the latest or has not ended. GM only.
+ */
+export const closeResults = keyedGmMutation({
+  args: { restId: v.id("rests") },
+  returns: v.null(),
+  handler: async (ctx, { restId }) =>
+    ctx.once("rest_close_results", { restId }, async () => {
+      const rest = await ctx.db.get("rests", restId);
+      if (rest === null || rest.campaignId !== ctx.campaign._id) throw appError("NOT_FOUND");
+      if (rest.status === "open") throw restRule("That rest is still under way.");
+      const [newest] = await ctx.db
+        .query("rests")
+        .withIndex("by_campaign_started", (q) => q.eq("campaignId", ctx.campaign._id))
+        .order("desc")
+        .take(1);
+      if (newest === undefined || newest._id !== rest._id) throw restRule("Only the latest rest's results can be closed.");
+      if (rest.resultsClosedAt === undefined) await ctx.db.patch("rests", rest._id, { resultsClosedAt: Date.now() });
+      return null;
+    }),
+});
+
+/** The rows one undo group holds (`GROUP_MAX`, convex/lib/actionLog.ts): a reroll that would overflow it is refused. */
+const UNDO_GROUP_MAX = 50;
+
+/**
+ * Oasis (Duneborne, HF p.27): "During a short rest, you or an ally can reroll a die used for a downtime move and take
+ * the higher result." The player picks the die after the dice are shown (user 2026-10-30, DA5): `characterId` is the
+ * Oasis holder (its owner or the GM acts), `die` the index of one of the latest rest's downtime dice (any party
+ * member's). Once per holder per short rest (an interrupted long rest runs as one, CB 105). The server rolls, keeps the
+ * higher result and clears the difference on the move's target, logged in the rest's actionLog group so the rest's
+ * undo reverts it. REST_RULE when the rest is not the latest ended short rest, the character held no Oasis at its end,
+ * the die doesn't exist or the holder already rerolled.
+ */
+export const oasisReroll = keyedUserMutation({
+  args: { restId: v.id("rests"), characterId: v.id("characters"), die: v.number() },
+  returns: v.object({ rolled: v.number(), kept: v.number(), cleared: v.number() }),
+  handler: async (ctx, { restId, characterId, die }) =>
+    ctx.once("rest_oasis", { restId, characterId, die }, async () => {
+      const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit");
+      const rest = await ctx.db.get("rests", restId);
+      if (rest === null || rest.campaignId !== campaign._id) throw appError("NOT_FOUND");
+      const ranShort = (rest.kind === "short" && rest.status === "finished") || (rest.kind === "long" && rest.status === "interrupted");
+      if (!ranShort) throw restRule("Oasis rerolls a die of a short rest, once its downtime dice are rolled (HF 27).");
+      const [newest] = await ctx.db
+        .query("rests")
+        .withIndex("by_campaign_started", (q) => q.eq("campaignId", campaign._id))
+        .order("desc")
+        .take(1);
+      if (newest === undefined || newest._id !== rest._id) throw restRule("Only the latest rest's downtime dice can be rerolled.");
+      // Only while the results are first shown (user 2026-10-30): the GM closing the results panel ends the window.
+      if (rest.resultsClosedAt !== undefined) throw restRule("The rest's results are closed: Oasis can no longer reroll its dice.");
+      if (!(rest.oasisHolders ?? []).includes(character._id)) throw restRule("Only a character who held Oasis (HF 27) during this rest can reroll.");
+      const groupId = rest.groupId;
+      if (groupId === undefined) throw restRule("That rest rolled no downtime dice.");
+
+      const dice = rest.dice ?? [];
+      const r = rerollDie(dice, die, character._id, rollDie);
+      const old = dice[die]!;
+      const kept = r.die.value;
+      const stored = dice.map((d, i) => (i === die ? { ...d, value: kept, rerolls: [...d.rerolls, { holderId: character._id, rolled: r.rolled, kept }] } : d));
+
+      // The rest's undo group must still hold the extra row (undo refuses a partial group).
+      const group = await ctx.db
+        .query("actionLog")
+        .withIndex("by_campaign_group", (q) => q.eq("campaignId", campaign._id).eq("groupId", groupId))
+        .take(UNDO_GROUP_MAX);
+      if (group.length >= UNDO_GROUP_MAX) throw restRule("This rest touched too many characters to add an Oasis reroll.");
+
+      const targetId = old.targetId ?? old.characterId;
+      const target = await ctx.db.get("characters", targetId);
+      const mover = old.characterId === targetId ? target : await ctx.db.get("characters", old.characterId);
+      const targetSheet = target !== null && target.campaignId === campaign._id ? readSheet(target.sheet) : null;
+      const applied = targetSheet === null ? { sheet: null, cleared: 0 } : applyDieDelta(targetSheet, old.move, r.delta);
+      if (targetSheet !== null && applied.sheet !== null && applied.cleared > 0) await saveSheet(ctx, targetId, applied.sheet);
+      await ctx.db.patch("rests", rest._id, { dice: stored });
+
+      const holderName = readSheet(character.sheet).name;
+      const moverName = mover !== null ? (sheetOrNull(mover)?.name ?? "A PC") : "A PC";
+      const on = old.targetId !== undefined && targetSheet !== null ? ` on ${targetSheet.name}` : "";
+      const effect = applied.cleared > 0 ? `: clears ${applied.cleared} more ${DIE_UNIT[old.move]}` : "";
+      await logAction(ctx, {
+        campaignId: campaign._id,
+        ...(targetSheet !== null ? { characterId: targetId } : {}),
+        actorId: ctx.user._id,
+        kind: "rest",
+        visibility: "public",
+        summary: `Oasis (${holderName}): rerolled ${moverName}'s ${MOVE_LABELS[old.move]}${on} d${old.sides} (${r.before}, then ${r.rolled}), kept ${kept}${effect}`,
+        groupId,
+        ...(targetSheet !== null && applied.cleared > 0 ? { before: targetSheet } : {}),
+        undoable: true,
+      });
+      return { rolled: r.rolled, kept, cleared: applied.cleared };
     }),
 });
 

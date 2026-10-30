@@ -1,16 +1,18 @@
 // SD-R: the rest-time heritage features (src/lib/domain/rest/feature-moves.ts) and the rest picker's slots for them.
 // Book texts: Hardy (HF p.29), Efficient (CB p.53), Celestial Trance (CB p.56), Oasis (HF p.27); interrupted rests CB p.105.
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { readSheet } from "../../convex/lib/characterSheet";
 import { applyMoves, validateChoice, type RestChoice } from "@/lib/domain/rest";
 import {
+  applyDieDelta,
   applyHardy,
-  applyMovesWithOasis,
+  applyMovesWithDice,
   efficientMoves,
   NO_REST_FEATURES,
+  oasisReroll,
   restFeaturesOf,
   restMoveSlots,
   validateFeatureChoice,
@@ -170,54 +172,58 @@ describe("Oasis: 'During a short rest, you or an ally can reroll a die used for 
   // Level 1 is tier 1: each 1d4 move clears the die plus 1.
   const clear = (id: string): RestChoice => ({ characterId: id, moves: [{ move: "clearStress" }, { move: "clearStress" }] });
 
-  it("rerolls the party's lowest downtime die and keeps the higher result", () => {
-    // d rolls 2, 4; the ally rolls 1, 3. The lowest is the ally's 1, rerolled to 4 (kept).
-    const r = applyMovesWithOasis("short", { d: duneborne(), a: sheet("Ally") }, [clear("d"), clear("a")], scripted(2, 4, 1, 3, 4), ["d"]);
-    expect(r.sheets.a.stress).toBe(0);
-    expect(r.sheets.a.hp).toBe(4);
-    expect(r.lines.d.at(-1)).toBe("Oasis: rerolled a d4 (1, then 4), kept 4");
-    // the replay used the kept 4 for the ally's first die: clears 5 then 4 of 5 Stress
-    expect(r.lines.a[0]).toContain("clears 5 Stress");
+  it("applyMovesWithDice records each downtime die in roll order with its move, target and tier; the moves are applyMoves'", () => {
+    const choices: RestChoice[] = [
+      { characterId: "d", moves: [{ move: "prepare" }, { move: "tendToWounds", targetId: "a" }] },
+      { characterId: "a", moves: [{ move: "clearStress" }, { move: "repairArmor" }] },
+    ];
+    const input = { d: duneborne(), a: sheet("Ally", { armorMarked: 2 }) };
+    const r = applyMovesWithDice("short", input, choices, scripted(2, 3, 4));
+    expect(r.dice).toEqual([
+      { characterId: "d", move: "tendToWounds", targetId: "a", sides: 4, bonus: 1, rolled: 2, value: 2, rerolls: [] },
+      { characterId: "a", move: "clearStress", sides: 4, bonus: 1, rolled: 3, value: 3, rerolls: [] },
+      { characterId: "a", move: "repairArmor", sides: 4, bonus: 1, rolled: 4, value: 4, rerolls: [] },
+    ]);
+    expect(r.sheets).toEqual(applyMoves("short", input, choices, scripted(2, 3, 4)).sheets);
+    // No automatic reroll: the holder's lines are the moves' only.
+    expect(r.lines.d.some((l) => l.includes("Oasis"))).toBe(false);
   });
 
-  it("keeps the first result when the reroll is lower", () => {
-    const r = applyMovesWithOasis("short", { d: duneborne() }, [clear("d")], scripted(3, 4, 1), ["d"]);
-    expect(r.lines.d[0]).toContain("clears 4 Stress");
-    expect(r.lines.d[1]).toContain("clears 5 Stress");
-    expect(r.lines.d.at(-1)).toBe("Oasis: rerolled a d4 (3, then 1), kept 3");
+  it("a long rest and Prepare roll no die", () => {
+    const none = () => {
+      throw new Error("no die");
+    };
+    expect(applyMovesWithDice("long", { d: duneborne() }, [{ characterId: "d", moves: [{ move: "tendToAllWounds" }] }], none).dice).toEqual([]);
+    expect(applyMovesWithDice("short", { d: duneborne() }, [{ characterId: "d", moves: [{ move: "prepare" }, { move: "prepare" }] }], none).dice).toEqual([]);
   });
 
-  it("each holder rerolls a different die", () => {
-    const two = applyMovesWithOasis("short", { d: duneborne(), e: duneborne("Dune2") }, [clear("d"), clear("e")], scripted(1, 1, 1, 1, 4, 4), ["d", "e"]);
-    expect(two.lines.d.at(-1)).toContain("kept 4");
-    expect(two.lines.e.at(-1)).toContain("kept 4");
+  it("oasisReroll rerolls the picked die, keeps the higher result and gives the difference", () => {
+    const { dice } = applyMovesWithDice("short", { d: duneborne(), a: sheet("Ally") }, [clear("a")], scripted(1, 2));
+    const up = oasisReroll(dice, 0, "d", scripted(4));
+    expect(up).toMatchObject({ rolled: 4, before: 1, delta: 3 });
+    expect(up.dice[0]).toMatchObject({ rolled: 1, value: 4, rerolls: [{ holderId: "d", rolled: 4, kept: 4 }] });
+    expect(up.dice[1]).toEqual(dice[1]);
+    const down = oasisReroll(dice, 1, "d", scripted(1));
+    expect(down).toMatchObject({ rolled: 1, before: 2, delta: 0 });
+    expect(down.die.value).toBe(2);
   });
 
-  it("a party without a holder and a long rest roll nothing extra", () => {
-    expect(applyMovesWithOasis("short", { d: duneborne() }, [clear("d")], scripted(2, 2), []).lines.d).toHaveLength(2);
-    const long = applyMovesWithOasis(
-      "long",
-      { d: duneborne() },
-      [{ characterId: "d", moves: [{ move: "tendToAllWounds" }] }],
-      () => {
-        throw new Error("a long rest rolls no die");
-      },
-      ["d"],
-    );
-    expect(long.sheets.d.hp).toBe(0);
+  it("once per holder per short rest; another holder may reroll the same die again; a missing die is refused", () => {
+    const { dice } = applyMovesWithDice("short", { d: duneborne(), a: sheet("Ally") }, [clear("a")], scripted(1, 2));
+    const first = oasisReroll(dice, 0, "d", scripted(2)).dice;
+    expect(() => oasisReroll(first, 1, "d", scripted(4))).toThrow(RuleError);
+    const second = oasisReroll(first, 0, "e", scripted(3));
+    expect(second.die).toMatchObject({ value: 3, rerolls: [{ holderId: "d", kept: 2 }, { holderId: "e", kept: 3 }] });
+    expect(second.delta).toBe(1);
+    for (const bad of [-1, 2, 0.5]) expect(() => oasisReroll(dice, bad, "d", scripted(4))).toThrow(RuleError);
   });
 
-  it("with no downtime die rolled (Prepare) there is nothing to reroll", () => {
-    const r = applyMovesWithOasis(
-      "short",
-      { d: duneborne() },
-      [{ characterId: "d", moves: [{ move: "prepare" }, { move: "prepare" }] }],
-      () => {
-        throw new Error("no die");
-      },
-      ["d"],
-    );
-    expect(r.sheets.d.hope).toBe(4);
+  it("applyDieDelta clears the difference on the move's resource, never below zero", () => {
+    const s = sheet("Ally", { hp: 4, stress: 1, armorMarked: 2 });
+    expect(applyDieDelta(s, "tendToWounds", 3)).toMatchObject({ cleared: 3, sheet: { hp: 1 } });
+    expect(applyDieDelta(s, "clearStress", 3)).toMatchObject({ cleared: 1, sheet: { stress: 0 } });
+    expect(applyDieDelta(s, "repairArmor", 3)).toMatchObject({ cleared: 2, sheet: { armorMarked: 0 } });
+    expect(applyDieDelta(s, "clearStress", 0)).toEqual({ sheet: s, cleared: 0 });
   });
 });
 
@@ -227,6 +233,8 @@ type Mine = { moves: string[]; efficient: string[]; slots: number; oasis: boolea
 const LONG_ONLY = ["tendToAllWounds", "clearAllStress", "repairAllArmor", "workOnProject"];
 let mine: Mine = { moves: [...REST_MOVES.short], efficient: [], slots: 2, oasis: false };
 const fired: unknown[] = [];
+/** The latest ended rest `rests.current` answers (the Oasis dice); null while the picker tests run. */
+let lastRest: unknown = null;
 
 vi.mock("convex/react", async () => {
   const { getFunctionName } = await import("convex/server");
@@ -234,9 +242,10 @@ vi.mock("convex/react", async () => {
     useQuery: (ref: Parameters<typeof getFunctionName>[0]) => {
       const name = getFunctionName(ref);
       if (name === "rests:current") {
+        if (lastRest !== null) return { open: null, shortRestsSinceLong: 1, last: lastRest };
         return { open: { _id: "r1", kind: "short", startedAt: 0, gmOverride: false, choices: [], moves: [{ characterId: "c1", ...mine }] }, shortRestsSinceLong: 0, last: null };
       }
-      if (name === "characters:listByCampaign") return [];
+      if (name === "characters:listByCampaign") return [{ _id: "c1", sheet: { name: "Ael" } }, { _id: "c2", sheet: { name: "Bryn" } }];
       return undefined;
     },
     useMutation: () => async (args: unknown) => {
@@ -246,7 +255,7 @@ vi.mock("convex/react", async () => {
   };
 });
 
-const { Picker } = await import("@/components/party/rest/picker");
+const { Picker, OasisDice } = await import("@/components/party/rest/picker");
 
 function renderPicker() {
   const character = { _id: "c1", status: "active", sheet: { name: "Ael", conditions: [], domainCards: { owned: [], loadout: [] } } };
@@ -300,5 +309,61 @@ describe("the rest picker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop using Efficient" }));
     expect(screen.queryByRole("button", { name: "Clear All Stress" })).toBeNull();
     expect(screen.getAllByRole("button", { name: "Tend to Wounds" })[0]).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("the Oasis dice after a short rest (DA5, HF p.27)", () => {
+  const die = (characterId: string, value: number, rerolls: { holderId: string; rolled: number; kept: number }[] = [], targetId?: string) => ({
+    characterId,
+    move: "clearStress",
+    ...(targetId ? { targetId } : {}),
+    sides: 4,
+    bonus: 1,
+    rolled: rerolls.length > 0 ? 1 : value,
+    value,
+    rerolls,
+  });
+  const renderDice = (canEdit = true) => {
+    const character = { _id: "c1", status: "active", sheet: { name: "Ael", conditions: [], domainCards: { owned: [], loadout: [] } } };
+    return render(createElement(OasisDice as never, { campaignId: "camp", character, canEdit }));
+  };
+  const base = { _id: "r1", kind: "short", status: "finished", finishedAt: 1, fearRoll: 1, fearGained: 1, undoable: true, oasisHolders: ["c1"], resultsOpen: true };
+
+  it("lists every party member's die with a 44 px, keyboard-reachable 'Reroll (keep higher)' button that sends the die's index", async () => {
+    lastRest = { ...base, dice: [die("c2", 1), die("c2", 2, [], "c1")] };
+    fired.length = 0;
+    renderDice();
+    const list = screen.getByRole("list", { name: "Downtime dice" });
+    expect(list).toHaveTextContent("Bryn: Clear Stress, d4 1 + tier 1");
+    expect(list).toHaveTextContent("Bryn: Clear Stress on Ael, d4 2 + tier 1");
+    const buttons = screen.getAllByRole("button", { name: "Reroll (keep higher)" });
+    expect(buttons).toHaveLength(2);
+    // A real <button> (keyboard reachable) sized by `.rp-dice .sh-pill { min-height: 44px }` (rest.css).
+    expect(buttons[1]!.tagName).toBe("BUTTON");
+    expect(buttons[1]!.closest(".rp-dice")).not.toBeNull();
+    expect(buttons[1]).toHaveAccessibleDescription("Bryn: Clear Stress on Ael, d4 2 + tier 1");
+    fireEvent.click(buttons[1]!);
+    await vi.waitFor(() => expect(fired.at(-1)).toMatchObject({ restId: "r1", characterId: "c1", die: 1 }));
+    cleanup();
+    lastRest = null;
+  });
+
+  it("after the holder's reroll it shows the kept result and no more buttons; a viewer who can't edit gets none", () => {
+    lastRest = { ...base, dice: [die("c2", 4, [{ holderId: "c1", rolled: 4, kept: 4 }]), die("c2", 2)] };
+    renderDice();
+    expect(screen.getByRole("list", { name: "Downtime dice" })).toHaveTextContent("d4 4 + tier 1 (first 1; Ael rerolled 4, kept 4)");
+    expect(screen.queryByRole("button", { name: "Reroll (keep higher)" })).toBeNull();
+    expect(screen.getByText(/Used this rest\./)).toBeTruthy();
+    cleanup();
+    lastRest = { ...base, dice: [die("c2", 1)] };
+    renderDice(false);
+    expect(screen.queryByRole("button", { name: "Reroll (keep higher)" })).toBeNull();
+    cleanup();
+    // Once the GM closes the results panel, the dice and the button are gone (user 2026-10-30).
+    lastRest = { ...base, resultsOpen: false, dice: [die("c2", 1)] };
+    renderDice();
+    expect(screen.queryByRole("region", { name: "Oasis" })).toBeNull();
+    cleanup();
+    lastRest = null;
   });
 });

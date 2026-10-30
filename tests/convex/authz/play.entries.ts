@@ -98,6 +98,10 @@ const area: Area = {
     // The open rest is the latest but changed nothing yet: the GM meets REST_RULE after the access check.
     { fn: api.rests.undo, access: "gm", setup: openRest, okCodes: ["REST_RULE"] },
     { fn: api.rests.choose, access: "own", setup: openRest, okCodes: ["REST_RULE"] },
+    // DA5: the Oasis holder's owner or the GM; the open rest has no dice yet, so access passes and the rule answers.
+    { fn: api.rests.oasisReroll, access: "own", setup: openRest, args: () => ({ die: 0 }), okCodes: ["REST_RULE"] },
+    // DA5: the GM closes the latest ended rest's results; the open rest has not ended, so the GM meets REST_RULE.
+    { fn: api.rests.closeResults, access: "gm", setup: openRest, okCodes: ["REST_RULE"] },
     { fn: api.rests.createProject, access: "own", args: () => ({ name: "Forge a blade", startingValue: 4 }) },
 
     // ---------------------------------------------------------------- rolls

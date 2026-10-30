@@ -158,6 +158,49 @@ test("Martial Preparation (CB 48): with a mastery Slayer in the party, an ally t
   await expect(page.getByRole("article", { name: ally }).getByRole("list", { name: "Session features" })).toContainText("Slayer Dice 1/1");
 });
 
+test("Oasis (HF 27): after a short rest a Duneborne's sheet offers 'Reroll (keep higher)' on a downtime die, once", async ({ page }) => {
+  const { campaignId } = await gmCreatesCampaign(page);
+  const gmApi = await convexAs(page);
+  await gmApi.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true });
+  const hero = unique("Sefa");
+  const { characterId } = await gmApi.mutation(api.characters.create, {
+    campaignId,
+    draft: { ...bardDraft(hero), communityId: "duneborne" },
+    idempotencyKey: crypto.randomUUID(),
+  });
+  await gmApi.mutation(api.characters.adjustResource, { characterId, resource: "stress", delta: 6 });
+  const { restId } = await gmApi.mutation(api.rests.start, { campaignId, kind: "short", idempotencyKey: crypto.randomUUID() });
+  await gmApi.mutation(api.rests.choose, {
+    restId,
+    characterId,
+    moves: [{ move: "tendToWounds" }, { move: "clearStress" }],
+    idempotencyKey: crypto.randomUUID(),
+  });
+  await gmApi.mutation(api.rests.finish, { campaignId, restId, idempotencyKey: crypto.randomUUID() });
+
+  // The holder's sheet lists both dice; the player (here the GM) picks the Clear Stress die with the keyboard.
+  await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  const oasis = page.getByRole("region", { name: "Oasis" });
+  const dice = oasis.getByRole("list", { name: "Downtime dice" });
+  await expect(dice.getByRole("listitem")).toHaveCount(2);
+  const reroll = dice.getByRole("listitem").filter({ hasText: "Clear Stress" }).getByRole("button", { name: "Reroll (keep higher)" });
+  await reroll.focus();
+  await page.keyboard.press("Enter");
+  await expect(oasis.getByText(/Used this rest\./)).toBeVisible();
+  await expect(oasis.getByRole("button", { name: "Reroll (keep higher)" })).toHaveCount(0);
+  await expect(dice.getByRole("listitem").filter({ hasText: "Clear Stress" })).toContainText(`${hero} rerolled`);
+
+  // The GM closes the results on the dashboard: the sheet's Oasis panel goes away (user 2026-10-30).
+  await page.goto(`/campaigns/${campaignId}`);
+  const results = page.getByRole("region", { name: "Rest", exact: true }).getByRole("group", { name: "Rest results" });
+  await expect(results.getByRole("listitem")).toHaveCount(2);
+  await results.getByRole("button", { name: "Close results" }).click();
+  await expect(results).toHaveCount(0);
+  await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
+  await expect(page.getByRole("article", { name: hero })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Oasis" })).toHaveCount(0);
+});
+
 test("after three short rests the GM's Start short rest is disabled with the rule (CB 105, HF 176)", async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
   const gmApi = await convexAs(page);

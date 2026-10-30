@@ -20,6 +20,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
   const finish = useIntent(api.rests.finish);
   const interrupt = useIntent(api.rests.interrupt);
   const undo = useIntent(api.rests.undo);
+  const closeResults = useIntent(api.rests.closeResults);
 
   if (state === undefined || party === undefined) {
     return (
@@ -32,7 +33,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
   if (!isGm && open === null) return null;
   const resting = party.filter((c) => c.status === "active");
   const blocked = mustLongRest("short", shortRestsSinceLong);
-  const error = start.error ?? finish.error ?? interrupt.error ?? undo.error;
+  const error = start.error ?? finish.error ?? interrupt.error ?? undo.error ?? closeResults.error;
 
   return (
     <section aria-labelledby="rest-h" className="flex flex-col gap-3 rounded-[14px] border border-[#2a3a40] bg-[#141e22] p-5">
@@ -76,6 +77,29 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
                   Undo rest
                 </BrandButton>
               ) : null}
+            </div>
+          ) : null}
+          {last !== null && last.resultsOpen ? (
+            // DA5: the short rest's results, shown once. While they are up, Oasis holders can reroll a die on their
+            // sheet (HF 27); closing them ends that for good (the server refuses rerolls after `closeResults`).
+            <div role="group" aria-label="Rest results" className="flex flex-col gap-2 text-[14px] text-[#c9d2cf]">
+              <ul aria-label="Downtime dice" className="m-0 flex list-none flex-col gap-1 p-0">
+                {last.dice.map((d, i) => {
+                  const name = (id: string) => party.find((c) => c._id === id)?.sheet.name ?? "A PC";
+                  return (
+                    // The dice never move: the roll order is their identity.
+                    <li key={i}>
+                      <strong className="text-parchment">{name(d.characterId)}</strong>: {MOVE_LABELS[d.move]}
+                      {d.targetId !== undefined ? ` on ${name(d.targetId)}` : ""}, d{d.sides} {d.value} + tier {d.bonus}
+                      {d.rerolls.length > 0 ? ` (Oasis: first ${d.rolled})` : ""}
+                    </li>
+                  );
+                })}
+              </ul>
+              {last.oasisHolders.length > 0 ? <span>Oasis (HF 27): a Duneborne can reroll one of these dice on their sheet until the results are closed.</span> : null}
+              <BrandButton size="sm" disabled={closeResults.pending} onClick={() => void closeResults.fire({ campaignId, restId: last._id })}>
+                Close results
+              </BrandButton>
             </div>
           ) : null}
           {isGm && last !== null && last.kind === "long" && last.status === "finished" ? <LongTermAfterRest campaignId={campaignId} /> : null}

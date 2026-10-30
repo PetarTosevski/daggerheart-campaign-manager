@@ -5,7 +5,8 @@ import { restChoiceFields, restFields } from "../lib/validators/rests";
 export const restTables = {
   /**
    * Party rests (D5, decision 10): the GM starts one, players choose, the GM
-   * finishes or interrupts it. Campaign-scoped: purged with its campaign.
+   * finishes or interrupts it. Campaign-scoped: purged with its campaign. An ended short rest keeps its downtime dice
+   * and Oasis holders (`dice`, `oasisHolders`; DA5, HF 27) for the player-picked reroll.
    *
    * - `by_campaign_status_started`: the open rest (`status: "open"`, at most one).
    * - `by_campaign_started`: rests newest first, to count short rests since the last long one (CB 105).

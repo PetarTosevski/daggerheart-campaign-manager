@@ -7,7 +7,9 @@
 // - Efficient (Clank, CB p.53): "When you take a short rest, you can choose a long rest move instead of a short rest move."
 // - Celestial Trance (Elf, CB p.56): "During a rest, you can drop into a trance to choose an additional downtime move."
 // - Oasis (Duneborne, HF p.27): "During a short rest, you or an ally can reroll a die used for a downtime move and take
-//   the higher result."
+//   the higher result." The player picks the die after the dice are shown (user 2026-10-30, DA5): `applyMovesWithDice`
+//   records the dice, `oasisReroll` rerolls one die per holder per short rest and keeps the higher, and
+//   `applyDieDelta` clears the extra on the move's target.
 // - CB p.105: an interrupted short rest gives no benefits; an interrupted long rest "gain[s] the benefits of a short rest",
 //   so it runs these features as a short rest (Oasis applies, Efficient has nothing left to offer).
 //
@@ -15,12 +17,13 @@
 // const features = restFeaturesOf(sheet, { hopeAndFear: true });
 // features.trance;                                      // true for an elf
 // restMoveSlots(features);                              // { min: 2, max: 3 }
-// const r = applyMovesWithOasis("short", sheets, choices, rollDie, ["holder-id"]); // rerolls the lowest die, keeps the higher
+// const { dice } = applyMovesWithDice("short", sheets, choices, rollDie); // the moves and their dice, in roll order
+// const r = oasisReroll(dice, 0, "holder-id", rollDie);                  // keeps the higher; r.delta more to clear
 // ```
 
 import { RuleError } from "../../errors/app-error";
 import type { CharacterSheet } from "../../validation/characters";
-import { applyResourceDelta } from "../characters/index";
+import { applyResourceDelta, tierForLevel } from "../characters/index";
 import { owned, type OwnedScope, type OwnedSheet } from "../feature-effects/owned";
 import type { Rng } from "../class-features/types";
 import { applyMoves, type MovesResult } from "./index";
@@ -98,53 +101,106 @@ export function applyHardy(sheet: CharacterSheet, features: RestFeatures): { she
   return { sheet: applyResourceDelta(sheet, "hp", -1), line: "Hardy: clears 1 HP" };
 }
 
+/** The downtime moves that roll a die: 1d4 + the mover's tier (CB 105). */
+export const DICE_MOVES = ["tendToWounds", "clearStress", "repairArmor"] as const;
+export type DiceMove = (typeof DICE_MOVES)[number];
+
+const isDiceMove = (m: RestMove): m is DiceMove => (DICE_MOVES as readonly RestMove[]).includes(m);
+
+/** What a dice move clears, for the feed ("2 more Stress"). */
+export const DIE_UNIT: Record<DiceMove, string> = { tendToWounds: "HP", clearStress: "Stress", repairArmor: "Armor Slots" };
+
+/** One Oasis reroll of a downtime die: the holder, the new roll and the result kept (the higher). */
+export type OasisReroll = { holderId: string; rolled: number; kept: number };
+
 /**
- * Resolves the moves (`applyMoves`) and then spends each Oasis holder's reroll. Oasis: "you or an ally can reroll a die
- * used for a downtime move and take the higher result". The die is picked here: the lowest not yet rerolled, among every
- * downtime die the party rolled, which is the one a reroll helps most (open question to the user: pick it instead).
- * Every holder gets one reroll. Only on a short rest (and an interrupted long rest, which runs as one, CB 105).
- *
- * The moves run twice on the same input: first to see the dice, then replaying the kept results, so the sheets, the
- * lines and the project work all come from `applyMoves` itself.
+ * A die rolled for a downtime move, stored on the rest so an Oasis holder can reroll it after the dice are shown.
+ * `targetId` only on an ally move; `value` is the result the move used, raised by each reroll that came out higher.
  */
-export function applyMovesWithOasis(
+export type DowntimeDie = {
+  characterId: string;
+  move: DiceMove;
+  targetId?: string;
+  sides: number;
+  /** The mover's tier, added to the die (CB 105). */
+  bonus: number;
+  rolled: number;
+  value: number;
+  rerolls: OasisReroll[];
+};
+
+/**
+ * `applyMoves` plus the downtime dice it rolled, in roll order. Each die belongs to the dice move that rolled it, in the
+ * order `applyMoves` resolves them: choice order, then move order, skipping movers and targets who are not resting.
+ */
+export function applyMovesWithDice(
   kind: RestKind,
   input: Readonly<Record<string, CharacterSheet>>,
   choices: readonly RestChoice[],
   rng: Rng,
-  oasisHolders: readonly string[],
-): MovesResult {
-  const holders = kind === "short" ? oasisHolders.filter((id) => input[id] !== undefined) : [];
-  if (holders.length === 0) return applyMoves(kind, input, choices, rng);
-
-  const rolled: { sides: number; value: number }[] = [];
-  applyMoves(kind, input, choices, (sides) => {
+): MovesResult & { dice: DowntimeDie[] } {
+  const rolls: { sides: number; value: number }[] = [];
+  const result = applyMoves(kind, input, choices, (sides) => {
     const value = rng(sides);
-    rolled.push({ sides, value });
+    rolls.push({ sides, value });
     return value;
   });
-
-  const notes = new Map<string, string[]>();
-  const rerolled = new Set<number>();
-  for (const holder of holders) {
-    let lowest = -1;
-    rolled.forEach((die, i) => {
-      if (!rerolled.has(i) && (lowest === -1 || die.value < rolled[lowest]!.value)) lowest = i;
-    });
-    if (lowest === -1) break;
-    rerolled.add(lowest);
-    const die = rolled[lowest]!;
-    const again = rng(die.sides);
-    const kept = Math.max(die.value, again);
-    (notes.get(holder) ?? notes.set(holder, []).get(holder)!).push(`Oasis: rerolled a d${die.sides} (${die.value}, then ${again}), kept ${kept}`);
-    rolled[lowest] = { sides: die.sides, value: kept };
+  const slots: Pick<DowntimeDie, "characterId" | "move" | "targetId" | "bonus">[] = [];
+  for (const choice of choices) {
+    const mover = input[choice.characterId];
+    if (mover === undefined) continue;
+    for (const m of choice.moves) {
+      const targetId = m.targetId ?? choice.characterId;
+      if (input[targetId] === undefined || !isDiceMove(m.move)) continue;
+      slots.push({ characterId: choice.characterId, move: m.move, ...(targetId !== choice.characterId ? { targetId } : {}), bonus: tierForLevel(mover.level) });
+    }
   }
+  // A programming error: applyMoves rolled a die for something other than a dice move, or skipped one.
+  if (slots.length !== rolls.length) throw new Error(`applyMovesWithDice: ${rolls.length} dice for ${slots.length} dice moves`);
+  const dice = slots.map((slot, i) => ({ ...slot, sides: rolls[i]!.sides, rolled: rolls[i]!.value, value: rolls[i]!.value, rerolls: [] }));
+  return { ...result, dice };
+}
 
-  let next = 0;
-  const result = applyMoves(kind, input, choices, (sides) => {
-    const die = rolled[next++];
-    return die !== undefined && die.sides === sides ? die.value : rng(sides);
-  });
-  for (const [id, lines] of notes) result.lines[id] = [...(result.lines[id] ?? []), ...lines];
-  return result;
+/**
+ * Oasis (HF p.27): "During a short rest, you or an ally can reroll a die used for a downtime move and take the higher
+ * result." The player picks the die after the dice are shown (user 2026-10-30): `holderId` rerolls `dice[index]`, once
+ * per short rest, and keeps the higher result. Returns the dice with the reroll recorded, the rerolled die, the new roll,
+ * the result before and how much the kept result raised it (`delta`, 0 when the reroll is not higher). Throws
+ * `RuleError("REST_RULE")` for a missing die or a holder who already rerolled a die this rest.
+ */
+export function oasisReroll(
+  dice: readonly DowntimeDie[],
+  index: number,
+  holderId: string,
+  rng: Rng,
+): { dice: DowntimeDie[]; die: DowntimeDie; rolled: number; before: number; delta: number } {
+  const die = Number.isInteger(index) && index >= 0 ? dice[index] : undefined;
+  if (die === undefined) throw new RuleError("REST_RULE", "That downtime die doesn't exist.");
+  if (dice.some((d) => d.rerolls.some((r) => r.holderId === holderId))) throw new RuleError("REST_RULE", "Oasis is used once per short rest: this character already rerolled a die.");
+  const rolled = rng(die.sides);
+  const kept = Math.max(die.value, rolled);
+  const next: DowntimeDie = { ...die, value: kept, rerolls: [...die.rerolls, { holderId, rolled, kept }] };
+  return { dice: dice.map((d, i) => (i === index ? next : d)), die: next, rolled, before: die.value, delta: kept - die.value };
+}
+
+/**
+ * The extra a raised die clears on the move's target, as if the move had used the higher result: Tend to Wounds clears
+ * Hit Points, Clear Stress Stress, Repair Armor Armor Slots, `delta` more of each (never below zero marked).
+ */
+export function applyDieDelta(sheet: CharacterSheet, move: DiceMove, delta: number): { sheet: CharacterSheet; cleared: number } {
+  if (delta <= 0) return { sheet, cleared: 0 };
+  switch (move) {
+    case "tendToWounds": {
+      const next = applyResourceDelta(sheet, "hp", -delta);
+      return { sheet: next, cleared: sheet.hp - next.hp };
+    }
+    case "clearStress": {
+      const next = applyResourceDelta(sheet, "stress", -delta);
+      return { sheet: next, cleared: sheet.stress - next.stress };
+    }
+    case "repairArmor": {
+      const armorMarked = Math.max(0, sheet.armorMarked - delta);
+      return { sheet: { ...sheet, armorMarked }, cleared: sheet.armorMarked - armorMarked };
+    }
+  }
 }
