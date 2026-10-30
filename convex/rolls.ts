@@ -33,6 +33,7 @@
 import { v } from "convex/values";
 
 import { withEffects } from "../src/lib/domain/characters/effects";
+import { withPassiveTraits } from "../src/lib/domain/characters/derived";
 import { applyDualityEffects, assertTypedModifier, dualityEffects, OUTCOME_LABEL, rollDuality, rollFree, spendHope, typedLabel } from "../src/lib/domain/dice/index";
 import { countsAsActionRoll } from "../src/lib/domain/countdowns/advanced";
 import {
@@ -73,6 +74,7 @@ import {
   signed,
   versus,
 } from "./lib/rolls";
+import { featureScope } from "./lib/featureScope";
 import { rollValidator } from "./lib/validators/actionLog";
 import { traitIdValidator } from "./lib/validators/characters";
 
@@ -168,7 +170,8 @@ export const tagTeam = keyedUserMutation({
       ];
       const rolls = [];
       for (const { loaded, sheet, side, before } of sides) {
-        const live = withEffects(sheet);
+        // DA19 (B1): a Beastform's trait bonus is a passive of the drawer's table, not an effect mod.
+        const live = withPassiveTraits(withEffects(sheet), featureScope(lead.campaign));
         const { roll } = rules(() =>
           rollDuality(
             { kind: "action", trait: live.traits[side.trait], modifier: side.modifier, ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}), advantage: 0, disadvantage: 0, help: 0 },

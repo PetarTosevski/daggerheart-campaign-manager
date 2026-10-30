@@ -214,7 +214,9 @@ export function drawerOf(characterId: Id<"characters">, sheet: CharacterSheet, c
     const isActive = holding !== undefined && holding.holds(sheet);
     const holdings = holdingsFor(sheet, held, f.owner);
     const upgraded = entry ? applyUpgrades(entry, holdings) : undefined;
-    const uses = (upgraded ? asCardEffect(upgraded).uses : []).map((u) => {
+    // DA19 (DA9 follow-up 3): only the uses the feature holds (`OwnedFeature.uses`: an Evolved form's uses keyed by its base).
+    const heldUses = (upgraded ? asCardEffect(upgraded).uses : []).filter((u) => f.uses === undefined || f.uses.includes(u.id));
+    const uses = heldUses.map((u) => {
       const a: Availability = entry ? featureAvailability(sheet, entry, u.id, { holdings }) : { state: "ready" };
       const spec = specOf(u);
       const blocked = isActive && u.activation.kind !== "passive";

@@ -37,7 +37,7 @@ import { FEATURE_CLASSIFICATION } from "../../src/lib/srd/feature-effects/classi
 import type { CardEffect, CardUse, Duration, Range, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { lineOfSight, rangeCheck, rangeFromWeapon, tokenDistance, type Combatant, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
-import { derivedDefense, derivedThresholds } from "../../src/lib/domain/characters/derived";
+import { derivedDefense, derivedThresholds, withPassiveTraits } from "../../src/lib/domain/characters/derived";
 import { withEffects } from "../../src/lib/domain/characters/effects";
 import { hopeMax, tierForLevel } from "../../src/lib/domain/characters/index";
 import { spellcastTraitOf } from "../../src/lib/domain/characters/spellcast";
@@ -154,7 +154,8 @@ export function pcCombatant(id: string, sheet: CharacterSheet): Combatant & { ar
  * `cardId` is the `cardTokens` id: the card id, or `feat:<featureId>` for a feature (SD3).
  */
 export function cardActor(id: string, sheet: CharacterSheet, cardId: string, trait: TraitId | undefined): ActorState {
-  const live = withEffects(sheet);
+  // DA19 (B1, dcm-bxp.99.19.19): traits with the passive features' bonuses (a Beastform's statistics, CB p.30).
+  const live = withPassiveTraits(withEffects(sheet));
   const spellTrait = spellcastTraitOf(sheet);
   const domainsOf = (ids: readonly string[]) => ids.flatMap((c) => (getDomainCard(c) ? [getDomainCard(c)!.domain as DomainId] : []));
   const vault = sheet.domainCards.owned.filter((c) => !sheet.domainCards.loadout.includes(c));

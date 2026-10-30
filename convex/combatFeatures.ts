@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { withEffects } from "../src/lib/domain/characters/effects";
+import { withPassiveTraits } from "../src/lib/domain/characters/derived";
 import { appError } from "../src/lib/errors/app-error";
 import { featureEffect } from "../src/lib/srd/feature-effects/index";
 import { FOCUS_HOLD_MAX, type CharacterSheet } from "../src/lib/validation/characters";
@@ -33,6 +34,7 @@ import {
 } from "./lib/featureRunner";
 import { campaignFearState } from "./lib/fear";
 import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
+import { featureScope } from "./lib/featureScope";
 import { atLeast } from "./lib/permissions";
 import { rangeBandValidator } from "./lib/validators/combatRequests";
 
@@ -378,7 +380,7 @@ export const refocus = keyedCampaignMutation({
       if (martial === undefined) throw appError("FEATURE_STATE_MISSING");
       if (sheet.featureUses.some((u) => u.key === REFOCUS_KEY)) throw appError("FEATURE_EXHAUSTED");
       if (!calm) throw appError("INVALID", "Refocus needs a moment of calm.");
-      const count = Math.max(0, withEffects(sheet).traits.instinct);
+      const count = Math.max(0, withPassiveTraits(withEffects(sheet), featureScope(campaign)).traits.instinct);
       const dice = Array.from({ length: count }, () => rollDie(6));
       const focus = Math.min(FOCUS_HOLD_MAX, Math.max(0, ...dice));
       const next: CharacterSheet = {

@@ -237,7 +237,10 @@ export function pickFeature(input: {
   if (entry === undefined) throw appError("FEATURE_NOT_COMBAT", `${feature.name} isn't automated on the map yet.`);
   const holdings = holdingsFor(sheet, held, entry.owner);
   let upgraded = applyUpgrades(entry, holdings);
-  const picked = pickUse(asCardEffect(upgraded), input.useId);
+  // DA19 (DA9 follow-up 3): only the uses the feature holds (`OwnedFeature.uses`: under an Evolved form, the uses keyed by
+  // its base form); any other is refused like a use the entry lacks.
+  const card = asCardEffect(upgraded);
+  const picked = pickUse({ ...card, uses: card.uses.filter((u) => feature.uses === undefined || feature.uses.includes(u.id)) }, input.useId);
   if (picked === undefined) throw appError("INVALID", `${feature.name} has no "${input.useId ?? ""}".`);
   if (picked.activation.kind === "passive") throw appError("FEATURE_NOT_COMBAT", `${picked.name} is always on.`);
   const transform = input.transform;

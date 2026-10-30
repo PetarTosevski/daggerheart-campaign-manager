@@ -12,6 +12,7 @@
 import { v } from "convex/values";
 
 import { withEffects } from "../../src/lib/domain/characters/effects";
+import { withPassiveTraits } from "../../src/lib/domain/characters/derived";
 import { BRAWLERS_STRIKE } from "../../src/lib/domain/class-features/classes/brawler";
 import { afterDualityRoll, rollOptions, weaponOverrides } from "../../src/lib/domain/class-features/hooks";
 import { CLASS_FEATURES } from "../../src/lib/domain/class-features/index";
@@ -166,7 +167,8 @@ async function loadIkonis(ctx: QueryCtx, campaign: Doc<"campaigns">, character: 
 export function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DualityInput; extras: string[] } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
   assertTypedModifier(args.modifier);
-  const live = withEffects(sheet);
+  // DA19 (B1, dcm-bxp.99.19.19): the passive features' trait bonuses (a Beastform's statistics, CB p.30) on top of effects.
+  const live = withPassiveTraits(withEffects(sheet), scope);
   const exp = experienceBonus(sheet.experiences, args.experienceIds);
   const opts = applyRollOptions(spendHope(sheet, exp.hope), rollOptions(sheet, args.kind, CLASS_FEATURES, scope), args.options);
   const attack = args.attack || ikonis !== null;
