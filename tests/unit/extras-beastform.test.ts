@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveBeastform, validateBeastform } from "../../src/lib/frames/extras/beastform";
+import { EVOLVED, HYBRID, resolveBeastform, validateBeastform } from "../../src/lib/frames/extras/beastform";
+import { BEASTFORM_STATS, EVOLVED_FORMS, HYBRID_EXTRA_STRESS } from "../../src/lib/srd/feature-effects/beastforms";
 import { extrasFor, parseDamage, stepDie } from "../../src/lib/frames/extras/common";
 
 describe("extras applicability", () => {
@@ -72,5 +73,15 @@ describe("Beastform (Core pp.31-35)", () => {
     expect(r.name).toBe("Legendary Hybrid (Agile Scout + Armored Sentry)");
     expect(r.advantages).toEqual(["deceive", "sneak", "dig", "protect"]);
     expect(r.features.map((f) => f.name)).toEqual(["Hybrid Features", "Agile", "Fragile"]);
+  });
+});
+
+// DA9: the Party sheet's Beastform panel and the drawer's table read the same Evolved and Hybrid numbers (CB p.34-35).
+describe("Beastform panel and the drawer's table agree (DA9)", () => {
+  it("Evolved bonuses and the Hybrid forms", () => {
+    for (const [id, e] of Object.entries(EVOLVED)) expect(EVOLVED_FORMS[id]).toMatchObject(e);
+    expect(Object.keys(HYBRID).sort()).toEqual(Object.keys(HYBRID_EXTRA_STRESS).sort());
+    const r = resolveBeastform({ formId: "legendary-beast", baseFormId: "agile-scout" })!;
+    expect(r.evasionBonus).toBe(BEASTFORM_STATS["agile-scout"]!.evasion + EVOLVED_FORMS["legendary-beast"]!.evasion);
   });
 });

@@ -189,3 +189,36 @@ describe("passives in the adversary attack roll (NV9)", () => {
     expect(r.total).toBe(6);
   });
 });
+
+// DA9 (B1, dcm-bxp.99.19.19): the form's statistics line is summed by passiveMods (SD2 follow-up 2). CB p.32 Agile Scout:
+// "Agility +1 | Evasion +2"; CB p.34 Great Predator: "Strength +2 | Evasion +2 … Gain advantage on: attack, sneak, sprint";
+// CB p.34 Legendary Beast: "A +1 bonus to the trait used by this form • A +2 bonus to Evasion".
+describe("passiveMods: the Beastform's statistics (DA9)", () => {
+  const inForm = (text: string, level = 1, mods?: CharacterSheet["effects"][number]["mods"]) =>
+    sheetOf("druid", "warden-of-the-elements", { level, effects: [{ id: "beastform", source: "Beastform", text, until: "manual", ...(mods ? { mods } : {}) }] });
+
+  it("trait and Evasion, the no-weapons flag and advantage on attacks for an 'attack' verb", () => {
+    const m = passiveMods(inForm("Great Predator: … Can't use weapons", 5));
+    expect(m.evasion).toBe(2);
+    expect(m.traits).toEqual({ strength: 2 });
+    expect(m.flags).toContain("noWeaponsOrSpells");
+    expect(m.advantage).toContain("attack");
+    expect(m.sources).toContain("beastform:great-predator:attack");
+    // The form's advantage rider (a confirmed verb) is the drawer's, not a roll option.
+    expect(m.rollOptions).toEqual([]);
+  });
+
+  it("an older effect with the mods keeps them on the effect; the stat line adds the rest", () => {
+    const m = passiveMods(inForm("Agile Scout: +2 Evasion, +1 agility.", 1, { evasion: 2, trait: { id: "agility", delta: 1 } }));
+    expect(m.evasion).toBe(0);
+    expect(m.traits).toEqual({});
+    expect(m.flags).toContain("noWeaponsOrSpells");
+  });
+
+  it("an Evolved form adds only the use keyed by its base form", () => {
+    const m = passiveMods(inForm("Legendary Beast (Pack Predator): …", 5));
+    expect(m.evasion).toBe(1 + 2);
+    expect(m.traits).toEqual({ strength: 2 + 1 });
+    expect(passiveMods(inForm("Legendary Beast. …", 5)).evasion).toBe(0);
+  });
+});

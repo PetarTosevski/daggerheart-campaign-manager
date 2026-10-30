@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ActorState, PlanStep, RunPlan } from "@/lib/domain/card-effects/run";
+import { rollMatches, type ActorState, type PlanStep, type RunPlan } from "@/lib/domain/card-effects/run";
 import type { CardUse } from "@/lib/domain/card-effects/types";
 import { queueRng } from "@/lib/domain/dice";
 import { beastformAttackId, featureId, parseFeatureId } from "@/lib/domain/feature-effects/ids";
@@ -296,6 +296,23 @@ describe("Tier 2 features (CB p.33)", () => {
     expect(ofKind(prof, "fold")[0]!.step).toMatchObject({ change: { kind: "proficiency", delta: 1 } });
   });
 
+  it("DA9 (dcm-bxp.99.19.6 (5)): the form attack and the 'make an attack' features roll an attack, so Rampage's rider matches them", () => {
+    const rider = useOf(bf("powerful-beast", "Rampage"), "proficiency").activation;
+    const filter = rider.kind === "rider" && rider.trigger.kind === "beforeYouRoll" ? rider.trigger.roll : "damage";
+    for (const form of BEASTFORM_IDS) for (const u of attack(form).uses.filter((u) => u.activation.kind === "action")) expect(rollMatches(filter, u.roll)).toBe(true);
+    for (const [form, name] of [
+      ["mighty-strider", "Trample"],
+      ["pouncing-predator", "Takedown"],
+      ["striking-serpent", "Venomous Strike"],
+      ["massive-behemoth", "Demolish"],
+    ] as const) {
+      expect(bf(form, name).uses.find((u) => u.id === "main")!.roll).toMatchObject({ kind: "trait", attack: true });
+    }
+    // Webslinger is a Finesse Roll, not an attack (CB p.32).
+    expect(rollMatches(filter, useOf(bf("stalking-arachnid", "Webslinger")).roll)).toBe(false);
+    expect(useOf(attack("powerful-beast")).roll).toEqual({ kind: "trait", trait: "strength", difficulty: { kind: "target" }, attack: true });
+  });
+
   it("Thick Hide +2, Hollow Bones −2 damage thresholds", () => {
     expect(useOf(bf("powerful-beast", "Thick Hide")).mods).toEqual([
       { kind: "stat", stat: "majorThreshold", delta: { kind: "fixed", value: 2 } },
@@ -328,13 +345,16 @@ describe("Tier 2 features (CB p.33)", () => {
 });
 
 describe("Tier 3 and 4 features (CB p.34-35)", () => {
-  it("Vicious Maul: a Hope, Vulnerable and +1 Proficiency; Great Predator's is temporary", () => {
+  it("Vicious Maul: a Hope, Vulnerable and +1 Proficiency; temporary for both predators", () => {
     const great = ok(bf("great-predator", "Vicious Maul"), undefined, { actor: inForm("great-predator"), rng: queueRng([]), targets: [foe("bandit")] });
     expect(great.actor.after.hope).toBe(2);
     expect(ofKind(great, "condition")[0]).toMatchObject({ duration: "temporary" });
     expect(ofKind(great, "fold")[0]!.step).toMatchObject({ change: { kind: "proficiency", delta: 1 } });
+    // CB p.34 Aquatic Predator: "make them Vulnerable"; user 2026-10-29 (dcm-bxp.99.19.20, DA9): temporary, like Great
+    // Predator's "temporarily Vulnerable".
     const aquatic = ok(bf("aquatic-predator", "Vicious Maul"), undefined, { actor: inForm("aquatic-predator"), rng: queueRng([]), targets: [foe("bandit")] });
-    expect(ofKind(aquatic, "condition")[0]).toMatchObject({ duration: "manual" });
+    expect(ofKind(aquatic, "condition")[0]).toMatchObject({ condition: { kind: "standard", condition: "vulnerable" }, duration: "temporary" });
+    expect(ofKind(aquatic, "fold")[0]!.step).toMatchObject({ change: { kind: "proficiency", delta: 1 } });
   });
 
   it("Physical Defense +3, Undaunted +2 thresholds", () => {
@@ -388,7 +408,10 @@ describe("Tier 3 and 4 features (CB p.34-35)", () => {
 describe("ownership (SD1 owned, Q10)", () => {
   it("a transformed druid holds the form's features; each one classified combat or passive has an entry", () => {
     for (const b of BEASTFORMS) {
-      const held = owned(druid, { beastformId: b.id }).filter((f) => f.source === "beastform");
+      const all = owned(druid, { beastformId: b.id }).filter((f) => f.source === "beastform");
+      // DA9 (B1): the form's attack and statistics line comes first, a combat entry.
+      expect(all[0]).toMatchObject({ featureId: beastformAttackId(b.id), owner: b.id, usage: "combat" });
+      const held = all.slice(1);
       expect(held.map((f) => f.name)).toEqual(b.features.map((f) => f.name));
       for (const f of held) expect(featureEffect(f.featureId) !== undefined).toBe(f.usage === "combat" || f.usage === "passive");
       expect(featureEffect(beastformAttackId(b.id))).toBeDefined();

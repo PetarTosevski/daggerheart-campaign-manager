@@ -2,6 +2,9 @@
 // uses of every feature a sheet holds (`owned`, SD1: class, subclass rank, multiclass, ancestry, community, transformation,
 // Beastform, stances) from the effect tables (src/lib/srd/feature-effects), with upgrades applied and `requires` checked,
 // so derived stats and the adversary attack roll read the tables instead of a hand-kept list.
+// DA9 (B1, user 2026-10-29, dcm-bxp.99.19.19): a Beastform's statistics line (the `form` use of `beastform:<form>:attack`)
+// and Evolved's per-base use are summed too, trait bonuses in `traits` (`derivedTraits`); an older sheet whose Beastform
+// effect still carries the form's mods is not counted twice (`legacyBeastformMods`).
 //
 // Book texts the tests take their numbers from (printed pages, CB = Core Book, HF = Hope & Fear):
 // - CB p.36, Unwavering / Unrelenting / Undaunted: "Gain a permanent +1 / +2 / +3 bonus to your damage thresholds."
@@ -24,12 +27,13 @@
 // versusMods(sheet, "attacksByThem", { tags: ["Marked for Death"] }).evasion;   // Scorpion's Poise: 2
 // ```
 
-import { activeBeastformId, holdingsFor, owned, type OwnedFeature, type OwnedScope, type OwnedSheet } from "./owned";
+import { activeBeastformId, holdingsFor, isStatLine, owned, type OwnedFeature, type OwnedScope, type OwnedSheet } from "./owned";
 import { featureEffect } from "../../srd/feature-effects/index";
 import { FEATURE_CLASSIFICATION } from "../../srd/feature-effects/classification";
 import { requirementMet, type RequirementState, type StateFacts } from "../card-effects/availability";
 import type { CardUse, CreatureKey, Mod, NumberSource, RollFilter, Versus } from "../card-effects/types";
 import type { CharacterSheet } from "../../validation/characters";
+import { TRAIT_IDS, type TraitId } from "../../srd/types";
 import { applyUpgrades } from "./upgrades";
 
 /** The sheet fields passives read. Every one is optional: a partial sheet holds what it names (derived-stat tests pass `{ level, subclassId }`). */
@@ -61,6 +65,8 @@ export interface StatTotals {
 
 /** What a sheet's passive features add up to right now. */
 export interface PassiveMods extends StatTotals {
+  /** Trait bonuses (DA9: a Beastform's statistics and Evolved bonus, CB p.30-35); `derivedTraits` adds them. */
+  traits: Partial<Record<TraitId, number>>;
   /** Rolls that always have advantage (a `versus`-free `advantage` mod). */
   advantage: RollFilter[];
   /** Rolls against the bearer that always have disadvantage (Sturdy at 1 HP left). */
@@ -204,11 +210,16 @@ export function activePassives(
   const req = requirementState(sheet, state);
   const out: { feature: OwnedFeature; use: CardUse }[] = [];
   for (const feature of held) {
-    if (feature.usage !== "passive") continue;
+    // DA9 (B1): a Beastform's attack and statistics line is a combat entry whose passive `form` use is the form's
+    // statistics (CB p.30: "add their Evasion bonus to your Evasion, and use the trait specified"); its riders are the
+    // drawer's, not roll options.
+    const line = isStatLine(feature);
+    if (feature.usage !== "passive" && !(line && kind === "passive")) continue;
     const entry = featureEffect(feature.featureId);
     if (entry === undefined) continue;
     const upgraded = applyUpgrades(entry, holdingsFor({ subclassId: full.subclassId ?? "", subclassRank: full.subclassRank, level: full.level }, held, entry.owner));
     for (const use of upgraded.uses) {
+      if (feature.uses && !feature.uses.includes(use.id)) continue;
       if (use.activation.kind !== kind) continue;
       if (use.activation.kind === "rider" && use.activation.trigger.kind !== "beforeYouRoll") continue;
       if (!(use.requires ?? []).every((r) => requirementMet(r, req))) continue;
@@ -237,12 +248,16 @@ const matches = (key: CreatureKey, creature: CreatureInfo): boolean => {
  */
 export function passiveMods(sheet: PassiveSheet, state: PassiveState = {}, scope: OwnedScope = {}, only?: (feature: OwnedFeature) => boolean): PassiveMods {
   const totals: StatTotals = { ...EMPTY_STATS };
-  const result: PassiveMods = { ...totals, advantage: [], disadvantageAgainst: [], flags: [], versus: [], sources: [], rollOptions: [] };
+  const result: PassiveMods = { ...totals, traits: {}, advantage: [], disadvantageAgainst: [], flags: [], versus: [], sources: [], rollOptions: [] };
   const amountSheet = { proficiency: sheet.proficiency, level: sheet.level };
+  const legacy = legacyBeastformMods(sheet);
   for (const { feature, use } of activePassives(sheet, state, scope)) {
     if (only && !only(feature)) continue;
     let contributed = false;
     for (const mod of use.mods ?? []) {
+      // An older sheet's Beastform effect still carries the form's trait and Evasion (`withEffects` adds them): the
+      // stat line does not add them a second time (B1, dcm-bxp.99.19.19).
+      if (legacy && isStatLine(feature) && use.id === "form" && (mod.kind === "trait" || (mod.kind === "stat" && mod.stat === "evasion"))) continue;
       contributed = apply(result, feature.featureId, mod, amountSheet) || contributed;
     }
     if (contributed && !result.sources.includes(feature.featureId)) result.sources.push(feature.featureId);
@@ -252,6 +267,15 @@ export function passiveMods(sheet: PassiveSheet, state: PassiveState = {}, scope
     result.rollOptions.push({ featureId: feature.featureId, useId: use.id, name: use.name });
   }
   return result;
+}
+
+/**
+ * Whether the sheet's `beastform` effect still carries the form's mods (written by D5 before DA9 / B1): `withEffects`
+ * adds those, so the stat line's trait and Evasion are skipped for it.
+ */
+export function legacyBeastformMods(sheet: Pick<PassiveSheet, "effects">): boolean {
+  const mods = sheet.effects?.find((e) => e.id === "beastform")?.mods;
+  return mods !== undefined && (mods.evasion !== undefined || mods.trait !== undefined);
 }
 
 function apply(result: PassiveMods, featureId: string, mod: Mod, sheet: { proficiency?: number; level?: number }): boolean {
@@ -264,6 +288,12 @@ function apply(result: PassiveMods, featureId: string, mod: Mod, sheet: { profic
       }
       if (!STAT_KEYS.has(mod.stat)) return false;
       result[mod.stat as keyof StatTotals] += delta;
+      return true;
+    }
+    case "trait": {
+      // DA9: a Beastform's "Agility +1" (CB p.32) and Evolved's "+1 bonus to the trait used by this form" (CB p.34).
+      const delta = passiveAmount(mod.delta, sheet);
+      for (const t of mod.trait === "all" ? TRAIT_IDS : [mod.trait]) result.traits[t] = (result.traits[t] ?? 0) + delta;
       return true;
     }
     case "advantage":

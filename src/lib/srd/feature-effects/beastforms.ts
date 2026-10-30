@@ -111,7 +111,7 @@ export function evolvedBases(formId: string): string[] {
 /**
  * The extra Stress a Hybrid form costs to take (CB p.34 Legendary Hybrid: "To transform into this creature, mark an
  * additional Stress"; CB p.35 Mythic Hybrid: "mark 2 additional Stress"). The transformation itself is the Beastform class
- * feature (D5 `beastform`, FE-druid-sorcerer), which charges 1 Stress; the integrator adds these (bead in the task doc).
+ * feature (D5 `beastform`, FE-druid-sorcerer), which charges 1 Stress; D5's `beastform` marks these on top (DA9).
  */
 export const HYBRID_EXTRA_STRESS: Readonly<Record<string, number>> = { "legendary-hybrid": 1, "mythic-hybrid": 2 };
 
@@ -147,8 +147,11 @@ const POISON_TEXT = "Poisoned: the creature takes 1d10 direct physical damage ea
 
 const enemy = (range: TargetSpec["range"], count: TargetSpec["count"] = { kind: "one" }, extra: Partial<TargetSpec> = {}): TargetSpec => ({ side: "enemy", range, count, ...extra });
 
-/** An attack roll with the form's trait against each target's Difficulty (CB p.32). */
-const formRoll = (trait: TraitId) => ({ kind: "trait" as const, trait, difficulty: { kind: "target" as const } });
+/**
+ * An attack roll with the form's trait against each target's Difficulty (CB p.32). `attack: true` (DA0, DA9): it is an
+ * attack roll, so "before you make an attack roll" riders (Rampage, CB p.33) apply to it (dcm-bxp.99.19.6 (5)).
+ */
+const formRoll = (trait: TraitId) => ({ kind: "trait" as const, trait, difficulty: { kind: "target" as const }, attack: true });
 
 /** "d8+2 physical damage using your Proficiency" (`profDelta`: "a +2 bonus to your Proficiency for this attack"). */
 const physical = (sides: DieSides, plus: number, profDelta = 0): Step => ({
@@ -331,21 +334,19 @@ const thresholds = (formId: string, name: string, delta: number): FeatureEffect 
     }),
   ]);
 
-/** Vicious Maul (CB p.34): a Hope on a successful attack for Vulnerable and +1 Proficiency on this attack. */
-const viciousMaul = (formId: string, temporary: boolean): FeatureEffect =>
+/**
+ * Vicious Maul (CB p.34): a Hope on a successful attack for Vulnerable and +1 Proficiency on this attack. Great Predator
+ * prints "temporarily Vulnerable"; Aquatic Predator prints "make them Vulnerable", read as temporary too (user 2026-10-29,
+ * dcm-bxp.99.19.20).
+ */
+const viciousMaul = (formId: string): FeatureEffect =>
   entry(formId, "Vicious Maul", [
     formUse({
       id: "main",
       name: "Vicious Maul",
       activation: { kind: "rider", trigger: onSuccess },
       costs: [hope(1)],
-      steps: [
-        temporary
-          ? temporarily(VULNERABLE)
-          : // Aquatic Predator prints "make them Vulnerable" without "temporarily" and no end (question Q-FB2).
-            { kind: "condition", to: "targets", when: ["hit"], condition: VULNERABLE, duration: "manual", endsWhen: "No end is printed (CB p.34); the GM clears it" },
-        { kind: "modifyDamage", to: "targets", change: { kind: "proficiency", delta: 1 }, note: "+1 Proficiency for this attack" },
-      ],
+      steps: [temporarily(VULNERABLE), { kind: "modifyDamage", to: "targets", change: { kind: "proficiency", delta: 1 }, note: "+1 Proficiency for this attack" }],
     }),
   ]);
 
@@ -373,7 +374,8 @@ const evolvedEntry = (formId: string): FeatureEffect => {
 // Hybrid Features (CB p.34 Legendary Hybrid, p.35 Mythic Hybrid): "To transform into this creature, mark an additional
 // Stress [2 additional Stress]. Choose any two [three] Beastform options from Tiers 1–2 [1–3]. Choose a total of four
 // [five] advantages and two [three] features from those options." The extra Stress is paid at the transformation
-// (`HYBRID_EXTRA_STRESS`); the chosen features are their own entries, held through the Beastform state (beads).
+// (`HYBRID_EXTRA_STRESS`, by D5's `beastform`); the chosen features are their own entries, held through the Beastform
+// effect (`owned()`, DA9).
 const hybridEntry = (formId: string): FeatureEffect =>
   entry(formId, "Hybrid Features", [formUse({ id: "main", name: "Hybrid Features", activation: { kind: "passive" }, mods: [], steps: [] })]);
 
@@ -606,11 +608,12 @@ const FEATURES: readonly FeatureEffect[] = [
 
   // ---- Tier 3 (CB p.34)
   // Vicious Maul (Aquatic Predator): "When you succeed on an attack against a target, you can spend a Hope to make them
-  // Vulnerable and gain a +1 bonus to your Proficiency for this attack."
-  viciousMaul("aquatic-predator", false),
+  // Vulnerable and gain a +1 bonus to your Proficiency for this attack." Temporary, like Great Predator's (user
+  // 2026-10-29, dcm-bxp.99.19.20).
+  viciousMaul("aquatic-predator"),
   // Vicious Maul (Great Predator): "When you succeed on an attack against a target, you can spend a Hope to make them
   // temporarily Vulnerable and gain a +1 bonus to your Proficiency for this attack."
-  viciousMaul("great-predator", true),
+  viciousMaul("great-predator"),
   birdsEyeView("great-winged-beast"),
   evolvedEntry("legendary-beast"),
   hybridEntry("legendary-hybrid"),

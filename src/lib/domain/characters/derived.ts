@@ -4,6 +4,7 @@ import { overrideEvasion } from "../class-features/hooks";
 import type { FeatureScope } from "../class-features/types";
 import { lunarBonuses } from "../session-features/lunar";
 import type { CharacterSheet } from "../../validation/characters";
+import type { TraitId } from "../../srd/types";
 import { passiveMods, type PassiveSheet, type PassiveState } from "../feature-effects/passives";
 import { damageThresholds, equipmentModifiers, type Thresholds } from "./index";
 
@@ -37,7 +38,8 @@ const ownedScope = (scope: FeatureScope | undefined) => (scope === undefined ? {
  * the active weapon override's Evasion (Brawler's Strike +1, HF 10; needs
  * `classId` and `proficiency`), installed Ikonis augments (Motherboard:
  * Guard, Deny, Block, CB 301-303) and a Waning moon die (+1, Lunar Phases,
- * HF 17; `scope` as in `holdsLunarPhases`, default: allowed); `evasion` on the sheet is the base.
+ * HF 17; `scope` as in `holdsLunarPhases`, default: allowed); `evasion` on the sheet is the base. A Beastform's
+ * Evasion bonus is a passive of the drawer's table (DA9, B1: CB p.30 "add their Evasion bonus to your Evasion").
  */
 export function derivedDefense(
   sheet: Pick<CharacterSheet, "evasion" | "primaryWeaponId" | "secondaryWeaponId" | "armorId"> & SubclassFields & MoonFields & Partial<Pick<CharacterSheet, "classId" | "proficiency">>,
@@ -62,6 +64,29 @@ export function derivedDefense(
     subclassEvasion,
     armorScore: Math.max(0, (armor?.baseScore ?? 0) + mods.armorScore + augments.armorScore + passives.armorScore),
   };
+}
+
+/**
+ * The traits with the passive features' trait bonuses (DA9, B1: user 2026-10-29, dcm-bxp.99.19.19): a Beastform's
+ * statistics (CB p.30: "use the trait specified in their statistics"; CB p.32: "While transformed, you gain a bonus to the
+ * listed trait") and Evolved's "+1 [+2] bonus to the trait used by this form" (CB p.34-35) come from the drawer's table
+ * through `passiveMods`, no longer from D5's Beastform effect. Pass the sheet after `withEffects` (Evolution's +1 and
+ * other effects stay effects); an older sheet whose Beastform effect still carries the mods is not counted twice.
+ *
+ * ```ts
+ * derivedTraits(withEffects(sheet)).agility;   // Agile Scout: + 1
+ * ```
+ */
+export function derivedTraits<T extends Pick<CharacterSheet, "traits"> & SubclassFields>(sheet: T, scope?: FeatureScope, state: PassiveState = {}): CharacterSheet["traits"] {
+  const bonus = passiveMods(sheet, state, ownedScope(scope)).traits;
+  const traits = { ...sheet.traits };
+  for (const [id, delta] of Object.entries(bonus) as [TraitId, number][]) traits[id] += delta;
+  return traits;
+}
+
+/** The sheet with `derivedTraits` in place of its traits (for the callers that read `withEffects(sheet).traits`). */
+export function withPassiveTraits<T extends Pick<CharacterSheet, "traits"> & SubclassFields>(sheet: T, scope?: FeatureScope, state: PassiveState = {}): T {
+  return { ...sheet, traits: derivedTraits(sheet, scope, state) };
 }
 
 /**
