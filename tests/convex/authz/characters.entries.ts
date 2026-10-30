@@ -108,7 +108,8 @@ const area: Area = {
       access: "own",
       args: async (w) => ({ experienceId: (await sheetA(w)).experiences[0]!.id }),
       okCodes: ["FEATURE_NOT_OWNED"],
-      note: "DA11: characterA is the fixture's first core ancestry (a Clank); FEATURE_NOT_OWNED would still mean access was granted",
+      note:
+        "DA11: characterA is the fixture's first core ancestry (a Clank); FEATURE_NOT_OWNED would still mean access was granted. DA16: need edit, exact up to owner; only the GM (owner) may move an existing choice (purposeful-design.test.ts)",
     },
     { fn: api.characters.adjustResource, access: "own", args: () => ({ resource: "stress", delta: 1 }), note: "delta 0 is INVALID before the access check" },
     { fn: api.characters.toggleCondition, access: "own", note: "bead dcm-bxp.51: owner or GM, used by the Combat Map token card" },

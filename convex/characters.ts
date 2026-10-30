@@ -645,24 +645,46 @@ export const removeExperience = userMutation({
 
 /**
  * Purposeful Design (Clank, CB p.53: "At character creation, choose one of your Experiences that best aligns with this
- * purpose and gain a permanent +1 bonus to it."): records the chosen Experience once, for a character created without
- * the choice (DA11, user 2026-10-29). The stored value stays; rolls and displays add the +1 (`experienceValue`).
- * Owner or GM. Refusals: FEATURE_NOT_OWNED (the sheet doesn't hold the feature), NOT_FOUND (no such Experience),
- * INVALID (an Experience is already chosen).
+ * purpose and gain a permanent +1 bonus to it."): records the chosen Experience (DA11, user 2026-10-29). The stored value
+ * stays; rolls and displays add the +1 (`experienceValue`), so the shown value may reach +11 (the level-up cap counts the
+ * stored value, user 2026-10-30).
+ * - The owner picks once, for a character created without the choice.
+ * - The GM (permission `owner` on the character) may move the +1 to another Experience later, as a correction (DA16,
+ *   user 2026-10-30). Moving it to the Experience that already holds it is a no-op.
+ * Removing the chosen Experience removes the +1 with it, and the sheet offers the pick again.
+ * Each pick or move writes one undoable feed row. Refusals: FEATURE_NOT_OWNED (the sheet doesn't hold the feature),
+ * NOT_FOUND (no such Experience), INVALID (the owner's second pick).
  */
 export const choosePurposefulDesign = keyedUserMutation({
   args: { characterId: v.id("characters"), experienceId: v.string() },
   returns: v.null(),
   handler: async (ctx, { characterId, experienceId }) =>
     ctx.once("character_purposeful_design", { characterId, experienceId }, async () => {
-      const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
+      const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "edit", "owner");
+      const sheet = readSheet(character.sheet);
       if (!holdsPurposefulDesign(sheet.ancestry, { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear })) {
         throw appError("FEATURE_NOT_OWNED");
       }
-      if (!sheet.experiences.some((e) => e.id === experienceId)) throw appError("NOT_FOUND");
-      if (sheet.experiences.some((e) => e.purposefulDesign)) invalid("Purposeful Design already has its Experience.");
-      const experiences = sheet.experiences.map((e) => (e.id === experienceId ? { ...e, purposefulDesign: true as const } : e));
+      const target = sheet.experiences.find((e) => e.id === experienceId);
+      if (target === undefined) throw appError("NOT_FOUND");
+      const current = sheet.experiences.find((e) => e.purposefulDesign);
+      if (current !== undefined && permission !== "owner") invalid("Purposeful Design already has its Experience.");
+      if (current?.id === experienceId) return null;
+      const experiences = sheet.experiences.map((e) => (e.id === experienceId ? { ...e, purposefulDesign: true as const } : { id: e.id, name: e.name, value: e.value }));
       await saveSheet(ctx, character._id, { ...sheet, experiences });
+      await logAction(ctx, {
+        campaignId: campaign._id,
+        characterId: character._id,
+        actorId: ctx.user._id,
+        kind: "feature",
+        visibility: "public",
+        summary:
+          current === undefined
+            ? `${sheet.name}: Purposeful Design gives +1 to ${target.name}`
+            : `${sheet.name}: Purposeful Design's +1 moved from ${current.name} to ${target.name}`,
+        before: sheet,
+        undoable: true,
+      });
       return null;
     }),
 });

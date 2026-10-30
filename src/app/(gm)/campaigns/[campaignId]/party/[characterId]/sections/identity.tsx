@@ -35,12 +35,15 @@ const TRAITS: Record<TraitId, { label: string; verbs: string }> = {
 const MOD_MIN = -5;
 const MOD_MAX = 10;
 
-/** "+2", "2", "-1" or "−1" to a number in range; null when it isn't one. */
-function parseModifier(text: string): number | null {
+/**
+ * "+2", "2", "-1" or "−1" to a number in range; null when it isn't one. `bonus` shifts the range for a field that shows
+ * a total with a bonus (Purposeful Design's +1), so a typed +11 stays +11 (DA16).
+ */
+function parseModifier(text: string, bonus = 0): number | null {
   const m = /^\s*([+\-−]?)(\d{1,2})\s*$/.exec(text);
   if (!m) return null;
   const n = Number(m[2]) * (m[1] === "-" || m[1] === "−" ? -1 : 1);
-  return Math.min(MOD_MAX, Math.max(MOD_MIN, n));
+  return Math.min(MOD_MAX + bonus, Math.max(MOD_MIN + bonus, n));
 }
 
 /** The board's trait card: green Cinzel head, ringed number, trait-mark dot, italic verbs; paper steppers for the GM. */
@@ -108,7 +111,7 @@ function ModifierInput({ label, value, bonus = 0, onSave }: { label: string; val
       onFocus={() => setDraft(signed(shown))}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
-        const typed = draft === null ? null : parseModifier(draft);
+        const typed = draft === null ? null : parseModifier(draft, bonus);
         setDraft(null);
         const next = typed === null ? null : Math.min(MOD_MAX, Math.max(MOD_MIN, typed - bonus));
         if (next !== null && next !== value) onSave(next);
@@ -205,18 +208,22 @@ function ExperiencesLevelUp() {
 
 /**
  * Purposeful Design (Clank, CB p.53: "At character creation, choose one of your Experiences that best aligns with this
- * purpose and gain a permanent +1 bonus to it."): a Clank created without the choice picks it once here (DA11). Shown
- * only to editors of a sheet that holds the feature and has no Experience chosen yet.
+ * purpose and gain a permanent +1 bonus to it."): a Clank created without the choice picks it once here (DA11), and so
+ * does one whose chosen Experience was removed. The GM can move the +1 to another Experience later as a correction
+ * (DA16, user 2026-10-30). Shown to editors of a sheet that holds the feature: to the owner while no Experience is
+ * chosen, to the GM also after (the server decides through permissionFor; this only hides the form).
  */
 function PurposefulDesignPick() {
-  const { character, sheet, canEdit, hopeAndFear } = useSheet();
+  const { character, sheet, canEdit, hopeAndFear, slot } = useSheet();
   const choose = useMutation(api.characters.choosePurposefulDesign);
   const [picked, setPicked] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  if (!canEdit || sheet.experiences.length === 0 || sheet.experiences.some((x) => x.purposefulDesign)) return null;
+  const chosen = sheet.experiences.find((x) => x.purposefulDesign);
+  const options = sheet.experiences.filter((x) => x.id !== chosen?.id);
+  if (!canEdit || options.length === 0 || (chosen && !slot.isGm)) return null;
   if (!holdsPurposefulDesign(sheet.ancestry, { hopeAndFear })) return null;
-  const experienceId = sheet.experiences.some((x) => x.id === picked) ? picked : sheet.experiences[0]!.id;
+  const experienceId = options.some((x) => x.id === picked) ? picked : options[0]!.id;
   return (
     <form
       className="id-exp-row"
@@ -231,9 +238,11 @@ function PurposefulDesignPick() {
       }}
     >
       <label className="id-exp-name">
-        <Small>Purposeful Design: +1 to the Experience that best aligns with your purpose</Small>
+        <Small>
+          {chosen ? `Correction: move Purposeful Design's +1 from ${chosen.name} to` : "Purposeful Design: +1 to the Experience that best aligns with your purpose"}
+        </Small>
         <select className={paperField.input} aria-label="Purposeful Design Experience" value={experienceId} onChange={(e) => setPicked(e.target.value)}>
-          {sheet.experiences.map((x) => (
+          {options.map((x) => (
             <option key={x.id} value={x.id}>
               {x.name}
             </option>
@@ -241,7 +250,7 @@ function PurposefulDesignPick() {
         </select>
       </label>
       <Pill type="submit" className="id-exp-add" disabled={busy}>
-        Choose
+        {chosen ? "Move" : "Choose"}
       </Pill>
       {error ? (
         <Small role="alert" className="italic">

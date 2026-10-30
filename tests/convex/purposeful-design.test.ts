@@ -69,14 +69,14 @@ describe("Purposeful Design (DA11)", () => {
   });
 
   it("a Clank created without the choice picks it once on the sheet; the value is never bumped", async () => {
-    const { gm, p1, p2, create, sheet, roll } = await setup();
+    const { p1, p2, create, sheet, roll } = await setup();
     const id = await create(p1, { ancestry: clank });
     const before = await sheet(id);
     expect(before.experiences.some((e) => e.purposefulDesign)).toBe(false);
     const [first, second] = before.experiences;
 
     // Another player can view but not edit; an unknown Experience is NOT_FOUND.
-    const pick = (who: typeof gm, experienceId: string) => who.mutation(api.characters.choosePurposefulDesign, { characterId: id, experienceId, idempotencyKey: key() });
+    const pick = (who: typeof p1, experienceId: string) => who.mutation(api.characters.choosePurposefulDesign, { characterId: id, experienceId, idempotencyKey: key() });
     expect(errorCode(await pick(p2, first!.id).catch((e: unknown) => e))).toBe("FORBIDDEN");
     expect(errorCode(await pick(p1, "nope").catch((e: unknown) => e))).toBe("NOT_FOUND");
 
@@ -86,8 +86,88 @@ describe("Purposeful Design (DA11)", () => {
     expect(after.experiences[1]).toEqual(second);
     expect((await roll(id, [first!.id])).roll.total).toBe(16);
 
-    // Once only, for the owner and the GM alike.
-    expect(errorCode(await pick(gm, second!.id).catch((e: unknown) => e))).toBe("INVALID");
+    // The owner picks once only (the GM's move is below, DA16).
+    expect(errorCode(await pick(p1, second!.id).catch((e: unknown) => e))).toBe("INVALID");
+    expect((await sheet(id)).experiences.filter((e) => e.purposefulDesign).map((e) => e.id)).toEqual([first!.id]);
+  });
+
+  // DA16 (dcm-bxp.99.19.54), user 2026-10-30: the GM can move the +1 to another Experience later, as a correction.
+  it("the GM moves the +1 to another Experience; one undoable feed row per pick or move", async () => {
+    const { t, gm, p1, create, sheet, roll } = await setup();
+    const id = await create(p1, { ancestry: clank, purposefulExperience: 0 });
+    const [first, second] = (await sheet(id)).experiences;
+    const rows = () =>
+      t.run((ctx) =>
+        ctx.db
+          .query("actionLog")
+          .withIndex("by_character_at", (q) => q.eq("characterId", id))
+          .collect(),
+      );
+    const pick = (who: typeof gm, experienceId: string) => who.mutation(api.characters.choosePurposefulDesign, { characterId: id, experienceId, idempotencyKey: key() });
+
+    // The owner can't move it.
+    expect(errorCode(await pick(p1, second!.id).catch((e: unknown) => e))).toBe("INVALID");
+    expect(await rows()).toHaveLength(0);
+
+    await pick(gm, second!.id);
+    const moved = await sheet(id);
+    expect(moved.experiences.map((e) => [e.name, e.value, e.purposefulDesign])).toEqual([
+      ["Sellsword", 2, undefined],
+      ["Lockpick", 2, true],
+    ]);
+    const logged = await rows();
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ kind: "feature", visibility: "public", undoable: true });
+
+    // Moving it onto the Experience that holds it is a no-op: no row.
+    await pick(gm, second!.id);
+    expect(await rows()).toHaveLength(1);
+    expect((await sheet(id)).experiences.filter((e) => e.purposefulDesign).map((e) => e.id)).toEqual([second!.id]);
+
+    // Undo puts it back on the first Experience.
+    await gm.mutation(api.actionLog.undo, { entryId: logged[0]!._id, idempotencyKey: key() });
+    expect((await sheet(id)).experiences.filter((e) => e.purposefulDesign).map((e) => e.id)).toEqual([first!.id]);
+
+    // Moved again, rolls follow it.
+    await pick(gm, second!.id);
+    expect((await roll(id, [second!.id])).roll.total).toBe(16);
+    expect((await roll(id, [first!.id])).roll.total).toBe(15);
+  });
+
+  it("the owner's first pick writes one undoable row too", async () => {
+    const { t, p1, create, sheet } = await setup();
+    const id = await create(p1, { ancestry: clank });
+    const [first] = (await sheet(id)).experiences;
+    await p1.mutation(api.characters.choosePurposefulDesign, { characterId: id, experienceId: first!.id, idempotencyKey: key() });
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query("actionLog")
+        .withIndex("by_character_at", (q) => q.eq("characterId", id))
+        .collect(),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "feature", undoable: true });
+    await p1.mutation(api.actionLog.undo, { entryId: rows[0]!._id, idempotencyKey: key() });
+    expect((await sheet(id)).experiences.some((e) => e.purposefulDesign)).toBe(false);
+  });
+
+  it("removing the chosen Experience drops the +1, and the owner may pick again", async () => {
+    const { p1, create, sheet } = await setup();
+    const id = await create(p1, { ancestry: clank, purposefulExperience: 0 });
+    const [first, second] = (await sheet(id)).experiences;
+    await p1.mutation(api.characters.removeExperience, { characterId: id, experienceId: first!.id });
+    expect((await sheet(id)).experiences).toEqual([second]);
+    await p1.mutation(api.characters.choosePurposefulDesign, { characterId: id, experienceId: second!.id, idempotencyKey: key() });
+    expect((await sheet(id)).experiences).toEqual([{ ...second, purposefulDesign: true }]);
+  });
+
+  it("a non-holder is refused for the GM's move as well", async () => {
+    const { gm, create, sheet } = await setup();
+    const other = await create(gm, { ancestry: dwarf });
+    const [, exp] = (await sheet(other)).experiences;
+    expect(errorCode(await gm.mutation(api.characters.choosePurposefulDesign, { characterId: other, experienceId: exp!.id, idempotencyKey: key() }).catch((e: unknown) => e))).toBe(
+      "FEATURE_NOT_OWNED",
+    );
   });
 
   it("a replay with the same key is a no-op; a sheet without the feature is refused", async () => {
