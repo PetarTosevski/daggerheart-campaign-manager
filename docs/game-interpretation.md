@@ -256,6 +256,105 @@ Application mapping:
 
 This feature requires a dedicated task before implementation.
 
+## Combat actions on the Combat Map (player side)
+
+Plan `.omc/plans/combat-actions.yaml`, analysis `.omc/autopilot/combat-actions-analysis.md` (approved 2026-10-21).
+Players hold their domain cards on the Combat Map, attack enemy tokens and use cards there; the server rolls, applies
+the result to the encounter's adversaries and logs it. Book pages are printed pages: CB = Core Book, HF = Hope & Fear.
+The adversary side (adversaries attacking PCs, the reaction window, Fear; Q12-Q19) has its own section, written by
+tracer AA6.
+
+### The user's rulings (2026-10-21, binding)
+
+- **U1 Players never see an enemy's HP, Stress or thresholds.** They only learn whether they hit or missed. The book
+  leaves this to the table: CB p.157 "You can choose to keep this Difficulty secret or tell the player what they're
+  aiming for up front; both playstyles work well in Daggerheart." Nothing requires showing thresholds. The application:
+  player-facing results carry the player's own roll and damage total and Hit / Miss / Defeated per target; the GM row
+  of the same action carries damage → severity → HP / Stress. Player-facing results are built from player-safe fields,
+  never by removing fields from the GM's row. Difficulty is hidden too.
+- **U2 Rolls made on the map also appear in the roll feed.** Attacks, card uses and the map's dice box write ordinary
+  roll-feed rows.
+- **U3 Every domain card that can be used in combat is automated.** 196 of the 210 cards are classified combat or
+  passive (`src/lib/srd/card-effects/classification.ts`); each has one entry in its domain's effect table
+  (`src/lib/srd/card-effects/<domain>.ts`). A part the effect vocabulary can't express is a `manual` step: the card's
+  words plus a Done button, logged to the feed. The other 14 cards are out of combat; using one on the map is refused.
+- **U4 Damage applies automatically; the GM can undo it.** There is no approval step. Each action is one log group
+  that stores the adversaries' state before it, and the GM's Undo restores it.
+- **U5 Mechanics follow the book.** Wherever the book decides, that is the default:
+  - Attack roll vs Difficulty, one roll for every target (CB p.96, p.193). A critical counts as a success with Hope
+    (CB p.90).
+  - Damage is Proficiency × weapon dice + modifier. A card's damage uses the dice it names, "using your Proficiency"
+    or "Spellcast trait". A critical deals the maximum of the dice plus a roll. A move's damage is totalled before
+    thresholds (CB p.98).
+  - Thresholds: Minor 1 HP, Major 2 HP, Severe 3 HP; damage of 0 or less marks none (CB p.91). Adversaries use the same
+    rule (CB p.193). The optional Massive threshold (CB p.91) is off for adversaries.
+  - "Minion (X)" (CB p.201) and "Horde (X)" (CB p.199) apply as printed. A full Stress track marks 1 HP instead
+    (CB p.92).
+  - Usage limits (CB p.101), rests (CB p.105) and the Recall Cost (CB p.101, p.26) follow the book.
+  - Hope features (CB p.90) and several targets or groups (CB p.104) follow the book.
+  - Resistance and immunity (CB p.99), Defined Ranges and line of sight (CB p.103-104) and adversary reaction rolls
+    (CB p.161) follow the book.
+
+### Open questions, answered (2026-10-21)
+
+The user answered Q1 and accepted the defaults of Q2-Q11.
+
+- **Q1 Range (user answer).** An attack or card use on a target outside its range waits as a pending request that the
+  GM approves or declines; nothing is rolled or paid before approval. Ranges use the grid of CB p.103 ("Melee: 1
+  square • Very Close: 3 squares • Close: 6 squares • Far: 12 squares • Very Far: 13+ squares"), counted between the
+  tokens' nearest edges, a diagonal step counting 1. The book adds "these ranges aren't intended to be precisely
+  measured during play", so the GM decides.
+- **Q2 Line of sight.** Line of sight is required for every attack and card, using the map's vision from the
+  attacker's token. A target in cover gives the attack disadvantage, shown before the roll. CB p.104: "You usually can't
+  be targeted if you're entirely behind a substantial structure like a wall"; cover: "attack rolls against you are made
+  with disadvantage."
+- **Q3 Once-per limits.** "Once per rest" comes back after a short or a long rest, and "once per long rest" only after a
+  long rest. An interrupted long rest counts as a short rest. Finishing a session does not reset card limits. The map
+  and the character sheet share one record (`featureUses`, key `card:<cardId>`), so a card used on the map is greyed on
+  the sheet too, and the reverse. CB p.101: "If you use that card, you'll need a way to remember that it's temporarily
+  unavailable." CB p.105: an interrupted long rest gives the benefits of a short rest.
+- **Q4 "Once per rest on a success"** (17 cards, e.g. Earthquake, CB p.329): the card is used up only when the roll
+  succeeds; a failed roll leaves it ready.
+- **Q5 The player's damage roll.** The player sees their own damage dice and total and Hit / Miss per target, but not
+  how many HP that became. CB p.98: "The GM marks Hit Points based on that damage."
+- **Q6 Defeats and Minions.** The player sees "Defeated" when an enemy goes down; the token shows as down. For Minion
+  (X) the server offers the Minions within range that the roll beat, and the attacking player picks them. CB p.201:
+  "Tell the attacking PC which other Minions within range the attack would succeed against and let them choose which
+  Minions they defeat."
+- **Q7 Enemy reaction rolls from cards** (15 cards). The server rolls the enemy's d20 against the card's Difficulty
+  with no bonus. The GM sees the roll and can undo, or spend a Fear to add an Experience and resolve again. CB p.161:
+  "roll a d20 … If you meet or exceed the roll's Difficulty, the NPC succeeds … you can spend a Fear to add any of the
+  adversary's relevant Experiences".
+- **Q8 Resistance and immunity.** A table gives the SRD adversaries' always-on resistances and immunities, applied
+  automatically. A conditional one ("while underground") is a GM toggle on the instance. Custom adversaries get a
+  resistance picker. Odd texts such as "takes double damage from fire" stay with the GM, unless the adversary effect
+  tables automate them. CB p.99: resistant creatures "halve damage of that type before comparing it to their damage
+  thresholds"; immune ones take none.
+- **Q9 Effects the book leaves open.** Movement ("knocked back to Far range", "pull the target into Melee") is a
+  prompt, not an automatic token move. "Temporarily" conditions set the tracker condition, which the GM clears (CB
+  p.96: "It might be temporary (in which case the GM can spend Fear to end the spell)"). Lasting spells become sheet
+  effects with their end. Choices on the card are asked in a dialog before the roll, or after it when the card says
+  so. Anything else is a `manual` step; each domain tracer's task doc lists them for review.
+- **Q10 What the GM sees.** Each hit applies at once: the token's HP / Stress pips change, and the GM's feed row reads
+  e.g. "Mira → Bandit: 14 phy → Major → 2 HP (3/5)", with Undo. The GM column's Resolutions list shows the latest hits
+  with Undo.
+- **Q11 Phones (≤ 760 px).** The map stays on top. A bottom sheet with the tabs Hand / Attack / Dice / Feed opens from a
+  bar under the map, with 44 px touch targets. A target is picked by tapping an enemy token and confirmed in the sheet.
+
+### Later user answers on the player side (2026-10-22, binding)
+
+- A plain weapon attack takes one target. Cards keep their own number of targets.
+- Range for extra creatures depends on how the card is worded: every extra creature is range-checked from the origin
+  the card names. That is the caster by default, the previous target for chains such as Chain Lightning, and the
+  area's point for areas. Out of range follows Q1.
+- The GM can see a PC's cards on the map by selecting the token. The cards are greyed until the GM turns on "Play for
+  this character". Then the GM can use and recall them, logged as the GM acting for that character.
+- The last attack result is kept when the layout switches across 760 px.
+- Card damage to another PC (e.g. a blast that catches an ally) opens the same incoming-hit prompt as an adversary
+  attack: armor choice and ally reactions.
+- Onslaught's Major floor applies to any hit that deals weapon damage: plain attacks, and cards that attack with the
+  weapon's damage.
+
 ## Corrections and undo
 
 A correction adds a compensating event to repair incorrect state.
