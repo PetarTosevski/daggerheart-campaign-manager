@@ -67,7 +67,7 @@ import {
 import { ikonisValidator } from "./lib/validators/characterExtras";
 import { gainWitherToken } from "./wither";
 import { witherGainValidator } from "./lib/validators/wither";
-import { assertOneActive, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
+import { assertOneActive, MAX_CHARACTERS_CREATED_PER_CAMPAIGN, MAX_CHARACTERS_PER_CAMPAIGN, partyOf } from "./lib/characterSheet";
 export { assertOneActive, MAX_CHARACTERS_PER_CAMPAIGN };
 
 export type { CharacterView };
@@ -155,11 +155,8 @@ async function toView(ctx: QueryCtx, c: Doc<"characters">, sheet: CharacterSheet
 
 /** Every character in the campaign as a view; a sheet that fails to read comes back marked `corrupt`. */
 async function partyViews(ctx: QueryCtx, user: Doc<"users">, campaignId: Id<"campaigns">, permission: Permission): Promise<CharacterView[]> {
-  // One party: a handful of characters.
-  const rows = await ctx.db
-    .query("characters")
-    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
-    .collect();
+  // One party, bounded by the read bound (dcm-bxp.38).
+  const rows = await partyOf(ctx, campaignId);
   // Edit on the campaign edits every sheet; otherwise only your own.
   const editsAll = atLeast(permission, "edit");
   return Promise.all(
@@ -409,7 +406,8 @@ const STARTING_POTIONS = ["Minor Health Potion", "Minor Stamina Potion"];
 
 /** Refuses a new character past the campaign's cap, or a second active one for `owner`. */
 async function assertRoom(ctx: QueryCtx, campaign: Doc<"campaigns">, owner: Id<"users">) {
-  if ((await partyOf(ctx, campaign._id)).length >= MAX_CHARACTERS_PER_CAMPAIGN) invalid(`A campaign holds at most ${MAX_CHARACTERS_PER_CAMPAIGN} characters.`);
+  // The creation cap, not the read bound (dcm-bxp.38): a campaign above a lowered cap still reads every character.
+  if ((await partyOf(ctx, campaign._id)).length >= MAX_CHARACTERS_CREATED_PER_CAMPAIGN) invalid(`A campaign holds at most ${MAX_CHARACTERS_CREATED_PER_CAMPAIGN} characters.`);
   await assertOneActive(ctx, campaign, owner);
 }
 
@@ -565,14 +563,35 @@ export const setGoldChest = userMutation({
   },
 });
 
-/** Sets one trait's modifier. GM only: players change traits through level-up (user 2026-10-18). */
+/** The range of a trait or Experience modifier (`characterSheetSchema`). */
+const MODIFIER_MIN = -5;
+const MODIFIER_MAX = 10;
+
+/** A modifier moved by `delta` (an intent, dcm-bxp.28), kept within the modifier range. */
+function shifted(current: number, delta: number): number {
+  assertDelta(delta, MODIFIER_MAX - MODIFIER_MIN);
+  return Math.min(MODIFIER_MAX, Math.max(MODIFIER_MIN, current + delta));
+}
+
+/** Exactly one of `value` and `delta`. */
+function oneOf(value: number | undefined, delta: number | undefined): void {
+  if ((value === undefined) === (delta === undefined)) invalid("Send a value or a change, not both.");
+}
+
+/**
+ * Sets one trait's modifier (`value`), or moves it by `delta` (the sheet's steppers send a delta, so two quick clicks
+ * add up instead of the second overwriting the first; dcm-bxp.28), kept within -5..+10. GM only: players change traits
+ * through level-up (user 2026-10-18).
+ */
 export const setTrait = userMutation({
-  args: { characterId: v.id("characters"), trait: traitIdValidator, value: v.number() },
+  args: { characterId: v.id("characters"), trait: traitIdValidator, value: v.optional(v.number()), delta: v.optional(v.number()) },
   returns: v.null(),
-  handler: async (ctx, { characterId, trait, value }) => {
+  handler: async (ctx, { characterId, trait, value, delta }) => {
+    oneOf(value, delta);
     const { character } = await loadCharacter(ctx, ctx.user, characterId, "owner", "owner");
     const sheet = readSheet(character.sheet);
-    await saveSheet(ctx, character._id, { ...sheet, traits: { ...sheet.traits, [trait]: value } });
+    const next = delta === undefined ? value! : shifted(sheet.traits[trait], delta);
+    await saveSheet(ctx, character._id, { ...sheet, traits: { ...sheet.traits, [trait]: next } });
     return null;
   },
 });
@@ -616,15 +635,32 @@ export const addExperience = userMutation({
   },
 });
 
-/** Renames an Experience or sets its bonus, by id. Owner or GM. */
+/**
+ * Renames an Experience, sets its stored bonus (`value`) or moves it by `delta` (an intent, dcm-bxp.28; kept within
+ * -5..+10), by id. `value` and `delta` don't go together. Owner or GM.
+ */
 export const setExperience = userMutation({
-  args: { characterId: v.id("characters"), experienceId: v.string(), name: v.optional(v.string()), value: v.optional(v.number()) },
+  args: {
+    characterId: v.id("characters"),
+    experienceId: v.string(),
+    name: v.optional(v.string()),
+    value: v.optional(v.number()),
+    delta: v.optional(v.number()),
+  },
   returns: v.null(),
-  handler: async (ctx, { characterId, experienceId, name, value }) => {
+  handler: async (ctx, { characterId, experienceId, name, value, delta }) => {
+    if (value !== undefined && delta !== undefined) oneOf(value, delta);
     const { character, sheet } = await editable(ctx, ctx.user, characterId);
     if (!sheet.experiences.some((e) => e.id === experienceId)) throw appError("NOT_FOUND");
     const experiences = sheet.experiences.map((e) =>
-      e.id === experienceId ? { ...e, ...(name !== undefined ? { name } : {}), ...(value !== undefined ? { value } : {}) } : e,
+      e.id === experienceId
+        ? {
+            ...e,
+            ...(name !== undefined ? { name } : {}),
+            ...(value !== undefined ? { value } : {}),
+            ...(delta !== undefined ? { value: shifted(e.value, delta) } : {}),
+          }
+        : e,
     );
     await saveSheet(ctx, character._id, { ...sheet, experiences });
     return null;

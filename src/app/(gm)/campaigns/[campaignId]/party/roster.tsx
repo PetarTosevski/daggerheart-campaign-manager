@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { LevelUpRosterBadge } from "@/components/party/level-up";
-import { BenchButton, FallenOverlay } from "@/components/party/party-card";
+import { BenchButton, cardLabel, CorruptNotice, FallenOverlay } from "@/components/party/party-card";
 import { domainBanner, DOMAIN_ICONS, heritageLine, ownerLabel, type Table } from "@/components/party/party-display";
 import { CharacterPortrait, PortraitUpload } from "@/components/party/portrait";
 import type { SlotProps } from "@/components/party/slots";
@@ -87,7 +87,7 @@ export function RosterCard({
 
   return (
     <article
-      aria-label={name + (dead ? " (fallen)" : "")}
+      aria-label={cardLabel(character)}
       className={cn("group/card relative flex flex-col overflow-hidden rounded-[14px] border bg-[#141e22]", dead ? "border-[#3a2a2a]" : "border-[#253338]")}
     >
       {canEdit && !dead ? (
@@ -149,6 +149,7 @@ export function RosterCard({
           <span className="text-[14px] text-[#9fb2b6]">
             {getSubclass(sheet.subclassId)?.name ? `${getSubclass(sheet.subclassId)?.name} · ` : ""}Level {sheet.level}
           </span>
+          <CorruptNotice character={character} />
           <LevelUpRosterBadge {...slot} />
           {activeOfOwner > 1 ? (
             <span data-testid="extra-active-warning" className="mt-1 self-start rounded-full border border-[#7a5a1e] bg-[#2a2416] px-2.5 py-0.5 text-[13px] text-[#f1d08a]">

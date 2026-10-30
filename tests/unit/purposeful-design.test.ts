@@ -243,7 +243,7 @@ describe("Purposeful Design on the sheet (DA16)", () => {
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "+11" } });
     fireEvent.blur(input);
-    const saved = calls.find((c) => c.name === "characters:updateSheet")?.args as { patch: { experiences: { value: number }[] } } | undefined;
-    expect(saved?.patch.experiences[0]!.value).toBe(10);
+    // One field of one Experience (dcm-bxp.28 intent), never the whole list.
+    expect(calls).toContainEqual({ name: "characters:setExperience", args: expect.objectContaining({ experienceId: "e1", value: 10 }) });
   });
 });

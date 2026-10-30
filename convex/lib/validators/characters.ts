@@ -222,6 +222,13 @@ export const sheetValidator = v.object({
 });
 
 /**
+ * The stored sheet blob as `storedSheet` writes it: the current sheet with its `schemaVersion` (CD3). `characters.sheet`
+ * is still `v.any()`; it narrows to this (dcm-bxp.28, CD4) only after, on every deployment, `migrations/characters:
+ * versionSheets` has run and `migrations/characters:auditSheets` reports no row that fails it.
+ */
+export const storedSheetValidator = v.object({ schemaVersion: v.number(), ...sheetValidator.fields });
+
+/**
  * The statuses `characters.setStatus` sets by hand. `away` there benches the
  * character (`away: { reason: "benched" }`, X6); `active` brings them back.
  */

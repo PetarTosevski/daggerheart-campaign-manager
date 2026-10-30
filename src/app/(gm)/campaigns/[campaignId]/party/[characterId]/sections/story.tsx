@@ -7,7 +7,6 @@ import { useState } from "react";
 import { Label, PaperInput, PaperTextarea, Pill, SheetBox, Small, paperField } from "@/components/party/sheet-ui";
 import { MAX_BAGS, MAX_HANDFULS } from "@/lib/domain/characters";
 import type { ClassDef } from "@/lib/srd";
-import { CLASSES } from "@/lib/srd/classes";
 import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
 
@@ -137,11 +136,9 @@ function startingInventory(cls: ClassDef, motherboard: boolean) {
   return cls.classItems ? `${base} And either ${cls.classItems}` : base;
 }
 
-export function InventoryBox({ className }: { className?: string }) {
+export function InventoryBox({ cls, className }: { cls: ClassDef | undefined; className?: string }) {
   const { sheet, canEdit, update } = useSheet();
   const { motherboard } = useMotherboard();
-  // page-two.tsx passes no class here, so look it up from the leaf module (CL9).
-  const cls = CLASSES.find((c) => c.id === sheet.classId);
   const [item, setItem] = useState("");
   return (
     <SheetBox title="Inventory" className={className}>

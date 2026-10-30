@@ -503,7 +503,7 @@ describe("undo (U4)", () => {
     await a.t.run(async (ctx) => {
       for (const row of await ctx.db.query("actionLog").collect()) await ctx.db.patch("actionLog", row._id, { at: row.at - 120_000 });
     });
-    expect(await code(a.player.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+    expect(await code(a.player.mutation(api.actionLog.undo, { entryId: r.entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
   });
 });
 

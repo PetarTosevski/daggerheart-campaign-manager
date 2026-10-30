@@ -8,7 +8,8 @@
  * - Pass `before` = the character's sheet BEFORE the change (the `sheet` you
  *   read) and save the sheet before logging; undo restores exactly it, and is
  *   refused (UNDO_STALE) once the character changed after the row, logged or
- *   not, or a player's dice row is older than `PLAYER_DICE_UNDO_MS`.
+ *   not, and (UNDO_EXPIRED) for a player once their dice row is older than
+ *   `PLAYER_DICE_UNDO_MS`.
  * - Pass `fearDelta` = the Fear `gainFear` actually gained (`gained`), never
  *   the requested amount; undo takes it back through `revertFear`.
  * - One action touching several characters (rest, tag team, Life Support)
@@ -117,7 +118,8 @@ function byTime(a: Doc<"actionLog">, b: Doc<"actionLog">): number {
  *   than their row's `at` and undo stamps the undo time, so a newer row undone
  *   since explains a newer `updatedAt`. Not caught: an unlogged change between
  *   two rows that are then undone newest first; closing that needs each row to
- *   store the character's `updatedAt` before the action.
+ *   store the character's `updatedAt` before the action (dcm-bxp.31 part 1,
+ *   open: see docs/tasks/TASK-LN-N2.md).
  */
 async function assertNothingNewer(ctx: MutationCtx, characterId: Id<"characters">, own: Doc<"actionLog">[], inGroup: Set<string>): Promise<void> {
   const [oldest] = [...own].sort(byTime);
@@ -173,9 +175,10 @@ async function declineGroupHits(ctx: MutationCtx, campaignId: Id<"campaigns">, g
  * Undoes a row and the rest of its group. Allowed for the row's actor and the
  * campaign's GM (`permissionFor`); others with access get FORBIDDEN, outsiders
  * NOT_FOUND. Refused with UNDO_STALE when the row is not undoable, already
- * undone, when a player undoes a dice row (roll or death move) older than
- * `PLAYER_DICE_UNDO_MS`, or when anything newer happened to a character in
- * the group (`assertNothingNewer`). Restores each `before` sheet, reverts the
+ * undone, or when anything newer happened to a character in the group
+ * (`assertNothingNewer`); with UNDO_EXPIRED when a player undoes a dice row
+ * (roll, death move, combat attack) older than `PLAYER_DICE_UNDO_MS`; with
+ * UNDO_USE_REST for a group holding a `refuse` kind (dcm-bxp.31). Restores each `before` sheet, reverts the
  * group's Fear (floor 0), takes back the countdown ticks the group's rows caused
  * where the countdown has not changed since (`revertTicks`, countdowns-advanced
  * D11), and marks every row undone.
@@ -184,7 +187,7 @@ export async function undoEntry(
   ctx: MutationCtx,
   user: Doc<"users">,
   entryId: Id<"actionLog">,
-  /** Kinds with their own undo path (`rest`: `rests.undo` also reopens the rest); refused with UNDO_STALE. */
+  /** Kinds with their own undo path (`rest`: `rests.undo` also reopens the rest); refused with UNDO_USE_REST (`message` overrides its text when set). */
   refuse: { kinds: ActionKind[]; message: string } = { kinds: [], message: "" },
 ): Promise<UndoResult> {
   const row = await ctx.db.get("actionLog", entryId);
@@ -204,14 +207,14 @@ export async function undoEntry(
           .take(GROUP_MAX + 1);
   // A partial group would restore some sheets and miss others: refuse instead.
   if (group.length > GROUP_MAX) throw appError("UNDO_STALE", "This action touched too many characters to undo.");
-  if (group.some((r) => refuse.kinds.includes(r.kind))) throw appError("UNDO_STALE", refuse.message);
+  if (group.some((r) => refuse.kinds.includes(r.kind))) throw appError("UNDO_USE_REST", refuse.message || undefined);
   if (group.some((r) => !r.undoable || r.undoneAt !== undefined)) throw appError("UNDO_STALE");
 
   const now = Date.now();
   // A combat attack (CA3) is a dice row too: its player has the same minute (no rerolling by undo).
   const dice = group.filter((r) => r.roll !== undefined && (r.kind === "roll" || r.kind === "death" || r.kind === "combat"));
   if (!isGm && dice.some((r) => now - r.at > PLAYER_DICE_UNDO_MS)) {
-    throw appError("UNDO_STALE", "Only the GM can undo a roll after the first minute.");
+    throw appError("UNDO_EXPIRED");
   }
 
   const inGroup = new Set<string>(group.map((r) => r._id));

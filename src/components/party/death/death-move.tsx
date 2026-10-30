@@ -47,7 +47,10 @@ function DeathMoveControls({
   // Closing the modal hides it until the character changes again.
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  // Castle High: the reason picked with Blaze of Glory carries to its finish step (dcm-bxp.40 item 5).
+  const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
   if (state === undefined) return null;
+  const reason = { awayReason, setAwayReason };
 
   const due = state.awaitingMove || state.pending !== null;
   const open = due && dismissedAt !== updatedAt;
@@ -89,16 +92,19 @@ function DeathMoveControls({
       ) : null}
       <PaperModal open={open} onClose={() => setDismissedAt(updatedAt)} title="Death move">
         {state.pending?.move === "blazeOfGlory" ? (
-          <FinishBlaze characterId={characterId} name={name} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} />
+          <FinishBlaze characterId={characterId} name={name} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} {...reason} />
         ) : state.pending?.move === "riskItAll" ? (
           <SplitRiskItAll key={state.undoEntryId ?? "risk"} characterId={characterId} value={state.pending.value} hp={sheet.hp} stress={sheet.stress} onDone={setResult} />
         ) : (
-          <ChooseMove characterId={characterId} name={name} level={sheet.level} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} />
+          <ChooseMove characterId={characterId} name={name} level={sheet.level} lessLethal={state.lessLethal} request={!isGm} onDone={setResult} {...reason} />
         )}
       </PaperModal>
     </>
   );
 }
+
+/** The Castle High reason, held by `DeathMoveControls` so Blaze of Glory's choose and finish steps share it. */
+type AwayReasonState = { awayReason: AwayReason; setAwayReason: (r: AwayReason) => void };
 
 /** Where a Castle High character goes instead of dying (HF 127). A player's pick is a request the GM settles (LL1). */
 function AwayReasonPicker({ value, onChange, request }: { value: AwayReason; onChange: (r: AwayReason) => void; request: boolean }) {
@@ -147,6 +153,8 @@ function ChooseMove({
   lessLethal,
   request,
   onDone,
+  awayReason,
+  setAwayReason,
 }: {
   characterId: Id<"characters">;
   name: string;
@@ -154,10 +162,9 @@ function ChooseMove({
   lessLethal: boolean;
   request: boolean;
   onDone: (text: string) => void;
-}) {
+} & AwayReasonState) {
   const choose = useIntent(api.deathMoves.choose);
   const [action, setAction] = useState("");
-  const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
 
   async function pick(move: DeathMove) {
     const r = await choose.fire({ characterId, move, ...(move === "blazeOfGlory" && action.trim() ? { action: action.trim() } : {}), ...(lessLethal ? { awayReason } : {}) });
@@ -202,15 +209,16 @@ function FinishBlaze({
   lessLethal,
   request,
   onDone,
+  awayReason,
+  setAwayReason,
 }: {
   characterId: Id<"characters">;
   name: string;
   lessLethal: boolean;
   request: boolean;
   onDone: (text: string) => void;
-}) {
+} & AwayReasonState) {
   const finish = useIntent(api.deathMoves.finishBlaze);
-  const [awayReason, setAwayReason] = useState<AwayReason>("infirmary");
   return (
     <>
       <p className="db-lede">{name} takes their last action, which critically succeeds. When it is done, they cross through the veil.</p>

@@ -2,6 +2,7 @@
 // No React: unit-tested in tests/unit/wizard-logic.test.ts.
 
 import { TRAIT_POOL } from "@/lib/domain/characters";
+import { derivedDefense, derivedThresholds } from "@/lib/domain/characters/derived";
 import { holdsPurposefulDesign } from "@/lib/domain/dice";
 import {
   ANCESTRIES,
@@ -17,9 +18,7 @@ import {
   getClass,
   getStartingSuggestion,
   getSubclass,
-  getWeapon,
   type ClassDef,
-  type Feature,
   type Source,
   type TraitId,
 } from "@/lib/srd";
@@ -389,26 +388,29 @@ export function suggestedLoadout(state: WizardState, opts: WizardOptions) {
   return { primaryWeaponId: primary.id, secondaryWeaponId: secondary?.id ?? null, armorId: armor?.id ?? null };
 }
 
-const featureMod = (feature: Feature | null | undefined, stat: "Evasion" | "Armor Score") => {
-  if (!feature) return 0;
-  let total = 0;
-  for (const m of feature.text.matchAll(new RegExp(`([+\\-−]\\d+) to ${stat}`, "g"))) {
-    total += parseInt(m[1].replace("−", "-"), 10);
-  }
-  return total;
-};
-
-/** Board's gear summary: Evasion and Armor Score with equipment features applied. */
+/**
+ * Board's gear summary at level 1: Evasion, Armor Score and damage thresholds as the sheet will show them, through the
+ * sheet's own `derivedDefense` / `derivedThresholds` (dcm-bxp.15: equipment modifiers with their "while" guard,
+ * thresholds with the level added).
+ */
 export function gearSummary(state: WizardState) {
   const cls = state.classId ? getClass(state.classId) : undefined;
-  const primary = state.primaryWeaponId ? getWeapon(state.primaryWeaponId) : undefined;
-  const secondary = state.secondaryWeaponId ? getWeapon(state.secondaryWeaponId) : undefined;
-  const armor = state.armorId ? getArmor(state.armorId) : undefined;
-  const gear = [primary?.feature, secondary?.feature, armor?.feature];
-  const evasion = (cls?.startingEvasion ?? 10) + gear.reduce((n, f) => n + featureMod(f, "Evasion"), 0);
-  const armorScore = armor ? armor.baseScore + gear.reduce((n, f) => n + featureMod(f, "Armor Score"), 0) : null;
-  const parts = [`Evasion ${evasion}`];
-  if (armor) parts.push(`Armor Score ${armorScore}`, `Thresholds ${armor.baseThresholds.major} / ${armor.baseThresholds.severe}`);
+  const level1 = {
+    level: 1,
+    proficiency: 1,
+    evasion: cls?.startingEvasion ?? 10,
+    classId: state.classId ?? "",
+    subclassId: state.subclassId ?? "",
+    primaryWeaponId: state.primaryWeaponId ?? "",
+    ...(state.secondaryWeaponId ? { secondaryWeaponId: state.secondaryWeaponId } : {}),
+    ...(state.armorId ? { armorId: state.armorId } : {}),
+  };
+  const defense = derivedDefense(level1);
+  const parts = [`Evasion ${defense.evasion}`];
+  if (state.armorId && getArmor(state.armorId)) {
+    const t = derivedThresholds(level1);
+    parts.push(`Armor Score ${defense.armorScore}`, `Thresholds ${t.major} / ${t.severe}`);
+  }
   parts.push("Proficiency 1");
   return parts.join(" · ");
 }

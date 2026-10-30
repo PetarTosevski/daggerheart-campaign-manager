@@ -132,15 +132,28 @@ export function assertCanAct(character: Pick<Doc<"characters">, "status">, sheet
   }
 }
 
-/** Reversible default (review M5; stays 50 while testing): the most characters a campaign holds. */
-export const MAX_CHARACTERS_PER_CAMPAIGN = 50;
+/**
+ * The creation cap (review M5, dcm-bxp.38): `characters.create` refuses a campaign's next character at this many. Stays
+ * 50 while testing; the user lowers it to 10 when testing is over (user 2026-10-30). Never above `CHARACTER_READ_BOUND`.
+ */
+export const MAX_CHARACTERS_CREATED_PER_CAMPAIGN = 50;
 
-/** The campaign's characters, bounded by the cap itself. */
+/**
+ * The read bound (dcm-bxp.38): how many of a campaign's characters every bounded party read takes (`partyOf`, rests,
+ * sessions, combat scenes, card hands, combat reveals). It stays 50 when the creation cap drops, so a campaign that
+ * holds more characters than a lowered cap (made before it dropped) is still read whole.
+ */
+export const CHARACTER_READ_BOUND = 50;
+
+/** The read bound under its old name (dcm-bxp.38): the party reads outside convex/characters.ts import it. */
+export const MAX_CHARACTERS_PER_CAMPAIGN = CHARACTER_READ_BOUND;
+
+/** The campaign's characters, bounded by the read bound. */
 export function partyOf(ctx: QueryCtx, campaignId: Id<"campaigns">) {
   return ctx.db
     .query("characters")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
-    .take(MAX_CHARACTERS_PER_CAMPAIGN);
+    .take(CHARACTER_READ_BOUND);
 }
 
 /** XC1: true while the GM allows extra active characters for the running session. */

@@ -11,11 +11,12 @@ import { errorMessage } from "@/lib/convex-errors";
 import { assetBackground } from "@/lib/design-assets";
 import { experienceValue, holdsPurposefulDesign } from "@/lib/domain/dice";
 import { ACHIEVEMENT_LEVELS } from "@/lib/domain/level-up";
-import { pronounsFieldLabel, type PronounsLabel, type SheetPatch } from "@/lib/validation/characters";
+import { pronounsFieldLabel, type PronounsLabel } from "@/lib/validation/characters";
 import { getCommunity, getSubclass, getTransformation, portraitFor, TRAIT_IDS, type ClassDef, type TraitId } from "@/lib/srd";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../../../convex/_generated/api";
+import type { Id } from "../../../../../../../../convex/_generated/dataModel";
 import { TextField } from "../fields";
 import { advancementsChosen, cardsChosen, useLevelUpDraft } from "../level-up-draft";
 import { useSheet } from "../sheet-context";
@@ -46,51 +47,66 @@ function parseModifier(text: string, bonus = 0): number | null {
   return Math.min(MOD_MAX + bonus, Math.max(MOD_MIN + bonus, n));
 }
 
-/** The board's trait card: green Cinzel head, ringed number, trait-mark dot, italic verbs; paper steppers for the GM. */
+/**
+ * The board's trait card: green Cinzel head, ringed number, trait-mark dot, italic verbs; paper steppers for the GM.
+ * A stepper click sends a delta (dcm-bxp.28), so two quick clicks add up instead of the second overwriting the first.
+ */
 function TraitsGrid() {
-  const { sheet, canEdit, slot, update } = useSheet();
+  const { character, sheet, canEdit, slot } = useSheet();
+  const step = useMutation(api.characters.setTrait);
+  const [error, setError] = useState<string | null>(null);
   const isGm = slot.isGm;
   const epoch = sheet.level >= 8 ? 3 : sheet.level >= 5 ? 2 : 1;
   return (
-    <div className="id-traits" role="list" aria-label="Traits">
-      {TRAIT_IDS.map((t) => {
-        const { label, verbs } = TRAITS[t];
-        const value = sheet.traits[t];
-        const marked = (sheet.traitMarks[t] ?? 0) === epoch;
-        const set = (v: number) => void update({ traits: { ...sheet.traits, [t]: v } });
-        return (
-          <div key={t} role="listitem" className="id-trait">
-            <span className="id-trait-head">{label}</span>
-            <span className="id-trait-ring">
-              <span className={cn(paperField.number, "id-trait-circle")} aria-label={`${label} ${signed(value)}`}>
-                {signed(value)}
-              </span>
-              {/* Marks change only through level-up, so the dot is shown, not toggled. */}
-              {marked ? (
-                <span className="id-trait-mark on" role="img" aria-label={`${label} marked this tier`} title={`${label} marked this tier`} />
-              ) : (
-                <span className="id-trait-mark" aria-hidden="true" />
-              )}
-            </span>
-            {/* Players change traits only through level-up; the GM keeps the steppers to correct them. */}
-            {canEdit && isGm ? (
-              <div className="id-steps" role="group" aria-label={label}>
-                <button type="button" className="id-step" aria-label={`Decrease ${label}`} disabled={value <= MOD_MIN} onClick={() => set(value - 1)}>
-                  −
-                </button>
-                <span className="sr-only" aria-live="polite">
+    <>
+      <div className="id-traits" role="list" aria-label="Traits">
+        {TRAIT_IDS.map((t) => {
+          const { label, verbs } = TRAITS[t];
+          const value = sheet.traits[t];
+          const marked = (sheet.traitMarks[t] ?? 0) === epoch;
+          const move = (delta: number) => {
+            setError(null);
+            step({ characterId: character._id, trait: t, delta }).catch((e: unknown) => setError(errorMessage(e)));
+          };
+          return (
+            <div key={t} role="listitem" className="id-trait">
+              <span className="id-trait-head">{label}</span>
+              <span className="id-trait-ring">
+                <span className={cn(paperField.number, "id-trait-circle")} aria-label={`${label} ${signed(value)}`}>
                   {signed(value)}
                 </span>
-                <button type="button" className="id-step" aria-label={`Increase ${label}`} disabled={value >= MOD_MAX} onClick={() => set(value + 1)}>
-                  +
-                </button>
-              </div>
-            ) : null}
-            <Small className="italic">{verbs}</Small>
-          </div>
-        );
-      })}
-    </div>
+                {/* Marks change only through level-up, so the dot is shown, not toggled. */}
+                {marked ? (
+                  <span className="id-trait-mark on" role="img" aria-label={`${label} marked this tier`} title={`${label} marked this tier`} />
+                ) : (
+                  <span className="id-trait-mark" aria-hidden="true" />
+                )}
+              </span>
+              {/* Players change traits only through level-up; the GM keeps the steppers to correct them. */}
+              {canEdit && isGm ? (
+                <div className="id-steps" role="group" aria-label={label}>
+                  <button type="button" className="id-step" aria-label={`Decrease ${label}`} disabled={value <= MOD_MIN} onClick={() => move(-1)}>
+                    −
+                  </button>
+                  <span className="sr-only" aria-live="polite">
+                    {signed(value)}
+                  </span>
+                  <button type="button" className="id-step" aria-label={`Increase ${label}`} disabled={value >= MOD_MAX} onClick={() => move(1)}>
+                    +
+                  </button>
+                </div>
+              ) : null}
+              <Small className="italic">{verbs}</Small>
+            </div>
+          );
+        })}
+      </div>
+      {error ? (
+        <Small role="alert" className="italic">
+          {error}
+        </Small>
+      ) : null}
+    </>
   );
 }
 
@@ -261,12 +277,41 @@ function PurposefulDesignPick() {
   );
 }
 
+/**
+ * The Experience mutations as intents (dcm-bxp.28, CL3): one field of one Experience by id, never the whole list, so an
+ * edit can't undo a concurrent one (a level-up, Purposeful Design, another tab).
+ */
+function useExperienceEdits(characterId: Id<"characters">) {
+  const set = useMutation(api.characters.setExperience);
+  const add = useMutation(api.characters.addExperience);
+  const remove = useMutation(api.characters.removeExperience);
+  const [error, setError] = useState<string | null>(null);
+  /** Resolves to whether the edit saved; a refusal shows below the list. */
+  const run = (p: Promise<unknown>): Promise<boolean> => {
+    setError(null);
+    return p.then(
+      () => true,
+      (e: unknown) => {
+        setError(errorMessage(e));
+        return false;
+      },
+    );
+  };
+  return {
+    error,
+    rename: (experienceId: string, name: string) => run(set({ characterId, experienceId, name })),
+    setValue: (experienceId: string, value: number) => run(set({ characterId, experienceId, value })),
+    add: (name: string) => run(add({ characterId, name })),
+    remove: (experienceId: string) => run(remove({ characterId, experienceId })),
+  };
+}
+
 function Experiences() {
-  const { sheet, canEdit, update } = useSheet();
+  const { character, sheet, canEdit } = useSheet();
   const leveling = useLevelUpDraft().active;
   const [draft, setDraft] = useState("");
   const list = sheet.experiences;
-  const save = (next: NonNullable<SheetPatch["experiences"]>) => void update({ experiences: next });
+  const edits = useExperienceEdits(character._id);
   return (
     <SheetBox title="Experiences" className="id-exp" id="lu-target-experiences">
       <ul className="id-exp-list">
@@ -279,7 +324,7 @@ function Experiences() {
                 value={x.name}
                 maxLength={80}
                 readOnly={!canEdit}
-                onSave={(name) => name && save(list.map((e) => (e.id === x.id ? { ...e, name } : e)))}
+                onSave={(name) => name && edits.rename(x.id, name)}
               />
             </div>
             {canEdit ? (
@@ -288,9 +333,9 @@ function Experiences() {
                   label={`Experience ${i + 1} modifier`}
                   value={x.value}
                   bonus={experienceValue(x) - x.value}
-                  onSave={(value) => save(list.map((e) => (e.id === x.id ? { ...e, value } : e)))}
+                  onSave={(value) => void edits.setValue(x.id, value)}
                 />
-                <button type="button" className="id-step id-exp-remove" aria-label={`Remove ${x.name}`} onClick={() => save(list.filter((e) => e.id !== x.id))}>
+                <button type="button" className="id-step id-exp-remove" aria-label={`Remove ${x.name}`} onClick={() => void edits.remove(x.id)}>
                   ×
                 </button>
               </>
@@ -324,7 +369,7 @@ function Experiences() {
             e.preventDefault();
             const name = draft.trim();
             if (!name) return;
-            save([...list, { name, value: 2 }]);
+            void edits.add(name);
             setDraft("");
           }}
         >
@@ -336,6 +381,11 @@ function Experiences() {
             Add
           </Pill>
         </form>
+      ) : null}
+      {edits.error ? (
+        <Small role="alert" className="italic">
+          {edits.error}
+        </Small>
       ) : null}
     </SheetBox>
   );

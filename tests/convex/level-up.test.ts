@@ -310,6 +310,14 @@ describe("levelUp", () => {
       expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
     });
 
+    it("dcm-bxp.61 (user 2026-10-23: keep): an End pressed with no live session (the Wither panel's path) is no boundary", async () => {
+      const { gm, p1, campaignId, a } = await leveled(1000);
+      // No session is live: End writes no session row, so the player may still undo.
+      await gm.mutation(api.sessions.end, { campaignId, idempotencyKey: key() });
+      expect(await p1.query(api.levelUp.canUndo, { characterId: a })).toBe(true);
+      expect(await p1.mutation(api.levelUp.undoLast, { characterId: a, idempotencyKey: key() })).toEqual({ level: 1 });
+    });
+
     it("an older entry without `at` is GM only", async () => {
       const { t, gm, p1, p2, a } = await leveled();
       await patchLatest(t, a, () => ({}));

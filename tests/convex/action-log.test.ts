@@ -196,7 +196,7 @@ describe("actionLog.undo", () => {
   it("refuses a rest row: rests.undo also reopens the rest (review L4)", async () => {
     const { t, ids, gm, campaignId } = await setup();
     const entryId = await t.run((ctx) => logAction(ctx, { campaignId, actorId: ids.gm, kind: "rest", visibility: "public", summary: "Short rest", undoable: true }));
-    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+    expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("UNDO_USE_REST");
   });
 
   it("a retry with the same key returns the first result", async () => {
@@ -297,7 +297,7 @@ describe("actionLog.undo: nothing newer is lost (review H1, H2, M2)", () => {
 
     const old = await hopeRoll(p1, a);
     later(PLAYER_DICE_UNDO_MS + 1);
-    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: old.entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId: old.entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
     expect(await codeOf(gm.mutation(api.actionLog.undo, { entryId: old.entryId, idempotencyKey: key() }))).toBe("ok");
 
     // A row without dice has no time limit.
@@ -312,6 +312,6 @@ describe("actionLog.undo: nothing newer is lost (review H1, H2, M2)", () => {
       logAction(ctx, { campaignId, characterId: a, actorId: ids.p1, kind: "death", visibility: "public", summary: "Risk It All", roll: ROLL, undoable: true }),
     );
     later(PLAYER_DICE_UNDO_MS + 1);
-    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("UNDO_STALE");
+    expect(await codeOf(p1.mutation(api.actionLog.undo, { entryId, idempotencyKey: key() }))).toBe("UNDO_EXPIRED");
   });
 });

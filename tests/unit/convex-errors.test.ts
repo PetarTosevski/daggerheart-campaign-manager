@@ -70,7 +70,7 @@ describe("domain messages", () => {
       expect(Object.keys(messages).some((code) => code.endsWith("_RULE") || code === "UNDO_STALE")).toBe(true);
       for (const [code, text] of Object.entries(messages)) expect(errorMessage(new ConvexError({ code }))).toBe(text);
     }
-    expect(Object.keys(actionLogMessages).sort()).toEqual(["CHARACTER_UNAVAILABLE", "UNDO_STALE"]);
+    expect(Object.keys(actionLogMessages).sort()).toEqual(["CHARACTER_UNAVAILABLE", "UNDO_EXPIRED", "UNDO_STALE", "UNDO_USE_REST"]);
   });
 
   it("the D8 encounter codes are all defined, each mapping to its message", () => {
