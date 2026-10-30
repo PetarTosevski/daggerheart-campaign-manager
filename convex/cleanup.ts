@@ -571,7 +571,7 @@ async function isKeptUnverifiedUser(ctx: MutationCtx, userId: Id<"users">): Prom
   if (campaign !== null) return true;
   const member = await ctx.db.query("campaignMembers").withIndex("by_user", (q) => q.eq("userId", userId)).first();
   if (member !== null) return true;
-  const character = await ctx.db.query("characters").withIndex("by_owner", (q) => q.eq("ownerId", userId)).first();
+  const character = await ctx.db.query("characters").withIndex("by_owner_campaign", (q) => q.eq("ownerId", userId)).first();
   if (character !== null) return true;
   const accounts = await ctx.db
     .query("authAccounts")

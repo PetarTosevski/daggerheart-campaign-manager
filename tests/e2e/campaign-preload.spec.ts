@@ -96,7 +96,7 @@ const PAGES = [
   {
     label: "dashboard",
     suffix: "",
-    queries: ["campaigns:get", "sessionWrap:dashboard", "characters:listByCampaign", "campaigns:fear", "feed:list"],
+    queries: ["campaigns:get", "sessionWrap:dashboard", "characters:partySummary", "campaigns:fear", "feed:list"],
     ready: (page: Page) => page.getByRole("region", { name: "GM Fear" }),
   },
   {

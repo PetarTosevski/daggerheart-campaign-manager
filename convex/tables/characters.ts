@@ -40,7 +40,9 @@ export const characterTables = {
     updatedAt: v.number(),
   })
     .index("by_campaign", ["campaignId"])
-    .index("by_owner", ["ownerId"]),
+    // J7 (dcm-bxp.141): a user's characters in one campaign (Notes' current journal), however many they own elsewhere;
+    // its ownerId prefix serves the per-user reads (replaces by_owner, which schema-guard forbids as a prefix).
+    .index("by_owner_campaign", ["ownerId", "campaignId"]),
 
   /**
    * A character's extras (beastform, companion, Motherboard wallet, Beast
