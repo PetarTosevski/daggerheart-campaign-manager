@@ -240,7 +240,8 @@ describe("rests", () => {
 
   it("interrupt: a short rest gives nothing; a long rest gives short-rest benefits (CB 105)", async () => {
     const { p1, a, gm, campaignId, sheetOf, edit, fear, start, rest } = await setup();
-    await edit(a, (s) => ({ ...s, stress: 6 }));
+    // Not a Clank: Efficient keeps one long rest pick on an interrupted long rest (dcm-bxp.99.19.58).
+    await edit(a, (s) => ({ ...s, stress: 6, ancestry: { kind: "single", id: "elf" } }));
     const short = await start("short");
     await p1.mutation(api.rests.choose, { restId: short.restId, characterId: a, moves: [{ move: "clearStress" }, { move: "clearStress" }], idempotencyKey: key() });
     expect(await gm.mutation(api.rests.interrupt, { campaignId, restId: short.restId, idempotencyKey: key() })).toEqual({ fearRoll: null, fearGained: 0 });

@@ -92,13 +92,29 @@ export function endMoon<T extends CharacterSheet>(sheet: T): T {
  * this rest; NOT_ENOUGH_HOPE at 0 Hope.
  */
 export function bumpMoonDie<T extends CharacterSheet>(sheet: T, scope: FeatureScope = EVERYTHING): { sheet: T; from: number; to: number } {
+  checkBump(sheet, scope);
+  if (sheet.hope < 1) throw new RuleError("NOT_ENOUGH_HOPE", "Not enough Hope.");
+  const raised = raiseMoonDie(sheet, scope);
+  return { ...raised, sheet: { ...raised.sheet, hope: sheet.hope - 1 } };
+}
+
+function checkBump(sheet: LunarSheet & Pick<CharacterSheet, "featureUses">, scope: FeatureScope): number {
   if (!holdsLunarPhases(sheet, scope)) throw new RuleError("CLASS_FEATURE_RULE", "Only a Moon Witch with the mastery has Lunar Phases.");
   const from = moonDie(sheet);
   if (from === undefined) throw new RuleError("CLASS_FEATURE_RULE", "No moon die: it is rolled when the session starts.");
   if (sheet.featureUses.some((u) => u.key === LUNAR_BUMP_KEY)) throw new RuleError("CLASS_FEATURE_RULE", "You already raised the moon die this rest.");
-  if (sheet.hope < 1) throw new RuleError("NOT_ENOUGH_HOPE", "Not enough Hope.");
+  return from;
+}
+
+/**
+ * The bump without its Hope (plan lanes E8, dcm-lk8): raises the die by one, a 6 becoming a 1, and marks
+ * `lunarPhasesBump` until the next rest. For the feature runner's `delegate`, whose entry pays the Hope as its cost.
+ * Refuses as `bumpMoonDie` does, except for Hope.
+ */
+export function raiseMoonDie<T extends CharacterSheet>(sheet: T, scope: FeatureScope = EVERYTHING): { sheet: T; from: number; to: number } {
+  const from = checkBump(sheet, scope);
   const to = from === 6 ? 1 : from + 1;
-  const next = withFeatures({ ...sheet, hope: sheet.hope - 1, featureUses: [...sheet.featureUses, { key: LUNAR_BUMP_KEY, until: "rest" as const }] }, { moonDie: to });
+  const next = withFeatures({ ...sheet, featureUses: [...sheet.featureUses, { key: LUNAR_BUMP_KEY, until: "rest" as const }] }, { moonDie: to });
   return { sheet: next, from, to };
 }
 

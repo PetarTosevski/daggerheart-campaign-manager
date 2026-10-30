@@ -129,10 +129,10 @@ describe("Hex (HF p.16): at the maximum the new Hex ends the oldest, or the pick
       runFeature(featureEffect("class:witch:hex")!, undefined, { actor: actorOf(full, { spellcast: 2, tier: 1 }), gmFear: 0, rng: queueRng([]), sheet: full, targets: [adversary("bandit")], ...(choices ? { choices } : {}) });
     const oldest = run();
     if (!oldest.ok) throw new Error(oldest.detail);
-    expect(oldest.sheet!.classState.hexes).toEqual(["Target 2", "Target 1"]);
+    expect(oldest.sheet!.classState.hexes).toEqual(["Target 2", "bandit"]);
     const picked = run({ [HEX_DROP_CHOICE.id]: 2 });
     if (!picked.ok) throw new Error(picked.detail);
-    expect(picked.sheet!.classState.hexes).toEqual(["Target 1", "Target 2"]);
+    expect(picked.sheet!.classState.hexes).toEqual(["Target 1", "bandit"]);
   });
 });
 

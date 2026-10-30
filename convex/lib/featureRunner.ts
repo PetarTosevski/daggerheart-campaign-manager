@@ -27,13 +27,15 @@
 import { v, type Infer } from "convex/values";
 
 import { pickUse, type ActorState, type RunContext, type RunPlan, type RunRefusal } from "../../src/lib/domain/card-effects/run";
-import type { CardUse, TargetSpec } from "../../src/lib/domain/card-effects/types";
+import type { CardUse, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { delegatedKeys } from "../../src/lib/domain/feature-effects/delegate";
 import { owned, activeBeastformId, holdingsFor, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
 import { actorExtras, asCardEffect, runFeature } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { applyUpgrades } from "../../src/lib/domain/feature-effects/upgrades";
 import type { OtherSheet } from "../../src/lib/domain/class-features/types";
+import type { NumberEnv } from "../../src/lib/domain/combat-actions/numbers";
+import { grantExtraMove } from "../../src/lib/domain/rest/feature-moves";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import { appError } from "../../src/lib/errors/app-error";
 import { resolveOptions } from "../../src/lib/frames/options";
@@ -47,6 +49,7 @@ import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSl
 import { cardPromptValidator, damageRolls, gmLines, instanceWrites, openCardHits, promptsOf, publicTargets, rollText, writeInstances } from "./cardRows";
 import { actorSheetAfter, effectOption, featureIdOfEffect, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
 import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
+import type { CompanionNumbers } from "./companion";
 import { partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
 import { countMark, hasServerMove, isRolledFirst, openAllyRoll, spendTargetCount } from "./featurePrompts";
@@ -227,6 +230,11 @@ export function pickFeature(input: {
    * a move is refused (INVALID) without it, so `combatFeatures.useFeature` can't run Charge without its square.
    */
   serverMove?: boolean;
+  /**
+   * Plan lanes E8 (dcm-2z2): the Beastbound companion's numbers (convex/lib/companion.ts `companionFor` +
+   * `companionNumbers`); its die is the `sidesOf: "companion"` dice size. Absent: the entry's level-1 d6.
+   */
+  companion?: CompanionNumbers | null;
 }): FeaturePick {
   const { sheet, featureId } = input;
   const held = ownedHere(sheet, input.campaign);
@@ -300,7 +308,12 @@ export function pickFeature(input: {
     times: input.times,
     run: runner,
     refusal: featureRefusal,
-    actor: (base) => ({ ...base, ...actorExtras(sheet), facts }),
+    actor: (base) => {
+      const extras = actorExtras(sheet);
+      // NumberEnv's dice sizes take `companion` (plan lanes V); the actor carries them on to the runner's env.
+      const dieSides: NumberEnv["dieSides"] = { ...extras.dieSides, ...(input.companion ? { companion: input.companion.dieSides } : {}) };
+      return { ...base, ...extras, dieSides, facts };
+    },
   };
 }
 
@@ -349,7 +362,7 @@ function serverMovePrompt(plan: RunPlan, p: { kind: string; text: string }): boo
 }
 
 /** The words of a feature's own plan steps the card rows don't say: D5 lines, Favor / Focus, Help dice, areas. */
-function notesOf(plan: RunPlan, built: BuiltRun, before: CharacterSheet, delegated: Delegated | undefined): string[] {
+function notesOf(plan: RunPlan, built: BuiltRun, before: CharacterSheet, delegated: Delegated | undefined, names: ReadonlyMap<string, string>): string[] {
   const name = (id: string) => {
     if (id === built.context.actor.id) return "you";
     const c = built.creatures.get(id);
@@ -357,12 +370,69 @@ function notesOf(plan: RunPlan, built: BuiltRun, before: CharacterSheet, delegat
   };
   const out: string[] = [];
   for (const s of plan.steps) {
-    if (s.kind === "delegate" && s.summary) out.push(delegateLine(s.summary, before, delegated?.sheet));
+    if (s.kind === "delegate" && s.summary) out.push(renameIds(delegateLine(s.summary, before, delegated?.sheet), names));
     else if (s.kind === "resource") out.push(`${s.resource === "favor" ? "Favor" : "Focus"} ${s.before} → ${s.after}`);
     else if (s.kind === "help") out.push(`${name(s.targetId)}: a d${s.die} Help die${s.free ? " (no Hope)" : ""}`);
     else if (s.kind === "area") out.push(`an area (${s.area.radius}) to place on the map`);
   }
   return out;
+}
+
+/** The id -> name of the creatures the use's delegated D5 features ran on (dcm-53f). */
+export function delegatedTargetNames(plan: RunPlan, built: BuiltRun): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const s of plan.steps) {
+    const id = s.kind === "delegate" ? s.params.targetId : undefined;
+    if (id === undefined) continue;
+    const c = built.creatures.get(id);
+    const name = c?.kind === "enemy" ? c.instance.label : c?.kind === "pc" ? c.sheet.name : undefined;
+    if (name !== undefined) out.set(id, name);
+  }
+  return out;
+}
+
+/** `text` with each creature id replaced by its name. */
+export function renameIds(text: string, names: ReadonlyMap<string, string>): string {
+  let out = text;
+  for (const [id, name] of names) out = out.split(id).join(name);
+  return out;
+}
+
+/**
+ * dcm-53f (Hex, HF p.16): a D5 feature that names its target in words gets the creature's id from the delegate
+ * (src/lib/domain/feature-effects/delegate.ts); the sheet's `classState` keeps the creature's name instead, so
+ * `classState.hexes` holds the instance's label ("Bandit 2"), as the drawer and the sheet show it. A Hex on a creature
+ * already Hexed by name is refused (INVALID), as D5 refuses a typed name it already holds.
+ */
+export function nameDelegatedTargets(sheet: CharacterSheet, names: ReadonlyMap<string, string>): CharacterSheet {
+  if (names.size === 0) return sheet;
+  let json = JSON.stringify(sheet.classState);
+  for (const [id, name] of names) json = json.split(JSON.stringify(id)).join(JSON.stringify(name));
+  const classState = JSON.parse(json) as CharacterSheet["classState"];
+  const hexes = classState.hexes ?? [];
+  const twice = hexes.find((h, i) => hexes.indexOf(h) !== i);
+  if (twice !== undefined) throw appError("INVALID", `${twice} is already Hexed.`);
+  return { ...sheet, classState };
+}
+
+/** Whether a manual step is a `downtime` grant for the next rest (Eloquent's third option, CB p.29). */
+function isExtraMoveGrant(step: Step | undefined): boolean {
+  return step?.kind === "downtime" && step.op === "extraMove" && step.at === "nextRest";
+}
+
+/** dcm-bxp.99.19.2: how many extra downtime moves each recipient (runner id) gets for their next rest. */
+export function extraMoveGrantsOf(plan: RunPlan): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const s of plan.steps) {
+    if (s.kind !== "prompt" || s.prompt !== "manual" || !isExtraMoveGrant(s.step)) continue;
+    for (const id of s.targetIds) out.set(id, (out.get(id) ?? 0) + 1);
+  }
+  return out;
+}
+
+/** Whether a card prompt is a granted downtime move the server records (no manual row for the table). */
+function extraMovePrompt(plan: RunPlan, p: { kind: string; text: string }): boolean {
+  return p.kind === "manual" && plan.steps.some((s) => s.kind === "prompt" && s.prompt === "manual" && isExtraMoveGrant(s.step) && s.text === p.text);
 }
 
 /**
@@ -399,10 +469,21 @@ export async function resolveFeatureUse(
   const unshaken: UnshakableRoll[] = [];
   const after = actorSheetAfter(start, plan, actorToken, pick.name, { out: unshaken });
   // B1 (dcm-bxp.99.19.55 (1)): the spent roll's scene mark leaves the sheet with the use (undo puts it back).
-  const next = rolled === null ? after : { ...after, featureUses: after.featureUses.filter((u) => u.key !== countMark(rolled.requestId)) };
+  const unmarked = rolled === null ? after : { ...after, featureUses: after.featureUses.filter((u) => u.key !== countMark(rolled.requestId)) };
+  // dcm-53f: a delegated D5 feature run on a creature (Hex) names it, not "Target N".
+  const names = delegatedTargetNames(plan, built);
+  // dcm-bxp.99.19.2 (Eloquent): extra downtime moves for the recipients' next rest.
+  const grants = extraMoveGrantsOf(plan);
+  let next = nameDelegatedTargets(unmarked, names);
+  for (let i = 0; i < (grants.get(actorToken) ?? 0); i++) next = grantExtraMove(next);
   // DA12: a move the server makes itself (`intoMelee`, Charge) is no prompt for the table.
-  let prompts = promptsOf(plan, built).filter((p) => !serverMovePrompt(plan, p));
-  const notes = [...(rolled !== null ? [`rolled ${rolled.count} target${rolled.count === 1 ? "" : "s"}`] : []), ...notesOf(plan, built, sheet, delegated), ...unshaken.map(unshakableText)];
+  let prompts = promptsOf(plan, built).filter((p) => !serverMovePrompt(plan, p) && !extraMovePrompt(plan, p));
+  const notes = [...(rolled !== null ? [`rolled ${rolled.count} target${rolled.count === 1 ? "" : "s"}`] : []), ...notesOf(plan, built, sheet, delegated, names), ...unshaken.map(unshakableText)];
+  for (const [id, n] of grants) {
+    const c = built.creatures.get(id);
+    const who = id === actorToken ? "you" : c?.kind === "pc" ? c.sheet.name : null;
+    if (who !== null) notes.push(`${who}: ${n === 1 ? "an additional downtime move" : `${n} additional downtime moves`} at the next rest`);
+  }
   // DA13 (CB p.33 Cannonball): a use rolled by an ally sends the roll to the picked ally's drawer.
   const allyRoll = plan.steps.find((s) => s.kind === "prompt" && s.prompt === "allyRoll");
   const roller = allyRoll?.kind === "prompt" ? built.creatures.get(allyRoll.targetIds[0] ?? "") : undefined;
@@ -426,6 +507,7 @@ export async function resolveFeatureUse(
     const u = unshakePlan(base, after, plan, c.tokenId, false);
     if (u.roll) notes.push(`${c.sheet.name}: ${unshakableText(u.roll)}`);
     after = u.sheet;
+    for (let i = 0; i < (grants.get(c.tokenId) ?? 0); i++) after = grantExtraMove(after);
     others.set(c.character._id, { character: c.character, before: prior?.before ?? c.sheet, after });
   }
 

@@ -55,6 +55,7 @@ import {
   applyMovesWithDice,
   DIE_UNIT,
   efficientMoves,
+  extraMoveGrants,
   NO_REST_FEATURES,
   oasisPool,
   oasisReroll as rerollDie,
@@ -158,7 +159,7 @@ async function pickableMoves(
   ctx: QueryCtx,
   campaign: Doc<"campaigns">,
   kind: RestKind,
-): Promise<{ characterId: Id<"characters">; moves: RestMove[]; efficient: RestMove[]; slots: number; oasis: boolean }[]> {
+): Promise<{ characterId: Id<"characters">; moves: RestMove[]; efficient: RestMove[]; slots: number; trance: boolean; extraMoves: number; oasis: boolean }[]> {
   const party = await ctx.db
     .query("characters")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
@@ -169,11 +170,15 @@ async function pickableMoves(
     const rules = restMovesFor(campaign, sheet ?? { classId: "" }, { martialPreparation });
     const features = featuresOf(campaign, sheet);
     const base = allowedMoves(kind, rules.extra, rules.forbidden);
+    // dcm-bxp.99.19.2: extra moves granted for this rest (Eloquent, CB 29).
+    const extraMoves = sheet === null ? 0 : extraMoveGrants(sheet);
     return {
       characterId: c._id,
       moves: base,
       efficient: efficientMoves(kind, features, base, rules.forbidden),
-      slots: restMoveSlots(features).max,
+      slots: restMoveSlots(features, extraMoves).max,
+      trance: features.trance,
+      extraMoves,
       oasis: kind === "short" && features.oasis,
     };
   });
@@ -229,10 +234,14 @@ const choiceView = v.object({ characterId: v.id("characters"), moves: v.array(re
 const movesView = v.object({
   characterId: v.id("characters"),
   moves: v.array(restMoveValidator),
-  /** Most moves the PC can pick: 2, 3 with Celestial Trance (CB 56). */
   /** Efficient (CB 53): the long rest moves the PC can take one of on this short rest, with `choose`'s `efficient`. */
   efficient: v.array(restMoveValidator),
+  /** Most moves the PC can pick: 2, +1 with Celestial Trance (CB 56), +1 per extra move granted (Eloquent, CB 29). */
   slots: v.number(),
+  /** The PC holds Celestial Trance (CB 56): one of the extra slots is the trance's. */
+  trance: v.boolean(),
+  /** Extra downtime moves granted for this rest (Eloquent, CB 29: "an additional downtime move during their next rest"). */
+  extraMoves: v.number(),
   /** The PC holds Oasis and this is a short rest: after the dice are shown, they add one reroll to the party's pool (HF 27). */
   oasis: v.boolean(),
 });
@@ -394,6 +403,7 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
   const pcs = await restingParty(ctx, campaign._id);
   const before = new Map<Id<"characters">, CharacterSheet>(pcs.map((c) => [c._id, readSheet(c.sheet)]));
 
+  const features = new Map<Id<"characters">, RestFeatures>(pcs.map((c) => [c._id, featuresOf(campaign, before.get(c._id)!)]));
   const allChoices = await choicesOf(ctx, rest._id);
   // Moves count only for PCs who can still act (not knocked out since choosing).
   const choices = allChoices
@@ -407,12 +417,13 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
         ...(m.targetId !== undefined ? { targetId: m.targetId } : {}),
         ...(m.countdownId !== undefined ? { countdownId: m.countdownId } : {}),
       }));
-      return { characterId: c.characterId, moves: interrupted ? interruptedMoves(rest.kind, moves) : moves };
+      // dcm-bxp.99.19.58: Efficient (CB 53) keeps one long rest pick on an interrupted long rest.
+      const efficient = features.get(c.characterId)?.efficient === true;
+      return { characterId: c.characterId, moves: interrupted ? interruptedMoves(rest.kind, moves, efficient) : moves };
     });
 
   const input: Record<string, CharacterSheet> = {};
   for (const [id, sheet] of before) input[id] = sheet;
-  const features = new Map<Id<"characters">, RestFeatures>(pcs.map((c) => [c._id, featuresOf(campaign, before.get(c._id)!)]));
   const moved = applyMovesWithDice(kind, input, choices, rollDie);
   // The dice's ids are the resting PCs' (the moves' keys): map them back to typed ids without a cast (CD7).
   const pcIds = new Map<string, Id<"characters">>(pcs.map((c) => [c._id, c._id]));
@@ -784,6 +795,7 @@ export const choose = keyedUserMutation({
         [...base, ...efficient],
         features,
         efficient,
+        extraMoveGrants(sheet),
       );
       for (const m of moves) {
         if (m.targetId !== undefined) {

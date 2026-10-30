@@ -59,6 +59,8 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
             moves={mine?.moves ?? REST_MOVES[open.kind]}
             efficient={mine?.efficient ?? []}
             slots={mine?.slots ?? MOVES_PER_REST}
+            trance={mine?.trance}
+            extraMoves={mine?.extraMoves ?? 0}
             oasis={mine?.oasis ?? false}
             character={character}
             allies={party.filter((c) => c._id !== character._id && c.status === "active")}
@@ -156,6 +158,8 @@ function MoveForm({
   moves,
   efficient,
   slots,
+  trance,
+  extraMoves,
   oasis,
   character,
   allies,
@@ -167,8 +171,12 @@ function MoveForm({
   moves: readonly RestMove[];
   /** Efficient (CB 53): the long rest moves this PC can take one of on a short rest. */
   efficient: readonly RestMove[];
-  /** Most moves: 2, or 3 with Celestial Trance (CB 56). */
+  /** Most moves: 2, +1 with Celestial Trance (CB 56), +1 per extra move granted (Eloquent, CB 29). */
   slots: number;
+  /** The PC holds Celestial Trance (CB 56): one optional slot, added with "Drop into a trance" (absent: any slot past the granted ones). */
+  trance?: boolean;
+  /** Extra moves granted for this rest (Eloquent, CB 29: "an additional downtime move during their next rest"; dcm-bxp.99.19.2). */
+  extraMoves: number;
   /** Oasis (HF 27): after this short rest the PC can reroll one downtime die and keep the higher result (`OasisDice`). */
   oasis: boolean;
   character: CharacterView;
@@ -177,7 +185,7 @@ function MoveForm({
 }) {
   const choose = useIntent(api.rests.choose);
   const [picks, setPicks] = useState<Pick[]>(() =>
-    Array.from({ length: Math.min(slots, Math.max(MOVES_PER_REST, initial.length)) }, (_, i) => initial[i] ?? { move: moves[0] }),
+    Array.from({ length: Math.min(slots, Math.max(MOVES_PER_REST + extraMoves, initial.length)) }, (_, i) => initial[i] ?? { move: moves[0] }),
   );
   // Efficient (CB 53): "you can choose a long rest move instead of a short rest move", one per short rest, once the
   // player uses it (a saved choice with a long rest move reopens with it on).
@@ -185,8 +193,10 @@ function MoveForm({
   const shown = efficientOn ? [...moves, ...efficient] : moves;
   // Work on a Project is a long rest move, or Efficient's on a short rest.
   const projects = useQuery(api.rests.projects, shown.includes("workOnProject") ? { characterId: character._id } : "skip");
-  const trance = slots > MOVES_PER_REST;
-  const tranced = picks.length > MOVES_PER_REST;
+  // The two moves, then the granted extra moves (shown from the start), then the trance's optional one.
+  const base = MOVES_PER_REST + extraMoves;
+  const hasTrance = trance ?? slots > base;
+  const tranced = hasTrance && picks.length > base;
   const [saved, setSaved] = useState(initial.length > 0);
   const uid = useId();
   const set = (i: number, next: Pick) => {
@@ -208,7 +218,7 @@ function MoveForm({
         <div key={i} className="rp-slot">
           <div role="group" aria-labelledby={`${uid}-move-${i}`} className="rp-chips">
             <Label id={`${uid}-move-${i}`} className="rp-slot-lbl">
-              {i >= MOVES_PER_REST ? "Trance move" : `Move ${i + 1}`}
+              {i < MOVES_PER_REST ? `Move ${i + 1}` : i < base ? "Extra move" : "Trance move"}
             </Label>
             {shown.map((m) => (
               <button
@@ -267,19 +277,25 @@ function MoveForm({
           ) : null}
         </div>
       ))}
-      {trance ? (
+      {hasTrance ? (
         <div className="rp-actions">
           <Pill
             aria-pressed={tranced}
             onClick={() => {
               setSaved(false);
-              setPicks((all) => (all.length > MOVES_PER_REST ? all.slice(0, MOVES_PER_REST) : [...all, { move: moves[0] }]));
+              setPicks((all) => (all.length > base ? all.slice(0, base) : [...all, { move: moves[0] }]));
             }}
           >
             {tranced ? "Leave the trance" : "Drop into a trance"}
           </Pill>
           <Small>Celestial Trance (CB 56): choose an additional downtime move.</Small>
         </div>
+      ) : null}
+      {extraMoves > 0 ? (
+        <Small as="p">
+          {extraMoves === 1 ? "An additional downtime move" : `${extraMoves} additional downtime moves`} granted for this rest (Eloquent,
+          CB 29).
+        </Small>
       ) : null}
       {efficient.length > 0 ? (
         <div className="rp-actions">

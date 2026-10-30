@@ -258,7 +258,8 @@ describe("Hex (HF p.16): a Stress, a target within Far, - tier to its damage and
     if (!result.ok) throw new Error(result.detail);
     const plan = result.plan;
     expect(plan.actor.after.stress).toBe(sheet.stress + 1);
-    expect(result.sheet!.classState.hexes).toEqual(["Target 1"]);
+    // Plan lanes E8 (dcm-53f): the delegate names the Hex by the creature (its id here; the server swaps in its name).
+    expect(result.sheet!.classState.hexes).toEqual(["bandit"]);
     expect(ofKind(plan, "delegate")[0]).toMatchObject({ feature: "hex", done: true, targetIds: ["bandit"] });
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "bandit", condition: { kind: "tag", tag: "Hexed" }, duration: "temporary" });
     expect(ofKind(plan, "effect")[0]).toMatchObject({

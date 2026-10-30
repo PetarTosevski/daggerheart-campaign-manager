@@ -12,7 +12,8 @@
 //   2026-10-30) on any die and keeps the higher, `oasisPool` says what is left, and `applyDieDelta` clears the extra on
 //   the move's target.
 // - CB p.105: an interrupted short rest gives no benefits; an interrupted long rest "gain[s] the benefits of a short rest",
-//   so it runs these features as a short rest (Oasis applies, Efficient has nothing left to offer).
+//   so it runs these features as a short rest (Oasis applies; Efficient keeps one long rest pick at full strength,
+//   user 2026-10-30, dcm-bxp.99.19.58, `interruptedMoves` in ./index.ts).
 //
 // ```ts
 // const features = restFeaturesOf(sheet, { hopeAndFear: true });
@@ -27,7 +28,10 @@
 import { RuleError } from "../../errors/app-error";
 import type { CharacterSheet } from "../../validation/characters";
 import { applyResourceDelta, tierForLevel } from "../characters/index";
+import { featureEffect } from "../../srd/feature-effects/index";
+import type { Step, Trigger } from "../card-effects/types";
 import { owned, type OwnedScope, type OwnedSheet } from "../feature-effects/owned";
+import type { FeatureEffect } from "../feature-effects/types";
 import type { Rng } from "../class-features/types";
 import { applyMoves, type MovesResult } from "./index";
 import { ALLY_MOVES, MOVE_LABELS, MOVES_PER_REST, REST_MOVES, type ChosenMove, type RestChoice, type RestKind, type RestMove } from "./moves";
@@ -44,15 +48,90 @@ export type RestFeatures = { hardy: boolean; efficient: boolean; trance: boolean
 
 export const NO_REST_FEATURES: RestFeatures = { hardy: false, efficient: false, trance: false, oasis: false };
 
-/** Which rest-time features the sheet holds. */
-export function restFeaturesOf(sheet: OwnedSheet, scope: OwnedScope = {}): RestFeatures {
-  const ids = new Set(owned(sheet, scope).map((f) => f.featureId));
-  return {
-    hardy: ids.has(REST_FEATURE_IDS.hardy),
-    efficient: ids.has(REST_FEATURE_IDS.efficient),
-    trance: ids.has(REST_FEATURE_IDS.trance),
-    oasis: ids.has(REST_FEATURE_IDS.oasis),
+/**
+ * Which rest-time features the sheet holds: the four ids above, or any held feature whose entry says so in the rest
+ * vocabulary (`restFeaturesOfEntry`, dcm-2a1). `entryOf` looks a feature's entry up (default the SRD registry).
+ */
+export function restFeaturesOf(
+  sheet: OwnedSheet,
+  scope: OwnedScope = {},
+  entryOf: (featureId: string) => FeatureEffect | undefined = featureEffect,
+): RestFeatures {
+  const ids = owned(sheet, scope).map((f) => f.featureId);
+  const held = new Set(ids);
+  const out: RestFeatures = {
+    hardy: held.has(REST_FEATURE_IDS.hardy),
+    efficient: held.has(REST_FEATURE_IDS.efficient),
+    trance: held.has(REST_FEATURE_IDS.trance),
+    oasis: held.has(REST_FEATURE_IDS.oasis),
   };
+  for (const id of ids) {
+    const entry = entryOf(id);
+    if (entry === undefined) continue;
+    const found = restFeaturesOfEntry(entry);
+    out.efficient ||= found.efficient;
+    out.trance ||= found.trance;
+    out.oasis ||= found.oasis;
+  }
+  return out;
+}
+
+/** Whether a trigger is a rest timing (`afterRest`, the during-rest and short / long narrowings of plan lanes V). */
+function restTiming(trigger: Trigger): trigger is Extract<Trigger, { kind: "timing" }> {
+  return trigger.kind === "timing" && (trigger.at === "afterRest" || trigger.at === "afterLongRest");
+}
+
+/** Every step of a list, nested ones included (optional, choose options, follow-ups, saves, checks). */
+function allSteps(steps: readonly Step[]): Step[] {
+  return steps.flatMap((s): Step[] => {
+    if (s.kind === "optional" || s.kind === "followUp") return [s, ...allSteps(s.steps)];
+    if (s.kind === "choose") return [s, ...s.options.flatMap((o) => allSteps(o.steps))];
+    if (s.kind === "save") return [s, ...allSteps(s.onFail), ...allSteps(s.onSuccess)];
+    if (s.kind === "check") return [s, ...allSteps(s.then), ...allSteps(s.otherwise)];
+    return [s];
+  });
+}
+
+/**
+ * The rest-flow features one entry declares (dcm-2a1; plan lanes V: `timing.restType` / `.during`, step `downtime`): a
+ * use set off by a rest timing whose steps hold a `downtime` step for this rest (`at` unset or `thisRest`):
+ * `longMoveOnShort` is Efficient (CB p.53), `extraMove` Celestial Trance (CB p.56), `rerollDie` Oasis (HF p.27). The
+ * rest flow runs them as SD-R built them; a `downtime` step `at: "nextRest"` is a grant from a use instead (Eloquent,
+ * `extraMoveGrants`).
+ */
+export function restFeaturesOfEntry(entry: Pick<FeatureEffect, "uses">): Omit<RestFeatures, "hardy"> {
+  const out = { efficient: false, trance: false, oasis: false };
+  for (const use of entry.uses) {
+    const a = use.activation;
+    if ((a.kind !== "reaction" && a.kind !== "auto") || !restTiming(a.trigger)) continue;
+    for (const s of allSteps(use.steps)) {
+      if (s.kind !== "downtime" || s.at === "nextRest") continue;
+      if (s.op === "longMoveOnShort") out.efficient = true;
+      else if (s.op === "extraMove") out.trance = true;
+      else out.oasis = true;
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- an extra downtime move granted for the next rest
+
+/**
+ * The `featureUses` key prefix of an extra downtime move granted for the recipient's next rest (Eloquent, CB p.29: "Give
+ * them an additional downtime move during their next rest"; dcm-bxp.99.19.2). Each grant is one entry until "rest", so
+ * the next rest reads it while it is open and its own expiry clears it.
+ */
+export const EXTRA_MOVE_KEY = "downtime:extraMove";
+
+/** How many extra downtime moves the sheet was granted for its next rest. */
+export function extraMoveGrants(sheet: Pick<CharacterSheet, "featureUses">): number {
+  return sheet.featureUses.filter((u) => u.key === EXTRA_MOVE_KEY || u.key.startsWith(`${EXTRA_MOVE_KEY}:`)).length;
+}
+
+/** The sheet with one more extra downtime move for its next rest (key `downtime:extraMove:<n>`, until "rest"). */
+export function grantExtraMove<T extends Pick<CharacterSheet, "featureUses">>(sheet: T): T {
+  const n = extraMoveGrants(sheet) + 1;
+  return { ...sheet, featureUses: [...sheet.featureUses, { key: `${EXTRA_MOVE_KEY}:${n}`, until: "rest" as const }] };
 }
 
 /**
@@ -65,9 +144,12 @@ export function efficientMoves(kind: RestKind, features: RestFeatures, base: rea
   return REST_MOVES.long.filter((m) => !base.includes(m) && !forbidden.includes(m));
 }
 
-/** How many moves a PC picks: two, and Celestial Trance can add one more (optional: "you can"). */
-export function restMoveSlots(features: RestFeatures): { min: number; max: number } {
-  return { min: MOVES_PER_REST, max: MOVES_PER_REST + (features.trance ? 1 : 0) };
+/**
+ * How many moves a PC picks: two, and Celestial Trance can add one more (optional: "you can"); `extra` granted moves
+ * (Eloquent, `extraMoveGrants`) add one each, also optional (the player may leave a granted move unused).
+ */
+export function restMoveSlots(features: RestFeatures, extra = 0): { min: number; max: number } {
+  return { min: MOVES_PER_REST, max: MOVES_PER_REST + (features.trance ? 1 : 0) + Math.max(0, extra) };
 }
 
 /**
@@ -82,12 +164,14 @@ export function validateFeatureChoice(
   allowed: readonly RestMove[],
   features: RestFeatures,
   efficient: readonly RestMove[] = [],
+  extra = 0,
 ): void {
   const fail = (message: string): never => {
     throw new RuleError("REST_RULE", message);
   };
-  const { min, max } = restMoveSlots(features);
-  if (moves.length < min || moves.length > max) fail(min === max ? `Choose ${min} downtime moves.` : `Choose ${min} downtime moves, or ${max} with Celestial Trance.`);
+  const { min, max } = restMoveSlots(features, extra);
+  const why = features.trance && extra > 0 ? "Celestial Trance and your extra moves" : features.trance ? "Celestial Trance" : "your extra moves";
+  if (moves.length < min || moves.length > max) fail(min === max ? `Choose ${min} downtime moves.` : `Choose ${min} downtime moves, or up to ${max} with ${why}.`);
   if (moves.filter((m) => efficient.includes(m.move)).length > 1) fail("Efficient (CB 53): choose one long rest move instead of a short rest move.");
   for (const m of moves) {
     if (!allowed.includes(m.move)) fail(`${MOVE_LABELS[m.move]} isn't a move this rest allows.`);

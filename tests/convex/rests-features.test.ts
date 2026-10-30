@@ -378,17 +378,17 @@ describe("rest-time heritage features (SD-R)", () => {
     expect(await codeOf(finish(long.restId))).toBe("REST_RULE");
   });
 
-  it("pins (dcm-bxp.99.19.45 (4)): Efficient on an interrupted long rest keeps no long rest move (the moves convert as everyone's)", async () => {
+  it("dcm-bxp.99.19.58 (user 2026-10-30, overrides .45 (4)): Efficient on an interrupted long rest keeps ONE long rest pick, the other converts", async () => {
     // The default party are Clanks (Efficient, CB p.53); an interrupted long rest gives "the benefits of a short rest".
     const { a, edit, sheetOf, start, interrupt, choose, p1, current } = await setup();
-    await edit(a, { hp: 6 });
+    await edit(a, { hp: 6, stress: 6 });
     const long = await start("long");
     expect((await current()).open!.moves.find((m) => m.characterId === a)!.efficient).toEqual([]);
-    await choose(p1, long.restId, a, [{ move: "tendToAllWounds" }, { move: "prepare" }]);
+    await choose(p1, long.restId, a, [{ move: "tendToAllWounds" }, { move: "clearAllStress" }]);
     dice([2]);
     await interrupt(long.restId);
-    // Tend to Wounds 2 + tier 1, not all 6.
-    expect((await sheetOf(a)).hp).toBe(3);
+    // Tend to All Wounds kept at full strength (all 6 HP); Clear All Stress became Clear Stress: 2 + tier 1.
+    expect(await sheetOf(a)).toMatchObject({ hp: 0, stress: 3 });
   });
 
   it("pins (dcm-bxp.99.19.47 (4)): Toxic Concoctions and Feed tokens are kept on an interrupted long rest, cleared on a finished one", async () => {
