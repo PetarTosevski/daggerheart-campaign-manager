@@ -11,7 +11,7 @@
  * - R9 (light.ts): at night a token without a light sees clearly only in Melee (1 square); a torch lights clearly to Close
  *   (6 squares).
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
@@ -42,7 +42,7 @@ async function arena() {
     await saveSheet(ctx, w.characterA, { ...s, classId: "rogue", conditions: ["cloaked"] });
     return { ash, encounterId };
   });
-  const enemy = (x: number, y: number, extra: { conditions?: ("hidden" | "restrained" | "vulnerable" | "distracted")[]; light?: "none" | "torch" } = {}) =>
+  const enemy = (x: number, y: number, extra: { conditions?: ("hidden" | "restrained" | "vulnerable" | "distracted")[]; light?: "none" | "torch"; difficulty?: number } = {}) =>
     t.run(async (ctx) => {
       const instanceId = await ctx.db.insert("encounterAdversaries", {
         campaignId,
@@ -51,7 +51,7 @@ async function arena() {
         label: "Bear",
         order: 0,
         summoned: false,
-        stats: { difficulty: 10, major: 5, severe: 10, hpMax: 6, stressMax: 2 },
+        stats: { difficulty: extra.difficulty ?? 10, major: 5, severe: 10, hpMax: 6, stressMax: 2 },
         hp: 0,
         stress: 0,
         defeated: false,
@@ -161,5 +161,110 @@ describe("Cloaked ends on a move in an enemy's sight (DA3)", () => {
     await a.edit(() => ({ conditions: [] }));
     await a.move(4, 10);
     expect((await a.rows()).some((r) => r.summary.includes("no longer Cloaked"))).toBe(false);
+  });
+});
+
+/**
+ * Server dice (as tests/convex/rests-features.test.ts): each die takes the next face from `faces`, then 1. `rollDie` maps a
+ * buffer value v to v % sides + 1. A Duality roll draws the Hope Die, then the Fear Die.
+ */
+function dice(faces: number[]) {
+  const queue = [...faces];
+  vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(((array: Uint32Array) => array.fill((queue.shift() ?? 1) - 1)) as typeof crypto.getRandomValues);
+}
+
+/**
+ * DA18 (plan drawer-answers; user 2026-10-30, dcm-bxp.99.19.53 (4)): "when a Cloaked rogue ends a move on a DIM-light square
+ * in a revealed enemy's clear line, the rogue makes ONE Finesse action roll (Hope/Fear apply as usual) against the HIGHEST
+ * Difficulty among the enemies that have that line. Success keeps Cloaked; failure ends it (public, undoable row). Clear
+ * light still ends it outright; darkness keeps it."
+ *
+ * R9 (light.ts): at night a token without a light sees clearly in Melee (1 square) and dimly to Very Close (3 squares), so
+ * an enemy 3 squares from the rogue sees it in dim light. The rogue's Finesse is set to +1: total = Hope + Fear + 1.
+ */
+describe("Cloaked in dim light makes a Finesse roll (DA18)", () => {
+  allowWorldEmails();
+  afterEach(() => vi.restoreAllMocks());
+
+  const fear = (a: Awaited<ReturnType<typeof arena>>) =>
+    a.t.run(async (ctx) => (await ctx.db.query("campaignState").withIndex("by_campaign", (q) => q.eq("campaignId", a.campaignId)).unique())!.fear);
+
+  async function dimArena() {
+    const a = await arena();
+    await a.setTime(NIGHT);
+    await a.edit((s) => ({ traits: { ...s.traits, finesse: 1 }, hope: 2, stress: 0 }));
+    return a;
+  }
+
+  it("a success with Hope keeps Cloaked and gives Hope; the public row hides the Difficulty, the GM row names it", async () => {
+    const a = await dimArena();
+    await a.enemy(7, 10); // 3 squares from (4, 10): dim
+    dice([11, 2]); // 11 + 2 + 1 = 14 vs Difficulty 10: success with Hope
+    await a.move(4, 10);
+    expect(await a.cloaked()).toBe(true);
+    expect((await a.sheet()).hope).toBe(3);
+    const rows = await a.rows();
+    const roll = rows.find((r) => r.kind === "roll" && r.summary.includes("Finesse"))!;
+    expect(roll).toMatchObject({ visibility: "public", undoable: true, characterId: a.w.characterA });
+    expect(roll.roll).toMatchObject({ kind: "action", total: 14, outcome: "successHope" });
+    expect(roll.roll!.difficulty).toBeUndefined();
+    expect(roll.summary).not.toContain("10");
+    const gmRow = rows.find((r) => r.visibility === "gm" && r.groupId === roll.groupId)!;
+    expect(gmRow.summary).toContain("Difficulty 10");
+  });
+
+  it("rolls against the HIGHEST Difficulty among the dim seers; a failure with Fear ends Cloaked, gives Fear, and undo reverts both", async () => {
+    const a = await dimArena();
+    await a.enemy(7, 10); // Difficulty 10
+    await a.enemy(4, 13, { difficulty: 18 }); // 3 squares below (4, 10): dim
+    const fearBefore = await fear(a);
+    dice([3, 8]); // 3 + 8 + 1 = 12: beats 10, fails 18 -> failure with Fear
+    await a.move(4, 10);
+    expect(await a.cloaked()).toBe(false);
+    expect(await fear(a)).toBe(fearBefore + 1);
+    const roll = (await a.rows()).find((r) => r.kind === "roll" && r.summary.includes("Finesse"))!;
+    expect(roll.roll).toMatchObject({ total: 12, outcome: "failFear" });
+    expect(roll.summary).toContain("no longer Cloaked");
+    expect((await a.rows()).find((r) => r.visibility === "gm" && r.groupId === roll.groupId)!.summary).toContain("Difficulty 18");
+    await a.gm.mutation(api.actionLog.undo, { entryId: roll._id, idempotencyKey: key() });
+    expect(await a.cloaked()).toBe(true);
+    expect(await fear(a)).toBe(fearBefore);
+  });
+
+  it("clear light still ends it outright with no roll", async () => {
+    const a = await dimArena();
+    await a.enemy(5, 10); // Melee: clear even without a light
+    await a.enemy(7, 10);
+    await a.move(4, 10);
+    expect(await a.cloaked()).toBe(false);
+    const rows = await a.rows();
+    expect(rows.some((r) => r.summary.includes("ends a move in sight of an adversary and is no longer Cloaked"))).toBe(true);
+    expect(rows.some((r) => r.kind === "roll")).toBe(false);
+  });
+
+  it("a Hidden enemy in dim range asks for no roll", async () => {
+    const a = await dimArena();
+    await a.enemy(7, 10, { conditions: ["hidden"] });
+    await a.move(4, 10);
+    expect(await a.cloaked()).toBe(true);
+    expect((await a.rows()).some((r) => r.kind === "roll")).toBe(false);
+  });
+
+  it("Vanishing Act's Cloaked makes no roll in dim light (CB p.42)", async () => {
+    const a = await dimArena();
+    await a.edit(() => ({ conditions: [], subclassId: "nightwalker", subclassRank: "mastery", stress: 0 }));
+    await a.player.mutation(api.combatFeatures.useFeature, {
+      campaignId: a.campaignId,
+      characterId: a.w.characterA,
+      featureId: "subclass:nightwalker:vanishing-act",
+      targetTokenIds: [],
+      choices: [],
+      idempotencyKey: key(),
+    } as never);
+    expect(await a.cloaked()).toBe(true);
+    await a.enemy(7, 10);
+    await a.move(4, 10);
+    expect(await a.cloaked()).toBe(true);
+    expect((await a.rows()).some((r) => r.kind === "roll" && r.summary.includes("Finesse"))).toBe(false);
   });
 });

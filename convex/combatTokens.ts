@@ -684,8 +684,9 @@ export const clear = gmMutation({
  * warn. `difficult`: the move crossed or ended on difficult terrain (a movement roll is needed to pass this turn, D5).
  * Players already receive the whole layout (`combatMaps.live`, Q1), so neither answer tells them anything new.
  *
- * Cloaked (DA3): a PC token that ends a move on the live map where a revealed enemy token sees it loses Cloaked
- * (`uncloakAfterMove`, a public undoable feed row); Vanishing Act's Cloaked stays.
+ * Cloaked (DA3, DA18): a PC token that ends a move on the live map where a revealed enemy token sees it in clear light
+ * loses Cloaked; in dim light only, the rogue makes one Finesse action roll against the highest Difficulty among those
+ * enemies, and a failure ends it (`uncloakAfterMove`, public undoable feed rows); Vanishing Act's Cloaked stays.
  */
 export const move = campaignMutation({
   need: "view",
