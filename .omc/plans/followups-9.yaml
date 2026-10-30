@@ -131,9 +131,10 @@ waves:
         goal: The Lorekeeper flow e2e asks a FAKE-FAIL question, sees the answer error card and recovers with Try again.
         depends_on: []
         owns:
+          - convex/lib/claude.ts
           - tests/e2e/lorekeeper-flow.spec.ts
           - docs/tasks/TASK-F9-J6.md
-        reads: [convex/lib/claude.ts, src/components/lorekeeper/**, docs/lorekeeper.md, docs/testing.md]
+        reads: [src/components/lorekeeper/**, docs/lorekeeper.md, docs/testing.md]
         acceptance:
-          - "lorekeeper-flow.spec.ts asks a question containing FAKE-FAIL, sees the error card ('couldn't answer just now' + Try again), presses Try again and gets an answer (the retry must not carry the FAKE-FAIL trigger, or the fake must fail only once; if neither works without changing files outside owns, stop and report)"
+          - "lorekeeper-flow.spec.ts asks a question containing FAKE-FAIL, sees the error card ('couldn't answer just now' + Try again), presses Try again and gets an answer (Try again re-sends the same text, so the fake fails while a backend env switch such as LOREKEEPER_FAKE_FAIL is set - only on the fake model path - and the spec sets it with convexEnv, then removes it before Try again, as the caps test does)"
           - "pnpm lint, typecheck, vitest, tests/e2e/lorekeeper-flow.spec.ts and tracer-guard pass"
