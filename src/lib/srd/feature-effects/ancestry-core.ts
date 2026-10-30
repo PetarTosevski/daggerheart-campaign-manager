@@ -181,8 +181,9 @@ export const ANCESTRY_CORE_EFFECTS: readonly FeatureEffect[] = [
       ],
     },
   ]),
-  // Unshakable (CB p.59): "When you would mark a Stress, roll a d6. On a result of 6, don't mark it." The d6 rolls by
-  // itself; no outcome step says "don't mark this Stress" (`negate` has no Stress), so a 6 is a manual step (bead).
+  // Unshakable (CB p.59): "When you would mark a Stress, roll a d6. On a result of 6, don't mark it." User answer
+  // 2026-10-30 (dcm-bxp.99.19.50 (1)): automated: the d6 rolls by itself (the plan's check step logs it) and a 6 cancels
+  // that one Stress (`negate` stress, DA0); the server rolls each Stress separately (DA11).
   ancestry("firbolg", "unshakable", [
     {
       id: "main",
@@ -193,7 +194,7 @@ export const ANCESTRY_CORE_EFFECTS: readonly FeatureEffect[] = [
           kind: "check",
           dice: { count: fixed(1), sides: 6 },
           test: { kind: "anyAtLeast", value: 6 },
-          then: [{ kind: "manual", to: "self", text: "Unshakable rolled a 6: don't mark that Stress" }],
+          then: [{ kind: "negate", to: "self", what: "stress", note: "Unshakable rolled a 6: that Stress is not marked" }],
           otherwise: [],
         },
       ],

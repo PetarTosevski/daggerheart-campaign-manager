@@ -289,3 +289,45 @@ describe("each new piece expresses the feature that needs it (SD0, analysis sect
     });
   });
 });
+
+// Plan drawer-answers, tracer DA0: widened again for the user's answers of 2026-10-29 / 30, widen only (no step kind
+// added: STEP_KINDS above is still CA0 + SD0, and every table above still compiles and merges).
+const stanceDrop: EndEvent = "stanceDrops";
+const grappleRestrain: OutcomeStep = { kind: "condition", to: "targets", condition: { kind: "standard", condition: "restrained" }, duration: "temporary", endsOn: [stanceDrop] };
+const stable: OutcomeStep = { kind: "reduceSeverity", to: "self", steps: 1, insteadOfArmorSlot: true };
+const wings: OutcomeStep = { kind: "convertMarks", to: "self", from: "armor", into: "hope", insteadOfArmorSlot: true };
+const darkAegis: OutcomeStep = { kind: "negate", to: "self", what: "damage", ignoreOnHitHp: true };
+const unshakable: OutcomeStep = { kind: "negate", to: "self", what: "stress" };
+const drainingBane: Step = { kind: "optional", id: "clear-stress", label: "Clear a Stress", defaultOn: true, steps: [{ kind: "clear", to: "self", track: "stress", amount: one }] };
+const wardensProtection: CardUse = {
+  id: "main",
+  name: "Warden's Protection",
+  activation: { kind: "action" },
+  targets: { side: "ally", range: "close", count: { kind: "upTo", n: { kind: "dice", dice: { count: one, sides: 4 } }, rolledFirst: true } },
+  steps: [{ kind: "clear", to: "targets", track: "hp", amount: { kind: "fixed", value: 2 } }],
+};
+const charge: Step = { kind: "move", to: "self", mode: "intoMelee", relativeTo: "target", when: ["success"] };
+const cannonball: CardUse = {
+  id: "main",
+  name: "Cannonball",
+  activation: { kind: "action" },
+  roll: { kind: "trait", trait: ["agility", "strength"], difficulty: { kind: "target" }, attack: true },
+  rolledBy: { who: "ally", proficiency: "actor", targets: { side: "enemy", range: "close", count: { kind: "one" } } },
+  steps: [],
+};
+
+describe("the DA0 widening (drawer-answers)", () => {
+  it("expresses each answer with the widened pieces, and the step kinds are unchanged", () => {
+    expect([grappleRestrain, stable, wings, darkAegis, unshakable, drainingBane, charge].map((s) => s.kind)).toEqual([
+      "condition",
+      "reduceSeverity",
+      "convertMarks",
+      "negate",
+      "negate",
+      "optional",
+      "move",
+    ]);
+    expect([wardensProtection.targets, cannonball.rolledBy?.who, cannonball.roll?.kind]).toEqual([wardensProtection.targets, "ally", "trait"]);
+    expect(STEP_KINDS).toHaveLength(CA0_STEP_KINDS.length + SD0_STEP_KINDS.length);
+  });
+});

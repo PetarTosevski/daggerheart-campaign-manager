@@ -33,7 +33,7 @@ import { resolveNumber, type NumberEnv } from "../combat-actions/numbers";
 import type { RollRecord } from "../duality";
 import { rallyDieSides } from "../class-features/classes/bard";
 import { unstoppableMax } from "../class-features/classes/guardian";
-import { patronDie } from "../class-features/classes/warlock";
+import { favorOf, patronDie } from "../class-features/classes/warlock";
 import type { Registry } from "../class-features/index";
 import type { OtherSheet } from "../class-features/types";
 import type { CharacterSheet, FeatureUse } from "../../validation/characters";
@@ -208,8 +208,11 @@ export function actorExtras(sheet: CharacterSheet): Pick<ActorState, "favor" | "
   // Slayer Dice are a count of unrolled d6s (session-features); they spend as held dice of kind `slayer`.
   const slayer = sheet.sessionFeatures?.slayerDice ?? 0;
   const heldDice: HeldDieState[] = [...heldDiceState(sheet), ...Array.from({ length: slayer }, (_, i): HeldDieState => ({ id: `slayer-${i + 1}`, kind: "slayer", sides: 6 }))];
+  // DA0 (SD4 follow-up): a warlock's unset Favor reads as 3, as D5's `favorOf` ("You start with 3 Favor.", HF p.14).
+  const warlock = sheet.classId === "warlock" || sheet.multiclass?.classId === "warlock";
+  const favor = sheet.classState.favor ?? (warlock ? favorOf(sheet) : undefined);
   return {
-    ...(sheet.classState.favor !== undefined ? { favor: sheet.classState.favor } : {}),
+    ...(favor !== undefined ? { favor } : {}),
     ...(sheet.classState.martial ? { focus: sheet.classState.martial.focus } : {}),
     heldDice,
     dieSides: {

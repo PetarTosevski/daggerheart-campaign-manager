@@ -236,14 +236,19 @@ describe("Firbolg (CB p.59)", () => {
     expect(miss.actor.after.stress).toBe(1);
   });
 
-  it("Unshakable: when you would mark a Stress, a d6; only a 6 says don't mark it", () => {
+  it("Unshakable (DA0, user 2026-10-30): when you would mark a Stress, a logged d6; a 6 cancels that Stress, no manual line", () => {
     expect(entry("ancestry:firbolg:unshakable").uses[0]!.activation).toEqual({ kind: "auto", trigger: { kind: "wouldMarkStress" } });
     const six = ok("ancestry:firbolg:unshakable", ctx([6]));
     expect(ofKind(six, "check")).toEqual([{ kind: "check", total: 6, dice: [6], passed: true }]);
-    expect(ofKind(six, "prompt")).toMatchObject([{ prompt: "manual", text: "Unshakable rolled a 6: don't mark that Stress" }]);
+    expect(ofKind(six, "fold")).toMatchObject([{ kind: "fold", step: { kind: "negate", what: "stress" }, targetIds: ["pc"] }]);
+    expect(ofKind(six, "prompt")).toEqual([]);
+    expect(six.actor.after.stress).toBe(six.actor.before.stress);
     const five = ok("ancestry:firbolg:unshakable", ctx([5]));
     expect(ofKind(five, "check")[0]!.passed).toBe(false);
+    expect(ofKind(five, "fold")).toEqual([]);
     expect(ofKind(five, "prompt")).toEqual([]);
+    const steps = JSON.stringify(entry("ancestry:firbolg:unshakable").uses[0]!.steps);
+    expect(steps).not.toContain('"manual"');
   });
 });
 

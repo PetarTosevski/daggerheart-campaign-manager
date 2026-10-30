@@ -43,6 +43,12 @@
 // - NV17 `replaceHopeGain` takes back the Hope this move's roll gave and gives a Favor or removes a Fear instead.
 // - `context.limitKeys` names the `featureUses` key and `until` of a limit (cards: `card:` keys, scene stored as session).
 //
+// Plan drawer-answers, DA0 (the user's answers of 2026-10-29 / 2026-10-30): a `defaultOn` optional runs unless named in
+// `context.optionalsOff`; a `rolledFirst` target count is the server's `context.rolledTargetCount` (`rollTargetCount`
+// rolls it); a trait roll marked `attack` is an attack for `rollMatches`; an `intoMelee` move is a server move prompt; a
+// `rolledBy` use pays and sends an `allyRoll` prompt, and the roller's run (`context.roller`) rolls and runs the steps.
+// `negate` stress / `ignoreOnHitHp`, `insteadOfArmorSlot` and `stanceDrops` travel on fold and condition steps as is.
+//
 // ```ts
 // const result = run(boltBeacon, { actor, gmFear: 3, targets: [bandit], rng });
 // if (!result.ok) throw refusal(result.reason);      // CARD_EXHAUSTED, CARD_COST_UNPAID, …
@@ -239,6 +245,26 @@ export interface RunContext {
   damageDice?: { reroll?: readonly number[]; double?: readonly number[] };
   /** Held dice picked for a delegated D5 feature (`FeatureParams.dieIndexes`, Prayer Dice). */
   dieIndexes?: readonly number[];
+  // ---- DA0 (drawer-answers)
+  /** `defaultOn` optional steps the player turned off (by id); a `defaultOn` optional runs unless named here. */
+  optionalsOff?: readonly string[];
+  /**
+   * The count of an `upTo` target count the server rolled before the pick (`rolledFirst`, Warden's Protection; dcm-d95).
+   * Given, it is the use's maximum and the runner rolls nothing for it; a `rolledFirst` count without it refuses the use.
+   */
+  rolledTargetCount?: number;
+  /**
+   * A `rolledBy` use's roller (Cannonball's ally): absent, the actor's run pays and sends the `allyRoll` prompt; given,
+   * this run is the roller's roll (no costs or limit again), with the roller's traits, and its Hope / Fear go to them.
+   */
+  roller?: RollerState;
+}
+
+/** DA0: the creature that makes a `rolledBy` use's roll. */
+export interface RollerState {
+  readonly id: string;
+  readonly traits: Readonly<Record<TraitId, number>>;
+  readonly proficiency: number;
 }
 
 // ---------------------------------------------------------------- outputs
@@ -308,14 +334,21 @@ export type PlanStep =
   | { kind: "defeat"; targetId: string; amount?: number }
   /** Minion (X): extra Minions the attacker may defeat (CB p.201, Q6). */
   | { kind: "minionOffer"; targetId: string; extra: number }
-  /** A step for the table: a movement prompt (Q9), the card's words (manual), or a choice still missing. */
+  /**
+   * A step for the table: a movement prompt (Q9), the card's words (manual), or a choice still missing.
+   * DA0 (widened): a `move` with `server: true` is one the server makes itself (`intoMelee`: into Melee range of
+   * `anchorId`); `allyRoll` asks the ally in `targetIds` to make a `rolledBy` use's roll, `amount` the Proficiency its
+   * damage uses when it is the actor's.
+   */
   | {
       kind: "prompt";
-      prompt: "move" | "manual" | "choose" | "split" | "pcSave";
+      prompt: "move" | "manual" | "choose" | "split" | "pcSave" | "allyRoll";
       text: string;
       targetIds: string[];
       step?: Step;
       amount?: number;
+      server?: boolean;
+      anchorId?: string;
     }
   /**
    * An outcome the runner can't apply on its own: it changes another roll or another creature's incoming damage
@@ -414,7 +447,8 @@ export function rollMatches(filter: RollFilter, roll: RollSpec | undefined): boo
     case "action":
       return roll.kind !== "reaction";
     case "attack":
-      return roll.kind === "attack" || roll.kind === "spellcast";
+      // DA0: a trait roll marked `attack` (a Beastform's form attack, CB p.30) is an attack roll too.
+      return roll.kind === "attack" || roll.kind === "spellcast" || (roll.kind === "trait" && roll.attack === true);
     case "weaponAttack":
       return roll.kind === "attack";
     case "spellcast":
@@ -515,11 +549,16 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   const unmet = unmetRequirements(use.requires, reqState(actor0));
   if (unmet.length > 0) return refuse("requirement", unmet.map((r) => r.kind).join(", "));
 
+  // DA0 (`rolledBy`, Cannonball): the actor's run pays and sends the roll to the roller (`sending`); the roller's run
+  // (`rolling`) makes the roll and runs the steps, and pays no cost or limit again.
+  const roller = use.rolledBy && context.roller ? context.roller : null;
+  const sending = use.rolledBy !== undefined && roller === null;
+
   // ---- limit (CB p.101, Q3)
   const targets0 = context.targets ?? [];
   const keyOf = context.limitKeys?.key ?? ((useId: string, targetId?: string) => featureUseKey(effect.cardId, useId, targetId));
   const untilOf = context.limitKeys?.until ?? limitUntil;
-  const limitKey = use.limit ? keyOf(use.id, use.limit.perTarget ? targets0[0]?.id : undefined) : null;
+  const limitKey = use.limit && !roller ? keyOf(use.id, use.limit.perTarget ? targets0[0]?.id : undefined) : null;
   if (use.limit && limitKey) {
     const availability = keyAvailability(actor0, limitKey, use.limit);
     if (availability.state === "exhausted") return refuse("exhausted", availability.label);
@@ -562,10 +601,12 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   let lastRoll: number | undefined;
   let rollTotal: number | undefined;
 
+  /** The Proficiency the use's numbers read: the roller's when a `rolledBy` use says so, else the actor's. */
+  const proficiencyOf = () => (roller && use.rolledBy?.proficiency === "roller" ? roller.proficiency : actor.proficiency);
   const env = (target?: Combatant): NumberEnv => ({
     traits: actor.traits,
     spellcast: actor.spellcast,
-    proficiency: actor.proficiency,
+    proficiency: proficiencyOf(),
     level: actor.level,
     tier: actor.tier,
     spent,
@@ -606,7 +647,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   // ---- targets (CB p.104: any that fall within the parameters)
   const excluded: string[] = [];
   let targets = targets0;
-  const spec = use.targets && use.targets.side !== "trigger" ? (use.targets as TargetSpec) : undefined;
+  const useTargets = roller && use.rolledBy ? use.rolledBy.targets : use.targets;
+  const spec = useTargets && useTargets.side !== "trigger" ? (useTargets as TargetSpec) : undefined;
   if (spec) {
     targets = targets0.filter((t) => {
       const out = (spec.maxDifficulty !== undefined && (t.difficulty ?? 0) > spec.maxDifficulty) || (spec.excludeFlying === true && t.flying === true);
@@ -614,13 +656,24 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       return !out;
     });
     const n = targets0.length;
+    const count = spec.count;
+    // DA0 (dcm-d95): a count rolled before the pick is the server's number; the runner never rolls it again.
+    if (count.kind === "upTo" && count.rolledFirst === true && context.rolledTargetCount === undefined) {
+      return refuse("targets", "Roll the number of targets first.");
+    }
     const max =
-      spec.count.kind === "one" ? 1 : spec.count.kind === "upTo" ? num(spec.count.n) : spec.count.kind === "any" && spec.count.max ? num(spec.count.max) : Infinity;
+      count.kind === "one"
+        ? 1
+        : count.kind === "upTo"
+          ? (context.rolledTargetCount ?? num(count.n))
+          : count.kind === "any" && count.max
+            ? num(count.max)
+            : Infinity;
     // With an area, `count` limits the picked anchor; the server passes every creature in the area as targets.
     if (spec.area === undefined && n > max) return refuse("targets", `At most ${max} target(s).`);
   }
-  if (use.targets && use.targets.side === "trigger") {
-    const who = use.targets.who === "source" ? context.trigger?.source : context.trigger?.subject;
+  if (useTargets && useTargets.side === "trigger") {
+    const who = useTargets.who === "source" ? context.trigger?.source : context.trigger?.subject;
     targets = who ? [who] : [];
   }
   counts.picked = targets.length;
@@ -686,7 +739,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       if (c.resource === "fear") gmFearDelta -= c.amount;
       return c;
     });
-  const upfront = resolveCosts(use.costs ?? [], costAmount, pickEither);
+  const upfront = roller ? [] : resolveCosts(use.costs ?? [], costAmount, pickEither);
   const short = unaffordable(upfront, payer());
   if (short.length > 0) return refuse("cost", short.join(", "));
   if (upfront.length > 0) {
@@ -715,7 +768,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         if (rollSpec.kind === "trait") {
           const options: readonly TraitId[] = typeof rollSpec.trait === "string" ? [rollSpec.trait] : rollSpec.trait;
           const picked: TraitId = context.roll?.trait && options.includes(context.roll.trait) ? context.roll.trait : options[0]!;
-          return actor.traits[picked] ?? 0;
+          // DA0: a `rolledBy` use rolls with the roller's trait ("using Agility or Strength (their choice)", CB p.33).
+          return (roller ? roller.traits : actor.traits)[picked] ?? 0;
         }
         const weapon = weaponFor(rollSpec.weapon);
         return weapon ? (actor.traits[weapon.trait] ?? 0) : 0;
@@ -836,7 +890,11 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   let mainHits: Map<string, boolean> | null = null;
   /** The Hope this move's roll actually gave (NV17 takes it back). */
   let rollHopeGained = 0;
-  if (use.roll) {
+  if (sending) {
+    // DA0: the actor's half of a `rolledBy` use: costs paid, the roll goes to the picked ally (Cannonball, CB p.33).
+    const proficiency = use.rolledBy!.proficiency === "actor" ? { amount: actor.proficiency } : {};
+    steps.push({ kind: "prompt", prompt: "allyRoll", text: `${use.name}: make the roll`, targetIds: targets.map((t) => t.id), ...proficiency });
+  } else if (use.roll) {
     const { info, hits } = rollOnce(use.roll, targets);
     mainRoll = info;
     mainHits = hits;
@@ -848,12 +906,16 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     }
     // R8: the roll's Hope (and a critical's Stress) lands before any later payment.
     const fx = info.effects;
-    if (fx.hope) {
+    if (roller) {
+      // DA0: the roller's action roll: its Hope and a critical's Stress clear are the roller's (CB p.90).
+      if (fx.hope) steps.push({ kind: "hope", targetId: roller.id, delta: fx.hope });
+      if (fx.clearStress) steps.push({ kind: "clear", targetId: roller.id, track: "stress", amount: fx.clearStress });
+    } else if (fx.hope) {
       const hope = Math.min(actor.hopeMax, actor.hope + fx.hope);
       rollHopeGained = hope - actor.hope;
       actor = { ...actor, hope };
     }
-    if (fx.clearStress) actor = { ...actor, stress: Math.max(0, actor.stress - fx.clearStress) };
+    if (fx.clearStress && !roller) actor = { ...actor, stress: Math.max(0, actor.stress - fx.clearStress) };
     if (fx.fear) gmFearDelta += fx.fear;
   }
   const success = mainRoll ? mainRoll.success : true;
@@ -905,7 +967,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       flat = d.plus;
     } else if (roll.kind === "weapon") {
       const weapon = weaponFor(roll.weapon);
-      let prof = actor.proficiency;
+      let prof = proficiencyOf();
       if (roll.proficiency === "half") prof = Math.ceil(prof / 2);
       else if (roll.proficiency) prof += roll.proficiency.delta;
       for (const ch of preDamage) if (ch.kind === "proficiency") prof += ch.delta;
@@ -1064,7 +1126,9 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         return ok;
       }
       case "optional": {
-        if (!(context.optionals ?? []).includes(step.id) || !stepGate(step.when, scope)) return true;
+        // DA0: a `defaultOn` add-on runs unless the player turned it off (Draining Bane, dcm-bxp.99.19.15).
+        const taken = step.defaultOn === true ? !(context.optionalsOff ?? []).includes(step.id) : (context.optionals ?? []).includes(step.id);
+        if (!taken || !stepGate(step.when, scope)) return true;
         const optionalKey = keyOf(`${use.id}:${step.id}`);
         if (step.limit) {
           const availability = keyAvailability(actor, optionalKey, step.limit);
@@ -1400,9 +1464,16 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         }
         return;
       }
-      case "move":
+      case "move": {
+        if (step.mode === "intoMelee") {
+          // DA0 (Charge, dcm-bxp.99.19.16): the server moves the recipients into Melee range of the use's first target.
+          const anchorId = (step.relativeTo === "triggerSource" ? context.trigger?.source?.id : undefined) ?? scope.targets[0] ?? (context.picked ?? [])[0]?.id;
+          steps.push({ kind: "prompt", prompt: "move", text: step.note ?? moveText(step), targetIds: ids, step, server: true, ...(anchorId ? { anchorId } : {}) });
+          return;
+        }
         steps.push({ kind: "prompt", prompt: "move", text: step.note ?? moveText(step), targetIds: ids, step });
         return;
+      }
       case "effect": {
         for (const r of recipients) {
           steps.push({
@@ -1558,7 +1629,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     }
   };
 
-  runSteps(use.steps, { targets: targets.map((t) => t.id), hits: mainHits, roll: mainRoll });
+  // DA0: a `rolledBy` use's steps run in the roller's run, after their roll.
+  if (!sending) runSteps(use.steps, { targets: targets.map((t) => t.id), hits: mainHits, roll: mainRoll });
   flush();
   if (delegateRefusal !== null) return refuse("choice", delegateRefusal);
 
@@ -1608,8 +1680,36 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   };
 }
 
+/**
+ * DA0 (dcm-d95): rolls the target count of a use whose `upTo` count is `rolledFirst` (Warden's Protection's 1d4, CB
+ * p.31), for the server to store before the player picks; null for any other use. The run then takes it as
+ * `RunContext.rolledTargetCount`.
+ */
+export function rollTargetCount(use: CardUse, actor: ActorState, rng: Rng): number | null {
+  const spec = use.targets;
+  if (!spec || spec.side === "trigger" || spec.count.kind !== "upTo" || spec.count.rolledFirst !== true) return null;
+  const env: NumberEnv = {
+    traits: actor.traits,
+    spellcast: actor.spellcast,
+    proficiency: actor.proficiency,
+    level: actor.level,
+    tier: actor.tier,
+    spent: {},
+    choices: {},
+    cardTokens: actor.cardTokens,
+    gmFear: 0,
+    self: { hp: actor.hp, stress: actor.stress, armor: actor.armor },
+    markedThisMove: { self: {}, byTarget: {} },
+    targetCount: { picked: 0, hit: 0, failedSave: 0 },
+    loadoutDomains: actor.loadoutDomains,
+    vaultDomains: actor.vaultDomains,
+    ...(actor.dieSides ? { dieSides: actor.dieSides } : {}),
+  };
+  return Math.max(0, resolveNumber(spec.count.n, env, rng));
+}
+
 function moveText(step: Extract<OutcomeStep, { kind: "move" }>): string {
   const range = step.range ? ` (${step.range})` : "";
-  const verb = { knockBack: "Knock back", pull: "Pull", teleport: "Teleport", move: "Move", flee: "Flee" }[step.mode];
+  const verb = { knockBack: "Knock back", pull: "Pull", teleport: "Teleport", move: "Move", flee: "Flee", intoMelee: "Move into Melee range" }[step.mode];
   return `${verb}${range}`;
 }

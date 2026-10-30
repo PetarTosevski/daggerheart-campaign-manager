@@ -153,6 +153,9 @@ export type Duration =
  *   (Night's Glamour). `attackSucceeds`: the bearer's next successful attack (Menacing Reach, HF p.15). `lastHp`: the
  *   bearer marks their last Hit Point (Beastform, CB p.30; martial stances, HF p.12). `majorDamage`: the bearer takes
  *   Major or greater damage (the "Fragile" Beastforms, CB p.32).
+ * - Plan drawer-answers, DA0 (widened): `stanceDrops`: the stance whose feature gave it drops (a shift, Severe damage, the
+ *   last Hit Point, the scene's end; HF p.12: "When you drop out of a stance, you lose any ongoing benefits it
+ *   provides."). Grappling's Restrain carries it (user answer 2026-10-29, dcm-bxp.99.19.10).
  */
 export type EndEvent =
   | "takeSevere"
@@ -165,7 +168,8 @@ export type EndEvent =
   | "dealDamage"
   | "attackSucceeds"
   | "lastHp"
-  | "majorDamage";
+  | "majorDamage"
+  | "stanceDrops";
 
 /** The conditions the encounter tracker and the sheet already know (src/lib/validation/characters.ts, convex/lib/validators/encounters.ts). */
 export type StandardCondition = "vulnerable" | "restrained" | "hidden" | "distracted" | "cloaked" | "unconscious";
@@ -205,7 +209,12 @@ export type RollFilter = "any" | "action" | "attack" | "weaponAttack" | "spellca
 /** How many targets a use may pick. */
 export type TargetCount =
   | { kind: "one" }
-  | { kind: "upTo"; n: NumberSource }
+  /**
+   * DA0 (widened): `rolledFirst`: the count is rolled (on the server) before the player picks, and the use takes at most
+   * that many (Warden's Protection, CB p.31: "clear 2 Hit Points on 1d4 allies within Close range"; user answer
+   * 2026-10-29, dcm-d95). The runner reads the rolled count from `RunContext.rolledTargetCount` and never rolls it itself.
+   */
+  | { kind: "upTo"; n: NumberSource; rolledFirst?: boolean }
   /** "all targets within Close range": every eligible creature, picked by the server (R9). */
   | { kind: "all" }
   /** "any targets", "a number of targets equal to the Hope spent": the player picks, at most `max`. */
@@ -271,8 +280,13 @@ export type Difficulty =
 /** The move's own roll, made once for all targets (R1, R9). */
 export type RollSpec = (
   | { kind: "spellcast"; difficulty: Difficulty }
-  /** "make a Presence Roll against them", "an Agility Roll against all targets". Several traits: the player picks. */
-  | { kind: "trait"; trait: TraitId | readonly TraitId[]; difficulty: Difficulty }
+  /**
+   * "make a Presence Roll against them", "an Agility Roll against all targets". Several traits: the player picks.
+   * DA0 (widened): `attack: true` makes the trait roll an attack roll (a Beastform's form attack, CB p.30: "When you make
+   * an attack while transformed, you use the creature's listed range, trait, and damage dice"; Cannonball's thrown attack),
+   * so `rollMatches("attack")` holds for it (Rampage's "before you make an attack roll", CB p.33; dcm-bxp.99.19.6 (5)).
+   */
+  | { kind: "trait"; trait: TraitId | readonly TraitId[]; difficulty: Difficulty; attack?: boolean }
   /** A weapon attack (uses the weapon's trait; CB p.96). */
   | { kind: "attack"; weapon: WeaponRef; difficulty: Difficulty }
   /** "a reaction roll using your Spellcast trait" (Counterspell, Hideous Retribution): no Hope or Fear (CB p.99). */
@@ -857,10 +871,14 @@ export type OutcomeStep =
   /**
    * Movement, shown as a prompt (Q9): `knockBack` ("knocked back to Far range"), `pull` ("pull the target into Melee
    * range"), `teleport`, `move` ("move them anywhere within Far range"), `flee` ("flee one range away").
+   * DA0 (widened): `intoMelee`: the SERVER moves the recipient's token into Melee range of the use's first target when
+   * the step's gates hold; no prompt for the player (Charge, CB p.59: "When you succeed on an Agility Roll to move from
+   * Far or Very Far range into Melee range"; user answer 2026-10-29, dcm-bxp.99.19.16: roll first, on a success the
+   * server moves the token). The plan's move prompt carries `server: true` and `anchorId`.
    */
   | (OutcomeBase & {
       kind: "move";
-      mode: "knockBack" | "pull" | "teleport" | "move" | "flee";
+      mode: "knockBack" | "pull" | "teleport" | "move" | "flee" | "intoMelee";
       range?: Range;
       relativeTo?: "self" | "target" | "point" | "triggerSource";
     })
@@ -905,21 +923,35 @@ export type OutcomeStep =
    * Armor Slots" (`"any"`), Brace and Forest Sprites "an additional Armor Slot" (1).
    */
   | (OutcomeBase & { kind: "extraArmorSlots"; max: NumberSource | "any" })
-  /** "reduce the severity by one threshold" (Get Back Up, Shrug It Off, Tekaira Armored Beetles, Shield Aura). */
-  | (OutcomeBase & { kind: "reduceSeverity"; steps: number })
+  /**
+   * "reduce the severity by one threshold" (Get Back Up, Shrug It Off, Tekaira Armored Beetles, Shield Aura).
+   * DA0 (widened): `insteadOfArmorSlot`: the step IS the hit's one armor reduction, paid with something else (Stable, HF
+   * p.12: "spend a Focus instead of an Armor Slot to reduce damage"; user answer 2026-10-29, dcm-bxp.99.19.9). No Armor
+   * Slot is marked with it and the two never add up past one step ("You can only mark 1 Armor Slot", CB p.114); it needs
+   * no armor worn. The reaction window (DA8) applies it.
+   */
+  | (OutcomeBase & { kind: "reduceSeverity"; steps: number; insteadOfArmorSlot?: boolean })
   /** "reduce incoming damage by 1d8" (Rune Ward), Thorn Skin, Zone of Protection, Dark Army. */
   | (OutcomeBase & { kind: "reduceDamage"; amount: NumberSource })
   /**
    * Arcane Deflection "negate the damage"; Bold Presence "avoid gaining the condition"; Counterspell "the effect stops"
    * (also the GM's Fear gain for Midnight-Touched and Dread-Touched); Life Ward "clear a Hit Point instead" of the death move.
+   * DA0 (widened):
+   * - `what: "stress"`: the Stress about to be marked is not marked (Unshakable, CB p.59: "When you would mark a Stress,
+   *   roll a d6. On a result of 6, don't mark it."; one Stress per use: the server rolls each Stress separately).
+   * - `ignoreOnHitHp` (with `what: "damage"`): the damage becomes zero, so the hit has no severity (no Minor, Major or
+   *   Severe), and any extra "mark HP" from the attack's on-hit effects is ignored too; its other on-hit effects
+   *   (conditions) still apply (Dark Aegis, HF p.14: "spend a Favor instead of marking Hit Points"; user answer
+   *   2026-10-29, dcm-bxp.99.19.13).
    */
-  | (OutcomeBase & { kind: "negate"; what: "damage" | "attack" | "condition" | "effect" | "deathMove" })
+  | (OutcomeBase & { kind: "negate"; what: "damage" | "attack" | "condition" | "effect" | "deathMove" | "stress"; ignoreOnHitHp?: boolean })
   /**
    * Marks taken on one track instead of another: Splendor-Touched "mark that much Stress or spend that much Hope instead"
    * of HP, Grace-Touched "force them to mark that number of Stress" instead of HP, or "mark an Armor Slot instead of
    * marking a Stress".
+   * DA0 (widened): `insteadOfArmorSlot` as on `reduceSeverity`: the conversion stands for the hit's one Armor Slot.
    */
-  | (OutcomeBase & { kind: "convertMarks"; from: Track; into: Track | "hope" })
+  | (OutcomeBase & { kind: "convertMarks"; from: Track; into: Track | "hope"; insteadOfArmorSlot?: boolean })
   /** "They are killed and can't come back to life by any means" (Disintegration Wave); a Minion group loses `amount` members. */
   | (OutcomeBase & { kind: "defeat"; amount?: NumberSource })
   /** Invigoration: "the feature can be used again" (drops the trigger feature's `featureUses` entry). */
@@ -1010,6 +1042,12 @@ export type FlowStep =
       costs?: readonly Cost[];
       limit?: Limit;
       timing?: "beforeRoll" | "afterRoll";
+      /**
+       * DA0 (widened): the add-on is taken unless the player turns it off (Draining Bane, HF p.14: "you can clear a
+       * Stress"; user answer 2026-10-29, dcm-bxp.99.19.15: an optional tick that is ON by default). The runner takes it
+       * when `RunContext.optionals` omits it and skips it only when `RunContext.optionalsOff` names it.
+       */
+      defaultOn?: boolean;
       steps: readonly Step[];
     })
   /**
@@ -1142,6 +1180,23 @@ export interface CardUse {
    * uses your Proficiency and their damage die"). Absent: the actor.
    */
   actor?: "companion";
+  /**
+   * DA0 (widened): another creature makes this use's roll (Cannonball, CB p.33: "the ally makes an attack roll using
+   * Agility or Strength (their choice) against a target within Close range. On a success, the adversary takes d12+2
+   * physical damage using the thrower's Proficiency"; user answer 2026-10-29, dcm-bxp.99.19.21: the ally gets a prompt
+   * and rolls from their own drawer). The actor's run pays the costs and the limit and sends the picked ally an
+   * `allyRoll` prompt; the roller's run (`RunContext.roller`) makes `roll` with the roller's traits against
+   * `rolledBy.targets` and runs `steps`. `proficiency` says whose Proficiency the damage uses (QUESTIONS, TASK-DA-DA0.md).
+   */
+  rolledBy?: RolledBy;
+}
+
+/** DA0: who rolls a `rolledBy` use, whose Proficiency its damage uses, and what the roller picks. */
+export interface RolledBy {
+  who: "ally";
+  proficiency: "actor" | "roller";
+  /** The roller's targets (Cannonball: "a target within Close range"), measured from the roller. */
+  targets: TargetSpec;
 }
 
 /**
