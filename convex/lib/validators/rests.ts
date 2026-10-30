@@ -45,8 +45,17 @@ export const restChoiceMoveValidator = v.object({
 /** The downtime moves that roll a die (1d4 + tier, CB 105); mirrors `DiceMove` (src/lib/domain/rest/feature-moves.ts). */
 export const diceMoveValidator = v.union(v.literal("tendToWounds"), v.literal("clearStress"), v.literal("repairArmor"));
 
-/** One Oasis reroll (HF p.27) of a downtime die: the Duneborne holder, the new roll and the result kept (the higher). */
-export const oasisRerollValidator = v.object({ holderId: v.id("characters"), rolled: v.number(), kept: v.number() });
+/**
+ * One Oasis reroll (HF p.27) of a downtime die: the Duneborne holder who pressed, the new roll and the result kept (the
+ * higher). `spentFrom` (DA15, widened): the holder whose reroll of the party pool it spent; DA5 rows have none (the
+ * holder's own).
+ */
+export const oasisRerollValidator = v.object({
+  holderId: v.id("characters"),
+  rolled: v.number(),
+  kept: v.number(),
+  spentFrom: v.optional(v.id("characters")),
+});
 
 /**
  * A die a finished short rest (or an interrupted long one) rolled for a downtime move (DA5): the mover, the move, the
@@ -89,10 +98,17 @@ export const restFields = {
   /** DA5 (widened): the resting PCs who held Oasis when a short rest (or an interrupted long one) ended. Cleared by undo. */
   oasisHolders: v.optional(v.array(v.id("characters"))),
   /**
-   * DA5 (widened): when the GM closed the ended rest's results panel. Oasis rerolls are possible only while the results
-   * are first shown (user 2026-10-30), so `oasisReroll` refuses once this is set. Cleared by undo.
+   * @deprecated DA5 (widened): when the GM closed the ended rest's results panel for everyone. No longer written (DA15:
+   * each holder closes their own panel, `oasisClosed`); still read, so a rest closed this way stays closed. Cleared by
+   * undo. Narrow once no row carries it.
    */
   resultsClosedAt: v.optional(v.number()),
+  /**
+   * DA15 (widened): the Oasis holders who closed their own Oasis panel (`rests.closeOasis`). Closing withdraws the
+   * holder's unused reroll from the party pool; once every holder closed, the window is over. At most `oasisHolders`.
+   * Cleared by undo.
+   */
+  oasisClosed: v.optional(v.array(v.id("characters"))),
 };
 
 export const restChoiceFields = {

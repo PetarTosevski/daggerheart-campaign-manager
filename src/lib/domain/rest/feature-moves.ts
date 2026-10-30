@@ -8,8 +8,9 @@
 // - Celestial Trance (Elf, CB p.56): "During a rest, you can drop into a trance to choose an additional downtime move."
 // - Oasis (Duneborne, HF p.27): "During a short rest, you or an ally can reroll a die used for a downtime move and take
 //   the higher result." The player picks the die after the dice are shown (user 2026-10-30, DA5): `applyMovesWithDice`
-//   records the dice, `oasisReroll` rerolls one die per holder per short rest and keeps the higher, and
-//   `applyDieDelta` clears the extra on the move's target.
+//   records the dice, `oasisReroll` spends one reroll of the party's Oasis pool (one per Duneborne holder; DA15, user
+//   2026-10-30) on any die and keeps the higher, `oasisPool` says what is left, and `applyDieDelta` clears the extra on
+//   the move's target.
 // - CB p.105: an interrupted short rest gives no benefits; an interrupted long rest "gain[s] the benefits of a short rest",
 //   so it runs these features as a short rest (Oasis applies, Efficient has nothing left to offer).
 //
@@ -18,7 +19,9 @@
 // features.trance;                                      // true for an elf
 // restMoveSlots(features);                              // { min: 2, max: 3 }
 // const { dice } = applyMovesWithDice("short", sheets, choices, rollDie); // the moves and their dice, in roll order
-// const r = oasisReroll(dice, 0, "holder-id", rollDie);                  // keeps the higher; r.delta more to clear
+// const pool = { holders: ["a", "b"], closed: [] };                     // one reroll per Duneborne (DA15)
+// const r = oasisReroll(dice, 0, "a", rollDie, pool);                    // keeps the higher; r.delta more to clear
+// oasisPool(r.dice, pool).left;                                          // 1
 // ```
 
 import { RuleError } from "../../errors/app-error";
@@ -110,8 +113,11 @@ const isDiceMove = (m: RestMove): m is DiceMove => (DICE_MOVES as readonly RestM
 /** What a dice move clears, for the feed ("2 more Stress"). */
 export const DIE_UNIT: Record<DiceMove, string> = { tendToWounds: "HP", clearStress: "Stress", repairArmor: "Armor Slots" };
 
-/** One Oasis reroll of a downtime die: the holder, the new roll and the result kept (the higher). */
-export type OasisReroll = { holderId: string; rolled: number; kept: number };
+/**
+ * One Oasis reroll of a downtime die: the holder who pressed, the new roll, the result kept (the higher) and whose
+ * reroll of the pool it spent (`spentFrom`, DA15; absent on DA5 rows, where it is the holder's own).
+ */
+export type OasisReroll = { holderId: string; rolled: number; kept: number; spentFrom?: string };
 
 /**
  * A die rolled for a downtime move, stored on the rest so an Oasis holder can reroll it after the dice are shown.
@@ -161,26 +167,50 @@ export function applyMovesWithDice(
   return { ...result, dice };
 }
 
+/** The Oasis holders of a rest and the holders who closed their Oasis panel (DA15). */
+export type OasisPoolState = { holders: readonly string[]; closed: readonly string[] };
+
+/**
+ * The party's Oasis pool (HF p.27; DA15, user 2026-10-30): each Duneborne holder adds one reroll. A holder's reroll is
+ * gone once a reroll spent it (`spentFrom`, or the pressing holder on DA5 rows) or once that holder closed their panel
+ * (closing withdraws an unused reroll). `unused` lists the holders whose reroll is still in the pool, in holder order;
+ * `left` is how many rerolls the pool holds; `open` lists the holders whose panel is still open.
+ */
+export function oasisPool(dice: readonly DowntimeDie[], { holders, closed }: OasisPoolState): { left: number; unused: string[]; open: string[] } {
+  const spent = new Set(dice.flatMap((d) => d.rerolls.map((r) => r.spentFrom ?? r.holderId)));
+  const open = holders.filter((h) => !closed.includes(h));
+  const unused = open.filter((h) => !spent.has(h));
+  return { left: unused.length, unused, open };
+}
+
 /**
  * Oasis (HF p.27): "During a short rest, you or an ally can reroll a die used for a downtime move and take the higher
- * result." The player picks the die after the dice are shown (user 2026-10-30): `holderId` rerolls `dice[index]`, once
- * per short rest, and keeps the higher result. Returns the dice with the reroll recorded, the rerolled die, the new roll,
- * the result before and how much the kept result raised it (`delta`, 0 when the reroll is not higher). Throws
- * `RuleError("REST_RULE")` for a missing die or a holder who already rerolled a die this rest.
+ * result." The player picks the die after the dice are shown (user 2026-10-30, DA5). The rerolls are a party pool
+ * (DA15, user 2026-10-30): one per holder; any holder whose panel is open spends one on any party member's die, and the
+ * same die can be rerolled again while the pool lasts, keeping the higher each time. The reroll spends the pressing
+ * holder's own reroll first, else the first unused one in holder order. Returns the dice with the reroll recorded, the
+ * rerolled die, the new roll, the result before and how much the kept result raised it (`delta`, 0 when the reroll is
+ * not higher). Throws `RuleError("REST_RULE")` for a missing die, a non-holder, a holder who closed their panel or an
+ * empty pool.
  */
 export function oasisReroll(
   dice: readonly DowntimeDie[],
   index: number,
   holderId: string,
   rng: Rng,
-): { dice: DowntimeDie[]; die: DowntimeDie; rolled: number; before: number; delta: number } {
+  pool: OasisPoolState,
+): { dice: DowntimeDie[]; die: DowntimeDie; rolled: number; before: number; delta: number; spentFrom: string } {
   const die = Number.isInteger(index) && index >= 0 ? dice[index] : undefined;
   if (die === undefined) throw new RuleError("REST_RULE", "That downtime die doesn't exist.");
-  if (dice.some((d) => d.rerolls.some((r) => r.holderId === holderId))) throw new RuleError("REST_RULE", "Oasis is used once per short rest: this character already rerolled a die.");
+  if (!pool.holders.includes(holderId)) throw new RuleError("REST_RULE", "Only a character who held Oasis (HF 27) during this rest can reroll.");
+  if (pool.closed.includes(holderId)) throw new RuleError("REST_RULE", "This character closed their Oasis panel: they can no longer reroll.");
+  const { unused } = oasisPool(dice, pool);
+  const spentFrom = unused.includes(holderId) ? holderId : unused[0];
+  if (spentFrom === undefined) throw new RuleError("REST_RULE", "The party's Oasis rerolls are used up for this rest.");
   const rolled = rng(die.sides);
   const kept = Math.max(die.value, rolled);
-  const next: DowntimeDie = { ...die, value: kept, rerolls: [...die.rerolls, { holderId, rolled, kept }] };
-  return { dice: dice.map((d, i) => (i === index ? next : d)), die: next, rolled, before: die.value, delta: kept - die.value };
+  const next: DowntimeDie = { ...die, value: kept, rerolls: [...die.rerolls, { holderId, rolled, kept, spentFrom }] };
+  return { dice: dice.map((d, i) => (i === index ? next : d)), die: next, rolled, before: die.value, delta: kept - die.value, spentFrom };
 }
 
 /**

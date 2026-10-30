@@ -73,15 +73,17 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
 
 /**
  * Oasis (Duneborne, HF p.27): "During a short rest, you or an ally can reroll a die used for a downtime move and take the
- * higher result." On a holder's sheet while the latest short rest's results are first shown (DA5, user 2026-10-30; gone
- * once the GM closes the results panel): the party's downtime dice, each with its kept result and a "Reroll (keep
- * higher)" button until the holder has used Oasis this rest. The server rolls,
- * so the result shows when the rest's row updates; the button is disabled while the call runs.
+ * higher result." On a holder's sheet after a short rest until that holder closes it (DA5; DA15, user 2026-10-30): the
+ * party's downtime dice, each with its kept result and a "Reroll (keep higher)" button while the party's pool (one
+ * reroll per Duneborne) holds one; the same die can be rerolled again. "Close Oasis" closes this holder's panel and
+ * withdraws their unused reroll. The server rolls, so the result shows when the rest's row updates; the buttons are
+ * disabled while a call runs.
  */
 export function OasisDice({ campaignId, character, canEdit }: SlotProps) {
   const state = useQuery(api.rests.current, { campaignId });
   const party = useQuery(api.characters.listByCampaign, { campaignId });
   const reroll = useIntent(api.rests.oasisReroll);
+  const close = useIntent(api.rests.closeOasis);
   const uid = useId();
   if (state === undefined || party === undefined) {
     return (
@@ -91,17 +93,21 @@ export function OasisDice({ campaignId, character, canEdit }: SlotProps) {
     );
   }
   const last = state.last;
-  if (last === null || !last.resultsOpen || !last.oasisHolders.includes(character._id)) return null;
+  if (last === null || !last.resultsOpen || !last.oasisHolders.includes(character._id) || last.oasisClosed.includes(character._id)) return null;
   const nameOf = (id: Id<"characters">) => party.find((c) => c._id === id)?.sheet.name ?? "A PC";
-  const used = last.dice.some((d) => d.rerolls.some((r) => r.holderId === character._id));
-  const can = canEdit && !used;
+  const left = last.oasisLeft;
+  const can = canEdit && left > 0;
+  const busy = reroll.pending || close.pending;
 
   return (
     <section className="rp" aria-label="Oasis">
       <h4 className="rp-h">Oasis: reroll a downtime die</h4>
       <Small as="p">
-        Oasis (HF 27): reroll one die used for a downtime move, yours or an ally&apos;s, and take the higher result. Once per short rest.
-        {used ? " Used this rest." : ""}
+        Oasis (HF 27): reroll a die used for a downtime move, yours or an ally&apos;s, and take the higher result. The party has
+        one reroll per Duneborne; a die can be rerolled again while rerolls remain.
+      </Small>
+      <Small as="p" data-testid="oasis-left">
+        {left === 0 ? "No rerolls left for the party." : `${left} ${left === 1 ? "reroll" : "rerolls"} left for the party.`}
       </Small>
       <ul aria-label="Downtime dice" className="rp-dice">
         {last.dice.map((d, i) => {
@@ -119,7 +125,7 @@ export function OasisDice({ campaignId, character, canEdit }: SlotProps) {
               {can ? (
                 <Pill
                   aria-describedby={descId}
-                  disabled={reroll.pending}
+                  disabled={busy}
                   onClick={() => void reroll.fire({ restId: last._id, characterId: character._id, die: i })}
                 >
                   Reroll (keep higher)
@@ -129,8 +135,16 @@ export function OasisDice({ campaignId, character, canEdit }: SlotProps) {
           );
         })}
       </ul>
+      {canEdit ? (
+        <div>
+          <Pill disabled={busy} aria-describedby={`${uid}-close`} onClick={() => void close.fire({ restId: last._id, characterId: character._id })}>
+            Close Oasis
+          </Pill>{" "}
+          <Small id={`${uid}-close`}>Closing gives up {character.sheet.name}&apos;s unused reroll, if any.</Small>
+        </div>
+      ) : null}
       <p aria-live="polite" className="rp-error">
-        {reroll.error ?? ""}
+        {reroll.error ?? close.error ?? ""}
       </p>
     </section>
   );
@@ -284,7 +298,7 @@ function MoveForm({
       ) : null}
       {oasis ? (
         <Small as="p">
-          Oasis (HF 27): once the GM ends this rest and the downtime dice are shown, you can reroll one of them, yours or an ally&apos;s, and keep the higher result.
+          Oasis (HF 27): once the GM ends this rest and the downtime dice are shown, you add one reroll to the party&apos;s pool: any Duneborne can spend it on any downtime die, yours or an ally&apos;s, and keep the higher result.
         </Small>
       ) : null}
       {picks.some((p) => p.move === "workOnProject" && p.countdownId === undefined) ? (

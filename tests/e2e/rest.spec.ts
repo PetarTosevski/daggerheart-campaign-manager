@@ -158,7 +158,7 @@ test("Martial Preparation (CB 48): with a mastery Slayer in the party, an ally t
   await expect(page.getByRole("article", { name: ally }).getByRole("list", { name: "Session features" })).toContainText("Slayer Dice 1/1");
 });
 
-test("Oasis (HF 27): after a short rest a Duneborne's sheet offers 'Reroll (keep higher)' on a downtime die, once", async ({ page }) => {
+test("Oasis (HF 27): after a short rest a Duneborne's sheet offers 'Reroll (keep higher)' from the party's pool, then closes its own panel", async ({ page }) => {
   const { campaignId } = await gmCreatesCampaign(page);
   const gmApi = await convexAs(page);
   await gmApi.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true });
@@ -186,19 +186,25 @@ test("Oasis (HF 27): after a short rest a Duneborne's sheet offers 'Reroll (keep
   const reroll = dice.getByRole("listitem").filter({ hasText: "Clear Stress" }).getByRole("button", { name: "Reroll (keep higher)" });
   await reroll.focus();
   await page.keyboard.press("Enter");
-  await expect(oasis.getByText(/Used this rest\./)).toBeVisible();
+  // One Duneborne, one reroll in the party's pool (DA15): spent, so no more buttons; the panel stays until closed.
+  await expect(oasis.getByTestId("oasis-left")).toHaveText("No rerolls left for the party.");
   await expect(oasis.getByRole("button", { name: "Reroll (keep higher)" })).toHaveCount(0);
   await expect(dice.getByRole("listitem").filter({ hasText: "Clear Stress" })).toContainText(`${hero} rerolled`);
 
-  // The GM closes the results on the dashboard: the sheet's Oasis panel goes away (user 2026-10-30).
+  // The GM's dashboard lists the dice and who still has the panel open.
   await page.goto(`/campaigns/${campaignId}`);
   const results = page.getByRole("region", { name: "Rest", exact: true }).getByRole("group", { name: "Rest results" });
   await expect(results.getByRole("listitem")).toHaveCount(2);
-  await results.getByRole("button", { name: "Close results" }).click();
-  await expect(results).toHaveCount(0);
+  await expect(results.getByTestId("oasis-pool")).toContainText(`0 rerolls left for the party. Still open: ${hero}.`);
+
+  // The holder closes their own Oasis panel (DA15): it goes away, and with every holder closed the results go too.
   await page.goto(`/campaigns/${campaignId}/party/${characterId}`);
-  await expect(page.getByRole("article", { name: hero })).toBeVisible();
+  await page.getByRole("region", { name: "Oasis" }).getByRole("button", { name: "Close Oasis" }).click();
   await expect(page.getByRole("region", { name: "Oasis" })).toHaveCount(0);
+  await expect(page.getByRole("article", { name: hero })).toBeVisible();
+  await page.goto(`/campaigns/${campaignId}`);
+  await expect(page.getByRole("region", { name: "Rest", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Rest", exact: true }).getByRole("group", { name: "Rest results" })).toHaveCount(0);
 });
 
 test("after three short rests the GM's Start short rest is disabled with the rule (CB 105, HF 176)", async ({ page }) => {

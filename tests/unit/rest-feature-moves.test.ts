@@ -12,6 +12,7 @@ import {
   applyMovesWithDice,
   efficientMoves,
   NO_REST_FEATURES,
+  oasisPool,
   oasisReroll,
   restFeaturesOf,
   restMoveSlots,
@@ -197,25 +198,49 @@ describe("Oasis: 'During a short rest, you or an ally can reroll a die used for 
     expect(applyMovesWithDice("short", { d: duneborne() }, [{ characterId: "d", moves: [{ move: "prepare" }, { move: "prepare" }] }], none).dice).toEqual([]);
   });
 
+  const solo = { holders: ["d"], closed: [] };
+
   it("oasisReroll rerolls the picked die, keeps the higher result and gives the difference", () => {
     const { dice } = applyMovesWithDice("short", { d: duneborne(), a: sheet("Ally") }, [clear("a")], scripted(1, 2));
-    const up = oasisReroll(dice, 0, "d", scripted(4));
-    expect(up).toMatchObject({ rolled: 4, before: 1, delta: 3 });
-    expect(up.dice[0]).toMatchObject({ rolled: 1, value: 4, rerolls: [{ holderId: "d", rolled: 4, kept: 4 }] });
+    const up = oasisReroll(dice, 0, "d", scripted(4), solo);
+    expect(up).toMatchObject({ rolled: 4, before: 1, delta: 3, spentFrom: "d" });
+    expect(up.dice[0]).toMatchObject({ rolled: 1, value: 4, rerolls: [{ holderId: "d", rolled: 4, kept: 4, spentFrom: "d" }] });
     expect(up.dice[1]).toEqual(dice[1]);
-    const down = oasisReroll(dice, 1, "d", scripted(1));
+    const down = oasisReroll(dice, 1, "d", scripted(1), solo);
     expect(down).toMatchObject({ rolled: 1, before: 2, delta: 0 });
     expect(down.die.value).toBe(2);
   });
 
-  it("once per holder per short rest; another holder may reroll the same die again; a missing die is refused", () => {
+  it("the pool (DA15): one reroll per holder, any holder on any die, the same die again; own reroll first; empty pool refused", () => {
+    const pool = { holders: ["d", "e"], closed: [] };
     const { dice } = applyMovesWithDice("short", { d: duneborne(), a: sheet("Ally") }, [clear("a")], scripted(1, 2));
-    const first = oasisReroll(dice, 0, "d", scripted(2)).dice;
-    expect(() => oasisReroll(first, 1, "d", scripted(4))).toThrow(RuleError);
-    const second = oasisReroll(first, 0, "e", scripted(3));
-    expect(second.die).toMatchObject({ value: 3, rerolls: [{ holderId: "d", kept: 2 }, { holderId: "e", kept: 3 }] });
-    expect(second.delta).toBe(1);
-    for (const bad of [-1, 2, 0.5]) expect(() => oasisReroll(dice, bad, "d", scripted(4))).toThrow(RuleError);
+    expect(oasisPool(dice, pool)).toEqual({ left: 2, unused: ["d", "e"], open: ["d", "e"] });
+    // e spends their own first, then d's, on the same die, keeping the higher each time.
+    const first = oasisReroll(dice, 0, "e", scripted(2), pool);
+    expect(first.spentFrom).toBe("e");
+    const second = oasisReroll(first.dice, 0, "e", scripted(3), pool);
+    expect(second).toMatchObject({ spentFrom: "d", delta: 1 });
+    expect(second.die).toMatchObject({ value: 3, rerolls: [{ holderId: "e", kept: 2, spentFrom: "e" }, { holderId: "e", kept: 3, spentFrom: "d" }] });
+    expect(oasisPool(second.dice, pool).left).toBe(0);
+    expect(() => oasisReroll(second.dice, 1, "d", scripted(4), pool)).toThrow(RuleError);
+    // A DA5 row (no `spentFrom`) spent the pressing holder's own.
+    const old = dice.map((d, i) => (i === 0 ? { ...d, rerolls: [{ holderId: "d", rolled: 2, kept: 2 }] } : d));
+    expect(oasisPool(old, pool).unused).toEqual(["e"]);
+    // A non-holder and a missing die are refused.
+    expect(() => oasisReroll(dice, 0, "a", scripted(4), pool)).toThrow(RuleError);
+    for (const bad of [-1, 2, 0.5]) expect(() => oasisReroll(dice, bad, "d", scripted(4), pool)).toThrow(RuleError);
+  });
+
+  it("closing (DA15) withdraws the holder's unused reroll and stops them rerolling; a reroll already spent stays spent", () => {
+    const { dice } = applyMovesWithDice("short", { d: duneborne(), a: sheet("Ally") }, [clear("a")], scripted(1, 2));
+    const closed = { holders: ["d", "e"], closed: ["d"] };
+    expect(oasisPool(dice, closed)).toEqual({ left: 1, unused: ["e"], open: ["e"] });
+    expect(() => oasisReroll(dice, 0, "d", scripted(4), closed)).toThrow(RuleError);
+    // d spends both, then e closes: nothing more to withdraw.
+    const pool = { holders: ["d", "e"], closed: [] };
+    const both = oasisReroll(oasisReroll(dice, 0, "d", scripted(2), pool).dice, 1, "d", scripted(3), pool).dice;
+    expect(oasisPool(both, { holders: ["d", "e"], closed: ["e"] })).toEqual({ left: 0, unused: [], open: ["d"] });
+    expect(oasisPool(both, { holders: ["d", "e"], closed: ["d", "e"] }).open).toEqual([]);
   });
 
   it("applyDieDelta clears the difference on the move's resource, never below zero", () => {
@@ -312,8 +337,8 @@ describe("the rest picker", () => {
   });
 });
 
-describe("the Oasis dice after a short rest (DA5, HF p.27)", () => {
-  const die = (characterId: string, value: number, rerolls: { holderId: string; rolled: number; kept: number }[] = [], targetId?: string) => ({
+describe("the Oasis dice after a short rest (DA5, DA15, HF p.27)", () => {
+  const die = (characterId: string, value: number, rerolls: { holderId: string; rolled: number; kept: number; spentFrom?: string }[] = [], targetId?: string) => ({
     characterId,
     move: "clearStress",
     ...(targetId ? { targetId } : {}),
@@ -327,7 +352,19 @@ describe("the Oasis dice after a short rest (DA5, HF p.27)", () => {
     const character = { _id: "c1", status: "active", sheet: { name: "Ael", conditions: [], domainCards: { owned: [], loadout: [] } } };
     return render(createElement(OasisDice as never, { campaignId: "camp", character, canEdit }));
   };
-  const base = { _id: "r1", kind: "short", status: "finished", finishedAt: 1, fearRoll: 1, fearGained: 1, undoable: true, oasisHolders: ["c1"], resultsOpen: true };
+  const base = {
+    _id: "r1",
+    kind: "short",
+    status: "finished",
+    finishedAt: 1,
+    fearRoll: 1,
+    fearGained: 1,
+    undoable: true,
+    oasisHolders: ["c1", "c2"],
+    oasisClosed: [],
+    oasisLeft: 2,
+    resultsOpen: true,
+  };
 
   it("lists every party member's die with a 44 px, keyboard-reachable 'Reroll (keep higher)' button that sends the die's index", async () => {
     lastRest = { ...base, dice: [die("c2", 1), die("c2", 2, [], "c1")] };
@@ -348,21 +385,50 @@ describe("the Oasis dice after a short rest (DA5, HF p.27)", () => {
     lastRest = null;
   });
 
-  it("after the holder's reroll it shows the kept result and no more buttons; a viewer who can't edit gets none", () => {
-    lastRest = { ...base, dice: [die("c2", 4, [{ holderId: "c1", rolled: 4, kept: 4 }]), die("c2", 2)] };
+  it("shows the pool left; the same die keeps its button while rerolls remain; none once the pool is empty", () => {
+    lastRest = { ...base, oasisLeft: 1, dice: [die("c2", 4, [{ holderId: "c1", rolled: 4, kept: 4, spentFrom: "c1" }]), die("c2", 2)] };
     renderDice();
     expect(screen.getByRole("list", { name: "Downtime dice" })).toHaveTextContent("d4 4 + tier 1 (first 1; Ael rerolled 4, kept 4)");
+    expect(screen.getByTestId("oasis-left")).toHaveTextContent("1 reroll left for the party.");
+    expect(screen.getAllByRole("button", { name: "Reroll (keep higher)" })).toHaveLength(2);
+    cleanup();
+    lastRest = { ...base, oasisLeft: 0, dice: [die("c2", 4, [{ holderId: "c1", rolled: 4, kept: 4 }, { holderId: "c1", rolled: 2, kept: 4 }]), die("c2", 2)] };
+    renderDice();
     expect(screen.queryByRole("button", { name: "Reroll (keep higher)" })).toBeNull();
-    expect(screen.getByText(/Used this rest\./)).toBeTruthy();
+    expect(screen.getByTestId("oasis-left")).toHaveTextContent("No rerolls left for the party.");
+    // The panel stays until the holder closes it.
+    expect(screen.getByRole("button", { name: "Close Oasis" })).toBeTruthy();
     cleanup();
     lastRest = { ...base, dice: [die("c2", 1)] };
     renderDice(false);
     expect(screen.queryByRole("button", { name: "Reroll (keep higher)" })).toBeNull();
     cleanup();
-    // Once the GM closes the results panel, the dice and the button are gone (user 2026-10-30).
-    lastRest = { ...base, resultsOpen: false, dice: [die("c2", 1)] };
+    // The holder closed their own panel (DA15): gone for them, even while another holder's is open.
+    lastRest = { ...base, oasisClosed: ["c1"], oasisLeft: 1, dice: [die("c2", 1)] };
     renderDice();
     expect(screen.queryByRole("region", { name: "Oasis" })).toBeNull();
+    cleanup();
+    // Every holder closed: the window is over.
+    lastRest = { ...base, oasisClosed: ["c1", "c2"], oasisLeft: 0, resultsOpen: false, dice: [die("c2", 1)] };
+    renderDice();
+    expect(screen.queryByRole("region", { name: "Oasis" })).toBeNull();
+    cleanup();
+    lastRest = null;
+  });
+
+  it("'Close Oasis' is a 44 px button that sends the holder's own close; no close for a viewer who can't edit", async () => {
+    lastRest = { ...base, dice: [die("c2", 1)] };
+    fired.length = 0;
+    renderDice();
+    const close = screen.getByRole("button", { name: "Close Oasis" });
+    expect(close.tagName).toBe("BUTTON");
+    expect(close).toHaveAccessibleDescription("Closing gives up Ael's unused reroll, if any.");
+    fireEvent.click(close);
+    await vi.waitFor(() => expect(fired.at(-1)).toEqual(expect.objectContaining({ restId: "r1", characterId: "c1" })));
+    expect(fired.at(-1)).not.toHaveProperty("die");
+    cleanup();
+    renderDice(false);
+    expect(screen.queryByRole("button", { name: "Close Oasis" })).toBeNull();
     cleanup();
     lastRest = null;
   });

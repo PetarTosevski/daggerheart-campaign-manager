@@ -215,7 +215,9 @@ describe("rest-time heritage features (SD-R)", () => {
     const after = (await current()).last!;
     expect(after.dice[0]).toMatchObject({ rolled: 1, value: 4, rerolls: [{ holderId: a, rolled: 4, kept: 4 }] });
 
-    // Once per holder per short rest.
+    // One holder, one reroll in the pool: it is spent (DA15). Bryn held no Oasis: no panel to close.
+    expect((await current()).last!.oasisLeft).toBe(0);
+    expect(await codeOf(p2.mutation(api.rests.closeOasis, { restId, characterId: b, idempotencyKey: key() }))).toBe("REST_RULE");
     expect(await codeOf(p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 1, idempotencyKey: key() }))).toBe("REST_RULE");
 
     // The rest's undo takes the reroll back with the rest, and the stored dice go with it.
@@ -225,32 +227,102 @@ describe("rest-time heritage features (SD-R)", () => {
     expect((await current()).last).toBeNull();
   });
 
-  it("Oasis only while the results are first shown: once the GM closes them, the server refuses the reroll (user 2026-10-30)", async () => {
-    const { a, b, edit, sheetOf, start, finish, undo, choose, gm, p1, p2, current, campaignId } = await setup();
+  // ---------------------------------------------------------------- Oasis as a party pool (DA15, user 2026-10-30)
+
+  it("Oasis pool: one reroll per Duneborne, spent by any holder on any die, the same die again while rerolls remain (DA15)", async () => {
+    const { a, b, edit, sheetOf, start, finish, undo, choose, p1, p2, current } = await setup();
     await edit(a, { communityId: "duneborne" });
-    await edit(b, { stress: 6 });
+    await edit(b, { communityId: "duneborne", stress: 6 });
+    const { restId } = await start("short");
+    await choose(p1, restId, a, [{ move: "prepare" }, { move: "prepare" }]);
+    await choose(p2, restId, b, [{ move: "clearStress" }, { move: "clearStress" }]);
+    // Bryn's dice 1 and 1 (tier 1) clear 2 + 2 of 6 Stress.
+    dice([1, 1]);
+    await finish(restId);
+    expect((await sheetOf(b)).stress).toBe(2);
+    expect((await current()).last).toMatchObject({ oasisHolders: [a, b], oasisClosed: [], oasisLeft: 2, resultsOpen: true });
+
+    // Ash spends both rerolls on Bryn's first die: 2 (kept, 1 more Stress), then 1 (lower, 2 kept).
+    dice([2]);
+    expect(await p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 0, idempotencyKey: key() })).toEqual({ rolled: 2, kept: 2, cleared: 1 });
+    expect((await current()).last!.oasisLeft).toBe(1);
+    dice([1]);
+    expect(await p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 0, idempotencyKey: key() })).toEqual({ rolled: 1, kept: 2, cleared: 0 });
+    const last = (await current()).last!;
+    expect(last.oasisLeft).toBe(0);
+    // The first reroll spent Ash's own, the second Bryn's.
+    expect(last.dice[0]).toMatchObject({
+      rolled: 1,
+      value: 2,
+      rerolls: [
+        { holderId: a, rolled: 2, kept: 2, spentFrom: a },
+        { holderId: a, rolled: 1, kept: 2, spentFrom: b },
+      ],
+    });
+    // The pool is empty: nobody rerolls, Bryn included. The window stays open until each holder closes.
+    dice([4]);
+    expect(await codeOf(p2.mutation(api.rests.oasisReroll, { restId, characterId: b, die: 1, idempotencyKey: key() }))).toBe("REST_RULE");
+    expect(await codeOf(p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 1, idempotencyKey: key() }))).toBe("REST_RULE");
+    expect((await sheetOf(b)).stress).toBe(1);
+    expect((await current()).last!.resultsOpen).toBe(true);
+
+    // The rest's undo reverts both rerolls with the rest.
+    await undo(restId);
+    expect((await sheetOf(b)).stress).toBe(6);
+  });
+
+  it("Oasis: each holder closes their own panel, withdrawing their unused reroll; the window ends once all have (DA15)", async () => {
+    const { a, b, edit, sheetOf, start, finish, undo, choose, gm, p1, p2, current } = await setup();
+    await edit(a, { communityId: "duneborne" });
+    await edit(b, { communityId: "duneborne", stress: 6 });
+    const close = (who: typeof p1, restId: Id<"rests">, characterId: Id<"characters">) =>
+      who.mutation(api.rests.closeOasis, { restId, characterId, idempotencyKey: key() });
     const { restId } = await start("short");
     await choose(p2, restId, b, [{ move: "clearStress" }, { move: "clearStress" }]);
     // Not before the rest ends.
-    expect(await codeOf(gm.mutation(api.rests.closeResults, { campaignId, restId, idempotencyKey: key() }))).toBe("REST_RULE");
+    expect(await codeOf(close(p1, restId, a))).toBe("REST_RULE");
     dice([1, 1]);
     await finish(restId);
-    expect((await current()).last!.resultsOpen).toBe(true);
-    await gm.mutation(api.rests.closeResults, { campaignId, restId, idempotencyKey: key() });
-    // Closing twice is harmless.
-    await gm.mutation(api.rests.closeResults, { campaignId, restId, idempotencyKey: key() });
-    expect((await current()).last).toMatchObject({ resultsOpen: false, oasisHolders: [a] });
+
+    // Ash closes without rerolling: Ash's reroll leaves the pool; closing twice is harmless; Ash can no longer reroll.
+    await close(p1, restId, a);
+    await close(p1, restId, a);
+    expect((await current()).last).toMatchObject({ oasisClosed: [a], oasisLeft: 1, resultsOpen: true });
     dice([4]);
     expect(await codeOf(p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 0, idempotencyKey: key() }))).toBe("REST_RULE");
-    expect((await sheetOf(b)).stress).toBe(2);
+    // Bryn still has one: spent on Bryn's own die; then the pool is empty.
+    dice([4]);
+    expect(await p2.mutation(api.rests.oasisReroll, { restId, characterId: b, die: 0, idempotencyKey: key() })).toMatchObject({ kept: 4 });
+    expect((await current()).last!.oasisLeft).toBe(0);
+    expect((await sheetOf(b)).stress).toBe(0);
+    // The GM closes Bryn's panel for Bryn's player: every holder closed, the window is over.
+    await close(gm, restId, b);
+    expect((await current()).last).toMatchObject({ oasisClosed: [a, b], oasisLeft: 0, resultsOpen: false });
 
-    // Undo reopens the rest and clears the marker; finishing again shows fresh results.
+    // Undo clears the closed panels with the dice; finishing again opens a fresh pool.
     await undo(restId);
     dice([1, 1]);
     await finish(restId);
-    expect((await current()).last!.resultsOpen).toBe(true);
-    dice([4]);
-    expect(await p1.mutation(api.rests.oasisReroll, { restId, characterId: a, die: 0, idempotencyKey: key() })).toMatchObject({ kept: 4 });
+    expect((await current()).last).toMatchObject({ oasisClosed: [], oasisLeft: 2, resultsOpen: true });
+  });
+
+  it("Oasis: a closing holder withdraws only their own unused reroll; one another holder spent stays spent (DA15)", async () => {
+    const { a, b, edit, start, finish, choose, p1, p2, current } = await setup();
+    await edit(a, { communityId: "duneborne" });
+    await edit(b, { communityId: "duneborne", stress: 6 });
+    const { restId } = await start("short");
+    await choose(p2, restId, b, [{ move: "clearStress" }, { move: "clearStress" }]);
+    dice([1, 1]);
+    await finish(restId);
+    // Bryn rerolls twice: Bryn's own, then Ash's. Ash closing withdraws nothing more; the pool was already empty.
+    dice([2, 3]);
+    await p2.mutation(api.rests.oasisReroll, { restId, characterId: b, die: 0, idempotencyKey: key() });
+    await p2.mutation(api.rests.oasisReroll, { restId, characterId: b, die: 1, idempotencyKey: key() });
+    expect((await current()).last!.dice.map((d) => d.rerolls.map((r) => r.spentFrom))).toEqual([[b], [a]]);
+    await p1.mutation(api.rests.closeOasis, { restId, characterId: a, idempotencyKey: key() });
+    expect((await current()).last).toMatchObject({ oasisLeft: 0, resultsOpen: true });
+    // Another player can't close a holder's panel.
+    expect(await codeOf(p1.mutation(api.rests.closeOasis, { restId, characterId: b, idempotencyKey: key() }))).toBe("FORBIDDEN");
   });
 
   it("Oasis keeps the first result when the reroll is lower; the GM can reroll for the holder; nothing on a long rest", async () => {

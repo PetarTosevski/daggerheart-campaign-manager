@@ -25,9 +25,12 @@
  * any rest that gives benefits, Efficient lets a short rest take one long rest
  * move, Celestial Trance allows a third move. Oasis (HF 27; DA5, user
  * 2026-10-30): a short rest (and an interrupted long rest) stores its downtime
- * dice and its Oasis holders on the rest row; after the dice are shown each
- * holder picks one die of any party member (`oasisReroll`), once per short
- * rest, and keeps the higher result, in the rest's undo group. `current`
+ * dice and its Oasis holders on the rest row; after the dice are shown the
+ * party has one reroll per holder (DA15, user 2026-10-30): any holder spends
+ * one on any party member's die (`oasisReroll`, the same die again while the
+ * pool lasts) and keeps the higher result, in the rest's undo group; each
+ * holder closes their own panel (`closeOasis`), withdrawing their unused
+ * reroll. `current`
  * offers Undo only while the rest's log rows are still undoable (the 30-day
  * snapshot strip, dcm-c26).
  */
@@ -53,6 +56,7 @@ import {
   DIE_UNIT,
   efficientMoves,
   NO_REST_FEATURES,
+  oasisPool,
   oasisReroll as rerollDie,
   restFeaturesOf,
   restMoveSlots,
@@ -229,7 +233,7 @@ const movesView = v.object({
   /** Efficient (CB 53): the long rest moves the PC can take one of on this short rest, with `choose`'s `efficient`. */
   efficient: v.array(restMoveValidator),
   slots: v.number(),
-  /** The PC holds Oasis and this is a short rest: after the dice are shown, they can reroll one downtime die (HF 27). */
+  /** The PC holds Oasis and this is a short rest: after the dice are shown, they add one reroll to the party's pool (HF 27). */
   oasis: v.boolean(),
 });
 
@@ -268,9 +272,13 @@ export const current = campaignQuery({
         undoable: v.boolean(),
         /** The downtime dice it rolled, in roll order (`oasisReroll`'s `die` is the index); empty for older rows. */
         dice: v.array(downtimeDieValidator),
-        /** The resting PCs who held Oasis when it ended; each can reroll one die (HF 27). */
+        /** The resting PCs who held Oasis when it ended; each adds one reroll to the party's pool (HF 27; DA15). */
         oasisHolders: v.array(v.id("characters")),
-        /** The results panel is still up (dice rolled, the GM has not closed it): Oasis rerolls are open (DA5). */
+        /** The holders who closed their own Oasis panel (DA15); their unused reroll left the pool. */
+        oasisClosed: v.array(v.id("characters")),
+        /** The rerolls left in the party's Oasis pool (DA15): holders with an open panel whose reroll nobody spent. */
+        oasisLeft: v.number(),
+        /** The Oasis window is open (DA15): dice rolled and at least one holder has not closed their panel. */
         resultsOpen: v.boolean(),
       }),
       v.null(),
@@ -307,7 +315,9 @@ export const current = campaignQuery({
               undoable: await groupUndoable(ctx, ctx.campaign._id, last.groupId),
               dice: last.dice ?? [],
               oasisHolders: last.oasisHolders ?? [],
-              resultsOpen: (last.dice ?? []).length > 0 && last.resultsClosedAt === undefined,
+              oasisClosed: last.oasisClosed ?? [],
+              oasisLeft: oasisWindowOpen(last) ? oasisPool(last.dice ?? [], oasisPoolOf(last)).left : 0,
+              resultsOpen: oasisWindowOpen(last),
             },
     };
   },
@@ -610,31 +620,59 @@ export const undo = keyedGmMutation({
         dice: undefined,
         oasisHolders: undefined,
         resultsClosedAt: undefined,
+        oasisClosed: undefined,
       });
       return { fearReverted };
     }),
 });
 
+/** The rest's Oasis holders and who closed their panel (DA15), for `oasisPool` and `oasisReroll`. */
+const oasisPoolOf = (rest: Doc<"rests">) => ({ holders: rest.oasisHolders ?? [], closed: rest.oasisClosed ?? [] });
+
 /**
- * Closes the latest ended rest's results panel (DA5, user 2026-10-30): Oasis rerolls are open only while the short
- * rest's results are first shown, so this ends them (`resultsClosedAt`, checked by `oasisReroll`). Closing twice is a
- * no-op. REST_RULE for a rest that is not the latest or has not ended. GM only.
+ * The ended rest's Oasis window is open (DA15, user 2026-10-30): it rolled dice, the GM did not close it for everyone
+ * under DA5 (`resultsClosedAt`, no longer written) and at least one holder has not closed their own panel. Starting
+ * the next rest ends it too (only the latest rest counts; the callers check that).
  */
-export const closeResults = keyedGmMutation({
-  args: { restId: v.id("rests") },
+function oasisWindowOpen(rest: Doc<"rests">): boolean {
+  return (rest.dice ?? []).length > 0 && rest.resultsClosedAt === undefined && oasisPool(rest.dice ?? [], oasisPoolOf(rest)).open.length > 0;
+}
+
+/**
+ * The latest ended rest of the campaign that ran as a short rest (a short rest, or an interrupted long one, CB 105),
+ * for Oasis. NOT_FOUND for a rest of another campaign; REST_RULE otherwise.
+ */
+async function latestShortRest(ctx: MutationCtx, campaignId: Id<"campaigns">, restId: Id<"rests">): Promise<Doc<"rests">> {
+  const rest = await ctx.db.get("rests", restId);
+  if (rest === null || rest.campaignId !== campaignId) throw appError("NOT_FOUND");
+  const ranShort = (rest.kind === "short" && rest.status === "finished") || (rest.kind === "long" && rest.status === "interrupted");
+  if (!ranShort) throw restRule("Oasis rerolls a die of a short rest, once its downtime dice are rolled (HF 27).");
+  const [newest] = await ctx.db
+    .query("rests")
+    .withIndex("by_campaign_started", (q) => q.eq("campaignId", campaignId))
+    .order("desc")
+    .take(1);
+  if (newest === undefined || newest._id !== rest._id) throw restRule("Only the latest rest's downtime dice can be rerolled.");
+  return rest;
+}
+
+/**
+ * A Duneborne closes their own Oasis panel (DA15, user 2026-10-30; replaces DA5's GM-wide `closeResults`):
+ * `characterId` is the Oasis holder (its owner or the GM acts). Closing withdraws the holder's unused reroll from the
+ * party's pool; once every holder closed, the window is over. Closing twice is a no-op. REST_RULE when the rest is not
+ * the latest ended short rest or the character held no Oasis at its end. Not logged: it changes no sheet, and the
+ * rest's undo clears it with the dice.
+ */
+export const closeOasis = keyedUserMutation({
+  args: { restId: v.id("rests"), characterId: v.id("characters") },
   returns: v.null(),
-  handler: async (ctx, { restId }) =>
-    ctx.once("rest_close_results", { restId }, async () => {
-      const rest = await ctx.db.get("rests", restId);
-      if (rest === null || rest.campaignId !== ctx.campaign._id) throw appError("NOT_FOUND");
-      if (rest.status === "open") throw restRule("That rest is still under way.");
-      const [newest] = await ctx.db
-        .query("rests")
-        .withIndex("by_campaign_started", (q) => q.eq("campaignId", ctx.campaign._id))
-        .order("desc")
-        .take(1);
-      if (newest === undefined || newest._id !== rest._id) throw restRule("Only the latest rest's results can be closed.");
-      if (rest.resultsClosedAt === undefined) await ctx.db.patch("rests", rest._id, { resultsClosedAt: Date.now() });
+  handler: async (ctx, { restId, characterId }) =>
+    ctx.once("rest_oasis_close", { restId, characterId }, async () => {
+      const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit");
+      const rest = await latestShortRest(ctx, campaign._id, restId);
+      const { holders, closed } = oasisPoolOf(rest);
+      if (!holders.includes(character._id)) throw restRule("Only a character who held Oasis (HF 27) during this rest has an Oasis panel.");
+      if (!closed.includes(character._id)) await ctx.db.patch("rests", rest._id, { oasisClosed: [...closed, character._id] });
       return null;
     }),
 });
@@ -645,11 +683,12 @@ const UNDO_GROUP_MAX = 50;
 /**
  * Oasis (Duneborne, HF p.27): "During a short rest, you or an ally can reroll a die used for a downtime move and take
  * the higher result." The player picks the die after the dice are shown (user 2026-10-30, DA5): `characterId` is the
- * Oasis holder (its owner or the GM acts), `die` the index of one of the latest rest's downtime dice (any party
- * member's). Once per holder per short rest (an interrupted long rest runs as one, CB 105). The server rolls, keeps the
- * higher result and clears the difference on the move's target, logged in the rest's actionLog group so the rest's
- * undo reverts it. REST_RULE when the rest is not the latest ended short rest, the character held no Oasis at its end,
- * the die doesn't exist or the holder already rerolled.
+ * Oasis holder pressing the button (its owner or the GM acts), `die` the index of one of the latest rest's downtime
+ * dice (any party member's). The rerolls are a party pool (DA15, user 2026-10-30): one per holder, spent by any holder
+ * whose panel is open, on any die, the same die again while rerolls remain (an interrupted long rest runs as a short
+ * one, CB 105). The server rolls, keeps the higher result and clears the difference on the move's target, logged in the
+ * rest's actionLog group so the rest's undo reverts it. REST_RULE when the rest is not the latest ended short rest, the
+ * character held no Oasis at its end or closed their panel, the die doesn't exist or the pool is empty.
  */
 export const oasisReroll = keyedUserMutation({
   args: { restId: v.id("rests"), characterId: v.id("characters"), die: v.number() },
@@ -657,27 +696,20 @@ export const oasisReroll = keyedUserMutation({
   handler: async (ctx, { restId, characterId, die }) =>
     ctx.once("rest_oasis", { restId, characterId, die }, async () => {
       const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit");
-      const rest = await ctx.db.get("rests", restId);
-      if (rest === null || rest.campaignId !== campaign._id) throw appError("NOT_FOUND");
-      const ranShort = (rest.kind === "short" && rest.status === "finished") || (rest.kind === "long" && rest.status === "interrupted");
-      if (!ranShort) throw restRule("Oasis rerolls a die of a short rest, once its downtime dice are rolled (HF 27).");
-      const [newest] = await ctx.db
-        .query("rests")
-        .withIndex("by_campaign_started", (q) => q.eq("campaignId", campaign._id))
-        .order("desc")
-        .take(1);
-      if (newest === undefined || newest._id !== rest._id) throw restRule("Only the latest rest's downtime dice can be rerolled.");
-      // Only while the results are first shown (user 2026-10-30): the GM closing the results panel ends the window.
+      const rest = await latestShortRest(ctx, campaign._id, restId);
+      // A rest the GM closed for everyone under DA5 stays closed (`resultsClosedAt`, no longer written).
       if (rest.resultsClosedAt !== undefined) throw restRule("The rest's results are closed: Oasis can no longer reroll its dice.");
-      if (!(rest.oasisHolders ?? []).includes(character._id)) throw restRule("Only a character who held Oasis (HF 27) during this rest can reroll.");
       const groupId = rest.groupId;
       if (groupId === undefined) throw restRule("That rest rolled no downtime dice.");
 
       const dice = rest.dice ?? [];
-      const r = rerollDie(dice, die, character._id, rollDie);
+      // The holder's panel is open and the pool holds a reroll (DA15); `rerollDie` throws REST_RULE otherwise.
+      const pool = oasisPoolOf(rest);
+      const r = rerollDie(dice, die, character._id, rollDie, pool);
       const old = dice[die]!;
       const kept = r.die.value;
-      const stored = dice.map((d, i) => (i === die ? { ...d, value: kept, rerolls: [...d.rerolls, { holderId: character._id, rolled: r.rolled, kept }] } : d));
+      const spentFrom = pool.holders.find((h) => h === r.spentFrom)!;
+      const stored = dice.map((d, i) => (i === die ? { ...d, value: kept, rerolls: [...d.rerolls, { holderId: character._id, rolled: r.rolled, kept, spentFrom }] } : d));
 
       // The rest's undo group must still hold the extra row (undo refuses a partial group).
       const group = await ctx.db
