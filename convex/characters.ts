@@ -18,6 +18,7 @@ import { applySlotBonuses } from "../src/lib/domain/characters/slots";
 import { negateMinor } from "../src/lib/domain/session-features/index";
 import { spellcastTraitOf } from "../src/lib/domain/characters/spellcast";
 import { addCard, cardTakeProblem, sourcesFor } from "../src/lib/domain/level-up/index";
+import { holdsPurposefulDesign } from "../src/lib/domain/dice/index";
 import { assertEquipment, assertSource, IKONIS_ONLY } from "../src/lib/equipment-rules";
 import { appError, RuleError } from "../src/lib/errors/app-error";
 import { FRAME_OF } from "../src/lib/frames/extras/common";
@@ -350,6 +351,10 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
   if (new Set(draft.domainCards).size !== draft.domainCards.length) throw new RuleError("INVALID", "Choose two different domain cards.");
 
   if (!STARTING_POTIONS.includes(draft.potion)) throw new RuleError("INVALID", "Choose a Minor Health Potion or a Minor Stamina Potion.");
+  // Purposeful Design (CB p.53, DA11): only an ancestry that gives it may name the Experience.
+  if (draft.purposefulExperience !== undefined && !holdsPurposefulDesign(draft.ancestry, { hopeAndFear: allowExpansion })) {
+    throw new RuleError("INVALID", "Only a character with Purposeful Design picks an Experience for it.");
+  }
 
   const sheet: CharacterSheetInput = {
     name: draft.name,
@@ -381,7 +386,13 @@ export function sheetFromDraft(draft: CharacterDraft, allowExpansion: boolean, i
       (name) => ({ id: newId(), name }),
     ),
     gold: ikonis ? { ...MOTHERBOARD_STARTING_GOLD } : { handfuls: 1, bags: 0, chest: false },
-    experiences: draft.experiences.map((name) => ({ id: newId(), name, value: STARTING_EXPERIENCE_VALUE })),
+    // The +1 is recorded on the chosen Experience, never added to its value (DA11).
+    experiences: draft.experiences.map((name, i) => ({
+      id: newId(),
+      name,
+      value: STARTING_EXPERIENCE_VALUE,
+      ...(i === draft.purposefulExperience ? { purposefulDesign: true as const } : {}),
+    })),
     domainCards: { owned: [...draft.domainCards], loadout: [...draft.domainCards] },
     background: draft.background,
     connections: draft.connections,
@@ -491,7 +502,14 @@ export const updateSheet = userMutation({
     // CB 104: a category holds at most 9 marks (a 10th rolls over through adjustGold).
     if (rest.gold) next.gold = { ...rest.gold, handfuls: Math.min(rest.gold.handfuls, MAX_HANDFULS), bags: Math.min(rest.gold.bags, MAX_BAGS) };
     if (inventory !== undefined) next.inventory = inventory.map((item) => (typeof item === "string" ? { id: newId(), name: item } : item));
-    if (experiences !== undefined) next.experiences = experiences.map((e) => ({ ...e, id: e.id ?? newId() }));
+    if (experiences !== undefined) {
+      // Purposeful Design stays on the Experience the sheet recorded (DA11); a whole-list write can't move or add it.
+      const chosen = sheet.experiences.find((e) => e.purposefulDesign)?.id;
+      next.experiences = experiences.map((e) => {
+        const id = e.id ?? newId();
+        return { id, name: e.name, value: e.value, ...(id === chosen ? { purposefulDesign: true as const } : {}) };
+      });
+    }
     if (secondaryWeaponId === null) delete next.secondaryWeaponId;
     else if (secondaryWeaponId !== undefined) next.secondaryWeaponId = secondaryWeaponId;
     if (armorId === null) delete next.armorId;
@@ -623,6 +641,30 @@ export const removeExperience = userMutation({
     await saveSheet(ctx, character._id, { ...sheet, experiences: sheet.experiences.filter((e) => e.id !== experienceId) });
     return null;
   },
+});
+
+/**
+ * Purposeful Design (Clank, CB p.53: "At character creation, choose one of your Experiences that best aligns with this
+ * purpose and gain a permanent +1 bonus to it."): records the chosen Experience once, for a character created without
+ * the choice (DA11, user 2026-10-29). The stored value stays; rolls and displays add the +1 (`experienceValue`).
+ * Owner or GM. Refusals: FEATURE_NOT_OWNED (the sheet doesn't hold the feature), NOT_FOUND (no such Experience),
+ * INVALID (an Experience is already chosen).
+ */
+export const choosePurposefulDesign = keyedUserMutation({
+  args: { characterId: v.id("characters"), experienceId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { characterId, experienceId }) =>
+    ctx.once("character_purposeful_design", { characterId, experienceId }, async () => {
+      const { campaign, character, sheet } = await editable(ctx, ctx.user, characterId);
+      if (!holdsPurposefulDesign(sheet.ancestry, { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear })) {
+        throw appError("FEATURE_NOT_OWNED");
+      }
+      if (!sheet.experiences.some((e) => e.id === experienceId)) throw appError("NOT_FOUND");
+      if (sheet.experiences.some((e) => e.purposefulDesign)) invalid("Purposeful Design already has its Experience.");
+      const experiences = sheet.experiences.map((e) => (e.id === experienceId ? { ...e, purposefulDesign: true as const } : e));
+      await saveSheet(ctx, character._id, { ...sheet, experiences });
+      return null;
+    }),
 });
 
 /**

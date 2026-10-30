@@ -29,17 +29,10 @@ const ancestry = (owner: string, slug: string, uses: FeatureEffect["uses"]): Fea
 export const ANCESTRY_CORE_EFFECTS: readonly FeatureEffect[] = [
   // ---------------------------------------------------------------- Clank (CB p.53)
   // Purposeful Design (CB p.53): "Decide who made you and for what purpose. At character creation, choose one of your
-  // Experiences that best aligns with this purpose and gain a permanent +1 bonus to it." No Mod raises one Experience:
-  // a manual note (bead, task doc).
-  ancestry("clank", "purposeful-design", [
-    {
-      id: "main",
-      name: "Purposeful Design",
-      activation: { kind: "passive" },
-      mods: [],
-      steps: [{ kind: "manual", to: "self", text: "+1 to the Experience you chose at character creation that best aligns with your purpose" }],
-    },
-  ]),
+  // Experiences that best aligns with this purpose and gain a permanent +1 bonus to it." DA11 (user 2026-10-29): the
+  // sheet records the chosen Experience (`purposefulDesign` on it, picked in the wizard or once on the sheet) and every
+  // roll and display adds the +1 (`experienceValue`, src/lib/domain/dice). Nothing is left for the player to apply.
+  ancestry("clank", "purposeful-design", [{ id: "main", name: "Purposeful Design", activation: { kind: "passive" }, mods: [], steps: [] }]),
 
   // ---------------------------------------------------------------- Drakona (CB p.54)
   // Scales (CB p.54): "Your scales act as natural protection. When you would take Severe damage, you can mark a Stress to

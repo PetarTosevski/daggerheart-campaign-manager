@@ -184,3 +184,38 @@ describe("normalizing and submitting", () => {
     expect(r.experiences).toEqual(["Sailor", ""]);
   });
 });
+
+// DA11: Purposeful Design (Clank, CB p.53: "At character creation, choose one of your Experiences that best aligns with
+// this purpose and gain a permanent +1 bonus to it.").
+describe("wizard Purposeful Design", () => {
+  const clank = (): WizardState => ({ ...completeGuardian(), ancestryId: "clank" });
+
+  it("a Clank still needs the Experience for Purposeful Design; other ancestries never do", () => {
+    expect(missingByStep(normalizeWizard(clank(), CORE), CORE)[7]).toEqual(["an Experience for Purposeful Design"]);
+    expect(missingByStep(normalizeWizard({ ...clank(), purposefulExperience: 1 }, CORE), CORE)[7]).toEqual([]);
+    expect(missingByStep(normalizeWizard(completeGuardian(), CORE), CORE)[7]).toEqual([]);
+  });
+
+  it("mixed ancestries hold it only when the first feature is the Clank's (CB p.71)", () => {
+    const mixed = (first: string, second: string): WizardState => ({ ...completeGuardian(), ancestryMode: "mixed", mixedFirst: first, mixedSecond: second });
+    expect(missingByStep(normalizeWizard(mixed("clank", "elf"), CORE), CORE)[7]).toEqual(["an Experience for Purposeful Design"]);
+    expect(missingByStep(normalizeWizard(mixed("elf", "clank"), CORE), CORE)[7]).toEqual([]);
+  });
+
+  it("sends the choice for a Clank and drops it when the ancestry changes", () => {
+    const s = normalizeWizard({ ...clank(), purposefulExperience: 0 }, CORE);
+    const draft = toCharacterDraft(s, portraitAsset(s));
+    expect(characterDraftSchema.safeParse(draft).success).toBe(true);
+    expect(draft.purposefulExperience).toBe(0);
+
+    const dwarf = normalizeWizard({ ...s, ancestryId: "dwarf" }, CORE);
+    expect(dwarf.purposefulExperience).toBeNull();
+    expect(toCharacterDraft(dwarf, null).purposefulExperience).toBeUndefined();
+    expect("purposefulExperience" in toCharacterDraft(normalizeWizard(completeGuardian(), CORE), null)).toBe(false);
+  });
+
+  it("restores the choice from a stored draft", () => {
+    expect(restoreWizard({ purposefulExperience: 1 }).purposefulExperience).toBe(1);
+    expect(restoreWizard({ purposefulExperience: 2 }).purposefulExperience).toBeNull();
+  });
+});

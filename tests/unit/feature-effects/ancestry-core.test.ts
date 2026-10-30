@@ -396,9 +396,9 @@ describe("Simiah (CB p.70)", () => {
 });
 
 describe("Clank (CB p.53)", () => {
-  it("Purposeful Design is a manual note (no Experience modifier in the vocabulary)", () => {
+  it("Purposeful Design is no reminder: the sheet records the Experience and adds the +1 (DA11)", () => {
     const use = entry("ancestry:clank:purposeful-design").uses[0]!;
     expect(use.activation).toEqual({ kind: "passive" });
-    expect(use.steps).toMatchObject([{ kind: "manual" }]);
+    expect(use.steps).toEqual([]);
   });
 });

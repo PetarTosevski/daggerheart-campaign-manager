@@ -2,6 +2,7 @@
 // No React: unit-tested in tests/unit/wizard-logic.test.ts.
 
 import { TRAIT_POOL } from "@/lib/domain/characters";
+import { holdsPurposefulDesign } from "@/lib/domain/dice";
 import {
   ANCESTRIES,
   ARMOR,
@@ -75,6 +76,8 @@ export type WizardState = {
   classItem: string | null;
   background: string[];
   experiences: [string, string];
+  /** Purposeful Design (Clank, CB p.53, DA11): which of the two Experiences gets the permanent +1; null = not chosen. */
+  purposefulExperience: 0 | 1 | null;
   domainCards: string[];
   connections: string[];
   /** GM only: who the character belongs to (a user id); null = the GM. */
@@ -108,6 +111,7 @@ export const emptyWizard = (): WizardState => ({
   classItem: null,
   background: [],
   experiences: ["", ""],
+  purposefulExperience: null,
   domainCards: [],
   connections: [],
   ownerId: null,
@@ -157,6 +161,7 @@ export function restoreWizard(raw: unknown): WizardState {
     classItem: str(r.classItem),
     background: strings(r.background),
     experiences: [exps[0] ?? "", exps[1] ?? ""],
+    purposefulExperience: r.purposefulExperience === 0 || r.purposefulExperience === 1 ? r.purposefulExperience : null,
     domainCards: strings(r.domainCards),
     connections: strings(r.connections),
     ownerId: str(r.ownerId),
@@ -261,6 +266,8 @@ export function normalizeWizard(state: WizardState, opts: WizardOptions): Wizard
     classItem: state.classItem && items.includes(state.classItem) ? state.classItem : null,
     domainCards: [...new Set(state.domainCards.filter((id) => cardIds.has(id)))].slice(0, 2),
   };
+  // Purposeful Design's pick only while the ancestry gives the feature (a Clank, or a mixed ancestry through `owned`).
+  if (!holdsPurposefulDesignNow(next, opts)) next.purposefulExperience = null;
   const portraitOk = state.portrait === null || state.portrait === "none" || portraitOptions(next).some((p) => p.key === state.portrait);
   return portraitOk ? next : { ...next, portrait: null };
 }
@@ -302,7 +309,11 @@ export function missingByStep(s: WizardState, opts?: WizardOptions): Record<numb
       classItemsFor(cls).length > 0 && !s.classItem && "a class item",
     ),
     6: [],
-    7: list(!has(s.experiences[0]) && "a first Experience", !has(s.experiences[1]) && "a second Experience"),
+    7: list(
+      !has(s.experiences[0]) && "a first Experience",
+      !has(s.experiences[1]) && "a second Experience",
+      holdsPurposefulDesignNow(s, opts) && s.purposefulExperience === null && "an Experience for Purposeful Design",
+    ),
     8: list(left > 0 && `${left} more domain card${left === 1 ? "" : "s"}`),
     9: [],
   };
@@ -424,14 +435,23 @@ export function portraitOptions(state: WizardState) {
   return keys;
 }
 
+/** The draft's ancestry choice from the wizard state. */
+function draftAncestry(s: WizardState): CharacterDraft["ancestry"] {
+  return s.ancestryMode === "mixed"
+    ? { kind: "mixed", first: s.mixedFirst ?? "", second: s.mixedSecond ?? "", name: s.mixedName.trim() }
+    : s.ancestryMode === "shapeshifter"
+      ? { kind: "shapeshifter", form: s.shapeForm ?? "", feature: s.shapeFeature ?? "" }
+      : { kind: "single", id: s.ancestryId ?? "" };
+}
+
+/** Whether the chosen ancestry gives Purposeful Design (CB p.53), read through `owned` (mixed ancestries, CB p.71). */
+export function holdsPurposefulDesignNow(s: WizardState, opts?: WizardOptions): boolean {
+  return s.ancestryMode !== null && holdsPurposefulDesign(draftAncestry(s), { hopeAndFear: opts?.hopeAndFear ?? true });
+}
+
 /** Builds the server draft from a complete, normalized state. */
 export function toCharacterDraft(s: WizardState, portrait: string | null): CharacterDraft {
-  const ancestry: CharacterDraft["ancestry"] =
-    s.ancestryMode === "mixed"
-      ? { kind: "mixed", first: s.mixedFirst ?? "", second: s.mixedSecond ?? "", name: s.mixedName.trim() }
-      : s.ancestryMode === "shapeshifter"
-        ? { kind: "shapeshifter", form: s.shapeForm ?? "", feature: s.shapeFeature ?? "" }
-        : { kind: "single", id: s.ancestryId ?? "" };
+  const ancestry = draftAncestry(s);
   const answers = (list: string[]) => list.map((x) => x.trim());
   return {
     classId: s.classId ?? "",
@@ -451,6 +471,8 @@ export function toCharacterDraft(s: WizardState, portrait: string | null): Chara
     classItem: s.classItem ?? "",
     background: answers(s.background),
     experiences: [s.experiences[0].trim(), s.experiences[1].trim()],
+    // Sent only for a character with Purposeful Design, so other drafts are unchanged (DA11).
+    ...(s.purposefulExperience !== null && holdsPurposefulDesignNow(s) ? { purposefulExperience: s.purposefulExperience } : {}),
     domainCards: [...s.domainCards],
     connections: answers(s.connections),
     ...(portrait ? { portrait: { kind: "asset" as const, asset: portrait } } : {}),

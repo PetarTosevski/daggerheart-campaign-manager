@@ -24,7 +24,13 @@ const experienceV1Schema = z.object({ name: z.string().trim().min(1).max(NAME), 
 /** A stable list id (CD8: list edits address items by id, never by index). */
 const listId = z.string().min(1).max(40);
 
-export const experienceSchema = experienceV1Schema.extend({ id: listId });
+/**
+ * An Experience on the current sheet. `purposefulDesign` (DA11, optional, widened, no version bump): the Experience a
+ * Clank chose for Purposeful Design (CB p.53: "choose one of your Experiences that best aligns with this purpose and
+ * gain a permanent +1 bonus to it"). The stored `value` is never bumped; rolls and displays add the +1
+ * (`experienceValue`, src/lib/domain/dice). At most one Experience carries it.
+ */
+export const experienceSchema = experienceV1Schema.extend({ id: listId, purposefulDesign: z.literal(true).optional() });
 
 export const inventoryItemSchema = z.object({ id: listId, name: z.string().trim().min(1).max(200) });
 
@@ -355,6 +361,11 @@ export const characterDraftSchema = z
     classItem: z.string().trim().max(100),
     background: z.array(z.string().max(TEXT)).max(12),
     experiences: z.tuple([z.string().trim().min(1, "Write a first Experience.").max(NAME), z.string().trim().min(1, "Write a second Experience.").max(NAME)]),
+    /**
+     * Purposeful Design (CB p.53, DA11): which of the two Experiences gets the permanent +1. Optional: only a sheet that
+     * holds the feature may send it, and a Clank created without it picks it once on the sheet.
+     */
+    purposefulExperience: z.union([z.literal(0), z.literal(1)]).optional(),
     domainCards: z.array(z.string().min(1)).length(2, "Choose two domain cards."),
     connections: z.array(z.string().max(TEXT)).max(12),
     portrait: portraitSchema.optional(),
@@ -395,7 +406,8 @@ export const sheetPatchSchema = characterSheetSchema
     armorId: z.string().nullable().optional(),
     // Whole-list writes stay accepted until the sheet UI sends intents (H19); entries without an id get a new one.
     inventory: z.array(z.union([z.string().trim().min(1).max(200), inventoryItemSchema])).max(60).optional(),
-    experiences: z.array(experienceV1Schema.extend({ id: listId.optional() })).max(12).optional(),
+    // `purposefulDesign` is accepted so a list read from the sheet can be sent back; the server keeps the stored choice (DA11).
+    experiences: z.array(experienceV1Schema.extend({ id: listId.optional(), purposefulDesign: z.literal(true).optional() })).max(12).optional(),
   })
   .strict();
 

@@ -27,6 +27,7 @@ import type { Rng, RollOption } from "../class-features/types";
 import { actionOutcome, type DieRole, type RolledDie, type RollOutcome, type RollRecord } from "../duality";
 import { applyResourceDelta } from "../characters/index";
 import type { CharacterSheet, Experience } from "../../validation/characters";
+import { owned, type OwnedScope, type OwnedSheet } from "../feature-effects/owned";
 
 export type { Rng };
 
@@ -175,9 +176,32 @@ export function applyDualityEffects(sheet: CharacterSheet, effects: DualityEffec
   return next;
 }
 
+// ---------------------------------------------------------------- Purposeful Design (DA11)
+
+/** Clank, CB p.53: "choose one of your Experiences that best aligns with this purpose and gain a permanent +1 bonus to it." */
+export const PURPOSEFUL_DESIGN_ID = "ancestry:clank:purposeful-design";
+export const PURPOSEFUL_DESIGN_BONUS = 1;
+
+/**
+ * An Experience's modifier on rolls and displays: the stored value, +1 on the one chosen for Purposeful Design (the
+ * stored value is never bumped, user 2026-10-29).
+ */
+export function experienceValue(e: { value: number; purposefulDesign?: true }): number {
+  return e.value + (e.purposefulDesign ? PURPOSEFUL_DESIGN_BONUS : 0);
+}
+
+/**
+ * Whether an ancestry gives Purposeful Design, read through `owned` (CB p.71): a Clank, a mixed ancestry whose first
+ * feature comes from the Clank, or a Shapeshifter whose chosen form feature is Purposeful Design.
+ */
+export function holdsPurposefulDesign(ancestry: OwnedSheet["ancestry"], scope: Pick<OwnedScope, "hopeAndFear"> = {}): boolean {
+  const sheet: OwnedSheet = { classId: "", subclassId: "", subclassRank: "foundation", ancestry, communityId: "", effects: [], classState: {}, level: 1 };
+  return owned(sheet, { ...scope, beastformId: null }).some((f) => f.featureId === PURPOSEFUL_DESIGN_ID);
+}
+
 // ---------------------------------------------------------------- Hope costs
 
-/** The Experiences used on a roll: their summed modifier and Hope cost (1 each, CB 90). */
+/** The Experiences used on a roll: their summed modifier (Purposeful Design's +1 included) and Hope cost (1 each, CB 90). */
 export function experienceBonus(experiences: readonly Experience[], ids: readonly string[]): { value: number; hope: number; names: string[] } {
   if (new Set(ids).size !== ids.length) throw new DiceRuleError("Each Experience counts once.");
   const used = ids.map((id) => {
@@ -185,7 +209,7 @@ export function experienceBonus(experiences: readonly Experience[], ids: readonl
     if (!found) throw new DiceRuleError("That Experience isn't on the sheet.");
     return found;
   });
-  return { value: used.reduce((s, e) => s + e.value, 0), hope: used.length, names: used.map((e) => e.name) };
+  return { value: used.reduce((s, e) => s + experienceValue(e), 0), hope: used.length, names: used.map((e) => e.name) };
 }
 
 /** Spends Hope, or refuses (the caller maps it to NOT_ENOUGH_HOPE). */

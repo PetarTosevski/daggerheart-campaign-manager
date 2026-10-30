@@ -2,16 +2,20 @@
 
 import "./identity.css";
 
+import { useMutation } from "convex/react";
 import { useState } from "react";
 
 import { PortraitUpload } from "@/components/party/portrait";
 import { Label, Pill, SheetBox, Small, paperField } from "@/components/party/sheet-ui";
+import { errorMessage } from "@/lib/convex-errors";
 import { assetBackground } from "@/lib/design-assets";
+import { experienceValue, holdsPurposefulDesign } from "@/lib/domain/dice";
 import { ACHIEVEMENT_LEVELS } from "@/lib/domain/level-up";
 import { pronounsFieldLabel, type PronounsLabel, type SheetPatch } from "@/lib/validation/characters";
 import { getCommunity, getSubclass, getTransformation, portraitFor, TRAIT_IDS, type ClassDef, type TraitId } from "@/lib/srd";
 import { cn } from "@/lib/utils";
 
+import { api } from "../../../../../../../../convex/_generated/api";
 import { TextField } from "../fields";
 import { advancementsChosen, cardsChosen, useLevelUpDraft } from "../level-up-draft";
 import { useSheet } from "../sheet-context";
@@ -87,21 +91,26 @@ function TraitsGrid() {
   );
 }
 
-/** The board's 50 px "+2" field. Shows the saved value while unfocused; saves a valid number on blur. */
-function ModifierInput({ label, value, onSave }: { label: string; value: number; onSave: (next: number) => void }) {
+/**
+ * The board's 50 px "+2" field. Shows the saved value while unfocused; saves a valid number on blur. `bonus` (Purposeful
+ * Design's +1, DA11) is shown and typed on top of the stored value, which is saved without it.
+ */
+function ModifierInput({ label, value, bonus = 0, onSave }: { label: string; value: number; bonus?: number; onSave: (next: number) => void }) {
   const [draft, setDraft] = useState<string | null>(null);
+  const shown = value + bonus;
   return (
     <input
       className={cn(paperField.input, "id-exp-mod")}
       inputMode="numeric"
       aria-label={label}
       maxLength={3}
-      value={draft ?? signed(value)}
-      onFocus={() => setDraft(signed(value))}
+      value={draft ?? signed(shown)}
+      onFocus={() => setDraft(signed(shown))}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
-        const next = draft === null ? null : parseModifier(draft);
+        const typed = draft === null ? null : parseModifier(draft);
         setDraft(null);
+        const next = typed === null ? null : Math.min(MOD_MAX, Math.max(MOD_MIN, typed - bonus));
         if (next !== null && next !== value) onSave(next);
       }}
       onKeyDown={(e) => {
@@ -180,7 +189,7 @@ function ExperiencesLevelUp() {
                     />
                     <span>+1 to {x.name}</span>
                     <span className="id-lu-preview" aria-hidden="true">
-                      {signed(x.value)} → {signed(x.value + 1)}
+                      {signed(experienceValue(x))} → {signed(experienceValue(x) + 1)}
                     </span>
                     {capped ? <span className="sr-only"> (already at +{MAX_EXPERIENCE_VALUE})</span> : null}
                   </label>
@@ -191,6 +200,55 @@ function ExperiencesLevelUp() {
         </fieldset>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Purposeful Design (Clank, CB p.53: "At character creation, choose one of your Experiences that best aligns with this
+ * purpose and gain a permanent +1 bonus to it."): a Clank created without the choice picks it once here (DA11). Shown
+ * only to editors of a sheet that holds the feature and has no Experience chosen yet.
+ */
+function PurposefulDesignPick() {
+  const { character, sheet, canEdit, hopeAndFear } = useSheet();
+  const choose = useMutation(api.characters.choosePurposefulDesign);
+  const [picked, setPicked] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!canEdit || sheet.experiences.length === 0 || sheet.experiences.some((x) => x.purposefulDesign)) return null;
+  if (!holdsPurposefulDesign(sheet.ancestry, { hopeAndFear })) return null;
+  const experienceId = sheet.experiences.some((x) => x.id === picked) ? picked : sheet.experiences[0]!.id;
+  return (
+    <form
+      className="id-exp-row"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError(null);
+        // One key per click, so the client's retries record it once.
+        choose({ characterId: character._id, experienceId, idempotencyKey: crypto.randomUUID() })
+          .catch((err: unknown) => setError(errorMessage(err)))
+          .finally(() => setBusy(false));
+      }}
+    >
+      <label className="id-exp-name">
+        <Small>Purposeful Design: +1 to the Experience that best aligns with your purpose</Small>
+        <select className={paperField.input} aria-label="Purposeful Design Experience" value={experienceId} onChange={(e) => setPicked(e.target.value)}>
+          {sheet.experiences.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <Pill type="submit" className="id-exp-add" disabled={busy}>
+        Choose
+      </Pill>
+      {error ? (
+        <Small role="alert" className="italic">
+          {error}
+        </Small>
+      ) : null}
+    </form>
   );
 }
 
@@ -220,6 +278,7 @@ function Experiences() {
                 <ModifierInput
                   label={`Experience ${i + 1} modifier`}
                   value={x.value}
+                  bonus={experienceValue(x) - x.value}
                   onSave={(value) => save(list.map((e) => (e.id === x.id ? { ...e, value } : e)))}
                 />
                 <button type="button" className="id-step id-exp-remove" aria-label={`Remove ${x.name}`} onClick={() => save(list.filter((e) => e.id !== x.id))}>
@@ -227,18 +286,26 @@ function Experiences() {
                 </button>
               </>
             ) : (
-              <span className={cn(paperField.locked, "id-exp-mod")} aria-label={`Experience ${i + 1} modifier ${signed(x.value)}`}>
-                {signed(x.value)}
+              <span className={cn(paperField.locked, "id-exp-mod")} aria-label={`Experience ${i + 1} modifier ${signed(experienceValue(x))}`}>
+                {signed(experienceValue(x))}
               </span>
             )}
           </li>
         ))}
+        {list.some((x) => x.purposefulDesign) ? (
+          <li>
+            <Small className="italic" data-testid="purposeful-design">
+              Purposeful Design: +1 to {list.find((x) => x.purposefulDesign)!.name} (included above)
+            </Small>
+          </li>
+        ) : null}
         {list.length === 0 ? (
           <li>
             <Small className="italic">No Experiences yet.</Small>
           </li>
         ) : null}
       </ul>
+      <PurposefulDesignPick />
       <ExperiencesLevelUp />
       {/* While levelling, the new Experience comes from the draft above, so the direct Add form steps aside. */}
       {canEdit && !leveling && list.length < MAX_EXPERIENCES ? (

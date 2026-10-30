@@ -64,6 +64,8 @@ export const characterDraftValidator = v.object({
   classItem: v.string(),
   background: v.array(v.string()),
   experiences: v.array(v.string()),
+  /** Purposeful Design (CB p.53, DA11): the index of the Experience that gets the +1. Optional (widened). */
+  purposefulExperience: v.optional(v.union(v.literal(0), v.literal(1))),
   domainCards: v.array(v.string()),
   connections: v.array(v.string()),
   portrait: v.optional(portraitValidator),
@@ -71,7 +73,8 @@ export const characterDraftValidator = v.object({
 
 export const inventoryItemValidator = v.object({ id: v.string(), name: v.string() });
 
-export const experienceValidator = v.object({ id: v.string(), name: v.string(), value: v.number() });
+/** `purposefulDesign` (DA11, optional, widened): the Experience a Clank chose for Purposeful Design (+1, CB p.53). */
+export const experienceValidator = v.object({ id: v.string(), name: v.string(), value: v.number(), purposefulDesign: v.optional(v.literal(true)) });
 
 /** A sheet edit (`sheetPatchSchema`): every field optional; `null` unequips. */
 export const sheetPatchValidator = v.object({
@@ -86,7 +89,7 @@ export const sheetPatchValidator = v.object({
   armorId: v.optional(v.union(v.string(), v.null())),
   inventory: v.optional(v.array(v.union(v.string(), inventoryItemValidator))),
   gold: v.optional(goldValidator),
-  experiences: v.optional(v.array(v.object({ id: v.optional(v.string()), name: v.string(), value: v.number() }))),
+  experiences: v.optional(v.array(v.object({ id: v.optional(v.string()), name: v.string(), value: v.number(), purposefulDesign: v.optional(v.literal(true)) }))),
   background: v.optional(v.array(v.string())),
   connections: v.optional(v.array(v.string())),
   notes: v.optional(v.string()),
