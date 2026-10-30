@@ -9,7 +9,8 @@
  */
 import { applyStressTo, rangeCheck, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import { rollD20, run as runCardUse, type ActorState, type HeldDieState, type PlanStep, type RunPlan, type RunRefusal } from "../../src/lib/domain/card-effects/run";
-import type { Range } from "../../src/lib/domain/card-effects/types";
+import type { CardEffect, Mod, Range, Step } from "../../src/lib/domain/card-effects/types";
+import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
 import { derivedThresholds } from "../../src/lib/domain/characters/derived";
 import { hopeMax } from "../../src/lib/domain/characters/index";
 import {
@@ -18,7 +19,9 @@ import {
   respond as windowRespond,
   runReactionCard,
   runReactionFeature,
+  type ArmorCost,
   type Fold,
+  type PcDefense,
   type WindowHit,
   type WindowPc,
   type WindowState,
@@ -40,7 +43,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { blockOf } from "./adversaryFeatures";
 import { parseChoices, type CardChoice } from "./cardChoices";
-import { cardActor, effectOption, featureIdOfEffect, pcCombatant, writeSheetChanges } from "./cardRunner";
+import { cardActor, cardIdOfEffect, effectOption, featureIdOfEffect, pcCombatant, writeSheetChanges } from "./cardRunner";
 import { partyOf, readSheet } from "./characterSheet";
 import { tokensOnMap } from "./combatMaps";
 import type { HitRider, IncomingHitPayload, PcAttacker } from "./validators/combatRequests";
@@ -179,12 +182,129 @@ export function windowPcOf(member: PartyMember, bandToTarget?: Range, scope?: Fe
     armorMax: c.armorMax,
     hope: sheet.hope,
     ...(c.evasion !== undefined ? { evasion: c.evasion } : {}),
+    ...withResistance(pcResistance(sheet, { hopeAndFear: scope?.hopeAndFear ?? true, ...(scope?.bandToAttacker !== undefined ? { attackerBand: scope.bandToAttacker } : {}) })),
     featureUses: sheet.featureUses,
     cards,
     ...(bandToTarget !== undefined ? { bandToTarget } : {}),
     ...(scope ? { actor: featureActor(character._id, sheet), features: answeringFeatures(sheet, scope.hopeAndFear) } : {}),
     ...(scope?.bandToAttacker !== undefined ? { bandToAttacker: scope.bandToAttacker } : {}),
   };
+}
+
+// ---------------------------------------------------------------- a PC's resistance (E2, dcm-nt4)
+
+type Level = "none" | "resistant" | "immune";
+const LEVELS: readonly Level[] = ["none", "resistant", "immune"];
+const stronger = (a: Level, b: Level): Level => (LEVELS.indexOf(a) >= LEVELS.indexOf(b) ? a : b);
+
+/** Every step of a use, nested optional / choose / check steps included. */
+function everyStep(steps: readonly Step[]): Step[] {
+  return steps.flatMap((s): Step[] => {
+    if (s.kind === "optional") return [s, ...everyStep(s.steps)];
+    if (s.kind === "choose") return [s, ...s.options.flatMap((o) => everyStep(o.steps))];
+    if (s.kind === "check") return [s, ...everyStep(s.then), ...everyStep(s.otherwise)];
+    return [s];
+  });
+}
+
+/** The mods of the step that wrote a sheet effect: its card's or feature's `effect` (or tag `condition`) step of that label. */
+function effectMods(entry: Pick<CardEffect, "uses"> | undefined, label: string): Mod[] {
+  if (!entry) return [];
+  return entry.uses.flatMap((u) =>
+    everyStep(u.steps).flatMap((s) => {
+      if (s.kind === "effect" && s.label === label) return [...s.mods];
+      if (s.kind === "condition" && s.condition.kind === "tag" && s.condition.tag === label) return [...(s.mods ?? [])];
+      return [];
+    }),
+  );
+}
+
+/**
+ * E2 (dcm-nt4): whether a resistance mod holds against this hit. `from` "melee" / "beyondMelee" reads the attacker's
+ * band (unknown: any range, Q18); `outsideArea` (Rejuvenation Barrier, CB p.339: "resistance to physical damage from
+ * outside the barrier") holds while the engine can't place the attacker in the area (no area runtime yet: as Q18, an
+ * unknown position doesn't take the protection away; see TASK-LN-E2 QUESTIONS); a `keyword` resistance (Fireproof) needs a
+ * hit with that keyword, which adversary hits don't carry yet.
+ */
+export function resistanceHolds(mod: Extract<Mod, { kind: "resistance" }>, attackerBand: Range | undefined): boolean {
+  if (mod.keyword !== undefined) return false;
+  if (mod.from === "melee") return attackerBand === undefined || attackerBand === "melee";
+  if (mod.from === "beyondMelee") return attackerBand === undefined || attackerBand !== "melee";
+  return true;
+}
+
+/**
+ * E2 (dcm-nt4): a PC's resistance and immunity against an incoming hit (CB p.99), from what the sheet holds: the sheet
+ * effects a card or feature wrote (Rejuvenation Barrier, Retract, Book of Yarrow's immunity; the `effect` / tag
+ * `condition` step of that label) and the passive uses of the features they hold without a requirement (Armored Shell).
+ * Each damage type takes its strongest level. Undefined when nothing applies.
+ */
+export function pcResistance(sheet: CharacterSheet, scope: { hopeAndFear: boolean; attackerBand?: Range }): PcDefense["resistance"] {
+  const mods: Mod[] = [];
+  for (const e of sheet.effects) {
+    const label = e.text.split("; ")[0] ?? "";
+    const cardId = cardIdOfEffect(e);
+    if (cardId !== null) mods.push(...effectMods(cardEffect(cardId), label));
+    const featureId = featureIdOfEffect(e);
+    if (featureId !== null) mods.push(...effectMods(featureEffect(featureId), label));
+  }
+  for (const f of owned(sheet, { hopeAndFear: scope.hopeAndFear })) {
+    for (const u of featureEffect(f.featureId)?.uses ?? []) if (u.activation.kind === "passive" && (u.requires ?? []).length === 0) mods.push(...(u.mods ?? []));
+  }
+  let physical: Level = "none";
+  let magic: Level = "none";
+  for (const m of mods) {
+    if (m.kind !== "resistance" || !resistanceHolds(m, scope.attackerBand)) continue;
+    if (m.type === "physical" || m.type === "both") physical = stronger(physical, m.level);
+    if (m.type === "magic" || m.type === "both") magic = stronger(magic, m.level);
+  }
+  return physical === "none" && magic === "none" ? undefined : { physical, magic };
+}
+
+const withResistance = (r: PcDefense["resistance"]) => (r ? { resistance: r } : {});
+
+// ---------------------------------------------------------------- the attacker's dearer Armor Slots (E2, dcm-s77)
+
+/**
+ * E2 (dcm-s77): the `armorCost` steps of the attacker's stat block that apply to this hit (the server re-reads the
+ * entries, as the payload names the feature): the attacking feature's own action or reaction uses (Tormenting Lash, CB
+ * p.235; Boiling Blast, CB p.236; Rending Jaws, HF p.81), and every automatic or passive use set off by "a successful
+ * attack" with no narrowing beyond the attack kind (Armor Eater, HF p.71: "When the Pangolati makes a successful attack
+ * against a PC"). The dearest `slotsPerStep` wins; `alsoMark` adds up. Undefined when none applies.
+ */
+export function hitArmorCost(effects: readonly AdversaryFeatureEffect[], feature: string | undefined): ArmorCost | undefined {
+  const steps: Extract<Step, { kind: "armorCost" }>[] = [];
+  const collect = (list: readonly unknown[]) => {
+    for (const s of everyStep(list as readonly Step[])) if (s.kind === "armorCost") steps.push(s);
+  };
+  for (const effect of effects) {
+    for (const use of effect.uses) {
+      const a = use.activation;
+      if ((a.kind === "action" || a.kind === "reaction") && feature !== undefined && effect.feature === feature) collect(use.steps);
+      else if (a.kind === "auto" && a.trigger.kind === "onHit") {
+        const { kind: _kind, attack, ...narrowing } = a.trigger;
+        void _kind;
+        if (Object.keys(narrowing).length > 0 || (attack === "standard" && feature !== undefined)) continue;
+        collect(use.steps);
+      }
+    }
+  }
+  if (steps.length === 0) return undefined;
+  const per = Math.max(1, ...steps.map((s) => s.slotsPerStep ?? 1));
+  const marks = steps.flatMap((s) => (s.alsoMark ? [s.alsoMark] : []));
+  const track = marks[0]?.track;
+  const amount = marks.filter((m) => m.track === track).reduce((n, m) => n + m.amount, 0);
+  return { ...(per > 1 ? { slotsPerStep: per } : {}), ...(track && amount > 0 ? { alsoMark: { track, amount } } : {}) };
+}
+
+/** E2 (dcm-s77): the hit's dearer Armor Slots from its attacking instance's stat block; none for a PC attacker. */
+export async function armorCostOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<ArmorCost | undefined> {
+  const attacker = row.payload.attacker;
+  if (isPcAttacker(attacker)) return undefined;
+  const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
+  if (instance === null || instance.campaignId !== row.campaignId) return undefined;
+  const block = await blockOf(ctx, instance);
+  return block ? hitArmorCost(block.effects, attacker.feature) : undefined;
 }
 
 /** The typed id of a character the window names by string (always one of the party, or the stored target). */
@@ -243,9 +363,10 @@ export function seededRng(seed: string): Rng {
   };
 }
 
-export function windowHitOf(attacker: HitAttacker, hit: Pick<HitDraft, "amount" | "type" | "direct" | "forcedArmor" | "critical" | "attackTotal">, riders: readonly HitRider[] = []): WindowHit {
+export function windowHitOf(attacker: HitAttacker, hit: Pick<HitDraft, "amount" | "type" | "direct" | "forcedArmor" | "critical" | "attackTotal">, riders: readonly HitRider[] = [], armorCost?: ArmorCost): WindowHit {
   return {
     amount: hit.amount,
+    ...(armorCost ? { armorCost } : {}),
     type: hit.type,
     direct: hit.direct,
     ...(hit.forcedArmor > 0 ? { forcedArmor: hit.forcedArmor } : {}),
@@ -445,7 +566,7 @@ export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: nu
   const attackRoll = isPcAttacker(p.attacker) ? null : await attackRollOf(ctx, row);
   // DA8 (DA1 follow-up 2): the target's own total, stored with the hit, before the whole roll's.
   const total = attackTotal ?? p.attackTotal ?? attackRoll?.total;
-  const hit = windowHitOf(p.attacker, { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(total !== undefined ? { attackTotal: total } : {}) }, p.riders ?? []);
+  const hit = windowHitOf(p.attacker, { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(total !== undefined ? { attackTotal: total } : {}) }, p.riders ?? [], await armorCostOf(ctx, row));
   const responders = p.responders.map((r) => {
     const featureIds = r.cardIds.filter(isFeatureId);
     return { characterId: r.characterId, role: r.role, cardIds: r.cardIds.filter((id) => !isFeatureId(id)), ...(featureIds.length > 0 ? { featureIds } : {}) };

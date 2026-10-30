@@ -53,6 +53,7 @@ import {
   respond as windowRespond,
   runReactionCard,
   runReactionFeature,
+  slotsPerStep,
   targetPrompt,
   type HitChoice,
   type MarkFacts,
@@ -60,6 +61,7 @@ import {
   type WindowResolution,
 } from "../../src/lib/domain/adversary-actions/index";
 import type { PlanStep, RunPlan, RunRefusal } from "../../src/lib/domain/card-effects/run";
+import { expire } from "../../src/lib/domain/characters/expiry";
 import { activeBeastform, owned } from "../../src/lib/domain/feature-effects/owned";
 import { beastformEndsOn } from "../../src/lib/srd/feature-effects/beastforms";
 import { runFeature } from "../../src/lib/domain/feature-effects/run";
@@ -73,6 +75,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
 import {
   answeringFeatures,
+  armorCostOf,
   attackerBandsOnMap,
   attackerCombatant,
   attackRollOf,
@@ -107,7 +110,7 @@ import {
   type Rebuilt,
 } from "./adversaryHits";
 import type { CardChoice } from "./cardChoices";
-import { actorSheetAfter, cardActor, pcCombatant } from "./cardRunner";
+import { actorSheetAfter, cardActor, cardIdOfEffect, pcCombatant } from "./cardRunner";
 import { saveSheet } from "./characterSheet";
 import { closeRequest } from "./combatRequests";
 import { dropStance } from "./stanceDrop";
@@ -195,7 +198,9 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
   const toAttacker = await attackerBandsOnMap(ctx, input.mapId, input.attacker);
   const party = windowParty(respondingParty(input.party, input.attacker), input.targetCharacterId, input.bands, { hopeAndFear, toAttacker });
   const attacker = await openingAttacker(ctx, input);
-  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders), targetId: input.targetCharacterId, party, ...(attacker ? { attacker } : {}) });
+  // E2 (dcm-s77): the attacker's dearer Armor Slots, re-read from its stat block (as `rebuildWindow`).
+  const armorCost = await armorCostOf(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } });
+  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders, armorCost), targetId: input.targetCharacterId, party, ...(attacker ? { attacker } : {}) });
   const responders: HitResponder[] = state.responders.slice(0, MAX_RESPONDERS).map((r) => ({
     characterId: memberId(input.party, r.characterId, input.targetCharacterId),
     role: r.role,
@@ -344,6 +349,8 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
     if (!Number.isInteger(slots) || slots < 1) throw appError("INVALID", "Mark at least one Armor Slot.");
     const defense = rebuilt.party.find((p) => p.id === characterId);
     if (state.targetId === characterId && defense && slots > targetPrompt(state, defense).maxSlots) throw appError("INVALID", "You can't mark that many Armor Slots on this hit.");
+    // E2 (dcm-s77): dearer slots are marked in whole steps (Armor Eater: 2 for one threshold).
+    if (slots % slotsPerStep(state.hit) !== 0) throw appError("INVALID", `Mark Armor Slots in steps of ${slotsPerStep(state.hit)} on this hit.`);
   }
   if (choice.kind === "card") {
     const card = cardEffect(choice.cardId);
@@ -459,6 +466,11 @@ export type HitResolution = {
   afterHit: AfterHit | null;
   /** AA2c: the incoming hit opened on a PC attacker for damage reflected at them (Arcane Reflection against a card). */
   reflectedHitId?: Id<"combatRequests">;
+  /**
+   * E2 (dcm-sos): the target marked Armor Slots to reduce this hit (Rend and Crush, CB p.233: "If a target damaged by the
+   * Dragon doesn't mark an Armor Slot to reduce the damage"; the `usedArmor` state check after the window).
+   */
+  usedArmor: boolean;
 };
 
 const SEVERITY_WORD: Record<PcSeverity, string> = { none: "No damage", minor: "Minor", major: "Major", severe: "Severe" };
@@ -491,6 +503,14 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
   if (target && result) {
     const sheet = target.sheet;
     let next: CharacterSheet = { ...sheet, hp: result.after.hp, stress: result.after.stress, armorMarked: result.after.armor, hope: Math.max(0, result.after.hope) };
+    // E2 (dcm-fyb, user answer 2026-10-30): a successful attack ends the PC's "until an attack succeeds against you" effects
+    // (Rogue's Dodge, CB p.42), before this attack's own riders land. The manual Got hit button stays as a fallback.
+    const succeeded = attackSucceeded(p, rebuilt.state.hit.attackTotal);
+    if (succeeded) next = expire(next, "hit");
+    // E2 (dcm-sim): what a card's answer turned into no Hit Points ends (Shield Aura, CB p.341).
+    const ended = endedOnNoHp(next, res.endedOnNoHp);
+    next = ended.sheet;
+    if (ended.names.length > 0) gm.push(`${targetName}: ${ended.names.join(", ")} ended (no Hit Points marked)`);
     // The attack's riders land on whoever took the hit (user answer 2026-10-22, AA2b), also when only its damage was
     // negated or reflected; a miss or full avoidance stops them (AA2c, user answer 2026-10-22).
     if (!res.missed && (p.riders?.length ?? 0) > 0) {
@@ -548,12 +568,12 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     const lastHp = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
     const formEnds = beastformEnds(next, { lastHp, severity: result.severity });
     if (formEnds) next = formEnds.sheet;
-    const ended: string[] = formEnds ? [formEnds.words] : [];
+    const endedWords: string[] = [...(formEnds ? [formEnds.words] : []), ...ended.names.map((n) => `${n} ends`)];
     if (lastHp || result.severity === "severe") {
       const dropped = await dropStance(ctx, row.campaignId, next);
       if (dropped.dropped) {
         next = dropped.sheet;
-        ended.push("drops out of their stance");
+        endedWords.push("drops out of their stance");
         gm.push(...dropped.lines);
         adversaryBefore.push(...dropped.before);
       }
@@ -571,7 +591,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
         ? `${targetName} avoided ${p.attacker.label}'s hit`
         : res.negated
           ? `${targetName} took no damage from ${p.attacker.label}'s hit`
-          : `${targetName} took ${p.attacker.label}'s hit${deathMove ? " and must make a death move" : ""}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${ended.length > 0 ? `; ${ended.join(", ")}` : ""}`,
+          : `${targetName} took ${p.attacker.label}'s hit${deathMove ? " and must make a death move" : ""}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${endedWords.length > 0 ? `; ${endedWords.join(", ")}` : ""}`,
       groupId: p.groupId,
       before: sheet,
       undoable: true,
@@ -669,7 +689,41 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     autos,
     afterHit,
     ...(reflectedHitId ? { reflectedHitId } : {}),
+    usedArmor: (result?.armorSlots ?? 0) > 0,
   };
+}
+
+/**
+ * E2 (dcm-fyb): the hit came from an adversary's attack roll that succeeded (Rogue's Dodge, CB p.42: "until the next time
+ * an attack succeeds against you"): an adversary attacker with an attack total (a feature's reaction-roll damage has
+ * none). A PC's card damage on an ally (AA2b) is left to the Got hit button.
+ */
+export function attackSucceeded(p: HitRow["payload"], attackTotal: number | undefined): boolean {
+  return !isPcAttacker(p.attacker) && attackTotal !== undefined;
+}
+
+/**
+ * E2 (dcm-sim): the bearer's sheet without what `reducedToNoHp` ended: a standard condition comes off, a card tag or an
+ * effect goes with the sheet effect that card wrote under that label. Returns the names for the feed.
+ */
+export function endedOnNoHp(sheet: CharacterSheet, ends: WindowResolution["endedOnNoHp"]): { sheet: CharacterSheet; names: string[] } {
+  let next = sheet;
+  const names: string[] = [];
+  for (const e of ends) {
+    if (e.ends.kind === "standard") {
+      const condition = e.ends.condition;
+      if (!next.conditions.includes(condition)) continue;
+      next = { ...next, conditions: next.conditions.filter((c) => c !== condition) };
+      names.push(condition);
+      continue;
+    }
+    const label = e.ends.kind === "tag" ? e.ends.tag : e.ends.label;
+    const keep = next.effects.filter((x) => !(cardIdOfEffect(x) === e.cardId && (x.text.split("; ")[0] ?? "") === label));
+    if (keep.length === next.effects.length) continue;
+    next = { ...next, effects: keep };
+    names.push(label);
+  }
+  return { sheet: next, names };
 }
 
 /** The card answer that sent the damage back at the attacker (its responder and card), from the window's answers. */

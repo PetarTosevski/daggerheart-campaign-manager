@@ -25,14 +25,14 @@
 
 import { cardAvailability, resolveCosts, unaffordable } from "../card-effects/availability";
 import { pickUse, run as runCard, type ActorState, type PlanStep, type RunPlan, type RunResult } from "../card-effects/run";
-import type { CardEffect, CardUse, NumberChoice, Range, Step, Trigger } from "../card-effects/types";
+import type { CardEffect, CardUse, ConditionRef, NumberChoice, Range, Step, Trigger } from "../card-effects/types";
 import { asCardEffect, runFeature, type FeatureRunResult } from "../feature-effects/run";
 import type { FeatureEffect } from "../feature-effects/types";
 import type { Combatant } from "../combat-actions/damage";
 import { withinRange } from "../combat-actions/distance";
 import type { Rng } from "../dice/index";
 import type { FeatureUse } from "../../validation/characters";
-import { applyHitToPc, armorOptions, damageBeforeArmor, hpForSeverity, stepDown, type HitAdjustments, type PcDefense, type PcHit, type PcHitResult, type PcSeverity } from "./severity";
+import { applyHitToPc, armorOptions, armorSteps, damageBeforeArmor, hpForSeverity, slotsPerStep, stepDown, type HitAdjustments, type PcDefense, type PcHit, type PcHitResult, type PcSeverity } from "./severity";
 
 // ---------------------------------------------------------------- inputs
 
@@ -170,6 +170,8 @@ export function triggerFits(trigger: Trigger, role: "target" | "ally", pc: Windo
       return role === "target" && typeOk(trigger.damageType) && (trigger.severity === undefined || trigger.severity === severityBefore) && fromOk(trigger.from);
     case "whenAttacked":
       return role === "target" && (trigger.stage === "rolled" || trigger.stage === "succeeded") && typeOk(trigger.damageType) && fromOk(trigger.from);
+    // E2 (dcm-98d): `stage: "would"` (Unyielding Armor, CB p.342: "When you would mark an Armor Slot") fits the same way:
+    // the target can mark one; it is offered only until the armor answer (`answerScope`).
     case "whenArmorSlotMarked":
       return role === "target" && trigger.who === "self" && armorCapable;
     case "wouldGainCondition":
@@ -337,6 +339,70 @@ export function eligibleFeatures(
   return out;
 }
 
+// ---------------------------------------------------------------- automatic answers to a marked Armor Slot (E2)
+
+/** E2 (dcm-sim): an automatic card use a marked Armor Slot set off (Shield Aura's extra step), with its folds. */
+export interface AutoAnswer {
+  characterId: string;
+  cardId: string;
+  useId: string;
+  folds: Fold[];
+}
+
+/** FNV-1a (32 bit) then mulberry32: dice for an automatic use, the same on every rebuild of the window. */
+function fixedDice(seed: string): Rng {
+  let a = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) a = Math.imul(a ^ seed.charCodeAt(i), 0x01000193) >>> 0;
+  return (sides: number) => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * sides) + 1;
+  };
+}
+
+/**
+ * E2 (dcm-sim): the automatic card uses on "when you / an ally mark an Armor Slot" (Shield Aura, CB p.341: the aura-ally
+ * and aura-self uses) that a marked slot of the current target sets off: run with the target as the trigger's subject,
+ * free uses only (one with a cost waits for the player), ready by their limit; their folds join the hit's (a severity
+ * step). A use the runner refuses (an unconfirmed situation, a gate that doesn't hold) adds nothing. `marked`: whether a
+ * real Armor Slot is marked (the target's answer, or a count the preview asks about).
+ */
+export function armorSlotAutos(state: WindowState, marked = realSlotsChosen(state) > 0): AutoAnswer[] {
+  const target = state.party?.find((p) => p.id === state.targetId);
+  if (!marked || !target?.actor || state.hit.direct) return [];
+  const out: AutoAnswer[] = [];
+  for (const pc of state.party ?? []) {
+    if (!pc.actor) continue;
+    for (const card of pc.cards) {
+      for (const use of card.uses) {
+        const a = use.activation;
+        if (a.kind !== "auto" || a.trigger.kind !== "whenArmorSlotMarked" || a.trigger.stage === "would") continue;
+        if ((a.trigger.who === "self") !== (pc.id === state.targetId)) continue;
+        if ((use.costs ?? []).length > 0) continue;
+        if (use.limit && cardAvailability(pc, card.cardId, { useId: use.id, limit: use.limit }).state !== "ready") continue;
+        const result = runCard(card, {
+          actor: pc.actor,
+          gmFear: 0,
+          useId: use.id,
+          trigger: { amount: state.hit.amount, subject: target.actor, ...(state.attacker ? { source: state.attacker } : {}) },
+          rng: fixedDice(`${state.hit.attackerId}:${state.targetId}:${card.cardId}:${use.id}`),
+        });
+        if (!result.ok) continue;
+        const folds = foldsFromPlan(result.plan, pc.id);
+        if (folds.length > 0) out.push({ characterId: pc.id, cardId: card.cardId, useId: use.id, folds });
+      }
+    }
+  }
+  return out;
+}
+
+/** Every fold of the hit so far: the answers', then (E2) the automatic uses a marked Armor Slot set off. */
+function allFolds(state: WindowState, marked?: boolean): Fold[] {
+  return [...state.responses.flatMap((r) => r.folds ?? []), ...armorSlotAutos(state, marked).flatMap((a) => a.folds)];
+}
+
 // ---------------------------------------------------------------- the hit so far (SD4)
 
 /** The hit as the answers so far left it: damage after reductions and rerolls, its severity now, the armor answered. */
@@ -377,6 +443,11 @@ function realSlotsChosen(state: WindowState): number {
   return answer?.choice.kind === "armor" ? Math.max(1, answer.choice.slots ?? 1) : 0;
 }
 
+/** E2 (dcm-s77): the severity steps the real slots bought (whole steps of the hit's `slotsPerStep`). */
+function realStepsChosen(state: WindowState): number {
+  return armorSteps(state.hit, realSlotsChosen(state));
+}
+
 const substituteTaken = (state: WindowState) => state.responses.some((r) => r.characterId === state.targetId && substitutes(r, state));
 
 /**
@@ -406,7 +477,7 @@ export function armorAnswered(state: WindowState, characterId: string): boolean 
  * real slots; "Don't mark" leaves the substitute open (dcm-bxp.99.19.55 (3)).
  */
 function substituteBlocked(state: WindowState): boolean {
-  return state.hit.direct || substituteTaken(state) || realSlotsChosen(state) >= slotAllowance(state);
+  return state.hit.direct || substituteTaken(state) || realStepsChosen(state) >= slotAllowance(state);
 }
 
 /**
@@ -443,18 +514,20 @@ function amountNow(state: WindowState, folds: readonly Fold[]): number {
 
 /** The hit now for the current target (SD4): what the next answer's trigger reads. */
 export function progress(state: WindowState, target: PcDefense): HitProgress {
-  const folds = state.responses.flatMap((r) => r.folds ?? []);
+  const folds = allFolds(state);
   // DA8: a cancelled damage (Dark Aegis, a reflection) is zero: no severity, no Hit Points (user answer 2026-10-29).
   const cancelled = folds.some((f) => f.kind === "negateDamage");
   const amount = cancelled ? 0 : amountNow(state, folds);
-  const armorAnswer = state.responses.find((r) => r.characterId === state.targetId && r.choice.kind === "armor");
-  const slots = armorAnswer?.choice.kind === "armor" ? Math.max(1, armorAnswer.choice.slots ?? 1) : 0;
   const before = cancelled ? "none" : damageBeforeArmor(target, { ...state.hit, amount }).severity;
-  const severity = stepDown(stepDown(before, slots), severitySteps(folds, state));
+  // E2 (dcm-s77): dearer slots buy whole steps only.
+  const severity = stepDown(stepDown(before, realStepsChosen(state)), severitySteps(folds, state));
   const delta = (state.hit.hpMarkedDelta ?? 0) + folds.reduce((n, f) => n + (f.kind === "hpMarked" && applies(f.targetIds, state) ? f.delta : 0), 0);
   const base = hpForSeverity(severity);
   return { amount, severity, hp: base > 0 ? Math.max(0, base + delta) : 0, armorAnswered: armorAnswered(state, state.targetId) };
 }
+
+/** E2 (dcm-98d): a reaction on "when you would mark an Armor Slot" (Unyielding Armor, CB p.342). */
+export const wouldMarkArmor = (use: CardUse) => use.activation.kind === "reaction" && use.activation.trigger.kind === "whenArmorSlotMarked" && use.activation.trigger.stage === "would";
 
 /** Shared gate of `featureAnswers` / `cardAnswers`: who answers, in which role, with what played so far. */
 function answerScope(state: WindowState, characterId: string) {
@@ -473,7 +546,11 @@ function answerScope(state: WindowState, characterId: string) {
   const ruled = ruledOut(state, role, role === "target" && now.armorAnswered);
   // DA8: damage cancelled or reduced to 0 (Dark Aegis; CB p.91 "If you ever reduce incoming damage to 0 or less") is no
   // longer damage anyone "would take": those answers don't fit any more.
-  const skip = (use: CardUse) => ruled(use) || (now.amount <= 0 && use.activation.kind === "reaction" && (use.activation.trigger.kind === "whenYouWouldTakeDamage" || use.activation.trigger.kind === "whenAllyWouldTakeDamage"));
+  // E2 (dcm-98d): a "when you would mark an Armor Slot" answer (Unyielding Armor, CB p.342) comes before the armor answer.
+  const skip = (use: CardUse) =>
+    ruled(use) ||
+    (now.amount <= 0 && use.activation.kind === "reaction" && (use.activation.trigger.kind === "whenYouWouldTakeDamage" || use.activation.trigger.kind === "whenAllyWouldTakeDamage")) ||
+    (role === "target" && now.armorAnswered && wouldMarkArmor(use));
   return { responder, pc, target, mine, role, now, skip, hit: { ...state.hit, amount: now.amount } };
 }
 
@@ -825,6 +902,32 @@ export interface WindowResolution {
    * land, but any extra "mark HP" from them is ignored.
    */
   hpRidersIgnored: boolean;
+  /**
+   * E2 (dcm-sim): conditions and effects that end because the card that made them turned this hit into no Hit Points
+   * marked (`EndEvent` `reducedToNoHp`; Shield Aura, CB p.341: "If this spell causes a creature who would be damaged to
+   * instead mark no Hit Points, the effect ends"). `bearerId`: the PC who took the hit; `cardId` / `ownerId`: the card
+   * and its holder; `ends`: the condition or the effect label on the bearer.
+   */
+  endedOnNoHp: { bearerId: string; ownerId: string; cardId: string; ends: ConditionRef | { kind: "effect"; label: string } }[];
+}
+
+/** E2 (dcm-sim): what a card's steps say ends on `reducedToNoHp` (its conditions and effects), nested steps included. */
+export function endsOnNoHp(card: CardEffect): (ConditionRef | { kind: "effect"; label: string })[] {
+  const out: (ConditionRef | { kind: "effect"; label: string })[] = [];
+  const walk = (steps: readonly Step[]) => {
+    for (const s of steps) {
+      if (s.kind === "condition" && s.endsOn?.includes("reducedToNoHp")) out.push(s.condition);
+      else if (s.kind === "effect" && s.endsOn?.includes("reducedToNoHp")) out.push({ kind: "effect", label: s.label });
+      else if (s.kind === "optional") walk(s.steps);
+      else if (s.kind === "choose") for (const o of s.options) walk(o.steps);
+      else if (s.kind === "check") {
+        walk(s.then);
+        walk(s.otherwise);
+      }
+    }
+  };
+  for (const use of card.uses) walk(use.steps);
+  return out;
 }
 
 /**
@@ -835,7 +938,8 @@ export interface WindowResolution {
  * thresholds; "N fewer Hit Points" folds (NV4) change the marks after them.
  */
 export function resolveWindow(state: WindowState, party: readonly PcDefense[]): WindowResolution {
-  const folds = state.responses.flatMap((r) => r.folds ?? []);
+  const autos = armorSlotAutos(state);
+  const folds = [...state.responses.flatMap((r) => r.folds ?? []), ...autos.flatMap((a) => a.folds)];
   const target = party.find((p) => p.id === state.targetId);
   const manual: string[] = [];
   let missed = folds.some((f) => f.kind === "negateAttack");
@@ -864,28 +968,47 @@ export function resolveWindow(state: WindowState, party: readonly PcDefense[]): 
   const conditionNegated = folds.some((f) => f.kind === "negateCondition");
   const hpRidersIgnored = !missed && folds.some((f) => f.kind === "negateDamage" && f.ignoreOnHitHp === true);
   if (!target || missed) {
-    return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result: null, reflected, manual, armorSlotsChosen, conditionNegated, hpRidersIgnored };
+    return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result: null, reflected, manual, armorSlotsChosen, conditionNegated, hpRidersIgnored, endedOnNoHp: [] };
   }
 
-  let extra: number | "any" = 0;
-  // DA8: slot substitutes (Stable, Celestial Wings) count one step at most (CB p.114).
-  const reduceSeverity = severitySteps(folds, state);
-  let hpDelta = 0;
-  let convert: HitAdjustments["convert"];
-  for (const f of folds) {
-    if (f.kind === "extraArmorSlots" && applies(f.targetIds, state)) extra = extra === "any" || f.max === "any" ? "any" : extra + f.max;
-    if (f.kind === "hpMarked" && applies(f.targetIds, state)) hpDelta += f.delta;
-    if (f.kind === "convert" && applies(f.targetIds, state)) convert = f.into;
+  const marks = (list: readonly Fold[]) => {
+    let extra: number | "any" = 0;
+    // DA8: slot substitutes (Stable, Celestial Wings) count one step at most (CB p.114).
+    const reduceSeverity = severitySteps(list, state);
+    let hpDelta = 0;
+    let convert: HitAdjustments["convert"];
+    for (const f of list) {
+      if (f.kind === "extraArmorSlots" && applies(f.targetIds, state)) extra = extra === "any" || f.max === "any" ? "any" : extra + f.max;
+      if (f.kind === "hpMarked" && applies(f.targetIds, state)) hpDelta += f.delta;
+      if (f.kind === "convert" && applies(f.targetIds, state)) convert = f.into;
+    }
+    const hit: PcHit = { ...state.hit, amount: amountNow(state, list), ...(hpDelta !== 0 ? { hpMarkedDelta: (state.hit.hpMarkedDelta ?? 0) + hpDelta } : {}) };
+    return applyHitToPc(target, hit, {
+      armorSlots: armorSlotsChosen,
+      extraSlots: extra,
+      reduceSeverity,
+      negate: negated,
+      ...(convert ? { convert } : {}),
+    });
+  };
+  const result = marks(folds);
+  // E2 (dcm-sim): a card whose own folds made the difference between Hit Points and none ends what it marked so.
+  const endedOnNoHp: WindowResolution["endedOnNoHp"] = [];
+  if (!negated && result.hpMarked === 0 && result.severityBefore !== "none") {
+    const answers = [
+      ...state.responses.flatMap((r) => (r.choice.kind === "card" && r.folds ? [{ characterId: r.characterId, cardId: r.choice.cardId, folds: r.folds }] : [])),
+      ...autos,
+    ];
+    for (const a of answers) {
+      const card = state.party?.find((p) => p.id === a.characterId)?.cards.find((c) => c.cardId === a.cardId);
+      const ends = card ? endsOnNoHp(card) : [];
+      if (ends.length === 0) continue;
+      const without = folds.filter((f) => !a.folds.includes(f));
+      if (marks(without).hpMarked === 0) continue;
+      for (const e of ends) endedOnNoHp.push({ bearerId: state.targetId, ownerId: a.characterId, cardId: a.cardId, ends: e });
+    }
   }
-  const hit: PcHit = { ...state.hit, amount, ...(hpDelta !== 0 ? { hpMarkedDelta: (state.hit.hpMarkedDelta ?? 0) + hpDelta } : {}) };
-  const result = applyHitToPc(target, hit, {
-    armorSlots: armorSlotsChosen,
-    extraSlots: extra,
-    reduceSeverity,
-    negate: negated,
-    ...(convert ? { convert } : {}),
-  });
-  return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result, reflected, manual, armorSlotsChosen, conditionNegated, hpRidersIgnored };
+  return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result, reflected, manual, armorSlotsChosen, conditionNegated, hpRidersIgnored, endedOnNoHp };
 }
 
 // ---------------------------------------------------------------- after the hit (AA2b)
@@ -990,15 +1113,16 @@ export function afterHitAmount(use: CardUse, facts: Pick<MarkFacts, "hpMarked">,
  * severity against their thresholds, and the slots they may mark.
  */
 export function targetPrompt(state: WindowState, target: PcDefense): { damage: number; severity: PcSeverity; maxSlots: number } {
-  const folds = state.responses.flatMap((r) => r.folds ?? []);
+  const folds = allFolds(state);
   // DA8: a cancelled damage (Dark Aegis) is zero: nothing for an Armor Slot to reduce.
   if (folds.some((f) => f.kind === "negateDamage")) return { damage: 0, severity: "none", maxSlots: 0 };
   const extra = extraSlotsNow(state);
   const amount = amountNow(state, folds);
   const hit = { ...state.hit, amount };
   const max = armorOptions(target, hit, extra).maxSlots;
-  // A1 (dcm-bxp.99.19.55 (6)): a slot substitute (Stable, Wings) took one of the slots the hit allows.
-  const left = substituteTaken(state) && extra !== "any" ? Math.min(max, Math.max(0, extra)) : max;
+  // A1 (dcm-bxp.99.19.55 (6)): a slot substitute (Stable, Wings) took one of the slots the hit allows (E2: one step's
+  // worth of dearer slots, dcm-s77).
+  const left = substituteTaken(state) && extra !== "any" ? Math.min(max, Math.max(0, extra) * slotsPerStep(hit)) : max;
   return { damage: amount, severity: damageBeforeArmor(target, hit).severity, maxSlots: left };
 }
 
@@ -1009,13 +1133,15 @@ export function targetPrompt(state: WindowState, target: PcDefense): { damage: n
  */
 export function targetArmorPreview(state: WindowState, target: PcDefense): { slots: number; severity: PcSeverity; hp: number }[] {
   const prompt = targetPrompt(state, target);
-  const folds = state.responses.flatMap((r) => r.folds ?? []);
-  const steps = severitySteps(folds, state);
-  const delta = (state.hit.hpMarkedDelta ?? 0) + folds.reduce((n, f) => n + (f.kind === "hpMarked" && applies(f.targetIds, state) ? f.delta : 0), 0);
   const base = damageBeforeArmor(target, { ...state.hit, amount: prompt.damage }).severity;
-  return Array.from({ length: prompt.maxSlots + 1 }, (_, slots) => {
-    const severity = base === "none" ? "none" : stepDown(stepDown(base, slots), steps);
+  const per = slotsPerStep(state.hit);
+  // E2: dearer slots (dcm-s77) are listed in whole steps (0, 2, 4); a marked slot adds what it sets off (Shield Aura, dcm-sim).
+  return Array.from({ length: Math.floor(prompt.maxSlots / per) + 1 }, (_, n) => {
+    const folds = allFolds(state, n > 0 || realSlotsChosen(state) > 0);
+    const steps = severitySteps(folds, state);
+    const delta = (state.hit.hpMarkedDelta ?? 0) + folds.reduce((m, f) => m + (f.kind === "hpMarked" && applies(f.targetIds, state) ? f.delta : 0), 0);
+    const severity = base === "none" ? "none" : stepDown(stepDown(base, n), steps);
     const hp = hpForSeverity(severity);
-    return { slots, severity, hp: hp > 0 ? Math.max(0, hp + delta) : 0 };
+    return { slots: n * per, severity, hp: hp > 0 ? Math.max(0, hp + delta) : 0 };
   });
 }

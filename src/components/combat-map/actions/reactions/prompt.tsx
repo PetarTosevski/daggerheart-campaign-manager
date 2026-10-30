@@ -12,6 +12,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import {
   afterAnswer,
+  armorCounts,
   armorQuestion,
   damageLine,
   defaultPicks,
@@ -261,8 +262,8 @@ function HitCard({
 
 /** Under I Am Your Shield: one button per count, each with what it leaves ("Mark 2 · Minor (1 HP)"). */
 function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; onAnswer: (choice: HitChoice) => void }) {
-  const max = view.maxSlots ?? 0;
-  const counts = Array.from({ length: max }, (_, i) => i + 1);
+  // E2 (dcm-s77): only the counts that buy a step (the server's preview).
+  const counts = armorCounts(view);
   const none = stepFor(view, 0);
   return (
     <>

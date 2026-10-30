@@ -18,6 +18,11 @@
 //   Point."
 // CB p.99: resistance halves the damage before the thresholds (rounded down like combat-actions/damage.ts), immunity
 //   takes none.
+// Plan lanes E2 (dcm-s77): an attacker can make Armor Slots dearer for its hit (`ArmorCost`): Armor Eater (HF p.71: "that
+//   PC must mark an additional Armor Slot to reduce the severity of the damage"), Tormenting Lash (CB p.235: "they must
+//   mark 2 Armor Slots"), Rending Jaws (HF p.81: "must mark 2 Armor Slots to reduce the severity by one threshold") take
+//   `slotsPerStep` 2; Boiling Blast (CB p.236: "If a target marks an Armor Slot to reduce the damage, they must also mark
+//   a Stress") takes `alsoMark` Stress per slot used.
 //
 // ```ts
 // pcSeverity(14, { major: 10, severe: 20 });                       // { severity: "major", hp: 2 }
@@ -80,6 +85,27 @@ export interface PcHit {
   readonly forcedArmor?: number;
   /** Chains of Affliction on the attacker: HP the target marks change by this much (never below 0). */
   readonly hpMarkedDelta?: number;
+  /** Plan lanes E2 (dcm-s77): the attacker's dearer Armor Slots for this hit. */
+  readonly armorCost?: ArmorCost;
+}
+
+/**
+ * Plan lanes E2 (dcm-s77; the `armorCost` step): `slotsPerStep` Armor Slots buy one severity step (default 1); `alsoMark`
+ * is marked for each slot used (Stress with the CB p.92 overflow, or HP).
+ */
+export interface ArmorCost {
+  readonly slotsPerStep?: number;
+  readonly alsoMark?: { readonly track: "stress" | "hp"; readonly amount: number };
+}
+
+/** Slots one severity step costs on this hit (1 unless the attacker made them dearer). */
+export function slotsPerStep(hit: Pick<PcHit, "armorCost">): number {
+  return Math.max(1, Math.trunc(hit.armorCost?.slotsPerStep ?? 1));
+}
+
+/** The severity steps `slots` Armor Slots buy on this hit (a slot short of a full step buys nothing). */
+export function armorSteps(hit: Pick<PcHit, "armorCost">, slots: number): number {
+  return Math.floor(Math.max(0, Math.trunc(slots)) / slotsPerStep(hit));
 }
 
 /** What the window decided for this hit (all optional; nothing set = take the damage without armor). */
@@ -98,11 +124,17 @@ export interface HitAdjustments {
   convert?: "stress" | "hope";
 }
 
-/** How many Armor Slots the PC may mark for their benefit on this hit, after forced slots. */
+/**
+ * How many Armor Slots the PC may mark for their benefit on this hit, after forced slots. E2 (dcm-s77): with dearer slots
+ * every step costs `slotsPerStep`; the allowance (one step, plus `extraSlots` more steps) and the free slots are counted
+ * in whole steps, so `maxSlots` is a multiple of it.
+ */
 export function armorOptions(pc: PcDefense, hit: PcHit, extraSlots: number | "any" = 0): { canUseArmor: boolean; maxSlots: number; free: number } {
   const forced = Math.min(Math.max(0, hit.forcedArmor ?? 0), Math.max(0, pc.armorMax - pc.armor));
   const free = Math.max(0, pc.armorMax - pc.armor - forced);
-  const allowed = hit.direct || pc.noArmorSlots ? 0 : extraSlots === "any" ? free : Math.min(free, 1 + Math.max(0, extraSlots));
+  const per = slotsPerStep(hit);
+  const steps = hit.direct || pc.noArmorSlots ? 0 : extraSlots === "any" ? Math.floor(free / per) : Math.min(Math.floor(free / per), 1 + Math.max(0, extraSlots));
+  const allowed = steps * per;
   return { canUseArmor: allowed > 0, maxSlots: allowed, free };
 }
 
@@ -116,13 +148,17 @@ export function damageBeforeArmor(pc: PcDefense, hit: PcHit, reduceDamage = 0): 
   return { taken, resisted, severity };
 }
 
-/** The severity and HP for every number of slots the PC may mark (0..maxSlots), for the "mark an Armor Slot?" prompt. */
+/**
+ * The severity and HP for every number of slots the PC may mark (0..maxSlots), for the "mark an Armor Slot?" prompt. E2
+ * (dcm-s77): with dearer slots only whole steps are listed (0, 2, 4 for Armor Eater).
+ */
 export function armorPreview(pc: PcDefense, hit: PcHit, extraSlots: number | "any" = 0): { slots: number; severity: Severity; hp: number }[] {
   const { severity } = damageBeforeArmor(pc, hit);
   const { maxSlots } = armorOptions(pc, hit, extraSlots);
-  return Array.from({ length: maxSlots + 1 }, (_, slots) => {
-    const s = stepDown(severity, slots);
-    return { slots, severity: s, hp: Math.max(0, MARKS[s] + (MARKS[s] > 0 ? (hit.hpMarkedDelta ?? 0) : 0)) };
+  const per = slotsPerStep(hit);
+  return Array.from({ length: Math.floor(maxSlots / per) + 1 }, (_, n) => {
+    const s = stepDown(severity, n);
+    return { slots: n * per, severity: s, hp: Math.max(0, MARKS[s] + (MARKS[s] > 0 ? (hit.hpMarkedDelta ?? 0) : 0)) };
   });
 }
 
@@ -143,7 +179,7 @@ export interface PcHitResult {
   severityBefore: Severity;
   /** Slots marked without benefit (CB p.195). */
   forcedArmor: number;
-  /** Slots marked to step the severity down. */
+  /** Slots marked to step the severity down (E2, dcm-s77: whole steps of the hit's `slotsPerStep`). */
   armorSlots: number;
   severity: Severity;
   hpMarked: number;
@@ -169,8 +205,10 @@ export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}
   const pre = damageBeforeArmor(pc, hit, adj.reduceDamage ?? 0);
   const severityBefore = adj.negate ? "none" : pre.severity;
   const { maxSlots } = armorOptions(pc, hit, adj.extraSlots ?? 0);
-  const armorSlots = severityBefore === "none" ? 0 : Math.min(maxSlots, Math.max(0, Math.trunc(adj.armorSlots ?? 0)));
-  const severity = stepDown(stepDown(severityBefore, armorSlots), adj.reduceSeverity ?? 0);
+  // E2 (dcm-s77): only whole steps of dearer slots are marked.
+  const steps = severityBefore === "none" ? 0 : armorSteps(hit, Math.min(maxSlots, Math.max(0, Math.trunc(adj.armorSlots ?? 0))));
+  const armorSlots = steps * slotsPerStep(hit);
+  const severity = stepDown(stepDown(severityBefore, steps), adj.reduceSeverity ?? 0);
   const base = MARKS[severity];
   const marks = base > 0 ? Math.max(0, base + (hit.hpMarkedDelta ?? 0)) : 0;
 
@@ -192,6 +230,18 @@ export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}
     hpMarks = 0;
   }
   hp = Math.min(pc.hpMax, hp + hpMarks);
+  // E2 (dcm-s77): Boiling Blast's Stress (CB p.236) per Armor Slot used, with the CB p.92 overflow; or HP.
+  const also = hit.armorCost?.alsoMark;
+  if (also && armorSlots > 0 && also.amount > 0) {
+    const n = Math.trunc(also.amount) * armorSlots;
+    if (also.track === "stress") {
+      const next = markStress({ stress, stressMax: pc.stressMax, hp, hpMax: pc.hpMax }, n);
+      stressMarked += next.stress - stress;
+      overflow = overflow || next.hp > hp;
+      stress = next.stress;
+      hp = next.hp;
+    } else hp = Math.min(pc.hpMax, hp + n);
+  }
   const after: PcTracks = { hp, stress, armor: pc.armor + forced + armorSlots, hope };
   return {
     targetId: pc.id,

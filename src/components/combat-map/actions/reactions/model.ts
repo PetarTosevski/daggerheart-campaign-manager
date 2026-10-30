@@ -48,6 +48,17 @@ export function promptMode(view: HitView): PromptMode {
   return max === 1 ? "armorOne" : "armorMany";
 }
 
+/**
+ * The slot counts the hit PC may mark (1..maxSlots). E2 (dcm-s77): when the attacker makes slots dearer (Armor Eater,
+ * HF p.71: "must mark an additional Armor Slot to reduce the severity") the server lists only whole steps in the preview
+ * (0, 2, 4), so a count that buys nothing isn't offered.
+ */
+export function armorCounts(view: Pick<HitView, "maxSlots" | "armorPreview">): number[] {
+  const listed = (view.armorPreview ?? []).map((s) => s.slots).filter((n) => n > 0);
+  if (listed.length > 0) return listed;
+  return Array.from({ length: view.maxSlots ?? 0 }, (_, i) => i + 1);
+}
+
 function hpText(hp: number): string {
   return `${hp} HP`;
 }
@@ -75,7 +86,13 @@ export function damageLine(view: HitView): string {
 export function armorQuestion(view: HitView): string {
   const mode = promptMode(view);
   if (mode === "ok") return view.direct ? "Direct damage: Armor Slots can't reduce it." : "No Armor Slot to mark.";
-  if (mode === "armorMany") return "Mark any number of Armor Slots to reduce it.";
+  if (mode === "armorMany") {
+    // E2 (dcm-s77): one dearer step ("Mark 2 Armor Slots to make it Minor?").
+    const counts = armorCounts(view);
+    const only = counts.length === 1 ? stepFor(view, counts[0]!) : undefined;
+    if (only) return only.severity === "none" ? `Mark ${only.slots} Armor Slots to take no damage?` : `Mark ${only.slots} Armor Slots to make it ${SEVERITY_LABEL[only.severity]}?`;
+    return "Mark any number of Armor Slots to reduce it.";
+  }
   const one = stepFor(view, 1);
   if (!one) return "Mark an Armor Slot?";
   return one.severity === "none" ? "Mark an Armor Slot to take no damage?" : `Mark an Armor Slot to make it ${SEVERITY_LABEL[one.severity]}?`;
