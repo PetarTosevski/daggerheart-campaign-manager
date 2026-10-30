@@ -21,7 +21,7 @@ import { ConvexError } from "convex/values";
 
 import { pickAdversaryUse, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFear, type AdversaryPlan, type AdversaryPlanStep, type AdversaryRunContext } from "../../src/lib/domain/adversary-effects/run";
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
-import { actorWithSubject, featureReady, passiveSummary, preRollFits, type AdversaryEvent } from "../../src/lib/domain/adversary-actions/index";
+import { actorWithSubject, featureReady, keptDie, passiveSummary, pcTarget, preRollFits, splitTargetDisadvantage, type AdversaryEvent } from "../../src/lib/domain/adversary-actions/index";
 import { runFeature } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { resolveOptions } from "../../src/lib/frames/options";
@@ -449,26 +449,79 @@ export const DRAINED = "Drained";
 /** SD4: a held attack's replay (Q2): its action group and what the before-roll answers changed. */
 export type Replay = {
   groupId: string;
-  /** Extra disadvantage dice (Harrowing Invocation). */
-  disadvantage: number;
+  /**
+   * DA1: disadvantage sources against this attack, by character id (Harrowing Invocation: "give them disadvantage on the
+   * roll", HF p.14). They count only against the PCs it protected (user 2026-10-30), not for the whole roll.
+   */
+  disadvantageAgainst: Record<string, number>;
   /** +Evasion against this attack, by character id (Keen Defenses: "equal to your tier"). */
   evasion: Record<string, number>;
-  /** Harrowing Invocation's PCs: if the roll fails against all of them, the attacker marks a Stress. */
+  /** Harrowing Invocation's PCs: if the roll fails against any of them, the attacker marks a Stress (user 2026-10-30). */
   harrowed: { subjects: string[] } | null;
 };
 
+type Rng = (sides: number) => number;
+type Rolled = { sides: number; value: number };
+
 /**
- * Dice for a Drained attacker (HF p.14: "uses a d12 instead of a d20 for attack rolls (including for advantage or
- * disadvantage)"): the attack roll's first `d20s` d20s are d12s; later dice (damage) roll as they are.
+ * DA1: the server's dice with the attack roll's d20s already rolled: the first d20 calls (the attack roll, CB p.161) take
+ * `preset` in order (a Drained attacker's d12s, HF p.14), every later die rolls, and is written to `record` when given.
+ * With `replay`, later dice repeat those values while the sides match (a second run shares the first run's damage dice).
  */
-function drainedDice(d20s: number) {
-  let left = d20s;
+function presetDice(preset: readonly number[], record?: Rolled[], replay?: readonly Rolled[]): Rng {
+  const queue = [...preset];
+  const again = [...(replay ?? [])];
   return (sides: number) => {
-    if (sides === 20 && left > 0) {
-      left--;
-      return rollDie(12);
+    if (sides === 20 && queue.length > 0) return queue.shift()!;
+    let value: number;
+    if (again.length > 0 && again[0]!.sides === sides) value = again.shift()!.value;
+    else {
+      again.length = 0;
+      value = rollDie(sides);
     }
-    return rollDie(sides);
+    record?.push({ sides, value });
+    return value;
+  };
+}
+
+/**
+ * The attack roll as the GM row stores it: a Drained attacker's attack dice are d12s (HF p.14, SD4 follow-up: the record
+ * said d20); `second`, the die only targets with their own disadvantage read (DA1), is listed after the kept die,
+ * dropped and with role "extra" (the roll's own advantage / disadvantage stays as rolled for every other reader).
+ */
+function attackRecord(record: RollRecord, drained: boolean, second: number | null): RollRecord {
+  const attackDie = (d: RollRecord["dice"][number]) => d.sides === 20 && d.role !== "damage";
+  let dice = drained ? record.dice.map((d) => (attackDie(d) ? { ...d, sides: 12 } : d)) : record.dice;
+  if (second !== null && record.dice.filter(attackDie).length === 1) dice = [dice[0]!, { sides: drained ? 12 : 20, value: second, role: "extra", dropped: true }, ...dice.slice(1)];
+  return dice === record.dice ? record : { ...record, dice };
+}
+
+/** Disadvantage sources a PC's passives put on an attack against them (CB p.68 Sturdy, at 1 HP left), by this attacker. */
+function targetDisadvantage(p: Pick, instance: Doc<"encounterAdversaries">): number {
+  if (p.kind !== "pc") return 0;
+  return pcTarget(p.member.character._id, p.member.sheet, 0, { tags: instance.tags ?? [] }).disadvantage ?? 0;
+}
+
+/**
+ * A second run's target-only results joined to the first run (DA1): the hits, damage, marks, conditions and prompts of
+ * the targets `ids`; the attacker's own changes, costs and Fear stay the first run's (paid once).
+ */
+function joinTargets(a: AdversaryPlan, b: AdversaryPlan, ids: ReadonlySet<string>): AdversaryPlan {
+  const mine = (s: AdversaryPlanStep) => {
+    if ("targetId" in s && typeof s.targetId === "string") return ids.has(s.targetId);
+    if ("targetIds" in s && Array.isArray(s.targetIds)) return s.targetIds.length > 0 && s.targetIds.every((id: string) => ids.has(id));
+    return false;
+  };
+  const saves = [...(a.saves ?? []), ...(b.saves ?? []).filter((s) => s.targetIds.every((id) => ids.has(id)))];
+  return {
+    ...a,
+    steps: [...a.steps, ...b.steps.filter(mine)],
+    hits: [...a.hits, ...b.hits.filter((h) => ids.has(h.id))],
+    success: a.success || b.success,
+    creatures: [...a.creatures, ...b.creatures.filter((c) => ids.has(c.id))],
+    incoming: [...a.incoming, ...b.incoming.filter((h) => ids.has(h.targetId))],
+    deathMoves: [...a.deathMoves, ...b.deathMoves.filter((id) => ids.has(id))],
+    ...(saves.length > 0 ? { saves } : {}),
   };
 }
 
@@ -551,7 +604,8 @@ async function holdForPreRoll(
   const names = (ids: readonly string[]) => ids.map((id) => h.scene.party.find((m) => m.character._id === id)?.sheet.name ?? "someone").join(", ");
   const text = `${h.label} attacks ${names(targetCharacterIds)} (${h.featureName}): waiting for ${names(responders.map((r) => r.characterId))} before the roll`;
   const entryId = await logAction(ctx, { campaignId: h.campaign._id, actorId: h.user._id, kind: "adversary", visibility: "gm", summary: text, groupId: h.groupId, undoable: true });
-  return { status: "resolved", groupId: h.groupId, entryId, roll: null, success: false, targets: [], fearDelta: 0, prompts: [{ kind: "manual", text }], offers: [], held: requestId };
+  // DA1 (SD4 follow-up): no manual prompt; the tracker's waiting line ("attacks Mira, before the roll") is the held row.
+  return { status: "resolved", groupId: h.groupId, entryId, roll: null, success: false, targets: [], fearDelta: 0, prompts: [], offers: [], held: requestId };
 }
 
 
@@ -632,9 +686,20 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   // disadvantage) until they fail a roll".
   const drained = attack && (instance.tags ?? []).includes(DRAINED);
   const advantage = (args.advantage ?? 0) + (attack && (passives.advantage ?? []).some((on) => on === "attack" || on === "any") ? 1 : 0);
-  const disadvantage = (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0) + (replay?.disadvantage ?? 0);
-  // The attack roll's d20s (rollD20: a second die when advantage and disadvantage don't cancel; Goad Them On adds one).
-  const attackD20s = advantage - disadvantage - (instanceModifiers(instance).disadvantage ? 1 : 0) !== 0 ? 2 : 1;
+  // DA1 (user 2026-10-30): one roll for every target (CB p.161), but a target's own disadvantage (CB p.68 Sturdy; HF p.14
+  // Harrowing Invocation for the PCs it protected) counts only against that target. What every target carries counts for
+  // the whole roll; the rest (`residual`) is read from the same pair of dice per target.
+  const own = attack ? targets.picks.map((p) => ({ id: p.combatant.id, disadvantage: targetDisadvantage(p, instance) + (p.kind === "pc" ? (replay?.disadvantageAgainst[p.member.character._id] ?? 0) : 0) })) : [];
+  const { common, residual } = splitTargetDisadvantage(own);
+  const disadvantage = (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0) + common;
+  // The whole roll's net advantage as rollD20 counts it (the use's own flags; Goad Them On adds a disadvantage).
+  const net = advantage + (use.roll?.advantage ? 1 : 0) - disadvantage - (instanceModifiers(instance).disadvantage ? 1 : 0) - (use.roll?.disadvantage ? 1 : 0);
+  // The attack roll's dice, rolled here (a Drained attacker's are d12s, HF p.14); a second die when any reader needs it.
+  const attackDie = () => rollDie(drained ? 12 : 20);
+  const first = attack ? attackDie() : 0;
+  const second = attack && (net !== 0 || residual.size > 0) ? attackDie() : null;
+  const keptBy = (id: string) => keptDie(first, second, net - (residual.get(id) ?? 0));
+  const natural = keptDie(first, second, net);
   const picked = (await resolveCreatures(ctx, base, args.picked ?? [], false)).picks;
   const allies = (await resolveCreatures(ctx, base, args.allies ?? [], false)).picks;
   const followUp = (await resolveCreatures(ctx, base, args.followUp ?? [], false)).picks;
@@ -672,10 +737,35 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     attackDiceOnAttacks: true,
     passives,
     instance: instanceModifiers(instance),
-    rng: drained ? drainedDice(attackD20s) : rollDie,
+    rng: rollDie,
   };
-  const plan = runOrThrow(effect, context);
+  // DA1: the runner reads the whole roll's die; a target that keeps a lower one meets its Evasion raised by the difference,
+  // which is the same hit or miss as its own total against its own Evasion.
+  const shifted = (p: Pick, from: number): Combatant =>
+    residual.has(p.combatant.id) && p.combatant.evasion !== undefined ? { ...p.combatant, evasion: p.combatant.evasion + from - keptBy(p.combatant.id) } : p.combatant;
+  // A natural 20 hits and is critical only for the targets that keep it (CB p.148): the others run again on their own
+  // die (same damage dice); the first run alone pays the costs and changes the attacker.
+  const lower = attack && natural === 20 ? targets.picks.filter((p) => keptBy(p.combatant.id) !== 20) : [];
+  const lowerIds = new Set(lower.map((p) => p.combatant.id));
+  const later: Rolled[] = [];
+  let plan = attack
+    ? runOrThrow(effect, { ...context, targets: targets.picks.filter((p) => !lowerIds.has(p.combatant.id)).map((p) => shifted(p, natural)), rng: presetDice(net !== 0 && second !== null ? [first, second] : [first], later) })
+    : runOrThrow(effect, context);
+  if (lower.length > 0) {
+    const top = Math.max(...lower.map((p) => keptBy(p.combatant.id)));
+    // One die, no advantage or disadvantage left over: the runner keeps `top`.
+    const even = { advantage: (instanceModifiers(instance).disadvantage ? 1 : 0) + (use.roll?.disadvantage ? 1 : 0), disadvantage: use.roll?.advantage ? 1 : 0 };
+    const rest = runOrThrow(effect, { ...context, ...even, targets: lower.map((p) => shifted(p, top)), rng: presetDice([top], undefined, later) });
+    plan = joinTargets(plan, rest, lowerIds);
+  }
+  // The stored roll (SD4 follow-up): a Drained attacker's dice are d12s; a second die only some targets read is listed.
+  const roll = plan.roll && attack ? attackRecord(plan.roll.record, drained, residual.size > 0 ? second : null) : (plan.roll?.record ?? null);
   w.absorb(plan, featureName);
+  // DA1: each hit carries its target's own attack total (the window compares Evasion answers with it).
+  if (plan.roll && residual.size > 0) {
+    const modifier = plan.roll.record.total - natural;
+    for (const h of w.hits) if (residual.has(h.targetId)) h.hit.attackTotal = keptBy(h.targetId) + modifier;
+  }
   const attackKind = args.feature === undefined ? ("standard" as const) : ("feature" as const);
 
   // Reactions the GM opted into before the damage (Heavy Hitter, Overload; Q19 default No): their damage folds join the hits.
@@ -723,8 +813,9 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   }
 
   // SD4: the before-roll answers' after-effects. Harrowing Invocation (HF p.14): "If the adversary fails the roll, they
-  // must also mark a Stress" (the roll failed against every PC it protected); Drained ends when the roll fails.
-  if (replay?.harrowed && plan.roll && replay.harrowed.subjects.every((id) => !hitIds.has(id))) {
+  // must also mark a Stress": the roll failed against any PC it protected (user 2026-10-30; SD4 had "every"). Drained
+  // ends when the attack roll fails (misses every target; HF p.14 "until they fail a roll", user: attack rolls only).
+  if (replay?.harrowed && plan.roll && replay.harrowed.subjects.some((id) => !hitIds.has(id))) {
     w.selfAfter = applyStressTo(w.selfAfter, 1).after;
     w.gm.push(`Harrowing Invocation: ${label} failed the roll and marks a Stress`);
   }
@@ -742,15 +833,18 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     ? `${label}${what ? `${what}:` : ""} ${[hitNames.length ? `hit ${hitNames.join(", ")}` : "", missNames.length ? `missed ${missNames.join(", ")}` : ""].filter(Boolean).join("; ")}`
     : `${label}${what || ` used ${featureName}`}${outcomes.length ? ` on ${outcomes.map((o) => w.nameOf(o.characterId ?? o.instanceId ?? "")).join(", ")}` : ""}`;
   const gmText: string[] = [];
-  if (plan.roll) {
-    const vs = targets.picks.map((p) => `${w.nameOf(p.combatant.id)} ${p.combatant.evasion ?? p.combatant.difficulty ?? "?"}: ${hitIds.has(p.combatant.id) ? "hit" : "miss"}`);
-    gmText.push(`${label} ${featureName}: ${words(plan.roll.record)}${plan.roll.critical ? " critical" : ""} vs ${vs.join(", ")}`);
+  if (plan.roll && roll) {
+    const modifier = plan.roll.record.total - natural;
+    // DA1: a target with its own disadvantage shows the die it kept and its own total.
+    const ownRoll = (id: string) => (residual.has(id) ? ` (disadvantage against them: ${keptBy(id)}, total ${keptBy(id) + modifier}${keptBy(id) === 20 ? " critical" : ""})` : "");
+    const vs = targets.picks.map((p) => `${w.nameOf(p.combatant.id)} ${p.combatant.evasion ?? p.combatant.difficulty ?? "?"}${ownRoll(p.combatant.id)}: ${hitIds.has(p.combatant.id) ? "hit" : "miss"}`);
+    gmText.push(`${label} ${featureName}: ${words(roll)}${plan.roll.critical ? " critical" : ""} vs ${vs.join(", ")}`);
   } else gmText.push(`${label} used ${featureName}`);
   if (spotlightFear > 0) gmText.push("1 Fear for the spotlight");
   if (experience) gmText.push(`Experience ${experience.name} +${experience.value} (1 Fear)`);
   for (const h of w.hits) gmText.push(`${w.nameOf(h.targetId)}: ${h.hit.amount} ${h.hit.type}${h.hit.direct ? " direct" : ""}${h.hit.forcedArmor ? `, ${h.hit.forcedArmor} forced Armor Slot` : ""}${h.riders.length ? `, ${h.riders.length} rider${h.riders.length === 1 ? "" : "s"} with the hit` : ""} (waiting for armor)`);
   w.fearDelta -= spotlightFear;
-  return finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, spotlightFear: 0, roll: plan.roll?.record ?? null, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
+  return finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
 }
 
 function outcomeOf(p: Pick, hit: boolean): TargetOutcome {
@@ -1032,8 +1126,8 @@ export async function respondPreRoll(ctx: MutationCtx, input: { row: PreRollRow;
 
 /**
  * Replays a held attack (Q2): when every responder answered, or on the GM's "Resolve now" (combat-actions Q17; whoever
- * hasn't answered passes). The answers' effects ride on the roll: Harrowing Invocation's disadvantage (and its Stress if
- * the roll fails), Keen Defenses' +Evasion; Drained is on the instance already. The attack then runs as the GM sent it,
+ * hasn't answered passes). The answers' effects ride on the roll: Harrowing Invocation's disadvantage against the PCs it
+ * protects (and its Stress if the roll fails against any of them, DA1), Keen Defenses' +Evasion; Drained is on the instance already. The attack then runs as the GM sent it,
  * in the same action group (one undo, U4). A held attack that can't run any more (the instance left, the Fear is gone)
  * is called off with a GM row. Closes the request.
  */
@@ -1048,7 +1142,7 @@ export async function replayHeld(ctx: MutationCtx, row: PreRollRow, by: Id<"user
   }
   const party = await partyMembers(ctx, row.campaignId);
   const hopeAndFear = resolveOptions(campaign.frameId, campaign.options).hopeAndFear;
-  const replay: Replay = { groupId: p.groupId, disadvantage: 0, evasion: {}, harrowed: null };
+  const replay: Replay = { groupId: p.groupId, disadvantageAgainst: {}, evasion: {}, harrowed: null };
   for (const [i, answer] of row.responses.entries()) {
     if (answer.choice.kind !== "feature") continue;
     const choice = answer.choice;
@@ -1068,7 +1162,10 @@ export async function replayHeld(ctx: MutationCtx, row: PreRollRow, by: Id<"user
     });
     if (!result.ok) continue;
     for (const s of result.plan.steps) {
-      if (s.kind === "effect" && s.mods.some((m) => m.kind === "flag" && m.flag === "attackDisadvantage")) replay.disadvantage += 1;
+      // DA1 (user 2026-10-30): the disadvantage counts only against the PCs this answer protects.
+      if (s.kind === "effect" && s.mods.some((m) => m.kind === "flag" && m.flag === "attackDisadvantage")) {
+        for (const id of subjects) replay.disadvantageAgainst[id] = (replay.disadvantageAgainst[id] ?? 0) + 1;
+      }
       if (s.kind === "fold" && s.step.kind === "modifyRoll" && s.step.change.kind === "evasion" && typeof s.amount === "number") {
         for (const id of s.targetIds.length > 0 ? s.targetIds : [answer.characterId]) replay.evasion[id] = (replay.evasion[id] ?? 0) + s.amount;
       }

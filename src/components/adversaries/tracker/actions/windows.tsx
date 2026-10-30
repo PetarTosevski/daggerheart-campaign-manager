@@ -9,10 +9,14 @@ import type { AdversaryActions } from "./use-adversary-actions";
 
 const TYPE = { physical: "physical", magic: "magic", both: "physical and magic" } as const;
 
+/** A held attack's row (SD4 Q2): `windows` sets `preRoll` on it only. */
+const isHeld = (w: object) => "preRoll" in w && w.preRoll === true;
+
 /**
  * The open reaction windows of this encounter (Q13, Q17; AA2's `windows`): who hit whom for how much, who still has to
  * answer (the target's armor choice, allies with an eligible card) and the GM's "Resolve now", which settles it with no
- * armor and no card from whoever hasn't answered. No timer. Renders nothing while no window is open.
+ * armor and no card from whoever hasn't answered. No timer. Renders nothing while no window is open. A held attack
+ * (SD4 Q2, `preRoll`) is a waiting line: "Bandit attacks Mira, before the roll", no damage; Resolve now rolls it.
  */
 export function ReactionWindows({ campaignId, encounterId, acts }: { campaignId: Id<"campaigns">; encounterId: string; acts: AdversaryActions }) {
   const windows = useQuery(api.adversaryActions.windows, { campaignId });
@@ -32,21 +36,29 @@ export function ReactionWindows({ campaignId, encounterId, acts }: { campaignId:
       <ul>
         {open.map((w) => (
           <li key={w.requestId} className="trk-window" data-testid="tracker-window">
-            <div className="trk-window-what">
-              <b>{w.attackerLabel}</b>
-              {w.feature ? ` (${w.feature})` : ""} hit <b>{w.targetName}</b>: {w.damage} {w.direct ? "direct " : ""}
-              {TYPE[w.damageType]} damage{w.critical ? ", critical" : ""}
-            </div>
+            {isHeld(w) ? (
+              // DA1 (SD4 follow-up): a held attack (Q2) has no roll and no damage yet.
+              <div className="trk-window-what">
+                <b>{w.attackerLabel}</b>
+                {w.feature ? ` (${w.feature})` : ""} attacks <b>{w.targetName}</b>, before the roll
+              </div>
+            ) : (
+              <div className="trk-window-what">
+                <b>{w.attackerLabel}</b>
+                {w.feature ? ` (${w.feature})` : ""} hit <b>{w.targetName}</b>: {w.damage} {w.direct ? "direct " : ""}
+                {TYPE[w.damageType]} damage{w.critical ? ", critical" : ""}
+              </div>
+            )}
             <div className="trk-window-who">
               {w.awaiting.length === 0
                 ? "Everyone answered."
-                : `Waiting for ${w.awaiting.map((a) => `${a.name} (${a.role === "target" ? "armor choice" : "ally reaction"})`).join(", ")}`}
+                : `Waiting for ${w.awaiting.map((a) => `${a.name} (${isHeld(w) ? "before-roll answer" : a.role === "target" ? "armor choice" : "ally reaction"})`).join(", ")}`}
             </div>
             <button
               type="button"
               className="trk-btn"
               disabled={resolving === w.requestId}
-              aria-label={`Resolve now: ${w.attackerLabel} hit ${w.targetName}`}
+              aria-label={`Resolve now: ${w.attackerLabel} ${isHeld(w) ? "attacks" : "hit"} ${w.targetName}`}
               onClick={() => void resolve(w.requestId)}
             >
               Resolve now
