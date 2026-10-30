@@ -1,12 +1,20 @@
 import { v } from "convex/values";
 
-import { awaiting } from "../src/lib/domain/adversary-actions/index";
+import { adversaryCountdownArmed, adversaryCountdownLabels, adversaryCountdownName, awaiting, countdownLabelBonus } from "../src/lib/domain/adversary-actions/index";
+import { COUNTDOWN_DICE_SIDES, MAX_COUNTDOWN_DICE, startFromDice } from "../src/lib/domain/countdowns/advanced";
+import { COUNTDOWN_VISIBILITY_PRESETS, MAX_COUNTDOWN_START } from "../src/lib/domain/countdowns/index";
+import { parseCountdownLabel } from "../src/lib/domain/countdowns/labels";
+import { environmentCountdownCategory } from "../src/lib/domain/environments/index";
 import { appError } from "../src/lib/errors/app-error";
+import { COUNTDOWN_DETAILS_MAX_LENGTH } from "../src/lib/validation/countdowns";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { adversaryAction, afterHitTriggers, isPreRollRow, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
 import { answeringFeatures, hopeAndFearOf } from "./lib/adversaryHits";
-import { featureAsk as featureAskOf } from "./lib/adversaryFeatures";
+import { blockOf, countdownTickOn, featureAsk as featureAskOf } from "./lib/adversaryFeatures";
+import { rollDice } from "./lib/dice";
+import { loadInstance } from "./lib/encounters";
+import { recordHistory } from "./tables/history";
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
 import { campaignQuery, gmQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
@@ -490,6 +498,67 @@ export const windows = gmQuery({
       });
     }
     return out;
+  },
+});
+
+/**
+ * Lane E7 (dcm-bxp.78; user answers 2026-10-30): the Start button of a countdown an adversary's feature names ("Countdown
+ * (Loop 1d6)", "Countdown (Decreasing 8)", "Doom Countdown (1d6+1)"), on the tracker's countdown prompt and the instance's
+ * stat block. Builds a dashboard countdown from the label (mode, repeat, fixed or rolled start, as the environments'
+ * `startCountdown`), Private, armed only when it ticks on action rolls (CB p.162). `characterId` makes it a per-PC one,
+ * "<Adversary>: <Feature> - <PC>". GM only, keyed. INVALID when the feature names no such countdown; NOT_FOUND for an
+ * instance, feature or PC outside the campaign. Linking it to the instance (the "End this countdown?" prompt on defeat)
+ * needs a countdowns field: follow-up bead (TASK-LN-E7.md).
+ */
+export const startCountdown = keyedGmMutation({
+  args: { instanceId: v.string(), feature: v.string(), label: v.optional(v.string()), characterId: v.optional(v.id("characters")) },
+  returns: v.object({ countdownId: v.id("countdowns"), name: v.string(), startingValue: v.number(), armed: v.boolean() }),
+  handler: async (ctx, args) => {
+    const campaignId = ctx.campaign._id;
+    const instance = await loadInstance(ctx, campaignId, args.instanceId);
+    const block = await blockOf(ctx, instance);
+    const feature = block?.features.find((f) => f.name === args.feature);
+    if (!block || !feature) throw appError("NOT_FOUND");
+    // A custom block stores its countdown as a number ("Countdown (N)").
+    const printed = typeof feature.countdown === "number" ? `Countdown (${feature.countdown})` : feature.countdown;
+    const labels = adversaryCountdownLabels({ text: feature.text, ...(printed !== undefined ? { countdown: printed } : {}) });
+    const label = args.label === undefined ? labels[0] : labels.find((l) => l === args.label);
+    const bonus = label === undefined ? { label: "", plus: 0 } : countdownLabelBonus(label);
+    const parsed = label === undefined ? null : parseCountdownLabel(bonus.label);
+    if (label === undefined || parsed === null) throw appError("INVALID", "That feature has no such countdown.");
+    let pcName: string | undefined;
+    if (args.characterId !== undefined) {
+      const member = (await partyMembers(ctx, campaignId)).find((m) => m.character._id === args.characterId);
+      if (!member) throw appError("NOT_FOUND");
+      pcName = member.sheet.name;
+    }
+    return ctx.once("adversary_start_countdown", args, async () => {
+      const { mode, repeat, start } = parsed;
+      const rolled = start.kind === "fixed" ? start.value : startFromDice(rollDice(start.count, start.sides), MAX_COUNTDOWN_START) + bonus.plus;
+      const startingValue = Math.min(MAX_COUNTDOWN_START, Math.max(1, rolled));
+      const sides = COUNTDOWN_DICE_SIDES.find((n) => start.kind === "dice" && n === start.sides);
+      const startDice = start.kind === "dice" && bonus.plus === 0 && sides !== undefined && start.count >= 1 && start.count <= MAX_COUNTDOWN_DICE ? { count: start.count, sides } : undefined;
+      const armed = mode !== "longTerm" && adversaryCountdownArmed(feature.text, countdownTickOn(block, feature.name));
+      const name = adversaryCountdownName(instance.label, labels.length > 1 ? `${feature.name} (${label})` : feature.name, pcName);
+      const countdownId = await ctx.db.insert("countdowns", {
+        campaignId,
+        name,
+        description: feature.text.slice(0, COUNTDOWN_DETAILS_MAX_LENGTH),
+        category: environmentCountdownCategory(label),
+        startingValue,
+        currentValue: startingValue,
+        consequence: "",
+        status: "active",
+        createdAt: Date.now(),
+        visibility: COUNTDOWN_VISIBILITY_PRESETS.private,
+        armed,
+        ...(mode !== "standard" ? { mode } : {}),
+        ...(repeat !== null && mode !== "longTerm" ? { repeat, initialValue: startingValue } : {}),
+        ...(startDice !== undefined && mode !== "longTerm" ? { startDice } : {}),
+      });
+      await recordHistory(ctx, ctx.user._id, { campaignId, kind: "countdown", action: "create", countdownId, before: null, after: { currentValue: startingValue, status: "active" } });
+      return { countdownId, name, startingValue, armed };
+    });
   },
 });
 

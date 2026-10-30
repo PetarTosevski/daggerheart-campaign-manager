@@ -31,7 +31,7 @@ import { parseAttackModifier, standardAttackDamage } from "../adversary-actions/
 import { adversaryNumberEnv, unmetAdversaryRequirements, type AdversaryState, type PassiveSummary } from "../adversary-actions/features";
 import { resolveCosts } from "../card-effects/availability";
 import { run as runCard, type ActorState, type PlanStep, type RollInfo, type RunPlan } from "../card-effects/run";
-import type { CardEffect, CardUse, Cost, NumberSource, Range as AdversaryRange, Step } from "../card-effects/types";
+import type { AttackedRider, CardEffect, CardUse, Cost, NumberSource, Range as AdversaryRange, RollSpec, Step } from "../card-effects/types";
 import { rangeFromWeapon } from "../combat-actions/distance";
 import type { Combatant } from "../combat-actions/damage";
 import type { HitResult } from "../combat-actions/hits";
@@ -118,6 +118,13 @@ export interface AdversaryRunContext {
   allyWithin?: AdversaryState["allyWithin"];
   /** AA2b (bead dcm-vv2 10): roll a dice Attack Modifier only for a use that attacks (the server sets it). */
   attackDiceOnAttacks?: boolean;
+  /**
+   * Lane E7 (dcm-xyw, dcm-51s, dcm-346): what this adversary's attacks get against each target, by target id: the
+   * `attackedRider` mods on the target's effects and conditions that apply to this attacker (the caller filters `by`:
+   * `caster` / `others` / `anyone`). Advantage when every target carries it (one roll for all targets, AR7), the target's
+   * Evasion halved, direct damage and a damage change on its hit.
+   */
+  attackedRiders?: Readonly<Record<string, readonly AttackedRider[]>>;
   rng: Rng;
 }
 
@@ -125,7 +132,8 @@ export interface AdversaryRunContext {
 
 /** The adversary-only steps, resolved. */
 export type AdversaryPromptStep =
-  | { kind: "summon"; label: string; count: number; adversaryId?: string; range?: AdversaryRange; note?: string }
+  /** Lane E7 (dcm-145, dcm-v27): `hp`, the summoned instance's HP resolved (Drain and Multiply); `duplicate`, a token of itself. */
+  | { kind: "summon"; label: string; count: number; adversaryId?: string; range?: AdversaryRange; hp?: number; duplicate?: boolean; note?: string }
   | {
       kind: "countdown";
       op: "start" | "tick" | "prompt";
@@ -134,6 +142,10 @@ export type AdversaryPromptStep =
       amount?: number;
       loop: boolean;
       onTrigger?: string;
+      /** Lane E7 (dcm-m5s, dcm-bxp.78): increasing / decreasing (CB p.163), the event at 0, what advances it. */
+      direction?: "increasing" | "decreasing";
+      onZero?: string;
+      tickOn?: "actionRoll" | "spotlight" | "marksHp" | "takesDamage" | "other";
       note?: string;
     }
   | { kind: "spotlight"; who: "self" | "allies" | "sameName" | "picked"; count?: number; within?: AdversaryRange; name?: string; note?: string };
@@ -183,8 +195,15 @@ export interface AdversaryPlan {
    * entry wrote it, so adversary-only steps in its branches (Petrifying Gaze's Petrification countdown) keep their kind.
    */
   saves?: { targetIds: string[]; step: Extract<AdversaryStep, { kind: "save" }> }[];
-  /** PCs whose last HP was marked by a forced mark in this plan (the window flags death moves for hits). */
+  /**
+   * PCs whose last HP was marked by a forced mark in this plan (the window flags death moves for hits), and (lane E7,
+   * dcm-702) PCs a `deathMove` step names (CRONCH!, HF p.70: "The target must make a death move").
+   */
   deathMoves: string[];
+  /** Lane E7 (dcm-icd): creatures a `move` step with `mode: "leaveScene"` takes out of the scene (Survival Instinct, Bolt). */
+  fled: string[];
+  /** Lane E7 (dcm-145): creatures a `revive` step brought back (Won't Stay Dead, Corpse Whisperer), itself included. */
+  revived: string[];
   /** Group Attack: the other Minions that took part (the server spotlights them, CB p.201). */
   group: string[];
   /** A passive use's modifiers. */
@@ -304,13 +323,15 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
   const tokens = context.tokens ?? 0;
 
   // ---- requirements, spotlight, Fear confirmation (CB p.194, Q19)
+  // Lane E7 (dcm-cdz): conditions a passive gives it while it holds (Hand of Glory's Hidden) count for its requirements.
+  const passiveConditions = context.passives?.selfConditions ?? [];
   const state: AdversaryState = {
     hp: self.hp,
     hpMax: self.hpMax,
     stress: self.stress,
     stressMax: self.stressMax,
-    conditions: self.conditions,
-    tags: self.tags ?? [],
+    conditions: [...new Set([...self.conditions, ...passiveConditions.flatMap((c) => (c.kind === "standard" ? [c.condition] : []))])],
+    tags: [...new Set([...(self.tags ?? []), ...passiveConditions.flatMap((c) => (c.kind === "tag" ? [c.tag] : []))])],
     tokens,
     situations: context.situations ?? [],
     ...(context.allyWithin ? { allyWithin: context.allyWithin } : {}),
@@ -341,6 +362,33 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     ...(passives?.attackDamageType ? { type: passives.attackDamageType } : {}),
   });
   const groupSize = use.groupAttack ? 1 + (context.group?.length ?? 0) : 1;
+  // Lane E7 (dcm-vv2 1): a follow-up attack of a use that makes no attack roll of its own ("Get Over Here!", Discordant
+  // Visions) is still the adversary's attack: d20 + ATK (CB p.160) with the passive and instance attack bonuses. A use
+  // whose own roll attacks passes them to every roll already (`roll.modifier` below).
+  const followUpAtk = isAttack ? 0 : atk.flat + bonusDice.reduce((s, n) => s + n, 0) + (passives?.attackBonus ?? 0) + (instance.attack ?? 0);
+  const ridersOn = (id: string) => context.attackedRiders?.[id] ?? [];
+  // Lane E7 (dcm-xyw): "the target's Evasion is halved against this attack" (Peerless Accuracy, CB p.224), from the roll
+  // or a rider on the target; rounded up (QUESTIONS in TASK-LN-E7.md).
+  const halved = (list: readonly Combatant[] | undefined, spec: RollSpec | undefined): Combatant[] | undefined =>
+    list?.map((t) =>
+      spec?.kind === "adversaryAttack" && t.evasion !== undefined && (spec.halveEvasion === true || ridersOn(t.id).some((r) => r.halveEvasion === true))
+        ? { ...t, evasion: Math.ceil(t.evasion / 2) }
+        : t,
+    );
+  const followUpRoll = (list: readonly AdversaryStep[]): RollSpec | undefined => {
+    for (const s of list) {
+      if (s.kind === "followUp" && s.roll) return s.roll;
+      const nested =
+        s.kind === "followUp" || s.kind === "optional" ? followUpRoll(s.steps) : s.kind === "choose" ? followUpRoll(s.options.flatMap((o) => o.steps)) : s.kind === "check" ? followUpRoll([...s.then, ...s.otherwise]) : undefined;
+      if (nested) return nested;
+    }
+    return undefined;
+  };
+  const targetsIn = halved(context.targets, use.roll);
+  const followUpIn = halved(context.followUp, followUpRoll(use.steps));
+  // Advantage from riders (Sunsear Arrows' Glowing, Drag and Bag) when every target of the one roll carries it (AR7).
+  const riderAdvantage =
+    isAttack && (context.targets?.length ?? 0) > 0 && context.targets!.every((t) => ridersOn(t.id).some((r) => r.advantage === true)) ? 1 : 0;
 
   // ---- translate the feature into a card use
   const prompts = new Map<Step, AdversaryOnlyStep>();
@@ -368,8 +416,11 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       }
       case "check":
         return { ...step, then: translate(step.then), otherwise: translate(step.otherwise) };
-      case "followUp":
-        return { ...step, steps: translate(step.steps) };
+      case "followUp": {
+        // dcm-vv2 1: entries written before it carry the ATK in the follow-up's own `modifier`; that one stands as written.
+        const roll = step.roll?.kind === "adversaryAttack" && followUpAtk !== 0 && step.roll.modifier === undefined ? { ...step.roll, modifier: fixed(followUpAtk) } : step.roll;
+        return { ...step, ...(roll ? { roll } : {}), steps: translate(step.steps) };
+      }
       case "damage": {
         let out = step;
         if (isAttack && direct && (step.roll.kind === "standardAttack" || passives?.directAttacks)) out = { ...out, direct: true };
@@ -422,10 +473,10 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     actor,
     gmFear: context.gmFear,
     useId: use.id,
-    ...(context.targets ? { targets: context.targets } : {}),
+    ...(targetsIn ? { targets: targetsIn } : {}),
     ...(context.picked ? { picked: context.picked } : {}),
     ...(context.allies ? { allies: context.allies } : {}),
-    ...(context.followUp ? { followUp: context.followUp } : {}),
+    ...(followUpIn ? { followUp: followUpIn } : {}),
     ...(context.trigger ? { trigger: context.trigger } : {}),
     ...(context.options ? { options: context.options } : {}),
     ...(context.optionals ? { optionals: context.optionals } : {}),
@@ -434,7 +485,8 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     situations: context.situations ?? [],
     roll: {
       modifier: rollModifier,
-      advantage: context.advantage ?? 0,
+      // Lane E7 (dcm-1ch): "make a standard attack with advantage" on a group attack (On My Signal, CB p.212).
+      advantage: (context.advantage ?? 0) + riderAdvantage + (isAttack && use.groupAttack?.advantage ? 1 : 0),
       disadvantage: (context.disadvantage ?? 0) + (isAttack && instance.disadvantage ? 1 : 0),
     },
     attackDamage,
@@ -483,6 +535,8 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
           count: num(original.count),
           ...(original.adversaryId ? { adversaryId: original.adversaryId } : {}),
           ...(original.range ? { range: original.range } : {}),
+          ...(original.hp ? { hp: num(original.hp) } : {}),
+          ...(original.duplicate ? { duplicate: true } : {}),
           ...note,
         };
       case "countdown":
@@ -494,6 +548,9 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
           ...(original.amount ? { amount: num(original.amount) } : original.op === "tick" ? { amount: 1 } : {}),
           loop: original.loop === true,
           ...(original.onTrigger ? { onTrigger: original.onTrigger } : {}),
+          ...(original.direction ? { direction: original.direction } : {}),
+          ...(original.onZero ? { onZero: original.onZero } : {}),
+          ...(original.tickOn ? { tickOn: original.tickOn } : {}),
           ...note,
         };
       case "spotlight":
@@ -543,13 +600,71 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       entry.after = { ...entry.after, armor: (entry.after.armor ?? 0) - hit.forcedArmor };
     }
   }
+  // Lane E7 (dcm-xyw, dcm-51s, dcm-346): the riders its attacks get against each hit target. Deathlock (CB p.225: "Attacks
+  // made by the Hunter against a Deathlocked target deal direct damage"), Tag Team (HF p.65: an extra 1d12 magic), I've
+  // Got 'Em (CB p.213: double damage from attacks by other adversaries).
+  if (attacks) {
+    for (const hit of incoming) {
+      for (const r of ridersOn(hit.targetId)) {
+        if (r.direct) hit.direct = true;
+        const d = r.damage;
+        if (d?.kind === "add") {
+          hit.amount += num(d.amount);
+          if (d.type && d.type !== hit.type) hit.type = "both";
+        } else if (d?.kind === "multiply") hit.amount *= d.factor;
+        else if (d?.kind === "halve") hit.amount = Math.floor(hit.amount / 2);
+      }
+    }
+  }
   const deathMoves = creatures.filter((c) => c.after.side === "pc" && c.before.hp < c.before.hpMax && c.after.hp >= c.after.hpMax).map((c) => c.id);
+
+  // ---- lane E7: steps the card runner leaves as prompts that change the table (dcm-702, dcm-145, dcm-icd)
+  const known = [...(context.targets ?? []), ...(context.picked ?? []), ...(context.allies ?? []), ...(context.followUp ?? [])];
+  const fled: string[] = [];
+  const revived: string[] = [];
+  let selfHp = plan.actor.after.hp;
+  let selfStress = plan.actor.after.stress;
+  const handled = new Set<AdversaryPlanStep>();
+  for (const s of outSteps) {
+    if (s.kind !== "prompt" || !s.step) continue;
+    const step = s.step;
+    if (step.kind === "deathMove") {
+      // "The target must make a death move" (CRONCH!, HF p.70): the window's death-move flag, not a manual line.
+      for (const id of s.targetIds) if (!deathMoves.includes(id) && known.find((c) => c.id === id)?.side !== "adversary") deathMoves.push(id);
+      handled.add(s);
+    } else if (step.kind === "revive") {
+      // Won't Stay Dead (CB p.217): "re-forms with no marked HP"; Corpse Whisperer (HF p.80): "half its HP cleared"
+      // (half the HP rounded up, cleared from the marked ones); Midnight Heart: HP and Stress.
+      const cleared = (c: Pick<Combatant, "hp" | "hpMax">) => (step.clearHp === "all" ? 0 : Math.max(0, c.hp - Math.ceil(c.hpMax / 2)));
+      for (const id of s.targetIds) {
+        if (id === self.id) {
+          selfHp = cleared({ hp: selfHp, hpMax: self.hpMax });
+          if (step.clearStress) selfStress = 0;
+        } else {
+          let entry = creatures.find((c) => c.id === id);
+          if (!entry) {
+            const c = known.find((k) => k.id === id);
+            if (!c) continue;
+            entry = { id, before: c, after: c };
+            creatures.push(entry);
+          }
+          entry.after = { ...entry.after, hp: cleared(entry.after), ...(step.clearStress ? { stress: 0 } : {}), defeated: false };
+        }
+        revived.push(id);
+      }
+      handled.add(s);
+    } else if (step.kind === "move" && step.mode === "leaveScene") {
+      // Survival Instinct, Bolt, Cowardly (HF p.62, p.64): "flees the scene". The prompt stays for the GM.
+      for (const id of s.targetIds) if (!fled.includes(id)) fled.push(id);
+    }
+  }
+  const stepsOut = handled.size > 0 ? outSteps.filter((s) => !handled.has(s)) : outSteps;
 
   // ---- the adversary itself
   // AA2b (bead dcm-vv2 5): a feature that clears a defeated instance's HP brings it back (The Work Never Ends, Come Back
   // Worse); a defeated instance whose HP stayed put stays defeated.
-  const hpAfter = plan.actor.after.hp;
-  let selfAfter: Combatant = { ...self, hp: hpAfter, stress: plan.actor.after.stress, defeated: hpAfter >= self.hpMax || (self.defeated && hpAfter >= self.hp) };
+  const hpAfter = selfHp;
+  let selfAfter: Combatant = { ...self, hp: hpAfter, stress: selfStress, defeated: hpAfter >= self.hpMax || (self.defeated && hpAfter >= self.hp) };
   for (const s of plan.steps) {
     if (s.kind === "condition" && s.targetId === self.id) {
       const c = s.condition;
@@ -576,7 +691,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       useId: use.id,
       activation: use.activation.kind,
       needsSpotlight: use.needsSpotlight,
-      steps: outSteps,
+      steps: stepsOut,
       roll: plan.roll,
       hits: plan.hits,
       success: plan.success,
@@ -587,6 +702,8 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       fearSpent,
       incoming,
       deathMoves,
+      fled,
+      revived,
       ...(savesOut.length > 0 ? { saves: savesOut } : {}),
       group: use.groupAttack ? (context.group ?? []).map((c) => c.id) : [],
       modifiers: use.modifiers ?? [],

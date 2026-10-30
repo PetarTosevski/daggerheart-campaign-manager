@@ -296,6 +296,21 @@ class Work {
       }
       this.sheets.set(id, { member, after });
     }
+    // Lane E7 (dcm-vkp): "can only mark one target at a time" (Judgment, CB p.236): a new use takes what the feature put on
+    // the other PCs off them (its effects and tags; a standard condition carries no source and stays for the GM).
+    const used = this.block.effects.find((e) => e.feature === plan.feature)?.uses.find((u) => u.id === plan.useId);
+    if (used?.exclusive && touched.size > 0) {
+      const cardId = `${plan.adversaryId}/${plan.feature}`;
+      for (const member of this.party) {
+        const id = member.character._id;
+        if (touched.has(id)) continue;
+        const sheet = this.sheets.get(id)?.after ?? member.sheet;
+        const after = writeSheetChanges(sheet, [], id, cardId, feature, true, false);
+        if (after.effects.length === sheet.effects.length) continue;
+        this.sheets.set(id, { member, after });
+        this.gm.push(`${feature}: ${member.sheet.name} is no longer marked`);
+      }
+    }
     for (const step of plan.steps) {
       const p = this.promptOf(step);
       if (p) this.prompts.push(p);
@@ -308,7 +323,11 @@ class Work {
       }
     }
     for (const id of plan.group) this.spotlit.add(id.split("#")[0]!);
-    for (const id of plan.deathMoves) this.gm.push(`${this.nameOf(id)} marked their last HP: death move`);
+    // Lane E7 (dcm-702): a `deathMove` step (CRONCH!, HF p.70) names its PCs here too.
+    for (const id of plan.deathMoves) this.gm.push(`${this.nameOf(id)} must make a death move`);
+    // Lane E7 (dcm-icd, dcm-145): who fled the scene (the GM removes them; QUESTIONS in TASK-LN-E7.md) and who came back.
+    for (const id of plan.fled) this.gm.push(`${this.nameOf(id)} flees the scene`);
+    for (const id of plan.revived) this.gm.push(`${this.nameOf(id)} comes back`);
   }
 
   private promptOf(step: AdversaryPlanStep): Prompt | null {
@@ -323,9 +342,17 @@ class Work {
         }
         return { kind: step.prompt === "move" ? "move" : step.prompt === "manual" ? "manual" : "choice", text: `${step.text}${names(step.targetIds)}` };
       case "summon":
-        return { kind: "summon", text: `Summon ${step.count} ${step.label}${step.range ? ` within ${step.range}` : ""}${step.note ? `: ${step.note}` : ""}` };
+        // Lane E7 (dcm-145): Drain and Multiply's Horde HP (CB p.218); dcm-v27: a second token of itself.
+        return {
+          kind: "summon",
+          text: `Summon ${step.count} ${step.duplicate ? `more of ${this.instance.label}` : step.label}${step.range ? ` within ${step.range}` : ""}${step.hp !== undefined ? ` with ${step.hp} HP` : ""}${step.note ? `: ${step.note}` : ""}`,
+        };
       case "countdown":
-        return { kind: "countdown", text: `Countdown ${step.label}: ${step.op}${step.start ? ` at ${step.start}` : ""}${step.amount ? ` by ${step.amount}` : ""}${step.note ? ` (${step.note})` : ""}` };
+        // Lane E7 (dcm-m5s): an increasing / decreasing countdown (CB p.163) and its event at 0.
+        return {
+          kind: "countdown",
+          text: `Countdown ${step.label}: ${step.op}${step.direction ? ` (${step.direction})` : ""}${step.start ? ` at ${step.start}` : ""}${step.amount ? ` by ${step.amount}` : ""}${step.onZero ? `; at 0: ${step.onZero}` : ""}${step.note ? ` (${step.note})` : ""}`,
+        };
       case "spotlight":
         return step.who === "self" ? null : { kind: "spotlight", text: `Spotlight ${step.who}${step.count ? ` x${step.count}` : ""}${step.within ? ` within ${step.within}` : ""}${step.name ? ` (${step.name})` : ""}` };
       default:

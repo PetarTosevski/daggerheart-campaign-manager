@@ -39,7 +39,7 @@ const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]
 
 // ---------------------------------------------------------------- the stat block
 
-export type BlockFeature = { name: string; kind: "passive" | "action" | "reaction" | "evolution"; text: string; fearCost?: number };
+export type BlockFeature = { name: string; kind: "passive" | "action" | "reaction" | "evolution"; text: string; fearCost?: number; countdown?: string | number };
 
 /** What the server reads of an instance's stat block: an SRD entry or the campaign's custom block. */
 export type Block = {
@@ -179,36 +179,58 @@ function limitedSteps(steps: readonly AdversaryStep[]): { id: string; limit: Lim
  * prefix (a per-target limit appends the target). Null when the block has no such limit.
  */
 export function limitPerOf(block: Pick<Block, "adversaryId" | "effects">, key: string): Limit["per"] | null {
-  let best: { length: number; per: Limit["per"] } | null = null;
-  const consider = (prefix: string, per: Limit["per"]) => {
-    if ((key === prefix || key.startsWith(`${prefix}:`)) && (best === null || prefix.length > best.length)) best = { length: prefix.length, per };
+  return limitOf(block, key)?.per ?? null;
+}
+
+/** The limit of a stored use key (see `limitPerOf`), with its `period` (lane E7, dcm-c5h). */
+export function limitOf(block: Pick<Block, "adversaryId" | "effects">, key: string): Limit | null {
+  let best: { length: number; limit: Limit } | null = null;
+  const consider = (prefix: string, limit: Limit) => {
+    if ((key === prefix || key.startsWith(`${prefix}:`)) && (best === null || prefix.length > best.length)) best = { length: prefix.length, limit };
   };
   for (const e of block.effects) {
     for (const u of e.uses) {
-      if (u.limit) consider(adversaryFeatureUseKey(block.adversaryId, e.feature, u.id), u.limit.per);
-      for (const step of limitedSteps(u.steps)) consider(`card:${adversaryFeatureId(block.adversaryId, e.feature)}:${u.id}:${step.id}`, step.limit.per);
+      if (u.limit) consider(adversaryFeatureUseKey(block.adversaryId, e.feature, u.id), u.limit);
+      for (const step of limitedSteps(u.steps)) consider(`card:${adversaryFeatureId(block.adversaryId, e.feature)}:${u.id}:${step.id}`, step.limit);
     }
   }
-  return (best as { per: Limit["per"] } | null)?.per ?? null;
+  return (best as { limit: Limit } | null)?.limit ?? null;
+}
+
+/**
+ * Lane E7 (dcm-c5h): a "once per GM turn" use (Ravenous, HF p.97; `Limit.period: "gmTurn"`) is stored with the GM turn it
+ * was made in after its key (`<key>@gmTurn<N>`), so it counts only during that turn. The stored shape needs no new field.
+ */
+const GM_TURN_MARK = "@gmTurn";
+
+/** A stored key's own key and the GM turn it is bound to (none for every other period). */
+function splitGmTurn(key: string): { key: string; gmTurn?: number } {
+  const at = key.lastIndexOf(GM_TURN_MARK);
+  if (at < 0) return { key };
+  const turn = Number(key.slice(at + GM_TURN_MARK.length));
+  return Number.isInteger(turn) ? { key: key.slice(0, at), gmTurn: turn } : { key };
 }
 
 /**
  * Whether a stored use still counts (AA2b, AA2c): recorded in this run of the encounter (per-scene limits reset when
  * it ends), or a session limit recorded in the live session (user answer 2026-10-22: "'once per session' adversary
- * features last the whole session (reset at session end)"). `session` is `campaignState.sessionStartedAt`.
+ * features last the whole session (reset at session end)"). `session` is `campaignState.sessionStartedAt`. Lane E7: a
+ * use bound to a GM turn counts only in that turn (`gmTurn`, the encounter's current turn).
  */
-export function useCounts(u: InstanceFeatureUse, scene: number, session: number | undefined): boolean {
+export function useCounts(u: InstanceFeatureUse, scene: number, session: number | undefined, gmTurn?: number): boolean {
+  const bound = splitGmTurn(u.key).gmTurn;
+  if (bound !== undefined && gmTurn !== undefined && bound !== gmTurn) return false;
   return u.scene === scene || (u.session !== undefined && u.session === session);
 }
 
 /**
  * The instance's limited feature uses that still count (AA2b; "Once per scene", TASK-CA-AA1 Q4): the entries recorded
  * in this run of the encounter, and (AA2c) session-limited ones of the live session (`session`, optional: without it
- * only the scene's count).
+ * only the scene's count). Lane E7: GM-turn uses of this GM turn only, under their own key.
  */
 export function instanceUses(instance: Doc<"encounterAdversaries">, encounter: Doc<"encounters">, session?: number): FeatureUse[] {
   const scene = sceneOf(encounter);
-  return (instance.featureUses ?? []).filter((u) => useCounts(u, scene, session)).map((u) => ({ key: u.key, until: u.until }));
+  return (instance.featureUses ?? []).filter((u) => useCounts(u, scene, session, encounter.gmTurn)).map((u) => ({ key: splitGmTurn(u.key).key, until: u.until }));
 }
 
 /**
@@ -218,9 +240,17 @@ export function instanceUses(instance: Doc<"encounterAdversaries">, encounter: D
  */
 export function storedUses(instance: Doc<"encounterAdversaries">, encounter: Doc<"encounters">, block: Block, added: readonly FeatureUse[], session: number | undefined): InstanceFeatureUse[] {
   const scene = sceneOf(encounter);
-  const kept = (instance.featureUses ?? []).filter((u) => useCounts(u, scene, session));
+  const kept = (instance.featureUses ?? []).filter((u) => useCounts(u, scene, session, encounter.gmTurn));
   // A sheet's `featureUses` gained `scene` (sheet-drawer SD0); an instance's scene limit is `session` stamped with `scene`.
-  const fresh = added.map((u) => ({ key: u.key, until: u.until === "scene" ? ("session" as const) : u.until, scene, ...(session !== undefined && limitPerOf(block, u.key) === "session" ? { session } : {}) }));
+  const fresh = added.map((u) => {
+    const limit = limitOf(block, u.key);
+    return {
+      key: limit?.period === "gmTurn" ? `${u.key}${GM_TURN_MARK}${encounter.gmTurn}` : u.key,
+      until: u.until === "scene" ? ("session" as const) : u.until,
+      scene,
+      ...(session !== undefined && limit?.per === "session" ? { session } : {}),
+    };
+  });
   return [...kept, ...fresh].slice(-MAX_INSTANCE_FEATURE_USES);
 }
 
@@ -380,6 +410,18 @@ function walkSteps(steps: readonly AdversaryStep[], visit: (s: AdversaryStep) =>
       walkSteps(s.onSuccess, visit);
     }
   }
+}
+
+/** Lane E7 (dcm-bxp.78): what advances a feature's countdown, as its effect entry's `countdown` step says (V vocabulary). */
+export function countdownTickOn(block: Pick<Block, "effects">, feature: string): Extract<AdversaryStep, { kind: "countdown" }>["tickOn"] {
+  let found: Extract<AdversaryStep, { kind: "countdown" }>["tickOn"];
+  for (const e of block.effects) {
+    if (e.feature !== feature) continue;
+    for (const u of e.uses) walkSteps(u.steps, (s) => {
+      if (s.kind === "countdown" && s.tickOn !== undefined && found === undefined) found = s.tickOn;
+    });
+  }
+  return found;
 }
 
 const fixedOf = (n: NumberSource | undefined): number | null => (n?.kind === "fixed" ? n.value : null);
@@ -564,7 +606,7 @@ export async function featureAsk(ctx: QueryCtx, campaign: Doc<"campaigns">, args
   if (use.limit && !use.limit.perTarget) {
     const key = adversaryFeatureUseKey(block.adversaryId, effect.feature, use.id);
     const used = instanceUses(instance, encounter, state.sessionStartedAt).filter((u) => u.key === key).length;
-    if (used >= (use.limit.times ?? 1)) ask.unavailable.push(`Used up this ${use.limit.per === "scene" ? "scene" : use.limit.per === "session" ? "session" : "rest"}`);
+    if (used >= (use.limit.times ?? 1)) ask.unavailable.push(`Used up this ${use.limit.period === "gmTurn" ? "GM turn" : use.limit.per === "scene" ? "scene" : use.limit.per === "session" ? "session" : "rest"}`);
   }
   ask.available = ask.unavailable.length === 0;
 

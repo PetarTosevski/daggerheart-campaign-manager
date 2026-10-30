@@ -21,7 +21,7 @@
 // spotlightCost({ spotlightsThisTurn: 1, instanceSpotlights: 0, relentless: null }); // { fear: 1, overLimit: false }
 // ```
 
-import type { ConditionRef, DamageType, Mod, Range, RollFilter, Severity } from "../card-effects/types";
+import type { ConditionRef, DamageKeyword, DamageType, Mod, Range, RollFilter, RollResult, Severity, StateCheck } from "../card-effects/types";
 import { withinRange } from "../combat-actions/distance";
 import { resolveNumber, type NumberEnv } from "../combat-actions/numbers";
 import type { Rng } from "../dice/index";
@@ -58,6 +58,39 @@ export interface AdversaryState {
 const hasCondition = (s: Pick<AdversaryState, "conditions" | "tags">, c: ConditionRef) =>
   c.kind === "standard" ? s.conditions.includes(c.condition) : (s.tags ?? []).includes(c.tag);
 
+const inBounds = (n: number, atLeast: number | undefined, atMost: number | undefined) => (atLeast === undefined || n >= atLeast) && (atMost === undefined || n <= atMost);
+
+/**
+ * Lane E7 (dcm-2f3, dcm-cdz): a state check on the adversary itself, as far as its own state answers it: its conditions,
+ * stat-block tokens, HP / Stress, and `not` / `anyOf` of those. Undefined when the engine can't read it (another
+ * creature, the map): the GM's confirmation of the requirement's text decides then.
+ */
+export function adversaryStateCheck(check: StateCheck, s: AdversaryState): boolean | undefined {
+  switch (check.kind) {
+    case "hasCondition":
+      return (check.who ?? "self") === "self" ? hasCondition(s, check.condition) : undefined;
+    case "tokens":
+      return (check.who ?? "self") === "self" && check.name === undefined ? inBounds(s.tokens, check.atLeast, check.atMost) : undefined;
+    case "track": {
+      if (check.who !== "self" || (check.track !== "hp" && check.track !== "stress")) return undefined;
+      const marked = check.track === "hp" ? s.hp : s.stress;
+      const max = check.track === "hp" ? s.hpMax : s.stressMax;
+      return inBounds(check.measure === "marked" ? marked : max - marked, check.atLeast, check.atMost);
+    }
+    case "not": {
+      const inner = adversaryStateCheck(check.check, s);
+      return inner === undefined ? undefined : !inner;
+    }
+    case "anyOf": {
+      const results = check.checks.map((c) => adversaryStateCheck(c, s));
+      if (results.some((r) => r === true)) return true;
+      return results.every((r) => r === false) ? false : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
 /** Whether one requirement holds. `half` = half or more of the HP (CB p.199, rounded up like the tracker). */
 export function adversaryRequirementMet(req: AdversaryRequirement, s: AdversaryState): boolean {
   switch (req.kind) {
@@ -68,13 +101,17 @@ export function adversaryRequirementMet(req: AdversaryRequirement, s: AdversaryS
     case "stressMarkedAtMost":
       return s.stress <= req.value;
     case "hasCondition":
-      return hasCondition(s, req.condition);
+      // Lane E7 (dcm-2f3): `lacks`, Magical Weakness (CB p.231: "While Dazed, they can't use their Regeneration action").
+      return hasCondition(s, req.condition) !== (req.lacks === true);
     case "tokens":
-      return (req.atLeast === undefined || s.tokens >= req.atLeast) && (req.atMost === undefined || s.tokens <= req.atMost);
+      return inBounds(s.tokens, req.atLeast, req.atMost);
     case "allyWithin":
       return s.allyWithin ? s.allyWithin(req) : true;
-    case "situation":
-      return (s.situations ?? []).includes(req.text);
+    case "situation": {
+      // Lane E7: a `check` the engine reads decides by itself (Hand of Glory's tokens); otherwise the GM confirms the text.
+      const read = req.check ? adversaryStateCheck(req.check, s) : undefined;
+      return read ?? (s.situations ?? []).includes(req.text);
+    }
   }
 }
 
@@ -107,6 +144,13 @@ export interface PassiveSummary {
   flags: string[];
   /** AA2b (bead dcm-vv2 3): rolls it makes with advantage (`advantage` self mods: Aquatic Attacker, Out of Nowhere). */
   advantage?: RollFilter[];
+  /**
+   * Lane E7 (dcm-cdz): conditions it has while the passive holds (Hand of Glory, HF p.67: Hidden while its stat block has
+   * a token; Fish-Tailed, HF p.82: Vulnerable out of the water). The server adds them to its conditions as it reads them.
+   */
+  selfConditions?: ConditionRef[];
+  /** Lane E7 (dcm-yea, dcm-dv6): weaknesses on self (Made of Straw, HF p.79: "double damage from fire"). */
+  weaknesses?: { type?: DamageType; keyword?: DamageKeyword }[];
   /** AA2b: rolls made against it with disadvantage (`disadvantageAgainst` self mods: Wind Lord). */
   disadvantageAgainst?: RollFilter[];
   /** Mods and condition auras on others, for the server to show or apply. */
@@ -190,6 +234,7 @@ export function passiveSummary(effects: readonly AdversaryFeatureEffect[], s: Ad
     } else if (m.kind === "flag") out.flags.push(m.flag);
     else if (m.kind === "advantage") (out.advantage ??= []).push(m.on);
     else if (m.kind === "disadvantageAgainst") (out.disadvantageAgainst ??= []).push(m.on);
+    else if (m.kind === "weakness") (out.weaknesses ??= []).push({ ...(m.type ? { type: m.type } : {}), ...(m.keyword ? { keyword: m.keyword } : {}) });
   };
   for (const { use } of activePassives(effects, s)) {
     for (const mod of use.modifiers ?? []) {
@@ -210,7 +255,11 @@ export function passiveSummary(effects: readonly AdversaryFeatureEffect[], s: Ad
           out.minion = mod.threshold;
           break;
         case "relentless":
-          out.relentless = mod.times;
+          // Lane E7 (dcm-gx1): "X is the Hydra's number of heads" (CB p.231), read when it is spotlighted; at least 1.
+          out.relentless = mod.timesFrom ? Math.max(1, n(mod.timesFrom)) : mod.times;
+          break;
+        case "selfCondition":
+          (out.selfConditions ??= []).push(mod.condition);
           break;
         case "spotlightCostsFear":
           out.spotlightCostsFear = true;
@@ -250,6 +299,8 @@ export interface RollFacts {
   withHope: boolean;
   withFear: boolean;
   total?: number;
+  /** Lane E7 (dcm-2gn): a critical success (CB p.90: it counts as a success with Hope). */
+  critical?: boolean;
 }
 
 /** An adversary ally of this one dealt damage, marked HP or was defeated (`band` from this adversary). */
@@ -257,6 +308,8 @@ export interface AllyEvent {
   kind: "allyDealtDamage" | "allyMarksHp" | "allyDefeated";
   band?: Range;
   allyName?: string;
+  /** Lane E7 (dcm-2gn): the ally's stat-block type ("Leader"; Cowardly, HF p.64). */
+  allyType?: string;
 }
 
 /**
@@ -270,10 +323,23 @@ export type AdversaryEvent =
   | { kind: "onDealDamage"; severity?: Severity; toPc: boolean }
   | { kind: "onTargetMarksHp"; attack: "standard" | "feature" }
   | { kind: "onDefeatPc" }
-  | { kind: "onDamaged"; stage: "would" | "did"; severity?: Severity; damageType?: DamageType | "both"; fromAttack?: boolean; attackerBand?: Range; first?: FirstTime }
+  /** Lane E7 (dcm-2gn, dcm-dv6): `weaponAttack` (Archer's Bane, HF p.62), `keywords` of the damage (fire: Made of Straw). */
+  | {
+      kind: "onDamaged";
+      stage: "would" | "did";
+      severity?: Severity;
+      damageType?: DamageType | "both";
+      fromAttack?: boolean;
+      attackerBand?: Range;
+      first?: FirstTime;
+      weaponAttack?: boolean;
+      keywords?: readonly DamageKeyword[];
+    }
+  /** `amount` 0 with `fromAttack`: a successful attack that marked no HP (Unreal Form, CB p.237; lane E7, dcm-2gn). */
   | { kind: "onMarkHp"; stage: "would" | "did"; amount: number; last: boolean; fromAttack?: boolean; attackerBand?: Range; damageType?: DamageType | "both" }
   | { kind: "onHpMarked"; before: number; after: number; hpMax: number }
-  | { kind: "onMarkStress"; last: boolean; first?: FirstTime }
+  /** Lane E7 (dcm-2gn, dcm-63j): `stage` (default `did`); `would` before the Stress is marked (Mind Meld, HF p.74). */
+  | { kind: "onMarkStress"; last: boolean; first?: FirstTime; stage?: "would" | "did" }
   | { kind: "onDefeated"; damageType?: DamageType | "both" }
   | AllyEvent
   | { kind: "onAttacked"; stage: "targeted" | "succeeded" | "failed"; attackerBand?: Range; weapon?: boolean }
@@ -281,11 +347,21 @@ export type AdversaryEvent =
   | { kind: "pcMoves"; into?: Range; outOf?: Range }
   | { kind: "pcMarksHp"; band?: Range; severity?: Severity; fromSelf?: boolean }
   | { kind: "pcHope"; change: "gain" | "spend" | "none"; band?: Range }
-  | { kind: "onSpotlight"; first?: FirstTime; tokens: number }
+  /** Lane E7 (dcm-2gn): `byFear`, the GM spent a Fear to spotlight it (Intimidating, HF p.89). */
+  | { kind: "onSpotlight"; first?: FirstTime; tokens: number; byFear?: boolean }
   | { kind: "allySpotlit"; band?: Range }
   | { kind: "wouldGainCondition"; condition: ConditionRef }
   | { kind: "timing"; at: Extract<AdversaryTrigger, { kind: "timing" }>["at"] }
-  | { kind: "situation"; text: string };
+  | { kind: "situation"; text: string }
+  // ---- lane E7 (dcm-2gn): the V trigger kinds
+  /** A PC takes the spotlight (`band` from this adversary). */
+  | { kind: "pcSpotlit"; band?: Range }
+  /** An adversary ally makes an attack: `made` before its result is known, else `succeeded` / `failed`. */
+  | { kind: "allyAttacks"; band?: Range; stage: "made" | "succeeded" | "failed" }
+  /** A PC would deal (or dealt) damage to a creature `band` from this adversary. */
+  | { kind: "pcDealsDamage"; band?: Range; stage: "would" | "did" }
+  /** The PCs finished a rest. */
+  | { kind: "pcsRest"; rest: "short" | "long" };
 
 const SEV: readonly Severity[] = ["minor", "major", "severe"];
 const atLeast = (sev: Severity | undefined, min: Severity | undefined) => min === undefined || (sev !== undefined && SEV.indexOf(sev) >= SEV.indexOf(min));
@@ -317,6 +393,35 @@ function rollFilterOk(filter: RollFilter | undefined, r: RollFacts): boolean {
       return false;
     default:
       return r.trait === filter;
+  }
+}
+
+/**
+ * Lane E7 (dcm-2gn): a PC roll's result against a trigger's `result`. A critical success is a success with Hope (CB
+ * p.90); `critical` needs it marked on the roll.
+ */
+function rollResultOk(result: RollResult | "failureWithFear" | "failureWithHope", r: RollFacts): boolean {
+  switch (result) {
+    case "any":
+      return true;
+    case "success":
+      return r.success;
+    case "failure":
+      return !r.success;
+    case "withHope":
+      return r.withHope;
+    case "withFear":
+      return r.withFear;
+    case "critical":
+      return r.critical === true;
+    case "successWithHope":
+      return r.success && r.withHope;
+    case "successWithFear":
+      return r.success && r.withFear;
+    case "failureWithFear":
+      return !r.success && r.withFear;
+    case "failureWithHope":
+      return !r.success && r.withHope;
   }
 }
 
@@ -362,14 +467,19 @@ export function matchesTrigger(trigger: AdversaryTrigger, event: AdversaryEvent)
         (trigger.fromAttack !== true || e.fromAttack === true) &&
         within(e.attackerBand, trigger.attackerWithin) &&
         beyond(e.attackerBand, trigger.attackerBeyond) &&
-        firstOk(trigger.first, e.first)
+        firstOk(trigger.first, e.first) &&
+        // Lane E7 (dcm-2gn, dcm-dv6): only a weapon attack's damage; only damage carrying the keyword (as `fromAttack`,
+        // the event must say so).
+        (trigger.weaponAttack !== true || e.weaponAttack === true) &&
+        (trigger.keyword === undefined || (e.keywords ?? []).includes(trigger.keyword))
       );
     }
     case "onMarkHp": {
       const e = event as Extract<AdversaryEvent, { kind: "onMarkHp" }>;
       return (
         e.stage === (trigger.stage ?? "did") &&
-        e.amount > 0 &&
+        // Lane E7 (dcm-2gn): Unreal Form (CB p.237: "marks 1 or fewer Hit Points from a successful attack") also fires on 0.
+        (e.amount > 0 || (trigger.includeZero === true && e.fromAttack === true)) &&
         (trigger.atLeast === undefined || e.amount >= trigger.atLeast) &&
         (trigger.atMost === undefined || e.amount <= trigger.atMost) &&
         (trigger.last !== true || e.last) &&
@@ -380,7 +490,7 @@ export function matchesTrigger(trigger: AdversaryTrigger, event: AdversaryEvent)
     }
     case "onMarkStress": {
       const e = event as Extract<AdversaryEvent, { kind: "onMarkStress" }>;
-      return (trigger.last !== true || e.last) && firstOk(trigger.first, e.first);
+      return (e.stage ?? "did") === (trigger.stage ?? "did") && (trigger.last !== true || e.last) && firstOk(trigger.first, e.first);
     }
     case "onDefeated":
       return typeOk(trigger.damageType, (event as Extract<AdversaryEvent, { kind: "onDefeated" }>).damageType);
@@ -388,7 +498,9 @@ export function matchesTrigger(trigger: AdversaryTrigger, event: AdversaryEvent)
     case "allyMarksHp":
     case "allyDefeated": {
       const e = event as AllyEvent;
-      return within(e.band, trigger.range) && nameOk(trigger.allyName, e.allyName);
+      // Lane E7 (dcm-2gn): Cowardly (HF p.64: "an allied Leader is defeated") narrows by the stat block's type.
+      const typeWanted = trigger.kind === "allyDefeated" ? trigger.allyType : undefined;
+      return within(e.band, trigger.range) && nameOk(trigger.allyName, e.allyName) && (typeWanted === undefined || e.allyType?.toLowerCase() === typeWanted.toLowerCase());
     }
     case "onAttacked": {
       const e = event as Extract<AdversaryEvent, { kind: "onAttacked" }>;
@@ -402,17 +514,11 @@ export function matchesTrigger(trigger: AdversaryTrigger, event: AdversaryEvent)
     case "pcRolls": {
       const e = event as Extract<AdversaryEvent, { kind: "pcRolls" }>;
       const r = e.roll;
-      const result = trigger.result ?? "any";
-      const resultOk =
-        result === "any" ||
-        (result === "success" && r.success) ||
-        (result === "failure" && !r.success) ||
-        (result === "withHope" && r.withHope) ||
-        (result === "withFear" && r.withFear) ||
-        (result === "failureWithFear" && !r.success && r.withFear);
       return (
         rollFilterOk(trigger.roll, r) &&
-        resultOk &&
+        rollResultOk(trigger.result ?? "any", r) &&
+        // Lane E7 (dcm-2gn): Vexing Word (HF p.80), Counterspell: "not a critical success".
+        (trigger.notCritical !== true || r.critical !== true) &&
         within(e.band, trigger.within) &&
         (trigger.againstSelf !== true || e.againstSelf === true) &&
         (trigger.totalAtMost === undefined || (r.total !== undefined && r.total <= trigger.totalAtMost))
@@ -432,7 +538,8 @@ export function matchesTrigger(trigger: AdversaryTrigger, event: AdversaryEvent)
     }
     case "onSpotlight": {
       const e = event as Extract<AdversaryEvent, { kind: "onSpotlight" }>;
-      return firstOk(trigger.first, e.first) && (trigger.noTokens !== true || e.tokens === 0);
+      // Lane E7 (dcm-2gn): Intimidating (HF p.89) only when the GM spent a Fear to spotlight it.
+      return firstOk(trigger.first, e.first) && (trigger.noTokens !== true || e.tokens === 0) && (trigger.byFear !== true || e.byFear === true);
     }
     case "allySpotlit":
       return within((event as Extract<AdversaryEvent, { kind: "allySpotlit" }>).band, trigger.range);
@@ -444,6 +551,23 @@ export function matchesTrigger(trigger: AdversaryTrigger, event: AdversaryEvent)
       return (event as Extract<AdversaryEvent, { kind: "timing" }>).at === trigger.at;
     case "situation":
       return (event as Extract<AdversaryEvent, { kind: "situation" }>).text === trigger.text;
+    // ---- lane E7 (dcm-2gn): the V trigger kinds
+    case "pcSpotlit":
+      // Fear Aura (HF p.66): "When a PC takes the spotlight within Very Close range".
+      return within((event as Extract<AdversaryEvent, { kind: "pcSpotlit" }>).band, trigger.within);
+    case "allyAttacks": {
+      // Pack Alpha (HF p.76): any attack an ally makes; Air Support (HF p.83): "an ally fails an attack".
+      const e = event as Extract<AdversaryEvent, { kind: "allyAttacks" }>;
+      return within(e.band, trigger.range) && ((trigger.stage ?? "made") === "made" || e.stage === trigger.stage);
+    }
+    case "pcDealsDamage": {
+      // Drake Guard Dog (HF p.82): "When a PC would deal damage to a creature within Close range".
+      const e = event as Extract<AdversaryEvent, { kind: "pcDealsDamage" }>;
+      return within(e.band, trigger.within) && e.stage === (trigger.stage ?? "did");
+    }
+    case "pcsRest":
+      // Midnight Heart (HF p.88): "When the PCs finish a long rest".
+      return trigger.rest === undefined || (event as Extract<AdversaryEvent, { kind: "pcsRest" }>).rest === trigger.rest;
   }
 }
 
@@ -492,4 +616,46 @@ export function spotlightCost(input: SpotlightInput): { fear: number; overLimit:
   const limit = input.relentless === "X" ? Infinity : (input.relentless ?? 1);
   const fear = spotlightCostsFear(input.spotlightsThisTurn) || input.costsFear === true ? 1 : 0;
   return { fear, overLimit: input.instanceSpotlights + 1 > limit };
+}
+
+// ---------------------------------------------------------------- countdowns (lane E7, dcm-bxp.78)
+//
+// User answers 2026-10-30 (dcm-bxp.78): core rule (CB p.162). A Start button on the tracker's countdown prompt and on the
+// instance stat block; armed only when the countdown ticks on action rolls (CB p.162: a standard countdown "ticks down
+// every time a player makes an action roll"); one whose text ticks on another event (spotlight, marks HP, takes damage)
+// starts unarmed. Private, like the environments' countdowns. Per-PC ones are named "<Adversary>: <Feature> - <PC>".
+
+const COUNTDOWN_IN_TEXT = /(?:(?:[A-Z][\w-]*)\s+){0,2}Countdown \((?:(?:Loop|Increasing|Decreasing|Long-Term)\s+)?(?:\d+d\d+(?:\s*\+\s*\d+)?|\d+)\)/g;
+
+/** The countdowns a feature names: its printed label first, then each one its text names ("Doom Countdown (4)"). */
+export function adversaryCountdownLabels(feature: { countdown?: string; text: string }): string[] {
+  const labels: string[] = [];
+  if (feature.countdown !== undefined) labels.push(feature.countdown);
+  for (const match of feature.text.matchAll(COUNTDOWN_IN_TEXT)) {
+    const label = match[0].trim();
+    if (!labels.some((l) => l.toLowerCase() === label.toLowerCase())) labels.push(label);
+  }
+  return labels;
+}
+
+/**
+ * Whether a feature's countdown ticks on action rolls (it starts armed). The entry's `tickOn` decides when it has one;
+ * else the text: "It ticks down when the Dullahan is spotlighted", "ticks down when a PC rolls with Fear" tick on
+ * something else; a countdown whose text names no advancement is a standard one (CB p.162).
+ */
+export function adversaryCountdownArmed(text: string, tickOn?: "actionRoll" | "spotlight" | "marksHp" | "takesDamage" | "other"): boolean {
+  if (tickOn !== undefined) return tickOn === "actionRoll";
+  const advance = /(?:ticks? down|advances?)\s+(?:when|whenever|each time|every time)\b[^.]*/i.exec(text);
+  return advance === null || /\baction rolls?\b/i.test(advance[0]);
+}
+
+/** "Bear 2: Doom Countdown", or for a per-PC countdown "Bear 2: Doom Countdown - Mira" (user answer, dcm-bxp.78). */
+export function adversaryCountdownName(instanceLabel: string, featureName: string, pcName?: string): string {
+  return `${instanceLabel}: ${featureName}${pcName ? ` - ${pcName}` : ""}`;
+}
+
+/** A label's flat bonus on rolled dice ("Countdown (1d6+1)", the Empress's Doom Countdown) and the label without it. */
+export function countdownLabelBonus(label: string): { label: string; plus: number } {
+  const m = /(\d+d\d+)\s*\+\s*(\d+)\)/i.exec(label);
+  return m ? { label: label.replace(m[0], `${m[1]})`), plus: Number(m[2]) } : { label, plus: 0 };
 }
