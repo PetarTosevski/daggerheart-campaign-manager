@@ -148,13 +148,14 @@ waves:
         owns:
           - convex/tables/characters.ts
           - convex/lib/notes.ts
+          - convex/cleanup.ts
           - tests/convex/notes-many-characters.test.ts
           - tests/e2e/campaign-preload.spec.ts
           - src/components/lorekeeper/drawer/panel.tsx
           - docs/tasks/TASK-F9-J7.md
         reads: [convex/notesJournals.ts, convex/notesSharing.ts, tests/e2e/lorekeeper-flow.spec.ts, docs/best-practices.md]
         acceptance:
-          - "characters gets index by_owner_campaign [ownerId, campaignId] (additive); liveCharacters queries it with eq(owner).eq(campaign) and a bounded take; convex test: a player owning more than 200 characters in other campaigns still gets their character on the journal (name, characterId)"
+          - "characters index by_owner is replaced by by_owner_campaign [ownerId, campaignId] (schema-guard forbids prefix indexes; cleanup.ts uses it as a prefix query); liveCharacters queries it with eq(owner).eq(campaign) and a bounded take; convex test: a player owning more than 200 characters in other campaigns still gets their character on the journal (name, characterId)"
           - "campaign-preload.spec.ts Dashboard target expects characters:partySummary (PF9)"
           - "Lorekeeper drawer ignores a native close event that arrives after the drawer was reopened; lorekeeper-flow.spec.ts:293 passes 3 runs in a row"
           - "Notes specs (live-notes, notes-a11y, notes-entries, notes-flow, notes-journals, notes-pages, notes-sharing), campaign-preload and lorekeeper-flow pass; pnpm lint, typecheck, vitest and tracer-guard pass"
