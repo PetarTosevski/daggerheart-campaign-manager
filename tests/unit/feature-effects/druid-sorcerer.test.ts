@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { PlanStep, RunPlan } from "@/lib/domain/card-effects/run";
+import { rollTargetCount, type PlanStep, type RunPlan } from "@/lib/domain/card-effects/run";
 import type { Combatant } from "@/lib/domain/combat-actions";
 import { queueRng } from "@/lib/domain/dice";
 import { featureKey, featureSlug, parseFeatureId } from "@/lib/domain/feature-effects/ids";
@@ -230,17 +230,22 @@ describe("Warden of Renewal (CB p.31)", () => {
     expect(ofKind(plan, "clear").map((c) => c.amount)).toEqual([2, 1]);
   });
 
-  it("Warden's Protection: once per long rest, 2 Hope, up to 1d4 allies within Close clear 2 HP", () => {
+  it("Warden's Protection: once per long rest, 2 Hope, up to 1d4 allies within Close clear 2 HP (the 1d4 rolled first, dcm-d95)", () => {
     const allies = [ally("a"), ally("b")];
-    const plan = ok("subclass:warden-of-renewal:wardens-protection", undefined, { actor: actorOf(renewal), targets: allies, dice: [3] });
+    const wardens = entry("subclass:warden-of-renewal:wardens-protection");
+    // User 2026-10-29: the server rolls the 1d4 before the pick (`rollTargetCount`); the run rolls nothing for it.
+    expect(wardens.uses[0]!.targets).toMatchObject({ count: { kind: "upTo", rolledFirst: true } });
+    expect(rollTargetCount(wardens.uses[0]!, actorOf(renewal), queueRng([3]))).toBe(3);
+    const plan = ok("subclass:warden-of-renewal:wardens-protection", undefined, { actor: actorOf(renewal), targets: allies, rolledTargetCount: 3 });
     expect(plan.actor.after.hope).toBe(1);
     expect(ofKind(plan, "clear").map((c) => [c.targetId, c.amount])).toEqual([
       ["a", 2],
       ["b", 2],
     ]);
     expect(plan.limit).toMatchObject({ key: "feat:subclass:warden-of-renewal:wardens-protection", until: "longRest" });
-    // More allies than the 1d4 shows: refused.
-    expect(runFeature(entry("subclass:warden-of-renewal:wardens-protection"), undefined, { actor: actorOf(renewal), gmFear: 0, rng: queueRng([1]), targets: allies })).toMatchObject({ ok: false, reason: "targets" });
+    // More allies than the 1d4 showed: refused; without the server's roll: refused, nothing rolled.
+    expect(runFeature(wardens, undefined, { actor: actorOf(renewal), gmFear: 0, rng: queueRng([]), targets: allies, rolledTargetCount: 1 })).toMatchObject({ ok: false, reason: "targets" });
+    expect(runFeature(wardens, undefined, { actor: actorOf(renewal), gmFear: 0, rng: queueRng([]), targets: allies })).toMatchObject({ ok: false, reason: "targets" });
   });
 
   it("Defender: in Beastform, an ally within Close who marks 2+ HP marks 1 fewer for your Stress", () => {

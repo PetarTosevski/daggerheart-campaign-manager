@@ -37,7 +37,27 @@ import { conditionValidator, effectValidator, traitIdValidator } from "./charact
  * attacker's Use (on the ONE creature they pick) or Pass. Never applied without this prompt. Resolved by the answer
  * (`combatActions.riderPick`, the player or the GM); declined when the encounter ends.
  */
-export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"), v.literal("minionOffer"), v.literal("preRoll"), v.literal("afterRoll"), v.literal("riderPick"));
+/**
+ * `targetCount` (plan drawer-answers DA12, widened; CB p.31 Warden's Protection, user 2026-10-29, dcm-d95): a target count
+ * the server rolled before the player picks (the 1d4 allies). Resolved by the use that takes it (`resolveFeatureUse`);
+ * declined once it expires (`TARGET_COUNT_TTL_MS`, closed by the next roll).
+ */
+/**
+ * `serverMove` (plan drawer-answers DA12, widened; CB p.59 Charge, user 2026-10-30): the square a token left when the
+ * server moved it for a feature (Charge's run into Melee range). Open while the move can be undone: undoing the use's
+ * actionLog group puts the token back and declines it (`declineGroupOffers`); the character's next server move resolves
+ * the older one, and the encounter's end declines it.
+ */
+export const combatRequestKindValidator = v.union(
+  v.literal("sanction"),
+  v.literal("incomingHit"),
+  v.literal("minionOffer"),
+  v.literal("preRoll"),
+  v.literal("afterRoll"),
+  v.literal("riderPick"),
+  v.literal("targetCount"),
+  v.literal("serverMove"),
+);
 
 /** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
 export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"));
@@ -392,8 +412,45 @@ export const riderPickPayloadValidator = v.object({
 /** One answer to a `riderPick` row: use the rider on one candidate, or pass (nothing paid). */
 export const riderPickChoiceValidator = v.union(v.object({ kind: v.literal("use"), tokenId: v.id("combatTokens") }), v.object({ kind: v.literal("pass") }));
 
+/** DA12: a target count rolled on the server before the pick (Warden's Protection's 1d4). */
+export const targetCountPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("targetCount"),
+  characterId: v.id("characters"),
+  /** The feature id (`<source>:<owner>:<slug>`) and the `CardUse.id` the count is for. */
+  featureId: v.string(),
+  useId: v.string(),
+  /** The rolled count: the most targets the use may take. */
+  count: v.number(),
+  expiresAt: v.number(),
+});
+
+/** A token's square and facing (combatTokens `x`, `y`, `face`). */
+export const tokenSquareValidator = v.object({ x: v.number(), y: v.number(), face: v.number() });
+
+/** DA12: a token the server moved for a feature use, with the square it left (undo puts it back). */
+export const serverMovePayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("serverMove"),
+  characterId: v.id("characters"),
+  /** The use's actionLog group: undoing it undoes the move. */
+  groupId: v.string(),
+  tokenId: v.id("combatTokens"),
+  from: tokenSquareValidator,
+  to: tokenSquareValidator,
+});
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
-export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator, minionOfferPayloadValidator, preRollPayloadValidator, afterRollPayloadValidator, riderPickPayloadValidator);
+export const combatRequestPayloadValidator = v.union(
+  sanctionPayloadValidator,
+  incomingHitPayloadValidator,
+  minionOfferPayloadValidator,
+  preRollPayloadValidator,
+  afterRollPayloadValidator,
+  riderPickPayloadValidator,
+  targetCountPayloadValidator,
+  serverMovePayloadValidator,
+);
 
 /**
  * One answer in a reaction window (Q13): `armor` (mark Armor Slots; `slots` above 1 only where a card allows it,
@@ -459,3 +516,5 @@ export type AfterRollPayload = Infer<typeof afterRollPayloadValidator>;
 export type AfterRollChoice = Infer<typeof afterRollChoiceValidator>;
 export type RiderPickPayload = Infer<typeof riderPickPayloadValidator>;
 export type RiderPickChoice = Infer<typeof riderPickChoiceValidator>;
+export type TargetCountPayload = Infer<typeof targetCountPayloadValidator>;
+export type ServerMovePayload = Infer<typeof serverMovePayloadValidator>;

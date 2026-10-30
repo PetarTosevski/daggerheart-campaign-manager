@@ -15,6 +15,9 @@
  * - Q13: a situation the engine can't read needs the player's confirmation (choice `situations`).
  * - NV2: D5 features keep their record: the delegated D5 feature's `classState`, held dice and other sheets (Rally Dice,
  *   Life Support) are written in the same mutation as the map steps.
+ * - DA12 (dcm-d95, CB p.31): a `rolledFirst` target count is the server's stored roll (convex/lib/featurePrompts.ts);
+ *   `resolveFeatureUse` refuses the use without it or with more targets. A use with a server move (`intoMelee`, Charge,
+ *   CB p.59) runs only through `featurePrompts.charge`.
  * - U1 / U4: rows as cards (public: roll, own damage, Hit / Miss / Defeated; GM: the full resolution with
  *   `adversaryBefore`); one actionLog group, which `actionLog.undo` reverts.
  */
@@ -37,11 +40,12 @@ import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
-import { dropDice, type CardChoice, type CardRoll, type DiceSlot } from "./cardChoices";
+import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSlot } from "./cardChoices";
 import { cardPromptValidator, damageRolls, gmLines, instanceWrites, openCardHits, promptsOf, publicTargets, rollText, writeInstances } from "./cardRows";
 import { actorSheetAfter, effectOption, featureIdOfEffect, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
 import { partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
+import { hasServerMove, isRolledFirst, spendTargetCount } from "./featurePrompts";
 import { campaignFearState, gainFear, spendFear } from "./fear";
 import { changed } from "./rolls";
 import { rollValidator } from "./validators/actionLog";
@@ -209,6 +213,16 @@ export function pickFeature(input: {
   transform?: (use: CardUse) => CardUse;
   /** SD5: facts about the attack's target and the trigger's subject for NV7 checks (`hasCondition` on the target). */
   extraFacts?: Pick<NonNullable<ActorState["facts"]>, "target" | "subject">;
+  /**
+   * DA12 (dcm-d95): the stored count of a `rolledFirst` use. Absent, the run takes up to MAX_CARD_TARGETS and
+   * `resolveFeatureUse` holds the use to the stored roll (`spendTargetCount`) before anything is written.
+   */
+  rolledTargetCount?: number;
+  /**
+   * DA12 (Charge): the caller makes the use's `intoMelee` move itself (convex/featurePrompts.ts `charge`). A use with such
+   * a move is refused (INVALID) without it, so `combatFeatures.useFeature` can't run Charge without its square.
+   */
+  serverMove?: boolean;
 }): FeaturePick {
   const { sheet, featureId } = input;
   const held = ownedHere(sheet, input.campaign);
@@ -234,6 +248,8 @@ export function pickFeature(input: {
     : entry;
   if (transform) upgraded = runEntry;
   const use = transform ? transform(picked) : picked;
+  if (hasServerMove(use) && input.serverMove !== true) throw appError("INVALID", `${use.name} needs the square to move to (featurePrompts.charge).`);
+  const rolledCount = isRolledFirst(use) ? { rolledTargetCount: input.rolledTargetCount ?? MAX_CARD_TARGETS } : {};
   const delegates = delegatedKeys(use).length > 0;
   const others: OtherSheet[] = delegates ? input.party.map((m) => ({ characterId: m.key, sheet: m.sheet })) : [];
   const facts = { ...factsOf(sheet, input.rollUsedExperience), ...(input.extraFacts ?? {}) };
@@ -247,6 +263,7 @@ export function pickFeature(input: {
     const actor = { ...rest.actor, featureUses: rest.actor.featureUses.map((u) => ({ ...u, key: expandedLimitKey(u.key, targetIds) })) };
     const result = runFeature(runEntry, use.id, {
       ...rest,
+      ...rolledCount,
       actor,
       sheet,
       others,
@@ -319,6 +336,11 @@ export function delegateLine(summary: string, before: CharacterSheet, after: Cha
   return fresh ? summary.replace(/\(d\d+\)/, `(d${fresh.sides})`) : summary;
 }
 
+/** DA12: whether a card prompt is the plan's server move (`server: true`, Charge's `intoMelee`), which the server makes. */
+function serverMovePrompt(plan: RunPlan, p: { kind: string; text: string }): boolean {
+  return p.kind === "move" && plan.steps.some((s) => s.kind === "prompt" && s.prompt === "move" && s.server === true && s.text === p.text);
+}
+
 /** The words of a feature's own plan steps the card rows don't say: D5 lines, Favor / Focus, Help dice, areas. */
 function notesOf(plan: RunPlan, built: BuiltRun, before: CharacterSheet, delegated: Delegated | undefined): string[] {
   const name = (id: string) => {
@@ -345,12 +367,15 @@ function notesOf(plan: RunPlan, built: BuiltRun, before: CharacterSheet, delegat
 export async function resolveFeatureUse(ctx: MutationCtx, req: FeatureUseRequest, built: BuiltRun, outcome: { plan: RunPlan; delegated?: Delegated }, actorId: Id<"users">): Promise<ResolvedFeature> {
   const { campaign, character, sheet, pick } = req;
   const { plan, delegated } = outcome;
+  // DA12 (dcm-d95): a `rolledFirst` use takes the server's stored roll (refused without one or with more targets).
+  const rolled = await spendTargetCount(ctx, { campaignId: campaign._id, characterId: character._id, featureId: pick.featureId, use: pick.use, targets: req.targetTokenIds.length, by: actorId });
   const actorToken = built.context.actor.id;
   // The D5 features' sheet (classState, held dice, effects) when they ran; resources come from the plan either way.
   const start = delegated?.sheet ?? built.paidSheet;
   const next = actorSheetAfter(start, plan, actorToken, pick.name);
-  let prompts = promptsOf(plan, built);
-  const notes = notesOf(plan, built, sheet, delegated);
+  // DA12: a move the server makes itself (`intoMelee`, Charge) is no prompt for the table.
+  let prompts = promptsOf(plan, built).filter((p) => !serverMovePrompt(plan, p));
+  const notes = [...(rolled !== null ? [`rolled ${rolled} target${rolled === 1 ? "" : "s"}`] : []), ...notesOf(plan, built, sheet, delegated)];
 
   // Other characters: a D5 feature's other sheets (by the runner's key), then the plan's ally steps and tracks.
   const others = new Map<string, { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }>();

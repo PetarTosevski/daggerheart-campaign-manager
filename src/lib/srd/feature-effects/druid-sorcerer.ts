@@ -341,8 +341,9 @@ export const DRUID_SORCERER_EFFECTS: readonly FeatureEffect[] = [
         activation: { kind: "action" },
         limit: { per: "longRest" },
         costs: [{ kind: "hope", amount: n(2) }],
-        // The 1d4 is rolled when the use resolves; more picked allies than it shows refuses the use (open ruling Q-C).
-        targets: { side: "ally", range: "close", count: { kind: "upTo", n: { kind: "dice", dice: d(1, 4) } } },
+        // User answer 2026-10-29 (dcm-d95, D3): the server rolls the 1d4 first (`featurePrompts.rollCount`), then the
+        // player picks that many allies; the use takes at most the stored roll (DA12).
+        targets: { side: "ally", range: "close", count: { kind: "upTo", n: { kind: "dice", dice: d(1, 4) }, rolledFirst: true } },
         steps: [{ kind: "clear", to: "targets", track: "hp", amount: n(2) }],
       },
     ],

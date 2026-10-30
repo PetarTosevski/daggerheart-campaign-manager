@@ -151,18 +151,20 @@ export const ANCESTRY_CORE_EFFECTS: readonly FeatureEffect[] = [
 
   // ---------------------------------------------------------------- Firbolg (CB p.59)
   // Charge (CB p.59): "When you succeed on an Agility Roll to move from Far or Very Far range into Melee range with one or
-  // more targets, you can mark a Stress to deal 1d12 physical damage to all targets within Melee range." The Agility Roll
-  // is the move (Difficulty from the GM); the player confirms the run in and the token is moved by prompt (Q9). The
-  // targets are every enemy within Melee where the token stands when Charge is used (open ruling in the task doc).
+  // more targets, you can mark a Stress to deal 1d12 physical damage to all targets within Melee range." User answers
+  // 2026-10-29 / 2026-10-30 (dcm-bxp.99.19.16, DA12): roll first. Before the roll the player picks the target (at Far or
+  // Very Far range) and a free square in Melee range of it; the server (`featurePrompts.charge`) runs the use as from that
+  // square, so `targets` are every enemy in Melee range of it, and on a success moves the token there (`intoMelee`); on a
+  // failure the token stays. The Agility Roll's Difficulty is the GM's. `combatFeatures.useFeature` refuses it (INVALID).
   ancestry("firbolg", "charge", [
     {
       id: "main",
       name: "Charge",
       activation: { kind: "action" },
-      requires: [situation("You move from Far or Very Far range into Melee range with one or more targets")],
       roll: { kind: "trait", trait: "agility", difficulty: { kind: "gm" } },
       targets: { side: "enemy", range: "melee", count: { kind: "all" } },
       steps: [
+        { kind: "move", to: "self", mode: "intoMelee", relativeTo: "target", when: ["success"], note: "Charge into Melee range" },
         {
           kind: "optional",
           id: "stress",

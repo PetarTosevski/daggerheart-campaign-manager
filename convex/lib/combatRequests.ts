@@ -10,13 +10,15 @@
  *   and `mine` treat a request whose encounter is no longer running as closed.
  * - `declineGroupOffers`: undoing an attack declines its open Minion offer (convex/lib/actionLog.ts `undoEntry`).
  * - `openAfterRoll` (plan sheet-drawer SD5, Q1): a player's own attack held after its roll for an after-roll feature.
+ * - `openServerMove` (plan drawer-answers DA12, Charge): the square a token left when the server moved it; undoing the
+ *   use's group puts it back (`declineGroupOffers`).
  *
  * Open requests per campaign are few (one per waiting action); reads take at most `OPEN_SCAN`.
  */
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { appError } from "../../src/lib/errors/app-error";
-import type { AfterRollPayload, MinionOfferPayload, RiderPickPayload, SanctionPayload } from "./validators/combatRequests";
+import type { AfterRollPayload, MinionOfferPayload, RiderPickPayload, SanctionPayload, ServerMovePayload } from "./validators/combatRequests";
 
 /** The most open requests a campaign's reads look at. */
 export const OPEN_SCAN = 200;
@@ -101,8 +103,33 @@ export async function groupOffer(ctx: QueryCtx, campaignId: Id<"campaigns">, gro
   return null;
 }
 
-/** Undoing an attack declines its open Minion offer. */
+/**
+ * Undoing an attack declines its open Minion offer. DA12: undoing a feature use (its public row is a `combat` row) also
+ * puts back a token the server moved for it (`serverMove`, Charge, CB p.59) on the square it left, and declines the row.
+ */
 export async function declineGroupOffers(ctx: MutationCtx, campaignId: Id<"campaigns">, groupId: string, by: Id<"users">): Promise<void> {
-  const offer = await groupOffer(ctx, campaignId, groupId);
-  if (offer !== null) await closeRequest(ctx, offer._id, "declined", by);
+  for (const row of await openRequests(ctx, campaignId)) {
+    const p = row.payload;
+    if (p.kind === "minionOffer" && p.groupId === groupId) await closeRequest(ctx, row._id, "declined", by);
+    else if (p.kind === "serverMove" && p.groupId === groupId) {
+      const token = await ctx.db.get("combatTokens", p.tokenId);
+      if (token !== null && token.campaignId === campaignId) await ctx.db.patch("combatTokens", token._id, { x: p.from.x, y: p.from.y, face: p.from.face });
+      await closeRequest(ctx, row._id, "declined", by);
+    }
+  }
+}
+
+/**
+ * DA12: records a token the server moved for a feature use (`serverMove`), so undoing the use's group puts it back. The
+ * character's older open server moves are resolved first (a newer use of theirs makes the older one's undo stale), so a
+ * character holds at most one open row.
+ */
+export async function openServerMove(
+  ctx: MutationCtx,
+  where: Omit<Where, "encounterId"> & { encounterId?: Id<"encounters">; payload: ServerMovePayload },
+): Promise<Id<"combatRequests">> {
+  for (const row of await openRequests(ctx, where.campaignId)) {
+    if (row.payload.kind === "serverMove" && row.payload.characterId === where.payload.characterId) await closeRequest(ctx, row._id, "resolved", where.createdBy);
+  }
+  return ctx.db.insert("combatRequests", { ...where, status: "open" as const, createdAt: Date.now(), responses: [], kind: "serverMove" });
 }
