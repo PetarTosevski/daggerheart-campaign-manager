@@ -49,7 +49,7 @@ import { actorSheetAfter, effectOption, featureIdOfEffect, writeSheetChanges, ty
 import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
 import { partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
-import { hasServerMove, isRolledFirst, openAllyRoll, spendTargetCount } from "./featurePrompts";
+import { countMark, hasServerMove, isRolledFirst, openAllyRoll, spendTargetCount } from "./featurePrompts";
 import { campaignFearState, gainFear, spendFear } from "./fear";
 import { changed } from "./rolls";
 import { rollValidator } from "./validators/actionLog";
@@ -389,15 +389,17 @@ export async function resolveFeatureUse(
   const { campaign, character, sheet, pick } = req;
   const { plan, delegated } = outcome;
   // DA12 (dcm-d95): a `rolledFirst` use takes the server's stored roll (refused without one or with more targets).
-  const rolled = await spendTargetCount(ctx, { campaignId: campaign._id, characterId: character._id, featureId: pick.featureId, use: pick.use, targets: req.targetTokenIds.length, by: actorId });
+  const rolled = await spendTargetCount(ctx, { campaignId: campaign._id, characterId: character._id, sheet, featureId: pick.featureId, use: pick.use, targets: req.targetTokenIds.length, by: actorId });
   const actorToken = built.context.actor.id;
   // The D5 features' sheet (classState, held dice, effects) when they ran; resources come from the plan either way.
   const start = delegated?.sheet ?? built.paidSheet;
   const unshaken: UnshakableRoll[] = [];
-  const next = actorSheetAfter(start, plan, actorToken, pick.name, { out: unshaken });
+  const after = actorSheetAfter(start, plan, actorToken, pick.name, { out: unshaken });
+  // B1 (dcm-bxp.99.19.55 (1)): the spent roll's scene mark leaves the sheet with the use (undo puts it back).
+  const next = rolled === null ? after : { ...after, featureUses: after.featureUses.filter((u) => u.key !== countMark(rolled.requestId)) };
   // DA12: a move the server makes itself (`intoMelee`, Charge) is no prompt for the table.
   let prompts = promptsOf(plan, built).filter((p) => !serverMovePrompt(plan, p));
-  const notes = [...(rolled !== null ? [`rolled ${rolled} target${rolled === 1 ? "" : "s"}`] : []), ...notesOf(plan, built, sheet, delegated), ...unshaken.map(unshakableText)];
+  const notes = [...(rolled !== null ? [`rolled ${rolled.count} target${rolled.count === 1 ? "" : "s"}`] : []), ...notesOf(plan, built, sheet, delegated), ...unshaken.map(unshakableText)];
   // DA13 (CB p.33 Cannonball): a use rolled by an ally sends the roll to the picked ally's drawer.
   const allyRoll = plan.steps.find((s) => s.kind === "prompt" && s.prompt === "allyRoll");
   const roller = allyRoll?.kind === "prompt" ? built.creatures.get(allyRoll.targetIds[0] ?? "") : undefined;

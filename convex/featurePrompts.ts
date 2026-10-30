@@ -14,8 +14,9 @@ import { cardRollValidator, keepDice, keptDice, parseChoices } from "./lib/cardC
 import { needsChoiceValidator } from "./lib/cardRows";
 import { buildRun, Creatures, extraSpecs, replaying, runCard } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
-import { attackScene } from "./lib/combatActions";
+import { attackScene, type AttackScene } from "./lib/combatActions";
 import { movementGrid } from "./lib/combatMovement";
+import type { MovementGrid } from "../src/lib/domain/combat-map/movement";
 import { closeRequest, loadOpenRequest, openServerMove } from "./lib/combatRequests";
 import { allyRollLive, isAllyRollRow, liveAllyRolls, liveTargetCount, optionalHope, rollAndStoreCount, rolledFirstUse, rollerUse, type AllyRollRow } from "./lib/featurePrompts";
 import {
@@ -71,12 +72,12 @@ function limitUsed(sheet: CharacterSheet, featureId: string): boolean {
 
 // ---------------------------------------------------------------- a target count rolled first (Warden's Protection)
 
-const countView = v.object({ requestId: v.id("combatRequests"), count: v.number(), expiresAt: v.number() });
+const countView = v.object({ requestId: v.id("combatRequests"), count: v.number() });
 
 /**
- * Rolls the target count of a `rolledFirst` use (Warden's Protection's 1d4) and stores it for the use. Refusals:
- * FEATURE_NOT_OWNED, FEATURE_NOT_COMBAT, FEATURE_EXHAUSTED (the limit is used), INVALID (no count to roll, or a roll of
- * this use still open: one roll until it is used or expires), CHARACTER_UNAVAILABLE.
+ * Rolls the target count of a `rolledFirst` use (Warden's Protection's 1d4) and stores it for the use until it is used
+ * or the scene ends (dcm-bxp.99.19.55 (1)). Refusals: FEATURE_NOT_OWNED, FEATURE_NOT_COMBAT, FEATURE_EXHAUSTED (the limit
+ * is used), INVALID (no count to roll, or a roll of this use still open in this scene), CHARACTER_UNAVAILABLE.
  */
 export const rollCount = keyedCampaignMutation({
   need: "view",
@@ -95,16 +96,41 @@ export const rollCount = keyedCampaignMutation({
     }),
 });
 
-/** The open, unexpired rolled count of a character's feature use (the drawer after a reload), or null. */
+const allyChoice = v.object({
+  tokenId: v.id("combatTokens"),
+  name: v.string(),
+  /** Within the use's range of the character's token (Close for Warden's Protection). */
+  inRange: v.boolean(),
+});
+
+/**
+ * The drawer's view of a `rolledFirst` use: the open roll of this scene (or null; after a reload too) and, with `mapId`,
+ * the allies on the live map with whether each is within the use's range (PC names only). No allies without a live map
+ * or a token of the character.
+ */
 export const targetCount = campaignQuery({
   need: "view",
-  args: { characterId: v.id("characters"), featureId: v.string(), useId: v.optional(v.string()) },
-  returns: v.union(v.null(), countView),
+  args: { characterId: v.id("characters"), featureId: v.string(), useId: v.optional(v.string()), mapId: v.optional(v.id("combatMaps")) },
+  returns: v.object({ roll: v.union(v.null(), countView), allies: v.array(allyChoice) }),
   handler: async (ctx, args) => {
-    const { campaign } = await editableHere(ctx, args.characterId);
+    const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
     const use = rolledFirstUse(args.featureId, args.useId);
-    const row = await liveTargetCount(ctx, campaign._id, args.characterId, args.featureId, use.id);
-    return row === null ? null : { requestId: row._id, count: row.payload.count, expiresAt: row.payload.expiresAt };
+    const row = await liveTargetCount(ctx, campaign._id, args.characterId, args.featureId, use.id, sheet);
+    const allies: Infer<typeof allyChoice>[] = [];
+    const spec = use.targets !== undefined && use.targets.side !== "trigger" ? use.targets : undefined;
+    const range = spec === undefined || spec.range === "weapon" ? "melee" : spec.range;
+    if (args.mapId !== undefined) {
+      try {
+        const scene = await attackScene(ctx, campaign, character, args.mapId);
+        for (const t of scene.scene.tokens) {
+          if (t._id === scene.attacker._id || t.side !== "pc" || t.ref.kind !== "pc") continue;
+          allies.push({ tokenId: t._id, name: await tokenName(ctx, campaign._id, t), inRange: range === "unlimited" || rangeCheck(scene.attacker, t, range).inRange });
+        }
+      } catch {
+        // no live map or no token of this character: no allies to list
+      }
+    }
+    return { roll: row === null ? null : { requestId: row._id, count: row.payload.count }, allies };
   },
 });
 
@@ -121,35 +147,131 @@ function overlaps(a: { x: number; y: number; size: number }, b: { x: number; y: 
 
 type ChargeArgs = { targetTokenId: Id<"combatTokens">; square: { x: number; y: number } };
 
+const sizeOf = (t: { size: number }) => Math.max(1, Math.min(3, Math.trunc(t.size) || 1));
+
+/** Whether the target can be charged from where the token stands: an enemy at Far or Very Far range (CB p.59). */
+function chargeable(attacker: Doc<"combatTokens">, target: Doc<"combatTokens">): boolean {
+  if (target.side !== "enemy") return false;
+  const band = bandOf(tokenDistance(attacker, target));
+  return band === "far" || band === "veryFar";
+}
+
+/**
+ * What is wrong with charging to the square, or null: on the map, free of other tokens, in Melee range of the target, and
+ * the straight way there not blocked by a wall or a closed door for a player (the GM may pass; creatures and difficult
+ * terrain don't stop it, as built in DA12 and confirmed 2026-10-30, dcm-bxp.99.19.55).
+ */
+function squareProblem(
+  grid: MovementGrid,
+  map: Doc<"combatMaps">,
+  attacker: Doc<"combatTokens">,
+  tokens: readonly Doc<"combatTokens">[],
+  target: Doc<"combatTokens">,
+  square: { x: number; y: number },
+  gm: boolean,
+): { code: "INVALID" | "MOVE_BLOCKED"; message?: string } | { next: { x: number; y: number; face: number } } {
+  const { x, y } = square;
+  const next = moveToken(attacker, x, y, map);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || next.x !== x || next.y !== y) return { code: "INVALID", message: "That square isn't on the map." };
+  const at = { x, y, size: sizeOf(attacker) };
+  if (tokens.some((t) => t._id !== attacker._id && overlaps(at, { x: t.x, y: t.y, size: sizeOf(t) }))) return { code: "MOVE_BLOCKED" };
+  if (tokenDistance(at, target) !== 1) return { code: "INVALID", message: "Pick a square in Melee range of the target." };
+  if (checkMove(grid, attacker, next, at.size).blocked && !gm) return { code: "MOVE_BLOCKED" };
+  return { next };
+}
+
 /**
  * Checks the square before anything is rolled: the target is an enemy token at Far or Very Far range of the Firbolg's
- * token, the square is on the map, free of other tokens and in Melee range of the target, and the way there is not
- * blocked (the GM may charge through, as `combatTokens.move`). Returns the token's next placement.
+ * token and the square passes `squareProblem`. Returns the token's next placement.
  */
 async function chargeSquare(ctx: QueryCtx & { campaign: Doc<"campaigns">; permission: Permission }, attacker: Doc<"combatTokens">, tokens: readonly Doc<"combatTokens">[], map: Doc<"combatMaps">, args: ChargeArgs) {
   const target = tokens.find((t) => t._id === args.targetTokenId);
   if (target === undefined || target.side !== "enemy") throw appError("COMBAT_TARGET_INVALID");
-  const band = bandOf(tokenDistance(attacker, target));
-  if (band !== "far" && band !== "veryFar") throw appError("INVALID", "Charge starts from Far or Very Far range of the target.");
-  const { x, y } = args.square;
-  const next = moveToken(attacker, x, y, map);
-  if (!Number.isInteger(x) || !Number.isInteger(y) || next.x !== x || next.y !== y) throw appError("INVALID", "That square isn't on the map.");
-  const size = Math.max(1, Math.min(3, Math.trunc(attacker.size) || 1));
-  const at = { x, y, size };
-  if (tokens.some((t) => t._id !== attacker._id && overlaps(at, { x: t.x, y: t.y, size: Math.max(1, Math.min(3, Math.trunc(t.size) || 1)) }))) throw appError("MOVE_BLOCKED");
-  if (tokenDistance(at, target) !== 1) throw appError("INVALID", "Pick a square in Melee range of the target.");
-  const { blocked } = checkMove(await movementGrid(ctx, ctx.campaign._id, map), attacker, next, size);
-  if (blocked && !atLeast(ctx.permission, "owner")) throw appError("MOVE_BLOCKED");
-  return { target, next };
+  if (!chargeable(attacker, target)) throw appError("INVALID", "Charge starts from Far or Very Far range of the target.");
+  const out = squareProblem(await movementGrid(ctx, ctx.campaign._id, map), map, attacker, tokens, target, args.square, atLeast(ctx.permission, "owner"));
+  if ("code" in out) throw appError(out.code, out.message);
+  return { target, next: out.next };
 }
 
 /**
+ * The scene with every enemy token in plain view: no walls, no cover, no vision cone. User 2026-10-30
+ * (dcm-bxp.99.19.55 (2)): Charge's Stress deals its 1d12 to every enemy within Melee range of the landing square
+ * "regardless of facing or sight", so the run's "all targets" are built from this view (`buildRun` keeps its usual
+ * checks for every other use).
+ */
+function sightless(s: AttackScene): AttackScene {
+  const prepared = { ...s.scene.prepared, blocked: new Uint8Array(s.scene.prepared.blocked.length) };
+  const visionTokens = s.scene.visionTokens.map((t) => (t.side === "enemy" ? { ...t, side: "pc" as const } : t));
+  return { ...s, scene: { ...s.scene, prepared, visionObjects: [], visionTokens } };
+}
+
+const COMPASS = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"] as const;
+
+/** "north-west of" the target, from the centres (y grows southwards on the map). */
+function sideOf(at: { x: number; y: number; size: number }, target: { x: number; y: number; size: number }): string {
+  const dx = at.x + at.size / 2 - (target.x + target.size / 2);
+  const dy = at.y + at.size / 2 - (target.y + target.size / 2);
+  const octant = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+  return COMPASS[(octant + 8) % 8]!;
+}
+
+const chargeTarget = v.object({
+  tokenId: v.id("combatTokens"),
+  name: v.string(),
+  band: v.union(v.literal("far"), v.literal("veryFar")),
+  /** The free squares in Melee range of the target the token may charge to (blocked ways left out for a player). */
+  squares: v.array(v.object({ x: v.number(), y: v.number(), label: v.string() })),
+});
+
+/**
+ * The drawer's Charge pick (dcm-bxp.99.19.56): the enemies the Firbolg sees at Far or Very Far range of its token, each
+ * with the squares in Melee range of it that `charge` would take (names and squares only, U1). Empty without a live map
+ * or a token of the character.
+ */
+export const chargeOptions = campaignQuery({
+  need: "view",
+  args: { characterId: v.id("characters"), mapId: v.id("combatMaps") },
+  returns: v.array(chargeTarget),
+  handler: async (ctx, args) => {
+    const { campaign, character, sheet } = await editableHere(ctx, args.characterId);
+    let scene: AttackScene;
+    try {
+      scene = await attackScene(ctx, campaign, character, args.mapId);
+    } catch {
+      return [];
+    }
+    const { attacker, map } = scene;
+    const tokens = scene.scene.tokens;
+    const grid = await movementGrid(ctx, campaign._id, map);
+    const gm = atLeast(ctx.permission, "owner");
+    const size = sizeOf(attacker);
+    const out: Infer<typeof chargeTarget>[] = [];
+    for (const enemy of await new Creatures(ctx, campaign._id, scene, sheet).visibleEnemies()) {
+      const target = enemy.token;
+      if (!chargeable(attacker, target)) continue;
+      const ts = sizeOf(target);
+      const squares = [];
+      for (let y = target.y - size; y <= target.y + ts; y++) {
+        for (let x = target.x - size; x <= target.x + ts; x++) {
+          const ok = squareProblem(grid, map, attacker, tokens, target, { x, y }, gm);
+          if ("next" in ok) squares.push({ x, y, label: sideOf({ x, y, size }, { x: target.x, y: target.y, size: ts }) });
+        }
+      }
+      const band = bandOf(tokenDistance(attacker, target));
+      out.push({ tokenId: target._id, name: enemy.instance.label, band: band === "veryFar" ? "veryFar" : "far", squares });
+    }
+    return out;
+  },
+});
+
+/**
  * Charge (CB p.59). The player picks the target and a free square in Melee range of it before the roll; the server runs
- * the use as from that square (its targets are every enemy the Firbolg would see in Melee range there), rolls Agility
+ * the use as from that square (its targets are every enemy in Melee range there, seen or not: user 2026-10-30,
+ * dcm-bxp.99.19.55 (2)), rolls Agility
  * against the GM's Difficulty (`roll.difficulty`, required) and, on a success, moves the token to the square (the optional
  * Stress, `stress: true`, then deals 1d12 physical damage to each of those targets); on a failure the token stays. One
  * actionLog group: undo restores the sheets, the adversaries and the square (`serverMove`). Refusals: FEATURE_NOT_OWNED,
- * FEATURE_EXHAUSTED / FEATURE_COST_UNPAID, COMBAT_TARGET_INVALID (not an enemy, or not in sight from the square), INVALID
+ * FEATURE_EXHAUSTED / FEATURE_COST_UNPAID, COMBAT_TARGET_INVALID (not an enemy), INVALID
  * (not at Far / Very Far, a square off the map or out of Melee, no Difficulty), MOVE_BLOCKED (an occupied square, a
  * blocked way for a player), COMBAT_MAP_NOT_FOUND / COMBAT_TOKEN_NOT_FOUND, CHARACTER_UNAVAILABLE.
  */
@@ -186,8 +308,9 @@ export const charge = keyedCampaignMutation({
       const choices = [{ id: "optional:stress", value: args.stress }];
       const req: FeatureUseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: [], choices, roll: args.roll };
       const fear = await campaignFearState(ctx, campaign._id);
-      const built = await buildRun(ctx, { campaign, character, sheet, scene, pick, targetTokenIds: [], choices: parseChoices(choices), roll: args.roll, gmFear: fear.fear, lastRollWithHope: false });
-      // "into Melee range with one or more targets": the picked target must be one the Firbolg sees there.
+      // dcm-bxp.99.19.55 (2): every enemy in Melee range of the square, whatever the Firbolg's facing or sight.
+      const built = await buildRun(ctx, { campaign, character, sheet, scene: sightless(scene), pick, targetTokenIds: [], choices: parseChoices(choices), roll: args.roll, gmFear: fear.fear, lastRollWithHope: false });
+      // "into Melee range with one or more targets": the picked target is one of them.
       if (!built.targets.some((t) => t.tokenId === target._id) || built.outOfRange.length > 0) throw appError("COMBAT_TARGET_INVALID");
       const kept = await keptDice(ctx, featureSlot(req));
       const outcome = runCard(built, pick, kept ? replaying(kept, rollDie) : rollDie);

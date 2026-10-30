@@ -8,6 +8,9 @@
  *   more targets, you can mark a Stress to deal 1d12 physical damage to all targets within Melee range." User 2026-10-30:
  *   the player picks the Melee square next to the target before rolling; on a success the server moves the token there,
  *   on a failure there is no move.
+ * - User 2026-10-30 (dcm-bxp.99.19.55): (1) the rolled 1d4 stays valid until it is used or the scene ends (no time
+ *   limit); (2) Charge's Stress deals the 1d12 to every enemy within Melee range of the landing square regardless of
+ *   facing or sight; a wall on the straight way refuses a player's Charge, the GM passes.
  * - CB p.103 (Defined Ranges): Melee 1 square, Close 6, Far 12 squares.
  * - Damage (CB p.90): incoming at or above the Major threshold and below Severe marks 2 HP.
  * - Server dice: `rollDie` maps a random word w to w % sides + 1 (convex/lib/dice.ts); the duality roll draws the Hope Die
@@ -20,6 +23,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
+import { CELL_TILE_ROWS, CELL_UNPAINTED, codeOfTerrain, indexInTile, tileOf } from "../../src/components/combat-map/map-view/cells";
 import { allowWorldEmails, buildWorld } from "./authz/world";
 import { key } from "./helpers";
 
@@ -107,7 +111,14 @@ async function arena(patchAsh: (s: CharacterSheet) => Partial<CharacterSheet>) {
     });
   const requests = () => t.run((ctx) => ctx.db.query("combatRequests").collect());
   const token = (id: Id<"combatTokens">) => t.run(async (ctx) => (await ctx.db.get("combatTokens", id))!);
-  return { w, t, campaignId, mapId, gm, player, ...ids, pcToken, enemy, sheetOf, editSheet, requests, token };
+  /** Paints one wall square (the "terrain" layer tile of a 30-wide map). */
+  const wall = (x: number, y: number) =>
+    t.run(async (ctx) => {
+      const cells = CELL_UNPAINTED.repeat(CELL_TILE_ROWS * 30).split("");
+      cells[indexInTile(x, y, 30)] = codeOfTerrain("wall");
+      await ctx.db.insert("combatMapCells", { mapId, layer: "terrain", tile: tileOf(y), cells: cells.join("") });
+    });
+  return { w, t, campaignId, mapId, gm, player, ...ids, pcToken, enemy, sheetOf, editSheet, requests, token, wall };
 }
 
 // ---------------------------------------------------------------- Warden's Protection
@@ -129,8 +140,9 @@ describe("Warden's Protection rolls its 1d4 before the pick (dcm-d95)", () => {
     const use = (targetTokenIds: Id<"combatTokens">[]) =>
       a.player.mutation(api.combatFeatures.useFeature, { campaignId: a.campaignId, characterId: a.w.characterA, mapId: a.mapId, featureId: WARDEN, targetTokenIds, choices: [], idempotencyKey: key() });
     const roll = () => a.player.mutation(api.featurePrompts.rollCount, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: WARDEN, idempotencyKey: key() });
-    const stored = () => a.player.query(api.featurePrompts.targetCount, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: WARDEN });
-    return { ...a, third, bryn, cara, use, roll, stored };
+    const view = () => a.player.query(api.featurePrompts.targetCount, { campaignId: a.campaignId, characterId: a.w.characterA, featureId: WARDEN, mapId: a.mapId });
+    const stored = async () => (await view()).roll;
+    return { ...a, third, bryn, cara, use, roll, view, stored };
   }
 
   it("refuses the use before the count is rolled, and nothing is paid", async () => {
@@ -144,7 +156,14 @@ describe("Warden's Protection rolls its 1d4 before the pick (dcm-d95)", () => {
     serverDice(1);
     const rolled = await a.roll();
     expect(rolled.count).toBe(1);
-    expect(await a.stored()).toMatchObject({ requestId: rolled.requestId, count: 1 });
+    expect(await a.stored()).toEqual({ requestId: rolled.requestId, count: 1 });
+    // The drawer's ally list: Bryn (2 squares) and Cara (2) are within Close range of Ash.
+    expect((await a.view()).allies).toEqual(
+      expect.arrayContaining([
+        { tokenId: a.bryn, name: expect.any(String), inRange: true },
+        { tokenId: a.cara, name: expect.any(String), inRange: true },
+      ]),
+    );
     expect(await codeOf(a.roll())).toBe("INVALID");
     // Two allies against a roll of 1: refused, nothing written, the roll still stands.
     expect(await codeOf(a.use([a.bryn, a.cara]))).toBe("COMBAT_TARGET_INVALID");
@@ -168,20 +187,37 @@ describe("Warden's Protection rolls its 1d4 before the pick (dcm-d95)", () => {
     expect(await codeOf(a.roll())).toBe("FEATURE_EXHAUSTED");
   });
 
-  it("an expired roll is refused by the use and declined by the next roll", async () => {
+  it("the roll holds with no time limit until the scene ends; undoing the scene end brings it back", async () => {
     const a = await wardens();
     serverDice(3);
     const old = await a.roll();
-    await a.t.run(async (ctx) => {
-      const row = (await ctx.db.get("combatRequests", old.requestId))!;
-      if (row.payload.kind === "targetCount") await ctx.db.patch("combatRequests", row._id, { payload: { ...row.payload, expiresAt: Date.now() - 1 } });
-    });
+    // Hours later (no TTL): still there.
+    await a.t.run((ctx) => ctx.db.patch("combatRequests", old.requestId, { createdAt: Date.now() - 5 * 60 * 60_000 }));
+    expect(await a.stored()).toEqual({ requestId: old.requestId, count: 3 });
+    // The GM ends the scene: the roll is gone, the use refused with nothing paid.
+    const ended = await a.gm.mutation(api.combatScenes.end, { campaignId: a.campaignId, idempotencyKey: key() });
     expect(await a.stored()).toBeNull();
     expect(await codeOf(a.use([a.bryn]))).toBe("COMBAT_TARGET_INVALID");
+    expect((await a.sheetOf(a.w.characterA)).hope).toBe(4);
+    // Undoing the scene end puts the roll back.
+    if (ended.entryId === null) throw new Error("the scene end wrote no row");
+    await a.gm.mutation(api.actionLog.undo, { entryId: ended.entryId, idempotencyKey: key() });
+    expect(await a.stored()).toEqual({ requestId: old.requestId, count: 3 });
+    // A new scene end, then a new roll: the stale row is declined.
+    await a.gm.mutation(api.combatScenes.end, { campaignId: a.campaignId, idempotencyKey: key() });
     serverDice(1);
     const fresh = await a.roll();
     expect(fresh.count).toBe(1);
     expect((await a.requests()).find((r) => r._id === old.requestId)).toMatchObject({ status: "declined" });
+  });
+
+  it("the use leaves no scene mark on the sheet", async () => {
+    const a = await wardens();
+    serverDice(1);
+    await a.roll();
+    expect((await a.sheetOf(a.w.characterA)).featureUses.some((u) => u.key.startsWith("rolledCount:"))).toBe(true);
+    await a.use([a.bryn]);
+    expect((await a.sheetOf(a.w.characterA)).featureUses.some((u) => u.key.startsWith("rolledCount:"))).toBe(false);
   });
 
   it("the GM rolls and uses it for the player's character; a non-rolled-first feature has no count", async () => {
@@ -262,6 +298,51 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
     const near = await a.enemy(6, 10);
     expect(await codeOf(a.charge({ targetTokenId: near.tokenId, square: { x: 6, y: 11 } }))).toBe("INVALID");
     expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
+  });
+
+  it("hits every enemy in Melee range of the square, also one behind the token", async () => {
+    const a = await firbolg();
+    // A third Bear south-west of the square (10, 11): behind the token, which faces east after the run.
+    const behind = await a.enemy(10, 11);
+    serverDice(9, 3, 7, 1);
+    const result = await a.charge();
+    if (result.status !== "charged") throw new Error("not charged");
+    expect(new Set(result.use.targets.map((t) => t.tokenId))).toEqual(new Set([a.bear.tokenId, a.other.tokenId, behind.tokenId]));
+    expect((await a.instance(behind.instanceId)).hp).toBe(2);
+  });
+
+  it("a wall on the way refuses the player's Charge; the GM charges through", async () => {
+    const a = await firbolg();
+    await a.wall(6, 10);
+    expect(await codeOf(a.charge())).toBe("MOVE_BLOCKED");
+    expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
+    serverDice(9, 3, 7, 1);
+    const result = await a.gm.mutation(api.featurePrompts.charge, {
+      campaignId: a.campaignId,
+      characterId: a.w.characterA,
+      mapId: a.mapId,
+      targetTokenId: a.bear.tokenId,
+      square: { x: 11, y: 10 },
+      stress: false,
+      roll: { difficulty: 12 },
+      idempotencyKey: key(),
+    });
+    expect(result).toMatchObject({ status: "charged", moved: true });
+    expect(await a.token(a.ash)).toMatchObject({ x: 11, y: 10 });
+  });
+
+  it("the drawer's options: the enemies at Far range with their free squares in Melee range", async () => {
+    const a = await firbolg();
+    await a.enemy(6, 10); // Close range: not a Charge target
+    const options = await a.player.query(api.featurePrompts.chargeOptions, { campaignId: a.campaignId, characterId: a.w.characterA, mapId: a.mapId });
+    expect(options.map((o) => o.tokenId).sort()).toEqual([a.bear.tokenId, a.other.tokenId].sort());
+    const bear = options.find((o) => o.tokenId === a.bear.tokenId)!;
+    expect(bear).toMatchObject({ name: "Bear", band: "far" });
+    expect(bear.squares).toContainEqual({ x: 11, y: 10, label: "west" });
+    expect(bear.squares).toContainEqual({ x: 13, y: 9, label: "north-east" });
+    // (12, 11) holds the other Bear; Bear's 8 neighbours less that one.
+    expect(bear.squares.some((q) => q.x === 12 && q.y === 11)).toBe(false);
+    expect(bear.squares).toHaveLength(7);
   });
 
   it("useFeature refuses Charge: it needs its square", async () => {

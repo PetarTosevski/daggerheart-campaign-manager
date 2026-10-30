@@ -76,6 +76,8 @@ const entries: Entry[] = [
     okCodes: ["FEATURE_NOT_OWNED"],
   },
   { fn: api.featurePrompts.targetCount, access: "view", args: (w) => ({ characterId: w.characterA, featureId: WARDEN }), expect: NOT_THEIRS },
+  // B1: the drawer's Charge pick (the board's map is not live, so an allowed row reads an empty list).
+  { fn: api.featurePrompts.chargeOptions, access: "view", setup: board, args: (w) => ({ characterId: w.characterA, mapId: w.ids.mapId as Id<"combatMaps"> }), expect: NOT_THEIRS },
   {
     fn: api.featurePrompts.charge,
     access: "view",

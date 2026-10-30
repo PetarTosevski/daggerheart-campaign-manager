@@ -4,9 +4,13 @@
  *
  * - A target count rolled before the pick (`rolledFirst`; CB p.31 Warden's Protection: "clear 2 Hit Points on 1d4 allies
  *   within Close range"; user 2026-10-29, dcm-d95): the server rolls it and stores it as an open `targetCount`
- *   `combatRequests` row; the use takes at most that many targets and resolves the row. One open roll per character, feature
- *   and use until it is used or expires (`TARGET_COUNT_TTL_MS`); an expired row is declined by the next roll. Closed rows
- *   are swept by `expireCombatRequests` (convex/cleanup.ts, rule 8).
+ *   `combatRequests` row; the use takes at most that many targets and resolves the row. User 2026-10-30
+ *   (dcm-bxp.99.19.55 (1)): the roll stays valid until it is used or the scene ends, with no time limit. There is no
+ *   scene record to point at, so the roll's scene is a mark on the roller's sheet (`countMark`: a `featureUses` entry
+ *   until "scene"); every scene end (End scene, the encounter's end, the session's end) drops it through
+ *   `expire(sheet, "scene" | "session")`, and the roll is checked lazily against it (`liveTargetCount`). Undoing the scene
+ *   end puts the mark back, and with it the roll. One open roll per character, feature and use; a stale one (its mark
+ *   gone) is declined by the next roll. Closed rows are swept by `expireCombatRequests` (convex/cleanup.ts, rule 8).
  * - A move the server makes (`intoMelee`; CB p.59 Charge): see convex/featurePrompts.ts `charge`; the square left is an
  *   open `serverMove` row (convex/lib/combatRequests.ts `openServerMove`) that undo reads.
  *
@@ -25,12 +29,35 @@ import type { CharacterSheet } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { cardActor } from "./cardRunner";
+import { saveSheet } from "./characterSheet";
 import { closeRequest, openRequests } from "./combatRequests";
 import { rollDie } from "./dice";
 import type { AllyRollPayload } from "./validators/combatRequests";
 
-/** How long a rolled target count waits for its use (then the next roll declines it). */
-export const TARGET_COUNT_TTL_MS = 30 * 60_000;
+/**
+ * The payload's `expiresAt` (a required field of `targetCountPayloadValidator`, owned by another lane) no longer limits
+ * the roll: it is written as this "never" value and not read (dcm-bxp.99.19.55 (1)).
+ */
+export const TARGET_COUNT_NO_EXPIRY = Number.MAX_SAFE_INTEGER;
+
+/** The `featureUses` key prefix that ties an open rolled count to the scene it was rolled in (until "scene"). */
+const COUNT_MARK = "rolledCount:";
+
+export function countMark(requestId: Id<"combatRequests">): string {
+  return `${COUNT_MARK}${requestId}`;
+}
+
+/** The sheet without the scene marks of rolled counts, except those in `keep`. The same object when nothing goes. */
+export function withoutCountMarks<S extends Pick<CharacterSheet, "featureUses">>(sheet: S, keep: ReadonlySet<string> = new Set()): S {
+  const kept = sheet.featureUses.filter((u) => !u.key.startsWith(COUNT_MARK) || keep.has(u.key));
+  return kept.length === sheet.featureUses.length ? sheet : { ...sheet, featureUses: kept };
+}
+
+/** Whether the roll's scene still runs: its mark is on the roller's sheet. */
+function sameScene(row: CountRow, sheet: Pick<CharacterSheet, "featureUses">): boolean {
+  const key = countMark(row._id);
+  return sheet.featureUses.some((u) => u.key === key);
+}
 
 /** Whether the use's target count is rolled by the server before the pick (`upTo.rolledFirst`, DA0). */
 export function isRolledFirst(use: CardUse): boolean {
@@ -49,7 +76,7 @@ function isCountRow(row: Doc<"combatRequests">): row is CountRow {
   return row.payload.kind === "targetCount";
 }
 
-/** The open rolled counts of this character's feature use, newest first (expired ones included). */
+/** The open rolled counts of this character's feature use, newest first (stale ones included). */
 async function countRows(ctx: QueryCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, featureId: string, useId: string): Promise<CountRow[]> {
   const rows = (await openRequests(ctx, campaignId)).filter(isCountRow);
   return rows
@@ -57,9 +84,16 @@ async function countRows(ctx: QueryCtx, campaignId: Id<"campaigns">, characterId
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
-/** The open, unexpired rolled count of this character's feature use, or null. */
-export async function liveTargetCount(ctx: QueryCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, featureId: string, useId: string, now = Date.now()): Promise<CountRow | null> {
-  return (await countRows(ctx, campaignId, characterId, featureId, useId)).find((r) => r.payload.expiresAt > now) ?? null;
+/** The open rolled count of this character's feature use whose scene still runs (`sheet`: the roller's), or null. */
+export async function liveTargetCount(
+  ctx: QueryCtx,
+  campaignId: Id<"campaigns">,
+  characterId: Id<"characters">,
+  featureId: string,
+  useId: string,
+  sheet: Pick<CharacterSheet, "featureUses">,
+): Promise<CountRow | null> {
+  return (await countRows(ctx, campaignId, characterId, featureId, useId)).find((r) => sameScene(r, sheet)) ?? null;
 }
 
 /** The feature's `rolledFirst` use (default its first action use), or INVALID. FEATURE_NOT_COMBAT without an entry. */
@@ -72,49 +106,53 @@ export function rolledFirstUse(featureId: string, useId: string | undefined): Ca
 }
 
 /**
- * Rolls the count of a `rolledFirst` use and stores it (open `targetCount` row). INVALID while an unexpired roll of the
- * same use is open; an expired one is declined here. The caller has checked ownership, the limit and access.
+ * Rolls the count of a `rolledFirst` use and stores it (open `targetCount` row) with its scene mark on the sheet. INVALID
+ * while a roll of the same use is open in this scene; a stale one is declined here. The caller has checked ownership,
+ * the limit and access. The mark is not a feed row: the roll itself writes none (its result shows in the drawer).
  */
 export async function rollAndStoreCount(
   ctx: MutationCtx,
   input: { campaignId: Id<"campaigns">; character: Doc<"characters">; sheet: CharacterSheet; featureId: string; use: CardUse; userId: Id<"users"> },
-): Promise<{ requestId: Id<"combatRequests">; count: number; expiresAt: number }> {
-  const now = Date.now();
+): Promise<{ requestId: Id<"combatRequests">; count: number }> {
   for (const row of await countRows(ctx, input.campaignId, input.character._id, input.featureId, input.use.id)) {
-    if (row.payload.expiresAt > now) throw appError("INVALID", "You already rolled for this use: use it first.");
+    if (sameScene(row, input.sheet)) throw appError("INVALID", "You already rolled for this use: use it first.");
     await closeRequest(ctx, row._id, "declined", input.userId);
   }
   const actor = cardActor(input.character._id, input.sheet, `feat:${input.featureId}`, undefined);
   const count = rollTargetCount(input.use, actor, rollDie);
   if (count === null) throw appError("INVALID", "That feature has no target count to roll first.");
-  const expiresAt = now + TARGET_COUNT_TTL_MS;
   const requestId = await ctx.db.insert("combatRequests", {
     campaignId: input.campaignId,
     kind: "targetCount",
     status: "open",
     createdBy: input.userId,
-    createdAt: now,
+    createdAt: Date.now(),
     responses: [],
-    payload: { schemaVersion: 1, kind: "targetCount", characterId: input.character._id, featureId: input.featureId, useId: input.use.id, count, expiresAt },
+    payload: { schemaVersion: 1, kind: "targetCount", characterId: input.character._id, featureId: input.featureId, useId: input.use.id, count, expiresAt: TARGET_COUNT_NO_EXPIRY },
   });
-  return { requestId, count, expiresAt };
+  // Keep the marks of the character's other open rolls (another rolled-first feature); drop stale ones.
+  const open = (await openRequests(ctx, input.campaignId)).filter((r): r is CountRow => isCountRow(r) && r.payload.characterId === input.character._id);
+  const kept = withoutCountMarks(input.sheet, new Set(open.map((r) => countMark(r._id))));
+  await saveSheet(ctx, input.character._id, { ...kept, featureUses: [...kept.featureUses, { key: countMark(requestId), until: "scene" }] });
+  return { requestId, count };
 }
 
 /**
  * The use of a `rolledFirst` feature takes its stored roll (user 2026-10-29, dcm-d95): COMBAT_TARGET_INVALID without an
- * open, unexpired roll or with more targets than it shows; otherwise the row is resolved and the count returned. Null for
- * any other use. Called before anything is written, so a refusal changes nothing.
+ * open roll of this scene or with more targets than it shows; otherwise the row is resolved and returned (the caller
+ * drops the row's scene mark from the sheet it writes). Null for any other use. Called before anything is written, so
+ * a refusal changes nothing.
  */
 export async function spendTargetCount(
   ctx: MutationCtx,
-  input: { campaignId: Id<"campaigns">; characterId: Id<"characters">; featureId: string; use: CardUse; targets: number; by: Id<"users"> },
-): Promise<number | null> {
+  input: { campaignId: Id<"campaigns">; characterId: Id<"characters">; sheet: CharacterSheet; featureId: string; use: CardUse; targets: number; by: Id<"users"> },
+): Promise<{ count: number; requestId: Id<"combatRequests"> } | null> {
   if (!isRolledFirst(input.use)) return null;
-  const row = await liveTargetCount(ctx, input.campaignId, input.characterId, input.featureId, input.use.id);
+  const row = await liveTargetCount(ctx, input.campaignId, input.characterId, input.featureId, input.use.id, input.sheet);
   if (row === null) throw appError("COMBAT_TARGET_INVALID", "Roll the number of targets first.");
   if (input.targets > row.payload.count) throw appError("COMBAT_TARGET_INVALID", `At most ${row.payload.count} target(s).`);
   await closeRequest(ctx, row._id, "resolved", input.by);
-  return row.payload.count;
+  return { count: row.payload.count, requestId: row._id };
 }
 
 // ---------------------------------------------------------------- a use rolled by an ally (Cannonball, DA13)

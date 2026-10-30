@@ -121,7 +121,7 @@ const area: Area = {
     { fn: api.characters.get, access: "own", expect: { outsider: "null" } },
   ],
   exempt: {
-    "auth:signIn": "Convex Auth's sign-in action: public by design; covered by tests/e2e/auth.spec.ts and create-or-update-user.test.ts",
+    "auth:signIn": "Convex Auth's sign-in action: public by design; covered by tests/e2e/auth.spec.ts, tests/e2e/signup.spec.ts and create-or-update-user.test.ts",
     "auth:signOut": "Convex Auth's sign-out action: public by design and acts only on the caller's own session; covered by tests/e2e/auth.spec.ts",
     "auth:isAuthenticated": "Convex Auth's session probe: public by design, returns only whether the caller is signed in",
   },
