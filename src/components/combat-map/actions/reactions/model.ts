@@ -30,7 +30,10 @@ export type PromptMode =
   | "ally"
   /** SD4 (Q2): before the adversary's roll: the before-roll features with Use, and Pass. */
   | "preRoll"
-  /** SD4: the hit PC answered armor; a feature that now fits (Thick Skin, CB p.107 order) with Use, and Done. */
+  /**
+   * The hit PC marked an Armor Slot (or, DA8, used a slot substitute such as Stable); every card or feature that still
+   * fits the hit (DA8, user 2026-10-30, CB p.107: in the order the player picks) with Use, and Done.
+   */
   | "afterArmor"
   /** Nothing owed: "Bandit hit Mira", waiting for the others (Q14). */
   | "waiting";
@@ -123,12 +126,15 @@ export type FeaturePicks = {
   situations: Record<string, boolean>;
 };
 
-/** A feature's controls at their defaults: the smallest counts, the first option of each pick, nothing optional. */
+/**
+ * A feature's controls at their defaults: the smallest counts, the first option of each pick, optional steps off except
+ * the `defaultOn` ones (DA8: Draining Bane's "Clear a Stress" is ticked, user answer 2026-10-29).
+ */
 export function defaultPicks(feature: FeatureView): FeaturePicks {
   return {
     numbers: Object.fromEntries(feature.numbers.map((n) => [n.id, Math.max(1, n.min)])),
     options: Object.fromEntries(feature.options.flatMap((o) => (o.options[0] ? [[o.id, o.options[0].id]] : []))),
-    optionals: {},
+    optionals: Object.fromEntries(feature.optionals.flatMap((o) => (o.defaultOn ? [[o.id, true]] : []))),
     situations: {},
   };
 }
@@ -150,19 +156,19 @@ export function featureChoice(feature: FeatureView, picks: FeaturePicks): HitCho
 }
 
 /**
- * The optimistic `pending` after an answer (CL4): an ally's Use / Pass or the target's armor answer ends what they owe;
- * a card the target plays first (Shrug It Off) only leaves the list of cards, the armor question stays. A redirect
- * (I Am Your Shield) is the server's to show, so the ally's card answer just stops awaiting.
+ * The optimistic `pending` after an answer (CL4): an ally's Use / Pass ends what they owe; a card or feature the target
+ * plays leaves its list, the armor question stays until answered; a marked slot (DA8) leaves the cards and features
+ * still listed (the server then lists what fits now) or, with none, ends what they owe; Don't / OK and Done end it. A
+ * redirect (I Am Your Shield) is the server's to show, so the ally's card answer just stops awaiting.
  */
 export function afterAnswer(views: readonly HitView[], requestId: HitView["requestId"], choice: HitChoice): HitView[] {
   return views.map((v) => {
     if (v.requestId !== requestId) return v;
-    if (choice.kind === "card" && v.role === "target") return { ...v, cardIds: v.cardIds.filter((id) => id !== choice.cardId) };
-    // SD4: the target's feature answer (Iron Will) leaves the armor question; after armor it may be the last thing owed.
-    if (choice.kind === "feature" && v.role === "target" && !v.preRoll && !v.afterHit) {
-      const features = (v.features ?? []).filter((f) => f.featureId !== choice.featureId);
-      return v.armorAnswered && features.length === 0 ? { ...v, features, awaiting: false } : { ...v, features };
-    }
-    return { ...v, awaiting: false };
+    if (v.role !== "target" || v.preRoll || v.afterHit || choice.kind === "pass" || choice.kind === "noArmor") return { ...v, awaiting: false };
+    const cardIds = choice.kind === "card" ? v.cardIds.filter((id) => id !== choice.cardId) : v.cardIds;
+    const features = choice.kind === "feature" ? (v.features ?? []).filter((f) => f.featureId !== choice.featureId) : (v.features ?? []);
+    const armorAnswered = v.armorAnswered === true || choice.kind === "armor";
+    const left = cardIds.length + features.length > 0;
+    return { ...v, cardIds, features, ...(armorAnswered ? { armorAnswered: true } : {}), awaiting: !armorAnswered || left };
   });
 }

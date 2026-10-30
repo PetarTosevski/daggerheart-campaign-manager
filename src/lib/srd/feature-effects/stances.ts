@@ -239,13 +239,15 @@ export const STANCE_EFFECTS: readonly FeatureEffect[] = [
   ]),
 
   // Stable (HF p.12): "You can spend a Focus instead of an Armor Slot to reduce damage." An Armor Slot reduces the
-  // severity by one threshold (CB p.114), so the Focus does that.
+  // severity by one threshold (CB p.114), so the Focus does that. User answer 2026-10-29 (dcm-bxp.99.19.9): the Focus
+  // replaces the hit's one Armor Slot: no slot is marked, never more than one step with the slot, usable without armor
+  // while the PC has Focus (`insteadOfArmorSlot`, DA0; the reaction window applies it, DA8).
   stance("stable", [
     {
       id: "main",
       activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
       costs: [focusCost(1)],
-      steps: [{ kind: "reduceSeverity", to: "self", steps: 1, note: "Spend a Focus instead of an Armor Slot to reduce the damage" }],
+      steps: [{ kind: "reduceSeverity", to: "self", steps: 1, insteadOfArmorSlot: true, note: "Spend a Focus instead of an Armor Slot to reduce the damage" }],
     },
   ]),
 

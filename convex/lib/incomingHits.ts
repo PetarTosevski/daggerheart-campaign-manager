@@ -37,14 +37,17 @@ import {
   afterHitAmount,
   afterHitFeatures,
   afterHitUses,
+  armorAnswered as armorAnsweredOf,
   armorPreview,
   awaiting as awaitingOf,
+  cardAnswers,
   chooseSteps,
   featureAnswers,
   featureUse,
   isComplete,
   openWindow,
   optionalSteps,
+  progress as progressOf,
   resolveNow,
   resolveWindow,
   respond as windowRespond,
@@ -174,6 +177,7 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
     // SD4: the feature ids ride after the card ids (told apart by their `<source>:` prefix; the validator is unchanged).
     cardIds: [...r.cardIds.slice(0, 10), ...(r.featureIds ?? []).slice(0, 10)],
   }));
+  const own = await ownAttack(ctx, input);
   const requestId = await ctx.db.insert("combatRequests", {
     campaignId: input.campaignId,
     ...(input.encounterId ? { encounterId: input.encounterId } : {}),
@@ -197,12 +201,28 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
       groupId: input.groupId,
       responders,
       ...(riders.length > 0 ? { riders: [...riders] } : {}),
+      ...(own.total !== undefined ? { attackTotal: own.total } : {}),
+      ...(own.disadvantage > 0 ? { attackDisadvantage: own.disadvantage } : {}),
     },
   });
   if (!isComplete({ ...state, responders: state.responders.slice(0, MAX_RESPONDERS) })) return { requestId, resolution: null };
   const row = await ctx.db.get("combatRequests", requestId);
   if (row === null || !isHitRow(row)) throw new Error("openIncomingHit: the row just written is gone.");
   return { requestId, resolution: await resolveIncomingHit(ctx, { row, by: input.createdBy, early: false, ...(input.hit.attackTotal !== undefined ? { attackTotal: input.hit.attackTotal } : {}) }) };
+}
+
+/**
+ * DA8 (DA1 follow-up 2): this target's own attack total and the disadvantage it adds to the roll, stored with the hit so
+ * a window rebuilt later compares Evasion answers with its own total and rerolls with its own disadvantage. The
+ * disadvantage is read from the totals (the action's GM row is written before its hits): a total below the whole roll's
+ * means the target kept the lower die for its own disadvantage (Sturdy, Harrowing; one source more than the roll).
+ * Two equal dice can't be told apart, so such a target rerolls with the whole roll's advantage / disadvantage.
+ */
+async function ownAttack(ctx: QueryCtx, input: OpenHitInput): Promise<{ total?: number; disadvantage: number }> {
+  const total = input.hit.attackTotal;
+  if (total === undefined || isPcAttacker(input.attacker)) return { disadvantage: 0 };
+  const record = await attackRollOf(ctx, { campaignId: input.campaignId, payload: { groupId: input.groupId } });
+  return { total, disadvantage: record !== null && total < record.total ? 1 : 0 };
 }
 
 /** The attacker as a creature when the hit opens (the feature triggers' `source`); null when it is gone. */
@@ -324,7 +344,7 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
     if (!ran.result.ok) throw featureRefusal(ran.result);
     assertPicked(ran.result.plan);
     const damage = ran.folds.some((f) => f.kind === "rerollDamage") ? await standardDamageOf(ctx, row, attacker) : null;
-    folds = resolveRerolls(ran.folds, `${row._id}:${index}:reroll`, isPcAttacker(row.payload.attacker) ? null : await attackRollOf(ctx, row), damage);
+    folds = resolveRerolls(ran.folds, `${row._id}:${index}:reroll`, isPcAttacker(row.payload.attacker) ? null : await attackRollOf(ctx, row), damage, { disadvantage: row.payload.attackDisadvantage ?? 0 });
     const plan = ran.result.plan;
     const spent = spentDiceChoice(plan);
     const stored: AnswerChoice = { kind: "feature", featureId: effect.featureId, useId: plan.useId, choices: [...choice.choices.filter((c) => c.id !== "spentDice"), ...(spent ? [spent] : [])] };
@@ -444,10 +464,11 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     // The attack's riders land on whoever took the hit (user answer 2026-10-22, AA2b), also when only its damage was
     // negated or reflected; a miss or full avoidance stops them (AA2c, user answer 2026-10-22).
     if (!res.missed && (p.riders?.length ?? 0) > 0) {
-      const landed = applyRiders(next, p.riders ?? [], res.conditionNegated);
+      // DA8: after Dark Aegis the conditions still land, any extra "mark HP" doesn't (user answer 2026-10-29).
+      const landed = applyRiders(next, p.riders ?? [], res.conditionNegated, res.hpRidersIgnored);
       next = landed.sheet;
       ridersApplied = landed.applied;
-      gm.push(`riders on ${targetName}: ${ridersApplied}${res.conditionNegated ? " (conditions avoided)" : ""}`);
+      gm.push(`riders on ${targetName}: ${ridersApplied}${res.conditionNegated ? " (conditions avoided)" : ""}${res.hpRidersIgnored ? " (no Hit Points from them)" : ""}`);
     }
     const hpMarked = Math.max(0, next.hp - sheet.hp);
     deathMove = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
@@ -630,6 +651,7 @@ export function runAfterHitFeature(
     choices: parsed.choices,
     options: parsed.options,
     optionals: parsed.optionals,
+    optionalsOff: parsed.optionalsOff,
     situations: parsed.situations,
     trigger: { amount: afterHitAmount(use, facts, taken), subject, ...(source ? { source } : {}) },
     rng: seededRng(seed),
@@ -748,7 +770,8 @@ export type FeatureView = {
   text: string;
   numbers: { id: string; label: string; min: number }[];
   options: { id: string; label: string; options: { id: string; label: string }[] }[];
-  optionals: { id: string; label: string }[];
+  /** DA8: `defaultOn`: ticked unless the player unticks it (Draining Bane's "Clear a Stress", dcm-bxp.99.19.15). */
+  optionals: { id: string; label: string; defaultOn?: boolean }[];
   situations: string[];
 };
 
@@ -763,7 +786,7 @@ export function featureView(effect: FeatureEffect, useId: string, sheet: Charact
     text: held?.text ?? "",
     numbers: (use?.choices ?? []).map((c) => ({ id: c.id, label: c.label, min: c.min })),
     options: use ? chooseSteps(use).map((c) => ({ id: c.id, label: c.label, options: c.options.map((o) => ({ id: o.id, label: o.label })) })) : [],
-    optionals: use ? optionalSteps(use).map((o) => ({ id: o.id, label: o.label })) : [],
+    optionals: use ? optionalSteps(use).map((o) => ({ id: o.id, label: o.label, ...(o.defaultOn ? { defaultOn: true } : {}) })) : [],
     situations: (use?.requires ?? []).flatMap((r) => (r.kind === "situation" && r.check === undefined ? [r.text] : [])),
   };
 }
@@ -838,7 +861,10 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
   // AA2b: a card this character already played in this window isn't offered again (I Am Your Shield after its use).
   const played = new Set(state.responses.flatMap((r) => (r.characterId === characterId && r.choice.kind === "card" ? [r.choice.cardId] : [])));
   const redirected = state.targetId !== state.originalTargetId;
-  const armorAnswered = state.responses.some((r) => r.characterId === characterId && (r.choice.kind === "armor" || r.choice.kind === "noArmor" || r.choice.kind === "pass"));
+  // DA8: a slot substitute (Stable, Celestial Wings) is the armor answer too.
+  const armorAnswered = isTarget && armorAnsweredOf(state, characterId);
+  // DA8: the hit PC's cards fit the hit as it is now (before or after the armor answer, CB p.107).
+  const cardIds = isTarget ? cardAnswers(state, characterId) : armorAnswered ? [] : (responder?.cardIds ?? []).filter((id) => !played.has(id));
   const me = members.find((m) => m.character._id === characterId);
   const pc = party.find((x) => x.id === characterId);
   const hopeAndFear = me ? await hopeAndFearOf(ctx, row.campaignId) : true;
@@ -856,13 +882,18 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
     targetName: target?.sheet.name ?? "Unknown",
     role: isTarget ? "target" : "ally",
     awaiting,
-    cardIds: armorAnswered ? [] : (responder?.cardIds ?? []).filter((id) => !played.has(id)),
+    cardIds,
     createdAt: row.createdAt,
     ...(redirected ? { originalTargetName: members.find((m) => m.character._id === state.originalTargetId)?.sheet.name ?? "Unknown" } : {}),
     ...(features.length > 0 ? { features } : {}),
     ...(isTarget && armorAnswered ? { armorAnswered: true } : {}),
   };
   const defense = party.find((p) => p.id === characterId);
+  if (isTarget && defense && armorAnswered) {
+    // DA8: after the armor answer the hit PC sees the hit as the answers so far left it (Q14: their own numbers only).
+    const now = progressOf(state, defense);
+    return { ...view, damage: now.amount, severity: now.severity, direct: row.payload.direct, maxSlots: 0, armorPreview: [{ slots: 0, severity: now.severity, hp: now.hp }] };
+  }
   if (isTarget && defense) {
     const prompt = targetPrompt(state, defense);
     const extra = prompt.maxSlots > 1 ? ("any" as const) : 0;

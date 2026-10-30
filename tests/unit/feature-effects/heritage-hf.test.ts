@@ -116,11 +116,15 @@ describe("Hope & Fear ancestries", () => {
   it("Celestial Wings (HF p.19): while flying (Q16), once per scene (Q7), a Hope instead of marking an Armor Slot", () => {
     const flying = actor({ facts: { flying: true } });
     const p = plan("ancestry:aetheris:celestial-wings", undefined, [], { actor: flying });
-    expect(folds(p).map((f) => f.step)).toEqual([expect.objectContaining({ kind: "convertMarks", from: "armor", into: "hope" })]);
+    // User 2026-10-29 / 2026-10-30 (dcm-bxp.99.19.30): on any hit while flying the Hope lowers the severity by one; it is
+    // the hit's one armor reduction (Wings OR a real Armor Slot, never both).
+    expect(folds(p).map((f) => f.step)).toEqual([expect.objectContaining({ kind: "reduceSeverity", steps: 1, insteadOfArmorSlot: true })]);
+    expect(p.actor.after.hope).toBe(p.actor.before.hope - 1);
     expect(p.limit).toEqual({ key: "feat:ancestry:aetheris:celestial-wings", until: "scene", consumed: true });
     expect(featureAvailability({ ...sheet, featureUses: p.actor.featureUses }, effectOf("ancestry:aetheris:celestial-wings"))).toEqual({ state: "exhausted", until: "scene", label: "Back after the scene" });
     expect(use("ancestry:aetheris:celestial-wings", undefined, [], { actor: actor({ facts: { flying: false } }) })).toMatchObject({ ok: false, reason: "requirement" });
-    expect(effectOf("ancestry:aetheris:celestial-wings").uses[0]!.activation).toEqual({ kind: "reaction", trigger: { kind: "whenArmorSlotMarked", who: "self" } });
+    expect(effectOf("ancestry:aetheris:celestial-wings").uses[0]!.activation).toEqual({ kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } });
+    expect(use("ancestry:aetheris:celestial-wings", undefined, [], { actor: actor({ hope: 0, facts: { flying: true } }) })).toMatchObject({ ok: false, reason: "cost" });
   });
 
   it("Stoneskin (HF p.21): +1 Armor Score and +1 to both damage thresholds, always on", () => {

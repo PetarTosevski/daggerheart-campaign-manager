@@ -32,7 +32,7 @@ import type { Combatant } from "../combat-actions/damage";
 import { withinRange } from "../combat-actions/distance";
 import type { Rng } from "../dice/index";
 import type { FeatureUse } from "../../validation/characters";
-import { applyHitToPc, armorOptions, damageBeforeArmor, stepDown, type HitAdjustments, type PcDefense, type PcHit, type PcHitResult, type PcSeverity } from "./severity";
+import { applyHitToPc, armorOptions, damageBeforeArmor, hpForSeverity, stepDown, type HitAdjustments, type PcDefense, type PcHit, type PcHitResult, type PcSeverity } from "./severity";
 
 // ---------------------------------------------------------------- inputs
 
@@ -98,9 +98,18 @@ export type Fold =
   | { kind: "redirect"; to: string }
   | { kind: "reflect"; to: "attacker" | "picked"; targetIds: string[] }
   | { kind: "extraArmorSlots"; max: number | "any"; targetIds: string[] }
-  | { kind: "reduceSeverity"; steps: number; targetIds: string[] }
+  /**
+   * DA8: `insteadOfArmorSlot` (Stable, HF p.12; Celestial Wings, HF p.19; user answers 2026-10-29 / 2026-10-30): the step
+   * IS the hit's one armor reduction, paid with something else: no Armor Slot is marked with it, it never adds up with a
+   * real slot past one step (CB p.114 "you can only mark 1 Armor Slot"), and it needs no armor.
+   */
+  | { kind: "reduceSeverity"; steps: number; targetIds: string[]; insteadOfArmorSlot?: boolean }
   | { kind: "reduceDamage"; amount: number; targetIds: string[] }
-  | { kind: "negateDamage" }
+  /**
+   * DA8: `ignoreOnHitHp` (Dark Aegis, HF p.14; user answer 2026-10-29): the damage is zero, so it has no severity; the
+   * attack's other on-hit effects (conditions) still land, but any extra "mark HP" from them is ignored.
+   */
+  | { kind: "negateDamage"; ignoreOnHitHp?: boolean }
   | { kind: "negateAttack" }
   /** AA2b: the hit's condition riders don't land (Bold Presence). */
   | { kind: "negateCondition" }
@@ -215,13 +224,17 @@ function affordable(use: CardUse, pc: WindowPc): boolean {
   );
 }
 
-/** The loadout cards with a ready, affordable reaction use whose trigger fits (the responder's `cardIds`). */
-export function eligibleCards(pc: WindowPc, role: "target" | "ally", hit: WindowHit, severityBefore: PcSeverity, armorCapable: boolean): string[] {
+/**
+ * The loadout cards with a ready, affordable reaction use whose trigger fits (the responder's `cardIds`). DA8: `skip`
+ * leaves out uses the answers so far rule out (as `eligibleFeatures`).
+ */
+export function eligibleCards(pc: WindowPc, role: "target" | "ally", hit: WindowHit, severityBefore: PcSeverity, armorCapable: boolean, skip?: (use: CardUse) => boolean): string[] {
   const out: string[] = [];
   for (const card of pc.cards) {
     const fits = card.uses.some(
       (use) =>
         use.activation.kind === "reaction" &&
+        !skip?.(use) &&
         triggerFits(use.activation.trigger, role, pc, hit, severityBefore, armorCapable) &&
         (!use.limit || cardAvailability(pc, card.cardId, { useId: use.id, limit: use.limit }).state === "ready") &&
         affordable(use, pc),
@@ -278,13 +291,27 @@ export function featureReady(effect: FeatureEffect, use: CardUse, actor: ActorSt
   return result.ok || result.reason === "choice";
 }
 
-/** Whether a use's trigger has a severity filter (Thick Skin, Scales): the only answers left after the armor answer. */
-const severityGated = (trigger: Trigger) => (trigger.kind === "whenYouWouldTakeDamage" || trigger.kind === "whenYouTakeDamage") && trigger.severity !== undefined;
+/** Whether any step of a use matches, nested optional / choose steps included. */
+function anyStepOf(use: CardUse, test: (s: Step) => boolean): boolean {
+  const walk = (steps: readonly Step[]): boolean =>
+    steps.some((s) => test(s) || (s.kind === "optional" && walk(s.steps)) || (s.kind === "choose" && s.options.some((o) => walk(o.steps))));
+  return walk(use.steps);
+}
+
+/**
+ * DA8: a use whose step stands for the hit's one Armor Slot (Stable, HF p.12: "spend a Focus instead of an Armor Slot";
+ * Celestial Wings, HF p.19: "spend a Hope instead of marking an Armor Slot"; DA0's `insteadOfArmorSlot`).
+ */
+export const replacesArmorSlot = (use: CardUse) => anyStepOf(use, (s) => (s.kind === "reduceSeverity" || s.kind === "convertMarks") && s.insteadOfArmorSlot === true);
+
+/** DA8: a use that changes how many Armor Slots the hit allows (Iron Will, I Am Your Shield): moot once armor is answered. */
+const addsArmorSlots = (use: CardUse) => anyStepOf(use, (s) => s.kind === "extraArmorSlots");
 
 /**
  * The feature uses this PC may answer the hit with now (SD4): `reaction` uses whose trigger fits the hit's current state
  * (`severityNow`: the severity after the answers so far, CB p.107 "the player … can apply the effects in any order"),
- * ready and affordable. `afterArmor`: the target already answered armor, so only severity-gated answers are left.
+ * ready and affordable. DA8: `skip` leaves out uses the answers so far rule out (a second armor reduction, an extra slot
+ * after the armor answer); the severity-only filter after armor is gone (user 2026-10-30, dcm-bxp.99.19.50 (3)).
  */
 export function eligibleFeatures(
   pc: WindowPc,
@@ -293,14 +320,14 @@ export function eligibleFeatures(
   severityNow: PcSeverity,
   armorCapable: boolean,
   trigger: TriggerCreatures & { amount: number },
-  afterArmor = false,
+  skip?: (use: CardUse) => boolean,
 ): FeatureAnswer[] {
   if (!pc.actor) return [];
   const out: FeatureAnswer[] = [];
   for (const effect of pc.features ?? []) {
     for (const use of effect.uses) {
       if (use.activation.kind !== "reaction") continue;
-      if (afterArmor && !severityGated(use.activation.trigger)) continue;
+      if (skip?.(use)) continue;
       if (!triggerFits(use.activation.trigger, role, pc, hit, severityNow, armorCapable)) continue;
       if (!featureReady(effect, use, pc.actor, trigger)) continue;
       out.push({ featureId: effect.featureId, useId: use.id });
@@ -317,11 +344,56 @@ export interface HitProgress {
   amount: number;
   /** Severity against the target's thresholds after the damage changes, Armor Slots and severity steps so far. */
   severity: PcSeverity;
+  /** DA8: the Hit Points that severity marks now ("N fewer" answers counted; none when the damage is cancelled). */
+  hp: number;
+  /** The target answered armor: a slot, no slot, Pass, or (DA8) an answer that stands for the slot (Stable, Wings). */
   armorAnswered: boolean;
 }
 
 const applies = (targetIds: readonly string[], state: WindowState) =>
   targetIds.length === 0 || targetIds.includes(state.targetId) || targetIds.includes(state.originalTargetId);
+
+/** DA8: an answer whose folds stand for the current target's one Armor Slot (Stable, Celestial Wings). */
+function substitutes(r: WindowResponse, state: WindowState): boolean {
+  return (r.folds ?? []).some((f) => f.kind === "reduceSeverity" && f.insteadOfArmorSlot === true && applies(f.targetIds, state));
+}
+
+/** Whether `characterId` (the current target) gave the armor answer: armor, no armor, Pass, or (DA8) a slot substitute. */
+export function armorAnswered(state: WindowState, characterId: string): boolean {
+  return characterId === state.targetId && state.responses.some((r) => r.characterId === characterId && (isArmorAnswer(r.choice) || substitutes(r, state)));
+}
+
+/**
+ * DA8: the hit's one armor reduction is taken: the target marked a real Armor Slot or used an answer that stands for it
+ * ("Wings OR a real Armor Slot on a hit, never both", user 2026-10-30; Stable "the Armor Slot is NOT marked", 2026-10-29).
+ */
+function armorReductionTaken(state: WindowState): boolean {
+  return state.responses.some((r) => r.characterId === state.targetId && (r.choice.kind === "armor" || substitutes(r, state)));
+}
+
+/**
+ * Severity steps from the answers' folds: every plain step, plus at most one from slot substitutes (DA8: "never more
+ * than 1 step in total" with the slot, CB p.114).
+ */
+function severitySteps(folds: readonly Fold[], state: WindowState): number {
+  let plain = 0;
+  let instead = 0;
+  for (const f of folds) {
+    if (f.kind !== "reduceSeverity" || !applies(f.targetIds, state)) continue;
+    if (f.insteadOfArmorSlot) instead += f.steps;
+    else plain += f.steps;
+  }
+  return plain + Math.min(1, instead);
+}
+
+/**
+ * DA8: the uses the answers so far rule out for `role`: a second armor reduction (a slot substitute after the slot or
+ * another substitute, or any substitute on direct damage, CB p.99), an extra Armor Slot once the armor answer is in.
+ */
+function ruledOut(state: WindowState, role: "target" | "ally", armorIn: boolean): (use: CardUse) => boolean {
+  const taken = armorReductionTaken(state);
+  return (use) => (role === "target" && armorIn && addsArmorSlots(use)) || (replacesArmorSlot(use) && (role !== "target" || taken || state.hit.direct));
+}
 
 /** The damage after the answers so far: a rerolled damage replaces it (CB p.107), reductions come off it. */
 function amountNow(state: WindowState, folds: readonly Fold[]): number {
@@ -334,34 +406,69 @@ function amountNow(state: WindowState, folds: readonly Fold[]): number {
 /** The hit now for the current target (SD4): what the next answer's trigger reads. */
 export function progress(state: WindowState, target: PcDefense): HitProgress {
   const folds = state.responses.flatMap((r) => r.folds ?? []);
-  const amount = amountNow(state, folds);
-  const armorAnswer = state.responses.find((r) => r.characterId === state.targetId && isArmorAnswer(r.choice));
+  // DA8: a cancelled damage (Dark Aegis, a reflection) is zero: no severity, no Hit Points (user answer 2026-10-29).
+  const cancelled = folds.some((f) => f.kind === "negateDamage");
+  const amount = cancelled ? 0 : amountNow(state, folds);
+  const armorAnswer = state.responses.find((r) => r.characterId === state.targetId && r.choice.kind === "armor");
   const slots = armorAnswer?.choice.kind === "armor" ? Math.max(1, armorAnswer.choice.slots ?? 1) : 0;
-  const steps = folds.reduce((n, f) => n + (f.kind === "reduceSeverity" && applies(f.targetIds, state) ? f.steps : 0), 0);
-  const before = damageBeforeArmor(target, { ...state.hit, amount }).severity;
-  return { amount, severity: stepDown(stepDown(before, slots), steps), armorAnswered: armorAnswer !== undefined };
+  const before = cancelled ? "none" : damageBeforeArmor(target, { ...state.hit, amount }).severity;
+  const severity = stepDown(stepDown(before, slots), severitySteps(folds, state));
+  const delta = (state.hit.hpMarkedDelta ?? 0) + folds.reduce((n, f) => n + (f.kind === "hpMarked" && applies(f.targetIds, state) ? f.delta : 0), 0);
+  const base = hpForSeverity(severity);
+  return { amount, severity, hp: base > 0 ? Math.max(0, base + delta) : 0, armorAnswered: armorAnswered(state, state.targetId) };
+}
+
+/** Shared gate of `featureAnswers` / `cardAnswers`: who answers, in which role, with what played so far. */
+function answerScope(state: WindowState, characterId: string) {
+  const responder = state.responders.find((r) => r.characterId === characterId);
+  const pc = state.party?.find((p) => p.id === characterId);
+  const target = state.party?.find((p) => p.id === state.targetId);
+  if (!responder || !pc || !target || state.closedEarly || state.released.includes(characterId)) return null;
+  const mine = state.responses.filter((x) => x.characterId === characterId);
+  const role = characterId === state.targetId ? ("target" as const) : ("ally" as const);
+  // One answer per ally per hit, card or feature (combat-actions Q17; user 2026-10-30, dcm-bxp.99.19.48 (4)).
+  if (role === "ally" && mine.length > 0) return null;
+  // The target's Done (`pass`) or "Don't mark" (`noArmor`) ends their turn: nothing changed the hit, and every answer that
+  // fits it was offered next to that choice. After a marked slot or a slot substitute the turn goes on (DA8).
+  if (role === "target" && mine.some((x) => x.choice.kind === "pass" || x.choice.kind === "noArmor")) return null;
+  const now = progress(state, target);
+  const ruled = ruledOut(state, role, role === "target" && now.armorAnswered);
+  // DA8: damage cancelled or reduced to 0 (Dark Aegis; CB p.91 "If you ever reduce incoming damage to 0 or less") is no
+  // longer damage anyone "would take": those answers don't fit any more.
+  const skip = (use: CardUse) => ruled(use) || (now.amount <= 0 && use.activation.kind === "reaction" && (use.activation.trigger.kind === "whenYouWouldTakeDamage" || use.activation.trigger.kind === "whenAllyWouldTakeDamage"));
+  return { responder, pc, target, mine, role, now, skip, hit: { ...state.hit, amount: now.amount } };
 }
 
 /**
  * The feature uses `characterId` may still answer with (SD4): eligible now and not played yet in this window. Only a
- * responder listed with that feature, still owed an answer (or the target after armor, for severity-gated answers).
+ * responder listed with that feature and still owed an answer. DA8 (user 2026-10-30, CB p.107 "the player … can apply
+ * the effects in any order"): after the armor answer every ready feature that still fits the hit stays offered, until
+ * the target's Done (`pass`); a slot substitute (Stable, Celestial Wings) only while no armor reduction is taken.
  */
 export function featureAnswers(state: WindowState, characterId: string): FeatureAnswer[] {
-  const responder = state.responders.find((r) => r.characterId === characterId);
-  const pc = state.party?.find((p) => p.id === characterId);
-  const target = state.party?.find((p) => p.id === state.targetId);
-  if (!responder || !pc || !target || (responder.featureIds ?? []).length === 0 || state.closedEarly || state.released.includes(characterId)) return [];
-  const mine = state.responses.filter((x) => x.characterId === characterId);
-  const role = characterId === state.targetId ? "target" : "ally";
-  if (role === "ally" && mine.length > 0) return [];
-  if (role === "target" && mine.some((x) => x.choice.kind === "pass" || x.choice.kind === "noArmor")) return [];
-  const now = progress(state, target);
+  const scope = answerScope(state, characterId);
+  if (!scope || (scope.responder.featureIds ?? []).length === 0) return [];
+  const { responder, pc, target, mine, role, now, skip, hit } = scope;
   const played = new Set(mine.flatMap((x) => (x.choice.kind === "feature" ? [x.choice.featureId] : [])));
-  const hit = { ...state.hit, amount: now.amount };
   const creatures: TriggerCreatures = { ...(target.actor ? { subject: target.actor } : {}), ...(state.attacker ? { source: state.attacker } : {}) };
-  return eligibleFeatures(pc, role, hit, now.severity, state.armorCapable[characterId] ?? false, { amount: now.amount, ...creatures }, role === "target" && now.armorAnswered).filter(
+  return eligibleFeatures(pc, role, hit, now.severity, state.armorCapable[characterId] ?? false, { amount: now.amount, ...creatures }, skip).filter(
     (f) => (responder.featureIds ?? []).includes(f.featureId) && !played.has(f.featureId),
   );
+}
+
+/**
+ * DA8: the reaction cards the hit PC may still play: listed for them, not played yet, and fitting the hit as the answers
+ * so far left it (before or after the armor answer, CB p.107). An ally's cards are their `cardIds` until they answer.
+ */
+export function cardAnswers(state: WindowState, characterId: string): string[] {
+  const scope = answerScope(state, characterId);
+  if (!scope) return [];
+  const { responder, pc, mine, role, now, skip, hit } = scope;
+  const played = new Set(mine.flatMap((x) => (x.choice.kind === "card" ? [x.choice.cardId] : [])));
+  const listed = responder.cardIds.filter((id) => !played.has(id));
+  if (role === "ally") return listed;
+  const fits = eligibleCards(pc, "target", hit, now.severity, state.armorCapable[characterId] ?? false, skip);
+  return listed.filter((id) => fits.includes(id));
 }
 
 // ---------------------------------------------------------------- the machine
@@ -377,16 +484,21 @@ export interface OpenInput {
 
 const SEVERITIES: readonly PcSeverity[] = ["severe", "major", "minor"];
 
-/** The feature ids a PC may answer this hit with at some point (SD4): now, or (the target) after the armor answer. */
-function featureIdsAtOpen(pc: WindowPc, role: "target" | "ally", hit: WindowHit, severity: PcSeverity, armorCapable: boolean, creatures: TriggerCreatures): string[] {
-  const ids = new Set(eligibleFeatures(pc, role, hit, severity, armorCapable, { amount: hit.amount, ...creatures }).map((f) => f.featureId));
-  if (role === "target" && armorCapable) {
-    // Armor (or a severity step) lowers the severity: Thick Skin on a Major hit marked down to Minor (CB p.107 order).
+/**
+ * The feature ids and card ids a PC may answer this hit with at some point (SD4): now, or (the target) once an answer
+ * lowered the severity: Thick Skin on a Major hit the slot marked down to Minor (CB p.107 order). DA8: also without
+ * armor, when an answer that fits now can lower it (Stable's Focus, a halving, a card's step).
+ */
+function answersAtOpen(pc: WindowPc, role: "target" | "ally", hit: WindowHit, severity: PcSeverity, armorCapable: boolean, creatures: TriggerCreatures): { featureIds: string[]; cardIds: string[] } {
+  const features = new Set(eligibleFeatures(pc, role, hit, severity, armorCapable, { amount: hit.amount, ...creatures }).map((f) => f.featureId));
+  const cards = new Set(eligibleCards(pc, role, hit, severity, armorCapable));
+  if (role === "target" && (armorCapable || features.size > 0 || cards.size > 0)) {
     for (const lower of SEVERITIES.slice(SEVERITIES.indexOf(severity) + 1)) {
-      for (const f of eligibleFeatures(pc, role, hit, lower, armorCapable, { amount: hit.amount, ...creatures }, true)) ids.add(f.featureId);
+      for (const f of eligibleFeatures(pc, role, hit, lower, armorCapable, { amount: hit.amount, ...creatures })) features.add(f.featureId);
+      for (const c of eligibleCards(pc, role, hit, lower, armorCapable)) cards.add(c);
     }
   }
-  return [...ids];
+  return { featureIds: [...features], cardIds: [...cards] };
 }
 
 /**
@@ -403,13 +515,11 @@ export function openWindow(input: OpenInput): WindowState {
   if (target) {
     const severity = damageBeforeArmor(target, hit).severity;
     const creatures: TriggerCreatures = { ...(target.actor ? { subject: target.actor } : {}), ...(input.attacker ? { source: input.attacker } : {}) };
-    const cards = eligibleCards(target, "target", hit, severity, armorCapable[target.id] ?? false);
-    const features = featureIdsAtOpen(target, "target", hit, severity, armorCapable[target.id] ?? false, creatures);
+    const { cardIds: cards, featureIds: features } = answersAtOpen(target, "target", hit, severity, armorCapable[target.id] ?? false, creatures);
     if (armorCapable[target.id] || cards.length > 0 || features.length > 0) responders.push({ characterId: target.id, role: "target", cardIds: cards, ...(features.length > 0 ? { featureIds: features } : {}) });
     for (const pc of party) {
       if (pc.id === targetId) continue;
-      const allyCards = eligibleCards(pc, "ally", hit, severity, armorCapable[pc.id] ?? false);
-      const allyFeatures = featureIdsAtOpen(pc, "ally", hit, severity, armorCapable[pc.id] ?? false, creatures);
+      const { cardIds: allyCards, featureIds: allyFeatures } = answersAtOpen(pc, "ally", hit, severity, armorCapable[pc.id] ?? false, creatures);
       if (allyCards.length > 0 || allyFeatures.length > 0) responders.push({ characterId: pc.id, role: "ally", cardIds: allyCards, ...(allyFeatures.length > 0 ? { featureIds: allyFeatures } : {}) });
     }
   }
@@ -419,9 +529,10 @@ export function openWindow(input: OpenInput): WindowState {
 const isArmorAnswer = (c: HitChoice) => c.kind === "armor" || c.kind === "noArmor" || c.kind === "pass";
 
 /**
- * The responders still owed an answer: the target until they answer armor (and, SD4, after armor while a severity-gated
- * feature they hold fits the hit now, until they use it or pass: Thick Skin after the slot made it Minor, CB p.107); an
- * ally until any answer (Q17).
+ * The responders still owed an answer: the target until they answer armor, and after a marked slot (or a slot
+ * substitute) while any card or feature they hold still fits the hit, until they use it or say Done (`pass`) (DA8, user
+ * 2026-10-30, CB p.107: every ready reaction stays offered, in the order the player picks; SD4 kept only severity-gated
+ * ones); "Don't mark" (`noArmor`) ends their turn as before; an ally until any answer (Q17).
  */
 export function awaiting(state: WindowState): string[] {
   if (state.closedEarly) return [];
@@ -430,9 +541,9 @@ export function awaiting(state: WindowState): string[] {
       if (state.released.includes(r.characterId)) return false;
       const mine = state.responses.filter((x) => x.characterId === r.characterId);
       if (r.role === "target") {
-        if (!mine.some((x) => isArmorAnswer(x.choice))) return true;
+        if (!armorAnswered(state, r.characterId)) return true;
         if (mine.some((x) => x.choice.kind === "pass" || x.choice.kind === "noArmor")) return false;
-        return (r.featureIds ?? []).length > 0 && featureAnswers(state, r.characterId).length > 0;
+        return featureAnswers(state, r.characterId).length > 0 || cardAnswers(state, r.characterId).length > 0;
       }
       return mine.length === 0;
     })
@@ -452,8 +563,9 @@ export function resolveNow(state: WindowState): WindowState {
 export type RespondResult = { ok: true; state: WindowState } | { ok: false; code: "REQUEST_NOT_OPEN" | "NOT_A_RESPONDER"; detail: string };
 
 /**
- * Records one answer. The target answers armor / noArmor (`pass` counts as noArmor) once, and may play eligible cards
- * and (SD4) features before that, and severity-gated features after it (then `pass` ends their turn); an ally answers once, with a card or `pass`. A card's `redirect` fold makes its user the target, who then
+ * Records one answer. The target answers armor / noArmor (`pass` before it counts as noArmor) once, and may play eligible
+ * cards and (SD4) features before and (DA8) after a marked slot in any order (CB p.107), until `pass` (Done) or `noArmor` ends their turn; a slot
+ * substitute (Stable, Celestial Wings) is their armor answer; an ally answers once, with a card or `pass`. A card's `redirect` fold makes its user the target, who then
  * owes an armor answer if they can mark a slot (the first target is released). Errors: REQUEST_NOT_OPEN (complete),
  * NOT_A_RESPONDER (not listed, already answered, or a card they weren't offered).
  */
@@ -468,17 +580,22 @@ export function respond(state: WindowState, response: WindowResponse, options: {
   if (!responder) return { ok: false, code: "NOT_A_RESPONDER", detail: who };
   const choice = response.choice;
   if (responder.role === "ally" && (choice.kind === "armor" || choice.kind === "noArmor")) return { ok: false, code: "NOT_A_RESPONDER", detail: "Only the target marks armor." };
-  // SD4: after the armor answer the target may still answer a severity-gated feature, or pass; nothing else.
-  const armorDone = responder.role === "target" && state.responses.some((x) => x.characterId === who && isArmorAnswer(x.choice));
-  if (armorDone && choice.kind !== "feature" && choice.kind !== "pass") return { ok: false, code: "NOT_A_RESPONDER", detail: "The armor answer is in." };
+  // DA8: after the armor answer the target may still play any card or feature that fits, or say Done (`pass`); a second
+  // armor answer is refused, and so is an armor answer after a slot substitute (Stable, Wings: never both, CB p.114).
+  const armorDone = responder.role === "target" && armorAnswered(state, who);
+  if (armorDone && (choice.kind === "armor" || choice.kind === "noArmor")) return { ok: false, code: "NOT_A_RESPONDER", detail: "The armor answer is in." };
   if (choice.kind === "card") {
     const played = state.responses.some((x) => x.characterId === who && x.choice.kind === "card" && x.choice.cardId === choice.cardId);
     if (!responder.cardIds.includes(choice.cardId) || played) return { ok: false, code: "NOT_A_RESPONDER", detail: choice.cardId };
+    // DA8: the target's card must fit the hit as it is now (a card listed for a lower severity waits for it).
+    if (!options.replay && responder.role === "target" && state.party && !cardAnswers(state, who).includes(choice.cardId)) return { ok: false, code: "NOT_A_RESPONDER", detail: choice.cardId };
   }
   if (choice.kind === "feature") {
     const played = state.responses.some((x) => x.characterId === who && x.choice.kind === "feature" && x.choice.featureId === choice.featureId);
     if (!(responder.featureIds ?? []).includes(choice.featureId) || played) return { ok: false, code: "NOT_A_RESPONDER", detail: choice.featureId };
   }
+  // DA8: one armor reduction per hit: a slot substitute after a real slot or another substitute is refused.
+  if (!options.replay && responder.role === "target" && substitutes(response, state) && armorReductionTaken(state)) return { ok: false, code: "NOT_A_RESPONDER", detail: "The armor reduction is taken." };
   let next: WindowState = { ...state, responses: [...state.responses, { ...response, ...(response.folds ? { folds: [...response.folds] } : {}) }] };
   const redirect = (response.folds ?? []).find((f): f is Extract<Fold, { kind: "redirect" }> => f.kind === "redirect");
   if ((choice.kind === "card" || choice.kind === "feature") && redirect && redirect.to !== next.targetId) {
@@ -520,7 +637,7 @@ export function foldsFromPlan(plan: Pick<RunPlan, "steps">, responderId: string,
         out.push({ kind: "extraArmorSlots", max: s.amount === "any" ? "any" : (s.amount ?? 1), targetIds: s.targetIds });
         break;
       case "reduceSeverity":
-        out.push({ kind: "reduceSeverity", steps: typeof s.amount === "number" ? s.amount : step.steps, targetIds: s.targetIds });
+        out.push({ kind: "reduceSeverity", steps: typeof s.amount === "number" ? s.amount : step.steps, targetIds: s.targetIds, ...(step.insteadOfArmorSlot ? { insteadOfArmorSlot: true } : {}) });
         break;
       case "reduceDamage":
         out.push({ kind: "reduceDamage", amount: typeof s.amount === "number" ? s.amount : 0, targetIds: s.targetIds });
@@ -593,7 +710,16 @@ export function runReactionFeature(
   state: WindowState,
   creatures: { target: Combatant; attacker?: Combatant },
   rng: Rng,
-  options: { useId?: string; amount?: number; choices?: Readonly<Record<string, number>>; options?: Readonly<Record<string, readonly string[]>>; optionals?: readonly string[]; situations?: readonly string[] } = {},
+  options: {
+    useId?: string;
+    amount?: number;
+    choices?: Readonly<Record<string, number>>;
+    options?: Readonly<Record<string, readonly string[]>>;
+    optionals?: readonly string[];
+    /** DA0 / DA8: `defaultOn` optional steps the player turned off. */
+    optionalsOff?: readonly string[];
+    situations?: readonly string[];
+  } = {},
 ): { result: FeatureRunResult; folds: Fold[] } {
   const useId = options.useId ?? effect.uses.find((u) => u.activation.kind === "reaction")?.id;
   const amount = options.amount ?? state.hit.amount;
@@ -603,11 +729,21 @@ export function runReactionFeature(
     ...(options.choices ? { choices: options.choices } : {}),
     ...(options.options ? { options: options.options } : {}),
     ...(options.optionals ? { optionals: options.optionals } : {}),
+    ...(options.optionalsOff ? { optionalsOff: options.optionalsOff } : {}),
     situations: options.situations ?? [],
     trigger: { amount, subject: creatures.target, ...(creatures.attacker ? { source: creatures.attacker } : {}) },
     rng,
   });
-  return { result, folds: result.ok ? foldsFromPlan(result.plan, actor.id, amount) : [] };
+  return { result, folds: result.ok ? withIgnoredHp(result.plan, foldsFromPlan(result.plan, actor.id, amount)) : [] };
+}
+
+/**
+ * DA8: a damage cancel whose step says `ignoreOnHitHp` (Dark Aegis, user answer 2026-10-29) carries the flag on its fold,
+ * so the resolution keeps the riders' extra "mark HP" off (`foldsFromPlan` keeps DA0's plain `negateDamage`).
+ */
+function withIgnoredHp(plan: Pick<RunPlan, "steps">, folds: Fold[]): Fold[] {
+  const ignore = (plan.steps as readonly PlanStep[]).some((s) => s.kind === "fold" && s.step.kind === "negate" && s.step.what === "damage" && s.step.ignoreOnHitHp === true);
+  return ignore ? folds.map((f) => (f.kind === "negateDamage" ? { kind: "negateDamage", ignoreOnHitHp: true } : f)) : folds;
 }
 
 /** The `choose` steps of a use the player must pick (Not This Time's attack or damage, Not Done Yet's Hope or Stress). */
@@ -645,6 +781,11 @@ export interface WindowResolution {
   armorSlotsChosen: number;
   /** AA2b: a card answer (Bold Presence) keeps the hit's condition riders off the target. */
   conditionNegated: boolean;
+  /**
+   * DA8: the damage was cancelled with `ignoreOnHitHp` (Dark Aegis, user answer 2026-10-29): the riders' conditions still
+   * land, but any extra "mark HP" from them is ignored.
+   */
+  hpRidersIgnored: boolean;
 }
 
 /**
@@ -682,17 +823,18 @@ export function resolveWindow(state: WindowState, party: readonly PcDefense[]): 
   const amount = amountNow(state, folds);
   const reflected = reflects.map((f) => ({ to: f.to, targetIds: f.targetIds, amount }));
   const conditionNegated = folds.some((f) => f.kind === "negateCondition");
+  const hpRidersIgnored = !missed && folds.some((f) => f.kind === "negateDamage" && f.ignoreOnHitHp === true);
   if (!target || missed) {
-    return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result: null, reflected, manual, armorSlotsChosen, conditionNegated };
+    return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result: null, reflected, manual, armorSlotsChosen, conditionNegated, hpRidersIgnored };
   }
 
   let extra: number | "any" = 0;
-  let reduceSeverity = 0;
+  // DA8: slot substitutes (Stable, Celestial Wings) count one step at most (CB p.114).
+  const reduceSeverity = severitySteps(folds, state);
   let hpDelta = 0;
   let convert: HitAdjustments["convert"];
   for (const f of folds) {
     if (f.kind === "extraArmorSlots" && applies(f.targetIds, state)) extra = extra === "any" || f.max === "any" ? "any" : extra + f.max;
-    if (f.kind === "reduceSeverity" && applies(f.targetIds, state)) reduceSeverity += f.steps;
     if (f.kind === "hpMarked" && applies(f.targetIds, state)) hpDelta += f.delta;
     if (f.kind === "convert" && applies(f.targetIds, state)) convert = f.into;
   }
@@ -704,7 +846,7 @@ export function resolveWindow(state: WindowState, party: readonly PcDefense[]): 
     negate: negated,
     ...(convert ? { convert } : {}),
   });
-  return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result, reflected, manual, armorSlotsChosen, conditionNegated };
+  return { originalTargetId: state.originalTargetId, targetId: state.targetId, missed, negated, result, reflected, manual, armorSlotsChosen, conditionNegated, hpRidersIgnored };
 }
 
 // ---------------------------------------------------------------- after the hit (AA2b)
@@ -810,6 +952,8 @@ export function afterHitAmount(use: CardUse, facts: Pick<MarkFacts, "hpMarked">,
  */
 export function targetPrompt(state: WindowState, target: PcDefense): { damage: number; severity: PcSeverity; maxSlots: number } {
   const folds = state.responses.flatMap((r) => r.folds ?? []);
+  // DA8: a cancelled damage (Dark Aegis) is zero: nothing for an Armor Slot to reduce.
+  if (folds.some((f) => f.kind === "negateDamage")) return { damage: 0, severity: "none", maxSlots: 0 };
   let extra: number | "any" = 0;
   for (const f of folds) if (f.kind === "extraArmorSlots" && applies(f.targetIds, state)) extra = extra === "any" || f.max === "any" ? "any" : extra + f.max;
   const amount = amountNow(state, folds);

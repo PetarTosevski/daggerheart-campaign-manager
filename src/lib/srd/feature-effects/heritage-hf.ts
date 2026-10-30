@@ -88,8 +88,9 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
 
   // Celestial Wings (Aetheris, HF p.19): "You have wings that allow you to fly. Once per scene while flying, you can
   // spend a Hope instead of marking an Armor Slot." Flying is the drawer's toggle (Q16, SD3 setFlying); the scene limit is
-  // Q7. When you mark an Armor Slot to reduce incoming damage (CB p.114), the mark is paid with a Hope instead (the convert
-  // spends the Hope, as Splendor-Touched's "spend that much Hope instead", CB p.341).
+  // Q7. User answers 2026-10-29 / 2026-10-30 (dcm-bxp.99.19.30): any hit while flying, even with no armor or every slot
+  // marked: the Hope lowers the severity by one, once per scene; it is the hit's one armor reduction, so Wings OR a real
+  // Armor Slot on a hit, never both (`insteadOfArmorSlot`, DA0; applied by the reaction window, DA8).
   {
     featureId: "ancestry:aetheris:celestial-wings",
     source: "ancestry",
@@ -98,10 +99,11 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "main",
         name: "Celestial Wings",
-        activation: { kind: "reaction", trigger: { kind: "whenArmorSlotMarked", who: "self" } },
+        activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
         requires: [FLYING],
         limit: { per: "scene" },
-        steps: [{ kind: "convertMarks", to: "self", from: "armor", into: "hope", note: "Spend a Hope instead of marking the Armor Slot" }],
+        costs: [{ kind: "hope", amount: n(1) }],
+        steps: [{ kind: "reduceSeverity", to: "self", steps: 1, insteadOfArmorSlot: true, note: "Spend a Hope instead of marking an Armor Slot" }],
       },
     ],
   },

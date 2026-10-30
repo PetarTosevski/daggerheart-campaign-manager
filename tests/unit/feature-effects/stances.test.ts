@@ -167,12 +167,13 @@ describe("Tier 3 (HF p.12)", () => {
     expect(ofKind(plan, "mark")).toMatchObject([{ targetId: "a", track: "stress", amount: 1 }]);
   });
 
-  it("Stable: a Focus instead of an Armor Slot reduces the damage one threshold", () => {
+  it("Stable: a Focus instead of an Armor Slot reduces the damage one threshold (user 2026-10-29: it IS the hit's slot)", () => {
     const u = entry("stable").uses[0]!;
     expect(u.activation).toEqual({ kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } });
     const plan = ok(use("stable", undefined, { actor: actor("stable"), trigger: { amount: 9 } }));
     expect(plan.actor.after).toMatchObject({ focus: 1, armor: plan.actor.before.armor });
-    expect(ofKind(plan, "fold")).toMatchObject([{ step: { kind: "reduceSeverity", steps: 1 }, amount: 1 }]);
+    // DA8 (dcm-bxp.99.19.9): the step stands for the one Armor Slot (no slot marked, never two steps with a slot).
+    expect(ofKind(plan, "fold")).toMatchObject([{ step: { kind: "reduceSeverity", steps: 1, insteadOfArmorSlot: true }, amount: 1 }]);
     expect(use("stable", undefined, { actor: actor("stable", { focus: 0 }) })).toMatchObject({ ok: false, reason: "cost" });
   });
 

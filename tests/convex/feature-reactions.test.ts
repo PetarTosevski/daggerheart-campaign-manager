@@ -14,7 +14,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
-import { bandsOnMap, openIncomingHit, partyMembers } from "../../convex/lib/incomingHits";
+import { attackRollOf, resolveRerolls } from "../../convex/lib/adversaryHits";
+import { bandsOnMap, openIncomingHit, partyMembers, seededRng } from "../../convex/lib/incomingHits";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { allowWorldEmails, buildWorld, type Client } from "./authz/world";
 import { errorCode, key } from "./helpers";
@@ -293,11 +294,135 @@ describe("before the roll (Q2)", () => {
     expect(await a.respond(a.gm, requestId, a.w.characterA, { kind: "pass" })).toMatchObject({ status: "resolved" });
   });
 
+  it("DA8: Draining Bane's 'Clear a Stress' is ticked by default (dcm-bxp.99.19.15); unticked it is skipped", async () => {
+    for (const [choices, stress] of [
+      [[], 0],
+      [[{ id: "optional:clear-stress", value: false }], 1],
+    ] as const) {
+      const a = await arena();
+      await a.edit(a.w.characterA, (s) => ({ classId: "warlock", subclassId: "pact-of-the-endless", subclassRank: "mastery", stress: 1, classState: { ...s.classState, favor: 2 } }));
+      const res = await a.gm.mutation(api.adversaryActions.attack, { campaignId: a.campaignId, instanceId: a.bear, targets: [a.w.characterA], spendFear: 1, idempotencyKey: key() });
+      const requestId = res.status === "resolved" ? res.held! : (null as never);
+      const bane = (await a.pending(a.player, a.w.characterA))[0]!.features?.find((f) => f.featureId === "subclass:pact-of-the-endless:draining-bane");
+      expect(bane?.optionals).toEqual([{ id: "clear-stress", label: "Clear a Stress", defaultOn: true }]);
+      await a.respond(a.player, requestId, a.w.characterA, a.feature("subclass:pact-of-the-endless:draining-bane", [...choices]));
+      expect((await a.sheet(a.w.characterA)).stress).toBe(stress);
+      expect((await a.bearNow()).stress).toBe(1);
+    }
+  });
+
   it("nothing waits for PCs without a before-roll feature (no Favor: no prompt)", async () => {
     const a = await arena();
     await a.edit(a.w.characterA, (s) => ({ classId: "warlock", subclassId: "pact-of-the-endless", subclassRank: "specialization", classState: { ...s.classState, favor: 0 } }));
     const res = await a.gm.mutation(api.adversaryActions.attack, { campaignId: a.campaignId, instanceId: a.bear, targets: [a.w.characterA], spendFear: 1, idempotencyKey: key() });
     expect(res.status === "resolved" ? res.held : "x").toBeUndefined();
     expect(res.status === "resolved" ? res.roll : null).not.toBeNull();
+  });
+});
+
+// Plan drawer-answers, tracer DA8 (docs/tasks/TASK-DA-DA8.md; user answers 2026-10-29 / 2026-10-30): CB p.107 "the
+// player controlling the effects ... can apply the effects in any order"; Stable (HF p.12), Dark Aegis (HF p.14).
+describe("DA8: the reaction window's answers", () => {
+  it("after an Armor Slot a dwarf still gets Increased Fortitude: 17 → 9 (Major) → the slot: Minor; then Thick Skin fits, or Done: 1 HP", async () => {
+    const a = await arena();
+    await a.edit(a.w.characterB, () => ({ ancestry: { kind: "single", id: "dwarf" } }));
+    const { requestId } = await a.hit(a.w.characterB, 17);
+    expect(await a.respond(a.other, requestId, a.w.characterB, { kind: "armor", slots: 1 })).toMatchObject({ status: "open" });
+    const [view] = await a.pending(a.other, a.w.characterB);
+    expect(view).toMatchObject({ awaiting: true, armorAnswered: true, damage: 17, severity: "major", maxSlots: 0 });
+    expect(view!.features?.map((f) => f.featureId)).toEqual(["ancestry:dwarf:increased-fortitude"]);
+    expect(await a.respond(a.other, requestId, a.w.characterB, a.feature("ancestry:dwarf:increased-fortitude"))).toMatchObject({ status: "open" });
+    // The hit now: 9 → Major → the slot → Minor (1 HP): Thick Skin fits it (CB p.107, any order).
+    const [now] = await a.pending(a.other, a.w.characterB);
+    expect(now).toMatchObject({ damage: 9, severity: "minor", armorPreview: [{ slots: 0, severity: "minor", hp: 1 }] });
+    expect(now!.features?.map((f) => f.featureId)).toEqual(["ancestry:dwarf:thick-skin"]);
+    expect(await a.respond(a.other, requestId, a.w.characterB, { kind: "pass" })).toMatchObject({ status: "resolved" });
+    expect(await a.sheet(a.w.characterB)).toMatchObject({ hp: 1, hope: 0, armorMarked: 1 });
+  });
+
+  it("Stable without armor: the Focus lowers the severity one step, no Armor Slot is marked; the player sees only their own numbers", async () => {
+    const a = await arena();
+    await a.edit(a.w.characterA, (s) => ({ armorId: undefined, classState: { ...s.classState, martial: { known: ["stable"], active: "stable", focus: 1 } } }));
+    const { requestId } = await a.hit(a.w.characterA, 40);
+    const [view] = await a.pending(a.player, a.w.characterA);
+    expect(view).toMatchObject({ role: "target", severity: "severe", maxSlots: 0 });
+    expect(keysOf(view).filter((k) => ROLL_KEYS.includes(k))).toEqual([]);
+    expect(view!.features?.map((f) => f.featureId)).toEqual(["stance:martial-artist:stable"]);
+    expect(await a.respond(a.player, requestId, a.w.characterA, a.feature("stance:martial-artist:stable"))).toMatchObject({ status: "resolved" });
+    // Severe → Major: 2 HP; the Focus is spent, no slot marked.
+    const after = await a.sheet(a.w.characterA);
+    expect(after).toMatchObject({ hp: 2, armorMarked: 0 });
+    expect(after.classState.martial?.focus).toBe(0);
+  });
+
+  it("Stable OR the Armor Slot: after the slot Stable is not offered (never more than one step)", async () => {
+    const a = await arena();
+    await a.edit(a.w.characterA, (s) => ({ classState: { ...s.classState, martial: { known: ["stable"], active: "stable", focus: 1 } } }));
+    const { requestId } = await a.hit(a.w.characterA, 40);
+    expect((await a.pending(a.player, a.w.characterA))[0]!.features?.map((f) => f.featureId)).toEqual(["stance:martial-artist:stable"]);
+    expect(await a.respond(a.player, requestId, a.w.characterA, { kind: "armor", slots: 1 })).toMatchObject({ status: "resolved" });
+    expect(await a.sheet(a.w.characterA)).toMatchObject({ hp: 2, armorMarked: 1 });
+    expect((await a.sheet(a.w.characterA)).classState.martial?.focus).toBe(1);
+  });
+
+  it("Dark Aegis (HF p.14) after an Armor Slot: zero damage, no slot, no HP; Restrained still lands, the extra HP doesn't; undo restores all", async () => {
+    const a = await arena();
+    await a.edit(a.w.characterA, (s) => ({ classId: "warlock", subclassId: "pact-of-the-endless", subclassRank: "mastery", classState: { ...s.classState, favor: 1 } }));
+    const groupId = `g-${key()}`;
+    const { requestId } = await a.t.run(async (ctx) =>
+      openIncomingHit(ctx, {
+        campaignId: a.campaignId,
+        encounterId: a.encounterId,
+        createdBy: a.w.users.gm,
+        groupId,
+        attacker: { instanceId: a.bear, label: "Bear" },
+        targetCharacterId: a.w.characterA,
+        hit: { amount: 20, type: "physical", direct: false, forcedArmor: 0, critical: false },
+        riders: [
+          { kind: "condition", condition: "restrained" },
+          { kind: "hp", amount: 1 },
+        ],
+        party: await partyMembers(ctx, a.campaignId),
+        bands: await bandsOnMap(ctx, undefined),
+      }),
+    );
+    expect(await a.respond(a.player, requestId, a.w.characterA, { kind: "armor", slots: 1 })).toMatchObject({ status: "open" });
+    const [view] = await a.pending(a.player, a.w.characterA);
+    expect(view!.features?.map((f) => f.featureId)).toContain("subclass:pact-of-the-endless:dark-aegis");
+    expect(await a.respond(a.player, requestId, a.w.characterA, a.feature("subclass:pact-of-the-endless:dark-aegis"))).toMatchObject({ status: "resolved" });
+    const after = await a.sheet(a.w.characterA);
+    expect(after).toMatchObject({ hp: 0, armorMarked: 0 });
+    expect(after.conditions).toContain("restrained");
+    expect(after.classState.favor).toBe(0);
+    const summaries = await a.t.run(async (ctx) => (await ctx.db.query("actionLog").collect()).filter((r) => r.groupId === groupId && r.visibility === "public").map((r) => r.summary));
+    expect(summaries).toContain("Ash took no damage from Bear's hit");
+    await a.undo((await a.groupRow(groupId))._id);
+    const undone = await a.sheet(a.w.characterA);
+    expect(undone).toMatchObject({ hp: 0, armorMarked: 0 });
+    expect(undone.conditions).not.toContain("restrained");
+    expect(undone.classState.favor).toBe(1);
+  });
+
+  it("DA1 follow-ups: a Drained attack's roll is found by its kind (d12s), the hit stores its own total, a forced reroll keeps the d12", async () => {
+    const a = await arena();
+    await a.t.run((ctx) => ctx.db.patch("encounterAdversaries", a.bear, { tags: ["Drained"] }));
+    serverD20s(12);
+    const res = await a.gm.mutation(api.adversaryActions.attack, { campaignId: a.campaignId, instanceId: a.bear, targets: [a.w.characterA], spendFear: 1, idempotencyKey: key() });
+    vi.restoreAllMocks();
+    const requestId = res.status === "resolved" ? res.targets[0]?.requestId : undefined;
+    expect(requestId).toBeDefined();
+    const row = await a.request(requestId!);
+    if (row.payload.kind !== "incomingHit") throw new Error("not a hit");
+    const groupId = row.payload.groupId;
+    const record = await a.t.run((ctx) => attackRollOf(ctx, { campaignId: a.campaignId, payload: { groupId } }));
+    expect(record?.dice[0]).toMatchObject({ sides: 12, value: 12 });
+    expect(row.payload.kind === "incomingHit" && row.payload.attackTotal).toBe(record!.total);
+    const [reroll] = resolveRerolls([{ kind: "rerollAttack" }], "seed", record, null);
+    expect(reroll).toMatchObject({ kind: "attackRoll", critical: false });
+    expect(reroll!.kind === "attackRoll" && reroll!.total - record!.modifier).toBeLessThanOrEqual(12);
+    // A target with its own disadvantage rerolls with two dice and keeps the lower (seeded: the same two dice).
+    const rng = seededRng("seed");
+    const [x, y] = [rng(12), rng(12)];
+    expect(resolveRerolls([{ kind: "rerollAttack" }], "seed", record, null, { disadvantage: 1 })).toEqual([{ kind: "attackRoll", total: Math.min(x, y) + record!.modifier, critical: false }]);
   });
 });

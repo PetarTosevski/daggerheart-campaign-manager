@@ -375,7 +375,8 @@ const featureViewValidator = v.object({
   text: v.string(),
   numbers: v.array(v.object({ id: v.string(), label: v.string(), min: v.number() })),
   options: v.array(v.object({ id: v.string(), label: v.string(), options: v.array(v.object({ id: v.string(), label: v.string() })) })),
-  optionals: v.array(v.object({ id: v.string(), label: v.string() })),
+  /** DA8 (widened): `defaultOn` optionals are ticked unless the player unticks them (Draining Bane). */
+  optionals: v.array(v.object({ id: v.string(), label: v.string(), defaultOn: v.optional(v.boolean()) })),
   situations: v.array(v.string()),
 });
 

@@ -176,6 +176,121 @@ test("a Guardian answers with Iron Will, a dwarf with Increased Fortitude, and t
   }
 });
 
+type LevelChoice = { picks: { option: "traits" | "hp" | "stress" | "evasion" | "subclass"; tier: number; targets?: string[] }[]; experienceName?: string };
+
+/** Levels a Warlock from 1 with `levels` (one entry per level from 2), a new class domain card each level. */
+async function levelWarlock(gm: ConvexHttpClient, characterId: Id<"characters">, levels: readonly LevelChoice[]) {
+  const cards = cardsForDomains(getClass("warlock")!.domains, levels.length + 1);
+  const owned = new Set((await sheetOf(gm, characterId)).domainCards.owned);
+  for (const [i, level] of levels.entries()) {
+    const card = cards.find((c) => c.level <= i + 2 && !owned.has(c.id))!;
+    owned.add(card.id);
+    await gm.mutation(api.levelUp.apply, { characterId, choice: { ...level, cardId: card.id }, idempotencyKey: crypto.randomUUID() });
+  }
+}
+
+/** Levels 2-5: the tier 3 upgraded subclass (specialization) at level 5 (HF p.14). */
+const TO_SPECIALIZATION: LevelChoice[] = [
+  { picks: [{ option: "traits", tier: 2, targets: ["agility", "instinct"] }, { option: "hp", tier: 2 }], experienceName: "Bargains Kept" },
+  { picks: [{ option: "stress", tier: 2 }, { option: "evasion", tier: 2 }] },
+  { picks: [{ option: "traits", tier: 2, targets: ["strength", "finesse"] }, { option: "hp", tier: 2 }] },
+  { picks: [{ option: "subclass", tier: 3 }, { option: "hp", tier: 3 }], experienceName: "Old Debts" },
+];
+
+/** Levels 6-8 on top: the tier 4 upgraded subclass (mastery: Dark Aegis, HF p.14) at level 8. */
+const TO_MASTERY: LevelChoice[] = [
+  ...TO_SPECIALIZATION,
+  { picks: [{ option: "stress", tier: 3 }, { option: "evasion", tier: 3 }] },
+  { picks: [{ option: "hp", tier: 3 }, { option: "stress", tier: 3 }] },
+  { picks: [{ option: "subclass", tier: 4 }, { option: "hp", tier: 4 }], experienceName: "Endless Pact" },
+];
+
+// Plan drawer-answers DA8 (user answers 2026-10-29 / 2026-10-30): CB p.107 "the player controlling the effects ... can
+// apply the effects in any order": after the Armor Slot every ready reaction that still fits stays offered; Dark Aegis
+// (HF p.14) cancels the damage to zero. Stable (HF p.12) has no e2e: no public function teaches a stance yet (the
+// convex test seeds it; docs/tasks/TASK-DA-DA8.md).
+test("after an Armor Slot a dwarf still gets Increased Fortitude; a warlock's Dark Aegis leaves no Hit Point marked; the GM's undo restores all", async ({ page, browser }) => {
+  test.setTimeout(300_000);
+  const { client: gm, campaignId } = await openCombatMap(page);
+  await gm.mutation(api.campaigns.setOption, { campaignId, option: "hopeAndFear", enabled: true });
+  const a = await joinAs(browser, gm, campaignId, PLAYER_A);
+  const b = await joinAs(browser, gm, campaignId, PLAYER_B);
+  try {
+    const { characterId: mira } = await a.client.mutation(api.characters.create, { campaignId, draft: dwarfDraft("Mira"), idempotencyKey: crypto.randomUUID() });
+    while ((await sheetOf(gm, mira)).hope < 3) await gm.mutation(api.characters.adjustResource, { characterId: mira, resource: "hope", delta: 1 });
+    const instanceId = await encounterWith(gm, campaignId, BRUTE_BANDIT);
+
+    // Mira: Mark the Armor Slot first; Increased Fortitude is still offered after it.
+    const first = await attacks(gm, campaignId, instanceId, mira);
+    await a.page.goto(`/campaigns/${campaignId}/party/${mira}`);
+    const miraPrompt = a.page.getByRole("region", { name: "Incoming hit: Bandit hit Mira" });
+    await expect(miraPrompt).toBeVisible({ timeout: 30_000 });
+    const before = Number(DAMAGE.exec((await miraPrompt.locator(".ih-dmg").textContent()) ?? "")?.[1]);
+    await miraPrompt.getByRole("button", { name: "Mark", exact: true }).click();
+    await expect(miraPrompt).toHaveAttribute("data-mode", "afterArmor");
+    const fortitude = miraPrompt.getByTestId("incoming-hit-feature").filter({ has: a.page.getByRole("heading", { name: "Increased Fortitude" }) });
+    await expect(fortitude).toBeVisible();
+    await expect(miraPrompt).not.toContainText(ENEMY_WORDS);
+    await expectNoSeriousA11yViolations(a.page, { include: "[data-testid=incoming-hit]" });
+    await expectTouchTargets(miraPrompt.getByRole("button"));
+    await miraPrompt.screenshot({ path: "test-results/visual/DA-DA8/after-armor-1280.png", animations: "disabled" });
+    await fortitude.getByRole("button", { name: "Use Increased Fortitude" }).click();
+    await expect.poll(async () => (await sheetOf(gm, mira)).hope).toBe(0);
+    // Thick Skin may fit the hit as the slot and the halving left it (Minor): then Done ends Mira's turn.
+    const [owed] = await a.client.query(api.adversaryActions.pending, { campaignId, characterId: mira });
+    if (owed?.awaiting) {
+      await expect(miraPrompt.locator(".ih-dmg")).toHaveText(new RegExp(`^${Math.ceil(before / 2)} damage: `), { timeout: 30_000 });
+      await miraPrompt.getByRole("button", { name: "Done" }).click();
+    }
+    await expect.poll(async () => (await sheetOf(gm, mira)).armorMarked, { timeout: 30_000 }).toBe(1);
+    expect((await sheetOf(gm, mira)).hp).toBeLessThanOrEqual(2);
+    await gm.mutation(api.actionLog.undo, { entryId: first.entryId, idempotencyKey: crypto.randomUUID() });
+    await expect.poll(async () => (await sheetOf(gm, mira)).armorMarked).toBe(0);
+    expect(await sheetOf(gm, mira)).toMatchObject({ hp: 0, hope: 3 });
+
+    // Wren joins only now: a warlock's before-roll answers (Harrowing Invocation, Draining Bane: "you or an ally") would
+    // hold the attack on Mira too.
+    const { characterId: wren } = await b.client.mutation(api.characters.create, { campaignId, draft: warlockDraft("Wren"), idempotencyKey: crypto.randomUUID() });
+    await levelWarlock(gm, wren, TO_MASTERY);
+    expect(await sheetOf(gm, wren)).toMatchObject({ level: 8, subclassRank: "mastery" });
+    await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: crypto.randomUUID() });
+    const favor = (await sheetOf(gm, wren)).classState?.favor ?? 0;
+    expect(favor).toBeGreaterThan(0);
+
+    // Wren: Harrowing Invocation and Draining Bane wait before the roll (Q2): Pass; then the hit: an Armor Slot, then
+    // Dark Aegis: the damage is zero, so the slot isn't marked and no Hit Point is.
+    const second = await attacks(gm, campaignId, instanceId, wren);
+    await b.page.goto(`/campaigns/${campaignId}/party/${wren}`);
+    const beforeRoll = b.page.getByRole("region", { name: "Before the roll: Bandit attacks Wren" });
+    await expect(beforeRoll).toBeVisible({ timeout: 30_000 });
+    // Draining Bane's "Clear a Stress" is ticked by default (dcm-bxp.99.19.15).
+    await expect(beforeRoll.getByRole("checkbox", { name: "Clear a Stress" })).toBeChecked();
+    await beforeRoll.getByRole("button", { name: "Pass" }).click();
+    const wrenPrompt = b.page.getByRole("region", { name: "Incoming hit: Bandit hit Wren" });
+    await expect(wrenPrompt).toBeVisible({ timeout: 30_000 });
+    await wrenPrompt.getByRole("button", { name: "Mark", exact: true }).click();
+    const aegis = wrenPrompt.getByTestId("incoming-hit-feature").filter({ has: b.page.getByRole("heading", { name: "Dark Aegis" }) });
+    await expect(aegis).toBeVisible({ timeout: 30_000 });
+    await aegis.getByRole("button", { name: "Use Dark Aegis" }).click();
+    await expect.poll(async () => (await sheetOf(gm, wren)).classState?.favor, { timeout: 30_000 }).toBe(favor - 1);
+    // A reaction that still fits a zero-damage hit (a loadout card such as Umbral Veil: "After an attack roll is made
+    // against you") stays offered with Done (CB p.107); the hit PC sees their own "0 damage: No damage." (Q14).
+    const [left] = await b.client.query(api.adversaryActions.pending, { campaignId, characterId: wren });
+    if (left?.awaiting) {
+      await expect(wrenPrompt.locator(".ih-dmg")).toHaveText("0 damage: No damage.", { timeout: 30_000 });
+      await wrenPrompt.getByRole("button", { name: "Done" }).click();
+    }
+    await expect(b.page.getByTestId("incoming-hit")).toHaveCount(0, { timeout: 30_000 });
+    expect(await sheetOf(gm, wren)).toMatchObject({ hp: 0, armorMarked: 0 });
+    await gm.mutation(api.actionLog.undo, { entryId: second.entryId, idempotencyKey: crypto.randomUUID() });
+    await expect.poll(async () => (await sheetOf(gm, wren)).classState?.favor).toBe(favor);
+    expect(await sheetOf(gm, wren)).toMatchObject({ hp: 0, armorMarked: 0 });
+  } finally {
+    await a.close();
+    await b.close();
+  }
+});
+
 test("a warlock's Harrowing Invocation answers before the roll: a Favor, disadvantage, and the GM's undo gives the Favor back", async ({ page, browser }) => {
   test.setTimeout(300_000);
   const { client: gm, campaignId } = await openCombatMap(page);
@@ -184,19 +299,7 @@ test("a warlock's Harrowing Invocation answers before the roll: a Favor, disadva
   try {
     const { characterId: wren } = await a.client.mutation(api.characters.create, { campaignId, draft: warlockDraft("Wren"), idempotencyKey: crypto.randomUUID() });
     // Level 5 with the upgraded subclass (a tier 3 option): Harrowing Invocation is a specialization (HF p.14).
-    const cards = cardsForDomains(getClass("warlock")!.domains, 5);
-    const owned = new Set((await sheetOf(gm, wren)).domainCards.owned);
-    const levels: { picks: { option: "traits" | "hp" | "stress" | "evasion" | "subclass"; tier: number; targets?: string[] }[]; experienceName?: string }[] = [
-      { picks: [{ option: "traits", tier: 2, targets: ["agility", "instinct"] }, { option: "hp", tier: 2 }], experienceName: "Bargains Kept" },
-      { picks: [{ option: "stress", tier: 2 }, { option: "evasion", tier: 2 }] },
-      { picks: [{ option: "traits", tier: 2, targets: ["strength", "finesse"] }, { option: "hp", tier: 2 }] },
-      { picks: [{ option: "subclass", tier: 3 }, { option: "hp", tier: 3 }], experienceName: "Old Debts" },
-    ];
-    for (const [i, level] of levels.entries()) {
-      const card = cards.find((c) => c.level <= i + 2 && !owned.has(c.id))!;
-      owned.add(card.id);
-      await gm.mutation(api.levelUp.apply, { characterId: wren, choice: { ...level, cardId: card.id }, idempotencyKey: crypto.randomUUID() });
-    }
+    await levelWarlock(gm, wren, TO_SPECIALIZATION);
     expect(await sheetOf(gm, wren)).toMatchObject({ level: 5, subclassRank: "specialization" });
     // The session start gives the Warlock their Favor (HF p.14).
     await gm.mutation(api.sessions.start, { campaignId, idempotencyKey: crypto.randomUUID() });

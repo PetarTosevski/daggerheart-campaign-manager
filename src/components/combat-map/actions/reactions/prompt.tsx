@@ -39,8 +39,10 @@ import {
  * - nothing owed: the one line "Bandit hit Mira" (Q14).
  * Plan sheet-drawer SD4: the features that may answer now (Iron Will, Increased Fortitude, Partners-in-Arms, Not This
  * Time, …) are listed with the cards, each with what its Use asks (a count, a pick, an optional step); after the armor
- * answer a feature that now fits (Thick Skin on a hit the slot made Minor, CB p.107) waits with Use / Done; before an
- * adversary's roll (Q2) a PC with a before-roll defence gets "Bandit attacks Mira" with Use / Pass.
+ * answer every card or feature that still fits (DA8, user 2026-10-30, CB p.107: Thick Skin on a hit the slot made
+ * Minor, Increased Fortitude, Dark Aegis) waits with Use / Done; Stable and Celestial Wings stand for the Armor Slot;
+ * before an adversary's roll (Q2) a PC with a before-roll defence gets "Bandit attacks Mira" with Use / Pass (Draining
+ * Bane's "Clear a Stress" ticked by default).
  * Each tap calls `adversaryActions.respond` once, with an optimistic update on `pending` (CL4).
  */
 
@@ -191,7 +193,8 @@ function HitCard({
 }) {
   const mode = promptMode(view);
   const target = view.role === "target";
-  const cards = mode === "afterArmor" || mode === "preRoll" ? [] : playableCards(view);
+  // DA8: after the armor answer the cards that still fit stay too (the server lists only those, CB p.107).
+  const cards = mode === "preRoll" ? [] : playableCards(view);
   const features = view.features ?? [];
   const title = mode === "preRoll" ? `${view.attackerLabel} attacks ${view.targetName}` : target ? `${view.attackerLabel} hit ${characterName}` : hitLine(view);
   const label = mode === "preRoll" ? "Before the roll" : target ? "You were hit" : `${characterName} can react`;
@@ -202,7 +205,7 @@ function HitCard({
       {target && mode !== "preRoll" ? (
         <>
           <p className="ih-dmg">{damageLine(view)}</p>
-          <p className="ih-q">{mode === "afterArmor" ? "Armor marked. Use a feature that fits now, or Done." : armorQuestion(view)}</p>
+          <p className="ih-q">{mode === "afterArmor" ? "Armor answered. Use another reaction that fits now, in any order, or Done." : armorQuestion(view)}</p>
         </>
       ) : null}
       {features.length > 0 ? (

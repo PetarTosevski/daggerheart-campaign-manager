@@ -26,7 +26,7 @@ import {
 import { maxDamage, parseDamage } from "../../src/lib/domain/adversaries/index";
 import { rollDamage, type Rng } from "../../src/lib/domain/dice/index";
 import type { RollRecord } from "../../src/lib/domain/duality";
-import { holdingsFor, owned } from "../../src/lib/domain/feature-effects/owned";
+import { activeBeastformId, holdingsFor, owned } from "../../src/lib/domain/feature-effects/owned";
 import { actorExtras } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { applyUpgrades } from "../../src/lib/domain/feature-effects/upgrades";
@@ -127,6 +127,10 @@ export function featureActor(id: string, sheet: CharacterSheet): ActorState {
         const option = effectOption(e);
         return featureId === null ? [] : [{ featureId, ...(option !== undefined ? { option } : {}) }];
       }),
+      // DA8: the active stance (Q5) and Beastform, as `factsOf` (./featureRunner.ts) reads them: without them a stance's
+      // answer (Stable, HF p.12) asks for a confirmation the prompt never shows and the server refuses it.
+      beastformId: activeBeastformId(sheet),
+      activeStance: sheet.classState.martial?.active ?? null,
     },
   };
 }
@@ -350,32 +354,59 @@ export function spentDiceChoice(plan: RunPlan): CardChoice | null {
 /** The feature answer's choices as the runner reads them (`useFeature`'s ids; the stored `spentDice` left out). */
 export function featureChoices(list: readonly CardChoice[]) {
   const parsed = parseChoices(list.filter((c) => c.id !== SPENT_DICE));
-  return { choices: parsed.numbers, options: parsed.options, optionals: [...parsed.optionals], situations: parsed.situations };
+  // DA8: an `optional:<id>` sent false turns a `defaultOn` step off (Draining Bane's "clear a Stress", dcm-bxp.99.19.15).
+  return { choices: parsed.numbers, options: parsed.options, optionals: [...parsed.optionals], optionalsOff: [...parsed.declined], situations: parsed.situations };
 }
 
-/** The adversary's attack roll of the hit's action (its GM row): never sent to players (Q14); the window compares it. */
+/**
+ * The adversary's attack roll of the hit's action (its GM row): never sent to players (Q14); the window compares it.
+ * DA8 (DA1 follow-up 1): found by the roll's kind (`action`, the adversary attack's record), not by a d20 in it: a
+ * Drained attacker's attack dice are d12s (HF p.14).
+ */
 export async function attackRollOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: { groupId: string } }): Promise<RollRecord | null> {
   const rows = await ctx.db
     .query("actionLog")
     .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.payload.groupId))
     .take(50);
-  return rows.find((r) => r.visibility === "gm" && r.roll !== undefined && r.roll.dice.some((d) => d.sides === 20))?.roll ?? null;
+  return rows.find((r) => r.visibility === "gm" && r.roll !== undefined && r.roll.kind === "action")?.roll ?? null;
+}
+
+/** The size of a stored attack roll's attack dice: 20, or 12 for a Drained attacker (HF p.14). */
+export function attackDieSides(record: RollRecord): number {
+  return record.dice.find((d) => d.role !== "damage")?.sides ?? 20;
+}
+
+/**
+ * DA8: the attack roll again with the record's die size (a Drained attacker's d12s, HF p.14: "including for advantage or
+ * disadvantage") and `advantage` / `disadvantage` sources (net, as `rollD20` counts them); critical only on a natural 20
+ * of a d20 (CB p.148: "Whenever you roll a 20 on the d20").
+ */
+function rerollAttackDice(rng: Rng, sides: number, modifier: number, advantage: number, disadvantage: number): { total: number; critical: boolean } {
+  if (sides === 20) {
+    const { record, natural } = rollD20(rng, modifier, advantage, disadvantage);
+    return { total: record.total, critical: natural === 20 };
+  }
+  const net = advantage - disadvantage;
+  const first = rng(sides);
+  const natural = net === 0 ? first : net > 0 ? Math.max(first, rng(sides)) : Math.min(first, rng(sides));
+  return { total: natural + modifier, critical: false };
 }
 
 /**
  * SD4: the attacker's rerolls a feature answer forced (Not This Time, Danger Sense; CB p.107 "you always take the new
  * result"), rolled with dice seeded from the answer: the attack roll again with the same advantage or disadvantage
  * (`attackRoll`), or the standard attack's damage again (`damageRoll`, its critical kept). A reroll the server can't
- * make (no stored roll, a feature's damage) stays for the GM.
+ * make (no stored roll, a feature's damage) stays for the GM. DA8 (DA1 follow-ups 1, 2): the attack dice keep the
+ * record's size (Drained d12s), and `own.disadvantage` (the hit's stored `attackDisadvantage`) adds the target's own
+ * disadvantage to the reroll.
  */
-export function resolveRerolls(folds: readonly Fold[], seed: string, attack: RollRecord | null, damage: { text: string; critical: boolean } | null): Fold[] {
+export function resolveRerolls(folds: readonly Fold[], seed: string, attack: RollRecord | null, damage: { text: string; critical: boolean } | null, own: { disadvantage?: number } = {}): Fold[] {
   const rng = seededRng(seed);
   return folds.map((f): Fold => {
     if (f.kind === "rerollAttack" && attack) {
       const adv = attack.dice.some((d) => d.role === "advantage") ? 1 : 0;
-      const dis = attack.dice.some((d) => d.role === "disadvantage") ? 1 : 0;
-      const { record, natural } = rollD20(rng, attack.modifier, adv, dis);
-      return { kind: "attackRoll", total: record.total, critical: natural === 20 };
+      const dis = (attack.dice.some((d) => d.role === "disadvantage") ? 1 : 0) + Math.max(0, own.disadvantage ?? 0);
+      return { kind: "attackRoll", ...rerollAttackDice(rng, attackDieSides(attack), attack.modifier, adv, dis) };
     }
     if (f.kind === "rerollDamage" && damage) {
       const parsed = parseDamage(damage.text);
@@ -412,7 +443,8 @@ export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: nu
   const party = windowParty(members, p.targetCharacterId, bands, { hopeAndFear, toAttacker });
   const attacker = await attackerCombatant(ctx, row, everyone);
   const attackRoll = isPcAttacker(p.attacker) ? null : await attackRollOf(ctx, row);
-  const total = attackTotal ?? attackRoll?.total;
+  // DA8 (DA1 follow-up 2): the target's own total, stored with the hit, before the whole roll's.
+  const total = attackTotal ?? p.attackTotal ?? attackRoll?.total;
   const hit = windowHitOf(p.attacker, { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(total !== undefined ? { attackTotal: total } : {}) }, p.riders ?? []);
   const responders = p.responders.map((r) => {
     const featureIds = r.cardIds.filter(isFeatureId);
@@ -442,7 +474,7 @@ export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: nu
         const amount = progressAmount(state, defense);
         const ran = runReactionFeature(effect, actor, state, creatures, seededRng(`${row._id}:${i}`), { ...(choice.useId ? { useId: choice.useId } : {}), amount, ...featureChoices(choice.choices) });
         if (ran.folds.some((f) => f.kind === "rerollDamage") && damage === undefined) damage = await standardDamageOf(ctx, row, attacker);
-        folds = resolveRerolls(ran.folds, `${row._id}:${i}:reroll`, attackRoll, damage ?? null);
+        folds = resolveRerolls(ran.folds, `${row._id}:${i}:reroll`, attackRoll, damage ?? null, { disadvantage: p.attackDisadvantage ?? 0 });
       }
     }
     const next = windowRespond(state, { characterId: answer.characterId, choice: answer.choice, ...(folds ? { folds } : {}) }, { replay: true });
@@ -506,13 +538,15 @@ function freeEffectId(effects: readonly { id: string }[], id: string): string {
 /**
  * The riders on the sheet of whoever took the hit (user answer 2026-10-22: the rider moves with the damage): conditions,
  * effects (the sheet keeps at most 20), Hope, Stress (a full track marks HP instead, CB p.92), forced HP. Bold Presence's
- * fold (`skipConditions`) keeps conditions and card tags off.
+ * fold (`skipConditions`) keeps conditions and card tags off. DA8 (`ignoreHp`, Dark Aegis, user answer 2026-10-29: "any
+ * extra 'mark HP' from them is also ignored"): forced HP riders are skipped and a Stress past a full track marks no HP.
  */
-export function applyRiders(sheet: CharacterSheet, riders: readonly HitRider[], skipConditions: boolean): { sheet: CharacterSheet; applied: number } {
+export function applyRiders(sheet: CharacterSheet, riders: readonly HitRider[], skipConditions: boolean, ignoreHp = false): { sheet: CharacterSheet; applied: number } {
   let next = sheet;
   let applied = 0;
   for (const r of riders) {
     if (skipConditions && isConditionRider(r)) continue;
+    if (ignoreHp && r.kind === "hp") continue;
     applied++;
     switch (r.kind) {
       case "condition":
@@ -526,7 +560,7 @@ export function applyRiders(sheet: CharacterSheet, riders: readonly HitRider[], 
         break;
       case "stress": {
         const marked = applyStressTo(pcCombatant("rider", next), r.amount).after;
-        next = { ...next, stress: Math.min(next.stressMax, marked.stress), hp: Math.min(next.hpMax, marked.hp) };
+        next = { ...next, stress: Math.min(next.stressMax, marked.stress), hp: ignoreHp ? next.hp : Math.min(next.hpMax, marked.hp) };
         break;
       }
       case "hp":

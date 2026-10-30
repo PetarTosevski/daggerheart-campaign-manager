@@ -261,6 +261,13 @@ export const incomingHitPayloadValidator = v.object({
   riders: v.optional(v.array(hitRiderValidator)),
   /** AA2b (widened): set when the hit resolved and its target still has an after-hit card to answer. */
   afterHit: v.optional(afterHitValidator),
+  /**
+   * DA8 (widened): this target's own attack total (DA1: a target with its own disadvantage keeps its own die), so a
+   * window rebuilt later compares Evasion answers with it. GM-only: never in a player's view (Q14).
+   */
+  attackTotal: v.optional(v.number()),
+  /** DA8 (widened): disadvantage this target puts on the roll beyond the whole roll's (DA1), for its forced rerolls. */
+  attackDisadvantage: v.optional(v.number()),
 });
 
 /** The most riders one hit carries. */

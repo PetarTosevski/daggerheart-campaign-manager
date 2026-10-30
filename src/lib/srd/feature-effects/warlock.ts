@@ -216,8 +216,9 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
 
   // Dark Aegis (mastery, HF p.14): "Once per long rest when you would take damage, you can spend a Favor instead of
   // marking Hit Points."
-  // The damage is still taken (its severity counts for "until you take Severe damage"); no Hit Points are marked. One hit
-  // marks at most 4 Hit Points (Massive damage, CB p.91), so "4 fewer" marks none.
+  // User answer 2026-10-29 (dcm-bxp.99.19.13): the damage becomes zero: no Hit Points marked, and zero damage has no
+  // severity (no Minor, Major or Severe, so "until you take Severe damage" doesn't fire). The attack's on-hit effects
+  // (conditions) still apply, but any extra "mark HP" from them is ignored (`ignoreOnHitHp`, DA0; applied by DA8).
   {
     featureId: `subclass:${ENDLESS}:dark-aegis`,
     source: "subclass",
@@ -230,7 +231,7 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
         activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
         limit: { per: "longRest" },
         costs: [aFavor],
-        steps: [{ kind: "adjustHpMarked", to: "self", change: "fewer", amount: n(4), note: "Spend a Favor instead of marking Hit Points." }],
+        steps: [{ kind: "negate", to: "self", what: "damage", ignoreOnHitHp: true, note: "Spend a Favor instead of marking Hit Points: the damage is zero." }],
       },
     ],
   },
@@ -238,7 +239,8 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
   // Draining Bane (mastery, HF p.14): "When an adversary targets you or an ally within Very Close range with an attack, you
   // can spend a Favor to Drain them. When you do, they must mark a Stress, and you can clear a Stress. While Drained, the
   // target uses a d12 instead of a d20 for attack rolls (including for advantage or disadvantage) until they fail a roll."
-  // Q2: a before-roll answer, so the d12 applies to this attack too. "You can clear a Stress" is an optional step.
+  // Q2: a before-roll answer, so the d12 applies to this attack too. "You can clear a Stress" is an optional step, ticked
+  // by default (user answer 2026-10-29, dcm-bxp.99.19.15: `defaultOn`, DA0); unticking skips it.
   {
     featureId: `subclass:${ENDLESS}:draining-bane`,
     source: "subclass",
@@ -256,7 +258,7 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
         targets: { side: "trigger", who: "source" },
         steps: [
           { kind: "markStress", to: "targets", amount: n(1) },
-          { kind: "optional", id: "clear-stress", label: "Clear a Stress", steps: [{ kind: "clear", to: "self", track: "stress", amount: n(1) }] },
+          { kind: "optional", id: "clear-stress", label: "Clear a Stress", defaultOn: true, steps: [{ kind: "clear", to: "self", track: "stress", amount: n(1) }] },
           {
             kind: "effect",
             to: "targets",

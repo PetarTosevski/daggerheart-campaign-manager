@@ -162,9 +162,9 @@ describe("Pact of the Endless (HF p.14)", () => {
     expect(ofKind(use(`subclass:pact-of-the-endless:damage-sink`, undefined, { trigger: { amount: 26 } }), "fold")[0]!.amount).toBe(13);
   });
 
-  it("Dark Aegis: a Favor instead of marking Hit Points (no HP marked from this hit); once per long rest", () => {
+  it("Dark Aegis: a Favor instead of marking Hit Points (user 2026-10-29: the damage is zero, on-hit HP ignored); once per long rest", () => {
     const plan = use(`subclass:pact-of-the-endless:dark-aegis`, undefined, { trigger: { amount: 40 } });
-    expect(ofKind(plan, "fold")[0]).toMatchObject({ step: { kind: "adjustHpMarked", change: "fewer" }, amount: 4 });
+    expect(ofKind(plan, "fold")[0]).toMatchObject({ step: { kind: "negate", what: "damage", ignoreOnHitHp: true } });
     expect(plan.actor.after.favor).toBe(2);
     expect(plan.limit).toMatchObject({ key: "feat:subclass:pact-of-the-endless:dark-aegis", until: "longRest" });
   });
@@ -175,8 +175,9 @@ describe("Pact of the Endless (HF p.14)", () => {
     expect(plan.actor.after).toMatchObject({ favor: 2, stress: 1 });
     expect(ofKind(plan, "mark")).toMatchObject([{ targetId: "bandit", track: "stress", amount: 1 }]);
     expect(ofKind(plan, "effect")[0]).toMatchObject({ targetId: "bandit", mods: [{ kind: "set", stat: "attackDie", to: 12 }], duration: "manual", endsOn: ["bearerFails"] });
-    // Without taking the optional clear, your Stress stays.
-    expect(use(`subclass:pact-of-the-endless:draining-bane`, undefined, { trigger: { source: bandit } }).actor.after.stress).toBe(2);
+    // User 2026-10-29 (dcm-bxp.99.19.15): the clear is ticked by default, so it runs when not named; unticked it is skipped.
+    expect(use(`subclass:pact-of-the-endless:draining-bane`, undefined, { trigger: { source: bandit } }).actor.after.stress).toBe(1);
+    expect(use(`subclass:pact-of-the-endless:draining-bane`, undefined, { trigger: { source: bandit }, optionalsOff: ["clear-stress"] }).actor.after.stress).toBe(2);
   });
 });
 

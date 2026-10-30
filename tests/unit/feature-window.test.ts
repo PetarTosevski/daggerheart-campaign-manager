@@ -24,6 +24,8 @@ import type { Combatant } from "@/lib/domain/combat-actions";
 import { queueRng } from "@/lib/domain/dice";
 import type { FeatureEffect } from "@/lib/domain/feature-effects/types";
 import { featureEffect } from "@/lib/srd/feature-effects/index";
+import { cardEffect } from "@/lib/srd/card-effects/index";
+import { defaultPicks, featureChoice, type FeatureView } from "@/components/combat-map/actions/reactions/model";
 
 // Plan sheet-drawer, tracer SD4: features in the adversary hit's reaction window (AA1's pure machine), the before-roll
 // fit (Q2) and the after-hit feature uses. The entries are the FE-* tables' own; the expected numbers come from the books
@@ -193,7 +195,8 @@ describe("feature answers in the reaction window", () => {
     let w = openWindow({ hit: hit({ amount: 20 }), targetId: "w", party: [warlock], attacker: BANDIT });
     w = useFeature(w, "w", ID);
     w = ok(respond(w, { characterId: "w", choice: { kind: "noArmor" } }));
-    expect(resolveWindow(w, [warlock]).result).toMatchObject({ severity: "severe", hpMarked: 0 });
+    // DA8 (user 2026-10-29): the damage is zero, so it has no severity and marks no Hit Points.
+    expect(resolveWindow(w, [warlock])).toMatchObject({ negated: true, hpRidersIgnored: true, result: { taken: 0, severity: "none", hpMarked: 0 } });
   });
 
   it("Partners-in-Arms (CB p.36): an ally within Very Close marks an Armor Slot and the target's severity drops one threshold", () => {
@@ -321,5 +324,191 @@ describe("after the hit", () => {
     expect(afterHitFeatures(channeling, facts({ hpMarked: 2 }), { source: BANDIT, taken: 9 }).auto).toEqual([{ featureId: ID, useId: "fire" }]);
     const water = pc("d", [ID], { facts: { conditions: [], tags: [], flying: false, featureEffects: [{ featureId: ID, option: "water" }] } }, undefined, "melee");
     expect(afterHitFeatures(water, facts({ hpMarked: 2 }), { source: BANDIT, taken: 9 }).auto).toEqual([]);
+  });
+});
+
+// Plan drawer-answers, tracer DA8 (the user's answers of 2026-10-29 / 2026-10-30; printed pages):
+// - CB p.107 "SIMULTANEOUS AND STACKING EFFECTS": "the player controlling the effects ... can apply the effects in any
+//   order." After the Armor Slot answer every ready reaction that still fits the hit stays offered (dcm-bxp.99.19.50 (3)).
+// - CB p.114: "Each time your character takes damage, you can only mark 1 Armor Slot."
+// - Stable (HF p.12): "spend a Focus instead of an Armor Slot to reduce damage" (dcm-bxp.99.19.9).
+// - Celestial Wings (HF p.19): "Once per scene while flying, you can spend a Hope instead of marking an Armor Slot."
+//   (dcm-bxp.99.19.30; user 2026-10-30: Wings OR a real Armor Slot on a hit, never both).
+// - Dark Aegis (HF p.14): "spend a Favor instead of marking Hit Points" (dcm-bxp.99.19.13: zero damage, no severity).
+describe("DA8: every ready reaction after armor, in the player's order", () => {
+  const FORTITUDE = "ancestry:dwarf:increased-fortitude";
+  const IRON_WILL = "subclass:stalwart:iron-will";
+
+  it("after the Armor Slot a dwarf still gets Increased Fortitude (not only severity-gated answers)", () => {
+    const dwarf = pc("dwarf", [FORTITUDE, IRON_WILL]);
+    let w = openWindow({ hit: hit({ amount: 15 }), targetId: "dwarf", party: [dwarf], attacker: BANDIT });
+    w = ok(respond(w, { characterId: "dwarf", choice: { kind: "armor", slots: 1 } }));
+    // Iron Will's extra slot is moot once the armor answer is in; Increased Fortitude still fits.
+    expect(featureAnswers(w, "dwarf")).toEqual([{ featureId: FORTITUDE, useId: "main" }]);
+    expect(awaiting(w)).toEqual(["dwarf"]);
+    w = useFeature(w, "dwarf", FORTITUDE);
+    expect(isComplete(w)).toBe(true);
+    // 15 halved (rounded up) = 8 ≥ Major 8 → Major; the slot: Minor, 1 HP.
+    expect(resolveWindow(w, [dwarf]).result).toMatchObject({ taken: 8, severityBefore: "major", armorSlots: 1, severity: "minor", hpMarked: 1 });
+  });
+
+  it("the same answers in the other order give the same hit; Don't mark ends the turn (every answer was offered with it)", () => {
+    const dwarf = pc("dwarf", [FORTITUDE]);
+    let w = openWindow({ hit: hit({ amount: 15 }), targetId: "dwarf", party: [dwarf], attacker: BANDIT });
+    w = useFeature(w, "dwarf", FORTITUDE);
+    w = ok(respond(w, { characterId: "dwarf", choice: { kind: "armor", slots: 1 } }));
+    expect(resolveWindow(w, [dwarf]).result).toMatchObject({ taken: 8, armorSlots: 1, severity: "minor", hpMarked: 1 });
+    let done = openWindow({ hit: hit({ amount: 15 }), targetId: "dwarf", party: [dwarf], attacker: BANDIT });
+    expect(featureAnswers(done, "dwarf")).toEqual([{ featureId: FORTITUDE, useId: "main" }]);
+    done = ok(respond(done, { characterId: "dwarf", choice: { kind: "noArmor" } }));
+    expect(isComplete(done)).toBe(true);
+    // Done after the slot with Increased Fortitude still offered.
+    let slot = openWindow({ hit: hit({ amount: 15 }), targetId: "dwarf", party: [dwarf], attacker: BANDIT });
+    slot = ok(respond(slot, { characterId: "dwarf", choice: { kind: "armor", slots: 1 } }));
+    expect(awaiting(slot)).toEqual(["dwarf"]);
+    slot = ok(respond(slot, { characterId: "dwarf", choice: { kind: "pass" } }));
+    expect(isComplete(slot)).toBe(true);
+    expect(resolveWindow(slot, [dwarf]).result).toMatchObject({ taken: 15, severity: "major", hpMarked: 2 });
+    expect(resolveWindow(done, [dwarf]).result).toMatchObject({ taken: 15, severity: "severe", hpMarked: 3 });
+  });
+
+  it("halving answer and resistance both apply: the reaction first, then resistance, each rounding up (dcm-bxp.99.19.47 (2), Q6)", () => {
+    const dwarf = { ...pc("dwarf", [FORTITUDE]), resistance: { physical: "resistant" as const, magic: "none" as const } };
+    let w = openWindow({ hit: hit({ amount: 15 }), targetId: "dwarf", party: [dwarf], attacker: BANDIT });
+    w = useFeature(w, "dwarf", FORTITUDE);
+    w = ok(respond(w, { characterId: "dwarf", choice: { kind: "noArmor" } }));
+    // 15 → 8 (Increased Fortitude, rounded up) → 4 (resistance, rounded up): Minor, 1 HP.
+    expect(resolveWindow(w, [dwarf]).result).toMatchObject({ incoming: 8, resisted: "resistant", taken: 4, severity: "minor", hpMarked: 1 });
+  });
+
+  it("one answer per ally per hit, card or feature (dcm-bxp.99.19.48 (4))", () => {
+    const shield = cardEffect("i-am-your-shield");
+    if (!shield) throw new Error("no I Am Your Shield entry");
+    const mira = pc("mira", []);
+    const guard: WindowPc = { ...pc("bram", ["subclass:stalwart:partners-in-arms"], {}, "veryClose"), cards: [shield] };
+    let w = openWindow({ hit: hit({ amount: 10 }), targetId: "mira", party: [mira, guard], attacker: BANDIT });
+    expect(w.responders.find((r) => r.characterId === "bram")).toMatchObject({ cardIds: ["i-am-your-shield"], featureIds: ["subclass:stalwart:partners-in-arms"] });
+    w = useFeature(w, "bram", "subclass:stalwart:partners-in-arms");
+    expect(featureAnswers(w, "bram")).toEqual([]);
+    expect(respond(w, { characterId: "bram", choice: { kind: "card", cardId: "i-am-your-shield" } })).toMatchObject({ ok: false, code: "NOT_A_RESPONDER" });
+  });
+});
+
+describe("DA8: Stable and Celestial Wings stand for the hit's one Armor Slot", () => {
+  const STABLE = "stance:martial-artist:stable";
+  const WINGS = "ancestry:aetheris:celestial-wings";
+  const stanceFacts = { conditions: [], tags: [], flying: false, featureEffects: [], activeStance: "stable" };
+
+  it("Stable without armor: a Focus lowers Major to Minor, no Armor Slot marked, and it is the armor answer", () => {
+    const monk = pc("m", [STABLE], { focus: 1, armorMax: 0, facts: stanceFacts });
+    let w = openWindow({ hit: hit({ amount: 10 }), targetId: "m", party: [monk], attacker: BANDIT });
+    expect(w.responders).toEqual([{ characterId: "m", role: "target", cardIds: [], featureIds: [STABLE] }]);
+    w = useFeature(w, "m", STABLE);
+    expect(isComplete(w)).toBe(true);
+    expect(resolveWindow(w, [monk]).result).toMatchObject({ severityBefore: "major", armorSlots: 0, severity: "minor", hpMarked: 1, after: { armor: 0 } });
+    expect(openWindow({ hit: hit({ amount: 10 }), targetId: "m", party: [pc("m", [STABLE], { focus: 0, armorMax: 0, facts: stanceFacts })], attacker: BANDIT }).responders).toEqual([]);
+  });
+
+  it("Stable OR the Armor Slot, never both: one step in total", () => {
+    const monk = pc("m", [STABLE], { focus: 2, facts: stanceFacts });
+    let slot = openWindow({ hit: hit({ amount: 20 }), targetId: "m", party: [monk], attacker: BANDIT });
+    expect(featureAnswers(slot, "m")).toEqual([{ featureId: STABLE, useId: "main" }]);
+    slot = ok(respond(slot, { characterId: "m", choice: { kind: "armor", slots: 1 } }));
+    expect(featureAnswers(slot, "m")).toEqual([]);
+    expect(isComplete(slot)).toBe(true);
+    let focus = openWindow({ hit: hit({ amount: 20 }), targetId: "m", party: [monk], attacker: BANDIT });
+    focus = useFeature(focus, "m", STABLE);
+    // The Focus was the armor answer: nothing else fits, so the window is done and no slot can follow.
+    expect(isComplete(focus)).toBe(true);
+    expect(respond(focus, { characterId: "m", choice: { kind: "armor", slots: 1 } }).ok).toBe(false);
+    expect(respond(focus, { characterId: "m", choice: { kind: "armor", slots: 1 } }, { replay: true })).toMatchObject({ ok: false, code: "NOT_A_RESPONDER" });
+    // Severe → Major (one step), the slot stays clear.
+    expect(resolveWindow(focus, [monk]).result).toMatchObject({ severity: "major", armorSlots: 0, hpMarked: 2, after: { armor: 0 } });
+    // Two substitutes still make one step.
+    const twice: WindowState = { ...focus, responses: [...focus.responses, { characterId: "m", choice: { kind: "feature", featureId: "x" }, folds: [{ kind: "reduceSeverity", steps: 1, targetIds: ["m"], insteadOfArmorSlot: true }] }] };
+    expect(resolveWindow(twice, [monk]).result).toMatchObject({ severity: "major" });
+  });
+
+  it("Celestial Wings while flying, every slot marked: a Hope lowers Severe to Major, once; after a real slot it is not offered", () => {
+    const flying = { conditions: [], tags: [], flying: true, featureEffects: [] };
+    const full = pc("a", [WINGS], { armor: 3, armorMax: 3, hope: 2, facts: flying });
+    let w = openWindow({ hit: hit({ amount: 20 }), targetId: "a", party: [full], attacker: BANDIT });
+    expect(featureAnswers(w, "a")).toEqual([{ featureId: WINGS, useId: "main" }]);
+    w = useFeature(w, "a", WINGS);
+    expect(isComplete(w)).toBe(true);
+    expect(resolveWindow(w, [full]).result).toMatchObject({ severity: "major", hpMarked: 2, armorSlots: 0 });
+    expect(openWindow({ hit: hit({ amount: 20 }), targetId: "a", party: [pc("a", [WINGS], { armor: 3, armorMax: 3, facts: { ...flying, flying: false } })], attacker: BANDIT }).responders).toEqual([]);
+    const armored = pc("a", [WINGS], { facts: flying });
+    let slot = openWindow({ hit: hit({ amount: 20 }), targetId: "a", party: [armored], attacker: BANDIT });
+    slot = ok(respond(slot, { characterId: "a", choice: { kind: "armor", slots: 1 } }));
+    expect(featureAnswers(slot, "a")).toEqual([]);
+  });
+
+  it("a slot substitute is not offered on direct damage (CB p.99: Armor Slots can't reduce it; QUESTIONS in TASK-DA-DA8)", () => {
+    const monk = pc("m", [STABLE], { focus: 1, facts: stanceFacts });
+    const w = openWindow({ hit: hit({ amount: 10, direct: true }), targetId: "m", party: [monk], attacker: BANDIT });
+    expect(featureAnswers(w, "m")).toEqual([]);
+  });
+});
+
+describe("DA8: Dark Aegis cancels the damage to zero", () => {
+  const AEGIS = "subclass:pact-of-the-endless:dark-aegis";
+
+  it("after an Armor Slot: no slot marked, no severity, no HP; on-hit HP ignored", () => {
+    const warlock = pc("w", [AEGIS], { favor: 1 });
+    let w = openWindow({ hit: hit({ amount: 20 }), targetId: "w", party: [warlock], attacker: BANDIT });
+    w = ok(respond(w, { characterId: "w", choice: { kind: "armor", slots: 1 } }));
+    expect(featureAnswers(w, "w")).toEqual([{ featureId: AEGIS, useId: "main" }]);
+    w = useFeature(w, "w", AEGIS);
+    expect(isComplete(w)).toBe(true);
+    expect(resolveWindow(w, [warlock])).toMatchObject({ negated: true, hpRidersIgnored: true, result: { severity: "none", armorSlots: 0, hpMarked: 0, after: { armor: 0 } } });
+  });
+
+  it("before the armor answer: nothing left for an Armor Slot to reduce", () => {
+    const warlock = pc("w", [AEGIS], { favor: 1 });
+    let w = openWindow({ hit: hit({ amount: 20 }), targetId: "w", party: [warlock], attacker: BANDIT });
+    w = useFeature(w, "w", AEGIS);
+    expect(targetPrompt(w, warlock)).toEqual({ damage: 0, severity: "none", maxSlots: 0 });
+  });
+
+  it("zero damage is no longer damage they 'would take': Damage Sink isn't offered after it (CB p.91)", () => {
+    const SINK = "subclass:pact-of-the-endless:damage-sink";
+    const warlock = pc("w", [AEGIS, SINK], { favor: 2 });
+    let w = openWindow({ hit: hit({ amount: 20 }), targetId: "w", party: [warlock], attacker: BANDIT });
+    expect(featureAnswers(w, "w").map((f) => f.featureId)).toEqual([AEGIS, SINK]);
+    w = ok(respond(w, { characterId: "w", choice: { kind: "armor", slots: 1 } }));
+    w = useFeature(w, "w", AEGIS);
+    expect(featureAnswers(w, "w")).toEqual([]);
+    expect(isComplete(w)).toBe(true);
+  });
+});
+
+describe("DA8: Draining Bane's 'Clear a Stress' is ticked by default (dcm-bxp.99.19.15)", () => {
+  const view: FeatureView = {
+    featureId: "subclass:pact-of-the-endless:draining-bane",
+    useId: "main",
+    name: "Draining Bane",
+    text: "",
+    numbers: [],
+    options: [],
+    optionals: [{ id: "clear-stress", label: "Clear a Stress", defaultOn: true }],
+    situations: [],
+  };
+
+  it("the prompt's default ticks it; unticking sends it off", () => {
+    const picks = defaultPicks(view);
+    expect(picks.optionals).toEqual({ "clear-stress": true });
+    expect(featureChoice(view, picks)).toMatchObject({ choices: [{ id: "optional:clear-stress", value: true }] });
+    expect(featureChoice(view, { ...picks, optionals: { "clear-stress": false } })).toMatchObject({ choices: [{ id: "optional:clear-stress", value: false }] });
+    expect(defaultPicks({ ...view, optionals: [{ id: "x", label: "X" }] }).optionals).toEqual({});
+  });
+});
+
+describe("DA8 pin: Elemental Dominion Fire's +1 Proficiency is for damage only (dcm-bxp.99.19.50 (2), CB p.30)", () => {
+  it("a passive Proficiency +1 while Channeling Fire, nothing else (Proficiency counts damage dice)", () => {
+    const fire = entry("subclass:warden-of-the-elements:elemental-dominion").uses.find((u) => u.id === "fire")!;
+    expect(fire.activation).toEqual({ kind: "passive" });
+    expect(fire.mods).toEqual([{ kind: "stat", stat: "proficiency", delta: { kind: "fixed", value: 1 } }]);
+    expect(fire.steps).toEqual([]);
   });
 });
