@@ -1,8 +1,9 @@
 import type { FunctionReturnType } from "convex/server";
 
 import { rangeCheck, type Footprint } from "@/lib/domain/combat-actions/distance";
-import type { CardEffect, CardUse, Cost, Limit, NumberSource, Range, Step, TargetSpec } from "@/lib/domain/card-effects/types";
-import type { TraitId } from "@/lib/srd/types";
+import { limitPeriod } from "@/lib/domain/card-effects/availability";
+import type { CardEffect, CardUse, Cost, Limit, NumberSource, Payer, Range, Step, TargetSpec } from "@/lib/domain/card-effects/types";
+import { TRAIT_IDS, type TraitId } from "@/lib/srd/types";
 
 import type { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -164,7 +165,13 @@ export function formFor(use: CardUse): UseForm {
     optionals: [],
     recipients: [],
     weapon: usesEitherWeapon(use.roll) || usesEitherWeapon(use.steps),
-    traits: use.roll?.kind === "trait" && Array.isArray(use.roll.trait) ? [...(use.roll.trait as readonly TraitId[])] : null,
+    // Plan lanes, E5 (dcm-fjh): "a reaction roll using a trait of your choice" (Attack of Opportunity, CB p.48) asks for any trait.
+    traits:
+      use.roll?.kind === "trait" && Array.isArray(use.roll.trait)
+        ? [...(use.roll.trait as readonly TraitId[])]
+        : use.roll?.kind === "reaction" && use.roll.anyTrait
+          ? [...TRAIT_IDS]
+          : null,
     gmDifficulty: use.roll !== undefined && "difficulty" in use.roll && use.roll.difficulty.kind === "gm",
     choose: [],
     rolls: use.roll !== undefined,
@@ -388,13 +395,35 @@ export const RANGE_LABEL: Record<string, string> = {
   unlimited: "Any range",
 };
 
-const PER_LABEL: Record<Limit["per"], string> = { rest: "rest", longRest: "long rest", session: "session", scene: "scene" };
+const PER_LABEL: Record<Limit["per"] | NonNullable<Limit["period"]>, string> = {
+  rest: "rest",
+  longRest: "long rest",
+  session: "session",
+  scene: "scene",
+  // Plan lanes, E5 (dcm-aym, dcm-c5h): a limit's `period` names the label when it has one.
+  gmTurn: "GM turn",
+  day: "day",
+  week: "week",
+};
 
-/** "Once per rest", "3× per scene", "Once per long rest on a success" (CB p.101). */
+/** "Once per rest", "3× per scene", "Once per long rest on a success", "Once per week on a failure" (CB p.101). */
 export function limitLabel(limit: Limit): string {
   const times = limit.times ?? 1;
   const on = limit.consumedOn === "success" ? " on a success" : limit.consumedOn === "failure" ? " on a failure" : "";
-  return `${times === 1 ? "Once" : `${times}×`} per ${PER_LABEL[limit.per]}${on}`;
+  return `${times === 1 ? "Once" : `${times}×`} per ${PER_LABEL[limitPeriod(limit)]}${on}`;
+}
+
+const PAYER_LABEL: Record<Payer, string> = {
+  self: "",
+  triggerSubject: "They pay: ",
+  triggerSource: "They pay: ",
+  picked: "The ally pays: ",
+  chooser: "The chooser pays: ",
+};
+
+/** Plan lanes, E5 (dcm-8yr, dcm-uj0): a cost badge's prefix when another creature pays it (Tactician, Rune Ward's holder). */
+export function payerPrefix(paidBy: Payer | undefined): string {
+  return PAYER_LABEL[paidBy ?? "self"];
 }
 
 /** A badge on a card face: a cost (gold), a limit (blue) or how it is used (passive, reaction, out of combat). */
@@ -415,11 +444,11 @@ export function cardBadges(card: Pick<HandCard, "state" | "uses">, effect: CardE
   if (playable.length > 1) return [{ kind: "how", text: `${playable.length} spells` }];
   const use = effect?.uses.find((u) => u.id === playable[0]!.useId);
   if (!use) return [];
-  const badges: Badge[] = (use.costs ?? []).map((c) => ({ kind: "cost", text: costLabel(c) }));
+  const badges: Badge[] = (use.costs ?? []).map((c) => ({ kind: "cost", text: `${payerPrefix(use.paidBy)}${costLabel(c)}` }));
   for (const step of use.steps) {
     if (step.kind === "pay") {
       const when = step.when?.includes("success") ? "On a success: " : "";
-      badges.push(...step.costs.map((c) => ({ kind: "cost" as const, text: `${when}${costLabel(c)}` })));
+      badges.push(...step.costs.map((c) => ({ kind: "cost" as const, text: when ? `${when}${payerPrefix(step.paidBy).toLowerCase()}${costLabel(c)}` : `${payerPrefix(step.paidBy)}${costLabel(c)}` })));
     }
   }
   if (use.limit) badges.push({ kind: "limit", text: limitLabel(use.limit) });

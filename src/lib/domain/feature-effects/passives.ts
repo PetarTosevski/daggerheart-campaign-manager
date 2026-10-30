@@ -35,10 +35,12 @@ import type { CardUse, CreatureKey, Mod, NumberSource, RollFilter, Versus } from
 import type { CharacterSheet } from "../../validation/characters";
 import { TRAIT_IDS, type TraitId } from "../../srd/types";
 import { applyUpgrades } from "./upgrades";
+import { FEATURE_KEY_PREFIX } from "./ids";
+import { slotsFromMods, type SlotCounts } from "../characters/slots";
 
 /** The sheet fields passives read. Every one is optional: a partial sheet holds what it names (derived-stat tests pass `{ level, subclassId }`). */
 export type PassiveSheet = Partial<OwnedSheet> &
-  Partial<Pick<CharacterSheet, "proficiency" | "hope" | "hp" | "hpMax" | "stress" | "stressMax" | "armorId" | "conditions" | "armorMarked">>;
+  Partial<Pick<CharacterSheet, "proficiency" | "hope" | "hp" | "hpMax" | "stress" | "stressMax" | "armorId" | "conditions" | "armorMarked" | "cardTokens">>;
 
 /** The state a passive's `requires` reads; every field defaults from the sheet. */
 export interface PassiveState {
@@ -83,6 +85,12 @@ export interface PassiveMods extends StatTotals {
    * auto roll option `combatTraining`.
    */
   rollOptions: { featureId: string; useId: string; name: string }[];
+  /**
+   * Plan lanes, E5 (dcm-u6z, dcm-fjh): Hit Point and Stress slots the passives' `hpMax` / `stressMax` mods name (At Ease,
+   * CB p.36: "Gain an additional Stress slot"). Not added to any total: a maximum is raised once, when the feature is
+   * gained, by characters/slots.ts (`gainSlots` under the feature's key), so the derived stats never count it twice.
+   */
+  slots: SlotCounts;
 }
 
 export interface VersusMod {
@@ -222,7 +230,11 @@ export function activePassives(
       if (feature.uses && !feature.uses.includes(use.id)) continue;
       if (use.activation.kind !== kind) continue;
       if (use.activation.kind === "rider" && use.activation.trigger.kind !== "beforeYouRoll") continue;
-      if (!(use.requires ?? []).every((r) => requirementMet(r, req))) continue;
+      // Plan lanes, E5 (dcm-2g9): a `tokens` check without a name reads this feature's own tokens (Feed, HF p.39: "While
+      // there are no tokens on this card"); a sheet without an entry holds none.
+      const tokens = sheet.cardTokens?.find((t) => t.cardId === `${FEATURE_KEY_PREFIX}${feature.featureId}`)?.count ?? 0;
+      const own = { ...req, facts: { ...req.facts, cardTokens: tokens } };
+      if (!(use.requires ?? []).every((r) => requirementMet(r, own))) continue;
       out.push({ feature, use });
     }
   }
@@ -248,7 +260,7 @@ const matches = (key: CreatureKey, creature: CreatureInfo): boolean => {
  */
 export function passiveMods(sheet: PassiveSheet, state: PassiveState = {}, scope: OwnedScope = {}, only?: (feature: OwnedFeature) => boolean): PassiveMods {
   const totals: StatTotals = { ...EMPTY_STATS };
-  const result: PassiveMods = { ...totals, traits: {}, advantage: [], disadvantageAgainst: [], flags: [], versus: [], sources: [], rollOptions: [] };
+  const result: PassiveMods = { ...totals, traits: {}, advantage: [], disadvantageAgainst: [], flags: [], versus: [], sources: [], rollOptions: [], slots: { hp: 0, stress: 0 } };
   const amountSheet = { proficiency: sheet.proficiency, level: sheet.level };
   const legacy = legacyBeastformMods(sheet);
   for (const { feature, use } of activePassives(sheet, state, scope)) {
@@ -285,6 +297,12 @@ function apply(result: PassiveMods, featureId: string, mod: Mod, sheet: { profic
       if (mod.versus) {
         if (mod.stat === "evasion") result.versus.push({ featureId, versus: mod.versus, mod: { kind: "stat", stat: "evasion", delta } });
         return true;
+      }
+      if (mod.stat === "hpMax" || mod.stat === "stressMax") {
+        const slots = slotsFromMods([mod]);
+        result.slots.hp += slots.hp;
+        result.slots.stress += slots.stress;
+        return slots.hp !== 0 || slots.stress !== 0;
       }
       if (!STAT_KEYS.has(mod.stat)) return false;
       result[mod.stat as keyof StatTotals] += delta;

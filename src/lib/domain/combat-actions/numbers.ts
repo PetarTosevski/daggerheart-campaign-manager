@@ -20,14 +20,40 @@
 // Point for each result of 4 or higher"), every die without `atLeast`, plus the expression's `plus`.
 
 import type { Rng } from "../dice/index";
-import type { DiceExpr, HeldDieKind, NumberSource, Resource, Track } from "../card-effects/types";
+import type { DiceExpr, HeldDieKind, NumberSource, Range, Resource, Track } from "../card-effects/types";
+import { RANGE_SQUARES } from "../combat-map/ranges";
 import type { DomainId, TraitId } from "../../srd/types";
 
-/** A creature's tracks, as `marked` reads them. */
+/**
+ * A creature's tracks, as `marked` reads them. Plan lanes, E5 (each optional; absent reads as 0):
+ * - `hpMax` / `stressMax` / `armorMax`: the slots, for `free` (free = slots − marked).
+ * - `stats`: derived stats for `stat` (Armored Shell's Armor Score, Blade of the Forest's Major threshold).
+ * - `gold`: the gold it carries, for `gold`; `tokens`: named tokens on it, for `creatureTokens`.
+ */
 export interface MarkedTracks {
   hp: number;
   stress: number;
   armor?: number;
+  hpMax?: number;
+  stressMax?: number;
+  armorMax?: number;
+  stats?: Partial<Record<Extract<NumberSource, { kind: "stat" }>["stat"], number>>;
+  gold?: { handfuls: number; bags: number };
+  tokens?: Readonly<Record<string, number>>;
+}
+
+/**
+ * A creature on the map, as `creatureCount` reads it (plan lanes, E5; dcm-ttz). `side` is seen from the actor (`self`
+ * is the actor itself); `pc` whether it is a player character; `name` the adversary's name; `fromSelf` / `fromTarget` the
+ * squares to the actor and to the target (absent: not known, so it is not counted when the source has a `within`).
+ */
+export interface MapCreature {
+  id: string;
+  side: "self" | "ally" | "enemy";
+  pc: boolean;
+  name?: string;
+  fromSelf?: number;
+  fromTarget?: number;
 }
 
 /** What `resolveNumber` reads. The runner keeps one per use and updates it as the use resolves. */
@@ -60,6 +86,56 @@ export interface NumberEnv {
   lastRoll?: number;
   /** SD1 (NV1): the size of the actor's class dice, for `DiceExpr.sidesOf` (absent: the expression's own `sides`). */
   dieSides?: Partial<Record<HeldDieKind | "unstoppable" | "companion", number>>;
+  // ---- Plan lanes, E5: what the sources tracer V widened read (absent reads as 0)
+  /** The Hope and Fear Die of the host roll or of this move's roll (`dualityDie`; lane E3 fills it). */
+  dualityDice?: { hope: number; fear: number };
+  /** The creatures on the map (`creatureCount`). */
+  creatures?: readonly MapCreature[];
+  /** The current value of the actor's class dice (`classDie`: the Unstoppable Die, a held Rally Die). */
+  classDice?: Partial<Record<HeldDieKind | "unstoppable", number>>;
+  /** The Know the Tide tokens the actor holds (`tideTokens`; lane E8 fills it). */
+  tideTokens?: number;
+}
+
+/** Squares each range reaches (combat-map/ranges.ts); Very Far is any distance on the map. */
+const REACH: Record<Range, number> = { ...RANGE_SQUARES, veryFar: Infinity };
+
+/** How many creatures a `creatureCount` source counts (dcm-ttz). */
+function countCreatures(source: Extract<NumberSource, { kind: "creatureCount" }>, creatures: readonly MapCreature[]): number {
+  const sideFits = (c: MapCreature): boolean => {
+    switch (source.side) {
+      case "allies":
+        return c.side === "self" || c.side === "ally";
+      case "enemies":
+        return c.side === "enemy";
+      case "pcs":
+        return c.pc;
+      case "all":
+        return true;
+    }
+  };
+  const within = source.within;
+  return creatures.filter((c) => {
+    if (source.excludeSelf && c.side === "self") return false;
+    if (!sideFits(c) || (source.name !== undefined && c.name !== source.name)) return false;
+    if (within === undefined) return true;
+    const d = (source.of ?? "self") === "self" ? (c.side === "self" ? 0 : c.fromSelf) : c.fromTarget;
+    return d !== undefined && d <= REACH[within];
+  }).length;
+}
+
+/** A track's free slots (slots − marked); 0 when the slots are not known. */
+function freeSlots(tracks: MarkedTracks | undefined, track: Track): number {
+  if (tracks === undefined) return 0;
+  const max = track === "hp" ? tracks.hpMax : track === "stress" ? tracks.stressMax : tracks.armorMax;
+  return max === undefined ? 0 : Math.max(0, max - (tracks[track] ?? 0));
+}
+
+/** Handfuls of gold (CB p.104: "10 handfuls to 1 bag") or whole bags. */
+function goldIn(tracks: MarkedTracks | undefined, unit: "handful" | "bag"): number {
+  const g = tracks?.gold;
+  if (g === undefined) return 0;
+  return unit === "bag" ? g.bags : g.handfuls + g.bags * 10;
 }
 
 /** Rolls `count` d`sides`; returns the dice. */
@@ -141,16 +217,23 @@ export function resolveNumber(source: NumberSource, env: NumberEnv, rng: Rng): n
       if (source.max !== undefined) value = Math.min(resolveNumber(source.max, env, rng), value);
       return value;
     }
-    // Plan lanes, tracer V: widened sources (TASK-LN-V.md); lane E5 (and E3 for `dualityDie`) reads them. Until then 0.
+    // Plan lanes, E5: the sources tracer V widened (TASK-LN-V.md); a value the env does not hold reads as 0.
     case "free":
+      return freeSlots(source.who === "self" ? env.self : env.target, source.track);
     case "dualityDie":
+      return env.dualityDice?.[source.die] ?? 0;
     case "stat":
+      return (source.who === "self" ? env.self : env.target)?.stats?.[source.stat] ?? 0;
     case "creatureCount":
+      return countCreatures(source, env.creatures ?? []);
     case "gold":
+      return goldIn(source.who === "self" ? env.self : env.target, source.unit ?? "handful");
     case "creatureTokens":
+      return (source.who === "self" ? env.self : env.target)?.tokens?.[source.name] ?? 0;
     case "classDie":
+      return env.classDice?.[source.die] ?? 0;
     case "tideTokens":
-      return 0;
+      return env.tideTokens ?? 0;
   }
 }
 
