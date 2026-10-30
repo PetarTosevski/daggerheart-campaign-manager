@@ -22,7 +22,7 @@ import {
   loadCombatToken,
   tokensOnMap,
 } from "./lib/combatMaps";
-import { movementGrid } from "./lib/combatMovement";
+import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
 import { adversaryArtSrc, MAX_INSTANCES, startEncounter } from "./lib/encounters";
 import { ownFileUrl } from "./lib/files";
 import { campaignMutation, campaignQuery, gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
@@ -683,6 +683,9 @@ export const clear = gmMutation({
  * MOVE_BLOCKED, which carries no position; the GM's move always goes through and returns `blocked: true` so the map can
  * warn. `difficult`: the move crossed or ended on difficult terrain (a movement roll is needed to pass this turn, D5).
  * Players already receive the whole layout (`combatMaps.live`, Q1), so neither answer tells them anything new.
+ *
+ * Cloaked (DA3): a PC token that ends a move on the live map where a revealed enemy token sees it loses Cloaked
+ * (`uncloakAfterMove`, a public undoable feed row); Vanishing Act's Cloaked stays.
  */
 export const move = campaignMutation({
   need: "view",
@@ -698,6 +701,8 @@ export const move = campaignMutation({
       : checkMove(await movementGrid(ctx, ctx.campaign._id, map), token, next, token.size);
     if (blocked && !atLeast(ctx.permission, "owner")) throw appError("MOVE_BLOCKED");
     await ctx.db.patch("combatTokens", token._id, next);
+    // CB p.42 (Rogue, Cloaked): "end a move within line of sight of an adversary" ends it (Q9, plan drawer-answers DA3).
+    if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id);
     return { ...next, blocked, difficult };
   },
 });
