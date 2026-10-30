@@ -48,6 +48,12 @@ import { conditionValidator, effectValidator, traitIdValidator } from "./charact
  * actionLog group puts the token back and declines it (`declineGroupOffers`); the character's next server move resolves
  * the older one, and the encounter's end declines it.
  */
+/**
+ * `allyRoll` (plan drawer-answers DA13, widened; CB p.33 Cannonball, user 2026-10-29 / 2026-10-30, dcm-bxp.99.19.21): a
+ * use whose roll another PC makes. The druid's use pays the Stress and opens it; the throwing ally answers it from their
+ * own drawer (`featurePrompts.allyRoll`), or the GM cancels it (`featurePrompts.cancelAllyRoll`). Closed once the druid's
+ * use is undone (`entryId`), superseded by the druid's next throw, and declined once it expires (`ALLY_ROLL_TTL_MS`).
+ */
 export const combatRequestKindValidator = v.union(
   v.literal("sanction"),
   v.literal("incomingHit"),
@@ -57,6 +63,7 @@ export const combatRequestKindValidator = v.union(
   v.literal("riderPick"),
   v.literal("targetCount"),
   v.literal("serverMove"),
+  v.literal("allyRoll"),
 );
 
 /** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
@@ -447,6 +454,23 @@ export const serverMovePayloadValidator = v.object({
   to: tokenSquareValidator,
 });
 
+/** DA13: a use rolled by an ally (Cannonball's throw), waiting for the ally's roll. */
+export const allyRollPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("allyRoll"),
+  /** The character whose use it is (the druid who is thrown) and that use. */
+  characterId: v.id("characters"),
+  featureId: v.string(),
+  useId: v.string(),
+  /** The ally who makes the roll, and their token on the map. */
+  rollerCharacterId: v.id("characters"),
+  rollerTokenId: v.id("combatTokens"),
+  /** The use's actionLog group and public row; once that row is undone the prompt is closed. */
+  groupId: v.string(),
+  entryId: v.id("actionLog"),
+  expiresAt: v.number(),
+});
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
 export const combatRequestPayloadValidator = v.union(
   sanctionPayloadValidator,
@@ -457,6 +481,7 @@ export const combatRequestPayloadValidator = v.union(
   riderPickPayloadValidator,
   targetCountPayloadValidator,
   serverMovePayloadValidator,
+  allyRollPayloadValidator,
 );
 
 /**
@@ -525,3 +550,4 @@ export type RiderPickPayload = Infer<typeof riderPickPayloadValidator>;
 export type RiderPickChoice = Infer<typeof riderPickChoiceValidator>;
 export type TargetCountPayload = Infer<typeof targetCountPayloadValidator>;
 export type ServerMovePayload = Infer<typeof serverMovePayloadValidator>;
+export type AllyRollPayload = Infer<typeof allyRollPayloadValidator>;

@@ -1,5 +1,6 @@
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { logAction } from "../../../convex/lib/actionLog";
 import type { Area, Entry, World } from "./harness";
 import { freshKey } from "./synth";
 
@@ -28,7 +29,45 @@ async function board(w: World) {
   w.set("tokenId", tokenId);
 }
 
+/**
+ * DA13: an open Cannonball prompt of characterB's use, rolled by characterA (`requestId`). The roll names characterA's own
+ * token as the target (not an enemy), so an allowed `allyRoll` stops at COMBAT_TARGET_INVALID before anything is written.
+ */
+async function allyRollRow(w: World) {
+  const { mapId } = await w.as("gm").mutation(api.combatMaps.create, { campaignId: w.campaignId, size: "medium", idempotencyKey: freshKey() });
+  const { requestId, rollerTokenId } = await w.t.run(async (ctx) => {
+    const rollerTokenId = await ctx.db.insert("combatTokens", { campaignId: w.campaignId, mapId, size: 1, face: 0, light: "none", revealedTo: [], ref: { kind: "pc", characterId: w.characterA }, side: "pc", x: 2, y: 10 });
+    const entryId = await logAction(ctx, { campaignId: w.campaignId, characterId: w.characterB, actorId: w.users.otherPlayer, kind: "combat", visibility: "public", summary: "Bryn uses Cannonball", groupId: "g-cannonball", undoable: true });
+    const requestId = await ctx.db.insert("combatRequests", {
+      campaignId: w.campaignId,
+      mapId,
+      kind: "allyRoll",
+      status: "open",
+      createdBy: w.users.otherPlayer,
+      createdAt: Date.now(),
+      responses: [],
+      payload: { schemaVersion: 1, kind: "allyRoll", characterId: w.characterB, featureId: CANNONBALL, useId: "main", rollerCharacterId: w.characterA, rollerTokenId, groupId: "g-cannonball", entryId, expiresAt: Date.now() + 60 * 60_000 },
+    });
+    return { requestId, rollerTokenId };
+  });
+  w.set("requestId", requestId);
+  w.set("rollerTokenId", rollerTokenId);
+}
+
+const CANNONBALL = "beastform:armored-sentry:cannonball";
+
 const entries: Entry[] = [
+  // DA13 (Cannonball): the ally's drawer read, the ally's roll (the roller's player or the GM), the GM's cancel.
+  { fn: api.featurePrompts.allyRolls, access: "view", args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
+  {
+    fn: api.featurePrompts.allyRoll,
+    access: "view",
+    setup: allyRollRow,
+    args: (w) => ({ requestId: w.ids.requestId as Id<"combatRequests">, trait: "strength", targetTokenId: w.ids.rollerTokenId as Id<"combatTokens"> }),
+    expect: NOT_THEIRS,
+    okCodes: ["COMBAT_TARGET_INVALID"],
+  },
+  { fn: api.featurePrompts.cancelAllyRoll, access: "gm", setup: allyRollRow, args: (w) => ({ requestId: w.ids.requestId as Id<"combatRequests"> }) },
   {
     fn: api.featurePrompts.rollCount,
     access: "view",

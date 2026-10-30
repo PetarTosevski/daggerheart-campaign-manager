@@ -482,12 +482,17 @@ const FEATURES: readonly FeatureEffect[] = [
       steps: [{ kind: "manual", to: "self", text: "In your shell: reduce this physical damage by your Armor Score (after applying resistance)." }],
     }),
   ]),
-  // Cannonball (Armored Sentry): "Mark a Stress to allow an ally to throw or launch you at an adversary. To do so, the ally
-  // makes an attack roll using Agility or Strength (their choice) against a target within Close range. On a success, the
-  // adversary takes d12+2 physical damage using the thrower's Proficiency. You can spend a Hope to target an additional
-  // adversary within Very Close range of the first. The second target takes half the damage dealt to the first target."
-  // The ally's roll and Proficiency are not the actor's (question Q-FB3): the Stress and Hope are paid here, the throw is
-  // the table's.
+  // Cannonball (Armored Sentry), CB p.33: "Mark a Stress to allow an ally to throw or launch you at an adversary. To do so,
+  // the ally makes an attack roll using Agility or Strength (their choice) against a target within Close range. On a
+  // success, the adversary takes d12+2 physical damage using the thrower's Proficiency. You can spend a Hope to target an
+  // additional adversary within Very Close range of the first. The second target takes half the damage dealt to the first
+  // target."
+  // User 2026-10-29 / 2026-10-30 (dcm-bxp.99.19.21, DA13): the druid marks the Stress and is thrown; the THROWING ally gets
+  // a prompt in their drawer and rolls Agility or Strength (their choice) against a target within Close range of them; on
+  // a success d12+2 physical damage with the ally's Proficiency; the roll's Hope / Fear and a critical are the ally's.
+  // `rolledBy` (DA0): the druid's use pays the Stress and sends the roll (convex/featurePrompts.ts `allyRoll` runs it).
+  // The second target's Hope is the druid's ("You can spend a Hope"), ticked in the ally's prompt (TASK-DA-DA13.md Q1);
+  // half damage rounds up (CB p.107).
   entry("armored-sentry", "Cannonball", [
     formUse({
       id: "main",
@@ -495,18 +500,16 @@ const FEATURES: readonly FeatureEffect[] = [
       activation: { kind: "action" },
       costs: [stress(1)],
       targets: { side: "ally", range: "unlimited", count: { kind: "one" }, excludeSelf: true },
+      roll: { kind: "trait", trait: ["agility", "strength"], difficulty: { kind: "target" }, attack: true },
+      rolledBy: { who: "ally", proficiency: "roller", targets: enemy("close") },
       steps: [
-        {
-          kind: "manual",
-          to: "targets",
-          text: "Your ally throws you: they make an attack roll using Agility or Strength (their choice) against a target within Close range. On a success, the adversary takes d12+2 physical damage using the thrower's Proficiency.",
-        },
+        physical(12, 2),
         {
           kind: "optional",
           id: "second",
           label: "Spend a Hope to target an additional adversary within Very Close range of the first",
           costs: [hope(1)],
-          steps: [{ kind: "manual", to: "self", text: "The second adversary, within Very Close range of the first, takes half the damage dealt to the first target." }],
+          steps: [{ ...physical(12, 2), to: "picked", pick: enemy("veryClose", { kind: "one" }, { area: "aroundTarget", areaRange: "veryClose" }), scale: "half" } as Step],
         },
       ],
     }),

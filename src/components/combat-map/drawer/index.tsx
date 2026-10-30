@@ -10,6 +10,7 @@ import { sheetHref, type SheetDrawerProps } from "../slots";
 import { DrawerBoundary } from "./boundary";
 import "./drawer.css";
 import { FeatureList } from "./list";
+import { DrawerPrompts } from "./prompts";
 import { Trackers } from "./trackers";
 
 export { FeatureUse } from "./use";
@@ -108,6 +109,10 @@ function DrawerBody({ campaignId, role, map, characterId }: Omit<SheetDrawerProp
       ) : null}
       <div className="sd-grey" data-greyed={canAct ? "false" : "true"}>
         <Trackers campaignId={campaignId} characterId={characterId} trackers={drawer.trackers} counters={drawer.counters} heldDice={drawer.heldDice} canAct={canAct} />
+        {/* DA13: uses another PC rolls (Cannonball): the ally's prompt, the druid's ask, the GM's pending list. */}
+        <DrawerBoundary label="The prompts">
+          <DrawerPrompts campaignId={campaignId} role={role} map={map} characterId={characterId} drawer={drawer} canAct={canAct} />
+        </DrawerBoundary>
         <FeatureList campaignId={campaignId} role={role} map={map} characterId={characterId} drawer={drawer} canAct={canAct} />
       </div>
     </div>

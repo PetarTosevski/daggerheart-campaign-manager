@@ -10,10 +10,14 @@
  * - A move the server makes (`intoMelee`; CB p.59 Charge): see convex/featurePrompts.ts `charge`; the square left is an
  *   open `serverMove` row (convex/lib/combatRequests.ts `openServerMove`) that undo reads.
  *
+ * - A use rolled by an ally (`rolledBy`; CB p.33 Cannonball; DA13): the druid's use opens an `allyRoll` row
+ *   (`openAllyRoll`); the ally's roll runs `rollerUse` as the ally's own use. A row stands while it is unexpired
+ *   (`ALLY_ROLL_TTL_MS`) and the druid's use is not undone (`allyRollLive`).
+ *
  * Reads go through `openRequests` (bounded, indexed by campaign and status).
  */
 import { pickUse, rollTargetCount } from "../../src/lib/domain/card-effects/run";
-import type { CardUse } from "../../src/lib/domain/card-effects/types";
+import type { CardUse, Step } from "../../src/lib/domain/card-effects/types";
 import { asCardEffect } from "../../src/lib/domain/feature-effects/run";
 import { appError } from "../../src/lib/errors/app-error";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
@@ -23,6 +27,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { cardActor } from "./cardRunner";
 import { closeRequest, openRequests } from "./combatRequests";
 import { rollDie } from "./dice";
+import type { AllyRollPayload } from "./validators/combatRequests";
 
 /** How long a rolled target count waits for its use (then the next roll declines it). */
 export const TARGET_COUNT_TTL_MS = 30 * 60_000;
@@ -110,4 +115,87 @@ export async function spendTargetCount(
   if (input.targets > row.payload.count) throw appError("COMBAT_TARGET_INVALID", `At most ${row.payload.count} target(s).`);
   await closeRequest(ctx, row._id, "resolved", input.by);
   return row.payload.count;
+}
+
+// ---------------------------------------------------------------- a use rolled by an ally (Cannonball, DA13)
+
+/** How long an ally's roll waits (then it is no longer offered, and the druid's next throw declines it). */
+export const ALLY_ROLL_TTL_MS = 30 * 60_000;
+
+export type AllyRollRow = Doc<"combatRequests"> & { payload: AllyRollPayload };
+
+export function isAllyRollRow(row: Doc<"combatRequests">): row is AllyRollRow {
+  return row.payload.kind === "allyRoll";
+}
+
+/**
+ * DA13 (CB p.33 Cannonball; user 2026-10-29 / 2026-10-30, dcm-bxp.99.19.21): the druid's use paid its Stress; the picked
+ * ally now makes the roll from their own drawer. The druid's older open throws are declined first (one at a time).
+ */
+export async function openAllyRoll(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; mapId: Id<"combatMaps">; createdBy: Id<"users">; payload: Omit<AllyRollPayload, "schemaVersion" | "kind" | "expiresAt"> },
+): Promise<Id<"combatRequests">> {
+  for (const row of (await openRequests(ctx, input.campaignId)).filter(isAllyRollRow)) {
+    if (row.payload.characterId === input.payload.characterId) await closeRequest(ctx, row._id, "declined", input.createdBy);
+  }
+  const now = Date.now();
+  return ctx.db.insert("combatRequests", {
+    campaignId: input.campaignId,
+    mapId: input.mapId,
+    kind: "allyRoll",
+    status: "open",
+    createdBy: input.createdBy,
+    createdAt: now,
+    responses: [],
+    payload: { schemaVersion: 1, kind: "allyRoll", ...input.payload, expiresAt: now + ALLY_ROLL_TTL_MS },
+  });
+}
+
+/** Whether an open ally roll still stands: not expired, and the druid's use (its public row) not undone. */
+export async function allyRollLive(ctx: QueryCtx, row: AllyRollRow, now = Date.now()): Promise<boolean> {
+  if (row.payload.expiresAt <= now) return false;
+  const entry = await ctx.db.get("actionLog", row.payload.entryId);
+  return entry !== null && entry.undoneAt === undefined;
+}
+
+/** The campaign's open ally rolls that still stand, oldest first. */
+export async function liveAllyRolls(ctx: QueryCtx, campaignId: Id<"campaigns">): Promise<AllyRollRow[]> {
+  const out: AllyRollRow[] = [];
+  for (const row of (await openRequests(ctx, campaignId)).filter(isAllyRollRow)) if (await allyRollLive(ctx, row)) out.push(row);
+  return out;
+}
+
+function withoutCosts(steps: readonly Step[]): Step[] {
+  return steps.map((s) => {
+    if (s.kind !== "optional") return s;
+    const { costs: _costs, ...rest } = s;
+    void _costs;
+    return { ...rest, steps: withoutCosts(s.steps) };
+  });
+}
+
+/**
+ * The ally's half of a `rolledBy` use as a use of its own, made by the ally: the roll (their trait, their Hope / Fear,
+ * their critical), `rolledBy.targets` measured from them, and the steps. The druid's costs and limit were paid by the
+ * druid's use; an optional step's cost (Cannonball's Hope for the second target, "You can spend a Hope") is the druid's
+ * and paid by the caller, so it is taken off here. INVALID for a use without `rolledBy`.
+ */
+export function rollerUse(use: CardUse): CardUse {
+  const rolledBy = use.rolledBy;
+  if (rolledBy === undefined) throw appError("INVALID", "That use is not rolled by an ally.");
+  const { costs: _costs, limit: _limit, requires: _requires, rolledBy: _rolledBy, targets: _targets, ...rest } = use;
+  void _costs;
+  void _limit;
+  void _requires;
+  void _rolledBy;
+  void _targets;
+  return { ...rest, targets: rolledBy.targets, steps: withoutCosts(use.steps) };
+}
+
+/** The Hope an optional step of the use costs (Cannonball's second target: 1), or 0 for none. */
+export function optionalHope(use: CardUse, optionalId: string): number {
+  const step = use.steps.find((s) => s.kind === "optional" && s.id === optionalId);
+  if (step?.kind !== "optional") return 0;
+  return (step.costs ?? []).reduce((n, c) => n + (c.kind === "hope" && c.amount.kind === "fixed" ? c.amount.value : 0), 0);
 }

@@ -18,6 +18,9 @@
  * - DA12 (dcm-d95, CB p.31): a `rolledFirst` target count is the server's stored roll (convex/lib/featurePrompts.ts);
  *   `resolveFeatureUse` refuses the use without it or with more targets. A use with a server move (`intoMelee`, Charge,
  *   CB p.59) runs only through `featurePrompts.charge`.
+ * - DA13 (dcm-bxp.99.19.21, CB p.33 Cannonball): a use rolled by an ally (`rolledBy`) pays here and opens an `allyRoll`
+ *   prompt for the picked ally (convex/lib/featurePrompts.ts `openAllyRoll`); the ally's roll runs through
+ *   `featurePrompts.allyRoll`, which writes with `resolveFeatureUse` too (`ResolveExtras`).
  * - U1 / U4: rows as cards (public: roll, own damage, Hit / Miss / Defeated; GM: the full resolution with
  *   `adversaryBefore`); one actionLog group, which `actionLog.undo` reverts.
  */
@@ -46,7 +49,7 @@ import { actorSheetAfter, effectOption, featureIdOfEffect, writeSheetChanges, ty
 import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
 import { partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
-import { hasServerMove, isRolledFirst, spendTargetCount } from "./featurePrompts";
+import { hasServerMove, isRolledFirst, openAllyRoll, spendTargetCount } from "./featurePrompts";
 import { campaignFearState, gainFear, spendFear } from "./fear";
 import { changed } from "./rolls";
 import { rollValidator } from "./validators/actionLog";
@@ -360,12 +363,29 @@ function notesOf(plan: RunPlan, built: BuiltRun, before: CharacterSheet, delegat
 }
 
 /**
+ * DA13: what a use rolled by an ally adds to its write (convex/featurePrompts.ts `allyRoll`): the public row's opening
+ * words ("Bryn throws Moss (Cannonball)") and other sheets the use changed outside the plan (the druid's Hope for the
+ * second target), each logged in the group with its `before`.
+ */
+export type ResolveExtras = {
+  title?: string;
+  sheets?: readonly { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }[];
+};
+
+/**
  * Writes the plan in one mutation (U4) and logs one actionLog group: the public row (the roll, the damage dice and total,
  * Hit / Miss / Defeated per target, the D5 lines, the actor's `before`), a row per other character whose sheet changed
  * (an ally the use touched, a D5 feature's other sheets), a public row per manual step, and the GM row (damage, severity,
  * HP, saves, `adversaryBefore`).
  */
-export async function resolveFeatureUse(ctx: MutationCtx, req: FeatureUseRequest, built: BuiltRun, outcome: { plan: RunPlan; delegated?: Delegated }, actorId: Id<"users">): Promise<ResolvedFeature> {
+export async function resolveFeatureUse(
+  ctx: MutationCtx,
+  req: FeatureUseRequest,
+  built: BuiltRun,
+  outcome: { plan: RunPlan; delegated?: Delegated },
+  actorId: Id<"users">,
+  extras: ResolveExtras = {},
+): Promise<ResolvedFeature> {
   const { campaign, character, sheet, pick } = req;
   const { plan, delegated } = outcome;
   // DA12 (dcm-d95): a `rolledFirst` use takes the server's stored roll (refused without one or with more targets).
@@ -378,6 +398,11 @@ export async function resolveFeatureUse(ctx: MutationCtx, req: FeatureUseRequest
   // DA12: a move the server makes itself (`intoMelee`, Charge) is no prompt for the table.
   let prompts = promptsOf(plan, built).filter((p) => !serverMovePrompt(plan, p));
   const notes = [...(rolled !== null ? [`rolled ${rolled} target${rolled === 1 ? "" : "s"}`] : []), ...notesOf(plan, built, sheet, delegated), ...unshaken.map(unshakableText)];
+  // DA13 (CB p.33 Cannonball): a use rolled by an ally sends the roll to the picked ally's drawer.
+  const allyRoll = plan.steps.find((s) => s.kind === "prompt" && s.prompt === "allyRoll");
+  const roller = allyRoll?.kind === "prompt" ? built.creatures.get(allyRoll.targetIds[0] ?? "") : undefined;
+  if (allyRoll && (roller?.kind !== "pc" || !built.creatures.onMap)) throw appError("COMBAT_TARGET_INVALID", "Pick the ally on the map who makes the roll.");
+  if (roller?.kind === "pc") notes.push(`${roller.sheet.name} makes the roll`);
 
   // Other characters: a D5 feature's other sheets (by the runner's key), then the plan's ally steps and tracks.
   const others = new Map<string, { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }>();
@@ -406,6 +431,8 @@ export async function resolveFeatureUse(ctx: MutationCtx, req: FeatureUseRequest
   if (sheetChanged) await saveSheet(ctx, character._id, next);
   const allyRows = [...others.values()].filter((o) => changed(o.before, o.after));
   for (const a of allyRows) await saveSheet(ctx, a.character._id, a.after);
+  const extraRows = (extras.sheets ?? []).filter((o) => changed(o.before, o.after));
+  for (const a of extraRows) await saveSheet(ctx, a.character._id, a.after);
 
   const groupId = newGroupId();
   const damage = damageRolls(plan);
@@ -423,15 +450,23 @@ export async function resolveFeatureUse(ctx: MutationCtx, req: FeatureUseRequest
     actorId,
     kind: "combat",
     visibility: "public",
-    summary: `${sheet.name} uses ${pick.name}${useName}${times > 1 ? ` ×${times}` : ""}${rollPart}${damagePart}${targetPart}${notePart}`.slice(0, 1000),
+    summary: `${extras.title ?? `${sheet.name} uses ${pick.name}${useName}`}${times > 1 ? ` ×${times}` : ""}${rollPart}${damagePart}${targetPart}${notePart}`.slice(0, 1000),
     ...(plan.roll ? { roll: plan.roll.record } : d5Roll ? { roll: d5Roll } : {}),
     groupId,
     ...(sheetChanged ? { before: sheet } : {}),
     ...(fearDelta !== 0 ? { fearDelta } : {}),
     undoable: true,
   });
-  for (const a of allyRows) {
+  for (const a of [...allyRows, ...extraRows]) {
     await logAction(ctx, { campaignId: campaign._id, characterId: a.character._id, actorId, kind: "combat", visibility: "public", summary: `${a.before.name}: ${pick.name} from ${sheet.name}`, groupId, before: a.before, undoable: true });
+  }
+  if (roller?.kind === "pc") {
+    await openAllyRoll(ctx, {
+      campaignId: campaign._id,
+      mapId: built.creatures.scene.map._id,
+      createdBy: actorId,
+      payload: { characterId: character._id, featureId: pick.featureId, useId: plan.useId, rollerCharacterId: roller.character._id, rollerTokenId: roller.tokenId, groupId, entryId },
+    });
   }
   for (const p of prompts.filter((x) => x.kind === "manual")) {
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary: `${sheet.name} used ${pick.name}: ${p.text}`, groupId, undoable: true });

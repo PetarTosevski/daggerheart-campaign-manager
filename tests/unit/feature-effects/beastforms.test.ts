@@ -258,10 +258,11 @@ describe("Tier 2 features (CB p.33)", () => {
     expect(ofKind(ok(e, "shell", { actor: inside, rng: queueRng([]) }), "prompt")[0]!.text).toContain("Armor Score");
   });
 
-  it("Cannonball: a Stress, a Hope for the second target; the ally's throw is prompted", () => {
-    const plan = ok(bf("armored-sentry", "Cannonball"), undefined, { actor: inForm("armored-sentry"), rng: queueRng([]), targets: [foe("ally", { side: "pc" })], optionals: ["second"] });
-    expect(plan.actor.after).toMatchObject({ stress: 2, hope: 2 });
-    expect(ofKind(plan, "prompt")).toHaveLength(2);
+  it("Cannonball: the druid's use marks a Stress and sends the throw to the ally (DA13; the second target's Hope is paid at the ally's roll)", () => {
+    const actor = inForm("armored-sentry");
+    const plan = ok(bf("armored-sentry", "Cannonball"), undefined, { actor, rng: queueRng([]), targets: [foe("ally", { side: "pc" })], optionals: ["second"] });
+    expect(plan.actor.after).toMatchObject({ stress: actor.stress + 1, hope: actor.hope });
+    expect(ofKind(plan, "prompt")).toMatchObject([{ prompt: "allyRoll", targetIds: ["ally"] }]);
   });
 
   it("Trample: a Stress, Agility against all targets along the line, d8+1 x Proficiency and temporarily Vulnerable", () => {
