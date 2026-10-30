@@ -137,6 +137,7 @@ waves:
         reads: []
         acceptance:
           - "Closes dcm-bxp.17 (ask the user about region-generation details the spec doesn't fix), dcm-bxp.16, dcm-bxp.60, dcm-bxp.27"
+          - "dcm-bxp.18 as answered 2026-10-30: optional World-marker link per pyre (Show on map, lit badge) + auto 'at a Sacred Pyre' when the party marker is within N km (GM-set, default 1) of a lit linked pyre"
       - id: N2
         label: w0-n2-characters
         title: Characters, sheet and actionLog follow-ups
@@ -166,6 +167,7 @@ waves:
           - "Closes dcm-bxp.28, dcm-bxp.31, dcm-bxp.40 (not item 10, which is N3's), dcm-bxp.15, dcm-bxp.61"
           - "Does not edit party/[characterId]/sheet-context.tsx (DA19 owns it), src/components/party/dice/** (SD-H) or src/components/party/rest/picker.tsx (E8)"
           - "logAction / LogEntry stay source-compatible (36 convex files import them)"
+          - "dcm-bxp.38: split the creation cap from the read bound (reads stay 50); lower creation to 10 only when the user says testing is over"
       - id: N3
         label: w0-n3-settings
         title: Campaign settings, dashboard and sign-up leftovers
@@ -270,6 +272,7 @@ waves:
           - docs/tasks/TASK-LN-E2.md
         reads: [src/lib/domain/card-effects/**]
         acceptance:
+          - "dcm-fyb: a successful adversary attack ends the PC's until-hit effects (Rogue's Dodge)"
           - "Every bead labelled lane:w1-e2-damage-window works in the window (instead-of-slot outcomes, would-mark triggers, resistance by source, damage-taken mods, PC options, armor cost and fallback, post-window gates, condition riders)"
       - id: E3
         label: w1-e3-steps-saves
@@ -361,6 +364,7 @@ waves:
         reads: [src/lib/domain/card-effects/**]
         acceptance:
           - "dcm-vv2 item 1 first: a follow-up adversaryAttack gets the stat-block ATK"
+          - "dcm-bxp.78 as answered 2026-10-30: Start on the tracker prompt and the instance stat block, armed only for action-roll countdowns, Private, linked to the instance with an End? prompt on defeat"
           - "Every bead labelled lane:w1-e7-adversary-engine (flee, revive, death moves, Stress split, group attacks, exclusive uses, evolution, GM control, passives on itself, immunities, crit range, tagged-target mods, damage types, trigger narrowings, Relentless X, once per GM turn, countdowns, delayed outcomes)"
       - id: E8
         label: w1-e8-session-features-rests
@@ -385,6 +389,7 @@ waves:
         acceptance:
           - "Every bead labelled lane:w1-e8-session-features-rests (delegated Hex names the map target, moon die, tide tokens, Slayer rerolls, targets after dice, short-rest timing and downtime moves, extra downtime move, companion stats)"
           - "dcm-2z2 needs the unbuilt sheet-drawer SD-C first"
+          - "dcm-bxp.99.19.58: Efficient keeps one full long-rest pick on an interrupted long rest"
   # ------------------------------------------------------------------ wave 5: data, tail and leftovers
   - wave: 5
     tracers:
@@ -429,6 +434,7 @@ waves:
           - src/components/combat-map/maps/**
           - src/components/combat-map/map-view/**
           - src/components/combat-map/editor/**
+          - src/components/combat-map/generate/**
           - convex/combatVision.ts
           - convex/lib/spriteSources.ts
           - convex/combatMapStyle.ts
@@ -436,7 +442,8 @@ waves:
           - docs/tasks/TASK-LN-M.md
         reads: [convex/lib/combatVision.ts]
         acceptance:
-          - "Closes dcm-bxp.84, .86, .97, .54 (campaign Day/Dim/Night field; ask where the GM control lives)"
+          - "Closes dcm-bxp.84, .86, .97, .54 (campaign Day/Dim/Night field set on the dashboard and the map header, players read-only; Witherwild phase drives it)"
+          - "dcm-bxp.129: scene chips - approved 4 per setting + 4-6 per frame drafted from the books"
   # ------------------------------------------------------------------ wave 6: last
   - wave: 6
     tracers:
@@ -454,5 +461,5 @@ waves:
         reads: []
         acceptance:
           - "dcm-bxp.93: one shared helper in convex/lib/files.ts; each upload path calls it in a short final pass"
-# Not in a lane: needs a user answer first (label lane:needs-user-answer): dcm-bxp.134, .78, .47, .118, .129, .18, .38.
+# Own plans (label lane:own-plan, answered 2026-10-30): dcm-bxp.134 optional-rule switches, dcm-bxp.118 export zip + import.
 # User-run (lane:user-run): dcm-bxp.82.7 (spends real API money), dcm-bxp.36.3 (needs an idle machine). Deferred: dcm-bxp.95.
