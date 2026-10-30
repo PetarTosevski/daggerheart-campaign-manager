@@ -207,9 +207,49 @@ waves:
           - .omc/plans/drawer-answers.yaml
         acceptance:
           - "DA19 as drawer-answers.yaml states; dcm-bxp.99.19.19 regression fixed: rolls read the form's trait bonus (convex/lib/rolls.ts:178, convex/rolls.ts:174, convex/lib/cardRunner.ts:170)"
-  # ------------------------------------------------------------------ wave 3: vocabulary widen
+      - id: C3
+        label: w0-c-cloaked
+        title: Cloaked follow-ups - Charge ends Cloaked, unconscious drops it, dusk and dawn are dim
+        goal: Cloaked follow-ups - Charge ends Cloaked, unconscious drops it, dusk and dawn are dim
+        size: S
+        depends_on: [B1]
+        owns:
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - convex/featurePrompts.ts
+          - tests/convex/cloaked-move.test.ts
+          - tests/convex/feature-prompts.test.ts
+          - docs/tasks/TASK-LN-C3.md
+        reads: [src/lib/domain/combat-map/light.ts]
+        acceptance:
+          - "dcm-bxp.99.19.59: charge calls uncloakAfterMove with the Charge's groupId so one undo reverts both"
+          - "dcm-bxp.99.19.62 (2) an unconscious or dead rogue drops Cloaked; (3) dusk and dawn count as dim (Finesse roll). Item (1) (GM enters a Difficulty) is B2's"
+  # ------------------------------------------------------------------ wave 3: vocabulary widen (+ B2 prompts)
   - wave: 3
     tracers:
+      - id: B2
+        label: w0-b-server-prompts
+        title: GM-entered Difficulties via requests - player's Charge, Cloaked vs an enemy without a Difficulty; payload expiresAt optional
+        goal: GM-entered Difficulties via requests - player's Charge, Cloaked vs an enemy without a Difficulty; payload expiresAt optional
+        size: M
+        depends_on: [C3]
+        owns:
+          - convex/featurePrompts.ts
+          - convex/lib/featurePrompts.ts
+          - convex/lib/combatRequests.ts
+          - convex/combatRequests.ts
+          - convex/lib/validators/combatRequests.ts
+          - convex/lib/combatMovement.ts
+          - src/components/combat-map/drawer/use/**
+          - src/components/combat-map/requests/**
+          - tests/convex/feature-prompts.test.ts
+          - tests/convex/authz/prompts.entries.ts
+          - docs/tasks/TASK-LN-B2.md
+        reads: []
+        acceptance:
+          - "dcm-bxp.99.19.61: a player's Charge sends the GM a request with a Difficulty box; on submit the server rolls Agility and moves the token on success"
+          - "dcm-bxp.99.19.62 (1): an enemy without a Difficulty that alone sees a Cloaked rogue dimly asks the GM for a Difficulty, then the roll happens"
+          - "dcm-bxp.99.19.60: payload expiresAt widened to optional and no longer written (widen; migrate/narrow later)"
       - id: V
         label: w1-vocabulary
         title: Vocabulary widen for every wave-4 gap (types only, plus fallbacks)
