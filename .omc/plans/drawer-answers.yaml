@@ -310,6 +310,7 @@ waves:
           - convex/lib/adversaryActions.ts
           - docs/tasks/TASK-SD-SD4.md
         acceptance:
+          - "DA1 follow-ups: attackRollOf (convex/lib/adversaryHits.ts) finds the attack roll by roll kind, not sides===20, and rerolls with the record's die size (Drained d12); incoming hits carry the target's own attack total and disadvantage so a rebuilt window and its rerolls use them (optional validator fields, widen only)"
           - "USER 2026-10-30: Celestial Wings replaces the hit's one Armor Slot - Wings OR a real Armor Slot on a hit, never both (like Stable)"
           - "CB p.107 'SIMULTANEOUS AND STACKING EFFECTS': '... the player controlling the effects ... can apply the effects in any order.' User 2026-10-30: after the Armor Slot answer every ready reaction that still fits the hit stays offered (not only severity-gated ones), and the player answers them in the order they pick; the 'afterArmor' severity-gated filter is removed; tests"
           - "Stable (HF p.12): 'spend a Focus instead of an Armor Slot to reduce damage'. User: the Focus lowers severity by one, the Armor Slot is NOT marked, never more than 1 step in total with the slot, usable without armor while the PC has Focus (entry uses insteadOfArmorSlot from DA0); tests"
