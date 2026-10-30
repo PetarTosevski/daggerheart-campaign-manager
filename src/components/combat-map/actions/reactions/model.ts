@@ -11,6 +11,8 @@ import type { api } from "../../../../../convex/_generated/api";
  */
 
 export type HitView = FunctionReturnType<typeof api.adversaryActions.pending>[number];
+/** SD4: a feature answer as the server describes it (name, text, what its Use asks). */
+export type FeatureView = NonNullable<HitView["features"]>[number];
 export type Severity = NonNullable<HitView["severity"]>;
 export type ArmorStep = NonNullable<HitView["armorPreview"]>[number];
 
@@ -24,14 +26,20 @@ export type PromptMode =
   | "armorMany"
   /** The hit PC with no slot to mark, or direct damage (CB p.99): OK only. */
   | "ok"
-  /** An ally with an eligible reaction card: the cards with Use, and Pass. */
+  /** An ally with an eligible reaction card or feature: the answers with Use, and Pass. */
   | "ally"
+  /** SD4 (Q2): before the adversary's roll: the before-roll features with Use, and Pass. */
+  | "preRoll"
+  /** SD4: the hit PC answered armor; a feature that now fits (Thick Skin, CB p.107 order) with Use, and Done. */
+  | "afterArmor"
   /** Nothing owed: "Bandit hit Mira", waiting for the others (Q14). */
   | "waiting";
 
 export function promptMode(view: HitView): PromptMode {
   if (!view.awaiting) return "waiting";
+  if (view.preRoll) return "preRoll";
   if (view.role === "ally") return "ally";
+  if (view.armorAnswered) return "afterArmor";
   const max = view.maxSlots ?? 0;
   if (view.direct || max <= 0) return "ok";
   return max === 1 ? "armorOne" : "armorMany";
@@ -96,12 +104,50 @@ export function playableCards(view: Pick<HitView, "role" | "cardIds">): string[]
   return view.role === "target" ? view.cardIds.filter((id) => !ALLY_ONLY_CARDS.has(id)) : view.cardIds;
 }
 
-/** What `respond` takes (the server's `hitChoiceValidator`). */
+/** One choice of a feature answer (`useFeature`'s ids: `n:<id>`, `opt:<step>`, `optional:<step>`, `situations`). */
+export type FeatureChoice = { id: string; value: number | string | string[] | boolean };
+
+/** What `respond` takes (the server's `hitChoiceValidator`, and SD4's feature answer). */
 export type HitChoice =
   | { kind: "armor"; slots?: number }
   | { kind: "noArmor" }
   | { kind: "pass" }
-  | { kind: "card"; cardId: string; useId?: string };
+  | { kind: "card"; cardId: string; useId?: string }
+  | { kind: "feature"; featureId: string; useId?: string; choices: FeatureChoice[] };
+
+/** What the player set on a feature answer's controls, before it becomes the choice list. */
+export type FeaturePicks = {
+  numbers: Record<string, number>;
+  options: Record<string, string>;
+  optionals: Record<string, boolean>;
+  situations: Record<string, boolean>;
+};
+
+/** A feature's controls at their defaults: the smallest counts, the first option of each pick, nothing optional. */
+export function defaultPicks(feature: FeatureView): FeaturePicks {
+  return {
+    numbers: Object.fromEntries(feature.numbers.map((n) => [n.id, Math.max(1, n.min)])),
+    options: Object.fromEntries(feature.options.flatMap((o) => (o.options[0] ? [[o.id, o.options[0].id]] : []))),
+    optionals: {},
+    situations: {},
+  };
+}
+
+/** Whether every situation the feature asks about is confirmed (Q13: the player confirms it). */
+export function situationsConfirmed(feature: FeatureView, picks: FeaturePicks): boolean {
+  return feature.situations.every((text) => picks.situations[text] === true);
+}
+
+/** The `respond` choice of a feature answer with the player's picks. */
+export function featureChoice(feature: FeatureView, picks: FeaturePicks): HitChoice {
+  const choices: FeatureChoice[] = [
+    ...feature.numbers.map((n) => ({ id: `n:${n.id}`, value: picks.numbers[n.id] ?? Math.max(1, n.min) })),
+    ...feature.options.flatMap((o) => (picks.options[o.id] ? [{ id: `opt:${o.id}`, value: [picks.options[o.id]!] }] : [])),
+    ...feature.optionals.map((o) => ({ id: `optional:${o.id}`, value: picks.optionals[o.id] === true })),
+    ...(feature.situations.length > 0 ? [{ id: "situations", value: feature.situations.filter((t) => picks.situations[t] === true) }] : []),
+  ];
+  return { kind: "feature", featureId: feature.featureId, useId: feature.useId, choices };
+}
 
 /**
  * The optimistic `pending` after an answer (CL4): an ally's Use / Pass or the target's armor answer ends what they owe;
@@ -112,6 +158,11 @@ export function afterAnswer(views: readonly HitView[], requestId: HitView["reque
   return views.map((v) => {
     if (v.requestId !== requestId) return v;
     if (choice.kind === "card" && v.role === "target") return { ...v, cardIds: v.cardIds.filter((id) => id !== choice.cardId) };
+    // SD4: the target's feature answer (Iron Will) leaves the armor question; after armor it may be the last thing owed.
+    if (choice.kind === "feature" && v.role === "target" && !v.preRoll && !v.afterHit) {
+      const features = (v.features ?? []).filter((f) => f.featureId !== choice.featureId);
+      return v.armorAnswered && features.length === 0 ? { ...v, features, awaiting: false } : { ...v, features };
+    }
     return { ...v, awaiting: false };
   });
 }

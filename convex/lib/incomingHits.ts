@@ -32,30 +32,54 @@
  * was negated (only a miss or full avoidance stops them)"; "damage reflected at a PC attacker opens the normal
  * incoming-hit prompt" (a new hit on that PC in the same group, the reflecting PC as its attacker).
  */
-import { applyDamageTo } from "../../src/lib/domain/combat-actions/index";
+import { applyDamageTo, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import {
+  afterHitAmount,
+  afterHitFeatures,
   afterHitUses,
   armorPreview,
   awaiting as awaitingOf,
+  chooseSteps,
+  featureAnswers,
+  featureUse,
   isComplete,
   openWindow,
+  optionalSteps,
   resolveNow,
   resolveWindow,
   respond as windowRespond,
   runReactionCard,
+  runReactionFeature,
   targetPrompt,
   type HitChoice,
+  type MarkFacts,
   type PcSeverity,
   type WindowResolution,
 } from "../../src/lib/domain/adversary-actions/index";
+import type { PlanStep, RunPlan, RunRefusal } from "../../src/lib/domain/card-effects/run";
+import { owned } from "../../src/lib/domain/feature-effects/owned";
+import { runFeature } from "../../src/lib/domain/feature-effects/run";
+import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { appError } from "../../src/lib/errors/app-error";
 import { cardEffect } from "../../src/lib/srd/card-effects/index";
 import { getDomainCard } from "../../src/lib/srd/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
 import {
+  answeringFeatures,
+  attackerBandsOnMap,
+  attackerCombatant,
+  attackRollOf,
+  featureActor,
+  featureChoices,
+  hopeAndFearOf,
+  isFeatureId,
+  progressAmount,
+  resolveRerolls,
+  spentDiceChoice,
+  standardDamageOf,
   cardRefusal,
   isHitRow,
   isPcAttacker,
@@ -78,7 +102,8 @@ import {
   type PartyMember,
   type Rebuilt,
 } from "./adversaryHits";
-import { cardActor, pcCombatant } from "./cardRunner";
+import type { CardChoice } from "./cardChoices";
+import { actorSheetAfter, cardActor, pcCombatant } from "./cardRunner";
 import { saveSheet } from "./characterSheet";
 import { closeRequest } from "./combatRequests";
 import type { AdversaryBefore } from "./validators/actionLog";
@@ -137,12 +162,17 @@ export type OpenHitInput = {
  */
 export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Promise<{ requestId: Id<"combatRequests">; resolution: HitResolution | null }> {
   const riders = (input.riders ?? []).slice(0, MAX_RIDERS);
-  const party = windowParty(respondingParty(input.party, input.attacker), input.targetCharacterId, input.bands);
-  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders), targetId: input.targetCharacterId, party });
+  // SD4: the PCs carry their features (owned, with effect entries) and their band to the attacker.
+  const hopeAndFear = await hopeAndFearOf(ctx, input.campaignId);
+  const toAttacker = await attackerBandsOnMap(ctx, input.mapId, input.attacker);
+  const party = windowParty(respondingParty(input.party, input.attacker), input.targetCharacterId, input.bands, { hopeAndFear, toAttacker });
+  const attacker = await openingAttacker(ctx, input);
+  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders), targetId: input.targetCharacterId, party, ...(attacker ? { attacker } : {}) });
   const responders: HitResponder[] = state.responders.slice(0, MAX_RESPONDERS).map((r) => ({
     characterId: memberId(input.party, r.characterId, input.targetCharacterId),
     role: r.role,
-    cardIds: r.cardIds.slice(0, 10),
+    // SD4: the feature ids ride after the card ids (told apart by their `<source>:` prefix; the validator is unchanged).
+    cardIds: [...r.cardIds.slice(0, 10), ...(r.featureIds ?? []).slice(0, 10)],
   }));
   const requestId = await ctx.db.insert("combatRequests", {
     campaignId: input.campaignId,
@@ -175,16 +205,84 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
   return { requestId, resolution: await resolveIncomingHit(ctx, { row, by: input.createdBy, early: false, ...(input.hit.attackTotal !== undefined ? { attackTotal: input.hit.attackTotal } : {}) }) };
 }
 
+/** The attacker as a creature when the hit opens (the feature triggers' `source`); null when it is gone. */
+async function openingAttacker(ctx: QueryCtx, input: OpenHitInput): Promise<Combatant | null> {
+  return (await attackerCombatant(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } }, input.party))?.combatant ?? null;
+}
+
 // ---------------------------------------------------------------- answering
 
-export type RespondInput = { row: HitRow; characterId: Id<"characters">; choice: HitChoice; by: Id<"users"> };
+/** A stored or sent answer: the window's choices, or (SD4) a feature use with its `useFeature` choices. */
+export type AnswerChoice = Exclude<HitChoice, { kind: "feature" }> | { kind: "feature"; featureId: string; useId?: string; choices: CardChoice[] };
+
+export type RespondInput = { row: HitRow; characterId: Id<"characters">; choice: AnswerChoice; by: Id<"users"> };
+
+/** The runner's refusals of a feature answer as SD0's FEATURE_* codes (as ./featureRunner.ts `featureRefusal`). */
+export function featureRefusal(r: RunRefusal) {
+  switch (r.reason) {
+    case "exhausted":
+      return appError("FEATURE_EXHAUSTED", r.detail);
+    case "cost":
+      return appError("FEATURE_COST_UNPAID", `Short of: ${r.detail}.`);
+    case "targets":
+      return appError("COMBAT_TARGET_INVALID", r.detail);
+    case "requirement":
+      return appError("INVALID", `The feature's condition isn't met (${r.detail}).`);
+    default:
+      return appError("INVALID", r.detail);
+  }
+}
+
+/** A `choose` step the answer left unpicked (Not This Time: the attack or the damage) refuses: INVALID. */
+export function assertPicked(plan: RunPlan) {
+  const open = plan.steps.find((s: PlanStep) => s.kind === "prompt" && s.prompt === "choose");
+  if (open && open.kind === "prompt") throw appError("INVALID", `Pick one: ${open.text}.`);
+}
+
+/** The manual words a feature's plan leaves for the table (Unshakable's 6, Loyal Protector's sprint). */
+export function manualWords(plan: RunPlan): string[] {
+  return plan.steps.flatMap((s: PlanStep) => (s.kind === "prompt" && s.prompt === "manual" ? [s.text] : []));
+}
+
+/**
+ * SD4: what a feature's plan did to the attacker (Revenge's Hit Point, Draining Bane's Stress, Deadly Vengeance, Eye for
+ * an Eye, Elemental Incarnation's Fire), written on the instance (read fresh: several answers may touch it in one
+ * mutation); its before-state for the GM row, so undo puts it back (U4). A PC attacker's marks are left to the table.
+ */
+export async function writeAttackerChanges(
+  ctx: MutationCtx,
+  plan: RunPlan,
+  attacker: { instance: Doc<"encounterAdversaries"> | null; combatant: Combatant } | null,
+  label: string,
+): Promise<{ before: AdversaryBefore | null; line: string | null }> {
+  if (!attacker) return { before: null, line: null };
+  const changed = plan.creatures.find((c) => c.id === attacker.combatant.id);
+  if (!changed) return { before: null, line: null };
+  const hpDelta = changed.after.hp - changed.before.hp;
+  const stressDelta = changed.after.stress - changed.before.stress;
+  if (hpDelta === 0 && stressDelta === 0) return { before: null, line: null };
+  const words = [hpDelta !== 0 ? `${hpDelta} HP` : "", stressDelta !== 0 ? `${stressDelta} Stress` : ""].filter(Boolean).join(", ");
+  if (attacker.instance === null) return { before: null, line: `${label} marks ${words}: mark it on their sheet` };
+  const instance = await ctx.db.get("encounterAdversaries", attacker.instance._id);
+  if (instance === null) return { before: null, line: null };
+  const before: AdversaryBefore = { instanceId: instance._id, hp: instance.hp, stress: instance.stress, defeated: instance.defeated, conditions: instance.conditions, tags: instance.tags };
+  const hp = Math.max(0, Math.min(instance.stats.hpMax, instance.hp + hpDelta));
+  const stress = Math.max(0, Math.min(instance.stats.stressMax, instance.stress + stressDelta));
+  await ctx.db.patch("encounterAdversaries", instance._id, { hp, stress, defeated: instance.defeated || hp >= instance.stats.hpMax, updatedAt: Date.now() });
+  return { before, line: `${label} marks ${words} (${hp}/${instance.stats.hpMax} HP, ${stress}/${instance.stats.stressMax} Stress)` };
+}
+
+/** One answered feature: the responder's sheet after it, the stored choice and the attacker's changes. */
+type FeaturePaid = { sheet: CharacterSheet; name: string; choice: AnswerChoice; plan: RunPlan; effect: FeatureEffect };
 
 /**
  * Records one answer (Q13, Q17): the target's armor choice (`armor {slots}` up to what this hit allows, `noArmor`,
  * `pass`) or a responder's reaction card, run through CA1's card runner with the hit as its trigger and paid at once
- * (its Stress / Hope, its once-per entry, Shrug It Off's vault). NOT_A_RESPONDER for a character the window doesn't
- * list, one that already answered, or a card it wasn't offered; INVALID for more Armor Slots than allowed. Returns
- * whether the window is now complete (the caller resolves it in the same mutation).
+ * (its Stress / Hope, its once-per entry, Shrug It Off's vault). SD4: or a feature use the responder may answer with now
+ * (`featureAnswers`: its trigger fits the hit as the answers so far left it, ready and affordable), run through SD1's
+ * feature runner and paid at once (Favor, Focus, held dice too); what it does to the attacker (Revenge) is written now.
+ * NOT_A_RESPONDER for a character the window doesn't list, one that already answered, or a card or feature it wasn't
+ * offered; INVALID for more Armor Slots than allowed or a missing pick. Returns whether the window is now complete.
  */
 export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promise<{ complete: boolean }> {
   const { row, characterId, choice } = input;
@@ -194,6 +292,7 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
   if (!member) throw appError("NOT_A_RESPONDER");
   let folds;
   let paid: { sheet: CharacterSheet; cardName: string } | null = null;
+  let feature: FeaturePaid | null = null;
   if (choice.kind === "armor") {
     const slots = choice.slots ?? 1;
     if (!Number.isInteger(slots) || slots < 1) throw appError("INVALID", "Mark at least one Armor Slot.");
@@ -212,12 +311,31 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
     const cardName = getDomainCard(card.cardId)?.name ?? card.cardId;
     paid = { sheet: sheetAfterCard(member.sheet, run.result.plan, characterId, cardName), cardName };
   }
-  const next = windowRespond(state, { characterId, choice, ...(folds ? { folds } : {}) });
+  if (choice.kind === "feature") {
+    const pc = rebuilt.party.find((p) => p.id === characterId);
+    const effect = pc?.features?.find((f) => f.featureId === choice.featureId);
+    const target = members.find((m) => m.character._id === state.targetId);
+    const defense = rebuilt.party.find((p) => p.id === state.targetId);
+    const now = featureAnswers(state, characterId).find((f) => f.featureId === choice.featureId && (choice.useId === undefined || f.useId === choice.useId));
+    if (!effect || !target || !defense || !now) throw appError("NOT_A_RESPONDER", choice.featureId);
+    const creatures = { target: pcCombatant(target.character._id, target.sheet), ...(attacker ? { attacker: attacker.combatant } : {}) };
+    const index = row.responses.length;
+    const ran = runReactionFeature(effect, featureActor(characterId, member.sheet), state, creatures, seededRng(`${row._id}:${index}`), { useId: now.useId, amount: progressAmount(state, defense), ...featureChoices(choice.choices) });
+    if (!ran.result.ok) throw featureRefusal(ran.result);
+    assertPicked(ran.result.plan);
+    const damage = ran.folds.some((f) => f.kind === "rerollDamage") ? await standardDamageOf(ctx, row, attacker) : null;
+    folds = resolveRerolls(ran.folds, `${row._id}:${index}:reroll`, isPcAttacker(row.payload.attacker) ? null : await attackRollOf(ctx, row), damage);
+    const plan = ran.result.plan;
+    const spent = spentDiceChoice(plan);
+    const stored: AnswerChoice = { kind: "feature", featureId: effect.featureId, useId: plan.useId, choices: [...choice.choices.filter((c) => c.id !== "spentDice"), ...(spent ? [spent] : [])] };
+    feature = { sheet: actorSheetAfter(member.sheet, plan, characterId, plan.name), name: plan.name, choice: stored, plan, effect };
+  }
+  const next = windowRespond(state, { characterId, choice: feature ? feature.choice : choice, ...(folds ? { folds } : {}) });
   if (!next.ok) throw appError(next.code, next.detail);
 
+  const targetName = members.find((m) => m.character._id === state.targetId)?.sheet.name ?? "an ally";
   if (paid) {
     await saveSheet(ctx, characterId, paid.sheet);
-    const targetName = members.find((m) => m.character._id === state.targetId)?.sheet.name ?? "an ally";
     await logAction(ctx, {
       campaignId: row.campaignId,
       characterId,
@@ -230,7 +348,35 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
       undoable: true,
     });
   }
-  await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice, by: input.by, at: Date.now() }] });
+  if (feature) {
+    await saveSheet(ctx, characterId, feature.sheet);
+    const manual = manualWords(feature.plan);
+    await logAction(ctx, {
+      campaignId: row.campaignId,
+      characterId,
+      actorId: row.createdBy,
+      kind: isPcAttacker(row.payload.attacker) ? "combat" : "adversary",
+      visibility: "public",
+      summary: `${member.sheet.name} uses ${feature.name}${characterId === state.targetId ? "" : ` for ${targetName}`}${manual.length > 0 ? ` (${manual.join("; ")})` : ""}`.slice(0, 1000),
+      groupId: row.payload.groupId,
+      before: member.sheet,
+      undoable: true,
+    });
+    const written = await writeAttackerChanges(ctx, feature.plan, attacker, row.payload.attacker.label);
+    if (written.line) {
+      await logAction(ctx, {
+        campaignId: row.campaignId,
+        actorId: row.createdBy,
+        kind: "adversary",
+        visibility: "gm",
+        summary: `${member.sheet.name} · ${feature.name} → ${written.line}`,
+        groupId: row.payload.groupId,
+        ...(written.before ? { adversaryBefore: [written.before] } : {}),
+        undoable: true,
+      });
+    }
+  }
+  await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice: feature ? feature.choice : (choice as Exclude<AnswerChoice, { kind: "feature" }>), by: input.by, at: Date.now() }] });
   return { complete: isComplete(next.state) };
 }
 
@@ -287,6 +433,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
 
   let ridersApplied = 0;
   let deathMove = false;
+  const adversaryBefore: AdversaryBefore[] = [];
   let afterHit: AfterHit | null = null;
   const autos: string[] = [];
   const kind = isPcAttacker(p.attacker) ? ("combat" as const) : ("adversary" as const);
@@ -305,7 +452,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     const hpMarked = Math.max(0, next.hp - sheet.hp);
     deathMove = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
     // After-hit card uses (CE-valor): autos run now; reactions are offered with the row kept open.
-    const facts = { hpMarked, deathMove, armorSlots: result.armorSlots, fromAttack: true };
+    const facts: MarkFacts = { hpMarked, deathMove, armorSlots: result.armorSlots, fromAttack: true, severity: result.severity, stressMarked: Math.max(0, next.stress - sheet.stress), damageType: p.damageType };
     const uses = afterHitUses(windowPcOf({ character: target.character, sheet: next }), facts);
     for (const [i, u] of uses.auto.entries()) {
       const ran = runAfterHitCard(target, next, u.cardId, u.useId, { amount: result.taken, ...(rebuilt.attacker ? { source: rebuilt.attacker.combatant } : {}) }, `${row._id}:after:${i}`);
@@ -313,8 +460,26 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
       next = sheetAfterCard(next, ran.plan, target.character._id, ran.cardName);
       autos.push(ran.cardName);
     }
+    // SD4: after-hit feature uses: autos run now (Unshakable, Elemental Incarnation's Fire); reactions are offered.
+    const scope = { hopeAndFear: await hopeAndFearOf(ctx, row.campaignId), toAttacker: await attackerBandsOnMap(ctx, row.mapId, p.attacker) };
+    const toAttacker = scope.toAttacker(target.character._id);
+    const pcNow = windowPcOf({ character: target.character, sheet: next }, undefined, { hopeAndFear: scope.hopeAndFear, ...(toAttacker !== undefined ? { bandToAttacker: toAttacker } : {}) });
+    const featureUses = afterHitFeatures(pcNow, facts, { ...(pcNow.actor ? { subject: pcNow.actor } : {}), ...(rebuilt.attacker ? { source: rebuilt.attacker.combatant } : {}), taken: result.taken });
+    for (const [i, u] of featureUses.auto.entries()) {
+      const effect = pcNow.features?.find((f) => f.featureId === u.featureId);
+      if (!effect) continue;
+      const ran = runAfterHitFeature(effect, u.useId, { character: target.character, sheet: next }, facts, result.taken, rebuilt.attacker?.combatant, `${row._id}:afterFeature:${i}`, []);
+      if (!ran.ok) continue;
+      next = ran.sheet;
+      autos.push(ran.plan.name);
+      for (const text of manualWords(ran.plan)) gm.push(`${targetName}: ${text}`);
+      const written = await writeAttackerChanges(ctx, ran.plan, rebuilt.attacker, p.attacker.label);
+      if (written.line) gm.push(written.line);
+      if (written.before) adversaryBefore.push(written.before);
+    }
     if (autos.length > 0) gm.push(`${targetName}: ${autos.join(", ")}`);
-    if (uses.offers.length > 0) afterHit = { characterId: target.character._id, cardIds: uses.offers.slice(0, 10), severity: result.severity, hpMarked, deathMove };
+    const offers = [...uses.offers.slice(0, 10), ...featureUses.offers.slice(0, 10)];
+    if (offers.length > 0) afterHit = { characterId: target.character._id, cardIds: offers, severity: result.severity, hpMarked, deathMove };
     await saveSheet(ctx, target.character._id, next);
     // The sheet's death move is due at once (user answer 2026-10-22; CB p.91): a new last HP clears an earlier "spent".
     if (deathMove) await ctx.db.patch("characters", target.character._id, { deathMoveSpent: undefined });
@@ -344,12 +509,11 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     gm.push(`${targetName}: ${res.missed ? "the hit became a miss" : "no damage"}`);
     await logAction(ctx, { campaignId: row.campaignId, actorId: row.createdBy, kind, visibility: "public", summary: `${targetName} avoided ${p.attacker.label}'s hit`, groupId: p.groupId, undoable: true });
   }
-  if (afterHit) gm.push(`${targetName} may answer ${afterHit.cardIds.map((id) => getDomainCard(id)?.name ?? id).join(", ")}`);
+  if (afterHit) gm.push(`${targetName} may answer ${afterHit.cardIds.map((id) => answerName(id)).join(", ")}`);
   if (res.targetId !== res.originalTargetId) gm.push(`(redirected from ${rebuilt.members.find((m) => m.character._id === res.originalTargetId)?.sheet.name ?? "the first target"})`);
   if (input.early) gm.push("(resolved by the GM)");
 
   // Damage a card sends back (Arcane Reflection): the attacker takes it against its thresholds (CB p.91, p.99).
-  const adversaryBefore: AdversaryBefore[] = [];
   const reflectedToAttacker = res.reflected.filter((r) => r.to === "attacker").reduce((n, r) => n + r.amount, 0);
   let reflectedHit: { attacker: HitAttacker; targetCharacterId: Id<"characters"> } | null = null;
   if (reflectedToAttacker > 0 && rebuilt.attacker && rebuilt.attacker.instance === null && isPcAttacker(p.attacker)) {
@@ -432,43 +596,126 @@ function reflectorOf(state: Rebuilt["state"]): { characterId: string; cardId: st
   return null;
 }
 
+/** A card's or (SD4) a feature's printed name, for the GM's lines. */
+function answerName(id: string): string {
+  if (!isFeatureId(id)) return getDomainCard(id)?.name ?? id;
+  return id.split(":").pop()?.replace(/-/g, " ") ?? id;
+}
+
+/**
+ * SD4: runs one of the hit PC's after-hit feature uses with the hit as its trigger (dice seeded from the row: no
+ * fishing): the trigger amount is the Hit Points marked for a "mark HP" trigger (Deadly Vengeance, Eye for an Eye), else
+ * the damage taken. Returns the sheet after it (its costs, Favor, the choices' steps, Brave Face's Stress turned into a
+ * spent Hope) or the refusal.
+ */
+export function runAfterHitFeature(
+  effect: FeatureEffect,
+  useId: string,
+  member: Pick<PartyMember, "character" | "sheet">,
+  facts: Pick<MarkFacts, "hpMarked">,
+  taken: number,
+  source: Combatant | undefined,
+  seed: string,
+  choices: readonly CardChoice[],
+): ({ ok: true; plan: RunPlan; sheet: CharacterSheet }) | RunRefusal {
+  const use = featureUse(effect, useId);
+  if (!use) return { ok: false, reason: "noUse", detail: effect.featureId };
+  const sheet = member.sheet;
+  const subject = pcCombatant(member.character._id, sheet);
+  const actor = featureActor(member.character._id, sheet);
+  const parsed = featureChoices(choices);
+  const result = runFeature(effect, use.id, {
+    actor: { ...actor, facts: { ...(actor.facts ?? {}), subject: { conditions: subject.conditions, ...(subject.tags ? { tags: subject.tags } : {}), hp: subject.hp, hpMax: subject.hpMax } } },
+    gmFear: 0,
+    choices: parsed.choices,
+    options: parsed.options,
+    optionals: parsed.optionals,
+    situations: parsed.situations,
+    trigger: { amount: afterHitAmount(use, facts, taken), subject, ...(source ? { source } : {}) },
+    rng: seededRng(seed),
+  });
+  if (!result.ok) return result;
+  let next = actorSheetAfter(sheet, result.plan, member.character._id, result.plan.name);
+  // Brave Face (HF p.32): "spend a Hope instead" of the forced Stress: the Stress comes off, a Hope is spent.
+  if (result.plan.steps.some((s: PlanStep) => s.kind === "fold" && s.step.kind === "convertMarks" && s.step.from === "stress" && s.step.into === "hope")) {
+    if (next.hope < 1 || next.stress < 1) return { ok: false, reason: "cost", detail: "hope" };
+    next = { ...next, stress: next.stress - 1, hope: next.hope - 1 };
+  }
+  return { ok: true, plan: result.plan, sheet: next };
+}
+
 /**
  * An answer to an after-hit offer (AA2b; the row's `afterHit`): `card` runs the offered card with the hit as its trigger
- * (Unbreakable: 1d6 HP cleared, the card to the vault, CB p.342) and logs a public row in the hit's group; `pass` (or any
- * armor answer) declines it. A death-move offer whose moment passed (the character is no longer at their last HP or
- * left play) declines the row. NOT_A_RESPONDER for anyone else or a card not offered. Closes the row.
+ * (Unbreakable: 1d6 HP cleared, the card to the vault, CB p.342) and logs a public row in the hit's group; SD4: `feature`
+ * runs the offered feature (Not Done Yet, Deadly Vengeance, Eye for an Eye, Brave Face) and writes what it does to the
+ * attacker; `pass` (or any armor answer) declines it. A death-move offer whose moment passed (the character is no longer
+ * at their last HP or left play) declines the row. NOT_A_RESPONDER for anyone else or an answer not offered. Closes the row.
  */
 export async function respondAfterHit(ctx: MutationCtx, input: RespondInput & { row: HitRow & { payload: { afterHit: AfterHit } } }): Promise<"resolved" | "declined"> {
   const { row, characterId, choice } = input;
   const offer = row.payload.afterHit;
   if (offer.characterId !== characterId) throw appError("NOT_A_RESPONDER");
-  if (choice.kind !== "card") {
+  if (choice.kind !== "card" && choice.kind !== "feature") {
     await closeRequest(ctx, row._id, "resolved", input.by);
     return "resolved";
   }
-  if (!offer.cardIds.includes(choice.cardId)) throw appError("NOT_A_RESPONDER", choice.cardId);
+  const offered = choice.kind === "card" ? choice.cardId : choice.featureId;
+  if (!offer.cardIds.includes(offered)) throw appError("NOT_A_RESPONDER", offered);
   const members = await partyMembers(ctx, row.campaignId);
   const member = members.find((m) => m.character._id === characterId);
   if (!member || (offer.deathMove && member.sheet.hp < member.sheet.hpMax)) {
     await closeRequest(ctx, row._id, "declined", input.by);
     return "declined";
   }
-  const ran = runAfterHitCard(member, member.sheet, choice.cardId, choice.useId, { amount: offer.hpMarked }, `${row._id}:afterHit`);
-  if ("ok" in ran) throw cardRefusal(ran);
-  const next = sheetAfterCard(member.sheet, ran.plan, characterId, ran.cardName);
+  const kind = isPcAttacker(row.payload.attacker) ? ("combat" as const) : ("adversary" as const);
+  let next: CharacterSheet;
+  let name: string;
+  let stored: AnswerChoice = choice;
+  if (choice.kind === "card") {
+    const ran = runAfterHitCard(member, member.sheet, choice.cardId, choice.useId, { amount: offer.hpMarked }, `${row._id}:afterHit`);
+    if ("ok" in ran) throw cardRefusal(ran);
+    next = sheetAfterCard(member.sheet, ran.plan, characterId, ran.cardName);
+    name = ran.cardName;
+  } else {
+    const effect = answeringFeatures(member.sheet, await hopeAndFearOf(ctx, row.campaignId)).find((f) => f.featureId === choice.featureId);
+    const use = effect ? featureUse(effect, choice.useId) : undefined;
+    if (!effect || !use) throw appError("NOT_A_RESPONDER", choice.featureId);
+    const attacker = await attackerCombatant(ctx, row, members);
+    const ran = runAfterHitFeature(effect, use.id, member, { hpMarked: offer.hpMarked }, offer.hpMarked, attacker?.combatant, `${row._id}:afterHit`, choice.choices);
+    if (!ran.ok) throw featureRefusal(ran);
+    assertPicked(ran.plan);
+    next = ran.sheet;
+    name = ran.plan.name;
+    stored = { kind: "feature", featureId: effect.featureId, useId: use.id, choices: choice.choices.filter((c) => c.id !== "spentDice") };
+    const written = await writeAttackerChanges(ctx, ran.plan, attacker, row.payload.attacker.label);
+    if (written.line) {
+      await logAction(ctx, {
+        campaignId: row.campaignId,
+        actorId: row.createdBy,
+        kind,
+        visibility: "gm",
+        summary: `${member.sheet.name} · ${name} → ${written.line}`,
+        groupId: row.payload.groupId,
+        ...(written.before ? { adversaryBefore: [written.before] } : {}),
+        undoable: true,
+      });
+    }
+    const manual = manualWords(ran.plan);
+    if (manual.length > 0) name = `${name} (${manual.join("; ")})`;
+  }
   await saveSheet(ctx, characterId, next);
   await logAction(ctx, {
     campaignId: row.campaignId,
     characterId,
     actorId: row.createdBy,
-    kind: isPcAttacker(row.payload.attacker) ? "combat" : "adversary",
+    kind,
     visibility: "public",
-    summary: `${member.sheet.name} uses ${ran.cardName}${offer.deathMove ? " instead of a death move" : ""}`,
+    summary: `${member.sheet.name} uses ${name}${offer.deathMove ? " instead of a death move" : ""}`.slice(0, 1000),
     groupId: row.payload.groupId,
     before: member.sheet,
     undoable: true,
   });
-  await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice, by: input.by, at: Date.now() }] });
+  await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice: stored, by: input.by, at: Date.now() }] });
   await closeRequest(ctx, row._id, "resolved", input.by);
   return "resolved";
 }
@@ -481,12 +728,44 @@ export function hasAfterHit(row: HitRow): row is HitRow & { payload: { afterHit:
 // ---------------------------------------------------------------- reading
 
 /** Whether the hit's actionLog group was undone (undo leaves the hit's row open; it is declined when next touched). */
-export async function groupUndone(ctx: QueryCtx, row: HitRow): Promise<boolean> {
+export async function groupUndone(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: { groupId: string } }): Promise<boolean> {
   const first = await ctx.db
     .query("actionLog")
     .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.payload.groupId))
     .first();
   return first !== null && first.undoneAt !== undefined;
+}
+
+/**
+ * SD4: one feature answer as a player's prompt shows it: the feature's printed name and text (from the SRD, never the
+ * enemy's numbers), and what its Use asks: counts (Prayer Dice to spend), a pick per `choose` step (Not This Time's
+ * attack or damage), optional steps (Draining Bane's "clear a Stress") and situations to confirm (Q13).
+ */
+export type FeatureView = {
+  featureId: string;
+  useId: string;
+  name: string;
+  text: string;
+  numbers: { id: string; label: string; min: number }[];
+  options: { id: string; label: string; options: { id: string; label: string }[] }[];
+  optionals: { id: string; label: string }[];
+  situations: string[];
+};
+
+/** The prompt's view of one feature use (SD4). */
+export function featureView(effect: FeatureEffect, useId: string, sheet: CharacterSheet, hopeAndFear: boolean): FeatureView {
+  const use = featureUse(effect, useId);
+  const held = owned(sheet, { hopeAndFear }).find((f) => f.featureId === effect.featureId);
+  return {
+    featureId: effect.featureId,
+    useId,
+    name: held?.name ?? use?.name ?? effect.featureId,
+    text: held?.text ?? "",
+    numbers: (use?.choices ?? []).map((c) => ({ id: c.id, label: c.label, min: c.min })),
+    options: use ? chooseSteps(use).map((c) => ({ id: c.id, label: c.label, options: c.options.map((o) => ({ id: o.id, label: o.label })) })) : [],
+    optionals: use ? optionalSteps(use).map((o) => ({ id: o.id, label: o.label })) : [],
+    situations: (use?.requires ?? []).flatMap((r) => (r.kind === "situation" && r.check === undefined ? [r.text] : [])),
+  };
 }
 
 export type HitView = {
@@ -513,6 +792,12 @@ export type HitView = {
   deathMove?: boolean;
   /** AA2b: after a redirect (I Am Your Shield), who was hit first ("Tabby stepped in" on their line). */
   originalTargetName?: string;
+  /** SD4: the feature uses this character may answer with now (Iron Will, Prayer Dice, Not This Time, …). */
+  features?: FeatureView[];
+  /** SD4: the hit PC answered armor; only severity-gated features (Thick Skin) or Done are left. */
+  armorAnswered?: boolean;
+  /** SD4 (Q2): a before-roll prompt: nothing is rolled yet; Use a before-roll feature or Pass. */
+  preRoll?: boolean;
 };
 
 /** What one character sees of an open hit: the target their own numbers (Q14), an ally only who was hit and their cards. */
@@ -521,6 +806,15 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
   if (offer) {
     if (offer.characterId !== characterId) return null;
     const member = (await partyMembers(ctx, row.campaignId)).find((m) => m.character._id === characterId);
+    const hopeAndFear = await hopeAndFearOf(ctx, row.campaignId);
+    const effects = member ? answeringFeatures(member.sheet, hopeAndFear) : [];
+    const features = member
+      ? offer.cardIds.filter(isFeatureId).flatMap((id) => {
+          const effect = effects.find((f) => f.featureId === id);
+          const use = effect?.uses.find((u) => u.activation.kind === "reaction");
+          return effect && use ? [featureView(effect, use.id, member.sheet, hopeAndFear)] : [];
+        })
+      : [];
     return {
       requestId: row._id,
       attackerLabel: row.payload.attacker.label,
@@ -528,10 +822,11 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
       targetName: member?.sheet.name ?? "Unknown",
       role: "target",
       awaiting: true,
-      cardIds: offer.cardIds,
+      cardIds: offer.cardIds.filter((id) => !isFeatureId(id)),
       createdAt: row.createdAt,
       afterHit: true,
       deathMove: offer.deathMove,
+      ...(features.length > 0 ? { features } : {}),
     };
   }
   const { state, party, members } = await rebuildWindow(ctx, row);
@@ -543,6 +838,17 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
   // AA2b: a card this character already played in this window isn't offered again (I Am Your Shield after its use).
   const played = new Set(state.responses.flatMap((r) => (r.characterId === characterId && r.choice.kind === "card" ? [r.choice.cardId] : [])));
   const redirected = state.targetId !== state.originalTargetId;
+  const armorAnswered = state.responses.some((r) => r.characterId === characterId && (r.choice.kind === "armor" || r.choice.kind === "noArmor" || r.choice.kind === "pass"));
+  const me = members.find((m) => m.character._id === characterId);
+  const pc = party.find((x) => x.id === characterId);
+  const hopeAndFear = me ? await hopeAndFearOf(ctx, row.campaignId) : true;
+  const features =
+    awaiting && me && pc
+      ? featureAnswers(state, characterId).flatMap((f) => {
+          const effect = pc.features?.find((e) => e.featureId === f.featureId);
+          return effect ? [featureView(effect, f.useId, me.sheet, hopeAndFear)] : [];
+        })
+      : [];
   const view: HitView = {
     requestId: row._id,
     attackerLabel: row.payload.attacker.label,
@@ -550,15 +856,18 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
     targetName: target?.sheet.name ?? "Unknown",
     role: isTarget ? "target" : "ally",
     awaiting,
-    cardIds: (responder?.cardIds ?? []).filter((id) => !played.has(id)),
+    cardIds: armorAnswered ? [] : (responder?.cardIds ?? []).filter((id) => !played.has(id)),
     createdAt: row.createdAt,
     ...(redirected ? { originalTargetName: members.find((m) => m.character._id === state.originalTargetId)?.sheet.name ?? "Unknown" } : {}),
+    ...(features.length > 0 ? { features } : {}),
+    ...(isTarget && armorAnswered ? { armorAnswered: true } : {}),
   };
   const defense = party.find((p) => p.id === characterId);
   if (isTarget && defense) {
     const prompt = targetPrompt(state, defense);
     const extra = prompt.maxSlots > 1 ? ("any" as const) : 0;
-    return { ...view, damage: prompt.damage, severity: prompt.severity, direct: row.payload.direct, maxSlots: prompt.maxSlots, armorPreview: armorPreview(defense, state.hit, extra).slice(0, prompt.maxSlots + 1) };
+    const hit = { ...state.hit, amount: prompt.damage };
+    return { ...view, damage: prompt.damage, severity: prompt.severity, direct: row.payload.direct, maxSlots: prompt.maxSlots, armorPreview: armorPreview(defense, hit, extra).slice(0, prompt.maxSlots + 1) };
   }
   return view;
 }

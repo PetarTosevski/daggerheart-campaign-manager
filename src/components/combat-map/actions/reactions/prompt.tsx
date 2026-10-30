@@ -14,12 +14,17 @@ import {
   afterAnswer,
   armorQuestion,
   damageLine,
+  defaultPicks,
+  featureChoice,
   hitLine,
   playableCards,
   promptMode,
   reactionCard,
+  situationsConfirmed,
   stepFor,
   stepText,
+  type FeaturePicks,
+  type FeatureView,
   type HitChoice,
   type HitView,
 } from "./model";
@@ -32,6 +37,10 @@ import {
  *   reaction cards (Shrug It Off, Unyielding Armor) with Use before the armor answer;
  * - an ally with an eligible reaction card: "Bandit hit Mira", the card with Use, and Pass;
  * - nothing owed: the one line "Bandit hit Mira" (Q14).
+ * Plan sheet-drawer SD4: the features that may answer now (Iron Will, Increased Fortitude, Partners-in-Arms, Not This
+ * Time, …) are listed with the cards, each with what its Use asks (a count, a pick, an optional step); after the armor
+ * answer a feature that now fits (Thick Skin on a hit the slot made Minor, CB p.107) waits with Use / Done; before an
+ * adversary's roll (Q2) a PC with a before-roll defence gets "Bandit attacks Mira" with Use / Pass.
  * Each tap calls `adversaryActions.respond` once, with an optimistic update on `pending` (CL4).
  */
 
@@ -182,17 +191,26 @@ function HitCard({
 }) {
   const mode = promptMode(view);
   const target = view.role === "target";
-  const cards = playableCards(view);
-  const title = target ? `${view.attackerLabel} hit ${characterName}` : hitLine(view);
+  const cards = mode === "afterArmor" || mode === "preRoll" ? [] : playableCards(view);
+  const features = view.features ?? [];
+  const title = mode === "preRoll" ? `${view.attackerLabel} attacks ${view.targetName}` : target ? `${view.attackerLabel} hit ${characterName}` : hitLine(view);
+  const label = mode === "preRoll" ? "Before the roll" : target ? "You were hit" : `${characterName} can react`;
   return (
-    <section className="ih-card" aria-label={`Incoming hit: ${title}`} data-testid="incoming-hit" data-role={view.role}>
-      <p className="ih-lbl">{target ? "You were hit" : `${characterName} can react`}</p>
+    <section className="ih-card" aria-label={`${mode === "preRoll" ? "Before the roll" : "Incoming hit"}: ${title}`} data-testid="incoming-hit" data-role={view.role} data-mode={mode}>
+      <p className="ih-lbl">{label}</p>
       <h2 className="ih-h">{title}</h2>
-      {target ? (
+      {target && mode !== "preRoll" ? (
         <>
           <p className="ih-dmg">{damageLine(view)}</p>
-          <p className="ih-q">{armorQuestion(view)}</p>
+          <p className="ih-q">{mode === "afterArmor" ? "Armor marked. Use a feature that fits now, or Done." : armorQuestion(view)}</p>
         </>
+      ) : null}
+      {features.length > 0 ? (
+        <ul className="ih-cards" aria-label="Reaction features">
+          {features.map((f) => (
+            <FeatureItem key={f.featureId} feature={f} disabled={busy} onUse={(picks) => onAnswer(featureChoice(f, picks))} />
+          ))}
+        </ul>
       ) : null}
       {cards.length > 0 ? (
         <ul className="ih-cards" aria-label="Reaction cards">
@@ -218,9 +236,14 @@ function HitCard({
             OK
           </button>
         ) : null}
-        {mode === "ally" ? (
+        {mode === "ally" || mode === "preRoll" ? (
           <button type="button" className="ih-btn" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
             Pass
+          </button>
+        ) : null}
+        {mode === "afterArmor" ? (
+          <button type="button" className="ih-btn ih-go" disabled={busy} onClick={() => onAnswer({ kind: "pass" })}>
+            Done
           </button>
         ) : null}
       </div>
@@ -284,6 +307,61 @@ function ReactionCardItem({ cardId, disabled, onUse }: { cardId: string; disable
       </div>
       {card.text ? <p className="ih-rc-text">{card.text}</p> : null}
       <button type="button" className="ih-btn ih-go" disabled={disabled} onClick={onUse} aria-label={`Use ${card.name}`}>
+        Use
+      </button>
+    </li>
+  );
+}
+
+/**
+ * SD4: one feature answer: its name and text, and what its Use asks (a count such as Prayer Dice to spend, a pick such as
+ * Not This Time's attack or damage, an optional step, a situation to confirm, Q13). Use sends it with those picks.
+ */
+function FeatureItem({ feature, disabled, onUse }: { feature: FeatureView; disabled: boolean; onUse: (picks: FeaturePicks) => void }) {
+  const [picks, setPicks] = useState<FeaturePicks>(() => defaultPicks(feature));
+  const ready = situationsConfirmed(feature, picks);
+  return (
+    <li className="ih-rc ih-feat" data-testid="incoming-hit-feature">
+      <div className="ih-rc-head">
+        <h3 className="ih-rc-name">{feature.name}</h3>
+        <span className="ih-rc-meta">Feature</span>
+      </div>
+      {feature.text ? <p className="ih-rc-text">{feature.text}</p> : null}
+      {feature.numbers.map((n) => (
+        <label key={n.id} className="ih-pick">
+          <span>{n.label}</span>
+          <input
+            type="number"
+            min={Math.max(1, n.min)}
+            value={picks.numbers[n.id] ?? Math.max(1, n.min)}
+            onChange={(e) => setPicks((p) => ({ ...p, numbers: { ...p.numbers, [n.id]: Math.max(Math.max(1, n.min), Math.trunc(Number(e.target.value) || 0)) } }))}
+          />
+        </label>
+      ))}
+      {feature.options.map((o) => (
+        <fieldset key={o.id} className="ih-pick">
+          <legend>{o.label}</legend>
+          {o.options.map((opt) => (
+            <label key={opt.id}>
+              <input type="radio" name={`${feature.featureId}:${o.id}`} checked={picks.options[o.id] === opt.id} onChange={() => setPicks((p) => ({ ...p, options: { ...p.options, [o.id]: opt.id } }))} />
+              {opt.label}
+            </label>
+          ))}
+        </fieldset>
+      ))}
+      {feature.optionals.map((o) => (
+        <label key={o.id} className="ih-pick">
+          <input type="checkbox" checked={picks.optionals[o.id] === true} onChange={(e) => setPicks((p) => ({ ...p, optionals: { ...p.optionals, [o.id]: e.target.checked } }))} />
+          {o.label}
+        </label>
+      ))}
+      {feature.situations.map((text) => (
+        <label key={text} className="ih-pick">
+          <input type="checkbox" checked={picks.situations[text] === true} onChange={(e) => setPicks((p) => ({ ...p, situations: { ...p.situations, [text]: e.target.checked } }))} />
+          {text}
+        </label>
+      ))}
+      <button type="button" className="ih-btn ih-go" disabled={disabled || !ready} onClick={() => onUse(picks)} aria-label={`Use ${feature.name}`}>
         Use
       </button>
     </li>

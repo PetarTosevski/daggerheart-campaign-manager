@@ -17,13 +17,18 @@
  * p.153-154, p.194 spotlight and Fear; AR7 CB p.161 one roll for every target; AR8 CB p.195 reactions; AR9 CB p.201 Group
  * Attack; AR10 CB p.199 Horde; Q2 cover gives the roll disadvantage (CB p.104).
  */
+import { ConvexError } from "convex/values";
+
 import { pickAdversaryUse, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFear, type AdversaryPlan, type AdversaryPlanStep, type AdversaryRunContext } from "../../src/lib/domain/adversary-effects/run";
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
-import { passiveSummary, type AdversaryEvent } from "../../src/lib/domain/adversary-actions/index";
+import { actorWithSubject, featureReady, passiveSummary, preRollFits, type AdversaryEvent } from "../../src/lib/domain/adversary-actions/index";
+import { runFeature } from "../../src/lib/domain/feature-effects/run";
+import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
+import { resolveOptions } from "../../src/lib/frames/options";
 import { featureFearCost } from "../../src/lib/domain/adversaries/index";
 import type { PlanStep } from "../../src/lib/domain/card-effects/run";
 import type { Range } from "../../src/lib/domain/card-effects/types";
-import { lineOfSight, rangeCheck, type Combatant } from "../../src/lib/domain/combat-actions/index";
+import { applyStressTo, lineOfSight, rangeCheck, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import { applySpotlight } from "../../src/lib/domain/encounters/spotlight";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { appError } from "../../src/lib/errors/app-error";
@@ -51,16 +56,31 @@ import {
   type BlockFeature,
   type Prompt,
 } from "./adversaryFeatures";
-import { pcCombatant, writeSheetChanges } from "./cardRunner";
+import { answeringFeatures, featureActor, featureChoices, featureReplayActor, seededRng, SPENT_DICE } from "./adversaryHits";
+import { actorSheetAfter, pcCombatant, writeSheetChanges } from "./cardRunner";
 import { saveSheet } from "./characterSheet";
+import { closeRequest } from "./combatRequests";
 import { liveCombatMap, tokensOnMap } from "./combatMaps";
 import { loadScene, type Scene } from "./combatVision";
 import { MAX_INSTANCES } from "./encounters";
 import { campaignFearState, gainFear, spendFear } from "./fear";
-import { attackerInstanceId, bandsOnMap, openIncomingHit, partyMembers, type BandBetween, type HitDraft, type HitResolution, type PartyMember } from "./incomingHits";
+import {
+  assertPicked,
+  attackerInstanceId,
+  bandsOnMap,
+  featureRefusal,
+  openIncomingHit,
+  partyMembers,
+  writeAttackerChanges,
+  type AnswerChoice,
+  type BandBetween,
+  type HitDraft,
+  type HitResolution,
+  type PartyMember,
+} from "./incomingHits";
 import { rollDie } from "./dice";
 import type { ActionTarget, AdversaryBefore, StoredRoll } from "./validators/actionLog";
-import type { HitRider } from "./validators/combatRequests";
+import type { CombatResponse, HitRider, PreRollPayload } from "./validators/combatRequests";
 import { ENCOUNTER_CONDITIONS, type EncounterCondition } from "./validators/encounters";
 
 // The stat block, limits, riders and the runner's helpers moved to ./adversaryFeatures.ts (AA2c, CH9); same names here.
@@ -419,7 +439,121 @@ export type ActionResult = {
   fearDelta: number;
   prompts: Prompt[];
   offers: Offer[];
+  /** SD4 (Q2): the attack waits, unrolled, for before-roll answers in this `preRoll` request. */
+  held?: Id<"combatRequests">;
 };
+
+/** SD4: the tag Draining Bane leaves on the adversary (HF p.14, "While Drained"). */
+export const DRAINED = "Drained";
+
+/** SD4: a held attack's replay (Q2): its action group and what the before-roll answers changed. */
+export type Replay = {
+  groupId: string;
+  /** Extra disadvantage dice (Harrowing Invocation). */
+  disadvantage: number;
+  /** +Evasion against this attack, by character id (Keen Defenses: "equal to your tier"). */
+  evasion: Record<string, number>;
+  /** Harrowing Invocation's PCs: if the roll fails against all of them, the attacker marks a Stress. */
+  harrowed: { subjects: string[] } | null;
+};
+
+/**
+ * Dice for a Drained attacker (HF p.14: "uses a d12 instead of a d20 for attack rolls (including for advantage or
+ * disadvantage)"): the attack roll's first `d20s` d20s are d12s; later dice (damage) roll as they are.
+ */
+function drainedDice(d20s: number) {
+  let left = d20s;
+  return (sides: number) => {
+    if (sides === 20 && left > 0) {
+      left--;
+      return rollDie(12);
+    }
+    return rollDie(sides);
+  };
+}
+
+/** An attack holds for before-roll answers only with what `heldAttackValidator` keeps (no picks, splits or trigger). */
+function holdable(args: ActionArgs): boolean {
+  const empty = (list: readonly unknown[] | undefined) => (list?.length ?? 0) === 0;
+  return args.trigger === undefined && empty(args.picked) && empty(args.allies) && empty(args.followUp) && empty(args.options) && empty(args.optionals) && empty(args.situations) && empty(args.eitherCosts) && empty(args.splits);
+}
+
+/** One PC's before-roll defences that fit this attack (Q2): ready, affordable, the trigger's subjects within range. */
+function preRollDefences(member: PartyMember, picks: readonly PcPick[], scene: ActionScene, self: Combatant, hopeAndFear: boolean): string[] {
+  const id = member.character._id;
+  const token = scene.map?.scene.tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === id);
+  const toAttacker = scene.map && token ? rangeCheck(token, scene.map.selfToken, "melee").band : undefined;
+  const targets = picks.map((p) => ({ id: p.member.character._id, ...(p.member.character._id !== id ? optionalBand(scene.bands(id, p.member.character._id)) : {}) }));
+  const actor = featureActor(id, member.sheet);
+  const out: string[] = [];
+  for (const effect of answeringFeatures(member.sheet, hopeAndFear)) {
+    const fits = effect.uses.find((u) => {
+      if (u.activation.kind !== "reaction") return false;
+      const subjects = preRollFits(u.activation.trigger, id, targets, toAttacker);
+      const subject = picks.find((p) => subjects.includes(p.member.character._id));
+      return subject !== undefined && featureReady(effect, u, actor, { amount: 0, subject: subject.combatant, source: self });
+    });
+    if (fits) out.push(effect.featureId);
+  }
+  return out;
+}
+
+const optionalBand = (band: Range | undefined) => (band !== undefined ? { band } : {});
+
+/**
+ * SD4 (Q2 a, HF p.14): before the roll, the PCs holding a ready, affordable before-roll defence get "Bandit attacks
+ * Mira" with Use / Pass; nothing waits for PCs without one. The attack is stored unrolled in a `preRoll` request (one GM
+ * row in the action's group, so undo calls it off) and replays when everyone answered or the GM resolves it. Returns
+ * null when nobody holds one (the attack goes ahead at once).
+ */
+async function holdForPreRoll(
+  ctx: MutationCtx,
+  h: { campaign: Doc<"campaigns">; user: Doc<"users">; instance: Doc<"encounterAdversaries">; encounter: Doc<"encounters">; block: Block; scene: ActionScene; args: ActionArgs; picks: PcPick[]; groupId: string; label: string; featureName: string },
+): Promise<ActionResult | null> {
+  if (h.picks.length === 0) return null;
+  const hopeAndFear = resolveOptions(h.campaign.frameId, h.campaign.options).hopeAndFear;
+  const self = selfCombatant(h.instance, h.block);
+  const responders = h.scene.party.flatMap((m) => {
+    const featureIds = preRollDefences(m, h.picks, h.scene, self, hopeAndFear);
+    return featureIds.length > 0 ? [{ characterId: m.character._id, featureIds: featureIds.slice(0, 10) }] : [];
+  });
+  if (responders.length === 0) return null;
+  const live = await liveCombatMap(ctx, h.campaign._id);
+  const targetCharacterIds = h.picks.map((p) => p.member.character._id);
+  const requestId = await ctx.db.insert("combatRequests", {
+    campaignId: h.campaign._id,
+    encounterId: h.encounter._id,
+    ...(live ? { mapId: live._id } : {}),
+    kind: "preRoll",
+    status: "open",
+    createdBy: h.user._id,
+    createdAt: Date.now(),
+    responses: [],
+    payload: {
+      schemaVersion: 1,
+      kind: "preRoll",
+      attacker: { instanceId: h.instance._id, label: h.label, ...(h.args.feature !== undefined ? { feature: h.args.feature } : {}) },
+      attack: {
+        instanceId: h.instance._id,
+        ...(h.args.feature !== undefined ? { feature: h.args.feature } : {}),
+        ...(h.args.useId !== undefined ? { useId: h.args.useId } : {}),
+        targetCharacterIds,
+        ...(h.args.advantage !== undefined ? { advantage: h.args.advantage } : {}),
+        ...(h.args.disadvantage !== undefined ? { disadvantage: h.args.disadvantage } : {}),
+        ...(h.args.experience !== undefined ? { experience: h.args.experience } : {}),
+        ...(h.args.spendFear !== undefined ? { spendFear: h.args.spendFear } : {}),
+        ...(h.args.reactions !== undefined ? { reactions: h.args.reactions.slice(0, 20) } : {}),
+      },
+      groupId: h.groupId,
+      responders,
+    },
+  });
+  const names = (ids: readonly string[]) => ids.map((id) => h.scene.party.find((m) => m.character._id === id)?.sheet.name ?? "someone").join(", ");
+  const text = `${h.label} attacks ${names(targetCharacterIds)} (${h.featureName}): waiting for ${names(responders.map((r) => r.characterId))} before the roll`;
+  const entryId = await logAction(ctx, { campaignId: h.campaign._id, actorId: h.user._id, kind: "adversary", visibility: "gm", summary: text, groupId: h.groupId, undoable: true });
+  return { status: "resolved", groupId: h.groupId, entryId, roll: null, success: false, targets: [], fearDelta: 0, prompts: [{ kind: "manual", text }], offers: [], held: requestId };
+}
+
 
 
 const words = (roll: RollRecord) => `${roll.total} (${roll.dice.filter((d) => !d.dropped).map((d) => d.value).join(", ")}${roll.modifier ? ` ${roll.modifier >= 0 ? "+" : ""}${roll.modifier}` : ""})`;
@@ -432,7 +566,7 @@ const words = (roll: RollRecord) => `${roll.total} (${roll.dice.filter((d) => !d
  * until `spendFear` covers them (Q19); NOT_ENOUGH_FEAR past the GM's Fear. Refusals: ADVERSARY_FEATURE_UNAVAILABLE,
  * ADVERSARY_NOT_SPOTLIT, COMBAT_TARGET_INVALID, COMBAT_NO_LINE_OF_SIGHT, ENCOUNTER_NOT_RUNNING, INVALID.
  */
-export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns">, user: Doc<"users">, args: ActionArgs): Promise<ActionResult | ConfirmFear> {
+export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns">, user: Doc<"users">, args: ActionArgs, replay?: Replay): Promise<ActionResult | ConfirmFear> {
   const { instance, encounter, block, others } = await loadActor(ctx, campaign, args.instanceId);
   const self = selfCombatant(instance, block);
 
@@ -466,7 +600,7 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
 
   const scene = await actionScene(ctx, campaign, instance);
   const base = { encounter, self: instance, block, scene };
-  const groupId = newGroupId();
+  const groupId = replay?.groupId ?? newGroupId();
   const w = new Work(instance, block, scene.party, others, encounter, fearState.sessionStartedAt);
   const label = instance.label;
   const featureName = args.feature ?? block.attack.name;
@@ -481,6 +615,26 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
 
   const attack = isAttackUse(use);
   const targets = await resolveCreatures(ctx, base, args.targets, attack);
+  // SD4 (Q2): PCs holding a ready before-roll defence (Harrowing Invocation, Draining Bane, Keen Defenses) answer first;
+  // the attack waits, unrolled, in a `preRoll` request and replays when they answered or the GM resolves it.
+  if (attack && !replay && holdable(args) && targets.picks.every((p) => p.kind === "pc")) {
+    const held = await holdForPreRoll(ctx, { campaign, user, instance, encounter, block, scene, args, picks: targets.picks as PcPick[], groupId, label: instance.label, featureName: args.feature ?? block.attack.name });
+    if (held) return held;
+  }
+  // SD4: a held attack replays with its before-roll answers: +Evasion against it for the PC who answered (Keen Defenses).
+  if (replay) {
+    for (const p of targets.picks) {
+      const bonus = p.kind === "pc" ? (replay.evasion[p.member.character._id] ?? 0) : 0;
+      if (bonus > 0) p.combatant = { ...p.combatant, evasion: (p.combatant.evasion ?? 0) + bonus };
+    }
+  }
+  // SD4: Drained (Draining Bane, HF p.14): "uses a d12 instead of a d20 for attack rolls (including for advantage or
+  // disadvantage) until they fail a roll".
+  const drained = attack && (instance.tags ?? []).includes(DRAINED);
+  const advantage = (args.advantage ?? 0) + (attack && (passives.advantage ?? []).some((on) => on === "attack" || on === "any") ? 1 : 0);
+  const disadvantage = (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0) + (replay?.disadvantage ?? 0);
+  // The attack roll's d20s (rollD20: a second die when advantage and disadvantage don't cancel; Goad Them On adds one).
+  const attackD20s = advantage - disadvantage - (instanceModifiers(instance).disadvantage ? 1 : 0) !== 0 ? 2 : 1;
   const picked = (await resolveCreatures(ctx, base, args.picked ?? [], false)).picks;
   const allies = (await resolveCreatures(ctx, base, args.allies ?? [], false)).picks;
   const followUp = (await resolveCreatures(ctx, base, args.followUp ?? [], false)).picks;
@@ -510,15 +664,15 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     ...(args.eitherCosts ? { eitherCosts: args.eitherCosts } : {}),
     ...(args.splits ? { splits: Object.fromEntries(args.splits.map((s) => [s.id, s.amount])) } : {}),
     situations: args.situations ?? [],
-    advantage: (args.advantage ?? 0) + (attack && (passives.advantage ?? []).some((on) => on === "attack" || on === "any") ? 1 : 0),
-    disadvantage: (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0),
+    advantage,
+    disadvantage,
     ...(experience ? { experience } : {}),
     ...(group.length ? { group } : {}),
     hordeX: block.hordeX,
     attackDiceOnAttacks: true,
     passives,
     instance: instanceModifiers(instance),
-    rng: rollDie,
+    rng: drained ? drainedDice(attackD20s) : rollDie,
   };
   const plan = runOrThrow(effect, context);
   w.absorb(plan, featureName);
@@ -566,6 +720,18 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     const r = runOrThrow(t.effect, { ...plain, self: w.selfAfter, useId: t.use.id, gmFear: Math.max(0, fearNow - spotlightFear + w.fearDelta), trigger: { source: self, ...(firstHit ? { subject: firstHit.combatant } : {}) } });
     w.absorb(r, t.effect.feature);
     w.gm.push(`${t.effect.feature} (automatic)`);
+  }
+
+  // SD4: the before-roll answers' after-effects. Harrowing Invocation (HF p.14): "If the adversary fails the roll, they
+  // must also mark a Stress" (the roll failed against every PC it protected); Drained ends when the roll fails.
+  if (replay?.harrowed && plan.roll && replay.harrowed.subjects.every((id) => !hitIds.has(id))) {
+    w.selfAfter = applyStressTo(w.selfAfter, 1).after;
+    w.gm.push(`Harrowing Invocation: ${label} failed the roll and marks a Stress`);
+  }
+  if (drained) w.gm.push(`Drained: rolled a d12 instead of a d20`);
+  if (drained && plan.roll && hitIds.size === 0) {
+    w.selfAfter = { ...w.selfAfter, tags: (w.selfAfter.tags ?? []).filter((t) => t !== DRAINED) };
+    w.gm.push(`${label} failed a roll: no longer Drained`);
   }
 
   const outcomes: TargetOutcome[] = targets.picks.map((p) => outcomeOf(p, plan.roll ? hitIds.has(p.combatant.id) : true));
@@ -768,4 +934,179 @@ export async function afterHitTriggers(ctx: MutationCtx, res: HitResolution, act
     // A hit from an automatic use (rare): its own window, in the same group; its triggers don't chain further.
     await openIncomingHit(ctx, { campaignId: instance.campaignId, encounterId: encounter._id, ...(map ? { mapId: map._id } : {}), createdBy: actorId, groupId, attacker: { instanceId: instance._id, label: instance.label }, targetCharacterId: h.targetId, hit: h.hit, riders: h.riders, party: await partyMembers(ctx, instance.campaignId), bands });
   }
+}
+// ---------------------------------------------------------------- before the roll (SD4, Q2)
+
+export type PreRollRow = Doc<"combatRequests"> & { payload: PreRollPayload };
+
+export function isPreRollRow(row: Doc<"combatRequests">): row is PreRollRow {
+  return row.kind === "preRoll" && row.payload.kind === "preRoll";
+}
+
+/** The attacking instance of a held attack as a creature (the before-roll feature's trigger source); null when gone. */
+async function heldAttacker(ctx: QueryCtx, row: PreRollRow): Promise<{ instance: Doc<"encounterAdversaries">; combatant: Combatant } | null> {
+  const instance = await ctx.db.get("encounterAdversaries", row.payload.attacker.instanceId);
+  if (instance === null || instance.campaignId !== row.campaignId) return null;
+  const block = await blockOf(ctx, instance);
+  return block ? { instance, combatant: selfCombatant(instance, block) } : null;
+}
+
+/** The PCs a before-roll answer protects (its trigger's subjects among the held attack's targets), by character id. */
+async function preRollSubjects(ctx: QueryCtx, row: PreRollRow, characterId: Id<"characters">, effect: FeatureEffect, useId: string): Promise<string[]> {
+  const use = effect.uses.find((u) => u.id === useId);
+  if (!use || use.activation.kind !== "reaction") return [];
+  const map = row.mapId ? await ctx.db.get("combatMaps", row.mapId) : null;
+  const bands = await bandsOnMap(ctx, row.mapId);
+  let toAttacker: Range | undefined;
+  if (map?.live) {
+    const tokens = await tokensOnMap(ctx, map._id);
+    const mine = tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === characterId);
+    const theirs = tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === row.payload.attacker.instanceId);
+    if (mine && theirs) toAttacker = rangeCheck(mine, theirs, "melee").band;
+  }
+  const targets = row.payload.attack.targetCharacterIds.map((id) => ({ id, ...(id !== characterId ? optionalBand(bands(characterId, id)) : {}) }));
+  return preRollFits(use.activation.trigger, characterId, targets, toAttacker);
+}
+
+/**
+ * An answer to a before-roll prompt (Q2): `pass`, or a before-roll feature the responder was offered, run now through
+ * SD1's feature runner with the attack as its trigger and paid at once (a Favor, a Focus). What it does to the attacker
+ * now is written now (Draining Bane: a Stress, and "Drained" on the instance); the rest waits for the replay
+ * (disadvantage, +Evasion). NOT_A_RESPONDER for anyone not listed, an answer given twice or a feature not offered.
+ * Returns whether every responder answered.
+ */
+export async function respondPreRoll(ctx: MutationCtx, input: { row: PreRollRow; characterId: Id<"characters">; choice: AnswerChoice; by: Id<"users"> }): Promise<{ complete: boolean }> {
+  const { row, characterId, choice } = input;
+  const p = row.payload;
+  const responder = p.responders.find((r) => r.characterId === characterId);
+  if (!responder || row.responses.some((r) => r.characterId === characterId)) throw appError("NOT_A_RESPONDER");
+  let stored: CombatResponse["choice"] = { kind: "pass" };
+  if (choice.kind === "feature") {
+    if (!responder.featureIds.includes(choice.featureId)) throw appError("NOT_A_RESPONDER", choice.featureId);
+    const member = (await partyMembers(ctx, row.campaignId)).find((m) => m.character._id === characterId);
+    const campaign = await ctx.db.get("campaigns", row.campaignId);
+    const attacker = await heldAttacker(ctx, row);
+    if (!member || !campaign || !attacker) throw appError("NOT_A_RESPONDER", choice.featureId);
+    const effect = answeringFeatures(member.sheet, resolveOptions(campaign.frameId, campaign.options).hopeAndFear).find((f) => f.featureId === choice.featureId);
+    const use = effect?.uses.find((u) => u.activation.kind === "reaction" && (choice.useId === undefined || u.id === choice.useId));
+    if (!effect || !use) throw appError("NOT_A_RESPONDER", choice.featureId);
+    const subjects = await preRollSubjects(ctx, row, characterId, effect, use.id);
+    const party = await partyMembers(ctx, row.campaignId);
+    const subject = party.find((m) => subjects.includes(m.character._id));
+    if (!subject) throw appError("NOT_A_RESPONDER", choice.featureId);
+    const subjectCombatant = pcCombatant(subject.character._id, subject.sheet);
+    const result = runFeature(effect, use.id, {
+      actor: actorWithSubject(featureActor(characterId, member.sheet), subjectCombatant),
+      gmFear: 0,
+      ...featureChoices(choice.choices),
+      trigger: { amount: 0, subject: subjectCombatant, source: attacker.combatant },
+      rng: seededRng(`${row._id}:${row.responses.length}`),
+    });
+    if (!result.ok) throw featureRefusal(result);
+    assertPicked(result.plan);
+    const plan = result.plan;
+    await saveSheet(ctx, characterId, actorSheetAfter(member.sheet, plan, characterId, plan.name));
+    await logAction(ctx, { campaignId: row.campaignId, characterId, actorId: row.createdBy, kind: "adversary", visibility: "public", summary: `${member.sheet.name} uses ${plan.name} against ${p.attacker.label}`, groupId: p.groupId, before: member.sheet, undoable: true });
+    // Draining Bane: the Stress now, and Drained on the instance (its d12 starts with this attack).
+    const written = await writeAttackerChanges(ctx, plan, attacker, p.attacker.label);
+    const drains = plan.steps.some((s) => s.kind === "effect" && s.targetId === attacker.combatant.id && s.mods.some((m) => m.kind === "set" && m.stat === "attackDie"));
+    let before = written.before;
+    const lines = written.line ? [written.line] : [];
+    if (drains) {
+      const fresh = await ctx.db.get("encounterAdversaries", attacker.instance._id);
+      if (fresh && !(fresh.tags ?? []).includes(DRAINED)) {
+        before ??= beforeOf(fresh);
+        await ctx.db.patch("encounterAdversaries", fresh._id, { tags: [...(fresh.tags ?? []), DRAINED].slice(0, 20), updatedAt: Date.now() });
+        lines.push(`${p.attacker.label} is Drained (d12 attack rolls until it fails a roll)`);
+      }
+    }
+    if (lines.length > 0) {
+      await logAction(ctx, { campaignId: row.campaignId, actorId: row.createdBy, kind: "adversary", visibility: "gm", summary: `${member.sheet.name} · ${plan.name} → ${lines.join("; ")}`, groupId: p.groupId, ...(before ? { adversaryBefore: [before] } : {}), undoable: true });
+    }
+    stored = { kind: "feature", featureId: effect.featureId, useId: use.id, choices: choice.choices.filter((c) => c.id !== SPENT_DICE) };
+  }
+  const responses = [...row.responses, { characterId, choice: stored, by: input.by, at: Date.now() }];
+  await ctx.db.patch("combatRequests", row._id, { responses });
+  return { complete: p.responders.every((r) => responses.some((x) => x.characterId === r.characterId)) };
+}
+
+/**
+ * Replays a held attack (Q2): when every responder answered, or on the GM's "Resolve now" (combat-actions Q17; whoever
+ * hasn't answered passes). The answers' effects ride on the roll: Harrowing Invocation's disadvantage (and its Stress if
+ * the roll fails), Keen Defenses' +Evasion; Drained is on the instance already. The attack then runs as the GM sent it,
+ * in the same action group (one undo, U4). A held attack that can't run any more (the instance left, the Fear is gone)
+ * is called off with a GM row. Closes the request.
+ */
+export async function replayHeld(ctx: MutationCtx, row: PreRollRow, by: Id<"users">): Promise<ActionResult | null> {
+  const p = row.payload;
+  const campaign = await ctx.db.get("campaigns", row.campaignId);
+  const user = await ctx.db.get("users", row.createdBy);
+  const attacker = await heldAttacker(ctx, row);
+  if (campaign === null || user === null || attacker === null) {
+    await closeRequest(ctx, row._id, "declined", by);
+    return null;
+  }
+  const party = await partyMembers(ctx, row.campaignId);
+  const hopeAndFear = resolveOptions(campaign.frameId, campaign.options).hopeAndFear;
+  const replay: Replay = { groupId: p.groupId, disadvantage: 0, evasion: {}, harrowed: null };
+  for (const [i, answer] of row.responses.entries()) {
+    if (answer.choice.kind !== "feature") continue;
+    const choice = answer.choice;
+    const member = party.find((m) => m.character._id === answer.characterId);
+    const effect = member ? answeringFeatures(member.sheet, hopeAndFear).find((f) => f.featureId === choice.featureId) : undefined;
+    const use = effect?.uses.find((u) => u.id === choice.useId) ?? effect?.uses.find((u) => u.activation.kind === "reaction");
+    if (!member || !effect || !use) continue;
+    const subjects = await preRollSubjects(ctx, row, answer.characterId, effect, use.id);
+    const subject = party.find((m) => subjects.includes(m.character._id));
+    const subjectCombatant = subject ? pcCombatant(subject.character._id, subject.sheet) : undefined;
+    const result = runFeature(effect, use.id, {
+      actor: actorWithSubject(featureReplayActor(member, effect.featureId, choice.choices), subjectCombatant),
+      gmFear: 0,
+      ...featureChoices(choice.choices),
+      trigger: { amount: 0, ...(subjectCombatant ? { subject: subjectCombatant } : {}), source: attacker.combatant },
+      rng: seededRng(`${row._id}:${i}`),
+    });
+    if (!result.ok) continue;
+    for (const s of result.plan.steps) {
+      if (s.kind === "effect" && s.mods.some((m) => m.kind === "flag" && m.flag === "attackDisadvantage")) replay.disadvantage += 1;
+      if (s.kind === "fold" && s.step.kind === "modifyRoll" && s.step.change.kind === "evasion" && typeof s.amount === "number") {
+        for (const id of s.targetIds.length > 0 ? s.targetIds : [answer.characterId]) replay.evasion[id] = (replay.evasion[id] ?? 0) + s.amount;
+      }
+    }
+    // Harrowing Invocation's second half: "If the adversary fails the roll, they must also mark a Stress."
+    if (effect.uses.some((u) => u.activation.kind === "auto" && u.activation.trigger.kind === "whenCreatureAttacked" && u.activation.trigger.stage === "failed")) {
+      replay.harrowed = { subjects: [...new Set([...(replay.harrowed?.subjects ?? []), ...subjects])] };
+    }
+  }
+  const a = p.attack;
+  const args: ActionArgs = {
+    instanceId: a.instanceId,
+    ...(a.feature !== undefined ? { feature: a.feature } : {}),
+    ...(a.useId !== undefined ? { useId: a.useId } : {}),
+    targets: [...a.targetCharacterIds],
+    ...(a.advantage !== undefined ? { advantage: a.advantage } : {}),
+    ...(a.disadvantage !== undefined ? { disadvantage: a.disadvantage } : {}),
+    ...(a.experience !== undefined ? { experience: a.experience } : {}),
+    ...(a.spendFear !== undefined ? { spendFear: a.spendFear } : {}),
+    ...(a.reactions !== undefined ? { reactions: [...a.reactions] } : {}),
+  };
+  let result: ActionResult | ConfirmFear;
+  try {
+    result = await adversaryAction(ctx, campaign, user, args, replay);
+  } catch (e) {
+    if (!(e instanceof ConvexError)) throw e;
+    await calledOff(ctx, row, by, (e.data as { code?: string }).code ?? "INVALID");
+    return null;
+  }
+  if (result.status === "confirmFear") {
+    await calledOff(ctx, row, by, "NOT_ENOUGH_FEAR");
+    return null;
+  }
+  await closeRequest(ctx, row._id, "resolved", by);
+  return result;
+}
+
+async function calledOff(ctx: MutationCtx, row: PreRollRow, by: Id<"users">, code: string) {
+  await logAction(ctx, { campaignId: row.campaignId, actorId: row.createdBy, kind: "adversary", visibility: "gm", summary: `${row.payload.attacker.label}'s held attack was called off (${code})`, groupId: row.payload.groupId, undoable: false });
+  await closeRequest(ctx, row._id, "declined", by);
 }
