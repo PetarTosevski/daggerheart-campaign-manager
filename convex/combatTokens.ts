@@ -12,6 +12,7 @@ import { CLASSES } from "../src/lib/srd/classes";
 import type { AdversaryType } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { areasAfterMove, rangeTriggersAfterMove } from "./combatAreas";
 import { partyOf, readSheet } from "./lib/characterSheet";
 import {
   MAX_TOKEN_NAME,
@@ -359,6 +360,20 @@ function customRef(token: Doc<"combatTokens">) {
   return token.ref;
 }
 
+/** A moved token's name for the feed (an area it entered, plan lanes E4). */
+async function moverName(ctx: QueryCtx, token: Doc<"combatTokens">): Promise<string> {
+  const { ref } = token;
+  if (ref.kind === "custom") return ref.name;
+  if (ref.kind === "adversary") return (await ctx.db.get("encounterAdversaries", ref.adversaryId))?.label ?? "An adversary";
+  if (ref.kind === "companion") return "A companion";
+  const character = await ctx.db.get("characters", ref.characterId);
+  try {
+    return character ? readSheet(character.sheet).name : "A character";
+  } catch {
+    return "A character";
+  }
+}
+
 /**
  * The token and its map when the caller may move and turn it: the GM any token; anyone else only a PC token on the
  * live map whose character they can edit (permissionFor on the character, R4), else COMBAT_NOT_YOUR_TOKEN.
@@ -694,7 +709,15 @@ export const move = campaignMutation({
   need: "view",
   enough: "owner",
   args: { tokenId: v.string(), x: v.number(), y: v.number() },
-  returns: v.object({ x: v.number(), y: v.number(), face: v.number(), blocked: v.boolean(), difficult: v.boolean() }),
+  returns: v.object({
+    x: v.number(),
+    y: v.number(),
+    face: v.number(),
+    blocked: v.boolean(),
+    difficult: v.boolean(),
+    /** Plan lanes E4: the live areas the move entered, passed through, crossed or left that react to it (convex/combatAreas.ts). */
+    areas: v.optional(v.array(v.object({ label: v.string(), event: v.union(v.literal("enter"), v.literal("through"), v.literal("leave"), v.literal("cross")), ended: v.boolean() }))),
+  }),
   handler: async (ctx, { tokenId, x, y }) => {
     const { token, map } = await movableToken(ctx, tokenId);
     const next = moveToken(token, x, y, map);
@@ -707,7 +730,13 @@ export const move = campaignMutation({
     // CB p.42 (Rogue, Cloaked): "end a move within line of sight of an adversary" ends it (Q9, plan drawer-answers DA3).
     // A GM's drag is not the rogue's move (dcm-bxp.99.19.62 (2)): `byGm`.
     if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id, { byGm: atLeast(ctx.permission, "owner") });
-    return { ...next, blocked, difficult };
+    // Plan lanes E4 (dcm-cma, dcm-wuu, dcm-ii4): live areas that react to entering, passing through, crossing or leaving.
+    let name: string | null = null;
+    const nameOf = async () => (name ??= await moverName(ctx, token));
+    const areas = stays ? [] : await areasAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
+    // dcm-bpr: an enemy coming within a PC's Hold the Line range is named in the feed.
+    if (!stays && map.live) await rangeTriggersAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
+    return { ...next, blocked, difficult, ...(areas.length > 0 ? { areas } : {}) };
   },
 });
 

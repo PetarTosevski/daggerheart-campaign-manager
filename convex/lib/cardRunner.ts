@@ -46,12 +46,14 @@ import { assertTypedModifier, experienceBonus, spendHope, type Rng } from "../..
 import { appError } from "../../src/lib/errors/app-error";
 import { ADVERSARIES } from "../../src/lib/srd/adversaries";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
+import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
 import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
 import { CONDITIONS, FEATURE_USES_MAX, type CharacterSheet, type Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
 import type { AttackScene } from "./combatActions";
 import { DEFAULT_OPTIONALS, MAX_CARD_TARGETS, type CardRoll, type ParsedChoices } from "./cardChoices";
 import type { ChoiceAsks } from "./cardRows";
@@ -347,7 +349,8 @@ export type OutOfRange = { tokenId: Id<"combatTokens">; band: Band };
  * range from the target initially hit (chain lightning)"). Chain Lightning (Arcana 5, CB p.328): "Additional adversaries not already
  * targeted by Chain Lightning and within Close range of previous targets who took damage also make the saving throw ...
  * This chain continues until there are no more adversaries within range." The vocabulary can't name a chain origin
- * (`area: "aroundTarget"` reads as "of the target"), so the server lists them (gap bead dcm-dgu).
+ * (`area: "aroundTarget"` reads as "of the target"), so the server lists them (gap bead dcm-dgu). Plan lanes E4: a
+ * follow-up spec with `origin: "chain"` chains too; this list stays until wave 5 writes the origin into the entry.
  */
 const CHAIN_CARDS = new Set(["chain-lightning"]);
 
@@ -377,14 +380,17 @@ export function extraSpecs(use: CardUse): { picked?: TargetSpec; allies?: Target
 /**
  * Where a creature of `spec` is measured from (CB p.103 "Ranges are measured from the actor unless `area` says
  * otherwise"): `aroundTarget` from the use's targets (any of them; a chain also from the earlier follow-ups), `aroundSelf`
- * from the actor with the area's radius, everything else from the actor with the spec's range. `aroundPoint`, `line`,
- * `front`, `path` and `between` have no point or shape on the map: the actor (gap bead dcm-dgu).
+ * from the actor with the area's radius, everything else from the actor with the spec's range. Plan lanes E4 (dcm-dgu):
+ * `origin: "target"` / `"chain"` measure from `from` (the use's targets; a chain also the earlier links) with the spec's
+ * range (`areaRange` when it has one). `aroundPoint` / `origin: "point"`, `line`, `front`, `path` and `between` have no
+ * point or shape among the use's arguments yet: the actor (task doc TASK-LN-E4.md).
  */
 export function rangeOrigin(scene: AttackScene, spec: TargetSpec | undefined, range: Range | "unlimited", from: readonly Creature[], c: Creature): { inRange: boolean; band: Band } | null {
   if (spec === undefined || c.kind === "self") return null;
   const origins = from.filter((o) => o.kind !== "self" && o.tokenId !== c.tokenId);
-  if (spec.area === "aroundTarget" && spec.areaRange !== undefined && origins.length > 0) {
-    const checks = origins.map((o) => rangeCheck(o.token, c.token, spec.areaRange!));
+  const fromOthers = spec.area === "aroundTarget" ? spec.areaRange : spec.origin === "target" || spec.origin === "chain" ? (spec.areaRange ?? range) : undefined;
+  if (fromOthers !== undefined && origins.length > 0) {
+    const checks = origins.map((o) => rangeCheck(o.token, c.token, fromOthers));
     const best = checks.reduce((a, b) => (b.distance < a.distance ? b : a));
     return { inRange: checks.some((x) => x.inRange), band: best.band };
   }
@@ -426,6 +432,33 @@ const SECOND_WIND_SITUATION = "The attack succeeded with Hope";
 
 function specOf(use: CardUse): TargetSpec | undefined {
   return use.targets && use.targets.side !== "trigger" ? (use.targets as TargetSpec) : undefined;
+}
+
+/** Plan lanes E4 (dcm-d7h): the fewest targets a use takes ("choose two willing creatures", CB p.333-334). */
+export function targetMin(spec: TargetSpec | undefined): number | undefined {
+  const count = spec?.count;
+  return count !== undefined && (count.kind === "upTo" || count.kind === "any") ? count.min : undefined;
+}
+
+/** Whether a use spends Hope: its own costs or the costs of a step inside it (an optional "spend a Hope to ..."). */
+export function paysHope(use: Pick<CardUse, "costs" | "steps">): boolean {
+  const walk = (x: unknown): boolean => {
+    if (Array.isArray(x)) return x.some(walk);
+    if (x === null || typeof x !== "object") return false;
+    const costs = (x as { costs?: unknown }).costs;
+    if (Array.isArray(costs) && costs.some((c: { kind?: unknown } | null) => c?.kind === "hope")) return true;
+    return Object.values(x).some(walk);
+  };
+  return walk({ costs: use.costs, steps: use.steps });
+}
+
+/**
+ * Plan lanes E4 (dcm-zos): the instance's stat block has a modifier `noHopeFeaturesAgainst` (Fearsome Presence, CB p.239:
+ * "PCs can't spend Hope to use features against the Zombie"), read from its adversary effect entries.
+ */
+export function barsHopeFeatures(instance: Doc<"encounterAdversaries">): boolean {
+  if (instance.source.kind !== "srd") return false;
+  return adversaryEffects(instance.source.adversaryId).some((entry) => entry.uses.some((u) => (u.modifiers ?? []).some((m) => m.kind === "mod" && m.mod.kind === "flag" && m.mod.flag === "noHopeFeaturesAgainst")));
 }
 
 function rangeOf(spec: TargetSpec | undefined, actor: ActorState, weapon: "primary" | "secondary" | undefined): Range | "unlimited" {
@@ -475,7 +508,10 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   if (exp.hope > 0 && use.roll === undefined) throw invalid("This card makes no roll to add an Experience to.");
   const paidSheet = rules(() => spendHope(sheet, exp.hope));
   const base = cardActor(actorTokenId, paidSheet, pick.limitKey, roll.trait);
-  const actor = pick.actor ? pick.actor(base) : base;
+  const own = pick.actor ? pick.actor(base) : base;
+  // Plan lanes E4 (SD-A, Q14): the live map areas the actor stands in at this roll (`inArea` checks).
+  const areas = scene ? areaFactsFor(await activeAreasOnMap(ctx, scene.scene.map._id), scene.scene.tokens, scene.attacker, req.character._id) : [];
+  const actor: ActorState = areas.length > 0 ? { ...own, facts: { ...(own.facts ?? {}), areas } } : own;
   const spec = specOf(use);
   const range = rangeOf(spec, actor, choices.weapon);
 
@@ -495,6 +531,14 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   if (scene && spec?.side === "self" && targets.length === 0) targets = [{ kind: "self", tokenId: scene.attacker._id, token: scene.attacker }];
   const encounters = new Set(targets.flatMap((t) => (t.kind === "enemy" ? [t.encounter._id] : [])));
   if (encounters.size > 1) throw appError("COMBAT_TARGET_INVALID");
+  if (spec?.excludeSubject === true && choices.triggerSubject !== undefined) {
+    // Plan lanes E4 (dcm-ssf): "all other adversaries" leaves the trigger's creature out (Elemental Incarnation, CB p.30).
+    if (ids.includes(choices.triggerSubject)) throw appError("COMBAT_TARGET_INVALID", "The creature that set this off isn't one of its targets.");
+    targets = targets.filter((t) => t.tokenId !== choices.triggerSubject);
+  }
+  const min = targetMin(spec);
+  if (min !== undefined && targets.length < min) throw appError("COMBAT_TARGET_INVALID", `Pick at least ${min} targets.`);
+  if (paysHope(use)) for (const t of targets) if (t.kind === "enemy" && barsHopeFeatures(t.instance)) throw appError("COMBAT_TARGET_INVALID", `You can't spend Hope to use features against ${t.instance.label}.`);
 
   // ---- other creatures
   const list = async (tokenIds: readonly string[], allow: (c: Creature) => boolean) => {
@@ -522,13 +566,16 @@ export async function buildRun(ctx: QueryCtx, req: CardRequest): Promise<BuiltRu
   const anchored = spec?.area === "aroundPoint" || spec?.area === "aroundTarget";
   for (const [i, t] of targets.entries()) {
     if (anchored && i > 0 && spec?.areaRange !== undefined) flag(t, rangeOrigin(creatures.scene, { ...spec, area: "aroundTarget" }, range, targets.slice(0, 1), t));
+    // Plan lanes E4 (dcm-dgu): the first target from the actor, the next from the first (`target`) or from every earlier one (`chain`).
+    else if (i > 0 && (spec?.origin === "target" || spec?.origin === "chain")) flag(t, rangeOrigin(creatures.scene, spec, range, spec.origin === "target" ? targets.slice(0, 1) : targets.slice(0, i), t));
     else flag(t, rangeOrigin(creatures.scene, spec && { ...spec, area: spec.area === "aroundSelf" ? "aroundSelf" : undefined }, range, [], t));
   }
   const specs = extraSpecs(use);
+  if (specs.picked?.excludeSubject === true && choices.triggerSubject !== undefined && choices.picked.includes(choices.triggerSubject)) throw appError("COMBAT_TARGET_INVALID", "The creature that set this off isn't one of its picks.");
   const extraRange = (s: TargetSpec | undefined) => (s === undefined ? "unlimited" : s.range === "weapon" ? (actor.weapons[choices.weapon ?? "primary"]?.range ?? "melee") : s.range);
   for (const c of picked) flag(c, rangeOrigin(creatures.scene, specs.picked, extraRange(specs.picked), targets, c));
   for (const c of allies) flag(c, rangeOrigin(creatures.scene, specs.allies, extraRange(specs.allies), targets, c));
-  const chain = CHAIN_CARDS.has(effect.cardId);
+  const chain = CHAIN_CARDS.has(effect.cardId) || specs.followUp?.origin === "chain";
   for (const [i, c] of followUp.entries()) flag(c, rangeOrigin(creatures.scene, specs.followUp, extraRange(specs.followUp), chain ? [...targets, ...followUp.slice(0, i)] : targets, c));
 
   // ---- the roll: cover gives one disadvantage (Q2); an attack roll adds the effects' attack bonus (CB p.96).
@@ -1026,7 +1073,9 @@ export function splitSteps(steps: readonly Step[], part: RiderPart, before: bool
  * paid and checked in `pre`). `roll` binds the move gates (absent: a before-roll rider's `pre`, which keeps no gated step).
  */
 export function riderUse(use: CardUse, part: RiderPart, before: boolean, roll: HostRoll | null): CardUse {
-  const steps = splitSteps(roll ? bindGates(use.steps, roll) : use.steps, part, before);
+  // Plan lanes E4 (dcm-jx6): a before-roll rider splits on its move gates first and binds them after, so a step gated on
+  // the host roll (Signature Move's "On a success, clear a Stress", CB p.331) lands in `post` and runs when the gate holds.
+  const steps = !roll ? splitSteps(use.steps, part, before) : before ? bindGates(splitSteps(use.steps, part, before), roll) : splitSteps(bindGates(use.steps, roll), part, before);
   if (part === "pre") return { ...use, steps };
   const { costs: _costs, limit: _limit, requires: _requires, ...rest } = use;
   void _costs;

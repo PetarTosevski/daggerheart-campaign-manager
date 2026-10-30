@@ -6,7 +6,10 @@ import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 
 import { DiceTiles } from "@/components/party/dice/parts";
+import type { Step } from "@/lib/domain/card-effects/types";
 import type { RollRecord } from "@/lib/domain/duality";
+import { cardEffect } from "@/lib/srd/card-effects";
+import { featureEffect } from "@/lib/srd/feature-effects";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -86,8 +89,46 @@ export function riderProblem(options: readonly RiderOption[], picks: RiderPicks)
   return null;
 }
 
-/** The rider toggles. `enemies`: the visible enemies other than the attack's target (for extra targets). */
-export function RiderToggles({ options, picks, onChange, enemies }: { options: readonly RiderOption[]; picks: RiderPicks; onChange: (next: RiderPicks) => void; enemies: readonly { _id: Id<"combatTokens">; name: string }[] }) {
+type Chip = { _id: Id<"combatTokens">; name: string; ally?: boolean };
+
+/** Every `addTargets` step of a list, nested ones included. */
+function addTargetsSteps(steps: readonly Step[]): Extract<Step, { kind: "addTargets" }>[] {
+  return steps.flatMap((s) => [
+    ...(s.kind === "addTargets" ? [s] : []),
+    ...(s.kind === "optional" || s.kind === "followUp" ? addTargetsSteps(s.steps) : []),
+    ...(s.kind === "choose" ? s.options.flatMap((x) => addTargetsSteps(x.steps)) : []),
+  ]);
+}
+
+/** Whether a rider's extra targets may be allies: its `addTargets` spec's side is `any`, `ally` or `selfOrAlly` (AB2). */
+export function extraTakesAllies(o: Pick<RiderOption, "source" | "id" | "useId">): boolean {
+  const entry = o.source === "card" ? cardEffect(o.id) : featureEffect(o.id);
+  const use = entry?.uses.find((u) => u.id === o.useId);
+  return addTargetsSteps(use?.steps ?? []).some((s) => s.targets.side === "any" || s.targets.side === "ally" || s.targets.side === "selfOrAlly");
+}
+
+/** The chips a rider's extra targets offer: the enemies, plus the allies when its spec takes any creature (Surrounded). */
+export function extraCandidates(o: Pick<RiderOption, "source" | "id" | "useId">, enemies: readonly Chip[], allies: readonly Chip[]): readonly Chip[] {
+  return allies.length > 0 && extraTakesAllies(o) ? [...enemies, ...allies.map((a) => ({ ...a, ally: true }))] : enemies;
+}
+
+/**
+ * The rider toggles. `enemies`: the visible enemies other than the attack's target (for extra targets); `allies`: the
+ * other PCs on the map, offered only to a rider whose extra targets can be any creature (plan lanes E4).
+ */
+export function RiderToggles({
+  options,
+  picks,
+  onChange,
+  enemies,
+  allies = [],
+}: {
+  options: readonly RiderOption[];
+  picks: RiderPicks;
+  onChange: (next: RiderPicks) => void;
+  enemies: readonly Chip[];
+  allies?: readonly Chip[];
+}) {
   if (options.length === 0) return null;
   const set = (o: RiderOption, patch: Partial<RiderPick>) => onChange({ ...picks, [riderKey(o)]: { ...pickOf(picks, o), ...patch } });
   return (
@@ -133,23 +174,30 @@ export function RiderToggles({ options, picks, onChange, enemies }: { options: r
                       <span>{text}</span>
                     </label>
                   ))}
-                  {o.addTargets !== null ? (
-                    <div className="cma-chips" role="group" aria-label={`${o.name}: more targets`}>
-                      <span className="cm-lbl">
-                        More targets (up to {extraMax(o, pick)}, {o.addTargets.range === "weapon" ? "within your weapon's range" : `within ${o.addTargets.range}`})
-                      </span>
-                      {enemies.length === 0 ? <span className="cm-muted cma-small">No other enemy in sight.</span> : null}
-                      {enemies.map((e) => {
-                        const chosen = pick.extra.includes(e._id);
-                        const full = !chosen && pick.extra.length >= extraMax(o, pick);
+                  {o.addTargets !== null
+                    ? (() => {
+                        // Plan lanes E4 (dcm-bxp.99.19.57, AB2): a rider whose extra targets can be any creature (Surrounded) offers allies too.
+                        const chips = extraCandidates(o, enemies, allies);
                         return (
-                          <button key={e._id} type="button" className="cm-chip" aria-pressed={chosen} disabled={full} onClick={() => set(o, { extra: chosen ? pick.extra.filter((x) => x !== e._id) : [...pick.extra, e._id] })}>
-                            {e.name}
-                          </button>
+                          <div className="cma-chips" role="group" aria-label={`${o.name}: more targets`}>
+                            <span className="cm-lbl">
+                              More targets (up to {extraMax(o, pick)}, {o.addTargets.range === "weapon" ? "within your weapon's range" : `within ${o.addTargets.range}`})
+                            </span>
+                            {chips.length === 0 ? <span className="cm-muted cma-small">{chips === enemies ? "No other enemy in sight." : "No other creature in sight."}</span> : null}
+                            {chips.map((e) => {
+                              const chosen = pick.extra.includes(e._id);
+                              const full = !chosen && pick.extra.length >= extraMax(o, pick);
+                              return (
+                                <button key={e._id} type="button" className="cm-chip" aria-pressed={chosen} disabled={full} onClick={() => set(o, { extra: chosen ? pick.extra.filter((x) => x !== e._id) : [...pick.extra, e._id] })}>
+                                  {e.name}
+                                  {e.ally ? " (ally)" : ""}
+                                </button>
+                              );
+                            })}
+                          </div>
                         );
-                      })}
-                    </div>
-                  ) : null}
+                      })()
+                    : null}
                 </div>
               ) : null}
             </li>

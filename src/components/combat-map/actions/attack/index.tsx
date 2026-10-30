@@ -8,6 +8,8 @@ import { useState } from "react";
 
 import { Modal } from "@/components/brand/modal";
 import { DiceTiles } from "@/components/party/dice/parts";
+import { derivedTraits } from "@/lib/domain/characters/derived";
+import { withEffects } from "@/lib/domain/characters/effects";
 import { weaponDice } from "@/lib/domain/dice";
 import type { RollRecord } from "@/lib/domain/duality";
 import { errorMessage } from "@/lib/convex-errors";
@@ -154,10 +156,12 @@ type Last =
 export function AttackBar(props: ActionsPanelProps) {
   const actor = useActor(props);
   if (!actor) return null;
-  return <AttackForm {...props} characterId={actor.characterId} enemies={actor.enemies} />;
+  return <AttackForm {...props} characterId={actor.characterId} enemies={actor.enemies} allies={actor.view.others.filter((t) => t.side === "pc")} />;
 }
 
-function AttackForm({ campaignId, map, role, characterId, enemies }: ActionsPanelProps & { characterId: Id<"characters">; enemies: readonly { _id: Id<"combatTokens">; name: string }[] }) {
+type Named = { _id: Id<"combatTokens">; name: string };
+
+function AttackForm({ campaignId, map, role, characterId, enemies, allies }: ActionsPanelProps & { characterId: Id<"characters">; enemies: readonly Named[]; allies: readonly Named[] }) {
   const character = useQuery(api.characters.get, { characterId });
   const { targetTokenIds, slot, setSlot } = useCombatTargets();
   const attack = useIntent(api.combatActions.attack);
@@ -179,11 +183,13 @@ function AttackForm({ campaignId, map, role, characterId, enemies }: ActionsPane
   }
   if (character === null) return null;
   const sheet = character.sheet;
+  // Plan lanes E4 (dcm-bxp.99.19.64): the traits the roll uses, after effects and passive features (Beastform, CB p.30).
+  const traits = derivedTraits(withEffects(sheet));
   const weapons = equippedWeapons(sheet);
   const chosen = weapons.find((w) => w.slot === slot) ?? weapons[0];
   // A plain weapon attack targets one enemy (user answer 2026-10-22, CB p.96): the latest pick.
   const picked = seenTargets(targetTokenIds, enemies).slice(-1);
-  const names = new Map<string, string>(enemies.map((t) => [t._id, t.name]));
+  const names = new Map<string, string>([...enemies, ...allies].map((t) => [t._id, t.name]));
   const roller: Roller = { experiences: sheet.experiences, hope: sheet.hope };
   const notEnoughHope = rollProblem(roller, rollValues);
   const riders = riderList ?? [];
@@ -247,14 +253,14 @@ function AttackForm({ campaignId, map, role, characterId, enemies }: ActionsPane
           <select className="cm-in cma-select" value={trait} onChange={(e) => setTrait(e.target.value as TraitId)}>
             {TRAIT_IDS.map((t) => (
               <option key={t} value={t}>
-                {TRAIT_LABEL[t]} {signed(sheet.traits[t])}
+                {TRAIT_LABEL[t]} {signed(traits[t])}
               </option>
             ))}
           </select>
         </label>
       ) : null}
       <RollOptions roller={roller} values={rollValues} onChange={(patch) => setRollValues((v) => ({ ...v, ...patch }))} />
-      <RiderToggles options={riders} picks={riderPicks} onChange={setRiderPicks} enemies={others} />
+      <RiderToggles options={riders} picks={riderPicks} onChange={setRiderPicks} enemies={others} allies={allies} />
       {notEnoughHope ? <p className="cma-error">{notEnoughHope}</p> : null}
       {riderMissing ? <p className="cma-error">{riderMissing}</p> : null}
       <button type="button" className="cm-go cma-go" disabled={!canAttack} aria-busy={attack.pending} onClick={() => void fire()}>

@@ -28,6 +28,9 @@ import { CLASSES } from "../../src/lib/srd/classes";
 import { pcPortrait, type TokenView } from "../combatTokens";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { derivedTraits } from "../../src/lib/domain/characters/derived";
+import { withEffects } from "../../src/lib/domain/characters/effects";
+import { activeAreasOnMap, sightBlockers } from "../combatAreas";
 import { readSheet } from "./characterSheet";
 import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
@@ -189,7 +192,10 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
   const cells = decodeCells(tiles, map.w, map.h);
   const sprites = map.style === "sprites" && map.source !== "image";
   const uploaded = await resolveRefs(ctx, campaign._id, sprites ? mapSpriteRefs(map, objects) : objects.map((o) => o.sprite));
-  const vision = visionObjectsWith(objects, uploaded);
+  const tokens = await tokensOnMap(ctx, map._id);
+  // Plan lanes E4 (SD-A, dcm-bhp): a live sight-blocking area (Dark Cloud, CB p.42: "Anyone in this cloud can't see outside
+  // of it, and anyone outside of it can't see in") is a blocking disc for every viewer.
+  const vision = [...visionObjectsWith(objects, uploaded), ...sightBlockers(await activeAreasOnMap(ctx, map._id), tokens)];
   const prepared = prepareMap({
     w: map.w,
     h: map.h,
@@ -203,7 +209,6 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
     // leaves it to the engine's terrain rule (lava).
     ...(sprites ? { glow: spriteGlow(map, tiles, cells.paint, uploaded) } : {}),
   });
-  const tokens = await tokensOnMap(ctx, map._id);
   const phase = await campaignPhase(ctx, campaign);
   return { map, objects, uploaded, visionObjects: vision, prepared, fog: cells.fog, tokens, visionTokens: tokens.map(visionTokenOf), phase, light: lightOf(phase ?? "") };
 }
@@ -223,10 +228,13 @@ function spriteGlow(
   return glowingSquares(map, paint, textures, paintSetting(map), uploaded);
 }
 
-/** The character's Instinct (R6); an unreadable sheet counts as 0. */
+/**
+ * The character's Instinct (R6) after effects and passive features (a Beastform's trait bonus, CB p.30; plan lanes E4,
+ * dcm-bxp.99.19.64); an unreadable sheet counts as 0.
+ */
 function instinctOf(character: Doc<"characters">): number {
   try {
-    return readSheet(character.sheet).traits.instinct;
+    return derivedTraits(withEffects(readSheet(character.sheet))).instinct;
   } catch {
     return 0;
   }
