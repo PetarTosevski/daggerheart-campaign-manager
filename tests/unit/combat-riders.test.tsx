@@ -7,7 +7,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { extraMax, riderProblem, RiderToggles, ridersToSend, type RiderOption, type RiderPicks } from "@/components/combat-map/actions/attack/riders";
+import { extraMax, riderProblem, RiderPickPrompt, RiderToggles, ridersToSend, riseToSend, type RiderOption, type RiderPicks, type RiderPickView } from "@/components/combat-map/actions/attack/riders";
 
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -105,5 +105,52 @@ describe("rider toggles", () => {
 
   it("sends nothing for an untoggled or used rider", () => {
     expect(ridersToSend([RAGE_UP, USED], { "feature|subclass:x:y|main": { on: true, numbers: {}, options: {}, situations: [], extra: [] } })).toEqual([]);
+  });
+});
+
+/** Rise to the Challenge (CB p.48): "While you have 2 or fewer Hit Points unmarked, you can roll a d20 as your Hope Die." */
+const RISE: RiderOption = { ...base, source: "feature", id: "subclass:call-of-the-brave:rise-to-the-challenge", useId: "main", name: "Rise to the Challenge", phase: "before", when: "Before the roll", costs: [], defaultOn: true };
+
+describe("DA2: Rise to the Challenge starts on (user 2026-10-30)", () => {
+  it("the toggle starts ticked; nothing is sent while on, `false` once switched off", () => {
+    let picks: RiderPicks = {};
+    render(<Harness options={[RISE]} onPicks={(p) => (picks = p)} />);
+    const box = screen.getByRole("checkbox", { name: /Rise to the Challenge/ });
+    expect(box).toBeChecked();
+    expect(ridersToSend([RISE], picks)).toEqual([]);
+    expect(riseToSend([RISE], picks)).toBeUndefined();
+    fireEvent.click(box);
+    expect(box).not.toBeChecked();
+    expect(riseToSend([RISE], picks)).toBe(false);
+    expect(ridersToSend([RISE], picks)).toEqual([]);
+  });
+});
+
+describe("DA2: Death Strike's prompt (HF p.8)", () => {
+  const view = (n: number): RiderPickView => ({
+    requestId: "r1" as Id<"combatRequests">,
+    name: "Death Strike",
+    costs: ["1 Stress"],
+    candidates: [
+      { tokenId: tok("a"), name: "Wolf" },
+      { tokenId: tok("b"), name: "Archer" },
+    ].slice(0, n),
+  });
+
+  it("one creature: Use / Pass, Use ready at once", () => {
+    render(<RiderPickPrompt campaignId={"c" as Id<"campaigns">} view={view(1)} />);
+    expect(screen.getByText(/: Wolf/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use Death Strike" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Pass" })).toBeEnabled();
+  });
+
+  it("several creatures: pick ONE before Use", () => {
+    render(<RiderPickPrompt campaignId={"c" as Id<"campaigns">} view={view(2)} />);
+    const use = screen.getByRole("button", { name: "Use Death Strike" });
+    expect(use).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Archer" }));
+    expect(screen.getByRole("button", { name: "Archer" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Wolf" })).toHaveAttribute("aria-pressed", "false");
+    expect(use).toBeEnabled();
   });
 });

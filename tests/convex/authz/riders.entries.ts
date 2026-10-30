@@ -59,10 +59,43 @@ async function held(w: World) {
         options: [{ featureId: "hope:warlock", useId: "main" }],
       },
     });
-    return { mapId, requestId };
+    // DA2: a Death Strike prompt on the attack (an actionLog row of characterA's, not undone).
+    const entryId = await ctx.db.insert("actionLog", {
+      campaignId: w.campaignId,
+      characterId: w.characterA,
+      actorId: w.users.player,
+      kind: "combat",
+      visibility: "public",
+      summary: "attack",
+      groupId: "g-da2",
+      undoable: true,
+      at: now,
+    } as never);
+    const pickId = await ctx.db.insert("combatRequests", {
+      campaignId: w.campaignId,
+      encounterId,
+      mapId,
+      kind: "riderPick",
+      status: "open",
+      createdBy: w.users.player,
+      createdAt: now,
+      responses: [],
+      payload: {
+        schemaVersion: 1,
+        kind: "riderPick",
+        characterId: w.characterA,
+        groupId: "g-da2",
+        entryId,
+        rider: { source: "feature", id: "subclass:executioners-guild:death-strike", useId: "main", name: "Death Strike" },
+        candidates: [ogreToken],
+        hostRoll: { success: true, critical: false, withHope: true, withFear: false },
+      },
+    });
+    return { mapId, requestId, pickId };
   });
   w.set("mapId", ids.mapId);
   w.set("requestId", ids.requestId);
+  w.set("pickId", ids.pickId);
 }
 
 const entries: Entry[] = [
@@ -74,6 +107,15 @@ const entries: Entry[] = [
     args: (w) => ({ requestId: w.ids.requestId as Id<"combatRequests">, choice: { kind: "pass" } }),
     expect: NOT_THEIRS,
     // A row answered by an earlier role is no longer open.
+    okCodes: ["REQUEST_NOT_OPEN"],
+  },
+  // DA2: the attacker's player or the GM answers a damage-phase rider prompt (Death Strike); Pass closes it.
+  {
+    fn: api.combatActions.riderPick,
+    access: "view",
+    setup: held,
+    args: (w) => ({ requestId: w.ids.pickId as Id<"combatRequests">, choice: { kind: "pass" } }),
+    expect: NOT_THEIRS,
     okCodes: ["REQUEST_NOT_OPEN"],
   },
 ];

@@ -19,6 +19,11 @@
  * use: Rage Up, Hold Them Off, Kick...) and the automatic ones (First Strike, Face Your Fear, Pummeljoy) run through the
  * card path (convex/lib/cardRunner.ts) and fold into the attack; Sneak Attack and Cloaked follow the map (Q9, CB p.42); an
  * attack whose attacker holds a ready after-roll feature is held after its roll (Q1, CB p.107) until Use or Pass.
+ *
+ * Plan drawer-answers DA2 (docs/tasks/TASK-DA-DA2.md, user answers 2026-10-30): a damage-phase rider (Death Strike, HF
+ * p.8) is a Use / Pass prompt on ONE creature the player picks (`riderPick` requests); a rider's extra target out of range
+ * waits for the GM (Q1); First Strike doubles the whole damage after a critical (`foldedDamage`); Rise to the Challenge's
+ * d20 Hope Die is on by default while it applies (`defaultOnRiders`, `hopeDieSwitch`); Surrounded may add allies.
  */
 import { ConvexError, v, type Infer } from "convex/values";
 
@@ -54,7 +59,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { parseChoices, type CardChoice, type ParsedChoices } from "./cardChoices";
 import { adversaryBefore, cardPromptValidator, gmLines, instanceWrites, promptsOf, writeInstances, type CardPrompt, type InstanceWrite } from "./cardRows";
-import { actorSheetAfter, bindGates, buildRun, cardActor, pickCard, replaying, riderPartRuns, riderUse, runCard, type BuiltRun, type HostRoll, type RiderPart, type UsePick } from "./cardRunner";
+import { actorSheetAfter, bindGates, buildRun, cardActor, pcCombatant, pickCard, replaying, riderPartRuns, riderUse, runCard, type BuiltRun, type HostRoll, type RiderPart, type UsePick } from "./cardRunner";
 import { saveSheet } from "./characterSheet";
 import { loadCombatMap } from "./combatMaps";
 import { loadScene, viewOf, type Scene, type Viewer } from "./combatVision";
@@ -62,11 +67,14 @@ import { costText, limitText } from "./featureDrawer";
 import { factsOf, ownedHere, pickFeature } from "./featureRunner";
 import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear, spendFear } from "./fear";
-import { openAfterRoll, openMinionOffer } from "./combatRequests";
+import { closeRequest, openAfterRoll, openMinionOffer, openRiderPick } from "./combatRequests";
+import { bandsOnMap, partyMembers } from "./adversaryHits";
+import { openIncomingHit } from "./incomingHits";
+import { readSheet } from "./characterSheet";
 import { changed, resolveDamage, resolveDuality, type DualityArgs, type Loaded } from "./rolls";
 import type { AdversaryBefore } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
-import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, sanctionRollOptionsValidator, type AfterRollChange, type AfterRollChoice, type Rider } from "./validators/combatRequests";
+import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, sanctionRollOptionsValidator, type AfterRollChange, type AfterRollChoice, type Rider, type RiderPickChoice } from "./validators/combatRequests";
 import { rollValidator } from "./validators/actionLog";
 import { rollDie } from "./dice";
 
@@ -95,6 +103,11 @@ export const attackRollFields = {
   damageOptions: v.optional(v.array(v.string())),
   slayerDice: v.optional(v.number()),
   tideTokens: v.optional(v.number()),
+  /**
+   * DA2 (CB p.48 Rise to the Challenge, user 2026-10-30): the d20 Hope Die is ON while 2 or fewer Hit Points are unmarked;
+   * `false` turns it off for this roll (fishing for a critical). Ignored when the feature doesn't apply.
+   */
+  riseToTheChallenge: v.optional(v.boolean()),
 };
 
 export type AttackRoll = {
@@ -108,6 +121,7 @@ export type AttackRoll = {
   damageOptions?: string[];
   slayerDice?: number;
   tideTokens?: number;
+  riseToTheChallenge?: boolean;
 };
 
 /** One target as the player learns it (U1): hit or miss, and whether it went down (Q6). */
@@ -127,6 +141,9 @@ const promptValidator = v.object({
   choices: v.array(v.object({ key: v.string(), label: v.string() })),
 });
 
+/** DA2: what the attacker learns of a damage-phase prompt (Death Strike, U1): its name and the candidate tokens, no stat. */
+export const riderPickOfferValidator = v.object({ requestId: v.id("combatRequests"), name: v.string(), candidates: v.array(v.id("combatTokens")) });
+
 /** What `attack` (and the GM's approval) returns: the player's own dice and hit / miss per target, never a stat. */
 export const resolvedAttackValidator = v.object({
   status: v.literal("resolved"),
@@ -144,6 +161,8 @@ export const resolvedAttackValidator = v.object({
   skipped: v.optional(v.array(v.string())),
   /** SD5: what the riders leave to the table (movement prompts, manual steps). */
   riderPrompts: v.optional(v.array(cardPromptValidator)),
+  /** DA2: damage-phase riders waiting for the player's Use / Pass and pick (Death Strike, HF p.8). */
+  riderPicks: v.optional(v.array(riderPickOfferValidator)),
 });
 export type ResolvedAttack = Infer<typeof resolvedAttackValidator>;
 
@@ -182,7 +201,13 @@ export async function attackScene(ctx: QueryCtx, campaign: Doc<"campaigns">, cha
 
 /** An enemy token's encounter instance, when it can be attacked: an enemy-side adversary token of a running encounter, not defeated. */
 async function enemyInstance(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<{ instance: Doc<"encounterAdversaries">; encounter: Doc<"encounters"> } | null> {
-  if (token.side !== "enemy" || token.ref.kind !== "adversary") return null;
+  if (token.side !== "enemy") return null;
+  return adversaryInstance(ctx, campaignId, token);
+}
+
+/** An adversary token's encounter instance whatever its side (a GM ally too), when it is of a running encounter and standing. */
+async function adversaryInstance(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<{ instance: Doc<"encounterAdversaries">; encounter: Doc<"encounters"> } | null> {
+  if (token.ref.kind !== "adversary") return null;
   const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
   if (instance === null || instance.campaignId !== campaignId || instance.defeated) return null;
   const encounter = await ctx.db.get("encounters", instance.encounterId);
@@ -368,6 +393,8 @@ export type AttackRequest = {
   riders?: readonly Rider[];
   /** SD5 (Q1): a held attack's answer, with every die it drew before it was held (replayed, so nothing is rerolled). */
   held?: { dice: readonly number[]; answer: AfterRollChoice };
+  /** DA2: rider-added targets out of range that the GM approved (Q1). */
+  waived?: readonly Id<"combatTokens">[];
 };
 
 // ---------------------------------------------------------------- riders (plan sheet-drawer SD5)
@@ -457,6 +484,8 @@ export type PickedRider = {
   choices: CardChoice[];
   /** An automatic use (no click): skipped quietly when it can't run (exhausted, unaffordable, a condition not met). */
   auto: boolean;
+  /** NV18: the creatures its `addTargets` step may add (Hold Them Off, Surrounded), for the range check before the roll. */
+  addSpec?: TargetSpec;
 };
 
 /** Features whose automatic use the attack applies another way (Sneak Attack: the D5 damage option, from positions, Q9). */
@@ -518,7 +547,8 @@ export function pickRiders(sheet: CharacterSheet, campaign: Doc<"campaigns">, ho
     const key = `${r.source}:${r.id}:${hit.use.id}`;
     if (seen.has(key)) throw appError("INVALID", `${name} applies once per attack (CB p.107).`);
     seen.add(key);
-    out.push({ source: r.source, id: r.id, useId: hit.use.id, name: hit.use.name === name ? name : hit.use.name, trigger: hit.trigger, phase: hit.phase, choices: [...r.choices], auto: false });
+    const add = allSteps(hit.use.steps).find((s): s is Extract<Step, { kind: "addTargets" }> => s.kind === "addTargets");
+    out.push({ source: r.source, id: r.id, useId: hit.use.id, name: hit.use.name === name ? name : hit.use.name, trigger: hit.trigger, phase: hit.phase, choices: [...r.choices], auto: false, ...(add ? { addSpec: add.targets } : {}) });
   }
   return out;
 }
@@ -529,6 +559,38 @@ export function autoRiders(sheet: CharacterSheet, campaign: Doc<"campaigns">, ho
   for (const { feature, entry } of heldEntries(sheet, campaign)) {
     if (AUTO_ELSEWHERE.has(feature.featureId)) continue;
     for (const { use, trigger, phase } of riderUses(entry.uses, host, ["auto"])) {
+      out.push({ source: "feature", id: feature.featureId, useId: use.id, name: use.name, trigger, phase, choices: [], auto: true });
+    }
+  }
+  return out;
+}
+
+/**
+ * DA2 (user 2026-10-30, replaces SD2's opt-in): rider uses that are ON by default while their condition holds, with a
+ * toggle to turn them off. Rise to the Challenge (CB p.48): "While you have 2 or fewer Hit Points unmarked, you can roll a
+ * d20 as your Hope Die."
+ */
+export const DEFAULT_ON_RIDERS: ReadonlySet<string> = new Set(["subclass:call-of-the-brave:rise-to-the-challenge"]);
+
+/** The requirement state of a sheet (Hit Points, Stress, Hope, Armor) for a default-on rider's condition. */
+function sheetState(sheet: CharacterSheet) {
+  const actor = { ...cardActor("self", sheet, "", undefined), ...actorExtras(sheet) };
+  return { hp: sheet.hp, hpMax: sheet.hpMax, stress: sheet.stress, stressMax: sheet.stressMax, armor: sheet.armorMarked, hope: sheet.hope, armorWorn: actor.armorWorn, loadoutDomains: actor.loadoutDomains, activeCardEffects: actor.activeCardEffects, situations: [] };
+}
+
+/**
+ * The default-on riders that apply to this roll now (their requirements met), unless the player turned them off
+ * (`off`) or already sent them. Run as automatic uses: one that can't run just doesn't happen.
+ */
+export function defaultOnRiders(sheet: CharacterSheet, campaign: Doc<"campaigns">, host: Host, off: boolean, already: readonly PickedRider[]): PickedRider[] {
+  if (off) return [];
+  const out: PickedRider[] = [];
+  const state = sheetState(sheet);
+  for (const { feature, entry } of heldEntries(sheet, campaign)) {
+    if (!DEFAULT_ON_RIDERS.has(feature.featureId)) continue;
+    for (const { use, trigger, phase } of riderUses(entry.uses, host, ["rider"])) {
+      if (already.some((p) => p.source === "feature" && p.id === feature.featureId && p.useId === use.id)) continue;
+      if (!(use.requires ?? []).every((r) => r.kind !== "situation" && requirementMet(r, state))) continue;
       out.push({ source: "feature", id: feature.featureId, useId: use.id, name: use.name, trigger, phase, choices: [], auto: true });
     }
   }
@@ -559,6 +621,11 @@ export const riderOptionValidator = v.object({
   situations: v.array(v.string()),
   /** NV18: more targets with the same roll (`picked` choice): at most `max` (null: as many as the number picked), within `range`. */
   addTargets: v.union(v.null(), v.object({ max: v.union(v.null(), v.number()), range: v.string() })),
+  /**
+   * DA2: ON unless the player turns it off (Rise to the Challenge, CB p.48); listed only while its condition holds. Not sent
+   * as a rider: turning it off sends `riseToTheChallenge: false`.
+   */
+  defaultOn: v.optional(v.boolean()),
 });
 export type RiderOption = Infer<typeof riderOptionValidator>;
 
@@ -623,14 +690,23 @@ export function riderOptions(sheet: CharacterSheet, campaign: Doc<"campaigns">, 
     if (effect === undefined || cardUsage(cardId) === "outOfCombat") continue;
     const name = getDomainCard(cardId)?.name ?? cardId;
     for (const { use, trigger, phase } of riderUses(effect.uses, host, ["rider"])) {
+      if (phase === "damage") continue;
       out.push(optionOf("card", cardId, name, use, trigger, phase, keyAvailability(sheet, featureUseKey(cardId, use.id), use.limit)));
     }
   }
   const held = ownedHere(sheet, campaign);
+  const state = sheetState(sheet);
   for (const { feature, entry } of heldEntries(sheet, campaign)) {
     const raw = featureEffect(feature.featureId)!;
     const holdings = holdingsFor(sheet, held, raw.owner);
     for (const { use, trigger, phase } of riderUses(entry.uses, host, ["rider"])) {
+      // DA2: a damage-phase rider (Death Strike) is a prompt after the damage, never a toggle before the attack.
+      if (phase === "damage") continue;
+      if (DEFAULT_ON_RIDERS.has(feature.featureId)) {
+        if (!(use.requires ?? []).every((r) => r.kind !== "situation" && requirementMet(r, state))) continue;
+        out.push({ ...optionOf("feature", feature.featureId, feature.name, use, trigger, phase, { state: "ready" }), defaultOn: true });
+        continue;
+      }
       out.push(optionOf("feature", feature.featureId, feature.name, use, trigger, phase, featureAvailability(sheet, raw, use.id, { holdings })));
     }
   }
@@ -650,6 +726,7 @@ export function rollFromStored(roll: Infer<typeof sanctionRollOptionsValidator>)
     ...(roll.damageOptions !== undefined ? { damageOptions: roll.damageOptions } : {}),
     ...(roll.slayerDice !== undefined ? { slayerDice: roll.slayerDice } : {}),
     ...(roll.tideTokens !== undefined ? { tideTokens: roll.tideTokens } : {}),
+    ...(roll.riseToTheChallenge !== undefined ? { riseToTheChallenge: roll.riseToTheChallenge } : {}),
   };
 }
 
@@ -751,8 +828,13 @@ export type Folds = {
   addTypes: DamageType[];
   /** Proficiency for this attack's damage roll (Ruthless Predator, Pummeljoy). */
   proficiency: number;
-  /** "double damage" (First Strike, HF p.8). */
+  /**
+   * "double damage" (First Strike, HF p.8), applied to the whole damage total after the critical's added maximum and every
+   * added die and bonus (dcm-bxp.99.19.43, user 2026-10-30: "crit damage first, then doubled").
+   */
   multiply: number;
+  /** DA2: the Hope Die's sides for this roll ("roll a d20 as your Hope Die", Rise to the Challenge, CB p.48). */
+  hopeDie?: number;
   minimumSeverity?: "minor" | "major" | "severe";
   /** "mark an additional Hit Point" after the thresholds (Thrive in Chaos, NV4). */
   extraHp: number;
@@ -787,6 +869,7 @@ export function foldInto(folds: Folds, run: RiderRun): void {
       const ch = step.change;
       if (ch.kind === "add") folds.modifier += amount;
       else if (ch.kind === "advantage") folds.advantage += 1;
+      else if (ch.kind === "hopeDie") folds.hopeDie = ch.sides;
       else folds.unsupported.push(`${run.name}: ${ch.kind}`);
     } else if (step.kind === "addTargets") {
       folds.addTargets.push({ rider: run.rider, count: amount, spec: step.targets, damage: step.damage ?? "same" });
@@ -796,17 +879,87 @@ export function foldInto(folds: Folds, run: RiderRun): void {
   }
 }
 
+/** A PC a rider added to the attack (Surrounded's "additional creatures", allies included: dcm-bxp.99.19.44). */
+export type PcTarget = { token: Doc<"combatTokens">; character: Doc<"characters">; sheet: CharacterSheet; evasion: number; sight: SightResult; rider: PickedRider; half: boolean };
+
+/** Whether a rider's added targets may be any creature (Surrounded, HF p.10: "additional creatures"), allies included. */
+function anyCreature(spec: TargetSpec): boolean {
+  return spec.side === "any" || spec.side === "ally" || spec.side === "selfOrAlly";
+}
+
+/** The range of a rider's added targets on the map. */
+function addRange(spec: TargetSpec, weapon: Weapon): Range {
+  return spec.range === "weapon" ? rangeFromWeapon(weapon.range) : (spec.range as Range);
+}
+
+/**
+ * DA2 (combat-actions Q1, user 2026-10-30): the extra targets the riders name (their `picked` choice) that are outside the
+ * rider's range, with their band. A player's attack with any of these waits for the GM like card targets; tokens not on
+ * the map are left to the attack's own checks.
+ */
+export function addedOutOfRange(s: AttackScene, weapon: Weapon, picked: readonly PickedRider[]): { tokenId: Id<"combatTokens">; band: RangeCheck["band"] }[] {
+  const out: { tokenId: Id<"combatTokens">; band: RangeCheck["band"] }[] = [];
+  for (const r of picked) {
+    if (r.addSpec === undefined) continue;
+    const range = addRange(r.addSpec, weapon);
+    for (const id of parseChoices(r.choices).picked) {
+      const token = s.scene.tokens.find((t) => t._id === id);
+      if (token === undefined || out.some((o) => o.tokenId === token._id)) continue;
+      const check = rangeCheck(s.attacker, token, range);
+      if (!check.inRange) out.push({ tokenId: token._id, band: check.band });
+    }
+  }
+  return out;
+}
+
+/**
+ * DA2: the riders with the declined extra targets taken out of their `picked` choice (the GM's Decline drops that target
+ * only). A rider left with no extra target is dropped (nothing paid); a number the player picked per target (Surrounded's
+ * Hope) goes down by the targets dropped, never below 1.
+ */
+export function withoutTargets(riders: readonly Rider[], dropped: ReadonlySet<string>): Rider[] {
+  const out: Rider[] = [];
+  for (const r of riders) {
+    const picked = r.choices.find((c) => c.id === "picked");
+    if (picked === undefined || !Array.isArray(picked.value)) {
+      out.push(r);
+      continue;
+    }
+    const kept = picked.value.filter((id) => !dropped.has(id));
+    const removed = picked.value.length - kept.length;
+    if (removed === 0) {
+      out.push(r);
+      continue;
+    }
+    if (kept.length === 0) continue;
+    out.push({ ...r, choices: r.choices.map((c) => (c.id === "picked" ? { ...c, value: kept } : c.id.startsWith("n:") && typeof c.value === "number" ? { ...c, value: Math.max(1, c.value - removed) } : c)) });
+  }
+  return out;
+}
+
 /**
  * NV18 (Hold Them Off, CB p.38: "use that same roll against two additional adversaries within range of the attack";
- * Surrounded, HF p.10): the creatures the rider's `picked` choice names, at most its count, each an enemy token the
- * attacker sees with a clear line (COMBAT_NO_LINE_OF_SIGHT), of an undefeated instance of the attack's encounter, not
- * already a target, and within the rider's range (COMBAT_TARGET_INVALID otherwise; an added target never waits for the GM).
+ * Surrounded, HF p.10: "additional creatures within Melee range"): the creatures the rider's `picked` choice names, at
+ * most its count, each seen with a clear line (COMBAT_NO_LINE_OF_SIGHT) and not already a target: an enemy adversary
+ * token of the attack's encounter, or, when the rider may target any creature (Surrounded, dcm-bxp.99.19.44), an ally
+ * adversary token or another PC's token. Out of the rider's range: COMBAT_TARGET_INVALID unless the GM waived it
+ * (`waived`, DA2: the attack waited for the GM's approval first). COMBAT_TARGET_INVALID otherwise.
  */
-async function addedTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon, add: Folds["addTargets"][number], taken: ReadonlySet<string>, encounterId: Id<"encounters">): Promise<CheckedTarget[]> {
+async function addedTargets(
+  ctx: QueryCtx,
+  campaign: Doc<"campaigns">,
+  s: AttackScene,
+  weapon: Weapon,
+  add: Folds["addTargets"][number],
+  taken: ReadonlySet<string>,
+  encounterId: Id<"encounters">,
+  waived: ReadonlySet<string>,
+): Promise<{ adversaries: CheckedTarget[]; pcs: PcTarget[] }> {
   const ids = parseChoices(add.rider.choices).picked;
   if (ids.length > add.count || new Set(ids).size !== ids.length) throw appError("COMBAT_TARGET_INVALID", `${add.rider.name}: at most ${add.count} more target(s).`);
-  const range = add.spec.range === "weapon" ? rangeFromWeapon(weapon.range) : add.spec.range;
-  const out: CheckedTarget[] = [];
+  const range = addRange(add.spec, weapon);
+  const adversaries: CheckedTarget[] = [];
+  const pcs: PcTarget[] = [];
   for (const id of ids) {
     const index = s.scene.tokens.findIndex((t) => t._id === id);
     if (index < 0 || index === s.viewer.index || taken.has(id)) throw appError("COMBAT_TARGET_INVALID");
@@ -814,13 +967,20 @@ async function addedTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: Attack
     if (!seenBy(s, index)) throw appError("COMBAT_NO_LINE_OF_SIGHT");
     const sight = sightTo(s, token);
     if (!sight.lineOfSight) throw appError("COMBAT_NO_LINE_OF_SIGHT");
-    const linked = await enemyInstance(ctx, campaign._id, token);
-    if (linked === null || linked.encounter._id !== encounterId) throw appError("COMBAT_TARGET_INVALID");
     const check = rangeCheck(s.attacker, token, range);
-    if (!check.inRange) throw appError("COMBAT_TARGET_INVALID", `${add.rider.name}: a target is out of range.`);
-    out.push({ token, ...linked, check, sight });
+    if (!check.inRange && !waived.has(id)) throw appError("COMBAT_TARGET_INVALID", `${add.rider.name}: a target is out of range.`);
+    if (anyCreature(add.spec) && token.ref.kind === "pc") {
+      const character = await ctx.db.get("characters", token.ref.characterId);
+      if (character === null || character.campaignId !== campaign._id) throw appError("COMBAT_TARGET_INVALID");
+      const sheet = readSheet(character.sheet);
+      pcs.push({ token, character, sheet, evasion: pcCombatant(token._id, sheet).evasion ?? 0, sight, rider: add.rider, half: add.damage === "half" });
+      continue;
+    }
+    const linked = anyCreature(add.spec) ? await adversaryInstance(ctx, campaign._id, token) : await enemyInstance(ctx, campaign._id, token);
+    if (linked === null || linked.encounter._id !== encounterId) throw appError("COMBAT_TARGET_INVALID");
+    adversaries.push({ token, ...linked, check, sight });
   }
-  return out;
+  return { adversaries, pcs };
 }
 
 // ---- Sneak Attack and Cloaked (Q9)
@@ -995,6 +1155,46 @@ export function recorder(base: Rng): { rng: Rng; values: number[] } {
   };
 }
 
+/**
+ * DA2 (Rise to the Challenge, CB p.48: "roll a d20 as your Hope Die"): a die source whose next 12-sided draw, once armed,
+ * draws `sides` instead. A Duality roll draws its Hope Die first (`rollDuality`: Hope, Fear, then the advantage dice), so
+ * arming it right before the roll swaps the Hope Die only. Put it outside a recorder so the held attack replays the value.
+ */
+export function hopeDieSwitch(base: Rng): { rng: Rng; arm: (sides: number | undefined) => void } {
+  let next: number | undefined;
+  return {
+    rng: (sides) => {
+      if (next !== undefined && sides === 12) {
+        const s = next;
+        next = undefined;
+        return base(s);
+      }
+      return base(sides);
+    },
+    arm: (sides) => {
+      next = sides !== undefined && sides !== 12 ? sides : undefined;
+    },
+  };
+}
+
+/** The roll record with its Hope Die's sides set (the value was already drawn from those sides). */
+export function withHopeSides(record: RollRecord, sides: number | undefined): RollRecord {
+  if (sides === undefined || sides === 12) return record;
+  return { ...record, dice: record.dice.map((d) => (d.role === "hope" ? { ...d, sides } : d)) };
+}
+
+/**
+ * The damage total of a weapon attack (R2, CB p.98) with the riders folded in: the damage roll's total (a critical's
+ * added maximum already in it), plus the riders' added damage, then multiplied ("double damage", First Strike, HF p.8).
+ * User 2026-10-30 (dcm-bxp.99.19.43): the whole damage is doubled, added dice included, after the critical.
+ */
+export function foldedDamage(record: RollRecord, folds: Pick<Folds, "damageAdd" | "multiply">): RollRecord {
+  let out = record;
+  if (folds.damageAdd !== 0) out = { ...out, modifier: out.modifier + folds.damageAdd, total: Math.max(0, out.total + folds.damageAdd) };
+  if (folds.multiply !== 1) out = { ...out, total: out.total * folds.multiply };
+  return out;
+}
+
 /** Applies a change of the GM's Fear (a gain through `gainFear`, a loss through `spendFear`); returns what changed. */
 export async function changeFear(ctx: MutationCtx, campaignId: Id<"campaigns">, delta: number): Promise<number> {
   if (delta > 0) return (await gainFear(ctx, campaignId, delta)).gained;
@@ -1023,6 +1223,8 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const { campaign, character } = loaded;
   const sheet0 = loaded.sheet;
   const rec = recorder(req.held ? replaying(req.held.dice, rollDie) : rollDie);
+  // DA2: the Hope Die switch sits outside the recorder, so a held attack replays a d20 Hope Die as drawn.
+  const hope = hopeDieSwitch(rec.rng);
   const host = hostOf(weapon, slot, options.trait);
   const env: RiderEnv = {
     ctx,
@@ -1031,14 +1233,17 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     scene: req.scene,
     host,
     gmFear: (await campaignFearState(ctx, campaign._id)).fear,
-    rng: rec.rng,
+    rng: hope.rng,
     rollUsedExperience: options.experienceIds.length > 0,
   };
-  const picked = pickRiders(sheet0, campaign, host, req.riders ?? []);
-  const autos = autoRiders(sheet0, campaign, host);
+  // DA2: damage-phase riders (Death Strike) are prompts after the damage (`damagePrompts`), never run from a toggle.
+  const picked = pickRiders(sheet0, campaign, host, req.riders ?? []).filter((r) => r.phase !== "damage");
+  const autos = [...autoRiders(sheet0, campaign, host), ...defaultOnRiders(sheet0, campaign, host, options.riseToTheChallenge === false, picked)];
   const folds = emptyFolds();
   const runs: RiderRun[] = [];
   const allTargets: CheckedTarget[] = [...req.targets];
+  const pcTargets: PcTarget[] = [];
+  const waived = new Set<string>(req.waived ?? []);
   const main = req.targets[0];
   /** Riders whose trigger held: their `post` parts run after the damage. */
   const used: PickedRider[] = [];
@@ -1056,24 +1261,34 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     foldInto(folds, run);
     runs.push(run);
   }
-  for (const add of folds.addTargets.splice(0)) allTargets.push(...(await addedTargets(ctx, campaign, req.scene, weapon, add, new Set(allTargets.map((t) => t.token._id)), main!.encounter._id)));
+  const taken = () => new Set<string>([...allTargets.map((t) => t.token._id), ...pcTargets.map((t) => t.token._id)]);
+  for (const add of folds.addTargets.splice(0)) {
+    const more = await addedTargets(ctx, campaign, req.scene, weapon, add, taken(), main!.encounter._id, waived);
+    allTargets.push(...more.adversaries);
+    pcTargets.push(...more.pcs);
+    for (const t of more.adversaries) halfDamage.set(t.token._id, add.damage === "half");
+  }
 
   // ---- the roll (R1, R9); cover gives one disadvantage (Q2)
-  const cover = allTargets.some((t) => t.sight.cover);
+  const cover = allTargets.some((t) => t.sight.cover) || pcTargets.some((t) => t.sight.cover);
   const args = attackDuality(weapon, { ...options, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage }, cover);
   const sheetBeforeRoll = sheet;
   const dualityAt = rec.values.length;
-  const duality = await resolveDuality(ctx, { ...loaded, sheet: sheetBeforeRoll }, args, rec.rng, false);
-  let roll = duality.roll;
+  // DA2: Rise to the Challenge's d20 Hope Die (CB p.48), on by default while it applies; the Hope Die is drawn first.
+  hope.arm(folds.hopeDie);
+  const duality = await resolveDuality(ctx, { ...loaded, sheet: sheetBeforeRoll }, args, hope.rng, false);
+  hope.arm(undefined);
+  let roll = withHopeSides(duality.roll, folds.hopeDie);
   let effects = duality.effects;
-  let rolled = duality.rolled;
+  let rolled = { ...duality.rolled, roll };
   let forced = false;
   let finalSheet = duality.next;
   const hitsOf = (r: RollRecord) => resolveHits(r.total, r.outcome === "critical", allTargets.map((t) => ({ id: t.token._id, difficulty: difficultyOf(t.instance) })));
   let hits = hitsOf(roll);
+  const pcHitsOf = (r: RollRecord, more: readonly PcTarget[] = pcTargets) => resolveHits(r.total, forced || r.outcome === "critical", more.map((t) => ({ id: t.token._id, difficulty: t.evasion })));
   const hostRollOf = (r: RollRecord, h: readonly { hit: boolean }[]): HostRoll => {
     const critical = r.outcome === "critical";
-    return { success: forced || h.some((x) => x.hit), critical, withHope: critical || r.outcome === "successHope" || r.outcome === "failHope", withFear: r.outcome === "successFear" || r.outcome === "failFear" };
+    return { success: forced || h.some((x) => x.hit) || pcHitsOf(r).some((x) => x.hit), critical, withHope: critical || r.outcome === "successHope" || r.outcome === "failHope", withFear: r.outcome === "successFear" || r.outcome === "failFear" };
   };
 
   // ---- the after-roll step (Q1): hold the attack when an after-roll feature is ready and affordable
@@ -1090,7 +1305,14 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
           schemaVersion: 1,
           kind: "afterRoll",
           characterId: character._id,
-          action: { kind: "attack", slot, targetTokenIds: req.targets.map((t) => t.token._id), roll: options, ...(req.riders && req.riders.length > 0 ? { riders: [...req.riders] } : {}) },
+          action: {
+            kind: "attack",
+            slot,
+            targetTokenIds: req.targets.map((t) => t.token._id),
+            roll: options,
+            ...(req.riders && req.riders.length > 0 ? { riders: [...req.riders] } : {}),
+            ...(req.waived && req.waived.length > 0 ? { waived: [...req.waived] } : {}),
+          },
           dice: rec.values.slice(0, MAX_HELD_DICE),
           dualityAt,
           roll,
@@ -1122,11 +1344,13 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     if (change.kind === "add") change = { kind: "add", amount: fold && typeof fold.amount === "number" ? fold.amount : 0 };
     const base = { ...afterRun.sheet, hope: Math.max(0, afterRun.sheet.hope - gave) };
     if (change.kind === "reroll" && change.hopeAtMost === undefined) {
-      const again = await resolveDuality(ctx, { ...loaded, sheet: sheetBeforeRoll }, { ...args, advantage: args.advantage + (change.advantage ? 1 : 0) }, rec.rng, false);
-      roll = again.roll;
-      rolled = again.rolled;
+      hope.arm(folds.hopeDie);
+      const again = await resolveDuality(ctx, { ...loaded, sheet: sheetBeforeRoll }, { ...args, advantage: args.advantage + (change.advantage ? 1 : 0) }, hope.rng, false);
+      hope.arm(undefined);
+      roll = withHopeSides(again.roll, folds.hopeDie);
+      rolled = { ...again.rolled, roll };
     } else {
-      const changed = changedRecord(roll, change, rec.rng);
+      const changed = changedRecord(roll, change, hope.rng);
       roll = changed.roll;
       forced = changed.forced;
       rolled = { ...rolled, hope: roll.dice.find((d) => d.role === "hope")?.value ?? rolled.hope, roll };
@@ -1157,13 +1381,15 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     runs.push(run);
   }
   for (const add of folds.addTargets.splice(0)) {
-    const more = await addedTargets(ctx, campaign, req.scene, weapon, add, new Set(allTargets.map((t) => t.token._id)), main!.encounter._id);
-    const moreHits = resolveHits(roll.total, critical || forced, more.map((t) => ({ id: t.token._id, difficulty: difficultyOf(t.instance) })));
-    allTargets.push(...more);
+    const more = await addedTargets(ctx, campaign, req.scene, weapon, add, taken(), main!.encounter._id, waived);
+    const moreHits = resolveHits(roll.total, critical || forced, more.adversaries.map((t) => ({ id: t.token._id, difficulty: difficultyOf(t.instance) })));
+    allTargets.push(...more.adversaries);
+    pcTargets.push(...more.pcs);
     hits = [...hits, ...moreHits];
-    for (const t of more) halfDamage.set(t.token._id, add.damage === "half");
+    for (const t of more.adversaries) halfDamage.set(t.token._id, add.damage === "half");
   }
-  const anyHit = hits.some((h) => h.hit);
+  const pcHits = pcHitsOf(roll);
+  const anyHit = hits.some((h) => h.hit) || pcHits.some((h) => h.hit);
 
   // ---- R2: one damage roll after the attack's costs and gains; a critical adds the dice's maximum
   const sneak = sneakAttackApplies(sheet0, req.scene, allTargets.filter((_, i) => hits[i]!.hit));
@@ -1172,12 +1398,9 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   let damageLabel = "";
   if (anyHit) {
     const proficiency = sheet.proficiency;
-    const rolledDamage = await resolveDamage(ctx, { ...loaded, sheet: { ...sheet, proficiency: proficiency + folds.proficiency } }, { source: { kind: "weapon", slot }, critical, modifier: 0, options: damageOptions }, rec.rng, false);
+    const rolledDamage = await resolveDamage(ctx, { ...loaded, sheet: { ...sheet, proficiency: proficiency + folds.proficiency } }, { source: { kind: "weapon", slot }, critical, modifier: 0, options: damageOptions }, hope.rng, false);
     sheet = { ...rolledDamage.paid, proficiency };
-    let record = rolledDamage.roll;
-    if (folds.damageAdd !== 0) record = { ...record, modifier: record.modifier + folds.damageAdd, total: Math.max(0, record.total + folds.damageAdd) };
-    if (folds.multiply !== 1) record = { ...record, total: record.total * folds.multiply };
-    damageRecord = record;
+    damageRecord = foldedDamage(rolledDamage.roll, folds);
     damageLabel = rolledDamage.label;
   }
 
@@ -1230,6 +1453,20 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     publicParts.push(`${label}: ${defeated ? "Defeated" : "Hit"}`);
     gmParts.push(`${label}: ${detail}${defeated ? ", defeated" : ""}`);
   }
+  // A PC a rider added (Surrounded, allies included): the same roll against their Evasion; on a hit the damage opens their
+  // incoming-hit window (armor, reactions) in this attack's group, as card damage to another PC does (AA2b).
+  const pcHitTotals: { target: PcTarget; amount: number }[] = [];
+  for (const [i, t] of pcTargets.entries()) {
+    const hit = pcHits[i]!.hit && damageRecord !== null;
+    publicParts.push(`${t.sheet.name}: ${hit ? "Hit" : "Miss"}`);
+    if (!hit) {
+      gmParts.push(`${t.sheet.name}: miss (${roll.total} vs Evasion ${t.evasion})`);
+      continue;
+    }
+    const amount = t.half ? Math.ceil(damageRecord!.total / 2) : damageRecord!.total;
+    pcHitTotals.push({ target: t, amount });
+    gmParts.push(`${t.sheet.name}: ${amount} ${SHORT_TYPE[type]}${t.half ? " (half)" : ""} → their reaction window`);
+  }
 
   // ---- the riders' effects on the creatures (Stress, conditions, movement), then the riders after the damage
   const standing = (r: TargetResult) => !r.defeated;
@@ -1260,19 +1497,26 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     await writeRun(run);
     posts.push(run);
   }
-  for (const r of [...picked, ...autos].filter((x) => x.phase === "damage")) {
+  const qualifying = (r: PickedRider) => {
     const severity = r.trigger.kind === "whenTargetMarksHp" || r.trigger.kind === "whenEnemyTakesDamage" ? r.trigger.severity : undefined;
-    const subject = results.find((x) => x.hit && x.hpMarked > 0 && standing(x) && (severity === undefined || x.severity === severity));
-    if (subject === undefined || !anyHit) {
-      if (!r.auto) skipped.push(r.name);
-      continue;
-    }
+    return anyHit ? results.filter((x) => x.hit && x.hpMarked > 0 && standing(x) && (severity === undefined || x.severity === severity)) : [];
+  };
+  // Automatic damage-phase uses (Ruthless Predator's Severe Stress) run on the first creature that qualifies.
+  for (const r of autos.filter((x) => x.phase === "damage")) {
+    const subject = qualifying(r)[0];
+    if (subject === undefined) continue;
     const id = subject.target.token._id;
     const run = await runRiderPart(env, r, sheet, "whole", hostRoll, [id], subject.target, id);
     if (run === null || run === "empty") continue;
     await writeRun(run);
     posts.push(run);
   }
+  // DA2 (HF p.8 Death Strike; user 2026-10-30): a damage-phase rider is never applied without a prompt: the player gets Use /
+  // Pass (its cost is optional, "you can"), and picks the ONE creature when several qualify. Opened after the rows below.
+  const toPrompt = damagePrompts(sheet0, campaign, host).flatMap((r) => {
+    const candidates = qualifying(r).map((x) => x.target.token._id);
+    return candidates.length > 0 ? [{ rider: r, candidates }] : [];
+  });
 
   // ---- the after-roll feature's own effects (Ranger's Focus ends on its target)
   if (afterRun !== null) {
@@ -1295,6 +1539,21 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const touched = new Set<string>(riderWrites.map((w) => w.before.instanceId));
   const before: AdversaryBefore[] = snapshots.map((i) => (touched.has(i._id) ? adversaryBefore(i, true) : beforeOf(i)));
   const groupId = newGroupId();
+  for (const { target, amount } of pcHitTotals) {
+    await openIncomingHit(ctx, {
+      campaignId: campaign._id,
+      encounterId: main!.encounter._id,
+      mapId: req.scene.map._id,
+      createdBy: req.actorId,
+      groupId,
+      attacker: { kind: "pc", characterId: character._id, label: sheet0.name, cardId: target.rider.id, feature: target.rider.name },
+      targetCharacterId: target.character._id,
+      targetTokenId: target.token._id,
+      hit: { amount, type, direct: false, forcedArmor: 0, critical },
+      party: await partyMembers(ctx, campaign._id),
+      bands: await bandsOnMap(ctx, req.scene.map._id),
+    });
+  }
   const riderNames = [...new Set([...(afterRun ? [featureName(afterRun)] : []), ...runs.map((r) => r.name), ...posts.map((r) => r.name), ...(damageOptions.includes(SNEAK_ATTACK) ? ["Sneak Attack"] : [])])];
   const using = [...duality.extras, ...riderNames].length > 0 ? ` (${[...duality.extras, ...riderNames].join(", ")})` : "";
   const head = `${sheet0.name} attacks with ${weapon.name}: ${TRAIT_LABEL[args.trait]} ${roll.total}${typedLabel(args.modifier)} ${rollWord(roll)}${using}`;
@@ -1347,8 +1606,22 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   }
 
   const minionOffer = extra > 0 ? await offerMinions(ctx, req, { groupId, entryId, extra, total: roll.total, critical }) : null;
+  const riderPicks: Infer<typeof riderPickOfferValidator>[] = [];
+  for (const { rider, candidates } of toPrompt) {
+    const requestId = await openRiderPick(ctx, {
+      campaignId: campaign._id,
+      encounterId: main!.encounter._id,
+      mapId: req.scene.map._id,
+      createdBy: req.actorId,
+      payload: { schemaVersion: 1, kind: "riderPick", characterId: character._id, groupId, entryId, rider: { source: rider.source, id: rider.id, useId: rider.useId, name: rider.name }, candidates, hostRoll },
+    });
+    riderPicks.push({ requestId, name: rider.name, candidates });
+  }
   const prompts = afterDualityRoll(finalSheet, { hope: rolled.hope, fear: rolled.fear, roll }, CLASS_FEATURES, duality.scope);
-  const outcomes = results.map((r) => ({ tokenId: r.target.token._id, hit: r.hit, defeated: r.defeated }));
+  const outcomes = [
+    ...results.map((r) => ({ tokenId: r.target.token._id, hit: r.hit, defeated: r.defeated })),
+    ...pcTargets.map((t, i) => ({ tokenId: t.token._id, hit: pcHits[i]!.hit && damageRecord !== null, defeated: false })),
+  ];
   return {
     status: "resolved",
     entryId,
@@ -1361,7 +1634,100 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     ...(riderNames.length > 0 ? { riders: riderNames } : {}),
     ...(skipped.length > 0 ? { skipped } : {}),
     ...(riderPrompts.length > 0 ? { riderPrompts: riderPrompts.filter((p) => p.kind !== "fold") } : {}),
+    ...(riderPicks.length > 0 ? { riderPicks } : {}),
   };
+}
+
+/**
+ * DA2: the damage-phase rider uses the attacker holds and can use now (a loadout card's or a held feature's `rider` use
+ * whose trigger is the damage it deals: Death Strike, HF p.8). Each becomes a Use / Pass prompt after the damage.
+ */
+export function damagePrompts(sheet: CharacterSheet, campaign: Doc<"campaigns">, host: Host): PickedRider[] {
+  const out: PickedRider[] = [];
+  for (const cardId of sheet.domainCards.loadout) {
+    const effect = cardEffect(cardId);
+    if (effect === undefined || cardUsage(cardId) === "outOfCombat") continue;
+    for (const { use, trigger, phase } of riderUses(effect.uses, host, ["rider"])) {
+      if (phase !== "damage" || keyAvailability(sheet, featureUseKey(cardId, use.id), use.limit).state !== "ready") continue;
+      out.push({ source: "card", id: cardId, useId: use.id, name: use.name === "main" ? (getDomainCard(cardId)?.name ?? cardId) : use.name, trigger, phase, choices: [], auto: false });
+    }
+  }
+  const held = ownedHere(sheet, campaign);
+  for (const { feature, entry } of heldEntries(sheet, campaign)) {
+    const raw = featureEffect(feature.featureId)!;
+    for (const { use, trigger, phase } of riderUses(entry.uses, host, ["rider"])) {
+      if (phase !== "damage" || featureAvailability(sheet, raw, use.id, { holdings: holdingsFor(sheet, held, raw.owner) }).state !== "ready") continue;
+      out.push({ source: "feature", id: feature.featureId, useId: use.id, name: use.name, trigger, phase, choices: [], auto: false });
+    }
+  }
+  return out;
+}
+
+/**
+ * DA2 (HF p.8 Death Strike: "When you deal Severe damage to a creature, you can mark a Stress to force them to mark an
+ * additional Hit Point"; user 2026-10-30): answers a `riderPick` prompt. `pass`: nothing paid. `use`: the rider runs on the
+ * ONE picked candidate (its cost paid now; a refusal such as CARD_COST_UNPAID leaves the prompt open), logged into the
+ * attack's group, so undoing the attack undoes it too. The prompt of an undone attack is declined. INVALID for a token
+ * that isn't a candidate; COMBAT_TARGET_INVALID when the creature is no longer standing.
+ */
+export async function answerRiderPick(ctx: MutationCtx, loaded: Loaded, row: Doc<"combatRequests">, choice: RiderPickChoice, actorId: Id<"users">): Promise<"resolved" | "passed" | "declined"> {
+  if (row.payload.kind !== "riderPick") throw appError("NOT_FOUND");
+  const p = row.payload;
+  const { campaign, character } = loaded;
+  const entry = await ctx.db.get("actionLog", p.entryId);
+  if (entry === null || entry.undoneAt !== undefined || row.mapId === undefined) {
+    await closeRequest(ctx, row._id, "declined", actorId);
+    return "declined";
+  }
+  if (choice.kind === "pass") {
+    await closeRequest(ctx, row._id, "resolved", actorId);
+    return "passed";
+  }
+  if (!p.candidates.includes(choice.tokenId)) throw appError("INVALID", "Pick one of the creatures that took the damage.");
+  const uses = p.rider.source === "card" ? cardEffect(p.rider.id)?.uses : featureEffect(p.rider.id)?.uses;
+  const use = uses?.find((u) => u.id === p.rider.useId);
+  if (use === undefined || (use.activation.kind !== "rider" && use.activation.kind !== "auto")) throw appError("INVALID");
+  const scene = await attackScene(ctx, campaign, character, row.mapId);
+  const index = scene.scene.tokens.findIndex((t) => t._id === choice.tokenId);
+  const token = scene.scene.tokens[index];
+  const linked = token ? await adversaryInstance(ctx, campaign._id, token) : null;
+  if (token === undefined || linked === null) throw appError("COMBAT_TARGET_INVALID");
+  const target: CheckedTarget = { token, ...linked, check: rangeCheck(scene.attacker, token, "melee"), sight: sightTo(scene, token) };
+  const host: Host = { spec: { kind: "attack", weapon: "primary", difficulty: { kind: "target" } }, trait: undefined, weapon: true, weaponRange: null, damageType: "physical" };
+  const env: RiderEnv = { ctx, campaign, character, scene, host, gmFear: (await campaignFearState(ctx, campaign._id)).fear, rng: rollDie, rollUsedExperience: false };
+  const rider: PickedRider = { source: p.rider.source, id: p.rider.id, useId: p.rider.useId, name: p.rider.name, trigger: use.activation.trigger, phase: "damage", choices: [], auto: false };
+  const run = await runRiderPart(env, rider, loaded.sheet, "whole", p.hostRoll, [token._id], target, token._id);
+  if (run === null || run === "empty") throw appError("INVALID");
+  const writes = instanceWrites(run.plan, run.built.creatures, run.name);
+  await writeInstances(ctx, writes);
+  const lines = gmLines(run.plan, run.built, writes);
+  const fearDelta = await changeFear(ctx, campaign._id, run.plan.gmFearDelta);
+  const sheetChanged = changed(loaded.sheet, run.sheet);
+  if (sheetChanged) await saveSheet(ctx, character._id, run.sheet);
+  await logAction(ctx, {
+    campaignId: campaign._id,
+    characterId: character._id,
+    actorId,
+    kind: "combat",
+    visibility: "public",
+    summary: `${loaded.sheet.name} uses ${run.name} on ${linked.instance.label}`.slice(0, 1000),
+    groupId: p.groupId,
+    ...(sheetChanged ? { before: loaded.sheet } : {}),
+    ...(fearDelta !== 0 ? { fearDelta } : {}),
+    undoable: true,
+  });
+  await logAction(ctx, {
+    campaignId: campaign._id,
+    actorId,
+    kind: "combat",
+    visibility: "gm",
+    summary: `${loaded.sheet.name} · ${run.name} → ${lines.join("; ") || linked.instance.label}`.slice(0, 1000),
+    groupId: p.groupId,
+    ...(writes.length > 0 ? { adversaryBefore: writes.map((w) => w.before) } : {}),
+    undoable: true,
+  });
+  await closeRequest(ctx, row._id, "resolved", actorId);
+  return "resolved";
 }
 
 /** The after-roll feature's name for the feed ("Patron's Boon"). */

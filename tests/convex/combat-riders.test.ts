@@ -20,7 +20,7 @@
  * Dice are the server's own: tests choose stats that make the outcome certain (Difficulty 1 always hits; 99 misses unless
  * the roll is a critical) or branch on the recorded roll.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -28,6 +28,9 @@ import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { inSightOfAdversary } from "../../convex/lib/combatMovement";
 import { loadScene } from "../../convex/lib/combatVision";
 import { bindGates, riderUse, splitSteps } from "../../convex/lib/cardRunner";
+import { foldedDamage } from "../../convex/lib/combatActions";
+import { weaponDice } from "../../src/lib/domain/dice/index";
+import { getWeapon } from "../../src/lib/srd/index";
 import { campaignFearState } from "../../convex/lib/fear";
 import type { CardUse, Step } from "../../src/lib/domain/card-effects/types";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
@@ -257,14 +260,38 @@ describe("riders on the result", () => {
     expect((await a.sheet()).hope).toBe(5 + gained);
   });
 
-  it("Hold Them Off refuses a target out of the weapon's range (no GM wait for an added target)", async () => {
+  it("DA2: an extra target out of range makes the attack wait for the GM; Approve resolves it with that target", async () => {
     const a = await arena();
     await a.edit(() => ({ classId: "ranger", subclassId: "wayfinder", hope: 5 }));
     const one = await a.enemy("One", 6, 10);
     const far = await a.enemy("Far", 15, 10);
-    const r = await code(a.attack(a.player, [one.tokenId], { riders: [{ source: "feature", id: "hope:ranger", choices: [{ id: "picked", value: [far.tokenId] }] }] }));
-    // A critical or any success reaches the check; the attack is refused as a whole.
-    expect(r).toBe("COMBAT_TARGET_INVALID");
+    const out = await a.attack(a.player, [one.tokenId], { riders: [{ source: "feature", id: "hope:ranger", choices: [{ id: "picked", value: [far.tokenId] }] }] });
+    expect(out.status).toBe("pending");
+    if (out.status !== "pending") return;
+    expect(out.outOfRange.map((o) => o.tokenId)).toEqual([far.tokenId]);
+    // Nothing rolled or paid while it waits (Q1).
+    expect((await a.sheet()).hope).toBe(5);
+    expect((await a.rows()).filter((r) => r.kind === "combat")).toHaveLength(0);
+    const r = resolved(await a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: out.requestId, approve: true, idempotencyKey: key() }));
+    if (!r.targets[0]!.hit) return; // Hold Them Off waits for a success (CB p.38).
+    // The same roll against the far target (CB p.38: "use that same roll").
+    expect(r.targets.map((x) => x.tokenId)).toEqual([one.tokenId, far.tokenId]);
+    expect(r.riders).toContain("Hold Them Off");
+  });
+
+  it("DA2: the GM's Decline drops the out-of-range extra target only; the attack resolves without it and Hold Them Off isn't paid", async () => {
+    const a = await arena();
+    await a.edit(() => ({ classId: "ranger", subclassId: "wayfinder", hope: 5 }));
+    const one = await a.enemy("One", 6, 10);
+    const far = await a.enemy("Far", 15, 10);
+    const out = await a.attack(a.player, [one.tokenId], { riders: [{ source: "feature", id: "hope:ranger", choices: [{ id: "picked", value: [far.tokenId] }] }] });
+    if (out.status !== "pending") throw new Error("expected pending");
+    const r = resolved(await a.gm.mutation(api.combatRequests.sanction, { campaignId: a.campaignId, requestId: out.requestId, approve: false, idempotencyKey: key() }));
+    expect(r.targets.map((x) => x.tokenId)).toEqual([one.tokenId]);
+    expect(r.riders ?? []).not.toContain("Hold Them Off");
+    const gained = r.roll.outcome === "critical" || r.roll.outcome === "successHope" || r.roll.outcome === "failHope" ? 1 : 0;
+    expect((await a.sheet()).hope).toBe(Math.min(6, 5 + gained));
+    expect((await a.instance(far.instanceId)).hp).toBe(0);
   });
 
   it("Kick (CB p.58): the map confirms Melee; a Stress, +2d6 damage and the knock-back prompt", async () => {
@@ -319,21 +346,101 @@ describe("automatic riders", () => {
     expect(gm[0]!.summary).toContain("×2");
   });
 
-  it("Death Strike (HF p.8): Severe damage, a Stress, one more Hit Point", async () => {
+  it("Death Strike (HF p.8, DA2): one Severe creature still gets the Use / Pass prompt; Use marks a Stress and one more HP", async () => {
     const a = await arena({ hopeAndFear: true });
     await a.edit(() => ({ classId: "assassin", subclassId: "executioners-guild", subclassRank: "specialization", stress: 0 }));
     // Major 1, Severe 2: any 2+ damage is Severe (3 HP).
     const bandit = await a.enemy("Bandit", 6, 10, { major: 1, severe: 2, hpMax: 12 });
-    const r = resolved(await a.attack(a.player, [bandit.tokenId], { riders: [{ source: "feature", id: "subclass:executioners-guild:death-strike", choices: [] }] }));
-    if (r.damage!.total < 2) return;
-    // First Strike doubles the first success too (HF p.8), still Severe.
+    const r = resolved(await a.attack(a.player, [bandit.tokenId]));
+    if (r.damage === null || r.damage.total < 2) return;
+    // Never applied without the prompt (user 2026-10-30): Severe marked 3 HP, nothing more yet.
+    expect((await a.instance(bandit.instanceId)).hp).toBe(3);
+    expect(r.riders ?? []).not.toContain("Death Strike");
+    expect(r.riderPicks).toHaveLength(1);
+    const pick = r.riderPicks![0]!;
+    expect(pick).toMatchObject({ name: "Death Strike", candidates: [bandit.tokenId] });
+    // U1: the prompt names creatures only.
+    expect(keysOf(r.riderPicks).filter((k) => STAT_KEYS.includes(k))).toEqual([]);
+    const stressBefore = (await a.sheet()).stress;
+    const done = await a.player.mutation(api.combatActions.riderPick, { campaignId: a.campaignId, requestId: pick.requestId, choice: { kind: "use", tokenId: bandit.tokenId }, idempotencyKey: key() });
+    expect(done.status).toBe("resolved");
     expect((await a.instance(bandit.instanceId)).hp).toBe(4);
-    expect(r.riders).toContain("Death Strike");
-    // Death Strike's Stress comes after the damage, so a critical's cleared Stress (CB p.90) doesn't cancel it.
-    expect((await a.sheet()).stress).toBe(1);
-    // Undo puts the instance back as it was before the attack (U4).
+    expect((await a.sheet()).stress).toBe(stressBefore + 1);
+    // Undo of the attack puts the instance back as it was before the attack (U4), the Death Strike rows included.
     const pub = (await a.rows()).find((row) => row.kind === "combat" && row.visibility === "public")!;
     await a.gm.mutation(api.actionLog.undo, { entryId: pub._id, idempotencyKey: key() });
+    expect((await a.instance(bandit.instanceId)).hp).toBe(0);
+    expect((await a.sheet()).stress).toBe(0);
+  });
+
+  it("Death Strike (DA2): Pass pays nothing and adds nothing", async () => {
+    const a = await arena({ hopeAndFear: true });
+    await a.edit(() => ({ classId: "assassin", subclassId: "executioners-guild", subclassRank: "specialization", stress: 0 }));
+    const bandit = await a.enemy("Bandit", 6, 10, { major: 1, severe: 2, hpMax: 12 });
+    const r = resolved(await a.attack(a.player, [bandit.tokenId]));
+    if (r.damage === null || r.damage.total < 2) return;
+    const stress = (await a.sheet()).stress;
+    const done = await a.player.mutation(api.combatActions.riderPick, { campaignId: a.campaignId, requestId: r.riderPicks![0]!.requestId, choice: { kind: "pass" }, idempotencyKey: key() });
+    expect(done.status).toBe("passed");
+    expect((await a.instance(bandit.instanceId)).hp).toBe(3);
+    expect((await a.sheet()).stress).toBe(stress);
+    expect(await code(a.player.mutation(api.combatActions.riderPick, { campaignId: a.campaignId, requestId: r.riderPicks![0]!.requestId, choice: { kind: "pass" }, idempotencyKey: key() }))).toBe("REQUEST_NOT_OPEN");
+  });
+
+  it("Death Strike (DA2): with several Severe creatures the player picks ONE; a token that isn't a candidate is refused", async () => {
+    const a = await arena({ hopeAndFear: true });
+    await a.edit(() => ({ classId: "assassin", subclassId: "executioners-guild", subclassRank: "specialization", stress: 0 }));
+    const one = await a.enemy("One", 6, 10, { major: 1, severe: 2, hpMax: 12 });
+    const two = await a.enemy("Two", 6, 9, { major: 1, severe: 2, hpMax: 12 });
+    const other = await a.enemy("Other", 6, 11, { major: 1, severe: 2, hpMax: 12 });
+    // The prompt an attack that dealt Severe damage to One and Two opens (one roll against several creatures, NV18).
+    const requestId = await a.t.run(async (ctx) => {
+      const entryId = await ctx.db.insert("actionLog", { campaignId: a.campaignId, characterId: a.w.characterA, actorId: a.w.users.player, kind: "combat", visibility: "public", summary: "attack", groupId: "g1", undoable: true, at: Date.now() });
+      const encounterId = (await ctx.db.get("encounterAdversaries", one.instanceId))!.encounterId;
+      return ctx.db.insert("combatRequests", {
+        campaignId: a.campaignId,
+        encounterId,
+        mapId: a.mapId,
+        kind: "riderPick",
+        status: "open",
+        createdBy: a.w.users.player,
+        createdAt: Date.now(),
+        responses: [],
+        payload: {
+          schemaVersion: 1,
+          kind: "riderPick",
+          characterId: a.w.characterA,
+          groupId: "g1",
+          entryId,
+          rider: { source: "feature", id: "subclass:executioners-guild:death-strike", useId: "main", name: "Death Strike" },
+          candidates: [one.tokenId, two.tokenId],
+          hostRoll: { success: true, critical: false, withHope: true, withFear: false },
+        },
+      });
+    });
+    const mine = await a.player.query(api.combatRequests.mine, { campaignId: a.campaignId });
+    const view = mine.find((m) => m.requestId === requestId);
+    expect(view).toMatchObject({ kind: "riderPick", name: "Death Strike", costs: ["1 Stress"], candidates: [{ tokenId: one.tokenId, name: "One" }, { tokenId: two.tokenId, name: "Two" }] });
+    expect(await code(a.player.mutation(api.combatActions.riderPick, { campaignId: a.campaignId, requestId, choice: { kind: "use", tokenId: other.tokenId }, idempotencyKey: key() }))).toBe("INVALID");
+    await a.player.mutation(api.combatActions.riderPick, { campaignId: a.campaignId, requestId, choice: { kind: "use", tokenId: two.tokenId }, idempotencyKey: key() });
+    // ONE creature (user 2026-10-30): Two marks the extra Hit Point, One doesn't; one Stress.
+    expect((await a.instance(two.instanceId)).hp).toBe(1);
+    expect((await a.instance(one.instanceId)).hp).toBe(0);
+    expect((await a.sheet()).stress).toBe(1);
+  });
+
+  it("Death Strike (DA2): another player can't answer the prompt; an undone attack's prompt is declined", async () => {
+    const a = await arena({ hopeAndFear: true });
+    await a.edit(() => ({ classId: "assassin", subclassId: "executioners-guild", subclassRank: "specialization", stress: 0 }));
+    const bandit = await a.enemy("Bandit", 6, 10, { major: 1, severe: 2, hpMax: 12 });
+    const r = resolved(await a.attack(a.player, [bandit.tokenId]));
+    if (r.damage === null || r.damage.total < 2) return;
+    const requestId = r.riderPicks![0]!.requestId;
+    expect(await code(a.w.as("otherPlayer").mutation(api.combatActions.riderPick, { campaignId: a.campaignId, requestId, choice: { kind: "pass" }, idempotencyKey: key() }))).toBe("FORBIDDEN");
+    const pub = (await a.rows()).find((row) => row.kind === "combat" && row.visibility === "public")!;
+    await a.gm.mutation(api.actionLog.undo, { entryId: pub._id, idempotencyKey: key() });
+    const done = await a.player.mutation(api.combatActions.riderPick, { campaignId: a.campaignId, requestId, choice: { kind: "use", tokenId: bandit.tokenId }, idempotencyKey: key() });
+    expect(done.status).toBe("declined");
     expect((await a.instance(bandit.instanceId)).hp).toBe(0);
   });
 });
@@ -460,5 +567,123 @@ describe("Cloaked ends on a move in sight of an adversary (Q9, CB p.42)", () => 
       return [inSightOfAdversary(scene, ash), inSightOfAdversary({ ...scene, tokens: scene.tokens.filter((t) => t.side !== "enemy") }, ash)];
     });
     expect(seen).toEqual([true, false]);
+  });
+});
+
+/** All server dice show 1 while `fn` runs (rollDie draws from `crypto.getRandomValues`): a known roll, a critical (CB p.90). */
+async function allOnes<T>(fn: () => Promise<T>): Promise<T> {
+  const spy = vi.spyOn(crypto, "getRandomValues").mockImplementation(<A extends ArrayBufferView | null>(buf: A): A => {
+    if (buf instanceof Uint32Array) buf.fill(0);
+    return buf;
+  });
+  try {
+    return await fn();
+  } finally {
+    spy.mockRestore();
+  }
+}
+
+describe("DA2: First Strike with a critical (dcm-bxp.99.19.43)", () => {
+  allowWorldEmails();
+
+  it("a known critical: the critical's damage first (the dice's maximum added), then the whole of it doubled", async () => {
+    const a = await arena({ hopeAndFear: true });
+    await a.edit(() => ({ classId: "assassin", subclassId: "executioners-guild" }));
+    const bandit = await a.enemy("Bandit", 6, 10, { major: 100, severe: 200, hpMax: 12 });
+    const sheet = await a.sheet();
+    const weapon = getWeapon(sheet.primaryWeaponId!)!;
+    const { dice, flat } = weaponDice(weapon.damage, sheet.proficiency);
+    const r = resolved(await allOnes(() => a.attack(a.player, [bandit.tokenId])));
+    expect(r.roll.outcome).toBe("critical");
+    expect(r.riders).toContain("First Strike");
+    // CB p.98: every damage die shows 1, the critical adds each die's maximum; HF p.8 doubles the whole damage.
+    const rolled = dice.reduce((s, d) => s + d.count, 0);
+    const maximum = dice.reduce((s, d) => s + d.count * d.sides, 0);
+    expect(r.damage!.total).toBe(2 * (rolled + maximum + flat));
+  });
+
+  it("foldedDamage: added damage first, then multiplied (pure)", () => {
+    const record = { kind: "damage" as const, dice: [{ sides: 8, value: 3, role: "damage" as const }], modifier: 8, total: 11, outcome: "none" as const, manual: false };
+    expect(foldedDamage(record, { damageAdd: 4, multiply: 2 }).total).toBe(30);
+    expect(foldedDamage(record, { damageAdd: 0, multiply: 1 })).toBe(record);
+  });
+});
+
+describe("DA2: Rise to the Challenge on by default (CB p.48, dcm-bxp.99.19.49 (2))", () => {
+  allowWorldEmails();
+
+  const brave = (hpLeft: number) => (s: CharacterSheet) => ({ classId: "warrior", subclassId: "call-of-the-brave", subclassRank: "specialization" as const, hp: s.hpMax - hpLeft });
+  const hopeSides = (roll: { dice: { role: string; sides: number }[] }) => roll.dice.find((d) => d.role === "hope")!.sides;
+
+  it("2 or fewer HP unmarked: the attack's Hope Die is a d20 without a click, and the Attack bar lists it as a toggle that starts on", async () => {
+    const a = await arena();
+    await a.edit(brave(2));
+    const bandit = await a.enemy("Bandit", 6, 10);
+    const options = await a.player.query(api.combatActions.riders, { campaignId: a.campaignId, characterId: a.w.characterA });
+    expect(options.find((o) => o.name === "Rise to the Challenge")).toMatchObject({ defaultOn: true, ready: true });
+    const r = resolved(await a.attack(a.player, [bandit.tokenId]));
+    expect(hopeSides(r.roll)).toBe(20);
+    expect(r.riders).toContain("Rise to the Challenge");
+  });
+
+  it("turned off: the usual d12 (fishing for a critical)", async () => {
+    const a = await arena();
+    await a.edit(brave(1));
+    const bandit = await a.enemy("Bandit", 6, 10);
+    const r = resolved(await a.attack(a.player, [bandit.tokenId], { riseToTheChallenge: false }));
+    expect(hopeSides(r.roll)).toBe(12);
+    expect(r.riders ?? []).not.toContain("Rise to the Challenge");
+  });
+
+  it("3 HP unmarked: not on, and not listed", async () => {
+    const a = await arena();
+    await a.edit(brave(3));
+    const bandit = await a.enemy("Bandit", 6, 10);
+    const options = await a.player.query(api.combatActions.riders, { campaignId: a.campaignId, characterId: a.w.characterA });
+    expect(options.some((o) => o.name === "Rise to the Challenge")).toBe(false);
+    const r = resolved(await a.attack(a.player, [bandit.tokenId]));
+    expect(hopeSides(r.roll)).toBe(12);
+  });
+
+  it("a card's roll (useCard): a d20 Hope Die by default, a d12 when turned off", async () => {
+    const a = await arena();
+    await a.edit((s) => ({ ...brave(2)(s), level: 6, domainCards: { owned: [...s.domainCards.owned, "whirlwind"], loadout: ["whirlwind"] } }));
+    const bandit = await a.enemy("Bandit", 6, 10, { hpMax: 30 });
+    const use = (extra: Record<string, unknown>) =>
+      a.player.mutation(api.combatCards.useCard, { campaignId: a.campaignId, characterId: a.w.characterA, mapId: a.mapId, cardId: "whirlwind", targetTokenIds: [bandit.tokenId], choices: [], idempotencyKey: key(), ...extra });
+    const on = await use({});
+    if (on.status !== "resolved") throw new Error(`expected resolved, got ${on.status}`);
+    expect(hopeSides(on.roll!)).toBe(20);
+    const off = await use({ riseToTheChallenge: false });
+    if (off.status !== "resolved") throw new Error(`expected resolved, got ${off.status}`);
+    expect(hopeSides(off.roll!)).toBe(12);
+  });
+});
+
+describe("DA2 pins", () => {
+  allowWorldEmails();
+
+  it("Surrounded's extra targets may be allies (dcm-bxp.99.19.44): another PC is hit against their Evasion and gets the incoming-hit window", async () => {
+    const a = await arena({ hopeAndFear: true });
+    await a.edit(() => ({ classId: "brawler", subclassId: "juggernaut", subclassRank: "specialization", hope: 4 }));
+    const bandit = await a.enemy("Bandit", 6, 10);
+    await a.moveToken(a.bryn, 5, 11);
+    const r = resolved(await a.attack(a.player, [bandit.tokenId], { riders: [{ source: "feature", id: "subclass:juggernaut:surrounded", choices: [{ id: "n:hope", value: 1 }, { id: "picked", value: [a.bryn] }] }] }));
+    expect(r.targets.map((t) => t.tokenId)).toEqual([bandit.tokenId, a.bryn]);
+    const hits = (await a.requests()).filter((q) => q.kind === "incomingHit");
+    const bryn = r.targets[1]!;
+    expect(hits.map((q) => (q.payload.kind === "incomingHit" ? q.payload.targetCharacterId : null))).toEqual(bryn.hit ? [a.w.characterB] : []);
+  });
+
+  it("Sneak Attack's ally is another PC or an ally token, never a neutral token (dcm-bxp.99.19.48 (2))", async () => {
+    const a = await arena();
+    await a.edit(() => ({ classId: "rogue", subclassId: "nightwalker" }));
+    const bandit = await a.enemy("Bandit", 6, 10);
+    await a.t.run((ctx) => ctx.db.insert("combatTokens", { campaignId: a.campaignId, mapId: a.mapId, size: 1, light: "none", revealedTo: [], ref: { kind: "custom", name: "Goat", hp: 0, hpMax: 1, stress: 0, stressMax: 1, conditions: [] }, side: "neutral", x: 7, y: 10, face: 0 }));
+    const neutral = resolved(await a.attack(a.player, [bandit.tokenId]));
+    expect(neutral.riders ?? []).not.toContain("Sneak Attack");
+    await a.t.run((ctx) => ctx.db.insert("combatTokens", { campaignId: a.campaignId, mapId: a.mapId, size: 1, light: "none", revealedTo: [], ref: { kind: "custom", name: "Hound", hp: 0, hpMax: 1, stress: 0, stressMax: 1, conditions: [] }, side: "ally", x: 7, y: 11, face: 0 }));
+    const ally = resolved(await a.attack(a.player, [bandit.tokenId]));
+    if (ally.targets[0]!.hit) expect(ally.riders).toContain("Sneak Attack");
   });
 });

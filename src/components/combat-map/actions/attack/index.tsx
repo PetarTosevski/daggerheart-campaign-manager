@@ -24,7 +24,7 @@ import { BAND_LABEL, type RangeBand } from "../targets";
 import { seenTargets, useActor, useCombatTargets, type WeaponSlot } from "../targets/state";
 import { NO_ROLL_OPTIONS, rollProblem, RollOptions, signed, Stepper, type Roller, type RollValues } from "../roll-controls";
 import { usePanelMemory } from "./memory";
-import { AfterRollPrompt, riderProblem, RiderToggles, ridersToSend, type HeldRoll, type RiderPicks } from "./riders";
+import { AfterRollPrompt, riderProblem, RiderPickPrompt, RiderToggles, ridersToSend, riseToSend, type HeldRoll, type RiderPicks } from "./riders";
 
 /**
  * The Attack bar (plan combat-actions CA5): the primary and secondary weapon with damage at Proficiency, the duality
@@ -208,6 +208,7 @@ function AttackForm({ campaignId, map, role, characterId, enemies }: ActionsPane
       help,
       options: [],
       riders: ridersToSend(riders, riderPicks),
+      ...(riseToSend(riders, riderPicks) === false ? { riseToTheChallenge: false } : {}),
     });
     if (!out) return;
     setRollValues((v) => ({ ...v, experienceIds: [] }));
@@ -319,6 +320,10 @@ function Requests({
         r.kind === "afterRoll" ? (
           <li key={r.requestId} className="cma-request">
             <AfterRollPrompt campaignId={campaignId} held={r} gm={gm} />
+          </li>
+        ) : r.kind === "riderPick" ? (
+          <li key={r.requestId} className="cma-request">
+            <RiderPickPrompt campaignId={campaignId} view={r} />
           </li>
         ) : r.kind === "sanction" ? (
           <li key={r.requestId} className="cma-request" data-testid="combat-sanction-waiting">

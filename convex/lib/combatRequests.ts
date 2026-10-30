@@ -16,7 +16,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { appError } from "../../src/lib/errors/app-error";
-import type { AfterRollPayload, MinionOfferPayload, SanctionPayload } from "./validators/combatRequests";
+import type { AfterRollPayload, MinionOfferPayload, RiderPickPayload, SanctionPayload } from "./validators/combatRequests";
 
 /** The most open requests a campaign's reads look at. */
 export const OPEN_SCAN = 200;
@@ -41,6 +41,17 @@ export function openMinionOffer(ctx: MutationCtx, where: Where & { payload: Mini
  */
 export function openAfterRoll(ctx: MutationCtx, where: Where & { payload: AfterRollPayload }): Promise<Id<"combatRequests">> {
   return ctx.db.insert("combatRequests", { ...open(where), kind: "afterRoll" });
+}
+
+/**
+ * DA2 (HF p.8 Death Strike, user 2026-10-30): a damage-phase rider waiting for the attacker's Use (on one creature) or
+ * Pass after the damage is written; answered by `combatActions.riderPick`.
+ */
+export function openRiderPick(
+  ctx: MutationCtx,
+  where: Omit<Where, "encounterId"> & { encounterId?: Id<"encounters">; payload: RiderPickPayload },
+): Promise<Id<"combatRequests">> {
+  return ctx.db.insert("combatRequests", { ...where, status: "open" as const, createdAt: Date.now(), responses: [], kind: "riderPick" });
 }
 
 /** The campaign's open requests, oldest first (bounded). */

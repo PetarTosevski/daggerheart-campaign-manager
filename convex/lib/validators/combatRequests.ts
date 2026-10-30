@@ -31,7 +31,13 @@ import { conditionValidator, effectValidator, traitIdValidator } from "./charact
  * attacker holds a ready, affordable after-roll feature (Patron's Boon, True Strike, …). Resolved by Use or Pass (the
  * player, or the GM's Resolve now); declined when the encounter ends.
  */
-export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"), v.literal("minionOffer"), v.literal("preRoll"), v.literal("afterRoll"));
+/**
+ * `riderPick` (plan drawer-answers DA2, widened; HF p.8 Death Strike, user 2026-10-30): after a PC's attack dealt Severe
+ * damage, a damage-phase rider ("you can mark a Stress to force them to mark an additional Hit Point") waits for the
+ * attacker's Use (on the ONE creature they pick) or Pass. Never applied without this prompt. Resolved by the answer
+ * (`combatActions.riderPick`, the player or the GM); declined when the encounter ends.
+ */
+export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"), v.literal("minionOffer"), v.literal("preRoll"), v.literal("afterRoll"), v.literal("riderPick"));
 
 /** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
 export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"));
@@ -63,6 +69,11 @@ export const sanctionRollOptionsValidator = v.object({
   tideTokens: v.optional(v.number()),
   /** The damage roll's chosen `rollOptions` keys (a weapon attack, CA3; widened). Auto options apply anyway. */
   damageOptions: v.optional(v.array(v.string())),
+  /**
+   * DA2 (widened; CB p.48 Rise to the Challenge, user 2026-10-30): `false` turns off a d20 Hope Die that is on by default
+   * while it applies (the player fishing for a critical). Unset or `true`: on.
+   */
+  riseToTheChallenge: v.optional(v.boolean()),
 });
 
 /** A player's pick for a card use (`NumberChoice` amounts, `choose` / `optional` option ids; card-effects/types.ts). */
@@ -138,6 +149,12 @@ export const sanctionPayloadValidator = v.object({
   characterId: v.id("characters"),
   action: sanctionActionValidator,
   outOfRange: v.array(outOfRangeTargetValidator),
+  /**
+   * DA2 (widened; combat-actions Q1, user 2026-10-30): the tokens of `outOfRange` that a rider added (Hold Them Off, CB
+   * p.38; Surrounded, HF p.10). Approving waives their range; declining drops only them when the attack's own target is in
+   * range.
+   */
+  added: v.optional(v.array(v.id("combatTokens"))),
 });
 
 /** Who must or may answer a hit: the target (armor) or an ally holding an eligible reaction card (Q13). */
@@ -334,6 +351,8 @@ export const afterRollPayloadValidator = v.object({
     targetTokenIds: v.array(v.id("combatTokens")),
     roll: sanctionRollOptionsValidator,
     riders: v.optional(v.array(riderValidator)),
+    /** DA2 (widened): rider-added targets whose range the GM waived (an approved sanction held after its roll). */
+    waived: v.optional(v.array(v.id("combatTokens"))),
   }),
   /** At most 60 dice (a Duality roll with its advantage, help and riders' dice). */
   dice: v.array(v.number()),
@@ -350,8 +369,31 @@ export const afterRollChoiceValidator = v.union(
   v.object({ kind: v.literal("pass") }),
 );
 
+/** The roll a rider rides on, as its result filters read it (a critical counts as a success with Hope, CB p.90). */
+export const hostRollValidator = v.object({ success: v.boolean(), critical: v.boolean(), withHope: v.boolean(), withFear: v.boolean() });
+
+/**
+ * DA2 (widened; HF p.8 Death Strike, user 2026-10-30): a damage-phase rider waiting for the attacker after the damage is
+ * written: Use on ONE of `candidates` (the creatures that took the damage it needs, Severe for Death Strike), or Pass.
+ * The answer logs into the attack's actionLog group (`groupId`), so undoing the attack undoes it. At most 20 candidates.
+ */
+export const riderPickPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("riderPick"),
+  characterId: v.id("characters"),
+  groupId: v.string(),
+  /** The attack's (or card's) public actionLog row; once it is undone the prompt is closed. */
+  entryId: v.id("actionLog"),
+  rider: v.object({ source: v.union(v.literal("card"), v.literal("feature")), id: v.string(), useId: v.string(), name: v.string() }),
+  candidates: v.array(v.id("combatTokens")),
+  hostRoll: hostRollValidator,
+});
+
+/** One answer to a `riderPick` row: use the rider on one candidate, or pass (nothing paid). */
+export const riderPickChoiceValidator = v.union(v.object({ kind: v.literal("use"), tokenId: v.id("combatTokens") }), v.object({ kind: v.literal("pass") }));
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
-export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator, minionOfferPayloadValidator, preRollPayloadValidator, afterRollPayloadValidator);
+export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator, minionOfferPayloadValidator, preRollPayloadValidator, afterRollPayloadValidator, riderPickPayloadValidator);
 
 /**
  * One answer in a reaction window (Q13): `armor` (mark Armor Slots; `slots` above 1 only where a card allows it,
@@ -415,3 +457,5 @@ export type HeldAttack = Infer<typeof heldAttackValidator>;
 export type PreRollChoice = Infer<typeof preRollChoiceValidator>;
 export type AfterRollPayload = Infer<typeof afterRollPayloadValidator>;
 export type AfterRollChoice = Infer<typeof afterRollChoiceValidator>;
+export type RiderPickPayload = Infer<typeof riderPickPayloadValidator>;
+export type RiderPickChoice = Infer<typeof riderPickChoiceValidator>;

@@ -3,6 +3,7 @@
 import "./riders.css";
 
 import type { FunctionReturnType } from "convex/server";
+import { useState } from "react";
 
 import { DiceTiles } from "@/components/party/dice/parts";
 import type { RollRecord } from "@/lib/domain/duality";
@@ -32,8 +33,17 @@ export const riderKey = (o: Pick<RiderOption, "source" | "id" | "useId">) => `${
 
 const EMPTY: RiderPick = { on: false, numbers: {}, options: {}, situations: [], extra: [] };
 
+/** A rider's picks; a default-on rider (Rise to the Challenge, DA2) starts on. */
 export function pickOf(picks: RiderPicks, o: RiderOption): RiderPick {
-  return picks[riderKey(o)] ?? EMPTY;
+  return picks[riderKey(o)] ?? (o.defaultOn ? { ...EMPTY, on: true } : EMPTY);
+}
+
+/**
+ * DA2 (CB p.48 Rise to the Challenge, user 2026-10-30): the d20 Hope Die is on by default while it applies; `false` when
+ * the player switched a default-on rider off (fishing for a critical), else undefined (the server's default: on).
+ */
+export function riseToSend(options: readonly RiderOption[], picks: RiderPicks): false | undefined {
+  return options.some((o) => o.defaultOn && !pickOf(picks, o).on) ? false : undefined;
 }
 
 /** The most extra targets a rider allows with these picks (Surrounded: as many as the Hope picked). */
@@ -51,7 +61,8 @@ export function extraMax(o: RiderOption, pick: RiderPick): number {
 export function ridersToSend(options: readonly RiderOption[], picks: RiderPicks): { source: "card" | "feature"; id: string; useId: string; choices: { id: string; value: number | string | string[] }[] }[] {
   return options.flatMap((o) => {
     const pick = pickOf(picks, o);
-    if (!pick.on || !o.ready) return [];
+    // A default-on rider is applied by the server; only switching it off is sent (`riseToSend`).
+    if (!pick.on || !o.ready || o.defaultOn) return [];
     const choices: { id: string; value: number | string | string[] }[] = [];
     for (const n of o.numbers) choices.push({ id: n.id, value: pick.numbers[n.id] ?? n.min });
     for (const opt of o.options) {
@@ -93,7 +104,7 @@ export function RiderToggles({ options, picks, onChange, enemies }: { options: r
               <label className="cma-rider-toggle" htmlFor={id}>
                 <input id={id} type="checkbox" checked={pick.on && o.ready} disabled={!o.ready} onChange={(e) => set(o, { on: e.target.checked })} />
                 <span className="cma-rider-name">{o.name}</span>
-                <span className="cm-muted cma-small">{o.ready ? meta : `Used · ${o.resetLabel ?? "comes back later"}`}</span>
+                <span className="cm-muted cma-small">{o.ready ? (o.defaultOn ? `${meta} · On while it applies; untick to roll the usual d12` : meta) : `Used · ${o.resetLabel ?? "comes back later"}`}</span>
               </label>
               {pick.on && o.ready ? (
                 <div className="cma-rider-body">
@@ -146,6 +157,58 @@ export function RiderToggles({ options, picks, onChange, enemies }: { options: r
         })}
       </ul>
     </fieldset>
+  );
+}
+
+/** A damage-phase rider prompt (DA2, Death Strike): its name, costs and the creatures it may hit, by name (U1). */
+export type RiderPickView = {
+  requestId: Id<"combatRequests">;
+  name: string;
+  costs: readonly string[];
+  candidates: readonly { tokenId: Id<"combatTokens">; name: string }[];
+};
+
+/**
+ * DA2 (HF p.8 Death Strike: "When you deal Severe damage to a creature, you can mark a Stress to force them to mark an
+ * additional Hit Point"; user 2026-10-30): Use / Pass, and with several creatures a pick of the ONE it hits. The GM can
+ * answer for the player.
+ */
+export function RiderPickPrompt({ campaignId, view, onDone }: { campaignId: Id<"campaigns">; view: RiderPickView; onDone?: () => void }) {
+  const answer = useIntent(api.combatActions.riderPick);
+  const [chosen, setChosen] = useState<Id<"combatTokens"> | null>(view.candidates.length === 1 ? view.candidates[0]!.tokenId : null);
+  async function send(choice: { kind: "use"; tokenId: Id<"combatTokens"> } | { kind: "pass" }) {
+    const out = await answer.fire({ campaignId, requestId: view.requestId, choice });
+    if (out) onDone?.();
+  }
+  const several = view.candidates.length > 1;
+  return (
+    <section className="cma-afterroll" aria-label={view.name} data-testid="combat-rider-pick">
+      <p className="m-0">
+        <strong>{view.name}</strong>
+        {view.costs.length > 0 ? ` · ${view.costs.join(", ")}` : ""}
+        {several ? ": pick one creature" : `: ${view.candidates[0]?.name ?? "the target"}`}
+      </p>
+      {several ? (
+        <div className="cma-chips" role="group" aria-label={`${view.name}: pick one`}>
+          {view.candidates.map((c) => (
+            <button key={c.tokenId} type="button" className="cm-chip cma-pick-chip" aria-pressed={chosen === c.tokenId} onClick={() => setChosen(c.tokenId)}>
+              {c.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div className="cma-row cma-afterroll-actions">
+        <button type="button" className="cm-go" disabled={answer.pending || chosen === null} onClick={() => chosen && void send({ kind: "use", tokenId: chosen })}>
+          Use {view.name}
+        </button>
+        <button type="button" className="cm-btn" disabled={answer.pending} onClick={() => void send({ kind: "pass" })}>
+          Pass
+        </button>
+      </div>
+      <p aria-live="polite" className="cma-error">
+        {answer.error}
+      </p>
+    </section>
   );
 }
 

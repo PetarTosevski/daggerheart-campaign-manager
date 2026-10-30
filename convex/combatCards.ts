@@ -17,6 +17,8 @@ import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/charact
 import {
   attackScene,
   changeFear,
+  damagePrompts,
+  defaultOnRiders,
   emptyFolds,
   foldInto,
   pickRiders,
@@ -24,6 +26,7 @@ import {
   resultHolds,
   runRiderPart,
   weaponIn,
+  withHopeSides,
   type AttackScene,
   type Folds,
   type Host,
@@ -31,7 +34,7 @@ import {
   type RiderEnv,
   type RiderRun,
 } from "./lib/combatActions";
-import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openRequests } from "./lib/combatRequests";
+import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openRequests, openRiderPick } from "./lib/combatRequests";
 import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
 import { campaignMutation, campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
@@ -370,6 +373,42 @@ function hostRollOf(plan: RunPlan): HostRoll {
   return { success: plan.success, critical: r?.critical ?? false, withHope: r?.withHope ?? false, withFear: r?.withFear ?? false };
 }
 
+/** The running encounter of a use's enemy targets, if any. */
+function encounterOf(built: BuiltRun): Id<"encounters"> | undefined {
+  const enemy = built.targets.find((t) => t.kind === "enemy");
+  return enemy?.kind === "enemy" ? enemy.encounter._id : undefined;
+}
+
+/**
+ * DA2 (Rise to the Challenge, CB p.48: "roll a d20 as your Hope Die"): runs the card with its Duality roll's Hope Die drawn
+ * from `sides`. The card runner draws its dice in its own order, so a first run finds the Hope Die's draw (the 12-sided
+ * pair matching the roll's Hope and Fear Dice), and the second run draws that one from `sides`, keeping the draws before
+ * it (and every kept die when `kept` replays a run: its Hope Die is already a d20). Without `sides`: one plain run.
+ */
+function runWithHopeDie(built: BuiltRun, pick: CardPick, sides: number | undefined, kept: readonly number[] | null): RunOutcome {
+  if (sides === undefined || sides === 12) return runCard(built, pick, kept ? replaying(kept, rollDie) : rollDie);
+  const calls: { sides: number; value: number }[] = [];
+  const probeBase = kept ? replaying(kept, rollDie) : rollDie;
+  const probe = runCard(built, pick, (s) => {
+    const value = probeBase(s);
+    calls.push({ sides: s, value });
+    return value;
+  });
+  const info = probe.kind === "plan" ? probe.plan.roll : null;
+  const at = info ? calls.findIndex((c, i) => c.sides === 12 && c.value === info.hope && calls[i + 1]?.sides === 12 && calls[i + 1]?.value === info.fear) : -1;
+  if (at < 0) return probe;
+  const prefix = kept ?? calls.slice(0, at).map((c) => c.value);
+  let n = 0;
+  const inner = replaying(prefix, rollDie);
+  const outcome = runCard(built, pick, (s) => inner(n++ === at && s === 12 ? sides : s));
+  if (outcome.kind === "plan" && outcome.plan.roll) {
+    const roll = outcome.plan.roll;
+    roll.record = withHopeSides(roll.record, sides);
+    for (const st of outcome.plan.steps) if (st.kind === "roll") st.roll.record = withHopeSides(st.roll.record, sides);
+  }
+  return outcome;
+}
+
 type CardRiderOutcome = { kind: "plan"; built: BuiltRun; plan: RunPlan; req: UseRequest; sheets: RiderSheets; post: (entryId: Id<"actionLog">) => Promise<void> } | { kind: "needsChoice"; outcome: Extract<RunOutcome, { kind: "needsChoice" }> };
 
 /**
@@ -378,11 +417,14 @@ type CardRiderOutcome = { kind: "plan"; built: BuiltRun; plan: RunPlan; req: Use
  * dice), and a `post` step that writes the riders' effects on the creatures and the damage-phase riders after the card's
  * own rows.
  */
-async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonly Rider[], actorId: Id<"users">): Promise<CardRiderOutcome> {
+async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonly Rider[], actorId: Id<"users">, riseOff = false): Promise<CardRiderOutcome> {
   if (riders.length > MAX_RIDERS_PER_ATTACK) throw appError("INVALID", `At most ${MAX_RIDERS_PER_ATTACK} riders.`);
   const parsed = parseChoices(req.choices);
   const host = cardHost(req, parsed.weapon);
-  const picked = pickRiders(req.sheet, req.campaign, host, riders);
+  // DA2: damage-phase riders (Death Strike) are prompts after the card's damage, never run from a toggle; default-on
+  // riders (Rise to the Challenge, CB p.48) join unless turned off.
+  const chosen = pickRiders(req.sheet, req.campaign, host, riders).filter((r) => r.phase !== "damage");
+  const picked = [...chosen, ...defaultOnRiders(req.sheet, req.campaign, host, riseOff, chosen)];
   const rec = recorder(rollDie);
   const fear = await campaignFearState(ctx, req.campaign._id);
   const env: RiderEnv = { ctx, campaign: req.campaign, character: req.character, scene: req.scene, host, gmFear: fear.fear, rng: rec.rng, rollUsedExperience: (req.roll.experienceIds ?? []).length > 0 };
@@ -402,16 +444,18 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
   if (folds.addTargets.length > 0) throw appError("INVALID", "A rider can't add targets to a card's roll yet.");
 
   // The card with the before-roll riders' additions (the roll's bonus and advantage, the damage changes).
-  const run = async (r: UseRequest, f: Folds, rng: typeof rollDie) => {
+  const run = async (r: UseRequest, f: Folds, kept: readonly number[] | null) => {
     const built = await build(ctx, r);
     const roll = built.context.roll ?? {};
     built.context.roll = { ...roll, modifier: (roll.modifier ?? 0) + f.modifier, advantage: (roll.advantage ?? 0) + f.advantage };
-    return { built, outcome: runCard(built, r.pick, rng) };
+    const ran = runWithHopeDie(built, r.pick, f.hopeDie, kept);
+    return { built, outcome: ran };
   };
   const req1: UseRequest = { ...req, sheet, pick: withFolds(req.pick, folds) };
-  const first = await run(req1, folds, rec.rng);
+  const first = await run(req1, folds, null);
   if (first.outcome.kind === "needsChoice") return { kind: "needsChoice", outcome: first.outcome };
-  const dice = [...rec.values];
+  // The card's own dice (the riders' are not replayed into it).
+  const dice = [...first.outcome.dice];
   let built = first.built;
   let plan = first.outcome.plan;
   const hostRoll = hostRollOf(plan);
@@ -440,7 +484,7 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
   if (merged !== folds && (later.damageAdd !== 0 || later.proficiency !== 0 || later.multiply !== 1 || later.extraHp !== 0 || later.minimumSeverity)) {
     // The same dice: the card's roll and damage don't change, only what the riders add to them.
     req2 = { ...req, sheet, pick: withFolds(req.pick, merged) };
-    const again = await run(req2, folds, replaying(dice, rollDie));
+    const again = await run(req2, folds, dice);
     if (again.outcome.kind === "needsChoice") return { kind: "needsChoice", outcome: again.outcome };
     built = again.built;
     plan = again.outcome.plan;
@@ -465,15 +509,27 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
       runs.push(ran);
       now = ran.sheet;
     }
-    for (const r of picked.filter((x) => x.phase === "damage")) {
-      const severity = r.trigger.kind === "whenTargetMarksHp" || r.trigger.kind === "whenEnemyTakesDamage" ? r.trigger.severity : undefined;
-      const hitStep = plan.steps.find((st) => st.kind === "damage" && st.result.hpMarked > 0 && (severity === undefined || st.result.severity === severity));
-      const tokenId = hitStep && hitStep.kind === "damage" ? built.creatures.get(hitStep.result.targetId)?.tokenId : undefined;
-      if (tokenId === undefined || !(await standing(tokenId))) continue;
-      const ran = await runRiderPart(env, r, now, "whole", hostRoll, [tokenId], undefined, tokenId);
-      if (ran === null || ran === "empty") continue;
-      runs.push(ran);
-      now = ran.sheet;
+    // DA2 (HF p.8 Death Strike; user 2026-10-30): a damage-phase rider is a Use / Pass prompt, with a pick of the ONE
+    // creature when several took the damage it needs; never applied without it.
+    if (groupId !== undefined) {
+      for (const r of damagePrompts(req.sheet, req.campaign, host)) {
+        const severity = r.trigger.kind === "whenTargetMarksHp" || r.trigger.kind === "whenEnemyTakesDamage" ? r.trigger.severity : undefined;
+        const candidates: Id<"combatTokens">[] = [];
+        for (const st of plan.steps) {
+          if (st.kind !== "damage" || st.result.hpMarked <= 0 || (severity !== undefined && st.result.severity !== severity)) continue;
+          const c = built.creatures.get(st.result.targetId);
+          if (c?.kind !== "enemy" || candidates.includes(c.tokenId) || !(await standing(c.tokenId))) continue;
+          candidates.push(c.tokenId);
+        }
+        if (candidates.length === 0) continue;
+        await openRiderPick(ctx, {
+          campaignId: req.campaign._id,
+          ...(encounterOf(built) ? { encounterId: encounterOf(built)! } : {}),
+          mapId: req.scene.map._id,
+          createdBy: actorId,
+          payload: { schemaVersion: 1, kind: "riderPick", characterId: req.character._id, groupId, entryId, rider: { source: r.source, id: r.id, useId: r.useId, name: r.name }, candidates, hostRoll },
+        });
+      }
     }
     if (runs.length === 0) return;
     const writes: InstanceWrite[] = [];
@@ -518,7 +574,20 @@ const useArgs = {
   roll: v.optional(cardRollValidator),
   /** SD5: riders taken with the card's roll (Rage Up on Whirlwind). */
   riders: v.optional(v.array(riderValidator)),
+  /**
+   * DA2 (CB p.48 Rise to the Challenge, user 2026-10-30): the d20 Hope Die is ON while 2 or fewer Hit Points are unmarked
+   * (an action roll); `false` turns it off for this roll.
+   */
+  riseToTheChallenge: v.optional(v.boolean()),
 };
+
+/** DA2: whether a default-on rider (Rise to the Challenge) applies to this card's roll now, unless turned off. */
+function riseApplies(req: UseRequest, off: boolean): boolean {
+  const roll = req.pick.use.roll;
+  if (off || roll === undefined || roll.kind === "adversaryAttack" || roll.kind === "reaction") return false;
+  const host = cardHost(req, parseChoices(req.choices).weapon);
+  return defaultOnRiders(req.sheet, req.campaign, host, false, []).length > 0;
+}
 
 /**
  * Uses a loadout card from the character's PC token on the live map (COMBAT_MAP_NOT_FOUND, COMBAT_TOKEN_NOT_FOUND).
@@ -540,8 +609,9 @@ export const useCard = keyedCampaignMutation({
       const pick = pickCard(sheet, args.cardId, args.spell);
       const req: UseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: args.targetTokenIds, choices: args.choices, roll: args.roll ?? {} };
       const riders = args.riders ?? [];
-      if (riders.length > 0) {
-        const withRiders = await cardWithRiders(ctx, req, riders, ctx.user._id);
+      const riseOff = args.riseToTheChallenge === false;
+      if (riders.length > 0 || riseApplies(req, riseOff)) {
+        const withRiders = await cardWithRiders(ctx, req, riders, ctx.user._id, riseOff);
         if (withRiders.kind === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.outcome.asks };
         if (withRiders.built.outOfRange.length === 0) {
           const result = await resolveUse(ctx, withRiders.req, withRiders.built, withRiders.plan, ctx.user._id, withRiders.sheets);
@@ -563,7 +633,15 @@ export const useCard = keyedCampaignMutation({
             schemaVersion: 1,
             kind: "sanction",
             characterId: character._id,
-            action: { kind: "card", cardId: args.cardId, useId: pick.use.id, targetTokenIds: args.targetTokenIds, choices: args.choices, ...(args.roll ? { roll: args.roll } : {}), riders },
+            action: {
+              kind: "card",
+              cardId: args.cardId,
+              useId: pick.use.id,
+              targetTokenIds: args.targetTokenIds,
+              choices: args.choices,
+              ...(args.roll || riseOff ? { roll: { ...args.roll, ...(riseOff ? { riseToTheChallenge: false } : {}) } } : {}),
+              ...(riders.length > 0 ? { riders } : {}),
+            },
             outOfRange: withRiders.built.outOfRange,
           },
         });
@@ -628,8 +706,9 @@ export const sanction = keyedGmMutation({
       const scene = await attackScene(ctx, ctx.campaign, character, row.mapId);
       const pick = pickCard(sheet, action.cardId, action.useId);
       const req: UseRequest = { campaign: ctx.campaign, character, sheet, scene, pick, targetTokenIds: action.targetTokenIds, choices: action.choices, roll: action.roll ?? {} };
-      if (action.riders && action.riders.length > 0) {
-        const withRiders = await cardWithRiders(ctx, req, action.riders, row.createdBy);
+      const riseOff = action.roll?.riseToTheChallenge === false;
+      if ((action.riders && action.riders.length > 0) || riseApplies(req, riseOff)) {
+        const withRiders = await cardWithRiders(ctx, req, action.riders ?? [], row.createdBy, riseOff);
         if (withRiders.kind === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.outcome.asks };
         const result = await resolveUse(ctx, withRiders.req, withRiders.built, withRiders.plan, row.createdBy, withRiders.sheets);
         await withRiders.post(result.entryId);

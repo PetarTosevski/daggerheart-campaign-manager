@@ -6,6 +6,8 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction } from "./lib/actionLog";
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
 import {
+  addedOutOfRange,
+  answerRiderPick,
   attackDuality,
   attackRollFields,
   attackScene,
@@ -30,7 +32,7 @@ import {
 import { loadCombatMap } from "./lib/combatMaps";
 import { loadScene, viewOf } from "./lib/combatVision";
 import { closeRequest, encounterRunning, groupOffer, loadOpenRequest, openSanction } from "./lib/combatRequests";
-import { afterRollChoiceValidator, MAX_RIDERS_PER_ATTACK, riderValidator } from "./lib/validators/combatRequests";
+import { afterRollChoiceValidator, MAX_RIDERS_PER_ATTACK, riderPickChoiceValidator, riderValidator } from "./lib/validators/combatRequests";
 import { featureScope } from "./lib/featureScope";
 import { campaignQuery, keyedCampaignMutation } from "./lib/functions";
 import { prepareDuality, rules, type Loaded } from "./lib/rolls";
@@ -71,6 +73,7 @@ function rollOf(args: AttackRoll): AttackRoll {
     ...(args.damageOptions !== undefined ? { damageOptions: args.damageOptions } : {}),
     ...(args.slayerDice !== undefined ? { slayerDice: args.slayerDice } : {}),
     ...(args.tideTokens !== undefined ? { tideTokens: args.tideTokens } : {}),
+    ...(args.riseToTheChallenge !== undefined ? { riseToTheChallenge: args.riseToTheChallenge } : {}),
   };
 }
 
@@ -103,21 +106,30 @@ export const attack = keyedCampaignMutation({
       const weapon = equippedWeapon(loaded.sheet, slot);
       const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds);
       const roll = rollOf(options);
+      const picked = pickRiders(loaded.sheet, ctx.campaign, hostOf(weapon, slot, roll.trait), riders);
       const outOfRange = targets.filter((t) => !t.check.inRange);
-      if (outOfRange.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders });
+      // DA2 (combat-actions Q1, user 2026-10-30): a rider's extra target out of its range waits for the GM too.
+      const added = addedOutOfRange(scene, weapon, picked);
+      if (outOfRange.length === 0 && added.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders });
 
       // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs,
       // a rider that doesn't ride on this attack).
       assertCanAct(loaded.character, loaded.sheet);
       rules(() => prepareDuality(loaded.sheet, attackDuality(weapon, roll, targets.some((t) => t.sight.cover)), featureScope(ctx.campaign), null));
-      pickRiders(loaded.sheet, ctx.campaign, hostOf(weapon, slot, roll.trait), riders);
-      const bands = outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band }));
+      const bands = [...outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band })), ...added.filter((a) => !outOfRange.some((t) => t.token._id === a.tokenId))];
       const requestId = await openSanction(ctx, {
         campaignId: ctx.campaign._id,
         encounterId: targets[0]!.encounter._id,
         mapId: scene.map._id,
         createdBy: ctx.user._id,
-        payload: { schemaVersion: 1, kind: "sanction", characterId, action: { kind: "attack", slot, targetTokenIds, roll, ...(riders.length > 0 ? { riders } : {}) }, outOfRange: bands },
+        payload: {
+          schemaVersion: 1,
+          kind: "sanction",
+          characterId,
+          action: { kind: "attack", slot, targetTokenIds, roll, ...(riders.length > 0 ? { riders } : {}) },
+          outOfRange: bands,
+          ...(added.length > 0 ? { added: added.map((a) => a.tokenId) } : {}),
+        },
       });
       return { status: "pending" as const, requestId, outOfRange: bands };
     }),
@@ -197,10 +209,35 @@ export const afterRoll = keyedCampaignMutation({
         roll: rollFromStored(p.action.roll),
         riders: p.action.riders ?? [],
         held: { dice: p.dice, answer },
+        ...(p.action.waived ? { waived: p.action.waived } : {}),
       });
       if (result.status !== "resolved") throw appError("INVALID");
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return result;
+    }),
+});
+
+/**
+ * DA2 (HF p.8 Death Strike: "When you deal Severe damage to a creature, you can mark a Stress to force them to mark an
+ * additional Hit Point"; user 2026-10-30): answers a damage-phase rider prompt after an attack: `use` on the ONE creature
+ * picked from its candidates (its cost paid now), or `pass`. The attacker's player or the GM; another player FORBIDDEN.
+ * Logged into the attack's group (undoing the attack undoes it). A prompt whose encounter ended, or whose attack was
+ * undone, is declined. REQUEST_NOT_OPEN once answered; NOT_FOUND for another campaign's or another kind of request.
+ */
+export const riderPick = keyedCampaignMutation({
+  need: "view",
+  args: { requestId: v.id("combatRequests"), choice: riderPickChoiceValidator },
+  returns: v.object({ status: v.union(v.literal("resolved"), v.literal("passed"), v.literal("declined")) }),
+  handler: async (ctx, { requestId, choice }) =>
+    ctx.once("combat_rider_pick", { requestId, choice }, async () => {
+      const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
+      if (row.payload.kind !== "riderPick") throw appError("NOT_FOUND");
+      const loaded = await attacker(ctx, row.payload.characterId);
+      if (!(await encounterRunning(ctx, row))) {
+        await closeRequest(ctx, row._id, "declined", ctx.user._id);
+        return { status: "declined" as const };
+      }
+      return { status: await answerRiderPick(ctx, loaded, row, choice, ctx.user._id) };
     }),
 });
 

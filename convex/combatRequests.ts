@@ -4,10 +4,11 @@ import { appError } from "../src/lib/errors/app-error";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { readSheet } from "./lib/characterSheet";
-import { attackScene, awaitingAttackValidator, checkTargets, equippedWeapon, resolveAttack, resolvedAttackValidator, rollFromStored } from "./lib/combatActions";
+import { attackScene, awaitingAttackValidator, checkTargets, equippedWeapon, resolveAttack, resolvedAttackValidator, rollFromStored, withoutTargets } from "./lib/combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
 import { featureEffect } from "../src/lib/srd/feature-effects/index";
+import { cardEffect } from "../src/lib/srd/card-effects/index";
 import { costText } from "./lib/featureDrawer";
 import { rangeBandValidator } from "./lib/validators/combatRequests";
 import { rollValidator } from "./lib/validators/actionLog";
@@ -39,11 +40,15 @@ export const sanction = keyedGmMutation({
     ctx.once("combat_sanction", { requestId, approve }, async () => {
       const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
       if (row.payload.kind !== "sanction") throw appError("NOT_FOUND");
-      if (!approve || !(await encounterRunning(ctx, row))) {
+      const { characterId, action, outOfRange } = row.payload;
+      const added = new Set<string>(row.payload.added ?? []);
+      // DA2 (user 2026-10-30): when only a rider's extra targets are out of range, Decline drops those targets only and the
+      // attack resolves without them (the attack's own target is in range).
+      const dropOnly = !approve && added.size > 0 && outOfRange.every((o) => added.has(o.tokenId));
+      if ((!approve && !dropOnly) || !(await encounterRunning(ctx, row))) {
         await closeRequest(ctx, row._id, "declined", ctx.user._id);
         return { status: "declined" as const };
       }
-      const { characterId, action } = row.payload;
       if (action.kind !== "attack") throw appError("INVALID", "Card uses are answered from the card's own request.");
       const character = await ctx.db.get("characters", characterId);
       if (character === null || character.campaignId !== ctx.campaign._id || row.mapId === undefined) throw appError("COMBAT_TARGET_INVALID");
@@ -51,7 +56,9 @@ export const sanction = keyedGmMutation({
       const scene = await attackScene(ctx, ctx.campaign, character, row.mapId);
       const weapon = equippedWeapon(loaded.sheet, action.slot);
       const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, action.targetTokenIds);
-      const result = await resolveAttack(ctx, { loaded, actorId: row.createdBy, scene, weapon, slot: action.slot, targets, roll: rollFromStored(action.roll), riders: action.riders ?? [] });
+      const riders = dropOnly ? withoutTargets(action.riders ?? [], added) : (action.riders ?? []);
+      const waived = dropOnly ? [] : (row.payload.added ?? []);
+      const result = await resolveAttack(ctx, { loaded, actorId: row.createdBy, scene, weapon, slot: action.slot, targets, roll: rollFromStored(action.roll), riders, waived });
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return result;
     }),
@@ -91,6 +98,17 @@ const requestView = v.union(
     roll: rollValidator,
     targets: v.array(v.object({ tokenId: v.id("combatTokens"), name: v.string(), hit: v.boolean() })),
     options: v.array(v.object({ featureId: v.string(), useId: v.string(), name: v.string(), costs: v.array(v.string()) })),
+  }),
+  /** DA2 (HF p.8 Death Strike): a damage-phase rider waiting for Use on one candidate, or Pass. Names only (U1). */
+  v.object({
+    kind: v.literal("riderPick"),
+    requestId: v.id("combatRequests"),
+    characterId: v.id("characters"),
+    characterName: v.string(),
+    createdAt: v.number(),
+    name: v.string(),
+    costs: v.array(v.string()),
+    candidates: v.array(namedToken),
   }),
 );
 
@@ -159,6 +177,21 @@ export const mine = campaignQuery({
           roll: p.roll,
           targets,
           options,
+        });
+      } else if (p.kind === "riderPick") {
+        const candidates = [];
+        for (const tokenId of p.candidates) candidates.push({ tokenId, name: await tokenName(ctx, row, tokenId) });
+        const uses = p.rider.source === "card" ? cardEffect(p.rider.id)?.uses : featureEffect(p.rider.id)?.uses;
+        const use = uses?.find((u) => u.id === p.rider.useId);
+        views.push({
+          kind: "riderPick" as const,
+          requestId: row._id,
+          characterId: p.characterId,
+          characterName: await characterName(ctx, row, p.characterId),
+          createdAt: row.createdAt,
+          name: p.rider.name,
+          costs: (use?.costs ?? []).map(costText),
+          candidates,
         });
       } else if (p.kind === "minionOffer") {
         const candidates = [];
