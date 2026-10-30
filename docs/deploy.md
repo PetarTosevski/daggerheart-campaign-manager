@@ -51,8 +51,8 @@ once a deployment is live (certificates issue automatically within minutes).
 5. Create a Resend API key restricted to sending. Store it only in the Convex production env (step 4), never in Vercel
    or git. The sender address will be on the verified domain, for example `Duality Heart <noreply@dualityheart.com>`.
 
-Note: the sign-up code email itself (Convex Auth `Password` provider with `verify` and a Resend provider) is bead
-dcm-bxp.128 and is not built yet. Its exact env var name is fixed when it lands; update step 4 then.
+The sign-up code email (Convex Auth `Password` provider with `verify`, `convex/lib/authEmail.ts`) and the campaign
+invite email (`convex/lib/inviteEmail.ts`) both send through this key as `AUTH_RESEND_KEY`, from `MAIL_FROM` (step 4).
 
 ## 3. Convex production deployment
 
@@ -75,12 +75,13 @@ Found by grepping `env.*` / `process.env.*` in `convex/`, `src/`, `scripts/`.
 | Variable | Needed | Who | Notes |
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | yes | already set | Lorekeeper, map generation, photo import. |
-| `SITE_URL` | yes | agent | `https://dualityheart.com`. Convex Auth redirects here after OAuth. Dev has its own value; do not copy it. |
+| `SITE_URL` | yes | agent | `https://dualityheart.com`. Convex Auth redirects here after OAuth; invite emails link to `<SITE_URL>/signin`. Dev has its own value; do not copy it. |
 | `JWT_PRIVATE_KEY` | yes | agent generates | RS256 private key (PKCS8). Generate fresh for production, see below. |
 | `JWKS` | yes | agent generates | Matching public JWKS. |
 | `AUTH_GOOGLE_ID` | yes | **USER** | Google OAuth client id (see step 5). |
 | `AUTH_GOOGLE_SECRET` | yes | **USER** | Google OAuth client secret. |
-| Resend key | yes | **USER** | Name decided in dcm-bxp.128 (Convex Auth convention is `AUTH_RESEND_KEY`). Only in Convex env. |
+| `AUTH_RESEND_KEY` | yes | **USER** | Resend API key (step 2). Sign-up, password-reset and invite emails. Only in Convex env. |
+| `MAIL_FROM` | yes | agent | Sender on the verified domain, e.g. `Duality Heart <noreply@dualityheart.com>`. |
 | `CONVEX_SITE_URL` | automatic | none | Provided by Convex itself to `convex/auth.config.ts`. Do not set. |
 | `LOREKEEPER_MODEL`, `LOREKEEPER_DAILY_QUESTIONS`, `LOREKEEPER_CAMPAIGN_MONTHLY_USD`, `LOREKEEPER_MONTHLY_USD`, `ANTHROPIC_MODEL` | optional | user | Defaults are fine; see `docs/lorekeeper.md`. |
 
@@ -104,8 +105,9 @@ Setting `JWT_PRIVATE_KEY` and `JWKS` before the first production sign-in matters
 
 ### Convex production: must NOT be set
 
-- `ALLOWED_EMAILS`, `GM_EMAILS`: the invite allowlist. (2026-10-26: the user chose an invite-only launch first, so `GM_EMAILS` IS set on prod, copied from dev; remove it when open sign-up lands.) Open sign-up (dcm-bxp.128) deletes it from the code; until
-  that lands, an unset list means nobody can sign up. **Blocker: do not launch before dcm-bxp.128 is merged.**
+- `ALLOWED_EMAILS`, `GM_EMAILS`: the old invite allowlist. Sign-up is open (dcm-bxp.128) and the code no longer reads
+  them; `GM_EMAILS` was set on prod for the invite-only launch, so remove it:
+  `npx convex env remove --prod GM_EMAILS` (and `ALLOWED_EMAILS` if listed).
 - `SEED_ACCOUNTS`, `ALLOW_SEED_ACCOUNTS`, `E2E_AUTH_ENABLED`, `E2E_AUTH_SECRET`, `LOREKEEPER_FAKE_MODEL`:
   test rails, off in production.
 
@@ -227,7 +229,7 @@ the last line of defence.
   `convex deploy` restores the old functions. Data migrations are one way for new-shape rows: restore from a Convex
   backup if needed. Take one before step 7: Convex dashboard, production, Settings, Backups, "Backup now"
   (**USER**), and note the time.
-- **Sign-in broken** (auth env wrong): fix `SITE_URL`, `AUTH_GOOGLE_*`, the Resend key with
+- **Sign-in broken** (auth env wrong): fix `SITE_URL`, `AUTH_GOOGLE_*`, `AUTH_RESEND_KEY`, `MAIL_FROM` with
   `npx convex env set --prod`; no redeploy needed. Never regenerate `JWT_PRIVATE_KEY`/`JWKS` as a fix, it signs
   everyone out.
 - **Lorekeeper cost runaway**: `npx convex env set --prod LOREKEEPER_DAILY_QUESTIONS 0` or lower the monthly caps.
