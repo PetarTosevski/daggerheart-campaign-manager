@@ -488,3 +488,97 @@ waves:
           - "The druid's use pays the Stress and creates the prompt (rolledBy ally from DA0); the ally's drawer shows it with Agility / Strength, the target pick and the optional Hope second target (half damage, rounded up, Q6); the GM sees it in the pending list and can cancel it; public rows hit / miss only (U1); undo restores both sheets and the instances"
           - "Authz rows for the new functions in prompts.entries.ts; e2e: druid in Beastform throws, ally rolls from the drawer, a Bandit takes damage; at desktop and 390 px"
           - "pnpm lint, typecheck, vitest and tests/e2e/combat-cannonball.spec.ts pass; tracer-guard passes"
+  # ---------------------------------------------------------------- wave 5: answers given 2026-10-30 after the plan (beads .53, .54) and DA9's leftovers
+  - wave: 5
+    tracers:
+      - id: DA15
+        title: Oasis rerolls are a party pool, one per Duneborne; each player closes their own Oasis panel (dcm-bxp.99.19.54)
+        size: M
+        goal: Each Duneborne in the party adds exactly one reroll to a party pool usable on anyone's downtime die (keep higher); a die can take several rerolls while the pool lasts; each holder closes their own panel, which withdraws their unused reroll.
+        depends_on: []
+        owns:
+          - convex/rests.ts
+          - convex/lib/validators/rests.ts
+          - convex/tables/rests.ts
+          - src/lib/domain/rest/feature-moves.ts
+          - src/components/party/rest/**
+          - tests/convex/rests-features.test.ts
+          - tests/unit/rest-feature-moves.test.ts
+          - tests/convex/authz/play.entries.ts
+          - tests/e2e/rest.spec.ts
+          - docs/tasks/TASK-DA-DA15.md
+        reads: [docs/tasks/TASK-DA-DA5.md, docs/tasks/TASK-SD-SD-R.md, docs/best-practices.md]
+        acceptance:
+          - "USER 2026-10-30 (HF p.27 'During a short rest, you or an ally can reroll a die used for a downtime move and take the higher result'): rerolls = number of Oasis holders at the end of the short rest; any holder's 'Reroll (keep higher)' spends one from the pool on ANY party member's downtime die; the same die can be rerolled again while rerolls remain (keep the higher each time); when the pool is empty nobody can reroll"
+          - "Each holder closes their own Oasis panel (replaces DA5's GM-wide close): closing withdraws that holder's unused reroll from the pool; when every holder has closed, the window is over; rests.closeResults is removed or kept only as the GM's 'close for everyone' (state which in the task doc); starting the next rest still ends the window; server-enforced"
+          - "Stored fields widen only (optional); authz rows for every changed/new public function; undo reverts rerolls with the rest's group"
+          - "pnpm lint, typecheck, vitest, tests/e2e/rest.spec.ts and tracer-guard pass"
+      - id: DA16
+        title: The GM can move Purposeful Design's +1 to another Experience (dcm-bxp.99.19.54)
+        size: S
+        goal: The player picks the Purposeful Design Experience once; the GM can move it later as a correction; removing that Experience drops the +1 and offers the pick again.
+        depends_on: []
+        owns:
+          - convex/characters.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sections/identity.tsx
+          - tests/convex/purposeful-design.test.ts
+          - tests/unit/purposeful-design.test.ts
+          - tests/convex/authz/characters.entries.ts
+          - docs/tasks/TASK-DA-DA16.md
+        reads: [docs/tasks/TASK-DA-DA11.md, src/lib/domain/dice/index.ts, docs/best-practices.md]
+        acceptance:
+          - "choosePurposefulDesign (or a sibling) lets the GM (permissionFor need edit as GM) move the flag to another Experience of a Clank holder; the owner still picks only once; INVALID on a non-holder; one undoable actionLog row"
+          - "Removing the chosen Experience drops the flag and the sheet offers the pick again (as built - pin it)"
+          - "The +1 may take the shown value to +11 (level-up cap counts the stored value - pin it)"
+          - "authz rows updated; pnpm lint, typecheck, vitest, tests/e2e/character-sheet.spec.ts and tracer-guard pass"
+      - id: DA17
+        title: Several disadvantage sources on one target count once (dcm-bxp.99.19.53)
+        size: S
+        goal: An adversary attack against a target with Sturdy and Harrowing (or any several disadvantage sources) applies one disadvantage to that target, cancelled by one advantage.
+        depends_on: []
+        owns:
+          - src/lib/domain/adversary-actions/attack.ts
+          - convex/lib/adversaryActions.ts
+          - tests/unit/adversary-actions/attack-per-target.test.ts
+          - tests/convex/adversary-attack-defences.test.ts
+          - docs/tasks/TASK-DA-DA17.md
+        reads: [docs/tasks/TASK-DA-DA1.md, src/lib/domain/dice/index.ts]
+        acceptance:
+          - "USER 2026-10-30: disadvantage from several sources on the same target counts once (on/off), and one advantage source cancels it; per-target split from DA1 kept; tests for Sturdy+Harrowing vs one and two advantage sources"
+          - "pnpm lint, typecheck, vitest, tests/e2e/combat-adversary.spec.ts and tracer-guard pass"
+  - wave: 6
+    tracers:
+      - id: DA18
+        title: Cloaked rogue ending a move in dim light makes a Finesse roll against the highest seeing Difficulty (dcm-bxp.99.19.53)
+        size: S
+        goal: When a Cloaked rogue ends a move on a dim-light square in a revealed enemy's clear line, the server makes one Finesse action roll against the highest Difficulty among those enemies; success keeps Cloaked, failure ends it.
+        depends_on: [DA12]
+        owns:
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - tests/convex/cloaked-move.test.ts
+          - docs/tasks/TASK-DA-DA18.md
+        reads: [docs/tasks/TASK-DA-DA3.md, convex/combatVision.ts, convex/lib/rolls.ts]
+        acceptance:
+          - "USER 2026-10-30: dim light -> one Finesse action roll (Hope/Fear apply as usual: Hope to the rogue, Fear to the GM) vs the HIGHEST Difficulty among the revealed enemies with a clear line; success keeps Cloaked, failure ends it; clear light still ends it outright, darkness keeps it; Vanishing Act's Cloaked unaffected; the roll is a public, undoable feed row; players never see the Difficulty number (U1)"
+          - "pnpm lint, typecheck, vitest, tests/e2e/combat-movement.spec.ts and tracer-guard pass"
+      - id: DA19
+        title: Beastform trait bonus reaches every roll; Evolved forms filter their uses in the drawer and runner (DA9 follow-ups)
+        size: M
+        goal: Rolls read the form's trait bonus through derivedTraits (withPassiveTraits) on every roll path, and under Evolution the drawer lists and the runner accepts only the Evolved uses for the chosen base.
+        depends_on: [DA10, DA12, DA13]
+        owns:
+          - convex/lib/rolls.ts
+          - convex/rolls.ts
+          - convex/lib/featureDrawer.ts
+          - convex/combatFeatures.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/featureRunner.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - tests/convex/beastform-rolls.test.ts
+          - docs/tasks/TASK-DA-DA19.md
+        reads: [docs/tasks/TASK-DA-DA9.md, src/lib/domain/characters/derived.ts, src/lib/domain/feature-effects/owned.ts]
+        acceptance:
+          - "Every roll path that read withEffects(sheet).traits also applies withPassiveTraits (cardActor in cardRunner, convex/lib/rolls.ts, convex/rolls.ts, featureDrawer, combatFeatures, sheet-context); a druid in Agile Scout rolls Agility +1 from the sheet, the dice box, the map attack and the drawer's form attack (convex tests)"
+          - "featureDrawer and pickFeature read OwnedFeature.uses: under Legendary Beast only the Evolved uses for the chosen base are listed and accepted"
+          - "pnpm lint, typecheck, vitest, the sheet-drawer and combat-attack e2e specs and tracer-guard pass"
