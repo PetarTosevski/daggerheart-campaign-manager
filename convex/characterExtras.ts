@@ -59,7 +59,7 @@ import { rollDie } from "./lib/dice";
 import { keyedCampaignMutation, userMutation, userQuery } from "./lib/functions";
 import { campaignScope, runOnce } from "./lib/operations";
 import { atLeast, permissionFor, type Permission } from "./lib/permissions";
-import { applyTrackerRule, frameTrackerMutation, loadTracker, readTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "./lib/trackers";
+import { frameTrackerMutation, loadTracker, readTracker, TRACKER_SCHEMA_VERSION, writeTracker, type FrameTracker } from "./lib/trackers";
 import {
   beastformStateValidator,
   companionStateValidator,
@@ -188,7 +188,7 @@ function extraRow(ctx: QueryCtx, characterId: Id<"characters">, extra: Extra) {
 /**
  * Edit access and applicability (a frame extra outside its frame, or a class
  * extra on another class, is `MECHANIC_DISABLED`), then one idempotent change
- * of the extra's state. The domain's plain `Error`s become `EXTRA_RULE`.
+ * of the extra's state. The extras modules throw `RuleError` themselves.
  */
 async function change<E extends Extra, R>(
   ctx: MutationCtx & { user: Doc<"users"> },
@@ -212,7 +212,7 @@ async function change<E extends Extra, R>(
     },
     async () => {
       const row = await extraRow(ctx, characterId, extra);
-      const next = await applyTrackerRule("EXTRA_RULE", async () => apply(await readState(ctx, loaded, extra, row), loaded));
+      const next = await apply(await readState(ctx, loaded, extra, row), loaded);
       await storeExtra(ctx, loaded, extra, row, next.state);
       return next.result;
     },
@@ -351,7 +351,7 @@ async function corruptionChange<R>(
     { scopeKey: campaignScope(campaignId), key: op.idempotencyKey, kind: op.kind, request: { characterId, ...op.request }, createdBy: ctx.user._id, campaignId },
     async () => {
       const current = (await readTracker(ctx, campaignId, CORRUPTION_TRACKER_KEY, corruptionStateSchema)) ?? INITIAL_CORRUPTION;
-      const next = await applyTrackerRule("EXTRA_RULE", () => apply(current, loaded));
+      const next = await apply(current, loaded);
       await writeTracker(ctx, campaignId, CORRUPTION_TRACKER_KEY, next.state, TRACKER_SCHEMA_VERSION);
       return next.result;
     },

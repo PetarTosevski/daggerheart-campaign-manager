@@ -1,6 +1,6 @@
-import { ZodError, type z } from "zod";
+import type { z } from "zod";
 
-import { appError, RuleError, type AppErrorCode } from "../../src/lib/errors/app-error";
+import { appError, type AppErrorCode } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { readVersioned } from "./blobs";
@@ -77,25 +77,6 @@ export async function loadTracker<S extends z.ZodType<object>>(
   tracker: FrameTracker<S>,
 ): Promise<z.output<S>> {
   return (await readTracker(ctx, campaignId, tracker.key, tracker.schema)) ?? tracker.initial();
-}
-
-/**
- * Legacy shim for callers outside the frame trackers (`convex/characterExtras.ts`):
- * `RuleError` and `ZodError` pass through to the wrapper, which converts them
- * (CF14); an error whose class is exactly `Error` becomes a `RuleError` with
- * `code`; any subclass is a bug and is rethrown unchanged. The frame tracker
- * modules in `src/lib/frames/trackers/` throw `RuleError` themselves
- * (dcm-bxp.27), so `frameTrackerMutation` and `convex/trackers/*` no longer
- * call this. Delete it once `characterExtras.ts` stops calling it.
- */
-export async function applyTrackerRule<T>(code: AppErrorCode, run: () => T | Promise<T>): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (error instanceof RuleError || error instanceof ZodError) throw error;
-    if (error instanceof Error && Object.getPrototypeOf(error) === Error.prototype) throw new RuleError(code, error.message);
-    throw error;
-  }
 }
 
 /**
