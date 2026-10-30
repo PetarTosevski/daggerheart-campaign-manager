@@ -59,7 +59,7 @@ export interface NumberEnv {
   /** The total of the latest dice this use rolled (`dice` sources and `check` steps write it). */
   lastRoll?: number;
   /** SD1 (NV1): the size of the actor's class dice, for `DiceExpr.sidesOf` (absent: the expression's own `sides`). */
-  dieSides?: Partial<Record<HeldDieKind | "unstoppable", number>>;
+  dieSides?: Partial<Record<HeldDieKind | "unstoppable" | "companion", number>>;
 }
 
 /** Rolls `count` d`sides`; returns the dice. */
@@ -141,6 +141,16 @@ export function resolveNumber(source: NumberSource, env: NumberEnv, rng: Rng): n
       if (source.max !== undefined) value = Math.min(resolveNumber(source.max, env, rng), value);
       return value;
     }
+    // Plan lanes, tracer V: widened sources (TASK-LN-V.md); lane E5 (and E3 for `dualityDie`) reads them. Until then 0.
+    case "free":
+    case "dualityDie":
+    case "stat":
+    case "creatureCount":
+    case "gold":
+    case "creatureTokens":
+    case "classDie":
+    case "tideTokens":
+      return 0;
   }
 }
 

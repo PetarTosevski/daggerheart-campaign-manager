@@ -221,6 +221,8 @@ export function stateCheckMet(check: StateCheck, s: RequirementState): boolean |
       return f.activeStance === slug;
     }
     case "inArea":
+      // Plan lanes, tracer V: `who` other than the actor is lane E5's; until then the player confirms.
+      if (check.who !== undefined && check.who !== "self") return undefined;
       return f.areas?.some((a) => a.featureId === check.featureId && (check.owner !== "self" || a.own));
     case "isolated": {
       const away = (n: number | undefined) => (n === undefined ? undefined : n > reach(check.range));
@@ -230,6 +232,19 @@ export function stateCheckMet(check: StateCheck, s: RequirementState): boolean |
       if (target === false) return false;
       return self === undefined || target === undefined ? undefined : true;
     }
+    // Plan lanes, tracer V: widened checks (TASK-LN-V.md), read by lane E5; until then not known, so the player confirms (Q13).
+    case "track":
+    case "tokens":
+    case "within":
+    case "allyNear":
+    case "weaponRange":
+    case "holdsItem":
+    case "usedOnBefore":
+    case "usedArmor":
+    case "moonPhase":
+    case "not":
+    case "anyOf":
+      return undefined;
   }
 }
 

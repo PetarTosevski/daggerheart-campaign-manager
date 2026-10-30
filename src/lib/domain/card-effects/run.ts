@@ -200,8 +200,11 @@ export interface RunContext {
   allies?: readonly Combatant[];
   /** The targets of a `followUp` step (Telekinesis' second target, Whirlwind's others). */
   followUp?: readonly Combatant[];
-  /** What set off a reaction / rider / auto. */
-  trigger?: { amount?: number; source?: Combatant; subject?: Combatant };
+  /**
+   * What set off a reaction / rider / auto. Plan lanes, V (widened): `damageType`: the type of the damage the trigger
+   * carries (Encore, CB p.335; dcm-86z; E1 fills it, E3 reads it).
+   */
+  trigger?: { amount?: number; source?: Combatant; subject?: Combatant; damageType?: DamageType | "both" };
   /** The player's numbers, by `NumberChoice` id. */
   choices?: Readonly<Record<string, number>>;
   /** The options picked in `choose` steps, by step id. */
@@ -274,7 +277,28 @@ export type ResolvedMod =
   | { kind: "stat"; stat: ModStat; delta: number; versus?: Versus }
   | { kind: "trait"; trait: TraitId | "all"; delta: number }
   | { kind: "set"; stat: ModStat | TraitId; to: number }
-  | Extract<Mod, { kind: "advantage" | "disadvantageAgainst" | "resistance" | "flag" }>;
+  | Extract<Mod, { kind: "advantage" | "disadvantageAgainst" | "resistance" | "flag" }>
+  // Plan lanes, tracer V: widened mods travel as written (no numbers resolved yet; the lanes that read them resolve them).
+  | Extract<
+      Mod,
+      {
+        kind:
+          | "attackedRider"
+          | "bearerRider"
+          | "disadvantage"
+          | "mustAttack"
+          | "weaponTrait"
+          | "extraTargets"
+          | "forcedMoveReduce"
+          | "moveLimit"
+          | "replaceCondition"
+          | "dualityDie"
+          | "gmControl"
+          | "standardAttack"
+          | "features"
+          | "weakness";
+      }
+    >;
 
 export interface RollInfo {
   record: RollRecord;
@@ -1046,10 +1070,13 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         return (context.options?.[gate.choice] ?? []).includes(gate.option);
       case "requires":
         return unmetRequirements([gate.requirement], reqState(actor)).length === 0;
+      case "targetCheck":
+        // Plan lanes, tracer V: not read yet (lanes E3 / E5); the gate holds.
+        return true;
     }
   };
   const isTargetGate = (g: Gate) =>
-    typeof g === "string" ? ["hit", "miss", "targetMarkedHp", "targetDefeated", "targetStressFull"].includes(g) : g.kind === "targetHas";
+    typeof g === "string" ? ["hit", "miss", "targetMarkedHp", "targetDefeated", "targetStressFull"].includes(g) : g.kind === "targetHas" || g.kind === "targetCheck";
   const needsFlush = (gates: readonly Gate[] | undefined) => (gates ?? []).some((g) => g === "targetMarkedHp" || g === "targetDefeated" || g === "targetStressFull");
 
   /** Whether a step without per-creature recipients may run: move gates hold, and a per-target gate holds for any target. */
@@ -1087,6 +1114,10 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         break;
       case "selfAndAllies":
         list = [actor, ...(context.allies ?? []).map((c) => get(c.id))];
+        break;
+      case "chooser":
+        // Plan lanes, tracer V: per-recipient picks (`by`) are lane E3's; until then no one.
+        list = [];
         break;
     }
     // Per-target gates filter `targets` one by one; for anyone else they hold when they hold for any target.
@@ -1194,7 +1225,10 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
               ? dice.length > 0 && dice.every((n) => n <= t.value)
               : t.kind === "totalAtLeast"
                 ? total >= t.value
-                : total <= t.value;
+                : t.kind === "totalAtMost"
+                  ? total <= t.value
+                  : // Plan lanes, tracer V: even / odd (dcm-27j).
+                    (total % 2 === 0) === (t.kind === "even");
         steps.push({ kind: "check", total, dice, passed });
         runSteps(passed ? step.then : step.otherwise, scope);
         return true;
@@ -1237,6 +1271,11 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         return num(d.value);
       case "actorDifficulty":
         return actor.difficulty ?? 0;
+      // Plan lanes, tracer V: the allies' raise and the fall are lane E3's; until then the base / start Difficulty.
+      case "raised":
+        return saveDifficulty(d.base);
+      case "falling":
+        return num(d.start);
     }
   };
 
@@ -1626,6 +1665,18 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       case "refreshFeature":
         steps.push({ kind: "fold", step, targetIds: ids });
         return;
+      // Plan lanes, tracer V: new outcome steps (TASK-LN-V.md); until their lane runs them, the table does it by hand.
+      case "loadout":
+      case "inventory":
+      case "endEffect":
+      case "setStance":
+      case "exhaust":
+      case "revive":
+      case "deathMove":
+      case "downtime":
+      case "armorCost":
+        steps.push({ kind: "prompt", prompt: "manual", text: step.note ?? step.kind, targetIds: ids, step });
+        return;
     }
   };
 
@@ -1710,6 +1761,15 @@ export function rollTargetCount(use: CardUse, actor: ActorState, rng: Rng): numb
 
 function moveText(step: Extract<OutcomeStep, { kind: "move" }>): string {
   const range = step.range ? ` (${step.range})` : "";
-  const verb = { knockBack: "Knock back", pull: "Pull", teleport: "Teleport", move: "Move", flee: "Flee", intoMelee: "Move into Melee range" }[step.mode];
+  const verb = {
+    knockBack: "Knock back",
+    pull: "Pull",
+    teleport: "Teleport",
+    move: "Move",
+    flee: "Flee",
+    intoMelee: "Move into Melee range",
+    ground: "Ground",
+    leaveScene: "Leave the scene",
+  }[step.mode];
   return `${verb}${range}`;
 }

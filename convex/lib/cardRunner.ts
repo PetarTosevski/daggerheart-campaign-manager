@@ -746,7 +746,9 @@ function sheetMods(mods: readonly ResolvedMod[]): { mods: NonNullable<Effect["mo
     else if (m.kind === "advantage") text.push(`advantage on ${m.on}`);
     else if (m.kind === "disadvantageAgainst") text.push(`${m.on} against them with disadvantage`);
     else if (m.kind === "resistance") text.push(`${m.level} to ${m.type} damage`);
-    else text.push(m.flag);
+    else if (m.kind === "flag") text.push(m.flag);
+    // Plan lanes, tracer V: widened mods show by kind until their lane stores them.
+    else text.push(m.kind);
   }
   return { mods: out, text };
 }
