@@ -1,0 +1,458 @@
+# Lanes plan: every open bead (2026-10-30) split into lanes that run in parallel worktrees.
+# Each lane = one tracer here; its beads carry the label lane:<label> (bd list --label lane:<label>).
+# A lane runs as one or more tracers in order; it may split into smaller tracers at start, but the split
+# stays inside the lane's owns. Format: docs/workflow.md. Extra keys (plan-check ignores them): title, label, size.
+#
+# Why lanes split by ENGINE PART and not by card / feature / adversary: the same gap appears in all three systems,
+# and all three share src/lib/domain/card-effects/types.ts. One owner per hot file:
+#   types.ts (all three)            -> V only           convex/lib/combatActions.ts -> E1
+#   incomingHits / window / severity -> A (wave 1), E2  card-effects/run.ts         -> E3
+#   convex/lib/cardRunner.ts         -> A, DA19, V, E4  availability.ts / numbers.ts -> E5
+#   expiry / cardRows / combatFeatures -> E6            adversary engine            -> E7
+#   delegate / featureRunner / rests -> E8
+#
+# Rules for every lane in wave 4:
+#   - Never edit the three effect types.ts files. A gap V missed: write a manual step and file a bead labelled
+#     vocabulary-gap with the lane label (the DA0 rule).
+#   - Never edit src/lib/srd/** data files. Engine + tests with fixture entries only; wave 5 data lanes switch the
+#     SRD entries over to the new vocabulary, one file per tracer.
+#   - A change needed in another lane's file: file a follow-up bead with that lane's label; don't edit it.
+#
+# Verified 2026-10-30 by two audit agents (close list, file collisions); their fixes are applied here.
+# DA10 (branch da10, 615745e) and DA13 (branch da13, 02089a0) are built but not merged into rebuild.
+# Paths: C = src/app/(gm)/campaigns/[campaignId] (written out in full below).
+plan: lanes
+waves:
+  # ------------------------------------------------------------------ wave 1: start now
+  - wave: 1
+    tracers:
+      - id: A1
+        label: w0-a-drawer-engine
+        title: Drawer engine - merge DA10, then the reaction-window answers
+        goal: Drawer engine - merge DA10, then the reaction-window answers
+        size: M
+        depends_on: []
+        owns:
+          - convex/lib/incomingHits.ts
+          - convex/lib/unshakable.ts
+          - convex/lib/stanceDrop.ts
+          - convex/lib/adversaryFeatures.ts
+          - convex/lib/cardHand.ts
+          - convex/lib/cardRunner.ts
+          - convex/combatFeatures.ts
+          - convex/combatScenes.ts
+          - convex/lib/restHooks.ts
+          - convex/lib/validators/combatRequests.ts
+          - src/lib/srd/feature-effects/stances.ts
+          - src/lib/domain/adversary-actions/window.ts
+          - src/lib/domain/adversary-actions/severity.ts
+          - src/components/combat-map/actions/reactions/**
+          - tests/convex/feature-reactions.test.ts
+          - docs/tasks/TASK-LN-A1.md
+        reads:
+          - .omc/plans/drawer-answers.yaml
+          - src/lib/domain/card-effects/**
+        acceptance:
+          - "Orchestrator merges branch da10 (DA10, drawer-answers.yaml) first: Unshakable automated, stance drop ends its benefits, beastform ends on last HP / Fragile Major (closes dcm-bxp.99.19.50, .51, .10, .6, dcm-qq3)"
+          - "dcm-bxp.99.19.55 (3): 'Don't mark' keeps the reaction window open; (6) Stable and Celestial Wings replace one of several Armor Slots"
+          - "dcm-22q: wouldMarkStress folds through the same call sites as unshakable.ts"
+          - "Owns validators/combatRequests.ts for this wave (IncomingHitPayload / AfterHit); B1 reads it"
+      - id: B1
+        label: w0-b-server-prompts
+        title: Server prompts - merge DA13 Cannonball, Warden expiry, drawer wiring
+        goal: Server prompts - merge DA13 Cannonball, Warden expiry, drawer wiring
+        size: M
+        depends_on: []
+        owns:
+          - convex/featurePrompts.ts
+          - convex/lib/featurePrompts.ts
+          - convex/lib/combatRequests.ts
+          - convex/lib/featureRunner.ts
+          - convex/cleanup.ts
+          - src/lib/srd/feature-effects/beastforms.ts
+          - src/components/combat-map/drawer/index.tsx
+          - src/components/combat-map/drawer/prompts/**
+          - src/components/combat-map/drawer/use/**
+          - docs/tasks/TASK-LN-B1.md
+        reads:
+          - convex/lib/validators/combatRequests.ts
+          - convex/combatScenes.ts
+        acceptance:
+          - "Orchestrator merges branch da13 (DA13 Cannonball; closes dcm-bxp.99.19.5, .21)"
+          - "dcm-bxp.99.19.55 (1): the rolled Warden count stays valid until used or the scene ends - store the sceneId in the payload and check it lazily (no edit to combatScenes.ts), not a 30-minute TTL"
+          - "dcm-bxp.99.19.55 (2) Charge hits every enemy in Melee: only after the user answers the blocked-path question"
+          - "dcm-bxp.99.19.56: the drawer offers Warden's Protection and Charge through featurePrompts"
+      - id: C1
+        label: w0-c-cloaked
+        title: Cloaked in dim light (DA18)
+        goal: Cloaked in dim light (DA18)
+        size: S
+        depends_on: []
+        owns:
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - tests/convex/cloaked-move.test.ts
+          - docs/tasks/TASK-LN-C1.md
+        reads:
+          - .omc/plans/drawer-answers.yaml
+        acceptance:
+          - "DA18 as drawer-answers.yaml states (closes dcm-bxp.99.19.53 (4))"
+          - "dcm-bxp.99.19.52 (condition source) is NOT done here: it runs as tracer C2 in wave 5"
+      - id: D1
+        label: w0-d-adversary-e2e
+        title: AA6 - adversary actions end to end, coverage net
+        goal: AA6 - adversary actions end to end, coverage net
+        size: M
+        depends_on: []
+        owns:
+          - tests/e2e/adversary-actions-*.spec.ts
+          - tests/unit/adversary-effects/coverage.test.ts
+          - docs/game-interpretation.md
+          - docs/tasks/TASK-CA-AA6.md
+        reads:
+          - .omc/plans/combat-actions.yaml
+        acceptance:
+          - "AA6 as combat-actions.yaml states (dcm-bxp.99.9); the coverage test prints manual-step counts per SRD file, it doesn't assert them"
+      - id: N1
+        label: w0-n1-world
+        title: World, maps, Codex pins, frame trackers
+        goal: World, maps, Codex pins, frame trackers
+        size: L
+        depends_on: []
+        owns:
+          - src/lib/world/**
+          - convex/maps.ts
+          - convex/lib/maps.ts
+          - convex/codex.ts
+          - convex/lib/codex.ts
+          - src/app/(gm)/campaigns/[campaignId]/codex/**
+          - src/app/(gm)/campaigns/[campaignId]/world/**
+          - src/app/(gm)/campaigns/[campaignId]/trackers/**
+          - convex/trackers/**
+          - convex/lib/trackers.ts
+          - src/lib/frames/trackers/**
+          - tests/e2e/horizon.spec.ts
+          - tests/convex/authz/world.entries.ts
+          - docs/tasks/TASK-LN-N1.md
+        reads: []
+        acceptance:
+          - "Closes dcm-bxp.17 (ask the user about region-generation details the spec doesn't fix), dcm-bxp.16, dcm-bxp.60, dcm-bxp.27"
+      - id: N2
+        label: w0-n2-characters
+        title: Characters, sheet and actionLog follow-ups
+        goal: Characters, sheet and actionLog follow-ups
+        size: L
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/party/**
+          - src/components/party/**
+          - convex/characters.ts
+          - convex/characterExtras.ts
+          - convex/lib/characterSheet.ts
+          - convex/lib/actionLog.ts
+          - convex/actionLog.ts
+          - convex/feed.ts
+          - convex/levelUp.ts
+          - src/lib/errors/actionLog.ts
+          - convex/tables/characters.ts
+          - convex/tables/actionLog.ts
+          - convex/lib/validators/characters.ts
+          - convex/migrations/**
+          - tests/convex/level-up.test.ts
+          - docs/tasks/TASK-LN-N2.md
+        reads:
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+        acceptance:
+          - "Closes dcm-bxp.28, dcm-bxp.31, dcm-bxp.40 (not item 10, which is N3's), dcm-bxp.15, dcm-bxp.61"
+          - "Does not edit party/[characterId]/sheet-context.tsx (DA19 owns it), src/components/party/dice/** (SD-H) or src/components/party/rest/picker.tsx (E8)"
+          - "logAction / LogEntry stay source-compatible (36 convex files import them)"
+      - id: N3
+        label: w0-n3-settings
+        title: Campaign settings, dashboard and sign-up leftovers
+        goal: Campaign settings, dashboard and sign-up leftovers
+        size: S
+        depends_on: []
+        owns:
+          - src/app/(gm)/campaigns/[campaignId]/fear-panel.tsx
+          - src/app/(gm)/campaigns/[campaignId]/dashboard.css
+          - src/app/(gm)/campaigns/[campaignId]/players-dialog.tsx
+          - convex/convex.config.ts
+          - scripts/e2e-setup.mjs
+          - docs/deploy.md
+          - docs/tasks/TASK-LN-N3.md
+        reads: []
+        acceptance:
+          - "Closes dcm-hlj, dcm-bxp.140, and dcm-bxp.40 item 10 (dashboard/roster restyle)"
+  # ------------------------------------------------------------------ wave 2: DA19 after the drawer merges
+  - wave: 2
+    tracers:
+      - id: A2
+        label: w0-a-drawer-engine
+        title: DA19 - beastform trait bonus reaches rolls, roll and runner follow-ups
+        goal: DA19 - beastform trait bonus reaches rolls, roll and runner follow-ups
+        size: M
+        depends_on: [A1, B1]
+        owns:
+          - convex/lib/rolls.ts
+          - convex/rolls.ts
+          - convex/lib/featureRunner.ts
+          - convex/lib/cardRunner.ts
+          - convex/combatFeatures.ts
+          - convex/lib/featureDrawer.ts
+          - src/app/(gm)/campaigns/[campaignId]/party/[characterId]/sheet-context.tsx
+          - docs/tasks/TASK-DA-DA19.md
+        reads:
+          - .omc/plans/drawer-answers.yaml
+        acceptance:
+          - "DA19 as drawer-answers.yaml states; dcm-bxp.99.19.19 regression fixed: rolls read the form's trait bonus (convex/lib/rolls.ts:178, convex/rolls.ts:174, convex/lib/cardRunner.ts:170)"
+  # ------------------------------------------------------------------ wave 3: vocabulary widen
+  - wave: 3
+    tracers:
+      - id: V
+        label: w1-vocabulary
+        title: Vocabulary widen for every wave-4 gap (types only, plus fallbacks)
+        goal: Vocabulary widen for every wave-4 gap (types only, plus fallbacks)
+        size: L
+        depends_on: [A2]
+        owns:
+          - src/lib/domain/card-effects/types.ts
+          - src/lib/domain/adversary-effects/types.ts
+          - src/lib/domain/feature-effects/types.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/cardRows.ts
+          - src/components/combat-map/actions/hand/model.ts
+          - src/lib/domain/card-effects/availability.ts
+          - src/lib/domain/combat-actions/numbers.ts
+          - src/lib/domain/card-effects/run.ts
+          - tests/unit/card-effects/types-widen.test.ts
+          - docs/tasks/TASK-LN-V.md
+        reads:
+          - src/lib/srd/**
+        acceptance:
+          - "Every new union member the wave-4 beads need (labels lane:w1-*), widen only, no any; no behaviour change"
+          - "Each exhaustive Record / default-less switch gets one fallback line (manual / false / null): cardRunner.ts UNTIL, cardRows.ts INSTANCE_UNTIL, hand/model.ts Cost and PER_LABEL maps, availability.ts requirementMet, numbers.ts resolveNumber, run.ts targetGate and saveDifficulty"
+          - "Every existing test passes unchanged"
+  # ------------------------------------------------------------------ wave 4: engine lanes, in parallel
+  - wave: 4
+    tracers:
+      - id: E1
+        label: w1-e1-triggers-rolls
+        title: Triggers, roll filters, rolls and the Hand
+        goal: Triggers, roll filters, rolls and the Hand
+        size: L
+        depends_on: [V]
+        owns:
+          - convex/lib/combatActions.ts
+          - convex/combatCards.ts
+          - convex/lib/cardHand.ts
+          - convex/lib/rolls.ts
+          - convex/rolls.ts
+          - tests/convex/lane-e1-*.test.ts
+          - docs/tasks/TASK-LN-E1.md
+        reads: [src/lib/domain/card-effects/**]
+        acceptance:
+          - "Every bead labelled lane:w1-e1-triggers-rolls fires on the server (success/failure with Hope/Fear results, Help, after any roll, weapon and feature filters, extra target, Hope/Fear-die changes, recall and loadout swap)"
+      - id: E2
+        label: w1-e2-damage-window
+        title: Incoming damage and the reaction window
+        goal: Incoming damage and the reaction window
+        size: L
+        depends_on: [V]
+        owns:
+          - convex/lib/incomingHits.ts
+          - convex/lib/adversaryHits.ts
+          - convex/lib/unshakable.ts
+          - src/lib/domain/adversary-actions/window.ts
+          - src/lib/domain/adversary-actions/severity.ts
+          - src/lib/domain/combat-actions/damage.ts
+          - src/components/combat-map/actions/reactions/**
+          - tests/convex/lane-e2-*.test.ts
+          - docs/tasks/TASK-LN-E2.md
+        reads: [src/lib/domain/card-effects/**]
+        acceptance:
+          - "Every bead labelled lane:w1-e2-damage-window works in the window (instead-of-slot outcomes, would-mark triggers, resistance by source, damage-taken mods, PC options, armor cost and fallback, post-window gates, condition riders)"
+      - id: E3
+        label: w1-e3-steps-saves
+        title: Card and feature steps, choices and saves
+        goal: Card and feature steps, choices and saves
+        size: L
+        depends_on: [V]
+        owns:
+          - src/lib/domain/card-effects/run.ts
+          - convex/lib/cardChoices.ts
+          - src/components/combat-map/actions/hand/dialog.tsx
+          - tests/unit/card-effects/lane-e3-*.test.ts
+          - docs/tasks/TASK-LN-E3.md
+        reads: [src/lib/domain/card-effects/types.ts]
+        acceptance:
+          - "Every bead labelled lane:w1-e3-steps-saves runs in the pure runner (per-recipient and distinct choices, picks among hit targets, number sources and choices, chains, multi-outcome checks, saves with advantage / auto-fail / raised Difficulty, held-dice picks, ending a card's own effect)"
+          - "dcm-vv2 item 2: the damage cache key is per follow-up, not JSON.stringify(roll) (run.ts:957)"
+      - id: E4
+        label: w1-e4-targeting-areas
+        title: Targeting, range origins, areas and map positions
+        goal: Targeting, range origins, areas and map positions
+        size: L
+        depends_on: [V]
+        owns:
+          - convex/lib/cardRunner.ts
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - convex/combatMaps.ts
+          - convex/lib/combatVision.ts
+          - convex/combatAreas.ts
+          - src/lib/domain/feature-effects/areas.ts
+          - src/components/combat-map/actions/attack/**
+          - tests/convex/lane-e4-*.test.ts
+          - docs/tasks/TASK-LN-E4.md
+        reads: [src/lib/domain/card-effects/**]
+        acceptance:
+          - "Every bead labelled lane:w1-e4-targeting-areas (chain / point / line origins, minimum target counts, persistent areas with entry triggers, movement limits, duplicate tokens, damageable objects, Cloaked per observer, trigger ranges, Attack-bar ally targets)"
+          - "Coordinate with the unbuilt sheet-drawer SD-A (area runtime): build it here or run SD-A first, never both at once"
+      - id: E5
+        label: w1-e5-checks-limits-numbers
+        title: State checks, requirements, limits, costs, number sources, slots
+        goal: State checks, requirements, limits, costs, number sources, slots
+        size: L
+        depends_on: [V]
+        owns:
+          - src/lib/domain/card-effects/availability.ts
+          - src/lib/domain/combat-actions/numbers.ts
+          - src/components/combat-map/actions/hand/model.ts
+          - src/lib/domain/characters/slots.ts
+          - src/lib/domain/feature-effects/passives.ts
+          - tests/unit/lane-e5-*.test.ts
+          - docs/tasks/TASK-LN-E5.md
+        reads: [src/lib/domain/card-effects/types.ts]
+        acceptance:
+          - "Every new StateCheck / Requirement evaluator lives here (range, ally near target, weapon range, tokens, tags, lacks condition, holds item)"
+          - "Every bead labelled lane:w1-e5-checks-limits-numbers (long limits, per-target memory, costs paid by an ally, threshold / creature-count / Armor Score number sources, HP and Stress slot maximums)"
+      - id: E6
+        label: w1-e6-endings-durations
+        title: Effect endings and durations
+        goal: Effect endings and durations
+        size: M
+        depends_on: [V]
+        owns:
+          - src/lib/domain/characters/expiry.ts
+          - convex/lib/cardRows.ts
+          - convex/combatFeatures.ts
+          - convex/lib/stanceDrop.ts
+          - tests/convex/lane-e6-*.test.ts
+          - docs/tasks/TASK-LN-E6.md
+        reads: [src/lib/domain/card-effects/types.ts, convex/lib/cardRunner.ts]
+        acceptance:
+          - "Every bead labelled lane:w1-e6-endings-durations ends on its event (target defeated, GM spends Fear, attack succeeds with a weapon, granter takes Severe, bearer takes damage, next targeted roll, next roll of a kind, stance set)"
+      - id: E7
+        label: w1-e7-adversary-engine
+        title: Adversary engine, passives and attack modifiers
+        goal: Adversary engine, passives and attack modifiers
+        size: L
+        depends_on: [V]
+        owns:
+          - src/lib/domain/adversary-effects/run.ts
+          - convex/lib/adversaryActions.ts
+          - convex/adversaryActions.ts
+          - convex/lib/adversaryFeatures.ts
+          - convex/lib/countdownTicks.ts
+          - src/lib/domain/adversary-actions/features.ts
+          - src/lib/domain/adversary-actions/attack.ts
+          - tests/unit/adversary-effects/lane-e7-*.test.ts
+          - docs/tasks/TASK-LN-E7.md
+        reads: [src/lib/domain/card-effects/**]
+        acceptance:
+          - "dcm-vv2 item 1 first: a follow-up adversaryAttack gets the stat-block ATK"
+          - "Every bead labelled lane:w1-e7-adversary-engine (flee, revive, death moves, Stress split, group attacks, exclusive uses, evolution, GM control, passives on itself, immunities, crit range, tagged-target mods, damage types, trigger narrowings, Relentless X, once per GM turn, countdowns, delayed outcomes)"
+      - id: E8
+        label: w1-e8-session-features-rests
+        title: Delegate, session features, held dice, rests and companion
+        goal: Delegate, session features, held dice, rests and companion
+        size: M
+        depends_on: [V]
+        owns:
+          - src/lib/domain/feature-effects/delegate.ts
+          - src/lib/domain/feature-effects/run.ts
+          - convex/lib/featureRunner.ts
+          - convex/sessionFeatures.ts
+          - src/lib/domain/session-features/**
+          - convex/rests.ts
+          - convex/lib/restHooks.ts
+          - src/lib/domain/rest/**
+          - src/components/party/rest/picker.tsx
+          - convex/lib/companion.ts
+          - tests/convex/lane-e8-*.test.ts
+          - docs/tasks/TASK-LN-E8.md
+        reads: [src/lib/domain/card-effects/types.ts]
+        acceptance:
+          - "Every bead labelled lane:w1-e8-session-features-rests (delegated Hex names the map target, moon die, tide tokens, Slayer rerolls, targets after dice, short-rest timing and downtime moves, extra downtime move, companion stats)"
+          - "dcm-2z2 needs the unbuilt sheet-drawer SD-C first"
+  # ------------------------------------------------------------------ wave 5: data, tail and leftovers
+  - wave: 5
+    tracers:
+      - id: C2
+        label: w0-c-cloaked
+        title: Conditions record their source; Vanishing Act endings
+        goal: Conditions record their source; Vanishing Act endings
+        size: M
+        depends_on: [E1, E4, E8]
+        owns:
+          - convex/lib/combatActions.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/combatMovement.ts
+          - convex/lib/restHooks.ts
+          - convex/lib/validators/characters.ts
+          - docs/tasks/TASK-LN-C2.md
+        reads: []
+        acceptance:
+          - "dcm-bxp.99.19.52, incl. the R5 note: attacks no longer strip Vanishing Act's Cloaked; a roll with Fear or the next rest ends it; cloakedByVanishingAct stop-gap removed"
+      - id: SRD
+        label: w2-srd-data
+        title: SRD data - swap manual steps for the new vocabulary (one tracer per src/lib/srd file)
+        goal: SRD data - swap manual steps for the new vocabulary (one tracer per src/lib/srd file)
+        size: L
+        depends_on: [E1, E2, E3, E4, E5, E6, E7, E8]
+        owns:
+          - src/lib/srd/**
+          - tests/unit/card-effects/**
+          - tests/unit/feature-effects/**
+          - tests/unit/adversary-effects/**
+          - docs/tasks/TASK-LN-SRD-*.md
+        reads: []
+        acceptance:
+          - "Split into one tracer per SRD file (all parallel); each rewrites its manual steps with the wave-4 vocabulary and its beads close; dcm-tal (Cracked Scales, countAtLeast) needs no engine work"
+      - id: M
+        label: w2-map-visuals
+        title: Combat map visuals, sprites, night and lights
+        goal: Combat map visuals, sprites, night and lights
+        size: M
+        depends_on: [E4]
+        owns:
+          - src/components/combat-map/maps/**
+          - src/components/combat-map/map-view/**
+          - src/components/combat-map/editor/**
+          - convex/combatVision.ts
+          - convex/lib/spriteSources.ts
+          - convex/combatMapStyle.ts
+          - convex/campaigns.ts
+          - docs/tasks/TASK-LN-M.md
+        reads: [convex/lib/combatVision.ts]
+        acceptance:
+          - "Closes dcm-bxp.84, .86, .97, .54 (campaign Day/Dim/Night field; ask where the GM control lives)"
+  # ------------------------------------------------------------------ wave 6: last
+  - wave: 6
+    tracers:
+      - id: U
+        label: w2-upload-check
+        title: Upload byte check on every upload path
+        goal: Upload byte check on every upload path
+        size: S
+        depends_on: [SRD, M, N1, N2]
+        owns:
+          - convex/lib/files.ts
+          - convex/spritePacks.ts
+          - docs/best-practices.md
+          - docs/tasks/TASK-LN-U.md
+        reads: []
+        acceptance:
+          - "dcm-bxp.93: one shared helper in convex/lib/files.ts; each upload path calls it in a short final pass"
+# Not in a lane: needs a user answer first (label lane:needs-user-answer): dcm-bxp.134, .78, .47, .118, .129, .18, .38.
+# User-run (lane:user-run): dcm-bxp.82.7 (spends real API money), dcm-bxp.36.3 (needs an idle machine). Deferred: dcm-bxp.95.
