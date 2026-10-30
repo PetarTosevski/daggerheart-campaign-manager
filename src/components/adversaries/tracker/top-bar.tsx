@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useIntent } from "@/lib/use-intent";
 
 import { Modal } from "@/components/brand/modal";
+import { EndSceneButton } from "@/components/combat-map/actions/scene";
 import { TrackerSessionChip } from "@/components/sessions/session-chip";
 import { battlePoints } from "@/lib/domain/encounters/budget";
 import { MAX_FEAR } from "@/lib/domain/fear";
@@ -72,7 +73,7 @@ function SpendFearDialog({ open, onClose, fear, actions }: { open: boolean; onCl
 }
 
 /**
- * The tracker's top bar: encounter name and status, "GM turn N" with "End GM turn" (spotlight counts reset), the GM
+ * The tracker's top bar: encounter name and status, "GM turn N" with "End GM turn" (spotlight counts reset), "End scene" (SD8: every PC's scene effects and limits end; ending the encounter does it too), the GM
  * Fear as the dashboard's token art (12, lit up to the campaign's Fear; read-only here) with "Spend Fear", and the Battle Points meter (A3's budget, CB p.197).
  */
 export function TopBar({ campaignId, view, fear, actions }: { campaignId: Id<"campaigns">; view: TrackerView; fear: number; actions: TrackerActions }) {
@@ -104,6 +105,7 @@ export function TopBar({ campaignId, view, fear, actions }: { campaignId: Id<"ca
         <button type="button" className="trk-btn" disabled={!running} onClick={() => void actions.endGmTurn()}>
           End GM turn
         </button>
+        <EndSceneButton campaignId={campaignId} className="trk-btn" />
       </div>
       <div className="trk-top-fear">
         <span className="trk-tokens" role="img" aria-label={`GM Fear ${fear} of ${MAX_FEAR}`} data-testid="tracker-fear">

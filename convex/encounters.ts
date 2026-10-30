@@ -22,6 +22,7 @@ import {
   MIN_PCS,
   startEncounter,
 } from "./lib/encounters";
+import { endScene } from "./combatScenes";
 import { closeEncounterRequests } from "./lib/combatRequests";
 import { gmMutation, gmQuery, keyedGmMutation } from "./lib/functions";
 import {
@@ -284,7 +285,11 @@ export const start = gmMutation({
   },
 });
 
-/** Ends the running encounter and declines its open combat requests (CA3); ENCOUNTER_NOT_RUNNING otherwise. */
+/**
+ * Ends the running encounter, declines its open combat requests (CA3) and ends the scene (sheet-drawer Q7, CB p.107: "A
+ * battle scene usually ends when one side has fled, surrendered, or been entirely defeated"): scene limits and effects
+ * come back for every PC in one undoable group (convex/combatScenes.ts). ENCOUNTER_NOT_RUNNING otherwise.
+ */
 export const end = gmMutation({
   args: { encounterId: v.string() },
   returns: v.null(),
@@ -295,6 +300,7 @@ export const end = gmMutation({
     await ctx.db.patch("encounters", encounter._id, { status: "ended", endedAt: now, updatedAt: now });
     // Open combat requests of the encounter (GM sanctions, Minion offers) close with it (plan combat-actions CA3).
     await closeEncounterRequests(ctx, ctx.campaign._id, encounter._id, ctx.user._id);
+    await endScene(ctx, ctx.campaign, ctx.user._id);
     return null;
   },
 });

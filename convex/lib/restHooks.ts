@@ -109,8 +109,29 @@ const motherboardRestHook: RestHook = async (ctx, { campaign, sheets, rng }) => 
   return lines;
 };
 
+/** Areas a rest looks at (a campaign draws few at a time; ended ones are swept by the cron). */
+const AREAS_MAX = 200;
+
+/**
+ * Live map areas end with their caster's rest (sheet-drawer SD8, `combatAreas.expires`): `rest` on any rest, `longRest`
+ * on a long one (an interrupted long rest runs as `short`, CB 105). Frame-independent; areas keep their own history, so
+ * the rest's undo does not bring one back (contract above). No feed line: the map shows the area gone.
+ */
+const endAreasRestHook: RestHook = async (ctx, { campaign, kind, sheets }) => {
+  const rows = await ctx.db
+    .query("combatAreas")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
+    .take(AREAS_MAX);
+  const now = Date.now();
+  for (const area of rows) {
+    const ends = area.expires === "rest" || (area.expires === "longRest" && kind === "long");
+    if (area.status === "active" && ends && sheets.has(area.characterId)) await ctx.db.patch("combatAreas", area._id, { status: "ended", endedAt: now });
+  }
+  return [];
+};
+
 /** Every frame's rest hook, in order; Horizon first, since it may refuse the rest. */
-export const REST_HOOKS: readonly RestHook[] = [horizonRestHook, ageOfUmbraRestHook, colossusRestHook, beastFeastRestHook, andaluriaRestHook, motherboardRestHook];
+export const REST_HOOKS: readonly RestHook[] = [horizonRestHook, ageOfUmbraRestHook, colossusRestHook, beastFeastRestHook, andaluriaRestHook, motherboardRestHook, endAreasRestHook];
 
 /** Runs every hook; returns their feed lines. */
 export async function runRestHooks(ctx: MutationCtx, input: RestHookInput): Promise<string[]> {

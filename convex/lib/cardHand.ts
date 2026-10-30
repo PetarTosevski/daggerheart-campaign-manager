@@ -13,7 +13,10 @@ import { cardAvailability, RESET_LABEL } from "../../src/lib/domain/card-effects
 import { run } from "../../src/lib/domain/card-effects/run";
 import type { CardUse, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import type { Rng } from "../../src/lib/domain/dice/index";
+import { owned } from "../../src/lib/domain/feature-effects/owned";
+import { runFeature } from "../../src/lib/domain/feature-effects/run";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
+import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard } from "../../src/lib/srd/index";
 import { markStress } from "../../src/lib/domain/characters/index";
 import { appError } from "../../src/lib/errors/app-error";
@@ -21,7 +24,7 @@ import type { CharacterSheet } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
-import { actorSheetAfter, cardActor, cardIdOfEffect } from "./cardRunner";
+import { actorSheetAfter, cardActor, cardIdOfEffect, tokenKeyOf } from "./cardRunner";
 import { loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./characterSheet";
 
 export const handUseValidator = v.object({
@@ -245,6 +248,36 @@ export function runRestTiming(sheet: CharacterSheet, actorId: string, at: RestTi
       if (JSON.stringify(after) === JSON.stringify(next)) continue;
       next = after;
       lines.push(use.name);
+    }
+  }
+  const features = runFeatureTokenTiming(next, actorId, at, rng);
+  return { sheet: features.sheet, lines: [...lines, ...features.lines] };
+}
+
+/**
+ * The token housekeeping of the features a sheet holds (sheet-drawer SD8): an `auto` use timed `at` this point of a rest
+ * whose steps only move tokens runs on the sheet, as each feature's text says ("When you take a long rest, clear all
+ * unspent tokens": Toxic Concoctions, HF p.9; "Clear all tokens from this card when you take a rest": Enchanted Talisman,
+ * HF p.16; "When you take a long rest, remove a token": Feed, HF). A timed use that does anything else (Hardy's Hit
+ * Point, the rest-time moves) belongs to the rest flow (`convex/rests.ts`, SD-R) and is skipped here. Focus is not
+ * cleared by a rest: HF p.12 clears it only when the Martial Artist refocuses. Pure, like `runRestTiming`.
+ */
+function runFeatureTokenTiming(sheet: CharacterSheet, actorId: string, at: RestTiming, rng: Rng): { sheet: CharacterSheet; lines: string[] } {
+  let next = sheet;
+  const lines: string[] = [];
+  for (const held of owned(sheet)) {
+    const entry = featureEffect(held.featureId);
+    if (entry === undefined) continue;
+    for (const use of entry.uses) {
+      const trigger = use.activation.kind === "auto" ? use.activation.trigger : undefined;
+      if (trigger?.kind !== "timing" || trigger.at !== at) continue;
+      if (use.steps.length === 0 || use.steps.some((step) => step.kind !== "tokens")) continue;
+      const result = runFeature(entry, use.id, { actor: cardActor(actorId, next, tokenKeyOf(held.featureId), undefined), gmFear: 0, targets: [], rng });
+      if (!result.ok) continue;
+      const after = actorSheetAfter(next, result.plan, actorId, held.name);
+      if (JSON.stringify(after) === JSON.stringify(next)) continue;
+      next = after;
+      lines.push(`${held.name}: ${use.name}`);
     }
   }
   return { sheet: next, lines };

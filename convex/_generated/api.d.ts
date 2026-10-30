@@ -27,6 +27,7 @@ import type * as combatMapGenerate from "../combatMapGenerate.js";
 import type * as combatMapStyle from "../combatMapStyle.js";
 import type * as combatMaps from "../combatMaps.js";
 import type * as combatRequests from "../combatRequests.js";
+import type * as combatScenes from "../combatScenes.js";
 import type * as combatTokens from "../combatTokens.js";
 import type * as combatVision from "../combatVision.js";
 import type * as countdownRolls from "../countdownRolls.js";
@@ -203,6 +204,7 @@ declare const fullApi: ApiFromModules<{
   combatMapStyle: typeof combatMapStyle;
   combatMaps: typeof combatMaps;
   combatRequests: typeof combatRequests;
+  combatScenes: typeof combatScenes;
   combatTokens: typeof combatTokens;
   combatVision: typeof combatVision;
   countdownRolls: typeof countdownRolls;

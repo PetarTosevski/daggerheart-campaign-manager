@@ -1,6 +1,6 @@
 // Seraph (CB 44). Hope feature: Life Support clears a Hit Point on an ally (decision 7: written only through the feature).
 // Class feature: Prayer Dice (settled rule). At session start the Seraph rolls d4s equal to their subclass's
-// Spellcast trait, none when it is 0 or less, held until session end (`expire(sheet, "session")` clears the
+// Spellcast trait, none when it is 0 or less (Devout rolls one more and drops the lowest), held until session end (`expire(sheet, "session")` clears the
 // rest). A spent die's value goes to one of: Hope for the Seraph or an ally, reducing incoming damage (a
 // reminder for the damage calculator), or the Seraph's latest roll after it is made.
 // `params.dieIndexes` picks Prayer Dice by their order on the sheet (default: the first one).
@@ -18,11 +18,22 @@ export function prayerDiceCount(sheet: CharacterSheet): number {
   return trait ? Math.max(0, sheet.traits[trait]) : 0;
 }
 
-/** The sheet with fresh Prayer Dice rolled (earlier ones replaced). */
+/**
+ * Devout (Divine Wielder specialization, CB p.44): "When you roll your Prayer Dice, you can roll an additional die and
+ * discard the lowest result." Held through the primary subclass's specialization or mastery card (a multiclass has only
+ * the foundation, CB p.111). Rolling the extra die is always better, so it is automatic.
+ */
+export function hasDevout(sheet: Pick<CharacterSheet, "subclassId" | "subclassRank">): boolean {
+  return sheet.subclassId === "divine-wielder" && sheet.subclassRank !== "foundation";
+}
+
+/** The sheet with fresh Prayer Dice rolled (earlier ones replaced); with Devout one die more is rolled and the lowest dropped. */
 export function rollPrayerDice(sheet: CharacterSheet, rng: Rng): CharacterSheet {
   const kept = sheet.heldDice.filter((d) => d.kind !== "prayer");
   const count = Math.min(prayerDiceCount(sheet), 20 - kept.length);
-  const prayer = Array.from({ length: count }, (_, i): HeldDie => ({ id: `prayer-${i + 1}`, kind: "prayer", sides: 4, value: rng(4), until: "session" }));
+  const rolled = Array.from({ length: count + (hasDevout(sheet) ? 1 : 0) }, () => rng(4));
+  if (rolled.length > count) rolled.splice(rolled.indexOf(Math.min(...rolled)), 1);
+  const prayer = rolled.map((value, i): HeldDie => ({ id: `prayer-${i + 1}`, kind: "prayer", sides: 4, value, until: "session" }));
   return { ...sheet, heldDice: [...kept, ...prayer] };
 }
 
