@@ -138,3 +138,23 @@ waves:
         acceptance:
           - "lorekeeper-flow.spec.ts asks a question containing FAKE-FAIL, sees the error card ('couldn't answer just now' + Try again), presses Try again and gets an answer (Try again re-sends the same text, so the fake fails while a backend env switch such as LOREKEEPER_FAKE_FAIL is set - only on the fake model path - and the spec sets it with convexEnv, then removes it before Try again, as the caps test does)"
           - "pnpm lint, typecheck, vitest, tests/e2e/lorekeeper-flow.spec.ts and tracer-guard pass"
+  - wave: 7
+    tracers:
+      - id: J7
+        title: Notes journals keep the character for players with many characters; preload spec matches PF9; Lorekeeper drawer reopen race (dcm-bxp.141)
+        size: S
+        goal: The full e2e suite is green again - Notes finds the caller's character in this campaign through an owner+campaign index, the preload spec expects partySummary, and a stale dialog close event no longer shuts a reopened Lorekeeper drawer.
+        depends_on: []
+        owns:
+          - convex/tables/characters.ts
+          - convex/lib/notes.ts
+          - tests/convex/notes-many-characters.test.ts
+          - tests/e2e/campaign-preload.spec.ts
+          - src/components/lorekeeper/drawer/panel.tsx
+          - docs/tasks/TASK-F9-J7.md
+        reads: [convex/notesJournals.ts, convex/notesSharing.ts, tests/e2e/lorekeeper-flow.spec.ts, docs/best-practices.md]
+        acceptance:
+          - "characters gets index by_owner_campaign [ownerId, campaignId] (additive); liveCharacters queries it with eq(owner).eq(campaign) and a bounded take; convex test: a player owning more than 200 characters in other campaigns still gets their character on the journal (name, characterId)"
+          - "campaign-preload.spec.ts Dashboard target expects characters:partySummary (PF9)"
+          - "Lorekeeper drawer ignores a native close event that arrives after the drawer was reopened; lorekeeper-flow.spec.ts:293 passes 3 runs in a row"
+          - "Notes specs (live-notes, notes-a11y, notes-entries, notes-flow, notes-journals, notes-pages, notes-sharing), campaign-preload and lorekeeper-flow pass; pnpm lint, typecheck, vitest and tracer-guard pass"
