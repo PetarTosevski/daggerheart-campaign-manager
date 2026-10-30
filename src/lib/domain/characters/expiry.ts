@@ -28,7 +28,9 @@
 // await saveSheet(ctx, characterId, rested);
 // ```
 
+import type { Cost, Duration, EndEvent, Maintain, RollEnd, RollFilter, RollResult } from "../card-effects/types";
 import { featureKey } from "../feature-effects/ids";
+import type { TraitId } from "../../srd/types";
 import type { CardTokens, ClassState, Effect, FeatureUse, HeldDie } from "../../validation/characters";
 
 export type ExpiryEvent = "shortRest" | "longRest" | "session" | "scene" | "hit";
@@ -93,4 +95,235 @@ export function expire<T extends Expirable>(sheet: T, event: ExpiryEvent): T {
     heldDice: (sheet.heldDice ?? []).filter((d) => !HELD_DICE[event].includes(d.until)),
     featureUses: (sheet.featureUses ?? []).filter((u) => !FEATURE_USES[event].includes(u.until)),
   };
+}
+
+// ---------------------------------------------------------------- end events (plan lanes, tracer E6)
+//
+// Besides its `until`, a lasting effect or condition ends on EVENTS (card-effects/types.ts `EndEvent`, `RollEnd`,
+// `endsOnCaster`, `maintain`; widened by tracer V, docs/tasks/TASK-LN-V.md). The sheet does not store them: the server
+// reads them from the effect's entry (`EffectEnds`, looked up by an `EndsOf`; convex/lib/cardRows.ts `effectEndsOf` for
+// the SRD entries). The caller says what happened (`EndOccurrence`) and to whom: the effect's bearer, or the creature
+// that made it (`role: "caster"`; Eye of the Storm, HF p.23: "until you take Severe damage"). Pure; the caller saves
+// and logs. docs/tasks/TASK-LN-E6.md.
+//
+// ```ts
+// const out = endEffects(sheet, { kind: "damageTaken", severity: "minor", hpMarked: 1, lastHp: false }, effectEndsOf);
+// // Transform (CB p.334: "until you take damage") is gone from out.sheet; out.ended names it for the feed.
+// ```
+
+/** What ends one effect besides its `until`: its entry's step (an `effect`, or a `condition`). */
+export type EffectEnds = {
+  duration?: Duration;
+  endsOn?: readonly EndEvent[];
+  endsOnRoll?: RollEnd;
+  endsOnCaster?: readonly EndEvent[];
+  maintain?: Maintain;
+};
+
+/** A made roll as an end reads it. `action` covers attack rolls and Spellcast Rolls (CB p.95); a reaction roll is not one. */
+export type EndRoll = {
+  kind: "action" | "reaction" | "damage";
+  /** An attack roll: with a weapon, a spell, or another attack (a Beastform's form attack). */
+  attack?: "weapon" | "spell" | "other";
+  /** The weapon of a weapon attack (Menacing Reach, HF p.15: "a successful attack with that weapon"). */
+  weapon?: "primary" | "secondary";
+  /** A Spellcast Roll. */
+  spellcast?: boolean;
+  /** The trait rolled (Reliable Backup, CB p.43: "a Presence Roll"). */
+  trait?: TraitId;
+  success?: boolean;
+  /** Which Duality Die was higher; `critical`: matching dice (CB p.90: a critical success counts as a success with Hope). */
+  duality?: "hope" | "fear" | "critical";
+  /** The roll targets another creature (Timejammer, CB p.334: "an action roll that targets another creature"). */
+  targetsCreature?: boolean;
+};
+
+/** Hit severities as the ends read them (`none`: the damage was reduced to no Hit Points). */
+export type EndSeverity = "none" | "minor" | "major" | "severe";
+
+/** What happened to the bearer (or, with `role: "caster"`, to the creature that made the effect). */
+export type EndOccurrence =
+  | { kind: "roll"; roll: EndRoll }
+  /** A resolved hit on the creature: its severity after armor and the Hit Points it marked. */
+  | { kind: "damageTaken"; severity: EndSeverity; hpMarked: number; lastHp: boolean }
+  /** The creature dealt damage (Night's Glamour, HF p.17; Patron's Fury, HF p.15). */
+  | { kind: "damageDealt"; severity: EndSeverity }
+  /** Any other event by name (`gmSpendsFear`, `targetDefeated`, `stanceDrops`, `usedAgain`, `moves`, `tokensGone`, …). */
+  | { kind: "event"; event: EndEvent };
+
+/** The `EndEvent`s an occurrence sets off. */
+export function occurredEvents(occ: EndOccurrence): ReadonlySet<EndEvent> {
+  const out = new Set<EndEvent>();
+  if (occ.kind === "event") out.add(occ.event);
+  else if (occ.kind === "damageTaken") {
+    // CB p.92: damage reduced to 0 marks no Hit Points; the hit still landed but no damage was taken (Q1 in the task).
+    const took = occ.severity !== "none" || occ.hpMarked > 0;
+    if (took) out.add("takeDamage");
+    else out.add("reducedToNoHp");
+    if (occ.hpMarked > 0) out.add("markHp");
+    if (occ.severity === "major" || occ.severity === "severe") out.add("majorDamage");
+    if (occ.severity === "severe") out.add("takeSevere");
+    if (occ.lastHp) out.add("lastHp");
+  } else if (occ.kind === "damageDealt") {
+    if (occ.severity !== "none") out.add("dealDamage");
+    if (occ.severity === "severe") out.add("dealSevere");
+  } else {
+    const r = occ.roll;
+    if (r.kind === "action") out.add("actionRoll");
+    if (r.attack !== undefined) out.add("bearerAttacks");
+    if (r.kind !== "damage" && r.duality === "fear") out.add("rollWithFear");
+    if (r.success === false && r.duality !== "critical") out.add("bearerFails");
+    if (r.success === false && r.duality === "fear") out.add("failWithFear");
+    if (r.attack !== undefined && (r.success === true || r.duality === "critical")) out.add("attackSucceeds");
+  }
+  return out;
+}
+
+/** Whether a made roll is of the kind a `RollFilter` names (as `rollMatches` in card-effects/run.ts does for a spec). */
+export function endRollFilter(filter: RollFilter, roll: EndRoll): boolean {
+  switch (filter) {
+    case "any":
+      return true;
+    case "action":
+      return roll.kind === "action";
+    case "attack":
+      return roll.attack !== undefined;
+    case "weaponAttack":
+      return roll.attack === "weapon";
+    case "spellcast":
+      return roll.spellcast === true;
+    case "reaction":
+      return roll.kind === "reaction";
+    case "damage":
+      return roll.kind === "damage";
+    default:
+      return roll.kind !== "damage" && roll.trait === filter;
+  }
+}
+
+/** Whether a roll's outcome is the one a `RollResult` names (CB p.90: a critical is a success with Hope). */
+export function endRollResult(result: RollResult, roll: EndRoll): boolean {
+  const critical = roll.duality === "critical";
+  const success = roll.success === true || critical;
+  const hope = roll.duality === "hope" || critical;
+  switch (result) {
+    case "any":
+      return true;
+    case "success":
+      return success;
+    case "failure":
+      return roll.success === false && !critical;
+    case "withHope":
+      return hope;
+    case "withFear":
+      return roll.duality === "fear";
+    case "critical":
+      return critical;
+    case "successWithHope":
+      return success && hope;
+    case "successWithFear":
+      return success && roll.duality === "fear";
+  }
+}
+
+/** Whether a `RollEnd` holds for a roll (whose roll it must be is the caller's `role`). */
+export function rollEndHolds(end: RollEnd, roll: EndRoll): boolean {
+  if (!endRollFilter(end.roll, roll)) return false;
+  if (end.targetsCreature === true && roll.targetsCreature !== true) return false;
+  if (end.result !== undefined && !endRollResult(end.result, roll)) return false;
+  return end.weapon === undefined || roll.weapon === end.weapon;
+}
+
+/** Whose event it was: the effect's bearer, or the creature that made the effect. */
+export type EndRole = "bearer" | "caster";
+
+/**
+ * Whether an effect with these ends ends on what happened. The bearer side: `endsOn`, a `RollEnd` by the bearer, and
+ * duration `nextRoll` ("until the next time you make an action roll"; the sheet stores it as `manual`). The caster
+ * side: `endsOnCaster` and a `RollEnd` with `by: "caster"`. A creature that made an effect on itself is asked once per
+ * role.
+ */
+export function endsOnOccurrence(ends: EffectEnds, occ: EndOccurrence, role: EndRole): boolean {
+  const events = occurredEvents(occ);
+  const roll = occ.kind === "roll" ? occ.roll : null;
+  if (role === "bearer") {
+    if ((ends.endsOn ?? []).some((e) => events.has(e))) return true;
+    if (ends.duration === "nextRoll" && events.has("actionRoll")) return true;
+    return roll !== null && ends.endsOnRoll !== undefined && (ends.endsOnRoll.by ?? "bearer") === "bearer" && rollEndHolds(ends.endsOnRoll, roll);
+  }
+  if ((ends.endsOnCaster ?? []).some((e) => events.has(e))) return true;
+  return roll !== null && ends.endsOnRoll?.by === "caster" && rollEndHolds(ends.endsOnRoll, roll);
+}
+
+/** The ends of a sheet effect; undefined for one no entry describes (a D5 effect, a marker, a hand-written effect). */
+export type EndsOf = (effect: Effect) => EffectEnds | undefined;
+
+export type EndOptions = {
+  role?: EndRole;
+  /** Only these effects (the caster side: the effects this caster made). Default every effect. */
+  only?: (effect: Effect) => boolean;
+  /** Effects whose `maintain` the bearer paid this time (Night's Glamour): they stay. */
+  maintained?: ReadonlySet<string>;
+};
+
+/**
+ * The sheet without the effects `occ` ends. `ended`: the effects that went. `maintainable`: those among them whose
+ * entry lets the bearer pay to keep them (`maintain`, dcm-4qv), for the caller to offer; an effect whose id is in
+ * `maintained` stays and is in neither list.
+ */
+export function endEffects<T extends { effects: readonly Effect[] }>(sheet: T, occ: EndOccurrence, endsOf: EndsOf, opts: EndOptions = {}): { sheet: T; ended: Effect[]; maintainable: Effect[] } {
+  const role = opts.role ?? "bearer";
+  const ended: Effect[] = [];
+  const maintainable: Effect[] = [];
+  const kept = sheet.effects.filter((e) => {
+    if (opts.only && !opts.only(e)) return true;
+    const ends = endsOf(e);
+    if (ends === undefined || !endsOnOccurrence(ends, occ, role)) return true;
+    if (ends.maintain !== undefined) {
+      if (opts.maintained?.has(e.id)) return true;
+      maintainable.push(e);
+    }
+    ended.push(e);
+    return false;
+  });
+  if (ended.length === 0) return { sheet, ended, maintainable };
+  return { sheet: { ...sheet, effects: kept }, ended, maintainable };
+}
+
+/**
+ * Night's Glamour (HF p.17: "Unless you mark a Stress to maintain your Glamour, it drops when you mark a Hit Point or
+ * deal damage"): the sheet after paying a `maintain`'s costs, or null when it can't be paid. Fixed Hope and Stress only
+ * (the costs a maintain names in the book); Stress past a full track marks a Hit Point instead (CB p.92). The server runs
+ * Unshakable (convex/lib/unshakable.ts) on the Stress where it calls this.
+ */
+export function payMaintain<T extends { hope: number; stress: number; stressMax: number; hp: number; hpMax: number }>(sheet: T, maintain: Maintain): T | null {
+  let next = sheet;
+  for (const cost of maintain.costs) {
+    const amount = fixedAmount(cost);
+    if (amount === null) return null;
+    if (cost.kind === "hope") {
+      if (next.hope < amount) return null;
+      next = { ...next, hope: next.hope - amount };
+    } else {
+      const overflow = Math.max(0, next.stress + amount - next.stressMax);
+      if (next.hp + overflow > next.hpMax) return null;
+      next = { ...next, stress: Math.min(next.stressMax, next.stress + amount), hp: next.hp + overflow };
+    }
+  }
+  return next;
+}
+
+function fixedAmount(cost: Cost): number | null {
+  if (cost.kind !== "hope" && cost.kind !== "stress") return null;
+  return cost.amount.kind === "fixed" ? cost.amount.value : null;
+}
+
+/**
+ * Unstoppable (CB p.36: "When the die's value would exceed its maximum value or when the scene ends, remove the die and
+ * drop out of Unstoppable"; dcm-v17): once the die is gone (D5's "Dealt Hit Points" past the maximum, End Unstoppable),
+ * the Unstoppable feature's sheet effects (`isUnstoppable`) go too. The same sheet while the die is held.
+ */
+export function withoutLapsedUnstoppable<T extends { effects: readonly Effect[]; classState?: ClassState }>(sheet: T, isUnstoppable: (effect: Effect) => boolean): T {
+  if (sheet.classState?.unstoppable !== undefined || !sheet.effects.some(isUnstoppable)) return sheet;
+  return { ...sheet, effects: sheet.effects.filter((e) => !isUnstoppable(e)) };
 }

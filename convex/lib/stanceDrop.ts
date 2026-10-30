@@ -13,6 +13,7 @@
  * It takes the stance and the markers off the sheet and the condition off each marked target's encounter instance; the
  * caller writes both in its own undo group (`adversaryBefore` on its row).
  */
+import { endEffects, type EndsOf } from "../../src/lib/domain/characters/expiry";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
@@ -40,20 +41,58 @@ export function stanceMarkers(sheet: Pick<CharacterSheet, "effects">): StanceMar
   });
 }
 
-/** The sheet with no active stance and no stance-drop markers; `dropped` whether anything went. Pure. */
-export function withoutStance(sheet: CharacterSheet): { sheet: CharacterSheet; markers: StanceMarker[]; dropped: boolean } {
+/**
+ * The sheet with no active stance and no stance-drop markers; `dropped` whether anything went. Pure.
+ * Plan lanes E6: with `endsOf` (convex/lib/cardRows.ts `effectEndsOf`), the sheet's own effects whose entry ends them on
+ * `stanceDrops` go too ("When you drop out of a stance, you lose any ongoing benefits it provides", HF p.12).
+ */
+export function withoutStance(sheet: CharacterSheet, endsOf?: EndsOf): { sheet: CharacterSheet; markers: StanceMarker[]; dropped: boolean; ended: Effect[] } {
   const markers = stanceMarkers(sheet);
   const martial = sheet.classState.martial;
   const active = martial?.active !== undefined;
-  if (!active && markers.length === 0) return { sheet, markers, dropped: false };
-  let next: CharacterSheet = sheet;
+  const own = endsOf ? endEffects(sheet, { kind: "event", event: "stanceDrops" }, endsOf) : { sheet, ended: [] };
+  if (!active && markers.length === 0 && own.ended.length === 0) return { sheet, markers, dropped: false, ended: [] };
+  let next: CharacterSheet = own.sheet;
   if (martial && active) {
     const { active: _active, ...kept } = martial;
     void _active;
     next = { ...next, classState: { ...next.classState, martial: kept } };
   }
   if (markers.length > 0) next = { ...next, effects: next.effects.filter((e) => !e.id.startsWith(PREFIX) || !CONDITION.test(e.text)) };
-  return { sheet: next, markers, dropped: true };
+  return { sheet: next, markers, dropped: true, ended: own.ended };
+}
+
+/**
+ * Stance Fighter (HF p.12: "You can spend a Focus to shift into a martial stance and gain its effects. You can shift only
+ * into stances you've marked as known."; dcm-awh): the sheet in `stance`, a known stance other than the active one, or
+ * null. Costs are the caller's (the use's `pay`, or `combatFeatures.shiftStance`). Pure; the previous stance's drop is
+ * `setStance`.
+ */
+export function withStance(sheet: CharacterSheet, stance: string): CharacterSheet | null {
+  const martial = sheet.classState.martial;
+  if (martial === undefined || !martial.known.includes(stance) || martial.active === stance) return null;
+  return { ...sheet, classState: { ...sheet.classState, martial: { ...martial, active: stance } } };
+}
+
+/**
+ * A `setStance` step or a shift on the server (dcm-awh): the previous stance drops first (HF p.12: "If you are already in
+ * a stance when you shift into a different stance, you automatically drop out of the previously active stance"), with
+ * what ends with it (`dropStance`), then the new stance is active. Null for a stance the sheet can't shift into. The
+ * caller saves the sheet and logs `before` (the instances whose conditions ended) in its undo group.
+ */
+export async function setStance(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  sheet: CharacterSheet,
+  stance: string,
+  endsOf?: EndsOf,
+): Promise<{ sheet: CharacterSheet; before: AdversaryBefore[]; lines: string[] } | null> {
+  if (withStance(sheet, stance) === null) return null;
+  const dropped = sheet.classState.martial?.active !== undefined ? await dropStance(ctx, campaignId, sheet, endsOf) : null;
+  const base = dropped?.dropped ? dropped.sheet : sheet;
+  const next = withStance(base, stance);
+  if (next === null) return null;
+  return { sheet: next, before: dropped?.before ?? [], lines: dropped?.lines ?? [] };
 }
 
 function beforeOf(instance: Doc<"encounterAdversaries">): AdversaryBefore {
@@ -99,9 +138,10 @@ export async function endStanceConditions(ctx: MutationCtx, campaignId: Id<"camp
  * The stance drops: the sheet without the stance and its markers (the caller saves it) and every marked condition ended
  * on its instance (the caller logs `before` in its undo group).
  */
-export async function dropStance(ctx: MutationCtx, campaignId: Id<"campaigns">, sheet: CharacterSheet): Promise<{ sheet: CharacterSheet; dropped: boolean; before: AdversaryBefore[]; lines: string[] }> {
-  const off = withoutStance(sheet);
+export async function dropStance(ctx: MutationCtx, campaignId: Id<"campaigns">, sheet: CharacterSheet, endsOf?: EndsOf): Promise<{ sheet: CharacterSheet; dropped: boolean; before: AdversaryBefore[]; lines: string[] }> {
+  const off = withoutStance(sheet, endsOf);
   if (!off.dropped) return { sheet, dropped: false, before: [], lines: [] };
   const ended = await endStanceConditions(ctx, campaignId, off.markers);
-  return { sheet: off.sheet, dropped: true, ...ended };
+  const own = off.ended.map((e) => `${sheet.name}: ${e.text.split("; ")[0] ?? e.source} ends with the stance`);
+  return { sheet: off.sheet, dropped: true, before: ended.before, lines: [...ended.lines, ...own] };
 }

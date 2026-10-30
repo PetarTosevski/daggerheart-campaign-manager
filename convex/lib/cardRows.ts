@@ -13,14 +13,20 @@
 import { v, type Infer } from "convex/values";
 
 import type { PlanStep, ResolvedMod, RunPlan } from "../../src/lib/domain/card-effects/run";
-import type { CardUse, Duration } from "../../src/lib/domain/card-effects/types";
+import type { CardUse, ConditionRef, Duration, Step } from "../../src/lib/domain/card-effects/types";
+import { endEffects, endsOnOccurrence, withoutLapsedUnstoppable, type EffectEnds, type EndOccurrence, type EndRole } from "../../src/lib/domain/characters/expiry";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { SEVERITY_LABEL } from "../../src/lib/domain/encounters/damage";
+import { owned } from "../../src/lib/domain/feature-effects/owned";
 import { TRAIT_LABEL } from "../../src/lib/frames/extras/common";
+import { cardEffect } from "../../src/lib/srd/card-effects/index";
+import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import type { TraitId } from "../../src/lib/srd/types";
+import type { CharacterSheet, Condition, Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { difficultyOf, isFeatureUseId, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
+import { cardIdOfEffect, difficultyOf, featureIdOfEffect, isFeatureUseId, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
+import { MAX_INSTANCES } from "./encounters";
 import { bandsOnMap, openIncomingHit, partyMembers } from "./incomingHits";
 import { ENCOUNTER_CONDITIONS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
 import { rollValidator, type AdversaryBefore } from "./validators/actionLog";
@@ -131,22 +137,36 @@ function instanceKey(id: string): string {
   return isFeatureUseId(id) ? `feat:${id}` : `card:${id}`;
 }
 
-/** Whether an instance modifier belongs to this card or feature (`<prefix>:<n>`). */
+/**
+ * Whether an instance modifier belongs to this card or feature (`<prefix>:<n>`, or `<prefix>:<n>~<caster token id>`
+ * for one that ends on its caster's events, lane E6).
+ */
 function ownsInstanceEffect(effectId: string, id: string): boolean {
   const prefix = `${instanceKey(id)}:`;
-  return effectId.startsWith(prefix) && /^\d+$/.test(effectId.slice(prefix.length));
+  return effectId.startsWith(prefix) && /^\d+(~.+)?$/.test(effectId.slice(prefix.length));
+}
+
+/** The next free `<prefix>:<n>` on an instance; `caster`: the `~<token id>` suffix of a caster-ended one (lane E6). */
+function nextInstanceId(existing: readonly InstanceEffect[], cardId: string, caster?: string): string {
+  let n = 1;
+  const key = instanceKey(cardId);
+  while (existing.some((e) => e.id === `${key}:${n}` || e.id.startsWith(`${key}:${n}~`)) && n < 99) n++;
+  return `${key}:${n}${caster !== undefined ? `~${caster}` : ""}`;
+}
+
+/** Whether an entry step's ends read its caster (lane E6): its instance id then names the caster's token. */
+function endsOnCaster(ends: EffectEnds | undefined): boolean {
+  return ends !== undefined && ((ends.endsOnCaster ?? []).length > 0 || ends.endsOnRoll?.by === "caster");
 }
 
 /**
  * The instance modifier a card's `effect` step on an enemy becomes (CA0's `instanceEffectValidator`): Difficulty, attack,
  * damage and HP-marked deltas and Blighting Strike's half damage are numbers the engine reads; the rest is the label.
  */
-function instanceEffect(existing: readonly InstanceEffect[], cardId: string, cardName: string, step: Extract<PlanStep, { kind: "effect" }>): InstanceEffect {
-  let n = 1;
-  const key = instanceKey(cardId);
-  while (existing.some((e) => e.id === `${key}:${n}`) && n < 99) n++;
+function instanceEffect(existing: readonly InstanceEffect[], cardId: string, cardName: string, step: Extract<PlanStep, { kind: "effect" }>, caster?: string, lookup: SourceLookup = srdUses): InstanceEffect {
+  const casterEnded = caster !== undefined && endsOnCaster(stepEnds(cardId, step.label, lookup)?.ends);
   const sum = (stat: string) => step.mods.reduce((s, m: ResolvedMod) => s + (m.kind === "stat" && m.stat === stat ? m.delta : 0), 0);
-  const effect: InstanceEffect = { id: `${key}:${n}`, source: cardName.slice(0, 80), label: step.label.slice(0, 120), until: INSTANCE_UNTIL[step.duration] };
+  const effect: InstanceEffect = { id: nextInstanceId(existing, cardId, casterEnded ? caster : undefined), source: cardName.slice(0, 80), label: step.label.slice(0, 120), until: INSTANCE_UNTIL[step.duration] };
   for (const [stat, field] of [["difficulty", "difficulty"], ["attack", "attack"], ["damage", "damage"], ["hpMarked", "hpMarked"]] as const) {
     const delta = sum(stat);
     if (delta !== 0) effect[field] = delta;
@@ -156,18 +176,23 @@ function instanceEffect(existing: readonly InstanceEffect[], cardId: string, car
 }
 
 /** Each enemy's `effects` after the plan's `effect` steps (an exclusive card's older ones removed first), by token id. */
-function effectsAfter(plan: RunPlan, creatures: Creatures, cardName: string): Map<string, InstanceEffect[]> {
+function effectsAfter(plan: RunPlan, creatures: Creatures, cardName: string, lookup: SourceLookup): Map<string, InstanceEffect[]> {
   const out = new Map<string, InstanceEffect[]>();
+  const caster = creatures.onMap ? (creatures.scene.attacker._id as string) : undefined;
   for (const step of plan.steps) {
-    if (step.kind !== "effect") continue;
+    if (step.kind !== "effect" && step.kind !== "condition") continue;
     const c = creatures.get(step.targetId);
     if (!c || c.kind !== "enemy") continue;
+    // Lane E6: a condition that ends on an event leaves a marker modifier (its name as the label) so the end can find it.
+    const marker = step.kind === "condition" ? conditionMarker(plan.cardId, cardName, step, caster, lookup) : null;
+    if (step.kind === "condition" && marker === null) continue;
     let list = out.get(step.targetId);
     if (list === undefined) {
       const own = c.instance.effects ?? [];
       list = plan.exclusive ? own.filter((e) => !ownsInstanceEffect(e.id, plan.cardId)) : [...own];
     }
-    out.set(step.targetId, [...list, instanceEffect(list, plan.cardId, cardName, step)].slice(-INSTANCE_EFFECTS_MAX));
+    const next = step.kind === "effect" ? instanceEffect(list, plan.cardId, cardName, step, caster, lookup) : marker!(list);
+    out.set(step.targetId, [...list, next].slice(-INSTANCE_EFFECTS_MAX));
   }
   return out;
 }
@@ -177,8 +202,8 @@ function effectsAfter(plan: RunPlan, creatures: Creatures, cardName: string): Ma
  * `defeat` without an amount takes the whole group, with an amount that many (CB p.201). A card's `effect` on an enemy
  * lands in the instance's `effects` (CA4b).
  */
-export function instanceWrites(plan: RunPlan, creatures: Creatures, cardName: string): InstanceWrite[] {
-  const effects = effectsAfter(plan, creatures, cardName);
+export function instanceWrites(plan: RunPlan, creatures: Creatures, cardName: string, lookup: SourceLookup = srdUses): InstanceWrite[] {
+  const effects = effectsAfter(plan, creatures, cardName, lookup);
   const writes: InstanceWrite[] = [];
   const withEffects = (c: EnemyCreature, patch: Omit<InstancePatch, "effects">): InstanceWrite => {
     const next = effects.get(c.tokenId);
@@ -222,7 +247,29 @@ export function instanceWrites(plan: RunPlan, creatures: Creatures, cardName: st
     if (!c || c.kind !== "enemy" || writes.some((w) => w.creature.tokenId === c.tokenId)) continue;
     writes.push(withEffects(c, unchanged(c)));
   }
-  return writes;
+  return writes.map((w) => endedByDamage(plan, w, lookup));
+}
+
+const SEVERITY_RANK = { none: 0, minor: 1, major: 2, severe: 3 } as const;
+
+/**
+ * Lane E6 (dcm-utu): the plan's damage to an enemy ends the modifiers and conditions it already had that end on it
+ * (Slumber, CB p.332: "Asleep until they take damage"; Jump Scare, HF p.181: "Vulnerable until they mark 1 or more Hit
+ * Points"). What the same use gives is not ended by its own damage.
+ */
+function endedByDamage(plan: RunPlan, w: InstanceWrite, lookup: SourceLookup): InstanceWrite {
+  const hits = plan.steps.flatMap((s) => (s.kind === "damage" && s.result.targetId === (w.creature.tokenId as string) ? [s.result] : []));
+  const inst = w.creature.instance;
+  const earlier = new Set((inst.effects ?? []).map((e) => e.id));
+  if (hits.length === 0 || earlier.size === 0) return w;
+  const severity = hits
+    .map((h) => (h.severity === "defeat" ? "minor" : h.severity))
+    .reduce<keyof typeof SEVERITY_RANK>((a, b) => (SEVERITY_RANK[b] > SEVERITY_RANK[a] ? b : a), "none");
+  const hpMarked = Math.max(0, w.patch.hp - inst.hp);
+  const occ: EndOccurrence = { kind: "damageTaken", severity, hpMarked, lastHp: hpMarked > 0 && w.patch.hp >= inst.stats.hpMax };
+  const out = endInstanceEffects({ effects: w.patch.effects ?? inst.effects ?? [], conditions: w.patch.conditions, tags: w.patch.tags }, occ, { only: (e) => earlier.has(e.id), lookup });
+  if (out.patch === null) return w;
+  return { creature: w.creature, before: adversaryBefore(inst, true), patch: { ...w.patch, ...out.patch } };
 }
 
 /** Writes the instances (U4: the GM row's `adversaryBefore` lets undo put them back). */
@@ -375,4 +422,285 @@ export async function openCardHits(
     handled.add(c.tokenId);
   }
   return handled;
+}
+
+// ---------------------------------------------------------------- effect endings (plan lanes, tracer E6)
+//
+// docs/tasks/TASK-LN-E6.md. The pure engine is `endEffects` (src/lib/domain/characters/expiry.ts); this section finds an
+// effect's ends in its entry and applies them to sheets and encounter instances. Nothing about the ends is stored: a
+// sheet effect `card:<cardId>:<n>` / `feat:<hash>:<n>` and an instance effect `card:<cardId>:<n>` / `feat:<featureId>:<n>`
+// name their entry, and the effect's label (the sheet text's first part) names the step. A condition on an enemy that
+// ends on an event gets a marker modifier with the condition's name as its label (`effectsAfter`), and one that ends on
+// its caster's events carries the caster's token: `<prefix>:<n>~<token id>`.
+//
+// The callers fire the events where they happen (follow-up beads per lane): a resolved hit (`damageTaken`), a roll
+// (`roll`), damage dealt, a GM Fear spend, a defeat. Each one saves what it gets back in its own undo group.
+
+/** The uses of a card or feature entry by id (tests pass fixture entries). */
+export type SourceLookup = (sourceId: string) => readonly CardUse[] | undefined;
+
+/** The SRD entries: a card's or a feature's uses. */
+export const srdUses: SourceLookup = (sourceId) => cardEffect(sourceId)?.uses ?? featureEffect(sourceId)?.uses;
+
+/** An entry's lasting step (an `effect`, or a `condition` by its name) with its ends and its flags. */
+export type EndStep = { kind: "effect" | "condition"; label: string; ends: EffectEnds; flags: readonly string[] };
+
+type LastingStep = Extract<Step, { kind: "effect" }> | Extract<Step, { kind: "condition" }>;
+
+function conditionName(condition: ConditionRef): string {
+  return condition.kind === "standard" ? condition.condition : condition.tag;
+}
+
+function toEndStep(step: LastingStep): EndStep {
+  const flags = (step.mods ?? []).flatMap((m) => (m.kind === "flag" ? [m.flag as string] : []));
+  const ends: EffectEnds = {
+    duration: step.duration,
+    ...(step.endsOn ? { endsOn: step.endsOn } : {}),
+    ...(step.endsOnRoll ? { endsOnRoll: step.endsOnRoll } : {}),
+    ...(step.endsOnCaster ? { endsOnCaster: step.endsOnCaster } : {}),
+    ...(step.kind === "effect" && step.maintain ? { maintain: step.maintain } : {}),
+  };
+  return step.kind === "effect" ? { kind: "effect", label: step.label, ends, flags } : { kind: "condition", label: conditionName(step.condition), ends, flags };
+}
+
+/** Every `effect` and `condition` step anywhere in the uses (options, saves, checks, follow-ups, table rows). */
+function lastingSteps(value: unknown, out: EndStep[]): EndStep[] {
+  if (Array.isArray(value)) {
+    for (const v of value) lastingSteps(v, out);
+  } else if (value !== null && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    if ((o.kind === "effect" || o.kind === "condition") && "duration" in o) out.push(toEndStep(o as unknown as LastingStep));
+    for (const v of Object.values(o)) lastingSteps(v, out);
+  }
+  return out;
+}
+
+const SRD_STEPS = new Map<string, EndStep[]>();
+
+/** The lasting step of an entry with this label (the first one), or undefined. */
+export function stepEnds(sourceId: string, label: string, lookup: SourceLookup = srdUses): EndStep | undefined {
+  let steps = lookup === srdUses ? SRD_STEPS.get(sourceId) : undefined;
+  if (steps === undefined) {
+    steps = lastingSteps(lookup(sourceId) ?? [], []);
+    if (lookup === srdUses) SRD_STEPS.set(sourceId, steps);
+  }
+  const short = label.slice(0, 120);
+  return steps.find((s) => s.label === label || s.label.slice(0, 120) === short);
+}
+
+/**
+ * D5 class actions write their own sheet effects (no `card:` / `feat:` id). Marked for Death (HF p.8): D5's effect is the
+ * assassin's record of the tag the feature entry puts on the target.
+ */
+const D5_EFFECTS: Readonly<Record<string, { sourceId: string; label: string }>> = {
+  "marked-for-death": { sourceId: "class:assassin:marked-for-death", label: "Marked for Death" },
+};
+
+/** The entry and step a sheet effect came from, or null (a hand-written effect, a marker). */
+export function effectSource(effect: Pick<Effect, "id" | "text">): { sourceId: string; label: string } | null {
+  const alias = D5_EFFECTS[effect.id];
+  if (alias) return alias;
+  const sourceId = cardIdOfEffect(effect as Effect) ?? featureIdOfEffect(effect);
+  return sourceId === null ? null : { sourceId, label: effect.text.split("; ")[0] ?? "" };
+}
+
+/** A sheet effect's ends from its entry (the `EndsOf` the pure engine takes). */
+export function effectEndsOf(effect: Effect, lookup: SourceLookup = srdUses): EffectEnds | undefined {
+  const source = effectSource(effect);
+  return source === null ? undefined : stepEnds(source.sourceId, source.label, lookup)?.ends;
+}
+
+const INSTANCE_ID = /^(card|feat):(.+):(\d+)(?:~(.+))?$/;
+
+/** The entry an instance modifier came from and its caster's token (a caster-ended one), or null. */
+export function instanceEffectSource(effect: Pick<InstanceEffect, "id" | "label">): { sourceId: string; label: string; caster?: string } | null {
+  const m = INSTANCE_ID.exec(effect.id);
+  if (!m) return null;
+  return { sourceId: m[2]!, label: effect.label, ...(m[4] !== undefined ? { caster: m[4] } : {}) };
+}
+
+/** Whether these ends hold an event besides the stance drop (which `stanceDrop.ts` ends through its own markers). */
+function hasEventEnds(ends: EffectEnds): boolean {
+  return (ends.endsOn ?? []).some((e) => e !== "stanceDrops") || ends.endsOnRoll !== undefined || (ends.endsOnCaster ?? []).length > 0;
+}
+
+/** The marker an event-ended condition on an enemy leaves (`effectsAfter`), or null for a condition without such ends. */
+function conditionMarker(cardId: string, cardName: string, step: Extract<PlanStep, { kind: "condition" }>, caster: string | undefined, lookup: SourceLookup): ((existing: readonly InstanceEffect[]) => InstanceEffect) | null {
+  const name = conditionName(step.condition);
+  const found = stepEnds(cardId, name, lookup)?.ends ?? { duration: step.duration };
+  const endsOn = [...new Set([...(found.endsOn ?? []), ...(step.endsOn ?? [])])];
+  const ends: EffectEnds = { ...found, ...(endsOn.length > 0 ? { endsOn } : {}) };
+  if (!hasEventEnds(ends)) return null;
+  return (existing) => ({ id: nextInstanceId(existing, cardId, endsOnCaster(ends) ? caster : undefined), source: cardName.slice(0, 80), label: name.slice(0, 120), until: INSTANCE_UNTIL[step.duration] });
+}
+
+type InstanceState = Pick<Doc<"encounterAdversaries">, "effects" | "conditions" | "tags">;
+
+/**
+ * The instance after `occ`: the modifiers it ends gone, and with a condition's marker the condition (standard) or tag
+ * too. `role: "caster"` with `casterTokenId`: only the modifiers that caster made. `patch` is null when nothing ends.
+ */
+export function endInstanceEffects(
+  instance: InstanceState,
+  occ: EndOccurrence,
+  opts: { role?: EndRole; casterTokenId?: string; only?: (effect: InstanceEffect) => boolean; lookup?: SourceLookup } = {},
+): { patch: { effects: InstanceEffect[]; conditions: EncounterCondition[]; tags: string[] } | null; ended: InstanceEffect[] } {
+  const role = opts.role ?? "bearer";
+  const ended: InstanceEffect[] = [];
+  let conditions = instance.conditions;
+  let tags = instance.tags ?? [];
+  const effects = (instance.effects ?? []).filter((e) => {
+    if (opts.only && !opts.only(e)) return true;
+    const source = instanceEffectSource(e);
+    if (source === null || (role === "caster" && (source.caster === undefined || source.caster !== opts.casterTokenId))) return true;
+    const step = stepEnds(source.sourceId, source.label, opts.lookup);
+    if (step === undefined || !endsOnOccurrence(step.ends, occ, role)) return true;
+    ended.push(e);
+    if (step.kind === "condition") {
+      if (ENCOUNTER_SET.has(step.label)) conditions = conditions.filter((c) => c !== step.label);
+      else tags = tags.filter((t) => t !== step.label);
+    }
+    return false;
+  });
+  return ended.length === 0 ? { patch: null, ended } : { patch: { effects, conditions, tags }, ended };
+}
+
+/** The feed line of an ended modifier or condition. */
+function endedLine(name: string, label: string, source: string): string {
+  return `${name}: ${label} ends (${source})`;
+}
+
+/**
+ * Bearer side on one instance (Slumber, CB p.332: "Asleep until they take damage"; Midnight Vine, HF p.9: "until it marks
+ * a Stress"): patches it and returns the instance before (for the caller's GM row `adversaryBefore`) and the GM lines.
+ */
+export async function endOnInstance(ctx: MutationCtx, instance: Doc<"encounterAdversaries">, occ: EndOccurrence, lookup?: SourceLookup): Promise<{ before: AdversaryBefore | null; lines: string[] }> {
+  const out = endInstanceEffects(instance, occ, lookup ? { lookup } : {});
+  if (out.patch === null) return { before: null, lines: [] };
+  await ctx.db.patch("encounterAdversaries", instance._id, { ...out.patch, updatedAt: Date.now() });
+  return { before: adversaryBefore(instance, true), lines: out.ended.map((e) => endedLine(instance.label, e.label, e.source)) };
+}
+
+/**
+ * Caster side on the running encounters' instances (Timejammer, CB p.334: "It resumes the next time you make an action
+ * roll that targets another creature"): every modifier and condition the caster's token made that `occ` ends.
+ */
+export async function endForCasterOnInstances(
+  ctx: MutationCtx,
+  campaignId: Id<"campaigns">,
+  casterTokenId: string,
+  occ: EndOccurrence,
+  lookup?: SourceLookup,
+): Promise<{ before: AdversaryBefore[]; lines: string[] }> {
+  const before: AdversaryBefore[] = [];
+  const lines: string[] = [];
+  const encounters = await ctx.db
+    .query("encounters")
+    .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaignId).eq("status", "running"))
+    .take(4);
+  const suffix = `~${casterTokenId}`;
+  for (const encounter of encounters) {
+    const instances = await ctx.db
+      .query("encounterAdversaries")
+      .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounter._id))
+      .take(MAX_INSTANCES);
+    for (const instance of instances) {
+      if (instance.campaignId !== campaignId || !(instance.effects ?? []).some((e) => e.id.endsWith(suffix))) continue;
+      const out = endInstanceEffects(instance, occ, { role: "caster", casterTokenId, ...(lookup ? { lookup } : {}) });
+      if (out.patch === null) continue;
+      before.push(adversaryBefore(instance, true));
+      await ctx.db.patch("encounterAdversaries", instance._id, { ...out.patch, updatedAt: Date.now() });
+      lines.push(...out.ended.map((e) => endedLine(instance.label, e.label, e.source)));
+    }
+  }
+  return { before, lines };
+}
+
+/** Bearer side on a PC sheet (`endEffects` with the entries' ends) plus the feed lines. */
+export function endOnSheet(
+  sheet: CharacterSheet,
+  occ: EndOccurrence,
+  opts: { role?: EndRole; only?: (effect: Effect) => boolean; maintained?: ReadonlySet<string>; lookup?: SourceLookup } = {},
+): { sheet: CharacterSheet; ended: Effect[]; maintainable: Effect[]; lines: string[] } {
+  const out = endEffects(sheet, occ, (e) => effectEndsOf(e, opts.lookup), {
+    ...(opts.role ? { role: opts.role } : {}),
+    ...(opts.only ? { only: opts.only } : {}),
+    ...(opts.maintained ? { maintained: opts.maintained } : {}),
+  });
+  const lines = out.ended.map((e) => endedLine(sheet.name, e.text.split("; ")[0] ?? e.source, e.source));
+  return { ...out, lines };
+}
+
+/** Whether a PC holds a card (in the loadout) or a feature (owned) by id: who can have made an effect from it. */
+export function holdsSource(sheet: CharacterSheet, sourceId: string): boolean {
+  if (sheet.domainCards.loadout.includes(sourceId)) return true;
+  return isFeatureUseId(sourceId) && owned(sheet).some((f) => f.featureId === sourceId);
+}
+
+/**
+ * Caster side on the party's sheets (Eye of the Storm on an ally, HF p.23: "until you take Severe damage"). A sheet
+ * effect does not name who made it, so the caster is the one party member holding its card or feature; when two hold it
+ * the effect is left for the GM to end by hand (Q3 in the task). Returns the sheets that changed.
+ */
+export function endForCasterOnSheets<K>(
+  caster: CharacterSheet,
+  party: readonly { key: K; sheet: CharacterSheet }[],
+  occ: EndOccurrence,
+  lookup?: SourceLookup,
+): { key: K; sheet: CharacterSheet; ended: Effect[]; lines: string[] }[] {
+  const mine = (e: Effect) => {
+    const source = effectSource(e);
+    return source !== null && holdsSource(caster, source.sourceId) && party.filter((p) => holdsSource(p.sheet, source.sourceId)).length <= 1;
+  };
+  const out: { key: K; sheet: CharacterSheet; ended: Effect[]; lines: string[] }[] = [];
+  for (const p of party) {
+    const ended = endOnSheet(p.sheet, occ, { role: "caster", only: mine, ...(lookup ? { lookup } : {}) });
+    if (ended.ended.length > 0) out.push({ key: p.key, sheet: ended.sheet, ended: ended.ended, lines: ended.lines });
+  }
+  return out;
+}
+
+/**
+ * `targetDefeated` (Marked for Death, HF p.8: "the current adversary Marked for Death is defeated"): a PC's effects whose
+ * step names a tag the defeated instance carries end. The sheet does not record which creature an effect is about; the
+ * tag on the instance is the link.
+ */
+export function endOnDefeat(sheet: CharacterSheet, defeated: Pick<Doc<"encounterAdversaries">, "tags">, lookup?: SourceLookup): ReturnType<typeof endOnSheet> {
+  const tags = new Set(defeated.tags ?? []);
+  return endOnSheet(sheet, { kind: "event", event: "targetDefeated" }, { only: (e) => tags.has(effectSource(e)?.label ?? ""), ...(lookup ? { lookup } : {}) });
+}
+
+/**
+ * `gmSpendsFear` (Slumber, CB p.332: "or the GM spends a Fear"; Marked for Death: "the GM spends a number of Fear equal
+ * to your tier to clear it"): the sheet without that one effect when its entry lets a Fear spend end it, or null. The
+ * caller spends the Fear (how many is Q2 in the task) and logs both in one undo group.
+ */
+export function endByGmFear(sheet: CharacterSheet, effectId: string, lookup?: SourceLookup): CharacterSheet | null {
+  const out = endOnSheet(sheet, { kind: "event", event: "gmSpendsFear" }, { only: (e) => e.id === effectId, ...(lookup ? { lookup } : {}) });
+  return out.ended.length > 0 ? out.sheet : null;
+}
+
+/** The same on an instance's modifier or condition marker: its patch, or null when a Fear spend does not end it. */
+export function endInstanceByGmFear(instance: InstanceState, effectId: string, lookup?: SourceLookup): ReturnType<typeof endInstanceEffects>["patch"] {
+  return endInstanceEffects(instance, { kind: "event", event: "gmSpendsFear" }, { only: (e) => e.id === effectId, ...(lookup ? { lookup } : {}) }).patch;
+}
+
+/** Conditions a PC's effects forbid (Unstoppable, CB p.36: "You can't be Restrained or Vulnerable"; dcm-v17). */
+export function refusedConditions(sheet: Pick<CharacterSheet, "effects">, lookup?: SourceLookup): ReadonlySet<Condition> {
+  const out = new Set<Condition>();
+  for (const e of sheet.effects) {
+    const source = effectSource(e);
+    const flags = source === null ? [] : (stepEnds(source.sourceId, source.label, lookup)?.flags ?? []);
+    if (flags.includes("cannotBeRestrained")) out.add("restrained");
+    if (flags.includes("cannotBeVulnerable")) out.add("vulnerable");
+  }
+  return out;
+}
+
+/** The Guardian's Unstoppable feature (src/lib/srd/feature-effects/guardian-warrior.ts). */
+const UNSTOPPABLE = "class:guardian:unstoppable";
+
+/** dcm-v17: the sheet without the Unstoppable effect once D5 has removed the die (call after any D5 Unstoppable action). */
+export function afterUnstoppable(sheet: CharacterSheet): CharacterSheet {
+  return withoutLapsedUnstoppable(sheet, (e) => featureIdOfEffect(e) === UNSTOPPABLE);
 }
