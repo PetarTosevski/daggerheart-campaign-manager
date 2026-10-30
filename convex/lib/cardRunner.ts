@@ -884,3 +884,136 @@ export function actorSheetAfter(paidSheet: CharacterSheet, plan: RunPlan, actorI
     ...(toVault ? { domainCards: { ...paidSheet.domainCards, loadout: paidSheet.domainCards.loadout.filter((c) => c !== plan.cardId) } } : {}),
   };
 }
+
+// ---------------------------------------------------------------- riders (plan sheet-drawer SD5)
+
+/**
+ * Riders (SD5; docs/tasks/TASK-SD-SD5.md): a card's or a feature's `rider` (or `auto`) use rides on the actor's own attack.
+ * The server runs it as its own plan on the attack's targets and folds what lands on the attack itself (`modifyRoll`,
+ * `modifyDamage`, `addTargets`, `adjustHpMarked`) into the attack. A rider has no roll of its own, so the attack's roll
+ * decides its gates: `bindGates` keeps the steps whose move gates the attack's roll meets and drops the gates.
+ *
+ * A rider runs in two parts: `pre` (its costs, limit, folds and steps on the actor) before the attack's damage, and `post`
+ * (its steps on other creatures: Stress, conditions, movement prompts) after the damage is written, so they land on the
+ * instances as the damage left them. A before-roll rider's move-gated steps wait for the roll (`post`).
+ */
+
+/** The attack's roll as a rider's gates read it (a critical is a success with Hope, CB p.90). */
+export type HostRoll = { success: boolean; critical: boolean; withHope: boolean; withFear: boolean };
+
+/** Steps whose effect lands on the attack itself (the server folds them in). */
+export const FOLD_KINDS: ReadonlySet<Step["kind"]> = new Set<Step["kind"]>(["modifyDamage", "modifyRoll", "addTargets", "adjustHpMarked"]);
+
+const MOVE_GATE_NAMES: ReadonlySet<string> = new Set(["success", "failure", "critical", "withHope", "withFear"]);
+
+const isMoveGate = (g: unknown): g is string => typeof g === "string" && MOVE_GATE_NAMES.has(g);
+
+/** Whether a step waits on the move's roll (a `success`, `failure`, `critical`, `withHope` or `withFear` gate). */
+export function hasMoveGate(step: Step): boolean {
+  return (step.when ?? []).some(isMoveGate);
+}
+
+/** The same step with its nested step lists changed by `f`. */
+function mapNested(step: Step, f: (steps: readonly Step[]) => Step[]): Step {
+  switch (step.kind) {
+    case "optional":
+      return { ...step, steps: f(step.steps) };
+    case "choose":
+      return { ...step, options: step.options.map((o) => ({ ...o, steps: f(o.steps) })) };
+    case "save":
+      return { ...step, onFail: f(step.onFail), onSuccess: f(step.onSuccess) };
+    case "check":
+      return { ...step, then: f(step.then), otherwise: f(step.otherwise) };
+    case "followUp":
+      return { ...step, steps: f(step.steps) };
+    default:
+      return step;
+  }
+}
+
+/** The step without its move gates (they were decided by the host roll). */
+function withoutMoveGates(step: Step): Step {
+  const rest = (step.when ?? []).filter((g) => !isMoveGate(g));
+  const { when: _when, ...base } = step;
+  void _when;
+  return (rest.length > 0 ? { ...base, when: rest } : base) as Step;
+}
+
+/** Keeps the steps whose move gates the attack's roll meets, without those gates (nested lists too). */
+export function bindGates(steps: readonly Step[], roll: HostRoll): Step[] {
+  const holds = (g: string) => (g === "success" ? roll.success : g === "failure" ? !roll.success : g === "critical" ? roll.critical : g === "withHope" ? roll.withHope : roll.withFear);
+  const out: Step[] = [];
+  for (const step of steps) {
+    if ((step.when ?? []).some((g) => isMoveGate(g) && !holds(g))) continue;
+    out.push(mapNested(withoutMoveGates(step), (list) => bindGates(list, roll)));
+  }
+  return out;
+}
+
+export type RiderPart = "pre" | "post";
+
+/** Which part a step runs in; `split` for an optional or a choose whose own steps split. */
+function partOf(step: Step, before: boolean): RiderPart | "split" {
+  if (before && hasMoveGate(step)) return "post";
+  switch (step.kind) {
+    case "optional":
+    case "choose":
+      return "split";
+    case "save":
+    case "check":
+    case "followUp":
+      return "post";
+    case "pay":
+    case "fear":
+      return "pre";
+    default:
+      return FOLD_KINDS.has(step.kind) || ("to" in step && step.to === "self") ? "pre" : "post";
+  }
+}
+
+/**
+ * The steps of one part of a rider (`before`: a before-roll rider, whose move-gated steps all wait for `post`). An
+ * optional step keeps its costs and limit in `pre` and runs without them in `post`; a choose step stays in a part while
+ * one of its options has steps there.
+ */
+export function splitSteps(steps: readonly Step[], part: RiderPart, before: boolean): Step[] {
+  const out: Step[] = [];
+  for (const step of steps) {
+    const p = partOf(step, before);
+    if (p === part) out.push(step);
+    if (p !== "split") continue;
+    if (step.kind === "optional") {
+      const inner = splitSteps(step.steps, part, before);
+      if (part === "pre") out.push({ ...step, steps: inner });
+      else if (inner.length > 0) {
+        const { costs: _costs, limit: _limit, ...bare } = step;
+        void _costs;
+        void _limit;
+        out.push({ ...bare, steps: inner });
+      }
+    } else if (step.kind === "choose") {
+      const options = step.options.map((o) => ({ ...o, steps: splitSteps(o.steps, part, before) }));
+      if (options.some((o) => o.steps.length > 0)) out.push({ ...step, options });
+    }
+  }
+  return out;
+}
+
+/**
+ * One part of a rider's use, ready to run: `pre` keeps the costs, limit and requirements; `post` drops them (they were
+ * paid and checked in `pre`). `roll` binds the move gates (absent: a before-roll rider's `pre`, which keeps no gated step).
+ */
+export function riderUse(use: CardUse, part: RiderPart, before: boolean, roll: HostRoll | null): CardUse {
+  const steps = splitSteps(roll ? bindGates(use.steps, roll) : use.steps, part, before);
+  if (part === "pre") return { ...use, steps };
+  const { costs: _costs, limit: _limit, requires: _requires, ...rest } = use;
+  void _costs;
+  void _limit;
+  void _requires;
+  return { ...rest, steps };
+}
+
+/** Whether a part has anything to run (a `pre` part with costs or a limit runs even without steps). */
+export function riderPartRuns(use: CardUse, part: RiderPart): boolean {
+  return use.steps.length > 0 || (part === "pre" && ((use.costs ?? []).length > 0 || use.limit !== undefined));
+}

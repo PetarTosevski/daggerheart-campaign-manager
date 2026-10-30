@@ -21,7 +21,7 @@
 import { v, type Infer } from "convex/values";
 
 import { pickUse, type ActorState, type RunContext, type RunPlan, type RunRefusal } from "../../src/lib/domain/card-effects/run";
-import type { TargetSpec } from "../../src/lib/domain/card-effects/types";
+import type { CardUse, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { delegatedKeys } from "../../src/lib/domain/feature-effects/delegate";
 import { owned, activeBeastformId, holdingsFor, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
 import { actorExtras, asCardEffect, runFeature } from "../../src/lib/domain/feature-effects/run";
@@ -202,6 +202,13 @@ export function pickFeature(input: {
   dieIndexes?: number[];
   rollUsedExperience: boolean;
   party: PartyMember[];
+  /**
+   * SD5: changes the use before it runs (a rider's `pre` or `post` part, convex/lib/cardRunner.ts `riderUse`). Applied
+   * after the upgrades, so an upgrade's extra steps are split too.
+   */
+  transform?: (use: CardUse) => CardUse;
+  /** SD5: facts about the attack's target and the trigger's subject for NV7 checks (`hasCondition` on the target). */
+  extraFacts?: Pick<NonNullable<ActorState["facts"]>, "target" | "subject">;
 }): FeaturePick {
   const { sheet, featureId } = input;
   const held = ownedHere(sheet, input.campaign);
@@ -211,13 +218,25 @@ export function pickFeature(input: {
   const entry = featureEffect(featureId);
   if (entry === undefined) throw appError("FEATURE_NOT_COMBAT", `${feature.name} isn't automated on the map yet.`);
   const holdings = holdingsFor(sheet, held, entry.owner);
-  const upgraded = applyUpgrades(entry, holdings);
-  const use = pickUse(asCardEffect(upgraded), input.useId);
-  if (use === undefined) throw appError("INVALID", `${feature.name} has no "${input.useId ?? ""}".`);
-  if (use.activation.kind === "passive") throw appError("FEATURE_NOT_COMBAT", `${use.name} is always on.`);
+  let upgraded = applyUpgrades(entry, holdings);
+  const picked = pickUse(asCardEffect(upgraded), input.useId);
+  if (picked === undefined) throw appError("INVALID", `${feature.name} has no "${input.useId ?? ""}".`);
+  if (picked.activation.kind === "passive") throw appError("FEATURE_NOT_COMBAT", `${picked.name} is always on.`);
+  const transform = input.transform;
+  // SD5: the transformed use runs as the entry's, upgrades already applied (only their die sizes are kept, which
+  // `runFeature` reads for delegated held dice and which apply twice harmlessly).
+  const runEntry: FeatureEffect = transform
+    ? {
+        ...upgraded,
+        uses: upgraded.uses.map((u) => (u.id === picked.id ? transform(u) : u)),
+        upgrades: (entry.upgrades ?? []).filter((u) => u.patch.dieSides !== undefined).map((u) => ({ ...u, patch: { dieSides: u.patch.dieSides! } })),
+      }
+    : entry;
+  if (transform) upgraded = runEntry;
+  const use = transform ? transform(picked) : picked;
   const delegates = delegatedKeys(use).length > 0;
   const others: OtherSheet[] = delegates ? input.party.map((m) => ({ characterId: m.key, sheet: m.sheet })) : [];
-  const facts = factsOf(sheet, input.rollUsedExperience);
+  const facts = { ...factsOf(sheet, input.rollUsedExperience), ...(input.extraFacts ?? {}) };
 
   const runner = (context: RunContext) => {
     const { useId: _useId, limitKeys: _limitKeys, delegate: _delegate, ...rest } = context;
@@ -226,7 +245,7 @@ export function pickFeature(input: {
     void _delegate;
     const targetIds = (context.targets ?? []).map((t) => t.id);
     const actor = { ...rest.actor, featureUses: rest.actor.featureUses.map((u) => ({ ...u, key: expandedLimitKey(u.key, targetIds) })) };
-    const result = runFeature(entry, use.id, {
+    const result = runFeature(runEntry, use.id, {
       ...rest,
       actor,
       sheet,

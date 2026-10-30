@@ -1,5 +1,6 @@
 import { v, type Infer } from "convex/values";
 
+import { rollValidator } from "./actionLog";
 import { conditionValidator, effectValidator, traitIdValidator } from "./characters";
 
 /**
@@ -25,7 +26,12 @@ import { conditionValidator, effectValidator, traitIdValidator } from "./charact
  * holding a ready before-roll defence (Harrowing Invocation, Draining Bane, Keen Defenses, Vigilant). Resolved when every
  * responder answered (or the GM pressed Resolve now), then the attack rolls; declined when the attack is withdrawn.
  */
-export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"), v.literal("minionOffer"), v.literal("preRoll"));
+/**
+ * `afterRoll` (plan sheet-drawer SD5, widened; Q1, CB p.107): a player's own map attack held after its roll because the
+ * attacker holds a ready, affordable after-roll feature (Patron's Boon, True Strike, …). Resolved by Use or Pass (the
+ * player, or the GM's Resolve now); declined when the encounter ends.
+ */
+export const combatRequestKindValidator = v.union(v.literal("sanction"), v.literal("incomingHit"), v.literal("minionOffer"), v.literal("preRoll"), v.literal("afterRoll"));
 
 /** `open` until answered; `resolved` (approved / hit applied) or `declined` (the GM refused a sanction). */
 export const combatRequestStatusValidator = v.union(v.literal("open"), v.literal("resolved"), v.literal("declined"));
@@ -66,6 +72,24 @@ export const cardChoiceValidator = v.object({
 });
 
 /**
+ * A rider on an attack or a card use (plan sheet-drawer SD5): a loadout card's or an owned feature's use whose activation
+ * is `rider`, taken with the attack ("With an attack" on the Hand and the drawer). `choices` as a card use's
+ * (`n:<choice>`, `opt:<step>`, `situations`, `picked` for the extra targets of Hold Them Off or Surrounded).
+ */
+export const riderValidator = v.object({
+  source: v.union(v.literal("card"), v.literal("feature")),
+  /** The card id, or the feature id (`<source>:<owner>:<slug>`). */
+  id: v.string(),
+  /** The `CardUse.id`; default the entry's first rider use. */
+  useId: v.optional(v.string()),
+  choices: v.array(cardChoiceValidator),
+});
+export type Rider = Infer<typeof riderValidator>;
+
+/** The most riders one attack takes (a character holds few: CB p.107 lets each apply once per roll). */
+export const MAX_RIDERS_PER_ATTACK = 8;
+
+/**
  * The action a sanction holds: a weapon attack (CA3), a domain card use (CA4) or, widened by the sheet drawer (SD0), a
  * Hope / class / subclass / heritage / Beastform / transformation / stance feature use (`combatFeatures.useFeature`, SD3).
  */
@@ -75,6 +99,8 @@ export const sanctionActionValidator = v.union(
     slot: v.union(v.literal("primary"), v.literal("secondary")),
     targetTokenIds: v.array(v.id("combatTokens")),
     roll: sanctionRollOptionsValidator,
+    /** SD5 (widened): the riders taken with the attack, replayed on approval. */
+    riders: v.optional(v.array(riderValidator)),
   }),
   v.object({
     kind: v.literal("card"),
@@ -84,6 +110,8 @@ export const sanctionActionValidator = v.union(
     targetTokenIds: v.array(v.id("combatTokens")),
     choices: v.array(cardChoiceValidator),
     roll: v.optional(sanctionRollOptionsValidator),
+    /** SD5 (widened): the riders taken with the card's attack, replayed on approval. */
+    riders: v.optional(v.array(riderValidator)),
   }),
   v.object({
     kind: v.literal("feature"),
@@ -274,8 +302,56 @@ export const preRollFeatureChoiceValidator = v.object({
 /** One answer to a `preRoll` prompt: a before-roll feature use or a pass. */
 export const preRollChoiceValidator = v.union(preRollFeatureChoiceValidator, v.object({ kind: v.literal("pass") }));
 
+/**
+ * What an after-roll feature does to the held roll (SD5, Q1): `reroll` the Duality Dice (`advantage`: with one more
+ * advantage die, Patron's Boon; `hopeAtMost`: only a Hope Die at or under it, Internal Compass), `withHope` (Fearless,
+ * Unbound), `outcome` (True Strike's success, Witch's Charm's success with Fear), `add` a number to the total (Prayer Dice).
+ */
+export const afterRollChangeValidator = v.union(
+  v.object({ kind: v.literal("reroll"), advantage: v.optional(v.boolean()), hopeAtMost: v.optional(v.number()) }),
+  v.object({ kind: v.literal("withHope") }),
+  v.object({ kind: v.literal("outcome"), outcome: v.union(v.literal("success"), v.literal("successWithFear"), v.literal("successWithHope")) }),
+  v.object({ kind: v.literal("add"), amount: v.number() }),
+);
+export type AfterRollChange = Infer<typeof afterRollChangeValidator>;
+
+/** An after-roll feature the attacker may use on the held roll (the feature id and use; their names are re-read). */
+export const afterRollOptionValidator = v.object({ featureId: v.string(), useId: v.string() });
+
+/**
+ * Q1 (plan sheet-drawer SD5, widened): a player's own weapon attack held after its Duality roll, before any damage is
+ * rolled, because the attacker holds a ready, affordable after-roll feature. Nothing is paid or written yet: `dice` are
+ * every die the attack drew so far, in order, so Use and Pass resolve the attack with the same dice (a reroll draws
+ * fresh ones from `dualityAt`). `roll` and `hits` are what the player already saw (their own dice, Hit / Miss, U1).
+ */
+export const afterRollPayloadValidator = v.object({
+  schemaVersion: v.literal(1),
+  kind: v.literal("afterRoll"),
+  characterId: v.id("characters"),
+  action: v.object({
+    kind: v.literal("attack"),
+    slot: v.union(v.literal("primary"), v.literal("secondary")),
+    targetTokenIds: v.array(v.id("combatTokens")),
+    roll: sanctionRollOptionsValidator,
+    riders: v.optional(v.array(riderValidator)),
+  }),
+  /** At most 60 dice (a Duality roll with its advantage, help and riders' dice). */
+  dice: v.array(v.number()),
+  /** Where the Duality Dice (Hope, Fear, then advantage dice) start in `dice`. */
+  dualityAt: v.number(),
+  roll: rollValidator,
+  hits: v.array(v.object({ tokenId: v.id("combatTokens"), hit: v.boolean() })),
+  options: v.array(afterRollOptionValidator),
+});
+
+/** One answer to an `afterRoll` row: use one of its features (with `useFeature`-style choices), or pass. */
+export const afterRollChoiceValidator = v.union(
+  v.object({ kind: v.literal("use"), featureId: v.string(), useId: v.optional(v.string()), choices: v.array(cardChoiceValidator) }),
+  v.object({ kind: v.literal("pass") }),
+);
+
 /** The payload of a `combatRequests` row; `kind` matches the row's `kind`. */
-export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator, minionOfferPayloadValidator, preRollPayloadValidator);
+export const combatRequestPayloadValidator = v.union(sanctionPayloadValidator, incomingHitPayloadValidator, minionOfferPayloadValidator, preRollPayloadValidator, afterRollPayloadValidator);
 
 /**
  * One answer in a reaction window (Q13): `armor` (mark Armor Slots; `slots` above 1 only where a card allows it,
@@ -337,3 +413,5 @@ export type MinionOfferPayload = Infer<typeof minionOfferPayloadValidator>;
 export type PreRollPayload = Infer<typeof preRollPayloadValidator>;
 export type HeldAttack = Infer<typeof heldAttackValidator>;
 export type PreRollChoice = Infer<typeof preRollChoiceValidator>;
+export type AfterRollPayload = Infer<typeof afterRollPayloadValidator>;
+export type AfterRollChoice = Infer<typeof afterRollChoiceValidator>;

@@ -24,6 +24,7 @@ import { BAND_LABEL, type RangeBand } from "../targets";
 import { seenTargets, useActor, useCombatTargets, type WeaponSlot } from "../targets/state";
 import { NO_ROLL_OPTIONS, rollProblem, RollOptions, signed, Stepper, type Roller, type RollValues } from "../roll-controls";
 import { usePanelMemory } from "./memory";
+import { AfterRollPrompt, riderProblem, RiderToggles, ridersToSend, type HeldRoll, type RiderPicks } from "./riders";
 
 /**
  * The Attack bar (plan combat-actions CA5): the primary and secondary weapon with damage at Proficiency, the duality
@@ -31,6 +32,10 @@ import { usePanelMemory } from "./memory";
  * targets, once per click with a "Rolling…" state (rule 12). The result shows the player's own dice, the damage total
  * and Hit / Miss / Defeated per target, never an enemy's numbers (U1, Q5). A Minion offer opens the pick dialog (Q6);
  * an out-of-range attack waits for the GM (Q1).
+ *
+ * Plan sheet-drawer SD5: the riders of the character's cards and features that ride on the weapon's attack are toggles
+ * above the Attack button (`combatActions.riders`); automatic ones apply on the server. An attack held for an after-roll
+ * feature (Q1) shows its roll with Use / Pass; the GM sees Resolve now on the character's held attacks.
  */
 
 export type AttackOutcome = FunctionReturnType<typeof api.combatActions.attack>;
@@ -78,7 +83,15 @@ export function targetVerdict(t: { hit: boolean; defeated: boolean }): "Hit" | "
  * The result of a resolved attack: the duality dice and total, the outcome, the damage dice and total, and per target
  * Hit / Miss / Defeated. It never shows HP, Stress, thresholds or Difficulty: the server never sends them (U1).
  */
-export function AttackResult({ result, names, weaponName }: { result: Pick<ResolvedAttack, "roll" | "damage" | "targets" | "fearGained">; names: ReadonlyMap<string, string>; weaponName: string }) {
+export function AttackResult({
+  result,
+  names,
+  weaponName,
+}: {
+  result: Pick<ResolvedAttack, "roll" | "damage" | "targets" | "fearGained"> & Partial<Pick<ResolvedAttack, "riders" | "skipped" | "riderPrompts">>;
+  names: ReadonlyMap<string, string>;
+  weaponName: string;
+}) {
   const outcome = outcomeLine(result.roll);
   return (
     <section className="cma-result" aria-label="Attack result" data-testid="combat-attack-result">
@@ -115,12 +128,27 @@ export function AttackResult({ result, names, weaponName }: { result: Pick<Resol
           );
         })}
       </ul>
+      {result.riders && result.riders.length > 0 ? (
+        <p className="cma-small cma-note" data-testid="combat-attack-riders">
+          With: {result.riders.join(", ")}
+        </p>
+      ) : null}
+      {result.skipped && result.skipped.length > 0 ? <p className="cm-muted cma-small cma-note">Not used (its moment didn&apos;t come): {result.skipped.join(", ")}</p> : null}
+      {(result.riderPrompts ?? []).map((p, i) => (
+        <p key={i} className="cma-small cma-note">
+          {p.kind === "move" ? "Move: " : ""}
+          {p.text}
+        </p>
+      ))}
       {result.fearGained > 0 ? <p className="cm-muted cma-small cma-note">Rolled with Fear: the GM gains a Fear.</p> : null}
     </section>
   );
 }
 
-type Last = { kind: "resolved"; result: ResolvedAttack; names: Map<string, string>; weaponName: string } | { kind: "pending"; outOfRange: { tokenId: string; band: RangeBand }[]; names: Map<string, string> };
+type Last =
+  | { kind: "resolved"; result: ResolvedAttack; names: Map<string, string>; weaponName: string }
+  | { kind: "pending"; outOfRange: { tokenId: string; band: RangeBand }[]; names: Map<string, string> }
+  | { kind: "awaiting"; held: HeldRoll; weaponName: string };
 
 /** Player column: the Attack bar. Renders nothing for a character without a token on the live map. */
 export function AttackBar(props: ActionsPanelProps) {
@@ -129,7 +157,7 @@ export function AttackBar(props: ActionsPanelProps) {
   return <AttackForm {...props} characterId={actor.characterId} enemies={actor.enemies} />;
 }
 
-function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps & { characterId: Id<"characters">; enemies: readonly { _id: Id<"combatTokens">; name: string }[] }) {
+function AttackForm({ campaignId, map, role, characterId, enemies }: ActionsPanelProps & { characterId: Id<"characters">; enemies: readonly { _id: Id<"combatTokens">; name: string }[] }) {
   const character = useQuery(api.characters.get, { characterId });
   const { targetTokenIds, slot, setSlot } = useCombatTargets();
   const attack = useIntent(api.combatActions.attack);
@@ -139,6 +167,8 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
   // Kept above the desktop / phone layout switch (user answer 2026-10-22), per character.
   const [last, setLast] = usePanelMemory<Last | null>(`attack:${characterId}`, null);
   const [pickFor, setPickFor] = useState<Id<"combatRequests"> | null>(null);
+  const [riderPicks, setRiderPicks] = useState<RiderPicks>({});
+  const riderList = useQuery(api.combatActions.riders, { campaignId, characterId, slot });
 
   if (character === undefined) {
     return (
@@ -156,7 +186,10 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
   const names = new Map<string, string>(enemies.map((t) => [t._id, t.name]));
   const roller: Roller = { experiences: sheet.experiences, hope: sheet.hope };
   const notEnoughHope = rollProblem(roller, rollValues);
-  const canAttack = chosen !== undefined && picked.length > 0 && !attack.pending && !notEnoughHope;
+  const riders = riderList ?? [];
+  const riderMissing = riderProblem(riders, riderPicks);
+  const others = enemies.filter((e) => !picked.includes(e._id));
+  const canAttack = chosen !== undefined && picked.length > 0 && !attack.pending && !notEnoughHope && !riderMissing;
 
   async function fire() {
     if (!chosen) return;
@@ -174,12 +207,17 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
       disadvantage: Math.max(0, -edge),
       help,
       options: [],
+      riders: ridersToSend(riders, riderPicks),
     });
     if (!out) return;
     setRollValues((v) => ({ ...v, experienceIds: [] }));
+    setRiderPicks({});
     if (out.status === "resolved") {
       setLast({ kind: "resolved", result: out, names, weaponName });
       if (out.minionOffer) setPickFor(out.minionOffer.requestId);
+    } else if (out.status === "awaiting") {
+      const held: HeldRoll = { requestId: out.requestId, roll: out.roll, targets: out.targets.map((t) => ({ ...t, name: names.get(t.tokenId) ?? "Target" })), options: out.options };
+      setLast({ kind: "awaiting", held, weaponName });
     } else {
       setLast({ kind: "pending", outOfRange: out.outOfRange, names });
     }
@@ -215,7 +253,9 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
         </label>
       ) : null}
       <RollOptions roller={roller} values={rollValues} onChange={(patch) => setRollValues((v) => ({ ...v, ...patch }))} />
+      <RiderToggles options={riders} picks={riderPicks} onChange={setRiderPicks} enemies={others} />
       {notEnoughHope ? <p className="cma-error">{notEnoughHope}</p> : null}
+      {riderMissing ? <p className="cma-error">{riderMissing}</p> : null}
       <button type="button" className="cm-go cma-go" disabled={!canAttack} aria-busy={attack.pending} onClick={() => void fire()}>
         {attack.pending ? "Rolling…" : picked.length === 0 ? "Pick a target to attack" : `⚔ Attack ${names.get(picked[0]!) ?? "target"}${chosen ? ` with ${chosen.weapon.name}` : ""}`}
       </button>
@@ -228,27 +268,59 @@ function AttackForm({ campaignId, map, characterId, enemies }: ActionsPanelProps
         </p>
       ) : last?.kind === "resolved" ? (
         <AttackResult result={last.result} names={last.names} weaponName={last.weaponName} />
+      ) : last?.kind === "awaiting" ? (
+        <AfterRollPrompt
+          campaignId={campaignId}
+          held={last.held}
+          gm={role === "gm"}
+          onDone={(r) => {
+            if (r.status === "resolved") {
+              setLast({ kind: "resolved", result: r, names, weaponName: last.weaponName });
+              if (r.minionOffer) setPickFor(r.minionOffer.requestId);
+            } else setLast(null);
+          }}
+        />
       ) : last?.kind === "pending" ? (
         <p role="status" className="cma-waiting" data-testid="combat-attack-pending">
           Out of range ({last.outOfRange.map((o) => `${last.names.get(o.tokenId) ?? "target"}: ${BAND_LABEL[o.band]}`).join(", ")}). The attack waits for the GM;
           nothing is rolled until they allow it.
         </p>
       ) : null}
-      <Requests campaignId={campaignId} characterId={characterId} pickFor={pickFor} onPickFor={setPickFor} />
+      <Requests campaignId={campaignId} characterId={characterId} pickFor={pickFor} onPickFor={setPickFor} shown={last?.kind === "awaiting" ? last.held.requestId : null} gm={role === "gm"} />
     </div>
   );
 }
 
 /** The character's open requests: attacks waiting for the GM (Q1) and Minion offers to pick (Q6). */
-function Requests({ campaignId, characterId, pickFor, onPickFor }: { campaignId: Id<"campaigns">; characterId: Id<"characters">; pickFor: Id<"combatRequests"> | null; onPickFor: (id: Id<"combatRequests"> | null) => void }) {
+function Requests({
+  campaignId,
+  characterId,
+  pickFor,
+  onPickFor,
+  shown,
+  gm,
+}: {
+  campaignId: Id<"campaigns">;
+  characterId: Id<"characters">;
+  pickFor: Id<"combatRequests"> | null;
+  onPickFor: (id: Id<"combatRequests"> | null) => void;
+  /** The held attack the bar already shows (not listed twice). */
+  shown: Id<"combatRequests"> | null;
+  /** The GM answers a held attack with Resolve now. */
+  gm: boolean;
+}) {
   const rows = useQuery(api.combatRequests.mine, { campaignId });
   if (!rows) return null;
-  const mine = rows.filter((r) => r.characterId === characterId);
+  const mine = rows.filter((r) => r.characterId === characterId && r.requestId !== shown);
   if (mine.length === 0) return null;
   return (
     <ul className="cma-requests" aria-label="Waiting">
       {mine.map((r) =>
-        r.kind === "sanction" ? (
+        r.kind === "afterRoll" ? (
+          <li key={r.requestId} className="cma-request">
+            <AfterRollPrompt campaignId={campaignId} held={r} gm={gm} />
+          </li>
+        ) : r.kind === "sanction" ? (
           <li key={r.requestId} className="cma-request" data-testid="combat-sanction-waiting">
             Waiting for the GM: {r.targets.map((t) => t.name).join(", ")} ({r.outOfRange.map((o) => BAND_LABEL[o.band]).join(", ")})
           </li>

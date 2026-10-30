@@ -4,38 +4,26 @@ import { appError } from "../src/lib/errors/app-error";
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { readSheet } from "./lib/characterSheet";
-import { attackScene, checkTargets, equippedWeapon, resolveAttack, resolvedAttackValidator, type AttackRoll } from "./lib/combatActions";
+import { attackScene, awaitingAttackValidator, checkTargets, equippedWeapon, resolveAttack, resolvedAttackValidator, rollFromStored } from "./lib/combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
 import { campaignQuery, keyedGmMutation } from "./lib/functions";
-import type { SanctionAction } from "./lib/validators/combatRequests";
+import { featureEffect } from "../src/lib/srd/feature-effects/index";
+import { costText } from "./lib/featureDrawer";
 import { rangeBandValidator } from "./lib/validators/combatRequests";
+import { rollValidator } from "./lib/validators/actionLog";
 
 /**
  * Combat requests a player or the GM answers (plan combat-actions; table AA0, these functions CA3):
  * - `sanction` (GM): approves or declines a player's out-of-range attack (Q1). Approval resolves the stored attack
  *   exactly as `combatActions.attack` would (rolled now, by the server; the rows belong to the player who asked).
- * - `mine`: the open requests waiting on the caller: a player's own sanctions and Minion offers; for the GM every open
- *   sanction and Minion offer of the campaign (the GM's queue). Requests whose encounter is no longer running are left out.
+ * - `mine`: the open requests waiting on the caller: a player's own sanctions, Minion offers and held attacks (SD5,
+ *   Q1: an attack waiting for an after-roll feature's Use / Pass); for the GM every open one of the campaign (the GM's
+ *   queue, with Resolve now). Requests whose encounter is no longer running are left out.
+ * - SD5: an approved sanction may itself be held for an after-roll feature (`awaiting`).
  * Card sanctions (CA4) and incoming hits (AA2) are answered by their own tracers' functions.
  */
 
 const declined = v.object({ status: v.literal("declined") });
-
-/** The stored roll options (every field optional, AA0's shape) as the attack's arguments. */
-function storedRoll(roll: Extract<SanctionAction, { kind: "attack" }>["roll"]): AttackRoll {
-  return {
-    ...(roll.trait !== undefined ? { trait: roll.trait } : {}),
-    modifier: roll.modifier ?? 0,
-    experienceIds: roll.experienceIds ?? [],
-    advantage: roll.advantage ?? 0,
-    disadvantage: roll.disadvantage ?? 0,
-    help: roll.help ?? 0,
-    options: roll.options ?? [],
-    ...(roll.damageOptions !== undefined ? { damageOptions: roll.damageOptions } : {}),
-    ...(roll.slayerDice !== undefined ? { slayerDice: roll.slayerDice } : {}),
-    ...(roll.tideTokens !== undefined ? { tideTokens: roll.tideTokens } : {}),
-  };
-}
 
 /**
  * The GM approves (`approve: true`) or declines a sanction (Q1). Declining closes it. Approving re-checks the attacker's
@@ -46,7 +34,7 @@ function storedRoll(roll: Extract<SanctionAction, { kind: "attack" }>["roll"]): 
 export const sanction = keyedGmMutation({
   rateLimit: "roll",
   args: { requestId: v.id("combatRequests"), approve: v.boolean() },
-  returns: v.union(resolvedAttackValidator, declined),
+  returns: v.union(resolvedAttackValidator, awaitingAttackValidator, declined),
   handler: async (ctx, { requestId, approve }) =>
     ctx.once("combat_sanction", { requestId, approve }, async () => {
       const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
@@ -63,7 +51,7 @@ export const sanction = keyedGmMutation({
       const scene = await attackScene(ctx, ctx.campaign, character, row.mapId);
       const weapon = equippedWeapon(loaded.sheet, action.slot);
       const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, action.targetTokenIds);
-      const result = await resolveAttack(ctx, { loaded, actorId: row.createdBy, scene, weapon, slot: action.slot, targets, roll: storedRoll(action.roll) });
+      const result = await resolveAttack(ctx, { loaded, actorId: row.createdBy, scene, weapon, slot: action.slot, targets, roll: rollFromStored(action.roll), riders: action.riders ?? [] });
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return result;
     }),
@@ -92,6 +80,17 @@ const requestView = v.union(
     entryId: v.id("actionLog"),
     extra: v.number(),
     candidates: v.array(v.object({ instanceId: v.id("encounterAdversaries"), tokenId: v.id("combatTokens"), name: v.string(), available: v.number() })),
+  }),
+  /** SD5 (Q1): the attacker's own dice and Hit / Miss per target, and the after-roll features on offer (U1). */
+  v.object({
+    kind: v.literal("afterRoll"),
+    requestId: v.id("combatRequests"),
+    characterId: v.id("characters"),
+    characterName: v.string(),
+    createdAt: v.number(),
+    roll: rollValidator,
+    targets: v.array(v.object({ tokenId: v.id("combatTokens"), name: v.string(), hit: v.boolean() })),
+    options: v.array(v.object({ featureId: v.string(), useId: v.string(), name: v.string(), costs: v.array(v.string()) })),
   }),
 );
 
@@ -143,6 +142,23 @@ export const mine = campaignQuery({
           slot: p.action.slot,
           targets,
           outOfRange: p.outOfRange,
+        });
+      } else if (p.kind === "afterRoll") {
+        const targets = [];
+        for (const h of p.hits) targets.push({ tokenId: h.tokenId, name: await tokenName(ctx, row, h.tokenId), hit: h.hit });
+        const options = p.options.flatMap((o) => {
+          const use = featureEffect(o.featureId)?.uses.find((u) => u.id === o.useId);
+          return use ? [{ ...o, name: use.name, costs: (use.costs ?? []).map(costText) }] : [];
+        });
+        views.push({
+          kind: "afterRoll" as const,
+          requestId: row._id,
+          characterId: p.characterId,
+          characterName: await characterName(ctx, row, p.characterId),
+          createdAt: row.createdAt,
+          roll: p.roll,
+          targets,
+          options,
         });
       } else if (p.kind === "minionOffer") {
         const candidates = [];

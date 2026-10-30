@@ -1,0 +1,56 @@
+/* The Attack bar's riders and the after-roll step (plan sheet-drawer SD5). Tokens and spacing as actions.css. */
+.cma-riders {
+  border: 1px solid var(--cm-line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  padding: 6px 10px 8px;
+  margin: 0;
+  min-width: 0;
+}
+.cma-riders > legend {
+  padding: 0 4px;
+}
+.cma-rider-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.cma-rider {
+  display: grid;
+  gap: 4px;
+}
+.cma-rider[data-ready="false"] {
+  opacity: 0.6;
+}
+.cma-rider-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.cma-rider-toggle input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.cma-rider-name {
+  font-weight: 600;
+}
+.cma-rider-body {
+  display: grid;
+  gap: 6px;
+  padding-left: 28px;
+}
+.cma-afterroll {
+  display: grid;
+  gap: 8px;
+}
+.cma-afterroll-actions {
+  flex-wrap: wrap;
+}
+.cma-afterroll-actions > button {
+  min-height: 44px;
+}

@@ -2,7 +2,11 @@ import { decodeCells } from "../../src/components/combat-map/map-view/cells";
 import { buildMovementGrid, type MovementGrid, type MovementObject } from "../../src/lib/domain/combat-map/movement";
 import { spriteMove } from "../../src/lib/sprite-packs/index";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { QueryCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { lineOfSight } from "../../src/lib/domain/combat-actions/index";
+import { logAction } from "./actionLog";
+import { readSheet, saveSheet } from "./characterSheet";
+import { loadScene, type Scene } from "./combatVision";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap } from "./combatMaps";
 import { objectTraits, resolveRefs } from "./spriteSources";
 
@@ -69,4 +73,44 @@ export async function movementGrid(ctx: QueryCtx, campaignId: Id<"campaigns">, m
     objects: objects.map((o) => movementObject(o, uploaded)),
     image,
   });
+}
+
+// ---------------------------------------------------------------- Cloaked ends on a move in sight (plan sheet-drawer SD5)
+
+/**
+ * Q9 (a), CB p.42 (Rogue, "Cloaked"): "After you make an attack or end a move within line of sight of an adversary, you are
+ * no longer Cloaked." Whether a token standing where `at` says has a clear line of sight (walls and closed doors block it;
+ * cover does not) to an enemy token of the map: adversaries don't carry a vision cone of their own, so the line is the
+ * map's geometry both ways (the task doc's QUESTIONS).
+ */
+export function inSightOfAdversary(scene: Pick<Scene, "prepared" | "tokens" | "visionObjects">, at: Doc<"combatTokens">): boolean {
+  return scene.tokens.some((t) => t._id !== at._id && t.side === "enemy" && lineOfSight(scene.prepared, t, at, scene.visionObjects).lineOfSight);
+}
+
+/**
+ * Ends the Cloaked condition of the character whose PC token just ended a move at its new square, when an adversary token
+ * has it in line of sight (`inSightOfAdversary`). Returns whether it ended. The move mutation (convex/combatTokens.ts
+ * `move`, not owned by SD5) calls it after patching the token; the change is logged as a public, undoable feed row.
+ */
+export async function uncloakAfterMove(ctx: MutationCtx, campaign: Doc<"campaigns">, map: Doc<"combatMaps">, token: Doc<"combatTokens">, actorId: Id<"users">): Promise<boolean> {
+  if (token.ref.kind !== "pc" || !map.live) return false;
+  const character = await ctx.db.get("characters", token.ref.characterId);
+  if (character === null || character.campaignId !== campaign._id) return false;
+  const sheet = readSheet(character.sheet);
+  if (!sheet.conditions.includes("cloaked")) return false;
+  const scene = await loadScene(ctx, campaign, map);
+  const moved = scene.tokens.find((t) => t._id === token._id) ?? token;
+  if (!inSightOfAdversary(scene, moved)) return false;
+  await saveSheet(ctx, character._id, { ...sheet, conditions: sheet.conditions.filter((c) => c !== "cloaked") });
+  await logAction(ctx, {
+    campaignId: campaign._id,
+    characterId: character._id,
+    actorId,
+    kind: "feature",
+    visibility: "public",
+    summary: `${sheet.name} ends a move in sight of an adversary and is no longer Cloaked`,
+    before: sheet,
+    undoable: true,
+  });
+  return true;
 }

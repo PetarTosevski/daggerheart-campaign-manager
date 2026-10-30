@@ -9,12 +9,18 @@ import {
   attackDuality,
   attackRollFields,
   attackScene,
+  awaitingAttackValidator,
   beforeOf,
   checkTargets,
   equippedWeapon,
+  hostOf,
   pendingAttackValidator,
+  pickRiders,
   resolveAttack,
   resolvedAttackValidator,
+  riderOptions,
+  riderOptionValidator,
+  rollFromStored,
   targetHints,
   targetHintValidator,
   weaponIn,
@@ -23,7 +29,8 @@ import {
 } from "./lib/combatActions";
 import { loadCombatMap } from "./lib/combatMaps";
 import { loadScene, viewOf } from "./lib/combatVision";
-import { closeRequest, encounterRunning, groupOffer, openSanction } from "./lib/combatRequests";
+import { closeRequest, encounterRunning, groupOffer, loadOpenRequest, openSanction } from "./lib/combatRequests";
+import { afterRollChoiceValidator, MAX_RIDERS_PER_ATTACK, riderValidator } from "./lib/validators/combatRequests";
 import { featureScope } from "./lib/featureScope";
 import { campaignQuery, keyedCampaignMutation } from "./lib/functions";
 import { prepareDuality, rules, type Loaded } from "./lib/rolls";
@@ -83,29 +90,34 @@ export const attack = keyedCampaignMutation({
     targetTokenIds: v.array(v.id("combatTokens")),
     slot: weaponSlotValidator,
     ...attackRollFields,
+    /** SD5: riders taken with the attack (at most MAX_RIDERS_PER_ATTACK). */
+    riders: v.optional(v.array(riderValidator)),
   },
-  returns: v.union(resolvedAttackValidator, pendingAttackValidator),
+  returns: v.union(resolvedAttackValidator, pendingAttackValidator, awaitingAttackValidator),
   handler: async (ctx, args) =>
     ctx.once("combat_attack", args, async () => {
-      const { characterId, mapId, targetTokenIds, slot, ...options } = args;
+      const { characterId, mapId, targetTokenIds, slot, riders = [], ...options } = args;
+      if (riders.length > MAX_RIDERS_PER_ATTACK) throw appError("INVALID", `At most ${MAX_RIDERS_PER_ATTACK} riders.`);
       const loaded = await attacker(ctx, characterId);
       const scene = await attackScene(ctx, ctx.campaign, loaded.character, mapId);
       const weapon = equippedWeapon(loaded.sheet, slot);
       const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds);
       const roll = rollOf(options);
       const outOfRange = targets.filter((t) => !t.check.inRange);
-      if (outOfRange.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll });
+      if (outOfRange.length === 0) return resolveAttack(ctx, { loaded, actorId: ctx.user._id, scene, weapon, slot, targets, roll, riders });
 
-      // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs).
+      // Q1: wait for the GM. Refuse now what the approval would refuse anyway (a character who can't act, unpaid costs,
+      // a rider that doesn't ride on this attack).
       assertCanAct(loaded.character, loaded.sheet);
       rules(() => prepareDuality(loaded.sheet, attackDuality(weapon, roll, targets.some((t) => t.sight.cover)), featureScope(ctx.campaign), null));
+      pickRiders(loaded.sheet, ctx.campaign, hostOf(weapon, slot, roll.trait), riders);
       const bands = outOfRange.map((t) => ({ tokenId: t.token._id, band: t.check.band }));
       const requestId = await openSanction(ctx, {
         campaignId: ctx.campaign._id,
         encounterId: targets[0]!.encounter._id,
         mapId: scene.map._id,
         createdBy: ctx.user._id,
-        payload: { schemaVersion: 1, kind: "sanction", characterId, action: { kind: "attack", slot, targetTokenIds, roll }, outOfRange: bands },
+        payload: { schemaVersion: 1, kind: "sanction", characterId, action: { kind: "attack", slot, targetTokenIds, roll, ...(riders.length > 0 ? { riders } : {}) }, outOfRange: bands },
       });
       return { status: "pending" as const, requestId, outOfRange: bands };
     }),
@@ -129,6 +141,67 @@ export const targets = campaignQuery({
     if (viewer === null) return [];
     return targetHints(ctx, ctx.campaign, { map, scene, viewer, attacker: scene.tokens[viewer.index]! }, weaponIn(sheet, slot ?? "primary"));
   },
+});
+
+/**
+ * SD5: the riders that ride on the character's attack with the weapon in `slot` (default primary): every rider use of a
+ * loadout card and of a held feature whose trigger fits a weapon attack, with its phase, costs, limit, readiness and the
+ * choices it asks (numbers, options, situations to confirm, extra targets). The character's own sheet only (U1, CF6).
+ */
+export const riders = campaignQuery({
+  need: "view",
+  args: { characterId: v.id("characters"), slot: v.optional(weaponSlotValidator) },
+  returns: v.array(riderOptionValidator),
+  handler: async (ctx, { characterId, slot }) => {
+    const { sheet } = await attacker(ctx, characterId);
+    const weapon = weaponIn(sheet, slot ?? "primary");
+    if (weapon === undefined) return [];
+    return riderOptions(sheet, ctx.campaign, hostOf(weapon, slot ?? "primary", undefined));
+  },
+});
+
+/**
+ * SD5 (Q1, CB p.107): answers an attack held after its roll: `use` one of its after-roll features (its costs and limit
+ * apply; the roll is rerolled or changed, and the new result stands) or `pass`. The attacker's player or the GM (Resolve
+ * now); another player is FORBIDDEN. The attack then resolves with the dice it already rolled, and the rows belong to
+ * the player who attacked. A request whose encounter ended is declined. REQUEST_NOT_OPEN once answered; NOT_FOUND for
+ * another campaign's or a non-after-roll request; INVALID for a feature the request doesn't offer.
+ */
+export const afterRoll = keyedCampaignMutation({
+  need: "view",
+  rateLimit: "roll",
+  args: { requestId: v.id("combatRequests"), choice: afterRollChoiceValidator },
+  returns: v.union(resolvedAttackValidator, v.object({ status: v.literal("declined") })),
+  handler: async (ctx, { requestId, choice }) =>
+    ctx.once("combat_after_roll", { requestId, choice }, async () => {
+      const row = await loadOpenRequest(ctx, ctx.campaign._id, requestId);
+      if (row.payload.kind !== "afterRoll") throw appError("NOT_FOUND");
+      const p = row.payload;
+      const loaded = await attacker(ctx, p.characterId);
+      if (!(await encounterRunning(ctx, row)) || row.mapId === undefined) {
+        await closeRequest(ctx, row._id, "declined", ctx.user._id);
+        return { status: "declined" as const };
+      }
+      if (choice.kind === "use" && !p.options.some((o) => o.featureId === choice.featureId && (choice.useId === undefined || choice.useId === o.useId))) throw appError("INVALID", "That feature isn't offered on this roll.");
+      const answer = choice.kind === "use" ? { ...choice, useId: choice.useId ?? p.options.find((o) => o.featureId === choice.featureId)!.useId } : choice;
+      const scene = await attackScene(ctx, ctx.campaign, loaded.character, row.mapId);
+      const weapon = equippedWeapon(loaded.sheet, p.action.slot);
+      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, p.action.targetTokenIds);
+      const result = await resolveAttack(ctx, {
+        loaded,
+        actorId: row.createdBy,
+        scene,
+        weapon,
+        slot: p.action.slot,
+        targets,
+        roll: rollFromStored(p.action.roll),
+        riders: p.action.riders ?? [],
+        held: { dice: p.dice, answer },
+      });
+      if (result.status !== "resolved") throw appError("INVALID");
+      await closeRequest(ctx, row._id, "resolved", ctx.user._id);
+      return result;
+    }),
 });
 
 const pickResult = v.object({
