@@ -11,6 +11,7 @@ import { cardEffect } from "@/lib/srd/card-effects";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { useViewerFlag } from "../../map-view/use-viewer-flag";
+import { usePlayFor } from "../../play-for";
 import type { ActionsPanelProps, ResolutionsProps } from "../../slots";
 import { useTokens, type TokenView } from "../../tokens/use-tokens";
 import { HandSharingSwitch } from "../../settings/hand-sharing";
@@ -49,15 +50,21 @@ import { useCardActions, useRecall, type UseRequest } from "./use-card";
 
 /** The player's creatures: their own token, the other PCs, and every other token their character sees (R4). */
 function playerCreatures(view: NonNullable<ReturnType<typeof useActor>>["view"]): Creature[] {
-  const out: Creature[] = [{ tokenId: view.tokenId, name: "You", side: "self" }];
-  for (const pc of view.pcs) if (pc._id !== view.tokenId) out.push({ tokenId: pc._id, name: pc.name, side: "pc" });
-  for (const t of view.others) out.push({ tokenId: t._id, name: t.name, side: t.side === "pc" ? "pc" : t.side });
+  const self = view.pcs.find((pc) => pc._id === view.tokenId);
+  const out: Creature[] = [{ tokenId: view.tokenId, name: "You", side: "self", ...(self ? { at: footprint(self) } : {}) }];
+  for (const pc of view.pcs) if (pc._id !== view.tokenId) out.push({ tokenId: pc._id, name: pc.name, side: "pc", at: footprint(pc) });
+  for (const t of view.others) out.push({ tokenId: t._id, name: t.name, side: t.side === "pc" ? "pc" : t.side, at: footprint(t) });
   return out;
 }
 
 /** The GM's creatures for a character: its token is "self", every other token by its side. */
 function gmCreatures(tokens: readonly TokenView[], characterId: Id<"characters">): Creature[] {
-  return tokens.map((t) => ({ tokenId: t._id, name: t.name, side: t.characterId === characterId ? "self" : t.side }));
+  return tokens.map((t) => ({ tokenId: t._id, name: t.name, side: t.characterId === characterId ? "self" : t.side, at: footprint(t) }));
+}
+
+/** A token's square and size, for the card dialog's range check (DA6). */
+function footprint(t: { x: number; y: number; size: number }) {
+  return { x: t.x, y: t.y, size: t.size };
 }
 
 // ---------------------------------------------------------------- the hand
@@ -110,7 +117,7 @@ export function HandBody({
   mapId,
   characterId,
   creatures,
-  pickedEnemies,
+  pickedEnemies: pickedOnMap,
   gm,
   canPlay,
   lockedNote = GM_LOCKED,
@@ -126,7 +133,9 @@ export function HandBody({
   const character = useQuery(api.characters.get, canPlay ? { characterId } : "skip");
   const actions = useCardActions({ campaignId, mapId, characterId });
   const recall = useRecall({ campaignId, characterId });
-  const { aim, setAim } = useCombatTargets();
+  const { aim, setAim, clearDialogPicks, dialogTokenIds } = useCombatTargets();
+  // The enemies the player picked on the map; the rings the last card dialog left are not picks of the next card (DA6).
+  const pickedEnemies = pickedOnMap.filter((id) => !dialogTokenIds.has(id));
   const [dialogFor, setDialogFor] = useState<string | null>(null);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [last, setLast] = usePanelMemory<LastCard | null>(`card:${characterId}`, null);
@@ -180,6 +189,12 @@ export function HandBody({
     return first && effectUse ? { first, form: formFor(effectUse) } : null;
   }
 
+  /** Opens a card's dialog with no picks: the last dialog's picks and their rings on the map go (DA6, CA8 bug 3). */
+  function openDialog(cardId: string) {
+    clearDialogPicks();
+    setDialogFor(cardId);
+  }
+
   /** Use (the button on the raised card), and the end of every drag onto the table. */
   function playNow(card: HandCard) {
     actions.clearError();
@@ -187,7 +202,7 @@ export function HandBody({
     if (!start) return;
     const { first, form } = start;
     if (needsDialog(form, { spells: playableUses(card).length, pickedEnemies: pickedEnemies.length, gm })) {
-      setDialogFor(card.cardId);
+      openDialog(card.cardId);
       return;
     }
     // Nothing to ask (F8-I1, dcm-bxp.99.28): it fires at once, with the roll options when it rolls.
@@ -237,7 +252,7 @@ export function HandBody({
               className="cm-btn cm-sm"
               onClick={() => {
                 setAim(null);
-                setDialogFor(aiming.cardId);
+                openDialog(aiming.cardId);
               }}
             >
               Pick from a list
@@ -390,6 +405,7 @@ export function HandBody({
           pending={actions.pending}
           error={actions.waiting ? null : actions.error}
           onClose={() => setDialogFor(null)}
+          onSpell={clearDialogPicks}
           onSubmit={(request) => void submit(dialogCard, request)}
         />
       ) : null}
@@ -559,17 +575,12 @@ function GmHandFor(props: ResolutionsProps) {
   const tokens = useTokens(campaignId, "gm", map._id);
   const [held, setHeld] = useState<Id<"characters"> | null>(null);
   const [seenSelection, setSeenSelection] = useState<Id<"combatTokens"> | null>(null);
-  const [playingFor, setPlayingFor] = useState<Id<"characters"> | null>(null);
-  const switchId = useId();
 
   // A newly selected PC token opens its Hand (adjusting state during render, not in an effect: rule 13).
   const selectedPc = tokens?.find((t) => t._id === selectedTokenId && t.characterId !== undefined)?.characterId ?? null;
   if (tokens !== undefined && selectedTokenId !== seenSelection) {
     setSeenSelection(selectedTokenId);
-    if (selectedPc !== null && selectedPc !== held) {
-      setHeld(selectedPc);
-      setPlayingFor(null);
-    }
+    if (selectedPc !== null && selectedPc !== held) setHeld(selectedPc);
   }
 
   const token = held ? tokens?.find((t) => t.characterId === held) : undefined;
@@ -579,39 +590,64 @@ function GmHandFor(props: ResolutionsProps) {
       <GmCardSanctions campaignId={campaignId} />
       {held && tokens && token ? (
         <HandDock>
-          <HandBody
-            campaignId={campaignId}
-            mapId={map._id}
-            characterId={held}
-            creatures={gmCreatures(tokens, held)}
-            pickedEnemies={[]}
-            gm
-            canPlay={playingFor === held}
-            label={`Hand of ${token.name}`}
-            title={`Hand · ${token.name}`}
-            testId="combat-gm-hand"
-            barStart={
-              <>
-                <label className="cmh-switch" htmlFor={switchId}>
-                  <input
-                    id={switchId}
-                    type="checkbox"
-                    role="switch"
-                    checked={playingFor === held}
-                    onChange={(e) => setPlayingFor(e.target.checked ? held : null)}
-                  />
-                  <span className="cmh-switch-track" aria-hidden="true" />
-                  <span>Play for this character</span>
-                </label>
-                <button type="button" className="cm-btn cm-sm" aria-label={`Close the hand of ${token.name}`} onClick={() => setHeld(null)}>
-                  ✕
-                </button>
-              </>
-            }
-          />
+          <GmHandBody campaignId={campaignId} mapId={map._id} characterId={held} tokens={tokens} name={token.name} onClose={() => setHeld(null)} />
         </HandDock>
       ) : null}
     </>
+  );
+}
+
+/**
+ * The Hand of the PC the GM holds, greyed until "Play for this character" is on: the one switch per PC that the sheet
+ * drawer shows too, kept on until the GM turns it off (DA6, user answer 2026-10-30; `play-for.ts`).
+ */
+function GmHandBody({
+  campaignId,
+  mapId,
+  characterId,
+  tokens,
+  name,
+  onClose,
+}: {
+  campaignId: Id<"campaigns">;
+  mapId: Id<"combatMaps">;
+  characterId: Id<"characters">;
+  tokens: readonly TokenView[];
+  name: string;
+  onClose: () => void;
+}) {
+  const playFor = usePlayFor(campaignId, characterId, true);
+  const switchId = useId();
+  return (
+    <HandBody
+      campaignId={campaignId}
+      mapId={mapId}
+      characterId={characterId}
+      creatures={gmCreatures(tokens, characterId)}
+      pickedEnemies={[]}
+      gm
+      canPlay={playFor.on}
+      label={`Hand of ${name}`}
+      title={`Hand · ${name}`}
+      testId="combat-gm-hand"
+      barStart={
+        <>
+          <label className="cmh-switch" htmlFor={switchId}>
+            <input id={switchId} type="checkbox" role="switch" checked={playFor.on} onChange={(e) => playFor.set(e.target.checked)} />
+            <span className="cmh-switch-track" aria-hidden="true" />
+            <span>Play for this character</span>
+          </label>
+          {playFor.error ? (
+            <p role="alert" className="cma-error cmh-bar-error">
+              {playFor.error}
+            </p>
+          ) : null}
+          <button type="button" className="cm-btn cm-sm" aria-label={`Close the hand of ${name}`} onClick={onClose}>
+            ✕
+          </button>
+        </>
+      }
+    />
   );
 }
 

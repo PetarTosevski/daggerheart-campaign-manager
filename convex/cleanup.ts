@@ -403,6 +403,11 @@ const PURGE_STEPS: ((ctx: MutationCtx, c: Id<"campaigns">, budget: Budget) => Pr
     const rows = await ctx.db.query("combatAreas").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "combatAreas", rows);
   },
+  // The GM's "Play for this character" switches (plan drawer-answers DA6); the index's prefix is the campaign.
+  async (ctx, c, budget) => {
+    const rows = await ctx.db.query("playFor").withIndex("by_campaign_user_character", (q) => q.eq("campaignId", c)).take(budget.left);
+    await deleteRows(ctx, budget, "playFor", rows);
+  },
   async (ctx, c, budget) => {
     const rows = await ctx.db.query("operations").withIndex("by_campaign", (q) => q.eq("campaignId", c)).take(budget.left);
     await deleteRows(ctx, budget, "operations", rows);

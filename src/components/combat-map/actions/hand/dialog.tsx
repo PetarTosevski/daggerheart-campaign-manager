@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { Modal } from "@/components/brand/modal";
 import type { CardUse } from "@/lib/domain/card-effects/types";
@@ -16,6 +16,7 @@ import {
   formFor,
   formProblem,
   initialValues,
+  outOfRange,
   RANGE_LABEL,
   rollOf,
   type ChoiceAsk,
@@ -44,21 +45,28 @@ function dialogPicks(values: FormValues): Set<string> {
   return new Set<string>([...values.targets, ...Object.values(values.recipients).flatMap((ids) => ids ?? [])]);
 }
 
-const sideWord = (side: string) => (side === "enemy" ? "enemies" : side === "ally" ? "allies" : side === "selfOrAlly" ? "you or allies" : "creatures");
+/** The label of a creature out of the card's range (user answer 2026-10-30): picking it still sends the use (Q1). */
+export const OUT_OF_RANGE = "Out of range - GM approves";
+
+const sideWord =(side: string) => (side === "enemy" ? "enemies" : side === "ally" ? "allies" : side === "selfOrAlly" ? "you or allies" : "creatures");
 
 function CreaturePicks({
   legend,
   creatures,
   picked,
   max,
+  away,
   onChange,
 }: {
   legend: string;
   creatures: readonly Creature[];
   picked: readonly string[];
   max: number | null;
+  /** Out of the card's range (DA6): listed greyed with "Out of range - GM approves", still pickable (Q1). */
+  away?: (c: Creature) => boolean;
   onChange: (ids: string[]) => void;
 }) {
+  const awayId = useId();
   if (creatures.length === 0) {
     return (
       <fieldset className="cmh-field">
@@ -71,10 +79,15 @@ function CreaturePicks({
   return (
     <fieldset className="cmh-field">
       <legend className="cm-lbl">{legend}</legend>
+      <span id={awayId} hidden>
+        {OUT_OF_RANGE}
+      </span>
       <div className="cmh-picks">
         {creatures.map((c) => {
           const on = picked.includes(c.tokenId);
           const full = !on && max !== null && !single && picked.length >= max;
+          const far = away?.(c) ?? false;
+          const name = c.side === "self" ? "You" : c.name;
           return (
             <button
               key={c.tokenId}
@@ -82,9 +95,16 @@ function CreaturePicks({
               className="cm-chip cmh-pick"
               aria-pressed={on}
               disabled={full}
+              data-away={far ? "true" : undefined}
+              aria-describedby={far ? awayId : undefined}
               onClick={() => onChange(single ? (on ? [] : [c.tokenId]) : on ? picked.filter((id) => id !== c.tokenId) : [...picked, c.tokenId])}
             >
-              {c.side === "self" ? "You" : c.name}
+              <span>{name}</span>
+              {far ? (
+                <span className="cmh-pick-away" aria-hidden="true">
+                  {OUT_OF_RANGE}
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -173,6 +193,7 @@ function UseForm({
           creatures={creatures.filter((c) => fitsSide(c, t.side))}
           picked={values.targets}
           max={t.max}
+          away={(c) => outOfRange(t, creatures, values.targets, c)}
           onChange={(targets) => pick({ targets })}
         />
       ) : null}
@@ -315,6 +336,7 @@ export function UseDialog({
   pending,
   error,
   onClose,
+  onSpell,
   onSubmit,
 }: {
   card: HandCard;
@@ -331,6 +353,8 @@ export function UseDialog({
   pending: boolean;
   error: string | null;
   onClose: () => void;
+  /** Another spell was picked: its form starts with no picks, so the rings of the last one's picks go (DA6). */
+  onSpell?: () => void;
   onSubmit: (request: UseRequest) => void;
 }) {
   const firstReady = uses.find((u) => u.ready) ?? uses[0];
@@ -343,7 +367,12 @@ export function UseDialog({
           <legend className="cm-lbl">Spell</legend>
           <div className="cmh-picks">
             {uses.map((u) => (
-              <button key={u.useId} type="button" className="cm-chip cmh-pick" aria-pressed={u.useId === useId} disabled={!u.ready} onClick={() => setUseId(u.useId)}>
+              <button key={u.useId} type="button" className="cm-chip cmh-pick" aria-pressed={u.useId === useId} disabled={!u.ready} onClick={() => {
+                  if (u.useId === useId) return;
+                  onSpell?.();
+                  setUseId(u.useId);
+                }}
+              >
                 {u.name}
                 {u.ready ? (u.usesLeft !== null ? ` (${u.usesLeft} left)` : "") : ` · Used · ${u.resetLabel ?? "Back after a rest"}`}
               </button>

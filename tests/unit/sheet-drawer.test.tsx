@@ -5,7 +5,7 @@
  * loading and error states, intents sent by the trackers and controls, the GM's greyed view until "Play for this
  * character", and the "Full sheet" link.
  */
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { SheetDrawer } from "@/components/combat-map/drawer";
@@ -333,9 +333,45 @@ describe("SheetDrawer", () => {
     expect(grey.dataset.greyed).toBe("true");
     expect(within(dialog).getByRole("button", { name: "Mark 1 Stress" })).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Use Make a Scene" })).toBeDisabled();
-    fireEvent.click(within(dialog).getByRole("switch", { name: "Play for this character" }));
-    expect(grey.dataset.greyed).toBe("false");
+    // DA6: the switch is the GM's server-side one (playFor.set, an intent with an optimistic update).
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("switch", { name: "Play for this character" }));
+    });
+    expect(calls).toEqual([{ name: "playFor:set", args: { campaignId: CAMPAIGN, characterId: ASH, on: true } }]);
+    let written: unknown = null;
+    optimistic["playFor:set"]!({ getQuery: () => [], setQuery: (_ref, _args, value) => (written = value) }, { campaignId: CAMPAIGN, characterId: ASH, on: true });
+    expect(written).toEqual([ASH]);
+  });
+
+  it("reads Play for this character from the server: on whenever the drawer opens, until the GM turns it off (DA6)", async () => {
+    queries["combatFeatures:drawer"] = drawer();
+    queries["playFor:list"] = [ASH];
+    const { dialog } = open("gm");
+    expect(within(dialog).getByRole("switch", { name: "Play for this character" })).toBeChecked();
+    expect((dialog.querySelector(".sd-grey") as HTMLElement).dataset.greyed).toBe("false");
     expect(within(dialog).getByRole("button", { name: "Mark 1 Stress" })).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("switch", { name: "Play for this character" }));
+    });
+    expect(calls).toEqual([{ name: "playFor:set", args: { campaignId: CAMPAIGN, characterId: ASH, on: false } }]);
+    let written: unknown = null;
+    optimistic["playFor:set"]!({ getQuery: () => [ASH], setQuery: (_ref, _args, value) => (written = value) }, { campaignId: CAMPAIGN, characterId: ASH, on: false });
+    expect(written).toEqual([]);
+    // Another character's switch is its own.
+    cleanup();
+    queries["playFor:list"] = ["ch-other"];
+    const other = open("gm");
+    expect(within(other.dialog).getByRole("switch", { name: "Play for this character" })).not.toBeChecked();
+  });
+
+  it("shows a refused switch as an alert", async () => {
+    queries["combatFeatures:drawer"] = drawer();
+    results["playFor:set"] = [new Error("Nope")];
+    const { dialog } = open("gm");
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("switch", { name: "Play for this character" }));
+    });
+    expect(within(dialog).getByRole("alert")).toBeTruthy();
   });
 
   it("has no switch for a player", () => {

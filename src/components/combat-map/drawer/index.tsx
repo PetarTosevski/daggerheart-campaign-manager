@@ -2,10 +2,10 @@
 
 import { useQuery } from "convex/react";
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import { api } from "../../../../convex/_generated/api";
-import type { Id } from "../../../../convex/_generated/dataModel";
+import { usePlayFor } from "../play-for";
 import { sheetHref, type SheetDrawerProps } from "../slots";
 import { DrawerBoundary } from "./boundary";
 import "./drawer.css";
@@ -75,8 +75,9 @@ export function SheetDrawer({ campaignId, role, map, characterId, open, onClose 
 
 function DrawerBody({ campaignId, role, map, characterId }: Omit<SheetDrawerProps, "open" | "onClose">) {
   const drawer = useQuery(api.combatFeatures.drawer, { campaignId, characterId });
-  // The GM plays for a character only after turning the switch on (as the Hand's "Play for this character", CA6).
-  const [playingFor, setPlayingFor] = useState<Id<"characters"> | null>(null);
+  // The GM plays for a character only after turning the switch on: the one switch per PC the map Hand shows too, kept
+  // on until the GM turns it off, on every device (DA6, user answers 2026-10-30; stored by convex/playFor.ts).
+  const playFor = usePlayFor(campaignId, characterId, role === "gm");
   const switchId = useId();
   if (drawer === undefined) {
     return (
@@ -85,18 +86,25 @@ function DrawerBody({ campaignId, role, map, characterId }: Omit<SheetDrawerProp
       </p>
     );
   }
-  const canAct = role === "player" || playingFor === characterId;
+  const canAct = role === "player" || playFor.on;
   return (
     <div className="sd-body">
       <p className="sd-name" data-testid="sheet-drawer-name">
         {drawer.name}
       </p>
       {role === "gm" ? (
-        <label className="sd-switch" htmlFor={switchId}>
-          <input id={switchId} type="checkbox" role="switch" checked={playingFor === characterId} onChange={(e) => setPlayingFor(e.target.checked ? characterId : null)} />
-          <span className="sd-switch-track" aria-hidden="true" />
-          <span>Play for this character</span>
-        </label>
+        <>
+          <label className="sd-switch" htmlFor={switchId}>
+            <input id={switchId} type="checkbox" role="switch" checked={playFor.on} onChange={(e) => playFor.set(e.target.checked)} />
+            <span className="sd-switch-track" aria-hidden="true" />
+            <span>Play for this character</span>
+          </label>
+          {playFor.error ? (
+            <p role="alert" className="cma-error">
+              {playFor.error}
+            </p>
+          ) : null}
+        </>
       ) : null}
       <div className="sd-grey" data-greyed={canAct ? "false" : "true"}>
         <Trackers campaignId={campaignId} characterId={characterId} trackers={drawer.trackers} counters={drawer.counters} heldDice={drawer.heldDice} canAct={canAct} />

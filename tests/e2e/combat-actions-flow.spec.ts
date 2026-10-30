@@ -257,8 +257,17 @@ test("two players and the GM: attacks, cards, a Minion pick, a recall, a rest an
     const korvax = a.page.getByRole("dialog", { name: "Book of Korvax" });
     await korvax.getByRole("button", { name: "Recant", exact: true }).click();
     await expect(korvax.getByRole("button", { name: "Recant", exact: true })).toHaveAttribute("aria-pressed", "true");
-    // The Wild Flame picks may still be on (they ring the tokens on the map): leave only the Raider.
-    await pickExactly(korvax, ["Bandit", "Raider"], ["Raider"]);
+    // A new dialog starts with no picks of the last one (DA6, CA8 bug 3): the Raider, picked in the Wild Flame dialog, is
+    // not; the Bandit, picked on the map in step 1, is the card's first pick as before. Recant has one target.
+    const raiderChip = korvax.getByRole("button", { name: "Raider", exact: true });
+    await expect(raiderChip).toHaveAttribute("aria-pressed", "false");
+    await expect(korvax.getByRole("button", { name: "Bandit", exact: true })).toHaveAttribute("aria-pressed", "true");
+    // Creatures beyond Recant's Melee range stay listed, greyed for the GM's approval (DA6, CA8 follow-up 2): Bryn.
+    await expect(korvax.getByRole("button", { name: "Bryn", exact: true })).toContainText("Out of range - GM approves");
+    await expect(korvax.getByRole("button", { name: "Bryn", exact: true })).toHaveAttribute("data-away", "true");
+    await raiderChip.click();
+    await expect(raiderChip).toHaveAttribute("aria-pressed", "true");
+    await expect(korvax.getByRole("button", { name: "Bandit", exact: true })).toHaveAttribute("aria-pressed", "false");
     await korvax.getByRole("button", { name: "Use Recant" }).click();
     await expect(korvax).toHaveCount(0);
     await expect(cardResult).toContainText("Book of Korvax");

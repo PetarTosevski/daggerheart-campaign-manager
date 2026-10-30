@@ -17,6 +17,7 @@ import { lorekeeperTables } from "./tables/lorekeeper";
 import { mapTables } from "./tables/maps";
 import { notesTables } from "./tables/notes";
 import { operationTables } from "./tables/operations";
+import { playForTables } from "./tables/playFor";
 import { restTables } from "./tables/rests";
 import { sessionTables } from "./tables/sessions";
 import { spritePackTables } from "./tables/spritePacks";
@@ -42,6 +43,7 @@ export default defineSchema({
   ...combatMapTables,
   ...combatRequestTables,
   ...combatAreaTables,
+  ...playForTables,
   ...sessionTables,
   ...spritePackTables,
   ...notesTables,

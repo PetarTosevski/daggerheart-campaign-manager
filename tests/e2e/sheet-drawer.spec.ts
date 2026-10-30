@@ -9,6 +9,8 @@ import { bardDraft, convexAs, openCombatMap } from "./visual/helpers";
 // Plan sheet-drawer SD6 (bead dcm-bxp.99.19): the Sheet button opens the drawer over the live map. The GM selects a PC
 // token after zooming and panning: the drawer is greyed until "Play for this character", then a tracker marks a Stress;
 // Esc closes it, the focus is back on the Sheet button and the map keeps its zoom, scroll and selection (no remount).
+// DA6 (user answer 2026-10-30): the switch is the one the map Hand shows too, and it stays on across closing and opening
+// until the GM turns it off.
 // A player at 390 px opens their own sheet from the bar under the map: the drawer fills the screen, Hope goes up, the
 // close button returns to the map. Axe on the open drawer; 44 px touch targets at 390 px.
 
@@ -66,13 +68,21 @@ test("the GM opens a PC's sheet drawer, plays for them, and closes back to the s
   await expect(sheetButton).toBeFocused();
   expect(await mapView(page)).toEqual(before);
 
-  // Opening it again shows the server's state; the switch starts off again.
+  // One switch per PC for the drawer and the map Hand (DA6, user answer 2026-10-30): Mira's Hand shows it on too.
+  const hand = page.getByRole("region", { name: "Hand of Mira" });
+  await expect(hand.getByRole("switch", { name: "Play for this character" })).toBeChecked();
+
+  // Opening it again shows the server's state; the switch stays on until the GM turns it off.
   await sheetButton.click();
   await expect(drawer.getByRole("group", { name: "Stress" }).locator("output")).toHaveText("1 / 6 marked");
-  await expect(drawer.getByRole("switch", { name: "Play for this character" })).not.toBeChecked();
+  await expect(drawer.getByRole("switch", { name: "Play for this character" })).toBeChecked();
+  await expect(drawer.getByRole("group", { name: "Stress" }).getByRole("button", { name: "Mark 1 Stress" })).toBeEnabled();
+  await drawer.getByRole("switch", { name: "Play for this character" }).uncheck();
+  await expect(drawer.getByRole("group", { name: "Stress" }).getByRole("button", { name: "Mark 1 Stress" })).toBeDisabled();
   await drawer.getByRole("button", { name: "Close character sheet" }).click();
   await expect(drawer).toBeHidden();
   expect(await mapView(page)).toEqual(before);
+  await expect(hand.getByRole("switch", { name: "Play for this character" })).not.toBeChecked();
 });
 
 test("a player opens their own sheet full screen at 390 px and gains a Hope", async ({ page, browser }) => {

@@ -177,6 +177,8 @@ async function seedCampaign(t: Test, userId: Id<"users">, deletedAt: number | un
     await ins("combatRequests", combatRequest(c, userId, characterId, instanceId, { encounterId, mapId: combatMapId, at: now }));
     // A live map area a feature drew (sheet-drawer SD0, Q14).
     await ins("combatAreas", combatArea(c, combatMapId, characterId, { at: now, centre: { kind: "token", tokenId: pcTokenId } }));
+    // The GM's "Play for this character" switch, on (drawer-answers DA6).
+    await ins("playFor", { campaignId: c, userId, characterId });
     // A session with its prep (linking the encounter), a log line and a spotlight count (D10).
     const sessionId = await ins("sessions", { campaignId: c, n: 1, title: "The Bridge at Dawn", status: "live", startedAt: now, createdAt: now, updatedAt: now });
     await ins("sessionPrep", { campaignId: c, sessionId, scenes: [{ id: "s1", type: "combat", text: "Ambush" }], hooks: "", encounterId, updatedAt: now });

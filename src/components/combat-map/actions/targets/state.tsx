@@ -21,8 +21,18 @@ export type CombatTargets = {
    * picking another enemy replaces the pick; picking the picked one clears it.
    */
   toggleTarget: (tokenId: Id<"combatTokens">) => void;
-  /** Multi-select, for cards and features that name several targets (CA6): adds or removes one token. */
+  /**
+   * Multi-select, for cards and features that name several targets (CA6): adds or removes one token. A token added here
+   * is a card dialog's pick (its ring on the map, F7-H4) until `clearDialogPicks` drops it.
+   */
   toggleExtraTarget: (tokenId: Id<"combatTokens">) => void;
+  /**
+   * Drops the rings of the last card dialog's picks (DA6, CA8 bug 3): called in the handler that opens a card dialog (or
+   * switches its spell), so a new dialog starts with no picks of the one before. Enemies picked on the map stay.
+   */
+  clearDialogPicks: () => void;
+  /** The targets the last card dialog added (still ringed); a card played from the Hand never takes them as its own. */
+  dialogTokenIds: ReadonlySet<Id<"combatTokens">>;
   clearTargets: () => void;
   slot: WeaponSlot;
   setSlot: (slot: WeaponSlot) => void;
@@ -42,6 +52,8 @@ const NO_TARGETS: CombatTargets = {
   targetTokenIds: [],
   toggleTarget: () => {},
   toggleExtraTarget: () => {},
+  clearDialogPicks: () => {},
+  dialogTokenIds: new Set(),
   clearTargets: () => {},
   slot: "primary",
   setSlot: () => {},
@@ -54,6 +66,8 @@ const TargetsContext = createContext<CombatTargets>(NO_TARGETS);
 /** Holds the picked targets for the whole page; renders its children and nothing else. */
 export function ActionsProvider({ children }: ProviderProps) {
   const [targetTokenIds, setTargets] = useState<readonly Id<"combatTokens">[]>([]);
+  // The targets a card dialog added (toggleExtraTarget), so the next dialog can drop them (DA6).
+  const [dialogPicks, setDialogPicks] = useState<ReadonlySet<Id<"combatTokens">>>(() => new Set());
   const [slot, setSlot] = useState<WeaponSlot>("primary");
   const [aim, setAim] = useState<Aim | null>(null);
   const value = useMemo<CombatTargets>(
@@ -62,21 +76,40 @@ export function ActionsProvider({ children }: ProviderProps) {
       toggleTarget: (tokenId) => {
         const picked = !(targetTokenIds.length === 1 && targetTokenIds[0] === tokenId);
         setTargets(picked ? [tokenId] : []);
+        // A pick on the map is the player's own, not a dialog's.
+        setDialogPicks(new Set());
         // A card waiting on the map takes the enemy just picked (in the click's handler, never an effect: rule 13).
         if (aim && picked) {
           setAim(null);
           aim.onTarget(tokenId);
         }
       },
-      toggleExtraTarget: (tokenId) =>
-        setTargets((ids) => (ids.includes(tokenId) ? ids.filter((id) => id !== tokenId) : [...ids, tokenId])),
-      clearTargets: () => setTargets([]),
+      toggleExtraTarget: (tokenId) => {
+        const on = !targetTokenIds.includes(tokenId);
+        setTargets((ids) => (ids.includes(tokenId) ? ids.filter((id) => id !== tokenId) : [...ids, tokenId]));
+        setDialogPicks((picks) => {
+          const next = new Set(picks);
+          if (on) next.add(tokenId);
+          else next.delete(tokenId);
+          return next;
+        });
+      },
+      clearDialogPicks: () => {
+        if (dialogPicks.size === 0) return;
+        setTargets((ids) => ids.filter((id) => !dialogPicks.has(id)));
+        setDialogPicks(new Set());
+      },
+      dialogTokenIds: dialogPicks,
+      clearTargets: () => {
+        setTargets([]);
+        setDialogPicks(new Set());
+      },
       slot,
       setSlot,
       aim,
       setAim,
     }),
-    [targetTokenIds, slot, aim],
+    [targetTokenIds, dialogPicks, slot, aim],
   );
   return <TargetsContext.Provider value={value}>{children}</TargetsContext.Provider>;
 }

@@ -321,6 +321,23 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* DA6: out of the card's range, still pickable (the GM approves, Q1): greyed with a second line. */
+.cmh-pick[data-away="true"] {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  border-style: dashed;
+  color: var(--cm-muted, #9fb2b6);
+}
+.cmh-pick[data-away="true"][aria-pressed="true"] {
+  color: var(--cm-acc-soft, #f3cf86);
+}
+.cmh-pick-away {
+  font-size: 11px;
+  line-height: 1.2;
+  opacity: 0.85;
+}
 .cmh-check,
 .cmh-split {
   display: flex;

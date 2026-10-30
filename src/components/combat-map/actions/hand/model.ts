@@ -1,6 +1,7 @@
 import type { FunctionReturnType } from "convex/server";
 
-import type { CardEffect, CardUse, Cost, Limit, NumberSource, Step, TargetSpec } from "@/lib/domain/card-effects/types";
+import { rangeCheck, type Footprint } from "@/lib/domain/combat-actions/distance";
+import type { CardEffect, CardUse, Cost, Limit, NumberSource, Range, Step, TargetSpec } from "@/lib/domain/card-effects/types";
 import type { TraitId } from "@/lib/srd/types";
 
 import type { api } from "../../../../../convex/_generated/api";
@@ -24,10 +25,19 @@ export type ChoiceAsk = NeedsChoice["asks"][number];
 export type CardChoice = { id: string; value: number | string | string[] | boolean };
 
 /** A creature on the map the dialog can offer: the actor ("self"), another PC, an enemy, an ally or a neutral token. */
-export type Creature = { tokenId: Id<"combatTokens">; name: string; side: "self" | "pc" | "enemy" | "ally" | "neutral" };
+export type Creature = {
+  tokenId: Id<"combatTokens">;
+  name: string;
+  side: "self" | "pc" | "enemy" | "ally" | "neutral";
+  /** Where the token stands (top-left square and size), for the dialog's range check (DA6); unknown: never greyed. */
+  at?: Footprint;
+};
 
-/** Who a use's own targets are, when the player picks them. `max` null: several, no fixed cap the client knows. */
-export type TargetAsk = { side: "enemy" | "ally" | "selfOrAlly" | "any"; max: number | null; range: string };
+/**
+ * Who a use's own targets are, when the player picks them. `max` null: several, no fixed cap the client knows.
+ * `area` / `areaRange`: the card's shape, when it names one (an area around a target measures from the first target).
+ */
+export type TargetAsk = { side: "enemy" | "ally" | "selfOrAlly" | "any"; max: number | null; range: string; area?: TargetSpec["area"]; areaRange?: Range };
 
 export type RecipientKey = "picked" | "allies" | "followUp";
 
@@ -88,7 +98,31 @@ export function targetAsk(use: Pick<CardUse, "targets">): TargetAsk | null {
   const t = use.targets;
   if (t === undefined || t.side === "trigger" || t.side === "self" || t.side === "point" || t.side === "object") return null;
   if (t.count.kind === "all") return null;
-  return { side: t.side, max: maxOf(t), range: t.range };
+  return { side: t.side, max: maxOf(t), range: t.range, ...(t.area !== undefined ? { area: t.area } : {}), ...(t.areaRange !== undefined ? { areaRange: t.areaRange } : {}) };
+}
+
+const BANDS: ReadonlySet<string> = new Set<Range>(["melee", "veryClose", "close", "far", "veryFar"]);
+const isBand = (range: string | undefined): range is Range => range !== undefined && BANDS.has(range);
+
+/**
+ * Whether a creature the dialog offers is out of the card's range (DA6, user answer 2026-10-30): it stays listed, greyed,
+ * and picking it sends the use for the GM's sanction (Q1). Mirrors the server's check (convex/lib/cardRunner.ts
+ * rangeOrigin): from the actor's token, with `areaRange` around yourself; an area around a point or a target measures
+ * the first target from the actor and the others from that first target. The actor itself, a creature whose position
+ * is unknown, and "weapon" / "unlimited" ranges are never greyed (the dialog doesn't know the weapon's range).
+ */
+export function outOfRange(ask: TargetAsk, creatures: readonly Creature[], picked: readonly string[], c: Creature): boolean {
+  if (c.side === "self" || c.at === undefined) return false;
+  const anchored = ask.area === "aroundPoint" || ask.area === "aroundTarget";
+  const anchorId = picked[0];
+  if (anchored && ask.areaRange !== undefined && anchorId !== undefined && anchorId !== c.tokenId) {
+    const anchor = creatures.find((x) => x.tokenId === anchorId);
+    if (anchor !== undefined && anchor.side !== "self" && anchor.at !== undefined) return !rangeCheck(anchor.at, c.at, ask.areaRange).inRange;
+  }
+  const actor = creatures.find((x) => x.side === "self")?.at;
+  const radius = ask.area === "aroundSelf" ? (ask.areaRange ?? ask.range) : ask.range;
+  if (actor === undefined || !isBand(radius)) return false;
+  return !rangeCheck(actor, c.at, radius).inRange;
 }
 
 const RECIPIENT_LABEL: Record<RecipientKey, string> = {

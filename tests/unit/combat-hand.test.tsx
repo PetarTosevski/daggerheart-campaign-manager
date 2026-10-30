@@ -17,11 +17,11 @@ import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { PanelMemoryProvider, usePanelMemory } from "@/components/combat-map/actions/attack/memory";
-import { Hand, HandBody, HandColumn, handHiddenKey, type BodyProps } from "@/components/combat-map/actions/hand";
+import { GmHand, Hand, HandBody, HandColumn, handHiddenKey, type BodyProps } from "@/components/combat-map/actions/hand";
 import { HideHandSwitch } from "@/components/combat-map/actions/hand/sharing";
 import { ActionsProvider, useCombatTargets } from "@/components/combat-map/actions/targets/state";
 import { HandSharingSwitch } from "@/components/combat-map/settings/hand-sharing";
-import type { ActionsPanelProps } from "@/components/combat-map/slots";
+import type { ActionsPanelProps, ResolutionsProps } from "@/components/combat-map/slots";
 import {
   aimsOnMap,
   answerChoices,
@@ -32,6 +32,7 @@ import {
   formProblem,
   initialValues,
   needsDialog,
+  outOfRange,
   playableUses,
   recallLabel,
   rollOf,
@@ -865,3 +866,198 @@ describe("panel memory across the 760 px layout switch (user answer 2026-10-22)"
     expect(screen.getByTestId("alone")).toHaveTextContent("Bandit: Hit");
   });
 });
+
+// ---------------------------------------------------------------- DA6 (plan drawer-answers, user answers 2026-10-30)
+
+const TYFAR = card("book-of-tyfar", "Book of Tyfar", {
+  domain: "codex",
+  type: "grimoire",
+  uses: [
+    handUse("wild-flame", "Wild Flame", { targets: { side: "enemy", range: "melee", count: "upTo" } }),
+    handUse("magic-hand", "Magic Hand", { rolls: false, targets: null }),
+    handUse("mysterious-mist", "Mysterious Mist", { targets: null }),
+  ],
+});
+
+type PlacedCreature = BodyProps["creatures"][number];
+const SELF_AT: PlacedCreature = { tokenId: ASH, name: "You", side: "self", at: { x: 5, y: 5, size: 1 } };
+const MIRA_AT: PlacedCreature = { tokenId: MIRA, name: "Mira", side: "pc", at: { x: 5, y: 6, size: 1 } };
+const BANDIT_AT: PlacedCreature = { tokenId: BANDIT, name: "Bandit", side: "enemy", at: { x: 6, y: 5, size: 1 } };
+const ARCHER_AT: PlacedCreature = { tokenId: ARCHER, name: "Archer", side: "enemy", at: { x: 13, y: 5, size: 1 } };
+/** Ash at (5,5); Mira and the Bandit next to Ash (Melee); the Archer 8 squares away (Far). */
+const PLACED: BodyProps["creatures"] = [SELF_AT, MIRA_AT, BANDIT_AT, ARCHER_AT];
+
+/** The player's Hand as the page wires it: the enemies picked on the map are the Hand's picked enemies. */
+function WiredHand(extra: Partial<BodyProps>) {
+  const { targetTokenIds } = useCombatTargets();
+  return <HandBody {...props({ creatures: PLACED, pickedEnemies: targetTokenIds, ...extra })} />;
+}
+
+/** A tap on an enemy token on the map (the vision layer's single-select pick). */
+function MapTap({ tokenId }: { tokenId: Id<"combatTokens"> }) {
+  const { toggleTarget } = useCombatTargets();
+  return (
+    <button type="button" onClick={() => toggleTarget(tokenId)}>
+      Tap {tokenId}
+    </button>
+  );
+}
+
+describe("DA6: out-of-range creatures in the card dialog", () => {
+  it("outOfRange mirrors the server: from the actor, around yourself with areaRange, around a target from the first target", () => {
+    const melee = { side: "enemy" as const, max: 3, range: "melee" };
+    expect(outOfRange(melee, PLACED, [], BANDIT_AT)).toBe(false);
+    expect(outOfRange(melee, PLACED, [], ARCHER_AT)).toBe(true);
+    // The actor and creatures without a known position are never greyed; "weapon" and "unlimited" neither.
+    expect(outOfRange(melee, PLACED, [], SELF_AT)).toBe(false);
+    expect(outOfRange(melee, PLACED, [], { ...ARCHER_AT, at: undefined })).toBe(false);
+    expect(outOfRange({ ...melee, range: "weapon" }, PLACED, [], ARCHER_AT)).toBe(false);
+    expect(outOfRange({ ...melee, range: "unlimited" }, PLACED, [], ARCHER_AT)).toBe(false);
+    // Far reaches 8 squares.
+    expect(outOfRange({ ...melee, range: "far" }, PLACED, [], ARCHER_AT)).toBe(false);
+    // Around yourself: the area's radius.
+    expect(outOfRange({ ...melee, range: "far", area: "aroundSelf", areaRange: "veryClose" }, PLACED, [], ARCHER_AT)).toBe(true);
+    // Around a target: the first target from the actor, the others from the first target.
+    const fireball = { side: "any" as const, max: null, range: "far", area: "aroundTarget" as const, areaRange: "veryClose" as const };
+    expect(outOfRange(fireball, PLACED, [], ARCHER_AT)).toBe(false);
+    expect(outOfRange(fireball, PLACED, [ARCHER], MIRA_AT)).toBe(true);
+    expect(outOfRange(fireball, PLACED, [BANDIT], MIRA_AT)).toBe(false);
+  });
+
+  it("an enemy out of the card's range stays listed, greyed with 'Out of range - GM approves', and can still be picked (Q1)", async () => {
+    withHand([TYFAR]);
+    results["combatCards:useCard"] = [{ status: "pending", requestId: "r1", outOfRange: [{ tokenId: ARCHER, band: "far" }] }];
+    render(<HandBody {...props({ creatures: PLACED, pickedEnemies: [] })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Use Book of Tyfar" }));
+    const dialog = screen.getByRole("dialog", { name: "Book of Tyfar" });
+    const bandit = within(dialog).getByRole("button", { name: "Bandit" });
+    const archer = within(dialog).getByRole("button", { name: "Archer" });
+    expect(bandit).not.toHaveAttribute("data-away");
+    expect(archer).toHaveAttribute("data-away", "true");
+    expect(archer).toHaveTextContent("Out of range - GM approves");
+    expect(archer).toHaveAccessibleDescription("Out of range - GM approves");
+    expect(archer).toBeEnabled();
+    fireEvent.click(archer);
+    expect(archer).toHaveAttribute("aria-pressed", "true");
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Use Wild Flame" })));
+    expect(useCalls()[0]!.args).toMatchObject({ cardId: "book-of-tyfar", spell: "wild-flame", targetTokenIds: [ARCHER] });
+  });
+});
+
+describe("DA6: a new card dialog starts with no picks (CA8 bug 3)", () => {
+  it("the last dialog's picks are not pressed and their rings go; an enemy picked on the map stays", async () => {
+    withHand([TYFAR]);
+    results["combatCards:useCard"] = [resolved({ cardId: "book-of-tyfar", useId: "wild-flame" })];
+    render(
+      <ActionsProvider>
+        <Rings />
+        <MapTap tokenId={BANDIT} />
+        <WiredHand />
+      </ActionsProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Use Book of Tyfar" }));
+    let dialog = screen.getByRole("dialog", { name: "Book of Tyfar" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bandit" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archer" }));
+    expect(screen.getByTestId("rings").textContent).toBe(`${BANDIT},${ARCHER}`);
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Use Wild Flame" })));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // The next dialog: nothing pressed, and the rings of the last dialog are gone.
+    fireEvent.click(screen.getByRole("button", { name: "Use Book of Tyfar" }));
+    dialog = screen.getByRole("dialog", { name: "Book of Tyfar" });
+    expect(within(dialog).getByRole("button", { name: "Bandit" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(dialog).getByRole("button", { name: "Archer" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("rings").textContent).toBe("");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    // An enemy the player picked on the map is still the card's first pick, as before (F8-I1).
+    fireEvent.click(screen.getByRole("button", { name: `Tap ${BANDIT}` }));
+    fireEvent.click(screen.getByRole("button", { name: "Use Book of Tyfar" }));
+    dialog = screen.getByRole("dialog", { name: "Book of Tyfar" });
+    expect(within(dialog).getByRole("button", { name: "Bandit" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archer" }));
+    expect(screen.getByTestId("rings").textContent).toBe(`${BANDIT},${ARCHER}`);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use Book of Tyfar" }));
+    dialog = screen.getByRole("dialog", { name: "Book of Tyfar" });
+    expect(within(dialog).getByRole("button", { name: "Bandit" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).getByRole("button", { name: "Archer" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("rings").textContent).toBe(BANDIT);
+  });
+
+  it("switching the spell in a grimoire's dialog drops the last spell's picks and rings", () => {
+    withHand([ILLIAT]);
+    render(
+      <ActionsProvider>
+        <Rings />
+        <WiredHand creatures={props().creatures} />
+      </ActionsProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Use Book of Illiat" }));
+    const dialog = screen.getByRole("dialog", { name: "Book of Illiat" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archer" }));
+    expect(screen.getByTestId("rings").textContent).toBe(ARCHER);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Arcane Barrage" }));
+    expect(screen.getByTestId("rings").textContent).toBe("");
+    expect(within(dialog).getByRole("button", { name: "Archer" })).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+describe("DA6: the GM's one 'Play for this character' switch per PC, stored on the server", () => {
+  function gmPanel(selected: Id<"combatTokens"> | null): ResolutionsProps {
+    const pc = (id: Id<"combatTokens">, name: string, characterId: Id<"characters">) => ({ _id: id, name, characterId, side: "pc", x: 0, y: 0, size: 1 });
+    const panel = playerPanel(selected);
+    queries["combatTokens:list"] = [pc(ASH, "Ash", ASH_CH), pc(MIRA, "Mira", MIRA_CH)];
+    return { ...panel, role: "gm" };
+  }
+  const setCalls = () => calls.filter((c) => c.name === "playFor:set").map((c) => c.args);
+
+  it("sends the switch as an intent and follows the server's list across picking other tokens and closing the hand", async () => {
+    withHand([BOLT]);
+    queries["combatCards:handSharing"] = { playersSeeHands: false, hidden: [] };
+    queries["playFor:list"] = [];
+    const { rerender } = render(<GmHand {...gmPanel(ASH)} />);
+    let hand = screen.getByRole("region", { name: "Hand of Ash" });
+    expect(within(hand).getByRole("article", { name: "Bolt Beacon" })).toHaveAttribute("data-locked", "true");
+    await act(async () => fireEvent.click(within(hand).getByRole("switch", { name: "Play for this character" })));
+    expect(setCalls()).toEqual([{ campaignId: "c1", characterId: ASH_CH, on: true }]);
+
+    // The server's list now holds Ash.
+    queries["playFor:list"] = [ASH_CH];
+    rerender(<GmHand {...gmPanel(ASH)} />);
+    hand = screen.getByRole("region", { name: "Hand of Ash" });
+    expect(within(hand).getByRole("switch", { name: "Play for this character" })).toBeChecked();
+    expect(within(hand).getByRole("button", { name: "Use Bolt Beacon" })).toBeEnabled();
+
+    // Mira's hand has its own switch, off.
+    rerender(<GmHand {...gmPanel(MIRA)} />);
+    hand = screen.getByRole("region", { name: "Hand of Mira" });
+    expect(within(hand).getByRole("switch", { name: "Play for this character" })).not.toBeChecked();
+    fireEvent.click(within(hand).getByRole("button", { name: "Close the hand of Mira" }));
+    expect(screen.queryByRole("region", { name: "Hand of Mira" })).toBeNull();
+
+    // Back to Ash: still on (nothing reset it), until the GM turns it off.
+    rerender(<GmHand {...gmPanel(ASH)} />);
+    hand = screen.getByRole("region", { name: "Hand of Ash" });
+    expect(within(hand).getByRole("switch", { name: "Play for this character" })).toBeChecked();
+    await act(async () => fireEvent.click(within(hand).getByRole("switch", { name: "Play for this character" })));
+    expect(setCalls()).toEqual([
+      { campaignId: "c1", characterId: ASH_CH, on: true },
+      { campaignId: "c1", characterId: ASH_CH, on: false },
+    ]);
+  });
+
+  it("shows a refused switch in the hand's bar", async () => {
+    withHand([BOLT]);
+    queries["combatCards:handSharing"] = { playersSeeHands: false, hidden: [] };
+    queries["playFor:list"] = [];
+    // A thenable that rejects when the mocked mutation returns it (no unhandled rejection before then).
+    results["playFor:set"] = [{ then: (_ok: unknown, fail: (e: Error) => void) => fail(new Error("Nope")) }];
+    render(<GmHand {...gmPanel(ASH)} />);
+    const hand = screen.getByRole("region", { name: "Hand of Ash" });
+    await act(async () => fireEvent.click(within(hand).getByRole("switch", { name: "Play for this character" })));
+    expect(within(hand).getByRole("alert")).toBeInTheDocument();
+  });
+});
+
