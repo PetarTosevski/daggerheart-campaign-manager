@@ -95,7 +95,7 @@ export const HELD_DIE_UNTIL = ["session", "longRest", "manual"] as const;
  * bump): "once per scene" limits, cleared when the scene ends (the GM ends the encounter or presses End scene, or the
  * session ends).
  */
-export const FEATURE_USE_UNTIL = ["rest", "longRest", "session", "scene"] as const;
+export const FEATURE_USE_UNTIL = ["rest", "longRest", "session", "scene", "gmTurn", "day", "week"] as const;
 /** Labels for the `pronouns` field (dcm-bxp.35): "gender" is the default. */
 export const PRONOUNS_LABELS = ["gender", "pronouns"] as const;
 export type PronounsLabel = (typeof PRONOUNS_LABELS)[number];

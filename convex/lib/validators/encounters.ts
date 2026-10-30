@@ -96,7 +96,7 @@ export type InstanceEffect = Infer<typeof instanceEffectValidator>;
  */
 export const instanceFeatureUseValidator = v.object({
   key: v.string(),
-  until: v.union(v.literal("rest"), v.literal("longRest"), v.literal("session")),
+  until: v.union(v.literal("rest"), v.literal("longRest"), v.literal("session"), v.literal("gmTurn"), v.literal("day"), v.literal("week")),
   scene: v.number(),
   session: v.optional(v.number()),
 });

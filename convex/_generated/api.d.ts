@@ -68,6 +68,7 @@ import type * as lib_combatMaps from "../lib/combatMaps.js";
 import type * as lib_combatMovement from "../lib/combatMovement.js";
 import type * as lib_combatRequests from "../lib/combatRequests.js";
 import type * as lib_combatVision from "../lib/combatVision.js";
+import type * as lib_companion from "../lib/companion.js";
 import type * as lib_countdownTicks from "../lib/countdownTicks.js";
 import type * as lib_dice from "../lib/dice.js";
 import type * as lib_encounters from "../lib/encounters.js";
@@ -251,6 +252,7 @@ declare const fullApi: ApiFromModules<{
   "lib/combatMovement": typeof lib_combatMovement;
   "lib/combatRequests": typeof lib_combatRequests;
   "lib/combatVision": typeof lib_combatVision;
+  "lib/companion": typeof lib_companion;
   "lib/countdownTicks": typeof lib_countdownTicks;
   "lib/dice": typeof lib_dice;
   "lib/encounters": typeof lib_encounters;
