@@ -58,6 +58,8 @@ import type { ChoiceAsks } from "./cardRows";
 import { rangeBandValidator } from "./validators/combatRequests";
 import { readSheet } from "./characterSheet";
 import { rules } from "./rolls";
+import { stanceDropMarker } from "./stanceDrop";
+import { unshakePlan, type UnshakableRoll } from "./unshakable";
 
 const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
@@ -831,6 +833,13 @@ export function writeSheetChanges(sheet: CharacterSheet, steps: readonly PlanSte
   let conditions = [...sheet.conditions];
   let hope = sheet.hope;
   for (const step of steps) {
+    // DA10 (dcm-bxp.99.19.10): a condition the actor gives that ends when their stance drops (Grappling's Restrain) leaves
+    // a marker on the actor's sheet naming the target's token; `dropStance` (convex/lib/stanceDrop.ts) reads it.
+    if (isActor && step.kind === "condition" && step.targetId !== who && step.endsOn?.includes("stanceDrops")) {
+      const marker = stanceDropMarker(step.targetId, cardName, step.condition.kind === "standard" ? step.condition.condition : step.condition.tag);
+      effects = [...effects.filter((e) => e.id !== marker.id), marker].slice(-20);
+      continue;
+    }
     if (!("targetId" in step) || step.targetId !== who) continue;
     if (step.kind === "condition") {
       if (step.condition.kind === "standard") {
@@ -857,8 +866,18 @@ export function writeSheetChanges(sheet: CharacterSheet, steps: readonly PlanSte
  * The actor's sheet after the plan: resources, the limit entries, the card's tokens, effects, conditions, the vault.
  * SD3: a feature's Favor, Focus and held dice too (the runner's `after`; a held die it spent is gone). `paidSheet` is the
  * sheet the plan started from (a feature's D5 delegation passes the sheet its D5 features left: classState, held dice).
+ * DA10 (CB p.59 Unshakable, user 2026-10-30): an Unshakable actor rolls a d6 for each Stress the plan marks on them (its
+ * Stress costs and Stress steps; `convex/lib/unshakable.ts`) and a 6 skips that Stress. The roll goes to
+ * `unshakable.out` for the caller's log; `unshakable.rng` replaces the server's dice (rests pass theirs).
  */
-export function actorSheetAfter(paidSheet: CharacterSheet, plan: RunPlan, actorId: string, cardName: string): CharacterSheet {
+export function actorSheetAfter(paidSheet: CharacterSheet, plan: RunPlan, actorId: string, cardName: string, unshakable: { rng?: Rng; out?: UnshakableRoll[] } = {}): CharacterSheet {
+  const sheet = sheetAfterPlan(paidSheet, plan, actorId, cardName);
+  const u = unshakePlan(paidSheet, sheet, plan, actorId, true, unshakable.rng);
+  if (u.roll) unshakable.out?.push(u.roll);
+  return u.sheet;
+}
+
+function sheetAfterPlan(paidSheet: CharacterSheet, plan: RunPlan, actorId: string, cardName: string): CharacterSheet {
   const after = plan.actor.after;
   const base = writeSheetChanges(paidSheet, plan.steps, actorId, plan.cardId, cardName, plan.exclusive, true);
   const tokenKey = tokenKeyOf(plan.cardId);

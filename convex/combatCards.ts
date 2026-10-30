@@ -40,6 +40,7 @@ import { campaignFearState, gainFear, spendFear } from "./lib/fear";
 import { campaignMutation, campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
 import { atLeast } from "./lib/permissions";
 import { changed } from "./lib/rolls";
+import { logUnshakable, unshakePlan, type UnshakableRoll } from "./lib/unshakable";
 import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, riderValidator, type Rider } from "./lib/validators/combatRequests";
 import type { RunPlan } from "../src/lib/domain/card-effects/run";
 import type { Step } from "../src/lib/domain/card-effects/types";
@@ -198,7 +199,10 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   // SD5: with riders the row's `before` is the sheet before the riders' costs, and the actor's sheet after them.
   const sheet = riders?.before ?? req.sheet;
   const actorToken = built.context.actor.id;
-  let next = riders?.next ?? actorSheetAfter(built.paidSheet, plan, actorToken, pick.name);
+  const unshaken: { characterId: Id<"characters">; name: string; roll: UnshakableRoll }[] = [];
+  const actorRolls: UnshakableRoll[] = [];
+  let next = riders?.next ?? actorSheetAfter(built.paidSheet, plan, actorToken, pick.name, { out: actorRolls });
+  for (const roll of actorRolls) unshaken.push({ characterId: character._id, name: req.sheet.name, roll });
   const healed = siphonHeal(plan);
   if (healed > 0) next = { ...next, hp: Math.max(0, next.hp - healed) };
   let prompts = promptsOf(plan, built).filter((p) => !(healed > 0 && p.kind === "manual" && p.text.startsWith("You clear a number of Hit Points")));
@@ -210,6 +214,10 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     const changedTo = plan.creatures.find((x) => x.id === c.tokenId)?.after;
     let after = writeSheetChanges(c.sheet, plan.steps, c.tokenId, plan.cardId, pick.name, plan.exclusive, false);
     if (changedTo) after = { ...after, hp: Math.min(c.sheet.hpMax, changedTo.hp), stress: Math.min(c.sheet.stressMax, changedTo.stress), armorMarked: Math.max(0, changedTo.armor ?? c.sheet.armorMarked) };
+    // DA10: an Unshakable ally rolls on the Stress the card marks on them (CB p.59).
+    const u = unshakePlan(c.sheet, after, plan, c.tokenId, false);
+    if (u.roll) unshaken.push({ characterId: c.character._id, name: c.sheet.name, roll: u.roll });
+    after = u.sheet;
     if (changed(c.sheet, after)) allyRows.push({ character: c.character, before: c.sheet, after });
   }
 
@@ -256,6 +264,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   for (const p of prompts.filter((x) => x.kind === "manual")) {
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary: `${sheet.name} used ${pick.name}: ${p.text}`, groupId, undoable: true });
   }
+  for (const u of unshaken) await logUnshakable(ctx, { campaignId: campaign._id, characterId: u.characterId, actorId, name: u.name, groupId }, u.roll);
   const lines = gmLines(plan, built, writes);
   if (lines.length > 0 || writes.length > 0) {
     await logAction(ctx, {

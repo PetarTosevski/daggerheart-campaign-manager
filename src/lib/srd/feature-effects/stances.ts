@@ -216,7 +216,9 @@ export const STANCE_EFFECTS: readonly FeatureEffect[] = [
             {
               id: "restrain",
               label: "Temporarily Restrain the target",
-              steps: [{ kind: "condition", to: "targets", condition: { kind: "standard", condition: "restrained" }, duration: "temporary" }],
+              // User 2026-10-29 (dcm-bxp.99.19.10): the Restrain ends when the stance drops (HF p.12: "When you drop out of
+              // a stance, you lose any ongoing benefits it provides."); convex/lib/stanceDrop.ts ends it (DA10).
+              steps: [{ kind: "condition", to: "targets", condition: { kind: "standard", condition: "restrained" }, duration: "temporary", endsOn: ["stanceDrops"] }],
             },
             {
               id: "throw",

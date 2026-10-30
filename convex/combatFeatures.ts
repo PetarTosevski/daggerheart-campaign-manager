@@ -1,13 +1,14 @@
 import { v } from "convex/values";
 
-import { markStress } from "../src/lib/domain/characters/index";
 import { withEffects } from "../src/lib/domain/characters/effects";
 import { appError } from "../src/lib/errors/app-error";
 import { featureEffect } from "../src/lib/srd/feature-effects/index";
 import { FOCUS_HOLD_MAX, type CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { logAction } from "./lib/actionLog";
+import { logAction, newGroupId } from "./lib/actionLog";
+import { dropStance } from "./lib/stanceDrop";
+import { markStressOn, unshakableText, type UnshakableRoll } from "./lib/unshakable";
 import { cardChoicesValidator, cardRollValidator, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll } from "./lib/cardChoices";
 import { handSharedWithPlayers } from "./lib/cardHand";
 import { needsChoiceValidator, pendingCardValidator } from "./lib/cardRows";
@@ -331,15 +332,28 @@ export const shiftStance = keyedCampaignMutation({
       if (def === undefined) throw appError("FEATURE_NOT_OWNED");
       if (martial.active === stance) throw appError("INVALID", `${def.name} is already your active stance.`);
       let next: CharacterSheet;
+      let unshakable: UnshakableRoll | null = null;
       if (payWith === "stress") {
         if (!held.some((f) => f.featureId === FLOW_STATE)) throw appError("FEATURE_NOT_OWNED");
-        const { stress, hp } = markStress(sheet, 1);
-        next = { ...sheet, stress, hp, classState: { ...sheet.classState, martial: { ...martial, active: stance } } };
+        // DA10: Unshakable (CB p.59) rolls its d6 on this Stress too.
+        const marked = markStressOn(sheet, 1);
+        unshakable = marked.roll;
+        next = { ...marked.sheet, classState: { ...sheet.classState, martial: { ...martial, active: stance } } };
       } else {
         if (martial.focus < 1) throw appError("FEATURE_COST_UNPAID");
         next = { ...sheet, classState: { ...sheet.classState, martial: { ...martial, active: stance, focus: martial.focus - 1 } } };
       }
-      await writeIntent(ctx, campaign._id, character._id, ctx.user._id, sheet, next, `${sheet.name} shifts into ${def.name} (${payWith === "stress" ? "1 Stress" : "1 Focus"})`);
+      // DA10 (HF p.12): the previous stance drops, and what ends with it (Grappling's Restrain, dcm-bxp.99.19.10).
+      const dropped = martial.active !== undefined ? await dropStance(ctx, campaign._id, next) : null;
+      if (dropped?.dropped) next = { ...dropped.sheet, classState: { ...dropped.sheet.classState, martial: { ...next.classState.martial!, active: stance } } };
+      const ended = dropped && dropped.lines.length > 0 ? `; ${dropped.lines.join("; ")}` : "";
+      const summary = `${sheet.name} shifts into ${def.name} (${payWith === "stress" ? "1 Stress" : "1 Focus"}${unshakable ? `; ${unshakableText(unshakable)}` : ""})${ended}`;
+      if (dropped && dropped.before.length > 0) {
+        const groupId = newGroupId();
+        await saveSheet(ctx, character._id, next);
+        await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId: ctx.user._id, kind: "feature", visibility: "public", summary, groupId, before: sheet, undoable: true });
+        await logAction(ctx, { campaignId: campaign._id, actorId: ctx.user._id, kind: "feature", visibility: "gm", summary: `${sheet.name}'s stance dropped: ${dropped.lines.join("; ")}`, groupId, adversaryBefore: dropped.before, undoable: true });
+      } else await writeIntent(ctx, campaign._id, character._id, ctx.user._id, sheet, next, summary);
       return null;
     }),
 });

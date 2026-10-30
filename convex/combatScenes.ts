@@ -8,7 +8,9 @@
  * ends the scene's sheet state too). Ending it:
  * - for every active PC `expire(sheet, "scene")`: effects and feature uses that last until the scene, the Unstoppable
  *   Die, the active stance and Walk Between Worlds' tokens (src/lib/domain/characters/expiry.ts);
- * - ends the campaign's live map areas that last until the scene (`combatAreas.expires` `scene`).
+ * - ends the campaign's live map areas that last until the scene (`combatAreas.expires` `scene`);
+ * - DA10: ends what ends with the stance (Grappling's Restrain on its instance, convex/lib/stanceDrop.ts); the campaign
+ *   row carries the instances' `adversaryBefore`, so undo restores them.
  * The dashboard's End scene (`scenes.end`, RF1) runs the same `endScene`; the session end (`sessions.end`) closes the
  * `scene` and `session` areas through `endSceneAreas` (plan drawer-answers DA4).
  *
@@ -26,6 +28,7 @@ import type { MutationCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./lib/characterSheet";
 import { keyedGmMutation } from "./lib/functions";
+import { endStanceConditions, withoutStance } from "./lib/stanceDrop";
 import type { AreaExpires } from "./lib/validators/combatMaps";
 
 /** Sheets one scene end may change: an undo group holds at most 50 rows (convex/lib/actionLog.ts), one is the campaign's. */
@@ -90,9 +93,11 @@ export async function endScene(ctx: MutationCtx, campaign: Doc<"campaigns">, act
     .flatMap((character) => {
       try {
         const sheet = readSheet(character.sheet);
-        const next = expire(sheet, "scene");
+        // DA10 (HF p.12): the stance drops at the scene's end, and what ends with it (Grappling's Restrain markers).
+        const off = withoutStance(sheet);
+        const next = expire(off.sheet, "scene");
         const ended = sceneThings(sheet, next);
-        return ended > 0 ? [{ character, sheet, next, ended }] : [];
+        return ended > 0 ? [{ character, sheet, next, ended, markers: off.markers }] : [];
       } catch {
         return []; // a corrupt sheet is left alone
       }
@@ -102,6 +107,7 @@ export async function endScene(ctx: MutationCtx, campaign: Doc<"campaigns">, act
   if (changes.length === 0) return { ended: 0, areas, entryId: null };
 
   const groupId = newGroupId();
+  const released = await endStanceConditions(ctx, campaignId, changes.flatMap((c) => c.markers));
   for (const { character, sheet, next } of changes) {
     await saveSheet(ctx, character._id, next);
     await logAction(ctx, { campaignId, characterId: character._id, actorId, kind: "session", visibility: "public", summary: `${sheet.name}: scene end`, groupId, before: sheet, undoable: true });
@@ -112,8 +118,9 @@ export async function endScene(ctx: MutationCtx, campaign: Doc<"campaigns">, act
     actorId,
     kind: "session",
     visibility: "public",
-    summary: `Scene ended; ${ended} scene effect${ended === 1 ? "" : "s"} and limit${ended === 1 ? "" : "s"} ended`,
+    summary: [`Scene ended; ${ended} scene effect${ended === 1 ? "" : "s"} and limit${ended === 1 ? "" : "s"} ended`, ...released.lines].join("; "),
     groupId,
+    ...(released.before.length > 0 ? { adversaryBefore: released.before } : {}),
     undoable: true,
   });
   return { ended, areas, entryId };

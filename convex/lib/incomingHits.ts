@@ -60,7 +60,8 @@ import {
   type WindowResolution,
 } from "../../src/lib/domain/adversary-actions/index";
 import type { PlanStep, RunPlan, RunRefusal } from "../../src/lib/domain/card-effects/run";
-import { owned } from "../../src/lib/domain/feature-effects/owned";
+import { activeBeastform, owned } from "../../src/lib/domain/feature-effects/owned";
+import { beastformEndsOn } from "../../src/lib/srd/feature-effects/beastforms";
 import { runFeature } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { appError } from "../../src/lib/errors/app-error";
@@ -109,6 +110,8 @@ import type { CardChoice } from "./cardChoices";
 import { actorSheetAfter, cardActor, pcCombatant } from "./cardRunner";
 import { saveSheet } from "./characterSheet";
 import { closeRequest } from "./combatRequests";
+import { dropStance } from "./stanceDrop";
+import { logUnshakable, UNSHAKABLE_ID, unshake, unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
 import type { AdversaryBefore } from "./validators/actionLog";
 import { MAX_RIDERS, type AfterHit, type HitResponder, type HitRider } from "./validators/combatRequests";
 
@@ -131,6 +134,28 @@ export {
   type PartyMember,
   type Rebuilt,
 } from "./adversaryHits";
+
+/** Effects that end with the Beastform (CB p.30 Evolution: "until you drop out of that Beastform"; classFeatures ENDS_WITH). */
+const BEASTFORM_EFFECTS = new Set(["beastform", "evolution"]);
+
+/**
+ * DA10 (dcm-bxp.99.19.6 (1)): the sheet out of its Beastform when a resolved hit sets off one of the form's end events
+ * (`beastformEndsOn`: the last Hit Point, and Major or greater damage for a Fragile form, CB p.30, p.32). An Evolved form
+ * keeps its base form's features (CB p.34: "you retain all traits and features from the original form"), so a Fragile
+ * base counts; a Hybrid counts when it picked Fragile. Null when the form stays (or there is none).
+ */
+export function beastformEnds(sheet: CharacterSheet, hit: { lastHp: boolean; severity: PcSeverity }): { sheet: CharacterSheet; words: string } | null {
+  const form = activeBeastform(sheet);
+  if (form === null) return null;
+  const events = new Set([
+    ...beastformEndsOn(form.formId),
+    ...(form.baseFormId ? beastformEndsOn(form.baseFormId) : []),
+    ...((form.hybridFeatures ?? []).some((p) => p.endsWith(":fragile")) ? (["majorDamage"] as const) : []),
+  ]);
+  const ends = (hit.lastHp && events.has("lastHp")) || (events.has("majorDamage") && (hit.severity === "major" || hit.severity === "severe"));
+  if (!ends) return null;
+  return { sheet: { ...sheet, effects: sheet.effects.filter((e) => !BEASTFORM_EFFECTS.has(e.id)) }, words: "drops out of Beastform" };
+}
 
 /** The most responders one window lists (the party cap the validator names, CD8). */
 export const MAX_RESPONDERS = 12;
@@ -313,6 +338,7 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
   let folds;
   let paid: { sheet: CharacterSheet; cardName: string } | null = null;
   let feature: FeaturePaid | null = null;
+  const unshaken: UnshakableRoll[] = [];
   if (choice.kind === "armor") {
     const slots = choice.slots ?? 1;
     if (!Number.isInteger(slots) || slots < 1) throw appError("INVALID", "Mark at least one Armor Slot.");
@@ -329,7 +355,10 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
     if (!run.result.ok) throw cardRefusal(run.result);
     folds = run.folds;
     const cardName = getDomainCard(card.cardId)?.name ?? card.cardId;
-    paid = { sheet: sheetAfterCard(member.sheet, run.result.plan, characterId, cardName), cardName };
+    // DA10: Unshakable (CB p.59) on the card's Stress cost.
+    const u = unshakePlan(member.sheet, sheetAfterCard(member.sheet, run.result.plan, characterId, cardName), run.result.plan, characterId, true);
+    if (u.roll) unshaken.push(u.roll);
+    paid = { sheet: u.sheet, cardName };
   }
   if (choice.kind === "feature") {
     const pc = rebuilt.party.find((p) => p.id === characterId);
@@ -348,7 +377,7 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
     const plan = ran.result.plan;
     const spent = spentDiceChoice(plan);
     const stored: AnswerChoice = { kind: "feature", featureId: effect.featureId, useId: plan.useId, choices: [...choice.choices.filter((c) => c.id !== "spentDice"), ...(spent ? [spent] : [])] };
-    feature = { sheet: actorSheetAfter(member.sheet, plan, characterId, plan.name), name: plan.name, choice: stored, plan, effect };
+    feature = { sheet: actorSheetAfter(member.sheet, plan, characterId, plan.name, { out: unshaken }), name: plan.name, choice: stored, plan, effect };
   }
   const next = windowRespond(state, { characterId, choice: feature ? feature.choice : choice, ...(folds ? { folds } : {}) });
   if (!next.ok) throw appError(next.code, next.detail);
@@ -396,6 +425,7 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
       });
     }
   }
+  for (const roll of unshaken) await logUnshakable(ctx, { campaignId: row.campaignId, characterId, actorId: row.createdBy, name: member.sheet.name, groupId: row.payload.groupId }, roll);
   await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice: feature ? feature.choice : (choice as Exclude<AnswerChoice, { kind: "feature" }>), by: input.by, at: Date.now() }] });
   return { complete: isComplete(next.state) };
 }
@@ -470,15 +500,23 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
       ridersApplied = landed.applied;
       gm.push(`riders on ${targetName}: ${ridersApplied}${res.conditionNegated ? " (conditions avoided)" : ""}${res.hpRidersIgnored ? " (no Hit Points from them)" : ""}`);
     }
+    // DA10 (CB p.59 Unshakable, user 2026-10-30): a d6 for each Stress the hit (marked instead of HP) and its riders
+    // would mark; a 6 skips that one. Counted before the after-hit uses, so "when you mark a Stress" reads the result.
+    const riderStress = !res.missed ? (p.riders ?? []).reduce((n, r) => n + (r.kind === "stress" ? Math.max(0, Math.trunc(r.amount)) : 0), 0) : 0;
+    const shaken = unshake(sheet, next, result.stressMarked + (result.overflow ? 1 : 0) + riderStress);
+    next = shaken.sheet;
     const hpMarked = Math.max(0, next.hp - sheet.hp);
     deathMove = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
     // After-hit card uses (CE-valor): autos run now; reactions are offered with the row kept open.
     const facts: MarkFacts = { hpMarked, deathMove, armorSlots: result.armorSlots, fromAttack: true, severity: result.severity, stressMarked: Math.max(0, next.stress - sheet.stress), damageType: p.damageType };
     const uses = afterHitUses(windowPcOf({ character: target.character, sheet: next }), facts);
+    const laterRolls: UnshakableRoll[] = [];
     for (const [i, u] of uses.auto.entries()) {
       const ran = runAfterHitCard(target, next, u.cardId, u.useId, { amount: result.taken, ...(rebuilt.attacker ? { source: rebuilt.attacker.combatant } : {}) }, `${row._id}:after:${i}`);
       if ("ok" in ran) continue;
-      next = sheetAfterCard(next, ran.plan, target.character._id, ran.cardName);
+      const shook = unshakePlan(next, sheetAfterCard(next, ran.plan, target.character._id, ran.cardName), ran.plan, target.character._id, true);
+      if (shook.roll) laterRolls.push(shook.roll);
+      next = shook.sheet;
       autos.push(ran.cardName);
     }
     // SD4: after-hit feature uses: autos run now (Unshakable, Elemental Incarnation's Fire); reactions are offered.
@@ -487,9 +525,11 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     const pcNow = windowPcOf({ character: target.character, sheet: next }, undefined, { hopeAndFear: scope.hopeAndFear, ...(toAttacker !== undefined ? { bandToAttacker: toAttacker } : {}) });
     const featureUses = afterHitFeatures(pcNow, facts, { ...(pcNow.actor ? { subject: pcNow.actor } : {}), ...(rebuilt.attacker ? { source: rebuilt.attacker.combatant } : {}), taken: result.taken });
     for (const [i, u] of featureUses.auto.entries()) {
+      // DA10: Unshakable already rolled on each Stress above (`unshake`).
+      if (u.featureId === UNSHAKABLE_ID) continue;
       const effect = pcNow.features?.find((f) => f.featureId === u.featureId);
       if (!effect) continue;
-      const ran = runAfterHitFeature(effect, u.useId, { character: target.character, sheet: next }, facts, result.taken, rebuilt.attacker?.combatant, `${row._id}:afterFeature:${i}`, []);
+      const ran = runAfterHitFeature(effect, u.useId, { character: target.character, sheet: next }, facts, result.taken, rebuilt.attacker?.combatant, `${row._id}:afterFeature:${i}`, [], laterRolls);
       if (!ran.ok) continue;
       next = ran.sheet;
       autos.push(ran.plan.name);
@@ -501,6 +541,23 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     if (autos.length > 0) gm.push(`${targetName}: ${autos.join(", ")}`);
     const offers = [...uses.offers.slice(0, 10), ...featureUses.offers.slice(0, 10)];
     if (offers.length > 0) afterHit = { characterId: target.character._id, cardIds: offers, severity: result.severity, hpMarked, deathMove };
+    // DA10: what the hit ends. A Beastform on its end events (CB p.30: "If you mark your last Hit Point, you automatically
+    // drop out of this form"; CB p.32 Fragile: "When you take Major or greater damage, you drop out of Beastform"), with
+    // Evolution's +1 (CB p.30: "until you drop out of that Beastform"); the stance on Severe damage or the last Hit Point
+    // (HF p.12), and what ends with it (Grappling's Restrain).
+    const lastHp = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
+    const formEnds = beastformEnds(next, { lastHp, severity: result.severity });
+    if (formEnds) next = formEnds.sheet;
+    const ended: string[] = formEnds ? [formEnds.words] : [];
+    if (lastHp || result.severity === "severe") {
+      const dropped = await dropStance(ctx, row.campaignId, next);
+      if (dropped.dropped) {
+        next = dropped.sheet;
+        ended.push("drops out of their stance");
+        gm.push(...dropped.lines);
+        adversaryBefore.push(...dropped.before);
+      }
+    }
     await saveSheet(ctx, target.character._id, next);
     // The sheet's death move is due at once (user answer 2026-10-22; CB p.91): a new last HP clears an earlier "spent".
     if (deathMove) await ctx.db.patch("characters", target.character._id, { deathMoveSpent: undefined });
@@ -514,15 +571,21 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
         ? `${targetName} avoided ${p.attacker.label}'s hit`
         : res.negated
           ? `${targetName} took no damage from ${p.attacker.label}'s hit`
-          : `${targetName} took ${p.attacker.label}'s hit${deathMove ? " and must make a death move" : ""}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}`,
+          : `${targetName} took ${p.attacker.label}'s hit${deathMove ? " and must make a death move" : ""}${autos.length > 0 ? ` (${autos.join(", ")})` : ""}${ended.length > 0 ? `; ${ended.join(", ")}` : ""}`,
       groupId: p.groupId,
       before: sheet,
       undoable: true,
     });
+    for (const roll of [shaken.roll, ...laterRolls]) await logUnshakable(ctx, { campaignId: row.campaignId, characterId: target.character._id, actorId: row.createdBy, name: targetName, groupId: p.groupId }, roll);
     const armor = result.armorSlots > 0 ? `, ${result.armorSlots} Armor Slot${result.armorSlots === 1 ? "" : "s"}` : "";
     const forced = result.forcedArmor > 0 ? `, ${result.forcedArmor} forced` : "";
     const resisted = result.resisted !== "none" ? ` (${result.resisted}: ${result.taken})` : "";
-    const marks = [result.hpMarked > 0 ? `${result.hpMarked} HP (${result.after.hp}/${sheet.hpMax})` : "no HP", ...(result.stressMarked > 0 ? [`${result.stressMarked} Stress`] : []), ...(result.hopeSpent > 0 ? [`${result.hopeSpent} Hope`] : [])];
+    const marks = [
+      result.hpMarked > 0 ? `${result.hpMarked} HP (${result.after.hp}/${sheet.hpMax})` : "no HP",
+      ...(result.stressMarked > 0 ? [`${result.stressMarked} Stress`] : []),
+      ...(result.hopeSpent > 0 ? [`${result.hopeSpent} Hope`] : []),
+      ...(shaken.roll ? [unshakableText(shaken.roll)] : []),
+    ];
     gm.push(
       `${targetName}: ${result.incoming} ${TYPE_WORD[p.damageType]}${resisted} → ${SEVERITY_WORD[result.severityBefore]}${armor}${forced} → ${SEVERITY_WORD[result.severity]} → ${marks.join(", ")}${deathMove ? "; death move" : ""}`,
     );
@@ -638,6 +701,7 @@ export function runAfterHitFeature(
   source: Combatant | undefined,
   seed: string,
   choices: readonly CardChoice[],
+  unshaken?: UnshakableRoll[],
 ): ({ ok: true; plan: RunPlan; sheet: CharacterSheet }) | RunRefusal {
   const use = featureUse(effect, useId);
   if (!use) return { ok: false, reason: "noUse", detail: effect.featureId };
@@ -657,7 +721,7 @@ export function runAfterHitFeature(
     rng: seededRng(seed),
   });
   if (!result.ok) return result;
-  let next = actorSheetAfter(sheet, result.plan, member.character._id, result.plan.name);
+  let next = actorSheetAfter(sheet, result.plan, member.character._id, result.plan.name, unshaken ? { out: unshaken } : {});
   // Brave Face (HF p.32): "spend a Hope instead" of the forced Stress: the Stress comes off, a Hope is spent.
   if (result.plan.steps.some((s: PlanStep) => s.kind === "fold" && s.step.kind === "convertMarks" && s.step.from === "stress" && s.step.into === "hope")) {
     if (next.hope < 1 || next.stress < 1) return { ok: false, reason: "cost", detail: "hope" };
@@ -690,20 +754,23 @@ export async function respondAfterHit(ctx: MutationCtx, input: RespondInput & { 
     return "declined";
   }
   const kind = isPcAttacker(row.payload.attacker) ? ("combat" as const) : ("adversary" as const);
+  const unshaken: UnshakableRoll[] = [];
   let next: CharacterSheet;
   let name: string;
   let stored: AnswerChoice = choice;
   if (choice.kind === "card") {
     const ran = runAfterHitCard(member, member.sheet, choice.cardId, choice.useId, { amount: offer.hpMarked }, `${row._id}:afterHit`);
     if ("ok" in ran) throw cardRefusal(ran);
-    next = sheetAfterCard(member.sheet, ran.plan, characterId, ran.cardName);
+    const u = unshakePlan(member.sheet, sheetAfterCard(member.sheet, ran.plan, characterId, ran.cardName), ran.plan, characterId, true);
+    if (u.roll) unshaken.push(u.roll);
+    next = u.sheet;
     name = ran.cardName;
   } else {
     const effect = answeringFeatures(member.sheet, await hopeAndFearOf(ctx, row.campaignId)).find((f) => f.featureId === choice.featureId);
     const use = effect ? featureUse(effect, choice.useId) : undefined;
     if (!effect || !use) throw appError("NOT_A_RESPONDER", choice.featureId);
     const attacker = await attackerCombatant(ctx, row, members);
-    const ran = runAfterHitFeature(effect, use.id, member, { hpMarked: offer.hpMarked }, offer.hpMarked, attacker?.combatant, `${row._id}:afterHit`, choice.choices);
+    const ran = runAfterHitFeature(effect, use.id, member, { hpMarked: offer.hpMarked }, offer.hpMarked, attacker?.combatant, `${row._id}:afterHit`, choice.choices, unshaken);
     if (!ran.ok) throw featureRefusal(ran);
     assertPicked(ran.plan);
     next = ran.sheet;
@@ -737,6 +804,7 @@ export async function respondAfterHit(ctx: MutationCtx, input: RespondInput & { 
     before: member.sheet,
     undoable: true,
   });
+  for (const roll of unshaken) await logUnshakable(ctx, { campaignId: row.campaignId, characterId, actorId: row.createdBy, name: member.sheet.name, groupId: row.payload.groupId }, roll);
   await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice: stored, by: input.by, at: Date.now() }] });
   await closeRequest(ctx, row._id, "resolved", input.by);
   return "resolved";

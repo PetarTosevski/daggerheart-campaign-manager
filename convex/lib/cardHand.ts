@@ -18,7 +18,6 @@ import { runFeature } from "../../src/lib/domain/feature-effects/run";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard } from "../../src/lib/srd/index";
-import { markStress } from "../../src/lib/domain/characters/index";
 import { appError } from "../../src/lib/errors/app-error";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -26,6 +25,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
 import { actorSheetAfter, cardActor, cardIdOfEffect, tokenKeyOf } from "./cardRunner";
 import { loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./characterSheet";
+import { markStressOn, unshakableText, type UnshakableRoll } from "./unshakable";
 
 export const handUseValidator = v.object({
   useId: v.string(),
@@ -177,6 +177,7 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
   const card = getDomainCard(cardId);
   let next: CharacterSheet = { ...s };
   let paid = 0;
+  let unshakable: UnshakableRoll | null = null;
   if (to === "vault") {
     if (!inLoadout) return null;
     next.domainCards = { ...s.domainCards, loadout: s.domainCards.loadout.filter((c) => c !== cardId) };
@@ -193,15 +194,17 @@ export async function moveCardFor(ctx: MutationCtx, user: Doc<"users">, characte
         .withIndex("by_campaign_status_started", (q) => q.eq("campaignId", campaign._id).eq("status", "open"))
         .first()) !== null;
     if (!resting && recall > 0) {
-      const { stress, hp } = markStress(next, recall);
-      next = { ...next, stress, hp };
+      // DA10: Unshakable (CB p.59) rolls a d6 for each Stress of the Recall Cost; a 6 skips that one.
+      const marked = markStressOn(next, recall);
+      next = marked.sheet;
+      unshakable = marked.roll;
       paid = recall;
     }
   }
   await saveSheet(ctx, character._id, next);
   const forSomeone = permission === "owner" && character.ownerId !== user._id;
   if (forSomeone || paid > 0) {
-    const what = to === "vault" ? `vaults ${card?.name ?? cardId}` : `recalls ${card?.name ?? cardId}${paid > 0 ? ` (${paid} Stress)` : ""}`;
+    const what = to === "vault" ? `vaults ${card?.name ?? cardId}` : `recalls ${card?.name ?? cardId}${paid > 0 ? ` (${paid} Stress${unshakable ? `; ${unshakableText(unshakable)}` : ""})` : ""}`;
     await logAction(ctx, {
       campaignId: campaign._id,
       characterId: character._id,
@@ -243,11 +246,13 @@ export function runRestTiming(sheet: CharacterSheet, actorId: string, at: RestTi
       if (trigger?.kind !== "timing" || trigger.at !== at) continue;
       const result = run(effect, { actor: cardActor(actorId, next, cardId, undefined), gmFear: 0, useId: use.id, targets: [], rng });
       if (!result.ok) continue;
-      let after = actorSheetAfter(next, result.plan, actorId, card.name);
+      // DA10: an Unshakable PC rolls a d6 for each Stress the use marks (Wild Surge's rest Stress), with the rest's dice.
+      const rolled: UnshakableRoll[] = [];
+      let after = actorSheetAfter(next, result.plan, actorId, card.name, { rng, out: rolled });
       if (ENDS_ON_REST.has(cardId)) after = { ...after, effects: after.effects.filter((e) => cardIdOfEffect(e) !== cardId) };
       if (JSON.stringify(after) === JSON.stringify(next)) continue;
       next = after;
-      lines.push(use.name);
+      lines.push(rolled.length > 0 ? `${use.name} (${rolled.map(unshakableText).join("; ")})` : use.name);
     }
   }
   const features = runFeatureTokenTiming(next, actorId, at, rng);
@@ -274,7 +279,7 @@ function runFeatureTokenTiming(sheet: CharacterSheet, actorId: string, at: RestT
       if (use.steps.length === 0 || use.steps.some((step) => step.kind !== "tokens")) continue;
       const result = runFeature(entry, use.id, { actor: cardActor(actorId, next, tokenKeyOf(held.featureId), undefined), gmFear: 0, targets: [], rng });
       if (!result.ok) continue;
-      const after = actorSheetAfter(next, result.plan, actorId, held.name);
+      const after = actorSheetAfter(next, result.plan, actorId, held.name, { rng });
       if (JSON.stringify(after) === JSON.stringify(next)) continue;
       next = after;
       lines.push(`${held.name}: ${use.name}`);

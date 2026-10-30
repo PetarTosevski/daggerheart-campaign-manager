@@ -59,6 +59,7 @@ import {
 import { answeringFeatures, featureActor, featureChoices, featureReplayActor, seededRng, SPENT_DICE } from "./adversaryHits";
 import { actorSheetAfter, pcCombatant, writeSheetChanges } from "./cardRunner";
 import { saveSheet } from "./characterSheet";
+import { logUnshakable, unshake } from "./unshakable";
 import { closeRequest } from "./combatRequests";
 import { liveCombatMap, tokensOnMap } from "./combatMaps";
 import { loadScene, type Scene } from "./combatVision";
@@ -371,8 +372,12 @@ async function commit(ctx: MutationCtx, w: Work, log: { campaignId: Id<"campaign
       await ctx.db.patch("encounterAdversaries", other._id, { ...applySpotlight({ spotlights: other.spotlights, spotlightTurn: other.spotlightTurn }, spotlight.gmTurn), updatedAt: now });
     }
   }
-  for (const { member, after } of w.sheets.values()) {
+  for (const { member, after: written } of w.sheets.values()) {
+    // DA10: Unshakable (CB p.59) on the Stress the feature marked without a hit (a hit's Stress rides with it).
+    const shaken = unshake(member.sheet, written, Math.max(0, written.stress - member.sheet.stress));
+    const after = shaken.sheet;
     await saveSheet(ctx, member.character._id, after);
+    await logUnshakable(ctx, { campaignId: log.campaignId, characterId: member.character._id, actorId: log.actorId, name: member.sheet.name, groupId: log.groupId, kind: "adversary" }, shaken.roll);
     await logAction(ctx, {
       campaignId: log.campaignId,
       characterId: member.character._id,

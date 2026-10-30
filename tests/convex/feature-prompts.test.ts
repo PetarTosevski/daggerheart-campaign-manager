@@ -221,8 +221,9 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
 
   it("on a success the token moves to the picked square and the Stress deals 1d12 to every enemy in Melee there; undo restores all", async () => {
     const a = await firbolg();
-    // Hope 9 + Fear 3 + Agility 2 = 14 vs 12: a success with Hope. The 1d12 shows 7: Major for both Bears (2 HP).
-    serverDice(9, 3, 7);
+    // Hope 9 + Fear 3 + Agility 2 = 14 vs 12: a success with Hope. The 1d12 shows 7: Major for both Bears (2 HP). The
+    // Firbolg's Unshakable d6 on the Stress shows 1: it is marked (CB p.59; DA10).
+    serverDice(9, 3, 7, 1);
     const result = await a.charge();
     expect(result).toMatchObject({ status: "charged", moved: true, use: { success: true } });
     if (result.status !== "charged") throw new Error("not charged");

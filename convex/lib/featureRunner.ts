@@ -43,6 +43,7 @@ import { logAction, newGroupId } from "./actionLog";
 import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSlot } from "./cardChoices";
 import { cardPromptValidator, damageRolls, gmLines, instanceWrites, openCardHits, promptsOf, publicTargets, rollText, writeInstances } from "./cardRows";
 import { actorSheetAfter, effectOption, featureIdOfEffect, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
+import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
 import { partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
 import { hasServerMove, isRolledFirst, spendTargetCount } from "./featurePrompts";
@@ -372,10 +373,11 @@ export async function resolveFeatureUse(ctx: MutationCtx, req: FeatureUseRequest
   const actorToken = built.context.actor.id;
   // The D5 features' sheet (classState, held dice, effects) when they ran; resources come from the plan either way.
   const start = delegated?.sheet ?? built.paidSheet;
-  const next = actorSheetAfter(start, plan, actorToken, pick.name);
+  const unshaken: UnshakableRoll[] = [];
+  const next = actorSheetAfter(start, plan, actorToken, pick.name, { out: unshaken });
   // DA12: a move the server makes itself (`intoMelee`, Charge) is no prompt for the table.
   let prompts = promptsOf(plan, built).filter((p) => !serverMovePrompt(plan, p));
-  const notes = [...(rolled !== null ? [`rolled ${rolled} target${rolled === 1 ? "" : "s"}`] : []), ...notesOf(plan, built, sheet, delegated)];
+  const notes = [...(rolled !== null ? [`rolled ${rolled} target${rolled === 1 ? "" : "s"}`] : []), ...notesOf(plan, built, sheet, delegated), ...unshaken.map(unshakableText)];
 
   // Other characters: a D5 feature's other sheets (by the runner's key), then the plan's ally steps and tracks.
   const others = new Map<string, { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }>();
@@ -390,6 +392,10 @@ export async function resolveFeatureUse(ctx: MutationCtx, req: FeatureUseRequest
     const changedTo = plan.creatures.find((x) => x.id === c.tokenId)?.after;
     let after = writeSheetChanges(base, plan.steps, c.tokenId, plan.cardId, pick.name, plan.exclusive, false);
     if (changedTo) after = { ...after, hp: Math.min(c.sheet.hpMax, changedTo.hp), stress: Math.min(c.sheet.stressMax, changedTo.stress), armorMarked: Math.max(0, changedTo.armor ?? base.armorMarked) };
+    // DA10: an Unshakable ally rolls on the Stress the use marks on them (CB p.59).
+    const u = unshakePlan(base, after, plan, c.tokenId, false);
+    if (u.roll) notes.push(`${c.sheet.name}: ${unshakableText(u.roll)}`);
+    after = u.sheet;
     others.set(c.character._id, { character: c.character, before: prior?.before ?? c.sheet, after });
   }
 
