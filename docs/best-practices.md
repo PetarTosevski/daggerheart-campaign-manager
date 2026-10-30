@@ -130,8 +130,8 @@ Why: production redacts other errors, and two payload shapes break client mappin
 **CF14. Convert only `RuleError` (thrown from `src/lib/domain/**`) and `ZodError` into `ConvexError`. Rethrow everything else.**
 Why: a `TypeError` must surface as a bug, not as a user message. · https://docs.convex.dev/functions/error-handling/application-errors · Enforced by: `tests/convex/functions.test.ts`.
 
-**CF15. Rate-limit abusable endpoints with the wrapper's `rateLimit` option (`@convex-dev/rate-limiter`): upload URLs, `joinByCode`, campaign create and invites now; password sign-up before the allowlist opens.**
-Why: Convex Auth limits only failed sign-ins. · https://www.convex.dev/components/rate-limiter · Enforced by: review.
+**CF15. Rate-limit abusable endpoints with the wrapper's `rateLimit` option (`@convex-dev/rate-limiter`): upload URLs, `joinByCode`, campaign create and invites. Password sign-up and emailed codes are limited per normalised email plus a global sign-up cap (`convex/lib/authRateLimit.ts`), and invite emails per campaign and per recipient (`convex/lib/inviteEmail.ts`).**
+Why: Convex Auth limits only failed sign-ins, and sign-up is open: every code or invite sent is an email someone can be flooded with. · https://www.convex.dev/components/rate-limiter · Enforced by: `tests/convex/auth-signup.test.ts`, `tests/convex/members-invite-email.test.ts`, review.
 
 **CF16. Issue upload URLs only from access-checked mutations. After upload, go through `acceptUpload`: check size and an explicit type allowlist (png/jpeg/webp/gif; never `image/*`, never SVG). Delete a rejected file and *return* `{ ok: false, code }` (throwing would roll back the delete).**
 Why: upload URLs enforce no size limit, and the content type is whatever header the client sent. · https://docs.convex.dev/file-storage/upload-files · Enforced by: `tests/convex/upload-claims.test.ts`.
@@ -145,8 +145,8 @@ Why: they cannot be revoked short of deleting the file. · https://docs.convex.d
 **CF19. Read environment variables through the typed `env` from `_generated/server`, inside handlers, never at module scope. Secrets never go behind `NEXT_PUBLIC_`.**
 Why: typos fail silently, and module-scope reads are frozen at deploy time. · https://docs.convex.dev/production/environment-variables · Enforced by: `@convex-dev/no-process-env` (`auth.config.ts` exempt).
 
-**CF20. Seed and test accounts exist only on e2e/local deployments, and sign-up errors never reveal whether an email is allowlisted or registered.**
-Why: known passwords in prod, and account enumeration. · https://docs.convex.dev/understanding/best-practices/ · Enforced by: `tests/unit/allowlist.test.ts` + `tests/convex/create-or-update-user.test.ts`.
+**CF20. Seed and test accounts exist only on e2e/local deployments. Sign-up errors are separate and clear (`src/lib/errors/auth.ts`: `EMAIL_TAKEN`, `PASSWORD_TOO_SHORT`, `CODE_INVALID`, plus `RATE_LIMITED`); the password-reset step never reveals whether an email has an account. An account works only after its emailed code, and an unverified email never gains campaign access.**
+Why: known passwords in prod; clear errors were the user's decision (bead dcm-bxp.128), accepting that sign-up shows "this email already has an account", while reset and the rate limits keep enumeration costly; an unverified email proves nothing about who holds it. · https://docs.convex.dev/understanding/best-practices/ · Enforced by: `tests/unit/allowlist.test.ts`, `tests/convex/create-or-update-user.test.ts`, `tests/convex/auth-signup.test.ts`, `tests/e2e/signup.spec.ts`.
 
 **CF21. Keep `"use node"` files to actions only, and never import them from non-Node files.**
 Why: wrong-runtime imports break bundling. · https://docs.convex.dev/functions/runtimes · Enforced by: `@convex-dev/import-wrong-runtime`.
