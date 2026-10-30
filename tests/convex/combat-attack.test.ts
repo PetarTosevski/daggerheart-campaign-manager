@@ -222,7 +222,8 @@ describe("combatActions.attack: hit, damage and the two rows", () => {
     // Skeleton Warrior: "resistant to physical damage" (CA2). Severe 2 so the halved damage still decides the HP.
     const skeleton = await a.enemy("Skeleton", 6, 10, { major: 1, severe: 100 }, { source: { kind: "srd", adversaryId: "skeleton-warrior" } });
     const r = resolved(await a.attack(a.player, [skeleton.tokenId]));
-    const halved = Math.floor(r.damage!.total / 2);
+    // Halving rounds up (CB p.107, Q6).
+    const halved = Math.ceil(r.damage!.total / 2);
     expect((await a.instance(skeleton.instanceId)).hp).toBe(halved >= 1 ? 2 : 0);
     expect((await a.rows()).find((row) => row.visibility === "gm")!.summary).toContain(`resistant: ${halved}`);
   });

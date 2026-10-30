@@ -59,8 +59,8 @@ describe("applyDamageTo: resistance and immunity (R10, CB p.99)", () => {
   it("the book's example: 26 physical against physical resistance is 13", () => {
     expect(applyDamageTo(warrior, 26, "physical")).toMatchObject({ resisted: "resistant", taken: 13, severity: "major", hpMarked: 2 });
   });
-  it("halving rounds down (plan acceptance)", () => {
-    expect(applyDamageTo(warrior, 27, "physical").taken).toBe(13);
+  it("halving rounds up (CB p.107, Q6)", () => {
+    expect(applyDamageTo(warrior, 27, "physical").taken).toBe(14);
   });
   it("resistance to the other type does nothing", () => {
     expect(applyDamageTo(warrior, 26, "magic")).toMatchObject({ resisted: "none", taken: 26 });

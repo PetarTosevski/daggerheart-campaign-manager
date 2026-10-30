@@ -30,6 +30,7 @@ import { resolveHits, type HitResult } from "../combat-actions/hits";
 import { rollDamage, type Rng } from "../dice/index";
 import type { RollRecord } from "../duality";
 import { hordeHalved } from "../encounters/damage";
+import { versusMods, type CreatureInfo, type PassiveSheet, type PassiveState } from "../feature-effects/passives";
 
 /** A stat block's Attack Modifier: a number ("+3") or extra dice ("+2d4", the only one in the SRD). */
 export interface AttackModifier {
@@ -53,10 +54,27 @@ export interface AttackAdvantage {
   disadvantage?: number;
 }
 
-/** A PC an attack is made against: their Evasion is the Difficulty (AR1). */
+/**
+ * A PC an attack is made against: their Evasion is the Difficulty (AR1). `advantage` / `disadvantage` are the sources the
+ * target's passives put on an attack against them (Sturdy, CB p.68); `pcTarget` fills all three.
+ */
 export interface EvasionTarget {
   readonly id: string;
   readonly evasion: number;
+  readonly advantage?: number;
+  readonly disadvantage?: number;
+}
+
+/**
+ * A PC as a target of one adversary attack (SD2, NV9): their Evasion (already with the always-on passives, `derivedDefense`)
+ * plus the passives keyed to this attacker (CB p.39 Elusive Predator, HF p.8 Scorpion's Poise, CB p.38 Battle-Bonded:
+ * "+2 bonus to your Evasion against the attack"), and the disadvantage their passives put on attacks against them (CB p.68
+ * Sturdy: "When you have 1 Hit Point remaining, attacks against you have disadvantage"). `attacker` says what the adversary
+ * is: its condition tags (Focus, Marked for Death) and whether it is within the PC's companion's Melee range.
+ */
+export function pcTarget(id: string, sheet: PassiveSheet, evasion: number, attacker: CreatureInfo, state: PassiveState = {}): EvasionTarget {
+  const v = versusMods(sheet, "attacksByThem", attacker, state);
+  return { id, evasion: evasion + v.evasion, ...(v.advantage ? { advantage: v.advantage } : {}), ...(v.disadvantage ? { disadvantage: v.disadvantage } : {}) };
 }
 
 export interface AdversaryAttackResult {
@@ -86,7 +104,10 @@ export function adversaryAttack(
 ): AdversaryAttackResult {
   const mod = parseAttackModifier(atk);
   const flat = mod.flat + experienceBonus;
-  const { record, natural } = rollD20(rng, flat, adv.advantage ?? 0, adv.disadvantage ?? 0);
+  // One roll for all targets (CB p.161): a source a target's passives add counts once for the roll, however many targets have it.
+  const advantage = (adv.advantage ?? 0) + (targets.some((t) => t.advantage) ? 1 : 0);
+  const disadvantage = (adv.disadvantage ?? 0) + (targets.some((t) => t.disadvantage) ? 1 : 0);
+  const { record, natural } = rollD20(rng, flat, advantage, disadvantage);
   const extra = mod.dice ? Array.from({ length: mod.dice.count }, () => rng(mod.dice!.sides)) : [];
   const total = record.total + extra.reduce((s, n) => s + n, 0);
   const dice = [...record.dice, ...extra.map((value) => ({ sides: mod.dice!.sides, value, role: "extra" as const }))];
