@@ -686,7 +686,9 @@ export const clear = gmMutation({
  *
  * Cloaked (DA3, DA18): a PC token that ends a move on the live map where a revealed enemy token sees it in clear light
  * loses Cloaked; in dim light only, the rogue makes one Finesse action roll against the highest Difficulty among those
- * enemies, and a failure ends it (`uncloakAfterMove`, public undoable feed rows); Vanishing Act's Cloaked stays.
+ * enemies, and a failure ends it (`uncloakAfterMove`, public undoable feed rows); Vanishing Act's Cloaked stays. A dim
+ * time phase counts as dim light. The GM's drag of a conscious rogue (not the GM's own character) is not the rogue's move:
+ * no roll, Cloaked stays. An unconscious or dead rogue's token that moves drops Cloaked (dcm-bxp.99.19.62).
  */
 export const move = campaignMutation({
   need: "view",
@@ -703,7 +705,8 @@ export const move = campaignMutation({
     if (blocked && !atLeast(ctx.permission, "owner")) throw appError("MOVE_BLOCKED");
     await ctx.db.patch("combatTokens", token._id, next);
     // CB p.42 (Rogue, Cloaked): "end a move within line of sight of an adversary" ends it (Q9, plan drawer-answers DA3).
-    if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id);
+    // A GM's drag is not the rogue's move (dcm-bxp.99.19.62 (2)): `byGm`.
+    if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id, { byGm: atLeast(ctx.permission, "owner") });
     return { ...next, blocked, difficult };
   },
 });

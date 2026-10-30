@@ -290,6 +290,36 @@ describe("Charge rolls first and the server moves the token on a success (dcm-bx
     expect((await a.requests()).some((r) => r.kind === "serverMove")).toBe(false);
   });
 
+  // dcm-bxp.99.19.59; CB p.42 (Rogue, Cloaked): "After you make an attack or end a move within line of sight of an
+  // adversary, you are no longer Cloaked." By day the Bears next to the square see the Firbolg in clear light.
+  it("a Cloaked Firbolg's Charge that lands in sight ends Cloaked in the Charge's group; one undo reverts both", async () => {
+    const a = await firbolg();
+    await a.editSheet(a.w.characterA, () => ({ conditions: ["cloaked"] }));
+    serverDice(9, 3); // 9 + 3 + 2 = 14 vs 12: success
+    const result = await a.charge({ stress: false });
+    if (result.status !== "charged") throw new Error("not charged");
+    expect(result.moved).toBe(true);
+    expect((await a.sheetOf(a.w.characterA)).conditions).not.toContain("cloaked");
+    const rows = await a.t.run((ctx) => ctx.db.query("actionLog").collect());
+    const use = rows.find((r) => r._id === result.use.entryId)!;
+    const cloak = rows.find((r) => r.summary.includes("no longer Cloaked"))!;
+    expect(cloak).toMatchObject({ visibility: "public", undoable: true, characterId: a.w.characterA });
+    expect(cloak.groupId).toBe(use.groupId);
+
+    await a.gm.mutation(api.actionLog.undo, { entryId: result.use.entryId, idempotencyKey: key() });
+    expect((await a.sheetOf(a.w.characterA)).conditions).toContain("cloaked");
+    expect(await a.token(a.ash)).toMatchObject({ x: 2, y: 10 });
+  });
+
+  it("a failed Charge does not move, so Cloaked stays", async () => {
+    const a = await firbolg();
+    await a.editSheet(a.w.characterA, () => ({ conditions: ["cloaked"] }));
+    serverDice(2, 3);
+    const result = await a.charge({ stress: false });
+    expect(result).toMatchObject({ status: "charged", moved: false });
+    expect((await a.sheetOf(a.w.characterA)).conditions).toContain("cloaked");
+  });
+
   it("refuses a square out of Melee, an occupied square, a target in Close range and a roll without the Difficulty", async () => {
     const a = await firbolg();
     expect(await codeOf(a.charge({ square: { x: 9, y: 10 } }))).toBe("INVALID");

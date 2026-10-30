@@ -15,7 +15,7 @@ import { needsChoiceValidator } from "./lib/cardRows";
 import { buildRun, Creatures, extraSpecs, replaying, runCard } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
 import { attackScene, type AttackScene } from "./lib/combatActions";
-import { movementGrid } from "./lib/combatMovement";
+import { movementGrid, uncloakAfterMove } from "./lib/combatMovement";
 import type { MovementGrid } from "../src/lib/domain/combat-map/movement";
 import { closeRequest, loadOpenRequest, openServerMove } from "./lib/combatRequests";
 import { allyRollLive, isAllyRollRow, liveAllyRolls, liveTargetCount, optionalHope, rollAndStoreCount, rolledFirstUse, rollerUse, type AllyRollRow } from "./lib/featurePrompts";
@@ -270,7 +270,8 @@ export const chargeOptions = campaignQuery({
  * dcm-bxp.99.19.55 (2)), rolls Agility
  * against the GM's Difficulty (`roll.difficulty`, required) and, on a success, moves the token to the square (the optional
  * Stress, `stress: true`, then deals 1d12 physical damage to each of those targets); on a failure the token stays. One
- * actionLog group: undo restores the sheets, the adversaries and the square (`serverMove`). Refusals: FEATURE_NOT_OWNED,
+ * actionLog group: undo restores the sheets, the adversaries and the square (`serverMove`). A Cloaked Firbolg that lands in
+ * an enemy's sight loses Cloaked (or rolls Finesse in dim light) in that group (`uncloakAfterMove`). Refusals: FEATURE_NOT_OWNED,
  * FEATURE_EXHAUSTED / FEATURE_COST_UNPAID, COMBAT_TARGET_INVALID (not an enemy), INVALID
  * (not at Far / Very Far, a square off the map or out of Melee, no Difficulty), MOVE_BLOCKED (an occupied square, a
  * blocked way for a player), COMBAT_MAP_NOT_FOUND / COMBAT_TOKEN_NOT_FOUND, CHARACTER_UNAVAILABLE.
@@ -334,6 +335,9 @@ export const charge = keyedCampaignMutation({
             payload: { schemaVersion: 1, kind: "serverMove", characterId: character._id, groupId: entry.groupId, tokenId: attacker._id, from, to: next },
           });
         }
+        // CB p.42 (Rogue, Cloaked): the Charge ends a move, so a Cloaked Firbolg in sight loses Cloaked (or rolls in dim
+        // light) in the Charge's group: one undo reverts both (dcm-bxp.99.19.59). The Firbolg's own move, whoever clicked.
+        await uncloakAfterMove(ctx, campaign, before.map, { ...attacker, ...next }, ctx.user._id, entry?.groupId === undefined ? {} : { groupId: entry.groupId });
       }
       return { status: "charged" as const, moved, use };
     }),

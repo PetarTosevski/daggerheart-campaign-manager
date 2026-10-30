@@ -268,3 +268,77 @@ describe("Cloaked in dim light makes a Finesse roll (DA18)", () => {
     expect((await a.rows()).some((r) => r.kind === "roll" && r.summary.includes("Finesse"))).toBe(false);
   });
 });
+
+/**
+ * C3 (user 2026-10-30, dcm-bxp.99.19.62):
+ * (2) "a rogue who is unconscious or dead drops Cloaked (a GM drag of a conscious rogue stays: no roll)";
+ * (3) "Witherwild dusk and dawn count as dim light, so being seen then asks for the Finesse roll instead of ending Cloaked".
+ * The dim phases are R8's Nautical Twilight (DAY day 7) and Nightfall (NIGHT day 1); Morning (DAY day 3) is day.
+ */
+describe("Cloaked follow-ups: dim phases, unconscious or dead, the GM's drag (C3)", () => {
+  allowWorldEmails();
+  afterEach(() => vi.restoreAllMocks());
+
+  const TWILIGHT = { cycle: "DAY" as const, cycleDay: 7 };
+  const NIGHTFALL = { cycle: "NIGHT" as const, cycleDay: 1 };
+  const gmMove = (a: Awaited<ReturnType<typeof arena>>, x: number, y: number) => a.gm.mutation(api.combatTokens.move, { campaignId: a.campaignId, tokenId: a.ash, x, y });
+
+  it("in Nautical Twilight an enemy far off sees the rogue dimly: a Finesse roll, and a success keeps Cloaked", async () => {
+    const a = await arena();
+    await a.setTime(TWILIGHT);
+    await a.edit((s) => ({ traits: { ...s.traits, finesse: 1 }, hope: 2, stress: 0 }));
+    await a.enemy(20, 10);
+    dice([11, 2]); // 14 vs 10: success with Hope
+    await a.move(4, 10);
+    expect(await a.cloaked()).toBe(true);
+    const roll = (await a.rows()).find((r) => r.kind === "roll" && r.summary.includes("Finesse"))!;
+    expect(roll.roll).toMatchObject({ total: 14, outcome: "successHope" });
+  });
+
+  it("at Nightfall a failure ends Cloaked; no outright end without a roll", async () => {
+    const a = await arena();
+    await a.setTime(NIGHTFALL);
+    await a.edit((s) => ({ traits: { ...s.traits, finesse: 1 }, hope: 2, stress: 0 }));
+    await a.enemy(20, 10);
+    dice([2, 3]); // 6 vs 10: failure with Fear
+    await a.move(4, 10);
+    expect(await a.cloaked()).toBe(false);
+    const rows = await a.rows();
+    expect(rows.some((r) => r.kind === "roll" && r.summary.includes("no longer Cloaked"))).toBe(true);
+    expect(rows.some((r) => r.summary.includes("ends a move in sight of an adversary"))).toBe(false);
+  });
+
+  it("an unconscious rogue's token moved by the GM drops Cloaked, with no enemy in sight; undo restores it", async () => {
+    const a = await arena();
+    await a.setTime(DAY);
+    await a.edit(() => ({ conditions: ["cloaked", "unconscious"] }));
+    await gmMove(a, 4, 10);
+    expect(await a.cloaked()).toBe(false);
+    const row = (await a.rows()).find((r) => r.summary.includes("unconscious and no longer Cloaked"))!;
+    expect(row).toMatchObject({ visibility: "public", undoable: true, characterId: a.w.characterA });
+    await a.gm.mutation(api.actionLog.undo, { entryId: row._id, idempotencyKey: key() });
+    expect(await a.cloaked()).toBe(true);
+  });
+
+  it("a dead rogue's token that moves drops Cloaked", async () => {
+    const a = await arena();
+    await a.setTime(DAY);
+    await a.t.run((ctx) => ctx.db.patch("characters", a.w.characterA, { status: "dead" }));
+    await gmMove(a, 4, 10);
+    expect(await a.cloaked()).toBe(false);
+    expect((await a.rows()).some((r) => r.summary.includes("dead and no longer Cloaked"))).toBe(true);
+  });
+
+  it("the GM's drag of a conscious rogue is not the rogue's move: in clear or dim sight Cloaked stays, no roll", async () => {
+    const a = await arena();
+    await a.setTime(DAY);
+    await a.enemy(20, 10);
+    await gmMove(a, 4, 10);
+    expect(await a.cloaked()).toBe(true);
+    await a.setTime(NIGHT);
+    await a.enemy(7, 11); // dim at night
+    await gmMove(a, 4, 11);
+    expect(await a.cloaked()).toBe(true);
+    expect((await a.rows()).some((r) => r.characterId === a.w.characterA)).toBe(false);
+  });
+});

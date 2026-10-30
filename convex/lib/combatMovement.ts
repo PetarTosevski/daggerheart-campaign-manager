@@ -5,6 +5,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { lineOfSight } from "../../src/lib/domain/combat-actions/index";
 import { createView, tokenVisibility, VISION_BASE_DEG, VISION_MAX_DEG, VISION_STEP_DEG, type VisionToken } from "../../src/lib/domain/combat-map/index";
+import { lightOf } from "../../src/lib/domain/combat-map/light";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import { OUTCOME_LABEL } from "../../src/lib/domain/dice/index";
 import { rollGaveHope, WITH_HOPE } from "../../src/lib/domain/session-features/index";
@@ -101,12 +102,14 @@ function visionToken(t: Doc<"combatTokens">): VisionToken {
 export type EnemySight = "clear" | "dim" | "none";
 
 /**
- * DA3 / DA18 (user 2026-10-30): how the enemy token `enemy` sees the token `at` under the map's light. Day and dim phases
- * light everything (R8: dim is "full vision"), so every square is clear; at night `at` is clear when its best square is
- * clear (level 2) from the enemy's eye under the enemy's own night vision or carried light, every other token's carried
- * light (the rogue's own torch too), the map's lit lights and glowing terrain (R9), and dim when it is dim (level 1). The
- * enemy looks straight at `at` with the widest cone, so facing never decides. GM fog marks are the players' view and are
- * not applied.
+ * DA3 / DA18 (user 2026-10-30): how the enemy token `enemy` sees the token `at` under the map's light. Day phases light
+ * everything, so every square is clear. The dim phases (R8: Nautical Twilight and Nightfall, the Witherwild dusk; "full
+ * vision" on the map) count as dim light here (user 2026-10-30, dcm-bxp.99.19.62 (3)): what the enemy sees then it sees
+ * dimly, so Cloaked asks for the Finesse roll instead of ending. At night `at` is clear when its best square is clear
+ * (level 2) from the enemy's eye under the enemy's own night vision or carried light, every other token's carried light
+ * (the rogue's own torch too), the map's lit lights and glowing terrain (R9), and dim when it is dim (level 1). The enemy
+ * looks straight at `at` with the widest cone, so facing never decides. GM fog marks are the players' view and are not
+ * applied.
  */
 export function enemySight(scene: Pick<Scene, "prepared" | "tokens" | "phase">, enemy: Doc<"combatTokens">, at: Doc<"combatTokens">): EnemySight {
   const ez = sizeOf(enemy);
@@ -121,7 +124,8 @@ export function enemySight(scene: Pick<Scene, "prepared" | "tokens" | "phase">, 
   // Read as a non-PC token (tokenVisibility always shows a PC token, Q4) revealed to this viewer, so a dim square reads
   // "dim" rather than "hidden" (R10's GM reveal is the players' view, not the enemy's).
   const seen = tokenVisibility(view, { ...visionToken(at), side: "neutral", revealedTo: [viewer] });
-  return seen === "hidden" ? "none" : seen;
+  if (seen === "hidden") return "none";
+  return seen === "clear" && lightOf(scene.phase ?? "") === "dim" ? "dim" : seen;
 }
 
 /** DA3: whether the enemy token `enemy` sees the token `at` in clear light (`enemySight`). */
@@ -229,40 +233,65 @@ export async function cloakedByVanishingAct(ctx: QueryCtx, characterId: Id<"char
 
 const uncloaked = (s: CharacterSheet): CharacterSheet => ({ ...s, conditions: s.conditions.filter((c) => c !== "cloaked") });
 
+/** How a move came about, for `uncloakAfterMove`. */
+export type UncloakOptions = {
+  /**
+   * The actionLog group of the use that made the move (dcm-bxp.99.19.59: Charge): the Cloaked rows join it, so one undo
+   * reverts the use, the move and Cloaked together. Without it the rows form their own group.
+   */
+  groupId?: string;
+  /**
+   * The GM moved the token (`combatTokens.move` by the GM). Unless the GM also owns the character, the drag is not the
+   * rogue's move (user 2026-10-30, dcm-bxp.99.19.62 (2)): no roll, and Cloaked stays.
+   */
+  byGm?: boolean;
+};
+
 /**
- * Cloaked on a move (DA3, DA18). When the character whose PC token just ended a move on the live map is Cloaked (and not by
- * Vanishing Act, `cloakedByVanishingAct`, pin dcm-bxp.99.19.42), and a revealed enemy with a clear line to its square
- * - sees it in clear light: Cloaked ends (one public, undoable `feature` row);
- * - sees it only in dim light (user 2026-10-30, dcm-bxp.99.19.53 (4)): the rogue makes ONE Finesse action roll
- *   (`cloakRoll`); success keeps Cloaked, failure ends it;
- * - sees it nowhere (darkness): nothing happens.
- * Returns whether Cloaked ended. `combatTokens.move` calls it after patching the token.
+ * Cloaked on a move (DA3, DA18). When the character whose PC token just ended a move on the live map is Cloaked:
+ * - unconscious or dead (user 2026-10-30, dcm-bxp.99.19.62 (2): a rogue who is unconscious or dead drops Cloaked):
+ *   Cloaked ends, whoever moved the token and whatever sees it (one public, undoable `feature` row);
+ * - else a GM's drag (`options.byGm`, the GM not the character's owner) changes nothing: it is not the rogue's move;
+ * - else, unless Cloaked comes from Vanishing Act (`cloakedByVanishingAct`, pin dcm-bxp.99.19.42), when a revealed enemy
+ *   with a clear line to its square
+ *   - sees it in clear light: Cloaked ends (one public, undoable `feature` row);
+ *   - sees it only in dim light (user 2026-10-30, dcm-bxp.99.19.53 (4); a dim time phase counts, `enemySight`): the
+ *     rogue makes ONE Finesse action roll (`cloakRoll`); success keeps Cloaked, failure ends it;
+ *   - sees it nowhere (darkness): nothing happens.
+ * The rows join `options.groupId` when given. Returns whether Cloaked ended. `combatTokens.move` calls it after patching
+ * the token; `featurePrompts.charge` after a successful Charge moved it.
  */
-export async function uncloakAfterMove(ctx: MutationCtx, campaign: Doc<"campaigns">, map: Doc<"combatMaps">, token: Doc<"combatTokens">, actorId: Id<"users">): Promise<boolean> {
+export async function uncloakAfterMove(
+  ctx: MutationCtx,
+  campaign: Doc<"campaigns">,
+  map: Doc<"combatMaps">,
+  token: Doc<"combatTokens">,
+  actorId: Id<"users">,
+  options: UncloakOptions = {},
+): Promise<boolean> {
   if (token.ref.kind !== "pc" || !map.live) return false;
   const character = await ctx.db.get("characters", token.ref.characterId);
   if (character === null || character.campaignId !== campaign._id) return false;
   const sheet = readSheet(character.sheet);
   if (!sheet.conditions.includes("cloaked")) return false;
+  const groupId = options.groupId ?? newGroupId();
+  const drop = async (summary: string): Promise<true> => {
+    await saveSheet(ctx, character._id, uncloaked(sheet));
+    await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary, before: sheet, groupId, undoable: true });
+    return true;
+  };
+  if (character.status === "dead" || sheet.conditions.includes("unconscious")) {
+    return drop(`${sheet.name} is ${character.status === "dead" ? "dead" : "unconscious"} and no longer Cloaked`);
+  }
+  if (options.byGm === true && character.ownerId !== actorId) return false;
   const scene = await loadScene(ctx, campaign, map);
   const moved = scene.tokens.find((t) => t._id === token._id) ?? token;
   const enemies = await enemyStates(ctx, campaign._id, scene.tokens);
   const sight = enemySightOf(scene, moved, enemies.hidden);
   if (!sight.clear && sight.dim.length === 0) return false;
   if (await cloakedByVanishingAct(ctx, character._id, sheet.name)) return false;
-  if (!sight.clear) return cloakRoll(ctx, { campaign, character, sheet, gm: false }, sight.dim, enemies.difficulty, actorId);
-  await saveSheet(ctx, character._id, uncloaked(sheet));
-  await logAction(ctx, {
-    campaignId: campaign._id,
-    characterId: character._id,
-    actorId,
-    kind: "feature",
-    visibility: "public",
-    summary: `${sheet.name} ends a move in sight of an adversary and is no longer Cloaked`,
-    before: sheet,
-    undoable: true,
-  });
-  return true;
+  if (!sight.clear) return cloakRoll(ctx, { campaign, character, sheet, gm: false }, sight.dim, enemies.difficulty, actorId, groupId);
+  return drop(`${sheet.name} ends a move in sight of an adversary and is no longer Cloaked`);
 }
 
 /** DA18's Finesse action roll: no Experience, no options; the Difficulty sets the outcome only. */
@@ -276,10 +305,18 @@ function cloakRollArgs(difficulty: number): DualityArgs {
  * action roll (Hope or a cleared Stress to the rogue, Fear to the GM, armed countdowns tick); success keeps Cloaked,
  * failure ends it. The public `roll` row holds the dice, the total and success / failure but never the Difficulty (U1);
  * a GM row in the same group names it. Undo of the group reverts the roll's Hope / Stress / Fear and the Cloaked change.
- * A seer without a Difficulty (a custom or PC token) is left out; with none left, or a rogue who can't act (unconscious,
- * dead, away), no roll is made and Cloaked stays (docs/tasks/TASK-LN-C1.md QUESTIONS). Returns whether Cloaked ended.
+ * A seer without a Difficulty (a custom or PC token) is left out; with none left, or a rogue who is away, no roll is made
+ * and Cloaked stays (docs/tasks/TASK-LN-C1.md QUESTIONS; an unconscious or dead rogue has already dropped Cloaked in
+ * `uncloakAfterMove`). Both rows join `groupId`. Returns whether Cloaked ended.
  */
-async function cloakRoll(ctx: MutationCtx, loaded: Loaded, seers: readonly Doc<"combatTokens">[], difficulties: ReadonlyMap<Id<"combatTokens">, Difficulty>, actorId: Id<"users">): Promise<boolean> {
+async function cloakRoll(
+  ctx: MutationCtx,
+  loaded: Loaded,
+  seers: readonly Doc<"combatTokens">[],
+  difficulties: ReadonlyMap<Id<"combatTokens">, Difficulty>,
+  actorId: Id<"users">,
+  groupId: string,
+): Promise<boolean> {
   const { campaign, character, sheet } = loaded;
   let highest: Difficulty | null = null;
   for (const t of seers) {
@@ -287,7 +324,7 @@ async function cloakRoll(ctx: MutationCtx, loaded: Loaded, seers: readonly Doc<"
     if (d !== undefined && (highest === null || d.value > highest.value)) highest = d;
   }
   if (highest === null) return false;
-  if (character.status === "dead" || character.status === "away" || sheet.conditions.includes("unconscious")) return false;
+  if (character.status === "away") return false;
   const { paid, next, roll, effects } = await resolveDuality(ctx, loaded, cloakRollArgs(highest.value), rollDie, false);
   const success = roll.outcome === "critical" || roll.outcome === "successHope" || roll.outcome === "successFear";
   const after = success ? next : uncloaked(next);
@@ -297,7 +334,6 @@ async function cloakRoll(ctx: MutationCtx, loaded: Loaded, seers: readonly Doc<"
   // U1: players never see the Difficulty; the public record keeps the outcome it gave.
   const publicRoll = { ...roll };
   delete publicRoll.difficulty;
-  const groupId = newGroupId();
   const entryId = await logAction(ctx, {
     campaignId: campaign._id,
     characterId: character._id,
