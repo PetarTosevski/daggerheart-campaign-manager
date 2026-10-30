@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 
 import { Modal } from "@/components/brand/modal";
-import type { CardUse } from "@/lib/domain/card-effects/types";
+import type { CardUse, Step } from "@/lib/domain/card-effects/types";
 import { TRAIT_LABEL } from "@/lib/frames/extras/common";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -122,6 +122,48 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
   );
 }
 
+/** E3 (dcm-uyc): the values a `NumberChoice` lists, or null. */
+function listedValues(use: CardUse, id: string): readonly number[] | null {
+  const values = use.choices?.find((c) => c.id === id)?.values;
+  return values && values.length > 0 ? values : null;
+}
+
+/** E3 (dcm-uyc): a listed number starts at its first listed value at or above its minimum (the runner's default). */
+function withListedNumbers(use: CardUse, values: FormValues): FormValues {
+  const numbers = { ...values.numbers };
+  for (const c of use.choices ?? []) {
+    const listed = listedValues(use, c.id);
+    if (listed && !listed.includes(numbers[c.id] ?? c.min)) numbers[c.id] = listed.find((n) => n >= c.min) ?? listed[0]!;
+  }
+  return { ...values, numbers };
+}
+
+/** E3 (dcm-40m): the choose step (by id) whose pick this one must not repeat, at any depth of the use's steps. */
+function distinctFromOf(use: CardUse, stepId: string): string | undefined {
+  const find = (steps: readonly Step[]): string | undefined => {
+    for (const step of steps) {
+      if (step.kind === "choose") {
+        if (step.id === stepId) return step.distinctFrom;
+        for (const o of step.options) {
+          const inner = find(o.steps);
+          if (inner) return inner;
+        }
+      } else if (step.kind === "optional" || step.kind === "followUp") {
+        const inner = find(step.steps);
+        if (inner) return inner;
+      } else if (step.kind === "save") {
+        const inner = find(step.onFail) ?? find(step.onSuccess);
+        if (inner) return inner;
+      } else if (step.kind === "check") {
+        const inner = find(step.then) ?? find(step.otherwise);
+        if (inner) return inner;
+      }
+    }
+    return undefined;
+  };
+  return find(use.steps);
+}
+
 /** The form of one use. Remounted (by key) when the spell changes, so its answers start fresh. */
 function UseForm({
   use,
@@ -147,7 +189,7 @@ function UseForm({
   onSubmit: (request: Omit<UseRequest, "cardId">) => void;
 }) {
   const form = formFor(use);
-  const [values, setValues] = useState<FormValues>(() => initialValues(form, pickedEnemies));
+  const [values, setValues] = useState<FormValues>(() => withListedNumbers(use, initialValues(form, pickedEnemies)));
   const { targetTokenIds, toggleExtraTarget } = useCombatTargets();
   const problem =
     formProblem(form, values) ?? (form.gmDifficulty && gm && values.difficulty === undefined ? "Set the Difficulty." : null) ?? (form.rolls ? rollProblem(roller, rollOptions) : null);
@@ -197,7 +239,21 @@ function UseForm({
           onChange={(targets) => pick({ targets })}
         />
       ) : null}
-      {form.numbers.map((n) => (
+      {form.numbers.map((n) => {
+        // E3 (dcm-uyc, Teleport, CB p.333): a number with listed values is picked from them.
+        const listed = listedValues(use, n.id);
+        return listed ? (
+          <label key={n.id} className="cmh-field">
+            <span className="cm-lbl">{n.label}</span>
+            <select className="cm-in" value={values.numbers[n.id] ?? listed[0]} onChange={(e) => set({ numbers: { ...values.numbers, [n.id]: Number(e.target.value) } })}>
+              {listed.map((v) => (
+                <option key={v} value={v}>
+                  {v > 0 ? `+${v}` : v}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
         <label key={n.id} className="cmh-field">
           <span className="cm-lbl">{n.label}</span>
           <input
@@ -209,7 +265,8 @@ function UseForm({
             onChange={(e) => set({ numbers: { ...values.numbers, [n.id]: Math.max(n.min, Number(e.target.value) || n.min) } })}
           />
         </label>
-      ))}
+        );
+      })}
       {form.eithers.map((e) => (
         <fieldset key={e.index} className="cmh-field">
           <legend className="cm-lbl">Pay with</legend>
@@ -252,6 +309,9 @@ function UseForm({
           <legend className="cm-lbl">{c.label}</legend>
           {c.options.map((o) => {
             const picked = values.options[c.stepId] ?? [];
+            // E3 (dcm-40m, Twin Fang, HF p.9): an option picked in the step this one must differ from is not offered.
+            const other = distinctFromOf(use, c.stepId);
+            if (other && (values.options[other] ?? []).includes(o.id) && !picked.includes(o.id)) return null;
             return (
               <Check
                 key={o.id}

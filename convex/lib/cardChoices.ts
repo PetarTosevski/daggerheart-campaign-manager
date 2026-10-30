@@ -64,7 +64,21 @@ export type ParsedChoices = {
   triggerSubject?: string;
   triggerAmount?: number;
   weapon?: "primary" | "secondary";
+  // ---- Plan lanes, tracer E3 (docs/tasks/TASK-LN-E3.md); the runner's RunContext fields of the same meaning.
+  /** `by:<step>:<tokenId>`: the option(s) each chooser of a `choose` step with `by` picked (dcm-bz8). */
+  chooserOptions?: Record<string, Record<string, string[]>>;
+  /** `byOptional:<step>:<tokenId>`: whether each chooser takes an `optional` step with `by` (dcm-6ju). */
+  chooserOptionals?: Record<string, Record<string, boolean>>;
+  /** `heldDice`: the held dice (ids) the player picked to spend first (Prayer Dice, dcm-qbn). */
+  heldDice?: string[];
+  /** `chain:<i>`: the token ids of link i (1, 2, …) of a repeating follow-up (link 0 is `followUp`; dcm-rou, dcm-7az). */
+  chain?: string[][];
+  /** `raisers`: the token ids of the allies who pay to raise a save's Difficulty (dcm-q0a). */
+  raisers?: string[];
 };
+
+/** The most links of a repeating follow-up one use sends (Chain Lightning's chain, Rip & Tear's attacks). */
+export const MAX_CHAIN_LINKS = 10;
 
 const invalid = (what: string) => appError("INVALID", what);
 
@@ -86,6 +100,8 @@ function asText(c: CardChoice): string {
  * Reads the choice list. Ids: `n:<choice>` (a NumberChoice), `opt:<step>` (options of a choose step), `optional:<step>`
  * (true / false), `either:<i>` (the option index of the i-th "either" cost), `split:<tokenId>` (a share), `situations`,
  * `picked`, `allies`, `followUp` (token ids), `triggerSource`, `triggerSubject` (a token id), `triggerAmount`, `weapon`.
+ * E3: `by:<step>:<tokenId>` (a chooser's options), `byOptional:<step>:<tokenId>` (true / false), `heldDice` (die ids),
+ * `chain:<i>` (token ids of link i, 1 to MAX_CHAIN_LINKS), `raisers` (token ids).
  */
 export function parseChoices(list: readonly CardChoice[]): ParsedChoices {
   if (list.length > MAX_CARD_CHOICES) throw invalid("Too many choices.");
@@ -134,11 +150,35 @@ export function parseChoices(list: readonly CardChoice[]): ParsedChoices {
         out.weapon = w;
         break;
       }
+      case "by":
+      case "byOptional": {
+        const [step, who, ...more] = rest;
+        if (!step || !who || more.length > 0) throw invalid(`${c.id} needs a step and a creature.`);
+        if (head === "by") ((out.chooserOptions ??= {})[step] ??= {})[who] = asList(c);
+        else {
+          if (typeof c.value !== "boolean") throw invalid(`${c.id} needs true or false.`);
+          ((out.chooserOptionals ??= {})[step] ??= {})[who] = c.value;
+        }
+        break;
+      }
+      case "heldDice":
+        out.heldDice = asList(c);
+        break;
+      case "chain": {
+        const index = Number(tail);
+        if (!Number.isInteger(index) || index < 1 || index > MAX_CHAIN_LINKS) throw invalid(`${c.id} is not a link.`);
+        (out.chain ??= [])[index - 1] = asList(c);
+        break;
+      }
+      case "raisers":
+        out.raisers = asList(c);
+        break;
       default:
         throw invalid(`Unknown choice ${c.id}.`);
     }
   }
   for (let i = 0; i < out.either.length; i++) out.either[i] ??= 0;
+  if (out.chain) for (let i = 0; i < out.chain.length; i++) out.chain[i] ??= [];
   return out;
 }
 
