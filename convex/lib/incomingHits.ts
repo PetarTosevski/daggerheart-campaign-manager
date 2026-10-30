@@ -38,7 +38,7 @@ import {
   afterHitFeatures,
   afterHitUses,
   armorAnswered as armorAnsweredOf,
-  armorPreview,
+  targetArmorPreview,
   awaiting as awaitingOf,
   cardAnswers,
   chooseSteps,
@@ -964,9 +964,9 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
   }
   if (isTarget && defense) {
     const prompt = targetPrompt(state, defense);
-    const extra = prompt.maxSlots > 1 ? ("any" as const) : 0;
-    const hit = { ...state.hit, amount: prompt.damage };
-    return { ...view, damage: prompt.damage, severity: prompt.severity, direct: row.payload.direct, maxSlots: prompt.maxSlots, armorPreview: armorPreview(defense, hit, extra).slice(0, prompt.maxSlots + 1) };
+    // A1: the preview counts what the answers so far folded in (a slot substitute beside further slots, dcm-bxp.99.19.55 (6)).
+    const preview = targetArmorPreview(state, defense);
+    return { ...view, damage: prompt.damage, severity: prompt.severity, direct: row.payload.direct, maxSlots: prompt.maxSlots, armorPreview: preview };
   }
   return view;
 }

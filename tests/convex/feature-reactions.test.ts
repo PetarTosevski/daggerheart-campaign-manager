@@ -365,6 +365,70 @@ describe("DA8: the reaction window's answers", () => {
     expect((await a.sheet(a.w.characterA)).classState.martial?.focus).toBe(1);
   });
 
+  it("A1 (dcm-bxp.99.19.55 (3)): 'Don't mark' keeps the window open with the reactions that still fit, until Done", async () => {
+    const a = await arena();
+    await a.edit(a.w.characterB, () => ({ ancestry: { kind: "single", id: "dwarf" } }));
+    const { requestId } = await a.hit(a.w.characterB, 17);
+    expect(await a.respond(a.other, requestId, a.w.characterB, { kind: "noArmor" })).toMatchObject({ status: "open" });
+    const [view] = await a.pending(a.other, a.w.characterB);
+    expect(view).toMatchObject({ awaiting: true, armorAnswered: true, damage: 17, severity: "severe", maxSlots: 0 });
+    expect(view!.features?.map((f) => f.featureId)).toEqual(["ancestry:dwarf:increased-fortitude"]);
+    // A second armor answer is refused; Done ends the turn with nothing used: 17 is Severe, 3 HP.
+    expect(await code(a.respond(a.other, requestId, a.w.characterB, { kind: "armor", slots: 1 }))).toBe("NOT_A_RESPONDER");
+    expect(await a.respond(a.other, requestId, a.w.characterB, { kind: "pass" })).toMatchObject({ status: "resolved" });
+    expect(await a.sheet(a.w.characterB)).toMatchObject({ hp: 3, hope: 3, armorMarked: 0 });
+  });
+
+  it("A1: 'Don't mark', then a reaction that fits: Increased Fortitude halves 17 to 9 (Major, 2 HP) and nothing else fits", async () => {
+    const a = await arena();
+    await a.edit(a.w.characterB, () => ({ ancestry: { kind: "single", id: "dwarf" } }));
+    const { requestId } = await a.hit(a.w.characterB, 17);
+    await a.respond(a.other, requestId, a.w.characterB, { kind: "noArmor" });
+    expect(await a.respond(a.other, requestId, a.w.characterB, a.feature("ancestry:dwarf:increased-fortitude"))).toMatchObject({ status: "resolved" });
+    expect(await a.sheet(a.w.characterB)).toMatchObject({ hp: 2, hope: 0, armorMarked: 0 });
+  });
+
+  it("A1 (dcm-bxp.99.19.55 (6)): with Iron Will's second slot, Stable replaces ONE slot and the other is still marked: Severe → Minor", async () => {
+    for (const order of ["stable-first", "slot-first"] as const) {
+      const a = await arena();
+      await a.edit(a.w.characterA, (s) => ({ classId: "guardian", subclassId: "stalwart", subclassRank: "foundation", classState: { ...s.classState, martial: { known: ["stable"], active: "stable", focus: 1 } } }));
+      const { requestId } = await a.hit(a.w.characterA, 40);
+      await a.respond(a.player, requestId, a.w.characterA, a.feature("subclass:stalwart:iron-will"));
+      const [two] = await a.pending(a.player, a.w.characterA);
+      expect(two).toMatchObject({ maxSlots: 2 });
+      expect(two!.features?.map((f) => f.featureId)).toEqual(["stance:martial-artist:stable"]);
+      if (order === "stable-first") {
+        expect(await a.respond(a.player, requestId, a.w.characterA, a.feature("stance:martial-artist:stable"))).toMatchObject({ status: "open" });
+        // One slot left to mark; the preview counts Stable's step: Severe → (Stable) Major → (a slot) Minor.
+        const [left] = await a.pending(a.player, a.w.characterA);
+        expect(left).toMatchObject({ awaiting: true, maxSlots: 1, armorPreview: [{ slots: 0, severity: "major", hp: 2 }, { slots: 1, severity: "minor", hp: 1 }] });
+        expect(left!.armorAnswered).toBeUndefined();
+        expect(await code(a.respond(a.player, requestId, a.w.characterA, { kind: "armor", slots: 2 }))).toBe("INVALID");
+        expect(await a.respond(a.player, requestId, a.w.characterA, { kind: "armor", slots: 1 })).toMatchObject({ status: "resolved" });
+      } else {
+        expect(await a.respond(a.player, requestId, a.w.characterA, { kind: "armor", slots: 1 })).toMatchObject({ status: "open" });
+        const [after] = await a.pending(a.player, a.w.characterA);
+        expect(after).toMatchObject({ awaiting: true, armorAnswered: true });
+        expect(after!.features?.map((f) => f.featureId)).toEqual(["stance:martial-artist:stable"]);
+        expect(await a.respond(a.player, requestId, a.w.characterA, a.feature("stance:martial-artist:stable"))).toMatchObject({ status: "resolved" });
+      }
+      const s = await a.sheet(a.w.characterA);
+      expect(s).toMatchObject({ hp: 1, armorMarked: 1 });
+      expect(s.classState.martial?.focus).toBe(0);
+    }
+  });
+
+  it("A1: with both of Iron Will's slots marked, Stable no longer fits (it replaces a slot, never adds one)", async () => {
+    const a = await arena();
+    await a.edit(a.w.characterA, (s) => ({ classId: "guardian", subclassId: "stalwart", subclassRank: "foundation", classState: { ...s.classState, martial: { known: ["stable"], active: "stable", focus: 1 } } }));
+    const { requestId } = await a.hit(a.w.characterA, 40);
+    await a.respond(a.player, requestId, a.w.characterA, a.feature("subclass:stalwart:iron-will"));
+    expect(await a.respond(a.player, requestId, a.w.characterA, { kind: "armor", slots: 2 })).toMatchObject({ status: "resolved" });
+    const s = await a.sheet(a.w.characterA);
+    expect(s).toMatchObject({ hp: 1, armorMarked: 2 });
+    expect(s.classState.martial?.focus).toBe(1);
+  });
+
   it("Dark Aegis (HF p.14) after an Armor Slot: zero damage, no slot, no HP; Restrained still lands, the extra HP doesn't; undo restores all", async () => {
     const a = await arena();
     await a.edit(a.w.characterA, (s) => ({ classId: "warlock", subclassId: "pact-of-the-endless", subclassRank: "mastery", classState: { ...s.classState, favor: 1 } }));

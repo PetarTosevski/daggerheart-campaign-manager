@@ -358,17 +358,55 @@ function substitutes(r: WindowResponse, state: WindowState): boolean {
   return (r.folds ?? []).some((f) => f.kind === "reduceSeverity" && f.insteadOfArmorSlot === true && applies(f.targetIds, state));
 }
 
-/** Whether `characterId` (the current target) gave the armor answer: armor, no armor, Pass, or (DA8) a slot substitute. */
-export function armorAnswered(state: WindowState, characterId: string): boolean {
-  return characterId === state.targetId && state.responses.some((r) => r.characterId === characterId && (isArmorAnswer(r.choice) || substitutes(r, state)));
+/** The extra Armor Slots the answers so far allow the current target (I Am Your Shield "any", Iron Will +1). */
+function extraSlotsNow(state: WindowState): number | "any" {
+  let extra: number | "any" = 0;
+  for (const f of state.responses.flatMap((r) => r.folds ?? [])) if (f.kind === "extraArmorSlots" && applies(f.targetIds, state)) extra = extra === "any" || f.max === "any" ? "any" : extra + f.max;
+  return extra;
+}
+
+/** How many Armor Slots this hit allows the current target (CB p.114: one, unless an answer allows more). */
+function slotAllowance(state: WindowState): number {
+  const extra = extraSlotsNow(state);
+  return extra === "any" ? Number.POSITIVE_INFINITY : 1 + Math.max(0, extra);
+}
+
+/** The real Armor Slots the current target marked for the hit's benefit (their `armor` answer). */
+function realSlotsChosen(state: WindowState): number {
+  const answer = state.responses.find((r) => r.characterId === state.targetId && r.choice.kind === "armor");
+  return answer?.choice.kind === "armor" ? Math.max(1, answer.choice.slots ?? 1) : 0;
+}
+
+const substituteTaken = (state: WindowState) => state.responses.some((r) => r.characterId === state.targetId && substitutes(r, state));
+
+/**
+ * A1 (dcm-bxp.99.19.55 (6), user answer 2026-10-30): a slot substitute (Stable, Celestial Wings) leaves real slots to
+ * mark beside it when the hit allows more than one Armor Slot (I Am Your Shield, CB p.341: "you can mark any number of
+ * Armor Slots"; Iron Will: "mark an additional Armor Slot") and the target can mark one.
+ */
+function slotsLeftBesideSubstitute(state: WindowState): boolean {
+  return (state.armorCapable[state.targetId] ?? false) && slotAllowance(state) >= 2;
 }
 
 /**
- * DA8: the hit's one armor reduction is taken: the target marked a real Armor Slot or used an answer that stands for it
- * ("Wings OR a real Armor Slot on a hit, never both", user 2026-10-30; Stable "the Armor Slot is NOT marked", 2026-10-29).
+ * Whether `characterId` (the current target) gave the armor answer: armor, no armor, Pass, or (DA8) a slot substitute
+ * when it stands for the hit's only Armor Slot. A1: with more than one slot allowed, the substitute replaces ONE of
+ * them and the others are still asked for.
  */
-function armorReductionTaken(state: WindowState): boolean {
-  return state.responses.some((r) => r.characterId === state.targetId && (r.choice.kind === "armor" || substitutes(r, state)));
+export function armorAnswered(state: WindowState, characterId: string): boolean {
+  if (characterId !== state.targetId) return false;
+  const mine = state.responses.filter((r) => r.characterId === characterId);
+  return mine.some((r) => isArmorAnswer(r.choice)) || (mine.some((r) => substitutes(r, state)) && !slotsLeftBesideSubstitute(state));
+}
+
+/**
+ * DA8: no slot substitute fits any more ("Wings OR a real Armor Slot on a hit, never both", user 2026-10-30; Stable "the
+ * Armor Slot is NOT marked", 2026-10-29): one was used already, or the real slots marked fill what the hit allows. A1
+ * (dcm-bxp.99.19.55 (6)): with more than one slot allowed, one substitute may replace one of them, before or after the
+ * real slots; "Don't mark" leaves the substitute open (dcm-bxp.99.19.55 (3)).
+ */
+function substituteBlocked(state: WindowState): boolean {
+  return state.hit.direct || substituteTaken(state) || realSlotsChosen(state) >= slotAllowance(state);
 }
 
 /**
@@ -391,8 +429,8 @@ function severitySteps(folds: readonly Fold[], state: WindowState): number {
  * another substitute, or any substitute on direct damage, CB p.99), an extra Armor Slot once the armor answer is in.
  */
 function ruledOut(state: WindowState, role: "target" | "ally", armorIn: boolean): (use: CardUse) => boolean {
-  const taken = armorReductionTaken(state);
-  return (use) => (role === "target" && armorIn && addsArmorSlots(use)) || (replacesArmorSlot(use) && (role !== "target" || taken || state.hit.direct));
+  const blocked = substituteBlocked(state);
+  return (use) => (role === "target" && armorIn && addsArmorSlots(use)) || (replacesArmorSlot(use) && (role !== "target" || blocked));
 }
 
 /** The damage after the answers so far: a rerolled damage replaces it (CB p.107), reductions come off it. */
@@ -428,9 +466,9 @@ function answerScope(state: WindowState, characterId: string) {
   const role = characterId === state.targetId ? ("target" as const) : ("ally" as const);
   // One answer per ally per hit, card or feature (combat-actions Q17; user 2026-10-30, dcm-bxp.99.19.48 (4)).
   if (role === "ally" && mine.length > 0) return null;
-  // The target's Done (`pass`) or "Don't mark" (`noArmor`) ends their turn: nothing changed the hit, and every answer that
-  // fits it was offered next to that choice. After a marked slot or a slot substitute the turn goes on (DA8).
-  if (role === "target" && mine.some((x) => x.choice.kind === "pass" || x.choice.kind === "noArmor")) return null;
+  // The target's Done (`pass`) ends their turn. After a marked slot, a slot substitute (DA8) or "Don't mark" / OK
+  // (`noArmor`, A1: dcm-bxp.99.19.55 (3), user answer 2026-10-30) the turn goes on with every answer that still fits.
+  if (role === "target" && mine.some((x) => x.choice.kind === "pass")) return null;
   const now = progress(state, target);
   const ruled = ruledOut(state, role, role === "target" && now.armorAnswered);
   // DA8: damage cancelled or reduced to 0 (Dark Aegis; CB p.91 "If you ever reduce incoming damage to 0 or less") is no
@@ -530,9 +568,9 @@ const isArmorAnswer = (c: HitChoice) => c.kind === "armor" || c.kind === "noArmo
 
 /**
  * The responders still owed an answer: the target until they answer armor, and after a marked slot (or a slot
- * substitute) while any card or feature they hold still fits the hit, until they use it or say Done (`pass`) (DA8, user
- * 2026-10-30, CB p.107: every ready reaction stays offered, in the order the player picks; SD4 kept only severity-gated
- * ones); "Don't mark" (`noArmor`) ends their turn as before; an ally until any answer (Q17).
+ * substitute, or "Don't mark" / OK: A1, user answer 2026-10-30) while any card or feature they hold still fits the hit,
+ * until they use it or say Done (`pass`) (DA8, user 2026-10-30, CB p.107: every ready reaction stays offered, in the
+ * order the player picks; SD4 kept only severity-gated ones); an ally until any answer (Q17).
  */
 export function awaiting(state: WindowState): string[] {
   if (state.closedEarly) return [];
@@ -542,7 +580,7 @@ export function awaiting(state: WindowState): string[] {
       const mine = state.responses.filter((x) => x.characterId === r.characterId);
       if (r.role === "target") {
         if (!armorAnswered(state, r.characterId)) return true;
-        if (mine.some((x) => x.choice.kind === "pass" || x.choice.kind === "noArmor")) return false;
+        if (mine.some((x) => x.choice.kind === "pass")) return false;
         return featureAnswers(state, r.characterId).length > 0 || cardAnswers(state, r.characterId).length > 0;
       }
       return mine.length === 0;
@@ -564,8 +602,9 @@ export type RespondResult = { ok: true; state: WindowState } | { ok: false; code
 
 /**
  * Records one answer. The target answers armor / noArmor (`pass` before it counts as noArmor) once, and may play eligible
- * cards and (SD4) features before and (DA8) after a marked slot in any order (CB p.107), until `pass` (Done) or `noArmor` ends their turn; a slot
- * substitute (Stable, Celestial Wings) is their armor answer; an ally answers once, with a card or `pass`. A card's `redirect` fold makes its user the target, who then
+ * cards and (SD4) features before and (DA8) after a marked slot (A1: or "Don't mark") in any order (CB p.107), until
+ * `pass` (Done) ends their turn; a slot substitute (Stable, Celestial Wings) is their armor answer when the hit allows one
+ * slot, else it replaces one of them (A1); an ally answers once, with a card or `pass`. A card's `redirect` fold makes its user the target, who then
  * owes an armor answer if they can mark a slot (the first target is released). Errors: REQUEST_NOT_OPEN (complete),
  * NOT_A_RESPONDER (not listed, already answered, or a card they weren't offered).
  */
@@ -594,8 +633,8 @@ export function respond(state: WindowState, response: WindowResponse, options: {
     const played = state.responses.some((x) => x.characterId === who && x.choice.kind === "feature" && x.choice.featureId === choice.featureId);
     if (!(responder.featureIds ?? []).includes(choice.featureId) || played) return { ok: false, code: "NOT_A_RESPONDER", detail: choice.featureId };
   }
-  // DA8: one armor reduction per hit: a slot substitute after a real slot or another substitute is refused.
-  if (!options.replay && responder.role === "target" && substitutes(response, state) && armorReductionTaken(state)) return { ok: false, code: "NOT_A_RESPONDER", detail: "The armor reduction is taken." };
+  // DA8: a slot substitute after another one, or after real slots that fill what the hit allows, is refused (A1).
+  if (!options.replay && responder.role === "target" && substitutes(response, state) && substituteBlocked(state)) return { ok: false, code: "NOT_A_RESPONDER", detail: "The armor reduction is taken." };
   let next: WindowState = { ...state, responses: [...state.responses, { ...response, ...(response.folds ? { folds: [...response.folds] } : {}) }] };
   const redirect = (response.folds ?? []).find((f): f is Extract<Fold, { kind: "redirect" }> => f.kind === "redirect");
   if ((choice.kind === "card" || choice.kind === "feature") && redirect && redirect.to !== next.targetId) {
@@ -954,9 +993,29 @@ export function targetPrompt(state: WindowState, target: PcDefense): { damage: n
   const folds = state.responses.flatMap((r) => r.folds ?? []);
   // DA8: a cancelled damage (Dark Aegis) is zero: nothing for an Armor Slot to reduce.
   if (folds.some((f) => f.kind === "negateDamage")) return { damage: 0, severity: "none", maxSlots: 0 };
-  let extra: number | "any" = 0;
-  for (const f of folds) if (f.kind === "extraArmorSlots" && applies(f.targetIds, state)) extra = extra === "any" || f.max === "any" ? "any" : extra + f.max;
+  const extra = extraSlotsNow(state);
   const amount = amountNow(state, folds);
   const hit = { ...state.hit, amount };
-  return { damage: amount, severity: damageBeforeArmor(target, hit).severity, maxSlots: armorOptions(target, hit, extra).maxSlots };
+  const max = armorOptions(target, hit, extra).maxSlots;
+  // A1 (dcm-bxp.99.19.55 (6)): a slot substitute (Stable, Wings) took one of the slots the hit allows.
+  const left = substituteTaken(state) && extra !== "any" ? Math.min(max, Math.max(0, extra)) : max;
+  return { damage: amount, severity: damageBeforeArmor(target, hit).severity, maxSlots: left };
+}
+
+/**
+ * A1: the hit PC's "mark N slots" preview (0..maxSlots) from the hit as the answers so far left it: the severity steps
+ * already folded in (a slot substitute used beside further slots, dcm-bxp.99.19.55 (6)) and the "N fewer Hit Points"
+ * answers come on top of each count.
+ */
+export function targetArmorPreview(state: WindowState, target: PcDefense): { slots: number; severity: PcSeverity; hp: number }[] {
+  const prompt = targetPrompt(state, target);
+  const folds = state.responses.flatMap((r) => r.folds ?? []);
+  const steps = severitySteps(folds, state);
+  const delta = (state.hit.hpMarkedDelta ?? 0) + folds.reduce((n, f) => n + (f.kind === "hpMarked" && applies(f.targetIds, state) ? f.delta : 0), 0);
+  const base = damageBeforeArmor(target, { ...state.hit, amount: prompt.damage }).severity;
+  return Array.from({ length: prompt.maxSlots + 1 }, (_, slots) => {
+    const severity = base === "none" ? "none" : stepDown(stepDown(base, slots), steps);
+    const hp = hpForSeverity(severity);
+    return { slots, severity, hp: hp > 0 ? Math.max(0, hp + delta) : 0 };
+  });
 }

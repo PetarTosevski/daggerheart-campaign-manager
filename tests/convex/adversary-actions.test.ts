@@ -58,7 +58,9 @@ async function arena(options: { map?: boolean } = {}) {
       const s = readSheet((await ctx.db.get("characters", id))!.sheet);
       await saveSheet(ctx, id, { ...s, ...patch(s) });
     });
-  for (const id of [w.characterA, w.characterB]) await edit(() => ({ armorId: "chainmail-armor", armorMarked: 0, hp: 0, stress: 0, effects: [EASY] }), id);
+  // A1 (dcm-bxp.99.19.55 (3)): no loadout. A reaction that fits (the fixture warrior's Get Back Up on a Severe hit) keeps
+  // the window open after "Don't mark" until Done, and the Bear's damage is rolled. Tests add the cards they need.
+  for (const id of [w.characterA, w.characterB]) await edit(() => ({ armorId: "chainmail-armor", armorMarked: 0, hp: 0, stress: 0, effects: [EASY], domainCards: { owned: [], loadout: [] } }), id);
   const encounterId = await t.run((ctx) => ctx.db.insert("encounters", { campaignId, name: "Ambush", status: "running", pcs: 2, adjustments: [], gmTurn: 1, createdAt: now, updatedAt: now, startedAt: now }));
   const dummyBlock = await t.run((ctx) =>
     ctx.db.insert("customAdversaries", {

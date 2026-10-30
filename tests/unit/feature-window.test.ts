@@ -352,7 +352,7 @@ describe("DA8: every ready reaction after armor, in the player's order", () => {
     expect(resolveWindow(w, [dwarf]).result).toMatchObject({ taken: 8, severityBefore: "major", armorSlots: 1, severity: "minor", hpMarked: 1 });
   });
 
-  it("the same answers in the other order give the same hit; Don't mark ends the turn (every answer was offered with it)", () => {
+  it("the same answers in the other order give the same hit; Don't mark keeps the fitting answers until Done (A1, dcm-bxp.99.19.55 (3))", () => {
     const dwarf = pc("dwarf", [FORTITUDE]);
     let w = openWindow({ hit: hit({ amount: 15 }), targetId: "dwarf", party: [dwarf], attacker: BANDIT });
     w = useFeature(w, "dwarf", FORTITUDE);
@@ -361,6 +361,9 @@ describe("DA8: every ready reaction after armor, in the player's order", () => {
     let done = openWindow({ hit: hit({ amount: 15 }), targetId: "dwarf", party: [dwarf], attacker: BANDIT });
     expect(featureAnswers(done, "dwarf")).toEqual([{ featureId: FORTITUDE, useId: "main" }]);
     done = ok(respond(done, { characterId: "dwarf", choice: { kind: "noArmor" } }));
+    expect(awaiting(done)).toEqual(["dwarf"]);
+    expect(featureAnswers(done, "dwarf")).toEqual([{ featureId: FORTITUDE, useId: "main" }]);
+    done = ok(respond(done, { characterId: "dwarf", choice: { kind: "pass" } }));
     expect(isComplete(done)).toBe(true);
     // Done after the slot with Increased Fortitude still offered.
     let slot = openWindow({ hit: hit({ amount: 15 }), targetId: "dwarf", party: [dwarf], attacker: BANDIT });

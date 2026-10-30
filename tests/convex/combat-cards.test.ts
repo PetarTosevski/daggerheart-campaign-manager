@@ -468,7 +468,9 @@ describe("AA2b: card damage to another PC, Onslaught on card attacks", () => {
     expect(await a.player.query(api.adversaryActions.pending, { campaignId: a.campaignId, characterId: a.w.characterA })).toEqual([]);
     const [view] = await other.query(api.adversaryActions.pending, { campaignId: a.campaignId, characterId: a.w.characterB });
     expect(view).toMatchObject({ requestId: hit!._id, role: "target", attackerLabel: "Ash", maxSlots: 1 });
-    const answer = await other.mutation(api.adversaryActions.respond, { campaignId: a.campaignId, requestId: hit!._id, characterId: a.w.characterB, choice: { kind: "noArmor" }, idempotencyKey: key() });
+    let answer = await other.mutation(api.adversaryActions.respond, { campaignId: a.campaignId, requestId: hit!._id, characterId: a.w.characterB, choice: { kind: "noArmor" }, idempotencyKey: key() });
+    // A1 (dcm-bxp.99.19.55 (3)): "Don't mark" keeps the window open while a reaction still fits (Get Back Up); Done ends it.
+    if (answer.status !== "resolved") answer = await other.mutation(api.adversaryActions.respond, { campaignId: a.campaignId, requestId: hit!._id, characterId: a.w.characterB, choice: { kind: "pass" }, idempotencyKey: key() });
     expect(answer.status).toBe("resolved");
     expect((await a.sheet(a.w.characterB)).hp).toBeGreaterThan(0);
     const all = await a.rows();

@@ -31,7 +31,7 @@ export type PromptMode =
   /** SD4 (Q2): before the adversary's roll: the before-roll features with Use, and Pass. */
   | "preRoll"
   /**
-   * The hit PC marked an Armor Slot (or, DA8, used a slot substitute such as Stable); every card or feature that still
+   * The hit PC marked an Armor Slot, said Don't / OK (A1) or (DA8) used a slot substitute such as Stable; every card or feature that still
    * fits the hit (DA8, user 2026-10-30, CB p.107: in the order the player picks) with Use, and Done.
    */
   | "afterArmor"
@@ -157,17 +157,18 @@ export function featureChoice(feature: FeatureView, picks: FeaturePicks): HitCho
 
 /**
  * The optimistic `pending` after an answer (CL4): an ally's Use / Pass ends what they owe; a card or feature the target
- * plays leaves its list, the armor question stays until answered; a marked slot (DA8) leaves the cards and features
- * still listed (the server then lists what fits now) or, with none, ends what they owe; Don't / OK and Done end it. A
+ * plays leaves its list, the armor question stays until answered; a marked slot (DA8) or Don't / OK (A1, user answer
+ * 2026-10-30) leaves the cards and features still listed (the server then lists what fits now) or, with none, ends what
+ * they owe; Done ends it. A
  * redirect (I Am Your Shield) is the server's to show, so the ally's card answer just stops awaiting.
  */
 export function afterAnswer(views: readonly HitView[], requestId: HitView["requestId"], choice: HitChoice): HitView[] {
   return views.map((v) => {
     if (v.requestId !== requestId) return v;
-    if (v.role !== "target" || v.preRoll || v.afterHit || choice.kind === "pass" || choice.kind === "noArmor") return { ...v, awaiting: false };
+    if (v.role !== "target" || v.preRoll || v.afterHit || choice.kind === "pass") return { ...v, awaiting: false };
     const cardIds = choice.kind === "card" ? v.cardIds.filter((id) => id !== choice.cardId) : v.cardIds;
     const features = choice.kind === "feature" ? (v.features ?? []).filter((f) => f.featureId !== choice.featureId) : (v.features ?? []);
-    const armorAnswered = v.armorAnswered === true || choice.kind === "armor";
+    const armorAnswered = v.armorAnswered === true || choice.kind === "armor" || choice.kind === "noArmor";
     const left = cardIds.length + features.length > 0;
     return { ...v, cardIds, features, ...(armorAnswered ? { armorAnswered: true } : {}), awaiting: !armorAnswered || left };
   });
