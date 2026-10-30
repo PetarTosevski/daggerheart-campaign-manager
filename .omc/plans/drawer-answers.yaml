@@ -214,6 +214,11 @@ waves:
         goal: The GM has one 'Play for this character' switch per PC shared by the map Hand and the sheet drawer that stays on until switched off, the card dialog greys creatures out of the card's range with 'Out of range - GM approves', and a new card dialog starts with no picks.
         depends_on: []
         owns:
+          - convex/playFor.ts
+          - convex/tables/playFor.ts
+          - convex/schema.ts
+          - tests/convex/play-for.test.ts
+          - tests/convex/authz/play-for.entries.ts
           - src/components/combat-map/actions/hand/**
           - src/components/combat-map/actions/targets/**
           - src/components/combat-map/drawer/index.tsx
