@@ -26,3 +26,6 @@
 .rp-swap-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
 .rp-swap-list>li{display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:var(--font-garamond),serif;font-size:16px;color:var(--sheet-ink,#2a1f14)}
 @media (max-width:640px){.rp{padding:10px}.rp-field{max-width:none}.rp-swap-lists{flex-direction:column}}
+/* SD-R: the trance toggle is a 44 px target; an Efficient move greys out once another slot holds one (CB 53). */
+.rp-actions>.sh-pill{min-height:44px}
+.rp-chip:disabled{opacity:.45;cursor:not-allowed}

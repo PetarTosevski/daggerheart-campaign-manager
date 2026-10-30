@@ -34,6 +34,7 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
   const open = state.open;
   if (open === null) return null;
   const choice = open.choices.find((c) => c.characterId === character._id);
+  const mine = open.moves.find((m) => m.characterId === character._id);
   const kindLabel = open.kind === "short" ? "Short rest" : "Long rest";
   const unavailable =
     character.status !== "active" ? character.status : character.sheet.conditions?.includes("unconscious") ? "unconscious" : null;
@@ -55,7 +56,10 @@ export function Picker({ campaignId, character, canEdit }: SlotProps) {
             key={`${open._id}-${character._id}`}
             restId={open._id}
             kind={open.kind}
-            moves={open.moves.find((m) => m.characterId === character._id)?.moves ?? REST_MOVES[open.kind]}
+            moves={mine?.moves ?? REST_MOVES[open.kind]}
+            efficient={mine?.efficient ?? []}
+            slots={mine?.slots ?? MOVES_PER_REST}
+            oasis={mine?.oasis ?? false}
             character={character}
             allies={party.filter((c) => c._id !== character._id && c.status === "active")}
             initial={choice?.moves ?? []}
@@ -71,6 +75,9 @@ function MoveForm({
   restId,
   kind,
   moves,
+  efficient,
+  slots,
+  oasis,
   character,
   allies,
   initial,
@@ -79,15 +86,28 @@ function MoveForm({
   kind: RestKind;
   /** The moves this PC can pick: the rest's core moves with the frame and class moves (Make a Feast, Keep Watch, halt lycanthropy, Tribute, Martial Preparation). */
   moves: readonly RestMove[];
+  /** Efficient (CB 53): the long rest moves this PC can take one of on a short rest. */
+  efficient: readonly RestMove[];
+  /** Most moves: 2, or 3 with Celestial Trance (CB 56). */
+  slots: number;
+  /** Oasis (HF 27): the party's lowest downtime die is rerolled when this short rest ends, keeping the higher result. */
+  oasis: boolean;
   character: CharacterView;
   allies: CharacterView[];
   initial: Pick[];
 }) {
   const choose = useIntent(api.rests.choose);
-  const projects = useQuery(api.rests.projects, kind === "long" ? { characterId: character._id } : "skip");
   const [picks, setPicks] = useState<Pick[]>(() =>
-    Array.from({ length: MOVES_PER_REST }, (_, i) => initial[i] ?? { move: moves[0] }),
+    Array.from({ length: Math.min(slots, Math.max(MOVES_PER_REST, initial.length)) }, (_, i) => initial[i] ?? { move: moves[0] }),
   );
+  // Efficient (CB 53): "you can choose a long rest move instead of a short rest move", one per short rest, once the
+  // player uses it (a saved choice with a long rest move reopens with it on).
+  const [efficientOn, setEfficientOn] = useState(() => initial.some((p) => efficient.includes(p.move)));
+  const shown = efficientOn ? [...moves, ...efficient] : moves;
+  // Work on a Project is a long rest move, or Efficient's on a short rest.
+  const projects = useQuery(api.rests.projects, shown.includes("workOnProject") ? { characterId: character._id } : "skip");
+  const trance = slots > MOVES_PER_REST;
+  const tranced = picks.length > MOVES_PER_REST;
   const [saved, setSaved] = useState(initial.length > 0);
   const uid = useId();
   const set = (i: number, next: Pick) => {
@@ -100,17 +120,26 @@ function MoveForm({
       className="rp-form"
       onSubmit={(e) => {
         e.preventDefault();
-        void choose.fire({ restId, characterId: character._id, moves: picks }).then((r) => setSaved(r !== undefined));
+        void choose
+          .fire({ restId, characterId: character._id, moves: picks, ...(efficientOn ? { efficient: true } : {}) })
+          .then((r) => setSaved(r !== undefined));
       }}
     >
       {picks.map((pick, i) => (
         <div key={i} className="rp-slot">
           <div role="group" aria-labelledby={`${uid}-move-${i}`} className="rp-chips">
             <Label id={`${uid}-move-${i}`} className="rp-slot-lbl">
-              Move {i + 1}
+              {i >= MOVES_PER_REST ? "Trance move" : `Move ${i + 1}`}
             </Label>
-            {moves.map((m) => (
-              <button key={m} type="button" className="rp-chip" aria-pressed={pick.move === m} onClick={() => set(i, { move: m })}>
+            {shown.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className="rp-chip"
+                aria-pressed={pick.move === m}
+                disabled={efficient.includes(m) && picks.some((p, k) => k !== i && efficient.includes(p.move))}
+                onClick={() => set(i, { move: m })}
+              >
                 {MOVE_LABELS[m]}
               </button>
             ))}
@@ -159,6 +188,40 @@ function MoveForm({
           ) : null}
         </div>
       ))}
+      {trance ? (
+        <div className="rp-actions">
+          <Pill
+            aria-pressed={tranced}
+            onClick={() => {
+              setSaved(false);
+              setPicks((all) => (all.length > MOVES_PER_REST ? all.slice(0, MOVES_PER_REST) : [...all, { move: moves[0] }]));
+            }}
+          >
+            {tranced ? "Leave the trance" : "Drop into a trance"}
+          </Pill>
+          <Small>Celestial Trance (CB 56): choose an additional downtime move.</Small>
+        </div>
+      ) : null}
+      {efficient.length > 0 ? (
+        <div className="rp-actions">
+          <Pill
+            aria-pressed={efficientOn}
+            onClick={() => {
+              setSaved(false);
+              if (efficientOn) setPicks((all) => all.map((p) => (efficient.includes(p.move) ? { move: moves[0] } : p)));
+              setEfficientOn(!efficientOn);
+            }}
+          >
+            {efficientOn ? "Stop using Efficient" : "Use Efficient"}
+          </Pill>
+          <Small>Efficient (CB 53): you can choose a long rest move instead of a short rest move.</Small>
+        </div>
+      ) : null}
+      {oasis ? (
+        <Small as="p">
+          Oasis (HF 27): when the GM ends this rest, the lowest downtime die the party rolled is rerolled and the higher result is kept, for you or an ally.
+        </Small>
+      ) : null}
       {picks.some((p) => p.move === "workOnProject" && p.countdownId === undefined) ? (
         <Small as="p">The GM asks for an action roll to gauge the project&apos;s progress: roll it in the dice box.</Small>
       ) : null}

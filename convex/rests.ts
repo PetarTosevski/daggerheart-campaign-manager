@@ -19,7 +19,13 @@
  * Q3, D11; convex/countdownTracks.ts).
  * Martial Preparation (CB 48, dcm-bxp.63) is every resting PC's move on either
  * rest while a resting PC holds the Call of the Slayer mastery card; each
- * taker gains a Slayer Die (src/lib/domain/rest `applyMoves`). `current`
+ * taker gains a Slayer Die (src/lib/domain/rest `applyMoves`).
+ * Rest-time heritage features (SD-R, src/lib/domain/rest/feature-moves.ts),
+ * applied in the same transaction and undo group: Hardy clears a Hit Point on
+ * any rest that gives benefits, Efficient lets a short rest take one long rest
+ * move, Celestial Trance allows a third move, Oasis rerolls the party's lowest
+ * downtime die on a short rest (and an interrupted long rest) and keeps the
+ * higher. `current`
  * offers Undo only while the rest's log rows are still undoable (the 30-day
  * snapshot strip, dcm-c26).
  */
@@ -28,7 +34,6 @@ import { v } from "convex/values";
 import { applyCountdownAction, CountdownRangeError, CountdownRuleError, MAX_COUNTDOWN_START } from "../src/lib/domain/countdowns/index";
 import {
   allowedMoves,
-  applyMoves,
   interruptedMoves,
   MOVE_LABELS,
   mustLongRest,
@@ -36,10 +41,19 @@ import {
   SHORT_REST_LIMIT_MESSAGE,
   restFear,
   shortRestsSinceLong,
-  validateChoice,
   type RestKind as DomainRestKind,
   type RestMove as DomainRestMove,
 } from "../src/lib/domain/rest/index";
+import {
+  applyHardy,
+  applyMovesWithOasis,
+  efficientMoves,
+  NO_REST_FEATURES,
+  restFeaturesOf,
+  restMoveSlots,
+  validateFeatureChoice,
+  type RestFeatures,
+} from "../src/lib/domain/rest/feature-moves";
 import { holdsMartialPreparation } from "../src/lib/domain/session-features/holders";
 import { appError } from "../src/lib/errors/app-error";
 import type { CharacterSheet } from "../src/lib/validation/characters";
@@ -51,6 +65,7 @@ import { runRestTiming } from "./lib/cardHand";
 import { assertCanAct, loadCharacter, MAX_CHARACTERS_PER_CAMPAIGN, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
 import { gainFear } from "./lib/fear";
+import { featureScope } from "./lib/featureScope";
 import { campaignQuery, keyedGmMutation, keyedUserMutation, userQuery } from "./lib/functions";
 import { restMovesFor, runRestHooks } from "./lib/restHooks";
 import {
@@ -122,7 +137,11 @@ const resting = (c: Doc<"characters">) => c.status === "active";
  * Each resting PC's pickable moves for this rest. A sheet that fails to read gets the core moves. Read only while a
  * rest is open (`current`), bounded by the campaign's character cap.
  */
-async function pickableMoves(ctx: QueryCtx, campaign: Doc<"campaigns">, kind: RestKind): Promise<{ characterId: Id<"characters">; moves: RestMove[] }[]> {
+async function pickableMoves(
+  ctx: QueryCtx,
+  campaign: Doc<"campaigns">,
+  kind: RestKind,
+): Promise<{ characterId: Id<"characters">; moves: RestMove[]; efficient: RestMove[]; slots: number; oasis: boolean }[]> {
   const party = await ctx.db
     .query("characters")
     .withIndex("by_campaign", (q) => q.eq("campaignId", campaign._id))
@@ -131,8 +150,21 @@ async function pickableMoves(ctx: QueryCtx, campaign: Doc<"campaigns">, kind: Re
   const martialPreparation = pcs.some(({ sheet }) => sheet !== null && holdsMartialPreparation(sheet));
   return pcs.map(({ c, sheet }) => {
     const rules = restMovesFor(campaign, sheet ?? { classId: "" }, { martialPreparation });
-    return { characterId: c._id, moves: allowedMoves(kind, rules.extra, rules.forbidden) };
+    const features = featuresOf(campaign, sheet);
+    const base = allowedMoves(kind, rules.extra, rules.forbidden);
+    return {
+      characterId: c._id,
+      moves: base,
+      efficient: efficientMoves(kind, features, base, rules.forbidden),
+      slots: restMoveSlots(features).max,
+      oasis: kind === "short" && features.oasis,
+    };
   });
+}
+
+/** The rest-time heritage features the sheet holds (Hardy, Efficient, Celestial Trance, Oasis; SD-R), none for an unreadable sheet. */
+function featuresOf(campaign: Doc<"campaigns">, sheet: CharacterSheet | null): RestFeatures {
+  return sheet === null ? NO_REST_FEATURES : restFeaturesOf(sheet, { hopeAndFear: featureScope(campaign).hopeAndFear });
 }
 
 /** The character's sheet, or null when it fails to read. */
@@ -177,7 +209,16 @@ async function groupUndoable(ctx: QueryCtx, campaignId: Id<"campaigns">, groupId
 }
 
 const choiceView = v.object({ characterId: v.id("characters"), moves: v.array(restChoiceMoveValidator) });
-const movesView = v.object({ characterId: v.id("characters"), moves: v.array(restMoveValidator) });
+const movesView = v.object({
+  characterId: v.id("characters"),
+  moves: v.array(restMoveValidator),
+  /** Most moves the PC can pick: 2, 3 with Celestial Trance (CB 56). */
+  /** Efficient (CB 53): the long rest moves the PC can take one of on this short rest, with `choose`'s `efficient`. */
+  efficient: v.array(restMoveValidator),
+  slots: v.number(),
+  /** The PC holds Oasis and this is a short rest: a downtime die is rerolled at the end (HF 27). */
+  oasis: v.boolean(),
+});
 
 /** A countdown Work on a Project can tick: the character's own project (not an Endurance or Lycanthropy countdown). */
 const isProject = (c: Doc<"countdowns">, characterId: Id<"characters">) => c.ownerKey === characterId && c.kind === "project" && c.status !== "cancelled";
@@ -339,7 +380,9 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
 
   const input: Record<string, CharacterSheet> = {};
   for (const [id, sheet] of before) input[id] = sheet;
-  const moved = applyMoves(kind, input, choices, rollDie);
+  const features = new Map<Id<"characters">, RestFeatures>(pcs.map((c) => [c._id, featuresOf(campaign, before.get(c._id)!)]));
+  const oasisHolders = pcs.filter((c) => features.get(c._id)!.oasis).map((c) => c._id);
+  const moved = applyMovesWithOasis(kind, input, choices, rollDie, oasisHolders);
 
   // Card timing uses (CA4b, convex/lib/cardHand.ts): `afterRest` before the rest's expiry (Wild Surge needs its effect
   // active to drop it), `afterLongRest` after a finished long rest's expiry (Inspirational Words' tokens).
@@ -350,6 +393,10 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     const timed = runRestTiming(sheet, pc._id, "afterRest", rollDie);
     let rested = restedSheet(timed.sheet, kind);
     const lines = [...timed.lines];
+    // Hardy (HF 29): "When you take a rest, you clear a Hit Point." Any rest; an interrupted long rest is a short one.
+    const hardy = applyHardy(rested, features.get(pc._id)!);
+    rested = hardy.sheet;
+    if (hardy.line !== null) lines.push(hardy.line);
     if (kind === "long") {
       const long = runRestTiming(rested, pc._id, "afterLongRest", rollDie);
       rested = long.sheet;
@@ -534,8 +581,9 @@ export const undo = keyedGmMutation({
 // ---------------------------------------------------------------- the player's picks
 
 /**
- * Sets a character's two downtime moves for the open rest (CB 105). The
- * character's owner or the GM; dead, away and unconscious characters can't
+ * Sets a character's two downtime moves for the open rest (CB 105), three with
+ * Celestial Trance (CB 56); with `efficient`, a Clank's short rest takes one
+ * long rest move (CB 53; src/lib/domain/rest/feature-moves.ts). The character's owner or the GM; dead, away and unconscious characters can't
  * (CHARACTER_UNAVAILABLE). The moves are the rest's, with the frame and class
  * moves and without the frame's forbidden ones (`restMovesFor`: Beast Feast
  * refuses moves that clear Stress, clear HP or gain Hope, CB 278). An ally
@@ -543,22 +591,32 @@ export const undo = keyedGmMutation({
  * be one of the character's own projects.
  */
 export const choose = keyedUserMutation({
-  args: { restId: v.id("rests"), characterId: v.id("characters"), moves: v.array(restChoiceMoveValidator) },
+  args: {
+    restId: v.id("rests"),
+    characterId: v.id("characters"),
+    moves: v.array(restChoiceMoveValidator),
+    /** The PC uses Efficient (Clank, CB 53) on this short rest: one of the moves may be a long rest move. */
+    efficient: v.optional(v.boolean()),
+  },
   returns: v.null(),
-  handler: async (ctx, { restId, characterId, moves }) =>
-    ctx.once("rest_choose", { restId, characterId, moves }, async () => {
+  handler: async (ctx, { restId, characterId, moves, efficient: useEfficient }) =>
+    ctx.once("rest_choose", { restId, characterId, moves, efficient: useEfficient ?? false }, async () => {
       const { campaign, character } = await loadCharacter(ctx, ctx.user, characterId, "edit");
       const sheet = readSheet(character.sheet);
       assertCanAct(character, sheet);
       if (character.status !== "active") throw appError("CHARACTER_UNAVAILABLE");
       const rest = await loadOpenRest(ctx, campaign._id, restId);
       const rules = restMovesFor(campaign, sheet, { martialPreparation: await partyHasMartialPreparation(ctx, campaign._id) });
-      validateChoice(
-        rest.kind,
+      const features = featuresOf(campaign, sheet);
+      const base = allowedMoves(rest.kind, rules.extra, rules.forbidden);
+      // Efficient's long rest moves only when the player uses it, so a Clank's short rest otherwise checks as anyone's.
+      const efficient = useEfficient === true ? efficientMoves(rest.kind, features, base, rules.forbidden) : [];
+      validateFeatureChoice(
         characterId,
         moves.map((m) => ({ move: m.move, targetId: m.targetId, countdownId: m.countdownId })),
-        rules.extra,
-        rules.forbidden,
+        [...base, ...efficient],
+        features,
+        efficient,
       );
       for (const m of moves) {
         if (m.targetId !== undefined) {
