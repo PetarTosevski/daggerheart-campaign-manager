@@ -158,3 +158,25 @@ export function withCycleDay(current: CampaignTime, cycleDay: number): CampaignT
   }
   return { ...current, currentCycleDay: day };
 }
+
+/**
+ * One campaign day passed by the GM's End day (plan lanes-2 CT, dcm-ztb8; user answer 2026-10-31: every campaign
+ * tracks days of a week, a week passes after 7 days). `cycles`: the frame keeps Witherwild's Day / Night weeks
+ * (`frameHasMechanic(frameId, "campaignTime")`), so a new week flips the cycle as `getNextCampaignTime` does; other
+ * frames only count days and weeks and keep their cycle. `newWeek` is true when day 7 ended (weekly limits reset).
+ *
+ * ```ts
+ * passDay({ currentWeek: 1, currentCycle: "DAY", currentCycleDay: 7 }, false);
+ * // { next: { currentWeek: 2, currentCycle: "DAY", currentCycleDay: 1 }, newWeek: true }
+ * ```
+ */
+export function passDay(current: CampaignTime, cycles: boolean): { next: CampaignTime; newWeek: boolean } {
+  const next = getNextCampaignTime(current);
+  const newWeek = next.currentWeek !== current.currentWeek;
+  return { next: cycles ? next : { ...next, currentCycle: current.currentCycle }, newWeek };
+}
+
+/** Label of a frame without Witherwild's cycles, e.g. "Week 3 · Day 2". */
+export function formatCalendarDay(week: number, day: number): string {
+  return `Week ${week} · Day ${day}`;
+}

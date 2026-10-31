@@ -26,7 +26,7 @@ import type { TomeChapterId } from "@/lib/frames/tomes";
 
 import { CampaignTome } from "./campaign-tome";
 import { PlayersDialog } from "./players-dialog";
-import { TimeArc } from "./time-arc";
+import { CampaignDay, TimeArc } from "./time-arc";
 import { TimeOfDay } from "./time-of-day";
 
 /*
@@ -227,9 +227,15 @@ const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { ca
       {frameHasMechanic(campaign.frameId, "campaignTime") ? (
         <TimeArc campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
       ) : (
-        <SlotBoundary fallback={null}>
-          <TimeOfDay campaignId={campaign._id} />
-        </SlotBoundary>
+        <div className="flex flex-wrap items-start justify-center gap-x-10 gap-y-4 self-center">
+          <SlotBoundary fallback={null}>
+            <TimeOfDay campaignId={campaign._id} />
+          </SlotBoundary>
+          {/* Plan lanes-2 CT (dcm-ztb8): every campaign counts days and weeks; the GM ends the day here. */}
+          <SlotBoundary fallback={null}>
+            <CampaignDay campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
+          </SlotBoundary>
+        </div>
       )}
       <div className="flex flex-wrap items-end justify-between gap-6">
       <div className="flex min-w-0 flex-col gap-2">

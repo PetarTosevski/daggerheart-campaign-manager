@@ -152,6 +152,9 @@ const area: Area = {
     { fn: api.campaignTime.advance, access: "gm", expect: { grantee: "FORBIDDEN" } },
     // A new campaign starts on day 1; setDay must change the day.
     { fn: api.campaignTime.setDay, access: "gm", args: () => ({ cycleDay: 2 }), expect: { grantee: "FORBIDDEN" } },
+    // Plan lanes-2 CT: every frame counts days; members read the day, only the GM ends it.
+    { fn: api.campaignTime.calendar, access: "view" },
+    { fn: api.campaignTime.endDay, access: "gm", expect: { grantee: "FORBIDDEN" } },
 
     // ---- characters (worked H0 entry)
     // A character read: strangers get null instead of NOT_FOUND (no existence leak); party members may view.

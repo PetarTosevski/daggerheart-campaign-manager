@@ -137,7 +137,11 @@ export const countdownTables = {
     .index("by_entry_countdown", ["entryId", "countdownId"])
     .index("by_campaign_at", ["campaignId", "at"]),
 
-  /** Witherwild-only campaign time: one row per campaign whose frame has `campaignTime`. */
+  /**
+   * Campaign time: at most one row per campaign. Witherwild (frame mechanic `campaignTime`) gets it at creation and uses
+   * the Day / Night cycle; since plan lanes-2 CT (dcm-ztb8) every other campaign gets it lazily on its first End day and
+   * only counts `week` and `cycleDay` (its `cycle` stays "DAY").
+   */
   campaignTime: defineTable({
     campaignId: v.id("campaigns"),
     week: v.number(),
