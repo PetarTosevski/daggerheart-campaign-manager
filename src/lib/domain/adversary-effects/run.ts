@@ -31,11 +31,11 @@ import { parseAttackModifier, standardAttackDamage } from "../adversary-actions/
 import { adversaryNumberEnv, unmetAdversaryRequirements, type AdversaryState, type PassiveSummary } from "../adversary-actions/features";
 import { resolveCosts } from "../card-effects/availability";
 import { run as runCard, type ActorState, type PlanStep, type RollInfo, type RunPlan } from "../card-effects/run";
-import type { AttackedRider, CardEffect, CardUse, Cost, NumberSource, Range as AdversaryRange, RollSpec, Step } from "../card-effects/types";
+import type { AttackedRider, CardEffect, CardUse, CheckRow, ConditionRef, Cost, EndEvent, Escape, Mod, NumberSource, Range as AdversaryRange, RollEnd, RollSpec, Step } from "../card-effects/types";
 import { rangeFromWeapon } from "../combat-actions/distance";
 import type { Combatant } from "../combat-actions/damage";
 import type { HitResult } from "../combat-actions/hits";
-import { resolveNumber } from "../combat-actions/numbers";
+import { resolveNumber, type MapCreature } from "../combat-actions/numbers";
 import type { Rng } from "../dice/index";
 import type {
   AdversaryActivation,
@@ -125,6 +125,25 @@ export interface AdversaryRunContext {
    * Evasion halved, direct damage and a damage change on its hit.
    */
   attackedRiders?: Readonly<Record<string, readonly AttackedRider[]>>;
+  // ---- Plan lanes-2, lane E7 (dcm-e16o, dcm-0n1u, dcm-8rh): per-creature facts the card runner reads, forwarded as given.
+  /** The Hope each PC holds now, by id (Dreadhowl, Howl at the Moon: `hope.ifUnable`; dcm-5xi). */
+  hopeOf?: Readonly<Record<string, number>>;
+  /** The allies who may pay to raise a `raised` save's Difficulty (Enchanting Song's other Sirens; dcm-q0a). */
+  saveRaisers?: readonly Combatant[];
+  /** Named tokens on creatures now, by creature id then name (Encumber's bramble tokens; dcm-xp0). */
+  creatureTokens?: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  /** Handfuls of gold each creature carries, by id (Quick Hands; dcm-0gh). */
+  goldOf?: Readonly<Record<string, number>>;
+  /** The creatures of each further link of a repeating follow-up (Rip & Tear; dcm-7az). Link 0 is `followUp`. */
+  chain?: readonly (readonly Combatant[])[];
+  /**
+   * The creatures on the live map seen from this adversary (`creatureCount`: Hive Mind, Pack Fury, Drain and Multiply's
+   * Horde HP; dcm-ttz). Read by the numbers this runner resolves itself (upfront Fear, summon / countdown / spotlight
+   * prompts); absent: none counted.
+   */
+  creatures?: readonly MapCreature[];
+  /** The labels of the lasting effects each creature carries now, by id (`effect.stacking`; dcm-kkx). */
+  effectsOn?: Readonly<Record<string, readonly string[]>>;
   rng: Rng;
 }
 
@@ -204,11 +223,84 @@ export interface AdversaryPlan {
   fled: string[];
   /** Lane E7 (dcm-145): creatures a `revive` step brought back (Won't Stay Dead, Corpse Whisperer), itself included. */
   revived: string[];
+  /**
+   * Plan lanes-2, lane E7 (dcm-iedr): what the card runner's `condition` plan step drops, per condition the plan gives:
+   * the entry's `mods` (bearer riders, attacked riders, disadvantage, flags), `endsOnCaster` (Envelop: "until the Shark
+   * takes Severe damage"), `endsOnRoll` (Slowed: "until they roll with Hope"), `escape`, `record` and `endFear`, read
+   * from the entry's own step by the condition's name. Only conditions whose step carries any of them are listed.
+   */
+  conditionDetails: AdversaryConditionDetail[];
   /** Group Attack: the other Minions that took part (the server spotlights them, CB p.201). */
   group: string[];
   /** A passive use's modifiers. */
   modifiers: readonly AdversaryModifier[];
   excluded: string[];
+}
+
+/** Lane E7 (dcm-iedr): a condition the plan gives with the fields its plan step leaves out (see `AdversaryPlan.conditionDetails`). */
+export interface AdversaryConditionDetail {
+  targetId: string;
+  condition: ConditionRef;
+  mods?: readonly Mod[];
+  endsOnCaster?: readonly EndEvent[];
+  endsOnRoll?: RollEnd;
+  escape?: Escape;
+  record?: NumberSource;
+  endFear?: NumberSource;
+}
+
+type ConditionStep = Extract<Step, { kind: "condition" }>;
+
+/** The condition's printed name (a standard condition or a tag). */
+export const conditionName = (c: ConditionRef): string => (c.kind === "standard" ? c.condition : c.tag);
+
+/**
+ * Lane E7 (dcm-iedr): every `condition` step of a step list, nested flows and check-table rows included, by condition
+ * name (the first one wins). Walks the data generically: any object with `kind: "condition"` and a `condition` ref.
+ */
+export function conditionStepsOf(steps: readonly unknown[]): Map<string, ConditionStep> {
+  const out = new Map<string, ConditionStep>();
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const n of node) walk(n);
+      return;
+    }
+    if (node === null || typeof node !== "object") return;
+    const o = node as Record<string, unknown>;
+    if (o.kind === "condition" && typeof o.condition === "object" && o.condition !== null) {
+      const name = conditionName(o.condition as ConditionRef);
+      if (!out.has(name)) out.set(name, o as unknown as ConditionStep);
+    }
+    for (const value of Object.values(o)) if (typeof value === "object") walk(value);
+  };
+  walk(steps);
+  return out;
+}
+
+/**
+ * Lane E7, round 2 (dcm-iedr, dcm-xyw, dcm-yd5h, dcm-mm0f): the mods of the lasting step a stored effect or condition
+ * came from, found again in its entry's steps by its label (an `effect` step's `label`, a `condition` step's name; the
+ * first match wins). The server stores only the label and the source; the riders (`attackedRider`, `bearerRider`) are
+ * read back from the entry when they are needed. Empty when nothing matches.
+ */
+export function lastingModsOf(steps: readonly unknown[], label: string): readonly Mod[] {
+  let found: readonly Mod[] | undefined;
+  const walk = (node: unknown): void => {
+    if (found !== undefined || node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const n of node) walk(n);
+      return;
+    }
+    const o = node as Record<string, unknown>;
+    const named = o.kind === "effect" && o.label === label ? true : o.kind === "condition" && typeof o.condition === "object" && o.condition !== null && conditionName(o.condition as ConditionRef) === label;
+    if (named && Array.isArray(o.mods)) {
+      found = o.mods as readonly Mod[];
+      return;
+    }
+    for (const value of Object.values(o)) if (typeof value === "object") walk(value);
+  };
+  walk(steps);
+  return found ?? [];
 }
 
 export type AdversaryRunRefusal = {
@@ -277,12 +369,13 @@ export function standardAttackEffect(adversaryId: string, attack: Pick<StandardA
 const fixed = (value: number): NumberSource => ({ kind: "fixed", value });
 
 /** Fear an upfront cost list asks for (with the GM's `either` picks), to ask "Spend N Fear?" first (Q19). */
-export function upfrontFear(costs: readonly AdversaryCost[] | undefined, context: Pick<AdversaryRunContext, "eitherCosts" | "self" | "tokens" | "tier" | "gmFear" | "rng"> & Partial<Pick<AdversaryRunContext, "trigger" | "targets">>): number {
+export function upfrontFear(costs: readonly AdversaryCost[] | undefined, context: Pick<AdversaryRunContext, "eitherCosts" | "self" | "tokens" | "tier" | "gmFear" | "rng"> & Partial<Pick<AdversaryRunContext, "trigger" | "targets" | "creatures">>): number {
   if (!costs || costs.length === 0) return 0;
   // AA2b (bead dcm-yle): a cost read from the trigger (My Turn: "spend a number of Fear equal to the HP marked") asks first.
   const env = adversaryNumberEnv({ hp: context.self.hp, stress: context.self.stress, tokens: context.tokens ?? 0 }, context.tier, context.gmFear, {
     ...(context.trigger?.amount !== undefined ? { triggerAmount: context.trigger.amount } : {}),
     targetCount: { picked: context.targets?.length ?? 0, hit: 0, failedSave: 0 },
+    ...(context.creatures ? { creatures: context.creatures } : {}),
   });
   let i = 0;
   const paid = resolveCosts(costs as readonly Cost[], (c) => resolveNumber(c.amount, env, context.rng), () => context.eitherCosts?.[i++] ?? 0);
@@ -295,9 +388,18 @@ export function hasFollowUpAttack(steps: readonly AdversaryStep[]): boolean {
     if (s.kind === "followUp") return s.roll?.kind === "adversaryAttack" || hasFollowUpAttack(s.steps);
     if (s.kind === "optional") return hasFollowUpAttack(s.steps);
     if (s.kind === "choose") return s.options.some((o) => hasFollowUpAttack(o.steps));
-    if (s.kind === "check") return hasFollowUpAttack(s.then) || hasFollowUpAttack(s.otherwise);
+    if (s.kind === "check") return hasFollowUpAttack(s.then) || hasFollowUpAttack(s.otherwise) || hasFollowUpAttack(tableSteps(s.table));
     return false;
   });
+}
+
+/**
+ * Lane E7, round 2 (dcm-b3bb): the steps of a check's table rows (Broken Magic's d6, Tentacle Rays' d8 beams; dcm-27j).
+ * A row holds card steps; every adversary step kind the runner reads in them is a card kind, so they read as adversary
+ * steps here.
+ */
+function tableSteps(table: readonly CheckRow[] | undefined): readonly AdversaryStep[] {
+  return (table ?? []).flatMap((r) => r.steps as readonly AdversaryStep[]);
 }
 
 const refuse = (reason: AdversaryRunRefusal["reason"], code: AdversaryActionErrorCode | null, detail: string): AdversaryRunRefusal => ({
@@ -369,9 +471,12 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
   const ridersOn = (id: string) => context.attackedRiders?.[id] ?? [];
   // Lane E7 (dcm-xyw): "the target's Evasion is halved against this attack" (Peerless Accuracy, CB p.224), from the roll
   // or a rider on the target; rounded up (QUESTIONS in TASK-LN-E7.md).
+  // Lane E7, round 2 (dcm-4c9m): the passive flag `attacksHalveEvasion` (Never Misses, CB p.228: "When the Flickerfly makes
+  // an attack, the target's Evasion is halved") halves it on every attack, the standard attack included.
+  const alwaysHalved = passives?.flags.includes("attacksHalveEvasion") === true;
   const halved = (list: readonly Combatant[] | undefined, spec: RollSpec | undefined): Combatant[] | undefined =>
     list?.map((t) =>
-      spec?.kind === "adversaryAttack" && t.evasion !== undefined && (spec.halveEvasion === true || ridersOn(t.id).some((r) => r.halveEvasion === true))
+      spec?.kind === "adversaryAttack" && t.evasion !== undefined && (alwaysHalved || spec.halveEvasion === true || ridersOn(t.id).some((r) => r.halveEvasion === true))
         ? { ...t, evasion: Math.ceil(t.evasion / 2) }
         : t,
     );
@@ -379,7 +484,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     for (const s of list) {
       if (s.kind === "followUp" && s.roll) return s.roll;
       const nested =
-        s.kind === "followUp" || s.kind === "optional" ? followUpRoll(s.steps) : s.kind === "choose" ? followUpRoll(s.options.flatMap((o) => o.steps)) : s.kind === "check" ? followUpRoll([...s.then, ...s.otherwise]) : undefined;
+        s.kind === "followUp" || s.kind === "optional" ? followUpRoll(s.steps) : s.kind === "choose" ? followUpRoll(s.options.flatMap((o) => o.steps)) : s.kind === "check" ? followUpRoll([...s.then, ...s.otherwise, ...tableSteps(s.table)]) : undefined;
       if (nested) return nested;
     }
     return undefined;
@@ -415,7 +520,13 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
         return translated;
       }
       case "check":
-        return { ...step, then: translate(step.then), otherwise: translate(step.otherwise) };
+        // dcm-b3bb: table rows are translated like `then` / `otherwise` (a follow-up attack in a row gets the ATK).
+        return {
+          ...step,
+          then: translate(step.then),
+          otherwise: translate(step.otherwise),
+          ...(step.table ? { table: step.table.map((r) => ({ ...r, steps: translate(r.steps as readonly AdversaryStep[]) })) } : {}),
+        };
       case "followUp": {
         // dcm-vv2 1: entries written before it carry the ATK in the follow-up's own `modifier`; that one stands as written.
         const roll = step.roll?.kind === "adversaryAttack" && followUpAtk !== 0 && step.roll.modifier === undefined ? { ...step.roll, modifier: fixed(followUpAtk) } : step.roll;
@@ -482,6 +593,12 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     ...(context.optionals ? { optionals: context.optionals } : {}),
     ...(context.eitherCosts ? { eitherCosts: context.eitherCosts } : {}),
     ...(context.splits ? { splits: context.splits } : {}),
+    ...(context.hopeOf ? { hopeOf: context.hopeOf } : {}),
+    ...(context.saveRaisers ? { saveRaisers: context.saveRaisers } : {}),
+    ...(context.creatureTokens ? { creatureTokens: context.creatureTokens } : {}),
+    ...(context.goldOf ? { goldOf: context.goldOf } : {}),
+    ...(context.chain ? { chain: context.chain } : {}),
+    ...(context.effectsOn ? { effectsOn: context.effectsOn } : {}),
     situations: context.situations ?? [],
     roll: {
       modifier: rollModifier,
@@ -519,6 +636,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       ...(context.trigger?.amount !== undefined ? { triggerAmount: context.trigger.amount } : {}),
       ...(lastRoll !== undefined ? { lastRoll } : {}),
       targetCount,
+      ...(context.creatures ? { creatures: context.creatures } : {}),
     });
   const num = (src: NumberSource) => resolveNumber(src, env(), context.rng);
   const outSteps: AdversaryPlanStep[] = plan.steps.map((s): AdversaryPlanStep => {
@@ -677,6 +795,26 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       selfAfter = c.kind === "standard" ? { ...selfAfter, conditions: selfAfter.conditions.filter((x) => x !== c.condition) } : { ...selfAfter, tags: (selfAfter.tags ?? []).filter((x) => x !== c.tag) };
     }
   }
+  // ---- lane E7 (dcm-iedr): the condition steps' fields the card runner's plan step leaves out
+  const conditionSteps = conditionStepsOf(use.steps);
+  const conditionDetails: AdversaryConditionDetail[] = [];
+  for (const s of plan.steps) {
+    if (s.kind !== "condition") continue;
+    const original = conditionSteps.get(conditionName(s.condition));
+    if (!original) continue;
+    const detail: AdversaryConditionDetail = {
+      targetId: s.targetId,
+      condition: s.condition,
+      ...(original.mods && original.mods.length > 0 ? { mods: original.mods } : {}),
+      ...(original.endsOnCaster && original.endsOnCaster.length > 0 ? { endsOnCaster: original.endsOnCaster } : {}),
+      ...(original.endsOnRoll ? { endsOnRoll: original.endsOnRoll } : {}),
+      ...(original.escape ? { escape: original.escape } : {}),
+      ...(original.record ? { record: original.record } : {}),
+      ...(original.endFear ? { endFear: original.endFear } : {}),
+    };
+    if (Object.keys(detail).length > 2) conditionDetails.push(detail);
+  }
+
   const fearSpent = plan.steps
     .filter((s): s is Extract<PlanStep, { kind: "pay" }> => s.kind === "pay" && s.paid)
     .flatMap((s) => s.costs)
@@ -705,6 +843,7 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
       fled,
       revived,
       ...(savesOut.length > 0 ? { saves: savesOut } : {}),
+      conditionDetails,
       group: use.groupAttack ? (context.group ?? []).map((c) => c.id) : [],
       modifiers: use.modifiers ?? [],
       excluded: plan.excluded,

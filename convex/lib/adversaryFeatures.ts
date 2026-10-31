@@ -12,17 +12,20 @@
  *
  * Rules (printed pages): CB p.153-154, p.194 spotlight and Fear; CB p.160 an Experience for a Fear; CB p.195 reactions.
  */
-import { adversaryFeatureId, adversaryFeatureUseKey, pickAdversaryUse, run, upfrontFear, type AdversaryPlan, type AdversaryRunContext, type InstanceModifiers, type StandardAttack } from "../../src/lib/domain/adversary-effects/run";
+import { adversaryFeatureId, adversaryFeatureUseKey, conditionStepsOf, lastingModsOf, pickAdversaryUse, run, upfrontFear, type AdversaryPlan, type AdversaryRunContext, type InstanceModifiers, type StandardAttack } from "../../src/lib/domain/adversary-effects/run";
 import type { AdversaryCost, AdversaryFeatureEffect, AdversaryFeatureUse, AdversaryRequirement, AdversaryStep } from "../../src/lib/domain/adversary-effects/types";
 import { passiveSummary, spotlightCost, triggeredUses, unmetAdversaryRequirements, type AdversaryEvent, type AdversaryState, type PassiveSummary, type TriggeredUse } from "../../src/lib/domain/adversary-actions/index";
 import { featureFearCost, hordeDamage, relentlessValue } from "../../src/lib/domain/adversaries/index";
-import type { PlanStep } from "../../src/lib/domain/card-effects/run";
-import type { Gate, Limit, NumberSource, TargetSpec, TriggerTargets } from "../../src/lib/domain/card-effects/types";
-import type { Combatant } from "../../src/lib/domain/combat-actions/index";
+import type { PlanStep, ResolvedMod } from "../../src/lib/domain/card-effects/run";
+import type { AttackedRider, BearerRider, Duration, Gate, Limit, Mod, NumberSource, Step, TargetSpec, TriggerTargets } from "../../src/lib/domain/card-effects/types";
+import { tokenDistance, type Combatant } from "../../src/lib/domain/combat-actions/index";
+import type { MapCreature } from "../../src/lib/domain/combat-actions/numbers";
 import { turnSpotlights } from "../../src/lib/domain/encounters/spotlight";
 import { appError } from "../../src/lib/errors/app-error";
 import { ADVERSARIES } from "../../src/lib/srd/adversaries";
-import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
+import { ADVERSARY_EFFECTS, adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
+import { CARD_EFFECTS } from "../../src/lib/srd/card-effects/index";
+import { FEATURE_EFFECTS } from "../../src/lib/srd/feature-effects/index";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
 import type { AdversaryDef } from "../../src/lib/srd/types";
 import type { CharacterSheet, FeatureUse } from "../../src/lib/validation/characters";
@@ -33,7 +36,8 @@ import { campaignFearState } from "./fear";
 import { rules } from "./rolls";
 import type { AdversaryBefore } from "./validators/actionLog";
 import type { HitRider } from "./validators/combatRequests";
-import { MAX_INSTANCE_FEATURE_USES, type InstanceFeatureUse } from "./validators/encounters";
+import { MAX_INSTANCE_FEATURE_USES, type InstanceEffect, type InstanceFeatureUse } from "./validators/encounters";
+import { effectSource, instanceEffectSource, srdUses } from "./cardRows";
 
 const SRD_BY_ID = new Map<string, AdversaryDef>(ADVERSARIES.map((a) => [a.id, a]));
 
@@ -61,8 +65,39 @@ const srdRange = (r: string): StandardAttack["range"] => SRD_RANGES.find((x) => 
 
 const tierOf = (n: number): 1 | 2 | 3 | 4 => (n <= 1 ? 1 : n >= 4 ? 4 : (Math.round(n) as 2 | 3));
 
-/** The instance's stat block, or null when its source is gone. The instance's own resistance wins (CA2, Q8). */
+/**
+ * The instance's stat block, or null when its source is gone. The instance's own resistance wins (CA2, Q8). Lane E7
+ * (dcm-gx3): an Evolution on the instance (`evolvedBlock`) replaces its standard attack and drops the features it lost.
+ */
 export async function blockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries">): Promise<Block | null> {
+  const block = await printedBlockOf(ctx, instance);
+  return block === null ? null : evolvedBlock(block, instance);
+}
+
+const VOCABULARY_RANGES = ["melee", "veryClose", "close", "far", "veryFar"] as const;
+
+/**
+ * Lane E7, round 2 (dcm-gx3, Evolution, HF p.61): the block as the instance's modifiers changed it. The latest
+ * `standardAttack` replaces the standard attack (its ATK stays the printed one: Enraged Mountain Troll, HF p.65, "replace
+ * Skull Flail with the following standard attack: Claw Swipe: Very Close | 1d10+3 phy"); features in `featuresRemoved`
+ * are gone from the feature list and from the effect entries. `featuresAdded` are printed on the block already (Double
+ * Swipe) and stay listed.
+ */
+export function evolvedBlock(block: Block, instance: Pick<Doc<"encounterAdversaries">, "effects">): Block {
+  const effects = instance.effects ?? [];
+  const attack = [...effects].reverse().find((e) => e.standardAttack !== undefined)?.standardAttack;
+  const removed = new Set(effects.flatMap((e) => e.featuresRemoved ?? []));
+  if (attack === undefined && removed.size === 0) return block;
+  const range: StandardAttack["range"] = SRD_RANGES.find((x) => x === attack?.range) ?? VOCABULARY_RANGES.find((x) => x === attack?.range) ?? block.attack.range;
+  return {
+    ...block,
+    ...(attack ? { attack: { name: attack.name, modifier: block.attack.modifier, range, damage: attack.damage } } : {}),
+    features: block.features.filter((f) => !removed.has(f.name)),
+    effects: block.effects.filter((e) => !removed.has(e.feature)),
+  };
+}
+
+async function printedBlockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries">): Promise<Block | null> {
   const own = instance.resistance;
   const fromInstance = own === undefined ? undefined : own.conditional === undefined || instance.resistanceActive === true ? { physical: own.physical, magic: own.magic } : { physical: "none" as const, magic: "none" as const };
   if (instance.source.kind === "srd") {
@@ -616,4 +651,224 @@ export async function featureAsk(ctx: QueryCtx, campaign: Doc<"campaigns">, args
     }
   }
   return ask;
+}
+
+// ---------------------------------------------------------------- lasting effects an adversary gives or carries (lanes-2, E7)
+
+/** The prefix of the instance modifiers an adversary feature leaves (`adv:<adversaryId>/<feature>:<n>`). */
+const ADVERSARY_INSTANCE_EFFECT = /^adv:([^/:]+)\/(.+):\d+$/;
+/** A PC sheet effect an adversary feature left: `writeSheetChanges` keys it `card:<adversaryId>/<feature>:<n>`. */
+const ADVERSARY_SHEET_EFFECT = /^card:([^/:]+)\/(.+):\d+$/;
+
+const INSTANCE_UNTIL: Record<Duration, InstanceEffect["until"]> = {
+  temporary: "temporary",
+  rest: "temporary",
+  longRest: "temporary",
+  session: "temporary",
+  scene: "scene",
+  hit: "hit",
+  nextRoll: "hit",
+  manual: "temporary",
+  permanent: "permanent",
+};
+
+/** The most modifiers kept on one instance (cardRows keeps the same cap; the oldest go first). */
+const INSTANCE_EFFECTS_MAX = 20;
+
+const fixedOr = (n: NumberSource | undefined, fallback: number) => (n === undefined ? fallback : n.kind === "fixed" ? n.value : fallback);
+
+/** A vocabulary dice expression as the stat block prints it ("1d10+3 phy"). Numbers that aren't fixed read 1 die / +0. */
+function printedDamage(d: Extract<ResolvedMod, { kind: "standardAttack" }>): string {
+  const plus = fixedOr(d.damage.plus, 0);
+  return `${fixedOr(d.damage.count, 1)}d${d.damage.sides}${plus > 0 ? `+${plus}` : plus < 0 ? `${plus}` : ""} ${d.type === "magic" ? "mag" : "phy"}`;
+}
+
+/**
+ * Lane E7, round 2 (dcm-gx3): the instance modifier an adversary feature's `effect` step on itself or an ally becomes:
+ * the Difficulty, attack, damage and HP-marked deltas, Blighting Strike's half damage, Goad Them On's disadvantage, and
+ * Evolution's new standard attack and feature changes. The id names the feature (`adv:<adversaryId>/<feature>:<n>`) so
+ * its riders can be read back from the entry (`instanceBearerRiders`).
+ */
+export function adversaryInstanceEffect(existing: readonly InstanceEffect[], adversaryId: string, feature: string, step: Extract<PlanStep, { kind: "effect" }>): InstanceEffect[] {
+  const key = `adv:${adversaryId}/${feature}`;
+  let n = 1;
+  while (existing.some((e) => e.id === `${key}:${n}`) && n < 99) n++;
+  const sum = (stat: string) => step.mods.reduce((s, m) => s + (m.kind === "stat" && m.stat === stat ? m.delta : 0), 0);
+  const effect: InstanceEffect = { id: `${key}:${n}`, source: feature.slice(0, 80), label: step.label.slice(0, 120), until: INSTANCE_UNTIL[step.duration] };
+  for (const [stat, field] of [["difficulty", "difficulty"], ["attack", "attack"], ["damage", "damage"], ["hpMarked", "hpMarked"]] as const) {
+    const delta = sum(stat);
+    if (delta !== 0) effect[field] = delta;
+  }
+  if (step.mods.some((m) => m.kind === "flag" && m.flag === "halfDamage")) effect.halfDamage = true;
+  if (step.mods.some((m) => m.kind === "disadvantage")) effect.disadvantage = true;
+  for (const m of step.mods) {
+    if (m.kind === "standardAttack") effect.standardAttack = { name: m.name.slice(0, 80), range: m.range, damage: printedDamage(m) };
+    if (m.kind === "features") {
+      if (m.remove && m.remove.length > 0) effect.featuresRemoved = [...m.remove].slice(0, 20);
+      if (m.add && m.add.length > 0) effect.featuresAdded = [...m.add].slice(0, 20);
+    }
+  }
+  // `replace` stacking (dcm-kkx): an older copy with this label goes first.
+  const kept = step.stacking === "replace" ? existing.filter((e) => e.label !== effect.label) : existing;
+  return [...kept, effect].slice(-INSTANCE_EFFECTS_MAX);
+}
+
+/** The steps of the entry a lasting effect came from: an adversary feature (`<adversaryId>/<feature>`) or a card / PC feature. */
+function entrySteps(source: { adversaryId: string; feature: string } | { sourceId: string }): readonly unknown[] {
+  if ("adversaryId" in source) return (adversaryEffects(source.adversaryId).find((e) => e.feature === source.feature)?.uses ?? []).map((u) => u.steps);
+  // E6 (dcm-i2tv): a lookup can return the whole entry; walk its upgrades' options too.
+  const entry = srdUses(source.sourceId);
+  if (entry === undefined) return [];
+  if (Array.isArray(entry)) return entry.map((u) => u.steps);
+  const whole = entry as { uses: readonly { steps: unknown }[]; upgrades?: readonly unknown[] };
+  return [...whole.uses.map((u) => u.steps), ...(whole.upgrades ?? [])];
+}
+
+type LastingMods = { label: string; source: string; adversaryId?: string; mods: readonly Mod[] };
+
+/** Every sheet effect's entry mods (dcm-xyw, dcm-yd5h): adversary features' tags and conditions, cards' effects. */
+function sheetLasting(sheet: Pick<CharacterSheet, "effects">): LastingMods[] {
+  const out: LastingMods[] = [];
+  for (const e of sheet.effects) {
+    const label = e.text.split("; ")[0] ?? "";
+    const adv = ADVERSARY_SHEET_EFFECT.exec(e.id);
+    if (adv) {
+      out.push({ label, source: e.source, adversaryId: adv[1]!, mods: lastingModsOf(entrySteps({ adversaryId: adv[1]!, feature: adv[2]! }), label) });
+      continue;
+    }
+    const src = effectSource(e);
+    if (src) out.push({ label, source: e.source, mods: lastingModsOf(entrySteps({ sourceId: src.sourceId }), src.label) });
+  }
+  return out;
+}
+
+/**
+ * Lane E7, round 2 (dcm-xyw, dcm-yd5h, dcm-51s, dcm-346): the `attackedRider`s an adversary's attack on this PC gets
+ * from what the PC carries (Mark Target's mark, Chokehold's Vulnerable, Breaking Blow). `by`: `anyone` always; `caster`
+ * when the rider came from this adversary's stat block; `others` when it didn't; `pcs` never (an adversary attacks).
+ */
+export function attackedRidersOn(sheet: Pick<CharacterSheet, "effects">, attackerAdversaryId: string): AttackedRider[] {
+  const out: AttackedRider[] = [];
+  for (const l of sheetLasting(sheet)) {
+    const own = l.adversaryId === attackerAdversaryId;
+    for (const m of l.mods) {
+      if (m.kind !== "attackedRider") continue;
+      const r = m.rider;
+      if (r.by === "anyone" || (r.by === "caster" && own) || (r.by === "others" && !own)) out.push(r);
+    }
+  }
+  return out;
+}
+
+/**
+ * Lane E7, round 2 (dcm-mm0f, adversary half; dcm-f0m, dcm-bxp.99.19.3): the `bearerRider`s on what this instance
+ * carries (a card's On Fire or Poisoned, an adversary feature's modifier) that fire on `on`. The steps are the entry's;
+ * the server turns them into GM prompts.
+ */
+export function instanceBearerRiders(instance: Pick<Doc<"encounterAdversaries">, "effects" | "tags">, on: readonly BearerRider["on"][]): { label: string; source: string; rider: BearerRider }[] {
+  const out: { label: string; source: string; rider: BearerRider }[] = [];
+  const seen = new Set<string>();
+  for (const e of instance.effects ?? []) {
+    const adv = ADVERSARY_INSTANCE_EFFECT.exec(e.id);
+    const src = adv ? null : instanceEffectSource(e);
+    const steps = adv ? entrySteps({ adversaryId: adv[1]!, feature: adv[2]! }) : src ? entrySteps({ sourceId: src.sourceId }) : [];
+    seen.add(e.label);
+    for (const m of lastingModsOf(steps, e.label)) if (m.kind === "bearerRider" && on.includes(m.rider.on)) out.push({ label: e.label, source: e.source, rider: m.rider });
+  }
+  // A card's tag on an enemy (Cinder Grasp's On Fire) is stored as the tag alone: its riders come from the entry
+  // that gives a tag of that name.
+  for (const tag of instance.tags ?? []) {
+    if (seen.has(tag)) continue;
+    const found = tagEntry(tag);
+    if (found) for (const m of found.mods) if (m.kind === "bearerRider" && on.includes(m.rider.on)) out.push({ label: tag, source: found.source, rider: m.rider });
+  }
+  return out;
+}
+
+let TAG_ENTRIES: Map<string, { source: string; mods: readonly Mod[] }> | null = null;
+
+/** The first SRD entry (card, PC feature, adversary feature) that gives a tag of this name with mods, cached. */
+function tagEntry(tag: string): { source: string; mods: readonly Mod[] } | undefined {
+  if (TAG_ENTRIES === null) {
+    const map = new Map<string, { source: string; mods: readonly Mod[] }>();
+    const add = (source: string, uses: readonly { steps: readonly unknown[] }[]) => {
+      for (const [name, step] of conditionStepsOf(uses.map((u) => u.steps))) {
+        if (step.condition.kind === "tag" && step.mods && step.mods.length > 0 && !map.has(name)) map.set(name, { source, mods: step.mods });
+      }
+    };
+    for (const e of CARD_EFFECTS.values()) add(e.cardId, e.uses);
+    for (const e of FEATURE_EFFECTS.values()) add(e.featureId, e.uses);
+    for (const list of ADVERSARY_EFFECTS.values()) for (const e of list) add(e.feature, e.uses);
+    TAG_ENTRIES = map;
+  }
+  return TAG_ENTRIES.get(tag);
+}
+
+/** A short line for a rider's steps (a GM prompt): the step kinds, with the dice of a damage step when they are fixed. */
+export function riderStepsText(steps: readonly Step[]): string {
+  return steps
+    .map((s) => {
+      if (s.kind === "damage" && s.roll && s.roll.kind === "dice") {
+        const d = s.roll.dice as { count: NumberSource; sides?: number; plus?: NumberSource };
+        const plus = fixedOr(d.plus, 0);
+        return d.sides === undefined ? "damage" : `${fixedOr(d.count, 1)}d${d.sides}${plus ? `+${plus}` : ""} ${s.type ?? ""} damage`.replace(/\s+/g, " ").trim();
+      }
+      if (s.kind === "markHp" || s.kind === "markStress") return `mark ${"amount" in s ? fixedOr(s.amount as NumberSource | undefined, 1) : 1} ${s.kind === "markHp" ? "HP" : "Stress"}`;
+      return s.kind;
+    })
+    .join(", ");
+}
+
+/**
+ * Lane E7, round 2 (dcm-e16o, dcm-ttz, dcm-8rh): the creatures `creatureCount` counts, seen from `selfId`. With the live
+ * map: every token there, with its squares to the adversary (`fromSelf`) and to the first target (`fromTarget`).
+ * Without one (Q18): the party PCs and the encounter's undefeated instances, with no distances.
+ */
+export function mapCreatures(
+  selfId: string,
+  instances: readonly Pick<Doc<"encounterAdversaries">, "_id" | "defeated" | "source" | "label">[],
+  party: readonly { character: { _id: string } }[],
+  map: { tokens: readonly Doc<"combatTokens">[]; self: Doc<"combatTokens">; target?: Doc<"combatTokens"> } | null,
+): MapCreature[] {
+  const nameOf = (i: Pick<Doc<"encounterAdversaries">, "source" | "label">) => (i.source.kind === "srd" ? (SRD_BY_ID.get(i.source.adversaryId)?.name ?? i.label) : i.label);
+  if (map === null) {
+    return [
+      ...party.map((m): MapCreature => ({ id: m.character._id, side: "enemy", pc: true })),
+      ...instances.filter((i) => !i.defeated).map((i): MapCreature => ({ id: i._id, side: i._id === selfId ? "self" : "ally", pc: false, name: nameOf(i) })),
+    ];
+  }
+  const out: MapCreature[] = [];
+  for (const t of map.tokens) {
+    const distances = { fromSelf: tokenDistance(map.self, t), ...(map.target ? { fromTarget: tokenDistance(map.target, t) } : {}) };
+    if (t.ref.kind === "pc") out.push({ id: t.ref.characterId, side: "enemy", pc: true, ...distances });
+    else if (t.ref.kind === "adversary") {
+      const id = t.ref.adversaryId;
+      const inst = instances.find((i) => i._id === id);
+      if (inst === undefined || inst.defeated) continue;
+      out.push({ id, side: id === selfId ? "self" : "ally", pc: false, name: nameOf(inst), ...distances });
+    }
+  }
+  return out;
+}
+
+/** Lane E7, round 2 (dcm-idz; user answer 2026-10-31): the tag a GM-controlled PC carries. */
+export const GM_CONTROLLED = "GM-controlled";
+
+/**
+ * Lane E7, round 2 (dcm-idz): whether the GM controls this PC now (Enthralled, HF p.92; Weredrake Curse, HF p.143): an
+ * effect labelled `GM-controlled`, or one whose entry carries `Mod gmControl`. `asAdversary`: the stat block the PC uses
+ * meanwhile (the Weredrake's), when the entry names one. Null when not controlled.
+ */
+export function gmControlOf(sheet: Pick<CharacterSheet, "effects">): { asAdversary?: AdversaryDef } | null {
+  let controlled = sheet.effects.some((e) => (e.text.split("; ")[0] ?? "") === GM_CONTROLLED);
+  let asAdversary: AdversaryDef | undefined;
+  for (const l of sheetLasting(sheet)) {
+    for (const m of l.mods) {
+      if (m.kind !== "gmControl") continue;
+      controlled = true;
+      const def = m.asAdversary === undefined ? undefined : (SRD_BY_ID.get(m.asAdversary) ?? ADVERSARIES.find((a) => a.name === m.asAdversary));
+      if (def) asAdversary = def;
+    }
+  }
+  return controlled ? (asAdversary ? { asAdversary } : {}) : null;
 }

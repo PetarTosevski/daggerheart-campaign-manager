@@ -9,7 +9,7 @@ import { appError } from "../src/lib/errors/app-error";
 import { COUNTDOWN_DETAILS_MAX_LENGTH } from "../src/lib/validation/countdowns";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { adversaryAction, afterHitTriggers, isPreRollRow, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
+import { adversaryAction, afterHitTriggers, gmControlledAttack as gmControlledAttackOf, isPreRollRow, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
 import { answeringFeatures, hopeAndFearOf } from "./lib/adversaryHits";
 import { blockOf, countdownTickOn, featureAsk as featureAskOf } from "./lib/adversaryFeatures";
 import { rollDice } from "./lib/dice";
@@ -75,6 +75,13 @@ const featureArgs = {
   picked: v.optional(v.array(v.string())),
   allies: v.optional(v.array(v.string())),
   followUp: v.optional(v.array(v.string())),
+  /**
+   * Lane E7, round 2 (dcm-e16o, dcm-7az): the creatures of each further link of a repeating follow-up (Rip & Tear, HF
+   * p.76: "not already targeted"), link by link; the first link is `followUp`.
+   */
+  chain: v.optional(v.array(v.array(v.string()))),
+  /** Lane E7, round 2 (dcm-q0a): the allies (instance ids) who pay to raise a save's Difficulty (Enchanting Song, CB p.226). */
+  raisers: v.optional(v.array(v.string())),
   /** A reaction fired by hand: who set it off (character, token or instance id) and the amount. */
   trigger: v.optional(v.object({ sourceId: v.optional(v.string()), subjectId: v.optional(v.string()), amount: v.optional(v.number()) })),
   options: v.optional(v.array(v.object({ id: v.string(), values: v.array(v.string()) }))),
@@ -126,7 +133,7 @@ function checkArgs(args: ActionArgs) {
   whole(args.advantage, 3, "Advantage");
   whole(args.disadvantage, 3, "Disadvantage");
   whole(args.spendFear, 12, "Fear to spend");
-  for (const list of [args.reactions, args.situations, args.options, args.optionals, args.eitherCosts, args.splits]) {
+  for (const list of [args.reactions, args.situations, args.options, args.optionals, args.eitherCosts, args.splits, args.chain, args.raisers, ...(args.chain ?? [])]) {
     if ((list?.length ?? 0) > MAX_LIST) throw appError("INVALID", `At most ${MAX_LIST} entries per list.`);
   }
 }
@@ -162,6 +169,19 @@ export const useFeature = keyedGmMutation({
       checkArgs(args);
       return adversaryAction(ctx, ctx.campaign, ctx.user, args);
     }),
+});
+
+/**
+ * Lane E7, round 2 (dcm-idz; user answer 2026-10-31): a GM-controlled PC (the `GM-controlled` tag: Enthralled, HF p.92;
+ * Weredrake Curse, HF p.143) attacks like an adversary: d20 + the weapon's trait (or the stat block's ATK under the
+ * Weredrake's) against other PCs' Evasion (a reaction window, this PC the attacker) or adversaries' Difficulty (a GM damage
+ * prompt). Refusals: NOT_FOUND, INVALID (not GM-controlled, no weapon), COMBAT_TARGET_INVALID. GM only, keyed, `roll`.
+ */
+export const gmControlledAttack = keyedGmMutation({
+  rateLimit: "roll",
+  args: { characterId: v.id("characters"), targets: v.array(v.string()), weapon: v.optional(v.union(v.literal("primary"), v.literal("secondary"))) },
+  returns: resolvedActionValidator,
+  handler: async (ctx, args) => ctx.once("adversary_gm_controlled", args, async () => gmControlledAttackOf(ctx, ctx.campaign, ctx.user, args)),
 });
 
 const targetAskValidator = v.union(
@@ -424,6 +444,12 @@ export const pending = campaignQuery({
       armorAnswered: v.optional(v.boolean()),
       /** SD4 (Q2): a before-roll prompt (nothing rolled yet): a feature's Use, or Pass. */
       preRoll: v.optional(v.boolean()),
+      /**
+       * Lane E7, round 2 (dcm-5cn5; widened, absent = none): answers the attacker grants the hit PC (Money Talks, CB p.228:
+       * "spend a handful of gold instead of marking HP"). E2's window fills it; `respond` takes the answer through
+       * `hitChoiceValidator` (validators/combatRequests.ts).
+       */
+      grants: v.optional(v.array(v.object({ id: v.string(), label: v.string(), amount: v.optional(v.number()) }))),
     }),
   ),
   handler: async (ctx, { characterId }) => {

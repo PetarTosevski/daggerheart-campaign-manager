@@ -165,8 +165,10 @@ const stronger = (a: ResistanceLevel, b: ResistanceLevel) => (LEVELS.indexOf(b) 
  * AA2b (beads dcm-vv2 7 / 9, dcm-yle): `extra` carries what the use knows: the trigger's amount (My Turn's Fear,
  * Summoning Ritual's tick), the latest roll (To Me, My Pretties' summon count) and the target counts (Endless Legions).
  */
-export function adversaryNumberEnv(s: Pick<AdversaryState, "hp" | "stress" | "tokens">, tier: 1 | 2 | 3 | 4, gmFear = 0, extra: Partial<Pick<NumberEnv, "triggerAmount" | "lastRoll" | "targetCount">> = {}): NumberEnv {
+export function adversaryNumberEnv(s: Pick<AdversaryState, "hp" | "stress" | "tokens">, tier: 1 | 2 | 3 | 4, gmFear = 0, extra: Partial<Pick<NumberEnv, "triggerAmount" | "lastRoll" | "targetCount" | "creatures">> = {}): NumberEnv {
   return {
+    // Plan lanes-2, lane E7 (dcm-8rh, dcm-ttz): the live map's creatures for `creatureCount`.
+    ...(extra.creatures ? { creatures: extra.creatures } : {}),
     ...(extra.triggerAmount !== undefined ? { triggerAmount: extra.triggerAmount } : {}),
     ...(extra.lastRoll !== undefined ? { lastRoll: extra.lastRoll } : {}),
     traits: { agility: 0, strength: 0, finesse: 0, instinct: 0, presence: 0, knowledge: 0 },
@@ -361,7 +363,15 @@ export type AdversaryEvent =
   /** A PC would deal (or dealt) damage to a creature `band` from this adversary. */
   | { kind: "pcDealsDamage"; band?: Range; stage: "would" | "did" }
   /** The PCs finished a rest. */
-  | { kind: "pcsRest"; rest: "short" | "long" };
+  | { kind: "pcsRest"; rest: "short" | "long" }
+  /**
+   * Plan lanes-2, lane E7 (dcm-xobk): a PC escaped what this adversary put on them (Encumber's bramble tokens, CB p.218:
+   * "All bramble tokens can be removed by succeeding on a Finesse Roll (12 + the number of bramble tokens)"; Drain and
+   * Multiply spawns a Minion per token removed). `tokens`: how many came off, `name` their name, `condition` the condition
+   * escaped. No `AdversaryTrigger` matches it yet: the trigger kind is a vocabulary gap (filed for V3); until then
+   * `matchesTrigger` answers false (kinds differ) and the GM fires the reaction by hand with `trigger.amount` = `tokens`.
+   */
+  | { kind: "pcEscapes"; tokens: number; name?: string; condition?: string; band?: Range };
 
 const SEV: readonly Severity[] = ["minor", "major", "severe"];
 const atLeast = (sev: Severity | undefined, min: Severity | undefined) => min === undefined || (sev !== undefined && SEV.indexOf(sev) >= SEV.indexOf(min));

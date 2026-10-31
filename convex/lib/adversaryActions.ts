@@ -21,6 +21,8 @@ import { ConvexError } from "convex/values";
 
 import { pickAdversaryUse, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFear, type AdversaryPlan, type AdversaryPlanStep, type AdversaryRunContext } from "../../src/lib/domain/adversary-effects/run";
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
+import { adversaryAttack, adversaryDamage, gmControlledWeaponAttack } from "../../src/lib/domain/adversary-actions/attack";
+import { getWeapon } from "../../src/lib/srd/index";
 import { actorWithSubject, featureReady, keptDie, passiveSummary, pcTarget, preRollFits, splitTargetDisadvantage, type AdversaryEvent } from "../../src/lib/domain/adversary-actions/index";
 import { runFeature } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
@@ -37,15 +39,22 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import {
+  GM_CONTROLLED,
+  gmControlOf,
+  adversaryInstanceEffect,
   adversaryOnlyPrompts,
   adversaryState,
+  attackedRidersOn,
   beforeOf,
   blockOf,
   instanceModifiers,
   instanceUses,
   isAttackUse,
+  instanceBearerRiders,
   loadActor,
+  mapCreatures,
   optionalIds,
+  riderStepsText,
   ridersOf,
   runOrThrow,
   selfCombatant,
@@ -82,7 +91,7 @@ import {
 import { rollDie } from "./dice";
 import type { ActionTarget, AdversaryBefore, StoredRoll } from "./validators/actionLog";
 import type { CombatResponse, HitRider, PreRollPayload } from "./validators/combatRequests";
-import { ENCOUNTER_CONDITIONS, type EncounterCondition } from "./validators/encounters";
+import { ENCOUNTER_CONDITIONS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
 
 // The stat block, limits, riders and the runner's helpers moved to ./adversaryFeatures.ts (AA2c, CH9); same names here.
 export { adversaryOnlyPrompts, adversaryState, beforeOf, blockOf, instanceUses, ridersOf, selfCombatant, type Block, type Prompt } from "./adversaryFeatures";
@@ -91,6 +100,8 @@ export { adversaryOnlyPrompts, adversaryState, beforeOf, blockOf, instanceUses, 
 export const MAX_ACTION_TARGETS = 20;
 /** The most Minions a Group Attack counts. */
 const MAX_GROUP = 30;
+/** Lane E7, round 2: the most further links of a repeating follow-up (Rip & Tear) one action takes. */
+const MAX_CHAIN = 10;
 
 const ENCOUNTER_SET = new Set<string>(ENCOUNTER_CONDITIONS);
 
@@ -200,6 +211,8 @@ class Work {
   readonly prompts: Prompt[] = [];
   readonly gm: string[] = [];
   readonly spotlit = new Set<string>();
+  /** Lane E7, round 2 (dcm-gx3): the modifiers of itself and its allies after the plans' `effect` steps on them, by instance id. */
+  readonly instanceEffects = new Map<string, InstanceEffect[]>();
   /** The instance's limited uses this scene (the runs' `featureUses`), and the ones this action recorded. */
   readonly baseUses: FeatureUse[];
   readonly addedUses: FeatureUse[] = [];
@@ -280,6 +293,25 @@ class Work {
       }
       const ally = this.encounterInstances.find((a) => a._id === c.id);
       if (ally) this.allies.set(c.id, { instance: ally, after: c.after });
+    }
+    // Lane E7, round 2 (dcm-gx3): an `effect` on itself or an ally (Enraged's +1 Difficulty, Claw Swipe and the feature
+    // swap, HF p.65) becomes an instance modifier the engine reads.
+    for (const s of plan.steps) {
+      if (s.kind !== "effect") continue;
+      const owner = s.targetId === this.instance._id ? this.instance : this.encounterInstances.find((a) => a._id === s.targetId);
+      if (owner === undefined) continue;
+      const current = this.instanceEffects.get(owner._id) ?? owner.effects ?? [];
+      this.instanceEffects.set(owner._id, adversaryInstanceEffect(current, plan.adversaryId, plan.feature, s));
+    }
+    // Lane E7, round 2 (dcm-iedr): what a condition's entry adds that the stored condition can't hold yet, for the GM.
+    for (const d of plan.conditionDetails) {
+      const name = d.condition.kind === "standard" ? d.condition.condition : d.condition.tag;
+      const ends = [
+        ...(d.endsOnCaster ?? []).map((e) => `${this.instance.label} ${e === "takeSevere" ? "takes Severe damage" : e === "majorDamage" ? "takes Major damage or more" : e}`),
+        ...(d.endsOnRoll ? [`${d.endsOnRoll.by === "caster" ? this.instance.label : "they"} make ${d.endsOnRoll.roll === "any" ? "a" : `a ${d.endsOnRoll.roll}`} roll${d.endsOnRoll.result && d.endsOnRoll.result !== "any" ? ` (${d.endsOnRoll.result})` : ""}`] : []),
+      ];
+      if (ends.length > 0) this.gm.push(`${name} on ${this.nameOf(d.targetId)} ends when ${ends.join(" or ")}`);
+      if (d.escape) this.gm.push(`${name} on ${this.nameOf(d.targetId)}: they can try to escape`);
     }
     // Conditions, effects and Hope on PCs (Restrained on a hit, a sheet effect), with the feature as the effect's source.
     const cardSteps = plan.steps.filter((s): s is PlanStep => s.kind !== "summon" && s.kind !== "countdown" && s.kind !== "spotlight");
@@ -365,7 +397,8 @@ class Work {
 async function commit(ctx: MutationCtx, w: Work, log: { campaignId: Id<"campaigns">; actorId: Id<"users">; groupId: string }, spotlight: { gmTurn: number } | null): Promise<AdversaryBefore[]> {
   const now = Date.now();
   // AA2c: a recorded limited use goes into the before-state, so undo gives it back.
-  const before: AdversaryBefore[] = [{ ...beforeOf(w.instance), ...(w.addedUses.length > 0 ? { featureUses: w.instance.featureUses ?? [] } : {}) }];
+  const selfEffects = w.instanceEffects.get(w.instance._id);
+  const before: AdversaryBefore[] = [{ ...beforeOf(w.instance), ...(w.addedUses.length > 0 ? { featureUses: w.instance.featureUses ?? [] } : {}), ...(selfEffects ? { effects: w.instance.effects ?? [] } : {}) }];
   const s = w.selfAfter;
   const hp = Math.max(0, Math.min(w.instance.stats.hpMax, s.hp));
   await ctx.db.patch("encounterAdversaries", w.instance._id, {
@@ -375,12 +408,14 @@ async function commit(ctx: MutationCtx, w: Work, log: { campaignId: Id<"campaign
     conditions: [...new Set(s.conditions.filter((c): c is EncounterCondition => ENCOUNTER_SET.has(c)))],
     tags: [...new Set(s.tags ?? [])].slice(0, 20),
     tokens: Math.max(0, w.tokensAfter),
+    ...(selfEffects ? { effects: selfEffects } : {}),
     ...(w.addedUses.length > 0 ? { featureUses: storedUses(w.instance, w.encounter, w.block, w.addedUses, w.session) } : {}),
     ...(spotlight ? applySpotlight({ spotlights: w.instance.spotlights, spotlightTurn: w.instance.spotlightTurn }, spotlight.gmTurn) : {}),
     updatedAt: now,
   });
   for (const { instance, after } of w.allies.values()) {
-    before.push(beforeOf(instance));
+    const effects = w.instanceEffects.get(instance._id);
+    before.push({ ...beforeOf(instance), ...(effects ? { effects: instance.effects ?? [] } : {}) });
     const ahp = Math.max(0, Math.min(instance.stats.hpMax, after.hp));
     await ctx.db.patch("encounterAdversaries", instance._id, {
       hp: ahp,
@@ -388,8 +423,17 @@ async function commit(ctx: MutationCtx, w: Work, log: { campaignId: Id<"campaign
       defeated: ahp >= instance.stats.hpMax || (instance.defeated && after.defeated),
       conditions: [...new Set(after.conditions.filter((c): c is EncounterCondition => ENCOUNTER_SET.has(c)))],
       tags: [...new Set(after.tags ?? [])].slice(0, 20),
+      ...(effects ? { effects } : {}),
       updatedAt: now,
     });
+  }
+  // Lane E7, round 2 (dcm-gx3): an ally that only gained a modifier.
+  for (const [id, effects] of w.instanceEffects) {
+    if (id === w.instance._id || w.allies.has(id)) continue;
+    const instance = w.encounterInstances.find((a) => a._id === id);
+    if (!instance) continue;
+    before.push({ ...beforeOf(instance), effects: instance.effects ?? [] });
+    await ctx.db.patch("encounterAdversaries", instance._id, { effects, updatedAt: now });
   }
   // Group Attack (CB p.201): the other Minions are spotlighted with it.
   if (spotlight) {
@@ -441,6 +485,10 @@ export type ActionArgs = {
   picked?: string[];
   allies?: string[];
   followUp?: string[];
+  /** Lane E7, round 2 (dcm-e16o, dcm-7az): the creatures of each further link of a repeating follow-up (Rip & Tear). */
+  chain?: string[][];
+  /** Lane E7, round 2 (dcm-e16o, dcm-q0a): the allies who pay to raise a save's Difficulty (Enchanting Song's other Sirens). */
+  raisers?: string[];
   /** For a reaction or automatic use fired by hand: who set it off. */
   trigger?: { sourceId?: string; subjectId?: string; amount?: number };
   options?: { id: string; values: string[] }[];
@@ -560,7 +608,7 @@ function joinTargets(a: AdversaryPlan, b: AdversaryPlan, ids: ReadonlySet<string
 /** An attack holds for before-roll answers only with what `heldAttackValidator` keeps (no picks, splits or trigger). */
 function holdable(args: ActionArgs): boolean {
   const empty = (list: readonly unknown[] | undefined) => (list?.length ?? 0) === 0;
-  return args.trigger === undefined && empty(args.picked) && empty(args.allies) && empty(args.followUp) && empty(args.options) && empty(args.optionals) && empty(args.situations) && empty(args.eitherCosts) && empty(args.splits);
+  return args.trigger === undefined && empty(args.picked) && empty(args.allies) && empty(args.followUp) && empty(args.options) && empty(args.optionals) && empty(args.situations) && empty(args.eitherCosts) && empty(args.splits) && empty(args.chain) && empty(args.raisers);
 }
 
 /** One PC's before-roll defences that fit this attack (Q2): ready, affordable, the trigger's subjects within range. */
@@ -740,6 +788,24 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   const source = await byId(args.trigger?.sourceId);
   const subject = await byId(args.trigger?.subjectId);
   const group = use.groupAttack ? await groupOf(ctx, instance, others, self) : [];
+  // Lane E7, round 2 (dcm-e16o): the per-creature facts the card runner reads.
+  const raisers = (await resolveCreatures(ctx, base, args.raisers ?? [], false)).picks.filter((p) => p.kind === "adversary");
+  const chain: Combatant[][] = [];
+  for (const link of (args.chain ?? []).slice(0, MAX_CHAIN)) chain.push((await resolveCreatures(ctx, base, link, false)).picks.map((p) => p.combatant));
+  const firstPcTarget = targets.picks.find((p): p is PcPick => p.kind === "pc");
+  const creatures = mapCreatures(
+    instance._id,
+    [instance, ...others.filter((a) => a._id !== instance._id)],
+    scene.party,
+    scene.map ? { tokens: scene.map.scene.tokens, self: scene.map.selfToken, ...(firstPcTarget?.token ? { target: firstPcTarget.token } : {}) } : null,
+  );
+  // dcm-xyw / dcm-yd5h: riders on attacks against what each PC target carries (Mark Target, Chokehold's Vulnerable).
+  const attackedRiders: Record<string, ReturnType<typeof attackedRidersOn>> = {};
+  for (const p of targets.picks) {
+    if (p.kind !== "pc") continue;
+    const riders = attackedRidersOn(p.member.sheet, block.adversaryId);
+    if (riders.length > 0) attackedRiders[p.member.character._id] = riders;
+  }
 
   const context: AdversaryRunContext = {
     adversaryId: block.adversaryId,
@@ -770,6 +836,11 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     attackDiceOnAttacks: true,
     passives,
     instance: instanceModifiers(instance),
+    hopeOf: Object.fromEntries(scene.party.map((m) => [m.character._id, m.sheet.hope])),
+    creatures,
+    ...(raisers.length ? { saveRaisers: raisers.map((p) => p.combatant) } : {}),
+    ...(chain.length ? { chain } : {}),
+    ...(Object.keys(attackedRiders).length > 0 ? { attackedRiders } : {}),
     rng: rollDie,
   };
   // DA1: the runner reads the whole roll's die; a target that keeps a lower one meets its Evasion raised by the difference,
@@ -794,6 +865,10 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   // The stored roll (SD4 follow-up): a Drained attacker's dice are d12s; a second die only some targets read is listed.
   const roll = plan.roll && attack ? attackRecord(plan.roll.record, drained, residual.size > 0 ? second : null) : (plan.roll?.record ?? null);
   w.absorb(plan, featureName);
+  // Lane E7, round 2 (dcm-mm0f, adversary bearer; dcm-f0m, dcm-bxp.99.19.3): riders on what it carries fire when it acts
+  // (On Fire, Poisoned: "each time they act") or attacks; the GM applies their steps.
+  const firing = instanceBearerRiders(instance, [...(needsSpotlight ? (["acts"] as const) : []), ...(attack ? (["attack"] as const) : [])]);
+  for (const r of firing) w.prompts.push({ kind: "manual", text: `${r.label} (${r.source}): ${label} ${r.rider.on === "acts" ? "acts" : "attacks"}: ${riderStepsText(r.rider.steps)}` });
   // DA1: each hit carries its target's own attack total (the window compares Evasion answers with it).
   if (plan.roll && residual.size > 0) {
     const modifier = plan.roll.record.total - natural;
@@ -1239,4 +1314,115 @@ export async function replayHeld(ctx: MutationCtx, row: PreRollRow, by: Id<"user
 async function calledOff(ctx: MutationCtx, row: PreRollRow, by: Id<"users">, code: string) {
   await logAction(ctx, { campaignId: row.campaignId, actorId: row.createdBy, kind: "adversary", visibility: "gm", summary: `${row.payload.attacker.label}'s held attack was called off (${code})`, groupId: row.payload.groupId, undoable: false });
   await closeRequest(ctx, row._id, "declined", by);
+}
+
+// ---------------------------------------------------------------- a GM-controlled PC (lanes-2, E7; dcm-idz)
+
+export type GmControlArgs = { characterId: Id<"characters">; targets: string[]; weapon?: "primary" | "secondary" };
+
+/**
+ * Lane E7, round 2 (dcm-idz; user answer 2026-10-31: "the GM moves the token and attacks with it using a d20 + the PC's
+ * weapon like an adversary; Weredrake swaps to the Weredrake stat block until it ends"). The PC must carry the
+ * `GM-controlled` tag or a `gmControl` mod (`gmControlOf`). One d20 + the weapon's trait (or, under a stat block, its ATK)
+ * against each target: other party PCs (their Evasion; a hit opens the usual reaction window with this PC as attacker)
+ * or adversary instances of the running encounter (their Difficulty; the damage is a GM prompt, applied in the tracker).
+ * Spotlight and token moves stay the GM's (the control UI waits for the combat UI design, dcm-bxp.99.32). Refusals:
+ * NOT_FOUND (not a party PC), INVALID (not GM-controlled, no weapon), COMBAT_TARGET_INVALID.
+ */
+export async function gmControlledAttack(ctx: MutationCtx, campaign: Doc<"campaigns">, user: Doc<"users">, args: GmControlArgs): Promise<ActionResult> {
+  const party = await partyMembers(ctx, campaign._id);
+  const member = party.find((m) => m.character._id === args.characterId);
+  if (!member) throw appError("NOT_FOUND");
+  const control = gmControlOf(member.sheet);
+  if (control === null) throw appError("INVALID", "That character is not under the GM's control.");
+  if (args.targets.length === 0 || args.targets.length > MAX_ACTION_TARGETS) throw appError("COMBAT_TARGET_INVALID");
+
+  type Target = { id: string; evasion: number; pc?: PartyMember; instance?: Doc<"encounterAdversaries"> };
+  const targets: Target[] = [];
+  let encounter: Doc<"encounters"> | null = null;
+  for (const raw of args.targets) {
+    const characterId = ctx.db.normalizeId("characters", raw);
+    const instanceId = ctx.db.normalizeId("encounterAdversaries", raw);
+    if (characterId) {
+      const pc = party.find((m) => m.character._id === characterId);
+      if (!pc || pc.character._id === member.character._id) throw appError("COMBAT_TARGET_INVALID");
+      if (!targets.some((t) => t.id === pc.character._id)) targets.push({ id: pc.character._id, evasion: pcCombatant(pc.character._id, pc.sheet).evasion ?? 0, pc });
+    } else if (instanceId) {
+      const instance = await ctx.db.get("encounterAdversaries", instanceId);
+      if (instance === null || instance.campaignId !== campaign._id || instance.defeated) throw appError("COMBAT_TARGET_INVALID");
+      encounter ??= await ctx.db.get("encounters", instance.encounterId);
+      if (encounter === null || encounter._id !== instance.encounterId || encounter.status !== "running") throw appError("COMBAT_TARGET_INVALID");
+      const difficulty = instance.stats.difficulty + (instance.effects ?? []).reduce((s, e) => s + (e.difficulty ?? 0), 0);
+      if (!targets.some((t) => t.id === instance._id)) targets.push({ id: instance._id, evasion: difficulty, instance });
+    } else throw appError("COMBAT_TARGET_INVALID");
+  }
+
+  // The roll: the stat block's ATK and standard attack (Weredrake), else d20 + the weapon's trait and its damage.
+  const sheet = member.sheet;
+  let rolled: { attack: ReturnType<typeof gmControlledWeaponAttack>["attack"]; damage: string };
+  let weaponName: string;
+  if (control.asAdversary) {
+    const def = control.asAdversary;
+    rolled = { attack: adversaryAttack(def.attack.modifier, {}, 0, targets, rollDie), damage: def.attack.damage };
+    weaponName = `${def.name}: ${def.attack.name}`;
+  } else {
+    const weapon = getWeapon((args.weapon === "secondary" ? sheet.secondaryWeaponId : sheet.primaryWeaponId) ?? "");
+    if (!weapon) throw appError("INVALID", "That character has no such weapon.");
+    const trait = weapon.trait === "choice" ? Math.max(...Object.values(sheet.traits)) : sheet.traits[weapon.trait];
+    rolled = gmControlledWeaponAttack(trait, weapon.damage, sheet.proficiency, targets, rollDie);
+    weaponName = weapon.name;
+  }
+  const { attack } = rolled;
+
+  const groupId = newGroupId();
+  const log = { campaignId: campaign._id, actorId: user._id, groupId };
+  const name = sheet.name;
+  const hitIds = new Set(attack.hits.filter((h) => h.hit).map((h) => h.id));
+  const prompts: Prompt[] = [];
+  const gmLines = [`${name} (${GM_CONTROLLED}) ${weaponName}: ${words(attack.record)}${attack.critical ? " critical" : ""} vs ${targets.map((t) => `${t.pc?.sheet.name ?? t.instance?.label ?? "?"} ${t.evasion}: ${hitIds.has(t.id) ? "hit" : "miss"}`).join(", ")}`];
+  const damages = new Map<string, NonNullable<ReturnType<typeof adversaryDamage>>>();
+  for (const t of targets) {
+    if (!hitIds.has(t.id)) continue;
+    const dmg = adversaryDamage(rolled.damage, attack.targets.find((x) => x.id === t.id)?.critical ?? false, rollDie);
+    if (!dmg) continue;
+    damages.set(t.id, dmg);
+    if (t.instance) prompts.push({ kind: "manual", text: `${t.instance.label} takes ${dmg.record.total} ${dmg.type} damage from ${name}` });
+  }
+  const entryId = await logAction(ctx, { ...log, kind: "adversary", visibility: "gm", summary: [...gmLines, ...prompts.map((p) => `${p.kind}: ${p.text}`)].join("; "), roll: attack.record, undoable: true });
+  const hitNames = targets.filter((t) => hitIds.has(t.id)).map((t) => t.pc?.sheet.name ?? t.instance?.label ?? "?");
+  const missNames = targets.filter((t) => !hitIds.has(t.id)).map((t) => t.pc?.sheet.name ?? t.instance?.label ?? "?");
+  await logAction(ctx, { ...log, kind: "adversary", visibility: "public", summary: `${name} (${GM_CONTROLLED}) attacked: ${[hitNames.length ? `hit ${hitNames.join(", ")}` : "", missNames.length ? `missed ${missNames.join(", ")}` : ""].filter(Boolean).join("; ")}`, undoable: true });
+
+  const map = await liveCombatMap(ctx, campaign._id);
+  const bands = await bandsOnMap(ctx, map?._id);
+  const tokens = map ? await tokensOnMap(ctx, map._id) : [];
+  const outcomes: TargetOutcome[] = [];
+  for (const t of targets) {
+    const dmg = damages.get(t.id);
+    if (t.instance) {
+      outcomes.push({ instanceId: t.instance._id, hit: hitIds.has(t.id), resolved: true, ...(dmg ? { damage: dmg.record.total } : {}) });
+      continue;
+    }
+    if (!t.pc || !dmg) {
+      if (t.pc) outcomes.push({ characterId: t.pc.character._id, hit: false, resolved: true });
+      continue;
+    }
+    const targetId = t.pc.character._id;
+    const token = tokens.find((x) => x.ref.kind === "pc" && x.ref.characterId === targetId);
+    const { requestId, resolution } = await openIncomingHit(ctx, {
+      campaignId: campaign._id,
+      ...(encounter ? { encounterId: encounter._id } : {}),
+      ...(map ? { mapId: map._id } : {}),
+      createdBy: user._id,
+      groupId,
+      attacker: { kind: "pc", characterId: member.character._id, label: name, cardId: "gm-control", feature: weaponName },
+      targetCharacterId: targetId,
+      ...(token ? { targetTokenId: token._id } : {}),
+      hit: { amount: dmg.record.total, type: dmg.type, direct: dmg.direct, forcedArmor: 0, critical: attack.targets.find((x) => x.id === t.id)?.critical ?? false },
+      party: await partyMembers(ctx, campaign._id),
+      bands,
+    });
+    outcomes.push({ characterId: targetId, hit: true, requestId, damage: dmg.record.total, resolved: resolution !== null, ...(resolution?.deathMove ? { deathMove: true } : {}) });
+  }
+  return { status: "resolved", groupId, entryId, roll: attack.record, success: hitIds.size > 0, targets: outcomes, fearDelta: 0, prompts, offers: [] };
 }

@@ -264,3 +264,19 @@ export function standardAttackDamage(
 export function groupAttackDamage(x: number, groupSize: number): number {
   return Math.max(0, x) * Math.max(0, Math.trunc(groupSize));
 }
+
+/**
+ * Plan lanes-2, lane E7 (dcm-idz; user answer 2026-10-31): a GM-controlled PC (Enthralled, HF p.92: "you can spotlight
+ * them during a GM turn as if they were an adversary … makes a weapon attack against them using a d20 instead of Duality
+ * Dice") attacks like an adversary: one d20 + the weapon's trait against each target's Evasion or Difficulty, a natural 20
+ * hits and crits (CB p.148). The damage text is the weapon's with the PC's Proficiency as its dice count (CB, Damage Rolls: "you roll a
+ * number of your weapon's damage dice equal to your Proficiency"): "d8+1 phy" at Proficiency 2 is "2d8+1 phy".
+ *
+ * ```ts
+ * gmControlledWeaponAttack(2, "d8+1 phy", 2, [{ id: "mira", evasion: 12 }], rng); // d20 + 2 vs 12; damage "2d8+1 phy"
+ * ```
+ */
+export function gmControlledWeaponAttack(trait: number, weaponDamage: string, proficiency: number, targets: readonly EvasionTarget[], rng: Rng): { attack: AdversaryAttackResult; damage: string } {
+  const damage = weaponDamage.trim().replace(/^(\d*)d/, `${Math.max(1, Math.trunc(proficiency))}d`);
+  return { attack: adversaryAttack(trait, {}, 0, targets, rng), damage };
+}

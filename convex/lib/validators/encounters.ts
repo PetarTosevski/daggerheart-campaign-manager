@@ -85,6 +85,16 @@ export const instanceEffectValidator = v.object({
   halfDamage: v.optional(v.boolean()),
   /** Goad Them On: its next attack is made with disadvantage. */
   disadvantage: v.optional(v.boolean()),
+  /**
+   * Plan lanes-2, lane E7 (dcm-gx3; widened, absent = none): Evolution (HF p.61). `standardAttack` replaces the stat
+   * block's standard attack while the modifier lasts (Enraged Mountain Troll's "Claw Swipe: Very Close | 1d10+3 phy",
+   * HF p.65; Vampire Lord Hellwing's Claws, HF p.88); `range` and `damage` in the stat block's printed form.
+   * `featuresRemoved` / `featuresAdded`: printed feature names the instance loses / gains ("loses their Stolen Armor and
+   * Flail Swipe features … gain the Double Swipe feature"). Adding optional fields is a widen only: no stored row changes.
+   */
+  standardAttack: v.optional(v.object({ name: v.string(), range: v.string(), damage: v.string() })),
+  featuresRemoved: v.optional(v.array(v.string())),
+  featuresAdded: v.optional(v.array(v.string())),
   until: v.union(...INSTANCE_EFFECT_UNTIL.map((u) => v.literal(u))),
 });
 export type InstanceEffect = Infer<typeof instanceEffectValidator>;
