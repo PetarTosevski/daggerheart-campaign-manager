@@ -163,7 +163,8 @@ describe("per-target memory (Words of Discord, CB p.335: 'The next time you cast
     const key = "card:words-of-discord";
     let uses = recordUsedOn([], key, "adv-1");
     uses = recordUsedOn(uses, key, "adv-1");
-    expect(uses).toEqual([{ key: usedOnKey(key, "adv-1"), until: "session" }]);
+    // Wave 9 E5.3 (dcm-pg8x): the memory lasts the whole campaign.
+    expect(uses).toEqual([{ key: usedOnKey(key, "adv-1"), until: "campaign" }]);
     expect(usedOnBefore({ featureUses: uses }, key, "adv-1")).toBe(true);
     expect(usedOnBefore({ featureUses: uses }, key, "adv-2")).toBe(false);
     expect(recordUsedOn([], key, "adv-1", "longRest")).toEqual([{ key: usedOnKey(key, "adv-1"), until: "longRest" }]);
@@ -181,21 +182,21 @@ describe("limits", () => {
     expect(limitLabel({ per: "session", period: "day" })).toBe("Once per day");
   });
 
-  it("round 2: limitUntil / featureLimitUntil take the Limit; a period expire does not end yet keeps per (dcm-55k)", () => {
-    // Resurrection (CB p.341: "you can't cast Resurrection again for a week"): nothing ends `week` entries yet.
+  it("round 2: limitUntil / featureLimitUntil take the Limit; since wave 9 (dcm-bc67) they store the real period", () => {
+    // Resurrection (CB p.341: "you can't cast Resurrection again for a week"): `expire` ends `week` (dcm-55k).
     const resurrection: Limit = { per: "session", period: "week", consumedOn: "failure" };
-    expect(limitUntil(resurrection)).toBe("session");
-    expect(featureLimitUntil(resurrection)).toBe("session");
-    expect(recordUse([], "card:resurrection", resurrection)).toEqual([{ key: "card:resurrection", until: "session" }]);
+    expect(limitUntil(resurrection)).toBe("week");
+    expect(featureLimitUntil(resurrection)).toBe("week");
+    expect(recordUse([], "card:resurrection", resurrection)).toEqual([{ key: "card:resurrection", until: "week" }]);
     // Summon Tormentors (CB p.237: "Once per day") and Ravenous (HF p.97: "Once per GM turn") likewise.
-    expect(featureLimitUntil({ per: "session", period: "day" })).toBe("session");
-    expect(featureLimitUntil({ per: "scene", period: "gmTurn" })).toBe("scene");
-    expect(limitUntil({ per: "scene", period: "gmTurn" })).toBe("session");
+    expect(featureLimitUntil({ per: "session", period: "day" })).toBe("day");
+    expect(featureLimitUntil({ per: "scene", period: "gmTurn" })).toBe("gmTurn");
+    expect(limitUntil({ per: "scene", period: "gmTurn" })).toBe("gmTurn");
     // Without a period, the Limit and its `per` store the same; cards keep scene as session.
     expect(limitUntil({ per: "longRest" })).toBe("longRest");
     expect(limitUntil({ per: "scene" })).toBe(limitUntil("scene"));
     expect(featureLimitUntil({ per: "scene" })).toBe("scene");
-    expect(EXPIRING_UNTIL).toEqual(["rest", "longRest", "session", "scene"]);
+    expect([...EXPIRING_UNTIL].sort()).toEqual(["day", "gmTurn", "longRest", "rest", "scene", "session", "week"]);
     // Every stored period has a label and an order (an entry already stored with `week` still reads right).
     expect(keyAvailability({ featureUses: [{ key: "k", until: "rest" }, { key: "k", until: "week" }] }, "k")).toEqual({
       state: "exhausted",

@@ -41,6 +41,7 @@
 // Words of Discord's memory lasts the whole campaign (`USED_ON_EVER`, user answer 2026-10-31, dcm-c75).
 
 import type { FeatureUse } from "../../validation/characters";
+import { EXPIRING_FEATURE_USES } from "../characters/expiry";
 import { RANGE_SQUARES } from "../combat-map/ranges";
 import type { ConditionRef, Cost, FeatureOptionRef, HeldDieKind, Limit, Mod, Payer, Range, Requirement, StateCheck, TokenPool, Track } from "./types";
 import type { DomainId } from "../../srd/types";
@@ -56,22 +57,19 @@ export function featureUseKey(cardId: string, useId?: string, targetId?: string)
 }
 
 /**
- * Plan lanes, E5 round 2 (dcm-55k): the `featureUses` periods that `expire` (characters/expiry.ts) ends today. The
- * validator stores `gmTurn`, `day` and `week` since the widen, but nothing ends them yet, so a limit naming one of those
- * periods keeps its `per` fallback here: a stored "week" would never come back on its own. A period joins this list in
- * the same change that makes `expire` end it (follow-up for E6; QUESTION 1 in TASK-LN-E5.md for days and weeks).
+ * The `featureUses` periods that `expire` (characters/expiry.ts) ends: every limit period since dcm-55k (E6 fires
+ * `gmTurn`, campaign time fires `day` / `week`). Plan lanes-2 wave 9, E5.3 (dcm-bc67): a limit is stored with its real
+ * period (`limitPeriod`); `campaign` is not here, `expire` never ends it.
  */
-export const EXPIRING_UNTIL: readonly FeatureUse["until"][] = ["rest", "longRest", "session", "scene"];
+export const EXPIRING_UNTIL: readonly FeatureUse["until"][] = EXPIRING_FEATURE_USES;
 
-/** The period a limit (or a bare `per`, the callers' older form) is stored for: `limitPeriod` when it expires, else `per`. */
+/** The period a limit (or a bare `per`, the callers' older form) is stored for: `limitPeriod` (dcm-bc67). */
 function storedPeriod(limit: Limit | Limit["per"]): FeatureUse["until"] {
-  if (typeof limit === "string") return limit;
-  const period = limitPeriod(limit);
-  return EXPIRING_UNTIL.includes(period) ? period : limit.per;
+  return typeof limit === "string" ? limit : limitPeriod(limit);
 }
 
 /**
- * The `until` a card's limit is stored with: its period (`limitPeriod`) when `expire` ends it, else `per`. A "once per
+ * The `until` a card's limit is stored with: its period (`limitPeriod`). A "once per
  * scene" limit is stored as `session` (cards keep `session` until their tables move over; see the task doc's
  * QUESTIONS). Takes the `Limit` (E5 round 2) or, as before, its `per`.
  */
@@ -81,16 +79,16 @@ export function limitUntil(limit: Limit | Limit["per"]): FeatureUse["until"] {
 }
 
 /**
- * The `until` a feature's limit is stored with (SD1, Q3, Q7): the limit's own period when `expire` ends it, `scene`
- * included ("once per scene"; CB p.107: "a scene continues until the current narrative situation has played out"),
- * else `per`. Takes the `Limit` (E5 round 2) or, as before, its `per`.
+ * The `until` a feature's limit is stored with (SD1, Q3, Q7): the limit's own period (`limitPeriod`), `scene`
+ * included ("once per scene"; CB p.107: "a scene continues until the current narrative situation has played out").
+ * Takes the `Limit` (E5 round 2) or, as before, its `per`.
  */
 export function featureLimitUntil(limit: Limit | Limit["per"]): FeatureUse["until"] {
   return storedPeriod(limit);
 }
 
 /** The label of an exhausted card (CA5 Hand, CA7 sheet), for every period `featureUses` stores. */
-export const RESET_LABEL: Record<FeatureUse["until"] | typeof CAMPAIGN_UNTIL, string> = {
+export const RESET_LABEL: Record<FeatureUse["until"], string> = {
   rest: "Back after a rest",
   longRest: "Back after a long rest",
   session: "Back next session",
@@ -99,7 +97,7 @@ export const RESET_LABEL: Record<FeatureUse["until"] | typeof CAMPAIGN_UNTIL, st
   gmTurn: "Back after the GM's turn",
   day: "Back tomorrow",
   week: "Back in a week",
-  // Plan lanes-2, E5 (dcm-c75): a campaign-long entry, once `featureUses` stores it (`USED_ON_EVER`).
+  // Plan lanes-2, E5 (dcm-c75, dcm-pg8x): a campaign-long entry (`USED_ON_EVER`); nothing ends it.
   campaign: "Not again this campaign",
 };
 
@@ -137,7 +135,7 @@ export function keyAvailability(sheet: { readonly featureUses?: readonly Feature
   const entries = (sheet.featureUses ?? []).filter((u) => u.key === key);
   const times = Math.max(1, limit?.times ?? 1);
   if (entries.length < times) return limit?.times ? { state: "ready", usesLeft: times - entries.length } : { state: "ready" };
-  const order: (FeatureUse["until"] | typeof CAMPAIGN_UNTIL)[] = ["gmTurn", "scene", "rest", "longRest", "session", "day", "week", CAMPAIGN_UNTIL];
+  const order: FeatureUse["until"][] = ["gmTurn", "scene", "rest", "longRest", "session", "day", "week", CAMPAIGN_UNTIL];
   const until = entries.map((e) => e.until).reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a));
   return { state: "exhausted", until, label: RESET_LABEL[until] };
 }
@@ -157,9 +155,9 @@ export function recordUse(featureUses: readonly FeatureUse[], key: string, limit
 /**
  * Plan lanes, E5 (dcm-aym, dcm-c5h): the period a limit really runs for: its `period` (a GM turn, a day, a week) when it
  * names one, else `per`. `featureUses` stores every one of them since the validator widen; `limitUntil` /
- * `featureLimitUntil` store it once `expire` ends it (`EXPIRING_UNTIL`).
+ * `featureLimitUntil` store it (dcm-bc67: `expire` ends every one, `EXPIRING_UNTIL`).
  */
-export function limitPeriod(limit: Limit): FeatureUse["until"] {
+export function limitPeriod(limit: Limit): Limit["per"] | NonNullable<Limit["period"]> {
   return limit.period ?? limit.per;
 }
 
@@ -442,15 +440,14 @@ export function usedOnBefore(sheet: { readonly featureUses?: readonly FeatureUse
 }
 
 /** The `until` of an entry nothing ends (dcm-c75): `expire` (characters/expiry.ts) ends only the periods it lists. */
-export const CAMPAIGN_UNTIL = "campaign" as const;
+export const CAMPAIGN_UNTIL = "campaign" as const satisfies FeatureUse["until"];
 
 /**
  * Plan lanes-2, E5 (dcm-c75; user answer 2026-10-31: Words of Discord remembers a target "for the WHOLE CAMPAIGN: every
- * later cast on a creature it has hit takes -5"): the `until` a memory without `since` is stored with. It becomes
- * `CAMPAIGN_UNTIL` once `FEATURE_USE_UNTIL` (src/lib/validation/characters.ts) gains "campaign"; until that widen
- * (follow-up in TASK-LN2-E5.md) it is the longest period the validator takes, `session`. The widen flips this one line.
+ * later cast on a creature it has hit takes -5"): the `until` a memory without `since` is stored with, `CAMPAIGN_UNTIL`
+ * since `FEATURE_USE_UNTIL` (src/lib/validation/characters.ts) gained "campaign" (wave 9, E5.3, dcm-pg8x).
  */
-export const USED_ON_EVER: FeatureUse["until"] = "session";
+export const USED_ON_EVER: FeatureUse["until"] = CAMPAIGN_UNTIL;
 
 /**
  * `featureUses` remembering that `key` affected `targetId` until `since` ends. Without `since` the memory lasts the

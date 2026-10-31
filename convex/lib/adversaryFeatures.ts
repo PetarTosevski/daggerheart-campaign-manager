@@ -281,7 +281,8 @@ export function storedUses(instance: Doc<"encounterAdversaries">, encounter: Doc
     const limit = limitOf(block, u.key);
     return {
       key: limit?.period === "gmTurn" ? `${u.key}${GM_TURN_MARK}${encounter.gmTurn}` : u.key,
-      until: u.until === "scene" ? ("session" as const) : u.until,
+      // Wave 9 E5.3 (dcm-pg8x): a sheet's campaign-long memory has no instance period; an instance lasts the encounter.
+      until: u.until === "scene" || u.until === "campaign" ? ("session" as const) : u.until,
       scene,
       ...(session !== undefined && limit?.per === "session" ? { session } : {}),
     };

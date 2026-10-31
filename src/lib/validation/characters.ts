@@ -93,9 +93,10 @@ export const HELD_DIE_UNTIL = ["session", "longRest", "manual"] as const;
 /**
  * When a used "once per X" feature comes back. `scene` (plan sheet-drawer SD0, Q7, dcm-bxp.117; widened, no version
  * bump): "once per scene" limits, cleared when the scene ends (the GM ends the encounter or presses End scene, or the
- * session ends).
+ * session ends). `campaign` (plan lanes-2 wave 9, E5.3, dcm-pg8x; widened, no version bump, old rows stay valid): an
+ * entry nothing ends, Words of Discord's per-target memory (user answer 2026-10-31, dcm-c75: the whole campaign).
  */
-export const FEATURE_USE_UNTIL = ["rest", "longRest", "session", "scene", "gmTurn", "day", "week"] as const;
+export const FEATURE_USE_UNTIL = ["rest", "longRest", "session", "scene", "gmTurn", "day", "week", "campaign"] as const;
 /** Labels for the `pronouns` field (dcm-bxp.35): "gender" is the default. */
 export const PRONOUNS_LABELS = ["gender", "pronouns"] as const;
 export type PronounsLabel = (typeof PRONOUNS_LABELS)[number];
