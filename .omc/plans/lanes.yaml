@@ -647,7 +647,14 @@ waves:
         depends_on: [SRD-A1, SRD-A2, SRD-C1, SRD-C2, SRD-F1, SRD-F2, SRD-F3, M, N1, N2]
         owns:
           - convex/lib/files.ts
+          - convex/files.ts
           - convex/spritePacks.ts
+          - convex/maps.ts
+          - convex/combatMaps.ts
+          - convex/characters.ts
+          - convex/codex.ts
+          - convex/photoImport.ts
+          - tests/convex/lane-u-*.test.ts
           - docs/best-practices.md
           - docs/tasks/TASK-LN-U.md
         reads: []
