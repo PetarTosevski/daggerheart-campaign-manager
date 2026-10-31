@@ -628,6 +628,7 @@ waves:
           - tests/convex/lane-m-*.test.ts
           - tests/unit/combat-map/lane-m-*.test.ts
           - tests/e2e/lane-m-*.spec.ts
+          - tests/convex/authz/core.entries.ts
           - docs/tasks/TASK-LN-M.md
         reads: [.omc/plans/scene-chips.md]
         acceptance:
