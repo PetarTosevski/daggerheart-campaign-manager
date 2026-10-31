@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { Camera } from "lucide-react";
 import { useRef, useState, type CSSProperties } from "react";
 
+import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 import { assetBackground } from "@/lib/design-assets";
 import { cn } from "@/lib/utils";
@@ -171,6 +172,7 @@ export function PortraitUpload({
       <span role="status" aria-live="polite" className="text-[13px] text-danger empty:hidden">
         {error}
       </span>
+      <UploadNotice kind="portrait" scope={character._id} />
     </span>
   );
 }

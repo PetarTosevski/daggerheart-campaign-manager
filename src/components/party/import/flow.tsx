@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 import { photoImportMessages } from "@/lib/errors/photoImport";
 import { MAX_PHOTOS, type ImportDraft, type PhotoReadResult } from "@/lib/import/draft";
@@ -156,6 +157,7 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
       <p role="alert" className="m-0 text-[14px] text-danger empty:hidden">
         {error}
       </p>
+      <UploadNotice kind="photoImport" scope={campaignId} />
       <div className="flex gap-3">
         <BrandButton variant="primary" size="lg" disabled={busy || files.length === 0} onClick={() => void readPhotos()}>
           Read photos

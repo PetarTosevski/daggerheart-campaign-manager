@@ -25,6 +25,14 @@ async function thumbnailMap(w: World) {
   w.set("thumbMapId", mapId);
 }
 
+/** A byte-check notice for the GM (dismiss's subject, dcm-vqs0); registers `noticeId`. */
+async function gmUploadNotice(w: World) {
+  const noticeId = await w.t.run((ctx) =>
+    ctx.db.insert("uploadNotices", { userId: w.users.gm, kind: "map", scope: w.campaignId, createdAt: Date.now() }),
+  );
+  w.set("noticeId", noticeId);
+}
+
 /** The GM deleted the campaign (restore's subject). */
 async function deletedCampaign(w: World) {
   await w.as("gm").mutation(api.campaigns.remove, { campaignId: w.campaignId });
@@ -104,6 +112,17 @@ const area: Area = {
     { fn: api.settings.get, access: "user" },
     { fn: api.settings.update, access: "user", args: () => ({ tableName: "Friday table" }) },
     { fn: api.users.viewer, access: "maybe" },
+
+    // ---- upload notices (dcm-vqs0): the caller's own notices only, so no campaign check.
+    { fn: api.uploadNotices.mine, access: "user", args: (w) => ({ kind: "map", scope: w.campaignId }) },
+    // Someone else's notice is NOT_FOUND; the owner dismisses it.
+    {
+      fn: api.uploadNotices.dismiss,
+      access: "scoped",
+      setup: gmUploadNotice,
+      args: (w) => ({ noticeId: w.ids.noticeId }),
+      expect: { anon: "UNAUTHENTICATED", outsider: "NOT_FOUND", otherPlayer: "NOT_FOUND", player: "NOT_FOUND", grantee: "NOT_FOUND", gm: "ok" },
+    },
 
     // ---- fear
     // GM only, keyed: every default applies, the synthesizer fills campaignId, direction ("increase") and idempotencyKey.

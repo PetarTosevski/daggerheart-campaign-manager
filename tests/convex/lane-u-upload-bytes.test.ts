@@ -257,13 +257,13 @@ describe("upload byte check on every upload path", () => {
       }
     });
 
-    it(`${path.name}: deletes an SVG or HTML body sent as image/png, or a PNG recorded as JPEG, and clears its record`, async () => {
+    // A real image recorded as another type is kept and retyped (dcm-vqs0, tests/convex/lane-u2-upload-notices.test.ts).
+    it(`${path.name}: deletes an SVG or HTML body sent as image/png and clears its record`, async () => {
       const s = await setup();
       const { attach, refers } = await path.prepare(s);
       const bodies: [string, Uint8Array][] = [
         ["image/png", SVG],
         ["image/png", HTML],
-        ["image/jpeg", bytesOf(MAGIC["image/png"]!)],
       ];
       for (const [type, body] of bodies) {
         const storageId = await s.store(type, body);

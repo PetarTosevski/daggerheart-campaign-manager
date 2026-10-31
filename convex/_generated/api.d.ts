@@ -184,6 +184,7 @@ import type * as trackers_colossus from "../trackers/colossus.js";
 import type * as trackers_fiveBanners from "../trackers/fiveBanners.js";
 import type * as trackers_horizon from "../trackers/horizon.js";
 import type * as trackers_weredragon from "../trackers/weredragon.js";
+import type * as uploadNotices from "../uploadNotices.js";
 import type * as users from "../users.js";
 import type * as wither from "../wither.js";
 
@@ -370,6 +371,7 @@ declare const fullApi: ApiFromModules<{
   "trackers/fiveBanners": typeof trackers_fiveBanners;
   "trackers/horizon": typeof trackers_horizon;
   "trackers/weredragon": typeof trackers_weredragon;
+  uploadNotices: typeof uploadNotices;
   users: typeof users;
   wither: typeof wither;
 }>;
