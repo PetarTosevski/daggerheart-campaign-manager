@@ -137,6 +137,7 @@ import type * as migrations_run from "../migrations/run.js";
 import type * as migrations_sessions from "../migrations/sessions.js";
 import type * as migrations_slotBonuses from "../migrations/slotBonuses.js";
 import type * as migrations_trackers from "../migrations/trackers.js";
+import type * as migrations_vanishingActMarker from "../migrations/vanishingActMarker.js";
 import type * as notes from "../notes.js";
 import type * as notesBin from "../notesBin.js";
 import type * as notesEntries from "../notesEntries.js";
@@ -322,6 +323,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/sessions": typeof migrations_sessions;
   "migrations/slotBonuses": typeof migrations_slotBonuses;
   "migrations/trackers": typeof migrations_trackers;
+  "migrations/vanishingActMarker": typeof migrations_vanishingActMarker;
   notes: typeof notes;
   notesBin: typeof notesBin;
   notesEntries: typeof notesEntries;
