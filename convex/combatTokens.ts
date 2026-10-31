@@ -3,6 +3,7 @@ import { v, type Infer } from "convex/values";
 import { freeSquares, moveToken, snapTurn, startFace, startSide } from "../src/components/combat-map/tokens/geometry";
 import { rasterize, type TerrainId } from "../src/lib/combat-map/raster";
 import { checkMove } from "../src/lib/domain/combat-map/movement";
+import { rangeCheck } from "../src/lib/domain/combat-actions/distance";
 import { appError } from "../src/lib/errors/app-error";
 import { applyCondition } from "../src/lib/domain/encounters/damage";
 import { sessionEncounterTitle } from "../src/lib/domain/sessions/encounter-title";
@@ -664,16 +665,56 @@ export const toggleCustomCondition = keyedGmMutation({
     }),
 });
 
-/** Takes one token off the map (its character or tracker row stays). */
+/** Takes one token off the map (its character or tracker row stays), with its duplicates (plan lanes-2 E4.3, dcm-v27). */
 export const remove = gmMutation({
   args: { tokenId: v.string() },
   returns: v.null(),
   handler: async (ctx, { tokenId }) => {
     const token = await loadCombatToken(ctx, ctx.campaign._id, tokenId);
     await ctx.db.delete("combatTokens", token._id);
+    await removeDuplicates(ctx, token);
     return null;
   },
 });
+
+// ---------------------------------------------------------------- plan lanes-2 E4.3: second positions (dcm-v27)
+
+/** The duplicates of a token on its map (`duplicateOf`; at most MAX_COMBAT_TOKENS tokens read). */
+export async function duplicatesOf(ctx: QueryCtx, token: Doc<"combatTokens">): Promise<Doc<"combatTokens">[]> {
+  return (await tokensOnMap(ctx, token.mapId)).filter((t) => t.duplicateOf === token._id);
+}
+
+/** Deletes a token's duplicates (the creature's other positions go with it). */
+export async function removeDuplicates(ctx: MutationCtx, token: Doc<"combatTokens">): Promise<number> {
+  const list = await duplicatesOf(ctx, token);
+  for (const d of list) await ctx.db.delete("combatTokens", d._id);
+  return list.length;
+}
+
+/**
+ * Writes a second position of a creature (Blink Beast, HF p.71: "a duplicate of itself appears ... within Close range";
+ * E7's `summon.duplicate` calls it): a token with the original's `ref`, side and size on square (x, y), `duplicateOf` the
+ * original. The square must be on the map and within `within` (default Close) of the original (COMBAT_TARGET_INVALID); a
+ * duplicate of a duplicate names the original. The original's earlier duplicates go first (one second position at a time,
+ * unless `keepOld`). COMBAT_TOKEN_LIMIT past the map's tokens.
+ */
+export async function placeDuplicate(
+  ctx: MutationCtx,
+  input: { original: Doc<"combatTokens">; x: number; y: number; within?: "melee" | "veryClose" | "close" | "far" | "veryFar"; keepOld?: boolean },
+): Promise<Id<"combatTokens">> {
+  const original = input.original.duplicateOf !== undefined ? ((await ctx.db.get("combatTokens", input.original.duplicateOf)) ?? input.original) : input.original;
+  const map = await ctx.db.get("combatMaps", original.mapId);
+  if (map === null) throw appError("COMBAT_MAP_NOT_FOUND");
+  const at = { x: Math.trunc(input.x), y: Math.trunc(input.y), size: original.size };
+  if (!Number.isFinite(input.x) || !Number.isFinite(input.y) || at.x < 0 || at.y < 0 || at.x + at.size > map.w || at.y + at.size > map.h) throw appError("COMBAT_TARGET_INVALID", "That square is off the map.");
+  if (!rangeCheck(original, at, input.within ?? "close").inRange) throw appError("COMBAT_TARGET_INVALID", `The duplicate must appear within ${input.within ?? "close"} range.`);
+  if (input.keepOld !== true) await removeDuplicates(ctx, original);
+  await assertCanAddTokens(ctx, map._id);
+  const { _id: _ignored, _creationTime: _created, ...fields } = original;
+  void _ignored;
+  void _created;
+  return ctx.db.insert("combatTokens", { ...fields, x: at.x, y: at.y, revealedTo: [], duplicateOf: original._id });
+}
 
 /** Takes every token off the map (the board's "Clear tokens", confirmed with a second click). */
 export const clear = gmMutation({

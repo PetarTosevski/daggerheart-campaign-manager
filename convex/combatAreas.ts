@@ -1,8 +1,11 @@
 import { v } from "convex/values";
 
 import type { PlanStep } from "../src/lib/domain/card-effects/run";
-import type { AreaSpec, ConditionRef, EndEvent, Escape, StandardCondition, Step } from "../src/lib/domain/card-effects/types";
+import type { AreaSpec, CardEffect, CardUse, ConditionRef, EndEvent, Escape, Mod, StandardCondition, Step } from "../src/lib/domain/card-effects/types";
 import {
+  alongTo,
+  forcedRange,
+  pullSquare,
   areaExpires,
   areaHpMarked,
   blocksBetween,
@@ -36,7 +39,14 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { blockOf } from "./lib/adversaryFeatures";
-import { readSheet } from "./lib/characterSheet";
+import { parseChoices } from "./lib/cardChoices";
+import { gmLines, instanceWrites, writeInstances } from "./lib/cardRows";
+import { actorSheetAfter, buildRun, instanceModsOn, runCard, sheetModsOn, tokenIdsOf, type UsePick } from "./lib/cardRunner";
+import { readSheet, saveSheet } from "./lib/characterSheet";
+import type { AttackScene } from "./lib/combatActions";
+import { loadScene, viewOf } from "./lib/combatVision";
+import { rollDie } from "./lib/dice";
+import { campaignFearState } from "./lib/fear";
 import { loadCombatMap, tokensOnMap } from "./lib/combatMaps";
 import { campaignMutation, campaignQuery, gmMutation } from "./lib/functions";
 import { atLeast, permissionFor } from "./lib/permissions";
@@ -568,6 +578,13 @@ export async function areasAfterMove(
     if (steps === undefined || steps.length === 0) continue;
     await logAction(ctx, { campaignId, characterId: area.characterId, actorId, kind: "combat", visibility: "public", summary: `${await who()} ${EVENT_WORDS[ev.kind]} ${area.label}`, groupId, undoable: false });
     notes.push({ label: area.label, event: ev.kind, ended: false });
+    // Plan lanes-2 E4.3 (dcm-cma, dcm-wuu): the area's steps run on the creature that set it off (`to: "triggerSubject"`),
+    // with the caster as the actor, when the server can write all they change; otherwise the row above is the table's.
+    const ownerSelf = after.ref.kind === "pc" && after.ref.characterId === area.characterId;
+    if (!ownerSelf) {
+      const effect: CardEffect = { cardId: area.featureId, uses: [{ id: `${area.useId ?? "main"}:${ev.kind}`, name: area.label, activation: { kind: "action" }, steps }] };
+      await runTriggeredUse(ctx, { campaignId, mapId, characterId: area.characterId, effect, name: area.label, role: "triggerSubject", tokenId: after._id, actorId, groupId });
+    }
   }
   return notes;
 }
@@ -601,13 +618,156 @@ export async function rangeTriggersAfterMove(
       continue;
     }
     for (const cardId of sheet.domainCards.loadout) {
-      const use = cardEffect(cardId)?.uses.find((u) => (u.activation.kind === "reaction" || u.activation.kind === "auto") && u.activation.trigger.kind === "whenEnemyEntersRange" && entersRange(before, after, token, u.activation.trigger.range));
-      if (use === undefined) continue;
+      const effect = cardEffect(cardId);
+      const use = effect?.uses.find((u) => (u.activation.kind === "reaction" || u.activation.kind === "auto") && u.activation.trigger.kind === "whenEnemyEntersRange" && entersRange(before, after, token, u.activation.trigger.range));
+      if (effect === undefined || use === undefined) continue;
       await logAction(ctx, { campaignId, characterId: character._id, actorId, kind: "combat", visibility: "public", summary: `${await nameOf()} moves within range of ${sheet.name}: ${use.name}`, groupId, undoable: false });
       out.push({ characterId: character._id, card: use.name });
+      // Plan lanes-2 E4.3 (dcm-bpr, dcm-g90o engine half): an `auto` use runs at once on the creature that came in (its
+      // `trigger` source; Hold the Line's pull and Restrained); a reaction stays the player's answer.
+      if (use.activation.kind === "auto") await runTriggeredUse(ctx, { campaignId, mapId, characterId: character._id, effect: { cardId, uses: [use] }, name: use.name, role: "triggerSource", tokenId: after._id, actorId, groupId });
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------- plan lanes-2 E4.3: uses the server runs on a move
+
+/**
+ * The live map and the character's view on it (as combatActions' `attackScene`, built here from combatVision: importing
+ * combatActions from this module is an import cycle through cardRows' validators). Throws off the live map or token.
+ */
+async function triggerScene(ctx: QueryCtx, campaign: Doc<"campaigns">, character: Doc<"characters">, mapId: Id<"combatMaps">): Promise<AttackScene> {
+  const map = await ctx.db.get("combatMaps", mapId);
+  if (map === null || map.campaignId !== campaign._id || !map.live) throw appError("COMBAT_MAP_NOT_FOUND");
+  const scene = await loadScene(ctx, campaign, map);
+  const viewer = viewOf(scene, character);
+  if (viewer === null) throw appError("COMBAT_TOKEN_NOT_FOUND");
+  return { map, scene, viewer, attacker: scene.tokens[viewer.index]! };
+}
+
+/**
+ * Runs a use that a move set off (an area's `onEnter` / `onCross` steps, dcm-cma; a card's `auto` use on
+ * `whenEnemyEntersRange`, dcm-bpr) with the PC `characterId` as the actor and the moved token as the trigger's
+ * `triggerSubject` / `triggerSource`, through the card runner (`buildRun`, `runCard`, the server's dice). It writes only
+ * what the server can write on its own: the actor's sheet (costs, limits), enemy instances (damage, marks, conditions;
+ * `instanceWrites`) and server moves (into Melee of the anchor: `pullIntoMelee`, with `forcedMoveReduce`). A use that
+ * needs a choice, a roll answer, the GM's Fear or another PC's sheet, or that the runner refuses, runs nothing (the
+ * caller's feed row stays the table's). One public row names what happened, one GM row the numbers. Returns whether it ran.
+ */
+export async function runTriggeredUse(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; mapId: Id<"combatMaps">; characterId: Id<"characters">; effect: CardEffect; name: string; role: "triggerSubject" | "triggerSource"; tokenId: Id<"combatTokens">; actorId: Id<"users">; groupId: string },
+): Promise<boolean> {
+  const campaign = await ctx.db.get("campaigns", input.campaignId);
+  const character = await ctx.db.get("characters", input.characterId);
+  const use: CardUse | undefined = input.effect.uses[0];
+  if (campaign === null || character === null || character.campaignId !== campaign._id || use === undefined) return false;
+  let ran: { plan: Extract<ReturnType<typeof runCard>, { kind: "plan" }>["plan"]; built: Awaited<ReturnType<typeof buildRun>> };
+  try {
+    const scene = await triggerScene(ctx, campaign, character, input.mapId);
+    const pick: UsePick = { effect: input.effect, use, name: input.name, limitKey: input.effect.cardId };
+    const fear = await campaignFearState(ctx, campaign._id);
+    const built = await buildRun(ctx, { campaign, character, sheet: readSheet(character.sheet), scene, pick, targetTokenIds: [], choices: parseChoices([{ id: input.role, value: input.tokenId }]), roll: {}, gmFear: fear.fear, lastRollWithHope: false });
+    const outcome = runCard(built, pick, rollDie);
+    if (outcome.kind !== "plan") return false;
+    ran = { plan: outcome.plan, built };
+  } catch {
+    // Not on the live map, the creature can't be seen or named, a refused requirement or cost: the table's.
+    return false;
+  }
+  const { plan, built } = ran;
+  const pcs = new Set(built.creatures.all.flatMap((c) => (c.kind === "pc" ? [c.tokenId as string] : [])));
+  const tableOnly = plan.steps.some((s) => s.kind === "pcDamage" || s.kind === "fold" || s.kind === "delegate" || s.kind === "area" || (s.kind === "prompt" && s.prompt !== "manual" && !(s.prompt === "move" && s.server === true)));
+  if (plan.gmFearDelta !== 0 || tableOnly || plan.creatures.some((c) => pcs.has(c.id))) return false;
+  const writes = instanceWrites(plan, built.creatures, input.name);
+  await writeInstances(ctx, writes);
+  const sheet = actorSheetAfter(built.paidSheet, plan, built.context.actor.id, input.name);
+  await saveSheet(ctx, character._id, sheet);
+  const map = await ctx.db.get("combatMaps", input.mapId);
+  const moved: string[] = [];
+  for (const step of plan.steps) {
+    if (step.kind !== "prompt" || step.prompt !== "move" || step.server !== true || map === null) continue;
+    const anchorToken = step.anchorId !== undefined ? tokenIdsOf(built, [step.anchorId])[0] : undefined;
+    for (const tokenId of tokenIdsOf(built, step.targetIds)) {
+      const anchorId = anchorToken !== undefined && anchorToken !== tokenId ? anchorToken : built.creatures.scene.attacker._id;
+      if (anchorId === tokenId) continue;
+      const done = await pullIntoMelee(ctx, { campaignId: input.campaignId, map, tokenId, anchorId, label: input.name, actorId: input.actorId });
+      if (done !== null) moved.push(done);
+    }
+  }
+  const manual = plan.steps.flatMap((s) => (s.kind === "prompt" && s.prompt === "manual" ? [s.text] : []));
+  const parts = [`${sheet.name}: ${input.name}`, ...moved, ...manual];
+  await logAction(ctx, { campaignId: input.campaignId, characterId: character._id, actorId: input.actorId, kind: "combat", visibility: "public", summary: parts.join("; ").slice(0, 500), groupId: input.groupId, undoable: false });
+  const lines = gmLines(plan, built, writes);
+  if (lines.length > 0) await logAction(ctx, { campaignId: input.campaignId, characterId: character._id, actorId: input.actorId, kind: "combat", visibility: "gm", summary: `${input.name}: ${lines.join("; ")}`.slice(0, 500), groupId: input.groupId, undoable: false });
+  return true;
+}
+
+// ---------------------------------------------------------------- plan lanes-2 E4.3: forced moves (dcm-1yo, dcm-bpr)
+
+/** The `forcedMoveReduce` steps of mods (Immovable Object, CB p.230). */
+const reduceSteps = (mods: readonly Mod[]) => mods.reduce((n, m) => n + (m.kind === "forcedMoveReduce" ? m.steps : 0), 0);
+
+/**
+ * How many ranges a forced move of `token` loses (dcm-1yo): an adversary's stat block passives (`forcedMoveReduce` on
+ * itself) and the lasting mods on its instance; a PC's lasting mods.
+ */
+export async function forcedMoveReduceOf(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<number> {
+  if (token.ref.kind === "pc") {
+    const character = await ctx.db.get("characters", token.ref.characterId);
+    if (character === null || character.campaignId !== campaignId) return 0;
+    try {
+      return reduceSteps(sheetModsOn(readSheet(character.sheet)));
+    } catch {
+      return 0;
+    }
+  }
+  const instance = await liveInstance(ctx, campaignId, token);
+  if (instance === null) return 0;
+  const block = await blockOf(ctx, instance);
+  const passive = (block?.effects ?? []).flatMap((e) => e.uses.flatMap((u) => (u.activation.kind === "passive" ? (u.modifiers ?? []).flatMap((m) => (m.kind === "mod" && (m.to === undefined || m.to === "self") ? [m.mod] : [])) : [])));
+  return reduceSteps(passive) + reduceSteps(instanceModsOn(instance));
+}
+
+/**
+ * A move the server makes on a creature (plan lanes-2 E4.3, dcm-1yo: the server forced-move path): toward `to`, shortened
+ * by its `forcedMoveReduce` ranges (Immovable Object: "moves them two fewer ranges"; none left: it stays). Writes the
+ * token's square and a GM feed row when the move was shortened. Returns where it ended and the ranges it lost.
+ */
+export async function forcedMove(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; map: Doc<"combatMaps">; tokenId: Id<"combatTokens">; to: { x: number; y: number }; label: string; actorId: Id<"users"> },
+): Promise<{ x: number; y: number; reducedBy: number; moved: boolean } | null> {
+  const token = await ctx.db.get("combatTokens", input.tokenId);
+  if (token === null || token.mapId !== input.map._id) return null;
+  const reducedBy = await forcedMoveReduceOf(ctx, input.campaignId, token);
+  const target = { x: input.to.x, y: input.to.y, size: token.size };
+  const range = forcedRange(token, target, reducedBy);
+  const at = range === null ? { x: token.x, y: token.y } : reducedBy > 0 ? alongTo(token, target, range) : { x: input.to.x, y: input.to.y };
+  const moved = at.x !== token.x || at.y !== token.y;
+  if (moved) await ctx.db.patch("combatTokens", token._id, at);
+  if (reducedBy > 0) await logAction(ctx, { campaignId: input.campaignId, actorId: input.actorId, kind: "combat", visibility: "gm", summary: `${input.label}: the move is ${reducedBy} range${reducedBy === 1 ? "" : "s"} shorter${moved ? "" : "; it stays"}`, undoable: false });
+  return { ...at, reducedBy, moved };
+}
+
+/**
+ * Pulls a creature into Melee range of `anchorId` (Hold the Line, CB p.342: "they're pulled into Melee range"; a use's
+ * `move` with `mode: "intoMelee"` the server makes): to the nearest free square in Melee of the anchor (`pullSquare`),
+ * through `forcedMove`. Returns the feed words, or null when it didn't move.
+ */
+export async function pullIntoMelee(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; map: Doc<"combatMaps">; tokenId: Id<"combatTokens">; anchorId: Id<"combatTokens">; label: string; actorId: Id<"users"> },
+): Promise<string | null> {
+  const tokens = await tokensOnMap(ctx, input.map._id);
+  const token = tokens.find((t) => t._id === input.tokenId);
+  const anchor = tokens.find((t) => t._id === input.anchorId);
+  if (token === undefined || anchor === undefined) return null;
+  const to = pullSquare(token, anchor, tokens.filter((t) => t._id !== token._id && t._id !== anchor._id), input.map);
+  if (to === null) return null;
+  const done = await forcedMove(ctx, { ...input, to });
+  return done?.moved === true ? "pulled into Melee range" : null;
 }
 
 // ---------------------------------------------------------------- plan lanes-2 E4: the rules a move keeps
@@ -640,6 +800,14 @@ function passiveMoveLimits(effects: readonly AdversaryFeatureEffect[]): MoveLimi
     }
   }
   return out;
+}
+
+/**
+ * The `moveLimit` mods among a creature's lasting mods (Creeping Fire's kind on a condition; Hurricane, CB p.339). A
+ * `direction` names the use's choice, whose pick no stored row keeps yet, so only `maxRange` applies (task doc).
+ */
+function lastingMoveLimits(mods: readonly Mod[], label: string): MoveLimit[] {
+  return mods.flatMap((m) => (m.kind === "moveLimit" && m.maxRange !== undefined ? [{ maxRange: m.maxRange, label: m.text ?? label }] : []));
 }
 
 /**
@@ -687,6 +855,12 @@ export async function moveRules(
   if (instance !== null) {
     const block = await blockOf(ctx, instance);
     if (block !== null) limits.push(...passiveMoveLimits(block.effects));
+    // Plan lanes-2 E4.3 (dcm-3oe, dcm-wuu): the movement limits on what the instance carries (a card's condition, an
+    // adversary's modifier), read from their entries.
+    limits.push(...lastingMoveLimits(instanceModsOn(instance), instance.label));
+  } else if (before.ref.kind === "pc") {
+    const character = await ctx.db.get("characters", before.ref.characterId);
+    if (character !== null && character.campaignId === input.campaignId) limits.push(...lastingMoveLimits(sheetModsOn(readSheet(character.sheet)), "a lasting effect"));
   }
   for (const limit of limits) {
     const broken = moveBreaks(limit, before, moved);

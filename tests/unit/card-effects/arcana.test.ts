@@ -338,8 +338,9 @@ describe("Preservation Blast (L4, CB p.328)", () => {
 describe("Chain Lightning (L5, CB p.328)", () => {
   it("2 Stress; beaten targets save against your roll's total, failures take 2d8+4; the first link of the chain likewise", () => {
     // 8 + 5 + 3 = 16: beats a (12), not b (20). a saves 10 < 16: fails, 2d8+4 = 3 + 5 + 4 = 12 (Major).
-    // The chain: c saves 4 < 16 and takes the same 12 (one damage roll for the move, CB p.104).
-    const plan = ok("chain-lightning", ctx([8, 5, 10, 3, 5, 4], { targets: [adv("a"), adv("b", { difficulty: 20 })], followUp: [adv("c")] }));
+    // The chain: c saves 4 < 16 and takes a fresh 2d8+4 = 6 + 5 + 4 = 15 (dcm-qoq9, user answer 2026-10-31: "every new
+    // wave of chained targets gets a fresh 2d8+4 roll"; the server sets freshLinkDamage).
+    const plan = ok("chain-lightning", ctx([8, 5, 10, 3, 5, 4, 6, 5], { freshLinkDamage: true, targets: [adv("a"), adv("b", { difficulty: 20 })], followUp: [adv("c")] }));
     expect(ofKind(plan, "pay")[0]).toMatchObject({ phase: "upfront", costs: [{ resource: "stress", amount: 2 }] });
     expect(ofKind(plan, "save").map((s) => [s.targetId, s.difficulty, s.success])).toEqual([
       ["a", 16, false],
@@ -347,7 +348,7 @@ describe("Chain Lightning (L5, CB p.328)", () => {
     ]);
     expect(ofKind(plan, "damage").map((d) => [d.result.targetId, d.result.incoming, d.result.hpMarked])).toEqual([
       ["a", 12, 2],
-      ["c", 12, 2],
+      ["c", 15, 3],
     ]);
     expect(plan.actor.after).toMatchObject({ stress: 3, hope: 3 });
     // Lanes SRD-C1 (dcm-rou): no manual step; with no next link given, the runner asks for it.
@@ -355,9 +356,9 @@ describe("Chain Lightning (L5, CB p.328)", () => {
     expect(prompts(plan, "followUp")).toHaveLength(1);
   });
   it("the chain continues link by link (origin chain) until a link finds no one", () => {
-    // 8 + 5 + 3 = 16 beats a. a saves 10, fails: 2d8+4 = 3 + 5 + 4 = 12. Link 1 (c) saves 4, link 2 (d) saves 3: both
-    // fail and take the move's 12. An empty third link ends the chain.
-    const plan = ok("chain-lightning", ctx([8, 5, 10, 3, 5, 4, 3], { targets: [adv("a")], followUp: [adv("c")], chain: [[adv("d")], []] }));
+    // 8 + 5 + 3 = 16 beats a. a saves 10, fails: 2d8+4 = 3 + 5 + 4 = 12. Link 1 (c) saves 4, fails: a fresh 2d8+4 = 1 + 2
+    // + 4 = 7 (dcm-qoq9). Link 2 (d) saves 3, fails: 8 + 8 + 4 = 20. An empty third link ends the chain.
+    const plan = ok("chain-lightning", ctx([8, 5, 10, 3, 5, 4, 1, 2, 3, 8, 8], { freshLinkDamage: true, targets: [adv("a")], followUp: [adv("c")], chain: [[adv("d")], []] }));
     expect(ofKind(plan, "save").map((s) => [s.targetId, s.success])).toEqual([
       ["a", false],
       ["c", false],
@@ -365,8 +366,8 @@ describe("Chain Lightning (L5, CB p.328)", () => {
     ]);
     expect(ofKind(plan, "damage").map((d) => [d.result.targetId, d.result.incoming])).toEqual([
       ["a", 12],
-      ["c", 12],
-      ["d", 12],
+      ["c", 7],
+      ["d", 20],
     ]);
     expect(prompts(plan, "followUp")).toEqual([]);
     const follow = effectOf("chain-lightning").uses[0]!.steps.find((s) => s.kind === "followUp");

@@ -247,6 +247,60 @@ export function carriedTo(carrierBefore: Footprint, carrierAfter: Footprint, car
   return { x: clamp(carried.x + (carrierAfter.x - carrierBefore.x), map.w), y: clamp(carried.y + (carrierAfter.y - carrierBefore.y), map.h) };
 }
 
+// ---------------------------------------------------------------- plan lanes-2 E4.3: forced movement on the server
+
+/** Whether two footprints share a square. */
+function overlaps(a: Footprint, b: Footprint): boolean {
+  const sa = sizeOf(a);
+  const sb = sizeOf(b);
+  return a.x < b.x + sb && b.x < a.x + sa && a.y < b.y + sb && b.y < a.y + sa;
+}
+
+/**
+ * Where a creature pulled into Melee range of `anchor` ends (Hold the Line, CB p.342: "they're pulled into Melee range";
+ * dcm-bpr, dcm-g90o): the free square within Melee of the anchor nearest to where it stands (ties: the first scanned),
+ * kept on the map and off every token in `others`. Null when no such square is free. A creature already in Melee range
+ * stays where it is.
+ */
+export function pullSquare(mover: Footprint, anchor: Footprint, others: readonly Footprint[], map: { w: number; h: number }): { x: number; y: number } | null {
+  const s = sizeOf(mover);
+  const melee = rangeSquares("melee");
+  if (tokenDistance(anchor, mover) <= melee) return { x: mover.x, y: mover.y };
+  let best: { x: number; y: number; d: number } | null = null;
+  const as = sizeOf(anchor);
+  for (let y = anchor.y - melee - s + 1; y <= anchor.y + as + melee - 1; y++) {
+    for (let x = anchor.x - melee - s + 1; x <= anchor.x + as + melee - 1; x++) {
+      if (x < 0 || y < 0 || x + s > map.w || y + s > map.h) continue;
+      const at = { x, y, size: s };
+      if (tokenDistance(anchor, at) > melee || overlaps(at, anchor) || others.some((o) => overlaps(at, o))) continue;
+      const d = tokenDistance(mover, at);
+      if (best === null || d < best.d) best = { x, y, d };
+    }
+  }
+  return best === null ? null : { x: best.x, y: best.y };
+}
+
+/**
+ * The range a forced move keeps after `forcedMoveReduce` steps (Immovable Object, CB p.230: "An attack that would move
+ * the Elemental moves them two fewer ranges (for example, Far becomes Very Close)"): the band of the move's length
+ * lowered by `steps`; null when nothing is left (the creature isn't moved).
+ */
+export function forcedRange(from: Footprint, to: Footprint, steps: number): Range | null {
+  const d = tokenDistance(from, to);
+  if (d === 0) return null;
+  const band = RANGE_ORDER.find((r) => d <= rangeSquares(r)) ?? "veryFar";
+  return steps > 0 ? reduceRange(band, steps) : band;
+}
+
+/** The square at most `range` along the straight way from `from` to `to` (a forced move shortened by `forcedRange`). */
+export function alongTo(from: Footprint, to: Footprint, range: Range): { x: number; y: number } {
+  const limit = rangeSquares(range);
+  const d = tokenDistance(from, to);
+  if (d <= limit) return { x: to.x, y: to.y };
+  const t = limit / d;
+  return { x: Math.round(from.x + (to.x - from.x) * t), y: Math.round(from.y + (to.y - from.y) * t) };
+}
+
 /**
  * The Defined Ranges of `other` a move came into (`into`) or went out of (`outOf`), nearest last; Very Far is never
  * entered. An adversary's `pcMoves` trigger matches one of them (Shield Wall, CB p.209: "A creature who tries to move

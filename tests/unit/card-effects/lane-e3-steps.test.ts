@@ -428,12 +428,13 @@ describe("dcm-rou / dcm-7az: repeating follow-ups", () => {
   });
 
   it("each link drops creatures already targeted and the chain stops at an empty link (Chain Lightning)", () => {
-    // Main 6 + 4 + 3 = 13 hits a: d4 = 1. Links without a roll of their own share the move's damage (R9, as CA's Chain
-    // Lightning entry reads it): link 0 (b), link 1 (c; a was targeted already). Link 2: empty.
-    const rng = queueRng([6, 4, 1]);
-    const plan = ok(run(chain, { ...ctx([]), rng, targets: [adv("a")], followUp: [adv("b", { difficulty: 1 })], chain: [[adv("c", { difficulty: 1 }), adv("a")], []] }));
+    // Main 6 + 4 + 3 = 13 hits a: d4 = 1. Each link rolls its damage again (dcm-qoq9, user answer 2026-10-31: "every new
+    // wave of chained targets gets a fresh 2d8+4 roll"; the server sets freshLinkDamage): link 0 (b) d4 = 3, link 1 (c; a
+    // was targeted already) d4 = 2. Link 2: empty.
+    const rng = queueRng([6, 4, 1, 3, 2]);
+    const plan = ok(run(chain, { ...ctx([]), rng, freshLinkDamage: true, targets: [adv("a")], followUp: [adv("b", { difficulty: 1 })], chain: [[adv("c", { difficulty: 1 }), adv("a")], []] }));
     rng.done();
-    expect(ofKind(plan, "damageRoll").map((s) => s.record.total)).toEqual([1, 1, 1]);
+    expect(ofKind(plan, "damageRoll").map((s) => s.record.total)).toEqual([1, 3, 2]);
     expect(ofKind(plan, "damage").map((s) => s.result.targetId)).toEqual(["a", "b", "c"]);
     expect(ofKind(plan, "prompt")).toEqual([]);
   });
