@@ -148,6 +148,8 @@ const damage = (r: DamageRoll, type: DamageType | "weapon", extra: Partial<Extra
   type,
   ...extra,
 });
+/** Lanes-2, S4 (dcm-dv6): fire damage carries `keyword: "fire"` (Fireproof, HF p.22; Made of Straw, HF p.79). */
+const FIRE = { keyword: "fire" } as const;
 
 /**
  * One die read as ranges ("roll a d6 and use the corresponding result"): a chain of checks, each later one reading the
@@ -421,7 +423,9 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // subcutaneous wrigglers. Each PC within Close range must make an Agility Reaction Roll. Targets who fail are covered in
   // 2d4 leechpoles, which burrow under their skin. Until the leechpoles are dug out with a successful Finesse Roll (21),
   // any damage the target takes gains a +1 bonus for each leechpole under their skin."
-  // Manual: the leechpoles are tokens on a PC that raise the damage they take (dcm-xp0).
+  // Lanes-2, S4: the Leechpoles tag carries a `damageTaken` `add` of the bearer's "leechpole" tokens (dcm-kvx4). Manual
+  // until the engine reads it (Lanes-2 (dcm-n3mp): no token store on a PC for the 2d4; Lanes-2 (dcm-12kx): a PC hit
+  // doesn't read an adversary condition's mods yet), so the reminder stays.
   entry(
     "cephilith-abomination",
     "Burrowing Leechpoles",
@@ -431,7 +435,14 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         targets: allAround("close"),
         steps: [
           save("agility", OWN_DIFFICULTY, [
-            { kind: "condition", to: "targets", condition: tag("Leechpoles"), duration: "manual", endsWhen: "they are dug out with a successful Finesse Roll (21)" },
+            {
+              kind: "condition",
+              to: "targets",
+              condition: tag("Leechpoles"),
+              duration: "manual",
+              endsWhen: "they are dug out with a successful Finesse Roll (21)",
+              mods: [{ kind: "damageTaken", change: { kind: "add", amount: { kind: "creatureTokens", who: "self", name: "leechpole" } } }],
+            },
             manual("Roll 2d4: that many leechpoles burrow under the target's skin. Any damage the target takes gains +1 per leechpole until they're dug out.", "targets"),
           ]),
         ],
@@ -993,7 +1004,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
                   kind: "followUp",
                   targets: { side: "enemy", range: "close", count: { kind: "upTo", n: diceOf(1, 4, 1) } },
                   steps: [
-                    damage(roll(4, 12), "magic"),
+                    damage(roll(4, 12), "magic", FIRE),
                     {
                       kind: "choose",
                       id: "fire",
@@ -1637,8 +1648,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Hunger Pangs: Countdown (Decreasing 6). When the Harbinger appears, activate the countdown. It ticks down when the
   // Harbinger is spotlighted. When it triggers, all PCs within Far range mark a Stress and become Ravenous. While
   // Ravenous, a PC can't spend Hope until they clear the condition with a successful Instinct Roll."
-  // Plan lanes, SRD-A2 (dcm-m5s): a decreasing countdown (`direction`). Manual: Ravenous's "can't spend Hope" (no flag:
-  // vocabulary-gap bead in docs/tasks/TASK-LN-SRD-A2.md).
+  // Plan lanes, SRD-A2 (dcm-m5s): a decreasing countdown (`direction`). Lanes-2, S4: Ravenous carries the
+  // `cannotSpendHope` flag (dcm-5kxg); the reminder stays until a PC's payers read it (Lanes-2 (dcm-hgvx), dcm-12kx).
   entry(
     "harbinger-of-famine",
     "Hunger Pangs",
@@ -1652,7 +1663,14 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         targets: allAround("far"),
         steps: [
           { kind: "markStress", to: "targets", amount: one },
-          { kind: "condition", to: "targets", condition: tag("Ravenous"), duration: "manual", endsWhen: "a successful Instinct Roll" },
+          {
+            kind: "condition",
+            to: "targets",
+            condition: tag("Ravenous"),
+            duration: "manual",
+            endsWhen: "a successful Instinct Roll",
+            mods: [{ kind: "flag", flag: "cannotSpendHope" }],
+          },
           manual("Ravenous: the PC can't spend Hope until they clear the condition.", "targets"),
         ],
       },
@@ -1910,7 +1928,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Nightmare Stare: Spend a Fear to have the Owl Witch Afflict a PC within Far range with waking nightmares unless the
   // target succeeds on a Knowledge Reaction Roll. While Afflicted, the target can't clear HP or Stress. The condition is
   // cleared when another PC uses a downtime move to comfort the Afflicted creature."
-  // Manual: "can't clear HP or Stress" (dcm-kti).
+  // Lanes-2, S4: Afflicted carries `cannotClearHp` / `cannotClearStress` (dcm-5kxg); the reminder stays until clear steps
+  // read them (Lanes-2 (dcm-hgvx), dcm-12kx).
   entry(
     "owl-witch",
     "Nightmare Stare",
@@ -1919,7 +1938,17 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: oneEnemy("far"),
       steps: [
         save("knowledge", OWN_DIFFICULTY, [
-          { kind: "condition", to: "targets", condition: tag("Afflicted"), duration: "manual", endsWhen: "another PC uses a downtime move to comfort them" },
+          {
+            kind: "condition",
+            to: "targets",
+            condition: tag("Afflicted"),
+            duration: "manual",
+            endsWhen: "another PC uses a downtime move to comfort them",
+            mods: [
+              { kind: "flag", flag: "cannotClearHp" },
+              { kind: "flag", flag: "cannotClearStress" },
+            ],
+          },
           manual("Afflicted: the target can't clear HP or Stress.", "targets"),
         ]),
       ],
@@ -1957,7 +1986,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
     action({
       costs: STRESS,
       targets: inFront("close"),
-      steps: [save("agility", OWN_DIFFICULTY, [damage(roll(4, 12, 10), "magic"), { kind: "markArmor", to: "targets", amount: one, noBenefit: true }])],
+      steps: [save("agility", OWN_DIFFICULTY, [damage(roll(4, 12, 10), "magic", FIRE), { kind: "markArmor", to: "targets", amount: one, noBenefit: true }])],
     }),
   ),
   // "Volcanic Fissure: Spend a Fear to have the Dragon snap its tail against the ground, opening a lava rift that flows
@@ -1971,7 +2000,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       costs: FEAR,
       targets: allAround("close"),
       steps: [
-        save("agility", OWN_DIFFICULTY, [damage(roll(4, 8, 5), "magic")], [{ kind: "move", to: "targets", mode: "move", note: "They immediately move out of the area" }]),
+        save("agility", OWN_DIFFICULTY, [damage(roll(4, 8, 5), "magic", FIRE)], [{ kind: "move", to: "targets", mode: "move", note: "They immediately move out of the area" }]),
         manual("Until the Dragon is defeated, a creature who enters the area takes 4d8+5 magic damage."),
       ],
     }),
@@ -2041,7 +2070,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
           [
             // "1. Fire Beam. Adonix manifests a beam of elemental fire with a Very Close width from themself to the edge
             // of the battlefield. Each target in the beam's path must make an Agility Reaction Roll. Targets who fail take
-            // Severe damage. Targets who succeed take Minor damage." Manual: damage of a set severity (dcm-a7o).
+            // Severe damage. Targets who succeed take Minor damage." User answer 2026-10-31 (dcm-6rke): 3 / 1 HP marked
+            // outright (no armor, no damage type).
             {
               upTo: 1,
               note: "1. Fire Beam",
@@ -2049,7 +2079,14 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
                 {
                   kind: "followUp",
                   targets: inLine("veryFar"),
-                  steps: [save("agility", OWN_DIFFICULTY, [manual("The target takes Severe damage.", "targets")], [manual("The target takes Minor damage.", "targets")])],
+                  steps: [
+                    save(
+                      "agility",
+                      OWN_DIFFICULTY,
+                      [{ kind: "markHp", to: "targets", amount: fixed(3), note: "Severe damage: 3 HP" }],
+                      [{ kind: "markHp", to: "targets", amount: one, note: "Minor damage: 1 HP" }],
+                    ),
+                  ],
                 },
               ],
             },
@@ -2412,7 +2449,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // "Power Slide: Mark a Stress to move up to Close range. Each PC Xero moves through must succeed on a Strength Reaction
   // Roll or choose to either mark 2 Armor Slots or take Severe damage."
-  // Manual: damage of a set severity (dcm-a7o).
+  // User answer 2026-10-31 (dcm-6rke): "take Severe damage" with no number is 3 HP marked outright (no armor, no type).
   entry(
     "xero-the-castle-killer",
     "Power Slide",
@@ -2428,7 +2465,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             label: "Mark 2 Armor Slots or take Severe damage (the PC's choice)",
             options: [
               { id: "armor", label: "Mark 2 Armor Slots", steps: [{ kind: "markArmor", to: "targets", amount: fixed(2) }] },
-              { id: "severe", label: "Take Severe damage", steps: [manual("The PC takes Severe damage.", "targets")] },
+              { id: "severe", label: "Take Severe damage (mark 3 HP)", steps: [{ kind: "markHp", to: "targets", amount: fixed(3), note: "Severe damage: 3 HP" }] },
             ],
           },
         ]),

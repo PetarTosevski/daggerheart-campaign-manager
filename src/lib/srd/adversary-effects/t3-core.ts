@@ -238,12 +238,9 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Relentless (4): The Flickerfly can be spotlighted up to four times per GM turn. Spend Fear as usual to spotlight them."
   relentless("adult-flickerfly", 4),
   // "Never Misses: When the Flickerfly makes an attack, the target's Evasion is halved against the attack."
-  // Manual: halving the target's Evasion for one attack (vocabulary gap), offered before every attack.
-  entry(
-    "adult-flickerfly",
-    "Never Misses",
-    auto({ kind: "onAttack", stage: "before", attack: "any" }, { steps: [manual("The target's Evasion is halved against this attack.")] }),
-  ),
+  // Lanes-2, S4: the passive flag `attacksHalveEvasion` (dcm-4c9m): the runner halves the target's Evasion (rounded up) on
+  // every attack roll of the Flickerfly, the standard attack included.
+  entry("adult-flickerfly", "Never Misses", passive({ modifiers: [{ kind: "mod", mod: { kind: "flag", flag: "attacksHalveEvasion" } }] })),
   // "Deadly Flight: While flying, the Flickerfly can move up to Far range instead of Close range before taking an action."
   // Movement on the map is the GM's (Q18); while flying the Flickerfly carries the `flying` flag.
   entry("adult-flickerfly", "Deadly Flight", passive({ requires: [FLYING], modifiers: [{ kind: "mod", mod: { kind: "flag", flag: "flying" } }] })),

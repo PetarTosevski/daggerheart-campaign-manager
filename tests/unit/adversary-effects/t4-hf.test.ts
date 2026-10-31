@@ -1085,11 +1085,15 @@ describe("Severed Shadow (HF p.95)", () => {
 });
 
 describe("Supreme Demiurge Adonix (HF p.96)", () => {
-  it("Elemental Archon 1, Fire Beam: an Agility roll; Severe or Minor damage is manual", () => {
+  it("Elemental Archon 1, Fire Beam: an Agility roll; Severe / Minor damage marks 3 / 1 HP outright (dcm-6rke)", () => {
     const plan = runUse("supreme-demiurge-adonix", "Elemental Archon", [1], { followUp: [mira] });
     expect(plan.self.after.stress).toBe(1);
     const step = saveStep(saves(plan)[0]!);
-    expect(step).toMatchObject({ trait: "agility", onFail: [{ kind: "manual", text: "The target takes Severe damage." }], onSuccess: [{ kind: "manual", text: "The target takes Minor damage." }] });
+    expect(step).toMatchObject({
+      trait: "agility",
+      onFail: [{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 3 } }],
+      onSuccess: [{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 1 } }],
+    });
   });
 
   it("Elemental Archon 2, Thunderclap: everyone within Far marks a Stress and is Vulnerable", () => {
@@ -1248,7 +1252,8 @@ describe("Xero the Castle Killer (HF p.97)", () => {
     expect(plan.self.after.stress).toBe(1);
     const choose = saveStep(saves(plan)[0]!).onFail[0] as Extract<AdversaryStep, { kind: "choose" }>;
     expect(choose.options[0]!.steps).toEqual([{ kind: "markArmor", to: "targets", amount: { kind: "fixed", value: 2 } }]);
-    expect(choose.options[1]!.steps[0]).toMatchObject({ kind: "manual" });
+    // dcm-6rke: "take Severe damage" with no number marks 3 HP outright.
+    expect(choose.options[1]!.steps).toEqual([{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 3 }, note: "Severe damage: 3 HP" }]);
   });
 
   it("Radioactive Breath: a Fear charges a token (once until Severe damage); the beam spends it", () => {
@@ -1269,5 +1274,60 @@ describe("Xero the Castle Killer (HF p.97)", () => {
     const plan = runUse("xero-the-castle-killer", "Regeneration", [], { self: hurt, eitherCosts: [3] });
     expect(plan).toMatchObject({ fearSpent: 4, self: { after: { hp: 2 } } });
     expect(plan.limit).toMatchObject({ consumed: true });
+  });
+});
+
+describe("Lanes-2 S4: tier 4 Hope & Fear data switches", () => {
+  /** The keyword of every `damage` step of a feature (all uses, nested); "none" without one. */
+  const damageKeywords = (adversaryId: string, feature: string): string[] => {
+    const out: string[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (node === null || typeof node !== "object") return;
+      const o = node as Record<string, unknown>;
+      if (o.kind === "damage" && "roll" in o) out.push(typeof o.keyword === "string" ? o.keyword : "none");
+      Object.values(o).forEach(walk);
+    };
+    walk(effectOf(adversaryId, feature).uses);
+    return out;
+  };
+  /** The lasting condition a feature's failed reaction roll gives (first `condition` step with `mods`). */
+  const conditionWithMods = (adversaryId: string, feature: string): Record<string, unknown> | undefined => {
+    let found: Record<string, unknown> | undefined;
+    const walk = (node: unknown): void => {
+      if (found || node === null || typeof node !== "object") return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      const o = node as Record<string, unknown>;
+      if (o.kind === "condition" && Array.isArray(o.mods)) found = o;
+      else Object.values(o).forEach(walk);
+    };
+    walk(effectOf(adversaryId, feature).uses);
+    return found;
+  };
+
+  it("fire damage carries keyword fire (dcm-dv6): Mitera's Fire head, Melting Breath, Volcanic Fissure", () => {
+    expect(damageKeywords("dragon-mother-mitera", "Elemental Breath")).toContain("fire");
+    expect(damageKeywords("ruby-dragon", "Melting Breath")).toEqual(["fire"]);
+    expect(damageKeywords("ruby-dragon", "Volcanic Fissure")).toEqual(["fire"]);
+    // Not fire: the Fire Titan Warlord's maul.
+    expect(damageKeywords("fire-titan-warlord", "Ground-Breaking")).toEqual(["none"]);
+  });
+
+  it("Burrowing Leechpoles: the tag adds the bearer's leechpole tokens to damage taken (dcm-kvx4); the 2d4 stays manual (dcm-n3mp)", () => {
+    expect(conditionWithMods("cephilith-abomination", "Burrowing Leechpoles")).toMatchObject({
+      condition: { kind: "tag", tag: "Leechpoles" },
+      mods: [{ kind: "damageTaken", change: { kind: "add", amount: { kind: "creatureTokens", who: "self", name: "leechpole" } } }],
+    });
+  });
+
+  it("Ravenous and Afflicted carry their flags (dcm-5kxg); the reminders stay (dcm-hgvx)", () => {
+    expect(conditionWithMods("harbinger-of-famine", "Hunger Pangs")).toMatchObject({ condition: { tag: "Ravenous" }, mods: [{ kind: "flag", flag: "cannotSpendHope" }] });
+    expect(conditionWithMods("owl-witch", "Nightmare Stare")).toMatchObject({
+      condition: { tag: "Afflicted" },
+      mods: [
+        { kind: "flag", flag: "cannotClearHp" },
+        { kind: "flag", flag: "cannotClearStress" },
+      ],
+    });
   });
 });

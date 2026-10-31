@@ -89,14 +89,17 @@ const hitDamage = (roll: DamageRoll, type: DamageType, direct = false): Adversar
   type,
   ...(direct ? { direct: true } : {}),
 });
-const damage = (roll: DamageRoll, type: DamageType, extra: { direct?: boolean; scale?: "half" | "double" } = {}): AdversaryStep => ({
+const damage = (roll: DamageRoll, type: DamageType, extra: { direct?: boolean; scale?: "half" | "double"; keyword?: "fire" } = {}): AdversaryStep => ({
   kind: "damage",
   to: "targets",
   roll,
   type,
   ...(extra.direct ? { direct: true } : {}),
   ...(extra.scale ? { scale: extra.scale } : {}),
+  ...(extra.keyword ? { keyword: extra.keyword } : {}),
 });
+/** Lanes-2, S4 (dcm-dv6): fire damage carries `keyword: "fire"` (Fireproof, HF p.22; Made of Straw, HF p.79). */
+const FIRE = { keyword: "fire" } as const;
 const gainFear = (amount: NumberSource = one): AdversaryStep => ({ kind: "fear", to: "self", change: "gain", amount });
 const markStress = (amount: NumberSource = one): AdversaryStep => ({ kind: "markStress", to: "targets", amount });
 const condition = (c: ConditionRef, duration: "temporary" | "rest" | "scene" | "hit" | "manual", endsWhen?: string, when?: readonly Gate[]): AdversaryStep => ({
@@ -121,13 +124,13 @@ const save = (trait: TraitId | readonly TraitId[], difficulty: SaveDifficulty, o
 });
 
 /** "Targets who succeed must mark a Stress or take half damage" (the PC picks; one option each). */
-const stressOrHalf = (id: string, roll: DamageRoll, type: DamageType, direct = false): AdversaryStep => ({
+const stressOrHalf = (id: string, roll: DamageRoll, type: DamageType, direct = false, keyword?: "fire"): AdversaryStep => ({
   kind: "choose",
   id,
   label: "Mark a Stress or take half damage",
   options: [
     { id: "stress", label: "Mark a Stress", steps: [markStress()] },
-    { id: "half", label: "Take half damage", steps: [damage(roll, type, { direct, scale: "half" })] },
+    { id: "half", label: "Take half damage", steps: [damage(roll, type, { direct, scale: "half", ...(keyword ? { keyword } : {}) })] },
   ],
 });
 
@@ -363,7 +366,7 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         id: `fireball-${n}`,
         costs: [stress(n)],
         targets: enemies("far", n),
-        steps: [save("agility", OWN, [damage(dmg(4, 10), "magic")])],
+        steps: [save("agility", OWN, [damage(dmg(4, 10), "magic", FIRE)])],
       }),
     ),
   ),
@@ -408,13 +411,20 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // The Weight of Opulence - Action: "Spend a Fear to turn the Catrin's gaze toward the PC carrying the most gold. The target
   // must succeed on an Instinct Reaction Roll or lose a Hope for each bag of gold they're carrying. If the PC loses their last
   // Hope or has no Hope to lose, they mark Stress instead."
+  // User answer 2026-10-31 (dcm-trz9): each bag costs a Hope; each bag the PC can't pay with Hope (none left, or none at
+  // all) is a Stress instead (3 bags, 1 Hope: lose 1 Hope, mark 2 Stress). Manual: the adversary run has no gold count of
+  // the PC (Lanes-2 (dcm-n3mp): goldOf has no stored source on this path).
   entry(
     "catrin",
     "The Weight of Opulence",
     action({
       costs: [fear()],
       targets: enemy("unlimited"),
-      steps: [save("instinct", OWN, [manual("Lose a Hope for each bag of gold carried. If they lose their last Hope or have none to lose, they mark Stress instead.")])],
+      steps: [
+        save("instinct", OWN, [
+          manual("Lose a Hope for each bag of gold carried; mark a Stress for each bag they can't pay with Hope (e.g. 3 bags with 1 Hope: lose 1 Hope and mark 2 Stress)."),
+        ]),
+      ],
     }),
   ),
   // Expensive Failure - Reaction: "When a PC within Melee range fails an action roll, you can mark a Stress to have the
@@ -454,7 +464,7 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         save(
           "agility",
           dc(20),
-          [damage(dmg(3, 12), "magic")],
+          [damage(dmg(3, 12), "magic", FIRE)],
           [
             {
               kind: "choose",
@@ -1810,7 +1820,7 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
           kind: "check",
           dice: diceExpr(1, 4),
           test: { kind: "totalAtLeast", value: 1 },
-          then: [damage(dmg(3, 6), "magic"), manual("The d4 is the number of bursts. A target within Very Close range of more than one burst takes 3d6 more for each extra burst, combined.", "self")],
+          then: [damage(dmg(3, 6), "magic", FIRE), manual("The d4 is the number of bursts. A target within Very Close range of more than one burst takes 3d6 more for each extra burst, combined.", "self")],
           otherwise: [],
         },
       ],
@@ -1863,8 +1873,9 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Hellwing - Evolution: "When the Vampire Lord marks half their HP, they transform into the Hellwing: a towering, demonic
   // bat creature. They gain the "On Crimson Wings" and "Blood Bath" features and replace their standard attack with the
   // following standard attack: Claws: Close | 3d12+6 phy"
-  // The transformation tags the instance (both features require the tag); the new standard attack is manual (no evolution
-  // step swaps the stat block's attack).
+  // The transformation tags the instance (both features require the tag). Lanes-2, S4: the new standard attack is an
+  // effect on itself (Evolution, dcm-gx3): the server stores it as an instance modifier and the stat block's attack
+  // becomes Claws (ATK kept).
   entry(
     "vampire-lord",
     "Hellwing",
@@ -1873,7 +1884,13 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       {
         steps: [
           { kind: "condition", to: "self", condition: HELLWING, duration: "permanent" },
-          manual("Its standard attack becomes Claws: Close | 3d12+6 phy.", "self"),
+          {
+            kind: "effect",
+            to: "self",
+            label: "Hellwing",
+            mods: [{ kind: "standardAttack", name: "Claws", range: "close", damage: diceExpr(3, 12, 6), type: "physical" }],
+            duration: "permanent",
+          },
         ],
       },
     ),
@@ -2035,7 +2052,7 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       costs: [fear()],
       targets: enemiesFront("close"),
       steps: [
-        save("agility", OWN, [damage(dmg(4, 8, 3), "magic")], [stressOrHalf("flame", dmg(4, 8, 3), "magic")]),
+        save("agility", OWN, [damage(dmg(4, 8, 3), "magic", FIRE)], [stressOrHalf("flame", dmg(4, 8, 3), "magic", false, "fire")]),
         manual("A target who marks HP from this attack also becomes Vulnerable until they clear a HP."),
       ],
     }),

@@ -289,9 +289,18 @@ describe("shared features", () => {
 // ---------------------------------------------------------------- adversary by adversary
 
 describe("Adult Flickerfly (CB p.228)", () => {
-  it("Never Misses: before every attack, a manual halved Evasion", () => {
-    expect(fired("adult-flickerfly", { kind: "onAttack", stage: "before", attack: "standard" })).toEqual(["Never Misses:main:auto"]);
-    expect(prompts(runUse("adult-flickerfly", "Never Misses", [], { spotlit: false }), "manual")[0]!.text).toMatch(/Evasion is halved/);
+  it("Never Misses: the attacksHalveEvasion flag halves the target's Evasion on the standard attack (lanes-2 S4, dcm-4c9m)", () => {
+    expect(fired("adult-flickerfly", { kind: "onAttack", stage: "before", attack: "standard" })).toEqual([]);
+    const passives = passiveSummary(effectsOf("adult-flickerfly"), state());
+    expect(passives.flags).toContain("attacksHalveEvasion");
+    // d20 5 + 3 (ATK) = 8 beats Bram's Evasion 15 halved (8, rounded up); 3d20 = 1 + 1 + 1 = 3 physical.
+    const rng = queueRng([5, 1, 1, 1]);
+    const result = runStandardAttack(context("adult-flickerfly", { passives, targets: [bram], rng }));
+    expect(result.ok && result.plan.incoming).toEqual([hitOn("bram", 3, "physical", { attackTotal: 8 })]);
+    rng.done();
+    // Without the passive the same roll misses.
+    const plain = runStandardAttack(context("adult-flickerfly", { targets: [bram], rng: queueRng([5]) }));
+    expect(plain.ok && plain.plan.incoming).toEqual([]);
   });
 
   it("Deadly Flight: only while flying (the flag)", () => {

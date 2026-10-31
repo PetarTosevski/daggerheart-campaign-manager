@@ -1148,11 +1148,19 @@ describe("Vampire Lord (HF p.88)", () => {
     expect(folds(plan("vampire-lord", "Melt into Shadow", [4], quiet()))).toEqual([]);
   });
 
-  it("Hellwing: at half HP it transforms (tag; the new standard attack is manual); On Crimson Wings +1 Difficulty while flying", () => {
+  it("Hellwing: at half HP it transforms (tag + Claws as a permanent standardAttack effect); On Crimson Wings +1 Difficulty while flying", () => {
     expect(matchesTrigger(triggerOf("vampire-lord", "Hellwing"), { kind: "onHpMarked", before: 3, after: 4, hpMax: 7 })).toBe(true);
     const p = plan("vampire-lord", "Hellwing", [], quiet());
     expect(p.self.after.tags).toEqual(["Hellwing"]);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    // Lanes-2 S4 (dcm-gx3): "replace their standard attack with … Claws: Close | 3d12+6 phy".
+    expect(stepsOf(p, "effect")).toMatchObject([
+      {
+        label: "Hellwing",
+        duration: "permanent",
+        mods: [{ kind: "standardAttack", name: "Claws", range: "close", damage: { count: { kind: "fixed", value: 3 }, sides: 12, plus: { kind: "fixed", value: 6 } }, type: "physical" }],
+      },
+    ]);
     expect(summaryOf("vampire-lord", hellwing, { situations: ["The Hellwing is flying"] }).difficulty).toBe(1);
     expect(summaryOf("vampire-lord", selfOf("vampire-lord"), { situations: ["The Hellwing is flying"] }).difficulty).toBe(0);
   });
@@ -1265,5 +1273,36 @@ describe("Young Fire Dragon (HF p.89)", () => {
     const burn = plan("young-fire-dragon", "Slash and Burn", [], quiet({ useId: "burn", trigger: { subject: mira } }));
     expect(burn.self.after.stress).toBe(1);
     expect(folds(burn)).toEqual([expect.objectContaining({ targetIds: ["mira"], amount: 10 })]);
+  });
+});
+
+describe("Lanes-2 S4: tier 3 Hope & Fear data switches", () => {
+  /** The keyword of every `damage` step of a feature (all uses, nested); "none" without one. */
+  const damageKeywords = (adversaryId: string, feature: string): string[] => {
+    const out: string[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (node === null || typeof node !== "object") return;
+      const o = node as Record<string, unknown>;
+      if (o.kind === "damage" && "roll" in o) out.push(typeof o.keyword === "string" ? o.keyword : "none");
+      Object.values(o).forEach(walk);
+    };
+    walk(effectOf(adversaryId, feature).uses);
+    return out;
+  };
+
+  it("fire damage carries keyword fire (dcm-dv6): Fireball, Breath of Fire, Unleash Hellfire, Flame Breath", () => {
+    expect(new Set(damageKeywords("archmage", "Fireball"))).toEqual(new Set(["fire"]));
+    expect(damageKeywords("chimera", "Breath of Fire")).toEqual(["fire"]);
+    expect(damageKeywords("vampire-lord", "Unleash Hellfire")).toEqual(["fire"]);
+    expect(damageKeywords("young-fire-dragon", "Flame Breath")).toEqual(["fire", "fire"]);
+    // Not fire: the Fire Titan's thrown rock.
+    expect(damageKeywords("fire-titan", "Hurl Rock")).toEqual(["none"]);
+  });
+
+  it("The Weight of Opulence: the failure branch states the answer's rule (dcm-trz9; the gold count stays manual, dcm-n3mp)", () => {
+    const save = effectOf("catrin", "The Weight of Opulence").uses[0]!.steps[0] as Extract<AdversaryStep, { kind: "save" }>;
+    expect(save).toMatchObject({ kind: "save", trait: "instinct" });
+    expect(save.onFail).toEqual([expect.objectContaining({ kind: "manual", text: expect.stringMatching(/mark a Stress for each bag they can't pay with Hope/) })]);
   });
 });

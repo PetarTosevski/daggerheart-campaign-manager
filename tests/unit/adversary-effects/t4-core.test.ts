@@ -877,3 +877,39 @@ describe("Zombie Legion (CB p.239)", () => {
     expect(p.incoming).toEqual([expect.objectContaining({ targetId: "rook", amount: 14 })]);
   });
 });
+
+describe("Lanes-2 S4: tier 4 Core Book data switches", () => {
+  /** The keyword of every `damage` step of a feature (all uses, nested); "none" without one. */
+  const damageKeywords = (adversaryId: string, feature: string): string[] => {
+    const out: string[] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (node === null || typeof node !== "object") return;
+      const o = node as Record<string, unknown>;
+      if (o.kind === "damage" && "roll" in o) out.push(typeof o.keyword === "string" ? o.keyword : "none");
+      Object.values(o).forEach(walk);
+    };
+    walk(effectOf(adversaryId, feature).uses);
+    return out;
+  };
+
+  it("fire and lava damage carries keyword fire (dcm-dv6): Conflagration, Eruption, Volcanic Breath, Lava Splash", () => {
+    expect(damageKeywords("fallen-sorcerer", "Conflagration")).toEqual(["fire"]);
+    expect(damageKeywords("volcanic-dragon-molten-scourge", "Eruption")).toEqual(["fire"]);
+    expect(damageKeywords("volcanic-dragon-molten-scourge", "Volcanic Breath")).toEqual(["fire", "fire"]);
+    expect(damageKeywords("volcanic-dragon-molten-scourge", "Lava Splash")).toEqual(["fire"]);
+    // Not fire: the Molten Scourge's physical blow.
+    expect(damageKeywords("volcanic-dragon-molten-scourge", "Shattering Might")).toEqual(["none"]);
+  });
+
+  it("Reality Quake: Unstuck carries marksMultiplier x2 on Hope, Armor, HP and Stress (dcm-fbsr); the reminder stays (dcm-12kx, dcm-q40t)", () => {
+    const save = useOf("outer-realms-abomination", "Reality Quake").steps[0] as Extract<AdversaryStep, { kind: "save" }>;
+    expect(save.onFail[0]).toMatchObject({
+      kind: "condition",
+      condition: { kind: "tag", tag: "Unstuck" },
+      duration: "scene",
+      mods: [{ kind: "marksMultiplier", factor: 2, of: ["hope", "armor", "hp", "stress"] }],
+    });
+    expect(save.onFail[1]).toMatchObject({ kind: "manual", text: expect.stringMatching(/double the amount spent or marked \(an Armor Slot needs two free slots\)/) });
+  });
+});

@@ -375,7 +375,7 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       costs: [fear(1)],
       roll: ATTACK,
       targets: allAround("close"),
-      steps: [{ kind: "damage", to: "targets", when: ["hit"], roll: roll(2, 10, 6), type: "magic", direct: true }],
+      steps: [{ kind: "damage", to: "targets", when: ["hit"], roll: roll(2, 10, 6), type: "magic", direct: true, keyword: "fire" }],
     }),
   ),
   // Nightmare Tableau: "Mark a Stress to trap a target within Far range in a powerful illusion of their worst fears. While
@@ -896,6 +896,9 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Reality Quake: "Spend a Fear to rattle the edges of reality within Far range of the Abomination. All targets within
   // that area must succeed on a Knowledge Reaction Roll or become Unstuck from reality until the end of the scene. When an
   // Unstuck target spends Hope or marks Armor Slots, HP, or Stress, they must double the amount spent or marked."
+  // Lanes-2, S4: the Unstuck tag carries `marksMultiplier` x2 (dcm-fbsr; E2 doubles a hit's marks from it, an Armor Slot
+  // needs two free slots, dcm-3m5k). The reminder stays: a PC hit doesn't read an adversary condition's mods yet
+  // (Lanes-2 (dcm-12kx)), and spends and other marks wait on Lanes-2 (dcm-q40t).
   entry(
     "outer-realms-abomination",
     "Reality Quake",
@@ -911,8 +914,14 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           trait: "knowledge",
           difficulty: OWN_DIFFICULTY,
           onFail: [
-            { kind: "condition", to: "targets", condition: tag("Unstuck"), duration: "scene" },
-            { kind: "manual", to: "targets", text: "While Unstuck, when they spend Hope or mark Armor Slots, HP, or Stress, they must double the amount spent or marked." },
+            {
+              kind: "condition",
+              to: "targets",
+              condition: tag("Unstuck"),
+              duration: "scene",
+              mods: [{ kind: "marksMultiplier", factor: 2, of: ["hope", "armor", "hp", "stress"] }],
+            },
+            { kind: "manual", to: "targets", text: "While Unstuck, when they spend Hope or mark Armor Slots, HP, or Stress, they must double the amount spent or marked (an Armor Slot needs two free slots)." },
           ],
           onSuccess: [],
         },
@@ -1198,7 +1207,7 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           trait: "agility",
           difficulty: OWN_DIFFICULTY,
           onFail: [
-            { kind: "damage", to: "targets", roll: roll(4, 6, 6), type: "physical" },
+            { kind: "damage", to: "targets", roll: roll(4, 6, 6), type: "physical", keyword: "fire" },
             { kind: "move", to: "targets", mode: "knockBack", range: "close", relativeTo: "self" },
           ],
           onSuccess: [],
@@ -1231,12 +1240,12 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
               trait: "agility",
               difficulty: OWN_DIFFICULTY,
               onFail: [
-                { kind: "damage", to: "targets", roll: roll(2, 10, 4), type: "physical" },
+                { kind: "damage", to: "targets", roll: roll(2, 10, 4), type: "physical", keyword: "fire" },
                 { kind: "markStress", to: "targets", amount: dice(1, 4) },
                 { kind: "condition", to: "targets", condition: VULNERABLE, duration: "manual", endsWhen: "until they clear a Stress" },
               ],
               onSuccess: [
-                { kind: "damage", to: "targets", roll: roll(2, 10, 4), type: "physical", scale: "half" },
+                { kind: "damage", to: "targets", roll: roll(2, 10, 4), type: "physical", scale: "half", keyword: "fire" },
                 { kind: "markStress", to: "targets", amount: fixed(1) },
               ],
             },
@@ -1255,7 +1264,7 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       activation: { kind: "reaction", trigger: { kind: "onDamaged", stage: "did", minSeverity: "severe", fromAttack: true, attackerWithin: "veryClose" } },
       needsSpotlight: false,
       targets: SOURCE,
-      steps: [{ kind: "damage", to: "targets", roll: roll(2, 10, 4), type: "physical", direct: true }],
+      steps: [{ kind: "damage", to: "targets", roll: roll(2, 10, 4), type: "physical", direct: true, keyword: "fire" }],
     }),
   ),
   phaseChange("volcanic-dragon-molten-scourge", "Ashen Vengeance (Phase Change)", "volcanic-dragon-ashen-tyrant", "Volcanic Dragon: Ashen Tyrant"),
