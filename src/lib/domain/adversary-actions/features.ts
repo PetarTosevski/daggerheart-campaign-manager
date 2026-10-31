@@ -546,6 +546,8 @@ export function matchesTrigger(trigger: AdversaryTrigger, event: AdversaryEvent)
       const e = event as Extract<AdversaryEvent, { kind: "pcHope" }>;
       return e.change === trigger.change && within(e.band, trigger.within);
     }
+    case "pcEscapes":
+      return false; // matched in wave 10 (dcm-0hlq, dcm-thwj)
     case "onSpotlight": {
       const e = event as Extract<AdversaryEvent, { kind: "onSpotlight" }>;
       // Lane E7 (dcm-2gn): Intimidating (HF p.89) only when the GM spent a Fear to spotlight it.

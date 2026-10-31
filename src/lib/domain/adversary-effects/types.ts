@@ -208,7 +208,15 @@ export type AdversaryTrigger =
   /** "When a PC would deal damage to a creature within Close range" of this adversary (Drake Guard Dog, HF p.82). */
   | { kind: "pcDealsDamage"; within?: Range; stage?: "would" | "did" }
   /** "When the PCs finish a long rest" (Midnight Heart, HF p.88); `rest` narrows the rest. */
-  | { kind: "pcsRest"; rest?: "short" | "long" };
+  | { kind: "pcsRest"; rest?: "short" | "long" }
+  // ---- Plan lanes-2, tracer V3 (widened; dcm-j63t)
+  /**
+   * "A PC escaped what the X put on them": the answer to a card `tokens.escape` (Encumber, CB p.218: "All bramble tokens
+   * can be removed by succeeding on a Finesse Roll (12 + the number of bramble tokens)"; Drain and Multiply spawns a Minion
+   * per bramble token removed). `name`: only tokens of that name (`"bramble"`); `condition`: only escaping that condition;
+   * `within`: the escaping PC is within this range of the X. The event's token count becomes `trigger.amount`.
+   */
+  | { kind: "pcEscapes"; name?: string; condition?: ConditionRef; within?: Range };
 
 /** Every trigger kind, for exhaustive switches and coverage tests (checked against `AdversaryTrigger` below). */
 export const ADVERSARY_TRIGGER_KINDS = [
@@ -236,6 +244,8 @@ export const ADVERSARY_TRIGGER_KINDS = [
   "wouldGainCondition",
   "timing",
   "situation",
+  // Plan lanes-2, tracer V3 (dcm-j63t). Listed before V's kinds: types-widen.test.ts pins V's four as the last ones.
+  "pcEscapes",
   // Plan lanes, tracer V
   "pcSpotlit",
   "allyAttacks",
