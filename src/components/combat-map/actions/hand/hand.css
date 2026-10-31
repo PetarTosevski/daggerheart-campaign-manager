@@ -536,6 +536,16 @@
 .cmh-vault > h3 {
   margin: 0;
 }
+/* Plan lanes-2 E1.3a (dcm-ego9): the recall riders' check boxes (Perfect Recall). */
+.cmh-recall-riders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--cm-card-border);
+  border-radius: 6px;
+}
 
 /* The tray: the slim bar and the fan under it. */
 .cmh-tray {

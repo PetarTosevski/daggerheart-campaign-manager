@@ -48,6 +48,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { installedAugments, seedMotherboard } from "./characterExtras";
 import { logAction } from "./lib/actionLog";
 import { moveCardFor, writeHandHidden } from "./lib/cardHand";
+import { withoutCondition } from "./lib/cardRunner";
 import { featureScope } from "./sessionFeatures";
 import { editable, findCharacter, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { claimFile, deleteFilesOf, deleteOwnFile, isAllowedImage, isClaimed, ownFileUrl } from "./lib/files";
@@ -757,15 +758,21 @@ export const adjustResource = userMutation({
 /**
  * Switches one condition on the sheet (CB p.102: Vulnerable, Restrained, Hidden...): on when it was off, off when it was
  * on. Owner or GM; used by the Combat Map's token card (user 2026-10-20).
+ *
+ * Plan lanes-2 E1.3a: turning a condition off drops its source marker too (`withoutCondition`; dcm-bxp.99.19.68: else a
+ * later ordinary Cloaked would read as Vanishing Act's until the next rest). Turning Unconscious on drops Cloaked, any
+ * Cloaked (dcm-bxp.99.19.63; user 2026-10-30: a rogue who is unconscious or dead drops Cloaked).
  */
 export const toggleCondition = userMutation({
   args: { characterId: v.id("characters"), condition: conditionValidator },
   returns: v.object({ conditions: v.array(conditionValidator) }),
   handler: async (ctx, { characterId, condition }) => {
     const { character, sheet: s } = await editable(ctx, ctx.user, characterId);
-    const conditions = s.conditions.includes(condition) ? s.conditions.filter((c) => c !== condition) : [...s.conditions, condition];
-    await saveSheet(ctx, character._id, { ...s, conditions });
-    return { conditions };
+    const on = !s.conditions.includes(condition);
+    let next: CharacterSheet = on ? { ...s, conditions: [...s.conditions, condition] } : withoutCondition(s, condition);
+    if (on && condition === "unconscious") next = withoutCondition(next, "cloaked");
+    await saveSheet(ctx, character._id, next);
+    return { conditions: next.conditions };
   },
 });
 

@@ -22,6 +22,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { assertOneActive } from "./characters";
 import { logAction, undoEntry } from "./lib/actionLog";
 import { editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
+import { withoutCondition } from "./lib/cardRunner";
 import { rollDie } from "./lib/dice";
 import { keyedUserMutation, userQuery } from "./lib/functions";
 import { applyRule } from "./lib/mechanics";
@@ -102,6 +103,10 @@ async function leavePlay(
 ) {
   const outcome = deathStatus(lessLethal(campaign), reason);
   const requested = outcome.status === "away" && !atLeast(await permissionFor(ctx, ctx.user, { type: "campaign", campaign }, "owner"), "owner");
+  // dcm-bxp.99.19.63 (user 2026-10-30): a rogue who leaves play drops Cloaked here, saved with the death row (its `before`
+  // is the sheet with Cloaked, so undo puts it back).
+  const uncloaked = withoutCondition(sheet, "cloaked");
+  if (uncloaked !== sheet) await saveSheet(ctx, character._id, uncloaked);
   await ctx.db.patch("characters", character._id, {
     status: outcome.status,
     away: outcome.status === "away" ? { ...outcome.away, ...(requested ? { requested: true as const } : {}) } : undefined,
@@ -172,7 +177,8 @@ export const choose = keyedUserMutation({
       if (args.move === "avoidDeath") {
         const hopeDie = rollDie(12);
         const result = avoidDeath(sheet, hopeDie);
-        await saveSheet(ctx, character._id, result.sheet);
+        // dcm-bxp.99.19.63 (user 2026-10-30): an unconscious rogue drops Cloaked (any Cloaked), in this same row.
+        await saveSheet(ctx, character._id, withoutCondition(result.sheet, "cloaked"));
         const scar = result.scarred ? `gains a scar${result.journeyEnds ? "; the last Hope slot is gone and their journey ends" : ""}` : "no scar";
         const entryId = await logAction(ctx, {
           ...base,

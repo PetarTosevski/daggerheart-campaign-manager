@@ -138,6 +138,7 @@ export function HandBody({
   const pickedEnemies = pickedOnMap.filter((id) => !dialogTokenIds.has(id));
   const [dialogFor, setDialogFor] = useState<string | null>(null);
   const [vaultOpen, setVaultOpen] = useState(false);
+  const [checkedRiders, setCheckedRiders] = useState<string[]>([]);
   const [last, setLast] = usePanelMemory<LastCard | null>(`card:${characterId}`, null);
   // F8-I1 (dcm-bxp.99.28): the roll options for the next card that rolls, kept across the layout switch.
   const [rollOptions, setRollOptions] = usePanelMemory<RollValues>(`rolls:${characterId}`, NO_ROLL_OPTIONS);
@@ -238,6 +239,13 @@ export function HandBody({
   const waitingCard = actions.waiting ? loadout.find((c) => c.cardId === actions.waiting?.request.cardId) : undefined;
   const full = loadout.length >= LOADOUT_MAX;
   const peek = hidden && !instead && hand !== undefined && loadout.length > 0;
+  // Plan lanes-2 E1.3a (dcm-ego9): the ready recall riders (Perfect Recall), offered with a recall that costs Stress.
+  const recallRiders = restOpen ? [] : (hand?.recallRiders ?? []).filter((r) => r.ready);
+  const sentRiders = recallRiders.filter((r) => checkedRiders.includes(r.id)).map((r) => r.id);
+
+  async function recallCard(cardId: string) {
+    if (await recall.recall(cardId, restOpen, sentRiders)) setCheckedRiders([]);
+  }
 
   const over = (
     <div className="cmh-over">
@@ -285,6 +293,21 @@ export function HandBody({
       {vaultOpen && hand ? (
         <section id={vaultId} className="cmh-panel cmh-vault" aria-label={`Vault (${vault.length})`}>
           <h3 className="cm-lbl">Vault ({vault.length})</h3>
+          {canPlay && vault.length > 0 && recallRiders.length > 0 ? (
+            <fieldset className="cmh-recall-riders" data-testid="combat-hand-recall-riders">
+              <legend className="cma-small">With the next recall</legend>
+              {recallRiders.map((r) => (
+                <label key={r.id} className="cma-small">
+                  <input
+                    type="checkbox"
+                    checked={checkedRiders.includes(r.id)}
+                    onChange={(e) => setCheckedRiders((now) => (e.target.checked ? [...now, r.id] : now.filter((id) => id !== r.id)))}
+                  />{" "}
+                  {r.name}: -{r.amount} Recall Cost
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
           {vault.length === 0 ? (
             <p className="cm-muted cma-small cma-note">The vault is empty.</p>
           ) : (
@@ -299,7 +322,7 @@ export function HandBody({
                         disabled={full || recall.pending !== null}
                         aria-label={`${recallLabel(card.recallCost, restOpen)}, ${card.name}`}
                         title={full ? "The loadout holds 5 cards: vault one first." : undefined}
-                        onClick={() => void recall.recall(card.cardId, restOpen)}
+                        onClick={() => void recallCard(card.cardId)}
                       >
                         {recallLabel(card.recallCost, restOpen)}
                       </button>

@@ -76,13 +76,16 @@ export function useRecall({ campaignId, characterId }: { campaignId: Id<"campaig
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
 
-  async function recall(cardId: string, duringRest: boolean) {
+  /** Plan lanes-2 E1.3a (dcm-ego9): `recallRiders` are the checked recall riders (Perfect Recall), sent with the move. */
+  async function recall(cardId: string, duringRest: boolean, recallRiders: readonly string[] = []): Promise<boolean> {
     setError(null);
     setPending(cardId);
     try {
-      await move({ characterId, cardId, to: "loadout", duringRest });
+      await move({ characterId, cardId, to: "loadout", duringRest, ...(recallRiders.length > 0 ? { recallRiders: [...recallRiders] } : {}) });
+      return true;
     } catch (e) {
       setError(errorMessage(e));
+      return false;
     } finally {
       setPending(null);
     }

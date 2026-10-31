@@ -8,15 +8,15 @@ import type { CardUse } from "../src/lib/domain/card-effects/types";
 import type { EndRoll } from "../src/lib/domain/characters/expiry";
 import type { RollRecord } from "../src/lib/domain/duality";
 import type { TraitId } from "../src/lib/srd/types";
-import type { CharacterSheet } from "../src/lib/validation/characters";
+import type { CharacterSheet, Effect } from "../src/lib/validation/characters";
 import { tickArmedCountdowns } from "./countdownRolls";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { cardChoicesValidator, cardRollValidator, dropDice, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll, type DiceSlot } from "./lib/cardChoices";
 import { handCardValidator, handOf, handSharedWithPlayers, hiddenHands, playersSeeHands, recallRiderOptions, recallRiderOptionValidator, writeHandHidden } from "./lib/cardHand";
-import { damageRolls, endForCasterOnInstances, endOnSheet, gmLines, instanceWrites, needsChoiceValidator, openCardHits, pendingCardValidator, promptsOf, publicTargets, resolvedCardValidator, rollText, writeInstances, type InstanceWrite, type ResolvedCard } from "./lib/cardRows";
-import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, pickCard, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome } from "./lib/cardRunner";
+import { applyUseEnds, damageRolls, endForCasterOnInstances, endOnDefeat, endOnSheet, endSharedGrants, endSpellCast, gmLines, isSpell, instanceWrites, needsChoiceValidator, openCardHits, pendingCardValidator, promptsOf, publicTargets, resolvedCardValidator, rollText, writeInstances, type InstanceWrite, type ResolvedCard } from "./lib/cardRows";
+import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, pickCard, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome, type UsePick } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import {
   attackScene,
@@ -42,6 +42,8 @@ import {
   type RiderEnv,
   type RiderRun,
 } from "./lib/combatActions";
+import { uncloakAfterAttack } from "./lib/combatMovement";
+import { partyMembers } from "./lib/adversaryHits";
 import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openRequests, openRiderPick } from "./lib/combatRequests";
 import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
@@ -50,7 +52,8 @@ import { atLeast } from "./lib/permissions";
 import { changed } from "./lib/rolls";
 import { logUnshakable, unshakePlan, type UnshakableRoll } from "./lib/unshakable";
 import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, riderValidator, type Rider } from "./lib/validators/combatRequests";
-import type { RunPlan } from "../src/lib/domain/card-effects/run";
+import type { PlanStep, RunPlan } from "../src/lib/domain/card-effects/run";
+import { activeAreasOnMap, MAX_AREA_COUNT, placeAreasFromPlan } from "./combatAreas";
 import type { Step } from "../src/lib/domain/card-effects/types";
 import { rangeFromWeapon } from "../src/lib/domain/combat-actions/index";
 
@@ -240,7 +243,7 @@ function cardEndRoll(use: CardUse, record: RollRecord, trait: TraitId | undefine
   return endRollFor(record, { ...(attack ? { attack } : {}), ...(spec?.kind === "spellcast" ? { spellcast: true } : {}), ...(trait !== undefined ? { trait } : {}), targetsCreature });
 }
 
-async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, plan: RunPlan, actorId: Id<"users">, riders?: RiderSheets): Promise<ResolvedCard> {
+async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, plan: RunPlan, actorId: Id<"users">, riders?: RiderSheets): Promise<{ result: ResolvedCard; writes: InstanceWrite[] }> {
   const { campaign, character, pick } = req;
   // SD5: with riders the row's `before` is the sheet before the riders' costs, and the actor's sheet after them.
   const sheet = riders?.before ?? req.sheet;
@@ -257,10 +260,12 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   // the condition markers already went in the runner) and the modifiers its token made that end on its roll (Timejammer).
   const endRoll = plan.roll ? cardEndRoll(pick.use, plan.roll.record, req.roll.trait, built.targets.some((t) => t.tokenId !== actorToken)) : null;
   const rollEndLabels: string[] = [];
+  const rollEnded: Effect[] = [];
   if (endRoll !== null) {
     const own = endOnSheet(next, { kind: "roll", roll: endRoll }, { only: (e) => conditionMarkerOf(e) === null });
     next = own.sheet;
     rollEndLabels.push(...own.lines);
+    rollEnded.push(...own.ended);
   }
   let prompts = promptsOf(plan, built).filter((p) => !(healed > 0 && p.kind === "manual" && p.text.startsWith("You clear a number of Hit Points")) && !(p.kind === "manual" && swapped.texts.includes(p.text)));
 
@@ -326,6 +331,16 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   if (rollEndLabels.length > 0) {
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary: rollEndLabels.join("; ").slice(0, 1000), groupId, undoable: true });
   }
+  // Plan lanes-2 E1.3a (dcm-79v1 card half; dcm-rao5, CB p.33 Bird's-Eye View): a shared grant the card's roll spent ends
+  // on every other party sheet too, each a row in the use's group.
+  if (rollEnded.length > 0) {
+    const party = (await partyMembers(ctx, campaign._id)).filter((m) => m.character._id !== character._id);
+    for (const end of endSharedGrants(rollEnded, party.map((m) => ({ key: m.character._id, sheet: m.sheet })))) {
+      const before = party.find((m) => m.character._id === end.key)!.sheet;
+      await saveSheet(ctx, end.key, end.sheet);
+      await logAction(ctx, { campaignId: campaign._id, characterId: end.key, actorId, kind: "feature", visibility: "public", summary: end.lines.join("; ").slice(0, 1000), groupId, before, undoable: true });
+    }
+  }
   const lines = [...gmLines(plan, built, writes), ...casterEnds.lines];
   const adversaryBefore = [...writes.map((w) => w.before), ...casterEnds.before];
   if (lines.length > 0 || adversaryBefore.length > 0) {
@@ -352,7 +367,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   prompts = prompts.filter((p) => !(p.kind === "pcDamage" && p.tokenIds.every((t) => hitTokens.has(t))));
   const minionOffer = await offerMinions(ctx, req, built, plan, { groupId, entryId, actorId });
   await dropDice(ctx, slotOf(req));
-  return {
+  const result: ResolvedCard = {
     status: "resolved",
     entryId,
     cardId: plan.cardId,
@@ -365,6 +380,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     prompts,
     minionOffer,
   };
+  return { result, writes };
 }
 
 /**
@@ -407,34 +423,43 @@ async function offerMinions(ctx: MutationCtx, req: UseRequest, built: BuiltRun, 
 
 // ---------------------------------------------------------------- riders on a card's roll (SD5)
 
-/** The sheets a card use with riders writes: before the riders' costs, and after the riders on the result. */
-type RiderSheets = { before: CharacterSheet; next: CharacterSheet; names: string[] };
+/** The sheets a use with riders writes: before the riders' costs, and after the riders on the result. */
+export type RiderSheets = { before: CharacterSheet; next: CharacterSheet; names: string[] };
 
-/** What a card's roll is to its riders: an attack with a weapon, a Spellcast Roll, a trait roll. */
-function cardHost(req: UseRequest, weaponChoice: "primary" | "secondary" | undefined): Host {
-  const roll = req.pick.use.roll;
-  if (roll === undefined || roll.kind === "adversaryAttack" || roll.kind === "reaction") throw appError("INVALID", "Riders ride on a card that makes an action roll.");
-  const slot = roll.kind === "attack" ? (roll.weapon === "either" ? (weaponChoice ?? "primary") : roll.weapon) : undefined;
-  const weapon = slot ? weaponIn(req.sheet, slot) : undefined;
-  const trait = roll.kind === "trait" ? (typeof roll.trait === "string" ? roll.trait : (req.roll.trait ?? roll.trait[0])) : weapon && weapon.trait !== "choice" ? weapon.trait : req.roll.trait;
-  // Plan lanes, E1: the card's use (`fromUse`), its domain (`cardDomain`: Fane of the Wilds, dcm-z1a), whether it makes a
-  // damage roll (Twilight Toll's `noDamageRoll`, dcm-94h), and a trait roll that is its own weapon (`asWeapon`, dcm-gvr).
-  const domain = getDomainCard(req.pick.effect.cardId)?.domain;
+/**
+ * What a use's roll is to its riders: an attack with a weapon, a Spellcast Roll, a trait roll; null for a use without an
+ * action roll (none, a reaction roll, an adversary's attack). Plan lanes, E1: the use (`fromUse`), the card's domain
+ * (`cardDomain`: Fane of the Wilds, dcm-z1a), whether it makes a damage roll (Twilight Toll's `noDamageRoll`, dcm-94h), and
+ * a trait roll that is its own weapon (`asWeapon`, dcm-gvr). Plan lanes-2 E1.3a (dcm-1kvg): a feature's use too.
+ */
+export function rollHost(sheet: CharacterSheet, use: CardUse, roll: CardRoll, weaponChoice: "primary" | "secondary" | undefined, fromUse: { id: string; useId: string }, domain?: Host["cardDomain"]): Host | null {
+  const spec = use.roll;
+  if (spec === undefined || spec.kind === "adversaryAttack" || spec.kind === "reaction") return null;
+  const slot = spec.kind === "attack" ? (spec.weapon === "either" ? (weaponChoice ?? "primary") : spec.weapon) : undefined;
+  const weapon = slot ? weaponIn(sheet, slot) : undefined;
+  const trait = spec.kind === "trait" ? (typeof spec.trait === "string" ? spec.trait : (roll.trait ?? spec.trait[0])) : weapon && weapon.trait !== "choice" ? weapon.trait : roll.trait;
   return {
-    spec: roll,
+    spec,
     trait,
-    weapon: roll.kind === "attack" || (roll.kind === "trait" && roll.asWeapon === true),
+    weapon: spec.kind === "attack" || (spec.kind === "trait" && spec.asWeapon === true),
     weaponRange: weapon ? rangeFromWeapon(weapon.range) : null,
     damageType: weapon?.damageType === "magic" ? "magic" : "physical",
     ...(slot ? { slot } : {}),
-    fromUse: { id: req.pick.effect.cardId, useId: req.pick.use.id },
+    fromUse,
     ...(domain ? { cardDomain: domain } : {}),
-    damage: makesDamageRoll(req.pick.use.steps),
+    damage: makesDamageRoll(use.steps),
   };
 }
 
+/** What a card's roll is to its riders (INVALID for a card without an action roll). */
+function cardHost(req: UseRequest, weaponChoice: "primary" | "secondary" | undefined): Host {
+  const host = rollHost(req.sheet, req.pick.use, req.roll, weaponChoice, { id: req.pick.effect.cardId, useId: req.pick.use.id }, getDomainCard(req.pick.effect.cardId)?.domain);
+  if (host === null) throw appError("INVALID", "Riders ride on a card that makes an action roll.");
+  return host;
+}
+
 /** Whether a use's steps roll damage (a `damage` step, nested ones included). */
-function makesDamageRoll(steps: readonly Step[]): boolean {
+export function makesDamageRoll(steps: readonly Step[]): boolean {
   return steps.some(
     (s) =>
       s.kind === "damage" ||
@@ -446,21 +471,21 @@ function makesDamageRoll(steps: readonly Step[]): boolean {
 }
 
 /**
- * Plan lanes, E1: the automatic uses that ride on a card's roll (a loadout card's or a held feature's `auto` use whose
+ * Plan lanes, E1: the automatic uses that ride on a use's roll (a loadout card's or a held feature's `auto` use whose
  * trigger fits it: Fane of the Wilds' token on a critical Spellcast Roll for a Sage spell, CB p.339, dcm-z1a), before or
  * after the roll. Damage-phase ones stay with the weapon attack.
  */
-function cardAutos(req: UseRequest, host: Host): PickedRider[] {
-  return autoRiders(req.sheet, req.campaign, host).filter((r) => r.phase !== "damage");
+export function autoUsesOn(sheet: CharacterSheet, campaign: Doc<"campaigns">, host: Host): PickedRider[] {
+  return autoRiders(sheet, campaign, host).filter((r) => r.phase !== "damage");
 }
 
 const fixedN = (value: number) => ({ kind: "fixed" as const, value });
 
 /**
- * The card's use with the riders' damage changes folded in as numbers (they were rolled with the rider): +Proficiency
- * before its damage roll, the added damage, "double damage" and the extra Hit Points (NV4) on the creatures it hits.
+ * The use with the riders' damage changes folded in as numbers (they were rolled with the rider): +Proficiency before its
+ * damage roll, the added damage, "double damage" and the extra Hit Points (NV4) on the creatures it hits.
  */
-function withFolds(pick: CardPick, folds: Folds): CardPick {
+export function foldSteps(use: CardUse, folds: Folds): CardUse {
   const pre: Step[] = [];
   const post: Step[] = [];
   if (folds.proficiency !== 0) pre.push({ kind: "modifyDamage", to: "targets", change: { kind: "proficiency", delta: folds.proficiency } });
@@ -468,8 +493,14 @@ function withFolds(pick: CardPick, folds: Folds): CardPick {
   if (folds.damageAdd !== 0) post.push({ kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "add", amount: fixedN(folds.damageAdd), ...(folds.addTypes[0] ? { type: folds.addTypes[0] } : {}) } });
   if (folds.multiply !== 1) post.push({ kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "multiply", factor: 2 } });
   if (folds.extraHp > 0) post.push({ kind: "markHp", to: "targets", when: ["targetMarkedHp"], amount: fixedN(folds.extraHp) });
-  if (pre.length === 0 && post.length === 0) return pick;
-  const use = { ...pick.use, steps: [...pre, ...pick.use.steps, ...post] };
+  if (pre.length === 0 && post.length === 0) return use;
+  return { ...use, steps: [...pre, ...use.steps, ...post] };
+}
+
+/** The card's use with the riders' damage changes folded in (`foldSteps`). */
+function withFolds<P extends UsePick>(pick: P, folds: Folds): P {
+  const use = foldSteps(pick.use, folds);
+  if (use === pick.use) return pick;
   return { ...pick, use, effect: { ...pick.effect, uses: pick.effect.uses.map((u) => (u.id === use.id ? use : u)) } };
 }
 
@@ -490,7 +521,7 @@ function encounterOf(built: BuiltRun): Id<"encounters"> | undefined {
  * pair matching the roll's Hope and Fear Dice), and the second run draws that one from `sides`, keeping the draws before
  * it (and every kept die when `kept` replays a run: its Hope Die is already a d20). Without `sides`: one plain run.
  */
-function runWithHopeDie(built: BuiltRun, pick: CardPick, sides: number | undefined, kept: readonly number[] | null): RunOutcome {
+function runWithHopeDie(built: BuiltRun, pick: UsePick, sides: number | undefined, kept: readonly number[] | null): RunOutcome {
   if (sides === undefined || sides === 12) return runCard(built, pick, kept ? replaying(kept, rollDie) : rollDie);
   const calls: { sides: number; value: number }[] = [];
   const probeBase = kept ? replaying(kept, rollDie) : rollDie;
@@ -514,73 +545,98 @@ function runWithHopeDie(built: BuiltRun, pick: CardPick, sides: number | undefin
   return outcome;
 }
 
-type CardRiderOutcome = { kind: "plan"; built: BuiltRun; plan: RunPlan; req: UseRequest; sheets: RiderSheets; post: (entryId: Id<"actionLog">) => Promise<void> } | { kind: "needsChoice"; outcome: Extract<RunOutcome, { kind: "needsChoice" }> };
+/**
+ * A use that takes riders on its roll: a card (`cardWithRiders`) or, plan lanes-2 E1.3a (dcm-3s6e, dcm-1kvg), a feature
+ * (convex/combatFeatures.ts: Fangs with Wolf Form's +1d10 and Feed, HF p.39-40; Elemental Breath with Kick / Tusks).
+ */
+export type RiderUse<P extends UsePick> = {
+  campaign: Doc<"campaigns">;
+  character: Doc<"characters">;
+  /** The actor's sheet before any rider. */
+  sheet: CharacterSheet;
+  scene: AttackScene;
+  host: Host;
+  targetTokenIds: readonly string[];
+  roll: CardRoll;
+  /** Where the use's dice wait for a choice asked after the roll. */
+  slot: DiceSlot;
+  /** Builds the use on `sheet` (the riders' costs paid) with `folds`' damage changes in its steps. */
+  build: (sheet: CharacterSheet, folds: Folds) => Promise<{ built: BuiltRun; pick: P }>;
+};
 
 /**
- * SD5: a card use with riders, computed without writing: the before-roll riders (costs, roll and damage additions), the
- * card with their additions, the riders on its result (their additions folded in by running the card again with the same
- * dice), and a `post` step that writes the riders' effects on the creatures and the damage-phase riders after the card's
- * own rows.
+ * A use with riders, computed: the use to resolve (`pick`, built on `sheet`, the sheet after the before-roll riders),
+ * the rows' sheets, the rider runs (their `endEffect` steps are applied after the use, `applyUseEnds`) and `post`, which
+ * writes the riders' effects on the creatures after the use's own rows and returns its runs.
  */
-async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonly Rider[], actorId: Id<"users">, riseOff = false): Promise<CardRiderOutcome> {
+export type RiderOutcome<P extends UsePick> =
+  | { kind: "plan"; built: BuiltRun; plan: RunPlan; pick: P; sheet: CharacterSheet; sheets: RiderSheets; runs: RiderRun[]; post: (entryId: Id<"actionLog">) => Promise<RiderRun[]> }
+  | { kind: "needsChoice"; outcome: Extract<RunOutcome, { kind: "needsChoice" }> };
+
+/**
+ * SD5: a use with riders, computed without writing: the before-roll riders (costs, roll and damage additions), the use
+ * with their additions, the riders on its result (their additions folded in by running the use again with the same dice),
+ * and a `post` step that writes the riders' effects on the creatures and the damage-phase riders after the use's own rows.
+ */
+export async function runWithRiders<P extends UsePick>(ctx: MutationCtx, use: RiderUse<P>, riders: readonly Rider[], actorId: Id<"users">, riseOff = false): Promise<RiderOutcome<P>> {
   if (riders.length > MAX_RIDERS_PER_ATTACK) throw appError("INVALID", `At most ${MAX_RIDERS_PER_ATTACK} riders.`);
-  const parsed = parseChoices(req.choices);
-  const host = cardHost(req, parsed.weapon);
-  // DA2: damage-phase riders (Death Strike) are prompts after the card's damage, never run from a toggle; default-on
+  const host = use.host;
+  // DA2: damage-phase riders (Death Strike) are prompts after the use's damage, never run from a toggle; default-on
   // riders (Rise to the Challenge, CB p.48) join unless turned off.
-  const chosen = pickRiders(req.sheet, req.campaign, host, riders).filter((r) => r.phase !== "damage");
-  const picked = [...chosen, ...defaultOnRiders(req.sheet, req.campaign, host, riseOff, chosen), ...cardAutos(req, host)];
+  const chosen = pickRiders(use.sheet, use.campaign, host, riders).filter((r) => r.phase !== "damage");
+  const picked = [...chosen, ...defaultOnRiders(use.sheet, use.campaign, host, riseOff, chosen), ...autoUsesOn(use.sheet, use.campaign, host)];
   const rec = recorder(rollDie);
-  const fear = await campaignFearState(ctx, req.campaign._id);
-  const env: RiderEnv = { ctx, campaign: req.campaign, character: req.character, scene: req.scene, host, gmFear: fear.fear, rng: rec.rng, rollUsedExperience: (req.roll.experienceIds ?? []).length > 0 };
+  const fear = await campaignFearState(ctx, use.campaign._id);
+  const env: RiderEnv = { ctx, campaign: use.campaign, character: use.character, scene: use.scene, host, gmFear: fear.fear, rng: rec.rng, rollUsedExperience: (use.roll.experienceIds ?? []).length > 0 };
   const folds = emptyFolds();
   const used: PickedRider[] = [];
+  const runs: RiderRun[] = [];
   const names: string[] = [];
-  let sheet = req.sheet;
+  let sheet = use.sheet;
   for (const r of picked.filter((x) => x.phase === "before")) {
-    const run = await runRiderPart(env, r, sheet, "pre", null, req.targetTokenIds, undefined);
+    const run = await runRiderPart(env, r, sheet, "pre", null, use.targetTokenIds, undefined);
     if (run === null) continue;
     used.push(r);
     if (run === "empty") continue;
+    runs.push(run);
     sheet = run.sheet;
     foldInto(folds, run);
     names.push(run.name);
   }
-  if (folds.addTargets.length > 0) throw appError("INVALID", "A rider can't add targets to a card's roll yet.");
+  if (folds.addTargets.length > 0) throw appError("INVALID", "A rider can't add targets to this roll yet.");
 
-  // The card with the before-roll riders' additions (the roll's bonus and advantage, the damage changes).
-  const run = async (r: UseRequest, f: Folds, kept: readonly number[] | null) => {
-    const built = await build(ctx, r);
+  // The use with the before-roll riders' additions (the roll's bonus and advantage, the damage changes).
+  const run = async (pickFolds: Folds, kept: readonly number[] | null) => {
+    const { built, pick } = await use.build(sheet, pickFolds);
     const roll = built.context.roll ?? {};
-    built.context.roll = { ...roll, modifier: (roll.modifier ?? 0) + f.modifier, advantage: (roll.advantage ?? 0) + f.advantage };
-    const ran = runWithHopeDie(built, r.pick, f.hopeDie, kept);
-    return { built, outcome: ran };
+    built.context.roll = { ...roll, modifier: (roll.modifier ?? 0) + folds.modifier, advantage: (roll.advantage ?? 0) + folds.advantage };
+    return { built, pick, outcome: runWithHopeDie(built, pick, folds.hopeDie, kept) };
   };
-  const req1: UseRequest = { ...req, sheet, pick: withFolds(req.pick, folds) };
-  // Plan lanes, E1: automatic uses send plain card uses this way too, so a choice asked after the roll keeps the card's
-  // dice here as `runKept` does (CA4b: asking again never rerolls).
-  const first = await run(req1, folds, await keptDice(ctx, slotOf(req)));
+  // Plan lanes, E1: automatic uses send plain uses this way too, so a choice asked after the roll keeps the use's dice
+  // here as `runKept` does (CA4b: asking again never rerolls).
+  const first = await run(folds, await keptDice(ctx, use.slot));
   if (first.outcome.kind === "needsChoice") {
-    await keepDice(ctx, slotOf(req), first.outcome.dice, actorId);
+    await keepDice(ctx, use.slot, first.outcome.dice, actorId);
     return { kind: "needsChoice", outcome: first.outcome };
   }
-  // The card's own dice (the riders' are not replayed into it).
+  // The use's own dice (the riders' are not replayed into it).
   const dice = [...first.outcome.dice];
   let built = first.built;
+  let pick = first.pick;
   let plan = first.outcome.plan;
   const hostRoll = hostRollOf(plan);
-  // Plan lanes-2, E1 (dcm-n0dv): the riders on the result read the card roll's Hope and Fear Die (Midnight-Touched).
+  // Plan lanes-2, E1 (dcm-n0dv): the riders on the result read the roll's Hope and Fear Die (Midnight-Touched).
   if (plan.roll) env.hostDice = { hope: plan.roll.hope, fear: plan.roll.fear };
 
-  // The riders on the result, on the sheet after the card (its own Hope may pay, CB p.90).
-  let after = actorSheetAfter(built.paidSheet, plan, built.context.actor.id, req.pick.name);
+  // The riders on the result, on the sheet after the use (its own Hope may pay, CB p.90).
+  let after = actorSheetAfter(built.paidSheet, plan, built.context.actor.id, pick.name);
   const hitIds = plan.hits.filter((h) => h.hit).map((h) => built.creatures.get(h.id)?.tokenId ?? h.id);
   const later = emptyFolds();
   const skipped: string[] = [];
   const lead = built.targets[0];
   const subject = lead === undefined ? undefined : { token: lead.token, enemy: lead.kind === "enemy", tags: lead.kind === "enemy" ? lead.instance.tags : [], conditions: lead.kind === "enemy" ? lead.instance.conditions : lead.kind === "pc" ? lead.sheet.conditions : [] };
   for (const r of picked.filter((x) => x.phase === "after")) {
-    if (!resultHolds(r.trigger, hostRoll) || !rollTargetHolds(r.trigger, host, req.scene.attacker, subject) || (!rollOnly(r.trigger) && hitIds.length === 0)) {
+    if (!resultHolds(r.trigger, hostRoll) || !rollTargetHolds(r.trigger, host, use.scene.attacker, subject) || (!rollOnly(r.trigger) && hitIds.length === 0)) {
       if (!r.auto) skipped.push(r.name);
       continue;
     }
@@ -588,27 +644,27 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
     if (ran === null) continue;
     used.push(r);
     if (ran === "empty") continue;
+    runs.push(ran);
     after = ran.sheet;
     foldInto(later, ran);
     names.push(ran.name);
   }
-  if (later.addTargets.length > 0) throw appError("INVALID", "A rider can't add targets to a card's roll yet.");
+  if (later.addTargets.length > 0) throw appError("INVALID", "A rider can't add targets to this roll yet.");
   const merged: Folds = { ...folds, damageAdd: folds.damageAdd + later.damageAdd, addTypes: [...folds.addTypes, ...later.addTypes], proficiency: folds.proficiency + later.proficiency, multiply: folds.multiply * later.multiply, extraHp: folds.extraHp + later.extraHp, ...(later.minimumSeverity ? { minimumSeverity: later.minimumSeverity } : {}) };
-  let req2 = req1;
-  if (merged !== folds && (later.damageAdd !== 0 || later.proficiency !== 0 || later.multiply !== 1 || later.extraHp !== 0 || later.minimumSeverity)) {
-    // The same dice: the card's roll and damage don't change, only what the riders add to them.
-    req2 = { ...req, sheet, pick: withFolds(req.pick, merged) };
-    const again = await run(req2, folds, dice);
+  if (later.damageAdd !== 0 || later.proficiency !== 0 || later.multiply !== 1 || later.extraHp !== 0 || later.minimumSeverity) {
+    // The same dice: the use's roll and damage don't change, only what the riders add to them.
+    const again = await run(merged, dice);
     if (again.outcome.kind === "needsChoice") return { kind: "needsChoice", outcome: again.outcome };
     built = again.built;
+    pick = again.pick;
     plan = again.outcome.plan;
   }
 
-  const post = async (entryId: Id<"actionLog">) => {
+  const post = async (entryId: Id<"actionLog">): Promise<RiderRun[]> => {
     const groupId = (await ctx.db.get("actionLog", entryId))?.groupId;
-    let now = readSheet((await ctx.db.get("characters", req.character._id))!.sheet);
+    let now = readSheet((await ctx.db.get("characters", use.character._id))!.sheet);
     const start = now;
-    const runs: RiderRun[] = [];
+    const postRuns: RiderRun[] = [];
     const standing = async (tokenId: string) => {
       const c = built.creatures.get(tokenId);
       if (c?.kind !== "enemy") return c !== undefined;
@@ -620,13 +676,13 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
     for (const r of used) {
       const ran = await runRiderPart(env, r, now, "post", hostRoll, alive, undefined);
       if (ran === null || ran === "empty") continue;
-      runs.push(ran);
+      postRuns.push(ran);
       now = ran.sheet;
     }
     // DA2 (HF p.8 Death Strike; user 2026-10-30): a damage-phase rider is a Use / Pass prompt, with a pick of the ONE
     // creature when several took the damage it needs; never applied without it.
     if (groupId !== undefined) {
-      for (const r of damagePrompts(req.sheet, req.campaign, host)) {
+      for (const r of damagePrompts(use.sheet, use.campaign, host)) {
         const severity = r.trigger.kind === "whenTargetMarksHp" || r.trigger.kind === "whenEnemyTakesDamage" ? r.trigger.severity : undefined;
         const candidates: Id<"combatTokens">[] = [];
         for (const st of plan.steps) {
@@ -637,19 +693,19 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
         }
         if (candidates.length === 0) continue;
         await openRiderPick(ctx, {
-          campaignId: req.campaign._id,
+          campaignId: use.campaign._id,
           ...(encounterOf(built) ? { encounterId: encounterOf(built)! } : {}),
-          mapId: req.scene.map._id,
+          mapId: use.scene.map._id,
           createdBy: actorId,
-          payload: { schemaVersion: 1, kind: "riderPick", characterId: req.character._id, groupId, entryId, rider: { source: r.source, id: r.id, useId: r.useId, name: r.name }, candidates, hostRoll },
+          payload: { schemaVersion: 1, kind: "riderPick", characterId: use.character._id, groupId, entryId, rider: { source: r.source, id: r.id, useId: r.useId, name: r.name }, candidates, hostRoll },
         });
       }
     }
-    if (runs.length === 0) return;
+    if (postRuns.length === 0) return postRuns;
     const writes: InstanceWrite[] = [];
     const lines: string[] = [];
     let fearDelta = 0;
-    for (const ran of runs) {
+    for (const ran of postRuns) {
       const w = instanceWrites(ran.plan, ran.built.creatures, ran.name);
       await writeInstances(ctx, w);
       writes.push(...w);
@@ -657,24 +713,205 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
       if (l.length > 0) lines.push(`${ran.name}: ${l.join("; ")}`);
       fearDelta += ran.plan.gmFearDelta;
     }
-    const changedFear = await changeFear(ctx, req.campaign._id, fearDelta);
+    const changedFear = await changeFear(ctx, use.campaign._id, fearDelta);
     const sheetChanged = changed(start, now);
-    if (sheetChanged) await saveSheet(ctx, req.character._id, now);
+    if (sheetChanged) await saveSheet(ctx, use.character._id, now);
     await logAction(ctx, {
-      campaignId: req.campaign._id,
-      ...(sheetChanged ? { characterId: req.character._id, before: start } : {}),
+      campaignId: use.campaign._id,
+      ...(sheetChanged ? { characterId: use.character._id, before: start } : {}),
       actorId,
       kind: "combat",
       visibility: "gm",
-      summary: `${req.sheet.name} · riders → ${lines.join("; ") || runs.map((x) => x.name).join(", ")}`.slice(0, 1000),
+      summary: `${use.sheet.name} · riders → ${lines.join("; ") || postRuns.map((x) => x.name).join(", ")}`.slice(0, 1000),
       ...(groupId !== undefined ? { groupId } : {}),
       ...(writes.length > 0 ? { adversaryBefore: writes.map((w) => w.before) } : {}),
       ...(changedFear !== 0 ? { fearDelta: changedFear } : {}),
       undoable: true,
     });
+    return postRuns;
   };
-  return { kind: "plan", built, plan, req: req2, sheets: { before: req.sheet, next: after, names: [...names, ...skipped.map((n) => `${n} not used`)] }, post };
+  return { kind: "plan", built, plan, pick, sheet, sheets: { before: use.sheet, next: after, names: [...names, ...skipped.map((n) => `${n} not used`)] }, runs, post };
 }
+
+type CardRiderOutcome = { kind: "plan"; built: BuiltRun; plan: RunPlan; req: UseRequest; sheets: RiderSheets; runs: RiderRun[]; post: (entryId: Id<"actionLog">) => Promise<RiderRun[]> } | { kind: "needsChoice"; outcome: Extract<RunOutcome, { kind: "needsChoice" }> };
+
+/** SD5: a card use with riders (`runWithRiders` with the card's host and `withFolds`). */
+async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonly Rider[], actorId: Id<"users">, riseOff = false): Promise<CardRiderOutcome> {
+  const host = cardHost(req, parseChoices(req.choices).weapon);
+  const out = await runWithRiders(
+    ctx,
+    {
+      campaign: req.campaign,
+      character: req.character,
+      sheet: req.sheet,
+      scene: req.scene,
+      host,
+      targetTokenIds: req.targetTokenIds,
+      roll: req.roll,
+      slot: slotOf(req),
+      build: async (sheet, folds) => {
+        const pick = withFolds(req.pick, folds);
+        return { built: await build(ctx, { ...req, sheet, pick }), pick };
+      },
+    },
+    riders,
+    actorId,
+    riseOff,
+  );
+  if (out.kind === "needsChoice") return out;
+  return { kind: "plan", built: out.built, plan: out.plan, req: { ...req, sheet: out.sheet, pick: out.pick }, sheets: out.sheets, runs: out.runs, post: out.post };
+}
+
+// ---------------------------------------------------------------- after a use (plan lanes-2 E1.3a)
+
+/** A square on the map, as a use's `point` / `points` args send it. */
+export type Square = { x: number; y: number };
+
+/**
+ * CB p.42 (Rogue, Cloaked: "After you make an attack ... you are no longer Cloaked") and CB p.99 ("When you make an action
+ * roll with the intent to harm an adversary, you're making an attack roll"): a use is an attack when its action roll is a
+ * weapon attack or a trait roll marked `attack`, or when it rolls damage against an enemy target (a Spellcast attack).
+ */
+export function isAttackUse(use: CardUse, built: BuiltRun): boolean {
+  const spec = use.roll;
+  if (spec === undefined || spec.kind === "reaction" || spec.kind === "adversaryAttack") return false;
+  if (spec.kind === "attack" || (spec.kind === "trait" && (spec.attack === true || spec.asWeapon === true))) return true;
+  return makesDamageRoll(use.steps) && built.targets.some((t) => t.kind === "enemy");
+}
+
+/**
+ * Plan lanes-2 E1.3a (dcm-uwg1 card half; HF p.8 Marked for Death: "the current adversary Marked for Death is defeated"):
+ * the instances a use's writes defeated end every party member's `targetDefeated` effects tagged on them, each sheet
+ * saved and logged in `groupId`. Returns the feed lines.
+ */
+export async function endDefeatedOnParty(ctx: MutationCtx, input: { campaignId: Id<"campaigns">; writes: readonly InstanceWrite[]; groupId: string; actorId: Id<"users"> }): Promise<string[]> {
+  const defeated = input.writes.filter((w) => w.patch.defeated && !w.creature.instance.defeated).map((w) => w.creature.instance);
+  if (defeated.length === 0) return [];
+  const lines: string[] = [];
+  for (const m of await partyMembers(ctx, input.campaignId)) {
+    let sheet = m.sheet;
+    const ended: string[] = [];
+    for (const instance of defeated) {
+      const out = endOnDefeat(sheet, instance);
+      sheet = out.sheet;
+      ended.push(...out.lines);
+    }
+    if (ended.length === 0) continue;
+    await saveSheet(ctx, m.character._id, sheet);
+    await logAction(ctx, { campaignId: input.campaignId, characterId: m.character._id, actorId: input.actorId, kind: "combat", visibility: "public", summary: ended.join("; ").slice(0, 1000), groupId: input.groupId, before: m.sheet, undoable: true });
+    lines.push(...ended);
+  }
+  return lines;
+}
+
+/** What `afterUse` needs of a resolved use. */
+export type AfterUse = {
+  campaign: Doc<"campaigns">;
+  character: Doc<"characters">;
+  /** The actor's sheet before the use (and its riders). */
+  before: CharacterSheet;
+  built: BuiltRun;
+  plan: RunPlan;
+  use: CardUse;
+  /** The card or feature id that drew the use's areas, and its name for the feed. */
+  sourceId: string;
+  name: string;
+  entryId: Id<"actionLog">;
+  actorId: Id<"users">;
+  /** The rider runs of the use (their `endEffect` steps). */
+  riderRuns?: readonly RiderRun[];
+  /** The instance writes of the use (`endDefeatedOnParty`); the feature path leaves them out. */
+  writes?: readonly InstanceWrite[];
+  point?: Square;
+  points?: readonly Square[];
+};
+
+/**
+ * Plan lanes-2 E1.3a (dcm-m48i, dcm-9nlr, dcm-76l5 (3), dcm-bxp.99.19.67, dcm-uwg1): what a resolved card or feature use
+ * does after its own rows, in its undo group: what it ends (`applyUseEnds` for its plan and its riders' plans: `endEffect`
+ * and `replace` steps, effects and areas whose tokens are gone), what a spell's cast ends (`endSpellCast`: Through Your
+ * Eyes, Veil of Night), the `targetDefeated` effects of the instances it defeated, an ordinary Cloaked when it was an
+ * attack, then its map areas (`placeAreasFromPlan`; a wall or a `point` area without its squares is left for the table).
+ * Returns the feed lines and the "place by hand" notes.
+ */
+export async function afterUse(ctx: MutationCtx, input: AfterUse): Promise<{ lines: string[]; byHand: string[] }> {
+  const entry = await ctx.db.get("actionLog", input.entryId);
+  const groupId = entry?.groupId;
+  if (groupId === undefined) return { lines: [], byHand: [] };
+  const { campaign, character, built, plan } = input;
+  const scene = built.creatures.onMap ? built.creatures.scene : null;
+  const areasBefore = scene ? (await activeAreasOnMap(ctx, scene.map._id)).filter((a) => a.characterId === character._id) : [];
+  const lines: string[] = [];
+  const ends = await applyUseEnds(ctx, { campaignId: campaign._id, character, before: input.before, built, plan, groupId, actorId: input.actorId });
+  lines.push(...ends.lines);
+  for (const r of input.riderRuns ?? []) {
+    const now = await ctx.db.get("characters", character._id);
+    if (now === null) break;
+    const out = await applyUseEnds(ctx, { campaignId: campaign._id, character, before: readSheet(now.sheet), built: r.built, plan: r.plan, groupId, actorId: input.actorId });
+    lines.push(...out.lines);
+  }
+  if (isSpell(input.sourceId)) {
+    const now = await ctx.db.get("characters", character._id);
+    if (now !== null) {
+      const cast = await endSpellCast(ctx, { campaignId: campaign._id, characterId: character._id, sheet: readSheet(now.sheet), castCardId: input.sourceId, ...(scene ? { casterTokenId: built.context.actor.id } : {}), groupId, actorId: input.actorId });
+      lines.push(...cast.lines);
+    }
+  }
+  if (input.writes) lines.push(...(await endDefeatedOnParty(ctx, { campaignId: campaign._id, writes: input.writes, groupId, actorId: input.actorId })));
+  if (isAttackUse(input.use, built) && (await uncloakAfterAttack(ctx, campaign, character._id, input.actorId, input.name, { groupId }))) lines.push(`${input.before.name} is no longer Cloaked`);
+  // Areas that ended above (their sheet rows say the rest): one public row, so the feed names them.
+  if (scene) {
+    const live = new Set((await activeAreasOnMap(ctx, scene.map._id)).map((a) => a._id));
+    const gone = areasBefore.filter((a) => !live.has(a._id)).map((a) => `${a.label} ends`);
+    if (gone.length > 0) await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId: input.actorId, kind: "feature", visibility: "public", summary: `${input.before.name}: ${gone.join("; ")}`.slice(0, 1000), groupId, undoable: true });
+  }
+  const byHand: string[] = [];
+  const areas = plan.steps.filter((s): s is Extract<PlanStep, { kind: "area" }> => s.kind === "area");
+  if (areas.length > 0 && scene) {
+    const squares = (input.point ? 1 : 0) + (input.points?.length ?? 0);
+    const placeable = plan.steps.filter((s) => s.kind !== "area" || (s.area.shape === "wall" ? squares >= 2 : s.area.centre !== "point" || squares > 0));
+    for (const s of areas) if (!placeable.includes(s)) byHand.push(`place ${s.area.label} on the map by hand`);
+    const actorTokenId = built.context.actor.id;
+    await placeAreasFromPlan(ctx, {
+      campaignId: campaign._id,
+      map: scene.map,
+      characterId: character._id,
+      sourceId: input.sourceId,
+      useId: plan.useId,
+      ownerToken: scene.attacker,
+      steps: placeable,
+      tokenOf: (id) => (id === actorTokenId ? scene.attacker._id : (built.creatures.get(id)?.tokenId ?? null)),
+      ...(input.point ? { point: input.point } : {}),
+      ...(input.points ? { points: input.points } : {}),
+    });
+  }
+  return { lines, byHand };
+}
+
+/** A card use's after-steps (`afterUse`) with its result: the "place by hand" notes join its prompts. */
+async function afterCardUse(ctx: MutationCtx, input: { result: ResolvedCard; req: UseRequest; built: BuiltRun; plan: RunPlan; actorId: Id<"users">; before: CharacterSheet; writes: readonly InstanceWrite[]; riderRuns?: readonly RiderRun[]; point?: Square; points?: readonly Square[] }): Promise<ResolvedCard> {
+  const { result, req } = input;
+  const out = await afterUse(ctx, {
+    campaign: req.campaign,
+    character: req.character,
+    before: input.before,
+    built: input.built,
+    plan: input.plan,
+    use: req.pick.use,
+    sourceId: req.pick.effect.cardId,
+    name: req.pick.name,
+    entryId: result.entryId,
+    actorId: input.actorId,
+    writes: input.writes,
+    ...(input.riderRuns ? { riderRuns: input.riderRuns } : {}),
+    ...(input.point ? { point: input.point } : {}),
+    ...(input.points ? { points: input.points } : {}),
+  });
+  if (out.byHand.length === 0) return result;
+  return { ...result, prompts: [...result.prompts, ...out.byHand.map((text) => ({ kind: "manual" as const, text, tokenIds: [] }))] };
+}
+
+const squareValidator = v.object({ x: v.number(), y: v.number() });
 
 const useArgs = {
   characterId: v.id("characters"),
@@ -695,17 +932,23 @@ const useArgs = {
   riseToTheChallenge: v.optional(v.boolean()),
   /** Plan lanes, E1 (dcm-p1r): the vault card a swap step brings in (Codex-Touched, CB p.333). */
   swapWith: v.optional(v.string()),
+  /**
+   * Plan lanes-2 E1.3a (dcm-9nlr, dcm-76l5 (3)): the square a `point`-centred area goes on (as `combatFeatures.useFeature`;
+   * Veil of Night, CB p.336: "between two points"), and more squares after it (a wall's second end, a `count` area's others).
+   */
+  point: v.optional(squareValidator),
+  points: v.optional(v.array(squareValidator)),
 };
 
 /**
  * DA2: whether a default-on rider (Rise to the Challenge) applies to this card's roll now, unless turned off. Plan lanes,
- * E1: or an automatic use rides on it (`cardAutos`): the card then runs through the rider path too.
+ * E1: or an automatic use rides on it (`autoUsesOn`): the card then runs through the rider path too.
  */
 function riseApplies(req: UseRequest, off: boolean): boolean {
   const roll = req.pick.use.roll;
   if (roll === undefined || roll.kind === "adversaryAttack" || roll.kind === "reaction") return false;
   const host = cardHost(req, parseChoices(req.choices).weapon);
-  if (cardAutos(req, host).length > 0) return true;
+  if (autoUsesOn(req.sheet, req.campaign, host).length > 0) return true;
   return !off && defaultOnRiders(req.sheet, req.campaign, host, false, []).length > 0;
 }
 
@@ -730,13 +973,15 @@ export const useCard = keyedCampaignMutation({
       const req: UseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: args.targetTokenIds, choices: args.choices, roll: args.roll ?? {}, ...(args.swapWith !== undefined ? { swapWith: args.swapWith } : {}) };
       const riders = args.riders ?? [];
       const riseOff = args.riseToTheChallenge === false;
+      if ((args.points?.length ?? 0) > MAX_AREA_COUNT) throw appError("INVALID", `At most ${MAX_AREA_COUNT} squares.`);
+      const squares = { ...(args.point ? { point: args.point } : {}), ...(args.points ? { points: args.points } : {}) };
       if (riders.length > 0 || riseApplies(req, riseOff)) {
         const withRiders = await cardWithRiders(ctx, req, riders, ctx.user._id, riseOff);
         if (withRiders.kind === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.outcome.asks };
         if (withRiders.built.outOfRange.length === 0) {
-          const result = await resolveUse(ctx, withRiders.req, withRiders.built, withRiders.plan, ctx.user._id, withRiders.sheets);
-          await withRiders.post(result.entryId);
-          return result;
+          const { result, writes } = await resolveUse(ctx, withRiders.req, withRiders.built, withRiders.plan, ctx.user._id, withRiders.sheets);
+          const postRuns = await withRiders.post(result.entryId);
+          return afterCardUse(ctx, { result, req: withRiders.req, built: withRiders.built, plan: withRiders.plan, actorId: ctx.user._id, before: sheet, writes, riderRuns: [...withRiders.runs, ...postRuns], ...squares });
         }
         // Q1: wait for the GM; the approval runs the card and its riders again (nothing is kept).
         const encounter = withRiders.built.targets.find((t) => t.kind === "enemy");
@@ -761,6 +1006,8 @@ export const useCard = keyedCampaignMutation({
               choices: args.choices,
               ...(args.roll || riseOff ? { roll: { ...args.roll, ...(riseOff ? { riseToTheChallenge: false } : {}) } } : {}),
               ...(riders.length > 0 ? { riders } : {}),
+              // dcm-0x2g: the point area's square, replayed on approval (E2.3 widened the payload).
+              ...(args.point ? { point: args.point } : {}),
             },
             outOfRange: withRiders.built.outOfRange,
           },
@@ -771,7 +1018,10 @@ export const useCard = keyedCampaignMutation({
       // Refusals (exhausted, cost, condition) and missing choices come first, whether or not the GM must approve.
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
-      if (built.outOfRange.length === 0) return resolveUse(ctx, req, built, outcome.plan, ctx.user._id);
+      if (built.outOfRange.length === 0) {
+        const { result, writes } = await resolveUse(ctx, req, built, outcome.plan, ctx.user._id);
+        return afterCardUse(ctx, { result, req, built, plan: outcome.plan, actorId: ctx.user._id, before: sheet, writes, ...squares });
+      }
 
       // Q1: wait for the GM; nothing paid or logged is kept. The dry run's dice are kept, so the approval resolves with
       // them (CA4b: no rerolling by asking again).
@@ -790,7 +1040,7 @@ export const useCard = keyedCampaignMutation({
           schemaVersion: 1,
           kind: "sanction",
           characterId: character._id,
-          action: { kind: "card", cardId: args.cardId, useId: pick.use.id, targetTokenIds: args.targetTokenIds, choices: args.choices, ...(args.roll ? { roll: args.roll } : {}) },
+          action: { kind: "card", cardId: args.cardId, useId: pick.use.id, targetTokenIds: args.targetTokenIds, choices: args.choices, ...(args.roll ? { roll: args.roll } : {}), ...(args.point ? { point: args.point } : {}) },
           outOfRange: built.outOfRange,
         },
       });
@@ -827,20 +1077,24 @@ export const sanction = keyedGmMutation({
       const pick = pickCard(sheet, action.cardId, action.useId);
       const req: UseRequest = { campaign: ctx.campaign, character, sheet, scene, pick, targetTokenIds: action.targetTokenIds, choices: action.choices, roll: action.roll ?? {} };
       const riseOff = action.roll?.riseToTheChallenge === false;
+      // dcm-0x2g: the square the player picked for a point area (the payload keeps `point` only, not `points`).
+      const squares = action.point ? { point: action.point } : {};
       if ((action.riders && action.riders.length > 0) || riseApplies(req, riseOff)) {
         const withRiders = await cardWithRiders(ctx, req, action.riders ?? [], row.createdBy, riseOff);
         if (withRiders.kind === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.outcome.asks };
-        const result = await resolveUse(ctx, withRiders.req, withRiders.built, withRiders.plan, row.createdBy, withRiders.sheets);
-        await withRiders.post(result.entryId);
+        const { result, writes } = await resolveUse(ctx, withRiders.req, withRiders.built, withRiders.plan, row.createdBy, withRiders.sheets);
+        const postRuns = await withRiders.post(result.entryId);
+        const done = await afterCardUse(ctx, { result, req: withRiders.req, built: withRiders.built, plan: withRiders.plan, actorId: row.createdBy, before: sheet, writes, riderRuns: [...withRiders.runs, ...postRuns], ...squares });
         await closeRequest(ctx, row._id, "resolved", ctx.user._id);
-        return result;
+        return done;
       }
       const built = await build(ctx, req);
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
-      const result = await resolveUse(ctx, req, built, outcome.plan, row.createdBy);
+      const { result, writes } = await resolveUse(ctx, req, built, outcome.plan, row.createdBy);
+      const done = await afterCardUse(ctx, { result, req, built, plan: outcome.plan, actorId: row.createdBy, before: sheet, writes, ...squares });
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
-      return result;
+      return done;
     }),
 });
 
