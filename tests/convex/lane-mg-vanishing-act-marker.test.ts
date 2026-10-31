@@ -1,7 +1,7 @@
 /**
  * MG (dcm-3ias; docs/tasks/TASK-LN2-MG.md): `migrations/vanishingActMarker:addMarker` gives a rogue Cloaked by Vanishing Act
- * before lane C2's deploy the source marker a use writes today (TE5: old shape in, new shape out, a second run changes
- * nothing).
+ * before lane C2's deploy the source marker a use writes today, and removes the Cloaked when a rest since the use ended it
+ * (change 2026-10-31) (TE5: old shape in, new shape out, a second run changes nothing).
  *
  * Expected values: the marker the real feature use writes (`combatFeatures.useFeature`) in the same world. CB p.42
  * (Nightwalker, Vanishing Act): "You remain Cloaked in this way until you roll with Fear or until your next rest."
@@ -92,7 +92,7 @@ describe("migrations/vanishingActMarker:addMarker (dcm-3ias)", () => {
     expect({ ...after, effects: [] }).toEqual({ ...readSheet(before), effects: [] });
   });
 
-  it("not migrated: no Vanishing Act (below mastery), Cloaked without a use, Cloaked again the ordinary way, after a rest", async () => {
+  it("not migrated: no Vanishing Act (below mastery), Cloaked without a use, Cloaked again the ordinary way", async () => {
     // A Nightwalker below mastery does not hold Vanishing Act, whatever the feed says.
     const spec = await rogue("specialization");
     await spec.logged("feature", (n) => `${n} uses Vanishing Act`, () => ({ conditions: ["cloaked"] }));
@@ -110,11 +110,44 @@ describe("migrations/vanishingActMarker:addMarker (dcm-3ias)", () => {
     await again.logged("feature", (n) => `${n} is Cloaked`, () => ({ conditions: ["cloaked"] }));
     await untouched(again);
 
-    // A rest since the use (before C2 a rest left the bare Cloaked; by the book Vanishing Act's ended there).
-    const rested = await rogue();
-    await usedBeforeDeploy(rested);
-    await rested.logged("rest", () => "Short rest", () => ({}));
-    await untouched(rested);
+    // Cloaked again the ordinary way after a rest ended Vanishing Act's (the rest came after the use).
+    const restedAgain = await rogue();
+    await usedBeforeDeploy(restedAgain);
+    await restedAgain.logged("rest", () => "Short rest", (s) => ({ conditions: s.conditions.filter((c) => c !== "cloaked") }));
+    await restedAgain.logged("feature", (n) => `${n} is Cloaked`, () => ({ conditions: ["cloaked"] }));
+    await untouched(restedAgain);
+  });
+
+  it("rested since the use (change 2026-10-31): the stale Cloaked is removed; a dry run changes nothing; a rerun changes nothing", async () => {
+    // Before C2 a rest left the bare Cloaked; by the book Vanishing Act's ended there (CB p.42: "until your next rest").
+    const r = await rogue();
+    await usedBeforeDeploy(r);
+    await r.logged("rest", () => "Short rest", () => ({}));
+    await r.logged("feature", (n) => `${n} gains a Hope`, (s) => ({ hope: Math.min(s.hope + 1, 6) }));
+    const before = await r.raw();
+
+    const endRows = () =>
+      r.w.t.run(async (ctx) => (await ctx.db.query("actionLog").withIndex("by_character_at", (q) => q.eq("characterId", r.w.characterA)).take(50)).filter((row) => row.summary.endsWith("Cloaked ends (Vanishing Act)")));
+    await r.run({ dryRun: true });
+    expect(await r.raw()).toEqual(before);
+    expect(await endRows()).toEqual([]);
+
+    await r.run();
+    const after = await r.sheet();
+    expect(after.conditions).not.toContain("cloaked");
+    // dcm-3wt4 (user answer): one public feed row says why the Cloaked is gone.
+    const ended = await endRows();
+    expect(ended.map((row) => [row.summary, row.visibility, row.undoable])).toEqual([[`${after.name}: Cloaked ends (Vanishing Act)`, "public", false]]);
+    expect(conditionSources(after, "cloaked")).toEqual([]);
+    // Nothing else on the sheet moved.
+    const was = readSheet(before);
+    expect({ ...after, conditions: [] }).toEqual({ ...was, conditions: [] });
+    expect(after.conditions).toEqual(was.conditions.filter((c) => c !== "cloaked"));
+
+    const once = await r.raw();
+    await r.run({ reset: true });
+    expect(await r.raw()).toEqual(once);
+    expect(await endRows()).toHaveLength(1);
   });
 
   it("run twice: the second run (from the start) changes nothing", async () => {
