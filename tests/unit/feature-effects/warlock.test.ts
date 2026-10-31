@@ -6,8 +6,11 @@ import { owned } from "@/lib/domain/feature-effects/owned";
 import { actorExtras, featureAvailability, runFeature, type FeatureRunContext } from "@/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "@/lib/domain/feature-effects/types";
 import { FEATURE_CLASSIFICATION } from "@/lib/srd/feature-effects/classification";
-import { HARROWED, WARLOCK_EFFECTS } from "@/lib/srd/feature-effects/warlock";
+import { HARROWED, MANTLE_INTIMIDATE, WARLOCK_EFFECTS } from "@/lib/srd/feature-effects/warlock";
+import { endsOnOccurrence, type EndOccurrence, type EndRoll } from "@/lib/domain/characters/expiry";
 import { actorOf, adversary, sheetOf } from "./engine/fixtures";
+import { stepEnds } from "../../../convex/lib/cardRows";
+import { rollResultHolds } from "../../../convex/lib/rolls";
 
 // Plan sheet-drawer, tracer FE-warlock: every Warlock feature's entry, run through runFeature with fixed dice. Expected
 // values come from the feature texts by hand (HF p.14: Patron's Boon, Patron's Pact, Favor, Pact of the Endless; HF p.15:
@@ -101,10 +104,26 @@ describe("Hope feature and class features (HF p.14)", () => {
   });
 
   it("Favor: after a success with Hope, a Favor instead of the Hope (NV17: a fold on the trigger's roll)", () => {
-    const plan = use("class:warlock:favor", undefined, { situations: ["The action roll succeeded with Hope"] });
+    // SRD-F3 (dcm-a9n): the trigger says "success with Hope" itself; no check box.
+    const favor = effectOf("class:warlock:favor").uses[0]!;
+    expect(favor.activation).toEqual({ kind: "reaction", trigger: { kind: "afterYouRoll", roll: "action", result: "successWithHope" } });
+    expect(favor.requires).toBeUndefined();
+    const plan = use("class:warlock:favor", undefined);
     expect(ofKind(plan, "fold")[0]!.step).toMatchObject({ kind: "replaceHopeGain", with: "favor" });
     expect(plan.actor.after).toMatchObject({ hope: 4, favor: 3 });
-    expect(effectOf("class:warlock:favor").uses[0]!.activation).toMatchObject({ kind: "reaction", trigger: { kind: "afterYouRoll", roll: "action", result: "success" } });
+  });
+
+  it("SRD-F3 (dcm-a9n): Favor and Diminish My Foes answer a success with Hope or a critical, never a failure with Hope or a success with Fear", () => {
+    for (const id of ["class:warlock:favor", `subclass:pact-of-the-wrathful:diminish-my-foes`]) {
+      const activation = effectOf(id).uses[0]!.activation;
+      const trigger = "trigger" in activation ? activation.trigger : undefined;
+      if (trigger?.kind !== "afterYouRoll") throw new Error(id);
+      const holds = (roll: { success: boolean; critical: boolean; withHope: boolean; withFear: boolean }) => rollResultHolds(trigger.result, trigger.duality, roll);
+      expect(holds({ success: true, critical: false, withHope: true, withFear: false }), id).toBe(true);
+      expect(holds({ success: true, critical: true, withHope: true, withFear: false }), id).toBe(true);
+      expect(holds({ success: false, critical: false, withHope: true, withFear: false }), id).toBe(false);
+      expect(holds({ success: true, critical: false, withHope: false, withFear: true }), id).toBe(false);
+    }
   });
 });
 
@@ -117,11 +136,13 @@ describe("Pact of the Endless (HF p.14)", () => {
       mods: [
         { kind: "stat", stat: "majorThreshold", delta: 3 },
         { kind: "stat", stat: "severeThreshold", delta: 3 },
+        // SRD-F3 (dcm-733): the advantage holds on an action roll the player marks as intimidating (E1 situations).
+        { kind: "advantage", on: "action", situation: MANTLE_INTIMIDATE },
       ],
       duration: "scene",
       endsOn: ["takeSevere"],
     });
-    expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual", text: expect.stringMatching(/advantage on action rolls to intimidate/) });
+    expect(ofKind(plan, "prompt")).toEqual([]);
   });
 
   it("Deathless Embrace: 3 Favor roll 3 Patron Dice; 4, 2, 6 clear 2 Hit Points; once per rest", () => {
@@ -207,22 +228,30 @@ describe("Pact of the Wrathful (HF p.15)", () => {
     expect(plan.creatures[0]!.after.hp).toBe(2);
   });
 
-  it("Menacing Reach: a Favor; primary weapon range +1 step until a successful attack", () => {
+  it("Menacing Reach: a Favor; primary weapon range +1 step until a successful attack with that weapon (SRD-F3, dcm-ffk)", () => {
     const plan = use(`subclass:pact-of-the-wrathful:menacing-reach`, undefined, { actor: wActor() });
     expect(plan.actor.after.favor).toBe(2);
-    expect(ofKind(plan, "effect")[0]).toMatchObject({ mods: [{ kind: "stat", stat: "primaryRange", delta: 1 }], duration: "manual", endsOn: ["attackSucceeds"] });
+    const effect = ofKind(plan, "effect")[0]!;
+    expect(effect).toMatchObject({ mods: [{ kind: "stat", stat: "primaryRange", delta: 1 }], duration: "manual" });
+    expect(effect.endsOn).toBeUndefined();
+    // The end, as the server reads it from the entry (E6): only a successful primary-weapon attack.
+    const ends = stepEnds(`subclass:pact-of-the-wrathful:menacing-reach`, effect.label)!.ends;
+    const attack = (over: Partial<EndRoll>): EndOccurrence => ({ kind: "roll", roll: { kind: "action", attack: "weapon", weapon: "primary", success: true, duality: "hope", ...over } });
+    expect(endsOnOccurrence(ends, attack({}), "bearer")).toBe(true);
+    expect(endsOnOccurrence(ends, attack({ duality: "critical" }), "bearer")).toBe(true);
+    expect(endsOnOccurrence(ends, attack({ success: false }), "bearer")).toBe(false);
+    expect(endsOnOccurrence(ends, attack({ weapon: "secondary" }), "bearer")).toBe(false);
+    expect(endsOnOccurrence(ends, attack({ attack: "spell", weapon: undefined, spellcast: true }), "bearer")).toBe(false);
   });
 
   it("Diminish My Foes: after a success with Hope, 2 Favor make the target mark 2 Stress", () => {
-    const plan = use(`subclass:pact-of-the-wrathful:diminish-my-foes`, undefined, {
-      actor: wActor(),
-      situations: ["The action roll against a target succeeded with Hope"],
-      choices: { favor: 2 },
-      targets: [adversary("bandit")],
-    });
+    const diminish = effectOf(`subclass:pact-of-the-wrathful:diminish-my-foes`).uses[0]!;
+    expect(diminish.activation).toEqual({ kind: "rider", trigger: { kind: "afterYouRoll", roll: "action", result: "successWithHope" } });
+    expect(diminish.requires).toBeUndefined();
+    const plan = use(`subclass:pact-of-the-wrathful:diminish-my-foes`, undefined, { actor: wActor(), choices: { favor: 2 }, targets: [adversary("bandit")] });
     expect(plan.actor.after.favor).toBe(1);
     expect(ofKind(plan, "mark")).toMatchObject([{ targetId: "bandit", track: "stress", amount: 2 }]);
-    expect(runFeature(effectOf(`subclass:pact-of-the-wrathful:diminish-my-foes`), undefined, { actor: wActor({ favor: 1 }), gmFear: 0, rng: queueRng([]), situations: ["The action roll against a target succeeded with Hope"], choices: { favor: 2 }, targets: [adversary("bandit")] })).toMatchObject({ ok: false, reason: "cost" });
+    expect(runFeature(effectOf(`subclass:pact-of-the-wrathful:diminish-my-foes`), undefined, { actor: wActor({ favor: 1 }), gmFear: 0, rng: queueRng([]), choices: { favor: 2 }, targets: [adversary("bandit")] })).toMatchObject({ ok: false, reason: "cost" });
   });
 
   it("Fearsome Attack: a Favor rerolls the picked damage dice; again for another Favor (no limit)", () => {

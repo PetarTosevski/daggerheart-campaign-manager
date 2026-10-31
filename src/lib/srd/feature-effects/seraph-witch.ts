@@ -29,6 +29,13 @@ const HEXED: ConditionRef = { kind: "tag", tag: "Hexed" };
 export const HEX_DROP_CHOICE = { id: "dropHex", label: "Hex to end at the maximum", min: 0 } as const;
 const TALISMAN_HOLDER: ConditionRef = { kind: "tag", tag: "Enchanted Talisman" };
 
+const CIRCLE_OF_POWER = "subclass:hedge:circle-of-power";
+/** Circle of Power (HF p.16): "each time you or an ally within the circle …": the trigger's roller or evader stands inside. */
+const IN_CIRCLE: Requirement = { kind: "situation", text: "The roller or evader is within your Circle of Power", check: { kind: "inArea", featureId: CIRCLE_OF_POWER, who: "subject" } };
+
+/** Lunar Phases (HF p.17): the moon die's New phase (1). */
+const MOON_NEW: Requirement = { kind: "situation", text: "Your moon die shows a 1 (New)", check: { kind: "moonPhase", phase: 1 } };
+
 const NIGHTS_GLAMOUR = "subclass:moon:nights-glamour";
 const GLAMOURED: Requirement = { kind: "situation", text: "You are Glamoured", check: { kind: "featureEffect", featureId: NIGHTS_GLAMOUR } };
 
@@ -226,7 +233,8 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
 
   // Ethereal Visage (Winged Sentinel specialization, CB p.45): "Your supernatural visage strikes awe and fear. While
   // flying, you have advantage on Presence Rolls. When you succeed with Hope on a Presence Roll, you can remove a Fear
-  // from the GM's Fear pool instead of gaining Hope." The second sentence is not limited to flying.
+  // from the GM's Fear pool instead of gaining Hope." The second sentence is not limited to flying. Plan lanes SRD-F3
+  // (dcm-nhr): the trigger's result `successWithHope` (a critical counts, CB p.90) leaves out a failure with Hope.
   {
     featureId: "subclass:winged-sentinel:ethereal-visage",
     source: "subclass",
@@ -244,8 +252,8 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "fear",
         name: "Ethereal Visage: remove a Fear",
-        activation: { kind: "reaction", trigger: { kind: "afterYouRoll", roll: "presence", result: "withHope" } },
-        steps: [{ kind: "replaceHopeGain", to: "self", with: "removeFear", note: "Only on a success with Hope (a critical counts, CB p.90)." }],
+        activation: { kind: "reaction", trigger: { kind: "afterYouRoll", roll: "presence", result: "successWithHope" } },
+        steps: [{ kind: "replaceHopeGain", to: "self", with: "removeFear", note: "Remove a Fear from the GM's Fear pool instead of gaining Hope." }],
       },
     ],
   },
@@ -343,6 +351,8 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
   // essence. Spend any number of Hope to place an equal number of tokens on this card. When the person holding the
   // talisman takes damage, spend a token to reduce the number of Hit Points they mark by one. Clear all tokens from this
   // card when you take a rest."
+  // Plan lanes SRD-F3 (dcm-3i4): the holder can be anywhere, so the protect window is `unlimited` (`range` is then
+  // ignored). Holding the talisman stays the condition tag: imbuing makes no inventory item a `holdsItem` check could read.
   {
     featureId: "subclass:hedge:enchanted-talisman",
     source: "subclass",
@@ -365,7 +375,7 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "protect",
         name: "Enchanted Talisman: fewer Hit Points",
-        activation: { kind: "reaction", trigger: { kind: "whenAllyWouldTakeDamage", range: "veryFar", includeSelf: true } },
+        activation: { kind: "reaction", trigger: { kind: "whenAllyWouldTakeDamage", range: "veryFar", includeSelf: true, unlimited: true } },
         requires: [{ kind: "situation", text: "The creature taking damage holds your talisman", check: { kind: "hasCondition", condition: TALISMAN_HOLDER, who: "subject" } }],
         costs: [{ kind: "tokens", amount: n(1) }],
         targets: { side: "trigger", who: "subject" },
@@ -403,11 +413,11 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
   // ally within the circle makes an action roll or evades an attack. This spell lasts until the last token is removed or
   // you exit the circle."
   // The circle is marked on the ground (it stays where it was drawn: "you exit the circle"), so its centre is the square
-  // the witch stands on when she draws it (Q14 live members, SD-A). The token uses fire only for a roller or an evader
-  // inside the circle: no state check reads the trigger subject's areas (`inArea` reads the actor's), so SD-A matches the
-  // trigger to the area's members (bead, task doc). The end on the last token or on leaving the circle is SD-A's too.
+  // the witch stands on when she draws it (Q14 live members, SD-A). Plan lanes SRD-F3 (dcm-ii4): the token uses fire only
+  // for a roller or an evader inside the circle (`inArea` `who: "subject"`); the area ends on its last token
+  // (`tokensGone`) or when the witch leaves it (`ownerLeavesArea`).
   {
-    featureId: "subclass:hedge:circle-of-power",
+    featureId: CIRCLE_OF_POWER,
     source: "subclass",
     owner: "hedge",
     card: "mastery",
@@ -435,6 +445,7 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
                 { kind: "stat", stat: "evasion", delta: n(2) },
               ],
               duration: "manual",
+              endsOn: ["tokensGone", "ownerLeavesArea"],
             },
             note: "Lasts until the last token is removed or you exit the circle.",
           },
@@ -443,13 +454,15 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "roll",
         name: "Circle of Power: a token per roll",
-        activation: { kind: "auto", trigger: { kind: "afterAllyRolls", result: "any", includeSelf: true } },
+        activation: { kind: "auto", trigger: { kind: "afterAllyRolls", result: "any", includeSelf: true, roll: "action" } },
+        requires: [IN_CIRCLE],
         steps: [{ kind: "tokens", to: "self", op: "spend", amount: n(1) }],
       },
       {
         id: "evade",
         name: "Circle of Power: a token per evaded attack",
         activation: { kind: "auto", trigger: { kind: "whenCreatureAttacked", subject: "selfOrAlly", stage: "failed" } },
+        requires: [IN_CIRCLE],
         steps: [{ kind: "tokens", to: "self", op: "spend", amount: n(1) }],
       },
     ],
@@ -459,6 +472,8 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
   // While Glamoured, you have advantage on rolls that leverage your illusory appearance. Additionally, adversaries within
   // Close range must mark a Stress to attack you. Unless you mark a Stress to maintain your Glamour, it drops when you
   // mark a Hit Point or deal damage."
+  // Plan lanes SRD-F3 (dcm-4qv): the Stress that keeps the Glamour is the effect's `maintain` (E6 `endEffects` offers it
+  // when an `endsOn` event comes; paid, the effect stays), so the two manual maintain reactions are gone.
   {
     featureId: NIGHTS_GLAMOUR,
     source: "subclass",
@@ -480,6 +495,7 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
             duration: "manual",
             endsOn: ["markHp", "dealDamage"],
             endsWhen: "You mark a Hit Point or deal damage, unless you mark a Stress to maintain your Glamour",
+            maintain: { costs: [{ kind: "stress", amount: n(1) }] },
           },
         ],
       },
@@ -490,22 +506,6 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
         requires: [GLAMOURED, { kind: "situation", text: "The roll leverages your illusory appearance" }],
         mods: [{ kind: "advantage", on: "action" }],
         steps: [],
-      },
-      {
-        id: "maintain-hp",
-        name: "Night’s Glamour: maintain (marking a Hit Point)",
-        activation: { kind: "reaction", trigger: { kind: "whenYouMarkHp" } },
-        requires: [GLAMOURED],
-        costs: [{ kind: "stress", amount: n(1) }],
-        steps: [{ kind: "manual", to: "self", text: "You mark a Stress to maintain your Glamour: it does not drop." }],
-      },
-      {
-        id: "maintain-damage",
-        name: "Night’s Glamour: maintain (dealing damage)",
-        activation: { kind: "reaction", trigger: { kind: "whenYouDealDamage" } },
-        requires: [GLAMOURED],
-        costs: [{ kind: "stress", amount: n(1) }],
-        steps: [{ kind: "manual", to: "self", text: "You mark a Stress to maintain your Glamour: it does not drop." }],
       },
     ],
   },
@@ -560,8 +560,10 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
   // rolls. 4 Full: +3 to damage thresholds. 5–6 Waning: +1 to Evasion. Once per rest, you can spend a Hope to increase the
   // value of this die by one. If you increase the value of a 6, it becomes a 1."
   // The moon die and the Waxing, Full and Waning numbers are the session features' (session-features/lunar.ts
-  // `lunarBonuses`, read by derived.ts and hooks.ts), so `phases` adds no mods (no double count). The bump changes the
-  // moon die, which no step reaches: a manual step (bead, task doc).
+  // `lunarBonuses`, read by derived.ts and hooks.ts), so `phases` adds no mods (no double count). Plan lanes SRD-F3
+  // (dcm-lk8): New reads the moon die (`moonPhase` 1); the bump is the session delegate `lunarPhasesBump` (E8
+  // `raiseMoonDie`), whose once-per-rest key is the sheet button's (LUNAR_BUMP_KEY), so the use has no limit of its own;
+  // the entry pays the Hope.
   {
     featureId: "subclass:moon:lunar-phases",
     source: "subclass",
@@ -573,7 +575,7 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
         id: "new",
         name: "Lunar Phases: New",
         activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage", severity: "minor" } },
-        requires: [{ kind: "situation", text: "Your moon die shows a 1 (New)" }],
+        requires: [MOON_NEW],
         costs: [{ kind: "hope", amount: n(1) }],
         steps: [{ kind: "negate", to: "self", what: "damage" }],
       },
@@ -581,9 +583,8 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
         id: "bump",
         name: "Lunar Phases: turn the moon",
         activation: { kind: "action" },
-        limit: { per: "rest" },
         costs: [{ kind: "hope", amount: n(1) }],
-        steps: [{ kind: "manual", to: "self", text: "Increase the value of your moon die by one. If you increase the value of a 6, it becomes a 1." }],
+        steps: [{ kind: "delegate", to: "self", feature: "lunarPhasesBump", note: "Increase the value of your moon die by one. If you increase the value of a 6, it becomes a 1." }],
       },
     ],
   },

@@ -33,6 +33,9 @@ const situation = (text: string): Requirement => ({ kind: "situation", text });
 /** The tag Harrowing Invocation leaves on the attacker for its one attack, so the failed-attack use knows it. */
 export const HARROWED: ConditionRef = { kind: "tag", tag: "Harrowing Invocation" };
 
+/** Patron's Mantle (HF p.14): the roll its advantage applies to, marked by the player on the roll (Q13). */
+export const MANTLE_INTIMIDATE = "The action roll is to intimidate a target";
+
 const ENDLESS = "pact-of-the-endless";
 const WRATHFUL = "pact-of-the-wrathful";
 
@@ -83,8 +86,8 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
   // Hope, you can choose to gain a Favor instead of a Hope."
   // The start (D5 session start) and the tribute (the rest move, convex/lib/restHooks.ts) stay out of combat. In combat:
   // "you can choose" is a Use / Pass after the roll (Q1), so the entry is a reaction, not the classification's `auto`.
-  // The trigger cannot say "success with Hope" (vocabulary gap), so "with Hope" is the player's check box (Q13); on a
-  // roll that gave no Hope the server's fold takes nothing.
+  // Plan lanes SRD-F3 (dcm-a9n): the trigger's result `successWithHope` (a critical counts, CB p.90) decides "with
+  // Hope" itself, so there is no check box.
   {
     featureId: "class:warlock:favor",
     source: "class",
@@ -93,8 +96,7 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "main",
         name: "Favor instead of Hope",
-        activation: { kind: "reaction", trigger: { kind: "afterYouRoll", roll: "action", result: "success" } },
-        requires: [situation("The action roll succeeded with Hope")],
+        activation: { kind: "reaction", trigger: { kind: "afterYouRoll", roll: "action", result: "successWithHope" } },
         steps: [{ kind: "replaceHopeGain", to: "self", with: "favor", note: "Gain a Favor instead of a Hope." }],
       },
     ],
@@ -105,8 +107,8 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
   // Patron's Mantle (foundation, HF p.14): "Spend a Favor to cloak yourself in a terrifying aspect of your Patron that
   // lasts until you take Severe damage or the scene ends. While this effect is active, you gain a bonus to your damage
   // thresholds equal to your tier and have advantage on action rolls to intimidate a target."
-  // Thresholds are mods; the advantage only on intimidation has no roll filter (vocabulary gap): it is in the effect's
-  // label and a manual step.
+  // Thresholds are mods; the advantage is a situational `advantage` mod (plan lanes SRD-F3, dcm-733): the server adds
+  // the advantage die on an action roll the player marks as intimidating a target (E1 `dualityFields.situations`).
   {
     featureId: `subclass:${ENDLESS}:patrons-mantle`,
     source: "subclass",
@@ -126,11 +128,11 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
             mods: [
               { kind: "stat", stat: "majorThreshold", delta: tier },
               { kind: "stat", stat: "severeThreshold", delta: tier },
+              { kind: "advantage", on: "action", situation: MANTLE_INTIMIDATE },
             ],
             duration: "scene",
             endsOn: ["takeSevere"],
           },
-          { kind: "manual", to: "self", text: "While Patron’s Mantle lasts, you have advantage on action rolls to intimidate a target." },
         ],
       },
     ],
@@ -332,6 +334,8 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
   // as Melee to Very Close or Very Close to Close) to a maximum of Very Far range. This effect ends when you make a
   // successful attack with that weapon."
   // No other end is printed (no scene end). The cap at Very Far is the range engine's (the last Defined Range, CB p.103).
+  // Plan lanes SRD-F3 (dcm-ffk): the end is a `RollEnd`, a successful weapon attack with the primary weapon (E6
+  // `rollEndHolds`), not `attackSucceeds` (which any successful attack, a spell too, sets off).
   {
     featureId: `subclass:${WRATHFUL}:menacing-reach`,
     source: "subclass",
@@ -351,7 +355,7 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
             mods: [{ kind: "stat", stat: "primaryRange", delta: n(1) }],
             duration: "manual",
             endsWhen: "when you make a successful attack with your primary weapon",
-            endsOn: ["attackSucceeds"],
+            endsOnRoll: { roll: "weaponAttack", result: "success", weapon: "primary" },
           },
         ],
       },
@@ -360,7 +364,8 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
 
   // Diminish My Foes (specialization, HF p.15): "When you succeed with Hope on an action roll against a target, you can
   // spend any number of Favor to force the target to mark an equal number of Stress."
-  // A rider after the warlock's own roll on the move's target. As with Favor, "with Hope" is the player's check box.
+  // A rider after the warlock's own roll on the move's target. As with Favor, the trigger's `successWithHope` decides
+  // "with Hope" (plan lanes SRD-F3, dcm-a9n).
   {
     featureId: `subclass:${WRATHFUL}:diminish-my-foes`,
     source: "subclass",
@@ -370,8 +375,7 @@ export const WARLOCK_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "main",
         name: "Diminish My Foes",
-        activation: { kind: "rider", trigger: { kind: "afterYouRoll", roll: "action", result: "success" } },
-        requires: [situation("The action roll against a target succeeded with Hope")],
+        activation: { kind: "rider", trigger: { kind: "afterYouRoll", roll: "action", result: "successWithHope" } },
         choices: [favorChoice],
         costs: [anyFavor],
         steps: [{ kind: "markStress", to: "targets", amount: { kind: "spent", resource: "favor" } }],

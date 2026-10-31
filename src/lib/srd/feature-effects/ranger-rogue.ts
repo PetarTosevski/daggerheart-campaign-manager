@@ -69,6 +69,7 @@ export const RANGER_ROGUE_SITUATIONS = {
   shadowStepper: "You're moving into an area of darkness or a shadow cast by another creature or object",
   vulnerable: "You're Vulnerable",
   conversation: "This Presence Roll is made in conversation",
+  buildsOnCompanion: "This action builds on your companion's success",
 } as const;
 const S = RANGER_ROGUE_SITUATIONS;
 
@@ -77,6 +78,20 @@ const situation = (text: string, check?: Extract<Requirement, { kind: "situation
 const companionPick = (range: TargetSpec["range"]): TargetSpec => ({ side: "ally", range, count: { kind: "one" }, companion: true });
 /** A Contacts Everywhere benefit waiting on the sheet (the `option` its effect step names). */
 const contactWaiting = (option: string): Requirement => situation(`Your shady contact's "${option}" help is waiting`, { kind: "featureEffect", featureId: ID.contactsEverywhere, option });
+
+/**
+ * The companion command's "On a success with Hope, if your next action builds on their success, you gain advantage on
+ * the roll" (CB p.40): an effect on you until your next roll, whose advantage holds on a roll the player marks (E1).
+ */
+const COMPANION_BUILDS_ON: Step = {
+  kind: "effect",
+  to: "self",
+  when: ["success", "withHope"],
+  label: "Companion: advantage if your next action builds on their success",
+  mods: [{ kind: "advantage", on: "action", situation: S.buildsOnCompanion }],
+  duration: "nextRoll",
+  note: "On a success with Hope, if your next action builds on their success, you gain advantage on the roll.",
+};
 
 /** Contacts Everywhere's three benefits (CB p.43); Reliable Backup adds two (`RELIABLE_BACKUP_OPTIONS`). */
 const CONTACT_CHOOSE = "benefit";
@@ -188,6 +203,9 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
   // physical or magic damage." "When your companion would take any amount of damage, they mark a Stress." (SD-C.)
   // Q4 (a): Command from the drawer, the companion's token acts. The Experience is a number the player enters (the
   // companion sheet's value, +2 at the start, CB p.40); entering one costs the Hope.
+  // Plan lanes SRD-F3: the damage die is the companion's (`sidesOf: "companion"`, d6 when the runner has none) and the
+  // range its sheet's (`companionRange`, Melee as the fallback; dcm-2z2, dcm-b9hc); "advantage if your next action builds
+  // on their success" is a next-roll effect with a situational advantage the player marks on that roll (E1).
   {
     featureId: ID.companion,
     source: "subclass",
@@ -202,17 +220,17 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
         choices: [{ id: "experience", label: "Companion Experience to add (spend a Hope)", min: 0, max: n(5) }],
         costs: [{ kind: "hope", amount: { kind: "calc", of: { kind: "chosen", choice: "experience" }, max: n(1) } }],
         roll: { kind: "spellcast", difficulty: { kind: "target" }, modifier: { kind: "chosen", choice: "experience" } },
-        targets: { side: "enemy", range: "melee", count: { kind: "one" } },
+        targets: { side: "enemy", range: "melee", count: { kind: "one" }, companionRange: true },
         steps: [
           {
             kind: "damage",
             to: "targets",
             when: ["hit"],
-            roll: { kind: "dice", dice: { count: prof, sides: 6 } },
+            roll: { kind: "dice", dice: { count: prof, sides: 6, sidesOf: "companion" } },
             type: "physical",
             note: "Your Proficiency and their damage die (d6 at level 1; the companion sheet's die and damage type, SD-C).",
           },
-          { kind: "manual", to: "self", when: ["success", "withHope"], text: "On a success with Hope, if your next action builds on their success, you gain advantage on the roll." },
+          COMPANION_BUILDS_ON,
         ],
       },
       {
@@ -225,7 +243,7 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
         roll: { kind: "spellcast", difficulty: { kind: "gm" }, modifier: { kind: "chosen", choice: "experience" } },
         steps: [
           { kind: "manual", to: "self", when: ["success"], text: "Your companion takes the action you commanded." },
-          { kind: "manual", to: "self", when: ["success", "withHope"], text: "On a success with Hope, if your next action builds on their success, you gain advantage on the roll." },
+          COMPANION_BUILDS_ON,
         ],
       },
     ],
@@ -393,18 +411,19 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
   // of the Hidden condition, while Cloaked you remain unseen if you are stationary when an adversary moves to where they
   // would normally see you. After you make an attack or end a move within line of sight of an adversary, you are no longer
   // Cloaked." Always on; Q9 (a): the map turns Hidden into Cloaked and ends it after an attack or a move ending in an
-  // adversary's line of sight (vision engine). No modifier of the vocabulary says it (bead dcm-bhp).
+  // adversary's line of sight (vision engine). Plan lanes SRD-F3 (dcm-bhp): the passive says "Hidden becomes Cloaked" with
+  // a `replaceCondition` mod; the endings stay the map engine's (lanes C2 / C3), as Shadow Stepper's condition names them.
   {
     featureId: ID.cloaked,
     source: "class",
     owner: "rogue",
-    uses: [{ id: "main", name: "Cloaked", activation: { kind: "passive" }, mods: [], steps: [] }],
+    uses: [{ id: "main", name: "Cloaked", activation: { kind: "passive" }, mods: [{ kind: "replaceCondition", from: "hidden", to: "cloaked" }], steps: [] }],
   },
 
   // Sneak Attack (class feature, CB p.42): "When you succeed on an attack while Cloaked or while an ally is within Melee
-  // range of your target, add a number of d6s equal to your tier to your damage roll." Q9 (a): automatic ("add"). The
-  // engine decides Cloaked; "an ally within Melee range of your target" has no state check yet, so the situation falls
-  // back to the player's check box (bead dcm-85u).
+  // range of your target, add a number of d6s equal to your tier to your damage roll." Q9 (a): automatic ("add"). Plan
+  // lanes SRD-F3 (dcm-85u): the situation's check is `anyOf` Cloaked (you) or `allyNear` Melee of the target; a fact the
+  // server does not fill yet leaves it to the player's check box (Q13; the distances: dcm-aeg).
   {
     featureId: ID.sneakAttack,
     source: "class",
@@ -414,7 +433,7 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
         id: "main",
         name: "Sneak Attack",
         activation: { kind: "auto", trigger: { kind: "whenYouAttack", result: "success" } },
-        requires: [situation(S.sneakAttack)],
+        requires: [situation(S.sneakAttack, { kind: "anyOf", checks: [{ kind: "hasCondition", condition: cloaked }, { kind: "allyNear", range: "melee", of: "target" }] })],
         steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "add", amount: { kind: "dice", dice: { count: tierCount, sides: 6 } } }, note: "Add tier-many d6s to your damage roll." }],
       },
     ],
@@ -426,7 +445,8 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
   // shadow cast by another creature or object, you can mark a Stress to disappear from where you are and reappear inside
   // another shadow within Far range. When you reappear, you are Cloaked." The shadow is a picked point (Q9: the move is a
   // prompt). Fleeting Shadow (mastery, CB p.42): "You can use your 'Shadow Stepper' feature to move within Very Far
-  // range." (NV3 range upgrade.)
+  // range." (NV3 range upgrade.) Plan lanes SRD-F3 (dcm-bhp): the Cloaked condition ends on Cloaked's own events
+  // (`bearerAttacks`, `endsMoveInSight`, CB p.42).
   {
     featureId: ID.shadowStepper,
     source: "subclass",
@@ -442,7 +462,15 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
         targets: { side: "point", range: "far", count: { kind: "one" } },
         steps: [
           { kind: "move", to: "self", mode: "teleport", relativeTo: "point", note: "Disappear from where you are and reappear inside another shadow (the picked point)." },
-          { kind: "condition", to: "self", condition: cloaked, duration: "manual", endsWhen: "you make an attack or end a move within line of sight of an adversary", note: "When you reappear, you are Cloaked." },
+          {
+            kind: "condition",
+            to: "self",
+            condition: cloaked,
+            duration: "manual",
+            endsWhen: "you make an attack or end a move within line of sight of an adversary",
+            endsOn: ["bearerAttacks", "endsMoveInSight"],
+            note: "When you reappear, you are Cloaked.",
+          },
         ],
       },
     ],
@@ -452,8 +480,9 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
   // Dark Cloud (specialization, CB p.42): "Make a Spellcast Roll (15). On a success, create a temporary dark cloud that
   // covers any area within Close range. Anyone in this cloud can't see outside of it, and anyone outside of it can't see
   // in. You're considered Cloaked from any adversary for whom the cloud blocks line of sight." Q14 (a): a live area that
-  // blocks sight. The area is the Close range around you (open question 2 in the task doc). Being Cloaked from the
-  // adversaries it blocks is the vision engine's (bead dcm-bhp).
+  // blocks sight. Plan lanes SRD-F3: user answer 2026-10-29 (rule question R2, dcm-bxp.99.19.39): the cloud is placed at a
+  // point the rogue picks within Close range (`placeWithin`), radius Very Close until the user confirms it (the radius
+  // was not given). Being Cloaked from the adversaries it blocks is `perObserver` (dcm-bhp; vision engine, E4).
   {
     featureId: ID.darkCloud,
     source: "subclass",
@@ -470,7 +499,7 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
             kind: "area",
             to: "self",
             when: ["success"],
-            area: { label: "Dark Cloud", centre: "self", radius: "close", side: "all", blocksSight: true, duration: "temporary" },
+            area: { label: "Dark Cloud", centre: "point", radius: "veryClose", placeWithin: "close", side: "all", blocksSight: true, perObserver: "cloaked", duration: "temporary" },
             note: "Anyone in this cloud can't see outside of it, and anyone outside of it can't see in.",
           },
         ],
@@ -540,8 +569,9 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
   // The following options are added to the list of benefits you can choose from when you use that feature:
   // • When you mark 1 or more Hit Points, they can rush out to shield you, reducing the Hit Points marked by 1.
   // • When you make a Presence Roll in conversation, they back you up. You can roll a d20 as your Hope Die."
-  // NV3: three times per session and the two options; their riders "shield" and "backup". The backup benefit has no end
-  // event for "your next Presence Roll in conversation" (manual, bead dcm-3ea).
+  // NV3: three times per session and the two options; their riders "shield" and "backup". Plan lanes SRD-F3 (dcm-3ea):
+  // the backup benefit ends on your next Presence Roll (`endsOnRoll`); "in conversation" is the player's check box on the
+  // rider (not detectable, E6 Q5).
   {
     featureId: ID.contactsEverywhere,
     source: "subclass",
@@ -607,7 +637,7 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
             {
               id: "backup",
               label: "Back you up: a d20 Hope Die on a Presence Roll in conversation",
-              steps: [contactEffect("backup", "Contacts Everywhere: d20 Hope Die in conversation", { endsWhen: "you make a Presence Roll in conversation" })],
+              steps: [contactEffect("backup", "Contacts Everywhere: d20 Hope Die in conversation", { endsWhen: "you make a Presence Roll in conversation", endsOnRoll: { roll: "presence" } })],
             },
           ],
         },

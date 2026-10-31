@@ -8,6 +8,8 @@ import { FEATURE_CLASSIFICATION, featureEffect } from "@/lib/srd/feature-effects
 import { FOCUS_TAG, RANGER_ROGUE_EFFECTS, RANGER_ROGUE_IDS as ID, RANGER_ROGUE_SITUATIONS as S } from "@/lib/srd/feature-effects/ranger-rogue";
 import type { CharacterSheet } from "@/lib/validation/characters";
 import { actorOf, adversary, sheetOf } from "./engine/fixtures";
+import { stepEnds } from "../../../convex/lib/cardRows";
+import { endsOnOccurrence } from "@/lib/domain/characters/expiry";
 
 // Plan sheet-drawer, tracer FE-ranger-rogue: every Ranger and Rogue feature's effect entry, run through runFeature with
 // fixed dice. Expected values come from the book by hand (CB p.38-43, printed pages). RNG order: Hope die, Fear die, then
@@ -158,22 +160,36 @@ describe("Beastbound (CB p.38, companion CB p.40)", () => {
     expect(p.roll?.record.total).toBe(13);
     expect(p.actor.after.hope).toBe(3); // 3 - 1 + 1
     expect(ofKind(p, "damage")[0]!.result).toMatchObject({ targetId: "bandit", incoming: 4, hpMarked: 1 });
-    expect(ofKind(p, "prompt").map((s) => s.text)).toEqual(["On a success with Hope, if your next action builds on their success, you gain advantage on the roll."]);
-    // No Experience: no Hope. Hope 3 + Fear 9 + 1 = 13: a hit with Fear, no advantage reminder.
+    // SRD-F3: the success with Hope leaves a next-roll effect on you whose advantage needs the player's mark (E1).
+    expect(ofKind(p, "prompt")).toEqual([]);
+    expect(ofKind(p, "effect")).toMatchObject([{ targetId: "pc", duration: "nextRoll", mods: [{ kind: "advantage", on: "action", situation: S.buildsOnCompanion }] }]);
+    // No Experience: no Hope. Hope 3 + Fear 9 + 1 = 13: a hit with Fear, no advantage effect.
     const plain = plan(ID.companion, "attack", [3, 9, 2], { targets: [adversary("bandit")] });
     expect(plain.actor.after.hope).toBe(3);
-    expect(ofKind(plain, "prompt")).toEqual([]);
+    expect(ofKind(plain, "effect")).toEqual([]);
     expect(ofKind(plain, "damage")[0]!.result.incoming).toBe(2);
+  });
+
+  it("SRD-F3 (dcm-2z2): the companion's attack rolls its own die (sidesOf companion, d6 without one) at its own range", () => {
+    const attack = entry(ID.companion).uses.find((u) => u.id === "attack")!;
+    expect(attack.targets).toMatchObject({ range: "melee", companionRange: true });
+    // A companion die of d8 (Vicious, CB p.41): Hope 9 + Fear 3 + Spellcast 1 = 13 ≥ 12 hits; the d8 rolls 7.
+    const d8 = actorWith(ranger(), { dieSides: { companion: 8 } as ActorState["dieSides"] });
+    expect(ofKind(plan(ID.companion, "attack", [9, 3, 7], { actor: d8, targets: [adversary("bandit")] }), "damage")[0]!.result.incoming).toBe(7);
+    // Without a companion die the level-1 d6 stands: a 7 is not a d6 result.
+    expect(() => plan(ID.companion, "attack", [9, 3, 7], { targets: [adversary("bandit")] })).toThrow();
   });
 
   it("Companion: Command an action (the GM's Difficulty); on a success the companion acts", () => {
     const p = plan(ID.companion, "command", [9, 4], { roll: { difficulty: 10 } });
     expect(p.success).toBe(true);
-    expect(ofKind(p, "prompt").map((s) => s.text)).toEqual([
-      "Your companion takes the action you commanded.",
-      "On a success with Hope, if your next action builds on their success, you gain advantage on the roll.",
-    ]);
-    expect(plan(ID.companion, "command", [2, 4], { roll: { difficulty: 10 } }).steps.some((s) => s.kind === "prompt")).toBe(false);
+    expect(ofKind(p, "prompt").map((s) => s.text)).toEqual(["Your companion takes the action you commanded."]);
+    expect(ofKind(p, "effect")).toMatchObject([{ targetId: "pc", duration: "nextRoll", mods: [{ kind: "advantage", situation: S.buildsOnCompanion }] }]);
+    // Hope 4 + Fear 9 + 1 = 14 ≥ 10: a success with Fear, the companion acts but no advantage effect.
+    const withFear = plan(ID.companion, "command", [4, 9], { roll: { difficulty: 10 } });
+    expect(ofKind(withFear, "prompt")).toHaveLength(1);
+    expect(ofKind(withFear, "effect")).toEqual([]);
+    expect(plan(ID.companion, "command", [2, 4], { roll: { difficulty: 10 } }).steps.some((s) => s.kind === "prompt" || s.kind === "effect")).toBe(false);
   });
 
   it("Battle-Bonded: +2 Evasion against an adversary inside your companion's Melee range; the Trainings have no modifier", () => {
@@ -248,7 +264,8 @@ describe("Rogue (CB p.42)", () => {
   });
 
   it("Cloaked: passive, the map turns Hidden into Cloaked (Q9)", () => {
-    expect(entry(ID.cloaked).uses).toEqual([{ id: "main", name: "Cloaked", activation: { kind: "passive" }, mods: [], steps: [] }]);
+    // SRD-F3 (dcm-bhp): "Any time you would be Hidden, you are instead Cloaked" is a replaceCondition mod.
+    expect(entry(ID.cloaked).uses).toEqual([{ id: "main", name: "Cloaked", activation: { kind: "passive" }, mods: [{ kind: "replaceCondition", from: "hidden", to: "cloaked" }], steps: [] }]);
   });
 
   it("Sneak Attack: automatic on a successful attack, + tier d6s (tier 1: 1d6, tier 3: 3d6)", () => {
@@ -258,6 +275,19 @@ describe("Rogue (CB p.42)", () => {
     expect(folds(plan(ID.sneakAttack, undefined, [2, 3, 4], { actor: tier3, targets: [adversary("bandit")], situations: [S.sneakAttack] }, rogue()))[0]!.amount).toBe(9);
     expect(refusal(ID.sneakAttack, undefined, {}, rogue())).toMatchObject({ ok: false, reason: "requirement" });
   });
+
+  it("SRD-F3 (dcm-85u): Sneak Attack decides Cloaked or an ally within Melee of the target from the facts, without the box", () => {
+    const run = (facts: NonNullable<ActorState["facts"]>) => refusal(ID.sneakAttack, undefined, { actor: actorWith(rogue(), { facts }), targets: [adversary("bandit")], rng: queueRng([4]) }, rogue());
+    const target = { conditions: [], hp: 0, hpMax: 6 };
+    // Cloaked: holds.
+    expect(run({ conditions: ["cloaked"] })).toMatchObject({ ok: true });
+    // An ally 1 square from the target (Melee): holds.
+    expect(run({ conditions: [], target: { ...target, nearestAlly: 1 } })).toMatchObject({ ok: true });
+    // Neither (ally 3 squares away, not Cloaked): refused even with the box ticked, as the engine knows.
+    expect(refusal(ID.sneakAttack, undefined, { actor: actorWith(rogue(), { facts: { conditions: [], target: { ...target, nearestAlly: 3 } } }), situations: [S.sneakAttack] }, rogue())).toMatchObject({ ok: false, reason: "requirement" });
+    // Not Cloaked and the ally's distance unknown: the player's box decides (Q13).
+    expect(run({ conditions: [] })).toMatchObject({ ok: false, reason: "requirement" });
+  });
 });
 
 describe("Nightwalker (CB p.42)", () => {
@@ -265,7 +295,8 @@ describe("Nightwalker (CB p.42)", () => {
     const p = plan(ID.shadowStepper, undefined, [], { situations: [S.shadowStepper] }, rogue());
     expect(p.actor.after.stress).toBe(2);
     expect(ofKind(p, "prompt")[0]).toMatchObject({ prompt: "move", targetIds: ["pc"] });
-    expect(ofKind(p, "condition")[0]).toMatchObject({ targetId: "pc", condition: { kind: "standard", condition: "cloaked" }, duration: "manual" });
+    // SRD-F3 (dcm-bhp): Cloaked ends after an attack or a move ending in an adversary's line of sight.
+    expect(ofKind(p, "condition")[0]).toMatchObject({ targetId: "pc", condition: { kind: "standard", condition: "cloaked" }, duration: "manual", endsOn: ["bearerAttacks", "endsMoveInSight"] });
     expect(entry(ID.shadowStepper).uses[0]!.targets).toMatchObject({ side: "point", range: "far" });
     expect(refusal(ID.shadowStepper, undefined, {}, rogue())).toMatchObject({ ok: false, reason: "requirement" });
   });
@@ -279,11 +310,17 @@ describe("Nightwalker (CB p.42)", () => {
     }
   });
 
-  it("Dark Cloud: Spellcast Roll (15); on a success a temporary cloud around you that blocks sight (Q14)", () => {
-    // Hope 10 + Fear 6 + Spellcast 1 = 17.
+  it("Dark Cloud: Spellcast Roll (15); on a success a temporary sight-blocking cloud at a point within Close (R2)", () => {
+    // Hope 10 + Fear 6 + Spellcast 1 = 17. SRD-F3: user answer 2026-10-29 (dcm-bxp.99.19.39): a point within Close, a Very
+    // Close radius (to confirm); members are Cloaked from the observers it blocks (perObserver, dcm-bhp).
     const p = plan(ID.darkCloud, undefined, [10, 6], {}, rogue());
     expect(ofKind(p, "area")).toEqual([
-      { kind: "area", area: { label: "Dark Cloud", centre: "self", radius: "close", side: "all", blocksSight: true, duration: "temporary", mods: [] }, centreId: "pc", targetIds: ["pc"] },
+      {
+        kind: "area",
+        area: { label: "Dark Cloud", centre: "point", radius: "veryClose", placeWithin: "close", side: "all", blocksSight: true, perObserver: "cloaked", duration: "temporary", mods: [] },
+        centreId: null,
+        targetIds: ["pc"],
+      },
     ]);
     expect(ofKind(plan(ID.darkCloud, undefined, [3, 4], {}, rogue()), "area")).toEqual([]); // 8 < 15
   });
@@ -330,6 +367,14 @@ describe("Syndicate (CB p.43)", () => {
     const fresh = syndicate({ subclassRank: "mastery" });
     expect(ofKind(contact(fresh, "shield"), "effect")[0]).toMatchObject({ option: "shield", endsOn: ["markHp"] });
     expect(ofKind(contact(fresh, "backup"), "effect")[0]).toMatchObject({ option: "backup", duration: "manual", endsWhen: "you make a Presence Roll in conversation" });
+    // SRD-F3 (dcm-3ea): the waiting backup ends on your next Presence Roll, and only on one (E6 roll ends). The option is
+    // Reliable Backup's upgrade, which the server's lookup (srdUses) does not read yet (follow-up bead), so the lookup here
+    // is the upgraded entry.
+    const upgraded = applyUpgrades(entry(ID.contactsEverywhere), holdingsFor(fresh, owned(fresh), "syndicate"));
+    const backupEnds = stepEnds(ID.contactsEverywhere, "Contacts Everywhere: d20 Hope Die in conversation", () => upgraded.uses)!.ends;
+    expect(backupEnds.endsOnRoll).toEqual({ roll: "presence" });
+    expect(endsOnOccurrence(backupEnds, { kind: "roll", roll: { kind: "action", trait: "presence", success: true, duality: "hope" } }, "bearer")).toBe(true);
+    expect(endsOnOccurrence(backupEnds, { kind: "roll", roll: { kind: "action", trait: "agility", success: true, duality: "hope" } }, "bearer")).toBe(false);
     expect(entry(ID.reliableBackup).uses[0]!.mods).toEqual([]);
   });
 
