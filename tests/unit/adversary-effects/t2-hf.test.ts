@@ -408,7 +408,8 @@ describe("Centaur Warden (HF p.70)", () => {
     expect(p.roll!.record.total).toBe(21);
     expect(p.incoming[0]).toMatchObject({ amount: 11, type: "physical" });
     expect(p.self.after.stress).toBe(1);
-    expect(prompts(p, "manual")).toEqual([]);
+    // The 19–20 critical stays a manual reminder until the adversary runner reads critRange (dcm-mhn, dcm-s9md).
+    expect(prompts(p, "manual")).toHaveLength(1);
     // "critically succeeds on a roll of 19–20" (dcm-mhn).
     expect(effectOf("centaur-warden", "Eye of the Sage").uses[0]!.roll).toEqual({ kind: "adversaryAttack", difficulty: { kind: "evasion" }, advantage: true, critRange: 19 });
   });
@@ -952,6 +953,8 @@ describe("Guahalan (HF p.76-77)", () => {
       ["mira", 5, "magic"],
       ["bram", 5, "magic"],
     ]);
+    // "explodes in white flame": the fire keyword (dcm-dv6).
+    expect(partsOf("guahalan-spirit-beast", "Beast Bomb", "damage").map((d) => d.keyword)).toEqual(["fire"]);
   });
 
   it("Beast-Caller: a Fear summons 2d4 Spirit Beasts and spotlights one", () => {

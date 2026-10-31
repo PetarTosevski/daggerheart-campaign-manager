@@ -570,7 +570,8 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
     ],
   },
   // Eye of the Sage - Action: "Mark a Stress to make a standard attack. The Warden has advantage on the attack roll and
-  // critically succeeds on a roll of 19–20."
+  // critically succeeds on a roll of 19–20." The adversary runner doesn't read `critRange` yet (dcm-mhn): a manual reminder
+  // until it does (silent reminders, dcm-s9md).
   {
     adversaryId: "centaur-warden",
     feature: "Eye of the Sage",
@@ -579,7 +580,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         costs: [stress()],
         roll: { ...ATTACK_ADV, critRange: 19 },
         targets: enemy("far"),
-        steps: [standardHit],
+        steps: [standardHit, { kind: "manual", to: "self", text: "Lanes-2 (dcm-mhn): the Warden critically succeeds on a d20 of 19–20; on a 19, treat the attack as a critical by hand." }],
       }),
     ],
   },
@@ -1796,7 +1797,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // each. Combine this damage."
   groupAttack("guahalan-spirit-beast", 5, "magic"),
   // Beast Bomb - Reaction: "When the Spirit Beast is defeated, it explodes in white flame and deals 5 magic damage to
-  // creatures within Melee range."
+  // creatures within Melee range." White flame: the damage carries the fire keyword (Fireproof, HF p.22; dcm-dv6).
   {
     adversaryId: "guahalan-spirit-beast",
     feature: "Beast Bomb",
@@ -1806,7 +1807,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         activation: { kind: "reaction", trigger: { kind: "onDefeated" } },
         needsSpotlight: false,
         targets: { side: "any", range: "melee", count: { kind: "all" }, area: "aroundSelf", excludeSelf: true },
-        steps: [{ kind: "damage", to: "targets", roll: flat(5), type: "magic" }],
+        steps: [{ kind: "damage", to: "targets", roll: flat(5), type: "magic", keyword: "fire" }],
       },
     ],
   },

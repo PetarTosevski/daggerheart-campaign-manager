@@ -297,8 +297,8 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Randomized Tactics: Mark a Stress and roll a d6. The Box uses the corresponding move: 1. Mana Beam … 2. Fire Jets …
   // 3. Trample … 4. Shocking Gas … 5. Stunning Clap … 6. Psionic Whine …" (full texts on each branch below).
   // The d6 is a `check`; each later branch reads the same result (0 dice + the last roll). The move's creatures are the
-  // `followUp` targets the GM picks (Q18). A branch's own attack roll is not the use's main roll, so it carries the
-  // Box's ATK (+2) itself.
+  // `followUp` targets the GM picks (Q18). A branch's own attack roll is not the use's main roll; the runner adds the
+  // Box's ATK (+2) to it (dcm-vv2, dcm-b3bb; the per-branch modifier workaround is gone, dcm-6n0p).
   entry(
     "battle-box",
     "Randomized Tactics",
@@ -316,7 +316,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
             {
               kind: "followUp",
               note: "1. Mana Beam",
-              roll: { ...ATTACK, modifier: fixed(2) },
+              roll: ATTACK,
               targets: oneEnemy("far"),
               steps: [{ kind: "damage", to: "targets", when: hit, roll: roll(2, 10, 2), type: "magic" }],
             },
@@ -332,9 +332,10 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
                 {
                   kind: "followUp",
                   note: "2. Fire Jets",
-                  roll: { ...ATTACK, modifier: fixed(2) },
+                  roll: ATTACK,
                   targets: allAround("close"),
-                  steps: [{ kind: "damage", to: "targets", when: hit, roll: roll(2, 8), type: "physical" }],
+                  // Fire jets are flame (Fireproof, HF p.22; dcm-dv6).
+                  steps: [{ kind: "damage", to: "targets", when: hit, roll: roll(2, 8), type: "physical", keyword: "fire" }],
                 },
               ],
               otherwise: [
@@ -348,7 +349,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
                     {
                       kind: "followUp",
                       note: "3. Trample",
-                      roll: { ...ATTACK, modifier: fixed(2) },
+                      roll: ATTACK,
                       targets: allAround("close"),
                       steps: [
                         { kind: "damage", to: "targets", when: hit, roll: roll(1, 6, 5), type: "physical" },

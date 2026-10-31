@@ -852,7 +852,7 @@ describe("Soul-Shattered Mage (HF p.68)", () => {
     expect(ofKind(slow, "check")).toMatchObject([{ total: 4, row: 1, label: "Time Dilation" }]);
     expect(slow.creatures.map((c) => [c.id, c.after.tags, c.after.conditions])).toEqual([["mira", ["Slowed"], ["vulnerable"]], ["bram", ["Slowed"], ["vulnerable"]]]);
     expect(conditionStep("soul-shattered-mage", "Broken Magic", "Slowed")).toMatchObject({ endsOnRoll: { roll: "action", result: "withHope" }, mods: [stressOn("moves")] });
-    // 5–6 Discordant Visions: d20 10 + 2 ATK (the row's own modifier until dcm-b3bb) = 12 hits Mira only; 2d8 direct magic (3 + 4).
+    // 5–6 Discordant Visions: d20 10 + 2 ATK (the runner adds the stat block's ATK, dcm-b3bb / dcm-6n0p) = 12 hits Mira only; 2d8 direct magic (3 + 4).
     const visions = ok("soul-shattered-mage", "Broken Magic", [5, 10, 3, 4], { followUp: [mira, bram] });
     expect(ofKind(visions, "check")).toMatchObject([{ total: 5, row: 2, label: "Discordant Visions" }]);
     expect(visions.incoming).toMatchObject([{ targetId: "mira", amount: 7, direct: true }]);
@@ -992,6 +992,15 @@ describe("tier 1 Hope & Fear conditions carry what they do (SRD-A1, dcm-kti, dcm
     expect(mod).toMatchObject({ kind: "bearerRider", rider: { on: "actionRoll", steps: [{ kind: "check", dice: { sides: 6 }, test: { kind: "totalAtLeast", value: 4 } }] } });
     const choose = partsOf("darkweave-swarmlings", "“Get ’em Off, Get ’em Off!”", "choose")[0]!;
     expect((choose.options as { id: string }[]).map((o) => o.id)).toEqual(["stress", "fear"]);
+    // dcm-72qk (a): the player picks, "Mark a Stress" | "GM gains Fear"; the PC-roll rider isn't run yet (dcm-mm0f), so a
+    // manual reminder says so (dcm-s9md).
+    expect((choose.options as { label: string }[]).map((o) => o.label)).toEqual(["Mark a Stress", "GM gains Fear"]);
+    expect(manualCount("darkweave-swarmlings", "“Get ’em Off, Get ’em Off!”")).toBe(1);
+    expect(partsOf("darkweave-swarmlings", "“Get ’em Off, Get ’em Off!”", "manual")[0]!.text).toContain("the player picks");
+  });
+
+  it("Dance in the Flames: both damages carry the fire keyword (dcm-dv6)", () => {
+    expect(partsOf("redcap-candlemaker", "Dance in the Flames", "damage").map((d) => d.keyword)).toEqual(["fire", "fire"]);
   });
 
   it("Howl at the Moon: a failed save loses a Hope (and the GM gains a Fear); no Hope: a Stress and Vulnerable until they roll with Hope", () => {

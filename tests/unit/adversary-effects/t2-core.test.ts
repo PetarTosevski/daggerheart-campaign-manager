@@ -353,6 +353,10 @@ describe("Battle Box (CB p.221)", () => {
     const plan = tactics([2, 10, 3, 3], [mira, bram]);
     expect(ofKind(plan, "check").map((c) => c.passed)).toEqual([false, true]);
     expect(plan.incoming.map((h) => [h.targetId, h.amount, h.type])).toEqual([["mira", 6, "physical"]]);
+    // Fire jets: the fire keyword (dcm-dv6); only that branch carries it.
+    expect(partsOf("battle-box", "Randomized Tactics", "damage").filter((d) => d.keyword === "fire").map((d) => d.roll)).toEqual([
+      { kind: "dice", dice: { count: { kind: "fixed", value: 2 }, sides: 8 } },
+    ]);
   });
 
   it("Randomized Tactics 3, Trample: 1d6+5 physical and Vulnerable until their next roll with Hope", () => {

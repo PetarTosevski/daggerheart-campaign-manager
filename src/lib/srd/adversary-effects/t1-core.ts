@@ -1279,7 +1279,8 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
     }),
   ),
   // Hellfire: "Spend a Fear to rain down hellfire within Far range. All targets within the area must make an Agility
-  // Reaction Roll. Targets who fail take 1d20+3 magic damage. Targets who succeed take half damage."
+  // Reaction Roll. Targets who fail take 1d20+3 magic damage. Targets who succeed take half damage." Hellfire is flame:
+  // the damage carries the fire keyword (Fireproof, HF p.22; dcm-dv6), as every fire damage step in this file.
   entry(
     "minor-demon",
     "Hellfire",
@@ -1294,8 +1295,8 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           to: "targets",
           trait: "agility",
           difficulty: { kind: "actorDifficulty" },
-          onFail: [{ kind: "damage", to: "targets", roll: roll(1, 20, 3), type: "magic" }],
-          onSuccess: [{ kind: "damage", to: "targets", roll: roll(1, 20, 3), type: "magic", scale: "half" }],
+          onFail: [{ kind: "damage", to: "targets", roll: roll(1, 20, 3), type: "magic", keyword: "fire" }],
+          onSuccess: [{ kind: "damage", to: "targets", roll: roll(1, 20, 3), type: "magic", scale: "half", keyword: "fire" }],
         },
       ],
     }),
@@ -1334,8 +1335,8 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           to: "targets",
           trait: "agility",
           difficulty: { kind: "actorDifficulty" },
-          onFail: [{ kind: "damage", to: "targets", roll: roll(2, 8), type: "magic" }],
-          onSuccess: [{ kind: "damage", to: "targets", roll: roll(2, 8), type: "magic", scale: "half" }],
+          onFail: [{ kind: "damage", to: "targets", roll: roll(2, 8), type: "magic", keyword: "fire" }],
+          onSuccess: [{ kind: "damage", to: "targets", roll: roll(2, 8), type: "magic", scale: "half", keyword: "fire" }],
         },
       ],
     }),
@@ -1352,7 +1353,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       roll: ATTACK,
       targets: allAround("close"),
       steps: [
-        { kind: "damage", to: "targets", when: ["hit"], roll: roll(1, 8), type: "magic" },
+        { kind: "damage", to: "targets", when: ["hit"], roll: roll(1, 8), type: "magic", keyword: "fire" },
         { kind: "move", to: "targets", when: ["hit"], mode: "knockBack", range: "far", relativeTo: "self" },
       ],
     }),
@@ -1471,7 +1472,8 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // Exile: "Spend a Fear and target a PC. The Noble proclaims that the target and their allies are exiled from the noble's
   // territory. While exiled, the target and their allies have disadvantage during social situations within the Noble's
-  // domain."
+  // domain." User answer (dcm-72qk (c), 2026-10-31): the target and the WHOLE party are exiled, so the use targets every
+  // PC (no GM pick of allies).
   entry(
     "petty-noble",
     "Exile",
@@ -1479,18 +1481,16 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       activation: { kind: "action" },
       needsSpotlight: true,
       costs: [fear(1)],
-      targets: one("unlimited"),
+      targets: { side: "enemy", range: "unlimited", count: { kind: "all" } },
       steps: [
-        { kind: "condition", to: "targets", condition: tag("Exiled"), duration: "manual", endsWhen: "until the Noble lifts the exile", mods: [EXILED] },
         {
           kind: "condition",
-          to: "picked",
-          pick: { side: "enemy", range: "unlimited", count: { kind: "all" } },
+          to: "targets",
           condition: tag("Exiled"),
           duration: "manual",
           endsWhen: "until the Noble lifts the exile",
           mods: [EXILED],
-          note: "The target's allies are exiled too",
+          note: "The target and the whole party are exiled",
         },
       ],
     }),
@@ -1585,7 +1585,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // Ignite: "Make an attack against a target within Very Close range. On a success, the target takes 1d8 magic damage and is
   // Ignited until they're extinguished with a successful Finesse Roll (14). While Ignited, the target takes 1d4 magic damage
-  // when they make an action roll."
+  // when they make an action roll." Ignited is burning: both damages carry the fire keyword (dcm-dv6).
   entry(
     "red-ooze",
     "Ignite",
@@ -1595,7 +1595,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       roll: ATTACK,
       targets: one("veryClose"),
       steps: [
-        { kind: "damage", to: "targets", when: ["hit"], roll: roll(1, 8), type: "magic" },
+        { kind: "damage", to: "targets", when: ["hit"], roll: roll(1, 8), type: "magic", keyword: "fire" },
         {
           kind: "condition",
           to: "targets",
@@ -1603,7 +1603,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           condition: tag("Ignited"),
           duration: "manual",
           endsWhen: "until extinguished with a successful Finesse Roll (14)",
-          mods: [rider("actionRoll", [{ kind: "damage", to: "self", roll: roll(1, 4), type: "magic" }])],
+          mods: [rider("actionRoll", [{ kind: "damage", to: "self", roll: roll(1, 4), type: "magic", keyword: "fire" }])],
         },
       ],
     }),
@@ -1948,7 +1948,8 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   acidicForm("tiny-green-ooze"),
 
   // ======== Tiny Red Ooze (Skulk, CB p.216)
-  // Burning: "When a creature within Melee range deals damage to the Ooze, they take 1d6 direct magic damage."
+  // Burning: "When a creature within Melee range deals damage to the Ooze, they take 1d6 direct magic damage." A "flaming
+  // red slime" (CB p.216): the burn carries the fire keyword (dcm-dv6).
   entry(
     "tiny-red-ooze",
     "Burning",
@@ -1956,14 +1957,15 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       activation: { kind: "reaction", trigger: { kind: "onDamaged", stage: "did", attackerWithin: "melee" } },
       needsSpotlight: false,
       targets: SOURCE,
-      steps: [{ kind: "damage", to: "targets", roll: roll(1, 6), type: "magic", direct: true }],
+      steps: [{ kind: "damage", to: "targets", roll: roll(1, 6), type: "magic", direct: true, keyword: "fire" }],
     }),
   ),
 
   // ======== Weaponmaster (Bruiser, CB p.218)
   // Goading Strike: "Make a standard attack against a target. On a success, mark a Stress to Taunt the target until their
   // next successful attack. The next time the Taunted target attacks, they have disadvantage against targets other than the
-  // Weaponmaster."
+  // Weaponmaster." User answer (dcm-72qk (b), 2026-10-31): the disadvantage against others lasts the whole Taunt, which
+  // ends on their next successful attack.
   entry(
     "weaponmaster",
     "Goading Strike",

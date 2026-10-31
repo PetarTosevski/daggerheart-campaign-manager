@@ -69,7 +69,11 @@ const HIT: readonly Gate[] = ["hit"];
 const HALF_ROLL: NumberSource = { kind: "calc", of: { kind: "lastRoll" }, divide: 2, round: "up" };
 /** The recipient holds at least one Hope. */
 const HAS_HOPE = { kind: "track", who: "target", track: "hope", measure: "marked", atLeast: 1 } as const;
-/** Covered in Spiders (HF p.63): "roll a d6 when they make an action roll. On a result of 4 or higher, they must mark a Stress or you gain a Fear." */
+/**
+ * Covered in Spiders (HF p.63): "roll a d6 when they make an action roll. On a result of 4 or higher, they must mark a
+ * Stress or you gain a Fear." User answer (dcm-72qk (a), 2026-10-31): the PLAYER picks, in a two-half popup "Mark a
+ * Stress" | "GM gains Fear". The rider runs on the bearer's own roll (`self` is the bearer), so its `choose` is the PC's.
+ */
 const SPIDERS: Step = {
   kind: "check",
   dice: { count: fixed(1), sides: 6 },
@@ -78,15 +82,21 @@ const SPIDERS: Step = {
     {
       kind: "choose",
       id: "spiders",
-      label: "Mark a Stress, or the GM gains a Fear",
+      label: "The player picks: mark a Stress, or the GM gains a Fear",
       options: [
         { id: "stress", label: "Mark a Stress", steps: [{ kind: "markStress", to: "self", amount: fixed(1) }] },
-        { id: "fear", label: "The GM gains a Fear", steps: [{ kind: "fear", to: "self", change: "gain", amount: fixed(1) }] },
+        { id: "fear", label: "GM gains Fear", steps: [{ kind: "fear", to: "self", change: "gain", amount: fixed(1) }] },
       ],
     },
   ],
   otherwise: [],
 };
+/**
+ * Silent reminders (dcm-s9md): a PC's own action rolls don't run bearer riders yet (dcm-mm0f, PC-roll half), so the d6 and
+ * the player's pick stay a manual step until that lands.
+ */
+const SPIDERS_TEXT =
+  "While Covered in Spiders, the target rolls a d6 each time they make an action roll; on 4 or higher the player picks: mark a Stress, or the GM gains a Fear.";
 
 const std = (condition: StandardCondition): ConditionRef => ({ kind: "standard", condition });
 const tag = (name: string, implies?: readonly StandardCondition[]): ConditionRef => ({ kind: "tag", tag: name, ...(implies ? { implies } : {}) });
@@ -100,7 +110,7 @@ const physical = (r: DamageRoll, when: readonly Gate[] | undefined = HIT, extra:
   ...(when ? { when } : {}),
   ...extra,
 });
-const magic = (r: DamageRoll, when: readonly Gate[] | undefined = HIT, extra: { direct?: boolean; scale?: "half" } = {}): AdversaryStep => ({
+const magic = (r: DamageRoll, when: readonly Gate[] | undefined = HIT, extra: { direct?: boolean; scale?: "half"; keyword?: "fire" } = {}): AdversaryStep => ({
   kind: "damage",
   to: "targets",
   roll: r,
@@ -225,7 +235,8 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // A PC who searches the Atototl's remains finds the stone and makes a fate roll. On an even result, the PC gains Hope
   // equal to half the result, which they can distribute among the PCs however they wish. On an odd result, you gain Fear
   // equal to half the result." A fate roll is one Duality Die, a d12 (CB p.168); even / odd is the check's parity
-  // (dcm-27j). Half of an odd result rounds up (CB p.107 "round up unless otherwise specified"). The searching PC is the
+  // (dcm-27j). Half of an odd result rounds up (CB p.107 "round up unless otherwise specified"; user answer dcm-72qk (d)
+  // 2026-10-31 keeps it). The split stays a note: the GM's ask has no Hope split yet (dcm-nh44 data waits). The searching PC is the
   // target and gains the Hope; spreading it over the PCs is theirs to do (no split for a Hope gain, dcm-nh44).
   f(
     "atototl",
@@ -415,7 +426,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       {
         costs: [stress()],
         targets: SUBJECT,
-        steps: [temporarily(tag("Covered in Spiders"), undefined, "targets", { mods: [rider("actionRoll", [SPIDERS])] })],
+        steps: [temporarily(tag("Covered in Spiders"), undefined, "targets", { mods: [rider("actionRoll", [SPIDERS])] }), manual(SPIDERS_TEXT, "targets")],
       },
     ),
   ),
@@ -963,7 +974,8 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   f("redcap-candlemaker", "Torchbearer", passive([{ kind: "mod", mod: { kind: "stat", stat: "damage", delta: fixed(1) }, to: "allies", within: "close" }], { requires: [{ kind: "tokens", atLeast: 1 }] })),
   // Dance in the Flames - Action: "Spend a token from this stat block. The Candlemaker conjures a ball of fire on a group
   // of PCs within Far range. Each target must make an Agility Reaction Roll. Targets who fail take 2d10 magic damage.
-  // Targets who succeed take half damage." `AdversaryCost` has no token cost: a token requirement and a spend step.
+  // Targets who succeed take half damage." `AdversaryCost` has no token cost: a token requirement and a spend step. A ball
+  // of fire: the damage carries the fire keyword (Fireproof, HF p.22; dcm-dv6).
   f(
     "redcap-candlemaker",
     "Dance in the Flames",
@@ -972,7 +984,14 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: enemy("far", ALL, { area: "aroundPoint", areaRange: "veryClose" }),
       steps: [
         { kind: "tokens", to: "self", op: "spend", amount: fixed(1) },
-        { kind: "save", to: "targets", trait: "agility", difficulty: { kind: "actorDifficulty" }, onFail: [magic(roll(2, 10), undefined)], onSuccess: [magic(roll(2, 10), undefined, { scale: "half" })] },
+        {
+          kind: "save",
+          to: "targets",
+          trait: "agility",
+          difficulty: { kind: "actorDifficulty" },
+          onFail: [magic(roll(2, 10), undefined, { keyword: "fire" })],
+          onSuccess: [magic(roll(2, 10), undefined, { scale: "half", keyword: "fire" })],
+        },
       ],
     }),
   ),
@@ -1153,11 +1172,11 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
               atLeast: 5,
               atMost: 6,
               label: "Discordant Visions",
-              // The runner adds ATK to a follow-up attack, but not yet inside a check table row (dcm-b3bb): ATK +2 here until then (dcm-6n0p).
+              // The runner adds the stat block's ATK (+2) to a follow-up attack inside a check table row (dcm-b3bb, dcm-6n0p).
               steps: [
                 {
                   kind: "followUp",
-                  roll: { ...ATTACK, modifier: fixed(2) },
+                  roll: ATTACK,
                   targets: enemy("close", { kind: "upTo", n: fixed(3) }),
                   steps: [{ kind: "damage", to: "targets", when: HIT, roll: roll(2, 8), type: "magic", direct: true }],
                 },

@@ -368,6 +368,12 @@ describe("Acid Burrower (CB p.210)", () => {
       { kind: "markHp", to: "targets", amount: { kind: "fixed", value: 1 } },
       { kind: "fear", to: "self", change: "gain", amount: { kind: "fixed", value: 1 } },
     ]);
+    // Lanes-2 S3: the runner reads it on the adversary path (pcCombatant fills armor / armorMax): no free slot, no forced
+    // slot; an HP and a Fear instead.
+    const full = plan("acid-burrower", "Spit Acid", [12, 3, 4], { targets: [pc("mira", { armor: 3, armorMax: 3 })] });
+    expect(full.incoming[0]).toMatchObject({ targetId: "mira", forcedArmor: 0 });
+    expect(after(full, "mira")!.hp).toBe(1);
+    expect(ofKind(full, "fear")).not.toEqual([]);
   });
 
   it("Acid Bath: a reaction to Severe damage, 1d10 physical to everyone within Close; the blood pool is an area (1d6 on entering)", () => {
@@ -973,17 +979,15 @@ describe("Petty Noble (CB p.216)", () => {
     expect(attempt("petty-noble", "Guards, Seize Them!", [2], { featureUses: p.self.featureUses })).toMatchObject({ ok: false, reason: "exhausted" });
   });
 
-  it("Exile: a Fear exiles the target and their allies (the picked PCs), with disadvantage in social situations in the domain", () => {
-    const p = plan("petty-noble", "Exile", [], { fearConfirmed: true, targets: [pc("mira")], picked: [pc("bram")] });
+  it("Exile: a Fear exiles the target and the whole party (dcm-72qk (c)), with disadvantage in social situations in the domain", () => {
+    expect(adversaryEffects("petty-noble").find((e) => e.feature === "Exile")!.uses[0]!.targets).toEqual({ side: "enemy", range: "unlimited", count: { kind: "all" } });
+    const p = plan("petty-noble", "Exile", [], { fearConfirmed: true, targets: [pc("mira"), pc("bram")] });
     expect(p.fearSpent).toBe(1);
     expect(after(p, "mira")!.tags).toEqual(["Exiled"]);
     expect(after(p, "bram")!.tags).toEqual(["Exiled"]);
     expect(prompts(p, "manual")).toEqual([]);
     const exiled = { kind: "disadvantage", on: "action", situation: "A social situation within the Noble's domain" };
-    expect(partsOf("petty-noble", "Exile", "condition").map((c) => [c.to, c.mods])).toEqual([
-      ["targets", [exiled]],
-      ["picked", [exiled]],
-    ]);
+    expect(partsOf("petty-noble", "Exile", "condition").map((c) => [c.to, c.mods])).toEqual([["targets", [exiled]]]);
   });
 });
 
@@ -1028,7 +1032,7 @@ describe("Red Ooze (CB p.216)", () => {
     expect(after(p, "mira")!.tags).toEqual(["Ignited"]);
     expect(prompts(p, "manual")).toEqual([]);
     expect(conditionStep("red-ooze", "Ignite", "Ignited")!.mods).toEqual([
-      { kind: "bearerRider", rider: { on: "actionRoll", steps: [{ kind: "damage", to: "self", roll: { kind: "dice", dice: { count: { kind: "fixed", value: 1 }, sides: 4 } }, type: "magic" }] } },
+      { kind: "bearerRider", rider: { on: "actionRoll", steps: [{ kind: "damage", to: "self", roll: { kind: "dice", dice: { count: { kind: "fixed", value: 1 }, sides: 4 } }, type: "magic", keyword: "fire" }] } },
     ]);
   });
 });
@@ -1253,5 +1257,26 @@ describe("Zombie Pack (CB p.219)", () => {
     expect(p.incoming[0]).toMatchObject({ targetId: "rook", amount: 7 }); // 14 - 1 = 13; 1d10 5 + 2
     const halved = plan("zombie-pack", "Overwhelm", [14, 2], { self: selfOf("zombie-pack", { hp: 3 }), passives: passivesOf("zombie-pack", { hp: 3 }), trigger: { source: pc("rook") } });
     expect(halved.incoming[0]!.amount).toBe(4); // Horde 1d4+2
+  });
+});
+
+describe("Fire keyword (dcm-dv6)", () => {
+  // Every fire damage step of the tier: Fireproof (HF p.22) and Made of Straw (HF p.79) read the keyword on the hit.
+  const FIRE: readonly [string, string][] = [
+    ["minor-demon", "Hellfire"],
+    ["minor-fire-elemental", "Scorched Earth"],
+    ["minor-fire-elemental", "Explosion"],
+    ["red-ooze", "Ignite"],
+    ["tiny-red-ooze", "Burning"],
+  ];
+  it.each(FIRE)("%s %s: every damage step carries keyword fire", (adversaryId, feature) => {
+    const damage = partsOf(adversaryId, feature, "damage");
+    expect(damage.length).toBeGreaterThan(0);
+    expect(damage.every((d) => d.keyword === "fire")).toBe(true);
+  });
+  it("no other entry of the file carries the fire keyword", () => {
+    const fire = new Set(FIRE.map(([a, f]) => `${a}/${f}`));
+    const others = T1_CORE_EFFECTS.filter((e) => !fire.has(`${e.adversaryId}/${e.feature}`) && JSON.stringify(e.uses).includes('"keyword":"fire"'));
+    expect(others.map((e) => e.feature)).toEqual([]);
   });
 });
