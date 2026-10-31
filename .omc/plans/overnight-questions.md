@@ -92,3 +92,16 @@ The user went to bed and asked: take a default on every open question; ask on re
 - E1.3a Q2 Unconscious toggled by hand drops Cloaked (kept).
 - E1.3b Q1 Multi-target attack: compare the one roll per target with that target's own advantage / disadvantage (change -> bead).
 - E1.3b Q2 Lead by Example: any PC except the one who used it can take the benefit (change -> bead).
+
+## Answers 2026-10-31 (wave 9 new questions, rounds B-D)
+- E1.3b Q3 Bearer riders on a PC's own rolls run automatically (change -> dcm-l1er).
+- E7.3 Q1 Forced PC attack: a roll request opens the player's attack with the target locked (change -> bead).
+- E7.3 Q2 Buy-offs: GM pays before the roll, default unpaid (kept).
+- E6.3 Q1 Last-HP cap keeps the hit's Severe (kept). E6.3 Q2 Doubled Minor (2 HP marked) counts as Major (kept, as built).
+- E4.3 Share the Burden over marked Stress: cap (kept; dcm-io4m closable).
+- E8.3 Q2 Otherworldly Ire: ALL the use's costs are paid at the roll (change -> bead).
+- E8.3 Q3 Locate Soul Echoes on short and long rests (kept). E8.3 Q1 excess gold to nearest PC with room (kept, matches answer 20).
+- S2 Q1 Fireproof on an untyped hit: offer it to the GM to decide whether the hit is fire (change -> bead).
+- S2 Q2 Manipulate Magic reach: picked at setup, widens the attack's targets (kept, dcm-lbai).
+- AO Hand-drawn areas may be GM-owned (no PC caster): widen combatAreas.characterId to optional (change -> bead).
+- E4.3 An area never runs its steps on its owner's own token (kept).
