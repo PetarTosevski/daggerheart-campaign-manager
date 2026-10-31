@@ -490,7 +490,9 @@ const FEATURES: readonly FeatureEffect[] = [
       requires: [{ kind: "situation", text: "While in your shell", check: { kind: "featureEffect", featureId: "beastform:armored-sentry:armored-shell", option: "retracted" } }],
       // Plan lanes, SRD-F1: `reduceDamage` by `{ kind: "stat", stat: "armorScore", who: "self" }` would say it, but the
       // feature runner and the hit window don't fill the actor's stats yet (dcm-me3), so it would reduce by 0: the
-      // reduction stays the table's (dcm-bxp.99.19.4).
+      // reduction stays the table's (dcm-bxp.99.19.4). Lanes-2 wave 9 (S2): still manual. E8 binds `stat` on the feature
+      // path (`pickFeature`), but this use runs in the incoming-hit window, whose actor (adversaryHits `featureActor`)
+      // carries no `stats` (E2 follow-up dcm-91tx).
       steps: [{ kind: "manual", to: "self", text: "In your shell: reduce this physical damage by your Armor Score (after applying resistance)." }],
     }),
   ]),

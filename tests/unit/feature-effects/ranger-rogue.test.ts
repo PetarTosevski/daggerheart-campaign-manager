@@ -310,14 +310,15 @@ describe("Nightwalker (CB p.42)", () => {
     }
   });
 
-  it("Dark Cloud: Spellcast Roll (15); on a success a temporary sight-blocking cloud at a point within Close (R2)", () => {
-    // Hope 10 + Fear 6 + Spellcast 1 = 17. SRD-F3: user answer 2026-10-29 (dcm-bxp.99.19.39): a point within Close, a Very
-    // Close radius (to confirm); members are Cloaked from the observers it blocks (perObserver, dcm-bhp).
+  it("Dark Cloud: Spellcast Roll (15); on a success a temporary sight-blocking cloud of Close radius at a point within Close (R2)", () => {
+    // Hope 10 + Fear 6 + Spellcast 1 = 17. SRD-F3: user answer 2026-10-29 (dcm-bxp.99.19.39): a point within Close; user
+    // answer 2026-10-31: a Close radius by default (lanes-2 S2); members are Cloaked from the observers it blocks
+    // (perObserver, dcm-bhp).
     const p = plan(ID.darkCloud, undefined, [10, 6], {}, rogue());
     expect(ofKind(p, "area")).toEqual([
       {
         kind: "area",
-        area: { label: "Dark Cloud", centre: "point", radius: "veryClose", placeWithin: "close", side: "all", blocksSight: true, perObserver: "cloaked", duration: "temporary", mods: [] },
+        area: { label: "Dark Cloud", centre: "point", radius: "close", placeWithin: "close", side: "all", blocksSight: true, perObserver: "cloaked", duration: "temporary", mods: [] },
         centreId: null,
         targetIds: ["pc"],
       },

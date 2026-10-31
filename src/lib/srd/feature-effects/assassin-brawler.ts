@@ -28,12 +28,15 @@ const MARKED: ConditionRef = { kind: "tag", tag: MARKED_FOR_DEATH };
 const FLOW_STATE = "subclass:martial-artist:flow-state";
 const focus = (amount: NumberSource = one) => ({ kind: "tokens" as const, amount, pool: "focus" as const });
 /**
- * "Shift into a martial stance" (HF p.12): V's `setStance` (dcm-awh). The stance is the one SD3's `shiftStance` intent
- * names; until the runner and feature runner apply the step (dcm-4xl) it shows its note as a manual prompt.
+ * "Shift into a martial stance" (HF p.12): V's `setStance` (dcm-awh). Lanes-2 wave 9 (S2; dcm-awh, dcm-4xl): the stance
+ * is the player's pick sent as `opt:stance` (a known stance's id), which the runner reads through `choice` (E3) and the
+ * feature runner applies (E8 `stancesOf` / `setStance`: the previous stance drops first). Without a pick the use is
+ * refused ("Pick the stance to shift into"). SD3's `shiftStance` intent stays the free shift.
  */
 const SHIFT_STANCE: Step = {
   kind: "setStance",
   to: "self",
+  choice: "stance",
   note: "Shift into a martial stance you know; it is your active stance until you drop out of it.",
 };
 
@@ -97,7 +100,9 @@ const VENOMANCER_POISONS: readonly ChooseOption[] = [
           { kind: "stat", stat: "severeThreshold", delta: fixed(-3) },
         ],
         duration: "scene",
-        // Gap (bead): no field says an effect can't stack; the label names it and the GM keeps one.
+        // Lanes-2 wave 9 (S2; dcm-kkx): a target that already carries Blight Seed gets no second copy (E6 instance
+        // writes, E8 `refuseStacked`).
+        stacking: "refuse",
         note: "This effect can't stack.",
       },
     ],
@@ -105,8 +110,8 @@ const VENOMANCER_POISONS: readonly ChooseOption[] = [
   {
     id: "fear-leaf",
     label: "Fear Leaf: extra damage equal to your Fear Die",
-    // Gap (dcm-d1b, as Midnight-Touched): no number source reads the host roll's Fear Die, so the dialog asks for it.
-    steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "add", amount: { kind: "chosen", choice: "fearDie" } } }],
+    // Lanes-2 wave 9 (S2; dcm-d1b, dcm-n0dv): the attack's Fear Die, read from the host roll (E1 `RiderEnv.hostDice`).
+    steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "add", amount: { kind: "dualityDie", die: "fear" } } }],
   },
   {
     id: "corpse-thorn",
@@ -175,6 +180,10 @@ export const ASSASSIN_BRAWLER_EFFECTS: readonly FeatureEffect[] = [
             condition: MARKED,
             duration: "rest",
             endsWhen: "Until you take a rest, the target is defeated, or the GM spends Fear equal to your tier to clear it",
+            // Lanes-2 wave 9 (S2; dcm-8bv, dcm-kmr): the GM's Fear end costs the assassin's tier (E6 `gmFearToEnd` reads
+            // it). The GM intent that spends it is still dcm-kmr's, so the `endsWhen` words stay the reminder.
+            endsOn: ["gmSpendsFear"],
+            endFear: { kind: "byTier", values: [1, 2, 3, 4] },
           },
           { kind: "delegate", to: "self", feature: "markedForDeath" },
         ],
@@ -321,8 +330,7 @@ export const ASSASSIN_BRAWLER_EFFECTS: readonly FeatureEffect[] = [
         name: "Toxic Concoctions: poison",
         activation: { kind: "rider", trigger: { kind: "whenYouAttack", result: "success", weapon: true } },
         targets: { side: "enemy", range: "weapon", count: { kind: "one" } },
-        // Fear Leaf only (Venomancer): the dialog's number for the Fear Die (dcm-d1b); 0 when unused.
-        choices: [{ id: "fearDie", label: "Fear Leaf: your Fear Die's result", min: 0, max: fixed(12) }],
+        // Fear Leaf (Venomancer) reads the attack's Fear Die itself (lanes-2 wave 9 S2): the dialog asks no number.
         costs: [{ kind: "tokens", amount: one }],
         steps: [{ kind: "choose", id: "poison", label: "Poison", options: BASE_POISONS }],
       },
@@ -615,8 +623,8 @@ export const ASSASSIN_BRAWLER_EFFECTS: readonly FeatureEffect[] = [
   // level up your character, choose an additional stance from your tier or lower."
   // HF p.12, Shifting into Stances: "You can spend a Focus to shift into a martial stance and gain its effects. You can
   // shift only into stances you've marked as known." Flow State (HF p.11): "mark a Stress instead of spending a Focus".
-  // The use pays the shift (the "cost" choice); the stance itself is set by SD3's `shiftStance` intent
-  // (`classState.martial.active`); the use's `setStance` step (SHIFT_STANCE) names it for the runner once dcm-4xl lands.
+  // The use pays the shift (the "cost" choice) and its `setStance` step (SHIFT_STANCE) sets the picked stance
+  // (`classState.martial.active`; lanes-2 wave 9, the feature runner applies it).
   // The stance effects are FE-stances'.
   {
     featureId: "subclass:martial-artist:stance-fighter",

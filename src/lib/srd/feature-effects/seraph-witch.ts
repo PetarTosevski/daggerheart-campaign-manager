@@ -124,6 +124,8 @@ export const SERAPH_WITCH_EFFECTS: readonly FeatureEffect[] = [
   // Spirit Weapon (Divine Wielder foundation, CB p.44): "When you have an equipped weapon with a range of Melee or Very
   // Close, it can fly from your hand to attack an adversary within Close range and then return to you. You can mark a
   // Stress to target an additional adversary within range with the same attack roll."
+  // Lanes-2 wave 9 (S2): unchanged. User answer 2026-10-31 (dcm-xbtw): a per-attack "Use as Spirit Weapon" check box;
+  // its engine half (attack arg, Attack bar box) is E1.3b's this wave, so the data switch is wave 10's.
   {
     featureId: "subclass:divine-wielder:spirit-weapon",
     source: "subclass",

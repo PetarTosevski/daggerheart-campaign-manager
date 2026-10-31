@@ -154,9 +154,16 @@ describe("Warden of the Elements (CB p.30)", () => {
     expect(refused(INCARNATION, "fire", { actor: actorOf(druid, { facts: channelingFacts("earth") }), trigger: { source: attacker } })).toMatchObject({ ok: false, reason: "requirement" });
   });
 
-  it("Water: the Stress on the other adversaries is a manual step (vocabulary gap)", () => {
-    const plan = ok(INCARNATION, "water", { actor: actorOf(druid, { facts: channelingFacts("water") }) });
-    expect(ofKind(plan, "prompt").map((p) => p.prompt)).toEqual(["manual"]);
+  it("Water: on damage to an adversary within Melee, every other adversary picked by the server marks a Stress (lanes-2 S2)", () => {
+    const use = entry(INCARNATION).uses.find((u) => u.id === "water")!;
+    expect(use.activation).toEqual({ kind: "auto", trigger: { kind: "whenYouDealDamage", toEnemy: true, within: "melee" } });
+    const plan = ok(INCARNATION, "water", { actor: actorOf(druid, { facts: channelingFacts("water") }), targets: [adversary("ogre")], picked: [adversary("imp-1"), adversary("imp-2")] });
+    expect(ofKind(plan, "prompt")).toEqual([]);
+    const marked = plan.creatures.filter((c) => c.after.stress !== c.before.stress).map((c) => [c.id, c.after.stress - c.before.stress]);
+    expect(marked).toEqual([
+      ["imp-1", 1],
+      ["imp-2", 1],
+    ]);
   });
 
   it("Elemental Aura: once per rest while Channeling, a Close aura matching the element", () => {
@@ -325,7 +332,11 @@ describe("Primal Origin (CB p.47)", () => {
     expect(folds(roll)).toMatchObject([{ kind: "modifyRoll", amount: 2 }]);
     expect(folds(run("double"))).toMatchObject([{ kind: "modifyDamage", targetIds: ["ogre"], change: { kind: "doubleDice", which: "chosen", count: 1 } }]);
     expect(folds(run("target"))).toMatchObject([{ kind: "addTargets", amount: 1 }]);
-    expect(ofKind(run("reach"), "prompt")).toMatchObject([{ prompt: "manual" }]);
+    // Lanes-2 S2: the added target takes the host move's range (`hostRange`); reach is a fold plus its reminder.
+    expect(JSON.stringify(entry("subclass:primal-origin:manipulate-magic"))).toContain('"hostRange":true');
+    const reach = run("reach");
+    expect(folds(reach)).toMatchObject([{ kind: "modifyRoll", change: { kind: "reach", steps: 1 } }]);
+    expect(ofKind(reach, "prompt")).toMatchObject([{ prompt: "manual", text: "Extend the spell or attack's reach by one range." }]);
     expect(refused("subclass:primal-origin:manipulate-magic", undefined, { actor: actorOf(sorcerer), options: { option: ["roll"] } })).toMatchObject({ ok: false, reason: "requirement" });
   });
 

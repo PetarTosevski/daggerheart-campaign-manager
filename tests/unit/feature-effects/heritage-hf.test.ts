@@ -91,7 +91,7 @@ describe("the Hope & Fear heritage table", () => {
     for (const e of HERITAGE_HF_EFFECTS) {
       for (const u of e.uses) {
         const result = runFeature(e, u.id, {
-          actor: actor({ hope: 6, facts: { flying: true, featureEffects: [{ featureId: "ancestry:emberkin:ignition" }] } }),
+          actor: actor({ hope: 6, tideTokens: 1, facts: { flying: true, featureEffects: [{ featureId: "ancestry:emberkin:ignition" }] } }),
           gmFear: 2,
           targets: [ally("mira")],
           trigger: { amount: 8, source: adversary("bandit"), subject: ally("mira") },
@@ -141,9 +141,9 @@ describe("Hope & Fear ancestries", () => {
     expect(use("ancestry:earthkin:stoneskin", undefined, [])).toMatchObject({ ok: true });
   });
 
-  it("Fireproof (HF p.22): flame damage confirmed by the player (Q13) is negated", () => {
-    expect(use("ancestry:emberkin:fireproof", undefined, [], { trigger: { amount: 9 } })).toMatchObject({ ok: false, reason: "requirement" });
-    const p = plan("ancestry:emberkin:fireproof", undefined, [], { trigger: { amount: 9 }, situations: [S.fireproof] });
+  it("Fireproof (HF p.22): flame damage is negated; the fire keyword decides, no check box (lanes-2 S2)", () => {
+    expect(effectOf("ancestry:emberkin:fireproof").uses[0]!.requires).toBeUndefined();
+    const p = plan("ancestry:emberkin:fireproof", undefined, [], { trigger: { amount: 9 } });
     expect(folds(p).map((f) => f.step)).toEqual([expect.objectContaining({ kind: "negate", what: "damage" })]);
     expect(p.actor.after).toMatchObject({ hope: 3, stress: 1 });
     // SRD-F1 (dcm-dv6): the trigger names the fire keyword.
@@ -230,9 +230,10 @@ describe("communities", () => {
   });
 
   it("Know the Tide (CB p.77): spending tokens before an action roll is delegated to the session features, +1 per token", () => {
-    // You can hold tokens up to your level: a level-1 sheet can't spend 2.
-    expect(use("community:seaborne:know-the-tide", undefined, [], { choices: { tokens: 2 } })).toMatchObject({ ok: false, reason: "choice" });
-    const p = plan("community:seaborne:know-the-tide", undefined, [], { actor: actor({ level: 3 }), choices: { tokens: 2 } });
+    // Lanes-2 S2: at most the tokens held (`tideTokens`): 1 held can't spend 2; none held can't spend any.
+    expect(use("community:seaborne:know-the-tide", undefined, [], { actor: actor({ level: 3, tideTokens: 1 }), choices: { tokens: 2 } })).toMatchObject({ ok: false, reason: "choice" });
+    expect(use("community:seaborne:know-the-tide", undefined, [], { actor: actor({ level: 3 }), choices: { tokens: 1 } })).toMatchObject({ ok: false, reason: "choice" });
+    const p = plan("community:seaborne:know-the-tide", undefined, [], { actor: actor({ level: 3, tideTokens: 2 }), choices: { tokens: 2 } });
     expect(ofKind(p, "delegate")).toEqual([expect.objectContaining({ feature: "knowTheTide", params: expect.objectContaining({ amount: 2 }), done: false })]);
     expect(folds(p)).toEqual([{ step: expect.objectContaining({ kind: "modifyRoll", change: expect.objectContaining({ kind: "add" }) }), targetIds: ["pc"], amount: 2 }]);
     // No cardTokens of its own: the session features keep the one record (sessionFeatures.tideTokens).

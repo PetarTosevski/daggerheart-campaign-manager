@@ -17,7 +17,8 @@
 // Plan lanes, SRD-F1 (wave 5): Ignition's rider rides only on the primary weapon (`weaponSlot`, dcm-ab5), Eye of the
 // Storm on an ally ends when YOU take Severe damage (`endsOnCaster`, dcm-wjv), Fireproof names the flame (`keyword`,
 // dcm-dv6) and the rest-time features use the rest vocabulary (dcm-2a1). Player check boxes left (Q13): the roll options'
-// situations, Fireproof's flame until hits carry a fire keyword, Lifespring's water and Dedicated's principle.
+// situations, Lifespring's water and Dedicated's principle (lanes-2 wave 9: Fireproof's went with the hits' fire keyword;
+// Know the Tide's choice is capped by the tokens held, `tideTokens`).
 
 import type { CardUse, NumberSource, Requirement, RollFilter } from "../../domain/card-effects/types";
 import type { FeatureEffect } from "../../domain/feature-effects/types";
@@ -39,7 +40,6 @@ export const HERITAGE_SITUATIONS = {
   naturalClimber: "The Agility Roll involves balancing or climbing",
   dedicated: "You describe how you're embodying one of your three recorded principles through your current action",
   lifespring: "You have access to a small amount of water",
-  fireproof: "The incoming damage is from magical or mundane flame",
 } as const;
 
 /**
@@ -134,8 +134,9 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
 
   // Fireproof (Emberkin, HF p.22): "You are immune to damage from magical or mundane flame." CB p.99: "If a target is
   // immune to a damage type, they ignore incoming damage of that type." The trigger names the fire keyword (plan lanes V,
-  // dcm-dv6); until the hits carry it the window ignores it, so the player still confirms the flame (Q13) and the damage
-  // is negated.
+  // dcm-dv6). Lanes-2 wave 9 (S2): hits carry the attacker's `damage` step keyword (E2 `hitKeyword`), so the check box is
+  // gone: the window offers Fireproof on a fire hit, never on a hit with another keyword, and on a hit whose keyword is
+  // unknown (a standard attack) the reaction is still offered and choosing it is the player's confirmation (Q13).
   {
     featureId: "ancestry:emberkin:fireproof",
     source: "ancestry",
@@ -145,7 +146,6 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
         id: "main",
         name: "Fireproof",
         activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage", keyword: "fire" } },
-        requires: [{ kind: "situation", text: HERITAGE_SITUATIONS.fireproof }],
         steps: [{ kind: "negate", to: "self", what: "damage", note: "Immune to flame (HF p.22)" }],
       },
     ],
@@ -365,7 +365,9 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
   // The tokens are the session features' record (`sessionFeatures.tideTokens`, src/lib/domain/session-features/tide.ts):
   // the dice path already places a token after an action roll with Fear and clears them at session end. This rider spends
   // them before an action roll: the `delegate` step names the session feature's spend (`spendTideTokens`, which checks the
-  // tokens held), and the roll gains +1 per token spent.
+  // tokens held), and the roll gains +1 per token spent. Lanes-2 wave 9 (S2; dcm-78x, dcm-rm9): the choice is capped by
+  // the tokens held (`tideTokens`, at most the level by the card's own limit), which the feature runner binds from the
+  // sheet (E8 `bindSheetNumbers`) and the card runner reads from `ActorState.tideTokens` (E3).
   {
     featureId: "community:seaborne:know-the-tide",
     source: "community",
@@ -375,7 +377,7 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
         id: "main",
         name: "Know the Tide",
         activation: { kind: "rider", trigger: { kind: "beforeYouRoll", roll: "action" } },
-        choices: [{ id: "tokens", label: "Tide tokens to spend", min: 1, max: { kind: "level" } }],
+        choices: [{ id: "tokens", label: "Tide tokens to spend", min: 1, max: { kind: "tideTokens" } }],
         steps: [
           { kind: "delegate", to: "self", feature: "knowTheTide", params: { amount: { kind: "chosen", choice: "tokens" } }, note: "Spend the Tide tokens (session features)" },
           { kind: "modifyRoll", to: "self", change: { kind: "add", amount: { kind: "chosen", choice: "tokens" } } },

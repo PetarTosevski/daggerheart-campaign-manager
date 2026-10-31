@@ -258,7 +258,7 @@ export const FEATURE_CLASSIFICATION: Readonly<Record<string, FeatureClass>> = {
   "ancestry:aetheris:celestial-wings": c("reaction", "Fly; once per scene while flying spend a Hope instead of marking an Armor Slot"),
   "ancestry:earthkin:stoneskin": p("passive", "+1 Armor Score and thresholds (not in derived stats yet)"),
   "ancestry:earthkin:immovable": n("passive", "Can't be moved against your will while touching the ground (movement is a prompt)"),
-  "ancestry:emberkin:fireproof": p("passive", "Immune to flame damage (no fire keyword)"),
+  "ancestry:emberkin:fireproof": p("passive", "Immune to flame damage (hits with the fire keyword)"),
   "ancestry:emberkin:ignition": c("action", "Mark a Stress: primary weapon +1d6 damage until scene end"),
   "ancestry:gnome:nimble-fingers": c("rider", "Finesse Roll: 2 Hope, reroll the Hope Die"),
   "ancestry:gnome:flicker-step": c("action", "Once per scene: teleport within Far (move prompt)"),

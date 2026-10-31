@@ -161,16 +161,19 @@ export const DRUID_SORCERER_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "water",
         name: "Elemental Incarnation: Water",
-        activation: { kind: "auto", trigger: { kind: "whenYouDealDamage", toEnemy: true } },
+        // Lanes-2 wave 9 (S2; dcm-ssf, dcm-76l5, dcm-umti): the trigger holds only for a damaged adversary within Melee
+        // range (E1 `dealDamageHolds`, which makes it the trigger's subject), and the automatic rider's `picked` creatures
+        // are filled by the server (E1 `autoPicked`): every other adversary within Very Close range of the druid
+        // (dcm-bxp.99.19.34) that the druid sees, the damaged one excluded (`excludeSubject`).
+        activation: { kind: "auto", trigger: { kind: "whenYouDealDamage", toEnemy: true, within: "melee" } },
         requires: [channeling("water")],
-        // Still manual (dcm-ssf): V added `whenYouDealDamage.within` and `TargetSpec.excludeSubject`, but the attack's
-        // rider phase neither matches `within` (dcm-76l5) nor fills a rider's `picked` creatures (it passes none), so
-        // "all other adversaries within Very Close range" (of the druid, dcm-bxp.99.19.34) would mark no Stress.
         steps: [
           {
-            kind: "manual",
-            to: "self",
-            text: "If the adversary you damaged is within Melee range: all other adversaries within Very Close range must mark a Stress.",
+            kind: "markStress",
+            to: "picked",
+            pick: { side: "enemy", range: "veryClose", count: { kind: "all" }, excludeSubject: true },
+            amount: n(1),
+            note: "All other adversaries within Very Close range must mark a Stress.",
           },
         ],
       },
@@ -519,15 +522,26 @@ export const DRUID_SORCERER_EFFECTS: readonly FeatureEffect[] = [
             id: "option",
             label: "Do one of the following",
             options: [
-              // Still manual (dcm-x7p): V's `RollChange` `reach` names it, but nothing widens the host's range yet (dcm-76l5).
-              { id: "reach", label: "Extend the reach by one range", steps: [{ kind: "manual", to: "self", text: "Extend the spell or attack's reach by one range." }] },
+              // Lanes-2 wave 9 (S2; dcm-x7p, dcm-76l5): the `reach` fold widens the range of the attack's added targets (E1
+              // `addRange`), but this rider runs after the roll, when the attack's own targets were already range-checked,
+              // and the options are exclusive (no added target in the same use). So the reminder stays beside the data
+              // until a reach picked with the attack widens its own target check (follow-up, lane w1-e1).
+              {
+                id: "reach",
+                label: "Extend the reach by one range",
+                steps: [
+                  { kind: "modifyRoll", to: "self", change: { kind: "reach", steps: 1 } },
+                  { kind: "manual", to: "self", text: "Extend the spell or attack's reach by one range." },
+                ],
+              },
               { id: "roll", label: "+2 to the action roll's result", steps: [{ kind: "modifyRoll", to: "self", change: { kind: "add", amount: n(2) } }] },
               { id: "double", label: "Double a damage die of your choice", steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "doubleDice", which: "chosen", count: 1 } }] },
               {
                 id: "target",
                 label: "Hit an additional target within range",
-                // "within range": the host move's range; `weapon` stands for it (the gap bead covers a spell's range).
-                steps: [{ kind: "addTargets", to: "self", count: n(1), targets: { side: "enemy", range: "weapon", count: { kind: "one" } }, damage: "same" }],
+                // "within range": the host move's range (`hostRange`, lanes-2 wave 9 S2; dcm-x7p, E1 `addRange`); `weapon`
+                // stays as the range a reader without `hostRange` takes.
+                steps: [{ kind: "addTargets", to: "self", count: n(1), targets: { side: "enemy", range: "weapon", count: { kind: "one" }, hostRange: true }, damage: "same" }],
               },
             ],
           },

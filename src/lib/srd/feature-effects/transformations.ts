@@ -250,8 +250,8 @@ export const TRANSFORMATION_EFFECTS: readonly FeatureEffect[] = [
   // d20s equal to your tier and deal that much physical damage to all creatures within Very Close range, then drop out
   // of Wolf Form."
   // "All creatures": allies too (side `any`, the actor excluded); the server passes every creature within Very Close.
-  // "Then drop out of Wolf Form": an `endEffect` of the Wolf Form effect (plan lanes V, dcm-5fc; the server applies the
-  // runner's plan step under dcm-9z2z).
+  // "Then drop out of Wolf Form": an `endEffect` of the Wolf Form effect (plan lanes V, dcm-5fc). The feature path applies
+  // it on the sheet since lanes-2 wave 8 (E6 `applyUseEnds` / `planEndsOnSheet`), so no reminder is needed.
   {
     featureId: "transformation:werewolf:howling-rampage",
     source: "transformation",

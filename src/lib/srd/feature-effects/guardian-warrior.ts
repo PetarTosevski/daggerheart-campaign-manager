@@ -343,7 +343,9 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
   // two if you critically succeed: • They can't move from where they are. • You deal damage to them equal to your primary
   // weapon's damage. • You move with them." A reaction roll takes one trait (CB p.99: no Hope or Fear), so "a trait of
   // your choice" is one use per trait: the player picks the use. The critical's second pick is a second `choose` step,
-  // kept different from the first by `distinctFrom` (open point 2; dcm-fjh's distinct half).
+  // kept different from the first by `distinctFrom` (open point 2; dcm-fjh's distinct half). Lanes-2 wave 9 (S2): kept
+  // one use per trait. V's `roll.anyTrait` would make it one use, but no server path offers a `whenEnemyLeavesRange`
+  // reaction yet (nothing in convex/ reads the trigger or `anyTrait`), so the table keeps choosing the use.
   {
     featureId: "class:warrior:attack-of-opportunity",
     source: "class",
@@ -494,7 +496,10 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
   // When you succeed on an attack, you can spend a Hope to add one of the damage dice from your secondary weapon to the
   // damage roll. Additionally, once per long rest when you roll your Slayer Dice, reroll any 1s." The reroll stays a
   // manual Use, once per long rest (open point 5): V's `RollChange` `rerollHeld` names it, but the runner does not apply
-  // it yet (dcm-inou, dcm-sa2); the dice box and map attacks already reroll the 1s (convex/lib/rolls.ts).
+  // it yet (dcm-inou, dcm-sa2); the dice box and map attacks already reroll the 1s (convex/lib/rolls.ts). Lanes-2 wave 9
+  // (S2): still manual. E3's runner rerolls held dice only inside the use that spent them (`rerollHeld` after a held-die
+  // cost), and the Slayer Dice are spent by Slayer's own rider, so a separate use has nothing to reroll. Moving the reroll
+  // onto that rider (with its once per long rest) is listed for wave 10 (dcm-q40t / dcm-inou).
   {
     featureId: "subclass:call-of-the-slayer:weapon-specialist",
     source: "subclass",

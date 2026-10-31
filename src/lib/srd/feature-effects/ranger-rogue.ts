@@ -481,8 +481,9 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
   // covers any area within Close range. Anyone in this cloud can't see outside of it, and anyone outside of it can't see
   // in. You're considered Cloaked from any adversary for whom the cloud blocks line of sight." Q14 (a): a live area that
   // blocks sight. Plan lanes SRD-F3: user answer 2026-10-29 (rule question R2, dcm-bxp.99.19.39): the cloud is placed at a
-  // point the rogue picks within Close range (`placeWithin`), radius Very Close until the user confirms it (the radius
-  // was not given). Being Cloaked from the adversaries it blocks is `perObserver` (dcm-bhp; vision engine, E4).
+  // point the rogue picks within Close range (`placeWithin`). Lanes-2 wave 9 (S2): user answer 2026-10-31
+  // (dcm-bxp.99.19.39): the radius is Close by default; the GM can draw or adjust the area by hand (AO's overlay). Being
+  // Cloaked from the adversaries it blocks is `perObserver` (dcm-bhp; vision engine, E4).
   {
     featureId: ID.darkCloud,
     source: "subclass",
@@ -499,7 +500,7 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
             kind: "area",
             to: "self",
             when: ["success"],
-            area: { label: "Dark Cloud", centre: "point", radius: "veryClose", placeWithin: "close", side: "all", blocksSight: true, perObserver: "cloaked", duration: "temporary" },
+            area: { label: "Dark Cloud", centre: "point", radius: "close", placeWithin: "close", side: "all", blocksSight: true, perObserver: "cloaked", duration: "temporary" },
             note: "Anyone in this cloud can't see outside of it, and anyone outside of it can't see in.",
           },
         ],
@@ -572,6 +573,10 @@ export const RANGER_ROGUE_EFFECTS: readonly FeatureEffect[] = [
   // NV3: three times per session and the two options; their riders "shield" and "backup". Plan lanes SRD-F3 (dcm-3ea):
   // the backup benefit ends on your next Presence Roll (`endsOnRoll`); "in conversation" is the player's check box on the
   // rider (not detectable, E6 Q5).
+  // Lanes-2 wave 9 (S2; dcm-vf7i): the "supply" benefit stays a manual step. An `inventory` `giveGold` / `giveItem` step
+  // becomes a plan `inventory` step in the runner (E3), but the feature runner writes gifts only from manual prompts
+  // (E8 `giftsOf`), so the gift would be neither written nor shown (tests/convex/lane3-s2-features.test.ts pins it;
+  // follow-up for lane w1-e8). The handful of gold is also only one of three things the contact can bring.
   {
     featureId: ID.contactsEverywhere,
     source: "subclass",
