@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "../../convex/_generated/api";
 import { readSheet, saveSheet } from "../../convex/lib/characterSheet";
 import { ANCESTRIES, ARMOR, COMMUNITIES, cardsForDomains, getClass, getDomainCard, subclassesForClass, WEAPONS } from "../../src/lib/srd/index";
-import { errorCode, key, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 function draft(overrides: Record<string, unknown> = {}) {
@@ -214,7 +214,7 @@ describe("characters", () => {
     const { t, p1, p2, campaignId } = await setup();
     const a = (await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() })).characterId;
     const b = (await p2.mutation(api.characters.create, { campaignId, draft: draft({ name: "Bryn" }), idempotencyKey: key() })).characterId;
-    const image = await t.run((ctx) => ctx.storage.store(new Blob(["png"], { type: "image/png" })));
+    const image = await t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
     const text = await t.run((ctx) => ctx.storage.store(new Blob(["hi"], { type: "text/plain" })));
 
     // convex-test records no content type, so a stored file always fails the image check here
@@ -300,7 +300,7 @@ describe("characters", () => {
   it("players can't see an uploaded portrait's storage id in get or listByCampaign", async () => {
     const { t, p1, p2, campaignId } = await setup();
     const { characterId } = await p1.mutation(api.characters.create, { campaignId, draft: draft(), idempotencyKey: key() });
-    const image = await t.run((ctx) => ctx.storage.store(new Blob(["png"], { type: "image/png" })));
+    const image = await t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
     await t.run(async (ctx) => {
       const c = (await ctx.db.get(characterId))!;
       await ctx.db.insert("files", { storageId: image, campaignId: c.campaignId, uploadedBy: c.ownerId, kind: "portrait", refId: characterId, createdAt: 0 });

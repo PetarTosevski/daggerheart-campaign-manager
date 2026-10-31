@@ -15,7 +15,7 @@ import {
 import { searchPalette, spritePalette } from "../../src/components/combat-map/editor/sprite-palette";
 import { codeOfTerrain, decodeCells } from "../../src/components/combat-map/map-view/cells";
 import { CATALOG_ENTRIES } from "../../src/lib/sprite-packs/catalog/index";
-import { errorCode, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 // Sprite packs P9 (plan .omc/plans/sprite-packs.yaml): hand editing in the Sprites style. `addObject` places a
 // sprite (built-in key or this campaign's uploaded sprite; the Classic kind comes from the catalog or the row, D1,
@@ -59,7 +59,7 @@ async function withMap() {
     t.run((c) => c.db.query("combatMapCells").withIndex("by_map_layer_tile", (q) => q.eq("mapId", mapId).eq("layer", layer)).collect());
   const store = () =>
     t.run(async (c) => {
-      const id = await c.storage.store(new Blob([new Uint8Array(64)], { type: "image/webp" }));
+      const id = await c.storage.store(imageBlob("image/webp"));
       await (c.db as unknown as { patch: (id: Id<"_storage">, value: { contentType: string }) => Promise<void> }).patch(id, { contentType: "image/webp" });
       return id;
     });

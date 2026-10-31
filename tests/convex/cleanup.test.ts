@@ -6,7 +6,7 @@ import type { Doc, Id, TableNames } from "../../convex/_generated/dataModel";
 import schema from "../../convex/schema";
 import { ACTION_LOG_STRIP_BATCH, BATCH } from "../../convex/cleanup";
 import { deleteSessionRows } from "../../convex/lib/sessions";
-import { errorCode, GM_EMAIL, key, useAllowlist } from "./helpers";
+import { errorCode, GM_EMAIL, imageBlob, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 const HOUR = 60 * 60 * 1000;
@@ -28,7 +28,7 @@ const tables = Object.entries(schema.tables) as [TableNames, { validator: Generi
 const campaignTables = tables.filter(([, t]) => hasField(t.validator, "campaignId")).map(([name]) => name);
 
 async function blob(ctx: { storage: { store(blob: Blob): Promise<Id<"_storage">> } }): Promise<Id<"_storage">> {
-  return ctx.storage.store(new Blob(["x"], { type: "image/png" }));
+  return ctx.storage.store(imageBlob("image/png"));
 }
 
 /**

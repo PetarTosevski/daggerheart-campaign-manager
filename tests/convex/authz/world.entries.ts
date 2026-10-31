@@ -1,6 +1,6 @@
 import { api } from "../../../convex/_generated/api";
 import type { Id, TableNames } from "../../../convex/_generated/dataModel";
-import { key } from "../helpers";
+import { imageBlob, key } from "../helpers";
 import type { Area, Entry, Outcome, Role, World } from "./harness";
 
 /**
@@ -33,7 +33,7 @@ async function firstEntry(w: World): Promise<Id<"codexEntries">> {
 
 /** A file stored directly (no upload URL), unclaimed: the `_storage` row synthesis uses (system tables cannot be scanned). */
 async function storedFile(w: World) {
-  const storageId = await w.t.run((ctx) => ctx.storage.store(new Blob(["img"], { type: "image/png" })));
+  const storageId = await w.t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
   // `use` is typed for user tables; synthesis looks the chosen id up before touching the table.
   w.use("_storage" as TableNames, storageId);
 }
@@ -43,7 +43,7 @@ async function entryImage(w: World) {
   const entryId = await firstEntry(w);
   const gm = w.users.gm;
   const storageId = await w.t.run(async (ctx) => {
-    const id = await ctx.storage.store(new Blob(["img"], { type: "image/jpeg" }));
+    const id = await ctx.storage.store(imageBlob("image/jpeg"));
     const entry = (await ctx.db.get(entryId))!;
     await ctx.db.insert("files", { storageId: id, campaignId: entry.campaignId, uploadedBy: gm, kind: "codexImage", refId: entryId, createdAt: 0 });
     const data = entry.data as { images: { storageId: string; shown: boolean }[]; cover: string | null };

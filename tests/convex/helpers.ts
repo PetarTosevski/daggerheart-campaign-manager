@@ -34,3 +34,23 @@ export async function setupWithCampaign(frameId: "witherwild" | "beast-feast" = 
   const { campaignId } = await gm.mutation(api.campaigns.create, { frameId, name: "Test", idempotencyKey: key() });
   return { t, gm, other, campaignId };
 }
+
+const IMAGE_MAGIC: Record<string, readonly number[]> = {
+  "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  "image/jpeg": [0xff, 0xd8, 0xff, 0xe0],
+  "image/gif": [0x47, 0x49, 0x46, 0x38, 0x39, 0x61],
+  "image/webp": [0x52, 0x49, 0x46, 0x46, 0x24, 0, 0, 0, 0x57, 0x45, 0x42, 0x50],
+};
+
+/**
+ * `size` bytes (at least 12) that start with `contentType`'s magic number, so an attached test upload passes the
+ * scheduled byte check (CF16, `convex/lib/files.ts`). Other types get zero bytes.
+ */
+export function imageBytes(contentType = "image/png", size = 64): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(Math.max(size, 12));
+  bytes.set(IMAGE_MAGIC[contentType] ?? []);
+  return bytes;
+}
+
+/** A Blob of `imageBytes(contentType, size)` with that type. */
+export const imageBlob = (contentType = "image/png", size = 64) => new Blob([imageBytes(contentType, size)], { type: contentType });

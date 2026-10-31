@@ -4,6 +4,7 @@ import { readSheet, saveSheet } from "../../../convex/lib/characterSheet";
 import { PLACEABLE_KINDS } from "../../../src/components/combat-map/editor/edit-model";
 import type { Area, Entry, Outcome, Role, World } from "./harness";
 import { freshKey } from "./synth";
+import { imageBlob } from "../helpers";
 
 /**
  * Authz matrix: combat (combatMaps, combatMapEdit, combatMapGenerate, combatMapStyle, combatTokens, combatVision,
@@ -69,7 +70,7 @@ async function inReach(w: World) {
 
 /** A file stored directly (no upload URL), unclaimed: the `_storage` row synthesis uses. */
 async function storedFile(w: World) {
-  const storageId = await w.t.run((ctx) => ctx.storage.store(new Blob(["img"], { type: "image/png" })));
+  const storageId = await w.t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
   // `use` is typed for user tables; synthesis looks the chosen id up before touching the table.
   w.use("_storage" as TableNames, storageId);
 }
@@ -80,7 +81,7 @@ async function imageMap(w: World) {
   const campaignId = w.campaignId;
   const gm = w.users.gm;
   await w.t.run(async (ctx) => {
-    const storageId = await ctx.storage.store(new Blob(["img"], { type: "image/png" }));
+    const storageId = await ctx.storage.store(imageBlob("image/png"));
     const fileId = await ctx.db.insert("files", { storageId, campaignId, uploadedBy: gm, kind: "combatMap", refId: mapId, createdAt: 0 });
     await ctx.db.patch(mapId, { source: "image", image: { fileId, grid: { cell: 40, offsetX: 0, offsetY: 0 } } });
   });
@@ -103,7 +104,7 @@ export async function sprites(w: World) {
   const first = await w.t.run(async (ctx) => {
     const ids = [];
     for (const [order, name] of ["Standing stone", "Cairn"].entries()) {
-      const storageId = await ctx.storage.store(new Blob(["img"], { type: "image/webp" }));
+      const storageId = await ctx.storage.store(imageBlob("image/webp"));
       const fileId = await ctx.db.insert("files", { storageId, campaignId, uploadedBy: gm, kind: "sprite", refId: "pending", createdAt: 0 });
       const spriteId = await ctx.db.insert("spritePackSprites", {
         campaignId,

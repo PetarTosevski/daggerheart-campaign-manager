@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { errorCode, key, useAllowlist } from "./helpers";
+import { errorCode, imageBlob, key, useAllowlist } from "./helpers";
 import { makeTest } from "./setup";
 
 // PF9 (.omc/plans/performance.yaml): the dashboard's party cards read `characters.partySummary`, a projection of
@@ -162,7 +162,7 @@ describe("characters.partySummary", () => {
 
   it("hides an uploaded portrait's storage id from everyone but the sheet's editors", async () => {
     const { t, as, campaignId, characters } = await party();
-    const storageId = await t.run((ctx) => ctx.storage.store(new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" })));
+    const storageId = await t.run((ctx) => ctx.storage.store(imageBlob("image/png")));
     await t.run(async (ctx) => {
       const row = (await ctx.db.get("characters", characters.p1!))!;
       await ctx.db.patch("characters", row._id, { sheet: { ...(row.sheet as object), portrait: { kind: "upload", storageId } } });
