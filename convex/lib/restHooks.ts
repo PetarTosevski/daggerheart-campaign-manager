@@ -53,6 +53,8 @@ import { ageOfUmbraRestHook } from "../trackers/ageOfUmbra";
 import { andaluriaRestHook } from "../trackers/andaluria";
 import { colossusRestHook } from "../trackers/colossus";
 import { horizonRestHook } from "../trackers/horizon";
+import { endedConditionLine, lapsedConditions } from "./cardRunner";
+import { readSheet } from "./characterSheet";
 import { readTracker, TRACKER_SCHEMA_VERSION, writeTracker } from "./trackers";
 
 export type RestHookInput = {
@@ -130,8 +132,37 @@ const endAreasRestHook: RestHook = async (ctx, { campaign, kind, sheets }) => {
   return [];
 };
 
+/**
+ * Sourced conditions end with their marker (plan lanes C2, dcm-bxp.99.19.52; convex/lib/cardRunner.ts `lapsedConditions`):
+ * the rest's expiry took a condition's source marker (Vanishing Act, CB p.42: "You remain Cloaked in this way until you
+ * roll with Fear or until your next rest"), so the condition goes too. Frame-independent. The stored sheet (one `get` per
+ * resting PC; not yet saved by the rest) holds the markers the expiry took; the rested sheet loses the condition, so the
+ * rest's own save, log and undo carry it. One feed line per ended condition.
+ */
+const sourcedConditionsRestHook: RestHook = async (ctx, { campaign, sheets }) => {
+  const lines: string[] = [];
+  for (const [id, rested] of sheets) {
+    const character = await ctx.db.get("characters", id);
+    if (character === null || character.campaignId !== campaign._id) continue;
+    const out = lapsedConditions(readSheet(character.sheet), rested);
+    if (out.ended.length === 0) continue;
+    sheets.set(id, out.sheet);
+    lines.push(...out.ended.map((e) => endedConditionLine(rested.name, e)));
+  }
+  return lines;
+};
+
 /** Every frame's rest hook, in order; Horizon first, since it may refuse the rest. */
-export const REST_HOOKS: readonly RestHook[] = [horizonRestHook, ageOfUmbraRestHook, colossusRestHook, beastFeastRestHook, andaluriaRestHook, motherboardRestHook, endAreasRestHook];
+export const REST_HOOKS: readonly RestHook[] = [
+  horizonRestHook,
+  ageOfUmbraRestHook,
+  colossusRestHook,
+  beastFeastRestHook,
+  andaluriaRestHook,
+  motherboardRestHook,
+  endAreasRestHook,
+  sourcedConditionsRestHook,
+];
 
 /** Runs every hook; returns their feed lines. */
 export async function runRestHooks(ctx: MutationCtx, input: RestHookInput): Promise<string[]> {

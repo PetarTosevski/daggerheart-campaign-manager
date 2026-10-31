@@ -33,6 +33,8 @@ import { pickUse, run, type ActorState, type PlanStep, type ResolvedMod, type Ru
 import type { OtherSheet } from "../../src/lib/domain/class-features/types";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { featureKey, parseFeatureId } from "../../src/lib/domain/feature-effects/ids";
+import { endsOnOccurrence, type EffectEnds, type EndRoll } from "../../src/lib/domain/characters/expiry";
+import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { FEATURE_CLASSIFICATION } from "../../src/lib/srd/feature-effects/classification";
 import type { CardEffect, CardUse, Duration, Range, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { lineOfSight, rangeCheck, rangeFromWeapon, tokenDistance, type Combatant, type SightResult } from "../../src/lib/domain/combat-actions/index";
@@ -50,7 +52,7 @@ import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
 import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
-import { CONDITIONS, FEATURE_USES_MAX, type CharacterSheet, type Effect } from "../../src/lib/validation/characters";
+import { CONDITIONS, FEATURE_USES_MAX, type CharacterSheet, type Condition, type Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
@@ -893,15 +895,30 @@ export function writeSheetChanges(sheet: CharacterSheet, steps: readonly PlanSte
     if (!("targetId" in step) || step.targetId !== who) continue;
     if (step.kind === "condition") {
       if (step.condition.kind === "standard") {
-        if (!conditions.includes(step.condition.condition)) conditions.push(step.condition.condition);
+        const condition = step.condition.condition;
+        if (!conditions.includes(condition)) conditions.push(condition);
+        // Lane C2 (dcm-bxp.99.19.52): a condition its entry ends on events (Vanishing Act's Cloaked) records its source.
+        if (sourceEnds(cardId, condition) !== undefined) {
+          effects = addEffect(
+            effects.filter((e) => !isMarker(e, cardId, condition)),
+            cardId,
+            cardName,
+            condition,
+            [],
+            step.duration,
+            step.endsWhen,
+          );
+        }
       } else {
         for (const c of step.condition.implies ?? []) if (!conditions.includes(c)) conditions.push(c);
         effects = addEffect(effects, cardId, cardName, step.condition.tag, [], step.duration, step.endsWhen);
       }
     } else if (step.kind === "clearCondition") {
       const cond = step.condition;
-      if (cond.kind === "standard") conditions = conditions.filter((c) => c !== cond.condition);
-      else effects = effects.filter((e) => !((cardIdOfEffect(e) !== null || featureIdOfEffect(e) !== null) && e.text.split(";")[0] === cond.tag));
+      if (cond.kind === "standard") {
+        conditions = conditions.filter((c) => c !== cond.condition);
+        effects = effects.filter((e) => conditionMarkerOf(e)?.condition !== cond.condition);
+      } else effects = effects.filter((e) => !((cardIdOfEffect(e) !== null || featureIdOfEffect(e) !== null) && e.text.split(";")[0] === cond.tag));
     } else if (step.kind === "effect") {
       effects = addEffect(effects, cardId, cardName, step.label, step.mods, step.duration, step.endsWhen, step.option);
     } else if (step.kind === "hope" && !isActor) {
@@ -929,7 +946,10 @@ export function actorSheetAfter(paidSheet: CharacterSheet, plan: RunPlan, actorI
 
 function sheetAfterPlan(paidSheet: CharacterSheet, plan: RunPlan, actorId: string, cardName: string): CharacterSheet {
   const after = plan.actor.after;
-  const base = writeSheetChanges(paidSheet, plan.steps, actorId, plan.cardId, cardName, plan.exclusive, true);
+  // Lane C2: the use's own roll ends the actor's sourced conditions first (Vanishing Act: "until you roll with Fear"), so
+  // a condition the use itself gives is not ended by the roll that gave it.
+  const rolled = plan.roll === null ? paidSheet : endConditionsOnRoll(paidSheet, plan.roll.record).sheet;
+  const base = writeSheetChanges(rolled, plan.steps, actorId, plan.cardId, cardName, plan.exclusive, true);
   const tokenKey = tokenKeyOf(plan.cardId);
   const others = (paidSheet.cardTokens ?? []).filter((t) => t.cardId !== tokenKey);
   const cardTokens = after.cardTokens > 0 ? [...others, { cardId: tokenKey, count: Math.min(99, after.cardTokens) }] : others;
@@ -952,6 +972,149 @@ function sheetAfterPlan(paidSheet: CharacterSheet, plan: RunPlan, actorId: strin
     cardTokens,
     ...(toVault ? { domainCards: { ...paidSheet.domainCards, loadout: paidSheet.domainCards.loadout.filter((c) => c !== plan.cardId) } } : {}),
   };
+}
+
+// ---------------------------------------------------------------- condition sources (plan lanes, tracer C2)
+//
+// dcm-bxp.99.19.52 (docs/tasks/TASK-LN-C2.md). A standard condition on a PC sheet is a bare name (`conditions`). When the
+// entry that gives it ends it on events of its own (Vanishing Act, CB p.42: "You remain Cloaked in this way until you
+// roll with Fear or until your next rest"), `writeSheetChanges` also writes a source marker: a sheet effect of that entry
+// (`card:<cardId>:<n>` / `feat:<hash>:<n>`, as any card or feature effect) whose label is the condition's name and whose
+// `until` is the step's duration. The marker is the record of where the condition came from:
+// - `conditionSources` reads it (combatMovement / combatActions: a sourced Cloaked ends only by its own endings);
+// - `endConditionsOnRoll` ends a marker whose entry ends on the roll (and the condition with it);
+// - `lapsedConditions` drops a condition whose marker `expire` took (restHooks: "until your next rest");
+// - `withoutCondition` drops a condition with every marker for it (unconscious or dead, an ordinary Cloaked ending).
+// No stored shape changes: markers are ordinary `effects` entries (rule 7 needs no widening).
+
+/** The condition steps of an entry, by condition name (first one wins), with their ends. Cached per entry. */
+const SOURCE_STEPS = new Map<string, Map<string, EffectEnds>>();
+
+function conditionSteps(value: unknown, out: Map<string, EffectEnds>): Map<string, EffectEnds> {
+  if (Array.isArray(value)) {
+    for (const v of value) conditionSteps(v, out);
+  } else if (value !== null && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    if (o.kind === "condition" && "duration" in o) {
+      const step = o as unknown as Extract<Step, { kind: "condition" }>;
+      if (step.condition.kind === "standard" && !out.has(step.condition.condition)) {
+        out.set(step.condition.condition, {
+          duration: step.duration,
+          ...(step.endsOn ? { endsOn: step.endsOn } : {}),
+          ...(step.endsOnRoll ? { endsOnRoll: step.endsOnRoll } : {}),
+          ...(step.endsOnCaster ? { endsOnCaster: step.endsOnCaster } : {}),
+        });
+      }
+    }
+    for (const v of Object.values(o)) conditionSteps(v, out);
+  }
+  return out;
+}
+
+/**
+ * The ends of a card's or feature's standard condition step when they hold an event of their own (an `endsOn` other than
+ * the stance drop DA10 handles, an `endsOnRoll`); undefined otherwise (the condition stays a bare name).
+ */
+export function sourceEnds(sourceId: string, condition: string): EffectEnds | undefined {
+  let steps = SOURCE_STEPS.get(sourceId);
+  if (steps === undefined) {
+    const uses = cardEffect(sourceId)?.uses ?? featureEffect(sourceId)?.uses ?? [];
+    steps = conditionSteps(uses, new Map());
+    SOURCE_STEPS.set(sourceId, steps);
+  }
+  const ends = steps.get(condition);
+  if (ends === undefined) return undefined;
+  const events = (ends.endsOn ?? []).some((e) => e !== "stanceDrops") || ends.endsOnRoll !== undefined;
+  return events ? ends : undefined;
+}
+
+/** A sheet effect that records a condition's source: the entry and the condition, or null. */
+export function conditionMarkerOf(effect: Effect): { sourceId: string; condition: Condition } | null {
+  const sourceId = cardIdOfEffect(effect) ?? featureIdOfEffect(effect);
+  if (sourceId === null) return null;
+  const label = effect.text.split("; ")[0] ?? "";
+  if (!STANDARD.has(label) || sourceEnds(sourceId, label) === undefined) return null;
+  return { sourceId, condition: label as Condition };
+}
+
+function isMarker(effect: Effect, sourceId: string, condition: Condition): boolean {
+  const m = conditionMarkerOf(effect);
+  return m !== null && m.sourceId === sourceId && m.condition === condition;
+}
+
+/** The entries a held condition comes from (their markers); empty when the condition is bare or not held. */
+export function conditionSources(sheet: Pick<CharacterSheet, "conditions" | "effects">, condition: Condition): string[] {
+  if (!sheet.conditions.includes(condition)) return [];
+  return sheet.effects.flatMap((e) => {
+    const m = conditionMarkerOf(e);
+    return m !== null && m.condition === condition ? [m.sourceId] : [];
+  });
+}
+
+/** The sheet without the condition and every marker for it; the same sheet when neither is there. */
+export function withoutCondition<T extends Pick<CharacterSheet, "conditions" | "effects">>(sheet: T, condition: Condition): T {
+  const markers = sheet.effects.some((e) => conditionMarkerOf(e)?.condition === condition);
+  if (!sheet.conditions.includes(condition) && !markers) return sheet;
+  return { ...sheet, conditions: sheet.conditions.filter((c) => c !== condition), effects: sheet.effects.filter((e) => conditionMarkerOf(e)?.condition !== condition) };
+}
+
+/** A sourced condition that ended, with its marker's `source` (the card or feature name, for the feed). */
+export type EndedCondition = { condition: Condition; source: string };
+
+/** The feed words of an ended sourced condition: "Ash: Cloaked ends (Vanishing Act)". */
+export function endedConditionLine(name: string, ended: EndedCondition): string {
+  return `${name}: ${ended.condition.charAt(0).toUpperCase()}${ended.condition.slice(1)} ends (${ended.source})`;
+}
+
+/**
+ * `after` without the conditions whose markers were on `before` and are gone from `after` (an `expire` took them: a
+ * rest; or `endConditionsOnRoll`), unless another marker still holds the condition. The same sheet when none lapsed.
+ */
+export function lapsedConditions<T extends Pick<CharacterSheet, "conditions" | "effects">>(before: Pick<CharacterSheet, "effects">, after: T): { sheet: T; ended: EndedCondition[] } {
+  const kept = new Set(after.effects.map((e) => e.id));
+  const ended: EndedCondition[] = [];
+  let sheet = after;
+  for (const e of before.effects) {
+    const m = conditionMarkerOf(e);
+    if (m === null || kept.has(e.id) || !sheet.conditions.includes(m.condition)) continue;
+    if (sheet.effects.some((x) => conditionMarkerOf(x)?.condition === m.condition)) continue;
+    sheet = { ...sheet, conditions: sheet.conditions.filter((c) => c !== m.condition) };
+    ended.push({ condition: m.condition, source: e.source });
+  }
+  return { sheet, ended };
+}
+
+/** A made roll as the end engine reads it (`attack`: an attack roll). Damage and free rolls end nothing (null). */
+export function endRollOf(record: Pick<RollRecord, "kind" | "outcome">, attack?: EndRoll["attack"]): EndRoll | null {
+  if (record.kind !== "action" && record.kind !== "reaction") return null;
+  const o = record.outcome;
+  const duality = o === "critical" ? "critical" : o === "successHope" || o === "failHope" ? "hope" : o === "successFear" || o === "failFear" ? "fear" : undefined;
+  const success = o === "critical" || o === "successHope" || o === "successFear" ? true : o === "failHope" || o === "failFear" ? false : undefined;
+  return { kind: record.kind, ...(duality ? { duality } : {}), ...(success !== undefined ? { success } : {}), ...(attack ? { attack } : {}) };
+}
+
+/**
+ * The sheet after its bearer made `record`: every marker whose entry ends on that roll (Vanishing Act: a roll with Fear)
+ * goes, and its condition with it unless another marker still holds it. `ended` names them for the caller's feed.
+ */
+export function endConditionsOnRoll<T extends Pick<CharacterSheet, "conditions" | "effects">>(
+  sheet: T,
+  record: Pick<RollRecord, "kind" | "outcome">,
+  attack?: EndRoll["attack"],
+): { sheet: T; ended: EndedCondition[] } {
+  const roll = endRollOf(record, attack);
+  if (roll === null) return { sheet, ended: [] };
+  const gone = new Set(
+    sheet.effects
+      .filter((e) => {
+        const m = conditionMarkerOf(e);
+        const ends = m === null ? undefined : sourceEnds(m.sourceId, m.condition);
+        return ends !== undefined && endsOnOccurrence(ends, { kind: "roll", roll }, "bearer");
+      })
+      .map((e) => e.id),
+  );
+  if (gone.size === 0) return { sheet, ended: [] };
+  return lapsedConditions(sheet, { ...sheet, effects: sheet.effects.filter((e) => !gone.has(e.id)) });
 }
 
 // ---------------------------------------------------------------- riders (plan sheet-drawer SD5)

@@ -15,7 +15,7 @@ import { needsChoiceValidator } from "./lib/cardRows";
 import { buildRun, Creatures, extraSpecs, replaying, runCard } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet } from "./lib/characterSheet";
 import { attackScene, type AttackScene } from "./lib/combatActions";
-import { answerCloakDifficulty, movementGrid, uncloakAfterMove } from "./lib/combatMovement";
+import { answerCloakDifficulty, movementGrid, uncloakAfterAttack, uncloakAfterMove } from "./lib/combatMovement";
 import type { MovementGrid } from "../src/lib/domain/combat-map/movement";
 import { closeRequest, encounterRunning, loadOpenRequest, openDifficulty, openServerMove } from "./lib/combatRequests";
 import { allyRollLive, isAllyRollRow, liveAllyRolls, liveTargetCount, optionalHope, rollAndStoreCount, rolledFirstUse, rollerUse, type AllyRollRow } from "./lib/featurePrompts";
@@ -324,9 +324,13 @@ async function runCharge(
         payload: { schemaVersion: 1, kind: "serverMove", characterId: character._id, groupId: entry.groupId, tokenId: attacker._id, from, to: next },
       });
     }
+    const group = entry?.groupId === undefined ? {} : { groupId: entry.groupId };
+    // dcm-bxp.99.19.65 (4) (user 2026-10-30): the Stress's 1d12 damage is an attack, so an ordinary Cloaked ends (CB p.42:
+    // "After you make an attack … you are no longer Cloaked"; Vanishing Act's stays), in the Charge's group.
+    if (outcome.plan.steps.some((s) => s.kind === "damageRoll")) await uncloakAfterAttack(ctx, campaign, character._id, actorId, "Charge", group);
     // CB p.42 (Rogue, Cloaked): the Charge ends a move, so a Cloaked Firbolg in sight loses Cloaked (or rolls in dim
     // light) in the Charge's group: one undo reverts both (dcm-bxp.99.19.59). The Firbolg's own move, whoever clicked.
-    await uncloakAfterMove(ctx, campaign, before.map, { ...attacker, ...next }, actorId, entry?.groupId === undefined ? {} : { groupId: entry.groupId });
+    await uncloakAfterMove(ctx, campaign, before.map, { ...attacker, ...next }, actorId, group);
   }
   return { status: "charged" as const, moved, use };
 }
@@ -343,8 +347,9 @@ async function encounterOf(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Do
  * the use as from that square (its targets are every enemy in Melee range there, seen or not: user 2026-10-30,
  * dcm-bxp.99.19.55 (2)), rolls Agility against the GM's Difficulty and, on a success, moves the token to the square (the
  * optional Stress, `stress: true`, then deals 1d12 physical damage to each of those targets); on a failure the token stays.
- * One actionLog group: undo restores the sheets, the adversaries and the square (`serverMove`). A Cloaked Firbolg that lands
- * in an enemy's sight loses Cloaked (or rolls Finesse in dim light) in that group (`uncloakAfterMove`).
+ * One actionLog group: undo restores the sheets, the adversaries and the square (`serverMove`). The Stress's damage is an
+ * attack (dcm-bxp.99.19.65 (4)): it ends an ordinary Cloaked (`uncloakAfterAttack`); else a Cloaked Firbolg that lands in an
+ * enemy's sight loses Cloaked (or rolls Finesse in dim light) in that group (`uncloakAfterMove`).
  *
  * The Difficulty is the GM's (CB p.104: "The GM sets this Difficulty"). The GM sends it in `roll.difficulty` and the Charge
  * runs at once. A player sends none (user 2026-10-30, dcm-bxp.99.19.61): the square is checked now, nothing is rolled or

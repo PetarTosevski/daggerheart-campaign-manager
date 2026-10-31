@@ -12,7 +12,7 @@ import { rollGaveHope, WITH_HOPE } from "../../src/lib/domain/session-features/i
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import { tickArmedCountdowns } from "../countdownRolls";
 import { logAction, newGroupId } from "./actionLog";
-import { difficultyOf } from "./cardRunner";
+import { conditionSources, difficultyOf, endConditionsOnRoll, withoutCondition } from "./cardRunner";
 import { readSheet, saveSheet } from "./characterSheet";
 import { rollDie } from "./dice";
 import { gainFear } from "./fear";
@@ -108,7 +108,8 @@ export type EnemySight = "clear" | "dim" | "none";
  * DA3 / DA18 (user 2026-10-30): how the enemy token `enemy` sees the token `at` under the map's light. Day phases light
  * everything, so every square is clear. The dim phases (R8: Nautical Twilight and Nightfall, the Witherwild dusk; "full
  * vision" on the map) count as dim light here (user 2026-10-30, dcm-bxp.99.19.62 (3)): what the enemy sees then it sees
- * dimly, so Cloaked asks for the Finesse roll instead of ending. At night `at` is clear when its best square is clear
+ * dimly, so Cloaked asks for the Finesse roll instead of ending, except where the night's light would show it clearly (a
+ * torch or campfire's clear reach, the enemy's own Melee sight; user 2026-10-30, dcm-bxp.99.19.65 (1)). At night `at` is clear when its best square is clear
  * (level 2) from the enemy's eye under the enemy's own night vision or carried light, every other token's carried light
  * (the rogue's own torch too), the map's lit lights and glowing terrain (R9), and dim when it is dim (level 1). The enemy
  * looks straight at `at` with the widest cone, so facing never decides. GM fog marks are the players' view and are not
@@ -119,17 +120,22 @@ export function enemySight(scene: Pick<Scene, "prepared" | "tokens" | "phase">, 
   const az = sizeOf(at);
   const face = Math.atan2(at.y + az / 2 - (enemy.y + ez / 2), at.x + az / 2 - (enemy.x + ez / 2));
   const viewer = `token:${enemy._id}`;
-  const view = createView(
-    scene.prepared,
-    { token: { ...visionToken(enemy), face }, characterId: viewer, instinct: WIDE_INSTINCT },
-    { phase: scene.phase ?? "", tokens: scene.tokens.filter((t) => t._id !== enemy._id).map(visionToken) },
-  );
+  const others = scene.tokens.filter((t) => t._id !== enemy._id).map(visionToken);
+  const view = createView(scene.prepared, { token: { ...visionToken(enemy), face }, characterId: viewer, instinct: WIDE_INSTINCT }, { phase: scene.phase ?? "", tokens: others });
   // Read as a non-PC token (tokenVisibility always shows a PC token, Q4) revealed to this viewer, so a dim square reads
   // "dim" rather than "hidden" (R10's GM reveal is the players' view, not the enemy's).
-  const seen = tokenVisibility(view, { ...visionToken(at), side: "neutral", revealedTo: [viewer] });
+  const target: VisionToken = { ...visionToken(at), side: "neutral", revealedTo: [viewer] };
+  const seen = tokenVisibility(view, target);
   if (seen === "hidden") return "none";
-  return seen === "clear" && lightOf(scene.phase ?? "") === "dim" ? "dim" : seen;
+  if (seen !== "clear" || lightOf(scene.phase ?? "") !== "dim") return seen;
+  // dcm-bxp.99.19.65 (1) (user 2026-10-30): in a dim phase a rogue inside a light's clear reach (a torch, a campfire) is
+  // seen clearly, as at night: the same look under night light decides; anything less stays dim.
+  const lit = createView(scene.prepared, { token: { ...visionToken(enemy), face }, characterId: viewer, instinct: WIDE_INSTINCT }, { phase: NIGHT_LOOK, tokens: others });
+  return tokenVisibility(lit, target) === "clear" ? "clear" : "dim";
 }
+
+/** A night phase (R8), for the dim-phase look at the lights only (`enemySight`). */
+const NIGHT_LOOK = "Deep Night";
 
 /** DA3: whether the enemy token `enemy` sees the token `at` in clear light (`enemySight`). */
 export function enemySees(scene: Pick<Scene, "prepared" | "tokens" | "phase">, enemy: Doc<"combatTokens">, at: Doc<"combatTokens">): boolean {
@@ -201,40 +207,44 @@ async function enemyStates(
   return { hidden, difficulty };
 }
 
-/** The feature whose Cloaked a move never ends (pin dcm-bxp.99.19.42). */
-const VANISHING_ACT = "Vanishing Act";
-/** Feed rows `cloakedByVanishingAct` reads back. */
-const CLOAK_SOURCE_ROWS = 20;
-
 /**
- * Whether the character's Cloaked comes from Vanishing Act (CB p.42: "You remain Cloaked in this way until you roll with
- * Fear or until your next rest."; pin dcm-bxp.99.19.42). The sheet stores Cloaked as a bare condition, so the source is
- * read from the character's newest feed rows (`by_character_at`, at most CLOAK_SOURCE_ROWS, undone rows skipped): a
- * Vanishing Act use (the feature runner's row "<name> uses Vanishing Act") newer than the row that turned Cloaked on
- * (its `before` without it). Stop-gap until the runner records a condition's source (docs/tasks/TASK-DA-DA3.md).
+ * Whether the character's Cloaked has a source of its own (Vanishing Act, CB p.42: "You remain Cloaked in this way until
+ * you roll with Fear or until your next rest."; pin dcm-bxp.99.19.42; user R5, dcm-bxp.99.19.52): its marker on the sheet
+ * (`conditionSources`, convex/lib/cardRunner.ts). Such a Cloaked ends only by its own endings (a roll with Fear, the next
+ * rest), never by a move or an attack; unconscious or dead still drops it.
  */
-export async function cloakedByVanishingAct(ctx: QueryCtx, characterId: Id<"characters">, name: string): Promise<boolean> {
-  const rows = await ctx.db
-    .query("actionLog")
-    .withIndex("by_character_at", (q) => q.eq("characterId", characterId))
-    .order("desc")
-    .take(CLOAK_SOURCE_ROWS);
-  for (const row of rows) {
-    if (row.undoneAt !== undefined) continue;
-    if (row.summary.startsWith(`${name} uses ${VANISHING_ACT}`)) return true;
-    if (row.before === undefined) continue;
-    let before: ReturnType<typeof readSheet>;
-    try {
-      before = readSheet(row.before);
-    } catch {
-      continue;
-    }
-    if (!before.conditions.includes("cloaked")) return false;
-  }
-  return false;
+export function sourcedCloak(sheet: Pick<CharacterSheet, "conditions" | "effects">): boolean {
+  return conditionSources(sheet, "cloaked").length > 0;
 }
 
-const uncloaked = (s: CharacterSheet): CharacterSheet => ({ ...s, conditions: s.conditions.filter((c) => c !== "cloaked") });
+/** The sheet without Cloaked (and without any source marker for it). */
+const uncloaked = (s: CharacterSheet): CharacterSheet => withoutCondition(s, "cloaked");
+
+/**
+ * dcm-bxp.99.19.65 (4) (user 2026-10-30): an attack made outside the attack path (Charge's 1d12 damage, `use` names it)
+ * ends the character's ordinary Cloaked (CB p.42: "After you make an attack … you are no longer Cloaked"); Vanishing Act's
+ * (`sourcedCloak`) stays. One public, undoable `feature` row in `options.groupId` (or a group of its own). Returns
+ * whether Cloaked ended.
+ */
+export async function uncloakAfterAttack(ctx: MutationCtx, campaign: Doc<"campaigns">, characterId: Id<"characters">, actorId: Id<"users">, use: string, options: { groupId?: string } = {}): Promise<boolean> {
+  const character = await ctx.db.get("characters", characterId);
+  if (character === null || character.campaignId !== campaign._id) return false;
+  const sheet = readSheet(character.sheet);
+  if (!sheet.conditions.includes("cloaked") || sourcedCloak(sheet)) return false;
+  await saveSheet(ctx, character._id, uncloaked(sheet));
+  await logAction(ctx, {
+    campaignId: campaign._id,
+    characterId: character._id,
+    actorId,
+    kind: "feature",
+    visibility: "public",
+    summary: `${sheet.name} attacks with ${use} and is no longer Cloaked`,
+    before: sheet,
+    groupId: options.groupId ?? newGroupId(),
+    undoable: true,
+  });
+  return true;
+}
 
 /** How a move came about, for `uncloakAfterMove`. */
 export type UncloakOptions = {
@@ -255,7 +265,7 @@ export type UncloakOptions = {
  * - unconscious or dead (user 2026-10-30, dcm-bxp.99.19.62 (2): a rogue who is unconscious or dead drops Cloaked):
  *   Cloaked ends, whoever moved the token and whatever sees it (one public, undoable `feature` row);
  * - else a GM's drag (`options.byGm`, the GM not the character's owner) changes nothing: it is not the rogue's move;
- * - else, unless Cloaked comes from Vanishing Act (`cloakedByVanishingAct`, pin dcm-bxp.99.19.42), when a revealed enemy
+ * - else, unless Cloaked comes from Vanishing Act (`sourcedCloak`, pin dcm-bxp.99.19.42), when a revealed enemy
  *   with a clear line to its square
  *   - sees it in clear light: Cloaked ends (one public, undoable `feature` row);
  *   - sees it only in dim light (user 2026-10-30, dcm-bxp.99.19.53 (4); a dim time phase counts, `enemySight`): the
@@ -292,7 +302,7 @@ export async function uncloakAfterMove(
   const enemies = await enemyStates(ctx, campaign._id, scene.tokens);
   const sight = enemySightOf(scene, moved, enemies.hidden);
   if (!sight.clear && sight.dim.length === 0) return false;
-  if (await cloakedByVanishingAct(ctx, character._id, sheet.name)) return false;
+  if (sourcedCloak(sheet)) return false;
   if (!sight.clear) return cloakRoll(ctx, { campaign, character, sheet, gm: false }, { map, token: moved, seers: sight.dim, difficulties: enemies.difficulty }, actorId, groupId);
   return drop(`${sheet.name} ends a move in sight of an adversary and is no longer Cloaked`);
 }
@@ -393,7 +403,8 @@ async function rollCloak(ctx: MutationCtx, loaded: Loaded, highest: Difficulty, 
   const { campaign, character, sheet } = loaded;
   const { paid, next, roll, effects } = await resolveDuality(ctx, loaded, cloakRollArgs(highest.value), rollDie, false);
   const success = roll.outcome === "critical" || roll.outcome === "successHope" || roll.outcome === "successFear";
-  const after = success ? next : uncloaked(next);
+  // Lane C2: the roll ends the rogue's other sourced conditions it ends (a roll with Fear), as any roll does.
+  const after = endConditionsOnRoll(success ? next : uncloaked(next), roll).sheet;
   const { gained } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const sheetChanged = changed(sheet, after);
   if (sheetChanged) await saveSheet(ctx, character._id, after);

@@ -59,7 +59,26 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { parseChoices, type CardChoice, type ParsedChoices } from "./cardChoices";
 import { adversaryBefore, cardPromptValidator, gmLines, instanceWrites, promptsOf, writeInstances, type CardPrompt, type InstanceWrite } from "./cardRows";
-import { actorSheetAfter, bindGates, buildRun, cardActor, pcCombatant, pickCard, replaying, riderPartRuns, riderUse, runCard, type BuiltRun, type HostRoll, type RiderPart, type UsePick } from "./cardRunner";
+import {
+  actorSheetAfter,
+  bindGates,
+  buildRun,
+  cardActor,
+  conditionSources,
+  endConditionsOnRoll,
+  endedConditionLine,
+  pcCombatant,
+  pickCard,
+  replaying,
+  riderPartRuns,
+  riderUse,
+  runCard,
+  withoutCondition,
+  type BuiltRun,
+  type HostRoll,
+  type RiderPart,
+  type UsePick,
+} from "./cardRunner";
 import { saveSheet } from "./characterSheet";
 import { loadCombatMap } from "./combatMaps";
 import { loadScene, viewOf, type Scene, type Viewer } from "./combatVision";
@@ -1260,9 +1279,14 @@ export function endedByAttack(sheet: CharacterSheet, mods: readonly LiveMod[]): 
   return { ...sheet, effects: sheet.effects.filter((e) => !ended.has(e.id)) };
 }
 
-/** CB p.42: "After you make an attack … you are no longer Cloaked." */
-function uncloaked(sheet: CharacterSheet): CharacterSheet {
-  return sheet.conditions.includes("cloaked") ? { ...sheet, conditions: sheet.conditions.filter((c) => c !== "cloaked") } : sheet;
+/**
+ * CB p.42 (Rogue, Cloaked): "After you make an attack … you are no longer Cloaked." User R5 (dcm-bxp.99.19.52): an attack
+ * does not end Vanishing Act's Cloaked (a sourced Cloaked, `conditionSources`); that one ends on a roll with Fear or the
+ * next rest (CB p.42: "You remain Cloaked in this way until you roll with Fear or until your next rest").
+ */
+export function uncloakedByAttack(sheet: CharacterSheet): CharacterSheet {
+  if (!sheet.conditions.includes("cloaked") || conditionSources(sheet, "cloaked").length > 0) return sheet;
+  return withoutCondition(sheet, "cloaked");
 }
 
 // ---- the after-roll step (Q1)
@@ -1823,8 +1847,10 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     riderFear += afterRun.plan.gmFearDelta;
   }
 
-  // ---- CB p.42: "After you make an attack … you are no longer Cloaked."
-  sheet = uncloaked(sheet);
+  // ---- Lane C2: the attack roll ends the attacker's sourced conditions that end on it (Vanishing Act's Cloaked on a roll
+  // with Fear, CB p.42); then CB p.42: "After you make an attack … you are no longer Cloaked." (an ordinary Cloaked only).
+  const rollEnds = endConditionsOnRoll(sheet, roll, "weapon");
+  sheet = uncloakedByAttack(rollEnds.sheet);
   // Plan lanes, E1 (dcm-y3e): an effect that gave this attack its extra target ends with it (Parallela, CB p.332: "The next
   // time the target makes an attack"), as does one that ends when its bearer attacks.
   sheet = endedByAttack(sheet, mods);
@@ -1893,6 +1919,18 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       summary: `${sheet0.name} · riders → ${[...riderLines, ...folds.unsupported.map((u) => `${u} (not automated)`)].join("; ")}`.slice(0, 1000),
       groupId,
       ...(riderWrites.length > 0 ? { adversaryBefore: riderWrites.map((w) => w.before) } : {}),
+      undoable: true,
+    });
+  }
+  if (rollEnds.ended.length > 0) {
+    await logAction(ctx, {
+      campaignId: campaign._id,
+      characterId: character._id,
+      actorId: req.actorId,
+      kind: "feature",
+      visibility: "public",
+      summary: rollEnds.ended.map((e) => endedConditionLine(sheet0.name, e)).join("; "),
+      groupId,
       undoable: true,
     });
   }
