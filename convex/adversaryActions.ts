@@ -9,7 +9,7 @@ import { appError } from "../src/lib/errors/app-error";
 import { COUNTDOWN_DETAILS_MAX_LENGTH } from "../src/lib/validation/countdowns";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { adversaryAction, afterHitTriggers, gmControlledAttack as gmControlledAttackOf, isPreRollRow, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
+import { adversaryAction, afterHitTriggers, forcedStandardAttack, gmControlledAttack as gmControlledAttackOf, isPreRollRow, replayHeld, respondPreRoll, type ActionArgs, type PreRollRow } from "./lib/adversaryActions";
 import { answeringFeatures, hopeAndFearOf } from "./lib/adversaryHits";
 import { blockOf, countdownTickOn, featureAsk as featureAskOf } from "./lib/adversaryFeatures";
 import { rollDice } from "./lib/dice";
@@ -37,6 +37,7 @@ import {
 } from "./lib/incomingHits";
 import { rollValidator } from "./lib/validators/actionLog";
 import { hitChoiceValidator, preRollFeatureChoiceValidator } from "./lib/validators/combatRequests";
+import { traitIdValidator } from "./lib/validators/characters";
 
 /**
  * Adversary actions against PCs (plan combat-actions, tracer AA2; docs/tasks/TASK-CA-AA2.md). The GM attacks with an
@@ -64,6 +65,11 @@ const sharedArgs = {
   spendFear: v.optional(v.number()),
   /** Reactions on this attack the GM opted into (Heavy Hitter, …; Q19 default No), by feature name. */
   reactions: v.optional(v.array(v.string())),
+  /**
+   * Lane E7 round 3 (dcm-eut): the PC feature ids whose "unless the attacker marks a Stress" disadvantage the attacker pays
+   * off for this attack (Defensive stance, HF p.12); the attacker marks the cost. Unpaid ones come back in the GM feed.
+   */
+  buyOffs: v.optional(v.array(v.string())),
 };
 
 const featureArgs = {
@@ -133,7 +139,7 @@ function checkArgs(args: ActionArgs) {
   whole(args.advantage, 3, "Advantage");
   whole(args.disadvantage, 3, "Disadvantage");
   whole(args.spendFear, 12, "Fear to spend");
-  for (const list of [args.reactions, args.situations, args.options, args.optionals, args.eitherCosts, args.splits, args.chain, args.raisers, ...(args.chain ?? [])]) {
+  for (const list of [args.reactions, args.situations, args.options, args.optionals, args.eitherCosts, args.splits, args.chain, args.raisers, args.buyOffs, ...(args.chain ?? [])]) {
     if ((list?.length ?? 0) > MAX_LIST) throw appError("INVALID", `At most ${MAX_LIST} entries per list.`);
   }
 }
@@ -175,13 +181,31 @@ export const useFeature = keyedGmMutation({
  * Lane E7, round 2 (dcm-idz; user answer 2026-10-31): a GM-controlled PC (the `GM-controlled` tag: Enthralled, HF p.92;
  * Weredrake Curse, HF p.143) attacks like an adversary: d20 + the weapon's trait (or the stat block's ATK under the
  * Weredrake's) against other PCs' Evasion (a reaction window, this PC the attacker) or adversaries' Difficulty (a GM damage
- * prompt). Refusals: NOT_FOUND, INVALID (not GM-controlled, no weapon), COMBAT_TARGET_INVALID. GM only, keyed, `roll`.
+ * prompt). A weapon whose trait is "choice" takes the GM-picked `trait` per attack (dcm-grqt). Refusals: NOT_FOUND,
+ * INVALID (not GM-controlled, no weapon, a choice weapon without `trait`), COMBAT_TARGET_INVALID. GM only, keyed, `roll`.
  */
 export const gmControlledAttack = keyedGmMutation({
   rateLimit: "roll",
-  args: { characterId: v.id("characters"), targets: v.array(v.string()), weapon: v.optional(v.union(v.literal("primary"), v.literal("secondary"))) },
+  args: { characterId: v.id("characters"), targets: v.array(v.string()), weapon: v.optional(v.union(v.literal("primary"), v.literal("secondary"))), trait: v.optional(traitIdValidator) },
   returns: resolvedActionValidator,
   handler: async (ctx, args) => ctx.once("adversary_gm_controlled", args, async () => gmControlledAttackOf(ctx, ctx.campaign, ctx.user, args)),
+});
+
+/**
+ * Lane E7 round 3 (dcm-f70y, dcm-c8h3, dcm-zi3k): a forced attack. The instance makes its standard attack against
+ * `targets` (PCs or other instances of its encounter) outside its spotlight (Words of Discord, CB p.335; Beguiled, HF
+ * p.75): no spotlight, no Fear. Adversary runs that force an adversary's attack call it themselves; this is the GM's
+ * button for a card's forced attack until the card runner hands it over (E4). Refusals as `attack`. GM only, keyed, `roll`.
+ */
+export const forcedAttack = keyedGmMutation({
+  rateLimit: "roll",
+  args: { instanceId: v.string(), targets: v.array(v.string()) },
+  returns: resolvedActionValidator,
+  handler: async (ctx, args) =>
+    ctx.once("adversary_forced_attack", args, async () => {
+      if (args.targets.length > MAX_LIST) throw appError("INVALID", `At most ${MAX_LIST} entries per list.`);
+      return forcedStandardAttack(ctx, ctx.campaign, ctx.user, args);
+    }),
 });
 
 const targetAskValidator = v.union(

@@ -414,7 +414,8 @@ export type PlanStep =
   | { kind: "damage"; result: DamageResult }
   /** Damage to a PC: Armor Slots and the PC's thresholds are AA1's (the reaction window); nothing is applied here. */
   | { kind: "pcDamage"; targetId: string; amount: number; type: DamageType | "both"; direct: boolean }
-  | { kind: "mark"; targetId: string; track: Track; amount: number; hpMarked: number; overflow: boolean; noBenefit?: boolean }
+  /** `reduceWithHope`: HP from a `markHp` with `reduceWith: "hope"`; the PC may spend Hope to mark fewer (dcm-nnbl). */
+  | { kind: "mark"; targetId: string; track: Track; amount: number; hpMarked: number; overflow: boolean; noBenefit?: boolean; reduceWithHope?: boolean }
   | { kind: "clear"; targetId: string; track: Track; amount: number }
   | { kind: "hope"; targetId: string; delta: number }
   | { kind: "fear"; delta: number }
@@ -2085,7 +2086,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             const res = applyHpTo(get(r.id), amount);
             put(res.after);
             addMarked(r.id, "hp", res.hpMarked);
-            steps.push({ kind: "mark", targetId: r.id, track: "hp", amount, hpMarked: res.hpMarked, overflow: false });
+            steps.push({ kind: "mark", targetId: r.id, track: "hp", amount, hpMarked: res.hpMarked, overflow: false, ...(step.reduceWith === "hope" ? { reduceWithHope: true } : {}) });
           }
           if (recipients.some((r) => context.splits?.[r.id] === undefined)) {
             steps.push({ kind: "prompt", prompt: "split", text: step.maxPer ? `Divide the marks (at most ${step.maxPer} each)` : "Divide the marks", targetIds: ids, step, amount: total });
@@ -2098,7 +2099,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
           const res = applyHpTo(get(r.id), amount);
           put(res.after);
           addMarked(r.id, "hp", res.hpMarked);
-          steps.push({ kind: "mark", targetId: r.id, track: "hp", amount, hpMarked: res.hpMarked, overflow: false });
+          steps.push({ kind: "mark", targetId: r.id, track: "hp", amount, hpMarked: res.hpMarked, overflow: false, ...(step.reduceWith === "hope" ? { reduceWithHope: true } : {}) });
         }
         return;
       }

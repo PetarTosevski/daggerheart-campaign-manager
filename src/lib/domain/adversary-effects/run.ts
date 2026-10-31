@@ -31,7 +31,7 @@ import { parseAttackModifier, standardAttackDamage } from "../adversary-actions/
 import { adversaryNumberEnv, unmetAdversaryRequirements, type AdversaryState, type PassiveSummary } from "../adversary-actions/features";
 import { resolveCosts } from "../card-effects/availability";
 import { run as runCard, type ActorState, type PlanStep, type RollInfo, type RunPlan } from "../card-effects/run";
-import type { AttackedRider, CardEffect, CardUse, CheckRow, ConditionRef, Cost, EndEvent, Escape, Mod, NumberSource, Range as AdversaryRange, RollEnd, RollSpec, Step } from "../card-effects/types";
+import type { AttackedRider, CardEffect, CardUse, CheckRow, ConditionRef, Cost, EndEvent, Escape, FeatureOptionRef, Mod, NumberSource, Range as AdversaryRange, RollEnd, RollSpec, Step } from "../card-effects/types";
 import { rangeFromWeapon } from "../combat-actions/distance";
 import type { Combatant } from "../combat-actions/damage";
 import type { HitResult } from "../combat-actions/hits";
@@ -136,6 +136,8 @@ export interface AdversaryRunContext {
   goldOf?: Readonly<Record<string, number>>;
   /** The creatures of each further link of a repeating follow-up (Rip & Tear; dcm-7az). Link 0 is `followUp`. */
   chain?: readonly (readonly Combatant[])[];
+  /** Lane E7 round 3 (dcm-qw4f): the options removed for good from its features (Seven-Headed, HF p.92), the actor's `removedOptions` fact. */
+  removedOptions?: readonly FeatureOptionRef[];
   /**
    * The creatures on the live map seen from this adversary (`creatureCount`: Hive Mind, Pack Fury, Drain and Multiply's
    * Horde HP; dcm-ttz). Read by the numbers this runner resolves itself (upfront Fear, summon / countdown / spotlight
@@ -578,6 +580,8 @@ export function run(effect: AdversaryFeatureEffect, context: AdversaryRunContext
     cardTokens: tokens,
     featureUses: context.featureUses ?? [],
     weapons: {},
+    // Lane E7 round 3 (dcm-qw4f): an `optionRemoved` check reads the options its features lost.
+    ...(context.removedOptions && context.removedOptions.length > 0 ? { facts: { removedOptions: context.removedOptions } } : {}),
   };
 
   const result = runCard(cardEffect, {

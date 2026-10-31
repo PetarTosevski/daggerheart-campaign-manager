@@ -24,7 +24,7 @@
 // ```
 
 import { maxDamage, parseDamage, type ParsedDamage } from "../adversaries/index";
-import type { DamageType } from "../card-effects/types";
+import type { Cost, DamageType } from "../card-effects/types";
 import { rollD20 } from "../card-effects/run";
 import { resolveHits, type HitResult } from "../combat-actions/hits";
 import { rollDamage, type Rng } from "../dice/index";
@@ -64,6 +64,11 @@ export interface EvasionTarget {
   readonly evasion: number;
   readonly advantage?: number;
   readonly disadvantage?: number;
+  /**
+   * Lane E7 round 3 (dcm-eut): disadvantages the attacker may buy off (Defensive stance, HF p.12: "unless the attacker
+   * marks a Stress to negate the disadvantage"), by feature id; once paid (`CreatureInfo.paidOff`) they are not counted.
+   */
+  readonly buyOff?: readonly { featureId: string; costs: readonly Cost[] }[];
 }
 
 /**
@@ -75,7 +80,7 @@ export interface EvasionTarget {
  */
 export function pcTarget(id: string, sheet: PassiveSheet, evasion: number, attacker: CreatureInfo, state: PassiveState = {}): EvasionTarget {
   const v = versusMods(sheet, "attacksByThem", attacker, state);
-  return { id, evasion: evasion + v.evasion, ...(v.advantage ? { advantage: v.advantage } : {}), ...(v.disadvantage ? { disadvantage: v.disadvantage } : {}) };
+  return { id, evasion: evasion + v.evasion, ...(v.advantage ? { advantage: v.advantage } : {}), ...(v.disadvantage ? { disadvantage: v.disadvantage } : {}), ...(v.buyOff && v.buyOff.length > 0 ? { buyOff: v.buyOff } : {}) };
 }
 
 /** One target's reading of the shared attack roll (DA1): the d20 it keeps, its total, a natural 20, hit or miss. */

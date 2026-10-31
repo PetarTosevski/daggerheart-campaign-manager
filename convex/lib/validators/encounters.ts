@@ -62,6 +62,10 @@ export const resistanceValidator = v.object({
 });
 export type Resistance = Infer<typeof resistanceValidator>;
 
+/** The Defined Ranges in the effect vocabulary's form (src/lib/domain/card-effects/types.ts `Range`). */
+export const VOCABULARY_RANGES = ["melee", "veryClose", "close", "far", "veryFar"] as const;
+const vocabularyRangeValidator = v.union(...VOCABULARY_RANGES.map((r) => v.literal(r)));
+
 /** How long an instance modifier lasts: until the GM clears it, the instance's next attack, the end of the scene, or for good. */
 export const INSTANCE_EFFECT_UNTIL = ["temporary", "hit", "scene", "permanent"] as const;
 
@@ -95,6 +99,37 @@ export const instanceEffectValidator = v.object({
   standardAttack: v.optional(v.object({ name: v.string(), range: v.string(), damage: v.string() })),
   featuresRemoved: v.optional(v.array(v.string())),
   featuresAdded: v.optional(v.array(v.string())),
+  /** Lane E7 round 3 (dcm-qw4f; Seven-Headed, HF p.92: "Permanently remove the Elemental Breath option"): `choose` options gone for good. */
+  optionsRemoved: v.optional(v.array(v.object({ feature: v.string(), choose: v.string(), option: v.string() }))),
+  /**
+   * Plan lanes-2, lane E7 round 3 (widened, absent = none; a widen only, no stored row changes). `moveLimit` (`Mod
+   * moveLimit`; Creeping Fire, CB p.216: "can only move within Very Close range"; Hurricane, CB p.339: "can't move against
+   * the wind"): `maxRange` in vocabulary form, `direction` the wind direction already resolved from the use's choice (one
+   * of the eight map directions; dcm-3oe, dcm-wuu). `forcedMoveReduce` (`Mod forcedMoveReduce`; Immovable Object, CB
+   * p.230: "two fewer ranges"; dcm-1yo): ranges taken off a forced move. E4's moveRules reads both.
+   */
+  moveLimit: v.optional(v.object({ maxRange: v.optional(vocabularyRangeValidator), direction: v.optional(v.string()), text: v.optional(v.string()) })),
+  forcedMoveReduce: v.optional(v.number()),
+  /**
+   * Lane E7 round 3 (dcm-3ag5; Transform, HF p.142-143: "While she embodies a form, she uses its statistics and
+   * features"): the SRD stat block (slug) the instance now uses, keeping its marked HP and Stress. The latest one counts.
+   */
+  form: v.optional(v.string()),
+  /**
+   * Lane E7 round 3 (dcm-f70y, dcm-iedr, dcm-b77): a condition's entry fields on an instance. `condition`: the standard
+   * condition or tag this modifier belongs to (it goes with it). `endsOn` / `endsOnCaster`: end events (`EndEvent` names)
+   * on the bearer / on `casterId` (a character or instance id). `endsOnRoll`: the next roll that ends it. `escape`: how the
+   * bearer can break free (Restrained's escape roll). `recorded`: a number the use recorded (Words of Discord's -5 lives
+   * in the campaign memory instead). `endFear`: the Fear a `gmSpendsFear` end costs.
+   */
+  condition: v.optional(v.string()),
+  casterId: v.optional(v.string()),
+  endsOn: v.optional(v.array(v.string())),
+  endsOnCaster: v.optional(v.array(v.string())),
+  endsOnRoll: v.optional(v.object({ roll: v.string(), by: v.optional(v.union(v.literal("bearer"), v.literal("caster"))), result: v.optional(v.string()) })),
+  escape: v.optional(v.object({ traits: v.optional(v.array(v.string())), difficulty: v.optional(v.number()), attack: v.optional(v.boolean()) })),
+  recorded: v.optional(v.number()),
+  endFear: v.optional(v.number()),
   until: v.union(...INSTANCE_EFFECT_UNTIL.map((u) => v.literal(u))),
 });
 export type InstanceEffect = Infer<typeof instanceEffectValidator>;
@@ -190,7 +225,15 @@ export const encounterAdversaryFields = {
    * (`instanceFeatureUseValidator`).
    */
   featureUses: v.optional(v.array(instanceFeatureUseValidator)),
+  /**
+   * Plan lanes-2, lane E7 round 3 (dcm-n3mp; widened, absent = none): named tokens a card or feature put on this
+   * instance (Encumber's bramble tokens, CB p.218), by name. At most `MAX_CREATURE_TOKEN_KINDS` names.
+   */
+  creatureTokens: v.optional(v.array(v.object({ name: v.string(), count: v.number() }))),
 };
+
+/** The most token names one instance keeps (`creatureTokens`). */
+export const MAX_CREATURE_TOKEN_KINDS = 10;
 
 /** The most `featureUses` entries one instance keeps (oldest dropped first). */
 export const MAX_INSTANCE_FEATURE_USES = 40;

@@ -17,7 +17,7 @@ import type { AdversaryCost, AdversaryFeatureEffect, AdversaryFeatureUse, Advers
 import { passiveSummary, spotlightCost, triggeredUses, unmetAdversaryRequirements, type AdversaryEvent, type AdversaryState, type PassiveSummary, type TriggeredUse } from "../../src/lib/domain/adversary-actions/index";
 import { featureFearCost, hordeDamage, relentlessValue } from "../../src/lib/domain/adversaries/index";
 import type { PlanStep, ResolvedMod } from "../../src/lib/domain/card-effects/run";
-import type { AttackedRider, BearerRider, Duration, Gate, Limit, Mod, NumberSource, Step, TargetSpec, TriggerTargets } from "../../src/lib/domain/card-effects/types";
+import type { AttackedRider, BearerRider, ConditionRef, Duration, Escape, Gate, Limit, Mod, NumberSource, RollEnd, Step, TargetSpec, TriggerTargets } from "../../src/lib/domain/card-effects/types";
 import { tokenDistance, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import type { MapCreature } from "../../src/lib/domain/combat-actions/numbers";
 import { turnSpotlights } from "../../src/lib/domain/encounters/spotlight";
@@ -100,8 +100,10 @@ export function evolvedBlock(block: Block, instance: Pick<Doc<"encounterAdversar
 async function printedBlockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries">): Promise<Block | null> {
   const own = instance.resistance;
   const fromInstance = own === undefined ? undefined : own.conditional === undefined || instance.resistanceActive === true ? { physical: own.physical, magic: own.magic } : { physical: "none" as const, magic: "none" as const };
-  if (instance.source.kind === "srd") {
-    const def = SRD_BY_ID.get(instance.source.adversaryId);
+  // Lane E7 round 3 (dcm-3ag5, Transform): a `form` modifier swaps in that SRD stat block.
+  const form = formOf(instance);
+  if (form !== undefined || instance.source.kind === "srd") {
+    const def = form ?? (instance.source.kind === "srd" ? SRD_BY_ID.get(instance.source.adversaryId) : undefined);
     if (!def) return null;
     return {
       adversaryId: def.id,
@@ -135,15 +137,17 @@ async function printedBlockOf(ctx: QueryCtx, instance: Doc<"encounterAdversaries
 
 /** The instance as the engine reads it (side "adversary"). */
 export function selfCombatant(instance: Doc<"encounterAdversaries">, block: Block): Combatant {
+  // Lane E7 round 3: a Transform's form brings its own numbers (`instanceStatsOf`).
+  const stats = instanceStatsOf(instance);
   return {
     id: instance._id,
     side: "adversary",
-    difficulty: instance.stats.difficulty + (instance.effects ?? []).reduce((s, e) => s + (e.difficulty ?? 0), 0),
-    thresholds: { major: instance.stats.major, severe: instance.stats.severe },
+    difficulty: stats.difficulty + (instance.effects ?? []).reduce((s, e) => s + (e.difficulty ?? 0), 0),
+    thresholds: { major: stats.major, severe: stats.severe },
     hp: instance.hp,
-    hpMax: instance.stats.hpMax,
+    hpMax: stats.hpMax,
     stress: instance.stress,
-    stressMax: instance.stats.stressMax,
+    stressMax: stats.stressMax,
     defeated: instance.defeated,
     ...(block.resistance ? { resistance: block.resistance } : {}),
     conditions: instance.conditions,
@@ -684,34 +688,153 @@ function printedDamage(d: Extract<ResolvedMod, { kind: "standardAttack" }>): str
   return `${fixedOr(d.damage.count, 1)}d${d.damage.sides}${plus > 0 ? `+${plus}` : plus < 0 ? `${plus}` : ""} ${d.type === "magic" ? "mag" : "phy"}`;
 }
 
+/** The fields of an instance modifier its mods give (shared by `effect` and condition modifiers). */
+type ModFields = Omit<InstanceEffect, "id" | "source" | "label" | "until">;
+
 /**
- * Lane E7, round 2 (dcm-gx3): the instance modifier an adversary feature's `effect` step on itself or an ally becomes:
- * the Difficulty, attack, damage and HP-marked deltas, Blighting Strike's half damage, Goad Them On's disadvantage, and
- * Evolution's new standard attack and feature changes. The id names the feature (`adv:<adversaryId>/<feature>:<n>`) so
- * its riders can be read back from the entry (`instanceBearerRiders`).
+ * Lane E7 (rounds 2-3): what a list of resolved mods puts on an instance modifier: the Difficulty, attack, damage and
+ * HP-marked deltas, Blighting Strike's half damage, Goad Them On's disadvantage, Evolution's new standard attack and
+ * feature changes (dcm-gx3), and (round 3) `moveLimit` / `forcedMoveReduce` (dcm-3oe, dcm-wuu, dcm-1yo): a wind direction
+ * is read from the use's option `choices[direction.choice]` (Hurricane: one of the eight map directions).
  */
-export function adversaryInstanceEffect(existing: readonly InstanceEffect[], adversaryId: string, feature: string, step: Extract<PlanStep, { kind: "effect" }>): InstanceEffect[] {
-  const key = `adv:${adversaryId}/${feature}`;
-  let n = 1;
-  while (existing.some((e) => e.id === `${key}:${n}`) && n < 99) n++;
-  const sum = (stat: string) => step.mods.reduce((s, m) => s + (m.kind === "stat" && m.stat === stat ? m.delta : 0), 0);
-  const effect: InstanceEffect = { id: `${key}:${n}`, source: feature.slice(0, 80), label: step.label.slice(0, 120), until: INSTANCE_UNTIL[step.duration] };
+export function instanceModFields(mods: readonly (ResolvedMod | Mod)[], choices?: Readonly<Record<string, readonly string[]>>): ModFields {
+  const out: ModFields = {};
+  const sum = (stat: string) => mods.reduce((s, m) => s + (m.kind === "stat" && m.stat === stat && typeof m.delta === "number" ? m.delta : 0), 0);
   for (const [stat, field] of [["difficulty", "difficulty"], ["attack", "attack"], ["damage", "damage"], ["hpMarked", "hpMarked"]] as const) {
     const delta = sum(stat);
-    if (delta !== 0) effect[field] = delta;
+    if (delta !== 0) out[field] = delta;
   }
-  if (step.mods.some((m) => m.kind === "flag" && m.flag === "halfDamage")) effect.halfDamage = true;
-  if (step.mods.some((m) => m.kind === "disadvantage")) effect.disadvantage = true;
-  for (const m of step.mods) {
-    if (m.kind === "standardAttack") effect.standardAttack = { name: m.name.slice(0, 80), range: m.range, damage: printedDamage(m) };
+  if (mods.some((m) => m.kind === "flag" && m.flag === "halfDamage")) out.halfDamage = true;
+  if (mods.some((m) => m.kind === "disadvantage")) out.disadvantage = true;
+  for (const m of mods) {
+    if (m.kind === "standardAttack") out.standardAttack = { name: m.name.slice(0, 80), range: m.range, damage: printedDamage(m) };
     if (m.kind === "features") {
-      if (m.remove && m.remove.length > 0) effect.featuresRemoved = [...m.remove].slice(0, 20);
-      if (m.add && m.add.length > 0) effect.featuresAdded = [...m.add].slice(0, 20);
+      if (m.remove && m.remove.length > 0) out.featuresRemoved = [...m.remove].slice(0, 20);
+      if (m.add && m.add.length > 0) out.featuresAdded = [...m.add].slice(0, 20);
+      if (m.removeOptions && m.removeOptions.length > 0) out.optionsRemoved = m.removeOptions.map((o) => ({ feature: o.feature.slice(0, 80), choose: o.choose.slice(0, 40), option: o.option.slice(0, 40) })).slice(0, 20);
+    }
+    if (m.kind === "forcedMoveReduce") out.forcedMoveReduce = (out.forcedMoveReduce ?? 0) + Math.max(0, Math.trunc(m.steps));
+    if (m.kind === "moveLimit") {
+      const direction = m.direction ? choices?.[m.direction.choice]?.[0] : undefined;
+      out.moveLimit = { ...(m.maxRange ? { maxRange: m.maxRange } : {}), ...(direction ? { direction: direction.slice(0, 20) } : {}), ...(m.text ? { text: m.text.slice(0, 200) } : {}) };
     }
   }
+  return out;
+}
+
+/** The next free id under `key` (`<key>:<n>`). */
+function nextEffectId(existing: readonly InstanceEffect[], key: string): string {
+  let n = 1;
+  while (existing.some((e) => e.id === `${key}:${n}`) && n < 99) n++;
+  return `${key}:${n}`;
+}
+
+/**
+ * Lane E7, round 2 (dcm-gx3): the instance modifier an adversary feature's `effect` step on itself or an ally becomes
+ * (`instanceModFields`). The id names the feature (`adv:<adversaryId>/<feature>:<n>`) so its riders can be read back from
+ * the entry (`instanceBearerRiders`). Round 3: `choices` resolves a `moveLimit` wind direction; `endsOn` / `endFear` kept.
+ */
+export function adversaryInstanceEffect(
+  existing: readonly InstanceEffect[],
+  adversaryId: string,
+  feature: string,
+  step: Extract<PlanStep, { kind: "effect" }>,
+  choices?: Readonly<Record<string, readonly string[]>>,
+): InstanceEffect[] {
+  const effect: InstanceEffect = { id: nextEffectId(existing, `adv:${adversaryId}/${feature}`), source: feature.slice(0, 80), label: step.label.slice(0, 120), until: INSTANCE_UNTIL[step.duration], ...instanceModFields(step.mods, choices) };
+  if (step.endsOn && step.endsOn.length > 0) effect.endsOn = [...step.endsOn].slice(0, 10);
+  if (step.endFear !== undefined) effect.endFear = step.endFear;
   // `replace` stacking (dcm-kkx): an older copy with this label goes first.
   const kept = step.stacking === "replace" ? existing.filter((e) => e.label !== effect.label) : existing;
   return [...kept, effect].slice(-INSTANCE_EFFECTS_MAX);
+}
+
+/** A condition plan step as `conditionInstanceEffect` reads it (the card runner's step, or E7's `conditionDetails`). */
+export type ConditionFields = {
+  condition: ConditionRef;
+  mods?: readonly (ResolvedMod | Mod)[];
+  endsOn?: readonly string[];
+  endsOnCaster?: readonly string[];
+  endsOnRoll?: RollEnd;
+  escape?: Escape;
+  recorded?: number;
+  endFear?: number;
+};
+
+/** A condition's name as an instance stores it (a standard condition or the tag). */
+const conditionName = (c: ConditionRef): string => (c.kind === "standard" ? c.condition : c.tag);
+
+/**
+ * Lane E7 round 3 (dcm-f70y, dcm-iedr, dcm-b77): the instance modifier a condition with entry fields becomes, so the
+ * engine reads its mods (a tag's Difficulty change, a moveLimit) and its ends while the condition lasts. `key` names the
+ * source (`adv:<adversaryId>/<feature>` or `card:<cardId>`); `casterId` is who gave it. Null when the condition carries
+ * nothing beyond its name (the stored condition / tag is enough). Exported for the card runner (E4 writes a card's
+ * conditions on instances through it).
+ */
+export function conditionInstanceEffect(existing: readonly InstanceEffect[], key: string, source: string, casterId: string, d: ConditionFields, choices?: Readonly<Record<string, readonly string[]>>): InstanceEffect[] | null {
+  const fields = instanceModFields(d.mods ?? [], choices);
+  const escape = d.escape
+    ? {
+        ...(d.escape.trait !== undefined ? { traits: [d.escape.trait].flat().map(String) } : {}),
+        ...(d.escape.difficulty?.kind === "fixed" ? { difficulty: d.escape.difficulty.value } : {}),
+        ...(d.escape.attack ? { attack: true } : {}),
+      }
+    : undefined;
+  const endsOnRoll = d.endsOnRoll ? { roll: String(d.endsOnRoll.roll), ...(d.endsOnRoll.by ? { by: d.endsOnRoll.by } : {}), ...(d.endsOnRoll.result ? { result: d.endsOnRoll.result } : {}) } : undefined;
+  const has = Object.keys(fields).length > 0 || (d.endsOn?.length ?? 0) > 0 || escape !== undefined || endsOnRoll !== undefined || (d.endsOnCaster?.length ?? 0) > 0 || d.recorded !== undefined || d.endFear !== undefined;
+  if (!has) return null;
+  const name = conditionName(d.condition);
+  const effect: InstanceEffect = {
+    id: nextEffectId(existing, key),
+    source: source.slice(0, 80),
+    label: name.slice(0, 120),
+    until: "temporary",
+    condition: name.slice(0, 80),
+    casterId,
+    ...fields,
+    ...(d.endsOn && d.endsOn.length > 0 ? { endsOn: [...d.endsOn].slice(0, 10) } : {}),
+    ...(d.endsOnCaster && d.endsOnCaster.length > 0 ? { endsOnCaster: [...d.endsOnCaster].slice(0, 10) } : {}),
+    ...(endsOnRoll ? { endsOnRoll } : {}),
+    ...(escape ? { escape } : {}),
+    ...(d.recorded !== undefined ? { recorded: d.recorded } : {}),
+    ...(d.endFear !== undefined ? { endFear: d.endFear } : {}),
+  };
+  // One modifier per condition and source: a second copy replaces the first.
+  const kept = existing.filter((e) => !(e.condition === effect.condition && e.id.startsWith(`${key}:`)));
+  return [...kept, effect].slice(-INSTANCE_EFFECTS_MAX);
+}
+
+/** Lane E7 round 3: modifiers that belong to a condition the instance no longer has go with it. */
+export function withoutClearedConditions(effects: readonly InstanceEffect[], conditions: readonly string[], tags: readonly string[]): InstanceEffect[] {
+  const held = new Set([...conditions, ...tags]);
+  return effects.filter((e) => e.condition === undefined || held.has(e.condition));
+}
+
+/**
+ * Lane E7 round 3 (dcm-3ag5, Transform, HF p.142-143): the `changeForm` modifier: the instance now uses the SRD stat
+ * block `adversaryId` (its marked HP and Stress stay). Replaces an earlier form modifier.
+ */
+export function formInstanceEffect(existing: readonly InstanceEffect[], adversaryId: string, feature: string): InstanceEffect[] {
+  const def = SRD_BY_ID.get(adversaryId);
+  const kept = existing.filter((e) => e.form === undefined);
+  const effect: InstanceEffect = { id: nextEffectId(kept, `form:${feature}`.slice(0, 80)), source: feature.slice(0, 80), label: `Form: ${def?.name ?? adversaryId}`.slice(0, 120), until: "permanent", form: adversaryId };
+  return [...kept, effect].slice(-INSTANCE_EFFECTS_MAX);
+}
+
+/** The SRD stat block an instance's latest `form` modifier names (Transform), or undefined. */
+export function formOf(instance: Pick<Doc<"encounterAdversaries">, "effects">): AdversaryDef | undefined {
+  const form = [...(instance.effects ?? [])].reverse().find((e) => e.form !== undefined)?.form;
+  return form === undefined ? undefined : SRD_BY_ID.get(form);
+}
+
+/**
+ * Lane E7 round 3: the instance's numbers as the engine reads them: its stored stats, or under a `form` modifier the
+ * form's stat block (Difficulty, thresholds, HP and Stress maximums; marks are kept).
+ */
+export function instanceStatsOf(instance: Pick<Doc<"encounterAdversaries">, "effects" | "stats">): Doc<"encounterAdversaries">["stats"] {
+  const def = formOf(instance);
+  if (def === undefined) return instance.stats;
+  return { difficulty: def.difficulty, major: def.thresholds.major, severe: def.thresholds.severe, hpMax: def.hp, stressMax: def.stress ?? 0 };
 }
 
 /** The steps of the entry a lasting effect came from: an adversary feature (`<adversaryId>/<feature>`) or a card / PC feature. */

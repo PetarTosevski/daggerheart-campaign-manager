@@ -23,14 +23,15 @@ import { pickAdversaryUse, standardAttackEffect, STANDARD_ATTACK_USE, upfrontFea
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
 import { adversaryAttack, adversaryDamage, gmControlledWeaponAttack } from "../../src/lib/domain/adversary-actions/attack";
 import { getWeapon } from "../../src/lib/srd/index";
-import { actorWithSubject, featureReady, keptDie, passiveSummary, pcTarget, preRollFits, splitTargetDisadvantage, type AdversaryEvent } from "../../src/lib/domain/adversary-actions/index";
+import type { TraitId } from "../../src/lib/srd/types";
+import { actorWithSubject, featureReady, keptDie, passiveSummary, pcTarget, preRollFits, splitTargetDisadvantage, type AdversaryEvent, type RollFacts } from "../../src/lib/domain/adversary-actions/index";
 import { runFeature } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { resolveOptions } from "../../src/lib/frames/options";
 import { featureFearCost } from "../../src/lib/domain/adversaries/index";
 import type { PlanStep } from "../../src/lib/domain/card-effects/run";
-import type { Range } from "../../src/lib/domain/card-effects/types";
-import { applyStressTo, lineOfSight, rangeCheck, type Combatant } from "../../src/lib/domain/combat-actions/index";
+import type { Cost, Range } from "../../src/lib/domain/card-effects/types";
+import { applyStressTo, lineOfSight, rangeCheck, tokenDistance, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import { applySpotlight } from "../../src/lib/domain/encounters/spotlight";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { appError } from "../../src/lib/errors/app-error";
@@ -42,6 +43,10 @@ import {
   GM_CONTROLLED,
   gmControlOf,
   adversaryInstanceEffect,
+  conditionInstanceEffect,
+  formInstanceEffect,
+  instanceStatsOf,
+  withoutClearedConditions,
   adversaryOnlyPrompts,
   adversaryState,
   attackedRidersOn,
@@ -91,7 +96,7 @@ import {
 import { rollDie } from "./dice";
 import type { ActionTarget, AdversaryBefore, StoredRoll } from "./validators/actionLog";
 import type { CombatResponse, HitRider, PreRollPayload } from "./validators/combatRequests";
-import { ENCOUNTER_CONDITIONS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
+import { ENCOUNTER_CONDITIONS, MAX_CREATURE_TOKEN_KINDS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
 
 // The stat block, limits, riders and the runner's helpers moved to ./adversaryFeatures.ts (AA2c, CH9); same names here.
 export { adversaryOnlyPrompts, adversaryState, beforeOf, blockOf, instanceUses, ridersOf, selfCombatant, type Block, type Prompt } from "./adversaryFeatures";
@@ -213,6 +218,12 @@ class Work {
   readonly spotlit = new Set<string>();
   /** Lane E7, round 2 (dcm-gx3): the modifiers of itself and its allies after the plans' `effect` steps on them, by instance id. */
   readonly instanceEffects = new Map<string, InstanceEffect[]>();
+  /** Lane E7 round 3 (dcm-n3mp): named tokens on itself and its allies after the plans' `creatureTokens` steps, by instance id. */
+  readonly creatureTokens = new Map<string, Map<string, number>>();
+  /** Lane E7 round 3 (dcm-f70y): forced attacks the plans asked for (Words of Discord, Beguiled), run after the commit. */
+  readonly forcedAttacks: { attackerIds: string[]; againstIds: string[] }[] = [];
+  /** The use's option picks (a `moveLimit` wind direction reads them). */
+  options?: Readonly<Record<string, readonly string[]>>;
   /** The instance's limited uses this scene (the runs' `featureUses`), and the ones this action recorded. */
   readonly baseUses: FeatureUse[];
   readonly addedUses: FeatureUse[] = [];
@@ -265,8 +276,15 @@ class Work {
     }
     const pending = (id: string) => this.hits.find((h) => h.targetId === id);
     const inPlan = new Set(plan.incoming.map((h) => h.targetId));
-    const marks = (id: string, track: "stress" | "hp" | "armor", noBenefit?: boolean) =>
-      plan.steps.reduce((n, s) => n + (s.kind === "mark" && s.targetId === id && s.track === track && (noBenefit === undefined || (s.noBenefit === true) === noBenefit) ? s.amount : 0), 0);
+    const marks = (id: string, track: "stress" | "hp" | "armor", noBenefit?: boolean, reduceWithHope?: boolean) =>
+      plan.steps.reduce(
+        (n, s) =>
+          n +
+          (s.kind === "mark" && s.targetId === id && s.track === track && (noBenefit === undefined || (s.noBenefit === true) === noBenefit) && (reduceWithHope === undefined || (s.reduceWithHope === true) === reduceWithHope)
+            ? s.amount
+            : 0),
+        0,
+      );
     for (const c of plan.creatures) {
       if (c.id === this.instance._id) continue;
       const member = this.party.find((m) => m.character._id === c.id);
@@ -282,9 +300,13 @@ class Work {
             armor -= forced;
           }
           const stress = marks(c.id, "stress");
-          const hp = marks(c.id, "hp");
+          // E2.3 (dcm-nnbl, Doom / Tentacle Rays, HF p.75): HP from a `markHp` with `reduceWith: "hope"` ride apart, so
+          // the PC may spend Hope to mark fewer of them.
+          const hp = marks(c.id, "hp", undefined, false);
+          const hopeHp = marks(c.id, "hp", undefined, true);
           if (stress > 0) hit.riders.push({ kind: "stress", amount: stress });
           if (hp > 0) hit.riders.push({ kind: "hp", amount: hp });
+          if (hopeHp > 0) hit.riders.push({ kind: "hp", amount: hopeHp, reduceWithHope: true });
           if (armor !== sheet.armorMarked) this.sheets.set(c.id, { member, after: { ...sheet, armorMarked: armor } });
           continue;
         }
@@ -301,7 +323,36 @@ class Work {
       const owner = s.targetId === this.instance._id ? this.instance : this.encounterInstances.find((a) => a._id === s.targetId);
       if (owner === undefined) continue;
       const current = this.instanceEffects.get(owner._id) ?? owner.effects ?? [];
-      this.instanceEffects.set(owner._id, adversaryInstanceEffect(current, plan.adversaryId, plan.feature, s));
+      this.instanceEffects.set(owner._id, adversaryInstanceEffect(current, plan.adversaryId, plan.feature, s, this.options));
+    }
+    // Lane E7 round 3 (dcm-f70y): the runner's lasting steps on instances and the forced attacks.
+    const ownerOf = (id: string) => (id === this.instance._id ? this.instance : this.encounterInstances.find((a) => a._id === id));
+    for (const s of plan.steps) {
+      if (s.kind === "changeForm") {
+        // dcm-3ag5 (Transform, HF p.142-143): the instance takes the other stat block; its marks stay.
+        const owner = ownerOf(s.targetId);
+        if (owner === undefined) continue;
+        this.instanceEffects.set(owner._id, formInstanceEffect(this.instanceEffects.get(owner._id) ?? owner.effects ?? [], s.adversaryId, plan.feature));
+        this.gm.push(`${owner.label} changes form`);
+      } else if (s.kind === "condition") {
+        // dcm-iedr / dcm-b77: a condition on an instance keeps its entry's mods and ends as a modifier tied to it.
+        const owner = ownerOf(s.targetId);
+        if (owner === undefined) continue;
+        const next = conditionInstanceEffect(this.instanceEffects.get(owner._id) ?? owner.effects ?? [], `adv:${plan.adversaryId}/${plan.feature}`, plan.feature, this.instance._id, s, this.options);
+        if (next !== null) this.instanceEffects.set(owner._id, next);
+      } else if (s.kind === "creatureTokens") {
+        // dcm-n3mp: named tokens on an instance are stored; on a PC the sheet has no field yet (follow-up), so the GM notes them.
+        const owner = ownerOf(s.targetId);
+        if (owner === undefined) {
+          this.gm.push(`${this.nameOf(s.targetId)}: ${s.name} ${s.before} -> ${s.after} (note it on the sheet)`);
+          continue;
+        }
+        const held = this.creatureTokens.get(owner._id) ?? new Map((owner.creatureTokens ?? []).map((t) => [t.name, t.count]));
+        held.set(s.name, Math.max(0, s.after));
+        this.creatureTokens.set(owner._id, held);
+      } else if (s.kind === "forcedAttack") {
+        this.forcedAttacks.push({ attackerIds: [...s.attackerIds], againstIds: [...s.againstIds] });
+      }
     }
     // Lane E7, round 2 (dcm-iedr): what a condition's entry adds that the stored condition can't hold yet, for the GM.
     for (const d of plan.conditionDetails) {
@@ -393,47 +444,83 @@ class Work {
   }
 }
 
+/**
+ * Lane E7 round 3: the modifiers to write for an instance: the work's (or the stored ones) without those tied to a
+ * condition it no longer has; undefined when nothing changes.
+ */
+function settledEffects(instance: Doc<"encounterAdversaries">, changed: InstanceEffect[] | undefined, conditions: readonly string[], tags: readonly string[]): InstanceEffect[] | undefined {
+  const base = changed ?? instance.effects ?? [];
+  const kept = withoutClearedConditions(base, conditions, tags);
+  return changed !== undefined || kept.length !== base.length ? kept : undefined;
+}
+
+/** Lane E7 round 3 (dcm-n3mp): the run context's `creatureTokens`: every instance's named tokens by instance id. */
+export function creatureTokensOf(instances: readonly { _id: string; creatureTokens?: { name: string; count: number }[] }[]): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const a of instances) if (a.creatureTokens && a.creatureTokens.length > 0) out[a._id] = Object.fromEntries(a.creatureTokens.map((t) => [t.name, t.count]));
+  return out;
+}
+
+/** Lane E7 round 3 (dcm-n3mp): named tokens as the instance stores them (empty names dropped, capped). */
+function storedCreatureTokens(held: ReadonlyMap<string, number>): { name: string; count: number }[] {
+  return [...held].filter(([, count]) => count > 0).map(([name, count]) => ({ name: name.slice(0, 40), count })).slice(0, MAX_CREATURE_TOKEN_KINDS);
+}
+
 /** Writes the work: the instance (and spotlight), allies, PC sheets with their public rows. Returns the instances' before-states. */
 async function commit(ctx: MutationCtx, w: Work, log: { campaignId: Id<"campaigns">; actorId: Id<"users">; groupId: string }, spotlight: { gmTurn: number } | null): Promise<AdversaryBefore[]> {
   const now = Date.now();
   // AA2c: a recorded limited use goes into the before-state, so undo gives it back.
-  const selfEffects = w.instanceEffects.get(w.instance._id);
-  const before: AdversaryBefore[] = [{ ...beforeOf(w.instance), ...(w.addedUses.length > 0 ? { featureUses: w.instance.featureUses ?? [] } : {}), ...(selfEffects ? { effects: w.instance.effects ?? [] } : {}) }];
   const s = w.selfAfter;
-  const hp = Math.max(0, Math.min(w.instance.stats.hpMax, s.hp));
+  const selfConditions = [...new Set(s.conditions.filter((c): c is EncounterCondition => ENCOUNTER_SET.has(c)))];
+  const selfTags = [...new Set(s.tags ?? [])].slice(0, 20);
+  // Lane E7 round 3: modifiers tied to a condition it no longer has go with the condition.
+  const selfEffects = settledEffects(w.instance, w.instanceEffects.get(w.instance._id), selfConditions, selfTags);
+  const before: AdversaryBefore[] = [{ ...beforeOf(w.instance), ...(w.addedUses.length > 0 ? { featureUses: w.instance.featureUses ?? [] } : {}), ...(selfEffects ? { effects: w.instance.effects ?? [] } : {}) }];
+  // A Transform's form brings its own maximums (instanceStatsOf); the stored stats otherwise.
+  const selfStats = instanceStatsOf({ stats: w.instance.stats, effects: selfEffects ?? w.instance.effects });
+  const hp = Math.max(0, Math.min(selfStats.hpMax, s.hp));
+  const selfTokens = w.creatureTokens.get(w.instance._id);
   await ctx.db.patch("encounterAdversaries", w.instance._id, {
     hp,
-    stress: Math.max(0, Math.min(w.instance.stats.stressMax, s.stress)),
-    defeated: hp >= w.instance.stats.hpMax || (w.instance.defeated && s.defeated),
-    conditions: [...new Set(s.conditions.filter((c): c is EncounterCondition => ENCOUNTER_SET.has(c)))],
-    tags: [...new Set(s.tags ?? [])].slice(0, 20),
+    stress: Math.max(0, Math.min(selfStats.stressMax, s.stress)),
+    defeated: hp >= selfStats.hpMax || (w.instance.defeated && s.defeated),
+    conditions: selfConditions,
+    tags: selfTags,
     tokens: Math.max(0, w.tokensAfter),
     ...(selfEffects ? { effects: selfEffects } : {}),
+    ...(selfTokens ? { creatureTokens: storedCreatureTokens(selfTokens) } : {}),
     ...(w.addedUses.length > 0 ? { featureUses: storedUses(w.instance, w.encounter, w.block, w.addedUses, w.session) } : {}),
     ...(spotlight ? applySpotlight({ spotlights: w.instance.spotlights, spotlightTurn: w.instance.spotlightTurn }, spotlight.gmTurn) : {}),
     updatedAt: now,
   });
   for (const { instance, after } of w.allies.values()) {
-    const effects = w.instanceEffects.get(instance._id);
+    const conditions = [...new Set(after.conditions.filter((c): c is EncounterCondition => ENCOUNTER_SET.has(c)))];
+    const tags = [...new Set(after.tags ?? [])].slice(0, 20);
+    const effects = settledEffects(instance, w.instanceEffects.get(instance._id), conditions, tags);
     before.push({ ...beforeOf(instance), ...(effects ? { effects: instance.effects ?? [] } : {}) });
-    const ahp = Math.max(0, Math.min(instance.stats.hpMax, after.hp));
+    const stats = instanceStatsOf({ stats: instance.stats, effects: effects ?? instance.effects });
+    const tokens = w.creatureTokens.get(instance._id);
+    const ahp = Math.max(0, Math.min(stats.hpMax, after.hp));
     await ctx.db.patch("encounterAdversaries", instance._id, {
       hp: ahp,
-      stress: Math.max(0, Math.min(instance.stats.stressMax, after.stress)),
-      defeated: ahp >= instance.stats.hpMax || (instance.defeated && after.defeated),
-      conditions: [...new Set(after.conditions.filter((c): c is EncounterCondition => ENCOUNTER_SET.has(c)))],
-      tags: [...new Set(after.tags ?? [])].slice(0, 20),
+      stress: Math.max(0, Math.min(stats.stressMax, after.stress)),
+      defeated: ahp >= stats.hpMax || (instance.defeated && after.defeated),
+      conditions,
+      tags,
       ...(effects ? { effects } : {}),
+      ...(tokens ? { creatureTokens: storedCreatureTokens(tokens) } : {}),
       updatedAt: now,
     });
   }
-  // Lane E7, round 2 (dcm-gx3): an ally that only gained a modifier.
-  for (const [id, effects] of w.instanceEffects) {
+  // Lane E7, round 2 (dcm-gx3): an ally that only gained a modifier (round 3: or named tokens).
+  for (const id of new Set([...w.instanceEffects.keys(), ...w.creatureTokens.keys()])) {
     if (id === w.instance._id || w.allies.has(id)) continue;
     const instance = w.encounterInstances.find((a) => a._id === id);
     if (!instance) continue;
-    before.push({ ...beforeOf(instance), effects: instance.effects ?? [] });
-    await ctx.db.patch("encounterAdversaries", instance._id, { effects, updatedAt: now });
+    const effects = w.instanceEffects.get(id);
+    const tokens = w.creatureTokens.get(id);
+    before.push({ ...beforeOf(instance), ...(effects ? { effects: instance.effects ?? [] } : {}) });
+    await ctx.db.patch("encounterAdversaries", instance._id, { ...(effects ? { effects } : {}), ...(tokens ? { creatureTokens: storedCreatureTokens(tokens) } : {}), updatedAt: now });
   }
   // Group Attack (CB p.201): the other Minions are spotlighted with it.
   if (spotlight) {
@@ -502,6 +589,8 @@ export type ActionArgs = {
   experience?: string;
   /** Fear the GM agreed to spend (Q19). */
   spendFear?: number;
+  /** Lane E7 round 3 (dcm-eut): PC feature ids whose disadvantage buy-off the attacker pays for this attack. */
+  buyOffs?: string[];
   /** Reactions the GM opted into for this attack (Heavy Hitter, …), by feature name (Q19: default No). */
   reactions?: string[];
 };
@@ -577,10 +666,24 @@ function attackRecord(record: RollRecord, drained: boolean, second: number | nul
 }
 
 /** Disadvantage sources a PC's passives put on an attack against them (CB p.68 Sturdy, at 1 HP left), by this attacker. */
-function targetDisadvantage(p: Pick, instance: Doc<"encounterAdversaries">): number {
+function targetDisadvantage(p: Pick, instance: Doc<"encounterAdversaries">, gated: { selfToken?: Doc<"combatTokens">; paidOff: readonly string[]; offers: BuyOffer[] }): number {
   if (p.kind !== "pc") return 0;
-  return pcTarget(p.member.character._id, p.member.sheet, 0, { tags: instance.tags ?? [] }).disadvantage ?? 0;
+  // Lane E7 round 3 (dcm-eut): the distance for a `from: "melee"` gate (no map: unknown, the gate doesn't count) and the
+  // buy-offs the GM paid for this attack (Defensive stance, HF p.12: "unless the attacker marks a Stress").
+  const distance = gated.selfToken && p.token ? tokenDistance(gated.selfToken, p.token) : undefined;
+  const info = { tags: instance.tags ?? [], ...(distance !== undefined ? { distance } : {}) };
+  // Every buy-off on offer (none paid), then the disadvantage left after the paid ones.
+  for (const b of pcTarget(p.member.character._id, p.member.sheet, 0, info).buyOff ?? []) {
+    gated.offers.push({ characterId: p.member.character._id, featureId: b.featureId, costs: b.costs, paid: gated.paidOff.includes(b.featureId) });
+  }
+  return pcTarget(p.member.character._id, p.member.sheet, 0, { ...info, paidOff: gated.paidOff }).disadvantage ?? 0;
 }
+
+/** Lane E7 round 3 (dcm-eut): a disadvantage on this attack the attacker may buy off (the GM passes `buyOffs` to pay). */
+type BuyOffer = { characterId: string; featureId: string; costs: readonly Cost[]; paid: boolean };
+
+/** The Stress a set of buy-off costs asks of the attacker (other resources are the GM's by hand). */
+const buyOffStress = (costs: readonly Cost[]) => costs.reduce((n, c) => n + (c.kind === "stress" && c.amount.kind === "fixed" ? c.amount.value : 0), 0);
 
 /**
  * A second run's target-only results joined to the first run (DA1): the hits, damage, marks, conditions and prompts of
@@ -700,7 +803,7 @@ const words = (roll: RollRecord) => `${roll.total} (${roll.dice.filter((d) => !d
  * until `spendFear` covers them (Q19); NOT_ENOUGH_FEAR past the GM's Fear. Refusals: ADVERSARY_FEATURE_UNAVAILABLE,
  * ADVERSARY_NOT_SPOTLIT, COMBAT_TARGET_INVALID, COMBAT_NO_LINE_OF_SIGHT, ENCOUNTER_NOT_RUNNING, INVALID.
  */
-export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns">, user: Doc<"users">, args: ActionArgs, replay?: Replay): Promise<ActionResult | ConfirmFear> {
+export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns">, user: Doc<"users">, args: ActionArgs, replay?: Replay, opts?: { forced?: boolean }): Promise<ActionResult | ConfirmFear> {
   const { instance, encounter, block, others } = await loadActor(ctx, campaign, args.instanceId);
   const self = selfCombatant(instance, block);
 
@@ -715,7 +818,8 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   }
   const use = effect ? pickAdversaryUse(effect, args.feature === undefined ? STANDARD_ATTACK_USE : args.useId) : undefined;
   if (effect && (!use || use.activation.kind === "passive")) throw appError("ADVERSARY_FEATURE_UNAVAILABLE");
-  const needsSpotlight = use ? use.needsSpotlight : manualFeature!.kind === "action";
+  // Lane E7 round 3 (dcm-f70y): a forced attack (Words of Discord, Beguiled) is made outside its spotlight.
+  const needsSpotlight = opts?.forced ? false : use ? use.needsSpotlight : manualFeature!.kind === "action";
 
   // Spotlight (CB p.153, p.194): spotlit this GM turn, or spotlight it now (the turn's second spotlight costs a Fear).
   const fearState = await campaignFearState(ctx, campaign._id);
@@ -770,7 +874,9 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   // Harrowing Invocation for the PCs it protected) counts only against that target. What every target carries counts for
   // the whole roll; the rest (`residual`) is read from the same pair of dice per target. DA17 (user 2026-10-30): several
   // of a target's own sources (Sturdy and Harrowing) count once; one advantage source cancels them.
-  const own = attack ? targets.picks.map((p) => ({ id: p.combatant.id, disadvantage: targetDisadvantage(p, instance) + (p.kind === "pc" ? (replay?.disadvantageAgainst[p.member.character._id] ?? 0) : 0) })) : [];
+  const buyOffers: BuyOffer[] = [];
+  const gated = { ...(scene.map ? { selfToken: scene.map.selfToken } : {}), paidOff: args.buyOffs ?? [], offers: buyOffers };
+  const own = attack ? targets.picks.map((p) => ({ id: p.combatant.id, disadvantage: targetDisadvantage(p, instance, gated) + (p.kind === "pc" ? (replay?.disadvantageAgainst[p.member.character._id] ?? 0) : 0) })) : [];
   const { common, residual } = splitTargetDisadvantage(own);
   const disadvantage = (args.disadvantage ?? 0) + (attack && targets.cover ? 1 : 0) + common;
   // The whole roll's net advantage as rollD20 counts it (the use's own flags; Goad Them On adds a disadvantage).
@@ -841,15 +947,23 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     ...(raisers.length ? { saveRaisers: raisers.map((p) => p.combatant) } : {}),
     ...(chain.length ? { chain } : {}),
     ...(Object.keys(attackedRiders).length > 0 ? { attackedRiders } : {}),
+    // Lane E7 round 3 (dcm-n3mp, dcm-0n1u): named tokens on the encounter's instances, and each PC's handfuls of gold.
+    creatureTokens: creatureTokensOf([instance, ...others]),
+    goldOf: Object.fromEntries(scene.party.map((m) => [m.character._id, m.sheet.gold.handfuls])),
+    // dcm-qw4f: the options its features lost for good (Seven-Headed).
+    removedOptions: (instance.effects ?? []).flatMap((e) => e.optionsRemoved ?? []),
     rng: rollDie,
   };
+  if (args.options) w.options = context.options;
   // DA1: the runner reads the whole roll's die; a target that keeps a lower one meets its Evasion raised by the difference,
   // which is the same hit or miss as its own total against its own Evasion.
   const shifted = (p: Pick, from: number): Combatant =>
     residual.has(p.combatant.id) && p.combatant.evasion !== undefined ? { ...p.combatant, evasion: p.combatant.evasion + from - keptBy(p.combatant.id) } : p.combatant;
   // A natural 20 hits and is critical only for the targets that keep it (CB p.148): the others run again on their own
   // die (same damage dice); the first run alone pays the costs and changes the attacker.
-  const lower = attack && natural === 20 ? targets.picks.filter((p) => keptBy(p.combatant.id) !== 20) : [];
+  // Lane E7 round 3 (dcm-mhn): a widened critical range (Eye of the Sage, HF p.70: "critically succeeds on a roll of 19-20").
+  const critAt = Math.min(20, use.roll?.critRange ?? 20);
+  const lower = attack && natural >= critAt ? targets.picks.filter((p) => keptBy(p.combatant.id) < critAt) : [];
   const lowerIds = new Set(lower.map((p) => p.combatant.id));
   const later: Rolled[] = [];
   let plan = attack
@@ -927,6 +1041,14 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
     w.selfAfter = applyStressTo(w.selfAfter, 1).after;
     w.gm.push(`Harrowing Invocation: ${label} failed the roll and marks a Stress`);
   }
+  // Lane E7 round 3 (dcm-eut): the attacker pays the buy-offs the GM chose; the others are offered for the next attack.
+  for (const b of buyOffers) {
+    const stress = buyOffStress(b.costs);
+    if (b.paid) {
+      if (stress > 0) w.selfAfter = applyStressTo(w.selfAfter, stress).after;
+      w.gm.push(`${label} pays off ${w.nameOf(b.characterId)}'s disadvantage (${b.featureId})${stress > 0 ? `: marks ${stress} Stress` : ""}`);
+    } else w.gm.push(`${label} could pay ${stress > 0 ? `${stress} Stress` : "the cost"} to negate ${w.nameOf(b.characterId)}'s disadvantage (${b.featureId}; buyOffs)`);
+  }
   if (drained) w.gm.push(`Drained: rolled a d12 instead of a d20`);
   if (drained && plan.roll && hitIds.size === 0) {
     w.selfAfter = { ...w.selfAfter, tags: (w.selfAfter.tags ?? []).filter((t) => t !== DRAINED) };
@@ -944,7 +1066,7 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   if (plan.roll && roll) {
     const modifier = plan.roll.record.total - natural;
     // DA1: a target with its own disadvantage shows the die it kept and its own total.
-    const ownRoll = (id: string) => (residual.has(id) ? ` (disadvantage against them: ${keptBy(id)}, total ${keptBy(id) + modifier}${keptBy(id) === 20 ? " critical" : ""})` : "");
+    const ownRoll = (id: string) => (residual.has(id) ? ` (disadvantage against them: ${keptBy(id)}, total ${keptBy(id) + modifier}${keptBy(id) >= critAt ? " critical" : ""})` : "");
     const vs = targets.picks.map((p) => `${w.nameOf(p.combatant.id)} ${p.combatant.evasion ?? p.combatant.difficulty ?? "?"}${ownRoll(p.combatant.id)}: ${hitIds.has(p.combatant.id) ? "hit" : "miss"}`);
     gmText.push(`${label} ${featureName}: ${words(roll)}${plan.roll.critical ? " critical" : ""} vs ${vs.join(", ")}`);
   } else gmText.push(`${label} used ${featureName}`);
@@ -952,7 +1074,40 @@ export async function adversaryAction(ctx: MutationCtx, campaign: Doc<"campaigns
   if (experience) gmText.push(`Experience ${experience.name} +${experience.value} (1 Fear)`);
   for (const h of w.hits) gmText.push(`${w.nameOf(h.targetId)}: ${h.hit.amount} ${h.hit.type}${h.hit.direct ? " direct" : ""}${h.hit.forcedArmor ? `, ${h.hit.forcedArmor} forced Armor Slot` : ""}${h.riders.length ? `, ${h.riders.length} rider${h.riders.length === 1 ? "" : "s"} with the hit` : ""} (waiting for armor)`);
   w.fearDelta -= spotlightFear;
-  return finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
+  // Lane E7 round 3 (dcm-f70y): a forced attack by a PC is the player's roll; the GM is told.
+  for (const f of w.forcedAttacks) {
+    const pcs = f.attackerIds.filter((id) => scene.party.some((m) => m.character._id === id));
+    const against = f.againstIds.length > 0 ? f.againstIds.map((id) => w.nameOf(id)).join(", ") : "a target the GM picks";
+    if (pcs.length > 0) w.prompts.push({ kind: "manual", text: `${pcs.map((id) => w.nameOf(id)).join(", ")} must make an attack against ${against}` });
+  }
+  const result = await finish(ctx, { campaign, user, encounter, w, groupId, spotlight: needsSpotlight && !spotlit, spotlightFear: 0, roll, success: plan.success, outcomes, offers, publicText, gmText, ...(args.feature !== undefined ? { attackerFeature: args.feature } : {}) });
+  // An adversary attacker makes its standard attack now (its own log group), unless this already is a forced attack.
+  if (!opts?.forced) {
+    for (const f of w.forcedAttacks) {
+      for (const attackerId of f.attackerIds) {
+        if (!others.some((a) => a._id === attackerId && !a.defeated)) continue;
+        const targetIds = f.againstIds.filter((id) => id !== attackerId);
+        if (targetIds.length === 0) {
+          result.prompts.push({ kind: "manual", text: `${w.nameOf(attackerId)} must make its standard attack against a target the GM picks` });
+          continue;
+        }
+        await forcedStandardAttack(ctx, campaign, user, { instanceId: attackerId, targets: targetIds });
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Lane E7 round 3 (dcm-f70y; Words of Discord, CB p.335: "make an attack against another adversary instead of against you
+ * or your allies"; Beguiled, HF p.75): the instance makes its standard attack against `targets` (PCs or other instances of
+ * its encounter) outside its spotlight: no spotlight is spent and no Fear is asked. The card runner's `forcedAttack` hand-off
+ * (E4) and the GM's button call it. Refusals as `adversaryAction`.
+ */
+export async function forcedStandardAttack(ctx: MutationCtx, campaign: Doc<"campaigns">, user: Doc<"users">, args: { instanceId: string; targets: string[] }): Promise<ActionResult> {
+  const result = await adversaryAction(ctx, campaign, user, { instanceId: args.instanceId, targets: args.targets }, undefined, { forced: true });
+  if (result.status !== "resolved") throw appError("INVALID", "A forced attack asks for no Fear.");
+  return result;
 }
 
 function outcomeOf(p: Pick, hit: boolean): TargetOutcome {
@@ -1318,7 +1473,7 @@ async function calledOff(ctx: MutationCtx, row: PreRollRow, by: Id<"users">, cod
 
 // ---------------------------------------------------------------- a GM-controlled PC (lanes-2, E7; dcm-idz)
 
-export type GmControlArgs = { characterId: Id<"characters">; targets: string[]; weapon?: "primary" | "secondary" };
+export type GmControlArgs = { characterId: Id<"characters">; targets: string[]; weapon?: "primary" | "secondary"; trait?: TraitId };
 
 /**
  * Lane E7, round 2 (dcm-idz; user answer 2026-10-31: "the GM moves the token and attacks with it using a d20 + the PC's
@@ -1368,7 +1523,10 @@ export async function gmControlledAttack(ctx: MutationCtx, campaign: Doc<"campai
   } else {
     const weapon = getWeapon((args.weapon === "secondary" ? sheet.secondaryWeaponId : sheet.primaryWeaponId) ?? "");
     if (!weapon) throw appError("INVALID", "That character has no such weapon.");
-    const trait = weapon.trait === "choice" ? Math.max(...Object.values(sheet.traits)) : sheet.traits[weapon.trait];
+    // Lanes-3 (dcm-grqt; user answer 2026-10-31): a "choice" weapon takes the trait the GM picks for this attack.
+    const traitId = weapon.trait === "choice" ? args.trait : weapon.trait;
+    if (traitId === undefined) throw appError("INVALID", "Pick the trait for this weapon's attack.");
+    const trait = sheet.traits[traitId];
     rolled = gmControlledWeaponAttack(trait, weapon.damage, sheet.proficiency, targets, rollDie);
     weaponName = weapon.name;
   }
@@ -1425,4 +1583,104 @@ export async function gmControlledAttack(ctx: MutationCtx, campaign: Doc<"campai
     outcomes.push({ characterId: targetId, hit: true, requestId, damage: dmg.record.total, resolved: resolution !== null, ...(resolution?.deathMove ? { deathMove: true } : {}) });
   }
   return { status: "resolved", groupId, entryId, roll: attack.record, success: hitIds.size > 0, targets: outcomes, fearDelta: 0, prompts, offers: [] };
+}
+
+// ---------------------------------------------------------------- adversary uses on a PC's roll (lanes-2, E7 round 3; dcm-of7v)
+
+/** A bonus an adversary use puts on one duality die of a PC's roll (Ill Omen, Backhanded Guidance). */
+export type PcRollDieBonus = { die: "hope" | "fear"; amount: number; instanceId: Id<"encounterAdversaries">; feature: string };
+
+export type PcRollUses = {
+  /** The duality-die bonuses to fold into the roll with `withDieBonuses` (E1's helper) before hits are read. */
+  bonuses: PcRollDieBonus[];
+  /** GM feed lines for what ran (the caller logs them with its roll). */
+  lines: string[];
+  /** Reactions that matched and were not opted into (the GM's choice, Q19 default No), by instance. */
+  offers: { instanceId: Id<"encounterAdversaries">; feature: string; useId: string }[];
+};
+
+/**
+ * Lane E7 round 3 (dcm-of7v; dcm-3ou, dcm-jog): the running encounter's adversary uses that fire when a PC rolls
+ * (`pcRolls` triggers): every matching `auto` use runs (Ill Omen, HF p.95: "When a PC within Close range makes an action
+ * roll, their Fear Die gains a bonus equal to the amount of Fear you have"), and a matching `reaction` runs when the GM
+ * opted into it (`reactions`, by feature name; Backhanded Guidance, HF p.87: "mark a Stress to add 1d6 to the result of
+ * their Fear Die"); the others come back as `offers`. Their `modifyRoll dieBonus` folds come back as `bonuses` for the
+ * caller's roll (user answer 2026-10-31: the bonus only decides Hope vs Fear, never a critical; a tie is WITH FEAR, which
+ * `withDieBonuses` does). Costs an opted-in reaction pays (its Stress, Fear) are written on the instance and the GM's Fear.
+ * The band is read from the live map (no map: no range, Q18). No running encounter: nothing.
+ *
+ * Callers: the PC roll paths (E1's resolveAttack / card uses / rolls.duality; follow-up bead) pass the roll's facts.
+ */
+export async function pcRollAdversaryUses(
+  ctx: MutationCtx,
+  campaign: Doc<"campaigns">,
+  input: { characterId: Id<"characters">; roll: RollFacts; reactions?: readonly string[] },
+): Promise<PcRollUses> {
+  const out: PcRollUses = { bonuses: [], lines: [], offers: [] };
+  const encounter = await ctx.db
+    .query("encounters")
+    .withIndex("by_campaign_status_updated", (q) => q.eq("campaignId", campaign._id).eq("status", "running"))
+    .first();
+  if (encounter === null) return out;
+  const party = await partyMembers(ctx, campaign._id);
+  const member = party.find((m) => m.character._id === input.characterId);
+  if (!member) return out;
+  const subject = pcCombatant(member.character._id, member.sheet);
+  const instances = await ctx.db
+    .query("encounterAdversaries")
+    .withIndex("by_encounter_order", (q) => q.eq("encounterId", encounter._id))
+    .take(MAX_INSTANCES + 1);
+  const map = await liveCombatMap(ctx, campaign._id);
+  const tokens = map ? await tokensOnMap(ctx, map._id) : [];
+  const pcToken = tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === input.characterId);
+  const fearState = await campaignFearState(ctx, campaign._id);
+  let fear = fearState.fear;
+  for (const instance of instances) {
+    if (instance.defeated) continue;
+    const block = await blockOf(ctx, instance);
+    if (block === null) continue;
+    const selfToken = tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === instance._id);
+    const band = selfToken && pcToken ? rangeCheck(selfToken, pcToken, "melee").band : undefined;
+    const event: AdversaryEvent = { kind: "pcRolls", roll: input.roll, ...(band ? { band } : {}) };
+    for (const t of triggered(block, instance, [event])) {
+      if (t.mode === "reaction" && !(input.reactions ?? []).includes(t.effect.feature)) {
+        out.offers.push({ instanceId: instance._id, feature: t.effect.feature, useId: t.use.id });
+        continue;
+      }
+      const self = selfCombatant(instance, block);
+      const plan = runOrThrow(t.effect, {
+        adversaryId: block.adversaryId,
+        self,
+        attack: block.attack,
+        tier: block.tier,
+        tokens: instance.tokens ?? 0,
+        featureUses: instanceUses(instance, encounter, fearState.sessionStartedAt),
+        gmFear: fear,
+        spotlit: true,
+        fearConfirmed: true,
+        useId: t.use.id,
+        targets: [subject],
+        trigger: { subject, source: self },
+        optionals: optionalIds(t.use),
+        rng: rollDie,
+      });
+      for (const s of plan.steps) {
+        if (s.kind !== "fold" || s.step.kind !== "modifyRoll" || s.step.change.kind !== "dieBonus") continue;
+        const die = s.step.change.die === "hopeOrFear" ? "fear" : s.step.change.die;
+        const amount = typeof s.amount === "number" ? s.amount : 0;
+        if (amount !== 0) out.bonuses.push({ die, amount, instanceId: instance._id, feature: t.effect.feature });
+      }
+      // What the use paid or changed on itself (Backhanded Guidance's Stress), and the Fear it spent or gained.
+      const after = plan.self.after;
+      if (after.stress !== instance.stress || after.hp !== instance.hp) {
+        await ctx.db.patch("encounterAdversaries", instance._id, { stress: Math.max(0, Math.min(self.stressMax, after.stress)), hp: Math.max(0, Math.min(self.hpMax, after.hp)), updatedAt: Date.now() });
+      }
+      if (plan.gmFearDelta < 0) await spendFear(ctx, campaign._id, -plan.gmFearDelta, "feature");
+      else if (plan.gmFearDelta > 0) await gainFear(ctx, campaign._id, plan.gmFearDelta);
+      fear = Math.max(0, fear + plan.gmFearDelta);
+      const manual = plan.steps.flatMap((s) => (s.kind === "prompt" ? [s.text] : []));
+      out.lines.push(`${instance.label} ${t.effect.feature} (${t.mode === "auto" ? "automatic" : "reaction"}) on ${member.sheet.name}'s roll${manual.length > 0 ? `: ${manual.join("; ")}` : ""}`);
+    }
+  }
+  return out;
 }
