@@ -298,12 +298,14 @@ describe("riders on the result", () => {
     const a = await arena();
     await a.edit(() => ({ ancestry: { kind: "single", id: "faun" }, stress: 0 }));
     const bandit = await a.enemy("Bandit", 6, 10);
-    const r = resolved(await a.attack(a.player, [bandit.tokenId], { riders: [{ source: "feature", id: "ancestry:faun:kick", choices: [{ id: "opt:knock", value: ["target"] }] }] }));
+    // dcm-lfbf: the dice are pinned (Hope 6, Fear 3: never a critical), so no critical clears Kick's Stress (CB p.90).
+    const r = resolved(await pinnedDice([6, 3], () => a.attack(a.player, [bandit.tokenId], { riders: [{ source: "feature", id: "ancestry:faun:kick", choices: [{ id: "opt:knock", value: ["target"] }] }] })));
+    expect(r.roll.outcome).not.toBe("critical");
     expect(r.riders).toContain("Kick");
     // The weapon's dice plus Kick's 2d6 (as a total: the extra damage is added, R2).
     expect(r.damage!.modifier).toBeGreaterThanOrEqual(2);
     expect(r.riderPrompts?.some((p) => p.kind === "move")).toBe(true);
-    expect((await a.sheet()).stress).toBe(r.roll.outcome === "critical" ? 0 : 1);
+    expect((await a.sheet()).stress).toBe(1);
   });
 });
 
@@ -576,6 +578,20 @@ describe("Cloaked ends on a move in sight of an adversary (Q9, CB p.42)", () => 
     expect(seen).toEqual([true, false]);
   });
 });
+
+/** dcm-lfbf: the server's dice show `values` in turn (each at most the die's sides) while `fn` runs. */
+async function pinnedDice<T>(values: readonly number[], fn: () => Promise<T>): Promise<T> {
+  let i = 0;
+  const spy = vi.spyOn(crypto, "getRandomValues").mockImplementation(<A extends ArrayBufferView | null>(buf: A): A => {
+    if (buf instanceof Uint32Array) buf.fill(values[i++ % values.length]! - 1);
+    return buf;
+  });
+  try {
+    return await fn();
+  } finally {
+    spy.mockRestore();
+  }
+}
 
 /** All server dice show 1 while `fn` runs (rollDie draws from `crypto.getRandomValues`): a known roll, a critical (CB p.90). */
 async function allOnes<T>(fn: () => Promise<T>): Promise<T> {

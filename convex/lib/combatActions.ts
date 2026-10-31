@@ -29,7 +29,11 @@ import { ConvexError, v, type Infer } from "convex/values";
 
 import { featureUseKey, keyAvailability, requirementMet, stateCheckMet } from "../../src/lib/domain/card-effects/availability";
 import { rollMatches, type PlanStep, type RunPlan } from "../../src/lib/domain/card-effects/run";
-import type { CardUse, CreatureKey, DamageType, Range, RollFilter, RollResult, RollSpec, Step, TargetSpec, Trigger } from "../../src/lib/domain/card-effects/types";
+import type { AttackedRider, CardUse, CreatureKey, DamageKeyword, DamageType, Mod, Range, RollFilter, RollResult, RollSpec, Step, TargetSpec, Trigger } from "../../src/lib/domain/card-effects/types";
+import { adversaryNumberEnv, passiveSummary, type PassiveSummary } from "../../src/lib/domain/adversary-actions/index";
+import { conditionName, conditionStepsOf, lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
+import { resolveNumber } from "../../src/lib/domain/combat-actions/numbers";
+import { ADVERSARY_EFFECTS, adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import { lineOfSight, RANGE_ORDER, rangeCheck, rangeFromWeapon, resolveHits, applyDamageTo, tokenDistance, type Combatant, type DamageResult, type RangeCheck, type SightResult } from "../../src/lib/domain/combat-actions/index";
 import { tokenVisibility } from "../../src/lib/domain/combat-map/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
@@ -37,7 +41,7 @@ import { afterDualityRoll, rollOptions } from "../../src/lib/domain/class-featur
 import { CLASS_FEATURES } from "../../src/lib/domain/class-features/index";
 import { applyDualityEffects, dualityEffects, typedLabel, type Rng } from "../../src/lib/domain/dice/index";
 import { actionOutcome, type RollRecord } from "../../src/lib/domain/duality";
-import { holdingsFor, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
+import { holdingsFor, owned, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
 import { actorExtras, featureAvailability, featureCostShort } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { applyUpgrades } from "../../src/lib/domain/feature-effects/upgrades";
@@ -48,8 +52,8 @@ import { appError } from "../../src/lib/errors/app-error";
 import { TRAIT_LABEL } from "../../src/lib/frames/extras/common";
 import { ADVERSARIES } from "../../src/lib/srd/adversaries";
 import { alwaysOnResistance } from "../../src/lib/srd/adversary-resistance";
-import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
-import { featureEffect } from "../../src/lib/srd/feature-effects/index";
+import { CARD_EFFECTS, cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
+import { FEATURE_EFFECTS, featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard, getWeapon } from "../../src/lib/srd/index";
 import type { AdversaryDef, DomainId, TraitId, Weapon } from "../../src/lib/srd/types";
 import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
@@ -59,7 +63,9 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { parseChoices, type CardChoice, type ParsedChoices } from "./cardChoices";
-import { adversaryBefore, cardPromptValidator, endForCasterOnInstances, endOnDefeat, endOnInstance, endOnSheet, gmLines, instanceWrites, promptsOf, writeInstances, type CardPrompt, type InstanceWrite } from "./cardRows";
+import { adversaryBefore, cardPromptValidator, endForCasterOnInstances, endForCasterOnSheets, endOnDefeat, endOnInstance, endOnSheet, gmLines, holdsSource, instanceEffectSource, instanceWrites, promptsOf, srdUses, writeInstances, type CardPrompt, type InstanceWrite, type SourceLookup } from "./cardRows";
+import { adversaryState, blockOf as adversaryBlockOf, riderStepsText } from "./adversaryFeatures";
+import { activeAreasOnMap, memberConditionsFor, observerConditions } from "../combatAreas";
 import {
   actorSheetAfter,
   bindGates,
@@ -94,7 +100,7 @@ import { closeRequest, openAfterRoll, openMinionOffer, openRiderPick } from "./c
 import { bandsOnMap, partyMembers } from "./adversaryHits";
 import { openIncomingHit } from "./incomingHits";
 import { readSheet } from "./characterSheet";
-import { changed, liveMods, resolveDamage, resolveDuality, rollResultHolds, type DualityArgs, type LiveMod, type Loaded } from "./rolls";
+import { changed, liveMods, resolveDamage, resolveDuality, rollResultHolds, sheetBearerMods, type DualityArgs, type LiveMod, type Loaded } from "./rolls";
 import type { AdversaryBefore } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
 import { MAX_RIDERS_PER_ATTACK, rangeBandValidator, sanctionRollOptionsValidator, type AfterRollChange, type AfterRollChoice, type Rider, type RiderPickChoice } from "./validators/combatRequests";
@@ -131,6 +137,12 @@ export const attackRollFields = {
    * `false` turns it off for this roll (fishing for a critical). Ignored when the feature doesn't apply.
    */
   riseToTheChallenge: v.optional(v.boolean()),
+  /**
+   * Plan lanes-2 wave 9, E1.3b (dcm-xbtw, user answer 2026-10-31): the "Use as Spirit Weapon" check box (CB p.44). Ticked,
+   * with an equipped Melee / Very Close weapon and Spirit Weapon held: the attack reaches Close, may take one more target
+   * for a Stress, and Sacred Resonance doubles matching damage dice. Ignored otherwise.
+   */
+  spiritWeapon: v.optional(v.boolean()),
 };
 
 export type AttackRoll = {
@@ -145,6 +157,7 @@ export type AttackRoll = {
   slayerDice?: number;
   tideTokens?: number;
   riseToTheChallenge?: boolean;
+  spiritWeapon?: boolean;
 };
 
 /** One target as the player learns it (U1): hit or miss, and whether it went down (Q6). */
@@ -287,10 +300,12 @@ export const WEAPON_ATTACK_TARGETS = 1;
  * COMBAT_TARGET_INVALID). Seen first, so a token the player can't see answers the same whatever it is. Kept as a list
  * (a stored sanction holds `targetTokenIds`); several targets would have to share one encounter.
  */
-export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon, tokenIds: readonly Id<"combatTokens">[]): Promise<CheckedTarget[]> {
-  const most = Math.min(MAX_TARGETS, WEAPON_ATTACK_TARGETS + (await extraAttackTargets(ctx, campaign, s)));
+export async function checkTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon, tokenIds: readonly Id<"combatTokens">[], roll: Pick<AttackRoll, "spiritWeapon"> = {}): Promise<CheckedTarget[]> {
+  // E1.3b (dcm-xbtw): a ticked Spirit Weapon reaches Close and may take one more target (its Stress is paid in the attack).
+  const spirit = roll.spiritWeapon === true && (await spiritWeaponFor(ctx, campaign, s, weapon, roll));
+  const most = Math.min(MAX_TARGETS, WEAPON_ATTACK_TARGETS + (spirit ? 1 : 0) + (await extraAttackTargets(ctx, campaign, s)));
   if (tokenIds.length === 0 || tokenIds.length > most || new Set(tokenIds).size !== tokenIds.length) throw appError("COMBAT_TARGET_INVALID");
-  const range = rangeFromWeapon(weapon.range);
+  const range = spirit ? "close" : rangeFromWeapon(weapon.range);
   const checked: CheckedTarget[] = [];
   for (const id of tokenIds) {
     const index = s.scene.tokens.findIndex((t) => t._id === id);
@@ -327,6 +342,14 @@ async function extraAttackTargets(ctx: QueryCtx, campaign: Doc<"campaigns">, s: 
   const character = await ctx.db.get("characters", s.attacker.ref.characterId);
   if (character === null || character.campaignId !== campaign._id) return 0;
   return extraTargetsOf(liveMods(readSheet(character.sheet), featureScope(campaign)));
+}
+
+/** E1.3b (dcm-xbtw): whether the attacker's ticked Spirit Weapon applies (`spiritWeaponOn` on their sheet). */
+async function spiritWeaponFor(ctx: QueryCtx, campaign: Doc<"campaigns">, s: AttackScene, weapon: Weapon, roll: Pick<AttackRoll, "spiritWeapon">): Promise<boolean> {
+  if (s.attacker.ref.kind !== "pc") return false;
+  const character = await ctx.db.get("characters", s.attacker.ref.characterId);
+  if (character === null || character.campaignId !== campaign._id) return false;
+  return spiritWeaponOn(readSheet(character.sheet), campaign, weapon, roll);
 }
 
 /**
@@ -932,6 +955,8 @@ export function rollFromStored(roll: Infer<typeof sanctionRollOptionsValidator>)
     ...(roll.slayerDice !== undefined ? { slayerDice: roll.slayerDice } : {}),
     ...(roll.tideTokens !== undefined ? { tideTokens: roll.tideTokens } : {}),
     ...(roll.riseToTheChallenge !== undefined ? { riseToTheChallenge: roll.riseToTheChallenge } : {}),
+    // E1.3b (dcm-xbtw): a stored roll keeps the Spirit Weapon box once the stored shape is widened to carry it.
+    ...("spiritWeapon" in roll && typeof roll.spiritWeapon === "boolean" ? { spiritWeapon: roll.spiritWeapon } : {}),
   };
 }
 
@@ -1077,6 +1102,8 @@ export type Folds = {
   damageAdd: number;
   /** Added damage of another type (Face Your Fear's magic damage). */
   addTypes: DamageType[];
+  /** E1.3b (dcm-c09o): keywords of added damage ("fire"), for a target's weakness (Made of Straw, HF p.79). */
+  keywords: DamageKeyword[];
   /** Proficiency for this attack's damage roll (Ruthless Predator, Pummeljoy). */
   proficiency: number;
   /**
@@ -1109,7 +1136,7 @@ export type Folds = {
 };
 
 export function emptyFolds(): Folds {
-  return { modifier: 0, advantage: 0, damageAdd: 0, addTypes: [], proficiency: 0, multiply: 1, extraHp: 0, addTargets: [], unsupported: [], dieBonus: [], reach: 0 };
+  return { modifier: 0, advantage: 0, damageAdd: 0, addTypes: [], keywords: [], proficiency: 0, multiply: 1, extraHp: 0, addTargets: [], unsupported: [], dieBonus: [], reach: 0 };
 }
 
 /** Folds a rider plan's `fold` steps into the attack. */
@@ -1125,6 +1152,7 @@ export function foldInto(folds: Folds, run: RiderRun): void {
       if (ch.kind === "add") {
         folds.damageAdd += amount;
         if (ch.type) folds.addTypes.push(ch.type);
+        if (ch.keyword) folds.keywords.push(ch.keyword);
       } else if (ch.kind === "proficiency") folds.proficiency += ch.delta;
       else if (ch.kind === "multiply") folds.multiply *= ch.factor;
       else if (ch.kind === "minimumSeverity") folds.minimumSeverity = ch.severity;
@@ -1631,7 +1659,7 @@ export async function endsFromAttack(
   sheet0: CharacterSheet,
   record: RollRecord,
   at: { slot: WeaponSlot; trait: TraitId | undefined; results: readonly TargetResult[]; alreadyDefeated: ReadonlySet<string> },
-): Promise<{ sheet: CharacterSheet; lines: string[]; gmLines: string[]; touched: string[]; casterBefore: AdversaryBefore[] }> {
+): Promise<{ sheet: CharacterSheet; lines: string[]; gmLines: string[]; touched: string[]; casterBefore: AdversaryBefore[]; endRoll: EndRoll | null; worst: EndSeverity }> {
   let sheet = sheet0;
   const lines: string[] = [];
   const gm: string[] = [];
@@ -1672,7 +1700,252 @@ export async function endsFromAttack(
     sheet = dealt.sheet;
     lines.push(...dealt.lines);
   }
-  return { sheet, lines, gmLines: gm, touched, casterBefore };
+  return { sheet, lines, gmLines: gm, touched, casterBefore, endRoll, worst };
+}
+
+// ---------------------------------------------------------------- plan lanes-2 wave 9, E1.3b: what the target brings to the attack
+
+/**
+ * CB p.102 (Hidden): "While Hidden, any rolls against you have disadvantage." Cloaked (CB p.42) is Hidden with more
+ * benefits. Vulnerable (CB p.102): rolls targeting a Vulnerable creature have advantage.
+ */
+export function conditionEdge(conditions: Iterable<string>): { advantage: number; disadvantage: number } {
+  const set = new Set(conditions);
+  return { advantage: set.has("vulnerable") ? 1 : 0, disadvantage: set.has("hidden") || set.has("cloaked") ? 1 : 0 };
+}
+
+/** The steps of the entry a stored effect or tag came from: an adversary feature (`<adversaryId>/<feature>`) or a card / PC feature. */
+function entryStepsOf(source: { adversaryId: string; feature: string } | { sourceId: string }): readonly unknown[] {
+  if ("adversaryId" in source) return (adversaryEffects(source.adversaryId).find((e) => e.feature === source.feature)?.uses ?? []).map((u) => u.steps);
+  const entry = srdUses(source.sourceId);
+  if (entry === undefined) return [];
+  if (Array.isArray(entry)) return entry.map((u) => u.steps);
+  const whole = entry as { uses: readonly { steps: unknown }[]; upgrades?: readonly unknown[] };
+  return [...whole.uses.map((u) => u.steps), ...(whole.upgrades ?? [])];
+}
+
+const ADV_INSTANCE_EFFECT = /^adv:([^/:]+)\/(.+):\d+$/;
+
+type TagRiderSource = { kind: "pc"; sourceId: string } | { kind: "adversary" };
+let TAG_RIDERS: Map<string, { source: TagRiderSource; mods: readonly Mod[] }> | null = null;
+
+/** The first SRD entry (card, PC feature, adversary feature) giving a tag or condition of this name with mods, cached. */
+function tagRiderEntry(tag: string): { source: TagRiderSource; mods: readonly Mod[] } | undefined {
+  if (TAG_RIDERS === null) {
+    const map = new Map<string, { source: TagRiderSource; mods: readonly Mod[] }>();
+    const add = (source: TagRiderSource, uses: readonly { steps: readonly unknown[] }[]) => {
+      for (const [name, step] of conditionStepsOf(uses.map((u) => u.steps))) {
+        if (step.mods && step.mods.length > 0 && !map.has(name)) map.set(name, { source, mods: step.mods });
+      }
+    };
+    for (const e of CARD_EFFECTS.values()) add({ kind: "pc", sourceId: e.cardId }, e.uses);
+    for (const e of FEATURE_EFFECTS.values()) add({ kind: "pc", sourceId: e.featureId }, e.uses);
+    for (const list of ADVERSARY_EFFECTS.values()) for (const e of list) add({ kind: "adversary" }, e.uses);
+    TAG_RIDERS = map;
+  }
+  return TAG_RIDERS.get(tag);
+}
+
+/**
+ * Whether an `attackedRider`'s `by` holds for a PC's attack. `anyone` and `pcs` always; `caster`: the PC holds the card or
+ * feature that made it (an adversary's own rider never); `others`: the PC doesn't (Breaking Blow, Chokehold: the caster's
+ * own attacks add the extra damage through their own `auto` use, so it is never added twice).
+ */
+function attackedByHolds(rider: AttackedRider, source: TagRiderSource, attacker: CharacterSheet): boolean {
+  if (rider.by === "anyone" || rider.by === "pcs") return true;
+  const mine = source.kind === "pc" && holdsSource(attacker, source.sourceId);
+  return rider.by === "caster" ? mine : !mine;
+}
+
+/**
+ * dcm-yd5h / dcm-9gw / dcm-kso9: the `attackedRider`s a PC's attack on this instance gets, read back from the entries of
+ * what it carries (E7's `adv:` instance modifiers, a card's or feature's `card:` / `feat:` modifier, and a bare tag or
+ * condition a card left: Breaking Blow, CB p.331; Chokehold, CB p.336).
+ */
+export function instanceAttackedRiders(instance: Pick<Doc<"encounterAdversaries">, "effects" | "tags" | "conditions">, attacker: CharacterSheet): { label: string; rider: AttackedRider }[] {
+  const out: { label: string; rider: AttackedRider }[] = [];
+  const seen = new Set<string>();
+  for (const e of instance.effects ?? []) {
+    const adv = ADV_INSTANCE_EFFECT.exec(e.id);
+    const src = adv ? null : instanceEffectSource(e);
+    if (adv === null && src === null) continue;
+    seen.add(e.label);
+    const steps = adv ? entryStepsOf({ adversaryId: adv[1]!, feature: adv[2]! }) : entryStepsOf({ sourceId: src!.sourceId });
+    const source: TagRiderSource = adv ? { kind: "adversary" } : { kind: "pc", sourceId: src!.sourceId };
+    for (const m of lastingModsOf(steps, e.label)) if (m.kind === "attackedRider" && attackedByHolds(m.rider, source, attacker)) out.push({ label: e.label, rider: m.rider });
+  }
+  for (const tag of [...(instance.tags ?? []), ...instance.conditions]) {
+    if (seen.has(tag)) continue;
+    seen.add(tag);
+    const found = tagRiderEntry(tag);
+    if (found) for (const m of found.mods) if (m.kind === "attackedRider" && attackedByHolds(m.rider, found.source, attacker)) out.push({ label: tag, rider: m.rider });
+  }
+  return out;
+}
+
+/** What one adversary target brings to a PC's attack (dcm-c09o, dcm-wuu, dcm-bhp, dcm-yd5h). */
+export type TargetFacts = {
+  passives: PassiveSummary | null;
+  /** The conditions the attack reads: the instance's own, its passive self conditions, the areas it stands in, toward the attacker. */
+  conditions: string[];
+  riders: { label: string; rider: AttackedRider }[];
+};
+
+/**
+ * dcm-c09o (Hand of Glory, HF p.67: Hidden while its stat block has a token), dcm-wuu (Shadow Swarm, HF p.82: Vulnerable
+ * inside the area; `memberConditionsFor`), dcm-bhp (a sight-blocking area between the two: `observerConditions`),
+ * dcm-yd5h (instance riders): the target as the attack reads it.
+ */
+export async function targetFacts(ctx: QueryCtx, s: AttackScene, areas: readonly Doc<"combatAreas">[], target: Pick<CheckedTarget, "instance" | "token">, attacker: CharacterSheet): Promise<TargetFacts> {
+  const block = await adversaryBlockOf(ctx, target.instance);
+  const passives = block === null ? null : passiveSummary(block.effects, { ...adversaryState(target.instance), situations: [] }, block.tier);
+  const conditions = new Set<string>([...target.instance.conditions, ...(target.instance.tags ?? [])]);
+  for (const c of passives?.selfConditions ?? []) conditions.add(conditionName(c));
+  for (const m of memberConditionsFor(areas, s.scene.tokens, target.token)) conditions.add(conditionName(m.condition));
+  for (const o of observerConditions(areas, s.scene.tokens, target.token, s.attacker)) conditions.add(o.condition);
+  return { passives, conditions: [...conditions], riders: instanceAttackedRiders(target.instance, attacker) };
+}
+
+/**
+ * The advantage and disadvantage the targets give the one attack roll (R9: one roll for every target). Each target's
+ * edge: its conditions (`conditionEdge`), a passive `disadvantageAgainst` covering the attack (Wind Lord), an
+ * `attackedRider` with `advantage` (Mark Target, Drag and Bag). With several targets only what every target gives
+ * counts (simplest reading, QUESTIONS in TASK-LN3-E1B.md).
+ */
+export function targetsEdge(facts: readonly TargetFacts[], host: Pick<Host, "spec" | "trait">): { advantage: number; disadvantage: number } {
+  if (facts.length === 0) return { advantage: 0, disadvantage: 0 };
+  const each = facts.map((f) => {
+    const edge = conditionEdge(f.conditions);
+    const against = (f.passives?.disadvantageAgainst ?? []).filter((on) => hostMatches(on, host) || on === "any").length;
+    const riderAdvantage = f.riders.some((r) => r.rider.advantage === true) ? 1 : 0;
+    return { advantage: edge.advantage + riderAdvantage, disadvantage: edge.disadvantage + against };
+  });
+  return { advantage: Math.min(...each.map((e) => e.advantage)), disadvantage: Math.min(...each.map((e) => e.disadvantage)) };
+}
+
+/** Whether a passive weakness (Made of Straw, HF p.79: "double damage from fire") matches the attack's damage. */
+export function weaknessMatches(weaknesses: PassiveSummary["weaknesses"], types: readonly DamageType[], keywords: readonly DamageKeyword[]): boolean {
+  return (weaknesses ?? []).some((w) => (w.type === undefined || types.includes(w.type)) && (w.keyword === undefined || keywords.includes(w.keyword)) && (w.type !== undefined || w.keyword !== undefined));
+}
+
+/**
+ * dcm-yd5h: the extra damage the target's `attackedRider`s add to a successful attack on it (Breaking Blow's 2d12, CB
+ * p.331; Chokehold's 2d6, CB p.336; I've Got 'Em's double damage, CB p.213). Dice are rolled with the attack's rng.
+ */
+export function attackedRiderDamage(riders: readonly { label: string; rider: AttackedRider }[], instance: Doc<"encounterAdversaries">, rng: Rng): { add: number; multiply: number; dice: { sides: number; value: number }[]; labels: string[]; manual: string[] } {
+  let add = 0;
+  let multiply = 1;
+  const dice: { sides: number; value: number }[] = [];
+  const labels: string[] = [];
+  const manual: string[] = [];
+  const env = adversaryNumberEnv({ hp: instance.hp, stress: instance.stress, tokens: instance.tokens ?? 0 }, 1);
+  for (const { label, rider } of riders) {
+    const d = rider.damage;
+    if (d !== undefined) {
+      if (d.kind === "add") {
+        const record = (sides: number) => {
+          const value = rng(sides);
+          dice.push({ sides, value });
+          return value;
+        };
+        const amount = resolveNumber(d.amount, env, record);
+        add += amount;
+        labels.push(`${label} +${amount}`);
+      } else if (d.kind === "multiply") {
+        multiply *= d.factor;
+        labels.push(`${label} ×${d.factor}`);
+      } else manual.push(`${label}: ${d.kind} (not automated)`);
+    }
+    if (rider.attackerSteps && rider.attackerSteps.length > 0) manual.push(`${label}: ${riderStepsText(rider.attackerSteps)}`);
+  }
+  return { add, multiply, dice, labels, manual };
+}
+
+/**
+ * dcm-c09o (Tireless, HF p.68: "can't be forced to mark Stress"): a rider's write that marks Stress on an instance whose
+ * passives say `noForcedStress` keeps its Stress.
+ */
+export async function withoutForcedStress(ctx: QueryCtx, writes: readonly InstanceWrite[], known: ReadonlyMap<string, PassiveSummary | null>): Promise<InstanceWrite[]> {
+  const out: InstanceWrite[] = [];
+  for (const w of writes) {
+    const inst = w.creature.instance;
+    if (w.patch.stress <= inst.stress) {
+      out.push(w);
+      continue;
+    }
+    let passives = known.get(inst._id);
+    if (passives === undefined) {
+      const block = await adversaryBlockOf(ctx, inst);
+      passives = block === null ? null : passiveSummary(block.effects, { ...adversaryState(inst), situations: [] }, block.tier);
+    }
+    out.push(passives?.flags.includes("noForcedStress") ? { ...w, patch: { ...w.patch, stress: inst.stress } } : w);
+  }
+  return out;
+}
+
+// ---- Spirit Weapon (CB p.44; user answer 2026-10-31, dcm-xbtw)
+
+export const SPIRIT_WEAPON = "subclass:divine-wielder:spirit-weapon";
+export const SACRED_RESONANCE = "subclass:divine-wielder:sacred-resonance";
+
+/**
+ * Spirit Weapon (CB p.44): "When you have an equipped weapon with a range of Melee or Very Close, it can fly from your hand
+ * to attack an adversary within Close range and then return to you. You can mark a Stress to target an additional
+ * adversary within range with the same attack roll." User answer (dcm-xbtw): a per-attack check box; ticked, with such a
+ * weapon and the feature held, the attack reaches Close and may take one more target for a Stress.
+ */
+export function spiritWeaponOn(sheet: CharacterSheet, campaign: Doc<"campaigns">, weapon: Weapon, roll: Pick<AttackRoll, "spiritWeapon">): boolean {
+  if (roll.spiritWeapon !== true) return false;
+  const range = rangeFromWeapon(weapon.range);
+  if (range !== "melee" && range !== "veryClose") return false;
+  return owned(sheet, featureScope(campaign)).some((f) => f.featureId === SPIRIT_WEAPON);
+}
+
+/**
+ * Sacred Resonance (CB p.44): "When you roll damage for your Spirit Weapon feature, if any of the die results match, double
+ * the value of each matching die." Dice of the damage roll that share a value are doubled; the total follows.
+ */
+export function sacredResonance(record: RollRecord): RollRecord {
+  const live = record.dice.filter((d) => !d.dropped);
+  const counts = new Map<number, number>();
+  for (const d of live) counts.set(d.value, (counts.get(d.value) ?? 0) + 1);
+  if (![...counts.values()].some((n) => n > 1)) return record;
+  const dice = record.dice.map((d) => (!d.dropped && (counts.get(d.value) ?? 0) > 1 ? { ...d, value: d.value * 2 } : d));
+  const total = Math.max(0, dice.filter((d) => !d.dropped).reduce((s, d) => s + d.value, 0) + record.modifier);
+  return { ...record, dice, total };
+}
+
+/**
+ * Plan lanes-2 wave 9, E1.3b (dcm-uwg1): the party's sheets an attack ends effects on: caster-side ends on another PC's
+ * sheet (`endForCasterOnSheets`: an effect this attacker made on an ally that ends on the caster's roll or damage dealt)
+ * and another PC's effects tied to an instance this attack defeated (Marked for Death, HF p.8: "the current adversary
+ * Marked for Death is defeated"; `endOnDefeat`). Returns only the sheets that changed.
+ */
+export function partyEndsFromAttack<K>(
+  attacker: CharacterSheet,
+  party: readonly { key: K; sheet: CharacterSheet }[],
+  endRoll: EndRoll | null,
+  worst: EndSeverity,
+  defeated: readonly Pick<Doc<"encounterAdversaries">, "tags">[],
+  lookup?: SourceLookup,
+): { key: K; sheet: CharacterSheet; lines: string[] }[] {
+  const current = new Map<K, { key: K; sheet: CharacterSheet; lines: string[] }>(party.map((p) => [p.key, { key: p.key, sheet: p.sheet, lines: [] }]));
+  const apply = (outs: readonly { key: K; sheet: CharacterSheet; lines: string[] }[]) => {
+    for (const o of outs) {
+      const c = current.get(o.key)!;
+      current.set(o.key, { key: o.key, sheet: o.sheet, lines: [...c.lines, ...o.lines] });
+    }
+  };
+  const list = () => [...current.values()].map((c) => ({ key: c.key, sheet: c.sheet }));
+  if (endRoll !== null) apply(endForCasterOnSheets(attacker, list(), { kind: "roll", roll: endRoll }, lookup));
+  if (worst !== "none") apply(endForCasterOnSheets(attacker, list(), { kind: "damageDealt", severity: worst }, lookup));
+  for (const instance of defeated) {
+    for (const c of [...current.values()]) {
+      const out = endOnDefeat(c.sheet, instance, lookup);
+      if (out.ended.length > 0) current.set(c.key, { key: c.key, sheet: out.sheet, lines: [...c.lines, ...out.lines] });
+    }
+  }
+  return [...current.values()].filter((c) => c.lines.length > 0);
 }
 
 /**
@@ -1740,9 +2013,37 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     for (const t of more.adversaries) halfDamage.set(t.token._id, add.damage === "half");
   }
 
+  // ---- E1.3b: what the targets bring (dcm-c09o passives, dcm-wuu / dcm-bhp area conditions, dcm-yd5h instance riders)
+  const areas = await activeAreasOnMap(ctx, req.scene.map._id);
+  const facts = new Map<string, TargetFacts>();
+  const factsOf = async (t: CheckedTarget) => {
+    const known = facts.get(t.token._id);
+    if (known !== undefined) return known;
+    const read = await targetFacts(ctx, req.scene, areas, t, sheet0);
+    facts.set(t.token._id, read);
+    return read;
+  };
+  for (const t of allTargets) await factsOf(t);
+  const edge = targetsEdge(allTargets.map((t) => facts.get(t.token._id)!), host);
+  // E1.3b (dcm-mm0f): a bearer's disadvantage on attacks from beyond a range (Sandstorm, CB p.339: "Attacks made from beyond
+  // Melee range have disadvantage"); the ones without a range are counted in `prepareDuality`.
+  edge.disadvantage += sheetBearerMods(sheet0).filter(({ mod }) => mod.kind === "disadvantage" && mod.beyond !== undefined && mod.unlessTarget === undefined && mod.situation === undefined && hostMatches(mod.on, host) && allTargets.some((t) => !rangeAtMost(t.check.band, mod.beyond!))).length;
+  // E1.3b (dcm-xbtw): a ticked Spirit Weapon's extra adversary costs a Stress (CB p.44: "You can mark a Stress to target an
+  // additional adversary within range with the same attack roll").
+  const spirit = spiritWeaponOn(sheet0, campaign, weapon, options);
+  if (spirit && req.targets.length > WEAPON_ATTACK_TARGETS + extraTargetsOf(mods)) {
+    if (sheet.stress >= sheet.stressMax) throw appError("INVALID", "No Stress left to mark for Spirit Weapon's extra target.");
+    sheet = { ...sheet, stress: sheet.stress + 1 };
+  }
+
   // ---- the roll (R1, R9); cover gives one disadvantage (Q2)
   const cover = allTargets.some((t) => t.sight.cover) || pcTargets.some((t) => t.sight.cover);
-  const args = attackDuality(weapon, { ...options, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage }, cover, traitOverride);
+  const args = attackDuality(
+    weapon,
+    { ...options, modifier: options.modifier + folds.modifier, advantage: options.advantage + folds.advantage + edge.advantage, disadvantage: options.disadvantage + edge.disadvantage },
+    cover,
+    traitOverride,
+  );
   const sheetBeforeRoll = sheet;
   const dualityAt = rec.values.length;
   // DA2: Rise to the Challenge's d20 Hope Die (CB p.48), on by default while it applies; the Hope Die is drawn first.
@@ -1880,13 +2181,25 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const sneak = sneakAttackApplies(sheet0, req.scene, allTargets.filter((_, i) => hits[i]!.hit));
   const damageOptions = damageOptionsFor(sheet0, campaign, options.damageOptions ?? [], sneak);
   let damageRecord: RollRecord | null = null;
+  /** E1.3b (dcm-c09o): the same damage without the critical's added maximum, for a target with `noCritDamage` (No Vital Organs, HF p.69). */
+  let noCritRecord: RollRecord | null = null;
   let damageLabel = "";
+  const resonance = spirit && owned(sheet0, featureScope(campaign)).some((f) => f.featureId === SACRED_RESONANCE);
+  for (const t of allTargets) await factsOf(t);
   if (anyHit) {
     const proficiency = sheet.proficiency;
-    const rolledDamage = await resolveDamage(ctx, { ...loaded, sheet: { ...sheet, proficiency: proficiency + folds.proficiency } }, { source: { kind: "weapon", slot }, critical, modifier: 0, options: damageOptions }, hope.rng, false);
+    const damageSheet = { ...sheet, proficiency: proficiency + folds.proficiency };
+    const rolledDamage = await resolveDamage(ctx, { ...loaded, sheet: damageSheet }, { source: { kind: "weapon", slot }, critical, modifier: 0, options: damageOptions }, hope.rng, false);
     sheet = { ...rolledDamage.paid, proficiency };
-    damageRecord = foldedDamage(rolledDamage.roll, folds);
+    // E1.3b (dcm-xbtw): Sacred Resonance doubles each matching die of a Spirit Weapon's damage (CB p.44).
+    const dice = resonance ? sacredResonance(rolledDamage.roll) : rolledDamage.roll;
+    damageRecord = foldedDamage(dice, folds);
     damageLabel = rolledDamage.label;
+    const noCritHit = allTargets.some((t, i) => hits[i]!.hit && facts.get(t.token._id)?.passives?.flags.includes("noCritDamage") === true);
+    if (critical && noCritHit) {
+      const plain = await resolveDamage(ctx, { ...loaded, sheet: damageSheet }, { source: { kind: "weapon", slot }, critical: false, modifier: 0, options: damageOptions }, replaying(rolledDamage.roll.dice.map((d) => d.value), rollDie), false);
+      noCritRecord = foldedDamage(resonance ? sacredResonance(plain.roll) : plain.roll, folds);
+    }
   }
 
   // ---- damage on each instance hit (R3, R10), the riders' extra Hit Points (NV4), Onslaught's floor
@@ -1896,6 +2209,10 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const floor = onslaught ? "major" : folds.minimumSeverity;
   const now = Date.now();
   const snapshots: Doc<"encounterAdversaries">[] = [];
+  /** E1.3b: what the targets' riders ask that the attack can't apply (Lead by Example's benefit), and the riders that added damage. */
+  const knownPassives = new Map<string, PassiveSummary | null>([...allTargets].map((t) => [t.instance._id as string, facts.get(t.token._id)?.passives ?? null]));
+  const riderManual: string[] = [];
+  const publicExtras: string[] = [];
   const results: TargetResult[] = [];
   const publicParts: string[] = [];
   const gmParts: string[] = [];
@@ -1912,7 +2229,27 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     }
     snapshots.push(t.instance);
     const half = halfDamage.get(t.token._id) === true;
-    const total = half ? Math.ceil(damageRecord.total / 2) : damageRecord.total;
+    // E1.3b: per target, the critical's maximum dropped (noCritDamage), the target's attackedRider damage (Breaking Blow,
+    // Chokehold, I've Got 'Em), then a weakness doubles it (Made of Straw); half damage last.
+    const f = facts.get(t.token._id);
+    const notes: string[] = [];
+    let base = damageRecord.total;
+    if (noCritRecord !== null && f?.passives?.flags.includes("noCritDamage") === true) {
+      base = noCritRecord.total;
+      notes.push("no critical damage");
+    }
+    if (f !== undefined && f.riders.length > 0) {
+      const extraDamage = attackedRiderDamage(f.riders, t.instance, hope.rng);
+      base = (base + extraDamage.add) * extraDamage.multiply;
+      notes.push(...extraDamage.labels);
+      riderManual.push(...extraDamage.manual);
+      if (extraDamage.labels.length > 0) publicExtras.push(...f.riders.filter((r) => r.rider.damage !== undefined).map((r) => r.label));
+    }
+    if (weaknessMatches(f?.passives?.weaknesses, [weaponType, ...folds.addTypes], folds.keywords)) {
+      base *= 2;
+      notes.push("weakness ×2");
+    }
+    const total = half ? Math.ceil(base / 2) : base;
     let hp: number;
     let detail: string;
     let severity: TargetResult["severity"] = "none";
@@ -1936,7 +2273,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     await ctx.db.patch("encounterAdversaries", t.instance._id, { hp, defeated, updatedAt: now });
     results.push({ target: t, hit: true, defeated, severity, hpMarked: marked, half });
     publicParts.push(`${label}: ${defeated ? "Defeated" : "Hit"}`);
-    gmParts.push(`${label}: ${detail}${defeated ? ", defeated" : ""}`);
+    gmParts.push(`${label}: ${detail}${notes.length > 0 ? ` [${notes.join("; ")}]` : ""}${defeated ? ", defeated" : ""}`);
   }
   // A PC a rider added (Surrounded, allies included): the same roll against their Evasion; on a hit the damage opens their
   // incoming-hit window (armor, reactions) in this attack's group, as card damage to another PC does (AA2b).
@@ -1961,7 +2298,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const posts: RiderRun[] = [];
   let riderFear = 0;
   const writeRun = async (run: RiderRun) => {
-    const writes = instanceWrites(run.plan, run.built.creatures, run.name);
+    const writes = await withoutForcedStress(ctx, instanceWrites(run.plan, run.built.creatures, run.name), knownPassives);
     await writeInstances(ctx, writes);
     riderWrites.push(...writes);
     const lines = gmLines(run.plan, run.built, writes);
@@ -2000,7 +2337,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const allyRuns = await allyAutoRuns(ctx, campaign, req.scene, character._id, host, hostRoll, main ? subjectOf(main) : undefined, results.filter((x) => x.hit && standing(x)).map((x) => x.target.token._id), hope.rng);
   const allySheets = new Map<string, { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }>();
   for (const a of allyRuns) {
-    const writes = instanceWrites(a.run.plan, a.run.built.creatures, a.run.name);
+    const writes = await withoutForcedStress(ctx, instanceWrites(a.run.plan, a.run.built.creatures, a.run.name), knownPassives);
     await writeInstances(ctx, writes);
     riderWrites.push(...writes);
     const lines = gmLines(a.run.plan, a.run.built, writes);
@@ -2018,7 +2355,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
 
   // ---- the after-roll feature's own effects (Ranger's Focus ends on its target)
   if (afterRun !== null) {
-    const writes = instanceWrites(afterRun.plan, afterRun.built.creatures, afterRun.name);
+    const writes = await withoutForcedStress(ctx, instanceWrites(afterRun.plan, afterRun.built.creatures, afterRun.name), knownPassives);
     await writeInstances(ctx, writes);
     riderWrites.push(...writes);
     riderFear += afterRun.plan.gmFearDelta;
@@ -2035,6 +2372,24 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   const attackEnds = await endsFromAttack(ctx, campaign._id, req.scene.attacker._id, sheet, roll, { slot, trait: host.trait, results, alreadyDefeated: new Set(snapshots.filter((i) => i.defeated).map((i) => i._id)) });
   sheet = attackEnds.sheet;
   finalSheet = sheet;
+  // E1.3b (dcm-uwg1): the party's sheets: caster-side ends of this attacker's effects on allies, and other PCs' effects tied
+  // to an instance this attack defeated (Marked for Death, HF p.8), saved in this attack's group below.
+  const wasDefeated = new Set(snapshots.filter((i) => i.defeated).map((i) => i._id as string));
+  const others = (await partyMembers(ctx, campaign._id)).filter((m) => m.character._id !== character._id);
+  const partyEnds = partyEndsFromAttack(
+    sheet,
+    others.map((m) => ({ key: m.character._id as string, sheet: allySheets.get(m.character._id)?.after ?? m.sheet })),
+    attackEnds.endRoll,
+    attackEnds.worst,
+    results.filter((r) => r.defeated && !wasDefeated.has(r.target.instance._id)).map((r) => r.target.instance),
+  );
+  const partyLines = new Map<string, string[]>();
+  for (const pe of partyEnds) {
+    const member = others.find((m) => m.character._id === pe.key)!;
+    const seen = allySheets.get(member.character._id);
+    allySheets.set(member.character._id, { character: member.character, before: seen?.before ?? member.sheet, after: pe.sheet });
+    partyLines.set(pe.key, pe.lines);
+  }
 
   const { gained } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const fearChanged = gained + (await changeFear(ctx, campaign._id, riderFear));
@@ -2063,7 +2418,7 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
       bands: await bandsOnMap(ctx, req.scene.map._id),
     });
   }
-  const riderNames = [...new Set([...(afterRun ? [featureName(afterRun)] : []), ...runs.map((r) => r.name), ...posts.map((r) => r.name), ...(damageOptions.includes(SNEAK_ATTACK) ? ["Sneak Attack"] : [])])];
+  const riderNames = [...new Set([...(afterRun ? [featureName(afterRun)] : []), ...runs.map((r) => r.name), ...posts.map((r) => r.name), ...(damageOptions.includes(SNEAK_ATTACK) ? ["Sneak Attack"] : []), ...(spirit ? ["Spirit Weapon"] : []), ...(resonance && damageRecord !== null ? ["Sacred Resonance"] : []), ...publicExtras])];
   const using = [...duality.extras, ...riderNames].length > 0 ? ` (${[...duality.extras, ...riderNames].join(", ")})` : "";
   const head = `${sheet0.name} attacks with ${weapon.name}: ${TRAIT_LABEL[args.trait]} ${roll.total}${typedLabel(args.modifier)} ${rollWord(roll)}${using}`;
   const damageText = damageRecord === null ? "" : `; ${critical ? "critical " : ""}damage ${damageRecord.total} (${[damageLabel, diceList(damageRecord)].filter((s) => s !== "").join(": ")}${folds.damageAdd !== 0 ? ` ${typedLabel(folds.damageAdd)}` : ""}${folds.multiply !== 1 ? ` ×${folds.multiply}` : ""})`;
@@ -2093,6 +2448,10 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
     ...(before.length > 0 ? { adversaryBefore: before } : {}),
     undoable: true,
   });
+  // E1.3b (dcm-kso9): what a target's rider gives the attacker that the attack can't apply yet (Lead by Example's benefit).
+  for (const text of [...new Set(riderManual)]) {
+    await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId: req.actorId, kind: "feature", visibility: "public", summary: `${sheet0.name}: ${text}`.slice(0, 1000), groupId, undoable: true });
+  }
   if (riderLines.length > 0 || riderWrites.length > 0 || folds.unsupported.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
@@ -2130,7 +2489,9 @@ export async function resolveAttack(ctx: MutationCtx, req: AttackRequest): Promi
   for (const a of allySheets.values()) {
     if (!changed(a.before, a.after)) continue;
     await saveSheet(ctx, a.character._id, a.after);
-    await logAction(ctx, { campaignId: campaign._id, characterId: a.character._id, actorId: req.actorId, kind: "feature", visibility: "public", summary: `${a.before.name}: ${allyRuns.filter((r) => r.character._id === a.character._id).map((r) => r.run.name).join(", ")} on ${sheet0.name}'s roll`.slice(0, 1000), groupId, before: a.before, undoable: true });
+    const ran = allyRuns.filter((r) => r.character._id === a.character._id).map((r) => r.run.name);
+    const parts = [...(ran.length > 0 ? [`${a.before.name}: ${ran.join(", ")} on ${sheet0.name}'s roll`] : []), ...(partyLines.get(a.character._id) ?? [])];
+    await logAction(ctx, { campaignId: campaign._id, characterId: a.character._id, actorId: req.actorId, kind: "feature", visibility: "public", summary: parts.join("; ").slice(0, 1000), groupId, before: a.before, undoable: true });
   }
 
   // Armed countdowns tick right after the attack roll, as for `actionRoll` (countdowns-advanced K1, CB p.162).
@@ -2231,7 +2592,7 @@ export async function answerRiderPick(ctx: MutationCtx, loaded: Loaded, row: Doc
   const rider: PickedRider = { source: p.rider.source, id: p.rider.id, useId: p.rider.useId, name: p.rider.name, trigger: use.activation.trigger, phase: "damage", choices: [], auto: false };
   const run = await runRiderPart(env, rider, loaded.sheet, "whole", p.hostRoll, [token._id], target, token._id);
   if (run === null || run === "empty") throw appError("INVALID");
-  const writes = instanceWrites(run.plan, run.built.creatures, run.name);
+  const writes = await withoutForcedStress(ctx, instanceWrites(run.plan, run.built.creatures, run.name), new Map());
   await writeInstances(ctx, writes);
   const lines = gmLines(run.plan, run.built, writes);
   const fearDelta = await changeFear(ctx, campaign._id, run.plan.gmFearDelta);

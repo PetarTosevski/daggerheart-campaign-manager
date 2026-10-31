@@ -7,6 +7,8 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Label, Pill, SheetBox } from "@/components/party/sheet-ui";
 import { BRAWLERS_STRIKE } from "@/lib/domain/class-features/classes/brawler";
+import { derivedTraits } from "@/lib/domain/characters/derived";
+import { withEffects } from "@/lib/domain/characters/effects";
 import { rollOptions, weaponOverrides } from "@/lib/domain/class-features/hooks";
 import { CLASS_FEATURES } from "@/lib/domain/class-features/index";
 import type { FeatureScope, RollPrompt } from "@/lib/domain/class-features/types";
@@ -31,6 +33,7 @@ import { playRollSound } from "./sound";
 import { TagTeam } from "./tag-team";
 
 type Mode = "action" | "reaction" | "damage";
+type AttackWeapon = "primary" | "secondary" | "none";
 /** `slayer`: how many of the roll's last dice are spent Slayer Dice (labelled "Slayer d6"). */
 type Result = { id: number; entryId: Id<"actionLog">; roll: RollRecord; prompts: RollPrompt[]; label: string; fearGained?: number; slayer: number };
 
@@ -161,6 +164,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
     return parsed.success ? parsed.data : null;
   }, [view]);
   const unavailable = isUnavailable(character);
+  // dcm-hnbk: the traits with effects and passive bonuses (Beastform, CB p.30/32), as the Attack bar reads them.
+  const traits = useMemo(() => (sheet ? derivedTraits(withEffects(sheet)) : view.traits), [sheet, view.traits]);
 
   const [mode, setMode] = useState<Mode>("action");
   const [trait, setTrait] = useState<TraitId>("agility");
@@ -171,6 +176,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
   const [edge, setEdge] = useState(0);
   const [help, setHelp] = useState(0);
   const [attack, setAttack] = useState(false);
+  const [attackWeaponPick, setAttackWeapon] = useState<AttackWeapon>("primary");
   const [ikonisAttack, setIkonisAttack] = useState(false);
   const [chosen, setChosen] = useState<string[]>([]);
   const [source, setSource] = useState("primary");
@@ -231,6 +237,9 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       : overrides.find((o) => o.key === damageSourceKey)?.damageType) === "magic");
   const options = allOptions.filter((o) => !(o.physicalOnly && magicSource));
   const useIkonis = mode === "action" && ikonisAttack && ikonis !== null;
+  // dcm-6qrn: the picked weapon falls back to "none" when that slot is empty (derived, never copied into state).
+  const attackWeapon: AttackWeapon = attackWeaponPick === "primary" && !view.primaryWeaponId ? (view.secondaryWeaponId ? "secondary" : "none") : attackWeaponPick === "secondary" && !view.secondaryWeaponId ? "none" : attackWeaponPick;
+  const weaponSlot = attackWeapon === "none" ? null : attackWeapon;
   const rollTrait = useIkonis && ikonis.trait ? ikonis.trait : trait;
   // '+ Slayer Dice' on attack and damage rolls while the pool holds dice (K2); '+ Tide tokens' on action rolls, only
   // for a Know the Tide holder, never shown (not even disabled) to anyone else (U5).
@@ -253,7 +262,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
     }
     const diff = toInt(difficulty);
     const tide = tideCount > 0 ? ` · Know the Tide +${tideCount}` : "";
-    return `${TRAIT_LABEL[rollTrait]} ${signed(view.traits[rollTrait])} ${mode} roll${diff !== undefined ? ` vs ${diff}` : ""}${tide}`;
+    return `${TRAIT_LABEL[rollTrait]} ${signed(traits[rollTrait])} ${mode} roll${diff !== undefined ? ` vs ${diff}` : ""}${tide}`;
   }
 
   /** " · Slayer d6 ×2 (4, 6)": the spent Slayer Dice, the roll's last dice. */
@@ -308,6 +317,8 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
       disadvantage,
       help: mode === "reaction" ? 0 : help,
       attack: mode === "action" && (attack || useIkonis),
+      // dcm-6qrn (user answer 2026-10-31): an attack roll names its weapon, or none (a non-weapon attack).
+      ...(mode === "action" && attack && !useIkonis && weaponSlot !== null ? { weapon: weaponSlot } : {}),
       options: picked,
       ...(useIkonis ? { ikonis: true } : {}),
       ...(slayerCount > 0 ? { slayerDice: slayerCount } : {}),
@@ -414,7 +425,7 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
               <select className="dc-in" value={rollTrait} disabled={useIkonis && ikonis.trait !== null} onChange={(e) => setTrait(e.target.value as TraitId)}>
                 {TRAIT_IDS.map((t) => (
                   <option key={t} value={t}>
-                    {TRAIT_LABEL[t]} {signed(view.traits[t])}
+                    {TRAIT_LABEL[t]} {signed(traits[t])}
                   </option>
                 ))}
               </select>
@@ -475,6 +486,16 @@ export function DiceBox({ campaignId, character, hopeAndFear }: { campaignId: Id
               <Chip checked={attack} onChange={setAttack}>
                 Attack roll
               </Chip>
+              {attack && !useIkonis ? (
+                <label className="dc-field">
+                  <Label>Weapon</Label>
+                  <select className="dc-in" value={attackWeapon} onChange={(e) => setAttackWeapon(e.target.value as AttackWeapon)}>
+                    {view.primaryWeaponId ? <option value="primary">Primary weapon</option> : null}
+                    {view.secondaryWeaponId ? <option value="secondary">Secondary weapon</option> : null}
+                    <option value="none">No weapon</option>
+                  </select>
+                </label>
+              ) : null}
               {ikonis ? (
                 <Chip checked={ikonisAttack} onChange={setIkonisAttack}>
                   Ikonis attack ({ikonis.label}

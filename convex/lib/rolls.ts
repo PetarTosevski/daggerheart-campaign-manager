@@ -50,9 +50,11 @@ import { appError } from "../../src/lib/errors/app-error";
 import { cardEffect } from "../../src/lib/srd/card-effects/index";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getWeapon } from "../../src/lib/srd/index";
+import { lastingModsOf } from "../../src/lib/domain/adversary-effects/run";
+import { adversaryEffects } from "../../src/lib/srd/adversary-effects/index";
 import type { TraitId } from "../../src/lib/srd/types";
 import { FRAME_OF, TRAIT_LABEL } from "../../src/lib/frames/extras/common";
-import type { CharacterSheet } from "../../src/lib/validation/characters";
+import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
 import { motherboardState } from "../characterExtras";
 import { tickArmedCountdowns } from "../countdownRolls";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -64,7 +66,9 @@ import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear } from "./fear";
 import { applyRule } from "./mechanics";
 import { actorSheetAfter, cardActor, cardIdOfEffect, conditionMarkerOf, endConditionsOnRoll, endRollOf, featureIdOfEffect, tokenKeyOf, type HostRoll } from "./cardRunner";
-import { endOnSheet } from "./cardRows";
+import { effectSource, endGrantedBenefit, endOnSheet, endSharedGrants } from "./cardRows";
+import { riderStepsText } from "./adversaryFeatures";
+import { partyMembers } from "./adversaryHits";
 import { rollValidator } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
 
@@ -84,6 +88,11 @@ export const dualityFields = {
   help: v.number(),
   /** An attack roll: effect attack bonuses apply. */
   attack: v.boolean(),
+  /**
+   * Plan lanes-2 wave 9, E1.3b (dcm-6qrn, user answer 2026-10-31 Q21): the weapon an attack roll is made with; absent on an
+   * attack = no weapon (a non-weapon attack). Weapon-attack ends (Menacing Reach, HF p.15) and `weaponAttack` filters read it.
+   */
+  weapon: v.optional(v.union(v.literal("primary"), v.literal("secondary"))),
   /** Chosen `rollOptions` keys (auto options apply anyway). */
   options: v.array(v.string()),
   /** An Ikonis attack (Motherboard): its trait, Converge/Target bonus and Override's advantage apply. */
@@ -139,6 +148,7 @@ export type DualityArgs = {
   disadvantage: number;
   help: number;
   attack: boolean;
+  weapon?: "primary" | "secondary";
   options: string[];
   ikonis?: boolean;
   slayerDice?: number;
@@ -235,8 +245,11 @@ export function liveMods(sheet: CharacterSheet, scope: Pick<FeatureScope, "hopeA
   return out;
 }
 
-/** Whether a roll filter covers a plain Duality roll (its kind, trait and whether it is an attack). */
-export function filterCoversRoll(on: RollFilter, roll: { kind: "action" | "reaction"; trait: TraitId; attack: boolean }): boolean {
+/**
+ * Whether a roll filter covers a plain Duality roll (its kind, trait and whether it is an attack). E1.3b (dcm-6qrn): a
+ * `weaponAttack` needs the weapon the player named; an attack with no weapon is an `attack` only.
+ */
+export function filterCoversRoll(on: RollFilter, roll: { kind: "action" | "reaction"; trait: TraitId; attack: boolean; weapon?: "primary" | "secondary" }): boolean {
   switch (on) {
     case "any":
       return true;
@@ -245,8 +258,9 @@ export function filterCoversRoll(on: RollFilter, roll: { kind: "action" | "react
     case "reaction":
       return roll.kind === "reaction";
     case "attack":
-    case "weaponAttack":
       return roll.attack;
+    case "weaponAttack":
+      return roll.attack && roll.weapon !== undefined;
     case "spellcast":
     case "damage":
       return false;
@@ -351,25 +365,83 @@ export function plainRollAutos(sheet: CharacterSheet, args: Pick<DualityArgs, "k
  * as, when its roll filter covers the roll (Patron's Mantle, HF p.14: "advantage on action rolls to intimidate a target").
  * A mod without a situation is not counted here (the passive features already reach the roll another way).
  */
-export function situationalAdvantage(sheet: CharacterSheet, args: Pick<DualityArgs, "kind" | "trait" | "attack" | "situations">, scope: Pick<FeatureScope, "hopeAndFear">): { advantage: number; labels: string[] } {
+export function situationalAdvantage(sheet: CharacterSheet, args: Pick<DualityArgs, "kind" | "trait" | "attack" | "weapon" | "situations">, scope: Pick<FeatureScope, "hopeAndFear">): { advantage: number; labels: string[]; effectIds: string[] } {
   const marked = args.situations ?? [];
   if (marked.length > MAX_SITUATIONS) throw new DiceRuleError("Too many situations.");
-  if (marked.length === 0) return { advantage: 0, labels: [] };
+  if (marked.length === 0) return { advantage: 0, labels: [], effectIds: [] };
   let advantage = 0;
   const labels: string[] = [];
-  for (const { mod } of liveMods(sheet, scope)) {
+  // E1.3b (dcm-79v1): the sheet effects whose advantage this roll used (a granted benefit ends once used).
+  const effectIds: string[] = [];
+  for (const { mod, effectId } of liveMods(sheet, scope)) {
     if (mod.kind !== "advantage" || mod.situation === undefined || !marked.includes(mod.situation)) continue;
     if (!filterCoversRoll(mod.on, args)) continue;
     advantage += 1;
     labels.push(`advantage: ${mod.situation}`);
+    if (effectId !== undefined) effectIds.push(effectId);
   }
-  return { advantage, labels };
+  return { advantage, labels, effectIds };
+}
+
+const ADV_SHEET_EFFECT = /^card:([^/:]+)\/(.+):\d+$/;
+
+/** The steps of the entry a sheet effect came from: an adversary feature (`card:<adversaryId>/<feature>:n`) or a card / PC feature. */
+function sheetEffectSteps(effect: Effect): { steps: readonly unknown[]; label: string } | null {
+  const label = effect.text.split("; ")[0] ?? "";
+  const adv = ADV_SHEET_EFFECT.exec(effect.id);
+  if (adv) return { steps: (adversaryEffects(adv[1]!).find((e) => e.feature === adv[2]!)?.uses ?? []).map((u) => u.steps), label };
+  const src = effectSource(effect);
+  if (src === null) return null;
+  const entry = cardEffect(src.sourceId) ?? featureEffect(src.sourceId);
+  return entry === undefined ? null : { steps: entry.uses.map((u) => u.steps), label: src.label };
+}
+
+/**
+ * Plan lanes-2 wave 9, E1.3b (dcm-mm0f / dcm-kti, PC-roll half): the mods of what a PC carries that act on their own rolls,
+ * read back from the entry that gave it (the sheet effect stores only its text): Poisoned's d6 before each action roll
+ * (CB p.211), Envelop's Stress, Ignite's 1d4 (CB p.215-216), Shadow Shackles' Hope (CB p.222) as `bearerRider`s;
+ * Taunted / Sandstorm / Light and Shadow as `disadvantage`.
+ */
+export function sheetBearerMods(sheet: Pick<CharacterSheet, "effects">): { label: string; mod: Mod }[] {
+  const out: { label: string; mod: Mod }[] = [];
+  for (const e of sheet.effects ?? []) {
+    const found = sheetEffectSteps(e);
+    if (found === null) continue;
+    for (const mod of lastingModsOf(found.steps, found.label)) if (mod.kind === "bearerRider" || mod.kind === "disadvantage") out.push({ label: found.label, mod });
+  }
+  return out;
+}
+
+/**
+ * E1.3b (dcm-mm0f): what the bearer's mods do to this roll. A `disadvantage` mod covering the roll with nothing the server
+ * can't see (`beyond`, `unlessTarget`, `situation` are left out here: the map attack reads `beyond`) gives one
+ * disadvantage die each; a `bearerRider` on `actionRoll`, `acts` (an action roll is an action) or `attack` is named in the
+ * roll's line as a reminder of its steps (the steps are not run yet: follow-up).
+ */
+export function bearerRollMods(sheet: Pick<CharacterSheet, "effects">, args: Pick<DualityArgs, "kind" | "trait" | "attack" | "weapon">): { disadvantage: number; labels: string[]; reminders: string[] } {
+  let disadvantage = 0;
+  const labels: string[] = [];
+  const reminders: string[] = [];
+  for (const { label, mod } of sheetBearerMods(sheet)) {
+    if (mod.kind === "disadvantage") {
+      if (mod.beyond !== undefined || mod.unlessTarget !== undefined || mod.situation !== undefined) continue;
+      if (!filterCoversRoll(mod.on, args)) continue;
+      disadvantage += 1;
+      labels.push(`disadvantage: ${label}`);
+    } else if (mod.kind === "bearerRider") {
+      const on = mod.rider.on;
+      const fires = (on === "actionRoll" && args.kind === "action") || (on === "acts" && args.kind === "action") || (on === "attack" && args.attack);
+      if (fires) reminders.push(`${label}: ${riderStepsText(mod.rider.steps)}`);
+    }
+  }
+  return { disadvantage, labels, reminders };
 }
 
 /** Pays a Duality roll's costs (Experiences, roll options) and builds the resolver's input. */
 export function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: FeatureScope, ikonis: IkonisWeapon | null): { paid: CharacterSheet; input: DualityInput; extras: string[] } {
   if (args.options.length > MAX_OPTIONS) throw new DiceRuleError("Too many options.");
   const situational = situationalAdvantage(sheet, args, scope);
+  const bearer = bearerRollMods(sheet, args);
   assertTypedModifier(args.modifier);
   // DA19 (B1, dcm-bxp.99.19.19): the passive features' trait bonuses (a Beastform's statistics, CB p.30) on top of effects.
   const live = withPassiveTraits(withEffects(sheet), scope);
@@ -385,13 +457,13 @@ export function prepareDuality(sheet: CharacterSheet, args: DualityArgs, scope: 
       modifier: args.modifier + exp.value + opts.modifier + spent.tide + (attack ? live.attackBonus : 0) + (ikonis?.attack ?? 0),
       ...(args.difficulty !== undefined ? { difficulty: args.difficulty } : {}),
       advantage: args.advantage + opts.advantage + (ikonis?.advantage ? 1 : 0) + situational.advantage,
-      disadvantage: args.disadvantage,
+      disadvantage: args.disadvantage + bearer.disadvantage,
       help: args.help,
       extraDice: [...opts.extraDice, ...opts.namedDice],
       // Slayer Dice come last, already rolled by the server rng (a manual roll types in only its own dice).
       fixedDice: [...opts.fixedDice, ...spent.slayer],
     },
-    extras: [...(ikonis ? [ikonis.label, ...ikonis.augments] : []), ...exp.names, ...opts.labels, ...spent.labels, ...situational.labels],
+    extras: [...(ikonis ? [ikonis.label, ...ikonis.augments] : []), ...exp.names, ...opts.labels, ...spent.labels, ...situational.labels, ...bearer.labels, ...bearer.reminders],
   };
 }
 
@@ -492,13 +564,39 @@ export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: Dualit
  * on it (`endConditionsOnRoll`), then every other effect whose entry ends on the roll (`endOnSheet`). `labels` name what
  * ended ("X ends") for the roll's summary. A damage or free roll ends nothing.
  */
-export function rollEndsOnSheet(sheet: CharacterSheet, record: RollRecord, extra: Omit<EndRoll, "kind" | "success" | "duality">): { sheet: CharacterSheet; labels: string[] } {
+export function rollEndsOnSheet(sheet: CharacterSheet, record: RollRecord, extra: Omit<EndRoll, "kind" | "success" | "duality">): { sheet: CharacterSheet; labels: string[]; ended: Effect[] } {
   const base = endRollOf(record, extra.attack);
-  if (base === null) return { sheet, labels: [] };
+  if (base === null) return { sheet, labels: [], ended: [] };
   const markers = endConditionsOnRoll(sheet, record, extra.attack);
   const own = endOnSheet(markers.sheet, { kind: "roll", roll: { ...base, ...extra } }, { only: (e) => conditionMarkerOf(e) === null });
   const labels = [...markers.ended.map((e) => `${e.condition} ends`), ...own.ended.map((e) => `${e.text.split("; ")[0] ?? e.source} ends`)];
-  return { sheet: own.sheet, labels };
+  return { sheet: own.sheet, labels, ended: own.ended };
+}
+
+/**
+ * Plan lanes-2 wave 9, E1.3b (dcm-79v1, roll half): the benefits a roll used end where their entry says so. Each effect
+ * whose advantage the roll took (`effectIds`) ends on `benefitGranted` (Forest Sprites, CB p.339: "A sprite vanishes after
+ * granting a benefit"; `endGrantedBenefit`); then every other party sheet's copy of a shared grant that ended goes too
+ * (Bird's-Eye View, CB p.33: "The first time a character makes a roll to act on this information, they gain advantage";
+ * `endSharedGrants`). `ended`: what already ended on the roller's sheet from the roll itself.
+ */
+export function grantEndsOnRoll<K>(
+  sheet: CharacterSheet,
+  effectIds: readonly string[],
+  ended: readonly Effect[],
+  party: readonly { key: K; sheet: CharacterSheet }[],
+): { sheet: CharacterSheet; labels: string[]; party: { key: K; sheet: CharacterSheet; lines: string[] }[] } {
+  let next = sheet;
+  const labels: string[] = [];
+  const all: Effect[] = [...ended];
+  for (const id of new Set(effectIds)) {
+    const out = endGrantedBenefit(next, id);
+    next = out.sheet;
+    all.push(...out.ended);
+    labels.push(...out.ended.map((e) => `${e.text.split("; ")[0] ?? e.source} ends`));
+  }
+  const shared = endSharedGrants(all, party).map((p) => ({ key: p.key, sheet: p.sheet, lines: p.lines }));
+  return { sheet: next, labels, party: shared };
 }
 
 /** Rolls (or reads typed-in dice), applies Hope, Stress and Fear, saves and logs. */
@@ -510,9 +608,15 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   const autos = plainRollAutos(resolved.next, args, roll, scope, (await campaignFearState(ctx, campaign._id)).fear, rollDie);
   // Plan lanes-2, E1 (dcm-wn7): the roller's effects and sourced conditions that end on this roll (Spectral Mist, HF p.181:
   // "until you make an action roll"; Reliable Backup, CB p.43: "a Presence Roll"; duration nextRoll), in the same row.
-  const ends = rollEndsOnSheet(autos.sheet, roll, { trait, ...(args.attack ? { attack: "other" as const } : {}) });
-  const next = ends.sheet;
-  const extras = [...resolved.extras, ...autos.names, ...ends.labels];
+  // E1.3b (dcm-6qrn): an attack roll with a named weapon is a weapon attack with that weapon; without one, "other".
+  const attackEnd = args.attack ? (args.weapon !== undefined ? { attack: "weapon" as const, weapon: args.weapon } : { attack: "other" as const }) : {};
+  const ends = rollEndsOnSheet(autos.sheet, roll, { trait, ...attackEnd });
+  // E1.3b (dcm-79v1): a granted benefit the roll used ends; a shared grant's copies on the other sheets with it.
+  const usedGrants = rules(() => situationalAdvantage(sheet, args, scope)).effectIds;
+  const others = usedGrants.length > 0 || ends.ended.length > 0 ? (await partyMembers(ctx, campaign._id)).filter((m) => m.character._id !== character._id) : [];
+  const grants = grantEndsOnRoll(ends.sheet, usedGrants, ends.ended, others.map((m) => ({ key: m, sheet: m.sheet })));
+  const next = grants.sheet;
+  const extras = [...resolved.extras, ...autos.names, ...ends.labels, ...grants.labels];
   const { gained: rolledFear } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const gained = rolledFear + (autos.gmFearDelta > 0 ? (await gainFear(ctx, campaign._id, autos.gmFearDelta)).gained : 0);
   const sheetChanged = changed(sheet, next);
@@ -531,6 +635,11 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
     ...(args.kind === "action" && WITH_HOPE.includes(roll.outcome) ? { hopeGained: rollGaveHope(paid, roll.outcome, args.kind) } : {}),
     undoable: true,
   });
+  // E1.3b (dcm-79v1): the other sheets whose shared grant ended, each a row with its sheet before (undo puts it back).
+  for (const p of grants.party) {
+    await saveSheet(ctx, p.key.character._id, p.sheet);
+    await logAction(ctx, { campaignId: campaign._id, characterId: p.key.character._id, actorId: ctx.user._id, kind: "feature", visibility: "public", summary: p.lines.join("; ").slice(0, 1000), before: p.key.sheet, undoable: true });
+  }
   // Armed countdowns tick right after the action roll resolves (countdowns-advanced K1, CB p.162); never a reaction roll (CB p.99).
   if (countsAsActionRoll(roll, { logKind: "roll", undone: false })) {
     await tickArmedCountdowns(ctx, { campaignId: campaign._id, entryId, outcome: roll.outcome, actorId: ctx.user._id });

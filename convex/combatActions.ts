@@ -74,6 +74,8 @@ function rollOf(args: AttackRoll): AttackRoll {
     ...(args.slayerDice !== undefined ? { slayerDice: args.slayerDice } : {}),
     ...(args.tideTokens !== undefined ? { tideTokens: args.tideTokens } : {}),
     ...(args.riseToTheChallenge !== undefined ? { riseToTheChallenge: args.riseToTheChallenge } : {}),
+    // E1.3b (dcm-xbtw): the "Use as Spirit Weapon" box.
+    ...(args.spiritWeapon !== undefined ? { spiritWeapon: args.spiritWeapon } : {}),
   };
 }
 
@@ -104,8 +106,8 @@ export const attack = keyedCampaignMutation({
       const loaded = await attacker(ctx, characterId);
       const scene = await attackScene(ctx, ctx.campaign, loaded.character, mapId);
       const weapon = equippedWeapon(loaded.sheet, slot);
-      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds);
       const roll = rollOf(options);
+      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, targetTokenIds, roll);
       const picked = pickRiders(loaded.sheet, ctx.campaign, hostOf(weapon, slot, roll.trait), riders);
       const outOfRange = targets.filter((t) => !t.check.inRange);
       // DA2 (combat-actions Q1, user 2026-10-30): a rider's extra target out of its range waits for the GM too.
@@ -198,7 +200,7 @@ export const afterRoll = keyedCampaignMutation({
       const answer = choice.kind === "use" ? { ...choice, useId: choice.useId ?? p.options.find((o) => o.featureId === choice.featureId)!.useId } : choice;
       const scene = await attackScene(ctx, ctx.campaign, loaded.character, row.mapId);
       const weapon = equippedWeapon(loaded.sheet, p.action.slot);
-      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, p.action.targetTokenIds);
+      const targets = await checkTargets(ctx, ctx.campaign, scene, weapon, p.action.targetTokenIds, rollFromStored(p.action.roll));
       const result = await resolveAttack(ctx, {
         loaded,
         actorId: row.createdBy,

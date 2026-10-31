@@ -26,6 +26,7 @@ import { BAND_LABEL, type RangeBand } from "../targets";
 import { seenTargets, useActor, useCombatTargets, type WeaponSlot } from "../targets/state";
 import { NO_ROLL_OPTIONS, rollProblem, RollOptions, signed, Stepper, type Roller, type RollValues } from "../roll-controls";
 import { usePanelMemory } from "./memory";
+import { extraTargets, offersSpiritWeapon, picksTrait, sheetMods } from "./mods";
 import { AfterRollPrompt, riderProblem, RiderPickPrompt, RiderToggles, ridersToSend, riseToSend, type HeldRoll, type RiderPicks } from "./riders";
 
 /**
@@ -168,6 +169,8 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
   const [rollValues, setRollValues] = useState<RollValues>(NO_ROLL_OPTIONS);
   const { experienceIds, edge, help } = rollValues;
   const [trait, setTrait] = useState<TraitId>("strength");
+  // dcm-xbtw (user answer 2026-10-31): "Use as Spirit Weapon", per attack; cleared after each attack.
+  const [spiritWeapon, setSpiritWeapon] = useState(false);
   // Kept above the desktop / phone layout switch (user answer 2026-10-22), per character.
   const [last, setLast] = usePanelMemory<Last | null>(`attack:${characterId}`, null);
   const [pickFor, setPickFor] = useState<Id<"combatRequests"> | null>(null);
@@ -187,8 +190,15 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
   const traits = derivedTraits(withEffects(sheet));
   const weapons = equippedWeapons(sheet);
   const chosen = weapons.find((w) => w.slot === slot) ?? weapons[0];
-  // A plain weapon attack targets one enemy (user answer 2026-10-22, CB p.96): the latest pick.
-  const picked = seenTargets(targetTokenIds, enemies).slice(-1);
+  // E1.3b (dcm-jkhp, dcm-xbtw): Versatile Fighter's trait pick, Parallela's extra target, the Spirit Weapon box.
+  const mods = sheetMods(sheet);
+  const traitPick = chosen !== undefined && (chosen.weapon.trait === "choice" || picksTrait(mods, chosen.slot));
+  const spiritOffered = chosen !== undefined && offersSpiritWeapon(sheet, chosen.weapon);
+  const spirit = spiritOffered && spiritWeapon;
+  // A plain weapon attack targets one enemy (user answer 2026-10-22, CB p.96): the latest picks, one more per extra
+  // target (Parallela, CB p.332; a ticked Spirit Weapon's extra adversary for a Stress, CB p.44).
+  const most = 1 + extraTargets(mods) + (spirit ? 1 : 0);
+  const picked = seenTargets(targetTokenIds, enemies).slice(-most);
   const names = new Map<string, string>([...enemies, ...allies].map((t) => [t._id, t.name]));
   const roller: Roller = { experiences: sheet.experiences, hope: sheet.hope };
   const notEnoughHope = rollProblem(roller, rollValues);
@@ -206,7 +216,8 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
       mapId: map._id,
       targetTokenIds: picked,
       slot: chosen.slot,
-      ...(chosen.weapon.trait === "choice" ? { trait } : {}),
+      ...(traitPick ? { trait } : {}),
+      ...(spirit ? { spiritWeapon: true } : {}),
       modifier: 0,
       experienceIds: [...experienceIds],
       advantage: Math.max(0, edge),
@@ -219,6 +230,7 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
     if (!out) return;
     setRollValues((v) => ({ ...v, experienceIds: [] }));
     setRiderPicks({});
+    setSpiritWeapon(false);
     if (out.status === "resolved") {
       setLast({ kind: "resolved", result: out, names, weaponName });
       if (out.minionOffer) setPickFor(out.minionOffer.requestId);
@@ -247,7 +259,7 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
           ))}
         </div>
       )}
-      {chosen?.weapon.trait === "choice" ? (
+      {traitPick ? (
         <label className="cma-field">
           <span className="cm-lbl">Trait</span>
           <select className="cm-in cma-select" value={trait} onChange={(e) => setTrait(e.target.value as TraitId)}>
@@ -259,12 +271,19 @@ function AttackForm({ campaignId, map, role, characterId, enemies, allies }: Act
           </select>
         </label>
       ) : null}
+      {spiritOffered ? (
+        <label className="cma-field cma-check">
+          <input type="checkbox" checked={spiritWeapon} onChange={(e) => setSpiritWeapon(e.target.checked)} data-testid="combat-attack-spirit-weapon" />
+          <span>Use as Spirit Weapon (reach Close; mark a Stress for one more target)</span>
+        </label>
+      ) : null}
+      {most > 1 ? <p className="cm-muted cma-small cma-note">Up to {most} targets with this attack.</p> : null}
       <RollOptions roller={roller} values={rollValues} onChange={(patch) => setRollValues((v) => ({ ...v, ...patch }))} />
       <RiderToggles options={riders} picks={riderPicks} onChange={setRiderPicks} enemies={others} allies={allies} />
       {notEnoughHope ? <p className="cma-error">{notEnoughHope}</p> : null}
       {riderMissing ? <p className="cma-error">{riderMissing}</p> : null}
       <button type="button" className="cm-go cma-go" disabled={!canAttack} aria-busy={attack.pending} onClick={() => void fire()}>
-        {attack.pending ? "Rolling…" : picked.length === 0 ? "Pick a target to attack" : `⚔ Attack ${names.get(picked[0]!) ?? "target"}${chosen ? ` with ${chosen.weapon.name}` : ""}`}
+        {attack.pending ? "Rolling…" : picked.length === 0 ? "Pick a target to attack" : `⚔ Attack ${picked.map((id) => names.get(id) ?? "target").join(", ")}${chosen ? ` with ${chosen.weapon.name}` : ""}`}
       </button>
       <p aria-live="polite" className="cma-error">
         {attack.error}
