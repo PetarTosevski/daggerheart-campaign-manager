@@ -86,3 +86,9 @@ The user went to bed and asked: take a default on every open question; ask on re
 - E6 r1 Q5 Reliable Backup: the player confirms "in conversation" on a Presence Roll (change -> bead).
 - E6 r1 Q6 Marked for Death names its assassin; only that PC's effect ends (change -> bead).
 - MG2 The Vanishing Act migration writes a feed line "Cloaked ends (Vanishing Act)" when it removes a stale Cloaked (change -> bead).
+
+## Answers 2026-10-31 (wave 9 new questions, round A)
+- E1.3a Q1 Cloaked: attacks end Cloaked automatically; any other action roll by a Cloaked rogue that targets an enemy pops a GM prompt "Does Cloaked end?" (change -> bead).
+- E1.3a Q2 Unconscious toggled by hand drops Cloaked (kept).
+- E1.3b Q1 Multi-target attack: compare the one roll per target with that target's own advantage / disadvantage (change -> bead).
+- E1.3b Q2 Lead by Example: any PC except the one who used it can take the benefit (change -> bead).
