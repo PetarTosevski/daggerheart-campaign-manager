@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { resolveNumber, type MapCreature, type NumberEnv } from "@/lib/domain/combat-actions/numbers";
 import {
+  EXPIRING_UNTIL,
   exhaustKey,
+  featureLimitUntil,
   keyAvailability,
   limitPeriod,
+  limitUntil,
+  recordUse,
   recordUsedOn,
   requirementMet,
   stateCheckMet,
@@ -16,7 +20,7 @@ import {
   type RequirementState,
   type StateFacts,
 } from "@/lib/domain/card-effects/availability";
-import type { CardEffect, CardUse, StateCheck } from "@/lib/domain/card-effects/types";
+import type { CardEffect, CardUse, Limit, StateCheck } from "@/lib/domain/card-effects/types";
 import { gainSlots, loseSlots, slotsFromMods } from "@/lib/domain/characters/slots";
 import { passiveMods } from "@/lib/domain/feature-effects/passives";
 import { queueRng } from "@/lib/domain/dice";
@@ -175,6 +179,29 @@ describe("limits", () => {
     expect(limitLabel({ per: "session", period: "week", consumedOn: "failure" })).toBe("Once per week on a failure");
     expect(limitLabel({ per: "scene", period: "gmTurn" })).toBe("Once per GM turn");
     expect(limitLabel({ per: "session", period: "day" })).toBe("Once per day");
+  });
+
+  it("round 2: limitUntil / featureLimitUntil take the Limit; a period expire does not end yet keeps per (dcm-55k)", () => {
+    // Resurrection (CB p.341: "you can't cast Resurrection again for a week"): nothing ends `week` entries yet.
+    const resurrection: Limit = { per: "session", period: "week", consumedOn: "failure" };
+    expect(limitUntil(resurrection)).toBe("session");
+    expect(featureLimitUntil(resurrection)).toBe("session");
+    expect(recordUse([], "card:resurrection", resurrection)).toEqual([{ key: "card:resurrection", until: "session" }]);
+    // Summon Tormentors (CB p.237: "Once per day") and Ravenous (HF p.97: "Once per GM turn") likewise.
+    expect(featureLimitUntil({ per: "session", period: "day" })).toBe("session");
+    expect(featureLimitUntil({ per: "scene", period: "gmTurn" })).toBe("scene");
+    expect(limitUntil({ per: "scene", period: "gmTurn" })).toBe("session");
+    // Without a period, the Limit and its `per` store the same; cards keep scene as session.
+    expect(limitUntil({ per: "longRest" })).toBe("longRest");
+    expect(limitUntil({ per: "scene" })).toBe(limitUntil("scene"));
+    expect(featureLimitUntil({ per: "scene" })).toBe("scene");
+    expect(EXPIRING_UNTIL).toEqual(["rest", "longRest", "session", "scene"]);
+    // Every stored period has a label and an order (an entry already stored with `week` still reads right).
+    expect(keyAvailability({ featureUses: [{ key: "k", until: "rest" }, { key: "k", until: "week" }] }, "k")).toEqual({
+      state: "exhausted",
+      until: "week",
+      label: "Back in a week",
+    });
   });
 
   it("exhaustKey: Rune Ward's Ward Die 8 spends the ward until the next rest (CB p.328)", () => {

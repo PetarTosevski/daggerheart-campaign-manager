@@ -52,30 +52,45 @@ export function featureUseKey(cardId: string, useId?: string, targetId?: string)
 }
 
 /**
- * The `until` a limit is stored with. The sheet's `featureUses` knows rest, longRest and session; a "once per scene"
- * limit is stored as `session` (the GM's End scene does not clear feature uses; see the task doc's QUESTIONS).
+ * Plan lanes, E5 round 2 (dcm-55k): the `featureUses` periods that `expire` (characters/expiry.ts) ends today. The
+ * validator stores `gmTurn`, `day` and `week` since the widen, but nothing ends them yet, so a limit naming one of those
+ * periods keeps its `per` fallback here: a stored "week" would never come back on its own. A period joins this list in
+ * the same change that makes `expire` end it (follow-up for E6; QUESTION 1 in TASK-LN-E5.md for days and weeks).
  */
-export function limitUntil(per: Limit["per"]): FeatureUse["until"] {
-  return per === "scene" ? "session" : per;
+export const EXPIRING_UNTIL: readonly FeatureUse["until"][] = ["rest", "longRest", "session", "scene"];
+
+/** The period a limit (or a bare `per`, the callers' older form) is stored for: `limitPeriod` when it expires, else `per`. */
+function storedPeriod(limit: Limit | Limit["per"]): FeatureUse["until"] {
+  if (typeof limit === "string") return limit;
+  const period = limitPeriod(limit);
+  return EXPIRING_UNTIL.includes(period) ? period : limit.per;
 }
 
 /**
- * The `until` a feature's limit is stored with (SD1, Q3, Q7): the limit's own period, `scene` included ("once per
- * scene"; CB p.107: "a scene continues until the current narrative situation has played out").
+ * The `until` a card's limit is stored with: its period (`limitPeriod`) when `expire` ends it, else `per`. A "once per
+ * scene" limit is stored as `session` (cards keep `session` until their tables move over; see the task doc's
+ * QUESTIONS). Takes the `Limit` (E5 round 2) or, as before, its `per`.
  */
-export function featureLimitUntil(per: Limit["per"]): FeatureUse["until"] {
-  return per;
+export function limitUntil(limit: Limit | Limit["per"]): FeatureUse["until"] {
+  const until = storedPeriod(limit);
+  return until === "scene" ? "session" : until;
 }
 
 /**
- * The label of an exhausted card (CA5 Hand, CA7 sheet). Plan lanes, E5: the `Limit.period` values are labelled ahead of
- * the `featureUses` validator widen (TASK-LN-E5.md), so storing them then needs no change here.
+ * The `until` a feature's limit is stored with (SD1, Q3, Q7): the limit's own period when `expire` ends it, `scene`
+ * included ("once per scene"; CB p.107: "a scene continues until the current narrative situation has played out"),
+ * else `per`. Takes the `Limit` (E5 round 2) or, as before, its `per`.
  */
-export const RESET_LABEL: Record<FeatureUse["until"] | NonNullable<Limit["period"]>, string> = {
+export function featureLimitUntil(limit: Limit | Limit["per"]): FeatureUse["until"] {
+  return storedPeriod(limit);
+}
+
+/** The label of an exhausted card (CA5 Hand, CA7 sheet), for every period `featureUses` stores. */
+export const RESET_LABEL: Record<FeatureUse["until"], string> = {
   rest: "Back after a rest",
   longRest: "Back after a long rest",
   session: "Back next session",
-  // Plan sheet-drawer SD0 (Q7): the sheet's `featureUses` gained `scene`; nothing stores it until SD1 / SD8.
+  // Plan sheet-drawer SD0 (Q7): the sheet's `featureUses` gained `scene`.
   scene: "Back after the scene",
   gmTurn: "Back after the GM's turn",
   day: "Back tomorrow",
@@ -116,8 +131,7 @@ export function keyAvailability(sheet: { readonly featureUses?: readonly Feature
   const entries = (sheet.featureUses ?? []).filter((u) => u.key === key);
   const times = Math.max(1, limit?.times ?? 1);
   if (entries.length < times) return limit?.times ? { state: "ready", usesLeft: times - entries.length } : { state: "ready" };
-  // Plan lanes, E5: the `Limit.period` values take their place once `featureUses` can store them (TASK-LN-E5.md).
-  const order: (FeatureUse["until"] | NonNullable<Limit["period"]>)[] = ["gmTurn", "scene", "rest", "longRest", "session", "day", "week"];
+  const order: FeatureUse["until"][] = ["gmTurn", "scene", "rest", "longRest", "session", "day", "week"];
   const until = entries.map((e) => e.until).reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a));
   return { state: "exhausted", until, label: RESET_LABEL[until] };
 }
@@ -131,15 +145,15 @@ export function limitConsumed(limit: Limit, success: boolean): boolean {
 
 /** `featureUses` with one more use of `key` recorded under the limit's period. */
 export function recordUse(featureUses: readonly FeatureUse[], key: string, limit: Limit): FeatureUse[] {
-  return [...featureUses, { key, until: limitUntil(limit.per) }];
+  return [...featureUses, { key, until: limitUntil(limit) }];
 }
 
 /**
  * Plan lanes, E5 (dcm-aym, dcm-c5h): the period a limit really runs for: its `period` (a GM turn, a day, a week) when it
- * names one, else `per`. `featureUses` can't store `period` yet (its `until` validator knows rest, longRest, session and
- * scene), so `recordUse` still stores the `per` fallback; TASK-LN-E5.md names the validator widen.
+ * names one, else `per`. `featureUses` stores every one of them since the validator widen; `limitUntil` /
+ * `featureLimitUntil` store it once `expire` ends it (`EXPIRING_UNTIL`).
  */
-export function limitPeriod(limit: Limit): Limit["per"] | NonNullable<Limit["period"]> {
+export function limitPeriod(limit: Limit): FeatureUse["until"] {
   return limit.period ?? limit.per;
 }
 

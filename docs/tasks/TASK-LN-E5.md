@@ -93,3 +93,41 @@ of those got a follow-up bead (label `e5-followup`). No SRD entry changed (wave 
    last longer (until the target leaves play / for the campaign), which needs a new `until` value?
 3. **Gold as a number.** `gold` in handfuls counts a bag as 10 handfuls (CB p.104: "10 handfuls to 1 bag"); `unit: "bag"`
    counts whole bags only. Confirm when the steal-gold steps (dcm-0gh, E3) are built.
+
+## Round 2
+
+After round 1 of all eight engine lanes merged and the orchestrator widened `FEATURE_USE_UNTIL` and
+`instanceFeatureUseValidator.until` with `gmTurn`, `day` and `week` (dcm-55k, widen step).
+
+### What changed
+
+- `src/lib/domain/card-effects/availability.ts`
+  - `limitUntil` / `featureLimitUntil` take the whole `Limit` (or, as before, its `per`, so E3's and E8's callers
+    still compile) and store `limitPeriod(limit)` when `expire` ends that period, else `per`. `EXPIRING_UNTIL` lists
+    the periods `characters/expiry.ts` ends today (`rest`, `longRest`, `session`, `scene`). `gmTurn`, `day` and
+    `week` are left out on purpose: nothing ends them on a sheet yet, so a stored "week" would never come back
+    (Resurrection, CB p.341: "you can't cast Resurrection again for a week"). Behaviour today is unchanged; when E6
+    ends a period, adding it to `EXPIRING_UNTIL` switches every limit naming it over.
+  - `recordUse` passes the `Limit`. `RESET_LABEL` and `keyAvailability`'s order narrowed back to `FeatureUse["until"]`
+    (it now holds every period); `limitPeriod` returns `FeatureUse["until"]`.
+- `tests/unit/lane-e5-checks-limits-numbers.test.ts`: the round 2 limit cases (Resurrection, Summon Tormentors,
+  Ravenous, plain limits, a stored `week` entry's label).
+
+### Beads
+
+| Bead | State | Notes |
+|---|---|---|
+| dcm-rm9 tideTokens / moonPhase | done in E5's files (round 1) | `NumberEnv.tideTokens`, `StateFacts.moonPhase` resolve; left: run.ts copies tideTokens into `env()` (dcm-rs1z, E3) and featureRunner fills both (dcm-me3, E8) |
+| dcm-753y inArea for subject / target | done in E5's files (round 1) | `CreatureFacts.areas`, tested with Circle of Power; filling it: dcm-me3 (featureRunner), dcm-aeg (combatActions), dcm-gl9 (cardRunner) |
+| dcm-aym week / day | partly | `limitUntil` / `featureLimitUntil` take the `Limit`; storing the period waits for expiry (dcm-55k, E6) and QUESTION 1 |
+| all other E5 beads | unchanged since round 1 | evaluators done; the rest is in other lanes' files (round 1 table) |
+
+### Follow-ups
+
+- dcm-rs1z (new, E3, run.ts): pass the `Limit` to `untilOf` (`step.limit.per`, `use.limit.per` today) and copy the
+  widened `NumberEnv` fields (`tideTokens`, `classDice`, `creatures`, slots, `stats`) from the actor / context into
+  `env()`.
+- Comments on dcm-55k (E6: end `gmTurn` / `day` / `week` in `expire`, then add them to `EXPIRING_UNTIL`), dcm-me3,
+  dcm-gl9 and dcm-aeg (field names for moonPhase and subject / target areas).
+
+QUESTIONS 1 to 3 above are still open.
