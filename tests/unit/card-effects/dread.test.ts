@@ -356,7 +356,8 @@ describe("Spectral Mist (L5, HF p.180): 2 Hope, you and chosen allies incorporea
     expect(plan.actor.after.hope).toBe(0);
     const effects = ofKind(plan, "effect");
     expect(effects.map((e) => e.targetId)).toEqual(["pc", "mira"]);
-    expect(effects[0]).toMatchObject({ mods: [{ kind: "resistance", type: "physical", level: "immune" }], duration: "nextRoll" });
+    // Lanes-2 S1: the bearer's action roll ends it (E1's roll ends, dcm-wn7); else the scene.
+    expect(effects[0]).toMatchObject({ mods: [{ kind: "resistance", type: "physical", level: "immune" }], duration: "scene", endsOn: ["actionRoll"] });
   });
 });
 
@@ -449,11 +450,12 @@ describe("Dark Army (L8, HF p.181): Spellcast (14), once per long rest on a succ
     expect(fail.limit?.consumed).toBe(false);
   });
   it("dealing damage within Very Close: 1d8 per token spent is added to the damage roll", () => {
-    const plan = ok("dark-army", ctx([1, 2, 3], { useId: "strike", actor: actor({ cardTokens: 8 }), targets: [adv("a")], choices: { tokens: 3 }, situations: ["The target is within Very Close range"] }));
+    const plan = ok("dark-army", ctx([1, 2, 3], { useId: "strike", actor: actor({ cardTokens: 8 }), targets: [adv("a")], choices: { tokens: 3 } }));
     expect(plan.activation).toBe("rider");
     expect(folds(plan)).toEqual([{ kind: "modifyDamage", targetIds: ["a"], amount: 6 }]);
     expect(plan.actor.after.cardTokens).toBe(5);
-    expect(run(effectOf("dark-army"), ctx([], { useId: "strike", actor: actor({ cardTokens: 8 }), targets: [adv("a")] }))).toMatchObject({ ok: false, reason: "requirement" });
+    // Lanes-2 S1: the range is the trigger's (`within`), checked by the server against the damaged creature.
+    expect(effectOf("dark-army").uses.find((u) => u.id === "strike")!.activation).toEqual({ kind: "rider", trigger: { kind: "whenYouDealDamage", within: "veryClose" } });
   });
   it("taking damage: 1d8 per token spent reduces it; a rest clears the tokens", () => {
     const plan = ok("dark-army", ctx([4, 5], { useId: "guard", actor: actor({ cardTokens: 2 }), choices: { tokens: 2 }, trigger: { amount: 12, source: adv("ogre") } }));
@@ -537,7 +539,10 @@ describe("Avatar of Terror (L10, HF p.181)", () => {
     expect(ofKind(paid, "endEffect")).toEqual([]);
     const broke = ok("avatar-of-terror", ctx([], { useId: "upkeep", actor: actor({ hope: 0, activeCardEffects: ["avatar-of-terror"] }) }));
     expect(ofKind(broke, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "avatar-of-terror", own: true }]);
-    expect(prompts(broke, "manual")).toEqual([]);
+    // Lanes-2 S1 (dcm-ky8b): the reminder is back until the card paths apply endEffect (dcm-m48i); not when paid.
+    expect(prompts(broke, "manual")).toHaveLength(1);
+    expect(JSON.stringify(prompts(broke, "manual")[0])).toContain("remove the Avatar of Terror effect");
+    expect(prompts(paid, "manual")).toEqual([]);
     expect(ofKind(broke, "pay")[0]).toMatchObject({ paid: false });
   });
 });

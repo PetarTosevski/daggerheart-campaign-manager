@@ -406,7 +406,8 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
   // gain the following benefits: • Once per rest, when you have 0 Hope and the GM would gain a Fear, you can gain a Hope
   // instead. • When you make a successful attack, you can mark a Stress to add the result of your Fear Die to your
   // damage roll."
-  // The Fear Die's value is a dialog number (`fearDie`, 1-12) because no number source reads the host roll's dice.
+  // Lanes-2 S1 (dcm-vbzy (1)): the Fear Die is read from the attack's roll (`dualityDie fear`; the server passes the
+  // host dice to riders since E1 dcm-n0dv), no longer asked as a dialog number.
   {
     cardId: "midnight-touched",
     uses: [
@@ -429,9 +430,8 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
         name: "Midnight-Touched: add your Fear Die",
         activation: { kind: "rider", trigger: { kind: "whenYouAttack", result: "success" } },
         requires: [{ kind: "loadoutDomainCount", domain: "midnight", min: 4 }],
-        choices: [{ id: "fearDie", label: "Your Fear Die's result", min: 1, max: n(12) }],
         costs: [{ kind: "stress", amount: n(1) }],
-        steps: [{ kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "add", amount: { kind: "chosen", choice: "fearDie" } } }],
+        steps: [{ kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "add", amount: { kind: "dualityDie", die: "fear" } } }],
       },
     ],
   },

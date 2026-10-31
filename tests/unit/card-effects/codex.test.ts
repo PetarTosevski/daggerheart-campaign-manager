@@ -215,6 +215,12 @@ describe("Book of Tyfar (CB p.332)", () => {
     expect(prompts(plan("book-of-tyfar", "mysterious-mist", [8, 5]), "manual")).toHaveLength(1);
     expect(prompts(plan("book-of-tyfar", "mysterious-mist", [4, 5]), "manual")).toHaveLength(0);
   });
+
+  it("Mysterious Mist (user answer, dcm-gzmo): a point within Very Close, Very Close radius, blocks sight; the reminder stays", () => {
+    const p = plan("book-of-tyfar", "mysterious-mist", [8, 5]);
+    expect(ofKind(p, "area")[0]!.area).toMatchObject({ label: "Mysterious Mist", centre: "point", radius: "veryClose", placeWithin: "veryClose", side: "all", blocksSight: true, duration: "temporary" });
+    expect(ofKind(plan("book-of-tyfar", "mysterious-mist", [4, 5]), "area")).toEqual([]);
+  });
 });
 
 describe("Book of Sitil (CB p.332)", () => {
@@ -434,6 +440,12 @@ describe("Banish (CB p.333)", () => {
     expect(ofKind(p, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Banished" }, duration: "manual" });
     expect(p.actor.featureUses).toEqual([{ key: banishKey, until: "rest" }]);
     expect(prompts(p, "manual")).toHaveLength(1);
+  });
+  it("Lanes-2 S1 (dcm-b77): the condition records the Difficulty and carries the return save on PC Fear rolls", () => {
+    const p = plan("banish", "main", [9, 2, 4, 11, 7, 5], { targets: [adv("a")], optionals: ["banish"] });
+    const banished = ofKind(p, "condition")[0]!;
+    expect(banished).toMatchObject({ recorded: 11 });
+    expect(banished.mods).toMatchObject([{ kind: "bearerRider", rider: { on: "pcRollsWithFear" } }]);
   });
   it("a successful reaction roll marks a Stress instead", () => {
     const p = plan("banish", "main", [9, 2, 4, 11, 7, 15], { targets: [adv("a")], optionals: ["banish"] });

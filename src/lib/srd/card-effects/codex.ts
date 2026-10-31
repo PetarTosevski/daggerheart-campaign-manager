@@ -176,12 +176,23 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         activation: { kind: "action" },
         roll: vsFixed(13),
         targets: { side: "point", range: "veryClose", count: { kind: "one" } },
+        // User answer 2026-10-31 (dcm-gzmo): placed at a point within Very Close; an area of Very Close radius that blocks
+        // line of sight into and through it (like Dark Cloud).
         steps: [
+          {
+            kind: "area",
+            to: "self",
+            when: ["success"],
+            area: { label: "Mysterious Mist", centre: "point", radius: "veryClose", placeWithin: "veryClose", side: "all", blocksSight: true, duration: "temporary" },
+            note: "The fog heavily obscures this area and everything in it: no one sees into or through it.",
+          },
+          // Lanes-2 S1 (dcm-gzmo): the table's reminder until the card paths place their areas (dcm-9nlr / dcm-m48i);
+          // remove it when that merges.
           {
             kind: "manual",
             to: "self",
             when: ["success"],
-            text: "A temporary thick fog gathers in a stationary area within Very Close range; it heavily obscures the area and everything in it.",
+            text: "A temporary thick fog gathers at a point within Very Close range, filling a Very Close area around it; no one can see into or through it (draw the area on the map).",
           },
         ],
       },
@@ -640,12 +651,34 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
                 label: "Banish them from this realm (once per rest)",
                 limit: { per: "rest" },
                 steps: [
+                  // Lanes-2 S1 (dcm-b77): the cast's highest d20 is kept with the condition (`record`); each time a PC
+                  // rolls with Fear the bearer saves against it, 1 lower each time (`falling` from `recorded`), and a
+                  // success clears Banished. The server doesn't run bearer riders on instances yet (dcm-f70y, E7), so the
+                  // manual step stays; remove it when that merges.
                   {
                     kind: "condition",
                     to: "targets",
                     condition: { kind: "tag", tag: "Banished" },
                     duration: "manual",
                     endsWhen: "they succeed on the reaction roll made each time the PCs roll with Fear (the Difficulty drops by 1 each time)",
+                    record: { kind: "lastRoll" },
+                    mods: [
+                      {
+                        kind: "bearerRider",
+                        rider: {
+                          on: "pcRollsWithFear",
+                          steps: [
+                            {
+                              kind: "save",
+                              to: "self",
+                              difficulty: { kind: "falling", start: { kind: "recorded" }, step: 1 },
+                              onFail: [],
+                              onSuccess: [{ kind: "clearCondition", to: "self", condition: { kind: "tag", tag: "Banished" } }],
+                            },
+                          ],
+                        },
+                      },
+                    ],
                   },
                   {
                     kind: "manual",

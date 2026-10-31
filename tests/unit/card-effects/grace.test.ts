@@ -267,7 +267,8 @@ describe("Invisibility (CB p.334)", () => {
   it("each action of the Invisible creature spends a token; the last one ends the effect (tokensGone, dcm-7n7)", () => {
     const plan = ok(run(invis, ctx([], { useId: "spend-token", actor: actor({ cardTokens: 1 }) })));
     expect(plan.actor.after.cardTokens).toBe(0);
-    expect(manualTexts(plan)).toEqual([]);
+    // Lanes-2 S1 (dcm-ky8b): the reminder is back until the card paths end tokensGone effects (dcm-m48i).
+    expect(manualTexts(plan)).toEqual(["If that was the last Invisibility token: after this action is resolved, the effect ends (remove Invisible)."]);
     expect(run(invis, ctx([], { useId: "spend-token" }))).toMatchObject({ ok: false, reason: "cost" });
     const cast = ok(run(invis, ctx([4, 3], { targets: [ally("mira")] })));
     expect(ofKind(cast, "effect")[0]).toMatchObject({ label: "Invisible", endsOn: ["tokensGone"] });
@@ -314,7 +315,12 @@ describe("Words of Discord (CB p.335)", () => {
     const plan = ok(run(words, ctx([6, 4], { targets: [adv("a")] })));
     expect(plan.roll?.record.total).toBe(13);
     expect(after(plan, "a")).toMatchObject({ stress: 1 });
+    // Lanes-2 S1 (dcm-f70y): the forced attack is data; the manual step stays until the server runs it.
+    expect(ofKind(plan, "forcedAttack")).toEqual([{ kind: "forcedAttack", attackerIds: ["a"], against: { side: "enemy", range: "unlimited", count: { kind: "one" } }, againstIds: [] }]);
     expect(manualTexts(plan)).toHaveLength(1);
+    const victim = ok(run(words, ctx([6, 4], { targets: [adv("a")], picked: [adv("b")] })));
+    expect(ofKind(victim, "forcedAttack")[0]!.againstIds).toEqual(["b"]);
+    expect(ofKind(ok(run(words, ctx([2, 3], { targets: [adv("a")] }))), "forcedAttack")).toEqual([]);
   });
 
   it("the next cast on the same target takes a -5 penalty", () => {
@@ -459,6 +465,15 @@ describe("Encore (CB p.335)", () => {
     expect(plan.hits).toEqual([{ id: "a", hit: true }]);
     expect(ofKind(plan, "damage")[0]!.result).toMatchObject({ incoming: 9, severity: "major", hpMarked: 2 });
     expect(ofKind(plan, "toVault")).toEqual([]);
+  });
+
+  it("the damage takes the trigger's type (sameAsTrigger typed weapon, dcm-m5fy); the reminder stays until dcm-q40t", () => {
+    const magic = ok(run(encore, ctx([9, 4], { trigger: { amount: 9, subject: bandit, damageType: "magic" } })));
+    expect(ofKind(magic, "damageRoll")[0]).toMatchObject({ type: "magic" });
+    const physical = ok(run(encore, ctx([9, 4], { trigger: { amount: 9, subject: bandit, damageType: "physical" } })));
+    expect(ofKind(physical, "damageRoll")[0]).toMatchObject({ type: "physical" });
+    expect(manualTexts(magic)).toHaveLength(1);
+    expect(manualTexts(ok(run(encore, ctx([2, 5], { trigger: { amount: 9, subject: bandit } }))))).toEqual([]);
   });
 
   it("a success with Fear deals the damage and places the card in your vault; a critical does not", () => {

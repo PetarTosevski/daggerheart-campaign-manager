@@ -113,7 +113,8 @@ describe("the Midnight table", () => {
           picked: [adv("b")],
           allies: [ally("mira")],
           situations: (use.requires ?? []).flatMap((r) => (r.kind === "situation" ? [r.text] : [])),
-          choices: { tokens: 1, fearDie: 4 },
+          choices: { tokens: 1 },
+          hostRoll: { hope: 5, fear: 4 },
           trigger: { source: adv("a"), subject: ally("mira"), amount: 2 },
           rng: () => 1,
         });
@@ -352,11 +353,12 @@ describe("Midnight-Touched (L7, CB p.337)", () => {
     expect(refusal("midnight-touched", "hope", { actor: actor({ ...zero, featureUses: p.actor.featureUses }) })).toMatchObject({ reason: "exhausted" });
   });
   it("on a successful attack, a Stress adds the Fear Die's result to the damage", () => {
-    const p = plan("midnight-touched", "fear-die", [], { actor: midnight4, targets: [adv("a")], choices: { fearDie: 7 } });
+    // Lanes-2 S1 (dcm-vbzy (1)): the Fear Die comes from the host roll (`hostRoll`), no dialog number.
+    const p = plan("midnight-touched", "fear-die", [], { actor: midnight4, targets: [adv("a")], hostRoll: { hope: 3, fear: 7 } });
     expect(p.activation).toBe("rider");
     expect(p.actor.after.stress).toBe(2);
     expect(folds(p)).toEqual([{ kind: "modifyDamage", targetIds: ["a"], amount: 7 }]);
-    expect(refusal("midnight-touched", "fear-die", { actor: midnight4, targets: [adv("a")], choices: { fearDie: 13 } })).toMatchObject({ reason: "choice" });
+    expect(effectOf("midnight-touched").uses.find((u) => u.id === "fear-die")!.choices).toBeUndefined();
   });
 });
 

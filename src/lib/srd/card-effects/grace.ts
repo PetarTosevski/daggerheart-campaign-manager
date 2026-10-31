@@ -7,7 +7,7 @@
 // CB p.335 (levels 4-10). Out of combat (no entry): Deft Deceiver, Soothing Speech, Endless Charisma, Master of the
 // Craft, Notorious.
 
-import type { CardEffect, ConditionRef, NumberSource } from "../../domain/card-effects/types";
+import type { CardEffect, ConditionRef, NumberSource, TargetSpec } from "../../domain/card-effects/types";
 
 const fixed = (value: number): NumberSource => ({ kind: "fixed", value });
 const ONE = fixed(1);
@@ -16,6 +16,14 @@ const ONE = fixed(1);
 const ENRAPTURED: ConditionRef = { kind: "tag", tag: "Enraptured" };
 const STUNNED: ConditionRef = { kind: "tag", tag: "Stunned" };
 const CANT_LIE: ConditionRef = { kind: "tag", tag: "Can't lie (Tell No Lies)" };
+
+/**
+ * Words of Discord (CB p.335: "make an attack against another adversary instead of against you or your allies"): the
+ * victim is another adversary (`forcedAttack`; the runner never lists an attacker as its own victim; none picked: the GM
+ * picks). Lanes-2 S1 (dcm-f70y): the server doesn't run the forced attack yet, so each use keeps its manual step; remove
+ * those when dcm-f70y merges.
+ */
+const DISCORD_VICTIM: TargetSpec = { side: "enemy", range: "unlimited", count: { kind: "one" } };
 
 /** "When 4 or more of the domain cards in your loadout are from the Grace domain" (Grace-Touched). */
 const GRACE_TOUCHED = { kind: "loadoutDomainCount", domain: "grace", min: 4 } as const;
@@ -208,7 +216,15 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         activation: { kind: "action" },
         costs: [{ kind: "tokens", amount: ONE }],
         // Spending the last token ends the Invisible effect (`endsOn: ["tokensGone"]` above).
-        steps: [],
+        steps: [
+          // Lanes-2 S1 (dcm-ky8b, dcm-s9md): the table's reminder until the card paths end `tokensGone` effects; remove it
+          // when dcm-m48i (dcm-erhv) merges.
+          {
+            kind: "manual",
+            to: "self",
+            text: "If that was the last Invisibility token: after this action is resolved, the effect ends (remove Invisible).",
+          },
+        ],
       },
     ],
   },
@@ -276,6 +292,7 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         targets: { side: "enemy", range: "melee", count: { kind: "one" } },
         steps: [
           { kind: "markStress", to: "targets", when: ["success"], amount: ONE },
+          { kind: "forcedAttack", to: "targets", when: ["success"], against: DISCORD_VICTIM },
           {
             kind: "manual",
             to: "targets",
@@ -295,6 +312,7 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         targets: { side: "enemy", range: "melee", count: { kind: "one" } },
         steps: [
           { kind: "markStress", to: "targets", when: ["success"], amount: ONE },
+          { kind: "forcedAttack", to: "targets", when: ["success"], against: DISCORD_VICTIM },
           {
             kind: "manual",
             to: "targets",
@@ -482,7 +500,16 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         roll: { kind: "spellcast", difficulty: { kind: "target" } },
         targets: { side: "trigger", who: "subject" },
         steps: [
-          { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "sameAsTrigger" }, type: "magic" },
+          // Lanes-2 S1 (dcm-m5fy, dcm-86z): the damage takes the trigger's type (`sameAsTrigger` typed `weapon`, E3's
+          // runner). Until cardRunner fills the trigger's damage type (dcm-q40t) it reads as physical, so the reminder
+          // below stays; remove it when dcm-q40t merges.
+          { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "sameAsTrigger" }, type: "weapon" },
+          {
+            kind: "manual",
+            to: "targets",
+            when: ["hit"],
+            text: "Encore deals the same type of damage your ally dealt. It is applied as physical for now: if your ally's damage was magic, the GM corrects it for resistance.",
+          },
           { kind: "toVault", to: "self", when: ["success", "withFear"] },
         ],
       },

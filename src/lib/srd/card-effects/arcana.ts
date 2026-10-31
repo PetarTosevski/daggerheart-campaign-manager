@@ -47,15 +47,19 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
         steps: runeWard("self"),
       },
       {
-        // The holder is an ally: the ally spends their own Hope (a `hope` step on them; the runner doesn't read
-        // `paidBy` yet, dcm-a9c, so a `costs` + `paidBy` would charge you). Lanes SRD-C1 (dcm-uj0): the ward works at
-        // any range (`unlimited`); `range` stays for a reader that doesn't know it (dcm-ofo).
+        // The holder is an ally: the ally spends their own Hope. Lanes-2 S1 (dcm-uj0, dcm-a9c): the use's cost is paid
+        // by the trigger's subject (`paidBy`; run.ts charges them and refuses when their known Hope is short). The
+        // server doesn't describe payers to the run yet (dcm-q40t), so an unknown Hope is taken as enough and the manual
+        // step below is the reminder; remove it when dcm-q40t merges. Lanes SRD-C1 (dcm-uj0): the ward works at any range
+        // (`unlimited`); `range` stays for a reader that doesn't know it (dcm-ofo).
         id: "ally",
         name: "Rune Ward (an ally holds it)",
         activation: { kind: "reaction", trigger: { kind: "whenAllyWouldTakeDamage", range: "veryFar", unlimited: true } },
         targets: { side: "trigger", who: "subject" },
+        costs: [{ kind: "hope", amount: n(1) }],
+        paidBy: "triggerSubject",
         steps: [
-          { kind: "hope", to: "triggerSubject", change: "lose", amount: n(1), note: "The ward's holder spends a Hope." },
+          { kind: "manual", to: "triggerSubject", text: "The ward's holder spends a Hope; if they have none, they can't use the ward (undo this)." },
           ...runeWard("triggerSubject"),
         ],
       },
@@ -313,8 +317,8 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
   // Close range of previous targets who took damage must also make the reaction roll. Targets who fail take 2d8+4 magic
   // damage. This chain continues until there are no more adversaries within range."
   // `followUp` is the chain. Lanes SRD-C1 (dcm-rou): it repeats until a link finds no one (`until: "noTargets"`), each
-  // link measured from the earlier ones (`origin: "chain"`); the runner drops creatures already targeted. The damage
-  // is the move's one roll (R9; TASK-LN-E3.md QUESTIONS 1).
+  // link measured from the earlier ones (`origin: "chain"`); the runner drops creatures already targeted. User answer
+  // 2026-10-31 (dcm-q13x): every new link rolls its own 2d8+4; that is run.ts's change (E3.3), the data stays as is.
   {
     cardId: "chain-lightning",
     uses: [

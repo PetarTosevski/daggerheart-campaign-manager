@@ -484,8 +484,9 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
 
   // Lead by Example (Valor 9, CB p.342): "When you deal damage to an adversary, you can mark a Stress and describe how you
   // encourage your allies. The next PC to make an attack against that adversary can clear a Stress or gain a Hope."
-  // SRD-C2: whether the caster's own next attack counts is an open rule question (dcm-903q), so the benefit stays a
-  // manual step; the vocabulary has it (`attackedRider` with `attackerSteps`, dcm-7zb / dcm-kso9).
+  // User answer 2026-10-31 (dcm-903q): other PCs only; the caster's own next attack doesn't count (`attackedRider` with
+  // `by: "others"` and `attackerSteps`). Lanes-2 (dcm-903q): the benefit stays a manual step until the PC attack path
+  // reads a bearer's attackedRider (engine E1.3b; dcm-yd5h / dcm-kso9), then the data switches (wave 10).
   {
     cardId: "lead-by-example",
     uses: [
@@ -501,12 +502,12 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
             to: "targets",
             condition: LED_BY_EXAMPLE,
             duration: "manual",
-            endsWhen: "The next PC to make an attack against this adversary can clear a Stress or gain a Hope",
+            endsWhen: "The next other PC (not you) to make an attack against this adversary can clear a Stress or gain a Hope",
           },
           {
             kind: "manual",
             to: "targets",
-            text: "The next PC to make an attack against this adversary can clear a Stress or gain a Hope. Then clear Lead by Example.",
+            text: "The next other PC to make an attack against this adversary (other PCs only, not you) can clear a Stress or gain a Hope. Then clear Lead by Example.",
           },
         ],
       },

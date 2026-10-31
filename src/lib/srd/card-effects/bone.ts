@@ -390,6 +390,13 @@ export const BONE_EFFECTS: readonly CardEffect[] = [
             endsWhen: "The next successful attack against this target deals an extra 2d12 damage",
             mods: [{ kind: "attackedRider", rider: { by: "others", onSuccess: true, damage: { kind: "add", amount: dice(2, 12) } } }],
           },
+          // Lanes-2 S1 (dcm-ky8b, dcm-s9md): the table's reminder until another PC's attack reads the tag's
+          // `attackedRider` (PC attacks, dcm-yd5h); remove it when that merges. Your own next attack adds it (`extra`).
+          {
+            kind: "manual",
+            to: "targets",
+            text: "If another PC makes the next successful attack against this target, they deal an extra 2d12 damage (add it by hand), then clear Breaking Blow.",
+          },
         ],
       },
       {

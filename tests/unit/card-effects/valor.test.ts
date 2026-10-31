@@ -542,6 +542,11 @@ describe("Lead by Example (CB p.342)", () => {
     expect(ofKind(plan, "condition")[0]).toMatchObject({ targetId: "a", condition: { kind: "tag", tag: "Lead by Example" } });
     expect(ofKind(plan, "prompt")[0]).toMatchObject({ prompt: "manual", targetIds: ["a"] });
   });
+
+  it("user answer (dcm-903q): the reminder says other PCs only; the caster's own attack doesn't count", () => {
+    const plan = ok("lead-by-example", ctx([], { trigger: { subject: adv("a") } }));
+    expect(JSON.stringify(ofKind(plan, "prompt")[0])).toContain("other PCs only, not you");
+  });
 });
 
 describe("Unbreakable (CB p.342)", () => {

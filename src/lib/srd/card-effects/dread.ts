@@ -330,8 +330,11 @@ export const DREAD_EFFECTS: readonly CardEffect[] = [
             pick: { side: "ally", range: "close", count: { kind: "any" } },
             label: "Incorporeal: moves through solid objects, immune to physical damage",
             mods: [{ kind: "resistance", type: "physical", level: "immune" }],
-            duration: "nextRoll",
-            endsWhen: "they pass through a solid object, or the scene ends",
+            // Lanes-2 S1 (dcm-wn7): the bearer's action roll ends it on the server (E1's roll ends); passing through a
+            // solid object stays the table's call; otherwise it lasts until the end of the scene.
+            duration: "scene",
+            endsOn: ["actionRoll"],
+            endsWhen: "they pass through a solid object or make an action roll",
           },
         ],
       },
@@ -485,8 +488,8 @@ export const DREAD_EFFECTS: readonly CardEffect[] = [
       {
         id: "strike",
         name: "Dark Army: fiends add to your damage",
-        activation: { kind: "rider", trigger: { kind: "whenYouDealDamage" } },
-        requires: [{ kind: "situation", text: "The target is within Very Close range" }],
+        // Lanes-2 S1 (dcm-76l5): the server checks that the damaged target is within Very Close (`within`).
+        activation: { kind: "rider", trigger: { kind: "whenYouDealDamage", within: "veryClose" } },
         choices: [{ id: "tokens", label: "Tokens to spend", min: 1, max: { kind: "cardTokens" } }],
         costs: [{ kind: "tokens", amount: { kind: "chosen", choice: "tokens" } }],
         steps: [
@@ -643,6 +646,14 @@ export const DREAD_EFFECTS: readonly CardEffect[] = [
             to: "self",
             when: [{ kind: "requires", requirement: { kind: "hopeAtMost", value: 0 } }],
             note: "You can't spend a Hope: you revert to your normal form.",
+          },
+          // Lanes-2 S1 (dcm-ky8b, dcm-s9md): the table's reminder until the card paths apply `endEffect`; remove it when
+          // dcm-m48i merges.
+          {
+            kind: "manual",
+            to: "self",
+            when: [{ kind: "requires", requirement: { kind: "hopeAtMost", value: 0 } }],
+            text: "You can't spend a Hope before this action roll: you revert to your normal form (remove the Avatar of Terror effect).",
           },
           { kind: "pay", costs: [{ kind: "hope", amount: n(1) }], note: "Before you make an action roll, you must spend a Hope." },
         ],

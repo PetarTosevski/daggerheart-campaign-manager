@@ -167,6 +167,13 @@ describe("Rune Ward (L1, CB p.328): the holder spends a Hope to reduce damage by
     expect(ofKind(plan, "hope")).toEqual([{ kind: "hope", targetId: "mira", delta: -1 }]);
     expect(folds(plan)).toEqual([{ kind: "reduceDamage", targetIds: ["mira"], amount: 3 }]);
     expect(plan.actor.after.hope).toBe(2);
+    // Lanes-2 S1 (dcm-uj0): the use's cost is paid by the holder (`paidBy: "triggerSubject"`), not by you.
+    expect(ofKind(plan, "pay")[0]).toMatchObject({ phase: "upfront", paid: true, payerId: "mira" });
+    // Until the server describes payers (dcm-q40t), the holder's Hope is the table's reminder.
+    expect(prompts(plan, "manual").map((p) => p.text)).toEqual(["The ward's holder spends a Hope; if they have none, they can't use the ward (undo this)."]);
+  });
+  it("an ally holds it with no Hope: refused, you pay nothing (paidBy)", () => {
+    expect(run(effectOf("rune-ward"), ctx([3], { useId: "ally", hopeOf: { mira: 0 }, trigger: { amount: 9, subject: ally("mira") } }))).toMatchObject({ ok: false, reason: "cost" });
   });
   it("refused without a Hope", () => {
     expect(run(effectOf("rune-ward"), ctx([], { actor: actor({ hope: 0 }) }))).toMatchObject({ ok: false, reason: "cost", detail: "hope" });
