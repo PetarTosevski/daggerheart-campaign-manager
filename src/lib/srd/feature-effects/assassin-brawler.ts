@@ -27,6 +27,15 @@ const MARKED: ConditionRef = { kind: "tag", tag: MARKED_FOR_DEATH };
 
 const FLOW_STATE = "subclass:martial-artist:flow-state";
 const focus = (amount: NumberSource = one) => ({ kind: "tokens" as const, amount, pool: "focus" as const });
+/**
+ * "Shift into a martial stance" (HF p.12): V's `setStance` (dcm-awh). The stance is the one SD3's `shiftStance` intent
+ * names; until the runner and feature runner apply the step (dcm-4xl) it shows its note as a manual prompt.
+ */
+const SHIFT_STANCE: Step = {
+  kind: "setStance",
+  to: "self",
+  note: "Shift into a martial stance you know; it is your active stance until you drop out of it.",
+};
 
 // ---------------------------------------------------------------- poisons (HF p.9)
 
@@ -113,8 +122,8 @@ const TWIN_FANG_STEP: Step = {
   label: "Twin Fang: spend another token to also inflict a second poison you know",
   when: [{ kind: "targetHas", condition: MARKED }],
   costs: [{ kind: "tokens", amount: one }],
-  // "a second poison": a different one; two choose steps can't be kept distinct (bead), the dialog offers the others.
-  steps: [{ kind: "choose", id: "second-poison", label: "Second poison", options: BASE_POISONS }],
+  // "a second poison": a different one than the `poison` pick (dcm-40m: the runner refuses the same one, the dialog hides it).
+  steps: [{ kind: "choose", id: "second-poison", label: "Second poison", options: BASE_POISONS, distinctFrom: "poison" }],
 };
 
 // ---------------------------------------------------------------- the table
@@ -607,7 +616,8 @@ export const ASSASSIN_BRAWLER_EFFECTS: readonly FeatureEffect[] = [
   // HF p.12, Shifting into Stances: "You can spend a Focus to shift into a martial stance and gain its effects. You can
   // shift only into stances you've marked as known." Flow State (HF p.11): "mark a Stress instead of spending a Focus".
   // The use pays the shift (the "cost" choice); the stance itself is set by SD3's `shiftStance` intent
-  // (`classState.martial.active`), because no step sets the active stance (gap, bead). The stance effects are FE-stances'.
+  // (`classState.martial.active`); the use's `setStance` step (SHIFT_STANCE) names it for the runner once dcm-4xl lands.
+  // The stance effects are FE-stances'.
   {
     featureId: "subclass:martial-artist:stance-fighter",
     source: "subclass",
@@ -629,7 +639,7 @@ export const ASSASSIN_BRAWLER_EFFECTS: readonly FeatureEffect[] = [
                 label: "Spend a Focus",
                 steps: [
                   { kind: "pay", costs: [focus()] },
-                  { kind: "manual", to: "self", text: "Shift into a martial stance you know; it is your active stance until you drop out of it." },
+                  SHIFT_STANCE,
                 ],
               },
             ],
@@ -649,7 +659,7 @@ export const ASSASSIN_BRAWLER_EFFECTS: readonly FeatureEffect[] = [
               label: "Mark a Stress (Flow State)",
               steps: [
                 { kind: "pay", costs: [{ kind: "stress", amount: one }] },
-                { kind: "manual", to: "self", text: "Shift into a martial stance you know; it is your active stance until you drop out of it." },
+                SHIFT_STANCE,
               ],
             },
           ],

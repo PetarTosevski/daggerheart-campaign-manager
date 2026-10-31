@@ -328,6 +328,12 @@ describe("Toxic Concoctions (HF p.9)", () => {
     expect(without.actor.after.cardTokens).toBe(1);
   });
 
+  it("Twin Fang: the second poison must differ from the first (distinctFrom, dcm-40m)", () => {
+    const h = holding("specialization", "subclass:poisoners-guild:twin-fang", "subclass:poisoners-guild:poison-compendium");
+    const same = go(toxic, "poison", [], { actor: actor(2), targets: [marked("a")], holdings: h, optionals: ["twin-fang"], options: { poison: ["ghost-petal"], "second-poison": ["ghost-petal"] } });
+    expect(same).toMatchObject({ ok: false, reason: "choice" });
+  });
+
   it("a long rest clears every unspent token", () => {
     const plan = ok(go(toxic, "long-rest", [], { actor: actor(4) }));
     expect(useOf(toxic, "long-rest").activation).toEqual({ kind: "auto", trigger: { kind: "timing", at: "afterLongRest" } });
@@ -451,10 +457,12 @@ describe("Martial Artist (HF p.11-12)", () => {
   it("Stance Fighter: shifting costs a Focus (a Stress with Flow State); the stance itself is SD3's shiftStance", () => {
     const plain = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 3 }), holdings: none(), options: { cost: ["focus"] } }));
     expect(plain.actor.after.focus).toBe(2);
-    expect(ofKind(plain, "prompt")).toEqual([expect.objectContaining({ prompt: "manual" })]);
+    // Lane SRD-F2 (dcm-awh): a `setStance` step; until dcm-4xl applies it, the runner shows its note.
+    expect(ofKind(plain, "prompt")).toEqual([expect.objectContaining({ prompt: "manual", step: expect.objectContaining({ kind: "setStance" }) })]);
     const flow = holdingsFor(martial, owned(martial), "martial-artist");
     const stress = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 0 }), holdings: flow, options: { cost: ["stress"] } }));
     expect(stress.actor.after).toMatchObject({ focus: 0, stress: martial.stress + 1 });
+    expect(ofKind(stress, "prompt")).toEqual([expect.objectContaining({ step: expect.objectContaining({ kind: "setStance" }) })]);
     // No Focus and no Flow State: the payment fails and nothing shifts.
     const broke = ok(go("subclass:martial-artist:stance-fighter", "shift", [], { actor: actorOf(martial, { focus: 0 }), holdings: none(), options: { cost: ["focus"] } }));
     expect(ofKind(broke, "prompt")).toEqual([]);

@@ -163,7 +163,9 @@ export const DRUID_SORCERER_EFFECTS: readonly FeatureEffect[] = [
         name: "Elemental Incarnation: Water",
         activation: { kind: "auto", trigger: { kind: "whenYouDealDamage", toEnemy: true } },
         requires: [channeling("water")],
-        // Vocabulary gap: the trigger carries no range and a pick can't leave out the damaged adversary ("all other").
+        // Still manual (dcm-ssf): V added `whenYouDealDamage.within` and `TargetSpec.excludeSubject`, but the attack's
+        // rider phase neither matches `within` (dcm-76l5) nor fills a rider's `picked` creatures (it passes none), so
+        // "all other adversaries within Very Close range" (of the druid, dcm-bxp.99.19.34) would mark no Stress.
         steps: [
           {
             kind: "manual",
@@ -517,7 +519,7 @@ export const DRUID_SORCERER_EFFECTS: readonly FeatureEffect[] = [
             id: "option",
             label: "Do one of the following",
             options: [
-              // Vocabulary gap: a rider can't extend its host move's range (rangeSteps lives on a TargetSpec only).
+              // Still manual (dcm-x7p): V's `RollChange` `reach` names it, but nothing widens the host's range yet (dcm-76l5).
               { id: "reach", label: "Extend the reach by one range", steps: [{ kind: "manual", to: "self", text: "Extend the spell or attack's reach by one range." }] },
               { id: "roll", label: "+2 to the action roll's result", steps: [{ kind: "modifyRoll", to: "self", change: { kind: "add", amount: n(2) } }] },
               { id: "double", label: "Double a damage die of your choice", steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "doubleDice", which: "chosen", count: 1 } }] },

@@ -20,9 +20,26 @@ const PRIORITIZED: ConditionRef = { kind: "tag", tag: "Prioritized" };
 const UNSTOPPABLE_ID = "class:guardian:unstoppable";
 const whileUnstoppable = situation("While you are Unstoppable", { kind: "featureEffect", featureId: UNSTOPPABLE_ID });
 
-/** Attack of Opportunity's three effects (CB p.48). Movement is a prompt (Q9 of combat-actions). */
+/**
+ * Attack of Opportunity's three effects (CB p.48). Movement is a prompt (Q9 of combat-actions). "They can't move from
+ * where they are" is the `cannotMove` flag; the book names no end, so the effect is ended by hand (duration `manual`).
+ */
 const AOO_OPTIONS: readonly ChooseOption[] = [
-  { id: "hold", label: "They can't move from where they are", steps: [{ kind: "manual", to: "targets", text: "They can't move from where they are." }] },
+  {
+    id: "hold",
+    label: "They can't move from where they are",
+    steps: [
+      {
+        kind: "effect",
+        to: "targets",
+        label: "Attack of Opportunity: can't move",
+        mods: [{ kind: "flag", flag: "cannotMove" }],
+        duration: "manual",
+        endsWhen: "The table decides they can move again",
+        note: "They can't move from where they are",
+      },
+    ],
+  },
   { id: "damage", label: "Deal your primary weapon's damage", steps: [{ kind: "damage", to: "targets", roll: { kind: "weapon", weapon: "primary" }, type: "weapon" }] },
   { id: "follow", label: "You move with them", steps: [{ kind: "move", to: "self", mode: "move", relativeTo: "triggerSource", note: "You move with them" }] },
 ];
@@ -72,12 +89,14 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
             kind: "effect",
             to: "self",
             label: "Unstoppable",
-            mods: [{ kind: "flag", flag: "cannotBeRestrained" }],
+            mods: [
+              { kind: "flag", flag: "cannotBeRestrained" },
+              { kind: "flag", flag: "cannotBeVulnerable" },
+            ],
             duration: "scene",
             endsWhen: "The Unstoppable Die's value would exceed its maximum",
             note: "Physical damage one threshold lower; the die's value added to damage rolls; can't be Restrained or Vulnerable",
           },
-          { kind: "manual", to: "self", text: "While Unstoppable you can't be Vulnerable." },
         ],
       },
       {
@@ -323,8 +342,8 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
   // range, make a reaction roll using a trait of your choice against their Difficulty. Choose one effect on a success, or
   // two if you critically succeed: • They can't move from where they are. • You deal damage to them equal to your primary
   // weapon's damage. • You move with them." A reaction roll takes one trait (CB p.99: no Hope or Fear), so "a trait of
-  // your choice" is one use per trait: the player picks the use. The critical's second pick is a second `choose` step
-  // (open point 2).
+  // your choice" is one use per trait: the player picks the use. The critical's second pick is a second `choose` step,
+  // kept different from the first by `distinctFrom` (open point 2; dcm-fjh's distinct half).
   {
     featureId: "class:warrior:attack-of-opportunity",
     source: "class",
@@ -337,7 +356,7 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
       roll: { kind: "reaction", trait, difficulty: { kind: "target" } },
       steps: [
         { kind: "choose", id: "effect", label: "Choose one effect", when: ["success"], options: AOO_OPTIONS },
-        { kind: "choose", id: "critical", label: "Critical success: choose a second, different effect", when: ["critical"], options: AOO_OPTIONS },
+        { kind: "choose", id: "critical", label: "Critical success: choose a second, different effect", when: ["critical"], options: AOO_OPTIONS, distinctFrom: "effect" },
       ],
     })),
   },
@@ -359,8 +378,8 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
     ],
   },
 
-  // Courage (Call of the Brave foundation, CB p.48): "When you fail a roll with Fear, you gain a Hope." The trigger has no
-  // "failure with Fear" result: it is the failure, and "with Fear" is a situation the server decides (open point 4).
+  // Courage (Call of the Brave foundation, CB p.48): "When you fail a roll with Fear, you gain a Hope." The failure with
+  // the trigger's `duality: "fear"` (dcm-5z3); the server runs it on attacks and plain rolls (E1 `plainRollAutos`).
   {
     featureId: "subclass:call-of-the-brave:courage",
     source: "subclass",
@@ -370,8 +389,7 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "main",
         name: "Courage",
-        activation: { kind: "auto", trigger: { kind: "afterYouRoll", roll: "action", result: "failure" } },
-        requires: [situation("The roll was with Fear")],
+        activation: { kind: "auto", trigger: { kind: "afterYouRoll", roll: "action", result: "failure", duality: "fear" } },
         steps: [{ kind: "hope", to: "self", change: "gain", amount: fixed(1), note: "Gain a Hope" }],
       },
     ],
@@ -474,8 +492,9 @@ export const GUARDIAN_WARRIOR_EFFECTS: readonly FeatureEffect[] = [
 
   // Weapon Specialist (Call of the Slayer specialization, CB p.48): "You can wield multiple weapons with dangerous ease.
   // When you succeed on an attack, you can spend a Hope to add one of the damage dice from your secondary weapon to the
-  // damage roll. Additionally, once per long rest when you roll your Slayer Dice, reroll any 1s." The reroll has no step
-  // (no reroll of spent held dice): a manual Use, once per long rest (open point 5).
+  // damage roll. Additionally, once per long rest when you roll your Slayer Dice, reroll any 1s." The reroll stays a
+  // manual Use, once per long rest (open point 5): V's `RollChange` `rerollHeld` names it, but the runner does not apply
+  // it yet (dcm-inou, dcm-sa2); the dice box and map attacks already reroll the 1s (convex/lib/rolls.ts).
   {
     featureId: "subclass:call-of-the-slayer:weapon-specialist",
     source: "subclass",

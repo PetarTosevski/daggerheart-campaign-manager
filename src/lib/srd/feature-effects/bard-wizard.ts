@@ -201,8 +201,8 @@ export const BARD_WIZARD_EFFECTS: readonly FeatureEffect[] = [
               {
                 id: "downtime",
                 label: "An additional downtime move during their next rest",
-                // Vocabulary gap dcm-bxp.99.19.2: no step grants an extra downtime move in the rest flow.
-                steps: [{ kind: "manual", to: "targets", text: "Your ally takes an additional downtime move during their next rest." }],
+                // dcm-bxp.99.19.2: the server records the grant on the ally; their next rest offers one more move (E8).
+                steps: [{ kind: "downtime", to: "targets", op: "extraMove", at: "nextRest", note: "An additional downtime move during their next rest" }],
               },
             ],
           },
@@ -314,8 +314,8 @@ export const BARD_WIZARD_EFFECTS: readonly FeatureEffect[] = [
   },
 
   // Perfect Recall (School of Knowledge specialization, CB p.50): "Once per rest, when you recall a domain card in your
-  // vault, you can reduce its Recall Cost by 1." Vocabulary gap dcm-bxp.99.19.1: no recall trigger and no Recall Cost change, so
-  // the use records the limit and leaves the discount to the table.
+  // vault, you can reduce its Recall Cost by 1." "You can": a rider on the Hand's recall (dcm-bxp.99.19.1); the server
+  // runs it through the runner (limit) and takes its amount off (convex/lib/cardHand.ts `recallReductions`).
   {
     featureId: "subclass:school-of-knowledge:perfect-recall",
     source: "subclass",
@@ -325,9 +325,9 @@ export const BARD_WIZARD_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "main",
         name: "Perfect Recall",
-        activation: { kind: "action" },
+        activation: { kind: "rider", trigger: { kind: "whenYouRecall" } },
         limit: { per: "rest" },
-        steps: [{ kind: "manual", to: "self", text: "Reduce the Recall Cost of the domain card you recall from your vault by 1 (mark 1 fewer Stress)." }],
+        steps: [{ kind: "loadout", to: "self", op: "reduceRecallCost", amount: ONE, note: "Recall Cost reduced by 1" }],
       },
     ],
   },
