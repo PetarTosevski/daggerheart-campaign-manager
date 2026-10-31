@@ -42,3 +42,240 @@ waves:
           - "Every needs-term bead's union members added, widen only, no any; no behaviour change"
           - "Each exhaustive Record / default-less switch gets one fallback line (manual / false / null) as in V"
           - "Every existing test passes unchanged"
+  # ------------------------------------------------------------------ wave 8: engine lanes round 2 + small independent tracers
+  # Bead lists: every open bead labelled lane:<label>, using V2's triage (docs/tasks/TASK-LN-V2.md). Skipped here:
+  # combat-ui beads (wait for the user's design, dcm-bxp.99.32), dcm-22q (cross-lane, wave 9), dcm-lqnt (overlay, wave 9 with the art).
+  # V2 collisions settled: dcm-5cn5 and validators/encounters.ts -> E7; run.ts halves -> E3; passives.ts -> E5; combatTokens move -> E4 (E7 runs the triggered use).
+  - wave: 8
+    tracers:
+      - id: E1
+        label: w1-e1-triggers-rolls
+        title: "Triggers, rolls, the Hand and moveCard: round-2 beads (incl. dcm-cfpv recall riders, dcm-jog/3ou die bonus answer)"
+        goal: "Triggers, rolls, the Hand and moveCard: round-2 beads (incl. dcm-cfpv recall riders, dcm-jog/3ou die bonus answer)"
+        size: M
+        depends_on: []
+        owns:
+          - convex/lib/combatActions.ts
+          - convex/combatCards.ts
+          - convex/lib/cardHand.ts
+          - convex/lib/rolls.ts
+          - convex/rolls.ts
+          - convex/characters.ts
+          - tests/convex/lane-e1-*.test.ts
+          - tests/unit/lane-e1-*.test.ts
+          - docs/tasks/TASK-LN2-E1.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "Every open engine-side bead labelled lane:w1-e1-triggers-rolls done or split with a follow-up (V2 table)"
+          - "No edits to types.ts or src/lib/srd/**; data switches go to wave 9"
+          - "lint, typecheck, tests pass"
+      - id: E2
+        label: w1-e2-damage-window
+        title: "Incoming damage and the reaction window: round-2 beads"
+        goal: "Incoming damage and the reaction window: round-2 beads"
+        size: M
+        depends_on: []
+        owns:
+          - convex/lib/incomingHits.ts
+          - convex/lib/adversaryHits.ts
+          - convex/lib/unshakable.ts
+          - convex/lib/validators/combatRequests.ts
+          - src/lib/domain/adversary-actions/window.ts
+          - src/lib/domain/adversary-actions/severity.ts
+          - src/lib/domain/combat-actions/damage.ts
+          - src/components/combat-map/actions/reactions/**
+          - tests/convex/lane-e2-*.test.ts
+          - tests/unit/lane-e2-*.test.ts
+          - docs/tasks/TASK-LN2-E2.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "Every open engine-side bead labelled lane:w1-e2-damage-window done or split with a follow-up (V2 table)"
+          - "No edits to types.ts or src/lib/srd/**; data switches go to wave 9"
+          - "lint, typecheck, tests pass"
+      - id: E3
+        label: w1-e3-steps-saves
+        title: "Steps, choices and saves in the pure card runner (owns run.ts: every run.ts half of other lanes' beads)"
+        goal: "Steps, choices and saves in the pure card runner (owns run.ts: every run.ts half of other lanes' beads)"
+        size: M
+        depends_on: []
+        owns:
+          - src/lib/domain/card-effects/run.ts
+          - convex/lib/cardChoices.ts
+          - src/components/combat-map/actions/hand/dialog.tsx
+          - tests/unit/card-effects/lane-e3-*.test.ts
+          - tests/convex/lane-e3-*.test.ts
+          - docs/tasks/TASK-LN2-E3.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "Every open engine-side bead labelled lane:w1-e3-steps-saves done or split with a follow-up (V2 table)"
+          - "No edits to types.ts or src/lib/srd/**; data switches go to wave 9"
+          - "lint, typecheck, tests pass"
+      - id: E4
+        label: w1-e4-targeting-areas
+        title: "Targeting, movement and areas (server side; the map overlay dcm-lqnt waits for the area art)"
+        goal: "Targeting, movement and areas (server side; the map overlay dcm-lqnt waits for the area art)"
+        size: M
+        depends_on: []
+        owns:
+          - convex/lib/cardRunner.ts
+          - convex/lib/combatMovement.ts
+          - convex/combatTokens.ts
+          - convex/combatMaps.ts
+          - convex/lib/combatVision.ts
+          - convex/combatAreas.ts
+          - convex/lib/validators/combatMaps.ts
+          - src/lib/domain/feature-effects/areas.ts
+          - src/components/combat-map/actions/attack/**
+          - tests/convex/lane-e4-*.test.ts
+          - tests/unit/lane-e4-*.test.ts
+          - docs/tasks/TASK-LN2-E4.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "Every open engine-side bead labelled lane:w1-e4-targeting-areas done or split with a follow-up (V2 table)"
+          - "No edits to types.ts or src/lib/srd/**; data switches go to wave 9"
+          - "lint, typecheck, tests pass"
+      - id: E5
+        label: w1-e5-checks-limits-numbers
+        title: "Checks, limits, numbers, passives (incl. dcm-c75 campaign-long memory)"
+        goal: "Checks, limits, numbers, passives (incl. dcm-c75 campaign-long memory)"
+        size: M
+        depends_on: []
+        owns:
+          - src/lib/domain/card-effects/availability.ts
+          - src/lib/domain/combat-actions/numbers.ts
+          - src/components/combat-map/actions/hand/model.ts
+          - src/lib/domain/characters/slots.ts
+          - src/lib/domain/feature-effects/passives.ts
+          - tests/unit/lane-e5-*.test.ts
+          - tests/convex/lane-e5-*.test.ts
+          - docs/tasks/TASK-LN2-E5.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "Every open engine-side bead labelled lane:w1-e5-checks-limits-numbers done or split with a follow-up (V2 table)"
+          - "No edits to types.ts or src/lib/srd/**; data switches go to wave 9"
+          - "lint, typecheck, tests pass"
+      - id: E6
+        label: w1-e6-endings-durations
+        title: "Effect endings and durations: round-2 beads (endEffect, tokensGone, endFear, ...)"
+        goal: "Effect endings and durations: round-2 beads (endEffect, tokensGone, endFear, ...)"
+        size: M
+        depends_on: []
+        owns:
+          - src/lib/domain/characters/expiry.ts
+          - convex/lib/cardRows.ts
+          - convex/combatFeatures.ts
+          - convex/lib/stanceDrop.ts
+          - tests/convex/lane-e6-*.test.ts
+          - tests/unit/lane-e6-*.test.ts
+          - docs/tasks/TASK-LN2-E6.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "Every open engine-side bead labelled lane:w1-e6-endings-durations done or split with a follow-up (V2 table)"
+          - "No edits to types.ts or src/lib/srd/**; data switches go to wave 9"
+          - "lint, typecheck, tests pass"
+      - id: E7
+        label: w1-e7-adversary-engine
+        title: "Adversary engine: round-2 beads (largest lane; owns validators/encounters.ts and the respond args, incl. dcm-5cn5, dcm-idz GM control)"
+        goal: "Adversary engine: round-2 beads (largest lane; owns validators/encounters.ts and the respond args, incl. dcm-5cn5, dcm-idz GM control)"
+        size: XL
+        depends_on: []
+        owns:
+          - src/lib/domain/adversary-effects/run.ts
+          - src/lib/domain/adversary-actions/features.ts
+          - src/lib/domain/adversary-actions/attack.ts
+          - convex/lib/adversaryActions.ts
+          - convex/adversaryActions.ts
+          - convex/lib/adversaryFeatures.ts
+          - convex/lib/countdownTicks.ts
+          - convex/lib/validators/encounters.ts
+          - tests/unit/adversary-effects/lane-e7-*.test.ts
+          - tests/convex/lane-e7-*.test.ts
+          - docs/tasks/TASK-LN2-E7.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "Every open engine-side bead labelled lane:w1-e7-adversary-engine done or split with a follow-up (V2 table)"
+          - "No edits to types.ts or src/lib/srd/**; data switches go to wave 9"
+          - "lint, typecheck, tests pass"
+      - id: E8
+        label: w1-e8-session-features-rests
+        title: "Feature runner, delegates, prompts, companion, rests: round-2 beads"
+        goal: "Feature runner, delegates, prompts, companion, rests: round-2 beads"
+        size: M
+        depends_on: []
+        owns:
+          - src/lib/domain/feature-effects/delegate.ts
+          - src/lib/domain/feature-effects/run.ts
+          - convex/lib/featureRunner.ts
+          - convex/featurePrompts.ts
+          - convex/lib/featurePrompts.ts
+          - convex/sessionFeatures.ts
+          - src/lib/domain/session-features/**
+          - convex/rests.ts
+          - convex/lib/restHooks.ts
+          - src/lib/domain/rest/**
+          - src/components/party/rest/picker.tsx
+          - convex/lib/companion.ts
+          - tests/convex/lane-e8-*.test.ts
+          - tests/unit/lane-e8-*.test.ts
+          - docs/tasks/TASK-LN2-E8.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "Every open engine-side bead labelled lane:w1-e8-session-features-rests done or split with a follow-up (V2 table)"
+          - "No edits to types.ts or src/lib/srd/**; data switches go to wave 9"
+          - "lint, typecheck, tests pass"
+      - id: R1
+        label: w2-srd-data
+        title: "Restore table reminders on SRD-C1 cards until their engine lands (dcm-s9md)"
+        goal: "Restore table reminders on SRD-C1 cards until their engine lands (dcm-s9md)"
+        size: M
+        depends_on: []
+        owns:
+          - src/lib/srd/card-effects/arcana.ts
+          - src/lib/srd/card-effects/codex.ts
+          - src/lib/srd/card-effects/blade.ts
+          - tests/unit/card-effects/arcana.test.ts
+          - tests/unit/card-effects/codex.test.ts
+          - tests/unit/card-effects/blade.test.ts
+          - docs/tasks/TASK-LN2-R1.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "dcm-s9md done"
+          - "lint, typecheck, tests pass"
+      - id: MG
+        label: w0-c-cloaked
+        title: "Migration: Vanishing Act source marker for rogues already Cloaked (dcm-3ias)"
+        goal: "Migration: Vanishing Act source marker for rogues already Cloaked (dcm-3ias)"
+        size: M
+        depends_on: []
+        owns:
+          - convex/migrations/vanishingActMarker.ts
+          - tests/convex/lane-mg-*.test.ts
+          - docs/tasks/TASK-LN2-MG.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "dcm-3ias done"
+          - "lint, typecheck, tests pass"
+      - id: U2
+        label: w2-upload-check
+        title: "Upload check follow-up: toast the uploader on a rejected file; accept a mislabelled real image and fix its type (dcm-vqs0)"
+        goal: "Upload check follow-up: toast the uploader on a rejected file; accept a mislabelled real image and fix its type (dcm-vqs0)"
+        size: M
+        depends_on: []
+        owns:
+          - convex/lib/files.ts
+          - convex/uploadNotices.ts
+          - convex/tables/files.ts
+          - src/components/uploads/**
+          - src/components/party/portrait.tsx
+          - src/components/party/import/flow.tsx
+          - src/components/combat-map/maps/image-upload.tsx
+          - src/components/combat-map/packs/uploader.tsx
+          - src/app/(gm)/campaigns/[campaignId]/codex/gallery.tsx
+          - src/app/(gm)/campaigns/[campaignId]/world/map-image.tsx
+          - tests/convex/lane-u2-*.test.ts
+          - tests/convex/authz/core.entries.ts
+          - docs/tasks/TASK-LN2-U2.md
+        reads: [docs/tasks/TASK-LN-V2.md, src/lib/domain/card-effects/types.ts, src/lib/domain/feature-effects/types.ts, src/lib/domain/adversary-effects/types.ts]
+        acceptance:
+          - "dcm-vqs0 done"
+          - "lint, typecheck, tests pass"
