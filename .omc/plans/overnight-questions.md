@@ -65,3 +65,24 @@ The user went to bed and asked: take a default on every open question; ask on re
 - 26 Unstuck Armor Slot: needs two free slots (change, dcm-3m5k, E2.3).
 - 27 Leechpoles before resistance (kept).
 - E5 round-1 Q3 gold units: handfuls, bag = 10, bag steps take whole bags (kept).
+- 15 Migration, untraceable Cloaked: stays ordinary (kept).
+- 16 Migration, Cloaked that outlived a rest after Vanishing Act: REMOVE it (change, tracer MG2, lane3-mg2).
+- 17 Run the migration: dev now (after MG2 merges), production after the next deploy (confirm with the user first).
+- E6 round-1 Q1 Slumber "takes damage": only when at least 1 HP is marked (change, sent to E2.3 and E6.3).
+
+## Answers 2026-10-31 (wave 9 round 1-2, after the crash)
+- CT Q1 End day location: as built (kept).
+- CT Q2 End day also resets time of day to Day (change; built in CT).
+- CT Q3 Witherwild forward day-icon jump counts as ended days (change; built in CT).
+- CT Q4 Undo of End day rolls the day back too (change; not in CT owns -> dcm-jq4b).
+- E2 Q1 Money Talks under Unstuck: a handful per HP actually marked (kept).
+- E2 Q2 Hope instead of forced HP under Unstuck: 2 Hope per HP (kept).
+- E2 Q3 "Took damage" / severity: severity follows the HP actually marked after armor (Major = 2 HP, Severe = 3 HP); armor that reduces the damage reduces the severity. Fragile Beastform and the Severe stance drop follow it (check E2.3's build at merge).
+- S4 Q2 Fire Beam: Fireproof makes an Emberkin immune (change -> bead).
+- S4 Q1 Lava is fire (kept). S3 Q1 Oozes fire, Sear / Mana Beam not (kept).
+- S3 Q2 Standard attacks get a damage keyword; Elemental Blast, Burning Candlestick, Spirit Flame are fire (change -> bead).
+- CT Q5 End day clears instances in running encounters only (kept).
+- E6 r1 Q3 Store the caster on a sheet effect (change, widen -> migrate -> narrow -> bead).
+- E6 r1 Q5 Reliable Backup: the player confirms "in conversation" on a Presence Roll (change -> bead).
+- E6 r1 Q6 Marked for Death names its assassin; only that PC's effect ends (change -> bead).
+- MG2 The Vanishing Act migration writes a feed line "Cloaked ends (Vanishing Act)" when it removes a stale Cloaked (change -> bead).
