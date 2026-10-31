@@ -44,7 +44,10 @@ import {
   chooseSteps,
   featureAnswers,
   featureUse,
+  grantAnswers,
+  grantsTaken,
   isComplete,
+  marksFactor,
   openWindow,
   optionalSteps,
   progress as progressOf,
@@ -83,6 +86,7 @@ import {
   attackRollOf,
   featureActor,
   featureChoices,
+  goldForHpOf,
   hopeAndFearOf,
   isFeatureId,
   progressAmount,
@@ -114,7 +118,8 @@ import {
 import type { CardChoice } from "./cardChoices";
 import { actorSheetAfter, cardActor, cardIdOfEffect, pcCombatant } from "./cardRunner";
 import { readSheet, saveSheet } from "./characterSheet";
-import { effectEndsOf, endForCasterOnSheets, endOnSheet, refusedConditions } from "./cardRows";
+import { effectEndsOf, endCasterAreas, endForCasterOnInstances, endForCasterOnSheets, endOnSheet, refusedConditions } from "./cardRows";
+import { tokensOnMap } from "./combatMaps";
 import { closeRequest } from "./combatRequests";
 import { dropStance } from "./stanceDrop";
 import { logUnshakable, UNSHAKABLE_ID, unshake, unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
@@ -206,7 +211,9 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
   const attacker = await openingAttacker(ctx, input);
   // E2 (dcm-s77): the attacker's dearer Armor Slots, re-read from its stat block (as `rebuildWindow`).
   const armorCost = await armorCostOf(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } });
-  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders, armorCost, keyword), targetId: input.targetCharacterId, party, ...(attacker ? { attacker } : {}) });
+  // Plan lanes-2, E2.3 (dcm-5cn5): the attacker's gold-instead-of-HP grant (Money Talks), re-read like the armor cost.
+  const gold = await goldForHpOf(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } });
+  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders, armorCost, keyword, gold), targetId: input.targetCharacterId, party, ...(attacker ? { attacker } : {}) });
   const responders: HitResponder[] = state.responders.slice(0, MAX_RESPONDERS).map((r) => ({
     characterId: memberId(input.party, r.characterId, input.targetCharacterId),
     role: r.role,
@@ -347,7 +354,7 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
   const member = members.find((m) => m.character._id === characterId);
   if (!member) throw appError("NOT_A_RESPONDER");
   let folds;
-  let paid: { sheet: CharacterSheet; cardName: string } | null = null;
+  let paid: { sheet: CharacterSheet; cardName: string; manual: string[] } | null = null;
   let feature: FeaturePaid | null = null;
   const unshaken: UnshakableRoll[] = [];
   if (choice.kind === "armor") {
@@ -371,7 +378,8 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
     // DA10: Unshakable (CB p.59) on the card's Stress cost.
     const u = unshakePlan(member.sheet, sheetAfterCard(member.sheet, run.result.plan, characterId, cardName), run.result.plan, characterId, true);
     if (u.roll) unshaken.push(u.roll);
-    paid = { sheet: u.sheet, cardName };
+    // Plan lanes-2, E2.3 (TASK-LN2-R1's finding): the card's manual words go on its line, as a feature answer's do.
+    paid = { sheet: u.sheet, cardName, manual: manualWords(run.result.plan) };
   }
   if (choice.kind === "feature") {
     const pc = rebuilt.party.find((p) => p.id === characterId);
@@ -404,7 +412,7 @@ export async function respondToHit(ctx: MutationCtx, input: RespondInput): Promi
       actorId: row.createdBy,
       kind: "adversary",
       visibility: "public",
-      summary: characterId === state.targetId ? `${member.sheet.name} uses ${paid.cardName}` : `${member.sheet.name} uses ${paid.cardName} for ${targetName}`,
+      summary: `${member.sheet.name} uses ${paid.cardName}${characterId === state.targetId ? "" : ` for ${targetName}`}${paid.manual.length > 0 ? ` (${paid.manual.join("; ")})` : ""}`.slice(0, 1000),
       groupId: row.payload.groupId,
       before: member.sheet,
       undoable: true,
@@ -517,15 +525,28 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     const ended = endedOnNoHp(next, res.endedOnNoHp);
     next = ended.sheet;
     if (ended.names.length > 0) gm.push(`${targetName}: ${ended.names.join(", ")} ended (no Hit Points marked)`);
+    // Plan lanes-2, E2.3: what the target took of the attacker's grants (`grant` answers, the current target's only).
+    const grants = grantsTaken(state);
+    // dcm-5cn5 (Money Talks, CB p.228: "spend a handful of gold instead of marking HP (1 handful per HP)"): the handfuls
+    // replace the HP this hit's damage marks (capped by those and by the handfuls held); the Demon's Collect is the GM's.
+    const goldSpent = Math.min(grants.gold, Math.max(0, next.hp - sheet.hp), sheet.gold.handfuls);
+    if (goldSpent > 0) {
+      next = { ...next, hp: next.hp - goldSpent, gold: { ...next.gold, handfuls: next.gold.handfuls - goldSpent } };
+      gm.push(`${targetName} pays ${goldSpent} handful${goldSpent === 1 ? "" : "s"} of gold instead of ${goldSpent} HP: add ${goldSpent === 1 ? "it" : "them"} to ${p.attacker.label}'s gold (Collect)`);
+    }
     // The attack's riders land on whoever took the hit (user answer 2026-10-22, AA2b), also when only its damage was
     // negated or reflected; a miss or full avoidance stops them (AA2c, user answer 2026-10-22).
     if (!res.missed && (p.riders?.length ?? 0) > 0) {
       // DA8: after Dark Aegis the conditions still land, any extra "mark HP" doesn't (user answer 2026-10-29).
       // Plan lanes-2, E2 (dcm-t8c): conditions the PC's effects forbid stay off (Unstoppable, CB p.36, dcm-v17).
-      const landed = applyRiders(next, p.riders ?? [], res.conditionNegated, res.hpRidersIgnored, refusedConditions(next));
+      // Plan lanes-2, E2.3 (dcm-nnbl, HF p.75): the Hope the target chose to spend comes off the riders' forced HP.
+      const defense = rebuilt.party.find((x) => x.id === target.character._id);
+      const landed = applyRiders(next, p.riders ?? [], res.conditionNegated, res.hpRidersIgnored, refusedConditions(next), { amount: grants.hope, factor: defense ? marksFactor(defense, "hope") : 1 });
       next = landed.sheet;
       ridersApplied = landed.applied;
-      gm.push(`riders on ${targetName}: ${ridersApplied}${res.conditionNegated ? " (conditions avoided)" : ""}${res.hpRidersIgnored ? " (no Hit Points from them)" : ""}`);
+      gm.push(
+        `riders on ${targetName}: ${ridersApplied}${res.conditionNegated ? " (conditions avoided)" : ""}${res.hpRidersIgnored ? " (no Hit Points from them)" : ""}${landed.hopeSpent > 0 ? ` (${landed.hopeSpent} Hope spent for fewer HP)` : ""}`,
+      );
     }
     // DA10 (CB p.59 Unshakable, user 2026-10-30): a d6 for each Stress the hit (marked instead of HP) and its riders
     // would mark; a 6 skips that one. Counted before the after-hit uses, so "when you mark a Stress" reads the result.
@@ -539,10 +560,19 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     // p.17, on a Hit Point marked; dcm-4qv: its Stress to maintain it is offered below), Eye of the Storm (HF p.23, on the
     // caster's Severe damage; dcm-wjv). A hit reduced to no Hit Points ends only what the window's `endedOnNoHp` says
     // (Shield Aura made the difference, dcm-sim), so it doesn't run here.
-    const occ: EndOccurrence = { kind: "damageTaken", severity: result.severity, hpMarked, lastHp: deathMove };
+    // User answer 2026-10-31 (plan lanes-2, E2.3): "took damage" means at least 1 HP was actually marked. A hit that armor,
+    // a feature or a grant left at 0 HP marked is not taking damage even at Minor or worse (Slumber, CB p.332: "Asleep
+    // until they take damage"; replaces round-1 E6 Q1's reading), so its severity counts as none here and no `takeDamage`
+    // / `majorDamage` end fires; what ends on `reducedToNoHp` is the window's `endedOnNoHp` (dcm-sim).
+    const occ: EndOccurrence = { kind: "damageTaken", severity: hpMarked > 0 ? result.severity : "none", hpMarked, lastHp: deathMove };
     const hitEnds = hitEndEvents(next, occ, target.character._id, await partyMembers(ctx, row.campaignId));
     next = hitEnds.sheet;
     gm.push(...hitEnds.lines);
+    // Plan lanes-2, E2.3 (dcm-8f51): what the hit PC made on the adversaries and their live areas end on the caster's
+    // damage too (Hush, CB p.336: "or you take Major damage"): the instances in the GM row's `adversaryBefore` (undo).
+    const casterEnds = await hitCasterEnds(ctx, row, target.character._id, occ);
+    gm.push(...casterEnds.lines);
+    adversaryBefore.push(...casterEnds.before);
     // After-hit card uses (CE-valor): autos run now; reactions are offered with the row kept open.
     const facts: MarkFacts = { hpMarked, deathMove, armorSlots: result.armorSlots, fromAttack: true, severity: result.severity, stressMarked: Math.max(0, next.stress - sheet.stress), damageType: p.damageType };
     const uses = afterHitUses(windowPcOf({ character: target.character, sheet: next }), facts);
@@ -582,10 +612,11 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     // Evolution's +1 (CB p.30: "until you drop out of that Beastform"); the stance on Severe damage or the last Hit Point
     // (HF p.12), and what ends with it (Grappling's Restrain).
     const lastHp = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
-    const formEnds = beastformEnds(next, { lastHp, severity: result.severity });
+    // User answer 2026-10-31: Fragile's "take Major or greater damage" and the stance's "Severe damage" need a marked HP too.
+    const formEnds = beastformEnds(next, { lastHp, severity: occ.severity });
     if (formEnds) next = formEnds.sheet;
-    const endedWords: string[] = [...(formEnds ? [formEnds.words] : []), ...ended.names.map((n) => `${n} ends`), ...hitEnds.names.map((n) => `${n} ends`)];
-    if (lastHp || result.severity === "severe") {
+    const endedWords: string[] = [...(formEnds ? [formEnds.words] : []), ...ended.names.map((n) => `${n} ends`), ...hitEnds.names.map((n) => `${n} ends`), ...casterEnds.areas.map((n) => `${n} ends`)];
+    if (lastHp || occ.severity === "severe") {
       const dropped = await dropStance(ctx, row.campaignId, next);
       if (dropped.dropped) {
         next = dropped.sheet;
@@ -765,6 +796,34 @@ export function hitEndEvents(sheet: CharacterSheet, occ: Extract<EndOccurrence, 
     if (member) others.push({ character: member.character, before: member.sheet, sheet: c.sheet, names: ended });
   }
   return { sheet: next, names, lines, maintain, others };
+}
+
+/**
+ * Plan lanes-2, E2.3 (dcm-8f51): the caster side of a resolved hit beyond the party's sheets: the modifiers and conditions
+ * the hit PC's token made on the running encounters' instances (`endForCasterOnInstances`: Hush's Silenced, CB p.336 "or
+ * you take Major damage") and the PC's live areas whose spec ends on the event (`endCasterAreas`, `AreaSpec.endsOnCaster`).
+ * Skipped for a hit reduced to no damage (as `hitEndEvents`). Instances are found by the PC's token on the hit's live map;
+ * without one only the areas end. `before`: the instances as they were, for the GM row.
+ */
+export async function hitCasterEnds(
+  ctx: MutationCtx,
+  row: HitRow,
+  characterId: Id<"characters">,
+  occ: Extract<EndOccurrence, { kind: "damageTaken" }>,
+): Promise<{ before: AdversaryBefore[]; lines: string[]; areas: string[] }> {
+  if (occ.severity === "none" && occ.hpMarked === 0) return { before: [], lines: [], areas: [] };
+  const tokenId = await pcTokenOf(ctx, row, characterId);
+  const inst = tokenId !== null ? await endForCasterOnInstances(ctx, row.campaignId, tokenId, occ) : { before: [], lines: [] };
+  const areas = await endCasterAreas(ctx, row.campaignId, characterId, occ);
+  return { before: inst.before, lines: [...inst.lines, ...areas.map((a) => `${a} ends (its caster took ${SEVERITY_WORD[occ.severity]} damage)`)], areas };
+}
+
+/** The PC's token on the hit's map (the stored target token for the first target; else read from the map), or null. */
+async function pcTokenOf(ctx: QueryCtx, row: HitRow, characterId: Id<"characters">): Promise<string | null> {
+  if (row.payload.targetTokenId !== undefined && characterId === row.payload.targetCharacterId) return row.payload.targetTokenId;
+  if (row.mapId === undefined) return null;
+  const token = (await tokensOnMap(ctx, row.mapId)).find((t) => t.ref.kind === "pc" && t.ref.characterId === characterId);
+  return token?._id ?? null;
 }
 
 /**
@@ -1095,6 +1154,17 @@ export type HitView = {
   armorAnswered?: boolean;
   /** SD4 (Q2): a before-roll prompt: nothing is rolled yet; Use a before-roll feature or Pass. */
   preRoll?: boolean;
+  /**
+   * Plan lanes-2, E2.3: the attacker's grants the hit PC may still take (answer `grant {id, amount}`, `amount` 1..the
+   * listed amount): `hope` Hope for fewer forced HP (dcm-nnbl), `gold` handfuls instead of HP (dcm-5cn5).
+   */
+  grants?: { id: string; label: string; amount?: number }[];
+};
+
+/** Plan lanes-2, E2.3: the prompt's words for a grant. */
+const GRANT_LABEL: Record<"hope" | "gold", string> = {
+  hope: "Spend Hope to mark that many fewer of the Hit Points this attack forces",
+  gold: "Spend handfuls of gold instead of marking Hit Points (1 handful per HP)",
 };
 
 /** What one character sees of an open hit: the target their own numbers (Q14), an ally only who was hit and their cards. */
@@ -1151,6 +1221,8 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
           return effect ? [featureView(effect, f.useId, me.sheet, hopeAndFear)] : [];
         })
       : [];
+  // Plan lanes-2, E2.3: the grants the target may still take, while they owe an answer.
+  const grants = awaiting && isTarget ? grantAnswers(state, characterId).map((g) => ({ id: g.id, label: GRANT_LABEL[g.id], amount: g.max })) : [];
   const view: HitView = {
     requestId: row._id,
     attackerLabel: row.payload.attacker.label,
@@ -1163,6 +1235,7 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
     ...(redirected ? { originalTargetName: members.find((m) => m.character._id === state.originalTargetId)?.sheet.name ?? "Unknown" } : {}),
     ...(features.length > 0 ? { features } : {}),
     ...(isTarget && armorAnswered ? { armorAnswered: true } : {}),
+    ...(grants.length > 0 ? { grants } : {}),
   };
   const defense = party.find((p) => p.id === characterId);
   if (isTarget && defense && armorAnswered) {

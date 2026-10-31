@@ -198,6 +198,9 @@ export function windowPcOf(member: PartyMember, bandToTarget?: Range, scope?: Fe
       }),
     ),
     ...pcDamageMods(sheet, scope?.hopeAndFear ?? true),
+    // Plan lanes-2, E2.3 (dcm-hgvx, dcm-5cn5): the PC's spending flags (Ravenous) and gold handfuls (Money Talks).
+    ...pcFlags(sheet, scope?.hopeAndFear ?? true),
+    ...(sheet.gold.handfuls > 0 ? { gold: sheet.gold.handfuls } : {}),
     featureUses: sheet.featureUses,
     cards,
     ...(bandToTarget !== undefined ? { bandToTarget } : {}),
@@ -310,6 +313,47 @@ export function pcDamageMods(sheet: CharacterSheet, hopeAndFear: boolean): Pick<
 }
 
 const withResistance = (r: PcDefense["resistance"]) => (r ? { resistance: r } : {});
+
+/**
+ * Plan lanes-2, E2.3 (dcm-hgvx): the rule flags of the mods the sheet holds (`pcMods`; `cannotSpendHope`, Ravenous, HF
+ * p.94), for the window's `PayerState.flags`. Absent when none.
+ */
+export function pcFlags(sheet: CharacterSheet, hopeAndFear: boolean): { flags?: string[] } {
+  const flags = [...new Set(pcMods(sheet, hopeAndFear).flatMap(({ mod }) => (mod.kind === "flag" ? [mod.flag] : [])))];
+  return flags.length > 0 ? { flags } : {};
+}
+
+/**
+ * Plan lanes-2, E2.3 (dcm-5cn5): whether the attacker's stat block lets a PC its standard attack hits pay gold instead of
+ * HP (Money Talks, CB p.228: "When a target marks HP from the Demon's standard attack, they can spend a handful of gold
+ * instead of marking HP (1 handful per HP)"): an `onTargetMarksHp` use (standard or any attack) whose steps convert HP
+ * marks into gold (`convertMarks` `into: "gold"`, nested in an `optional` the target decides). Only for the standard attack.
+ */
+export function goldForHp(effects: readonly AdversaryFeatureEffect[], feature: string | undefined): boolean {
+  if (feature !== undefined) return false;
+  return effects.some((effect) =>
+    effect.uses.some((use) => {
+      const a = use.activation;
+      if ((a.kind !== "auto" && a.kind !== "reaction") || a.trigger.kind !== "onTargetMarksHp") return false;
+      return everyStep(use.steps as readonly Step[]).some((st) => st.kind === "convertMarks" && st.from === "hp" && st.into === "gold");
+    }),
+  );
+}
+
+/** E2.3 (dcm-5cn5): `goldForHp` from the attacking instance's stat block; never for a PC attacker. */
+export async function goldForHpOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<boolean> {
+  const attacker = row.payload.attacker;
+  if (isPcAttacker(attacker)) return false;
+  const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
+  if (instance === null || instance.campaignId !== row.campaignId) return false;
+  const block = await blockOf(ctx, instance);
+  return block ? goldForHp(block.effects, attacker.feature) : false;
+}
+
+/** E2.3 (dcm-nnbl): the forced HP of the riders the PC may reduce with Hope (`reduceWithHope`). */
+export function hopeReducibleHp(riders: readonly HitRider[]): number {
+  return riders.reduce((n, r) => n + (r.kind === "hp" && r.reduceWithHope === true ? Math.max(0, Math.trunc(r.amount)) : 0), 0);
+}
 
 // ---------------------------------------------------------------- the attacker's dearer Armor Slots (E2, dcm-s77)
 
@@ -474,8 +518,19 @@ export function seededRng(seed: string): Rng {
   };
 }
 
-export function windowHitOf(attacker: HitAttacker, hit: Pick<HitDraft, "amount" | "type" | "direct" | "forcedArmor" | "critical" | "attackTotal">, riders: readonly HitRider[] = [], armorCost?: ArmorCost, keyword?: DamageKeyword): WindowHit {
+export function windowHitOf(
+  attacker: HitAttacker,
+  hit: Pick<HitDraft, "amount" | "type" | "direct" | "forcedArmor" | "critical" | "attackTotal">,
+  riders: readonly HitRider[] = [],
+  armorCost?: ArmorCost,
+  keyword?: DamageKeyword,
+  /** Plan lanes-2, E2.3 (dcm-5cn5): the attacker grants gold instead of HP (`goldForHpOf`). */
+  gold = false,
+): WindowHit {
+  // Plan lanes-2, E2.3: the grants (Hope before forced HP, dcm-nnbl; gold instead of HP, dcm-5cn5).
+  const hopeHp = hopeReducibleHp(riders);
   return {
+    ...(hopeHp > 0 || gold ? { grants: { ...(hopeHp > 0 ? { hopeHp } : {}), ...(gold ? { goldForHp: true } : {}) } } : {}),
     amount: hit.amount,
     ...(armorCost ? { armorCost } : {}),
     ...(keyword ? { keyword } : {}),
@@ -681,7 +736,14 @@ export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: nu
   const attackRoll = isPcAttacker(p.attacker) ? null : await attackRollOf(ctx, row);
   // DA8 (DA1 follow-up 2): the target's own total, stored with the hit, before the whole roll's.
   const total = attackTotal ?? p.attackTotal ?? attackRoll?.total;
-  const hit = windowHitOf(p.attacker, { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(total !== undefined ? { attackTotal: total } : {}) }, p.riders ?? [], await armorCostOf(ctx, row), keyword);
+  const hit = windowHitOf(
+    p.attacker,
+    { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(total !== undefined ? { attackTotal: total } : {}) },
+    p.riders ?? [],
+    await armorCostOf(ctx, row),
+    keyword,
+    await goldForHpOf(ctx, row),
+  );
   const responders = p.responders.map((r) => {
     const featureIds = r.cardIds.filter(isFeatureId);
     return { characterId: r.characterId, role: r.role, cardIds: r.cardIds.filter((id) => !isFeatureId(id)), ...(featureIds.length > 0 ? { featureIds } : {}) };
@@ -776,10 +838,22 @@ function freeEffectId(effects: readonly { id: string }[], id: string): string {
  * effects (the sheet keeps at most 20), Hope, Stress (a full track marks HP instead, CB p.92), forced HP. Bold Presence's
  * fold (`skipConditions`) keeps conditions and card tags off. DA8 (`ignoreHp`, Dark Aegis, user answer 2026-10-29: "any
  * extra 'mark HP' from them is also ignored"): forced HP riders are skipped and a Stress past a full track marks no HP.
+ * Plan lanes-2, E2.3 (dcm-nnbl): `hope.amount` Hope the PC chose to spend (the `hope` grant) comes off the HP of
+ * `reduceWithHope` riders first, one HP per `hope.factor` Hope (Unstuck, CB p.237), never more than the PC holds then.
  */
-export function applyRiders(sheet: CharacterSheet, riders: readonly HitRider[], skipConditions: boolean, ignoreHp = false, refused: ReadonlySet<string> = new Set()): { sheet: CharacterSheet; applied: number } {
+export function applyRiders(
+  sheet: CharacterSheet,
+  riders: readonly HitRider[],
+  skipConditions: boolean,
+  ignoreHp = false,
+  refused: ReadonlySet<string> = new Set(),
+  hope: { amount: number; factor?: number } = { amount: 0 },
+): { sheet: CharacterSheet; applied: number; hopeSpent: number } {
   let next = sheet;
   let applied = 0;
+  let hopeLeft = Math.max(0, Math.trunc(hope.amount));
+  let hopeSpent = 0;
+  const factor = Math.max(1, Math.trunc(hope.factor ?? 1));
   for (const r of riders) {
     if (skipConditions && isConditionRider(r)) continue;
     // Plan lanes-2, E2 (dcm-t8c, dcm-v17): a condition the PC's effects forbid doesn't land (Unstoppable, CB p.36).
@@ -801,12 +875,17 @@ export function applyRiders(sheet: CharacterSheet, riders: readonly HitRider[], 
         next = { ...next, stress: Math.min(next.stressMax, marked.stress), hp: ignoreHp ? next.hp : Math.min(next.hpMax, marked.hp) };
         break;
       }
-      case "hp":
-        next = { ...next, hp: Math.min(next.hpMax, next.hp + Math.max(0, Math.trunc(r.amount))) };
+      case "hp": {
+        const amount = Math.max(0, Math.trunc(r.amount));
+        const reduced = r.reduceWithHope === true ? Math.min(amount, hopeLeft, Math.floor(next.hope / factor)) : 0;
+        hopeLeft -= reduced;
+        hopeSpent += reduced * factor;
+        next = { ...next, hope: next.hope - reduced * factor, hp: Math.min(next.hpMax, next.hp + amount - reduced) };
         break;
+      }
     }
   }
-  return { sheet: next, applied };
+  return { sheet: next, applied, hopeSpent };
 }
 
 /** Runs one of the hit PC's after-hit card uses with the hit as its trigger (dice seeded from the row: no fishing). */

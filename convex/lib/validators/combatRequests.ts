@@ -137,6 +137,9 @@ export type Rider = Infer<typeof riderValidator>;
 /** The most riders one attack takes (a character holds few: CB p.107 lets each apply once per roll). */
 export const MAX_RIDERS_PER_ATTACK = 8;
 
+/** Plan lanes-2, E2.3 (dcm-6y00 (3)): a map square a held use places its point area on. */
+export const sanctionPointValidator = v.object({ x: v.number(), y: v.number() });
+
 /**
  * The action a sanction holds: a weapon attack (CA3), a domain card use (CA4) or, widened by the sheet drawer (SD0), a
  * Hope / class / subclass / heritage / Beastform / transformation / stance feature use (`combatFeatures.useFeature`, SD3).
@@ -160,6 +163,8 @@ export const sanctionActionValidator = v.union(
     roll: v.optional(sanctionRollOptionsValidator),
     /** SD5 (widened): the riders taken with the card's attack, replayed on approval. */
     riders: v.optional(v.array(riderValidator)),
+    /** Plan lanes-2, E2.3 (widened; dcm-6y00 (3)): the square a point area is placed on, replayed on approval. */
+    point: v.optional(sanctionPointValidator),
   }),
   v.object({
     kind: v.literal("feature"),
@@ -170,6 +175,11 @@ export const sanctionActionValidator = v.union(
     targetTokenIds: v.array(v.id("combatTokens")),
     choices: v.array(cardChoiceValidator),
     roll: v.optional(sanctionRollOptionsValidator),
+    /**
+     * Plan lanes-2, E2.3 (widened; dcm-6y00 (3)): the square a point area is placed on (`useFeature`'s `point`), so an
+     * approved out-of-range use can place it. Absent: none picked (as before).
+     */
+    point: v.optional(sanctionPointValidator),
   }),
 );
 
@@ -240,7 +250,12 @@ export const hitRiderValidator = v.union(
   v.object({ kind: v.literal("condition"), condition: conditionValidator }),
   v.object({ kind: v.literal("effect"), effect: effectValidator, fromCondition: v.optional(v.boolean()) }),
   v.object({ kind: v.literal("stress"), amount: v.number() }),
-  v.object({ kind: v.literal("hp"), amount: v.number() }),
+  /**
+   * Plan lanes-2, E2.3 (widened; dcm-nnbl): `reduceWithHope`: the PC may spend Hope to mark fewer of these HP, one for one
+   * (Doom / Tentacle Rays, HF p.75: "they can spend any number of Hope to reduce the number of HP marked this way by an
+   * equal amount"); the window offers it as the `hope` grant. Absent: the HP are forced.
+   */
+  v.object({ kind: v.literal("hp"), amount: v.number(), reduceWithHope: v.optional(v.boolean()) }),
   v.object({ kind: v.literal("hope"), delta: v.number() }),
 );
 
@@ -532,13 +547,17 @@ export const combatRequestPayloadValidator = v.union(
 
 /**
  * One answer in a reaction window (Q13): `armor` (mark Armor Slots; `slots` above 1 only where a card allows it,
- * I Am Your Shield, CB p.341), `noArmor`, a reaction `card`, or `pass`.
+ * I Am Your Shield, CB p.341), `noArmor`, a reaction `card`, or `pass`. Plan lanes-2, E2.3 (widened): `grant`, the hit
+ * PC takes what the attacker lets them pay instead of Hit Points (`pending`'s `grants`): `id` `hope` spends `amount` Hope
+ * on the forced HP of `reduceWithHope` riders (dcm-nnbl, HF p.75), `gold` pays up to `amount` handfuls of gold instead of
+ * the HP the standard attack marks (dcm-5cn5, Money Talks, CB p.228).
  */
 export const hitChoiceValidator = v.union(
   v.object({ kind: v.literal("armor"), slots: v.optional(v.number()) }),
   v.object({ kind: v.literal("noArmor") }),
   v.object({ kind: v.literal("card"), cardId: v.string(), useId: v.optional(v.string()) }),
   v.object({ kind: v.literal("pass") }),
+  v.object({ kind: v.literal("grant"), id: v.string(), amount: v.number() }),
 );
 
 export const combatResponseValidator = v.object({

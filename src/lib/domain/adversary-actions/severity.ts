@@ -23,6 +23,7 @@
 //   mark 2 Armor Slots"), Rending Jaws (HF p.81: "must mark 2 Armor Slots to reduce the severity by one threshold") take
 //   `slotsPerStep` 2; Boiling Blast (CB p.236: "If a target marks an Armor Slot to reduce the damage, they must also mark
 //   a Stress") takes `alsoMark` Stress per slot used.
+// Unstuck (CB p.237, user answer 2026-10-31, dcm-3m5k): an Armor Slot needs two free slots; both are marked for its benefit.
 //
 // ```ts
 // pcSeverity(14, { major: 10, severe: 20 });                       // { severity: "major", hp: 2 }
@@ -140,12 +141,18 @@ export interface HitAdjustments {
  * every step costs `slotsPerStep`; the allowance (one step, plus `extraSlots` more steps) and the free slots are counted
  * in whole steps, so `maxSlots` is a multiple of it.
  */
-export function armorOptions(pc: PcDefense, hit: PcHit, extraSlots: number | "any" = 0): { canUseArmor: boolean; maxSlots: number; free: number } {
-  const forced = Math.min(Math.max(0, hit.forcedArmor ?? 0), Math.max(0, pc.armorMax - pc.armor));
-  const free = Math.max(0, pc.armorMax - pc.armor - forced);
-  const per = slotsPerStep(hit);
+export function armorOptions(pc: PcDefense, hit: PcHit, extraSlots: number | "any" = 0, offer = true): { canUseArmor: boolean; maxSlots: number; free: number } {
+  const room = Math.max(0, pc.armorMax - pc.armor);
+  // Plan lanes-2, E2.3 (dcm-3m5k, user answer 2026-10-31): under Unstuck (CB p.237: "double the amount spent or marked")
+  // every slot is marked `factor` times, the forced ones too, so one slot's benefit needs `factor` free slots: with only
+  // one free slot the armor option is unavailable. That is the offer (the window's prompt, `armorCapable`, the answer's
+  // check); `applyHitToPc` (`offer` false) only clamps the slots it was given to a full track, as before.
+  const factor = offer ? marksFactor(pc, "armor") : 1;
+  const forced = Math.min(Math.max(0, hit.forcedArmor ?? 0) * factor, room);
+  const free = Math.max(0, room - forced);
+  const per = slotsPerStep(hit) * factor;
   const steps = hit.direct || pc.noArmorSlots ? 0 : extraSlots === "any" ? Math.floor(free / per) : Math.min(Math.floor(free / per), 1 + Math.max(0, extraSlots));
-  const allowed = steps * per;
+  const allowed = steps * slotsPerStep(hit);
   return { canUseArmor: allowed > 0, maxSlots: allowed, free };
 }
 
@@ -223,7 +230,7 @@ export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}
   const incoming = Math.max(0, Math.trunc(hit.amount));
   const pre = damageBeforeArmor(pc, hit, adj.reduceDamage ?? 0);
   const severityBefore = adj.negate ? "none" : pre.severity;
-  const { maxSlots } = armorOptions(pc, hit, adj.extraSlots ?? 0);
+  const { maxSlots } = armorOptions(pc, hit, adj.extraSlots ?? 0, false);
   // E2 (dcm-s77): only whole steps of dearer slots are marked.
   const steps = severityBefore === "none" ? 0 : armorSteps(hit, Math.min(maxSlots, Math.max(0, Math.trunc(adj.armorSlots ?? 0))));
   const armorSlots = steps * slotsPerStep(hit);

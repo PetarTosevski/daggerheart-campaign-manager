@@ -15,6 +15,8 @@ export type HitView = FunctionReturnType<typeof api.adversaryActions.pending>[nu
 export type FeatureView = NonNullable<HitView["features"]>[number];
 export type Severity = NonNullable<HitView["severity"]>;
 export type ArmorStep = NonNullable<HitView["armorPreview"]>[number];
+/** Plan lanes-2, E2.3: a grant the attacker gives the hit PC (Hope for fewer forced HP, gold instead of HP). */
+export type GrantView = NonNullable<HitView["grants"]>[number];
 
 export const SEVERITY_LABEL: Record<Severity, string> = { none: "No damage", minor: "Minor", major: "Major", severe: "Severe" };
 
@@ -133,7 +135,19 @@ export type HitChoice =
   | { kind: "noArmor" }
   | { kind: "pass" }
   | { kind: "card"; cardId: string; useId?: string }
-  | { kind: "feature"; featureId: string; useId?: string; choices: FeatureChoice[] };
+  | { kind: "feature"; featureId: string; useId?: string; choices: FeatureChoice[] }
+  /** Plan lanes-2, E2.3: take a grant, paying `amount` (1..the grant's amount). */
+  | { kind: "grant"; id: string; amount: number };
+
+/** Plan lanes-2, E2.3: the most a grant takes (its listed amount; at least 1). */
+export function grantMax(grant: Pick<GrantView, "amount">): number {
+  return Math.max(1, Math.trunc(grant.amount ?? 1));
+}
+
+/** Plan lanes-2, E2.3: a typed count clamped to 1..the grant's most. */
+export function grantAmount(grant: Pick<GrantView, "amount">, typed: number): number {
+  return Math.min(grantMax(grant), Math.max(1, Math.trunc(Number.isFinite(typed) ? typed : 1)));
+}
 
 /** What the player set on a feature answer's controls, before it becomes the choice list. */
 export type FeaturePicks = {
@@ -183,6 +197,8 @@ export function afterAnswer(views: readonly HitView[], requestId: HitView["reque
   return views.map((v) => {
     if (v.requestId !== requestId) return v;
     if (v.role !== "target" || v.preRoll || v.afterHit || choice.kind === "pass") return { ...v, awaiting: false };
+    // Plan lanes-2, E2.3: a taken grant leaves the list; the rest of the prompt stays.
+    if (choice.kind === "grant") return { ...v, grants: (v.grants ?? []).filter((g) => g.id !== choice.id) };
     const cardIds = choice.kind === "card" ? v.cardIds.filter((id) => id !== choice.cardId) : v.cardIds;
     const features = choice.kind === "feature" ? (v.features ?? []).filter((f) => f.featureId !== choice.featureId) : (v.features ?? []);
     const armorAnswered = v.armorAnswered === true || choice.kind === "armor" || choice.kind === "noArmor";

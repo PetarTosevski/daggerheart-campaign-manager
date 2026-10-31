@@ -23,7 +23,7 @@
 // resolveWindow(w, party);                                   // Bram takes the hit with 2 slots
 // ```
 
-import { cardAvailability, resolveCosts, unaffordable } from "../card-effects/availability";
+import { cardAvailability, hopeBlocked, resolveCosts, unaffordable } from "../card-effects/availability";
 import { pickUse, run as runCard, type ActorState, type PlanStep, type RunPlan, type RunResult } from "../card-effects/run";
 import type { CardEffect, CardUse, ConditionRef, DamageKeyword, NumberChoice, Range, Step, Trigger } from "../card-effects/types";
 import { asCardEffect, runFeature, type FeatureRunResult } from "../feature-effects/run";
@@ -55,6 +55,14 @@ export interface WindowHit extends PcHit {
    * card's `damage` step). Unknown (absent) = not known: a keyword trigger still fits and the player confirms (Q13).
    */
   keyword?: DamageKeyword;
+  /**
+   * Plan lanes-2, E2.3: what the attacker lets the hit PC pay instead of Hit Points (`grantOffers`). `hopeHp`: forced HP
+   * from the hit's riders that the PC may reduce one for one with Hope (dcm-nnbl; Doom / Tentacle Rays, HF p.75: "they
+   * can spend any number of Hope to reduce the number of HP marked this way by an equal amount"). `goldForHp`: a handful
+   * of gold per Hit Point instead of marking it (dcm-5cn5; Money Talks, CB p.228: "When a target marks HP from the
+   * Demon's standard attack, they can spend a handful of gold instead of marking HP (1 handful per HP)").
+   */
+  grants?: { hopeHp?: number; goldForHp?: boolean };
 }
 
 /** A PC at the table, as the window needs them: defenses, Evasion, loadout cards with effects, and distance to the target. */
@@ -75,6 +83,13 @@ export interface WindowPc extends PcDefense {
   readonly features?: readonly FeatureEffect[];
   /** SD4: the band from this PC to the attacker (Not This Time "within Far", Q3); unknown = any range (Q18). */
   readonly bandToAttacker?: Range;
+  /**
+   * Plan lanes-2, E2.3 (dcm-hgvx): the PC's rule flags from the mods it carries (`Mod` `flag`): `cannotSpendHope` makes
+   * every Hope cost short (Ravenous, HF p.94) and keeps the Hope grant off (`grantOffers`). Absent = none.
+   */
+  readonly flags?: readonly string[];
+  /** Plan lanes-2, E2.3 (dcm-5cn5): the handfuls of gold on the sheet (Money Talks' grant). Absent = none. */
+  readonly gold?: number;
 }
 
 /** Who must or may answer (the stored `HitResponder`): the target (armor) or an ally with an eligible reaction card. */
@@ -93,6 +108,8 @@ export type HitChoice =
   | { kind: "card"; cardId: string; useId?: string }
   /** SD4: a feature's reaction use (the stored `preRollFeatureChoiceValidator` shape; `choices` as `useFeature`'s). */
   | { kind: "feature"; featureId: string; useId?: string; choices?: readonly unknown[] }
+  /** Plan lanes-2, E2.3: the hit PC takes an attacker's grant (`grantOffers`): `amount` Hope or handfuls of gold. */
+  | { kind: "grant"; id: string; amount: number }
   | { kind: "pass" };
 
 /**
@@ -237,6 +254,8 @@ function affordable(use: CardUse, pc: WindowPc): boolean {
       armor: pc.armor,
       armorMax: pc.armorMax,
       cardTokens: Infinity,
+      // Plan lanes-2, E2.3 (dcm-hgvx): Ravenous (HF p.94) and the other spending flags.
+      ...(pc.flags ? { flags: pc.flags } : {}),
     }).length === 0
   );
 }
@@ -623,6 +642,55 @@ export function cardAnswers(state: WindowState, characterId: string): string[] {
   return listed.filter((id) => fits.includes(id));
 }
 
+// ---------------------------------------------------------------- grants (plan lanes-2, E2.3)
+
+/** An attacker's grant to the hit PC: `hope` (Hope before forced HP, dcm-nnbl) or `gold` (Money Talks, dcm-5cn5). */
+export type GrantId = "hope" | "gold";
+
+/** A grant the PC may take now and the most it may pay (Hope, or handfuls of gold). */
+export interface GrantOffer {
+  id: GrantId;
+  max: number;
+}
+
+/**
+ * The grants `hit` offers `pc` (the hit PC): `hope` while the riders force HP the PC may reduce with Hope, the PC has Hope
+ * and no `cannotSpendHope` flag (Ravenous, HF p.94); under Unstuck (CB p.237) each HP costs the Hope factor. `gold` while
+ * the attacker grants it and the PC holds a handful; the HP it replaces is capped when the hit resolves.
+ */
+export function grantOffers(hit: Pick<WindowHit, "grants">, pc: Pick<WindowPc, "hope" | "flags" | "gold" | "marksMultiplier">): GrantOffer[] {
+  const out: GrantOffer[] = [];
+  const hopeHp = Math.max(0, Math.trunc(hit.grants?.hopeHp ?? 0));
+  const hope = Math.floor(Math.max(0, pc.hope ?? 0) / marksFactor(pc, "hope"));
+  if (hopeHp > 0 && hope > 0 && !hopeBlocked(pc.flags)) out.push({ id: "hope", max: Math.min(hopeHp, hope) });
+  const gold = Math.max(0, Math.trunc(pc.gold ?? 0));
+  if (hit.grants?.goldForHp === true && gold > 0) out.push({ id: "gold", max: gold });
+  return out;
+}
+
+/** The grants the current target may still take: offered, not taken yet, their turn not ended (Done) nor closed. */
+export function grantAnswers(state: WindowState, characterId: string): GrantOffer[] {
+  if (characterId !== state.targetId || state.closedEarly) return [];
+  const pc = state.party?.find((p) => p.id === characterId);
+  if (!pc) return [];
+  const mine = state.responses.filter((r) => r.characterId === characterId);
+  if (mine.some((r) => r.choice.kind === "pass")) return [];
+  const taken = new Set(mine.flatMap((r) => (r.choice.kind === "grant" ? [r.choice.id] : [])));
+  return grantOffers(state.hit, pc).filter((g) => !taken.has(g.id));
+}
+
+/** What the current target took: Hope to spend on the forced HP and handfuls of gold to pay instead of HP. */
+export function grantsTaken(state: WindowState): { hope: number; gold: number } {
+  const out = { hope: 0, gold: 0 };
+  for (const r of state.responses) {
+    if (r.characterId !== state.targetId || r.choice.kind !== "grant") continue;
+    const amount = Math.max(0, Math.trunc(r.choice.amount));
+    if (r.choice.id === "hope") out.hope += amount;
+    else if (r.choice.id === "gold") out.gold += amount;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- the machine
 
 export interface OpenInput {
@@ -668,7 +736,9 @@ export function openWindow(input: OpenInput): WindowState {
     const severity = damageBeforeArmor(target, hit).severity;
     const creatures: TriggerCreatures = { ...(target.actor ? { subject: target.actor } : {}), ...(input.attacker ? { source: input.attacker } : {}) };
     const { cardIds: cards, featureIds: features } = answersAtOpen(target, "target", hit, severity, armorCapable[target.id] ?? false, creatures);
-    if (armorCapable[target.id] || cards.length > 0 || features.length > 0) responders.push({ characterId: target.id, role: "target", cardIds: cards, ...(features.length > 0 ? { featureIds: features } : {}) });
+    // Plan lanes-2, E2.3: a grant to answer (Hope before forced HP, gold instead of HP) makes the target a responder too, so
+    // a forced-HP hit with no damage still asks them (dcm-nnbl).
+    if (armorCapable[target.id] || cards.length > 0 || features.length > 0 || grantOffers(hit, target).length > 0) responders.push({ characterId: target.id, role: "target", cardIds: cards, ...(features.length > 0 ? { featureIds: features } : {}) });
     for (const pc of party) {
       if (pc.id === targetId) continue;
       const { cardIds: allyCards, featureIds: allyFeatures } = answersAtOpen(pc, "ally", hit, severity, armorCapable[pc.id] ?? false, creatures);
@@ -742,6 +812,13 @@ export function respond(state: WindowState, response: WindowResponse, options: {
     if (!responder.cardIds.includes(choice.cardId) || played) return { ok: false, code: "NOT_A_RESPONDER", detail: choice.cardId };
     // DA8: the target's card must fit the hit as it is now (a card listed for a lower severity waits for it).
     if (!options.replay && responder.role === "target" && state.party && !cardAnswers(state, who).includes(choice.cardId)) return { ok: false, code: "NOT_A_RESPONDER", detail: choice.cardId };
+  }
+  if (choice.kind === "grant") {
+    // Plan lanes-2, E2.3: only the current target, once per grant, at most what it offers now.
+    if (who !== state.targetId) return { ok: false, code: "NOT_A_RESPONDER", detail: "Only the target takes a grant." };
+    const taken = state.responses.some((x) => x.characterId === who && x.choice.kind === "grant" && x.choice.id === choice.id);
+    const offer = grantAnswers(state, who).find((g) => g.id === choice.id);
+    if (taken || (!options.replay && (!offer || !Number.isInteger(choice.amount) || choice.amount < 1 || choice.amount > offer.max))) return { ok: false, code: "NOT_A_RESPONDER", detail: choice.id };
   }
   if (choice.kind === "feature") {
     const played = state.responses.some((x) => x.characterId === who && x.choice.kind === "feature" && x.choice.featureId === choice.featureId);

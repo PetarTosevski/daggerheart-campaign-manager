@@ -17,6 +17,8 @@ import {
   damageLine,
   defaultPicks,
   featureChoice,
+  grantAmount,
+  grantMax,
   hitLine,
   playableCards,
   promptMode,
@@ -26,6 +28,7 @@ import {
   stepText,
   type FeaturePicks,
   type FeatureView,
+  type GrantView,
   type HitChoice,
   type HitView,
 } from "./model";
@@ -209,6 +212,13 @@ function HitCard({
           <p className="ih-q">{mode === "afterArmor" ? "Armor answered. Use another reaction that fits now, in any order, or Done." : armorQuestion(view)}</p>
         </>
       ) : null}
+      {(view.grants ?? []).length > 0 ? (
+        <ul className="ih-cards" aria-label="Grants">
+          {(view.grants ?? []).map((g) => (
+            <GrantItem key={g.id} grant={g} disabled={busy} onUse={(amount) => onAnswer({ kind: "grant", id: g.id, amount })} />
+          ))}
+        </ul>
+      ) : null}
       {features.length > 0 ? (
         <ul className="ih-cards" aria-label="Reaction features">
           {features.map((f) => (
@@ -295,6 +305,27 @@ function ArmorCounts({ view, busy, onAnswer }: { view: HitView; busy: boolean; o
         </span>
       </button>
     </>
+  );
+}
+
+/**
+ * Plan lanes-2, E2.3: one grant the attacker gives the hit PC (Doom / Tentacle Rays, HF p.75: Hope for fewer forced HP;
+ * Money Talks, CB p.228: gold instead of HP), with how much to pay (1..its amount) and Spend. Answer it before the armor
+ * question: the hit resolves once that and every reaction are answered.
+ */
+function GrantItem({ grant, disabled, onUse }: { grant: GrantView; disabled: boolean; onUse: (amount: number) => void }) {
+  const [amount, setAmount] = useState(() => grantMax(grant));
+  return (
+    <li className="ih-rc ih-feat" data-testid="incoming-hit-grant">
+      <p className="ih-rc-text">{grant.label}</p>
+      <label className="ih-pick">
+        <span>How many</span>
+        <input type="number" min={1} max={grantMax(grant)} value={amount} onChange={(e) => setAmount(grantAmount(grant, Number(e.target.value)))} />
+      </label>
+      <button type="button" className="ih-btn ih-go" disabled={disabled} onClick={() => onUse(grantAmount(grant, amount))} aria-label={`Spend ${amount}: ${grant.label}`}>
+        Spend
+      </button>
+    </li>
   );
 }
 
