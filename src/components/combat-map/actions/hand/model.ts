@@ -60,6 +60,11 @@ export type UseForm = {
   choose: { stepId: string; label: string; options: { id: string; label: string }[]; count: number | null }[];
   /** The use makes an action roll: the Hand's roll-options strip applies to it (Experiences, advantage, Help; F8-I1). */
   rolls: boolean;
+  /**
+   * Plan lanes-2, E5 (dcm-u4pq): the use swaps a vault card into the loadout (`loadout` `swapWithVault`; Codex-Touched,
+   * CB p.333: "replace this card with any card from your vault"): the dialog asks which (`swapWith`).
+   */
+  swapWithVault?: boolean;
 };
 
 /** Optional steps the server takes unless declined (convex/lib/cardRunner.ts `DEFAULT_OPTIONALS`). */
@@ -197,6 +202,7 @@ export function formFor(use: CardUse): UseForm {
       else if (step.to === "allies" || step.to === "selfAndAllies") addRecipient("allies", pickSide ?? "ally");
     }
     if (step.kind === "redirectDamage" && step.target === "picked") addRecipient("picked", step.pick?.side ?? "enemy");
+    if (step.kind === "loadout" && step.op === "swapWithVault") form.swapWithVault = true;
   });
   form.eithers = eitherCosts.flatMap((c, index) => (c.kind === "either" ? [{ index, options: c.options.map((o) => o.map(costLabel).join(" and ")) }] : []));
   return form;
@@ -237,7 +243,7 @@ export function fitsSide(c: Creature, side: TargetSpec["side"]): boolean {
 export function needsDialog(form: UseForm, opts: { spells: number; pickedEnemies: number; gm: boolean }): boolean {
   if (opts.spells > 1) return true;
   if (form.numbers.length || form.eithers.length || form.situations.length || form.optionals.length || form.recipients.length || form.choose.length) return true;
-  if (form.weapon || form.traits || (form.gmDifficulty && opts.gm)) return true;
+  if (form.weapon || form.traits || form.swapWithVault || (form.gmDifficulty && opts.gm)) return true;
   if (form.targets === null) return false;
   return !(form.targets.side === "enemy" && form.targets.max === 1 && opts.pickedEnemies > 0);
 }

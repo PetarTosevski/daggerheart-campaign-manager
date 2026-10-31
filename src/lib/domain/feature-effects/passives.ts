@@ -22,6 +22,16 @@
 //   gain a +2 bonus to your Evasion against the attack."  HF p.16, Vexing Malison: "You have advantage on attacks against
 //   Hexed creatures."
 //
+// Plan lanes-2, E5 (docs/tasks/TASK-LN2-E5.md):
+// - dcm-eut: a `disadvantageAgainst` mod with `from`, `buyOff` or `situation` is not summed into the always-on list
+//   (`disadvantageAgainst`); it is kept in `guarded` and `versusMods` counts it against one attacker: `from` by the
+//   attacker's `distance`, `situation` by what the GM confirmed, `buyOff` offered to the attacker (`VersusTotals.buyOff`)
+//   and dropped once paid (`CreatureInfo.paidOff`). HF p.12, Defensive stance: "Attack rolls targeting you from within
+//   Melee range have disadvantage unless the attacker marks a Stress to negate the disadvantage."
+// - dcm-cqwm: the `passive` uses of every feature are read, whatever the feature's usage (Feed, HF p.39, is a combat
+//   feature whose "While there are no tokens on this card, you make action and reaction rolls with disadvantage" is a
+//   passive use). Before-roll toggles (`rollOptions`) stay with passive features.
+//
 // ```ts
 // passiveMods(galapaGuardian).majorThreshold;                    // Shell: + Proficiency
 // versusMods(sheet, "attacksByThem", { tags: ["Marked for Death"] }).evasion;   // Scorpion's Poise: 2
@@ -31,7 +41,8 @@ import { activeBeastformId, holdingsFor, isStatLine, owned, type OwnedFeature, t
 import { featureEffect } from "../../srd/feature-effects/index";
 import { FEATURE_CLASSIFICATION } from "../../srd/feature-effects/classification";
 import { requirementMet, type RequirementState, type StateFacts } from "../card-effects/availability";
-import type { CardUse, CreatureKey, Mod, NumberSource, RollFilter, Versus } from "../card-effects/types";
+import type { CardUse, Cost, CreatureKey, Mod, NumberSource, RollFilter, Versus } from "../card-effects/types";
+import { RANGE_SQUARES } from "../combat-map/ranges";
 import type { CharacterSheet } from "../../validation/characters";
 import { TRAIT_IDS, type TraitId } from "../../srd/types";
 import { applyUpgrades } from "./upgrades";
@@ -73,6 +84,11 @@ export interface PassiveMods extends StatTotals {
   advantage: RollFilter[];
   /** Rolls against the bearer that always have disadvantage (Sturdy at 1 HP left). */
   disadvantageAgainst: RollFilter[];
+  /**
+   * Plan lanes-2, E5 (dcm-eut): disadvantage on rolls against the bearer that holds only for some attackers (`from`), on
+   * the GM's word (`situation`) or until the attacker pays (`buyOff`); `versusMods` decides them per attacker.
+   */
+  guarded: GuardedDisadvantage[];
   /** The rules switches on (`flying`, `cannotBeMoved`, ...). */
   flags: string[];
   /** The `versus` mods, kept for `versusMods`. */
@@ -93,17 +109,39 @@ export interface PassiveMods extends StatTotals {
   slots: SlotCounts;
 }
 
+/** A `disadvantageAgainst` mod's gates (dcm-eut): only attackers in / beyond Melee, only when confirmed, unless paid. */
+export interface DisadvantageGates {
+  from?: "melee" | "beyondMelee";
+  buyOff?: readonly Cost[];
+  situation?: string;
+}
+
 export interface VersusMod {
   featureId: string;
   versus: Versus;
-  mod: { kind: "stat"; stat: "evasion"; delta: number } | { kind: "advantage"; on: RollFilter } | { kind: "disadvantageAgainst"; on: RollFilter };
+  mod: { kind: "stat"; stat: "evasion"; delta: number } | { kind: "advantage"; on: RollFilter } | ({ kind: "disadvantageAgainst"; on: RollFilter } & DisadvantageGates);
 }
 
-/** A creature as a `versus` key reads it: its condition tags, whether it is Hexed, whether it is within the bearer's companion's Melee range. */
+/** An unkeyed `disadvantageAgainst` mod with gates (dcm-eut). */
+export interface GuardedDisadvantage extends DisadvantageGates {
+  featureId: string;
+  on: RollFilter;
+}
+
+/**
+ * A creature as a `versus` key reads it: its condition tags, whether it is Hexed, whether it is within the bearer's companion's Melee range.
+ * Plan lanes-2, E5 (dcm-eut), for gated disadvantage (each optional):
+ * - `distance`: squares between the attacker and the bearer (absent: not known, so a `from` gate does not count).
+ * - `situations`: the situation texts the GM confirmed for this attack.
+ * - `paidOff`: feature ids whose `buyOff` the attacker paid for this attack (the attacker's pay prompt, lane E7).
+ */
 export interface CreatureInfo {
   tags?: readonly string[];
   hexed?: boolean;
   inCompanionReach?: boolean;
+  distance?: number;
+  situations?: readonly string[];
+  paidOff?: readonly string[];
 }
 
 const EMPTY_STATS: StatTotals = { evasion: 0, armorScore: 0, majorThreshold: 0, severeThreshold: 0, proficiency: 0, attack: 0, damage: 0, actionRoll: 0 };
@@ -221,8 +259,9 @@ export function activePassives(
     // DA9 (B1): a Beastform's attack and statistics line is a combat entry whose passive `form` use is the form's
     // statistics (CB p.30: "add their Evasion bonus to your Evasion, and use the trait specified"); its riders are the
     // drawer's, not roll options.
-    const line = isStatLine(feature);
-    if (feature.usage !== "passive" && !(line && kind === "passive")) continue;
+    // Plan lanes-2, E5 (dcm-cqwm): a passive use counts on any feature (the use's activation decides; Feed is a combat
+    // feature with a passive use); before-roll toggles stay with passive features.
+    if (kind === "rider" && feature.usage !== "passive") continue;
     const entry = featureEffect(feature.featureId);
     if (entry === undefined) continue;
     const upgraded = applyUpgrades(entry, holdingsFor({ subclassId: full.subclassId ?? "", subclassRank: full.subclassRank, level: full.level }, held, entry.owner));
@@ -260,7 +299,7 @@ const matches = (key: CreatureKey, creature: CreatureInfo): boolean => {
  */
 export function passiveMods(sheet: PassiveSheet, state: PassiveState = {}, scope: OwnedScope = {}, only?: (feature: OwnedFeature) => boolean): PassiveMods {
   const totals: StatTotals = { ...EMPTY_STATS };
-  const result: PassiveMods = { ...totals, traits: {}, advantage: [], disadvantageAgainst: [], flags: [], versus: [], sources: [], rollOptions: [], slots: { hp: 0, stress: 0 } };
+  const result: PassiveMods = { ...totals, traits: {}, advantage: [], disadvantageAgainst: [], guarded: [], flags: [], versus: [], sources: [], rollOptions: [], slots: { hp: 0, stress: 0 } };
   const amountSheet = { proficiency: sheet.proficiency, level: sheet.level };
   const legacy = legacyBeastformMods(sheet);
   for (const { feature, use } of activePassives(sheet, state, scope)) {
@@ -318,10 +357,17 @@ function apply(result: PassiveMods, featureId: string, mod: Mod, sheet: { profic
       if (mod.versus) result.versus.push({ featureId, versus: mod.versus, mod: { kind: "advantage", on: mod.on } });
       else result.advantage.push(mod.on);
       return true;
-    case "disadvantageAgainst":
-      if (mod.versus) result.versus.push({ featureId, versus: mod.versus, mod: { kind: "disadvantageAgainst", on: mod.on } });
+    case "disadvantageAgainst": {
+      const gates: DisadvantageGates = {
+        ...(mod.from !== undefined ? { from: mod.from } : {}),
+        ...(mod.buyOff !== undefined ? { buyOff: mod.buyOff } : {}),
+        ...(mod.situation !== undefined ? { situation: mod.situation } : {}),
+      };
+      if (mod.versus) result.versus.push({ featureId, versus: mod.versus, mod: { kind: "disadvantageAgainst", on: mod.on, ...gates } });
+      else if (Object.keys(gates).length > 0) result.guarded.push({ featureId, on: mod.on, ...gates });
       else result.disadvantageAgainst.push(mod.on);
       return true;
+    }
     case "flag":
       result.flags.push(mod.flag);
       return true;
@@ -337,6 +383,26 @@ export interface VersusTotals {
   evasion: number;
   advantage: number;
   disadvantage: number;
+  /**
+   * Plan lanes-2, E5 (dcm-eut): the disadvantages counted in `disadvantage` that the attacker may pay to drop (Defensive
+   * stance, HF p.12: "unless the attacker marks a Stress"). The attacker's pay prompt (lane E7) offers each; a paid one is
+   * passed back in `CreatureInfo.paidOff` and no longer counts. Absent when there is none.
+   */
+  buyOff?: { featureId: string; costs: readonly Cost[] }[];
+}
+
+/**
+ * Plan lanes-2, E5 (dcm-eut): whether a gated disadvantage counts against `creature`: `from` by its distance (unknown:
+ * not counted), `situation` when confirmed, `buyOff` unless paid.
+ */
+export function gateHolds(gates: DisadvantageGates & { featureId: string }, creature: CreatureInfo): boolean {
+  if (gates.from !== undefined) {
+    if (creature.distance === undefined) return false;
+    const inMelee = creature.distance <= RANGE_SQUARES.melee;
+    if ((gates.from === "melee") !== inMelee) return false;
+  }
+  if (gates.situation !== undefined && !(creature.situations ?? []).includes(gates.situation)) return false;
+  return !(gates.buyOff !== undefined && (creature.paidOff ?? []).includes(gates.featureId));
 }
 
 const attackRoll = (on: RollFilter) => on === "any" || on === "attack" || on === "weaponAttack" || on === "action";
@@ -349,13 +415,20 @@ const attackRoll = (on: RollFilter) => on === "any" || on === "attack" || on ===
 export function versusMods(sheet: PassiveSheet, side: "attacksByThem" | "attacksAgainstThem", creature: CreatureInfo, state: PassiveState = {}, scope: OwnedScope = {}): VersusTotals {
   const mods = passiveMods(sheet, state, scope);
   const total: VersusTotals = { evasion: 0, advantage: 0, disadvantage: 0 };
-  if (side === "attacksByThem") total.disadvantage += mods.disadvantageAgainst.filter(attackRoll).length;
-  else total.advantage += mods.advantage.filter(attackRoll).length;
+  const disadvantage = (g: DisadvantageGates & { featureId: string; on: RollFilter }) => {
+    if (!attackRoll(g.on) || !gateHolds(g, creature)) return;
+    total.disadvantage += 1;
+    if (g.buyOff !== undefined) (total.buyOff ??= []).push({ featureId: g.featureId, costs: g.buyOff });
+  };
+  if (side === "attacksByThem") {
+    total.disadvantage += mods.disadvantageAgainst.filter(attackRoll).length;
+    for (const g of mods.guarded) disadvantage(g);
+  } else total.advantage += mods.advantage.filter(attackRoll).length;
   for (const v of mods.versus) {
     if (v.versus.on !== side || !matches(v.versus.creature, creature)) continue;
     if (v.mod.kind === "stat") total.evasion += v.mod.delta;
     else if (v.mod.kind === "advantage" && attackRoll(v.mod.on)) total.advantage += 1;
-    else if (v.mod.kind === "disadvantageAgainst" && attackRoll(v.mod.on)) total.disadvantage += 1;
+    else if (v.mod.kind === "disadvantageAgainst") disadvantage({ featureId: v.featureId, ...v.mod });
   }
   return total;
 }

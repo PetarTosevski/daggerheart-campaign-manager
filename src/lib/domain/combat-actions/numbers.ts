@@ -20,8 +20,9 @@
 // Point for each result of 4 or higher"), every die without `atLeast`, plus the expression's `plus`.
 
 import type { Rng } from "../dice/index";
-import type { DiceExpr, HeldDieKind, NumberSource, Range, Resource, Track } from "../card-effects/types";
+import type { DiceExpr, HeldDieKind, NumberSource, Range, Resource, Severity, Track } from "../card-effects/types";
 import { RANGE_SQUARES } from "../combat-map/ranges";
+import { tokenDistance, type Footprint } from "./distance";
 import type { DomainId, TraitId } from "../../srd/types";
 
 /**
@@ -46,6 +47,7 @@ export interface MarkedTracks {
  * A creature on the map, as `creatureCount` reads it (plan lanes, E5; dcm-ttz). `side` is seen from the actor (`self`
  * is the actor itself); `pc` whether it is a player character; `name` the adversary's name; `fromSelf` / `fromTarget` the
  * squares to the actor and to the target (absent: not known, so it is not counted when the source has a `within`).
+ * Plan lanes-2, E5: `at` is its footprint on the grid, for a `chain` (absent: not on the map, so no link reaches it).
  */
 export interface MapCreature {
   id: string;
@@ -54,6 +56,17 @@ export interface MapCreature {
   name?: string;
   fromSelf?: number;
   fromTarget?: number;
+  at?: Footprint;
+}
+
+/**
+ * Plan lanes-2, E5 (dcm-nsqo, dcm-k4x5): one target's result after the reaction window, for `targetCount` with
+ * `which: "markedHp"`: the Hit Points it marked from this feature and the severity of the damage (absent: no damage).
+ */
+export interface TargetResult {
+  id: string;
+  hpMarked: number;
+  severity?: Severity;
 }
 
 /** What `resolveNumber` reads. The runner keeps one per use and updates it as the use resolves. */
@@ -95,13 +108,18 @@ export interface NumberEnv {
   classDice?: Partial<Record<HeldDieKind | "unstoppable", number>>;
   /** The Know the Tide tokens the actor holds (`tideTokens`; lane E8 fills it). */
   tideTokens?: number;
+  // ---- Plan lanes-2, E5: what the sources tracer V2 widened read (absent reads as 0)
+  /** Each target's result after the reaction window (`targetCount` `markedHp`; lane E7 fills it with dcm-ehgy). */
+  targetResults?: readonly TargetResult[];
+  /** The number the condition being read recorded when it was given (`recorded`; lane E7 fills it from the condition). */
+  recorded?: number;
 }
 
 /** Squares each range reaches (combat-map/ranges.ts); Very Far is any distance on the map. */
 const REACH: Record<Range, number> = { ...RANGE_SQUARES, veryFar: Infinity };
 
-/** How many creatures a `creatureCount` source counts (dcm-ttz). */
-function countCreatures(source: Extract<NumberSource, { kind: "creatureCount" }>, creatures: readonly MapCreature[]): number {
+/** How many creatures a `creatureCount` source counts (dcm-ttz; `chain`: dcm-346). */
+function countCreatures(source: Extract<NumberSource, { kind: "creatureCount" }>, creatures: readonly MapCreature[], targetId: string | undefined): number {
   const sideFits = (c: MapCreature): boolean => {
     switch (source.side) {
       case "allies":
@@ -114,14 +132,49 @@ function countCreatures(source: Extract<NumberSource, { kind: "creatureCount" }>
         return true;
     }
   };
+  const counts = (c: MapCreature): boolean =>
+    !(source.excludeSelf && c.side === "self") && sideFits(c) && (source.name === undefined || c.name === source.name);
+  if (source.chain !== undefined) return chainCount(source.chain, (source.of ?? "self") === "self" ? creatures.find((c) => c.side === "self") : creatures.find((c) => c.id === targetId), creatures, counts);
   const within = source.within;
   return creatures.filter((c) => {
-    if (source.excludeSelf && c.side === "self") return false;
-    if (!sideFits(c) || (source.name !== undefined && c.name !== source.name)) return false;
+    if (!counts(c)) return false;
     if (within === undefined) return true;
     const d = (source.of ?? "self") === "self" ? (c.side === "self" ? 0 : c.fromSelf) : c.fromTarget;
     return d !== undefined && d <= REACH[within];
   }).length;
+}
+
+/**
+ * Plan lanes-2, E5 (dcm-346): the creatures in a line with `root`: every creature `counts` admits that is linked to the
+ * root through steps of at most `step` each (Shield Wall, CB p.212: "If additional Bladed Guards are standing in a line
+ * alongside the first, and each is within Melee range of another guard in the line, the Difficulty increases by the
+ * total number of guards in that line"). The root counts when `counts` admits it ("the total number of guards"); a root
+ * with no link is no line and counts 0 (QUESTION in TASK-LN2-E5.md). A creature without a footprint links to nothing.
+ */
+function chainCount(step: Range, root: MapCreature | undefined, creatures: readonly MapCreature[], counts: (c: MapCreature) => boolean): number {
+  if (root?.at === undefined) return 0;
+  const members = creatures.filter((c) => c.id !== root.id && c.at !== undefined && counts(c));
+  const reached = new Set<string>();
+  const queue: MapCreature[] = [root];
+  while (queue.length > 0) {
+    const from = queue.shift()!;
+    for (const c of members) {
+      if (reached.has(c.id) || tokenDistance(from.at!, c.at!) > REACH[step]) continue;
+      reached.add(c.id);
+      queue.push(c);
+    }
+  }
+  if (reached.size === 0) return 0;
+  return reached.size + (counts(root) ? 1 : 0);
+}
+
+const SEVERITY_RANK: Record<Severity, number> = { minor: 1, major: 2, severe: 3 };
+
+/** Targets that marked 1+ HP from this feature, and with `severity` only those whose damage reached it (dcm-nsqo, dcm-k4x5). */
+function markedHpTargets(results: readonly TargetResult[] | undefined, severity: Severity | undefined): number {
+  return (results ?? []).filter(
+    (r) => r.hpMarked > 0 && (severity === undefined || (r.severity !== undefined && SEVERITY_RANK[r.severity] >= SEVERITY_RANK[severity])),
+  ).length;
 }
 
 /** A track's free slots (slots − marked); 0 when the slots are not known. */
@@ -178,8 +231,8 @@ export function resolveNumber(source: NumberSource, env: NumberEnv, rng: Rng): n
       return marks?.[source.track] ?? 0;
     }
     case "targetCount":
-      // Plan lanes-2, V2 fallback: `markedHp` (dcm-nsqo, dcm-k4x5) is counted after the reaction window; 0 until then.
-      return source.which === "markedHp" ? 0 : env.targetCount[source.which];
+      // Plan lanes-2, E5: `markedHp` (dcm-nsqo, dcm-k4x5) is counted from the results after the reaction window.
+      return source.which === "markedHp" ? markedHpTargets(env.targetResults, source.severity) : env.targetCount[source.which];
     case "rollTotal":
       return env.rollTotal ?? 0;
     case "triggerAmount":
@@ -226,7 +279,7 @@ export function resolveNumber(source: NumberSource, env: NumberEnv, rng: Rng): n
     case "stat":
       return (source.who === "self" ? env.self : env.target)?.stats?.[source.stat] ?? 0;
     case "creatureCount":
-      return countCreatures(source, env.creatures ?? []);
+      return countCreatures(source, env.creatures ?? [], env.target?.id);
     case "gold":
       return goldIn(source.who === "self" ? env.self : env.target, source.unit ?? "handful");
     case "creatureTokens":
@@ -235,9 +288,9 @@ export function resolveNumber(source: NumberSource, env: NumberEnv, rng: Rng): n
       return env.classDice?.[source.die] ?? 0;
     case "tideTokens":
       return env.tideTokens ?? 0;
-    // Plan lanes-2, V2 fallback: the number a condition recorded (dcm-b77) is not stored yet.
+    // Plan lanes-2, E5: the number the condition recorded when it was given (dcm-b77); 0 when the caller has none.
     case "recorded":
-      return 0;
+      return env.recorded ?? 0;
   }
 }
 
