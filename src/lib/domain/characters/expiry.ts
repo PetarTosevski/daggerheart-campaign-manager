@@ -13,6 +13,13 @@
 // | session     | session, scene          | session    | session, scene    |
 // | scene       | scene                   | -          | scene             |
 // | hit         | hit                     | -          | -                 |
+// | gmTurn      | -                       | -          | gmTurn            |
+// | day         | -                       | -          | gmTurn, day       |
+// | week        | -                       | -          | gmTurn, day, week |
+//
+// Plan lanes-2 E6 (dcm-55k): a `gmTurn` / `day` / `week` limit (availability.ts `limitPeriod`) is stored in featureUses
+// and ends here: `gmTurn` when the GM's turn ends (and with any scene, session or rest end: a GM turn never outlasts
+// them), `day` and `week` as campaign time passes (the caller fires them; frames without a calendar never do, E5 Q1).
 //
 // A scene end (the encounter ends, the GM's End scene, or the session ends; sheet-drawer Q7, CB 107) also drops what
 // the book ties to the scene outside those lists: the Guardian's Unstoppable Die (CB 36: "until the end of the scene")
@@ -28,12 +35,12 @@
 // await saveSheet(ctx, characterId, rested);
 // ```
 
-import type { Cost, Duration, EndEvent, Maintain, RollEnd, RollFilter, RollResult } from "../card-effects/types";
+import type { Cost, Duration, EndEvent, Maintain, NumberSource, RollEnd, RollFilter, RollResult } from "../card-effects/types";
 import { featureKey } from "../feature-effects/ids";
 import type { TraitId } from "../../srd/types";
 import type { CardTokens, ClassState, Effect, FeatureUse, HeldDie } from "../../validation/characters";
 
-export type ExpiryEvent = "shortRest" | "longRest" | "session" | "scene" | "hit";
+export type ExpiryEvent = "shortRest" | "longRest" | "session" | "scene" | "hit" | "gmTurn" | "day" | "week";
 
 const EFFECTS: Record<ExpiryEvent, readonly Effect["until"][]> = {
   shortRest: ["rest"],
@@ -41,6 +48,9 @@ const EFFECTS: Record<ExpiryEvent, readonly Effect["until"][]> = {
   session: ["session", "scene"],
   scene: ["scene"],
   hit: ["hit"],
+  gmTurn: [],
+  day: [],
+  week: [],
 };
 const HELD_DICE: Record<ExpiryEvent, readonly HeldDie["until"][]> = {
   shortRest: [],
@@ -48,15 +58,24 @@ const HELD_DICE: Record<ExpiryEvent, readonly HeldDie["until"][]> = {
   session: ["session"],
   scene: [],
   hit: [],
+  gmTurn: [],
+  day: [],
+  week: [],
 };
 const FEATURE_USES: Record<ExpiryEvent, readonly FeatureUse["until"][]> = {
-  shortRest: ["rest"],
-  longRest: ["rest", "longRest"],
-  session: ["session", "scene"],
-  scene: ["scene"],
+  shortRest: ["rest", "gmTurn"],
+  longRest: ["rest", "longRest", "gmTurn"],
+  session: ["session", "scene", "gmTurn"],
+  scene: ["scene", "gmTurn"],
   hit: [],
+  gmTurn: ["gmTurn"],
+  day: ["gmTurn", "day"],
+  week: ["gmTurn", "day", "week"],
 };
-const ENDS_SCENE: Record<ExpiryEvent, boolean> = { shortRest: false, longRest: false, session: true, scene: true, hit: false };
+const ENDS_SCENE: Record<ExpiryEvent, boolean> = { shortRest: false, longRest: false, session: true, scene: true, hit: false, gmTurn: false, day: false, week: false };
+
+/** The featureUses periods some `expire` event ends (all of them since dcm-55k): a limit may store any of these. */
+export const EXPIRING_FEATURE_USES: readonly FeatureUse["until"][] = [...new Set(Object.values(FEATURE_USES).flat())];
 
 /** Feature tokens (`cardTokens` keys) that end with the scene: Walk Between Worlds (HF p.16). */
 export const SCENE_TOKEN_KEYS: readonly string[] = [featureKey("subclass:hedge:walk-between-worlds")];
@@ -118,6 +137,10 @@ export type EffectEnds = {
   endsOnRoll?: RollEnd;
   endsOnCaster?: readonly EndEvent[];
   maintain?: Maintain;
+  /** Plan lanes-2 E6 (dcm-8bv): the Fear a `gmSpendsFear` end costs (default 1). */
+  endFear?: NumberSource;
+  /** Plan lanes-2 E6 (dcm-rao5): one grant shared by every recipient of the use; ending on one ends it on all. */
+  sharedGrant?: boolean;
 };
 
 /** A made roll as an end reads it. `action` covers attack rolls and Spellcast Rolls (CB p.95); a reaction roll is not one. */
@@ -326,4 +349,31 @@ function fixedAmount(cost: Cost): number | null {
 export function withoutLapsedUnstoppable<T extends { effects: readonly Effect[]; classState?: ClassState }>(sheet: T, isUnstoppable: (effect: Effect) => boolean): T {
   if (sheet.classState?.unstoppable !== undefined || !sheet.effects.some(isUnstoppable)) return sheet;
   return { ...sheet, effects: sheet.effects.filter((e) => !isUnstoppable(e)) };
+}
+
+// ---------------------------------------------------------------- plan lanes-2, tracer E6
+
+/**
+ * dcm-8bv / dcm-kmr: the Fear the GM spends to end an effect whose ends hold `gmSpendsFear`, or null when a Fear spend
+ * does not end it. Slumber (CB p.332): "the GM spends a Fear" (the default 1); Marked for Death (HF p.8): "a number of
+ * Fear equal to your tier" (`endFear` `byTier`, read with the tier of the PC the effect belongs to). A fixed number is
+ * itself; any other number source is 1 until the caller can resolve it (E6 Q2).
+ */
+export function gmFearToEnd(ends: EffectEnds | undefined, tier: 1 | 2 | 3 | 4): number | null {
+  if (ends === undefined || !(ends.endsOn ?? []).includes("gmSpendsFear")) return null;
+  const fear = ends.endFear;
+  if (fear === undefined) return 1;
+  if (fear.kind === "fixed") return Math.max(0, fear.value);
+  if (fear.kind === "byTier") return Math.max(0, fear.values[tier - 1] ?? 1);
+  return 1;
+}
+
+/**
+ * dcm-erhv / dcm-u2wx: the `cardTokens` keys whose tokens are gone after a change (more than 0 before, 0 or no entry
+ * after). Flight (CB p.328): "After the action that spends the last token is resolved, you descend"; Invisibility (CB
+ * p.334): "After the action that spends the last token is resolved, the effect ends".
+ */
+export function tokensGoneKeys(before: Pick<Expirable, "cardTokens">, after: Pick<Expirable, "cardTokens">): string[] {
+  const left = new Map((after.cardTokens ?? []).map((t) => [t.cardId, t.count]));
+  return (before.cardTokens ?? []).filter((t) => t.count > 0 && (left.get(t.cardId) ?? 0) <= 0).map((t) => t.cardId);
 }

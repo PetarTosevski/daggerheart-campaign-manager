@@ -12,8 +12,11 @@ import { setStance } from "./lib/stanceDrop";
 import { markStressOn, unshakableText, type UnshakableRoll } from "./lib/unshakable";
 import { cardChoicesValidator, cardRollValidator, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll } from "./lib/cardChoices";
 import { handSharedWithPlayers } from "./lib/cardHand";
-import { effectEndsOf, needsChoiceValidator, pendingCardValidator } from "./lib/cardRows";
+import { applyUseEnds, effectEndsOf, needsChoiceValidator, pendingCardValidator } from "./lib/cardRows";
 import { buildRun, replaying, runCard, type BuiltRun, type RunOutcome } from "./lib/cardRunner";
+import type { RunPlan } from "../src/lib/domain/card-effects/run";
+import { placeAreasFromPlan } from "./combatAreas";
+import { companionFor, companionNumbers } from "./lib/companion";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { attackScene } from "./lib/combatActions";
 import { closeRequest, encounterRunning, loadOpenRequest, openRequests } from "./lib/combatRequests";
@@ -31,6 +34,7 @@ import {
   resolvedFeatureValidator,
   splitFeatureChoices,
   type FeatureUseRequest,
+  type ResolvedFeature,
 } from "./lib/featureRunner";
 import { campaignFearState } from "./lib/fear";
 import { campaignQuery, keyedCampaignMutation, keyedGmMutation } from "./lib/functions";
@@ -98,6 +102,8 @@ async function prepare(ctx: QueryCtx, campaign: Doc<"campaigns">, character: Doc
   const scene = mapId === undefined ? null : await attackScene(ctx, campaign, character, mapId);
   const party = await partyFor(ctx, campaign._id, character._id, scene, (c) => readSheet(c.sheet));
   const roll = input.roll ?? {};
+  // Plan lanes-2 E6 (dcm-b9hc (1)): the Beastbound companion's die, range and damage type (CB p.40-41).
+  const companion = await companionFor(ctx, character._id);
   const pick = pickFeature({
     sheet,
     campaign,
@@ -107,6 +113,7 @@ async function prepare(ctx: QueryCtx, campaign: Doc<"campaigns">, character: Doc
     ...(dieIndexes ? { dieIndexes } : {}),
     rollUsedExperience: (roll.experienceIds?.length ?? 0) > 0,
     party,
+    companion: companion && companionNumbers(companion, sheet.level),
   });
   if (scene === null && (offMapTargets || (entry !== undefined && needsMap(entry, pick.use.id)))) throw appError("FEATURE_NEEDS_MAP");
   const req: FeatureUseRequest = { campaign, character, sheet, scene, pick, targetTokenIds: input.targetTokenIds, choices: input.choices, roll };
@@ -144,7 +151,47 @@ const useArgs = {
   /** As `combatCards.useCard`, plus `{id: "times", value: n}` (CB p.107) and `{id: "dieIndexes", value: ["0"]}`. */
   choices: cardChoicesValidator,
   roll: v.optional(cardRollValidator),
+  /** Plan lanes-2 E6 (dcm-u2wx): the square a `point`-centred area goes on (Dark Cloud, CB p.42: "a point ... within Close range"). */
+  point: v.optional(v.object({ x: v.number(), y: v.number() })),
 };
+
+/**
+ * Plan lanes-2 E6 (dcm-u2wx, dcm-9z2z, dcm-erhv): after `resolveFeatureUse` saved the use, in its undo group: what the
+ * use ends (`applyUseEnds`: `endEffect` / `replace` steps on sheets and areas, effects and areas whose tokens are gone),
+ * then the plan's map areas (`placeAreasFromPlan`). A wall, or a `point` area without `point` (the GM's approval keeps no
+ * square), is left for the table with a note. Returns the result with the lines added to its notes.
+ */
+async function afterFeatureUse(
+  ctx: MutationCtx,
+  input: { result: ResolvedFeature; req: FeatureUseRequest; built: BuiltRun; plan: RunPlan; actorId: Id<"users">; point?: { x: number; y: number } },
+): Promise<ResolvedFeature> {
+  const { result, req, built, plan } = input;
+  const entry = await ctx.db.get("actionLog", result.entryId);
+  const groupId = entry?.groupId;
+  if (groupId === undefined) return result;
+  const notes = [...result.notes];
+  const ends = await applyUseEnds(ctx, { campaignId: req.campaign._id, character: req.character, before: req.sheet, built, plan, groupId, actorId: input.actorId });
+  notes.push(...ends.lines);
+  const areas = plan.steps.filter((s): s is Extract<typeof s, { kind: "area" }> => s.kind === "area");
+  if (areas.length > 0 && built.creatures.onMap) {
+    const scene = built.creatures.scene;
+    const placeable = plan.steps.filter((s) => s.kind !== "area" || (s.area.shape !== "wall" && (s.area.centre !== "point" || input.point !== undefined)));
+    for (const s of areas) if (!placeable.includes(s)) notes.push(`place ${s.area.label} on the map by hand`);
+    const actorTokenId = built.context.actor.id;
+    await placeAreasFromPlan(ctx, {
+      campaignId: req.campaign._id,
+      map: scene.map,
+      characterId: req.character._id,
+      sourceId: req.pick.featureId,
+      useId: plan.useId,
+      ownerToken: scene.attacker,
+      steps: placeable,
+      tokenOf: (id) => (id === actorTokenId ? scene.attacker._id : (built.creatures.get(id)?.tokenId ?? null)),
+      ...(input.point !== undefined ? { point: input.point } : {}),
+    });
+  }
+  return notes.length === result.notes.length ? result : { ...result, notes };
+}
 
 /**
  * Uses an owned feature. Refusals: FEATURE_NOT_OWNED, FEATURE_NOT_COMBAT (out of combat, narrative, passive, not yet
@@ -163,7 +210,10 @@ export const useFeature = keyedCampaignMutation({
       const { req, built } = await prepare(ctx, campaign, character, sheet, args.mapId, args);
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
-      if (built.outOfRange.length === 0) return resolveFeatureUse(ctx, req, built, outcome, ctx.user._id);
+      if (built.outOfRange.length === 0) {
+        const result = await resolveFeatureUse(ctx, req, built, outcome, ctx.user._id);
+        return afterFeatureUse(ctx, { result, req, built, plan: outcome.plan, actorId: ctx.user._id, ...(args.point ? { point: args.point } : {}) });
+      }
 
       await keepDice(ctx, featureSlot(req), outcome.dice, ctx.user._id);
       const encounter = built.targets.find((t) => t.kind === "enemy");
@@ -213,7 +263,8 @@ export const sanction = keyedGmMutation({
       const { req, built } = await prepare(ctx, ctx.campaign, character, sheet, row.mapId, action);
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
-      const result = await resolveFeatureUse(ctx, req, built, outcome, row.createdBy);
+      const resolved = await resolveFeatureUse(ctx, req, built, outcome, row.createdBy);
+      const result = await afterFeatureUse(ctx, { result: resolved, req, built, plan: outcome.plan, actorId: row.createdBy });
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return result;
     }),

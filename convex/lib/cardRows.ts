@@ -13,19 +13,25 @@
 import { v, type Infer } from "convex/values";
 
 import type { PlanStep, ResolvedMod, RunPlan } from "../../src/lib/domain/card-effects/run";
-import type { CardUse, ConditionRef, Duration, Step } from "../../src/lib/domain/card-effects/types";
-import { endEffects, endsOnOccurrence, withoutLapsedUnstoppable, type EffectEnds, type EndOccurrence, type EndRole } from "../../src/lib/domain/characters/expiry";
+import type { CardUse, ConditionRef, Duration, Step, Upgrade } from "../../src/lib/domain/card-effects/types";
+import { endEffects, endsOnOccurrence, gmFearToEnd, tokensGoneKeys, withoutLapsedUnstoppable, type EffectEnds, type EndOccurrence, type EndRole } from "../../src/lib/domain/characters/expiry";
+import { tierForLevel } from "../../src/lib/domain/characters/index";
+import { FEATURE_KEY_PREFIX } from "../../src/lib/domain/feature-effects/ids";
 import type { RollRecord } from "../../src/lib/domain/duality";
 import { SEVERITY_LABEL } from "../../src/lib/domain/encounters/damage";
 import { owned } from "../../src/lib/domain/feature-effects/owned";
 import { TRAIT_LABEL } from "../../src/lib/frames/extras/common";
 import { cardEffect } from "../../src/lib/srd/card-effects/index";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
+import { getDomainCard } from "../../src/lib/srd/index";
 import type { TraitId } from "../../src/lib/srd/types";
 import type { CharacterSheet, Condition, Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { cardIdOfEffect, difficultyOf, featureIdOfEffect, isFeatureUseId, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
+import { activeAreasOnMap, areaSpecOf, endArea } from "../combatAreas";
+import { logAction } from "./actionLog";
+import { cardIdOfEffect, difficultyOf, effectOption, featureIdOfEffect, isFeatureUseId, lapsedConditions, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
+import { readSheet, saveSheet } from "./characterSheet";
 import { MAX_INSTANCES } from "./encounters";
 import { bandsOnMap, openIncomingHit, partyMembers } from "./incomingHits";
 import { ENCOUNTER_CONDITIONS, type EncounterCondition, type InstanceEffect } from "./validators/encounters";
@@ -87,8 +93,17 @@ export const needsChoiceValidator = v.object({
   status: v.literal("needsChoice"),
   asks: v.array(
     v.union(
-      v.object({ kind: v.literal("choose"), stepId: v.string(), label: v.string(), options: v.array(v.object({ id: v.string(), label: v.string() })) }),
+      v.object({
+        kind: v.literal("choose"),
+        stepId: v.string(),
+        label: v.string(),
+        options: v.array(v.object({ id: v.string(), label: v.string() })),
+        /** Plan lanes-2 E6 (dcm-sc54): the chooser of a `choose` step with `by` (the client answers `by:<stepId>:<chooserId>`). */
+        chooserId: v.optional(v.id("combatTokens")),
+      }),
       v.object({ kind: v.literal("split"), label: v.string(), tokenIds: v.array(v.id("combatTokens")) }),
+      /** Plan lanes-2 E6 (dcm-sc54): the creatures of the next link of a repeating follow-up (the client answers `chain:<link>`). */
+      v.object({ kind: v.literal("followUp"), label: v.string(), link: v.number(), tokenIds: v.array(v.id("combatTokens")) }),
     ),
   ),
 });
@@ -175,26 +190,59 @@ function instanceEffect(existing: readonly InstanceEffect[], cardId: string, car
   return effect;
 }
 
-/** Each enemy's `effects` after the plan's `effect` steps (an exclusive card's older ones removed first), by token id. */
-function effectsAfter(plan: RunPlan, creatures: Creatures, cardName: string, lookup: SourceLookup): Map<string, InstanceEffect[]> {
+/**
+ * Each enemy's `effects` after the plan's `effect` steps (an exclusive card's older ones removed first), by token id, and
+ * the conditions / tags to drop because their marker ended (`drops`).
+ *
+ * Plan lanes-2 E6: an `endEffect` step on an enemy ends the modifiers and condition markers its card or feature made
+ * (dcm-9z2z: Confusing Aura "this spell ends", CB p.329; `option` narrows to the step of that option); an `effect` step
+ * with `stacking: "replace"` ends the older copy with its label from the same entry first, one with `refuse` is not added
+ * when the instance already carries that label (Blight Seed, HF p.9: "This effect can't stack"; dcm-kkx).
+ */
+function effectsAfter(plan: RunPlan, creatures: Creatures, cardName: string, lookup: SourceLookup): { effects: Map<string, InstanceEffect[]>; drops: Map<string, Set<string>> } {
   const out = new Map<string, InstanceEffect[]>();
+  const drops = new Map<string, Set<string>>();
   const caster = creatures.onMap ? (creatures.scene.attacker._id as string) : undefined;
+  const listOf = (tokenId: string, c: EnemyCreature): InstanceEffect[] => {
+    const prior = out.get(tokenId);
+    if (prior !== undefined) return prior;
+    const own = c.instance.effects ?? [];
+    return plan.exclusive ? own.filter((e) => !ownsInstanceEffect(e.id, plan.cardId)) : [...own];
+  };
   for (const step of plan.steps) {
-    if (step.kind !== "effect" && step.kind !== "condition") continue;
+    if (step.kind !== "effect" && step.kind !== "condition" && step.kind !== "endEffect") continue;
     const c = creatures.get(step.targetId);
     if (!c || c.kind !== "enemy") continue;
+    if (step.kind === "endEffect") {
+      const list = listOf(step.targetId, c);
+      const kept = list.filter((e) => !instanceMadeBy(e, step.of, step.option, lookup));
+      if (kept.length === list.length) continue;
+      const dropped = drops.get(step.targetId) ?? new Set<string>();
+      for (const e of list) if (!kept.includes(e) && stepEnds(step.of, e.label, lookup)?.kind === "condition") dropped.add(e.label);
+      drops.set(step.targetId, dropped);
+      out.set(step.targetId, kept);
+      continue;
+    }
     // Lane E6: a condition that ends on an event leaves a marker modifier (its name as the label) so the end can find it.
     const marker = step.kind === "condition" ? conditionMarker(plan.cardId, cardName, step, caster, lookup) : null;
     if (step.kind === "condition" && marker === null) continue;
-    let list = out.get(step.targetId);
-    if (list === undefined) {
-      const own = c.instance.effects ?? [];
-      list = plan.exclusive ? own.filter((e) => !ownsInstanceEffect(e.id, plan.cardId)) : [...own];
+    let list = listOf(step.targetId, c);
+    if (step.kind === "effect" && step.stacking !== undefined && step.stacking !== "stack") {
+      const label = step.label.slice(0, 120);
+      const copy = (e: InstanceEffect) => ownsInstanceEffect(e.id, plan.cardId) && e.label === label;
+      if (step.stacking === "refuse" && list.some(copy)) continue;
+      if (step.stacking === "replace") list = list.filter((e) => !copy(e));
     }
     const next = step.kind === "effect" ? instanceEffect(list, plan.cardId, cardName, step, caster, lookup) : marker!(list);
     out.set(step.targetId, [...list, next].slice(-INSTANCE_EFFECTS_MAX));
   }
-  return out;
+  return { effects: out, drops };
+}
+
+/** Whether an instance modifier came from `of` (a card or feature id), narrowed to the step of `option` when set. */
+function instanceMadeBy(effect: InstanceEffect, of: string, option: string | undefined, lookup: SourceLookup): boolean {
+  if (!ownsInstanceEffect(effect.id, of)) return false;
+  return option === undefined || stepEnds(of, effect.label, lookup)?.option === option;
 }
 
 /**
@@ -203,11 +251,14 @@ function effectsAfter(plan: RunPlan, creatures: Creatures, cardName: string, loo
  * lands in the instance's `effects` (CA4b).
  */
 export function instanceWrites(plan: RunPlan, creatures: Creatures, cardName: string, lookup: SourceLookup = srdUses): InstanceWrite[] {
-  const effects = effectsAfter(plan, creatures, cardName, lookup);
+  const { effects, drops } = effectsAfter(plan, creatures, cardName, lookup);
   const writes: InstanceWrite[] = [];
   const withEffects = (c: EnemyCreature, patch: Omit<InstancePatch, "effects">): InstanceWrite => {
     const next = effects.get(c.tokenId);
-    return { creature: c, before: adversaryBefore(c.instance, next !== undefined), patch: next !== undefined ? { ...patch, effects: next } : patch };
+    // Plan lanes-2 E6 (dcm-9z2z): a condition whose marker an `endEffect` step ended goes with it.
+    const dropped = drops.get(c.tokenId);
+    const kept = dropped === undefined ? patch : { ...patch, conditions: patch.conditions.filter((x) => !dropped.has(x)), tags: patch.tags.filter((t) => !dropped.has(t)) };
+    return { creature: c, before: adversaryBefore(c.instance, next !== undefined), patch: next !== undefined ? { ...kept, effects: next } : kept };
   };
   for (const changed of plan.creatures) {
     const c = creatures.get(changed.id);
@@ -436,14 +487,23 @@ export async function openCardHits(
 // The callers fire the events where they happen (follow-up beads per lane): a resolved hit (`damageTaken`), a roll
 // (`roll`), damage dealt, a GM Fear spend, a defeat. Each one saves what it gets back in its own undo group.
 
-/** The uses of a card or feature entry by id (tests pass fixture entries). */
-export type SourceLookup = (sourceId: string) => readonly CardUse[] | undefined;
+/** A card or feature entry: its uses and the upgrades that add options (Reliable Backup's, CB p.43). */
+export type SourceEntry = { uses: readonly CardUse[]; upgrades?: readonly Upgrade[] };
 
-/** The SRD entries: a card's or a feature's uses. */
-export const srdUses: SourceLookup = (sourceId) => cardEffect(sourceId)?.uses ?? featureEffect(sourceId)?.uses;
+/** The uses of a card or feature entry by id, or the whole entry (tests pass fixture entries). */
+export type SourceLookup = (sourceId: string) => readonly CardUse[] | SourceEntry | undefined;
 
-/** An entry's lasting step (an `effect`, or a `condition` by its name) with its ends and its flags. */
-export type EndStep = { kind: "effect" | "condition"; label: string; ends: EffectEnds; flags: readonly string[] };
+/**
+ * The SRD entries: a card's or a feature's whole entry. Plan lanes-2 E6 (dcm-i2tv): the upgrades too, so an effect step
+ * an upgrade adds (Reliable Backup's "shield" and "backup" options to Contacts Everywhere) has its ends on the server.
+ */
+export const srdUses: SourceLookup = (sourceId) => cardEffect(sourceId) ?? featureEffect(sourceId);
+
+/**
+ * An entry's lasting step (an `effect`, or a `condition` by its name) with its ends and its flags; `option`: the option
+ * an effect step stands for (NV7), which an `endEffect` step's `option` narrows to.
+ */
+export type EndStep = { kind: "effect" | "condition"; label: string; ends: EffectEnds; flags: readonly string[]; option?: string };
 
 type LastingStep = Extract<Step, { kind: "effect" }> | Extract<Step, { kind: "condition" }>;
 
@@ -459,8 +519,12 @@ function toEndStep(step: LastingStep): EndStep {
     ...(step.endsOnRoll ? { endsOnRoll: step.endsOnRoll } : {}),
     ...(step.endsOnCaster ? { endsOnCaster: step.endsOnCaster } : {}),
     ...(step.kind === "effect" && step.maintain ? { maintain: step.maintain } : {}),
+    ...(step.endFear ? { endFear: step.endFear } : {}),
+    ...(step.kind === "effect" && step.sharedGrant ? { sharedGrant: true } : {}),
   };
-  return step.kind === "effect" ? { kind: "effect", label: step.label, ends, flags } : { kind: "condition", label: conditionName(step.condition), ends, flags };
+  return step.kind === "effect"
+    ? { kind: "effect", label: step.label, ends, flags, ...(step.option !== undefined ? { option: step.option } : {}) }
+    : { kind: "condition", label: conditionName(step.condition), ends, flags };
 }
 
 /** Every `effect` and `condition` step anywhere in the uses (options, saves, checks, follow-ups, table rows). */
@@ -591,6 +655,8 @@ export async function endForCasterOnInstances(
   casterTokenId: string,
   occ: EndOccurrence,
   lookup?: SourceLookup,
+  /** Plan lanes-2 E6: leave this card's or feature's own modifiers ("cast another spell": not the one just cast). */
+  except?: string,
 ): Promise<{ before: AdversaryBefore[]; lines: string[] }> {
   const before: AdversaryBefore[] = [];
   const lines: string[] = [];
@@ -606,7 +672,7 @@ export async function endForCasterOnInstances(
       .take(MAX_INSTANCES);
     for (const instance of instances) {
       if (instance.campaignId !== campaignId || !(instance.effects ?? []).some((e) => e.id.endsWith(suffix))) continue;
-      const out = endInstanceEffects(instance, occ, { role: "caster", casterTokenId, ...(lookup ? { lookup } : {}) });
+      const out = endInstanceEffects(instance, occ, { role: "caster", casterTokenId, ...(lookup ? { lookup } : {}), ...(except !== undefined ? { only: (e) => instanceEffectSource(e)?.sourceId !== except } : {}) });
       if (out.patch === null) continue;
       before.push(adversaryBefore(instance, true));
       await ctx.db.patch("encounterAdversaries", instance._id, { ...out.patch, updatedAt: Date.now() });
@@ -703,4 +769,326 @@ const UNSTOPPABLE = "class:guardian:unstoppable";
 /** dcm-v17: the sheet without the Unstoppable effect once D5 has removed the die (call after any D5 Unstoppable action). */
 export function afterUnstoppable(sheet: CharacterSheet): CharacterSheet {
   return withoutLapsedUnstoppable(sheet, (e) => featureIdOfEffect(e) === UNSTOPPABLE);
+}
+
+// ---------------------------------------------------------------- plan lanes-2, tracer E6 (docs/tasks/TASK-LN2-E6.md)
+//
+// The endings the SRD data already writes: a plan's `endEffect` and `stacking: "replace"` steps on PC sheets
+// (`planEndsOnSheet`; instances: `instanceWrites`) and on the caster's map areas (`endPlanAreas`), the end of a card's or
+// feature's tokens (`tokensGone`: `endOnTokensGone`, `endTokensGone`), a spell cast (`castsSpell`: `endOnSpellCast`),
+// a granted benefit (`benefitGranted`), shared grants (`endSharedGrants`), areas ended by their caster's events
+// (`endCasterAreas`), and the Fear a GM spend costs (`gmFearForEffect`, `gmFearForInstanceEffect`).
+
+type PartySheet<K> = { key: K; sheet: CharacterSheet };
+type SheetEnd<K> = { key: K; sheet: CharacterSheet; ended: Effect[]; lines: string[] };
+
+/** Whether a sheet effect came from `of` (a card or feature id, a D5 alias), narrowed to the step of `option` when set. */
+function sheetMadeBy(effect: Effect, of: string, option: string | undefined, lookup: SourceLookup): boolean {
+  const source = effectSource(effect);
+  if (source === null || source.sourceId !== of) return false;
+  return option === undefined || (effectOption(effect) ?? stepEnds(of, source.label, lookup)?.option) === option;
+}
+
+/** A sheet without these effects, and without a condition whose last source marker was among them (C2's markers). */
+function withoutEffects(sheet: CharacterSheet, gone: ReadonlySet<string>): CharacterSheet {
+  if (gone.size === 0) return sheet;
+  return lapsedConditions(sheet, { ...sheet, effects: sheet.effects.filter((e) => !gone.has(e.id)) }).sheet;
+}
+
+/**
+ * dcm-9z2z / dcm-8x8 / dcm-5fc / dcm-kkx: a PC's sheet after the plan's `endEffect` steps on them (the effects and
+ * condition markers the named card or feature made, narrowed to `option`; Confusing Aura, CB p.329: "this spell ends";
+ * Howling Rampage, HF p.40: "drop out of Wolf Form") and its `effect` steps with `stacking: "replace"` (only the newest
+ * copy of that label from `cardId` stays). Call it on the sheet `writeSheetChanges` returned (the new copy is the last
+ * one). The same sheet when nothing ends.
+ */
+export function planEndsOnSheet(sheet: CharacterSheet, steps: readonly PlanStep[], who: string, cardId: string, lookup: SourceLookup = srdUses): { sheet: CharacterSheet; ended: Effect[]; lines: string[] } {
+  const ends = steps.filter((s): s is Extract<PlanStep, { kind: "endEffect" }> => s.kind === "endEffect" && s.targetId === who);
+  const replaced = new Set(steps.flatMap((s) => (s.kind === "effect" && s.targetId === who && s.stacking === "replace" ? [s.label] : [])));
+  if (ends.length === 0 && replaced.size === 0) return { sheet, ended: [], lines: [] };
+  const newest = new Map<string, string>();
+  for (const e of sheet.effects) {
+    const source = effectSource(e);
+    if (source !== null && source.sourceId === cardId && replaced.has(source.label)) newest.set(source.label, e.id);
+  }
+  const ended = sheet.effects.filter((e) => {
+    if (ends.some((x) => sheetMadeBy(e, x.of, x.option, lookup))) return true;
+    const source = effectSource(e);
+    return source !== null && source.sourceId === cardId && replaced.has(source.label) && newest.get(source.label) !== e.id;
+  });
+  if (ended.length === 0) return { sheet, ended, lines: [] };
+  return { sheet: withoutEffects(sheet, new Set(ended.map((e) => e.id))), ended, lines: ended.map((e) => endedLine(sheet.name, e.text.split("; ")[0] ?? e.source, e.source)) };
+}
+
+/**
+ * dcm-9z2z (areas): the caster's live areas an `endEffect` step on the caster ends (the area of the named card or feature;
+ * Circle of Power, Wild Fortress's dome). Returns the ended areas' labels for the feed.
+ */
+export async function endPlanAreas(ctx: MutationCtx, input: { mapId: Id<"combatMaps">; characterId: Id<"characters">; actorId: string; steps: readonly PlanStep[] }): Promise<string[]> {
+  const ends = input.steps.filter((s): s is Extract<PlanStep, { kind: "endEffect" }> => s.kind === "endEffect" && s.targetId === input.actorId);
+  if (ends.length === 0) return [];
+  const out: string[] = [];
+  for (const area of await activeAreasOnMap(ctx, input.mapId)) {
+    if (area.characterId !== input.characterId || !ends.some((x) => x.of === area.featureId)) continue;
+    await endArea(ctx, area);
+    out.push(area.label);
+  }
+  return out;
+}
+
+/** The card or feature id of a `cardTokens` key (`feat:<featureId>` for a feature, the card id for a card). */
+export function tokenKeySource(key: string): string {
+  return key.startsWith(FEATURE_KEY_PREFIX) ? key.slice(FEATURE_KEY_PREFIX.length) : key;
+}
+
+/** The party member's effects from `sourceIds` the caster made (their own; on another PC only when no other member holds the source, Q3). */
+function castersEffect<K>(caster: CharacterSheet, member: CharacterSheet, party: readonly PartySheet<K>[], sourceIds: ReadonlySet<string>): (e: Effect) => boolean {
+  return (e) => {
+    const source = effectSource(e);
+    if (source === null || !sourceIds.has(source.sourceId)) return false;
+    if (member === caster) return true;
+    return holdsSource(caster, source.sourceId) && party.filter((p) => holdsSource(p.sheet, source.sourceId)).length <= 1;
+  };
+}
+
+/**
+ * dcm-erhv: `tokensGone` on sheets. The effects of these cards or features that end when their tokens are gone (Flight's
+ * Flying on the caster, CB p.328; Invisibility's Invisible on the ally the caster picked, CB p.334), on the caster and on
+ * the party (an ally's only when the caster is the one member holding the card, as `endForCasterOnSheets`). `party` may
+ * hold the caster (by the same sheet object, or not at all). Returns the sheets that changed.
+ */
+export function endOnTokensGone<K>(caster: PartySheet<K>, party: readonly PartySheet<K>[], sourceIds: readonly string[], lookup?: SourceLookup): SheetEnd<K>[] {
+  if (sourceIds.length === 0) return [];
+  const ids = new Set(sourceIds);
+  const members = [caster, ...party.filter((p) => p.key !== caster.key)];
+  const out: SheetEnd<K>[] = [];
+  for (const p of members) {
+    const only = castersEffect(caster.sheet, p.sheet, members, ids);
+    const ended = endOnSheet(p.sheet, { kind: "event", event: "tokensGone" }, { only, ...(lookup ? { lookup } : {}) });
+    if (ended.ended.length > 0) out.push({ key: p.key, sheet: withoutEffects(p.sheet, new Set(ended.ended.map((e) => e.id))), ended: ended.ended, lines: ended.lines });
+  }
+  return out;
+}
+
+/** Writes changed sheets after a use: each is saved, then logged in the use's group (`before`: the sheet as it was). */
+async function saveEnded(ctx: MutationCtx, campaignId: Id<"campaigns">, groupId: string, actorId: Id<"users">, rows: readonly { characterId: Id<"characters">; before: CharacterSheet; after: CharacterSheet; lines: string[] }[]): Promise<void> {
+  for (const r of rows) {
+    await saveSheet(ctx, r.characterId, r.after);
+    await logAction(ctx, { campaignId, characterId: r.characterId, actorId, kind: "combat", visibility: "public", summary: r.lines.join("; ").slice(0, 1000), groupId, before: r.before, undoable: true });
+  }
+}
+
+/** The live areas a character drew in a campaign (any map). */
+async function areasOfCharacter(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">): Promise<Doc<"combatAreas">[]> {
+  const rows = await ctx.db
+    .query("combatAreas")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .take(MAX_CAMPAIGN_AREAS);
+  return rows.filter((a) => a.status === "active" && a.characterId === characterId);
+}
+
+/** The most area rows read for one campaign (live ones plus ended ones the cron has not swept yet). */
+const MAX_CAMPAIGN_AREAS = 400;
+
+/**
+ * dcm-erhv / dcm-u2wx (2): after a use's sheet is saved, the tokens it left at 0 end what ends with them: the caster's
+ * and the party's `tokensGone` effects (`endOnTokensGone`) and the caster's live areas whose spec ends on `tokensGone`
+ * (Circle of Power, HF p.16: "This spell lasts until the last token is removed"). Every changed sheet is saved and logged
+ * in `groupId` (undo puts it back with the use). `before` / `after`: the caster's sheet before the use and as saved.
+ */
+export async function endTokensGone(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; characterId: Id<"characters">; before: CharacterSheet; after: CharacterSheet; groupId: string; actorId: Id<"users">; lookup?: SourceLookup },
+): Promise<{ lines: string[] }> {
+  const sources = tokensGoneKeys(input.before, input.after).map(tokenKeySource);
+  if (sources.length === 0) return { lines: [] };
+  const party = (await partyMembers(ctx, input.campaignId)).filter((m) => m.character._id !== input.characterId).map((m) => ({ key: m.character._id, sheet: m.sheet }));
+  const changed = endOnTokensGone({ key: input.characterId, sheet: input.after }, party, sources, input.lookup);
+  const lines: string[] = [];
+  const rows = changed.map((c) => {
+    lines.push(...c.lines);
+    const before = c.key === input.characterId ? input.after : party.find((p) => p.key === c.key)!.sheet;
+    return { characterId: c.key, before, after: c.sheet, lines: c.lines };
+  });
+  await saveEnded(ctx, input.campaignId, input.groupId, input.actorId, rows);
+  for (const area of await areasOfCharacter(ctx, input.campaignId, input.characterId)) {
+    if (!sources.includes(area.featureId)) continue;
+    const spec = areaSpecOf(area.featureId, area.useId, area.label);
+    if (!(spec?.endsOn ?? []).includes("tokensGone")) continue;
+    await endArea(ctx, area);
+    lines.push(`${area.label} ends (its last token is gone)`);
+  }
+  return { lines };
+}
+
+/**
+ * dcm-rx1k / dcm-o44e: the caster's live areas whose spec ends on the caster's event (`AreaSpec.endsOnCaster`; Hush, CB
+ * p.336: "or you take Major damage"; Veil of Night, CB p.336: "until you cast another spell"). `except`: leave the
+ * areas of this card or feature (the spell just cast). Returns the ended areas' labels.
+ */
+export async function endCasterAreas(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, occ: EndOccurrence, except?: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const area of await areasOfCharacter(ctx, campaignId, characterId)) {
+    if (area.featureId === except) continue;
+    const spec = areaSpecOf(area.featureId, area.useId, area.label);
+    if (spec?.endsOnCaster === undefined || !endsOnOccurrence({ duration: spec.duration, endsOnCaster: spec.endsOnCaster }, occ, "caster")) continue;
+    await endArea(ctx, area);
+    out.push(area.label);
+  }
+  return out;
+}
+
+/** Whether a card is a spell (CB p.101: a domain card's type), whose cast ends `castsSpell` effects. */
+export function isSpell(cardId: string): boolean {
+  return getDomainCard(cardId)?.type === "spell";
+}
+
+/**
+ * dcm-o44e (`castsSpell`): the caster cast a spell (`castCardId`). Ends the caster's own effects that end when they cast
+ * another spell (`endsOn`; Through Your Eyes, CB p.335: "until you cast another spell") and the effects the caster made on
+ * party members that end on the caster's cast (`endsOnCaster`), but none of the spell just cast. Not a spell: nothing.
+ */
+export function endOnSpellCast<K>(caster: PartySheet<K>, party: readonly PartySheet<K>[], castCardId: string, lookup?: SourceLookup): SheetEnd<K>[] {
+  if (!isSpell(castCardId) && lookup === undefined) return [];
+  const occ: EndOccurrence = { kind: "event", event: "castsSpell" };
+  const other = (e: Effect) => effectSource(e)?.sourceId !== castCardId;
+  const members = [caster, ...party.filter((p) => p.key !== caster.key)];
+  const out: SheetEnd<K>[] = [];
+  for (const p of members) {
+    const own = p.key === caster.key ? endOnSheet(p.sheet, occ, { only: other, ...(lookup ? { lookup } : {}) }) : null;
+    const base = own?.sheet ?? p.sheet;
+    const made = (e: Effect) => {
+      const source = effectSource(e);
+      return other(e) && source !== null && holdsSource(caster.sheet, source.sourceId) && members.filter((m) => holdsSource(m.sheet, source.sourceId)).length <= 1;
+    };
+    const theirs = endOnSheet(base, occ, { role: "caster", only: made, ...(lookup ? { lookup } : {}) });
+    const ended = [...(own?.ended ?? []), ...theirs.ended];
+    if (ended.length > 0) out.push({ key: p.key, sheet: withoutEffects(p.sheet, new Set(ended.map((e) => e.id))), ended, lines: [...(own?.lines ?? []), ...theirs.lines] });
+  }
+  return out;
+}
+
+/**
+ * dcm-o44e on the server: after a spell card's use, end what the cast ends on the party's sheets (`endOnSpellCast`), on
+ * the instances the caster's token marked (`endsOnCaster` / `castsSpell`), and the caster's areas (`endCasterAreas`).
+ * Sheets are saved and logged in `groupId`; the instances' `before` go on the caller's GM row (or a GM row here when
+ * `logInstances`). `sheet`: the caster's sheet as saved by the use.
+ */
+export async function endSpellCast(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; characterId: Id<"characters">; sheet: CharacterSheet; castCardId: string; casterTokenId?: string; groupId: string; actorId: Id<"users">; lookup?: SourceLookup },
+): Promise<{ lines: string[] }> {
+  if (!isSpell(input.castCardId) && input.lookup === undefined) return { lines: [] };
+  const party = (await partyMembers(ctx, input.campaignId)).filter((m) => m.character._id !== input.characterId).map((m) => ({ key: m.character._id, sheet: m.sheet }));
+  const changed = endOnSpellCast({ key: input.characterId, sheet: input.sheet }, party, input.castCardId, input.lookup);
+  const lines: string[] = [];
+  await saveEnded(
+    ctx,
+    input.campaignId,
+    input.groupId,
+    input.actorId,
+    changed.map((c) => {
+      lines.push(...c.lines);
+      return { characterId: c.key, before: c.key === input.characterId ? input.sheet : party.find((p) => p.key === c.key)!.sheet, after: c.sheet, lines: c.lines };
+    }),
+  );
+  const occ: EndOccurrence = { kind: "event", event: "castsSpell" };
+  if (input.casterTokenId !== undefined) {
+    const inst = await endForCasterOnInstances(ctx, input.campaignId, input.casterTokenId, occ, input.lookup, input.castCardId);
+    if (inst.before.length > 0) {
+      await logAction(ctx, { campaignId: input.campaignId, actorId: input.actorId, kind: "combat", visibility: "gm", summary: inst.lines.join("; ").slice(0, 1000), groupId: input.groupId, adversaryBefore: inst.before, undoable: true });
+    }
+  }
+  for (const label of await endCasterAreas(ctx, input.campaignId, input.characterId, occ, input.castCardId)) lines.push(`${label} ends (another spell was cast)`);
+  return { lines };
+}
+
+/**
+ * dcm-rao5 (`sharedGrant`): the copies of a shared grant on the other party sheets end with the one that ended
+ * (Bird's-Eye View, CB p.33: "The first time a character makes a roll to act on this information, they gain advantage";
+ * every recipient of the use carries a copy, and the first roll by any of them spends it). `ended`: what ended on one
+ * sheet (`endOnSheet(...).ended`). Returns the other sheets that changed.
+ */
+export function endSharedGrants<K>(ended: readonly Effect[], party: readonly PartySheet<K>[], lookup?: SourceLookup): SheetEnd<K>[] {
+  const shared = new Set<string>();
+  for (const e of ended) {
+    const source = effectSource(e);
+    if (source !== null && stepEnds(source.sourceId, source.label, lookup)?.ends.sharedGrant === true) shared.add(`${source.sourceId}\u0000${source.label}`);
+  }
+  if (shared.size === 0) return [];
+  const gone = new Set(ended.map((e) => e.id));
+  const out: SheetEnd<K>[] = [];
+  for (const p of party) {
+    const copies = p.sheet.effects.filter((e) => {
+      const source = effectSource(e);
+      return !gone.has(e.id) && source !== null && shared.has(`${source.sourceId}\u0000${source.label}`);
+    });
+    if (copies.length === 0) continue;
+    out.push({ key: p.key, sheet: withoutEffects(p.sheet, new Set(copies.map((e) => e.id))), ended: copies, lines: copies.map((e) => endedLine(p.sheet.name, e.text.split("; ")[0] ?? e.source, e.source)) });
+  }
+  return out;
+}
+
+/**
+ * dcm-5yew (`benefitGranted`): the effect that granted its benefit once ends when its entry says so (a Forest Sprite's
+ * help, CB p.339: "A sprite vanishes after granting a benefit"). The caller names the effect whose benefit a roll used.
+ */
+export function endGrantedBenefit(sheet: CharacterSheet, effectId: string, lookup?: SourceLookup): ReturnType<typeof endOnSheet> {
+  return endOnSheet(sheet, { kind: "event", event: "benefitGranted" }, { only: (e) => e.id === effectId, ...(lookup ? { lookup } : {}) });
+}
+
+/**
+ * dcm-8bv / dcm-kmr: the Fear the GM spends to end a PC's effect (`endFear`; Marked for Death, HF p.8: "a number of Fear
+ * equal to your tier", the sheet's tier), or null when a Fear spend does not end it.
+ */
+export function gmFearForEffect(sheet: Pick<CharacterSheet, "effects" | "level">, effectId: string, lookup?: SourceLookup): number | null {
+  const effect = sheet.effects.find((e) => e.id === effectId);
+  return effect === undefined ? null : gmFearToEnd(effectEndsOf(effect, lookup), tierForLevel(sheet.level));
+}
+
+/** The same for an instance modifier or condition marker (Slumber, CB p.332: "the GM spends a Fear"); `tier`: the caster's. */
+export function gmFearForInstanceEffect(effect: Pick<InstanceEffect, "id" | "label">, tier: 1 | 2 | 3 | 4, lookup?: SourceLookup): number | null {
+  const source = instanceEffectSource(effect);
+  return source === null ? null : gmFearToEnd(stepEnds(source.sourceId, source.label, lookup)?.ends, tier);
+}
+
+/**
+ * dcm-9z2z / dcm-erhv / dcm-u2wx (2): what a resolved use ends, after its writes (call it once the use is saved; the
+ * feature path does, `convex/combatFeatures.ts`; the card paths are the follow-up in the task doc). The plan's
+ * `endEffect` and `stacking: "replace"` steps on the actor's and the touched PCs' sheets (`planEndsOnSheet`), the caster's
+ * areas an `endEffect` names (`endPlanAreas`), and what the use's spent tokens end (`endTokensGone`). Every changed sheet
+ * is saved and logged in `groupId` with its `before`, so undo puts it back with the use. `before`: the actor's sheet
+ * before the use. Returns the feed lines.
+ */
+export async function applyUseEnds(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; character: Doc<"characters">; before: CharacterSheet; built: BuiltRun; plan: RunPlan; groupId: string; actorId: Id<"users">; lookup?: SourceLookup },
+): Promise<{ lines: string[] }> {
+  const { plan, built } = input;
+  const lookup = input.lookup ?? srdUses;
+  const actorTokenId = built.context.actor.id;
+  const pcs = new Map<string, Id<"characters">>([[actorTokenId, input.character._id]]);
+  for (const c of built.creatures.all) if (c.kind === "pc") pcs.set(c.tokenId, c.character._id);
+  const lines: string[] = [];
+  const rows: { characterId: Id<"characters">; before: CharacterSheet; after: CharacterSheet; lines: string[] }[] = [];
+  let actorNow: CharacterSheet | null = null;
+  for (const [tokenId, characterId] of pcs) {
+    const row = await ctx.db.get("characters", characterId);
+    if (row === null || row.campaignId !== input.campaignId) continue;
+    const sheet = readSheet(row.sheet);
+    const out = planEndsOnSheet(sheet, plan.steps, tokenId, plan.cardId, lookup);
+    if (characterId === input.character._id) actorNow = out.sheet;
+    if (out.ended.length === 0) continue;
+    rows.push({ characterId, before: sheet, after: out.sheet, lines: out.lines });
+    lines.push(...out.lines);
+  }
+  await saveEnded(ctx, input.campaignId, input.groupId, input.actorId, rows);
+  if (built.creatures.onMap) {
+    for (const label of await endPlanAreas(ctx, { mapId: built.creatures.scene.map._id, characterId: input.character._id, actorId: actorTokenId, steps: plan.steps })) lines.push(`${label} ends`);
+  }
+  if (actorNow !== null) {
+    const gone = await endTokensGone(ctx, { campaignId: input.campaignId, characterId: input.character._id, before: input.before, after: actorNow, groupId: input.groupId, actorId: input.actorId, lookup });
+    lines.push(...gone.lines);
+  }
+  return { lines };
 }
