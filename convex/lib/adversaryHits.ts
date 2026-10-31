@@ -9,7 +9,7 @@
  */
 import { applyStressTo, rangeCheck, type Combatant } from "../../src/lib/domain/combat-actions/index";
 import { rollD20, run as runCardUse, type ActorState, type HeldDieState, type PlanStep, type RunPlan, type RunRefusal } from "../../src/lib/domain/card-effects/run";
-import type { CardEffect, Mod, Range, Step } from "../../src/lib/domain/card-effects/types";
+import type { CardEffect, DamageKeyword, Mod, Range, Step } from "../../src/lib/domain/card-effects/types";
 import type { AdversaryFeatureEffect } from "../../src/lib/domain/adversary-effects/types";
 import { derivedThresholds } from "../../src/lib/domain/characters/derived";
 import { hopeMax } from "../../src/lib/domain/characters/index";
@@ -46,6 +46,7 @@ import { parseChoices, type CardChoice } from "./cardChoices";
 import { cardActor, cardIdOfEffect, effectOption, featureIdOfEffect, pcCombatant, writeSheetChanges } from "./cardRunner";
 import { partyOf, readSheet } from "./characterSheet";
 import { tokensOnMap } from "./combatMaps";
+import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
 import type { HitRider, IncomingHitPayload, PcAttacker } from "./validators/combatRequests";
 
 /** One hit before armor, as the runner's `IncomingHitDraft` gives it. */
@@ -110,8 +111,11 @@ export async function bandsOnMap(ctx: QueryCtx, mapId: Id<"combatMaps"> | undefi
 /** The sheet effect the Flying toggle writes (Q16; SD3's `FLYING_EFFECT_ID` in ./featureRunner.ts). */
 const FLYING_EFFECT_ID = "flying";
 
-/** What a PC's feature answers need besides the sheet (SD4): the campaign's Hope & Fear option, the band to the attacker. */
-export type FeatureScope = { hopeAndFear: boolean; bandToAttacker?: Range };
+/**
+ * What a PC's feature answers need besides the sheet (SD4): the campaign's Hope & Fear option, the band to the attacker.
+ * Plan lanes-2, E2: the hit's keyword (dcm-dv6) and the areas the attacker stands in (dcm-nt4), for the PC's resistance.
+ */
+export type FeatureScope = { hopeAndFear: boolean; bandToAttacker?: Range; keyword?: DamageKeyword; attackerAreas?: readonly string[] };
 
 /**
  * SD4: the PC as the card runner's actor for a feature answer: the card actor (resources, traits), SD1's Favor, Focus and
@@ -134,6 +138,9 @@ export function featureActor(id: string, sheet: CharacterSheet): ActorState {
       // answer (Stable, HF p.12) asks for a confirmation the prompt never shows and the server refuses it.
       beastformId: activeBeastformId(sheet),
       activeStance: sheet.classState.martial?.active ?? null,
+      // Plan lanes-2, E2 (dcm-ofo): the items the PC holds (a `holdsItem` check on them as the subject; Enchanted
+      // Talisman, HF p.16: "the person holding the talisman"), by the names on the sheet's inventory.
+      items: sheet.inventory.map((i) => i.name),
     },
   };
 }
@@ -182,7 +189,15 @@ export function windowPcOf(member: PartyMember, bandToTarget?: Range, scope?: Fe
     armorMax: c.armorMax,
     hope: sheet.hope,
     ...(c.evasion !== undefined ? { evasion: c.evasion } : {}),
-    ...withResistance(pcResistance(sheet, { hopeAndFear: scope?.hopeAndFear ?? true, ...(scope?.bandToAttacker !== undefined ? { attackerBand: scope.bandToAttacker } : {}) })),
+    ...withResistance(
+      pcResistance(sheet, {
+        hopeAndFear: scope?.hopeAndFear ?? true,
+        ...(scope?.bandToAttacker !== undefined ? { attackerBand: scope.bandToAttacker } : {}),
+        ...(scope?.keyword !== undefined ? { keyword: scope.keyword } : {}),
+        ...(scope?.attackerAreas !== undefined ? { attackerAreas: scope.attackerAreas } : {}),
+      }),
+    ),
+    ...pcDamageMods(sheet, scope?.hopeAndFear ?? true),
     featureUses: sheet.featureUses,
     cards,
     ...(bandToTarget !== undefined ? { bandToTarget } : {}),
@@ -219,46 +234,79 @@ function effectMods(entry: Pick<CardEffect, "uses"> | undefined, label: string):
   );
 }
 
+/** What a resistance reads of the hit (plan lanes-2, E2): the attacker's band, the hit's keyword, the attacker's areas. */
+export type ResistanceScope = { attackerBand?: Range; keyword?: DamageKeyword; attackerAreas?: readonly string[] };
+
 /**
  * E2 (dcm-nt4): whether a resistance mod holds against this hit. `from` "melee" / "beyondMelee" reads the attacker's
- * band (unknown: any range, Q18); `outsideArea` (Rejuvenation Barrier, CB p.339: "resistance to physical damage from
- * outside the barrier") holds while the engine can't place the attacker in the area (no area runtime yet: as Q18, an
- * unknown position doesn't take the protection away; see TASK-LN-E2 QUESTIONS); a `keyword` resistance (Fireproof) needs a
- * hit with that keyword, which adversary hits don't carry yet.
+ * band (unknown: any range, Q18). Plan lanes-2, E2: `outsideArea` (Rejuvenation Barrier, CB p.339: "resistance to
+ * physical damage from outside the barrier") holds unless the attacker stands inside a live area of the same source
+ * (`sourceId`, the card or feature that made the effect; unknown position or no map: it holds, Q18); a `keyword`
+ * resistance (Fireproof, HF p.22: "damage from magical or mundane flame"; dcm-dv6) holds only on a hit carrying it.
  */
-export function resistanceHolds(mod: Extract<Mod, { kind: "resistance" }>, attackerBand: Range | undefined): boolean {
-  if (mod.keyword !== undefined) return false;
+export function resistanceHolds(mod: Extract<Mod, { kind: "resistance" }>, attackerBand: Range | undefined, scope: Omit<ResistanceScope, "attackerBand"> & { sourceId?: string } = {}): boolean {
+  if (mod.keyword !== undefined && scope.keyword !== mod.keyword) return false;
   if (mod.from === "melee") return attackerBand === undefined || attackerBand === "melee";
   if (mod.from === "beyondMelee") return attackerBand === undefined || attackerBand !== "melee";
+  if (mod.from === "outsideArea") return scope.attackerAreas === undefined || scope.sourceId === undefined || !scope.attackerAreas.includes(scope.sourceId);
   return true;
 }
 
 /**
- * E2 (dcm-nt4): a PC's resistance and immunity against an incoming hit (CB p.99), from what the sheet holds: the sheet
- * effects a card or feature wrote (Rejuvenation Barrier, Retract, Book of Yarrow's immunity; the `effect` / tag
- * `condition` step of that label) and the passive uses of the features they hold without a requirement (Armored Shell).
- * Each damage type takes its strongest level. Undefined when nothing applies.
+ * The mods a PC's sheet holds, each with the entry it came from: the sheet effects a card or feature wrote (the `effect` /
+ * tag `condition` step of that label) and the passive uses of the features they hold without a requirement (Armored
+ * Shell). Plan lanes-2, E2: shared by resistance (dcm-nt4) and the damage-taken / marks mods (dcm-kvx4, dcm-fbsr).
  */
-export function pcResistance(sheet: CharacterSheet, scope: { hopeAndFear: boolean; attackerBand?: Range }): PcDefense["resistance"] {
-  const mods: Mod[] = [];
+export function pcMods(sheet: CharacterSheet, hopeAndFear: boolean): { mod: Mod; sourceId: string }[] {
+  const out: { mod: Mod; sourceId: string }[] = [];
   for (const e of sheet.effects) {
     const label = e.text.split("; ")[0] ?? "";
     const cardId = cardIdOfEffect(e);
-    if (cardId !== null) mods.push(...effectMods(cardEffect(cardId), label));
+    if (cardId !== null) for (const mod of effectMods(cardEffect(cardId), label)) out.push({ mod, sourceId: cardId });
     const featureId = featureIdOfEffect(e);
-    if (featureId !== null) mods.push(...effectMods(featureEffect(featureId), label));
+    if (featureId !== null) for (const mod of effectMods(featureEffect(featureId), label)) out.push({ mod, sourceId: featureId });
   }
-  for (const f of owned(sheet, { hopeAndFear: scope.hopeAndFear })) {
-    for (const u of featureEffect(f.featureId)?.uses ?? []) if (u.activation.kind === "passive" && (u.requires ?? []).length === 0) mods.push(...(u.mods ?? []));
+  for (const f of owned(sheet, { hopeAndFear })) {
+    for (const u of featureEffect(f.featureId)?.uses ?? []) {
+      if (u.activation.kind === "passive" && (u.requires ?? []).length === 0) for (const mod of u.mods ?? []) out.push({ mod, sourceId: f.featureId });
+    }
   }
+  return out;
+}
+
+/**
+ * E2 (dcm-nt4): a PC's resistance and immunity against an incoming hit (CB p.99), from the mods the sheet holds
+ * (`pcMods`: Rejuvenation Barrier, Retract, Book of Yarrow's immunity, Armored Shell). Each damage type takes its
+ * strongest level. Undefined when nothing applies.
+ */
+export function pcResistance(sheet: CharacterSheet, scope: { hopeAndFear: boolean } & ResistanceScope): PcDefense["resistance"] {
   let physical: Level = "none";
   let magic: Level = "none";
-  for (const m of mods) {
-    if (m.kind !== "resistance" || !resistanceHolds(m, scope.attackerBand)) continue;
+  for (const { mod: m, sourceId } of pcMods(sheet, scope.hopeAndFear)) {
+    if (m.kind !== "resistance" || !resistanceHolds(m, scope.attackerBand, { ...(scope.keyword !== undefined ? { keyword: scope.keyword } : {}), ...(scope.attackerAreas !== undefined ? { attackerAreas: scope.attackerAreas } : {}), sourceId })) continue;
     if (m.type === "physical" || m.type === "both") physical = stronger(physical, m.level);
     if (m.type === "magic" || m.type === "both") magic = stronger(magic, m.level);
   }
   return physical === "none" && magic === "none" ? undefined : { physical, magic };
+}
+
+/**
+ * Plan lanes-2, E2 (dcm-kvx4, dcm-fbsr): the PC's damage-taken bonus (a `damageTaken` `add` of a fixed amount; Burrowing
+ * Leechpoles, HF p.90) and marks multiplier (`marksMultiplier`, the largest factor per track; Unstuck, CB p.237) from the
+ * mods the sheet holds. A `creatureTokens` amount reads 0 until a PC's named tokens are stored (dcm-0n1u).
+ */
+export function pcDamageMods(sheet: CharacterSheet, hopeAndFear: boolean): Pick<PcDefense, "damageTakenBonus" | "marksMultiplier"> {
+  let bonus = 0;
+  let factor = 1;
+  const of = new Set<"hope" | "hp" | "stress" | "armor">();
+  for (const { mod } of pcMods(sheet, hopeAndFear)) {
+    if (mod.kind === "damageTaken" && mod.change.kind === "add" && mod.change.amount.kind === "fixed") bonus += mod.change.amount.value;
+    if (mod.kind === "marksMultiplier" && mod.factor > 1) {
+      factor = Math.max(factor, Math.trunc(mod.factor));
+      for (const t of mod.of) of.add(t);
+    }
+  }
+  return { ...(bonus > 0 ? { damageTakenBonus: bonus } : {}), ...(factor > 1 && of.size > 0 ? { marksMultiplier: { factor, of: [...of] } } : {}) };
 }
 
 const withResistance = (r: PcDefense["resistance"]) => (r ? { resistance: r } : {});
@@ -307,6 +355,56 @@ export async function armorCostOf(ctx: QueryCtx, row: { campaignId: Id<"campaign
   return block ? hitArmorCost(block.effects, attacker.feature) : undefined;
 }
 
+/** Every `damage` step keyword in a list of steps (nested steps included). */
+function damageKeywords(steps: readonly Step[]): DamageKeyword[] {
+  return everyStep(steps).flatMap((st) => (st.kind === "damage" && st.keyword !== undefined ? [st.keyword] : []));
+}
+
+/**
+ * Plan lanes-2, E2 (dcm-dv6): the keyword the hit's damage carries (Fireproof, HF p.22: "damage from magical or mundane
+ * flame"): a `damage` step's `keyword` in the attacking feature's own action or reaction uses; none for the standard
+ * attack (its stat block names no keyword).
+ */
+export function hitKeyword(effects: readonly AdversaryFeatureEffect[], feature: string | undefined): DamageKeyword | undefined {
+  if (feature === undefined) return undefined;
+  for (const effect of effects) {
+    if (effect.feature !== feature) continue;
+    for (const use of effect.uses) {
+      if (use.activation.kind !== "action" && use.activation.kind !== "reaction") continue;
+      const found = damageKeywords(use.steps as readonly Step[])[0];
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/** E2 (dcm-dv6): the hit's keyword from its attacking instance's stat block, or (a PC attacker) the card's damage steps. */
+export async function hitKeywordOf(ctx: QueryCtx, row: { campaignId: Id<"campaigns">; payload: Pick<IncomingHitPayload, "attacker"> }): Promise<DamageKeyword | undefined> {
+  const attacker = row.payload.attacker;
+  if (isPcAttacker(attacker)) return damageKeywords(cardEffect(attacker.cardId)?.uses.flatMap((u) => [...u.steps]) ?? [])[0];
+  const instance = await ctx.db.get("encounterAdversaries", attacker.instanceId);
+  if (instance === null || instance.campaignId !== row.campaignId) return undefined;
+  const block = await blockOf(ctx, instance);
+  return block ? hitKeyword(block.effects, attacker.feature) : undefined;
+}
+
+/**
+ * Plan lanes-2, E2 (dcm-nt4): the sources (card / feature ids) of the live areas the attacker's token stands in on the
+ * live map; undefined when not known (no live map, no token).
+ */
+export async function attackerAreasOnMap(ctx: QueryCtx, mapId: Id<"combatMaps"> | undefined, attacker: HitAttacker): Promise<string[] | undefined> {
+  if (mapId === undefined) return undefined;
+  const map = await ctx.db.get("combatMaps", mapId);
+  if (map === null || !map.live) return undefined;
+  const tokens = await tokensOnMap(ctx, mapId);
+  const token = isPcAttacker(attacker)
+    ? tokens.find((t) => t.ref.kind === "pc" && t.ref.characterId === attacker.characterId)
+    : tokens.find((t) => t.ref.kind === "adversary" && t.ref.adversaryId === attacker.instanceId);
+  if (!token) return undefined;
+  const areas = await activeAreasOnMap(ctx, mapId);
+  return areaFactsFor(areas, tokens, token, null).map((a) => a.featureId);
+}
+
 /** The typed id of a character the window names by string (always one of the party, or the stored target). */
 export function memberId(members: readonly PartyMember[], id: string, fallback: Id<"characters">): Id<"characters"> {
   return members.find((m) => m.character._id === id)?.character._id ?? fallback;
@@ -315,10 +413,23 @@ export function memberId(members: readonly PartyMember[], id: string, fallback: 
 /** Band from a PC's token to the attacker's token on the live map (SD4: Not This Time's Far, Eye for an Eye's Melee). */
 export type BandToAttacker = (characterId: Id<"characters">) => Range | undefined;
 
-export function windowParty(party: readonly PartyMember[], targetId: Id<"characters">, bands: BandBetween, features?: { hopeAndFear: boolean; toAttacker: BandToAttacker }): WindowPc[] {
+export function windowParty(
+  party: readonly PartyMember[],
+  targetId: Id<"characters">,
+  bands: BandBetween,
+  features?: { hopeAndFear: boolean; toAttacker: BandToAttacker; keyword?: DamageKeyword; attackerAreas?: readonly string[] },
+): WindowPc[] {
   return party.map((m) => {
     const toAttacker = features?.toAttacker(m.character._id);
-    return windowPcOf(m, m.character._id === targetId ? undefined : bands(m.character._id, targetId), features ? { hopeAndFear: features.hopeAndFear, ...(toAttacker !== undefined ? { bandToAttacker: toAttacker } : {}) } : undefined);
+    const scope: FeatureScope | undefined = features
+      ? {
+          hopeAndFear: features.hopeAndFear,
+          ...(toAttacker !== undefined ? { bandToAttacker: toAttacker } : {}),
+          ...(features.keyword !== undefined ? { keyword: features.keyword } : {}),
+          ...(features.attackerAreas !== undefined ? { attackerAreas: features.attackerAreas } : {}),
+        }
+      : undefined;
+    return windowPcOf(m, m.character._id === targetId ? undefined : bands(m.character._id, targetId), scope);
   });
 }
 
@@ -363,10 +474,11 @@ export function seededRng(seed: string): Rng {
   };
 }
 
-export function windowHitOf(attacker: HitAttacker, hit: Pick<HitDraft, "amount" | "type" | "direct" | "forcedArmor" | "critical" | "attackTotal">, riders: readonly HitRider[] = [], armorCost?: ArmorCost): WindowHit {
+export function windowHitOf(attacker: HitAttacker, hit: Pick<HitDraft, "amount" | "type" | "direct" | "forcedArmor" | "critical" | "attackTotal">, riders: readonly HitRider[] = [], armorCost?: ArmorCost, keyword?: DamageKeyword): WindowHit {
   return {
     amount: hit.amount,
     ...(armorCost ? { armorCost } : {}),
+    ...(keyword ? { keyword } : {}),
     type: hit.type,
     direct: hit.direct,
     ...(hit.forcedArmor > 0 ? { forcedArmor: hit.forcedArmor } : {}),
@@ -561,12 +673,15 @@ export async function rebuildWindow(ctx: QueryCtx, row: HitRow, attackTotal?: nu
   const bands = await bandsOnMap(ctx, row.mapId);
   const hopeAndFear = await hopeAndFearOf(ctx, row.campaignId);
   const toAttacker = await attackerBandsOnMap(ctx, row.mapId, p.attacker);
-  const party = windowParty(members, p.targetCharacterId, bands, { hopeAndFear, toAttacker });
+  // Plan lanes-2, E2: the hit's keyword (dcm-dv6) and the attacker's areas (dcm-nt4), re-read like the armor cost.
+  const keyword = await hitKeywordOf(ctx, row);
+  const attackerAreas = await attackerAreasOnMap(ctx, row.mapId, p.attacker);
+  const party = windowParty(members, p.targetCharacterId, bands, { hopeAndFear, toAttacker, ...(keyword ? { keyword } : {}), ...(attackerAreas ? { attackerAreas } : {}) });
   const attacker = await attackerCombatant(ctx, row, everyone);
   const attackRoll = isPcAttacker(p.attacker) ? null : await attackRollOf(ctx, row);
   // DA8 (DA1 follow-up 2): the target's own total, stored with the hit, before the whole roll's.
   const total = attackTotal ?? p.attackTotal ?? attackRoll?.total;
-  const hit = windowHitOf(p.attacker, { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(total !== undefined ? { attackTotal: total } : {}) }, p.riders ?? [], await armorCostOf(ctx, row));
+  const hit = windowHitOf(p.attacker, { amount: p.damage, type: p.damageType, direct: p.direct, forcedArmor: p.forcedArmor ?? 0, critical: p.critical, ...(total !== undefined ? { attackTotal: total } : {}) }, p.riders ?? [], await armorCostOf(ctx, row), keyword);
   const responders = p.responders.map((r) => {
     const featureIds = r.cardIds.filter(isFeatureId);
     return { characterId: r.characterId, role: r.role, cardIds: r.cardIds.filter((id) => !isFeatureId(id)), ...(featureIds.length > 0 ? { featureIds } : {}) };
@@ -662,11 +777,13 @@ function freeEffectId(effects: readonly { id: string }[], id: string): string {
  * fold (`skipConditions`) keeps conditions and card tags off. DA8 (`ignoreHp`, Dark Aegis, user answer 2026-10-29: "any
  * extra 'mark HP' from them is also ignored"): forced HP riders are skipped and a Stress past a full track marks no HP.
  */
-export function applyRiders(sheet: CharacterSheet, riders: readonly HitRider[], skipConditions: boolean, ignoreHp = false): { sheet: CharacterSheet; applied: number } {
+export function applyRiders(sheet: CharacterSheet, riders: readonly HitRider[], skipConditions: boolean, ignoreHp = false, refused: ReadonlySet<string> = new Set()): { sheet: CharacterSheet; applied: number } {
   let next = sheet;
   let applied = 0;
   for (const r of riders) {
     if (skipConditions && isConditionRider(r)) continue;
+    // Plan lanes-2, E2 (dcm-t8c, dcm-v17): a condition the PC's effects forbid doesn't land (Unstoppable, CB p.36).
+    if (r.kind === "condition" && refused.has(r.condition)) continue;
     if (ignoreHp && r.kind === "hp") continue;
     applied++;
     switch (r.kind) {

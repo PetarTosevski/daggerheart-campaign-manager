@@ -61,7 +61,7 @@ import {
   type WindowResolution,
 } from "../../src/lib/domain/adversary-actions/index";
 import type { PlanStep, RunPlan, RunRefusal } from "../../src/lib/domain/card-effects/run";
-import { expire } from "../../src/lib/domain/characters/expiry";
+import { expire, payMaintain, type EndOccurrence } from "../../src/lib/domain/characters/expiry";
 import { activeBeastform, owned } from "../../src/lib/domain/feature-effects/owned";
 import { beastformEndsOn } from "../../src/lib/srd/feature-effects/beastforms";
 import { runFeature } from "../../src/lib/domain/feature-effects/run";
@@ -69,15 +69,17 @@ import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { appError } from "../../src/lib/errors/app-error";
 import { cardEffect } from "../../src/lib/srd/card-effects/index";
 import { getDomainCard } from "../../src/lib/srd/index";
-import type { CharacterSheet } from "../../src/lib/validation/characters";
+import type { CharacterSheet, Effect } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction } from "./actionLog";
 import {
   answeringFeatures,
   armorCostOf,
+  attackerAreasOnMap,
   attackerBandsOnMap,
   attackerCombatant,
+  hitKeywordOf,
   attackRollOf,
   featureActor,
   featureChoices,
@@ -111,7 +113,8 @@ import {
 } from "./adversaryHits";
 import type { CardChoice } from "./cardChoices";
 import { actorSheetAfter, cardActor, cardIdOfEffect, pcCombatant } from "./cardRunner";
-import { saveSheet } from "./characterSheet";
+import { readSheet, saveSheet } from "./characterSheet";
+import { effectEndsOf, endForCasterOnSheets, endOnSheet, refusedConditions } from "./cardRows";
 import { closeRequest } from "./combatRequests";
 import { dropStance } from "./stanceDrop";
 import { logUnshakable, UNSHAKABLE_ID, unshake, unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
@@ -196,11 +199,14 @@ export async function openIncomingHit(ctx: MutationCtx, input: OpenHitInput): Pr
   // SD4: the PCs carry their features (owned, with effect entries) and their band to the attacker.
   const hopeAndFear = await hopeAndFearOf(ctx, input.campaignId);
   const toAttacker = await attackerBandsOnMap(ctx, input.mapId, input.attacker);
-  const party = windowParty(respondingParty(input.party, input.attacker), input.targetCharacterId, input.bands, { hopeAndFear, toAttacker });
+  // Plan lanes-2, E2: the hit's keyword (dcm-dv6) and the areas the attacker stands in (dcm-nt4), as `rebuildWindow`.
+  const keyword = await hitKeywordOf(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } });
+  const attackerAreas = await attackerAreasOnMap(ctx, input.mapId, input.attacker);
+  const party = windowParty(respondingParty(input.party, input.attacker), input.targetCharacterId, input.bands, { hopeAndFear, toAttacker, ...(keyword ? { keyword } : {}), ...(attackerAreas ? { attackerAreas } : {}) });
   const attacker = await openingAttacker(ctx, input);
   // E2 (dcm-s77): the attacker's dearer Armor Slots, re-read from its stat block (as `rebuildWindow`).
   const armorCost = await armorCostOf(ctx, { campaignId: input.campaignId, payload: { attacker: input.attacker } });
-  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders, armorCost), targetId: input.targetCharacterId, party, ...(attacker ? { attacker } : {}) });
+  const state = openWindow({ hit: windowHitOf(input.attacker, input.hit, riders, armorCost, keyword), targetId: input.targetCharacterId, party, ...(attacker ? { attacker } : {}) });
   const responders: HitResponder[] = state.responders.slice(0, MAX_RESPONDERS).map((r) => ({
     characterId: memberId(input.party, r.characterId, input.targetCharacterId),
     role: r.role,
@@ -515,7 +521,8 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     // negated or reflected; a miss or full avoidance stops them (AA2c, user answer 2026-10-22).
     if (!res.missed && (p.riders?.length ?? 0) > 0) {
       // DA8: after Dark Aegis the conditions still land, any extra "mark HP" doesn't (user answer 2026-10-29).
-      const landed = applyRiders(next, p.riders ?? [], res.conditionNegated, res.hpRidersIgnored);
+      // Plan lanes-2, E2 (dcm-t8c): conditions the PC's effects forbid stay off (Unstoppable, CB p.36, dcm-v17).
+      const landed = applyRiders(next, p.riders ?? [], res.conditionNegated, res.hpRidersIgnored, refusedConditions(next));
       next = landed.sheet;
       ridersApplied = landed.applied;
       gm.push(`riders on ${targetName}: ${ridersApplied}${res.conditionNegated ? " (conditions avoided)" : ""}${res.hpRidersIgnored ? " (no Hit Points from them)" : ""}`);
@@ -527,6 +534,15 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     next = shaken.sheet;
     const hpMarked = Math.max(0, next.hp - sheet.hp);
     deathMove = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
+    // Plan lanes-2, E2 (dcm-t8c): the hit's end events (E6's engine, convex/lib/cardRows.ts) on the PC who took it and on
+    // the effects they made on the party: Transform (CB p.334, "until you take damage"; dcm-utu), Night's Glamour (HF
+    // p.17, on a Hit Point marked; dcm-4qv: its Stress to maintain it is offered below), Eye of the Storm (HF p.23, on the
+    // caster's Severe damage; dcm-wjv). A hit reduced to no Hit Points ends only what the window's `endedOnNoHp` says
+    // (Shield Aura made the difference, dcm-sim), so it doesn't run here.
+    const occ: EndOccurrence = { kind: "damageTaken", severity: result.severity, hpMarked, lastHp: deathMove };
+    const hitEnds = hitEndEvents(next, occ, target.character._id, await partyMembers(ctx, row.campaignId));
+    next = hitEnds.sheet;
+    gm.push(...hitEnds.lines);
     // After-hit card uses (CE-valor): autos run now; reactions are offered with the row kept open.
     const facts: MarkFacts = { hpMarked, deathMove, armorSlots: result.armorSlots, fromAttack: true, severity: result.severity, stressMarked: Math.max(0, next.stress - sheet.stress), damageType: p.damageType };
     const uses = afterHitUses(windowPcOf({ character: target.character, sheet: next }), facts);
@@ -559,7 +575,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
       if (written.before) adversaryBefore.push(written.before);
     }
     if (autos.length > 0) gm.push(`${targetName}: ${autos.join(", ")}`);
-    const offers = [...uses.offers.slice(0, 10), ...featureUses.offers.slice(0, 10)];
+    const offers = [...uses.offers.slice(0, 10), ...featureUses.offers.slice(0, 10), ...hitEnds.maintain.slice(0, 4).map(maintainId)];
     if (offers.length > 0) afterHit = { characterId: target.character._id, cardIds: offers, severity: result.severity, hpMarked, deathMove };
     // DA10: what the hit ends. A Beastform on its end events (CB p.30: "If you mark your last Hit Point, you automatically
     // drop out of this form"; CB p.32 Fragile: "When you take Major or greater damage, you drop out of Beastform"), with
@@ -568,7 +584,7 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     const lastHp = next.hpMax > 0 && sheet.hp < next.hpMax && next.hp >= next.hpMax;
     const formEnds = beastformEnds(next, { lastHp, severity: result.severity });
     if (formEnds) next = formEnds.sheet;
-    const endedWords: string[] = [...(formEnds ? [formEnds.words] : []), ...ended.names.map((n) => `${n} ends`)];
+    const endedWords: string[] = [...(formEnds ? [formEnds.words] : []), ...ended.names.map((n) => `${n} ends`), ...hitEnds.names.map((n) => `${n} ends`)];
     if (lastHp || result.severity === "severe") {
       const dropped = await dropStance(ctx, row.campaignId, next);
       if (dropped.dropped) {
@@ -596,6 +612,11 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
       before: sheet,
       undoable: true,
     });
+    // Plan lanes-2, E2 (dcm-wjv): allies whose effects the hit PC made ended with it (Eye of the Storm on an ally).
+    for (const o of hitEnds.others) {
+      await saveSheet(ctx, o.character._id, o.sheet);
+      await logAction(ctx, { campaignId: row.campaignId, characterId: o.character._id, actorId: row.createdBy, kind, visibility: "public", summary: `${o.names.join(", ")} ends for ${o.before.name} (${targetName} took ${SEVERITY_WORD[result.severity]} damage)`, groupId: p.groupId, before: o.before, undoable: true });
+    }
     for (const roll of [shaken.roll, ...laterRolls]) await logUnshakable(ctx, { campaignId: row.campaignId, characterId: target.character._id, actorId: row.createdBy, name: targetName, groupId: p.groupId }, roll);
     const armor = result.armorSlots > 0 ? `, ${result.armorSlots} Armor Slot${result.armorSlots === 1 ? "" : "s"}` : "";
     const forced = result.forcedArmor > 0 ? `, ${result.forcedArmor} forced` : "";
@@ -691,6 +712,80 @@ export async function resolveIncomingHit(ctx: MutationCtx, input: { row: HitRow;
     ...(reflectedHitId ? { reflectedHitId } : {}),
     usedArmor: (result?.armorSlots ?? 0) > 0,
   };
+}
+
+/** The after-hit offer id of a maintainable effect (Night's Glamour): `maintain:<effect id>` (a feature-shaped id). */
+const MAINTAIN = "maintain:";
+export const maintainId = (effectId: string) => `${MAINTAIN}${effectId}`;
+export const isMaintainId = (id: string) => id.startsWith(MAINTAIN);
+
+/** What a hit's end events did: the hit PC's sheet, the maintainable effects ended (offered), and the allies' sheets. */
+export type HitEnds = {
+  sheet: CharacterSheet;
+  names: string[];
+  lines: string[];
+  /** Ended effects the PC may pay to keep (`maintain`, dcm-4qv), the payment affordable now. */
+  maintain: string[];
+  others: { character: PartyMember["character"]; before: CharacterSheet; sheet: CharacterSheet; names: string[] }[];
+};
+
+/**
+ * Plan lanes-2, E2 (dcm-t8c): the end events of a resolved hit (`damageTaken`, E6's `EndOccurrence`). The bearer side on
+ * the hit PC's sheet (`endOnSheet`: Transform's `takeDamage`, Night's Glamour's `markHp`); an ended effect with an
+ * affordable `maintain` (HF p.17: "Unless you mark a Stress to maintain your Glamour, it drops when you mark a Hit Point")
+ * is listed for the after-hit offer: it drops now, and paying puts it back (`respondAfterHit`). The caster side on the
+ * party (`endForCasterOnSheets`: Eye of the Storm, HF p.23 "until you take Severe damage", on the PC and their allies;
+ * with two holders of the card it is left to the GM, E6 Q3). A hit reduced to no Hit Points is skipped (the window's
+ * `endedOnNoHp` decides `reducedToNoHp`, dcm-sim).
+ */
+export function hitEndEvents(sheet: CharacterSheet, occ: Extract<EndOccurrence, { kind: "damageTaken" }>, targetId: Id<"characters">, party: readonly PartyMember[]): HitEnds {
+  const none: HitEnds = { sheet, names: [], lines: [], maintain: [], others: [] };
+  if (occ.severity === "none" && occ.hpMarked === 0) return none;
+  const own = endOnSheet(sheet, occ);
+  let next = own.sheet;
+  const names = own.ended.map((e) => e.text.split("; ")[0] ?? e.source);
+  const lines = [...own.lines];
+  const maintain = own.maintainable.flatMap((e) => {
+    const m = effectEndsOf(e)?.maintain;
+    return m && payMaintain(next, m) !== null ? [e.id] : [];
+  });
+  if (maintain.length > 0) lines.push(`${sheet.name} may pay to keep ${own.maintainable.filter((e) => maintain.includes(e.id)).map((e) => e.text.split("; ")[0]).join(", ")}`);
+  const others: HitEnds["others"] = [];
+  const members = party.filter((m) => m.character._id !== targetId);
+  const caster = endForCasterOnSheets(next, [{ key: null as Id<"characters"> | null, sheet: next }, ...members.map((m) => ({ key: m.character._id as Id<"characters"> | null, sheet: m.sheet }))], occ);
+  for (const c of caster) {
+    lines.push(...c.lines);
+    const ended = c.ended.map((e) => e.text.split("; ")[0] ?? e.source);
+    if (c.key === null) {
+      next = c.sheet;
+      names.push(...ended);
+      continue;
+    }
+    const member = members.find((m) => m.character._id === c.key);
+    if (member) others.push({ character: member.character, before: member.sheet, sheet: c.sheet, names: ended });
+  }
+  return { sheet: next, names, lines, maintain, others };
+}
+
+/**
+ * Plan lanes-2, E2 (dcm-4qv): the ended effect a `maintain` offer puts back, from the hit PC's sheet before the hit (the
+ * public row of the hit's group that carries their `before`). Null when it can't be found (the group was undone).
+ */
+async function endedEffect(ctx: QueryCtx, row: HitRow, characterId: Id<"characters">, effectId: string): Promise<Effect | null> {
+  const rows = await ctx.db
+    .query("actionLog")
+    .withIndex("by_campaign_group", (q) => q.eq("campaignId", row.campaignId).eq("groupId", row.payload.groupId))
+    .take(50);
+  for (const r of rows) {
+    if (r.characterId !== characterId || r.before === undefined || r.undoneAt !== undefined) continue;
+    try {
+      const found = readSheet(JSON.parse(r.before)).effects.find((e) => e.id === effectId);
+      if (found) return found;
+    } catch {
+      // An unreadable before can't hold it.
+    }
+  }
+  return null;
 }
 
 /**
@@ -803,11 +898,19 @@ export async function respondAfterHit(ctx: MutationCtx, input: RespondInput & { 
   if (!offer.cardIds.includes(offered)) throw appError("NOT_A_RESPONDER", offered);
   const members = await partyMembers(ctx, row.campaignId);
   const member = members.find((m) => m.character._id === characterId);
+  const kind = isPcAttacker(row.payload.attacker) ? ("combat" as const) : ("adversary" as const);
+  // Plan lanes-2, E2 (dcm-4qv): paying a `maintain` (Night's Glamour's Stress, HF p.17) puts the ended effect back.
+  if (choice.kind === "feature" && isMaintainId(choice.featureId)) {
+    if (!member) {
+      await closeRequest(ctx, row._id, "declined", input.by);
+      return "declined";
+    }
+    return await payToMaintain(ctx, { ...input, row, member, effectId: choice.featureId.slice(MAINTAIN.length), kind });
+  }
   if (!member || (offer.deathMove && member.sheet.hp < member.sheet.hpMax)) {
     await closeRequest(ctx, row._id, "declined", input.by);
     return "declined";
   }
-  const kind = isPcAttacker(row.payload.attacker) ? ("combat" as const) : ("adversary" as const);
   const unshaken: UnshakableRoll[] = [];
   let next: CharacterSheet;
   let name: string;
@@ -862,6 +965,55 @@ export async function respondAfterHit(ctx: MutationCtx, input: RespondInput & { 
   await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice: stored, by: input.by, at: Date.now() }] });
   await closeRequest(ctx, row._id, "resolved", input.by);
   return "resolved";
+}
+
+/**
+ * Plan lanes-2, E2 (dcm-4qv): the maintain answer: the effect the hit ended comes back and its `maintain` is paid (HF p.17:
+ * "mark a Stress to maintain your Glamour"; Unshakable rolls on the Stress, DA10). CARD_COST_UNPAID when it can't be paid
+ * now; a declined row when the effect can't be found (the hit was undone).
+ */
+async function payToMaintain(
+  ctx: MutationCtx,
+  input: { row: HitRow; by: Id<"users">; characterId: Id<"characters">; member: PartyMember; effectId: string; kind: "combat" | "adversary" },
+): Promise<"resolved" | "declined"> {
+  const { row, member, characterId } = input;
+  const effect = await endedEffect(ctx, row, characterId, input.effectId);
+  const maintain = effect ? effectEndsOf(effect)?.maintain : undefined;
+  if (!effect || !maintain || member.sheet.effects.some((e) => e.id === effect.id)) {
+    await closeRequest(ctx, row._id, "declined", input.by);
+    return "declined";
+  }
+  const paid = payMaintain(member.sheet, maintain);
+  if (paid === null) throw appError("CARD_COST_UNPAID", "stress");
+  const stress = Math.max(0, paid.stress - member.sheet.stress) + Math.max(0, paid.hp - member.sheet.hp);
+  const shaken = unshake(member.sheet, paid, stress);
+  const next: CharacterSheet = { ...shaken.sheet, effects: [...shaken.sheet.effects, effect].slice(-20) };
+  const label = effect.text.split("; ")[0] ?? effect.source;
+  await saveSheet(ctx, characterId, next);
+  await logAction(ctx, { campaignId: row.campaignId, characterId, actorId: row.createdBy, kind: input.kind, visibility: "public", summary: `${member.sheet.name} pays to keep ${label}`.slice(0, 1000), groupId: row.payload.groupId, before: member.sheet, undoable: true });
+  if (shaken.roll) await logUnshakable(ctx, { campaignId: row.campaignId, characterId, actorId: row.createdBy, name: member.sheet.name, groupId: row.payload.groupId }, shaken.roll);
+  await ctx.db.patch("combatRequests", row._id, { responses: [...row.responses, { characterId, choice: { kind: "feature", featureId: maintainId(effect.id), useId: "maintain", choices: [] }, by: input.by, at: Date.now() }] });
+  await closeRequest(ctx, row._id, "resolved", input.by);
+  return "resolved";
+}
+
+/**
+ * Plan lanes-2, E2 (dcm-4qv): the after-hit prompt's view of a maintain offer (as a feature answer: Use or OK), from the
+ * effect the hit ended (the sheet before the hit).
+ */
+async function maintainViews(ctx: QueryCtx, row: HitRow, characterId: Id<"characters">, ids: readonly string[]): Promise<FeatureView[]> {
+  const out: FeatureView[] = [];
+  for (const id of ids) {
+    if (!isMaintainId(id)) continue;
+    const effect = await endedEffect(ctx, row, characterId, id.slice(MAINTAIN.length));
+    const maintain = effect ? effectEndsOf(effect)?.maintain : undefined;
+    if (!effect || !maintain) continue;
+    const label = effect.text.split("; ")[0] ?? effect.source;
+    // The book's maintain costs are fixed Hope or Stress (`payMaintain`); anything else reads as one of its kind.
+    const cost = maintain.costs.map((c) => ("amount" in c && c.amount.kind === "fixed" ? `${c.amount.value} ${c.kind === "hope" ? "Hope" : "Stress"}` : `1 ${c.kind}`)).join(" and ");
+    out.push({ featureId: id, useId: "maintain", name: `Keep ${label}`, text: `${label} drops after this hit. Mark ${cost} to maintain it.`, numbers: [], options: [], optionals: [], situations: [] });
+  }
+  return out;
 }
 
 /** A hit row waiting only for its after-hit answer. */
@@ -960,6 +1112,8 @@ export async function hitView(ctx: QueryCtx, row: HitRow, characterId: Id<"chara
           return effect && use ? [featureView(effect, use.id, member.sheet, hopeAndFear)] : [];
         })
       : [];
+    // Plan lanes-2, E2 (dcm-4qv): a maintain offer (Night's Glamour's Stress) shows as a feature answer.
+    features.push(...(await maintainViews(ctx, row, characterId, offer.cardIds)));
     return {
       requestId: row._id,
       attackerLabel: row.payload.attacker.label,

@@ -73,6 +73,17 @@ export interface PcDefense {
   readonly noArmorSlots?: boolean;
   /** On the Brink: "you don't take Minor damage". */
   readonly noMinorDamage?: boolean;
+  /**
+   * Plan lanes-2, E2 (dcm-kvx4): added to any damage the PC takes, before resistance and the thresholds (Burrowing
+   * Leechpoles, HF p.90: "any damage the target takes gains a +1 bonus for each leechpole under their skin"; the bearer's
+   * `damageTaken` `add` mods). Damage reduced to 0 gains nothing.
+   */
+  readonly damageTakenBonus?: number;
+  /**
+   * Plan lanes-2, E2 (dcm-fbsr): the hit's marks are multiplied (Unstuck, CB p.237: "When an Unstuck target spends Hope or
+   * marks Armor Slots, HP, or Stress, they must double the amount spent or marked"; the bearer's `marksMultiplier` mod).
+   */
+  readonly marksMultiplier?: { readonly factor: number; readonly of: readonly ("hope" | "hp" | "stress" | "armor")[] };
 }
 
 /** The damage of one hit before armor (the incoming-hit payload's numbers). */
@@ -140,7 +151,9 @@ export function armorOptions(pc: PcDefense, hit: PcHit, extraSlots: number | "an
 
 /** Damage after reductions and resistance, and its severity before armor (what the hit PC's prompt shows, Q14). */
 export function damageBeforeArmor(pc: PcDefense, hit: PcHit, reduceDamage = 0): { taken: number; resisted: ResistanceLevel; severity: Severity } {
-  const incoming = Math.max(0, Math.trunc(hit.amount) - Math.max(0, reduceDamage));
+  const reduced = Math.max(0, Math.trunc(hit.amount) - Math.max(0, reduceDamage));
+  // E2 (dcm-kvx4): the bearer's "any damage … gains a +N bonus", on damage that is still there.
+  const incoming = reduced > 0 ? reduced + Math.max(0, Math.trunc(pc.damageTakenBonus ?? 0)) : 0;
   const resisted = resistanceAgainst(pc, hit.type);
   const taken = resisted === "immune" ? 0 : damageTaken(incoming, resisted === "resistant");
   let severity = damageSeverity(taken, pc.thresholds);
@@ -158,8 +171,14 @@ export function armorPreview(pc: PcDefense, hit: PcHit, extraSlots: number | "an
   const per = slotsPerStep(hit);
   return Array.from({ length: Math.floor(maxSlots / per) + 1 }, (_, n) => {
     const s = stepDown(severity, n);
-    return { slots: n * per, severity: s, hp: Math.max(0, MARKS[s] + (MARKS[s] > 0 ? (hit.hpMarkedDelta ?? 0) : 0)) };
+    return { slots: n * per, severity: s, hp: Math.max(0, MARKS[s] + (MARKS[s] > 0 ? (hit.hpMarkedDelta ?? 0) : 0)) * marksFactor(pc, "hp") };
   });
+}
+
+/** E2 (dcm-fbsr): the multiplier on `track` (Hope spent, or marks) from the PC's `marksMultiplier`; 1 without one. */
+export function marksFactor(pc: Pick<PcDefense, "marksMultiplier">, track: "hope" | "hp" | "stress" | "armor"): number {
+  const m = pc.marksMultiplier;
+  return m && m.of.includes(track) ? Math.max(1, Math.trunc(m.factor)) : 1;
 }
 
 export interface PcTracks {
@@ -216,24 +235,28 @@ export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}
   let stressMarked = 0;
   let hopeSpent = 0;
   let overflow = false;
+  // E2 (dcm-fbsr): Unstuck doubles the HP marked, the Stress marked instead and the Hope spent instead (each converted HP
+  // costs the Hope factor; what the Hope can't cover is marked as HP).
   let hpMarks = marks;
   if (marks > 0 && adj.convert === "hope") {
-    hopeSpent = Math.min(hope, marks);
+    const per = marksFactor(pc, "hope");
+    const covered = Math.min(marks, Math.floor(hope / per));
+    hopeSpent = covered * per;
     hope -= hopeSpent;
-    hpMarks = marks - hopeSpent;
+    hpMarks = marks - covered;
   } else if (marks > 0 && adj.convert === "stress") {
-    const next = markStress({ stress, stressMax: pc.stressMax, hp, hpMax: pc.hpMax }, marks);
+    const next = markStress({ stress, stressMax: pc.stressMax, hp, hpMax: pc.hpMax }, marks * marksFactor(pc, "stress"));
     stressMarked = next.stress - stress;
     overflow = next.hp > hp;
     stress = next.stress;
     hp = next.hp;
     hpMarks = 0;
   }
-  hp = Math.min(pc.hpMax, hp + hpMarks);
+  hp = Math.min(pc.hpMax, hp + hpMarks * marksFactor(pc, "hp"));
   // E2 (dcm-s77): Boiling Blast's Stress (CB p.236) per Armor Slot used, with the CB p.92 overflow; or HP.
   const also = hit.armorCost?.alsoMark;
   if (also && armorSlots > 0 && also.amount > 0) {
-    const n = Math.trunc(also.amount) * armorSlots;
+    const n = Math.trunc(also.amount) * armorSlots * marksFactor(pc, also.track);
     if (also.track === "stress") {
       const next = markStress({ stress, stressMax: pc.stressMax, hp, hpMax: pc.hpMax }, n);
       stressMarked += next.stress - stress;
@@ -242,7 +265,9 @@ export function applyHitToPc(pc: PcDefense, hit: PcHit, adj: HitAdjustments = {}
       hp = next.hp;
     } else hp = Math.min(pc.hpMax, hp + n);
   }
-  const after: PcTracks = { hp, stress, armor: pc.armor + forced + armorSlots, hope };
+  // E2 (dcm-fbsr): Unstuck marks each Armor Slot it marks twice; the extra slots give no benefit and stop at a full track.
+  const slotsMarked = Math.min(Math.max(0, pc.armorMax - pc.armor), (forced + armorSlots) * marksFactor(pc, "armor"));
+  const after: PcTracks = { hp, stress, armor: pc.armor + Math.max(forced + armorSlots, slotsMarked), hope };
   return {
     targetId: pc.id,
     incoming,

@@ -25,14 +25,14 @@
 
 import { cardAvailability, resolveCosts, unaffordable } from "../card-effects/availability";
 import { pickUse, run as runCard, type ActorState, type PlanStep, type RunPlan, type RunResult } from "../card-effects/run";
-import type { CardEffect, CardUse, ConditionRef, NumberChoice, Range, Step, Trigger } from "../card-effects/types";
+import type { CardEffect, CardUse, ConditionRef, DamageKeyword, NumberChoice, Range, Step, Trigger } from "../card-effects/types";
 import { asCardEffect, runFeature, type FeatureRunResult } from "../feature-effects/run";
 import type { FeatureEffect } from "../feature-effects/types";
 import type { Combatant } from "../combat-actions/damage";
 import { withinRange } from "../combat-actions/distance";
 import type { Rng } from "../dice/index";
 import type { FeatureUse } from "../../validation/characters";
-import { applyHitToPc, armorOptions, armorSteps, damageBeforeArmor, hpForSeverity, slotsPerStep, stepDown, type HitAdjustments, type PcDefense, type PcHit, type PcHitResult, type PcSeverity } from "./severity";
+import { applyHitToPc, armorOptions, armorSteps, damageBeforeArmor, hpForSeverity, marksFactor, slotsPerStep, stepDown, type HitAdjustments, type PcDefense, type PcHit, type PcHitResult, type PcSeverity } from "./severity";
 
 // ---------------------------------------------------------------- inputs
 
@@ -50,6 +50,11 @@ export interface WindowHit extends PcHit {
    * may answer a `wouldGainCondition` reaction (Bold Presence, CB p.341: "When you would gain a condition").
    */
   conditionRiders?: boolean;
+  /**
+   * Plan lanes-2, E2 (dcm-dv6): the keyword the hit's damage carries besides its type (fire; the attacking feature's or
+   * card's `damage` step). Unknown (absent) = not known: a keyword trigger still fits and the player confirms (Q13).
+   */
+  keyword?: DamageKeyword;
 }
 
 /** A PC at the table, as the window needs them: defenses, Evasion, loadout cards with effects, and distance to the target. */
@@ -164,10 +169,20 @@ export function triggerFits(trigger: Trigger, role: "target" | "ally", pc: Windo
   const fromOk = (from: "melee" | "beyondMelee" | undefined) =>
     from === undefined || hit.attackerBand === undefined || (from === "melee" ? hit.attackerBand === "melee" : hit.attackerBand !== "melee");
   switch (trigger.kind) {
+    // Plan lanes-2, E2 (dcm-ofo): `unlimited` (Enchanted Talisman, HF p.16; Rune Ward held by an ally, CB p.328) fits at
+    // any range: `range` is ignored.
     case "whenAllyWouldTakeDamage":
-      return role === "ally" ? reaches(pc.bandToTarget, trigger.range) : trigger.includeSelf === true;
+      return role === "ally" ? trigger.unlimited === true || reaches(pc.bandToTarget, trigger.range) : trigger.includeSelf === true;
+    // Plan lanes-2, E2 (dcm-dv6): a `keyword` trigger (Fireproof, HF p.22: "damage from magical or mundane flame") doesn't
+    // fit a hit that carries another keyword; a hit with no known keyword still offers it (the player confirms, Q13).
     case "whenYouWouldTakeDamage":
-      return role === "target" && typeOk(trigger.damageType) && (trigger.severity === undefined || trigger.severity === severityBefore) && fromOk(trigger.from);
+      return (
+        role === "target" &&
+        typeOk(trigger.damageType) &&
+        (trigger.severity === undefined || trigger.severity === severityBefore) &&
+        fromOk(trigger.from) &&
+        (trigger.keyword === undefined || hit.keyword === undefined || hit.keyword === trigger.keyword)
+      );
     case "whenAttacked":
       return role === "target" && (trigger.stage === "rolled" || trigger.stage === "succeeded") && typeOk(trigger.damageType) && fromOk(trigger.from);
     // E2 (dcm-98d): `stage: "would"` (Unyielding Armor, CB p.342: "When you would mark an Armor Slot") fits the same way:
@@ -270,10 +285,32 @@ function minimalChoices(use: CardUse): Record<string, number> {
   return Object.fromEntries((use.choices ?? []).map((c: NumberChoice) => [c.id, Math.max(0, c.min)]));
 }
 
-/** The actor with the trigger's subject as a fact (Loyal Protector, CB p.36: "an ally … has 2 or fewer Hit Points"). */
-export function actorWithSubject(actor: ActorState, subject: Combatant | undefined): ActorState {
+/**
+ * The actor with the trigger's subject as a fact (Loyal Protector, CB p.36: "an ally … has 2 or fewer Hit Points"). Plan
+ * lanes-2, E2 (dcm-ofo): also the subject's Stress, Armor Slots and Hope, and (a PC subject) the items it holds, when known
+ * (a `track` or `holdsItem` check on the subject; Enchanted Talisman, HF p.16: "the person holding the talisman").
+ */
+export function actorWithSubject(actor: ActorState, subject: (Combatant & { readonly hope?: number; readonly facts?: { readonly items?: readonly string[] } }) | undefined): ActorState {
   if (!subject) return actor;
-  return { ...actor, facts: { ...(actor.facts ?? {}), subject: { conditions: subject.conditions, ...(subject.tags ? { tags: subject.tags } : {}), hp: subject.hp, hpMax: subject.hpMax } } };
+  const items = subject.facts?.items;
+  return {
+    ...actor,
+    facts: {
+      ...(actor.facts ?? {}),
+      subject: {
+        conditions: subject.conditions,
+        ...(subject.tags ? { tags: subject.tags } : {}),
+        hp: subject.hp,
+        hpMax: subject.hpMax,
+        stress: subject.stress,
+        stressMax: subject.stressMax,
+        ...(subject.armor !== undefined ? { armor: subject.armor } : {}),
+        ...(subject.armorMax !== undefined ? { armorMax: subject.armorMax } : {}),
+        ...(subject.hope !== undefined ? { hope: subject.hope } : {}),
+        ...(items !== undefined ? { items } : {}),
+      },
+    },
+  };
 }
 
 /**
@@ -523,7 +560,7 @@ export function progress(state: WindowState, target: PcDefense): HitProgress {
   const severity = stepDown(stepDown(before, realStepsChosen(state)), severitySteps(folds, state));
   const delta = (state.hit.hpMarkedDelta ?? 0) + folds.reduce((n, f) => n + (f.kind === "hpMarked" && applies(f.targetIds, state) ? f.delta : 0), 0);
   const base = hpForSeverity(severity);
-  return { amount, severity, hp: base > 0 ? Math.max(0, base + delta) : 0, armorAnswered: armorAnswered(state, state.targetId) };
+  return { amount, severity, hp: base > 0 ? Math.max(0, base + delta) * marksFactor(target, "hp") : 0, armorAnswered: armorAnswered(state, state.targetId) };
 }
 
 /** E2 (dcm-98d): a reaction on "when you would mark an Armor Slot" (Unyielding Armor, CB p.342). */
@@ -1142,6 +1179,6 @@ export function targetArmorPreview(state: WindowState, target: PcDefense): { slo
     const delta = (state.hit.hpMarkedDelta ?? 0) + folds.reduce((m, f) => m + (f.kind === "hpMarked" && applies(f.targetIds, state) ? f.delta : 0), 0);
     const severity = base === "none" ? "none" : stepDown(stepDown(base, n), steps);
     const hp = hpForSeverity(severity);
-    return { slots: n * per, severity, hp: hp > 0 ? Math.max(0, hp + delta) : 0 };
+    return { slots: n * per, severity, hp: hp > 0 ? Math.max(0, hp + delta) * marksFactor(target, "hp") : 0 };
   });
 }
