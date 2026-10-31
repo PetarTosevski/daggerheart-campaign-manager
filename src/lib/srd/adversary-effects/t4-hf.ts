@@ -11,8 +11,8 @@
 // - Actions need the spotlight; passives and reactions don't (CB p.194). "Mark a Stress" is a `stress` cost on the
 //   adversary, "Spend a Fear" a `fear` cost asked first (CB p.194, Q19).
 // - "Make an attack" is `adversaryAttack` against Evasion; the runner adds the stat block's ATK (AR1) to the use's own
-//   roll. A follow-up roll (a bounce, a d4 branch) is not the use's roll, so it carries the ATK itself. One roll for
-//   every target (AR7, CB p.161). A reaction roll without a number uses the adversary's Difficulty (CB p.193).
+//   roll and to a follow-up roll (a bounce, a d4 branch) that writes no modifier (lane E7, dcm-vv2; plan lanes, SRD-A2,
+//   dcm-6n0p). One roll for every target (AR7, CB p.161). A reaction roll without a number uses the adversary's Difficulty (CB p.193).
 // - Triggered passives and Fear gains are `auto` (Q19: "Fear gains automatic"); other printed reactions are `reaction`
 //   (a one-tap prompt defaulting to No), also where the text has no "you can".
 // - Countdowns have separate uses: activate (the printed trigger), tick, and the effect when it triggers (a `situation`
@@ -65,8 +65,6 @@ const markedSelf = (track: "hp" | "stress"): NumberSource => ({ kind: "marked", 
 /** d20 + ATK against each target's Evasion (AR1); the runner adds the stat block's Attack Modifier. */
 const ATTACK: RollSpec = { kind: "adversaryAttack", difficulty: { kind: "evasion" } };
 const ATTACK_WITH_ADVANTAGE: RollSpec = { ...ATTACK, advantage: true };
-/** A follow-up attack (not the use's own roll) adds the printed ATK itself. */
-const attackWithAtk = (atk: number): RollSpec => ({ ...ATTACK, modifier: fixed(atk) });
 /** A reaction roll with no printed number uses the adversary's Difficulty (CB p.193). */
 const OWN_DIFFICULTY = { kind: "actorDifficulty" } as const;
 const dc = (value: number) => ({ kind: "fixed", value }) as const;
@@ -240,13 +238,16 @@ const terrifying = (adversaryId: string, range: Range) =>
     ),
   );
 
-const ON_MOUNT = situation("While the Harbinger is on their mount");
+/** Plan lanes, SRD-A2: an unhorsed Harbinger carries this tag; on the mount is the tag's absence (`lacks`, dcm-2f3). */
+const UNHORSED = tag("Unhorsed");
+const ON_MOUNT: AdversaryRequirement = { kind: "hasCondition", condition: UNHORSED, lacks: true };
 
 /**
  * The Harbingers' "Mount: While the Harbinger is on their mount, they gain a +2 bonus to their Difficulty. When the
  * Harbinger takes Severe damage, they're knocked from their mount. If the Harbinger is unhorsed, their mount disappears
  * until you mark a Stress to summon it again." Three uses: the Difficulty while mounted, the fall on Severe damage, and
- * the Stress to call the mount back (on the Harbinger's spotlight, like the tier 2 Ghost's move).
+ * the Stress to call the mount back (on the Harbinger's spotlight, like the tier 2 Ghost's move). Plan lanes, SRD-A2:
+ * the fall puts the Unhorsed tag on the Harbinger, the call back clears it; the Difficulty holds while it lacks the tag.
  */
 const mount = (adversaryId: string) =>
   entry(
@@ -255,9 +256,18 @@ const mount = (adversaryId: string) =>
     passive({ id: "mounted", requires: [ON_MOUNT], modifiers: [{ kind: "mod", mod: { kind: "stat", stat: "difficulty", delta: fixed(2) } }] }),
     auto(
       { kind: "onDamaged", minSeverity: "severe" },
-      { id: "unhorsed", requires: [ON_MOUNT], steps: [manual("The Harbinger is knocked from their mount (no more +2 Difficulty); the mount disappears.")] },
+      {
+        id: "unhorsed",
+        requires: [ON_MOUNT],
+        steps: [{ kind: "condition", to: "self", condition: UNHORSED, duration: "manual", endsWhen: "you mark a Stress to summon the mount again", note: "Knocked from the mount; it disappears" }],
+      },
     ),
-    action({ id: "resummon", costs: STRESS, steps: [manual("The mount returns: the Harbinger is on their mount again (+2 Difficulty).")] }),
+    action({
+      id: "resummon",
+      requires: [{ kind: "hasCondition", condition: UNHORSED }],
+      costs: STRESS,
+      steps: [{ kind: "clearCondition", to: "self", condition: UNHORSED, note: "The mount returns" }],
+    }),
   );
 
 /** "Feed on Fear: When a PC within Close range fails with Fear, Forlorne can clear a HP or a Stress." (both forms) */
@@ -303,11 +313,14 @@ const countdownUses = (
   tick: AdversaryTrigger,
   onTrigger: string,
   triggered: Omit<UseParts, "id">,
-  opts: { loop?: boolean; activateKind?: "auto" | "reaction"; activateExtra?: readonly AdversaryStep[] } = {},
+  opts: { loop?: boolean; direction?: "increasing" | "decreasing"; activateKind?: "auto" | "reaction"; activateExtra?: readonly AdversaryStep[] } = {},
 ): AdversaryFeatureUse[] => [
   (opts.activateKind === "reaction" ? reaction : auto)(activate, {
     id: "activate",
-    steps: [{ kind: "countdown", op: "start", label, start, ...(opts.loop ? { loop: true } : {}), onTrigger }, ...(opts.activateExtra ?? [])],
+    steps: [
+      { kind: "countdown", op: "start", label, start, ...(opts.loop ? { loop: true } : {}), ...(opts.direction ? { direction: opts.direction } : {}), onTrigger },
+      ...(opts.activateExtra ?? []),
+    ],
   }),
   auto(tick, { id: "tick", steps: [{ kind: "countdown", op: "tick", label }] }),
   reaction({ kind: "situation", text: `The ${label} countdown triggers` }, { id: "trigger", ...triggered }),
@@ -319,8 +332,11 @@ const DIAMOND_TICK: readonly AdversaryStep[] = [
   { kind: "countdown", op: "tick", label: "Diamond Hide" },
 ];
 
-const OMEGA = situation("Adonix is in Omega form");
-const FULL_FORM = situation("The Titan is in its full form");
+/** Plan lanes, SRD-A2: the forms an evolution gives are tags on the adversary itself, read by `hasCondition`. */
+const OMEGA_FORM = tag("Omega Form");
+const OMEGA: AdversaryRequirement = { kind: "hasCondition", condition: OMEGA_FORM };
+const FULL_FORM_TAG = tag("Full Form");
+const FULL_FORM: AdversaryRequirement = { kind: "hasCondition", condition: FULL_FORM_TAG };
 const MISTY_FORM = situation("While the Titan is a misty cloud");
 const FLYING = situation("While flying");
 
@@ -558,11 +574,12 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Terrifying: When the Titan makes a successful attack, all PCs within Close range lose a Hope, and you gain a Fear."
   terrifying("cephilith-titan", "close"),
   // "Merely a Projection: … They have immunity to physical damage and resistance to magic damage."
-  // Losing it on "It's Here…" is manual (dcm-gx3).
+  // Plan lanes, SRD-A2: it holds while the Titan lacks the Full Form tag "It's Here…" gives it (`lacks`, dcm-2f3).
   entry(
     "cephilith-titan",
     "Merely a Projection",
     passive({
+      requires: [{ kind: "hasCondition", condition: FULL_FORM_TAG, lacks: true }],
       modifiers: [
         { kind: "mod", mod: { kind: "resistance", type: "physical", level: "immune" } },
         { kind: "mod", mod: { kind: "resistance", type: "magic", level: "resistant" } },
@@ -598,7 +615,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // the “Merely a Projection” feature. While the Titan is in this form, a creature who marks HP from the Titan's standard
   // attack must mark an additional HP."
   // Two uses: the evolution (automatic, once per scene, HF p.61), and the full form's extra HP (automatic after the
-  // window, while the GM has confirmed the form). Dropping "Merely a Projection" is manual (dcm-gx3).
+  // window, in the full form). Plan lanes, SRD-A2: the full form is a permanent Full Form tag on the Titan, which ends
+  // "Merely a Projection" (its `lacks` requirement) and gates the extra HP.
   entry(
     "cephilith-titan",
     "“It’s Here…”",
@@ -608,7 +626,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         limit: { per: "scene" },
         steps: [
           { kind: "clear", to: "self", track: "hp", amount: markedSelf("hp"), note: "The Titan clears all HP" },
-          manual("The Titan manifests in its full form and loses “Merely a Projection” (no more physical immunity or magic resistance)."),
+          { kind: "condition", to: "self", condition: FULL_FORM_TAG, duration: "permanent", note: "The Titan manifests in its full form and loses “Merely a Projection”" },
         ],
       },
     ),
@@ -695,7 +713,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // magic damage and roll a d6. On a result of 4 or higher, the lightning bounces, and the Titan makes this attack
   // against a different target within Very Close range of the previous target. Each time the lightning bounces, decrease
   // the damage it deals by 1d10."
-  // The first bounce is a follow-up attack (ATK +3) for 4d10+14 − 1d10; later bounces repeat by hand (dcm-7az).
+  // The first bounce is a follow-up attack (the runner adds ATK +3) for 4d10+14 − 1d10; later bounces repeat by hand (a
+  // repeat on a check with a falling damage: vocabulary-gap bead in docs/tasks/TASK-LN-SRD-A2.md).
   entry(
     "cloud-titan",
     "Lightning Strike",
@@ -715,7 +734,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             {
               kind: "followUp",
               note: "The lightning bounces to a different target within Very Close range of the previous one",
-              roll: attackWithAtk(3),
+              roll: ATTACK,
               targets: oneEnemy("veryClose"),
               steps: [
                 damage(flat({ kind: "sum", of: [diceOf(4, 10, 14), { kind: "calc", of: diceOf(1, 10), times: -1 }] }), "magic", {
@@ -965,7 +984,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
           label: "One head of your choice",
           options: [
             // "1. Fire. Deal 4d12 magic damage to 1d4+1 targets within Close range. Targets who take damage must mark an
-            // Armor Slot or 2 additional HP." Manual: each target's own choice (dcm-bz8).
+            // Armor Slot or 2 additional HP." Plan lanes, SRD-A2 (dcm-bz8): each target picks (`choose.by`).
             {
               id: "fire",
               label: "1. Fire",
@@ -973,7 +992,19 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
                 {
                   kind: "followUp",
                   targets: { side: "enemy", range: "close", count: { kind: "upTo", n: diceOf(1, 4, 1) } },
-                  steps: [damage(roll(4, 12), "magic"), manual("Each target who takes damage marks an Armor Slot or 2 additional HP (their choice).", "targets")],
+                  steps: [
+                    damage(roll(4, 12), "magic"),
+                    {
+                      kind: "choose",
+                      id: "fire",
+                      label: "Mark an Armor Slot or 2 additional HP",
+                      by: { to: "targets" },
+                      options: [
+                        { id: "armor", label: "Mark an Armor Slot", steps: [{ kind: "markArmor", to: "chooser", amount: one }] },
+                        { id: "hp", label: "Mark 2 additional HP", steps: [{ kind: "markHp", to: "chooser", amount: fixed(2) }] },
+                      ],
+                    },
+                  ],
                 },
               ],
             },
@@ -1361,11 +1392,27 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Relentless (3): The Machine can be spotlighted up to three times per GM turn. Spend Fear as usual to spotlight it."
   relentless("gargantuan-war-machine", 3),
   // "Awesome Size: When the Machine enters the battlefield, each PC must either lose a Hope or mark 1d4 Stress."
-  // Manual: each PC's own choice (dcm-bz8).
+  // Plan lanes, SRD-A2 (dcm-bz8): each PC picks (`choose.by`).
   entry(
     "gargantuan-war-machine",
     "Awesome Size",
-    auto({ kind: "timing", at: "appears" }, { steps: [manual("Each PC either loses a Hope or marks 1d4 Stress (their choice).", "picked", { pick: ANY_PC })] }),
+    auto(
+      { kind: "timing", at: "appears" },
+      {
+        steps: [
+          {
+            kind: "choose",
+            id: "size",
+            label: "Lose a Hope or mark 1d4 Stress",
+            by: { to: "picked", pick: ANY_PC },
+            options: [
+              { id: "hope", label: "Lose a Hope", steps: [{ kind: "hope", to: "chooser", change: "lose", amount: one }] },
+              { id: "stress", label: "Mark 1d4 Stress", steps: [{ kind: "markStress", to: "chooser", amount: diceOf(1, 4) }] },
+            ],
+          },
+        ],
+      },
+    ),
   ),
   // "Rocket Punch: Mark a Stress to make an attack against a PC within Close range. On a success, the target takes
   // 4d12+10 direct physical damage and marks 2 Armor Slots without gaining their benefits."
@@ -1527,7 +1574,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // "Decapitate: Spend 2 Fear to have the Harbinger make an attack roll against a PC within Melee range. On a success,
   // roll a d6. On a result of 6, the target marks all HP and must make a death move."
-  // Manual: marking all HP and the death move (dcm-702).
+  // Plan lanes, SRD-A2 (dcm-702): all their free HP marked and a `deathMove`.
   entry(
     "harbinger-of-death",
     "Decapitate",
@@ -1542,7 +1589,10 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
           note: "Roll a d6",
           dice: { count: one, sides: 6 },
           test: { kind: "anyAtLeast", value: 6 },
-          then: [manual("The target marks all their HP and must make a death move.", "targets")],
+          then: [
+            { kind: "markHp", to: "targets", amount: { kind: "free", who: "target", track: "hp" }, note: "The target marks all their HP" },
+            { kind: "deathMove", to: "targets" },
+          ],
           otherwise: [],
         },
       ],
@@ -1587,7 +1637,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Hunger Pangs: Countdown (Decreasing 6). When the Harbinger appears, activate the countdown. It ticks down when the
   // Harbinger is spotlighted. When it triggers, all PCs within Far range mark a Stress and become Ravenous. While
   // Ravenous, a PC can't spend Hope until they clear the condition with a successful Instinct Roll."
-  // Manual: a decreasing countdown restarts one lower (dcm-m5s); Ravenous's "can't spend Hope" (dcm-kti).
+  // Plan lanes, SRD-A2 (dcm-m5s): a decreasing countdown (`direction`). Manual: Ravenous's "can't spend Hope" (no flag:
+  // vocabulary-gap bead in docs/tasks/TASK-LN-SRD-A2.md).
   entry(
     "harbinger-of-famine",
     "Hunger Pangs",
@@ -1596,17 +1647,16 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       fixed(6),
       { kind: "timing", at: "appears" },
       { kind: "onSpotlight" },
-      "All PCs within Far range mark a Stress and become Ravenous. Decreasing: it restarts one lower each time (6, 5, 4 …).",
+      "All PCs within Far range mark a Stress and become Ravenous.",
       {
         targets: allAround("far"),
         steps: [
           { kind: "markStress", to: "targets", amount: one },
           { kind: "condition", to: "targets", condition: tag("Ravenous"), duration: "manual", endsWhen: "a successful Instinct Roll" },
           manual("Ravenous: the PC can't spend Hope until they clear the condition.", "targets"),
-          manual("Decreasing countdown: restart Hunger Pangs one lower than its last start."),
         ],
       },
-      { loop: true },
+      { loop: true, direction: "decreasing" },
     ),
   ),
   // "Drain Essence: Spend a Fear to choose up to three PCs. Each target takes 4d6 magic damage."
@@ -1689,7 +1739,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Locust Swarm: Spend 2 Fear to have the Harbinger conjure a swarm of locusts at a point within Very Far range. Each PC
   // within Close range of that point must either mark an Armor Slot or take 4d10 direct physical damage and roll a d6. On
   // a result of 1–2, the PC becomes Contagious."
-  // Manual: each PC's own choice (dcm-bz8).
+  // Plan lanes, SRD-A2 (dcm-bz8): each PC picks (`choose.by`).
   entry(
     "harbinger-of-pestilence",
     "Locust Swarm",
@@ -1697,7 +1747,30 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       costs: TWO_FEAR,
       targets: allAroundPoint("veryFar", "close"),
       steps: [
-        manual("Each PC either marks an Armor Slot, or takes 4d10 direct physical damage and rolls a d6: on 1–2 they become Contagious (their choice).", "targets"),
+        {
+          kind: "choose",
+          id: "swarm",
+          label: "Mark an Armor Slot, or take 4d10 direct physical damage and roll a d6",
+          by: { to: "targets" },
+          options: [
+            { id: "armor", label: "Mark an Armor Slot", steps: [{ kind: "markArmor", to: "chooser", amount: one }] },
+            {
+              id: "damage",
+              label: "Take 4d10 direct physical damage and roll a d6",
+              steps: [
+                { kind: "damage", to: "chooser", roll: roll(4, 10), type: "physical", direct: true },
+                {
+                  kind: "check",
+                  note: "The PC rolls a d6",
+                  dice: { count: one, sides: 6 },
+                  test: { kind: "totalAtMost", value: 2 },
+                  then: [{ kind: "condition", to: "chooser", condition: CONTAGIOUS, duration: "manual", endsWhen: "they spend 3 Hope to clear it" }],
+                  otherwise: [],
+                },
+              ],
+            },
+          ],
+        },
       ],
     }),
   ),
@@ -1905,7 +1978,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // "Hot-Blooded: When a creature makes a successful attack against the Dragon within Very Close range, the Dragon's
   // blood erupts from the wound and burns the attacker, forcing them to mark an Armor Slot. If they can't mark an Armor
-  // Slot, they mark 1d4 HP." Manual: the fallback for a full Armor track (dcm-18i).
+  // Slot, they mark 1d4 HP." Plan lanes, SRD-A2 (dcm-18i): the 1d4 HP is gated on no free Armor Slot (a `targetCheck`
+  // read before the slot is marked).
   entry(
     "ruby-dragon",
     "Hot-Blooded",
@@ -1913,7 +1987,16 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       { kind: "onAttacked", stage: "succeeded", attackerWithin: "veryClose" },
       {
         targets: TRIGGER_SOURCE,
-        steps: [{ kind: "markArmor", to: "targets", amount: one }, manual("If they can't mark an Armor Slot, they mark 1d4 HP instead.", "targets")],
+        steps: [
+          {
+            kind: "markHp",
+            to: "targets",
+            when: [{ kind: "targetCheck", check: { kind: "track", who: "target", track: "armor", measure: "free", atMost: 0 } }],
+            amount: diceOf(1, 4),
+            note: "They can't mark an Armor Slot: 1d4 HP instead",
+          },
+          { kind: "markArmor", to: "targets", amount: one },
+        ],
       },
     ),
   ),
@@ -1995,7 +2078,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
               steps: [
                 {
                   kind: "followUp",
-                  roll: attackWithAtk(8),
+                  roll: ATTACK,
                   targets: oneEnemy("veryFar"),
                   steps: [
                     damage(roll(4, 8), "magic", { when: hit }),
@@ -2028,7 +2111,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Alpha to Omega: When Adonix is defeated, they resurrect in Omega form with all HP and Stress cleared. Each PC within
   // Very Far range must succeed on a Presence Reaction Roll or lose a Hope. You gain a Fear for each Hope lost in this
   // way. Adonix gains the following features in this form:" (Forsaken and Armageddon, gated on the Omega form).
-  // An evolution: automatic, once per scene (HF p.61). Manual: rising again after defeat (dcm-145).
+  // An evolution: automatic, once per scene (HF p.61). Plan lanes, SRD-A2 (dcm-145): a `revive` of itself (all HP and
+  // Stress), and the Omega Form tag that Forsaken and Armageddon require.
   entry(
     "supreme-demiurge-adonix",
     "Alpha to Omega",
@@ -2038,9 +2122,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         limit: { per: "scene" },
         targets: allAround("veryFar"),
         steps: [
-          manual("Adonix resurrects in Omega form (no longer defeated) and gains Forsaken and Armageddon."),
-          { kind: "clear", to: "self", track: "hp", amount: markedSelf("hp"), note: "All HP cleared" },
-          { kind: "clear", to: "self", track: "stress", amount: markedSelf("stress"), note: "All Stress cleared" },
+          { kind: "revive", to: "self", clearHp: "all", clearStress: true, note: "Adonix resurrects with all HP and Stress cleared" },
+          { kind: "condition", to: "self", condition: OMEGA_FORM, duration: "permanent", note: "Omega form: Forsaken and Armageddon" },
           save("presence", OWN_DIFFICULTY, [{ kind: "hope", to: "targets", change: "lose", amount: one }, { ...gainFear(), note: "A Fear for the Hope lost" }]),
         ],
       },
@@ -2069,7 +2152,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
     ),
   ),
   // "Armageddon: When Adonix is defeated again, they unleash a reality storm that shakes the realms to their foundations.
-  // Roll a d6. On a result of 5–6, each PC must make a death move." (Omega form.) Manual: the death moves (dcm-702).
+  // Roll a d6. On a result of 5–6, each PC must make a death move." (Omega form.) Plan lanes, SRD-A2 (dcm-702): a
+  // `deathMove` for every PC.
   entry(
     "supreme-demiurge-adonix",
     "Armageddon",
@@ -2083,7 +2167,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             note: "Roll a d6",
             dice: { count: one, sides: 6 },
             test: { kind: "anyAtLeast", value: 5 },
-            then: [manual("Each PC must make a death move.", "picked", { pick: ANY_PC })],
+            then: [{ kind: "deathMove", to: "picked", pick: ANY_PC }],
             otherwise: [],
           },
         ],
@@ -2097,8 +2181,8 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Time Looper: Countdown (Loop 2d6). When the Enforcer first appears, activate the countdown. It ticks down when the
   // Enforcer is spotlighted. When it triggers, the Enforcer clears all HP, Stress, and conditions. Reroll the countdown
   // when the Enforcer takes Severe damage."
-  // Four uses: the countdown's three and the reroll (a fresh 2d6 start). "All conditions" is every standard condition
-  // cleared, plus a manual note for tags.
+  // Four uses: the countdown's three and the reroll (a fresh 2d6 start). Plan lanes, SRD-A2 (dcm-730): "all conditions"
+  // is every condition and tag (`clearCondition.all`).
   entry(
     "temporal-enforcer",
     "Time Looper",
@@ -2112,10 +2196,7 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         steps: [
           { kind: "clear", to: "self", track: "hp", amount: markedSelf("hp") },
           { kind: "clear", to: "self", track: "stress", amount: markedSelf("stress") },
-          ...(["vulnerable", "restrained", "hidden", "distracted", "cloaked"] as const).map(
-            (condition): AdversaryStep => ({ kind: "clearCondition", to: "self", condition: { kind: "standard", condition } }),
-          ),
-          manual("The Enforcer also clears any other condition it carries (tags)."),
+          { kind: "clearCondition", to: "self", condition: VULNERABLE, all: true },
         ],
       },
       { loop: true },
@@ -2262,13 +2343,13 @@ export const T4_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   horde("wyrmlings", 2, 6, 5),
   // "Ravenous: Once per GM turn when a PC marks a HP from an attack made by the Wyrmlings, you can spend a Fear to
   // spotlight the Wyrmlings again."
-  // Manual: the once-per-GM-turn limit (no GM-turn period, dcm-c5h).
+  // Plan lanes, SRD-A2 (dcm-c5h): once per GM turn (`Limit.period`; `per: "scene"` is the fallback period).
   entry(
     "wyrmlings",
     "Ravenous",
     reaction(
       { kind: "onTargetMarksHp", attack: "any" },
-      { costs: FEAR, steps: [{ kind: "spotlight", who: "self", note: "Spotlight the Wyrmlings again (once per GM turn)" }] },
+      { limit: { per: "scene", period: "gmTurn" }, costs: FEAR, steps: [{ kind: "spotlight", who: "self", note: "Spotlight the Wyrmlings again" }] },
     ),
   ),
   // "Overwhelm: When the Wyrmlings take Minor damage from an attack within Melee range, you can mark a Stress to make a

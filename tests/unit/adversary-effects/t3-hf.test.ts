@@ -320,15 +320,22 @@ describe("Archmage (HF p.81)", () => {
     expect(plan("archmage", "Orbiting Aegis", [], quiet({ useId: "study-2", self: aegis(2), situations: [study], options: { study: ["hope"] } })).self.after.tags).toEqual([]);
   });
 
-  it("Force Salvo: any number of Fear, that many d4s; the total is the bolts (placed by the GM)", () => {
+  it("Force Salvo: any number of Fear, that many d4s; the bolts are HP marks split over the picked creatures, three at most on one (dcm-zhc)", () => {
     expect(prompts(plan("archmage", "Force Salvo", [], { targets: [] }), "choose")).toHaveLength(1);
-    const p = plan("archmage", "Force Salvo", [1, 2, 4], { targets: [], options: { salvo: ["3"] } });
+    // 3 Fear, 3d4 1 + 2 + 4 = 7 bolts: the GM puts 3 on Mira (the most on one), 4 asked on Bram are capped at 3.
+    const p = plan("archmage", "Force Salvo", [1, 2, 4], { targets: [], picked: [mira, bram], options: { salvo: ["3"] }, splits: { mira: 3, bram: 4 } });
     expect(p).toMatchObject({ fearSpent: 3, gmFearDelta: -3 });
-    expect(stepsOf(p, "check")).toEqual([expect.objectContaining({ total: 7, dice: [1, 2, 4] })]);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(stepsOf(p, "mark")).toEqual([
+      expect.objectContaining({ targetId: "mira", track: "hp", amount: 3 }),
+      expect.objectContaining({ targetId: "bram", track: "hp", amount: 3 }),
+    ]);
+    expect(prompts(p, "manual")).toEqual([]);
+    // No shares yet: a split prompt with the total and the cap.
+    const ask = plan("archmage", "Force Salvo", [1, 2, 4], { targets: [], picked: [mira, bram], options: { salvo: ["3"] } });
+    expect(prompts(ask, "split")).toEqual([expect.objectContaining({ amount: 7, targetIds: ["mira", "bram"], text: expect.stringMatching(/at most 3/) })]);
     const short = plan("archmage", "Force Salvo", [], { targets: [], gmFear: 2, options: { salvo: ["3"] } });
     expect(stepsOf(short, "pay")).toEqual([expect.objectContaining({ paid: false })]);
-    expect(stepsOf(short, "check")).toEqual([]);
+    expect(stepsOf(short, "mark")).toEqual([]);
   });
 
   it("Fireball: N Stress for up to N PCs within Far range, each makes an Agility Reaction Roll", () => {
@@ -382,9 +389,13 @@ describe("Catrin (HF p.81)", () => {
 });
 
 describe("Chimera (HF p.81)", () => {
-  it("Rending Jaws: on a hit the PC needs 2 Armor Slots per severity step (manual)", () => {
+  it("Rending Jaws: on a hit the PC needs 2 Armor Slots per severity step (an armorCost the server reads into the hit, dcm-s77)", () => {
     expect(matchesTrigger(triggerOf("chimera", "Rending Jaws"), { kind: "onHit", attack: "feature" })).toBe(true);
-    expect(prompts(plan("chimera", "Rending Jaws", [], quiet({ trigger: { subject: mira } })), "manual")).toEqual([expect.objectContaining({ targetIds: ["mira"] })]);
+    expect(effectOf("chimera", "Rending Jaws").uses[0]!.steps).toEqual([expect.objectContaining({ kind: "armorCost", slotsPerStep: 2 })]);
+    // The card runner leaves it as a prompt for the table, with the feature's words.
+    expect(prompts(plan("chimera", "Rending Jaws", [], quiet({ trigger: { subject: mira } })), "manual")).toEqual([
+      expect.objectContaining({ targetIds: ["mira"], text: expect.stringMatching(/2 Armor Slots/) }),
+    ]);
   });
 
   it("Breath of Fire: a Fear, up to three PCs, Agility Reaction Roll (20)", () => {
@@ -492,10 +503,14 @@ describe("Cursed Merfolk (HF p.82)", () => {
     expect(pull).toMatchObject({ fearSpent: 0, roll: null });
     expect(pull.self.after.stress).toBe(1);
     expect(prompts(pull, "move")).toEqual([expect.objectContaining({ targetIds: ["mira"] })]);
-    // d20s 10 and 4 with advantage keep 10, + ATK 3 = 13 hits; 3d6 = 1 + 2 + 3.
+    // d20s 10 and 4 with advantage keep 10, + ATK 3 (the runner adds it to the follow-up: dcm-6n0p) + 2 (Gang Up: with no
+    // map an ally within Melee of the target holds, Q18) = 15 hits; 3d6 = 1 + 2 + 3.
     const attack = plan("cursed-merfolk", "“Get Over Here!”", [10, 4, 1, 2, 3], quiet({ trigger: { subject: mira }, followUp: [mira], optionals: ["attack"] }));
     expect(attack.fearSpent).toBe(1);
-    expect(stepsOf(attack, "roll")[0]!.roll.record.total).toBe(13);
+    expect(stepsOf(attack, "roll")[0]!.roll.record.total).toBe(15);
+    // Without Gang Up's +2 the ATK alone: 10 + 3 = 13.
+    const alone = plan("cursed-merfolk", "“Get Over Here!”", [10, 4, 1, 2, 3], quiet({ trigger: { subject: mira }, followUp: [mira], optionals: ["attack"], passives: { ...summaryOf("cursed-merfolk"), attackBonus: 0 } }));
+    expect(stepsOf(alone, "roll")[0]!.roll.record.total).toBe(13);
     expect(attack.incoming).toEqual([expect.objectContaining({ targetId: "mira", amount: 6 })]);
   });
 });
@@ -585,12 +600,13 @@ describe("Dullahan (HF p.83)", () => {
 
 describe("Fellmounted Shadow King (HF p.83)", () => {
   it("Fellmount: +2 Difficulty while mounted; Severe damage unmounts; a Stress summons the mount", () => {
-    expect(summaryOf("fellmounted-shadow-king", selfOf("fellmounted-shadow-king"), { situations: ["The Shadow King is on his mount"] }).difficulty).toBe(2);
-    expect(summaryOf("fellmounted-shadow-king").difficulty).toBe(0);
+    // Plan lanes, SRD-A2: mounted unless he carries the Unmounted tag.
+    expect(summaryOf("fellmounted-shadow-king").difficulty).toBe(2);
+    expect(summaryOf("fellmounted-shadow-king", selfOf("fellmounted-shadow-king", { tags: ["Unmounted"] })).difficulty).toBe(0);
     expect(matchesTrigger(triggerOf("fellmounted-shadow-king", "Fellmount", "knocked"), { kind: "onDamaged", stage: "did", severity: "severe" })).toBe(true);
     const off = plan("fellmounted-shadow-king", "Fellmount", [], quiet({ useId: "knocked" }));
     expect(off.self.after.tags).toEqual(["Unmounted"]);
-    expect(prompts(off, "manual")).toHaveLength(1);
+    expect(prompts(off, "manual")).toEqual([]);
     expect(plan("fellmounted-shadow-king", "Fellmount", [], quiet({ useId: "summon", self: off.self.after })).self.after).toMatchObject({ tags: [], stress: 1 });
   });
 
@@ -609,10 +625,15 @@ describe("Fellmounted Shadow King (HF p.83)", () => {
     expect(active.map((x) => x.effect.feature)).toContain("Relic Hunter");
   });
 
-  it("Hellsong: 2 Fear, a Presence Reaction Roll (18) for each PC within Far range", () => {
+  it("Hellsong: 2 Fear, a Presence Reaction Roll (18) for each PC within Far range; no Hope to lose gains 2 Fear (dcm-5xi)", () => {
     const p = plan("fellmounted-shadow-king", "Hellsong", [], { targets: [mira, bram] });
     expect(p.fearSpent).toBe(2);
     expect(prompts(p, "pcSave")).toHaveLength(2);
+    const onFail = (p.saves ?? [])[0]!.step.onFail;
+    expect(onFail).toEqual([
+      expect.objectContaining({ kind: "markStress" }),
+      expect.objectContaining({ kind: "hope", change: "lose", ifUnable: [expect.objectContaining({ kind: "fear", change: "gain", amount: { kind: "fixed", value: 2 } })] }),
+    ]);
   });
 
   it("Air Support: three times per scene, a Fear for an ally's reroll with advantage", () => {
@@ -764,11 +785,14 @@ describe("Lamplight Beguiler (HF p.85)", () => {
     expect(prompts(p, "manual")).toHaveLength(1);
   });
 
-  it("Entice: a Fear, a Presence Reaction Roll (18); disadvantage for a trusted form is manual", () => {
+  it("Entice: a Fear, a Presence Reaction Roll (18), with disadvantage once the GM confirms the trusted form (dcm-rb0)", () => {
     const p = plan("lamplight-beguiler", "Entice", []);
     expect(p.fearSpent).toBe(1);
-    expect(prompts(p, "pcSave")).toHaveLength(1);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "pcSave")).toEqual([expect.objectContaining({ targetIds: ["mira"], difficulty: 18 })]);
+    expect(prompts(p, "pcSave")[0]!.disadvantage ?? 0).toBe(0);
+    expect(prompts(p, "manual")).toEqual([]);
+    const trusted = plan("lamplight-beguiler", "Entice", [], { situations: ["The head stalk is in the form this PC finds trustworthy (Doppel-Dangler)"] });
+    expect(prompts(trusted, "pcSave")[0]!.disadvantage).toBe(1);
   });
 
   it("Gulp: a PC moves into Melee; a Fear for an attack: 3d6 and Swallowed; 3d6 on each spotlight; Major damage disgorges", () => {
@@ -855,10 +879,13 @@ describe("Phoenix (HF p.86)", () => {
   it("Purifying Aura: a PC acting in Melee spends a Hope to clear a HP or Stress and its conditions", () => {
     expect(matchesTrigger(triggerOf("phoenix", "Purifying Aura"), { kind: "pcRolls", roll: actionRoll(), band: "melee" })).toBe(true);
     expect(matchesTrigger(triggerOf("phoenix", "Purifying Aura"), { kind: "pcRolls", roll: actionRoll(), band: "close" })).toBe(false);
-    const hurt = pc("mira", { stress: 2, conditions: ["vulnerable"] });
+    // Plan lanes, SRD-A2 (dcm-730): every condition and tag goes, not only Vulnerable and Restrained.
+    const hurt = pc("mira", { stress: 2, conditions: ["vulnerable", "hidden"], tags: ["Poisoned", "Shaky"] });
     const p = plan("phoenix", "Purifying Aura", [], quiet({ trigger: { subject: hurt }, options: { purify: ["stress"] } }));
     expect(stepsOf(p, "hope")).toEqual([{ kind: "hope", targetId: "mira", delta: -1 }]);
-    expect(creature(p, "mira")).toMatchObject({ stress: 1, conditions: [] });
+    expect(creature(p, "mira")).toMatchObject({ stress: 1, conditions: [], tags: [] });
+    expect(stepsOf(p, "clearCondition")).toHaveLength(4);
+    expect(prompts(p, "manual")).toEqual([]);
   });
 
   it("Fireseed: when it marks HP, summon a Minor Fire Elemental", () => {

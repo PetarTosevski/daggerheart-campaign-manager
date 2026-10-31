@@ -320,8 +320,9 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Force Salvo - Action: "Spend any number of Fear and roll that many d4s. The Archmage unleashes a number of magical homing
   // force bolts equal to the total result. For each bolt, a creature within Far range marks a HP. The same creature can be
   // targeted by up to three force bolts."
-  // One option per Fear (the GM's pool holds 12). The d4s are rolled (`check`, its total is the bolts); placing the bolts
-  // is manual: no step spreads forced HP marks over creatures (bead in the task doc).
+  // One option per Fear (the GM's pool holds 12). Plan lanes, SRD-A2 (dcm-zhc): the d4s' total is the bolts, a `markHp`
+  // split over the creatures picked within Far range, at most three on one (the GM divides them: `splits`, else a split
+  // prompt with the total).
   entry(
     "archmage",
     "Force Salvo",
@@ -337,11 +338,13 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             steps: [
               { kind: "pay", costs: [fear(n)] },
               {
-                kind: "check",
-                dice: diceExpr(n, 4),
-                test: { kind: "totalAtLeast", value: 0 },
-                then: [manual("The total is the number of bolts. For each bolt, a creature within Far range marks a HP; at most three bolts on the same creature.", "self")],
-                otherwise: [],
+                kind: "markHp",
+                to: "picked",
+                pick: { side: "enemy", range: "far", count: { kind: "any" } },
+                amount: rolled(n, 4),
+                distribution: "split",
+                maxPer: 3,
+                note: "For each bolt, a creature within Far range marks a HP (at most three bolts on one)",
               },
             ],
           })),
@@ -425,10 +428,14 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // ======================================================== Chimera (HF p.81)
   // Rending Jaws - Passive: "When the Chimera makes a successful attack against a PC, the target must mark 2 Armor Slots to
   // reduce the severity by one threshold."
+  // Plan lanes, SRD-A2 (dcm-s77): an `armorCost` of 2 slots per severity step; the server reads it into the hit (E2).
   entry(
     "chimera",
     "Rending Jaws",
-    auto({ kind: "onHit", attack: "any" }, { targets: SUBJECT, steps: [manual("To reduce the severity with armor, this PC must mark 2 Armor Slots instead of 1.")] }),
+    auto(
+      { kind: "onHit", attack: "any" },
+      { targets: SUBJECT, steps: [{ kind: "armorCost", to: "targets", slotsPerStep: 2, note: "To reduce the severity with armor, this PC must mark 2 Armor Slots instead of 1" }] },
+    ),
   ),
   // Double Claw - Action: "Mark a Stress to make two standard attacks. If both attacks succeed against the same target,
   // combine the damage."
@@ -653,7 +660,8 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Get Over Here!" - Reaction: "When the Merfolk makes a successful standard attack against a target beyond Melee range,
   // you can mark a Stress to pull them into Melee range. If you do, you can spend a Fear to make a standard attack with
   // advantage against the target."
-  // The second attack is an optional Fear step (default No, Q19) with its own roll; it carries the ATK +3 (dcm-vv2).
+  // The second attack is an optional Fear step (default No, Q19) with its own roll; the runner adds the stat block's ATK
+  // to a follow-up roll that writes no modifier (lane E7, dcm-vv2; plan lanes, SRD-A2, dcm-6n0p).
   entry(
     "cursed-merfolk",
     "“Get Over Here!”",
@@ -669,7 +677,7 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             id: "attack",
             label: "Spend a Fear for a standard attack with advantage",
             costs: [fear()],
-            steps: [{ kind: "followUp", roll: { ...ATTACK, advantage: true, modifier: fixed(3) }, targets: enemy("melee"), steps: [standardHit] }],
+            steps: [{ kind: "followUp", roll: { ...ATTACK, advantage: true }, targets: enemy("melee"), steps: [standardHit] }],
           },
         ],
       },
@@ -833,19 +841,18 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Fellmount - Passive: "While the Shadow King is on his mount, he gains a +2 bonus to his Difficulty. When the Shadow King
   // takes Severe damage, he's knocked from his mount. If the Shadow King is unmounted, his mount disappears until you mark a
   // Stress to summon it again."
-  // "On his mount" is a situation the GM confirms (as Knight of the Realm, t2-core); Severe damage asks the GM to unconfirm
-  // it; the summon needs no spotlight (as Spectral Mount).
+  // Plan lanes, SRD-A2: "on his mount" is the absence of the Unmounted tag Severe damage puts on him (`lacks`, dcm-2f3);
+  // the summon clears it and needs no spotlight (as Spectral Mount).
   entry(
     "fellmounted-shadow-king",
     "Fellmount",
-    passive([{ kind: "mod", mod: { kind: "stat", stat: "difficulty", delta: fixed(2) } }], { requires: [{ kind: "situation", text: "The Shadow King is on his mount" }] }),
+    passive([{ kind: "mod", mod: { kind: "stat", stat: "difficulty", delta: fixed(2) } }], { requires: [{ kind: "hasCondition", condition: tag("Unmounted"), lacks: true }] }),
     auto(
       { kind: "onDamaged", minSeverity: "severe" },
       {
         id: "knocked",
         steps: [
-          { kind: "condition", to: "self", condition: tag("Unmounted"), duration: "manual", endsWhen: "you mark a Stress to summon the mount" },
-          manual("He is knocked from his mount and it disappears: he is no longer on his mount.", "self"),
+          { kind: "condition", to: "self", condition: tag("Unmounted"), duration: "manual", endsWhen: "you mark a Stress to summon the mount", note: "Knocked from his mount; it disappears" },
         ],
       },
     ),
@@ -876,7 +883,15 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
     action({
       costs: [fear(2)],
       targets: enemiesAround("far"),
-      steps: [save("presence", dc(18), [markStress(), { kind: "hope", to: "targets", change: "lose", amount: one }, manual("If this PC can't lose a Hope, you gain 2 Fear.")], [markStress()])],
+      // Plan lanes, SRD-A2 (dcm-5xi): "If a PC can't lose a Hope" is the Hope loss's `ifUnable`.
+      steps: [
+        save(
+          "presence",
+          dc(18),
+          [markStress(), { kind: "hope", to: "targets", change: "lose", amount: one, ifUnable: [{ kind: "fear", to: "self", change: "gain", amount: fixed(2) }], note: "If this PC can't lose a Hope, you gain 2 Fear" }],
+          [markStress()],
+        ),
+      ],
     }),
   ),
   // Air Support - Reaction: "Three times per scene, you can spend a Fear to have an ally within Far range reroll a failed
@@ -1167,9 +1182,18 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
     action({
       costs: [fear()],
       targets: enemy("close"),
+      // Plan lanes, SRD-A2 (dcm-rb0): the save's disadvantage holds while the GM confirms the trusted form (`modsWhen`).
       steps: [
-        manual("If the head stalk is in the form this PC finds trustworthy (Doppel-Dangler), they roll with disadvantage."),
-        save("presence", dc(18), [{ kind: "move", to: "targets", mode: "pull", range: "melee", relativeTo: "self", note: "They move into Melee range with the Beguiler" }]),
+        {
+          kind: "save",
+          to: "targets",
+          trait: "presence",
+          difficulty: dc(18),
+          disadvantage: true,
+          modsWhen: [situationGate("The head stalk is in the form this PC finds trustworthy (Doppel-Dangler)")],
+          onFail: [{ kind: "move", to: "targets", mode: "pull", range: "melee", relativeTo: "self", note: "They move into Melee range with the Beguiler" }],
+          onSuccess: [],
+        },
       ],
     }),
   ),
@@ -1334,9 +1358,8 @@ export const T3_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
                 steps: [
                   { kind: "hope", to: "targets", change: "lose", amount: one, note: "The PC spends a Hope" },
                   { kind: "clear", to: "targets", track, amount: one },
-                  { kind: "clearCondition", to: "targets", condition: std("vulnerable") },
-                  { kind: "clearCondition", to: "targets", condition: std("restrained") },
-                  manual("They also clear every other condition they have."),
+                  // Plan lanes, SRD-A2 (dcm-730): every condition and tag they carry.
+                  { kind: "clearCondition", to: "targets", condition: std("vulnerable"), all: true },
                 ],
               }),
             ),

@@ -316,12 +316,9 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       requires: [{ kind: "hpMarkedAtLeast", value: 7 }],
       costs: [fear(1)],
       steps: [
-        { kind: "move", to: "self", mode: "teleport", note: "Away to a safe location to recover" },
-        {
-          kind: "manual",
-          to: "self",
-          text: "The Necromancer leaves the scene to recover. A PC who succeeds on an Instinct Roll can trace the teleportation magic to their destination.",
-        },
+        // Plan lanes, SRD-A2 (dcm-icd): teleporting away to recover leaves the scene (`leaveScene`: the GM line and prompt).
+        { kind: "move", to: "self", mode: "leaveScene", note: "The Necromancer teleports away to a safe location to recover" },
+        { kind: "manual", to: "self", text: "A PC who succeeds on an Instinct Roll can trace the teleportation magic to their destination." },
       ],
     }),
   ),
@@ -430,8 +427,16 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       steps: [
         { kind: "condition", to: "targets", condition: VULNERABLE, duration: "manual", endsWhen: "until they break free with a successful Presence or Strength Roll" },
         { kind: "markStress", to: "targets", amount: fixed(1) },
-        { kind: "manual", to: "targets", text: "When a PC fails to break free from their regret, they lose a Hope." },
       ],
+    },
+    // Plan lanes, SRD-A2: the failed break-free roll is the PC's own (a story roll the engine doesn't see), so it is a GM
+    // button with the Hope loss.
+    {
+      id: "fail",
+      activation: { kind: "reaction", trigger: { kind: "situation", text: "A PC fails to break free from their regret" } },
+      needsSpotlight: false,
+      targets: one("unlimited"),
+      steps: [{ kind: "hope", to: "targets", change: "lose", amount: fixed(1) }],
     },
   ),
 
@@ -450,7 +455,8 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       costs: [stress(1)],
       roll: ATTACK,
       targets: allAround("veryClose"),
-      steps: [STANDARD_DAMAGE, { kind: "manual", to: "targets", when: ["hit"], text: "A target who uses armor to reduce this damage must mark 2 Armor Slots." }],
+      // Plan lanes, SRD-A2 (dcm-s77): 2 Armor Slots per severity step, read into the hit by the server (E2).
+      steps: [STANDARD_DAMAGE, { kind: "armorCost", to: "targets", when: ["hit"], slotsPerStep: 2, note: "A target who uses armor to reduce this damage must mark 2 Armor Slots" }],
     }),
   ),
   // All-Consuming Rage (Countdown (Decreasing 8)): "When the Realm-Breaker is in the spotlight for the first time, activate
@@ -459,7 +465,9 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // half damage. For each HP marked from this damage, summon a Fallen Shock Troop within Very Close range of the target who
   // marked that HP. If the countdown ever decreases its maximum value to 0, the Realm-Breaker marks their remaining HP and
   // all targets within Far range must mark all remaining HP and make a death move."
-  // A decreasing countdown resets one lower after each trigger (CB p.163): a GM prompt on each trigger.
+  // Plan lanes, SRD-A2 (dcm-m5s): a decreasing countdown (CB p.163: it resets one lower after each trigger) with its event
+  // at 0 (`direction`, `onZero`); it ticks on action rolls. Its doom at 0 marks all remaining HP and forces death moves
+  // (`free` HP, `deathMove`; dcm-702).
   entry(
     "fallen-warlord-realm-breaker",
     "All-Consuming Rage",
@@ -474,7 +482,10 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           label: "All-Consuming Rage",
           start: fixed(8),
           loop: true,
-          onTrigger: "A torrent of incarnate rage: Presence Reaction Rolls within Far range. Decreasing: it resets one lower each time.",
+          direction: "decreasing",
+          tickOn: "actionRoll",
+          onTrigger: "A torrent of incarnate rage: Presence Reaction Rolls within Far range.",
+          onZero: "The Realm-Breaker marks their remaining HP; all targets within Far range mark all remaining HP and make a death move.",
         },
       ],
     },
@@ -494,7 +505,6 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           onSuccess: [{ kind: "damage", to: "targets", roll: roll(2, 6, 10), type: "magic", direct: true, scale: "half" }],
         },
         { kind: "manual", to: "targets", text: "For each HP marked from this damage, summon a Fallen Shock Troop within Very Close range of the target who marked that HP." },
-        { kind: "countdown", op: "prompt", label: "All-Consuming Rage", note: "Decreasing: reset the countdown one lower than its last starting value" },
       ],
     },
     {
@@ -504,7 +514,8 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: allAround("far"),
       steps: [
         { kind: "defeat", to: "self", note: "The Realm-Breaker marks their remaining HP" },
-        { kind: "manual", to: "targets", text: "All targets within Far range must mark all remaining HP and make a death move." },
+        { kind: "markHp", to: "targets", amount: { kind: "free", who: "target", track: "hp" }, note: "All remaining HP" },
+        { kind: "deathMove", to: "targets" },
       ],
     },
   ),
@@ -633,9 +644,12 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       needsSpotlight: true,
       costs: [fear(1)],
       targets: one("unlimited"),
+      // Plan lanes, SRD-A2 (dcm-vkp): one target at a time: a new Judgment takes Guilty off the earlier target (`exclusive`).
+      // Manual: no Hope from rolls with Hope while Guilty (a rider on the bearer's own rolls: engine bead dcm-mm0f).
+      exclusive: true,
       steps: [
         { kind: "condition", to: "targets", condition: GUILTY, duration: "manual", endsWhen: "until the Seraph is defeated" },
-        { kind: "manual", to: "targets", text: "While Guilty, the target doesn't gain Hope on a result with Hope. The Seraph can only mark one target at a time: clear Guilty from any other target." },
+        { kind: "manual", to: "targets", text: "While Guilty, the target doesn't gain Hope on a result with Hope." },
       ],
     }),
     {
@@ -663,7 +677,9 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           to: "targets",
           trait: "presence",
           difficulty: OWN_DIFFICULTY,
-          note: "With disadvantage for targets marked Guilty",
+          // Plan lanes, SRD-A2 (dcm-rb0): disadvantage for targets marked Guilty (`modsWhen`, read per target).
+          disadvantage: true,
+          modsWhen: [{ kind: "targetHas", condition: GUILTY }],
           onFail: [{ kind: "damage", to: "targets", roll: roll(4, 6, 12), type: "magic" }],
           onSuccess: [{ kind: "damage", to: "targets", roll: roll(4, 6, 12), type: "magic", scale: "half" }],
         },
@@ -754,7 +770,8 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           difficulty: OWN_DIFFICULTY,
           onFail: [
             { kind: "damage", to: "targets", roll: roll(4, 6, 9), type: "physical" },
-            { kind: "manual", to: "targets", text: "If the target marks an Armor Slot to reduce the damage, they must also mark a Stress." },
+            // Plan lanes, SRD-A2 (dcm-s77): a Stress for each Armor Slot marked against it (`armorCost.alsoMark`).
+            { kind: "armorCost", to: "targets", alsoMark: { track: "stress", amount: 1 }, note: "If the target marks an Armor Slot to reduce the damage, they must also mark a Stress" },
           ],
           onSuccess: [],
         },
@@ -963,10 +980,9 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
 
   // ======== Perfected Zombie (Bruiser, CB p.239)
   terrifying("perfected-zombie"),
-  // Fearsome Presence: "PCs can't spend Hope to use features against the Zombie." No modifier forbids a PC's Hope costs.
-  passive("perfected-zombie", "Fearsome Presence", {
-    steps: [{ kind: "manual", to: "self", text: "PCs can't spend Hope to use features against the Zombie." }],
-  }),
+  // Fearsome Presence: "PCs can't spend Hope to use features against the Zombie." Plan lanes, SRD-A2 (dcm-zos): the flag
+  // `noHopeFeaturesAgainst`; the card runner refuses a Hope-paying use that targets it (E4).
+  passive("perfected-zombie", "Fearsome Presence", { modifiers: [{ kind: "mod", mod: { kind: "flag", flag: "noHopeFeaturesAgainst" } }] }),
   // Perfect Strike: "Mark a Stress to make a standard attack against all targets within Very Close range. Targets the
   // Zombie succeeds against are Vulnerable until their next rest."
   entry(
@@ -1023,9 +1039,17 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       needsSpotlight: false,
       targets: SUBJECT,
       steps: [
-        { kind: "hope", to: "targets", change: "lose", amount: fixed(1) },
+        // Plan lanes, SRD-A2 (dcm-5xi): "If the PC can't lose a Hope" is the loss's `ifUnable`; with the PC's Hope unknown
+        // the runner asks the table with the note.
+        {
+          kind: "hope",
+          to: "targets",
+          change: "lose",
+          amount: fixed(1),
+          ifUnable: [{ kind: "markHp", to: "targets", amount: fixed(1) }],
+          note: "If the PC can't lose a Hope, they must mark a HP",
+        },
         { kind: "fear", to: "self", change: "gain", amount: fixed(1) },
-        { kind: "manual", to: "targets", text: "If the PC can't lose a Hope, they must mark a HP." },
       ],
     }),
   ),
@@ -1116,7 +1140,8 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // ======== Volcanic Dragon: Molten Scourge (Solo, CB p.238)
   relentless("volcanic-dragon-molten-scourge", 3),
   // Cracked Scales: "When the Molten Scourge takes damage, roll a number of d6s equal to HP marked. For each result of 4
-  // or higher, you gain a Fear." The d6s are rolled; the first 4+ gains a Fear, the others are counted by hand.
+  // or higher, you gain a Fear." Plan lanes, SRD-A2 (dcm-tal): the Fear is the count of d6s at 4 or higher
+  // (`keep: "countAtLeast"`).
   entry(
     "volcanic-dragon-molten-scourge",
     "Cracked Scales",
@@ -1125,15 +1150,11 @@ export const T4_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       needsSpotlight: false,
       steps: [
         {
-          kind: "check",
-          dice: { count: { kind: "marked", who: "self", track: "hp" }, sides: 6 },
-          test: { kind: "anyAtLeast", value: 4 },
-          note: "A d6 for each HP marked",
-          then: [
-            { kind: "fear", to: "self", change: "gain", amount: fixed(1) },
-            { kind: "manual", to: "self", text: "Gain one more Fear for each further result of 4 or higher." },
-          ],
-          otherwise: [],
+          kind: "fear",
+          to: "self",
+          change: "gain",
+          amount: { kind: "dice", dice: { count: { kind: "marked", who: "self", track: "hp" }, sides: 6 }, keep: "countAtLeast", atLeast: 4 },
+          note: "A d6 for each HP marked; a Fear for each 4 or higher",
         },
       ],
     }),

@@ -350,14 +350,15 @@ describe("Arch-Necromancer (CB p.234)", () => {
     expect(ofKind(p, "spotlight")).toEqual([expect.objectContaining({ who: "sameName", name: "Zombie Legion" })]);
   });
 
-  it("Not Today, My Dears: at 7+ HP marked, a Fear teleports the Necromancer away; the escape is manual", () => {
+  it("Not Today, My Dears: at 7+ HP marked, a Fear takes the Necromancer out of the scene (dcm-icd); the trace is manual", () => {
     expect(fired("arch-necromancer", { kind: "onHpMarked", before: 6, after: 7, hpMax: 9 }, { hp: 7, hpMax: 9 })).toContain("Not Today, My Dears:main:reaction");
     expect(attempt("arch-necromancer", "Not Today, My Dears", [], { self: selfOf("arch-necromancer", { hp: 6 }) })).toMatchObject({ ok: false, reason: "requirement" });
     expect(attempt("arch-necromancer", "Not Today, My Dears", [], { self: selfOf("arch-necromancer", { hp: 7 }) })).toMatchObject({ ok: false, reason: "confirmFear" });
     const p = plan("arch-necromancer", "Not Today, My Dears", [], { self: selfOf("arch-necromancer", { hp: 7 }), fearConfirmed: true, spotlit: false });
     expect(p.fearSpent).toBe(1);
     expect(prompts(p, "move")).toHaveLength(1);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(p.fled).toEqual(["self"]);
+    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ text: expect.stringMatching(/Instinct Roll can trace/) })]);
   });
 
   it("Your Life Is Mine: at 6+ HP marked a Loop 2d6 countdown starts, ticks on action rolls, then 2d10+6 direct magic", () => {
@@ -409,7 +410,10 @@ describe("Fallen Sorcerer (CB p.234)", () => {
     const p = plan("fallen-sorcerer", "Shackles of Guilt", [], { useId: "regret", spotlit: false, targets: [pc("mira"), pc("bram")] });
     expect(after(p, "mira")).toMatchObject({ stress: 1, conditions: ["vulnerable"] });
     expect(after(p, "bram")).toMatchObject({ stress: 1, conditions: ["vulnerable"] });
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    // A PC who fails to break free loses a Hope (a GM button: the roll is the PC's own).
+    const fail = plan("fallen-sorcerer", "Shackles of Guilt", [], { useId: "fail", spotlit: false, targets: [pc("mira")] });
+    expect(hopeOf(fail)).toEqual([["mira", -1]]);
   });
 });
 
@@ -421,7 +425,7 @@ describe("Fallen Warlord: Realm-Breaker (CB p.235)", () => {
     expect(ofKind(p, "fold")).toEqual([expect.objectContaining({ targetIds: ["self"], amount: 11 })]);
   });
 
-  it("Tormenting Lash: a Stress; a standard attack against all within Very Close; the 2-Armor-Slot rule is manual", () => {
+  it("Tormenting Lash: a Stress; a standard attack against all within Very Close; 2 Armor Slots per step (armorCost, dcm-s77)", () => {
     // d20 9 + 7 = 16 hits Evasion 12 and 15. 4d8 = 1 + 2 + 3 + 4, + 7 = 17.
     const p = plan("fallen-warlord-realm-breaker", "Tormenting Lash", [9, 1, 2, 3, 4], { targets: [pc("mira"), pc("bram", { evasion: 15 })] });
     expect(p.self.after.stress).toBe(1);
@@ -429,22 +433,29 @@ describe("Fallen Warlord: Realm-Breaker (CB p.235)", () => {
       ["mira", 17, "physical"],
       ["bram", 17, "physical"],
     ]);
-    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ targetIds: ["mira", "bram"] })]);
+    // The server reads the armorCost into the hit (E2); the card runner shows it to the table with the feature's words.
+    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ targetIds: ["mira", "bram"], text: expect.stringMatching(/2 Armor Slots/) })]);
+    expect(effectOf("fallen-warlord-realm-breaker", "Tormenting Lash").uses[0]!.steps).toContainEqual(expect.objectContaining({ kind: "armorCost", slotsPerStep: 2 }));
   });
 
-  it("All-Consuming Rage: a Decreasing 8 countdown; Presence Reaction Rolls for 2d6+10 direct magic; the end is a GM button", () => {
+  it("All-Consuming Rage: a Decreasing 8 countdown (dcm-m5s); Presence Reaction Rolls for 2d6+10 direct magic; the end marks all HP and forces death moves", () => {
     expect(fired("fallen-warlord-realm-breaker", { kind: "onSpotlight", first: { scene: true, ever: true }, tokens: 0 })).toEqual(["All-Consuming Rage:activate:reaction"]);
     const start = plan("fallen-warlord-realm-breaker", "All-Consuming Rage", [], { useId: "activate", spotlit: false });
-    expect(ofKind(start, "countdown")).toEqual([expect.objectContaining({ op: "start", start: 8, loop: true })]);
+    expect(ofKind(start, "countdown")).toEqual([
+      expect.objectContaining({ op: "start", start: 8, loop: true, direction: "decreasing", tickOn: "actionRoll", onZero: expect.stringMatching(/death move/) }),
+    ]);
     // The PC rolls; the NPC rolls 3 against Difficulty 20 and fails: 2d6 = 2 + 3, + 10 = 15 direct magic.
     const rage = plan("fallen-warlord-realm-breaker", "All-Consuming Rage", [3, 2, 3], { useId: "rage", spotlit: false, targets: [pc("mira"), npc("a")] });
     expect(prompts(rage, "pcSave")).toEqual([expect.objectContaining({ targetIds: ["mira"] })]);
     expect(ofKind(rage, "damage").map((d) => [d.result.targetId, d.result.incoming])).toEqual([["a", 15]]);
     expect(prompts(rage, "manual")).toHaveLength(1);
-    expect(ofKind(rage, "countdown")).toEqual([expect.objectContaining({ op: "prompt", label: "All-Consuming Rage" })]);
-    const doom = plan("fallen-warlord-realm-breaker", "All-Consuming Rage", [], { useId: "doom", spotlit: false, targets: [pc("mira")] });
+    expect(ofKind(rage, "countdown")).toEqual([]);
+    // Mira has 2 of 6 HP marked: she marks the other 4 and makes a death move (dcm-702).
+    const doom = plan("fallen-warlord-realm-breaker", "All-Consuming Rage", [], { useId: "doom", spotlit: false, targets: [pc("mira", { hp: 2 })] });
     expect(doom.self.after.defeated).toBe(true);
-    expect(prompts(doom, "manual")).toEqual([expect.objectContaining({ targetIds: ["mira"] })]);
+    expect(ofKind(doom, "mark")).toEqual([expect.objectContaining({ targetId: "mira", track: "hp", amount: 4 })]);
+    expect(doom.deathMoves).toEqual(["mira"]);
+    expect(prompts(doom, "manual")).toEqual([]);
   });
 });
 
@@ -511,6 +522,8 @@ describe("High Seraph (CB p.236)", () => {
     const p = plan("high-seraph", "Judgment", [], { fearConfirmed: true, targets: [pc("mira")] });
     expect(ofKind(p, "condition")).toEqual([expect.objectContaining({ targetId: "mira", condition: { kind: "tag", tag: "Guilty" }, endsWhen: "until the Seraph is defeated" })]);
     expect(prompts(p, "manual")).toHaveLength(1);
+    // One target at a time (dcm-vkp): the server takes Guilty off the earlier target.
+    expect(effectOf("high-seraph", "Judgment").uses[0]!.exclusive).toBe(true);
     const guilty = { conditions: [], tags: ["Guilty"] };
     expect(fired("high-seraph", { kind: "onHit", attack: "standard", target: guilty })).toEqual(["Judgment:severe:auto"]);
     expect(fired("high-seraph", { kind: "onHit", attack: "feature", target: guilty })).toEqual([]);
@@ -524,6 +537,12 @@ describe("High Seraph (CB p.236)", () => {
     expect(p.self.after.stress).toBe(1);
     expect(prompts(p, "pcSave")).toHaveLength(2);
     expect(ofKind(p, "damage").map((d) => [d.result.targetId, d.result.incoming])).toEqual([["c", 22]]);
+    // Disadvantage for a target marked Guilty (dcm-rb0).
+    const guilty = plan("high-seraph", "God Rays", [], { targets: [pc("a", { tags: ["Guilty"] }), pc("b")] });
+    expect(prompts(guilty, "pcSave").map((s) => [s.targetIds[0], s.disadvantage ?? 0])).toEqual([
+      ["a", 1],
+      ["b", 0],
+    ]);
     const many = Array.from({ length: 21 }, (_, i) => pc(`p${i}`));
     expect(attempt("high-seraph", "God Rays", [], { targets: many })).toMatchObject({ ok: false, reason: "targets" });
   });
@@ -560,13 +579,14 @@ describe("Kraken (CB p.236)", () => {
     expect(miss.self.after.stress).toBe(0);
   });
 
-  it("Boiling Blast: a Fear; any number in a line make an Agility Reaction Roll or take 4d6+9; the armor Stress is manual", () => {
+  it("Boiling Blast: a Fear; any number in a line make an Agility Reaction Roll or take 4d6+9; a Stress per Armor Slot (armorCost, dcm-s77)", () => {
     expect(attempt("kraken", "Boiling Blast", [], { targets: [pc("mira")] })).toMatchObject({ ok: false, reason: "confirmFear" });
     // The NPC rolls 2 against Difficulty 20: 4d6 = 1 + 1 + 1 + 1, + 9 = 13.
     const p = plan("kraken", "Boiling Blast", [2, 1, 1, 1, 1], { fearConfirmed: true, targets: [pc("mira"), npc("a")] });
     expect(prompts(p, "pcSave")).toEqual([expect.objectContaining({ targetIds: ["mira"] })]);
     expect(ofKind(p, "damage").map((d) => [d.result.targetId, d.result.incoming])).toEqual([["a", 13]]);
-    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ targetIds: ["a"] })]);
+    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ targetIds: ["a"], text: expect.stringMatching(/also mark a Stress/) })]);
+    expect((p.saves ?? [])[0]!.step.onFail).toContainEqual(expect.objectContaining({ kind: "armorCost", alsoMark: { track: "stress", amount: 1 } }));
   });
 });
 
@@ -665,10 +685,11 @@ describe("Outer Realms Corruptor (CB p.237)", () => {
 });
 
 describe("Perfected Zombie (CB p.239)", () => {
-  it("Fearsome Presence: the Hope ban on PCs' features is a reminder (manual)", () => {
+  it("Fearsome Presence: the noHopeFeaturesAgainst flag bars PCs' Hope-paying features against it (dcm-zos)", () => {
     const p = plan("perfected-zombie", "Fearsome Presence", [], { spotlit: false });
     expect(p.activation).toBe("passive");
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(p.modifiers).toEqual([{ kind: "mod", mod: { kind: "flag", flag: "noHopeFeaturesAgainst" } }]);
   });
 
   it("Perfect Strike: a Stress; a standard attack against all within Very Close; hits are Vulnerable until their next rest", () => {
@@ -702,13 +723,15 @@ describe("Volcanic Dragon: Ashen Tyrant (CB p.239)", () => {
     expect(passivesOf("volcanic-dragon-ashen-tyrant").difficulty).toBe(0);
   });
 
-  it("Ashes to Ashes: a failure within Close loses a Hope and gains a Fear; no Hope to lose is a manual HP", () => {
+  it("Ashes to Ashes: a failure within Close loses a Hope and gains a Fear; no Hope to lose marks a HP (dcm-5xi)", () => {
     expect(fired("volcanic-dragon-ashen-tyrant", { kind: "pcRolls", band: "close", roll: failAction })).toEqual(["Ashes to Ashes:main:auto"]);
     expect(fired("volcanic-dragon-ashen-tyrant", { kind: "pcRolls", band: "far", roll: failAction })).toEqual([]);
     const p = plan("volcanic-dragon-ashen-tyrant", "Ashes to Ashes", [], { spotlit: false, trigger: { subject: pc("mira") } });
     expect(hopeOf(p)).toEqual([["mira", -1]]);
     expect(p.gmFearDelta).toBe(1);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    // The PC's Hope is not known to the adversary runner: the table is asked with the feature's words.
+    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ targetIds: ["mira"], text: expect.stringMatching(/mark a HP/) })]);
+    expect(effectOf("volcanic-dragon-ashen-tyrant", "Ashes to Ashes").uses[0]!.steps[0]).toMatchObject({ kind: "hope", ifUnable: [{ kind: "markHp", amount: { kind: "fixed", value: 1 } }] });
   });
 
   it("Desperate Rampage: a Stress; attack all within Close; 2d20+2, knocked back, a Stress", () => {
@@ -750,12 +773,12 @@ describe("Volcanic Dragon: Ashen Tyrant (CB p.239)", () => {
 });
 
 describe("Volcanic Dragon: Molten Scourge (CB p.238)", () => {
-  it("Cracked Scales: on damage, a d6 per marked HP; a 4 or higher gains a Fear (further ones by hand)", () => {
+  it("Cracked Scales: on damage, a d6 per marked HP; a Fear for each 4 or higher (dcm-tal)", () => {
     expect(fired("volcanic-dragon-molten-scourge", { kind: "onDamaged", stage: "did" })).toContain("Cracked Scales:main:auto");
+    // 3 HP marked: 3d6 2, 5, 4: two results of 4 or higher, 2 Fear.
     const hit = plan("volcanic-dragon-molten-scourge", "Cracked Scales", [2, 5, 4], { spotlit: false, self: selfOf("volcanic-dragon-molten-scourge", { hp: 3 }) });
-    expect(ofKind(hit, "check")).toEqual([expect.objectContaining({ dice: [2, 5, 4], passed: true })]);
-    expect(hit.gmFearDelta).toBe(1);
-    expect(prompts(hit, "manual")).toHaveLength(1);
+    expect(hit.gmFearDelta).toBe(2);
+    expect(prompts(hit, "manual")).toEqual([]);
     const none = plan("volcanic-dragon-molten-scourge", "Cracked Scales", [1, 2, 3], { spotlit: false, self: selfOf("volcanic-dragon-molten-scourge", { hp: 3 }) });
     expect(none.gmFearDelta).toBe(0);
   });

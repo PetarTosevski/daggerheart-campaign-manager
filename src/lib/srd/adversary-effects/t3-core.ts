@@ -25,7 +25,7 @@ import type {
   AdversaryStep,
   AdversaryTrigger,
 } from "../../domain/adversary-effects/types";
-import type { ConditionRef, DamageRoll, DieSides, NumberSource, Range, RollSpec, TargetSpec } from "../../domain/card-effects/types";
+import type { ConditionRef, DamageRoll, DieSides, Gate, NumberSource, Range, RollSpec, TargetSpec } from "../../domain/card-effects/types";
 
 // ---------------------------------------------------------------- building blocks
 
@@ -199,8 +199,10 @@ const slow = (adversaryId: string, feature: "Slow" | "Slow Firing", cannot: stri
 /**
  * "Crushing Blows / Acidic Form: When the X makes a successful attack, the target must mark an Armor Slot without
  * receiving its benefits (they can still use armor to reduce the damage). If they can't mark an Armor Slot, they must mark
- * an additional HP." Automatic on a hit; the fallback for a full armor track is manual (as in the tier 1 table).
+ * an additional HP." Automatic on a hit. Plan lanes, SRD-A2 (dcm-18i): the extra HP is gated on the target having no free
+ * Armor Slot (a `targetCheck`, read before the slot is marked); the card runner reads it from the target's track.
  */
+const NO_FREE_ARMOR: Gate = { kind: "targetCheck", check: { kind: "track", who: "target", track: "armor", measure: "free", atMost: 0 } };
 const forcedArmor = (adversaryId: string, feature: string) =>
   entry(
     adversaryId,
@@ -210,8 +212,8 @@ const forcedArmor = (adversaryId: string, feature: string) =>
       {
         targets: TRIGGER_SUBJECT,
         steps: [
+          { kind: "markHp", to: "targets", when: [NO_FREE_ARMOR], amount: one, note: "They can't mark an Armor Slot: an additional HP" },
           { kind: "markArmor", to: "targets", amount: one, noBenefit: true },
-          manual("If they can't mark an Armor Slot, they must mark an additional HP.", "targets"),
         ],
       },
     ),
@@ -493,7 +495,8 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "What's Yours Is Mine: When a PC takes Severe damage within Very Close range of the Demon, you can spend a Fear to
   // cause the target to make a Finesse Reaction Roll. On a failure, the Demon seizes one item or consumable of their
   // choice from the target's inventory."
-  // Manual: taking the item (no inventory step).
+  // Plan lanes, SRD-A2 (dcm-0gh): the theft is an `inventory` step in the PC's failure branch (the GM applies the PC's
+  // reaction roll, AR11).
   entry(
     "demon-of-jealousy",
     "What's Yours Is Mine",
@@ -508,7 +511,7 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
             to: "targets",
             trait: "finesse",
             difficulty: OWN_DIFFICULTY,
-            onFail: [manual("The Demon seizes one item or consumable of their choice from the target's inventory.", "targets")],
+            onFail: [{ kind: "inventory", to: "targets", op: "take", item: "any", note: "The Demon seizes one item or consumable of their choice" }],
             onSuccess: [],
           },
         ],
@@ -851,21 +854,21 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // "Relentless (X): The Hydra can be spotlighted X times per GM turn, where X is the Hydra's number of heads. Spend Fear
   // as usual to spotlight them."
-  // `relentless` takes a fixed number: it is 5 (the most heads), and each spotlight reminds the GM of the heads
-  // (manual: the number of heads is the limit).
+  // Plan lanes, SRD-A2 (dcm-gx1): X is read from the heads (the tokens on its stat block) when it is spotlighted
+  // (`timesFrom`, at least 1); `times` 5 (the most heads) is the fallback for a reader that doesn't know `timesFrom`.
   entry(
     "hydra",
     "Relentless (X)",
-    passive({ id: "relentless", modifiers: [{ kind: "relentless", times: 5 }] }),
-    auto({ kind: "onSpotlight" }, { id: "heads", steps: [manual("Relentless (X): the Hydra can be spotlighted as many times per GM turn as it has heads (tokens on its stat block).")] }),
+    passive({ id: "relentless", modifiers: [{ kind: "relentless", times: 5, timesFrom: { kind: "cardTokens" } }] }),
   ),
   // "Regeneration: If the Hydra has any marked HP, spend a Fear to clear a HP and grow two heads."
-  // The heads stop at five. It can't be used while Dazed (Magical Weakness says so; the GM holds it back).
+  // The heads stop at five. Plan lanes, SRD-A2 (dcm-2f3): it can't be used while Dazed (Magical Weakness), a `lacks`
+  // requirement.
   entry(
     "hydra",
     "Regeneration",
     action({
-      requires: [{ kind: "hpMarkedAtLeast", value: 1 }],
+      requires: [{ kind: "hpMarkedAtLeast", value: 1 }, { kind: "hasCondition", condition: tag("Dazed"), lacks: true }],
       costs: FEAR,
       steps: [
         { kind: "clear", to: "self", track: "hp", amount: one },
@@ -877,7 +880,7 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   entry("hydra", "Terrifying Chorus", action({ targets: allAround("far"), steps: [{ kind: "hope", to: "targets", change: "lose", amount: fixed(2) }] })),
   // "Magical Weakness: When the Hydra takes magic damage, they become Dazed until the next roll with Fear. While Dazed,
   // they can't use their Regeneration action but are immune to magic damage."
-  // Manual: Regeneration is blocked while Dazed (no requirement that the adversary lacks a condition).
+  // Regeneration's own `lacks` requirement blocks it while Dazed (plan lanes, SRD-A2; dcm-2f3).
   entry(
     "hydra",
     "Magical Weakness",
@@ -887,7 +890,6 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
         steps: [
           { kind: "condition", to: "self", condition: tag("Dazed"), duration: "manual", endsWhen: "the next roll with Fear" },
           { kind: "effect", to: "self", label: "Dazed", mods: [{ kind: "resistance", type: "magic", level: "immune" }], duration: "manual", endsWhen: "the next roll with Fear" },
-          manual("While Dazed, the Hydra can't use Regeneration."),
         ],
       },
     ),
@@ -1098,16 +1100,18 @@ export const T3_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // "Box In: Mark a Stress to choose a target within Very Close range to focus on. That target has disadvantage on attack
   // rolls when they're within Very Close range of the Sentinel. The Sentinel can only focus on one target at a time."
-  // Manual: the disadvantage on the bearer's attacks (vocabulary gap); a new focus ends the old one (the GM clears it).
+  // Plan lanes, SRD-A2 (dcm-vkp): one target at a time (`exclusive`: a new focus takes Boxed In off the old target).
+  // Manual: the disadvantage on the bearer's attacks (a condition rider on the bearer's own rolls: engine bead dcm-mm0f).
   entry(
     "vault-guardian-sentinel",
     "Box In",
     action({
       costs: STRESS,
       targets: oneEnemy("veryClose"),
+      exclusive: true,
       steps: [
         { kind: "condition", to: "targets", condition: tag("Boxed In"), duration: "manual", endsWhen: "the Sentinel focuses on another target" },
-        manual("Boxed In: disadvantage on attack rolls while within Very Close range of the Sentinel. The Sentinel focuses on one target at a time.", "targets"),
+        manual("Boxed In: disadvantage on attack rolls while within Very Close range of the Sentinel.", "targets"),
       ],
     }),
   ),
