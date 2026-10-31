@@ -8,14 +8,16 @@
 //   Core Book's Dread Visage (Infernis) and Natural Climber (Simiah), as roll options: passive advantage gated by a
 //   `situation` the player ticks in the dice box.
 // - The rest-time features (Q15 b): Hardy, Oasis, and the Core Book's Efficient (Clank) and Celestial Trance (Elf), as
-//   rest-trigger entries (`timing` triggers) that tracer SD-R runs in the rest flow.
+//   rest-trigger entries (`timing` triggers) that tracer SD-R runs in the rest flow. Plan lanes, SRD-F1 (dcm-2a1): the three
+//   downtime-move features say what they do with a `downtime` step on a during-rest timing (`restType: "short"` for
+//   Efficient and Oasis), which `restFeaturesOfEntry` (src/lib/domain/rest/feature-moves.ts) reads.
 // Not here: Immovable and Amphibious (narrative), Nomadic Pack (out of combat, not a roll option or rest move), and
 // Luckbringer (a Core ancestry feature classified passive, so FE-ancestry-core's table holds it).
 //
-// Vocabulary gaps (manual text or a player check box instead): Ignition's bonus only "with that weapon" (no weapon filter
-// on a damage rider), Eye of the Storm on an ally ending when YOU take Severe damage (`endsOn` reads the bearer), Know the
-// Tide's spend delegated to session features (the delegate handler reaches only D5's registry), Efficient and Oasis
-// "during a short rest" (no short-rest timing), and the downtime-move steps of the rest-time features.
+// Plan lanes, SRD-F1 (wave 5): Ignition's rider rides only on the primary weapon (`weaponSlot`, dcm-ab5), Eye of the
+// Storm on an ally ends when YOU take Severe damage (`endsOnCaster`, dcm-wjv), Fireproof names the flame (`keyword`,
+// dcm-dv6) and the rest-time features use the rest vocabulary (dcm-2a1). Player check boxes left (Q13): the roll options'
+// situations, Fireproof's flame until hits carry a fire keyword, Lifespring's water and Dedicated's principle.
 
 import type { CardUse, NumberSource, Requirement, RollFilter } from "../../domain/card-effects/types";
 import type { FeatureEffect } from "../../domain/feature-effects/types";
@@ -38,8 +40,6 @@ export const HERITAGE_SITUATIONS = {
   dedicated: "You describe how you're embodying one of your three recorded principles through your current action",
   lifespring: "You have access to a small amount of water",
   fireproof: "The incoming damage is from magical or mundane flame",
-  ignitionWeapon: "The damage roll is with your primary weapon, which Ignition set ablaze",
-  shortRest: "This is a short rest",
 } as const;
 
 /**
@@ -55,14 +55,17 @@ function rollOption(featureId: string, source: "ancestry" | "community", owner: 
   };
 }
 
-/** A rest-time feature (Q15 b): a `timing` trigger at the rest; SD-R's rest flow carries out the downtime-move part. */
-function restUse(name: string, text: string, requires?: readonly Requirement[]): CardUse {
+/**
+ * A rest-time feature (Q15 b; plan lanes, SRD-F1, dcm-2a1): a during-rest `timing` trigger (`restType` narrows it to a
+ * short rest) with one `downtime` step; SD-R's rest flow carries out the downtime-move part (`restFeaturesOfEntry`). The
+ * note is the book's words (the card runner shows a downtime step as a prompt with it).
+ */
+function restUse(name: string, op: "extraMove" | "longMoveOnShort" | "rerollDie", note: string, restType?: "short"): CardUse {
   return {
     id: "main",
     name,
-    activation: { kind: "reaction", trigger: { kind: "timing", at: "afterRest" } },
-    ...(requires ? { requires } : {}),
-    steps: [{ kind: "manual", to: "self", text }],
+    activation: { kind: "reaction", trigger: { kind: "timing", at: "afterRest", during: true, ...(restType ? { restType } : {}) } },
+    steps: [{ kind: "downtime", to: "self", op, at: "thisRest", note }],
   };
 }
 
@@ -130,8 +133,9 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
   },
 
   // Fireproof (Emberkin, HF p.22): "You are immune to damage from magical or mundane flame." CB p.99: "If a target is
-  // immune to a damage type, they ignore incoming damage of that type." Damage has no fire keyword (bead dcm-dv6), so the
-  // player confirms the flame in the reaction window (Q13) and the damage is negated.
+  // immune to a damage type, they ignore incoming damage of that type." The trigger names the fire keyword (plan lanes V,
+  // dcm-dv6); until the hits carry it the window ignores it, so the player still confirms the flame (Q13) and the damage
+  // is negated.
   {
     featureId: "ancestry:emberkin:fireproof",
     source: "ancestry",
@@ -140,7 +144,7 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "main",
         name: "Fireproof",
-        activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
+        activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage", keyword: "fire" } },
         requires: [{ kind: "situation", text: HERITAGE_SITUATIONS.fireproof }],
         steps: [{ kind: "negate", to: "self", what: "damage", note: "Immune to flame (HF p.22)" }],
       },
@@ -150,7 +154,8 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
   // Ignition (Emberkin, HF p.22): "Mark a Stress to wreathe your primary weapon in flame until the end of the scene. While
   // the weapon is ablaze, it gives off a bright light, and you gain a 1d6 bonus to damage rolls with that weapon."
   // The Use marks the Stress and sets the scene-long effect (Q7); the 1d6 is a damage rider while the effect is active,
-  // rolled with each damage roll (a stat mod would roll it once). "With that weapon": the player confirms (no weapon filter).
+  // rolled with each damage roll (a stat mod would roll it once). "With that weapon": the rider rides only on an attack with
+  // the primary weapon (`weaponSlot`, plan lanes V; dcm-ab5).
   {
     featureId: "ancestry:emberkin:ignition",
     source: "ancestry",
@@ -166,11 +171,8 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "ablaze",
         name: "Ignition: +1d6 damage",
-        activation: { kind: "rider", trigger: { kind: "whenYouAttack", result: "success", weapon: true } },
-        requires: [
-          { kind: "situation", text: "Your primary weapon is ablaze (Ignition)", check: { kind: "featureEffect", featureId: "ancestry:emberkin:ignition" } },
-          { kind: "situation", text: HERITAGE_SITUATIONS.ignitionWeapon },
-        ],
+        activation: { kind: "rider", trigger: { kind: "whenYouAttack", result: "success", weapon: true, weaponSlot: "primary" } },
+        requires: [{ kind: "situation", text: "Your primary weapon is ablaze (Ignition)", check: { kind: "featureEffect", featureId: "ancestry:emberkin:ignition" } }],
         steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "add", amount: { kind: "dice", dice: { count: n(1), sides: 6 } } } }],
       },
     ],
@@ -231,7 +233,7 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
 
   // Eye of the Storm (Skykin, HF p.23): "Spend 2 Hope to grant you or an ally within Melee range a +1 bonus to Evasion
   // until you take Severe damage or you use this feature again." On yourself both events end it (`endsOn`); on an ally,
-  // `takeSevere` would read the ally, so "you take Severe damage" is the effect's `endsWhen` (ended by hand; gap bead).
+  // "you take Severe damage" is the granter's event (`endsOnCaster`, plan lanes V; dcm-wjv).
   {
     featureId: "ancestry:skykin:eye-of-the-storm",
     source: "ancestry",
@@ -271,6 +273,7 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
             mods: [{ kind: "stat", stat: "evasion", delta: n(1) }],
             duration: "manual",
             endsOn: ["usedAgain"],
+            endsOnCaster: ["takeSevere"],
             endsWhen: "The skykin who granted it takes Severe damage or uses Eye of the Storm again",
           },
         ],
@@ -311,7 +314,7 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
     featureId: "ancestry:clank:efficient",
     source: "ancestry",
     owner: "clank",
-    uses: [restUse("Efficient", "Choose a long rest move instead of a short rest move.", [{ kind: "situation", text: HERITAGE_SITUATIONS.shortRest }])],
+    uses: [restUse("Efficient", "longMoveOnShort", "Choose a long rest move instead of a short rest move.", "short")],
   },
   // Celestial Trance (Elf, CB p.56): "During a rest, you can drop into a trance to choose an additional downtime move."
   // SD-R adds one downtime move slot on any rest.
@@ -319,7 +322,7 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
     featureId: "ancestry:elf:celestial-trance",
     source: "ancestry",
     owner: "elf",
-    uses: [restUse("Celestial Trance", "Drop into a trance to choose an additional downtime move.")],
+    uses: [restUse("Celestial Trance", "extraMove", "Drop into a trance to choose an additional downtime move.")],
   },
 
   // ---------------------------------------------------------------- Core communities
@@ -399,7 +402,7 @@ export const HERITAGE_HF_EFFECTS: readonly FeatureEffect[] = [
     featureId: "community:duneborne:oasis",
     source: "community",
     owner: "duneborne",
-    uses: [restUse("Oasis", "You or an ally can reroll a die used for a downtime move and take the higher result.", [{ kind: "situation", text: HERITAGE_SITUATIONS.shortRest }])],
+    uses: [restUse("Oasis", "rerollDie", "You or an ally can reroll a die used for a downtime move and take the higher result.", "short")],
   },
 
   // Unbound (Freeborne, HF p.28): "Once per session when you roll with Fear, you can change it into a roll with Hope

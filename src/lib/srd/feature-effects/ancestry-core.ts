@@ -15,9 +15,12 @@ import type { NumberSource, Requirement } from "../../domain/card-effects/types"
 const fixed = (value: number): NumberSource => ({ kind: "fixed", value });
 const dice = (count: number, sides: 6 | 8 | 12): NumberSource => ({ kind: "dice", dice: { count: fixed(count), sides } });
 const proficiency: NumberSource = { kind: "proficiency" };
-const situation = (text: string): Requirement => ({ kind: "situation", text });
-/** Kick and Tusks: the engine has no state check for a target's distance, so the player confirms it (Q13). */
-const TARGET_IN_MELEE = "The target is within Melee range";
+/**
+ * Kick and Tusks: "a target within Melee range". Plan lanes SRD-F1 (dcm-9l4): the `within` state check decides it from the
+ * target's distance; without that fact the text is the situation the map decides (`MAP_SITUATIONS`, convex/lib/
+ * combatActions.ts) or the player confirms (Q13), so the words stay as they were.
+ */
+const TARGET_IN_MELEE: Requirement = { kind: "situation", text: "The target is within Melee range", check: { kind: "within", range: "melee", who: "target" } };
 
 const ancestry = (owner: string, slug: string, uses: FeatureEffect["uses"]): FeatureEffect => ({
   featureId: `ancestry:${owner}:${slug}`,
@@ -49,13 +52,14 @@ export const ANCESTRY_CORE_EFFECTS: readonly FeatureEffect[] = [
   // Elemental Breath (CB p.54): "Choose an element for your breath (such as electricity, fire, or ice). You can use this
   // breath against a target or group of targets within Very Close range, treating it as an Instinct weapon that deals d8
   // magic damage using your Proficiency." One Instinct Roll against every target's Difficulty, damage rolled once (CB
-  // p.104). The element is flavour (no damage keyword).
+  // p.104). The element is flavour (no damage keyword). "Treating it as an Instinct weapon": the roll is a weapon attack
+  // (`attack` + `asWeapon`, plan lanes V; dcm-gvr), so attack riders fit it.
   ancestry("drakona", "elemental-breath", [
     {
       id: "main",
       name: "Elemental Breath",
       activation: { kind: "action" },
-      roll: { kind: "trait", trait: "instinct", difficulty: { kind: "target" } },
+      roll: { kind: "trait", trait: "instinct", difficulty: { kind: "target" }, attack: true, asWeapon: true },
       targets: { side: "enemy", range: "veryClose", count: { kind: "any" } },
       steps: [{ kind: "damage", to: "targets", when: ["hit"], roll: { kind: "dice", dice: { count: proficiency, sides: 8 } }, type: "magic" }],
     },
@@ -132,7 +136,7 @@ export const ANCESTRY_CORE_EFFECTS: readonly FeatureEffect[] = [
       id: "main",
       name: "Kick",
       activation: { kind: "rider", trigger: { kind: "whenYouAttack", result: "success" } },
-      requires: [situation(TARGET_IN_MELEE)],
+      requires: [TARGET_IN_MELEE],
       costs: [{ kind: "stress", amount: fixed(1) }],
       steps: [
         { kind: "modifyDamage", to: "targets", change: { kind: "add", amount: dice(2, 6) }, note: "An extra 2d6 damage" },
@@ -361,7 +365,7 @@ export const ANCESTRY_CORE_EFFECTS: readonly FeatureEffect[] = [
       id: "main",
       name: "Tusks",
       activation: { kind: "rider", trigger: { kind: "whenYouAttack", result: "success" } },
-      requires: [situation(TARGET_IN_MELEE)],
+      requires: [TARGET_IN_MELEE],
       costs: [{ kind: "hope", amount: fixed(1) }],
       steps: [{ kind: "modifyDamage", to: "targets", change: { kind: "add", amount: dice(1, 6) }, note: "An extra 1d6 damage" }],
     },
@@ -369,14 +373,14 @@ export const ANCESTRY_CORE_EFFECTS: readonly FeatureEffect[] = [
 
   // ---------------------------------------------------------------- Ribbet (CB p.69)
   // Long Tongue (CB p.69): "You can use your long tongue to grab onto things within Close range. Mark a Stress to use your
-  // tongue as a Finesse Close weapon that deals d12 physical damage using your Proficiency." Grabbing things is fiction.
+  // tongue as a Finesse Close weapon that deals d12 physical damage using your Proficiency." Grabbing things is fiction. The tongue is its own weapon (`attack` + `asWeapon`, plan lanes V; dcm-gvr).
   ancestry("ribbet", "long-tongue", [
     {
       id: "main",
       name: "Long Tongue",
       activation: { kind: "action" },
       costs: [{ kind: "stress", amount: fixed(1) }],
-      roll: { kind: "trait", trait: "finesse", difficulty: { kind: "target" } },
+      roll: { kind: "trait", trait: "finesse", difficulty: { kind: "target" }, attack: true, asWeapon: true },
       targets: { side: "enemy", range: "close", count: { kind: "one" } },
       steps: [{ kind: "damage", to: "targets", when: ["hit"], roll: { kind: "dice", dice: { count: proficiency, sides: 12 } }, type: "physical" }],
     },

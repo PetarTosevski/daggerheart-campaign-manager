@@ -161,9 +161,10 @@ export const STANCE_EFFECTS: readonly FeatureEffect[] = [
   ]),
 
   // Defensive (HF p.12): "Attack rolls targeting you from within Melee range have disadvantage unless the attacker marks a
-  // Stress to negate the disadvantage." The vocabulary has no disadvantage the attacker can buy off with a Stress (nor a
-  // passive disadvantage narrowed to Melee attackers): a manual step on each Melee attack (bead dcm-eut, see
-  // the task doc).
+  // Stress to negate the disadvantage." Plan lanes V widened the vocabulary for it (`disadvantageAgainst` with `from:
+  // "melee"` and `buyOff`), but the passive totals (src/lib/domain/feature-effects/passives.ts) and the adversary attack
+  // engine ignore `from` and `buyOff` and there is no pay prompt before the roll (dcm-eut, E7 "not"): the passive mod
+  // would give every attack disadvantage. Until then, a manual step on each Melee attack (docs/tasks/TASK-LN-SRD-F1.md).
   stance("defensive", [
     {
       id: "main",
@@ -205,7 +206,9 @@ export const STANCE_EFFECTS: readonly FeatureEffect[] = [
     {
       id: "main",
       activation: { kind: "rider", trigger: { kind: "whenYouAttack", result: "success" } },
-      requires: [{ kind: "situation", text: "The attack was within Melee range" }],
+      // "An attack within Melee range": the target's distance (`within`, plan lanes V; dcm-9l4); the player confirms when
+      // the fact is missing (Q13).
+      requires: [{ kind: "situation", text: "The attack was within Melee range", check: { kind: "within", range: "melee", who: "target" } }],
       costs: [focusOrStress],
       steps: [
         {
@@ -360,8 +363,9 @@ export function dropStance(martial: MartialState): MartialState {
 }
 
 /**
- * The vocabulary has no step that sets `classState.martial.active`: the shift intent (SD3) checks `shiftRefusal`, runs
- * the use for its price and then sets the active stance (the previous one drops). The use has no steps of its own.
+ * The shift intent (SD3, `combatFeatures.shiftStance`) checks `shiftRefusal`, runs the use for its price and then sets the
+ * active stance (E6 `setStance`: the previous one drops). The use has no steps of its own: a `setStance` step (plan lanes
+ * V) would be a second, manual prompt until the runner applies it (dcm-4xl), and the intent already does it.
  */
 const shiftSteps: readonly Step[] = [];
 

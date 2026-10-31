@@ -161,6 +161,19 @@ describe("Tier 3 (HF p.12)", () => {
     expect(use("grappling", undefined, { actor: actor("grappling"), targets: [adversary("a")] })).toMatchObject({ ok: false, reason: "requirement" });
   });
 
+  it("SRD-F1 (dcm-9l4): Grappling's Melee is the target's distance when the engine knows it", () => {
+    const near = actor("grappling", { facts: { activeStance: "grappling", target: { conditions: [], hp: 0, hpMax: 5, distance: 1 } } });
+    expect(ok(use("grappling", undefined, { actor: near, targets: [adversary("a")], options: { grapple: ["restrain"] } })).actor.after.focus).toBe(1);
+    const far = actor("grappling", { facts: { activeStance: "grappling", target: { conditions: [], hp: 0, hpMax: 5, distance: 6 } } });
+    expect(use("grappling", undefined, { actor: far, situations: melee, targets: [adversary("a")], options: { grapple: ["restrain"] } })).toMatchObject({ ok: false, reason: "requirement" });
+  });
+
+  it("Defensive keeps its manual step: the widened `disadvantageAgainst` (from, buyOff) isn't read yet (dcm-eut)", () => {
+    const u = entry("defensive").uses[0]!;
+    expect(u.activation).toEqual({ kind: "auto", trigger: { kind: "whenAttacked", stage: "targeted", from: "melee" } });
+    expect(u.steps).toEqual([expect.objectContaining({ kind: "manual", to: "triggerSource" })]);
+  });
+
   it("Scary: on a successful attack the target marks a Stress", () => {
     const plan = ok(use("scary", undefined, { actor: actor("scary"), targets: [adversary("a")] }));
     expect(creature(plan, "a").stress).toBe(1);

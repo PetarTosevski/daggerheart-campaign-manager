@@ -18,6 +18,7 @@ const fixed = (value: number): NumberSource => ({ kind: "fixed", value });
 const ONE = fixed(1);
 
 const WOLF_FORM = "transformation:werewolf:wolf-form";
+const FANGS = "transformation:vampire:fangs";
 
 /** "While in this form" (HF p.40): the Wolf Form sheet effect the Wolf Form use creates is active. */
 const IN_WOLF_FORM: Requirement = {
@@ -117,6 +118,7 @@ export const TRANSFORMATION_EFFECTS: readonly FeatureEffect[] = [
   // Fangs (HF p.39): "Make an attack using a trait of your choice to bite a target within Melee range. On a success,
   // deal d6 physical damage using your Proficiency."
   // A trait roll (the player picks any of the six traits) against the target's Difficulty; Proficiency d6 physical.
+  // "Make an attack": an attack roll (`attack`, DA0; dcm-bn1), so attack riders (Wolf Form's +1d10, HF p.40) fit it.
   {
     featureId: "transformation:vampire:fangs",
     source: "transformation",
@@ -126,7 +128,7 @@ export const TRANSFORMATION_EFFECTS: readonly FeatureEffect[] = [
         id: "main",
         name: "Fangs",
         activation: { kind: "action" },
-        roll: { kind: "trait", trait: TRAIT_IDS, difficulty: { kind: "target" } },
+        roll: { kind: "trait", trait: TRAIT_IDS, difficulty: { kind: "target" }, attack: true },
         targets: { side: "enemy", range: "melee", count: { kind: "one" } },
         steps: [
           {
@@ -146,8 +148,9 @@ export const TRANSFORMATION_EFFECTS: readonly FeatureEffect[] = [
   // tokens at a time. Before you make an action roll, you can spend a token to make your Fear Die a d20. When you take a
   // long rest, remove a token. While there are no tokens on this card, you make action and reaction rolls with
   // disadvantage."
-  // Tokens are this feature's (`feat:transformation:vampire:feed`). "A Fangs attack" and "a creature that can bleed" are
-  // confirmed by the player (Q13); "no tokens" too, until the vocabulary can read a feature's own tokens (bead).
+  // Tokens are this feature's (`feat:transformation:vampire:feed`). Plan lanes, SRD-F1: the rider rides only on a Fangs
+  // use (`fromUse`, dcm-bn1); "a creature that can bleed" is the player's (Q13); "no tokens" reads the feature's own
+  // tokens (`tokens` state check, dcm-2g9).
   {
     featureId: "transformation:vampire:feed",
     source: "transformation",
@@ -156,8 +159,8 @@ export const TRANSFORMATION_EFFECTS: readonly FeatureEffect[] = [
       {
         id: "main",
         name: "Feed",
-        activation: { kind: "rider", trigger: { kind: "whenTargetMarksHp" } },
-        requires: [{ kind: "situation", text: "A successful Fangs attack against a creature that can bleed" }],
+        activation: { kind: "rider", trigger: { kind: "whenTargetMarksHp", fromUse: FANGS } },
+        requires: [{ kind: "situation", text: "The target is a creature that can bleed" }],
         costs: [{ kind: "stress", amount: ONE }],
         targets: { side: "trigger", who: "subject" },
         steps: [{ kind: "tokens", to: "self", op: "add", amount: { kind: "triggerAmount" }, max: fixed(6), note: "A token per Hit Point the target marked (up to 6)" }],
@@ -179,7 +182,7 @@ export const TRANSFORMATION_EFFECTS: readonly FeatureEffect[] = [
         id: "hunger",
         name: "Feed: no tokens",
         activation: { kind: "passive" },
-        requires: [{ kind: "situation", text: "There are no tokens on Feed" }],
+        requires: [{ kind: "situation", text: "There are no tokens on Feed", check: { kind: "tokens", atMost: 0 } }],
         mods: [
           { kind: "flag", flag: "actionDisadvantage" },
           { kind: "flag", flag: "reactionDisadvantage" },
@@ -195,7 +198,7 @@ export const TRANSFORMATION_EFFECTS: readonly FeatureEffect[] = [
   // this form, you gain a 1d10 bonus to attack and damage rolls. When you gain a Hope while in Wolf Form, you must also
   // mark a Stress. Your Wolf Form lasts until you go into your “Howling Rampage” or take a rest."
   // The form is a sheet effect until the next rest; the d10s are rolled on each attack and damage roll (automatic while
-  // the effect is active). Howling Rampage's drop-out is a manual step (no step ends another feature's effect; bead).
+  // the effect is active). Howling Rampage ends it (`endEffect`, dcm-5fc).
   {
     featureId: WOLF_FORM,
     source: "transformation",
@@ -247,6 +250,8 @@ export const TRANSFORMATION_EFFECTS: readonly FeatureEffect[] = [
   // d20s equal to your tier and deal that much physical damage to all creatures within Very Close range, then drop out
   // of Wolf Form."
   // "All creatures": allies too (side `any`, the actor excluded); the server passes every creature within Very Close.
+  // "Then drop out of Wolf Form": an `endEffect` of the Wolf Form effect (plan lanes V, dcm-5fc; the server applies the
+  // runner's plan step under dcm-9z2z).
   {
     featureId: "transformation:werewolf:howling-rampage",
     source: "transformation",
@@ -265,7 +270,7 @@ export const TRANSFORMATION_EFFECTS: readonly FeatureEffect[] = [
             roll: { kind: "dice", dice: { count: { kind: "byTier", values: [1, 2, 3, 4] }, sides: 20 } },
             type: "physical",
           },
-          { kind: "manual", to: "self", text: "Drop out of Wolf Form (end the Wolf Form effect)." },
+          { kind: "endEffect", to: "self", of: WOLF_FORM, note: "Drop out of Wolf Form" },
         ],
       },
     ],

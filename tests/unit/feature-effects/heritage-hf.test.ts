@@ -6,8 +6,11 @@ import { owned } from "@/lib/domain/feature-effects/owned";
 import { featureAvailability, runFeature, type FeatureRunContext, type FeatureRunResult } from "@/lib/domain/feature-effects/run";
 import type { FeatureEffect } from "@/lib/domain/feature-effects/types";
 import { ANCESTRIES, COMMUNITIES } from "@/lib/srd/heritage";
+import { getWeapon } from "@/lib/srd";
 import { FEATURE_CLASSIFICATION, featureEffect } from "@/lib/srd/feature-effects";
 import { HERITAGE_HF_EFFECTS, HERITAGE_SITUATIONS as S } from "@/lib/srd/feature-effects/heritage-hf";
+import { restFeaturesOfEntry } from "@/lib/domain/rest/feature-moves";
+import { hostOf, riderPhase } from "../../../convex/lib/combatActions";
 import { actorOf, adversary, sheetOf } from "./engine/fixtures";
 
 // Plan sheet-drawer, tracer FE-heritage-hf: every Hope & Fear ancestry feature and every community feature classified
@@ -143,19 +146,29 @@ describe("Hope & Fear ancestries", () => {
     const p = plan("ancestry:emberkin:fireproof", undefined, [], { trigger: { amount: 9 }, situations: [S.fireproof] });
     expect(folds(p).map((f) => f.step)).toEqual([expect.objectContaining({ kind: "negate", what: "damage" })]);
     expect(p.actor.after).toMatchObject({ hope: 3, stress: 1 });
+    // SRD-F1 (dcm-dv6): the trigger names the fire keyword.
+    expect(effectOf("ancestry:emberkin:fireproof").uses[0]!.activation).toEqual({ kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage", keyword: "fire" } });
   });
 
   it("Ignition (HF p.22): a Stress sets the weapon ablaze until the end of the scene; then +1d6 on its damage rolls", () => {
     const p = plan("ancestry:emberkin:ignition", "main", []);
     expect(p.actor.after.stress).toBe(2);
     expect(ofKind(p, "effect")).toEqual([expect.objectContaining({ targetId: "pc", duration: "scene", mods: [] })]);
-    // The rider needs the Ignition effect (engine fact) and the player's "with that weapon".
-    expect(use("ancestry:emberkin:ignition", "ablaze", [], { situations: [S.ignitionWeapon], actor: actor({ facts: { featureEffects: [] } }) })).toMatchObject({ ok: false, reason: "requirement" });
+    // The rider needs the Ignition effect (engine fact); no player check box is left (SRD-F1, dcm-ab5).
+    expect(use("ancestry:emberkin:ignition", "ablaze", [], { actor: actor({ facts: { featureEffects: [] } }) })).toMatchObject({ ok: false, reason: "requirement" });
     const ablaze = actor({ facts: { featureEffects: [{ featureId: "ancestry:emberkin:ignition" }] } });
-    expect(use("ancestry:emberkin:ignition", "ablaze", [], { actor: ablaze })).toMatchObject({ ok: false, reason: "requirement" });
-    const rider = plan("ancestry:emberkin:ignition", "ablaze", [4], { actor: ablaze, situations: [S.ignitionWeapon], targets: [adversary("bandit")] });
+    const rider = plan("ancestry:emberkin:ignition", "ablaze", [4], { actor: ablaze, targets: [adversary("bandit")] });
     expect(folds(rider)).toEqual([{ step: expect.objectContaining({ kind: "modifyDamage", change: expect.objectContaining({ kind: "add" }) }), targetIds: ["bandit"], amount: 4 }]);
-    expect(effectOf("ancestry:emberkin:ignition").uses[1]!.activation).toEqual({ kind: "rider", trigger: { kind: "whenYouAttack", result: "success", weapon: true } });
+    expect(effectOf("ancestry:emberkin:ignition").uses[1]!.requires).toHaveLength(1);
+  });
+
+  it("Ignition (dcm-ab5): the +1d6 rides only on an attack with the primary weapon", () => {
+    const u = effectOf("ancestry:emberkin:ignition").uses[1]!;
+    expect(u.activation).toEqual({ kind: "rider", trigger: { kind: "whenYouAttack", result: "success", weapon: true, weaponSlot: "primary" } });
+    if (u.activation.kind !== "rider") throw new Error("rider");
+    const weapon = getWeapon("legendary-broadsword")!;
+    expect(riderPhase(u.activation.trigger, hostOf(weapon, "primary", "strength"), u)).toBe("after");
+    expect(riderPhase(u.activation.trigger, hostOf(weapon, "secondary", "strength"), u)).toBeNull();
   });
 
   it("Nimble Fingers (HF p.25): after a Finesse Roll, 2 Hope reroll the Hope Die (Q1)", () => {
@@ -188,6 +201,9 @@ describe("Hope & Fear ancestries", () => {
     ]);
     const onAlly = plan("ancestry:skykin:eye-of-the-storm", "ally", [], { targets: [ally("mira")] });
     expect(ofKind(onAlly, "effect")).toEqual([expect.objectContaining({ targetId: "mira", endsOn: ["usedAgain"], endsWhen: expect.stringContaining("takes Severe damage") })]);
+    // SRD-F1 (dcm-wjv): on an ally the granter's Severe damage ends it.
+    const allyStep = effectOf("ancestry:skykin:eye-of-the-storm").uses[1]!.steps[0]!;
+    expect(allyStep).toMatchObject({ kind: "effect", endsOn: ["usedAgain"], endsOnCaster: ["takeSevere"] });
     expect(use("ancestry:skykin:eye-of-the-storm", "main", [], { actor: actor({ hope: 1 }) })).toMatchObject({ ok: false, reason: "cost" });
   });
 
@@ -290,15 +306,25 @@ describe("rest-time features (Q15 b): rest-trigger entries SD-R runs", () => {
   });
 
   it("Efficient (CB p.53) and Oasis (HF p.27) on a short rest, Celestial Trance (CB p.56) on any rest", () => {
-    for (const [id, text, short] of [
-      ["ancestry:clank:efficient", "long rest move instead of a short rest move", true],
-      ["community:duneborne:oasis", "reroll a die used for a downtime move and take the higher result", true],
-      ["ancestry:elf:celestial-trance", "additional downtime move", false],
+    // SRD-F1 (dcm-2a1): a during-rest timing (short rest for Efficient and Oasis) with a `downtime` step; no check box.
+    for (const [id, text, op, short] of [
+      ["ancestry:clank:efficient", "long rest move instead of a short rest move", "longMoveOnShort", true],
+      ["community:duneborne:oasis", "reroll a die used for a downtime move and take the higher result", "rerollDie", true],
+      ["ancestry:elf:celestial-trance", "additional downtime move", "extraMove", false],
     ] as const) {
-      expect(effectOf(id).uses[0]!.activation, id).toEqual({ kind: "reaction", trigger: { kind: "timing", at: "afterRest" } });
-      if (short) expect(use(id, undefined, [])).toMatchObject({ ok: false, reason: "requirement" });
-      const p = plan(id, undefined, [], { situations: [S.shortRest] });
+      const u = effectOf(id).uses[0]!;
+      expect(u.activation, id).toEqual({ kind: "reaction", trigger: { kind: "timing", at: "afterRest", during: true, ...(short ? { restType: "short" } : {}) } });
+      expect(u.requires).toBeUndefined();
+      expect(u.steps).toEqual([expect.objectContaining({ kind: "downtime", op, at: "thisRest" })]);
+      const p = plan(id, undefined, []);
       expect(ofKind(p, "prompt")).toEqual([expect.objectContaining({ prompt: "manual", text: expect.stringContaining(text) })]);
     }
+  });
+
+  it("the rest flow reads the rest-time features from their entries alone (restFeaturesOfEntry, dcm-2a1)", () => {
+    expect(restFeaturesOfEntry(effectOf("ancestry:clank:efficient"))).toEqual({ efficient: true, trance: false, oasis: false });
+    expect(restFeaturesOfEntry(effectOf("ancestry:elf:celestial-trance"))).toEqual({ efficient: false, trance: true, oasis: false });
+    expect(restFeaturesOfEntry(effectOf("community:duneborne:oasis"))).toEqual({ efficient: false, trance: false, oasis: true });
+    expect(restFeaturesOfEntry(effectOf("community:frostborne:hardy"))).toEqual({ efficient: false, trance: false, oasis: false });
   });
 });

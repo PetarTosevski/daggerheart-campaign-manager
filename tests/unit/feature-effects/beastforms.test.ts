@@ -404,6 +404,33 @@ describe("Tier 3 and 4 features (CB p.34-35)", () => {
     expect(plan.actor.after.stress).toBe(2);
     expect(ofKind(plan, "mark")).toContainEqual(expect.objectContaining({ targetId: "bandit", track: "hp", amount: 1 }));
   });
+
+  it("SRD-F1 (dcm-9l4): Devastating Strikes' Melee is the target's distance when known", () => {
+    const e = bf("terrible-lizard", "Devastating Strikes");
+    expect(useOf(e).requires).toContainEqual({ kind: "situation", text: "The target is within Melee range", check: { kind: "within", range: "melee", who: "target" } });
+    const near = inForm("terrible-lizard", { facts: { beastformId: "terrible-lizard", target: { conditions: [], hp: 0, hpMax: 5, distance: 1 } } });
+    expect(ok(e, undefined, { actor: near, rng: queueRng([]), targets: [foe("bandit")] }).actor.after.stress).toBe(2);
+    const far = inForm("terrible-lizard", { facts: { beastformId: "terrible-lizard", target: { conditions: [], hp: 0, hpMax: 5, distance: 6 } } });
+    expect(runFeature(e, undefined, { gmFear: 2, actor: far, rng: queueRng([]), targets: [foe("bandit")], situations: ["The target is within Melee range"] })).toMatchObject({ ok: false, reason: "requirement" });
+  });
+});
+
+describe("SRD-F1: Poisoned (CB p.32-33) carries its rider", () => {
+  it("Venomous Bite and Venomous Strike: the condition's bearer rider is 1d10 direct physical each time they act; the prompt stays (dcm-mm0f)", () => {
+    for (const [form, name] of [
+      ["stalking-arachnid", "Venomous Bite"],
+      ["striking-serpent", "Venomous Strike"],
+    ] as const) {
+      const steps = bf(form, name).uses.find((u) => u.id === "main")!.steps;
+      const poisoned = steps.find((s) => s.kind === "condition");
+      expect(poisoned, name).toMatchObject({
+        condition: { kind: "tag", tag: "Poisoned" },
+        duration: "temporary",
+        mods: [{ kind: "bearerRider", rider: { on: "acts", steps: [{ kind: "damage", to: "self", roll: { kind: "dice", dice: { count: { kind: "fixed", value: 1 }, sides: 10 } }, type: "physical", direct: true }] } }],
+      });
+      expect(steps.some((s) => s.kind === "manual"), name).toBe(true);
+    }
+  });
 });
 
 describe("ownership (SD1 owned, Q10)", () => {

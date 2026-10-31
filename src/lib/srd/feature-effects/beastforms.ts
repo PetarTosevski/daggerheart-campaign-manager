@@ -141,7 +141,7 @@ const situation = (text: string): Requirement => ({ kind: "situation", text });
 
 const VULNERABLE = { kind: "standard", condition: "vulnerable" } as const;
 const RESTRAINED = { kind: "standard", condition: "restrained" } as const;
-/** CB p.32-33: "A Poisoned creature takes 1d10 direct physical damage each time they act" (the per-act damage is the GM's; bead). */
+/** CB p.32-33: "A Poisoned creature takes 1d10 direct physical damage each time they act" (`poisoned` below; dcm-mm0f runs it). */
 const POISONED = { kind: "tag", tag: "Poisoned" } as const;
 const POISON_TEXT = "Poisoned: the creature takes 1d10 direct physical damage each time they act (roll it when they act).";
 
@@ -166,6 +166,16 @@ const physical = (sides: DieSides, plus: number, profDelta = 0): Step => ({
 });
 
 const temporarily = (condition: typeof VULNERABLE | typeof RESTRAINED | typeof POISONED): Step => ({ kind: "condition", to: "targets", when: ["hit"], condition, duration: "temporary" });
+
+/**
+ * Temporarily Poisoned with what it does (plan lanes V, dcm-bxp.99.19.3): a `bearerRider` on the condition, "1d10 direct
+ * physical damage each time they act" (`self` in the rider is the bearer). The bearer's engines don't run condition riders
+ * yet (dcm-mm0f), so the entries keep the POISON_TEXT prompt beside it.
+ */
+const poisoned: Step = {
+  ...(temporarily(POISONED) as Extract<Step, { kind: "condition" }>),
+  mods: [{ kind: "bearerRider", rider: { on: "acts", steps: [{ kind: "damage", to: "self", roll: { kind: "dice", dice: { count: fixed(1), sides: 10 } }, type: "physical", direct: true }] } }],
+};
 
 const formUse = (u: Omit<CardUse, "requires"> & { requires?: readonly Requirement[] }): CardUse => ({ ...u, requires: [IN_BEASTFORM, ...(u.requires ?? [])] });
 
@@ -433,7 +443,7 @@ const FEATURES: readonly FeatureEffect[] = [
       id: "main",
       name: "Venomous Bite",
       activation: { kind: "auto", trigger: onMeleeSuccess },
-      steps: [temporarily(POISONED), { kind: "manual", to: "targets", text: POISON_TEXT }],
+      steps: [poisoned, { kind: "manual", to: "targets", text: POISON_TEXT }],
     }),
   ]),
   // Webslinger (Stalking Arachnid): "You can create a strong web material useful for both adventuring and battle. The web
@@ -478,7 +488,9 @@ const FEATURES: readonly FeatureEffect[] = [
       name: "Armored Shell (in your shell)",
       activation: { kind: "auto", trigger: { kind: "whenYouWouldTakeDamage", damageType: "physical" } },
       requires: [{ kind: "situation", text: "While in your shell", check: { kind: "featureEffect", featureId: "beastform:armored-sentry:armored-shell", option: "retracted" } }],
-      // No number source reads the Armor Score (bead): the reduction is the table's.
+      // Plan lanes, SRD-F1: `reduceDamage` by `{ kind: "stat", stat: "armorScore", who: "self" }` would say it, but the
+      // feature runner and the hit window don't fill the actor's stats yet (dcm-me3), so it would reduce by 0: the
+      // reduction stays the table's (dcm-bxp.99.19.4).
       steps: [{ kind: "manual", to: "self", text: "In your shell: reduce this physical damage by your Armor Score (after applying resistance)." }],
     }),
   ]),
@@ -590,7 +602,7 @@ const FEATURES: readonly FeatureEffect[] = [
       activation: { kind: "action" },
       roll: formRoll("finesse"),
       targets: enemy("veryClose", { kind: "any" }),
-      steps: [physical(8, 4), temporarily(POISONED), { kind: "manual", to: "targets", when: ["hit"], text: POISON_TEXT }],
+      steps: [physical(8, 4), poisoned, { kind: "manual", to: "targets", when: ["hit"], text: POISON_TEXT }],
     }),
   ]),
   // Warning Hiss (Striking Serpent): "Mark a Stress to force any number of targets within Melee range to move back to Very
@@ -701,7 +713,8 @@ const FEATURES: readonly FeatureEffect[] = [
       id: "main",
       name: "Devastating Strikes",
       activation: { kind: "rider", trigger: { kind: "whenTargetMarksHp", severity: "severe" } },
-      requires: [situation("The target is within Melee range")],
+      // "A target within Melee range": the `within` check (dcm-9l4); without the distance fact the map decides the words.
+      requires: [{ kind: "situation", text: "The target is within Melee range", check: { kind: "within", range: "melee", who: "target" } }],
       costs: [stress(1)],
       steps: [{ kind: "markHp", to: "targets", amount: fixed(1), note: "The target marks an additional Hit Point" }],
     }),
