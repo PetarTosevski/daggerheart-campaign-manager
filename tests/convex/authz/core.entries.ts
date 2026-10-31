@@ -19,6 +19,12 @@ async function pendingInvite(w: World) {
   w.set("inviteId", inviteId);
 }
 
+/** A combat map of the campaign (the thumbnail's subject); registers `thumbMapId`. */
+async function thumbnailMap(w: World) {
+  const { mapId } = await w.as("gm").mutation(api.combatMaps.create, { campaignId: w.campaignId, size: "small", idempotencyKey: freshKey() });
+  w.set("thumbMapId", mapId);
+}
+
 /** The GM deleted the campaign (restore's subject). */
 async function deletedCampaign(w: World) {
   await w.as("gm").mutation(api.campaigns.remove, { campaignId: w.campaignId });
@@ -55,6 +61,18 @@ const area: Area = {
     },
     { fn: api.campaigns.setOption, access: "gm", args: () => ({ option: "witherPersists", enabled: true }) },
     { fn: api.campaigns.setPlayersSeeHands, access: "gm", args: () => ({ enabled: false }) },
+    // dcm-bxp.54: every member reads the time of day; edit access sets it. The world is a Witherwild campaign, whose
+    // time phase decides the light, so the GM and an edit grantee pass the access check and get INVALID.
+    { fn: api.campaigns.timeOfDay, access: "view" },
+    { fn: api.campaigns.setTimeOfDay, access: "edit", args: () => ({ timeOfDay: "night" }), okCodes: ["INVALID"] },
+    // dcm-bxp.97 (lane M owns this file, not combat.entries.ts): a Maps card thumbnail's painted cells, GM only.
+    {
+      fn: api.combatMapStyle.thumbnail,
+      access: "gm",
+      setup: thumbnailMap,
+      args: (w) => ({ mapId: w.ids.thumbMapId }),
+      expect: { grantee: "FORBIDDEN" },
+    },
     // Only a custom campaign has a tome: on the witherwild world the GM passes the access check and gets INVALID.
     { fn: api.campaigns.updateTome, access: "gm", args: () => ({ chapter: "overview", text: "Once upon a time" }), okCodes: ["INVALID"] },
 

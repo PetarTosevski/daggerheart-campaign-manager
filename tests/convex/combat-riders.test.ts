@@ -560,6 +560,13 @@ describe("Cloaked ends on a move in sight of an adversary (Q9, CB p.42)", () => 
     const a = await arena();
     await a.enemy("Bandit", 12, 10);
     const seen = await a.t.run(async (ctx) => {
+      // A bright day (dcm-p40: day 1 of a cycle is dim, where the enemy sees the rogue only dimly).
+      const time = await ctx.db
+        .query("campaignTime")
+        .withIndex("by_campaign", (q) => q.eq("campaignId", a.campaignId))
+        .unique();
+      if (time === null) await ctx.db.insert("campaignTime", { campaignId: a.campaignId, week: 1, cycle: "DAY", cycleDay: 3 });
+      else await ctx.db.patch("campaignTime", time._id, { cycle: "DAY", cycleDay: 3 });
       const campaign = (await ctx.db.get("campaigns", a.campaignId))!;
       const map = (await ctx.db.get("combatMaps", a.mapId))!;
       const scene = await loadScene(ctx, campaign, map);

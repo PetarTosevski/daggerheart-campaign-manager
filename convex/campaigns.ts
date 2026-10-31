@@ -29,6 +29,8 @@ import {
   tomeChapterValidator,
 } from "./lib/validators/campaigns";
 import { settingsRow } from "./settings";
+import { timeOfDayValidator } from "./tables/campaigns";
+import { campaignLight } from "./lib/combatVision";
 
 /**
  * What `get` returns: the campaign summary without GM Fear (PF7). Fear changes on every click, and the whole campaign
@@ -456,6 +458,46 @@ export const setPlayersSeeHands = gmMutation({
     const campaign = ctx.campaign;
     if (playersSeeHands(campaign) === enabled) return null;
     await ctx.db.patch("campaigns", campaign._id, { playersSeeHands: enabled });
+    return null;
+  },
+});
+
+/**
+ * The campaign's time of day (dcm-bxp.54), every member: the light every map follows (`campaignLight`). In a frame
+ * with campaign time (the Witherwild) the time phase decides and `phase` names it; elsewhere it is the GM's
+ * Day / Dim / Night and `phase` is null. `canSet`: the caller may change it here (edit access, no campaign time).
+ */
+export const timeOfDay = campaignQuery({
+  need: "view",
+  enough: "edit",
+  args: {},
+  returns: v.object({
+    phase: v.union(v.string(), v.null()),
+    light: timeOfDayValidator,
+    canSet: v.boolean(),
+  }),
+  handler: async (ctx) => {
+    const { phase, light } = await campaignLight(ctx, ctx.campaign);
+    const canSet = atLeast(ctx.permission, "edit") && !frameHasMechanic(ctx.campaign.frameId, "campaignTime");
+    return { phase, light, canSet };
+  },
+});
+
+/**
+ * Sets the campaign's time of day (dcm-bxp.54): one shared value, set from the dashboard and the Combat Map header.
+ * Edit access. Refused (INVALID) in a frame with campaign time, where the time phase decides the light.
+ */
+export const setTimeOfDay = campaignMutation({
+  need: "edit",
+  args: { timeOfDay: timeOfDayValidator },
+  returns: v.null(),
+  handler: async (ctx, { timeOfDay }) => {
+    const campaign = ctx.campaign;
+    if (frameHasMechanic(campaign.frameId, "campaignTime")) {
+      throw appError("INVALID", "Campaign time sets the light in this campaign.");
+    }
+    if ((campaign.timeOfDay ?? "day") === timeOfDay) return null;
+    await ctx.db.patch("campaigns", campaign._id, { timeOfDay });
     return null;
   },
 });

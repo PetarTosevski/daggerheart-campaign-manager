@@ -27,6 +27,7 @@ import type { TomeChapterId } from "@/lib/frames/tomes";
 import { CampaignTome } from "./campaign-tome";
 import { PlayersDialog } from "./players-dialog";
 import { TimeArc } from "./time-arc";
+import { TimeOfDay } from "./time-of-day";
 
 /*
  * The shell's context is split by how often each part changes (PF7). `CampaignContext` holds the campaign summary,
@@ -225,7 +226,11 @@ const DashboardHero = memo(function DashboardHero({ campaign, onOpenTome }: { ca
     <div className="relative mx-auto flex max-w-[1344px] flex-col gap-9 px-4 pt-2 pb-8 sm:px-12">
       {frameHasMechanic(campaign.frameId, "campaignTime") ? (
         <TimeArc campaignId={campaign._id} readOnly={campaign.role !== "gm"} />
-      ) : null}
+      ) : (
+        <SlotBoundary fallback={null}>
+          <TimeOfDay campaignId={campaign._id} />
+        </SlotBoundary>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-6">
       <div className="flex min-w-0 flex-col gap-2">
         <span className="text-[13px] tracking-[0.3em] text-[#c9d2cf] uppercase">

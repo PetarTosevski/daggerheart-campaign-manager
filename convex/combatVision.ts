@@ -92,7 +92,7 @@ const viewOkValidator = v.object({
   characterId: v.id("characters"),
   /** The viewer's own token. */
   tokenId: v.id("combatTokens"),
-  /** Campaign time phase (R8); null for a frame without campaign time (vision as by day). */
+  /** Campaign time phase (R8); null for a frame without campaign time, whose `light` is the GM's time of day (dcm-bxp.54). */
   phase: v.union(v.string(), v.null()),
   light: lightLevelValidator,
   instinct: v.number(),

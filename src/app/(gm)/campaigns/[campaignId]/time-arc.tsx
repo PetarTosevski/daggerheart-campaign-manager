@@ -4,6 +4,7 @@ import { useQuery } from "convex/react";
 import type { CSSProperties } from "react";
 
 import { getPhaseName, monthOf, weekInMonth } from "@/lib/domain/campaign-time";
+import { LIGHT_LEVEL_LABEL, lightOf } from "@/lib/domain/combat-map/light";
 import { useIntent } from "@/lib/use-intent";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -80,7 +81,7 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
   const error = advance.error ?? setDay.error;
 
   return (
-    <section aria-label="Time of the long cycle" className="flex w-full max-w-[600px] flex-col items-center gap-1.5 self-center">
+    <section id="time-arc" aria-label="Time of the long cycle" className="flex w-full max-w-[600px] flex-col items-center gap-1.5 self-center">
       <div className="relative aspect-[560/170] w-full max-w-[560px]">
         <svg viewBox="0 0 560 170" width="100%" height="100%" aria-hidden="true" className="absolute inset-0 overflow-visible">
           <defs>
@@ -169,6 +170,13 @@ export function TimeArc({ campaignId, readOnly = false }: { campaignId: Id<"camp
         </span>
         <span>
           Current week cycle: <strong style={{ color: c2 }}>{night ? "Night" : "Day"}</strong>
+        </span>
+        <span aria-hidden="true" className="hidden opacity-40 sm:inline">
+          |
+        </span>
+        {/* dcm-bxp.54 / dcm-p40: the phase decides the light every map follows (read-only; no separate override). */}
+        <span data-testid="time-light">
+          Light: <strong style={{ color: c2 }}>{LIGHT_LEVEL_LABEL[lightOf(getPhaseName(time.cycle, time.cycleDay))]}</strong>
         </span>
       </div>
       {time.cycleDay === 7 && !readOnly ? (

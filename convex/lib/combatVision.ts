@@ -35,8 +35,9 @@ import { readSheet } from "./characterSheet";
 import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
 import { atLeast, permissionFor } from "./permissions";
-import { mapSpriteRefs, objectTraits, resolveRefs, type UploadedSprites } from "./spriteSources";
+import { mapSpriteRefs, objectTraits, resolveRefs, resolveSetting, type UploadedSprites } from "./spriteSources";
 import { CELL_LAYERS, tokenSideValidator } from "./validators/combatMaps";
+import { timeOfDayValidator } from "../tables/campaigns";
 
 /**
  * Vision on the server (D9 C7, plan `.omc/plans/d9-combat-map.yaml`; R8–R12, Q1, Q3, Q4). A player's view is
@@ -54,8 +55,8 @@ const MAX_CELL_TILES = CELL_LAYERS.length * Math.ceil(MAX_MAP_H / CELL_TILE_ROWS
 
 // ---------------------------------------------------------------- validators
 
-/** The campaign time's light (R8): day, dim (badge) or night (lights only). */
-export const lightLevelValidator = v.union(v.literal("day"), v.literal("dim"), v.literal("night"));
+/** The campaign's light (R8, dcm-bxp.54): day, dim (badge) or night (lights only). */
+export const lightLevelValidator = timeOfDayValidator;
 
 /**
  * A token a player sees that is not a PC (adversary, ally, neutral, custom): name, size, side and facing only
@@ -111,14 +112,20 @@ export type Scene = {
   readonly tokens: readonly Doc<"combatTokens">[];
   /** Same order as `tokens`. */
   readonly visionTokens: readonly VisionToken[];
-  /** The campaign time phase, or null for a frame without campaign time (treated as day). */
-  readonly phase: CampaignPhaseName | null;
+  /**
+   * What the vision engine reads as the time (`createView`'s `phase`, `lightOf`): the campaign time phase in a frame
+   * with campaign time, else the campaign's time of day as a light level (dcm-bxp.54; `lightOf` reads it as itself).
+   * Every caller that passes `scene.phase` to the engine or to `lightOf` thus follows the campaign's light.
+   */
+  readonly phase: CampaignPhaseName | LightLevel;
+  /** The campaign time phase for display, or null for a frame without campaign time. */
+  readonly phaseName: CampaignPhaseName | null;
   readonly light: LightLevel;
 };
 
 /**
- * The campaign's time phase (R8). Campaign time is a Witherwild mechanic: other frames have none and get null
- * (vision as by day). A Witherwild campaign without a time row is at the initial time (week 1, DAY day 1).
+ * The campaign's time phase (R8). Campaign time is a Witherwild mechanic: other frames have none and get null. A
+ * Witherwild campaign without a time row is at the initial time (week 1, DAY day 1).
  */
 export async function campaignPhase(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<CampaignPhaseName | null> {
   if (!frameHasMechanic(campaign.frameId, "campaignTime")) return null;
@@ -132,6 +139,22 @@ export async function campaignPhase(ctx: QueryCtx, campaign: Doc<"campaigns">): 
   } catch {
     return null;
   }
+}
+
+/** A campaign's light (dcm-bxp.54): its time phase and that phase's light, or its time of day (no phase). */
+export type CampaignLight = { phase: CampaignPhaseName | null; light: LightLevel };
+
+/**
+ * The light every map of the campaign follows (dcm-bxp.54, user 2026-10-30): in a frame with campaign time (the
+ * Witherwild) the time phase decides (`lightOf`, dcm-p40); every other campaign has the GM's Day / Dim / Night
+ * (`campaigns.timeOfDay`, unset = day).
+ */
+export async function campaignLight(ctx: QueryCtx, campaign: Doc<"campaigns">): Promise<CampaignLight> {
+  if (frameHasMechanic(campaign.frameId, "campaignTime")) {
+    const phase = await campaignPhase(ctx, campaign);
+    return { phase, light: lightOf(phase ?? "") };
+  }
+  return { phase: null, light: campaign.timeOfDay ?? "day" };
 }
 
 /** A token as the engine reads it. */
@@ -207,10 +230,22 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
     image: map.source === "image",
     // F6: on a Sprites map the textures decide which squares glow (as the sprite painter draws them); a Classic map
     // leaves it to the engine's terrain rule (lava).
-    ...(sprites ? { glow: spriteGlow(map, tiles, cells.paint, uploaded) } : {}),
+    ...(sprites ? { glow: spriteGlow(map, tiles, cells.paint, uploaded, await packSettingExtends(ctx, map)) } : {}),
   });
-  const phase = await campaignPhase(ctx, campaign);
-  return { map, objects, uploaded, visionObjects: vision, prepared, fog: cells.fog, tokens, visionTokens: tokens.map(visionTokenOf), phase, light: lightOf(phase ?? "") };
+  const { phase, light } = await campaignLight(ctx, campaign);
+  return {
+    map,
+    objects,
+    uploaded,
+    visionObjects: vision,
+    prepared,
+    fog: cells.fog,
+    tokens,
+    visionTokens: tokens.map(visionTokenOf),
+    phase: phase ?? light,
+    phaseName: phase,
+    light,
+  };
 }
 
 /**
@@ -222,10 +257,17 @@ function spriteGlow(
   tiles: readonly { layer: string; tile: number; cells: string }[],
   paint: Record<string, string>,
   uploaded: UploadedSprites,
+  packExtends: string | null,
 ): string[] {
   const textureCells = tiles.flatMap(({ layer, tile, cells }) => (layer === "texture" ? [{ tile, cells }] : []));
   const textures = decodeTextureCells({ w: map.w, h: map.h, texturePalette: map.texturePalette, textureCells });
-  return glowingSquares(map, paint, textures, paintSetting(map), uploaded);
+  return glowingSquares(map, paint, textures, paintSetting(map, packExtends), uploaded);
+}
+
+/** dcm-bxp.86: the built-in setting a pack-setting map's pack extends (the painter's setting for it), else null (no read). */
+async function packSettingExtends(ctx: QueryCtx, map: Doc<"combatMaps">): Promise<string | null> {
+  if (map.setting === undefined || !("pack" in map.setting)) return null;
+  return (await resolveSetting(ctx, map)).extends;
 }
 
 /**
@@ -255,7 +297,7 @@ export function viewOf(scene: Scene, character: Doc<"characters">): Viewer | nul
   const view = createView(
     scene.prepared,
     { token: scene.visionTokens[index]!, characterId: character._id, instinct },
-    { phase: scene.phase ?? "", tokens: scene.visionTokens, fog: scene.fog },
+    { phase: scene.phase, tokens: scene.visionTokens, fog: scene.fog },
   );
   return { index, instinct, view };
 }
@@ -426,7 +468,7 @@ export async function buildView(
     mapId: scene.map._id,
     characterId: character._id,
     tokenId: scene.tokens[viewer.index]!._id,
-    phase: scene.phase,
+    phase: scene.phaseName,
     light: scene.light,
     instinct: viewer.instinct,
     coneDeg: viewer.view.coneDeg,

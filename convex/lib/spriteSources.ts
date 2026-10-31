@@ -99,25 +99,32 @@ export function keywordSetting(map: Pick<Doc<"combatMaps">, "prompt" | "name">):
   return { builtin: pickSetting(map.prompt ?? "", map.name) };
 }
 
+/** The built-in setting a pack adds to (Q3), or null for a setting of its own (or an id the catalog no longer knows). */
+export function packExtends(pack: Pick<Doc<"spritePacks">, "extends">): string | null {
+  return pack.extends !== undefined && isSettingId(pack.extends) ? pack.extends : null;
+}
+
 /**
  * The map's setting as it is drawn (D7): the stored one when it still resolves (a built-in id the catalog knows, or
  * a pack of this campaign), else the keyword picker's (a deleted pack falls back too, D9). Returns the pack row for a
- * pack setting and whether the stored setting was used.
+ * pack setting, whether the stored setting was used and (dcm-bxp.86) the built-in setting the pack extends: the
+ * sprite painter maps a pack map's unreferenced objects and terrains through it (`paintSetting`), so a pack that adds
+ * to Forest draws stand-ins from Forest + common. Null for a built-in setting or a pack of its own.
  */
 export async function resolveSetting(
   ctx: QueryCtx,
   map: Doc<"combatMaps">,
-): Promise<{ setting: SettingRef; pack: Doc<"spritePacks"> | null; stored: boolean }> {
+): Promise<{ setting: SettingRef; pack: Doc<"spritePacks"> | null; stored: boolean; extends: string | null }> {
   const stored = map.setting;
   if (stored !== undefined) {
     if ("builtin" in stored) {
-      if (isSettingId(stored.builtin)) return { setting: stored, pack: null, stored: true };
+      if (isSettingId(stored.builtin)) return { setting: stored, pack: null, stored: true, extends: null };
     } else {
       const pack = await ctx.db.get("spritePacks", stored.pack);
-      if (pack !== null && pack.campaignId === map.campaignId) return { setting: stored, pack, stored: true };
+      if (pack !== null && pack.campaignId === map.campaignId) return { setting: stored, pack, stored: true, extends: packExtends(pack) };
     }
   }
-  return { setting: keywordSetting(map), pack: null, stored: false };
+  return { setting: keywordSetting(map), pack: null, stored: false, extends: null };
 }
 
 // ---------------------------------------------------------------- client rows
