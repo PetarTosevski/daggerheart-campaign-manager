@@ -241,8 +241,8 @@ describe("endInstanceEffects", () => {
   const instance = { effects: [marker("card:slumber:1", "Asleep"), marker("card:jumpscare:1", "vulnerable"), marker("card:timejammer:1~tokA", "Time-Stopped")], conditions: ["vulnerable" as const], tags: ["Asleep", "Time-Stopped", "Other"] };
 
   it("damage ends Slumber's Asleep tag (and its marker); marking HP ends Jump Scare's Vulnerable (dcm-utu)", () => {
-    const minorNoHp = endInstanceEffects(instance, hit("minor", 0), { lookup });
-    expect(minorNoHp.patch).toEqual({ effects: [instance.effects[1], instance.effects[2]], conditions: ["vulnerable"], tags: ["Time-Stopped", "Other"] });
+    // User answer 2026-10-31 (lanes-2 E6.3): "take damage" needs a marked Hit Point; a hit reduced to 0 HP ends neither.
+    expect(endInstanceEffects(instance, hit("minor", 0), { lookup }).patch).toBeNull();
     const marked = endInstanceEffects(instance, hit("minor", 1), { lookup });
     expect(marked.patch).toEqual({ effects: [instance.effects[2]], conditions: [], tags: ["Time-Stopped", "Other"] });
     expect(endInstanceEffects(instance, hit("none", 0), { lookup }).patch).toBeNull();

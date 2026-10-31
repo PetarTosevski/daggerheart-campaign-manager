@@ -58,6 +58,9 @@ const entries: Entry[] = [
   { fn: api.combatFeatures.setFlying, access: "view", args: (w) => ({ characterId: w.characterA, flying: true }), expect: NOT_THEIRS, okCodes: ["FEATURE_NOT_OWNED"] },
   { fn: api.combatFeatures.shiftStance, access: "view", args: (w) => ({ characterId: w.characterA, stance: "quick" }), expect: NOT_THEIRS, okCodes: ["FEATURE_STATE_MISSING"] },
   { fn: api.combatFeatures.refocus, access: "view", args: (w) => ({ characterId: w.characterA, calm: true }), expect: NOT_THEIRS, okCodes: ["FEATURE_STATE_MISSING"] },
+  // Plan lanes-2 E6.3 (dcm-kmr): the GM's Fear spend that ends an effect; characterA has no Fear-endable effect.
+  { fn: api.combatEffects.fearEnds, access: "gm", args: (w) => ({ target: { kind: "character", characterId: w.characterA } }) },
+  { fn: api.combatEffects.endByFear, access: "gm", args: (w) => ({ target: { kind: "character", characterId: w.characterA }, effectId: "none", fear: 1 }), okCodes: ["INVALID"] },
 ];
 
 const area: Area = { area: "features", entries };

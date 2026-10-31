@@ -28,6 +28,7 @@ import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
+import { afterUnstoppable } from "./lib/cardRows";
 import { assertCanAct, editable, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { payCost } from "./lib/classFeatureCost";
 import { rollDie } from "./lib/dice";
@@ -39,6 +40,9 @@ import { rollValidator, type StoredRoll } from "./lib/validators/actionLog";
 const ROLL_SCAN = 20;
 /** The most characters a party feature reaches. */
 const PARTY_MAX = 50;
+
+/** The Guardian's D5 Unstoppable actions that can remove the die (src/lib/domain/class-features/classes/guardian.ts). */
+const UNSTOPPABLE_ACTIONS: ReadonlySet<string> = new Set(["unstoppableHit", "endUnstoppable"]);
 
 /** The character's newest action log row that carries a roll and is not undone, or null. */
 async function latestRoll(ctx: QueryCtx, characterId: Id<"characters">): Promise<StoredRoll | null> {
@@ -132,7 +136,9 @@ export const use = keyedUserMutation({
       const subjectId = (feature.target === "ally" ? others[0]?.id : undefined) ?? character._id;
       const roll = (await latestRoll(ctx, subjectId)) ?? undefined;
 
-      const result = feature.use({ sheet: paid, params, rng: rollDie, others: others.map(({ characterId, sheet }) => ({ characterId, sheet })), roll });
+      const used = feature.use({ sheet: paid, params, rng: rollDie, others: others.map(({ characterId, sheet }) => ({ characterId, sheet })), roll });
+      // Plan lanes-2 E6.3 (dcm-v17): once a D5 Unstoppable action removed the die, the feature's sheet effect ends too.
+      const result = UNSTOPPABLE_ACTIONS.has(featureKey) ? { ...used, sheet: afterUnstoppable(used.sheet) } : used;
       const fearDelta = await changeFear(ctx, campaign._id, result.fearDelta ?? 0);
 
       const loaded = new Map<string, { id: Id<"characters">; before: CharacterSheet }>([

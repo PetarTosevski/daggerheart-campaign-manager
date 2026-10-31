@@ -22,6 +22,7 @@ import type * as codex from "../codex.js";
 import type * as combatActions from "../combatActions.js";
 import type * as combatAreas from "../combatAreas.js";
 import type * as combatCards from "../combatCards.js";
+import type * as combatEffects from "../combatEffects.js";
 import type * as combatFeatures from "../combatFeatures.js";
 import type * as combatMapEdit from "../combatMapEdit.js";
 import type * as combatMapGenerate from "../combatMapGenerate.js";
@@ -210,6 +211,7 @@ declare const fullApi: ApiFromModules<{
   combatActions: typeof combatActions;
   combatAreas: typeof combatAreas;
   combatCards: typeof combatCards;
+  combatEffects: typeof combatEffects;
   combatFeatures: typeof combatFeatures;
   combatMapEdit: typeof combatMapEdit;
   combatMapGenerate: typeof combatMapGenerate;

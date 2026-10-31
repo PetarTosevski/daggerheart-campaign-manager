@@ -174,18 +174,35 @@ export type EndOccurrence =
   /** Any other event by name (`gmSpendsFear`, `targetDefeated`, `stanceDrops`, `usedAgain`, `moves`, `tokensGone`, …). */
   | { kind: "event"; event: EndEvent };
 
+const SEVERITY_ORDER: readonly EndSeverity[] = ["none", "minor", "major", "severe"];
+
+/**
+ * The severity a hit's ends read (user answer 2026-10-31, tracer E6.3): it follows the Hit Points finally marked, after
+ * armor and other reductions: 1 HP Minor, 2 HP Major, 3 or more Severe, 0 none. Armor that drops a Severe hit to 2 HP
+ * makes it Major ("until the Shark takes Severe damage" stays). On the creature's last Hit Point the marks are capped at
+ * what was left, so the hit's own severity counts when it is higher.
+ */
+export function takenSeverity(occ: Pick<Extract<EndOccurrence, { kind: "damageTaken" }>, "severity" | "hpMarked" | "lastHp">): EndSeverity {
+  const marked = SEVERITY_ORDER[Math.min(3, Math.max(0, Math.trunc(occ.hpMarked)))]!;
+  if (!occ.lastHp) return marked;
+  return SEVERITY_ORDER.indexOf(occ.severity) > SEVERITY_ORDER.indexOf(marked) ? occ.severity : marked;
+}
+
 /** The `EndEvent`s an occurrence sets off. */
 export function occurredEvents(occ: EndOccurrence): ReadonlySet<EndEvent> {
   const out = new Set<EndEvent>();
   if (occ.kind === "event") out.add(occ.event);
   else if (occ.kind === "damageTaken") {
-    // CB p.92: damage reduced to 0 marks no Hit Points; the hit still landed but no damage was taken (Q1 in the task).
-    const took = occ.severity !== "none" || occ.hpMarked > 0;
+    // User answer 2026-10-31 (E6.3, replaces round-1 E6 Q1): "took damage" means at least 1 Hit Point was marked. A hit
+    // reduced to 0 HP marked (armor, features) does not end "until they take damage" (Slumber, CB p.332; Transform), even
+    // at Minor or worse.
+    const took = occ.hpMarked > 0;
     if (took) out.add("takeDamage");
     else out.add("reducedToNoHp");
     if (occ.hpMarked > 0) out.add("markHp");
-    if (occ.severity === "major" || occ.severity === "severe") out.add("majorDamage");
-    if (occ.severity === "severe") out.add("takeSevere");
+    const severity = takenSeverity(occ);
+    if (severity === "major" || severity === "severe") out.add("majorDamage");
+    if (severity === "severe") out.add("takeSevere");
     if (occ.lastHp) out.add("lastHp");
   } else if (occ.kind === "damageDealt") {
     if (occ.severity !== "none") out.add("dealDamage");

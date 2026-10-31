@@ -206,3 +206,36 @@ export function useTokenActions(campaignId: Id<"campaigns">, map: CombatMapSumma
 }
 
 export type TokenActions = ReturnType<typeof useTokenActions>;
+
+/** A PC token's sheet or an adversary token's encounter instance: where a GM Fear spend ends an effect (E6.3). */
+function fearTarget(token: TokenView) {
+  if (token.kind === "pc" && token.characterId) return { kind: "character" as const, characterId: token.characterId };
+  if (token.kind === "adversary" && token.instanceId) return { kind: "instance" as const, instanceId: token.instanceId };
+  return null;
+}
+
+/**
+ * GM only (plan lanes-2 E6.3, dcm-kmr): the token's effects and conditions a Fear spend ends (Slumber, Marked for Death),
+ * with their cost, and `end` spending it (`combatEffects.endByFear`, one undoable row). `ends` is empty for a player or
+ * a token without a sheet or instance.
+ */
+export function useFearEnds(campaignId: Id<"campaigns">, token: TokenView, gm: boolean) {
+  const target = gm ? fearTarget(token) : null;
+  const ends = useQuery(api.combatEffects.fearEnds, target ? { campaignId, target } : "skip") ?? [];
+  const endByFear = useMutation(api.combatEffects.endByFear);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  async function end(effectId: string, fear: number) {
+    if (!target) return;
+    setError(null);
+    setBusy(effectId);
+    try {
+      await endByFear({ campaignId, target, effectId, fear, idempotencyKey: idempotencyKey() });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  return { ends, end, busy, error };
+}

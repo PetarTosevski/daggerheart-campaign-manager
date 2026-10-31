@@ -13,7 +13,7 @@
 import { v, type Infer } from "convex/values";
 
 import type { PlanStep, ResolvedMod, RunPlan } from "../../src/lib/domain/card-effects/run";
-import type { CardUse, ConditionRef, Duration, Step, Upgrade } from "../../src/lib/domain/card-effects/types";
+import type { CardUse, ConditionRef, Duration, EndEvent, NumberSource, RollEnd, Step, Upgrade } from "../../src/lib/domain/card-effects/types";
 import { endEffects, endsOnOccurrence, gmFearToEnd, tokensGoneKeys, withoutLapsedUnstoppable, type EffectEnds, type EndOccurrence, type EndRole } from "../../src/lib/domain/characters/expiry";
 import { tierForLevel } from "../../src/lib/domain/characters/index";
 import { FEATURE_KEY_PREFIX } from "../../src/lib/domain/feature-effects/ids";
@@ -30,7 +30,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { activeAreasOnMap, areaSpecOf, endArea } from "../combatAreas";
 import { logAction } from "./actionLog";
-import { cardIdOfEffect, difficultyOf, effectOption, featureIdOfEffect, isFeatureUseId, lapsedConditions, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
+import { cardIdOfEffect, difficultyOf, effectKeyOf, effectOption, endRollOf, featureIdOfEffect, isFeatureUseId, lapsedConditions, tokenIdsOf, type BuiltRun, type Creatures, type EnemyCreature } from "./cardRunner";
 import { readSheet, saveSheet } from "./characterSheet";
 import { MAX_INSTANCES } from "./encounters";
 import { bandsOnMap, openIncomingHit, partyMembers } from "./incomingHits";
@@ -1091,4 +1091,236 @@ export async function applyUseEnds(
     lines.push(...gone.lines);
   }
   return { lines };
+}
+
+// ---------------------------------------------------------------- plan lanes-2 wave 9, tracer E6.3 (docs/tasks/TASK-LN3-E6.md)
+//
+// dcm-46q4 / dcm-iedr (E6 half): a condition an adversary gives a PC that ends on the adversary's damage (`endsOnCaster`:
+// Envelop, "until the Shark takes Severe damage"; Hold Them Down / Encumber / Smothering Grapple: "Major damage or more")
+// or on the bearer's roll (`endsOnRoll`: Slowed, Rattled, HF p.69: "until they roll with Hope"). The PC's sheet stores
+// the condition as a bare name (or, for a tag, an effect of the adversary's feature), so the plan's `conditionDetails`
+// (AdversaryPlan, E7) are stored as a marker effect beside it: id `ac:<n>`; its text says it in words and ends with
+// `; condition: <name>; ends: <json>` (schema version, the caster instance, the feature, `endsOnCaster`, `endsOnRoll`,
+// `endFear`). No stored shape changes: markers are ordinary `effects` entries (rule 7 needs no widening).
+//
+// - `withAdversaryConditionMarkers`: the sheet with the markers of the details aimed at this PC (the adversary path calls
+//   it after `writeSheetChanges`; caller follow-up in the task doc);
+// - `endAdversaryConditions`: the sheet after an occurrence: the caster side (`role: "caster"`, the caster instance's
+//   damage) or the bearer side (the PC's own roll); the condition goes with its marker unless another marker holds it;
+// - `endAdversaryConditionsForCaster`: the caster side over the whole party, saved and logged in the caller's undo group;
+// - `endAdversaryConditionsOnRoll`: the bearer side for a made roll (pure; the roll path saves it).
+
+const AC_PREFIX = "ac:";
+const AC_TAIL = /; condition: ([^;]+); ends: (\{.*\})$/;
+
+/** A condition detail the adversary plan lists (`AdversaryPlan.conditionDetails`, src/lib/domain/adversary-effects/run.ts). */
+export type AdversaryConditionDetailLike = {
+  targetId: string;
+  condition: ConditionRef;
+  endsOnCaster?: readonly EndEvent[];
+  endsOnRoll?: RollEnd;
+  endFear?: NumberSource;
+};
+
+/** What a marker records: the caster instance, the feature (`<adversaryId>/<feature>`, the tag effect's card id) and the ends. */
+export type AdversaryMarker = { id: string; casterId: string; cardId: string; condition: string; tag: boolean; ends: EffectEnds; source: string };
+
+type MarkerJson = { v: 1; by: string; src: string; tag?: 1; c?: readonly EndEvent[]; r?: RollEnd; f?: NumberSource };
+
+/** The marker of an adversary-given condition on a sheet, or null for any other effect. */
+export function adversaryMarkerOf(effect: Pick<Effect, "id" | "text" | "source">): AdversaryMarker | null {
+  if (!effect.id.startsWith(AC_PREFIX)) return null;
+  const m = AC_TAIL.exec(effect.text);
+  if (!m) return null;
+  let j: MarkerJson;
+  try {
+    j = JSON.parse(m[2]!) as MarkerJson;
+  } catch {
+    return null;
+  }
+  if (j.v !== 1 || typeof j.by !== "string" || typeof j.src !== "string") return null;
+  const ends: EffectEnds = {
+    duration: "manual",
+    ...(j.c ? { endsOnCaster: j.c } : {}),
+    ...(j.r ? { endsOnRoll: j.r } : {}),
+    // Its entry names a Fear cost: the GM's spend ends it too (`fearEndsOnSheet`).
+    ...(j.f ? { endFear: j.f, endsOn: ["gmSpendsFear" as const] } : {}),
+  };
+  return { id: effect.id, casterId: j.by, cardId: j.src, condition: m[1]!, tag: j.tag === 1, ends, source: effect.source };
+}
+
+/** The words of an end event on the caster ("takes Severe damage"). */
+function casterEventWords(e: EndEvent): string {
+  if (e === "takeSevere") return "takes Severe damage";
+  if (e === "majorDamage") return "takes Major damage or more";
+  if (e === "markHp") return "marks a Hit Point";
+  return e;
+}
+
+/** The marker effect of one detail, or null when the detail has no end the server runs (`endsOnCaster`, `endsOnRoll`). */
+export function adversaryConditionMarker(
+  existing: readonly Pick<Effect, "id">[],
+  input: { casterId: string; casterName: string; cardId: string; featureName: string; detail: AdversaryConditionDetailLike },
+): Effect | null {
+  const { detail } = input;
+  const casterEnds = detail.endsOnCaster ?? [];
+  if (casterEnds.length === 0 && detail.endsOnRoll === undefined) return null;
+  const tag = detail.condition.kind !== "standard";
+  const name = conditionName(detail.condition);
+  const json: MarkerJson = {
+    v: 1,
+    by: input.casterId,
+    src: input.cardId,
+    ...(tag ? { tag: 1 as const } : {}),
+    ...(casterEnds.length > 0 ? { c: casterEnds } : {}),
+    ...(detail.endsOnRoll ? { r: detail.endsOnRoll } : {}),
+    ...(detail.endFear ? { f: detail.endFear } : {}),
+  };
+  const roll = detail.endsOnRoll;
+  const words = [
+    ...casterEnds.map((e) => `${input.casterName} ${casterEventWords(e)}`),
+    ...(roll ? [`${roll.by === "caster" ? input.casterName : "they"} roll${roll.result === "withHope" ? " with Hope" : roll.result && roll.result !== "any" ? ` (${roll.result})` : ""}`] : []),
+  ];
+  const tail = `; condition: ${name}; ends: ${JSON.stringify(json)}`;
+  const head = `${name.charAt(0).toUpperCase()}${name.slice(1)} until ${words.join(" or ")}`;
+  let n = 1;
+  while (n < 99 && existing.some((e) => e.id === `${AC_PREFIX}${n}`)) n++;
+  return { id: `${AC_PREFIX}${n}`, source: input.featureName.slice(0, 80), text: `${head.slice(0, Math.max(0, 300 - tail.length))}${tail}`, until: "manual" };
+}
+
+/**
+ * The sheet with a marker for each detail aimed at `pcId` (replacing an older marker of the same caster and condition).
+ * Call after the condition itself is written (`writeSheetChanges`). The sheet holds at most 20 effects: the oldest goes.
+ */
+export function withAdversaryConditionMarkers(
+  sheet: CharacterSheet,
+  pcId: string,
+  input: { casterId: string; casterName: string; adversaryId: string; feature: string; details: readonly AdversaryConditionDetailLike[] },
+): CharacterSheet {
+  const cardId = `${input.adversaryId}/${input.feature}`;
+  let effects = sheet.effects;
+  for (const detail of input.details) {
+    if (detail.targetId !== pcId) continue;
+    const name = conditionName(detail.condition);
+    const kept = effects.filter((e) => {
+      const m = adversaryMarkerOf(e);
+      return m === null || m.casterId !== input.casterId || m.condition !== name;
+    });
+    const marker = adversaryConditionMarker(kept, { casterId: input.casterId, casterName: input.casterName, cardId, featureName: input.feature, detail });
+    if (marker !== null) effects = [...kept, marker].slice(-20);
+  }
+  return effects === sheet.effects ? sheet : { ...sheet, effects };
+}
+
+/** The tag effect `writeSheetChanges` wrote for an adversary's tag condition (`<effectKeyOf(cardId)>:<n>`, label first). */
+function isTagEffect(e: Effect, cardId: string, tag: string): boolean {
+  return e.id.startsWith(`${effectKeyOf(cardId)}:`) && (e.text.split("; ")[0] ?? "") === tag;
+}
+
+/**
+ * The sheet after `occ`. `role: "caster"` with `casterId`: the markers that caster instance made whose `endsOnCaster`
+ * holds (its damage). `role: "bearer"`: the markers whose `endsOnRoll` (or `gmSpendsFear`) holds. Each ended marker takes
+ * its condition with it (a standard condition unless another marker still holds it; a tag: its effect).
+ */
+export function endAdversaryConditions(
+  sheet: CharacterSheet,
+  occ: EndOccurrence,
+  opts: { role: EndRole; casterId?: string; only?: (marker: AdversaryMarker) => boolean },
+): { sheet: CharacterSheet; ended: AdversaryMarker[]; lines: string[] } {
+  const ended: AdversaryMarker[] = [];
+  for (const e of sheet.effects) {
+    const m = adversaryMarkerOf(e);
+    if (m === null || (opts.only && !opts.only(m))) continue;
+    if (opts.role === "caster" && m.casterId !== opts.casterId) continue;
+    if (endsOnOccurrence(m.ends, occ, opts.role)) ended.push(m);
+  }
+  if (ended.length === 0) return { sheet, ended, lines: [] };
+  const gone = new Set(ended.map((m) => m.id));
+  let effects = sheet.effects.filter((e) => !gone.has(e.id));
+  let conditions = sheet.conditions;
+  for (const m of ended) {
+    if (m.tag) {
+      effects = effects.filter((e) => !isTagEffect(e, m.cardId, m.condition));
+      continue;
+    }
+    if (!effects.some((e) => adversaryMarkerOf(e)?.condition === m.condition)) conditions = conditions.filter((c) => c !== m.condition);
+  }
+  const after = lapsedConditions(sheet, { ...sheet, effects, conditions }).sheet;
+  return { sheet: after, ended, lines: ended.map((m) => endedLine(sheet.name, `${m.condition.charAt(0).toUpperCase()}${m.condition.slice(1)}`, m.source)) };
+}
+
+/**
+ * The caster side over the party: the adversary instance `casterId` took damage (`occ`, a `damageTaken`) and every PC
+ * condition it gave that ends on that ends. Each changed sheet is saved and logged in `groupId` with its `before`, so undo
+ * puts it back with the hit. Callers: where a PC's attack or card damages an instance (follow-up in the task doc).
+ */
+export async function endAdversaryConditionsForCaster(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; casterId: string; occ: EndOccurrence; groupId: string; actorId: Id<"users"> },
+): Promise<{ lines: string[] }> {
+  const rows: { characterId: Id<"characters">; before: CharacterSheet; after: CharacterSheet; lines: string[] }[] = [];
+  for (const { character, sheet } of await partyMembers(ctx, input.campaignId)) {
+    if (!sheet.effects.some((e) => adversaryMarkerOf(e)?.casterId === input.casterId)) continue;
+    const out = endAdversaryConditions(sheet, input.occ, { role: "caster", casterId: input.casterId });
+    if (out.ended.length > 0) rows.push({ characterId: character._id, before: sheet, after: out.sheet, lines: out.lines });
+  }
+  await saveEnded(ctx, input.campaignId, input.groupId, input.actorId, rows);
+  return { lines: rows.flatMap((r) => r.lines) };
+}
+
+/** The bearer side for a PC's own made roll (Slowed, Rattled: "until they roll with Hope"); pure, the roll path saves it. */
+export function endAdversaryConditionsOnRoll(
+  sheet: CharacterSheet,
+  record: Pick<RollRecord, "kind" | "outcome">,
+  attack?: "weapon" | "spell" | "other",
+): { sheet: CharacterSheet; ended: AdversaryMarker[]; lines: string[] } {
+  const roll = endRollOf(record, attack);
+  if (roll === null) return { sheet, ended: [], lines: [] };
+  return endAdversaryConditions(sheet, { kind: "roll", roll }, { role: "bearer" });
+}
+
+// ---------------------------------------------------------------- the GM's Fear spend (dcm-kmr, dcm-6y00 (1))
+
+/** A Fear-endable effect or condition marker on a PC sheet or an instance, with its cost (the GM's list and button). */
+export type FearEnd = { effectId: string; label: string; source: string; fear: number };
+
+/** The sheet effects a GM Fear spend ends, with their cost (the sheet's tier for `byTier`; adversary markers with `endFear`). */
+export function fearEndsOnSheet(sheet: CharacterSheet, lookup?: SourceLookup): FearEnd[] {
+  const out: FearEnd[] = [];
+  for (const e of sheet.effects) {
+    const marker = adversaryMarkerOf(e);
+    const fear = marker !== null ? gmFearToEnd(marker.ends, tierForLevel(sheet.level)) : gmFearForEffect(sheet, e.id, lookup);
+    if (fear === null) continue;
+    out.push({ effectId: e.id, label: marker?.condition ?? e.text.split("; ")[0] ?? e.source, source: e.source, fear });
+  }
+  return out;
+}
+
+/** The instance modifiers and condition markers a GM Fear spend ends; `tierOf`: the caster's tier by token (default the caller's). */
+export function fearEndsOnInstance(instance: InstanceState, tierOf: (casterTokenId: string | undefined) => 1 | 2 | 3 | 4, lookup?: SourceLookup): FearEnd[] {
+  const out: FearEnd[] = [];
+  for (const e of instance.effects ?? []) {
+    const fear = gmFearForInstanceEffect(e, tierOf(instanceEffectSource(e)?.caster), lookup);
+    if (fear !== null) out.push({ effectId: e.id, label: e.label, source: e.source, fear });
+  }
+  return out;
+}
+
+/** `endByGmFear` with the adversary-given markers too (their `endFear`) and the feed lines; null when a Fear spend does not end it. */
+export function endSheetEffectByGmFear(sheet: CharacterSheet, effectId: string, lookup?: SourceLookup): { sheet: CharacterSheet; lines: string[] } | null {
+  const effect = sheet.effects.find((e) => e.id === effectId);
+  if (effect === undefined) return null;
+  if (adversaryMarkerOf(effect) !== null) {
+    const out = endAdversaryConditions(sheet, { kind: "event", event: "gmSpendsFear" }, { role: "bearer", only: (m) => m.id === effectId });
+    return out.ended.length > 0 ? { sheet: out.sheet, lines: out.lines } : null;
+  }
+  const out = endOnSheet(sheet, { kind: "event", event: "gmSpendsFear" }, { only: (e) => e.id === effectId, ...(lookup ? { lookup } : {}) });
+  if (out.ended.length === 0) return null;
+  return { sheet: withoutEffects(sheet, new Set([effectId])), lines: out.lines };
+}
+
+/** The instance after a GM Fear spend on one modifier or condition marker, with the feed lines; null when it does not end. */
+export function endInstanceEffectByGmFear(instance: InstanceState & { label: string }, effectId: string, lookup?: SourceLookup): { patch: NonNullable<ReturnType<typeof endInstanceEffects>["patch"]>; lines: string[] } | null {
+  const out = endInstanceEffects(instance, { kind: "event", event: "gmSpendsFear" }, { only: (e) => e.id === effectId, ...(lookup ? { lookup } : {}) });
+  return out.patch === null ? null : { patch: out.patch, lines: out.ended.map((e) => endedLine(instance.label, e.label, e.source)) };
 }
