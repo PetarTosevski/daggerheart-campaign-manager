@@ -445,25 +445,164 @@ waves:
           - convex/lib/combatMovement.ts
           - convex/lib/restHooks.ts
           - convex/lib/validators/characters.ts
+          - convex/featurePrompts.ts
+          - tests/convex/lane-c2-cloaked.test.ts
           - docs/tasks/TASK-LN-C2.md
         reads: []
         acceptance:
+          - "dcm-bxp.99.19.65: in a dim phase a rogue inside a torch/campfire radius is seen clearly; Charge damage is an attack and ends Cloaked"
           - "dcm-bxp.99.19.52, incl. the R5 note: attacks no longer strip Vanishing Act's Cloaked; a roll with Fear or the next rest ends it; cloakedByVanishingAct stop-gap removed"
-      - id: SRD
+      - id: SRD-A1
         label: w2-srd-data
-        title: SRD data - swap manual steps for the new vocabulary (one tracer per src/lib/srd file)
-        goal: SRD data - swap manual steps for the new vocabulary (one tracer per src/lib/srd file)
-        size: L
+        title: "SRD data - adversaries tier 1-2"
+        goal: "adversaries tier 1-2: manual steps the wave-4 vocabulary can now express are rewritten as automated steps; their tests prove it"
+        size: M
         depends_on: [E1, E2, E3, E4, E5, E6, E7, E8]
         owns:
-          - src/lib/srd/**
-          - tests/unit/card-effects/**
-          - tests/unit/feature-effects/**
-          - tests/unit/adversary-effects/**
-          - docs/tasks/TASK-LN-SRD-*.md
-        reads: []
+          - src/lib/srd/adversary-effects/t1-core.ts
+          - tests/unit/adversary-effects/t1-core.test.ts
+          - src/lib/srd/adversary-effects/t1-hf.ts
+          - tests/unit/adversary-effects/t1-hf.test.ts
+          - src/lib/srd/adversary-effects/t2-core.ts
+          - tests/unit/adversary-effects/t2-core.test.ts
+          - src/lib/srd/adversary-effects/t2-hf.ts
+          - tests/unit/adversary-effects/t2-hf.test.ts
+          - docs/tasks/TASK-LN-SRD-A1.md
+        reads: [src/lib/domain/card-effects/**, src/lib/domain/feature-effects/**, src/lib/domain/adversary-effects/**, src/lib/srd/*/classification.ts, src/lib/srd/*/index.ts]
         acceptance:
-          - "Split into one tracer per SRD file (all parallel); each rewrites its manual steps with the wave-4 vocabulary and its beads close; dcm-tal (Cracked Scales, countAtLeast) needs no engine work"
+          - "Beads closed by this tracer: dcm-27j, dcm-fev, dcm-s77, dcm-6n0p (t1-hf part), dcm-c5h (t2-hf Ravenous)"
+          - "Every remaining manual step in its files was checked against the wave-4 vocabulary; ones still not expressible keep a manual step and get a vocabulary-gap bead"
+          - "coverage.test.ts of its folder still passes (read only)"
+      - id: SRD-A2
+        label: w2-srd-data
+        title: "SRD data - adversaries tier 3-4"
+        goal: "adversaries tier 3-4: manual steps the wave-4 vocabulary can now express are rewritten as automated steps; their tests prove it"
+        size: M
+        depends_on: [E1, E2, E3, E4, E5, E6, E7, E8]
+        owns:
+          - src/lib/srd/adversary-effects/t3-core.ts
+          - tests/unit/adversary-effects/t3-core.test.ts
+          - src/lib/srd/adversary-effects/t3-hf.ts
+          - tests/unit/adversary-effects/t3-hf.test.ts
+          - src/lib/srd/adversary-effects/t4-core.ts
+          - tests/unit/adversary-effects/t4-core.test.ts
+          - src/lib/srd/adversary-effects/t4-hf.ts
+          - tests/unit/adversary-effects/t4-hf.test.ts
+          - docs/tasks/TASK-LN-SRD-A2.md
+        reads: [src/lib/domain/card-effects/**, src/lib/domain/feature-effects/**, src/lib/domain/adversary-effects/**, src/lib/srd/*/classification.ts, src/lib/srd/*/index.ts]
+        acceptance:
+          - "Beads closed by this tracer: dcm-730, dcm-rb0, dcm-zhc, dcm-6n0p (t3/t4 part), dcm-gx1, dcm-m5s, dcm-tal, dcm-vkp, dcm-zos, dcm-c5h (t4-hf)"
+          - "Every remaining manual step in its files was checked against the wave-4 vocabulary; ones still not expressible keep a manual step and get a vocabulary-gap bead"
+          - "coverage.test.ts of its folder still passes (read only)"
+      - id: SRD-C1
+        label: w2-srd-data
+        title: "SRD data - domain cards arcana blade bone codex dread grace"
+        goal: "domain cards arcana blade bone codex dread grace: manual steps the wave-4 vocabulary can now express are rewritten as automated steps; their tests prove it"
+        size: M
+        depends_on: [E1, E2, E3, E4, E5, E6, E7, E8]
+        owns:
+          - src/lib/srd/card-effects/arcana.ts
+          - tests/unit/card-effects/arcana.test.ts
+          - src/lib/srd/card-effects/blade.ts
+          - tests/unit/card-effects/blade.test.ts
+          - src/lib/srd/card-effects/bone.ts
+          - tests/unit/card-effects/bone.test.ts
+          - src/lib/srd/card-effects/codex.ts
+          - tests/unit/card-effects/codex.test.ts
+          - src/lib/srd/card-effects/dread.ts
+          - tests/unit/card-effects/dread.test.ts
+          - src/lib/srd/card-effects/grace.ts
+          - tests/unit/card-effects/grace.test.ts
+          - docs/tasks/TASK-LN-SRD-C1.md
+        reads: [src/lib/domain/card-effects/**, src/lib/domain/feature-effects/**, src/lib/domain/adversary-effects/**, src/lib/srd/*/classification.ts, src/lib/srd/*/index.ts]
+        acceptance:
+          - "Beads closed by this tracer: dcm-fnq, dcm-uyc"
+          - "Every remaining manual step in its files was checked against the wave-4 vocabulary; ones still not expressible keep a manual step and get a vocabulary-gap bead"
+          - "coverage.test.ts of its folder still passes (read only)"
+      - id: SRD-C2
+        label: w2-srd-data
+        title: "SRD data - domain cards midnight sage splendor valor"
+        goal: "domain cards midnight sage splendor valor: manual steps the wave-4 vocabulary can now express are rewritten as automated steps; their tests prove it"
+        size: M
+        depends_on: [E1, E2, E3, E4, E5, E6, E7, E8]
+        owns:
+          - src/lib/srd/card-effects/midnight.ts
+          - tests/unit/card-effects/midnight.test.ts
+          - src/lib/srd/card-effects/sage.ts
+          - tests/unit/card-effects/sage.test.ts
+          - src/lib/srd/card-effects/splendor.ts
+          - tests/unit/card-effects/splendor.test.ts
+          - src/lib/srd/card-effects/valor.ts
+          - tests/unit/card-effects/valor.test.ts
+          - docs/tasks/TASK-LN-SRD-C2.md
+        reads: [src/lib/domain/card-effects/**, src/lib/domain/feature-effects/**, src/lib/domain/adversary-effects/**, src/lib/srd/*/classification.ts, src/lib/srd/*/index.ts]
+        acceptance:
+          - "Beads closed by this tracer: dcm-94h, dcm-98d, dcm-z1a, dcm-qdm, dcm-sim, dcm-y45"
+          - "Every remaining manual step in its files was checked against the wave-4 vocabulary; ones still not expressible keep a manual step and get a vocabulary-gap bead"
+          - "coverage.test.ts of its folder still passes (read only)"
+      - id: SRD-F1
+        label: w2-srd-data
+        title: "SRD data - ancestry, heritage, beastforms, transformations, stances"
+        goal: "ancestry, heritage, beastforms, transformations, stances: manual steps the wave-4 vocabulary can now express are rewritten as automated steps; their tests prove it"
+        size: M
+        depends_on: [E1, E2, E3, E4, E5, E6, E7, E8]
+        owns:
+          - src/lib/srd/feature-effects/ancestry-core.ts
+          - tests/unit/feature-effects/ancestry-core.test.ts
+          - src/lib/srd/feature-effects/heritage-hf.ts
+          - tests/unit/feature-effects/heritage-hf.test.ts
+          - src/lib/srd/feature-effects/beastforms.ts
+          - tests/unit/feature-effects/beastforms.test.ts
+          - src/lib/srd/feature-effects/transformations.ts
+          - tests/unit/feature-effects/transformations.test.ts
+          - src/lib/srd/feature-effects/stances.ts
+          - tests/unit/feature-effects/stances.test.ts
+          - docs/tasks/TASK-LN-SRD-F1.md
+        reads: [src/lib/domain/card-effects/**, src/lib/domain/feature-effects/**, src/lib/domain/adversary-effects/**, src/lib/srd/*/classification.ts, src/lib/srd/*/index.ts]
+        acceptance:
+          - "Beads closed by this tracer: dcm-2a1, dcm-ab5, dcm-2g9"
+          - "Every remaining manual step in its files was checked against the wave-4 vocabulary; ones still not expressible keep a manual step and get a vocabulary-gap bead"
+          - "coverage.test.ts of its folder still passes (read only)"
+      - id: SRD-F2
+        label: w2-srd-data
+        title: "SRD data - classes assassin brawler bard wizard druid sorcerer guardian warrior"
+        goal: "classes assassin brawler bard wizard druid sorcerer guardian warrior: manual steps the wave-4 vocabulary can now express are rewritten as automated steps; their tests prove it"
+        size: M
+        depends_on: [E1, E2, E3, E4, E5, E6, E7, E8]
+        owns:
+          - src/lib/srd/feature-effects/assassin-brawler.ts
+          - tests/unit/feature-effects/assassin-brawler.test.ts
+          - src/lib/srd/feature-effects/bard-wizard.ts
+          - tests/unit/feature-effects/bard-wizard.test.ts
+          - src/lib/srd/feature-effects/druid-sorcerer.ts
+          - tests/unit/feature-effects/druid-sorcerer.test.ts
+          - src/lib/srd/feature-effects/guardian-warrior.ts
+          - tests/unit/feature-effects/guardian-warrior.test.ts
+          - docs/tasks/TASK-LN-SRD-F2.md
+        reads: [src/lib/domain/card-effects/**, src/lib/domain/feature-effects/**, src/lib/domain/adversary-effects/**, src/lib/srd/*/classification.ts, src/lib/srd/*/index.ts]
+        acceptance:
+          - "Beads closed by this tracer: dcm-40m, dcm-5z3, dcm-bxp.99.19.2"
+          - "Every remaining manual step in its files was checked against the wave-4 vocabulary; ones still not expressible keep a manual step and get a vocabulary-gap bead"
+          - "coverage.test.ts of its folder still passes (read only)"
+      - id: SRD-F3
+        label: w2-srd-data
+        title: "SRD data - classes ranger rogue seraph witch warlock"
+        goal: "classes ranger rogue seraph witch warlock: manual steps the wave-4 vocabulary can now express are rewritten as automated steps; their tests prove it"
+        size: M
+        depends_on: [E1, E2, E3, E4, E5, E6, E7, E8]
+        owns:
+          - src/lib/srd/feature-effects/ranger-rogue.ts
+          - tests/unit/feature-effects/ranger-rogue.test.ts
+          - src/lib/srd/feature-effects/seraph-witch.ts
+          - tests/unit/feature-effects/seraph-witch.test.ts
+          - src/lib/srd/feature-effects/warlock.ts
+          - tests/unit/feature-effects/warlock.test.ts
+          - docs/tasks/TASK-LN-SRD-F3.md
+        reads: [src/lib/domain/card-effects/**, src/lib/domain/feature-effects/**, src/lib/domain/adversary-effects/**, src/lib/srd/*/classification.ts, src/lib/srd/*/index.ts]
+        acceptance:
+          - "Beads closed by this tracer: dcm-a9n, dcm-nhr"
+          - "Every remaining manual step in its files was checked against the wave-4 vocabulary; ones still not expressible keep a manual step and get a vocabulary-gap bead"
+          - "coverage.test.ts of its folder still passes (read only)"
       - id: M
         label: w2-map-visuals
         title: Combat map visuals, sprites, night and lights
@@ -479,11 +618,23 @@ waves:
           - convex/lib/spriteSources.ts
           - convex/combatMapStyle.ts
           - convex/campaigns.ts
+          - convex/tables/campaigns.ts
+          - convex/lib/combatVision.ts
+          - src/lib/domain/combat-map/light.ts
+          - src/components/combat-map/vision/**
+          - src/app/(gm)/campaigns/[campaignId]/campaign-shell.tsx
+          - src/app/(gm)/campaigns/[campaignId]/time-arc.tsx
+          - src/app/(gm)/campaigns/[campaignId]/time-of-day.tsx
+          - tests/convex/lane-m-*.test.ts
+          - tests/unit/combat-map/lane-m-*.test.ts
+          - tests/e2e/lane-m-*.spec.ts
           - docs/tasks/TASK-LN-M.md
-        reads: [convex/lib/combatVision.ts]
+        reads: [.omc/plans/scene-chips.md]
         acceptance:
           - "Closes dcm-bxp.84, .86, .97, .54 (campaign Day/Dim/Night field set on the dashboard and the map header, players read-only; Witherwild phase drives it)"
           - "dcm-bxp.129: scene chips - approved 4 per setting + 4-6 per frame drafted from the books"
+          - "dcm-p40: Witherwild dim on the boundary days (lightOf in light.ts; combatMovement reads lightOf, so Cloaked follows)"
+          - "dcm-bxp.86, .97: pack extends in spriteSources; thumbnails draw hand-painted cells"
   # ------------------------------------------------------------------ wave 6: last
   - wave: 6
     tracers:
@@ -492,7 +643,7 @@ waves:
         title: Upload byte check on every upload path
         goal: Upload byte check on every upload path
         size: S
-        depends_on: [SRD, M, N1, N2]
+        depends_on: [SRD-A1, SRD-A2, SRD-C1, SRD-C2, SRD-F1, SRD-F2, SRD-F3, M, N1, N2]
         owns:
           - convex/lib/files.ts
           - convex/spritePacks.ts
