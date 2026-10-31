@@ -4,14 +4,14 @@ The server already stores effect areas (`combatAreas`, AreaSpec in src/lib/domai
 circles (`radius` = a Defined Range, centre on the caster / a target / a point) and walls (`shape: "wall"`, a line).
 Nothing draws them on the map yet. This is the art list the overlay needs.
 
-## Format (to match the map painter)
-- WebP with transparency, like public/sprite-packs/** (those are ~160 px objects).
-- **Circle areas: one tileable fill texture per kind, 256 x 256**, seamless on all four sides, semi-transparent
-  (the painter tiles it inside the circle and clips it), plus an optional **edge ring** (512 x 512, transparent centre)
-  if the kind should have a visible border.
-- **Walls: one tileable strip per kind, 256 x 64**, seamless left to right (the painter repeats it along the line).
-- Mid-tone and not too busy: tokens must stay readable on top. Both map styles (Classic and sprites) use the same art.
-- Optional: 2-4 frames for an animated kind (fire, fog drift), same size, named `-1`, `-2`, ...
+## Format (revised 2026-10-31: image models make no transparency)
+Generated as 6 Gemini sheets on magenta, same pipeline as the sprite packs. Prompts: docs/sprite-packs/area-effects-prompts.md
+and the artifact "Area Effect Sprites" (https://claude.ai/artifact/SZg9PS4F9a2KsC3Zhmyztn).
+- **Fills** (16, sheets fills-1..4): opaque seamless swatches; the overlay draws them see-through, clipped to the circle.
+- **Circle decals** (9, sheet decals): round rings cut out of magenta, drawn scaled to the area's circle.
+- **Walls** (4, sheet walls): long strips cut out of magenta, repeated along the wall line.
+Raw sheets go to C:\Users\Petar\sprite-sheets\area-effects\<sheet>.jpg (never committed). The overlay tracer (dcm-lqnt,
+wave 9) extends the cutter/build to write public/area-effects/<kind>.<hash>.webp and a manifest.
 
 ## Kinds (grouped by look; one texture can serve several effects)
 
@@ -36,9 +36,9 @@ Nothing draws them on the map yet. This is the art list the overlay needs.
 | `fortress` | circle (damageable) | Wild Fortress (Sage, CB p.339) | woven living-wood dome |
 | `generic` | circle / wall | any area without its own kind | neutral translucent tint with a dashed edge |
 
-That is 24 textures (21 circle fills, 3 wall strips). Start with `generic`, `darkness`, `fog` and `fire-wall`: they
+29 pieces in all, with extras: smoke, shadow (fills); ritual-dark, frost-glyph, shadow-pool (decals); shadow-line (wall). Start with `generic`, `darkness`, `fog` and `fire-wall`: they
 cover the areas that already run on the server (Dark Cloud, Cloud of darkness) and the next ones to land.
 
-## Where to put them
-`public/area-effects/<kind>.webp` (and `<kind>-edge.webp`, `<kind>-1.webp` ...). The overlay maps each AreaSpec to a
+## Where they end up
+`public/area-effects/<kind>.<hash>.webp`, built from the sheets. The overlay maps each AreaSpec to a
 kind by its label (a small table in code), falling back to `generic`.
