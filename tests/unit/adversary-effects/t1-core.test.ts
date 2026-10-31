@@ -145,6 +145,23 @@ const stepsDeep = (steps: readonly AdversaryStep[]): AdversaryStep[] =>
     return [s];
   });
 
+/** Plan lanes, SRD-A1: every object of `kind` anywhere in an entry (steps, table rows, `ifUnable`, condition mods, areas). */
+const partsOf = (adversaryId: string, feature: string, kind: string): Record<string, unknown>[] => {
+  const walk = (v: unknown): Record<string, unknown>[] =>
+    Array.isArray(v)
+      ? v.flatMap(walk)
+      : v !== null && typeof v === "object"
+        ? [...((v as { kind?: unknown }).kind === kind ? [v as Record<string, unknown>] : []), ...Object.values(v).flatMap(walk)]
+        : [];
+  return walk(effectOf(adversaryId, feature).uses);
+};
+/** The entry's condition step for `name` (a tag or a standard condition). */
+const conditionStep = (adversaryId: string, feature: string, name: string) =>
+  partsOf(adversaryId, feature, "condition").find((c) => {
+    const ref = c.condition as { kind: string; tag?: string; condition?: string };
+    return ref.tag === name || ref.condition === name;
+  });
+
 // ---------------------------------------------------------------- the table
 
 describe("the tier 1 core table (Q15)", () => {
@@ -294,12 +311,14 @@ describe("shared features", () => {
     expect(attempt(id, "Slow", [], { useId: "prepare", tokens: 1 })).toMatchObject({ ok: false, reason: "requirement" });
   });
 
-  it.each(["green-ooze", "tiny-green-ooze"])("%s Acidic Form: a hit target marks an Armor Slot without its benefit; no slot is a manual extra HP", (id) => {
+  it.each(["green-ooze", "tiny-green-ooze"])("%s Acidic Form: a hit target marks an Armor Slot without its benefit; no slot is an extra HP (ifUnable)", (id) => {
     expect(fired(id, { kind: "onHit", attack: "standard" })).toContain("Acidic Form:main:auto");
     const p = plan(id, "Acidic Form", [], { spotlit: false, trigger: { subject: pc("mira", { armor: 1 }) } });
     expect(after(p, "mira")).toMatchObject({ armor: 2 });
     expect(ofKind(p, "mark")).toEqual([expect.objectContaining({ targetId: "mira", track: "armor", amount: 1, noBenefit: true })]);
-    expect(prompts(p, "manual")[0]).toMatchObject({ targetIds: ["mira"] });
+    expect(prompts(p, "manual")).toEqual([]);
+    // CB p.215: "If they can't mark an Armor Slot, they must mark an additional HP" (dcm-18i).
+    expect(partsOf(id, "Acidic Form", "markArmor")[0]!.ifUnable).toEqual([{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 1 } }]);
   });
 
   it.each([
@@ -334,7 +353,7 @@ describe("Acid Burrower (CB p.210)", () => {
     expect(ofKind(p, "condition")).toEqual([expect.objectContaining({ targetId: "goblin", condition: { kind: "standard", condition: "vulnerable" }, endsWhen: "until they next act" })]);
   });
 
-  it("Spit Acid: one roll against all in front within Close; hits take 2d6 and a forced Armor Slot, with the no-slot rider manual", () => {
+  it("Spit Acid: one roll against all in front within Close; hits take 2d6 and a forced Armor Slot; no slot: an HP and a Fear", () => {
     // d20 12 + 3 = 15: hits Evasion 12, misses 16. 2d6 = 3 + 4.
     const p = plan("acid-burrower", "Spit Acid", [12, 3, 4], { targets: [pc("mira"), pc("bram", { evasion: 16 })] });
     expect(p.hits).toEqual([
@@ -342,11 +361,16 @@ describe("Acid Burrower (CB p.210)", () => {
       { id: "bram", hit: false },
     ]);
     expect(p.incoming).toEqual([{ targetId: "mira", amount: 7, type: "physical", direct: false, forcedArmor: 1, critical: false, attackTotal: 15 }]);
-    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ targetIds: ["mira"] })]);
+    expect(prompts(p, "manual")).toEqual([]);
     expect(p.fearSpent).toBe(0);
+    // CB p.210: "If they can't mark an Armor Slot, they must mark an additional HP and you gain a Fear."
+    expect(partsOf("acid-burrower", "Spit Acid", "markArmor")[0]!.ifUnable).toEqual([
+      { kind: "markHp", to: "targets", amount: { kind: "fixed", value: 1 } },
+      { kind: "fear", to: "self", change: "gain", amount: { kind: "fixed", value: 1 } },
+    ]);
   });
 
-  it("Acid Bath: a reaction to Severe damage, 1d10 physical to everyone within Close; the blood pool is manual", () => {
+  it("Acid Bath: a reaction to Severe damage, 1d10 physical to everyone within Close; the blood pool is an area (1d6 on entering)", () => {
     expect(fired("acid-burrower", { kind: "onDamaged", stage: "did", severity: "severe" })).toEqual(["Acid Bath:main:reaction"]);
     expect(fired("acid-burrower", { kind: "onDamaged", stage: "did", severity: "major" })).toEqual([]);
     const p = plan("acid-burrower", "Acid Bath", [6], { spotlit: false, targets: [pc("mira"), pc("bram")] });
@@ -354,17 +378,28 @@ describe("Acid Burrower (CB p.210)", () => {
       ["mira", 6, "physical"],
       ["bram", 6, "physical"],
     ]);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    const [pool] = ofKind(p, "area");
+    expect(pool!.area).toMatchObject({ label: "Acidic blood", centre: "point", radius: "veryClose", side: "all", excludeOwner: true, duration: "scene" });
+    // "all creatures other than the Burrower who move through it take 1d6 physical damage"
+    expect(pool!.area.onEnter).toEqual([{ kind: "damage", to: "triggerSubject", roll: { kind: "dice", dice: { count: { kind: "fixed", value: 1 }, sides: 6 } }, type: "physical" }]);
   });
 });
 
 describe("Archer Guard (CB p.212)", () => {
-  it("Hobbling Shot: on a hit, mark a Stress to deal 1d12+3; the Agility disadvantage if HP is marked is manual", () => {
+  it("Hobbling Shot: on a hit, mark a Stress to deal 1d12+3; a target marking HP is Hobbled (Agility disadvantage) until they clear an HP", () => {
     // d20 13 + 1 = 14 hits; 1d12 = 8, + 3 = 11.
     const p = plan("archer-guard", "Hobbling Shot", [13, 8], { targets: [pc("mira")] });
     expect(p.self.after.stress).toBe(1);
     expect(p.incoming[0]).toMatchObject({ targetId: "mira", amount: 11, type: "physical" });
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    // The HP is marked in the reaction window, after the plan: the gate reads it there (dcm-sos, dcm-ehgy).
+    expect(conditionStep("archer-guard", "Hobbling Shot", "Hobbled")).toMatchObject({
+      when: ["hit", "targetMarkedHp"],
+      duration: "manual",
+      endsWhen: "until they clear at least 1 HP",
+      mods: [{ kind: "disadvantage", on: "agility" }],
+    });
     const miss = plan("archer-guard", "Hobbling Shot", [5], { targets: [pc("mira")] });
     expect(miss.self.after.stress).toBe(0);
     expect(miss.incoming).toEqual([]);
@@ -579,12 +614,31 @@ describe("Giant Scorpion (CB p.211)", () => {
     expect(p.incoming.map((h) => h.amount)).toEqual([11, 11]); // 1d12+2 rolled once (R9)
   });
 
-  it("Venomous Stinger: on a hit, a tapped Fear deals 1d4+4 and Poisons until a rest; the d6 rider is manual", () => {
+  it("Venomous Stinger: on a hit, a tapped Fear deals 1d4+4 and Poisons until a rest; Poisoned rolls a d6 before each action roll", () => {
     const p = plan("giant-scorpion", "Venomous Stinger", [12, 2], { targets: [pc("mira")], optionals: ["poison"] });
     expect(p.fearSpent).toBe(1);
     expect(p.incoming[0]).toMatchObject({ amount: 6 });
     expect(ofKind(p, "condition")[0]).toMatchObject({ condition: { kind: "tag", tag: "Poisoned" }, duration: "rest" });
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    // "roll a d6 before they make an action roll. On a result of 4 or lower, they must mark a Stress" (dcm-kti).
+    expect(conditionStep("giant-scorpion", "Venomous Stinger", "Poisoned")!.mods).toEqual([
+      {
+        kind: "bearerRider",
+        rider: {
+          on: "actionRoll",
+          timing: "before",
+          steps: [
+            {
+              kind: "check",
+              dice: { count: { kind: "fixed", value: 1 }, sides: 6 },
+              test: { kind: "totalAtMost", value: 4 },
+              then: [{ kind: "markStress", to: "self", amount: { kind: "fixed", value: 1 } }],
+              otherwise: [],
+            },
+          ],
+        },
+      },
+    ]);
     expect(plan("giant-scorpion", "Venomous Stinger", [12], { targets: [pc("mira")] }).incoming).toEqual([]);
   });
 });
@@ -595,7 +649,9 @@ describe("Glass Snake (CB p.212)", () => {
     expect(fired("glass-snake", { kind: "onAttacked", stage: "succeeded", attackerBand: "close" })).toEqual([]);
     const p = plan("glass-snake", "Armor-Shredding Shards", [], { spotlit: false, trigger: { source: pc("rook") } });
     expect(after(p, "rook")!.armor).toBe(1);
-    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ targetIds: ["rook"] })]);
+    expect(prompts(p, "manual")).toEqual([]);
+    // "If they can't mark an Armor Slot, they must mark an HP."
+    expect(partsOf("glass-snake", "Armor-Shredding Shards", "markArmor")[0]!.ifUnable).toEqual([{ kind: "markHp", to: "targets", amount: { kind: "fixed", value: 1 } }]);
   });
 
   it("Spinning Serpent: mark a Stress; attack all within Very Close for 1d6+1", () => {
@@ -618,12 +674,16 @@ describe("Glass Snake (CB p.212)", () => {
 });
 
 describe("Green Ooze (CB p.215)", () => {
-  it("Envelop: a standard attack; on a hit 2 Stress and Enveloped until Severe damage; the per-roll Stress is manual", () => {
+  it("Envelop: a standard attack; on a hit 2 Stress and Enveloped until the Ooze takes Severe damage; a Stress per action roll", () => {
     // d20 12 + 1 = 13; 1d6 = 4, + 1 = 5 magic.
     const p = plan("green-ooze", "Envelop", [12, 4], { targets: [pc("mira")] });
     expect(p.incoming[0]).toMatchObject({ amount: 5, type: "magic" });
     expect(after(p, "mira")).toMatchObject({ stress: 2, tags: ["Enveloped"] });
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(conditionStep("green-ooze", "Envelop", "Enveloped")).toMatchObject({
+      endsOnCaster: ["takeSevere"],
+      mods: [{ kind: "bearerRider", rider: { on: "actionRoll", steps: [{ kind: "markStress", to: "self", amount: { kind: "fixed", value: 1 } }] } }],
+    });
   });
 });
 
@@ -700,8 +760,14 @@ describe("Jagged Knife Hexer (CB p.213)", () => {
 });
 
 describe("Jagged Knife Kneebreaker (CB p.213)", () => {
-  it("I've Got 'Em: the double damage from other adversaries is manual", () => {
-    expect(prompts(plan("jagged-knife-kneebreaker", "I've Got 'Em", [], { spotlit: false }), "manual")).toHaveLength(1);
+  it("I've Got 'Em: Hold Them Down's Restrained carries double damage from other attackers", () => {
+    expect(prompts(plan("jagged-knife-kneebreaker", "I've Got 'Em", [], { spotlit: false }), "manual")).toEqual([]);
+    // "Creatures Restrained by the Kneebreaker take double damage from attacks by other adversaries." (dcm-346)
+    expect(conditionStep("jagged-knife-kneebreaker", "Hold Them Down", "restrained")).toMatchObject({
+      endsOnCaster: ["majorDamage"],
+      mods: [{ kind: "attackedRider", rider: { by: "others", damage: { kind: "multiply", factor: 2 } } }],
+    });
+    expect(conditionStep("jagged-knife-kneebreaker", "Hold Them Down", "vulnerable")).toMatchObject({ endsOnCaster: ["majorDamage"] });
   });
 
   it("Hold Them Down: a hit deals no damage but Restrains and makes Vulnerable", () => {
@@ -762,13 +828,16 @@ describe("Merchant (CB p.214)", () => {
     roll: { kind: "action", trait: "presence", success, withHope: true, withFear: false, ...(total !== undefined ? { total } : {}) },
   });
 
-  it("Preferential Treatment: a Presence success earns a discount; a failure costs more and earns disadvantage (manual)", () => {
+  it("Preferential Treatment: a Presence success earns a discount; a failure costs more (manual) and earns disadvantage", () => {
     expect(fired("merchant", presence(true, 16))).toEqual(["Preferential Treatment:discount:auto"]);
     expect(fired("merchant", presence(false, 15))).toEqual(["Preferential Treatment:markup:auto"]);
     expect(prompts(plan("merchant", "Preferential Treatment", [], { useId: "discount", trigger: { subject: pc("mira") } }), "manual")).toHaveLength(1);
     const markup = plan("merchant", "Preferential Treatment", [], { useId: "markup", trigger: { subject: pc("mira") } });
     expect(after(markup, "mira")!.tags).toEqual(["Out of Favor"]);
-    expect(prompts(markup, "manual")).toHaveLength(1);
+    expect(prompts(markup, "manual")).toEqual([expect.objectContaining({ text: "The PC must pay more." })]);
+    expect(conditionStep("merchant", "Preferential Treatment", "Out of Favor")!.mods).toEqual([
+      { kind: "disadvantage", on: "presence", situation: "A Presence Roll against the Merchant" },
+    ]);
   });
 
   it("The Runaround: a Presence Roll of 14 or lower against it costs a Stress", () => {
@@ -893,8 +962,8 @@ describe("Petty Noble (CB p.216)", () => {
   it("My Land, My Rules: on their land, social actions against the Noble have disadvantage", () => {
     expect(attempt("petty-noble", "My Land, My Rules", [])).toMatchObject({ ok: false, reason: "requirement" });
     const p = plan("petty-noble", "My Land, My Rules", [], { situations: ["The Noble is on their land"] });
-    expect(p.modifiers).toEqual([{ kind: "mod", mod: { kind: "disadvantageAgainst", on: "presence" } }]);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(p.modifiers).toEqual([{ kind: "mod", mod: { kind: "disadvantageAgainst", on: "action", situation: "A social action against the Noble on their land" } }]);
+    expect(prompts(p, "manual")).toEqual([]);
   });
 
   it("Guards, Seize Them!: once per scene, mark a Stress to summon 1d4 Bladed Guards at Far", () => {
@@ -904,11 +973,17 @@ describe("Petty Noble (CB p.216)", () => {
     expect(attempt("petty-noble", "Guards, Seize Them!", [2], { featureUses: p.self.featureUses })).toMatchObject({ ok: false, reason: "exhausted" });
   });
 
-  it("Exile: a Fear marks the target Exiled; the social disadvantage is manual", () => {
-    const p = plan("petty-noble", "Exile", [], { fearConfirmed: true, targets: [pc("mira")] });
+  it("Exile: a Fear exiles the target and their allies (the picked PCs), with disadvantage in social situations in the domain", () => {
+    const p = plan("petty-noble", "Exile", [], { fearConfirmed: true, targets: [pc("mira")], picked: [pc("bram")] });
     expect(p.fearSpent).toBe(1);
     expect(after(p, "mira")!.tags).toEqual(["Exiled"]);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(after(p, "bram")!.tags).toEqual(["Exiled"]);
+    expect(prompts(p, "manual")).toEqual([]);
+    const exiled = { kind: "disadvantage", on: "action", situation: "A social situation within the Noble's domain" };
+    expect(partsOf("petty-noble", "Exile", "condition").map((c) => [c.to, c.mods])).toEqual([
+      ["targets", [exiled]],
+      ["picked", [exiled]],
+    ]);
   });
 });
 
@@ -941,15 +1016,20 @@ describe("Pirate Tough (CB p.216)", () => {
 });
 
 describe("Red Ooze (CB p.216)", () => {
-  it("Creeping Fire is a manual movement limit", () => {
-    expect(prompts(plan("red-ooze", "Creeping Fire", [], { spotlit: false }), "manual")).toHaveLength(1);
+  it("Creeping Fire is a movement limit: Very Close only", () => {
+    const p = plan("red-ooze", "Creeping Fire", [], { spotlit: false });
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(p.modifiers).toEqual([{ kind: "mod", mod: expect.objectContaining({ kind: "moveLimit", maxRange: "veryClose" }) }]);
   });
 
-  it("Ignite: 1d8 magic and Ignited until a Finesse Roll (14); the per-roll damage is manual", () => {
+  it("Ignite: 1d8 magic and Ignited until a Finesse Roll (14); 1d4 magic each action roll while Ignited", () => {
     const p = plan("red-ooze", "Ignite", [11, 7], { targets: [pc("mira")] });
     expect(p.incoming[0]).toMatchObject({ amount: 7, type: "magic" });
     expect(after(p, "mira")!.tags).toEqual(["Ignited"]);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(conditionStep("red-ooze", "Ignite", "Ignited")!.mods).toEqual([
+      { kind: "bearerRider", rider: { on: "actionRoll", steps: [{ kind: "damage", to: "self", roll: { kind: "dice", dice: { count: { kind: "fixed", value: 1 }, sides: 4 } }, type: "magic" }] } },
+    ]);
   });
 });
 
@@ -1020,10 +1100,11 @@ describe("Skeleton Warrior (CB p.217)", () => {
     expect(attempt("skeleton-warrior", "Won't Stay Dead", [6], { self: dead })).toMatchObject({ ok: false, reason: "requirement" });
     const six = plan("skeleton-warrior", "Won't Stay Dead", [6], { self: dead, situations, spotlit: false });
     expect(ofKind(six, "spotlight")).toEqual([{ kind: "spotlight", who: "self" }]);
-    expect(six.self.after.hp).toBe(0);
-    expect(prompts(six, "manual")).toHaveLength(1);
+    // dcm-145: the revive step clears every HP and lifts `defeated`.
+    expect([six.self.after.hp, six.self.after.defeated, six.revived]).toEqual([0, false, ["self"]]);
+    expect(prompts(six, "manual")).toEqual([]);
     const five = plan("skeleton-warrior", "Won't Stay Dead", [5], { self: dead, situations });
-    expect([five.self.after.hp, prompts(five, "manual")]).toEqual([3, []]);
+    expect([five.self.after.hp, five.self.after.defeated, five.revived]).toEqual([3, true, []]);
   });
 });
 
@@ -1049,9 +1130,14 @@ describe("Spellblade (CB p.217)", () => {
 });
 
 describe("Swarm of Rats (CB p.218)", () => {
-  it("In Your Face: PCs in its Melee range are tagged; their disadvantage against others is manual", () => {
-    expect(passivesOf("swarm-of-rats").auras).toEqual([{ kind: "conditionAura", condition: { kind: "tag", tag: "In Your Face" }, to: "pcs", within: "melee" }]);
-    expect(prompts(plan("swarm-of-rats", "In Your Face", [], { spotlit: false }), "manual")).toHaveLength(1);
+  it("In Your Face: PCs in its Melee range are tagged and have disadvantage on attacks against anyone but the Swarm", () => {
+    expect(passivesOf("swarm-of-rats").auras).toEqual([
+      { kind: "conditionAura", condition: { kind: "tag", tag: "In Your Face" }, to: "pcs", within: "melee" },
+      { kind: "mod", mod: { kind: "disadvantage", on: "attack", unlessTarget: "caster" }, to: "pcs", within: "melee" },
+    ]);
+    const p = plan("swarm-of-rats", "In Your Face", [], { spotlit: false });
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(p.modifiers).toContainEqual({ kind: "mod", mod: { kind: "disadvantage", on: "attack", unlessTarget: "caster" }, to: "pcs", within: "melee" });
   });
 });
 
@@ -1083,8 +1169,10 @@ describe("Tangle Bramble (CB p.218)", () => {
       "Drain and Multiply:main:reaction",
     ]);
     const p = plan("tangle-bramble", "Drain and Multiply", [], { situations: ["Three or more Tangle Bramble Minions are within Close range"] });
-    expect(ofKind(p, "summon")).toEqual([{ kind: "summon", label: "Tangle Bramble Swarm", count: 1, adversaryId: "tangle-bramble-swarm", range: "close" }]);
-    expect(prompts(p, "manual")).toHaveLength(1);
+    // The Horde's HP is the number of Minions combined (dcm-145): the Tangle Brambles within Close range, itself included.
+    expect(ofKind(p, "summon")).toEqual([expect.objectContaining({ label: "Tangle Bramble Swarm", count: 1, adversaryId: "tangle-bramble-swarm", range: "close" })]);
+    expect(partsOf("tangle-bramble", "Drain and Multiply", "summon")[0]!.hp).toEqual({ kind: "creatureCount", side: "allies", within: "close", name: "Tangle Bramble" });
+    expect(prompts(p, "manual")).toEqual([expect.objectContaining({ text: "Remove the combined Minions." })]);
   });
 });
 
@@ -1095,11 +1183,16 @@ describe("Tangle Bramble Swarm (CB p.218)", () => {
     expect(p.incoming[0]).toMatchObject({ amount: 13, direct: true });
   });
 
-  it("Encumber: a hit gives a bramble token and Restrains; tokens and the rest are manual", () => {
+  it("Encumber: a hit gives a bramble token on the PC and Restrains; 3 or more make them Vulnerable; the Finesse removal is manual", () => {
     expect(fired("tangle-bramble-swarm", { kind: "onHit", attack: "standard" })).toEqual(["Encumber:main:reaction"]);
     const p = plan("tangle-bramble-swarm", "Encumber", [], { trigger: { subject: pc("mira") } });
-    expect(after(p, "mira")).toMatchObject({ conditions: ["restrained"], tags: ["Bramble tokens"] });
+    expect(after(p, "mira")).toMatchObject({ conditions: ["restrained"] });
+    expect(partsOf("tangle-bramble-swarm", "Encumber", "tokens").filter((t) => t.to !== undefined)).toEqual([{ kind: "tokens", to: "targets", op: "add", amount: { kind: "fixed", value: 1 }, holder: "recipient", name: "bramble" }]);
+    const bramble3 = { kind: "targetCheck", check: { kind: "tokens", who: "target", name: "bramble", atLeast: 3 } };
+    expect(conditionStep("tangle-bramble-swarm", "Encumber", "vulnerable")).toMatchObject({ when: [bramble3], endsOnCaster: ["majorDamage"] });
     expect(prompts(p, "manual")).toHaveLength(1);
+    // Crush reads the same tokens (dcm-xp0).
+    expect(useOf("tangle-bramble-swarm", "Crush").requires).toEqual([{ kind: "situation", text: "The target has 3 or more bramble tokens", check: bramble3.check }]);
   });
 });
 
@@ -1113,11 +1206,16 @@ describe("Tiny Red Ooze (CB p.216)", () => {
 });
 
 describe("Weaponmaster (CB p.218)", () => {
-  it("Goading Strike: a standard attack; on a hit a Stress Taunts the target; the disadvantage is manual", () => {
+  it("Goading Strike: a standard attack; on a hit a Stress Taunts the target (disadvantage against others) until their next successful attack", () => {
     const p = plan("weaponmaster", "Goading Strike", [12, 6], { targets: [pc("mira")] });
     expect(p.incoming[0]).toMatchObject({ amount: 8 });
     expect(p.self.after.stress).toBe(1);
     expect(after(p, "mira")!.tags).toEqual(["Taunted"]);
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(conditionStep("weaponmaster", "Goading Strike", "Taunted")).toMatchObject({
+      endsOn: ["attackSucceeds"],
+      mods: [{ kind: "disadvantage", on: "attack", unlessTarget: "caster" }],
+    });
     const tired = plan("weaponmaster", "Goading Strike", [12, 6], { self: selfOf("weaponmaster", { stress: 3 }), targets: [pc("mira")] });
     expect(tired.incoming[0]!.amount).toBe(8);
     expect(after(tired, "mira")).toBeUndefined();

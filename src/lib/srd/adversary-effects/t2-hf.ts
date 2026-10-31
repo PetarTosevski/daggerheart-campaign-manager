@@ -23,13 +23,16 @@ import type {
   AdversaryStep,
 } from "../../domain/adversary-effects/types";
 import type {
+  BearerRider,
   ConditionRef,
   DamageRoll,
   DamageType,
   DiceExpr,
   DieSides,
   Gate,
+  Mod,
   NumberSource,
+  Step,
   Range,
   RollSpec,
   SaveDifficulty,
@@ -71,6 +74,39 @@ const tag = (name: string, implies?: readonly StandardCondition[]): ConditionRef
 
 /** The printed standard attack's damage on a hit (Horde X and passive damage changes applied by the runner). */
 const standardHit: AdversaryStep = { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "standardAttack" }, type: "weapon" };
+/** Plan lanes, SRD-A1: a rider on a condition's bearer (dcm-kti); in `steps` `self` is the bearer, `triggerSource` this adversary. */
+const rider = (on: BearerRider["on"], steps: readonly Step[], extra: Omit<BearerRider, "on" | "steps"> = {}): Mod => ({ kind: "bearerRider", rider: { on, steps, ...extra } });
+const STRESS_ON = (on: BearerRider["on"]): Mod => rider(on, [{ kind: "markStress", to: "self", amount: one }]);
+/** Poisoned (HF p.74): "roll a d6 before they make an action roll. On a result of 4 or lower, they must mark a Stress." */
+const POISONED: Mod = rider(
+  "actionRoll",
+  [{ kind: "check", dice: diceExpr(1, 6), test: { kind: "totalAtMost", value: 4 }, then: [{ kind: "markStress", to: "self", amount: one }], otherwise: [] }],
+  { timing: "before" },
+);
+/**
+ * Sleepy (HF p.79): "make a Presence Reaction Roll before they make an action roll. On a failure, they must mark 2 Stress
+ * or fall asleep until they take damage." No Difficulty printed: the Sprite's, 13 (CB p.193). The bearer picks.
+ */
+const SLEEPY_SAVE: Step = {
+  kind: "save",
+  to: "self",
+  trait: "presence",
+  difficulty: { kind: "fixed", value: 13 },
+  onSuccess: [],
+  onFail: [
+    {
+      kind: "choose",
+      id: "sleepy",
+      label: "Mark 2 Stress or fall asleep",
+      options: [
+        { id: "stress", label: "Mark 2 Stress", steps: [{ kind: "markStress", to: "self", amount: fixed(2) }] },
+        { id: "asleep", label: "Fall asleep", steps: [{ kind: "condition", to: "self", condition: { kind: "tag", tag: "Asleep" }, duration: "manual", endsWhen: "until they take damage", endsOn: ["takeDamage"] }] },
+      ],
+    },
+  ],
+};
+/** "+1 per ally within Very Close range of the target" (dcm-ttz): the adversary's allies, itself excluded. */
+const alliesNearTarget = (name?: string): NumberSource => ({ kind: "creatureCount", side: "allies", within: "veryClose", of: "target", excludeSelf: true, ...(name ? { name } : {}) });
 const hitDamage = (roll: DamageRoll, type: DamageType, direct = false): AdversaryStep => ({
   kind: "damage",
   to: "targets",
@@ -181,6 +217,7 @@ const unleashTheBeast = (adversaryId: string): AdversaryFeatureEffect => ({
       costs: [fear()],
       steps: [
         { kind: "condition", to: "self", condition: BESTIAL, duration: "manual", endsWhen: "the form ends" },
+        // No modifier widens an adversary's move before its action (dcm-z5a6).
         { kind: "manual", to: "self", text: "In bestial form it can move up to Far range instead of Close range before taking an action." },
       ],
     },
@@ -211,18 +248,14 @@ const berserkerRage = (adversaryId: string, bonus: number): AdversaryFeatureEffe
   ],
 });
 
-/** Pack Fury: "gains a +1 bonus to their attack rolls for each ally within Very Close range of their attack's target." */
+/**
+ * Pack Fury: "gains a +1 bonus to their attack rolls for each ally within Very Close range of their attack's target."
+ * A passive attack bonus that counts the allies near the target (dcm-ttz).
+ */
 const packFury = (adversaryId: string): AdversaryFeatureEffect => ({
   adversaryId,
   feature: "Pack Fury",
-  uses: [
-    {
-      id: "main",
-      activation: { kind: "auto", trigger: { kind: "onAttack", stage: "before", attack: "any" } },
-      needsSpotlight: false,
-      steps: [{ kind: "manual", to: "self", text: "+1 to this attack roll for each ally within Very Close range of the target." }],
-    },
-  ],
+  uses: [passive([{ kind: "mod", mod: { kind: "stat", stat: "attack", delta: alliesNearTarget() } }])],
 });
 
 /** Burrowing / Deep Diver: burrow or surface when it moves; while underground resistant (or immune) to all damage, can't attack. */
@@ -258,6 +291,105 @@ const action = (use: Omit<AdversaryFeatureUse, "id" | "activation" | "needsSpotl
 const resistance = (type: DamageType) => passive([{ kind: "mod", mod: { kind: "resistance", type, level: "resistant" } }]);
 
 // ---------------------------------------------------------------- the table
+
+/**
+ * Gobstalker Tentacle Rays (HF p.75): the eight beams, the rows of its d8 table and the options of a Fear-bought pick
+ * (dcm-27j). A row holds card steps; every step is gated on the use's hit.
+ */
+const TENTACLE_BEAMS: readonly { id: string; label: string; steps: readonly Step[] }[] = [
+  {
+    // "The Gobstalker Beguiles the target. While Beguiled, the target sees the Gobstalker as a friend and can't attack it.
+    // Additionally, when a PC rolls with Fear, a Beguiled PC must mark a Stress or attack a target chosen by the Gobstalker.
+    // A Beguiled PC must succeed on an Instinct Roll (16) to clear the condition." No mod bars attacking one creature or
+    // forces an attack on the GM's pick (dcm-zi3k).
+    id: "1",
+    label: "Beguile",
+    steps: [
+      { kind: "condition", to: "targets", when: ["hit"], condition: tag("Beguiled"), duration: "manual", endsWhen: "they succeed on an Instinct Roll (16)" },
+      { kind: "manual", to: "targets", when: ["hit"], text: "Beguiled: can't attack the Gobstalker; when a PC rolls with Fear, mark a Stress or attack a target the Gobstalker chooses." },
+    ],
+  },
+  {
+    // "The target takes 2d8 magic damage and must mark an Armor Slot without receiving its benefits (they can still use
+    // armor to reduce the damage). If they can't, double the damage." (`ifUnable`, dcm-18i)
+    id: "2",
+    label: "Corrode",
+    steps: [
+      { kind: "damage", to: "targets", when: ["hit"], roll: dmg(2, 8), type: "magic" },
+      {
+        kind: "markArmor",
+        to: "targets",
+        when: ["hit"],
+        amount: one,
+        noBenefit: true,
+        ifUnable: [{ kind: "modifyDamage", to: "targets", change: { kind: "multiply", factor: 2 }, note: "They can't mark an Armor Slot: double the damage" }],
+      },
+    ],
+  },
+  {
+    // "The target must mark all HP, but they can spend any number of Hope to reduce the number of HP marked this way by an
+    // equal amount." The PC's Hope spend comes before the marks: no step asks them (dcm-zi3k).
+    id: "3",
+    label: "Doom",
+    steps: [{ kind: "manual", to: "targets", when: ["hit"], text: "The target marks all their HP, less 1 HP for each Hope they choose to spend." }],
+  },
+  {
+    // "The target falls into a Deep Trance and can't act except to try to wake up. This condition lasts until the target
+    // takes damage or wakes up with a successful Presence Roll (16)."
+    id: "4",
+    label: "Hypnosis",
+    steps: [
+      {
+        kind: "condition",
+        to: "targets",
+        when: ["hit"],
+        condition: tag("Deep Trance"),
+        duration: "manual",
+        endsWhen: "they take damage or succeed on a Presence Roll (16); they can't act except to try to wake up",
+        endsOn: ["takeDamage"],
+      },
+    ],
+  },
+  {
+    // "The target freezes in place, becoming Vulnerable and Restrained until they mark 2 Stress."
+    id: "5",
+    label: "Paralyze",
+    steps: [
+      { kind: "condition", to: "targets", when: ["hit"], condition: std("vulnerable"), duration: "manual", endsWhen: "they mark 2 Stress" },
+      { kind: "condition", to: "targets", when: ["hit"], condition: std("restrained"), duration: "manual", endsWhen: "they mark 2 Stress" },
+    ],
+  },
+  // "The target takes 2d8 direct magic damage."
+  { id: "6", label: "Sear", steps: [{ kind: "damage", to: "targets", when: ["hit"], roll: dmg(2, 8), type: "magic", direct: true }] },
+  {
+    // "The target is Scared. While Scared, the target can't take actions other than fleeing the battle or trying to shake off
+    // their terror. Additionally, the target must mark a Stress whenever you spend a Fear. The target can clear the
+    // condition with a successful Presence Roll (16)." No rider on the GM's Fear spend (dcm-zi3k).
+    id: "7",
+    label: "Scare",
+    steps: [
+      { kind: "condition", to: "targets", when: ["hit"], condition: tag("Scared"), duration: "manual", endsWhen: "they succeed on a Presence Roll (16)" },
+      { kind: "manual", to: "targets", when: ["hit"], text: "Scared: only flee or shake off the terror; mark a Stress whenever the GM spends a Fear." },
+    ],
+  },
+  {
+    // "The target becomes Vulnerable and must mark a Stress to move until they spend 2 Hope." (a cost on the bearer's moves)
+    id: "8",
+    label: "Slow",
+    steps: [
+      { kind: "condition", to: "targets", when: ["hit"], condition: std("vulnerable"), duration: "manual", endsWhen: "they spend 2 Hope" },
+      {
+        kind: "condition",
+        to: "targets",
+        when: ["hit"],
+        condition: tag("Slowed"),
+        duration: "manual",
+        endsWhen: "they spend 2 Hope",
+        mods: [rider("moves", [], { timing: "before", costs: [{ kind: "stress", amount: one }] })],
+      },
+    ],
+  },
+];
 
 export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // ======================================================== Banshee (HF p.70)
@@ -365,8 +497,14 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
                 duration: "manual",
                 endsWhen: "Basilisk saliva is applied to them (they can't act)",
               },
-              { kind: "condition", to: "targets", condition: tag("Stiff"), duration: "rest", endsWhen: "they take a rest or the Basilisk is defeated" },
-              { kind: "manual", to: "targets", text: "While Stiff, the PC marks a Stress each time they act." },
+              {
+                kind: "condition",
+                to: "targets",
+                condition: tag("Stiff"),
+                duration: "rest",
+                endsWhen: "they take a rest or the Basilisk is defeated",
+                mods: [STRESS_ON("acts")],
+              },
             ],
           },
         ],
@@ -382,7 +520,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       action({
         costs: [stress()],
         targets: enemy("melee"),
-        steps: [{ kind: "manual", to: "targets", when: [{ kind: "targetHas", condition: tag("Petrified") }], text: "The target must make a death move." }],
+        steps: [{ kind: "deathMove", to: "targets", when: [{ kind: "targetHas", condition: tag("Petrified") }], note: "The target must make a death move" }],
       }),
     ],
   },
@@ -439,9 +577,9 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
     uses: [
       action({
         costs: [stress()],
-        roll: ATTACK_ADV,
+        roll: { ...ATTACK_ADV, critRange: 19 },
         targets: enemy("far"),
-        steps: [standardHit, { kind: "manual", to: "self", text: "A natural 19 is also a critical success: the attack hits and deals maximum damage dice plus the roll." }],
+        steps: [standardHit],
       }),
     ],
   },
@@ -523,6 +661,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         targets: SUBJECT,
         steps: [
           { kind: "condition", to: "targets", condition: std("restrained"), duration: "temporary" },
+          // No rider on the caster's move (dcm-z5a6).
           { kind: "manual", to: "targets", text: "The Hut drags the Restrained target when it moves." },
         ],
       },
@@ -541,7 +680,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         activation: { kind: "auto", trigger: { kind: "onHit", attack: "any" } },
         needsSpotlight: false,
         targets: SUBJECT,
-        steps: [{ kind: "manual", to: "targets", text: "To reduce the severity with armor, this PC must mark 2 Armor Slots instead of 1." }],
+        steps: [{ kind: "armorCost", to: "targets", slotsPerStep: 2, note: "To reduce the severity with armor, this PC must mark 2 Armor Slots instead of 1" }],
       },
     ],
   },
@@ -601,7 +740,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         needsSpotlight: false,
         steps: [
           { kind: "condition", to: "self", condition: tag("Duplicate"), duration: "manual", endsWhen: "an attack succeeds against the Doppelhound" },
-          { kind: "manual", to: "self", text: "Place a duplicate within Close range. The duplicate moves when the Doppelhound is spotlighted; it can attack from either place." },
+          { kind: "summon", label: "Duplicate", count: one, range: "close", duplicate: true, note: "The duplicate moves when the Doppelhound is spotlighted; it can attack from either place" },
         ],
       },
       {
@@ -609,7 +748,16 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         activation: { kind: "auto", trigger: { kind: "onAttacked", stage: "targeted" } },
         needsSpotlight: false,
         requires: [{ kind: "hasCondition", condition: tag("Duplicate") }],
-        steps: [{ kind: "manual", to: "self", text: "The attacker rolls a d6: even, they target the Doppelhound; odd, they target the duplicate and the attack fails." }],
+        steps: [
+          {
+            kind: "check",
+            dice: diceExpr(1, 6),
+            test: { kind: "odd" },
+            note: "The attacker's d6: even, they target the Doppelhound; odd, the duplicate",
+            then: [{ kind: "negate", to: "self", what: "attack", note: "They target the duplicate and the attack fails" }],
+            otherwise: [],
+          },
+        ],
       },
       {
         id: "dispel",
@@ -625,7 +773,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         costs: [fear()],
         steps: [
           { kind: "condition", to: "self", condition: tag("Duplicate"), duration: "manual", endsWhen: "an attack succeeds against the Doppelhound" },
-          { kind: "manual", to: "self", text: "Place the duplicate within Close range." },
+          { kind: "summon", label: "Duplicate", count: one, range: "close", duplicate: true },
         ],
       },
     ],
@@ -753,7 +901,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             trait: "presence",
             difficulty: OWN,
             onSuccess: [],
-            onFail: [{ kind: "condition", to: "targets", condition: tag("Rattled"), duration: "manual", endsWhen: "they roll with Hope" }],
+            onFail: [{ kind: "condition", to: "targets", condition: tag("Rattled"), duration: "manual", endsWhen: "they roll with Hope", endsOnRoll: { roll: "action", result: "withHope" } }],
           },
         ],
       }),
@@ -763,7 +911,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         needsSpotlight: false,
         targets: SUBJECT,
         steps: [
-          { kind: "manual", to: "targets", text: "Roll this attack's damage twice and take the better result." },
+          { kind: "modifyDamage", to: "targets", change: { kind: "best", of: 2 }, note: "Roll this attack's damage twice and take the better result" },
           { kind: "clearCondition", to: "targets", condition: tag("Rattled") },
         ],
       },
@@ -810,14 +958,8 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   {
     adversaryId: "entombed-elite-guard",
     feature: "Battle Formation",
-    uses: [
-      {
-        id: "main",
-        activation: { kind: "auto", trigger: { kind: "onAttacked", stage: "targeted" } },
-        needsSpotlight: false,
-        steps: [{ kind: "manual", to: "self", text: "+1 to the Guard's Difficulty against this attack for each ally within Very Close range of the Guard." }],
-      },
-    ],
+    // A passive Difficulty bonus that counts its allies within Very Close range (dcm-ttz).
+    uses: [passive([{ kind: "mod", mod: { kind: "stat", stat: "difficulty", delta: { kind: "creatureCount", side: "allies", within: "veryClose", excludeSelf: true } } }])],
   },
   // Javelin - Action: "Make an attack against a target within Very Far range. On a success, deal 2d6+2 physical damage."
   {
@@ -1167,8 +1309,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             difficulty: OWN,
             onSuccess: [],
             onFail: [
-              { kind: "condition", to: "targets", condition: tag("Poisoned"), duration: "manual", endsWhen: "they spend a Hope to clear it" },
-              { kind: "manual", to: "targets", text: "While Poisoned, roll a d6 before each action roll; on 4 or lower, mark a Stress." },
+              { kind: "condition", to: "targets", condition: tag("Poisoned"), duration: "manual", endsWhen: "they spend a Hope to clear it", mods: [POISONED] },
             ],
           },
         ],
@@ -1233,6 +1374,8 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         needsSpotlight: false,
         steps: [
           { kind: "clear", to: "self", track: "stress", amount: { kind: "triggerAmount" }, note: "The Stress from the attack is not marked on the Sporophore" },
+          // markStress `distribution: "split"` would say it, but the card runner marks the whole amount on each recipient
+          // (no split yet, dcm-63j): manual until it does.
           { kind: "manual", to: "self", text: "Fungispunj allies in the scene mark that Stress instead, distributed as you choose." },
         ],
       },
@@ -1276,10 +1419,10 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             onSuccess: [],
             onFail: [
               {
-                kind: "manual",
+                kind: "deathMove",
                 to: "targets",
                 when: [{ kind: "targetHas", condition: std("vulnerable") }, { kind: "targetHas", condition: std("restrained") }],
-                text: "Already Vulnerable and Restrained: the target must make a death move.",
+                note: "Already Vulnerable and Restrained: the target must make a death move",
               },
               {
                 kind: "condition",
@@ -1388,8 +1531,8 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   },
   // Tentacle Rays - Action: "Mark a Stress to attack a target within Far range. On a success, roll a d8 for a random beam
   // attack or spend a Fear to choose instead: 1. Beguile. … 2. Corrode. … 3. Doom. … 4. Hypnosis. … 5. Paralyze. … 6.
-  // Sear. … 7. Scare. … 8. Slow. …" (full beam texts in ../adversaries.ts)
-  // The GM picks the beam the d8 showed, or pays the optional Fear to pick freely.
+  // Sear. … 7. Scare. … 8. Slow. …" (full beam texts in ../adversaries.ts and at `TENTACLE_BEAMS` above)
+  // On a hit the GM rolls the d8 (a check table, dcm-27j) or spends a Fear to pick the beam.
   {
     adversaryId: "gobstalker",
     feature: "Tentacle Rays",
@@ -1399,88 +1542,33 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         roll: ATTACK,
         targets: enemy("far"),
         steps: [
-          { kind: "optional", id: "choose-beam", label: "Spend a Fear to choose the beam instead of rolling a d8", when: ["hit"], costs: [fear()], steps: [] },
           {
             kind: "choose",
-            id: "beam",
-            label: "Beam (the d8 result, or the one chosen for a Fear)",
+            id: "how",
+            label: "Roll a d8 for a random beam, or spend a Fear to choose it",
             when: ["hit"],
             options: [
               {
-                // "The Gobstalker Beguiles the target. While Beguiled, the target sees the Gobstalker as a friend and can't
-                // attack it. Additionally, when a PC rolls with Fear, a Beguiled PC must mark a Stress or attack a target
-                // chosen by the Gobstalker. A Beguiled PC must succeed on an Instinct Roll (16) to clear the condition."
-                id: "1",
-                label: "Beguile",
-                steps: [
-                  { kind: "condition", to: "targets", when: ["hit"], condition: tag("Beguiled"), duration: "manual", endsWhen: "they succeed on an Instinct Roll (16)" },
-                  { kind: "manual", to: "targets", when: ["hit"], text: "Beguiled: can't attack the Gobstalker; when a PC rolls with Fear, mark a Stress or attack a target the Gobstalker chooses." },
-                ],
-              },
-              {
-                // "The target takes 2d8 magic damage and must mark an Armor Slot without receiving its benefits (they can
-                // still use armor to reduce the damage). If they can't, double the damage."
-                id: "2",
-                label: "Corrode",
-                steps: [
-                  hitDamage(dmg(2, 8), "magic"),
-                  { kind: "markArmor", to: "targets", when: ["hit"], amount: one, noBenefit: true },
-                  { kind: "manual", to: "targets", when: ["hit"], text: "If the target can't mark an Armor Slot, double the damage." },
-                ],
-              },
-              {
-                // "The target must mark all HP, but they can spend any number of Hope to reduce the number of HP marked
-                // this way by an equal amount."
-                id: "3",
-                label: "Doom",
-                steps: [{ kind: "manual", to: "targets", when: ["hit"], text: "The target marks all their HP, less 1 HP for each Hope they choose to spend." }],
-              },
-              {
-                // "The target falls into a Deep Trance and can't act except to try to wake up. This condition lasts until
-                // the target takes damage or wakes up with a successful Presence Roll (16)."
-                id: "4",
-                label: "Hypnosis",
+                id: "roll",
+                label: "Roll a d8",
                 steps: [
                   {
-                    kind: "condition",
-                    to: "targets",
-                    when: ["hit"],
-                    condition: tag("Deep Trance"),
-                    duration: "manual",
-                    endsWhen: "they take damage or succeed on a Presence Roll (16); they can't act except to try to wake up",
+                    kind: "check",
+                    dice: diceExpr(1, 8),
+                    test: { kind: "totalAtLeast", value: 1 },
+                    table: TENTACLE_BEAMS.map((b, i) => ({ atLeast: i + 1, atMost: i + 1, label: b.label, steps: b.steps })),
+                    then: [],
+                    otherwise: [],
+                    note: "Random beam (d8)",
                   },
                 ],
               },
               {
-                // "The target freezes in place, becoming Vulnerable and Restrained until they mark 2 Stress."
-                id: "5",
-                label: "Paralyze",
+                id: "pick",
+                label: "Spend a Fear to choose the beam",
                 steps: [
-                  { kind: "condition", to: "targets", when: ["hit"], condition: std("vulnerable"), duration: "manual", endsWhen: "they mark 2 Stress" },
-                  { kind: "condition", to: "targets", when: ["hit"], condition: std("restrained"), duration: "manual", endsWhen: "they mark 2 Stress" },
-                ],
-              },
-              // "The target takes 2d8 direct magic damage."
-              { id: "6", label: "Sear", steps: [hitDamage(dmg(2, 8), "magic", true)] },
-              {
-                // "The target is Scared. While Scared, the target can't take actions other than fleeing the battle or
-                // trying to shake off their terror. Additionally, the target must mark a Stress whenever you spend a Fear.
-                // The target can clear the condition with a successful Presence Roll (16)."
-                id: "7",
-                label: "Scare",
-                steps: [
-                  { kind: "condition", to: "targets", when: ["hit"], condition: tag("Scared"), duration: "manual", endsWhen: "they succeed on a Presence Roll (16)" },
-                  { kind: "manual", to: "targets", when: ["hit"], text: "Scared: only flee or shake off the terror; mark a Stress whenever the GM spends a Fear." },
-                ],
-              },
-              {
-                // "The target becomes Vulnerable and must mark a Stress to move until they spend 2 Hope."
-                id: "8",
-                label: "Slow",
-                steps: [
-                  { kind: "condition", to: "targets", when: ["hit"], condition: std("vulnerable"), duration: "manual", endsWhen: "they spend 2 Hope" },
-                  { kind: "condition", to: "targets", when: ["hit"], condition: tag("Slowed"), duration: "manual", endsWhen: "they spend 2 Hope" },
-                  { kind: "manual", to: "targets", when: ["hit"], text: "Slowed: mark a Stress to move." },
+                  { kind: "pay", costs: [fear()] },
+                  { kind: "choose", id: "beam", label: "Beam", options: TENTACLE_BEAMS.map((b) => ({ id: b.id, label: b.label, steps: b.steps as readonly AdversaryStep[] })) },
                 ],
               },
             ],
@@ -1551,8 +1639,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
             difficulty: OWN,
             onSuccess: [],
             onFail: [
-              { kind: "condition", to: "targets", condition: tag("Panicked"), duration: "temporary" },
-              { kind: "manual", to: "targets", text: "While Panicked, mark a Stress when taking the spotlight." },
+              { kind: "condition", to: "targets", condition: tag("Panicked"), duration: "temporary", mods: [STRESS_ON("spotlight")] },
             ],
           },
         ],
@@ -1562,9 +1649,9 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Rip & Tear - Action: "Spend a Fear to make a standard attack with advantage. On a success, you can mark a Stress to make
   // another standard attack against an additional target within range. You can continue marking Stress to make additional
   // attacks until the Alebrujo fails an attack roll."
-  // The first extra attack is automated (an optional Stress with its own roll); the chain after it is the GM's. Its damage
-  // is the printed 2d10+4 magic written out plus The Beast Unleashed's Fear bonus (a second `standardAttack` would reuse
-  // the first roll, bead dcm-vv2).
+  // The first extra attack is an optional Stress with its own roll; the chain repeats it, a Stress each, until an attack
+  // misses (`followUp.repeat`, dcm-7az). Its damage is the printed 2d10+4 magic written out plus The Beast Unleashed's Fear
+  // bonus (a second `standardAttack` would reuse the first roll, bead dcm-vv2).
   {
     adversaryId: "guahalan-alebrujo",
     feature: "Rip & Tear",
@@ -1586,12 +1673,12 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
                 kind: "followUp",
                 roll: ATTACK,
                 targets: enemy("veryClose"),
+                repeat: { until: "miss", costEach: [{ kind: "stress", amount: one }] },
                 steps: [
                   hitDamage(dmg(2, 10, 4), "magic"),
                   { kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "add", amount: { kind: "gmFear" } }, note: "The Beast Unleashed" },
                 ],
               },
-              { kind: "manual", to: "self", text: "If that attack succeeded, you can keep marking Stress for more attacks against additional targets until one fails." },
             ],
           },
         ],
@@ -1691,7 +1778,10 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         costs: [stress()],
         roll: ATTACK,
         targets: enemy("melee"),
-        steps: [standardHit, { kind: "manual", to: "targets", when: ["hit"], text: "+1 damage for each other Guahalan Shifter within Very Close range of the target." }],
+        steps: [
+          standardHit,
+          { kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "add", amount: alliesNearTarget("Guahalan Shifter") }, note: "+1 per other Shifter within Very Close range of the target" },
+        ],
       }),
     ],
   },
@@ -1847,12 +1937,12 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         needsSpotlight: false,
         targets: enemiesAround("veryClose"),
         steps: [
-          { kind: "manual", to: "targets", when: [{ kind: "targetHas", condition: std("restrained") }], text: "Restrained targets automatically fail this reaction roll." },
           {
             kind: "save",
             to: "targets",
             trait: "instinct",
             difficulty: OWN,
+            autoFail: [std("restrained")],
             onSuccess: [],
             onFail: [{ kind: "damage", to: "targets", roll: dmg(1, 8), type: "physical", direct: true, repeat: { kind: "marked", who: "self", track: "hp" } }],
           },
@@ -2075,11 +2165,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         needsSpotlight: false,
         targets: SOURCE,
         steps: [
-          {
-            kind: "manual",
-            to: "targets",
-            text: "If the weapon is metal, its damage die drops one step (d8 to d6, d6 to d4); below a d4 it crumbles into rust.",
-          },
+          { kind: "inventory", to: "targets", op: "damageWeapon", item: "metalWeapon", note: "A metal weapon's damage die drops one step; below a d4 it crumbles into rust" },
           {
             kind: "optional",
             id: "devour-rust",
@@ -2098,12 +2184,8 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
     feature: "Made of Straw",
     uses: [
       resistance("physical"),
-      {
-        id: "fire",
-        activation: { kind: "auto", trigger: { kind: "onDamaged", stage: "would" } },
-        needsSpotlight: false,
-        steps: [{ kind: "manual", to: "self", text: "If the damage is fire, the Scarecrow takes double damage." }],
-      },
+      // "takes double damage from fire": a weakness to the fire keyword (dcm-dv6).
+      passive([{ kind: "mod", mod: { kind: "weakness", keyword: "fire" } }], { id: "fire" }),
     ],
   },
   // Terror Vision - Action: "Spend a Fear to have the Scarecrow lock eyes with a PC within Very Close range, dealing 2d8
@@ -2148,8 +2230,15 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         costs: [fear()],
         targets: SUBJECT,
         steps: [
-          { kind: "condition", to: "targets", condition: tag("Sleepy"), duration: "manual", endsWhen: "they take damage" },
-          { kind: "manual", to: "targets", text: "While Sleepy, make a Presence Reaction Roll before each action roll; on a failure, mark 2 Stress or fall asleep until taking damage." },
+          {
+            kind: "condition",
+            to: "targets",
+            condition: tag("Sleepy"),
+            duration: "manual",
+            endsWhen: "they take damage",
+            endsOn: ["takeDamage"],
+            mods: [rider("actionRoll", [SLEEPY_SAVE], { timing: "before" })],
+          },
         ],
       },
     ],
@@ -2160,7 +2249,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // them."
   relentless("stone-titan", 3),
   // Skillful Strike - Passive: "Before the Titan makes an attack, you can mark a Stress and roll a d6. On a result of 3 or
-  // higher, the target's Evasion is halved against this attack."
+  // higher, the target's Evasion is halved against this attack." The halving stays manual (dcm-5jyp).
   {
     adversaryId: "stone-titan",
     feature: "Skillful Strike",
@@ -2477,7 +2566,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Corpse Whisperer - Action: "Spend a Fear to have the Valdenhax call out to the lingering spirit of a fallen ally within
   // Close range. Roll a d6. On an even result, the Valdenhax resurrects the ally with half its HP cleared. On an odd result,
   // the Valdenhax absorbs the dregs of its life force and clears a Stress."
-  // The vocabulary has no even / odd test: the GM picks the option the d6 showed.
+  // The d6's parity is the check (dcm-27j); the resurrection is a `revive` with half its HP cleared (dcm-145).
   {
     adversaryId: "valdenhax",
     feature: "Corpse Whisperer",
@@ -2487,26 +2576,11 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         targets: { side: "ally", range: "close", count: { kind: "one" } },
         steps: [
           {
-            kind: "choose",
-            id: "d6",
-            label: "Roll a d6: even or odd?",
-            options: [
-              {
-                id: "even",
-                label: "Even: resurrect the ally",
-                steps: [
-                  {
-                    kind: "clear",
-                    to: "targets",
-                    track: "hp",
-                    amount: { kind: "calc", of: { kind: "marked", who: "target", track: "hp" }, divide: 2, round: "down" },
-                    note: "Half its HP cleared",
-                  },
-                  { kind: "manual", to: "targets", text: "The ally is resurrected (no longer defeated)." },
-                ],
-              },
-              { id: "odd", label: "Odd: clear a Stress", steps: [{ kind: "clear", to: "self", track: "stress", amount: one }] },
-            ],
+            kind: "check",
+            dice: diceExpr(1, 6),
+            test: { kind: "even" },
+            then: [{ kind: "revive", to: "targets", clearHp: "half", note: "Even: the Valdenhax resurrects the ally with half its HP cleared" }],
+            otherwise: [{ kind: "clear", to: "self", track: "stress", amount: one, note: "Odd: it absorbs the dregs of its life force" }],
           },
         ],
       }),

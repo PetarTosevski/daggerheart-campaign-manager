@@ -27,6 +27,22 @@ const effectOf = (adversaryId: string, feature: string): AdversaryFeatureEffect 
   return e;
 };
 const useOf = (adversaryId: string, feature: string, useId = "main") => effectOf(adversaryId, feature).uses.find((u) => u.id === useId)!;
+/** Plan lanes, SRD-A1: every object of `kind` anywhere in an entry (steps, `ifUnable`, condition mods, areas). */
+const partsOf = (adversaryId: string, feature: string, kind: string): Record<string, unknown>[] => {
+  const walk = (v: unknown): Record<string, unknown>[] =>
+    Array.isArray(v)
+      ? v.flatMap(walk)
+      : v !== null && typeof v === "object"
+        ? [...((v as { kind?: unknown }).kind === kind ? [v as Record<string, unknown>] : []), ...Object.values(v).flatMap(walk)]
+        : [];
+  return walk(effectOf(adversaryId, feature).uses);
+};
+const conditionStep = (adversaryId: string, feature: string, name: string) =>
+  partsOf(adversaryId, feature, "condition").find((c) => {
+    const ref = c.condition as { tag?: string; condition?: string };
+    return ref.tag === name || ref.condition === name;
+  });
+const fx = (value: number) => ({ kind: "fixed", value });
 
 const selfOf = (adversaryId: string, over: Partial<Combatant> = {}): Combatant => {
   const d = def(adversaryId);
@@ -168,7 +184,7 @@ describe("the tier 2 core table", () => {
       for (const u of effect.uses) {
         const result = run(effect, {
           ...context(effect.adversaryId, []),
-          self: selfOf(effect.adversaryId, { conditions: ["hidden"] }),
+          self: selfOf(effect.adversaryId, { conditions: ["hidden"], ...(u.id === "remount" ? { tags: ["Unhorsed"] } : {}) }),
           useId: u.id,
           targets: [pc("a", { tags: ["Entranced"] })],
           picked: [pc("p")],
@@ -273,10 +289,23 @@ describe("Archer Squadron (CB p.220)", () => {
     expect(plan.incoming).toEqual([{ targetId: "mira", amount: 10, type: "physical", direct: false, forcedArmor: 0, critical: false, attackTotal: 14 }]);
   });
 
-  it("Suppressing Fire: a Stress, the lasting zone is a manual step", () => {
+  it("Suppressing Fire: a Stress; a lasting area at the point: entering it takes an Agility Reaction Roll, 2d6+3 or half", () => {
     const plan = runUse("archer-squadron", "Suppressing Fire", []);
     expect(plan.self.after.stress).toBe(1);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/Agility Reaction Roll/);
+    expect(prompts(plan, "manual")).toEqual([]);
+    const [zone] = ofKind(plan, "area");
+    expect(zone!.area).toMatchObject({ label: "Suppressing Fire", centre: "point", placeWithin: "far", radius: "close", duration: "manual" });
+    const dmg = { kind: "dice", dice: { count: fx(2), sides: 6, plus: fx(3) } };
+    expect(zone!.area.onEnter).toEqual([
+      {
+        kind: "save",
+        to: "triggerSubject",
+        trait: "agility",
+        difficulty: { kind: "actorDifficulty" },
+        onFail: [{ kind: "damage", to: "triggerSubject", roll: dmg, type: "physical" }],
+        onSuccess: [{ kind: "damage", to: "triggerSubject", roll: dmg, type: "physical", scale: "half" }],
+      },
+    ]);
   });
 });
 
@@ -296,7 +325,7 @@ describe("Assassin Poisoner (CB p.220)", () => {
     expect(plan.modifiers).toEqual([{ kind: "mod", mod: { kind: "advantage", on: "attack" } }]);
   });
 
-  it("Fumigation: everyone within Close is Dizzied until their next roll (the disadvantage is manual)", () => {
+  it("Fumigation: everyone within Close is Dizzied until their next roll, with disadvantage on it", () => {
     const plan = runUse("assassin-poisoner", "Fumigation", [], { targets: [mira, bram] });
     expect(plan.fearSpent).toBe(0);
     expect(ofKind(plan, "condition").map((c) => [c.targetId, c.duration])).toEqual([
@@ -304,7 +333,8 @@ describe("Assassin Poisoner (CB p.220)", () => {
       ["bram", "nextRoll"],
     ]);
     expect(after(plan, "mira")!.tags).toEqual(["Dizzied"]);
-    expect(prompts(plan, "manual")).toHaveLength(1);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(conditionStep("assassin-poisoner", "Fumigation", "Dizzied")!.mods).toEqual([{ kind: "disadvantage", on: "action" }]);
   });
 });
 
@@ -422,11 +452,14 @@ describe("Cult Adept (CB p.222)", () => {
     ]);
   });
 
-  it("Shadow Shackles: a Fear; everyone within Close of a point is Restrained (the Hope to act is manual)", () => {
+  it("Shadow Shackles: a Fear; everyone within Close of a point is Restrained and must spend a Hope to make an action roll", () => {
     const plan = runUse("cult-adept", "Shadow Shackles", [], { targets: [mira, bram] });
     expect(plan.fearSpent).toBe(1);
     expect(after(plan, "bram")!.conditions).toEqual(["restrained"]);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/spend a Hope/);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(conditionStep("cult-adept", "Shadow Shackles", "restrained")!.mods).toEqual([
+      { kind: "bearerRider", rider: { on: "actionRoll", steps: [], timing: "before", costs: [{ kind: "hope", amount: fx(1) }] } },
+    ]);
   });
 
   it("Fear Is Fuel: twice per scene, a PC's failure with Fear clears a Stress", () => {
@@ -460,14 +493,16 @@ describe("Cult Fang (CB p.222)", () => {
 });
 
 describe("Demonic Hound Pack (CB p.222)", () => {
-  it("Dreadhowl: a Stress; everyone within Very Close loses a Hope (the no-Hope fallback is manual)", () => {
+  it("Dreadhowl: a Stress; everyone within Very Close loses a Hope; one who can't marks 2 Stress (ifUnable)", () => {
     const plan = runUse("demonic-hound-pack", "Dreadhowl", [], { targets: [mira, bram] });
     expect(plan.self.after.stress).toBe(1);
     expect(ofKind(plan, "hope").map((h) => [h.targetId, h.delta])).toEqual([
       ["mira", -1],
       ["bram", -1],
     ]);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/2 Stress/);
+    // The PCs' Hope isn't in the adversary context (dcm-e16o): the runner asks the table per PC.
+    expect(prompts(plan, "manual").map((p) => p.targetIds)).toEqual([["mira"], ["bram"]]);
+    expect(partsOf("demonic-hound-pack", "Dreadhowl", "hope")[0]!.ifUnable).toEqual([{ kind: "markStress", to: "targets", amount: fx(2) }]);
   });
 });
 
@@ -577,11 +612,14 @@ describe("Giant Eagle (CB p.223)", () => {
     expect(prompts(runUse("giant-eagle", "Take Off", [5], { targets: [mira] }), "pcSave")).toEqual([]);
   });
 
-  it("Deadly Drop: only while flying; the held target is no longer Restrained and the fall is manual", () => {
+  it("Deadly Drop: only while flying; the held target is no longer Restrained and Falls: 2d20 physical after the PCs' next action", () => {
     expect(attempt("giant-eagle", "Deadly Drop", { targets: [mira] })).toMatchObject({ ok: false, reason: "requirement" });
     const plan = runUse("giant-eagle", "Deadly Drop", [], { targets: [pc("held", { conditions: ["restrained"] })], situations: ["While flying"] });
-    expect(after(plan, "held")!.conditions).toEqual([]);
-    expect(prompts(plan, "manual")[0]!.text).toMatch(/2d20/);
+    expect(after(plan, "held")).toMatchObject({ conditions: [], tags: ["Falling"] });
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(conditionStep("giant-eagle", "Deadly Drop", "Falling")!.mods).toEqual([
+      { kind: "bearerRider", rider: { on: "afterPcsNextAction", steps: [{ kind: "damage", to: "self", roll: { kind: "dice", dice: { count: fx(2), sides: 20 } }, type: "physical" }] } },
+    ]);
   });
 });
 
@@ -592,7 +630,12 @@ describe("Gorgon (CB p.224)", () => {
     const plan = runUse("gorgon", "Sunsear Arrows", [], { spotlit: false, trigger: { subject: mira } });
     expect(after(plan, "mira")!.tags).toEqual(["Glowing"]);
     expect(ofKind(plan, "condition")[0]!.duration).toBe("scene");
-    expect(prompts(plan, "manual")).toHaveLength(1);
+    expect(prompts(plan, "manual")).toEqual([]);
+    // "can't become Hidden. Attack rolls made against a Glowing target have advantage." (dcm-xyw)
+    expect(conditionStep("gorgon", "Sunsear Arrows", "Glowing")!.mods).toEqual([
+      { kind: "flag", flag: "cannotBeHidden" },
+      { kind: "attackedRider", rider: { by: "anyone", advantage: true } },
+    ]);
   });
 
   it("Crown of Serpents: on a hit, a Stress pays for 2d10+4 and a Stress on the target; no Stress, no damage", () => {
@@ -642,13 +685,22 @@ describe("Juvenile Flickerfly (CB p.224)", () => {
 describe("Knight of the Realm (CB p.224)", () => {
   const mounted = ["While the Knight is on a mount"];
 
-  it("Chevalier: +2 Difficulty while mounted; Severe damage knocks it off (manual)", () => {
+  it("Chevalier: +2 Difficulty while mounted; Severe damage knocks it off (Unhorsed) until its next spotlight", () => {
     expect(passiveSummary(effectsOf("knight-of-the-realm"), state()).difficulty).toBe(0);
     expect(passiveSummary(effectsOf("knight-of-the-realm"), state({ situations: mounted })).difficulty).toBe(2);
+    expect(passiveSummary(effectsOf("knight-of-the-realm"), state({ situations: mounted, tags: ["Unhorsed"] })).difficulty).toBe(0);
     const u = useOf("knight-of-the-realm", "Chevalier", "unhorsed");
     expect(u.activation.kind === "auto" && matchesTrigger(u.activation.trigger, { kind: "onDamaged", stage: "did", severity: "severe" })).toBe(true);
     expect(u.activation.kind === "auto" && matchesTrigger(u.activation.trigger, { kind: "onDamaged", stage: "did", severity: "major" })).toBe(false);
-    expect(prompts(runUse("knight-of-the-realm", "Chevalier", [], { useId: "unhorsed", spotlit: false, situations: mounted }), "manual")).toHaveLength(1);
+    const off = runUse("knight-of-the-realm", "Chevalier", [], { useId: "unhorsed", spotlit: false, situations: mounted });
+    expect(prompts(off, "manual")).toEqual([]);
+    expect(off.self.after.tags).toEqual(["Unhorsed"]);
+    // Its next spotlight clears the tag: the +2 is back.
+    const remount = useOf("knight-of-the-realm", "Chevalier", "remount");
+    expect(remount.activation).toEqual({ kind: "auto", trigger: { kind: "onSpotlight" } });
+    const back = runUse("knight-of-the-realm", "Chevalier", [], { useId: "remount", self: selfOf("knight-of-the-realm", { tags: ["Unhorsed"] }) });
+    expect(back.self.after.tags ?? []).toEqual([]);
+    expect(attempt("knight-of-the-realm", "Chevalier", { useId: "remount" })).toMatchObject({ ok: false, reason: "requirement" });
   });
 
   it("Heavily Armored: physical damage it would take is reduced by 3", () => {
@@ -677,10 +729,12 @@ describe("Knight of the Realm (CB p.224)", () => {
 });
 
 describe("Masked Thief (CB p.225)", () => {
-  it("Quick Hands: 1d8+2 and a stolen item (manual) on a hit", () => {
+  it("Quick Hands: 1d8+2 and a stolen item (an inventory step, dcm-0gh) on a hit", () => {
     const plan = runUse("masked-thief", "Quick Hands", [9, 4], { targets: [mira] });
     expect(plan.incoming[0]).toMatchObject({ amount: 6 });
-    expect(prompts(plan, "manual")).toHaveLength(1);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(ofKind(plan, "inventory")).toEqual([{ kind: "inventory", targetId: "mira", op: "take", item: "any" }]);
+    expect(ofKind(runUse("masked-thief", "Quick Hands", [2], { targets: [mira] }), "inventory")).toEqual([]);
   });
 
   it("Escape Plan: a Stress; everyone near the trap makes an Agility Reaction Roll (13)", () => {
@@ -764,11 +818,13 @@ describe("Minotaur Wrecker (CB p.225)", () => {
 });
 
 describe("Mortal Hunter (CB p.225)", () => {
-  it("Deathlock: a Fear curses a target for the scene (its direct damage is manual)", () => {
+  it("Deathlock: a Fear curses one target at a time for the scene; the Hunter's attacks against them deal direct damage", () => {
     const plan = runUse("mortal-hunter", "Deathlock", [], { targets: [mira] });
     expect(plan.fearSpent).toBe(1);
     expect(after(plan, "mira")!.tags).toEqual(["Deathlocked"]);
-    expect(prompts(plan, "manual")).toHaveLength(1);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(useOf("mortal-hunter", "Deathlock").exclusive).toBe(true);
+    expect(conditionStep("mortal-hunter", "Deathlock", "Deathlocked")!.mods).toEqual([{ kind: "attackedRider", rider: { by: "caster", direct: true } }]);
   });
 
   it("Inevitable Death: a Stress spotlights 1d4 allies at half damage", () => {
@@ -835,11 +891,12 @@ describe("Secret-Keeper (CB p.226)", () => {
 });
 
 describe("Shark (CB p.226)", () => {
-  it("Rending Bite: a hit forces an Armor Slot without its benefit (no free slot: manual extra HP)", () => {
+  it("Rending Bite: a hit forces an Armor Slot without its benefit (no free slot: an extra HP, ifUnable)", () => {
     const plan = runUse("shark", "Rending Bite", [], { spotlit: false, trigger: { subject: mira } });
     expect(ofKind(plan, "mark")[0]).toMatchObject({ targetId: "mira", track: "armor", amount: 1, noBenefit: true });
     expect(after(plan, "mira")!.armor).toBe(1);
-    expect(prompts(plan, "manual")).toHaveLength(1);
+    expect(prompts(plan, "manual")).toEqual([]);
+    expect(partsOf("shark", "Rending Bite", "markArmor")[0]!.ifUnable).toEqual([{ kind: "markHp", to: "targets", amount: fx(1) }]);
   });
 
   it("Blood in the Water: a Stress spotlights it and makes a standard attack against the creature who marked HP", () => {
@@ -860,8 +917,11 @@ describe("Siren (CB p.226)", () => {
   it("Enchanting Song: a Fear; everyone within Close rolls Instinct or is Entranced (Vulnerable, can't act)", () => {
     const plan = runUse("siren", "Enchanting Song", [], { targets: [mira, bram] });
     expect(plan.fearSpent).toBe(1);
-    expect(prompts(plan, "manual")).toHaveLength(1);
+    expect(prompts(plan, "manual")).toEqual([]);
     const step = saveStep(prompts(plan, "pcSave")[0]!);
+    // "Other Sirens within Close range of the target can mark a Stress to each add a +1 bonus to the Difficulty" (dcm-q0a).
+    expect(step.difficulty).toEqual({ kind: "raised", base: { kind: "actorDifficulty" }, allies: { within: "close", of: "target", name: "Siren" }, cost: { kind: "stress", amount: fx(1) }, each: 1 });
+    expect(prompts(plan, "pcSave")[0]).toMatchObject({ difficulty: def("siren").difficulty }); // no raisers given: its own Difficulty
     expect(step.onFail[0]).toMatchObject({ kind: "condition", condition: { kind: "tag", tag: "Entranced", implies: ["vulnerable"] }, endsWhen: "they mark 2 Stress" });
   });
 });

@@ -26,7 +26,7 @@ import type {
   AdversaryFeatureUse,
   AdversaryRequirement,
 } from "../../domain/adversary-effects/types";
-import type { ConditionRef, DamageRoll, DieSides, NumberSource, RollSpec, TargetSpec } from "../../domain/card-effects/types";
+import type { BearerRider, ConditionRef, DamageRoll, DieSides, Mod, NumberSource, RollSpec, StateCheck, Step, TargetSpec } from "../../domain/card-effects/types";
 
 // ---------------------------------------------------------------- helpers
 
@@ -61,6 +61,26 @@ const VULNERABLE: ConditionRef = { kind: "standard", condition: "vulnerable" };
 const RESTRAINED: ConditionRef = { kind: "standard", condition: "restrained" };
 const HIDDEN: ConditionRef = { kind: "standard", condition: "hidden" };
 const tag = (name: string): ConditionRef => ({ kind: "tag", tag: name });
+
+/**
+ * Plan lanes, SRD-A1: a rider on a condition's bearer (dcm-kti): `on` the bearer's action roll, action, … the `steps` run
+ * (`self` is the bearer, `triggerSource` the adversary that gave it).
+ */
+const rider = (on: BearerRider["on"], steps: readonly Step[], extra: Omit<BearerRider, "on" | "steps"> = {}): Mod => ({ kind: "bearerRider", rider: { on, steps, ...extra } });
+/** "If they can't mark an Armor Slot, they must mark an additional HP" (dcm-18i): `markArmor.ifUnable`. */
+const NO_SLOT_HP: readonly Step[] = [{ kind: "markHp", to: "targets", amount: fixed(1) }];
+/** Poisoned (CB p.211): "roll a d6 before they make an action roll. On a result of 4 or lower, they must mark a Stress." */
+const D6_STRESS: Step = {
+  kind: "check",
+  dice: { count: fixed(1), sides: 6 },
+  test: { kind: "totalAtMost", value: 4 },
+  then: [{ kind: "markStress", to: "self", amount: fixed(1) }],
+  otherwise: [],
+};
+/** I've Got 'Em (CB p.213): "Creatures Restrained by the Kneebreaker take double damage from attacks by other adversaries." */
+const I_VE_GOT_EM: Mod = { kind: "attackedRider", rider: { by: "others", damage: { kind: "multiply", factor: 2 } } };
+/** Exile (CB p.216): "disadvantage during social situations within the Noble's domain". */
+const EXILED: Mod = { kind: "disadvantage", on: "action", situation: "A social situation within the Noble's domain" };
 
 const main = (use: Omit<AdversaryFeatureUse, "id">): AdversaryFeatureUse => ({ id: "main", ...use });
 const entry = (adversaryId: string, feature: string, ...uses: AdversaryFeatureUse[]): AdversaryFeatureEffect => ({
@@ -170,8 +190,10 @@ const swashbuckler = (adversaryId: string): AdversaryFeatureEffect =>
     }),
   );
 
-const NO_ARMOR_FALLBACK = "If they can't mark an Armor Slot, they must mark an additional HP.";
 const HELD_UNTIL = "until they break free with a successful Strength Roll (clearing both) or the Kneebreaker takes Major or greater damage";
+/** Bramble tokens on a PC (dcm-xp0): Encumber gives them; Crush and the Vulnerable read them. */
+const BRAMBLE = "bramble";
+const BRAMBLE_3: StateCheck = { kind: "tokens", who: "target", name: BRAMBLE, atLeast: 3 };
 const BRAMBLE_UNTIL = "until the bramble tokens are removed (a Finesse Roll of 12 + tokens, or Major or greater damage to the Swarm)";
 
 /**
@@ -188,8 +210,7 @@ const acidicForm = (adversaryId: string): AdversaryFeatureEffect =>
       needsSpotlight: false,
       targets: SUBJECT,
       steps: [
-        { kind: "markArmor", to: "targets", amount: fixed(1), noBenefit: true },
-        { kind: "manual", to: "targets", text: NO_ARMOR_FALLBACK },
+        { kind: "markArmor", to: "targets", amount: fixed(1), noBenefit: true, ifUnable: NO_SLOT_HP },
       ],
     }),
   );
@@ -271,8 +292,14 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: { side: "enemy", range: "close", count: { kind: "all" }, area: "front" },
       steps: [
         { kind: "damage", to: "targets", when: ["hit"], roll: roll(2, 6), type: "physical" },
-        { kind: "markArmor", to: "targets", when: ["hit"], amount: fixed(1), noBenefit: true },
-        { kind: "manual", to: "targets", when: ["hit"], text: "If they can't mark an Armor Slot, they must mark an additional HP and you gain a Fear." },
+        {
+          kind: "markArmor",
+          to: "targets",
+          when: ["hit"],
+          amount: fixed(1),
+          noBenefit: true,
+          ifUnable: [...NO_SLOT_HP, { kind: "fear", to: "self", change: "gain", amount: fixed(1) }],
+        },
       ],
     }),
   ),
@@ -288,7 +315,21 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: allAround("close", "any"),
       steps: [
         { kind: "damage", to: "targets", roll: roll(1, 10), type: "physical" },
-        { kind: "manual", to: "self", text: "Blood covers the ground within Very Close range: creatures other than the Burrower who move through it take 1d6 physical damage." },
+        {
+          kind: "area",
+          to: "self",
+          area: {
+            label: "Acidic blood",
+            centre: "point",
+            placeWithin: "melee",
+            radius: "veryClose",
+            side: "all",
+            excludeOwner: true,
+            duration: "scene",
+            onEnter: [{ kind: "damage", to: "triggerSubject", roll: roll(1, 6), type: "physical" }],
+          },
+          note: "Blood covers the ground within Very Close range of where the Burrower stands",
+        },
       ],
     }),
   ),
@@ -307,7 +348,15 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       steps: [
         { kind: "pay", when: ["hit"], costs: [stress(1)] },
         { kind: "damage", to: "targets", when: ["hit"], roll: roll(1, 12, 3), type: "physical" },
-        { kind: "manual", to: "targets", when: ["hit"], text: "If the target marks HP from this attack, they have disadvantage on Agility Rolls until they clear at least 1 HP." },
+        {
+          kind: "condition",
+          to: "targets",
+          when: ["hit", "targetMarkedHp"],
+          condition: tag("Hobbled"),
+          duration: "manual",
+          endsWhen: "until they clear at least 1 HP",
+          mods: [{ kind: "disadvantage", on: "agility" }],
+        },
       ],
     }),
   ),
@@ -346,7 +395,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // ======== Bladed Guard (Standard, CB p.212)
   // Shield Wall: "A creature who tries to move within Very Close range of the Guard must succeed on an Agility Roll. If
   // additional Bladed Guards are standing in a line alongside the first, and each is within Melee range of another guard
-  // in the line, the Difficulty increases by the total number of guards in that line."
+  // in the line, the Difficulty increases by the total number of guards in that line." The line bonus (dcm-346) and the blocked move (dcm-xobk) stay manual.
   entry(
     "bladed-guard",
     "Shield Wall",
@@ -732,8 +781,15 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           costs: [fear(1)],
           steps: [
             { kind: "damage", to: "targets", when: ["hit"], roll: roll(1, 4, 4), type: "physical" },
-            { kind: "condition", to: "targets", when: ["hit"], condition: tag("Poisoned"), duration: "rest", endsWhen: "or until they succeed on a Knowledge Roll (16)" },
-            { kind: "manual", to: "targets", when: ["hit"], text: "While Poisoned, the target rolls a d6 before each action roll; on a result of 4 or lower, they must mark a Stress." },
+            {
+              kind: "condition",
+              to: "targets",
+              when: ["hit"],
+              condition: tag("Poisoned"),
+              duration: "rest",
+              endsWhen: "or until they succeed on a Knowledge Roll (16)",
+              mods: [rider("actionRoll", [D6_STRESS], { timing: "before" })],
+            },
           ],
         },
       ],
@@ -752,8 +808,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       needsSpotlight: false,
       targets: SOURCE,
       steps: [
-        { kind: "markArmor", to: "targets", amount: fixed(1) },
-        { kind: "manual", to: "targets", text: "If they can't mark an Armor Slot, they must mark an HP." },
+        { kind: "markArmor", to: "targets", amount: fixed(1), ifUnable: NO_SLOT_HP },
       ],
     }),
   ),
@@ -831,8 +886,16 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       steps: [
         { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "standardAttack" }, type: "weapon" },
         { kind: "markStress", to: "targets", when: ["hit"], amount: fixed(2) },
-        { kind: "condition", to: "targets", when: ["hit"], condition: tag("Enveloped"), duration: "manual", endsWhen: "until the Ooze takes Severe damage" },
-        { kind: "manual", to: "targets", when: ["hit"], text: "While enveloped, the target must mark an additional Stress when they make an action roll." },
+        {
+          kind: "condition",
+          to: "targets",
+          when: ["hit"],
+          condition: tag("Enveloped"),
+          duration: "manual",
+          endsWhen: "until the Ooze takes Severe damage",
+          endsOnCaster: ["takeSevere"],
+          mods: [rider("actionRoll", [{ kind: "markStress", to: "self", amount: fixed(1) }])],
+        },
       ],
     }),
   ),
@@ -885,7 +948,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // On My Signal (Countdown (5)): "When the Head Guard is in the spotlight for the first time, activate the countdown. It
   // ticks down when a PC makes an attack roll. When it triggers, all Archer Guards within Far range make a standard attack
   // with advantage against the nearest target within their range. If any attacks succeed on the same target, combine their
-  // damage."
+  // damage." The volley stays manual: each Guard rolls and the hits on one target combine (groupAttack eachRolls / name, dcm-1ch).
   entry(
     "head-guard",
     "On My Signal",
@@ -993,7 +1056,8 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
     main({
       activation: { kind: "passive" },
       needsSpotlight: false,
-      steps: [{ kind: "manual", to: "self", text: "Creatures Restrained by the Kneebreaker take double damage from attacks by other adversaries." }],
+      // Plan lanes, SRD-A1 (dcm-346): Hold Them Down's Restrained carries the double damage (`I_VE_GOT_EM`).
+      steps: [],
     }),
   ),
   // Hold Them Down: "Make an attack against a target within Melee range. On a success, the target takes no damage but is
@@ -1008,8 +1072,17 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       roll: ATTACK,
       targets: one("melee"),
       steps: [
-        { kind: "condition", to: "targets", when: ["hit"], condition: RESTRAINED, duration: "manual", endsWhen: HELD_UNTIL },
-        { kind: "condition", to: "targets", when: ["hit"], condition: VULNERABLE, duration: "manual", endsWhen: HELD_UNTIL },
+        {
+          kind: "condition",
+          to: "targets",
+          when: ["hit"],
+          condition: RESTRAINED,
+          duration: "manual",
+          endsWhen: HELD_UNTIL,
+          endsOnCaster: ["majorDamage"],
+          mods: [I_VE_GOT_EM],
+        },
+        { kind: "condition", to: "targets", when: ["hit"], condition: VULNERABLE, duration: "manual", endsWhen: HELD_UNTIL, endsOnCaster: ["majorDamage"] },
       ],
     }),
   ),
@@ -1110,8 +1183,15 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       needsSpotlight: false,
       targets: SUBJECT,
       steps: [
-        { kind: "condition", to: "targets", condition: tag("Out of Favor"), duration: "manual", endsWhen: "while dealing with this Merchant" },
-        { kind: "manual", to: "targets", text: "The PC must pay more and has disadvantage on future Presence Rolls against the Merchant." },
+        {
+          kind: "condition",
+          to: "targets",
+          condition: tag("Out of Favor"),
+          duration: "manual",
+          endsWhen: "while dealing with this Merchant",
+          mods: [{ kind: "disadvantage", on: "presence", situation: "A Presence Roll against the Merchant" }],
+        },
+        { kind: "manual", to: "targets", text: "The PC must pay more." },
       ],
     },
   ),
@@ -1372,8 +1452,8 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       activation: { kind: "passive" },
       needsSpotlight: false,
       requires: [situation("The Noble is on their land")],
-      modifiers: [{ kind: "mod", mod: { kind: "disadvantageAgainst", on: "presence" } }],
-      steps: [{ kind: "manual", to: "self", text: "All social actions made against the Noble on their land have disadvantage." }],
+      modifiers: [{ kind: "mod", mod: { kind: "disadvantageAgainst", on: "action", situation: "A social action against the Noble on their land" } }],
+      steps: [],
     }),
   ),
   // Guards, Seize Them!: "Once per scene, mark a Stress to summon 1d4 Bladed Guards, who appear at Far range to enforce the
@@ -1401,8 +1481,17 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       costs: [fear(1)],
       targets: one("unlimited"),
       steps: [
-        { kind: "condition", to: "targets", condition: tag("Exiled"), duration: "manual", endsWhen: "until the Noble lifts the exile" },
-        { kind: "manual", to: "targets", text: "The target and their allies are exiled: they have disadvantage during social situations within the Noble's domain." },
+        { kind: "condition", to: "targets", condition: tag("Exiled"), duration: "manual", endsWhen: "until the Noble lifts the exile", mods: [EXILED] },
+        {
+          kind: "condition",
+          to: "picked",
+          pick: { side: "enemy", range: "unlimited", count: { kind: "all" } },
+          condition: tag("Exiled"),
+          duration: "manual",
+          endsWhen: "until the Noble lifts the exile",
+          mods: [EXILED],
+          note: "The target's allies are exiled too",
+        },
       ],
     }),
   ),
@@ -1481,7 +1570,17 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
     main({
       activation: { kind: "passive" },
       needsSpotlight: false,
-      steps: [{ kind: "manual", to: "self", text: "The Ooze can only move within Very Close range as their normal movement. They light any flammable object they touch on fire." }],
+      modifiers: [
+        {
+          kind: "mod",
+          mod: {
+            kind: "moveLimit",
+            maxRange: "veryClose",
+            text: "The Ooze can only move within Very Close range as their normal movement. They light any flammable object they touch on fire.",
+          },
+        },
+      ],
+      steps: [],
     }),
   ),
   // Ignite: "Make an attack against a target within Very Close range. On a success, the target takes 1d8 magic damage and is
@@ -1497,8 +1596,15 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: one("veryClose"),
       steps: [
         { kind: "damage", to: "targets", when: ["hit"], roll: roll(1, 8), type: "magic" },
-        { kind: "condition", to: "targets", when: ["hit"], condition: tag("Ignited"), duration: "manual", endsWhen: "until extinguished with a successful Finesse Roll (14)" },
-        { kind: "manual", to: "targets", when: ["hit"], text: "While Ignited, the target takes 1d4 magic damage when they make an action roll." },
+        {
+          kind: "condition",
+          to: "targets",
+          when: ["hit"],
+          condition: tag("Ignited"),
+          duration: "manual",
+          endsWhen: "until extinguished with a successful Finesse Roll (14)",
+          mods: [rider("actionRoll", [{ kind: "damage", to: "self", roll: roll(1, 4), type: "magic" }])],
+        },
       ],
     }),
   ),
@@ -1646,8 +1752,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
           dice: { count: fixed(1), sides: 6 },
           test: { kind: "anyAtLeast", value: 6 },
           then: [
-            { kind: "clear", to: "self", track: "hp", amount: { kind: "marked", who: "self", track: "hp" } },
-            { kind: "manual", to: "self", text: "The Warrior re-forms with no marked HP: return them to the fight." },
+            { kind: "revive", to: "self", clearHp: "all", note: "The Warrior re-forms with no marked HP" },
           ],
           otherwise: [],
         },
@@ -1660,7 +1765,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // damage already reads "phy/mag", which the runner types as both (CB p.99); nothing more to apply.
   entry("spellblade", "Arcane Steel", main({ activation: { kind: "passive" }, needsSpotlight: false, steps: [] })),
   // Suppressing Blast: "Mark a Stress and target a group within Far range. All targets must succeed on an Agility Reaction
-  // Roll or take 1d8+2 magic damage. You gain a Fear for each target who marked HP from this attack."
+  // Roll or take 1d8+2 magic damage. You gain a Fear for each target who marked HP from this attack." The Fear per target stays manual (dcm-nsqo).
   entry(
     "spellblade",
     "Suppressing Blast",
@@ -1704,8 +1809,11 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
     main({
       activation: { kind: "passive" },
       needsSpotlight: false,
-      modifiers: [{ kind: "conditionAura", condition: tag("In Your Face"), to: "pcs", within: "melee" }],
-      steps: [{ kind: "manual", to: "self", text: "All targets within Melee range have disadvantage on attacks against targets other than the Swarm." }],
+      modifiers: [
+        { kind: "conditionAura", condition: tag("In Your Face"), to: "pcs", within: "melee" },
+        { kind: "mod", mod: { kind: "disadvantage", on: "attack", unlessTarget: "caster" }, to: "pcs", within: "melee" },
+      ],
+      steps: [],
     }),
   ),
 
@@ -1765,7 +1873,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   groupAttack("tangle-bramble", 2),
   // Drain and Multiply: "When an attack from the Bramble causes a target to mark HP and there are three or more Tangle
   // Bramble Minions within Close range, you can combine the Minions into a Tangle Bramble Swarm Horde. The Horde's HP is
-  // equal to the number of Minions combined."
+  // equal to the number of Minions combined." The Horde's HP is a creature count (dcm-145, dcm-ttz); removing the combined Minions stays manual (dcm-xobk).
   entry(
     "tangle-bramble",
     "Drain and Multiply",
@@ -1774,8 +1882,16 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       needsSpotlight: false,
       requires: [situation("Three or more Tangle Bramble Minions are within Close range")],
       steps: [
-        { kind: "summon", label: "Tangle Bramble Swarm", count: fixed(1), adversaryId: "tangle-bramble-swarm", range: "close" },
-        { kind: "manual", to: "self", text: "Remove the combined Minions; the Horde's HP equals the number of Minions combined." },
+        {
+          kind: "summon",
+          label: "Tangle Bramble Swarm",
+          count: fixed(1),
+          adversaryId: "tangle-bramble-swarm",
+          range: "close",
+          hp: { kind: "creatureCount", side: "allies", within: "close", name: "Tangle Bramble" },
+          note: "The Horde's HP is equal to the number of Minions combined",
+        },
+        { kind: "manual", to: "self", text: "Remove the combined Minions." },
       ],
     }),
   ),
@@ -1789,7 +1905,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
     main({
       activation: { kind: "action" },
       needsSpotlight: true,
-      requires: [situation("The target has 3 or more bramble tokens")],
+      requires: [{ kind: "situation", text: "The target has 3 or more bramble tokens", check: BRAMBLE_3 }],
       costs: [stress(1)],
       targets: one("unlimited"),
       steps: [{ kind: "damage", to: "targets", roll: roll(2, 6, 8), type: "physical", direct: true }],
@@ -1799,7 +1915,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // they are Restrained. If a target has 3 or more bramble tokens, they are also Vulnerable. All bramble tokens can be
   // removed by succeeding on a Finesse Roll (12 + the number of bramble tokens) or dealing Major or greater damage to the
   // Swarm. If bramble tokens are removed from a target using a Finesse Roll, a number of Tangle Bramble Minions spawn within
-  // Melee range equal to the number of tokens removed."
+  // Melee range equal to the number of tokens removed." The tokens are on the PC (dcm-xp0); the Finesse removal stays manual (dcm-xobk).
   entry(
     "tangle-bramble-swarm",
     "Encumber",
@@ -1808,12 +1924,21 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       needsSpotlight: false,
       targets: SUBJECT,
       steps: [
-        { kind: "condition", to: "targets", condition: tag("Bramble tokens"), duration: "manual", endsWhen: BRAMBLE_UNTIL },
-        { kind: "condition", to: "targets", condition: RESTRAINED, duration: "manual", endsWhen: BRAMBLE_UNTIL },
+        { kind: "tokens", to: "targets", op: "add", amount: fixed(1), holder: "recipient", name: BRAMBLE },
+        { kind: "condition", to: "targets", condition: RESTRAINED, duration: "manual", endsWhen: BRAMBLE_UNTIL, endsOnCaster: ["majorDamage"] },
+        {
+          kind: "condition",
+          to: "targets",
+          when: [{ kind: "targetCheck", check: BRAMBLE_3 }],
+          condition: VULNERABLE,
+          duration: "manual",
+          endsWhen: BRAMBLE_UNTIL,
+          endsOnCaster: ["majorDamage"],
+        },
         {
           kind: "manual",
           to: "targets",
-          text: "Give the target a bramble token. With 3 or more tokens they are also Vulnerable. Removing tokens with a Finesse Roll (12 + tokens) spawns that many Tangle Bramble Minions within Melee range.",
+          text: "All bramble tokens can be removed with a Finesse Roll (12 + the number of bramble tokens); removed that way, that many Tangle Bramble Minions spawn within Melee range.",
         },
       ],
     }),
@@ -1850,8 +1975,16 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       steps: [
         { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "standardAttack" }, type: "weapon" },
         { kind: "pay", when: ["hit"], costs: [stress(1)] },
-        { kind: "condition", to: "targets", when: ["hit"], condition: tag("Taunted"), duration: "manual", endsWhen: "until their next successful attack" },
-        { kind: "manual", to: "targets", when: ["hit"], text: "The next time the Taunted target attacks, they have disadvantage against targets other than the Weaponmaster." },
+        {
+          kind: "condition",
+          to: "targets",
+          when: ["hit"],
+          condition: tag("Taunted"),
+          duration: "manual",
+          endsWhen: "until their next successful attack",
+          endsOn: ["attackSucceeds"],
+          mods: [{ kind: "disadvantage", on: "attack", unlessTarget: "caster" }],
+        },
       ],
     }),
   ),
@@ -1890,7 +2023,7 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
     }),
   ),
   // Thorny Cage: "Spend a Fear to form a cage around a target within Very Close range and Restrain them until they're freed
-  // with a successful Strength Roll. When a creature makes an action roll against the cage, they must mark a Stress."
+  // with a successful Strength Roll. When a creature makes an action roll against the cage, they must mark a Stress." The Stress for rolls against the cage stays manual (dcm-xobk).
   entry(
     "young-dryad",
     "Thorny Cage",

@@ -23,12 +23,15 @@ import type {
   AdversaryStep,
 } from "../../domain/adversary-effects/types";
 import type {
+  BearerRider,
   ConditionRef,
   DamageRoll,
   DieSides,
+  Mod,
   NumberSource,
   Range,
   RollSpec,
+  Step,
   TargetSpec,
 } from "../../domain/card-effects/types";
 
@@ -73,6 +76,9 @@ const RESTRAINED: ConditionRef = { kind: "standard", condition: "restrained" };
 const HIDDEN: ConditionRef = { kind: "standard", condition: "hidden" };
 
 const hit = ["hit"] as const;
+/** Plan lanes, SRD-A1: a rider on a condition's bearer (dcm-kti); in `steps` `self` is the bearer. */
+const rider = (on: BearerRider["on"], steps: readonly Step[], extra: Omit<BearerRider, "on" | "steps"> = {}): Mod => ({ kind: "bearerRider", rider: { on, steps, ...extra } });
+const UNHORSED: ConditionRef = { kind: "tag", tag: "Unhorsed" };
 
 /** One use with the given parts (id "main" unless named). */
 const featureUse = (u: Omit<AdversaryFeatureUse, "id"> & { id?: string }): AdversaryFeatureUse => ({ id: "main", ...u });
@@ -220,7 +226,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Suppressing Fire: Mark a Stress to target a point within Far range. Until the next roll with Fear, a creature who
   // moves within Close range of that point must make an Agility Reaction Roll. On a failure, they take 2d6+3 physical
   // damage. On a success, they take half damage."
-  // Manual: a lasting zone that triggers on movement (vocabulary gap).
+  // A lasting area at the point (dcm-cma, dcm-wuu): its reaction roll on entering; ended by hand at the next roll with Fear.
   entry(
     "archer-squadron",
     "Suppressing Fire",
@@ -229,9 +235,27 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: { side: "point", range: "far", count: { kind: "one" } },
       steps: [
         {
-          kind: "manual",
+          kind: "area",
           to: "self",
-          text: "Until the next roll with Fear, a creature who moves within Close range of that point makes an Agility Reaction Roll: on a failure 2d6+3 physical damage, on a success half damage.",
+          area: {
+            label: "Suppressing Fire",
+            centre: "point",
+            placeWithin: "far",
+            radius: "close",
+            side: "all",
+            duration: "manual",
+            onEnter: [
+              {
+                kind: "save",
+                to: "triggerSubject",
+                trait: "agility",
+                difficulty: OWN_DIFFICULTY,
+                onFail: [{ kind: "damage", to: "triggerSubject", roll: roll(2, 6, 3), type: "physical" }],
+                onSuccess: [{ kind: "damage", to: "triggerSubject", roll: roll(2, 6, 3), type: "physical", scale: "half" }],
+              },
+            ],
+          },
+          note: "Until the next roll with Fear",
         },
       ],
     }),
@@ -257,16 +281,13 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // "Fumigation: Drop a smoke bomb that fills the air within Close range with smoke, Dizzying all targets in this area.
   // Dizzied targets have disadvantage on their next action roll, then clear the condition."
-  // Manual: the disadvantage on the bearer's own roll (vocabulary gap); the Dizzied tag ends with that roll.
+  // The Dizzied tag carries the disadvantage and ends with that roll (duration `nextRoll`).
   entry(
     "assassin-poisoner",
     "Fumigation",
     action({
       targets: allAround("close"),
-      steps: [
-        { kind: "condition", to: "targets", condition: { kind: "tag", tag: "Dizzied" }, duration: "nextRoll" },
-        { kind: "manual", to: "targets", text: "Dizzied: disadvantage on their next action roll, then the condition clears." },
-      ],
+      steps: [{ kind: "condition", to: "targets", condition: { kind: "tag", tag: "Dizzied" }, duration: "nextRoll", mods: [{ kind: "disadvantage", on: "action" }] }],
     }),
   ),
 
@@ -548,7 +569,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Shadow Shackles: Spend a Fear and choose a point within Far range. All targets within Close range of that point are
   // Restrained in smoky chains until they break free with a successful Strength or Instinct Roll. A target Restrained by
   // this feature must spend a Hope to make an action roll."
-  // Manual: the Hope to make an action roll (vocabulary gap).
+  // The Hope to act is a rider cost on the bearer's action rolls (dcm-kti).
   entry(
     "cult-adept",
     "Shadow Shackles",
@@ -556,8 +577,14 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       costs: FEAR,
       targets: allAroundPoint("far", "close"),
       steps: [
-        { kind: "condition", to: "targets", condition: RESTRAINED, duration: "manual", endsWhen: "they break free with a successful Strength or Instinct Roll" },
-        { kind: "manual", to: "targets", text: "While Restrained by Shadow Shackles, the target must spend a Hope to make an action roll." },
+        {
+          kind: "condition",
+          to: "targets",
+          condition: RESTRAINED,
+          duration: "manual",
+          endsWhen: "they break free with a successful Strength or Instinct Roll",
+          mods: [rider("actionRoll", [], { timing: "before", costs: [{ kind: "hope", amount: one }] })],
+        },
       ],
     }),
   ),
@@ -626,17 +653,14 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   horde("demonic-hound-pack", 2, 4, 1),
   // "Dreadhowl: Mark a Stress to make all targets within Very Close range lose a Hope. If a target is not able to lose a
   // Hope, they must instead mark 2 Stress."
-  // Manual: the fallback for a PC with no Hope (vocabulary gap: no gate on a PC target's Hope).
+  // The fallback is the Hope loss's `ifUnable` (dcm-5xi).
   entry(
     "demonic-hound-pack",
     "Dreadhowl",
     action({
       costs: STRESS,
       targets: allAround("veryClose"),
-      steps: [
-        { kind: "hope", to: "targets", change: "lose", amount: one },
-        { kind: "manual", to: "targets", text: "A target with no Hope to lose marks 2 Stress instead." },
-      ],
+      steps: [{ kind: "hope", to: "targets", change: "lose", amount: one, ifUnable: [{ kind: "markStress", to: "targets", amount: fixed(2) }] }],
     }),
   ),
   // "Momentum: When the Pack makes a successful attack against a PC, you gain a Fear."
@@ -648,7 +672,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   horde("electric-eels", 2, 4, 1),
   // "Paralyzing Shock: Mark a Stress to make a standard attack against all targets within Very Close range. You gain a
   // Fear for each target that marks HP."
-  // Manual: the Fear per target who marks HP; HP is marked when each reaction window resolves (vocabulary gap).
+  // Manual: the Fear per target who marks HP; HP is marked when each reaction window resolves (dcm-nsqo).
   entry(
     "electric-eels",
     "Paralyzing Shock",
@@ -858,7 +882,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Deadly Drop: While flying, the Eagle can drop a Restrained target they are holding. When dropped, the target is no
   // longer Restrained but starts falling. If their fall isn't prevented during the PCs' next action, the target takes
   // 2d20 physical damage when they land."
-  // Manual: the damage waits on the PCs' next action (vocabulary gap).
+  // The fall is a Falling tag whose rider lands after the PCs' next action (dcm-1jg); the GM clears it if they prevent it.
   entry(
     "giant-eagle",
     "Deadly Drop",
@@ -867,7 +891,14 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: oneEnemy("melee"),
       steps: [
         { kind: "clearCondition", to: "targets", condition: RESTRAINED },
-        { kind: "manual", to: "targets", text: "The target falls: unless the PCs prevent the fall during their next action, they take 2d20 physical damage when they land." },
+        {
+          kind: "condition",
+          to: "targets",
+          condition: { kind: "tag", tag: "Falling" },
+          duration: "manual",
+          endsWhen: "they land, or the PCs prevent the fall during their next action",
+          mods: [rider("afterPcsNextAction", [{ kind: "damage", to: "self", roll: roll(2, 20), type: "physical" }])],
+        },
       ],
     }),
   ),
@@ -884,8 +915,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   relentless("gorgon", 2),
   // "Sunsear Arrows: When the Gorgon makes a successful standard attack, the target Glows until the end of the scene and
   // can't become Hidden. Attack rolls made against a Glowing target have advantage."
-  // Manual: advantage against the Glowing target and its "can't become Hidden" (vocabulary gap: modifiers keyed to a
-  // target's tag).
+  // The Glowing tag carries both (dcm-xyw): the cannotBeHidden flag and advantage on attacks against them.
   entry(
     "gorgon",
     "Sunsear Arrows",
@@ -894,8 +924,16 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       needsSpotlight: false,
       targets: TRIGGER_SUBJECT,
       steps: [
-        { kind: "condition", to: "targets", condition: { kind: "tag", tag: "Glowing" }, duration: "scene" },
-        { kind: "manual", to: "targets", text: "Glowing: can't become Hidden; attack rolls against them have advantage." },
+        {
+          kind: "condition",
+          to: "targets",
+          condition: { kind: "tag", tag: "Glowing" },
+          duration: "scene",
+          mods: [
+            { kind: "flag", flag: "cannotBeHidden" },
+            { kind: "attackedRider", rider: { by: "anyone", advantage: true } },
+          ],
+        },
       ],
     }),
   ),
@@ -963,7 +1001,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   relentless("juvenile-flickerfly", 3),
   // "Peerless Accuracy: Before the Flickerfly makes an attack, roll a d6. On a result of 4 or higher, the target's
   // Evasion is halved against this attack."
-  // Manual: halving the target's Evasion for one attack (vocabulary gap); the d6 is rolled here.
+  // Manual: halving the target's Evasion for the attack it precedes (dcm-5jyp); the d6 is rolled here.
   entry(
     "juvenile-flickerfly",
     "Peerless Accuracy",
@@ -1048,13 +1086,25 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   entry(
     "knight-of-the-realm",
     "Chevalier",
-    passive({ id: "mounted", requires: [MOUNTED], modifiers: [{ kind: "mod", mod: { kind: "stat", stat: "difficulty", delta: fixed(2) } }] }),
+    // Plan lanes, SRD-A1: knocked off, an Unhorsed tag (dcm-2f3 `lacks`) switches the +2 off until its next spotlight.
+    passive({
+      id: "mounted",
+      requires: [MOUNTED, { kind: "hasCondition", condition: UNHORSED, lacks: true }],
+      modifiers: [{ kind: "mod", mod: { kind: "stat", stat: "difficulty", delta: fixed(2) } }],
+    }),
     featureUse({
       id: "unhorsed",
       activation: { kind: "auto", trigger: { kind: "onDamaged", minSeverity: "severe" } },
       needsSpotlight: false,
       requires: [MOUNTED],
-      steps: [{ kind: "manual", to: "self", text: "The Knight is knocked from their mount and loses the +2 Difficulty until they're next spotlighted." }],
+      steps: [{ kind: "condition", to: "self", condition: UNHORSED, duration: "manual", endsWhen: "until they're next spotlighted", note: "Knocked from their mount" }],
+    }),
+    featureUse({
+      id: "remount",
+      activation: { kind: "auto", trigger: { kind: "onSpotlight" } },
+      needsSpotlight: false,
+      requires: [{ kind: "hasCondition", condition: UNHORSED }],
+      steps: [{ kind: "clearCondition", to: "self", condition: UNHORSED }],
     }),
   ),
   // "Heavily Armored: When the Knight takes physical damage, reduce it by 3."
@@ -1090,7 +1140,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // ---- Masked Thief (Skulk, CB p.225)
   // "Quick Hands: Make an attack against a target within Melee range. On a success, deal 1d8+2 physical damage and the
   // Thief steals one item or consumable from the target's inventory."
-  // Manual: the theft (vocabulary gap: inventory).
+  // The theft is an inventory step (dcm-0gh): one item or consumable, the GM's pick.
   entry(
     "masked-thief",
     "Quick Hands",
@@ -1099,7 +1149,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: oneEnemy("melee"),
       steps: [
         { kind: "damage", to: "targets", when: hit, roll: roll(1, 8, 2), type: "physical" },
-        { kind: "manual", to: "targets", when: hit, text: "The Thief steals one item or consumable from the target's inventory." },
+        { kind: "inventory", to: "targets", when: hit, op: "take", item: "any", note: "One item or consumable from the target's inventory" },
       ],
     }),
   ),
@@ -1271,16 +1321,22 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Deathlock: Spend a Fear to curse a target within Very Close range with a necrotic Deathlock until the end of the
   // scene. Attacks made by the Hunter against a Deathlocked target deal direct damage. The Hunter can only maintain one
   // Deathlock at a time."
-  // Manual: direct damage against the Deathlocked target and the one-at-a-time rule (vocabulary gap).
+  // The tag carries the Hunter's direct damage (dcm-xyw); one at a time is `exclusive` (dcm-vkp).
   entry(
     "mortal-hunter",
     "Deathlock",
     action({
       costs: FEAR,
       targets: oneEnemy("veryClose"),
+      exclusive: true,
       steps: [
-        { kind: "condition", to: "targets", condition: { kind: "tag", tag: "Deathlocked" }, duration: "scene" },
-        { kind: "manual", to: "targets", text: "The Hunter's attacks against the Deathlocked target deal direct damage. Only one Deathlock at a time: end the previous one." },
+        {
+          kind: "condition",
+          to: "targets",
+          condition: { kind: "tag", tag: "Deathlocked" },
+          duration: "scene",
+          mods: [{ kind: "attackedRider", rider: { by: "caster", direct: true } }],
+        },
       ],
     }),
   ),
@@ -1411,7 +1467,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // "Rending Bite: When the Shark makes a successful attack, the target must mark an Armor Slot without receiving its
   // benefits (they can still use armor to reduce the damage). If they can't mark an Armor Slot, they must mark an
   // additional HP."
-  // Manual: the extra HP when no Armor Slot is free (vocabulary gap: no gate on a PC target's free slots).
+  // The extra HP when no Armor Slot is free is the mark's `ifUnable` (dcm-18i).
   entry(
     "shark",
     "Rending Bite",
@@ -1420,8 +1476,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       needsSpotlight: false,
       targets: TRIGGER_SUBJECT,
       steps: [
-        { kind: "markArmor", to: "targets", amount: one, noBenefit: true },
-        { kind: "manual", to: "targets", text: "If they can't mark an Armor Slot, they mark an additional HP." },
+        { kind: "markArmor", to: "targets", amount: one, noBenefit: true, ifUnable: [{ kind: "markHp", to: "targets", amount: one }] },
       ],
     }),
   ),
@@ -1462,7 +1517,7 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Instinct Reaction Roll or become Entranced until they mark 2 Stress. Other Sirens within Close range of the target
   // can mark a Stress to each add a +1 bonus to the Difficulty of the reaction roll. While Entranced, a target can't act
   // and is Vulnerable."
-  // Manual: the other Sirens' Stress for +1 Difficulty each (vocabulary gap).
+  // The other Sirens' Stress for +1 Difficulty each is a `raised` Difficulty (dcm-q0a).
   entry(
     "siren",
     "Enchanting Song",
@@ -1470,12 +1525,11 @@ export const T2_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
       costs: FEAR,
       targets: allAround("close"),
       steps: [
-        { kind: "manual", to: "self", text: "Other Sirens within Close range of a target can each mark a Stress to add +1 to the Difficulty of that reaction roll." },
         {
           kind: "save",
           to: "targets",
           trait: "instinct",
-          difficulty: OWN_DIFFICULTY,
+          difficulty: { kind: "raised", base: OWN_DIFFICULTY, allies: { within: "close", of: "target", name: "Siren" }, cost: { kind: "stress", amount: one }, each: 1 },
           onFail: [
             { kind: "condition", to: "targets", condition: { kind: "tag", tag: "Entranced", implies: ["vulnerable"] }, duration: "manual", endsWhen: "they mark 2 Stress" },
             { kind: "effect", to: "targets", label: "Entranced: can't act", mods: [{ kind: "flag", flag: "cannotAct" }], duration: "manual", endsWhen: "they mark 2 Stress" },

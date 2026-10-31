@@ -31,12 +31,16 @@ import type {
   ConditionRef,
   DamageRoll,
   DieSides,
+  BearerRider,
   Gate,
+  Mod,
   NumberSource,
+  OutcomeStep,
   Range,
   Recipient,
   RollSpec,
   StandardCondition,
+  Step,
   TargetCount,
   TargetSpec,
   TriggerTargets,
@@ -61,6 +65,28 @@ const enemy = (range: Range | "unlimited", count: TargetCount = ONE, extra: Part
 const SUBJECT: TriggerTargets = { side: "trigger", who: "subject" };
 const SOURCE: TriggerTargets = { side: "trigger", who: "source" };
 const HIT: readonly Gate[] = ["hit"];
+/** Half the latest roll, rounded up (CB p.107 "round up unless otherwise specified"). */
+const HALF_ROLL: NumberSource = { kind: "calc", of: { kind: "lastRoll" }, divide: 2, round: "up" };
+/** The recipient holds at least one Hope. */
+const HAS_HOPE = { kind: "track", who: "target", track: "hope", measure: "marked", atLeast: 1 } as const;
+/** Covered in Spiders (HF p.63): "roll a d6 when they make an action roll. On a result of 4 or higher, they must mark a Stress or you gain a Fear." */
+const SPIDERS: Step = {
+  kind: "check",
+  dice: { count: fixed(1), sides: 6 },
+  test: { kind: "totalAtLeast", value: 4 },
+  then: [
+    {
+      kind: "choose",
+      id: "spiders",
+      label: "Mark a Stress, or the GM gains a Fear",
+      options: [
+        { id: "stress", label: "Mark a Stress", steps: [{ kind: "markStress", to: "self", amount: fixed(1) }] },
+        { id: "fear", label: "The GM gains a Fear", steps: [{ kind: "fear", to: "self", change: "gain", amount: fixed(1) }] },
+      ],
+    },
+  ],
+  otherwise: [],
+};
 
 const std = (condition: StandardCondition): ConditionRef => ({ kind: "standard", condition });
 const tag = (name: string, implies?: readonly StandardCondition[]): ConditionRef => ({ kind: "tag", tag: name, ...(implies ? { implies } : {}) });
@@ -82,23 +108,33 @@ const magic = (r: DamageRoll, when: readonly Gate[] | undefined = HIT, extra: { 
   ...(when ? { when } : {}),
   ...extra,
 });
+/** Plan lanes, SRD-A1: what a condition does to its bearer and the events that end it (dcm-kti, dcm-51s). */
+type ConditionMore = Partial<Pick<Extract<OutcomeStep, { kind: "condition" }>, "mods" | "endsOn" | "endsOnCaster" | "endsOnRoll">>;
 /** A condition on the targets that lasts until an event the engine doesn't track (cleared by hand). */
-const until = (condition: ConditionRef, endsWhen: string, when: readonly Gate[] | undefined = HIT, to: Recipient = "targets"): AdversaryStep => ({
+const until = (condition: ConditionRef, endsWhen: string, when: readonly Gate[] | undefined = HIT, to: Recipient = "targets", more: ConditionMore = {}): AdversaryStep => ({
   kind: "condition",
   to,
   condition,
   duration: "manual",
   endsWhen,
   ...(when ? { when } : {}),
+  ...more,
 });
-const temporarily = (condition: ConditionRef, when: readonly Gate[] | undefined = HIT, to: Recipient = "targets"): AdversaryStep => ({
+const temporarily = (condition: ConditionRef, when: readonly Gate[] | undefined = HIT, to: Recipient = "targets", more: ConditionMore = {}): AdversaryStep => ({
   kind: "condition",
   to,
   condition,
   duration: "temporary",
   ...(when ? { when } : {}),
+  ...more,
 });
-const flee = (who: string): AdversaryStep => manual(`The ${who} flees the scene.`);
+/** A rider on the condition's bearer (dcm-kti): in `steps` `self` is the bearer, `triggerSource` this adversary. */
+const rider = (on: BearerRider["on"], steps: readonly Step[], extra: Omit<BearerRider, "on" | "steps"> = {}): Mod => ({ kind: "bearerRider", rider: { on, steps, ...extra } });
+const STRESS_ON = (on: BearerRider["on"]): Mod => rider(on, [{ kind: "markStress", to: "self", amount: fixed(1) }]);
+/** "until they roll with Hope" (an action roll with Hope, CB p.90). */
+const UNTIL_HOPE: ConditionMore = { endsOnRoll: { roll: "action", result: "withHope" } };
+/** "flees the scene" (dcm-icd): the adversary leaves the scene without being defeated. */
+const flee = (who: string): AdversaryStep => ({ kind: "move", to: "self", mode: "leaveScene", note: `The ${who} flees the scene.` });
 
 const action = (use: Omit<AdversaryFeatureUse, "id" | "activation" | "needsSpotlight"> & { id?: string }): AdversaryFeatureUse => ({
   id: "main",
@@ -167,7 +203,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   f("ahuizotl", "Tail Swat", action({ costs: [stress()], roll: ATTACK, targets: enemy("veryClose"), steps: [physical(roll(1, 8, 2))] })),
   // Drag and Bag - Action: "Spend a Fear to have the Ahuizotl grab a target within Close range with its tail, pull the
   // target into Melee range, and temporarily Restrain them. The Ahuizotl has advantage on attacks against targets
-  // Restrained in this way." No roll. The "Bagged" tag marks who was Restrained this way; the advantage is the GM's.
+  // Restrained in this way." No roll. The "Bagged" tag marks who was Restrained this way; its rider gives the Ahuizotl advantage (an attackedRider by the caster).
   f(
     "ahuizotl",
     "Drag and Bag",
@@ -176,8 +212,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       targets: enemy("close"),
       steps: [
         { kind: "move", to: "targets", mode: "pull", range: "melee", relativeTo: "self" },
-        temporarily(tag("Bagged", ["restrained"]), undefined),
-        manual("The Ahuizotl has advantage on attacks against targets Restrained by Drag and Bag.", "targets"),
+        temporarily(tag("Bagged", ["restrained"]), undefined, "targets", { mods: [{ kind: "attackedRider", rider: { by: "caster", advantage: true } }] }),
       ],
     }),
   ),
@@ -189,21 +224,24 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Stone of Omens - Passive: "Inside the Atototl is a stone that foretells good or ill fortune, depending on its color.
   // A PC who searches the Atototl's remains finds the stone and makes a fate roll. On an even result, the PC gains Hope
   // equal to half the result, which they can distribute among the PCs however they wish. On an odd result, you gain Fear
-  // equal to half the result." A fate roll is one Duality Die, a d12 (CB p.168); the even / odd outcome is manual.
+  // equal to half the result." A fate roll is one Duality Die, a d12 (CB p.168); even / odd is the check's parity
+  // (dcm-27j). Half of an odd result rounds up (CB p.107 "round up unless otherwise specified"). The searching PC is the
+  // target and gains the Hope; spreading it over the PCs is theirs to do (no split for a Hope gain, dcm-nh44).
   f(
     "atototl",
     "Stone of Omens",
     reaction(
       { kind: "situation", text: "A PC searches the Atototl's remains" },
       {
+        targets: enemy("unlimited"),
         steps: [
           {
             kind: "check",
             dice: die(12),
-            test: { kind: "totalAtLeast", value: 1 },
+            test: { kind: "even" },
             note: "Fate roll (d12)",
-            then: [manual("Even: the PC gains Hope equal to half the result, distributed among the PCs as they wish. Odd: you gain Fear equal to half the result.")],
-            otherwise: [],
+            then: [{ kind: "hope", to: "targets", change: "gain", amount: HALF_ROLL, note: "They can distribute it among the PCs however they wish" }],
+            otherwise: [{ kind: "fear", to: "self", change: "gain", amount: HALF_ROLL }],
           },
         ],
       },
@@ -279,7 +317,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   groupAttack("darkweave-crawler", { kind: "flat", amount: fixed(2) }),
   // Darkweave Venom - Reaction: "When the Crawler makes a successful attack, you can mark a Stress to Exhaust the target
   // until they succeed on a Strength Roll (9). While Exhausted, the target must mark a Stress each time they make an
-  // action roll." The Stress per action roll is manual.
+  // action roll." The Stress per action roll is a rider on the tag (dcm-kti).
   f(
     "darkweave-crawler",
     "Darkweave Venom",
@@ -288,7 +326,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       {
         costs: [stress()],
         targets: SUBJECT,
-        steps: [until(tag("Exhausted"), "they succeed on a Strength Roll (9)", undefined), manual("While Exhausted, the target marks a Stress each time they make an action roll.", "targets")],
+        steps: [until(tag("Exhausted"), "they succeed on a Strength Roll (9)", undefined, "targets", { mods: [STRESS_ON("actionRoll")] })],
       },
     ),
   ),
@@ -351,13 +389,13 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // Shadow Fang - Reaction: "When the Spinner makes a successful attack against a target within Melee range, you can
   // spend a Fear to make the target Shaky until they succeed on an Instinct Roll (10). While Shaky, the target has
-  // disadvantage on attack rolls." The disadvantage is manual.
+  // disadvantage on attack rolls." The disadvantage rides on the tag.
   f(
     "darkweave-spinner",
     "Shadow Fang",
     reaction(
       { kind: "onHit", attack: "any", within: "melee" },
-      { costs: [fear()], targets: SUBJECT, steps: [until(tag("Shaky"), "they succeed on an Instinct Roll (10)", undefined), manual("While Shaky, the target has disadvantage on attack rolls.", "targets")] },
+      { costs: [fear()], targets: SUBJECT, steps: [until(tag("Shaky"), "they succeed on an Instinct Roll (10)", undefined, "targets", { mods: [{ kind: "disadvantage", on: "attack" }] })] },
     ),
   ),
 
@@ -377,7 +415,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       {
         costs: [stress()],
         targets: SUBJECT,
-        steps: [temporarily(tag("Covered in Spiders"), undefined), manual("While Covered in Spiders, the target rolls a d6 with each action roll; on 4 or higher they mark a Stress or you gain a Fear.", "targets")],
+        steps: [temporarily(tag("Covered in Spiders"), undefined, "targets", { mods: [rider("actionRoll", [SPIDERS])] })],
       },
     ),
   ),
@@ -461,15 +499,16 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   f("kelpie", "Heart’s Desire", shown("After watching a creature for a hundred heartbeats, the Kelpie knows the form it finds most pleasing.")),
   // Shapeshifter - Action: "Mark a Stress to change the Kelpie's physical form into any creature or object smaller than a
   // wagon. A creature has disadvantage on rolls against the Kelpie while the Kelpie is in a form the creature finds
-  // pleasing or alluring." The per-viewer disadvantage is manual.
+  // pleasing or alluring." The per-viewer disadvantage rides on its tag, confirmed by the GM (situation).
   f(
     "kelpie",
     "Shapeshifter",
     action({
       costs: [stress()],
       steps: [
-        until(tag("Shapeshifted"), "it changes form again", undefined, "self"),
-        manual("A creature has disadvantage on rolls against the Kelpie while it is in a form that creature finds pleasing or alluring."),
+        until(tag("Shapeshifted"), "it changes form again", undefined, "self", {
+          mods: [{ kind: "disadvantageAgainst", on: "any", situation: "The roller finds the Kelpie's form pleasing or alluring" }],
+        }),
       ],
     }),
   ),
@@ -526,7 +565,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   ),
   // Tag Team - Reaction: "When the Masque Muerte deals damage to a PC, you can spend a Fear to have a spectral wrestler
   // appear and Pin the target until they escape with a successful Strength Roll. While Pinned, the target is Restrained
-  // and takes an extra 1d12 magic damage from the Masque Muerte's attacks." The extra 1d12 is manual.
+  // and takes an extra 1d12 magic damage from the Masque Muerte's attacks." The extra 1d12 is an attackedRider by the caster (dcm-51s).
   f(
     "masque-muerte",
     "Tag Team",
@@ -535,7 +574,11 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       {
         costs: [fear()],
         targets: SUBJECT,
-        steps: [until(tag("Pinned", ["restrained"]), "they escape with a successful Strength Roll", undefined), manual("While Pinned, the target takes an extra 1d12 magic damage from the Masque Muerte's attacks.", "targets")],
+        steps: [
+          until(tag("Pinned", ["restrained"]), "they escape with a successful Strength Roll", undefined, "targets", {
+            mods: [{ kind: "attackedRider", rider: { by: "caster", damage: { kind: "add", amount: { kind: "dice", dice: die(12) }, type: "magic" } } }],
+          }),
+        ],
       },
     ),
   ),
@@ -543,8 +586,14 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // ======== Mechanorb (Standard, HF p.65)
 
   // Hive Mind - Passive: "The Mechanorb gains a +1 bonus to their Difficulty for each other Mechanorb within Close range."
-  // The vocabulary can't count allies: manual.
-  f("mechanorb", "Hive Mind", shown("+1 Difficulty for each other Mechanorb within Close range.")),
+  // Plan lanes, SRD-A1 (dcm-ttz): the other Mechanorbs within Close range are counted.
+  f(
+    "mechanorb",
+    "Hive Mind",
+    passive([
+      { kind: "mod", mod: { kind: "stat", stat: "difficulty", delta: { kind: "creatureCount", side: "allies", within: "close", name: "Mechanorb", excludeSelf: true } } },
+    ]),
+  ),
   // Adaptive Tactics - Passive: "Pool. When the Mechanorb fails an attack roll, add a token to the Mechanorb Pool. All
   // Mechanorbs in the scene gain a bonus to attack rolls equal to the number of tokens in the Mechanorb Pool. Clear all
   // tokens when any Mechanorb takes Severe damage or is defeated." The Pool is the instance's tokens (shared Pool: AA2,
@@ -587,7 +636,8 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Enraged Mountain Troll - Evolution: "The Troll loses their "Stolen Armor" and "Flail Swipe" features, then gains a +1
   // bonus to their Difficulty. Additionally, they gain the "Double Swipe" feature and replace "Skull Flail" with the
   // following standard attack: Claw Swipe: Very Close | 1d10+3 phy" When the Stolen Armor countdown triggers; once a
-  // scene (HF p.61: "An adversary's evolution can't be triggered more than once in a scene"). The feature swap is manual.
+  // scene (HF p.61: "An adversary's evolution can't be triggered more than once in a scene"). The swap is a permanent
+  // effect on itself (dcm-gx3): a new standard attack and the feature list changed.
   f(
     "mountain-troll",
     "Enraged Mountain Troll",
@@ -596,8 +646,17 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       {
         limit: { per: "scene" },
         steps: [
-          { kind: "effect", to: "self", label: "Enraged", mods: [{ kind: "stat", stat: "difficulty", delta: fixed(1) }], duration: "permanent" },
-          manual("The Troll loses Stolen Armor and Flail Swipe, gains Double Swipe, and its standard attack becomes Claw Swipe: Very Close | 1d10+3 phy."),
+          {
+            kind: "effect",
+            to: "self",
+            label: "Enraged",
+            mods: [
+              { kind: "stat", stat: "difficulty", delta: fixed(1) },
+              { kind: "features", remove: ["Stolen Armor", "Flail Swipe"], add: ["Double Swipe"] },
+              { kind: "standardAttack", name: "Claw Swipe", range: "veryClose", damage: { count: fixed(1), sides: 10, plus: fixed(3) }, type: "physical" },
+            ],
+            duration: "permanent",
+          },
         ],
       },
     ),
@@ -647,7 +706,8 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Squirt Ink - Action: "Mark a Stress to have the Octopus squirt ink. On land, the ink covers the ground within Very
   // Close range. Each creature who moves through that area must succeed on an Agility Reaction Roll or slip and fall,
   // becoming Vulnerable until they exit the area. If this feature is used while the Octopus is underwater, it instead
-  // creates a cloud of darkness that fills an area within Very Close range and blocks line of sight." The area is manual.
+  // creates a cloud of darkness that fills an area within Very Close range and blocks line of sight." Each is an area
+  // placed where the Octopus stands (dcm-cma, dcm-wuu): the ink's reaction roll on entering; the cloud blocks sight.
   f(
     "octopus",
     "Squirt Ink",
@@ -659,8 +719,39 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
           id: "where",
           label: "On land or underwater?",
           options: [
-            { id: "land", label: "On land", steps: [manual("Ink covers the ground within Very Close range: a creature moving through it makes an Agility Reaction Roll or falls, Vulnerable until it exits the area.")] },
-            { id: "underwater", label: "Underwater", steps: [manual("A cloud of darkness fills an area within Very Close range and blocks line of sight.")] },
+            {
+              id: "land",
+              label: "On land",
+              steps: [
+                {
+                  kind: "area",
+                  to: "self",
+                  area: {
+                    label: "Ink",
+                    centre: "point",
+                    placeWithin: "melee",
+                    radius: "veryClose",
+                    side: "all",
+                    duration: "scene",
+                    onEnter: [
+                      {
+                        kind: "save",
+                        to: "triggerSubject",
+                        trait: "agility",
+                        difficulty: { kind: "actorDifficulty" },
+                        onFail: [{ kind: "condition", to: "triggerSubject", condition: std("vulnerable"), duration: "manual", endsWhen: "until they exit the area" }],
+                        onSuccess: [],
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            {
+              id: "underwater",
+              label: "Underwater",
+              steps: [{ kind: "area", to: "self", area: { label: "Cloud of darkness", centre: "point", placeWithin: "melee", radius: "veryClose", side: "all", blocksSight: true, duration: "scene" } }],
+            },
           ],
         },
       ],
@@ -858,15 +949,13 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
 
   // Hand of Glory - Passive: "When the Candlemaker appears, place 5 tokens on this stat block. Remove a token whenever the
   // Candlemaker marks a HP. While this stat block has 1 or more tokens on it, the Candlemaker is Hidden." One token per
-  // HP marked; leaving Hidden when the last token goes is manual.
+  // HP marked; Hidden while a token is left is a passive condition on itself (dcm-cdz).
   f(
     "redcap-candlemaker",
     "Hand of Glory",
-    auto({ kind: "timing", at: "appears" }, { id: "appear", steps: [{ kind: "tokens", to: "self", op: "set", amount: fixed(5) }, until(std("hidden"), "this stat block has no tokens", undefined, "self")] }),
-    auto(
-      { kind: "onMarkHp" },
-      { id: "burn", requires: [{ kind: "tokens", atLeast: 1 }], steps: [{ kind: "tokens", to: "self", op: "spend", amount: { kind: "triggerAmount" } }, manual("With no tokens left on the stat block, the Candlemaker is no longer Hidden.")] },
-    ),
+    auto({ kind: "timing", at: "appears" }, { id: "appear", steps: [{ kind: "tokens", to: "self", op: "set", amount: fixed(5) }] }),
+    auto({ kind: "onMarkHp" }, { id: "burn", requires: [{ kind: "tokens", atLeast: 1 }], steps: [{ kind: "tokens", to: "self", op: "spend", amount: { kind: "triggerAmount" } }] }),
+    passive([{ kind: "selfCondition", condition: std("hidden") }], { id: "hidden", requires: [{ kind: "tokens", atLeast: 1 }] }),
   ),
   // Torchbearer - Passive: "The light of the Candlemaker's Hand of Glory inspires bloodlust in their allies. While this
   // stat block has 1 or more tokens on it, each Redcap adversary within Close range gains a +1 bonus to their damage
@@ -894,11 +983,14 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Skinner, the PC defeats an additional Minion within range the attack would succeed against."
   minion("redcap-skinner", 4),
   // Shallow Cuts - Passive: "When a PC fails a roll, they take 1 physical damage for each Skinner within Melee range of
-  // them. Combine this damage." The vocabulary can't count the Skinners: manual.
+  // them. Combine this damage." The Skinners within Melee range of the PC are counted (dcm-ttz): one hit.
   f(
     "redcap-skinner",
     "Shallow Cuts",
-    reaction({ kind: "pcRolls", result: "failure" }, { targets: SOURCE, steps: [manual("The PC takes 1 physical damage for each Skinner within Melee range of them, combined into one hit.", "targets")] }),
+    reaction(
+      { kind: "pcRolls", result: "failure" },
+      { targets: SOURCE, steps: [{ kind: "damage", to: "targets", roll: { kind: "flat", amount: { kind: "creatureCount", side: "allies", name: "Redcap Skinner", within: "melee", of: "target" } }, type: "physical" }] },
+    ),
   ),
   // Group Attack - Action: "… spotlight all Redcap Skinners within Close range of them. … On a success, they deal 2
   // physical damage each. Combine this damage."
@@ -923,7 +1015,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Howl at the Moon - Action: "Mark a Stress to force each PC within Far range to make a Presence Reaction Roll (15).
   // Targets who fail lose a Hope. Gain a Fear for each Hope lost. If a PC has no Hope, they must mark a Stress and become
   // Vulnerable until they roll with Hope." Read as: a PC who fails with no Hope to lose marks a Stress and becomes
-  // Vulnerable instead (manual; the gates can't test a PC's Hope). See the task doc's questions.
+  // Vulnerable instead (`hope.ifUnable`, dcm-5xi); the Fear comes only for a Hope lost (gated on the Hope held).
   f(
     "rugaru",
     "Howl at the Moon",
@@ -937,9 +1029,17 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
           trait: "presence",
           difficulty: { kind: "fixed", value: 15 },
           onFail: [
-            { kind: "hope", to: "targets", change: "lose", amount: fixed(1) },
-            { kind: "fear", to: "self", change: "gain", amount: fixed(1), note: "A Fear for each Hope lost" },
-            manual("If the PC has no Hope, they mark a Stress and become Vulnerable until they roll with Hope.", "targets"),
+            { kind: "fear", to: "self", change: "gain", amount: fixed(1), when: [{ kind: "targetCheck", check: HAS_HOPE }], note: "A Fear for each Hope lost" },
+            {
+              kind: "hope",
+              to: "targets",
+              change: "lose",
+              amount: fixed(1),
+              ifUnable: [
+                { kind: "markStress", to: "targets", amount: fixed(1) },
+                { kind: "condition", to: "targets", condition: std("vulnerable"), duration: "manual", endsWhen: "until they roll with Hope", endsOnRoll: { roll: "action", result: "withHope" } },
+              ],
+            },
           ],
           onSuccess: [],
         },
@@ -962,7 +1062,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Feeding Frenzy - Reaction: "When a creature marks HP, you can spend a Fear to spotlight all Sawtoothed Gillbeasts
   // within Very Close range of them. Those Gillbeasts move into Melee range of the creature and each make a standard
   // attack against them. If any attacks succeed, combine their damage." "A creature": a PC or an adversary. Each
-  // Gillbeast's own roll, combined, is manual.
+  // Gillbeast's own roll, combined, is manual (eachRolls isn't run yet, dcm-1ch).
   f(
     "sawtoothed-gillbeast",
     "Feeding Frenzy",
@@ -998,8 +1098,8 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // and takes 2d6 direct magic damage as their body and mind reassemble. 3–4: Time Dilation. Choose a group of PCs within
   // Far range. Each target is Slowed until they roll with Hope. While Slowed, a target is Vulnerable and must mark a
   // Stress when they move. 5–6: Discordant Visions. Make an attack against up to three targets within Close range.
-  // Targets the Mage succeeds against take 2d8 direct magic damage." The d6 can't pick an option in one pass: the GM
-  // rolls it and picks the matching move; each move has its own targets (`followUp`).
+  // Targets the Mage succeeds against take 2d8 direct magic damage." The d6 is a check table (dcm-27j): its row runs that
+  // move; each move has its own targets (`followUp`).
   f(
     "soul-shattered-mage",
     "Broken Magic",
@@ -1007,39 +1107,65 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
       costs: [stress()],
       steps: [
         {
-          kind: "choose",
-          id: "move",
-          label: "Roll a d6: 1–2 Dimension Rift, 3–4 Time Dilation, 5–6 Discordant Visions",
-          options: [
+          kind: "check",
+          dice: die(6),
+          test: { kind: "totalAtLeast", value: 1 },
+          note: "Roll a d6: 1–2 Dimension Rift, 3–4 Time Dilation, 5–6 Discordant Visions",
+          table: [
             {
-              id: "dimension-rift",
-              label: "1–2: Dimension Rift",
+              atLeast: 1,
+              atMost: 2,
+              label: "Dimension Rift",
               steps: [
                 {
                   kind: "followUp",
                   targets: enemy("far"),
-                  steps: [{ kind: "move", to: "targets", mode: "teleport", range: "close", relativeTo: "target" }, magic(roll(2, 6), undefined, { direct: true })],
+                  steps: [
+                    { kind: "move", to: "targets", mode: "teleport", range: "close", relativeTo: "target" },
+                    { kind: "damage", to: "targets", roll: roll(2, 6), type: "magic", direct: true },
+                  ],
                 },
               ],
             },
             {
-              id: "time-dilation",
-              label: "3–4: Time Dilation",
+              atLeast: 3,
+              atMost: 4,
+              label: "Time Dilation",
               steps: [
                 {
                   kind: "followUp",
                   targets: enemy("far", ALL, { area: "aroundPoint", areaRange: "veryClose" }),
-                  steps: [until(tag("Slowed", ["vulnerable"]), "they roll with Hope", undefined), manual("While Slowed, the target marks a Stress when they move.", "targets")],
+                  steps: [
+                    {
+                      kind: "condition",
+                      to: "targets",
+                      condition: tag("Slowed", ["vulnerable"]),
+                      duration: "manual",
+                      endsWhen: "they roll with Hope",
+                      ...UNTIL_HOPE,
+                      mods: [STRESS_ON("moves")],
+                    },
+                  ],
                 },
               ],
             },
             {
-              id: "discordant-visions",
-              label: "5–6: Discordant Visions",
-              // The runner adds the stat block's ATK only to a use's own roll, not to a follow-up's: ATK +2 here.
-              steps: [{ kind: "followUp", roll: { ...ATTACK, modifier: fixed(2) }, targets: enemy("close", { kind: "upTo", n: fixed(3) }), steps: [magic(roll(2, 8), HIT, { direct: true })] }],
+              atLeast: 5,
+              atMost: 6,
+              label: "Discordant Visions",
+              // The runner adds ATK to a follow-up attack, but not yet inside a check table row (dcm-b3bb): ATK +2 here until then (dcm-6n0p).
+              steps: [
+                {
+                  kind: "followUp",
+                  roll: { ...ATTACK, modifier: fixed(2) },
+                  targets: enemy("close", { kind: "upTo", n: fixed(3) }),
+                  steps: [{ kind: "damage", to: "targets", when: HIT, roll: roll(2, 8), type: "magic", direct: true }],
+                },
+              ],
             },
           ],
+          then: [],
+          otherwise: [],
         },
       ],
     }),
@@ -1055,8 +1181,8 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // ======== Spellbound Armor (Bruiser, HF p.68)
 
   // Tireless - Passive: "The Armor can't be forced to mark Stress. When an effect would cause it to mark Stress, the
-  // Armor ignores that part of the effect." No modifier for it: manual (it has no Stress track either).
-  f("spellbound-armor", "Tireless", shown("The Armor can't be forced to mark Stress; it ignores that part of any effect.")),
+  // Armor ignores that part of the effect." A flag (dcm-yea); it has no Stress track either.
+  f("spellbound-armor", "Tireless", passive([{ kind: "mod", mod: { kind: "flag", flag: "noForcedStress" } }])),
   // Clatter & Recombobulate - Reaction: "Once per scene when the Armor is defeated, you can spend a Fear to reactivate
   // it. Clear 2 HP and immediately spotlight it."
   f(
@@ -1075,7 +1201,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   f(
     "viper",
     "Venomous",
-    auto({ kind: "onHit", attack: "standard" }, { targets: SUBJECT, steps: [temporarily(tag("Envenomated"), undefined), manual("While Envenomated, the target marks a Stress whenever they make an action roll.", "targets")] }),
+    auto({ kind: "onHit", attack: "standard" }, { targets: SUBJECT, steps: [temporarily(tag("Envenomated"), undefined, "targets", { mods: [STRESS_ON("actionRoll")] })] }),
   ),
   // Group Attack - Action: "… spotlight all Vipers within Close range of them. … On a success, they deal 1 physical
   // damage each. Combine this damage."
@@ -1086,8 +1212,8 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Relentless (2) - Passive: "The Creation can be spotlighted up to two times per GM turn. …"
   relentless("waxwork-creation", 2),
   // No Vital Organs - Passive: "The Creation doesn't take extra damage from attacks that critically succeed against it."
-  // No modifier for it: manual.
-  f("waxwork-creation", "No Vital Organs", shown("Critical successes against the Creation deal no extra damage.")),
+  // A flag (dcm-yea).
+  f("waxwork-creation", "No Vital Organs", passive([{ kind: "mod", mod: { kind: "flag", flag: "noCritDamage" } }])),
   // Wax Ball - Action: "Mark a Stress to have the Creation throw a ball of wax at a target within Far range. Make an
   // attack against the target. On a success, the target takes 1d12+2 physical damage and becomes Restrained until they
   // succeed on a Strength Roll (15)."
@@ -1106,7 +1232,8 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Smothering Grapple - Reaction: "When the Creation makes a successful standard attack against a target within Melee
   // range, you can spend a Fear to Trap the target inside the Creation's wax body. While Trapped, the target is
   // Restrained and must mark a Stress and move with the Creation each time it's spotlighted. A Trapped creature is freed
-  // when the Creation takes Major or greater damage." The Stress per spotlight and the release are manual.
+  // when the Creation takes Major or greater damage." A rider on its spotlight (`casterSpotlit`, dcm-51s) and an end on
+  // its Major damage (`endsOnCaster`).
   f(
     "waxwork-creation",
     "Smothering Grapple",
@@ -1116,8 +1243,15 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         costs: [fear()],
         targets: SUBJECT,
         steps: [
-          until(tag("Trapped", ["restrained"]), "the Creation takes Major or greater damage", undefined),
-          manual("While Trapped, the target marks a Stress and moves with the Creation each time it's spotlighted.", "targets"),
+          until(tag("Trapped", ["restrained"]), "the Creation takes Major or greater damage", undefined, "targets", {
+            endsOnCaster: ["majorDamage"],
+            mods: [
+              rider("casterSpotlit", [
+                { kind: "markStress", to: "self", amount: fixed(1) },
+                { kind: "move", to: "self", mode: "move", relativeTo: "triggerSource", note: "The Trapped target moves with the Creation" },
+              ]),
+            ],
+          }),
         ],
       },
     ),
@@ -1181,11 +1315,11 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // Telepathic - Passive: "The Yufo can mentally communicate with creatures within Very Far range." Story only.
   f("yufo", "Telepathic", shown("The Yufo can mentally communicate with creatures within Very Far range.")),
   // Psychic Strongbox - Passive: "The Yufo is immune to abilities and features that would affect or alter its thoughts or
-  // emotions." Not damage immunity (CA2 excludes it): the GM rules which effects it ignores.
-  f("yufo", "Psychic Strongbox", shown("The Yufo is immune to abilities and features that would affect or alter its thoughts or emotions.")),
+  // emotions." Not damage immunity (CA2 excludes it): a flag (dcm-yea); the GM still rules which effects it ignores.
+  f("yufo", "Psychic Strongbox", passive([{ kind: "mod", mod: { kind: "flag", flag: "mindImmune" } }])),
   // Glitch Wave - Action: "Spend a Fear and choose up to three targets within Close range. Each target must succeed on a
   // Instinct Reaction Roll or become desynced from reality and have disadvantage on Instinct Rolls until they use a
-  // downtime move to ground their psyches in the now." The disadvantage is manual.
+  // downtime move to ground their psyches in the now." The disadvantage rides on the tag.
   f(
     "yufo",
     "Glitch Wave",
@@ -1198,7 +1332,7 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
           to: "targets",
           trait: "instinct",
           difficulty: { kind: "actorDifficulty" },
-          onFail: [until(tag("Desynced"), "they use a downtime move to ground their psyche", undefined), manual("While desynced, the target has disadvantage on Instinct Rolls.", "targets")],
+          onFail: [until(tag("Desynced"), "they use a downtime move to ground their psyche", undefined, "targets", { mods: [{ kind: "disadvantage", on: "instinct" }] })],
           onSuccess: [],
         },
       ],
