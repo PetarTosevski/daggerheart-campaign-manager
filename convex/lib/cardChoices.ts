@@ -63,6 +63,11 @@ export type ParsedChoices = {
   triggerSource?: string;
   triggerSubject?: string;
   triggerAmount?: number;
+  /**
+   * Lanes-2 E3 (dcm-86z, dcm-aw16 (2); Encore, CB p.335: "you deal the same damage to the target that your ally dealt"):
+   * `triggerDamageType`, the type of the trigger's damage; cardRunner fills `RunContext.trigger.damageType` from it (E4).
+   */
+  triggerDamageType?: "physical" | "magic" | "both";
   weapon?: "primary" | "secondary";
   // ---- Plan lanes, tracer E3 (docs/tasks/TASK-LN-E3.md); the runner's RunContext fields of the same meaning.
   /** `by:<step>:<tokenId>`: the option(s) each chooser of a `choose` step with `by` picked (dcm-bz8). */
@@ -100,6 +105,7 @@ function asText(c: CardChoice): string {
  * Reads the choice list. Ids: `n:<choice>` (a NumberChoice), `opt:<step>` (options of a choose step), `optional:<step>`
  * (true / false), `either:<i>` (the option index of the i-th "either" cost), `split:<tokenId>` (a share), `situations`,
  * `picked`, `allies`, `followUp` (token ids), `triggerSource`, `triggerSubject` (a token id), `triggerAmount`, `weapon`.
+ * Lanes-2 E3: `triggerDamageType` (physical / magic / both).
  * E3: `by:<step>:<tokenId>` (a chooser's options), `byOptional:<step>:<tokenId>` (true / false), `heldDice` (die ids),
  * `chain:<i>` (token ids of link i, 1 to MAX_CHAIN_LINKS), `raisers` (token ids).
  */
@@ -144,6 +150,12 @@ export function parseChoices(list: readonly CardChoice[]): ParsedChoices {
       case "triggerAmount":
         out.triggerAmount = asNumber(c);
         break;
+      case "triggerDamageType": {
+        const t = asText(c);
+        if (t !== "physical" && t !== "magic" && t !== "both") throw invalid("Pick physical or magic damage.");
+        out.triggerDamageType = t;
+        break;
+      }
       case "weapon": {
         const w = asText(c);
         if (w !== "primary" && w !== "secondary") throw invalid("Pick the primary or secondary weapon.");

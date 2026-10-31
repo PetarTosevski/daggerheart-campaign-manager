@@ -303,7 +303,7 @@ describe("the V2 widening (plan lanes-2)", () => {
     expect(stateCheckMet(v2Checks[0]!, state)).toBeUndefined();
   });
 
-  it("the new steps and the inventory gifts become manual prompts", () => {
+  it("the new steps and the inventory gifts become plan entries (lanes-2 E3)", () => {
     const plan = ok(
       run(
         card([
@@ -315,13 +315,13 @@ describe("the V2 widening (plan lanes-2)", () => {
         ctx([], { targets: [adv("a")] }),
       ),
     );
-    expect(ofKind(plan, "prompt").map((p) => [p.prompt, p.text])).toEqual([
-      ["manual", "Attack another adversary"],
-      ["manual", "changeForm"],
-      ["manual", "giveGold"],
-      ["manual", "a mundane object"],
+    // Lanes-2 E3: forcedAttack and the gifts are plan entries; a changeForm on a PC stays the table's.
+    expect(ofKind(plan, "forcedAttack")).toMatchObject([{ attackerIds: ["a"], againstIds: [] }]);
+    expect(ofKind(plan, "prompt").map((p) => [p.prompt, p.text])).toEqual([["manual", "Change form"]]);
+    expect(ofKind(plan, "inventory")).toEqual([
+      { kind: "inventory", targetId: "pc", op: "giveGold", amount: 1 },
+      { kind: "inventory", targetId: "pc", op: "giveItem", text: "a mundane object" },
     ]);
-    expect(ofKind(plan, "inventory")).toEqual([]);
   });
 
   it("a move along with the caster is a labelled move prompt", () => {
