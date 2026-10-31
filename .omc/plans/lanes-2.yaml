@@ -1,0 +1,44 @@
+# Lanes plan, round 2 (2026-10-31): the beads left open after lanes.yaml waves 1-6.
+# Same pattern as round 1: widen the vocabulary once (wave 7), engine lanes in parallel (wave 8),
+# SRD data + leftovers (wave 9). Waves 8 and 9 are written after V2's triage table (TASK-LN-V2.md),
+# which says for every open vocabulary-gap bead whether it still needs a new term, only engine work,
+# or only data. Lane labels stay the round-1 ones (lane:w1-e*, lane:w2-srd-data, ...).
+# Format: docs/workflow.md. Extra keys (plan-check ignores them): title, label, size.
+#
+# Rules carried over from lanes.yaml:
+#   - Only V2 edits the three effect types.ts files in this round.
+#   - Never edit src/lib/srd/** data in the vocabulary or engine waves; data moves in wave 9.
+#   - A change needed in another lane's file: file a follow-up bead with that lane's label.
+#   - Combat UI (dcm-bxp.99.32) waits for the user's design: keep UI changes minimal.
+plan: lanes-2
+waves:
+  # ------------------------------------------------------------------ wave 7: vocabulary widen 2 + triage
+  - wave: 7
+    tracers:
+      - id: V2
+        label: w3-vocabulary
+        title: Vocabulary widen 2 - every open gap's missing terms (types only, plus fallbacks) and a triage of every open vocabulary-gap bead
+        goal: Every open vocabulary-gap bead either has its terms in the vocabulary or is marked engine-only / data-only / narrative, so waves 8 and 9 can run in parallel
+        size: L
+        depends_on: []
+        owns:
+          - src/lib/domain/card-effects/types.ts
+          - src/lib/domain/adversary-effects/types.ts
+          - src/lib/domain/feature-effects/types.ts
+          - convex/lib/cardRunner.ts
+          - convex/lib/cardRows.ts
+          - src/components/combat-map/actions/hand/model.ts
+          - src/lib/domain/card-effects/availability.ts
+          - src/lib/domain/combat-actions/numbers.ts
+          - src/lib/domain/card-effects/run.ts
+          - tests/unit/card-effects/types-widen.test.ts
+          - tests/unit/card-effects/types-widen-2.test.ts
+          - docs/tasks/TASK-LN-V2.md
+        reads:
+          - src/lib/srd/**
+          - docs/tasks/TASK-LN-*.md
+        acceptance:
+          - "Triage table in TASK-LN-V2.md: every open bead labelled vocabulary-gap -> needs-term (added here) / engine-only (which lane) / data-only / narrative (P4, close-candidate) / rule-question"
+          - "Every needs-term bead's union members added, widen only, no any; no behaviour change"
+          - "Each exhaustive Record / default-less switch gets one fallback line (manual / false / null) as in V"
+          - "Every existing test passes unchanged"
