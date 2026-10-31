@@ -132,6 +132,19 @@ function resize(before: readonly HeldDie[], after: readonly HeldDie[], sides: Di
   return after.map((d) => (old.has(d.id) || d.value !== undefined ? d : { ...d, sides }));
 }
 
+/** A roll as it reads for a target it missed: its success becomes the failure with the same die (Hope / Fear). */
+export function missedFor(roll: RollRecord): RollRecord {
+  switch (roll.outcome) {
+    case "critical":
+    case "successHope":
+      return { ...roll, outcome: "failHope" };
+    case "successFear":
+      return { ...roll, outcome: "failFear" };
+    default:
+      return roll;
+  }
+}
+
 /** A handler for the runner's `delegate` steps, and the sheets the D5 features leave behind. */
 export function createDelegator(input: DelegatorInput): Delegator {
   const registry = input.registry ?? CLASS_FEATURES;
@@ -140,7 +153,7 @@ export function createDelegator(input: DelegatorInput): Delegator {
   const changed = new Set<string>();
   const rolls: RollRecord[] = [];
 
-  const handler: DelegateHandler = ({ feature, params, actor }): DelegateAnswer => {
+  const handler: DelegateHandler = ({ feature, params, actor, roll: ownRoll, hit }): DelegateAnswer => {
     // Plan lanes E8 (dcm-78x, dcm-lk8): a session feature's key routes to its session-features rule.
     const session = SESSION_DELEGATES[feature];
     if (session) {
@@ -188,6 +201,12 @@ export function createDelegator(input: DelegatorInput): Delegator {
     // (convex/lib/featureRunner.ts `nameDelegatedTargets`), so `classState.hexes` holds the instance, not "Target N".
     const namesTarget = meta.target !== "ally" && meta.target !== "party" && (meta.inputs ?? []).some((i) => i.kind === "text" && i.param === "choice");
     const choice = params.choice ?? (namesTarget ? params.targetId : undefined);
+    // Plan lanes-2 E8 (dcm-8dhe, dcm-d1d; Ranger's Focus, CB p.39: "make an attack against a target. On a success, that
+    // target becomes your Focus"): the use's own roll (or its follow-up's, `DelegateRequest.roll`) is the roll the D5
+    // feature acts on; the caller's `roll` (Volatile Magic, Patron's Boon: the latest roll) only without one. A roll that
+    // missed the step's target (`hit: false`) is a failure for that target.
+    const acted = ownRoll ?? input.roll;
+    const roll = acted && hit === false && ownRoll !== undefined ? missedFor(acted) : acted;
     let result;
     try {
       result = meta.use({
@@ -200,7 +219,7 @@ export function createDelegator(input: DelegatorInput): Delegator {
         },
         rng: input.rng,
         others: pass,
-        ...(input.roll ? { roll: input.roll } : {}),
+        ...(roll ? { roll } : {}),
       });
     } catch (error) {
       // A D5 refusal is a RuleError with the player's words; anything else is a bug and goes on up.

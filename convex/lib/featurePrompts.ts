@@ -22,7 +22,7 @@
  */
 import { pickUse, rollTargetCount } from "../../src/lib/domain/card-effects/run";
 import type { CardUse, Step } from "../../src/lib/domain/card-effects/types";
-import { asCardEffect } from "../../src/lib/domain/feature-effects/run";
+import { actorExtras, asCardEffect, featureCostShort } from "../../src/lib/domain/feature-effects/run";
 import { appError } from "../../src/lib/errors/app-error";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
@@ -43,7 +43,8 @@ export function countMark(requestId: Id<"combatRequests">): string {
 
 /** The sheet without the scene marks of rolled counts, except those in `keep`. The same object when nothing goes. */
 export function withoutCountMarks<S extends Pick<CharacterSheet, "featureUses">>(sheet: S, keep: ReadonlySet<string> = new Set()): S {
-  const kept = sheet.featureUses.filter((u) => !u.key.startsWith(COUNT_MARK) || keep.has(u.key));
+  // A chosen number's mark (`<mark>:<choice>=<n>`, E8) goes with its roll's mark.
+  const kept = sheet.featureUses.filter((u) => !u.key.startsWith(COUNT_MARK) || keep.has(u.key) || keep.has(u.key.split(":").slice(0, 2).join(":")));
   return kept.length === sheet.featureUses.length ? sheet : { ...sheet, featureUses: kept };
 }
 
@@ -106,14 +107,29 @@ export function rolledFirstUse(featureId: string, useId: string | undefined): Ca
  */
 export async function rollAndStoreCount(
   ctx: MutationCtx,
-  input: { campaignId: Id<"campaigns">; character: Doc<"characters">; sheet: CharacterSheet; featureId: string; use: CardUse; userId: Id<"users"> },
+  input: {
+    campaignId: Id<"campaigns">;
+    character: Doc<"characters">;
+    sheet: CharacterSheet;
+    featureId: string;
+    use: CardUse;
+    userId: Id<"users">;
+    /** Plan lanes-2 E8 (dcm-q3t1): the player's numbers the count reads (Otherworldly Ire's Favor), by choice id. */
+    choices?: Readonly<Record<string, number>>;
+  },
 ): Promise<{ requestId: Id<"combatRequests">; count: number }> {
   for (const row of await countRows(ctx, input.campaignId, input.character._id, input.featureId, input.use.id)) {
     if (sameScene(row, input.sheet)) throw appError("INVALID", "You already rolled for this use: use it first.");
     await closeRequest(ctx, row._id, "declined", input.userId);
   }
-  const actor = cardActor(input.character._id, input.sheet, `feat:${input.featureId}`, undefined);
-  const count = rollTargetCount(input.use, actor, rollDie);
+  const actor = { ...cardActor(input.character._id, input.sheet, `feat:${input.featureId}`, undefined), ...actorExtras(input.sheet) };
+  const chosen = countChoices(input.use, input.choices ?? {});
+  // The count's chosen numbers are paid with the use (its costs); the player must hold them now.
+  if (chosen.length > 0) {
+    const short = featureCostShort(actor, input.use, input.choices ?? {});
+    if (short.length > 0) throw appError("FEATURE_COST_UNPAID", `Short of: ${short.join(", ")}.`);
+  }
+  const count = rollTargetCount(withChosenCount(input.use, input.choices ?? {}), actor, rollDie);
   if (count === null) throw appError("INVALID", "That feature has no target count to roll first.");
   const requestId = await ctx.db.insert("combatRequests", {
     campaignId: input.campaignId,
@@ -127,8 +143,60 @@ export async function rollAndStoreCount(
   // Keep the marks of the character's other open rolls (another rolled-first feature); drop stale ones.
   const open = (await openRequests(ctx, input.campaignId)).filter((r): r is CountRow => isCountRow(r) && r.payload.characterId === input.character._id);
   const kept = withoutCountMarks(input.sheet, new Set(open.map((r) => countMark(r._id))));
-  await saveSheet(ctx, input.character._id, { ...kept, featureUses: [...kept.featureUses, { key: countMark(requestId), until: "scene" }] });
+  const marks = [countMark(requestId), ...chosen.map((c) => chosenMark(requestId, c.id, c.value))].map((key) => ({ key, until: "scene" as const }));
+  await saveSheet(ctx, input.character._id, { ...kept, featureUses: [...kept.featureUses, ...marks] });
   return { requestId, count };
+}
+
+// ---------------------------------------------------------------- plan lanes-2, E8: a count rolled from a chosen number
+
+/**
+ * dcm-q3t1 (Otherworldly Ire, HF p.15: "spend any number of Favor to roll that many Patron Dice and target a number of
+ * creatures within Close range equal to the highest result"): the `chosen` numbers a `rolledFirst` count reads, with the
+ * player's values (0 when not given). The roll stores each beside its scene mark (`chosenMark`), and the use must be made
+ * with the same numbers (`spendTargetCount`), so its costs pay what the roll was made with.
+ */
+export function countChoices(use: CardUse, choices: Readonly<Record<string, number>>): { id: string; value: number }[] {
+  const spec = use.targets;
+  if (spec === undefined || spec.side === "trigger" || spec.count.kind !== "upTo") return [];
+  const ids = new Set<string>();
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (v !== null && typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      if (o.kind === "chosen" && typeof o.choice === "string") ids.add(o.choice);
+      Object.values(o).forEach(walk);
+    }
+  };
+  walk(spec.count.n);
+  return [...ids].map((id) => ({ id, value: choices[id] ?? 0 }));
+}
+
+/** The use with the `chosen` numbers of its target count written in as fixed numbers (run.ts rolls the count without choices). */
+export function withChosenCount(use: CardUse, choices: Readonly<Record<string, number>>): CardUse {
+  const spec = use.targets;
+  if (spec === undefined || spec.side === "trigger" || spec.count.kind !== "upTo") return use;
+  const bind = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(bind);
+    if (v === null || typeof v !== "object") return v;
+    const o = v as Record<string, unknown>;
+    if (o.kind === "chosen" && typeof o.choice === "string") return { kind: "fixed", value: choices[o.choice] ?? 0 };
+    return Object.fromEntries(Object.entries(o).map(([k, x]) => [k, bind(x)]));
+  };
+  return { ...use, targets: { ...spec, count: { ...spec.count, n: bind(spec.count.n) as typeof spec.count.n } } };
+}
+
+/** The scene mark that keeps a chosen number of a rolled count: `rolledCount:<requestId>:<choice>=<n>`. */
+export function chosenMark(requestId: Id<"combatRequests">, choice: string, value: number): string {
+  const key = `${countMark(requestId)}:${choice}=${value}`;
+  if (key.length > 80) throw appError("INVALID", "That choice id is too long.");
+  return key;
+}
+
+/** Whether a `featureUses` key is a rolled count's mark or one of its chosen numbers. */
+export function isMarkOf(key: string, requestId: Id<"combatRequests">): boolean {
+  const mark = countMark(requestId);
+  return key === mark || key.startsWith(`${mark}:`);
 }
 
 /**
@@ -139,12 +207,28 @@ export async function rollAndStoreCount(
  */
 export async function spendTargetCount(
   ctx: MutationCtx,
-  input: { campaignId: Id<"campaigns">; characterId: Id<"characters">; sheet: CharacterSheet; featureId: string; use: CardUse; targets: number; by: Id<"users"> },
+  input: {
+    campaignId: Id<"campaigns">;
+    characterId: Id<"characters">;
+    sheet: CharacterSheet;
+    featureId: string;
+    use: CardUse;
+    targets: number;
+    by: Id<"users">;
+    /** Plan lanes-2 E8 (dcm-q3t1): the use's numbers; a count rolled from a chosen number needs the same one. */
+    choices?: Readonly<Record<string, number>>;
+  },
 ): Promise<{ count: number; requestId: Id<"combatRequests"> } | null> {
   if (!isRolledFirst(input.use)) return null;
   const row = await liveTargetCount(ctx, input.campaignId, input.characterId, input.featureId, input.use.id, input.sheet);
   if (row === null) throw appError("COMBAT_TARGET_INVALID", "Roll the number of targets first.");
   if (input.targets > row.payload.count) throw appError("COMBAT_TARGET_INVALID", `At most ${row.payload.count} target(s).`);
+  const prefix = `${countMark(row._id)}:`;
+  for (const u of input.sheet.featureUses) {
+    if (!u.key.startsWith(prefix)) continue;
+    const [choice, value] = u.key.slice(prefix.length).split("=");
+    if (choice !== undefined && Number(value) !== (input.choices?.[choice] ?? 0)) throw appError("INVALID", `Use it with the ${choice} you rolled for (${value}).`);
+  }
   await closeRequest(ctx, row._id, "resolved", input.by);
   return { count: row.payload.count, requestId: row._id };
 }

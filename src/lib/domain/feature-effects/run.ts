@@ -28,8 +28,11 @@ import {
   type Availability,
 } from "../card-effects/availability";
 import { pickUse, run, type ActorState, type HeldDieState, type RunContext, type RunPlan, type RunRefusal } from "../card-effects/run";
-import type { CardEffect, CardUse, Cost, HeldDieKind } from "../card-effects/types";
+import type { CardEffect, CardUse, Cost, HeldDieKind, NumberSource } from "../card-effects/types";
 import { resolveNumber, type NumberEnv } from "../combat-actions/numbers";
+import { derivedDefense, derivedThresholds } from "../characters/derived";
+import { withEffects } from "../characters/effects";
+import type { FeatureScope } from "../class-features/types";
 import type { RollRecord } from "../duality";
 import { rallyDieSides } from "../class-features/classes/bard";
 import { unstoppableMax } from "../class-features/classes/guardian";
@@ -224,4 +227,116 @@ export function actorExtras(sheet: CharacterSheet): Pick<ActorState, "favor" | "
       unstoppable: sheet.classState.unstoppable?.max ?? unstoppableMax(sheet.level),
     },
   };
+}
+
+// ---------------------------------------------------------------- plan lanes-2, E8: numbers the sheet holds
+
+/** The derived stats a `stat` number source reads for the actor (`NumberSource stat`, `who: "self"`). */
+export type SheetStat = Extract<NumberSource, { kind: "stat" }>["stat"];
+
+/**
+ * Plan lanes-2, E8 (dcm-me3, dcm-rm9, dcm-78x, dcm-v17, dcm-bxp.99.19.4): the numbers of the actor's own sheet that the
+ * vocabulary's `tideTokens`, `classDie` and `stat` (`who: "self"`) sources read. The card runner's `NumberEnv` has the
+ * fields (numbers.ts, E5) but `run()` doesn't copy them from the actor yet (dcm-rs1z, E3); `bindSheetNumbers` writes
+ * them into the use as fixed numbers before it runs, so a feature reads them either way.
+ * - Know the Tide (CB p.77): "spend any number of these tokens" -> `sessionFeatures.tideTokens`.
+ * - Unstoppable (CB p.36): the die's current value -> `classState.unstoppable.value`; a held class die (Rally, Prayer,
+ *   Patron, Combo) its rolled value, when it has one.
+ * - Armored Shell (CB p.33: "reduce the incoming damage by your Armor Score"): Armor Score, Evasion and the thresholds
+ *   after gear, effects and passives (characters/derived.ts; installed Ikonis augments are not read here).
+ */
+export interface SheetNumbers {
+  tideTokens: number;
+  classDice: Partial<Record<HeldDieKind | "unstoppable", number>>;
+  stats: Record<SheetStat, number>;
+}
+
+export function sheetNumbers(sheet: CharacterSheet, scope?: FeatureScope): SheetNumbers {
+  const classDice: SheetNumbers["classDice"] = {};
+  const unstoppable = sheet.classState.unstoppable?.value;
+  if (unstoppable !== undefined) classDice.unstoppable = unstoppable;
+  for (const d of sheet.heldDice) if (d.value !== undefined && classDice[d.kind] === undefined) classDice[d.kind] = d.value;
+  const defense = derivedDefense(withEffects(sheet), [], scope);
+  const thresholds = derivedThresholds(sheet, scope);
+  return {
+    tideTokens: sheet.sessionFeatures?.tideTokens ?? 0,
+    classDice,
+    stats: { armorScore: defense.armorScore, evasion: defense.evasion, majorThreshold: thresholds.major, severeThreshold: thresholds.severe },
+  };
+}
+
+/** The fixed number a sheet-held source reads, or undefined for any other value. */
+function boundSource(value: Record<string, unknown>, numbers: SheetNumbers): NumberSource | undefined {
+  const fixed = (n: number): NumberSource => ({ kind: "fixed", value: n });
+  // A `Mod` of kind "stat" carries `delta` (never `who`); only the number source is bound.
+  if ("delta" in value) return undefined;
+  switch (value.kind) {
+    case "tideTokens":
+      return fixed(numbers.tideTokens);
+    case "classDie":
+      return typeof value.die === "string" ? fixed(numbers.classDice[value.die as HeldDieKind | "unstoppable"] ?? 0) : undefined;
+    case "stat":
+      return value.who === "self" && typeof value.stat === "string" && value.stat in numbers.stats ? fixed(numbers.stats[value.stat as SheetStat]) : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * `value` (a use, a step, any part of an entry) with every `tideTokens`, `classDie` and self `stat` number source
+ * replaced by the sheet's number (`sheetNumbers`). Unchanged parts keep their identity, so a use without such a source
+ * comes back as the same object.
+ *
+ * ```ts
+ * bindSheetNumbers(knowTheTide, sheetNumbers(sheet));   // choice max {kind: "tideTokens"} -> {kind: "fixed", value: 3}
+ * ```
+ */
+export function bindSheetNumbers<T>(value: T, numbers: SheetNumbers): T {
+  if (Array.isArray(value)) {
+    let changed = false;
+    const out = value.map((v: unknown) => {
+      const b = bindSheetNumbers(v, numbers);
+      if (b !== v) changed = true;
+      return b;
+    });
+    return (changed ? out : value) as T;
+  }
+  if (value === null || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const bound = boundSource(record, numbers);
+  if (bound !== undefined) return bound as T;
+  let changed = false;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(record)) {
+    const b = bindSheetNumbers(v, numbers);
+    if (b !== v) changed = true;
+    out[k] = b;
+  }
+  return (changed ? out : value) as T;
+}
+
+// ---------------------------------------------------------------- plan lanes-2, E8: a pick made when the card is chosen
+
+/**
+ * dcm-40mj (Vitality, CB p.330: "When you choose this card, permanently gain two of the following benefits ... Then place
+ * this card in your vault permanently"): the entry's use set off by its choosing (`auto` on `whenYouChooseThisCard`), or
+ * undefined. The level-up / card acquisition flow runs it once, when the card is taken (`runOnChoose`).
+ */
+export function onChooseUse(effect: Pick<CardEffect, "uses">): CardUse | undefined {
+  return effect.uses.find((u) => u.activation.kind === "auto" && u.activation.trigger.kind === "whenYouChooseThisCard");
+}
+
+/**
+ * Runs the `whenYouChooseThisCard` use of a card or feature entry once (no limit: it happens when the card is chosen,
+ * never again). The plan's steps are the permanent picks (`effect` steps with `hpMax` / `stressMax` / threshold mods,
+ * `toVault`), which the caller writes to the sheet. Null when the entry has no such use; a refusal as `run` gives it
+ * (an option not picked yet: `choice`).
+ */
+export function runOnChoose(effect: CardEffect, context: Omit<RunContext, "useId">): { ok: true; plan: RunPlan } | RunRefusal | null {
+  const use = onChooseUse(effect);
+  if (use === undefined) return null;
+  const { limit: _limit, ...once } = use;
+  void _limit;
+  const result = run({ ...effect, uses: [{ ...once, activation: { kind: "action" } }] }, { ...context, useId: use.id });
+  return result.ok ? { ok: true, plan: result.plan } : result;
 }

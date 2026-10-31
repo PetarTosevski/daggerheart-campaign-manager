@@ -84,7 +84,13 @@ const countView = v.object({ requestId: v.id("combatRequests"), count: v.number(
 export const rollCount = keyedCampaignMutation({
   need: "view",
   rateLimit: "roll",
-  args: { characterId: v.id("characters"), featureId: v.string(), useId: v.optional(v.string()) },
+  args: {
+    characterId: v.id("characters"),
+    featureId: v.string(),
+    useId: v.optional(v.string()),
+    /** Plan lanes-2 E8 (dcm-q3t1): the numbers the count reads (Otherworldly Ire's Favor), by choice id; the use repeats them. */
+    choices: v.optional(v.record(v.string(), v.number())),
+  },
   returns: countView,
   handler: async (ctx, args) =>
     ctx.once("feature_roll_count", args, async () => {
@@ -94,7 +100,9 @@ export const rollCount = keyedCampaignMutation({
       const pick = pickFeature({ sheet, campaign, featureId: args.featureId, useId: args.useId, times: 1, rollUsedExperience: false, party: [] });
       const use = rolledFirstUse(args.featureId, pick.use.id);
       if (limitUsed(sheet, args.featureId)) throw appError("FEATURE_EXHAUSTED");
-      return rollAndStoreCount(ctx, { campaignId: campaign._id, character, sheet, featureId: args.featureId, use, userId: ctx.user._id });
+      const choices = args.choices ?? {};
+      if (Object.keys(choices).length > 10 || Object.values(choices).some((n) => !Number.isInteger(n) || n < 0 || n > 99)) throw appError("INVALID", "Each chosen number is a whole number from 0 to 99.");
+      return rollAndStoreCount(ctx, { campaignId: campaign._id, character, sheet, featureId: args.featureId, use, userId: ctx.user._id, choices });
     }),
 });
 

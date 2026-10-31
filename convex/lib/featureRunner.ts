@@ -30,7 +30,12 @@ import { pickUse, type ActorState, type RunContext, type RunPlan, type RunRefusa
 import type { CardUse, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { delegatedKeys } from "../../src/lib/domain/feature-effects/delegate";
 import { owned, activeBeastformId, holdingsFor, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
-import { actorExtras, asCardEffect, runFeature } from "../../src/lib/domain/feature-effects/run";
+import { actorExtras, asCardEffect, bindSheetNumbers, runFeature, sheetNumbers } from "../../src/lib/domain/feature-effects/run";
+import type { FeatureScope } from "../../src/lib/domain/class-features/types";
+import { addGold } from "../../src/lib/domain/characters/index";
+import { rangeFromWeapon } from "../../src/lib/domain/combat-actions/distance";
+import { FRAME_OF } from "../../src/lib/frames/extras/common";
+import { getWeapon } from "../../src/lib/srd/index";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
 import { applyUpgrades } from "../../src/lib/domain/feature-effects/upgrades";
 import type { OtherSheet } from "../../src/lib/domain/class-features/types";
@@ -46,13 +51,15 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logAction, newGroupId } from "./actionLog";
 import { dropDice, MAX_CARD_TARGETS, type CardChoice, type CardRoll, type DiceSlot } from "./cardChoices";
-import { cardPromptValidator, damageRolls, gmLines, instanceWrites, openCardHits, promptsOf, publicTargets, rollText, writeInstances } from "./cardRows";
-import { actorSheetAfter, effectOption, featureIdOfEffect, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
+import { afterUnstoppable, cardPromptValidator, damageRolls, effectEndsOf, endOnSheet, gmLines, instanceWrites, openCardHits, promptsOf, publicTargets, rollText, writeInstances } from "./cardRows";
+import { actorSheetAfter, effectOption, featureIdOfEffect, ownsEffect, tokenKeyOf, writeSheetChanges, type BuiltRun, type Delegated, type UsePick } from "./cardRunner";
+import { setStance } from "./stanceDrop";
+import type { AdversaryBefore } from "./validators/actionLog";
 import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
 import type { CompanionNumbers } from "./companion";
 import { partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
-import { countMark, hasServerMove, isRolledFirst, openAllyRoll, spendTargetCount } from "./featurePrompts";
+import { hasServerMove, isMarkOf, isRolledFirst, openAllyRoll, spendTargetCount } from "./featurePrompts";
 import { campaignFearState, gainFear, spendFear } from "./fear";
 import { changed } from "./rolls";
 import { rollValidator } from "./validators/actionLog";
@@ -104,12 +111,17 @@ export function featureRefusal(r: RunRefusal) {
 export const MAX_TIMES = 10;
 
 /** The SD3-only choice ids, taken out before the card path parses the rest (`parseChoices`). */
-export function splitFeatureChoices(list: readonly CardChoice[]): { rest: CardChoice[]; times: number; dieIndexes?: number[] } {
+export function splitFeatureChoices(list: readonly CardChoice[]): { rest: CardChoice[]; times: number; dieIndexes?: number[]; heldDicePicks?: string[] } {
   let times = 1;
   let dieIndexes: number[] | undefined;
+  let heldDicePicks: string[] | undefined;
   const rest: CardChoice[] = [];
   for (const c of list) {
-    if (c.id === "times") {
+    if (c.id === HELD_DICE_PICKS) {
+      // Plan lanes-2 E8 (dcm-qbn): the held dice (by id) to spend, e.g. which Prayer Dice (CB p.44).
+      if (!Array.isArray(c.value) || c.value.length > 20) throw appError("INVALID", "heldDicePicks needs held die ids.");
+      heldDicePicks = [...c.value];
+    } else if (c.id === "times") {
       if (typeof c.value !== "number" || !Number.isInteger(c.value) || c.value < 1 || c.value > MAX_TIMES) throw appError("INVALID", `Times is 1 to ${MAX_TIMES}.`);
       times = c.value;
     } else if (c.id === "dieIndexes") {
@@ -119,7 +131,35 @@ export function splitFeatureChoices(list: readonly CardChoice[]): { rest: CardCh
       dieIndexes = n;
     } else rest.push(c);
   }
-  return { rest, times, ...(dieIndexes ? { dieIndexes } : {}) };
+  return { rest, times, ...(dieIndexes ? { dieIndexes } : {}), ...(heldDicePicks ? { heldDicePicks } : {}) };
+}
+
+/** The choice id of the held dice a feature use spends (`{id: "heldDicePicks", value: ["die-1"]}`). */
+export const HELD_DICE_PICKS = "heldDicePicks";
+
+/** The campaign's feature scope (as convex/lib/featureScope.ts, from the fields a pick has). */
+function scopeOf(campaign: Pick<Doc<"campaigns">, "frameId" | "options">): FeatureScope {
+  return { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear, ikonis: campaign.frameId === FRAME_OF.motherboard };
+}
+
+/**
+ * Plan lanes-2 E8 (dcm-me3, dcm-lk8, dcm-rm9): the facts a feature's own checks read beyond `factsOf`: its own tokens
+ * (`cardTokens` under `feat:<featureId>`; Feed, dcm-2g9), the Lunar Phases moon die (`moonPhase`, HF p.17), the items
+ * carried (`holdsItem`) and the weapons' ranges (`weaponRange`).
+ */
+export function ownFacts(sheet: CharacterSheet, featureId: string): NonNullable<ActorState["facts"]> {
+  const key = tokenKeyOf(featureId);
+  const rangeOf = (id: string | undefined) => {
+    const w = id ? getWeapon(id) : undefined;
+    return w ? rangeFromWeapon(w.range) : null;
+  };
+  const moon = sheet.sessionFeatures?.moonDie;
+  return {
+    cardTokens: (sheet.cardTokens ?? []).find((t) => t.cardId === key)?.count ?? 0,
+    ...(moon !== undefined ? { moonPhase: moon } : {}),
+    items: sheet.inventory.map((i) => i.name),
+    weapons: { primary: rangeOf(sheet.primaryWeaponId), secondary: rangeOf(sheet.secondaryWeaponId) },
+  };
 }
 
 /** Whether a use needs the live map: its targets are enemies, any creature, a point or an object (FEATURE_NEEDS_MAP). */
@@ -211,6 +251,8 @@ export function pickFeature(input: {
   useId: string | undefined;
   times: number;
   dieIndexes?: number[];
+  /** Plan lanes-2 E8 (dcm-qbn): the held dice (by id) the player picked to spend (`splitFeatureChoices` `heldDicePicks`). */
+  heldDicePicks?: string[];
   rollUsedExperience: boolean;
   party: PartyMember[];
   /**
@@ -251,7 +293,17 @@ export function pickFeature(input: {
   const picked = pickUse({ ...card, uses: card.uses.filter((u) => feature.uses === undefined || feature.uses.includes(u.id)) }, input.useId);
   if (picked === undefined) throw appError("INVALID", `${feature.name} has no "${input.useId ?? ""}".`);
   if (picked.activation.kind === "passive") throw appError("FEATURE_NOT_COMBAT", `${picked.name} is always on.`);
-  const transform = input.transform;
+  // Plan lanes-2 E8 (dcm-me3): the sheet's own numbers (Tide tokens, class dice, Armor Score, thresholds) are written into
+  // the use as fixed numbers, until run.ts reads them from the actor (dcm-rs1z).
+  const numbers = sheetNumbers(sheet, scopeOf(input.campaign));
+  const binds = bindSheetNumbers(picked, numbers) !== picked;
+  const transform =
+    input.transform || binds
+      ? (u: CardUse) => {
+          const t = input.transform ? input.transform(u) : u;
+          return binds ? bindSheetNumbers(t, numbers) : t;
+        }
+      : undefined;
   // SD5: the transformed use runs as the entry's, upgrades already applied (only their die sizes are kept, which
   // `runFeature` reads for delegated held dice and which apply twice harmlessly).
   const runEntry: FeatureEffect = transform
@@ -267,7 +319,7 @@ export function pickFeature(input: {
   const rolledCount = isRolledFirst(use) ? { rolledTargetCount: input.rolledTargetCount ?? MAX_CARD_TARGETS } : {};
   const delegates = delegatedKeys(use).length > 0;
   const others: OtherSheet[] = delegates ? input.party.map((m) => ({ characterId: m.key, sheet: m.sheet })) : [];
-  const facts = { ...factsOf(sheet, input.rollUsedExperience), ...(input.extraFacts ?? {}) };
+  const facts = { ...factsOf(sheet, input.rollUsedExperience), ...ownFacts(sheet, featureId), ...(input.extraFacts ?? {}) };
 
   const runner = (context: RunContext) => {
     const { useId: _useId, limitKeys: _limitKeys, delegate: _delegate, ...rest } = context;
@@ -285,6 +337,8 @@ export function pickFeature(input: {
       holdings,
       times: input.times,
       ...(input.dieIndexes ? { dieIndexes: input.dieIndexes } : {}),
+      // dcm-qbn: the held dice the player picked to spend (Prayer Dice); the runner spends these first.
+      ...(input.heldDicePicks ? { heldDicePicks: input.heldDicePicks } : {}),
     });
     if (!result.ok) return result;
     const short = (key: string) => storedLimitKey(key, targetIds);
@@ -435,6 +489,120 @@ function extraMovePrompt(plan: RunPlan, p: { kind: string; text: string }): bool
   return p.kind === "manual" && plan.steps.some((s) => s.kind === "prompt" && s.prompt === "manual" && isExtraMoveGrant(s.step) && s.text === p.text);
 }
 
+// ---------------------------------------------------------------- plan lanes-2, E8: steps the feature runner writes
+
+/** A PC's name on the map, or null. */
+function pcName(built: BuiltRun, id: string): string | null {
+  const c = built.creatures.get(id);
+  return c?.kind === "pc" ? c.sheet.name : null;
+}
+
+/** The labels of the lasting effects a creature carries now: an adversary's instance effects, a PC's sheet effects. */
+export function effectLabelsOn(built: BuiltRun, id: string, actorToken: string, sheet: CharacterSheet): string[] {
+  const label = (e: { text: string }) => e.text.split("; ")[0] ?? "";
+  if (id === actorToken) return sheet.effects.map(label);
+  const c = built.creatures.get(id);
+  if (c?.kind === "enemy") return (c.instance.effects ?? []).map((e) => e.label);
+  if (c?.kind === "pc") return c.sheet.effects.map(label);
+  return [];
+}
+
+/**
+ * dcm-kkx (Blight Seed, HF p.9: "This effect can't stack"): a `stacking: "refuse"` effect step on a creature that already
+ * carries an effect of that label becomes a note for the table instead (as run.ts does with `effectsOn`, which the
+ * server's card path doesn't fill). Other plans come back unchanged.
+ */
+export function refuseStacked(plan: RunPlan, labelsOf: (id: string) => readonly string[]): RunPlan {
+  if (!plan.steps.some((s) => s.kind === "effect" && s.stacking === "refuse")) return plan;
+  const steps = plan.steps.map((s): RunPlan["steps"][number] =>
+    s.kind === "effect" && s.stacking === "refuse" && labelsOf(s.targetId).includes(s.label)
+      ? { kind: "prompt", prompt: "manual", text: `${s.label}: already on them (it can't stack)`, targetIds: [s.targetId] }
+      : s,
+  );
+  return { ...plan, steps };
+}
+
+/** What an `inventory` gift step gives one PC (CB p.43, dcm-vf7i): handfuls of gold, or an item by name. */
+export type Gift = { kind: "gold"; handfuls: number } | { kind: "item"; name: string };
+
+/** The gift of a manual step, or null: `giveGold` (fixed amount, default 1 handful), `giveItem` with its `text`. */
+function giftOf(step: Step | undefined): Gift | null {
+  if (step?.kind !== "inventory") return null;
+  if (step.op === "giveGold") {
+    const amount = step.amount === undefined ? 1 : step.amount.kind === "fixed" ? step.amount.value : null;
+    return amount !== null && amount > 0 ? { kind: "gold", handfuls: amount } : null;
+  }
+  // An item the step doesn't name is the GM's pick ("a mundane object that the situation requires"): the table's.
+  if (step.op === "giveItem" && step.text !== undefined && step.text.trim() !== "") return { kind: "item", name: step.text.trim().slice(0, 200) };
+  return null;
+}
+
+/**
+ * The gifts of a plan's manual `inventory` steps (`giveGold` / `giveItem`, run.ts's fallback prompt) whose recipients are
+ * all PCs (`isPc`): by recipient, the prompt texts they answer, and a note per recipient.
+ */
+export function giftsOf(plan: RunPlan, isPc: (id: string) => boolean): { byTarget: Map<string, Gift[]>; texts: Set<string>; notes: (name: (id: string) => string) => string[] } {
+  const byTarget = new Map<string, Gift[]>();
+  const texts = new Set<string>();
+  for (const s of plan.steps) {
+    if (s.kind !== "prompt" || s.prompt !== "manual") continue;
+    const gift = giftOf(s.step);
+    if (gift === null || s.targetIds.length === 0 || !s.targetIds.every(isPc)) continue;
+    texts.add(s.text);
+    for (const id of s.targetIds) byTarget.set(id, [...(byTarget.get(id) ?? []), gift]);
+  }
+  const words = (g: Gift) => (g.kind === "gold" ? `${g.handfuls} ${g.handfuls === 1 ? "handful" : "handfuls"} of gold` : g.name);
+  return { byTarget, texts, notes: (name) => [...byTarget].map(([id, list]) => `${name(id)}: ${list.map(words).join(", ")}`) };
+}
+
+/** The sheet with the gifts: gold through `addGold` (CB p.104), items appended. INVALID past a second chest or 60 items. */
+export function giveTo(sheet: CharacterSheet, gifts: readonly Gift[]): CharacterSheet {
+  let out = sheet;
+  for (const g of gifts) {
+    if (g.kind === "gold") {
+      const gold = addGold(out.gold, "handfuls", g.handfuls);
+      if (gold === null) throw appError("INVALID", `${out.name} can't carry more gold: store some first (CB p.104).`);
+      out = { ...out, gold };
+    } else {
+      if (out.inventory.length >= 60) throw appError("INVALID", `${out.name}'s inventory is full.`);
+      out = { ...out, inventory: [...out.inventory, { id: crypto.randomUUID(), name: g.name }] };
+    }
+  }
+  return out;
+}
+
+/** A `setStance` step as run.ts leaves it (V's manual fallback, or E3's plan step), for the actor. */
+function stanceStepOf(s: RunPlan["steps"][number], actorToken: string): { stance?: string; choice?: string } | null {
+  const loose = s as { kind: string; targetId?: string; stance?: string };
+  if (loose.kind === "setStance") return loose.targetId === actorToken && loose.stance !== undefined ? { stance: loose.stance } : null;
+  if (s.kind === "prompt" && s.prompt === "manual" && s.step?.kind === "setStance" && s.targetIds.includes(actorToken)) {
+    return { ...(s.step.stance !== undefined ? { stance: s.step.stance } : {}), ...(s.step.choice !== undefined ? { choice: s.step.choice } : {}) };
+  }
+  return null;
+}
+
+/**
+ * dcm-awh (Stance Fighter, HF p.12: "You can spend a Focus to shift into a martial stance"): the stances the plan shifts
+ * the actor into, in order: the step's `stance`, or the option picked in its `choice` step. A `setStance` step without a
+ * stance or a pick is INVALID (the drawer asks for it).
+ */
+export function stancesOf(plan: RunPlan, actorToken: string, options: Readonly<Record<string, readonly string[]>>): string[] {
+  const out: string[] = [];
+  for (const s of plan.steps) {
+    const step = stanceStepOf(s, actorToken);
+    if (step === null) continue;
+    const stance = step.stance ?? (step.choice !== undefined ? options[step.choice]?.[0] : undefined);
+    if (stance === undefined) throw appError("INVALID", "Pick the stance to shift into.");
+    out.push(stance);
+  }
+  return out;
+}
+
+/** Whether a manual prompt is a `setStance` step the server makes. */
+function stancePrompt(plan: RunPlan, text: string): boolean {
+  return plan.steps.some((s) => s.kind === "prompt" && s.prompt === "manual" && s.step?.kind === "setStance" && s.text === text);
+}
+
 /**
  * DA13: what a use rolled by an ally adds to its write (convex/featurePrompts.ts `allyRoll`): the public row's opening
  * words ("Bryn throws Moss (Cannonball)") and other sheets the use changed outside the plan (the druid's Hope for the
@@ -460,25 +628,60 @@ export async function resolveFeatureUse(
   extras: ResolveExtras = {},
 ): Promise<ResolvedFeature> {
   const { campaign, character, sheet, pick } = req;
-  const { plan, delegated } = outcome;
-  // DA12 (dcm-d95): a `rolledFirst` use takes the server's stored roll (refused without one or with more targets).
-  const rolled = await spendTargetCount(ctx, { campaignId: campaign._id, characterId: character._id, sheet, featureId: pick.featureId, use: pick.use, targets: req.targetTokenIds.length, by: actorId });
+  const { delegated } = outcome;
   const actorToken = built.context.actor.id;
+  // Plan lanes-2 E8 (dcm-kkx): an effect that can't stack is not given again to a creature that carries it.
+  const plan = refuseStacked(outcome.plan, (id) => effectLabelsOn(built, id, actorToken, sheet));
+  // DA12 (dcm-d95): a `rolledFirst` use takes the server's stored roll (refused without one or with more targets).
+  const rolled = await spendTargetCount(ctx, {
+    campaignId: campaign._id,
+    characterId: character._id,
+    sheet,
+    featureId: pick.featureId,
+    use: pick.use,
+    targets: req.targetTokenIds.length,
+    by: actorId,
+    choices: built.context.choices ?? {},
+  });
   // The D5 features' sheet (classState, held dice, effects) when they ran; resources come from the plan either way.
-  const start = delegated?.sheet ?? built.paidSheet;
+  // Plan lanes-2 E8 (dcm-4xl): the feature's own effects that end when it is used again go first.
+  const again = endOnSheet(delegated?.sheet ?? built.paidSheet, { kind: "event", event: "usedAgain" }, { only: (e) => ownsEffect(e, pick.featureId) });
+  const start = again.sheet;
   const unshaken: UnshakableRoll[] = [];
   const after = actorSheetAfter(start, plan, actorToken, pick.name, { out: unshaken });
   // B1 (dcm-bxp.99.19.55 (1)): the spent roll's scene mark leaves the sheet with the use (undo puts it back).
-  const unmarked = rolled === null ? after : { ...after, featureUses: after.featureUses.filter((u) => u.key !== countMark(rolled.requestId)) };
+  const unmarked = rolled === null ? after : { ...after, featureUses: after.featureUses.filter((u) => !isMarkOf(u.key, rolled.requestId)) };
   // dcm-53f: a delegated D5 feature run on a creature (Hex) names it, not "Target N".
   const names = delegatedTargetNames(plan, built);
   // dcm-bxp.99.19.2 (Eloquent): extra downtime moves for the recipients' next rest.
   const grants = extraMoveGrantsOf(plan);
   let next = nameDelegatedTargets(unmarked, names);
   for (let i = 0; i < (grants.get(actorToken) ?? 0); i++) next = grantExtraMove(next);
+  // Plan lanes-2 E8 (dcm-v17, dcm-4xl): a delegated D5 Unstoppable action that removed the die ends the sheet effect too.
+  if (plan.steps.some((s) => s.kind === "delegate")) next = afterUnstoppable(next);
+  // Plan lanes-2 E8 (dcm-vf7i): gold and named items the use gives to PCs are written (CB p.43 Contacts Everywhere).
+  const gifts = giftsOf(plan, (id) => id === actorToken || built.creatures.get(id)?.kind === "pc");
+  next = giveTo(next, gifts.byTarget.get(actorToken) ?? []);
+  // Plan lanes-2 E8 (dcm-awh, dcm-4xl): a `setStance` step shifts the actor's stance (the previous one drops first).
+  const stanceBefore: AdversaryBefore[] = [];
+  const stanceLines: string[] = [];
+  for (const stance of stancesOf(plan, actorToken, built.context.options ?? {})) {
+    const shifted = await setStance(ctx, campaign._id, next, stance, (e) => effectEndsOf(e));
+    if (shifted === null) throw appError("INVALID", `You can't shift into that stance (${stance}).`);
+    next = shifted.sheet;
+    stanceBefore.push(...shifted.before);
+    stanceLines.push(...shifted.lines, `stance: ${stance}`);
+  }
   // DA12: a move the server makes itself (`intoMelee`, Charge) is no prompt for the table.
-  let prompts = promptsOf(plan, built).filter((p) => !serverMovePrompt(plan, p) && !extraMovePrompt(plan, p));
-  const notes = [...(rolled !== null ? [`rolled ${rolled.count} target${rolled.count === 1 ? "" : "s"}`] : []), ...notesOf(plan, built, sheet, delegated, names), ...unshaken.map(unshakableText)];
+  let prompts = promptsOf(plan, built).filter((p) => !serverMovePrompt(plan, p) && !extraMovePrompt(plan, p) && !(p.kind === "manual" && (gifts.texts.has(p.text) || stancePrompt(plan, p.text))));
+  const notes = [
+    ...(rolled !== null ? [`rolled ${rolled.count} target${rolled.count === 1 ? "" : "s"}`] : []),
+    ...again.lines,
+    ...notesOf(plan, built, sheet, delegated, names),
+    ...unshaken.map(unshakableText),
+    ...stanceLines,
+    ...gifts.notes((id) => (id === actorToken ? "you" : (pcName(built, id) ?? "an ally"))),
+  ];
   for (const [id, n] of grants) {
     const c = built.creatures.get(id);
     const who = id === actorToken ? "you" : c?.kind === "pc" ? c.sheet.name : null;
@@ -508,6 +711,7 @@ export async function resolveFeatureUse(
     if (u.roll) notes.push(`${c.sheet.name}: ${unshakableText(u.roll)}`);
     after = u.sheet;
     for (let i = 0; i < (grants.get(c.tokenId) ?? 0); i++) after = grantExtraMove(after);
+    after = giveTo(after, gifts.byTarget.get(c.tokenId) ?? []);
     others.set(c.character._id, { character: c.character, before: prior?.before ?? c.sheet, after });
   }
 
@@ -559,16 +763,16 @@ export async function resolveFeatureUse(
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary: `${sheet.name} used ${pick.name}: ${p.text}`, groupId, undoable: true });
   }
   const lines = gmLines(plan, built, writes);
-  if (lines.length > 0 || writes.length > 0) {
+  if (lines.length > 0 || writes.length > 0 || stanceBefore.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
       actorId,
       kind: "combat",
       visibility: "gm",
-      summary: `${sheet.name} · ${pick.name} → ${lines.join("; ")}`,
+      summary: `${sheet.name} · ${pick.name} → ${(lines.length > 0 ? lines : stanceLines).join("; ")}`,
       ...(damage[0] ? { roll: damage[0].roll } : {}),
       groupId,
-      ...(writes.length > 0 ? { adversaryBefore: writes.map((w) => w.before) } : {}),
+      ...(writes.length > 0 || stanceBefore.length > 0 ? { adversaryBefore: [...writes.map((w) => w.before), ...stanceBefore] } : {}),
       undoable: true,
     });
   }
