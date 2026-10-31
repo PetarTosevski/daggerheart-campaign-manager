@@ -63,6 +63,7 @@ import { applyDamageTo, applyHpTo, applyStressTo, clearTrack, type Combatant, ty
 import { resolveHits, type HitResult } from "../combat-actions/hits";
 import { resolveDice, resolveNumber, rollDice, type MapCreature, type MarkedTracks, type NumberEnv } from "../combat-actions/numbers";
 import {
+  clearBlocked,
   featureUseKey,
   stateCheckMet,
   keyAvailability,
@@ -332,6 +333,19 @@ export interface RunContext {
    * rolls once per point and each creature takes the sum of its points'.
    */
   pointsOf?: Readonly<Record<string, readonly number[]>>;
+  // ---- Plan lanes-2, tracer E3.3 (round 3; docs/tasks/TASK-LN3-E3.md). All optional: absent reads as before.
+  /**
+   * dcm-ldom (Hive Mind, HF p.65; Pack Fury, HF p.70-77): the creatures on the live map seen from the actor, for a
+   * `creatureCount` number in a step this runner resolves (the adversary runner forwards its own `creatures`). Wins over
+   * `numbers.creatures` when both are given.
+   */
+  creatures?: readonly MapCreature[];
+  /**
+   * dcm-q13x (user answer 2026-10-31, Chain Lightning, CB p.328): each link of a repeating `followUp` rolls its damage
+   * again ("every new wave of chained targets gets a fresh 2d8+4 roll"); off, the links share the move's damage (R9).
+   * Default off until the card tests that pin the shared roll move with it (see the task doc); the server sets it.
+   */
+  freshLinkDamage?: boolean;
 }
 
 /** DA0: the creature that makes a `rolledBy` use's roll. */
@@ -796,9 +810,21 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   const proficiencyOf = () => (roller && use.rolledBy?.proficiency === "roller" ? roller.proficiency : actor.proficiency);
   // Lanes-2 E3 (dcm-rs1z, dcm-4zti): the server's numbers for the actor and each creature, under the runner's own tracks.
   const extrasOf = (id: string): Partial<MarkedTracks> => (id === actor.id ? (context.numbers?.self ?? {}) : (context.numbers?.byId?.[id] ?? {}));
+  /**
+   * Lanes-2 E3.3 (dcm-91tx, dcm-bxp.99.19.4): the stats a creature shows on its own: its thresholds, Evasion and (a PC's)
+   * Armor Score, which is its Armor Slots (CB, character creation: "you have a number of slots equal to your Armor
+   * Score"). The server's `numbers` and the actor's `stats` win over these.
+   */
+  const ownStats = (c: Combatant): NonNullable<MarkedTracks["stats"]> => ({
+    ...(c.thresholds.major !== null ? { majorThreshold: c.thresholds.major } : {}),
+    ...(c.thresholds.severe !== null ? { severeThreshold: c.thresholds.severe } : {}),
+    ...(c.evasion !== undefined ? { evasion: c.evasion } : {}),
+    ...(c.side === "pc" && c.armorMax !== undefined ? { armorScore: c.armorMax } : {}),
+  });
   const tracksOf = (c: Combatant): MarkedTracks => {
     const known = extrasOf(c.id);
-    const stats = c.id === actor.id && actor.stats ? { ...(known.stats ?? {}), ...actor.stats } : known.stats;
+    const merged = { ...ownStats(c), ...(known.stats ?? {}), ...(c.id === actor.id ? (actor.stats ?? {}) : {}) };
+    const stats = Object.keys(merged).length > 0 ? merged : undefined;
     const tokens = tokensOn.get(c.id) ?? known.tokens;
     return {
       ...known,
@@ -837,7 +863,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     ...(actor.dieSides ? { dieSides: actor.dieSides } : {}),
     // Lanes-2 E3 (dcm-rs1z, dcm-e80y, dcm-4zti): what E5's numbers.ts reads beyond the tracks.
     ...(dualityOf() ? { dualityDice: dualityOf() } : {}),
-    ...(context.numbers?.creatures ? { creatures: context.numbers.creatures } : {}),
+    ...((context.creatures ?? context.numbers?.creatures) ? { creatures: context.creatures ?? context.numbers?.creatures } : {}),
     ...(actor.classDice ? { classDice: actor.classDice } : {}),
     ...(actor.tideTokens !== undefined ? { tideTokens: actor.tideTokens } : {}),
   });
@@ -980,7 +1006,22 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   let eitherIndex = 0;
   const pickEither = () => context.eitherCosts?.[eitherIndex++] ?? 0;
   const costAmount = (cost: Exclude<Cost, { kind: "either" | "gold" }>) => num(cost.amount);
-  const payer = () => ({
+  // Lanes-2 E3 (dcm-fbsr, dcm-5kxg): the lasting mods a creature carries (`context.modsOn`).
+  const modsOf = (id: string): readonly Mod[] => context.modsOn?.[id] ?? [];
+  const hasFlag = (id: string, flag: Extract<Mod, { kind: "flag" }>["flag"]) => modsOf(id).some((m) => m.kind === "flag" && m.flag === flag);
+  /** Lanes-2 E3.3 (dcm-hgvx): a creature's rules flags (`Mod` `flag`), as `PayerState.flags` and `clearBlocked` read them. */
+  const flagsOf = (id: string): string[] => modsOf(id).flatMap((m) => (m.kind === "flag" ? [m.flag] : []));
+  /** dcm-hgvx: a payer the server described, with the flags its creature carries here added (Ravenous, HF p.94). */
+  const payersWithFlags = (): Partial<Record<Payer, PayerState>> => {
+    const out: Partial<Record<Payer, PayerState>> = {};
+    for (const [key, state] of Object.entries(context.payers ?? {}) as [Payer, PayerState][]) {
+      const who = payerOf(key);
+      const extra = who ? flagsOf(who.id) : [];
+      out[key] = extra.length > 0 ? { ...state, flags: [...new Set([...(state.flags ?? []), ...extra])] } : state;
+    }
+    return out;
+  };
+  const payer = (): PayerState => ({
     hope: actor.hope,
     stress: actor.stress,
     stressMax: actor.stressMax,
@@ -993,6 +1034,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     favor: actor.favor ?? 0,
     focus: actor.focus ?? 0,
     heldDice: heldCounts(actor.heldDice ?? []),
+    // Lanes-2 E3.3 (dcm-hgvx): `unaffordable` refuses a Hope cost while `cannotSpendHope` holds.
+    flags: flagsOf(actor.id),
   });
   /** Lanes-2 E3 (dcm-inou, dcm-sa2): the held dice this use spent, by kind, for a `rerollHeld` change. */
   const heldSpent: { kind: HeldDieKind; dice: { sides: number; value: number }[] }[] = [];
@@ -1043,9 +1086,6 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       if (c.resource === "fear") gmFearDelta -= c.amount;
       return c;
     });
-  // Lanes-2 E3 (dcm-fbsr, dcm-5kxg): the lasting mods a creature carries (`context.modsOn`).
-  const modsOf = (id: string): readonly Mod[] => context.modsOn?.[id] ?? [];
-  const hasFlag = (id: string, flag: Extract<Mod, { kind: "flag" }>["flag"]) => modsOf(id).some((m) => m.kind === "flag" && m.flag === flag);
   /** Unstuck (CB p.237: "they must double the amount spent or marked"): the factor on `what` for creature `id`. */
   const multiplierOf = (id: string, what: "hope" | Track): number =>
     modsOf(id).reduce((f, m) => (m.kind === "marksMultiplier" && m.of.includes(what) ? f * m.factor : f), 1);
@@ -1071,7 +1111,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
     }
     const hopeNeeded = costs.reduce((n, x) => n + (x.resource === "hope" ? x.amount : 0), 0);
     const hope = hopeOf(c.id);
-    const described = payerKey ? unaffordableBy(costs, payerKey, context.payers ?? {}) : null;
+    const described = payerKey ? unaffordableBy(costs, payerKey, payersWithFlags()) : null;
     const short = described !== null ? described.length > 0 : hope !== undefined && hope < hopeNeeded;
     if (short || hopeBarred(c.id, costs)) {
       steps.push({ kind: "pay", phase, costs: [...costs], paid: false, payerId: c.id });
@@ -1124,7 +1164,7 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
   if (!upfrontPayer) return refuse("cost", `No ${use.paidBy ?? "payer"} to pay.`);
   const upfront = roller ? [] : costsFor(use.costs ?? [], upfrontPayer.id);
   if (upfrontPayer.id !== actor.id) {
-    const described = unaffordableBy(upfront, use.paidBy, context.payers ?? {});
+    const described = unaffordableBy(upfront, use.paidBy, payersWithFlags());
     if ((described !== null && described.length > 0) || hopeBarred(upfrontPayer.id, upfront)) return refuse("cost", (described?.length ? described : ["hope"]).join(", "));
     if (!payBy(upfrontPayer, upfront, "upfront", use.paidBy)) return refuse("cost", "hope");
   } else {
@@ -1749,7 +1789,12 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
           }
           for (const c of others) seen.add(c.id);
           const damageBefore = steps.length;
+          // Lanes-2 E3.3 (dcm-q13x, user answer 2026-10-31: "every new wave of chained targets gets a fresh 2d8+4 roll"):
+          // each link is its own damage scope, so its damage is rolled again; one roll still serves the whole link (R9).
+          const outerScope = damageScope;
+          if (context.freshLinkDamage && !step.roll) damageScope = `${outerScope}|link${i}`;
           const hitAny = runLink(step, scope, others);
+          damageScope = outerScope;
           ran = i + 1;
           last = others.map((c) => c.id);
           // Lanes-2 E3 (dcm-4yg4, Lightning Strike, HF p.91: "Each time the lightning bounces, decrease the damage it deals
@@ -2114,7 +2159,8 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
             amount = share;
           } else amount = amountFor(step.amount, r);
           // Lanes-2 E3 (dcm-5kxg; Afflicted, Nightmare Stare, HF p.95: "the target can't clear HP or Stress").
-          if ((step.track === "hp" && hasFlag(r.id, "cannotClearHp")) || (step.track === "stress" && hasFlag(r.id, "cannotClearStress"))) {
+          // Lanes-2 E3.3 (dcm-hgvx): read through E5's `clearBlocked`, the one place that maps a track to its flag.
+          if ((step.track === "hp" || step.track === "stress") && clearBlocked(step.track, flagsOf(r.id))) {
             steps.push({ kind: "prompt", prompt: "manual", text: `Can't clear ${step.track === "hp" ? "Hit Points" : "Stress"} now`, targetIds: [r.id], step });
             continue;
           }

@@ -30,6 +30,47 @@ import { NO_ROLL_OPTIONS, rollProblem, rollSummary, type Roller, type RollValues
 import type { UseRequest } from "./use-card";
 
 /**
+ * Plan lanes-2 E3.3 (dcm-aw16 (1), dcm-u4pq): a vault card the dialog can swap in (Codex-Touched, CB p.333: "replace
+ * this card with any card from your vault without paying its Recall Cost"). The Hand passes the vault cards at or under
+ * the character's level; the server checks both again (`combatCards.useCard` refuses INVALID otherwise).
+ */
+export type VaultPick = { cardId: string; name: string; level: number };
+
+/** E3.3: what the dialog sends: a use request plus the vault card a `swapWithVault` step brings in. */
+export type DialogRequest = UseRequest & { swapWith?: string };
+
+/** E3.3 (dcm-aw16 (1)): whether the use has a `loadout` `swapWithVault` step, at any depth. */
+export function swapsWithVault(use: CardUse): boolean {
+  return someStep(use.steps, (s) => s.kind === "loadout" && s.op === "swapWithVault");
+}
+
+/**
+ * E3.3 (dcm-aw16 (2), dcm-86z): whether the use deals "the same damage" as its trigger (Encore, CB p.335: "you deal the
+ * same damage to the target that your ally dealt"): the dialog then asks the type of that damage (`triggerDamageType`).
+ */
+export function asksTriggerDamageType(use: CardUse): boolean {
+  return someStep(use.steps, (s) => s.kind === "damage" && s.roll.kind === "sameAsTrigger");
+}
+
+function someStep(steps: readonly Step[], test: (s: Step) => boolean): boolean {
+  for (const step of steps) {
+    if (test(step)) return true;
+    const inner =
+      step.kind === "choose"
+        ? step.options.flatMap((o) => o.steps)
+        : step.kind === "optional" || step.kind === "followUp"
+          ? step.steps
+          : step.kind === "save"
+            ? [...step.onFail, ...step.onSuccess]
+            : step.kind === "check"
+              ? [...step.then, ...step.otherwise, ...(step.table ?? []).flatMap((r) => r.steps)]
+              : [];
+    if (inner.length > 0 && someStep(inner, test)) return true;
+  }
+  return false;
+}
+
+/**
  * The Use dialog (plan combat-actions CA6): opens only when the card needs a choice (a grimoire spell, a number of Hope,
  * a cost option, a situation to confirm, an optional part, creatures beyond one enemy, a weapon or trait, the GM's
  * Difficulty) and fires `combatCards.useCard` once with the picks. `AfterRollDialog` answers the server's
@@ -172,6 +213,7 @@ function UseForm({
   gm,
   roller,
   rollOptions,
+  vault,
   pending,
   error,
   onCancel,
@@ -183,16 +225,24 @@ function UseForm({
   gm: boolean;
   roller: Roller | null;
   rollOptions: RollValues;
+  vault: readonly VaultPick[];
   pending: boolean;
   error: string | null;
   onCancel: () => void;
-  onSubmit: (request: Omit<UseRequest, "cardId">) => void;
+  onSubmit: (request: Omit<DialogRequest, "cardId">) => void;
 }) {
   const form = formFor(use);
   const [values, setValues] = useState<FormValues>(() => withListedNumbers(use, initialValues(form, pickedEnemies)));
   const { targetTokenIds, toggleExtraTarget } = useCombatTargets();
+  const swaps = swapsWithVault(use);
+  const asksType = asksTriggerDamageType(use);
+  const [swapWith, setSwapWith] = useState<string>("");
+  const [triggerType, setTriggerType] = useState<"physical" | "magic">("physical");
   const problem =
-    formProblem(form, values) ?? (form.gmDifficulty && gm && values.difficulty === undefined ? "Set the Difficulty." : null) ?? (form.rolls ? rollProblem(roller, rollOptions) : null);
+    formProblem(form, values) ??
+    (form.gmDifficulty && gm && values.difficulty === undefined ? "Set the Difficulty." : null) ??
+    (swaps && swapWith === "" ? "Pick a vault card." : null) ??
+    (form.rolls ? rollProblem(roller, rollOptions) : null);
   const rollNote = form.rolls ? rollSummary(rollOptions) : null;
 
   function set(patch: Partial<FormValues>) {
@@ -221,8 +271,9 @@ function UseForm({
     onSubmit({
       spell: use.id,
       targetTokenIds: values.targets as UseRequest["targetTokenIds"],
-      choices: choicesOf(form, values),
+      choices: [...choicesOf(form, values), ...(asksType ? [{ id: "triggerDamageType", value: triggerType }] : [])],
       ...(roll ? { roll } : {}),
+      ...(swaps && swapWith !== "" ? { swapWith } : {}),
     });
   }
 
@@ -346,6 +397,34 @@ function UseForm({
           </select>
         </label>
       ) : null}
+      {swaps ? (
+        vault.length > 0 ? (
+          <label className="cmh-field">
+            <span className="cm-lbl">Swap in from the vault</span>
+            <select className="cm-in" value={swapWith} onChange={(e) => setSwapWith(e.target.value)}>
+              <option value="">Pick a card</option>
+              {vault.map((c) => (
+                <option key={c.cardId} value={c.cardId}>
+                  {c.name} (level {c.level})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p className="cmh-note">No vault card at or under your level to swap in.</p>
+        )
+      ) : null}
+      {asksType ? (
+        <fieldset className="cmh-field">
+          <legend className="cm-lbl">Your ally&apos;s damage was</legend>
+          {(["physical", "magic"] as const).map((t) => (
+            <label key={t} className="cmh-check">
+              <input type="radio" name="trigger-damage-type" checked={triggerType === t} onChange={() => setTriggerType(t)} />
+              <span>{t === "physical" ? "Physical" : "Magic"}</span>
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
       {form.gmDifficulty ? (
         gm ? (
           <label className="cmh-field">
@@ -392,6 +471,7 @@ export function UseDialog({
   gm,
   roller = null,
   rollOptions = NO_ROLL_OPTIONS,
+  vault = [],
   open,
   pending,
   error,
@@ -409,13 +489,15 @@ export function UseDialog({
   roller?: Roller | null;
   /** The Hand's roll-options strip, applied when the use rolls (F8-I1). */
   rollOptions?: RollValues;
+  /** E3.3 (dcm-u4pq): the vault cards a Codex-Touched swap may bring in (at or under the character's level). */
+  vault?: readonly VaultPick[];
   open: boolean;
   pending: boolean;
   error: string | null;
   onClose: () => void;
   /** Another spell was picked: its form starts with no picks, so the rings of the last one's picks go (DA6). */
   onSpell?: () => void;
-  onSubmit: (request: UseRequest) => void;
+  onSubmit: (request: DialogRequest) => void;
 }) {
   const firstReady = uses.find((u) => u.ready) ?? uses[0];
   const [useId, setUseId] = useState(firstReady?.useId ?? "");
@@ -449,6 +531,7 @@ export function UseDialog({
           gm={gm}
           roller={roller}
           rollOptions={rollOptions}
+          vault={vault}
           pending={pending}
           error={error}
           onCancel={onClose}
