@@ -262,7 +262,8 @@ describe("E1: duality die bonus (dcm-3ou, dcm-jog)", () => {
     expect(after.dice.find((d) => d.role === "fear")?.value).toBe(9);
     expect(after.total).toBe(18);
     expect(after.outcome).toBe("successFear");
-    expect(withDieBonus(record, "fear", 3).outcome).toBe("critical");
+    // User answer 2026-10-31: a tie after the bonus is with Fear, never a critical.
+    expect(withDieBonus(record, "fear", 3).outcome).toBe("successFear");
   });
 });
 

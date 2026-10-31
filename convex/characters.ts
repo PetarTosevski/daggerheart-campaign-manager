@@ -836,11 +836,21 @@ export const applyDamage = keyedUserMutation({
  * Moves a domain card between loadout (max 5) and vault; from the vault it costs the card's Recall Cost in Stress unless
  * during an open party rest (CB 101, 105). The character's player, or the GM for any character of the campaign, logged as
  * the GM acting for it (CA4b). See `moveCardFor` in convex/lib/cardHand.ts.
+ *
+ * Plan lanes-2, E1 (dcm-cfpv, dcm-bxp.99.19.1): `recallRiders` names the `whenYouRecall` rider uses the player takes with
+ * a recall (`<featureId or cardId>` or `<id>:<useId>`; Perfect Recall, CB p.50: "Once per rest, when you recall a domain
+ * card in your vault, you can reduce its Recall Cost by 1"). At most 5; a rider that can't run is INVALID.
  */
 export const moveCard = userMutation({
-  args: { characterId: v.id("characters"), cardId: v.string(), to: v.union(v.literal("loadout"), v.literal("vault")), duringRest: v.optional(v.boolean()) },
+  args: {
+    characterId: v.id("characters"),
+    cardId: v.string(),
+    to: v.union(v.literal("loadout"), v.literal("vault")),
+    duringRest: v.optional(v.boolean()),
+    recallRiders: v.optional(v.array(v.string())),
+  },
   returns: v.null(),
-  handler: (ctx, { characterId, cardId, to, duringRest }) => moveCardFor(ctx, ctx.user, characterId, cardId, to, duringRest),
+  handler: (ctx, { characterId, cardId, to, duringRest, recallRiders }) => moveCardFor(ctx, ctx.user, characterId, cardId, to, duringRest, recallRiders ?? []),
 });
 
 /**

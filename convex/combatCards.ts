@@ -4,15 +4,19 @@ import { countsAsActionRoll } from "../src/lib/domain/countdowns/advanced";
 import { rangeCheck } from "../src/lib/domain/combat-actions/index";
 import { appError } from "../src/lib/errors/app-error";
 import { getDomainCard } from "../src/lib/srd/index";
+import type { CardUse } from "../src/lib/domain/card-effects/types";
+import type { EndRoll } from "../src/lib/domain/characters/expiry";
+import type { RollRecord } from "../src/lib/domain/duality";
+import type { TraitId } from "../src/lib/srd/types";
 import type { CharacterSheet } from "../src/lib/validation/characters";
 import { tickArmedCountdowns } from "./countdownRolls";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { cardChoicesValidator, cardRollValidator, dropDice, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll, type DiceSlot } from "./lib/cardChoices";
-import { handCardValidator, handOf, handSharedWithPlayers, hiddenHands, playersSeeHands, writeHandHidden } from "./lib/cardHand";
-import { damageRolls, gmLines, instanceWrites, needsChoiceValidator, openCardHits, pendingCardValidator, promptsOf, publicTargets, resolvedCardValidator, rollText, writeInstances, type InstanceWrite, type ResolvedCard } from "./lib/cardRows";
-import { actorSheetAfter, buildRun, difficultyOf, pickCard, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome } from "./lib/cardRunner";
+import { handCardValidator, handOf, handSharedWithPlayers, hiddenHands, playersSeeHands, recallRiderOptions, recallRiderOptionValidator, writeHandHidden } from "./lib/cardHand";
+import { damageRolls, endForCasterOnInstances, endOnSheet, gmLines, instanceWrites, needsChoiceValidator, openCardHits, pendingCardValidator, promptsOf, publicTargets, resolvedCardValidator, rollText, writeInstances, type InstanceWrite, type ResolvedCard } from "./lib/cardRows";
+import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, pickCard, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import {
   attackScene,
@@ -21,6 +25,7 @@ import {
   damagePrompts,
   defaultOnRiders,
   emptyFolds,
+  endRollFor,
   foldInto,
   pickRiders,
   recorder,
@@ -99,12 +104,21 @@ async function lastRollWithHope(ctx: QueryCtx, characterId: Id<"characters">): P
 export const hand = campaignQuery({
   need: "view",
   args: { characterId: v.id("characters") },
-  returns: v.object({ characterId: v.id("characters"), loadout: v.array(handCardValidator), vault: v.array(handCardValidator) }),
+  returns: v.object({
+    characterId: v.id("characters"),
+    loadout: v.array(handCardValidator),
+    vault: v.array(handCardValidator),
+    /** Plan lanes-2, E1 (dcm-cfpv): the recall riders the Hand offers with a recall (Perfect Recall); the editor only. */
+    recallRiders: v.optional(v.array(recallRiderOptionValidator)),
+  }),
   handler: async (ctx, { characterId }) => {
     const { campaign, character, permission } = await loadCharacter(ctx, ctx.user, characterId, "view", "owner");
     if (campaign._id !== ctx.campaign._id) throw appError("NOT_FOUND");
-    if (!atLeast(permission, "edit") && !handSharedWithPlayers(campaign, character)) throw appError("FORBIDDEN");
-    return { characterId, ...handOf(readSheet(character.sheet)) };
+    const editor = atLeast(permission, "edit");
+    if (!editor && !handSharedWithPlayers(campaign, character)) throw appError("FORBIDDEN");
+    const sheet = readSheet(character.sheet);
+    const riders = editor ? recallRiderOptions(sheet, campaign) : [];
+    return { characterId, ...handOf(sheet), ...(riders.length > 0 ? { recallRiders: riders } : {}) };
   },
 });
 
@@ -215,6 +229,17 @@ function swapWithVault(sheet: CharacterSheet, plan: RunPlan, swapWith: string | 
  * total, Hit / Miss / Defeated per target, the actor's `before`), a row per ally whose sheet changed, a public row per
  * manual step ("Mira used <card>: <step text>"), and the GM row (damage, severity, HP, saves, `adversaryBefore`).
  */
+/**
+ * Plan lanes-2, E1 (dcm-wn7): a card's roll as E6's end engine reads it: a Spellcast Roll, a weapon attack (an `attack`
+ * spec, or a trait roll `asWeapon`), another attack (`attack: true`), the trait rolled and whether it targets another
+ * creature. Null for a roll that ends nothing (damage, free).
+ */
+function cardEndRoll(use: CardUse, record: RollRecord, trait: TraitId | undefined, targetsCreature: boolean): EndRoll | null {
+  const spec = use.roll;
+  const attack: EndRoll["attack"] = spec?.kind === "attack" || (spec?.kind === "trait" && spec.asWeapon === true) ? "weapon" : spec?.kind === "trait" && spec.attack === true ? "other" : undefined;
+  return endRollFor(record, { ...(attack ? { attack } : {}), ...(spec?.kind === "spellcast" ? { spellcast: true } : {}), ...(trait !== undefined ? { trait } : {}), targetsCreature });
+}
+
 async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, plan: RunPlan, actorId: Id<"users">, riders?: RiderSheets): Promise<ResolvedCard> {
   const { campaign, character, pick } = req;
   // SD5: with riders the row's `before` is the sheet before the riders' costs, and the actor's sheet after them.
@@ -228,6 +253,15 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
   if (healed > 0) next = { ...next, hp: Math.max(0, next.hp - healed) };
   const swapped = swapWithVault(next, plan, req.swapWith);
   next = swapped.sheet;
+  // Plan lanes-2, E1 (dcm-wn7): the card's roll ends the actor's effects that end on it (Spectral Mist, duration nextRoll;
+  // the condition markers already went in the runner) and the modifiers its token made that end on its roll (Timejammer).
+  const endRoll = plan.roll ? cardEndRoll(pick.use, plan.roll.record, req.roll.trait, built.targets.some((t) => t.tokenId !== actorToken)) : null;
+  const rollEndLabels: string[] = [];
+  if (endRoll !== null) {
+    const own = endOnSheet(next, { kind: "roll", roll: endRoll }, { only: (e) => conditionMarkerOf(e) === null });
+    next = own.sheet;
+    rollEndLabels.push(...own.lines);
+  }
   let prompts = promptsOf(plan, built).filter((p) => !(healed > 0 && p.kind === "manual" && p.text.startsWith("You clear a number of Hit Points")) && !(p.kind === "manual" && swapped.texts.includes(p.text)));
 
   // Allies: tracks from the plan's creatures, Hope / effects / conditions from its steps.
@@ -246,6 +280,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
 
   const writes = instanceWrites(plan, built.creatures, pick.name);
   await writeInstances(ctx, writes);
+  const casterEnds = endRoll !== null && endRoll.kind === "action" ? await endForCasterOnInstances(ctx, campaign._id, actorToken, { kind: "roll", roll: endRoll }) : { before: [], lines: [] };
   const fearDelta = await applyFear(ctx, campaign._id, plan.gmFearDelta);
   const sheetChanged = changed(sheet, next);
   if (sheetChanged) await saveSheet(ctx, character._id, next);
@@ -288,17 +323,21 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary: `${sheet.name} used ${pick.name}: ${p.text}`, groupId, undoable: true });
   }
   for (const u of unshaken) await logUnshakable(ctx, { campaignId: campaign._id, characterId: u.characterId, actorId, name: u.name, groupId }, u.roll);
-  const lines = gmLines(plan, built, writes);
-  if (lines.length > 0 || writes.length > 0) {
+  if (rollEndLabels.length > 0) {
+    await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary: rollEndLabels.join("; ").slice(0, 1000), groupId, undoable: true });
+  }
+  const lines = [...gmLines(plan, built, writes), ...casterEnds.lines];
+  const adversaryBefore = [...writes.map((w) => w.before), ...casterEnds.before];
+  if (lines.length > 0 || adversaryBefore.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
       actorId,
       kind: "combat",
       visibility: "gm",
-      summary: `${sheet.name} · ${pick.name} → ${lines.join("; ")}`,
+      summary: `${sheet.name} · ${pick.name} → ${lines.join("; ")}`.slice(0, 1000),
       ...(damage[0] ? { roll: damage[0].roll } : {}),
       groupId,
-      ...(writes.length > 0 ? { adversaryBefore: writes.map((w) => w.before) } : {}),
+      ...(adversaryBefore.length > 0 ? { adversaryBefore } : {}),
       undoable: true,
     });
   }
@@ -530,6 +569,8 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
   let built = first.built;
   let plan = first.outcome.plan;
   const hostRoll = hostRollOf(plan);
+  // Plan lanes-2, E1 (dcm-n0dv): the riders on the result read the card roll's Hope and Fear Die (Midnight-Touched).
+  if (plan.roll) env.hostDice = { hope: plan.roll.hope, fear: plan.roll.fear };
 
   // The riders on the result, on the sheet after the card (its own Hope may pay, CB p.90).
   let after = actorSheetAfter(built.paidSheet, plan, built.context.actor.id, req.pick.name);

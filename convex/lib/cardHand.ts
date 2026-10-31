@@ -9,12 +9,12 @@
  */
 import { v, type Infer } from "convex/values";
 
-import { cardAvailability, RESET_LABEL } from "../../src/lib/domain/card-effects/availability";
+import { cardAvailability, featureUseKey, keyAvailability, RESET_LABEL } from "../../src/lib/domain/card-effects/availability";
 import { run, type RunPlan } from "../../src/lib/domain/card-effects/run";
 import type { CardUse, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import type { Rng } from "../../src/lib/domain/dice/index";
 import { owned } from "../../src/lib/domain/feature-effects/owned";
-import { runFeature } from "../../src/lib/domain/feature-effects/run";
+import { featureAvailability, runFeature } from "../../src/lib/domain/feature-effects/run";
 import { cardEffect, cardUsage } from "../../src/lib/srd/card-effects/index";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import { getDomainCard } from "../../src/lib/srd/index";
@@ -235,6 +235,34 @@ export async function moveCardFor(
     });
   }
   return null;
+}
+
+/** A `whenYouRecall` rider the Hand offers with a recall (Perfect Recall, CB p.50); `id` is what `moveCard` takes. */
+export const recallRiderOptionValidator = v.object({ id: v.string(), name: v.string(), ready: v.boolean(), amount: v.number() });
+export type RecallRiderOption = Infer<typeof recallRiderOptionValidator>;
+
+/**
+ * Plan lanes-2, E1 (dcm-cfpv): the recall riders the character can take with a recall: the `rider` uses with a
+ * `whenYouRecall` trigger and a `reduceRecallCost` step of the loadout's cards and the held features, with whether their
+ * limit is ready. Automatic ones are not listed (they always apply).
+ */
+export function recallRiderOptions(sheet: CharacterSheet, campaign: Pick<Doc<"campaigns">, "frameId" | "options">): RecallRiderOption[] {
+  const out: RecallRiderOption[] = [];
+  const offers = (use: CardUse) => use.activation.kind === "rider" && use.activation.trigger.kind === "whenYouRecall" && reductionOf(use) > 0;
+  for (const id of sheet.domainCards.loadout) {
+    for (const use of cardEffect(id)?.uses ?? []) {
+      if (!offers(use)) continue;
+      out.push({ id: `${id}:${use.id}`, name: use.name, ready: keyAvailability(sheet, featureUseKey(id, use.id), use.limit).state === "ready", amount: reductionOf(use) });
+    }
+  }
+  for (const held of owned(sheet, { hopeAndFear: resolveOptions(campaign.frameId, campaign.options).hopeAndFear })) {
+    const entry = featureEffect(held.featureId);
+    for (const use of entry?.uses ?? []) {
+      if (!offers(use)) continue;
+      out.push({ id: `${held.featureId}:${use.id}`, name: use.name, ready: featureAvailability(sheet, entry!, use.id).state === "ready", amount: reductionOf(use) });
+    }
+  }
+  return out;
 }
 
 /** At most this many recall riders per move. */

@@ -39,6 +39,7 @@ import {
 } from "../../src/lib/domain/dice/index";
 import { countsAsActionRoll } from "../../src/lib/domain/countdowns/advanced";
 import type { RollRecord } from "../../src/lib/domain/duality";
+import type { EndRoll } from "../../src/lib/domain/characters/expiry";
 import { placeTideToken, rerollSlayerOnes, rollGaveHope, SLAYER_DIE_SIDES, spendSlayerDice, spendTideTokens, WITH_HOPE } from "../../src/lib/domain/session-features/index";
 import { requirementMet } from "../../src/lib/domain/card-effects/availability";
 import { run as runCardUse } from "../../src/lib/domain/card-effects/run";
@@ -62,7 +63,8 @@ import { rollDie } from "./dice";
 import { featureScope } from "./featureScope";
 import { campaignFearState, gainFear } from "./fear";
 import { applyRule } from "./mechanics";
-import { actorSheetAfter, cardActor, cardIdOfEffect, featureIdOfEffect, tokenKeyOf, type HostRoll } from "./cardRunner";
+import { actorSheetAfter, cardActor, cardIdOfEffect, conditionMarkerOf, endConditionsOnRoll, endRollOf, featureIdOfEffect, tokenKeyOf, type HostRoll } from "./cardRunner";
+import { endOnSheet } from "./cardRows";
 import { rollValidator } from "./validators/actionLog";
 import { traitIdValidator } from "./validators/characters";
 
@@ -485,6 +487,20 @@ export async function resolveDuality(ctx: QueryCtx, loaded: Loaded, args: Dualit
   return { scope, paid, next, extras, trait, rolled, roll, effects };
 }
 
+/**
+ * Plan lanes-2, E1 (dcm-wn7): the sheet after its bearer made `record` with E6's end engine: the condition markers that end
+ * on it (`endConditionsOnRoll`), then every other effect whose entry ends on the roll (`endOnSheet`). `labels` name what
+ * ended ("X ends") for the roll's summary. A damage or free roll ends nothing.
+ */
+export function rollEndsOnSheet(sheet: CharacterSheet, record: RollRecord, extra: Omit<EndRoll, "kind" | "success" | "duality">): { sheet: CharacterSheet; labels: string[] } {
+  const base = endRollOf(record, extra.attack);
+  if (base === null) return { sheet, labels: [] };
+  const markers = endConditionsOnRoll(sheet, record, extra.attack);
+  const own = endOnSheet(markers.sheet, { kind: "roll", roll: { ...base, ...extra } }, { only: (e) => conditionMarkerOf(e) === null });
+  const labels = [...markers.ended.map((e) => `${e.condition} ends`), ...own.ended.map((e) => `${e.text.split("; ")[0] ?? e.source} ends`)];
+  return { sheet: own.sheet, labels };
+}
+
 /** Rolls (or reads typed-in dice), applies Hope, Stress and Fear, saves and logs. */
 export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded: Loaded, args: DualityArgs, rng: Rng, manual: boolean) {
   const { campaign, character, sheet } = loaded;
@@ -492,8 +508,11 @@ export async function duality(ctx: MutationCtx & { user: Doc<"users"> }, loaded:
   const { scope, paid, trait, rolled, roll, effects } = resolved;
   // Plan lanes, E1: the automatic uses the roll sets off (Courage), with the server's dice, in the same row (undo reverts them).
   const autos = plainRollAutos(resolved.next, args, roll, scope, (await campaignFearState(ctx, campaign._id)).fear, rollDie);
-  const next = autos.sheet;
-  const extras = [...resolved.extras, ...autos.names];
+  // Plan lanes-2, E1 (dcm-wn7): the roller's effects and sourced conditions that end on this roll (Spectral Mist, HF p.181:
+  // "until you make an action roll"; Reliable Backup, CB p.43: "a Presence Roll"; duration nextRoll), in the same row.
+  const ends = rollEndsOnSheet(autos.sheet, roll, { trait, ...(args.attack ? { attack: "other" as const } : {}) });
+  const next = ends.sheet;
+  const extras = [...resolved.extras, ...autos.names, ...ends.labels];
   const { gained: rolledFear } = effects.fear > 0 ? await gainFear(ctx, campaign._id, effects.fear) : { gained: 0 };
   const gained = rolledFear + (autos.gmFearDelta > 0 ? (await gainFear(ctx, campaign._id, autos.gmFearDelta)).gained : 0);
   const sheetChanged = changed(sheet, next);
