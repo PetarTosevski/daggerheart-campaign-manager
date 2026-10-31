@@ -12,7 +12,7 @@ import { CLASSES } from "../src/lib/srd/classes";
 import type { AdversaryType } from "../src/lib/srd/types";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { areasAfterMove, rangeTriggersAfterMove } from "./combatAreas";
+import { areasAfterMove, carryAlong, endAreasOnCasterEvent, moveRules, rangeTriggersAfterMove } from "./combatAreas";
 import { partyOf, readSheet } from "./lib/characterSheet";
 import {
   MAX_TOKEN_NAME,
@@ -708,7 +708,8 @@ export const clear = gmMutation({
 export const move = campaignMutation({
   need: "view",
   enough: "owner",
-  args: { tokenId: v.string(), x: v.number(), y: v.number() },
+  /** Plan lanes-2 E4 (dcm-lvgm, dcm-z5a6): tokens carried along (Wings of Light, Pin), each within Melee range of the mover. */
+  args: { tokenId: v.string(), x: v.number(), y: v.number(), carry: v.optional(v.array(v.string())) },
   returns: v.object({
     x: v.number(),
     y: v.number(),
@@ -717,26 +718,46 @@ export const move = campaignMutation({
     difficult: v.boolean(),
     /** Plan lanes E4: the live areas the move entered, passed through, crossed or left that react to it (convex/combatAreas.ts). */
     areas: v.optional(v.array(v.object({ label: v.string(), event: v.union(v.literal("enter"), v.literal("through"), v.literal("leave"), v.literal("cross")), ended: v.boolean() }))),
+    /** Plan lanes-2 E4: what the GM's drag broke (an area's hold, a movement limit); a player's move is refused instead. */
+    warnings: v.optional(v.array(v.string())),
+    /** Plan lanes-2 E4 (dcm-xobk): adversary `pcMoves` features the move set off (E7 runs them). */
+    triggers: v.optional(v.array(v.object({ instanceId: v.id("encounterAdversaries"), feature: v.string(), useId: v.string(), stage: v.union(v.literal("would"), v.literal("did")) }))),
+    /** Plan lanes-2 E4: where the carried tokens went. */
+    carried: v.optional(v.array(v.object({ tokenId: v.id("combatTokens"), x: v.number(), y: v.number() }))),
   }),
-  handler: async (ctx, { tokenId, x, y }) => {
+  handler: async (ctx, { tokenId, x, y, carry }) => {
     const { token, map } = await movableToken(ctx, tokenId);
+    const byGm = atLeast(ctx.permission, "owner");
     const next = moveToken(token, x, y, map);
     const stays = next.x === token.x && next.y === token.y;
     const { blocked, difficult } = stays
       ? { blocked: false, difficult: false }
       : checkMove(await movementGrid(ctx, ctx.campaign._id, map), token, next, token.size);
-    if (blocked && !atLeast(ctx.permission, "owner")) throw appError("MOVE_BLOCKED");
-    await ctx.db.patch("combatTokens", token._id, next);
-    // CB p.42 (Rogue, Cloaked): "end a move within line of sight of an adversary" ends it (Q9, plan drawer-answers DA3).
-    // A GM's drag is not the rogue's move (dcm-bxp.99.19.62 (2)): `byGm`.
-    if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id, { byGm: atLeast(ctx.permission, "owner") });
-    // Plan lanes E4 (dcm-cma, dcm-wuu, dcm-ii4): live areas that react to entering, passing through, crossing or leaving.
+    if (blocked && !byGm) throw appError("MOVE_BLOCKED");
     let name: string | null = null;
     const nameOf = async () => (name ??= await moverName(ctx, token));
+    // Plan lanes-2 E4: an area's hold (Bramble Patch), movement limits (Creeping Fire) and the adversaries' pcMoves features.
+    const rules = stays ? { warnings: [], triggers: [] } : await moveRules(ctx, { campaignId: ctx.campaign._id, map, before: token, after: next, byGm, actorId: ctx.user._id, nameOf });
+    await ctx.db.patch("combatTokens", token._id, next);
+    const carried = carry === undefined || carry.length === 0 || stays ? [] : await carryAlong(ctx, { map, carrierBefore: token, carrierAfter: next, carry, byGm });
+    // dcm-rx1k / dcm-bpr: the caster's areas that end when the caster moves.
+    if (!stays && token.ref.kind === "pc") await endAreasOnCasterEvent(ctx, ctx.campaign._id, token.ref.characterId, "moves");
+    // CB p.42 (Rogue, Cloaked): "end a move within line of sight of an adversary" ends it (Q9, plan drawer-answers DA3).
+    // A GM's drag is not the rogue's move (dcm-bxp.99.19.62 (2)): `byGm`.
+    if (!stays) await uncloakAfterMove(ctx, ctx.campaign, map, { ...token, ...next }, ctx.user._id, { byGm });
+    // Plan lanes E4 (dcm-cma, dcm-wuu, dcm-ii4): live areas that react to entering, passing through, crossing or leaving.
     const areas = stays ? [] : await areasAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
     // dcm-bpr: an enemy coming within a PC's Hold the Line range is named in the feed.
     if (!stays && map.live) await rangeTriggersAfterMove(ctx, ctx.campaign._id, map._id, token, { ...token, ...next }, ctx.user._id, nameOf);
-    return { ...next, blocked, difficult, ...(areas.length > 0 ? { areas } : {}) };
+    return {
+      ...next,
+      blocked,
+      difficult,
+      ...(areas.length > 0 ? { areas } : {}),
+      ...(rules.warnings.length > 0 ? { warnings: rules.warnings } : {}),
+      ...(rules.triggers.length > 0 ? { triggers: rules.triggers } : {}),
+      ...(carried.length > 0 ? { carried } : {}),
+    };
   },
 });
 

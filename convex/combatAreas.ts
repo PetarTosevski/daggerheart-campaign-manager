@@ -1,15 +1,46 @@
+import { v } from "convex/values";
+
 import type { PlanStep } from "../src/lib/domain/card-effects/run";
-import type { AreaSpec, Step } from "../src/lib/domain/card-effects/types";
-import { areaExpires, circle, entersRange, inArea, moveEvents, placementHolds, sightDisc, type AreaShapeOnMap, type MoveEventKind } from "../src/lib/domain/feature-effects/areas";
+import type { AreaSpec, ConditionRef, EndEvent, Escape, StandardCondition, Step } from "../src/lib/domain/card-effects/types";
+import {
+  areaExpires,
+  areaHpMarked,
+  blocksBetween,
+  carriedTo,
+  centreOf,
+  circle,
+  entersRange,
+  inArea,
+  isWindDirection,
+  memberSideFits,
+  moveBreaks,
+  moveEvents,
+  placementHolds,
+  rangeSquares,
+  rangesCrossed,
+  seesThrough,
+  sightDisc,
+  wall,
+  wallBetween,
+  type AreaShapeOnMap,
+  type MoveEventKind,
+  type MoveLimit,
+  type Point,
+} from "../src/lib/domain/feature-effects/areas";
+import type { AdversaryFeatureEffect } from "../src/lib/domain/adversary-effects/types";
+import { tokenDistance } from "../src/lib/domain/combat-actions/distance";
 import { appError } from "../src/lib/errors/app-error";
 import { cardEffect } from "../src/lib/srd/card-effects/index";
 import { featureEffect } from "../src/lib/srd/feature-effects/index";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
+import { blockOf } from "./lib/adversaryFeatures";
 import { readSheet } from "./lib/characterSheet";
-import { tokensOnMap } from "./lib/combatMaps";
-import type { AreaCentre } from "./lib/validators/combatMaps";
+import { loadCombatMap, tokensOnMap } from "./lib/combatMaps";
+import { campaignMutation, campaignQuery, gmMutation } from "./lib/functions";
+import { atLeast, permissionFor } from "./lib/permissions";
+import { AREA_RADII, areaCentreValidator, pointValidator, type AreaCentre } from "./lib/validators/combatMaps";
 
 /**
  * Live map areas (plan lanes, tracer E4; the area runtime of sheet-drawer SD-A, Q14; docs/tasks/TASK-LN-E4.md). The
@@ -31,9 +62,15 @@ import type { AreaCentre } from "./lib/validators/combatMaps";
  * - `sightBlockers`: Dark Cloud's blocking discs for the vision engine (CB p.42: "Anyone in this cloud can't see
  *   outside of it, and anyone outside of it can't see in").
  *
- * No public function lives here yet: `list` (the overlay) and `remove` (the GM) need their authz-matrix entries in a
- * file outside lane E4's owns, so they are the follow-up (task doc). Reads: `combatAreas.by_map`, at most MAX_MAP_AREAS
- * rows (ended rows are swept a day after `endedAt`, convex/cleanup.ts).
+ *
+ * Plan lanes-2 E4 (round 2, docs/tasks/TASK-LN2-E4.md): walls (`shape: "wall"`, two picked squares), `anchored` areas (a
+ * token centre stays on its square), `count` areas (one per picked square), damageable areas (`damage`, Wild Fortress),
+ * areas ending on their caster's events (`endAreasOnCasterEvent`), see-through darkness per viewer (`areaSightBlocks`),
+ * member and observer conditions (`memberConditionsFor`, `observerConditions`), a `leave` gate on moves (`leaveGate`).
+ *
+ * Public: `list` (the map overlay: the live areas of a map), `remove` (the GM, or the caster's player), `damage` (the GM
+ * marks a damageable area's HP). Reads: `combatAreas.by_map`, at most MAX_MAP_AREAS rows (ended rows are swept a day
+ * after `endedAt`, convex/cleanup.ts).
  */
 
 /** The most area rows read for one map (live ones plus the ended ones the cron has not swept yet). */
@@ -73,8 +110,11 @@ export async function activeAreasOnMap(ctx: QueryCtx, mapId: Id<"combatMaps">): 
   return rows.filter((a) => a.status === "active");
 }
 
-/** Where the area is now: a token centre follows its token; null when that token is no longer on the map. */
+const asPoint = (p: readonly number[]): Point => [p[0] ?? 0, p[1] ?? 0];
+
+/** Where the area is now: a wall between its ends; a token centre follows its token; null when that token is no longer on the map. */
 export function areaShape(area: Doc<"combatAreas">, tokens: readonly Doc<"combatTokens">[]): AreaShapeOnMap | null {
+  if (area.shape === "wall") return area.wall ? wall(asPoint(area.wall.a), asPoint(area.wall.b)) : null;
   if (area.centre.kind === "square") return circle({ x: area.centre.x, y: area.centre.y }, area.radius);
   const tokenId = area.centre.tokenId;
   const token = tokens.find((t) => t._id === tokenId);
@@ -96,25 +136,52 @@ export type PlaceInput = {
   useId?: string;
   spec: Omit<AreaSpec, "mods">;
   centre: AreaCentre;
+  /** A wall's two end squares (`shape: "wall"`). */
+  wallEnds?: { a: { x: number; y: number }; b: { x: number; y: number } };
   /** The caster's token (for `placeWithin`); null off the map's token list. */
   ownerToken: Doc<"combatTokens"> | null;
+  /** Leave the caster's older area of the same feature and label live (a `count` area's siblings). */
+  keepOld?: boolean;
 };
 
+/** A square on the map, else COMBAT_TARGET_INVALID; `placeWithin` of the caster's token is checked too. */
+function checkSquare(input: Pick<PlaceInput, "map" | "ownerToken" | "spec">, p: { x: number; y: number }): { x: number; y: number } {
+  if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.y < 0 || p.x >= input.map.w || p.y >= input.map.h) throw appError("COMBAT_TARGET_INVALID", "That square is off the map.");
+  const square = { x: Math.trunc(p.x), y: Math.trunc(p.y) };
+  if (input.ownerToken && !placementHolds(input.spec, input.ownerToken, square)) throw appError("COMBAT_TARGET_INVALID", `${input.spec.label} must be placed within ${input.spec.placeWithin} range.`);
+  return square;
+}
+
 /**
- * Writes one live area. A wall (`shape: "wall"`) is refused until `combatAreaFields.shape` is widened (task doc); a
- * square outside `placeWithin` of the caster is COMBAT_TARGET_INVALID. The caster's old live area of the same feature
- * and label ends first.
+ * Writes one live area. A square centre (and a wall's two ends) must be on the map and within `placeWithin` of the caster
+ * (COMBAT_TARGET_INVALID). A wall needs both ends (INVALID without). An `anchored` token centre is stored as the token's
+ * square (Phantom Retreat, CB p.336: "where you're currently standing"). A `damageable` area starts with no HP marked.
+ * The caster's old live area of the same feature and label ends first (not with `keepOld`).
  */
 export async function placeArea(ctx: MutationCtx, input: PlaceInput): Promise<Id<"combatAreas">> {
-  const { spec, centre } = input;
-  if (spec.shape === "wall") throw appError("INVALID", `${spec.label} is a wall; walls can't be drawn on the map yet.`);
-  if (centre.kind === "square") {
-    if (!Number.isFinite(centre.x) || !Number.isFinite(centre.y) || centre.x < 0 || centre.y < 0 || centre.x >= input.map.w || centre.y >= input.map.h) throw appError("COMBAT_TARGET_INVALID", "That square is off the map.");
-    if (input.ownerToken && !placementHolds(spec, input.ownerToken, { x: centre.x, y: centre.y })) throw appError("COMBAT_TARGET_INVALID", `${spec.label} must be placed within ${spec.placeWithin} range.`);
+  const { spec } = input;
+  let centre = input.centre;
+  let wallRow: { a: number[]; b: number[] } | undefined;
+  if (spec.shape === "wall") {
+    if (input.wallEnds === undefined) throw appError("INVALID", `Pick the two ends of ${spec.label}.`);
+    const a = checkSquare(input, input.wallEnds.a);
+    const b = checkSquare(input, input.wallEnds.b);
+    wallRow = { a: [a.x, a.y], b: [b.x, b.y] };
+    centre = { kind: "square", x: a.x, y: a.y };
+  } else if (centre.kind === "square") {
+    centre = { kind: "square", ...checkSquare(input, centre) };
+  } else if (spec.anchored === true) {
+    const tokenId = centre.tokenId;
+    const token = input.ownerToken?._id === tokenId ? input.ownerToken : await ctx.db.get("combatTokens", tokenId);
+    if (token === null || token.mapId !== input.map._id) throw appError("FEATURE_NEEDS_MAP");
+    centre = { kind: "square", x: token.x, y: token.y };
   }
-  for (const old of await activeAreasOnMap(ctx, input.map._id)) {
-    if (old.characterId === input.characterId && old.featureId === input.sourceId && old.label === spec.label) await endArea(ctx, old);
+  if (input.keepOld !== true) {
+    for (const old of await activeAreasOnMap(ctx, input.map._id)) {
+      if (old.characterId === input.characterId && old.featureId === input.sourceId && old.label === spec.label) await endArea(ctx, old);
+    }
   }
+  const hp = spec.damageable;
   return ctx.db.insert("combatAreas", {
     campaignId: input.campaignId,
     mapId: input.map._id,
@@ -122,8 +189,10 @@ export async function placeArea(ctx: MutationCtx, input: PlaceInput): Promise<Id
     ...(input.useId !== undefined ? { useId: input.useId } : {}),
     characterId: input.characterId,
     label: spec.label.slice(0, 80),
-    shape: "circle",
-    centre: centre.kind === "square" ? { kind: "square", x: Math.trunc(centre.x), y: Math.trunc(centre.y) } : centre,
+    shape: spec.shape === "wall" ? "wall" : "circle",
+    centre,
+    ...(wallRow ? { wall: wallRow } : {}),
+    ...(hp ? { damage: { major: hp.major, severe: hp.severe, hpMax: hp.hp, hp: 0 } } : {}),
     radius: spec.radius,
     blocksSight: spec.blocksSight === true,
     expires: areaExpires(spec.duration),
@@ -132,31 +201,49 @@ export async function placeArea(ctx: MutationCtx, input: PlaceInput): Promise<Id
   });
 }
 
-export type PlanAreasInput = Omit<PlaceInput, "spec" | "centre"> & {
+/** The most areas one `count` step places (Forest Sprites, CB p.339: one per Hope spent). */
+export const MAX_AREA_COUNT = 10;
+
+export type PlanAreasInput = Omit<PlaceInput, "spec" | "centre" | "wallEnds" | "keepOld"> & {
   steps: readonly PlanStep[];
   /** The map token of a runner id (the actor's id is its own token), or null. */
   tokenOf: (runnerId: string) => Id<"combatTokens"> | null;
   /** The square the player picked for a `point` centre (dcm-dgu); a `point` area without one is INVALID. */
   point?: { x: number; y: number };
+  /**
+   * Plan lanes-2 E4: more squares, after `point`. A `count` area (Forest Sprites, dcm-5yew) places one area on each picked
+   * square (at most MAX_AREA_COUNT); a wall takes its two ends from the first two (Wall of Flame, CB p.332).
+   */
+  points?: readonly { x: number; y: number }[];
 };
 
-/** Writes every `area` step of a plan (NV11) in the use's mutation; returns the new rows' ids. */
+/**
+ * Writes every `area` step of a plan (NV11) in the use's mutation; returns the new rows' ids. A wall takes the first two
+ * picked squares as its ends; a `count` area with a `point` centre places one area per picked square (its siblings stay
+ * live; using it again ends the old ones first).
+ */
 export async function placeAreasFromPlan(ctx: MutationCtx, input: PlanAreasInput): Promise<Id<"combatAreas">[]> {
   const out: Id<"combatAreas">[] = [];
+  const squares = [...(input.point ? [input.point] : []), ...(input.points ?? [])];
   for (const step of input.steps) {
     if (step.kind !== "area") continue;
     const { mods: _mods, ...spec } = step.area;
     void _mods;
-    let centre: AreaCentre;
-    if (spec.centre === "point") {
-      if (input.point === undefined) throw appError("INVALID", `Pick a square for ${spec.label}.`);
-      centre = { kind: "square", x: input.point.x, y: input.point.y };
-    } else {
-      const tokenId = step.centreId === null ? null : input.tokenOf(step.centreId);
-      if (tokenId === null) throw appError("FEATURE_NEEDS_MAP");
-      centre = { kind: "token", tokenId };
+    if (spec.shape === "wall") {
+      const [a, b] = squares;
+      if (a === undefined || b === undefined) throw appError("INVALID", `Pick the two ends of ${spec.label}.`);
+      out.push(await placeArea(ctx, { ...input, spec, centre: { kind: "square", x: a.x, y: a.y }, wallEnds: { a, b } }));
+      continue;
     }
-    out.push(await placeArea(ctx, { ...input, spec, centre }));
+    if (spec.centre === "point") {
+      if (squares.length === 0) throw appError("INVALID", `Pick a square for ${spec.label}.`);
+      const picks = spec.count === undefined ? squares.slice(0, 1) : squares.slice(0, MAX_AREA_COUNT);
+      for (const [i, p] of picks.entries()) out.push(await placeArea(ctx, { ...input, spec, centre: { kind: "square", x: p.x, y: p.y }, keepOld: i > 0 }));
+      continue;
+    }
+    const tokenId = step.centreId === null ? null : input.tokenOf(step.centreId);
+    if (tokenId === null) throw appError("FEATURE_NEEDS_MAP");
+    out.push(await placeArea(ctx, { ...input, spec, centre: { kind: "token", tokenId } }));
   }
   return out;
 }
@@ -172,18 +259,270 @@ export function areaFactsFor(areas: readonly Doc<"combatAreas">[], tokens: reado
 }
 
 /** The vision engine's blocking discs of the live sight-blocking areas (Dark Cloud), as map objects that block sight. */
-export function sightBlockers(areas: readonly Doc<"combatAreas">[], tokens: readonly Doc<"combatTokens">[]): { kind: string; x: number; y: number; r: number; sight: "block" }[] {
-  const out: { kind: string; x: number; y: number; r: number; sight: "block" }[] = [];
+export function sightBlockers(areas: readonly Doc<"combatAreas">[], tokens: readonly Doc<"combatTokens">[]): SightDisc[] {
+  return areaSightBlocks(areas, tokens).flatMap((b) => b.discs);
+}
+
+/** A blocking disc as the vision engine reads a map object. */
+export type SightDisc = { kind: string; x: number; y: number; r: number; sight: "block" };
+
+/** One sight-blocking area's discs, with who sees through it (`AreaSpec.seeThrough`; dcm-o44e). */
+export type AreaSightBlock = { areaId: Id<"combatAreas">; characterId: Id<"characters">; seeThrough?: "owner" | "ownerAndAllies"; discs: SightDisc[] };
+
+// prepareMap blocks `r * blockRadiusFactor(kind)` (0.55 for an unknown kind): undo it so the disc is the area.
+const disc = (x: number, y: number, r: number): SightDisc => ({ kind: "area", x, y, r: r / 0.55, sight: "block" });
+
+/**
+ * The live sight-blocking areas as blocking discs: a circle is one disc (Dark Cloud, CB p.42), a wall a row of half-square
+ * discs along its line (Veil of Night, CB p.336: "a temporary curtain of darkness between two points"). `seeThrough` says
+ * which viewers the vision engine leaves it out for (convex/lib/combatVision.ts `preparedFor`).
+ */
+export function areaSightBlocks(areas: readonly Doc<"combatAreas">[], tokens: readonly Doc<"combatTokens">[]): AreaSightBlock[] {
+  const out: AreaSightBlock[] = [];
   for (const area of areas) {
     if (!area.blocksSight) continue;
     const shape = areaShape(area, tokens);
-    if (shape === null || shape.shape !== "circle") continue;
-    const disc = sightDisc(shape);
-    // prepareMap blocks `r * blockRadiusFactor(kind)` (0.55 for an unknown kind): undo it so the disc is the cloud.
-    out.push({ kind: "area", x: disc.x, y: disc.y, r: disc.r / 0.55, sight: "block" });
+    if (shape === null) continue;
+    const discs: SightDisc[] = [];
+    if (shape.shape === "circle") {
+      const d = sightDisc(shape);
+      discs.push(disc(d.x, d.y, d.r));
+    } else {
+      const [ax, ay] = [shape.a[0] + 0.5, shape.a[1] + 0.5];
+      const [bx, by] = [shape.b[0] + 0.5, shape.b[1] + 0.5];
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) * 2));
+      for (let i = 0; i <= n; i++) discs.push(disc(ax + ((bx - ax) * i) / n, ay + ((by - ay) * i) / n, 0.5));
+    }
+    const seeThrough = areaSpecOf(area.featureId, area.useId, area.label)?.seeThrough;
+    out.push({ areaId: area._id, characterId: area.characterId, ...(seeThrough ? { seeThrough } : {}), discs });
   }
   return out;
 }
+
+/** Whether a PC viewer (a character's token) sees through the block (the owner; with `ownerAndAllies` every PC). */
+export function viewerSeesThrough(block: AreaSightBlock, viewer: Id<"characters">): boolean {
+  return seesThrough(block.seeThrough, { isOwner: block.characterId === viewer, isParty: true });
+}
+
+// ---------------------------------------------------------------- plan lanes-2 E4: caster events, conditions, leaving
+
+/**
+ * Ends the caster's live areas whose `endsOnCaster` holds `event` (Hush, CB p.336: "you cast Hush again, or you take Major
+ * damage": `majorDamage`; Veil of Night: `castsSpell`; Hold the Line: `moves`; dcm-rx1k, dcm-o44e). The caller fires it
+ * where the caster's event happens (E6 / E2 for damage and spells; `combatTokens.move` for `moves`). Returns the labels
+ * ended. Reads `combatAreas.by_campaign` (at most MAX_MAP_AREAS rows).
+ */
+export async function endAreasOnCasterEvent(ctx: MutationCtx, campaignId: Id<"campaigns">, characterId: Id<"characters">, event: EndEvent): Promise<string[]> {
+  const rows = await ctx.db
+    .query("combatAreas")
+    .withIndex("by_campaign", (q) => q.eq("campaignId", campaignId))
+    .take(MAX_MAP_AREAS);
+  const ended: string[] = [];
+  for (const area of rows) {
+    if (area.status !== "active" || area.characterId !== characterId) continue;
+    if (!(areaSpecOf(area.featureId, area.useId, area.label)?.endsOnCaster ?? []).includes(event)) continue;
+    await endArea(ctx, area);
+    ended.push(area.label);
+  }
+  return ended;
+}
+
+/** A token as the side checks read it: its side and whether it is the area owner's PC token. */
+function isOwnerToken(area: Doc<"combatAreas">, token: Doc<"combatTokens">): boolean {
+  return token.ref.kind === "pc" && token.ref.characterId === area.characterId;
+}
+
+/**
+ * The conditions a token has from the areas it stands in (`AreaSpec.memberCondition`; Shadow Swarm, HF p.82: "Creatures
+ * that aren't Cryptimoths are Vulnerable while inside that area"; dcm-wuu). Members by `side` / `excludeOwner`; the owner
+ * is a PC, so its side is the party. Read by the attack paths (follow-up for E1 / E7).
+ */
+export function memberConditionsFor(areas: readonly Doc<"combatAreas">[], tokens: readonly Doc<"combatTokens">[], token: Doc<"combatTokens">): { label: string; condition: ConditionRef }[] {
+  const out: { label: string; condition: ConditionRef }[] = [];
+  for (const area of areas) {
+    const spec = areaSpecOf(area.featureId, area.useId, area.label);
+    if (spec?.memberCondition === undefined) continue;
+    const shape = areaShape(area, tokens);
+    if (shape === null || !inArea(token, shape)) continue;
+    if (!memberSideFits(spec, "pc", token.side, isOwnerToken(area, token))) continue;
+    out.push({ label: area.label, condition: spec.memberCondition });
+  }
+  return out;
+}
+
+/**
+ * The conditions `target` has toward `observer` from sight-blocking areas between them: members' `perObserver` (Dark
+ * Cloud, CB p.42: "Cloaked from any adversary for whom the cloud blocks line of sight"; dcm-bhp) and the owner's
+ * `ownerPerObserver` (Veil of Night, CB p.336: "Hidden to adversaries on the other side of the veil"; dcm-o44e). A circle
+ * blocks when one stands inside and the other outside; a wall when the line between them crosses it.
+ */
+export function observerConditions(areas: readonly Doc<"combatAreas">[], tokens: readonly Doc<"combatTokens">[], target: Doc<"combatTokens">, observer: Doc<"combatTokens">): { label: string; condition: StandardCondition }[] {
+  const out: { label: string; condition: StandardCondition }[] = [];
+  for (const area of areas) {
+    if (!area.blocksSight) continue;
+    const spec = areaSpecOf(area.featureId, area.useId, area.label);
+    if (spec === undefined || (spec.perObserver === undefined && spec.ownerPerObserver === undefined)) continue;
+    const shape = areaShape(area, tokens);
+    if (shape === null || !(shape.shape === "wall" ? wallBetween(shape, observer, target) : blocksBetween(shape, observer, target))) continue;
+    if (spec.ownerPerObserver !== undefined && isOwnerToken(area, target)) out.push({ label: area.label, condition: spec.ownerPerObserver });
+    if (spec.perObserver !== undefined && shape.shape === "circle" && inArea(target, shape) && memberSideFits(spec, "pc", target.side, isOwnerToken(area, target))) out.push({ label: area.label, condition: spec.perObserver });
+  }
+  return out;
+}
+
+/** "a Finesse Roll (14) or an attack" from an `Escape` (V2). */
+function escapeText(e: Escape): string {
+  const traits = e.trait === undefined ? [] : typeof e.trait === "string" ? [e.trait] : [...e.trait];
+  const name = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+  const dc = e.difficulty?.kind === "fixed" ? ` (${e.difficulty.value})` : "";
+  const parts = [...(traits.length > 0 ? [`a ${traits.map(name).join(" or ")} Roll${dc}`] : []), ...(e.attack === true ? ["an attack"] : [])];
+  return parts.length > 0 ? parts.join(" or ") : "an escape";
+}
+
+/**
+ * The areas a move would take a member out of that hold it (`AreaSpec.leave`; Bramble Patch, CB p.230: "must succeed on a
+ * Finesse Roll or deal more than 20 damage to the Dryad with an attack to leave the area"; dcm-wuu): label and what it
+ * takes. `combatTokens.move` refuses a player's move out (the escape roll is the table's / E7's) and warns the GM.
+ */
+export function leaveGate(areas: readonly Doc<"combatAreas">[], tokens: readonly Doc<"combatTokens">[], before: Doc<"combatTokens">, after: { x: number; y: number }): { label: string; text: string }[] {
+  const out: { label: string; text: string }[] = [];
+  for (const area of areas) {
+    if (area.centre.kind === "token" && area.centre.tokenId === before._id) continue;
+    const spec = areaSpecOf(area.featureId, area.useId, area.label);
+    if (spec?.leave === undefined) continue;
+    const shape = areaShape(area, tokens);
+    if (shape === null || !inArea(before, shape) || inArea({ ...before, ...after }, shape)) continue;
+    if (!memberSideFits(spec, "pc", before.side, isOwnerToken(area, before))) continue;
+    out.push({ label: area.label, text: `${escapeText(spec.leave)} to leave ${area.label}` });
+  }
+  return out;
+}
+
+/** The centre square of the caster's live area with this label (Phantom Retreat's spot, `move.relativeTo: "area"`; dcm-5yew), or null. */
+export function areaCentreSquare(areas: readonly Doc<"combatAreas">[], tokens: readonly Doc<"combatTokens">[], characterId: Id<"characters">, label: string): { x: number; y: number } | null {
+  const area = areas.find((a) => a.characterId === characterId && a.label === label);
+  if (area === undefined) return null;
+  if (area.centre.kind === "square") return { x: area.centre.x, y: area.centre.y };
+  const shape = areaShape(area, tokens);
+  if (shape === null || shape.shape !== "circle") return null;
+  const [cx, cy] = centreOf(shape.centre);
+  return { x: Math.floor(cx), y: Math.floor(cy) };
+}
+
+/**
+ * A damageable area takes an attack's damage (Wild Fortress, CB p.339: "Attacks made against the dome automatically
+ * succeed. The dome has the following damage thresholds and lasts until it marks 3 Hit Points"; dcm-cj8): marks 1 / 2 / 3
+ * HP by its thresholds and ends at its last HP. Returns the HP marked and whether it ended.
+ */
+export async function damageArea(ctx: MutationCtx, area: Doc<"combatAreas">, amount: number): Promise<{ marked: number; hp: number; ended: boolean }> {
+  if (area.status !== "active" || area.damage === undefined) throw appError("INVALID", `${area.label} can't be damaged.`);
+  const marked = areaHpMarked(amount, area.damage.major, area.damage.severe);
+  const hp = Math.min(area.damage.hpMax, area.damage.hp + marked);
+  const ended = hp >= area.damage.hpMax;
+  await ctx.db.patch("combatAreas", area._id, { damage: { ...area.damage, hp }, ...(ended ? { status: "ended" as const, endedAt: Date.now() } : {}) });
+  return { marked, hp, ended };
+}
+
+// ---------------------------------------------------------------- public (plan lanes-2 E4, dcm-lqnt server half)
+
+/** One live area as the map overlay draws it (aoe-sprites spec: the overlay picks the art by `label`). */
+const areaViewValidator = v.object({
+  _id: v.id("combatAreas"),
+  label: v.string(),
+  shape: v.union(v.literal("circle"), v.literal("wall")),
+  /** A token centre is drawn around the token where the viewer sees it; no position is sent for it. */
+  centre: areaCentreValidator,
+  radius: v.union(...AREA_RADII.map((r) => v.literal(r))),
+  wall: v.optional(v.object({ a: pointValidator, b: pointValidator })),
+  blocksSight: v.boolean(),
+  /** A damageable area's HP (Wild Fortress). */
+  damage: v.optional(v.object({ hp: v.number(), hpMax: v.number() })),
+  characterId: v.id("characters"),
+});
+
+/**
+ * The live areas on a map (the overlay, dcm-lqnt). Players read the live map only (another map reads as empty, R2); the
+ * GM any of the campaign's maps. An unknown map reads as empty. A token centre is sent as its token id, never a position,
+ * so an area around a token the player can't see shows nothing new.
+ */
+export const list = campaignQuery({
+  need: "view",
+  enough: "owner",
+  args: { mapId: v.string() },
+  returns: v.array(areaViewValidator),
+  handler: async (ctx, { mapId }) => {
+    const id = ctx.db.normalizeId("combatMaps", mapId);
+    const map = id === null ? null : await ctx.db.get("combatMaps", id);
+    if (map === null || map.campaignId !== ctx.campaign._id) return [];
+    if (!map.live && !atLeast(ctx.permission, "owner")) return [];
+    return (await activeAreasOnMap(ctx, map._id)).map((a) => ({
+      _id: a._id,
+      label: a.label,
+      shape: a.shape,
+      centre: a.centre,
+      radius: a.radius,
+      ...(a.wall ? { wall: a.wall } : {}),
+      blocksSight: a.blocksSight,
+      ...(a.damage ? { damage: { hp: a.damage.hp, hpMax: a.damage.hpMax } } : {}),
+      characterId: a.characterId,
+    }));
+  },
+});
+
+/** The area when the id is one of this campaign's live areas, else NOT_FOUND. */
+async function loadArea(ctx: QueryCtx, campaignId: Id<"campaigns">, areaId: string): Promise<Doc<"combatAreas">> {
+  const id = ctx.db.normalizeId("combatAreas", areaId);
+  const area = id === null ? null : await ctx.db.get("combatAreas", id);
+  if (area === null || area.campaignId !== campaignId || area.status !== "active") throw appError("NOT_FOUND");
+  return area;
+}
+
+/**
+ * Ends a live area (the GM's Remove; the caster's player dismissing their own spell on the live map). Anyone else:
+ * FORBIDDEN. Ended rows are swept by the retention cron.
+ */
+export const remove = campaignMutation({
+  need: "view",
+  enough: "owner",
+  args: { areaId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { areaId }) => {
+    const area = await loadArea(ctx, ctx.campaign._id, areaId);
+    if (!atLeast(ctx.permission, "owner")) {
+      const character = await ctx.db.get("characters", area.characterId);
+      const permission = character === null ? null : await permissionFor(ctx, ctx.user, { type: "character", campaign: ctx.campaign, character }, "edit");
+      if (permission === null || !atLeast(permission, "edit")) throw appError("FORBIDDEN");
+      const map = await loadCombatMap(ctx, ctx.campaign._id, area.mapId);
+      if (!map.live) throw appError("FORBIDDEN");
+    }
+    await endArea(ctx, area);
+    return null;
+  },
+});
+
+/**
+ * The GM marks a damageable area with an attack's damage (Wild Fortress, CB p.339: thresholds 15/30, "lasts until it
+ * marks 3 Hit Points"; dcm-cj8): 1 / 2 / 3 HP by its thresholds; at its last HP it ends. Public feed row.
+ */
+export const damage = gmMutation({
+  args: { areaId: v.string(), amount: v.number() },
+  returns: v.object({ marked: v.number(), hp: v.number(), ended: v.boolean() }),
+  handler: async (ctx, { areaId, amount }) => {
+    if (!Number.isInteger(amount) || amount < 0 || amount > 999) throw appError("INVALID", "Damage is a whole number from 0 to 999.");
+    const area = await loadArea(ctx, ctx.campaign._id, areaId);
+    const out = await damageArea(ctx, area, amount);
+    await logAction(ctx, {
+      campaignId: ctx.campaign._id,
+      characterId: area.characterId,
+      actorId: ctx.user._id,
+      kind: "combat",
+      visibility: "public",
+      summary: `${area.label} takes ${amount} damage and marks ${out.marked} HP (${out.hp}/${area.damage?.hpMax ?? out.hp})${out.ended ? "; it falls" : ""}`,
+      undoable: false,
+    });
+    return out;
+  },
+});
 
 /** What a move did to one area (`combatTokens.move` returns it). */
 export type AreaMoveNote = { label: string; event: MoveEventKind; ended: boolean };
@@ -267,6 +606,146 @@ export async function rangeTriggersAfterMove(
       await logAction(ctx, { campaignId, characterId: character._id, actorId, kind: "combat", visibility: "public", summary: `${await nameOf()} moves within range of ${sheet.name}: ${use.name}`, groupId, undoable: false });
       out.push({ characterId: character._id, card: use.name });
     }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- plan lanes-2 E4: the rules a move keeps
+
+/** One adversary feature a PC's move sets off (`pcMoves`; Shield Wall, CB p.212; dcm-xobk). E7 runs the use. */
+export type MoveTrigger = { instanceId: Id<"encounterAdversaries">; feature: string; useId: string; stage: "would" | "did" };
+
+/** What the move rules said about one move: GM warnings (a player's move is refused instead) and the triggers it set off. */
+export type MoveRules = { warnings: string[]; triggers: MoveTrigger[] };
+
+/** The adversary instance behind an enemy token, when its encounter is running and it is not defeated. */
+async function liveInstance(ctx: QueryCtx, campaignId: Id<"campaigns">, token: Doc<"combatTokens">): Promise<Doc<"encounterAdversaries"> | null> {
+  if (token.side !== "enemy" || token.ref.kind !== "adversary") return null;
+  const instance = await ctx.db.get("encounterAdversaries", token.ref.adversaryId);
+  if (instance === null || instance.campaignId !== campaignId || instance.defeated) return null;
+  const encounter = await ctx.db.get("encounters", instance.encounterId);
+  return encounter !== null && encounter.status === "running" ? instance : null;
+}
+
+/** The `moveLimit` mods of a stat block's passives (Creeping Fire, CB p.216: "can only move within Very Close range"; dcm-wuu). */
+function passiveMoveLimits(effects: readonly AdversaryFeatureEffect[]): MoveLimit[] {
+  const out: MoveLimit[] = [];
+  for (const effect of effects) {
+    for (const use of effect.uses) {
+      if (use.activation.kind !== "passive") continue;
+      for (const m of use.modifiers ?? []) {
+        if (m.kind !== "mod" || m.mod.kind !== "moveLimit" || (m.to !== undefined && m.to !== "self")) continue;
+        out.push({ ...(m.mod.maxRange ? { maxRange: m.mod.maxRange } : {}), label: effect.feature });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The `moveLimit` mods of the areas a token stands in (members by `side`). A `direction` read from a use's choice is not
+ * stored on an area row, so only `maxRange` applies here; Hurricane's wind sits on a condition (E7's instance effects).
+ */
+function areaMoveLimits(areas: readonly Doc<"combatAreas">[], tokens: readonly Doc<"combatTokens">[], token: Doc<"combatTokens">): MoveLimit[] {
+  const out: MoveLimit[] = [];
+  for (const area of areas) {
+    const spec = areaSpecOf(area.featureId, area.useId, area.label);
+    const limits = (spec?.mods ?? []).flatMap((m) => (m.kind === "moveLimit" ? [m] : []));
+    if (spec === undefined || limits.length === 0) continue;
+    const shape = areaShape(area, tokens);
+    if (shape === null || !inArea(token, shape) || !memberSideFits(spec, "pc", token.side, isOwnerToken(area, token))) continue;
+    for (const m of limits) {
+      const direction = m.direction?.choice;
+      out.push({ ...(m.maxRange ? { maxRange: m.maxRange } : {}), ...(isWindDirection(direction) ? { direction } : {}), label: area.label });
+    }
+  }
+  return out;
+}
+
+/**
+ * The rules a token's move from `before` to `after` keeps, read before it is written (plan lanes-2 E4):
+ * - leaving an area that holds its members (`AreaSpec.leave`, Bramble Patch, CB p.230; dcm-wuu);
+ * - movement limits (`Mod moveLimit`: an area's members, an adversary's own passive, Creeping Fire, CB p.216; dcm-3oe);
+ * - a PC's move into or out of an adversary's range sets off its `pcMoves` features (Shield Wall, CB p.212: "A creature
+ *   who tries to move within Very Close range of the Guard"; `stage: "would"` before the move, else after; dcm-xobk). One
+ *   GM feed row names them; E7 runs the use (a would-move `negate` undoes the move).
+ * A player's move that breaks a hold or a limit is MOVE_BLOCKED (the message says what it takes); the GM's drag goes
+ * through with a warning. Reads the map's live areas and tokens, and per enemy token on a live map its instance and
+ * encounter (at most MAX_COMBAT_TOKENS).
+ */
+export async function moveRules(
+  ctx: MutationCtx,
+  input: { campaignId: Id<"campaigns">; map: Doc<"combatMaps">; before: Doc<"combatTokens">; after: { x: number; y: number }; byGm: boolean; actorId: Id<"users">; nameOf: () => Promise<string> },
+): Promise<MoveRules> {
+  const { before, byGm } = input;
+  const moved = { ...before, ...input.after };
+  const areas = await activeAreasOnMap(ctx, input.map._id);
+  const tokens = await tokensOnMap(ctx, input.map._id);
+  const problems = leaveGate(areas, tokens, before, input.after).map((g) => `${g.label}: needs ${g.text}`);
+  const limits = areaMoveLimits(areas, tokens, before);
+  const instance = await liveInstance(ctx, input.campaignId, before);
+  if (instance !== null) {
+    const block = await blockOf(ctx, instance);
+    if (block !== null) limits.push(...passiveMoveLimits(block.effects));
+  }
+  for (const limit of limits) {
+    const broken = moveBreaks(limit, before, moved);
+    if (broken !== null) problems.push(broken);
+  }
+  if (problems.length > 0 && !byGm) throw appError("MOVE_BLOCKED", problems[0]);
+  const triggers = before.ref.kind === "pc" && input.map.live ? await pcMoveTriggers(ctx, input.campaignId, tokens, before, moved) : [];
+  if (triggers.length > 0) {
+    const words = triggers.map((t) => `${t.feature} (${t.stage === "would" ? "before the move" : "after the move"})`);
+    await logAction(ctx, { campaignId: input.campaignId, actorId: input.actorId, kind: "adversary", visibility: "gm", summary: `${await input.nameOf()} moves: ${words.join(", ")}`, undoable: false });
+  }
+  return { warnings: problems, triggers };
+}
+
+/** The `pcMoves` features of the enemies on the map that a PC's move sets off (into / out of their ranges). */
+async function pcMoveTriggers(ctx: QueryCtx, campaignId: Id<"campaigns">, tokens: readonly Doc<"combatTokens">[], before: Doc<"combatTokens">, after: Doc<"combatTokens">): Promise<MoveTrigger[]> {
+  const out: MoveTrigger[] = [];
+  for (const enemy of tokens) {
+    if (enemy._id === before._id || enemy.side !== "enemy" || enemy.ref.kind !== "adversary") continue;
+    const crossed = rangesCrossed(before, after, enemy);
+    if (crossed.into.length === 0 && crossed.outOf.length === 0) continue;
+    const instance = await liveInstance(ctx, campaignId, enemy);
+    if (instance === null) continue;
+    const block = await blockOf(ctx, instance);
+    for (const effect of block?.effects ?? []) {
+      for (const use of effect.uses) {
+        const a = use.activation;
+        if ((a.kind !== "auto" && a.kind !== "reaction") || a.trigger.kind !== "pcMoves") continue;
+        const t = a.trigger;
+        const hit = (t.into !== undefined && crossed.into.includes(t.into)) || (t.outOf !== undefined && crossed.outOf.includes(t.outOf));
+        if (hit) out.push({ instanceId: instance._id, feature: effect.feature, useId: use.id ?? "main", stage: t.stage ?? "did" });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Tokens carried along by a move (`move.mode: "withCaster"`: Wings of Light, CB p.45: "carry another willing creature";
+ * Pin, HF p.71: "drags the Restrained target when it moves"; dcm-lvgm, dcm-z5a6): each takes the carrier's step. A carried
+ * token must stand within Melee range of the carrier before the move (COMBAT_TARGET_INVALID); a player carries PC tokens
+ * only (the willing creature), the GM any. At most 4. Returns the carried tokens' new squares.
+ */
+export async function carryAlong(
+  ctx: MutationCtx,
+  input: { map: Doc<"combatMaps">; carrierBefore: Doc<"combatTokens">; carrierAfter: { x: number; y: number }; carry: readonly string[]; byGm: boolean },
+): Promise<{ tokenId: Id<"combatTokens">; x: number; y: number }[]> {
+  if (input.carry.length > 4) throw appError("INVALID", "At most 4 creatures can be carried.");
+  const out: { tokenId: Id<"combatTokens">; x: number; y: number }[] = [];
+  const after = { ...input.carrierBefore, ...input.carrierAfter };
+  for (const raw of new Set(input.carry)) {
+    const id = ctx.db.normalizeId("combatTokens", raw);
+    const token = id === null ? null : await ctx.db.get("combatTokens", id);
+    if (token === null || token.mapId !== input.map._id || token._id === input.carrierBefore._id) throw appError("COMBAT_TARGET_INVALID");
+    if (!input.byGm && token.side !== "pc") throw appError("COMBAT_TARGET_INVALID", "Only a willing creature can be carried.");
+    if (tokenDistance(input.carrierBefore, token) > rangeSquares("melee")) throw appError("COMBAT_TARGET_INVALID", "A carried creature must be within Melee range.");
+    const to = carriedTo(input.carrierBefore, after, token, input.map);
+    await ctx.db.patch("combatTokens", token._id, to);
+    out.push({ tokenId: token._id, ...to });
   }
   return out;
 }

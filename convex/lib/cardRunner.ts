@@ -57,6 +57,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
 import type { AttackScene } from "./combatActions";
+import { preparedFor } from "./combatVision";
 import { DEFAULT_OPTIONALS, MAX_CARD_TARGETS, type CardRoll, type ParsedChoices } from "./cardChoices";
 import type { ChoiceAsks } from "./cardRows";
 import { rangeBandValidator } from "./validators/combatRequests";
@@ -308,7 +309,7 @@ export class Creatures {
     if (index === s.viewer.index) creature = { kind: "self", tokenId: token._id, token };
     else if (token.side === "enemy") {
       if (!seenBy(s, index)) throw appError("COMBAT_NO_LINE_OF_SIGHT");
-      const sight = lineOfSight(s.scene.prepared, s.attacker, token, s.scene.visionObjects);
+      const sight = lineOfSight(s.attacker.ref.kind === "pc" ? preparedFor(s.scene, s.attacker.ref.characterId) : s.scene.prepared, s.attacker, token, s.scene.visionObjects);
       if (!sight.lineOfSight) throw appError("COMBAT_NO_LINE_OF_SIGHT");
       const linked = await enemyInstance(this.ctx, this.campaignId, token);
       if (linked === null) throw appError("COMBAT_TARGET_INVALID");

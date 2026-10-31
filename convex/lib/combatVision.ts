@@ -30,7 +30,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { derivedTraits } from "../../src/lib/domain/characters/derived";
 import { withEffects } from "../../src/lib/domain/characters/effects";
-import { activeAreasOnMap, sightBlockers } from "../combatAreas";
+import { activeAreasOnMap, areaSightBlocks, viewerSeesThrough, type AreaSightBlock } from "../combatAreas";
 import { readSheet } from "./characterSheet";
 import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
@@ -121,6 +121,10 @@ export type Scene = {
   /** The campaign time phase for display, or null for a frame without campaign time. */
   readonly phaseName: CampaignPhaseName | null;
   readonly light: LightLevel;
+  /** Plan lanes-2 E4 (dcm-o44e): the live sight-blocking areas, with who sees through them (`AreaSpec.seeThrough`). */
+  readonly areaBlocks: readonly AreaSightBlock[];
+  /** The blocking grid without the named areas' discs (a viewer who sees through them); `prepared` when none. */
+  readonly preparedWithout: (areaIds: ReadonlySet<string>) => PreparedMap;
 };
 
 /**
@@ -218,20 +222,29 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
   const tokens = await tokensOnMap(ctx, map._id);
   // Plan lanes E4 (SD-A, dcm-bhp): a live sight-blocking area (Dark Cloud, CB p.42: "Anyone in this cloud can't see outside
   // of it, and anyone outside of it can't see in") is a blocking disc for every viewer.
-  const vision = [...visionObjectsWith(objects, uploaded), ...sightBlockers(await activeAreasOnMap(ctx, map._id), tokens)];
-  const prepared = prepareMap({
+  // Plan lanes-2 E4 (dcm-o44e): a see-through area (Eclipse, Veil of Night) is left out for the viewers it lets through.
+  const areaBlocks = areaSightBlocks(await activeAreasOnMap(ctx, map._id), tokens);
+  const base = visionObjectsWith(objects, uploaded);
+  const vision = [...base, ...areaBlocks.flatMap((b) => b.discs)];
+  const glow = sprites ? { glow: spriteGlow(map, tiles, cells.paint, uploaded, await packSettingExtends(ctx, map)) } : {};
+  const prepareWith = (objs: readonly VisionObject[]) => prepareMap({
     w: map.w,
     h: map.h,
     base: map.base,
     areas: map.areas,
-    objects: vision,
+    objects: [...objs],
     paint: cells.paint,
     block: cells.block,
     image: map.source === "image",
     // F6: on a Sprites map the textures decide which squares glow (as the sprite painter draws them); a Classic map
     // leaves it to the engine's terrain rule (lava).
-    ...(sprites ? { glow: spriteGlow(map, tiles, cells.paint, uploaded, await packSettingExtends(ctx, map)) } : {}),
+    ...glow,
   });
+  const prepared = prepareWith(vision);
+  const preparedWithout = (areaIds: ReadonlySet<string>): PreparedMap => {
+    const kept = areaBlocks.filter((b) => !areaIds.has(b.areaId));
+    return kept.length === areaBlocks.length ? prepared : prepareWith([...base, ...kept.flatMap((b) => b.discs)]);
+  };
   const { phase, light } = await campaignLight(ctx, campaign);
   return {
     map,
@@ -245,6 +258,8 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
     phase: phase ?? light,
     phaseName: phase,
     light,
+    areaBlocks,
+    preparedWithout,
   };
 }
 
@@ -287,6 +302,15 @@ function tokenIndexOf(scene: Scene, characterId: Id<"characters">): number {
   return scene.tokens.findIndex((t) => t.ref.kind === "pc" && t.ref.characterId === characterId);
 }
 
+/**
+ * The blocking grid as this character sees it: without the sight-blocking areas they see through (Eclipse, CB p.337:
+ * "complete darkness only you and your allies can see through"; Veil of Night, CB p.336; plan lanes-2 E4, dcm-o44e).
+ */
+export function preparedFor(scene: Scene, characterId: Id<"characters">): PreparedMap {
+  const through = new Set<string>(scene.areaBlocks.filter((b) => viewerSeesThrough(b, characterId)).map((b) => b.areaId));
+  return through.size > 0 ? scene.preparedWithout(through) : scene.prepared;
+}
+
 export type Viewer = { readonly index: number; readonly instinct: number; readonly view: ViewerView };
 
 /** The character's view (C1 `createView`): own cone and lights, every token's carried light, GM fog marks. Null off the map. */
@@ -295,7 +319,7 @@ export function viewOf(scene: Scene, character: Doc<"characters">): Viewer | nul
   if (index < 0) return null;
   const instinct = instinctOf(character);
   const view = createView(
-    scene.prepared,
+    preparedFor(scene, character._id),
     { token: scene.visionTokens[index]!, characterId: character._id, instinct },
     { phase: scene.phase, tokens: scene.visionTokens, fog: scene.fog },
   );

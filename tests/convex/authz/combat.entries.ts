@@ -209,7 +209,34 @@ const tokens: Entry[] = [
   // The player moves and turns their own PC's token on the live map (another's: COMBAT_NOT_YOUR_TOKEN, combat.test.ts).
   { fn: api.combatTokens.move, access: "view", args: () => ({ x: 6, y: 10 }) },
   { fn: api.combatTokens.turn, access: "view", args: () => ({ angle: 1 }) },
+  // Lanes-2 E4: live map areas. Every member lists them; the caster's player (characterA) or the GM ends one; the GM damages one.
+  { fn: api.combatAreas.list, access: "view", args: (w) => ({ mapId: w.ids.mapId }) },
+  { fn: api.combatAreas.remove, access: "view", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId }) },
+  { fn: api.combatAreas.damage, access: "gm", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId, amount: 1 }) },
 ];
+
+/** Lanes-2 E4: a live area on the setup's map, drawn by characterA (a damageable circle, so the GM can damage it). */
+async function liveArea(w: World) {
+  const mapId = w.ids.mapId as Id<"combatMaps">;
+  const areaId = await w.t.run((ctx) =>
+    ctx.db.insert("combatAreas", {
+      campaignId: w.campaignId,
+      mapId,
+      featureId: "class:test:wild-fortress",
+      characterId: w.characterA,
+      label: "Wild Fortress",
+      shape: "circle",
+      centre: { kind: "square", x: 6, y: 10 },
+      damage: { major: 15, severe: 30, hpMax: 3, hp: 0 },
+      radius: "veryClose",
+      blocksSight: false,
+      expires: "scene",
+      status: "active",
+      createdAt: Date.now(),
+    }),
+  );
+  w.set("areaId", areaId);
+}
 
 const vision: Entry[] = [
   // The player's own character's view of the live map; the other player's of theirs; the GM has no token (noCharacter).

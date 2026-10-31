@@ -274,6 +274,12 @@ export const combatTokenFields = {
   light: carriedLightValidator,
   /** Characters this token was revealed to while in dim light (R10), at most MAX_COMBAT_REVEALS. */
   revealedTo: v.array(v.id("characters")),
+  /**
+   * Plan lanes-2 E4 (dcm-3p7s (4), dcm-v27; widened, absent = none): this token is a second position of the same creature
+   * as the named token (Blink Beast, HF p.71: "a duplicate of itself appears ... within Close range"). Its `ref` is the
+   * original's; it is removed with it. Nothing writes it until E7's `summon.duplicate`.
+   */
+  duplicateOf: v.optional(v.id("combatTokens")),
 };
 
 /** One row per (map, character): the half-squares the character has seen (R11). Own table: it changes on every move. */
@@ -322,8 +328,16 @@ export const combatAreaFields = {
   characterId: v.id("characters"),
   /** The map's label for it ("Circle of Power"). */
   label: v.string(),
-  shape: v.literal("circle"),
+  /** Plan lanes-2 E4 (dcm-3p7s (1), widened): `wall` is a line between `wall.a` and `wall.b`; `centre` is then `a`. */
+  shape: v.union(v.literal("circle"), v.literal("wall")),
   centre: areaCentreValidator,
+  /** A wall's end squares (`shape: "wall"`; Wall of Flame, CB p.332; Wall of Hunger, HF p.181). `[x, y]` each. */
+  wall: v.optional(v.object({ a: pointValidator, b: pointValidator })),
+  /**
+   * Plan lanes-2 E4 (dcm-3p7s (2), dcm-cj8; widened): an area that can be attacked (`AreaSpec.damageable`, Wild Fortress,
+   * CB p.339: "has damage thresholds 15/30 and lasts until it marks 3 Hit Points"). `hp` = HP marked so far.
+   */
+  damage: v.optional(v.object({ major: v.number(), severe: v.number(), hpMax: v.number(), hp: v.number() })),
   radius: literals(AREA_RADII),
   /** Dark Cloud (CB p.42): "Anyone in this cloud can't see outside of it, and anyone outside of it can't see in." */
   blocksSight: v.boolean(),

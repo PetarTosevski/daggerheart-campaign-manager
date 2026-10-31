@@ -186,3 +186,108 @@ export function sightDisc(area: Extract<AreaShapeOnMap, { shape: "circle" }>): {
   const reach = rangeSquares(area.radius);
   return { x, y, r: (Number.isFinite(reach) ? reach : 999) + sizeOf(area.centre) / 2 };
 }
+
+// ---------------------------------------------------------------- plan lanes-2, tracer E4 (round 2)
+
+/** The Defined Ranges from nearest to farthest (CB p.103). */
+export const RANGE_ORDER: readonly Range[] = ["melee", "veryClose", "close", "far", "veryFar"];
+
+/**
+ * A forced move `steps` ranges shorter (Immovable Object, CB p.230: "An attack that would move the Elemental moves them
+ * two fewer ranges (for example, Far becomes Very Close)"; `Mod forcedMoveReduce`, dcm-1yo). Null: no move is left.
+ */
+export function reduceRange(range: Range, steps: number): Range | null {
+  const at = RANGE_ORDER.indexOf(range) - Math.max(0, Math.trunc(steps));
+  return at < 0 ? null : RANGE_ORDER[at]!;
+}
+
+/**
+ * Wind directions a `moveLimit.direction` choice can name, by the option ids of Tempest's `wind` choice (Hurricane, CB
+ * p.339: "choose a direction the wind is blowing"; the wind blows toward it). `[dx, dy]` with y down the map.
+ */
+export const WIND_DIRECTIONS = {
+  north: [0, -1],
+  "north-east": [1, -1],
+  east: [1, 0],
+  "south-east": [1, 1],
+  south: [0, 1],
+  "south-west": [-1, 1],
+  west: [-1, 0],
+  "north-west": [-1, -1],
+} as const satisfies Record<string, Point>;
+export type WindDirection = keyof typeof WIND_DIRECTIONS;
+
+export const isWindDirection = (s: string | undefined): s is WindDirection => s !== undefined && Object.hasOwn(WIND_DIRECTIONS, s);
+
+/** A movement limit as the move check reads it (`Mod moveLimit`; the direction already resolved from the use's choice). */
+export type MoveLimit = { maxRange?: Range; direction?: WindDirection; label: string };
+
+/**
+ * Why a move breaks a limit, or null when it keeps to it: longer than `maxRange` (Creeping Fire, CB p.216: "can only move
+ * within Very Close range as their normal movement"; the distance from where the token stood), or against the wind
+ * (Hurricane, CB p.339: "Targets can't move against the wind": any step back along the wind's direction). dcm-3oe, dcm-wuu.
+ */
+export function moveBreaks(limit: MoveLimit, before: Footprint, after: Footprint): string | null {
+  if (limit.maxRange !== undefined && tokenDistance(before, after) > rangeSquares(limit.maxRange)) return `${limit.label}: can only move within ${limit.maxRange} range`;
+  if (limit.direction !== undefined) {
+    const [wx, wy] = WIND_DIRECTIONS[limit.direction];
+    if ((after.x - before.x) * wx + (after.y - before.y) * wy < 0) return `${limit.label}: can't move against the wind (${limit.direction})`;
+  }
+  return null;
+}
+
+/**
+ * Where a carried token goes when its carrier moves (`move.mode: "withCaster"`; Pin, HF p.71: "drags the Restrained target
+ * when it moves"; Wings of Light, CB p.45: "carry another willing creature"; dcm-z5a6, dcm-lvgm): the same step, kept on
+ * the map.
+ */
+export function carriedTo(carrierBefore: Footprint, carrierAfter: Footprint, carried: Footprint, map: { w: number; h: number }): { x: number; y: number } {
+  const s = sizeOf(carried);
+  const clamp = (n: number, max: number) => Math.max(0, Math.min(max - s, n));
+  return { x: clamp(carried.x + (carrierAfter.x - carrierBefore.x), map.w), y: clamp(carried.y + (carrierAfter.y - carrierBefore.y), map.h) };
+}
+
+/**
+ * The Defined Ranges of `other` a move came into (`into`) or went out of (`outOf`), nearest last; Very Far is never
+ * entered. An adversary's `pcMoves` trigger matches one of them (Shield Wall, CB p.209: "A creature who tries to move
+ * within Very Close range of the Guard"; dcm-xobk).
+ */
+export function rangesCrossed(before: Footprint, after: Footprint, other: Footprint): { into: Range[]; outOf: Range[] } {
+  const was = tokenDistance(before, other);
+  const is = tokenDistance(after, other);
+  const bands = RANGE_ORDER.filter((r) => r !== "veryFar").reverse();
+  return {
+    into: bands.filter((r) => was > rangeSquares(r) && is <= rangeSquares(r)),
+    outOf: bands.filter((r) => was <= rangeSquares(r) && is > rangeSquares(r)),
+  };
+}
+
+/**
+ * HP an attack's damage marks on a damageable area (Wild Fortress, CB p.339: "damage thresholds 15/30"): the CB p.91 rule,
+ * 1 below Major, 2 from Major, 3 from Severe; no damage marks none.
+ */
+export function areaHpMarked(amount: number, major: number, severe: number): number {
+  if (!(amount > 0)) return 0;
+  return amount >= severe ? 3 : amount >= major ? 2 : 1;
+}
+
+/**
+ * Whether a viewer sees through a sight-blocking area (`AreaSpec.seeThrough`; Eclipse, CB p.337: "complete darkness only
+ * you and your allies can see through"; Veil of Night, CB p.336: "Only you can see through this darkness"; dcm-o44e).
+ * An area's owner is a PC, so its allies are the party.
+ */
+export function seesThrough(seeThrough: AreaSpec["seeThrough"], viewer: { isOwner: boolean; isParty: boolean }): boolean {
+  if (seeThrough === "owner") return viewer.isOwner;
+  if (seeThrough === "ownerAndAllies") return viewer.isOwner || viewer.isParty;
+  return false;
+}
+
+/**
+ * Whether the line between an observer and a target crosses a wall (a line through square centres). A Veil of Night wall
+ * (CB p.336: "a wall of darkness") blocks sight across it.
+ */
+export function wallBetween(area: AreaShapeOnMap, observer: Footprint, target: Footprint): boolean {
+  if (area.shape !== "wall") return false;
+  const [a, b] = wallEnds(area);
+  return segmentsCross(centreOf(observer), centreOf(target), a, b);
+}
