@@ -1,16 +1,18 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { errorMessage } from "@/lib/convex-errors";
+import type { AreaSpec } from "@/lib/domain/card-effects/types";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { FeatureUseProps } from "../../slots";
 import { DrawerBoundary } from "../boundary";
 import { DifficultyRequests, useWaitingDifficulty } from "../../requests";
-import { chargeLine, serverUseOf, squareLabels, targetLabel, validAllies } from "./model";
+import { startAreaPick } from "../../map-view/area-pick";
+import { areaUseLine, chargeLine, RANGE_LABEL, serverUseOf, squareLabels, targetLabel, validAllies } from "./model";
 import "./use.css";
 
 /**
@@ -27,6 +29,8 @@ import "./use.css";
  *   roll (`featurePrompts.charge`). The Agility Roll's Difficulty is the GM's (CB p.104): the GM playing for the
  *   character types it; a player's Charge goes to the GM as a request (plan lanes B2, dcm-bxp.99.19.61), and the drawer
  *   shows it waiting until the GM answers (the GM's drawer lists it with a Difficulty box, `DifficultyRequests`).
+ * - A point-centred area (plan lanes-2 AO, dcm-u2wx; Dark Cloud, CB p.42): pick the square on the map, then Use with
+ *   `point` (`AreaUse`).
  */
 export function FeatureUse({ campaignId, role, map, characterId, featureId, useId, onClose }: FeatureUseProps) {
   const server = serverUseOf(featureId, useId);
@@ -45,6 +49,8 @@ export function FeatureUse({ campaignId, role, map, characterId, featureId, useI
           <p className="cm-muted">Needs the live map.</p>
         ) : server.kind === "count" ? (
           <CountUse campaignId={campaignId} characterId={characterId} mapId={mapId} featureId={featureId} useId={server.use.id} name={server.name} range={server.range} />
+        ) : server.kind === "area" ? (
+          <AreaUse campaignId={campaignId} characterId={characterId} mapId={mapId} featureId={featureId} useId={server.use.id} name={server.name} area={server.area} onClose={onClose} />
         ) : (
           <ChargeUse campaignId={campaignId} characterId={characterId} mapId={mapId} gm={role === "gm"} />
         )}
@@ -54,6 +60,42 @@ export function FeatureUse({ campaignId, role, map, characterId, featureId, useI
 }
 
 type Here = { campaignId: Id<"campaigns">; characterId: Id<"characters">; mapId: Id<"combatMaps"> };
+
+/**
+ * A use that places an area on a square the player picks (plan lanes-2 AO, dcm-u2wx): Dark Cloud (CB p.42: "create a
+ * temporary dark cloud that covers any area within Close range"; user answer 2026-10-31: a point within Close). The
+ * drawer closes so the map can be clicked; the map board's pick banner asks for the square, then sends
+ * `combatFeatures.useFeature` with `point` (the server checks `placeWithin`) and shows the result.
+ */
+function AreaUse({ campaignId, characterId, mapId, featureId, useId, name, area, onClose }: Here & { featureId: string; useId: string; name: string; area: AreaSpec; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const sendUse = useMutation(api.combatFeatures.useFeature);
+  const within = area.placeWithin ? ` within ${RANGE_LABEL[area.placeWithin] ?? area.placeWithin} range` : "";
+  function pick() {
+    startAreaPick({
+      prompt: `Pick the centre of ${area.label}${within}`,
+      mapId,
+      ...(area.radius !== "veryFar" ? { radius: area.radius } : {}),
+      onPick: async (point) => {
+        const out = await sendUse({ campaignId, idempotencyKey: crypto.randomUUID(), characterId, mapId, featureId, useId, targetTokenIds: [], choices: [], point });
+        return areaUseLine(name, area.label, out);
+      },
+    });
+    // The drawer is a modal dialog over the map: close it so the square can be clicked (its onClose runs the page's).
+    ref.current?.closest("dialog")?.close();
+    onClose();
+  }
+  return (
+    <div className="sdu-body" ref={ref}>
+      <p className="sdu-note">
+        {area.label} covers {RANGE_LABEL[area.radius] ?? area.radius} range around a square you pick{within}.
+      </p>
+      <button type="button" className="cm-btn" onClick={pick}>
+        Pick the square on the map
+      </button>
+    </div>
+  );
+}
 
 function CountUse({ campaignId, characterId, mapId, featureId, useId, name, range }: Here & { featureId: string; useId: string; name: string; range: string }) {
   const view = useQuery(api.featurePrompts.targetCount, { campaignId, characterId, featureId, useId, mapId });

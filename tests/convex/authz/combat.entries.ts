@@ -213,6 +213,14 @@ const tokens: Entry[] = [
   { fn: api.combatAreas.list, access: "view", args: (w) => ({ mapId: w.ids.mapId }) },
   { fn: api.combatAreas.remove, access: "view", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId }) },
   { fn: api.combatAreas.damage, access: "gm", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId, amount: 1 }) },
+  // Lanes-2 wave 9 AO: the GM draws an area by hand, moves and resizes one (Dark Cloud: the GM adjusts it, dcm-bxp.99.19.39).
+  {
+    fn: api.combatAreaEdits.draw,
+    access: "gm",
+    args: (w) => ({ mapId: w.ids.mapId, characterId: w.characterA, label: "Dark Cloud", shape: "circle", at: { x: 6, y: 10 }, blocksSight: true }),
+  },
+  { fn: api.combatAreaEdits.move, access: "gm", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId, at: { x: 7, y: 10 } }) },
+  { fn: api.combatAreaEdits.resize, access: "gm", setup: liveArea, args: (w) => ({ areaId: w.ids.areaId, radius: "close" }) },
 ];
 
 /** Lanes-2 E4: a live area on the setup's map, drawn by characterA (a damageable circle, so the GM can damage it). */

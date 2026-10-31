@@ -12,6 +12,8 @@ import { api } from "../../../../convex/_generated/api";
 import type { CombatMapLayout } from "../../../../convex/combatMaps";
 import type { CombatMapSummary, CombatMapViewport, MapBoardProps } from "../slots";
 import { usePlayerFitArea } from "../vision/fit";
+import { AreaOverlay, AreaTools } from "./area-overlay";
+import { AreaPickBanner, AreaPickLayer, cancelAreaPick } from "./area-pick";
 import { decodeCells } from "./cells";
 import { MapViewContext, type MapViewState } from "./context";
 import { imageMapSize, type ImageGrid } from "./grid";
@@ -107,6 +109,8 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
   const [error, setError] = useState<string | null>(null);
   const drag = useRef<Drag | null>(null);
   const [panning, setPanning] = useState(false);
+  // AO (dcm-lqnt): the GM's area tools (draw, move, resize, remove live areas), shown in Play.
+  const [areaTools, setAreaTools] = useState(false);
 
   const image = useLoadedImage(layout?.image?.url ?? null);
   const imageSize = image ? { width: image.naturalWidth, height: image.naturalHeight } : null;
@@ -192,7 +196,10 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
     if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === "n" || e.key === "N") setShowNames(!showNames);
-    if (e.key === "Escape") onSelectToken(null);
+    if (e.key === "Escape") {
+      cancelAreaPick();
+      onSelectToken(null);
+    }
   });
   useEffect(() => {
     const listener = (e: KeyboardEvent) => onKey(e);
@@ -224,6 +231,11 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
           </button>
         ) : null}
         <span className="cm-spacer" />
+        {gm && mode !== "edit" ? (
+          <button type="button" className="cm-btn cm-sm" aria-pressed={areaTools} onClick={() => setAreaTools(!areaTools)} title="Draw, move, resize or remove effect areas">
+            Areas
+          </button>
+        ) : null}
         <button type="button" className="cm-btn cm-sm" aria-pressed={showNames} onClick={() => setShowNames(!showNames)} title="Always show token names (N)">
           Aa Names
         </button>
@@ -248,6 +260,8 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
           {error}
         </p>
       ) : null}
+      {gm && mode !== "edit" && areaTools ? <AreaTools campaignId={campaignId} mapId={map._id} /> : null}
+      <AreaPickBanner mapId={map._id} />
       <div
         ref={viewportRef}
         className={vpClass}
@@ -263,7 +277,9 @@ function LoadedBoard(props: MapBoardProps & { map: CombatMapSummary; layout: Com
             {layout && mapState ? (
               <MapViewContext.Provider value={mapState}>
                 <MapCanvas layout={layout} paint={cells.paint} image={image} grid={shownGrid} zoom={zoom} pad={pad} />
+                <AreaOverlay campaignId={campaignId} role={role} mapId={map._id} w={w} h={h} pad={pad} step={step} />
                 {renderLayers({ ...props, map, viewport })}
+                <AreaPickLayer mapId={map._id} viewport={viewport} />
               </MapViewContext.Provider>
             ) : (
               <p role="status" className="cm-muted cm-vp-loading">

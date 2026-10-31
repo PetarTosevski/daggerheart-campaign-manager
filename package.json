@@ -18,7 +18,8 @@
     "worktree:setup": "node scripts/worktree-setup.mjs",
     "lorekeeper:ingest": "node scripts/lorekeeper-ingest.mjs",
     "sprites:cut": "node --import ./scripts/sprite-packs/ts-hooks.mjs scripts/sprite-packs/cut-sheets.ts",
-    "sprites:build": "node --import ./scripts/sprite-packs/ts-hooks.mjs scripts/sprite-packs/build-pack.ts"
+    "sprites:build": "node --import ./scripts/sprite-packs/ts-hooks.mjs scripts/sprite-packs/build-pack.ts",
+    "sprites:areas": "node --import ./scripts/sprite-packs/ts-hooks.mjs scripts/sprite-packs/cut-areas.ts"
   },
   "dependencies": {
     "@auth/core": "0.41.3",

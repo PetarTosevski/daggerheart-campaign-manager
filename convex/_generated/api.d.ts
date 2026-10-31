@@ -20,6 +20,7 @@ import type * as classFeatures from "../classFeatures.js";
 import type * as cleanup from "../cleanup.js";
 import type * as codex from "../codex.js";
 import type * as combatActions from "../combatActions.js";
+import type * as combatAreaEdits from "../combatAreaEdits.js";
 import type * as combatAreas from "../combatAreas.js";
 import type * as combatCards from "../combatCards.js";
 import type * as combatEffects from "../combatEffects.js";
@@ -209,6 +210,7 @@ declare const fullApi: ApiFromModules<{
   cleanup: typeof cleanup;
   codex: typeof codex;
   combatActions: typeof combatActions;
+  combatAreaEdits: typeof combatAreaEdits;
   combatAreas: typeof combatAreas;
   combatCards: typeof combatCards;
   combatEffects: typeof combatEffects;
