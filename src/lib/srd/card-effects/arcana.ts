@@ -250,7 +250,17 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
         name: "Flight: a token per action roll",
         activation: { kind: "auto", trigger: { kind: "afterYouRoll", roll: "action" } },
         requires: [{ kind: "effectActive", cardId: "flight" }],
-        steps: [{ kind: "tokens", to: "self", op: "spend", amount: n(1), note: "The last token ends Flying: you descend to the ground directly below you." }],
+        steps: [
+          { kind: "tokens", to: "self", op: "spend", amount: n(1), note: "The last token ends Flying: you descend to the ground directly below you." },
+          // Lanes-2 R1 (dcm-s9md): the table's reminder (the token step's note isn't shown) until the server ends Flying
+          // on `tokensGone`; remove it when dcm-erhv merges. Card: "After the action that spends the last token is
+          // resolved, you descend to the ground directly below you."
+          {
+            kind: "manual",
+            to: "self",
+            text: "If that was the last Flight token: after the action that spends the last token is resolved, you descend to the ground directly below you (end Flying).",
+          },
+        ],
       },
     ],
   },
@@ -552,6 +562,9 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
               { kind: "tokens", to: "self", op: "clear" },
               // Lanes SRD-C1 (dcm-8x8): "you take the damage and this spell ends".
               { kind: "endEffect", to: "self", note: "All the results are 4 or lower: you take the damage and Confusing Aura ends." },
+              // Lanes-2 R1 (dcm-s9md): the table's reminder until the server applies `endEffect`; remove it when dcm-9z2z
+              // merges. Card: "If all the results are 4 or lower, you take the damage and this spell ends."
+              { kind: "manual", to: "self", text: "All the results are 4 or lower: you take the damage and this spell ends (remove the Confusing Aura effect)." },
             ],
           },
         ],

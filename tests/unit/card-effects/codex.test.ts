@@ -374,6 +374,10 @@ describe("Book of Grynn (CB p.333)", () => {
     expect(prompts(hold, "manual")).toEqual([]);
     const lose = plan("book-of-grynn", "time-lock-maintain", [2, 3], { targets: [adv("a")], situations });
     expect(ofKind(lose, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "book-of-grynn", own: true }]);
+    // Lanes-2 R1 (dcm-s9md): beside the `endEffect`, one manual reminder for the table until dcm-9z2z applies it.
+    expect(prompts(lose, "manual").map((p) => p.text)).toEqual([
+      "Time Lock isn't maintained: the creature moves the object and the spell ends (remove the Time Lock effect).",
+    ]);
   });
   it("Wall of Flame: Spellcast (15); whatever passes through later takes 4d10+3 magic", () => {
     expect(prompts(plan("book-of-grynn", "wall-of-flame", [8, 5]), "manual")).toHaveLength(1);

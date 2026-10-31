@@ -517,7 +517,12 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         roll: vsTarget,
         targets: { side: "any", range: "unlimited", count: { kind: "one" } },
         // On a success the spell holds (nothing changes); on a failure it isn't maintained and ends.
-        steps: [{ kind: "endEffect", to: "self", when: ["failure"], note: "Time Lock ends: the creature moves the object." }],
+        steps: [
+          { kind: "endEffect", to: "self", when: ["failure"], note: "Time Lock ends: the creature moves the object." },
+          // Lanes-2 R1 (dcm-s9md): the table's reminder until the server applies `endEffect`; remove it when dcm-9z2z
+          // merges. Card: "If a creature tries to move it, make a Spellcast Roll against them to maintain this spell."
+          { kind: "manual", to: "self", when: ["failure"], text: "Time Lock isn't maintained: the creature moves the object and the spell ends (remove the Time Lock effect)." },
+        ],
       },
       // "Wall of Flame: Make a Spellcast Roll (15). On a success, create a temporary wall of magical flame between two
       // points within Far range. All creatures in its path must choose a side to be on, and anything that subsequently

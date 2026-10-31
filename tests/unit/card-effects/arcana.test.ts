@@ -152,6 +152,12 @@ describe("Rune Ward (L1, CB p.328): the holder spends a Hope to reduce damage by
       expect.objectContaining({ kind: "exhaust", per: "rest", useId: "ally" }),
     ]);
     expect(prompts(plan, "manual")[0]!.text).toMatch(/recharged for free on your next rest/);
+    // Lanes-2 R1 (dcm-s9md): the `exhaust` steps' notes are the reminder (run.ts shows them as manual prompts until
+    // dcm-a9c writes `exhaust`), so no separate manual step: exactly these two texts, the card's words once.
+    expect(prompts(plan, "manual").map((p) => p.text)).toEqual([
+      "The Ward Die rolled 8: the ward's power ends after it reduces damage this turn. It can be recharged for free on your next rest.",
+      "The ward is spent whoever holds it.",
+    ]);
   });
   it("the ward's holder can be an ally at any range (unlimited trigger)", () => {
     expect(effectOf("rune-ward").uses.find((u) => u.id === "ally")!.activation).toMatchObject({ trigger: { kind: "whenAllyWouldTakeDamage", unlimited: true } });
@@ -275,11 +281,15 @@ describe("Flight (L3, CB p.328)", () => {
     expect(ofKind(fail, "tokens")).toEqual([]);
     expect(ofKind(fail, "effect")).toEqual([]);
   });
-  it("each action roll while flying spends a token; the last one ends Flying (tokensGone), no manual step", () => {
+  it("each action roll while flying spends a token; the last one ends Flying (tokensGone), with the table's reminder", () => {
     const plan = ok("flight", ctx([], { useId: "spend", actor: actor({ cardTokens: 2, activeCardEffects: ["flight"] }) }));
     expect(plan.activation).toBe("auto");
     expect(plan.actor.after.cardTokens).toBe(1);
-    expect(prompts(plan, "manual")).toEqual([]);
+    // Lanes-2 R1 (dcm-s9md): one manual reminder (the token step's note is not a prompt) until dcm-erhv lands.
+    expect(prompts(plan, "manual").map((p) => p.text)).toEqual([
+      "If that was the last Flight token: after the action that spends the last token is resolved, you descend to the ground directly below you (end Flying).",
+    ]);
+    expect(prompts(plan, "manual")[0]!.targetIds).toEqual(["pc"]);
     expect(ok("flight", ctx([], { useId: "spend", actor: actor({ cardTokens: 1, activeCardEffects: ["flight"] }) })).actor.after.cardTokens).toBe(0);
     expect(run(effectOf("flight"), ctx([], { useId: "spend" }))).toMatchObject({ ok: false, reason: "requirement" });
   });
@@ -479,9 +489,15 @@ describe("Confusing Aura (L8, CB p.329)", () => {
     const broken = ok("confusing-aura", ctx([1, 4, 3], { useId: "attacked", actor: aura }));
     expect(broken.actor.after.cardTokens).toBe(0);
     expect(ofKind(broken, "fold")).toEqual([]);
-    // Lanes SRD-C1 (dcm-8x8): the spell's own effect ends (an `endEffect` the server applies), no manual step.
+    // Lanes SRD-C1 (dcm-8x8): the spell's own effect ends (an `endEffect` for the server).
     expect(ofKind(broken, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "confusing-aura", own: true }]);
-    expect(prompts(broken, "manual")).toEqual([]);
+    // Lanes-2 R1 (dcm-s9md): beside it, one manual reminder for the table until dcm-9z2z applies `endEffect`.
+    expect(prompts(broken, "manual").map((p) => p.text)).toEqual([
+      "All the results are 4 or lower: you take the damage and this spell ends (remove the Confusing Aura effect).",
+    ]);
+    // A layer that holds shows no reminder.
+    const saved = ok("confusing-aura", ctx([2, 5, 1], { useId: "attacked", actor: aura }));
+    expect(prompts(saved, "manual")).toEqual([]);
   });
   it("the extra layers are capped by your unmarked Stress (dcm-8x8)", () => {
     // Stress 1 of 6: at most 5 more.
