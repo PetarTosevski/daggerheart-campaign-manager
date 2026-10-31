@@ -19,6 +19,18 @@ const dice = (count: NumberSource, sides: DiceExpr["sides"], plus?: number): Dic
   plus === undefined ? { count, sides } : { count, sides, plus: n(plus) };
 const prof: NumberSource = { kind: "proficiency" };
 
+/** Tempest's Hurricane: "choose a direction the wind is blowing" (the eight map directions; the wind blows toward it). */
+const WIND_DIRECTIONS: readonly (readonly [string, string])[] = [
+  ["north", "North"],
+  ["north-east", "North-east"],
+  ["east", "East"],
+  ["south-east", "South-east"],
+  ["south", "South"],
+  ["south-west", "South-west"],
+  ["west", "West"],
+  ["north-west", "North-west"],
+];
+
 /** A number compared against thresholds: zero dice, the number as the modifier. */
 const value = (of: NumberSource): DiceExpr => ({ count: n(0), sides: 6, plus: of });
 
@@ -53,7 +65,13 @@ const domeMarks: Step[] = [
     test: { kind: "totalAtLeast", value: 3 },
     then: [
       { kind: "tokens", to: "self", op: "clear" },
-      { kind: "manual", to: "self", text: "The dome has marked 3 Hit Points and falls: end Wild Fortress for everyone inside." },
+      // SRD-C2 (dcm-8x8): the dome falls, so the card's effect ends on everyone inside (you and the ally who has it).
+      {
+        kind: "endEffect",
+        to: "selfAndAllies",
+        pick: { side: "ally", range: "unlimited", count: { kind: "all" } },
+        note: "The dome has marked 3 Hit Points and falls: Wild Fortress ends for everyone inside.",
+      },
     ],
     otherwise: [],
   },
@@ -126,19 +144,17 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
         name: "Tekaira Armored Beetles: you take damage",
         activation: { kind: "reaction", trigger: { kind: "whenYouWouldTakeDamage" } },
         requires: [{ kind: "effectActive", cardId: "conjure-swarm" }],
+        // SRD-C2 (dcm-8x8): keep the beetles for a Hope, or they disperse (the card's own effect ends).
         steps: [
           { kind: "reduceSeverity", to: "self", steps: 1 },
           {
-            kind: "optional",
-            id: "keep",
-            label: "Spend a Hope to keep the beetles conjured",
-            costs: [{ kind: "hope", amount: n(1) }],
-            steps: [{ kind: "manual", to: "self", text: "The beetles stay conjured: keep Tekaira Armored Beetles active." }],
-          },
-          {
-            kind: "manual",
-            to: "self",
-            text: "Unless you spent a Hope to keep them, the beetles disperse: end Tekaira Armored Beetles.",
+            kind: "choose",
+            id: "beetles",
+            label: "Spend a Hope to keep the beetles conjured?",
+            options: [
+              { id: "keep", label: "Spend a Hope: the beetles stay", steps: [{ kind: "pay", costs: [{ kind: "hope", amount: n(1) }] }] },
+              { id: "disperse", label: "The beetles disperse", steps: [{ kind: "endEffect", to: "self", note: "The beetles disperse: Tekaira Armored Beetles ends." }] },
+            ],
           },
         ],
       },
@@ -602,7 +618,8 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
             then: [
               { kind: "tokens", to: "self", op: "clear", die: 6 },
               { kind: "markStress", to: "self", amount: n(1), note: "The form drops: mark an additional Stress." },
-              { kind: "manual", to: "self", text: "The Wild Surge Die would exceed 6: the form drops (end Wild Surge)." },
+              // SRD-C2 (dcm-8x8): the form drops, so the card's own effect ends.
+              { kind: "endEffect", to: "self", note: "The Wild Surge Die would exceed 6: the form drops." },
             ],
             otherwise: [],
           },
@@ -616,7 +633,7 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
         steps: [
           { kind: "tokens", to: "self", op: "clear", die: 6 },
           { kind: "markStress", to: "self", amount: n(1), note: "The form drops: mark an additional Stress." },
-          { kind: "manual", to: "self", text: "You take a rest: the form drops (end Wild Surge)." },
+          { kind: "endEffect", to: "self", note: "You take a rest: the form drops." },
         ],
       },
     ],
@@ -627,7 +644,7 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
   // • Your allies gain a +3 bonus to attack rolls against adversaries within Melee range of a sprite.
   // • An ally who marks an Armor Slot while within Melee range of a sprite can mark an additional Armor Slot.
   // A sprite vanishes after granting a benefit or taking any damage."
-  // The sprites are the card's tokens.
+  // The sprites are the card's tokens; where they stand is the player's (gap dcm-5yew).
   {
     cardId: "forest-sprites",
     uses: [
@@ -649,7 +666,9 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
       {
         id: "attack",
         name: "Forest Sprites: +3 to an ally's attack",
-        activation: { kind: "reaction", trigger: { kind: "afterAllyRolls", range: "veryFar", result: "any" } },
+        // SRD-C2 (dcm-g6t): the trigger narrows to an ally's attack roll against an adversary; the sprites aren't on the
+        // map, so "within Melee range of a sprite" stays the player's confirmation.
+        activation: { kind: "reaction", trigger: { kind: "afterAllyRolls", range: "veryFar", result: "any", roll: "attack", against: { enemy: true } } },
         requires: [
           { kind: "effectActive", cardId: "forest-sprites" },
           { kind: "situation", text: "The ally's attack roll is against an adversary within Melee range of a sprite" },
@@ -716,21 +735,33 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
             ],
             otherwise: [],
           },
+          // SRD-C2 (dcm-nt4, dcm-cma): the resistance is only to physical damage from outside the barrier
+          // (`from: "outsideArea"`, read by the reaction window today); the barrier is an area around you that follows you,
+          // so its members are the ones within it (the server places card areas once dcm-9nlr lands).
           {
             kind: "effect",
             to: "selfAndAllies",
             when: ["success"],
             pick: { side: "ally", range: "veryClose", count: { kind: "all" }, area: "aroundSelf" },
             label: "Rejuvenation Barrier",
-            mods: [{ kind: "resistance", type: "physical", level: "resistant" }],
+            mods: [{ kind: "resistance", type: "physical", level: "resistant", from: "outsideArea" }],
             duration: "temporary",
             endsWhen: "the barrier goes down",
           },
           {
-            kind: "manual",
+            kind: "area",
             to: "self",
             when: ["success"],
-            text: "The resistance only covers physical damage from outside the barrier, and only while within it. When you move, the barrier follows you.",
+            area: {
+              label: "Rejuvenation Barrier",
+              centre: "self",
+              radius: "veryClose",
+              side: "selfAndAllies",
+              mods: [{ kind: "resistance", type: "physical", level: "resistant", from: "outsideArea" }],
+              duration: "temporary",
+              follows: true,
+            },
+            note: "While the barrier is up, you and all allies within have resistance to physical damage from outside the barrier. When you move, the barrier follows you.",
           },
         ],
       },
@@ -761,11 +792,11 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
         // Setting the count also clears the unspent tokens of the long rest.
         steps: [{ kind: "tokens", to: "self", op: "set", amount: { kind: "domainCards", domain: "sage", includeVault: true } }],
       },
+      // SRD-C2 (dcm-z1a): "for a Sage domain spell" is the trigger's `cardDomain`, so no confirmation is needed.
       {
         id: "critical",
         name: "Fane of the Wilds: a token on a critical",
-        activation: { kind: "auto", trigger: { kind: "afterYouRoll", roll: "spellcast", result: "critical" } },
-        requires: [{ kind: "situation", text: "The Spellcast Roll was for a Sage domain spell" }],
+        activation: { kind: "auto", trigger: { kind: "afterYouRoll", roll: "spellcast", result: "critical", cardDomain: "sage" } },
         steps: [{ kind: "tokens", to: "self", op: "add", amount: n(1) }],
       },
     ],
@@ -843,14 +874,19 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
         name: "Force of Nature: a Hope before each action roll",
         activation: { kind: "auto", trigger: { kind: "beforeYouRoll", roll: "action" } },
         requires: [{ kind: "effectActive", cardId: "force-of-nature" }],
+        // SRD-C2 (dcm-8x8): with no Hope you revert (the card's own effect ends); with one you spend it.
         steps: [
           {
-            kind: "manual",
+            kind: "endEffect",
             to: "self",
             when: [{ kind: "requires", requirement: { kind: "hopeAtMost", value: 0 } }],
-            text: "You can't spend a Hope: you revert to your normal form (end Force of Nature).",
+            note: "You can't spend a Hope: you revert to your normal form.",
           },
-          { kind: "pay", costs: [{ kind: "hope", amount: n(1) }] },
+          {
+            kind: "pay",
+            when: [{ kind: "requires", requirement: { kind: "situation", text: "You have a Hope to spend", check: { kind: "hopeAtLeast", value: 1 } } }],
+            costs: [{ kind: "hope", amount: n(1) }],
+          },
         ],
       },
     ],
@@ -891,6 +927,14 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
                 label: "Hurricane: 3d10+10 magic, targets can't move against the wind",
                 steps: [
                   { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "dice", dice: dice(n(3), 10, 10) }, type: "magic" },
+                  // SRD-C2 (dcm-3oe): the wind's direction is a choice; the tag carries the movement limit against it.
+                  {
+                    kind: "choose",
+                    id: "wind",
+                    label: "Choose the direction the wind is blowing",
+                    when: ["hit"],
+                    options: WIND_DIRECTIONS.map(([id, label]) => ({ id, label, steps: [] })),
+                  },
                   {
                     kind: "condition",
                     to: "targets",
@@ -898,8 +942,9 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
                     condition: { kind: "tag", tag: "Hurricane" },
                     duration: "manual",
                     endsWhen: "the GM spends a Fear on their turn to end the spell",
+                    endsOn: ["gmSpendsFear"],
+                    mods: [{ kind: "moveLimit", direction: { choice: "wind" }, text: "Can't move against the wind." }],
                   },
-                  { kind: "manual", to: "self", when: ["hit"], text: "Choose the direction the wind is blowing: affected targets can't move against the wind." },
                 ],
               },
               {
@@ -907,6 +952,7 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
                 label: "Sandstorm: 5d6+9 magic, attacks from beyond Melee range have disadvantage",
                 steps: [
                   { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "dice", dice: dice(n(5), 6, 9) }, type: "magic" },
+                  // SRD-C2 (dcm-4dc): the affected targets' attacks from beyond Melee range have disadvantage.
                   {
                     kind: "condition",
                     to: "targets",
@@ -914,12 +960,8 @@ export const SAGE_EFFECTS: readonly CardEffect[] = [
                     condition: { kind: "tag", tag: "Sandstorm" },
                     duration: "manual",
                     endsWhen: "the GM spends a Fear on their turn to end the spell",
-                  },
-                  {
-                    kind: "manual",
-                    to: "self",
-                    when: ["hit"],
-                    text: "While the Sandstorm lasts, attacks made from beyond Melee range by the affected targets have disadvantage.",
+                    endsOn: ["gmSpendsFear"],
+                    mods: [{ kind: "disadvantage", on: "attack", beyond: "melee" }],
                   },
                 ],
               },

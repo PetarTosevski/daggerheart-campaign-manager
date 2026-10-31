@@ -33,7 +33,6 @@ export const MIDNIGHT_SITUATIONS = {
   sneakAlly: "The ally is also attempting to move unnoticed through a dangerous area",
   darkWhispers: "You've made physical contact with them",
   shadowhunter: "You're shrouded in low light or darkness",
-  twilightToll: "The roll was against your Twilight Toll target and doesn't result in a damage roll",
 } as const;
 
 const chokeholdTag = { kind: "tag", tag: "Chokehold", implies: ["vulnerable"] } as const;
@@ -117,12 +116,8 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
         targets: { side: "enemy", range: "veryFar", count: { kind: "one" } },
         steps: [
           { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "dice", dice: { count: { kind: "spellcast" }, sides: 6 } }, type: "magic" },
-          {
-            kind: "manual",
-            to: "self",
-            when: ["success"],
-            text: "The spirit moves into Melee range with the target, strikes, then dissipates: end your Midnight Spirit effect.",
-          },
+          // SRD-C2 (dcm-8x8): "The spirit then dissipates": the card's own effect ends.
+          { kind: "endEffect", to: "self", when: ["success"], note: "The spirit moves into Melee range with the target, strikes, then dissipates." },
         ],
       },
     ],
@@ -148,7 +143,8 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
   // to pull them into a chokehold, making them temporarily Vulnerable. When a creature attacks a target who is Vulnerable
   // in this way, they deal an extra 2d6 damage."
   // "Vulnerable in this way" is the tag "Chokehold" (implies Vulnerable). Your own successful attacks add the 2d6 by
-  // themselves (`auto`); another creature's attack is a manual step (no trigger on someone else's attack).
+  // themselves (`auto`); SRD-C2 (dcm-9gw): another creature's attack gets it from the tag's `attackedRider` (`by:
+  // "others"`, so your own attacks don't add it twice; the attack paths read it: dcm-yd5h).
   {
     cardId: "chokehold",
     uses: [
@@ -160,11 +156,13 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
         costs: [{ kind: "stress", amount: n(1) }],
         targets: { side: "enemy", range: "melee", count: { kind: "one" } },
         steps: [
-          { kind: "condition", to: "targets", condition: chokeholdTag, duration: "temporary" },
           {
-            kind: "manual",
+            kind: "condition",
             to: "targets",
-            text: "When a creature attacks a target who is Vulnerable in this way, they deal an extra 2d6 damage (add it to an ally's or adversary's damage roll while the Chokehold lasts).",
+            condition: chokeholdTag,
+            duration: "temporary",
+            mods: [{ kind: "attackedRider", rider: { by: "others", onSuccess: true, damage: { kind: "add", amount: { kind: "dice", dice: { count: n(2), sides: 6 } } } } }],
+            note: "When a creature attacks a target who is Vulnerable in this way, they deal an extra 2d6 damage.",
           },
         ],
       },
@@ -187,7 +185,7 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
   // Veil of Night (L3, CB p.336): "Make a Spellcast Roll (13). On a success, you can create a temporary curtain of
   // darkness between two points within Far range. Only you can see through this darkness. You're considered Hidden to
   // adversaries on the other side of the veil, and you have advantage on attacks you make through the darkness. The veil
-  // remains until you cast another spell."
+  // remains until you cast another spell." SRD-C2: the one-way darkness stays a manual step (gap dcm-o44e).
   {
     cardId: "veil-of-night",
     uses: [
@@ -277,8 +275,11 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
   // them as they move. The target and anything within the area is Silenced until the GM spends a Fear on their turn to
   // clear this condition, you cast Hush again, or you take Major damage. While Silenced, they can't make noise and can't
   // cast spells."
-  // The roll is against the target only; the creatures within Very Close of it (`picked`, passed by the server) are
-  // Silenced with it. Silenced is the tag plus the `silenced` flag (can't make noise or cast spells).
+  // The roll is against the target only. Silenced is the `silenced` flag (can't make noise or cast spells). SRD-C2
+  // (dcm-cma): everything within Very Close of the target is an area centred on it that follows it (`follows`), whose
+  // members are Silenced while inside; the server places card areas once dcm-9nlr lands. The GM's Fear ends both
+  // (`gmSpendsFear`); your Major damage ends the target's silence (`endsOnCaster`); an area has no caster end yet, so
+  // that stays in the target effect's `endsWhen` for the area too (gap dcm-rx1k).
   {
     cardId: "hush",
     uses: [
@@ -299,22 +300,24 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
             mods: [{ kind: "flag", flag: "silenced" }],
             duration: "manual",
             endsWhen: "the GM spends a Fear on their turn to clear it, you cast Hush again, or you take Major damage",
+            endsOn: ["gmSpendsFear"],
+            endsOnCaster: ["majorDamage"],
           },
           {
-            kind: "effect",
-            to: "picked",
-            pick: { side: "any", range: "veryClose", count: { kind: "all" }, area: "aroundTarget", areaRange: "veryClose" },
-            when: ["hit"],
-            label: "Silenced (Hush)",
-            mods: [{ kind: "flag", flag: "silenced" }],
-            duration: "manual",
-            endsWhen: "the GM spends a Fear on their turn to clear it, you cast Hush again, or you take Major damage",
-          },
-          {
-            kind: "manual",
+            kind: "area",
             to: "targets",
             when: ["hit"],
-            text: "The silence follows the target as they move: anything that comes within Very Close range of them is Silenced too, and anything that leaves the area is not.",
+            area: {
+              label: "Hush",
+              centre: "target",
+              radius: "veryClose",
+              side: "all",
+              mods: [{ kind: "flag", flag: "silenced" }],
+              duration: "manual",
+              endsOn: ["gmSpendsFear"],
+              follows: true,
+            },
+            note: "The silence encompasses everything within Very Close range of the target and follows them as they move.",
           },
         ],
       },
@@ -324,6 +327,7 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
   // Phantom Retreat (L5, CB p.336): "Spend a Hope to activate Phantom Retreat where you're currently standing. Spend
   // another Hope at any time before your next rest to disappear from where you are and reappear where you were standing
   // when you activated Phantom Retreat. This spell ends after you reappear."
+  // SRD-C2: the spot you return to is not stored anywhere yet (gap dcm-5yew), so it stays a manual note.
   {
     cardId: "phantom-retreat",
     uses: [
@@ -346,7 +350,8 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
         costs: [{ kind: "hope", amount: n(1) }],
         steps: [
           { kind: "move", to: "self", mode: "teleport", note: "Reappear where you were standing when you activated Phantom Retreat" },
-          { kind: "manual", to: "self", text: "This spell ends after you reappear: end your Phantom Retreat effect." },
+          // SRD-C2 (dcm-8x8): "This spell ends after you reappear".
+          { kind: "endEffect", to: "self", note: "This spell ends after you reappear." },
         ],
       },
     ],
@@ -555,12 +560,16 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
           { kind: "condition", to: "targets", condition: tollTag, duration: "manual", endsWhen: "you choose a new target for Twilight Toll" },
         ],
       },
+      // SRD-C2 (dcm-94h): "When you succeed on an action roll against them that doesn't result in making a damage roll,
+      // place a token": the trigger names the tagged creature and the missing damage roll, so the token comes by itself.
       {
         id: "toll",
         name: "Twilight Toll: place a token",
-        activation: { kind: "rider", trigger: { kind: "afterYouRoll", roll: "action", result: "success" } },
-        requires: [{ kind: "situation", text: MIDNIGHT_SITUATIONS.twilightToll }],
-        steps: [{ kind: "tokens", to: "self", when: [{ kind: "targetHas", condition: tollTag }], op: "add", amount: n(1) }],
+        activation: {
+          kind: "auto",
+          trigger: { kind: "afterYouRoll", roll: "action", result: "success", against: { creature: { kind: "tagged", tag: tollTag.tag } }, noDamageRoll: true },
+        },
+        steps: [{ kind: "tokens", to: "self", op: "add", amount: n(1) }],
       },
       {
         id: "strike",
@@ -592,7 +601,9 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
   // adversary within this shadow, the target must mark a Stress. This spell lasts until the GM spends a Fear on their
   // turn to clear this effect or you take Severe damage."
   // You and the allies within Far (`allies`, passed by the server) get the effect; your own successes with Hope mark the
-  // Stress by themselves (`shadow`); an ally's is a manual step.
+  // Stress by themselves (`shadow`), and SRD-C2 (dcm-0gi) an ally's too (`ally-shadow`, an `afterAllyRolls` auto
+  // against an adversary within Far of you). The end: the GM's Fear (`gmSpendsFear`) or your Severe damage
+  // (`endsOnCaster`). The darkness itself (only you and your allies see through it) stays a manual step (gap dcm-o44e).
   {
     cardId: "eclipse",
     uses: [
@@ -612,12 +623,14 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
             mods: [{ kind: "disadvantageAgainst", on: "attack" }],
             duration: "manual",
             endsWhen: "the GM spends a Fear on their turn to clear it, or the caster takes Severe damage",
+            endsOn: ["gmSpendsFear"],
+            endsOnCaster: ["takeSevere"],
           },
           {
             kind: "manual",
             to: "self",
             when: ["success"],
-            text: "The area within Far range is in complete darkness only you and your allies can see through. When an ally succeeds with Hope against an adversary within this shadow, the target must mark a Stress.",
+            text: "The area within Far range is in complete darkness only you and your allies can see through.",
           },
         ],
       },
@@ -627,6 +640,13 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
         activation: { kind: "auto", trigger: { kind: "whenYouAttack", result: "successWithHope" } },
         requires: [{ kind: "effectActive", cardId: "eclipse" }],
         steps: [{ kind: "markStress", to: "targets", when: ["hit"], amount: n(1) }],
+      },
+      {
+        id: "ally-shadow",
+        name: "Eclipse: an ally succeeds with Hope",
+        activation: { kind: "auto", trigger: { kind: "afterAllyRolls", result: "successWithHope", against: { enemy: true, within: "far" } } },
+        requires: [{ kind: "effectActive", cardId: "eclipse" }],
+        steps: [{ kind: "markStress", to: "targets", when: ["hit"], amount: n(1), note: "The target within this shadow must mark a Stress." }],
       },
     ],
   },
@@ -650,6 +670,8 @@ export const MIDNIGHT_EFFECTS: readonly CardEffect[] = [
             mods: [{ kind: "resistance", type: "physical", level: "immune" }],
             duration: "manual",
             endsWhen: "you make an action roll targeting another creature",
+            // SRD-C2 (dcm-cwh): the end is engine-read too.
+            endsOnRoll: { roll: "action", targetsCreature: true },
           },
         ],
       },

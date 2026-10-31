@@ -194,12 +194,14 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
             condition: GOADED,
             duration: "manual",
             endsWhen: "The next time the GM spotlights them, they must target you with an attack, made with disadvantage",
-          },
-          {
-            kind: "manual",
-            to: "targets",
-            when: ["hit"],
-            text: "The next time the GM spotlights this adversary, it must target you with an attack, which it makes with disadvantage. Then clear Goaded.",
+            // SRD-C2 (dcm-e75): the forced attack is `mustAttack` plus a `disadvantage` on its roll, and the condition ends
+            // with that attack (`bearerAttacks`). The adversary engine reads them (lane E7).
+            mods: [
+              { kind: "mustAttack", target: "caster" },
+              { kind: "disadvantage", on: "attack" },
+            ],
+            endsOn: ["bearerAttacks"],
+            note: "The next time the GM spotlights this adversary, it must target you with an attack, which it makes with disadvantage.",
           },
         ],
       },
@@ -428,7 +430,9 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
   // Hold the Line (Valor 9, CB p.342): "Describe the defensive stance you take and spend a Hope. If an adversary moves
   // within Very Close range, they're pulled into Melee range and Restrained. This condition lasts until you move or fail a
   // roll with Fear, or the GM spends 2 Fear on their turn to clear it." Two uses: the stance (a sheet effect) and, while
-  // it holds, the pull for an adversary that moved in (no "enemy enters range" trigger exists, so the player starts it).
+  // it holds, the pull for an adversary that moved in. SRD-C2: the vocabulary has the trigger (`whenEnemyEntersRange`,
+  // dcm-bpr), but the Hand only starts `action` uses and nothing runs that trigger yet (E4 only names it in the feed), so
+  // the player still starts the pull (follow-up dcm-g90o). The ends are now engine-read.
   {
     cardId: "hold-the-line",
     uses: [
@@ -445,6 +449,7 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
             mods: [],
             duration: "manual",
             endsWhen: "Until you move or fail a roll with Fear",
+            endsOn: ["moves", "failWithFear"],
           },
           {
             kind: "manual",
@@ -467,6 +472,10 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
             condition: { kind: "standard", condition: "restrained" },
             duration: "manual",
             endsWhen: "Until you move or fail a roll with Fear, or the GM spends 2 Fear on their turn to clear it",
+            // SRD-C2 (dcm-bpr): the caster's move or failure with Fear ends it; the GM's Fear spend is `gmSpendsFear` (its
+            // amount, 2, stays in `endsWhen`: EndEvent carries no amount).
+            endsOn: ["gmSpendsFear"],
+            endsOnCaster: ["moves", "failWithFear"],
           },
         ],
       },
@@ -475,6 +484,8 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
 
   // Lead by Example (Valor 9, CB p.342): "When you deal damage to an adversary, you can mark a Stress and describe how you
   // encourage your allies. The next PC to make an attack against that adversary can clear a Stress or gain a Hope."
+  // SRD-C2: whether the caster's own next attack counts is an open rule question (dcm-903q), so the benefit stays a
+  // manual step; the vocabulary has it (`attackedRider` with `attackerSteps`, dcm-7zb / dcm-kso9).
   {
     cardId: "lead-by-example",
     uses: [
@@ -522,24 +533,22 @@ export const VALOR_EFFECTS: readonly CardEffect[] = [
 
   // Unyielding Armor (Valor 10, CB p.342): "When you would mark an Armor Slot, roll a number of d6s equal to your
   // Proficiency. If any roll a 6, reduce the severity by one threshold without marking an Armor Slot." A reaction so the
-  // hit PC can play it in the reaction window (Q13, AA1) before the armor answer: on a 6 the severity drops and they
-  // answer without marking a slot; otherwise they mark it as usual.
+  // hit PC can play it in the reaction window (Q13, AA1) before the armor answer (`stage: "would"`: offered while they
+  // can still mark a slot). SRD-C2 (dcm-98d): on a 6 the reduction stands for the hit's Armor Slot
+  // (`insteadOfArmorSlot`: no slot is marked and the armor answer is in); otherwise they mark it as usual.
   {
     cardId: "unyielding-armor",
     uses: [
       {
         id: "main",
         name: "Unyielding Armor",
-        activation: { kind: "reaction", trigger: { kind: "whenArmorSlotMarked", who: "self" } },
+        activation: { kind: "reaction", trigger: { kind: "whenArmorSlotMarked", who: "self", stage: "would" } },
         steps: [
           {
             kind: "check",
             dice: { count: { kind: "proficiency" }, sides: 6 },
             test: { kind: "anyAtLeast", value: 6 },
-            then: [
-              { kind: "reduceSeverity", to: "self", steps: 1, note: "A 6: the severity drops by one threshold" },
-              { kind: "manual", to: "self", text: "Unyielding Armor rolled a 6: the severity is already reduced, so don't mark an Armor Slot for this damage." },
-            ],
+            then: [{ kind: "reduceSeverity", to: "self", steps: 1, insteadOfArmorSlot: true, note: "A 6: the severity drops by one threshold without marking an Armor Slot" }],
             otherwise: [],
           },
         ],

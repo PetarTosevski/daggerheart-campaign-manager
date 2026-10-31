@@ -303,8 +303,8 @@ export const SPLENDOR_EFFECTS: readonly CardEffect[] = [
         steps: [
           { kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "multiply", factor: 2 } },
           { kind: "modifyDamage", to: "targets", when: ["hit"], change: { kind: "type", type: "magic" } },
-          // No step ends a card's own sheet effect (gap dcm-8x8).
-          { kind: "manual", to: "self", text: "Smite is spent: end its charge (Smite charged) on your sheet." },
+          // SRD-C2 (dcm-8x8): the charge is spent, so the card's own sheet effect ends.
+          { kind: "endEffect", to: "self", note: "Smite is spent: its charge ends." },
         ],
       },
     ],
@@ -411,11 +411,23 @@ export const SPLENDOR_EFFECTS: readonly CardEffect[] = [
         steps: [
           { kind: "reduceDamage", to: "triggerSubject", amount: { kind: "cardTokens" } },
           { kind: "tokens", to: "self", op: "add", amount: n(1), die: 6, note: "Increase the die's value by one." },
-          // No gate on card tokens (gap dcm-7n7); the zone itself is not on the map (gap dcm-cma).
+          // SRD-C2: "When the die's value would exceed 6, this effect ends": the die (now 7) is compared as a number (the
+          // `check` with zero dice, as Wild Surge's), then the die is cleared and the zone's effect ends on everyone who
+          // has it (`endEffect` of this card; the zone is still not on the map, gap dcm-cma / dcm-9nlr).
           {
-            kind: "manual",
-            to: "self",
-            text: "If the die's value would now exceed 6 (it shows 7), the zone of protection ends: clear the die and end the zone.",
+            kind: "check",
+            dice: { count: n(0), sides: 6, plus: { kind: "cardTokens" } },
+            test: { kind: "totalAtLeast", value: 7 },
+            then: [
+              { kind: "tokens", to: "self", op: "clear", die: 6 },
+              {
+                kind: "endEffect",
+                to: "selfAndAllies",
+                pick: { side: "ally", range: "unlimited", count: { kind: "all" } },
+                note: "The die's value would exceed 6: the zone of protection ends.",
+              },
+            ],
+            otherwise: [],
           },
         ],
       },
@@ -493,6 +505,9 @@ export const SPLENDOR_EFFECTS: readonly CardEffect[] = [
             condition: SHIELD_AURA,
             duration: "manual",
             endsWhen: "The aura makes them mark no Hit Points from damage, or you cast Shield Aura on another creature.",
+            // SRD-C2 (dcm-sim): the reaction window ends the aura when its extra step made the hit mark no Hit Points
+            // (window.ts `endsOnNoHp`, incomingHits `endedOnNoHp`).
+            endsOn: ["reducedToNoHp"],
           },
         ],
       },
@@ -501,27 +516,15 @@ export const SPLENDOR_EFFECTS: readonly CardEffect[] = [
         name: "Shield Aura: an ally marks an Armor Slot",
         activation: { kind: "auto", trigger: { kind: "whenArmorSlotMarked", who: "ally" } },
         targets: { side: "trigger", who: "subject" },
-        steps: [
-          { kind: "reduceSeverity", to: "triggerSubject", when: [{ kind: "targetHas", condition: SHIELD_AURA }], steps: 1 },
-          // No gate on the damage result after Armor Slots (gap dcm-sim).
-          {
-            kind: "manual",
-            to: "triggerSubject",
-            when: [{ kind: "targetHas", condition: SHIELD_AURA }],
-            text: "If the aura made them mark no Hit Points, Shield Aura ends: clear its tag.",
-          },
-        ],
+        steps: [{ kind: "reduceSeverity", to: "triggerSubject", when: [{ kind: "targetHas", condition: SHIELD_AURA }], steps: 1 }],
       },
       {
         id: "aura-self",
         name: "Shield Aura: you mark an Armor Slot",
         activation: { kind: "auto", trigger: { kind: "whenArmorSlotMarked", who: "self" } },
-        // No requirement on a tag the actor carries (gap dcm-qdm): the player confirms it.
-        requires: [{ kind: "situation", text: "You hold your own Shield Aura" }],
-        steps: [
-          { kind: "reduceSeverity", to: "self", steps: 1 },
-          { kind: "manual", to: "self", text: "If the aura made you mark no Hit Points, Shield Aura ends: clear its tag." },
-        ],
+        // SRD-C2 (dcm-qdm): the engine reads the tag on you (`hasCondition` `self`); the text is the fallback (Q13).
+        requires: [{ kind: "situation", text: "You carry your own Shield Aura", check: { kind: "hasCondition", condition: SHIELD_AURA, who: "self" } }],
+        steps: [{ kind: "reduceSeverity", to: "self", steps: 1 }],
       },
     ],
   },
@@ -543,12 +546,12 @@ export const SPLENDOR_EFFECTS: readonly CardEffect[] = [
         targets: { side: "enemy", range: "far", count: { kind: "all" }, area: "front" },
         steps: [
           { kind: "pay", when: ["success"], costs: [{ kind: "hope", amount: { kind: "chosen", choice: "hope" } }] },
-          // The picked targets must be ones the roll hit; the pick can't say so (gap dcm-y45), CA4 offers only hit targets.
+          // SRD-C2 (dcm-y45): "force that many targets you succeeded against": the pick is among the targets the roll hit.
           {
             kind: "save",
             to: "picked",
             when: ["success"],
-            pick: { side: "enemy", range: "far", count: { kind: "any", max: { kind: "chosen", choice: "hope" } } },
+            pick: { side: "enemy", range: "far", count: { kind: "any", max: { kind: "chosen", choice: "hope" } }, among: "hit" },
             difficulty: { kind: "fixed", value: 14 },
             onSuccess: [{ kind: "damage", to: "targets", roll: { kind: "dice", dice: dice(n(3), 20, 3) }, type: "magic" }],
             onFail: [
@@ -659,6 +662,9 @@ export const SPLENDOR_EFFECTS: readonly CardEffect[] = [
         id: "main",
         name: "Resurrection",
         activation: { kind: "action" },
+        // SRD-C2 (dcm-aym): "On a failure, you can't cast Resurrection again for a week": a limit used up by a failure,
+        // with the period `week` (`per` is the fallback a reader without `period` uses; storing the week: dcm-55k).
+        limit: { per: "session", period: "week", consumedOn: "failure" },
         roll: { kind: "spellcast", difficulty: { kind: "fixed", value: 20 } },
         steps: [
           {
@@ -675,8 +681,6 @@ export const SPLENDOR_EFFECTS: readonly CardEffect[] = [
             then: [{ kind: "toVault", to: "self", permanent: true }],
             otherwise: [],
           },
-          // No limit longer than a long rest (gap dcm-aym).
-          { kind: "manual", to: "self", when: ["failure"], text: "You can't cast Resurrection again for a week." },
         ],
       },
     ],

@@ -176,7 +176,10 @@ describe("Midnight Spirit (L2, CB p.336)", () => {
     // 8 + 3 + 3 = 14 beats 12; 3d6 = 2 + 4 + 6 = 12 (Major).
     const p = plan("midnight-spirit", "attack", [8, 3, 2, 4, 6], { actor: actor({ activeCardEffects: ["midnight-spirit"] }), targets: [adv("a")] });
     expect(damages(p)).toEqual([["a", 12, "major", 2]]);
-    expect(prompts(p, "manual")[0]!.text).toMatch(/dissipates/);
+    // SRD-C2 (dcm-8x8): "The spirit then dissipates": the card's own effect ends (no manual step).
+    expect(ofKind(p, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "midnight-spirit", own: true }]);
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(ofKind(plan("midnight-spirit", "attack", [2, 3], { actor: actor({ activeCardEffects: ["midnight-spirit"] }), targets: [adv("a")] }), "endEffect")).toEqual([]);
     expect(p.actor.after.hope).toBe(3); // no cost to send it; the roll's Hope
   });
   it("can't be sent without a summoned spirit", () => {
@@ -200,8 +203,17 @@ describe("Chokehold (L3, CB p.336)", () => {
     expect(p.actor.after.stress).toBe(2);
     expect(after(p, "a")).toMatchObject({ conditions: ["vulnerable"], tags: ["Chokehold"] });
     expect(ofKind(p, "condition")[0]).toMatchObject({ duration: "temporary" });
-    expect(prompts(p, "manual")[0]!.text).toMatch(/extra 2d6 damage/);
+    expect(prompts(p, "manual")).toEqual([]);
     expect(refusal("chokehold", "main", { targets: [adv("a")] })).toMatchObject({ ok: false, reason: "requirement", detail: "situation" });
+  });
+  // SRD-C2 (dcm-9gw): "When a creature attacks a target who is Vulnerable in this way, they deal an extra 2d6 damage":
+  // the tag carries an attackedRider for every other attacker (yours is the auto use below, so it never adds twice).
+  it("the Chokehold tag gives other creatures' attacks against it an extra 2d6", () => {
+    const tag = effectOf("chokehold").uses[0]!.steps.find((s) => s.kind === "condition");
+    expect(tag).toMatchObject({
+      condition: { kind: "tag", tag: "Chokehold", implies: ["vulnerable"] },
+      mods: [{ kind: "attackedRider", rider: { by: "others", onSuccess: true, damage: { kind: "add", amount: { kind: "dice", dice: { count: { kind: "fixed", value: 2 }, sides: 6 } } } } }],
+    });
   });
   it("your successful attack on the choked target adds 2d6 by itself; any other target adds nothing", () => {
     const choked = adv("a", { conditions: ["vulnerable"], tags: ["Chokehold"] });
@@ -266,18 +278,29 @@ describe("Stealth Expertise (L4, CB p.336)", () => {
 
 describe("Hush (L5, CB p.336)", () => {
   it("on a success a Hope Silences the target and everything within Very Close of them until the listed ends", () => {
-    const p = plan("hush", "main", [8, 3], { targets: [adv("a")], picked: [adv("b"), ally("mira")] });
+    const p = plan("hush", "main", [8, 3], { targets: [adv("a")] });
     const silenced = ofKind(p, "effect");
-    expect(silenced.map((e) => e.targetId)).toEqual(["a", "b", "mira"]);
-    expect(silenced[0]).toMatchObject({ label: "Silenced (Hush)", mods: [{ kind: "flag", flag: "silenced" }], duration: "manual" });
+    expect(silenced.map((e) => e.targetId)).toEqual(["a"]);
+    expect(silenced[0]).toMatchObject({ label: "Silenced (Hush)", mods: [{ kind: "flag", flag: "silenced" }], duration: "manual", endsOn: ["gmSpendsFear"] });
     expect(silenced[0]!.endsWhen).toMatch(/you take Major damage/);
-    expect(prompts(p, "manual")[0]!.text).toMatch(/follows the target/);
+    // SRD-C2 (dcm-cma): the silence is an area centred on the target that follows it; its members are Silenced.
+    expect(ofKind(p, "area")).toEqual([
+      {
+        kind: "area",
+        area: { label: "Hush", centre: "target", radius: "veryClose", side: "all", mods: [{ kind: "flag", flag: "silenced" }], duration: "manual", endsOn: ["gmSpendsFear"], follows: true },
+        centreId: "a",
+        targetIds: ["a"],
+      },
+    ]);
+    expect(prompts(p, "manual")).toEqual([]);
+    expect(effectOf("hush").uses[0]!.steps.find((s) => s.kind === "effect")).toMatchObject({ endsOnCaster: ["majorDamage"] });
     expect(p.exclusive).toBe(true);
     expect(p.actor.after.hope).toBe(2);
   });
   it("a miss silences nobody and costs no Hope", () => {
     const p = plan("hush", "main", [2, 3], { targets: [adv("a")], picked: [adv("b")] });
     expect(ofKind(p, "effect")).toEqual([]);
+    expect(ofKind(p, "area")).toEqual([]);
     expect(ofKind(p, "pay")).toEqual([]);
     expect(p.actor.after.hope).toBe(2);
   });
@@ -291,7 +314,9 @@ describe("Phantom Retreat (L5, CB p.336)", () => {
     const back = plan("phantom-retreat", "return", [], { actor: actor({ activeCardEffects: ["phantom-retreat"] }) });
     expect(back.actor.after.hope).toBe(1);
     expect(prompts(back, "move")[0]).toMatchObject({ targetIds: ["pc"], step: { mode: "teleport" } });
-    expect(prompts(back, "manual")[0]!.text).toMatch(/ends after you reappear/);
+    // SRD-C2 (dcm-8x8): "This spell ends after you reappear".
+    expect(ofKind(back, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "phantom-retreat", own: true }]);
+    expect(prompts(back, "manual")).toEqual([]);
     expect(refusal("phantom-retreat", "return")).toMatchObject({ reason: "requirement" });
   });
 });
@@ -406,10 +431,17 @@ describe("Twilight Toll (L9, CB p.337)", () => {
     expect(after(p, "a")).toMatchObject({ tags: ["Twilight Toll"] });
     expect(p.exclusive).toBe(true);
   });
-  it("a success against the target that makes no damage roll places a token", () => {
-    const p = plan("twilight-toll", "toll", [], { targets: [tolled("a")], situations: [S.twilightToll] });
+  // SRD-C2 (dcm-94h): the trigger itself says "against them" (the tagged creature) and "doesn't result in making a
+  // damage roll", so the token is automatic; no situation to confirm.
+  it("a success against the target that makes no damage roll places a token by itself", () => {
+    expect(effectOf("twilight-toll").uses.find((u) => u.id === "toll")!.activation).toEqual({
+      kind: "auto",
+      trigger: { kind: "afterYouRoll", roll: "action", result: "success", against: { creature: { kind: "tagged", tag: "Twilight Toll" } }, noDamageRoll: true },
+    });
+    const p = plan("twilight-toll", "toll", [], { targets: [tolled("a")] });
+    expect(p.activation).toBe("auto");
     expect(p.actor.after.cardTokens).toBe(1);
-    expect(plan("twilight-toll", "toll", [], { targets: [adv("b")], situations: [S.twilightToll] }).actor.after.cardTokens).toBe(0);
+    expect(effectOf("twilight-toll").uses.find((u) => u.id === "toll")!.requires).toBeUndefined();
   });
   it("damaging the target: spend tokens for a d12 each; another target keeps the tokens", () => {
     const p = plan("twilight-toll", "strike", [5, 11], { actor: actor({ cardTokens: 2 }), targets: [tolled("a")], choices: { tokens: 2 } });
@@ -443,6 +475,23 @@ describe("Eclipse (L10, CB p.337)", () => {
     expect(ofKind(p, "mark")).toEqual([{ kind: "mark", targetId: "a", track: "stress", amount: 1, hpMarked: 0, overflow: false }]);
     expect(refusal("eclipse", "shadow", { targets: [adv("a")] })).toMatchObject({ reason: "requirement" });
   });
+  // SRD-C2 (dcm-0gi): "when you or an ally succeeds with Hope against an adversary within this shadow, the target must
+  // mark a Stress": an ally's success is an automatic use too (the server runs it against the targets the ally hit).
+  it("an ally's success with Hope against an adversary in the shadow makes it mark a Stress", () => {
+    expect(effectOf("eclipse").uses.find((u) => u.id === "ally-shadow")!.activation).toEqual({
+      kind: "auto",
+      trigger: { kind: "afterAllyRolls", result: "successWithHope", against: { enemy: true, within: "far" } },
+    });
+    const p = plan("eclipse", "ally-shadow", [], { actor: actor({ activeCardEffects: ["eclipse"] }), targets: [adv("a")], trigger: { subject: ally("mira") } });
+    expect(ofKind(p, "mark")).toEqual([{ kind: "mark", targetId: "a", track: "stress", amount: 1, hpMarked: 0, overflow: false }]);
+    expect(refusal("eclipse", "ally-shadow", { targets: [adv("a")] })).toMatchObject({ reason: "requirement" });
+  });
+  it("the darkness ends on a GM Fear spend or your Severe damage; only the darkness itself stays manual", () => {
+    const p = plan("eclipse", "main", [9, 8], { allies: [ally("mira")] });
+    expect(ofKind(p, "effect")[0]).toMatchObject({ endsOn: ["gmSpendsFear"] });
+    expect(effectOf("eclipse").uses[0]!.steps.find((s) => s.kind === "effect")).toMatchObject({ endsOnCaster: ["takeSevere"] });
+    expect(prompts(p, "manual").map((m) => m.text)).toEqual(["The area within Far range is in complete darkness only you and your allies can see through."]);
+  });
 });
 
 describe("Specter of the Dark (L10, CB p.337)", () => {
@@ -459,5 +508,7 @@ describe("Specter of the Dark (L10, CB p.337)", () => {
         endsWhen: "you make an action roll targeting another creature",
       },
     ]);
+    // SRD-C2 (dcm-cwh): the end on your next action roll that targets another creature is engine-read.
+    expect(effectOf("specter-of-the-dark").uses[0]!.steps[0]).toMatchObject({ endsOnRoll: { roll: "action", targetsCreature: true } });
   });
 });
