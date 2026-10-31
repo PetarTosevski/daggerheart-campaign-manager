@@ -371,7 +371,8 @@ export const BONE_EFFECTS: readonly CardEffect[] = [
 
   // Breaking Blow (Bone 8, CB p.331): "When you make a successful attack, you can mark a Stress to make the next
   // successful attack against that same target deal an extra 2d12 damage." The mark is a tag on the target until it is
-  // next hit; your own next successful attack adds the 2d12 by itself, anyone else's is added by hand.
+  // next hit; your own next successful attack adds the 2d12 by itself (`extra`), anyone else's through the tag's
+  // `attackedRider` (lanes SRD-C1, dcm-9gw: `by: "others"`, so your own attack doesn't add it twice).
   {
     cardId: "breaking-blow",
     uses: [
@@ -387,11 +388,7 @@ export const BONE_EFFECTS: readonly CardEffect[] = [
             condition: BREAKING_BLOW,
             duration: "hit",
             endsWhen: "The next successful attack against this target deals an extra 2d12 damage",
-          },
-          {
-            kind: "manual",
-            to: "targets",
-            text: "If another character makes the next successful attack against this target, that attack deals an extra 2d12 damage: add it by hand.",
+            mods: [{ kind: "attackedRider", rider: { by: "others", onSuccess: true, damage: { kind: "add", amount: dice(2, 12) } } }],
           },
         ],
       },

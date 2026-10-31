@@ -106,6 +106,8 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
             condition: { kind: "tag", tag: "Asleep" },
             duration: "manual",
             endsWhen: "they take damage, or the GM spends a Fear on their turn to clear it",
+            // Lanes SRD-C1 (dcm-utu): both ends are engine events.
+            endsOn: ["takeDamage", "gmSpendsFear"],
           },
         ],
       },
@@ -208,11 +210,15 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         targets: { side: "selfOrAlly", range: "close", count: { kind: "one" } },
         exclusive: true,
         steps: [
-          { kind: "effect", to: "targets", label: "Parallela", mods: [], duration: "manual", endsWhen: "the bearer's next attack" },
+          // Lanes SRD-C1 (dcm-y3e): one extra target on the bearer's next attack, which ends the effect.
           {
-            kind: "manual",
+            kind: "effect",
             to: "targets",
-            text: "The next time the target makes an attack, they can hit an additional target within range that their attack roll would succeed against.",
+            label: "Parallela",
+            mods: [{ kind: "extraTargets", on: "attack", count: fixed(1) }],
+            duration: "manual",
+            endsWhen: "the bearer's next attack",
+            endsOn: ["bearerAttacks"],
           },
         ],
       },
@@ -371,7 +377,8 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         steps: [
           { kind: "condition", to: "targets", when: ["hit"], condition: { kind: "standard", condition: "restrained" }, duration: "temporary" },
           { kind: "markStress", to: "targets", when: ["hit"], amount: fixed(1) },
-          { kind: "manual", to: "targets", when: ["hit"], text: "If the target was flying, it is grounded." },
+          // Lanes SRD-C1 (dcm-yzr): a flying target is grounded.
+          { kind: "move", to: "targets", when: ["hit"], mode: "ground", note: "If the target was flying, it is grounded." },
         ],
       },
       // "Fireball: Make a Spellcast Roll against a target within Very Far range. On a success, hurl a sphere of fire
@@ -490,7 +497,17 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         name: "Time Lock",
         activation: { kind: "action" },
         targets: { side: "object", range: "far", count: { kind: "one" } },
-        steps: [{ kind: "manual", to: "self", text: "The object stops in time and space exactly where it is until your next rest." }],
+        // Lanes SRD-C1: the spell is a self effect until your next rest, so a failed maintain roll can end it (dcm-8x8).
+        steps: [
+          {
+            kind: "effect",
+            to: "self",
+            label: "Time Lock",
+            mods: [],
+            duration: "rest",
+            endsWhen: "the object stops in time and space exactly where it is until your next rest",
+          },
+        ],
       },
       {
         id: "time-lock-maintain",
@@ -499,10 +516,8 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         requires: [{ kind: "situation", text: "A creature tries to move your time-locked object" }],
         roll: vsTarget,
         targets: { side: "any", range: "unlimited", count: { kind: "one" } },
-        steps: [
-          { kind: "manual", to: "targets", when: ["hit"], text: "Time Lock holds: the object doesn't move." },
-          { kind: "manual", to: "targets", when: ["miss"], text: "Time Lock ends: the creature moves the object." },
-        ],
+        // On a success the spell holds (nothing changes); on a failure it isn't maintained and ends.
+        steps: [{ kind: "endEffect", to: "self", when: ["failure"], note: "Time Lock ends: the creature moves the object." }],
       },
       // "Wall of Flame: Make a Spellcast Roll (15). On a success, create a temporary wall of magical flame between two
       // points within Far range. All creatures in its path must choose a side to be on, and anything that subsequently
@@ -577,7 +592,8 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         name: "Teleport",
         activation: { kind: "action" },
         limit: { per: "longRest" },
-        choices: [{ id: "familiarity", label: "Very well +3, frequently +1, infrequently 0, only once −2", min: -2, max: fixed(3) }],
+        // Lanes SRD-C1 (dcm-uyc): only the four printed options.
+        choices: [{ id: "familiarity", label: "Very well +3, frequently +1, infrequently 0, only once −2", min: -2, max: fixed(3), values: [3, 1, 0, -2] }],
         roll: { kind: "spellcast", difficulty: { kind: "fixed", value: 16 }, modifier: { kind: "chosen", choice: "familiarity" } },
         targets: { side: "ally", range: "close", count: { kind: "any" }, willing: true },
         steps: [
@@ -782,7 +798,8 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         activation: { kind: "action" },
         requires: [{ kind: "loadoutDomainCount", domain: "codex", min: 4 }],
         limit: { per: "rest" },
-        steps: [{ kind: "manual", to: "self", text: "Replace this card with any card from your vault without paying its Recall Cost." }],
+        // Lanes SRD-C1 (dcm-p1r): the Hand names the vault card (`swapWith`) and the server swaps them.
+        steps: [{ kind: "loadout", to: "self", op: "swapWithVault", note: "Replace this card with any card from your vault without paying its Recall Cost." }],
       },
     ],
   },
@@ -816,7 +833,8 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         activation: { kind: "action" },
         limit: { per: "longRest" },
         costs: [{ kind: "hope", amount: fixed(1) }],
-        targets: { side: "selfOrAlly", range: "unlimited", count: { kind: "upTo", n: fixed(2) }, willing: true },
+        // Lanes SRD-C1 (dcm-d7h): exactly two ("choose two willing creatures").
+        targets: { side: "selfOrAlly", range: "unlimited", count: { kind: "upTo", n: fixed(2), min: 2 }, willing: true },
         steps: [
           { kind: "effect", to: "targets", label: "Shared Clarity", mods: [], duration: "rest" },
           {
@@ -841,7 +859,17 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         activation: { kind: "action" },
         roll: vsFixed(15),
         steps: [
-          { kind: "effect", to: "self", when: ["success"], label: "Transformed", mods: [], duration: "manual", endsWhen: "you take damage (or choose to change back)" },
+          {
+            kind: "effect",
+            to: "self",
+            when: ["success"],
+            label: "Transformed",
+            mods: [],
+            duration: "manual",
+            endsWhen: "you take damage (or choose to change back)",
+            // Lanes SRD-C1 (dcm-utu).
+            endsOn: ["takeDamage"],
+          },
           { kind: "manual", to: "self", when: ["success"], text: "You transform into an inanimate object no larger than twice your normal size." },
         ],
       },
@@ -911,6 +939,8 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
             condition: { kind: "tag", tag: "Time-Stopped" },
             duration: "manual",
             endsWhen: "you next make an action roll that targets another creature",
+            // Lanes SRD-C1 (dcm-cwh): the caster's next action roll that targets another creature ends it.
+            endsOnRoll: { roll: "action", by: "caster", targetsCreature: true },
           },
         ],
       },
@@ -937,7 +967,8 @@ export const CODEX_EFFECTS: readonly CardEffect[] = [
         activation: { kind: "action" },
         limit: { per: "longRest" },
         costs: [{ kind: "hope", amount: fixed(5) }],
-        targets: { side: "selfOrAlly", range: "unlimited", count: { kind: "any" }, willing: true },
+        // Lanes SRD-C1 (dcm-d7h): "two or more willing creatures".
+        targets: { side: "selfOrAlly", range: "unlimited", count: { kind: "any", min: 2 }, willing: true },
         steps: [
           { kind: "effect", to: "targets", label: "Transcendent Union", mods: [], duration: "rest", endsWhen: "your next rest" },
           {

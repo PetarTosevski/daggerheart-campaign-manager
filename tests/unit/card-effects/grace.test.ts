@@ -264,11 +264,13 @@ describe("Invisibility (CB p.334)", () => {
     expect(plan.actor.after).toMatchObject({ stress: 1, cardTokens: 0 });
   });
 
-  it("each action of the Invisible creature spends a token", () => {
+  it("each action of the Invisible creature spends a token; the last one ends the effect (tokensGone, dcm-7n7)", () => {
     const plan = ok(run(invis, ctx([], { useId: "spend-token", actor: actor({ cardTokens: 1 }) })));
     expect(plan.actor.after.cardTokens).toBe(0);
-    expect(manualTexts(plan)).toEqual(["If that was the last token, Invisibility ends once this action is resolved."]);
+    expect(manualTexts(plan)).toEqual([]);
     expect(run(invis, ctx([], { useId: "spend-token" }))).toMatchObject({ ok: false, reason: "cost" });
+    const cast = ok(run(invis, ctx([4, 3], { targets: [ally("mira")] })));
+    expect(ofKind(cast, "effect")[0]).toMatchObject({ label: "Invisible", endsOn: ["tokensGone"] });
   });
 });
 
@@ -323,6 +325,11 @@ describe("Words of Discord (CB p.335)", () => {
     expect(after(plan, "a")).toBeUndefined();
     expect(run(words, ctx([6, 4], { useId: "again", targets: [adv("a")] }))).toMatchObject({ ok: false, reason: "requirement" });
   });
+
+  it("the repeat cast's requirement is the engine-readable memory (usedOnBefore, dcm-c75)", () => {
+    const again = words.uses.find((u) => u.id === "again")!;
+    expect(again.requires).toEqual([{ kind: "situation", text: "You have cast Words of Discord on this target before", check: { kind: "usedOnBefore" } }]);
+  });
 });
 
 describe("Never Upstaged (CB p.335)", () => {
@@ -357,6 +364,16 @@ describe("Share the Burden (CB p.335)", () => {
 
   it("refuses zero Stress", () => {
     expect(run(share, ctx([], { targets: [ally("mira")], choices: { stress: 0 } }))).toMatchObject({ ok: false, reason: "choice" });
+  });
+
+  it("caps the transfer at the target's marked Stress, read after the target is picked (dcm-fnq)", () => {
+    // Mira has 3 Stress marked: 3 is allowed, 4 is not.
+    const all = ok(run(share, ctx([], { targets: [ally("mira")], choices: { stress: 3 } })));
+    expect(after(all, "mira")).toMatchObject({ stress: 0 });
+    expect(all.actor.after).toMatchObject({ stress: 4, hope: 5 });
+    expect(run(share, ctx([], { targets: [ally("mira")], choices: { stress: 4 } }))).toMatchObject({ ok: false, reason: "choice" });
+    expect(run(share, ctx([], { targets: [ally("tao", { stress: 1 })], choices: { stress: 2 } }))).toMatchObject({ ok: false, reason: "choice" });
+    expect(share.uses[0]!.choices![0]).toMatchObject({ afterTargets: true, max: { kind: "marked", who: "target", track: "stress" } });
   });
 });
 

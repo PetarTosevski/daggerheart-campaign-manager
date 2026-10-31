@@ -196,6 +196,8 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
             mods: [{ kind: "disadvantageAgainst", on: "attack" }],
             duration: "manual",
             endsWhen: "the action that spends the last Invisibility token is resolved",
+            // Lanes SRD-C1 (dcm-7n7): the effect ends by itself once the card's last token is spent.
+            endsOn: ["tokensGone"],
           },
           { kind: "tokens", to: "self", when: ["success"], op: "set", amount: { kind: "spellcast" } },
         ],
@@ -205,13 +207,8 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         name: "Invisibility: the Invisible creature acts",
         activation: { kind: "action" },
         costs: [{ kind: "tokens", amount: ONE }],
-        steps: [
-          {
-            kind: "manual",
-            to: "self",
-            text: "If that was the last token, Invisibility ends once this action is resolved.",
-          },
-        ],
+        // Spending the last token ends the Invisible effect (`endsOn: ["tokensGone"]` above).
+        steps: [],
       },
     ],
   },
@@ -288,11 +285,12 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         ],
       },
       {
-        // The -5 on a repeat cast: the player confirms the target has been affected before.
+        // The -5 on a repeat cast. Lanes SRD-C1 (dcm-c75): the engine reads the memory (`usedOnBefore`) when it knows
+        // it; otherwise the player confirms the text.
         id: "again",
         name: "Words of Discord (again on the same target)",
         activation: { kind: "action" },
-        requires: [{ kind: "situation", text: "You have cast Words of Discord on this target before" }],
+        requires: [{ kind: "situation", text: "You have cast Words of Discord on this target before", check: { kind: "usedOnBefore" } }],
         roll: { kind: "spellcast", difficulty: { kind: "fixed", value: 13 }, modifier: fixed(-5) },
         targets: { side: "enemy", range: "melee", count: { kind: "one" } },
         steps: [
@@ -345,7 +343,16 @@ export const GRACE_EFFECTS: readonly CardEffect[] = [
         name: "Share the Burden",
         activation: { kind: "action" },
         limit: { per: "rest" },
-        choices: [{ id: "stress", label: "Stress to transfer (at most the target's marked Stress)", min: 1 }],
+        // Lanes SRD-C1 (dcm-fnq): asked once the target is picked, so the max reads their marked Stress.
+        choices: [
+          {
+            id: "stress",
+            label: "Stress to transfer (at most the target's marked Stress)",
+            min: 1,
+            max: { kind: "marked", who: "target", track: "stress" },
+            afterTargets: true,
+          },
+        ],
         targets: { side: "ally", range: "melee", count: { kind: "one" }, willing: true, excludeSelf: true },
         steps: [
           { kind: "clear", to: "targets", track: "stress", amount: { kind: "chosen", choice: "stress" } },

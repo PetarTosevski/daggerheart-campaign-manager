@@ -169,6 +169,9 @@ export const DREAD_EFFECTS: readonly CardEffect[] = [
             type: "magic",
             note: "On a success with Fear, +1 Proficiency for this attack.",
           },
+          // Kept manual (lanes SRD-C1): the runner could clear it now (`clear` self of `markedThisMove` target HP,
+          // dcm-0ib), but combatCards.ts `siphonHeal` still heals from this step's text and would heal twice
+          // (follow-up dcm-io4m switches both together).
           {
             kind: "manual",
             to: "self",
@@ -191,8 +194,10 @@ export const DREAD_EFFECTS: readonly CardEffect[] = [
         name: "Shared Trauma",
         activation: { kind: "action" },
         limit: { per: "rest" },
-        choices: [{ id: "hp", label: "Hit Points to transfer", min: 1 }],
-        // The use's target is the creature that clears; the step's `pick` is the one that marks.
+        // The use's target is the creature that clears; the step's `pick` is the one that marks. Lanes SRD-C1 (dcm-fnq
+        // comment): asked once the target is picked, at most the Hit Points they have marked ("clear an equal number").
+        // The marking creature's free Hit Points are not read: a choice reads the use's first target only.
+        choices: [{ id: "hp", label: "Hit Points to transfer", min: 1, max: { kind: "marked", who: "target", track: "hp" }, afterTargets: true }],
         targets: { side: "any", range: "melee", count: { kind: "one" }, willing: true },
         steps: [
           {
@@ -437,6 +442,7 @@ export const DREAD_EFFECTS: readonly CardEffect[] = [
                 mods: [],
                 duration: "manual",
                 endsWhen: "you mark a Hit Point or cast this spell again",
+                endsOn: ["markHp"],
               },
               {
                 kind: "markStress",
@@ -631,11 +637,12 @@ export const DREAD_EFFECTS: readonly CardEffect[] = [
         activation: { kind: "auto", trigger: { kind: "beforeYouRoll", roll: "action" } },
         requires: [{ kind: "effectActive", cardId: "avatar-of-terror" }],
         steps: [
+          // Lanes SRD-C1 (dcm-8x8): with no Hope to spend, the form ends.
           {
-            kind: "manual",
+            kind: "endEffect",
             to: "self",
             when: [{ kind: "requires", requirement: { kind: "hopeAtMost", value: 0 } }],
-            text: "You can't spend a Hope: you revert to your normal form (end Avatar of Terror).",
+            note: "You can't spend a Hope: you revert to your normal form.",
           },
           { kind: "pay", costs: [{ kind: "hope", amount: n(1) }], note: "Before you make an action roll, you must spend a Hope." },
         ],

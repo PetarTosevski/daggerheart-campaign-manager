@@ -126,17 +126,13 @@ export const BLADE_EFFECTS: readonly CardEffect[] = [
     cardId: "versatile-fighter",
     uses: [
       {
-        // Gap: no vocabulary part changes the trait a weapon attack rolls (RollSpec `attack` always uses the weapon's).
+        // Lanes SRD-C1 (dcm-5dg): always on; an attack with either equipped weapon rolls the trait the player picks
+        // (choice `trait`; none picked: the weapon's own trait). `trait` is only the default shown before the pick.
         id: "trait",
         name: "Versatile Fighter: different trait",
-        activation: { kind: "rider", trigger: { kind: "beforeYouRoll", roll: "weaponAttack" } },
-        steps: [
-          {
-            kind: "manual",
-            to: "self",
-            text: "You can use a different character trait for an equipped weapon, rather than the trait the weapon calls for.",
-          },
-        ],
+        activation: { kind: "passive" },
+        mods: [{ kind: "weaponTrait", weapon: "either", trait: "strength", choice: "trait" }],
+        steps: [],
       },
       {
         // The runner maxes the lowest die, which is the player's best pick.

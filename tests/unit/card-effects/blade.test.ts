@@ -281,10 +281,12 @@ describe("Scramble (CB p.330)", () => {
 });
 
 describe("Versatile Fighter (CB p.330)", () => {
-  it("the different trait is a manual step (vocabulary gap)", () => {
+  it("the different trait is an always-on weaponTrait mod for either weapon, the trait the player picks (dcm-5dg)", () => {
+    const use = useOf("versatile-fighter", "trait");
+    expect(use.activation).toEqual({ kind: "passive" });
+    expect(use.mods).toEqual([{ kind: "weaponTrait", weapon: "either", trait: "strength", choice: "trait" }]);
     const plan = ok(runCard("versatile-fighter", [], { useId: "trait" }));
-    expect(ofKind(plan, "prompt")).toMatchObject([{ prompt: "manual", targetIds: ["pc"] }]);
-    expect(ofKind(plan, "prompt")[0]!.text).toContain("different character trait");
+    expect(ofKind(plan, "prompt")).toEqual([]);
   });
 
   it("mark a Stress to use the maximum of one damage die", () => {

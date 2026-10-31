@@ -12,7 +12,11 @@ const n = (value: number): NumberSource => ({ kind: "fixed", value });
 const dice = (count: NumberSource, sides: DiceExpr["sides"], plus?: number): DiceExpr =>
   plus === undefined ? { count, sides } : { count, sides, plus: n(plus) };
 
-/** Rune Ward: the Ward Die (1d8) reduces the holder's damage; on an 8 the ward's power ends until your next rest. */
+/**
+ * Rune Ward: the Ward Die (1d8) reduces the holder's damage; on an 8 the ward's power ends until your next rest.
+ * Lanes SRD-C1 (dcm-war): an 8 spends both uses of the ward (one ward, whoever holds it) until your next rest.
+ */
+const WARD_ENDS = "The Ward Die rolled 8: the ward's power ends after it reduces damage this turn. It can be recharged for free on your next rest.";
 const runeWard = (holder: "self" | "triggerSubject"): Step[] => [
   {
     kind: "check",
@@ -20,11 +24,8 @@ const runeWard = (holder: "self" | "triggerSubject"): Step[] => [
     test: { kind: "totalAtLeast", value: 8 },
     then: [
       { kind: "reduceDamage", to: holder, amount: { kind: "lastRoll" } },
-      {
-        kind: "manual",
-        to: "self",
-        text: "The Ward Die rolled 8: the ward's power ends after it reduces damage this turn. It can be recharged for free on your next rest.",
-      },
+      { kind: "exhaust", to: "self", per: "rest", useId: "main", note: WARD_ENDS },
+      { kind: "exhaust", to: "self", per: "rest", useId: "ally", note: "The ward is spent whoever holds it." },
     ],
     otherwise: [{ kind: "reduceDamage", to: holder, amount: { kind: "lastRoll" } }],
   },
@@ -46,10 +47,12 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
         steps: runeWard("self"),
       },
       {
-        // The holder is an ally: the ally spends their own Hope (a `hope` step on them; the engine's costs are the actor's).
+        // The holder is an ally: the ally spends their own Hope (a `hope` step on them; the runner doesn't read
+        // `paidBy` yet, dcm-a9c, so a `costs` + `paidBy` would charge you). Lanes SRD-C1 (dcm-uj0): the ward works at
+        // any range (`unlimited`); `range` stays for a reader that doesn't know it (dcm-ofo).
         id: "ally",
         name: "Rune Ward (an ally holds it)",
-        activation: { kind: "reaction", trigger: { kind: "whenAllyWouldTakeDamage", range: "veryFar" } },
+        activation: { kind: "reaction", trigger: { kind: "whenAllyWouldTakeDamage", range: "veryFar", unlimited: true } },
         targets: { side: "trigger", who: "subject" },
         steps: [
           { kind: "hope", to: "triggerSubject", change: "lose", amount: n(1), note: "The ward's holder spends a Hope." },
@@ -134,7 +137,34 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
         targets: { side: "enemy", range: "melee", count: { kind: "one" } },
         steps: [
           { kind: "damage", to: "targets", when: ["hit"], roll: { kind: "dice", dice: dice(n(1), 20, 3) }, type: "magic" },
-          { kind: "condition", to: "targets", when: ["hit"], condition: { kind: "tag", tag: "On Fire" }, duration: "temporary" },
+          {
+            kind: "condition",
+            to: "targets",
+            when: ["hit"],
+            condition: { kind: "tag", tag: "On Fire" },
+            duration: "temporary",
+            // Lanes SRD-C1 (dcm-f0m): each time the bearer acts, after the action (only while still On Fire: the rider
+            // goes with the condition), the bearer (`self` in a rider) takes 2d6 magic damage.
+            mods: [
+              {
+                kind: "bearerRider",
+                rider: {
+                  on: "acts",
+                  timing: "after",
+                  steps: [
+                    {
+                      kind: "damage",
+                      to: "self",
+                      roll: { kind: "dice", dice: dice(n(2), 6) },
+                      type: "magic",
+                      note: "When a creature acts while On Fire, they must take an extra 2d6 magic damage if they are still On Fire at the end of their action.",
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          // Kept until bearer riders run on the server (dcm-0wj1): nothing else tells the table about the 2d6 today.
           {
             kind: "manual",
             to: "targets",
@@ -202,7 +232,17 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
         roll: { kind: "spellcast", difficulty: { kind: "fixed", value: 15 } },
         steps: [
           { kind: "tokens", to: "self", when: ["success"], op: "set", amount: { kind: "calc", of: { kind: "trait", trait: "agility" }, min: 1 } },
-          { kind: "effect", to: "self", when: ["success"], label: "Flying", mods: [{ kind: "flag", flag: "flying" }], duration: "manual", endsWhen: "the action that spends the last Flight token is resolved" },
+          {
+            kind: "effect",
+            to: "self",
+            when: ["success"],
+            label: "Flying",
+            mods: [{ kind: "flag", flag: "flying" }],
+            duration: "manual",
+            endsWhen: "the action that spends the last Flight token is resolved",
+            // Lanes SRD-C1 (dcm-7n7): spending the last token ends Flying: you descend to the ground below you.
+            endsOn: ["tokensGone"],
+          },
         ],
       },
       {
@@ -210,14 +250,7 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
         name: "Flight: a token per action roll",
         activation: { kind: "auto", trigger: { kind: "afterYouRoll", roll: "action" } },
         requires: [{ kind: "effectActive", cardId: "flight" }],
-        steps: [
-          { kind: "tokens", to: "self", op: "spend", amount: n(1) },
-          {
-            kind: "manual",
-            to: "self",
-            text: "If that was the last Flight token: after this action is resolved, you descend to the ground directly below you (end Flying).",
-          },
-        ],
+        steps: [{ kind: "tokens", to: "self", op: "spend", amount: n(1), note: "The last token ends Flying: you descend to the ground directly below you." }],
       },
     ],
   },
@@ -269,7 +302,9 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
   // Targets who fail take 2d8+4 magic damage. Additional adversaries not already targeted by Chain Lightning and within
   // Close range of previous targets who took damage must also make the reaction roll. Targets who fail take 2d8+4 magic
   // damage. This chain continues until there are no more adversaries within range."
-  // `followUp` is the first link of the chain (the server passes the new adversaries within Close of those who took damage).
+  // `followUp` is the chain. Lanes SRD-C1 (dcm-rou): it repeats until a link finds no one (`until: "noTargets"`), each
+  // link measured from the earlier ones (`origin: "chain"`); the runner drops creatures already targeted. The damage
+  // is the move's one roll (R9; TASK-LN-E3.md QUESTIONS 1).
   {
     cardId: "chain-lightning",
     uses: [
@@ -291,7 +326,8 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
           },
           {
             kind: "followUp",
-            targets: { side: "enemy", range: "close", count: { kind: "all" }, area: "aroundTarget", areaRange: "close" },
+            targets: { side: "enemy", range: "close", count: { kind: "all" }, area: "aroundTarget", areaRange: "close", origin: "chain" },
+            repeat: { until: "noTargets" },
             note: "Adversaries not already targeted, within Close range of a target who took damage.",
             steps: [
               {
@@ -302,11 +338,6 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
                 onSuccess: [],
               },
             ],
-          },
-          {
-            kind: "manual",
-            to: "self",
-            text: "The chain continues: adversaries not already targeted and within Close range of previous targets who took damage must also make the reaction roll (Difficulty = your Spellcast Roll); those who fail take 2d8+4 magic damage, until there are no more adversaries within range.",
           },
         ],
       },
@@ -492,7 +523,8 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
         name: "Confusing Aura",
         activation: { kind: "action" },
         limit: { per: "longRest", consumedOn: "success" },
-        choices: [{ id: "layers", label: "Stress to mark (one extra layer each)", min: 0 }],
+        // Lanes SRD-C1 (dcm-8x8): at most your unmarked Stress ("mark any number of Stress").
+        choices: [{ id: "layers", label: "Stress to mark (one extra layer each)", min: 0, max: { kind: "free", who: "self", track: "stress" } }],
         roll: { kind: "spellcast", difficulty: { kind: "fixed", value: 14 } },
         exclusive: true,
         steps: [
@@ -518,7 +550,8 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
             ],
             otherwise: [
               { kind: "tokens", to: "self", op: "clear" },
-              { kind: "manual", to: "self", text: "All the results are 4 or lower: you take the damage and Confusing Aura ends (remove its effect)." },
+              // Lanes SRD-C1 (dcm-8x8): "you take the damage and this spell ends".
+              { kind: "endEffect", to: "self", note: "All the results are 4 or lower: you take the damage and Confusing Aura ends." },
             ],
           },
         ],
@@ -577,7 +610,17 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
         limit: { per: "rest" },
         roll: { kind: "spellcast", difficulty: { kind: "fixed", value: 15 } },
         steps: [
-          { kind: "effect", to: "self", when: ["success"], label: "Sensory Projection", mods: [], duration: "manual", endsWhen: "you take damage or cast another spell" },
+          {
+            kind: "effect",
+            to: "self",
+            when: ["success"],
+            label: "Sensory Projection",
+            mods: [],
+            duration: "manual",
+            endsWhen: "you take damage or cast another spell",
+            // Lanes SRD-C1 (dcm-utu): taking damage ends it by itself; casting another spell is ended by hand.
+            endsOn: ["takeDamage"],
+          },
           {
             kind: "manual",
             to: "self",
@@ -591,31 +634,19 @@ export const ARCANA_EFFECTS: readonly CardEffect[] = [
 
   // Adjust Reality (L10): "After you or a willing ally make any roll, you can spend 5 Hope to change the numerical result
   // of that roll to a result of your choice instead. The result must be plausible within the range of the dice."
-  // The reaction covers action rolls (the trigger vocabulary's `afterAllyRolls`); any other roll goes through "other".
+  // Lanes SRD-C1 (dcm-3ft): the reaction covers any roll (`roll: "any"`: action, reaction and damage rolls), so the
+  // former "other" use with its manual step is gone. Offering it on another player's roll is dcm-cfpv.
   {
     cardId: "adjust-reality",
     uses: [
       {
         id: "main",
         name: "Adjust Reality",
-        activation: { kind: "reaction", trigger: { kind: "afterAllyRolls", result: "any", includeSelf: true } },
+        activation: { kind: "reaction", trigger: { kind: "afterAllyRolls", result: "any", includeSelf: true, roll: "any" } },
         costs: [{ kind: "hope", amount: n(5) }],
         targets: { side: "trigger", who: "subject" },
         steps: [
           { kind: "modifyRoll", to: "triggerSubject", change: { kind: "setResult" }, note: "The result must be plausible within the range of the dice." },
-        ],
-      },
-      {
-        id: "other",
-        name: "Adjust Reality: any other roll",
-        activation: { kind: "action" },
-        costs: [{ kind: "hope", amount: n(5) }],
-        steps: [
-          {
-            kind: "manual",
-            to: "self",
-            text: "Change the numerical result of the roll you or a willing ally just made (damage, reaction or any other roll) to a result of your choice. The result must be plausible within the range of the dice.",
-          },
         ],
       },
     ],

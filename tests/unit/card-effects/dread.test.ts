@@ -128,7 +128,8 @@ describe("the Dread table", () => {
           actor: rich,
           gmFear: 3,
           useId: use.id,
-          targets: [adv("a")],
+          // One HP marked: Shared Trauma's choice is capped by the target's marked Hit Points (dcm-fnq).
+          targets: [adv("a", { hp: 1 })],
           picked: [adv("b")],
           allies: [ally("mira")],
           trigger: { amount: 10, source: adv("src"), subject: adv("subj") },
@@ -243,7 +244,7 @@ describe("Hideous Retribution (L2, HF p.180): a Spellcast reaction roll against 
 });
 
 describe("Siphon Essence (L2, HF p.180): once per long rest on a success, d12+4 using Proficiency", () => {
-  it("with Hope: d12+4 x Proficiency; the heal is a manual step; the limit is used", () => {
+  it("with Hope: d12+4 x Proficiency; the heal is a manual step (the server heals it, siphonHeal); the limit is used", () => {
     // 2d12+4 = 5 + 6 + 4 = 15: Severe, 3 HP.
     const plan = ok("siphon-essence", ctx([9, 4, 5, 6], { targets: [adv("a")] }));
     expect(ofKind(plan, "damage")[0]!.result).toMatchObject({ incoming: 15, severity: "severe", hpMarked: 3 });
@@ -272,6 +273,10 @@ describe("Shared Trauma (L3, HF p.180): once per rest, HP marked on one willing 
     expect(ofKind(plan, "clear")).toEqual([{ kind: "clear", targetId: "mira", track: "hp", amount: 2 }]);
     expect(after(plan, "mira")?.hp).toBe(2);
     expect(plan.limit).toEqual({ key: "card:shared-trauma", until: "rest", consumed: true });
+  });
+  it("the choice is capped by the target's marked Hit Points, read after the target is picked (dcm-fnq)", () => {
+    expect(run(effectOf("shared-trauma"), ctx([], { picked: [ally("bran")], targets: [ally("mira", { hp: 2 })], choices: { hp: 3 } }))).toMatchObject({ ok: false, reason: "choice" });
+    expect(ok("shared-trauma", ctx([], { picked: [ally("bran")], targets: [ally("mira", { hp: 2 })], choices: { hp: 2 } })).steps.some((s) => s.kind === "clear")).toBe(true);
   });
   it("you can be the one who marks", () => {
     const plan = ok("shared-trauma", ctx([], { picked: [actor()], targets: [ally("mira", { hp: 3 })], choices: { hp: 1 } }));
@@ -418,7 +423,9 @@ describe("Wall of Hunger (L7, HF p.181): Spellcast (10), a Hope for the wall, 2 
       ["a", 2],
       ["b", 2],
     ]);
-    expect(ofKind(plan, "effect")[0]).toMatchObject({ targetId: "pc", duration: "manual", endsWhen: "you mark a Hit Point or cast this spell again" });
+    // Lanes SRD-C1: marking a Hit Point ends the wall by itself (`endsOn: markHp`); the wall on the map stays manual
+    // until walls can be stored (dcm-cma, dcm-3p7s).
+    expect(ofKind(plan, "effect")[0]).toMatchObject({ targetId: "pc", duration: "manual", endsWhen: "you mark a Hit Point or cast this spell again", endsOn: ["markHp"] });
     expect(prompts(plan, "manual")).toHaveLength(1);
     expect(plan.exclusive).toBe(true);
   });
@@ -524,12 +531,13 @@ describe("Avatar of Terror (L10, HF p.181)", () => {
   it("in form: a Hope when the GM spotlights an adversary within Very Close", () => {
     expect(ok("avatar-of-terror", ctx([], { useId: "spotlight", actor: form })).actor.after.hope).toBe(3);
   });
-  it("before each action roll a Hope; with none, you revert (manual)", () => {
+  it("before each action roll a Hope; with none, you revert: the form's effect ends (endEffect, dcm-8x8)", () => {
     const paid = ok("avatar-of-terror", ctx([], { useId: "upkeep", actor: form }));
     expect(paid.actor.after.hope).toBe(1);
-    expect(prompts(paid, "manual")).toEqual([]);
+    expect(ofKind(paid, "endEffect")).toEqual([]);
     const broke = ok("avatar-of-terror", ctx([], { useId: "upkeep", actor: actor({ hope: 0, activeCardEffects: ["avatar-of-terror"] }) }));
-    expect(prompts(broke, "manual")[0]!.text).toMatch(/revert to your normal form/);
+    expect(ofKind(broke, "endEffect")).toEqual([{ kind: "endEffect", targetId: "pc", of: "avatar-of-terror", own: true }]);
+    expect(prompts(broke, "manual")).toEqual([]);
     expect(ofKind(broke, "pay")[0]).toMatchObject({ paid: false });
   });
 });
