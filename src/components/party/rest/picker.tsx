@@ -326,6 +326,12 @@ function MoveForm({
           attack or damage roll in the dice box. Unspent dice clear at the end of the session for a Hope each.
         </Small>
       ) : null}
+      {picks.some((p) => p.move === "locateSoulEchoes") ? (
+        <Small as="p">
+          Locate Soul Echoes (HF 176): you commune with the Vessel. When the rest ends, the GM tells you the direction of the nearest sanctuary
+          with a Soul Echo at its shrine.
+        </Small>
+      ) : null}
       <div className="rp-actions">
         <Pill type="submit" variant="solid" disabled={choose.pending}>
           Save moves

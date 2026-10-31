@@ -21,13 +21,14 @@
  * Reads go through `openRequests` (bounded, indexed by campaign and status).
  */
 import { pickUse, rollTargetCount } from "../../src/lib/domain/card-effects/run";
-import type { CardUse, Step } from "../../src/lib/domain/card-effects/types";
+import type { CardUse, Cost, Step } from "../../src/lib/domain/card-effects/types";
 import { actorExtras, asCardEffect, featureCostShort } from "../../src/lib/domain/feature-effects/run";
 import { appError } from "../../src/lib/errors/app-error";
 import { featureEffect } from "../../src/lib/srd/feature-effects/index";
 import type { CharacterSheet } from "../../src/lib/validation/characters";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { logAction } from "./actionLog";
 import { cardActor } from "./cardRunner";
 import { saveSheet } from "./characterSheet";
 import { closeRequest, openRequests } from "./combatRequests";
@@ -103,7 +104,8 @@ export function rolledFirstUse(featureId: string, useId: string | undefined): Ca
 /**
  * Rolls the count of a `rolledFirst` use and stores it (open `targetCount` row) with its scene mark on the sheet. INVALID
  * while a roll of the same use is open in this scene; a stale one is declined here. The caller has checked ownership,
- * the limit and access. The mark is not a feed row: the roll itself writes none (its result shows in the drawer).
+ * the limit and access. The mark is not a feed row: a roll writes none (its result shows in the drawer), except one that
+ * paid its costs (E8.3, `paidAtRoll`): that roll is a public, undoable row with the sheet's `before`.
  */
 export async function rollAndStoreCount(
   ctx: MutationCtx,
@@ -124,12 +126,16 @@ export async function rollAndStoreCount(
   }
   const actor = { ...cardActor(input.character._id, input.sheet, `feat:${input.featureId}`, undefined), ...actorExtras(input.sheet) };
   const chosen = countChoices(input.use, input.choices ?? {});
-  // The count's chosen numbers are paid with the use (its costs); the player must hold them now.
+  // Plan lanes-2 E8.3 (dcm-atiu, user answer 2026-10-31): the costs that read the count's chosen numbers are paid at the
+  // roll, with no backing out; the use then skips them (`withoutRollCosts`). The player must hold them now.
+  const rollCosts = paidAtRoll(input.use);
+  let payer = input.sheet;
   if (chosen.length > 0) {
-    const short = featureCostShort(actor, input.use, input.choices ?? {});
+    const short = featureCostShort(actor, { ...input.use, costs: rollCosts }, input.choices ?? {});
     if (short.length > 0) throw appError("FEATURE_COST_UNPAID", `Short of: ${short.join(", ")}.`);
+    payer = payRollCosts(input.sheet, rollCosts, input.choices ?? {});
   }
-  const count = rollTargetCount(withChosenCount(input.use, input.choices ?? {}), actor, rollDie);
+  const count = rollTargetCount(withChosenCount(input.use, input.choices ?? {}), { ...actor, ...actorExtras(payer) }, rollDie);
   if (count === null) throw appError("INVALID", "That feature has no target count to roll first.");
   const requestId = await ctx.db.insert("combatRequests", {
     campaignId: input.campaignId,
@@ -142,10 +148,100 @@ export async function rollAndStoreCount(
   });
   // Keep the marks of the character's other open rolls (another rolled-first feature); drop stale ones.
   const open = (await openRequests(ctx, input.campaignId)).filter((r): r is CountRow => isCountRow(r) && r.payload.characterId === input.character._id);
-  const kept = withoutCountMarks(input.sheet, new Set(open.map((r) => countMark(r._id))));
+  const kept = withoutCountMarks(payer, new Set(open.map((r) => countMark(r._id))));
   const marks = [countMark(requestId), ...chosen.map((c) => chosenMark(requestId, c.id, c.value))].map((key) => ({ key, until: "scene" as const }));
-  await saveSheet(ctx, input.character._id, { ...kept, featureUses: [...kept.featureUses, ...marks] });
+  const after = { ...kept, featureUses: [...kept.featureUses, ...marks] };
+  await saveSheet(ctx, input.character._id, after);
+  // A roll that paid something is a feed row (undo gives the payment and the roll's mark back).
+  if (payer !== input.sheet) {
+    const paid = rollCostWords(rollCosts, input.choices ?? {});
+    await logAction(ctx, {
+      campaignId: input.campaignId,
+      characterId: input.character._id,
+      actorId: input.userId,
+      kind: "feature",
+      visibility: "public",
+      summary: `${input.sheet.name} spends ${paid} for ${input.use.name}: ${count} target${count === 1 ? "" : "s"}`.slice(0, 1000),
+      before: input.sheet,
+      undoable: true,
+    });
+  }
   return { requestId, count };
+}
+
+// ---------------------------------------------------------------- plan lanes-2, E8.3: costs paid at the roll (dcm-atiu)
+
+/** The choice ids a `rolledFirst` use's target count reads (Otherworldly Ire's `favor`). */
+function countChoiceIds(use: CardUse): Set<string> {
+  return new Set(countChoices(use, {}).map((c) => c.id));
+}
+
+/** Whether a cost's amount reads one of `ids` (`{kind: "chosen", choice}` anywhere inside it). */
+function readsChoice(cost: Cost, ids: ReadonlySet<string>): boolean {
+  const walk = (v: unknown): boolean => {
+    if (Array.isArray(v)) return v.some(walk);
+    if (v === null || typeof v !== "object") return false;
+    const o = v as Record<string, unknown>;
+    if (o.kind === "chosen" && typeof o.choice === "string" && ids.has(o.choice)) return true;
+    return Object.values(o).some(walk);
+  };
+  return walk(cost);
+}
+
+/**
+ * dcm-atiu (Otherworldly Ire, HF p.15: "spend any number of Favor to roll that many Patron Dice"; user answer 2026-10-31:
+ * the Favor is paid at the roll, the player cannot back out): the use's costs whose amount reads a number its rolled
+ * count reads. `rollCount` pays them; the use skips them (`withoutRollCosts`). Empty for any other use.
+ */
+export function paidAtRoll(use: CardUse): Cost[] {
+  if (!isRolledFirst(use)) return [];
+  const ids = countChoiceIds(use);
+  return ids.size === 0 ? [] : (use.costs ?? []).filter((c) => readsChoice(c, ids));
+}
+
+/** The use without the costs `rollCount` paid (`paidAtRoll`); the same object when there are none. */
+export function withoutRollCosts(use: CardUse): CardUse {
+  const paid = paidAtRoll(use);
+  if (paid.length === 0) return use;
+  return { ...use, costs: (use.costs ?? []).filter((c) => !paid.includes(c)) };
+}
+
+/** The fixed or chosen amount of a cost paid at the roll (other number kinds are not read here: INVALID). */
+function rollCostAmount(cost: Cost, choices: Readonly<Record<string, number>>): number {
+  if (cost.kind === "either" || cost.kind === "gold") throw appError("INVALID", "That cost can't be paid at the roll.");
+  const a = cost.amount;
+  if (a.kind === "fixed") return a.value;
+  if (a.kind === "chosen") return choices[a.choice] ?? 0;
+  throw appError("INVALID", "That cost can't be paid at the roll.");
+}
+
+/** The sheet with the roll's costs paid: Favor, Focus, Hope or Stress. INVALID for another kind. */
+export function payRollCosts(sheet: CharacterSheet, costs: readonly Cost[], choices: Readonly<Record<string, number>>): CharacterSheet {
+  let out = sheet;
+  for (const cost of costs) {
+    const n = rollCostAmount(cost, choices);
+    if (n <= 0) continue;
+    if (cost.kind === "tokens" && cost.pool === "favor") {
+      const favor = actorExtras(out).favor ?? 0;
+      out = { ...out, classState: { ...out.classState, favor: Math.max(0, favor - n) } };
+    } else if (cost.kind === "tokens" && cost.pool === "focus" && out.classState.martial) {
+      out = { ...out, classState: { ...out.classState, martial: { ...out.classState.martial, focus: Math.max(0, out.classState.martial.focus - n) } } };
+    } else if (cost.kind === "hope") out = { ...out, hope: Math.max(0, out.hope - n) };
+    else if (cost.kind === "stress") out = { ...out, stress: Math.min(out.stressMax, out.stress + n) };
+    else throw appError("INVALID", "That cost can't be paid at the roll.");
+  }
+  return out;
+}
+
+/** "3 Favor", "1 Hope and 2 Favor": the words of the costs paid at the roll. */
+function rollCostWords(costs: readonly Cost[], choices: Readonly<Record<string, number>>): string {
+  const words = costs.flatMap((c) => {
+    const n = rollCostAmount(c, choices);
+    if (n <= 0) return [];
+    const what = c.kind === "tokens" ? (c.pool === "focus" ? "Focus" : "Favor") : c.kind === "hope" ? "Hope" : "Stress";
+    return [`${n} ${what}`];
+  });
+  return words.join(" and ") || "nothing";
 }
 
 // ---------------------------------------------------------------- plan lanes-2, E8: a count rolled from a chosen number

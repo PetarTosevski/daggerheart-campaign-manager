@@ -164,7 +164,7 @@ export function featureAvailability(
  * The resources a use's upfront costs are short of (empty = affordable), for the drawer's cost badge. Amounts that
  * depend on the move (Hope spent, targets) read as 0 here; `choices` are the player's numbers.
  */
-export function featureCostShort(actor: ActorState, use: CardUse, choices: Readonly<Record<string, number>> = {}): string[] {
+export function featureCostShort(actor: ActorState, use: CardUse, choices: Readonly<Record<string, number>> = {}, flags?: readonly string[]): string[] {
   const env: NumberEnv = {
     traits: actor.traits,
     spellcast: actor.spellcast,
@@ -199,7 +199,17 @@ export function featureCostShort(actor: ActorState, use: CardUse, choices: Reado
     favor: actor.favor ?? 0,
     focus: actor.focus ?? 0,
     heldDice: held,
+    // Plan lanes-2 E8.3 (dcm-hgvx): the payer's rules flags (Ravenous `cannotSpendHope`, HF p.94: "a PC can't spend Hope").
+    ...(flags && flags.length > 0 ? { flags } : {}),
   });
+}
+
+/**
+ * Plan lanes-2 E8.3 (dcm-hgvx, dcm-5kxg): the rules flags a list of lasting mods carries (`Mod` `flag`: `cannotSpendHope`,
+ * `cannotClearHp`, `cannotClearStress`, ...), for `PayerState.flags` / `featureCostShort`.
+ */
+export function flagsOf(mods: readonly { kind: string; flag?: string }[]): string[] {
+  return [...new Set(mods.flatMap((m) => (m.kind === "flag" && typeof m.flag === "string" ? [m.flag] : [])))];
 }
 
 /**

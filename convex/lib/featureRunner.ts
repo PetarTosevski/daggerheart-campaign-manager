@@ -30,10 +30,10 @@ import { pickUse, type ActorState, type RunContext, type RunPlan, type RunRefusa
 import type { CardUse, Step, TargetSpec } from "../../src/lib/domain/card-effects/types";
 import { delegatedKeys } from "../../src/lib/domain/feature-effects/delegate";
 import { owned, activeBeastformId, holdingsFor, type OwnedFeature } from "../../src/lib/domain/feature-effects/owned";
-import { actorExtras, asCardEffect, bindSheetNumbers, runFeature, sheetNumbers } from "../../src/lib/domain/feature-effects/run";
+import { actorExtras, asCardEffect, bindSheetNumbers, runFeature, sheetNumbers, type SheetNumbers } from "../../src/lib/domain/feature-effects/run";
 import type { FeatureScope } from "../../src/lib/domain/class-features/types";
 import { addGold } from "../../src/lib/domain/characters/index";
-import { rangeFromWeapon } from "../../src/lib/domain/combat-actions/distance";
+import { rangeCheck, rangeFromWeapon, tokenDistance } from "../../src/lib/domain/combat-actions/distance";
 import { FRAME_OF } from "../../src/lib/frames/extras/common";
 import { getWeapon } from "../../src/lib/srd/index";
 import type { FeatureEffect } from "../../src/lib/domain/feature-effects/types";
@@ -59,7 +59,8 @@ import { unshakableText, unshakePlan, type UnshakableRoll } from "./unshakable";
 import type { CompanionNumbers } from "./companion";
 import { partyOf, saveSheet } from "./characterSheet";
 import type { AttackScene } from "./combatActions";
-import { hasServerMove, isMarkOf, isRolledFirst, openAllyRoll, spendTargetCount } from "./featurePrompts";
+import { hasServerMove, isMarkOf, isRolledFirst, openAllyRoll, spendTargetCount, withoutRollCosts } from "./featurePrompts";
+import { activeAreasOnMap, areaFactsFor } from "../combatAreas";
 import { campaignFearState, gainFear, spendFear } from "./fear";
 import { changed } from "./rolls";
 import { rollValidator } from "./validators/actionLog";
@@ -117,7 +118,10 @@ export function splitFeatureChoices(list: readonly CardChoice[]): { rest: CardCh
   let heldDicePicks: string[] | undefined;
   const rest: CardChoice[] = [];
   for (const c of list) {
-    if (c.id === HELD_DICE_PICKS) {
+    if (c.id === GIFT_EXCESS_TO) {
+      // Plan lanes-2 E8.3 (dcm-i5e1): read by `resolveFeatureUse` from the request's choices, not by the card path.
+      continue;
+    } else if (c.id === HELD_DICE_PICKS) {
       // Plan lanes-2 E8 (dcm-qbn): the held dice (by id) to spend, e.g. which Prayer Dice (CB p.44).
       if (!Array.isArray(c.value) || c.value.length > 20) throw appError("INVALID", "heldDicePicks needs held die ids.");
       heldDicePicks = [...c.value];
@@ -260,8 +264,12 @@ export function pickFeature(input: {
    * after the upgrades, so an upgrade's extra steps are split too.
    */
   transform?: (use: CardUse) => CardUse;
-  /** SD5: facts about the attack's target and the trigger's subject for NV7 checks (`hasCondition` on the target). */
-  extraFacts?: Pick<NonNullable<ActorState["facts"]>, "target" | "subject">;
+  /**
+   * SD5: facts about the attack's target and the trigger's subject for NV7 checks (`hasCondition` on the target). Plan
+   * lanes-2 E8.3 (dcm-576v): `weapons` too, merged over the sheet's own ranges (`attacking`: the attacking weapon's range,
+   * Surrounded, HF p.10: "an attack with a Melee weapon"); a creature's `areas` (dcm-753y) ride on `target` / `subject`.
+   */
+  extraFacts?: Pick<NonNullable<ActorState["facts"]>, "target" | "subject" | "weapons">;
   /**
    * DA12 (dcm-d95): the stored count of a `rolledFirst` use. Absent, the run takes up to MAX_CARD_TARGETS and
    * `resolveFeatureUse` holds the use to the stored roll (`spendTargetCount`) before anything is written.
@@ -297,11 +305,14 @@ export function pickFeature(input: {
   // the use as fixed numbers, until run.ts reads them from the actor (dcm-rs1z).
   const numbers = sheetNumbers(sheet, scopeOf(input.campaign));
   const binds = bindSheetNumbers(picked, numbers) !== picked;
+  // Plan lanes-2 E8.3 (dcm-atiu): the costs `featurePrompts.rollCount` paid at the roll are not paid again by the use.
+  const rollPaid = withoutRollCosts(picked) !== picked;
   const transform =
-    input.transform || binds
+    input.transform || binds || rollPaid
       ? (u: CardUse) => {
           const t = input.transform ? input.transform(u) : u;
-          return binds ? bindSheetNumbers(t, numbers) : t;
+          const b = binds ? bindSheetNumbers(t, numbers) : t;
+          return rollPaid ? withoutRollCosts(b) : b;
         }
       : undefined;
   // SD5: the transformed use runs as the entry's, upgrades already applied (only their die sizes are kept, which
@@ -319,7 +330,7 @@ export function pickFeature(input: {
   const rolledCount = isRolledFirst(use) ? { rolledTargetCount: input.rolledTargetCount ?? MAX_CARD_TARGETS } : {};
   const delegates = delegatedKeys(use).length > 0;
   const others: OtherSheet[] = delegates ? input.party.map((m) => ({ characterId: m.key, sheet: m.sheet })) : [];
-  const facts = { ...factsOf(sheet, input.rollUsedExperience), ...ownFacts(sheet, featureId), ...(input.extraFacts ?? {}) };
+  const facts = withExtraFacts({ ...factsOf(sheet, input.rollUsedExperience), ...ownFacts(sheet, featureId) }, input.extraFacts);
 
   const runner = (context: RunContext) => {
     const { useId: _useId, limitKeys: _limitKeys, delegate: _delegate, ...rest } = context;
@@ -362,13 +373,58 @@ export function pickFeature(input: {
     times: input.times,
     run: runner,
     refusal: featureRefusal,
-    actor: (base) => {
-      const extras = actorExtras(sheet);
-      // NumberEnv's dice sizes take `companion` (plan lanes V); the actor carries them on to the runner's env.
-      const dieSides: NumberEnv["dieSides"] = { ...extras.dieSides, ...(input.companion ? { companion: input.companion.dieSides } : {}) };
-      return { ...base, ...extras, dieSides, facts };
-    },
+    actor: (base) => ({ ...base, ...actorFill(sheet, numbers, input.companion), facts }),
   };
+}
+
+/**
+ * Plan lanes-2 E8.3 (dcm-pqbo, dcm-2z2, dcm-b9hc): what a feature's actor carries beyond the card path's `cardActor`:
+ * Favor, Focus, held dice and class dice sizes (`actorExtras`), the Beastbound companion's die (`dieSides.companion`, CB
+ * p.40: "your companion's damage die is a d6", stepped by Vicious) and damage type ("Choose whether they deal physical or
+ * magic damage"), and the sheet's own numbers run.ts reads since E3 round 2 (`tideTokens`, `classDice`, `stats`). The
+ * numbers are also bound into the use (`bindSheetNumbers`), which is harmless twice.
+ */
+export function actorFill(sheet: CharacterSheet, numbers: SheetNumbers, companion?: CompanionNumbers | null): Partial<ActorState> {
+  const extras = actorExtras(sheet);
+  // NumberEnv's dice sizes take `companion` (plan lanes V); the actor carries them on to the runner's env.
+  const dieSides: NumberEnv["dieSides"] = { ...extras.dieSides, ...(companion ? { companion: companion.dieSides } : {}) };
+  return {
+    ...extras,
+    dieSides,
+    tideTokens: numbers.tideTokens,
+    classDice: numbers.classDice,
+    stats: { ...numbers.stats },
+    ...(companion ? { companionDamageType: companion.damageType } : {}),
+  };
+}
+
+/**
+ * The actor's facts with the caller's extra facts (dcm-576v): `target` / `subject` replace, `weapons` merge over the
+ * sheet's primary / secondary ranges so the attacking weapon (`attacking`) adds to them.
+ */
+export function withExtraFacts(
+  own: NonNullable<ActorState["facts"]>,
+  extra: Pick<NonNullable<ActorState["facts"]>, "target" | "subject" | "weapons"> | undefined,
+): NonNullable<ActorState["facts"]> {
+  if (extra === undefined) return own;
+  const { weapons, ...rest } = extra;
+  return { ...own, ...rest, ...(weapons ? { weapons: { ...own.weapons, ...weapons } } : {}) };
+}
+
+/**
+ * Plan lanes-2 E8.3 (dcm-753y; Circle of Power, HF p.16: "you or an ally within the circle"): a creature's facts with the
+ * live map areas its token stands in (`CreatureFacts.areas`, read by `inArea` with `who: "subject" | "target"`). For the
+ * callers that build subject / target facts (convex/lib/combatActions.ts `creatureFacts`).
+ */
+export async function withCreatureAreas<F extends object>(
+  ctx: QueryCtx,
+  scene: AttackScene,
+  token: Doc<"combatTokens">,
+  facts: F,
+  characterId: Id<"characters"> | null = null,
+): Promise<F & { areas: { featureId: string; own: boolean }[] }> {
+  const areas = areaFactsFor(await activeAreasOnMap(ctx, scene.scene.map._id), scene.scene.tokens, token, characterId);
+  return { ...facts, areas };
 }
 
 // ---------------------------------------------------------------- resolving
@@ -555,13 +611,35 @@ export function giftsOf(plan: RunPlan, isPc: (id: string) => boolean): { byTarge
   return { byTarget, texts, notes: (name) => [...byTarget].map(([id, list]) => `${name(id)}: ${list.map(words).join(", ")}`) };
 }
 
-/** The sheet with the gifts: gold through `addGold` (CB p.104), items appended. INVALID past a second chest or 60 items. */
-export function giveTo(sheet: CharacterSheet, gifts: readonly Gift[]): CharacterSheet {
+/** The most handfuls of gold the sheet can still take before it would need a second chest (CB p.104), up to `cap`. */
+export function goldRoom(gold: CharacterSheet["gold"], cap: number): number {
+  let lo = 0;
+  let hi = Math.max(0, cap);
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (addGold(gold, "handfuls", mid) === null) hi = mid - 1;
+    else lo = mid;
+  }
+  return lo;
+}
+
+/**
+ * The sheet with the gifts: gold through `addGold` (CB p.104), items appended. INVALID past 60 items. Gold past a second
+ * chest is INVALID too, unless `overflow` is given: then the sheet takes what fits and `overflow.excess` counts the
+ * handfuls left over (plan lanes-2 E8.3, dcm-i5e1: `passExcessGold` offers them to a party member nearby).
+ */
+export function giveTo(sheet: CharacterSheet, gifts: readonly Gift[], overflow?: { excess: number }): CharacterSheet {
   let out = sheet;
   for (const g of gifts) {
     if (g.kind === "gold") {
       const gold = addGold(out.gold, "handfuls", g.handfuls);
-      if (gold === null) throw appError("INVALID", `${out.name} can't carry more gold: store some first (CB p.104).`);
+      if (gold === null) {
+        if (overflow === undefined) throw appError("INVALID", `${out.name} can't carry more gold: store some first (CB p.104).`);
+        const fits = goldRoom(out.gold, g.handfuls);
+        out = { ...out, gold: addGold(out.gold, "handfuls", fits) ?? out.gold };
+        overflow.excess += g.handfuls - fits;
+        continue;
+      }
       out = { ...out, gold };
     } else {
       if (out.inventory.length >= 60) throw appError("INVALID", `${out.name}'s inventory is full.`);
@@ -569,6 +647,40 @@ export function giveTo(sheet: CharacterSheet, gifts: readonly Gift[]): Character
     }
   }
   return out;
+}
+
+/** The choice id that names who takes gold past a recipient's cap (a PC token id, or `"drop"`). */
+export const GIFT_EXCESS_TO = "giftExcessTo";
+
+/** One party member who could take a recipient's excess gold: their token, distance and the handfuls they still fit. */
+export type ExcessCandidate = { id: string; name: string; distance: number; room: number };
+
+/**
+ * dcm-i5e1 (user answer 2026-10-31; CB p.104: "If you ever have more than 1 chest, you'll need to store some of your gold
+ * before you can take more"): who takes the handfuls a gift couldn't give. Candidates are the other party members within
+ * Close of the recipient with room. The player's pick (`giftExcessTo`: a candidate's token id, or `"drop"`) decides;
+ * without one the nearest candidate with room takes it (the offer's default). What nobody takes is dropped. A pick that is
+ * no candidate is COMBAT_TARGET_INVALID.
+ */
+export function passExcessGold(excess: number, candidates: readonly ExcessCandidate[], picked: string | undefined): { to: ExcessCandidate | null; given: number; dropped: number } {
+  if (excess <= 0) return { to: null, given: 0, dropped: 0 };
+  if (picked === "drop") return { to: null, given: 0, dropped: excess };
+  const open = candidates.filter((c) => c.room > 0);
+  let to: ExcessCandidate | null;
+  if (picked !== undefined) {
+    to = open.find((c) => c.id === picked) ?? null;
+    if (to === null) throw appError("COMBAT_TARGET_INVALID", "Pick a party member within Close range who can carry more gold.");
+  } else to = [...open].sort((a, b) => a.distance - b.distance)[0] ?? null;
+  const given = to === null ? 0 : Math.min(excess, to.room);
+  return { to, given, dropped: excess - given };
+}
+
+/** The `giftExcessTo` choice's value, or undefined. INVALID for a value that isn't a short text. */
+function excessPick(choices: readonly CardChoice[]): string | undefined {
+  const c = choices.find((x) => x.id === GIFT_EXCESS_TO);
+  if (c === undefined) return undefined;
+  if (typeof c.value !== "string" || c.value.length === 0 || c.value.length > 64) throw appError("INVALID", `${GIFT_EXCESS_TO} needs a token id or "drop".`);
+  return c.value;
 }
 
 /** A `setStance` step as run.ts leaves it (V's manual fallback, or E3's plan step), for the actor. */
@@ -661,7 +773,14 @@ export async function resolveFeatureUse(
   if (plan.steps.some((s) => s.kind === "delegate")) next = afterUnstoppable(next);
   // Plan lanes-2 E8 (dcm-vf7i): gold and named items the use gives to PCs are written (CB p.43 Contacts Everywhere).
   const gifts = giftsOf(plan, (id) => id === actorToken || built.creatures.get(id)?.kind === "pc");
-  next = giveTo(next, gifts.byTarget.get(actorToken) ?? []);
+  // dcm-i5e1: gold past a recipient's cap is passed on or dropped below (`passExcessGold`), never a refusal.
+  const excessOf = new Map<string, { excess: number }>();
+  const overflowFor = (id: string) => {
+    const o = { excess: 0 };
+    excessOf.set(id, o);
+    return o;
+  };
+  next = giveTo(next, gifts.byTarget.get(actorToken) ?? [], overflowFor(actorToken));
   // Plan lanes-2 E8 (dcm-awh, dcm-4xl): a `setStance` step shifts the actor's stance (the previous one drops first).
   const stanceBefore: AdversaryBefore[] = [];
   const stanceLines: string[] = [];
@@ -711,8 +830,39 @@ export async function resolveFeatureUse(
     if (u.roll) notes.push(`${c.sheet.name}: ${unshakableText(u.roll)}`);
     after = u.sheet;
     for (let i = 0; i < (grants.get(c.tokenId) ?? 0); i++) after = grantExtraMove(after);
-    after = giveTo(after, gifts.byTarget.get(c.tokenId) ?? []);
+    after = giveTo(after, gifts.byTarget.get(c.tokenId) ?? [], overflowFor(c.tokenId));
     others.set(c.character._id, { character: c.character, before: prior?.before ?? c.sheet, after });
+  }
+  // dcm-i5e1: each recipient's excess gold goes to a party member within Close with room, else it is dropped.
+  const pickedExcess = excessPick(req.choices);
+  for (const [id, { excess }] of excessOf) {
+    if (excess <= 0) continue;
+    const from = id === actorToken ? sheet.name : (pcName(built, id) ?? "an ally");
+    const candidates: (ExcessCandidate & { characterId: Id<"characters"> | null })[] = [];
+    const fromToken = built.creatures.onMap ? built.creatures.scene.scene.tokens.find((t) => t._id === id) : undefined;
+    if (fromToken !== undefined) {
+      for (const t of built.creatures.scene.scene.tokens) {
+        if (t._id === id || t.side !== "pc" || t.ref.kind !== "pc" || !rangeCheck(fromToken, t, "close").inRange) continue;
+        const holder = t._id === actorToken ? null : await built.creatures.resolve(t._id).catch(() => null);
+        const holderSheet = t._id === actorToken ? next : holder?.kind === "pc" ? (others.get(holder.character._id)?.after ?? holder.sheet) : null;
+        if (holderSheet === null) continue;
+        const characterId = holder?.kind === "pc" ? holder.character._id : null;
+        candidates.push({ id: t._id, name: holderSheet.name, distance: tokenDistance(fromToken, t), room: goldRoom(holderSheet.gold, excess), characterId });
+      }
+    }
+    const passed = passExcessGold(excess, candidates, pickedExcess);
+    const to = passed.to === null ? undefined : candidates.find((c) => c.id === passed.to!.id);
+    if (to !== undefined && passed.given > 0) {
+      if (to.characterId === null) next = giveTo(next, [{ kind: "gold", handfuls: passed.given }]);
+      else {
+        const o = others.get(to.characterId);
+        const holder = built.creatures.get(to.id);
+        if (o) others.set(to.characterId, { ...o, after: giveTo(o.after, [{ kind: "gold", handfuls: passed.given }]) });
+        else if (holder?.kind === "pc") others.set(to.characterId, { character: holder.character, before: holder.sheet, after: giveTo(holder.sheet, [{ kind: "gold", handfuls: passed.given }]) });
+      }
+      notes.push(`${from} can't carry ${passed.given} handful${passed.given === 1 ? "" : "s"} of gold: ${to.name} takes it`);
+    }
+    if (passed.dropped > 0) notes.push(`${from} can't carry ${passed.dropped} handful${passed.dropped === 1 ? "" : "s"} of gold: dropped (CB p.104)`);
   }
 
   const writes = instanceWrites(plan, built.creatures, pick.name);

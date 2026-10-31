@@ -2,6 +2,11 @@ import { v } from "convex/values";
 
 import { MAX_LEVEL } from "../src/lib/domain/characters/index";
 import { applyLevelUp, LevelUpRuleError, revertLevelUp } from "../src/lib/domain/level-up/index";
+import { applyChosenPicks, cardsGained, chosenPicks, revertChosenPicks } from "../src/lib/domain/level-up/on-choose";
+import { onChooseUse, runOnChoose } from "../src/lib/domain/feature-effects/run";
+import { cardEffect } from "../src/lib/srd/card-effects/index";
+import { cardActor } from "./lib/cardRunner";
+import { rollDie } from "./lib/dice";
 import { appError } from "../src/lib/errors/app-error";
 import { resolveOptions } from "../src/lib/frames/options";
 import { ADVANCEMENT_OPTIONS, type CharacterSheet } from "../src/lib/validation/characters";
@@ -38,13 +43,45 @@ const choiceValidator = v.object({
   cardId: v.string(),
   trade: v.optional(v.object({ out: v.string(), in: v.string() })),
   multiclass: v.optional(v.object({ classId: v.string(), domainId: v.string(), subclassId: v.string(), spellcastTrait: v.optional(traitIdValidator) })),
+  /**
+   * Plan lanes-2 E8.3 (dcm-31hq, dcm-40mj): the picks of a gained card's "when you choose this card" use, by card id, then
+   * by its `choose` step id (Vitality, CB p.330: "permanently gain two of the following benefits").
+   */
+  cardChoices: v.optional(v.record(v.string(), v.record(v.string(), v.array(v.string())))),
 });
 
 const levelResult = v.object({ level: v.number() });
 
 /** The longest the choice's free text and lists may be (validated again by the engine). */
-function assertSmall(choice: { picks: unknown[]; experienceName?: string }) {
+function assertSmall(choice: { picks: unknown[]; experienceName?: string; cardChoices?: Record<string, Record<string, string[]>> }) {
   if (choice.picks.length > 2 || (choice.experienceName?.length ?? 0) > 200) throw appError("INVALID");
+  const cards = Object.values(choice.cardChoices ?? {});
+  if (cards.length > 4 || cards.some((steps) => Object.keys(steps).length > 4 || Object.values(steps).some((ids) => ids.length > 4 || ids.some((id) => id.length > 60)))) {
+    throw appError("INVALID");
+  }
+}
+
+/**
+ * Plan lanes-2 E8.3 (dcm-31hq, dcm-40mj): runs each gained card's `whenYouChooseThisCard` use once and writes its
+ * permanent picks (src/lib/domain/level-up/on-choose.ts): Vitality's slots and threshold bonus, and the card to the vault
+ * (CB p.330). A pick the use still needs is LEVEL_UP_RULE. Cards without such a use change nothing.
+ */
+function withChosenCards(sheet: CharacterSheet, characterId: string, cardIds: readonly string[], cardChoices: Record<string, Record<string, string[]>> = {}): { sheet: CharacterSheet; lines: string[] } {
+  let next = sheet;
+  const lines: string[] = [];
+  for (const cardId of cardIds) {
+    const entry = cardEffect(cardId);
+    if (entry === undefined || onChooseUse(entry) === undefined) continue;
+    const actor = cardActor(characterId, next, cardId, undefined);
+    const out = runOnChoose(entry, { actor, gmFear: 0, rng: rollDie, targets: [], options: cardChoices[cardId] ?? {} });
+    if (out === null) continue;
+    if (!out.ok) throw appError("LEVEL_UP_RULE", out.detail);
+    const picks = chosenPicks(out.plan, actor.id);
+    if (picks.missing.length > 0) throw appError("LEVEL_UP_RULE", `Choose for ${onChooseUse(entry)?.name ?? cardId}: ${picks.missing.join("; ")}.`);
+    next = applyChosenPicks(next, cardId, picks);
+    lines.push(...picks.manual);
+  }
+  return { sheet: next, lines };
 }
 
 /**
@@ -100,9 +137,13 @@ export const apply = keyedUserMutation({
       const sheet = readSheet(character.sheet);
       if (!sheet.levelUpPending && permission !== "owner") throw appError("LEVEL_UP_RULE", "Wait for the GM to call for a level-up.");
       const allowExpansion = resolveOptions(campaign.frameId, campaign.options).hopeAndFear;
-      const next = applyRule("LEVEL_UP_RULE", LevelUpRuleError, () =>
-        applyLevelUp(sheet, choice, { allowExpansion, newId: () => crypto.randomUUID(), at: Date.now() }),
+      const { cardChoices, ...levelChoice } = choice;
+      const leveled = applyRule("LEVEL_UP_RULE", LevelUpRuleError, () =>
+        applyLevelUp(sheet, levelChoice, { allowExpansion, newId: () => crypto.randomUUID(), at: Date.now() }),
       );
+      // dcm-31hq: a gained card's "when you choose this card" picks (Vitality) are written with the level.
+      const gained = cardsGained({ cardId: levelChoice.cardId, picks: levelChoice.picks, ...(levelChoice.trade ? { tradeIn: levelChoice.trade.in } : {}) });
+      const { sheet: next, lines } = withChosenCards(leveled, character._id, gained, cardChoices);
       await saveSheet(ctx, character._id, next);
       await logAction(ctx, {
         campaignId: campaign._id,
@@ -110,7 +151,7 @@ export const apply = keyedUserMutation({
         actorId: ctx.user._id,
         kind: "levelUp",
         visibility: "public",
-        summary: `${sheet.name} reached level ${next.level}.`,
+        summary: `${sheet.name} reached level ${next.level}.${lines.length > 0 ? ` ${lines.join(" ")}` : ""}`.slice(0, 1000),
         undoable: false,
       });
       return { level: next.level };
@@ -130,7 +171,10 @@ export const undoLast = keyedUserMutation({
       const sheet = readSheet(character.sheet);
       const refusal = await undoRefusal(ctx, campaign._id, sheet, permission);
       if (refusal !== null) throw appError("LEVEL_UP_RULE", refusal);
-      const next = applyRule("LEVEL_UP_RULE", LevelUpRuleError, () => revertLevelUp(sheet));
+      // dcm-31hq: the latest level's chosen-card picks (Vitality's slots and bonus) go back with it.
+      const latest = sheet.advancements.at(-1);
+      const unpicked = latest && latest.level === sheet.level ? revertChosenPicks(sheet, cardsGained(latest)) : sheet;
+      const next = applyRule("LEVEL_UP_RULE", LevelUpRuleError, () => revertLevelUp(unpicked));
       await saveSheet(ctx, character._id, next);
       await logAction(ctx, {
         campaignId: campaign._id,

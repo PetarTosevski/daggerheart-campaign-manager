@@ -203,6 +203,8 @@ export function applyMoves(kind: RestKind, input: Readonly<Record<string, Charac
         case "makeAFeast":
         case "keepWatch":
         case "haltLycanthropy":
+        // Journey to Horizon (HF 176): no sheet change; the rest hook prompts the GM for the bearing (dcm-dvia).
+        case "locateSoulEchoes":
           break;
       }
       if (onAlly) say(targetId, `${mover.name} used ${MOVE_LABELS[m.move]} on them`);

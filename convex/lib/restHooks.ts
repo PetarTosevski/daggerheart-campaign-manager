@@ -39,6 +39,7 @@ import {
   FRAME_IDS,
   frameRestMoves,
   INITIAL_CORRUPTION,
+  LOCATE_ECHOES_MOVE,
   rollCorruption,
   rollsCorruption,
 } from "../../src/lib/domain/rest/frame-hooks/index";
@@ -111,6 +112,21 @@ const motherboardRestHook: RestHook = async (ctx, { campaign, sheets, rng }) => 
   return lines;
 };
 
+/**
+ * Journey to Horizon, Locate Soul Echoes (HF 176: "The PC learns the direction (north, south, east, west, or a
+ * combination) of the nearest sanctuary with a Soul Echo at its shrine. At the GM's discretion, using this downtime move
+ * alerts nearby Seekers-in-Shadow of the Vessel's general direction as well."). Plan lanes-2 E8.3 (dcm-dvia; user answer
+ * 2026-10-30: a downtime move and the GM button): each resting PC who chose it gets a line asking the GM for the bearing.
+ * The bearing (party hex and Echo map are GM-only), a tie between sanctuaries (the GM picks) and the Seekers alert stay
+ * the GM button's (convex/trackers/horizon.ts). An interrupted rest drops frame moves (CB 105).
+ */
+export const locateSoulEchoesRestHook: RestHook = async (_ctx, { campaign, interrupted, choices, sheets }) => {
+  if (campaign.frameId !== FRAME_IDS.horizon || interrupted) return [];
+  return choices
+    .filter((c) => sheets.has(c.characterId) && c.moves.some((m) => m.move === LOCATE_ECHOES_MOVE))
+    .map((c) => `${sheets.get(c.characterId)!.name} uses Locate Soul Echoes: the GM gives the bearing of the nearest sanctuary with a Soul Echo (Locate Soul Echoes on the world map)`);
+};
+
 /** Areas a rest looks at (a campaign draws few at a time; ended ones are swept by the cron). */
 const AREAS_MAX = 200;
 
@@ -155,6 +171,7 @@ const sourcedConditionsRestHook: RestHook = async (ctx, { campaign, sheets }) =>
 /** Every frame's rest hook, in order; Horizon first, since it may refuse the rest. */
 export const REST_HOOKS: readonly RestHook[] = [
   horizonRestHook,
+  locateSoulEchoesRestHook,
   ageOfUmbraRestHook,
   colossusRestHook,
   beastFeastRestHook,

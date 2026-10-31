@@ -19,7 +19,9 @@ export type RestMove =
   | "tribute"
   | "keepWatch"
   | "haltLycanthropy"
-  | "martialPreparation";
+  | "martialPreparation"
+  /** Journey to Horizon (HF 176): "the players gain access to an additional downtime move: Locate Soul Echoes". */
+  | "locateSoulEchoes";
 
 /** One chosen move, with plain id strings (the Convex caller converts). */
 export type ChosenMove = { move: RestMove; targetId?: string; countdownId?: string };
@@ -54,6 +56,7 @@ export const MOVE_LABELS: Record<RestMove, string> = {
   keepWatch: "Keep Watch",
   haltLycanthropy: "Halt lycanthropy",
   martialPreparation: "Martial Preparation",
+  locateSoulEchoes: "Locate Soul Echoes",
 };
 
 /**
