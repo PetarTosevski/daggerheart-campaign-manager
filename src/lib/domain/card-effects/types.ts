@@ -80,7 +80,13 @@ export type NumberSource =
   /** Marked on that track by this move (Siphon Essence: "equal to the number of Hit Points the target marked from this attack"). */
   | { kind: "markedThisMove"; who: "self" | "target"; track: Track }
   /** How many targets: picked, hit by the roll, or failed the reaction roll (Night Terror: "equal to the number of targets that are Horrified"). */
-  | { kind: "targetCount"; which: "picked" | "hit" | "failedSave" }
+  /**
+   * Plan lanes-2, V2 (widened): `markedHp`: the targets that marked 1+ HP from this feature, read after the reaction window
+   * (Suppressing Blast, CB p.217: "a Fear for each target who marked HP from this attack"; Paralyzing Shock, CB p.222;
+   * dcm-nsqo); with `severity`, only those whose damage reached it (Frenzied Feeding, HF p.91: "each creature who took
+   * Severe damage from this attack"; dcm-k4x5).
+   */
+  | { kind: "targetCount"; which: "picked" | "hit" | "failedSave" | "markedHp"; severity?: Severity }
   /** The total of this move's action roll (Chain Lightning: "a Difficulty equal to the result of your Spellcast Roll"). */
   | { kind: "rollTotal" }
   /** The number the trigger carries: the damage the ally dealt (Encore), the HP you marked (Never Upstaged), the Stress transferred. */
@@ -142,6 +148,13 @@ export type NumberSource =
       of?: "self" | "target";
       name?: string;
       excludeSelf?: boolean;
+      /**
+       * Plan lanes-2, V2 (widened): count a line: the creatures linked to `of` through steps of at most this range each
+       * (Shield Wall, CB p.212: "If additional Bladed Guards are standing in a line alongside the first, and each is within
+       * Melee range of another guard in the line, the Difficulty increases by the total number of guards in that line";
+       * dcm-346).
+       */
+      chain?: Range;
     }
   /** Handfuls (or bags) of gold a creature carries (Catrin's The Weight of Opulence, HF p.81; dcm-0gh). */
   | { kind: "gold"; who: "self" | "target"; unit?: "handful" | "bag" }
@@ -150,7 +163,13 @@ export type NumberSource =
   /** The current value of the actor's class die (the Unstoppable Die, CB p.36; dcm-v17). */
   | { kind: "classDie"; die: HeldDieKind | "unstoppable" }
   /** The Know the Tide tokens the actor holds (sessionFeatures.tideTokens, CB p.77; dcm-78x). */
-  | { kind: "tideTokens" };
+  | { kind: "tideTokens" }
+  // ---- Plan lanes-2, tracer V2 (widened); docs/tasks/TASK-LN-V2.md
+  /**
+   * The number the condition step recorded when it was given (`condition.record`), read inside that condition's `mods`:
+   * Banish's return (CB p.333: the reaction roll's Difficulty starts at "your highest result" of the cast's d20s; dcm-b77).
+   */
+  | { kind: "recorded" };
 
 /** Dice such as "d8+2 using your Proficiency" ({count: proficiency, sides: 8, plus: 2}) or "2d6" ({count: 2, sides: 6}). */
 export interface DiceExpr {
@@ -237,7 +256,12 @@ export type EndEvent =
   /** The area's owner leaves the area (Circle of Power: "or you exit the circle"; dcm-ii4). */
   | "ownerLeavesArea"
   /** The effect turned a hit on the bearer into no Hit Points marked (Shield Aura, CB p.341; dcm-sim). */
-  | "reducedToNoHp";
+  | "reducedToNoHp"
+  // ---- Plan lanes-2, tracer V2 (widened)
+  /** The bearer (or, through `endsOnCaster`, the caster) casts another spell (Veil of Night, CB p.336: "The veil remains until you cast another spell"; dcm-o44e). */
+  | "castsSpell"
+  /** The area or effect granted its benefit once (Forest Sprites, CB p.339: "A sprite vanishes after granting a benefit"; dcm-5yew). */
+  | "benefitGranted";
 
 /**
  * Plan lanes, V: an end on the next roll of a kind (dcm-3ea, dcm-cwh, dcm-ffk, dcm-0ey). `by`: whose roll (default the
@@ -260,6 +284,31 @@ export interface RollEnd {
  */
 export interface Maintain {
   costs: readonly Cost[];
+}
+
+/**
+ * Plan lanes-2, V2: how the bearer gets out of a condition, a creature's named tokens or an area (dcm-xobk, dcm-wuu, dcm-zi3k):
+ * a roll (`trait`, against `difficulty`; unset: the GM sets it), a successful attack (`attack`), or paying `costs`.
+ * "until they break free with a successful attack, Finesse Roll, or Strength Roll" (Detain, CB p.212); "removed by
+ * succeeding on a Finesse Roll (12 + the number of bramble tokens)" (Encumber, CB p.218); "can clear the condition with a
+ * successful Presence Roll (16)" (Scare, HF p.75); "until they spend 2 Hope" (Slow, HF p.75); "must succeed on a Finesse
+ * Roll ... to leave the area" (Bramble Patch, CB p.230). Any one of the ways that is given frees the bearer.
+ */
+export interface Escape {
+  trait?: TraitId | "spellcast" | readonly (TraitId | "spellcast")[];
+  difficulty?: NumberSource;
+  attack?: boolean;
+  costs?: readonly Cost[];
+}
+
+/** Plan lanes-2, V2: one option of another feature's `choose` step (Seven-Headed, HF p.92; dcm-qw4f). */
+export interface FeatureOptionRef {
+  /** The feature's printed name (an adversary feature) or card / feature id. */
+  feature: string;
+  /** The `choose` step's id. */
+  choose: string;
+  /** The option's id. */
+  option: string;
 }
 
 /** The conditions the encounter tracker and the sheet already know (src/lib/validation/characters.ts, convex/lib/validators/encounters.ts). */
@@ -396,6 +445,12 @@ export interface TargetSpec {
   origin?: "actor" | "target" | "point" | "chain";
   /** The range is the Beastbound companion's range from its sheet (CB p.40; dcm-2z2). */
   companionRange?: boolean;
+  /**
+   * Plan lanes-2, V2 (widened): with `area: "aroundPoint"`, that many points are picked (each with `areaRange`), and a
+   * creature in several of them is a target once (Unleash Hellfire, HF p.88: "1d4 bursts of hellfire within Far range";
+   * dcm-va0f). A `damage` step's `perArea` repeats per point.
+   */
+  points?: NumberSource;
 }
 
 /** The use acts on the trigger's creature instead of picked targets (Encore: "against that same target"; Rapid Riposte: the attacker). */
@@ -481,7 +536,13 @@ export type CheckTest =
   | { kind: "totalAtMost"; value: number }
   /** Plan lanes, V: the total is even / odd (a fate roll, CB p.168; Stone of Omens, HF p.62; Blink Beast, HF p.71; dcm-27j). */
   | { kind: "even" }
-  | { kind: "odd" };
+  | { kind: "odd" }
+  /**
+   * Plan lanes-2, V2: every die shows an even / odd result (Elemental Archon 3, Lightning Bolt, HF p.96: "If all results
+   * are even, make the same attack against a different target"; dcm-4yg4).
+   */
+  | { kind: "allEven" }
+  | { kind: "allOdd" };
 
 /** Plan lanes, V: one row of a check table (Broken Magic, HF p.68: "1-2 … 3-4 … 5-6"; Tentacle Rays' d8 beams; dcm-27j). */
 export interface CheckRow {
@@ -650,7 +711,9 @@ export type StateCheck =
   /** The check does not hold (Magical Weakness, CB p.231: "can't use their Regeneration action" while Dazed; dcm-2f3). */
   | { kind: "not"; check: StateCheck }
   /** Any of the checks holds (Sneak Attack: "while Cloaked or while an ally is within Melee range of your target"; dcm-85u). */
-  | { kind: "anyOf"; checks: readonly StateCheck[] };
+  | { kind: "anyOf"; checks: readonly StateCheck[] }
+  /** Plan lanes-2, V2: the option was removed for good (Seven-Headed, HF p.92: "if the corresponding option has already been removed"; dcm-qw4f). */
+  | { kind: "optionRemoved"; option: FeatureOptionRef };
 
 // ---------------------------------------------------------------- triggers
 
@@ -853,7 +916,13 @@ export type Trigger =
   /** You recall a domain card from your vault (Perfect Recall, CB p.50; dcm-bxp.99.19.1); a rider on the Hand's recall. */
   | { kind: "whenYouRecall" }
   /** An enemy moves within `range` of you (Hold the Line, CB p.342: "If an adversary moves within Very Close range"; dcm-bpr). */
-  | { kind: "whenEnemyEntersRange"; range: Range };
+  | { kind: "whenEnemyEntersRange"; range: Range }
+  // ---- Plan lanes-2, tracer V2 (widened)
+  /**
+   * Once, when the card is chosen (taken at level up; Vitality, CB p.330: "When you choose this card, permanently gain two
+   * of the following benefits ... Then place this card in your vault permanently"; dcm-40mj). Used with an `auto` activation.
+   */
+  | { kind: "whenYouChooseThisCard" };
 
 /**
  * How a use is started.
@@ -1026,7 +1095,17 @@ export type Mod =
         /** Terrified (Wyvern, HF p.89): no Hope from rolls with Hope (dcm-kti). */
         | "noHopeFromRolls"
         /** Paranoid (Cryptimoth, HF p.82): can't Help an Ally or join a Tag Team Roll (dcm-kti). */
-        | "cannotHelp";
+        | "cannotHelp"
+        // ---- Plan lanes-2, tracer V2 (widened)
+        /** Scared (Tentacle Rays, HF p.75): "can't take actions other than fleeing the battle or trying to shake off their terror" (dcm-zi3k). */
+        | "onlyFlee"
+        /** Ravenous (Hunger Pangs, HF p.94): "a PC can't spend Hope" (dcm-5kxg). */
+        | "cannotSpendHope"
+        /** Afflicted (Nightmare Stare, HF p.95): "the target can't clear HP or Stress" (two flags; dcm-5kxg). */
+        | "cannotClearHp"
+        | "cannotClearStress"
+        /** Never Misses (Adult Flickerfly, CB p.228): "When the Flickerfly makes an attack, the target's Evasion is halved" on every attack (dcm-4c9m). */
+        | "attacksHalveEvasion";
     }
   // ---- Plan lanes, tracer V (widened)
   /**
@@ -1075,9 +1154,29 @@ export type Mod =
   /** An adversary's standard attack is replaced (Evolution, HF p.61; Claw Swipe: Very Close, 1d10+3 phy; dcm-gx3). */
   | { kind: "standardAttack"; name: string; range: Range; damage: DiceExpr; type: DamageType }
   /** An adversary's feature list changes, by printed feature name (Enraged Mountain Troll, HF p.65; dcm-gx3). */
-  | { kind: "features"; remove?: readonly string[]; add?: readonly string[] }
+  /**
+   * Plan lanes-2, V2 (widened): `removeOptions`: single options of another feature's `choose` step, gone for good
+   * (Seven-Headed, HF p.92: "Permanently remove the Elemental Breath option that corresponds to the result"; dcm-qw4f).
+   */
+  | { kind: "features"; remove?: readonly string[]; add?: readonly string[]; removeOptions?: readonly FeatureOptionRef[] }
   /** The bearer takes double damage of a type or keyword (Made of Straw, HF p.79: "double damage from fire"; dcm-dv6). */
-  | { kind: "weakness"; type?: DamageType; keyword?: DamageKeyword };
+  | { kind: "weakness"; type?: DamageType; keyword?: DamageKeyword }
+  // ---- Plan lanes-2, tracer V2 (widened)
+  /** The bearer can't attack the creature that gave it (Beguiled, Tentacle Rays, HF p.75: "sees the Gobstalker as a friend and can't attack it"; dcm-zi3k). */
+  | { kind: "cannotAttackTarget"; target: "caster" }
+  /** The bearer's own move reaches this range (Unleash the Beast, HF p.75-76: "they can move up to Far range instead of Close range before taking an action"; dcm-z5a6). */
+  | { kind: "moveRange"; range: Range }
+  /**
+   * Every damage the bearer takes changes (Burrowing Leechpoles, HF p.90: "any damage the target takes gains a +1 bonus
+   * for each leechpole under their skin": `add` `creatureTokens` of `self`, the bearer; dcm-kvx4). Not only attacks
+   * (`attackedRider` covers those).
+   */
+  | { kind: "damageTaken"; change: DamageChange }
+  /**
+   * The bearer's spends and marks are multiplied (Unstuck, Reality Quake, CB p.237: "When an Unstuck target spends Hope or
+   * marks Armor Slots, HP, or Stress, they must double the amount spent or marked"; dcm-fbsr).
+   */
+  | { kind: "marksMultiplier"; factor: number; of: readonly ("hope" | Track)[] };
 
 /**
  * Plan lanes, V: what an attack against the bearer of an `attackedRider` gets. `by`: whose attacks (`caster`: the creature
@@ -1103,7 +1202,30 @@ export interface AttackedRider {
  * pay them to do it (Shadow Shackles). In `steps` `self` is the bearer and `triggerSource` the creature that made it.
  */
 export interface BearerRider {
-  on: "acts" | "actionRoll" | "attack" | "spotlight" | "moves" | "pcRollsWithFear" | "afterPcsNextAction" | "casterSpotlit";
+  on:
+    | "acts"
+    | "actionRoll"
+    | "attack"
+    | "spotlight"
+    | "moves"
+    | "pcRollsWithFear"
+    | "afterPcsNextAction"
+    | "casterSpotlit"
+    // ---- Plan lanes-2, tracer V2 (widened)
+    /** The GM spends a Fear (Scared, Tentacle Rays, HF p.75: "must mark a Stress whenever you spend a Fear"; dcm-zi3k). */
+    | "gmSpendsFear"
+    /** The caster moves (Pin, HF p.71: "The Hut drags the Restrained target when it moves"; Wings of Light's carry, CB p.45; dcm-z5a6, dcm-lvgm). */
+    | "casterMoves"
+    /**
+     * Any creature makes an action roll against the condition (Thorny Cage, CB p.218: "When a creature makes an action roll
+     * against the cage, they must mark a Stress"; dcm-xobk); in `steps` `triggerSubject` is that roller.
+     */
+    | "rolledAgainst"
+    /**
+     * The bearer marks their last Stress (Comatize, HF p.90: "If a PC marks their last Stress while the Hatchling is latched
+     * on, the PC must make a death move"; the latched condition carries it; dcm-wqgs).
+     */
+    | "marksLastStress";
   roll?: RollFilter;
   timing?: "before" | "after";
   costs?: readonly Cost[];
@@ -1238,7 +1360,14 @@ export type RollChange =
   /** The host move reaches `steps` ranges farther (Manipulate Magic, CB p.47: "Extend the spell or attack's reach by one range"; dcm-x7p). */
   | { kind: "reach"; steps: number }
   /** Reroll the held dice of a kind just rolled that show `atMost` or less (Weapon Specialist, CB p.48: "reroll any 1s" of the Slayer Dice; dcm-sa2). */
-  | { kind: "rerollHeld"; die: HeldDieKind; atMost: number };
+  | { kind: "rerollHeld"; die: HeldDieKind; atMost: number }
+  // ---- Plan lanes-2, tracer V2 (widened)
+  /**
+   * The target's Evasion is halved against the roll this rides on (an `onAttack` `before` use's check: Peerless Accuracy,
+   * CB p.224: "Before the Flickerfly makes an attack, roll a d6. On a result of 4 or higher, the target's Evasion is halved
+   * against this attack"; Skillful Strike, HF p.79; dcm-5jyp).
+   */
+  | { kind: "halveEvasion" };
 
 // ---------------------------------------------------------------- steps
 
@@ -1319,6 +1448,11 @@ export type OutcomeStep =
       repeat?: NumberSource;
       /** Plan lanes, V (widened): a keyword besides the type (fire; dcm-dv6). */
       keyword?: DamageKeyword;
+      /**
+       * Plan lanes-2, V2 (widened): each recipient takes the damage once per `TargetSpec.points` area it stands in, combined
+       * (Unleash Hellfire, HF p.88: "If a target takes damage from multiple bursts, combine the damage"; dcm-va0f).
+       */
+      perArea?: boolean;
     })
   /** A change to this move's damage roll (riders and options; `to` is the move's damage recipients). */
   | (OutcomeBase & { kind: "modifyDamage"; change: DamageChange })
@@ -1327,7 +1461,18 @@ export type OutcomeStep =
    * Plan lanes, V (widened): `distribution: "split"`: `amount` marks spread over the recipients as the actor picks, at
    * most `maxPer` on one (Force Salvo, HF p.81: "The same creature can be targeted by up to three force bolts"; dcm-zhc).
    */
-  | (OutcomeBase & { kind: "markHp"; amount: NumberSource; distribution?: "each" | "split"; maxPer?: number })
+  /**
+   * Plan lanes-2, V2 (widened): `reduceWith: "hope"`: before the marks, each recipient can spend any number of Hope to mark
+   * that many fewer (Doom, Tentacle Rays, HF p.75: "must mark all HP, but they can spend any number of Hope to reduce the
+   * number of HP marked this way by an equal amount"; dcm-zi3k).
+   */
+  | (OutcomeBase & {
+      kind: "markHp";
+      amount: NumberSource;
+      distribution?: "each" | "split";
+      maxPer?: number;
+      reduceWith?: "hope";
+    })
   /**
    * "must mark a Stress"; a full track marks 1 HP instead (R5, CB p.92).
    * Plan lanes, V (widened): `distribution: "split"` (Mind Meld, HF p.74: "distributed among allies as it chooses"; dcm-63j).
@@ -1347,7 +1492,18 @@ export type OutcomeStep =
    * Plan lanes, V (widened): `ifUnable` (with `lose`): steps for a recipient who can't lose the Hope (Dreadhowl, CB p.222:
    * "If a target is not able to lose a Hope, they must instead mark 2 Stress"; dcm-5xi).
    */
-  | (OutcomeBase & { kind: "hope"; change: "gain" | "lose"; amount: NumberSource; ifUnable?: readonly Step[] })
+  /**
+   * Plan lanes-2, V2 (widened): `distribution: "split"` (with `gain`): `amount` Hope spread over the recipients as the
+   * chooser picks (Stone of Omens, HF p.62: "gains Hope equal to half the result, which they can distribute among the PCs
+   * however they wish"; dcm-nh44).
+   */
+  | (OutcomeBase & {
+      kind: "hope";
+      change: "gain" | "lose";
+      amount: NumberSource;
+      ifUnable?: readonly Step[];
+      distribution?: "each" | "split";
+    })
   /** The GM's Fear pool: Sigil of Retribution "The GM gains a Fear", Dire Strike "The GM loses a Fear" (`to: "self"` is ignored). */
   | (OutcomeBase & { kind: "fear"; change: "gain" | "lose"; amount: NumberSource })
   /**
@@ -1366,6 +1522,15 @@ export type OutcomeStep =
       mods?: readonly Mod[];
       endsOnCaster?: readonly EndEvent[];
       endsOnRoll?: RollEnd;
+      /**
+       * Plan lanes-2, V2 (widened): `escape`: how the bearer clears it (`Escape`; Scare, HF p.75: "a successful Presence Roll
+       * (16)"; dcm-zi3k, dcm-xobk); `record`: a number kept with the condition, which a `recorded` number in its `mods` reads
+       * (Banish, CB p.333: the return roll's starting Difficulty; dcm-b77).
+       */
+      escape?: Escape;
+      record?: NumberSource;
+      /** Plan lanes-2, V2 (widened): the Fear a `gmSpendsFear` end costs (default 1; dcm-8bv), as on `effect`. */
+      endFear?: NumberSource;
     })
   /**
    * Plan lanes, V (widened): `all`: clear every condition and tag on the recipient (`condition` is then only the one named
@@ -1382,12 +1547,19 @@ export type OutcomeStep =
    * Plan lanes, V (widened): `ground`: a flying recipient lands (Mystic Tether, CB p.333: "grounds"; dcm-yzr);
    * `leaveScene`: the recipient leaves the scene without being defeated (Survival Instinct, Bolt, Cowardly, HF p.62-64;
    * dcm-icd).
+   * Plan lanes-2, V2 (widened): `withCaster`: the recipient's token moves along with the caster's (Pin, HF p.71: "drags the
+   * Restrained target when it moves"; Wings of Light, CB p.45: "carry another willing creature"; dcm-z5a6, dcm-lvgm);
+   * `relativeTo: "area"` with `area`: to the centre of the actor's live area of that label (Phantom Retreat, CB p.336:
+   * "reappear where you were standing when you activated Phantom Retreat"; dcm-5yew); `leaveAs`: how a `leaveScene` is
+   * logged (`combined`: Minions merged into a Horde, Drain and Multiply, CB p.218; dcm-xobk; default `fled`).
    */
   | (OutcomeBase & {
       kind: "move";
-      mode: "knockBack" | "pull" | "teleport" | "move" | "flee" | "intoMelee" | "ground" | "leaveScene";
+      mode: "knockBack" | "pull" | "teleport" | "move" | "flee" | "intoMelee" | "ground" | "leaveScene" | "withCaster";
       range?: Range;
-      relativeTo?: "self" | "target" | "point" | "triggerSource";
+      relativeTo?: "self" | "target" | "point" | "triggerSource" | "area";
+      area?: string;
+      leaveAs?: "fled" | "combined";
     })
   /**
    * A lasting effect: a sheet effect on a PC (mods + until), or a modifier on an adversary instance.
@@ -1409,6 +1581,17 @@ export type OutcomeStep =
       endsOnCaster?: readonly EndEvent[];
       endsOnRoll?: RollEnd;
       maintain?: Maintain;
+      /**
+       * Plan lanes-2, V2 (widened): one grant shared by every recipient of this use: when it ends on one of them (its
+       * duration or an event), it ends on all (Bird's-Eye View, CB p.33: "The first time a character makes a roll to act on
+       * this information, they gain advantage on the roll"; `nextRoll` on `selfAndAllies`; dcm-rao5).
+       */
+      sharedGrant?: boolean;
+      /**
+       * Plan lanes-2, V2 (widened): the Fear the GM spends for a `gmSpendsFear` end (default 1: Slumber, CB p.332: "the GM
+       * spends a Fear"; Marked for Death, HF p.8: "a number of Fear equal to your tier", `byTier` 1/2/3/4; dcm-8bv).
+       */
+      endFear?: NumberSource;
     })
   /**
    * Tokens on this card (sheet `cardTokens`): `set` ("place a number of tokens equal to your Agility"), `add`, `spend`,
@@ -1427,6 +1610,12 @@ export type OutcomeStep =
       die?: DieSides;
       holder?: "card" | "recipient";
       name?: string;
+      /**
+       * Plan lanes-2, V2 (widened): how the holder clears every token of `name` (Encumber, CB p.218: "All bramble tokens can be
+       * removed by succeeding on a Finesse Roll (12 + the number of bramble tokens)"; dcm-xobk). The adversary trigger
+       * `pcEscapes` answers it.
+       */
+      escape?: Escape;
     })
   /** "this card is placed in your vault" (Counterspell); `permanent`: "place this card in your vault permanently". */
   | (OutcomeBase & { kind: "toVault"; permanent?: boolean })
@@ -1464,7 +1653,15 @@ export type OutcomeStep =
    *   (conditions) still apply (Dark Aegis, HF p.14: "spend a Favor instead of marking Hit Points"; user answer
    *   2026-10-29, dcm-bxp.99.19.13).
    */
-  | (OutcomeBase & { kind: "negate"; what: "damage" | "attack" | "condition" | "effect" | "deathMove" | "stress"; ignoreOnHitHp?: boolean })
+  /**
+   * Plan lanes-2, V2 (widened): `what: "move"`: the move that set it off doesn't happen (Shield Wall, CB p.212: "A creature
+   * who tries to move within Very Close range of the Guard must succeed on an Agility Roll"; dcm-xobk).
+   */
+  | (OutcomeBase & {
+      kind: "negate";
+      what: "damage" | "attack" | "condition" | "effect" | "deathMove" | "stress" | "move";
+      ignoreOnHitHp?: boolean;
+    })
   /**
    * Marks taken on one track instead of another: Splendor-Touched "mark that much Stress or spend that much Hope instead"
    * of HP, Grace-Touched "force them to mark that number of Stress" instead of HP, or "mark an Armor Slot instead of
@@ -1525,12 +1722,16 @@ export type OutcomeStep =
    * A PC's inventory (dcm-0gh): `take` an item (Quick Hands, CB p.225; What's Yours Is Mine, CB p.229; Trophy Hunter, HF
    * p.84: `mostValuable`), `takeGold` `amount` handfuls (Expensive Failure, HF p.81), `damageWeapon` (Rust Touch, HF p.78:
    * the damage die one step down, destroyed below d4).
+   * Plan lanes-2, V2 (widened): `giveGold` `amount` handfuls and `giveItem` (`text` names it; the GM's pick when unset) to
+   * the recipient (Contacts Everywhere, CB p.43: "1 handful of gold, a unique tool, or a mundane object that the situation
+   * requires"; dcm-vf7i).
    */
   | (OutcomeBase & {
       kind: "inventory";
-      op: "take" | "takeGold" | "damageWeapon";
+      op: "take" | "takeGold" | "damageWeapon" | "giveGold" | "giveItem";
       item?: "any" | "consumable" | "mostValuable" | "metalWeapon";
       amount?: NumberSource;
+      text?: string;
     })
   /**
    * End a lasting effect, condition or area on the recipient: this card's or feature's own (`of` unset; Confusing Aura, CB
@@ -1564,7 +1765,21 @@ export type OutcomeStep =
    * Lash, CB p.235; Rending Jaws, HF p.81: 2), `alsoMark` per slot used (Boiling Blast, CB p.236: "they must also mark a
    * Stress"). Applies to the hit the reaction window holds.
    */
-  | (OutcomeBase & { kind: "armorCost"; slotsPerStep?: number; alsoMark?: { track: "stress" | "hp"; amount: number } });
+  | (OutcomeBase & { kind: "armorCost"; slotsPerStep?: number; alsoMark?: { track: "stress" | "hp"; amount: number } })
+  // ---- Plan lanes-2, tracer V2: new outcome steps (docs/tasks/TASK-LN-V2.md)
+  /**
+   * The recipients (the attackers) make an attack against a creature picked by `against` (`side` from the actor's view,
+   * ranges measured from the attacker; never the attacker itself): Words of Discord (CB p.335: "make an attack against
+   * another adversary instead of against you or your allies"; dcm-c8h3), Beguiled (Tentacle Rays, HF p.75: "attack a target
+   * chosen by the Gobstalker"; dcm-zi3k). An adversary attacker makes its standard attack; a PC is prompted.
+   */
+  | (OutcomeBase & { kind: "forcedAttack"; against: TargetSpec })
+  /**
+   * The adversary instance now uses another stat block (`adversaryId`), keeping its HP and Stress marked (Transform,
+   * Forlorne Lykona, HF p.142-143: "shift between her Dragon Form and Faun Form. While she embodies a form, she uses its
+   * statistics and features"; dcm-3ag5).
+   */
+  | (OutcomeBase & { kind: "changeForm"; adversaryId: string });
 
 /** NV2: what a `delegate` step passes to the D5 feature (`FeatureParams`): a fixed choice, a choice the player made, or a number. */
 export interface DelegateParams {
@@ -1615,6 +1830,32 @@ export interface AreaSpec {
    * adversary for whom the cloud blocks line of sight"; dcm-bhp).
    */
   perObserver?: StandardCondition;
+  // ---- Plan lanes-2, tracer V2 (widened)
+  /** The area also ends on its owner's events (Hush, CB p.336: "or you take Major damage"; dcm-rx1k; Veil of Night: `castsSpell`, dcm-o44e). */
+  endsOnCaster?: readonly EndEvent[];
+  /**
+   * `blocksSight` blocks everyone but these (Eclipse, CB p.337: "complete darkness only you and your allies can see
+   * through"; Veil of Night, CB p.336: "Only you can see through this darkness"; dcm-o44e).
+   */
+  seeThrough?: "owner" | "ownerAndAllies";
+  /** The owner has this condition toward observers whose sight the area blocks (Veil of Night: "You're considered Hidden to adversaries on the other side of the veil"; dcm-o44e). */
+  ownerPerObserver?: StandardCondition;
+  /**
+   * Members have this condition while inside (Shadow Swarm, HF p.82: "Creatures that aren't Cryptimoths are Vulnerable while
+   * inside that area"; dcm-wuu).
+   */
+  memberCondition?: ConditionRef;
+  /** A member must do this to leave (Bramble Patch, CB p.230: "must succeed on a Finesse Roll or deal more than 20 damage to the Dryad with an attack to leave the area"; dcm-wuu). */
+  leave?: Escape;
+  /** A creature can end the area this way (Shadow Swarm: "A PC can dispel the swarm with a successful Spellcast Roll (12)"; dcm-wuu). */
+  dispel?: Escape;
+  /** That many areas are placed, each its own (Forest Sprites, CB p.339: "an equal number of small forest sprites who appear at points you choose"; dcm-5yew). */
+  count?: NumberSource;
+  /**
+   * A `self` / `target` centre stays on the square it was placed on instead of following the token (Phantom Retreat, CB
+   * p.336: "activate Phantom Retreat where you're currently standing"; a `move` `relativeTo: "area"` returns there; dcm-5yew).
+   */
+  anchored?: boolean;
 }
 
 /** Plan lanes, V: "each ally picks for themselves" on a `choose` / `optional` step (dcm-bz8, dcm-6ju): who decides, one pick each. */
@@ -1629,9 +1870,18 @@ export interface ChooserSpec {
  * `costEach` paid before each repeat (Rip & Tear: a Stress); `max` caps it.
  */
 export interface FollowUpRepeat {
-  until: "miss" | "noTargets";
+  until: "miss" | "noTargets" | "checkFails";
   costEach?: readonly Cost[];
   max?: number;
+  /**
+   * Plan lanes-2, V2 (widened): with `until: "checkFails"`, the chain goes on while this check holds after each link:
+   * `dice` rolled fresh (Lightning Strike, HF p.91: "roll a d6. On a result of 4 or higher, the lightning bounces"), or with
+   * no `dice` the link's own damage dice (Lightning Bolt, HF p.96: "If all results are even ... until you roll an odd
+   * result or run out of targets"; dcm-4yg4). It stops too when no target is left.
+   */
+  check?: { dice?: DiceExpr; test: CheckTest };
+  /** Plan lanes-2, V2: a damage change added once per link so far ("Each time the lightning bounces, decrease the damage it deals by 1d10"; dcm-4yg4). */
+  perLink?: DamageChange;
 }
 
 /** One option of a `choose` step. */
@@ -1780,6 +2030,9 @@ export const STEP_KINDS = [
   "deathMove",
   "downtime",
   "armorCost",
+  // Plan lanes-2, tracer V2
+  "forcedAttack",
+  "changeForm",
 ] as const;
 
 export type StepKind = (typeof STEP_KINDS)[number];

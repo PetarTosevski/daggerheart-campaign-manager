@@ -174,8 +174,12 @@ export type AdversaryTrigger =
       totalAtMost?: number;
       notCritical?: boolean;
     }
-  /** "When a PC moves within Melee range", "A PC must mark a Stress to move out of the X's Melee range" (`outOf`). */
-  | { kind: "pcMoves"; into?: Range; outOf?: Range }
+  /**
+   * "When a PC moves within Melee range", "A PC must mark a Stress to move out of the X's Melee range" (`outOf`).
+   * Plan lanes-2, V2 (widened): `stage: "would"`: before the move is made, so a `negate` `move` can stop it (Shield Wall, CB
+   * p.212: "A creature who tries to move within Very Close range of the Guard must succeed on an Agility Roll"; dcm-xobk).
+   */
+  | { kind: "pcMoves"; into?: Range; outOf?: Range; stage?: "would" | "did" }
   /** "When a PC takes Severe damage within Very Close range of the X", "a PC marks HP from the X's standard attack". */
   | { kind: "pcMarksHp"; within?: Range; minSeverity?: Severity; fromSelf?: boolean }
   /** "When a PC within Close range of the X gains a Hope", "a PC with no Hope takes the spotlight". */

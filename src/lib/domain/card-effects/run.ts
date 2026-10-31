@@ -329,7 +329,12 @@ export type ResolvedMod =
           | "gmControl"
           | "standardAttack"
           | "features"
-          | "weakness";
+          | "weakness"
+          // Plan lanes-2, tracer V2 (TASK-LN-V2.md): travel as written too.
+          | "cannotAttackTarget"
+          | "moveRange"
+          | "damageTaken"
+          | "marksMultiplier";
       }
     >;
 
@@ -1495,8 +1500,11 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
                 ? total >= t.value
                 : t.kind === "totalAtMost"
                   ? total <= t.value
-                  : // dcm-27j: a fate roll's parity (CB p.168; Stone of Omens, HF p.62).
-                    (total % 2 === 0) === (t.kind === "even");
+                  : // lanes-2 V2 (dcm-4yg4, Lightning Bolt, HF p.96: "If all results are even"): every die's parity.
+                    t.kind === "allEven" || t.kind === "allOdd"
+                    ? dice.length > 0 && dice.every((n) => (n % 2 === 0) === (t.kind === "allEven"))
+                    : // dcm-27j: a fate roll's parity (CB p.168; Stone of Omens, HF p.62).
+                      (total % 2 === 0) === (t.kind === "even");
         steps.push({ kind: "check", total, dice, passed });
         runSteps(passed ? step.then : step.otherwise, scope);
         return true;
@@ -2114,6 +2122,11 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
         for (const id of ids) steps.push({ kind: "endEffect", targetId: id, of: step.of ?? effect.cardId, own: step.of === undefined, ...(step.option ? { option: step.option } : {}) });
         return;
       case "inventory":
+        // Plan lanes-2, V2 fallback: giving gold or an item (dcm-vf7i) is the table's until its lane runs it.
+        if (step.op === "giveGold" || step.op === "giveItem") {
+          steps.push({ kind: "prompt", prompt: "manual", text: step.note ?? step.text ?? step.op, targetIds: ids, step });
+          return;
+        }
         // E3 (dcm-0gh, Quick Hands, CB p.225): the server changes the recipient's inventory.
         for (const r of recipients) {
           steps.push({ kind: "inventory", targetId: r.id, op: step.op, ...(step.item ? { item: step.item } : {}), ...(step.amount ? { amount: num(step.amount, r) } : {}) });
@@ -2127,6 +2140,9 @@ export function run(effect: CardEffect, context: RunContext): RunResult {
       case "deathMove":
       case "downtime":
       case "armorCost":
+      // Plan lanes-2, tracer V2 (TASK-LN-V2.md): the same fallback for its new steps.
+      case "forcedAttack":
+      case "changeForm":
         steps.push({ kind: "prompt", prompt: "manual", text: step.note ?? step.kind, targetIds: ids, step });
         return;
     }
@@ -2223,6 +2239,8 @@ function moveText(step: Extract<OutcomeStep, { kind: "move" }>): string {
     intoMelee: "Move into Melee range",
     ground: "Ground",
     leaveScene: "Leave the scene",
+    // Plan lanes-2, V2 (dcm-z5a6, dcm-lvgm): a label until its lane moves the token.
+    withCaster: "Move along with the caster",
   }[step.mode];
   return `${verb}${range}`;
 }

@@ -349,6 +349,9 @@ export function stateCheckMet(check: StateCheck, s: RequirementState): boolean |
     }
     case "anyOf":
       return anyOf(check.checks.map((c) => stateCheckMet(c, s)));
+    // Plan lanes-2, V2 fallback: removed options (dcm-qw4f) are not recorded yet; the table confirms (Q13).
+    case "optionRemoved":
+      return undefined;
   }
 }
 

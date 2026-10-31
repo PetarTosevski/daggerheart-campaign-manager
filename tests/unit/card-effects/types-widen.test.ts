@@ -331,8 +331,8 @@ describe("the DA0 widening (drawer-answers)", () => {
       "move",
     ]);
     expect([wardensProtection.targets, cannonball.rolledBy?.who, cannonball.roll?.kind]).toEqual([wardensProtection.targets, "ally", "trait"]);
-    // DA0 added no step kind; plan lanes, tracer V appended its own after SD0's.
-    expect(STEP_KINDS).toHaveLength(CA0_STEP_KINDS.length + SD0_STEP_KINDS.length + V_STEP_KINDS.length);
+    // DA0 added no step kind; plan lanes, tracer V appended its own after SD0's, and lanes-2 V2 two more after V's.
+    expect(STEP_KINDS).toHaveLength(CA0_STEP_KINDS.length + SD0_STEP_KINDS.length + V_STEP_KINDS.length + 2);
   });
 });
 
@@ -669,7 +669,8 @@ const onMySignal: AdversaryFeatureUse = {
 describe("the V widening (plan lanes)", () => {
   it("appends its step kinds after SD0's and its adversary trigger kinds after AA0's", () => {
     const base = CA0_STEP_KINDS.length + SD0_STEP_KINDS.length;
-    expect(STEP_KINDS.slice(base)).toEqual([...V_STEP_KINDS]);
+    // Plan lanes-2, tracer V2 appends its kinds after V's (types-widen-2.test.ts).
+    expect(STEP_KINDS.slice(base, base + V_STEP_KINDS.length)).toEqual([...V_STEP_KINDS]);
     expect(ADVERSARY_STEP_KINDS.slice(base, base + V_STEP_KINDS.length)).toEqual([...V_STEP_KINDS]);
     expect(ADVERSARY_TRIGGER_KINDS.slice(-V_TRIGGER_KINDS.length)).toEqual([...V_TRIGGER_KINDS]);
   });

@@ -178,7 +178,8 @@ export function resolveNumber(source: NumberSource, env: NumberEnv, rng: Rng): n
       return marks?.[source.track] ?? 0;
     }
     case "targetCount":
-      return env.targetCount[source.which];
+      // Plan lanes-2, V2 fallback: `markedHp` (dcm-nsqo, dcm-k4x5) is counted after the reaction window; 0 until then.
+      return source.which === "markedHp" ? 0 : env.targetCount[source.which];
     case "rollTotal":
       return env.rollTotal ?? 0;
     case "triggerAmount":
@@ -234,6 +235,9 @@ export function resolveNumber(source: NumberSource, env: NumberEnv, rng: Rng): n
       return env.classDice?.[source.die] ?? 0;
     case "tideTokens":
       return env.tideTokens ?? 0;
+    // Plan lanes-2, V2 fallback: the number a condition recorded (dcm-b77) is not stored yet.
+    case "recorded":
+      return 0;
   }
 }
 
