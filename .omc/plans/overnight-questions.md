@@ -115,3 +115,5 @@ The user went to bed and asked: take a default on every open question; ask on re
 - E2.4 Fireproof GM ask only when the data can't settle the keyword (kept). Fireproof blocks damage only; riders still land; redirected hit asks on the first target (kept).
 - E1.4b Forced attack's GM-chosen target skips the range sanction; an attack without a Lead by Example pick uses it up, first option preselected (kept).
 - E1.4b Bearer riders follow each condition's wording (before / after the roll), not all before (change -> bead).
+- E8.4 Weapon Specialist: ask the player before spending the once-per-long-rest reroll of 1s (change -> dcm-bdu7).
+- E8.4 Vitality: recall from the vault is blocked; it shows as Permanent (change -> dcm-o03c).
