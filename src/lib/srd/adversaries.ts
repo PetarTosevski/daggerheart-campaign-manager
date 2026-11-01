@@ -1975,7 +1975,9 @@ export const ADVERSARIES: readonly AdversaryDef[] = [
       modifier: 3,
       name: "Elemental Blast",
       range: "Far",
-      damage: "1d10+4 mag"
+      damage: "1d10+4 mag",
+      // Hand-added, plan lanes-2 S3.4 (dcm-dztv): a fire attack (CB p.214). The generator does not emit it yet (dcm-bs32).
+      keyword: "fire"
     },
     experiences: [],
     features: [
@@ -2763,7 +2765,9 @@ export const ADVERSARIES: readonly AdversaryDef[] = [
       modifier: 3,
       name: "Burning Candlestick",
       range: "Very Close",
-      damage: "1d10+2 mag"
+      damage: "1d10+2 mag",
+      // Hand-added, plan lanes-2 S3.4 (dcm-dztv): a fire attack (HF p.67). The generator does not emit it yet (dcm-bs32).
+      keyword: "fire"
     },
     experiences: [
       {
@@ -6166,7 +6170,9 @@ export const ADVERSARIES: readonly AdversaryDef[] = [
       modifier: 2,
       name: "Spirit Flame",
       range: "Close",
-      damage: "2d6+4 mag"
+      damage: "2d6+4 mag",
+      // Hand-added, plan lanes-2 S3.4 (dcm-dztv): a fire attack (HF p.77). The generator does not emit it yet (dcm-bs32).
+      keyword: "fire"
     },
     experiences: [
       {
@@ -7880,7 +7886,9 @@ export const ADVERSARIES: readonly AdversaryDef[] = [
       modifier: 3,
       name: "Spirit Flame",
       range: "Far",
-      damage: "3d8+5 mag"
+      damage: "3d8+5 mag",
+      // Hand-added, plan lanes-2 S3.4 (dcm-dztv): a fire attack (HF p.81). The generator does not emit it yet (dcm-bs32).
+      keyword: "fire"
     },
     experiences: [
       {

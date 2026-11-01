@@ -1187,7 +1187,7 @@ describe("Tangle Bramble Swarm (CB p.218)", () => {
     expect(p.incoming[0]).toMatchObject({ amount: 13, direct: true });
   });
 
-  it("Encumber: a hit gives a bramble token on the PC and Restrains; 3 or more make them Vulnerable; the Finesse removal is manual", () => {
+  it("Encumber: a hit gives a bramble token on the PC and Restrains; 3 or more make them Vulnerable; the GM's Escaped spawns that many Minions", () => {
     expect(fired("tangle-bramble-swarm", { kind: "onHit", attack: "standard" })).toEqual(["Encumber:main:reaction"]);
     const p = plan("tangle-bramble-swarm", "Encumber", [], { trigger: { subject: pc("mira") } });
     expect(after(p, "mira")).toMatchObject({ conditions: ["restrained"] });
@@ -1195,6 +1195,11 @@ describe("Tangle Bramble Swarm (CB p.218)", () => {
     const bramble3 = { kind: "targetCheck", check: { kind: "tokens", who: "target", name: "bramble", atLeast: 3 } };
     expect(conditionStep("tangle-bramble-swarm", "Encumber", "vulnerable")).toMatchObject({ when: [bramble3], endsOnCaster: ["majorDamage"] });
     expect(prompts(p, "manual")).toHaveLength(1);
+    // S3.4 (dcm-0hlq): the GM's Escaped fires pcEscapes; the "spawn" use summons as many Minions as tokens removed.
+    expect(fired("tangle-bramble-swarm", { kind: "pcEscapes", name: "bramble", tokens: 2 })).toEqual(["Encumber:spawn:auto"]);
+    expect(fired("tangle-bramble-swarm", { kind: "pcEscapes", name: "vines", tokens: 2 })).toEqual([]);
+    const spawn = plan("tangle-bramble-swarm", "Encumber", [], { useId: "spawn", spotlit: false, targets: [], trigger: { amount: 2 } });
+    expect(ofKind(spawn, "summon")).toEqual([expect.objectContaining({ count: 2, adversaryId: "tangle-bramble", range: "melee" })]);
     // Crush reads the same tokens (dcm-xp0).
     expect(useOf("tangle-bramble-swarm", "Crush").requires).toEqual([{ kind: "situation", text: "The target has 3 or more bramble tokens", check: bramble3.check }]);
   });

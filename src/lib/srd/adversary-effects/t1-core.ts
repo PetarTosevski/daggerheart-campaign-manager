@@ -1915,7 +1915,10 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // they are Restrained. If a target has 3 or more bramble tokens, they are also Vulnerable. All bramble tokens can be
   // removed by succeeding on a Finesse Roll (12 + the number of bramble tokens) or dealing Major or greater damage to the
   // Swarm. If bramble tokens are removed from a target using a Finesse Roll, a number of Tangle Bramble Minions spawn within
-  // Melee range equal to the number of tokens removed." The tokens are on the PC (dcm-xp0); the Finesse removal stays manual (dcm-xobk).
+  // Melee range equal to the number of tokens removed." The tokens are on the PC (dcm-xp0). Plan lanes-2 S3.4 (dcm-0hlq,
+  // E7.4): the GM records a successful Finesse Roll with the Escaped button (`adversaryActions.pcEscape`), which clears the
+  // tokens and fires `pcEscapes` with the tokens removed as the trigger amount: the "spawn" use summons that many Minions.
+  // Restrained / Vulnerable ending with the tokens is dcm-d3nj (they stay for the GM).
   entry(
     "tangle-bramble-swarm",
     "Encumber",
@@ -1938,10 +1941,16 @@ export const T1_CORE_EFFECTS: readonly AdversaryFeatureEffect[] = [
         {
           kind: "manual",
           to: "targets",
-          text: "All bramble tokens can be removed with a Finesse Roll (12 + the number of bramble tokens); removed that way, that many Tangle Bramble Minions spawn within Melee range.",
+          text: "All bramble tokens can be removed with a Finesse Roll (12 + the number of bramble tokens): on a success the GM records the escape (Escaped), and that many Tangle Bramble Minions spawn within Melee range.",
         },
       ],
     }),
+    {
+      id: "spawn",
+      activation: { kind: "auto", trigger: { kind: "pcEscapes", name: BRAMBLE } },
+      needsSpotlight: false,
+      steps: [{ kind: "summon", label: "Tangle Bramble", count: { kind: "triggerAmount" }, adversaryId: "tangle-bramble", range: "melee", note: "Within Melee range of the escaping PC" }],
+    },
   ),
 
   // ======== Tiny Green Ooze (Skulk, CB p.215)

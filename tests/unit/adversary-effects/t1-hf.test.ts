@@ -288,10 +288,14 @@ describe("Atototl (HF p.62)", () => {
     expect(ofKind(odd, "check")).toMatchObject([{ total: 7, dice: [7], passed: false }]);
     expect(odd.gmFearDelta).toBe(4);
     expect(ofKind(odd, "hope")).toEqual([]);
-    // Even 8: the searching PC gains 4 Hope (theirs to spread over the PCs, dcm-nh44).
-    const even = ok("atototl", "Stone of Omens", [8], { targets: [mira] });
+    // Even 8: 4 Hope, split among every PC as the searching PC wishes (S3.4, dcm-nh44): 3 to Mira, 1 to Bram.
+    expect(use("atototl", "Stone of Omens").targets).toEqual({ side: "enemy", range: "unlimited", count: { kind: "all" } });
+    const even = ok("atototl", "Stone of Omens", [8], { targets: [mira, bram], splits: { mira: 3, bram: 1 } });
     expect(ofKind(even, "check")).toMatchObject([{ total: 8, passed: true }]);
-    expect(ofKind(even, "hope")).toEqual([{ kind: "hope", targetId: "mira", delta: 4 }]);
+    expect(ofKind(even, "hope")).toEqual([
+      { kind: "hope", targetId: "mira", delta: 3 },
+      { kind: "hope", targetId: "bram", delta: 1 },
+    ]);
     expect(even.gmFearDelta).toBe(0);
     expect(manualCount("atototl", "Stone of Omens")).toBe(0);
   });

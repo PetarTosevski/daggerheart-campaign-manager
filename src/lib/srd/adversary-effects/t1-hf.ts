@@ -236,22 +236,22 @@ export const T1_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
   // equal to half the result, which they can distribute among the PCs however they wish. On an odd result, you gain Fear
   // equal to half the result." A fate roll is one Duality Die, a d12 (CB p.168); even / odd is the check's parity
   // (dcm-27j). Half of an odd result rounds up (CB p.107 "round up unless otherwise specified"; user answer dcm-72qk (d)
-  // 2026-10-31 keeps it). The split stays a note: the GM's ask has no Hope split yet (dcm-nh44 data waits). The searching PC is the
-  // target and gains the Hope; spreading it over the PCs is theirs to do (no split for a Hope gain, dcm-nh44).
+  // 2026-10-31 keeps it). Plan lanes-2 S3.4 (dcm-nh44, after E7.4's dcm-mvgc): the targets are every PC and the Hope is
+  // split among them; the GM's ask lists the split ("Divide the Hope gained") and takes the searching PC's shares.
   f(
     "atototl",
     "Stone of Omens",
     reaction(
       { kind: "situation", text: "A PC searches the Atototl's remains" },
       {
-        targets: enemy("unlimited"),
+        targets: enemy("unlimited", ALL),
         steps: [
           {
             kind: "check",
             dice: die(12),
             test: { kind: "even" },
             note: "Fate roll (d12)",
-            then: [{ kind: "hope", to: "targets", change: "gain", amount: HALF_ROLL, note: "They can distribute it among the PCs however they wish" }],
+            then: [{ kind: "hope", to: "targets", change: "gain", amount: HALF_ROLL, distribution: "split", note: "Distributed among the PCs however the searching PC wishes" }],
             otherwise: [{ kind: "fear", to: "self", change: "gain", amount: HALF_ROLL }],
           },
         ],

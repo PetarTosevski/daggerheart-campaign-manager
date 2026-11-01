@@ -328,10 +328,11 @@ const TENTACLE_BEAMS: readonly { id: string; label: string; steps: readonly Step
   },
   {
     // "The target must mark all HP, but they can spend any number of Hope to reduce the number of HP marked this way by an
-    // equal amount." The PC's Hope spend comes before the marks: no step asks them (dcm-zi3k).
+    // equal amount." Plan lanes-2 S3.4 (dcm-spj0, E7.4): `free` HP (all the unmarked ones) with `reduceWith: "hope"`;
+    // with no hit waiting the server opens the PC's own window, where they spend Hope before the marks land.
     id: "3",
     label: "Doom",
-    steps: [{ kind: "manual", to: "targets", when: ["hit"], text: "The target marks all their HP, less 1 HP for each Hope they choose to spend." }],
+    steps: [{ kind: "markHp", to: "targets", when: ["hit"], amount: { kind: "free", who: "target", track: "hp" }, reduceWith: "hope" }],
   },
   {
     // "The target falls into a Deep Trance and can't act except to try to wake up. This condition lasts until the target
@@ -570,8 +571,8 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
     ],
   },
   // Eye of the Sage - Action: "Mark a Stress to make a standard attack. The Warden has advantage on the attack roll and
-  // critically succeeds on a roll of 19–20." The adversary runner doesn't read `critRange` yet (dcm-mhn): a manual reminder
-  // until it does (silent reminders, dcm-s9md).
+  // critically succeeds on a roll of 19–20." The runner and the server read `critRange` (dcm-mhn); plan lanes-2 S3.4
+  // dropped the manual reminder.
   {
     adversaryId: "centaur-warden",
     feature: "Eye of the Sage",
@@ -580,7 +581,7 @@ export const T2_HF_EFFECTS: readonly AdversaryFeatureEffect[] = [
         costs: [stress()],
         roll: { ...ATTACK_ADV, critRange: 19 },
         targets: enemy("far"),
-        steps: [standardHit, { kind: "manual", to: "self", text: "Lanes-2 (dcm-mhn): the Warden critically succeeds on a d20 of 19–20; on a 19, treat the attack as a critical by hand." }],
+        steps: [standardHit],
       }),
     ],
   },

@@ -408,8 +408,12 @@ describe("Centaur Warden (HF p.70)", () => {
     expect(p.roll!.record.total).toBe(21);
     expect(p.incoming[0]).toMatchObject({ amount: 11, type: "physical" });
     expect(p.self.after.stress).toBe(1);
-    // The 19–20 critical stays a manual reminder until the adversary runner reads critRange (dcm-mhn, dcm-s9md).
-    expect(prompts(p, "manual")).toHaveLength(1);
+    // S3.4: the runner reads critRange (dcm-mhn), so no manual reminder; a kept 19 is a critical, an 18 is not.
+    expect(prompts(p, "manual")).toHaveLength(0);
+    expect(p.roll!.critical).toBe(false);
+    const crit = plan("centaur-warden", "Eye of the Sage", [19, 2, 3, 4]);
+    expect(crit.roll!.critical).toBe(true);
+    expect(plan("centaur-warden", "Eye of the Sage", [18, 2, 3, 4]).roll!.critical).toBe(false);
     // "critically succeeds on a roll of 19–20" (dcm-mhn).
     expect(effectOf("centaur-warden", "Eye of the Sage").uses[0]!.roll).toEqual({ kind: "adversaryAttack", difficulty: { kind: "evasion" }, advantage: true, critRange: 19 });
   });
@@ -823,6 +827,13 @@ describe("Gobstalker (HF p.75)", () => {
     const corrode = plan("gobstalker", "Tentacle Rays", [13, 2, 3, 3], { options: { how: ["roll"] } });
     expect(corrode.incoming[0]).toMatchObject({ amount: 6, type: "magic", forcedArmor: 1 });
     expect(partsOf("gobstalker", "Tentacle Rays", "markArmor")[0]!.ifUnable).toEqual([expect.objectContaining({ kind: "modifyDamage", change: { kind: "multiply", factor: 2 } })]);
+    // d8 3 Doom (S3.4, dcm-spj0): every unmarked HP, bought down with Hope before the marks (the server's window).
+    const doom = plan("gobstalker", "Tentacle Rays", [13, 3], { options: { how: ["roll"] } });
+    expect(stepsOf(doom, "check")).toMatchObject([{ total: 3, label: "Doom" }]);
+    expect(prompts(doom, "manual")).toHaveLength(0);
+    expect(partsOf("gobstalker", "Tentacle Rays", "markHp")).toContainEqual(
+      { kind: "markHp", to: "targets", when: ["hit"], amount: { kind: "free", who: "target", track: "hp" }, reduceWith: "hope" },
+    );
     // d8 8 Slow: Vulnerable, and Slowed costs a Stress to move.
     const slow = plan("gobstalker", "Tentacle Rays", [13, 8], { options: { how: ["roll"] } });
     expect(creature(slow, "mira")).toMatchObject({ conditions: ["vulnerable"], tags: ["Slowed"] });
