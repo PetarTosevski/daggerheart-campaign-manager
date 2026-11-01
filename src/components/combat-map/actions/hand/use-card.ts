@@ -26,6 +26,9 @@ export type UseRequest = {
   targetTokenIds: Id<"combatTokens">[];
   choices: CardChoice[];
   roll?: FunctionArgs<typeof api.combatCards.useCard>["roll"];
+  /** Plan lanes-2 E1.4a: the square a `point` area goes on, and a wall's other end (picked on the map, `areaPickOf`). */
+  point?: { x: number; y: number };
+  points?: { x: number; y: number }[];
 };
 
 type Waiting = { request: UseRequest; asks: NeedsChoice["asks"] };

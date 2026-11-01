@@ -11,6 +11,7 @@ import { useCombatTargets } from "../targets/state";
 
 import {
   answerChoices,
+  askKey,
   choicesOf,
   fitsSide,
   formFor,
@@ -564,21 +565,40 @@ export function AfterRollDialog({
 }) {
   const [options, setOptions] = useState<Record<string, string[]>>({});
   const [splits, setSplits] = useState<Record<string, number>>({});
-  const missing = asks.some((a) => a.kind === "choose" && (options[a.stepId] ?? []).length === 0);
+  const missing = asks.some((a) => a.kind === "choose" && (options[askKey(a)] ?? []).length === 0);
   return (
     <Modal open onClose={onCancel} title={cardName}>
       {asks.map((a, i) =>
         a.kind === "choose" ? (
-          <fieldset key={a.stepId} className="cmh-field">
-            <legend className="cm-lbl">{a.label}</legend>
+          <fieldset key={askKey(a)} className="cmh-field">
+            {/* Plan lanes-2 E1.4a (dcm-tn8u): a per-chooser pick names its chooser (Critical Inspiration's allies). */}
+            <legend className="cm-lbl">{a.chooserId !== undefined ? `${names.get(a.chooserId) ?? "An ally"}: ${a.label}` : a.label}</legend>
             {a.options.map((o) => {
-              const picked = options[a.stepId] ?? [];
+              const key = askKey(a);
+              const picked = options[key] ?? [];
               return (
                 <Check
                   key={o.id}
                   label={o.label}
                   checked={picked.includes(o.id)}
-                  onChange={(on) => setOptions((all) => ({ ...all, [a.stepId]: on ? [...picked, o.id] : picked.filter((x) => x !== o.id) }))}
+                  onChange={(on) => setOptions((all) => ({ ...all, [key]: on ? [...picked, o.id] : picked.filter((x) => x !== o.id) }))}
+                />
+              );
+            })}
+          </fieldset>
+        ) : a.kind === "followUp" ? (
+          // dcm-tn8u: the creatures of a repeating follow-up's next link (a chain link), picked by check box.
+          <fieldset key={askKey(a)} className="cmh-field">
+            <legend className="cm-lbl">{a.label}</legend>
+            {a.tokenIds.map((id) => {
+              const key = askKey(a);
+              const picked = options[key] ?? [];
+              return (
+                <Check
+                  key={id}
+                  label={names.get(id) ?? "Target"}
+                  checked={picked.includes(id)}
+                  onChange={(on) => setOptions((all) => ({ ...all, [key]: on ? [...picked, id] : picked.filter((x) => x !== id) }))}
                 />
               );
             })}

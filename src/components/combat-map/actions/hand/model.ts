@@ -368,18 +368,67 @@ export function usedRollOptions(request: { roll?: RollAnswers }): boolean {
   return r !== undefined && ((r.experienceIds?.length ?? 0) > 0 || (r.advantage ?? 0) > 0 || (r.disadvantage ?? 0) > 0 || (r.help ?? 0) > 0);
 }
 
-/** The server's after-the-roll asks answered: `opt:<step>` for a choose step, `split:<tokenId>` for a damage share. */
+/**
+ * Where the after-the-roll dialog keeps an ask's picks: a choose step's id (with its chooser, `<step>:<token>`, for a
+ * per-chooser pick), or `chain:<link>` for a repeating follow-up's next link (plan lanes-2 E1.4a, dcm-tn8u).
+ */
+export function askKey(a: ChoiceAsk): string {
+  if (a.kind === "choose") return a.chooserId !== undefined ? `${a.stepId}:${a.chooserId}` : a.stepId;
+  if (a.kind === "followUp") return `chain:${a.link}`;
+  return "split";
+}
+
+/**
+ * The server's after-the-roll asks answered: `opt:<step>` for a choose step, `by:<step>:<chooser>` for one chooser's pick
+ * (dcm-sc54, Critical Inspiration / Rousing Strike's per-ally picks), `chain:<link>` with the picked creatures of a
+ * follow-up's next link, `split:<tokenId>` for a damage share.
+ */
 export function answerChoices(asks: readonly ChoiceAsk[], options: Readonly<Record<string, readonly string[]>>, splits: Readonly<Record<string, number>>): CardChoice[] {
   const out: CardChoice[] = [];
   for (const a of asks) {
     if (a.kind === "choose") {
-      const picked = options[a.stepId] ?? [];
-      if (picked.length > 0) out.push({ id: `opt:${a.stepId}`, value: [...picked] });
+      const picked = options[askKey(a)] ?? [];
+      if (picked.length > 0) out.push({ id: a.chooserId !== undefined ? `by:${a.stepId}:${a.chooserId}` : `opt:${a.stepId}`, value: [...picked] });
+    } else if (a.kind === "followUp") {
+      const picked = options[askKey(a)] ?? [];
+      if (picked.length > 0) out.push({ id: askKey(a), value: [...picked] });
     } else {
       for (const tokenId of a.tokenIds) out.push({ id: `split:${tokenId}`, value: splits[tokenId] ?? 0 });
     }
   }
   return out;
+}
+
+/** What the Hand asks the map for before a use with an area on a picked square: its label, ranges and how many squares. */
+export type AreaPick = { label: string; radius: Range; placeWithin?: Range; squares: 1 | 2 };
+
+/**
+ * Plan lanes-2 E1.4a (Hand point picking): a use whose area goes on a square the player picks: a `point`-centred area
+ * (Mysterious Mist, Eclipse; one square) or a wall (Veil of Night, CB p.336: "between two points"; two squares). Null
+ * for any other use. The first such area counts (at any depth of the steps).
+ */
+export function areaPickOf(use: Pick<CardUse, "steps">): AreaPick | null {
+  const walk = (steps: readonly Step[]): AreaPick | null => {
+    for (const step of steps) {
+      if (step.kind === "area" && (step.area.centre === "point" || step.area.shape === "wall")) {
+        return { label: step.area.label, radius: step.area.radius, ...(step.area.placeWithin ? { placeWithin: step.area.placeWithin } : {}), squares: step.area.shape === "wall" ? 2 : 1 };
+      }
+      const inner =
+        step.kind === "choose"
+          ? step.options.flatMap((o) => o.steps)
+          : step.kind === "optional" || step.kind === "followUp"
+            ? step.steps
+            : step.kind === "save"
+              ? [...step.onFail, ...step.onSuccess]
+              : step.kind === "check"
+                ? [...step.then, ...step.otherwise, ...(step.table ?? []).flatMap((r) => r.steps)]
+                : [];
+      const found = inner.length > 0 ? walk(inner) : null;
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(use.steps);
 }
 
 /** "Recall: 2 Stress", "Recall: free" (a 0-cost card, or any card while the GM's rest is open; CB p.101, p.105). */

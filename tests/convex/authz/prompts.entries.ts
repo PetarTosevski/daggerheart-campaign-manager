@@ -76,7 +76,31 @@ async function difficultyRow(w: World) {
   w.set("requestId", requestId);
 }
 
+/**
+ * Plan lanes-2 E1.4a (dcm-vx5n): an open "Does <name>'s Cloaked end?" prompt of characterA's use on the enemy token
+ * (`requestId`). An allowed `answer` declines it (`ends: false`): nothing changes on the sheet.
+ */
+async function cloakPromptRow(w: World) {
+  await board(w);
+  const requestId = await w.t.run((ctx) =>
+    ctx.db.insert("combatRequests", {
+      campaignId: w.campaignId,
+      mapId: w.ids.mapId as Id<"combatMaps">,
+      kind: "cloakPrompt",
+      status: "open",
+      createdBy: w.users.player,
+      createdAt: Date.now(),
+      responses: [],
+      payload: { schemaVersion: 1, kind: "cloakPrompt", characterId: w.characterA, tokenId: w.ids.tokenId as Id<"combatTokens">, label: "Words of Discord", groupId: "g-cloak", targetTokenIds: [w.ids.tokenId as Id<"combatTokens">] },
+    }),
+  );
+  w.set("requestId", requestId);
+}
+
 const entries: Entry[] = [
+  // E1.4a (dcm-vx5n): the GM's Cloaked prompts and the GM's answer.
+  { fn: api.cloakPrompts.pending, access: "gm", args: () => ({}) },
+  { fn: api.cloakPrompts.answer, access: "gm", setup: cloakPromptRow, args: (w) => ({ requestId: w.ids.requestId as Id<"combatRequests">, ends: false }) },
   // DA13 (Cannonball): the ally's drawer read, the ally's roll (the roller's player or the GM), the GM's cancel.
   { fn: api.featurePrompts.allyRolls, access: "view", args: (w) => ({ characterId: w.characterA }), expect: NOT_THEIRS },
   {

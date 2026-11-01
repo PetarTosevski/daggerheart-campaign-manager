@@ -18,7 +18,7 @@ import { actorSheetAfter, buildRun, replaying, runCard, type BuiltRun, type RunO
 import type { RunPlan } from "../src/lib/domain/card-effects/run";
 import type { CardUse } from "../src/lib/domain/card-effects/types";
 import { MAX_AREA_COUNT } from "./combatAreas";
-import { afterUse, foldSteps, runWithRiders, autoUsesOn, rollHost, type RiderSheets, type Square } from "./combatCards";
+import { afterUse, foldPcRolls, foldSteps, rerunWith, runWithRiders, autoUsesOn, rollHost, type RiderSheets, type Square } from "./combatCards";
 import { companionFor, companionNumbers } from "./lib/companion";
 import { assertCanAct, loadCharacter, readSheet, saveSheet, storedSheet } from "./lib/characterSheet";
 import { attackScene, defaultOnRiders, type Host, type RiderRun } from "./lib/combatActions";
@@ -150,6 +150,12 @@ async function runKept(ctx: MutationCtx, req: FeatureUseRequest, built: BuiltRun
   return outcome;
 }
 
+/** dcm-m7tm: a plain feature use with the adversaries' `pcRolls` uses on its roll (`foldPcRolls`); only a resolving run. */
+async function featurePcRolls(ctx: MutationCtx, req: FeatureUseRequest, built: BuiltRun, outcome: Extract<RunOutcome, { kind: "plan" }>): Promise<{ plan: RunPlan; lines: string[] }> {
+  const folded = await foldPcRolls(ctx, { campaign: req.campaign, characterId: req.character._id, use: req.pick.use, trait: req.roll.trait }, outcome, async (dice, delta) => ({ outcome: rerunWith(built, req.pick, dice, delta) }));
+  return { plan: folded.plan, lines: folded.lines };
+}
+
 const squareValidator = v.object({ x: v.number(), y: v.number() });
 
 const useArgs = {
@@ -189,7 +195,7 @@ type Squares = { point?: Square; points?: readonly Square[] };
  */
 async function afterFeatureUse(
   ctx: MutationCtx,
-  input: { result: ResolvedFeature; req: FeatureUseRequest; before: CharacterSheet; built: BuiltRun; plan: RunPlan; actorId: Id<"users">; riderRuns?: readonly RiderRun[] } & Squares,
+  input: { result: ResolvedFeature; req: FeatureUseRequest; before: CharacterSheet; built: BuiltRun; plan: RunPlan; actorId: Id<"users">; riderRuns?: readonly RiderRun[]; gmNotes?: readonly string[] } & Squares,
 ): Promise<ResolvedFeature> {
   const { result, req } = input;
   const out = await afterUse(ctx, {
@@ -206,6 +212,7 @@ async function afterFeatureUse(
     ...(input.riderRuns ? { riderRuns: input.riderRuns } : {}),
     ...(input.point ? { point: input.point } : {}),
     ...(input.points ? { points: input.points } : {}),
+    ...(input.gmNotes ? { gmNotes: input.gmNotes } : {}),
   });
   const notes = [...result.notes, ...out.lines, ...out.byHand];
   return notes.length === result.notes.length ? result : { ...result, notes };
@@ -222,7 +229,7 @@ function featureHost(req: FeatureUseRequest): Host | null {
 
 /** A feature use computed through the rider path, or the choice it still needs. */
 type RiderResolved =
-  | { status: "plan"; req: FeatureUseRequest; built: BuiltRun; plan: RunPlan; sheets: RiderSheets; runs: RiderRun[]; post: (entryId: Id<"actionLog">) => Promise<RiderRun[]> }
+  | { status: "plan"; req: FeatureUseRequest; built: BuiltRun; plan: RunPlan; sheets: RiderSheets; runs: RiderRun[]; post: (entryId: Id<"actionLog">) => Promise<RiderRun[]>; pcLines: string[] }
   | { status: "needsChoice"; asks: ChoiceAsks };
 
 /**
@@ -246,7 +253,7 @@ function ridesWith(req: FeatureUseRequest, riders: readonly Rider[], riseOff: bo
  * The rider path of a feature use (`runWithRiders`): the before-roll riders' costs paid, the feature picked and built again
  * on that sheet with their damage changes (`foldSteps` as the pick's `transform`), the riders on its result.
  */
-async function featureWithRiders(ctx: MutationCtx, first: FeatureUseRequest, host: Host, mapId: Id<"combatMaps"> | undefined, input: UseInput, riders: readonly Rider[], actorId: Id<"users">, riseOff: boolean): Promise<RiderResolved> {
+async function featureWithRiders(ctx: MutationCtx, first: FeatureUseRequest, host: Host, mapId: Id<"combatMaps"> | undefined, input: UseInput, riders: readonly Rider[], actorId: Id<"users">, riseOff: boolean, resolving?: boolean): Promise<RiderResolved> {
   const scene = first.scene;
   if (scene === null) throw appError("FEATURE_NEEDS_MAP");
   let last = first;
@@ -266,13 +273,14 @@ async function featureWithRiders(ctx: MutationCtx, first: FeatureUseRequest, hos
         last = req;
         return { built, pick: req.pick };
       },
+      ...(resolving !== undefined ? { resolving } : {}),
     },
     riders,
     actorId,
     riseOff,
   );
   if (out.kind === "needsChoice") return { status: "needsChoice", asks: out.outcome.asks };
-  return { status: "plan", req: { ...last, sheet: out.sheet, pick: out.pick }, built: out.built, plan: out.plan, sheets: out.sheets, runs: out.runs, post: out.post };
+  return { status: "plan", req: { ...last, sheet: out.sheet, pick: out.pick }, built: out.built, plan: out.plan, sheets: out.sheets, runs: out.runs, post: out.post, pcLines: out.pcLines };
 }
 
 /**
@@ -328,15 +336,18 @@ async function resolveWithRiders(ctx: MutationCtx, r: Extract<RiderResolved, { s
   }
   const postRuns = await r.post(result.entryId);
   const named = r.sheets.names.length > 0 ? { ...result, notes: [...result.notes, ...r.sheets.names] } : result;
-  return afterFeatureUse(ctx, { result: named, req: r.req, before: original, built: r.built, plan: r.plan, actorId, riderRuns: [...r.runs, ...postRuns], ...squares });
+  return afterFeatureUse(ctx, { result: named, req: r.req, before: original, built: r.built, plan: r.plan, actorId, riderRuns: [...r.runs, ...postRuns], gmNotes: r.pcLines, ...squares });
 }
 
 /**
- * Q1: an out-of-range feature use waits for the GM as a `sanction` request. The feature sanction's payload has no
- * `riders` yet (validators/combatRequests.ts is E2's; follow-up in docs/tasks/TASK-LN3-E1A.md): the approval runs the
- * automatic and default-on riders again, not the ones the player sent.
+ * Q1: an out-of-range feature use waits for the GM as a `sanction` request. Plan lanes-2 E1.4a (dcm-mcgj; V4's feature
+ * `sanctionAction.riders`): the riders the player sent are stored and the approval replays them with the automatic and
+ * default-on ones.
  */
-async function openSanction(ctx: MutationCtx & { user: Doc<"users"> }, input: { campaign: Doc<"campaigns">; character: Doc<"characters">; built: BuiltRun; args: UseInput & { targetTokenIds: Id<"combatTokens">[] }; useId: string; riseOff: boolean }) {
+async function openSanction(
+  ctx: MutationCtx & { user: Doc<"users"> },
+  input: { campaign: Doc<"campaigns">; character: Doc<"characters">; built: BuiltRun; args: UseInput & { targetTokenIds: Id<"combatTokens">[] }; useId: string; riseOff: boolean; riders: readonly Rider[] },
+) {
   const { campaign, character, built, args, riseOff } = input;
   const encounter = built.targets.find((t) => t.kind === "enemy");
   const scene = built.creatures.scene;
@@ -362,6 +373,7 @@ async function openSanction(ctx: MutationCtx & { user: Doc<"users"> }, input: { 
         ...(args.roll || riseOff ? { roll: { ...args.roll, ...(riseOff ? { riseToTheChallenge: false } : {}) } } : {}),
         // dcm-0x2g: the point area's square, replayed on approval (E2.3 widened the payload).
         ...(args.point ? { point: args.point } : {}),
+        ...(input.riders.length > 0 ? { riders: [...input.riders] } : {}),
       },
       outOfRange: built.outOfRange,
     },
@@ -394,17 +406,18 @@ export const useFeature = keyedCampaignMutation({
         const withRiders = await featureWithRiders(ctx, req, host, args.mapId, args, riders, ctx.user._id, riseOff);
         if (withRiders.status === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.asks };
         if (withRiders.built.outOfRange.length === 0) return resolveWithRiders(ctx, withRiders, ctx.user._id, squares);
-        // Q1: wait for the GM; the approval runs the feature and its automatic riders again (nothing is kept).
-        return openSanction(ctx, { campaign, character, built: withRiders.built, args, useId: req.pick.use.id, riseOff });
+        // Q1: wait for the GM; the approval runs the feature and its riders (the sent ones are stored) again.
+        return openSanction(ctx, { campaign, character, built: withRiders.built, args, useId: req.pick.use.id, riseOff, riders });
       }
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
       if (built.outOfRange.length === 0) {
-        const result = await resolveFeatureUse(ctx, req, built, outcome, ctx.user._id);
-        return afterFeatureUse(ctx, { result, req, before: sheet, built, plan: outcome.plan, actorId: ctx.user._id, ...squares });
+        const folded = await featurePcRolls(ctx, req, built, outcome);
+        const result = await resolveFeatureUse(ctx, req, built, { ...outcome, plan: folded.plan }, ctx.user._id);
+        return afterFeatureUse(ctx, { result, req, before: sheet, built, plan: folded.plan, actorId: ctx.user._id, gmNotes: folded.lines, ...squares });
       }
       await keepDice(ctx, featureSlot(req), outcome.dice, ctx.user._id);
-      return openSanction(ctx, { campaign, character, built, args, useId: req.pick.use.id, riseOff: false });
+      return openSanction(ctx, { campaign, character, built, args, useId: req.pick.use.id, riseOff: false, riders: [] });
     }),
 });
 
@@ -431,19 +444,22 @@ export const sanction = keyedGmMutation({
       const sheet = readSheet(character.sheet);
       const { req, built } = await prepare(ctx, ctx.campaign, character, sheet, row.mapId, action);
       const riseOff = action.roll?.riseToTheChallenge === false;
-      const host = ridesWith(req, [], riseOff);
+      // dcm-mcgj: the riders the player sent with the use, replayed.
+      const riders = action.riders ?? [];
+      const host = ridesWith(req, riders, riseOff);
       // dcm-0x2g: the square the player picked for a point area (the payload keeps `point` only, not `points`).
       const squares: Squares = action.point ? { point: action.point } : {};
       let result: ResolvedFeature;
       if (host !== null) {
-        const withRiders = await featureWithRiders(ctx, req, host, row.mapId, action, [], row.createdBy, riseOff);
+        const withRiders = await featureWithRiders(ctx, req, host, row.mapId, action, riders, row.createdBy, riseOff, true);
         if (withRiders.status === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.asks };
         result = await resolveWithRiders(ctx, withRiders, row.createdBy, squares);
       } else {
         const outcome = await runKept(ctx, req, built, ctx.user._id);
         if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
-        const resolved = await resolveFeatureUse(ctx, req, built, outcome, row.createdBy);
-        result = await afterFeatureUse(ctx, { result: resolved, req, before: sheet, built, plan: outcome.plan, actorId: row.createdBy, ...squares });
+        const folded = await featurePcRolls(ctx, req, built, outcome);
+        const resolved = await resolveFeatureUse(ctx, req, built, { ...outcome, plan: folded.plan }, row.createdBy);
+        result = await afterFeatureUse(ctx, { result: resolved, req, before: sheet, built, plan: folded.plan, actorId: row.createdBy, gmNotes: folded.lines, ...squares });
       }
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return result;

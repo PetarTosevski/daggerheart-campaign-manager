@@ -8,8 +8,8 @@
  * - `closeEncounterRequests`: declines every open request of an encounter that ended (orchestrator note on AA0). The
  *   encounter-end path (convex/encounters.ts, not owned by CA3) should call it; until then `sanction`, `pickMinions`
  *   and `mine` treat a request whose encounter is no longer running as closed.
- * - `declineGroupOffers`: undoing an attack declines its open Minion offer and the forced attacks its use opened
- *   (convex/lib/actionLog.ts `undoEntry`).
+ * - `declineGroupOffers`: undoing an attack declines its open Minion offer, the forced attacks and the Cloaked
+ *   prompt its use opened (convex/lib/actionLog.ts `undoEntry`).
  * - `openAfterRoll` (plan sheet-drawer SD5, Q1): a player's own attack held after its roll for an after-roll feature.
  * - `openServerMove` (plan drawer-answers DA12, Charge): the square a token left when the server moved it; undoing the
  *   use's group puts it back (`declineGroupOffers`).
@@ -116,6 +116,7 @@ export async function declineGroupOffers(ctx: MutationCtx, campaignId: Id<"campa
     if (p.kind === "minionOffer" && p.groupId === groupId) await closeRequest(ctx, row._id, "declined", by);
     else if (p.kind === "difficulty" && p.ask.kind === "cloak" && p.ask.groupId === groupId) await closeRequest(ctx, row._id, "declined", by);
     else if (p.kind === "forcedAttack" && p.groupId === groupId) await closeRequest(ctx, row._id, "declined", by);
+    else if (p.kind === "cloakPrompt" && p.groupId === groupId) await closeRequest(ctx, row._id, "declined", by);
     else if (p.kind === "serverMove" && p.groupId === groupId) {
       const token = await ctx.db.get("combatTokens", p.tokenId);
       if (token !== null && token.campaignId === campaignId) await ctx.db.patch("combatTokens", token._id, { x: p.from.x, y: p.from.y, face: p.from.face });

@@ -22,7 +22,8 @@ import { AfterRollDialog, UseDialog } from "./dialog";
 import { HandDock, HandFan, VaultDeck } from "./dock";
 import { HandCardFace } from "./face";
 import { NO_ROLL_OPTIONS, rollProblem, RollOptions, type Roller, type RollValues } from "../roll-controls";
-import { aimsOnMap, formFor, LOADOUT_MAX, needsDialog, playableUses, recallLabel, rollOf, usedRollOptions, type Creature, type HandCard, type UseOutcome } from "./model";
+import { aimsOnMap, areaPickOf, formFor, LOADOUT_MAX, needsDialog, playableUses, RANGE_LABEL, recallLabel, rollOf, usedRollOptions, type AreaPick, type Creature, type HandCard, type UseOutcome } from "./model";
+import { startAreaPick } from "../../map-view/area-pick";
 import { CardResult, type LastCard } from "./result";
 import { handShared, HideHandSwitch, useHandSharing } from "./sharing";
 import { useCardActions, useRecall, type UseRequest } from "./use-card";
@@ -180,7 +181,48 @@ export function HandBody({
   }
 
   async function submit(card: HandCard, request: UseRequest) {
+    // Plan lanes-2 E1.4a (Hand point picking): a use whose area goes on a picked square asks the map for it first.
+    const use = cardEffect(card.cardId)?.uses.find((u) => u.id === request.spell);
+    const area = use && request.point === undefined ? areaPickOf(use) : null;
+    if (area) {
+      pickSquares(card, request, area);
+      return;
+    }
     settle(card, request, await actions.submit(request));
+  }
+
+  /**
+   * The map's pick banner (map-view/area-pick.tsx) asks for the area's square (two for a wall: one end, then the other),
+   * then the use is sent with `point` (and `points`) and the banner shows its result. The Use dialog closes so the map
+   * can be clicked.
+   */
+  function pickSquares(card: HandCard, request: UseRequest, area: AreaPick) {
+    setDialogFor(null);
+    const within = area.placeWithin ? ` within ${RANGE_LABEL[area.placeWithin] ?? area.placeWithin} range` : "";
+    const ask = (got: readonly { x: number; y: number }[]) => {
+      const what = area.squares === 2 ? (got.length === 0 ? "one end" : "the other end") : "the centre";
+      startAreaPick({
+        prompt: `Pick ${what} of ${area.label}${within}`,
+        mapId,
+        ...(area.squares === 1 && area.radius !== "veryFar" ? { radius: area.radius } : {}),
+        onPick: async (square) => {
+          const all = [...got, square];
+          if (all.length < area.squares) {
+            ask(all);
+            return null;
+          }
+          const [point, ...rest] = all;
+          const sent: UseRequest = { ...request, point: point!, ...(rest.length > 0 ? { points: rest } : {}) };
+          const out = await actions.submit(sent);
+          settle(card, sent, out);
+          if (out?.status === "resolved") return `${card.name}: ${area.label} placed.`;
+          if (out?.status === "pending") return `${card.name} waits for the GM.`;
+          if (out?.status === "needsChoice") return `${card.name} needs a choice.`;
+          return null;
+        },
+      });
+    };
+    ask([]);
   }
 
   /** The card's first ready action use and its form, or null when nothing can start. */
@@ -424,6 +466,8 @@ export function HandBody({
           gm={gm}
           roller={roller}
           rollOptions={rollOptions}
+          // dcm-8e4c / dcm-u4pq: the vault cards a Codex-Touched swap may bring in (at or under the character's level).
+          vault={vault.filter((c) => c.level <= (character?.sheet.level ?? 0)).map((c) => ({ cardId: c.cardId, name: c.name, level: c.level }))}
           open
           pending={actions.pending}
           error={actions.waiting ? null : actions.error}

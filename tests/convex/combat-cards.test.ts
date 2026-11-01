@@ -363,7 +363,7 @@ describe("combatCards (CA4b): ranges from the card's origin, enemy effects, kept
     const r = resolved(await a.use(a.player, "glyph-of-nightfall", [bandit.tokenId]));
     const knowledge = Math.max(1, (await a.sheet()).traits.knowledge);
     const effects = (await a.instance(bandit.instanceId)).effects ?? [];
-    expect(effects).toEqual([{ id: "card:glyph-of-nightfall:1", source: "Glyph of Nightfall", label: "Glyph of Nightfall", difficulty: -knowledge, until: "temporary" }]);
+    expect(effects).toEqual([{ id: "card:glyph-of-nightfall:1", source: "Glyph of Nightfall", label: "Glyph of Nightfall", difficulty: -knowledge, until: "temporary", casterId: a.w.characterA }]);
     expectNoStats(r);
     const gmRow = (await a.rows()).find((row) => row.kind === "combat" && row.visibility === "gm")!;
     expect(gmRow.adversaryBefore).toEqual([{ instanceId: bandit.instanceId, hp: 0, stress: 0, defeated: false, conditions: [], tags: [], effects: [] }]);
@@ -380,7 +380,7 @@ describe("combatCards (CA4b): ranges from the card's origin, enemy effects, kept
     await a.holding(["blighting-strike"]);
     resolved(await a.use(a.player, "blighting-strike", [bandit.tokenId]));
     expect((await a.instance(bandit.instanceId)).effects).toEqual([
-      { id: "card:blighting-strike:1", source: "Blighting Strike", label: "Blighted: next successful attack deals half damage", halfDamage: true, until: "hit" },
+      { id: "card:blighting-strike:1", source: "Blighting Strike", label: "Blighted: next successful attack deals half damage", halfDamage: true, until: "hit", casterId: a.w.characterA },
     ]);
   });
 

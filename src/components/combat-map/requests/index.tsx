@@ -9,6 +9,7 @@ import { errorMessage } from "@/lib/convex-errors";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { DrawerBoundary } from "../drawer/boundary";
+import { CloakPrompts } from "./cloak";
 import "./requests.css";
 
 /**
@@ -48,10 +49,19 @@ export function answerLine(out: FunctionReturnType<typeof api.featurePrompts.ans
  * roll of the campaign (the GM column). Renders nothing while loading or when nothing waits.
  */
 export function DifficultyRequests({ campaignId, characterId, ask }: { campaignId: Id<"campaigns">; characterId?: Id<"characters">; ask?: DifficultyRow["ask"] }) {
+  // Plan lanes-2 E1.4a (dcm-vx5n): the GM column (no filter) also lists the "Does <name>'s Cloaked end?" prompts.
+  const column = characterId === undefined && ask === undefined;
   return (
-    <DrawerBoundary label="Difficulty requests">
-      <DifficultyList campaignId={campaignId} {...(characterId === undefined ? {} : { characterId })} {...(ask === undefined ? {} : { ask })} />
-    </DrawerBoundary>
+    <>
+      <DrawerBoundary label="Difficulty requests">
+        <DifficultyList campaignId={campaignId} {...(characterId === undefined ? {} : { characterId })} {...(ask === undefined ? {} : { ask })} />
+      </DrawerBoundary>
+      {column ? (
+        <DrawerBoundary label="Cloaked prompts">
+          <CloakPrompts campaignId={campaignId} />
+        </DrawerBoundary>
+      ) : null}
+    </>
   );
 }
 

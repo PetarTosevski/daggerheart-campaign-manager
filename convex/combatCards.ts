@@ -1,13 +1,14 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 import { countsAsActionRoll } from "../src/lib/domain/countdowns/advanced";
 import { rangeCheck } from "../src/lib/domain/combat-actions/index";
 import { appError } from "../src/lib/errors/app-error";
 import { getDomainCard } from "../src/lib/srd/index";
 import type { CardUse } from "../src/lib/domain/card-effects/types";
-import type { EndRoll } from "../src/lib/domain/characters/expiry";
+import type { EndRoll, EndSeverity } from "../src/lib/domain/characters/expiry";
 import type { RollRecord } from "../src/lib/domain/duality";
 import type { TraitId } from "../src/lib/srd/types";
+import type { RollFacts } from "../src/lib/domain/adversary-actions/index";
 import type { CharacterSheet, Effect } from "../src/lib/validation/characters";
 import { tickArmedCountdowns } from "./countdownRolls";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -15,8 +16,33 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId } from "./lib/actionLog";
 import { cardChoicesValidator, cardRollValidator, dropDice, keepDice, keptDice, parseChoices, type CardChoice, type CardRoll, type DiceSlot } from "./lib/cardChoices";
 import { handCardValidator, handOf, handSharedWithPlayers, hiddenHands, playersSeeHands, recallRiderOptions, recallRiderOptionValidator, writeHandHidden } from "./lib/cardHand";
-import { applyUseEnds, damageRolls, endForCasterOnInstances, endOnDefeat, endOnSheet, endSharedGrants, endSpellCast, gmLines, isSpell, instanceWrites, needsChoiceValidator, openCardHits, pendingCardValidator, promptsOf, publicTargets, resolvedCardValidator, rollText, writeInstances, type InstanceWrite, type ResolvedCard } from "./lib/cardRows";
-import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, pickCard, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome, type UsePick } from "./lib/cardRunner";
+import {
+  adversaryBefore,
+  applyUseEnds,
+  damageRolls,
+  effectEndsOf,
+  endAdversaryConditionsForCaster,
+  endAdversaryConditionsOnRoll,
+  endForCasterOnInstances,
+  endOnDefeat,
+  endOnSheet,
+  endSharedGrants,
+  endSpellCast,
+  gmLines,
+  isSpell,
+  instanceWrites,
+  needsChoiceValidator,
+  openCardHits,
+  pendingCardValidator,
+  promptsOf,
+  publicTargets,
+  resolvedCardValidator,
+  rollText,
+  writeInstances,
+  type InstanceWrite,
+  type ResolvedCard,
+} from "./lib/cardRows";
+import { actorSheetAfter, buildRun, conditionMarkerOf, difficultyOf, isFeatureUseId, pickCard, planHandoff, replaying, runCard, writeSheetChanges, type BuiltRun, type CardPick, type HostRoll, type RunOutcome, type UsePick } from "./lib/cardRunner";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import {
   attackScene,
@@ -34,6 +60,7 @@ import {
   rollTargetHolds,
   runRiderPart,
   weaponIn,
+  withDieBonuses,
   withHopeSides,
   type AttackScene,
   type Folds,
@@ -44,6 +71,13 @@ import {
 } from "./lib/combatActions";
 import { uncloakAfterAttack } from "./lib/combatMovement";
 import { partyMembers } from "./lib/adversaryHits";
+import { forcedStandardAttack, pcRollAdversaryUses } from "./lib/adversaryActions";
+import { conditionInstanceEffect, formInstanceEffect } from "./lib/adversaryFeatures";
+import { openCloakPrompt } from "./lib/cloakPrompts";
+import { giftsOf, giveTo, stancesOf, type Gift } from "./lib/featureRunner";
+import { setStance } from "./lib/stanceDrop";
+import type { InstanceEffect } from "./lib/validators/encounters";
+import type { AdversaryBefore } from "./lib/validators/actionLog";
 import { closeRequest, encounterRunning, loadOpenRequest, openMinionOffer, openRequests, openRiderPick } from "./lib/combatRequests";
 import { rollDie } from "./lib/dice";
 import { campaignFearState, gainFear, spendFear } from "./lib/fear";
@@ -158,7 +192,20 @@ type UseRequest = {
   roll: CardRoll;
   /** Plan lanes, E1 (dcm-p1r): the vault card a `loadout` `swapWithVault` step brings in (Codex-Touched, CB p.333). */
   swapWith?: string;
+  /**
+   * Plan lanes-2 E1.4a (dcm-tn8u): the squares `useCard` sent (`point` first, then `points`), given to the runner as
+   * `CardRequest.points` when the use's targets name points (`usesPoints`: Unleash Hellfire's bursts, an `aroundPoint` area).
+   */
+  squares?: readonly Square[];
 };
+
+/** Whether a use's targets are measured from picked squares (`TargetSpec.points`, an `aroundPoint` area, `origin: "point"`). */
+export function usesPoints(use: CardUse): boolean {
+  const t = use.targets;
+  if (t === undefined || t.side === "trigger") return false;
+  const spec = t as { points?: unknown; area?: string; origin?: string };
+  return spec.points !== undefined || spec.area === "aroundPoint" || spec.origin === "point";
+}
 
 /** Where this use's dice are kept while it waits for a choice (convex/lib/cardChoices.ts). */
 const slotOf = (req: UseRequest): DiceSlot => ({ campaignId: req.campaign._id, characterId: req.character._id, cardId: req.pick.effect.cardId, useId: req.pick.use.id });
@@ -187,6 +234,7 @@ async function build(ctx: QueryCtx, req: UseRequest): Promise<BuiltRun> {
     roll: req.roll,
     gmFear: fear.fear,
     lastRollWithHope: await lastRollWithHope(ctx, req.character._id),
+    ...(req.squares && req.squares.length > 0 && usesPoints(req.pick.use) ? { points: req.squares } : {}),
   });
 }
 
@@ -225,6 +273,171 @@ function swapWithVault(sheet: CharacterSheet, plan: RunPlan, swapWith: string | 
   if ((getDomainCard(swapWith)?.level ?? 99) > sheet.level) throw appError("INVALID", "That card is above your level.");
   const loadout = deck.loadout.filter((c) => c !== plan.cardId);
   return { sheet: { ...sheet, domainCards: { ...deck, loadout: [...loadout, swapWith] } }, texts: steps.map((st) => st.text) };
+}
+
+// ---------------------------------------------------------------- who gave it (plan lanes-2 E1.4a)
+
+/**
+ * Plan lanes-2 E1.4a (dcm-lztq card writer; V4's `Effect.casterId`): the effects `after` gained over `before` record the
+ * character whose use gave them (E6.4 reads it: an effect that ends on its caster's events, CB p.336 Mass Enrapture).
+ */
+export function stampCaster(before: CharacterSheet, after: CharacterSheet, casterId: Id<"characters">): CharacterSheet {
+  const old = new Set(before.effects.map((e) => e.id));
+  let touched = false;
+  const effects = after.effects.map((e) => {
+    if (old.has(e.id) || e.casterId !== undefined) return e;
+    touched = true;
+    return { ...e, casterId };
+  });
+  return touched ? { ...after, effects } : after;
+}
+
+const INVENTORY_WORDS = { take: "takes an item", takeGold: "takes gold", damageWeapon: "damages a weapon", giveGold: "gets gold", giveItem: "gets an item the GM picks" } as const;
+
+/**
+ * Plan lanes-2 E1.4a (dcm-tn8u): the runner's `inventory` plan steps (E3, dcm-vf7i; Contacts Everywhere, CB p.43): a
+ * `giveGold` (handfuls, default 1) or a named `giveItem` to a PC is a gift `giveTo` writes; any other op, an item without a
+ * name, or a recipient who is no PC is the table's (`byHand`: feed words).
+ */
+export function inventoryGifts(plan: RunPlan, isPc: (id: string) => boolean): { byTarget: Map<string, Gift[]>; byHand: (name: (id: string) => string) => string[] } {
+  const byTarget = new Map<string, Gift[]>();
+  const left: { id: string; op: keyof typeof INVENTORY_WORDS }[] = [];
+  for (const s of plan.steps) {
+    if (s.kind !== "inventory") continue;
+    const gift: Gift | null =
+      s.op === "giveGold" && (s.amount ?? 1) > 0 ? { kind: "gold", handfuls: s.amount ?? 1 } : s.op === "giveItem" && s.text !== undefined && s.text.trim() !== "" ? { kind: "item", name: s.text.trim().slice(0, 200) } : null;
+    if (gift === null || !isPc(s.targetId)) {
+      left.push({ id: s.targetId, op: s.op });
+      continue;
+    }
+    byTarget.set(s.targetId, [...(byTarget.get(s.targetId) ?? []), gift]);
+  }
+  return { byTarget, byHand: (name) => left.map((l) => `${name(l.id)} ${INVENTORY_WORDS[l.op]} (by hand)`) };
+}
+
+/** The prefix of a use's instance modifiers (cardRows' `instanceKey`): `card:<cardId>`, or `feat:<featureId>`. */
+const instanceKeyOf = (id: string) => (isFeatureUseId(id) ? `feat:${id}` : `card:${id}`);
+
+/**
+ * Plan lanes-2 E1.4a (dcm-svnq; dcm-j5aw writer half): a use's instance writes with
+ * - each `condition` step's entry fields on the enemy (`conditionInstanceEffect`, E7: its mods, `endsOnRoll`, `escape`,
+ *   `recorded`, `endFear`), merged into the condition's end marker when the use left one (cardRows' `effectsAfter`);
+ * - `casterId` (the character who used it) on every modifier the use put on an instance, so a reader can tell the
+ *   placing PC (Lead by Example, CB p.342: "The next PC to make an attack against that adversary" is any other PC).
+ * A write that gains effects this way gets its `before.effects`, so undo puts them back.
+ */
+export function castWrites(writes: readonly InstanceWrite[], plan: RunPlan, built: BuiltRun, casterId: Id<"characters">, cardName: string): InstanceWrite[] {
+  const key = instanceKeyOf(plan.cardId);
+  const conditions = plan.steps.filter((s): s is Extract<PlanStep, { kind: "condition" }> => s.kind === "condition");
+  const out = writes.map((w) => {
+    const instance = w.creature.instance;
+    const prior = new Set((instance.effects ?? []).map((e) => e.id));
+    let effects: InstanceEffect[] | undefined = w.patch.effects;
+    for (const s of conditions) {
+      if (s.targetId !== (w.creature.tokenId as string)) continue;
+      const made = conditionInstanceEffect([], key, cardName, casterId, s, built.context.options ?? {});
+      const fields = made?.[0];
+      if (fields === undefined) continue;
+      const list = effects ?? instance.effects ?? [];
+      const name = fields.label;
+      const marker = list.find((e) => !prior.has(e.id) && e.id.startsWith(`${key}:`) && e.label === name && e.condition === undefined);
+      if (marker) {
+        const rest: Partial<InstanceEffect> = { ...fields };
+        for (const k of ["id", "source", "label", "until"] as const) delete rest[k];
+        effects = list.map((e) => (e === marker ? { ...e, ...rest } : e));
+      } else effects = conditionInstanceEffect(list, key, cardName, casterId, s, built.context.options ?? {}) ?? list;
+    }
+    if (effects !== undefined) effects = effects.map((e) => (!prior.has(e.id) && e.casterId === undefined && e.id.startsWith(`${key}:`) ? { ...e, casterId } : e));
+    if (effects === w.patch.effects) return w;
+    return { ...w, before: w.before.effects === undefined ? adversaryBefore(instance, true) : w.before, patch: { ...w.patch, ...(effects ? { effects } : {}) } };
+  });
+  // A condition with entry fields on an enemy the use changed nothing else on.
+  for (const s of conditions) {
+    if (out.some((w) => (w.creature.tokenId as string) === s.targetId)) continue;
+    const c = built.creatures.get(s.targetId);
+    if (c?.kind !== "enemy") continue;
+    const effects = conditionInstanceEffect(c.instance.effects ?? [], key, cardName, casterId, s, built.context.options ?? {});
+    if (effects === null) continue;
+    const inst = c.instance;
+    out.push({ creature: c, before: adversaryBefore(inst, true), patch: { hp: inst.hp, stress: inst.stress, defeated: inst.defeated, conditions: inst.conditions, tags: inst.tags, effects } });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- adversary uses on the use's roll (dcm-m7tm)
+
+/** A use's action roll as the adversary engine's `pcRolls` triggers read it, or null (no duality action / reaction roll). */
+function rollFactsOf(use: CardUse, plan: RunPlan, trait: TraitId | undefined): RollFacts | null {
+  const r = plan.roll;
+  const spec = use.roll;
+  if (r === null || spec === undefined || spec.kind === "adversaryAttack" || r.record.outcome === "none") return null;
+  if (r.record.kind !== "action" && r.record.kind !== "reaction") return null;
+  const weapon = spec.kind === "attack" || (spec.kind === "trait" && spec.asWeapon === true);
+  const attack = weapon || (spec.kind === "trait" && spec.attack === true);
+  const rolledTrait = spec.kind === "trait" ? (typeof spec.trait === "string" ? spec.trait : (trait ?? spec.trait[0])) : trait;
+  return {
+    kind: r.record.kind,
+    ...(rolledTrait !== undefined ? { trait: rolledTrait } : {}),
+    ...(attack ? { attack: true } : {}),
+    ...(weapon ? { weapon: true } : {}),
+    ...(spec.kind === "spellcast" ? { spellcast: true } : {}),
+    success: plan.success,
+    withHope: r.withHope,
+    withFear: r.withFear,
+    total: r.record.total,
+    ...(r.critical ? { critical: true } : {}),
+  };
+}
+
+/** The plan with its roll records shown with the bonuses (`withDieBonuses`: the true dice and the outcome they make). */
+function showBonuses(plan: RunPlan, record: RollRecord, bonuses: readonly { die: "hope" | "fear"; amount: number }[]): RunPlan {
+  const shown = withDieBonuses(record, bonuses);
+  if (plan.roll) plan.roll.record = shown;
+  for (const st of plan.steps) if (st.kind === "roll") st.roll.record = shown;
+  return plan;
+}
+
+/**
+ * Plan lanes-2 E1.4a (dcm-m7tm card / feature half; E7's `pcRollAdversaryUses`, dcm-of7v): the running encounter's
+ * adversary uses that fire on the use's action roll (Ill Omen, HF p.95: "their Fear Die gains a bonus equal to the amount
+ * of Fear you have"; Backhanded Guidance, HF p.87) run, and their duality-die bonuses go into the roll. User answer
+ * 2026-10-31: a bonus never makes a critical (a critical stays one) and only decides Hope vs Fear; a tie after the bonus is
+ * WITH FEAR. The use is run again with the same dice, its Hope and Fear Die raised by the bonuses (`rerun`), so its
+ * success, Hope, Fear and hits follow the new roll; a tie runs with the Fear Die one higher and the modifier one lower
+ * (the total stays, the outcome is with Fear). The rows show the true dice (`withDieBonuses`). Returns the GM's lines.
+ */
+export async function foldPcRolls<T extends { outcome: RunOutcome }>(
+  ctx: MutationCtx,
+  input: { campaign: Doc<"campaigns">; characterId: Id<"characters">; use: CardUse; trait: TraitId | undefined },
+  first: { plan: RunPlan; dice: readonly number[] },
+  rerun: (dice: number[], modifierDelta: number) => Promise<T>,
+): Promise<{ plan: RunPlan; dice: number[]; lines: string[]; again: T | null }> {
+  const same = { plan: first.plan, dice: [...first.dice], lines: [] as string[], again: null };
+  const facts = rollFactsOf(input.use, first.plan, input.trait);
+  if (facts === null) return same;
+  const uses = await pcRollAdversaryUses(ctx, input.campaign, { characterId: input.characterId, roll: facts });
+  const lines = [...uses.lines, ...uses.offers.map((o) => `${o.feature} could react to this roll (the GM's call)`)];
+  const roll = first.plan.roll;
+  if (uses.bonuses.length === 0 || roll === null) return { ...same, lines };
+  const record = roll.record;
+  if (roll.critical) return { ...same, plan: showBonuses(first.plan, record, uses.bonuses), lines };
+  const add = { hope: 0, fear: 0 };
+  for (const b of uses.bonuses) add[b.die] += b.amount;
+  const at = first.dice.findIndex((d, i) => d === roll.hope && first.dice[i + 1] === roll.fear);
+  if (at < 0) return { ...same, plan: showBonuses(first.plan, record, uses.bonuses), lines };
+  const hope = roll.hope + add.hope;
+  let fear = roll.fear + add.fear;
+  let delta = 0;
+  if (hope === fear) {
+    fear += 1;
+    delta = -1;
+  }
+  const dice = [...first.dice];
+  dice[at] = hope;
+  dice[at + 1] = fear;
+  const again = await rerun(dice, delta);
+  if (again.outcome.kind !== "plan") return { ...same, plan: showBonuses(first.plan, record, uses.bonuses), lines };
+  return { plan: showBonuses(again.outcome.plan, record, uses.bonuses), dice, lines, again };
 }
 
 /**
@@ -267,7 +480,39 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     rollEndLabels.push(...own.lines);
     rollEnded.push(...own.ended);
   }
-  let prompts = promptsOf(plan, built).filter((p) => !(healed > 0 && p.kind === "manual" && p.text.startsWith("You clear a number of Hit Points")) && !(p.kind === "manual" && swapped.texts.includes(p.text)));
+  // Plan lanes-2 E1.4a (dcm-tn8u): the plan's hand-offs the runner leaves to the caller, as the feature path does
+  // (convex/lib/featureRunner.ts): gold and named items given to PCs (`giftsOf` / `giveTo`, CB p.43), a `setStance` step
+  // shifting the actor's stance (HF p.12: the previous one drops first, `setStance`), and the feed words (`planHandoff`).
+  const isPc = (id: string) => id === actorToken || built.creatures.get(id)?.kind === "pc";
+  const gifts = giftsOf(plan, isPc);
+  // The runner's own `inventory` plan steps (E3): `giveGold` / `giveItem` to a PC are written here too; the others (take,
+  // takeGold, damageWeapon) and an unnamed item stay the table's, as a feed line.
+  const inventory = inventoryGifts(plan, isPc);
+  for (const [id, list] of inventory.byTarget) gifts.byTarget.set(id, [...(gifts.byTarget.get(id) ?? []), ...list]);
+  next = giveTo(next, gifts.byTarget.get(actorToken) ?? []);
+  const stanceBefore: AdversaryBefore[] = [];
+  const stanceLines: string[] = [];
+  for (const stance of stancesOf(plan, actorToken, built.context.options ?? {})) {
+    const shifted = await setStance(ctx, campaign._id, next, stance, (e) => effectEndsOf(e));
+    if (shifted === null) throw appError("INVALID", `You can't shift into that stance (${stance}).`);
+    next = shifted.sheet;
+    stanceBefore.push(...shifted.before);
+    stanceLines.push(...shifted.lines);
+  }
+  // dcm-lztq: the effects the card gave its user carry the user as their caster.
+  next = stampCaster(sheet, next, character._id);
+  const handoff = planHandoff(built, plan);
+  const pcName = (id: string) => {
+    const c = built.creatures.get(id);
+    return c?.kind === "pc" ? c.sheet.name : "an ally";
+  };
+  const giftNames = (id: string) => (id === actorToken ? "you" : pcName(id));
+  // `gifts.notes` reads the merged recipients (the inventory gifts too).
+  const giftNotes = [...gifts.notes(giftNames), ...inventory.byHand(giftNames)];
+  const handled = (text: string) => gifts.texts.has(text) || plan.steps.some((s) => s.kind === "prompt" && s.prompt === "manual" && s.step?.kind === "setStance" && s.text === text);
+  let prompts = promptsOf(plan, built).filter(
+    (p) => !(healed > 0 && p.kind === "manual" && p.text.startsWith("You clear a number of Hit Points")) && !(p.kind === "manual" && (swapped.texts.includes(p.text) || handled(p.text))),
+  );
 
   // Allies: tracks from the plan's creatures, Hope / effects / conditions from its steps.
   const allyRows: { character: Doc<"characters">; before: CharacterSheet; after: CharacterSheet }[] = [];
@@ -279,11 +524,12 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
     // DA10: an Unshakable ally rolls on the Stress the card marks on them (CB p.59).
     const u = unshakePlan(c.sheet, after, plan, c.tokenId, false);
     if (u.roll) unshaken.push({ characterId: c.character._id, name: c.sheet.name, roll: u.roll });
-    after = u.sheet;
+    after = giveTo(u.sheet, gifts.byTarget.get(c.tokenId) ?? []);
+    after = stampCaster(c.sheet, after, character._id);
     if (changed(c.sheet, after)) allyRows.push({ character: c.character, before: c.sheet, after });
   }
 
-  const writes = instanceWrites(plan, built.creatures, pick.name);
+  const writes = castWrites(instanceWrites(plan, built.creatures, pick.name), plan, built, character._id, pick.name);
   await writeInstances(ctx, writes);
   const casterEnds = endRoll !== null && endRoll.kind === "action" ? await endForCasterOnInstances(ctx, campaign._id, actorToken, { kind: "roll", roll: endRoll }) : { before: [], lines: [] };
   const fearDelta = await applyFear(ctx, campaign._id, plan.gmFearDelta);
@@ -341,9 +587,15 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
       await logAction(ctx, { campaignId: campaign._id, characterId: end.key, actorId, kind: "feature", visibility: "public", summary: end.lines.join("; ").slice(0, 1000), groupId, before, undoable: true });
     }
   }
+  // dcm-tn8u: the hand-offs' feed words (stance, spent, rerolled dice, forced attacks, form changes), the stance's drops
+  // and the gifts, one public row.
+  const handoffWords = [...handoff.notes, ...stanceLines, ...giftNotes];
+  if (handoffWords.length > 0) {
+    await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId, kind: "feature", visibility: "public", summary: `${sheet.name} used ${pick.name}: ${handoffWords.join("; ")}`.slice(0, 1000), groupId, undoable: true });
+  }
   const lines = [...gmLines(plan, built, writes), ...casterEnds.lines];
-  const adversaryBefore = [...writes.map((w) => w.before), ...casterEnds.before];
-  if (lines.length > 0 || adversaryBefore.length > 0) {
+  const befores = [...writes.map((w) => w.before), ...casterEnds.before, ...stanceBefore];
+  if (lines.length > 0 || befores.length > 0) {
     await logAction(ctx, {
       campaignId: campaign._id,
       actorId,
@@ -352,7 +604,7 @@ async function resolveUse(ctx: MutationCtx, req: UseRequest, built: BuiltRun, pl
       summary: `${sheet.name} · ${pick.name} → ${lines.join("; ")}`.slice(0, 1000),
       ...(damage[0] ? { roll: damage[0].roll } : {}),
       groupId,
-      ...(adversaryBefore.length > 0 ? { adversaryBefore } : {}),
+      ...(befores.length > 0 ? { adversaryBefore: befores } : {}),
       undoable: true,
     });
   }
@@ -562,6 +814,11 @@ export type RiderUse<P extends UsePick> = {
   slot: DiceSlot;
   /** Builds the use on `sheet` (the riders' costs paid) with `folds`' damage changes in its steps. */
   build: (sheet: CharacterSheet, folds: Folds) => Promise<{ built: BuiltRun; pick: P }>;
+  /**
+   * Plan lanes-2 E1.4a (dcm-m7tm): this run resolves the use (the GM's approval of an out-of-range use). Unset: it does
+   * when every target is in range. Only a resolving run lets the adversaries' `pcRolls` uses fire on its roll.
+   */
+  resolving?: boolean;
 };
 
 /**
@@ -570,7 +827,7 @@ export type RiderUse<P extends UsePick> = {
  * writes the riders' effects on the creatures after the use's own rows and returns its runs.
  */
 export type RiderOutcome<P extends UsePick> =
-  | { kind: "plan"; built: BuiltRun; plan: RunPlan; pick: P; sheet: CharacterSheet; sheets: RiderSheets; runs: RiderRun[]; post: (entryId: Id<"actionLog">) => Promise<RiderRun[]> }
+  | { kind: "plan"; built: BuiltRun; plan: RunPlan; pick: P; sheet: CharacterSheet; sheets: RiderSheets; runs: RiderRun[]; post: (entryId: Id<"actionLog">) => Promise<RiderRun[]>; pcLines: string[] }
   | { kind: "needsChoice"; outcome: Extract<RunOutcome, { kind: "needsChoice" }> };
 
 /**
@@ -606,10 +863,12 @@ export async function runWithRiders<P extends UsePick>(ctx: MutationCtx, use: Ri
   if (folds.addTargets.length > 0) throw appError("INVALID", "A rider can't add targets to this roll yet.");
 
   // The use with the before-roll riders' additions (the roll's bonus and advantage, the damage changes).
+  // `modifierDelta`: the `pcRolls` fold's tie correction (`foldPcRolls`).
+  let modifierDelta = 0;
   const run = async (pickFolds: Folds, kept: readonly number[] | null) => {
     const { built, pick } = await use.build(sheet, pickFolds);
     const roll = built.context.roll ?? {};
-    built.context.roll = { ...roll, modifier: (roll.modifier ?? 0) + folds.modifier, advantage: (roll.advantage ?? 0) + folds.advantage };
+    built.context.roll = { ...roll, modifier: (roll.modifier ?? 0) + folds.modifier + modifierDelta, advantage: (roll.advantage ?? 0) + folds.advantage };
     return { built, pick, outcome: runWithHopeDie(built, pick, folds.hopeDie, kept) };
   };
   // Plan lanes, E1: automatic uses send plain uses this way too, so a choice asked after the roll keeps the use's dice
@@ -620,10 +879,25 @@ export async function runWithRiders<P extends UsePick>(ctx: MutationCtx, use: Ri
     return { kind: "needsChoice", outcome: first.outcome };
   }
   // The use's own dice (the riders' are not replayed into it).
-  const dice = [...first.outcome.dice];
+  let dice = [...first.outcome.dice];
   let built = first.built;
   let pick = first.pick;
   let plan = first.outcome.plan;
+  // dcm-m7tm: the adversaries' uses on this roll (Ill Omen's Fear Die bonus) before the riders read its result.
+  let pcLines: string[] = [];
+  if (use.resolving ?? built.outOfRange.length === 0) {
+    const folded = await foldPcRolls(ctx, { campaign: use.campaign, characterId: use.character._id, use: pick.use, trait: use.roll.trait }, { plan, dice }, (d, delta) => {
+      modifierDelta = delta;
+      return run(folds, d);
+    });
+    pcLines = folded.lines;
+    if (folded.again !== null && folded.again.outcome.kind === "plan") {
+      built = folded.again.built;
+      pick = folded.again.pick;
+    }
+    plan = folded.plan;
+    dice = folded.dice;
+  }
   const hostRoll = hostRollOf(plan);
   // Plan lanes-2, E1 (dcm-n0dv): the riders on the result read the roll's Hope and Fear Die (Midnight-Touched).
   if (plan.roll) env.hostDice = { hope: plan.roll.hope, fear: plan.roll.fear };
@@ -730,13 +1004,15 @@ export async function runWithRiders<P extends UsePick>(ctx: MutationCtx, use: Ri
     });
     return postRuns;
   };
-  return { kind: "plan", built, plan, pick, sheet, sheets: { before: use.sheet, next: after, names: [...names, ...skipped.map((n) => `${n} not used`)] }, runs, post };
+  return { kind: "plan", built, plan, pick, sheet, sheets: { before: use.sheet, next: after, names: [...names, ...skipped.map((n) => `${n} not used`)] }, runs, post, pcLines };
 }
 
-type CardRiderOutcome = { kind: "plan"; built: BuiltRun; plan: RunPlan; req: UseRequest; sheets: RiderSheets; runs: RiderRun[]; post: (entryId: Id<"actionLog">) => Promise<RiderRun[]> } | { kind: "needsChoice"; outcome: Extract<RunOutcome, { kind: "needsChoice" }> };
+type CardRiderOutcome =
+  | { kind: "plan"; built: BuiltRun; plan: RunPlan; req: UseRequest; sheets: RiderSheets; runs: RiderRun[]; post: (entryId: Id<"actionLog">) => Promise<RiderRun[]>; pcLines: string[] }
+  | { kind: "needsChoice"; outcome: Extract<RunOutcome, { kind: "needsChoice" }> };
 
-/** SD5: a card use with riders (`runWithRiders` with the card's host and `withFolds`). */
-async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonly Rider[], actorId: Id<"users">, riseOff = false): Promise<CardRiderOutcome> {
+/** SD5: a card use with riders (`runWithRiders` with the card's host and `withFolds`). `resolving`: the GM's approval. */
+async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonly Rider[], actorId: Id<"users">, riseOff = false, resolving?: boolean): Promise<CardRiderOutcome> {
   const host = cardHost(req, parseChoices(req.choices).weapon);
   const out = await runWithRiders(
     ctx,
@@ -753,13 +1029,34 @@ async function cardWithRiders(ctx: MutationCtx, req: UseRequest, riders: readonl
         const pick = withFolds(req.pick, folds);
         return { built: await build(ctx, { ...req, sheet, pick }), pick };
       },
+      ...(resolving !== undefined ? { resolving } : {}),
     },
     riders,
     actorId,
     riseOff,
   );
   if (out.kind === "needsChoice") return out;
-  return { kind: "plan", built: out.built, plan: out.plan, req: { ...req, sheet: out.sheet, pick: out.pick }, sheets: out.sheets, runs: out.runs, post: out.post };
+  return { kind: "plan", built: out.built, plan: out.plan, req: { ...req, sheet: out.sheet, pick: out.pick }, sheets: out.sheets, runs: out.runs, post: out.post, pcLines: out.pcLines };
+}
+
+/**
+ * dcm-m7tm: a plain card use (no riders) with the adversaries' `pcRolls` uses on its roll (`foldPcRolls`): the same dice
+ * replayed with the bonuses. Call only for a run that resolves (nothing fires on a dry run that waits for the GM).
+ */
+async function cardPcRolls(ctx: MutationCtx, req: UseRequest, built: BuiltRun, outcome: Extract<RunOutcome, { kind: "plan" }>): Promise<{ plan: RunPlan; lines: string[] }> {
+  const folded = await foldPcRolls(ctx, { campaign: req.campaign, characterId: req.character._id, use: req.pick.use, trait: req.roll.trait }, outcome, async (dice, delta) => ({ outcome: rerunWith(built, req.pick, dice, delta) }));
+  return { plan: folded.plan, lines: folded.lines };
+}
+
+/** Runs a built use again with `dice` replayed and the roll's modifier moved by `delta` (put back after). */
+export function rerunWith(built: BuiltRun, pick: UsePick, dice: readonly number[], delta: number): RunOutcome {
+  const roll = built.context.roll;
+  if (delta !== 0) built.context.roll = { ...(roll ?? {}), modifier: (roll?.modifier ?? 0) + delta };
+  try {
+    return runCard(built, pick, replaying(dice, rollDie));
+  } finally {
+    built.context.roll = roll;
+  }
 }
 
 // ---------------------------------------------------------------- after a use (plan lanes-2 E1.3a)
@@ -824,7 +1121,150 @@ export type AfterUse = {
   writes?: readonly InstanceWrite[];
   point?: Square;
   points?: readonly Square[];
+  /** Plan lanes-2 E1.4a (dcm-m7tm): the GM's lines of the adversary uses that fired on the use's roll (`foldPcRolls`). */
+  gmNotes?: readonly string[];
 };
+
+/** The attack kind a use's roll is to the end engine of adversary-given conditions (`endAdversaryConditionsOnRoll`). */
+function attackKindOf(use: CardUse): "weapon" | "spell" | "other" | undefined {
+  const spec = use.roll;
+  if (spec === undefined) return undefined;
+  if (spec.kind === "attack" || (spec.kind === "trait" && spec.asWeapon === true)) return "weapon";
+  if (spec.kind === "spellcast") return "spell";
+  if (spec.kind === "trait" && spec.attack === true) return "other";
+  return undefined;
+}
+
+const SEVERITY_RANK: Record<EndSeverity, number> = { none: 0, minor: 1, major: 2, severe: 3 };
+
+/** The instances a plan's damage marked Hit Points on, with the hit as their caster-side end reads it (E6's `damageTaken`). */
+function damagedInstances(plan: RunPlan, built: BuiltRun): Map<Id<"encounterAdversaries">, { severity: EndSeverity; hpMarked: number }> {
+  const out = new Map<Id<"encounterAdversaries">, { severity: EndSeverity; hpMarked: number }>();
+  for (const s of plan.steps) {
+    if (s.kind !== "damage" || s.result.hpMarked <= 0) continue;
+    const c = built.creatures.get(s.result.targetId);
+    if (c?.kind !== "enemy") continue;
+    const raw = s.result.severity;
+    const severity: EndSeverity = raw === "minor" || raw === "major" || raw === "severe" ? raw : raw === "none" ? "none" : "minor";
+    const prior = out.get(c.instance._id);
+    out.set(c.instance._id, { severity: prior && SEVERITY_RANK[prior.severity] > SEVERITY_RANK[severity] ? prior.severity : severity, hpMarked: (prior?.hpMarked ?? 0) + s.result.hpMarked });
+  }
+  return out;
+}
+
+/** The id the adversary engine names a creature of the use by: an instance id, or a PC's character id. */
+function engineIdOf(built: BuiltRun, tokenId: string): string | null {
+  const c = built.creatures.get(tokenId);
+  if (c?.kind === "enemy") return c.instance._id;
+  if (c?.kind === "pc") return c.character._id;
+  return null;
+}
+
+/**
+ * Plan lanes-2 E1.4a (dcm-svnq, dcm-9l9g; Words of Discord, CB p.335: "make an attack against another adversary instead of
+ * against you or your allies"; Transform, HF p.142): the plan's `forcedAttack` and `changeForm` hand-offs
+ * (`planHandoff`). An adversary forced to attack makes its standard attack now (`forcedStandardAttack`, its own log
+ * group); without a target, or one the engine refuses, it is the GM's ("must make its standard attack against a target
+ * the GM picks"). A PC forced to attack is the player's ("must make an attack against ..."). A form change writes the
+ * instance's `form` modifier (`formInstanceEffect`) in the use's group. Returns the notes for the table.
+ */
+async function runHandoffs(ctx: MutationCtx, input: AfterUse, groupId: string): Promise<string[]> {
+  const { built, plan, campaign } = input;
+  const handoff = planHandoff(built, plan);
+  const notes: string[] = [];
+  const nameOf = (tokenId: string) => {
+    const c = built.creatures.get(tokenId);
+    return c?.kind === "enemy" ? c.instance.label : c?.kind === "pc" ? c.sheet.name : "a creature";
+  };
+  for (const f of handoff.changeForms) {
+    const c = built.creatures.get(f.tokenId);
+    if (c?.kind !== "enemy") continue;
+    const instance = await ctx.db.get("encounterAdversaries", c.instance._id);
+    if (instance === null || instance.defeated) continue;
+    await ctx.db.patch("encounterAdversaries", instance._id, { effects: formInstanceEffect(instance.effects ?? [], f.adversaryId, input.name), updatedAt: Date.now() });
+    await logAction(ctx, { campaignId: campaign._id, actorId: input.actorId, kind: "combat", visibility: "gm", summary: `${instance.label} changes form (${input.name})`.slice(0, 1000), groupId, adversaryBefore: [adversaryBefore(instance, true)], undoable: true });
+  }
+  if (handoff.forcedAttacks.length === 0) return notes;
+  const user = await ctx.db.get("users", input.actorId);
+  for (const f of handoff.forcedAttacks) {
+    const against = f.againstTokenIds.map((t) => nameOf(t)).join(", ") || "a target the GM picks";
+    for (const attackerToken of f.attackerTokenIds) {
+      const c = built.creatures.get(attackerToken);
+      if (c?.kind === "pc") {
+        notes.push(`${c.sheet.name} must make an attack against ${against}`);
+        continue;
+      }
+      if (c?.kind !== "enemy") continue;
+      const targets = f.againstTokenIds.filter((t) => t !== attackerToken).flatMap((t) => engineIdOf(built, t) ?? []);
+      if (targets.length === 0 || user === null) {
+        notes.push(`${c.instance.label} must make its standard attack against a target the GM picks`);
+        continue;
+      }
+      try {
+        await forcedStandardAttack(ctx, campaign, user, { instanceId: c.instance._id, targets });
+      } catch (e) {
+        if (!(e instanceof ConvexError)) throw e;
+        notes.push(`${c.instance.label} must make its standard attack against ${against}`);
+      }
+    }
+  }
+  return notes;
+}
+
+/**
+ * Plan lanes-2 E1.4a (dcm-wli0 card / feature half; E6's ends of adversary-given conditions): the use's damage to an
+ * instance ends the PC conditions that instance gave which end on its damage (Envelop's Restrained on Severe), and its
+ * roll ends the actor's that end on the bearer's roll (Slowed, Rattled, HF p.69: "until they roll with Hope"), in `groupId`.
+ */
+async function endAdversaryGiven(ctx: MutationCtx, input: AfterUse, groupId: string): Promise<string[]> {
+  const { campaign, character, plan, built } = input;
+  const lines: string[] = [];
+  for (const [instanceId, hit] of damagedInstances(plan, built)) {
+    const instance = await ctx.db.get("encounterAdversaries", instanceId);
+    const lastHp = instance !== null && instance.hp >= instance.stats.hpMax;
+    const out = await endAdversaryConditionsForCaster(ctx, { campaignId: campaign._id, casterId: instanceId, occ: { kind: "damageTaken", severity: hit.severity, hpMarked: hit.hpMarked, lastHp }, groupId, actorId: input.actorId });
+    lines.push(...out.lines);
+  }
+  if (plan.roll) {
+    const now = await ctx.db.get("characters", character._id);
+    if (now !== null) {
+      const sheet = readSheet(now.sheet);
+      const out = endAdversaryConditionsOnRoll(sheet, plan.roll.record, attackKindOf(input.use));
+      if (out.ended.length > 0) {
+        await saveSheet(ctx, character._id, out.sheet);
+        await logAction(ctx, { campaignId: campaign._id, characterId: character._id, actorId: input.actorId, kind: "feature", visibility: "public", summary: out.lines.join("; ").slice(0, 1000), groupId, before: sheet, undoable: true });
+        lines.push(...out.lines);
+      }
+    }
+  }
+  return lines;
+}
+
+/**
+ * Plan lanes-2 E1.4a (dcm-vx5n; user 2026-10-31; CB p.42, CB p.99): a use whose action roll targets an enemy but is not
+ * an attack (`isAttackUse` false) asks the GM "Does <name>'s Cloaked end?" when the actor is Cloaked (`openCloakPrompt`).
+ */
+async function askCloak(ctx: MutationCtx, input: AfterUse, groupId: string): Promise<void> {
+  const { built, plan } = input;
+  const spec = input.use.roll;
+  if (!built.creatures.onMap || plan.roll === null || plan.roll.record.kind !== "action") return;
+  if (spec === undefined || spec.kind === "reaction" || spec.kind === "adversaryAttack" || isAttackUse(input.use, built)) return;
+  const enemies = built.targets.filter((t) => t.kind === "enemy");
+  const first = enemies[0];
+  if (first === undefined || first.kind !== "enemy") return;
+  const scene = built.creatures.scene;
+  await openCloakPrompt(ctx, {
+    campaign: input.campaign,
+    characterId: input.character._id,
+    tokenId: scene.attacker._id,
+    mapId: scene.map._id,
+    encounterId: first.encounter._id,
+    label: input.name,
+    groupId,
+    targetTokenIds: enemies.map((t) => t.token._id),
+    createdBy: input.actorId,
+  });
+}
 
 /**
  * Plan lanes-2 E1.3a (dcm-m48i, dcm-9nlr, dcm-76l5 (3), dcm-bxp.99.19.67, dcm-uwg1): what a resolved card or feature use
@@ -859,6 +1299,13 @@ export async function afterUse(ctx: MutationCtx, input: AfterUse): Promise<{ lin
   }
   if (input.writes) lines.push(...(await endDefeatedOnParty(ctx, { campaignId: campaign._id, writes: input.writes, groupId, actorId: input.actorId })));
   if (isAttackUse(input.use, built) && (await uncloakAfterAttack(ctx, campaign, character._id, input.actorId, input.name, { groupId }))) lines.push(`${input.before.name} is no longer Cloaked`);
+  // Plan lanes-2 E1.4a: the adversary-given conditions the use's damage or roll ends, the Cloaked prompt, the GM's lines of
+  // the adversary uses on its roll, then the hand-offs (a forced attack runs last: its rows are a group of their own).
+  lines.push(...(await endAdversaryGiven(ctx, input, groupId)));
+  await askCloak(ctx, input, groupId);
+  if (input.gmNotes && input.gmNotes.length > 0) {
+    await logAction(ctx, { campaignId: campaign._id, actorId: input.actorId, kind: "combat", visibility: "gm", summary: `${input.before.name} · ${input.name}: ${input.gmNotes.join("; ")}`.slice(0, 1000), groupId, undoable: true });
+  }
   // Areas that ended above (their sheet rows say the rest): one public row, so the feed names them.
   if (scene) {
     const live = new Set((await activeAreasOnMap(ctx, scene.map._id)).map((a) => a._id));
@@ -885,11 +1332,15 @@ export async function afterUse(ctx: MutationCtx, input: AfterUse): Promise<{ lin
       ...(input.points ? { points: input.points } : {}),
     });
   }
+  byHand.push(...(await runHandoffs(ctx, input, groupId)));
   return { lines, byHand };
 }
 
 /** A card use's after-steps (`afterUse`) with its result: the "place by hand" notes join its prompts. */
-async function afterCardUse(ctx: MutationCtx, input: { result: ResolvedCard; req: UseRequest; built: BuiltRun; plan: RunPlan; actorId: Id<"users">; before: CharacterSheet; writes: readonly InstanceWrite[]; riderRuns?: readonly RiderRun[]; point?: Square; points?: readonly Square[] }): Promise<ResolvedCard> {
+async function afterCardUse(
+  ctx: MutationCtx,
+  input: { result: ResolvedCard; req: UseRequest; built: BuiltRun; plan: RunPlan; actorId: Id<"users">; before: CharacterSheet; writes: readonly InstanceWrite[]; riderRuns?: readonly RiderRun[]; point?: Square; points?: readonly Square[]; gmNotes?: readonly string[] },
+): Promise<ResolvedCard> {
   const { result, req } = input;
   const out = await afterUse(ctx, {
     campaign: req.campaign,
@@ -906,6 +1357,7 @@ async function afterCardUse(ctx: MutationCtx, input: { result: ResolvedCard; req
     ...(input.riderRuns ? { riderRuns: input.riderRuns } : {}),
     ...(input.point ? { point: input.point } : {}),
     ...(input.points ? { points: input.points } : {}),
+    ...(input.gmNotes ? { gmNotes: input.gmNotes } : {}),
   });
   if (out.byHand.length === 0) return result;
   return { ...result, prompts: [...result.prompts, ...out.byHand.map((text) => ({ kind: "manual" as const, text, tokenIds: [] }))] };
@@ -975,13 +1427,15 @@ export const useCard = keyedCampaignMutation({
       const riseOff = args.riseToTheChallenge === false;
       if ((args.points?.length ?? 0) > MAX_AREA_COUNT) throw appError("INVALID", `At most ${MAX_AREA_COUNT} squares.`);
       const squares = { ...(args.point ? { point: args.point } : {}), ...(args.points ? { points: args.points } : {}) };
+      // dcm-tn8u: the squares go to the runner too, for a use whose targets name points.
+      req.squares = [...(args.point ? [args.point] : []), ...(args.points ?? [])];
       if (riders.length > 0 || riseApplies(req, riseOff)) {
         const withRiders = await cardWithRiders(ctx, req, riders, ctx.user._id, riseOff);
         if (withRiders.kind === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.outcome.asks };
         if (withRiders.built.outOfRange.length === 0) {
           const { result, writes } = await resolveUse(ctx, withRiders.req, withRiders.built, withRiders.plan, ctx.user._id, withRiders.sheets);
           const postRuns = await withRiders.post(result.entryId);
-          return afterCardUse(ctx, { result, req: withRiders.req, built: withRiders.built, plan: withRiders.plan, actorId: ctx.user._id, before: sheet, writes, riderRuns: [...withRiders.runs, ...postRuns], ...squares });
+          return afterCardUse(ctx, { result, req: withRiders.req, built: withRiders.built, plan: withRiders.plan, actorId: ctx.user._id, before: sheet, writes, riderRuns: [...withRiders.runs, ...postRuns], gmNotes: withRiders.pcLines, ...squares });
         }
         // Q1: wait for the GM; the approval runs the card and its riders again (nothing is kept).
         const encounter = withRiders.built.targets.find((t) => t.kind === "enemy");
@@ -1019,8 +1473,9 @@ export const useCard = keyedCampaignMutation({
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
       if (built.outOfRange.length === 0) {
-        const { result, writes } = await resolveUse(ctx, req, built, outcome.plan, ctx.user._id);
-        return afterCardUse(ctx, { result, req, built, plan: outcome.plan, actorId: ctx.user._id, before: sheet, writes, ...squares });
+        const folded = await cardPcRolls(ctx, req, built, outcome);
+        const { result, writes } = await resolveUse(ctx, req, built, folded.plan, ctx.user._id);
+        return afterCardUse(ctx, { result, req, built, plan: folded.plan, actorId: ctx.user._id, before: sheet, writes, gmNotes: folded.lines, ...squares });
       }
 
       // Q1: wait for the GM; nothing paid or logged is kept. The dry run's dice are kept, so the approval resolves with
@@ -1075,24 +1530,25 @@ export const sanction = keyedGmMutation({
       assertCanAct(character, sheet);
       const scene = await attackScene(ctx, ctx.campaign, character, row.mapId);
       const pick = pickCard(sheet, action.cardId, action.useId);
-      const req: UseRequest = { campaign: ctx.campaign, character, sheet, scene, pick, targetTokenIds: action.targetTokenIds, choices: action.choices, roll: action.roll ?? {} };
-      const riseOff = action.roll?.riseToTheChallenge === false;
       // dcm-0x2g: the square the player picked for a point area (the payload keeps `point` only, not `points`).
       const squares = action.point ? { point: action.point } : {};
+      const req: UseRequest = { campaign: ctx.campaign, character, sheet, scene, pick, targetTokenIds: action.targetTokenIds, choices: action.choices, roll: action.roll ?? {}, ...(action.point ? { squares: [action.point] } : {}) };
+      const riseOff = action.roll?.riseToTheChallenge === false;
       if ((action.riders && action.riders.length > 0) || riseApplies(req, riseOff)) {
-        const withRiders = await cardWithRiders(ctx, req, action.riders ?? [], row.createdBy, riseOff);
+        const withRiders = await cardWithRiders(ctx, req, action.riders ?? [], row.createdBy, riseOff, true);
         if (withRiders.kind === "needsChoice") return { status: "needsChoice" as const, asks: withRiders.outcome.asks };
         const { result, writes } = await resolveUse(ctx, withRiders.req, withRiders.built, withRiders.plan, row.createdBy, withRiders.sheets);
         const postRuns = await withRiders.post(result.entryId);
-        const done = await afterCardUse(ctx, { result, req: withRiders.req, built: withRiders.built, plan: withRiders.plan, actorId: row.createdBy, before: sheet, writes, riderRuns: [...withRiders.runs, ...postRuns], ...squares });
+        const done = await afterCardUse(ctx, { result, req: withRiders.req, built: withRiders.built, plan: withRiders.plan, actorId: row.createdBy, before: sheet, writes, riderRuns: [...withRiders.runs, ...postRuns], gmNotes: withRiders.pcLines, ...squares });
         await closeRequest(ctx, row._id, "resolved", ctx.user._id);
         return done;
       }
       const built = await build(ctx, req);
       const outcome = await runKept(ctx, req, built, ctx.user._id);
       if (outcome.kind === "needsChoice") return { status: "needsChoice" as const, asks: outcome.asks };
-      const { result, writes } = await resolveUse(ctx, req, built, outcome.plan, row.createdBy);
-      const done = await afterCardUse(ctx, { result, req, built, plan: outcome.plan, actorId: row.createdBy, before: sheet, writes, ...squares });
+      const folded = await cardPcRolls(ctx, req, built, outcome);
+      const { result, writes } = await resolveUse(ctx, req, built, folded.plan, row.createdBy);
+      const done = await afterCardUse(ctx, { result, req, built, plan: folded.plan, actorId: row.createdBy, before: sheet, writes, gmNotes: folded.lines, ...squares });
       await closeRequest(ctx, row._id, "resolved", ctx.user._id);
       return done;
     }),
